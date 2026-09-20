@@ -70,6 +70,20 @@ relay "webserver" {
   decidable at parse time, and a parse either succeeds completely or fails
   with a `line:column`.
 
+## Comments
+
+A `#` comment is one of three kinds, distinguished by where it sits:
+
+- **Leading** — a block of own-line comments attaches to the directive or
+  block that follows it, held in that entry's `Leading_Comment`. Blank lines
+  in between do not break the attachment.
+- **Trailing** — a comment on the same line as a directive or block annotates
+  that line, held in `Trailing_Comment`.
+- **Standalone** — a comment block with nothing after it is kept as its own
+  `Comment` node in the children sequence: the file header before the first
+  directive (which documents the whole file) and trailing lines before a `}`.
+  `Find` and `Find_All` skip `Comment` nodes.
+
 ## API
 
 ```ada
@@ -109,11 +123,11 @@ Both are populated by the parser; neither requires the caller to convert.
 `HBNF.Print` renders a parsed tree back to canonical text — single-space token
 separation, three-space indentation, `{` on the header line and `}` alone at
 the parent indent. Values round-trip exactly (a decimal keeps its literal, a
-string is re-quoted with the escape set). Comments are preserved: an own-line
-comment stays on its own line (documenting what follows), an end-of-line
-comment stays trailing on the directive or block it annotates. Printing is
-idempotent, so it normalizes two configs that differ only in whitespace or
-brace position.
+string is re-quoted with the escape set). Comments are preserved: a leading
+block stays on its own lines before the entry it documents, a trailing
+comment stays on its line, and a standalone comment (file header, or a block
+trailer before `}`) stays a comment of its own. Printing is idempotent, so it
+normalizes two configs that differ only in whitespace or brace position.
 
 ## Building
 

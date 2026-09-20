@@ -330,13 +330,20 @@ package body HBNF is
          return V;
       end Parse_Value;
 
-      procedure Parse_Entry (Parent : Node_Access; I : in out Positive);
-      procedure Parse_Children (Parent : Node_Access; I : in out Positive);
-      procedure Parse_Comment (Parent : Node_Access; I : in out Positive);
+      procedure Parse_Entry
+        (Parent : Node_Access; I : in out Positive;
+         Leading : Unbounded_String);
+      procedure Parse_Children
+        (Parent : Node_Access; I : in out Positive; At_Top : Boolean);
+      procedure Parse_Comment
+        (Parent : Node_Access; Text : String; L, C : Positive);
 
-      procedure Parse_Entry (Parent : Node_Access; I : in out Positive) is
+      procedure Parse_Entry
+        (Parent : Node_Access; I : in out Positive;
+         Leading : Unbounded_String) is
          N : constant Node_Access := new Node;
       begin
+         N.Leading_Comment := Leading;
          N.Kind := Directive;
          N.Name := Tokens (I).Text;
          N.Line := Tokens (I).Line;
@@ -357,7 +364,7 @@ package body HBNF is
                      N.Qualifier := N.Values.First_Element.Text;
                   end if;
                   I := I + 1;
-                  Parse_Children (N, I);
+                  Parse_Children (N, I, False);
                   if I <= Tokens.Last_Index
                     and then Tokens (I).Kind = Eol_Comment
                   then
@@ -376,34 +383,79 @@ package body HBNF is
          Parent.Children.Append (N);
       end Parse_Entry;
 
-      procedure Parse_Comment (Parent : Node_Access; I : in out Positive) is
-         C : constant Node_Access := new Node;
+      procedure Parse_Comment
+        (Parent : Node_Access; Text : String; L, C : Positive) is
+         N : constant Node_Access := new Node;
       begin
-         C.Kind := Comment;
-         C.Name := Tokens (I).Text;
-         C.Line := Tokens (I).Line;
-         C.Col  := Tokens (I).Col;
-         I := I + 1;
-         Parent.Children.Append (C);
+         N.Kind := Comment;
+         N.Name := To_Unbounded_String (Text);
+         N.Line := L;
+         N.Col  := C;
+         Parent.Children.Append (N);
       end Parse_Comment;
 
-      procedure Parse_Children (Parent : Node_Access; I : in out Positive) is
+      procedure Parse_Children
+        (Parent : Node_Access; I : in out Positive; At_Top : Boolean) is
+         Leading    : Unbounded_String := Null_Unbounded_String;
+         Seen_Entry : Boolean := False;
+
+         procedure Flush_Leading is
+            Txt   : constant String := To_String (Leading);
+            Start : Natural := Txt'First;
+         begin
+            if Leading /= Null_Unbounded_String then
+               for K in Txt'Range loop
+                  if Txt (K) = Character'Val (10) then
+                     Parse_Comment (Parent, Txt (Start .. K - 1),
+                                    Tokens (I).Line, Tokens (I).Col);
+                     Start := K + 1;
+                  end if;
+               end loop;
+               Parse_Comment (Parent, Txt (Start .. Txt'Last),
+                              Tokens (I).Line, Tokens (I).Col);
+               Leading := Null_Unbounded_String;
+            end if;
+         end Flush_Leading;
       begin
          loop
             exit when I > Tokens.Last_Index;
             if Tokens (I).Kind = Newline then
+               --  Newlines separate entries but never detach a comment block
+               --  from the entry that follows it (whitespace is fine).
                I := I + 1;
             elsif Tokens (I).Kind = RBrace then
+               Flush_Leading;
+               if At_Top then
+                  Fail (Tokens (I).Line, Tokens (I).Col, "unexpected '}'");
+               end if;
                I := I + 1;
                exit;
             elsif Tokens (I).Kind = Eof then
+               Flush_Leading;
+               if At_Top then
+                  exit;
+               end if;
                Fail (Tokens (I).Line, Tokens (I).Col, "unterminated block");
             elsif Tokens (I).Kind = Comment
               or else Tokens (I).Kind = Eol_Comment
             then
-               Parse_Comment (Parent, I);
+               if Leading /= Null_Unbounded_String then
+                  Append (Leading, Character'Val (10));
+               end if;
+               Append (Leading, Tokens (I).Text);
+               I := I + 1;
             elsif Tokens (I).Kind = Word then
-               Parse_Entry (Parent, I);
+               if At_Top and then not Seen_Entry
+                 and then Leading /= Null_Unbounded_String
+               then
+                  --  A comment block before the first directive is the file
+                  --  header: it applies to the whole file, so keep it as a
+                  --  standalone comment rather than the first entry's leader.
+                  Flush_Leading;
+               end if;
+               Parse_Entry (Parent, I, Leading);
+               Seen_Entry := True;
+               Leading := Null_Unbounded_String;
             else
                Fail (Tokens (I).Line, Tokens (I).Col,
                      "expected directive name, found '" &
@@ -422,20 +474,7 @@ package body HBNF is
       Root.Kind := Block;
       Root.Line := 1;
       Root.Col  := 1;
-      while Idx <= Tokens.Last_Index
-        and then Tokens (Idx).Kind /= Eof
-      loop
-         if Tokens (Idx).Kind = Newline then
-            Idx := Idx + 1;
-         elsif Tokens (Idx).Kind = Comment then
-            Parse_Comment (Root, Idx);
-         elsif Tokens (Idx).Kind = Word then
-            Parse_Entry (Root, Idx);
-         else
-            Fail (Tokens (Idx).Line, Tokens (Idx).Col,
-                  "expected directive name");
-         end if;
-      end loop;
+      Parse_Children (Root, Idx, True);
       return (Success => True, Root => Root);
    exception
       when Parse_Error =>
@@ -528,6 +567,32 @@ package body HBNF is
          end case;
       end Value_Text;
 
+      function Comment_Block (Indent : Natural; Text : String) return String is
+         Buf   : Unbounded_String := Null_Unbounded_String;
+         Start : Natural := Text'First;
+      begin
+         for K in Text'Range loop
+            if Text (K) = Character'Val (10) then
+               Append (Buf, Spaces (Indent));
+               Append (Buf, '#');
+               if K - 1 >= Start then
+                  Append (Buf, ' ');
+                  Append (Buf, Text (Start .. K - 1));
+               end if;
+               Append (Buf, Character'Val (10));
+               Start := K + 1;
+            end if;
+         end loop;
+         Append (Buf, Spaces (Indent));
+         Append (Buf, '#');
+         if Start <= Text'Last then
+            Append (Buf, ' ');
+            Append (Buf, Text (Start .. Text'Last));
+         end if;
+         Append (Buf, Character'Val (10));
+         return To_String (Buf);
+      end Comment_Block;
+
       function Node_Text (N : Node; Indent : Natural) return String is
          Buf : Unbounded_String := To_Unbounded_String (Spaces (Indent));
       begin
@@ -539,6 +604,10 @@ package body HBNF is
             end if;
             Append (Buf, Character'Val (10));
             return To_String (Buf);
+         end if;
+         if N.Leading_Comment /= Null_Unbounded_String then
+            Append (Buf,
+                    Comment_Block (Indent, To_String (N.Leading_Comment)));
          end if;
          Append (Buf, To_String (N.Name));
          for V of N.Values loop

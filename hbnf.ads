@@ -38,10 +38,13 @@ package HBNF is
    package Value_Vectors is new Ada.Containers.Vectors (Positive, Value);
 
    --  A directive (name + values), a block (name + optional qualifier +
-   --  children), or an own-line comment (its text in Name).  Own-line
-   --  comments sit in the children sequence; an end-of-line comment is held
-   --  in Trailing_Comment of the directive or block it follows.  Find and
-   --  Find_All skip comments.
+   --  children), or a standalone comment.  A block of own-line comments
+   --  becomes the Leading_Comment of the directive or block that follows it
+   --  (blank lines in between do not break the attachment); an end-of-line
+   --  comment becomes the Trailing_Comment of the entry it sits on.  A
+   --  comment block with nothing after it — the file header before the first
+   --  directive, or trailing lines before a `}` — is kept as a standalone
+   --  Comment node in the children sequence.  Find and Find_All skip comments.
    type Node_Kind is (Directive, Block, Comment);
 
    type Node;
@@ -59,6 +62,7 @@ package HBNF is
       Values    : Value_Vectors.Vector := Value_Vectors.Empty_Vector;
       Qualifier : Unbounded_String := Null_Unbounded_String;
       Children  : Node_Vectors.Vector := Node_Vectors.Empty_Vector;
+      Leading_Comment  : Unbounded_String := Null_Unbounded_String;
       Trailing_Comment : Unbounded_String := Null_Unbounded_String;
    end record;
 
