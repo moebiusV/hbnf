@@ -1,0 +1,14 @@
+with "../hbnf.gpr";
+
+--  Conformance suite for the hbnf grammar: builds hbnf_check against the
+--  static library.  Object files land outside the library's own obj/ so the
+--  test build never pollutes the library.
+project Check is
+   for Source_Dirs use (".");
+   for Object_Dir use "../obj-check";
+   for Exec_Dir use ".";
+   for Main use ("hbnf_check.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnat2022", "-gnatwa");
+   end Compiler;
+end Check;

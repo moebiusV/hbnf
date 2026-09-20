@@ -104,6 +104,15 @@ of `Word`, `Str`, `Int`, or `Dec`.
 
 Both are populated by the parser; neither requires the caller to convert.
 
+## Pretty-printing
+
+`HBNF.Print` renders a parsed tree back to canonical text — single-space token
+separation, three-space indentation, `{` on the header line and `}` alone at
+the parent indent. Values round-trip exactly (a decimal keeps its literal, a
+string is re-quoted with the escape set). Printing is idempotent and drops
+comments, so it normalizes two configs that differ only in whitespace or brace
+position.
+
 ## Building
 
 ```

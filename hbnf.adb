@@ -409,4 +409,80 @@ package body HBNF is
 
    function As_Decimal (V : Value) return Decimal is (V.Dec);
 
+   function Print (Root : Node_Access) return String is
+
+      Indent_Step : constant := 3;
+
+      function Spaces (N : Natural) return String is
+         S : constant String (1 .. N) := (others => ' ');
+      begin
+         return S;
+      end Spaces;
+
+      function Escape (S : String) return String is
+         Buf : Unbounded_String := Null_Unbounded_String;
+      begin
+         for C of S loop
+            case C is
+               when '"' => Append (Buf, "\""");
+               when '\' => Append (Buf, "\\");
+               when Character'Val (9)  => Append (Buf, "\t");
+               when Character'Val (10) => Append (Buf, "\n");
+               when Character'Val (13) => Append (Buf, "\r");
+               when others => Append (Buf, C);
+            end case;
+         end loop;
+         return To_String (Buf);
+      end Escape;
+
+      function Value_Text (V : Value) return String is
+      begin
+         case V.Kind is
+            when Word => return To_String (V.Text);
+            when Str  => return '"' & Escape (To_String (V.Text)) & '"';
+            when Int  =>
+               declare
+                  S : constant String := Long_Long_Integer'Image (V.Num);
+               begin
+                  if S (S'First) = ' ' then
+                     return S (S'First + 1 .. S'Last);
+                  else
+                     return S;
+                  end if;
+               end;
+            when Dec  => return To_String (V.Text);
+         end case;
+      end Value_Text;
+
+      function Node_Text (N : Node; Indent : Natural) return String is
+         Buf : Unbounded_String := To_Unbounded_String (Spaces (Indent));
+      begin
+         Append (Buf, To_String (N.Name));
+         for V of N.Values loop
+            Append (Buf, ' ');
+            Append (Buf, Value_Text (V));
+         end loop;
+         if N.Kind = Block then
+            Append (Buf, " {");
+            Append (Buf, Character'Val (10));
+            for C of N.Children loop
+               Append (Buf, Node_Text (C.all, Indent + Indent_Step));
+            end loop;
+            Append (Buf, Spaces (Indent));
+            Append (Buf, '}');
+         end if;
+         Append (Buf, Character'Val (10));
+         return To_String (Buf);
+      end Node_Text;
+
+      Buf : Unbounded_String := Null_Unbounded_String;
+   begin
+      if Root /= null then
+         for C of Root.Children loop
+            Append (Buf, Node_Text (C.all, 0));
+         end loop;
+      end if;
+      return To_String (Buf);
+   end Print;
+
 end HBNF;

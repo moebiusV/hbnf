@@ -92,4 +92,13 @@ package HBNF is
    function As_Integer (V : Value) return Long_Long_Integer;  -- Int
    function As_Decimal (V : Value) return Decimal;        -- Dec
 
+   --  Pretty-printing ----------------------------------------------------
+
+   --  The canonical text form of the tree rooted at Root (a Parse result's
+   --  Root): single-space token separation, three-space indentation, and
+   --  OpenBSD brace placement.  Values round-trip: a decimal emits its exact
+   --  literal, a string is re-quoted with the escape set.  Comments are not
+   --  retained.
+   function Print (Root : Node_Access) return String;
+
 end HBNF;
