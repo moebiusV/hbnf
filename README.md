@@ -109,9 +109,11 @@ Both are populated by the parser; neither requires the caller to convert.
 `HBNF.Print` renders a parsed tree back to canonical text — single-space token
 separation, three-space indentation, `{` on the header line and `}` alone at
 the parent indent. Values round-trip exactly (a decimal keeps its literal, a
-string is re-quoted with the escape set), and comments are preserved on their
-own lines. Printing is idempotent, so it normalizes two configs that differ
-only in whitespace or brace position.
+string is re-quoted with the escape set). Comments are preserved: an own-line
+comment stays on its own line (documenting what follows), an end-of-line
+comment stays trailing on the directive or block it annotates. Printing is
+idempotent, so it normalizes two configs that differ only in whitespace or
+brace position.
 
 ## Building
 

@@ -7,7 +7,8 @@ package body HBNF is
    --  Lexer ----------------------------------------------------------------
 
    type Token_Kind is
-     (Word, Str, Int, Dec, Comment, LBrace, RBrace, Newline, Eof);
+     (Word, Str, Int, Dec, Comment, Eol_Comment,
+      LBrace, RBrace, Newline, Eof);
 
    type Token is record
       Kind : Token_Kind;
@@ -125,6 +126,7 @@ package body HBNF is
       Line   : Positive := 1;
       Col    : Positive := 1;
       C      : Character;
+      On_Line : Boolean := False;
    begin
       while I <= Text'Last loop
          C := Text (I);
@@ -136,6 +138,7 @@ package body HBNF is
             I := I + 1;
             Line := Line + 1;
             Col := 1;
+            On_Line := False;
          elsif C = Character'Val (13) then
             I := I + 1;
             Col := Col + 1;
@@ -144,6 +147,8 @@ package body HBNF is
                Start_Line : constant Positive := Line;
                Start_Col  : constant Positive := Col;
                Buf        : Unbounded_String := Null_Unbounded_String;
+               Kind       : constant Token_Kind :=
+                 (if On_Line then Eol_Comment else Comment);
             begin
                I := I + 1;
                Col := Col + 1;
@@ -155,17 +160,19 @@ package body HBNF is
                   Col := Col + 1;
                end loop;
                Tokens.Append
-                 (Token'(Comment, Start_Line, Start_Col,
+                 (Token'(Kind, Start_Line, Start_Col,
                          To_Unbounded_String (Trim (To_String (Buf)))));
             end;
          elsif C = '{' then
             Tokens.Append (Token'(LBrace, Line, Col, Null_Unbounded_String));
             I := I + 1;
             Col := Col + 1;
+            On_Line := True;
          elsif C = '}' then
             Tokens.Append (Token'(RBrace, Line, Col, Null_Unbounded_String));
             I := I + 1;
             Col := Col + 1;
+            On_Line := True;
          elsif C = '"' then
             declare
                Start_Col : constant Positive := Col;
@@ -211,6 +218,7 @@ package body HBNF is
                   return Lex_Error (Line, Col, "unterminated string literal");
                end if;
                Tokens.Append (Token'(Str, Line, Start_Col, Buf));
+               On_Line := True;
             end;
          elsif C = '\' then
             --  Backslash outside a string: backslash-newline is a line
@@ -263,6 +271,7 @@ package body HBNF is
                   else
                      Tokens.Append (Token'(Word, Line, Start_Col, Buf));
                   end if;
+                  On_Line := True;
                end;
             end;
          end if;
@@ -349,6 +358,16 @@ package body HBNF is
                   end if;
                   I := I + 1;
                   Parse_Children (N, I);
+                  if I <= Tokens.Last_Index
+                    and then Tokens (I).Kind = Eol_Comment
+                  then
+                     N.Trailing_Comment := Tokens (I).Text;
+                     I := I + 1;
+                  end if;
+                  exit;
+               when Eol_Comment =>
+                  N.Trailing_Comment := Tokens (I).Text;
+                  I := I + 1;
                   exit;
                when Comment | Newline | Eof | RBrace =>
                   exit;
@@ -379,7 +398,9 @@ package body HBNF is
                exit;
             elsif Tokens (I).Kind = Eof then
                Fail (Tokens (I).Line, Tokens (I).Col, "unterminated block");
-            elsif Tokens (I).Kind = Comment then
+            elsif Tokens (I).Kind = Comment
+              or else Tokens (I).Kind = Eol_Comment
+            then
                Parse_Comment (Parent, I);
             elsif Tokens (I).Kind = Word then
                Parse_Entry (Parent, I);
@@ -532,6 +553,13 @@ package body HBNF is
             end loop;
             Append (Buf, Spaces (Indent));
             Append (Buf, '}');
+         end if;
+         if N.Trailing_Comment /= Null_Unbounded_String then
+            Append (Buf, " #");
+            if To_String (N.Trailing_Comment) /= "" then
+               Append (Buf, ' ');
+               Append (Buf, To_String (N.Trailing_Comment));
+            end if;
          end if;
          Append (Buf, Character'Val (10));
          return To_String (Buf);
