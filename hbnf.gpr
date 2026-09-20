@@ -1,7 +1,6 @@
---  Standalone project for HBNF: an OpenBSD-style ("parse.y style")
---  configuration parser.  Pure Ada — no C dependencies.  Built and
---  gprinstalled as a static library by the ada-on-alpine aport; the trading
---  harness consumes it the same way it consumes the Crypto binding.
+--  Standalone project for HBNF: an OpenBSD-style configuration parser.
+--  Pure Ada, no C dependencies.  Built and gprinstalled as a static
+--  library by the ada-on-alpine aport.
 
 library project HBNF is
 
@@ -21,8 +20,10 @@ library project HBNF is
    for Library_Kind use Library_Type;
 
    package Compiler is
+      --  -gnatwe (warnings-as-errors) is deliberately absent: it is right for
+      --  development but brittle in a package rebuilt against each new GNAT.
       for Default_Switches ("Ada") use
-        ("-gnat2022", "-gnatwa", "-gnatwe", "-gnatVa", "-gnato",
+        ("-gnat2022", "-gnatwa", "-gnatVa", "-gnato",
          "-gnaty3abcefhiklmnprt");
    end Compiler;
 
