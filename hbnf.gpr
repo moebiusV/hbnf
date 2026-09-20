@@ -1,0 +1,37 @@
+--  Standalone project for HBNF: an OpenBSD-style ("parse.y style")
+--  configuration parser.  Pure Ada — no C dependencies.  Built and
+--  gprinstalled as a static library by the ada-on-alpine aport; the trading
+--  harness consumes it the same way it consumes the Crypto binding.
+
+library project HBNF is
+
+   for Languages use ("Ada");
+   for Source_Dirs use (".");
+   for Object_Dir use "obj";
+   for Create_Missing_Dirs use "True";
+   for Library_Dir use "lib";
+   for Library_Name use "hbnf";
+
+   --  Scenario variable, so gprinstall emits the installed "library_type :=
+   --  static" marker that tells consuming projects this is a static library
+   --  (without it gprbuild defaults to relocatable and forces -lgnat-15).
+   type Library_Type_Type is ("relocatable", "static", "static-pic");
+   Library_Type : Library_Type_Type :=
+     external ("HBNF_LIBRARY_TYPE", external ("LIBRARY_TYPE", "static"));
+   for Library_Kind use Library_Type;
+
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-gnat2022", "-gnatwa", "-gnatwe", "-gnatVa", "-gnato",
+         "-gnaty3abcefhiklmnprt");
+   end Compiler;
+
+   package Binder is
+      for Switches ("Ada") use ("-Es");
+   end Binder;
+
+   package Install is
+      for Active use "True";
+   end Install;
+
+end HBNF;
