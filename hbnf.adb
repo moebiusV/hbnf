@@ -6,7 +6,8 @@ package body HBNF is
 
    --  Lexer ----------------------------------------------------------------
 
-   type Token_Kind is (Word, Str, Int, Dec, LBrace, RBrace, Newline, Eof);
+   type Token_Kind is
+     (Word, Str, Int, Dec, Comment, LBrace, RBrace, Newline, Eof);
 
    type Token is record
       Kind : Token_Kind;
@@ -98,6 +99,26 @@ package body HBNF is
       return J > S'Last and then Has_Digit and then (Has_Dot or Has_Exp);
    end Is_Decimal;
 
+   function Trim (S : String) return String is
+      First : Natural := S'First;
+      Last  : Natural := S'Last;
+   begin
+      while First <= Last
+        and then (S (First) = ' ' or else S (First) = Character'Val (9))
+      loop
+         First := First + 1;
+      end loop;
+      while Last >= First
+        and then (S (Last) = ' ' or else S (Last) = Character'Val (9))
+      loop
+         Last := Last - 1;
+      end loop;
+      if First > Last then
+         return "";
+      end if;
+      return S (First .. Last);
+   end Trim;
+
    function Tokenize (Text : String) return Lex_Result is
       Tokens : Token_Vectors.Vector := Token_Vectors.Empty_Vector;
       I      : Natural := Text'First;
@@ -119,12 +140,24 @@ package body HBNF is
             I := I + 1;
             Col := Col + 1;
          elsif C = '#' then
-            while I <= Text'Last
-              and then Text (I) /= Character'Val (10)
-            loop
+            declare
+               Start_Line : constant Positive := Line;
+               Start_Col  : constant Positive := Col;
+               Buf        : Unbounded_String := Null_Unbounded_String;
+            begin
                I := I + 1;
-            end loop;
-            Col := 1;
+               Col := Col + 1;
+               while I <= Text'Last
+                 and then Text (I) /= Character'Val (10)
+               loop
+                  Append (Buf, Text (I));
+                  I := I + 1;
+                  Col := Col + 1;
+               end loop;
+               Tokens.Append
+                 (Token'(Comment, Start_Line, Start_Col,
+                         To_Unbounded_String (Trim (To_String (Buf)))));
+            end;
          elsif C = '{' then
             Tokens.Append (Token'(LBrace, Line, Col, Null_Unbounded_String));
             I := I + 1;
@@ -290,6 +323,7 @@ package body HBNF is
 
       procedure Parse_Entry (Parent : Node_Access; I : in out Positive);
       procedure Parse_Children (Parent : Node_Access; I : in out Positive);
+      procedure Parse_Comment (Parent : Node_Access; I : in out Positive);
 
       procedure Parse_Entry (Parent : Node_Access; I : in out Positive) is
          N : constant Node_Access := new Node;
@@ -316,12 +350,23 @@ package body HBNF is
                   I := I + 1;
                   Parse_Children (N, I);
                   exit;
-               when Newline | Eof | RBrace =>
+               when Comment | Newline | Eof | RBrace =>
                   exit;
             end case;
          end loop;
          Parent.Children.Append (N);
       end Parse_Entry;
+
+      procedure Parse_Comment (Parent : Node_Access; I : in out Positive) is
+         C : constant Node_Access := new Node;
+      begin
+         C.Kind := Comment;
+         C.Name := Tokens (I).Text;
+         C.Line := Tokens (I).Line;
+         C.Col  := Tokens (I).Col;
+         I := I + 1;
+         Parent.Children.Append (C);
+      end Parse_Comment;
 
       procedure Parse_Children (Parent : Node_Access; I : in out Positive) is
       begin
@@ -334,6 +379,8 @@ package body HBNF is
                exit;
             elsif Tokens (I).Kind = Eof then
                Fail (Tokens (I).Line, Tokens (I).Col, "unterminated block");
+            elsif Tokens (I).Kind = Comment then
+               Parse_Comment (Parent, I);
             elsif Tokens (I).Kind = Word then
                Parse_Entry (Parent, I);
             else
@@ -359,6 +406,8 @@ package body HBNF is
       loop
          if Tokens (Idx).Kind = Newline then
             Idx := Idx + 1;
+         elsif Tokens (Idx).Kind = Comment then
+            Parse_Comment (Root, Idx);
          elsif Tokens (Idx).Kind = Word then
             Parse_Entry (Root, Idx);
          else
@@ -379,7 +428,9 @@ package body HBNF is
    function Find (N : Node; Name : String) return Node_Access is
    begin
       for C of N.Children loop
-         if C /= null and then To_String (C.Name) = Name then
+         if C /= null and then C.Kind /= Comment
+           and then To_String (C.Name) = Name
+         then
             return C;
          end if;
       end loop;
@@ -390,7 +441,9 @@ package body HBNF is
       R : Node_Vectors.Vector := Node_Vectors.Empty_Vector;
    begin
       for C of N.Children loop
-         if C /= null and then To_String (C.Name) = Name then
+         if C /= null and then C.Kind /= Comment
+           and then To_String (C.Name) = Name
+         then
             R.Append (C);
          end if;
       end loop;
@@ -414,7 +467,7 @@ package body HBNF is
       Indent_Step : constant := 3;
 
       function Spaces (N : Natural) return String is
-         S : constant String (1 .. N) := (others => ' ');
+         S : constant String (1 .. N) := [others => ' '];
       begin
          return S;
       end Spaces;
@@ -457,6 +510,15 @@ package body HBNF is
       function Node_Text (N : Node; Indent : Natural) return String is
          Buf : Unbounded_String := To_Unbounded_String (Spaces (Indent));
       begin
+         if N.Kind = Comment then
+            Append (Buf, '#');
+            if To_String (N.Name) /= "" then
+               Append (Buf, ' ');
+               Append (Buf, To_String (N.Name));
+            end if;
+            Append (Buf, Character'Val (10));
+            return To_String (Buf);
+         end if;
          Append (Buf, To_String (N.Name));
          for V of N.Values loop
             Append (Buf, ' ');

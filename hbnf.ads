@@ -37,7 +37,11 @@ package HBNF is
 
    package Value_Vectors is new Ada.Containers.Vectors (Positive, Value);
 
-   type Node_Kind is (Directive, Block);
+   --  A directive (name + values), a block (name + optional qualifier +
+   --  children), or a comment (its text in Name).  Comments sit in the
+   --  children sequence interleaved with directives and blocks; Find and
+   --  Find_All skip them.
+   type Node_Kind is (Directive, Block, Comment);
 
    type Node;
    type Node_Access is access Node;
@@ -76,10 +80,11 @@ package HBNF is
    --  The direct children of a block, in source order (empty for a directive).
    function Children (N : Node) return Node_Vectors.Vector;
 
-   --  The first child named Name, or null.
+   --  The first non-comment child named Name, or null.
    function Find (N : Node; Name : String) return Node_Access;
 
-   --  All children named Name, in source order (for repeated directives).
+   --  All non-comment children named Name, in source order (for repeated
+   --  directives).
    function Find_All (N : Node; Name : String) return Node_Vectors.Vector;
 
    --  The number of values and the Index'th value of a directive.
@@ -97,8 +102,8 @@ package HBNF is
    --  The canonical text form of the tree rooted at Root (a Parse result's
    --  Root): single-space token separation, three-space indentation, and
    --  OpenBSD brace placement.  Values round-trip: a decimal emits its exact
-   --  literal, a string is re-quoted with the escape set.  Comments are not
-   --  retained.
+   --  literal, a string is re-quoted with the escape set.  Comments are
+   --  preserved as Comment nodes in the children sequence.
    function Print (Root : Node_Access) return String;
 
 end HBNF;
