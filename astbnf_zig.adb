@@ -2,6 +2,7 @@ pragma Ada_2022;
 
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Templates;
 
 package body ASTBNF_Zig is
 
@@ -1014,84 +1015,8 @@ package body ASTBNF_Zig is
 
    function Emit_Lexer (Rules : ASTBNF.Rule_Vectors.Vector) return String is
       Root_T : constant String := Zig_Type (To_String (Rules (1).Name));
-      B      : U;
-      procedure Put (S : String) is
-      begin
-         Append (B, S);
-         Append (B, LF);
-      end Put;
    begin
-      Put ("fn lxDigit(c: u8) bool { return c >= '0' and c <= '9'; }");
-      Put ("fn lxWordStart(c: u8) bool {");
-      Put ("    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z')");
-      Put ("        or c == '_' or c == '-';");
-      Put ("}");
-      Put ("fn lxWordChar(c: u8) bool { return lxWordStart(c) or lxDigit(c) or c == '.'; }");
-      Put ("");
-      Put ("pub fn lex(alloc: std.mem.Allocator, text: []const u8) ![]Token {");
-      Put ("    var toks = std.ArrayList(Token).empty;");
-      Put ("    var i: usize = 0; var line: usize = 1; var col: usize = 1;");
-      Put ("    while (i < text.len) {");
-      Put ("        const c = text[i];");
-      Put ("        if (c == ' ' or c == '\t' or c == '\r') { i += 1; col += 1; }");
-      Put ("        else if (c == '\n') { i += 1; line += 1; col = 1; }");
-      Put ("        else if (c == '#') { while (i < text.len and text[i] != '\n') i += 1; }");
-      Put ("        else if (c == '""') {");
-      Put ("            const sc = col;");
-      Put ("            var s = std.ArrayList(u8).empty;");
-      Put ("            i += 1; col += 1;");
-      Put ("            while (i < text.len and text[i] != '""') {");
-      Put ("                if (text[i] == '\\' and i + 1 < text.len) { i += 1; col += 1; }");
-      Put ("                try s.append(alloc, text[i]);");
-      Put ("                i += 1; col += 1;");
-      Put ("            }");
-      Put ("            if (i < text.len and text[i] == '""') { i += 1; col += 1; }");
-      Put ("            try toks.append(alloc, .{ .kind = .str, .text = try s.toOwnedSlice(alloc), .line = line, .col = sc });");
-      Put ("        }");
-      Put ("        else if (lxDigit(c)) {");
-      Put ("            const s = i; const sc = col; var dec = false;");
-      Put ("            while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }");
-      Put ("            if (i + 1 < text.len and text[i] == '.' and lxDigit(text[i + 1])) {");
-      Put ("                dec = true; i += 1; col += 1;");
-      Put ("                while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }");
-      Put ("            }");
-      Put ("            if (i < text.len and (text[i] == 'e' or text[i] == 'E')) {");
-      Put ("                dec = true; i += 1; col += 1;");
-      Put ("                if (i < text.len and (text[i] == '+' or text[i] == '-')) { i += 1; col += 1; }");
-      Put ("                while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }");
-      Put ("            }");
-      Put ("            try toks.append(alloc, .{ .kind = if (dec) .dec else .int,");
-      Put ("                                     .text = text[s..i], .line = line, .col = sc });");
-      Put ("        }");
-      Put ("        else if (lxWordStart(c)) {");
-      Put ("            const s = i; const sc = col;");
-      Put ("            while (i < text.len and lxWordChar(text[i])) { i += 1; col += 1; }");
-      Put ("            try toks.append(alloc, .{ .kind = .atom, .text = text[s..i], .line = line, .col = sc });");
-      Put ("        }");
-      Put ("        else {");
-      Put ("            try toks.append(alloc, .{ .kind = .punct, .text = text[i..i + 1], .line = line, .col = col });");
-      Put ("            i += 1; col += 1;");
-      Put ("        }");
-      Put ("    }");
-      Put ("    try toks.append(alloc, .{ .kind = .eof, .text = """", .line = line, .col = col });");
-      Put ("    return toks.toOwnedSlice(alloc);");
-      Put ("}");
-      Put ("");
-      Put ("pub fn parse_text(alloc: std.mem.Allocator, text: []const u8,");
-      Put ("                  err: *[512]u8, err_line: *usize, err_col: *usize) ParseError!" & Root_T & " {");
-      Put ("    const toks = try lex(alloc, text);");
-      Put ("    var lines = std.ArrayList([]const u8).empty;");
-      Put ("    var s: usize = 0;");
-      Put ("    for (text, 0..) |ch, idx| {");
-      Put ("        if (ch == '\n') {");
-      Put ("            try lines.append(alloc, text[s..idx]);");
-      Put ("            s = idx + 1;");
-      Put ("        }");
-      Put ("    }");
-      Put ("    try lines.append(alloc, text[s..]);");
-      Put ("    return parse_config(alloc, toks, lines.items, err, err_line, err_col);");
-      Put ("}");
-      return To_String (B);
+      return Templates.Substitute (Templates.Zig_Lexer, "@ROOT_TYPE@", Root_T);
    end Emit_Lexer;
 
 end ASTBNF_Zig;

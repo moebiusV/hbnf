@@ -13,7 +13,8 @@ library project ASTBNF is
       "astbnf_ada.ads", "astbnf_ada.adb",
       "astbnf_c.ads", "astbnf_c.adb",
       "astbnf_rust.ads", "astbnf_rust.adb",
-      "astbnf_zig.ads", "astbnf_zig.adb");
+      "astbnf_zig.ads", "astbnf_zig.adb",
+      "templates.ads", "templates.adb");
    for Object_Dir use "obj-astbnf";
    for Create_Missing_Dirs use "True";
    for Library_Dir use "lib-astbnf";
