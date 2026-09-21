@@ -75,12 +75,13 @@ procedure ASTBNF_Check is
    end Find_Rule;
 
    procedure Check_Server (Path : String) is
-      Rules     : constant ASTBNF.Rule_Vectors.Vector :=
+      Rules       : constant ASTBNF.Rule_Vectors.Vector :=
         ASTBNF.Parse (Read_File (Path));
-      C_Text    : constant String := ASTBNF_C.Emit (Rules);
-      Ada_Text  : constant String := ASTBNF_Ada.Emit (Rules, "Server_Schema");
-      Rust_Text : constant String := ASTBNF_Rust.Emit (Rules);
-      Zig_Text  : constant String := ASTBNF_Zig.Emit (Rules);
+      C_Text      : constant String := ASTBNF_C.Emit (Rules);
+      Ada_Text    : constant String := ASTBNF_Ada.Emit (Rules, "Server_Schema");
+      Rust_Text   : constant String := ASTBNF_Rust.Emit (Rules);
+      Zig_Text    : constant String := ASTBNF_Zig.Emit (Rules);
+      Parser_Text : constant String := ASTBNF_C.Emit_Parser (Rules);
    begin
       Check ("13 rules", Natural (Rules.Length) = 13);
       Check ("first rule server", To_String (Rules (1).Name) = "server");
@@ -89,6 +90,10 @@ procedure ASTBNF_Check is
       Check ("C struct", Has (C_Text, "typedef struct"));
       Check ("C scalar", Has (C_Text, "typedef const char * name_t;"));
       Check ("C comment", Has (C_Text, "/* host name"));
+
+      Check ("C parser fn", Has (Parser_Text, "parse_server"));
+      Check ("C parser link", Has (Parser_Text, "calloc"));
+      Check ("C parser tok", Has (Parser_Text, "tok_lit"));
 
       Check ("Ada enum", Has (Ada_Text, "Direction_In"));
       Check ("Ada record", Has (Ada_Text, "type Server_Type is record"));
