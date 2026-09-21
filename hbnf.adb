@@ -6,30 +6,6 @@ package body HBNF is
 
    --  Lexer ----------------------------------------------------------------
 
-   type Token_Kind is
-     (Word, Str, Int, Dec, Comment, Eol_Comment,
-      LBrace, RBrace, Semicolon, Newline, Eof);
-
-   type Token is record
-      Kind : Token_Kind;
-      Line : Positive;
-      Col  : Positive;
-      Text : Unbounded_String;
-   end record;
-
-   package Token_Vectors is new Ada.Containers.Vectors (Positive, Token);
-
-   type Lex_Result (Success : Boolean := True) is record
-      case Success is
-         when True =>
-            Tokens : Token_Vectors.Vector;
-         when False =>
-            Line : Positive;
-            Col  : Positive;
-            Msg  : Unbounded_String;
-      end case;
-   end record;
-
    function Lex_Error (L, C : Positive; M : String) return Lex_Result is
    begin
       return (Success => False, Line => L, Col => C,
@@ -161,7 +137,7 @@ package body HBNF is
       end if;
    end Put_Utf8;
 
-   function Tokenize (Text : String) return Lex_Result is
+   function Lex (Text : String) return Lex_Result is
       Tokens : Token_Vectors.Vector := Token_Vectors.Empty_Vector;
       I      : Natural := Text'First;
       Line   : Positive := 1;
@@ -415,7 +391,7 @@ package body HBNF is
       end loop;
       Tokens.Append (Token'(Eof, Line, Col, Null_Unbounded_String));
       return (Success => True, Tokens => Tokens);
-   end Tokenize;
+   end Lex;
 
    --  Parser ---------------------------------------------------------------
 
@@ -423,7 +399,7 @@ package body HBNF is
 
       Parse_Error : exception;
 
-      L      : constant Lex_Result := Tokenize (Text);
+      L      : constant Lex_Result := Lex (Text);
       Err_L  : Positive := 1;
       Err_C  : Positive := 1;
       Err_M  : Unbounded_String := Null_Unbounded_String;

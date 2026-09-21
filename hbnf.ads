@@ -16,6 +16,41 @@ package HBNF is
 
    use Ada.Strings.Unbounded;
 
+   --  Lexer ---------------------------------------------------------------
+   --
+   --  The token stream is the input to astbnf's matcher.  A comment's place
+   --  relative to the Semicolon/Newline tokens tells astbnf whether it is
+   --  leading or trailing, so hbnf only marks it own-line (Comment) vs
+   --  end-of-line (Eol_Comment) and leaves the rest to the matcher.
+
+   type Token_Kind is
+     (Word, Str, Int, Dec, Comment, Eol_Comment,
+      LBrace, RBrace, Semicolon, Newline, Eof);
+
+   type Token is record
+      Kind : Token_Kind;
+      Line : Positive         := 1;
+      Col  : Positive         := 1;
+      Text : Unbounded_String := Null_Unbounded_String;
+   end record;
+
+   package Token_Vectors is new Ada.Containers.Vectors (Positive, Token);
+
+   type Lex_Result (Success : Boolean := True) is record
+      case Success is
+         when True =>
+            Tokens : Token_Vectors.Vector;
+         when False =>
+            Line : Positive;
+            Col  : Positive;
+            Msg  : Unbounded_String;
+      end case;
+   end record;
+
+   --  Lex plaintext into a token stream (terminated by Eof).  On a lexical
+   --  error Success is False and Line/Col/Msg describe the first error.
+   function Lex (Text : String) return Lex_Result;
+
    --  A fixed-point decimal: 8 fractional digits, 38 total — exact for money
    --  (2dp), rates (e.g. 3.7e-5) and contract multipliers (0.001).  The
    --  accompanying text preserves any finer literal exactly.
