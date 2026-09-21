@@ -26,19 +26,16 @@ pub fn lex(alloc: std.mem.Allocator, text: []const u8) ![]Token {
             try toks.append(alloc, .{ .kind = .str, .text = try s.toOwnedSlice(alloc), .line = line, .col = sc });
         }
         else if (lxDigit(c)) {
-            const s = i; const sc = col; var dec = false;
+            const s = i; const sc = col;
             while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }
-            if (i + 1 < text.len and text[i] == '.' and lxDigit(text[i + 1])) {
-                dec = true; i += 1; col += 1;
-                while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }
+            if (i < text.len and lxWordChar(text[i])) {
+                // dotted/alphanumeric run (1.2.3.4, 123abc) is one word
+                i = s; col = sc;
+                while (i < text.len and lxWordChar(text[i])) { i += 1; col += 1; }
+                try toks.append(alloc, .{ .kind = .atom, .text = text[s..i], .line = line, .col = sc });
+            } else {
+                try toks.append(alloc, .{ .kind = .int, .text = text[s..i], .line = line, .col = sc });
             }
-            if (i < text.len and (text[i] == 'e' or text[i] == 'E')) {
-                dec = true; i += 1; col += 1;
-                if (i < text.len and (text[i] == '+' or text[i] == '-')) { i += 1; col += 1; }
-                while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }
-            }
-            try toks.append(alloc, .{ .kind = if (dec) .dec else .int,
-                                     .text = text[s..i], .line = line, .col = sc });
         }
         else if (lxWordStart(c)) {
             const s = i; const sc = col;

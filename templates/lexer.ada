@@ -35,31 +35,32 @@
             end;
          elsif C in '0' .. '9' then
             declare
-               SC     : constant Natural := Col;
-               Is_Dec : Boolean := False;
-               Buf    : Unbounded_String;
+               SC      : constant Natural := Col;
+               Start_I : constant Natural := I;
+               Buf     : Unbounded_String;
             begin
                while I <= Text'Last and then Text (I) in '0' .. '9' loop
                   Append (Buf, Text (I)); I := I + 1; Col := Col + 1;
                end loop;
-               if I < Text'Last and then Text (I) = '.' and then Text (I + 1) in '0' .. '9' then
-                  Is_Dec := True;
-                  Append (Buf, '.'); I := I + 1; Col := Col + 1;
-                  while I <= Text'Last and then Text (I) in '0' .. '9' loop
-                     Append (Buf, Text (I)); I := I + 1; Col := Col + 1;
+               if I <= Text'Last
+                 and then (Text (I) in 'a' .. 'z' or else Text (I) in 'A' .. 'Z'
+                   or else Text (I) = '.' or else Text (I) = '_'
+                   or else Text (I) = '-')
+               then
+                  --  dotted/alphanumeric run (1.2.3.4, 123abc) is one word
+                  I := Start_I; Col := SC;
+                  Buf := Null_Unbounded_String;
+                  while I <= Text'Last loop
+                     C := Text (I);
+                     exit when not (C in 'a' .. 'z' or else C in 'A' .. 'Z'
+                       or else C in '0' .. '9' or else C = '_' or else C = '-'
+                       or else C = '.');
+                     Append (Buf, C); I := I + 1; Col := Col + 1;
                   end loop;
+                  Toks.Append (Token'(Atom, Buf, Line, SC));
+               else
+                  Toks.Append (Token'(Int, Buf, Line, SC));
                end if;
-               if I <= Text'Last and then (Text (I) = 'e' or else Text (I) = 'E') then
-                  Is_Dec := True;
-                  Append (Buf, Text (I)); I := I + 1; Col := Col + 1;
-                  if I <= Text'Last and then (Text (I) = '+' or else Text (I) = '-') then
-                     Append (Buf, Text (I)); I := I + 1; Col := Col + 1;
-                  end if;
-                  while I <= Text'Last and then Text (I) in '0' .. '9' loop
-                     Append (Buf, Text (I)); I := I + 1; Col := Col + 1;
-                  end loop;
-               end if;
-               Toks.Append (Token'((if Is_Dec then Dec else Int), Buf, Line, SC));
             end;
          elsif C in 'a' .. 'z' or else C in 'A' .. 'Z' or else C = '_' or else C = '-' then
             declare

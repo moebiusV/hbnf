@@ -23,10 +23,6 @@ package body ASTBNF_Zig is
          return "[]const u8";
       elsif Name = "int" then
          return "i64";
-      elsif Name = "dec" then
-         return "f64";
-      elsif Name = "float" then
-         return "f32";
       elsif Name = "bool" or else Name = "flag" then
          return "bool";
       elsif Name'Length >= 2 then
@@ -568,8 +564,6 @@ package body ASTBNF_Zig is
             return ".str";
          elsif Name = "int" then
             return ".int";
-         elsif Name = "dec" or else Name = "float" then
-            return ".dec";
          elsif Name'Length >= 2 then
             declare
                P : constant Character := Name (Name'First);
@@ -595,10 +589,6 @@ package body ASTBNF_Zig is
               & "std.mem.eql(u8, p.toks[p.pos].text, ""true""))";
          elsif Name = "int" then
             return "std.fmt.parseInt(i64, p.toks[p.pos].text, 10) catch 0";
-         elsif Name = "dec" then
-            return "std.fmt.parseFloat(f64, p.toks[p.pos].text) catch 0.0";
-         elsif Name = "float" then
-            return "std.fmt.parseFloat(f32, p.toks[p.pos].text) catch 0.0";
          elsif Name'Length >= 2 then
             declare
                P : constant Character := Name (Name'First);
@@ -875,7 +865,7 @@ package body ASTBNF_Zig is
       Append (Res, "const std = @import(""std"");");
       Append (Res, LF);
       Append (Res, LF);
-      Append (Res, "pub const Kind = enum { atom, str, int, dec, punct, eof };");
+      Append (Res, "pub const Kind = enum { atom, str, int, punct, eof };");
       Append (Res, LF);
       Append (Res, "pub const Token = struct { kind: Kind, text: []const u8, line: usize, col: usize };");
       Append (Res, LF);

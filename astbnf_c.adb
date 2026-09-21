@@ -23,10 +23,6 @@ package body ASTBNF_C is
          return "const char *";
       elsif Name = "int" then
          return "long long";
-      elsif Name = "dec" then
-         return "double";
-      elsif Name = "float" then
-         return "float";
       elsif Name = "bool" or else Name = "flag" then
          return "bool";
       elsif Name'Length >= 2 then
@@ -510,8 +506,6 @@ package body ASTBNF_C is
          return "TOK_STR";
       elsif Name = "int" then
          return "TOK_INT";
-      elsif Name = "dec" or else Name = "float" then
-         return "TOK_DEC";
       elsif Name'Length >= 2 then
          declare
             P : constant Character := Name (Name'First);
@@ -535,7 +529,7 @@ package body ASTBNF_C is
       elsif Name = "bool" or else Name = "flag" then
          return "yes or no";
       else
-         return "a number";  --  int / dec / float / uN / iN
+         return "a number";  --  int / uN / iN
       end if;
    end Core_Desc;
 
@@ -546,10 +540,6 @@ package body ASTBNF_C is
          return "strdup(p->toks[p->pos].text)";
       elsif Name = "int" then
          return "atoll(p->toks[p->pos].text)";
-      elsif Name = "dec" then
-         return "atof(p->toks[p->pos].text)";
-      elsif Name = "float" then
-         return "(float)atof(p->toks[p->pos].text)";
       elsif Name = "bool" or else Name = "flag" then
          return "(strcmp(p->toks[p->pos].text,""yes"")==0 "
            & "|| strcmp(p->toks[p->pos].text,""on"")==0 "
@@ -896,7 +886,7 @@ package body ASTBNF_C is
       Append (Res, "#include <stdio.h>");
       Append (Res, LF);
       Append (Res, LF);
-      Append (Res, "typedef enum { TOK_ATOM, TOK_STR, TOK_INT, TOK_DEC,"
+      Append (Res, "typedef enum { TOK_ATOM, TOK_STR, TOK_INT,"
         & " TOK_PUNCT, TOK_EOF } tok_kind_t;");
       Append (Res, LF);
       Append (Res, "typedef struct { tok_kind_t kind; const char *text;"

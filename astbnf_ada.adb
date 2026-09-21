@@ -23,10 +23,6 @@ package body ASTBNF_Ada is
          return "Unbounded_String";
       elsif Name = "int" then
          return "Long_Long_Integer";
-      elsif Name = "dec" then
-         return "Long_Float";
-      elsif Name = "float" then
-         return "Float";
       elsif Name = "bool" or else Name = "flag" then
          return "Boolean";
       elsif Name'Length >= 2 then
@@ -653,8 +649,6 @@ package body ASTBNF_Ada is
             return "Str";
          elsif Name = "int" then
             return "Int";
-         elsif Name = "dec" or else Name = "float" then
-            return "Dec";
          elsif Name'Length >= 2 then
             declare
                P : constant Character := Name (Name'First);
@@ -676,10 +670,6 @@ package body ASTBNF_Ada is
             return "P.Toks (P.Pos).Text";
          elsif Name = "int" then
             return "Long_Long_Integer'Value (To_String (P.Toks (P.Pos).Text))";
-         elsif Name = "dec" then
-            return "Long_Float'Value (To_String (P.Toks (P.Pos).Text))";
-         elsif Name = "float" then
-            return "Float'Value (To_String (P.Toks (P.Pos).Text))";
          elsif Name = "bool" or else Name = "flag" then
             return "To_String (P.Toks (P.Pos).Text) = ""yes"" or "
               & "To_String (P.Toks (P.Pos).Text) = ""on"" or "
@@ -975,7 +965,7 @@ package body ASTBNF_Ada is
       Append (Spec, "   use Ada.Strings.Unbounded;");
       Append (Spec, LF);
       Append (Spec, LF);
-      Append (Spec, "   type Token_Kind is (Atom, Str, Int, Dec, Punct, Eof);");
+      Append (Spec, "   type Token_Kind is (Atom, Str, Int, Punct, Eof);");
       Append (Spec, LF);
       Append (Spec, "   type Token is record");
       Append (Spec, LF);

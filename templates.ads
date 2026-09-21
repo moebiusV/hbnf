@@ -53,19 +53,16 @@ package Templates is
      "            toks[r.n++] = (token_t){ TOK_STR, buf, line, sc };" & LF &
      "        }" & LF &
      "        else if (lex_digit(c)) {" & LF &
-     "            size_t s = i, sc = col; int dec = 0;" & LF &
+     "            size_t s = i, sc = col;" & LF &
      "            while (lex_digit(text[i])) { i++; col++; }" & LF &
-     "            if (text[i] == '.' && lex_digit(text[i + 1])) {" & LF &
-     "                dec = 1; i++; col++;" & LF &
-     "                while (lex_digit(text[i])) { i++; col++; }" & LF &
+     "            if (lex_word_char(text[i])) {" & LF &
+     "                /* dotted/alphanumeric run (1.2.3.4, 123abc) is one word */" & LF &
+     "                i = s; col = sc;" & LF &
+     "                while (lex_word_char(text[i])) { i++; col++; }" & LF &
+     "                toks[r.n++] = (token_t){ TOK_ATOM, lex_dup(text + s, i - s), line, sc };" & LF &
+     "            } else {" & LF &
+     "                toks[r.n++] = (token_t){ TOK_INT, lex_dup(text + s, i - s), line, sc };" & LF &
      "            }" & LF &
-     "            if (text[i] == 'e' || text[i] == 'E') {" & LF &
-     "                dec = 1; i++; col++;" & LF &
-     "                if (text[i] == '+' || text[i] == '-') { i++; col++; }" & LF &
-     "                while (lex_digit(text[i])) { i++; col++; }" & LF &
-     "            }" & LF &
-     "            toks[r.n++] = (token_t){ dec ? TOK_DEC : TOK_INT," & LF &
-     "                                     lex_dup(text + s, i - s), line, sc };" & LF &
      "        }" & LF &
      "        else if (lex_word_start(c)) {" & LF &
      "            size_t s = i, sc = col;" & LF &
@@ -131,19 +128,16 @@ package Templates is
      "            toks.push(Token { kind: Kind::Str, text: s, line, col: sc });" & LF &
      "        }" & LF &
      "        else if lx_digit(c) {" & LF &
-     "            let s = i; let sc = col; let mut dec = false;" & LF &
+     "            let s = i; let sc = col;" & LF &
      "            while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }" & LF &
-     "            if i + 1 < b.len() && b[i] == b'.' && lx_digit(b[i + 1]) {" & LF &
-     "                dec = true; i += 1; col += 1;" & LF &
-     "                while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }" & LF &
+     "            if i < b.len() && lx_word_char(b[i]) {" & LF &
+     "                // dotted/alphanumeric run (1.2.3.4, 123abc) is one word" & LF &
+     "                i = s; col = sc;" & LF &
+     "                while i < b.len() && lx_word_char(b[i]) { i += 1; col += 1; }" & LF &
+     "                toks.push(Token { kind: Kind::Atom, text: text[s..i].to_string(), line, col: sc });" & LF &
+     "            } else {" & LF &
+     "                toks.push(Token { kind: Kind::Int, text: text[s..i].to_string(), line, col: sc });" & LF &
      "            }" & LF &
-     "            if i < b.len() && (b[i] == b'e' || b[i] == b'E') {" & LF &
-     "                dec = true; i += 1; col += 1;" & LF &
-     "                if i < b.len() && (b[i] == b'+' || b[i] == b'-') { i += 1; col += 1; }" & LF &
-     "                while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }" & LF &
-     "            }" & LF &
-     "            toks.push(Token { kind: if dec { Kind::Dec } else { Kind::Int }," & LF &
-     "                              text: text[s..i].to_string(), line, col: sc });" & LF &
      "        }" & LF &
      "        else if lx_word_start(c) {" & LF &
      "            let s = i; let sc = col;" & LF &
@@ -194,19 +188,16 @@ package Templates is
      "            try toks.append(alloc, .{ .kind = .str, .text = try s.toOwnedSlice(alloc), .line = line, .col = sc });" & LF &
      "        }" & LF &
      "        else if (lxDigit(c)) {" & LF &
-     "            const s = i; const sc = col; var dec = false;" & LF &
+     "            const s = i; const sc = col;" & LF &
      "            while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }" & LF &
-     "            if (i + 1 < text.len and text[i] == '.' and lxDigit(text[i + 1])) {" & LF &
-     "                dec = true; i += 1; col += 1;" & LF &
-     "                while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }" & LF &
+     "            if (i < text.len and lxWordChar(text[i])) {" & LF &
+     "                // dotted/alphanumeric run (1.2.3.4, 123abc) is one word" & LF &
+     "                i = s; col = sc;" & LF &
+     "                while (i < text.len and lxWordChar(text[i])) { i += 1; col += 1; }" & LF &
+     "                try toks.append(alloc, .{ .kind = .atom, .text = text[s..i], .line = line, .col = sc });" & LF &
+     "            } else {" & LF &
+     "                try toks.append(alloc, .{ .kind = .int, .text = text[s..i], .line = line, .col = sc });" & LF &
      "            }" & LF &
-     "            if (i < text.len and (text[i] == 'e' or text[i] == 'E')) {" & LF &
-     "                dec = true; i += 1; col += 1;" & LF &
-     "                if (i < text.len and (text[i] == '+' or text[i] == '-')) { i += 1; col += 1; }" & LF &
-     "                while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }" & LF &
-     "            }" & LF &
-     "            try toks.append(alloc, .{ .kind = if (dec) .dec else .int," & LF &
-     "                                     .text = text[s..i], .line = line, .col = sc });" & LF &
      "        }" & LF &
      "        else if (lxWordStart(c)) {" & LF &
      "            const s = i; const sc = col;" & LF &
@@ -275,31 +266,32 @@ package Templates is
      "            end;" & LF &
      "         elsif C in '0' .. '9' then" & LF &
      "            declare" & LF &
-     "               SC     : constant Natural := Col;" & LF &
-     "               Is_Dec : Boolean := False;" & LF &
-     "               Buf    : Unbounded_String;" & LF &
+     "               SC      : constant Natural := Col;" & LF &
+     "               Start_I : constant Natural := I;" & LF &
+     "               Buf     : Unbounded_String;" & LF &
      "            begin" & LF &
      "               while I <= Text'Last and then Text (I) in '0' .. '9' loop" & LF &
      "                  Append (Buf, Text (I)); I := I + 1; Col := Col + 1;" & LF &
      "               end loop;" & LF &
-     "               if I < Text'Last and then Text (I) = '.' and then Text (I + 1) in '0' .. '9' then" & LF &
-     "                  Is_Dec := True;" & LF &
-     "                  Append (Buf, '.'); I := I + 1; Col := Col + 1;" & LF &
-     "                  while I <= Text'Last and then Text (I) in '0' .. '9' loop" & LF &
-     "                     Append (Buf, Text (I)); I := I + 1; Col := Col + 1;" & LF &
+     "               if I <= Text'Last" & LF &
+     "                 and then (Text (I) in 'a' .. 'z' or else Text (I) in 'A' .. 'Z'" & LF &
+     "                   or else Text (I) = '.' or else Text (I) = '_'" & LF &
+     "                   or else Text (I) = '-')" & LF &
+     "               then" & LF &
+     "                  --  dotted/alphanumeric run (1.2.3.4, 123abc) is one word" & LF &
+     "                  I := Start_I; Col := SC;" & LF &
+     "                  Buf := Null_Unbounded_String;" & LF &
+     "                  while I <= Text'Last loop" & LF &
+     "                     C := Text (I);" & LF &
+     "                     exit when not (C in 'a' .. 'z' or else C in 'A' .. 'Z'" & LF &
+     "                       or else C in '0' .. '9' or else C = '_' or else C = '-'" & LF &
+     "                       or else C = '.');" & LF &
+     "                     Append (Buf, C); I := I + 1; Col := Col + 1;" & LF &
      "                  end loop;" & LF &
+     "                  Toks.Append (Token'(Atom, Buf, Line, SC));" & LF &
+     "               else" & LF &
+     "                  Toks.Append (Token'(Int, Buf, Line, SC));" & LF &
      "               end if;" & LF &
-     "               if I <= Text'Last and then (Text (I) = 'e' or else Text (I) = 'E') then" & LF &
-     "                  Is_Dec := True;" & LF &
-     "                  Append (Buf, Text (I)); I := I + 1; Col := Col + 1;" & LF &
-     "                  if I <= Text'Last and then (Text (I) = '+' or else Text (I) = '-') then" & LF &
-     "                     Append (Buf, Text (I)); I := I + 1; Col := Col + 1;" & LF &
-     "                  end if;" & LF &
-     "                  while I <= Text'Last and then Text (I) in '0' .. '9' loop" & LF &
-     "                     Append (Buf, Text (I)); I := I + 1; Col := Col + 1;" & LF &
-     "                  end loop;" & LF &
-     "               end if;" & LF &
-     "               Toks.Append (Token'((if Is_Dec then Dec else Int), Buf, Line, SC));" & LF &
      "            end;" & LF &
      "         elsif C in 'a' .. 'z' or else C in 'A' .. 'Z' or else C = '_' or else C = '-' then" & LF &
      "            declare" & LF &

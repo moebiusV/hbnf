@@ -22,19 +22,16 @@ pub fn lex(text: &str) -> Vec<Token> {
             toks.push(Token { kind: Kind::Str, text: s, line, col: sc });
         }
         else if lx_digit(c) {
-            let s = i; let sc = col; let mut dec = false;
+            let s = i; let sc = col;
             while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }
-            if i + 1 < b.len() && b[i] == b'.' && lx_digit(b[i + 1]) {
-                dec = true; i += 1; col += 1;
-                while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }
+            if i < b.len() && lx_word_char(b[i]) {
+                // dotted/alphanumeric run (1.2.3.4, 123abc) is one word
+                i = s; col = sc;
+                while i < b.len() && lx_word_char(b[i]) { i += 1; col += 1; }
+                toks.push(Token { kind: Kind::Atom, text: text[s..i].to_string(), line, col: sc });
+            } else {
+                toks.push(Token { kind: Kind::Int, text: text[s..i].to_string(), line, col: sc });
             }
-            if i < b.len() && (b[i] == b'e' || b[i] == b'E') {
-                dec = true; i += 1; col += 1;
-                if i < b.len() && (b[i] == b'+' || b[i] == b'-') { i += 1; col += 1; }
-                while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }
-            }
-            toks.push(Token { kind: if dec { Kind::Dec } else { Kind::Int },
-                              text: text[s..i].to_string(), line, col: sc });
         }
         else if lx_word_start(c) {
             let s = i; let sc = col;

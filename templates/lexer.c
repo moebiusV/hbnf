@@ -43,19 +43,16 @@ lexed_t lex(const char *text) {
             toks[r.n++] = (token_t){ TOK_STR, buf, line, sc };
         }
         else if (lex_digit(c)) {
-            size_t s = i, sc = col; int dec = 0;
+            size_t s = i, sc = col;
             while (lex_digit(text[i])) { i++; col++; }
-            if (text[i] == '.' && lex_digit(text[i + 1])) {
-                dec = 1; i++; col++;
-                while (lex_digit(text[i])) { i++; col++; }
+            if (lex_word_char(text[i])) {
+                /* dotted/alphanumeric run (1.2.3.4, 123abc) is one word */
+                i = s; col = sc;
+                while (lex_word_char(text[i])) { i++; col++; }
+                toks[r.n++] = (token_t){ TOK_ATOM, lex_dup(text + s, i - s), line, sc };
+            } else {
+                toks[r.n++] = (token_t){ TOK_INT, lex_dup(text + s, i - s), line, sc };
             }
-            if (text[i] == 'e' || text[i] == 'E') {
-                dec = 1; i++; col++;
-                if (text[i] == '+' || text[i] == '-') { i++; col++; }
-                while (lex_digit(text[i])) { i++; col++; }
-            }
-            toks[r.n++] = (token_t){ dec ? TOK_DEC : TOK_INT,
-                                     lex_dup(text + s, i - s), line, sc };
         }
         else if (lex_word_start(c)) {
             size_t s = i, sc = col;
