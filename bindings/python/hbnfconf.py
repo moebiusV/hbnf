@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """ctypes binding for the astbnf C config parser (tests/server.astbnf schema).
 
-Build libserver.so first (see bindings/README.md), then either import this
+Build libhbnfconf.so first (see bindings/README.md), then either import this
 module or run it directly:
 
-    LD_LIBRARY_PATH=. python3 server.py valid.conf
+    LD_LIBRARY_PATH=. python3 hbnfconf.py valid.conf
 """
 import ctypes
 import json
@@ -12,7 +12,7 @@ import os
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-lib = ctypes.CDLL(os.path.join(_HERE, "libserver.so"))
+lib = ctypes.CDLL(os.path.join(_HERE, "libhbnfconf.so"))
 
 
 class Listen(ctypes.Structure):

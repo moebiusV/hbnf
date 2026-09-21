@@ -1,11 +1,11 @@
 # Fiddle binding for the astbnf C config parser (tests/server.astbnf schema).
 #
-#   LD_LIBRARY_PATH=. ruby server.rb valid.conf
+#   LD_LIBRARY_PATH=. ruby hbnfconf.rb valid.conf
 require "fiddle"
 require "json"
 
-module Server
-  HANDLE = Fiddle.dlopen(File.join(__dir__, "libserver.so"))
+module HbnfConf
+  HANDLE = Fiddle.dlopen(File.join(__dir__, "libhbnfconf.so"))
   CParseConfig = Fiddle::Function.new(HANDLE["parse_config"],
                                       [Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
   CConfPtr = Fiddle::Function.new(HANDLE["conf_ptr"],
@@ -24,5 +24,5 @@ module Server
 end
 
 if $PROGRAM_NAME == __FILE__
-  puts JSON.pretty_generate(Server.parse_config(ARGV[0] || "valid.conf"))
+  puts JSON.pretty_generate(HbnfConf.parse_config(ARGV[0] || "valid.conf"))
 end

@@ -14,21 +14,21 @@ different schema (the C `typedef struct` in `conf.h` is the source of truth).
 ```sh
 astbnf schema.astbnf --backend=c --conf > conf-out.txt
 # split conf.h / conf.c (see tests/e2e.sh), then:
-cc -shared -fPIC conf.c -o libserver.so
+cc -shared -fPIC conf.c -o libhbnfconf.so
 ```
 
 ## Languages
 
 | language | file              | FFI mechanism                     |
 |----------|-------------------|-----------------------------------|
-| Python   | `python/server.py`  | `ctypes` (stdlib)                 |
-| Ruby     | `ruby/server.rb`    | `Fiddle` (stdlib)                 |
-| Perl     | `perl/server.pm`    | `FFI::Platypus` (`cpanm` it first)|
-| newLISP  | `newlisp/server.lsp`| `(import)`                        |
+| Python   | `python/hbnfconf.py`  | `ctypes` (stdlib)                 |
+| Ruby     | `ruby/hbnfconf.rb`    | `Fiddle` (stdlib)                 |
+| Perl     | `perl/hbnfconf.pm`    | `FFI::Platypus` (`cpanm` it first)|
+| newLISP  | `newlisp/hbnfconf.lsp`| `(import)`                        |
 
-Each binding exposes the same shape: load `libserver.so`, call
+Each binding exposes the same shape: load `libhbnfconf.so`, call
 `parse_config`, return the config as a native dict/hash/…, and let you override
 the error handler instead of the default `exit(1)`.
 
-`libserver.so` must be on the load path (`LD_LIBRARY_PATH=.` on Linux) or
+`libhbnfconf.so` must be on the load path (`LD_LIBRARY_PATH=.` on Linux) or
 placed alongside the binding.

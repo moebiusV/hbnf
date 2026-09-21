@@ -1,9 +1,9 @@
 # FFI::Platypus binding for the astbnf C config parser (tests/server.astbnf
 # schema).  Install the module first:  cpanm FFI::Platypus
 #
-#   use server;
-#   my $c = server::parse_config("valid.conf");
-package server;
+#   use hbnfconf;
+#   my $c = hbnfconf::parse_config("valid.conf");
+package hbnfconf;
 
 use strict;
 use warnings;
@@ -11,7 +11,7 @@ use FindBin;
 use FFI::Platypus 2.00;
 
 my $ffi = FFI::Platypus->new(api => 2);
-$ffi->lib("$FindBin::Bin/libserver.so");
+$ffi->lib("$FindBin::Bin/libhbnfconf.so");
 
 # Records mirror conf.h.  `listen` is embedded by value in `server`, so it is
 # inlined into the server record's members.

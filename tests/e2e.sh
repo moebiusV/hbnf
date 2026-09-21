@@ -27,16 +27,16 @@ cp tests/conf_main.c /tmp/
 
 echo "== FFI (C shared lib + ctypes/Fiddle) =="
 ( cd /tmp
-  cc -shared -fPIC conf.c -o libserver.so 2>&1 | head -10
+  cc -shared -fPIC conf.c -o libhbnfconf.so 2>&1 | head -10
   if command -v python3 >/dev/null 2>&1; then
-    cp "$HERE/bindings/python/server.py" .
-    echo "  python:"; LD_LIBRARY_PATH=. python3 server.py valid.conf 2>&1 | head -20
+    cp "$HERE/bindings/python/hbnfconf.py" .
+    echo "  python:"; LD_LIBRARY_PATH=. python3 hbnfconf.py valid.conf 2>&1 | head -20
   else
     echo "  (python3 not installed -- skipping)"
   fi
   if command -v ruby >/dev/null 2>&1; then
-    cp "$HERE/bindings/ruby/server.rb" .
-    echo "  ruby:"; LD_LIBRARY_PATH=. ruby server.rb valid.conf 2>&1 | head -20
+    cp "$HERE/bindings/ruby/hbnfconf.rb" .
+    echo "  ruby:"; LD_LIBRARY_PATH=. ruby hbnfconf.rb valid.conf 2>&1 | head -20
   else
     echo "  (ruby not installed -- skipping)"
   fi
