@@ -2,6 +2,8 @@
 --  Pure Ada, no C dependencies.  Built and gprinstalled as a static
 --  library by the ada-on-alpine aport.
 
+with "astbnf";
+
 library project HBNF is
 
    for Languages use ("Ada");

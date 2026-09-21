@@ -64,6 +64,7 @@ package HBNF is
       Children  : Node_Vectors.Vector := Node_Vectors.Empty_Vector;
       Leading_Comment  : Unbounded_String := Null_Unbounded_String;
       Trailing_Comment : Unbounded_String := Null_Unbounded_String;
+      Semicolon_After  : Boolean := False;  --  terminated by `;`, not newline
    end record;
 
    type Parse_Result (Success : Boolean := True) is record

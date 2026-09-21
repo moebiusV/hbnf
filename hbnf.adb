@@ -8,7 +8,7 @@ package body HBNF is
 
    type Token_Kind is
      (Word, Str, Int, Dec, Comment, Eol_Comment,
-      LBrace, RBrace, Newline, Eof);
+      LBrace, RBrace, Semicolon, Newline, Eof);
 
    type Token is record
       Kind : Token_Kind;
@@ -120,6 +120,47 @@ package body HBNF is
       return S (First .. Last);
    end Trim;
 
+   --  The value of a hexadecimal digit, or -1 when C is not one.
+   function Hex_Digit (C : Character) return Integer is
+   begin
+      if C in '0' .. '9' then
+         return Character'Pos (C) - Character'Pos ('0');
+      elsif C in 'a' .. 'f' then
+         return Character'Pos (C) - Character'Pos ('a') + 10;
+      elsif C in 'A' .. 'F' then
+         return Character'Pos (C) - Character'Pos ('A') + 10;
+      else
+         return -1;
+      end if;
+   end Hex_Digit;
+
+   --  The hexadecimal digit for N in 0 .. 15.
+   function Hex_Char (N : Natural) return Character is
+      H : constant String := "0123456789ABCDEF";
+   begin
+      return H (N + 1);
+   end Hex_Char;
+
+   --  Append Code as UTF-8 bytes (the C23 universal-character-name encoding).
+   procedure Put_Utf8 (B : in out Unbounded_String; Code : Natural) is
+   begin
+      if Code <= 16#7F# then
+         Append (B, Character'Val (Code));
+      elsif Code <= 16#7FF# then
+         Append (B, Character'Val (16#C0# + Code / 64));
+         Append (B, Character'Val (16#80# + Code mod 64));
+      elsif Code <= 16#FFFF# then
+         Append (B, Character'Val (16#E0# + Code / 4096));
+         Append (B, Character'Val (16#80# + (Code / 64) mod 64));
+         Append (B, Character'Val (16#80# + Code mod 64));
+      else
+         Append (B, Character'Val (16#F0# + Code / 262144));
+         Append (B, Character'Val (16#80# + (Code / 4096) mod 64));
+         Append (B, Character'Val (16#80# + (Code / 64) mod 64));
+         Append (B, Character'Val (16#80# + Code mod 64));
+      end if;
+   end Put_Utf8;
+
    function Tokenize (Text : String) return Lex_Result is
       Tokens : Token_Vectors.Vector := Token_Vectors.Empty_Vector;
       I      : Natural := Text'First;
@@ -173,6 +214,12 @@ package body HBNF is
             I := I + 1;
             Col := Col + 1;
             On_Line := True;
+         elsif C = ';' then
+            Tokens.Append
+              (Token'(Semicolon, Line, Col, Null_Unbounded_String));
+            I := I + 1;
+            Col := Col + 1;
+            On_Line := True;
          elsif C = '"' then
             declare
                Start_Col : constant Positive := Col;
@@ -194,18 +241,108 @@ package body HBNF is
                      if I > Text'Last then
                         return Lex_Error (Line, Col, "escape at end of file");
                      end if;
+                     --  Decode one C23 escape sequence (I indexes its first
+                     --  character).  The multi-character branches advance I
+                     --  and Col past the whole sequence themselves.
                      case Text (I) is
-                        when '"' => Append (Buf, '"');
-                        when '\' => Append (Buf, '\');
-                        when 'n' => Append (Buf, Character'Val (10));
-                        when 't' => Append (Buf, Character'Val (9));
-                        when 'r' => Append (Buf, Character'Val (13));
+                        when 'x' =>
+                           declare
+                              Val : Natural := 0;
+                              N   : Natural := 0;
+                           begin
+                              I := I + 1;
+                              Col := Col + 1;
+                              while I <= Text'Last
+                                and then Hex_Digit (Text (I)) >= 0
+                              loop
+                                 Val := Val * 16 + Hex_Digit (Text (I));
+                                 N := N + 1;
+                                 I := I + 1;
+                                 Col := Col + 1;
+                              end loop;
+                              if N = 0 then
+                                 return Lex_Error
+                                   (Line, Col, "hex escape needs a digit");
+                              end if;
+                              if Val > 255 then
+                                 return Lex_Error
+                                   (Line, Col, "hex escape out of range");
+                              end if;
+                              Append (Buf, Character'Val (Val));
+                           end;
+                        when 'u' | 'U' =>
+                           declare
+                              Hex_Len : constant Natural :=
+                                (if Text (I) = 'u' then 4 else 8);
+                              Code : Natural := 0;
+                           begin
+                              I := I + 1;
+                              Col := Col + 1;
+                              for K in 1 .. Hex_Len loop
+                                 if I > Text'Last
+                                   or else Hex_Digit (Text (I)) < 0
+                                 then
+                                    return Lex_Error
+                                      (Line, Col, "bad unicode escape");
+                                 end if;
+                                 Code := Code * 16 + Hex_Digit (Text (I));
+                                 I := I + 1;
+                                 Col := Col + 1;
+                              end loop;
+                              if Code > 16#10FFFF# then
+                                 return Lex_Error
+                                   (Line, Col, "unicode escape out of range");
+                              end if;
+                              Put_Utf8 (Buf, Code);
+                           end;
+                        when '0' .. '7' =>
+                           declare
+                              Val : Natural := 0;
+                              N   : Natural := 0;
+                           begin
+                              while I <= Text'Last and then N < 3
+                                and then Text (I) in '0' .. '7'
+                              loop
+                                 Val := Val * 8
+                                   + Character'Pos (Text (I))
+                                   - Character'Pos ('0');
+                                 N := N + 1;
+                                 I := I + 1;
+                                 Col := Col + 1;
+                              end loop;
+                              if Val > 255 then
+                                 return Lex_Error
+                                   (Line, Col, "octal escape out of range");
+                              end if;
+                              Append (Buf, Character'Val (Val));
+                           end;
                         when others =>
-                           return Lex_Error
-                             (Line, Col, "unknown escape in string");
+                           --  A one-character escape (or an error).
+                           declare
+                              Ch : Character;
+                           begin
+                              case Text (I) is
+                                 when 'a' => Ch := Character'Val (7);
+                                 when 'b' => Ch := Character'Val (8);
+                                 when 'f' => Ch := Character'Val (12);
+                                 when 'n' => Ch := Character'Val (10);
+                                 when 'r' => Ch := Character'Val (13);
+                                 when 't' => Ch := Character'Val (9);
+                                 when 'v' => Ch := Character'Val (11);
+                                 when ''' => Ch := ''';
+                                 when '"' => Ch := '"';
+                                 when '?' => Ch := '?';
+                                 when '\' => Ch := '\';
+                                 when others =>
+                                    return Lex_Error
+                                      (Line, Col,
+                                       "unknown escape in string");
+                              end case;
+                              Append (Buf, Ch);
+                              I := I + 1;
+                              Col := Col + 1;
+                           end;
                      end case;
-                     I := I + 1;
-                     Col := Col + 1;
                   elsif C = Character'Val (10) then
                      return Lex_Error (Line, Col, "newline in string literal");
                   else
@@ -365,21 +502,21 @@ package body HBNF is
                   end if;
                   I := I + 1;
                   Parse_Children (N, I, False);
-                  if I <= Tokens.Last_Index
-                    and then Tokens (I).Kind = Eol_Comment
-                  then
-                     N.Trailing_Comment := Tokens (I).Text;
-                     I := I + 1;
-                  end if;
                   exit;
-               when Eol_Comment =>
-                  N.Trailing_Comment := Tokens (I).Text;
-                  I := I + 1;
-                  exit;
-               when Comment | Newline | Eof | RBrace =>
+               when others =>
                   exit;
             end case;
          end loop;
+         --  A `;` terminates the entry (vs the newline the caller skips); an
+         --  end-of-line comment may still follow the terminator.
+         if I <= Tokens.Last_Index and then Tokens (I).Kind = Semicolon then
+            N.Semicolon_After := True;
+            I := I + 1;
+         end if;
+         if I <= Tokens.Last_Index and then Tokens (I).Kind = Eol_Comment then
+            N.Trailing_Comment := Tokens (I).Text;
+            I := I + 1;
+         end if;
          Parent.Children.Append (N);
       end Parse_Entry;
 
@@ -539,10 +676,23 @@ package body HBNF is
             case C is
                when '"' => Append (Buf, "\""");
                when '\' => Append (Buf, "\\");
+               when Character'Val (7)  => Append (Buf, "\a");
+               when Character'Val (8)  => Append (Buf, "\b");
                when Character'Val (9)  => Append (Buf, "\t");
                when Character'Val (10) => Append (Buf, "\n");
+               when Character'Val (11) => Append (Buf, "\v");
+               when Character'Val (12) => Append (Buf, "\f");
                when Character'Val (13) => Append (Buf, "\r");
-               when others => Append (Buf, C);
+               when others =>
+                  if C < Character'Val (32)
+                    or else C = Character'Val (127)
+                  then
+                     Append (Buf, "\x");
+                     Append (Buf, Hex_Char (Character'Pos (C) / 16));
+                     Append (Buf, Hex_Char (Character'Pos (C) mod 16));
+                  else
+                     Append (Buf, C);
+                  end if;
             end case;
          end loop;
          return To_String (Buf);
@@ -622,6 +772,9 @@ package body HBNF is
             end loop;
             Append (Buf, Spaces (Indent));
             Append (Buf, '}');
+         end if;
+         if N.Semicolon_After then
+            Append (Buf, ";");
          end if;
          if N.Trailing_Comment /= Null_Unbounded_String then
             Append (Buf, " #");
