@@ -16,8 +16,9 @@ with ASTBNF_Ada;
 --
 --  c/rust/zig print one compilable file to stdout; ada prints the parent
 --  package spec, then the child package spec+body (split them apart yourself).
---  --conf (C only) prints the OpenBSD conf.h/conf.c pair, delimited by
---  "===== conf.h =====" and "===== conf.c =====" markers.
+--  --conf adds the OpenBSD parse_config(filename) entry: for C it prints the
+--  conf.h/conf.c pair (delimited by "===== conf.h =====" and "===== conf.c ====="
+--  markers); for rust/zig/ada it appends the conf wrapper to the single file.
 procedure Astbnf_Cli is
 
    use Ada.Strings.Unbounded;
@@ -93,15 +94,24 @@ begin
          end if;
       elsif B = "rust" then
          Ada.Text_IO.Put (ASTBNF_Rust.Emit (Rules));
-         Ada.Text_IO.Put (ASTBNF_Rust.Emit_Parser (Rules));
+         Ada.Text_IO.Put (ASTBNF_Rust.Emit_Parser (Rules, Conf));
          Ada.Text_IO.Put (ASTBNF_Rust.Emit_Lexer (Rules));
+         if Conf then
+            Ada.Text_IO.New_Line;
+            Ada.Text_IO.Put (ASTBNF_Rust.Emit_Conf (Rules));
+         end if;
       elsif B = "zig" then
          Ada.Text_IO.Put (ASTBNF_Zig.Emit (Rules));
-         Ada.Text_IO.Put (ASTBNF_Zig.Emit_Parser (Rules));
+         Ada.Text_IO.Put (ASTBNF_Zig.Emit_Parser (Rules, Conf));
          Ada.Text_IO.Put (ASTBNF_Zig.Emit_Lexer (Rules));
+         if Conf then
+            Ada.Text_IO.New_Line;
+            Ada.Text_IO.Put (ASTBNF_Zig.Emit_Conf (Rules));
+         end if;
       elsif B = "ada" then
          Ada.Text_IO.Put (ASTBNF_Ada.Emit (Rules, To_String (Package_Name)));
-         Ada.Text_IO.Put (ASTBNF_Ada.Emit_Parser (Rules, To_String (Package_Name)));
+         Ada.Text_IO.Put
+           (ASTBNF_Ada.Emit_Parser (Rules, To_String (Package_Name), Conf));
       else
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error, "unknown backend: " & B);

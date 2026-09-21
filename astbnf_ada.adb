@@ -588,7 +588,8 @@ package body ASTBNF_Ada is
    end Emit;
 
    function Emit_Parser
-     (Rules : ASTBNF.Rule_Vectors.Vector; Package_Name : String) return String
+     (Rules : ASTBNF.Rule_Vectors.Vector; Package_Name : String;
+      Conf  : Boolean := False) return String
    is
 
       N : constant Natural := Natural (Rules.Length);
@@ -996,7 +997,7 @@ package body ASTBNF_Ada is
       Append (Spec, "   Parse_Error : exception;");
       Append (Spec, LF);
       Append (Spec, LF);
-      Append (Spec, "   function Parse_Config");
+      Append (Spec, "   function Parse_Tokens");
       Append (Spec, LF);
       Append (Spec, "     (Toks  : Token_Vectors.Vector;");
       Append (Spec, LF);
@@ -1006,12 +1007,21 @@ package body ASTBNF_Ada is
       Append (Spec, "   function Parse_Text (Text : String) return " & Ret_Type (1) & ";");
       Append (Spec, LF);
       Append (Spec, LF);
+      if Conf then
+         Append (Spec, "   function Parse_Config (Filename : String) return " & Ret_Type (1) & ";");
+         Append (Spec, LF);
+         Append (Spec, LF);
+      end if;
       Append (Spec, "end " & Package_Name & ".Parser;");
       Append (Spec, LF);
 
       --  Package body: the recursive-descent parser.
       Append (Bdy, "with Interfaces;");
       Append (Bdy, LF);
+      if Conf then
+         Append (Bdy, "with Ada.Text_IO;");
+         Append (Bdy, LF);
+      end if;
       Append (Bdy, LF);
       Append (Bdy, "package body " & Package_Name & ".Parser is");
       Append (Bdy, LF);
@@ -1159,7 +1169,7 @@ package body ASTBNF_Ada is
          Append (Bdy, LF);
       end loop;
 
-      Append (Bdy, "   function Parse_Config");
+      Append (Bdy, "   function Parse_Tokens");
       Append (Bdy, LF);
       Append (Bdy, "     (Toks  : Token_Vectors.Vector;");
       Append (Bdy, LF);
@@ -1181,7 +1191,7 @@ package body ASTBNF_Ada is
       Append (Bdy, LF);
       Append (Bdy, "      return R;");
       Append (Bdy, LF);
-      Append (Bdy, "   end Parse_Config;");
+      Append (Bdy, "   end Parse_Tokens;");
       Append (Bdy, LF);
       Append (Bdy, LF);
 
@@ -1191,6 +1201,11 @@ package body ASTBNF_Ada is
         "@ROOT_FN@", "Parse_" & Ada_Ident (To_String (Rules (1).Name))));
       Append (Bdy, LF);
       Append (Bdy, LF);
+      if Conf then
+         Append (Bdy, Templates.Substitute
+           (Templates.Conf_Ada, "@ROOT_TYPE@", Ret_Type (1)));
+         Append (Bdy, LF);
+      end if;
       Append (Bdy, "end " & Package_Name & ".Parser;");
       Append (Bdy, LF);
 

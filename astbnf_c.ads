@@ -14,7 +14,12 @@ package ASTBNF_C is
    --  Emit the parser half: a self-contained recursive-descent parser (a
    --  token type plus one `parse_<rule>()` function per rule) that consumes
    --  a token stream and allocates/populates the structs `Emit` declares.
-   function Emit_Parser (Rules : ASTBNF.Rule_Vectors.Vector) return String;
+   --  When Conf is true, the parser's `fail` reports to the global
+   --  `conf_error` handler at the point of error (yyerror-style) instead of
+   --  only filling the err buffer.
+   function Emit_Parser
+     (Rules : ASTBNF.Rule_Vectors.Vector; Conf : Boolean := False)
+      return String;
 
    --  Emit the lexer half: a schema-independent scanner that turns text into
    --  the token stream `Emit_Parser` consumes (word/string/number/punctuation

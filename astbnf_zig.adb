@@ -505,7 +505,7 @@ package body ASTBNF_Zig is
       return To_String (Res);
    end Emit;
 
-   function Emit_Parser (Rules : ASTBNF.Rule_Vectors.Vector) return String is
+   function Emit_Parser (Rules : ASTBNF.Rule_Vectors.Vector; Conf : Boolean := False) return String is
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -927,10 +927,27 @@ package body ASTBNF_Zig is
       Append (Res, LF);
       Append (Res, "        } else std.fmt.bufPrint(self.err[0..], ""expected {s}, found {s}"", .{ expected, found });");
       Append (Res, LF);
-      Append (Res, "        const m = msg catch { self.err_len = self.err.len; return; };");
-      Append (Res, LF);
-      Append (Res, "        self.err_len = m.len;");
-      Append (Res, LF);
+      if Conf then
+         Append (Res, "        const m = msg catch null;");
+         Append (Res, LF);
+         Append (Res, "        if (m) |mm| {");
+         Append (Res, LF);
+         Append (Res, "            self.err_len = mm.len;");
+         Append (Res, LF);
+         Append (Res, "        } else {");
+         Append (Res, LF);
+         Append (Res, "            self.err_len = self.err.len;");
+         Append (Res, LF);
+         Append (Res, "        }");
+         Append (Res, LF);
+         Append (Res, "        config_error(self.err_line, self.err[0..self.err_len]);");
+         Append (Res, LF);
+      else
+         Append (Res, "        const m = msg catch { self.err_len = self.err.len; return; };");
+         Append (Res, LF);
+         Append (Res, "        self.err_len = m.len;");
+         Append (Res, LF);
+      end if;
       Append (Res, "    }");
       Append (Res, LF);
       Append (Res, LF);
@@ -991,7 +1008,7 @@ package body ASTBNF_Zig is
          Append (Res, LF);
       end loop;
 
-      Append (Res, "pub fn parse_config(alloc: std.mem.Allocator, toks: []const Token,");
+      Append (Res, "pub fn parse_tokens(alloc: std.mem.Allocator, toks: []const Token,");
       Append (Res, LF);
       Append (Res, "                    lines: []const []const u8,");
       Append (Res, LF);
@@ -1018,5 +1035,11 @@ package body ASTBNF_Zig is
    begin
       return Templates.Substitute (Templates.Zig_Lexer, "@ROOT_TYPE@", Root_T);
    end Emit_Lexer;
+
+   function Emit_Conf (Rules : ASTBNF.Rule_Vectors.Vector) return String is
+      Root_T : constant String := Zig_Type (To_String (Rules (1).Name));
+   begin
+      return Templates.Substitute (Templates.Conf_Zig, "@ROOT_TYPE@", Root_T);
+   end Emit_Conf;
 
 end ASTBNF_Zig;

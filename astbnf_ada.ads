@@ -13,8 +13,13 @@ package ASTBNF_Ada is
 
    --  Emit the parser half: a self-contained recursive-descent parser (a
    --  token type plus one `Parse_<rule>` function per rule) that consumes a
-   --  token array and populates the records `Emit` declares.
+   --  token array and populates the records `Emit` declares.  When Conf is
+   --  true, also emit `Parse_Config (Filename)` — read a file, parse it — so
+   --  the child package has the OpenBSD conf.h/conf.c-shape entry point
+   --  (parse_tokens / parse_text / parse_config).
    function Emit_Parser
-     (Rules : ASTBNF.Rule_Vectors.Vector; Package_Name : String) return String;
+     (Rules      : ASTBNF.Rule_Vectors.Vector;
+      Package_Name : String;
+      Conf       : Boolean := False) return String;
 
 end ASTBNF_Ada;

@@ -66,5 +66,5 @@ pub fn parse_text(alloc: std.mem.Allocator, text: []const u8,
         }
     }
     try lines.append(alloc, text[s..]);
-    return parse_config(alloc, toks, lines.items, err, err_line, err_col);
+    return parse_tokens(alloc, toks, lines.items, err, err_line, err_col);
 }

@@ -53,5 +53,5 @@ pub fn lex(text: &str) -> Vec<Token> {
 pub fn parse_text(text: &str) -> Result<@ROOT_TYPE@, ParseError> {
     let toks = lex(text);
     let lines: Vec<&str> = text.split('\n').collect();
-    parse_config(&toks, &lines)
+    parse_tokens(&toks, &lines)
 }

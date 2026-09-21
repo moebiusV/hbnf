@@ -4,8 +4,8 @@
 
 /* Non-exiting error handler: capture the caret message, let parse_config
    return -1 instead of exit(1). */
-static void my_error(const char *file, size_t line, const char *msg) {
-    printf("callback: file=%s line=%zu msg=\n%s\n", file, line, msg);
+static void my_error(size_t line, const char *msg) {
+    printf("callback: file=%s line=%zu msg=\n%s\n", conf_file, line, msg);
 }
 
 int main(void) {

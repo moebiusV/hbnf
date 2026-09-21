@@ -405,7 +405,7 @@ package body ASTBNF_Rust is
       return To_String (Res);
    end Emit;
 
-   function Emit_Parser (Rules : ASTBNF.Rule_Vectors.Vector) return String is
+   function Emit_Parser (Rules : ASTBNF.Rule_Vectors.Vector; Conf : Boolean := False) return String is
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -783,6 +783,10 @@ package body ASTBNF_Rust is
       Append (Res, LF);
       Append (Res, "            };");
       Append (Res, LF);
+      if Conf then
+         Append (Res, "            config_error(line, &msg);");
+         Append (Res, LF);
+      end if;
       Append (Res, "            self.err = Some(ParseError { line, col, msg });");
       Append (Res, LF);
       Append (Res, "        }");
@@ -823,7 +827,7 @@ package body ASTBNF_Rust is
          Append (Res, LF);
       end loop;
 
-      Append (Res, "pub fn parse_config(toks: &[Token], lines: &[&str]) -> Result<"
+      Append (Res, "pub fn parse_tokens(toks: &[Token], lines: &[&str]) -> Result<"
         & Ret_Type (1) & ", ParseError> {");
       Append (Res, LF);
       Append (Res, "    let mut p = P { toks, lines, pos: 0, err: None };");
@@ -846,5 +850,11 @@ package body ASTBNF_Rust is
    begin
       return Templates.Substitute (Templates.Rust_Lexer, "@ROOT_TYPE@", Root_T);
    end Emit_Lexer;
+
+   function Emit_Conf (Rules : ASTBNF.Rule_Vectors.Vector) return String is
+      Root_T : constant String := Rust_Type (To_String (Rules (1).Name));
+   begin
+      return Templates.Substitute (Templates.Conf_Rust, "@ROOT_TYPE@", Root_T);
+   end Emit_Conf;
 
 end ASTBNF_Rust;

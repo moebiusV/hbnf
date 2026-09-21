@@ -41,7 +41,11 @@ procedure Gen_All is
    Rules : constant ASTBNF.Rule_Vectors.Vector :=
      ASTBNF.Parse (Read_File (Ada.Command_Line.Argument (1)));
 
-   Ada_Parser : constant String := ASTBNF_Ada.Emit_Parser (Rules, "Server_Schema");
+   Conf : constant Boolean := Ada.Command_Line.Argument_Count >= 2
+     and then Ada.Command_Line.Argument (2) = "--conf";
+
+   Ada_Parser : constant String :=
+     ASTBNF_Ada.Emit_Parser (Rules, "Server_Schema", Conf);
    Split      : constant Natural :=
      Ada.Strings.Fixed.Index (Ada_Parser, "with Interfaces;");
 begin

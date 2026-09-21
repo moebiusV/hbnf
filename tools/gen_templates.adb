@@ -104,6 +104,12 @@ begin
    Put_Line ("");
    Emit_Constant ("Conf_Tail_C", Read_File ("templates/conf_tail.c"));
    Put_Line ("");
+   Emit_Constant ("Conf_Rust", Read_File ("templates/conf.rs"));
+   Put_Line ("");
+   Emit_Constant ("Conf_Zig", Read_File ("templates/conf.zig"));
+   Put_Line ("");
+   Emit_Constant ("Conf_Ada", Read_File ("templates/conf.ada"));
+   Put_Line ("");
    Put_Line ("   --  Replace every occurrence of From in Text with To.");
    Put_Line ("   function Substitute (Text, From, To : String) return String;");
    Put_Line ("");

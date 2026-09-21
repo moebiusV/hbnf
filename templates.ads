@@ -162,7 +162,7 @@ package Templates is
      "pub fn parse_text(text: &str) -> Result<@ROOT_TYPE@, ParseError> {" & LF &
      "    let toks = lex(text);" & LF &
      "    let lines: Vec<&str> = text.split('\n').collect();" & LF &
-     "    parse_config(&toks, &lines)" & LF &
+     "    parse_tokens(&toks, &lines)" & LF &
      "}";
 
    Zig_Lexer : constant String :=
@@ -234,7 +234,7 @@ package Templates is
      "        }" & LF &
      "    }" & LF &
      "    try lines.append(alloc, text[s..]);" & LF &
-     "    return parse_config(alloc, toks, lines.items, err, err_line, err_col);" & LF &
+     "    return parse_tokens(alloc, toks, lines.items, err, err_line, err_col);" & LF &
      "}";
 
    Ada_Lexer : constant String :=
@@ -357,29 +357,46 @@ package Templates is
      "/* The configuration tree root, populated by parse_config(). */" & LF &
      "extern @ROOT_TYPE@ *conf;" & LF &
      "" & LF &
-     "/* Error handler: default prints ""file:line: msg"" and exits; override to" & LF &
-     "   handle errors yourself (parse_config then returns -1 instead). */" & LF &
-     "typedef void (*conf_error_fn)(const char *file, size_t line, const char *msg);" & LF &
+     "/* yyerror-style error handler: called by the parser at the point of failure" & LF &
+     "   with the caret message and its 1-based line.  The default handler prints" & LF &
+     "   ""file:line: msg"" (file taken from conf_file) and exit(1)s; override" & LF &
+     "   conf_error to take the message yourself, in which case parse_config returns" & LF &
+     "   -1 after the handler. */" & LF &
+     "typedef void (*conf_error_fn)(size_t line, const char *msg);" & LF &
      "extern conf_error_fn conf_error;" & LF &
      "" & LF &
+     "/* Filename being parsed: set by parse_config, used by the default handler. */" & LF &
+     "extern const char *conf_file;" & LF &
+     "" & LF &
      "/* Read filename, populate the global `conf`.  Returns 0 on success, -1 on" & LF &
-     "   error (after calling conf_error). */" & LF &
-     "int parse_config(const char *filename);";
+     "   error (after conf_error has been called). */" & LF &
+     "int parse_config(const char *filename);" & LF &
+     "" & LF &
+     "/* Return the current config root (NULL before a successful parse_config)." & LF &
+     "   Convenience for FFI languages that cannot read the `conf` global. */" & LF &
+     "@ROOT_TYPE@ *conf_ptr(void);";
 
    Conf_Tail_C : constant String :=
      "@ROOT_TYPE@ *conf = NULL;" & LF &
+     "const char *conf_file = NULL;" & LF &
      "" & LF &
      "/* Default handler: print ""file:line: <caret message>"" and exit(1).  Override" & LF &
      "   conf_error with your own to take the message elsewhere (then parse_config" & LF &
-     "   returns -1 after calling it). */" & LF &
-     "static void conf_error_default(const char *file, size_t line, const char *msg) {" & LF &
-     "    if (line)" & LF &
-     "        fprintf(stderr, ""%s:%zu: %s\n"", file, line, msg);" & LF &
-     "    else" & LF &
-     "        fprintf(stderr, ""%s: %s\n"", file, msg);" & LF &
+     "   returns -1 after the handler). */" & LF &
+     "static void conf_error_default(size_t line, const char *msg) {" & LF &
+     "    if (conf_file) {" & LF &
+     "        if (line)" & LF &
+     "            fprintf(stderr, ""%s:%zu: %s\n"", conf_file, line, msg);" & LF &
+     "        else" & LF &
+     "            fprintf(stderr, ""%s: %s\n"", conf_file, msg);" & LF &
+     "    } else {" & LF &
+     "        if (line)" & LF &
+     "            fprintf(stderr, ""%zu: %s\n"", line, msg);" & LF &
+     "        else" & LF &
+     "            fprintf(stderr, ""%s\n"", msg);" & LF &
+     "    }" & LF &
      "    exit(1);" & LF &
      "}" & LF &
-     "" & LF &
      "conf_error_fn conf_error = conf_error_default;" & LF &
      "" & LF &
      "int parse_config(const char *filename) {" & LF &
@@ -390,44 +407,151 @@ package Templates is
      "    size_t line = 0, col = 0;" & LF &
      "" & LF &
      "    if (!f) {" & LF &
-     "        conf_error(filename, 0, ""cannot open file"");" & LF &
+     "        conf_error(0, ""cannot open file"");" & LF &
      "        return -1;" & LF &
      "    }" & LF &
      "    if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 ||" & LF &
      "        fseek(f, 0, SEEK_SET) != 0) {" & LF &
      "        fclose(f);" & LF &
-     "        conf_error(filename, 0, ""cannot read file"");" & LF &
+     "        conf_error(0, ""cannot read file"");" & LF &
      "        return -1;" & LF &
      "    }" & LF &
      "    buf = (char *)malloc((size_t)len + 1);" & LF &
      "    if (!buf) {" & LF &
      "        fclose(f);" & LF &
-     "        conf_error(filename, 0, ""out of memory"");" & LF &
+     "        conf_error(0, ""out of memory"");" & LF &
      "        return -1;" & LF &
      "    }" & LF &
      "    if (len > 0 && fread(buf, 1, (size_t)len, f) != (size_t)len) {" & LF &
      "        free(buf);" & LF &
      "        fclose(f);" & LF &
-     "        conf_error(filename, 0, ""read error"");" & LF &
+     "        conf_error(0, ""read error"");" & LF &
      "        return -1;" & LF &
      "    }" & LF &
      "    buf[len] = '\0';" & LF &
      "    fclose(f);" & LF &
      "" & LF &
+     "    conf_file = filename;" & LF &
      "    conf = (@ROOT_TYPE@ *)calloc(1, sizeof *conf);" & LF &
      "    if (!conf) {" & LF &
      "        free(buf);" & LF &
-     "        conf_error(filename, 0, ""out of memory"");" & LF &
+     "        conf_error(0, ""out of memory"");" & LF &
      "        return -1;" & LF &
      "    }" & LF &
      "    if (!parse_text(buf, conf, err, sizeof err, &line, &col)) {" & LF &
      "        free(buf);" & LF &
-     "        conf_error(filename, line, err);  /* err carries the caret message */" & LF &
-     "        return -1;" & LF &
+     "        return -1;  /* conf_error was already called at the fail() site */" & LF &
      "    }" & LF &
      "    free(buf);" & LF &
      "    return 0;" & LF &
+     "}" & LF &
+     "" & LF &
+     "@ROOT_TYPE@ *conf_ptr(void) { return conf; }";
+
+   Conf_Rust : constant String :=
+     "// yyerror-style error handling: the parser calls config_error() at the point" & LF &
+     "// of failure with the caret message.  The default handler prints" & LF &
+     "// ""file:line: msg"" (file from CONF_FILE) and exit(1)s; override with" & LF &
+     "// set_config_error to take the message yourself, in which case parse_config" & LF &
+     "// returns the Err instead of exiting." & LF &
+     "static CONFIG_ERROR: std::sync::OnceLock<fn(usize, &str)> = std::sync::OnceLock::new();" & LF &
+     "static CONF_FILE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());" & LF &
+     "" & LF &
+     "fn default_config_error(line: usize, msg: &str) {" & LF &
+     "    let file = CONF_FILE.lock().unwrap();" & LF &
+     "    if !file.is_empty() {" & LF &
+     "        if line > 0 {" & LF &
+     "            eprintln!(""{}:{}: {}"", file, line, msg);" & LF &
+     "        } else {" & LF &
+     "            eprintln!(""{}: {}"", file, msg);" & LF &
+     "        }" & LF &
+     "    } else if line > 0 {" & LF &
+     "        eprintln!(""{}: {}"", line, msg);" & LF &
+     "    } else {" & LF &
+     "        eprintln!(""{}"", msg);" & LF &
+     "    }" & LF &
+     "    std::process::exit(1);" & LF &
+     "}" & LF &
+     "" & LF &
+     "pub fn set_config_error(f: fn(usize, &str)) {" & LF &
+     "    let _ = CONFIG_ERROR.set(f);" & LF &
+     "}" & LF &
+     "" & LF &
+     "fn config_error(line: usize, msg: &str) {" & LF &
+     "    CONFIG_ERROR.get().copied().unwrap_or(default_config_error)(line, msg);" & LF &
+     "}" & LF &
+     "" & LF &
+     "pub fn parse_config(path: &str) -> Result<@ROOT_TYPE@, ParseError> {" & LF &
+     "    *CONF_FILE.lock().unwrap() = path.to_string();" & LF &
+     "    let text = match std::fs::read_to_string(path) {" & LF &
+     "        Ok(t) => t," & LF &
+     "        Err(e) => {" & LF &
+     "            let m = format!(""cannot open file: {}"", e);" & LF &
+     "            config_error(0, &m);" & LF &
+     "            return Err(ParseError { line: 0, col: 0, msg: m });" & LF &
+     "        }" & LF &
+     "    };" & LF &
+     "    parse_text(&text)" & LF &
      "}";
+
+   Conf_Zig : constant String :=
+     "pub var conf_file: ?[]const u8 = null;" & LF &
+     "" & LF &
+     "// yyerror-style handler: the parser calls config_error() at the point of" & LF &
+     "// failure with the caret message.  Default prints ""file:line: msg"" (file from" & LF &
+     "// conf_file) and exits; assign config_error to take the message yourself, in" & LF &
+     "// which case parse_config returns the error instead of exiting." & LF &
+     "pub var config_error: *const fn(usize, []const u8) void = defaultConfigError;" & LF &
+     "" & LF &
+     "fn defaultConfigError(line: usize, msg: []const u8) void {" & LF &
+     "    if (conf_file) |f| {" & LF &
+     "        if (line > 0) {" & LF &
+     "            std.debug.print(""{s}:{d}: {s}\n"", .{ f, line, msg });" & LF &
+     "        } else {" & LF &
+     "            std.debug.print(""{s}: {s}\n"", .{ f, msg });" & LF &
+     "        }" & LF &
+     "    } else if (line > 0) {" & LF &
+     "        std.debug.print(""{d}: {s}\n"", .{ line, msg });" & LF &
+     "    } else {" & LF &
+     "        std.debug.print(""{s}\n"", .{msg});" & LF &
+     "    }" & LF &
+     "    std.process.exit(1);" & LF &
+     "}" & LF &
+     "" & LF &
+     "pub fn parse_config(alloc: std.mem.Allocator, path: []const u8) ParseError!@ROOT_TYPE@ {" & LF &
+     "    conf_file = path;" & LF &
+     "    var threaded = std.Io.Threaded.init(alloc, .{});" & LF &
+     "    const text = std.Io.Dir.cwd().readFileAlloc(" & LF &
+     "        threaded.io(), path, alloc, .limited(1 << 20)) catch {" & LF &
+     "        config_error(0, ""cannot open file"");" & LF &
+     "        return error.Invalid;" & LF &
+     "    };" & LF &
+     "    var err: [512]u8 = undefined;" & LF &
+     "    var el: usize = 0;" & LF &
+     "    var ec: usize = 0;" & LF &
+     "    return parse_text(alloc, text, &err, &el, &ec);" & LF &
+     "}";
+
+   Conf_Ada : constant String :=
+     "   function Read_File (Filename : String) return String is" & LF &
+     "      F   : Ada.Text_IO.File_Type;" & LF &
+     "      Buf : Unbounded_String;" & LF &
+     "   begin" & LF &
+     "      Ada.Text_IO.Open (F, Ada.Text_IO.In_File, Filename);" & LF &
+     "      while not Ada.Text_IO.End_Of_File (F) loop" & LF &
+     "         Append (Buf, Ada.Text_IO.Get_Line (F));" & LF &
+     "         if not Ada.Text_IO.End_Of_File (F) then" & LF &
+     "            Append (Buf, ASCII.LF);" & LF &
+     "         end if;" & LF &
+     "      end loop;" & LF &
+     "      Ada.Text_IO.Close (F);" & LF &
+     "      return To_String (Buf);" & LF &
+     "   end Read_File;" & LF &
+     "" & LF &
+     "   function Parse_Config (Filename : String) return @ROOT_TYPE@ is" & LF &
+     "   begin" & LF &
+     "      return Parse_Text (Read_File (Filename));" & LF &
+     "   end Parse_Config;";
 
    --  Replace every occurrence of From in Text with To.
    function Substitute (Text, From, To : String) return String;
