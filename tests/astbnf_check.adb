@@ -82,6 +82,9 @@ procedure ASTBNF_Check is
       Rust_Text   : constant String := ASTBNF_Rust.Emit (Rules);
       Zig_Text    : constant String := ASTBNF_Zig.Emit (Rules);
       Parser_Text : constant String := ASTBNF_C.Emit_Parser (Rules);
+      Ada_Parser  : constant String := ASTBNF_Ada.Emit_Parser (Rules, "Server_Schema");
+      Rust_Parser : constant String := ASTBNF_Rust.Emit_Parser (Rules);
+      Zig_Parser  : constant String := ASTBNF_Zig.Emit_Parser (Rules);
    begin
       Check ("13 rules", Natural (Rules.Length) = 13);
       Check ("first rule server", To_String (Rules (1).Name) = "server");
@@ -95,6 +98,7 @@ procedure ASTBNF_Check is
       Check ("C parser link", Has (Parser_Text, "calloc"));
       Check ("C parser expect", Has (Parser_Text, "expect_lit"));
       Check ("C parser err", Has (Parser_Text, "err_line"));
+      Check ("C parser caret", Has (Parser_Text, "memset(pad"));
 
       Check ("Ada enum", Has (Ada_Text, "Direction_In"));
       Check ("Ada record", Has (Ada_Text, "type Server_Type is record"));
@@ -102,15 +106,30 @@ procedure ASTBNF_Check is
              Has (Ada_Text, "subtype Port_Type is Unsigned_16"));
       Check ("Ada comment", Has (Ada_Text, "-- host name"));
 
+      Check ("Ada parser fn", Has (Ada_Parser, "Parse_Server"));
+      Check ("Ada parser except", Has (Ada_Parser, "Parse_Error"));
+      Check ("Ada parser expect", Has (Ada_Parser, "Expect_Lit"));
+      Check ("Ada parser caret", Has (Ada_Parser, "& ""^"""));
+
       Check ("Rust enum", Has (Rust_Text, "pub enum Direction"));
       Check ("Rust struct", Has (Rust_Text, "pub struct Server"));
       Check ("Rust scalar", Has (Rust_Text, "pub type Port = u16;"));
       Check ("Rust comment", Has (Rust_Text, "// host name"));
 
+      Check ("Rust parser fn", Has (Rust_Parser, "parse_server"));
+      Check ("Rust parser err", Has (Rust_Parser, "ParseError"));
+      Check ("Rust parser expect", Has (Rust_Parser, "expect_lit"));
+      Check ("Rust parser caret", Has (Rust_Parser, "{}^"));
+
       Check ("Zig enum", Has (Zig_Text, "const Direction = enum"));
       Check ("Zig struct", Has (Zig_Text, "const Server = struct"));
       Check ("Zig scalar", Has (Zig_Text, "const Port = u16;"));
       Check ("Zig comment", Has (Zig_Text, "// host name"));
+
+      Check ("Zig parser fn", Has (Zig_Parser, "parse_server"));
+      Check ("Zig parser err", Has (Zig_Parser, "ParseError"));
+      Check ("Zig parser expect", Has (Zig_Parser, "expect_lit"));
+      Check ("Zig parser caret", Has (Zig_Parser, "{s}^"));
    end Check_Server;
 
    procedure Check_Hbnf (Path : String) is

@@ -908,9 +908,13 @@ package body ASTBNF_C is
       Append (Res, LF);
       Append (Res, "    size_t n, pos;");
       Append (Res, LF);
+      Append (Res, "    const char *const *lines;  /* source lines, for the caret */");
+      Append (Res, LF);
+      Append (Res, "    size_t nlines;");
+      Append (Res, LF);
       Append (Res, "    size_t err_line, err_col;");
       Append (Res, LF);
-      Append (Res, "    char err[256];");
+      Append (Res, "    char err[512];");
       Append (Res, LF);
       Append (Res, "} parser_t;");
       Append (Res, LF);
@@ -924,10 +928,31 @@ package body ASTBNF_C is
       Append (Res, LF);
       Append (Res, "    p->err_col  = p->pos < p->n ? p->toks[p->pos].col  : 0;");
       Append (Res, LF);
-      Append (Res, "    snprintf(p->err, sizeof p->err, ""expected %s, found %s"",");
+      Append (Res, "    if (p->lines && p->err_line >= 1 && p->err_line <= p->nlines) {");
       Append (Res, LF);
-      Append (Res, "             expected, p->pos < p->n ? p->toks[p->pos].text"
-        & " : ""end of input"");");
+      Append (Res, "        const char *l = p->lines[p->err_line - 1];");
+      Append (Res, LF);
+      Append (Res, "        char pad[64];");
+      Append (Res, LF);
+      Append (Res, "        size_t w = p->err_col > 1 ? p->err_col - 1 : 0;");
+      Append (Res, LF);
+      Append (Res, "        if (w > sizeof pad - 1) w = sizeof pad - 1;");
+      Append (Res, LF);
+      Append (Res, "        memset(pad, ' ', w); pad[w] = '\0';");
+      Append (Res, LF);
+      Append (Res, "        snprintf(p->err, sizeof p->err,");
+      Append (Res, LF);
+      Append (Res, "                 ""expected %s, found %s\n  %s\n  %s^"",");
+      Append (Res, LF);
+      Append (Res, "                 expected, found, l, pad);");
+      Append (Res, LF);
+      Append (Res, "    } else {");
+      Append (Res, LF);
+      Append (Res, "        snprintf(p->err, sizeof p->err, ""expected %s, found %s"",");
+      Append (Res, LF);
+      Append (Res, "                 expected, found);");
+      Append (Res, LF);
+      Append (Res, "    }");
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
@@ -991,15 +1016,17 @@ package body ASTBNF_C is
       Append (Res, "bool parse_config(const token_t *toks, size_t n, "
         & C_Name (To_String (Rules (1).Name)) & "_t *out,");
       Append (Res, LF);
+      Append (Res, "                  const char *const *lines, size_t nlines,");
+      Append (Res, LF);
       Append (Res, "                  char *err, size_t errlen,"
         & " size_t *err_line, size_t *err_col) {");
       Append (Res, LF);
-      Append (Res, "    parser_t p = { toks, n, 0, 0, 0, {0} };");
+      Append (Res, "    parser_t p = { toks, n, 0, lines, nlines, 0, 0, {0} };");
       Append (Res, LF);
       Append (Res, "    if (!parse_" & C_Name (To_String (Rules (1).Name))
         & "(&p, out)) goto err;");
       Append (Res, LF);
-      Append (Res, "    if (p.pos < p.n) { fail(&p, ""end of config"", p.toks[p.pos].text); goto err; }");
+      Append (Res, "    if (p.pos < p.n && p.toks[p.pos].kind != TOK_EOF) { fail(&p, ""end of config"", p.toks[p.pos].text); goto err; }");
       Append (Res, LF);
       Append (Res, "    return true;");
       Append (Res, LF);

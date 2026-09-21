@@ -589,8 +589,601 @@ package body ASTBNF_Ada is
    function Emit_Parser
      (Rules : ASTBNF.Rule_Vectors.Vector; Package_Name : String) return String
    is
+
+      N : constant Natural := Natural (Rules.Length);
+
+      function Find (Name : String) return Natural is
+      begin
+         for I in 1 .. N loop
+            if To_String (Rules (I).Name) = Name then
+               return I;
+            end if;
+         end loop;
+         return 0;
+      end Find;
+
+      function Is_Core (Name : String) return Boolean is
+        (Scalar_Ada_Type (Name) /= "");
+
+      function Has_Alt (Els : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of Els loop
+            if E.Kind = Alt then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Alt;
+
+      function Has_Name (Els : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of Els loop
+            if E.Kind = Name then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Name;
+
+      function Ada_Type_Of (Ref : String) return String is
+         S : constant String := Scalar_Ada_Type (Ref);
+      begin
+         if S /= "" then
+            return S;
+         end if;
+         return Ada_Ident (Ref) & "_Type";
+      end Ada_Type_Of;
+
+      function Core_Desc (Name : String) return String is
+      begin
+         if Name = "str" or else Name = "atom" or else Name = "word" then
+            return "a string";
+         elsif Name = "bool" or else Name = "flag" then
+            return "yes or no";
+         else
+            return "a number";
+         end if;
+      end Core_Desc;
+
+      function Scalar_Kind (Name : String) return String is
+      begin
+         if Name = "str" then
+            return "Str";
+         elsif Name = "int" then
+            return "Int";
+         elsif Name = "dec" or else Name = "float" then
+            return "Dec";
+         elsif Name'Length >= 2 then
+            declare
+               P : constant Character := Name (Name'First);
+               R : constant String := Name (Name'First + 1 .. Name'Last);
+            begin
+               if (P = 'u' or else P = 'i')
+                 and then (for all C of R => C in '0' .. '9')
+               then
+                  return "Int";
+               end if;
+            end;
+         end if;
+         return "Atom";
+      end Scalar_Kind;
+
+      function Scalar_Parse (Name : String) return String is
+      begin
+         if Name = "str" or else Name = "atom" or else Name = "word" then
+            return "P.Toks (P.Pos).Text";
+         elsif Name = "int" then
+            return "Long_Long_Integer'Value (To_String (P.Toks (P.Pos).Text))";
+         elsif Name = "dec" then
+            return "Long_Float'Value (To_String (P.Toks (P.Pos).Text))";
+         elsif Name = "float" then
+            return "Float'Value (To_String (P.Toks (P.Pos).Text))";
+         elsif Name = "bool" or else Name = "flag" then
+            return "To_String (P.Toks (P.Pos).Text) = ""yes"" or "
+              & "To_String (P.Toks (P.Pos).Text) = ""on"" or "
+              & "To_String (P.Toks (P.Pos).Text) = ""true""";
+         elsif Name'Length >= 2 then
+            declare
+               P : constant Character := Name (Name'First);
+               R : constant String := Name (Name'First + 1 .. Name'Last);
+            begin
+               if (P = 'u' or else P = 'i')
+                 and then (for all C of R => C in '0' .. '9')
+               then
+                  return (if P = 'u' then "Unsigned_" else "Integer_") & R
+                    & "'Value (To_String (P.Toks (P.Pos).Text))";
+               end if;
+            end;
+         end if;
+         return "P.Toks (P.Pos).Text";
+      end Scalar_Parse;
+
+      function Start_Kind (Rule_Name : String) return String is
+         J : constant Natural := Find (Rule_Name);
+      begin
+         if J = 0 then
+            return "";
+         end if;
+         declare
+            P : constant Element_Vectors.Vector := Rules (J).Pattern;
+         begin
+            if Natural (P.Length) = 1 and then P (1).Kind = ASTBNF.Name
+              and then Is_Core (To_String (P (1).Name))
+            then
+               return Scalar_Kind (To_String (P (1).Name));
+            end if;
+         end;
+         return "";
+      end Start_Kind;
+
+      function Ret_Type (Idx : Natural) return String is
+        (Ada_Ident (To_String (Rules (Idx).Name)) & "_Type");
+
+      procedure Emit_Seq
+        (Els : Element_Vectors.Vector; First, Last : Natural;
+         Dst : String; Buf : in out U; Ind : String := "      ") is
+      begin
+         for K in First .. Last loop
+            declare
+               E : constant Element_Access := Els (K);
+            begin
+               case E.Kind is
+                  when Literal =>
+                     Append (Buf, Ind & "Expect_Lit (P, """
+                       & To_String (E.Lit) & """);");
+                     Append (Buf, LF);
+                  when Name =>
+                     if Is_Core (To_String (E.Name)) then
+                        Append (Buf, Ind & "Expect_Kind (P, "
+                          & Scalar_Kind (To_String (E.Name)) & ", """
+                          & Core_Desc (To_String (E.Name)) & """);");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & Dst
+                          & Ada_Ident (To_String (E.Name)) & " := "
+                          & Scalar_Parse (To_String (E.Name)) & "; P.Pos := P.Pos + 1;");
+                        Append (Buf, LF);
+                     else
+                        Append (Buf, Ind & Dst
+                          & Ada_Ident (To_String (E.Name)) & " := Parse_"
+                          & Ada_Ident (To_String (E.Name)) & " (P);");
+                        Append (Buf, LF);
+                     end if;
+                  when Group =>
+                     Emit_Seq (E.Items, 1, Natural (E.Items.Length), Dst, Buf,
+                               Ind & "   ");
+                  when Alt =>
+                     null;
+               end case;
+            end;
+         end loop;
+      end Emit_Seq;
+
+      procedure Emit_Rule_Decl (Idx : Natural; Buf : in out U) is
+         R        : constant Rule := Rules (Idx);
+         P        : constant Element_Vectors.Vector := R.Pattern;
+         TN       : constant String := Ada_Ident (To_String (R.Name)) & "_Type";
+         Delegate : constant Boolean :=
+           Natural (P.Length) = 1 and then P (1).Kind = ASTBNF.Name
+             and then P (1).Min = 1 and then P (1).Max = 1
+             and then not Is_Core (To_String (P (1).Name));
+      begin
+         if not Delegate then
+            Append (Buf, "   R : " & TN & ";");
+            Append (Buf, LF);
+         end if;
+      end Emit_Rule_Decl;
+
+      procedure Emit_Rule_Parser (Idx : Natural; Buf : in out U) is
+         R  : constant Rule := Rules (Idx);
+         P  : constant Element_Vectors.Vector := R.Pattern;
+         NM : constant String := To_String (R.Name);
+         TN : constant String := Ada_Ident (NM) & "_Type";
+         Is_List : constant Boolean := Natural (P.Length) = 1
+           and then (P (1).Min /= 1 or else P (1).Max /= 1);
+         Is_Enum : constant Boolean := not Is_List and then Has_Alt (P)
+           and then not Has_Name (P);
+      begin
+         if Is_List then
+            declare
+               E    : constant Element_Access := P (1);
+               Elem : constant String :=
+                 (if E.Kind = ASTBNF.Name
+                  then Ada_Type_Of (To_String (E.Name))
+                  else Ada_Ident (NM) & "_Entry");
+            begin
+               if E.Kind = Name then
+                  declare
+                     SK : constant String := Start_Kind (To_String (E.Name));
+                  begin
+                     if SK /= "" then
+                        Append (Buf, "      while P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = "
+                          & SK & " loop");
+                     else
+                        Append (Buf, "      while P.Pos <= Natural (P.Toks.Length) loop");
+                     end if;
+                  end;
+                  Append (Buf, LF);
+                  Append (Buf, "         R.Append (Parse_"
+                    & Ada_Ident (To_String (E.Name)) & " (P));");
+                  Append (Buf, LF);
+                  Append (Buf, "      end loop;");
+                  Append (Buf, LF);
+               elsif E.Kind = Group then
+                  declare
+                     Firsts : String_Vectors.Vector;
+                     St     : Natural := 1;
+                  begin
+                     for K in 1 .. Natural (E.Items.Length) + 1 loop
+                        if K > Natural (E.Items.Length)
+                          or else E.Items (K).Kind = Alt
+                        then
+                           if St <= K - 1 and then E.Items (St).Kind = Literal then
+                              Firsts.Append (E.Items (St).Lit);
+                           end if;
+                           St := K + 1;
+                        end if;
+                     end loop;
+                     Append (Buf, "      while P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = Atom");
+                     Append (Buf, LF);
+                     Append (Buf, "        and then (");
+                     for I in 1 .. Natural (Firsts.Length) loop
+                        if I > 1 then
+                           Append (Buf, " or else ");
+                        end if;
+                        Append (Buf, "To_String (P.Toks (P.Pos).Text) = """
+                          & To_String (Firsts (I)) & """");
+                     end loop;
+                     Append (Buf, ") loop");
+                     Append (Buf, LF);
+                     Append (Buf, "         declare");
+                     Append (Buf, LF);
+                     Append (Buf, "            E : " & Elem & ";");
+                     Append (Buf, LF);
+                     Append (Buf, "         begin");
+                     Append (Buf, LF);
+                     St := 1;
+                     declare
+                        Branch : Natural := 0;
+                     begin
+                        for K in 1 .. Natural (E.Items.Length) + 1 loop
+                           if K > Natural (E.Items.Length)
+                             or else E.Items (K).Kind = Alt
+                           then
+                              if St <= K - 1 and then E.Items (St).Kind = Literal then
+                                 if Branch = 0 then
+                                    Append (Buf, "            if To_String (P.Toks (P.Pos).Text) = """
+                                      & To_String (E.Items (St).Lit) & """ then");
+                                 else
+                                    Append (Buf, "            elsif To_String (P.Toks (P.Pos).Text) = """
+                                      & To_String (E.Items (St).Lit) & """ then");
+                                 end if;
+                                 Append (Buf, LF);
+                                 Append (Buf, "               P.Pos := P.Pos + 1;");
+                                 Append (Buf, LF);
+                                 Emit_Seq (E.Items, St + 1, K - 1, "E.", Buf,
+                                           "               ");
+                                 Branch := Branch + 1;
+                              end if;
+                              St := K + 1;
+                           end if;
+                        end loop;
+                     end;
+                     Append (Buf, "            end if;");
+                     Append (Buf, LF);
+                     Append (Buf, "            R.Append (E);");
+                     Append (Buf, LF);
+                     Append (Buf, "         end;");
+                     Append (Buf, LF);
+                     Append (Buf, "      end loop;");
+                     Append (Buf, LF);
+                  end;
+               end if;
+               Append (Buf, "      return R;");
+               Append (Buf, LF);
+            end;
+         elsif Is_Enum then
+            Append (Buf, "      Expect_Kind (P, Atom, ""a " & TN & """);");
+            Append (Buf, LF);
+            declare
+               St     : Natural := 1;
+               Branch : Natural := 0;
+            begin
+               for K in 1 .. Natural (P.Length) + 1 loop
+                  if K > Natural (P.Length) or else P (K).Kind = Alt then
+                     if St <= K - 1 and then P (St).Kind = Literal then
+                        if Branch = 0 then
+                           Append (Buf, "      if To_String (P.Toks (P.Pos).Text) = """
+                             & To_String (P (St).Lit) & """ then R := "
+                             & Ada_Ident (NM) & "_" & Ada_Ident (To_String (P (St).Lit)) & ";");
+                        else
+                           Append (Buf, "      elsif To_String (P.Toks (P.Pos).Text) = """
+                             & To_String (P (St).Lit) & """ then R := "
+                             & Ada_Ident (NM) & "_" & Ada_Ident (To_String (P (St).Lit)) & ";");
+                        end if;
+                        Append (Buf, LF);
+                        Branch := Branch + 1;
+                     end if;
+                     St := K + 1;
+                  end if;
+               end loop;
+            end;
+            Append (Buf, "      else Fail (P, ""`");
+            declare
+               St    : Natural := 1;
+               First : Boolean := True;
+            begin
+               for K in 1 .. Natural (P.Length) + 1 loop
+                  if K > Natural (P.Length) or else P (K).Kind = Alt then
+                     if St <= K - 1 and then P (St).Kind = Literal then
+                        if not First then
+                           Append (Buf, " or ");
+                        end if;
+                        Append (Buf, "`" & To_String (P (St).Lit) & "`");
+                        First := False;
+                     end if;
+                     St := K + 1;
+                  end if;
+               end loop;
+            end;
+            Append (Buf, """); end if;");
+            Append (Buf, LF);
+            Append (Buf, "      P.Pos := P.Pos + 1;");
+            Append (Buf, LF);
+            Append (Buf, "      return R;");
+            Append (Buf, LF);
+         elsif Natural (P.Length) = 1 and then P (1).Kind = Name then
+            if Is_Core (To_String (P (1).Name)) then
+               Append (Buf, "      Expect_Kind (P, "
+                 & Scalar_Kind (To_String (P (1).Name)) & ", """
+                 & Core_Desc (To_String (P (1).Name)) & """);");
+               Append (Buf, LF);
+               Append (Buf, "      R := " & Scalar_Parse (To_String (P (1).Name))
+                 & "; P.Pos := P.Pos + 1;");
+               Append (Buf, LF);
+               Append (Buf, "      return R;");
+               Append (Buf, LF);
+            else
+               Append (Buf, "      return Parse_"
+                 & Ada_Ident (To_String (P (1).Name)) & " (P);");
+               Append (Buf, LF);
+            end if;
+         else
+            Emit_Seq (P, 1, Natural (P.Length), "R.", Buf);
+            Append (Buf, "      return R;");
+            Append (Buf, LF);
+         end if;
+      end Emit_Rule_Parser;
+
+      Spec  : U;
+      Bdy  : U;
    begin
-      return "";
+      --  Package specification: token types, the exception, Parse_Config.
+      Append (Spec, "--  generated by astbnf -- do not edit");
+      Append (Spec, LF);
+      Append (Spec, "with Ada.Containers.Vectors;");
+      Append (Spec, LF);
+      Append (Spec, "with Ada.Strings.Unbounded;");
+      Append (Spec, LF);
+      Append (Spec, "with " & Package_Name & ";");
+      Append (Spec, LF);
+      Append (Spec, LF);
+      Append (Spec, "package " & Package_Name & ".Parser is");
+      Append (Spec, LF);
+      Append (Spec, LF);
+      Append (Spec, "   use Ada.Strings.Unbounded;");
+      Append (Spec, LF);
+      Append (Spec, LF);
+      Append (Spec, "   type Token_Kind is (Atom, Str, Int, Dec, Punct, Eof);");
+      Append (Spec, LF);
+      Append (Spec, "   type Token is record");
+      Append (Spec, LF);
+      Append (Spec, "      Kind : Token_Kind;");
+      Append (Spec, LF);
+      Append (Spec, "      Text : Unbounded_String;");
+      Append (Spec, LF);
+      Append (Spec, "      Line : Natural;");
+      Append (Spec, LF);
+      Append (Spec, "      Col  : Natural;");
+      Append (Spec, LF);
+      Append (Spec, "   end record;");
+      Append (Spec, LF);
+      Append (Spec, "   package Token_Vectors is new Ada.Containers.Vectors (Positive, Token);");
+      Append (Spec, LF);
+      Append (Spec, "   package Line_Vectors is new Ada.Containers.Vectors (Positive, Unbounded_String);");
+      Append (Spec, LF);
+      Append (Spec, LF);
+      Append (Spec, "   Parse_Error : exception;");
+      Append (Spec, LF);
+      Append (Spec, LF);
+      Append (Spec, "   function Parse_Config");
+      Append (Spec, LF);
+      Append (Spec, "     (Toks  : Token_Vectors.Vector;");
+      Append (Spec, LF);
+      Append (Spec, "      Lines : Line_Vectors.Vector) return " & Ret_Type (1) & ";");
+      Append (Spec, LF);
+      Append (Spec, LF);
+      Append (Spec, "end " & Package_Name & ".Parser;");
+      Append (Spec, LF);
+
+      --  Package body: the recursive-descent parser.
+      Append (Bdy, "with Interfaces;");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+      Append (Bdy, "package body " & Package_Name & ".Parser is");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+      Append (Bdy, "   use Ada.Strings.Unbounded;");
+      Append (Bdy, LF);
+      Append (Bdy, "   use Interfaces;");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+      Append (Bdy, "   type Parser is record");
+      Append (Bdy, LF);
+      Append (Bdy, "      Toks  : Token_Vectors.Vector;");
+      Append (Bdy, LF);
+      Append (Bdy, "      Lines : Line_Vectors.Vector;");
+      Append (Bdy, LF);
+      Append (Bdy, "      Pos   : Natural := 1;");
+      Append (Bdy, LF);
+      Append (Bdy, "   end record;");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+      Append (Bdy, "   Spaces : constant String :=");
+      Append (Bdy, LF);
+      Append (Bdy, "     ""                                                                "";");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+      Append (Bdy, "   function Found (P : Parser) return String is");
+      Append (Bdy, LF);
+      Append (Bdy, "   begin");
+      Append (Bdy, LF);
+      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length) then");
+      Append (Bdy, LF);
+      Append (Bdy, "         return To_String (P.Toks (P.Pos).Text);");
+      Append (Bdy, LF);
+      Append (Bdy, "      end if;");
+      Append (Bdy, LF);
+      Append (Bdy, "      return ""end of input"";");
+      Append (Bdy, LF);
+      Append (Bdy, "   end Found;");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+      Append (Bdy, "   procedure Fail (P : Parser; Expected : String) is");
+      Append (Bdy, LF);
+      Append (Bdy, "      L : Natural := 0;");
+      Append (Bdy, LF);
+      Append (Bdy, "      C : Natural := 0;");
+      Append (Bdy, LF);
+      Append (Bdy, "      Msg : Unbounded_String;");
+      Append (Bdy, LF);
+      Append (Bdy, "   begin");
+      Append (Bdy, LF);
+      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length) then");
+      Append (Bdy, LF);
+      Append (Bdy, "         L := P.Toks (P.Pos).Line;");
+      Append (Bdy, LF);
+      Append (Bdy, "         C := P.Toks (P.Pos).Col;");
+      Append (Bdy, LF);
+      Append (Bdy, "      end if;");
+      Append (Bdy, LF);
+      Append (Bdy, "      Append (Msg, ""expected "" & Expected & "", found "" & Found (P));");
+      Append (Bdy, LF);
+      Append (Bdy, "      if L >= 1 and then L <= Natural (P.Lines.Length) then");
+      Append (Bdy, LF);
+      Append (Bdy, "         declare");
+      Append (Bdy, LF);
+      Append (Bdy, "            W   : constant Natural := (if C > 1 then C - 1 else 0);");
+      Append (Bdy, LF);
+      Append (Bdy, "            Pad : constant String :=");
+      Append (Bdy, LF);
+      Append (Bdy, "              (if W <= Spaces'Length then Spaces (1 .. W) else Spaces);");
+      Append (Bdy, LF);
+      Append (Bdy, "         begin");
+      Append (Bdy, LF);
+      Append (Bdy, "            Append (Msg, ASCII.LF & ""  "" & To_String (P.Lines (L))");
+      Append (Bdy, LF);
+      Append (Bdy, "              & ASCII.LF & ""  "" & Pad & ""^"");");
+      Append (Bdy, LF);
+      Append (Bdy, "         end;");
+      Append (Bdy, LF);
+      Append (Bdy, "      end if;");
+      Append (Bdy, LF);
+      Append (Bdy, "      raise Parse_Error with To_String (Msg);");
+      Append (Bdy, LF);
+      Append (Bdy, "   end Fail;");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+      Append (Bdy, "   procedure Expect_Lit (P : in out Parser; Lit : String) is");
+      Append (Bdy, LF);
+      Append (Bdy, "   begin");
+      Append (Bdy, LF);
+      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length)");
+      Append (Bdy, LF);
+      Append (Bdy, "        and then (P.Toks (P.Pos).Kind = Atom or else P.Toks (P.Pos).Kind = Punct)");
+      Append (Bdy, LF);
+      Append (Bdy, "        and then To_String (P.Toks (P.Pos).Text) = Lit");
+      Append (Bdy, LF);
+      Append (Bdy, "      then");
+      Append (Bdy, LF);
+      Append (Bdy, "         P.Pos := P.Pos + 1;");
+      Append (Bdy, LF);
+      Append (Bdy, "      else");
+      Append (Bdy, LF);
+      Append (Bdy, "         Fail (P, ""`"" & Lit & ""`"");");
+      Append (Bdy, LF);
+      Append (Bdy, "      end if;");
+      Append (Bdy, LF);
+      Append (Bdy, "   end Expect_Lit;");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+      Append (Bdy, "   procedure Expect_Kind (P : in out Parser; K : Token_Kind; Desc : String) is");
+      Append (Bdy, LF);
+      Append (Bdy, "   begin");
+      Append (Bdy, LF);
+      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = K then");
+      Append (Bdy, LF);
+      Append (Bdy, "         null;");
+      Append (Bdy, LF);
+      Append (Bdy, "      else");
+      Append (Bdy, LF);
+      Append (Bdy, "         Fail (P, Desc);");
+      Append (Bdy, LF);
+      Append (Bdy, "      end if;");
+      Append (Bdy, LF);
+      Append (Bdy, "   end Expect_Kind;");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+
+      --  Forward declarations: a rule may call any other, in any order.
+      for I in 1 .. N loop
+         Append (Bdy, "   function Parse_" & Ada_Ident (To_String (Rules (I).Name))
+           & " (P : in out Parser) return " & Ret_Type (I) & ";");
+         Append (Bdy, LF);
+      end loop;
+      Append (Bdy, LF);
+
+      for I in 1 .. N loop
+         Append (Bdy, "   function Parse_" & Ada_Ident (To_String (Rules (I).Name))
+           & " (P : in out Parser) return " & Ret_Type (I) & " is");
+         Append (Bdy, LF);
+         Emit_Rule_Decl (I, Bdy);
+         Append (Bdy, "   begin");
+         Append (Bdy, LF);
+         Emit_Rule_Parser (I, Bdy);
+         Append (Bdy, "   end Parse_" & Ada_Ident (To_String (Rules (I).Name)) & ";");
+         Append (Bdy, LF);
+         Append (Bdy, LF);
+      end loop;
+
+      Append (Bdy, "   function Parse_Config");
+      Append (Bdy, LF);
+      Append (Bdy, "     (Toks  : Token_Vectors.Vector;");
+      Append (Bdy, LF);
+      Append (Bdy, "      Lines : Line_Vectors.Vector) return " & Ret_Type (1) & " is");
+      Append (Bdy, LF);
+      Append (Bdy, "      P : Parser := (Toks => Toks, Lines => Lines, Pos => 1);");
+      Append (Bdy, LF);
+      Append (Bdy, "      R : " & Ret_Type (1) & ";");
+      Append (Bdy, LF);
+      Append (Bdy, "   begin");
+      Append (Bdy, LF);
+      Append (Bdy, "      R := Parse_" & Ada_Ident (To_String (Rules (1).Name)) & " (P);");
+      Append (Bdy, LF);
+      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind /= Eof then");
+      Append (Bdy, LF);
+      Append (Bdy, "         Fail (P, ""end of config"");");
+      Append (Bdy, LF);
+      Append (Bdy, "      end if;");
+      Append (Bdy, LF);
+      Append (Bdy, "      return R;");
+      Append (Bdy, LF);
+      Append (Bdy, "   end Parse_Config;");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+      Append (Bdy, "end " & Package_Name & ".Parser;");
+      Append (Bdy, LF);
+
+      return To_String (Spec) & LF & To_String (Bdy);
    end Emit_Parser;
 
 end ASTBNF_Ada;
