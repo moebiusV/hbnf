@@ -1,0 +1,27 @@
+; unwind.conf — OpenBSD unwind(8) configuration, as an ASTBNF schema.
+; Translated from sbin/unwind/parse.y.
+;
+; The lexer's keyword table maps three spellings ("dot", "DoT", "tls") onto
+; one DOT token; astbnf says the same thing with a plain alternation.
+
+config     = [ws] *( entry [ws] ) [ws]
+
+entry      = "include" str
+           / varset
+           / "preference" "{" [nl] *( prefopt nl ) [nl] "}"
+           / "forwarder" "{" [nl] *( forwarder nl ) [nl] "}"
+           / "block" "list" str ["log"]
+           / "force" ["accept" "bogus"] prefopt "{" [nl] *( str nl ) [nl] "}"
+
+varset     = str "=" 1*( str )                          ; macro: name = value…
+
+dot        = "dot" / "DoT" / "tls"    ; three spellings, one token
+
+prefopt    = dot
+           / "forwarder" / "oDoT-forwarder" / "recursor" / "autoconf"
+           / "dhcp" / "oDoT-autoconf" / "oDoT-dhcp" / "stub"
+
+forwarder  = str ["port" int] ["authentication" "name" str] [dot]
+
+nl         = "\n"
+ws         = 1*( nl / comment )

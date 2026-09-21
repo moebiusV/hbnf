@@ -1,0 +1,19 @@
+; dhcpleased.conf — OpenBSD dhcpleased(8) configuration, as an ASTBNF schema.
+; Translated from sbin/dhcpleased/parse.y.
+
+config     = [ws] *( entry [ws] ) [ws]
+
+entry      = varset
+           / "interface" str "{" [nl] *( ifaceopt nl ) [nl] "}"
+
+varset     = str "=" 1*( str )                          ; macro: name = value…
+
+ifaceopt   = "send" ( "vendor" "class" "id" str
+                    / "client" "id" str
+                    / "host" "name" str
+                    / "no" "host" "name" )
+           / "ignore" ( "routes" / "dns" / str )
+           / "prefer" "ipv6"
+
+nl         = "\n"
+ws         = 1*( nl / comment )

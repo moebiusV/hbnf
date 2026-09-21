@@ -1,0 +1,31 @@
+; ntpd.conf — OpenBSD ntpd(8) configuration, as an ASTBNF schema.
+; Translated from usr.sbin/ntpd/parse.y: keyword tokens become quoted
+; literals, STRING/NUMBER become str/int, the `_l` list rules collapse to
+; *(…), and the { actions } (DNS resolution, TAILQ bookkeeping) are implicit
+; — the binder builds the tree.
+;
+; Whitespace: horizontal spaces/tabs are skipped by the lexer and never
+; appear here.  `nl` is a newline — it distinguishes lines.  A comment at
+; end-of-line is trailing (attached to that entry); a comment on its own
+; line is leading (attached to the next entry).
+
+config     = [ws] *( entry [ws] ) [ws]
+
+entry      = "listen" "on" address [rtable]
+           / "query" "from" str
+           / "servers" address *( weight / trusted )
+           / "server" address *( weight / trusted )
+           / "constraints" "from" str
+           / "constraint" "from" 1*( str )
+           / "sensor" str *( correction / refid / stratum / weight / trusted )
+
+address    = str                       ; hostname or IP — resolved later
+rtable     = "rtable" int
+weight     = "weight" int
+trusted    = "trusted"
+correction = "correction" int
+refid      = "refid" str
+stratum    = "stratum" int
+
+nl         = "\n"
+ws         = 1*( nl / comment )       ; entry separator: newline and/or comment
