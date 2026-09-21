@@ -507,8 +507,10 @@ package body ASTBNF_C is
    begin
       if Name = "str" then
          return "TOK_STR";
-      elsif Name = "int" or else Name = "dec" or else Name = "float" then
-         return (if Name = "int" then "TOK_INT" else "TOK_DEC");
+      elsif Name = "int" then
+         return "TOK_INT";
+      elsif Name = "dec" or else Name = "float" then
+         return "TOK_DEC";
       elsif Name'Length >= 2 then
          declare
             P : constant Character := Name (Name'First);
@@ -524,21 +526,33 @@ package body ASTBNF_C is
       return "TOK_ATOM";  --  atom / word / bool / flag
    end Scalar_Tok_Kind;
 
-   --  The C expression that converts the token at *p into a core value.
+   --  A human-readable description of a core scalar (for error messages).
+   function Core_Desc (Name : String) return String is
+   begin
+      if Name = "str" or else Name = "atom" or else Name = "word" then
+         return "a string";
+      elsif Name = "bool" or else Name = "flag" then
+         return "yes or no";
+      else
+         return "a number";  --  int / dec / float / uN / iN
+      end if;
+   end Core_Desc;
+
+   --  The C expression that converts the token at p->pos into a core value.
    function Scalar_Parse_Expr (Name : String) return String is
    begin
       if Name = "str" or else Name = "atom" or else Name = "word" then
-         return "strdup(toks[*p].text)";
+         return "strdup(p->toks[p->pos].text)";
       elsif Name = "int" then
-         return "atoll(toks[*p].text)";
+         return "atoll(p->toks[p->pos].text)";
       elsif Name = "dec" then
-         return "atof(toks[*p].text)";
+         return "atof(p->toks[p->pos].text)";
       elsif Name = "float" then
-         return "(float)atof(toks[*p].text)";
+         return "(float)atof(p->toks[p->pos].text)";
       elsif Name = "bool" or else Name = "flag" then
-         return "(strcmp(toks[*p].text,""yes"")==0 "
-           & "|| strcmp(toks[*p].text,""on"")==0 "
-           & "|| strcmp(toks[*p].text,""true"")==0)";
+         return "(strcmp(p->toks[p->pos].text,""yes"")==0 "
+           & "|| strcmp(p->toks[p->pos].text,""on"")==0 "
+           & "|| strcmp(p->toks[p->pos].text,""true"")==0)";
       elsif Name'Length >= 2 then
          declare
             P : constant Character := Name (Name'First);
@@ -548,14 +562,16 @@ package body ASTBNF_C is
               and then (for all C of R => C in '0' .. '9')
             then
                if P = 'u' then
-                  return "(uint" & R & "_t)strtoull(toks[*p].text, NULL, 10)";
+                  return "(uint" & R
+                    & "_t)strtoull(p->toks[p->pos].text, NULL, 10)";
                else
-                  return "(int" & R & "_t)strtoll(toks[*p].text, NULL, 10)";
+                  return "(int" & R
+                    & "_t)strtoll(p->toks[p->pos].text, NULL, 10)";
                end if;
             end if;
          end;
       end if;
-      return "strdup(toks[*p].text)";
+      return "strdup(p->toks[p->pos].text)";
    end Scalar_Parse_Expr;
 
    function Emit_Parser (Rules : Rule_Vectors.Vector) return String is
@@ -575,8 +591,41 @@ package body ASTBNF_C is
       function Is_Core (Name : String) return Boolean is
         (Scalar_C_Type (Name) /= "");
 
-      --  The token kind that begins a parse of rule `Rule_Name` (resolving a
-      --  scalar alias to its core type), or "" if unknown.
+      function Has_Alt (Els : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of Els loop
+            if E.Kind = Alt then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Alt;
+
+      function Has_Name (Els : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of Els loop
+            if E.Kind = Name then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Name;
+
+      --  The out-parameter type of parse_<rule>: a list hands back a head
+      --  pointer (`X_t **`), anything else a by-value struct/scalar (`X_t *`).
+      function Out_Type (Idx : Natural) return String is
+         R : constant Rule := Rules (Idx);
+         P : constant Element_Vectors.Vector := R.Pattern;
+      begin
+         if Natural (P.Length) = 1
+           and then (P (1).Min /= 1 or else P (1).Max /= 1)
+         then
+            return C_Name (To_String (R.Name)) & "_t **";
+         end if;
+         return C_Name (To_String (R.Name)) & "_t *";
+      end Out_Type;
+
+      --  The token kind that begins a parse of `Rule_Name`, or "" if unknown.
       function Start_Kind (Rule_Name : String) return String is
          J : constant Natural := Find (Rule_Name);
       begin
@@ -595,44 +644,8 @@ package body ASTBNF_C is
          return "";
       end Start_Kind;
 
-      --  Does Els contain a '/' alternation?  (any Alt element)
-      function Has_Alt (Els : Element_Vectors.Vector) return Boolean is
-      begin
-         for E of Els loop
-            if E.Kind = Alt then
-               return True;
-            end if;
-         end loop;
-         return False;
-      end Has_Alt;
-
-      --  Does Els contain a rule reference?  (any Name element)
-      function Has_Name (Els : Element_Vectors.Vector) return Boolean is
-      begin
-         for E of Els loop
-            if E.Kind = Name then
-               return True;
-            end if;
-         end loop;
-         return False;
-      end Has_Name;
-
-      --  The return type of parse_<rule>: a list is a head pointer, anything
-      --  else is a by-value struct/scalar/enum typedef.
-      function Return_Type (Idx : Natural) return String is
-         R : constant Rule := Rules (Idx);
-         P : constant Element_Vectors.Vector := R.Pattern;
-      begin
-         if Natural (P.Length) = 1
-           and then (P (1).Min /= 1 or else P (1).Max /= 1)
-         then
-            return C_Name (To_String (R.Name)) & "_t *";
-         end if;
-         return C_Name (To_String (R.Name)) & "_t";
-      end Return_Type;
-
-      --  Emit matching + building for segment Els(First..Last), assigning
-      --  fields through the accessor Acc ("r." or "nn->").
+      --  Emit matching + building for segment Els(First..Last), writing fields
+      --  through the accessor Acc ("r." or "nn->").  On failure returns false.
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural; Acc : String;
          Buf  : in out U; Ind : String := "    ") is
@@ -643,21 +656,25 @@ package body ASTBNF_C is
             begin
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & "if (tok_lit(&toks[*p], """
-                       & To_String (E.Lit) & """)) (*p)++;");
+                     Append (Buf, Ind & "if (!expect_lit(p, """
+                       & To_String (E.Lit) & """)) return false;");
                      Append (Buf, LF);
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
+                        Append (Buf, Ind & "if (!expect_kind(p, "
+                          & Scalar_Tok_Kind (To_String (E.Name)) & ", """
+                          & Core_Desc (To_String (E.Name)) & """)) return false;");
+                        Append (Buf, LF);
                         Append (Buf, Ind & Acc
                           & C_Field (To_String (E.Name)) & " = "
-                          & Scalar_Parse_Expr (To_String (E.Name))
-                          & "; (*p)++;");
+                          & Scalar_Parse_Expr (To_String (E.Name)) & "; p->pos++;");
+                        Append (Buf, LF);
                      else
-                        Append (Buf, Ind & Acc
-                          & C_Field (To_String (E.Name)) & " = parse_"
-                          & C_Name (To_String (E.Name)) & "(toks, n, p);");
+                        Append (Buf, Ind & "if (!parse_"
+                          & C_Name (To_String (E.Name)) & "(p, &" & Acc
+                          & C_Field (To_String (E.Name)) & ")) return false;");
+                        Append (Buf, LF);
                      end if;
-                     Append (Buf, LF);
                   when Group =>
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Acc, Buf,
                                Ind & "    ");
@@ -689,29 +706,26 @@ package body ASTBNF_C is
                      SK : constant String := Start_Kind (To_String (E.Name));
                   begin
                      if SK /= "" then
-                        Append (Buf, "    while (toks[*p].kind == "
+                        Append (Buf, "    while (p->pos < p->n && p->toks[p->pos].kind == "
                           & SK & ") {");
                      else
-                        Append (Buf, "    while (toks[*p].kind != TOK_EOF) {");
+                        Append (Buf, "    while (p->pos < p->n) {");
                      end if;
                   end;
                   Append (Buf, LF);
                   Append (Buf, "        " & CN & "_t *nn ="
                     & " calloc(1, sizeof(*nn));");
                   Append (Buf, LF);
-                  Append (Buf, "        nn->" & C_Field (To_String (E.Name))
-                    & " = parse_" & C_Name (To_String (E.Name))
-                    & "(toks, n, p);");
+                  Append (Buf, "        if (!parse_" & C_Name (To_String (E.Name))
+                    & "(p, &nn->" & C_Field (To_String (E.Name)) & ")) { free(nn); return false; }");
                   Append (Buf, LF);
                   Append (Buf, "        *tail = nn; tail = &nn->next;");
                   Append (Buf, LF);
                   Append (Buf, "    }");
                   Append (Buf, LF);
-                  Append (Buf, "    return head;");
+                  Append (Buf, "    *out = head; return true;");
                   Append (Buf, LF);
                elsif E.Kind = Group then
-                  --  An alternation group: peek the first literal of each
-                  --  alternative, then parse that alternative in full.
                   declare
                      Firsts : String_Vectors.Vector;
                      St     : Natural := 1;
@@ -729,12 +743,12 @@ package body ASTBNF_C is
                         end if;
                      end loop;
 
-                     Append (Buf, "    while (toks[*p].kind == TOK_ATOM && (");
+                     Append (Buf, "    while (p->pos < p->n && p->toks[p->pos].kind == TOK_ATOM && (");
                      for I in 1 .. Natural (Firsts.Length) loop
                         if I > 1 then
                            Append (Buf, " || ");
                         end if;
-                        Append (Buf, "strcmp(toks[*p].text, """
+                        Append (Buf, "strcmp(p->toks[p->pos].text, """
                           & To_String (Firsts (I)) & """)==0");
                      end loop;
                      Append (Buf, ")) {");
@@ -755,18 +769,18 @@ package body ASTBNF_C is
                                 and then E.Items (St).Kind = Literal
                               then
                                  if Branch = 0 then
-                                    Append (Buf, "        if (strcmp(toks[*p].text, "
+                                    Append (Buf, "        if (strcmp(p->toks[p->pos].text, "
                                       & '"' & To_String (E.Items (St).Lit)
                                       & '"' & ")==0) {");
                                  else
-                                    Append (Buf, "        } else if (strcmp(toks[*p].text, "
+                                    Append (Buf, "        } else if (strcmp(p->toks[p->pos].text, "
                                       & '"' & To_String (E.Items (St).Lit)
                                       & '"' & ")==0) {");
                                  end if;
-                                 Append (Buf, " (*p)++;");
+                                 Append (Buf, " p->pos++;");
                                  Append (Buf, LF);
                                  Emit_Seq (E.Items, St + 1, K - 1, "nn->",
-                                           Buf, "        ");
+                                           Buf, "            ");
                                  Branch := Branch + 1;
                               end if;
                               St := K + 1;
@@ -779,20 +793,22 @@ package body ASTBNF_C is
                      Append (Buf, LF);
                      Append (Buf, "    }");
                      Append (Buf, LF);
-                     Append (Buf, "    return head;");
+                     Append (Buf, "    *out = head; return true;");
                      Append (Buf, LF);
                   end;
                else
-                  Append (Buf, "    return head;");
+                  Append (Buf, "    *out = NULL; return true;");
                   Append (Buf, LF);
                end if;
             end;
          elsif Is_Enum then
-            --  A literal alternation: read one atom and pick a constant.
-            Append (Buf, "    " & CN & "_t r = " & C_Ident (NM) & "_"
-              & C_Ident (To_String (P (1).Lit)) & ";");
+            Append (Buf, "    if (!expect_kind(p, TOK_ATOM, ""a "
+              & CN & """)) return false;");
             Append (Buf, LF);
-            Append (Buf, "    if (toks[*p].kind == TOK_ATOM) {");
+            Append (Buf, "    {");
+            Append (Buf, LF);
+            Append (Buf, "        " & CN & "_t r = " & C_Ident (NM) & "_"
+              & C_Ident (To_String (P (1).Lit)) & ";");
             Append (Buf, LF);
             declare
                St     : Natural := 1;
@@ -802,10 +818,10 @@ package body ASTBNF_C is
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
                      if St <= K - 1 and then P (St).Kind = Literal then
                         if Branch = 0 then
-                           Append (Buf, "        if (strcmp(toks[*p].text, """
-                             & To_String (P (St).Lit) & """)==0)");
+                           Append (Buf, "        if (strcmp(p->toks[p->pos].text, "
+                             & '"' & To_String (P (St).Lit) & '"' & ")==0)");
                         else
-                           Append (Buf, "        else if (strcmp(toks[*p].text, "
+                           Append (Buf, "        else if (strcmp(p->toks[p->pos].text, "
                              & '"' & To_String (P (St).Lit) & '"' & ")==0)");
                         end if;
                         Append (Buf, " r = " & C_Ident (NM) & "_"
@@ -817,33 +833,53 @@ package body ASTBNF_C is
                   end if;
                end loop;
             end;
-            Append (Buf, "        (*p)++;");
+            Append (Buf, "        else { fail(p, ""`");
+            declare
+               St     : Natural := 1;
+               First  : Boolean := True;
+            begin
+               for K in 1 .. Natural (P.Length) + 1 loop
+                  if K > Natural (P.Length) or else P (K).Kind = Alt then
+                     if St <= K - 1 and then P (St).Kind = Literal then
+                        if not First then
+                           Append (Buf, " or ");
+                        end if;
+                        Append (Buf, "`" & To_String (P (St).Lit) & "`");
+                        First := False;
+                     end if;
+                     St := K + 1;
+                  end if;
+               end loop;
+            end;
+            Append (Buf, """, p->toks[p->pos].text); return false; }");
+            Append (Buf, LF);
+            Append (Buf, "        p->pos++; *out = r; return true;");
             Append (Buf, LF);
             Append (Buf, "    }");
-            Append (Buf, LF);
-            Append (Buf, "    return r;");
             Append (Buf, LF);
          elsif Natural (P.Length) = 1 and then P (1).Kind = Name then
             --  A scalar alias: read a core token, or delegate to the rule.
             if Is_Core (To_String (P (1).Name)) then
-               Append (Buf, "    " & Return_Type (Idx) & " r = "
-                 & Scalar_Parse_Expr (To_String (P (1).Name)) & ";");
+               Append (Buf, "    if (!expect_kind(p, "
+                 & Scalar_Tok_Kind (To_String (P (1).Name)) & ", """
+                 & Core_Desc (To_String (P (1).Name)) & """)) return false;");
                Append (Buf, LF);
-               Append (Buf, "    (*p)++;");
+               Append (Buf, "    *out = "
+                 & Scalar_Parse_Expr (To_String (P (1).Name)) & "; p->pos++;");
                Append (Buf, LF);
-               Append (Buf, "    return r;");
+               Append (Buf, "    return true;");
                Append (Buf, LF);
             else
-               Append (Buf, "    return parse_"
-                 & C_Name (To_String (P (1).Name)) & "(toks, n, p);");
+               Append (Buf, "    return parse_" & C_Name (To_String (P (1).Name))
+                 & "(p, out);");
                Append (Buf, LF);
             end if;
          else
             --  A struct: match literals and references in order.
-            Append (Buf, "    " & Return_Type (Idx) & " r = {0};");
+            Append (Buf, "    " & CN & "_t r = {0};");
             Append (Buf, LF);
             Emit_Seq (P, 1, Natural (P.Length), "r.", Buf);
-            Append (Buf, "    return r;");
+            Append (Buf, "    *out = r; return true;");
             Append (Buf, LF);
          end if;
       end Emit_Rule_Parser;
@@ -856,18 +892,74 @@ package body ASTBNF_C is
       Append (Res, LF);
       Append (Res, "#include <string.h>");
       Append (Res, LF);
+      Append (Res, "#include <stdio.h>");
+      Append (Res, LF);
       Append (Res, LF);
       Append (Res, "typedef enum { TOK_ATOM, TOK_STR, TOK_INT, TOK_DEC,"
         & " TOK_PUNCT, TOK_EOF } tok_kind_t;");
       Append (Res, LF);
-      Append (Res, "typedef struct { tok_kind_t kind; const char *text; }"
-        & " token_t;");
+      Append (Res, "typedef struct { tok_kind_t kind; const char *text;"
+        & " size_t line, col; } token_t;");
       Append (Res, LF);
       Append (Res, LF);
-      Append (Res, "static int tok_lit(const token_t *t, const char *s) {");
+      Append (Res, "typedef struct {");
       Append (Res, LF);
-      Append (Res, "    return (t->kind == TOK_ATOM || t->kind == TOK_PUNCT)"
-        & " && t->text && strcmp(t->text, s) == 0;");
+      Append (Res, "    const token_t *toks;");
+      Append (Res, LF);
+      Append (Res, "    size_t n, pos;");
+      Append (Res, LF);
+      Append (Res, "    size_t err_line, err_col;");
+      Append (Res, LF);
+      Append (Res, "    char err[256];");
+      Append (Res, LF);
+      Append (Res, "} parser_t;");
+      Append (Res, LF);
+      Append (Res, LF);
+      Append (Res, "static void fail(parser_t *p, const char *expected,"
+        & " const char *found) {");
+      Append (Res, LF);
+      Append (Res, "    if (p->err[0]) return;  /* first error wins */");
+      Append (Res, LF);
+      Append (Res, "    p->err_line = p->pos < p->n ? p->toks[p->pos].line : 0;");
+      Append (Res, LF);
+      Append (Res, "    p->err_col  = p->pos < p->n ? p->toks[p->pos].col  : 0;");
+      Append (Res, LF);
+      Append (Res, "    snprintf(p->err, sizeof p->err, ""expected %s, found %s"",");
+      Append (Res, LF);
+      Append (Res, "             expected, p->pos < p->n ? p->toks[p->pos].text"
+        & " : ""end of input"");");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, LF);
+      Append (Res, "static bool expect_lit(parser_t *p, const char *lit) {");
+      Append (Res, LF);
+      Append (Res, "    if (p->pos < p->n && (p->toks[p->pos].kind == TOK_ATOM"
+        & " || p->toks[p->pos].kind == TOK_PUNCT)");
+      Append (Res, LF);
+      Append (Res, "        && p->toks[p->pos].text && strcmp(p->toks[p->pos].text, lit) == 0) {");
+      Append (Res, LF);
+      Append (Res, "        p->pos++; return true;");
+      Append (Res, LF);
+      Append (Res, "    }");
+      Append (Res, LF);
+      Append (Res, "    { char want[64]; snprintf(want, sizeof want, ""`%s`"", lit);");
+      Append (Res, LF);
+      Append (Res, "      fail(p, want, p->pos < p->n ? p->toks[p->pos].text"
+        & " : ""end of input""); return false; }");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, LF);
+      Append (Res, "static bool expect_kind(parser_t *p, tok_kind_t k,"
+        & " const char *desc) {");
+      Append (Res, LF);
+      Append (Res, "    if (p->pos < p->n && p->toks[p->pos].kind == k) return true;");
+      Append (Res, LF);
+      Append (Res, "    fail(p, desc, p->pos < p->n ? p->toks[p->pos].text"
+        & " : ""end of input"");");
+      Append (Res, LF);
+      Append (Res, "    return false;");
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
@@ -875,9 +967,8 @@ package body ASTBNF_C is
 
       --  Forward declarations of every parse function.
       for I in 1 .. N loop
-         Append (Res, "static " & Return_Type (I)
-           & " parse_" & C_Name (To_String (Rules (I).Name))
-           & "(const token_t *toks, size_t n, size_t *p);");
+         Append (Res, "static bool parse_" & C_Name (To_String (Rules (I).Name))
+           & "(parser_t *p, " & Out_Type (I) & " out);");
          Append (Res, LF);
       end loop;
       Append (Res, LF);
@@ -886,9 +977,8 @@ package body ASTBNF_C is
          declare
             R : constant Rule := Rules (I);
          begin
-            Append (Res, "static " & Return_Type (I)
-              & " parse_" & C_Name (To_String (R.Name))
-              & "(const token_t *toks, size_t n, size_t *p) {");
+            Append (Res, "static bool parse_" & C_Name (To_String (R.Name))
+              & "(parser_t *p, " & Out_Type (I) & " out) {");
             Append (Res, LF);
             Emit_Rule_Parser (I, Res);
             Append (Res, "}");
@@ -896,6 +986,33 @@ package body ASTBNF_C is
             Append (Res, LF);
          end;
       end loop;
+
+      --  The entry point: parse the root rule, then reject trailing input.
+      Append (Res, "bool parse_config(const token_t *toks, size_t n, "
+        & C_Name (To_String (Rules (1).Name)) & "_t *out,");
+      Append (Res, LF);
+      Append (Res, "                  char *err, size_t errlen,"
+        & " size_t *err_line, size_t *err_col) {");
+      Append (Res, LF);
+      Append (Res, "    parser_t p = { toks, n, 0, 0, 0, {0} };");
+      Append (Res, LF);
+      Append (Res, "    if (!parse_" & C_Name (To_String (Rules (1).Name))
+        & "(&p, out)) goto err;");
+      Append (Res, LF);
+      Append (Res, "    if (p.pos < p.n) { fail(&p, ""end of config"", p.toks[p.pos].text); goto err; }");
+      Append (Res, LF);
+      Append (Res, "    return true;");
+      Append (Res, LF);
+      Append (Res, "err:");
+      Append (Res, LF);
+      Append (Res, "    snprintf(err, errlen, ""%s"", p.err);");
+      Append (Res, LF);
+      Append (Res, "    *err_line = p.err_line; *err_col = p.err_col;");
+      Append (Res, LF);
+      Append (Res, "    return false;");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
 
       return To_String (Res);
    end Emit_Parser;

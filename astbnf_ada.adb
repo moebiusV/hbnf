@@ -586,4 +586,11 @@ package body ASTBNF_Ada is
       return To_String (Res);
    end Emit;
 
+   function Emit_Parser
+     (Rules : ASTBNF.Rule_Vectors.Vector; Package_Name : String) return String
+   is
+   begin
+      return "";
+   end Emit_Parser;
+
 end ASTBNF_Ada;

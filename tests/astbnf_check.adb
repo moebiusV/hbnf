@@ -93,7 +93,8 @@ procedure ASTBNF_Check is
 
       Check ("C parser fn", Has (Parser_Text, "parse_server"));
       Check ("C parser link", Has (Parser_Text, "calloc"));
-      Check ("C parser tok", Has (Parser_Text, "tok_lit"));
+      Check ("C parser expect", Has (Parser_Text, "expect_lit"));
+      Check ("C parser err", Has (Parser_Text, "err_line"));
 
       Check ("Ada enum", Has (Ada_Text, "Direction_In"));
       Check ("Ada record", Has (Ada_Text, "type Server_Type is record"));
