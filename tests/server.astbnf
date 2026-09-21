@@ -1,0 +1,25 @@
+; server example — pure ABNF; types are built-in core rules (str, word, u16, ...)
+server    = name listen root redirects aliases tls
+
+; host name this server answers for
+name      = str
+
+; one listen socket (keyword on/port are match-and-skip)
+listen    = "on" iface "port" port
+
+iface     = word
+port      = u16
+root      = str
+
+; redirect one target to another, or to a group
+redirects = *( "to" dest / "to-group" group )
+
+dest      = str
+group     = word
+
+; extra names the server is known by
+aliases   = 1*alias
+
+alias     = str
+tls       = flag
+direction = "in" / "out"

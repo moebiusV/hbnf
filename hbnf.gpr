@@ -1,8 +1,7 @@
---  Standalone project for HBNF: an OpenBSD-style configuration parser.
---  Pure Ada, no C dependencies.  Built and gprinstalled as a static
---  library by the ada-on-alpine aport.
-
-with "astbnf";
+--  Standalone project for HBNF: an OpenBSD-style configuration parser plus
+--  the astbnf schema engine (parser, matcher/binder, C and Ada emitters)
+--  folded into one library.  Pure Ada, no C dependencies.  Built and
+--  gprinstalled as a static library by the ada-on-alpine aport.
 
 library project HBNF is
 

@@ -1,0 +1,20 @@
+; hbnf config grammar, as an ASTBNF schema over the token stream.
+;
+; Built-in core types (interpreted by the codegen, never part of the grammar):
+;   str   = a quoted c-string      atom  = a bare token (symbol or number)
+;   int / dec / float / bool / flag / u8..u64 / i8..i64 = typed atoms.
+;
+; hbnf AST nodes map to these rules: Directive -> statement, Block -> block.
+; Word -> atom, Str -> str, Int -> int, Dec -> dec.  An entry ends with ";"
+; (optional) and is separated from the next by `ws` — one or more newlines
+; and comments, which are whitespace exactly as hbnf's own parser treats them.
+
+config    = [ws] *( entry [semicolon] [ws] ) [ws]
+entry     = block / statement
+statement = name *arg
+block     = name [qualifier] "{" [ws] *( entry [semicolon] [ws] ) [ws] "}"
+name      = atom
+qualifier = str / atom
+arg       = atom / str / int / dec
+ws        = 1*( "\n" / comment )
+semicolon = ";"

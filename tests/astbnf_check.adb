@@ -1,0 +1,182 @@
+pragma Ada_2022;
+
+with Ada.Command_Line;
+with Ada.Strings.Unbounded;
+with Ada.Text_IO;
+with ASTBNF;
+use type ASTBNF.Element_Kind;
+with ASTBNF_Ada;
+with ASTBNF_C;
+with ASTBNF_Match;
+
+--  Check the parser and both emitters against two schema files passed on the
+--  command line.  Usage: astbnf_check <server.astbnf> <hbnf.astbnf>
+--  The first is the small server example, which drives the C/Ada emitters;
+--  the second is the hbnf config grammar, checked at the parse level (its
+--  entry/block rules are mutually recursive, which the declaration-only
+--  emitters reject as a cyclic reference).
+procedure ASTBNF_Check is
+
+   use Ada.Strings.Unbounded;
+
+   Failures : Natural := 0;
+   Checks   : Natural := 0;
+
+   procedure Check (Name : String; Cond : Boolean) is
+   begin
+      Checks := Checks + 1;
+      if Cond then
+         Ada.Text_IO.Put_Line ("ok: " & Name);
+      else
+         Failures := Failures + 1;
+         Ada.Text_IO.Put_Line ("FAIL: " & Name);
+      end if;
+   end Check;
+
+   function Has (Hay, Needle : String) return Boolean is
+   begin
+      if Needle'Length = 0 then
+         return True;
+      end if;
+      for I in Hay'First .. Hay'Last - Needle'Length + 1 loop
+         if Hay (I .. I + Needle'Length - 1) = Needle then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Has;
+
+   function Read_File (Path : String) return String is
+      F   : Ada.Text_IO.File_Type;
+      Buf : Unbounded_String;
+   begin
+      Ada.Text_IO.Open (F, Ada.Text_IO.In_File, Path);
+      while not Ada.Text_IO.End_Of_File (F) loop
+         Append (Buf, Ada.Text_IO.Get_Line (F));
+         if not Ada.Text_IO.End_Of_File (F) then
+            Append (Buf, ASCII.LF);
+         end if;
+      end loop;
+      Ada.Text_IO.Close (F);
+      return To_String (Buf);
+   end Read_File;
+
+   function Find_Rule
+     (Rules : ASTBNF.Rule_Vectors.Vector; Name : String) return Natural is
+   begin
+      for I in 1 .. Natural (Rules.Length) loop
+         if To_String (Rules (I).Name) = Name then
+            return I;
+         end if;
+      end loop;
+      return 0;
+   end Find_Rule;
+
+   procedure Check_Server (Path : String) is
+      Rules    : constant ASTBNF.Rule_Vectors.Vector :=
+        ASTBNF.Parse (Read_File (Path));
+      C_Text   : constant String := ASTBNF_C.Emit (Rules);
+      Ada_Text : constant String := ASTBNF_Ada.Emit (Rules, "Server_Schema");
+   begin
+      Check ("13 rules", Natural (Rules.Length) = 13);
+      Check ("first rule server", To_String (Rules (1).Name) = "server");
+
+      Check ("C enum", Has (C_Text, "DIRECTION_IN"));
+      Check ("C struct", Has (C_Text, "typedef struct"));
+      Check ("C scalar", Has (C_Text, "typedef const char * name_t;"));
+      Check ("C comment", Has (C_Text, "/* host name"));
+
+      Check ("Ada enum", Has (Ada_Text, "Direction_In"));
+      Check ("Ada record", Has (Ada_Text, "type Server_Type is record"));
+      Check ("Ada subtype",
+             Has (Ada_Text, "subtype Port_Type is Unsigned_16"));
+      Check ("Ada comment", Has (Ada_Text, "-- host name"));
+   end Check_Server;
+
+   procedure Check_Hbnf (Path : String) is
+      use ASTBNF_Match;
+      Rules : constant ASTBNF.Rule_Vectors.Vector :=
+        ASTBNF.Parse (Read_File (Path));
+      I     : Natural;
+   begin
+      Check ("hbnf 9 rules", Natural (Rules.Length) = 9);
+
+      --  entry = block / statement : block first, so a block's "{" wins.
+      I := Find_Rule (Rules, "entry");
+      Check ("entry is block/statement",
+             I /= 0 and then Natural (Rules (I).Pattern.Length) = 3
+               and then Rules (I).Pattern (2).Kind = ASTBNF.Alt
+               and then To_String (Rules (I).Pattern (1).Name) = "block"
+               and then To_String (Rules (I).Pattern (3).Name) = "statement");
+
+      --  statement = name *arg (the terminator is handled by `sep`).
+      I := Find_Rule (Rules, "statement");
+      Check ("statement is name *arg",
+             I /= 0 and then Natural (Rules (I).Pattern.Length) = 2
+               and then To_String (Rules (I).Pattern (1).Name) = "name"
+               and then Rules (I).Pattern (2).Min = 0
+               and then Rules (I).Pattern (2).Max = -1);
+
+      --  ws = 1*( "\n" / comment ) — newlines and comments are whitespace.
+      I := Find_Rule (Rules, "ws");
+      Check ("ws is newline/comment",
+             I /= 0 and then Natural (Rules (I).Pattern.Length) = 1
+               and then Rules (I).Pattern (1).Kind = ASTBNF.Group
+               and then Rules (I).Pattern (1).Min = 1
+               and then Rules (I).Pattern (1).Max = -1);
+
+      I := Find_Rule (Rules, "name");
+      Check ("name is an atom",
+             I /= 0 and then Natural (Rules (I).Pattern.Length) = 1
+               and then To_String (Rules (I).Pattern (1).Name) = "atom");
+
+      I := Find_Rule (Rules, "qualifier");
+      Check ("qualifier alternates str/atom",
+             I /= 0 and then Natural (Rules (I).Pattern.Length) = 3
+               and then Rules (I).Pattern (2).Kind = ASTBNF.Alt);
+
+      I := Find_Rule (Rules, "arg");
+      Check ("arg alternates atom/str/int/dec",
+             I /= 0 and then Natural (Rules (I).Pattern.Length) = 7);
+
+      --  semicolon = ";" — the entry terminator, captured so the binder can
+      --  set Semicolon_After.
+      I := Find_Rule (Rules, "semicolon");
+      Check ("semicolon is a literal ';'",
+             I /= 0 and then Natural (Rules (I).Pattern.Length) = 1
+               and then Rules (I).Pattern (1).Kind = ASTBNF.Literal
+               and then To_String (Rules (I).Pattern (1).Lit) = ";");
+
+      --  The matcher recognizes the schema against a token stream.
+      declare
+         T : Token_Vectors.Vector;
+      begin
+         T.Append (Token'(Atom, To_Unbounded_String ("listen")));
+         T.Append (Token'(Atom, To_Unbounded_String ("on")));
+         T.Append (Token'(Int, To_Unbounded_String ("443")));
+         T.Append (Token'(Newline, Null_Unbounded_String));
+         T.Append (Token'(Eof, Null_Unbounded_String));
+         Check ("matcher accepts a directive",
+                ASTBNF_Match.Match (Rules, T, "config"));
+
+         T.Clear;
+         T.Append (Token'(Punct, To_Unbounded_String ("}")));
+         T.Append (Token'(Eof, Null_Unbounded_String));
+         Check ("matcher rejects a stray brace",
+                not ASTBNF_Match.Match (Rules, T, "config"));
+      end;
+   end Check_Hbnf;
+
+begin
+   Check_Server (Ada.Command_Line.Argument (1));
+   Check_Hbnf (Ada.Command_Line.Argument (2));
+
+   Ada.Text_IO.Put_Line
+     ("checks: " & Natural'Image (Checks) &
+      ", failures: " & Natural'Image (Failures));
+   if Failures = 0 then
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+   else
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   end if;
+end ASTBNF_Check;
