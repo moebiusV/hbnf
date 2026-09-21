@@ -373,7 +373,19 @@ package body ASTBNF is
       V : Element_Vectors.Vector;
    begin
       Append_All (V, Parse_Pattern (P));
-      while Cur (P).Kind = T_Slash loop
+      loop
+         --  A newline before `/` is a continuation, not the end of the rule:
+         --  allow a multi-line alternation (`x = a` newline `/ b`).  Peek
+         --  past the newline run and commit only if the next token is `/`.
+         declare
+            Pos : Positive := P.Pos;
+         begin
+            while P.Toks (Pos).Kind = T_Newline loop
+               Pos := Pos + 1;
+            end loop;
+            exit when P.Toks (Pos).Kind /= T_Slash;
+            P.Pos := Pos;
+         end;
          Next (P);
          Element_Vectors.Append
            (V, new Element'(Kind => Alt, Min => 1, Max => 1));
