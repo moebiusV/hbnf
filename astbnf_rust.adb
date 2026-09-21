@@ -840,4 +840,73 @@ package body ASTBNF_Rust is
       return To_String (Res);
    end Emit_Parser;
 
+   function Emit_Lexer (Rules : ASTBNF.Rule_Vectors.Vector) return String is
+      Root_T : constant String := Rust_Type (To_String (Rules (1).Name));
+      B      : U;
+      procedure Put (S : String) is
+      begin
+         Append (B, S);
+         Append (B, LF);
+      end Put;
+   begin
+      Put ("fn lx_digit(c: u8) -> bool { c.is_ascii_digit() }");
+      Put ("fn lx_word_start(c: u8) -> bool { c.is_ascii_alphabetic() || c == b'_' || c == b'-' }");
+      Put ("fn lx_word_char(c: u8) -> bool { lx_word_start(c) || lx_digit(c) || c == b'.' }");
+      Put ("");
+      Put ("pub fn lex(text: &str) -> Vec<Token> {");
+      Put ("    let b = text.as_bytes();");
+      Put ("    let mut toks = Vec::new();");
+      Put ("    let mut i = 0usize; let mut line = 1usize; let mut col = 1usize;");
+      Put ("    while i < b.len() {");
+      Put ("        let c = b[i];");
+      Put ("        if c == b' ' || c == b'\t' || c == b'\r' { i += 1; col += 1; }");
+      Put ("        else if c == b'\n' { i += 1; line += 1; col = 1; }");
+      Put ("        else if c == b'#' { while i < b.len() && b[i] != b'\n' { i += 1; } }");
+      Put ("        else if c == b'""' {");
+      Put ("            let sc = col; let mut s = String::new();");
+      Put ("            i += 1; col += 1;");
+      Put ("            while i < b.len() && b[i] != b'""' {");
+      Put ("                if b[i] == b'\\' && i + 1 < b.len() { i += 1; col += 1; }");
+      Put ("                s.push(b[i] as char); i += 1; col += 1;");
+      Put ("            }");
+      Put ("            if i < b.len() && b[i] == b'""' { i += 1; col += 1; }");
+      Put ("            toks.push(Token { kind: Kind::Str, text: s, line, col: sc });");
+      Put ("        }");
+      Put ("        else if lx_digit(c) {");
+      Put ("            let s = i; let sc = col; let mut dec = false;");
+      Put ("            while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }");
+      Put ("            if i + 1 < b.len() && b[i] == b'.' && lx_digit(b[i + 1]) {");
+      Put ("                dec = true; i += 1; col += 1;");
+      Put ("                while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }");
+      Put ("            }");
+      Put ("            if i < b.len() && (b[i] == b'e' || b[i] == b'E') {");
+      Put ("                dec = true; i += 1; col += 1;");
+      Put ("                if i < b.len() && (b[i] == b'+' || b[i] == b'-') { i += 1; col += 1; }");
+      Put ("                while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }");
+      Put ("            }");
+      Put ("            toks.push(Token { kind: if dec { Kind::Dec } else { Kind::Int },");
+      Put ("                              text: text[s..i].to_string(), line, col: sc });");
+      Put ("        }");
+      Put ("        else if lx_word_start(c) {");
+      Put ("            let s = i; let sc = col;");
+      Put ("            while i < b.len() && lx_word_char(b[i]) { i += 1; col += 1; }");
+      Put ("            toks.push(Token { kind: Kind::Atom, text: text[s..i].to_string(), line, col: sc });");
+      Put ("        }");
+      Put ("        else {");
+      Put ("            toks.push(Token { kind: Kind::Punct, text: (c as char).to_string(), line, col });");
+      Put ("            i += 1; col += 1;");
+      Put ("        }");
+      Put ("    }");
+      Put ("    toks.push(Token { kind: Kind::Eof, text: String::new(), line, col });");
+      Put ("    toks");
+      Put ("}");
+      Put ("");
+      Put ("pub fn parse_text(text: &str) -> Result<" & Root_T & ", ParseError> {");
+      Put ("    let toks = lex(text);");
+      Put ("    let lines: Vec<&str> = text.split('\n').collect();");
+      Put ("    parse_config(&toks, &lines)");
+      Put ("}");
+      return To_String (B);
+   end Emit_Lexer;
+
 end ASTBNF_Rust;

@@ -16,4 +16,9 @@ package ASTBNF_Zig is
    --  builds the types `Emit` declares.
    function Emit_Parser (Rules : ASTBNF.Rule_Vectors.Vector) return String;
 
+   --  Emit the lexer half: a schema-independent scanner turning text into the
+   --  token slice `Emit_Parser` consumes (skipping whitespace and `#` comments),
+   --  plus a `parseText` convenience that lexes, splits lines and parses.
+   function Emit_Lexer (Rules : ASTBNF.Rule_Vectors.Vector) return String;
+
 end ASTBNF_Zig;

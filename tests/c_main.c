@@ -1,43 +1,26 @@
 #include <stdio.h>
 #include <string.h>
 
-/* server.c is the generated declarations + parser, concatenated. */
+/* server.c is the generated declarations + lexer + parser, concatenated. */
 #include "server.c"
 
-static const char *lines[] = {
-    "example.com",
-    "on wg0 port oops",
-    "/var/www",
-    "www",
-    "yes",
-};
+static const char *valid = "\"example.com\"\n"
+                           "on wg0 port 443\n"
+                           "\"/var/www\"\n"
+                           "\"www\"\n"
+                           "yes\n";
 
-static token_t malformed[] = {
-    { TOK_STR,  "example.com", 1, 1 },
-    { TOK_ATOM, "on", 2, 1 },
-    { TOK_ATOM, "wg0", 2, 4 },
-    { TOK_ATOM, "port", 2, 8 },
-    { TOK_ATOM, "oops", 2, 13 },
-    { TOK_EOF,  "", 5, 1 },
-};
+static const char *bad = "\"example.com\"\n"
+                         "on wg0 port oops\n"
+                         "\"/var/www\"\n"
+                         "\"www\"\n"
+                         "yes\n";
 
-static token_t valid[] = {
-    { TOK_STR,  "example.com", 1, 1 },
-    { TOK_ATOM, "on", 2, 1 },
-    { TOK_ATOM, "wg0", 2, 4 },
-    { TOK_ATOM, "port", 2, 8 },
-    { TOK_INT,  "443", 2, 13 },
-    { TOK_STR,  "/var/www", 3, 1 },
-    { TOK_STR,  "www", 4, 1 },
-    { TOK_ATOM, "yes", 5, 1 },
-    { TOK_EOF,  "", 5, 1 },
-};
-
-static void run(const char *what, token_t *toks, size_t n) {
+static void run(const char *what, const char *text) {
     server_t out = {0};
     char err[512];
     size_t line = 0, col = 0;
-    if (parse_config(toks, n, &out, lines, 5, err, sizeof err, &line, &col)) {
+    if (parse_text(text, &out, err, sizeof err, &line, &col)) {
         printf("== %s: OK (name=%s port=%u)\n", what,
                out.name ? out.name : "?", (unsigned)out.listen.port);
     } else {
@@ -46,7 +29,7 @@ static void run(const char *what, token_t *toks, size_t n) {
 }
 
 int main(void) {
-    run("valid", valid, sizeof valid / sizeof valid[0]);
-    run("malformed", malformed, sizeof malformed / sizeof malformed[0]);
+    run("valid", valid);
+    run("malformed", bad);
     return 0;
 }

@@ -16,4 +16,10 @@ package ASTBNF_C is
    --  a token stream and allocates/populates the structs `Emit` declares.
    function Emit_Parser (Rules : ASTBNF.Rule_Vectors.Vector) return String;
 
+   --  Emit the lexer half: a schema-independent scanner that turns text into
+   --  the token stream `Emit_Parser` consumes (word/string/number/punctuation
+   --  tokens, skipping whitespace and `#` comments), plus a `parse_text`
+   --  convenience that lexes, splits lines and parses in one call.
+   function Emit_Lexer (Rules : ASTBNF.Rule_Vectors.Vector) return String;
+
 end ASTBNF_C;
