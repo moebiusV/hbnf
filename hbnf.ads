@@ -2,6 +2,7 @@ pragma Ada_2022;
 
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with ASTBNF;
 
 --  HBNF: an OpenBSD-style ("parse.y style") configuration parser.
 --
@@ -116,6 +117,14 @@ package HBNF is
    --  Parse plaintext into a tree.  On failure Success is False and
    --  Line/Col/Msg describe the first error.
    function Parse (Text : String) return Parse_Result;
+
+   --  Parse plaintext with astbnf's matcher/binder against a parsed schema
+   --  (the grammar in astbnf notation, e.g. ASTBNF.Parse of hbnf.astbnf),
+   --  then interpret the bound tree back into this package's Node tree.
+   --  Same result shape as Parse; comments land by position (leading /
+   --  trailing / standalone file-header).
+   function Parse_Astbnf
+     (Text : String; Schema : ASTBNF.Rule_Vectors.Vector) return Parse_Result;
 
    --  Accessors ----------------------------------------------------------
 

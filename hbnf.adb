@@ -1,6 +1,7 @@
 pragma Ada_2022;
 
 with Ada.Containers;
+with ASTBNF_Match;
 
 package body HBNF is
 
@@ -593,6 +594,251 @@ package body HBNF is
       when Parse_Error =>
          return (Success => False, Line => Err_L, Col => Err_C, Msg => Err_M);
    end Parse;
+
+   --  astbnf backend ------------------------------------------------------
+   --
+   --  Parse with astbnf's matcher/binder instead of the hand-written parser
+   --  above: lex the text, map the tokens onto astbnf's generic kinds, bind
+   --  the schema's root rule to a parse tree, then interpret that tree back
+   --  into this package's Node tree.  Comments land by position: an own-line
+   --  comment in the `ws` before an entry becomes its Leading_Comment (or a
+   --  standalone file-header / block-trailer comment), an end-of-line comment
+   --  after an entry becomes its Trailing_Comment; a `;` terminator becomes
+   --  Semicolon_After.
+
+   use type ASTBNF_Match.Node_Kind;
+   use type ASTBNF_Match.Node_Access;
+   use type ASTBNF_Match.Token_Kind;
+
+   Backend_Error : exception;
+
+   --  Map an hbnf token onto the matcher's generic token (mirrors the adapter
+   --  in tests/hbnf_match_check.adb).
+   function To_Match_Token (T : Token) return ASTBNF_Match.Token is
+   begin
+      case T.Kind is
+         when Word      => return (ASTBNF_Match.Atom, T.Text);
+         when Str       => return (ASTBNF_Match.Str, T.Text);
+         when Int       => return (ASTBNF_Match.Int, T.Text);
+         when Dec       => return (ASTBNF_Match.Dec, T.Text);
+         when LBrace    =>
+            return (ASTBNF_Match.Punct, To_Unbounded_String ("{"));
+         when RBrace    =>
+            return (ASTBNF_Match.Punct, To_Unbounded_String ("}"));
+         when Semicolon =>
+            return (ASTBNF_Match.Punct, To_Unbounded_String (";"));
+         when Newline   =>
+            return (ASTBNF_Match.Newline, Null_Unbounded_String);
+         when Eof       =>
+            return (ASTBNF_Match.Eof, Null_Unbounded_String);
+         when Comment     =>
+            return (ASTBNF_Match.Comment, T.Text);
+         when Eol_Comment =>
+            return (ASTBNF_Match.Eol_Comment, T.Text);
+      end case;
+   end To_Match_Token;
+
+   --  Is N a Rule_Node named Name?
+   function Is_Rule (N : ASTBNF_Match.Node_Access; Name : String)
+     return Boolean
+   is
+     (N /= null and then N.Kind = ASTBNF_Match.Rule_Node
+      and then To_String (N.Rule_Name) = Name);
+
+   --  The token a name/arg/qualifier rule matched (its single Token_Node kid).
+   function Rule_Token (N : ASTBNF_Match.Node_Access)
+     return ASTBNF_Match.Token
+   is
+   begin
+      for K of N.Kids loop
+         if K.Kind = ASTBNF_Match.Token_Node then
+            return K.Tok;
+         end if;
+      end loop;
+      return (Kind => ASTBNF_Match.Eof, Text => Null_Unbounded_String);
+   end Rule_Token;
+
+   --  Rebuild a Value from a matched token, re-running the same Int/Dec
+   --  conversion (and range checks) as the hand-written parser's Parse_Value.
+   function To_Value (T : ASTBNF_Match.Token) return HBNF.Value is
+      V : HBNF.Value;
+      S : constant String := To_String (T.Text);
+   begin
+      case T.Kind is
+         when ASTBNF_Match.Atom =>
+            V.Kind := Word;
+            V.Text := T.Text;
+         when ASTBNF_Match.Str =>
+            V.Kind := Str;
+            V.Text := T.Text;
+         when ASTBNF_Match.Int =>
+            V.Kind := Int;
+            V.Num := Long_Long_Integer'Value (S);
+         when ASTBNF_Match.Dec =>
+            V.Kind := Dec;
+            V.Text := T.Text;
+            begin
+               V.Dec := Decimal'Value (S);
+            exception
+               when Constraint_Error =>
+                  raise Backend_Error with "decimal out of range";
+            end;
+         when others =>
+            raise Backend_Error with "internal: unexpected value token";
+      end case;
+      return V;
+   end To_Value;
+
+   --  Interpret a bound tree into a Node tree.
+   function Interpret (Root : ASTBNF_Match.Node_Access) return Node_Access is
+
+      function Interpret_Entry
+        (N : ASTBNF_Match.Node_Access; Leading : Unbounded_String)
+        return Node_Access;
+      procedure Interpret_Children
+        (Parent : ASTBNF_Match.Node_Access; Dst : Node_Access;
+         At_Top : Boolean);
+
+      function Make_Comment (Text : String) return Node_Access is
+         N : constant Node_Access := new Node;
+      begin
+         N.Kind := Comment;
+         N.Name := To_Unbounded_String (Text);
+         return N;
+      end Make_Comment;
+
+      function Interpret_Entry
+        (N : ASTBNF_Match.Node_Access; Leading : Unbounded_String)
+        return Node_Access
+      is
+         Result : constant Node_Access := new Node;
+      begin
+         Result.Kind := Directive;
+         Result.Leading_Comment := Leading;
+         for Kid of N.Kids loop
+            if Is_Rule (Kid, "statement") then
+               for K of Kid.Kids loop
+                  if Is_Rule (K, "name") then
+                     Result.Name := Rule_Token (K).Text;
+                  elsif Is_Rule (K, "arg") then
+                     Result.Values.Append (To_Value (Rule_Token (K)));
+                  end if;
+               end loop;
+            elsif Is_Rule (Kid, "block") then
+               Result.Kind := Block;
+               for K of Kid.Kids loop
+                  if Is_Rule (K, "name") then
+                     Result.Name := Rule_Token (K).Text;
+                  elsif Is_Rule (K, "qualifier") then
+                     --  hbnf keeps the qualifier as the block's first value
+                     --  (a block is `name value { ... }`), so record it both
+                     --  ways: Qualifier and Values(1).
+                     declare
+                        QT : constant ASTBNF_Match.Token := Rule_Token (K);
+                     begin
+                        Result.Qualifier := QT.Text;
+                        Result.Values.Append (To_Value (QT));
+                     end;
+                  end if;
+               end loop;
+               Interpret_Children (Kid, Result, False);
+            end if;
+         end loop;
+         return Result;
+      end Interpret_Entry;
+
+      procedure Interpret_Children
+        (Parent : ASTBNF_Match.Node_Access; Dst : Node_Access;
+         At_Top : Boolean)
+      is
+         Leading    : Unbounded_String := Null_Unbounded_String;
+         Seen_Entry : Boolean := False;
+         Last       : Node_Access := null;
+
+         procedure Flush_Leading is
+            Txt   : constant String := To_String (Leading);
+            Start : Natural := Txt'First;
+         begin
+            if Leading /= Null_Unbounded_String then
+               for K in Txt'Range loop
+                  if Txt (K) = Character'Val (10) then
+                     Dst.Children.Append (Make_Comment (Txt (Start .. K - 1)));
+                     Start := K + 1;
+                  end if;
+               end loop;
+               Dst.Children.Append (Make_Comment (Txt (Start .. Txt'Last)));
+               Leading := Null_Unbounded_String;
+            end if;
+         end Flush_Leading;
+      begin
+         for Kid of Parent.Kids loop
+            if Is_Rule (Kid, "entry") then
+               if At_Top and then not Seen_Entry
+                 and then Leading /= Null_Unbounded_String
+               then
+                  Flush_Leading;  --  file header: standalone comments
+               end if;
+               Last := Interpret_Entry (Kid, Leading);
+               Dst.Children.Append (Last);
+               Seen_Entry := True;
+               Leading := Null_Unbounded_String;
+            elsif Is_Rule (Kid, "semicolon") then
+               if Last /= null then
+                  Last.Semicolon_After := True;
+               end if;
+            elsif Is_Rule (Kid, "ws") then
+               for C of Kid.Kids loop
+                  if C.Kind = ASTBNF_Match.Token_Node then
+                     if C.Tok.Kind = ASTBNF_Match.Eol_Comment then
+                        if Last /= null then
+                           Last.Trailing_Comment := C.Tok.Text;
+                        end if;
+                     else  --  own-line comment: accumulate as leading
+                        if Leading /= Null_Unbounded_String then
+                           Append (Leading, Character'Val (10));
+                        end if;
+                        Append (Leading, C.Tok.Text);
+                     end if;
+                  end if;
+               end loop;
+            end if;
+         end loop;
+         Flush_Leading;  --  trailer before `}` or end of file
+      end Interpret_Children;
+
+      Result : constant Node_Access := new Node;
+   begin
+      Result.Kind := Block;
+      Result.Line := 1;
+      Result.Col  := 1;
+      Interpret_Children (Root, Result, True);
+      return Result;
+   end Interpret;
+
+   function Parse_Astbnf
+     (Text : String; Schema : ASTBNF.Rule_Vectors.Vector) return Parse_Result
+   is
+      L    : constant Lex_Result := Lex (Text);
+      Toks : ASTBNF_Match.Token_Vectors.Vector;
+      Tree : ASTBNF_Match.Node_Access;
+   begin
+      if not L.Success then
+         return (Success => False, Line => L.Line, Col => L.Col, Msg => L.Msg);
+      end if;
+      for T of L.Tokens loop
+         Toks.Append (To_Match_Token (T));
+      end loop;
+      Tree := ASTBNF_Match.Bind (Schema, Toks, "config");
+      if Tree = null then
+         return (Success => False, Line => 1, Col => 1,
+                 Msg => To_Unbounded_String ("does not match the grammar"));
+      end if;
+      return (Success => True, Root => Interpret (Tree));
+   exception
+      when Backend_Error | Constraint_Error =>
+         return (Success => False, Line => 1, Col => 1,
+                 Msg => To_Unbounded_String ("value out of range"));
+   end Parse_Astbnf;
 
    --  Accessors ------------------------------------------------------------
 
