@@ -97,7 +97,7 @@ package Templates is
      "            s = i + 1;" & LF &
      "        }" & LF &
      "    }" & LF &
-     "    bool ok = parse_config(l.toks, l.n, out, (const char *const *)lines, nlines," & LF &
+     "    bool ok = parse_tokens(l.toks, l.n, out, (const char *const *)lines, nlines," & LF &
      "                           err, errlen, err_line, err_col);" & LF &
      "    for (i = 0; i < l.n; i++) free((char *)l.toks[i].text);" & LF &
      "    free(l.toks);" & LF &
@@ -352,6 +352,82 @@ package Templates is
      "         return R;" & LF &
      "      end;" & LF &
      "   end Parse_Text;";
+
+   Conf_H : constant String :=
+     "/* The configuration tree root, populated by parse_config(). */" & LF &
+     "extern @ROOT_TYPE@ *conf;" & LF &
+     "" & LF &
+     "/* Error handler: default prints ""file:line: msg"" and exits; override to" & LF &
+     "   handle errors yourself (parse_config then returns -1 instead). */" & LF &
+     "typedef void (*conf_error_fn)(const char *file, size_t line, const char *msg);" & LF &
+     "extern conf_error_fn conf_error;" & LF &
+     "" & LF &
+     "/* Read filename, populate the global `conf`.  Returns 0 on success, -1 on" & LF &
+     "   error (after calling conf_error). */" & LF &
+     "int parse_config(const char *filename);";
+
+   Conf_Tail_C : constant String :=
+     "@ROOT_TYPE@ *conf = NULL;" & LF &
+     "" & LF &
+     "/* Default handler: print ""file:line: <caret message>"" and exit(1).  Override" & LF &
+     "   conf_error with your own to take the message elsewhere (then parse_config" & LF &
+     "   returns -1 after calling it). */" & LF &
+     "static void conf_error_default(const char *file, size_t line, const char *msg) {" & LF &
+     "    if (line)" & LF &
+     "        fprintf(stderr, ""%s:%zu: %s\n"", file, line, msg);" & LF &
+     "    else" & LF &
+     "        fprintf(stderr, ""%s: %s\n"", file, msg);" & LF &
+     "    exit(1);" & LF &
+     "}" & LF &
+     "" & LF &
+     "conf_error_fn conf_error = conf_error_default;" & LF &
+     "" & LF &
+     "int parse_config(const char *filename) {" & LF &
+     "    FILE *f = fopen(filename, ""r"");" & LF &
+     "    char *buf;" & LF &
+     "    long len;" & LF &
+     "    char err[512];" & LF &
+     "    size_t line = 0, col = 0;" & LF &
+     "" & LF &
+     "    if (!f) {" & LF &
+     "        conf_error(filename, 0, ""cannot open file"");" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 ||" & LF &
+     "        fseek(f, 0, SEEK_SET) != 0) {" & LF &
+     "        fclose(f);" & LF &
+     "        conf_error(filename, 0, ""cannot read file"");" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    buf = (char *)malloc((size_t)len + 1);" & LF &
+     "    if (!buf) {" & LF &
+     "        fclose(f);" & LF &
+     "        conf_error(filename, 0, ""out of memory"");" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    if (len > 0 && fread(buf, 1, (size_t)len, f) != (size_t)len) {" & LF &
+     "        free(buf);" & LF &
+     "        fclose(f);" & LF &
+     "        conf_error(filename, 0, ""read error"");" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    buf[len] = '\0';" & LF &
+     "    fclose(f);" & LF &
+     "" & LF &
+     "    conf = (@ROOT_TYPE@ *)calloc(1, sizeof *conf);" & LF &
+     "    if (!conf) {" & LF &
+     "        free(buf);" & LF &
+     "        conf_error(filename, 0, ""out of memory"");" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    if (!parse_text(buf, conf, err, sizeof err, &line, &col)) {" & LF &
+     "        free(buf);" & LF &
+     "        conf_error(filename, line, err);  /* err carries the caret message */" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    free(buf);" & LF &
+     "    return 0;" & LF &
+     "}";
 
    --  Replace every occurrence of From in Text with To.
    function Substitute (Text, From, To : String) return String;

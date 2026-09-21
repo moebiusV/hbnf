@@ -22,4 +22,13 @@ package ASTBNF_C is
    --  convenience that lexes, splits lines and parses in one call.
    function Emit_Lexer (Rules : ASTBNF.Rule_Vectors.Vector) return String;
 
+   --  Emit the OpenBSD-daemon shape: a conf.h/conf.c pair.  The header is the
+   --  declarations plus a global `conf` root, an overridable `conf_error`
+   --  callback (default: print the caret message and exit(1)) and the
+   --  parse_config(filename) prototype.  The source is the lexer + parser +
+   --  parse_config, which slurps the file, populates `conf`, and reports
+   --  errors through the callback.
+   function Emit_Conf_Header (Rules : ASTBNF.Rule_Vectors.Vector) return String;
+   function Emit_Conf_Source (Rules : ASTBNF.Rule_Vectors.Vector) return String;
+
 end ASTBNF_C;

@@ -87,7 +87,7 @@ bool parse_text(const char *text, @ROOT_TYPE@ *out,
             s = i + 1;
         }
     }
-    bool ok = parse_config(l.toks, l.n, out, (const char *const *)lines, nlines,
+    bool ok = parse_tokens(l.toks, l.n, out, (const char *const *)lines, nlines,
                            err, errlen, err_line, err_col);
     for (i = 0; i < l.n; i++) free((char *)l.toks[i].text);
     free(l.toks);

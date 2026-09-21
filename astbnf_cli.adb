@@ -12,10 +12,12 @@ with ASTBNF_Ada;
 --  astbnf: read a schema and emit a self-contained parser (declarations +
 --  lexer + parser) in the chosen backend language.
 --
---    astbnf schema.astbnf --backend=c|rust|zig|ada [--package=NAME]
+--    astbnf schema.astbnf --backend=c|rust|zig|ada [--package=NAME] [--conf]
 --
 --  c/rust/zig print one compilable file to stdout; ada prints the parent
 --  package spec, then the child package spec+body (split them apart yourself).
+--  --conf (C only) prints the OpenBSD conf.h/conf.c pair, delimited by
+--  "===== conf.h =====" and "===== conf.c =====" markers.
 procedure Astbnf_Cli is
 
    use Ada.Strings.Unbounded;
@@ -23,6 +25,7 @@ procedure Astbnf_Cli is
    Backend      : Unbounded_String := To_Unbounded_String ("c");
    Package_Name : Unbounded_String := To_Unbounded_String ("Schema");
    Schema_Path  : Unbounded_String;
+   Conf         : Boolean := False;
 
    function Read_File (Path : String) return String is
       F   : Ada.Text_IO.File_Type;
@@ -42,7 +45,7 @@ procedure Astbnf_Cli is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: astbnf <schema.astbnf> --backend=c|rust|zig|ada [--package=NAME]");
+        ("usage: astbnf <schema.astbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf]");
    end Usage;
 
 begin
@@ -59,6 +62,8 @@ begin
             Backend := To_Unbounded_String (A (11 .. A'Last));
          elsif A'Length >= 10 and then A (1 .. 10) = "--package=" then
             Package_Name := To_Unbounded_String (A (11 .. A'Last));
+         elsif A = "--conf" then
+            Conf := True;
          elsif A (A'First) /= '-' then
             Schema_Path := To_Unbounded_String (A);
          end if;
@@ -76,9 +81,16 @@ begin
       B     : constant String := To_String (Backend);
    begin
       if B = "c" then
-         Ada.Text_IO.Put (ASTBNF_C.Emit (Rules));
-         Ada.Text_IO.Put (ASTBNF_C.Emit_Parser (Rules));
-         Ada.Text_IO.Put (ASTBNF_C.Emit_Lexer (Rules));
+         if Conf then
+            Ada.Text_IO.Put_Line ("===== conf.h =====");
+            Ada.Text_IO.Put (ASTBNF_C.Emit_Conf_Header (Rules));
+            Ada.Text_IO.Put_Line ("===== conf.c =====");
+            Ada.Text_IO.Put (ASTBNF_C.Emit_Conf_Source (Rules));
+         else
+            Ada.Text_IO.Put (ASTBNF_C.Emit (Rules));
+            Ada.Text_IO.Put (ASTBNF_C.Emit_Parser (Rules));
+            Ada.Text_IO.Put (ASTBNF_C.Emit_Lexer (Rules));
+         end if;
       elsif B = "rust" then
          Ada.Text_IO.Put (ASTBNF_Rust.Emit (Rules));
          Ada.Text_IO.Put (ASTBNF_Rust.Emit_Parser (Rules));

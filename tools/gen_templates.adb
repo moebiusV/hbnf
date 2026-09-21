@@ -100,6 +100,10 @@ begin
    Put_Line ("");
    Emit_Constant ("Ada_Lexer", Read_File ("templates/lexer.ada"));
    Put_Line ("");
+   Emit_Constant ("Conf_H", Read_File ("templates/conf.h"));
+   Put_Line ("");
+   Emit_Constant ("Conf_Tail_C", Read_File ("templates/conf_tail.c"));
+   Put_Line ("");
    Put_Line ("   --  Replace every occurrence of From in Text with To.");
    Put_Line ("   function Substitute (Text, From, To : String) return String;");
    Put_Line ("");
