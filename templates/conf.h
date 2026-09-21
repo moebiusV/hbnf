@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* The configuration tree root, populated by parse_config(). */
 extern @ROOT_TYPE@ *conf;
 
@@ -19,3 +23,7 @@ int parse_config(const char *filename);
 /* Return the current config root (NULL before a successful parse_config).
    Convenience for FFI languages that cannot read the `conf` global. */
 @ROOT_TYPE@ *conf_ptr(void);
+
+#ifdef __cplusplus
+}
+#endif

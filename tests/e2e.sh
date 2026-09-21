@@ -42,6 +42,17 @@ echo "== FFI (C shared lib + ctypes/Fiddle) =="
   fi
 )
 
+echo "== C++ (extern \"C\" header) =="
+if command -v g++ >/dev/null 2>&1; then
+    ( cd /tmp
+      cp "$HERE/tests/cpp_conf_main.cpp" .
+      cc -c conf.c -o conf.o
+      g++ -std=c++17 cpp_conf_main.cpp conf.o -o cpp_conf_test 2>&1 | head -20
+      ./cpp_conf_test )
+else
+    echo "  (g++ not installed -- skipping)"
+fi
+
 echo "== Rust =="
 if command -v rustc >/dev/null 2>&1; then
     /tmp/astbnf_cli tests/server.astbnf --backend=rust > /tmp/server.rs
