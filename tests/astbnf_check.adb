@@ -8,13 +8,15 @@ use type ASTBNF.Element_Kind;
 with ASTBNF_Ada;
 with ASTBNF_C;
 with ASTBNF_Match;
+with ASTBNF_Rust;
+with ASTBNF_Zig;
 
---  Check the parser and both emitters against two schema files passed on the
---  command line.  Usage: astbnf_check <server.astbnf> <hbnf.astbnf>
---  The first is the small server example, which drives the C/Ada emitters;
---  the second is the hbnf config grammar, checked at the parse level (its
---  entry/block rules are mutually recursive, which the declaration-only
---  emitters reject as a cyclic reference).
+--  Check the parser and the four emitters against two schema files passed on
+--  the command line.  Usage: astbnf_check <server.astbnf> <hbnf.astbnf>
+--  The first is the small server example, which drives the C/Ada/Rust/Zig
+--  emitters; the second is the hbnf config grammar, checked at the parse
+--  level (its entry/block rules are mutually recursive, which the
+--  declaration-only emitters reject as a cyclic reference).
 procedure ASTBNF_Check is
 
    use Ada.Strings.Unbounded;
@@ -73,10 +75,12 @@ procedure ASTBNF_Check is
    end Find_Rule;
 
    procedure Check_Server (Path : String) is
-      Rules    : constant ASTBNF.Rule_Vectors.Vector :=
+      Rules     : constant ASTBNF.Rule_Vectors.Vector :=
         ASTBNF.Parse (Read_File (Path));
-      C_Text   : constant String := ASTBNF_C.Emit (Rules);
-      Ada_Text : constant String := ASTBNF_Ada.Emit (Rules, "Server_Schema");
+      C_Text    : constant String := ASTBNF_C.Emit (Rules);
+      Ada_Text  : constant String := ASTBNF_Ada.Emit (Rules, "Server_Schema");
+      Rust_Text : constant String := ASTBNF_Rust.Emit (Rules);
+      Zig_Text  : constant String := ASTBNF_Zig.Emit (Rules);
    begin
       Check ("13 rules", Natural (Rules.Length) = 13);
       Check ("first rule server", To_String (Rules (1).Name) = "server");
@@ -91,6 +95,16 @@ procedure ASTBNF_Check is
       Check ("Ada subtype",
              Has (Ada_Text, "subtype Port_Type is Unsigned_16"));
       Check ("Ada comment", Has (Ada_Text, "-- host name"));
+
+      Check ("Rust enum", Has (Rust_Text, "pub enum Direction"));
+      Check ("Rust struct", Has (Rust_Text, "pub struct Server"));
+      Check ("Rust scalar", Has (Rust_Text, "pub type Port = u16;"));
+      Check ("Rust comment", Has (Rust_Text, "// host name"));
+
+      Check ("Zig enum", Has (Zig_Text, "const Direction = enum"));
+      Check ("Zig struct", Has (Zig_Text, "const Server = struct"));
+      Check ("Zig scalar", Has (Zig_Text, "const Port = u16;"));
+      Check ("Zig comment", Has (Zig_Text, "// host name"));
    end Check_Server;
 
    procedure Check_Hbnf (Path : String) is
