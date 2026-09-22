@@ -6,7 +6,7 @@
 
 Configuration file parsers are the unglamorous workhorses of systems software:
 every daemon ships one, and they are almost all written the same way — a
-hand-written lexer plus a yacc grammar.  We present **hbnf**, a schema-driven
+hand-written lexer plus a yacc grammar.  This paper presents **hbnf**, a schema-driven
 parser generator built on an extension of RFC 5234 ABNF.  A schema is a
 grammar; hbnf compiles it to a self-contained parser (declarations, lexer, and
 parser in one file) in C, Rust, Zig, or Ada, with the C backend exposed to
@@ -21,12 +21,12 @@ parser this way lets a grammar distinguish `a > b` from a bareword containing
 `>` using ordinary rules, and lets a MIME type or a money amount be written as
 `str "/" str` or `1*DIGIT "." 2DIGIT` without touching any lexer code.
 
-We evaluate hbnf on a synthetic pf-style firewall ruleset — the motivating
+hbnf is evaluated on a synthetic pf-style firewall ruleset — the motivating
 workload, where production rulesets exceed 100,000 rules.  The current
 generated C parser consumes 100,000 rules (8.5 MB) in 72.7 ms (1.38 M rules/s,
 111 MB/s, 127 MB peak RSS).  The same grammar notation compresses OpenBSD's
 httpd configuration grammar from 2,785 lines of parse.y (63 rules, 79 keyword
-tokens) to roughly a hundred lines.
+tokens) to under two hundred lines.
 
 ## 1. Introduction
 
@@ -48,16 +48,15 @@ language wants `1.2.3.4` to be an IPv4 address, or `1.50` to be a money amount,
 the lexer grows a special case (`allowed_to_end_number` in OpenBSD's lexer is
 exactly this, and it is a hack).
 
-We built hbnf around a different premise: **a token is a grammar rule over
+hbnf is built around a different premise: **a token is a grammar rule over
 characters, and the lexer is generated from the grammar's token definitions,
 not written separately.**  ABNF (RFC 5234) is already a character-level
 notation — its core rules are `DIGIT`, `ALPHA`, `SP`, `DQUOTE`, and its
-literals are strings of characters.  We take ABNF as the schema language,
-extend it with the typed, named subrules that a parser generator needs, and
-emit the whole parser from it.  Where hand-written speed is required — a
+literals are strings of characters.  The schema language is ABNF, extended with
+the typed, named subrules a parser generator needs; the whole parser is emitted
+from that schema.  Where hand-written speed is required — a
 token that appears a million times — the schema can name a hand-written scanner
-function as that token's definition, and we check that the hand-written scanner
-agrees with a BNF twin.  The result matches the readability of a grammar
+function as that token's definition, cross-checked against a BNF twin.  The result matches the readability of a grammar
 notation with the speed of a hand-written lexer.
 
 Contributions:
@@ -70,6 +69,9 @@ Contributions:
    speed-equivalence escape hatch, cross-checked against the BNF.
 3. Four code generators (C, Rust, Zig, Ada) and an FFI story for dynamic
    languages, with a benchmark on 100k-rule firewall rulesets.
+4. A privsep wire shape for the C backend: an id-ref serializer and rebuild
+   side that flatten the typed tree to cross the imsg boundary, matching how
+   OpenBSD's privsep daemons actually hand configuration to their children.
 
 ## 2. Background
 
@@ -104,10 +106,10 @@ stays readable because it reasons about word-sized tokens rather than
 characters; the lexer is a simple, fast table-driven loop; and the whole thing
 is easier to make deterministic.
 
-But the split is *not* forced on us by the input.  A character is a perfectly
+But nothing about the input forces the split.  A character is a perfectly
 good token.  If you feed a yacc-style parser characters instead of words, it
 still works — it just matches `1*ALPHA` instead of a single `IDENT` token.
-The real question is not "must we lex?" but "who decides what a word is?"  In
+The real question is not "must there be a lexer?" but "who decides what a word is?"  In
 the classic split, the lexer decides, once, globally, by way of a hard-coded
 word-character set.  That one global decision is what makes `1.2.3.4` (or
 `a>b`) need a lexer special case.
@@ -120,7 +122,7 @@ OpenBSD's config parsers are the concrete starting point for this work.  Each
 domain quirks (pfctl and bgpd have an operator switch; the rest are identical
 in shape).  The grammars differ more — each encodes one daemon's config
 language — but they share a skeleton: a `%token` keyword table, a top-level
-list rule, `TAILQ` action code, and `yyerror`.  Two details matter to us:
+list rule, `TAILQ` action code, and `yyerror`.  Two details matter:
 
 - **Domain-specific tokens are validated in actions, not lexed.**  An IP
   address, a MAC address, an OID are lexed as a plain STRING or NUMBER and
@@ -141,6 +143,18 @@ list rule, `TAILQ` action code, and `yyerror`.  Two details matter to us:
   afterward.  For configuration that is the same work split across two phases;
   for a parser generator it is the difference between a grammar welded to one
   daemon's struct layout and a grammar that is reusable and self-describing.
+
+- **The tree crosses a process boundary as ids, not pointers.**  The daemon
+  family is privsep: the parent parses, then ships the configuration to
+  unprivileged children over imsg, and a pointer cannot cross that boundary.
+  Objects therefore carry an id (`objid_t`, `rl_conf.id`) and refer to each
+  other by id; the parent serializes the tree piece by piece
+  (`config_setrelay()`, `config_settable()`, `imsg_send_config()`), and each child
+  rebuilds its own copy, resolving ids with per-type `*_find()` helpers and
+  merging into its live tree (`merge_config()`, `config_purge()`).  Reload
+  parses a whole new tree and merges it.  For these consumers a pointer-linked
+  tree is the wrong shape — the wire form is a flat id-ref stream plus a
+  serializer — which is exactly what hbnf's `--idref` output emits (§3.4).
 
 hbnf's goal is to get that speed and that clarity from a *declarative* schema,
 without the hand-written lexer and without the token-level straitjacket.
@@ -192,12 +206,21 @@ and the lexer — one compilable file per backend.
 
 For the OpenBSD use case, hbnf also emits a `parse_config(filename)` entry that
 matches the shape of a daemon's existing config loader: it reads the file and
-produces a global root, with an overridable error handler.  Following the
-`yyerror` convention, the handler is invoked *at the point of error* with the
-message, line, and a caret rendering, rather than a buffer being inspected
-after the fact.  The default handler prints `file:line:` and exits; a program
-that wants to recover overrides it.  The same entry point is what the FFI
-bindings expose (`conf_ptr()` returns the parsed root).
+produces a global root, with an overridable error handler.  The handler is
+invoked at the point of error with the message and a caret rendering of the
+exact position — line, column, and the offending token underlined:
+
+    on wg0 port oops
+                  ^
+
+The daemons' own `yyerror` does not do this: it logs `file:line: message` from
+the lexer's line counter, with no column and no caret, so a mistake in the
+middle of a long line is reported only by line number.  The caret is thus a
+small but real improvement over the convention it replaces, and it extends
+naturally to a *span*: an "unclosed `{`" error can point both at the token that
+failed to match and at the opener that began the production — which is what the
+reader actually needs when the two are not on the same line.  The same entry
+point is what the FFI bindings expose (`conf_ptr()` returns the parsed root).
 
 ### 3.3 Extensions over ABNF
 
@@ -212,6 +235,33 @@ bindings expose (`conf_ptr()` returns the parsed root).
   matcher operates on code points, and the emitted parsers emit UTF-8.  A
   literal can name a non-ASCII character (`"café"`), which is meaningful only
   once the lexer's unit is a code point rather than a byte.
+
+### 3.4 The privsep wire shape
+
+The tree a privsep daemon consumes is not the pointer tree a single-process
+parser would build, because that tree has to cross the imsg boundary (§2.3).
+The C backend therefore emits a second shape on request — the `--idref` wire
+form — alongside the ordinary pointer tree, so a schema yields both the
+in-process tree and the cross-process representation.
+
+Every struct and list node gains `objid_t id, parent;`.  A generated
+`serialize_<rule>` walks the tree in pre-order, assigns ids in traversal order,
+and emits one flat record per object through an abstract
+`emit(type, ptr, len)` callback.  A child records its parent's id, which is
+always smaller and already sent, so a consumer rebuilds the tree in a single
+forward pass.  Strings are length-prefixed on the wire; ids replace only the
+structural pointers, never the scalar leaves.  The symmetric rebuild side
+emits an id-indexed table, a `<rule>_find(id)` helper, and a
+`config_get<rule>()` per type, so each process keeps its own separately
+allocated tree and none of them is the parser's original.
+
+The traversal itself is not new — hbnf already generates the visitor and fold
+of §8, and a pretty-printer like the daemons' `printconf.c` is just one more
+visitor over the typed tree.  What `--idref` adds is the id-ref
+*representation*: a third generated pass that walks the same tree once more and
+emits it as the flat id-ref stream a pointer cannot carry — the wire-form
+counterpart of the daemons' `config_set*`/`config_get*` serialization rather
+than of their `printconf.c` text printer.
 
 ## 4. Moving the lexer into the parser
 
@@ -244,7 +294,7 @@ the lexer must be *told* that `>` is not a word character, so `a>b` lexes as
 comparison = bareword ">" bareword
 ```
 
-The bareword rule simply stops at `>` because `>` is not in its alternation.
+The bareword rule stops at `>` because `>` is not in its alternation.
 No lexer knowledge of operators is needed, and — crucially — the boundary can
 differ per rule.
 
@@ -291,7 +341,7 @@ A schema declares its jet language on the first non-comment line
 (`language C|Rust|Zig|Ada`), and may carry a raw `{ ... }` *preamble* before
 the rules and a raw `{ ... }` *epilogue* after them — yacc's prologue and
 epilogue, interleaved with the grammar.  Both are emitted verbatim; a jet is
-simply the per-token form of the same verbatim block.
+the per-token form of the same verbatim block.
 
 ### 4.4 Jets, and why they are safe
 
@@ -330,7 +380,7 @@ C loop.  Jet and fallback sit adjacent in the schema, so any drift between
 them is the bug, found at the schema before it reaches a mis-parsed config.
 
 An inline jet is written in one target language, so it names its backend — or
-simply sits beside the BNF spec, which the other backends compile.  A schema
+sits beside the BNF spec, which the other backends compile.  A schema
 meant for more than one language can carry per-language blocks, but the
 recommended style is a BNF spec plus at most one hand-tuned jet for the
 backend that actually gets deployed.
@@ -370,11 +420,58 @@ holds inside a jet: its `{ }` block is a scanner, its value is the slice's
 text unless it declares a converter of its own — classify with a scanner,
 interpret with a converter, in both cases over one whole slice.
 
+### 4.7 Binary wire: the same idea over octets
+
+The lexer's unit is a code point because configuration is text.  A binary
+protocol is the same problem one level down: the unit is an **octet**, and a
+"token" is a fixed-width field reader instead of a character class.  A schema
+declares `binary` (octet stream, network byte order); a field is `name:N`, C's
+bitfield spelling with N in **bits**, packed the way a reader of the RFCs
+expects: left to right as written, first field in the most significant
+bits, big-endian, adjacent sub-byte fields coalescing into octets.
+Read top to bottom, each line is one 32-bit word of the RFC's packet diagram:
+
+    binary
+
+    ; Ethernet II (RFC 894) — 6 + 6 + 2 octets
+    ethernet   = dst:48 src:48 ethertype:16 payload:*u8
+    ethertype  = 0x0800 / 0x0806 / 0x86DD      ; IPv4 · ARP · IPv6
+
+    ; ARP (RFC 826) — pure fixed-width (Ethernet + IPv4 case)
+    arp = htype:16 ptype:16 hlen:8 plen:8 oper:16
+          sha:48 spa:32 tha:48 tpa:32
+
+    ; IPv4 (RFC 791) — one 32-bit word per line
+    ipv4 = version:4 ihl:4 tos:8 total_length:16
+           identification:16 flags:3 frag_offset:13
+           ttl:8 protocol:8 header_checksum:16
+           src:32 dst:32
+           options:*u8 payload:*u8
+
+    ; TCP (RFC 793) — RFC 3168 renames the reserved bits to NS/CWR/ECE
+    tcp = src_port:16 dst_port:16 seq_num:32 ack_num:32
+          data_offset:4 reserved:6
+          urg:1 ack:1 psh:1 rst:1 syn:1 fin:1
+          window_size:16
+          checksum:16 urgent_pointer:16 options:*u8 payload:*u8
+
+    udp = src_port:16 dst_port:16 length:16 checksum:16 payload:*u8
+
+C bitfields are layout-undefined, so no C struct is emitted; the emitter
+generates the shift-and-mask the daemons hand-write (`vihl >> 4`,
+`vihl & 0x0F`), portable across compilers and byte orders.  A `name:N` field is
+layout only — §4.6's converter turns its bits into a value: `src:32` renders
+dotted-quad, `dst:48` six octets (spelled `dst:[6]` when octets read better).
+The demos leave open length-bounded payloads (`total_length − ihl·4` octets, not
+"the rest"), tag dispatch on a field value (EtherType choosing the payload
+type), and checksums — the three gaps any binary protocol engine must close.
+Binary mode is design, not yet implemented.
+
 ## 5. Implementation
 
 ### 5.1 The allocation storm
 
-The first implementation lesson is about memory.  The naive generated parser
+The first implementation lesson is about memory.  The unoptimized generated parser
 materializes every token as a heap string (`lex_dup` in the lexer) and then,
 for every string- or number-valued field, copies the token's text into the
 result tree (`strdup`).  For a 100k-rule ruleset that is on the order of two
@@ -391,7 +488,7 @@ stream is the source slice that a run-level scanner points at, not a pile of
 allocated tokens.  The result tree still needs its own storage, but that can be
 an arena, allocated once and freed once, instead of a `strdup` per field.
 
-The measured baseline deliberately keeps the naive per-token copies, so the
+The measured baseline deliberately keeps the per-token copies, so the
 number in §6 is the *before* picture against which the zero-copy and arena
 changes are measured.
 
@@ -413,7 +510,7 @@ path only on a non-ASCII byte — so the common case costs nothing.
 
 ### 5.3 Backends and the FFI story
 
-hbnf and hbnf are written in Ada (the project they live in, `ada-on-alpine`,
+hbnf is written in Ada (the project it lives in, `ada-on-alpine`,
 is an Alpine Linux aports overlay for the Ada/GNAT toolchain; the end goal is
 the Ada Language Server).  `hbnf` is the front end: it parses a schema and
 hands a typed rule tree to one of four emitters (`hbnf_c`, `hbnf_rust`,
@@ -432,8 +529,8 @@ bindings trivial.
 ## 6. Evaluation
 
 The motivating question is whether a generated parser can load a firewall
-ruleset of the size OpenBSD operators actually deploy.  We measure the
-generated C parser on a synthetic pf-style config.
+ruleset of the size OpenBSD operators actually deploy.  The evaluation
+measures the generated C parser on a synthetic pf-style config.
 
 **Setup.**  A schema with the shape of a pf rule — action (`pass`/`block`/
 `match`), direction (`in`/`out`), interface, protocol, and a `from`/`to` pair
@@ -449,28 +546,47 @@ call; peak RSS is `getrusage`'s `ru_maxrss`.
 
 Throughput is linear in the rule count, at roughly 1.4 million rules per second
 and ~120 MB/s, with memory at about 1.25 KB per rule — dominated by the
-per-token and per-field string copies that §5 flags as the naive baseline.  The
+per-token and per-field string copies that §5 flags as the baseline.  The
 100k-rule case completes in under 75 ms, well inside the "load a big ruleset
 fast" criterion that motivated the work.
 
 **Compactness.**  The same notation compresses a real grammar.  OpenBSD's
 `httpd.conf` is 2,785 lines of parse.y — 63 rules and 79 keyword tokens — most
 of it action code and keyword-table plumbing.  The hbnf schema for the same
-language is about a hundred lines; the shape survives (blocks, server options,
+language is under two hundred lines; the shape survives (blocks, server options,
 TLS, fastcgi, logging, MIME types) and the `{ ... }` actions are gone because
 they were, for config, bookkeeping the binder does automatically.
 
+Across the nine daemon grammars with schemas, the win is aggregate, not
+anecdotal: 25,794 lines of hand-written `parse.y` — lexer, grammar, and action
+code together — collapse to 2,165 lines of schema, a 92% reduction, and the
+ratio holds on every daemon at a factor of ten to twenty:
+
+| daemon | parse.y (lines) | hbnf (lines) |
+|---|---:|---:|
+| bgpd | 6,146 | 534 |
+| dhcpleased | 863 | 43 |
+| httpd | 2,785 | 183 |
+| ldpd | 1,739 | 144 |
+| ntpd | 841 | 72 |
+| pfctl | 6,546 | 559 |
+| relayd | 3,800 | 372 |
+| snmpd | 2,099 | 163 |
+| unwind | 975 | 95 |
+| **total** | **25,794** | **2,165** |
+
 **Status.**  The measured baseline is the token-level parser with per-token
-allocation (§5.1) — deliberately the naive version.  The inline-jet mechanism
-(§4.3–4.4), the `language` declaration, and the preamble/epilogue blocks are
-implemented in the C backend: the schema parses them, the C emitter produces a
-working parser, and a jet that recognizes IPv4 addresses round-trips through
-the generator (the e2e suite and the 45-check conformance suite pass).  The
-character-level grammar (§4.1), the zero-copy/arena token representation
-(§5.1), the UTF-8 code-point path (§5.2), and the Rust/Zig/Ada jet emission are
-the remaining increments.  We report the baseline to establish what the design
-is being compared against, and because it already meets the performance
-criterion.
+allocation (§5.1) — deliberately the unoptimized version.  The inline-jet mechanism
+(§4.3–4.4), the `language` declaration, the preamble/epilogue blocks, and the
+id-ref serializer and rebuild side (§3.4) are implemented in the C backend: the
+schema parses them, the C emitter produces a working parser, a jet that
+recognizes IPv4 addresses round-trips through the generator, and the nine
+OpenBSD daemon schemas compile through all four emitters (the e2e suite and the
+52-check conformance suite pass).  The character-level grammar (§4.1), the
+zero-copy/arena token representation (§5.1), the UTF-8 code-point path (§5.2),
+and the Rust/Zig/Ada jet emission are the remaining increments.  The baseline
+is reported to establish what the design is being compared against, and because
+it already meets the performance criterion.
 
 ## 7. Related work
 
@@ -520,7 +636,7 @@ safety property that makes hand-optimizing a hot token acceptable.
 
 ## 8. Conclusion and future research
 
-We have described hbnf, a parser generator whose schema is an extension of
+This paper has described hbnf, a parser generator whose schema is an extension of
 ABNF, whose generated lexer is a thin character stream, and whose token
 definitions live in the grammar — as BNF, as hand-written jets, or as
 refinements of either.  The baseline already parses a 100k-rule firewall
@@ -559,8 +675,11 @@ low-level ones, optimization rewrites subtrees — and this is exactly a
 *fold/map*: hbnf emits a `map_<rule>` that recurses first and then hands the
 node to a hook, so the user writes only "replace a server node with its lowered
 form".  Code generation is then a final visitor over the fully-transformed
-tree.  The parser (given) plus visit and map (generated) are thus the complete
-set of primitives a compiler needs, and because a pass is an ordinary function
+tree.  The parser (given) plus visit, map, and serialize (generated) are thus
+the complete set of primitives a compiler needs — analysis, transformation, and
+emission are one recursion over one typed tree, and the serialize walk of §3.4
+is the wire-form analogue of the daemons' `config_set*` serialization — and
+because a pass is an ordinary function
 of the target language — not a `$1`/`$2` action embedded in the grammar — the
 one-grammar, four-language property survives: the same schema emits the
 traversal in all four backends, and a pass is written once per target language,
