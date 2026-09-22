@@ -251,9 +251,10 @@ and emits one flat record per object through an abstract
 always smaller and already sent, so a consumer rebuilds the tree in a single
 forward pass.  Strings are length-prefixed on the wire; ids replace only the
 structural pointers, never the scalar leaves.  The symmetric rebuild side
-emits an id-indexed table, a `<rule>_find(id)` helper, and a
-`config_get<rule>()` per type, so each process keeps its own separately
-allocated tree and none of them is the parser's original.
+emits a `decode_<rule>` per type that reads one flat record back and recurses
+into its children in field order, plus a `config_decode()` entry over the whole
+record stream, so each process keeps its own separately allocated tree and none
+of them is the parser's original.
 
 The traversal itself is not new — hbnf already generates the visitor and fold
 of §8, and a pretty-printer like the daemons' `printconf.c` is just one more
@@ -429,7 +430,7 @@ declares `binary` (octet stream, network byte order); a field is `name:N`, C's
 bitfield spelling with N in **bits**, packed the way a reader of the RFCs
 expects: left to right as written, first field in the most significant
 bits, big-endian, adjacent sub-byte fields coalescing into octets.
-Read top to bottom, each line is one 32-bit word of the RFC's packet diagram:
+Read top to bottom, matching the RFC's packet diagram:
 
     binary
 
@@ -445,10 +446,11 @@ Read top to bottom, each line is one 32-bit word of the RFC's packet diagram:
     ipv4 = version:4 ihl:4 tos:8 total_length:16
            identification:16 flags:3 frag_offset:13
            ttl:8 protocol:8 header_checksum:16
-           src:32 dst:32
+           src:32
+           dst:32
            options:*u8 payload:*u8
 
-    ; TCP (RFC 793) — RFC 3168 renames the reserved bits to NS/CWR/ECE
+    ; TCP (RFC 793) — RFC 3168 (CWR/ECE) and RFC 3540 (NS) take three reserved bits
     tcp = src_port:16 dst_port:16 seq_num:32 ack_num:32
           data_offset:4 reserved:6
           urg:1 ack:1 psh:1 rst:1 syn:1 fin:1
@@ -559,21 +561,21 @@ they were, for config, bookkeeping the binder does automatically.
 
 Across the nine daemon grammars with schemas, the win is aggregate, not
 anecdotal: 25,794 lines of hand-written `parse.y` — lexer, grammar, and action
-code together — collapse to 2,165 lines of schema, a 92% reduction, and the
-ratio holds on every daemon at a factor of ten to twenty:
+code together — collapse to 2,255 lines of schema, a 91% reduction, and the
+ratio holds on every daemon at a factor of roughly ten to twenty:
 
 | daemon | parse.y (lines) | hbnf (lines) |
 |---|---:|---:|
-| bgpd | 6,146 | 534 |
-| dhcpleased | 863 | 43 |
-| httpd | 2,785 | 183 |
-| ldpd | 1,739 | 144 |
-| ntpd | 841 | 72 |
-| pfctl | 6,546 | 559 |
-| relayd | 3,800 | 372 |
-| snmpd | 2,099 | 163 |
-| unwind | 975 | 95 |
-| **total** | **25,794** | **2,165** |
+| bgpd | 6,146 | 544 |
+| dhcpleased | 863 | 53 |
+| httpd | 2,785 | 193 |
+| ldpd | 1,739 | 154 |
+| ntpd | 841 | 82 |
+| pfctl | 6,546 | 569 |
+| relayd | 3,800 | 382 |
+| snmpd | 2,099 | 173 |
+| unwind | 975 | 105 |
+| **total** | **25,794** | **2,255** |
 
 **Status.**  The measured baseline is the token-level parser with per-token
 allocation (§5.1) — deliberately the unoptimized version.  The inline-jet mechanism
@@ -641,7 +643,7 @@ ABNF, whose generated lexer is a thin character stream, and whose token
 definitions live in the grammar — as BNF, as hand-written jets, or as
 refinements of either.  The baseline already parses a 100k-rule firewall
 ruleset in 75 ms, and the grammar notation compresses a 2,785-line yacc
-grammar to a hundred lines.
+grammar to under two hundred lines.
 
 Near-term work is to finish the implemented surface — the jet and refinement
 syntax across the four emitters, the spec-vs-jet cross-check, the zero-copy or
@@ -682,8 +684,8 @@ is the wire-form analogue of the daemons' `config_set*` serialization — and
 because a pass is an ordinary function
 of the target language — not a `$1`/`$2` action embedded in the grammar — the
 one-grammar, four-language property survives: the same schema emits the
-traversal in all four backends, and a pass is written once per target language,
-not once per grammar.  The visitor/fold route is what makes hbnf a true
+traversal in the C, Rust, and Zig backends, and a pass is written once per
+target language, not once per grammar.  The visitor/fold route is what makes hbnf a true
 compiler-compiler without reintroducing the semantic-action layer that would
 re-tie a grammar to one backend.  Reclaiming the remaining yacc facilities —
 left recursion (via an Earley or GLR kernel) and operator-precedence
