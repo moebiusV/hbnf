@@ -31,13 +31,12 @@ package HBNF_C is
       return String;
 
    --  Emit the parser half: a self-contained recursive-descent parser (a
-   --  token type plus one `parse_<rule>()` function per rule) that consumes
-   --  a token stream and allocates/populates the structs `Emit` declares.
-   --  When Conf is true, the parser's `fail` reports to the global
-   --  `conf_error` handler at the point of error (yyerror-style) instead of
-   --  only filling the err buffer.
+   --  token type plus one `parse_rule_<rule>()` function per rule) that
+   --  consumes a token stream and allocates/populates the structs `Emit`
+   --  declares.  On failure it records the deepest `fail` into the err
+   --  buffer; the conf wrapper calls the `conf_error` handler with it.
    function Emit_Parser
-     (Rules : HBNF_Grammar.Rule_Vectors.Vector; Conf : Boolean := False)
+     (Rules : HBNF_Grammar.Rule_Vectors.Vector)
       return String;
 
    --  Emit the lexer half: a schema-independent scanner that turns text into

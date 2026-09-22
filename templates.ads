@@ -475,8 +475,9 @@ package Templates is
      "        return -1;" & LF &
      "    }" & LF &
      "    if (!parse_text(buf, conf, err, sizeof err, &line, &col)) {" & LF &
+     "        conf_error(line, err);" & LF &
      "        free(buf);" & LF &
-     "        return -1;  /* conf_error was already called at the fail() site */" & LF &
+     "        return -1;" & LF &
      "    }" & LF &
      "    free(buf);" & LF &
      "    return 0;" & LF &
