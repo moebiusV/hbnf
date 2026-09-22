@@ -709,16 +709,6 @@ package body HBNF_Zig is
          return False;
       end Has_Alt;
 
-      function Has_Name (Els : Element_Vectors.Vector) return Boolean is
-      begin
-         for E of Els loop
-            if E.Kind = Name then
-               return True;
-            end if;
-         end loop;
-         return False;
-      end Has_Name;
-
       --  True when every `/`-alternative is exactly one Literal — the shape
       --  an enum can hold.
       function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is

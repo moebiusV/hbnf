@@ -461,9 +461,14 @@ package body HBNF_Rust is
 
          case Info.Kind is
             when Scalar =>
-               Append (Buf, "pub type " & Base & " = " &
-                       To_String (Info.Inline_Type) & ";");
-               Append (Buf, LF);
+               --  A rule whose name already names its resolved type (e.g.
+               --  `string` -> `String`) is that type; a self-alias `type
+               --  String = String` would shadow std and is omitted.
+               if Base /= To_String (Info.Inline_Type) then
+                  Append (Buf, "pub type " & Base & " = " &
+                          To_String (Info.Inline_Type) & ";");
+                  Append (Buf, LF);
+               end if;
             when Enum =>
                declare
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
@@ -609,16 +614,6 @@ package body HBNF_Rust is
          end loop;
          return False;
       end Has_Alt;
-
-      function Has_Name (Els : Element_Vectors.Vector) return Boolean is
-      begin
-         for E of Els loop
-            if E.Kind = Name then
-               return True;
-            end if;
-         end loop;
-         return False;
-      end Has_Name;
 
       --  True when every `/`-alternative is exactly one Literal — the shape
       --  an enum can hold.

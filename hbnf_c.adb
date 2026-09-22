@@ -797,16 +797,6 @@ package body HBNF_C is
          return False;
       end Has_Alt;
 
-      function Has_Name (Els : Element_Vectors.Vector) return Boolean is
-      begin
-         for E of Els loop
-            if E.Kind = Name then
-               return True;
-            end if;
-         end loop;
-         return False;
-      end Has_Name;
-
       --  True when every `/`-alternative is exactly one Literal — the shape an
       --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`) or one
       --  that names another rule is not an enum.
