@@ -500,37 +500,11 @@ package body HBNF_Ada is
       --  non-list members that reference another record type (a by-value
       --  member needs that type complete first).
       function Deps (Idx : Natural) return Natural_Vectors.Vector is
-         Members : Member_Vectors.Vector;
-         Lits    : String_Vectors.Vector;
-         Has_Alt : Boolean := False;
-         D       : Natural_Vectors.Vector;
+         --  No by-value record dependencies: every record member is an
+         --  _Access (see Emit_Rule), so records may be emitted in any order
+         --  and no cycle is possible.
+         D : Natural_Vectors.Vector;
       begin
-         if Infos (Idx).Kind /= Struct then
-            return D;
-         end if;
-         Collect (Rules (Idx).Pattern, Members, Lits, Has_Alt);
-         for M of Members loop
-            if not M.Is_List then
-               declare
-                  J : constant Natural := Find (To_String (M.Name));
-               begin
-                  if J > 0 and then Is_Record (Infos (J)) then
-                     declare
-                        Present : Boolean := False;
-                     begin
-                        for X of D loop
-                           if X = J then
-                              Present := True;
-                           end if;
-                        end loop;
-                        if not Present then
-                           D.Append (J);
-                        end if;
-                     end;
-                  end if;
-               end;
-            end if;
-         end loop;
          return D;
       end Deps;
 
@@ -602,7 +576,7 @@ package body HBNF_Ada is
                              "_Vectors.Vector;");
                   else
                      Append (Buf, "      " & Ada_Field (To_String (M.Name)) &
-                             " : " & Ada_Type_Of (To_String (M.Name)) & ";");
+                             " : " & Elem_Type (To_String (M.Name)) & ";");
                   end if;
                   Append (Buf, LF);
                end loop;
@@ -1125,7 +1099,8 @@ package body HBNF_Ada is
       --  through for the caller's own failure handling.
       procedure Emit_Alternation
         (Els : Element_Vectors.Vector; TN : String;
-         Buf : in out U; Ind : String := "         ") is
+         Buf : in out U; Ind : String := "         ";
+         Alloc_Records : Boolean := False) is
          N  : constant Natural := Natural (Els.Length);
          St : Natural := 1;
          Br : Natural := 0;
@@ -1143,7 +1118,7 @@ package body HBNF_Ada is
                Append (Buf, LF);
                Append (Buf, Ind & "begin");
                Append (Buf, LF);
-               Emit_Seq (Els, St, K - 1, "R.", Buf, Ind & "   ");
+               Emit_Seq (Els, St, K - 1, "R.", Buf, Ind & "   ", Alloc_Records);
                Append (Buf, Ind & "   return R;");
                Append (Buf, LF);
                Append (Buf, Ind & "exception");
@@ -1429,7 +1404,7 @@ package body HBNF_Ada is
             Append (Buf, LF);
             Append (Buf, "      begin");
             Append (Buf, LF);
-            Emit_Alternation (P, TN, Buf);
+            Emit_Alternation (P, TN, Buf, "         ", True);
             Append (Buf, "         P.Pos := Save;");
             Append (Buf, LF);
             Append (Buf, "         Fail (P, ""a " & NM & """);");
@@ -1439,7 +1414,7 @@ package body HBNF_Ada is
             Append (Buf, "      end;");
             Append (Buf, LF);
          else
-            Emit_Seq (P, 1, Natural (P.Length), "R.", Buf);
+            Emit_Seq (P, 1, Natural (P.Length), "R.", Buf, "      ", True);
             Append (Buf, "      return R;");
             Append (Buf, LF);
          end if;

@@ -467,15 +467,23 @@ package body HBNF_Zig is
          end;
       end Analyze;
 
-      --  Structs and lists both name types that must precede any rule that
-      --  refers to them (Zig has no forward declarations).
+      --  Structs and lists both name a type.  Zig's lazy analysis lets a
+      --  declaration refer to a type declared later, so only a genuine
+      --  by-value embedding imposes an ordering constraint (and, transitively,
+      --  the infinite-type cycle the sort below guards against).
       function Is_Type (Info : Rule_Info) return Boolean is
         (Info.Kind = Struct or else Info.Kind = List);
 
+      --  A struct member embedded by value; a list is a `[]T` slice (and a
+      --  reference to a list is its slice alias), so neither embeds by value.
+      function Is_By_Value (Info : Rule_Info) return Boolean is
+        (Info.Kind = Struct);
+
       Infos : Info_Vectors.Vector;
 
-      --  The rule indices this rule must be emitted after.  Unlike C, a list
-      --  member (`[]T` slice) also needs its element defined first.
+      --  The rule indices this rule must be emitted after: only the structs it
+      --  embeds by value.  List members and list references are slices, which
+      --  break the cycle.
       function Deps (Idx : Natural) return Natural_Vectors.Vector is
          D : Natural_Vectors.Vector;
 
@@ -494,6 +502,14 @@ package body HBNF_Zig is
                D.Append (J);
             end if;
          end Add;
+
+         procedure Add_Ref (Name : U) is
+            J : constant Natural := Find (To_String (Name));
+         begin
+            if J > 0 and then Is_By_Value (Infos (J)) then
+               Add (J);
+            end if;
+         end Add_Ref;
       begin
          declare
             Info : constant Rule_Info := Infos (Idx);
@@ -501,34 +517,12 @@ package body HBNF_Zig is
             case Info.Kind is
                when Struct =>
                   for M of Info.Members loop
-                     declare
-                        J : constant Natural := Find (To_String (M.Name));
-                     begin
-                        if J > 0 and then Is_Type (Infos (J)) then
-                           Add (J);
-                        end if;
-                     end;
+                     if not M.Is_List then
+                        Add_Ref (M.Name);
+                     end if;
                   end loop;
                when List =>
-                  if Info.Elem_Name /= Null_Unbounded_String then
-                     declare
-                        J : constant Natural :=
-                          Find (To_String (Info.Elem_Name));
-                     begin
-                        if J > 0 and then Is_Type (Infos (J)) then
-                           Add (J);
-                        end if;
-                     end;
-                  end if;
-                  for M of Info.Elem_Members loop
-                     declare
-                        J : constant Natural := Find (To_String (M.Name));
-                     begin
-                        if J > 0 and then Is_Type (Infos (J)) then
-                           Add (J);
-                        end if;
-                     end;
-                  end loop;
+                  null;  --  a slice; its element type is not embedded by value
                when others =>
                   null;
             end case;
@@ -986,6 +980,19 @@ package body HBNF_Zig is
          return "";
       end Scalar_Union_Type;
 
+      --  True when a pattern (or any nested group) names a rule reference.
+      function Has_Name (Els : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of Els loop
+            if E.Kind = Name then
+               return True;
+            elsif E.Kind = Group and then Has_Name (E.Items) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Name;
+
       function Core_Desc (Name : String) return String is
       begin
          if Name = "str" or else Name = "atom" or else Name = "word" then
@@ -1176,8 +1183,9 @@ package body HBNF_Zig is
          SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
       begin
          if R.Jet_Code /= Null_Unbounded_String then
-            Append (Buf, "    try p.expect_kind(." & Zig_Snake (NM)
-              & ", ""a " & NM & """);");
+            --  A jet is a hand-written C scanner; this backend can't run it,
+            --  so read the token the generic lexer produced instead.
+            Append (Buf, "    try p.expect_kind(.atom, ""a " & NM & """);");
             Append (Buf, LF);
             Append (Buf, "    const r = p.toks[p.pos].text; p.pos += 1;");
             Append (Buf, LF);
@@ -1214,66 +1222,51 @@ package body HBNF_Zig is
                   Append (Buf, "    }");
                   Append (Buf, LF);
                elsif E.Kind = Group then
+                  Append (Buf, "    list: while (p.pos < p.toks.len) {");
+                  Append (Buf, LF);
+                  Append (Buf, "        const save = p.pos;");
+                  Append (Buf, LF);
+                  Append (Buf, "        var e = std.mem.zeroes(" & Elem & ");");
+                  Append (Buf, LF);
+                  Append (Buf, "        blk_alt: {");
+                  Append (Buf, LF);
                   declare
-                     Firsts : String_Vectors.Vector;
                      St     : Natural := 1;
+                     Branch : Natural := 0;
                   begin
                      for K in 1 .. Natural (E.Items.Length) + 1 loop
                         if K > Natural (E.Items.Length)
                           or else E.Items (K).Kind = Alt
                         then
-                           if St <= K - 1 and then E.Items (St).Kind = Literal then
-                              Firsts.Append (E.Items (St).Lit);
+                           if St <= K - 1 then
+                              Branch := Branch + 1;
+                              if Branch > 1 then
+                                 Append (Buf, "            p.pos = save; e = std.mem.zeroes("
+                                   & Elem & ");");
+                                 Append (Buf, LF);
+                              end if;
+                              Append (Buf, "            blk_" & Img (Branch) & ": {");
+                              Append (Buf, LF);
+                              Emit_Seq (E.Items, St, K - 1, "e.", Buf,
+                                        "break :blk_" & Img (Branch),
+                                        "                ");
+                              Append (Buf, "                break :blk_alt;");
+                              Append (Buf, LF);
+                              Append (Buf, "            }");
+                              Append (Buf, LF);
                            end if;
                            St := K + 1;
                         end if;
                      end loop;
-                     Append (Buf, "    while (p.pos < p.toks.len and p.toks[p.pos].kind == .atom and (");
-                     for I in 1 .. Natural (Firsts.Length) loop
-                        if I > 1 then
-                           Append (Buf, " or ");
-                        end if;
-                        Append (Buf, "std.mem.eql(u8, p.toks[p.pos].text, """
-                          & To_String (Firsts (I)) & """)");
-                     end loop;
-                     Append (Buf, ")) {");
-                     Append (Buf, LF);
-                     Append (Buf, "        var e = std.mem.zeroes(" & Elem & ");");
-                     Append (Buf, LF);
-                     St := 1;
-                     declare
-                        Branch : Natural := 0;
-                     begin
-                        for K in 1 .. Natural (E.Items.Length) + 1 loop
-                           if K > Natural (E.Items.Length)
-                             or else E.Items (K).Kind = Alt
-                           then
-                              if St <= K - 1 and then E.Items (St).Kind = Literal then
-                                 if Branch = 0 then
-                                    Append (Buf, "        if (std.mem.eql(u8, p.toks[p.pos].text, """
-                                      & To_String (E.Items (St).Lit) & """)) {");
-                                 else
-                                    Append (Buf, "        } else if (std.mem.eql(u8, p.toks[p.pos].text, """
-                                      & To_String (E.Items (St).Lit) & """)) {");
-                                 end if;
-                                 Append (Buf, LF);
-                                 Append (Buf, "            p.pos += 1;");
-                                 Append (Buf, LF);
-                                 Emit_Seq (E.Items, St + 1, K - 1, "e.", Buf, "",
-                                           "            ");
-                                 Branch := Branch + 1;
-                              end if;
-                              St := K + 1;
-                           end if;
-                        end loop;
-                     end;
-                     Append (Buf, "        }");
-                     Append (Buf, LF);
-                     Append (Buf, "        try list.append(p.alloc, e);");
-                     Append (Buf, LF);
-                     Append (Buf, "    }");
-                     Append (Buf, LF);
                   end;
+                  Append (Buf, "            p.pos = save; break :list;");
+                  Append (Buf, LF);
+                  Append (Buf, "        }");
+                  Append (Buf, LF);
+                  Append (Buf, "        try list.append(p.alloc, e);");
+                  Append (Buf, LF);
+                  Append (Buf, "    }");
+                  Append (Buf, LF);
                end if;
                Append (Buf, "    return list.toOwnedSlice(p.alloc);");
                Append (Buf, LF);
@@ -1410,7 +1403,11 @@ package body HBNF_Zig is
             Append (Buf, "    unreachable;");
             Append (Buf, LF);
          else
-            Append (Buf, "    var r: " & ZT & " = std.mem.zeroes(" & ZT & ");");
+            if Has_Name (P) then
+               Append (Buf, "    var r: " & ZT & " = std.mem.zeroes(" & ZT & ");");
+            else
+               Append (Buf, "    const r: " & ZT & " = std.mem.zeroes(" & ZT & ");");
+            end if;
             Append (Buf, LF);
             Emit_Seq (P, 1, Natural (P.Length), "r.", Buf);
             Append (Buf, "    return r;");
@@ -1601,9 +1598,9 @@ package body HBNF_Zig is
                NM : constant String := To_String (R.Name);
             begin
                Append (Res, "fn jet_" & Zig_Snake (NM)
-                 & "(s: []const u8, pos: usize, len: usize) usize {");
+                 & "(_: []const u8, _: usize, _: usize) usize {");
                Append (Res, LF);
-               Append (Res, To_String (R.Jet_Code));
+               Append (Res, "    return 0;");
                Append (Res, LF);
                Append (Res, "}");
                Append (Res, LF);
@@ -1615,8 +1612,20 @@ package body HBNF_Zig is
       Append (Res, "fn jet_dispatch(s: []const u8, pos: usize, len: usize,"
         & " kind: *Kind) usize {");
       Append (Res, LF);
-      Append (Res, "    _ = s; _ = pos; _ = len; _ = kind;");
-      Append (Res, LF);
+      declare
+         Has_Jet : Boolean := False;
+      begin
+         for I in 1 .. N loop
+            if Rules (I).Jet_Code /= Null_Unbounded_String then
+               Has_Jet := True;
+               exit;
+            end if;
+         end loop;
+         if not Has_Jet then
+            Append (Res, "    _ = s; _ = pos; _ = len; _ = kind;");
+            Append (Res, LF);
+         end if;
+      end;
       for I in 1 .. N loop
          if Rules (I).Jet_Code /= Null_Unbounded_String then
             declare
