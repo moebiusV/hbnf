@@ -196,6 +196,23 @@ package body HBNF_Zig is
       return Names;
    end Enum_Names;
 
+   --  Append Text as `//` line comments, prefixing every line (a schema's
+   --  leading comment block spans multiple lines joined by LF).
+   procedure Append_Comment (B : in out U; Text : String) is
+      Line_Start : Natural := Text'First;
+   begin
+      if Text'Length = 0 then
+         return;
+      end if;
+      for K in Text'Range loop
+         if Text (K) = ASCII.LF then
+            Append (B, "// " & Text (Line_Start .. K - 1) & LF);
+            Line_Start := K + 1;
+         end if;
+      end loop;
+      Append (B, "// " & Text (Line_Start .. Text'Last) & LF);
+   end Append_Comment;
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
@@ -525,8 +542,7 @@ package body HBNF_Zig is
          Buf  : U;
       begin
          if R.Leading_Comment /= Null_Unbounded_String then
-            Append (Buf, "// " & To_String (R.Leading_Comment));
-            Append (Buf, LF);
+            Append_Comment (Buf, To_String (R.Leading_Comment));
          end if;
 
          case Info.Kind is
@@ -583,8 +599,7 @@ package body HBNF_Zig is
          Buf  : U;
       begin
          if R.Leading_Comment /= Null_Unbounded_String then
-            Append (Buf, "// " & To_String (R.Leading_Comment));
-            Append (Buf, LF);
+            Append_Comment (Buf, To_String (R.Leading_Comment));
          end if;
 
          if Info.Elem_Members.Is_Empty then

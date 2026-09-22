@@ -66,7 +66,18 @@ package body HBNF_Rust is
             Append (Buf, C);
          end if;
       end loop;
-      return To_String (Buf);
+      --  A rule named after a std prelude type would shadow it and break the
+      --  generated parser (which uses Option/Result/Vec/String unqualified).
+      declare
+         T : constant String := To_String (Buf);
+      begin
+         if T = "Option" or else T = "Result" or else T = "String"
+           or else T = "Vec" or else T = "Box"
+         then
+            return T & "_";
+         end if;
+         return T;
+      end;
    end Rust_Type;
 
    --  A field name: snake_case, with a "_" suffix if it is a Rust keyword.
@@ -191,6 +202,23 @@ package body HBNF_Rust is
       end loop;
       return Names;
    end Enum_Names;
+
+   --  Append Text as `//` line comments, prefixing every line (a schema's
+   --  leading comment block spans multiple lines joined by LF).
+   procedure Append_Comment (B : in out U; Text : String) is
+      Line_Start : Natural := Text'First;
+   begin
+      if Text'Length = 0 then
+         return;
+      end if;
+      for K in Text'Range loop
+         if Text (K) = ASCII.LF then
+            Append (B, "// " & Text (Line_Start .. K - 1) & LF);
+            Line_Start := K + 1;
+         end if;
+      end loop;
+      Append (B, "// " & Text (Line_Start .. Text'Last) & LF);
+   end Append_Comment;
 
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
@@ -455,8 +483,7 @@ package body HBNF_Rust is
          Buf  : U;
       begin
          if R.Leading_Comment /= Null_Unbounded_String then
-            Append (Buf, "// " & To_String (R.Leading_Comment));
-            Append (Buf, LF);
+            Append_Comment (Buf, To_String (R.Leading_Comment));
          end if;
 
          case Info.Kind is
@@ -526,8 +553,7 @@ package body HBNF_Rust is
          Buf  : U;
       begin
          if R.Leading_Comment /= Null_Unbounded_String then
-            Append (Buf, "// " & To_String (R.Leading_Comment));
-            Append (Buf, LF);
+            Append_Comment (Buf, To_String (R.Leading_Comment));
          end if;
 
          if Info.Elem_Members.Is_Empty then
@@ -1124,8 +1150,9 @@ package body HBNF_Rust is
          SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
       begin
          if R.Jet_Code /= Null_Unbounded_String then
-            Append (Buf, "    p.expect_kind(Kind::" & Rust_Type (NM)
-              & ", ""a " & NM & """)?;");
+            --  A jet is a hand-written C scanner; this backend can't run it,
+            --  so read the token the generic lexer produced instead.
+            Append (Buf, "    p.expect_kind(Kind::Atom, ""a " & NM & """)?;");
             Append (Buf, LF);
             Append (Buf, "    let r = p.toks[p.pos].text.clone(); p.pos += 1;");
             Append (Buf, LF);
@@ -1157,68 +1184,25 @@ package body HBNF_Rust is
                   Append (Buf, "    }");
                   Append (Buf, LF);
                elsif E.Kind = Group then
-                  declare
-                     Firsts : String_Vectors.Vector;
-                     St     : Natural := 1;
-                  begin
-                     for K in 1 .. Natural (E.Items.Length) + 1 loop
-                        if K > Natural (E.Items.Length)
-                          or else E.Items (K).Kind = Alt
-                        then
-                           if St <= K - 1 and then E.Items (St).Kind = Literal then
-                              Firsts.Append (E.Items (St).Lit);
-                           end if;
-                           St := K + 1;
-                        end if;
-                     end loop;
-                     Append (Buf, "    while p.pos < p.toks.len() && matches!(p.toks[p.pos].kind, Kind::Atom)");
-                     Append (Buf, LF);
-                     Append (Buf, "        && (");
-                     for I in 1 .. Natural (Firsts.Length) loop
-                        if I > 1 then
-                           Append (Buf, " || ");
-                        end if;
-                        Append (Buf, "p.toks[p.pos].text == """
-                          & To_String (Firsts (I)) & """");
-                     end loop;
-                     Append (Buf, ") {");
-                     Append (Buf, LF);
-                     Append (Buf, "        let mut e = " & RT & "Entry::default();");
-                     Append (Buf, LF);
-                     St := 1;
-                     declare
-                        Branch : Natural := 0;
-                     begin
-                        for K in 1 .. Natural (E.Items.Length) + 1 loop
-                           if K > Natural (E.Items.Length)
-                             or else E.Items (K).Kind = Alt
-                           then
-                              if St <= K - 1 and then E.Items (St).Kind = Literal then
-                                 if Branch = 0 then
-                                    Append (Buf, "        if p.toks[p.pos].text == """
-                                      & To_String (E.Items (St).Lit) & """ {");
-                                 else
-                                    Append (Buf, "        } else if p.toks[p.pos].text == """
-                                      & To_String (E.Items (St).Lit) & """ {");
-                                 end if;
-                                 Append (Buf, LF);
-                                 Append (Buf, "            p.pos += 1;");
-                                 Append (Buf, LF);
-                                 Emit_Seq (E.Items, St + 1, K - 1, "e.", Buf,
-                                           "            ");
-                                 Branch := Branch + 1;
-                              end if;
-                              St := K + 1;
-                           end if;
-                        end loop;
-                     end;
-                     Append (Buf, "        }");
-                     Append (Buf, LF);
-                     Append (Buf, "        r.push(e);");
-                     Append (Buf, LF);
-                     Append (Buf, "    }");
-                     Append (Buf, LF);
-                  end;
+                  Append (Buf, "    'list: loop {");
+                  Append (Buf, LF);
+                  Append (Buf, "        let save = p.pos;");
+                  Append (Buf, LF);
+                  Append (Buf, "        let mut e = " & RT & "Entry::default();");
+                  Append (Buf, LF);
+                  Append (Buf, "        'alt: {");
+                  Append (Buf, LF);
+                  Emit_Alternation (E.Items, "e.",
+                                    "e = " & RT & "Entry::default()", Buf,
+                                    "            ");
+                  Append (Buf, "            p.pos = save; break 'list;");
+                  Append (Buf, LF);
+                  Append (Buf, "        }");
+                  Append (Buf, LF);
+                  Append (Buf, "        r.push(e);");
+                  Append (Buf, LF);
+                  Append (Buf, "    }");
+                  Append (Buf, LF);
                end if;
                Append (Buf, "    Ok(r)");
                Append (Buf, LF);
@@ -1485,7 +1469,7 @@ package body HBNF_Rust is
                Append (Res, "fn jet_" & Rust_Snake (NM)
                  & "(s: &[u8], pos: usize, len: usize) -> usize {");
                Append (Res, LF);
-               Append (Res, To_String (R.Jet_Code));
+               Append (Res, "    let _ = (s, pos, len); 0");
                Append (Res, LF);
                Append (Res, "}");
                Append (Res, LF);

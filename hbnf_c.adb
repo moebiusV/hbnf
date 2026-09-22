@@ -169,6 +169,24 @@ package body HBNF_C is
       return N;
    end C_Field;
 
+   --  The `_t` typedef name for a rule, with a "_" suffix when it would
+   --  collide with a POSIX <sys/types.h> typedef (uid_t, gid_t, ...).
+   function C_Type_Name (Ref : String) return String is
+      T : constant String := C_Name (Ref) & "_t";
+   begin
+      if T = "uid_t" or else T = "gid_t" or else T = "pid_t"
+        or else T = "off_t" or else T = "size_t" or else T = "ssize_t"
+        or else T = "time_t" or else T = "mode_t" or else T = "dev_t"
+        or else T = "ino_t" or else T = "nlink_t" or else T = "id_t"
+        or else T = "clock_t" or else T = "useconds_t"
+        or else T = "suseconds_t" or else T = "timer_t"
+        or else T = "socklen_t" or else T = "key_t"
+      then
+         return T & "_";
+      end if;
+      return T;
+   end C_Type_Name;
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
@@ -192,7 +210,7 @@ package body HBNF_C is
          if Find (Ref) = 0 then
             raise Parse_Error with "undefined rule: " & Ref;
          end if;
-         return C_Name (Ref) & "_t";
+         return C_Type_Name (Ref);
       end C_Type_Of;
 
       --  The underlying scalar C type a rule name resolves to, chasing
@@ -489,7 +507,7 @@ package body HBNF_C is
          if S /= "" then
             return S;
          end if;
-         return C_Name (Name) & "_t";
+         return C_Type_Name (Name);
       end Ref_Type;
 
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
@@ -506,7 +524,7 @@ package body HBNF_C is
          case Info.Kind is
             when Scalar =>
                Append (Buf, "typedef " & To_String (Info.Inline_Type) & " "
-                 & CN & "_t;");
+                 & C_Type_Name (NM) & ";");
                Append (Buf, LF);
             when Enum =>
                declare
@@ -524,7 +542,7 @@ package body HBNF_C is
                        & To_String (Info.Literals (I)) & " */");
                      Append (Buf, LF);
                   end loop;
-                  Append (Buf, "} " & CN & "_t;");
+                  Append (Buf, "} " & C_Type_Name (NM) & ";");
                   Append (Buf, LF);
                end;
             when Struct =>
@@ -635,11 +653,12 @@ package body HBNF_C is
 
          procedure Visit_Def (Idx : Natural; Buf : in out U) is
             CN   : constant String := C_Name (To_String (Rules (Idx).Name));
+            TN   : constant String := C_Type_Name (To_String (Rules (Idx).Name));
             Info : constant Rule_Info := Infos (Idx);
          begin
             if Info.Kind = Struct then
-               Append (Buf, "void visit_" & CN & "(const " & CN
-                 & "_t *n, visit_fn f, void *ctx) {");
+               Append (Buf, "void visit_" & CN & "(const "
+                 & TN & " *n, visit_fn f, void *ctx) {");
                Append (Buf, LF);
                Append (Buf, "    if (!n) return;");
                Append (Buf, LF);
@@ -649,11 +668,11 @@ package body HBNF_C is
                   Recurse (To_String (M.Name), "visit", Buf, "    ");
                end loop;
             else
-               Append (Buf, "void visit_" & CN & "(const " & CN
-                 & "_t *head, visit_fn f, void *ctx) {");
+               Append (Buf, "void visit_" & CN & "(const "
+                 & TN & " *head, visit_fn f, void *ctx) {");
                Append (Buf, LF);
-               Append (Buf, "    for (const " & CN
-                 & "_t *n = head; n; n = n->next) {");
+               Append (Buf, "    for (const "
+                 & TN & " *n = head; n; n = n->next) {");
                Append (Buf, LF);
                Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
@@ -667,11 +686,12 @@ package body HBNF_C is
 
          procedure Map_Def (Idx : Natural; Buf : in out U) is
             CN   : constant String := C_Name (To_String (Rules (Idx).Name));
+            TN   : constant String := C_Type_Name (To_String (Rules (Idx).Name));
             Info : constant Rule_Info := Infos (Idx);
          begin
             if Info.Kind = Struct then
-               Append (Buf, "void map_" & CN & "(" & CN
-                 & "_t *n, map_fn f, void *ctx) {");
+               Append (Buf, "void map_" & CN & "("
+                 & TN & " *n, map_fn f, void *ctx) {");
                Append (Buf, LF);
                Append (Buf, "    if (!n) return;");
                Append (Buf, LF);
@@ -681,11 +701,11 @@ package body HBNF_C is
                Append (Buf, "    f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
             else
-               Append (Buf, "void map_" & CN & "(" & CN
-                 & "_t *head, map_fn f, void *ctx) {");
+               Append (Buf, "void map_" & CN & "("
+                 & TN & " *head, map_fn f, void *ctx) {");
                Append (Buf, LF);
-               Append (Buf, "    for (" & CN
-                 & "_t *n = head; n; n = n->next) {");
+               Append (Buf, "    for ("
+                 & TN & " *n = head; n; n = n->next) {");
                Append (Buf, LF);
                Recurse_Elem (Info, "map", Buf, "        ");
                Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
@@ -732,12 +752,13 @@ package body HBNF_C is
             if Infos (I).Kind = Struct or else Infos (I).Kind = List then
                declare
                   CN : constant String := C_Name (To_String (Rules (I).Name));
+                  TN : constant String := C_Type_Name (To_String (Rules (I).Name));
                begin
-                  Append (Buf, "void visit_" & CN & "(const " & CN
-                    & "_t *, visit_fn f, void *ctx);");
+                  Append (Buf, "void visit_" & CN & "(const "
+                    & TN & " *, visit_fn f, void *ctx);");
                   Append (Buf, LF);
-                  Append (Buf, "void map_" & CN & "(" & CN
-                    & "_t *, map_fn f, void *ctx);");
+                  Append (Buf, "void map_" & CN & "("
+                    & TN & " *, map_fn f, void *ctx);");
                   Append (Buf, LF);
                end;
             end if;
@@ -777,7 +798,7 @@ package body HBNF_C is
          if Is_By_Value (Infos (I)) or else Infos (I).Kind = List then
             Append (Res, "typedef struct "
               & C_Name (To_String (Rules (I).Name))
-              & " " & C_Name (To_String (Rules (I).Name)) & "_t;");
+              & " " & C_Type_Name (To_String (Rules (I).Name)) & ";");
             Append (Res, LF);
             Remaining := Remaining + 1;
          end if;
@@ -1074,9 +1095,9 @@ package body HBNF_C is
          if Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1)
          then
-            return C_Name (To_String (R.Name)) & "_t **";
+            return C_Type_Name (To_String (R.Name)) & " **";
          end if;
-         return C_Name (To_String (R.Name)) & "_t *";
+         return C_Type_Name (To_String (R.Name)) & " *";
       end Out_Type;
 
       --  Emit matching + building for segment Els(First..Last), writing fields
@@ -1185,11 +1206,11 @@ package body HBNF_C is
             declare
                E : constant Element_Access := P (1);
             begin
-               Append (Buf, "    " & CN & "_t *head = NULL, **tail = &head;");
+               Append (Buf, "    " & C_Type_Name (NM) & " *head = NULL, **tail = &head;");
                Append (Buf, LF);
                Append (Buf, "    while (p->pos < p->n) {");
                Append (Buf, LF);
-               Append (Buf, "        " & CN & "_t *nn ="
+               Append (Buf, "        " & C_Type_Name (NM) & " *nn ="
                  & " calloc(1, sizeof(*nn));");
                Append (Buf, LF);
                Append (Buf, "        size_t save = p->pos;");
@@ -1239,7 +1260,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    {");
                Append (Buf, LF);
-               Append (Buf, "        " & CN & "_t r = " & C_Ident (NM) & "_"
+               Append (Buf, "        " & C_Type_Name (NM) & " r = " & C_Ident (NM) & "_"
                  & To_String (Names (1)) & ";");
                Append (Buf, LF);
                declare
@@ -1349,7 +1370,7 @@ package body HBNF_C is
             --  A struct alternation: try each branch with backtracking.
             Append (Buf, "    size_t save = p->pos;");
             Append (Buf, LF);
-            Append (Buf, "    " & CN & "_t r = {0};");
+            Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
             Append (Buf, LF);
             Emit_Alternation (P, "r.", "memset(&r, 0, sizeof r)", "ok", Buf);
             Append (Buf, "    p->pos = save; return false;");
@@ -1362,7 +1383,7 @@ package body HBNF_C is
             --  A struct sequence: match literals and references in order.
             Append (Buf, "    size_t save = p->pos;");
             Append (Buf, LF);
-            Append (Buf, "    " & CN & "_t r = {0};");
+            Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
             Append (Buf, LF);
             Emit_Seq (P, 1, Natural (P.Length), "r.", Buf,
                       "p->pos = save; return false;");
@@ -1598,7 +1619,7 @@ package body HBNF_C is
    end Emit_Parser;
 
    function Emit_Lexer (Rules : Rule_Vectors.Vector) return String is
-      Root_Name : constant String := C_Name (To_String (Rules (1).Name)) & "_t";
+      Root_Name : constant String := C_Type_Name (To_String (Rules (1).Name));
       Root_List : constant Boolean :=
         Natural (Rules (1).Pattern.Length) = 1
           and then (Rules (1).Pattern (1).Min /= 1
@@ -1617,7 +1638,7 @@ package body HBNF_C is
    --  conf.h: the declarations plus the global `conf`, the error callback and
    --  the parse_config prototype.
    function Emit_Conf_Header (Rules : Rule_Vectors.Vector) return String is
-      Root_T : constant String := C_Name (To_String (Rules (1).Name)) & "_t";
+      Root_T : constant String := C_Type_Name (To_String (Rules (1).Name));
    begin
       return
         "#ifndef CONF_H" & LF &
@@ -1632,7 +1653,7 @@ package body HBNF_C is
    --  conf.c: the lexer + parser plus the global `conf` and parse_config
    --  (slurp the file, populate conf, report errors through the callback).
    function Emit_Conf_Source (Rules : Rule_Vectors.Vector) return String is
-      Root_T : constant String := C_Name (To_String (Rules (1).Name)) & "_t";
+      Root_T : constant String := C_Type_Name (To_String (Rules (1).Name));
    begin
       return
         "/* generated by hbnf -- do not edit */" & LF & LF &

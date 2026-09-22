@@ -59,6 +59,43 @@ package body HBNF_Ada is
       return To_String (Buf);
    end Ada_Ident;
 
+   --  A record component name: Ada_Ident, with a "_F" suffix if the bare
+   --  identifier is an Ada reserved word (e.g. the rule `entry`).
+   function Ada_Field (S : String) return String is
+      N : constant String := Ada_Ident (S);
+      Reserved : constant Boolean :=
+        N = "Abort" or else N = "Abs" or else N = "Abstract"
+        or else N = "Accept" or else N = "Access" or else N = "Aliased"
+        or else N = "All" or else N = "And" or else N = "Array"
+        or else N = "At" or else N = "Begin" or else N = "Body"
+        or else N = "Case" or else N = "Constant" or else N = "Declare"
+        or else N = "Delay" or else N = "Delta" or else N = "Digits"
+        or else N = "Do" or else N = "Else" or else N = "Elsif"
+        or else N = "End" or else N = "Entry" or else N = "Exception"
+        or else N = "Exit" or else N = "For" or else N = "Function"
+        or else N = "Generic" or else N = "Goto" or else N = "If"
+        or else N = "In" or else N = "Interface" or else N = "Is"
+        or else N = "Limited" or else N = "Loop" or else N = "Mod"
+        or else N = "New" or else N = "Not" or else N = "Null"
+        or else N = "Of" or else N = "Or" or else N = "Others"
+        or else N = "Out" or else N = "Overriding" or else N = "Package"
+        or else N = "Pragma" or else N = "Private" or else N = "Procedure"
+        or else N = "Protected" or else N = "Raise" or else N = "Range"
+        or else N = "Record" or else N = "Rem" or else N = "Renames"
+        or else N = "Requeue" or else N = "Return" or else N = "Reverse"
+        or else N = "Select" or else N = "Separate" or else N = "Some"
+        or else N = "Subtype" or else N = "Synchronized"
+        or else N = "Tagged" or else N = "Task" or else N = "Terminate"
+        or else N = "Then" or else N = "Type" or else N = "Until"
+        or else N = "Use" or else N = "When" or else N = "While"
+        or else N = "With" or else N = "Xor";
+   begin
+      if Reserved then
+         return N & "_F";
+      end if;
+      return N;
+   end Ada_Field;
+
    --  True when every `/`-alternative is exactly one Literal — the shape an
    --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`), one that
    --  names another rule, or a single literal (no `/`) is not an enum.
@@ -269,43 +306,6 @@ package body HBNF_Ada is
          return "";
       end Scalar_Union_Type;
 
-      --  A record component name: Ada_Ident, with a "_F" suffix if the bare
-      --  identifier is an Ada reserved word (e.g. the rule `entry`).
-      function Ada_Field (S : String) return String is
-         N : constant String := Ada_Ident (S);
-         Reserved : constant Boolean :=
-           N = "Abort" or else N = "Abs" or else N = "Abstract"
-           or else N = "Accept" or else N = "Access" or else N = "Aliased"
-           or else N = "All" or else N = "And" or else N = "Array"
-           or else N = "At" or else N = "Begin" or else N = "Body"
-           or else N = "Case" or else N = "Constant" or else N = "Declare"
-           or else N = "Delay" or else N = "Delta" or else N = "Digits"
-           or else N = "Do" or else N = "Else" or else N = "Elsif"
-           or else N = "End" or else N = "Entry" or else N = "Exception"
-           or else N = "Exit" or else N = "For" or else N = "Function"
-           or else N = "Generic" or else N = "Goto" or else N = "If"
-           or else N = "In" or else N = "Interface" or else N = "Is"
-           or else N = "Limited" or else N = "Loop" or else N = "Mod"
-           or else N = "New" or else N = "Not" or else N = "Null"
-           or else N = "Of" or else N = "Or" or else N = "Others"
-           or else N = "Out" or else N = "Overriding" or else N = "Package"
-           or else N = "Pragma" or else N = "Private" or else N = "Procedure"
-           or else N = "Protected" or else N = "Raise" or else N = "Range"
-           or else N = "Record" or else N = "Rem" or else N = "Renames"
-           or else N = "Requeue" or else N = "Return" or else N = "Reverse"
-           or else N = "Select" or else N = "Separate" or else N = "Some"
-           or else N = "Subtype" or else N = "Synchronized"
-           or else N = "Tagged" or else N = "Task" or else N = "Terminate"
-           or else N = "Then" or else N = "Type" or else N = "Until"
-           or else N = "Use" or else N = "When" or else N = "While"
-           or else N = "With" or else N = "Xor";
-      begin
-         if Reserved then
-            return N & "_F";
-         end if;
-         return N;
-      end Ada_Field;
-
       --  Append Text as an Ada comment block, one "-- " per line (a leading
       --  comment may span several schema lines).
       procedure Append_Comment (B : in out U; Text : String) is
@@ -420,16 +420,26 @@ package body HBNF_Ada is
                              Elem_Name    => E.Name,
                              Elem_Members => Member_Vectors.Empty_Vector);
                   elsif E.Kind = Group then
-                     declare
-                        Members : Member_Vectors.Vector;
-                        Lits    : String_Vectors.Vector;
-                        Has_Alt : Boolean := False;
-                     begin
-                        Collect (E.Items, Members, Lits, Has_Alt);
+                     --  A group of a single rule reference (`*( entry )`) is
+                     --  a list of that rule's type, not an anonymous struct.
+                     if Natural (E.Items.Length) = 1
+                       and then E.Items (1).Kind = Name
+                     then
                         return (Kind        => List,
-                                Elem_Name    => Null_Unbounded_String,
-                                Elem_Members => Members);
-                     end;
+                                Elem_Name    => E.Items (1).Name,
+                                Elem_Members => Member_Vectors.Empty_Vector);
+                     else
+                        declare
+                           Members : Member_Vectors.Vector;
+                           Lits    : String_Vectors.Vector;
+                           Has_Alt : Boolean := False;
+                        begin
+                           Collect (E.Items, Members, Lits, Has_Alt);
+                           return (Kind        => List,
+                                   Elem_Name    => Null_Unbounded_String,
+                                   Elem_Members => Members);
+                        end;
+                     end if;
                   else
                      return (Kind        => List,
                              Elem_Name    => Null_Unbounded_String,
@@ -637,7 +647,7 @@ package body HBNF_Ada is
             Append (Buf, LF);
             for M of Info.Elem_Members loop
                Append (Buf, "      " & Ada_Field (To_String (M.Name)) &
-                       " : " & Ada_Type_Of (To_String (M.Name)) & ";");
+                       " : " & Elem_Type (To_String (M.Name)) & ";");
                Append (Buf, LF);
             end loop;
             Append (Buf, "   end record;");
@@ -948,6 +958,38 @@ package body HBNF_Ada is
          return "";
       end Scalar_Union_Type;
 
+      --  True when a rule is a record (struct): its parse yields a _Type whose
+      --  full declaration may come after its use, so a list of it stores an
+      --  _Access.  Scalars (core, alias, or union) and enums are not records.
+      function Is_Struct (Name : String) return Boolean is
+         J : constant Natural := Find (Name);
+      begin
+         if J = 0 then
+            return False;
+         end if;
+         declare
+            R : constant Rule := Rules (J);
+            P : constant Element_Vectors.Vector := R.Pattern;
+         begin
+            if R.Jet_Code /= Null_Unbounded_String then
+               return False;
+            end if;
+            if Natural (P.Length) = 1 then
+               declare
+                  E : constant Element_Access := P (1);
+               begin
+                  if E.Min /= 1 or else E.Max /= 1 then
+                     return False;  -- a list
+                  end if;
+                  return E.Kind = HBNF_Grammar.Group;  -- ( x ) = struct
+               end;
+            else
+               return not Is_Pure_Literal_Alt (P)
+                 and then Scalar_Union_Type (P) = "";
+            end if;
+         end;
+      end Is_Struct;
+
       function Core_Desc (Name : String) return String is
       begin
          if Name = "str" or else Name = "atom" or else Name = "word" then
@@ -1029,7 +1071,8 @@ package body HBNF_Ada is
 
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural;
-         Dst : String; Buf : in out U; Ind : String := "      ") is
+         Dst : String; Buf : in out U; Ind : String := "      ";
+         Alloc_Records : Boolean := False) is
       begin
          for K in First .. Last loop
             declare
@@ -1047,18 +1090,26 @@ package body HBNF_Ada is
                           & Core_Desc (To_String (E.Name)) & """);");
                         Append (Buf, LF);
                         Append (Buf, Ind & Dst
-                          & Ada_Ident (To_String (E.Name)) & " := "
+                          & Ada_Field (To_String (E.Name)) & " := "
                           & Scalar_Parse (To_String (E.Name)) & "; P.Pos := P.Pos + 1;");
                         Append (Buf, LF);
                      else
-                        Append (Buf, Ind & Dst
-                          & Ada_Ident (To_String (E.Name)) & " := Parse_"
-                          & Ada_Ident (To_String (E.Name)) & " (P);");
+                        if Alloc_Records and then Is_Struct (To_String (E.Name))
+                        then
+                           Append (Buf, Ind & Dst
+                             & Ada_Field (To_String (E.Name)) & " := new "
+                             & Ada_Ident (To_String (E.Name)) & "_Type'(Parse_"
+                             & Ada_Ident (To_String (E.Name)) & " (P));");
+                        else
+                           Append (Buf, Ind & Dst
+                             & Ada_Field (To_String (E.Name)) & " := Parse_"
+                             & Ada_Ident (To_String (E.Name)) & " (P);");
+                        end if;
                         Append (Buf, LF);
                      end if;
                   when Group =>
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Dst, Buf,
-                               Ind & "   ");
+                               Ind & "   ", Alloc_Records);
                   when Alt =>
                      null;
                end case;
@@ -1118,6 +1169,13 @@ package body HBNF_Ada is
          if not Delegate then
             Append (Buf, "   R : " & TN & ";");
             Append (Buf, LF);
+            if Natural (P.Length) = 1
+              and then (P (1).Min /= 1 or else P (1).Max /= 1)
+              and then P (1).Kind = HBNF_Grammar.Group
+            then
+               Append (Buf, "   Save : Natural;");
+               Append (Buf, LF);
+            end if;
          end if;
       end Emit_Rule_Decl;
 
@@ -1132,8 +1190,9 @@ package body HBNF_Ada is
          SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
       begin
          if R.Jet_Code /= Null_Unbounded_String then
-            Append (Buf, "      Expect_Kind (P, " & Ada_Ident (NM)
-              & ", ""a " & NM & """);");
+            --  A jet is a hand-written C scanner; this backend can't run it,
+            --  so read the token the generic lexer produced instead.
+            Append (Buf, "      Expect_Kind (P, Atom, ""a " & NM & """);");
             Append (Buf, LF);
             Append (Buf, "      R := P.Toks (P.Pos).Text; P.Pos := P.Pos + 1;");
             Append (Buf, LF);
@@ -1143,15 +1202,23 @@ package body HBNF_Ada is
          end if;
          if Is_List then
             declare
-               E    : constant Element_Access := P (1);
+               E      : constant Element_Access := P (1);
+               --  A list of a single rule reference: `1*name` or `*( name )`.
+               Simple : constant Unbounded_String :=
+                 (if E.Kind = HBNF_Grammar.Name then E.Name
+                  elsif E.Kind = HBNF_Grammar.Group
+                    and then Natural (E.Items.Length) = 1
+                    and then E.Items (1).Kind = HBNF_Grammar.Name
+                  then E.Items (1).Name
+                  else Null_Unbounded_String);
                Elem : constant String :=
-                 (if E.Kind = HBNF_Grammar.Name
-                  then Ada_Type_Of (To_String (E.Name))
+                 (if Simple /= Null_Unbounded_String
+                  then Ada_Type_Of (To_String (Simple))
                   else Ada_Ident (NM) & "_Entry");
             begin
-               if E.Kind = Name then
+               if Simple /= Null_Unbounded_String then
                   declare
-                     SK : constant String := Start_Kind (To_String (E.Name));
+                     SK : constant String := Start_Kind (To_String (Simple));
                   begin
                      if SK /= "" then
                         Append (Buf, "      while P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = "
@@ -1161,80 +1228,71 @@ package body HBNF_Ada is
                      end if;
                   end;
                   Append (Buf, LF);
-                  Append (Buf, "         R.Append (Parse_"
-                    & Ada_Ident (To_String (E.Name)) & " (P));");
+                  if Is_Struct (To_String (Simple)) then
+                     Append (Buf, "         R.Append (new "
+                       & Ada_Ident (To_String (Simple)) & "_Type'(Parse_"
+                       & Ada_Ident (To_String (Simple)) & " (P)));");
+                  else
+                     Append (Buf, "         R.Append (Parse_"
+                       & Ada_Ident (To_String (Simple)) & " (P));");
+                  end if;
                   Append (Buf, LF);
                   Append (Buf, "      end loop;");
                   Append (Buf, LF);
                elsif E.Kind = Group then
+                  Append (Buf, "      loop");
+                  Append (Buf, LF);
+                  Append (Buf, "         Save := P.Pos;");
+                  Append (Buf, LF);
+                  Append (Buf, "         declare");
+                  Append (Buf, LF);
+                  Append (Buf, "            E : " & Elem & ";");
+                  Append (Buf, LF);
+                  Append (Buf, "            Matched : Boolean := False;");
+                  Append (Buf, LF);
+                  Append (Buf, "         begin");
+                  Append (Buf, LF);
                   declare
-                     Firsts : String_Vectors.Vector;
-                     St     : Natural := 1;
+                     St : Natural := 1;
                   begin
                      for K in 1 .. Natural (E.Items.Length) + 1 loop
                         if K > Natural (E.Items.Length)
                           or else E.Items (K).Kind = Alt
                         then
-                           if St <= K - 1 and then E.Items (St).Kind = Literal then
-                              Firsts.Append (E.Items (St).Lit);
+                           if St <= K - 1 then
+                              Append (Buf, "            if not Matched then");
+                              Append (Buf, LF);
+                              Append (Buf, "               declare");
+                              Append (Buf, LF);
+                              Append (Buf, "                  El : " & Elem & ";");
+                              Append (Buf, LF);
+                              Append (Buf, "               begin");
+                              Append (Buf, LF);
+                              Emit_Seq (E.Items, St, K - 1, "El.", Buf,
+                                        "                  ", True);
+                              Append (Buf, "                  E := El; Matched := True;");
+                              Append (Buf, LF);
+                              Append (Buf, "               exception");
+                              Append (Buf, LF);
+                              Append (Buf, "                  when Parse_Error => P.Pos := Save;");
+                              Append (Buf, LF);
+                              Append (Buf, "               end;");
+                              Append (Buf, LF);
+                              Append (Buf, "            end if;");
+                              Append (Buf, LF);
                            end if;
                            St := K + 1;
                         end if;
                      end loop;
-                     Append (Buf, "      while P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = Atom");
-                     Append (Buf, LF);
-                     Append (Buf, "        and then (");
-                     for I in 1 .. Natural (Firsts.Length) loop
-                        if I > 1 then
-                           Append (Buf, " or else ");
-                        end if;
-                        Append (Buf, "To_String (P.Toks (P.Pos).Text) = """
-                          & To_String (Firsts (I)) & """");
-                     end loop;
-                     Append (Buf, ") loop");
-                     Append (Buf, LF);
-                     Append (Buf, "         declare");
-                     Append (Buf, LF);
-                     Append (Buf, "            E : " & Elem & ";");
-                     Append (Buf, LF);
-                     Append (Buf, "         begin");
-                     Append (Buf, LF);
-                     St := 1;
-                     declare
-                        Branch : Natural := 0;
-                     begin
-                        for K in 1 .. Natural (E.Items.Length) + 1 loop
-                           if K > Natural (E.Items.Length)
-                             or else E.Items (K).Kind = Alt
-                           then
-                              if St <= K - 1 and then E.Items (St).Kind = Literal then
-                                 if Branch = 0 then
-                                    Append (Buf, "            if To_String (P.Toks (P.Pos).Text) = """
-                                      & To_String (E.Items (St).Lit) & """ then");
-                                 else
-                                    Append (Buf, "            elsif To_String (P.Toks (P.Pos).Text) = """
-                                      & To_String (E.Items (St).Lit) & """ then");
-                                 end if;
-                                 Append (Buf, LF);
-                                 Append (Buf, "               P.Pos := P.Pos + 1;");
-                                 Append (Buf, LF);
-                                 Emit_Seq (E.Items, St + 1, K - 1, "E.", Buf,
-                                           "               ");
-                                 Branch := Branch + 1;
-                              end if;
-                              St := K + 1;
-                           end if;
-                        end loop;
-                     end;
-                     Append (Buf, "            end if;");
-                     Append (Buf, LF);
-                     Append (Buf, "            R.Append (E);");
-                     Append (Buf, LF);
-                     Append (Buf, "         end;");
-                     Append (Buf, LF);
-                     Append (Buf, "      end loop;");
-                     Append (Buf, LF);
                   end;
+                  Append (Buf, "            exit when not Matched;");
+                  Append (Buf, LF);
+                  Append (Buf, "            R.Append (E);");
+                  Append (Buf, LF);
+                  Append (Buf, "         end;");
+                  Append (Buf, LF);
+                  Append (Buf, "      end loop;");
+                  Append (Buf, LF);
                end if;
                Append (Buf, "      return R;");
                Append (Buf, LF);
@@ -1412,7 +1470,7 @@ package body HBNF_Ada is
       begin
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
-               Append (Enum, ", " & Ada_Ident (To_String (Rules (I).Name)));
+               Append (Enum, ", " & Ada_Field (To_String (Rules (I).Name)));
             end if;
          end loop;
          Append (Enum, ", Eof);");
@@ -1647,9 +1705,11 @@ package body HBNF_Ada is
                Append (Bdy, "   function Jet_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
                Append (Bdy, LF);
+               Append (Bdy, "      pragma Unreferenced (S, Pos, Len);");
+               Append (Bdy, LF);
                Append (Bdy, "   begin");
                Append (Bdy, LF);
-               Append (Bdy, To_String (R.Jet_Code));
+               Append (Bdy, "      return 0;");
                Append (Bdy, LF);
                Append (Bdy, "   end Jet_" & Ada_Ident (NM) & ";");
                Append (Bdy, LF);
@@ -1671,7 +1731,7 @@ package body HBNF_Ada is
                NM : constant String := To_String (Rules (I).Name);
             begin
                Append (Bdy, "      N := Jet_" & Ada_Ident (NM)
-                 & " (S, Pos, Len); if N > 0 then Kind := " & Ada_Ident (NM)
+                 & " (S, Pos, Len); if N > 0 then Kind := " & Ada_Field (NM)
                  & "; return N; end if;");
                Append (Bdy, LF);
             end;
