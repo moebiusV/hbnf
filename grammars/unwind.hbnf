@@ -1,27 +1,95 @@
-; unwind.conf — OpenBSD unwind(8) configuration, as an ASTBNF schema.
+; unwind.conf — OpenBSD unwind(8) configuration, as an hbnf grammar.
 ; Translated from sbin/unwind/parse.y.
 ;
-; The lexer's keyword table maps three spellings ("dot", "DoT", "tls") onto
-; one DOT token; astbnf says the same thing with a plain alternation.
+;   %token keyword table   ->  "keyword" literals
+;   STRING / NUMBER        ->  string (str/word) / int
+;   { ... } tree actions   ->  implicit — the binder builds the tree
+;   the DOT keyword — "dot"/"DoT"/"tls" are one token in parse.y's lookup()
+;                     table                          ->  the dot inline jet below
+;   the forwarder IP — a bareword that may be an IPv6 literal (with ':'),
+;                      which the generated `word` can't swallow
+;                                                    ->  the ipv6 inline jet below
+;
+; parse.y's `_l` list rules and its `'{' optnl X '}' | X` blocks are kept as
+; top-level lists (`prefopts = 1*( prefopt )`) and explicit two-way
+; alternations (`"{" prefopts "}" / prefopts`) — the same shape parse.y spells
+; out, minus the newline scaffolding (the generated lexer skips newlines).
 
-config     = [ws] *( entry [ws] ) [ws]
+language C
 
-entry      = "include" str
-           / varset
-           / "preference" "{" [nl] *( prefopt nl ) [nl] "}"
-           / "forwarder" "{" [nl] *( forwarder nl ) [nl] "}"
-           / "block" "list" str ["log"]
-           / "force" ["accept" "bogus"] prefopt "{" [nl] *( str nl ) [nl] "}"
+config     = *( include / varset / preference / forwarder / block_list / force )
 
-varset     = str "=" 1*( str )                          ; macro: name = value…
+include    = "include" string
 
-dot        = "dot" / "DoT" / "tls"    ; three spellings, one token
+; a STRING token: quoted ("foo bar") or bareword (10.0.0.1, example.com)
+string     = str / word
+
+; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
+stringlist = 1*string
+
+varset     = string "=" stringlist                ; macro name = value…
+
+preference = "preference" "{" prefopts "}"
+           / "preference" prefopt
+prefopts   = 1*prefopt
 
 prefopt    = dot
-           / "forwarder" / "oDoT-forwarder" / "recursor" / "autoconf"
+           / prefopt_kw
+prefopt_kw = "forwarder" / "oDoT-forwarder" / "recursor" / "autoconf"
            / "dhcp" / "oDoT-autoconf" / "oDoT-dhcp" / "stub"
 
-forwarder  = str ["port" int] ["authentication" "name" str] [dot]
+forwarder  = "forwarder" "{" forwarderopts "}"
+           / "forwarder" forwarderopt
+forwarderopts = 1*forwarderopt
 
-nl         = "\n"
-ws         = 1*( nl / comment )
+forwarderopt = address "port" int "authentication" "name" string dot
+             / address "port" int "authentication" "name" string
+             / address "port" int dot
+             / address "port" int
+             / address "authentication" "name" string dot
+             / address "authentication" "name" string
+             / address dot
+             / address
+
+block_list = "block" "list" string "log"
+           / "block" "list" string
+
+force      = "force" "accept" "bogus" prefopt "{" forcelist "}"
+           / "force" prefopt "{" forcelist "}"
+forcelist  = *string
+
+; the forwarder IP: a STRING, or an IPv6 literal the bare `word` can't reach
+address    = str / word / ipv6
+
+; dot — the DOT keyword: parse.y's lookup() folds the three spellings into one
+; token (a keyword-only enum would emit colliding C enumerators DOT_DOT).
+;   dot = "dot" / "DoT" / "tls"
+dot        = {
+    const char *kw[] = { "dot", "DoT", "tls" };
+    size_t i, n;
+    for (i = 0; i < 3; i++) {
+        n = strlen(kw[i]);
+        if (pos + n > len || memcmp(s + pos, kw[i], n) != 0) continue;
+        if (pos + n < len) {
+            char c = s[pos + n];
+            if (isalnum((unsigned char)c) || c == '_' || c == '-' || c == '.')
+                continue;
+        }
+        return n;
+    }
+    return 0;
+}
+
+; ipv6 — hex groups separated by ":", with "::" allowed (syntax only; the
+; daemon still runs host_ip for full validation).
+;   ipv6 = 1*( hexdig / ":" ) with at least one hexdig and one ":"
+ipv6       = {
+    size_t n = 0, hex = 0, colon = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) { hex = 1; n++; }
+        else if (c == ':') { colon = 1; n++; }
+        else break;
+    }
+    return (hex && colon) ? n : 0;
+}

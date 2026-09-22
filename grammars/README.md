@@ -1,78 +1,82 @@
 # grammars/
 
 OpenBSD daemons' configuration grammars, translated from their `parse.y`
-into ASTBNF (the schema notation `hbnf` parses and binds against).  Each file
-is a complete grammar for that daemon's config file — the same shape
-`parse.y` describes, minus the yacc machinery.
+into **hbnf**, the grammar notation.  Each file is a complete grammar for
+that daemon's config file: the same shape `parse.y` describes, minus the
+yacc machinery, the C `{ actions }`, and the macros.
 
-## The translation
+## The notation
 
-`parse.y` splits a grammar across three layers — the `%token` keyword list,
-the productions, and the `{ actions }` that build the tree.  ASTBNF keeps only
-the productions; the other two layers are implicit.
+A grammar is `name = pattern` rules.  The first non-comment line declares the
+language the inline scanner code is written in:
 
-| parse.y | ASTBNF |
+```
+language C
+```
+
+- **Operators** — juxtaposition (sequence), `/` (alternation), `( ... )`
+  (grouping), `[ ... ]` (optional), `*` / `1*` (repetition).  `;` starts a
+  line comment.
+- **Keywords** are quoted literals in their config spelling (`"router-id"`,
+  `"read-only"`), never the yacc `%token` identifier.
+- **Readable typed tokens** (no `%d`/`%x`/`%b` printf-isms): `str` (quoted
+  string), `word`/`atom` (bareword), `int`, `bool`/`flag`, `u8`..`u64`/
+  `i8`..`i64` (fixed-width), and `decint`/`hexint`/`octint`/`binint` for
+  base-specific integers.  Character classes are named core rules
+  (`digit`, `alpha`, `hexdig`, …) — the character level is the foundation;
+  tokens and jets are sugar over it.
+- **Jets** — a rule whose body is hand-written scanner code instead of a
+  token sequence:
+
+  ```
+  ; ipv4 — 1*3digit "." 1*3digit "." 1*3digit "." 1*3digit   (each 0..255)
+  ipv4 = { … C code: sees s, pos, len; returns matched length … }
+  ```
+
+  Every jet carries a **fallback line** above it: the character-level BNF it
+  implements, so the hand-written code is readable and verifiable against its
+  definition.
+
+## The translation (`parse.y` → hbnf)
+
+| parse.y | hbnf |
 |---|---|
-| `%token` keyword + `lookup()` table | a quoted literal `"server"` |
-| `STRING` / `NUMBER` (typed via `%type`) | `str` / `int` |
+| `%token` keyword + `lookup()` table | a quoted literal, in keyword-table spelling |
+| `STRING` (quoted or bareword) | `string` — defined once as `string = str / word` |
+| `NUMBER` | `int` |
 | `x : y z` | `x = y z` |
 | `x : y \| z` | `x = y / z` |
-| `x_l : x_l y \| y` (list boilerplate) | `x = 1*( y )` |
-| `x : y \| /* empty */` | `x = [ y ]` |
-| `'{' optnl x_l '}'` (a block) | `"{" [nl] *( x nl ) [nl] "}"` |
+| `x_l : x_l y \| y` (list boilerplate) | hoisted: `xs = *( y )` as its own rule |
+| `x : y \| /* empty */` / `[ y ]` | flattened: `prefix y / prefix` |
 | `{ … }` action (TAILQ/alloc/logic) | dropped — the binder builds the tree |
+| a hand-written scanner (`host()`, `get_address()`, the OID/AS/port parse) | an inline jet, with a fallback line |
 
-A keyword alias like unwind's `dot`/`DoT`/`tls` → one token becomes a plain
-alternation:
+Two shape rules keep the generated parser simple and match `parse.y` exactly:
 
-```abnf
-dot = "dot" / "DoT" / "tls"
-```
+- **Lists are hoisted** — a `_l` rule becomes a top-level `xs = *( y )`, and
+  a block body references it (`"{" xs "}"`).  Never nest `*( … )` inside a
+  sequence.
+- **Optionals are flattened** — `prefix [ X ]` becomes the two-way alternation
+  `prefix X / prefix`.
 
-## Whitespace, lines, comments
+The generated lexer skips whitespace and newlines, so there is no `nl`/`ws`/
+`comment` scaffolding — entries are token sequences delimited by their leading
+keywords and `{ }` blocks, which is what `parse.y`'s `'\n'`-terminated rules
+spell out anyway.
 
-Three things, kept distinct:
+## Covered
 
-- **Horizontal whitespace** (spaces/tabs) is skipped by the lexer and never
-  appears in a grammar.
-- **`nl`** — a newline, `"\n"`.  It is what distinguishes *lines*, so it is
-  explicit in block bodies: `"{" [nl] *( option nl ) [nl] "}"`.
-- **Comments** — a comment at end-of-line is *trailing* (attached to the entry
-  on that line); a comment on its own line is *leading* (attached to the next
-  entry).  `ws` is the entry separator, "newline and/or comment":
-
-```abnf
-nl = "\n"
-ws = 1*( nl / comment )
-```
-
-## The win, concretely
-
-httpd's `serveropts_l` list rule is 22 lines of yacc:
-
-```yacc
-serveropts_l : serveropts_l serveroptsl nl
-             | serveroptsl optnl ;
-serveroptsl  : LISTEN ON STRING opttls port { … }
-             | ALIAS optmatch STRING          { … }
-             | … (18 more alternatives) …
-```
-
-Its ASTBNF equivalent is one line, because the list/`nl`/action scaffolding
-collapses into `*( … nl )`:
-
-```abnf
-server = "server" ["match"] str "{" [nl] *( serveropt nl ) [nl] "}"
-```
-
-## Covered so far
-
-| daemon | file | size (parse.y → hbnf) |
+| daemon | file | parse.y |
 |---|---|---|
-| ntpd | `ntpd.hbnf` | 841 → 25 lines |
-| unwind | `unwind.hbnf` | 975 → 27 lines |
-| dhcpleased | `dhcpleased.hbnf` | 863 → 17 lines |
-| httpd | `httpd.hbnf` | 2785 → ~100 lines |
+| dhcpleased | `dhcpleased.hbnf` | `sbin/dhcpleased/parse.y` |
+| httpd | `httpd.hbnf` | `usr.sbin/httpd/parse.y` |
+| ntpd | `ntpd.hbnf` | `usr.sbin/ntpd/parse.y` |
+| unwind | `unwind.hbnf` | `sbin/unwind/parse.y` |
+| ldpd | `ldpd.hbnf` | `usr.sbin/ldpd/parse.y` |
+| snmpd | `snmpd.hbnf` | `usr.sbin/snmpd/parse.y` |
+| relayd | `relayd.hbnf` | `usr.sbin/relayd/parse.y` |
+| bgpd | `bgpd.hbnf` | `usr.sbin/bgpd/parse.y` |
+| pfctl | `pfctl.hbnf` | `sbin/pfctl/parse.y` |
 
-`openbgpd.hbnf`, `relayd.hbnf`, `snmpd.hbnf`, `ldpd.hbnf`, `pfctl.hbnf` are the
-next candidates (bgpd is the largest at 122 rules).
+Each grammar round-trips through the `hbnf` generator (`hbnf_cli`): it
+emits a self-contained C parser that compiles and parses a sample config.

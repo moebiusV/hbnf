@@ -1,0 +1,559 @@
+; pf.conf — OpenBSD pfctl(8) configuration, as an hbnf grammar.
+; Translated from sbin/pfctl/parse.y (~150 rules).
+;
+;   %token keyword table   ->  "keyword" literals (keyword-table spelling)
+;   STRING / NUMBER        ->  string (str/word) / int
+;   { ... } tree actions   ->  implicit — the binder builds the tree
+;   the host() scanner (addr, addr:port, :port, addr/len, <table>, (dynaddr))
+;   and parseport()'s "a:b"/"a:*" ranges collapse into the address/port
+;   building blocks below; the "!="/"<="/">="/"><" operators and the address
+;   literals are the inline jets.
+;
+; parse.y's `_l` list rules become top-level `xs = *( y "," / y )` lists; an
+; optional `comma` (empty / "," / newline) is dropped, so a list element is
+; `y "," / y`.  An optional `[ X ]` in a sequence is flattened to a two-way
+; alternation (see the pfhead/anchorhead chains for the interleaved optionals
+; of a filter rule).  Newlines are skipped by the lexer.
+
+language C
+
+ruleset     = *( rule )
+
+; ---------------------------------------------------------------- top level
+; the ten `ruleset : ... '\n'` productions, plus the top-level `{ ... }` anchor
+rule        = option
+            / pfrule
+            / anchorrule
+            / loadrule
+            / queuespec
+            / varset
+            / antispoof
+            / tabledef
+            / statelim
+            / sourcelim
+            / include
+            / anchorblock
+
+include     = "include" string
+
+varset      = string "=" varstring          ; macro name = value…
+
+; a STRING token: quoted ("foo bar") or bareword (em0, example.com)
+string      = str / word
+
+; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
+stringlist  = 1*string
+
+; a NUMBER or STRING token (parse.y's numberstring)
+numberstring = int / string
+
+; one or more numberstrings (parse.y's varstring)
+varstring   = 1*numberstring
+
+; an address: an IPv4 or IPv6 literal (parse.y host(): inet_pton)
+address     = ipv4 / ipv6
+
+; ---------------------------------------------------------------- ports
+; a single port: a number or a service name (parse.y numberstring -> getservice)
+port        = int / string
+
+; a port spec: a single port, an "a:b" range, or "a:*" (parse.y parseport)
+;   port — 1*5digit [ ":" ( 1*5digit / "*" ) ]
+portval     = port ":" port
+            / port ":" "*"
+            / port
+
+portitem    = portval portbin portval
+            / unaryop portval
+            / portval
+
+portlist    = 1*( portitem "," / portitem )
+
+portspec    = portitem
+            / "{" portlist "}"
+
+; the ">/<" comparison operators (multi-char, so jets below)
+unaryop     = "=" / ne / le / "<" / ge / ">"
+portbin     = "<" ">" / xrange
+
+; ---------------------------------------------------------------- hosts
+; a host atom: an address, "address:port", ":port", or a bareword
+; (interface name / hostname).  host — address [ ":" port ] / ":" port / word
+hostatom    = address ":" port
+            / address
+            / ":" port
+            / word
+
+; a dynamic interface address: (em0), or (em0:network) / (em0:0) with a modifier
+dynaddr     = "(" word ":" word ")"
+            / "(" word ":" int ")"
+            / "(" word ")"
+
+host        = "route" string
+            / hostatom "-" hostatom
+            / hostatom "/" int
+            / int "/" int
+            / dynaddr "/" int
+            / dynaddr
+            / "<" string ">"
+            / hostatom
+
+xhost       = "no-route"
+            / "!" "no-route"
+            / "urpf-failed"
+            / "!" "urpf-failed"
+            / host
+            / "!" host
+
+hostlist    = 1*( ipspec "," / ipspec )
+
+ipspec      = "any"
+            / xhost
+            / "{" hostlist "}"
+
+ipportspec  = ipspec "port" portspec
+            / "port" portspec
+            / ipspec
+
+from        = "from" ipportspec
+to          = "to" ipportspec
+os          = "os" string
+            / "os" "{" oslist "}"
+oslist      = 1*( string "," / string )
+
+; from os to, with from / os / to each optional (plus the "all" shorthand)
+fromto      = "all"
+            / from os to
+            / from os
+            / from to
+            / from
+            / os to
+            / os
+            / to
+
+dir         = "in" / "out"
+af          = "inet" / "inet6"
+
+; ---------------------------------------------------------------- log / if
+
+logopt      = "all"
+            / "matches"
+            / "user"
+            / "to" string
+
+logopts     = 1*( logopt "," / logopt )
+
+log         = "log" "(" logopts ")"
+            / "log"
+
+logquick    = log "quick"
+            / "quick" log
+            / log
+            / "quick"
+
+ifitem      = "any"
+            / "rdomain" int
+            / string
+
+ifitem_not  = "!" ifitem
+            / ifitem
+
+iflist      = 1*( ifitem_not "," / ifitem_not )
+
+interface   = "on" ifitem_not
+            / "on" "{" iflist "}"
+
+; ---------------------------------------------------------------- proto / flags / icmp
+
+protoitem   = string / int
+protolist   = 1*( protoitem "," / protoitem )
+
+proto       = "proto" protoitem
+            / "proto" "{" protolist "}"
+
+flags       = "flags" string "/" string
+            / "flags" "/" string
+            / "flags" "any"
+
+icmptype    = string / int
+icmp6type   = string / int
+
+icmpitem    = icmptype "code" string
+            / icmptype "code" int
+            / icmptype
+
+icmp6item   = icmp6type "code" string
+            / icmp6type "code" int
+            / icmp6type
+
+icmplist    = 1*( icmpitem "," / icmpitem )
+icmp6list   = 1*( icmp6item "," / icmp6item )
+
+icmpspec    = "icmp-type" icmpitem
+            / "icmp-type" "{" icmplist "}"
+            / "icmp6-type" icmp6item
+            / "icmp6-type" "{" icmp6list "}"
+
+; ---------------------------------------------------------------- user / group / state
+
+uid         = string / int
+gid         = string / int
+
+uiditem     = uid portbin uid
+            / unaryop uid
+            / uid
+
+giditem     = gid portbin gid
+            / unaryop gid
+            / gid
+
+uidlist     = 1*( uiditem "," / uiditem )
+gidlist     = 1*( giditem "," / giditem )
+
+uids        = uiditem
+            / "{" uidlist "}"
+
+gids        = giditem
+            / "{" gidlist "}"
+
+stateopt    = "max" int
+            / "no-sync"
+            / "max-src-states" int
+            / "max-src-conn" int
+            / "max-src-conn-rate" int "/" int
+            / "overload" "<" string ">" "flush" "global"
+            / "overload" "<" string ">" "flush"
+            / "overload" "<" string ">"
+            / "max-src-nodes" int
+            / "source-track" "global"
+            / "source-track" "rule"
+            / "source-track"
+            / "if-bound"
+            / "floating"
+            / "sloppy"
+            / "pflow"
+            / string int                     ; tcp.first 120
+
+stateoptlist = 1*( stateopt "," / stateopt )
+
+keep        = "no" "state"
+            / "keep" "state" "(" stateoptlist ")"
+            / "keep" "state"
+            / "modulate" "state" "(" stateoptlist ")"
+            / "modulate" "state"
+            / "synproxy" "state" "(" stateoptlist ")"
+            / "synproxy" "state"
+
+; ---------------------------------------------------------------- pools / redirection
+
+poolopt     = "bitmask"
+            / "random"
+            / "source-hash" stringlist
+            / "source-hash"
+            / "round-robin"
+            / "least-states"
+            / "static-port"
+            / "sticky-address"
+
+poolopts    = *( poolopt )
+
+redirhostlist = 1*( host "," / host )
+
+redirspec   = host "weight" int
+            / host
+            / "{" redirhostlist "}"
+
+redirpool   = redirspec "port" portval
+            / redirspec
+
+routespec   = redirspec poolopts
+
+; ---------------------------------------------------------------- filter options
+
+qname       = string
+            / "(" string ")"
+            / "(" string "," string ")"
+
+prio        = "prio" "(" int "," int ")"
+            / "prio" int
+
+tos         = string / int
+probability = string / int
+
+filterset   = prio
+            / "queue" qname
+            / "tos" tos
+            / "delay" int
+
+filtersetlist = 1*( filterset "," / filterset )
+
+filtersets  = "set" "(" filtersetlist ")"
+            / "set" filterset
+
+scrubopt    = "no-df"
+            / "min-ttl" int
+            / "max-mss" int
+            / "reassemble" string
+            / "random-id"
+
+scrubopts   = 1*( scrubopt "," / scrubopt )
+
+statelim_filter_opt = "state" "limiter" string "(" "block" ")"
+            / "state" "limiter" string "(" "no-match" ")"
+            / "state" "limiter" string
+            / "state" "limiter" "id" int "(" "block" ")"
+            / "state" "limiter" "id" int "(" "no-match" ")"
+            / "state" "limiter" "id" int
+
+sourcelim_filter_opt = "source" "limiter" string "(" "block" ")"
+            / "source" "limiter" string "(" "no-match" ")"
+            / "source" "limiter" string
+            / "source" "limiter" "id" int "(" "block" ")"
+            / "source" "limiter" "id" int "(" "no-match" ")"
+            / "source" "limiter" "id" int
+
+filteropt   = "user" uids
+            / "group" gids
+            / flags
+            / icmpspec
+            / "prio" int
+            / "tos" tos
+            / keep
+            / "fragment"
+            / "allow-opts"
+            / "label" string
+            / "queue" qname
+            / "tag" stringlist
+            / "!" "tagged" stringlist
+            / "tagged" stringlist
+            / "probability" probability
+            / statelim_filter_opt
+            / sourcelim_filter_opt
+            / "rtable" int
+            / "divert-to" hostatom "port" portval
+            / "divert-reply"
+            / "divert-packet" "port" portval
+            / "scrub" "(" scrubopts ")"
+            / "nat-to" redirpool poolopts
+            / "af-to" af "from" redirpool poolopts "to" redirpool poolopts
+            / "af-to" af "from" redirpool poolopts
+            / "rdr-to" redirpool poolopts
+            / "binat-to" redirpool poolopts
+            / "route-to" routespec
+            / "reply-to" routespec
+            / "dup-to" routespec
+            / "!" "received-on" ifitem
+            / "received-on" ifitem
+            / "once"
+            / "max-pkt-rate" int "/" int
+            / filtersets
+
+filteropts  = *( filteropt )
+
+; ---------------------------------------------------------------- a filter rule
+
+action      = "pass"
+            / "match"
+            / "block" "return-rst" "(" "ttl" int ")"
+            / "block" "return-icmp" "(" reticmpspec "," reticmp6spec ")"
+            / "block" "return-icmp" "(" reticmpspec ")"
+            / "block" "return-icmp6" "(" reticmp6spec ")"
+            / "block" "return-rst"
+            / "block" "return-icmp"
+            / "block" "return-icmp6"
+            / "block" "return"
+            / "block" "drop"
+            / "block"
+
+reticmpspec = string / int
+reticmp6spec = string / int
+
+; action dir logquick interface af proto fromto filter_opts — each of the six
+; middle slots optional, in order, flattened to a chain of two-way alternations
+pfrule      = action pfdir
+pfdir       = dir pflq / pflq
+pflq        = logquick pfif / pfif
+pfif        = interface pfaf / pfaf
+pfaf        = af pfproto / pfproto
+pfproto     = proto pffromto / pffromto
+pffromto    = fromto filteropts / filteropts
+
+; ---------------------------------------------------------------- anchors
+
+anchorlist  = *( anchorrule / pfrule / tabledef / include )
+
+; anchor name dir quick interface af proto fromto filter_opts [ { anchorlist } ]
+anchorrule  = "anchor" string anchdir
+            / "anchor" anchdir
+anchdir     = dir anchquick / anchquick
+anchquick   = "quick" anchif / anchif
+anchif      = interface anchaf / anchaf
+anchaf      = af anchproto / anchproto
+anchproto   = proto anchfromto / anchfromto
+anchfromto  = fromto anchfilter / anchfilter
+anchfilter  = filteropts "{" anchorlist "}" / filteropts
+
+anchorblock = "{" anchorlist "}"
+
+loadrule    = "load" "anchor" string "from" stringlist
+
+; ---------------------------------------------------------------- set options
+
+optimizer   = "none" / "basic" / "profile"
+yesno       = "yes" / "no"
+statelock   = "if-bound" / "floating"
+
+stringall   = "all" / string
+
+timeoutspec = string int
+timeoutlist = 1*( timeoutspec "," / timeoutspec )
+limitspec   = string int
+limitlist   = 1*( limitspec "," / limitspec )
+
+syncookieval = "never" / "adaptive" / "always"
+syncookieopt = string int "%"
+syncookieoptlist = 1*( syncookieopt "," / syncookieopt )
+
+option      = "set" "reassemble" yesno "no-df"
+            / "set" "reassemble" yesno
+            / "set" "optimization" string
+            / "set" "ruleset-optimization" optimizer
+            / "set" "timeout" "{" timeoutlist "}"
+            / "set" "timeout" timeoutspec
+            / "set" "limit" "{" limitlist "}"
+            / "set" "limit" limitspec
+            / "set" "loginterface" stringall
+            / "set" "hostid" int
+            / "set" "block-policy" "drop"
+            / "set" "block-policy" "return"
+            / "set" "fingerprints" string
+            / "set" "state-policy" statelock
+            / "set" "debug" string
+            / "set" "debug" "debug"
+            / "set" "skip" interface
+            / "set" "state-defaults" stateoptlist
+            / "set" "syncookies" syncookieval "(" syncookieoptlist ")"
+            / "set" "syncookies" syncookieval
+
+; ---------------------------------------------------------------- antispoof / table
+
+antispoofif = ifitem
+            / "(" ifitem ")"
+antispoofiflist = 1*( antispoofif "," / antispoofif )
+antispoofifspc = "for" antispoofif
+               / "for" "{" antispoofiflist "}"
+
+antispoofopt = "label" string
+             / "rtable" int
+antispoofopts = *( antispoofopt )
+
+antispoof  = "antispoof" logquick antispoofifspc af antispoofopts
+           / "antispoof" logquick antispoofifspc antispoofopts
+           / "antispoof" antispoofifspc af antispoofopts
+           / "antispoof" antispoofifspc antispoofopts
+
+tablespec  = xhost "weight" int
+           / xhost
+           / "{" tablehostlist "}"
+tablehostlist = 1*( tablespec "," / tablespec )
+
+; a table option: "const"/"persist"/"counters", an empty {} block, a { hosts }
+; block, or a "file" path
+tableopt   = string
+           / "{" "}"
+           / "{" tablehostlist "}"
+           / "file" string
+tableopts  = *( tableopt )
+
+tabledef   = "table" "<" string ">" tableopts
+
+; ---------------------------------------------------------------- queues
+
+bandwidth  = string
+           / int "%"
+           / int
+
+scspec     = bandwidth "burst" bandwidth "for" string
+           / bandwidth
+
+queueopt   = "bandwidth" scspec "," "min" scspec "," "max" scspec
+           / "bandwidth" scspec "," "max" scspec "," "min" scspec
+           / "bandwidth" scspec "," "min" scspec
+           / "bandwidth" scspec "," "max" scspec
+           / "bandwidth" scspec
+           / "parent" string
+           / "default"
+           / "qlimit" int
+           / "flows" int
+           / "quantum" int
+
+queueopts  = 1*( queueopt )
+
+queuespec  = "queue" string interface queueopts
+           / "queue" string queueopts
+
+; ---------------------------------------------------------------- statelim / sourcelim
+
+statelimopt = "id" int
+            / "limit" int
+            / "rate" int "/" int
+statelimopts = 1*( statelimopt )
+statelim   = "state" "limiter" stringlist statelimopts
+
+sourcelimopt = "id" int
+             / "entries" int
+             / "limit" int
+             / "rate" int "/" int
+             / "table" "<" string ">" "above" int "below" int
+             / "table" "<" string ">" "above" int
+             / "inet" "mask" int
+             / "inet6" "mask" int
+sourcelimopts = 1*( sourcelimopt )
+sourcelim  = "source" "limiter" stringlist sourcelimopts
+
+; ---------------------------------------------------------------- jets
+; ipv4 — 1*3digit "." 1*3digit "." 1*3digit "." 1*3digit, each octet 0..255
+ipv4        = {
+    size_t n = 0, dots = 0, octet = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if (c >= '0' && c <= '9') {
+            octet = octet * 10 + (c - '0');
+            if (octet > 255) return 0;
+            n++;
+        } else if (c == '.' && dots < 3) {
+            dots++; octet = 0; n++;
+        } else break;
+    }
+    return (dots == 3 && octet <= 255) ? n : 0;
+}
+
+; ipv6 — 1*4hexdig *( ":" 1*4hexdig ), with "::" allowed (syntax only; the
+; daemon still runs inet_pton).  Requires at least two colons, so a bare hex
+; word ("em0", "from") and a 2-group "a:b" port range are left to the word /
+; port grammar.
+ipv6        = {
+    size_t i = pos, colons = 0;
+    int seen = 0;
+    while (i < len) {
+        char c = s[i];
+        if (c >= '0' && c <= '9') { seen = 1; i++; }
+        else if ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) { seen = 1; i++; }
+        else if (c == ':') { colons++; i++; }
+        else break;
+    }
+    if (!seen || colons < 2) return 0;
+    return i - pos;
+}
+
+; ne — "!" "=" (not equal)
+ne          = { return (pos + 1 < len && s[pos] == '!' && s[pos + 1] == '=') ? 2 : 0; }
+
+; le — "<" "=" (less than or equal)
+le          = { return (pos + 1 < len && s[pos] == '<' && s[pos + 1] == '=') ? 2 : 0; }
+
+; ge — ">" "=" (greater than or equal)
+ge          = { return (pos + 1 < len && s[pos] == '>' && s[pos + 1] == '=') ? 2 : 0; }
+
+; xrange — ">" "<" (the inclusive port/uid/gid range operator)
+xrange      = { return (pos + 1 < len && s[pos] == '>' && s[pos + 1] == '<') ? 2 : 0; }

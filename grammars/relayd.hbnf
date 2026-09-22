@@ -1,0 +1,372 @@
+; relayd.conf — OpenBSD relayd(8) configuration, as an hbnf grammar.
+; Translated from usr.sbin/relayd/parse.y.
+;
+;   %token keyword table   ->  "keyword" literals
+;   STRING / NUMBER        ->  string (str/word) / int
+;   { ... } tree actions   ->  implicit — the binder builds the tree
+;
+; parse.y's `_l` list rules and its `'{' optnl X '}'` blocks are kept as
+; top-level lists (`opts = *( opt )`) and the `/* empty */` optionals are
+; flattened to explicit alternations — the same shape parse.y spells out,
+; minus the newline scaffolding (the generated lexer skips newlines).
+;
+; relayd's yylex is generic; address resolution happens in the actions
+; (host() -> host_ip / host_dns / host_if), not the lexer.  The gaps the
+; generic hbnf lexer cannot express are the tokens with a `:` in them:
+; IPv6 literals (which the word scanner would split on the colons) and
+; "low:high" port ranges (which the number scanner would split too) — the
+; ipv6 and portrange jets below close them, and ipv4 pins the dotted quad
+; the `addrprefix` (address/len) rule needs.
+
+language C
+
+config        = *( include / varset / conf_main / rdr / tabledef / relay
+                 / proto / router )
+
+include       = "include" string
+
+; a STRING token: quoted ("foo bar") or bareword (em0, example.com)
+string        = str / word
+
+varset        = string "=" string                  ; macro name = value
+
+; ---- global configuration ----------------------------------------------
+
+conf_main     = "interval" int
+              / "log" "state" "changes"
+              / "log" "host" "checks"
+              / "log" "connection" "errors"
+              / "log" "connection"
+              / "log" "level" "verbose"
+              / "log" "level" "brief"
+              / "timeout" int
+              / "prefork" int
+              / "agentx" "context" string "path" string
+              / "agentx" "context" string
+              / "agentx" "path" string
+              / "agentx"
+              / "socket" string
+
+; ---- redirections ------------------------------------------------------
+
+rdr           = "redirect" string "{" rdropts "}"
+rdropts       = *( rdropt )
+rdropt        = "forward" "to" tablespec interface
+              / "forward" "to" tablespec
+              / "route" "to" tablespec interface
+              / "route" "to" tablespec
+              / "transparent" "forward" "to" tablespec interface
+              / "transparent" "forward" "to" tablespec
+              / "listen" "on" address redirect_proto port interface pflog
+              / "listen" "on" address redirect_proto port interface
+              / "listen" "on" address redirect_proto port pflog
+              / "listen" "on" address redirect_proto port
+              / "listen" "on" address port interface pflog
+              / "listen" "on" address port interface
+              / "listen" "on" address port pflog
+              / "listen" "on" address port
+              / "disable"
+              / "sticky-address"
+              / "match" "pftag" string
+              / "pftag" string
+              / "session" "timeout" int
+              / include
+
+redirect_proto = "tcp" / string
+
+; ---- tables ------------------------------------------------------------
+
+tabledef      = "table" table tabledefopts
+tabledefopts  = *( tabledefopt )
+tabledefopt   = "disable"
+              / "{" tablelist "}"
+tablelist     = *( tableitem )
+tableitem     = host "," / host / include "," / include
+
+host          = address hostflags
+hostflags     = *( hostflag )
+hostflag      = "retry" int
+              / "parent" int
+              / "priority" int
+              / "ip" "ttl" int
+
+tablespec     = table tableopts
+tableopts     = *( tableopt )
+tableopt      = "check" tablecheck
+              / port
+              / "timeout" int
+              / "demote" string
+              / "interval" int
+              / "mode" dstmode string
+              / "mode" dstmode
+              / "mode" string
+              / "mode"
+
+tablecheck    = "icmp"
+              / "tcp"
+              / "tls"
+              / http_type string hostname "code" int
+              / http_type string "code" int
+              / http_type string hostname digest
+              / http_type string digest
+              / "send" sendbuf "expect" string "tls"
+              / "send" sendbuf "expect" string
+              / "binary" "send" sendbinbuf "expect" string "tls"
+              / "binary" "send" sendbinbuf "expect" string
+              / "script" string
+
+http_type     = "http" / "https"
+hostname      = "host" string
+digest        = "digest" string
+sendbuf       = "nothing" / string
+sendbinbuf    = "nothing" / string
+
+; ---- relays ------------------------------------------------------------
+
+relay         = "relay" string "{" relayopts "}"
+relayopts     = *( relayopt )
+relayopt      = "listen" "on" address port "tls"
+              / "listen" "on" address port
+              / "forward" forwardrest
+              / "route" forwardrest
+              / "transparent" "forward" forwardrest
+              / "session" "timeout" int
+              / "protocol" string
+              / include
+
+forwardrest   = "with" "tls" "to" forwardspec forwardend
+              / "with" "tls" "to" forwardspec
+              / "to" forwardspec forwardend
+              / "to" forwardspec
+
+forwardend    = "inet" "proxy-protocol" "v1"
+              / "inet" "proxy-protocol" "v2"
+              / "inet6" address "proxy-protocol" "v1"
+              / "inet6" address "proxy-protocol" "v2"
+              / "inet"
+              / "inet6" address
+              / "proxy-protocol" "v1"
+              / "proxy-protocol" "v2"
+
+forwardspec   = address port "retry" int
+              / address port
+              / "nat" "lookup" "retry" int
+              / "nat" "lookup"
+              / "destination" "retry" int
+              / "destination"
+              / tablespec
+
+; ---- protocols ---------------------------------------------------------
+
+proto         = relay_proto "protocol" string "{" protopts "}"
+              / relay_proto "protocol" string
+              / "protocol" string "{" protopts "}"
+              / "protocol" string
+
+relay_proto   = "tcp" / "http" / "dns"
+
+protopts      = *( protopt )
+protopt       = "tls" tlsflag
+              / "tls" "{" tlsflags "}"
+              / "tcp" tcpflag
+              / "tcp" "{" tcpflags "}"
+              / "http" httpflag
+              / "http" "{" httpflags "}"
+              / "return" "error" eflags
+              / "return" "error"
+              / "return" "error" "{" eflags "}"
+              / filterrule
+              / include
+
+tlsflags      = *( tlsflagitem )
+tlsflagitem   = tlsflag "," / tlsflag
+tlsflag       = "session" "tickets"
+              / "no" "session" "tickets"
+              / "ciphers" string
+              / "no" "edh"
+              / "edh"
+              / "edh" "params" string
+              / "ecdhe" string
+              / "ca" "file" string
+              / "ca" "key" string "password" string
+              / "ca" "cert" string
+              / "keypair" string
+              / "keypair" string "cert" string
+              / "keypair" string "key" string
+              / "keypair" string "ocsp" string
+              / "client" "ca" string
+              / "no" flag
+              / flag
+
+tcpflags      = *( tcpflagitem )
+tcpflagitem   = tcpflag "," / tcpflag
+tcpflag       = "sack"
+              / "no" "sack"
+              / "nodelay"
+              / "no" "nodelay"
+              / "splice"
+              / "no" "splice"
+              / "backlog" int
+              / "socket" "buffer" int
+              / "ip" string int
+
+httpflags     = *( httpflagitem )
+httpflagitem  = httpflag "," / httpflag
+httpflag      = "headerlen" int
+              / "websockets"
+              / "no" "websockets"
+
+eflags        = *( eflagitem )
+eflagitem     = eflag "," / eflag
+eflag         = "style" string
+
+flag          = "sslv3" / "tlsv1" / "tlsv1.0" / "tlsv1.1" / "tlsv1.2"
+              / "tlsv1.3" / "cipher-server-preference" / "client-renegotiation"
+
+; ---- filter rules ------------------------------------------------------
+
+filterrule    = action filterfront
+action        = "pass" / "block" / "match"
+
+filterfront   = dir "quick" ruleaf filterback
+              / dir "quick" filterback
+              / dir ruleaf filterback
+              / dir filterback
+              / "quick" ruleaf filterback
+              / "quick" filterback
+              / ruleaf filterback
+              / filterback
+
+filterback    = rulesrc ruledst ruleopts
+              / rulesrc ruleopts
+              / ruledst ruleopts
+              / ruleopts
+
+dir           = "request" / "response"
+ruleaf        = "inet6" / "inet"
+rulesrc       = "from" addrprefix
+ruledst       = "to" addrprefix
+
+ruleopts      = *( ruleopt )
+ruleopt       = "method" string
+              / "cookie" kv
+              / "cookie" key_option
+              / "header" kv
+              / "header" key_option
+              / "path" "strip" int
+              / "path" kv
+              / "path" key_option
+              / "query" kv
+              / "query" key_option
+              / "url" urlkv
+              / "url" key_option
+              / "forward" "to" table
+              / "tag" string
+              / "no" "tag"
+              / "tagged" string
+              / "label" string
+              / "no" "label"
+              / "file" string value
+              / "file" string
+
+kv            = key_option "pattern" string value
+              / key_option "pattern" string
+              / key_option string value
+              / key_option string
+              / "pattern" string value
+              / "pattern" string
+              / string value
+              / string
+
+urlkv         = key_option "pattern" optdigest value
+              / key_option "pattern" optdigest
+              / key_option optdigest value
+              / key_option optdigest
+              / "pattern" optdigest value
+              / "pattern" optdigest
+              / optdigest value
+              / optdigest
+
+key_option    = "append" / "set" / "remove" / "hash" / "log"
+value         = "value" "pattern" string
+              / "value" string
+optdigest     = "digest" string
+              / string
+
+; ---- routers -----------------------------------------------------------
+
+router        = "router" string "{" routeopts "}"
+routeopts     = *( routeopt )
+routeopt      = "route" addrprefix
+              / "forward" "to" tablespec
+              / "rtable" int
+              / "rtlabel" string
+              / "disable"
+              / include
+
+; ---- shared scalars ----------------------------------------------------
+
+port          = "port" "http"
+              / "port" portrange
+              / "port" int
+              / "port" string
+
+table         = "<" string ">"
+interface     = "interface" string
+pflog         = "pflog"
+dstmode       = "loadbalance" / "roundrobin" / "hash"
+              / "least-states" / "source-hash" / "random"
+
+addrprefix    = address "/" int
+              / address
+
+; address — an IPv4/IPv6 literal, a hostname, or an interface name
+; (parse.y: `address : STRING`, resolved later by host())
+address       = ipv6 / ipv4 / str / word
+
+; ipv4 — 1*3digit "." 1*3digit "." 1*3digit "." 1*3digit, each octet 0..255
+ipv4          = {
+    size_t n = 0, dots = 0, octet = 0, ndig = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if (c >= '0' && c <= '9') {
+            if (ndig == 3) return 0;
+            octet = octet * 10 + (c - '0');
+            if (octet > 255) return 0;
+            ndig++; n++;
+        } else if (c == '.' && dots < 3 && ndig > 0) {
+            dots++; octet = 0; ndig = 0; n++;
+        } else break;
+    }
+    return (dots == 3 && ndig > 0) ? n : 0;
+}
+
+; ipv6 — 1*( hexdigit / ":" ), at least two ":" (or a "::"); syntax only —
+; the daemon still runs inet_pton for full validation
+ipv6          = {
+    size_t n = 0, hex = 0, colons = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) { hex = 1; n++; }
+        else if (c == ':') { colons++; n++; }
+        else break;
+    }
+    return (hex && colons >= 2) ? n : 0;
+}
+
+; portrange — a port range "low:high" (numbers or service names), one ":"
+portrange     = {
+    size_t i = 0, colon = 0, part = 0;
+    while (pos + i < len) {
+        char c = s[pos + i];
+        if (c == ':') {
+            if (colon == 1 || part == 0) return 0;
+            colon = 1; part = 0; i++;
+        } else if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '#') {
+            break;
+        } else {
+            part = 1; i++;
+        }
+    }
+    return (colon && part) ? i : 0;
+}

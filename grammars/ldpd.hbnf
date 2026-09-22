@@ -1,0 +1,144 @@
+; ldpd.conf — OpenBSD ldpd(8) configuration, as an hbnf grammar.
+; Translated from sbin/ldpd/parse.y.
+;
+;   %token keyword table   ->  "keyword" literals
+;   STRING / NUMBER        ->  string (str/word) / int
+;   { ... } tree actions   ->  implicit — the binder builds the tree
+;   the lexer's hand-written address scanner (get_address -> inet_pton)
+;                          ->  the ipv4 / ipv6 inline jets below
+;
+; parse.y's `_l` list rules and its `'{' optnl X '}' | /* nothing */` blocks
+; are kept as top-level lists (`afopts = *( afopt )`) and explicit two-way
+; alternations (`with block / without block`) — the same shape parse.y spells
+; out, minus the newline scaffolding (the generated lexer skips newlines).
+
+language C
+
+config     = *( include / conf_main / varset / af / neighbor / l2vpn )
+
+include    = "include" string
+
+; a STRING token: quoted ("foo bar") or bareword (em0, example.com)
+string     = str / word
+
+; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
+stringlist = 1*string
+
+varset     = string "=" stringlist                ; macro name = value…
+
+conf_main  = "router-id" ipv4
+           / "fib-update" yesno
+           / "rdomain" int
+           / "transport-preference" ldp_af
+           / "ds-cisco-interop" yesno
+           / auth
+           / af_defaults
+           / iface_defaults
+           / tnbr_defaults
+
+af         = "address-family" ldp_af "{" afopts "}"
+           / "address-family" ldp_af
+afopts     = *( afopt )
+afopt      = "transport-address" address
+           / "gtsm-enable" yesno
+           / af_defaults
+           / iface_defaults
+           / tnbr_defaults
+           / interface
+           / tneighbor
+
+af_defaults    = "targeted-hello-accept" yesno
+               / "explicit-null" yesno
+               / "keepalive" int
+
+iface_defaults = "link-hello-holdtime" int
+               / "link-hello-interval" int
+
+tnbr_defaults  = "targeted-hello-holdtime" int
+               / "targeted-hello-interval" int
+
+tcpmd5     = "tcp" "md5sig" "password" string
+           / "tcp" "md5sig" "key" string
+           / "no" "tcp" "md5sig"
+
+; a TCP-MD5 auth, with an optional authorised neighbour prefix
+auth       = tcpmd5 ipv4 "/" int
+           / tcpmd5 ipv4
+           / tcpmd5
+
+nbr_opt    = "keepalive" int
+           / tcpmd5
+           / "gtsm-enable" yesno
+           / "gtsm-hops" int
+
+pw_defaults = "status-tlv" yesno
+            / "control-word" yesno
+
+pwopt      = "pw-id" int
+           / "neighbor-id" ipv4
+           / "neighbor-addr" address
+           / pw_defaults
+
+pseudowire = "pseudowire" string "{" pwopts "}"
+           / "pseudowire" string
+pwopts     = *( pwopt )
+
+l2vpnopt   = "pw-type" pw_type
+           / "mtu" int
+           / pw_defaults
+           / "bridge" string
+           / "interface" string
+           / pseudowire
+
+interface  = "interface" string "{" ifaceopts "}"
+           / "interface" string
+ifaceopts  = *( iface_defaults )
+
+tneighbor  = "targeted-neighbor" address "{" tnbropts "}"
+           / "targeted-neighbor" address
+tnbropts   = *( tnbr_defaults )
+
+neighbor   = "neighbor" ipv4 "{" nbropts "}"
+           / "neighbor" ipv4
+nbropts    = *( nbr_opt )
+
+l2vpn      = "l2vpn" string "type" l2vpn_type "{" l2vpnopts "}"
+           / "l2vpn" string "type" l2vpn_type
+l2vpnopts  = *( l2vpnopt )
+
+yesno      = "yes" / "no"
+ldp_af     = "ipv4" / "ipv6"
+l2vpn_type = "vpls"
+pw_type    = "ethernet" / "ethernet-tagged"
+
+; address — an IPv4 or IPv6 literal (parse.y: get_address / get_af_address)
+address    = ipv4 / ipv6
+
+; ipv4 — 1*3digit "." 1*3digit "." 1*3digit "." 1*3digit, each octet 0..255
+ipv4       = {
+    size_t n = 0, dots = 0, octet = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if (c >= '0' && c <= '9') {
+            octet = octet * 10 + (c - '0');
+            if (octet > 255) return 0;
+            n++;
+        } else if (c == '.' && dots < 3) {
+            dots++; octet = 0; n++;
+        } else break;
+    }
+    return (dots == 3 && octet <= 255) ? n : 0;
+}
+
+; ipv6 — hex groups separated by ":", with "::" allowed (syntax only; the
+; daemon still runs inet_pton for full validation)
+ipv6       = {
+    size_t n = 0, hex = 0, colon = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) { hex = 1; n++; }
+        else if (c == ':') { colon = 1; n++; }
+        else break;
+    }
+    return (hex && colon) ? n : 0;
+}

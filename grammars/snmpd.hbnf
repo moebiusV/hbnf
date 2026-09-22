@@ -1,0 +1,163 @@
+; snmpd.conf — OpenBSD snmpd(8) configuration, as an hbnf grammar.
+; Translated from usr.sbin/snmpd/parse.y.
+;
+;   %token keyword table   ->  "keyword" literals
+;   STRING / NUMBER        ->  string (str/word/ipv6) / int
+;   { ... } tree actions   ->  implicit — the binder builds the tree
+;
+; parse.y's `_l` list rules and optional keywords are kept as top-level lists
+; (`userspecs = *( userspec )`) and explicit alternations, minus the newline
+; scaffolding (the generated lexer skips newlines).
+;
+; snmpd's yylex is generic — the OID/engineid "parsing" happens in the
+; actions (mib_string2oid / fromhexstr / inet_pton), not in the lexer, so
+; there are no hand-written token scanners to turn into jets.  The one gap:
+; OpenBSD's allowed_in_string admits `:` in a bareword (IPv6 / MAC literals),
+; which the generic hbnf lexer cannot produce — the ipv6 jet below closes it.
+
+language C
+
+config          = *( include / varset / conf_main / system / object / mib )
+
+include         = "include" string
+
+; a STRING token: quoted ("foo bar") or bareword (em0, 1.3.6.1, fe80::1)
+string          = str / word / ipv6
+
+varset          = string "=" value                ; macro name = value...
+value           = string
+
+conf_main       = listen
+                / agentx
+                / engineid
+                / "read-only" "community" string
+                / "read-write" "community" string
+                / "trap" "community" string
+                / "trap" "receiver" host
+                / "trap" "handle" trapoid cmd
+                / "blocklist" oid
+                / "filter-routes" yesno
+                / seclevel
+                / "user" string userspecs
+
+listen          = "listen" "on" "udp" string port listenflags
+                / "listen" "on" "udp" string listenflags
+                / "listen" "on" "tcp" string port listenflags
+                / "listen" "on" "tcp" string listenflags
+                / "listen" "on" string port listenflags
+                / "listen" "on" string listenflags
+
+port            = "port" string
+                / "port" int
+
+listenflags     = *( listenflag )
+listenflag      = "read" / "write" / "notify" / "snmpv1" / "snmpv2c" / "snmpv3"
+
+agentx          = "agentx" agentxopts
+agentxopts      = *( agentxopt )
+agentxopt       = "path" string
+                / "owner" int
+                / "owner" string
+                / "group" int
+                / "group" string
+                / "mode" int
+
+engineid        = "engineid" "pen" int enginefmt_local
+                / "engineid" "pen" "openbsd" enginefmt_local
+                / "engineid" enginefmt_local
+
+enginefmt_local = enginefmt
+                / "hosthash"
+
+enginefmt       = "ipv4" string
+                / "ipv6" string
+                / "mac" string
+                / "text" string
+                / "octets" string
+                / "agentid" string
+                / "hosthash" string
+                / int string
+
+system          = "system" sysmib
+
+sysmib          = "contact" string
+                / "description" string
+                / "location" string
+                / "name" string
+                / "oid" oid
+                / "services" int
+
+object          = "oid" oid "name" string optwrite objectvalue
+
+optwrite        = "read-only" / "read-write"
+
+objectvalue     = "integer" int
+                / "string" string
+
+oid             = string
+
+trapoid         = "default"
+                / oid
+
+cmd             = string
+
+host            = "{" hostlist "}"
+                / hostdef
+
+hostlist        = *( hostdef "," / hostdef )
+
+hostdef         = string "oid" oid hostauth srcaddr
+                / string "oid" oid hostauth
+                / string hostauth srcaddr
+                / string hostauth
+
+hostauth        = "snmpv2c" "community" string
+                / "snmpv2c"
+                / "snmpv3" usmauthopts
+                / usmauthopts
+
+usmauthopts     = *( usmauthopt )
+
+usmauthopt      = usmuser
+                / seclevel
+
+usmuser         = "user" string
+
+seclevel        = "seclevel" seclevel_type
+
+seclevel_type   = "none" / "auth" / "enc"
+
+srcaddr         = "source-address" string
+
+userspecs       = *( userspec )
+
+userspec        = "authkey" string
+                / "auth" auth
+                / "enckey" string
+                / "enc" enc
+
+auth            = "hmac-md5" / "hmac-md5-96"
+                / "hmac-sha1" / "hmac-sha1-96"
+                / "hmac-sha224" / "usmHMAC128SHA224AuthProtocol"
+                / "hmac-sha256" / "usmHMAC192SHA256AuthProtocol"
+                / "hmac-sha384" / "usmHMAC256SHA384AuthProtocol"
+                / "hmac-sha512" / "usmHMAC384SHA512AuthProtocol"
+
+enc             = "des" / "cbc-des" / "aes" / "cfb128-aes-128"
+
+mib             = "mib" "directory" string
+
+yesno           = "yes" / "no"
+
+; ipv6 — 1*( hex / ":" ), with at least one hex digit and one ":" (syntax
+; only; the daemon still runs inet_pton for full validation)
+ipv6            = {
+    size_t n = 0, hex = 0, colon = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) { hex = 1; n++; }
+        else if (c == ':') { colon = 1; n++; }
+        else break;
+    }
+    return (hex && colon) ? n : 0;
+}

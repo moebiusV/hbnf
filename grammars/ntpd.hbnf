@@ -1,31 +1,72 @@
-; ntpd.conf — OpenBSD ntpd(8) configuration, as an ASTBNF schema.
-; Translated from usr.sbin/ntpd/parse.y: keyword tokens become quoted
-; literals, STRING/NUMBER become str/int, the `_l` list rules collapse to
-; *(…), and the { actions } (DNS resolution, TAILQ bookkeeping) are implicit
-; — the binder builds the tree.
+; ntpd.conf — OpenBSD ntpd(8) configuration, as an hbnf grammar.
+; Translated from usr.sbin/ntpd/parse.y.
 ;
-; Whitespace: horizontal spaces/tabs are skipped by the lexer and never
-; appear here.  `nl` is a newline — it distinguishes lines.  A comment at
-; end-of-line is trailing (attached to that entry); a comment on its own
-; line is leading (attached to the next entry).
+;   %token keyword table   ->  "keyword" literals
+;   STRING / NUMBER        ->  string (str/word) / int
+;   { ... } tree actions   ->  implicit — the binder builds the tree
+;   the lexer's address bareword (an IP or hostname, with `*` and `:` allowed,
+;                          ->  resolved later by host()) -> the wildcard and
+;                          ->  ipv6 inline jets below
+;
+; parse.y's `_l` list rules and its `{ opts_default(); } _opts_l | { }`
+; option blocks are kept as top-level lists (`serveropts = *( serveropt )`)
+; and explicit two-way alternations (`with rtable / without`) — the same
+; shape parse.y spells out, minus the newline scaffolding (the generated
+; lexer skips newlines).
 
-config     = [ws] *( entry [ws] ) [ws]
+language C
 
-entry      = "listen" "on" address [rtable]
-           / "query" "from" str
-           / "servers" address *( weight / trusted )
-           / "server" address *( weight / trusted )
-           / "constraints" "from" str
-           / "constraint" "from" 1*( str )
-           / "sensor" str *( correction / refid / stratum / weight / trusted )
+config     = *( entry )
 
-address    = str                       ; hostname or IP — resolved later
+entry      = "listen" "on" address rtable
+           / "listen" "on" address
+           / "query" "from" string
+           / "servers" address serveropts
+           / "server" address serveropts
+           / "constraints" "from" string
+           / "constraint" "from" stringlist
+           / "sensor" string sensoropts
+
+; a STRING token: quoted ("cpu0") or bareword (10.0.0.1, example.com)
+string     = str / word
+
+; one or more STRING tokens (parse.y's `urllist : urllist address | url`)
+stringlist = 1*string
+
 rtable     = "rtable" int
 weight     = "weight" int
 trusted    = "trusted"
 correction = "correction" int
-refid      = "refid" str
+refid      = "refid" string
 stratum    = "stratum" int
 
-nl         = "\n"
-ws         = 1*( nl / comment )       ; entry separator: newline and/or comment
+; parse.y's server_opts_l / sensor_opts_l list rules
+serveropts = *( serveropt )
+serveropt  = weight / trusted
+
+sensoropts = *( sensoropt )
+sensoropt  = correction / refid / stratum / weight / trusted
+
+; an address: a hostname, IPv4/IPv6 literal, or "*" — `string` plus the two
+; forms the generated `word` token cannot match (":" and "*"), spelled out
+; so the value stays a single string (a scalar union, like ldpd's address)
+address    = wildcard / ipv6 / str / word
+
+; wildcard — "*" (parse.y's bareword start char; `listen on *` binds all)
+wildcard   = {
+    return (s[pos] == '*') ? 1 : 0;
+}
+
+; ipv6 — hex groups separated by ":", with "::" and an IPv4-mapped tail
+; (".d.d.d.d") allowed (syntax only; parse.y resolves the address later)
+ipv6       = {
+    size_t n = 0, hex = 0, colon = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) { hex = 1; n++; }
+        else if (c == ':') { colon = 1; n++; }
+        else if (c == '.') { n++; }
+        else break;
+    }
+    return (hex && colon) ? n : 0;
+}

@@ -1,19 +1,43 @@
-; dhcpleased.conf — OpenBSD dhcpleased(8) configuration, as an ASTBNF schema.
+; dhcpleased.conf — OpenBSD dhcpleased(8) configuration, as an hbnf grammar.
 ; Translated from sbin/dhcpleased/parse.y.
+;
+;   %token keyword table   ->  "keyword" literals
+;   STRING                 ->  string (str/word)
+;   NUMBER                 ->  lexed but never accepted (no rule names NUMBER)
+;   { ... } tree actions   ->  implicit — the binder builds the tree
+;
+; parse.y's `iface_block : optnl ifaceopts_l` block is a hoisted top-level list
+; (`ifaceopts = *( ifaceopt )`) and the `{ iface_block }` body is the explicit
+; `"{" ifaceopts "}"` — the same shape parse.y spells out, minus the newline
+; scaffolding (the generated lexer skips newlines).
+;
+; The address / vendor-id / client-id checks (inet_pton, strnunvis, the hex
+; client-id decode) all run in parse.y's actions, not in its scanner — there is
+; no hand-written token here, so no jet.
 
-config     = [ws] *( entry [ws] ) [ws]
+language C
+
+config     = *( entry )
 
 entry      = varset
-           / "interface" str "{" [nl] *( ifaceopt nl ) [nl] "}"
+           / interface
 
-varset     = str "=" 1*( str )                          ; macro: name = value…
+; a STRING token: quoted ("foo bar") or bareword (em0, example.com)
+string     = str / word
 
-ifaceopt   = "send" ( "vendor" "class" "id" str
-                    / "client" "id" str
-                    / "host" "name" str
-                    / "no" "host" "name" )
-           / "ignore" ( "routes" / "dns" / str )
+; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
+stringlist = 1*string
+
+varset     = string "=" stringlist                ; macro name = value…
+
+interface  = "interface" string "{" ifaceopts "}"
+ifaceopts  = *( ifaceopt )
+
+ifaceopt   = "send" "vendor" "class" "id" string
+           / "send" "client" "id" string
+           / "send" "host" "name" string
+           / "send" "no" "host" "name"
+           / "ignore" "routes"
+           / "ignore" "dns"
+           / "ignore" string
            / "prefer" "ipv6"
-
-nl         = "\n"
-ws         = 1*( nl / comment )

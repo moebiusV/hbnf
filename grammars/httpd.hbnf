@@ -1,116 +1,183 @@
-; httpd.conf — OpenBSD httpd(8) configuration, as an ASTBNF schema.
-; Translated from usr.sbin/httpd/parse.y (63 rules + 79 keyword tokens).
-; Every `{ ... }` action — server/type registration, TAILQ bookkeeping,
-; add_media() — is implicit: the binder builds the tree and the daemon walks
-; it.  Only the shape survives, which is all the config really is.
+; httpd.conf — OpenBSD httpd(8) configuration, as an hbnf grammar.
+; Translated from usr.sbin/httpd/parse.y.
+;
+;   %token keyword table   ->  "keyword" literals
+;   STRING / NUMBER        ->  string (str/word) / int
+;   { ... } tree actions   ->  implicit — the binder builds the tree
+;
+; parse.y's `optcommanl`-separated flag runs and its `[ X ]` optionals are kept
+; as top-level lists (`tlsopts = *( tlsopt )`) and explicit alternations
+; (`prefix X / prefix`) — the same shape parse.y spells out, minus the comma
+; and newline scaffolding (the generated lexer skips newlines).
+;
+; There are no jets: httpd's `port` is `PORT (NUMBER | STRING)` at the grammar
+; level — getservice() only validates the token it is handed — so it becomes
+; the `"port" (int / string)` alternation below, not a hand-written scanner.
 
-config     = [ws] *( entry [ws] ) [ws]
+language C
 
-entry      = "prefork" int
-           / "chroot" str
-           / "errdocs" str
-           / "logdir" str
-           / "no" "banner"
-           / "default" "type" mediastring
-           / server
-           / types
-           / "include" str
-           / str "=" str                          ; varset (macro)
+config        = *( entry )
 
-server     = "server" ["match"] str "{" [nl] *( serveropt nl ) [nl] "}"
+entry         = "prefork" int
+              / "chroot" string
+              / "errdocs" string
+              / "logdir" string
+              / "no" "banner"
+              / "default" "type" mediastring
+              / server
+              / types
+              / include
+              / varset
 
-; The ~20 things that can live inside a `server { }` block.
-serveropt  = "listen" "on" str ["tls"] port
-           / "alias" ["match"] str
-           / "errdocs" str
-           / "no" "errdocs"
-           / tcpip
-           / connection
-           / tls
-           / request
-           / root
-           / directory
-           / "banner" / "no" "banner"
-           / header
-           / "static-cache-control" / "no" "static-cache-control"
-           / logformat
-           / fastcgi
-           / authenticate
-           / "gzip-static" / "no" "gzip-static"
-           / filter
-           / "location" [found] ["match"] str "{" [nl] *( serveropt nl ) [nl] "}"
-           / "default" "type" mediastring
-           / "include" str
-           / hsts
+include       = "include" string
 
-port       = "port" ( int / str )                 ; a port number or service name
+varset        = string "=" string                ; macro name = value…
 
-header     = "header" ( "remove" str ["always"]
-                      / "add" str str ["always"]
-                      / "set" str str ["always"] )
+; a STRING token: quoted ("foo bar") or bareword (0.0.0.0, example.com)
+string        = str / word
 
-found      = "found" / "not" "found"              ; optfound, the "location" qualifier
+server        = "server" "match" string "{" serveropts "}"
+              / "server" string "{" serveropts "}"
+serveropts    = *( serveropt )
 
-hsts       = "hsts" *( sep ( "max-age" int
-                            / "subdomains"
-                            / "preload" ) )
+; the things that can live inside a `server { }` block
+serveropt     = "listen" "on" string "tls" port
+              / "listen" "on" string port
+              / "alias" "match" string
+              / "alias" string
+              / "errdocs" string
+              / "no" "errdocs"
+              / tcpip
+              / connection
+              / tls
+              / request
+              / root
+              / directory
+              / "banner"
+              / "no" "banner"
+              / header
+              / "static-cache-control"
+              / "no" "static-cache-control"
+              / logformat
+              / fastcgi
+              / authenticate
+              / "gzip-static"
+              / "no" "gzip-static"
+              / filter
+              / location
+              / "default" "type" mediastring
+              / include
+              / hsts
 
-fastcgi    = ["no"] "fastcgi" [*( sep fcgiflag )]
-fcgiflag   = "socket" ( str / "tcp" str ["port" int] )
-           / "param" str str
-           / "strip" int
-           / "pass" str
+; a port number or service name (parse.y `port : PORT NUMBER | PORT STRING`)
+port          = "port" int
+              / "port" string
 
-connection = "connection" [*( sep conflags )]
-conflags   = "timeout" int
-           / "request" "timeout" int
-           / "max" "requests" int
-           / "max" "request" "body" int
+; a location: `location [found] [match] STRING { ... }`
+location      = "location" "found" "match" string "{" serveropts "}"
+              / "location" "found" string "{" serveropts "}"
+              / "location" "not" "found" "match" string "{" serveropts "}"
+              / "location" "not" "found" string "{" serveropts "}"
+              / "location" "match" string "{" serveropts "}"
+              / "location" string "{" serveropts "}"
 
-tls        = "tls" [*( sep tlsopts )]
-tlsopts    = "certificate" str
-           / "key" str
-           / "ocsp" str
-           / "ciphers" str
-           / "client" "ca" str *( sep ( "crl" str / "optional" ) )
-           / "dhe" str
-           / "ecdhe" str
-           / "protocols" str
-           / "ticket" "lifetime" ( "default" / int )
-           / "no" "ticket"
+header        = "header" "remove" string "always"
+              / "header" "remove" string
+              / "header" "add" string string "always"
+              / "header" "add" string string
+              / "header" "set" string string "always"
+              / "header" "set" string string
 
-root       = "root" *( sep str )                  ; rootflags: one or more doc roots
-request    = "request" [*( sep ( "rewrite" str / "no" "rewrite" / "strip" int ) )]
+hsts          = "hsts" hstsflags
+hstsflags     = *( hstsflag )
+hstsflag      = "max-age" int
+              / "subdomains"
+              / "preload"
 
-authenticate = "authenticate" ( str "with" str / "with" str )
+fastcgi       = "no" "fastcgi" fcgiflags
+              / "fastcgi" fcgiflags
+fcgiflags     = *( fcgiflag )
+fcgiflag      = "socket" string
+              / "socket" "tcp" string "port" int
+              / "socket" "tcp" string
+              / "param" string string
+              / "strip" int
+              / "pass" string
 
-directory  = "directory" [*( sep ( "index" str
-                                 / "no" "index"
-                                 / "auto" "index"
-                                 / "no" "auto" "index" ) )]
+connection    = "connection" conflags
+conflags      = *( conflag )
+conflag       = "timeout" int
+              / "request" "timeout" int
+              / "max" "requests" int
+              / "max" "request" "body" int
 
-logformat  = "log" [*( sep ( "style" logstyle
-                           / "syslog" / "no" "syslog"
-                           / "access" str
-                           / "error" str ) )]
-           / "no" "log"
+tls           = "tls" tlsopts
+tlsopts       = *( tlsopt )
+tlsopt        = "certificate" string
+              / "key" string
+              / "ocsp" string
+              / "ciphers" string
+              / "client" "ca" string tlsclientopts
+              / "dhe" string
+              / "ecdhe" string
+              / "protocols" string
+              / "ticket" "lifetime" "default"
+              / "ticket" "lifetime" int
+              / "no" "ticket"
+tlsclientopts = *( tlsclientopt )
+tlsclientopt  = "crl" string
+              / "optional"
 
-logstyle   = "common" / "combined" / "connection" / "forwarded"
+root          = "root" "{" rootflags "}"
+              / "root" string
+rootflags     = *( string )
 
-filter     = "block" ( "return" int [str] / "drop" )
-           / "pass"
+request       = "request" requestflags
+requestflags  = *( requestflag )
+requestflag   = "rewrite" string
+              / "no" "rewrite"
+              / "strip" int
 
-tcpip      = "tcp" [*( sep ( "sack" / "no" "sack"
-                           / "nodelay" / "no" "nodelay"
-                           / "backlog" int
-                           / "socket" "buffer" int
-                           / "ip" str int ) )]
+authenticate  = "authenticate" string "with" string
+              / "authenticate" "with" string
 
-types      = "types" "{" [nl] *( mediaopt nl ) [nl] "}"
-mediaopt   = mediastring 1*( int / str ) [";"]
-           / "include" str
-mediastring = str "/" str                          ; a MIME type, e.g. "text/html"
+directory     = "directory" dirflags
+dirflags      = *( dirflag )
+dirflag       = "index" string
+              / "no" "index"
+              / "auto" "index"
+              / "no" "auto" "index"
 
-nl         = "\n"                                 ; a newline — distinguishes lines
-sep        = "," [nl] / nl                        ; comma-or-newline flag separator
-ws         = 1*( nl / comment )                   ; entry separator: newline and/or comment
+logformat     = "log" logflags
+              / "no" "log"
+logflags      = *( logflag )
+logflag       = "style" logstyle
+              / "syslog"
+              / "no" "syslog"
+              / "access" string
+              / "error" string
+logstyle      = "common" / "combined" / "connection" / "forwarded"
+
+filter        = "block" "return" int string
+              / "block" "return" int
+              / "block" "drop"
+              / "pass"
+
+tcpip         = "tcp" tcpflags
+tcpflags      = *( tcpflag )
+tcpflag       = "sack"
+              / "no" "sack"
+              / "nodelay"
+              / "no" "nodelay"
+              / "backlog" int
+              / "socket" "buffer" int
+              / "ip" string int
+
+types         = "types" "{" mediaopts "}"
+mediaopts     = *( mediaopt )
+mediaopt      = mediastring medianames ";"
+              / mediastring medianames
+              / include
+mediastring   = string "/" string                ; a MIME type, e.g. text/html
+medianames    = 1*( medianame )
+medianame     = int / string

@@ -1,0 +1,534 @@
+; bgpd.conf — OpenBSD bgpd(8) configuration, as an hbnf grammar.
+; Translated from sbin/bgpd/parse.y (122 rules).
+;
+;   %token keyword table   ->  "keyword" literals (keyword-table spelling)
+;   STRING / NUMBER        ->  string (str/word) / int
+;   { ... } tree actions   ->  implicit — the binder builds the tree
+;   host()/parsecommunity()/the asdot scanner -> the inline jets below
+;
+; parse.y's `_l` list rules become top-level `xs = *( y )` lists; its optional
+; `comma` separator (empty / "," / newline) becomes `y "," / y`; an optional
+; `[ X ]` suffix is flattened to a two-way alternation — the same shapes
+; parse.y spells out, minus the newline scaffolding (the lexer skips newlines).
+; `rib` is listed after `conf_main` so that `rde rib Loc-RIB include filtered`
+; resolves to conf_main, not to a bare `rib` followed by an `include`.
+
+language C
+
+config     = *( include / varset / as_set / prefixset / roa_set / aspa_set
+             / origin_set / rtr / network / flowspec / mrtdump / conf_main
+             / l3vpn / neighbor / group / filterrule / rib )
+
+; a STRING token: quoted ("foo bar") or bareword (em0, example.com)
+string     = str / word
+
+; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
+stringlist = 1*string
+
+include    = "include" string
+varset     = string "=" stringlist            ; macro name = value…
+yesno      = "yes" / "no"
+
+; ---------------------------------------------------------------- sets
+
+as_set     = "as-set" string "{" as_set_l "}"
+           / "as-set" string "{" "}"
+as_set_l   = *( asnumber "," / asnumber )
+
+prefixset    = "prefix-set" string "{" prefixset_l "}"
+             / "prefix-set" string "{" "}"
+prefixset_l  = *( prefixsetitem "," / prefixsetitem )
+prefixsetitem = prefix prefixlenop
+              / prefix
+
+roa_set     = "roa-set" "{" roa_set_l "}"
+            / "roa-set" "{" "}"
+roa_set_l   = *( roa_set_item "," / roa_set_item )
+roa_set_item = prefixsetitem "source-as" asnumber expires
+             / prefixsetitem "source-as" asnumber
+expires     = "expires" int
+
+origin_set  = "origin-set" string "{" roa_set_l "}"
+            / "origin-set" string "{" "}"
+
+aspa_set    = "aspa-set" "{" aspa_set_l "}"
+            / "aspa-set" "{" "}"
+aspa_set_l  = *( aspa_elm "," / aspa_elm )
+aspa_elm    = "customer-as" asnumber expires "provider-as" "{" aspa_tas_l "}"
+            / "customer-as" asnumber "provider-as" "{" aspa_tas_l "}"
+aspa_tas_l  = *( asnumber "," / asnumber )
+
+rtr         = "rtr" address "{" rtropt_l "}"
+            / "rtr" address
+rtropt_l    = *( rtropt )
+rtropt      = "descr" string
+            / "local-address" address
+            / "port" port
+            / "min-version" int
+            / authconf
+
+; ---------------------------------------------------------------- main config
+
+conf_main   = "AS" asnumber int
+            / "AS" asnumber
+            / "router-id" address
+            / "holdtime" int
+            / "holdtime" "min" int
+            / "staletime" int
+            / "listen" "on" address "port" port
+            / "listen" "on" address
+            / "fib-priority" int
+            / "fib-update" yesno
+            / "transparent-as" yesno
+            / "reject" "as-set" yesno
+            / "log" string
+            / "dump" string string int
+            / "dump" string string
+            / "dump" "rib" string string string int
+            / "dump" "rib" string string string
+            / "rde" string "evaluate"
+            / "rde" string "ignore"
+            / "rde" "med" "compare" string
+            / "rde" "evaluate" string
+            / "rde" "rib" string "include" "filtered"
+            / "nexthop" "qualify" "via" string
+            / "rtable" int
+            / "connect-retry" int
+            / "socket" string "restricted"
+            / "socket" string
+
+rib         = "rde" "rib" string ribopts
+            / "rde" "rib" string
+ribopts     = "fib-update" yesno
+            / "rtable" int "fib-update" yesno
+            / "rtable" int
+            / yesno "evaluate"
+
+mrtdump     = "dump" string inout string int
+            / "dump" string inout string
+inout       = "in" / "out"
+
+network     = "network" prefix filterset
+            / "network" "prefix-set" string filterset
+            / "network" af "rtlabel" string filterset
+            / "network" af "priority" int filterset
+            / "network" af nettype filterset
+nettype     = "static" / "connected"
+
+af          = "IPv4" / "IPv6" / "inet" / "inet6"
+safi        = "none" / "unicast" / "vpn" / "flowspec"
+
+; ---------------------------------------------------------------- flowspec
+
+flowspec    = "flowspec" af flowrules filterset
+flowrules   = *( flowrule )
+flowrule    = "from" ipportspec
+            / "to" ipportspec
+            / "flags" flags
+            / "fragment" flags
+            / icmpspec
+            / "length" lengthspec
+            / proto
+            / "tos" tos
+
+ipportspec  = ipspec "port" portspec
+            / ipspec
+            / "port" portspec
+ipspec      = "any" / prefix
+portspec    = port_item
+            / "{" port_list "}"
+port_list   = *( port_item "," / port_item )
+port_item   = unaryop port
+            / port binaryop port
+            / range
+            / port
+port        = int / string
+
+proto       = "proto" protoitem
+            / "proto" "{" proto_list "}"
+proto_list  = *( protoitem "," / protoitem )
+protoitem   = string / int
+
+flags       = string "/" string
+            / "/" string
+            / "any"
+            / string
+
+icmpspec    = "icmp-type" icmp_item
+            / "icmp-type" "{" icmp_list "}"
+icmp_list   = *( icmp_item "," / icmp_item )
+icmp_item   = icmptype "code" string
+            / icmptype "code" int
+            / icmptype
+icmptype    = string / int
+
+lengthspec  = length_item
+            / "{" length_list "}"
+length_list = *( length_item "," / length_item )
+length_item = unaryop int
+            / int binaryop int
+            / range
+            / int
+
+tos         = string / int
+
+; ---------------------------------------------------------------- l3vpn / peers
+
+l3vpn       = "vpn" string "on" string "{" l3vpnopts_l "}"
+l3vpnopts_l = *( l3vpnopts )
+l3vpnopts   = "rd" rdvalue
+            / "export-target" string commval
+            / "import-target" string commval
+            / "fib-update" yesno
+            / network
+
+neighbor    = "neighbor" addrspec "{" peeropts_l "}"
+            / "neighbor" addrspec
+peeropts_l  = *( peeropts )
+
+group       = "group" stringlist "{" groupopts_l "}"
+groupopts_l = *( peeropts / neighbor )
+
+peeropts    = "remote-as" asnumber
+            / "local-as" asnumber int
+            / "local-as" asnumber
+            / "descr" stringlist
+            / "local-address" address
+            / yesno "local-address"
+            / "multihop" int
+            / "passive"
+            / "down" string
+            / "down"
+            / "rib" string
+            / "holdtime" int
+            / "holdtime" "min" int
+            / "staletime" int
+            / "announce" af safi "enforce"
+            / "announce" af safi
+            / "announce" "EVPN" "enforce"
+            / "announce" "EVPN"
+            / "announce" "refresh" yesnoenforce
+            / "announce" "enhanced" "refresh" yesnoenforce
+            / "announce" "restart" yesnoenforce
+            / "announce" "graceful" "notification" yesno
+            / "announce" "as-4byte" yesnoenforce
+            / "announce" "add-path" "recv" yesnoenforce
+            / "announce" "add-path" "send" string "plus" int "max" int "enforce"
+            / "announce" "add-path" "send" string "plus" int "max" int
+            / "announce" "add-path" "send" string "plus" int "enforce"
+            / "announce" "add-path" "send" string "plus" int
+            / "announce" "add-path" "send" string "max" int "enforce"
+            / "announce" "add-path" "send" string "max" int
+            / "announce" "add-path" "send" string "enforce"
+            / "announce" "add-path" "send" string
+            / "announce" "policy" yesnoenforce
+            / "announce" "extended" "message" yesnoenforce
+            / "announce" "extended" "nexthop" yesnoenforce
+            / "role" "none"
+            / "role" string
+            / "export" "none"
+            / "export" "default-route"
+            / "enforce" "neighbor-as" yesno
+            / "enforce" "local-as" yesno
+            / "as-override" yesno
+            / "max-prefix" int "out" "restart" int
+            / "max-prefix" int "out"
+            / "max-prefix" int "restart" int
+            / "max-prefix" int
+            / authconf
+            / "ttl-security" yesno
+            / setclause
+            / mrtdump
+            / "route-reflector"
+            / "route-reflector" address
+            / "depend" "on" string
+            / "demote" string
+            / "transparent-as" yesno
+            / "log" string
+            / "reject" "as-set" yesno
+            / "port" port
+            / "rde" "evaluate" string
+
+yesnoenforce = "yes" / "no" / "enforce"
+
+authconf    = "tcp" "md5sig" "password" stringlist
+            / "tcp" "md5sig" "key" stringlist
+            / "ipsec" espah "ike"
+            / "ipsec" espah inout "spi" int string string encspec
+            / "ipsec" espah inout "spi" int string string
+espah       = "esp" / "ah"
+encspec     = string string
+
+; ---------------------------------------------------------------- filters
+
+filterrule  = action "quick" ribspec direction filter_peer_h filter_match_h filterset
+            / action ribspec direction filter_peer_h filter_match_h filterset
+            / action "quick" direction filter_peer_h filter_match_h filterset
+            / action direction filter_peer_h filter_match_h filterset
+action      = "allow" / "deny" / "match"
+direction   = "from" / "to"
+
+ribspec     = "rib" string
+            / "rib" "{" filter_rib_l "}"
+filter_rib_l = *( string "," / string )
+
+filter_peer_h = filter_peer
+              / "{" filter_peer_l "}"
+filter_peer_l = *( filter_peer "," / filter_peer )
+filter_peer   = "any"
+              / address
+              / "AS" asnumber
+              / "group" string
+              / "ebgp"
+              / "ibgp"
+
+filter_prefix_h = af prefixlenop
+                / af
+                / "prefix" filter_prefix
+                / "prefix" "{" filter_prefix_m "}"
+filter_prefix_m = *( filter_prefix_grp )
+filter_prefix_grp = filter_prefix "," / filter_prefix / "{" filter_prefix_l "}"
+filter_prefix_l = *( filter_prefix "," / filter_prefix )
+filter_prefix   = prefix prefixlenop
+                / prefix
+
+filter_as_h   = filter_as_t
+              / "{" filter_as_t_l "}"
+filter_as_t_l = *( filter_as_t "," / filter_as_t )
+filter_as_t   = filter_as_type filter_as
+              / filter_as_type "{" filter_as_l_h "}"
+              / filter_as_type "as-set" string
+filter_as_l_h = *( filter_as_grp )
+filter_as_grp = filter_as "," / filter_as / "{" filter_as_l "}"
+filter_as_l   = *( filter_as "," / filter_as )
+filter_as     = "neighbor-as"
+              / equalityop asnumber
+              / asnumber binaryop asnumber
+              / range
+              / asnumber
+filter_as_type = "AS" / "source-as" / "transit-as" / "peer-as"
+
+filter_match_h = *( filter_elm )
+filter_elm   = filter_prefix_h
+             / filter_as_h
+             / "max-as-len" int
+             / "max-as-seq" int
+             / commtype commval
+             / "ext-community" "ovs" ovsval
+             / "ext-community" string commval
+             / "max-communities" int
+             / "max-ext-communities" int
+             / "max-large-communities" int
+             / "nexthop" address
+             / "nexthop" "neighbor"
+             / "prefix-set" string prefixlenop
+             / "prefix-set" string
+             / "origin-set" string
+             / "ovs" validity
+             / "avs" aspa_validity
+
+prefixlenop = "or-longer"
+            / "maxlen" int
+            / "prefixlen" unaryop int
+            / "prefixlen" int binaryop int
+            / "prefixlen" range
+
+filterset   = *( setclause )
+setclause   = "set" filterset_opt
+            / "set" "{" filterset_l "}"
+filterset_l = *( filterset_opt "," / filterset_opt )
+
+filterset_opt = "localpref" int
+              / "localpref" "+" int
+              / "localpref" "-" int
+              / "med" int
+              / "med" "+" int
+              / "med" "-" int
+              / "metric" int
+              / "metric" "+" int
+              / "metric" "-" int
+              / "weight" int
+              / "weight" "+" int
+              / "weight" "-" int
+              / "nexthop" address
+              / "nexthop" "blackhole"
+              / "nexthop" "reject"
+              / "nexthop" "no-modify"
+              / "nexthop" "self"
+              / "prepend-self" int
+              / "prepend-neighbor" int
+              / "as-override"
+              / "pftable" string
+              / "rtlabel" string
+              / "community" "delete" commval
+              / "community" commval
+              / "large-community" "delete" commval
+              / "large-community" commval
+              / "ext-community" "delete" "ovs" ovsval
+              / "ext-community" "delete" string commval
+              / "ext-community" "ovs" ovsval
+              / "ext-community" string commval
+              / "origin" origincode
+
+commtype    = "community" / "large-community"
+origincode  = "egp" / "igp" / "incomplete"
+validity    = "not-found" / "invalid" / "valid"
+aspa_validity = "unknown" / "invalid" / "valid"
+ovsval      = "valid" / "invalid" / "not-found" / "*"
+
+unaryop     = "=" / ne / le / "<" / ge / ">"
+equalityop  = "=" / ne
+binaryop    = "-" / xrange
+
+; ---------------------------------------------------------------- scalars
+; an AS number: a plain integer ("64512") or 4-byte asdot ("1.10")
+asnumber    = asdot / int
+
+; address — an IPv4 or IPv6 literal (parse.y: host())
+address     = ipv4 / ipv6
+
+; a neighbor address: a bare address or an address/len prefix (parse.y: addrspec)
+addrspec    = address / prefix
+
+; a community / large-community / ext-community value: a numeric as:data form
+; (the jets), a well-known name ("NO_EXPORT", "neighbor-as"), or "*"
+commval     = largecommunity / community / colonword / "*" / string
+
+; a route distinguisher value ("64512:100" or "1.2.3.4:100")
+rdvalue     = community / colonword
+
+; ---------------------------------------------------------------- jets
+; prefix — address "/" 1*2digit (address an ipv4 or ipv6 literal)
+prefix      = {
+    size_t i = pos, digits = 0;
+    int has_dot = 0, has_colon = 0;
+    while (i < len && s[i] != '/') {
+        char c = s[i];
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+            || (c >= 'A' && c <= 'F')) { /* address char */ }
+        else if (c == '.') has_dot = 1;
+        else if (c == ':') has_colon = 1;
+        else return 0;                 /* not an address character */
+        i++;
+    }
+    if (i >= len || s[i] != '/') return 0;  /* no /len: an address, not a prefix */
+    if (!has_dot && !has_colon) return 0;   /* "10/8" is not an address prefix */
+    i++;                                    /* skip '/' */
+    while (i < len && s[i] >= '0' && s[i] <= '9') { digits++; i++; }
+    if (digits == 0) return 0;
+    return i - pos;
+}
+
+; ipv6 — 1*4hexdig *( ":" 1*4hexdig ), with "::" allowed (syntax only; the
+; daemon still runs inet_pton).  Requires "::", a hex letter, or 8 groups so a
+; 2-group "as:data" community is left for the community jets.
+ipv6        = {
+    size_t i = pos, colons = 0;
+    int seen = 0, hexletter = 0, dcolon = 0;
+    while (i < len) {
+        char c = s[i];
+        if (c >= '0' && c <= '9') { seen = 1; i++; }
+        else if ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) { seen = 1; hexletter = 1; i++; }
+        else if (c == ':') {
+            if (i + 1 < len && s[i + 1] == ':') { dcolon = 1; i += 2; colons++; }
+            else { i++; colons++; }
+        } else break;
+    }
+    if (!seen || colons == 0 || !(dcolon || hexletter || colons >= 7)) return 0;
+    return i - pos;
+}
+
+; largecommunity — 1*( digit / "*" ) ":" 1*( digit / "*" ) ":" 1*( digit / "*" )
+largecommunity = {
+    size_t i = pos, n = 0;
+    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    if (n == 0 || i >= len || s[i] != ':') return 0;
+    i++; n = 0;
+    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    if (n == 0 || i >= len || s[i] != ':') return 0;
+    i++; n = 0;
+    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    if (n == 0) return 0;
+    return i - pos;
+}
+
+; community — 1*( digit / "*" ) ":" 1*( digit / "*" )
+community   = {
+    size_t i = pos, n = 0;
+    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    if (n == 0 || i >= len || s[i] != ':') return 0;
+    i++; n = 0;
+    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    if (n == 0) return 0;
+    return i - pos;
+}
+
+; colonword — 1*( alnum / "." / "-" / "_" / "*" ) ":" 1*( alnum / "." / "-" /
+; "_" / "*" )  — an RD or ext-community value that is not a plain as:data
+; community, e.g. "1.2.3.4:10"
+colonword   = {
+    size_t i = pos;
+    int colon = 0;
+    while (i < len) {
+        char c = s[i];
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')
+            || (c >= 'A' && c <= 'Z') || c == '.' || c == '-'
+            || c == '_' || c == '*') { i++; }
+        else if (c == ':') { colon = 1; i++; }
+        else break;
+    }
+    return (colon && i > pos) ? i - pos : 0;
+}
+
+; ipv4 — 1*3digit "." 1*3digit "." 1*3digit "." 1*3digit, each octet 0..255
+ipv4        = {
+    size_t n = 0, dots = 0, octet = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if (c >= '0' && c <= '9') {
+            octet = octet * 10 + (c - '0');
+            if (octet > 255) return 0;
+            n++;
+        } else if (c == '.' && dots < 3) {
+            dots++; octet = 0; n++;
+        } else break;
+    }
+    return (dots == 3 && octet <= 255) ? n : 0;
+}
+
+; asdot — 1*digit "." 1*digit (a 4-byte AS number, e.g. "1.10")
+asdot       = {
+    size_t i = pos, n = 0;
+    while (i < len && s[i] >= '0' && s[i] <= '9') { n++; i++; }
+    if (n == 0 || i >= len || s[i] != '.') return 0;
+    i++; n = 0;
+    while (i < len && s[i] >= '0' && s[i] <= '9') { n++; i++; }
+    if (n == 0) return 0;
+    return i - pos;
+}
+
+; range — 1*digit ( "-" / "><" ) 1*digit (an inclusive/exclusive numeric range)
+range       = {
+    size_t i = pos, n = 0;
+    while (i < len && s[i] >= '0' && s[i] <= '9') { n++; i++; }
+    if (n == 0) return 0;
+    if (i < len && s[i] == '-') i++;
+    else if (i + 1 < len && s[i] == '>' && s[i + 1] == '<') i += 2;
+    else return 0;
+    n = 0;
+    while (i < len && s[i] >= '0' && s[i] <= '9') { n++; i++; }
+    if (n == 0) return 0;
+    return i - pos;
+}
+
+; xrange — ">" "<" (exclusive range operator)
+xrange      = { return (pos + 1 < len && s[pos] == '>' && s[pos + 1] == '<') ? 2 : 0; }
+
+; ne — "!" "=" (not equal)
+ne          = { return (pos + 1 < len && s[pos] == '!' && s[pos + 1] == '=') ? 2 : 0; }
+
+; le — "<" "=" (less than or equal)
+le          = { return (pos + 1 < len && s[pos] == '<' && s[pos + 1] == '=') ? 2 : 0; }
+
+; ge — ">" "=" (greater than or equal)
+ge          = { return (pos + 1 < len && s[pos] == '>' && s[pos + 1] == '=') ? 2 : 0; }
