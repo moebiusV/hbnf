@@ -187,6 +187,20 @@ package body HBNF_C is
       return T;
    end C_Type_Name;
 
+   --  The C type of the root (first) rule: a list root is its TAILQ head
+   --  (`struct <CN>_list`), a struct root its `_t` typedef.
+   function Root_Type (Rules : Rule_Vectors.Vector) return String is
+      NM : constant String := To_String (Rules (1).Name);
+   begin
+      if Natural (Rules (1).Pattern.Length) = 1
+        and then (Rules (1).Pattern (1).Min /= 1
+                  or else Rules (1).Pattern (1).Max /= 1)
+      then
+         return "struct " & C_Name (NM) & "_list";
+      end if;
+      return C_Type_Name (NM);
+   end Root_Type;
+
    --  =====================================================================
    --  Classification shared by the id-ref serialization emitters.  Emit and
    --  Emit_Parser keep their own local copies; these package-level versions
@@ -809,8 +823,9 @@ package body HBNF_C is
                          (J > 0 and then Infos (J).Kind = List);
                   begin
                      if Is_Head then
-                        Append (Buf, "    " & Ref_Type (To_String (M.Name))
-                          & " *" & C_Field (To_String (M.Name)) & ";");
+                        Append (Buf, "    struct "
+                          & C_Name (To_String (M.Name)) & "_list "
+                          & C_Field (To_String (M.Name)) & ";");
                      else
                         Append (Buf, "    " & C_Type_Of (To_String (M.Name))
                           & " " & C_Field (To_String (M.Name)) & ";");
@@ -821,14 +836,15 @@ package body HBNF_C is
                Append (Buf, "};");
                Append (Buf, LF);
             when List =>
-               --  A `next`-linked node: the list is a head pointer elsewhere.
+               --  A TAILQ-linked node; the head is a `struct <CN>_list`
+               --  embedded in the parent.
                Append (Buf, "struct " & CN & " {");
                Append (Buf, LF);
                if Idref then
                   Append (Buf, "    objid_t id, parent;");
                   Append (Buf, LF);
                end if;
-               Append (Buf, "    struct " & CN & " *next;");
+               Append (Buf, "    TAILQ_ENTRY(" & CN & ") _entry;");
                Append (Buf, LF);
                if Info.Elem_Members.Is_Empty then
                   if Info.Elem_Name /= Null_Unbounded_String then
@@ -885,7 +901,7 @@ package body HBNF_C is
                     & "(&n->" & F & ", f, ctx);");
                when List =>
                   Append (Buf, Ind & Prefix & "_" & C_Name (Name)
-                    & "(n->" & F & ", f, ctx);");
+                    & "(&n->" & F & ", f, ctx);");
                when others =>
                   return;
             end case;
@@ -914,7 +930,7 @@ package body HBNF_C is
             Info : constant Rule_Info := Infos (Idx);
          begin
             if Info.Kind = Struct then
-               Append (Buf, "void visit_" & CN & "(const "
+               Append (Buf, "static void visit_" & CN & "(const "
                  & TN & " *n, visit_fn f, void *ctx) {");
                Append (Buf, LF);
                Append (Buf, "    if (!n) return;");
@@ -925,11 +941,12 @@ package body HBNF_C is
                   Recurse (To_String (M.Name), "visit", Buf, "    ");
                end loop;
             else
-               Append (Buf, "void visit_" & CN & "(const "
-                 & TN & " *head, visit_fn f, void *ctx) {");
+               Append (Buf, "static void visit_" & CN & "(const struct " & CN
+                 & "_list *head, visit_fn f, void *ctx) {");
                Append (Buf, LF);
-               Append (Buf, "    for (const "
-                 & TN & " *n = head; n; n = n->next) {");
+               Append (Buf, "    const " & TN & " *n;");
+               Append (Buf, LF);
+               Append (Buf, "    TAILQ_FOREACH(n, head, _entry) {");
                Append (Buf, LF);
                Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
@@ -947,7 +964,7 @@ package body HBNF_C is
             Info : constant Rule_Info := Infos (Idx);
          begin
             if Info.Kind = Struct then
-               Append (Buf, "void map_" & CN & "("
+               Append (Buf, "static void map_" & CN & "("
                  & TN & " *n, map_fn f, void *ctx) {");
                Append (Buf, LF);
                Append (Buf, "    if (!n) return;");
@@ -958,11 +975,12 @@ package body HBNF_C is
                Append (Buf, "    f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
             else
-               Append (Buf, "void map_" & CN & "("
-                 & TN & " *head, map_fn f, void *ctx) {");
+               Append (Buf, "static void map_" & CN & "(struct " & CN
+                 & "_list *head, map_fn f, void *ctx) {");
                Append (Buf, LF);
-               Append (Buf, "    for ("
-                 & TN & " *n = head; n; n = n->next) {");
+               Append (Buf, "    " & TN & " *n;");
+               Append (Buf, LF);
+               Append (Buf, "    TAILQ_FOREACH(n, head, _entry) {");
                Append (Buf, LF);
                Recurse_Elem (Info, "map", Buf, "        ");
                Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
@@ -1011,11 +1029,19 @@ package body HBNF_C is
                   CN : constant String := C_Name (To_String (Rules (I).Name));
                   TN : constant String := C_Type_Name (To_String (Rules (I).Name));
                begin
-                  Append (Buf, "void visit_" & CN & "(const "
-                    & TN & " *, visit_fn f, void *ctx);");
-                  Append (Buf, LF);
-                  Append (Buf, "void map_" & CN & "("
-                    & TN & " *, map_fn f, void *ctx);");
+                  if Infos (I).Kind = List then
+                     Append (Buf, "static void visit_" & CN & "(const struct " & CN
+                       & "_list *, visit_fn f, void *ctx);");
+                     Append (Buf, LF);
+                     Append (Buf, "static void map_" & CN & "(struct " & CN
+                       & "_list *, map_fn f, void *ctx);");
+                  else
+                     Append (Buf, "static void visit_" & CN & "(const "
+                       & TN & " *, visit_fn f, void *ctx);");
+                     Append (Buf, LF);
+                     Append (Buf, "static void map_" & CN & "("
+                       & TN & " *, map_fn f, void *ctx);");
+                  end if;
                   Append (Buf, LF);
                end;
             end if;
@@ -1048,6 +1074,8 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "#include <stddef.h>");
       Append (Res, LF);
+      Append (Res, "#include <sys/queue.h>");
+      Append (Res, LF);
       Append (Res, LF);
 
       if Idref then
@@ -1059,13 +1087,20 @@ package body HBNF_C is
          Append (Res, LF);
       end if;
 
-      --  Forward-declare every struct and list node type.
+      --  Forward-declare every struct and list node type; a list rule also
+      --  gets its TAILQ head type.
       for I in 1 .. N loop
          if Is_By_Value (Infos (I)) or else Infos (I).Kind = List then
             Append (Res, "typedef struct "
               & C_Name (To_String (Rules (I).Name))
               & " " & C_Type_Name (To_String (Rules (I).Name)) & ";");
             Append (Res, LF);
+            if Infos (I).Kind = List then
+               Append (Res, "TAILQ_HEAD("
+                 & C_Name (To_String (Rules (I).Name)) & "_list, "
+                 & C_Name (To_String (Rules (I).Name)) & ");");
+               Append (Res, LF);
+            end if;
             Remaining := Remaining + 1;
          end if;
       end loop;
@@ -1352,8 +1387,9 @@ package body HBNF_C is
          return "";
       end Scalar_Union_Type;
 
-      --  The out-parameter type of parse_<rule>: a list hands back a head
-      --  pointer (`X_t **`), anything else a by-value struct/scalar (`X_t *`).
+      --  The out-parameter type of parse_<rule>: a list hands back a TAILQ
+      --  head (`struct <CN>_list *`), anything else a by-value struct/scalar
+      --  (`<CN>_t *`).
       function Out_Type (Idx : Natural) return String is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
@@ -1361,7 +1397,7 @@ package body HBNF_C is
          if Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1)
          then
-            return C_Type_Name (To_String (R.Name)) & " **";
+            return "struct " & C_Name (To_String (R.Name)) & "_list *";
          end if;
          return C_Type_Name (To_String (R.Name)) & " *";
       end Out_Type;
@@ -1472,7 +1508,9 @@ package body HBNF_C is
             declare
                E : constant Element_Access := P (1);
             begin
-               Append (Buf, "    " & C_Type_Name (NM) & " *head = NULL, **tail = &head;");
+               Append (Buf, "    struct " & C_Name (NM) & "_list head;");
+               Append (Buf, LF);
+               Append (Buf, "    TAILQ_INIT(&head);");
                Append (Buf, LF);
                Append (Buf, "    while (p->pos < p->n) {");
                Append (Buf, LF);
@@ -1494,7 +1532,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "have:");
                Append (Buf, LF);
-               Append (Buf, "        *tail = nn; tail = &nn->next;");
+               Append (Buf, "        TAILQ_INSERT_TAIL(&head, nn, _entry);");
                Append (Buf, LF);
                Append (Buf, "    }");
                Append (Buf, LF);
@@ -1885,12 +1923,7 @@ package body HBNF_C is
    end Emit_Parser;
 
    function Emit_Lexer (Rules : Rule_Vectors.Vector) return String is
-      Root_Name : constant String := C_Type_Name (To_String (Rules (1).Name));
-      Root_List : constant Boolean :=
-        Natural (Rules (1).Pattern.Length) = 1
-          and then (Rules (1).Pattern (1).Min /= 1
-                    or else Rules (1).Pattern (1).Max /= 1);
-      Root_T : constant String := (if Root_List then Root_Name & " *" else Root_Name);
+      Root_T : constant String := Root_Type (Rules);
       Lexer  : constant String :=
         Templates.Substitute (Templates.C_Lexer, "@ROOT_TYPE@", Root_T);
    begin
@@ -1904,7 +1937,7 @@ package body HBNF_C is
    --  conf.h: the declarations plus the global `conf`, the error callback and
    --  the parse_config prototype.
    function Emit_Conf_Header (Rules : Rule_Vectors.Vector) return String is
-      Root_T : constant String := C_Type_Name (To_String (Rules (1).Name));
+      Root_T : constant String := Root_Type (Rules);
    begin
       return
         "#ifndef CONF_H" & LF &
@@ -1919,7 +1952,7 @@ package body HBNF_C is
    --  conf.c: the lexer + parser plus the global `conf` and parse_config
    --  (slurp the file, populate conf, report errors through the callback).
    function Emit_Conf_Source (Rules : Rule_Vectors.Vector) return String is
-      Root_T : constant String := C_Type_Name (To_String (Rules (1).Name));
+      Root_T : constant String := Root_Type (Rules);
    begin
       return
         "/* generated by hbnf -- do not edit */" & LF & LF &
@@ -2017,7 +2050,8 @@ package body HBNF_C is
          Append (Buf, Ind & "m.id = id; m.parent = parent;");
          Append (Buf, LF);
          if Bare then
-            Append (Buf, Ind & "m.value_len = (uint32_t)strlen(n->value);");
+            Append (Buf, Ind & "m.value_len = n->value ?"
+              & " (uint32_t)strlen(n->value) : 0;");
             Append (Buf, LF);
          end if;
          for M of Ms loop
@@ -2026,8 +2060,8 @@ package body HBNF_C is
                   F : constant String := C_Field (To_String (M.Name));
                begin
                   if Leaf_Type (To_String (M.Name)) = "const char *" then
-                     Append (Buf, Ind & "m." & F & "_len = (uint32_t)strlen(n->"
-                       & F & ");");
+                     Append (Buf, Ind & "m." & F & "_len = n->" & F & " ?"
+                       & " (uint32_t)strlen(n->" & F & ") : 0;");
                   else
                      Append (Buf, Ind & "m." & F & " = n->" & F & ";");
                   end if;
@@ -2038,7 +2072,8 @@ package body HBNF_C is
          Append (Buf, Ind & "emit(MSG_" & C_Ident (CN) & ", &m, sizeof m);");
          Append (Buf, LF);
          if Bare then
-            Append (Buf, Ind & "emit(MSG_STR, n->value, m.value_len);");
+            Append (Buf, Ind & "if (n->value) emit(MSG_STR, n->value,"
+              & " m.value_len);");
             Append (Buf, LF);
          end if;
          for M of Ms loop
@@ -2048,8 +2083,8 @@ package body HBNF_C is
                declare
                   F : constant String := C_Field (To_String (M.Name));
                begin
-                  Append (Buf, Ind & "emit(MSG_STR, n->" & F & ", m." & F
-                    & "_len);");
+                  Append (Buf, Ind & "if (n->" & F & ") emit(MSG_STR, n->" & F
+                    & ", m." & F & "_len);");
                   Append (Buf, LF);
                end;
             end if;
@@ -2058,15 +2093,11 @@ package body HBNF_C is
             if Is_Child (M) then
                declare
                   F : constant String := C_Field (To_String (M.Name));
-                  J : constant Natural := Find (Rules, To_String (M.Name));
                begin
-                  if M.Is_List or else Infos (J).Kind = List then
-                     Append (Buf, Ind & "serialize_" & C_Name (To_String (M.Name))
-                       & "(n->" & F & ", id, emit);");
-                  else
-                     Append (Buf, Ind & "serialize_" & C_Name (To_String (M.Name))
-                       & "(&n->" & F & ", id, emit);");
-                  end if;
+                  --  Both by-value struct members and embedded TAILQ heads are
+                  --  passed by address (&n->field).
+                  Append (Buf, Ind & "serialize_" & C_Name (To_String (M.Name))
+                    & "(&n->" & F & ", id, emit);");
                   Append (Buf, LF);
                end;
             end if;
@@ -2119,10 +2150,12 @@ package body HBNF_C is
             Emit_Body (CN, Info, Buf, "    ");
             Append (Buf, "}");
          else
-            Append (Buf, "void serialize_" & CN & "(const " & TN
-              & " *head, objid_t parent, emit_fn emit) {");
+            Append (Buf, "void serialize_" & CN & "(const struct " & CN
+              & "_list *head, objid_t parent, emit_fn emit) {");
             Append (Buf, LF);
-            Append (Buf, "    for (const " & TN & " *n = head; n; n = n->next) {");
+            Append (Buf, "    const " & TN & " *n;");
+            Append (Buf, LF);
+            Append (Buf, "    TAILQ_FOREACH(n, head, _entry) {");
             Append (Buf, LF);
             Emit_Body (CN, Info, Buf, "        ");
             Append (Buf, "    }");
@@ -2177,9 +2210,12 @@ package body HBNF_C is
             declare
                CN : constant String := C_Name (To_String (Rules (I).Name));
                TN : constant String := C_Type_Name (To_String (Rules (I).Name));
+               PT : constant String :=
+                 (if Infos (I).Kind = List then "const struct " & CN & "_list *"
+                  else "const " & TN & " *");
             begin
-               Append (Res, "void serialize_" & CN & "(const " & TN
-                 & " *, objid_t parent, emit_fn emit);");
+               Append (Res, "void serialize_" & CN & "(" & PT
+                 & ", objid_t parent, emit_fn emit);");
                Append (Res, LF);
             end;
          end if;
@@ -2194,8 +2230,11 @@ package body HBNF_C is
       end loop;
 
       declare
-         RT : constant String := C_Type_Name (To_String (Rules (1).Name));
-         RN : constant String := C_Name (To_String (Rules (1).Name));
+         RN          : constant String := C_Name (To_String (Rules (1).Name));
+         Root_Is_List : constant Boolean := Infos (1).Kind = List;
+         RT : constant String :=
+           (if Root_Is_List then "struct " & RN & "_list"
+            else C_Type_Name (To_String (Rules (1).Name)));
       begin
          --  Named `serialize_tree` (not `serialize_config`) because the root
          --  rule is often literally `config`, whose own per-type serializer
@@ -2367,7 +2406,7 @@ package body HBNF_C is
             declare
                F : constant String := C_Field (To_String (M.Name));
             begin
-               Append (Buf, "    n->" & F & " = strdup(" & F & ");");
+               Append (Buf, "    n->" & F & " = " & F & " ? strdup(" & F & ") : NULL;");
                Append (Buf, LF);
             end;
          end loop;

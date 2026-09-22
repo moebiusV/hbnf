@@ -13,7 +13,7 @@ gnatmake -q -gnat2022 -I. -Itests tests/gen_all.adb -o /tmp/gen_all
 echo "== C =="
 /tmp/hbnf_cli tests/server.hbnf --backend=c > /tmp/server.c
 cp tests/c_main.c /tmp/
-( cd /tmp && gcc -std=gnu11 -D_GNU_SOURCE c_main.c -o c_test 2>&1 | head -20 && ./c_test )
+( cd /tmp && gcc -std=gnu11 -D_GNU_SOURCE -I"$HERE/tests/bsdinc" c_main.c -o c_test 2>&1 | head -20 && ./c_test )
 
 echo "== C conf (OpenBSD conf.h/conf.c shape) =="
 /tmp/hbnf_cli tests/server.hbnf --backend=c --conf > /tmp/conf-out.txt
@@ -22,12 +22,12 @@ cp tests/conf_main.c /tmp/
   awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} f==1{print > "conf.h"} f==2{print > "conf.c"}' conf-out.txt
   printf '"example.com"\non wg0 port 443\n"/var/www"\n"www"\nyes\n' > valid.conf
   printf '"example.com"\non wg0 port oops\n"/var/www"\n"www"\nyes\n' > bad.conf
-  gcc -std=gnu11 -D_GNU_SOURCE conf.c conf_main.c -o conf_test 2>&1 | head -20 && ./conf_test
+  gcc -std=gnu11 -D_GNU_SOURCE -I"$HERE/tests/bsdinc" conf.c conf_main.c -o conf_test 2>&1 | head -20 && ./conf_test
 )
 
 echo "== FFI (C shared lib + ctypes/Fiddle) =="
 ( cd /tmp
-  cc -shared -fPIC conf.c -o libhbnfconf.so 2>&1 | head -10
+  cc -shared -fPIC -I"$HERE/tests/bsdinc" conf.c -o libhbnfconf.so 2>&1 | head -10
   if command -v python3 >/dev/null 2>&1; then
     cp "$HERE/bindings/python/hbnfconf.py" .
     echo "  python:"; LD_LIBRARY_PATH=. python3 hbnfconf.py valid.conf 2>&1 | head -20
@@ -46,7 +46,7 @@ echo "== C++ (extern \"C\" header) =="
 if command -v g++ >/dev/null 2>&1; then
     ( cd /tmp
       cp "$HERE/tests/cpp_conf_main.cpp" .
-      cc -c conf.c -o conf.o
+      cc -c -I"$HERE/tests/bsdinc" conf.c -o conf.o
       g++ -std=c++17 cpp_conf_main.cpp conf.o -o cpp_conf_test 2>&1 | head -20
       ./cpp_conf_test )
 else
