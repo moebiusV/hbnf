@@ -408,6 +408,10 @@ package Templates is
      "   Convenience for FFI languages that cannot read the `conf` global. */" & LF &
      "@ROOT_TYPE@ *conf_ptr(void);" & LF &
      "" & LF &
+     "/* Free the current config tree and reset the root (the SIGHUP reload" & LF &
+     "   path).  Safe to call when conf is NULL. */" & LF &
+     "void free_conf(void);" & LF &
+     "" & LF &
      "#ifdef __cplusplus" & LF &
      "}" & LF &
      "#endif";

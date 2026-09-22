@@ -1156,6 +1156,117 @@ package body HBNF_C is
          end loop;
       end Emit_Walk;
 
+      --  Emit free_<rule>: drop a parsed tree, freeing every string and list
+      --  node the parser allocated (the SIGHUP reload path).  A struct frees
+      --  its contents in place (the struct itself is embedded); a list frees
+      --  each node and resets the head.
+      procedure Emit_Free (Buf : in out U) is
+
+         function Ref_Kind (Name : String) return Class_Kind is
+            J : constant Natural := Find (Name);
+         begin
+            if J = 0 then
+               return Scalar;
+            end if;
+            return Infos (J).Kind;
+         end Ref_Kind;
+
+         --  Free the field `n-><F>`: recurse into a child struct/list, free a
+         --  string leaf, leave a numeric/enum leaf alone.
+         procedure Free_Field (Name : String; Buf : in out U; Ind : String) is
+            F : constant String := C_Field (Name);
+         begin
+            case Ref_Kind (Name) is
+               when Struct | List =>
+                  Append (Buf, Ind & "free_" & C_Name (Name)
+                    & "(&n->" & F & ");");
+                  Append (Buf, LF);
+               when others =>
+                  if Resolve_Type (Name) = "const char *" then
+                     Append (Buf, Ind & "free((void *)n->" & F & ");");
+                     Append (Buf, LF);
+                  end if;
+            end case;
+         end Free_Field;
+
+         procedure Free_Def (Idx : Natural; Buf : in out U) is
+            CN   : constant String := C_Name (To_String (Rules (Idx).Name));
+            TN   : constant String := C_Type_Name (To_String (Rules (Idx).Name));
+            Info : constant Rule_Info := Infos (Idx);
+         begin
+            if Info.Kind = Struct then
+               Append (Buf, "static void free_" & CN & "(" & TN & " *n) {");
+               Append (Buf, LF);
+               Append (Buf, "    if (!n) return;");
+               Append (Buf, LF);
+               for M of Info.Members loop
+                  Free_Field (To_String (M.Name), Buf, "    ");
+               end loop;
+            else
+               Append (Buf, "static void free_" & CN & "(struct " & CN
+                 & "_list *head) {");
+               Append (Buf, LF);
+               Append (Buf, "    " & TN & " *n = HBNF_LIST_FIRST(head), *next;");
+               Append (Buf, LF);
+               Append (Buf, "    while (n) {");
+               Append (Buf, LF);
+               Append (Buf, "        next = HBNF_LIST_NEXT(n);");
+               Append (Buf, LF);
+               if Info.Elem_Members.Is_Empty then
+                  if Info.Elem_Name /= Null_Unbounded_String then
+                     Free_Field (To_String (Info.Elem_Name), Buf, "        ");
+                  else
+                     Append (Buf, "        free((void *)n->value);");
+                     Append (Buf, LF);
+                  end if;
+               else
+                  for M of Info.Elem_Members loop
+                     Free_Field (To_String (M.Name), Buf, "        ");
+                  end loop;
+               end if;
+               Append (Buf, "        free(n);");
+               Append (Buf, LF);
+               Append (Buf, "        n = next;");
+               Append (Buf, LF);
+               Append (Buf, "    }");
+               Append (Buf, LF);
+               Append (Buf, "    HBNF_LIST_INIT(head);");
+               Append (Buf, LF);
+            end if;
+            Append (Buf, "}");
+            Append (Buf, LF);
+         end Free_Def;
+
+      begin
+         Append (Buf, "/* ---- free (drop a parsed tree) ---- */");
+         Append (Buf, LF);
+
+         for I in 1 .. N loop
+            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               declare
+                  CN : constant String := C_Name (To_String (Rules (I).Name));
+                  TN : constant String := C_Type_Name (To_String (Rules (I).Name));
+               begin
+                  if Infos (I).Kind = List then
+                     Append (Buf, "static void free_" & CN & "(struct " & CN
+                       & "_list *head);");
+                  else
+                     Append (Buf, "static void free_" & CN & "(" & TN & " *n);");
+                  end if;
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+         Append (Buf, LF);
+
+         for I in 1 .. N loop
+            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               Free_Def (I, Buf);
+               Append (Buf, LF);
+            end if;
+         end loop;
+      end Emit_Free;
+
       Emitted   : array (1 .. N) of Boolean := [others => False];
       Remaining : Natural := 0;
       Res       : U;
@@ -1177,6 +1288,10 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "#include <stddef.h>");
       Append (Res, LF);
+      Append (Res, "#include <stdlib.h>");
+      Append (Res, LF);
+      Append (Res, "#include <string.h>");
+      Append (Res, LF);
       Append (Res, LF);
       Append (Res, "/* List container: portable singly-linked by default.  A schema");
       Append (Res, LF);
@@ -1195,6 +1310,10 @@ package body HBNF_C is
       Append (Res, "#define HBNF_LIST_APPEND(h, e) do { *(h)->tail = (e); (h)->tail = &(e)->_link; } while (0)");
       Append (Res, LF);
       Append (Res, "#define HBNF_LIST_FOREACH(v, h) for ((v) = (h)->head; (v); (v) = (v)->_link)");
+      Append (Res, LF);
+      Append (Res, "#define HBNF_LIST_FIRST(h) ((h)->head)");
+      Append (Res, LF);
+      Append (Res, "#define HBNF_LIST_NEXT(e) ((e)->_link)");
       Append (Res, LF);
       Append (Res, "#endif");
       Append (Res, LF);
@@ -1313,6 +1432,9 @@ package body HBNF_C is
       end loop;
 
       Emit_Walk (Res);
+      Append (Res, LF);
+
+      Emit_Free (Res);
       Append (Res, LF);
 
       return To_String (Res);
@@ -2082,6 +2204,7 @@ package body HBNF_C is
    --  (slurp the file, populate conf, report errors through the callback).
    function Emit_Conf_Source (Rules : Rule_Vectors.Vector) return String is
       Root_T : constant String := Root_Type (Rules);
+      Root_C : constant String := C_Name (To_String (Rules (1).Name));
    begin
       return
         "/* generated by hbnf -- do not edit */" & LF & LF &
@@ -2089,7 +2212,15 @@ package body HBNF_C is
         Emit_Parser (Rules) &
         Emit_Lexer (Rules) &
         LF &
-        Templates.Substitute (Templates.Conf_Tail_C, "@ROOT_TYPE@", Root_T);
+        Templates.Substitute (Templates.Conf_Tail_C, "@ROOT_TYPE@", Root_T) &
+        LF &
+        "/* Drop the current config tree (the SIGHUP reload path). */" & LF &
+        "void free_conf(void) {" & LF &
+        "    if (!conf) return;" & LF &
+        "    free_" & Root_C & "(conf);" & LF &
+        "    free(conf);" & LF &
+        "    conf = NULL;" & LF &
+        "}";
    end Emit_Conf_Source;
 
    --  =====================================================================

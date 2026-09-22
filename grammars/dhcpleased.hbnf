@@ -24,6 +24,8 @@ language C
 #define HBNF_LIST_INIT(h)          TAILQ_INIT(h)
 #define HBNF_LIST_APPEND(h,e)      TAILQ_INSERT_TAIL(h,e,_link)
 #define HBNF_LIST_FOREACH(v,h)     TAILQ_FOREACH(v,h,_link)
+#define HBNF_LIST_NEXT(e)          TAILQ_NEXT(e,_link)
+#define HBNF_LIST_FIRST(h)         TAILQ_FIRST(h)
 }
 
 
