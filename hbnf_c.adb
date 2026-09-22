@@ -1643,6 +1643,72 @@ package body HBNF_C is
       return "hbnf_str_append(p->toks[p->pos].text, p->toks[p->pos].len)";
    end Scalar_Parse_Expr;
 
+   --  True for the numeric core scalars (int / uN / iN), whose strtol/atoll
+   --  conversion is deferred to the branch's commit point instead of running
+   --  on every speculative branch.
+   function Is_Number (Name : String) return Boolean is
+   begin
+      if Name = "int" then
+         return True;
+      end if;
+      if Name'Length >= 2
+        and then (Name (Name'First) = 'u' or else Name (Name'First) = 'i')
+      then
+         declare
+            R : constant String := Name (Name'First + 1 .. Name'Last);
+         begin
+            return (for all C of R => C in '0' .. '9');
+         end;
+      end if;
+      return False;
+   end Is_Number;
+
+   --  The conversion applied to a deferred number's text pointer.
+   function Scalar_Convert (Name : String; Ref : String) return String is
+   begin
+      if Name = "int" then
+         return "atoll(" & Ref & ")";
+      elsif Name'Length >= 2 then
+         declare
+            P : constant Character := Name (Name'First);
+            R : constant String := Name (Name'First + 1 .. Name'Last);
+         begin
+            if P = 'u' then
+               return "(uint" & R & "_t)strtoull(" & Ref & ", NULL, 10)";
+            elsif P = 'i' then
+               return "(int" & R & "_t)strtoll(" & Ref & ", NULL, 10)";
+            end if;
+         end;
+      end if;
+      return "atoll(" & Ref & ")";
+   end Scalar_Convert;
+
+   --  The direct numeric scalar fields (int / uN / iN) of a flat pattern, in
+   --  first-seen order, deduped.  Drives the deferred-number temporaries.
+   function Numeric_Fields (Els : Element_Vectors.Vector)
+     return String_Vectors.Vector is
+      V : String_Vectors.Vector;
+
+      function Present (S : U) return Boolean is
+      begin
+         for X of V loop
+            if X = S then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Present;
+   begin
+      for E of Els loop
+         if E.Kind = Name and then Is_Number (To_String (E.Name)) then
+            if not Present (E.Name) then
+               V.Append (E.Name);
+            end if;
+         end if;
+      end loop;
+      return V;
+   end Numeric_Fields;
+
    function Emit_Parser (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
@@ -1932,9 +1998,15 @@ package body HBNF_C is
                           & Scalar_Tok_Kind (To_String (E.Name)) & ", """
                           & Core_Desc (To_String (E.Name)) & """)) { " & Fail & " }");
                         Append (Buf, LF);
-                        Append (Buf, Ind & Acc
-                          & C_Field (To_String (E.Name)) & " = "
-                          & Scalar_Parse_Expr (To_String (E.Name)) & "; p->pos++;");
+                        if Is_Number (To_String (E.Name)) then
+                           Append (Buf, Ind & "num_"
+                             & C_Field (To_String (E.Name))
+                             & " = p->toks[p->pos].text; p->pos++;");
+                        else
+                           Append (Buf, Ind & Acc
+                             & C_Field (To_String (E.Name)) & " = "
+                             & Scalar_Parse_Expr (To_String (E.Name)) & "; p->pos++;");
+                        end if;
                         Append (Buf, LF);
                      else
                         Append (Buf, Ind & "if (!parse_rule_"
@@ -2222,6 +2294,51 @@ package body HBNF_C is
          end if;
       end Emit_Alternation;
 
+      --  Deferred-number plumbing: a numeric field (`int` / `uN` / `iN`) is
+      --  parsed into a `num_<field>` text pointer and converted only at the
+      --  branch's commit point, so speculative branches skip the strtol/atoll.
+
+      procedure Emit_Number_Deferrals
+        (Nums : String_Vectors.Vector; Buf : in out U; Ind : String) is
+      begin
+         for N of Nums loop
+            Append (Buf, Ind & "const char *num_"
+              & C_Field (To_String (N)) & " = NULL;");
+            Append (Buf, LF);
+         end loop;
+      end Emit_Number_Deferrals;
+
+      procedure Emit_Number_Converts
+        (Nums : String_Vectors.Vector; Acc : String; Check : Boolean;
+         Buf : in out U; Ind : String) is
+      begin
+         for N of Nums loop
+            if Check then
+               Append (Buf, Ind & "if (num_" & C_Field (To_String (N)) & ") "
+                 & Acc & C_Field (To_String (N)) & " = "
+                 & Scalar_Convert (To_String (N),
+                                   "num_" & C_Field (To_String (N))) & ";");
+            else
+               Append (Buf, Ind & Acc & C_Field (To_String (N)) & " = "
+                 & Scalar_Convert (To_String (N),
+                                   "num_" & C_Field (To_String (N))) & ";");
+            end if;
+            Append (Buf, LF);
+         end loop;
+      end Emit_Number_Converts;
+
+      --  The `; num_<field> = NULL` statements folded into an alternation's
+      --  reset, so a branch that leaves a field unset does not inherit a
+      --  stale pointer from an earlier speculative branch.
+      function Num_Clears (Nums : String_Vectors.Vector) return String is
+         S : U;
+      begin
+         for N of Nums loop
+            Append (S, "; num_" & C_Field (To_String (N)) & " = NULL");
+         end loop;
+         return To_String (S);
+      end Num_Clears;
+
       procedure Emit_Rule_Parser (Idx : Natural; Buf : in out U) is
          R  : constant Rule := Rules (Idx);
          P  : constant Element_Vectors.Vector := R.Pattern;
@@ -2247,6 +2364,9 @@ package body HBNF_C is
          if Is_List then
             declare
                E : constant Element_Access := P (1);
+               Nums : constant String_Vectors.Vector :=
+                 (if E.Kind = Group then Numeric_Fields (E.Items)
+                  else String_Vectors.Empty_Vector);
             begin
                Append (Buf, "    struct " & C_Name (NM) & "_list head;");
                Append (Buf, LF);
@@ -2259,6 +2379,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "        size_t save = p->pos;");
                Append (Buf, LF);
+               Emit_Number_Deferrals (Nums, Buf, "        ");
                if E.Kind = Name then
                   Append (Buf, "        if (parse_rule_" & C_Name (To_String (E.Name))
                     & "(p, &nn->" & C_Field (To_String (E.Name)) & ")) goto have;");
@@ -2270,7 +2391,8 @@ package body HBNF_C is
                   begin
                      Emit_Alternation
                        (E.Items, "nn->",
-                        "free_" & CN & "_fields(nn); memset(nn, 0, sizeof *nn)",
+                        "free_" & CN & "_fields(nn); memset(nn, 0, sizeof *nn)"
+                        & Num_Clears (Nums),
                         "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
                         Buf, "        ");
@@ -2280,6 +2402,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "have:");
                Append (Buf, LF);
+               Emit_Number_Converts (Nums, "nn->", True, Buf, "        ");
                Append (Buf, "        HBNF_LIST_APPEND(&head, nn);");
                Append (Buf, LF);
                Append (Buf, "    }");
@@ -2426,31 +2549,44 @@ package body HBNF_C is
             Append (Buf, LF);
          elsif Has_Alt (P) then
             --  A struct alternation: try each branch with backtracking.
-            Append (Buf, "    size_t save = p->pos;");
-            Append (Buf, LF);
-            Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
-            Append (Buf, LF);
-            Emit_Alternation (P, "r.",
-                              "free_" & CN & "_fields(&r); memset(&r, 0, sizeof r)",
-                              "ok",
-                              (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
-                              Buf);
-            Append (Buf, "    p->pos = save; return false;");
-            Append (Buf, LF);
-            Append (Buf, "ok:");
-            Append (Buf, LF);
-            Append (Buf, "    *out = r; return true;");
-            Append (Buf, LF);
+            declare
+               Nums : constant String_Vectors.Vector := Numeric_Fields (P);
+            begin
+               Append (Buf, "    size_t save = p->pos;");
+               Append (Buf, LF);
+               Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
+               Append (Buf, LF);
+               Emit_Number_Deferrals (Nums, Buf, "    ");
+               Emit_Alternation (P, "r.",
+                                 "free_" & CN & "_fields(&r); memset(&r, 0, sizeof r)"
+                                 & Num_Clears (Nums),
+                                 "ok",
+                                 (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
+                                 Buf);
+               Append (Buf, "    p->pos = save; return false;");
+               Append (Buf, LF);
+               Append (Buf, "ok:");
+               Append (Buf, LF);
+               Emit_Number_Converts (Nums, "r.", True, Buf, "    ");
+               Append (Buf, "    *out = r; return true;");
+               Append (Buf, LF);
+            end;
          else
             --  A struct sequence: match literals and references in order.
-            Append (Buf, "    size_t save = p->pos;");
-            Append (Buf, LF);
-            Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
-            Append (Buf, LF);
-            Emit_Seq (P, 1, Natural (P.Length), "r.", Buf,
-                      "p->pos = save; return false;");
-            Append (Buf, "    *out = r; return true;");
-            Append (Buf, LF);
+            declare
+               Nums : constant String_Vectors.Vector := Numeric_Fields (P);
+            begin
+               Append (Buf, "    size_t save = p->pos;");
+               Append (Buf, LF);
+               Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
+               Append (Buf, LF);
+               Emit_Number_Deferrals (Nums, Buf, "    ");
+               Emit_Seq (P, 1, Natural (P.Length), "r.", Buf,
+                         "p->pos = save; return false;");
+               Emit_Number_Converts (Nums, "r.", False, Buf, "    ");
+               Append (Buf, "    *out = r; return true;");
+               Append (Buf, LF);
+            end;
          end if;
       end Emit_Rule_Parser;
 
