@@ -2066,7 +2066,7 @@ package body HBNF_C is
          Append (Buf, LF);
          if Bare then
             Append (Buf, Ind & "m.value_len = n->value ?"
-              & " (uint32_t)strlen(n->value) : 0;");
+              & " (uint32_t)strlen(n->value) : (uint32_t)-1;");
             Append (Buf, LF);
          end if;
          for M of Ms loop
@@ -2076,7 +2076,7 @@ package body HBNF_C is
                begin
                   if Leaf_Type (To_String (M.Name)) = "const char *" then
                      Append (Buf, Ind & "m." & F & "_len = n->" & F & " ?"
-                       & " (uint32_t)strlen(n->" & F & ") : 0;");
+                       & " (uint32_t)strlen(n->" & F & ") : (uint32_t)-1;");
                   else
                      Append (Buf, Ind & "m." & F & " = n->" & F & ";");
                   end if;
@@ -2170,6 +2170,12 @@ package body HBNF_C is
             Append (Buf, LF);
             Append (Buf, "    const " & TN & " *n;");
             Append (Buf, LF);
+            Append (Buf, "    uint32_t n_ = 0;");
+            Append (Buf, LF);
+            Append (Buf, "    HBNF_LIST_FOREACH(n, head) n_++;");
+            Append (Buf, LF);
+            Append (Buf, "    emit(MSG_COUNT, &n_, sizeof n_);");
+            Append (Buf, LF);
             Append (Buf, "    HBNF_LIST_FOREACH(n, head) {");
             Append (Buf, LF);
             Emit_Body (CN, Info, Buf, "        ");
@@ -2212,7 +2218,9 @@ package body HBNF_C is
             end if;
          end loop;
       end;
-      Append (Res, "    MSG_STR");
+      Append (Res, "    MSG_STR,");
+      Append (Res, LF);
+      Append (Res, "    MSG_COUNT");
       Append (Res, LF);
       Append (Res, "};");
       Append (Res, LF);
@@ -2337,101 +2345,103 @@ package body HBNF_C is
                                     or else Infos (J).Kind = List));
       end Is_Child;
 
-      --  Fixed-width (non-string) leaf fields, in field order.
-      function Fixed_Leaves (Info : Rule_Info) return Member_Vectors.Vector is
-         V  : Member_Vectors.Vector;
-         Ms : constant Member_Vectors.Vector := Node_Members (Info);
+      --  Emit the body of decode_<CN>: read one node's msg, fill its leaves,
+      --  read its string payloads, and recurse into its children in field
+      --  order (the inverse of the serializer's Emit_Body).
+      procedure Decode_Body (CN : String; Info : Rule_Info;
+                             Buf : in out U; Ind : String) is
+         Ms   : constant Member_Vectors.Vector := Node_Members (Info);
+         Bare : constant Boolean := Has_Bare_Value (Info);
       begin
-         for M of Ms loop
-            if not Is_Child (M)
-              and then Leaf_Type (To_String (M.Name)) /= "const char *"
-            then
-               V.Append (M);
-            end if;
-         end loop;
-         return V;
-      end Fixed_Leaves;
-
-      --  String leaf fields, in field order (matches the serializer's emit
-      --  order), the bare `value` field first.
-      function String_Leaves (Info : Rule_Info) return Member_Vectors.Vector is
-         V  : Member_Vectors.Vector;
-         Ms : constant Member_Vectors.Vector := Node_Members (Info);
-      begin
-         if Has_Bare_Value (Info) then
-            V.Append
-              (Member'(Name => To_Unbounded_String ("value"), Is_List => False));
+         Append (Buf, Ind & "uint32_t _t; const char *_d; uint32_t _l;");
+         Append (Buf, LF);
+         Append (Buf, Ind & "struct " & CN & "_msg _m;");
+         Append (Buf, LF);
+         Append (Buf, Ind & "hbnf_next(rd, &_t, &_d, &_l);");
+         Append (Buf, LF);
+         Append (Buf, Ind & "memcpy(&_m, _d, sizeof _m);");
+         Append (Buf, LF);
+         Append (Buf, Ind & "n->id = _m.id; n->parent = _m.parent;");
+         Append (Buf, LF);
+         if Bare then
+            Append (Buf, Ind & "n->value = _m.value_len == (uint32_t)-1"
+              & " ? NULL : hbnf_str(rd);");
+            Append (Buf, LF);
          end if;
          for M of Ms loop
-            if not Is_Child (M)
-              and then Leaf_Type (To_String (M.Name)) = "const char *"
-            then
-               V.Append (M);
+            if not Is_Child (M) then
+               declare
+                  F : constant String := C_Field (To_String (M.Name));
+               begin
+                  if Leaf_Type (To_String (M.Name)) = "const char *" then
+                     Append (Buf, Ind & "n->" & F & " = _m." & F
+                       & "_len == (uint32_t)-1 ? NULL : hbnf_str(rd);");
+                  else
+                     Append (Buf, Ind & "n->" & F & " = _m." & F & ";");
+                  end if;
+                  Append (Buf, LF);
+               end;
             end if;
          end loop;
-         return V;
-      end String_Leaves;
+         for M of Ms loop
+            if Is_Child (M) then
+               declare
+                  F   : constant String := C_Field (To_String (M.Name));
+                  CN2 : constant String := C_Name (To_String (M.Name));
+                  J   : constant Natural := Find (Rules, To_String (M.Name));
+               begin
+                  if M.Is_List or else (J > 0 and then Infos (J).Kind = List) then
+                     Append (Buf, Ind & "decode_" & CN2
+                       & "_list(rd, &n->" & F & ");");
+                  else
+                     Append (Buf, Ind & "decode_" & CN2 & "(rd, &n->" & F & ");");
+                  end if;
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+      end Decode_Body;
 
-      procedure Rebuild_Def (Idx : Natural; Buf : in out U) is
+      procedure Decode_Def (Idx : Natural; Buf : in out U) is
          NM   : constant String := To_String (Rules (Idx).Name);
          CN   : constant String := C_Name (NM);
          TN   : constant String := C_Type_Name (NM);
          Info : constant Rule_Info := Infos (Idx);
-         Fix  : constant Member_Vectors.Vector := Fixed_Leaves (Info);
-         Str  : constant Member_Vectors.Vector := String_Leaves (Info);
       begin
-         Append (Buf, TN & " *" & CN & "_find(struct config_table *c, objid_t id) {");
+         Append (Buf, "void decode_" & CN & "(struct hbnf_reader *rd, "
+           & TN & " *n) {");
          Append (Buf, LF);
-         Append (Buf, "    return (id >= 1 && id <= c->n" & CN
-           & ") ? c->" & CN & "[id - 1] : NULL;");
-         Append (Buf, LF);
+         Decode_Body (CN, Info, Buf, "    ");
          Append (Buf, "}");
          Append (Buf, LF);
          Append (Buf, LF);
-
-         declare
-            Args : U := Null_Unbounded_String;
-         begin
-            for S of Str loop
-               if Args /= Null_Unbounded_String then
-                  Append (Args, ", ");
-               end if;
-               Append (Args, "const char *" & C_Field (To_String (S.Name)));
-            end loop;
-            Append (Buf, "void config_get" & CN
-              & "(struct config_table *c, const struct " & CN & "_msg *m"
-              & (if Args = Null_Unbounded_String then ""
-                 else ", " & To_String (Args))
-              & ") {");
+         if Info.Kind = List then
+            Append (Buf, "void decode_" & CN & "_list(struct hbnf_reader *rd,"
+              & " struct " & CN & "_list *head) {");
             Append (Buf, LF);
-         end;
-         Append (Buf, "    " & TN & " *n = calloc(1, sizeof *n);");
-         Append (Buf, LF);
-         Append (Buf, "    n->id = m->id; n->parent = m->parent;");
-         Append (Buf, LF);
-         for M of Fix loop
-            declare
-               F : constant String := C_Field (To_String (M.Name));
-            begin
-               Append (Buf, "    n->" & F & " = m->" & F & ";");
-               Append (Buf, LF);
-            end;
-         end loop;
-         for M of Str loop
-            declare
-               F : constant String := C_Field (To_String (M.Name));
-            begin
-               Append (Buf, "    n->" & F & " = " & F & " ? strdup(" & F & ") : NULL;");
-               Append (Buf, LF);
-            end;
-         end loop;
-         Append (Buf, "    c->" & CN & "[m->id - 1] = n;");
-         Append (Buf, LF);
-         Append (Buf, "    if (m->id > c->n" & CN & ") c->n" & CN & " = m->id;");
-         Append (Buf, LF);
-         Append (Buf, "}");
-         Append (Buf, LF);
-      end Rebuild_Def;
+            Append (Buf, "    uint32_t _t; const char *_d; uint32_t _l, _n;");
+            Append (Buf, LF);
+            Append (Buf, "    hbnf_next(rd, &_t, &_d, &_l);");
+            Append (Buf, LF);
+            Append (Buf, "    memcpy(&_n, _d, sizeof _n);");
+            Append (Buf, LF);
+            Append (Buf, "    HBNF_LIST_INIT(head);");
+            Append (Buf, LF);
+            Append (Buf, "    for (uint32_t _i = 0; _i < _n; _i++) {");
+            Append (Buf, LF);
+            Append (Buf, "        " & TN & " *nn = calloc(1, sizeof *nn);");
+            Append (Buf, LF);
+            Append (Buf, "        decode_" & CN & "(rd, nn);");
+            Append (Buf, LF);
+            Append (Buf, "        HBNF_LIST_APPEND(head, nn);");
+            Append (Buf, LF);
+            Append (Buf, "    }");
+            Append (Buf, LF);
+            Append (Buf, "}");
+            Append (Buf, LF);
+            Append (Buf, LF);
+         end if;
+      end Decode_Def;
 
       Res : U;
    begin
@@ -2439,36 +2449,84 @@ package body HBNF_C is
          Infos.Append (Analyze (Rules, I));
       end loop;
 
-      Append (Res, "/* ---- id-ref rebuild ---- */");
+      Append (Res, "/* ---- id-ref rebuild (decoder) ---- */");
       Append (Res, LF);
-      Append (Res, "struct config_table {");
+      Append (Res, "typedef struct { uint32_t type; const char *data;"
+        & " uint32_t len; } hbnf_record;");
       Append (Res, LF);
+      Append (Res, "struct hbnf_reader { const hbnf_record *r; size_t n, pos; };");
+      Append (Res, LF);
+      Append (Res, "static int hbnf_next(struct hbnf_reader *rd, uint32_t *type,");
+      Append (Res, LF);
+      Append (Res, "                    const char **data, uint32_t *len) {");
+      Append (Res, LF);
+      Append (Res, "    if (rd->pos >= rd->n) return 0;");
+      Append (Res, LF);
+      Append (Res, "    *type = rd->r[rd->pos].type; *data = rd->r[rd->pos].data;");
+      Append (Res, LF);
+      Append (Res, "    *len = rd->r[rd->pos].len; rd->pos++;");
+      Append (Res, LF);
+      Append (Res, "    return 1;");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, "static char *hbnf_str(struct hbnf_reader *rd) {");
+      Append (Res, LF);
+      Append (Res, "    uint32_t type; const char *data; uint32_t len;");
+      Append (Res, LF);
+      Append (Res, "    if (!hbnf_next(rd, &type, &data, &len)) return NULL;");
+      Append (Res, LF);
+      Append (Res, "    return strndup(data, len);");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, LF);
+
+      --  Forward declarations of every decoder.
       for I in 1 .. N loop
          if Infos (I).Kind = Struct or else Infos (I).Kind = List then
             declare
                CN : constant String := C_Name (To_String (Rules (I).Name));
                TN : constant String := C_Type_Name (To_String (Rules (I).Name));
             begin
-               Append (Res, "    " & TN & " **" & CN & ";");
+               Append (Res, "void decode_" & CN & "(struct hbnf_reader *rd, "
+                 & TN & " *n);");
                Append (Res, LF);
-               Append (Res, "    objid_t   n" & CN & ";");
-               Append (Res, LF);
+               if Infos (I).Kind = List then
+                  Append (Res, "void decode_" & CN
+                    & "_list(struct hbnf_reader *rd, struct " & CN
+                    & "_list *head);");
+                  Append (Res, LF);
+               end if;
             end;
          end if;
       end loop;
-      Append (Res, "};");
-      Append (Res, LF);
-      Append (Res, LF);
-      Append (Res, "void config_init(struct config_table *c) { memset(c, 0, sizeof *c); }");
-      Append (Res, LF);
       Append (Res, LF);
 
       for I in 1 .. N loop
          if Infos (I).Kind = Struct or else Infos (I).Kind = List then
-            Rebuild_Def (I, Res);
+            Decode_Def (I, Res);
             Append (Res, LF);
          end if;
       end loop;
+
+      declare
+         RN : constant String := C_Name (To_String (Rules (1).Name));
+      begin
+         Append (Res, "void config_decode(" & Root_Type (Rules) & " *conf,"
+           & " const hbnf_record *r, size_t n) {");
+         Append (Res, LF);
+         Append (Res, "    struct hbnf_reader rd = { r, n, 0 };");
+         Append (Res, LF);
+         if Infos (1).Kind = List then
+            Append (Res, "    decode_" & RN & "_list(&rd, conf);");
+         else
+            Append (Res, "    decode_" & RN & "(&rd, conf);");
+         end if;
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+      end;
 
       return To_String (Res);
    end Emit_Rebuild;
