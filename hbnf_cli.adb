@@ -28,21 +28,6 @@ procedure Hbnf_Cli is
    Schema_Path  : Unbounded_String;
    Conf         : Boolean := False;
 
-   function Read_File (Path : String) return String is
-      F   : Ada.Text_IO.File_Type;
-      Buf : Unbounded_String;
-   begin
-      Ada.Text_IO.Open (F, Ada.Text_IO.In_File, Path);
-      while not Ada.Text_IO.End_Of_File (F) loop
-         Append (Buf, Ada.Text_IO.Get_Line (F));
-         if not Ada.Text_IO.End_Of_File (F) then
-            Append (Buf, ASCII.LF);
-         end if;
-      end loop;
-      Ada.Text_IO.Close (F);
-      return To_String (Buf);
-   end Read_File;
-
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
@@ -78,7 +63,7 @@ begin
 
    declare
       Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
-        HBNF_Grammar.Parse (Read_File (To_String (Schema_Path)));
+        HBNF_Grammar.Parse_File (To_String (Schema_Path));
       B     : constant String := To_String (Backend);
    begin
       if B = "c" then

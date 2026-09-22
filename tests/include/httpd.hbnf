@@ -1,0 +1,8 @@
+include "core.hbnf"
+
+; httpd overrides listen to bind a TLS listener
+listen = "on" iface "port" port tls
+tls    = flag
+
+server = listen 1*alias
+alias  = str

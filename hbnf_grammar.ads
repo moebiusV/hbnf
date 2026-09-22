@@ -73,6 +73,14 @@ package HBNF_Grammar is
    --  Parse HBNF_Grammar (ABNF) source text into a flat list of rules, in order.
    function Parse (Text : String) return Rule_Vectors.Vector;
 
+   --  Parse a schema file, resolving top-level `include "path"` directives
+   --  (each path relative to the including file's directory).  Included files
+   --  are loaded first, depth-first; a same-named local rule overrides an
+   --  included one, so a daemon schema can pull in a common core and replace
+   --  just the rules that differ.  The top file's `language`/preamble/epilogue
+   --  win; include files are expected to be rules-only.
+   function Parse_File (Path : String) return Rule_Vectors.Vector;
+
    --  The schema language declared by the first non-blank line
    --  (`language C|Rust|Zig|Ada`), or "C" when absent.  Jet code blocks are
    --  written in this language.

@@ -1,5 +1,7 @@
 pragma Ada_2022;
 
+with Ada.Text_IO;
+
 package body HBNF_Grammar is
 
    --  Schema-level metadata gathered by Parse: the declared language (default
@@ -722,6 +724,158 @@ package body HBNF_Grammar is
       end loop;
       return Rules;
    end Parse;
+
+   function Parse_File (Path : String) return Rule_Vectors.Vector is
+
+      function Read_File (P : String) return String is
+         F   : Ada.Text_IO.File_Type;
+         Buf : Unbounded_String;
+      begin
+         Ada.Text_IO.Open (F, Ada.Text_IO.In_File, P);
+         while not Ada.Text_IO.End_Of_File (F) loop
+            Append (Buf, Ada.Text_IO.Get_Line (F));
+            Append (Buf, ASCII.LF);
+         end loop;
+         Ada.Text_IO.Close (F);
+         return To_String (Buf);
+      end Read_File;
+
+      --  The directory of Path ("" when it has no slash), so nested includes
+      --  resolve relative to the including file, not the process cwd.
+      function Dir_Of (P : String) return String is
+      begin
+         for I in reverse P'Range loop
+            if P (I) = '/' then
+               return P (P'First .. I - 1);
+            end if;
+         end loop;
+         return "";
+      end Dir_Of;
+
+      function Join (Dir, Name : String) return String is
+      begin
+         if Dir = "" then
+            return Name;
+         end if;
+         return Dir & "/" & Name;
+      end Join;
+
+      --  The quoted path if Line is `include "path"` (leading whitespace
+      --  tolerated); Null_Unbounded_String otherwise.
+      function Include_Target (Line : String) return Unbounded_String is
+         I : Natural := Line'First;
+         procedure Skip_WS is
+         begin
+            while I <= Line'Last and then Line (I) in ' ' | ASCII.HT loop
+               I := I + 1;
+            end loop;
+         end Skip_WS;
+      begin
+         Skip_WS;
+         declare
+            W : constant String := "include";
+         begin
+            if I > Line'Last - W'Length + 1
+              or else Line (I .. I + W'Length - 1) /= W
+            then
+               return Null_Unbounded_String;
+            end if;
+            I := I + W'Length;
+         end;
+         if I > Line'Last or else Line (I) not in ' ' | ASCII.HT then
+            return Null_Unbounded_String;
+         end if;
+         Skip_WS;
+         if I > Line'Last or else Line (I) /= '"' then
+            return Null_Unbounded_String;
+         end if;
+         I := I + 1;
+         declare
+            S : constant Natural := I;
+         begin
+            while I <= Line'Last and then Line (I) /= '"' loop
+               I := I + 1;
+            end loop;
+            if I > Line'Last then
+               return Null_Unbounded_String;
+            end if;
+            return To_Unbounded_String (Line (S .. I - 1));
+         end;
+      end Include_Target;
+
+      --  Walk Text (a file in directory Dir) line by line: `include` lines are
+      --  loaded recursively into Acc; every other line is kept verbatim in Out.
+      procedure Expand (Text : String; Dir : String;
+                        Acc : in out Rule_Vectors.Vector;
+                        Kept : in out Unbounded_String)
+      is
+         Start : Natural := Text'First;
+      begin
+         while Start <= Text'Last loop
+            declare
+               Stop : Natural := Start;
+            begin
+               while Stop <= Text'Last and then Text (Stop) /= ASCII.LF loop
+                  Stop := Stop + 1;
+               end loop;
+               declare
+                  Line   : constant String := Text (Start .. Stop - 1);
+                  Target : constant Unbounded_String := Include_Target (Line);
+               begin
+                  if Target /= Null_Unbounded_String then
+                     declare
+                        Sub : constant Rule_Vectors.Vector :=
+                          Parse_File (Join (Dir, To_String (Target)));
+                     begin
+                        for R of Sub loop
+                           Acc.Append (R);
+                        end loop;
+                     end;
+                  else
+                     Append (Kept, Line);
+                     Append (Kept, ASCII.LF);
+                  end if;
+               end;
+               Start := Stop + 1;
+            end;
+         end loop;
+      end Expand;
+
+      --  Local rules replace same-named Base rules; the rest append after.
+      function Override (Base, Local : Rule_Vectors.Vector)
+        return Rule_Vectors.Vector
+      is
+         Result : Rule_Vectors.Vector := Base;
+      begin
+         for L of Local loop
+            declare
+               Found : Boolean := False;
+            begin
+               if not Result.Is_Empty then
+                  for I in 1 .. Result.Last_Index loop
+                     if Result (I).Name = L.Name then
+                        Result.Replace_Element (I, L);
+                        Found := True;
+                        exit;
+                     end if;
+                  end loop;
+               end if;
+               if not Found then
+                  Result.Append (L);
+               end if;
+            end;
+         end loop;
+         return Result;
+      end Override;
+
+      Included : Rule_Vectors.Vector;
+      Local    : Rule_Vectors.Vector;
+      Out_Text : Unbounded_String;
+   begin
+      Expand (Read_File (Path), Dir_Of (Path), Included, Out_Text);
+      Local := Parse (To_String (Out_Text));
+      return Override (Included, Local);
+   end Parse_File;
 
    function Language return String is (To_String (Schema_Language));
 

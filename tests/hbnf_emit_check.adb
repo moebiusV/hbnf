@@ -206,9 +206,33 @@ procedure Hbnf_Emit_Check is
       end;
    end Check_Hbnf;
 
+   procedure Check_Include is
+      Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
+        HBNF_Grammar.Parse_File ("tests/include/httpd.hbnf");
+      I     : Natural;
+   begin
+      --  core.hbnf (listen, iface, port) + httpd.hbnf (listen override, tls,
+      --  server, alias) merge to six distinct rules.
+      Check ("include 6 rules", Natural (Rules.Length) = 6);
+
+      --  listen comes from core but the daemon overrides it: five elements
+      --  ("on" iface "port" port tls), not the core's four.
+      I := Find_Rule (Rules, "listen");
+      Check ("include overrides listen",
+             I /= 0 and then Natural (Rules (I).Pattern.Length) = 5);
+
+      --  iface/port are pulled in from core; tls/server/alias are local-only.
+      Check ("include pulls iface", Find_Rule (Rules, "iface") /= 0);
+      Check ("include pulls port", Find_Rule (Rules, "port") /= 0);
+      Check ("include local tls", Find_Rule (Rules, "tls") /= 0);
+      Check ("include local server", Find_Rule (Rules, "server") /= 0);
+      Check ("include local alias", Find_Rule (Rules, "alias") /= 0);
+   end Check_Include;
+
 begin
    Check_Server (Ada.Command_Line.Argument (1));
    Check_Hbnf (Ada.Command_Line.Argument (2));
+   Check_Include;
 
    Ada.Text_IO.Put_Line
      ("checks: " & Natural'Image (Checks) &
