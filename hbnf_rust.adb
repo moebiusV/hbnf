@@ -1350,7 +1350,7 @@ package body HBNF_Rust is
 
       Res : U;
    begin
-      if Preamble /= "" then
+      if Preamble /= "" and then Language = "Rust" then
          Append (Res, Preamble);
          Append (Res, LF);
          Append (Res, LF);

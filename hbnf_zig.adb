@@ -1422,7 +1422,7 @@ package body HBNF_Zig is
       Append (Res, "const std = @import(""std"");");
       Append (Res, LF);
       Append (Res, LF);
-      if Preamble /= "" then
+      if Preamble /= "" and then Language = "Zig" then
          Append (Res, Preamble);
          Append (Res, LF);
          Append (Res, LF);
