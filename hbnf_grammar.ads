@@ -94,4 +94,9 @@ package HBNF_Grammar is
    --  "" when absent.
    function Epilogue return String;
 
+   --  Extra bareword characters declared by a top-level `wordchars "..."`,
+   --  beyond the base set (letters, digits, `.`, `_`, `-`); the lexer folds
+   --  them into its word token.  "" when absent.
+   function Word_Chars return String;
+
 end HBNF_Grammar;

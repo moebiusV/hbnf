@@ -2175,14 +2175,22 @@ package body HBNF_C is
 
    function Emit_Lexer (Rules : Rule_Vectors.Vector) return String is
       Root_T : constant String := Root_Type (Rules);
-      Lexer  : constant String :=
-        Templates.Substitute (Templates.C_Lexer, "@ROOT_TYPE@", Root_T);
+      Wc     : U;
    begin
-      if Epilogue = "" then
-         return Lexer;
-      else
-         return Lexer & LF & Epilogue;
-      end if;
+      for C of Word_Chars loop
+         Append (Wc, " || c == '" & C & "'");
+      end loop;
+      declare
+         Lexer : constant String := Templates.Substitute
+           (Templates.Substitute (Templates.C_Lexer, "@ROOT_TYPE@", Root_T),
+            "@WORD_CHARS@", To_String (Wc));
+      begin
+         if Epilogue = "" then
+            return Lexer;
+         else
+            return Lexer & LF & Epilogue;
+         end if;
+      end;
    end Emit_Lexer;
 
    --  conf.h: the declarations plus the global `conf`, the error callback and

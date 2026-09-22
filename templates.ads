@@ -18,7 +18,7 @@ package Templates is
      "static int lex_digit(char c) { return c >= '0' && c <= '9'; }" & LF &
      "static int lex_word_start(char c) {" & LF &
      "    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')" & LF &
-     "        || c == '_' || c == '-';" & LF &
+     "        || c == '_' || c == '-'@WORD_CHARS@;" & LF &
      "}" & LF &
      "static int lex_word_char(char c) {" & LF &
      "    return lex_word_start(c) || lex_digit(c) || c == '.';" & LF &

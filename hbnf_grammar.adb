@@ -9,6 +9,7 @@ package body HBNF_Grammar is
    Schema_Language : Unbounded_String := To_Unbounded_String ("C");
    Preamble_Code   : Unbounded_String := Null_Unbounded_String;
    Epilogue_Code   : Unbounded_String := Null_Unbounded_String;
+   Word_Chars_Code : Unbounded_String := Null_Unbounded_String;
 
    --  ====================================================================
    --  Lexer
@@ -622,7 +623,8 @@ package body HBNF_Grammar is
          end loop;
          if Cur (P).Kind = T_Code
            or else (Cur (P).Kind = T_Name
-                    and then To_String (Cur (P).Text) = "language")
+                    and then (To_String (Cur (P).Text) = "language"
+                              or else To_String (Cur (P).Text) = "wordchars"))
          then
             P.Pos := Mark;
             loop
@@ -645,6 +647,18 @@ package body HBNF_Grammar is
                        ": expected a language name (C, Rust, Zig, or Ada)";
                   end if;
                   Schema_Language := Cur (P).Text;
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "wordchars"
+               then
+                  Next (P);
+                  if Cur (P).Kind /= T_String then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" &
+                       Integer'Image (Cur (P).Col) &
+                       ": expected a quoted character set after `wordchars`";
+                  end if;
+                  Word_Chars_Code := Cur (P).Text;
                   Next (P);
                else
                   exit;
@@ -841,29 +855,28 @@ package body HBNF_Grammar is
          end loop;
       end Expand;
 
-      --  Local rules replace same-named Base rules; the rest append after.
-      function Override (Base, Local : Rule_Vectors.Vector)
+      --  The top file's rules come first (its first rule is the root).  A
+      --  local rule with an included rule's name overrides it; the remaining
+      --  included rules append after.
+      function Override (Local, Included : Rule_Vectors.Vector)
         return Rule_Vectors.Vector
       is
-         Result : Rule_Vectors.Vector := Base;
+         Result : Rule_Vectors.Vector := Local;
+
+         function Has (Name : Unbounded_String) return Boolean is
+         begin
+            for R of Result loop
+               if R.Name = Name then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has;
       begin
-         for L of Local loop
-            declare
-               Found : Boolean := False;
-            begin
-               if not Result.Is_Empty then
-                  for I in 1 .. Result.Last_Index loop
-                     if Result (I).Name = L.Name then
-                        Result.Replace_Element (I, L);
-                        Found := True;
-                        exit;
-                     end if;
-                  end loop;
-               end if;
-               if not Found then
-                  Result.Append (L);
-               end if;
-            end;
+         for R of Included loop
+            if not Has (R.Name) then
+               Result.Append (R);
+            end if;
          end loop;
          return Result;
       end Override;
@@ -874,7 +887,7 @@ package body HBNF_Grammar is
    begin
       Expand (Read_File (Path), Dir_Of (Path), Included, Out_Text);
       Local := Parse (To_String (Out_Text));
-      return Override (Included, Local);
+      return Override (Local, Included);
    end Parse_File;
 
    function Language return String is (To_String (Schema_Language));
@@ -882,5 +895,7 @@ package body HBNF_Grammar is
    function Preamble return String is (To_String (Preamble_Code));
 
    function Epilogue return String is (To_String (Epilogue_Code));
+
+   function Word_Chars return String is (To_String (Word_Chars_Code));
 
 end HBNF_Grammar;

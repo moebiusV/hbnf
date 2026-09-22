@@ -1,0 +1,49 @@
+; commonconf.hbnf — the shared OpenBSD config core, pulled in (and overridable)
+; with `include "commonconf.hbnf"`.  Rules only: the including schema owns
+; `language`, the preamble, and the epilogue.
+;
+; `wordchars` widens the generated `word` token to the OpenBSD bareword set —
+; alphanumerics plus `. _ - * / $ @ %` — enough for `/path/to/file`, `$macro`,
+; and the daemons' `*` wildcard and `@`/`%` markers.  A standalone `*` is still
+; caught first by the `wildcard` jet, so `listen on *` keeps working; an
+; embedded `*` (a glob, `prefix*`) is a bareword character.
+
+wordchars "*/$@%"
+
+; a STRING token: quoted ("cpu0") or an OpenBSD bareword (10.0.0.1,
+; example.com, /etc/pf.conf, $interface)
+string     = str / word
+
+; one or more STRING tokens (parse.y's `_l` list rules)
+stringlist = 1*string
+
+; a yes/no keyword pair (the "flag" core rule is single-token; yesno is not)
+yesno      = "yes" / "no"
+
+; "*" — parse.y's bareword start char; `listen on *` binds all
+wildcard   = {
+    return (s[pos] == '*') ? 1 : 0;
+}
+
+; ipv6 — hex groups separated by ":", with "::" and an IPv4-mapped tail
+; (".d.d.d.d") allowed (syntax only; parse.y resolves the address later)
+ipv6       = {
+    size_t n = 0, hex = 0, colon = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+            || (c >= 'A' && c <= 'F')) { hex = 1; n++; }
+        else if (c == ':') { colon = 1; n++; }
+        else if (c == '.') { n++; }
+        else break;
+    }
+    return (hex && colon) ? n : 0;
+}
+
+; an address: a hostname, IPv4/IPv6 literal, or "*" — `str`/`word` plus the two
+; forms the generated `word` cannot match (":" and "*"), spelled out so the
+; value stays a single string (a scalar union, as in ntpd/relayd/unwind)
+address    = wildcard / ipv6 / str / word
+
+; a number: a signed or unsigned integer (the core `int`)
+number     = int
