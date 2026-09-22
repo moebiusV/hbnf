@@ -1,4 +1,4 @@
-;; newLISP FFI binding for the astbnf C config parser (tests/server.astbnf).
+;; newLISP FFI binding for the hbnf C config parser (tests/server.hbnf).
 ;; Build libhbnfconf.so first, then:
 ;;   (load "hbnfconf.lsp")
 ;;   (hbnfconf:parse "valid.conf")

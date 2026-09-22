@@ -3,23 +3,23 @@ pragma Ada_2022;
 with Ada.Command_Line;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
-with ASTBNF;
-with ASTBNF_C;
-with ASTBNF_Rust;
-with ASTBNF_Zig;
-with ASTBNF_Ada;
+with HBNF_Grammar;
+with HBNF_C;
+with HBNF_Rust;
+with HBNF_Zig;
+with HBNF_Ada;
 
---  astbnf: read a schema and emit a self-contained parser (declarations +
+--  hbnf: read a schema and emit a self-contained parser (declarations +
 --  lexer + parser) in the chosen backend language.
 --
---    astbnf schema.astbnf --backend=c|rust|zig|ada [--package=NAME] [--conf]
+--    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--conf]
 --
 --  c/rust/zig print one compilable file to stdout; ada prints the parent
 --  package spec, then the child package spec+body (split them apart yourself).
 --  --conf adds the OpenBSD parse_config(filename) entry: for C it prints the
 --  conf.h/conf.c pair (delimited by "===== conf.h =====" and "===== conf.c ====="
 --  markers); for rust/zig/ada it appends the conf wrapper to the single file.
-procedure Astbnf_Cli is
+procedure Hbnf_Cli is
 
    use Ada.Strings.Unbounded;
 
@@ -46,7 +46,7 @@ procedure Astbnf_Cli is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: astbnf <schema.astbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf]");
    end Usage;
 
 begin
@@ -77,45 +77,45 @@ begin
    end if;
 
    declare
-      Rules : constant ASTBNF.Rule_Vectors.Vector :=
-        ASTBNF.Parse (Read_File (To_String (Schema_Path)));
+      Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
+        HBNF_Grammar.Parse (Read_File (To_String (Schema_Path)));
       B     : constant String := To_String (Backend);
    begin
       if B = "c" then
          if Conf then
             Ada.Text_IO.Put_Line ("===== conf.h =====");
-            Ada.Text_IO.Put (ASTBNF_C.Emit_Conf_Header (Rules));
+            Ada.Text_IO.Put (HBNF_C.Emit_Conf_Header (Rules));
             Ada.Text_IO.Put_Line ("===== conf.c =====");
-            Ada.Text_IO.Put (ASTBNF_C.Emit_Conf_Source (Rules));
+            Ada.Text_IO.Put (HBNF_C.Emit_Conf_Source (Rules));
          else
-            Ada.Text_IO.Put (ASTBNF_C.Emit (Rules));
-            Ada.Text_IO.Put (ASTBNF_C.Emit_Parser (Rules));
-            Ada.Text_IO.Put (ASTBNF_C.Emit_Lexer (Rules));
+            Ada.Text_IO.Put (HBNF_C.Emit (Rules));
+            Ada.Text_IO.Put (HBNF_C.Emit_Parser (Rules));
+            Ada.Text_IO.Put (HBNF_C.Emit_Lexer (Rules));
          end if;
       elsif B = "rust" then
-         Ada.Text_IO.Put (ASTBNF_Rust.Emit (Rules));
-         Ada.Text_IO.Put (ASTBNF_Rust.Emit_Parser (Rules, Conf));
-         Ada.Text_IO.Put (ASTBNF_Rust.Emit_Lexer (Rules));
+         Ada.Text_IO.Put (HBNF_Rust.Emit (Rules));
+         Ada.Text_IO.Put (HBNF_Rust.Emit_Parser (Rules, Conf));
+         Ada.Text_IO.Put (HBNF_Rust.Emit_Lexer (Rules));
          if Conf then
             Ada.Text_IO.New_Line;
-            Ada.Text_IO.Put (ASTBNF_Rust.Emit_Conf (Rules));
+            Ada.Text_IO.Put (HBNF_Rust.Emit_Conf (Rules));
          end if;
       elsif B = "zig" then
-         Ada.Text_IO.Put (ASTBNF_Zig.Emit (Rules));
-         Ada.Text_IO.Put (ASTBNF_Zig.Emit_Parser (Rules, Conf));
-         Ada.Text_IO.Put (ASTBNF_Zig.Emit_Lexer (Rules));
+         Ada.Text_IO.Put (HBNF_Zig.Emit (Rules));
+         Ada.Text_IO.Put (HBNF_Zig.Emit_Parser (Rules, Conf));
+         Ada.Text_IO.Put (HBNF_Zig.Emit_Lexer (Rules));
          if Conf then
             Ada.Text_IO.New_Line;
-            Ada.Text_IO.Put (ASTBNF_Zig.Emit_Conf (Rules));
+            Ada.Text_IO.Put (HBNF_Zig.Emit_Conf (Rules));
          end if;
       elsif B = "ada" then
-         Ada.Text_IO.Put (ASTBNF_Ada.Emit (Rules, To_String (Package_Name)));
+         Ada.Text_IO.Put (HBNF_Ada.Emit (Rules, To_String (Package_Name)));
          Ada.Text_IO.Put
-           (ASTBNF_Ada.Emit_Parser (Rules, To_String (Package_Name), Conf));
+           (HBNF_Ada.Emit_Parser (Rules, To_String (Package_Name), Conf));
       else
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error, "unknown backend: " & B);
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       end if;
    end;
-end Astbnf_Cli;
+end Hbnf_Cli;

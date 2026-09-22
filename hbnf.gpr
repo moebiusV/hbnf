@@ -1,10 +1,10 @@
 --  Standalone project for HBNF: an OpenBSD-style configuration parser.  It
---  builds on the astbnf schema engine, which is its own library (astbnf.gpr
+--  builds on the hbnf schema engine, which is its own library (hbnf_grammar.gpr
 --  in this same source tree) rather than being folded in.  Pure Ada, no C
 --  dependencies.  Built and gprinstalled as a static library by the
 --  ada-on-alpine aport.
 
-with "astbnf";
+with "hbnf_grammar";
 
 library project HBNF is
 

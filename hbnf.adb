@@ -1,7 +1,7 @@
 pragma Ada_2022;
 
 with Ada.Containers;
-with ASTBNF_Match;
+with HBNF_Match;
 
 package body HBNF is
 
@@ -595,10 +595,10 @@ package body HBNF is
          return (Success => False, Line => Err_L, Col => Err_C, Msg => Err_M);
    end Parse;
 
-   --  astbnf backend ------------------------------------------------------
+   --  hbnf backend ------------------------------------------------------
    --
-   --  Parse with astbnf's matcher/binder instead of the hand-written parser
-   --  above: lex the text, map the tokens onto astbnf's generic kinds, bind
+   --  Parse with hbnf's matcher/binder instead of the hand-written parser
+   --  above: lex the text, map the tokens onto hbnf's generic kinds, bind
    --  the schema's root rule to a parse tree, then interpret that tree back
    --  into this package's Node tree.  Comments land by position: an own-line
    --  comment in the `ws` before an entry becomes its Leading_Comment (or a
@@ -606,75 +606,75 @@ package body HBNF is
    --  after an entry becomes its Trailing_Comment; a `;` terminator becomes
    --  Semicolon_After.
 
-   use type ASTBNF_Match.Node_Kind;
-   use type ASTBNF_Match.Node_Access;
-   use type ASTBNF_Match.Token_Kind;
+   use type HBNF_Match.Node_Kind;
+   use type HBNF_Match.Node_Access;
+   use type HBNF_Match.Token_Kind;
 
    Backend_Error : exception;
 
    --  Map an hbnf token onto the matcher's generic token (mirrors the adapter
    --  in tests/hbnf_match_check.adb).
-   function To_Match_Token (T : Token) return ASTBNF_Match.Token is
+   function To_Match_Token (T : Token) return HBNF_Match.Token is
    begin
       case T.Kind is
-         when Word      => return (ASTBNF_Match.Atom, T.Text);
-         when Str       => return (ASTBNF_Match.Str, T.Text);
-         when Int       => return (ASTBNF_Match.Int, T.Text);
-         when Dec       => return (ASTBNF_Match.Dec, T.Text);
+         when Word      => return (HBNF_Match.Atom, T.Text);
+         when Str       => return (HBNF_Match.Str, T.Text);
+         when Int       => return (HBNF_Match.Int, T.Text);
+         when Dec       => return (HBNF_Match.Dec, T.Text);
          when LBrace    =>
-            return (ASTBNF_Match.Punct, To_Unbounded_String ("{"));
+            return (HBNF_Match.Punct, To_Unbounded_String ("{"));
          when RBrace    =>
-            return (ASTBNF_Match.Punct, To_Unbounded_String ("}"));
+            return (HBNF_Match.Punct, To_Unbounded_String ("}"));
          when Semicolon =>
-            return (ASTBNF_Match.Punct, To_Unbounded_String (";"));
+            return (HBNF_Match.Punct, To_Unbounded_String (";"));
          when Newline   =>
-            return (ASTBNF_Match.Newline, Null_Unbounded_String);
+            return (HBNF_Match.Newline, Null_Unbounded_String);
          when Eof       =>
-            return (ASTBNF_Match.Eof, Null_Unbounded_String);
+            return (HBNF_Match.Eof, Null_Unbounded_String);
          when Comment     =>
-            return (ASTBNF_Match.Comment, T.Text);
+            return (HBNF_Match.Comment, T.Text);
          when Eol_Comment =>
-            return (ASTBNF_Match.Eol_Comment, T.Text);
+            return (HBNF_Match.Eol_Comment, T.Text);
       end case;
    end To_Match_Token;
 
    --  Is N a Rule_Node named Name?
-   function Is_Rule (N : ASTBNF_Match.Node_Access; Name : String)
+   function Is_Rule (N : HBNF_Match.Node_Access; Name : String)
      return Boolean
    is
-     (N /= null and then N.Kind = ASTBNF_Match.Rule_Node
+     (N /= null and then N.Kind = HBNF_Match.Rule_Node
       and then To_String (N.Rule_Name) = Name);
 
    --  The token a name/arg/qualifier rule matched (its single Token_Node kid).
-   function Rule_Token (N : ASTBNF_Match.Node_Access)
-     return ASTBNF_Match.Token
+   function Rule_Token (N : HBNF_Match.Node_Access)
+     return HBNF_Match.Token
    is
    begin
       for K of N.Kids loop
-         if K.Kind = ASTBNF_Match.Token_Node then
+         if K.Kind = HBNF_Match.Token_Node then
             return K.Tok;
          end if;
       end loop;
-      return (Kind => ASTBNF_Match.Eof, Text => Null_Unbounded_String);
+      return (Kind => HBNF_Match.Eof, Text => Null_Unbounded_String);
    end Rule_Token;
 
    --  Rebuild a Value from a matched token, re-running the same Int/Dec
    --  conversion (and range checks) as the hand-written parser's Parse_Value.
-   function To_Value (T : ASTBNF_Match.Token) return HBNF.Value is
+   function To_Value (T : HBNF_Match.Token) return HBNF.Value is
       V : HBNF.Value;
       S : constant String := To_String (T.Text);
    begin
       case T.Kind is
-         when ASTBNF_Match.Atom =>
+         when HBNF_Match.Atom =>
             V.Kind := Word;
             V.Text := T.Text;
-         when ASTBNF_Match.Str =>
+         when HBNF_Match.Str =>
             V.Kind := Str;
             V.Text := T.Text;
-         when ASTBNF_Match.Int =>
+         when HBNF_Match.Int =>
             V.Kind := Int;
             V.Num := Long_Long_Integer'Value (S);
-         when ASTBNF_Match.Dec =>
+         when HBNF_Match.Dec =>
             V.Kind := Dec;
             V.Text := T.Text;
             begin
@@ -690,13 +690,13 @@ package body HBNF is
    end To_Value;
 
    --  Interpret a bound tree into a Node tree.
-   function Interpret (Root : ASTBNF_Match.Node_Access) return Node_Access is
+   function Interpret (Root : HBNF_Match.Node_Access) return Node_Access is
 
       function Interpret_Entry
-        (N : ASTBNF_Match.Node_Access; Leading : Unbounded_String)
+        (N : HBNF_Match.Node_Access; Leading : Unbounded_String)
         return Node_Access;
       procedure Interpret_Children
-        (Parent : ASTBNF_Match.Node_Access; Dst : Node_Access;
+        (Parent : HBNF_Match.Node_Access; Dst : Node_Access;
          At_Top : Boolean);
 
       function Make_Comment (Text : String) return Node_Access is
@@ -708,7 +708,7 @@ package body HBNF is
       end Make_Comment;
 
       function Interpret_Entry
-        (N : ASTBNF_Match.Node_Access; Leading : Unbounded_String)
+        (N : HBNF_Match.Node_Access; Leading : Unbounded_String)
         return Node_Access
       is
          Result : constant Node_Access := new Node;
@@ -734,7 +734,7 @@ package body HBNF is
                      --  (a block is `name value { ... }`), so record it both
                      --  ways: Qualifier and Values(1).
                      declare
-                        QT : constant ASTBNF_Match.Token := Rule_Token (K);
+                        QT : constant HBNF_Match.Token := Rule_Token (K);
                      begin
                         Result.Qualifier := QT.Text;
                         Result.Values.Append (To_Value (QT));
@@ -748,7 +748,7 @@ package body HBNF is
       end Interpret_Entry;
 
       procedure Interpret_Children
-        (Parent : ASTBNF_Match.Node_Access; Dst : Node_Access;
+        (Parent : HBNF_Match.Node_Access; Dst : Node_Access;
          At_Top : Boolean)
       is
          Leading    : Unbounded_String := Null_Unbounded_String;
@@ -788,8 +788,8 @@ package body HBNF is
                end if;
             elsif Is_Rule (Kid, "ws") then
                for C of Kid.Kids loop
-                  if C.Kind = ASTBNF_Match.Token_Node then
-                     if C.Tok.Kind = ASTBNF_Match.Eol_Comment then
+                  if C.Kind = HBNF_Match.Token_Node then
+                     if C.Tok.Kind = HBNF_Match.Eol_Comment then
                         if Last /= null then
                            Last.Trailing_Comment := C.Tok.Text;
                         end if;
@@ -815,12 +815,12 @@ package body HBNF is
       return Result;
    end Interpret;
 
-   function Parse_Astbnf
-     (Text : String; Schema : ASTBNF.Rule_Vectors.Vector) return Parse_Result
+   function Parse_Against
+     (Text : String; Schema : HBNF_Grammar.Rule_Vectors.Vector) return Parse_Result
    is
       L    : constant Lex_Result := Lex (Text);
-      Toks : ASTBNF_Match.Token_Vectors.Vector;
-      Tree : ASTBNF_Match.Node_Access;
+      Toks : HBNF_Match.Token_Vectors.Vector;
+      Tree : HBNF_Match.Node_Access;
    begin
       if not L.Success then
          return (Success => False, Line => L.Line, Col => L.Col, Msg => L.Msg);
@@ -828,7 +828,7 @@ package body HBNF is
       for T of L.Tokens loop
          Toks.Append (To_Match_Token (T));
       end loop;
-      Tree := ASTBNF_Match.Bind (Schema, Toks, "config");
+      Tree := HBNF_Match.Bind (Schema, Toks, "config");
       if Tree = null then
          return (Success => False, Line => 1, Col => 1,
                  Msg => To_Unbounded_String ("does not match the grammar"));
@@ -838,7 +838,7 @@ package body HBNF is
       when Backend_Error | Constraint_Error =>
          return (Success => False, Line => 1, Col => 1,
                  Msg => To_Unbounded_String ("value out of range"));
-   end Parse_Astbnf;
+   end Parse_Against;
 
    --  Accessors ------------------------------------------------------------
 

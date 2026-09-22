@@ -3,7 +3,7 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 
---  ASTBNF: a schema for mapping a preparsed *generic* AST (a tree of named
+--  HBNF_Grammar: a schema for mapping a preparsed *generic* AST (a tree of named
 --  nodes carrying symbol/string values, children and comments) to typed C/Ada.
 --
 --  The schema notation is plain RFC 5234 ABNF.  Types are *not* part of the
@@ -20,7 +20,7 @@ with Ada.Strings.Unbounded;
 --     direction = "in" / "out"             ; an enum (literal alternation)
 --     listen    = "on" iface "port" port   ; a directive (literals + refs)
 --     server    = name 1*( listen / root ) ; a struct (ref + children)
-package ASTBNF is
+package HBNF_Grammar is
 
    use Ada.Strings.Unbounded;
 
@@ -63,11 +63,27 @@ package ASTBNF is
       Pattern         : Element_Vectors.Vector := Element_Vectors.Empty_Vector;
       Leading_Comment : Unbounded_String := Null_Unbounded_String;
       Trailing_Comment : Unbounded_String := Null_Unbounded_String;
+      Jet_Code        : Unbounded_String := Null_Unbounded_String;
+      --  Non-empty for a jet: `name = %{ <code> %}`.  The code is a
+      --  hand-written scanner body emitted verbatim; Pattern stays empty.
    end record;
 
    package Rule_Vectors is new Ada.Containers.Vectors (Positive, Rule);
 
-   --  Parse ASTBNF (ABNF) source text into a flat list of rules, in order.
+   --  Parse HBNF_Grammar (ABNF) source text into a flat list of rules, in order.
    function Parse (Text : String) return Rule_Vectors.Vector;
 
-end ASTBNF;
+   --  The schema language declared by the first non-blank line
+   --  (`language C|Rust|Zig|Ada`), or "C" when absent.  Jet code blocks are
+   --  written in this language.
+   function Language return String;
+
+   --  A raw `%{ ... %}` block at the top of the file (emitted before the
+   --  declarations), or "" when absent.
+   function Preamble return String;
+
+   --  A raw `%{ ... %}` block after the rules (emitted after the parser), or
+   --  "" when absent.
+   function Epilogue return String;
+
+end HBNF_Grammar;

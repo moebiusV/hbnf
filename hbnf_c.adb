@@ -4,10 +4,10 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Templates;
 
-package body ASTBNF_C is
+package body HBNF_C is
 
    use Ada.Strings.Unbounded;
-   use ASTBNF;
+   use HBNF_Grammar;
 
    subtype U is Unbounded_String;
 
@@ -55,6 +55,85 @@ package body ASTBNF_C is
       end loop;
       return To_String (Buf);
    end C_Ident;
+
+   --  Natural'Image with the leading blank stripped ("1", not " 1").
+   function Img (N : Natural) return String is
+      S : constant String := Natural'Image (N);
+   begin
+      if S'Length > 0 and then S (S'First) = ' ' then
+         return S (S'First + 1 .. S'Last);
+      end if;
+      return S;
+   end Img;
+
+   --  Unique enumerator suffixes for a literal list.  C_Ident is case-
+   --  insensitive (`dot`/`DoT` both -> `DOT`) and maps punctuation to `_`
+   --  (`!=`/`<=` both -> `__`), so plain names collide; dedupe by appending
+   --  _2, _3, ..., and name pure-punctuation literals `OP` + position.
+   function Enum_Names (Lits : String_Vectors.Vector) return String_Vectors.Vector is
+      Names : String_Vectors.Vector;
+
+      function Used (S : String) return Boolean is
+      begin
+         for X of Names loop
+            if To_String (X) = S then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Used;
+   begin
+      for I in 1 .. Natural (Lits.Length) loop
+         declare
+            Base : constant String := C_Ident (To_String (Lits (I)));
+            N    : U;
+         begin
+            if Base = "" or else (for all C of Base => C = '_') then
+               N := To_Unbounded_String ("OP" & Img (I));
+            else
+               N := To_Unbounded_String (Base);
+            end if;
+            if Used (To_String (N)) then
+               declare
+                  K : Natural := 2;
+               begin
+                  while Used (To_String (N) & "_" & Img (K)) loop
+                     K := K + 1;
+                  end loop;
+                  N := To_Unbounded_String (To_String (N) & "_" & Img (K));
+               end;
+            end if;
+            Names.Append (N);
+         end;
+      end loop;
+      return Names;
+   end Enum_Names;
+
+   --  True when every `/`-alternative is exactly one Literal — the shape an
+   --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`), one that
+   --  names another rule, or a single literal (no `/`) is not an enum.
+   function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
+      N       : constant Natural := Natural (Els.Length);
+      St      : Natural := 1;
+      Has_Alt : Boolean := False;
+   begin
+      for K in 1 .. N + 1 loop
+         if K > N then
+            --  final alternative [St..N] must be exactly one literal
+            if N /= St or else Els (St).Kind /= Literal then
+               return False;
+            end if;
+         elsif Els (K).Kind = Alt then
+            --  alternative [St..K-1] must be exactly one literal
+            if K - 1 /= St or else Els (St).Kind /= Literal then
+               return False;
+            end if;
+            St := K + 1;
+            Has_Alt := True;
+         end if;
+      end loop;
+      return Has_Alt;
+   end Is_Pure_Literal_Alt;
 
    --  A valid C identifier from a rule name ('-' -> '_').
    function C_Name (S : String) return String is
@@ -115,6 +194,75 @@ package body ASTBNF_C is
          end if;
          return C_Name (Ref) & "_t";
       end C_Type_Of;
+
+      --  The underlying scalar C type a rule name resolves to, chasing
+      --  single-name aliases and jets to their target (so `str / word` and
+      --  `ipv4 / ipv6` both collapse to `const char *`).  "" if not scalar.
+      function Resolve_Type (N : String; Depth : Natural := 0) return String is
+         C : constant String := Scalar_C_Type (N);
+      begin
+         if C /= "" then
+            return C;
+         end if;
+         if Depth > 8 then
+            return "";
+         end if;
+         declare
+            J : constant Natural := Find (N);
+         begin
+            if J = 0 then
+               return "";
+            end if;
+            declare
+               R : constant Rule := Rules (J);
+               P : constant Element_Vectors.Vector := R.Pattern;
+            begin
+               if R.Jet_Code /= Null_Unbounded_String then
+                  return "const char *";
+               end if;
+               if Natural (P.Length) = 1
+                 and then P (1).Kind = Name
+                 and then P (1).Min = 1
+                 and then P (1).Max = 1
+               then
+                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
+               end if;
+            end;
+         end;
+         return "";
+      end Resolve_Type;
+
+      --  If the pattern is a pure alternation of names that all resolve to
+      --  the same scalar C type, that type (a scalar union); else "".
+      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
+         T       : U := Null_Unbounded_String;
+         Has_Alt : Boolean := False;
+      begin
+         for E of Els loop
+            if E.Kind = Alt then
+               Has_Alt := True;
+            elsif E.Kind = Name then
+               declare
+                  R : constant String := Resolve_Type (To_String (E.Name));
+               begin
+                  if R = "" then
+                     return "";
+                  end if;
+                  if T = Null_Unbounded_String then
+                     T := To_Unbounded_String (R);
+                  elsif To_String (T) /= R then
+                     return "";
+                  end if;
+               end;
+            else
+               return "";
+            end if;
+         end loop;
+         if Has_Alt and then T /= Null_Unbounded_String then
+            return To_String (T);
+         end if;
+         return "";
+      end Scalar_Union_Type;
 
       --  A struct member: the referenced name, and whether it is a list
       --  (appeared with a repetition prefix) rather than a single value.
@@ -198,6 +346,11 @@ package body ASTBNF_C is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if R.Jet_Code /= Null_Unbounded_String then
+            --  A jet reads its own token kind and yields the matched text.
+            return (Kind        => Scalar,
+                    Inline_Type => To_Unbounded_String ("const char *"));
+         end if;
          if Natural (P.Length) = 1 then
             declare
                E : constant Element_Access := P (1);
@@ -254,9 +407,16 @@ package body ASTBNF_C is
             Has_Alt : Boolean := False;
          begin
             Collect (P, Members, Lits, Has_Alt);
-            if Members.Is_Empty then
+            if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
                return (Kind => Enum, Literals => Lits);
             else
+               declare
+                  SU : constant String := Scalar_Union_Type (P);
+               begin
+                  if SU /= "" then
+                     return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
+                  end if;
+               end;
                return (Kind => Struct, Members => Members);
             end if;
          end;
@@ -349,20 +509,24 @@ package body ASTBNF_C is
                  & CN & "_t;");
                Append (Buf, LF);
             when Enum =>
-               Append (Buf, "typedef enum {");
-               Append (Buf, LF);
-               for I in 1 .. Natural (Info.Literals.Length) loop
-                  Append (Buf, "    " & C_Ident (NM) & "_"
-                    & C_Ident (To_String (Info.Literals (I))));
-                  if I < Natural (Info.Literals.Length) then
-                     Append (Buf, ",");
-                  end if;
-                  Append (Buf, "   /* "
-                    & To_String (Info.Literals (I)) & " */");
+               declare
+                  Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
+               begin
+                  Append (Buf, "typedef enum {");
                   Append (Buf, LF);
-               end loop;
-               Append (Buf, "} " & CN & "_t;");
-               Append (Buf, LF);
+                  for I in 1 .. Natural (Info.Literals.Length) loop
+                     Append (Buf, "    " & C_Ident (NM) & "_"
+                       & To_String (Names (I)));
+                     if I < Natural (Info.Literals.Length) then
+                        Append (Buf, ",");
+                     end if;
+                     Append (Buf, "   /* "
+                       & To_String (Info.Literals (I)) & " */");
+                     Append (Buf, LF);
+                  end loop;
+                  Append (Buf, "} " & CN & "_t;");
+                  Append (Buf, LF);
+               end;
             when Struct =>
                Append (Buf, "struct " & CN & " {");
                Append (Buf, LF);
@@ -426,7 +590,7 @@ package body ASTBNF_C is
          Infos.Append (Analyze (I));
       end loop;
 
-      Append (Res, "/* generated by astbnf -- do not edit */");
+      Append (Res, "/* generated by hbnf -- do not edit */");
       Append (Res, LF);
       Append (Res, "#include <stdint.h>");
       Append (Res, LF);
@@ -448,14 +612,55 @@ package body ASTBNF_C is
       end loop;
       Append (Res, LF);
 
-      --  Leaves first: scalars and enums carry no ordering constraints.
-      for I in 1 .. N loop
-         if Infos (I).Kind = Scalar or else Infos (I).Kind = Enum then
-            Append (Res, Emit_Rule (I, Infos (I)));
-            Append (Res, LF);
-            Emitted (I) := True;
-         end if;
-      end loop;
+      --  Leaves: scalars and enums, in dependency order — a scalar alias
+      --  referencing another rule's type (e.g. `addr = ipv4`) must follow it.
+      declare
+         function Scalar_Ref (Idx : Natural) return Natural is
+            R : constant Rule := Rules (Idx);
+            P : constant Element_Vectors.Vector := R.Pattern;
+         begin
+            if Natural (P.Length) = 1 and then P (1).Kind = Name
+              and then Scalar_C_Type (To_String (P (1).Name)) = ""
+            then
+               return Find (To_String (P (1).Name));
+            end if;
+            return 0;
+         end Scalar_Ref;
+
+         Remaining_Leaves : Natural := 0;
+      begin
+         for I in 1 .. N loop
+            if Infos (I).Kind = Scalar or else Infos (I).Kind = Enum then
+               Remaining_Leaves := Remaining_Leaves + 1;
+            end if;
+         end loop;
+         while Remaining_Leaves > 0 loop
+            declare
+               Progress : Boolean := False;
+            begin
+               for I in 1 .. N loop
+                  if (Infos (I).Kind = Scalar or else Infos (I).Kind = Enum)
+                    and then not Emitted (I)
+                  then
+                     declare
+                        D : constant Natural := Scalar_Ref (I);
+                     begin
+                        if D = 0 or else Emitted (D) then
+                           Append (Res, Emit_Rule (I, Infos (I)));
+                           Append (Res, LF);
+                           Emitted (I) := True;
+                           Remaining_Leaves := Remaining_Leaves - 1;
+                           Progress := True;
+                        end if;
+                     end;
+                  end if;
+               end loop;
+               if not Progress then
+                  raise Parse_Error with "scalar cycle in schema";
+               end if;
+            end;
+         end loop;
+      end;
 
       --  Struct and list bodies, in by-value dependency order.
       while Remaining > 0 loop
@@ -602,6 +807,99 @@ package body ASTBNF_C is
          return False;
       end Has_Name;
 
+      --  True when every `/`-alternative is exactly one Literal — the shape an
+      --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`) or one
+      --  that names another rule is not an enum.
+      function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
+         N       : constant Natural := Natural (Els.Length);
+         St      : Natural := 1;
+         Has_Alt : Boolean := False;
+      begin
+         for K in 1 .. N + 1 loop
+            if K > N then
+               --  final alternative [St..N] must be exactly one literal
+               if N /= St or else Els (St).Kind /= Literal then
+                  return False;
+               end if;
+            elsif Els (K).Kind = Alt then
+               --  alternative [St..K-1] must be exactly one literal
+               if K - 1 /= St or else Els (St).Kind /= Literal then
+                  return False;
+               end if;
+               St := K + 1;
+               Has_Alt := True;
+            end if;
+         end loop;
+         return Has_Alt;
+      end Is_Pure_Literal_Alt;
+
+      --  The underlying scalar C type a rule name resolves to (chasing
+      --  single-name aliases and jets); "" if not scalar.
+      function Resolve_Type (N : String; Depth : Natural := 0) return String is
+         C : constant String := Scalar_C_Type (N);
+      begin
+         if C /= "" then
+            return C;
+         end if;
+         if Depth > 8 then
+            return "";
+         end if;
+         declare
+            J : constant Natural := Find (N);
+         begin
+            if J = 0 then
+               return "";
+            end if;
+            declare
+               R : constant Rule := Rules (J);
+               P : constant Element_Vectors.Vector := R.Pattern;
+            begin
+               if R.Jet_Code /= Null_Unbounded_String then
+                  return "const char *";
+               end if;
+               if Natural (P.Length) = 1
+                 and then P (1).Kind = Name
+                 and then P (1).Min = 1
+                 and then P (1).Max = 1
+               then
+                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
+               end if;
+            end;
+         end;
+         return "";
+      end Resolve_Type;
+
+      --  A pure alternation of names resolving to one scalar type; "" else.
+      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
+         T       : U := Null_Unbounded_String;
+         Has_Alt : Boolean := False;
+      begin
+         for E of Els loop
+            if E.Kind = Alt then
+               Has_Alt := True;
+            elsif E.Kind = Name then
+               declare
+                  R : constant String := Resolve_Type (To_String (E.Name));
+               begin
+                  if R = "" then
+                     return "";
+                  end if;
+                  if T = Null_Unbounded_String then
+                     T := To_Unbounded_String (R);
+                  elsif To_String (T) /= R then
+                     return "";
+                  end if;
+               end;
+            else
+               return "";
+            end if;
+         end loop;
+         if Has_Alt and then T /= Null_Unbounded_String then
+            return To_String (T);
+         end if;
+         return "";
+      end Scalar_Union_Type;
+
       --  The out-parameter type of parse_<rule>: a list hands back a head
       --  pointer (`X_t **`), anything else a by-value struct/scalar (`X_t *`).
       function Out_Type (Idx : Natural) return String is
@@ -616,30 +914,12 @@ package body ASTBNF_C is
          return C_Name (To_String (R.Name)) & "_t *";
       end Out_Type;
 
-      --  The token kind that begins a parse of `Rule_Name`, or "" if unknown.
-      function Start_Kind (Rule_Name : String) return String is
-         J : constant Natural := Find (Rule_Name);
-      begin
-         if J = 0 then
-            return "";
-         end if;
-         declare
-            P : constant Element_Vectors.Vector := Rules (J).Pattern;
-         begin
-            if Natural (P.Length) = 1 and then P (1).Kind = ASTBNF.Name
-              and then Is_Core (To_String (P (1).Name))
-            then
-               return Scalar_Tok_Kind (To_String (P (1).Name));
-            end if;
-         end;
-         return "";
-      end Start_Kind;
-
       --  Emit matching + building for segment Els(First..Last), writing fields
-      --  through the accessor Acc ("r." or "nn->").  On failure returns false.
+      --  through the accessor Acc ("r." or "nn->").  On failure emits the
+      --  `Fail` statement ("goto ..." or "p->pos = save; return false;").
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural; Acc : String;
-         Buf  : in out U; Ind : String := "    ") is
+         Buf  : in out U; Fail : String; Ind : String := "    ") is
       begin
          for K in First .. Last loop
             declare
@@ -648,13 +928,13 @@ package body ASTBNF_C is
                case E.Kind is
                   when Literal =>
                      Append (Buf, Ind & "if (!expect_lit(p, """
-                       & To_String (E.Lit) & """)) return false;");
+                       & To_String (E.Lit) & """)) { " & Fail & " }");
                      Append (Buf, LF);
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
                         Append (Buf, Ind & "if (!expect_kind(p, "
                           & Scalar_Tok_Kind (To_String (E.Name)) & ", """
-                          & Core_Desc (To_String (E.Name)) & """)) return false;");
+                          & Core_Desc (To_String (E.Name)) & """)) { " & Fail & " }");
                         Append (Buf, LF);
                         Append (Buf, Ind & Acc
                           & C_Field (To_String (E.Name)) & " = "
@@ -663,18 +943,57 @@ package body ASTBNF_C is
                      else
                         Append (Buf, Ind & "if (!parse_"
                           & C_Name (To_String (E.Name)) & "(p, &" & Acc
-                          & C_Field (To_String (E.Name)) & ")) return false;");
+                          & C_Field (To_String (E.Name)) & ")) { " & Fail & " }");
                         Append (Buf, LF);
                      end if;
                   when Group =>
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Acc, Buf,
-                               Ind & "    ");
+                               Fail, Ind & "    ");
                   when Alt =>
                      null;
                end case;
             end;
          end loop;
       end Emit_Seq;
+
+      --  Emit a backtracking alternation over the alternatives in Els (a flat
+      --  list with Alt separators).  Each branch writes through Acc; a failed
+      --  branch restores p->pos and resets the struct (Reset), a successful
+      --  branch jumps to label `Ok`.  After the last branch fails, control
+      --  falls through for the caller's own failure handling.
+      procedure Emit_Alternation
+        (Els : Element_Vectors.Vector; Acc, Reset, Ok : String;
+         Buf : in out U; Ind : String := "    ") is
+         N  : constant Natural := Natural (Els.Length);
+         St : Natural := 1;
+         Br : Natural := 0;
+
+         function Img (X : Natural) return String is
+            S : constant String := Natural'Image (X);
+         begin
+            if S'Length > 0 and then S (S'First) = ' ' then
+               return S (S'First + 1 .. S'Last);
+            end if;
+            return S;
+         end Img;
+      begin
+         for K in 1 .. N + 1 loop
+            if K > N or else Els (K).Kind = Alt then
+               Br := Br + 1;
+               if Br > 1 then
+                  Append (Buf, Ind & "p->pos = save; " & Reset & ";");
+                  Append (Buf, LF);
+               end if;
+               Emit_Seq (Els, St, K - 1, Acc, Buf,
+                         "goto alt_fail_" & Img (Br) & ";", Ind);
+               Append (Buf, Ind & "goto " & Ok & ";");
+               Append (Buf, LF);
+               Append (Buf, "alt_fail_" & Img (Br) & ":");
+               Append (Buf, LF);
+               St := K + 1;
+            end if;
+         end loop;
+      end Emit_Alternation;
 
       procedure Emit_Rule_Parser (Idx : Natural; Buf : in out U) is
          R  : constant Rule := Rules (Idx);
@@ -683,171 +1002,129 @@ package body ASTBNF_C is
          CN : constant String := C_Name (NM);
          Is_List : constant Boolean := Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
-         Is_Enum : constant Boolean := not Is_List and then Has_Alt (P)
-           and then not Has_Name (P);
+         Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
+         SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
       begin
+         if R.Jet_Code /= Null_Unbounded_String then
+            --  A jet: match its own token kind and yield the matched text.
+            Append (Buf, "    if (!expect_kind(p, TOK_" & C_Ident (NM)
+              & ", ""a " & NM & """)) return false;");
+            Append (Buf, LF);
+            Append (Buf, "    *out = strdup(p->toks[p->pos].text); p->pos++;");
+            Append (Buf, LF);
+            Append (Buf, "    return true;");
+            Append (Buf, LF);
+            return;
+         end if;
          if Is_List then
             declare
                E : constant Element_Access := P (1);
             begin
                Append (Buf, "    " & CN & "_t *head = NULL, **tail = &head;");
                Append (Buf, LF);
+               Append (Buf, "    while (p->pos < p->n) {");
+               Append (Buf, LF);
+               Append (Buf, "        " & CN & "_t *nn ="
+                 & " calloc(1, sizeof(*nn));");
+               Append (Buf, LF);
+               Append (Buf, "        size_t save = p->pos;");
+               Append (Buf, LF);
                if E.Kind = Name then
-                  declare
-                     SK : constant String := Start_Kind (To_String (E.Name));
-                  begin
-                     if SK /= "" then
-                        Append (Buf, "    while (p->pos < p->n && p->toks[p->pos].kind == "
-                          & SK & ") {");
-                     else
-                        Append (Buf, "    while (p->pos < p->n) {");
-                     end if;
-                  end;
+                  Append (Buf, "        if (parse_" & C_Name (To_String (E.Name))
+                    & "(p, &nn->" & C_Field (To_String (E.Name)) & ")) goto have;");
                   Append (Buf, LF);
-                  Append (Buf, "        " & CN & "_t *nn ="
-                    & " calloc(1, sizeof(*nn));");
-                  Append (Buf, LF);
-                  Append (Buf, "        if (!parse_" & C_Name (To_String (E.Name))
-                    & "(p, &nn->" & C_Field (To_String (E.Name)) & ")) { free(nn); return false; }");
-                  Append (Buf, LF);
-                  Append (Buf, "        *tail = nn; tail = &nn->next;");
-                  Append (Buf, LF);
-                  Append (Buf, "    }");
-                  Append (Buf, LF);
-                  Append (Buf, "    *out = head; return true;");
-                  Append (Buf, LF);
-               elsif E.Kind = Group then
-                  declare
-                     Firsts : String_Vectors.Vector;
-                     St     : Natural := 1;
-                  begin
-                     for K in 1 .. Natural (E.Items.Length) + 1 loop
-                        if K > Natural (E.Items.Length)
-                          or else E.Items (K).Kind = Alt
-                        then
-                           if St <= K - 1
-                             and then E.Items (St).Kind = Literal
-                           then
-                              Firsts.Append (E.Items (St).Lit);
-                           end if;
-                           St := K + 1;
-                        end if;
-                     end loop;
-
-                     Append (Buf, "    while (p->pos < p->n && p->toks[p->pos].kind == TOK_ATOM && (");
-                     for I in 1 .. Natural (Firsts.Length) loop
-                        if I > 1 then
-                           Append (Buf, " || ");
-                        end if;
-                        Append (Buf, "strcmp(p->toks[p->pos].text, """
-                          & To_String (Firsts (I)) & """)==0");
-                     end loop;
-                     Append (Buf, ")) {");
-                     Append (Buf, LF);
-                     Append (Buf, "        " & CN & "_t *nn ="
-                       & " calloc(1, sizeof(*nn));");
-                     Append (Buf, LF);
-
-                     St := 1;
-                     declare
-                        Branch : Natural := 0;
-                     begin
-                        for K in 1 .. Natural (E.Items.Length) + 1 loop
-                           if K > Natural (E.Items.Length)
-                             or else E.Items (K).Kind = Alt
-                           then
-                              if St <= K - 1
-                                and then E.Items (St).Kind = Literal
-                              then
-                                 if Branch = 0 then
-                                    Append (Buf, "        if (strcmp(p->toks[p->pos].text, "
-                                      & '"' & To_String (E.Items (St).Lit)
-                                      & '"' & ")==0) {");
-                                 else
-                                    Append (Buf, "        } else if (strcmp(p->toks[p->pos].text, "
-                                      & '"' & To_String (E.Items (St).Lit)
-                                      & '"' & ")==0) {");
-                                 end if;
-                                 Append (Buf, " p->pos++;");
-                                 Append (Buf, LF);
-                                 Emit_Seq (E.Items, St + 1, K - 1, "nn->",
-                                           Buf, "            ");
-                                 Branch := Branch + 1;
-                              end if;
-                              St := K + 1;
-                           end if;
-                        end loop;
-                     end;
-                     Append (Buf, "        }");
-                     Append (Buf, LF);
-                     Append (Buf, "        *tail = nn; tail = &nn->next;");
-                     Append (Buf, LF);
-                     Append (Buf, "    }");
-                     Append (Buf, LF);
-                     Append (Buf, "    *out = head; return true;");
-                     Append (Buf, LF);
-                  end;
                else
-                  Append (Buf, "    *out = NULL; return true;");
-                  Append (Buf, LF);
+                  Emit_Alternation (E.Items, "nn->",
+                                    "memset(nn, 0, sizeof *nn)", "have", Buf,
+                                    "        ");
                end if;
+               Append (Buf, "        p->pos = save; free(nn); break;");
+               Append (Buf, LF);
+               Append (Buf, "have:");
+               Append (Buf, LF);
+               Append (Buf, "        *tail = nn; tail = &nn->next;");
+               Append (Buf, LF);
+               Append (Buf, "    }");
+               Append (Buf, LF);
+               Append (Buf, "    *out = head; return true;");
+               Append (Buf, LF);
             end;
          elsif Is_Enum then
-            Append (Buf, "    if (!expect_kind(p, TOK_ATOM, ""a "
-              & CN & """)) return false;");
-            Append (Buf, LF);
-            Append (Buf, "    {");
-            Append (Buf, LF);
-            Append (Buf, "        " & CN & "_t r = " & C_Ident (NM) & "_"
-              & C_Ident (To_String (P (1).Lit)) & ";");
-            Append (Buf, LF);
             declare
-               St     : Natural := 1;
-               Branch : Natural := 0;
+               Lits  : String_Vectors.Vector;
+               Names : String_Vectors.Vector;
             begin
-               for K in 1 .. Natural (P.Length) + 1 loop
-                  if K > Natural (P.Length) or else P (K).Kind = Alt then
-                     if St <= K - 1 and then P (St).Kind = Literal then
-                        if Branch = 0 then
-                           Append (Buf, "        if (strcmp(p->toks[p->pos].text, "
-                             & '"' & To_String (P (St).Lit) & '"' & ")==0)");
-                        else
-                           Append (Buf, "        else if (strcmp(p->toks[p->pos].text, "
-                             & '"' & To_String (P (St).Lit) & '"' & ")==0)");
+               --  Collect each alternative's literal, in order, for naming.
+               declare
+                  St : Natural := 1;
+               begin
+                  for K in 1 .. Natural (P.Length) + 1 loop
+                     if K > Natural (P.Length) or else P (K).Kind = Alt then
+                        if St <= K - 1 and then P (St).Kind = Literal then
+                           Lits.Append (P (St).Lit);
                         end if;
-                        Append (Buf, " r = " & C_Ident (NM) & "_"
-                          & C_Ident (To_String (P (St).Lit)) & ";");
-                        Append (Buf, LF);
-                        Branch := Branch + 1;
+                        St := K + 1;
                      end if;
-                     St := K + 1;
-                  end if;
-               end loop;
-            end;
-            Append (Buf, "        else { fail(p, ""`");
-            declare
-               St     : Natural := 1;
-               First  : Boolean := True;
-            begin
-               for K in 1 .. Natural (P.Length) + 1 loop
-                  if K > Natural (P.Length) or else P (K).Kind = Alt then
-                     if St <= K - 1 and then P (St).Kind = Literal then
-                        if not First then
-                           Append (Buf, " or ");
+                  end loop;
+               end;
+               Names := Enum_Names (Lits);
+
+               Append (Buf, "    if (!expect_kind(p, TOK_ATOM, ""a "
+                 & CN & """)) return false;");
+               Append (Buf, LF);
+               Append (Buf, "    {");
+               Append (Buf, LF);
+               Append (Buf, "        " & CN & "_t r = " & C_Ident (NM) & "_"
+                 & To_String (Names (1)) & ";");
+               Append (Buf, LF);
+               declare
+                  St     : Natural := 1;
+                  Branch : Natural := 0;
+               begin
+                  for K in 1 .. Natural (P.Length) + 1 loop
+                     if K > Natural (P.Length) or else P (K).Kind = Alt then
+                        if St <= K - 1 and then P (St).Kind = Literal then
+                           if Branch = 0 then
+                              Append (Buf, "        if (strcmp(p->toks[p->pos].text, "
+                                & '"' & To_String (P (St).Lit) & '"' & ")==0)");
+                           else
+                              Append (Buf, "        else if (strcmp(p->toks[p->pos].text, "
+                                & '"' & To_String (P (St).Lit) & '"' & ")==0)");
+                           end if;
+                           Append (Buf, " r = " & C_Ident (NM) & "_"
+                             & To_String (Names (Branch + 1)) & ";");
+                           Append (Buf, LF);
+                           Branch := Branch + 1;
                         end if;
-                        Append (Buf, "`" & To_String (P (St).Lit) & "`");
-                        First := False;
+                        St := K + 1;
                      end if;
-                     St := K + 1;
-                  end if;
-               end loop;
+                  end loop;
+               end;
+               Append (Buf, "        else { fail(p, ""`");
+               declare
+                  St     : Natural := 1;
+                  First  : Boolean := True;
+               begin
+                  for K in 1 .. Natural (P.Length) + 1 loop
+                     if K > Natural (P.Length) or else P (K).Kind = Alt then
+                        if St <= K - 1 and then P (St).Kind = Literal then
+                           if not First then
+                              Append (Buf, " or ");
+                           end if;
+                           Append (Buf, "`" & To_String (P (St).Lit) & "`");
+                           First := False;
+                        end if;
+                        St := K + 1;
+                     end if;
+                  end loop;
+               end;
+               Append (Buf, """, p->toks[p->pos].text); return false; }");
+               Append (Buf, LF);
+               Append (Buf, "        p->pos++; *out = r; return true;");
+               Append (Buf, LF);
+               Append (Buf, "    }");
+               Append (Buf, LF);
             end;
-            Append (Buf, """, p->toks[p->pos].text); return false; }");
-            Append (Buf, LF);
-            Append (Buf, "        p->pos++; *out = r; return true;");
-            Append (Buf, LF);
-            Append (Buf, "    }");
-            Append (Buf, LF);
          elsif Natural (P.Length) = 1 and then P (1).Kind = Name then
             --  A scalar alias: read a core token, or delegate to the rule.
             if Is_Core (To_String (P (1).Name)) then
@@ -865,11 +1142,65 @@ package body ASTBNF_C is
                  & "(p, out);");
                Append (Buf, LF);
             end if;
-         else
-            --  A struct: match literals and references in order.
+         elsif SU /= "" then
+            --  A scalar union (str / word, ipv4 / ipv6): try each branch as a
+            --  single scalar read; the first that matches yields the value.
+            declare
+               St : Natural := 1;
+            begin
+               for K in 1 .. Natural (P.Length) + 1 loop
+                  if K > Natural (P.Length) or else P (K).Kind = Alt then
+                     if St <= K - 1 then
+                        declare
+                           E : constant Element_Access := P (St);
+                        begin
+                           if E.Kind = Name
+                             and then Is_Core (To_String (E.Name))
+                           then
+                              Append (Buf, "    if (p->pos < p->n && p->toks[p->pos].kind == "
+                                & Scalar_Tok_Kind (To_String (E.Name)) & ") {");
+                              Append (Buf, LF);
+                              Append (Buf, "        *out = "
+                                & Scalar_Parse_Expr (To_String (E.Name))
+                                & "; p->pos++; return true; }");
+                              Append (Buf, LF);
+                           elsif E.Kind = Name then
+                              Append (Buf, "    if (parse_"
+                                & C_Name (To_String (E.Name)) & "(p, out)) return true;");
+                              Append (Buf, LF);
+                           end if;
+                        end;
+                     end if;
+                     St := K + 1;
+                  end if;
+               end loop;
+            end;
+            Append (Buf, "    fail(p, ""a " & NM & """, p->pos < p->n"
+              & " ? p->toks[p->pos].text : ""end of input"");");
+            Append (Buf, LF);
+            Append (Buf, "    return false;");
+            Append (Buf, LF);
+         elsif Has_Alt (P) then
+            --  A struct alternation: try each branch with backtracking.
+            Append (Buf, "    size_t save = p->pos;");
+            Append (Buf, LF);
             Append (Buf, "    " & CN & "_t r = {0};");
             Append (Buf, LF);
-            Emit_Seq (P, 1, Natural (P.Length), "r.", Buf);
+            Emit_Alternation (P, "r.", "memset(&r, 0, sizeof r)", "ok", Buf);
+            Append (Buf, "    p->pos = save; return false;");
+            Append (Buf, LF);
+            Append (Buf, "ok:");
+            Append (Buf, LF);
+            Append (Buf, "    *out = r; return true;");
+            Append (Buf, LF);
+         else
+            --  A struct sequence: match literals and references in order.
+            Append (Buf, "    size_t save = p->pos;");
+            Append (Buf, LF);
+            Append (Buf, "    " & CN & "_t r = {0};");
+            Append (Buf, LF);
+            Emit_Seq (P, 1, Natural (P.Length), "r.", Buf,
+                      "p->pos = save; return false;");
             Append (Buf, "    *out = r; return true;");
             Append (Buf, LF);
          end if;
@@ -877,7 +1208,12 @@ package body ASTBNF_C is
 
       Res : U;
    begin
-      Append (Res, "/* generated by astbnf -- do not edit */");
+      if Preamble /= "" then
+         Append (Res, Preamble);
+         Append (Res, LF);
+         Append (Res, LF);
+      end if;
+      Append (Res, "/* generated by hbnf -- do not edit */");
       Append (Res, LF);
       Append (Res, "#include <stdlib.h>");
       Append (Res, LF);
@@ -885,10 +1221,23 @@ package body ASTBNF_C is
       Append (Res, LF);
       Append (Res, "#include <stdio.h>");
       Append (Res, LF);
+      Append (Res, "#include <ctype.h>");
       Append (Res, LF);
-      Append (Res, "typedef enum { TOK_ATOM, TOK_STR, TOK_INT,"
-        & " TOK_PUNCT, TOK_EOF } tok_kind_t;");
       Append (Res, LF);
+      declare
+         Enum : U := To_Unbounded_String
+           ("typedef enum { TOK_ATOM, TOK_STR, TOK_INT, TOK_PUNCT");
+      begin
+         for I in 1 .. N loop
+            if Rules (I).Jet_Code /= Null_Unbounded_String then
+               Append (Enum, ", TOK_"
+                 & C_Ident (To_String (Rules (I).Name)));
+            end if;
+         end loop;
+         Append (Enum, ", TOK_EOF } tok_kind_t;");
+         Append (Res, To_String (Enum));
+         Append (Res, LF);
+      end;
       Append (Res, "typedef struct { tok_kind_t kind; const char *text;"
         & " size_t line, col; } token_t;");
       Append (Res, LF);
@@ -903,6 +1252,8 @@ package body ASTBNF_C is
       Append (Res, LF);
       Append (Res, "    size_t nlines;");
       Append (Res, LF);
+      Append (Res, "    size_t err_pos;");
+      Append (Res, LF);
       Append (Res, "    size_t err_line, err_col;");
       Append (Res, LF);
       Append (Res, "    char err[512];");
@@ -913,7 +1264,10 @@ package body ASTBNF_C is
       Append (Res, "static void fail(parser_t *p, const char *expected,"
         & " const char *found) {");
       Append (Res, LF);
-      Append (Res, "    if (p->err[0]) return;  /* first error wins */");
+      Append (Res, "    if (p->err_pos != (size_t)-1 && p->pos <= p->err_pos)"
+        & " return;  /* a deeper failure already recorded */");
+      Append (Res, LF);
+      Append (Res, "    p->err_pos = p->pos;");
       Append (Res, LF);
       Append (Res, "    p->err_line = p->pos < p->n ? p->toks[p->pos].line : 0;");
       Append (Res, LF);
@@ -1009,14 +1363,14 @@ package body ASTBNF_C is
 
       --  The entry point: parse the root rule, then reject trailing input.
       Append (Res, "bool parse_tokens(const token_t *toks, size_t n, "
-        & C_Name (To_String (Rules (1).Name)) & "_t *out,");
+        & Out_Type (1) & " out,");
       Append (Res, LF);
       Append (Res, "                  const char *const *lines, size_t nlines,");
       Append (Res, LF);
       Append (Res, "                  char *err, size_t errlen,"
         & " size_t *err_line, size_t *err_col) {");
       Append (Res, LF);
-      Append (Res, "    parser_t p = { toks, n, 0, lines, nlines, 0, 0, {0} };");
+      Append (Res, "    parser_t p = { toks, n, 0, lines, nlines, (size_t)-1, 0, 0, {0} };");
       Append (Res, LF);
       Append (Res, "    if (!parse_" & C_Name (To_String (Rules (1).Name))
         & "(&p, out)) goto err;");
@@ -1036,13 +1390,63 @@ package body ASTBNF_C is
       Append (Res, "}");
       Append (Res, LF);
 
+      --  Jets: hand-written scanners, plus the dispatch the lexer calls.
+      for I in 1 .. N loop
+         if Rules (I).Jet_Code /= Null_Unbounded_String then
+            declare
+               R  : constant Rule := Rules (I);
+               NM : constant String := To_String (R.Name);
+            begin
+               Append (Res, "static size_t jet_" & C_Name (NM)
+                 & "(const char *s, size_t pos, size_t len) {");
+               Append (Res, LF);
+               Append (Res, To_String (R.Jet_Code));
+               Append (Res, LF);
+               Append (Res, "}");
+               Append (Res, LF);
+               Append (Res, LF);
+            end;
+         end if;
+      end loop;
+
+      Append (Res, "static size_t jet_dispatch(const char *s, size_t pos,"
+        & " size_t len, tok_kind_t *kind) {");
+      Append (Res, LF);
+      for I in 1 .. N loop
+         if Rules (I).Jet_Code /= Null_Unbounded_String then
+            declare
+               NM : constant String := To_String (Rules (I).Name);
+            begin
+               Append (Res, "    { size_t n = jet_" & C_Name (NM)
+                 & "(s, pos, len); if (n > 0) { *kind = TOK_" & C_Ident (NM)
+                 & "; return n; } }");
+               Append (Res, LF);
+            end;
+         end if;
+      end loop;
+      Append (Res, "    return 0;");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+
       return To_String (Res);
    end Emit_Parser;
 
    function Emit_Lexer (Rules : Rule_Vectors.Vector) return String is
-      Root_T : constant String := C_Name (To_String (Rules (1).Name)) & "_t";
+      Root_Name : constant String := C_Name (To_String (Rules (1).Name)) & "_t";
+      Root_List : constant Boolean :=
+        Natural (Rules (1).Pattern.Length) = 1
+          and then (Rules (1).Pattern (1).Min /= 1
+                    or else Rules (1).Pattern (1).Max /= 1);
+      Root_T : constant String := (if Root_List then Root_Name & " *" else Root_Name);
+      Lexer  : constant String :=
+        Templates.Substitute (Templates.C_Lexer, "@ROOT_TYPE@", Root_T);
    begin
-      return Templates.Substitute (Templates.C_Lexer, "@ROOT_TYPE@", Root_T);
+      if Epilogue = "" then
+         return Lexer;
+      else
+         return Lexer & LF & Epilogue;
+      end if;
    end Emit_Lexer;
 
    --  conf.h: the declarations plus the global `conf`, the error callback and
@@ -1066,7 +1470,7 @@ package body ASTBNF_C is
       Root_T : constant String := C_Name (To_String (Rules (1).Name)) & "_t";
    begin
       return
-        "/* generated by astbnf -- do not edit */" & LF & LF &
+        "/* generated by hbnf -- do not edit */" & LF & LF &
         "#include ""conf.h""" & LF & LF &
         Emit_Parser (Rules, Conf => True) &
         Emit_Lexer (Rules) &
@@ -1074,4 +1478,4 @@ package body ASTBNF_C is
         Templates.Substitute (Templates.Conf_Tail_C, "@ROOT_TYPE@", Root_T);
    end Emit_Conf_Source;
 
-end ASTBNF_C;
+end HBNF_C;

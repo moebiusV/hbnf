@@ -33,9 +33,20 @@ package Templates is
      "    lexed_t r = {0};" & LF &
      "    token_t *toks = (token_t *)malloc((strlen(text) + 2) * sizeof *toks);" & LF &
      "    size_t i = 0, line = 1, col = 1;" & LF &
+     "    size_t tlen = strlen(text);" & LF &
      "" & LF &
      "    while (text[i]) {" & LF &
      "        char c = text[i];" & LF &
+     "        {" & LF &
+     "            /* Hand-written jet scanners (schema `%{ %}` blocks) win first. */" & LF &
+     "            tok_kind_t jk;" & LF &
+     "            size_t jl = jet_dispatch(text, i, tlen, &jk);" & LF &
+     "            if (jl > 0) {" & LF &
+     "                toks[r.n++] = (token_t){ jk, lex_dup(text + i, jl), line, col };" & LF &
+     "                i += jl; col += jl;" & LF &
+     "                continue;" & LF &
+     "            }" & LF &
+     "        }" & LF &
      "        if (c == ' ' || c == '\t' || c == '\r') { i++; col++; }" & LF &
      "        else if (c == '\n') { i++; line++; col = 1; }" & LF &
      "        else if (c == '#') { while (text[i] && text[i] != '\n') i++; }" & LF &
@@ -114,6 +125,13 @@ package Templates is
      "    let mut i = 0usize; let mut line = 1usize; let mut col = 1usize;" & LF &
      "    while i < b.len() {" & LF &
      "        let c = b[i];" & LF &
+     "        // Hand-written jet scanners (schema `{ }` blocks) win first." & LF &
+     "        let (jl, jk) = jet_dispatch(b, i, b.len());" & LF &
+     "        if jl > 0 {" & LF &
+     "            toks.push(Token { kind: jk, text: text[i..i + jl].to_string(), line, col });" & LF &
+     "            i += jl; col += jl;" & LF &
+     "            continue;" & LF &
+     "        }" & LF &
      "        if c == b' ' || c == b'\t' || c == b'\r' { i += 1; col += 1; }" & LF &
      "        else if c == b'\n' { i += 1; line += 1; col = 1; }" & LF &
      "        else if c == b'#' { while i < b.len() && b[i] != b'\n' { i += 1; } }" & LF &
@@ -172,6 +190,16 @@ package Templates is
      "    var i: usize = 0; var line: usize = 1; var col: usize = 1;" & LF &
      "    while (i < text.len) {" & LF &
      "        const c = text[i];" & LF &
+     "        {" & LF &
+     "            // Hand-written jet scanners (schema `{ }` blocks) win first." & LF &
+     "            var jk: Kind = .eof;" & LF &
+     "            const jl = jet_dispatch(text, i, text.len, &jk);" & LF &
+     "            if (jl > 0) {" & LF &
+     "                try toks.append(alloc, .{ .kind = jk, .text = text[i..i + jl], .line = line, .col = col });" & LF &
+     "                i += jl; col += jl;" & LF &
+     "                continue;" & LF &
+     "            }" & LF &
+     "        }" & LF &
      "        if (c == ' ' or c == '\t' or c == '\r') { i += 1; col += 1; }" & LF &
      "        else if (c == '\n') { i += 1; line += 1; col = 1; }" & LF &
      "        else if (c == '#') { while (i < text.len and text[i] != '\n') i += 1; }" & LF &
@@ -238,8 +266,15 @@ package Templates is
      "   begin" & LF &
      "      while I <= Text'Last loop" & LF &
      "         C := Text (I);" & LF &
-     "         if C = ' ' or else C = ASCII.HT or else C = ASCII.CR then" & LF &
-     "            I := I + 1; Col := Col + 1;" & LF &
+     "         declare" & LF &
+     "            JK : Token_Kind;" & LF &
+     "            JL : constant Natural := Jet_Dispatch (Text, I, Text'Last, JK);" & LF &
+     "         begin" & LF &
+     "            if JL > 0 then" & LF &
+     "               Toks.Append (Token'(JK, To_Unbounded_String (Text (I .. I + JL - 1)), Line, Col));" & LF &
+     "               I := I + JL; Col := Col + JL;" & LF &
+     "            elsif C = ' ' or else C = ASCII.HT or else C = ASCII.CR then" & LF &
+     "               I := I + 1; Col := Col + 1;" & LF &
      "         elsif C = ASCII.LF then" & LF &
      "            I := I + 1; Line := Line + 1; Col := 1;" & LF &
      "         elsif C = '#' then" & LF &
@@ -316,6 +351,7 @@ package Templates is
      "               I := I + 1; Col := Col + 1;" & LF &
      "            end;" & LF &
      "         end if;" & LF &
+     "         end;" & LF &
      "      end loop;" & LF &
      "      Toks.Append (Token'(Eof, Null_Unbounded_String, Line, Col));" & LF &
      "      return Toks;" & LF &

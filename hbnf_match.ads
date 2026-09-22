@@ -2,9 +2,9 @@ pragma Ada_2022;
 
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
-with ASTBNF;
+with HBNF_Grammar;
 
---  ASTBNF_Match: the matcher and binder.  Given a parsed schema and a token
+--  HBNF_Match: the matcher and binder.  Given a parsed schema and a token
 --  stream, recognize whether the tokens spell out the schema's root rule and
 --  bind them to a parse tree.
 --
@@ -13,7 +13,7 @@ with ASTBNF;
 --  is Comment (own line) or Eol_Comment (end of line), which is what lets a
 --  later pass place it as leading vs trailing.
 
-package ASTBNF_Match is
+package HBNF_Match is
 
    use Ada.Strings.Unbounded;
 
@@ -52,15 +52,15 @@ package ASTBNF_Match is
 
    --  True if Tokens (ending in Eof) match the rule named Root.
    function Match
-     (Rules  : ASTBNF.Rule_Vectors.Vector;
+     (Rules  : HBNF_Grammar.Rule_Vectors.Vector;
       Tokens : Token_Vectors.Vector;
       Root   : String) return Boolean;
 
    --  Match Root against Tokens and return the parse tree (a Rule_Node for
    --  Root), or null on failure.
    function Bind
-     (Rules  : ASTBNF.Rule_Vectors.Vector;
+     (Rules  : HBNF_Grammar.Rule_Vectors.Vector;
       Tokens : Token_Vectors.Vector;
       Root   : String) return Node_Access;
 
-end ASTBNF_Match;
+end HBNF_Match;

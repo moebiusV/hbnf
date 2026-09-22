@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ctypes binding for the astbnf C config parser (tests/server.astbnf schema).
+"""ctypes binding for the hbnf C config parser (tests/server.hbnf schema).
 
 Build libhbnfconf.so first (see bindings/README.md), then either import this
 module or run it directly:

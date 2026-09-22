@@ -1,4 +1,4 @@
-; hbnf config grammar, as an ASTBNF schema over the token stream.
+; hbnf config grammar, as an hbnf grammar over the token stream.
 ;
 ; Built-in core types (interpreted by the codegen, never part of the grammar):
 ;   str   = a quoted c-string      atom  = a bare token (symbol or number)

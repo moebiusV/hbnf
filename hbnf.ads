@@ -2,7 +2,7 @@ pragma Ada_2022;
 
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
-with ASTBNF;
+with HBNF_Grammar;
 
 --  HBNF: an OpenBSD-style ("parse.y style") configuration parser.
 --
@@ -19,8 +19,8 @@ package HBNF is
 
    --  Lexer ---------------------------------------------------------------
    --
-   --  The token stream is the input to astbnf's matcher.  A comment's place
-   --  relative to the Semicolon/Newline tokens tells astbnf whether it is
+   --  The token stream is the input to hbnf's matcher.  A comment's place
+   --  relative to the Semicolon/Newline tokens tells hbnf whether it is
    --  leading or trailing, so hbnf only marks it own-line (Comment) vs
    --  end-of-line (Eol_Comment) and leaves the rest to the matcher.
 
@@ -118,13 +118,13 @@ package HBNF is
    --  Line/Col/Msg describe the first error.
    function Parse (Text : String) return Parse_Result;
 
-   --  Parse plaintext with astbnf's matcher/binder against a parsed schema
-   --  (the grammar in astbnf notation, e.g. ASTBNF.Parse of hbnf.astbnf),
+   --  Parse plaintext with hbnf's matcher/binder against a parsed schema
+   --  (the grammar in hbnf notation, e.g. HBNF_Grammar.Parse of hbnf_schema.hbnf),
    --  then interpret the bound tree back into this package's Node tree.
    --  Same result shape as Parse; comments land by position (leading /
    --  trailing / standalone file-header).
-   function Parse_Astbnf
-     (Text : String; Schema : ASTBNF.Rule_Vectors.Vector) return Parse_Result;
+   function Parse_Against
+     (Text : String; Schema : HBNF_Grammar.Rule_Vectors.Vector) return Parse_Result;
 
    --  Accessors ----------------------------------------------------------
 

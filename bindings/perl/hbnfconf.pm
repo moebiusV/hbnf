@@ -1,4 +1,4 @@
-# FFI::Platypus binding for the astbnf C config parser (tests/server.astbnf
+# FFI::Platypus binding for the hbnf C config parser (tests/server.hbnf
 # schema).  Install the module first:  cpanm FFI::Platypus
 #
 #   use hbnfconf;

@@ -1,11 +1,11 @@
 pragma Ada_2022;
 
-package body ASTBNF_Match is
+package body HBNF_Match is
 
-   use ASTBNF;
+   use HBNF_Grammar;
 
    type Matcher is record
-      Rules  : ASTBNF.Rule_Vectors.Vector;
+      Rules  : HBNF_Grammar.Rule_Vectors.Vector;
       Tokens : Token_Vectors.Vector;
    end record;
 
@@ -128,7 +128,7 @@ package body ASTBNF_Match is
       R  : Match_Result;
    begin
       if RI = 0 then
-         raise ASTBNF.Parse_Error with "undefined rule: " & Name;
+         raise HBNF_Grammar.Parse_Error with "undefined rule: " & Name;
       end if;
       R := Match_Alts (M, M.Rules (RI).Pattern, Pos);
       if R.Pos /= 0 then
@@ -239,7 +239,7 @@ package body ASTBNF_Match is
       return (Pos => 0, Nodes => Node_Vectors.Empty_Vector);
    end Match_Alts;
 
-   function Bind (Rules  : ASTBNF.Rule_Vectors.Vector;
+   function Bind (Rules  : HBNF_Grammar.Rule_Vectors.Vector;
                   Tokens : Token_Vectors.Vector;
                   Root   : String) return Node_Access
    is
@@ -247,7 +247,7 @@ package body ASTBNF_Match is
       R : Match_Result;
    begin
       if Find_Rule (M, Root) = 0 then
-         raise ASTBNF.Parse_Error with "no root rule: " & Root;
+         raise HBNF_Grammar.Parse_Error with "no root rule: " & Root;
       end if;
       R := Match_Rule (M, Root, 1);
       if R.Pos /= 0 and then R.Pos <= Last (M)
@@ -258,9 +258,9 @@ package body ASTBNF_Match is
       return null;
    end Bind;
 
-   function Match (Rules  : ASTBNF.Rule_Vectors.Vector;
+   function Match (Rules  : HBNF_Grammar.Rule_Vectors.Vector;
                    Tokens : Token_Vectors.Vector;
                    Root   : String) return Boolean is
      (Bind (Rules, Tokens, Root) /= null);
 
-end ASTBNF_Match;
+end HBNF_Match;

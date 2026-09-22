@@ -10,6 +10,16 @@ pub fn lex(alloc: std.mem.Allocator, text: []const u8) ![]Token {
     var i: usize = 0; var line: usize = 1; var col: usize = 1;
     while (i < text.len) {
         const c = text[i];
+        {
+            // Hand-written jet scanners (schema `{ }` blocks) win first.
+            var jk: Kind = .eof;
+            const jl = jet_dispatch(text, i, text.len, &jk);
+            if (jl > 0) {
+                try toks.append(alloc, .{ .kind = jk, .text = text[i..i + jl], .line = line, .col = col });
+                i += jl; col += jl;
+                continue;
+            }
+        }
         if (c == ' ' or c == '\t' or c == '\r') { i += 1; col += 1; }
         else if (c == '\n') { i += 1; line += 1; col = 1; }
         else if (c == '#') { while (i < text.len and text[i] != '\n') i += 1; }

@@ -4,11 +4,11 @@ with Ada.Command_Line;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
-with ASTBNF;
-with ASTBNF_C;
-with ASTBNF_Rust;
-with ASTBNF_Zig;
-with ASTBNF_Ada;
+with HBNF_Grammar;
+with HBNF_C;
+with HBNF_Rust;
+with HBNF_Zig;
+with HBNF_Ada;
 
 --  Dump every backend's declarations + parser for a schema (arg 1) into the
 --  current directory under fixed names, for the cross-language compile smoke
@@ -38,24 +38,24 @@ procedure Gen_All is
       Ada.Text_IO.Close (F);
    end Write;
 
-   Rules : constant ASTBNF.Rule_Vectors.Vector :=
-     ASTBNF.Parse (Read_File (Ada.Command_Line.Argument (1)));
+   Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
+     HBNF_Grammar.Parse (Read_File (Ada.Command_Line.Argument (1)));
 
    Conf : constant Boolean := Ada.Command_Line.Argument_Count >= 2
      and then Ada.Command_Line.Argument (2) = "--conf";
 
    Ada_Parser : constant String :=
-     ASTBNF_Ada.Emit_Parser (Rules, "Server_Schema", Conf);
+     HBNF_Ada.Emit_Parser (Rules, "Server_Schema", Conf);
    Split      : constant Natural :=
      Ada.Strings.Fixed.Index (Ada_Parser, "with Interfaces;");
 begin
    Write ("server.c",
-          ASTBNF_C.Emit (Rules) & ASCII.LF & ASTBNF_C.Emit_Parser (Rules));
+          HBNF_C.Emit (Rules) & ASCII.LF & HBNF_C.Emit_Parser (Rules));
    Write ("server.rs",
-          ASTBNF_Rust.Emit (Rules) & ASCII.LF & ASTBNF_Rust.Emit_Parser (Rules));
+          HBNF_Rust.Emit (Rules) & ASCII.LF & HBNF_Rust.Emit_Parser (Rules));
    Write ("server.zig",
-          ASTBNF_Zig.Emit (Rules) & ASCII.LF & ASTBNF_Zig.Emit_Parser (Rules));
-   Write ("server_schema.ads", ASTBNF_Ada.Emit (Rules, "Server_Schema"));
+          HBNF_Zig.Emit (Rules) & ASCII.LF & HBNF_Zig.Emit_Parser (Rules));
+   Write ("server_schema.ads", HBNF_Ada.Emit (Rules, "Server_Schema"));
    Write ("server_schema-parser.ads",
           Ada_Parser (Ada_Parser'First .. Split - 1));
    Write ("server_schema-parser.adb",

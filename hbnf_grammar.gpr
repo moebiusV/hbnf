@@ -1,30 +1,30 @@
---  Library project for the astbnf schema engine (ABNF parser, matcher/binder,
+--  Library project for the hbnf schema engine (ABNF parser, matcher/binder,
 --  C and Ada emitters).  Shipped by the hbnf package from the same source
---  tree, but built as its own library (libastbnf.a), distinct from libhbnf.a.
---  Pure Ada, no C dependencies.
+--  tree, but built as its own library (libhbnf_grammar.a), distinct from
+--  libhbnf.a.  Pure Ada, no C dependencies.
 
-library project ASTBNF is
+library project HBNF_Grammar is
 
    for Languages use ("Ada");
    for Source_Dirs use (".");
    for Source_Files use
-     ("astbnf.ads", "astbnf.adb",
-      "astbnf_match.ads", "astbnf_match.adb",
-      "astbnf_ada.ads", "astbnf_ada.adb",
-      "astbnf_c.ads", "astbnf_c.adb",
-      "astbnf_rust.ads", "astbnf_rust.adb",
-      "astbnf_zig.ads", "astbnf_zig.adb",
+     ("hbnf_grammar.ads", "hbnf_grammar.adb",
+      "hbnf_match.ads", "hbnf_match.adb",
+      "hbnf_ada.ads", "hbnf_ada.adb",
+      "hbnf_c.ads", "hbnf_c.adb",
+      "hbnf_rust.ads", "hbnf_rust.adb",
+      "hbnf_zig.ads", "hbnf_zig.adb",
       "templates.ads", "templates.adb");
-   for Object_Dir use "obj-astbnf";
+   for Object_Dir use "obj-hbnf";
    for Create_Missing_Dirs use "True";
-   for Library_Dir use "lib-astbnf";
-   for Library_Name use "astbnf";
+   for Library_Dir use "lib-hbnf";
+   for Library_Name use "hbnf_grammar";
 
    --  Scenario variable, so gprinstall emits the installed "library_type :=
    --  static" marker that tells consuming projects this is a static library.
    type Library_Type_Type is ("relocatable", "static", "static-pic");
    Library_Type : Library_Type_Type :=
-     external ("ASTBNF_LIBRARY_TYPE", external ("LIBRARY_TYPE", "static"));
+     external ("HBNF_GRAMMAR_LIBRARY_TYPE", external ("LIBRARY_TYPE", "static"));
    for Library_Kind use Library_Type;
 
    package Compiler is
@@ -43,4 +43,4 @@ library project ASTBNF is
       for Active use "True";
    end Install;
 
-end ASTBNF;
+end HBNF_Grammar;

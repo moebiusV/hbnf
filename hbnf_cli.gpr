@@ -1,15 +1,15 @@
---  The astbnf command-line tool: reads a schema, emits a self-contained
+--  The hbnf command-line tool: reads a schema, emits a self-contained
 --  parser (declarations + lexer + parser) in the chosen backend language.
---  Links against the static libastbnf.a.
+--  Links against the static libhbnf_grammar.a.
 
-with "astbnf.gpr";
+with "hbnf_grammar.gpr";
 
-project ASTBNF_Cli is
+project HBNF_Cli is
 
    for Languages use ("Ada");
    for Source_Dirs use (".");
-   for Source_Files use ("astbnf_cli.adb");
-   for Main use ("astbnf_cli.adb");
+   for Source_Files use ("hbnf_cli.adb");
+   for Main use ("hbnf_cli.adb");
    for Object_Dir use "obj-cli";
    for Create_Missing_Dirs use "True";
    for Exec_Dir use ".";
@@ -20,4 +20,4 @@ project ASTBNF_Cli is
          "-gnaty3abcefhiklmnprt");
    end Compiler;
 
-end ASTBNF_Cli;
+end HBNF_Cli;

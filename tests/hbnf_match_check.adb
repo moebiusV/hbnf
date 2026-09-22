@@ -4,14 +4,14 @@ with Ada.Command_Line;
 with Ada.Text_IO;
 with Ada.Strings.Unbounded;
 with HBNF;
-with ASTBNF;
+with HBNF_Grammar;
 
 --  Equivalence check: parse one config file with hbnf's own hand-written
---  parser and with the astbnf matcher/binder (HBNF.Parse_Astbnf), and assert
+--  parser and with the hbnf matcher/binder (HBNF.Parse_Against), and assert
 --  they agree — both succeed and produce the same tree (accept), or both fail
 --  (reject).  The tree comparison is Print for Print, which includes comment
 --  placement, so it also verifies comments land in the same places.
---  Usage: hbnf_match_check <schema.astbnf> <config.conf> <accept|reject>
+--  Usage: hbnf_match_check <schema.hbnf> <config.conf> <accept|reject>
 procedure HBNF_Match_Check is
 
    use Ada.Strings.Unbounded;
@@ -31,13 +31,13 @@ procedure HBNF_Match_Check is
 
 begin
    declare
-      Schema : constant ASTBNF.Rule_Vectors.Vector :=
-        ASTBNF.Parse (Read_File (Ada.Command_Line.Argument (1)));
+      Schema : constant HBNF_Grammar.Rule_Vectors.Vector :=
+        HBNF_Grammar.Parse (Read_File (Ada.Command_Line.Argument (1)));
       Path   : constant String := Ada.Command_Line.Argument (2);
       Mode   : constant String := Ada.Command_Line.Argument (3);
       Text   : constant String := Read_File (Path);
       P1     : constant HBNF.Parse_Result := HBNF.Parse (Text);
-      P2     : constant HBNF.Parse_Result := HBNF.Parse_Astbnf (Text, Schema);
+      P2     : constant HBNF.Parse_Result := HBNF.Parse_Against (Text, Schema);
       Pass   : Boolean;
    begin
       Pass :=
@@ -54,7 +54,7 @@ begin
             if not P1.Success then
                Ada.Text_IO.Put_Line ("   hbnf parser rejected");
             elsif not P2.Success then
-               Ada.Text_IO.Put_Line ("   astbnf binder rejected");
+               Ada.Text_IO.Put_Line ("   hbnf binder rejected");
             else
                Ada.Text_IO.Put_Line ("   trees differ");
             end if;
@@ -62,7 +62,7 @@ begin
             if P1.Success then
                Ada.Text_IO.Put_Line ("   hbnf parser accepted");
             elsif P2.Success then
-               Ada.Text_IO.Put_Line ("   astbnf binder accepted");
+               Ada.Text_IO.Put_Line ("   hbnf binder accepted");
             end if;
          end if;
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);

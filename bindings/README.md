@@ -1,18 +1,18 @@
-# astbnf FFI bindings
+# hbnf FFI bindings
 
-The C backend (`astbnf --backend=c --conf`) emits a plain-C `conf.h`/`conf.c`
+The C backend (`hbnf --backend=c --conf`) emits a plain-C `conf.h`/`conf.c`
 with a `parse_config(filename)` entry, a global `conf` root and an overridable
 `conf_error` handler.  Because that output is ordinary C (no runtime, no
 macros, no opaque types), any language with an FFI can drive it directly.
 
-This directory holds example bindings for the `tests/server.astbnf` schema.
+This directory holds example bindings for the `tests/server.hbnf` schema.
 The struct layout they mirror is schema-specific — regenerate them for a
 different schema (the C `typedef struct` in `conf.h` is the source of truth).
 
 ## Build the shared library
 
 ```sh
-astbnf schema.astbnf --backend=c --conf > conf-out.txt
+hbnf schema.hbnf --backend=c --conf > conf-out.txt
 # split conf.h / conf.c (see tests/e2e.sh), then:
 cc -shared -fPIC conf.c -o libhbnfconf.so
 ```

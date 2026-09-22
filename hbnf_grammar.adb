@@ -1,13 +1,19 @@
 pragma Ada_2022;
 
-package body ASTBNF is
+package body HBNF_Grammar is
+
+   --  Schema-level metadata gathered by Parse: the declared language (default
+   --  "C") and the optional raw `%{ ... %}` preamble and epilogue blocks.
+   Schema_Language : Unbounded_String := To_Unbounded_String ("C");
+   Preamble_Code   : Unbounded_String := Null_Unbounded_String;
+   Epilogue_Code   : Unbounded_String := Null_Unbounded_String;
 
    --  ====================================================================
    --  Lexer
    --  ====================================================================
 
    type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Slash, T_LParen,
-                     T_RParen, T_LBrack, T_RBrack, T_Star,
+                     T_RParen, T_LBrack, T_RBrack, T_Star, T_Code,
                      T_Comment, T_Newline, T_EOF);
 
    type Token is record
@@ -18,6 +24,67 @@ package body ASTBNF is
    end record;
 
    package Token_Vectors is new Ada.Containers.Vectors (Positive, Token);
+
+   type Lang_Kind is (C_Lang, Rust_Lang, Zig_Lang, Ada_Lang);
+
+   --  Find the `language X` declaration (the first word "language" followed
+   --  by a name); defaults to C.  Drives the brace counter's comment/char
+   --  handling inside `{ }` code blocks, which differs per language.
+   function Detect_Language (Text : String) return Lang_Kind is
+      Lang : Lang_Kind := C_Lang;
+      I    : Natural  := Text'First;
+   begin
+      while I <= Text'Last loop
+         if Text (I) in 'a' .. 'z' or else Text (I) in 'A' .. 'Z'
+           or else Text (I) = '_'
+         then
+            declare
+               S : constant Natural := I;
+            begin
+               while I <= Text'Last
+                 and then (Text (I) in 'a' .. 'z' or else Text (I) in 'A' .. 'Z'
+                   or else Text (I) in '0' .. '9' or else Text (I) = '_'
+                   or else Text (I) = '-')
+               loop
+                  I := I + 1;
+               end loop;
+               if Text (S .. I - 1) = "language" then
+                  while I <= Text'Last
+                    and then Text (I) in ' ' | ASCII.HT
+                  loop
+                     I := I + 1;
+                  end loop;
+                  if I <= Text'Last
+                    and then (Text (I) in 'a' .. 'z'
+                      or else Text (I) in 'A' .. 'Z')
+                  then
+                     declare
+                        S2 : constant Natural := I;
+                     begin
+                        while I <= Text'Last
+                          and then (Text (I) in 'a' .. 'z'
+                            or else Text (I) in 'A' .. 'Z')
+                        loop
+                           I := I + 1;
+                        end loop;
+                        if Text (S2 .. I - 1) = "Rust" then
+                           Lang := Rust_Lang;
+                        elsif Text (S2 .. I - 1) = "Zig" then
+                           Lang := Zig_Lang;
+                        elsif Text (S2 .. I - 1) = "Ada" then
+                           Lang := Ada_Lang;
+                        end if;
+                        return Lang;
+                     end;
+                  end if;
+               end if;
+            end;
+         else
+            I := I + 1;
+         end if;
+      end loop;
+      return Lang;
+   end Detect_Language;
 
    function Trim (S : String) return String is
       First : Natural := S'First;
@@ -57,6 +124,7 @@ package body ASTBNF is
       I    : Natural  := Text'First;
       Line : Positive := 1;
       Col  : Positive := 1;
+      Lang : constant Lang_Kind := Detect_Language (Text);
 
       procedure Emit (K : Tok_Kind; S : String := "") is
       begin
@@ -185,6 +253,146 @@ package body ASTBNF is
             when '[' => Emit (T_LBrack); I := I + 1;  Col := Col + 1;
             when ']' => Emit (T_RBrack); I := I + 1;  Col := Col + 1;
             when '*' => Emit (T_Star);   I := I + 1;  Col := Col + 1;
+            when '{' =>
+               --  A raw code block (preamble, jet, or epilogue): capture the
+               --  text between matching braces.  Braces nest, and a `"` string
+               --  literal is copied verbatim so a `}` inside one is not taken
+               --  as the block's close.
+               declare
+                  Depth : Natural := 1;
+                  Buf   : Unbounded_String := Null_Unbounded_String;
+               begin
+                  I := I + 1;  Col := Col + 1;
+                  while I <= Text'Last loop
+                     case Text (I) is
+                        when '{' =>
+                           Depth := Depth + 1;
+                           Append (Buf, Text (I));
+                           I := I + 1;  Col := Col + 1;
+                        when '}' =>
+                           Depth := Depth - 1;
+                           if Depth = 0 then
+                              I := I + 1;  Col := Col + 1;
+                              exit;
+                           end if;
+                           Append (Buf, Text (I));
+                           I := I + 1;  Col := Col + 1;
+                        when '"' =>
+                           Append (Buf, Text (I));
+                           I := I + 1;  Col := Col + 1;
+                           while I <= Text'Last and then Text (I) /= '"' loop
+                              if Text (I) = '\' and then I < Text'Last then
+                                 Append (Buf, Text (I));
+                                 I := I + 1;  Col := Col + 1;
+                              end if;
+                              Append (Buf, Text (I));
+                              I := I + 1;  Col := Col + 1;
+                           end loop;
+                           if I <= Text'Last then
+                              Append (Buf, Text (I));
+                              I := I + 1;  Col := Col + 1;
+                           end if;
+                        when ''' =>
+                           if Lang = Ada_Lang and then I > Text'First
+                             and then (Text (I - 1) in 'a' .. 'z'
+                               or else Text (I - 1) in 'A' .. 'Z'
+                               or else Text (I - 1) in '0' .. '9'
+                               or else Text (I - 1) = '_')
+                           then
+                              --  Ada attribute (X'Pos): skip quote + name.
+                              Append (Buf, Text (I));
+                              I := I + 1;  Col := Col + 1;
+                              while I <= Text'Last
+                                and then (Text (I) in 'a' .. 'z'
+                                  or else Text (I) in 'A' .. 'Z'
+                                  or else Text (I) in '0' .. '9'
+                                  or else Text (I) = '_')
+                              loop
+                                 Append (Buf, Text (I));
+                                 I := I + 1;  Col := Col + 1;
+                              end loop;
+                           else
+                              --  Char literal 'x': copied verbatim.
+                              Append (Buf, Text (I));
+                              I := I + 1;  Col := Col + 1;
+                              while I <= Text'Last and then Text (I) /= ''' loop
+                                 if Text (I) = '\' and then I < Text'Last then
+                                    Append (Buf, Text (I));
+                                    I := I + 1;  Col := Col + 1;
+                                 end if;
+                                 Append (Buf, Text (I));
+                                 I := I + 1;  Col := Col + 1;
+                              end loop;
+                              if I <= Text'Last then
+                                 Append (Buf, Text (I));
+                                 I := I + 1;  Col := Col + 1;
+                              end if;
+                           end if;
+                        when '/' =>
+                           if (Lang = C_Lang or else Lang = Rust_Lang)
+                             and then I < Text'Last and then Text (I + 1) = '*'
+                           then
+                              --  Block comment: skip to */.
+                              Append (Buf, Text (I));
+                              Append (Buf, Text (I + 1));
+                              I := I + 2;  Col := Col + 2;
+                              while I <= Text'Last loop
+                                 if Text (I) = '*' and then I < Text'Last
+                                   and then Text (I + 1) = '/'
+                                 then
+                                    Append (Buf, Text (I));
+                                    Append (Buf, Text (I + 1));
+                                    I := I + 2;  Col := Col + 2;
+                                    exit;
+                                 end if;
+                                 if Text (I) = ASCII.LF then
+                                    Line := Line + 1;  Col := 1;
+                                 else
+                                    Col := Col + 1;
+                                 end if;
+                                 Append (Buf, Text (I));
+                                 I := I + 1;
+                              end loop;
+                           elsif Lang /= Ada_Lang
+                             and then I < Text'Last and then Text (I + 1) = '/'
+                           then
+                              --  Line comment: skip to newline.
+                              while I <= Text'Last and then Text (I) /= ASCII.LF loop
+                                 Append (Buf, Text (I));
+                                 I := I + 1;  Col := Col + 1;
+                              end loop;
+                           else
+                              Append (Buf, Text (I));
+                              I := I + 1;  Col := Col + 1;
+                           end if;
+                        when '-' =>
+                           if Lang = Ada_Lang and then I < Text'Last
+                             and then Text (I + 1) = '-'
+                           then
+                              --  Ada line comment: skip to newline.
+                              while I <= Text'Last and then Text (I) /= ASCII.LF loop
+                                 Append (Buf, Text (I));
+                                 I := I + 1;  Col := Col + 1;
+                              end loop;
+                           else
+                              Append (Buf, Text (I));
+                              I := I + 1;  Col := Col + 1;
+                           end if;
+                        when ASCII.LF =>
+                           Append (Buf, Text (I));
+                           I := I + 1;  Line := Line + 1;  Col := 1;
+                        when others =>
+                           Append (Buf, Text (I));
+                           I := I + 1;  Col := Col + 1;
+                     end case;
+                  end loop;
+                  if Depth > 0 then
+                     raise Parse_Error with
+                       Integer'Image (Line) & ":" & Integer'Image (Col) &
+                       ": unterminated code block (missing '}')";
+                  end if;
+                  Emit (T_Code, To_String (Buf));
+               end;
             when '0' .. '9' =>
                declare
                   Start : constant Positive := I;
@@ -380,7 +588,7 @@ package body ASTBNF is
          declare
             Pos : Positive := P.Pos;
          begin
-            while P.Toks (Pos).Kind = T_Newline loop
+            while P.Toks (Pos).Kind in T_Newline | T_Comment loop
                Pos := Pos + 1;
             end loop;
             exit when P.Toks (Pos).Kind /= T_Slash;
@@ -399,6 +607,52 @@ package body ASTBNF is
       Rules : Rule_Vectors.Vector;
       Name  : Unbounded_String;
    begin
+      --  Header: an optional `%{ ... %}` preamble and/or `language X`, each
+      --  preceded by blank lines and `;` comment lines (which are discarded
+      --  as header material).  Lookahead keeps a leading comment block that
+      --  belongs to the first rule instead.
+      declare
+         Mark : Natural;
+      begin
+         Mark := P.Pos;
+         while Cur (P).Kind in T_Newline | T_Comment loop
+            Next (P);
+         end loop;
+         if Cur (P).Kind = T_Code
+           or else (Cur (P).Kind = T_Name
+                    and then To_String (Cur (P).Text) = "language")
+         then
+            P.Pos := Mark;
+            loop
+               while Cur (P).Kind in T_Newline | T_Comment loop
+                  Next (P);
+               end loop;
+               if Cur (P).Kind = T_Code then
+                  if Preamble_Code = Null_Unbounded_String then
+                     Preamble_Code := Cur (P).Text;
+                  end if;
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "language"
+               then
+                  Next (P);
+                  if Cur (P).Kind /= T_Name then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" &
+                       Integer'Image (Cur (P).Col) &
+                       ": expected a language name (C, Rust, Zig, or Ada)";
+                  end if;
+                  Schema_Language := Cur (P).Text;
+                  Next (P);
+               else
+                  exit;
+               end if;
+            end loop;
+         else
+            P.Pos := Mark;
+         end if;
+      end;
+
       loop
          while Cur (P).Kind = T_Newline loop
             Next (P);
@@ -410,44 +664,69 @@ package body ASTBNF is
             Trailing : Unbounded_String := Null_Unbounded_String;
          begin
             --  A leading comment block: `;` comment lines before the rule.
-            while Cur (P).Kind = T_Comment loop
+            --  Blank lines between them do not break the block.
+            loop
+               while Cur (P).Kind = T_Newline loop
+                  Next (P);
+               end loop;
+               exit when Cur (P).Kind /= T_Comment;
                if Leading /= Null_Unbounded_String then
                   Append (Leading, ASCII.LF);
                end if;
                Append (Leading, Cur (P).Text);
                Next (P);
-               if Cur (P).Kind = T_Newline then
-                  Next (P);
-               end if;
             end loop;
-            while Cur (P).Kind = T_Newline loop
+
+            --  Epilogue: a raw code block after the rules.
+            if Cur (P).Kind = T_Code then
+               Epilogue_Code := Cur (P).Text;
                Next (P);
-            end loop;
+               exit;
+            end if;
             exit when Cur (P).Kind = T_EOF;
 
             Name := Expect_Name (P);
             Expect (P, T_Eq, "'='");
 
-            declare
-               Pattern : constant Element_Vectors.Vector :=
-                 Parse_Alternation (P);
-            begin
-               --  A trailing comment sits on the rule's own line, after the
-               --  pattern (Parse_Pattern stops at T_Comment).
-               if Cur (P).Kind = T_Comment then
-                  Trailing := Cur (P).Text;
-                  Next (P);
-               end if;
+            if Cur (P).Kind = T_Code then
+               --  A jet: `name = %{ <code> %}` — a hand-written scanner.
                Rule_Vectors.Append
                  (Rules,
                   Rule'(Name            => Name,
-                        Pattern         => Pattern,
+                        Pattern         => Element_Vectors.Empty_Vector,
                         Leading_Comment => Leading,
-                        Trailing_Comment => Trailing));
-            end;
+                        Trailing_Comment => Trailing,
+                        Jet_Code        => Cur (P).Text));
+               Next (P);
+            else
+               declare
+                  Pattern : constant Element_Vectors.Vector :=
+                    Parse_Alternation (P);
+               begin
+                  --  A trailing comment sits on the rule's own line, after
+                  --  the pattern (Parse_Pattern stops at T_Comment).
+                  if Cur (P).Kind = T_Comment then
+                     Trailing := Cur (P).Text;
+                     Next (P);
+                  end if;
+                  Rule_Vectors.Append
+                    (Rules,
+                     Rule'(Name            => Name,
+                           Pattern         => Pattern,
+                           Leading_Comment => Leading,
+                           Trailing_Comment => Trailing,
+                           Jet_Code        => Null_Unbounded_String));
+               end;
+            end if;
          end;
       end loop;
       return Rules;
    end Parse;
 
-end ASTBNF;
+   function Language return String is (To_String (Schema_Language));
+
+   function Preamble return String is (To_String (Preamble_Code));
+
+   function Epilogue return String is (To_String (Epilogue_Code));
+
+end HBNF_Grammar;

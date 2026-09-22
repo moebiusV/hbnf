@@ -1,4 +1,4 @@
-# Fiddle binding for the astbnf C config parser (tests/server.astbnf schema).
+# Fiddle binding for the hbnf C config parser (tests/server.hbnf schema).
 #
 #   LD_LIBRARY_PATH=. ruby hbnfconf.rb valid.conf
 require "fiddle"

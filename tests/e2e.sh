@@ -1,5 +1,5 @@
 #!/bin/sh
-# Cross-language end-to-end smoke test for the astbnf CLI: emit a self-contained
+# Cross-language end-to-end smoke test for the hbnf CLI: emit a self-contained
 # parser (declarations + lexer + parser) in each language, compile and run it.
 # Run inside the Alpine container (has gcc-gnat; rust/zig are optional).
 set -u
@@ -7,16 +7,16 @@ cd "$(dirname "$0")/.."
 HERE=$(pwd)
 
 echo "== building generators =="
-gnatmake -q -gnat2022 -I. -Itests astbnf_cli.adb -o /tmp/astbnf_cli
+gnatmake -q -gnat2022 -I. -Itests hbnf_cli.adb -o /tmp/hbnf_cli
 gnatmake -q -gnat2022 -I. -Itests tests/gen_all.adb -o /tmp/gen_all
 
 echo "== C =="
-/tmp/astbnf_cli tests/server.astbnf --backend=c > /tmp/server.c
+/tmp/hbnf_cli tests/server.hbnf --backend=c > /tmp/server.c
 cp tests/c_main.c /tmp/
 ( cd /tmp && gcc -std=gnu11 -D_GNU_SOURCE c_main.c -o c_test 2>&1 | head -20 && ./c_test )
 
 echo "== C conf (OpenBSD conf.h/conf.c shape) =="
-/tmp/astbnf_cli tests/server.astbnf --backend=c --conf > /tmp/conf-out.txt
+/tmp/hbnf_cli tests/server.hbnf --backend=c --conf > /tmp/conf-out.txt
 cp tests/conf_main.c /tmp/
 ( cd /tmp
   awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} f==1{print > "conf.h"} f==2{print > "conf.c"}' conf-out.txt
@@ -55,7 +55,7 @@ fi
 
 echo "== Rust =="
 if command -v rustc >/dev/null 2>&1; then
-    /tmp/astbnf_cli tests/server.astbnf --backend=rust > /tmp/server.rs
+    /tmp/hbnf_cli tests/server.hbnf --backend=rust > /tmp/server.rs
     cp tests/rust_main.rs /tmp/
     ( cd /tmp && rustc rust_main.rs -o rust_test 2>&1 | head -20 && ./rust_test )
 else
@@ -64,7 +64,7 @@ fi
 
 echo "== Rust conf =="
 if command -v rustc >/dev/null 2>&1; then
-    /tmp/astbnf_cli tests/server.astbnf --backend=rust --conf > /tmp/server.rs
+    /tmp/hbnf_cli tests/server.hbnf --backend=rust --conf > /tmp/server.rs
     cp tests/rust_conf_main.rs /tmp/rust_conf_main.rs
     ( cd /tmp && rustc rust_conf_main.rs -o rust_conf_test 2>&1 | head -20 && ./rust_conf_test )
 else
@@ -73,7 +73,7 @@ fi
 
 echo "== Zig =="
 if command -v zig >/dev/null 2>&1; then
-    /tmp/astbnf_cli tests/server.astbnf --backend=zig > /tmp/server.zig
+    /tmp/hbnf_cli tests/server.hbnf --backend=zig > /tmp/server.zig
     cp tests/zig_main.zig /tmp/
     ( cd /tmp && zig build-exe zig_main.zig -femit-bin=zig_test 2>&1 | head -30 && ./zig_test )
 else
@@ -82,7 +82,7 @@ fi
 
 echo "== Zig conf =="
 if command -v zig >/dev/null 2>&1; then
-    /tmp/astbnf_cli tests/server.astbnf --backend=zig --conf > /tmp/server.zig
+    /tmp/hbnf_cli tests/server.hbnf --backend=zig --conf > /tmp/server.zig
     cp tests/zig_conf_main.zig /tmp/zig_conf_main.zig
     ( cd /tmp && zig build-exe zig_conf_main.zig -femit-bin=zig_conf_test 2>&1 | head -30 && ./zig_conf_test )
 else
@@ -90,13 +90,13 @@ else
 fi
 
 echo "== Ada =="
-/tmp/gen_all tests/server.astbnf
+/tmp/gen_all tests/server.hbnf
 cp tests/ada_main.adb /tmp/
 cp server_schema.ads server_schema-parser.ads server_schema-parser.adb /tmp/
 ( cd /tmp && gnatmake -q -gnat2022 ada_main.adb -o ada_test 2>&1 | head -30 && ./ada_test )
 
 echo "== Ada conf =="
-/tmp/gen_all tests/server.astbnf --conf
+/tmp/gen_all tests/server.hbnf --conf
 cp tests/ada_conf_main.adb /tmp/
 cp server_schema.ads server_schema-parser.ads server_schema-parser.adb /tmp/
 ( cd /tmp && rm -f server_schema*.ali server_schema*.o ada_conf_main.ali ada_conf_main.o \

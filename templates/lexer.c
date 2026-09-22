@@ -23,9 +23,20 @@ lexed_t lex(const char *text) {
     lexed_t r = {0};
     token_t *toks = (token_t *)malloc((strlen(text) + 2) * sizeof *toks);
     size_t i = 0, line = 1, col = 1;
+    size_t tlen = strlen(text);
 
     while (text[i]) {
         char c = text[i];
+        {
+            /* Hand-written jet scanners (schema `%{ %}` blocks) win first. */
+            tok_kind_t jk;
+            size_t jl = jet_dispatch(text, i, tlen, &jk);
+            if (jl > 0) {
+                toks[r.n++] = (token_t){ jk, lex_dup(text + i, jl), line, col };
+                i += jl; col += jl;
+                continue;
+            }
+        }
         if (c == ' ' || c == '\t' || c == '\r') { i++; col++; }
         else if (c == '\n') { i++; line++; col = 1; }
         else if (c == '#') { while (text[i] && text[i] != '\n') i++; }

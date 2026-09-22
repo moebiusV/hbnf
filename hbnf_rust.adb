@@ -4,10 +4,10 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Templates;
 
-package body ASTBNF_Rust is
+package body HBNF_Rust is
 
    use Ada.Strings.Unbounded;
-   use ASTBNF;
+   use HBNF_Grammar;
 
    subtype U is Unbounded_String;
 
@@ -94,6 +94,103 @@ package body ASTBNF_Rust is
       end if;
       return N;
    end Rust_Field;
+
+   --  True when every `/`-alternative is exactly one Literal — the shape an
+   --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`), one that
+   --  names another rule, or a single literal (no `/`) is not an enum.
+   function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
+      N       : constant Natural := Natural (Els.Length);
+      St      : Natural := 1;
+      Has_Alt : Boolean := False;
+   begin
+      for K in 1 .. N + 1 loop
+         if K > N then
+            --  final alternative [St..N] must be exactly one literal
+            if N /= St or else Els (St).Kind /= Literal then
+               return False;
+            end if;
+         elsif Els (K).Kind = Alt then
+            --  alternative [St..K-1] must be exactly one literal
+            if K - 1 /= St or else Els (St).Kind /= Literal then
+               return False;
+            end if;
+            St := K + 1;
+            Has_Alt := True;
+         end if;
+      end loop;
+      return Has_Alt;
+   end Is_Pure_Literal_Alt;
+
+   --  Natural'Image with the leading blank stripped ("1", not " 1").
+   function Img (N : Natural) return String is
+      S : constant String := Natural'Image (N);
+   begin
+      if S'Length > 0 and then S (S'First) = ' ' then
+         return S (S'First + 1 .. S'Last);
+      end if;
+      return S;
+   end Img;
+
+   --  Unique enumerator names for a literal list.  Each literal is mapped
+   --  through Rust_Type and then any non-alphanumeric folded to '_', so
+   --  "tlsv1.0" -> "Tlsv1_0".  A name that is empty, all '_', or begins with
+   --  a digit (pure punctuation like "*" or "!=") becomes `Op<pos>`; and
+   --  collisions are deduped with _2, _3, ...
+   function Enum_Names (Lits : String_Vectors.Vector) return String_Vectors.Vector is
+      Names : String_Vectors.Vector;
+
+      function Fold (S : String) return String is
+         Buf : U;
+      begin
+         for C of S loop
+            if C in 'a' .. 'z' or else C in 'A' .. 'Z'
+              or else C in '0' .. '9'
+            then
+               Append (Buf, C);
+            else
+               Append (Buf, '_');
+            end if;
+         end loop;
+         return To_String (Buf);
+      end Fold;
+
+      function Used (S : String) return Boolean is
+      begin
+         for X of Names loop
+            if To_String (X) = S then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Used;
+   begin
+      for I in 1 .. Natural (Lits.Length) loop
+         declare
+            Base : constant String := Fold (Rust_Type (To_String (Lits (I))));
+            N    : U;
+         begin
+            if Base = "" or else (for all C of Base => C = '_')
+              or else Base (Base'First) in '0' .. '9'
+            then
+               N := To_Unbounded_String ("Op" & Img (I));
+            else
+               N := To_Unbounded_String (Base);
+            end if;
+            if Used (To_String (N)) then
+               declare
+                  K : Natural := 2;
+               begin
+                  while Used (To_String (N) & "_" & Img (K)) loop
+                     K := K + 1;
+                  end loop;
+                  N := To_Unbounded_String (To_String (N) & "_" & Img (K));
+               end;
+            end if;
+            Names.Append (N);
+         end;
+      end loop;
+      return Names;
+   end Enum_Names;
 
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
@@ -205,6 +302,11 @@ package body ASTBNF_Rust is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if R.Jet_Code /= Null_Unbounded_String then
+            --  A jet reads its own token kind and yields the matched text.
+            return (Kind => Scalar,
+                    Inline_Type => To_Unbounded_String ("String"));
+         end if;
          if Natural (P.Length) = 1 then
             declare
                E : constant Element_Access := P (1);
@@ -261,7 +363,7 @@ package body ASTBNF_Rust is
             Has_Alt : Boolean := False;
          begin
             Collect (P, Members, Lits, Has_Alt);
-            if Members.Is_Empty then
+            if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
                return (Kind => Enum, Literals => Lits);
             else
                return (Kind => Struct, Members => Members);
@@ -287,21 +389,25 @@ package body ASTBNF_Rust is
                        To_String (Info.Inline_Type) & ";");
                Append (Buf, LF);
             when Enum =>
-               Append (Buf, "#[derive(Default)]");
-               Append (Buf, LF);
-               Append (Buf, "pub enum " & Base & " {");
-               Append (Buf, LF);
-               for I in 1 .. Natural (Info.Literals.Length) loop
-                  if I = 1 then
-                     Append (Buf, "    #[default]");
-                     Append (Buf, LF);
-                  end if;
-                  Append (Buf, "    " & Base & "_" &
-                          Rust_Type (To_String (Info.Literals (I))) & ",");
+               declare
+                  Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
+               begin
+                  Append (Buf, "#[derive(Default)]");
                   Append (Buf, LF);
-               end loop;
-               Append (Buf, "}");
-               Append (Buf, LF);
+                  Append (Buf, "pub enum " & Base & " {");
+                  Append (Buf, LF);
+                  for I in 1 .. Natural (Info.Literals.Length) loop
+                     if I = 1 then
+                        Append (Buf, "    #[default]");
+                        Append (Buf, LF);
+                     end if;
+                     Append (Buf, "    " & Base & "_" &
+                             To_String (Names (I)) & ",");
+                     Append (Buf, LF);
+                  end loop;
+                  Append (Buf, "}");
+                  Append (Buf, LF);
+               end;
             when Struct =>
                Append (Buf, "#[derive(Default)]");
                Append (Buf, LF);
@@ -380,7 +486,7 @@ package body ASTBNF_Rust is
          Infos.Append (Analyze (I));
       end loop;
 
-      Append (Res, "// generated by astbnf -- do not edit");
+      Append (Res, "// generated by hbnf -- do not edit");
       Append (Res, LF);
       Append (Res, "#![allow(non_camel_case_types, dead_code)]");
       Append (Res, LF);
@@ -401,7 +507,7 @@ package body ASTBNF_Rust is
       return To_String (Res);
    end Emit;
 
-   function Emit_Parser (Rules : ASTBNF.Rule_Vectors.Vector; Conf : Boolean := False) return String is
+   function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector; Conf : Boolean := False) return String is
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -437,6 +543,29 @@ package body ASTBNF_Rust is
          end loop;
          return False;
       end Has_Name;
+
+      --  True when every `/`-alternative is exactly one Literal — the shape
+      --  an enum can hold.
+      function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
+         N       : constant Natural := Natural (Els.Length);
+         St      : Natural := 1;
+         Has_Alt : Boolean := False;
+      begin
+         for K in 1 .. N + 1 loop
+            if K > N then
+               if N /= St or else Els (St).Kind /= Literal then
+                  return False;
+               end if;
+            elsif Els (K).Kind = Alt then
+               if K - 1 /= St or else Els (St).Kind /= Literal then
+                  return False;
+               end if;
+               St := K + 1;
+               Has_Alt := True;
+            end if;
+         end loop;
+         return Has_Alt;
+      end Is_Pure_Literal_Alt;
 
       --  The Rust type a rule reference denotes.
       function Rust_Type_Of (Ref : String) return String is
@@ -504,7 +633,7 @@ package body ASTBNF_Rust is
          declare
             P : constant Element_Vectors.Vector := Rules (J).Pattern;
          begin
-            if Natural (P.Length) = 1 and then P (1).Kind = ASTBNF.Name
+            if Natural (P.Length) = 1 and then P (1).Kind = HBNF_Grammar.Name
               and then Is_Core (To_String (P (1).Name))
             then
                return Scalar_Kind (To_String (P (1).Name));
@@ -522,7 +651,7 @@ package body ASTBNF_Rust is
          if Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1)
          then
-            if P (1).Kind = ASTBNF.Name then
+            if P (1).Kind = HBNF_Grammar.Name then
                return "Vec<" & Rust_Type_Of (To_String (P (1).Name)) & ">";
             else
                return "Vec<" & Rust_Type (To_String (R.Name)) & "Entry>";
@@ -577,9 +706,18 @@ package body ASTBNF_Rust is
          RT : constant String := Rust_Type (NM);
          Is_List : constant Boolean := Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
-         Is_Enum : constant Boolean := not Is_List and then Has_Alt (P)
-           and then not Has_Name (P);
+         Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
       begin
+         if R.Jet_Code /= Null_Unbounded_String then
+            Append (Buf, "    p.expect_kind(Kind::" & Rust_Type (NM)
+              & ", ""a " & NM & """)?;");
+            Append (Buf, LF);
+            Append (Buf, "    let r = p.toks[p.pos].text.clone(); p.pos += 1;");
+            Append (Buf, LF);
+            Append (Buf, "    Ok(r)");
+            Append (Buf, LF);
+            return;
+         end if;
          if Is_List then
             declare
                E : constant Element_Access := P (1);
@@ -671,22 +809,37 @@ package body ASTBNF_Rust is
                Append (Buf, LF);
             end;
          elsif Is_Enum then
-            Append (Buf, "    p.expect_kind(Kind::Atom, ""a " & RT & """)?;");
-            Append (Buf, LF);
-            Append (Buf, "    let r = if p.toks[p.pos].text == """
-              & To_String (P (1).Lit) & """ { " & RT & "::" & RT & "_"
-              & Rust_Type (To_String (P (1).Lit)) & " }");
             declare
+               Lits   : String_Vectors.Vector;
+               Names  : String_Vectors.Vector;
                St     : Natural := 1;
                Branch : Natural := 0;
             begin
                for K in 1 .. Natural (P.Length) + 1 loop
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
                      if St <= K - 1 and then P (St).Kind = Literal then
+                        Lits.Append (P (St).Lit);
+                     end if;
+                     St := K + 1;
+                  end if;
+               end loop;
+               Names := Enum_Names (Lits);
+
+               Append (Buf, "    p.expect_kind(Kind::Atom, ""a " & RT & """)?;");
+               Append (Buf, LF);
+               Append (Buf, "    let r = if p.toks[p.pos].text == """
+                 & To_String (P (1).Lit) & """ { " & RT & "::" & RT & "_"
+                 & To_String (Names (1)) & " }");
+
+               St := 1;
+               Branch := 0;
+               for K in 1 .. Natural (P.Length) + 1 loop
+                  if K > Natural (P.Length) or else P (K).Kind = Alt then
+                     if St <= K - 1 and then P (St).Kind = Literal then
                         if Branch > 0 then
                            Append (Buf, " else if p.toks[p.pos].text == """
                              & To_String (P (St).Lit) & """ { " & RT & "::" & RT
-                             & "_" & Rust_Type (To_String (P (St).Lit)) & " }");
+                             & "_" & To_String (Names (Branch + 1)) & " }");
                         end if;
                         Branch := Branch + 1;
                      end if;
@@ -745,10 +898,26 @@ package body ASTBNF_Rust is
 
       Res : U;
    begin
-      Append (Res, "// generated by astbnf -- do not edit");
+      if Preamble /= "" then
+         Append (Res, Preamble);
+         Append (Res, LF);
+         Append (Res, LF);
+      end if;
+      Append (Res, "// generated by hbnf -- do not edit");
       Append (Res, LF);
-      Append (Res, "#[derive(Clone, PartialEq)] pub enum Kind { Atom, Str, Int, Punct, Eof }");
-      Append (Res, LF);
+      declare
+         Enum : U := To_Unbounded_String
+           ("#[derive(Clone, PartialEq)] pub enum Kind { Atom, Str, Int, Punct");
+      begin
+         for I in 1 .. N loop
+            if Rules (I).Jet_Code /= Null_Unbounded_String then
+               Append (Enum, ", " & Rust_Type (To_String (Rules (I).Name)));
+            end if;
+         end loop;
+         Append (Enum, ", Eof }");
+         Append (Res, To_String (Enum));
+         Append (Res, LF);
+      end;
       Append (Res, "pub struct Token { pub kind: Kind, pub text: String, pub line: usize, pub col: usize }");
       Append (Res, LF);
       Append (Res, "#[derive(Debug, Clone)] pub struct ParseError { pub line: usize, pub col: usize, pub msg: String }");
@@ -838,19 +1007,75 @@ package body ASTBNF_Rust is
       Append (Res, "}");
       Append (Res, LF);
 
+      --  Jets: hand-written scanners, plus the dispatch the lexer calls.
+      for I in 1 .. N loop
+         if Rules (I).Jet_Code /= Null_Unbounded_String then
+            declare
+               R  : constant Rule := Rules (I);
+               NM : constant String := To_String (R.Name);
+            begin
+               Append (Res, "fn jet_" & Rust_Snake (NM)
+                 & "(s: &[u8], pos: usize, len: usize) -> usize {");
+               Append (Res, LF);
+               Append (Res, To_String (R.Jet_Code));
+               Append (Res, LF);
+               Append (Res, "}");
+               Append (Res, LF);
+               Append (Res, LF);
+            end;
+         end if;
+      end loop;
+
+      Append (Res, "fn jet_dispatch(s: &[u8], pos: usize, len: usize)"
+        & " -> (usize, Kind) {");
+      Append (Res, LF);
+      for I in 1 .. N loop
+         if Rules (I).Jet_Code /= Null_Unbounded_String then
+            declare
+               NM : constant String := To_String (Rules (I).Name);
+            begin
+               Append (Res, "    { let n = jet_" & Rust_Snake (NM)
+                 & "(s, pos, len); if n > 0 { return (n, Kind::" & Rust_Type (NM)
+                 & "); } }");
+               Append (Res, LF);
+            end;
+         end if;
+      end loop;
+      Append (Res, "    (0, Kind::Eof)");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+
       return To_String (Res);
    end Emit_Parser;
 
-   function Emit_Lexer (Rules : ASTBNF.Rule_Vectors.Vector) return String is
-      Root_T : constant String := Rust_Type (To_String (Rules (1).Name));
+   function Emit_Lexer (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
+      R  : constant HBNF_Grammar.Rule := Rules (1);
+      P  : constant HBNF_Grammar.Element_Vectors.Vector := R.Pattern;
+      Root_T : constant String :=
+        (if Natural (P.Length) = 1
+           and then (P (1).Min /= 1 or else P (1).Max /= 1)
+         then
+            (if P (1).Kind = HBNF_Grammar.Name then
+               "Vec<" & (if Scalar_Rust_Type (To_String (P (1).Name)) /= "" then
+                           Scalar_Rust_Type (To_String (P (1).Name))
+                         else Rust_Type (To_String (P (1).Name))) & ">"
+             else "Vec<" & Rust_Type (To_String (R.Name)) & "Entry>")
+         else Rust_Type (To_String (R.Name)));
+      Lexer  : constant String :=
+        Templates.Substitute (Templates.Rust_Lexer, "@ROOT_TYPE@", Root_T);
    begin
-      return Templates.Substitute (Templates.Rust_Lexer, "@ROOT_TYPE@", Root_T);
+      if Epilogue = "" then
+         return Lexer;
+      else
+         return Lexer & LF & Epilogue;
+      end if;
    end Emit_Lexer;
 
-   function Emit_Conf (Rules : ASTBNF.Rule_Vectors.Vector) return String is
+   function Emit_Conf (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
       Root_T : constant String := Rust_Type (To_String (Rules (1).Name));
    begin
       return Templates.Substitute (Templates.Conf_Rust, "@ROOT_TYPE@", Root_T);
    end Emit_Conf;
 
-end ASTBNF_Rust;
+end HBNF_Rust;

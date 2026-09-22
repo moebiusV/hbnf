@@ -8,6 +8,13 @@ pub fn lex(text: &str) -> Vec<Token> {
     let mut i = 0usize; let mut line = 1usize; let mut col = 1usize;
     while i < b.len() {
         let c = b[i];
+        // Hand-written jet scanners (schema `{ }` blocks) win first.
+        let (jl, jk) = jet_dispatch(b, i, b.len());
+        if jl > 0 {
+            toks.push(Token { kind: jk, text: text[i..i + jl].to_string(), line, col });
+            i += jl; col += jl;
+            continue;
+        }
         if c == b' ' || c == b'\t' || c == b'\r' { i += 1; col += 1; }
         else if c == b'\n' { i += 1; line += 1; col = 1; }
         else if c == b'#' { while i < b.len() && b[i] != b'\n' { i += 1; } }

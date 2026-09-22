@@ -7,8 +7,15 @@
    begin
       while I <= Text'Last loop
          C := Text (I);
-         if C = ' ' or else C = ASCII.HT or else C = ASCII.CR then
-            I := I + 1; Col := Col + 1;
+         declare
+            JK : Token_Kind;
+            JL : constant Natural := Jet_Dispatch (Text, I, Text'Last, JK);
+         begin
+            if JL > 0 then
+               Toks.Append (Token'(JK, To_Unbounded_String (Text (I .. I + JL - 1)), Line, Col));
+               I := I + JL; Col := Col + JL;
+            elsif C = ' ' or else C = ASCII.HT or else C = ASCII.CR then
+               I := I + 1; Col := Col + 1;
          elsif C = ASCII.LF then
             I := I + 1; Line := Line + 1; Col := 1;
          elsif C = '#' then
@@ -85,6 +92,7 @@
                I := I + 1; Col := Col + 1;
             end;
          end if;
+         end;
       end loop;
       Toks.Append (Token'(Eof, Null_Unbounded_String, Line, Col));
       return Toks;
