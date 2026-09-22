@@ -17,6 +17,16 @@
 
 language C
 
+{
+#include <sys/queue.h>
+#define HBNF_LIST_HEAD(name,type)  TAILQ_HEAD(name,type)
+#define HBNF_LIST_ENTRY(type)      TAILQ_ENTRY(type) _link
+#define HBNF_LIST_INIT(h)          TAILQ_INIT(h)
+#define HBNF_LIST_APPEND(h,e)      TAILQ_INSERT_TAIL(h,e,_link)
+#define HBNF_LIST_FOREACH(v,h)     TAILQ_FOREACH(v,h,_link)
+}
+
+
 config     = *( entry )
 
 entry      = varset

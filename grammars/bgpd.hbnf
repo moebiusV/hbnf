@@ -15,6 +15,16 @@
 
 language C
 
+{
+#include <sys/queue.h>
+#define HBNF_LIST_HEAD(name,type)  TAILQ_HEAD(name,type)
+#define HBNF_LIST_ENTRY(type)      TAILQ_ENTRY(type) _link
+#define HBNF_LIST_INIT(h)          TAILQ_INIT(h)
+#define HBNF_LIST_APPEND(h,e)      TAILQ_INSERT_TAIL(h,e,_link)
+#define HBNF_LIST_FOREACH(v,h)     TAILQ_FOREACH(v,h,_link)
+}
+
+
 config     = *( include / varset / as_set / prefixset / roa_set / aspa_set
              / origin_set / rtr / network / flowspec / mrtdump / conf_main
              / l3vpn / neighbor / group / filterrule / rib )
