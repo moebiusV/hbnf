@@ -545,20 +545,30 @@ include, last-definition-wins, or an explicit `override` — and how a
 cross-checked jet from a library behaves when a program overrides only its
 fallback.
 
-**From recognizer to compiler-compiler.**  hbnf today yields a typed tree, and
-its one missing primitive as a compiler-compiler is the *semantic action* —
-target-language code attached to a rule, run during reduction with `$1`/`$2`
-access to sub-values — plus, for a real frontend, attributes
-(synthesized/inherited) for name resolution and scoping.  The tension is
-structural: an action is target-language code, and it is exactly what ties a
-grammar back to one backend, so naive actions undo hbnf's one-grammar,
-four-language property.  The path of least departure keeps the grammar pure and
-generates the tree-walking side instead — emit a visitor and a fold/map
-alongside the typed AST — so compilation becomes writing passes against a
-typed tree (desugar, type-check, lower, emit) rather than threading actions
-through a grammar.  Reclaiming the remaining yacc facilities — left recursion
-(via an Earley or GLR kernel) and operator-precedence declarations — is a
-further step in the same direction.
+**From recognizer to compiler-compiler.**  A "compiler-compiler" is a
+recognizer plus a way to write passes over the tree it produces, and every pass
+in a compiler frontend is one of two shapes.  An *analysis* walks the tree and
+computes without changing it — name resolution fills a symbol table, type
+checking computes types and records diagnostics, linting collects warnings —
+and this is exactly a *visitor*: for each composite rule hbnf emits a
+`visit_<rule>` that calls a hook on every node and then recurses into its
+fields, so the user writes only "on a server node, bind its name" and never the
+traversal itself.  A *transformation* rebuilds the tree bottom-up — desugaring
+replaces `a > b` with a canonical form, lowering maps high-level constructs to
+low-level ones, optimization rewrites subtrees — and this is exactly a
+*fold/map*: hbnf emits a `map_<rule>` that recurses first and then hands the
+node to a hook, so the user writes only "replace a server node with its lowered
+form".  Code generation is then a final visitor over the fully-transformed
+tree.  The parser (given) plus visit and map (generated) are thus the complete
+set of primitives a compiler needs, and because a pass is an ordinary function
+of the target language — not a `$1`/`$2` action embedded in the grammar — the
+one-grammar, four-language property survives: the same schema emits the
+traversal in all four backends, and a pass is written once per target language,
+not once per grammar.  The visitor/fold route is what makes hbnf a true
+compiler-compiler without reintroducing the semantic-action layer that would
+re-tie a grammar to one backend.  Reclaiming the remaining yacc facilities —
+left recursion (via an Earley or GLR kernel) and operator-precedence
+declarations — is a further step in the same direction.
 
 ## References
 

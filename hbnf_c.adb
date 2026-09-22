@@ -582,6 +582,178 @@ package body HBNF_C is
          return To_String (Buf);
       end Emit_Rule;
 
+      --  Emit AST walk (visit) and transform (map) helpers: a node_kind_t
+      --  tag per composite rule, plus visit_<rule>/map_<rule> functions that
+      --  walk the typed tree the parser builds.  visit_ is pre-order and
+      --  read-only; map_ is bottom-up and may mutate a node in place.  A
+      --  scalar or enum member is a leaf and is not recursed into.
+      procedure Emit_Walk (Buf : in out U) is
+
+         function Ref_Kind (Name : String) return Class_Kind is
+            J : constant Natural := Find (Name);
+         begin
+            if J = 0 then
+               return Scalar;
+            end if;
+            return Infos (J).Kind;
+         end Ref_Kind;
+
+         --  The recursive call into node field `n-><Name>`: a by-value struct
+         --  passes &n->f, a list head passes n->f, a leaf emits nothing.
+         procedure Recurse (Name : String; Prefix : String;
+                            Buf : in out U; Ind : String) is
+            F : constant String := C_Field (Name);
+         begin
+            case Ref_Kind (Name) is
+               when Struct =>
+                  Append (Buf, Ind & Prefix & "_" & C_Name (Name)
+                    & "(&n->" & F & ", f, ctx);");
+               when List =>
+                  Append (Buf, Ind & Prefix & "_" & C_Name (Name)
+                    & "(n->" & F & ", f, ctx);");
+               when others =>
+                  return;
+            end case;
+            Append (Buf, LF);
+         end Recurse;
+
+         --  The element fields of a list node: a single named element, the
+         --  bare `value` field, or the members of a grouped element.
+         procedure Recurse_Elem (Info : Rule_Info; Prefix : String;
+                                 Buf : in out U; Ind : String) is
+         begin
+            if Info.Elem_Members.Is_Empty then
+               if Info.Elem_Name /= Null_Unbounded_String then
+                  Recurse (To_String (Info.Elem_Name), Prefix, Buf, Ind);
+               end if;
+            else
+               for M of Info.Elem_Members loop
+                  Recurse (To_String (M.Name), Prefix, Buf, Ind);
+               end loop;
+            end if;
+         end Recurse_Elem;
+
+         procedure Visit_Def (Idx : Natural; Buf : in out U) is
+            CN   : constant String := C_Name (To_String (Rules (Idx).Name));
+            Info : constant Rule_Info := Infos (Idx);
+         begin
+            if Info.Kind = Struct then
+               Append (Buf, "void visit_" & CN & "(const " & CN
+                 & "_t *n, visit_fn f, void *ctx) {");
+               Append (Buf, LF);
+               Append (Buf, "    if (!n) return;");
+               Append (Buf, LF);
+               Append (Buf, "    f(n, NODE_" & C_Ident (CN) & ", ctx);");
+               Append (Buf, LF);
+               for M of Info.Members loop
+                  Recurse (To_String (M.Name), "visit", Buf, "    ");
+               end loop;
+            else
+               Append (Buf, "void visit_" & CN & "(const " & CN
+                 & "_t *head, visit_fn f, void *ctx) {");
+               Append (Buf, LF);
+               Append (Buf, "    for (const " & CN
+                 & "_t *n = head; n; n = n->next) {");
+               Append (Buf, LF);
+               Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
+               Append (Buf, LF);
+               Recurse_Elem (Info, "visit", Buf, "        ");
+               Append (Buf, "    }");
+               Append (Buf, LF);
+            end if;
+            Append (Buf, "}");
+            Append (Buf, LF);
+         end Visit_Def;
+
+         procedure Map_Def (Idx : Natural; Buf : in out U) is
+            CN   : constant String := C_Name (To_String (Rules (Idx).Name));
+            Info : constant Rule_Info := Infos (Idx);
+         begin
+            if Info.Kind = Struct then
+               Append (Buf, "void map_" & CN & "(" & CN
+                 & "_t *n, map_fn f, void *ctx) {");
+               Append (Buf, LF);
+               Append (Buf, "    if (!n) return;");
+               Append (Buf, LF);
+               for M of Info.Members loop
+                  Recurse (To_String (M.Name), "map", Buf, "    ");
+               end loop;
+               Append (Buf, "    f(n, NODE_" & C_Ident (CN) & ", ctx);");
+               Append (Buf, LF);
+            else
+               Append (Buf, "void map_" & CN & "(" & CN
+                 & "_t *head, map_fn f, void *ctx) {");
+               Append (Buf, LF);
+               Append (Buf, "    for (" & CN
+                 & "_t *n = head; n; n = n->next) {");
+               Append (Buf, LF);
+               Recurse_Elem (Info, "map", Buf, "        ");
+               Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
+               Append (Buf, LF);
+               Append (Buf, "    }");
+               Append (Buf, LF);
+            end if;
+            Append (Buf, "}");
+            Append (Buf, LF);
+         end Map_Def;
+
+      begin
+         Append (Buf, "/* ---- AST traversal (visit) and transform (map) ---- */");
+         Append (Buf, LF);
+         Append (Buf, "typedef enum {");
+         declare
+            First : Boolean := True;
+         begin
+            for I in 1 .. N loop
+               if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+                  if not First then
+                     Append (Buf, ",");
+                  end if;
+                  Append (Buf, LF);
+                  Append (Buf, "    NODE_" & C_Ident
+                    (C_Name (To_String (Rules (I).Name))));
+                  First := False;
+               end if;
+            end loop;
+         end;
+         Append (Buf, LF);
+         Append (Buf, "} node_kind_t;");
+         Append (Buf, LF);
+         Append (Buf, LF);
+         Append (Buf, "typedef void (*visit_fn)(const void *node,"
+           & " node_kind_t kind, void *ctx);");
+         Append (Buf, LF);
+         Append (Buf, "typedef void (*map_fn)(void *node, node_kind_t kind,"
+           & " void *ctx);");
+         Append (Buf, LF);
+         Append (Buf, LF);
+
+         for I in 1 .. N loop
+            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               declare
+                  CN : constant String := C_Name (To_String (Rules (I).Name));
+               begin
+                  Append (Buf, "void visit_" & CN & "(const " & CN
+                    & "_t *, visit_fn f, void *ctx);");
+                  Append (Buf, LF);
+                  Append (Buf, "void map_" & CN & "(" & CN
+                    & "_t *, map_fn f, void *ctx);");
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+         Append (Buf, LF);
+
+         for I in 1 .. N loop
+            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               Visit_Def (I, Buf);
+               Append (Buf, LF);
+               Map_Def (I, Buf);
+               Append (Buf, LF);
+            end if;
+         end loop;
+      end Emit_Walk;
+
       Emitted   : array (1 .. N) of Boolean := [others => False];
       Remaining : Natural := 0;
       Res       : U;
@@ -695,6 +867,9 @@ package body HBNF_C is
             end if;
          end;
       end loop;
+
+      Emit_Walk (Res);
+      Append (Res, LF);
 
       return To_String (Res);
    end Emit;
