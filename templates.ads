@@ -528,7 +528,13 @@ package Templates is
      "            return Err(ParseError { line: 0, col: 0, msg: m });" & LF &
      "        }" & LF &
      "    };" & LF &
-     "    parse_text(&text)" & LF &
+     "    match parse_text(&text) {" & LF &
+     "        Ok(r) => Ok(r)," & LF &
+     "        Err(e) => {" & LF &
+     "            config_error(e.line, &e.msg);" & LF &
+     "            Err(e)" & LF &
+     "        }" & LF &
+     "    }" & LF &
      "}";
 
    Conf_Zig : constant String :=

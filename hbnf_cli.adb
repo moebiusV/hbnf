@@ -88,7 +88,7 @@ begin
          end if;
       elsif B = "rust" then
          Ada.Text_IO.Put (HBNF_Rust.Emit (Rules));
-         Ada.Text_IO.Put (HBNF_Rust.Emit_Parser (Rules, Conf));
+         Ada.Text_IO.Put (HBNF_Rust.Emit_Parser (Rules));
          Ada.Text_IO.Put (HBNF_Rust.Emit_Lexer (Rules));
          if Conf then
             Ada.Text_IO.New_Line;

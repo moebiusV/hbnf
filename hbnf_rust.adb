@@ -858,7 +858,7 @@ package body HBNF_Rust is
       return To_String (Res);
    end Emit;
 
-   function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector; Conf : Boolean := False) return String is
+   function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -1374,13 +1374,15 @@ package body HBNF_Rust is
       Append (Res, LF);
       Append (Res, "#[derive(Debug, Clone)] pub struct ParseError { pub line: usize, pub col: usize, pub msg: String }");
       Append (Res, LF);
-      Append (Res, "struct P<'a> { toks: &'a [Token], lines: &'a [&'a str], pos: usize, err: Option<ParseError> }");
+      Append (Res, "struct P<'a> { toks: &'a [Token], lines: &'a [&'a str], pos: usize, err_pos: usize, err: Option<ParseError> }");
       Append (Res, LF);
       Append (Res, "impl<'a> P<'a> {");
       Append (Res, LF);
       Append (Res, "    fn fail(&mut self, expected: &str) -> ParseError {");
       Append (Res, LF);
-      Append (Res, "        if self.err.is_none() {");
+      Append (Res, "        if self.err.is_none() || self.pos > self.err_pos {");
+      Append (Res, LF);
+      Append (Res, "            self.err_pos = self.pos;");
       Append (Res, LF);
       Append (Res, "            let (line, col) = if self.pos < self.toks.len() { (self.toks[self.pos].line, self.toks[self.pos].col) } else { (0, 0) };");
       Append (Res, LF);
@@ -1400,10 +1402,6 @@ package body HBNF_Rust is
       Append (Res, LF);
       Append (Res, "            };");
       Append (Res, LF);
-      if Conf then
-         Append (Res, "            config_error(line, &msg);");
-         Append (Res, LF);
-      end if;
       Append (Res, "            self.err = Some(ParseError { line, col, msg });");
       Append (Res, LF);
       Append (Res, "        }");
@@ -1447,7 +1445,7 @@ package body HBNF_Rust is
       Append (Res, "pub fn parse_tokens(toks: &[Token], lines: &[&str]) -> Result<"
         & Ret_Type (1) & ", ParseError> {");
       Append (Res, LF);
-      Append (Res, "    let mut p = P { toks, lines, pos: 0, err: None };");
+      Append (Res, "    let mut p = P { toks, lines, pos: 0, err_pos: 0, err: None };");
       Append (Res, LF);
       Append (Res, "    let out = parse_" & Rust_Snake (To_String (Rules (1).Name))
         & "(&mut p)?;");
