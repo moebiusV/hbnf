@@ -518,7 +518,7 @@ and hbnf applies it one level down, to lexing: a token's BNF definition is the
 spec, the hand-written scanner is the jet, and the agreement check is the
 safety property that makes hand-optimizing a hot token acceptable.
 
-## 8. Conclusion and future work
+## 8. Conclusion and future research
 
 We have described hbnf, a parser generator whose schema is an extension of
 ABNF, whose generated lexer is a thin character stream, and whose token
@@ -527,30 +527,38 @@ refinements of either.  The baseline already parses a 100k-rule firewall
 ruleset in 75 ms, and the grammar notation compresses a 2,785-line yacc
 grammar to a hundred lines.
 
-Next: implement the jet and refinement syntax across the four emitters and the
-spec-vs-jet cross-check; remove the per-token string copy (arena or
-zero-copy slices) and re-measure; and express the full pf grammar as a schema,
-validating against real rulesets.
+Near-term work is to finish the implemented surface — the jet and refinement
+syntax across the four emitters, the spec-vs-jet cross-check, the zero-copy or
+arena token representation — and to re-measure against the baseline in §6.
 
-Two larger extensions follow from the design.  First, the nine OpenBSD schemas
+Two research directions follow from the design.
+
+**A grammar library, with includes and overrides.**  The nine OpenBSD schemas
 already repeat the same boilerplate — `string = str / word`, `yesno =
 "yes" / "no"`, IPv4/IPv6 and port handling — so a schema should be able to
 `include "stdlib.hbnf"` and override individual definitions locally.  yacc has
 no grammar-level include at all (its only `#include` reaches the verbatim C
 blocks, not the rules), so this is hbnf exceeding yacc rather than matching it;
 a token override and a rule override become the same operation, since a token
-*is* a rule.
+*is* a rule.  The open question is the override semantics — local-shadows-
+include, last-definition-wins, or an explicit `override` — and how a
+cross-checked jet from a library behaves when a program overrides only its
+fallback.
 
-Second, hbnf is today a recognizer that yields a typed tree, not a
-compiler-compiler.  The one missing primitive is the *semantic action* —
-target-language code attached to a rule, run during reduction with access to
-sub-values — and, for a real frontend, attributes (synthesized/inherited) for
-name resolution and a generated visitor/fold for transforming the typed tree.
-The visitor/fold route is the path of least departure: hbnf already produces a
-typed AST, so emitting the tree-walking code alongside it turns the "walk the
-tree afterward" of §2.3 into generated, first-class support, and compilation
-becomes writing passes against a typed tree instead of threading actions
-through a grammar.
+**From recognizer to compiler-compiler.**  hbnf today yields a typed tree, and
+its one missing primitive as a compiler-compiler is the *semantic action* —
+target-language code attached to a rule, run during reduction with `$1`/`$2`
+access to sub-values — plus, for a real frontend, attributes
+(synthesized/inherited) for name resolution and scoping.  The tension is
+structural: an action is target-language code, and it is exactly what ties a
+grammar back to one backend, so naive actions undo hbnf's one-grammar,
+four-language property.  The path of least departure keeps the grammar pure and
+generates the tree-walking side instead — emit a visitor and a fold/map
+alongside the typed AST — so compilation becomes writing passes against a
+typed tree (desugar, type-check, lower, emit) rather than threading actions
+through a grammar.  Reclaiming the remaining yacc facilities — left recursion
+(via an Earley or GLR kernel) and operator-precedence declarations — is a
+further step in the same direction.
 
 ## References
 
