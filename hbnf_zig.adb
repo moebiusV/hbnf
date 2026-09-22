@@ -616,6 +616,166 @@ package body HBNF_Zig is
          return To_String (Buf);
       end Emit_List;
 
+      --  Emit AST walk (visit) and transform (fold) helpers: visit_<rule>/
+      --  fold_<rule> free functions that take an `anytype` visitor/folder and
+      --  do the structural recursion.  visit_ is pre-order and read-only
+      --  (`*const`); fold_ is bottom-up and mutates the node in place (`*`).
+      --  A scalar or enum member (and a []scalar) is a leaf.
+      procedure Emit_Walk (Buf : in out U) is
+
+         function Ref_Kind (Name : String) return Class_Kind is
+            J : constant Natural := Find (Name);
+         begin
+            if J = 0 then
+               return Scalar;
+            end if;
+            return Infos (J).Kind;
+         end Ref_Kind;
+
+         --  The visit/fold function base for the ELEMENT of a list rule Name,
+         --  or "" when the element is a scalar/enum leaf.
+         function Elem_Fn (Name : String) return String is
+            J    : constant Natural := Find (Name);
+            Info : constant Rule_Info := Infos (J);
+         begin
+            if J = 0 then
+               return "";
+            end if;
+            if not Info.Elem_Members.Is_Empty then
+               return Zig_Snake (Name) & "_entry";
+            elsif Info.Elem_Name /= Null_Unbounded_String
+              and then Ref_Kind (To_String (Info.Elem_Name)) = Struct
+            then
+               return Zig_Snake (To_String (Info.Elem_Name));
+            else
+               return "";
+            end if;
+         end Elem_Fn;
+
+         procedure Visit_Field (Name : String; Buf : in out U; Ind : String) is
+            F : constant String := Zig_Field (Name);
+         begin
+            case Ref_Kind (Name) is
+               when Struct =>
+                  Append (Buf, Ind & "visit_" & Zig_Snake (Name)
+                    & "(&n." & F & ", v);");
+                  Append (Buf, LF);
+               when List =>
+                  declare
+                     E : constant String := Elem_Fn (Name);
+                  begin
+                     if E /= "" then
+                        Append (Buf, Ind & "for (n." & F & ") |*e| visit_" & E
+                          & "(e, v);");
+                        Append (Buf, LF);
+                     end if;
+                  end;
+               when others =>
+                  null;
+            end case;
+         end Visit_Field;
+
+         procedure Fold_Field (Name : String; Buf : in out U; Ind : String) is
+            F : constant String := Zig_Field (Name);
+         begin
+            case Ref_Kind (Name) is
+               when Struct =>
+                  Append (Buf, Ind & "fold_" & Zig_Snake (Name)
+                    & "(&n." & F & ", f);");
+                  Append (Buf, LF);
+               when List =>
+                  declare
+                     E : constant String := Elem_Fn (Name);
+                  begin
+                     if E /= "" then
+                        Append (Buf, Ind & "for (n." & F & ") |*e| fold_" & E
+                          & "(e, f);");
+                        Append (Buf, LF);
+                     end if;
+                  end;
+               when others =>
+                  null;
+            end case;
+         end Fold_Field;
+
+         procedure Emit_Node (Type_Name, Fn : String;
+                              Members : Member_Vectors.Vector;
+                              Buf : in out U) is
+         begin
+            Append (Buf, "pub fn visit_" & Fn & "(n: *const " & Type_Name
+              & ", v: anytype) void {");
+            Append (Buf, LF);
+            Append (Buf, "    v.visit_" & Fn & "(n);");
+            Append (Buf, LF);
+            for M of Members loop
+               Visit_Field (To_String (M.Name), Buf, "    ");
+            end loop;
+            Append (Buf, "}");
+            Append (Buf, LF);
+            Append (Buf, LF);
+
+            Append (Buf, "pub fn fold_" & Fn & "(n: *" & Type_Name
+              & ", f: anytype) void {");
+            Append (Buf, LF);
+            for M of Members loop
+               Fold_Field (To_String (M.Name), Buf, "    ");
+            end loop;
+            Append (Buf, "    f.fold_" & Fn & "(n);");
+            Append (Buf, LF);
+            Append (Buf, "}");
+            Append (Buf, LF);
+         end Emit_Node;
+
+         function Is_Node (Idx : Natural) return Boolean is
+            Info : constant Rule_Info := Infos (Idx);
+         begin
+            return Info.Kind = Struct
+              or else (Info.Kind = List and then not Info.Elem_Members.Is_Empty);
+         end Is_Node;
+
+         function Node_Type (Idx : Natural) return String is
+            Info : constant Rule_Info := Infos (Idx);
+            Base : constant String := Zig_Type (To_String (Rules (Idx).Name));
+         begin
+            if Info.Kind = Struct then
+               return Base;
+            else
+               return Base & "Entry";
+            end if;
+         end Node_Type;
+
+         function Node_Fn (Idx : Natural) return String is
+            Info : constant Rule_Info := Infos (Idx);
+            Base : constant String := Zig_Snake (To_String (Rules (Idx).Name));
+         begin
+            if Info.Kind = Struct then
+               return Base;
+            else
+               return Base & "_entry";
+            end if;
+         end Node_Fn;
+
+         function Node_Members (Idx : Natural) return Member_Vectors.Vector is
+            Info : constant Rule_Info := Infos (Idx);
+         begin
+            if Info.Kind = Struct then
+               return Info.Members;
+            else
+               return Info.Elem_Members;
+            end if;
+         end Node_Members;
+
+      begin
+         Append (Buf, "// ---- AST traversal (visit) and transform (fold) ----");
+         Append (Buf, LF);
+         for I in 1 .. N loop
+            if Is_Node (I) then
+               Emit_Node (Node_Type (I), Node_Fn (I), Node_Members (I), Buf);
+               Append (Buf, LF);
+            end if;
+         end loop;
+      end Emit_Walk;
+
       Emitted   : array (1 .. N) of Boolean := [others => False];
       Remaining : Natural := 0;
       Res       : U;
@@ -678,6 +838,9 @@ package body HBNF_Zig is
             end if;
          end;
       end loop;
+
+      Emit_Walk (Res);
+      Append (Res, LF);
 
       return To_String (Res);
    end Emit;
@@ -1081,7 +1244,7 @@ package body HBNF_Zig is
                                  Append (Buf, LF);
                                  Append (Buf, "            p.pos += 1;");
                                  Append (Buf, LF);
-                                 Emit_Seq (E.Items, St + 1, K - 1, "e.", Buf,
+                                 Emit_Seq (E.Items, St + 1, K - 1, "e.", Buf, "",
                                            "            ");
                                  Branch := Branch + 1;
                               end if;
@@ -1436,6 +1599,8 @@ package body HBNF_Zig is
 
       Append (Res, "fn jet_dispatch(s: []const u8, pos: usize, len: usize,"
         & " kind: *Kind) usize {");
+      Append (Res, LF);
+      Append (Res, "    _ = s; _ = pos; _ = len; _ = kind;");
       Append (Res, LF);
       for I in 1 .. N loop
          if Rules (I).Jet_Code /= Null_Unbounded_String then
