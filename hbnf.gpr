@@ -1,19 +1,24 @@
---  Standalone project for HBNF: an OpenBSD-style configuration parser.  It
---  builds on the hbnf schema engine, which is its own library (hbnf_grammar.gpr
---  in this same source tree) rather than being folded in.  Pure Ada, no C
---  dependencies.  Built and gprinstalled as a static library by the
---  ada-on-alpine aport.
-
-with "hbnf_grammar";
+--  Standalone project for HBNF: the OpenBSD-style configuration parser and
+--  the ABNF schema engine (parser, matcher/binder, and the C/Rust/Zig/Ada
+--  emitters) in one static library, libhbnf.a.  Pure Ada, no C dependencies.
+--  Built and gprinstalled as a static library by the ada-on-alpine aport.
 
 library project HBNF is
 
    for Languages use ("Ada");
    for Source_Dirs use (".");
-   for Source_Files use ("hbnf.ads", "hbnf.adb");
-   for Object_Dir use "obj";
+   for Source_Files use
+     ("hbnf.ads", "hbnf.adb",
+      "hbnf_grammar.ads", "hbnf_grammar.adb",
+      "hbnf_match.ads", "hbnf_match.adb",
+      "hbnf_c.ads", "hbnf_c.adb",
+      "hbnf_rust.ads", "hbnf_rust.adb",
+      "hbnf_zig.ads", "hbnf_zig.adb",
+      "hbnf_ada.ads", "hbnf_ada.adb",
+      "templates.ads", "templates.adb");
+   for Object_Dir use "obj-hbnf";
    for Create_Missing_Dirs use "True";
-   for Library_Dir use "lib";
+   for Library_Dir use "lib-hbnf";
    for Library_Name use "hbnf";
 
    --  Scenario variable, so gprinstall emits the installed "library_type :=

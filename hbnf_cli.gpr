@@ -1,8 +1,8 @@
 --  The hbnf command-line tool: reads a schema, emits a self-contained
 --  parser (declarations + lexer + parser) in the chosen backend language.
---  Links against the static libhbnf_grammar.a.
+--  Links against the static libhbnf.a.
 
-with "hbnf_grammar.gpr";
+with "hbnf.gpr";
 
 project HBNF_Cli is
 
