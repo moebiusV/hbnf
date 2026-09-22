@@ -19,6 +19,7 @@
 ; the `addrprefix` (address/len) rule needs.
 
 language C
+wordchars "*$@%"
 
 {
 #include <sys/queue.h>
@@ -30,15 +31,14 @@ language C
 #define HBNF_LIST_NEXT(e)          TAILQ_NEXT(e,_link)
 #define HBNF_LIST_FIRST(h)         TAILQ_FIRST(h)
 }
+include "commonconf.hbnf"
+
 
 
 config        = *( include / varset / conf_main / rdr / tabledef / relay
                  / proto / router )
 
 include       = "include" string
-
-; a STRING token: quoted ("foo bar") or bareword (em0, example.com)
-string        = str / word
 
 varset        = string "=" string                  ; macro name = value
 

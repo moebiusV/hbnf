@@ -13,6 +13,7 @@
 ; out, minus the newline scaffolding (the generated lexer skips newlines).
 
 language C
+wordchars "*$@%"
 
 {
 #include <sys/queue.h>
@@ -24,14 +25,13 @@ language C
 #define HBNF_LIST_NEXT(e)          TAILQ_NEXT(e,_link)
 #define HBNF_LIST_FIRST(h)         TAILQ_FIRST(h)
 }
+include "commonconf.hbnf"
+
 
 
 config     = *( include / conf_main / varset / af / neighbor / l2vpn )
 
 include    = "include" string
-
-; a STRING token: quoted ("foo bar") or bareword (em0, example.com)
-string     = str / word
 
 ; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
 stringlist = 1*string
@@ -117,8 +117,6 @@ nbropts    = *( nbr_opt )
 l2vpn      = "l2vpn" string "type" l2vpn_type "{" l2vpnopts "}"
            / "l2vpn" string "type" l2vpn_type
 l2vpnopts  = *( l2vpnopt )
-
-yesno      = "yes" / "no"
 ldp_af     = "ipv4" / "ipv6"
 l2vpn_type = "vpls"
 pw_type    = "ethernet" / "ethernet-tagged"

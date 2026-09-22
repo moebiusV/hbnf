@@ -1172,7 +1172,8 @@ package body HBNF_C is
          end Ref_Kind;
 
          --  Free the field `n-><F>`: recurse into a child struct/list, free a
-         --  string leaf, leave a numeric/enum leaf alone.
+         --  string leaf, leave a numeric/enum leaf alone.  The child's full
+         --  free_<child> is called (a non-root child never touches the arena).
          procedure Free_Field (Name : String; Buf : in out U; Ind : String) is
             F : constant String := C_Field (Name);
          begin
@@ -1186,6 +1187,38 @@ package body HBNF_C is
             end case;
          end Free_Field;
 
+         --  free_<CN>_fields: free the owned children of one node/element,
+         --  without freeing the node itself or the arena.  Used by the public
+         --  free_<CN> and by the backtracking reset, which frees a failed
+         --  branch's partial allocations before zeroing the struct.
+         procedure Free_Fields_Def (Idx : Natural; Buf : in out U) is
+            CN   : constant String := C_Name (To_String (Rules (Idx).Name));
+            TN   : constant String := C_Type_Name (To_String (Rules (Idx).Name));
+            Info : constant Rule_Info := Infos (Idx);
+         begin
+            Append (Buf, "static void free_" & CN & "_fields(" & TN & " *n) {");
+            Append (Buf, LF);
+            Append (Buf, "    if (!n) return;");
+            Append (Buf, LF);
+            if Info.Kind = Struct then
+               for M of Info.Members loop
+                  Free_Field (To_String (M.Name), Buf, "    ");
+               end loop;
+            elsif Info.Elem_Members.Is_Empty then
+               if Info.Elem_Name /= Null_Unbounded_String then
+                  Free_Field (To_String (Info.Elem_Name), Buf, "    ");
+               end if;
+            else
+               for M of Info.Elem_Members loop
+                  Free_Field (To_String (M.Name), Buf, "    ");
+               end loop;
+            end if;
+            Append (Buf, "}");
+            Append (Buf, LF);
+         end Free_Fields_Def;
+
+         --  The public free_<CN>: frees the node/element's children, then the
+         --  node itself for a list, then the arena at the root.
          procedure Free_Def (Idx : Natural; Buf : in out U) is
             CN   : constant String := C_Name (To_String (Rules (Idx).Name));
             TN   : constant String := C_Type_Name (To_String (Rules (Idx).Name));
@@ -1196,9 +1229,8 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    if (!n) return;");
                Append (Buf, LF);
-               for M of Info.Members loop
-                  Free_Field (To_String (M.Name), Buf, "    ");
-               end loop;
+               Append (Buf, "    free_" & CN & "_fields(n);");
+               Append (Buf, LF);
             else
                Append (Buf, "static void free_" & CN & "(struct " & CN
                  & "_list *head) {");
@@ -1209,17 +1241,8 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "        next = HBNF_LIST_NEXT(n);");
                Append (Buf, LF);
-               if Info.Elem_Members.Is_Empty then
-                  if Info.Elem_Name /= Null_Unbounded_String then
-                     Free_Field (To_String (Info.Elem_Name), Buf, "        ");
-                  else
-                     null;  --  bare `value` leaf points into the source/arena
-                  end if;
-               else
-                  for M of Info.Elem_Members loop
-                     Free_Field (To_String (M.Name), Buf, "        ");
-                  end loop;
-               end if;
+               Append (Buf, "        free_" & CN & "_fields(n);");
+               Append (Buf, LF);
                Append (Buf, "        free(n);");
                Append (Buf, LF);
                Append (Buf, "        n = next;");
@@ -1247,6 +1270,9 @@ package body HBNF_C is
                   CN : constant String := C_Name (To_String (Rules (I).Name));
                   TN : constant String := C_Type_Name (To_String (Rules (I).Name));
                begin
+                  Append (Buf, "static void free_" & CN & "_fields(" & TN
+                    & " *n);");
+                  Append (Buf, LF);
                   if Infos (I).Kind = List then
                      Append (Buf, "static void free_" & CN & "(struct " & CN
                        & "_list *head);");
@@ -1261,6 +1287,8 @@ package body HBNF_C is
 
          for I in 1 .. N loop
             if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               Free_Fields_Def (I, Buf);
+               Append (Buf, LF);
                Free_Def (I, Buf);
                Append (Buf, LF);
             end if;
@@ -1293,59 +1321,103 @@ package body HBNF_C is
       Append (Res, "#include <string.h>");
       Append (Res, LF);
       Append (Res, LF);
-      Append (Res, "/* Quoted-string arena: the lexer unescapes quoted strings into this");
+      Append (Res, "/* Arena: a bump allocator over a chain of chunks, so a pointer into it");
       Append (Res, LF);
-      Append (Res, "   growable buffer, and the tree's string leaves point into it (bareword");
+      Append (Res, "   stays valid for the arena's whole lifetime (chunks are never realloc'd).");
       Append (Res, LF);
-      Append (Res, "   leaves point into the caller's source buffer).  Frees with the tree. */");
+      Append (Res, "   The tree's string leaves live here; free_arena walks the chain once. */");
       Append (Res, LF);
-      Append (Res, "static char *hbnf_str_arena = NULL;");
+      Append (Res, "#define HBNF_ARENA_CHUNK (1u << 16)");
       Append (Res, LF);
-      Append (Res, "static size_t hbnf_str_len = 0, hbnf_str_cap = 0;");
+      Append (Res, "typedef struct hbnf_chunk hbnf_chunk;");
       Append (Res, LF);
-      Append (Res, "static void hbnf_str_put(char c) {");
+      Append (Res, "struct hbnf_chunk { hbnf_chunk *next; size_t used, cap; char data[]; };");
       Append (Res, LF);
-      Append (Res, "    if (hbnf_str_len + 1 > hbnf_str_cap) {");
+      Append (Res, "static hbnf_chunk *hbnf_arena;");
       Append (Res, LF);
-      Append (Res, "        hbnf_str_cap = hbnf_str_cap ? hbnf_str_cap * 2 : 256;");
+      Append (Res, "/* Bump n zeroed bytes out of the arena, 8-byte aligned, never split");
       Append (Res, LF);
-      Append (Res, "        hbnf_str_arena = (char *)realloc(hbnf_str_arena, hbnf_str_cap);");
+      Append (Res, "   across chunks. */");
+      Append (Res, LF);
+      Append (Res, "static void *hbnf_alloc(size_t n) {");
+      Append (Res, LF);
+      Append (Res, "    n = (n + 7u) & ~(size_t)7u;");
+      Append (Res, LF);
+      Append (Res, "    if (!hbnf_arena || hbnf_arena->used + n > hbnf_arena->cap) {");
+      Append (Res, LF);
+      Append (Res, "        size_t cap = n > HBNF_ARENA_CHUNK ? n : HBNF_ARENA_CHUNK;");
+      Append (Res, LF);
+      Append (Res, "        hbnf_chunk *c = (hbnf_chunk *)malloc(sizeof *c + cap);");
+      Append (Res, LF);
+      Append (Res, "        c->next = hbnf_arena; c->used = 0; c->cap = cap;");
+      Append (Res, LF);
+      Append (Res, "        hbnf_arena = c;");
       Append (Res, LF);
       Append (Res, "    }");
       Append (Res, LF);
-      Append (Res, "    hbnf_str_arena[hbnf_str_len++] = c;");
+      Append (Res, "    void *p = hbnf_arena->data + hbnf_arena->used;");
+      Append (Res, LF);
+      Append (Res, "    hbnf_arena->used += n;");
+      Append (Res, LF);
+      Append (Res, "    memset(p, 0, n);");
+      Append (Res, LF);
+      Append (Res, "    return p;");
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
       Append (Res, "/* Copy a (non-NUL-terminated) token slice into the arena, NUL-terminated,");
       Append (Res, LF);
-      Append (Res, "   and return it.  One amortized realloc, no per-string malloc. */");
+      Append (Res, "   and return it.  No per-string malloc. */");
       Append (Res, LF);
       Append (Res, "static const char *hbnf_str_append(const char *s, size_t n) {");
       Append (Res, LF);
-      Append (Res, "    if (hbnf_str_len + n + 1 > hbnf_str_cap) {");
+      Append (Res, "    char *p = (char *)hbnf_alloc(n + 1);");
       Append (Res, LF);
-      Append (Res, "        hbnf_str_cap = hbnf_str_cap ? hbnf_str_cap : 256;");
+      Append (Res, "    if (n) memcpy(p, s, n);");
       Append (Res, LF);
-      Append (Res, "        while (hbnf_str_len + n + 1 > hbnf_str_cap) hbnf_str_cap *= 2;");
+      Append (Res, "    return p;");
       Append (Res, LF);
-      Append (Res, "        hbnf_str_arena = (char *)realloc(hbnf_str_arena, hbnf_str_cap);");
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, "/* Per-string scratch: the lexer unescapes a quoted string into it char by");
+      Append (Res, LF);
+      Append (Res, "   char, then copies the finished string into the arena.  Only the lexer");
+      Append (Res, LF);
+      Append (Res, "   holds a pointer into it, so its realloc never dangles the tree. */");
+      Append (Res, LF);
+      Append (Res, "static char *hbnf_scratch;");
+      Append (Res, LF);
+      Append (Res, "static size_t hbnf_scratch_len, hbnf_scratch_cap;");
+      Append (Res, LF);
+      Append (Res, "static void hbnf_str_put(char c) {");
+      Append (Res, LF);
+      Append (Res, "    if (hbnf_scratch_len + 1 > hbnf_scratch_cap) {");
+      Append (Res, LF);
+      Append (Res, "        hbnf_scratch_cap = hbnf_scratch_cap ? hbnf_scratch_cap * 2 : 64;");
+      Append (Res, LF);
+      Append (Res, "        hbnf_scratch = (char *)realloc(hbnf_scratch, hbnf_scratch_cap);");
       Append (Res, LF);
       Append (Res, "    }");
       Append (Res, LF);
-      Append (Res, "    memcpy(hbnf_str_arena + hbnf_str_len, s, n);");
-      Append (Res, LF);
-      Append (Res, "    hbnf_str_arena[hbnf_str_len + n] = '\0';");
-      Append (Res, LF);
-      Append (Res, "    { const char *r = hbnf_str_arena + hbnf_str_len;");
-      Append (Res, LF);
-      Append (Res, "      hbnf_str_len += n + 1; return r; }");
+      Append (Res, "    hbnf_scratch[hbnf_scratch_len++] = c;");
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
       Append (Res, "static void free_arena(void) {");
       Append (Res, LF);
-      Append (Res, "    free(hbnf_str_arena); hbnf_str_arena = NULL; hbnf_str_len = hbnf_str_cap = 0;");
+      Append (Res, "    while (hbnf_arena) {");
+      Append (Res, LF);
+      Append (Res, "        hbnf_chunk *n = hbnf_arena->next;");
+      Append (Res, LF);
+      Append (Res, "        free(hbnf_arena);");
+      Append (Res, LF);
+      Append (Res, "        hbnf_arena = n;");
+      Append (Res, LF);
+      Append (Res, "    }");
+      Append (Res, LF);
+      Append (Res, "    free(hbnf_scratch); hbnf_scratch = NULL;");
+      Append (Res, LF);
+      Append (Res, "    hbnf_scratch_len = hbnf_scratch_cap = 0;");
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
@@ -1851,7 +1923,8 @@ package body HBNF_C is
                case E.Kind is
                   when Literal =>
                      Append (Buf, Ind & "if (!expect_lit(p, """
-                       & To_String (E.Lit) & """)) { " & Fail & " }");
+                       & To_String (E.Lit) & """, "
+                       & Img (To_String (E.Lit)'Length) & ")) { " & Fail & " }");
                      Append (Buf, LF);
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
@@ -1879,39 +1952,179 @@ package body HBNF_C is
          end loop;
       end Emit_Seq;
 
-      --  The leading literal of each alternative, one per branch, when every
-      --  branch begins with a distinct literal (the shape a switch can
-      --  dispatch on via the interned keyword id); empty otherwise.
-      function Switch_Keywords (Els : Element_Vectors.Vector)
-        return String_Vectors.Vector
-      is
-         K  : String_Vectors.Vector;
-         St : Natural := 1;
+      --  FIRST-set computation for keyword dispatch: the literal keywords that
+      --  can begin an element, transitively through rule references.  A core
+      --  scalar (word / atom / int / str / …) or a jet has no bounded keyword
+      --  set, so it makes the whole alternation fall back to linear probing.
+      function Is_Keyword (S : String) return Boolean is
+        (S'Length > 0
+         and then (S (S'First) in 'a' .. 'z'
+                   or else S (S'First) in 'A' .. 'Z'
+                   or else S (S'First) = '_'));
 
-         function Is_Keyword (S : String) return Boolean is
-           (S'Length > 0
-            and then (S (S'First) in 'a' .. 'z'
-                      or else S (S'First) in 'A' .. 'Z'
-                      or else S (S'First) = '_'));
+      function First_Union (A : String_Vectors.Vector; B : String_Vectors.Vector)
+        return String_Vectors.Vector is
+         R : String_Vectors.Vector := A;
       begin
-         for I in 1 .. Natural (Els.Length) + 1 loop
-            if I > Natural (Els.Length) or else Els (I).Kind = Alt then
-               if St > I - 1 or else Els (St).Kind /= Literal
-                 or else not Is_Keyword (To_String (Els (St).Lit))
-               then
-                  return String_Vectors.Empty_Vector;
-               end if;
-               for X of K loop
-                  if X = Els (St).Lit then
-                     return String_Vectors.Empty_Vector;
+         for S of B loop
+            declare
+               Present : Boolean := False;
+            begin
+               for X of R loop
+                  if X = S then
+                     Present := True;
                   end if;
                end loop;
-               K.Append (Els (St).Lit);
+               if not Present then
+                  R.Append (S);
+               end if;
+            end;
+         end loop;
+         return R;
+      end First_Union;
+
+      function First_Of (Els : Element_Vectors.Vector; Depth : Natural;
+                         Known : out Boolean) return String_Vectors.Vector;
+      function First_Elem (E : Element_Access; Depth : Natural;
+                           Known : out Boolean) return String_Vectors.Vector;
+
+      function First_Elem (E : Element_Access; Depth : Natural;
+                           Known : out Boolean) return String_Vectors.Vector is
+         V : String_Vectors.Vector;
+      begin
+         Known := True;
+         if Depth > 8 then
+            Known := False;
+            return V;
+         end if;
+         case E.Kind is
+            when Literal =>
+               if Is_Keyword (To_String (E.Lit)) then
+                  V.Append (E.Lit);
+               end if;
+            when Name =>
+               if Is_Core (To_String (E.Name)) then
+                  Known := False;
+               else
+                  declare
+                     J : constant Natural := Find (To_String (E.Name));
+                  begin
+                     if J = 0 then
+                        Known := False;
+                     else
+                        return First_Of (Rules (J).Pattern, Depth + 1, Known);
+                     end if;
+                  end;
+               end if;
+            when Group =>
+               return First_Of (E.Items, Depth + 1, Known);
+            when Alt =>
+               null;
+         end case;
+         return V;
+      end First_Elem;
+
+      function First_Of (Els : Element_Vectors.Vector; Depth : Natural;
+                         Known : out Boolean) return String_Vectors.Vector is
+      begin
+         Known := True;
+         if Els.Is_Empty then
+            return String_Vectors.Empty_Vector;
+         end if;
+         if Has_Alt (Els) then
+            declare
+               R  : String_Vectors.Vector;
+               St : Natural := 1;
+               K  : Boolean;
+            begin
+               for I in 1 .. Natural (Els.Length) + 1 loop
+                  if I > Natural (Els.Length) or else Els (I).Kind = Alt then
+                     if St <= I - 1 then
+                        R := First_Union
+                          (R, First_Elem (Els (St), Depth, K));
+                        if not K then
+                           Known := False;
+                        end if;
+                     end if;
+                     St := I + 1;
+                  end if;
+               end loop;
+               return R;
+            end;
+         else
+            return First_Elem (Els (1), Depth, Known);
+         end if;
+      end First_Of;
+
+      --  The FIRST set of each '/' branch, flattened into one vector: branch
+      --  Br's keywords are Flat (Offs (Br) .. Offs (Br + 1) - 1).  Offs is
+      --  empty when any branch's leading keyword is unbounded (a core scalar
+      --  or jet), so the caller falls back to linear probing.
+      procedure Branch_Firsts
+        (Els  : Element_Vectors.Vector;
+         Flat : out String_Vectors.Vector;
+         Offs : out Natural_Vectors.Vector) is
+         St : Natural := 1;
+         K  : Boolean;
+      begin
+         Offs.Clear;
+         for I in 1 .. Natural (Els.Length) + 1 loop
+            if I > Natural (Els.Length) or else Els (I).Kind = Alt then
+               if St <= I - 1 then
+                  declare
+                     F : constant String_Vectors.Vector :=
+                       First_Elem (Els (St), 0, K);
+                  begin
+                     if not K then
+                        Offs.Clear;
+                        Flat.Clear;
+                        return;
+                     end if;
+                     Offs.Append (Natural (Flat.Length) + 1);
+                     for S of F loop
+                        Flat.Append (S);
+                     end loop;
+                  end;
+               end if;
                St := I + 1;
             end if;
          end loop;
-         return K;
-      end Switch_Keywords;
+         Offs.Append (Natural (Flat.Length) + 1);
+      end Branch_Firsts;
+
+      --  True when keyword K leads branch Br and no other branch -- i.e. the
+      --  switch can jump straight to Br on K.
+      function Unique_To
+        (K : U; Flat : String_Vectors.Vector; Offs : Natural_Vectors.Vector;
+         Br : Positive) return Boolean is
+      begin
+         for X in 1 .. Natural (Offs.Length) - 1 loop
+            if X /= Br then
+               for I in Offs (X) .. Offs (X + 1) - 1 loop
+                  if Flat (I) = K then
+                     return False;
+                  end if;
+               end loop;
+            end if;
+         end loop;
+         return True;
+      end Unique_To;
+
+      --  True when some branch after the first has a keyword unique to it, so
+      --  a switch dispatch pays for itself.
+      function Has_Dispatch
+        (Flat : String_Vectors.Vector; Offs : Natural_Vectors.Vector)
+        return Boolean is
+      begin
+         for X in 2 .. Natural (Offs.Length) - 1 loop
+            for I in Offs (X) .. Offs (X + 1) - 1 loop
+               if Unique_To (Flat (I), Flat, Offs, X) then
+                  return True;
+               end if;
+            end loop;
+         end loop;
+         return False;
+      end Has_Dispatch;
 
       --  Emit a backtracking alternation over the alternatives in Els (a flat
       --  list with Alt separators).  Each branch writes through Acc; a failed
@@ -1922,9 +2135,9 @@ package body HBNF_C is
         (Els : Element_Vectors.Vector; Acc, Reset, Ok : String;
          Kind_Prefix : String := "";
          Buf : in out U; Ind : String := "    ") is
-         N  : constant Natural := Natural (Els.Length);
-         St : Natural := 1;
-         Br : Natural := 0;
+         N    : constant Natural := Natural (Els.Length);
+         Flat : String_Vectors.Vector;
+         Offs : Natural_Vectors.Vector;
 
          function Img (X : Natural) return String is
             S : constant String := Natural'Image (X);
@@ -1934,66 +2147,78 @@ package body HBNF_C is
             end if;
             return S;
          end Img;
-      begin
-         if not Switch_Keywords (Els).Is_Empty then
-            --  Keyword-led: one indexed jump on the interned keyword id,
-            --  instead of a strncmp chain across every branch.  A rest that
-            --  fails, or a token that is not one of the keywords, falls to
-            --  alt_fail_switch and the caller's own failure handling.
-            Append (Buf, Ind & "switch (p->toks[p->pos].kwid) {");
-            Append (Buf, LF);
-            St := 1;
+
+         --  The linear ordered-choice chain: try each branch in source order,
+         --  restoring p->pos and resetting the struct between attempts.  After
+         --  the last branch fails, control falls through to the caller's own
+         --  failure handling.
+         procedure Emit_Linear is
+            LSt : Natural := 1;
+            LBr : Natural := 0;
+         begin
             for K in 1 .. N + 1 loop
                if K > N or else Els (K).Kind = Alt then
-                  if St <= K - 1 and then Els (St).Kind = Literal then
-                     Append (Buf, Ind & "case KW_"
-                       & C_Ident (To_String (Els (St).Lit)) & ":");
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "    p->pos++;");
-                     Append (Buf, LF);
-                     Emit_Seq (Els, St + 1, K - 1, Acc, Buf,
-                               "goto alt_fail_switch;", Ind & "    ");
-                     if Kind_Prefix /= "" then
-                        Append (Buf, Ind & "    " & Acc & "kind = " & Kind_Prefix & "_"
-                          & C_Ident (To_String (Els (St).Lit)) & ";");
-                        Append (Buf, LF);
-                     end if;
-                     Append (Buf, Ind & "    goto " & Ok & ";");
-                     Append (Buf, LF);
-                  end if;
-                  St := K + 1;
-               end if;
-            end loop;
-            Append (Buf, Ind & "default: break;");
-            Append (Buf, LF);
-            Append (Buf, Ind & "}");
-            Append (Buf, LF);
-            Append (Buf, "alt_fail_switch:");
-            Append (Buf, LF);
-         else
-            for K in 1 .. N + 1 loop
-               if K > N or else Els (K).Kind = Alt then
-                  Br := Br + 1;
-                  if Br > 1 then
+                  LBr := LBr + 1;
+                  if LBr > 1 then
                      Append (Buf, Ind & "p->pos = save; " & Reset & ";");
                      Append (Buf, LF);
                   end if;
-                  Emit_Seq (Els, St, K - 1, Acc, Buf,
-                            "goto alt_fail_" & Img (Br) & ";", Ind);
-                  if Kind_Prefix /= "" and then St <= K - 1
-                    and then Els (St).Kind = Literal
+                  Emit_Seq (Els, LSt, K - 1, Acc, Buf,
+                            "goto alt_fail_" & Img (LBr) & ";", Ind);
+                  if Kind_Prefix /= "" and then LSt <= K - 1
+                    and then Els (LSt).Kind = Literal
                   then
                      Append (Buf, Ind & Acc & "kind = " & Kind_Prefix & "_"
-                       & C_Ident (To_String (Els (St).Lit)) & ";");
+                       & C_Ident (To_String (Els (LSt).Lit)) & ";");
                      Append (Buf, LF);
                   end if;
                   Append (Buf, Ind & "goto " & Ok & ";");
                   Append (Buf, LF);
-                  Append (Buf, "alt_fail_" & Img (Br) & ":");
+                  Append (Buf, "alt_fail_" & Img (LBr) & ":");
                   Append (Buf, LF);
-                  St := K + 1;
+                  LSt := K + 1;
                end if;
             end loop;
+         end Emit_Linear;
+      begin
+         Branch_Firsts (Els, Flat, Offs);
+         if not Offs.Is_Empty and then Has_Dispatch (Flat, Offs) then
+            --  Keyword dispatch: an O(1) jump table on the interned keyword
+            --  id.  A keyword unique to one branch jumps straight to that
+            --  branch's body in the linear chain below (branch 1 is entered
+            --  via alt_linear); a non-keyword, or a keyword shared by two
+            --  branches, falls through to the chain in source order, so
+            --  ordered-choice semantics are preserved.
+            Append (Buf, Ind & "switch (p->toks[p->pos].kwid) {");
+            Append (Buf, LF);
+            for X in 2 .. Natural (Offs.Length) - 1 loop
+               declare
+                  Emitted : Boolean := False;
+               begin
+                  for I in Offs (X) .. Offs (X + 1) - 1 loop
+                     if Unique_To (Flat (I), Flat, Offs, X) then
+                        Append (Buf, Ind & "case KW_"
+                          & C_Ident (To_String (Flat (I))) & ":");
+                        Append (Buf, LF);
+                        Emitted := True;
+                     end if;
+                  end loop;
+                  if Emitted then
+                     Append (Buf, Ind & "    goto alt_fail_"
+                       & Img (X - 1) & ";");
+                     Append (Buf, LF);
+                  end if;
+               end;
+            end loop;
+            Append (Buf, Ind & "default: goto alt_linear;");
+            Append (Buf, LF);
+            Append (Buf, Ind & "}");
+            Append (Buf, LF);
+            Append (Buf, "alt_linear:");
+            Append (Buf, LF);
+            Emit_Linear;
+         else
+            Emit_Linear;
          end if;
       end Emit_Alternation;
 
@@ -2044,7 +2269,9 @@ package body HBNF_C is
                        Leading_Tags (E.Items);
                   begin
                      Emit_Alternation
-                       (E.Items, "nn->", "memset(nn, 0, sizeof *nn)", "have",
+                       (E.Items, "nn->",
+                        "free_" & CN & "_fields(nn); memset(nn, 0, sizeof *nn)",
+                        "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
                         Buf, "        ");
                   end;
@@ -2203,7 +2430,9 @@ package body HBNF_C is
             Append (Buf, LF);
             Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
             Append (Buf, LF);
-            Emit_Alternation (P, "r.", "memset(&r, 0, sizeof r)", "ok",
+            Emit_Alternation (P, "r.",
+                              "free_" & CN & "_fields(&r); memset(&r, 0, sizeof r)",
+                              "ok",
                               (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
                               Buf);
             Append (Buf, "    p->pos = save; return false;");
@@ -2295,12 +2524,13 @@ package body HBNF_C is
       Append (Res, "}");
       Append (Res, LF);
       Append (Res, LF);
-      Append (Res, "static bool expect_lit(parser_t *p, const char *lit) {");
+      Append (Res, "static bool expect_lit(parser_t *p, const char *lit,"
+        & " size_t lit_len) {");
       Append (Res, LF);
       Append (Res, "    if (p->pos < p->n && (p->toks[p->pos].kind == TOK_ATOM"
         & " || p->toks[p->pos].kind == TOK_PUNCT)");
       Append (Res, LF);
-      Append (Res, "        && p->toks[p->pos].text && p->toks[p->pos].len == strlen(lit)");
+      Append (Res, "        && p->toks[p->pos].text && p->toks[p->pos].len == lit_len");
       Append (Res, LF);
       Append (Res, "        && strncmp(p->toks[p->pos].text, lit, p->toks[p->pos].len) == 0) {");
       Append (Res, LF);

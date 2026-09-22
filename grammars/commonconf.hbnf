@@ -1,15 +1,9 @@
 ; commonconf.hbnf — the shared OpenBSD config core, pulled in (and overridable)
 ; with `include "commonconf.hbnf"`.  Rules only: the including schema owns
-; `language`, the preamble, and the epilogue.
+; `language`, the preamble, the epilogue, and `wordchars` (each daemon widens
+; the bareword set by a different amount — some use `/` or `*` as a literal
+; separator, e.g. pfctl's `flags S/SA` — so the set is not shared here).
 ;
-; `wordchars` widens the generated `word` token to the OpenBSD bareword set —
-; alphanumerics plus `. _ - * / $ @ %` — enough for `/path/to/file`, `$macro`,
-; and the daemons' `*` wildcard and `@`/`%` markers.  A standalone `*` is still
-; caught first by the `wildcard` jet, so `listen on *` keeps working; an
-; embedded `*` (a glob, `prefix*`) is a bareword character.
-
-wordchars "*/$@%"
-
 ; a STRING token: quoted ("cpu0") or an OpenBSD bareword (10.0.0.1,
 ; example.com, /etc/pf.conf, $interface)
 string     = str / word

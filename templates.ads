@@ -47,15 +47,16 @@ package Templates is
      "        else if (c == '#') { while (text[i] && text[i] != '\n') i++; }" & LF &
      "        else if (c == '""') {" & LF &
      "            size_t sc = col;" & LF &
-     "            size_t start = hbnf_str_len;" & LF &
      "            i++; col++;" & LF &
      "            while (text[i] && text[i] != '""') {" & LF &
      "                if (text[i] == '\\' && text[i + 1]) { i++; col++; }" & LF &
      "                hbnf_str_put(text[i++]); col++;" & LF &
      "            }" & LF &
      "            if (text[i] == '""') { i++; col++; }" & LF &
-     "            hbnf_str_put('\0');" & LF &
-     "            toks[r.n++] = (token_t){ TOK_STR, hbnf_str_arena + start, hbnf_str_len - start - 1, KWID_NONE, line, sc };" & LF &
+     "            { size_t n = hbnf_scratch_len;" & LF &
+     "              const char *s = hbnf_str_append(hbnf_scratch, n);" & LF &
+     "              hbnf_scratch_len = 0;" & LF &
+     "              toks[r.n++] = (token_t){ TOK_STR, s, n, KWID_NONE, line, sc }; }" & LF &
      "        }" & LF &
      "        else if (lex_digit(c)) {" & LF &
      "            size_t s = i, sc = col;" & LF &

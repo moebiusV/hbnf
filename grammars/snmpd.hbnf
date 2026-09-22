@@ -16,6 +16,7 @@
 ; which the generic hbnf lexer cannot produce — the ipv6 jet below closes it.
 
 language C
+wordchars "*/$@%"
 
 {
 #include <sys/queue.h>
@@ -27,6 +28,8 @@ language C
 #define HBNF_LIST_NEXT(e)          TAILQ_NEXT(e,_link)
 #define HBNF_LIST_FIRST(h)         TAILQ_FIRST(h)
 }
+include "commonconf.hbnf"
+
 
 
 config          = *( include / varset / conf_main / system / object / mib )
@@ -158,8 +161,6 @@ auth            = "hmac-md5" / "hmac-md5-96"
 enc             = "des" / "cbc-des" / "aes" / "cfb128-aes-128"
 
 mib             = "mib" "directory" string
-
-yesno           = "yes" / "no"
 
 ; ipv6 — 1*( hex / ":" ), with at least one hex digit and one ":" (syntax
 ; only; the daemon still runs inet_pton for full validation)

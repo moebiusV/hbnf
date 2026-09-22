@@ -15,6 +15,7 @@
 ; lexer skips newlines).
 
 language C
+wordchars "*/$@%"
 
 {
 #include <sys/queue.h>
@@ -26,6 +27,8 @@ language C
 #define HBNF_LIST_NEXT(e)          TAILQ_NEXT(e,_link)
 #define HBNF_LIST_FIRST(h)         TAILQ_FIRST(h)
 }
+include "commonconf.hbnf"
+
 
 
 config     = *( entry )
@@ -38,12 +41,6 @@ entry      = "listen" "on" address rtable
            / "constraints" "from" string
            / "constraint" "from" stringlist
            / "sensor" string sensoropts
-
-; a STRING token: quoted ("cpu0") or bareword (10.0.0.1, example.com)
-string     = str / word
-
-; one or more STRING tokens (parse.y's `urllist : urllist address | url`)
-stringlist = 1*string
 
 rtable     = "rtable" int
 weight     = "weight" int
@@ -58,27 +55,3 @@ serveropt  = weight / trusted
 
 sensoropts = *( sensoropt )
 sensoropt  = correction / refid / stratum / weight / trusted
-
-; an address: a hostname, IPv4/IPv6 literal, or "*" — `string` plus the two
-; forms the generated `word` token cannot match (":" and "*"), spelled out
-; so the value stays a single string (a scalar union, like ldpd's address)
-address    = wildcard / ipv6 / str / word
-
-; wildcard — "*" (parse.y's bareword start char; `listen on *` binds all)
-wildcard   = {
-    return (s[pos] == '*') ? 1 : 0;
-}
-
-; ipv6 — hex groups separated by ":", with "::" and an IPv4-mapped tail
-; (".d.d.d.d") allowed (syntax only; parse.y resolves the address later)
-ipv6       = {
-    size_t n = 0, hex = 0, colon = 0;
-    while (pos + n < len) {
-        char c = s[pos + n];
-        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) { hex = 1; n++; }
-        else if (c == ':') { colon = 1; n++; }
-        else if (c == '.') { n++; }
-        else break;
-    }
-    return (hex && colon) ? n : 0;
-}

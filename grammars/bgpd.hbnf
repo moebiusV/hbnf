@@ -14,6 +14,7 @@
 ; resolves to conf_main, not to a bare `rib` followed by an `include`.
 
 language C
+wordchars "$@%"
 
 {
 #include <sys/queue.h>
@@ -25,21 +26,16 @@ language C
 #define HBNF_LIST_NEXT(e)          TAILQ_NEXT(e,_link)
 #define HBNF_LIST_FIRST(h)         TAILQ_FIRST(h)
 }
+include "commonconf.hbnf"
+
 
 
 config     = *( include / varset / as_set / prefixset / roa_set / aspa_set
              / origin_set / rtr / network / flowspec / mrtdump / conf_main
              / l3vpn / neighbor / group / filterrule / rib )
 
-; a STRING token: quoted ("foo bar") or bareword (em0, example.com)
-string     = str / word
-
-; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
-stringlist = 1*string
-
 include    = "include" string
 varset     = string "=" stringlist            ; macro name = value…
-yesno      = "yes" / "no"
 
 ; ---------------------------------------------------------------- sets
 

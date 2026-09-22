@@ -552,6 +552,26 @@ per-token and per-field string copies that §5 flags as the baseline.  The
 100k-rule case completes in under 75 ms, well inside the "load a big ruleset
 fast" criterion that motivated the work.
 
+The toy schema is a minimal shape, so those numbers understate the real cost.
+Measured the same way against the shipped `grammars/pfctl.hbnf` — the full
+grammar, with its 36-way filter-option alternation and address/port/IP parsing
+rather than the toy's five fields — the generated parser takes longer and holds
+more, as a reviewer who runs the motivating workload would find:
+
+| N | bytes | time | rules/s | MB/s | peak RSS |
+|---|---:|---:|---:|---:|---:|
+| 100,000 | 4.48 MB | 310 ms | 322 K | 14.5 | 310 MB |
+| 1,000,000 | 44.8 MB | 3.36 s | 297 K | 13.3 | 3.01 GB |
+
+The real grammar is about four times slower per rule and holds two-and-a-half
+times the memory: the toy schema's five-field rule simply does far less work per
+token.  Both ratios are what the rest of §5 is spent on — the filter-option
+dispatch (§5.2's FIRST-set switch) took the full grammar from 0.70 s down to
+310 ms, and the string arena (§5.3) accounts for most of the remaining RSS.
+This is the honest number for the "load a big firewall ruleset" criterion: a
+100k-rule `pf.conf` parses in about 310 ms at 310 MB, and a 1M-rule one in 3.4 s
+at 3 GB.
+
 **Compactness.**  The same notation compresses a real grammar.  OpenBSD's
 `httpd.conf` is 2,785 lines of parse.y — 63 rules and 79 keyword tokens — most
 of it action code and keyword-table plumbing.  The hbnf schema for the same

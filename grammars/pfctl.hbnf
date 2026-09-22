@@ -16,6 +16,7 @@
 ; of a filter rule).  Newlines are skipped by the lexer.
 
 language C
+wordchars "$@"
 
 {
 #include <sys/queue.h>
@@ -27,6 +28,8 @@ language C
 #define HBNF_LIST_NEXT(e)          TAILQ_NEXT(e,_link)
 #define HBNF_LIST_FIRST(h)         TAILQ_FIRST(h)
 }
+include "commonconf.hbnf"
+
 
 
 ruleset     = *( rule )
@@ -49,9 +52,6 @@ rule        = option
 include     = "include" string
 
 varset      = string "=" varstring          ; macro name = value…
-
-; a STRING token: quoted ("foo bar") or bareword (em0, example.com)
-string      = str / word
 
 ; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
 stringlist  = 1*string
@@ -412,7 +412,6 @@ loadrule    = "load" "anchor" string "from" stringlist
 ; ---------------------------------------------------------------- set options
 
 optimizer   = "none" / "basic" / "profile"
-yesno       = "yes" / "no"
 statelock   = "if-bound" / "floating"
 
 stringall   = "all" / string
