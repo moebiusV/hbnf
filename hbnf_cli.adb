@@ -96,7 +96,7 @@ begin
          end if;
       elsif B = "zig" then
          Ada.Text_IO.Put (HBNF_Zig.Emit (Rules));
-         Ada.Text_IO.Put (HBNF_Zig.Emit_Parser (Rules, Conf));
+         Ada.Text_IO.Put (HBNF_Zig.Emit_Parser (Rules));
          Ada.Text_IO.Put (HBNF_Zig.Emit_Lexer (Rules));
          if Conf then
             Ada.Text_IO.New_Line;

@@ -15,14 +15,23 @@ $ffi->lib("$FindBin::Bin/libhbnfconf.so");
 
 # Records mirror conf.h.  `listen` is embedded by value in `server`, so it is
 # inlined into the server record's members.
+$ffi->type('record(redirects_list)' => 'struct redirects_list' => [
+    head => 'opaque',            # struct redirects* @ 0
+    tail => 'opaque',            # struct redirects** @ 8
+]);
+$ffi->type('record(aliases_list)' => 'struct aliases_list' => [
+    head => 'opaque',            # struct aliases* @ 0
+    tail => 'opaque',            # struct aliases** @ 8
+]);
+
 $ffi->type('record(server_t)' => 'struct server' => [
-    name      => 'string',       # char* @ 0
-    iface     => 'string',       # listen.iface, char* @ 8
-    port      => 'uint16',       # listen.port,  uint16 @ 16
-    root      => 'string',       # char* @ 24
-    redirects => 'opaque',       # redirects_t* @ 32
-    aliases   => 'opaque',       # aliases_t* @ 40
-    tls       => 'bool',         # bool @ 48
+    name      => 'string',                 # char* @ 0
+    iface     => 'string',                 # listen.iface, char* @ 8
+    port      => 'uint16',                 # listen.port,  uint16 @ 16
+    root      => 'string',                 # char* @ 24
+    redirects => 'record(redirects_list)', # { head, tail } @ 32
+    aliases   => 'record(aliases_list)',   # { head, tail } @ 48
+    tls       => 'bool',                   # bool @ 64
 ]);
 
 $ffi->attach(parse_config => ['string'] => 'int');

@@ -28,14 +28,28 @@ class Aliases(ctypes.Structure):
 
 
 Redirects._fields_ = [
-    ("next", ctypes.POINTER(Redirects)),
+    ("_link", ctypes.POINTER(Redirects)),
     ("dest", ctypes.c_char_p),
     ("group", ctypes.c_char_p),
 ]
 Aliases._fields_ = [
-    ("next", ctypes.POINTER(Aliases)),
+    ("_link", ctypes.POINTER(Aliases)),
     ("alias", ctypes.c_char_p),
 ]
+
+
+class RedirectsList(ctypes.Structure):
+    _fields_ = [
+        ("head", ctypes.POINTER(Redirects)),
+        ("tail", ctypes.POINTER(ctypes.POINTER(Redirects))),
+    ]
+
+
+class AliasesList(ctypes.Structure):
+    _fields_ = [
+        ("head", ctypes.POINTER(Aliases)),
+        ("tail", ctypes.POINTER(ctypes.POINTER(Aliases))),
+    ]
 
 
 class Server(ctypes.Structure):
@@ -43,8 +57,8 @@ class Server(ctypes.Structure):
         ("name", ctypes.c_char_p),
         ("listen", Listen),
         ("root", ctypes.c_char_p),
-        ("redirects", ctypes.POINTER(Redirects)),
-        ("aliases", ctypes.POINTER(Aliases)),
+        ("redirects", RedirectsList),
+        ("aliases", AliasesList),
         ("tls", ctypes.c_bool),
     ]
 
@@ -59,11 +73,12 @@ def _str(p):
     return p.decode() if p else None
 
 
-def _walk(node, field):
+def _walk(head, field):
     out = []
+    node = head.head
     while node:
         out.append(field(node.contents))
-        node = node.contents.next
+        node = node.contents._link
     return out
 
 

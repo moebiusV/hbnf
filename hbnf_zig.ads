@@ -13,11 +13,10 @@ package HBNF_Zig is
 
    --  Emit the parser half: a recursive-descent parser (a token type plus one
    --  `parse_<rule>()` function per rule) that consumes a token slice and
-   --  builds the types `Emit` declares.  When Conf is true, the parser's
-   --  `set_err` reports to the global `config_error` handler at the point of
-   --  error (yyerror-style) instead of only filling the err buffer.
+   --  builds the types `Emit` declares.  On failure it records the deepest
+   --  `set_err` into the err buffer; the conf wrapper reports it via config_error.
    function Emit_Parser
-     (Rules : HBNF_Grammar.Rule_Vectors.Vector; Conf : Boolean := False)
+     (Rules : HBNF_Grammar.Rule_Vectors.Vector)
       return String;
 
    --  Emit the lexer half: a schema-independent scanner turning text into the

@@ -572,7 +572,10 @@ package Templates is
      "    var err: [512]u8 = undefined;" & LF &
      "    var el: usize = 0;" & LF &
      "    var ec: usize = 0;" & LF &
-     "    return parse_text(alloc, text, &err, &el, &ec);" & LF &
+     "    return parse_text(alloc, text, &err, &el, &ec) catch |e| {" & LF &
+     "        config_error(el, std.mem.sliceTo(&err, 0));" & LF &
+     "        return e;" & LF &
+     "    };" & LF &
      "}";
 
    Conf_Ada : constant String :=

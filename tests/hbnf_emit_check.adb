@@ -94,7 +94,7 @@ procedure Hbnf_Emit_Check is
       Check ("C scalar", Has (C_Text, "typedef const char * name_t;"));
       Check ("C comment", Has (C_Text, "/* host name"));
 
-      Check ("C parser fn", Has (Parser_Text, "parse_server"));
+      Check ("C parser fn", Has (Parser_Text, "parse_rule_server"));
       Check ("C parser link", Has (Parser_Text, "calloc"));
       Check ("C parser expect", Has (Parser_Text, "expect_lit"));
       Check ("C parser err", Has (Parser_Text, "err_line"));

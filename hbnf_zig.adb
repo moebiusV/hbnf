@@ -854,7 +854,7 @@ package body HBNF_Zig is
       return To_String (Res);
    end Emit;
 
-   function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector; Conf : Boolean := False) return String is
+   function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -1465,10 +1465,14 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "    err_len: usize = 0,");
       Append (Res, LF);
+      Append (Res, "    err_pos: usize = 0,");
+      Append (Res, LF);
       Append (Res, LF);
       Append (Res, "    fn set_err(self: *P, expected: []const u8) void {");
       Append (Res, LF);
-      Append (Res, "        if (self.err_len != 0) return;");
+      Append (Res, "        if (self.err_len != 0 and self.pos <= self.err_pos) return;");
+      Append (Res, LF);
+      Append (Res, "        self.err_pos = self.pos;");
       Append (Res, LF);
       Append (Res, "        const tok = if (self.pos < self.toks.len) self.toks[self.pos] else self.toks[self.toks.len - 1];");
       Append (Res, LF);
@@ -1490,27 +1494,10 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "        } else std.fmt.bufPrint(self.err[0..], ""expected {s}, found {s}"", .{ expected, found });");
       Append (Res, LF);
-      if Conf then
-         Append (Res, "        const m = msg catch null;");
-         Append (Res, LF);
-         Append (Res, "        if (m) |mm| {");
-         Append (Res, LF);
-         Append (Res, "            self.err_len = mm.len;");
-         Append (Res, LF);
-         Append (Res, "        } else {");
-         Append (Res, LF);
-         Append (Res, "            self.err_len = self.err.len;");
-         Append (Res, LF);
-         Append (Res, "        }");
-         Append (Res, LF);
-         Append (Res, "        config_error(self.err_line, self.err[0..self.err_len]);");
-         Append (Res, LF);
-      else
-         Append (Res, "        const m = msg catch { self.err_len = self.err.len; return; };");
-         Append (Res, LF);
-         Append (Res, "        self.err_len = m.len;");
-         Append (Res, LF);
-      end if;
+      Append (Res, "        const m = msg catch { self.err_len = self.err.len; return; };");
+      Append (Res, LF);
+      Append (Res, "        self.err_len = m.len;");
+      Append (Res, LF);
       Append (Res, "    }");
       Append (Res, LF);
       Append (Res, LF);
