@@ -187,7 +187,256 @@ package body HBNF_C is
       return T;
    end C_Type_Name;
 
-   function Emit (Rules : Rule_Vectors.Vector) return String is
+   --  =====================================================================
+   --  Classification shared by the id-ref serialization emitters.  Emit and
+   --  Emit_Parser keep their own local copies; these package-level versions
+   --  are parameterized by Rules so Emit_Serializer and Emit_Rebuild share
+   --  one classification.
+
+   type Member is record
+      Name    : U;
+      Is_List : Boolean;
+   end record;
+   package Member_Vectors is new Ada.Containers.Vectors (Positive, Member);
+
+   type Class_Kind is (Enum, Scalar, List, Struct);
+
+   type Rule_Info (Kind : Class_Kind := Scalar) is record
+      case Kind is
+         when Enum =>
+            Literals : String_Vectors.Vector := String_Vectors.Empty_Vector;
+         when Scalar =>
+            Inline_Type : U := Null_Unbounded_String;
+         when List =>
+            Elem_Name    : U := Null_Unbounded_String;
+            Elem_Members : Member_Vectors.Vector;
+         when Struct =>
+            Members : Member_Vectors.Vector := Member_Vectors.Empty_Vector;
+      end case;
+   end record;
+
+   package Info_Vectors is new Ada.Containers.Vectors (Positive, Rule_Info);
+
+   function Find (Rules : Rule_Vectors.Vector; Name : String) return Natural is
+   begin
+      for I in 1 .. Natural (Rules.Length) loop
+         if To_String (Rules (I).Name) = Name then
+            return I;
+         end if;
+      end loop;
+      return 0;
+   end Find;
+
+   function C_Type_Of (Rules : Rule_Vectors.Vector; Ref : String) return String is
+      S : constant String := Scalar_C_Type (Ref);
+   begin
+      if S /= "" then
+         return S;
+      end if;
+      if Find (Rules, Ref) = 0 then
+         raise Parse_Error with "undefined rule: " & Ref;
+      end if;
+      return C_Type_Name (Ref);
+   end C_Type_Of;
+
+   --  The underlying scalar C type a rule name resolves to, chasing
+   --  single-name aliases and jets.  "" if not scalar.
+   function Resolve_Type (Rules : Rule_Vectors.Vector; N : String;
+                          Depth : Natural := 0) return String is
+      C : constant String := Scalar_C_Type (N);
+   begin
+      if C /= "" then
+         return C;
+      end if;
+      if Depth > 8 then
+         return "";
+      end if;
+      declare
+         J : constant Natural := Find (Rules, N);
+      begin
+         if J = 0 then
+            return "";
+         end if;
+         declare
+            R : constant Rule := Rules (J);
+            P : constant Element_Vectors.Vector := R.Pattern;
+         begin
+            if R.Jet_Code /= Null_Unbounded_String then
+               return "const char *";
+            end if;
+            if Natural (P.Length) = 1
+              and then P (1).Kind = Name
+              and then P (1).Min = 1
+              and then P (1).Max = 1
+            then
+               return Resolve_Type (Rules, To_String (P (1).Name), Depth + 1);
+            end if;
+         end;
+      end;
+      return "";
+   end Resolve_Type;
+
+   --  If the pattern is a pure alternation of names that all resolve to the
+   --  same scalar C type, that type; else "".
+   function Scalar_Union_Type (Rules : Rule_Vectors.Vector;
+                               Els : Element_Vectors.Vector) return String is
+      T       : U := Null_Unbounded_String;
+      Has_Alt : Boolean := False;
+   begin
+      for E of Els loop
+         if E.Kind = Alt then
+            Has_Alt := True;
+         elsif E.Kind = Name then
+            declare
+               R : constant String := Resolve_Type (Rules, To_String (E.Name));
+            begin
+               if R = "" then
+                  return "";
+               end if;
+               if T = Null_Unbounded_String then
+                  T := To_Unbounded_String (R);
+               elsif To_String (T) /= R then
+                  return "";
+               end if;
+            end;
+         else
+            return "";
+         end if;
+      end loop;
+      if Has_Alt and then T /= Null_Unbounded_String then
+         return To_String (T);
+      end if;
+      return "";
+   end Scalar_Union_Type;
+
+   function Contains (V : Member_Vectors.Vector; S : U) return Boolean is
+   begin
+      for X of V loop
+         if X.Name = S then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Contains;
+
+   procedure Collect
+     (Els     : Element_Vectors.Vector;
+      Members : in out Member_Vectors.Vector;
+      Lits    : in out String_Vectors.Vector;
+      Has_Alt : in out Boolean) is
+   begin
+      for E of Els loop
+         case E.Kind is
+            when Name =>
+               declare
+                  Is_List : constant Boolean :=
+                    E.Min /= 1 or else E.Max /= 1;
+               begin
+                  if Contains (Members, E.Name) then
+                     if Is_List then
+                        for K in 1 .. Natural (Members.Length) loop
+                           if Members (K).Name = E.Name then
+                              Members.Replace_Element
+                                (K,
+                                 Member'(Name => E.Name, Is_List => True));
+                           end if;
+                        end loop;
+                     end if;
+                  else
+                     Members.Append
+                       (Member'(Name => E.Name, Is_List => Is_List));
+                  end if;
+               end;
+            when Literal =>
+               Lits.Append (E.Lit);
+            when Alt =>
+               Has_Alt := True;
+            when Group =>
+               Collect (E.Items, Members, Lits, Has_Alt);
+         end case;
+      end loop;
+   end Collect;
+
+   function Analyze (Rules : Rule_Vectors.Vector; Idx : Natural)
+      return Rule_Info is
+      R : constant Rule := Rules (Idx);
+      P : constant Element_Vectors.Vector := R.Pattern;
+   begin
+      if R.Jet_Code /= Null_Unbounded_String then
+         return (Kind        => Scalar,
+                 Inline_Type => To_Unbounded_String ("const char *"));
+      end if;
+      if Natural (P.Length) = 1 then
+         declare
+            E : constant Element_Access := P (1);
+         begin
+            if E.Min /= 1 or else E.Max /= 1 then
+               if E.Kind = Name then
+                  return (Kind        => List,
+                          Elem_Name    => E.Name,
+                          Elem_Members => Member_Vectors.Empty_Vector);
+               elsif E.Kind = Group then
+                  declare
+                     Members : Member_Vectors.Vector;
+                     Lits    : String_Vectors.Vector;
+                     Has_Alt : Boolean := False;
+                  begin
+                     Collect (E.Items, Members, Lits, Has_Alt);
+                     return (Kind        => List,
+                             Elem_Name    => Null_Unbounded_String,
+                             Elem_Members => Members);
+                  end;
+               else
+                  return (Kind        => List,
+                          Elem_Name    => Null_Unbounded_String,
+                          Elem_Members => Member_Vectors.Empty_Vector);
+               end if;
+            end if;
+
+            if E.Kind = Name then
+               return (Kind        => Scalar,
+                       Inline_Type =>
+                         To_Unbounded_String
+                           (C_Type_Of (Rules, To_String (E.Name))));
+            elsif E.Kind = Group then
+               declare
+                  Members : Member_Vectors.Vector;
+                  Lits    : String_Vectors.Vector;
+                  Has_Alt : Boolean := False;
+               begin
+                  Collect (E.Items, Members, Lits, Has_Alt);
+                  return (Kind => Struct, Members => Members);
+               end;
+            else
+               return (Kind        => Scalar,
+                       Inline_Type => To_Unbounded_String ("const char *"));
+            end if;
+         end;
+      end if;
+
+      declare
+         Members : Member_Vectors.Vector;
+         Lits    : String_Vectors.Vector;
+         Has_Alt : Boolean := False;
+      begin
+         Collect (P, Members, Lits, Has_Alt);
+         if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
+            return (Kind => Enum, Literals => Lits);
+         else
+            declare
+               SU : constant String := Scalar_Union_Type (Rules, P);
+            begin
+               if SU /= "" then
+                  return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
+               end if;
+            end;
+            return (Kind => Struct, Members => Members);
+         end if;
+      end;
+   end Analyze;
+
+   function Emit (Rules : Rule_Vectors.Vector; Idref : Boolean := False)
+      return String is
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -548,6 +797,10 @@ package body HBNF_C is
             when Struct =>
                Append (Buf, "struct " & CN & " {");
                Append (Buf, LF);
+               if Idref then
+                  Append (Buf, "    objid_t id, parent;");
+                  Append (Buf, LF);
+               end if;
                for M of Info.Members loop
                   declare
                      J : constant Natural := Find (To_String (M.Name));
@@ -571,6 +824,10 @@ package body HBNF_C is
                --  A `next`-linked node: the list is a head pointer elsewhere.
                Append (Buf, "struct " & CN & " {");
                Append (Buf, LF);
+               if Idref then
+                  Append (Buf, "    objid_t id, parent;");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, "    struct " & CN & " *next;");
                Append (Buf, LF);
                if Info.Elem_Members.Is_Empty then
@@ -792,6 +1049,15 @@ package body HBNF_C is
       Append (Res, "#include <stddef.h>");
       Append (Res, LF);
       Append (Res, LF);
+
+      if Idref then
+         Append (Res, "/* object id: assigned by the serializer, resolved on "
+           & "the rebuild side */");
+         Append (Res, LF);
+         Append (Res, "typedef uint32_t objid_t;");
+         Append (Res, LF);
+         Append (Res, LF);
+      end if;
 
       --  Forward-declare every struct and list node type.
       for I in 1 .. N loop
@@ -1663,5 +1929,494 @@ package body HBNF_C is
         LF &
         Templates.Substitute (Templates.Conf_Tail_C, "@ROOT_TYPE@", Root_T);
    end Emit_Conf_Source;
+
+   --  =====================================================================
+   --  Emit_Serializer: a pre-order walk of the tree Emit declares that
+   --  assigns ids in traversal order and emits one flat, typed record per
+   --  object through an abstract `emit` callback.  Cross-references are ids,
+   --  never pointers, so the output can cross a process boundary.
+   function Emit_Serializer (Rules : Rule_Vectors.Vector) return String is
+      N     : constant Natural := Natural (Rules.Length);
+      Infos : Info_Vectors.Vector;
+
+      function Ref_Kind (Name : String) return Class_Kind is
+         J : constant Natural := Find (Rules, Name);
+      begin
+         if J = 0 then
+            return Scalar;
+         end if;
+         return Infos (J).Kind;
+      end Ref_Kind;
+
+      --  The C type a leaf (scalar/enum) member serializes as.
+      function Leaf_Type (Name : String) return String is
+      begin
+         case Ref_Kind (Name) is
+            when Enum =>
+               return C_Type_Name (Name);
+            when others =>
+               declare
+                  R : constant String := Resolve_Type (Rules, Name);
+               begin
+                  if R /= "" then
+                     return R;
+                  end if;
+                  return C_Type_Of (Rules, Name);
+               end;
+         end case;
+      end Leaf_Type;
+
+      --  The members of a node (struct members, or a list's element members).
+      function Node_Members (Info : Rule_Info) return Member_Vectors.Vector is
+         M : Member_Vectors.Vector;
+      begin
+         case Info.Kind is
+            when Struct =>
+               return Info.Members;
+            when List =>
+               if Info.Elem_Members.Is_Empty then
+                  if Info.Elem_Name /= Null_Unbounded_String then
+                     M.Append
+                       (Member'(Name => Info.Elem_Name, Is_List => False));
+                  end if;
+               else
+                  return Info.Elem_Members;
+               end if;
+            when others =>
+               null;
+         end case;
+         return M;
+      end Node_Members;
+
+      --  A list of a bare literal carries a `value` string field, which is
+      --  not a rule reference and so needs special handling.
+      function Has_Bare_Value (Info : Rule_Info) return Boolean is
+        (Info.Kind = List and then Info.Elem_Members.Is_Empty
+         and then Info.Elem_Name = Null_Unbounded_String);
+
+      --  A member is a child node (recursed) rather than a serialized leaf.
+      function Is_Child (M : Member) return Boolean is
+         J : constant Natural := Find (Rules, To_String (M.Name));
+      begin
+         return M.Is_List
+           or else (J > 0 and then (Infos (J).Kind = Struct
+                                    or else Infos (J).Kind = List));
+      end Is_Child;
+
+      --  The serializer body for one node, writing through `n->` at the given
+      --  indentation.  `CN` names the wire struct (`struct CN_msg`).
+      procedure Emit_Body (CN : String; Info : Rule_Info;
+                           Buf : in out U; Ind : String) is
+         Ms   : constant Member_Vectors.Vector := Node_Members (Info);
+         Bare : constant Boolean := Has_Bare_Value (Info);
+      begin
+         Append (Buf, Ind & "objid_t id = next_id++;");
+         Append (Buf, LF);
+         Append (Buf, Ind & "struct " & CN & "_msg m; memset(&m, 0, sizeof m);");
+         Append (Buf, LF);
+         Append (Buf, Ind & "m.id = id; m.parent = parent;");
+         Append (Buf, LF);
+         if Bare then
+            Append (Buf, Ind & "m.value_len = (uint32_t)strlen(n->value);");
+            Append (Buf, LF);
+         end if;
+         for M of Ms loop
+            if not Is_Child (M) then
+               declare
+                  F : constant String := C_Field (To_String (M.Name));
+               begin
+                  if Leaf_Type (To_String (M.Name)) = "const char *" then
+                     Append (Buf, Ind & "m." & F & "_len = (uint32_t)strlen(n->"
+                       & F & ");");
+                  else
+                     Append (Buf, Ind & "m." & F & " = n->" & F & ";");
+                  end if;
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+         Append (Buf, Ind & "emit(MSG_" & C_Ident (CN) & ", &m, sizeof m);");
+         Append (Buf, LF);
+         if Bare then
+            Append (Buf, Ind & "emit(MSG_STR, n->value, m.value_len);");
+            Append (Buf, LF);
+         end if;
+         for M of Ms loop
+            if not Is_Child (M)
+              and then Leaf_Type (To_String (M.Name)) = "const char *"
+            then
+               declare
+                  F : constant String := C_Field (To_String (M.Name));
+               begin
+                  Append (Buf, Ind & "emit(MSG_STR, n->" & F & ", m." & F
+                    & "_len);");
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+         for M of Ms loop
+            if Is_Child (M) then
+               declare
+                  F : constant String := C_Field (To_String (M.Name));
+                  J : constant Natural := Find (Rules, To_String (M.Name));
+               begin
+                  if M.Is_List or else Infos (J).Kind = List then
+                     Append (Buf, Ind & "serialize_" & C_Name (To_String (M.Name))
+                       & "(n->" & F & ", id, emit);");
+                  else
+                     Append (Buf, Ind & "serialize_" & C_Name (To_String (M.Name))
+                       & "(&n->" & F & ", id, emit);");
+                  end if;
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+      end Emit_Body;
+
+      procedure Serialize_Def (Idx : Natural; Buf : in out U) is
+         NM   : constant String := To_String (Rules (Idx).Name);
+         CN   : constant String := C_Name (NM);
+         TN   : constant String := C_Type_Name (NM);
+         Info : constant Rule_Info := Infos (Idx);
+         Ms   : constant Member_Vectors.Vector := Node_Members (Info);
+         Bare : constant Boolean := Has_Bare_Value (Info);
+      begin
+         --  The wire record: ids plus the fixed-width leaves; string leaves
+         --  become a length prefix, with the bytes emitted separately.
+         Append (Buf, "struct " & CN & "_msg {");
+         Append (Buf, LF);
+         Append (Buf, "    objid_t id, parent;");
+         Append (Buf, LF);
+         if Bare then
+            Append (Buf, "    uint32_t value_len;");
+            Append (Buf, LF);
+         end if;
+         for M of Ms loop
+            if not Is_Child (M) then
+               declare
+                  T : constant String := Leaf_Type (To_String (M.Name));
+                  F : constant String := C_Field (To_String (M.Name));
+               begin
+                  if T = "const char *" then
+                     Append (Buf, "    uint32_t " & F & "_len;");
+                  else
+                     Append (Buf, "    " & T & " " & F & ";");
+                  end if;
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+         Append (Buf, "};");
+         Append (Buf, LF);
+         Append (Buf, LF);
+
+         if Info.Kind = Struct then
+            Append (Buf, "void serialize_" & CN & "(const " & TN
+              & " *n, objid_t parent, emit_fn emit) {");
+            Append (Buf, LF);
+            Append (Buf, "    if (!n) return;");
+            Append (Buf, LF);
+            Emit_Body (CN, Info, Buf, "    ");
+            Append (Buf, "}");
+         else
+            Append (Buf, "void serialize_" & CN & "(const " & TN
+              & " *head, objid_t parent, emit_fn emit) {");
+            Append (Buf, LF);
+            Append (Buf, "    for (const " & TN & " *n = head; n; n = n->next) {");
+            Append (Buf, LF);
+            Emit_Body (CN, Info, Buf, "        ");
+            Append (Buf, "    }");
+            Append (Buf, LF);
+            Append (Buf, "}");
+         end if;
+         Append (Buf, LF);
+      end Serialize_Def;
+
+      Res : U;
+   begin
+      for I in 1 .. N loop
+         Infos.Append (Analyze (Rules, I));
+      end loop;
+
+      Append (Res, "/* ---- id-ref serializer ---- */");
+      Append (Res, LF);
+      Append (Res, "typedef void (*emit_fn)(uint32_t type, const void *p,"
+        & " size_t n);");
+      Append (Res, LF);
+      Append (Res, "static objid_t next_id = 1;");
+      Append (Res, LF);
+      Append (Res, LF);
+      Append (Res, "enum {");
+      Append (Res, LF);
+      declare
+         First : Boolean := True;
+      begin
+         for I in 1 .. N loop
+            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               Append (Res, "    MSG_"
+                 & C_Ident (C_Name (To_String (Rules (I).Name))));
+               if First then
+                  Append (Res, " = 1");
+               end if;
+               Append (Res, ",");
+               Append (Res, LF);
+               First := False;
+            end if;
+         end loop;
+      end;
+      Append (Res, "    MSG_STR");
+      Append (Res, LF);
+      Append (Res, "};");
+      Append (Res, LF);
+      Append (Res, LF);
+
+      --  Forward-declare the per-type serializers (they recurse into each
+      --  other).
+      for I in 1 .. N loop
+         if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+            declare
+               CN : constant String := C_Name (To_String (Rules (I).Name));
+               TN : constant String := C_Type_Name (To_String (Rules (I).Name));
+            begin
+               Append (Res, "void serialize_" & CN & "(const " & TN
+                 & " *, objid_t parent, emit_fn emit);");
+               Append (Res, LF);
+            end;
+         end if;
+      end loop;
+      Append (Res, LF);
+
+      for I in 1 .. N loop
+         if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+            Serialize_Def (I, Res);
+            Append (Res, LF);
+         end if;
+      end loop;
+
+      declare
+         RT : constant String := C_Type_Name (To_String (Rules (1).Name));
+         RN : constant String := C_Name (To_String (Rules (1).Name));
+      begin
+         --  Named `serialize_tree` (not `serialize_config`) because the root
+         --  rule is often literally `config`, whose own per-type serializer
+         --  would otherwise collide.
+         Append (Res, "void serialize_tree(const " & RT
+           & " *conf, emit_fn emit) {");
+         Append (Res, LF);
+         Append (Res, "    next_id = 1;");
+         Append (Res, LF);
+         Append (Res, "    serialize_" & RN & "(conf, 0, emit);");
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+      end;
+
+      return To_String (Res);
+   end Emit_Serializer;
+
+   --  =====================================================================
+   --  Emit_Rebuild: a flat id-indexed config table, a `_find(id)` helper per
+   --  object type, and a `config_get<name>()` per type that allocates, fills
+   --  scalars, and stores the object keyed by its id.  The consumer demarshal
+   --  s records in id order, sizes the arrays, and relinks children into
+   --  parents using the stored parent id and the *_find helpers.
+   function Emit_Rebuild (Rules : Rule_Vectors.Vector) return String is
+      N     : constant Natural := Natural (Rules.Length);
+      Infos : Info_Vectors.Vector;
+
+      function Ref_Kind (Name : String) return Class_Kind is
+         J : constant Natural := Find (Rules, Name);
+      begin
+         if J = 0 then
+            return Scalar;
+         end if;
+         return Infos (J).Kind;
+      end Ref_Kind;
+
+      function Leaf_Type (Name : String) return String is
+      begin
+         case Ref_Kind (Name) is
+            when Enum =>
+               return C_Type_Name (Name);
+            when others =>
+               declare
+                  R : constant String := Resolve_Type (Rules, Name);
+               begin
+                  if R /= "" then
+                     return R;
+                  end if;
+                  return C_Type_Of (Rules, Name);
+               end;
+         end case;
+      end Leaf_Type;
+
+      function Node_Members (Info : Rule_Info) return Member_Vectors.Vector is
+         M : Member_Vectors.Vector;
+      begin
+         case Info.Kind is
+            when Struct =>
+               return Info.Members;
+            when List =>
+               if Info.Elem_Members.Is_Empty then
+                  if Info.Elem_Name /= Null_Unbounded_String then
+                     M.Append
+                       (Member'(Name => Info.Elem_Name, Is_List => False));
+                  end if;
+               else
+                  return Info.Elem_Members;
+               end if;
+            when others =>
+               null;
+         end case;
+         return M;
+      end Node_Members;
+
+      function Has_Bare_Value (Info : Rule_Info) return Boolean is
+        (Info.Kind = List and then Info.Elem_Members.Is_Empty
+         and then Info.Elem_Name = Null_Unbounded_String);
+
+      function Is_Child (M : Member) return Boolean is
+         J : constant Natural := Find (Rules, To_String (M.Name));
+      begin
+         return M.Is_List
+           or else (J > 0 and then (Infos (J).Kind = Struct
+                                    or else Infos (J).Kind = List));
+      end Is_Child;
+
+      --  Fixed-width (non-string) leaf fields, in field order.
+      function Fixed_Leaves (Info : Rule_Info) return Member_Vectors.Vector is
+         V  : Member_Vectors.Vector;
+         Ms : constant Member_Vectors.Vector := Node_Members (Info);
+      begin
+         for M of Ms loop
+            if not Is_Child (M)
+              and then Leaf_Type (To_String (M.Name)) /= "const char *"
+            then
+               V.Append (M);
+            end if;
+         end loop;
+         return V;
+      end Fixed_Leaves;
+
+      --  String leaf fields, in field order (matches the serializer's emit
+      --  order), the bare `value` field first.
+      function String_Leaves (Info : Rule_Info) return Member_Vectors.Vector is
+         V  : Member_Vectors.Vector;
+         Ms : constant Member_Vectors.Vector := Node_Members (Info);
+      begin
+         if Has_Bare_Value (Info) then
+            V.Append
+              (Member'(Name => To_Unbounded_String ("value"), Is_List => False));
+         end if;
+         for M of Ms loop
+            if not Is_Child (M)
+              and then Leaf_Type (To_String (M.Name)) = "const char *"
+            then
+               V.Append (M);
+            end if;
+         end loop;
+         return V;
+      end String_Leaves;
+
+      procedure Rebuild_Def (Idx : Natural; Buf : in out U) is
+         NM   : constant String := To_String (Rules (Idx).Name);
+         CN   : constant String := C_Name (NM);
+         TN   : constant String := C_Type_Name (NM);
+         Info : constant Rule_Info := Infos (Idx);
+         Fix  : constant Member_Vectors.Vector := Fixed_Leaves (Info);
+         Str  : constant Member_Vectors.Vector := String_Leaves (Info);
+      begin
+         Append (Buf, TN & " *" & CN & "_find(struct config_table *c, objid_t id) {");
+         Append (Buf, LF);
+         Append (Buf, "    return (id >= 1 && id <= c->n" & CN
+           & ") ? c->" & CN & "[id - 1] : NULL;");
+         Append (Buf, LF);
+         Append (Buf, "}");
+         Append (Buf, LF);
+         Append (Buf, LF);
+
+         declare
+            Args : U := Null_Unbounded_String;
+         begin
+            for S of Str loop
+               if Args /= Null_Unbounded_String then
+                  Append (Args, ", ");
+               end if;
+               Append (Args, "const char *" & C_Field (To_String (S.Name)));
+            end loop;
+            Append (Buf, "void config_get" & CN
+              & "(struct config_table *c, const struct " & CN & "_msg *m"
+              & (if Args = Null_Unbounded_String then ""
+                 else ", " & To_String (Args))
+              & ") {");
+            Append (Buf, LF);
+         end;
+         Append (Buf, "    " & TN & " *n = calloc(1, sizeof *n);");
+         Append (Buf, LF);
+         Append (Buf, "    n->id = m->id; n->parent = m->parent;");
+         Append (Buf, LF);
+         for M of Fix loop
+            declare
+               F : constant String := C_Field (To_String (M.Name));
+            begin
+               Append (Buf, "    n->" & F & " = m->" & F & ";");
+               Append (Buf, LF);
+            end;
+         end loop;
+         for M of Str loop
+            declare
+               F : constant String := C_Field (To_String (M.Name));
+            begin
+               Append (Buf, "    n->" & F & " = strdup(" & F & ");");
+               Append (Buf, LF);
+            end;
+         end loop;
+         Append (Buf, "    c->" & CN & "[m->id - 1] = n;");
+         Append (Buf, LF);
+         Append (Buf, "    if (m->id > c->n" & CN & ") c->n" & CN & " = m->id;");
+         Append (Buf, LF);
+         Append (Buf, "}");
+         Append (Buf, LF);
+      end Rebuild_Def;
+
+      Res : U;
+   begin
+      for I in 1 .. N loop
+         Infos.Append (Analyze (Rules, I));
+      end loop;
+
+      Append (Res, "/* ---- id-ref rebuild ---- */");
+      Append (Res, LF);
+      Append (Res, "struct config_table {");
+      Append (Res, LF);
+      for I in 1 .. N loop
+         if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+            declare
+               CN : constant String := C_Name (To_String (Rules (I).Name));
+               TN : constant String := C_Type_Name (To_String (Rules (I).Name));
+            begin
+               Append (Res, "    " & TN & " **" & CN & ";");
+               Append (Res, LF);
+               Append (Res, "    objid_t   n" & CN & ";");
+               Append (Res, LF);
+            end;
+         end if;
+      end loop;
+      Append (Res, "};");
+      Append (Res, LF);
+      Append (Res, LF);
+      Append (Res, "void config_init(struct config_table *c) { memset(c, 0, sizeof *c); }");
+      Append (Res, LF);
+      Append (Res, LF);
+
+      for I in 1 .. N loop
+         if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+            Rebuild_Def (I, Res);
+            Append (Res, LF);
+         end if;
+      end loop;
+
+      return To_String (Res);
+   end Emit_Rebuild;
 
 end HBNF_C;

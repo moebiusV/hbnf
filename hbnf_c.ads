@@ -9,7 +9,26 @@ with HBNF_Grammar;
 --  comments are carried through as C comments above each declaration.
 package HBNF_C is
 
-   function Emit (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
+   --  Emit the C declarations.  When Idref is true, every struct and list
+   --  node gains leading `objid_t id, parent;` fields (and the `objid_t`
+   --  typedef) so the tree can be flattened by Emit_Serializer and rebuilt
+   --  by Emit_Rebuild for a privsep (imsg) consumer.
+   function Emit
+     (Rules : HBNF_Grammar.Rule_Vectors.Vector; Idref : Boolean := False)
+      return String;
+
+   --  Emit the serializer: a pre-order walk of the tree Emit declares that
+   --  assigns ids in traversal order and emits one typed, flat record per
+   --  object through an abstract `emit` callback.  Cross-references are ids,
+   --  never pointers, so the output can cross a process boundary.
+   function Emit_Serializer (Rules : HBNF_Grammar.Rule_Vectors.Vector)
+      return String;
+
+   --  Emit the rebuild side: a flat id-indexed config table, a `_find(id)`
+   --  helper per object type, and a `config_get_<name>()` per type that
+   --  allocates, fills scalars, and stores the object keyed by its id.
+   function Emit_Rebuild (Rules : HBNF_Grammar.Rule_Vectors.Vector)
+      return String;
 
    --  Emit the parser half: a self-contained recursive-descent parser (a
    --  token type plus one `parse_<rule>()` function per rule) that consumes

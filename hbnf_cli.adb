@@ -12,13 +12,15 @@ with HBNF_Ada;
 --  hbnf: read a schema and emit a self-contained parser (declarations +
 --  lexer + parser) in the chosen backend language.
 --
---    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--conf]
+--    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref]
 --
 --  c/rust/zig print one compilable file to stdout; ada prints the parent
 --  package spec, then the child package spec+body (split them apart yourself).
 --  --conf adds the OpenBSD parse_config(filename) entry: for C it prints the
 --  conf.h/conf.c pair (delimited by "===== conf.h =====" and "===== conf.c ====="
 --  markers); for rust/zig/ada it appends the conf wrapper to the single file.
+--  --idref (C only) adds an id-ref serializer and rebuild side, for a privsep
+--  (imsg) consumer: the tree cross-references by id instead of pointer.
 procedure Hbnf_Cli is
 
    use Ada.Strings.Unbounded;
@@ -27,11 +29,12 @@ procedure Hbnf_Cli is
    Package_Name : Unbounded_String := To_Unbounded_String ("Schema");
    Schema_Path  : Unbounded_String;
    Conf         : Boolean := False;
+   Idref        : Boolean := False;
 
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref]");
    end Usage;
 
 begin
@@ -50,6 +53,8 @@ begin
             Package_Name := To_Unbounded_String (A (11 .. A'Last));
          elsif A = "--conf" then
             Conf := True;
+         elsif A = "--idref" then
+            Idref := True;
          elsif A (A'First) /= '-' then
             Schema_Path := To_Unbounded_String (A);
          end if;
@@ -73,9 +78,13 @@ begin
             Ada.Text_IO.Put_Line ("===== conf.c =====");
             Ada.Text_IO.Put (HBNF_C.Emit_Conf_Source (Rules));
          else
-            Ada.Text_IO.Put (HBNF_C.Emit (Rules));
+            Ada.Text_IO.Put (HBNF_C.Emit (Rules, Idref));
             Ada.Text_IO.Put (HBNF_C.Emit_Parser (Rules));
             Ada.Text_IO.Put (HBNF_C.Emit_Lexer (Rules));
+            if Idref then
+               Ada.Text_IO.Put (HBNF_C.Emit_Serializer (Rules));
+               Ada.Text_IO.Put (HBNF_C.Emit_Rebuild (Rules));
+            end if;
          end if;
       elsif B = "rust" then
          Ada.Text_IO.Put (HBNF_Rust.Emit (Rules));
