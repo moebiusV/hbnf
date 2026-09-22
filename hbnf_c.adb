@@ -1866,7 +1866,7 @@ package body HBNF_C is
                      end if;
                   end loop;
                end;
-               Append (Buf, """, p->toks[p->pos].text); return false; }");
+               Append (Buf, """, 0, p->toks[p->pos].text); return false; }");
                Append (Buf, LF);
                Append (Buf, "        p->pos++; *out = r; return true;");
                Append (Buf, LF);
@@ -1923,7 +1923,7 @@ package body HBNF_C is
                   end if;
                end loop;
             end;
-            Append (Buf, "    fail(p, ""a " & NM & """, p->pos < p->n"
+            Append (Buf, "    fail(p, ""a " & NM & """, 0, p->pos < p->n"
               & " ? p->toks[p->pos].text : ""end of input"");");
             Append (Buf, LF);
             Append (Buf, "    return false;");
@@ -2001,48 +2001,27 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "    size_t err_line, err_col;");
       Append (Res, LF);
-      Append (Res, "    char err[512];");
+      Append (Res, "    const char *err_expected, *err_found;");
+      Append (Res, LF);
+      Append (Res, "    int err_is_lit;");
       Append (Res, LF);
       Append (Res, "} parser_t;");
       Append (Res, LF);
       Append (Res, LF);
       Append (Res, "static void fail(parser_t *p, const char *expected,"
-        & " const char *found) {");
+        & " int is_lit, const char *found) {");
       Append (Res, LF);
       Append (Res, "    if (p->err_pos != (size_t)-1 && p->pos <= p->err_pos)"
         & " return;  /* a deeper failure already recorded */");
       Append (Res, LF);
       Append (Res, "    p->err_pos = p->pos;");
       Append (Res, LF);
+      Append (Res, "    p->err_expected = expected; p->err_found = found;"
+        & " p->err_is_lit = is_lit;");
+      Append (Res, LF);
       Append (Res, "    p->err_line = p->pos < p->n ? p->toks[p->pos].line : 0;");
       Append (Res, LF);
       Append (Res, "    p->err_col  = p->pos < p->n ? p->toks[p->pos].col  : 0;");
-      Append (Res, LF);
-      Append (Res, "    if (p->lines && p->err_line >= 1 && p->err_line <= p->nlines) {");
-      Append (Res, LF);
-      Append (Res, "        const char *l = p->lines[p->err_line - 1];");
-      Append (Res, LF);
-      Append (Res, "        char pad[64];");
-      Append (Res, LF);
-      Append (Res, "        size_t w = p->err_col > 1 ? p->err_col - 1 : 0;");
-      Append (Res, LF);
-      Append (Res, "        if (w > sizeof pad - 1) w = sizeof pad - 1;");
-      Append (Res, LF);
-      Append (Res, "        memset(pad, ' ', w); pad[w] = '\0';");
-      Append (Res, LF);
-      Append (Res, "        snprintf(p->err, sizeof p->err,");
-      Append (Res, LF);
-      Append (Res, "                 ""expected %s, found %s\n  %s\n  %s^"",");
-      Append (Res, LF);
-      Append (Res, "                 expected, found, l, pad);");
-      Append (Res, LF);
-      Append (Res, "    } else {");
-      Append (Res, LF);
-      Append (Res, "        snprintf(p->err, sizeof p->err, ""expected %s, found %s"",");
-      Append (Res, LF);
-      Append (Res, "                 expected, found);");
-      Append (Res, LF);
-      Append (Res, "    }");
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
@@ -2058,10 +2037,8 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "    }");
       Append (Res, LF);
-      Append (Res, "    { char want[64]; snprintf(want, sizeof want, ""`%s`"", lit);");
-      Append (Res, LF);
-      Append (Res, "      fail(p, want, p->pos < p->n ? p->toks[p->pos].text"
-        & " : ""end of input""); return false; }");
+      Append (Res, "    fail(p, lit, 1, p->pos < p->n ? p->toks[p->pos].text"
+        & " : ""end of input""); return false;");
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
@@ -2071,7 +2048,7 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "    if (p->pos < p->n && p->toks[p->pos].kind == k) return true;");
       Append (Res, LF);
-      Append (Res, "    fail(p, desc, p->pos < p->n ? p->toks[p->pos].text"
+      Append (Res, "    fail(p, desc, 0, p->pos < p->n ? p->toks[p->pos].text"
         & " : ""end of input"");");
       Append (Res, LF);
       Append (Res, "    return false;");
@@ -2111,18 +2088,51 @@ package body HBNF_C is
       Append (Res, "                  char *err, size_t errlen,"
         & " size_t *err_line, size_t *err_col) {");
       Append (Res, LF);
-      Append (Res, "    parser_t p = { toks, n, 0, lines, nlines, (size_t)-1, 0, 0, {0} };");
+      Append (Res, "    parser_t p = { toks, n, 0, lines, nlines, (size_t)-1, 0, 0 };");
       Append (Res, LF);
       Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
         & "(&p, out)) goto err;");
       Append (Res, LF);
-      Append (Res, "    if (p.pos < p.n && p.toks[p.pos].kind != TOK_EOF) { fail(&p, ""end of config"", p.toks[p.pos].text); goto err; }");
+      Append (Res, "    if (p.pos < p.n && p.toks[p.pos].kind != TOK_EOF) { fail(&p, ""end of config"", 0, p.toks[p.pos].text); goto err; }");
       Append (Res, LF);
       Append (Res, "    return true;");
       Append (Res, LF);
       Append (Res, "err:");
       Append (Res, LF);
-      Append (Res, "    snprintf(err, errlen, ""%s"", p.err);");
+      Append (Res, "    { const char *f = p.err_found ? p.err_found"
+        & " : ""end of input"";");
+      Append (Res, LF);
+      Append (Res, "      char want[160];");
+      Append (Res, LF);
+      Append (Res, "      if (p.err_is_lit) snprintf(want, sizeof want, ""`%s`"","
+        & " p.err_expected ? p.err_expected : """");");
+      Append (Res, LF);
+      Append (Res, "      else snprintf(want, sizeof want, ""%s"","
+        & " p.err_expected ? p.err_expected : """");");
+      Append (Res, LF);
+      Append (Res, "      if (p.lines && p.err_line >= 1 && p.err_line <= p.nlines) {");
+      Append (Res, LF);
+      Append (Res, "          const char *l = p.lines[p.err_line - 1];");
+      Append (Res, LF);
+      Append (Res, "          char pad[64];");
+      Append (Res, LF);
+      Append (Res, "          size_t w = p.err_col > 1 ? p.err_col - 1 : 0;");
+      Append (Res, LF);
+      Append (Res, "          if (w > sizeof pad - 1) w = sizeof pad - 1;");
+      Append (Res, LF);
+      Append (Res, "          memset(pad, ' ', w); pad[w] = '\0';");
+      Append (Res, LF);
+      Append (Res, "          snprintf(err, errlen,"
+        & " ""expected %s, found %s\n  %s\n  %s^"", want, f, l, pad);");
+      Append (Res, LF);
+      Append (Res, "      } else {");
+      Append (Res, LF);
+      Append (Res, "          snprintf(err, errlen, ""expected %s, found %s"","
+        & " want, f);");
+      Append (Res, LF);
+      Append (Res, "      }");
+      Append (Res, LF);
+      Append (Res, "    }");
       Append (Res, LF);
       Append (Res, "    *err_line = p.err_line; *err_col = p.err_col;");
       Append (Res, LF);
