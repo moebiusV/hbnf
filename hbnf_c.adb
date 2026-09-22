@@ -216,6 +216,7 @@ package body HBNF_C is
    type Class_Kind is (Enum, Scalar, List, Struct);
 
    type Rule_Info (Kind : Class_Kind := Scalar) is record
+      Tags : String_Vectors.Vector := String_Vectors.Empty_Vector;
       case Kind is
          when Enum =>
             Literals : String_Vectors.Vector := String_Vectors.Empty_Vector;
@@ -371,6 +372,47 @@ package body HBNF_C is
       end loop;
    end Collect;
 
+   --  The distinct leading keywords of a keyword-headed alternation: the
+   --  first literal of each '/' branch, deduped in order; empty if there is
+   --  no alternation (a plain sequence is not tagged) or if any branch does
+   --  not begin with a literal.
+   function Leading_Tags (Els : Element_Vectors.Vector)
+      return String_Vectors.Vector is
+      Tags     : String_Vectors.Vector;
+      All_Lit  : Boolean := True;
+      Branches : Natural := 0;
+      St       : Natural := 1;
+   begin
+      for K in 1 .. Natural (Els.Length) + 1 loop
+         if K > Natural (Els.Length) or else Els (K).Kind = Alt then
+            Branches := Branches + 1;
+            if St <= K - 1 then
+               if Els (St).Kind = Literal then
+                  declare
+                     Present : Boolean := False;
+                  begin
+                     for T of Tags loop
+                        if T = Els (St).Lit then
+                           Present := True;
+                        end if;
+                     end loop;
+                     if not Present then
+                        Tags.Append (Els (St).Lit);
+                     end if;
+                  end;
+               else
+                  All_Lit := False;
+               end if;
+            end if;
+            St := K + 1;
+         end if;
+      end loop;
+      if Branches < 2 or else not All_Lit then
+         return String_Vectors.Empty_Vector;
+      end if;
+      return Tags;
+   end Leading_Tags;
+
    function Analyze (Rules : Rule_Vectors.Vector; Idx : Natural)
       return Rule_Info is
       R : constant Rule := Rules (Idx);
@@ -378,7 +420,8 @@ package body HBNF_C is
    begin
       if R.Jet_Code /= Null_Unbounded_String then
          return (Kind        => Scalar,
-                 Inline_Type => To_Unbounded_String ("const char *"));
+                 Inline_Type => To_Unbounded_String ("const char *"),
+                 others      => <>);
       end if;
       if Natural (P.Length) = 1 then
          declare
@@ -388,7 +431,8 @@ package body HBNF_C is
                if E.Kind = Name then
                   return (Kind        => List,
                           Elem_Name    => E.Name,
-                          Elem_Members => Member_Vectors.Empty_Vector);
+                          Elem_Members => Member_Vectors.Empty_Vector,
+                          others       => <>);
                elsif E.Kind = Group then
                   declare
                      Members : Member_Vectors.Vector;
@@ -398,12 +442,14 @@ package body HBNF_C is
                      Collect (E.Items, Members, Lits, Has_Alt);
                      return (Kind        => List,
                              Elem_Name    => Null_Unbounded_String,
-                             Elem_Members => Members);
+                             Elem_Members => Members,
+                             Tags         => Leading_Tags (E.Items));
                   end;
                else
                   return (Kind        => List,
                           Elem_Name    => Null_Unbounded_String,
-                          Elem_Members => Member_Vectors.Empty_Vector);
+                          Elem_Members => Member_Vectors.Empty_Vector,
+                          others       => <>);
                end if;
             end if;
 
@@ -411,7 +457,8 @@ package body HBNF_C is
                return (Kind        => Scalar,
                        Inline_Type =>
                          To_Unbounded_String
-                           (C_Type_Of (Rules, To_String (E.Name))));
+                           (C_Type_Of (Rules, To_String (E.Name))),
+                       others      => <>);
             elsif E.Kind = Group then
                declare
                   Members : Member_Vectors.Vector;
@@ -419,11 +466,13 @@ package body HBNF_C is
                   Has_Alt : Boolean := False;
                begin
                   Collect (E.Items, Members, Lits, Has_Alt);
-                  return (Kind => Struct, Members => Members);
+                  return (Kind => Struct, Members => Members,
+                          Tags => Leading_Tags (E.Items));
                end;
             else
                return (Kind        => Scalar,
-                       Inline_Type => To_Unbounded_String ("const char *"));
+                       Inline_Type => To_Unbounded_String ("const char *"),
+                       others      => <>);
             end if;
          end;
       end if;
@@ -435,16 +484,18 @@ package body HBNF_C is
       begin
          Collect (P, Members, Lits, Has_Alt);
          if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
-            return (Kind => Enum, Literals => Lits);
+            return (Kind => Enum, Literals => Lits, others => <>);
          else
             declare
                SU : constant String := Scalar_Union_Type (Rules, P);
             begin
                if SU /= "" then
-                  return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
+                  return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU),
+                          others => <>);
                end if;
             end;
-            return (Kind => Struct, Members => Members);
+            return (Kind => Struct, Members => Members,
+                    Tags => Leading_Tags (P));
          end if;
       end;
    end Analyze;
@@ -608,6 +659,7 @@ package body HBNF_C is
       type Class_Kind is (Enum, Scalar, List, Struct);
 
       type Rule_Info (Kind : Class_Kind := Scalar) is record
+         Tags : String_Vectors.Vector := String_Vectors.Empty_Vector;
          case Kind is
             when Enum =>
                Literals : String_Vectors.Vector := String_Vectors.Empty_Vector;
@@ -630,7 +682,8 @@ package body HBNF_C is
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet reads its own token kind and yields the matched text.
             return (Kind        => Scalar,
-                    Inline_Type => To_Unbounded_String ("const char *"));
+                    Inline_Type => To_Unbounded_String ("const char *"),
+                    others      => <>);
          end if;
          if Natural (P.Length) = 1 then
             declare
@@ -641,7 +694,8 @@ package body HBNF_C is
                   if E.Kind = Name then
                      return (Kind        => List,
                              Elem_Name    => E.Name,
-                             Elem_Members => Member_Vectors.Empty_Vector);
+                             Elem_Members => Member_Vectors.Empty_Vector,
+                             others       => <>);
                   elsif E.Kind = Group then
                      declare
                         Members : Member_Vectors.Vector;
@@ -651,12 +705,14 @@ package body HBNF_C is
                         Collect (E.Items, Members, Lits, Has_Alt);
                         return (Kind        => List,
                                 Elem_Name    => Null_Unbounded_String,
-                                Elem_Members => Members);
+                                Elem_Members => Members,
+                                Tags         => Leading_Tags (E.Items));
                      end;
                   else
                      return (Kind        => List,
                              Elem_Name    => Null_Unbounded_String,
-                             Elem_Members => Member_Vectors.Empty_Vector);
+                             Elem_Members => Member_Vectors.Empty_Vector,
+                             others       => <>);
                   end if;
                end if;
 
@@ -665,7 +721,8 @@ package body HBNF_C is
                   return (Kind => Scalar,
                           Inline_Type =>
                             To_Unbounded_String
-                              (C_Type_Of (To_String (E.Name))));
+                              (C_Type_Of (To_String (E.Name))),
+                          others      => <>);
                elsif E.Kind = Group then
                   declare
                      Members : Member_Vectors.Vector;
@@ -673,11 +730,13 @@ package body HBNF_C is
                      Has_Alt : Boolean := False;
                   begin
                      Collect (E.Items, Members, Lits, Has_Alt);
-                     return (Kind => Struct, Members => Members);
+                     return (Kind => Struct, Members => Members,
+                             Tags => Leading_Tags (E.Items));
                   end;
                else
                   return (Kind        => Scalar,
-                          Inline_Type => To_Unbounded_String ("const char *"));
+                          Inline_Type => To_Unbounded_String ("const char *"),
+                          others      => <>);
                end if;
             end;
          end if;
@@ -689,16 +748,18 @@ package body HBNF_C is
          begin
             Collect (P, Members, Lits, Has_Alt);
             if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
-               return (Kind => Enum, Literals => Lits);
+               return (Kind => Enum, Literals => Lits, others => <>);
             else
                declare
                   SU : constant String := Scalar_Union_Type (P);
                begin
                   if SU /= "" then
-                     return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
+                     return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU),
+                          others => <>);
                   end if;
                end;
-               return (Kind => Struct, Members => Members);
+               return (Kind => Struct, Members => Members,
+                       Tags => Leading_Tags (P));
             end if;
          end;
       end Analyze;
@@ -773,6 +834,29 @@ package body HBNF_C is
          return C_Type_Name (Name);
       end Ref_Type;
 
+      --  The `kind` discriminator enum for a keyword-headed alternation:
+      --  one value per distinct leading keyword, so the tree records which
+      --  alternative matched.
+      function Kind_Enum (CN : String; Tags : String_Vectors.Vector)
+         return String is
+         Buf : U;
+      begin
+         Append (Buf, "typedef enum {");
+         Append (Buf, LF);
+         for I in 1 .. Natural (Tags.Length) loop
+            Append (Buf, "    " & C_Ident (CN) & "_"
+              & C_Ident (To_String (Tags (I))));
+            if I < Natural (Tags.Length) then
+               Append (Buf, ",");
+            end if;
+            Append (Buf, "   /* " & To_String (Tags (I)) & " */");
+            Append (Buf, LF);
+         end loop;
+         Append (Buf, "} " & CN & "_kind_t;");
+         Append (Buf, LF);
+         return To_String (Buf);
+      end Kind_Enum;
+
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
          R  : constant Rule := Rules (Idx);
          NM : constant String := To_String (R.Name);
@@ -809,10 +893,17 @@ package body HBNF_C is
                   Append (Buf, LF);
                end;
             when Struct =>
+               if not Info.Tags.Is_Empty then
+                  Append (Buf, Kind_Enum (CN, Info.Tags));
+               end if;
                Append (Buf, "struct " & CN & " {");
                Append (Buf, LF);
                if Idref then
                   Append (Buf, "    objid_t id, parent;");
+                  Append (Buf, LF);
+               end if;
+               if not Info.Tags.Is_Empty then
+                  Append (Buf, "    " & CN & "_kind_t kind;");
                   Append (Buf, LF);
                end if;
                for M of Info.Members loop
@@ -838,10 +929,17 @@ package body HBNF_C is
             when List =>
                --  A list-linked node; the head is a `struct <CN>_list`
                --  embedded in the parent.
+               if not Info.Tags.Is_Empty then
+                  Append (Buf, Kind_Enum (CN, Info.Tags));
+               end if;
                Append (Buf, "struct " & CN & " {");
                Append (Buf, LF);
                if Idref then
                   Append (Buf, "    objid_t id, parent;");
+                  Append (Buf, LF);
+               end if;
+               if not Info.Tags.Is_Empty then
+                  Append (Buf, "    " & CN & "_kind_t kind;");
                   Append (Buf, LF);
                end if;
                Append (Buf, "    HBNF_LIST_ENTRY(" & CN & ");");
@@ -1475,6 +1573,7 @@ package body HBNF_C is
       --  falls through for the caller's own failure handling.
       procedure Emit_Alternation
         (Els : Element_Vectors.Vector; Acc, Reset, Ok : String;
+         Kind_Prefix : String := "";
          Buf : in out U; Ind : String := "    ") is
          N  : constant Natural := Natural (Els.Length);
          St : Natural := 1;
@@ -1498,6 +1597,13 @@ package body HBNF_C is
                end if;
                Emit_Seq (Els, St, K - 1, Acc, Buf,
                          "goto alt_fail_" & Img (Br) & ";", Ind);
+               if Kind_Prefix /= "" and then St <= K - 1
+                 and then Els (St).Kind = Literal
+               then
+                  Append (Buf, Ind & Acc & "kind = " & Kind_Prefix & "_"
+                    & C_Ident (To_String (Els (St).Lit)) & ";");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, Ind & "goto " & Ok & ";");
                Append (Buf, LF);
                Append (Buf, "alt_fail_" & Img (Br) & ":");
@@ -1548,9 +1654,15 @@ package body HBNF_C is
                     & "(p, &nn->" & C_Field (To_String (E.Name)) & ")) goto have;");
                   Append (Buf, LF);
                else
-                  Emit_Alternation (E.Items, "nn->",
-                                    "memset(nn, 0, sizeof *nn)", "have", Buf,
-                                    "        ");
+                  declare
+                     Tags : constant String_Vectors.Vector :=
+                       Leading_Tags (E.Items);
+                  begin
+                     Emit_Alternation
+                       (E.Items, "nn->", "memset(nn, 0, sizeof *nn)", "have",
+                        (if Tags.Is_Empty then "" else C_Ident (CN)),
+                        Buf, "        ");
+                  end;
                end if;
                Append (Buf, "        p->pos = save; free(nn); break;");
                Append (Buf, LF);
@@ -1700,7 +1812,9 @@ package body HBNF_C is
             Append (Buf, LF);
             Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
             Append (Buf, LF);
-            Emit_Alternation (P, "r.", "memset(&r, 0, sizeof r)", "ok", Buf);
+            Emit_Alternation (P, "r.", "memset(&r, 0, sizeof r)", "ok",
+                              (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
+                              Buf);
             Append (Buf, "    p->pos = save; return false;");
             Append (Buf, LF);
             Append (Buf, "ok:");
@@ -2064,6 +2178,10 @@ package body HBNF_C is
          Append (Buf, LF);
          Append (Buf, Ind & "m.id = id; m.parent = parent;");
          Append (Buf, LF);
+         if not Info.Tags.Is_Empty then
+            Append (Buf, Ind & "m.kind = (uint32_t)n->kind;");
+            Append (Buf, LF);
+         end if;
          if Bare then
             Append (Buf, Ind & "m.value_len = n->value ?"
               & " (uint32_t)strlen(n->value) : (uint32_t)-1;");
@@ -2133,6 +2251,10 @@ package body HBNF_C is
          Append (Buf, LF);
          Append (Buf, "    objid_t id, parent;");
          Append (Buf, LF);
+         if not Info.Tags.Is_Empty then
+            Append (Buf, "    uint32_t kind;");
+            Append (Buf, LF);
+         end if;
          if Bare then
             Append (Buf, "    uint32_t value_len;");
             Append (Buf, LF);
@@ -2363,6 +2485,10 @@ package body HBNF_C is
          Append (Buf, LF);
          Append (Buf, Ind & "n->id = _m.id; n->parent = _m.parent;");
          Append (Buf, LF);
+         if not Info.Tags.Is_Empty then
+            Append (Buf, Ind & "n->kind = (" & CN & "_kind_t)_m.kind;");
+            Append (Buf, LF);
+         end if;
          if Bare then
             Append (Buf, Ind & "n->value = _m.value_len == (uint32_t)-1"
               & " ? NULL : hbnf_str(rd);");
