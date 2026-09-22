@@ -2000,9 +2000,7 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "    size_t n, pos;");
       Append (Res, LF);
-      Append (Res, "    const char *const *lines;  /* source lines, for the caret */");
-      Append (Res, LF);
-      Append (Res, "    size_t nlines;");
+      Append (Res, "    const char *text;   /* source, for the lazy caret line */");
       Append (Res, LF);
       Append (Res, "    size_t err_pos;");
       Append (Res, LF);
@@ -2092,12 +2090,12 @@ package body HBNF_C is
       Append (Res, "bool parse_tokens(const token_t *toks, size_t n, "
         & Out_Type (1) & " out,");
       Append (Res, LF);
-      Append (Res, "                  const char *const *lines, size_t nlines,");
+      Append (Res, "                  const char *text,");
       Append (Res, LF);
       Append (Res, "                  char *err, size_t errlen,"
         & " size_t *err_line, size_t *err_col) {");
       Append (Res, LF);
-      Append (Res, "    parser_t p = { toks, n, 0, lines, nlines, (size_t)-1, 0, 0 };");
+      Append (Res, "    parser_t p = { toks, n, 0, text, (size_t)-1, 0, 0 };");
       Append (Res, LF);
       Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
         & "(&p, out)) goto err;");
@@ -2122,9 +2120,19 @@ package body HBNF_C is
       Append (Res, "      else snprintf(want, sizeof want, ""%s"","
         & " p.err_expected ? p.err_expected : """");");
       Append (Res, LF);
-      Append (Res, "      if (p.lines && p.err_line >= 1 && p.err_line <= p.nlines) {");
+      Append (Res, "      if (p.text && p.err_line >= 1) {");
       Append (Res, LF);
-      Append (Res, "          const char *l = p.lines[p.err_line - 1];");
+      Append (Res, "          const char *l; size_t ll;");
+      Append (Res, LF);
+      Append (Res, "          { const char *s = p.text; size_t ln = p.err_line;");
+      Append (Res, LF);
+      Append (Res, "            while (ln > 1) { const char *nl = strchr(s, '\n');");
+      Append (Res, LF);
+      Append (Res, "              if (!nl) break; s = nl + 1; ln--; }");
+      Append (Res, LF);
+      Append (Res, "            const char *nl = strchr(s, '\n');");
+      Append (Res, LF);
+      Append (Res, "            l = s; ll = nl ? (size_t)(nl - s) : strlen(s); }");
       Append (Res, LF);
       Append (Res, "          char pad[64];");
       Append (Res, LF);
@@ -2135,7 +2143,7 @@ package body HBNF_C is
       Append (Res, "          memset(pad, ' ', w); pad[w] = '\0';");
       Append (Res, LF);
       Append (Res, "          snprintf(err, errlen,"
-        & " ""expected %s, found %.*s\n  %s\n  %s^"", want, (int)fl, f, l, pad);");
+        & " ""expected %s, found %.*s\n  %.*s\n  %s^"", want, (int)fl, f, (int)ll, l, pad);");
       Append (Res, LF);
       Append (Res, "      } else {");
       Append (Res, LF);

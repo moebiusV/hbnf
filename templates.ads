@@ -90,27 +90,15 @@ package Templates is
      "    return r;" & LF &
      "}" & LF &
      "" & LF &
-     "/* Convenience: lex, split text into lines (for the caret), then parse. */" & LF &
+     "/* Convenience: lex, then parse (the caret line is drawn lazily on error). */" & LF &
      "bool parse_text(const char *text, @ROOT_TYPE@ *out," & LF &
      "                char *err, size_t errlen, size_t *err_line, size_t *err_col) {" & LF &
      "    lexed_t l = lex(text);" & LF &
-     "    size_t nlines = 1, i, k = 0, s = 0;" & LF &
-     "    const char *p;" & LF &
-     "    for (p = text; *p; p++) if (*p == '\n') nlines++;" & LF &
-     "    char **lines = (char **)malloc(nlines * sizeof *lines);" & LF &
-     "    for (i = 0; ; i++) {" & LF &
-     "        if (text[i] == '\n' || text[i] == '\0') {" & LF &
-     "            lines[k++] = lex_dup(text + s, i - s);" & LF &
-     "            if (text[i] == '\0') break;" & LF &
-     "            s = i + 1;" & LF &
-     "        }" & LF &
-     "    }" & LF &
-     "    bool ok = parse_tokens(l.toks, l.n, out, (const char *const *)lines, nlines," & LF &
+     "    size_t i;" & LF &
+     "    bool ok = parse_tokens(l.toks, l.n, out, text," & LF &
      "                           err, errlen, err_line, err_col);" & LF &
      "    for (i = 0; i < l.n; i++) if (l.toks[i].kind == TOK_STR) free((char *)l.toks[i].text);" & LF &
      "    free(l.toks);" & LF &
-     "    for (i = 0; i < nlines; i++) free(lines[i]);" & LF &
-     "    free(lines);" & LF &
      "    return ok;" & LF &
      "}";
 
