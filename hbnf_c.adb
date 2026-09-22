@@ -1483,13 +1483,13 @@ package body HBNF_C is
    function Scalar_Parse_Expr (Name : String) return String is
    begin
       if Name = "str" or else Name = "atom" or else Name = "word" then
-         return "strdup(p->toks[p->pos].text)";
+         return "strndup(p->toks[p->pos].text, p->toks[p->pos].len)";
       elsif Name = "int" then
          return "atoll(p->toks[p->pos].text)";
       elsif Name = "bool" or else Name = "flag" then
-         return "(strcmp(p->toks[p->pos].text,""yes"")==0 "
-           & "|| strcmp(p->toks[p->pos].text,""on"")==0 "
-           & "|| strcmp(p->toks[p->pos].text,""true"")==0)";
+         return "(p->toks[p->pos].len==3 && strncmp(p->toks[p->pos].text,""yes"",3)==0 "
+           & "|| p->toks[p->pos].len==2 && strncmp(p->toks[p->pos].text,""on"",2)==0 "
+           & "|| p->toks[p->pos].len==4 && strncmp(p->toks[p->pos].text,""true"",4)==0)";
       elsif Name'Length >= 2 then
          declare
             P : constant Character := Name (Name'First);
@@ -1508,7 +1508,7 @@ package body HBNF_C is
             end if;
          end;
       end if;
-      return "strdup(p->toks[p->pos].text)";
+      return "strndup(p->toks[p->pos].text, p->toks[p->pos].len)";
    end Scalar_Parse_Expr;
 
    function Emit_Parser (Rules : Rule_Vectors.Vector) return String is
@@ -1750,7 +1750,8 @@ package body HBNF_C is
             Append (Buf, "    if (!expect_kind(p, TOK_" & C_Ident (NM)
               & ", ""a " & NM & """)) return false;");
             Append (Buf, LF);
-            Append (Buf, "    *out = strdup(p->toks[p->pos].text); p->pos++;");
+            Append (Buf, "    *out = strndup(p->toks[p->pos].text,"
+              & " p->toks[p->pos].len); p->pos++;");
             Append (Buf, LF);
             Append (Buf, "    return true;");
             Append (Buf, LF);
@@ -1833,11 +1834,17 @@ package body HBNF_C is
                      if K > Natural (P.Length) or else P (K).Kind = Alt then
                         if St <= K - 1 and then P (St).Kind = Literal then
                            if Branch = 0 then
-                              Append (Buf, "        if (strcmp(p->toks[p->pos].text, "
-                                & '"' & To_String (P (St).Lit) & '"' & ")==0)");
+                              Append (Buf, "        if (p->toks[p->pos].len == strlen("
+                                & '"' & To_String (P (St).Lit) & '"'
+                                & ") && strncmp(p->toks[p->pos].text, "
+                                & '"' & To_String (P (St).Lit) & '"'
+                                & ", p->toks[p->pos].len)==0)");
                            else
-                              Append (Buf, "        else if (strcmp(p->toks[p->pos].text, "
-                                & '"' & To_String (P (St).Lit) & '"' & ")==0)");
+                              Append (Buf, "        else if (p->toks[p->pos].len == strlen("
+                                & '"' & To_String (P (St).Lit) & '"'
+                                & ") && strncmp(p->toks[p->pos].text, "
+                                & '"' & To_String (P (St).Lit) & '"'
+                                & ", p->toks[p->pos].len)==0)");
                            end if;
                            Append (Buf, " r = " & C_Ident (NM) & "_"
                              & To_String (Names (Branch + 1)) & ";");
@@ -1984,7 +1991,7 @@ package body HBNF_C is
          Append (Res, LF);
       end;
       Append (Res, "typedef struct { tok_kind_t kind; const char *text;"
-        & " size_t line, col; } token_t;");
+        & " size_t len; size_t line, col; } token_t;");
       Append (Res, LF);
       Append (Res, LF);
       Append (Res, "typedef struct {");
@@ -2031,7 +2038,9 @@ package body HBNF_C is
       Append (Res, "    if (p->pos < p->n && (p->toks[p->pos].kind == TOK_ATOM"
         & " || p->toks[p->pos].kind == TOK_PUNCT)");
       Append (Res, LF);
-      Append (Res, "        && p->toks[p->pos].text && strcmp(p->toks[p->pos].text, lit) == 0) {");
+      Append (Res, "        && p->toks[p->pos].text && p->toks[p->pos].len == strlen(lit)");
+      Append (Res, LF);
+      Append (Res, "        && strncmp(p->toks[p->pos].text, lit, p->toks[p->pos].len) == 0) {");
       Append (Res, LF);
       Append (Res, "        p->pos++; return true;");
       Append (Res, LF);
@@ -2102,6 +2111,9 @@ package body HBNF_C is
       Append (Res, "    { const char *f = p.err_found ? p.err_found"
         & " : ""end of input"";");
       Append (Res, LF);
+      Append (Res, "      size_t fl = p.err_pos < p.n ? p.toks[p.err_pos].len"
+        & " : strlen(f);");
+      Append (Res, LF);
       Append (Res, "      char want[160];");
       Append (Res, LF);
       Append (Res, "      if (p.err_is_lit) snprintf(want, sizeof want, ""`%s`"","
@@ -2123,12 +2135,12 @@ package body HBNF_C is
       Append (Res, "          memset(pad, ' ', w); pad[w] = '\0';");
       Append (Res, LF);
       Append (Res, "          snprintf(err, errlen,"
-        & " ""expected %s, found %s\n  %s\n  %s^"", want, f, l, pad);");
+        & " ""expected %s, found %.*s\n  %s\n  %s^"", want, (int)fl, f, l, pad);");
       Append (Res, LF);
       Append (Res, "      } else {");
       Append (Res, LF);
-      Append (Res, "          snprintf(err, errlen, ""expected %s, found %s"","
-        & " want, f);");
+      Append (Res, "          snprintf(err, errlen, ""expected %s, found %.*s"","
+        & " want, (int)fl, f);");
       Append (Res, LF);
       Append (Res, "      }");
       Append (Res, LF);

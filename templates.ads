@@ -42,7 +42,7 @@ package Templates is
      "            tok_kind_t jk;" & LF &
      "            size_t jl = jet_dispatch(text, i, tlen, &jk);" & LF &
      "            if (jl > 0) {" & LF &
-     "                toks[r.n++] = (token_t){ jk, lex_dup(text + i, jl), line, col };" & LF &
+     "                toks[r.n++] = (token_t){ jk, text + i, jl, line, col };" & LF &
      "                i += jl; col += jl;" & LF &
      "                continue;" & LF &
      "            }" & LF &
@@ -61,7 +61,7 @@ package Templates is
      "            }" & LF &
      "            if (text[i] == '""') { i++; col++; }" & LF &
      "            buf[bn] = '\0';" & LF &
-     "            toks[r.n++] = (token_t){ TOK_STR, buf, line, sc };" & LF &
+     "            toks[r.n++] = (token_t){ TOK_STR, buf, bn, line, sc };" & LF &
      "        }" & LF &
      "        else if (lex_digit(c)) {" & LF &
      "            size_t s = i, sc = col;" & LF &
@@ -70,22 +70,22 @@ package Templates is
      "                /* dotted/alphanumeric run (1.2.3.4, 123abc) is one word */" & LF &
      "                i = s; col = sc;" & LF &
      "                while (lex_word_char(text[i])) { i++; col++; }" & LF &
-     "                toks[r.n++] = (token_t){ TOK_ATOM, lex_dup(text + s, i - s), line, sc };" & LF &
+     "                toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, line, sc };" & LF &
      "            } else {" & LF &
-     "                toks[r.n++] = (token_t){ TOK_INT, lex_dup(text + s, i - s), line, sc };" & LF &
+     "                toks[r.n++] = (token_t){ TOK_INT, text + s, i - s, line, sc };" & LF &
      "            }" & LF &
      "        }" & LF &
      "        else if (lex_word_start(c)) {" & LF &
      "            size_t s = i, sc = col;" & LF &
      "            while (lex_word_char(text[i])) { i++; col++; }" & LF &
-     "            toks[r.n++] = (token_t){ TOK_ATOM, lex_dup(text + s, i - s), line, sc };" & LF &
+     "            toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, line, sc };" & LF &
      "        }" & LF &
      "        else {" & LF &
-     "            toks[r.n++] = (token_t){ TOK_PUNCT, lex_dup(text + i, 1), line, col };" & LF &
+     "            toks[r.n++] = (token_t){ TOK_PUNCT, text + i, 1, line, col };" & LF &
      "            i++; col++;" & LF &
      "        }" & LF &
      "    }" & LF &
-     "    toks[r.n++] = (token_t){ TOK_EOF, lex_dup("""", 0), line, col };" & LF &
+     "    toks[r.n++] = (token_t){ TOK_EOF, """", 0, line, col };" & LF &
      "    r.toks = toks;" & LF &
      "    return r;" & LF &
      "}" & LF &
@@ -107,7 +107,7 @@ package Templates is
      "    }" & LF &
      "    bool ok = parse_tokens(l.toks, l.n, out, (const char *const *)lines, nlines," & LF &
      "                           err, errlen, err_line, err_col);" & LF &
-     "    for (i = 0; i < l.n; i++) free((char *)l.toks[i].text);" & LF &
+     "    for (i = 0; i < l.n; i++) if (l.toks[i].kind == TOK_STR) free((char *)l.toks[i].text);" & LF &
      "    free(l.toks);" & LF &
      "    for (i = 0; i < nlines; i++) free(lines[i]);" & LF &
      "    free(lines);" & LF &
