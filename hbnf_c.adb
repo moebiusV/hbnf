@@ -1564,6 +1564,137 @@ package body HBNF_C is
          return Has_Alt;
       end Is_Pure_Literal_Alt;
 
+      --  Every literal in the grammar, deduped in first-appearance order.
+      --  These are the keywords the lexer interns against.
+      function Collect_Keywords return String_Vectors.Vector is
+         K : String_Vectors.Vector;
+
+         function Present (S : U) return Boolean is
+         begin
+            for X of K loop
+               if X = S then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Present;
+
+         procedure Walk (Els : Element_Vectors.Vector) is
+         begin
+            for E of Els loop
+               case E.Kind is
+                  when Literal =>
+                     declare
+                        S : constant String := To_String (E.Lit);
+                     begin
+                        --  Keywords only: a letter/underscore-led literal
+                        --  (punctuation and digit-led literals are not atoms).
+                        if S'Length > 0
+                          and then (S (S'First) in 'a' .. 'z'
+                                    or else S (S'First) in 'A' .. 'Z'
+                                    or else S (S'First) = '_')
+                          and then not Present (E.Lit)
+                        then
+                           K.Append (E.Lit);
+                        end if;
+                     end;
+                  when Group =>
+                     Walk (E.Items);
+                  when others =>
+                     null;
+               end case;
+            end loop;
+         end Walk;
+      begin
+         for I in 1 .. N loop
+            Walk (Rules (I).Pattern);
+         end loop;
+         return K;
+      end Collect_Keywords;
+
+      Keywords : constant String_Vectors.Vector := Collect_Keywords;
+
+      --  Emit the keyword-id enum plus the interning lookup: a switch on
+      --  length, then first character, then one inlined memcmp per keyword in
+      --  the bucket.  The compiler lowers the switches to jump tables.
+      procedure Emit_Keywords (Buf : in out U) is
+         function Len (K : U) return Natural is
+           (To_String (K)'Length);
+
+         function First (K : U) return Character is
+           (To_String (K) (To_String (K)'First));
+
+         function Max_Len return Natural is
+            M : Natural := 0;
+         begin
+            for K of Keywords loop
+               if Len (K) > M then
+                  M := Len (K);
+               end if;
+            end loop;
+            return M;
+         end Max_Len;
+      begin
+         Append (Buf, "typedef enum { KWID_NONE = 0");
+         for K of Keywords loop
+            Append (Buf, ", KW_" & C_Ident (To_String (K)));
+         end loop;
+         Append (Buf, " } kwid_t;");
+         Append (Buf, LF);
+         Append (Buf, LF);
+
+         Append (Buf, "static kwid_t kw_lookup(const char *s, size_t len) {");
+         Append (Buf, LF);
+         Append (Buf, "    switch (len) {");
+         Append (Buf, LF);
+         for L in 1 .. Max_Len loop
+            declare
+               Seen : array (Character) of Boolean := (others => False);
+               Any  : Boolean := False;
+            begin
+               for K of Keywords loop
+                  if Len (K) = L then
+                     Any := True;
+                     exit;
+                  end if;
+               end loop;
+               if Any then
+                  Append (Buf, "    case " & Img (L) & ":");
+                  Append (Buf, LF);
+                  Append (Buf, "        switch (s[0]) {");
+                  Append (Buf, LF);
+                  for K of Keywords loop
+                     if Len (K) = L and then not Seen (First (K)) then
+                        Seen (First (K)) := True;
+                        Append (Buf, "        case '" & First (K) & "':");
+                        Append (Buf, LF);
+                        for K2 of Keywords loop
+                           if Len (K2) = L and then First (K2) = First (K) then
+                              Append (Buf, "            if (memcmp(s, """
+                                & To_String (K2) & """, " & Img (L)
+                                & ") == 0) return KW_" & C_Ident (To_String (K2)) & ";");
+                              Append (Buf, LF);
+                           end if;
+                        end loop;
+                        Append (Buf, "            break;");
+                        Append (Buf, LF);
+                     end if;
+                  end loop;
+                  Append (Buf, "        }");
+                  Append (Buf, LF);
+                  Append (Buf, "        break;");
+                  Append (Buf, LF);
+               end if;
+            end;
+         end loop;
+         Append (Buf, "    }");
+         Append (Buf, LF);
+         Append (Buf, "    return KWID_NONE;");
+         Append (Buf, LF);
+         Append (Buf, "}");
+         Append (Buf, LF);
+      end Emit_Keywords;
+
       --  The underlying scalar C type a rule name resolves to (chasing
       --  single-name aliases and jets); "" if not scalar.
       function Resolve_Type (N : String; Depth : Natural := 0) return String is
@@ -1688,6 +1819,40 @@ package body HBNF_C is
          end loop;
       end Emit_Seq;
 
+      --  The leading literal of each alternative, one per branch, when every
+      --  branch begins with a distinct literal (the shape a switch can
+      --  dispatch on via the interned keyword id); empty otherwise.
+      function Switch_Keywords (Els : Element_Vectors.Vector)
+        return String_Vectors.Vector
+      is
+         K  : String_Vectors.Vector;
+         St : Natural := 1;
+
+         function Is_Keyword (S : String) return Boolean is
+           (S'Length > 0
+            and then (S (S'First) in 'a' .. 'z'
+                      or else S (S'First) in 'A' .. 'Z'
+                      or else S (S'First) = '_'));
+      begin
+         for I in 1 .. Natural (Els.Length) + 1 loop
+            if I > Natural (Els.Length) or else Els (I).Kind = Alt then
+               if St > I - 1 or else Els (St).Kind /= Literal
+                 or else not Is_Keyword (To_String (Els (St).Lit))
+               then
+                  return String_Vectors.Empty_Vector;
+               end if;
+               for X of K loop
+                  if X = Els (St).Lit then
+                     return String_Vectors.Empty_Vector;
+                  end if;
+               end loop;
+               K.Append (Els (St).Lit);
+               St := I + 1;
+            end if;
+         end loop;
+         return K;
+      end Switch_Keywords;
+
       --  Emit a backtracking alternation over the alternatives in Els (a flat
       --  list with Alt separators).  Each branch writes through Acc; a failed
       --  branch restores p->pos and resets the struct (Reset), a successful
@@ -1710,29 +1875,64 @@ package body HBNF_C is
             return S;
          end Img;
       begin
-         for K in 1 .. N + 1 loop
-            if K > N or else Els (K).Kind = Alt then
-               Br := Br + 1;
-               if Br > 1 then
-                  Append (Buf, Ind & "p->pos = save; " & Reset & ";");
-                  Append (Buf, LF);
+         if not Switch_Keywords (Els).Is_Empty then
+            --  Keyword-led: one indexed jump on the interned keyword id,
+            --  instead of a strncmp chain across every branch.  A rest that
+            --  fails, or a token that is not one of the keywords, falls to
+            --  alt_fail_switch and the caller's own failure handling.
+            Append (Buf, Ind & "switch (p->toks[p->pos].kwid) {");
+            Append (Buf, LF);
+            St := 1;
+            for K in 1 .. N + 1 loop
+               if K > N or else Els (K).Kind = Alt then
+                  if St <= K - 1 and then Els (St).Kind = Literal then
+                     Append (Buf, Ind & "case KW_"
+                       & C_Ident (To_String (Els (St).Lit)) & ":");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "    p->pos++;");
+                     Append (Buf, LF);
+                     Emit_Seq (Els, St + 1, K - 1, Acc, Buf,
+                               "goto alt_fail_switch;", Ind & "    ");
+                     if Kind_Prefix /= "" then
+                        Append (Buf, Ind & "    " & Acc & "kind = " & Kind_Prefix & "_"
+                          & C_Ident (To_String (Els (St).Lit)) & ";");
+                        Append (Buf, LF);
+                     end if;
+                     Append (Buf, Ind & "    goto " & Ok & ";");
+                     Append (Buf, LF);
+                  end if;
+                  St := K + 1;
                end if;
-               Emit_Seq (Els, St, K - 1, Acc, Buf,
-                         "goto alt_fail_" & Img (Br) & ";", Ind);
-               if Kind_Prefix /= "" and then St <= K - 1
-                 and then Els (St).Kind = Literal
-               then
-                  Append (Buf, Ind & Acc & "kind = " & Kind_Prefix & "_"
-                    & C_Ident (To_String (Els (St).Lit)) & ";");
+            end loop;
+            Append (Buf, Ind & "}");
+            Append (Buf, LF);
+            Append (Buf, "alt_fail_switch:");
+            Append (Buf, LF);
+         else
+            for K in 1 .. N + 1 loop
+               if K > N or else Els (K).Kind = Alt then
+                  Br := Br + 1;
+                  if Br > 1 then
+                     Append (Buf, Ind & "p->pos = save; " & Reset & ";");
+                     Append (Buf, LF);
+                  end if;
+                  Emit_Seq (Els, St, K - 1, Acc, Buf,
+                            "goto alt_fail_" & Img (Br) & ";", Ind);
+                  if Kind_Prefix /= "" and then St <= K - 1
+                    and then Els (St).Kind = Literal
+                  then
+                     Append (Buf, Ind & Acc & "kind = " & Kind_Prefix & "_"
+                       & C_Ident (To_String (Els (St).Lit)) & ";");
+                     Append (Buf, LF);
+                  end if;
+                  Append (Buf, Ind & "goto " & Ok & ";");
                   Append (Buf, LF);
+                  Append (Buf, "alt_fail_" & Img (Br) & ":");
+                  Append (Buf, LF);
+                  St := K + 1;
                end if;
-               Append (Buf, Ind & "goto " & Ok & ";");
-               Append (Buf, LF);
-               Append (Buf, "alt_fail_" & Img (Br) & ":");
-               Append (Buf, LF);
-               St := K + 1;
-            end if;
-         end loop;
+            end loop;
+         end if;
       end Emit_Alternation;
 
       procedure Emit_Rule_Parser (Idx : Natural; Buf : in out U) is
@@ -1990,8 +2190,10 @@ package body HBNF_C is
          Append (Res, To_String (Enum));
          Append (Res, LF);
       end;
+      Emit_Keywords (Res);
+      Append (Res, LF);
       Append (Res, "typedef struct { tok_kind_t kind; const char *text;"
-        & " size_t len; size_t line, col; } token_t;");
+        & " size_t len; kwid_t kwid; size_t line, col; } token_t;");
       Append (Res, LF);
       Append (Res, LF);
       Append (Res, "typedef struct {");

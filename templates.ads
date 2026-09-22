@@ -42,7 +42,7 @@ package Templates is
      "            tok_kind_t jk;" & LF &
      "            size_t jl = jet_dispatch(text, i, tlen, &jk);" & LF &
      "            if (jl > 0) {" & LF &
-     "                toks[r.n++] = (token_t){ jk, text + i, jl, line, col };" & LF &
+     "                toks[r.n++] = (token_t){ jk, text + i, jl, KWID_NONE, line, col };" & LF &
      "                i += jl; col += jl;" & LF &
      "                continue;" & LF &
      "            }" & LF &
@@ -61,7 +61,7 @@ package Templates is
      "            }" & LF &
      "            if (text[i] == '""') { i++; col++; }" & LF &
      "            buf[bn] = '\0';" & LF &
-     "            toks[r.n++] = (token_t){ TOK_STR, buf, bn, line, sc };" & LF &
+     "            toks[r.n++] = (token_t){ TOK_STR, buf, bn, KWID_NONE, line, sc };" & LF &
      "        }" & LF &
      "        else if (lex_digit(c)) {" & LF &
      "            size_t s = i, sc = col;" & LF &
@@ -70,22 +70,22 @@ package Templates is
      "                /* dotted/alphanumeric run (1.2.3.4, 123abc) is one word */" & LF &
      "                i = s; col = sc;" & LF &
      "                while (lex_word_char(text[i])) { i++; col++; }" & LF &
-     "                toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, line, sc };" & LF &
+     "                toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, kw_lookup(text + s, i - s), line, sc };" & LF &
      "            } else {" & LF &
-     "                toks[r.n++] = (token_t){ TOK_INT, text + s, i - s, line, sc };" & LF &
+     "                toks[r.n++] = (token_t){ TOK_INT, text + s, i - s, KWID_NONE, line, sc };" & LF &
      "            }" & LF &
      "        }" & LF &
      "        else if (lex_word_start(c)) {" & LF &
      "            size_t s = i, sc = col;" & LF &
      "            while (lex_word_char(text[i])) { i++; col++; }" & LF &
-     "            toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, line, sc };" & LF &
+     "            toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, kw_lookup(text + s, i - s), line, sc };" & LF &
      "        }" & LF &
      "        else {" & LF &
-     "            toks[r.n++] = (token_t){ TOK_PUNCT, text + i, 1, line, col };" & LF &
+     "            toks[r.n++] = (token_t){ TOK_PUNCT, text + i, 1, KWID_NONE, line, col };" & LF &
      "            i++; col++;" & LF &
      "        }" & LF &
      "    }" & LF &
-     "    toks[r.n++] = (token_t){ TOK_EOF, """", 0, line, col };" & LF &
+     "    toks[r.n++] = (token_t){ TOK_EOF, """", 0, KWID_NONE, line, col };" & LF &
      "    r.toks = toks;" & LF &
      "    return r;" & LF &
      "}" & LF &
