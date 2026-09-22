@@ -224,6 +224,75 @@ package body HBNF_Zig is
          return Zig_Type (Ref);
       end Zig_Type_Of;
 
+      --  The underlying scalar Zig type a rule name resolves to, chasing
+      --  single-name aliases and jets to their target (so `str / word` and
+      --  `ipv4 / ipv6` both collapse to `[]const u8`).  "" if not scalar.
+      function Resolve_Type (N : String; Depth : Natural := 0) return String is
+         C : constant String := Scalar_Zig_Type (N);
+      begin
+         if C /= "" then
+            return C;
+         end if;
+         if Depth > 8 then
+            return "";
+         end if;
+         declare
+            J : constant Natural := Find (N);
+         begin
+            if J = 0 then
+               return "";
+            end if;
+            declare
+               R : constant Rule := Rules (J);
+               P : constant Element_Vectors.Vector := R.Pattern;
+            begin
+               if R.Jet_Code /= Null_Unbounded_String then
+                  return "[]const u8";
+               end if;
+               if Natural (P.Length) = 1
+                 and then P (1).Kind = Name
+                 and then P (1).Min = 1
+                 and then P (1).Max = 1
+               then
+                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
+               end if;
+            end;
+         end;
+         return "";
+      end Resolve_Type;
+
+      --  If the pattern is a pure alternation of names that all resolve to
+      --  the same scalar Zig type, that type (a scalar union); else "".
+      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
+         T       : U := Null_Unbounded_String;
+         Has_Alt : Boolean := False;
+      begin
+         for E of Els loop
+            if E.Kind = Alt then
+               Has_Alt := True;
+            elsif E.Kind = Name then
+               declare
+                  R : constant String := Resolve_Type (To_String (E.Name));
+               begin
+                  if R = "" then
+                     return "";
+                  end if;
+                  if T = Null_Unbounded_String then
+                     T := To_Unbounded_String (R);
+                  elsif To_String (T) /= R then
+                     return "";
+                  end if;
+               end;
+            else
+               return "";
+            end if;
+         end loop;
+         if Has_Alt and then T /= Null_Unbounded_String then
+            return To_String (T);
+         end if;
+         return "";
+      end Scalar_Union_Type;
+
       --  A struct member: the referenced name, and whether it is a list
       --  (appeared with a repetition prefix) rather than a single value.
       type Member is record
@@ -369,6 +438,13 @@ package body HBNF_Zig is
             if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
                return (Kind => Enum, Literals => Lits);
             else
+               declare
+                  SU : constant String := Scalar_Union_Type (P);
+               begin
+                  if SU /= "" then
+                     return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
+                  end if;
+               end;
                return (Kind => Struct, Members => Members);
             end if;
          end;
@@ -675,6 +751,73 @@ package body HBNF_Zig is
          return Zig_Type (Ref);
       end Zig_Type_Of;
 
+      --  The underlying scalar Zig type a rule name resolves to, chasing
+      --  single-name aliases and jets to their target.  "" if not scalar.
+      function Resolve_Type (N : String; Depth : Natural := 0) return String is
+         C : constant String := Scalar_Zig_Type (N);
+      begin
+         if C /= "" then
+            return C;
+         end if;
+         if Depth > 8 then
+            return "";
+         end if;
+         declare
+            J : constant Natural := Find (N);
+         begin
+            if J = 0 then
+               return "";
+            end if;
+            declare
+               R : constant Rule := Rules (J);
+               P : constant Element_Vectors.Vector := R.Pattern;
+            begin
+               if R.Jet_Code /= Null_Unbounded_String then
+                  return "[]const u8";
+               end if;
+               if Natural (P.Length) = 1
+                 and then P (1).Kind = Name
+                 and then P (1).Min = 1
+                 and then P (1).Max = 1
+               then
+                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
+               end if;
+            end;
+         end;
+         return "";
+      end Resolve_Type;
+
+      --  A pure alternation of names resolving to one scalar type; "" else.
+      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
+         T       : U := Null_Unbounded_String;
+         Has_Alt : Boolean := False;
+      begin
+         for E of Els loop
+            if E.Kind = Alt then
+               Has_Alt := True;
+            elsif E.Kind = Name then
+               declare
+                  R : constant String := Resolve_Type (To_String (E.Name));
+               begin
+                  if R = "" then
+                     return "";
+                  end if;
+                  if T = Null_Unbounded_String then
+                     T := To_Unbounded_String (R);
+                  elsif To_String (T) /= R then
+                     return "";
+                  end if;
+               end;
+            else
+               return "";
+            end if;
+         end loop;
+         if Has_Alt and then T /= Null_Unbounded_String then
+            return To_String (T);
+         end if;
+         return "";
+      end Scalar_Union_Type;
+
       function Core_Desc (Name : String) return String is
       begin
          if Name = "str" or else Name = "atom" or else Name = "word" then
@@ -769,7 +912,9 @@ package body HBNF_Zig is
 
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural;
-         Dst : String; Buf : in out U; Ind : String := "    ") is
+         Dst  : String; Buf : in out U; Fail : String := ""; Ind : String := "    ") is
+         Pref : constant String := (if Fail = "" then "try " else "");
+         Cat  : constant String := (if Fail = "" then "" else " catch " & Fail);
       begin
          for K in First .. Last loop
             declare
@@ -777,15 +922,15 @@ package body HBNF_Zig is
             begin
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & "try p.expect_lit("""
+                     Append (Buf, Ind & Pref & "p.expect_lit("""
                        & To_String (E.Lit) & """, ""`"
-                       & To_String (E.Lit) & "`"");");
+                       & To_String (E.Lit) & "`"")" & Cat & ";");
                      Append (Buf, LF);
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
-                        Append (Buf, Ind & "try p.expect_kind("
+                        Append (Buf, Ind & Pref & "p.expect_kind("
                           & Scalar_Kind (To_String (E.Name)) & ", """
-                          & Core_Desc (To_String (E.Name)) & """);");
+                          & Core_Desc (To_String (E.Name)) & """)" & Cat & ";");
                         Append (Buf, LF);
                         Append (Buf, Ind & Dst
                           & Zig_Field (To_String (E.Name)) & " = "
@@ -793,19 +938,64 @@ package body HBNF_Zig is
                         Append (Buf, LF);
                      else
                         Append (Buf, Ind & Dst
-                          & Zig_Field (To_String (E.Name)) & " = try parse_"
-                          & Zig_Snake (To_String (E.Name)) & "(p);");
+                          & Zig_Field (To_String (E.Name)) & " = "
+                          & Pref & "parse_"
+                          & Zig_Snake (To_String (E.Name)) & "(p)" & Cat & ";");
                         Append (Buf, LF);
                      end if;
                   when Group =>
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Dst, Buf,
-                               Ind & "    ");
+                               Fail, Ind & "    ");
                   when Alt =>
                      null;
                end case;
             end;
          end loop;
       end Emit_Seq;
+
+      --  Emit a backtracking alternation over the Alt-separated branches in
+      --  Els.  Each branch runs inside a labelled block whose `catch` failures
+      --  break out of it; a failed branch restores p.pos and resets the struct
+      --  (Reset), a successful one sets `matched` and returns r.  After the
+      --  last branch fails, control falls through for the caller's own failure
+      --  handling.
+      procedure Emit_Alternation
+        (Els : Element_Vectors.Vector; Acc, Reset : String;
+         Buf : in out U; Ind : String := "    ") is
+         N  : constant Natural := Natural (Els.Length);
+         St : Natural := 1;
+         Br : Natural := 0;
+
+         function Img (X : Natural) return String is
+            S : constant String := Natural'Image (X);
+         begin
+            if S'Length > 0 and then S (S'First) = ' ' then
+               return S (S'First + 1 .. S'Last);
+            end if;
+            return S;
+         end Img;
+      begin
+         for K in 1 .. N + 1 loop
+            if K > N or else Els (K).Kind = Alt then
+               Br := Br + 1;
+               if Br > 1 then
+                  Append (Buf, Ind & "p.pos = save; " & Reset & "; matched = false;");
+                  Append (Buf, LF);
+               end if;
+               Append (Buf, Ind & "blk_" & Img (Br) & ": {");
+               Append (Buf, LF);
+               Emit_Seq (Els, St, K - 1, Acc, Buf,
+                         "break :blk_" & Img (Br), Ind & "    ");
+               Append (Buf, Ind & "    matched = true;");
+               Append (Buf, LF);
+               Append (Buf, Ind & "}");
+               Append (Buf, LF);
+               Append (Buf, Ind & "if (matched) return r;");
+               Append (Buf, LF);
+               St := K + 1;
+            end if;
+         end loop;
+      end Emit_Alternation;
 
       procedure Emit_Rule_Parser (Idx : Natural; Buf : in out U) is
          R  : constant Rule := Rules (Idx);
@@ -815,6 +1005,7 @@ package body HBNF_Zig is
          Is_List : constant Boolean := Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
+         SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
       begin
          if R.Jet_Code /= Null_Unbounded_String then
             Append (Buf, "    try p.expect_kind(." & Zig_Snake (NM)
@@ -1001,6 +1192,55 @@ package body HBNF_Zig is
                  & "(p);");
                Append (Buf, LF);
             end if;
+         elsif SU /= "" then
+            --  A scalar union (str / word, ipv4 / ipv6): try each branch as a
+            --  single scalar read; the first that matches yields the value.
+            declare
+               St : Natural := 1;
+            begin
+               for K in 1 .. Natural (P.Length) + 1 loop
+                  if K > Natural (P.Length) or else P (K).Kind = Alt then
+                     if St <= K - 1 then
+                        declare
+                           E : constant Element_Access := P (St);
+                        begin
+                           if E.Kind = Name and then Is_Core (To_String (E.Name)) then
+                              Append (Buf, "    if (p.pos < p.toks.len and p.toks[p.pos].kind == "
+                                & Scalar_Kind (To_String (E.Name)) & ") {");
+                              Append (Buf, LF);
+                              Append (Buf, "        const r = " & Scalar_Parse (To_String (E.Name))
+                                & "; p.pos += 1; return r; }");
+                              Append (Buf, LF);
+                           elsif E.Kind = Name then
+                              Append (Buf, "    if (parse_" & Zig_Snake (To_String (E.Name))
+                                & "(p)) |r| { return r; } else |_| {}");
+                              Append (Buf, LF);
+                           end if;
+                        end;
+                     end if;
+                     St := K + 1;
+                  end if;
+               end loop;
+            end;
+            Append (Buf, "    try p.fail(""a " & NM & """);");
+            Append (Buf, LF);
+            Append (Buf, "    unreachable;");
+            Append (Buf, LF);
+         elsif Has_Alt (P) then
+            --  A struct alternation: try each branch with backtracking.
+            Append (Buf, "    const save = p.pos;");
+            Append (Buf, LF);
+            Append (Buf, "    var r: " & ZT & " = std.mem.zeroes(" & ZT & ");");
+            Append (Buf, LF);
+            Append (Buf, "    var matched = false;");
+            Append (Buf, LF);
+            Emit_Alternation (P, "r.", "r = std.mem.zeroes(" & ZT & ")", Buf);
+            Append (Buf, "    p.pos = save;");
+            Append (Buf, LF);
+            Append (Buf, "    try p.fail(""a " & NM & """);");
+            Append (Buf, LF);
+            Append (Buf, "    unreachable;");
+            Append (Buf, LF);
          else
             Append (Buf, "    var r: " & ZT & " = std.mem.zeroes(" & ZT & ");");
             Append (Buf, LF);

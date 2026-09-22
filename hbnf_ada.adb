@@ -200,6 +200,75 @@ package body HBNF_Ada is
          return Ada_Ident (Ref) & "_Type";
       end Ada_Type_Of;
 
+      --  The underlying scalar Ada type a rule name resolves to, chasing
+      --  single-name aliases and jets to their target (so `str / word` and
+      --  `ipv4 / ipv6` both collapse to `Unbounded_String`).  "" if not scalar.
+      function Resolve_Type (N : String; Depth : Natural := 0) return String is
+         C : constant String := Scalar_Ada_Type (N);
+      begin
+         if C /= "" then
+            return C;
+         end if;
+         if Depth > 8 then
+            return "";
+         end if;
+         declare
+            J : constant Natural := Find (N);
+         begin
+            if J = 0 then
+               return "";
+            end if;
+            declare
+               R : constant Rule := Rules (J);
+               P : constant Element_Vectors.Vector := R.Pattern;
+            begin
+               if R.Jet_Code /= Null_Unbounded_String then
+                  return "Unbounded_String";
+               end if;
+               if Natural (P.Length) = 1
+                 and then P (1).Kind = Name
+                 and then P (1).Min = 1
+                 and then P (1).Max = 1
+               then
+                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
+               end if;
+            end;
+         end;
+         return "";
+      end Resolve_Type;
+
+      --  If the pattern is a pure alternation of names that all resolve to
+      --  the same scalar Ada type, that type (a scalar union); else "".
+      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
+         T       : U := Null_Unbounded_String;
+         Has_Alt : Boolean := False;
+      begin
+         for E of Els loop
+            if E.Kind = Alt then
+               Has_Alt := True;
+            elsif E.Kind = Name then
+               declare
+                  R : constant String := Resolve_Type (To_String (E.Name));
+               begin
+                  if R = "" then
+                     return "";
+                  end if;
+                  if T = Null_Unbounded_String then
+                     T := To_Unbounded_String (R);
+                  elsif To_String (T) /= R then
+                     return "";
+                  end if;
+               end;
+            else
+               return "";
+            end if;
+         end loop;
+         if Has_Alt and then T /= Null_Unbounded_String then
+            return To_String (T);
+         end if;
+         return "";
+      end Scalar_Union_Type;
+
       --  A record component name: Ada_Ident, with a "_F" suffix if the bare
       --  identifier is an Ada reserved word (e.g. the rule `entry`).
       function Ada_Field (S : String) return String is
@@ -400,6 +469,13 @@ package body HBNF_Ada is
             if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
                return (Kind => Enum, Literals => Lits);
             else
+               declare
+                  SU : constant String := Scalar_Union_Type (P);
+               begin
+                  if SU /= "" then
+                     return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
+                  end if;
+               end;
                return (Kind => Struct, Members => Members);
             end if;
          end;
@@ -815,6 +891,73 @@ package body HBNF_Ada is
          return Ada_Ident (Ref) & "_Type";
       end Ada_Type_Of;
 
+      --  The underlying scalar Ada type a rule name resolves to, chasing
+      --  single-name aliases and jets to their target.  "" if not scalar.
+      function Resolve_Type (N : String; Depth : Natural := 0) return String is
+         C : constant String := Scalar_Ada_Type (N);
+      begin
+         if C /= "" then
+            return C;
+         end if;
+         if Depth > 8 then
+            return "";
+         end if;
+         declare
+            J : constant Natural := Find (N);
+         begin
+            if J = 0 then
+               return "";
+            end if;
+            declare
+               R : constant Rule := Rules (J);
+               P : constant Element_Vectors.Vector := R.Pattern;
+            begin
+               if R.Jet_Code /= Null_Unbounded_String then
+                  return "Unbounded_String";
+               end if;
+               if Natural (P.Length) = 1
+                 and then P (1).Kind = Name
+                 and then P (1).Min = 1
+                 and then P (1).Max = 1
+               then
+                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
+               end if;
+            end;
+         end;
+         return "";
+      end Resolve_Type;
+
+      --  A pure alternation of names resolving to one scalar type; "" else.
+      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
+         T       : U := Null_Unbounded_String;
+         Has_Alt : Boolean := False;
+      begin
+         for E of Els loop
+            if E.Kind = Alt then
+               Has_Alt := True;
+            elsif E.Kind = Name then
+               declare
+                  R : constant String := Resolve_Type (To_String (E.Name));
+               begin
+                  if R = "" then
+                     return "";
+                  end if;
+                  if T = Null_Unbounded_String then
+                     T := To_Unbounded_String (R);
+                  elsif To_String (T) /= R then
+                     return "";
+                  end if;
+               end;
+            else
+               return "";
+            end if;
+         end loop;
+         if Has_Alt and then T /= Null_Unbounded_String then
+            return To_String (T);
+         end if;
+         return "";
+      end Scalar_Union_Type;
+
       function Core_Desc (Name : String) return String is
       begin
          if Name = "str" or else Name = "atom" or else Name = "word" then
@@ -933,6 +1076,46 @@ package body HBNF_Ada is
          end loop;
       end Emit_Seq;
 
+      --  Emit a backtracking alternation over the Alt-separated branches in
+      --  Els.  Each branch runs in its own `declare` block with a fresh R, so a
+      --  partial match never leaves stale fields; a failed branch restores
+      --  P.Pos (via the caller's Save) and falls to the next, a successful one
+      --  returns R directly.  After the last branch fails, control falls
+      --  through for the caller's own failure handling.
+      procedure Emit_Alternation
+        (Els : Element_Vectors.Vector; TN : String;
+         Buf : in out U; Ind : String := "         ") is
+         N  : constant Natural := Natural (Els.Length);
+         St : Natural := 1;
+         Br : Natural := 0;
+      begin
+         for K in 1 .. N + 1 loop
+            if K > N or else Els (K).Kind = Alt then
+               Br := Br + 1;
+               if Br > 1 then
+                  Append (Buf, Ind & "P.Pos := Save;");
+                  Append (Buf, LF);
+               end if;
+               Append (Buf, Ind & "declare");
+               Append (Buf, LF);
+               Append (Buf, Ind & "   R : " & TN & ";");
+               Append (Buf, LF);
+               Append (Buf, Ind & "begin");
+               Append (Buf, LF);
+               Emit_Seq (Els, St, K - 1, "R.", Buf, Ind & "   ");
+               Append (Buf, Ind & "   return R;");
+               Append (Buf, LF);
+               Append (Buf, Ind & "exception");
+               Append (Buf, LF);
+               Append (Buf, Ind & "   when Parse_Error => null;");
+               Append (Buf, LF);
+               Append (Buf, Ind & "end;");
+               Append (Buf, LF);
+               St := K + 1;
+            end if;
+         end loop;
+      end Emit_Alternation;
+
       procedure Emit_Rule_Decl (Idx : Natural; Buf : in out U) is
          R        : constant Rule := Rules (Idx);
          P        : constant Element_Vectors.Vector := R.Pattern;
@@ -956,6 +1139,7 @@ package body HBNF_Ada is
          Is_List : constant Boolean := Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
+         SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
       begin
          if R.Jet_Code /= Null_Unbounded_String then
             Append (Buf, "      Expect_Kind (P, " & Ada_Ident (NM)
@@ -1144,6 +1328,68 @@ package body HBNF_Ada is
                  & Ada_Ident (To_String (P (1).Name)) & " (P);");
                Append (Buf, LF);
             end if;
+         elsif SU /= "" then
+            --  A scalar union (str / word, ipv4 / ipv6): try each branch as a
+            --  single scalar read; the first that matches yields the value.
+            declare
+               St : Natural := 1;
+            begin
+               for K in 1 .. Natural (P.Length) + 1 loop
+                  if K > Natural (P.Length) or else P (K).Kind = Alt then
+                     if St <= K - 1 then
+                        declare
+                           E : constant Element_Access := P (St);
+                        begin
+                           if E.Kind = Name and then Is_Core (To_String (E.Name)) then
+                              Append (Buf, "      if P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = "
+                                & Scalar_Kind (To_String (E.Name)) & " then");
+                              Append (Buf, LF);
+                              Append (Buf, "         R := " & Scalar_Parse (To_String (E.Name))
+                                & "; P.Pos := P.Pos + 1; return R;");
+                              Append (Buf, LF);
+                              Append (Buf, "      end if;");
+                              Append (Buf, LF);
+                           elsif E.Kind = Name then
+                              Append (Buf, "      begin");
+                              Append (Buf, LF);
+                              Append (Buf, "         R := Parse_" & Ada_Ident (To_String (E.Name)) & " (P);");
+                              Append (Buf, LF);
+                              Append (Buf, "         return R;");
+                              Append (Buf, LF);
+                              Append (Buf, "      exception");
+                              Append (Buf, LF);
+                              Append (Buf, "         when Parse_Error => null;");
+                              Append (Buf, LF);
+                              Append (Buf, "      end;");
+                              Append (Buf, LF);
+                           end if;
+                        end;
+                     end if;
+                     St := K + 1;
+                  end if;
+               end loop;
+            end;
+            Append (Buf, "      Fail (P, ""a " & NM & """);");
+            Append (Buf, LF);
+            Append (Buf, "      return R;");
+            Append (Buf, LF);
+         elsif Has_Alt (P) then
+            --  A struct alternation: try each branch with backtracking.
+            Append (Buf, "      declare");
+            Append (Buf, LF);
+            Append (Buf, "         Save : constant Natural := P.Pos;");
+            Append (Buf, LF);
+            Append (Buf, "      begin");
+            Append (Buf, LF);
+            Emit_Alternation (P, TN, Buf);
+            Append (Buf, "         P.Pos := Save;");
+            Append (Buf, LF);
+            Append (Buf, "         Fail (P, ""a " & NM & """);");
+            Append (Buf, LF);
+            Append (Buf, "         return R;");
+            Append (Buf, LF);
+            Append (Buf, "      end;");
+            Append (Buf, LF);
          else
             Emit_Seq (P, 1, Natural (P.Length), "R.", Buf);
             Append (Buf, "      return R;");
