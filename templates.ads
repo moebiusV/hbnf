@@ -23,11 +23,6 @@ package Templates is
      "static int lex_word_char(char c) {" & LF &
      "    return lex_word_start(c) || lex_digit(c) || c == '.';" & LF &
      "}" & LF &
-     "static char *lex_dup(const char *s, size_t n) {" & LF &
-     "    char *p = (char *)malloc(n + 1);" & LF &
-     "    if (p) { memcpy(p, s, n); p[n] = '\0'; }" & LF &
-     "    return p;" & LF &
-     "}" & LF &
      "" & LF &
      "lexed_t lex(const char *text) {" & LF &
      "    lexed_t r = {0};" & LF &
@@ -52,16 +47,15 @@ package Templates is
      "        else if (c == '#') { while (text[i] && text[i] != '\n') i++; }" & LF &
      "        else if (c == '""') {" & LF &
      "            size_t sc = col;" & LF &
-     "            char *buf = (char *)malloc(strlen(text + i) + 1);" & LF &
-     "            size_t bn = 0;" & LF &
+     "            size_t start = hbnf_str_len;" & LF &
      "            i++; col++;" & LF &
      "            while (text[i] && text[i] != '""') {" & LF &
      "                if (text[i] == '\\' && text[i + 1]) { i++; col++; }" & LF &
-     "                buf[bn++] = text[i++]; col++;" & LF &
+     "                hbnf_str_put(text[i++]); col++;" & LF &
      "            }" & LF &
      "            if (text[i] == '""') { i++; col++; }" & LF &
-     "            buf[bn] = '\0';" & LF &
-     "            toks[r.n++] = (token_t){ TOK_STR, buf, bn, KWID_NONE, line, sc };" & LF &
+     "            hbnf_str_put('\0');" & LF &
+     "            toks[r.n++] = (token_t){ TOK_STR, hbnf_str_arena + start, hbnf_str_len - start - 1, KWID_NONE, line, sc };" & LF &
      "        }" & LF &
      "        else if (lex_digit(c)) {" & LF &
      "            size_t s = i, sc = col;" & LF &
@@ -94,10 +88,8 @@ package Templates is
      "bool parse_text(const char *text, @ROOT_TYPE@ *out," & LF &
      "                char *err, size_t errlen, size_t *err_line, size_t *err_col) {" & LF &
      "    lexed_t l = lex(text);" & LF &
-     "    size_t i;" & LF &
      "    bool ok = parse_tokens(l.toks, l.n, out, text," & LF &
      "                           err, errlen, err_line, err_col);" & LF &
-     "    for (i = 0; i < l.n; i++) if (l.toks[i].kind == TOK_STR) free((char *)l.toks[i].text);" & LF &
      "    free(l.toks);" & LF &
      "    return ok;" & LF &
      "}";

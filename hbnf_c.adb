@@ -1182,10 +1182,7 @@ package body HBNF_C is
                     & "(&n->" & F & ");");
                   Append (Buf, LF);
                when others =>
-                  if Resolve_Type (Name) = "const char *" then
-                     Append (Buf, Ind & "free((void *)n->" & F & ");");
-                     Append (Buf, LF);
-                  end if;
+                  null;  --  string leaves point into the source/arena, not owned
             end case;
          end Free_Field;
 
@@ -1216,8 +1213,7 @@ package body HBNF_C is
                   if Info.Elem_Name /= Null_Unbounded_String then
                      Free_Field (To_String (Info.Elem_Name), Buf, "        ");
                   else
-                     Append (Buf, "        free((void *)n->value);");
-                     Append (Buf, LF);
+                     null;  --  bare `value` leaf points into the source/arena
                   end if;
                else
                   for M of Info.Elem_Members loop
@@ -1231,6 +1227,10 @@ package body HBNF_C is
                Append (Buf, "    }");
                Append (Buf, LF);
                Append (Buf, "    HBNF_LIST_INIT(head);");
+               Append (Buf, LF);
+            end if;
+            if Idx = 1 then
+               Append (Buf, "    free_arena();");
                Append (Buf, LF);
             end if;
             Append (Buf, "}");
@@ -1291,6 +1291,63 @@ package body HBNF_C is
       Append (Res, "#include <stdlib.h>");
       Append (Res, LF);
       Append (Res, "#include <string.h>");
+      Append (Res, LF);
+      Append (Res, LF);
+      Append (Res, "/* Quoted-string arena: the lexer unescapes quoted strings into this");
+      Append (Res, LF);
+      Append (Res, "   growable buffer, and the tree's string leaves point into it (bareword");
+      Append (Res, LF);
+      Append (Res, "   leaves point into the caller's source buffer).  Frees with the tree. */");
+      Append (Res, LF);
+      Append (Res, "static char *hbnf_str_arena = NULL;");
+      Append (Res, LF);
+      Append (Res, "static size_t hbnf_str_len = 0, hbnf_str_cap = 0;");
+      Append (Res, LF);
+      Append (Res, "static void hbnf_str_put(char c) {");
+      Append (Res, LF);
+      Append (Res, "    if (hbnf_str_len + 1 > hbnf_str_cap) {");
+      Append (Res, LF);
+      Append (Res, "        hbnf_str_cap = hbnf_str_cap ? hbnf_str_cap * 2 : 256;");
+      Append (Res, LF);
+      Append (Res, "        hbnf_str_arena = (char *)realloc(hbnf_str_arena, hbnf_str_cap);");
+      Append (Res, LF);
+      Append (Res, "    }");
+      Append (Res, LF);
+      Append (Res, "    hbnf_str_arena[hbnf_str_len++] = c;");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, "/* Copy a (non-NUL-terminated) token slice into the arena, NUL-terminated,");
+      Append (Res, LF);
+      Append (Res, "   and return it.  One amortized realloc, no per-string malloc. */");
+      Append (Res, LF);
+      Append (Res, "static const char *hbnf_str_append(const char *s, size_t n) {");
+      Append (Res, LF);
+      Append (Res, "    if (hbnf_str_len + n + 1 > hbnf_str_cap) {");
+      Append (Res, LF);
+      Append (Res, "        hbnf_str_cap = hbnf_str_cap ? hbnf_str_cap : 256;");
+      Append (Res, LF);
+      Append (Res, "        while (hbnf_str_len + n + 1 > hbnf_str_cap) hbnf_str_cap *= 2;");
+      Append (Res, LF);
+      Append (Res, "        hbnf_str_arena = (char *)realloc(hbnf_str_arena, hbnf_str_cap);");
+      Append (Res, LF);
+      Append (Res, "    }");
+      Append (Res, LF);
+      Append (Res, "    memcpy(hbnf_str_arena + hbnf_str_len, s, n);");
+      Append (Res, LF);
+      Append (Res, "    hbnf_str_arena[hbnf_str_len + n] = '\0';");
+      Append (Res, LF);
+      Append (Res, "    { const char *r = hbnf_str_arena + hbnf_str_len;");
+      Append (Res, LF);
+      Append (Res, "      hbnf_str_len += n + 1; return r; }");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, "static void free_arena(void) {");
+      Append (Res, LF);
+      Append (Res, "    free(hbnf_str_arena); hbnf_str_arena = NULL; hbnf_str_len = hbnf_str_cap = 0;");
+      Append (Res, LF);
+      Append (Res, "}");
       Append (Res, LF);
       Append (Res, LF);
       Append (Res, "/* List container: portable singly-linked by default.  A schema");
@@ -1482,14 +1539,17 @@ package body HBNF_C is
    --  The C expression that converts the token at p->pos into a core value.
    function Scalar_Parse_Expr (Name : String) return String is
    begin
-      if Name = "str" or else Name = "atom" or else Name = "word" then
-         return "strndup(p->toks[p->pos].text, p->toks[p->pos].len)";
+      if Name = "str" then
+         --  Quoted strings are already unescaped into the arena, NUL-terminated.
+         return "p->toks[p->pos].text";
+      elsif Name = "atom" or else Name = "word" then
+         return "hbnf_str_append(p->toks[p->pos].text, p->toks[p->pos].len)";
       elsif Name = "int" then
          return "atoll(p->toks[p->pos].text)";
       elsif Name = "bool" or else Name = "flag" then
-         return "(p->toks[p->pos].len==3 && strncmp(p->toks[p->pos].text,""yes"",3)==0 "
-           & "|| p->toks[p->pos].len==2 && strncmp(p->toks[p->pos].text,""on"",2)==0 "
-           & "|| p->toks[p->pos].len==4 && strncmp(p->toks[p->pos].text,""true"",4)==0)";
+         return "((p->toks[p->pos].len==3 && strncmp(p->toks[p->pos].text,""yes"",3)==0) "
+           & "|| (p->toks[p->pos].len==2 && strncmp(p->toks[p->pos].text,""on"",2)==0) "
+           & "|| (p->toks[p->pos].len==4 && strncmp(p->toks[p->pos].text,""true"",4)==0))";
       elsif Name'Length >= 2 then
          declare
             P : constant Character := Name (Name'First);
@@ -1508,7 +1568,7 @@ package body HBNF_C is
             end if;
          end;
       end if;
-      return "strndup(p->toks[p->pos].text, p->toks[p->pos].len)";
+      return "hbnf_str_append(p->toks[p->pos].text, p->toks[p->pos].len)";
    end Scalar_Parse_Expr;
 
    function Emit_Parser (Rules : Rule_Vectors.Vector) return String is
@@ -1904,6 +1964,8 @@ package body HBNF_C is
                   St := K + 1;
                end if;
             end loop;
+            Append (Buf, Ind & "default: break;");
+            Append (Buf, LF);
             Append (Buf, Ind & "}");
             Append (Buf, LF);
             Append (Buf, "alt_fail_switch:");
@@ -1950,7 +2012,7 @@ package body HBNF_C is
             Append (Buf, "    if (!expect_kind(p, TOK_" & C_Ident (NM)
               & ", ""a " & NM & """)) return false;");
             Append (Buf, LF);
-            Append (Buf, "    *out = strndup(p->toks[p->pos].text,"
+            Append (Buf, "    *out = hbnf_str_append(p->toks[p->pos].text,"
               & " p->toks[p->pos].len); p->pos++;");
             Append (Buf, LF);
             Append (Buf, "    return true;");
@@ -2328,9 +2390,15 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "          { const char *s = p.text; size_t ln = p.err_line;");
       Append (Res, LF);
-      Append (Res, "            while (ln > 1) { const char *nl = strchr(s, '\n');");
+      Append (Res, "            while (ln > 1) {");
       Append (Res, LF);
-      Append (Res, "              if (!nl) break; s = nl + 1; ln--; }");
+      Append (Res, "                const char *nl = strchr(s, '\n');");
+      Append (Res, LF);
+      Append (Res, "                if (!nl) break;");
+      Append (Res, LF);
+      Append (Res, "                s = nl + 1; ln--;");
+      Append (Res, LF);
+      Append (Res, "            }");
       Append (Res, LF);
       Append (Res, "            const char *nl = strchr(s, '\n');");
       Append (Res, LF);
