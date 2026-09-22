@@ -133,6 +133,15 @@ list rule, `TAILQ` action code, and `yyerror`.  Two details matter to us:
   milliseconds because the lexer is a hand-written loop and the grammar is
   LL(1)-ish, with no backtracking.
 
+- **There is no generic "conf tree".**  The yacc actions *are* the config
+  builder: they call helper functions (`new_peer()`, `new_filter()`,
+  `add_mrt()`, …) that allocate and link nodes directly into the daemon's own
+  `struct *conf`, mutating it incrementally as the shift/reduce runs.  hbnf
+  inverts this — the parser returns a typed tree and the program walks it
+  afterward.  For configuration that is the same work split across two phases;
+  for a parser generator it is the difference between a grammar welded to one
+  daemon's struct layout and a grammar that is reusable and self-describing.
+
 hbnf's goal is to get that speed and that clarity from a *declarative* schema,
 without the hand-written lexer and without the token-level straitjacket.
 
@@ -469,6 +478,21 @@ criterion.
 departs from.  The split is principled (§2.2) but forces the token boundary to
 be a lexer-level decision, which is exactly where the domain hacks accumulate.
 
+hbnf deliberately gives up four things yacc has, and each is a trade, not an
+oversight.  *Left recursion* (`list : list item | item`) is how yacc expresses
+repetition; hbnf's recursive-descent emitters cannot descend into it, so a
+schema spells the same thing as `*( item )` — a restructuring, not a loss of
+power.  *Semantic actions* — arbitrary C between rule symbols, with `$1`/`$2`
+access to sub-values — are the reason yacc is a "compiler-compiler" and hbnf is
+a recognizer that yields a typed tree; hbnf's bet is that config parsers do not
+need the action layer, and that removing it is what buys the one-grammar,
+four-language output.  *Lexer start conditions* (`%x STRING`) let one lexer
+re-tokenize the same bytes by parser state; hbnf's jets are stateless per token
+kind.  *Precedence declarations* (`%left`/`%right`) resolve expression
+ambiguity declaratively; hbnf resolves it structurally with ordered choice.
+None of these is beyond reach (§8), but a config schema needs none of them, and
+their absence is what keeps the notation small.
+
 **Parsing expression grammars.**  PEG (Ford) removes the token split in the
 other direction — ordered choice over characters — at the cost of ordered
 choice's surprise (a later alternative is unreachable) and worst-case
@@ -486,11 +510,13 @@ generators.  They are general parsers; hbnf's niche is the narrower and
 higher-volume one of configuration, where self-contained single-file output,
 typed trees, and the `parse_config` shape matter more than incrementality.
 
-**Urbit jets.**  The jet idea — a hand-written implementation of a formally
-specified function, checked to agree with the spec — comes from Urbit.  We
-apply it one level down, to lexing: a token's BNF definition is the spec, the
-hand-written scanner is the jet, and the agreement check is the safety property
-that makes hand-optimizing a hot token acceptable.
+**Jets.**  "Jet" is hbnf's term for a hand-written implementation of a formally
+specified operation, kept in agreement with its spec.  Hand-optimizing a hot
+path while a declarative spec stays the source of truth is an old idea in
+systems — a native method for a bytecode, an intrinsic for a library routine —
+and hbnf applies it one level down, to lexing: a token's BNF definition is the
+spec, the hand-written scanner is the jet, and the agreement check is the
+safety property that makes hand-optimizing a hot token acceptable.
 
 ## 8. Conclusion and future work
 
@@ -506,6 +532,26 @@ spec-vs-jet cross-check; remove the per-token string copy (arena or
 zero-copy slices) and re-measure; and express the full pf grammar as a schema,
 validating against real rulesets.
 
+Two larger extensions follow from the design.  First, the nine OpenBSD schemas
+already repeat the same boilerplate — `string = str / word`, `yesno =
+"yes" / "no"`, IPv4/IPv6 and port handling — so a schema should be able to
+`include "stdlib.hbnf"` and override individual definitions locally.  yacc has
+no grammar-level include at all (its only `#include` reaches the verbatim C
+blocks, not the rules), so this is hbnf exceeding yacc rather than matching it;
+a token override and a rule override become the same operation, since a token
+*is* a rule.
+
+Second, hbnf is today a recognizer that yields a typed tree, not a
+compiler-compiler.  The one missing primitive is the *semantic action* —
+target-language code attached to a rule, run during reduction with access to
+sub-values — and, for a real frontend, attributes (synthesized/inherited) for
+name resolution and a generated visitor/fold for transforming the typed tree.
+The visitor/fold route is the path of least departure: hbnf already produces a
+typed AST, so emitting the tree-walking code alongside it turns the "walk the
+tree afterward" of §2.3 into generated, first-class support, and compilation
+becomes writing passes against a typed tree instead of threading actions
+through a grammar.
+
 ## References
 
 [1] D. Crocker and P. Overell, "Augmented BNF for Syntax Specifications: ABNF,"
@@ -516,4 +562,3 @@ validating against real rulesets.
     Foundation," POPL 2004.
 [5] E. Visser, "Scannerless Generalized-LR Parsing," 1997.
 [6] OpenBSD, usr.sbin/httpd/parse.y and related, <https://cvsweb.openbsd.org>.
-[7] C. Yarvin et al., Urbit jets, <https://urbit.org>.
