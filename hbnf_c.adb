@@ -94,6 +94,135 @@ package body HBNF_C is
       return To_String (Buf);
    end C_Escape;
 
+   --  The C list container.  A grammar may override each operation with a
+   --  top-level `list-<op> { … }` directive: raw C with @name@ (the head's
+   --  struct tag), @elem@ (the element type), @h@ (a head-pointer
+   --  expression), @e@ (a node pointer) and @v@ (a node-pointer variable)
+   --  substituted.  An operation without an override falls back to hbnf's
+   --  own head/tail singly-linked list, written directly with no #define.
+   function Subst (T, Name, Elem, H, E, V : String) return String is
+      Buf : U;
+      I   : Natural := T'First;
+   begin
+      while I <= T'Last loop
+         if I < T'Last and then T (I) = '@' then
+            declare
+               J : Natural := I + 1;
+            begin
+               while J <= T'Last and then T (J) /= '@' loop
+                  J := J + 1;
+               end loop;
+               if J <= T'Last then
+                  declare
+                     Key : constant String := T (I + 1 .. J - 1);
+                  begin
+                     if Key = "name" then
+                        Append (Buf, Name);
+                     elsif Key = "elem" then
+                        Append (Buf, Elem);
+                     elsif Key = "h" then
+                        Append (Buf, H);
+                     elsif Key = "e" then
+                        Append (Buf, E);
+                     elsif Key = "v" then
+                        Append (Buf, V);
+                     else
+                        Append (Buf, T (I .. J));
+                     end if;
+                  end;
+                  I := J + 1;
+               else
+                  Append (Buf, T (I));
+                  I := I + 1;
+               end if;
+            end;
+         else
+            Append (Buf, T (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return To_String (Buf);
+   end Subst;
+
+   function L_Head (Name, Elem : String) return String is
+      O : constant String := HBNF_Grammar.List_Override ("head");
+   begin
+      if O /= "" then
+         return Subst (O, Name, Elem, "", "", "");
+      end if;
+      return "struct " & Name & " { struct " & Elem & " *head, **tail; }";
+   end L_Head;
+
+   function L_Entry (Elem : String) return String is
+      O : constant String := HBNF_Grammar.List_Override ("entry");
+   begin
+      if O /= "" then
+         return Subst (O, "", Elem, "", "", "");
+      end if;
+      return "struct " & Elem & " *_link";
+   end L_Entry;
+
+   function L_Init (H : String) return String is
+      O : constant String := HBNF_Grammar.List_Override ("init");
+   begin
+      if O /= "" then
+         return Subst (O, "", "", H, "", "");
+      end if;
+      return "(" & H & ")->head = NULL; (" & H & ")->tail = &(" & H
+        & ")->head;";
+   end L_Init;
+
+   function L_Append (H, E : String) return String is
+      O : constant String := HBNF_Grammar.List_Override ("append");
+   begin
+      if O /= "" then
+         return Subst (O, "", "", H, E, "");
+      end if;
+      return "*(" & H & ")->tail = " & E & "; (" & H & ")->tail = &("
+        & E & ")->_link;";
+   end L_Append;
+
+   function L_Foreach (V, H : String) return String is
+      O : constant String := HBNF_Grammar.List_Override ("foreach");
+   begin
+      if O /= "" then
+         return Subst (O, "", "", H, "", V);
+      end if;
+      return "for (" & V & " = (" & H & ")->head; " & V & "; " & V & " = "
+        & V & "->_link)";
+   end L_Foreach;
+
+   function L_First (H : String) return String is
+      O : constant String := HBNF_Grammar.List_Override ("first");
+   begin
+      if O /= "" then
+         return Subst (O, "", "", H, "", "");
+      end if;
+      return "(" & H & ")->head";
+   end L_First;
+
+   function L_Next (E : String) return String is
+      O : constant String := HBNF_Grammar.List_Override ("next");
+   begin
+      if O /= "" then
+         return Subst (O, "", "", "", E, "");
+      end if;
+      return "(" & E & ")->_link";
+   end L_Next;
+
+   --  After a head has been copied to its final place (the parser builds
+   --  lists in locals and copies structs out), repoint what points back at
+   --  the head: a TAILQ's first tqe_prev and an empty list's tail.
+   function L_Relink (H : String) return String is
+      O : constant String := HBNF_Grammar.List_Override ("relink");
+   begin
+      if O /= "" then
+         return Subst (O, "", "", H, "", "");
+      end if;
+      return "if (!(" & H & ")->head) (" & H & ")->tail = &(" & H
+        & ")->head;";
+   end L_Relink;
+
    --  Natural'Image with the leading blank stripped ("1", not " 1").
    function Img (N : Natural) return String is
       S : constant String := Natural'Image (N);
@@ -1084,7 +1213,7 @@ package body HBNF_C is
                   Append (Buf, "    " & Pfx & CN & "_kind_t kind;");
                   Append (Buf, LF);
                end if;
-               Append (Buf, "    HBNF_LIST_ENTRY(" & Pfx & CN & ");");
+               Append (Buf, "    " & L_Entry (Pfx & CN) & ";");
                Append (Buf, LF);
                if Info.Elem_Members.Is_Empty then
                   if Info.Elem_Name /= Null_Unbounded_String then
@@ -1188,7 +1317,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    const " & TN & " *n;");
                Append (Buf, LF);
-               Append (Buf, "    HBNF_LIST_FOREACH(n, head) {");
+               Append (Buf, "    " & L_Foreach ("n", "head") & " {");
                Append (Buf, LF);
                Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
@@ -1222,7 +1351,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    " & TN & " *n;");
                Append (Buf, LF);
-               Append (Buf, "    HBNF_LIST_FOREACH(n, head) {");
+               Append (Buf, "    " & L_Foreach ("n", "head") & " {");
                Append (Buf, LF);
                Recurse_Elem (Info, "map", Buf, "        ");
                Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
@@ -1380,11 +1509,11 @@ package body HBNF_C is
                Append (Buf, "static void free_" & CN & "(struct " & Pfx & CN
                  & "_list *head) {");
                Append (Buf, LF);
-               Append (Buf, "    " & TN & " *n = HBNF_LIST_FIRST(head), *next;");
+               Append (Buf, "    " & TN & " *n = " & L_First ("head") & ", *next;");
                Append (Buf, LF);
                Append (Buf, "    while (n) {");
                Append (Buf, LF);
-               Append (Buf, "        next = HBNF_LIST_NEXT(n);");
+               Append (Buf, "        next = " & L_Next ("n") & ";");
                Append (Buf, LF);
                Append (Buf, "        free_" & CN & "_fields(n);");
                Append (Buf, LF);
@@ -1394,7 +1523,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    }");
                Append (Buf, LF);
-               Append (Buf, "    HBNF_LIST_INIT(head);");
+               Append (Buf, "    " & L_Init ("head"));
                Append (Buf, LF);
             end if;
             if Idx = 1 then
@@ -1446,9 +1575,9 @@ package body HBNF_C is
       --  in.  After a successful parse one walk over the tree repoints them
       --  at the heads' final addresses, so the daemon may TAILQ_REMOVE,
       --  TAILQ_INSERT_* or TAILQ_CONCAT on the tree as on its own lists.
-      --  The repoint itself is container-specific, so it is left to the
-      --  grammar's preamble via HBNF_LIST_RELINK, alongside the other
-      --  HBNF_LIST_* operations.
+      --  The repoint itself is container-specific: the grammar's
+      --  `list-relink { … }` override when present, else written directly
+      --  for hbnf's own slist.
       procedure Emit_Relink (Buf : in out U) is
 
          function Ref_Kind (Name : String) return Class_Kind is
@@ -1573,12 +1702,12 @@ package body HBNF_C is
                      Append (Buf, "static void relink_" & CN & "(struct " & Pfx
                        & CN & "_list *head) {");
                      Append (Buf, LF);
-                     Append (Buf, "    HBNF_LIST_RELINK(head);");
+                     Append (Buf, "    " & L_Relink ("head"));
                      Append (Buf, LF);
                      if Elem_Holds_List (Info) then
                         Append (Buf, "    " & TN & " *n;");
                         Append (Buf, LF);
-                        Append (Buf, "    HBNF_LIST_FOREACH(n, head) relink_"
+                        Append (Buf, "    " & L_Foreach ("n", "head") & " relink_"
                           & CN & "_fields(n);");
                         Append (Buf, LF);
                      end if;
@@ -1623,7 +1752,7 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "   The tree's string leaves live here; free_arena walks the chain once. */");
       Append (Res, LF);
-      Append (Res, "#define HBNF_ARENA_CHUNK (1u << 16)");
+      Append (Res, "enum { HBNF_ARENA_CHUNK = 1 << 16 };");
       Append (Res, LF);
       Append (Res, "typedef struct hbnf_chunk hbnf_chunk;");
       Append (Res, LF);
@@ -1641,7 +1770,7 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "    if (!hbnf_arena || hbnf_arena->used + n > hbnf_arena->cap) {");
       Append (Res, LF);
-      Append (Res, "        size_t cap = n > HBNF_ARENA_CHUNK ? n : HBNF_ARENA_CHUNK;");
+      Append (Res, "        size_t cap = n > (size_t)HBNF_ARENA_CHUNK ? n : (size_t)HBNF_ARENA_CHUNK;");
       Append (Res, LF);
       Append (Res, "        hbnf_chunk *c = (hbnf_chunk *)malloc(sizeof *c + cap);");
       Append (Res, LF);
@@ -1718,33 +1847,6 @@ package body HBNF_C is
       Append (Res, "}");
       Append (Res, LF);
       Append (Res, LF);
-      Append (Res, "/* List container: portable singly-linked by default.  A schema");
-      Append (Res, LF);
-      Append (Res, "   preamble may #define these to another container (e.g. OpenBSD's");
-      Append (Res, LF);
-      Append (Res, "   TAILQ, after #include <sys/queue.h>). */");
-      Append (Res, LF);
-      Append (Res, "#ifndef HBNF_LIST_HEAD");
-      Append (Res, LF);
-      Append (Res, "#define HBNF_LIST_HEAD(name, type) struct name { struct type *head, **tail; }");
-      Append (Res, LF);
-      Append (Res, "#define HBNF_LIST_ENTRY(type) struct type *_link");
-      Append (Res, LF);
-      Append (Res, "#define HBNF_LIST_INIT(h) do { (h)->head = NULL; (h)->tail = &(h)->head; } while (0)");
-      Append (Res, LF);
-      Append (Res, "#define HBNF_LIST_APPEND(h, e) do { *(h)->tail = (e); (h)->tail = &(e)->_link; } while (0)");
-      Append (Res, LF);
-      Append (Res, "#define HBNF_LIST_FOREACH(v, h) for ((v) = (h)->head; (v); (v) = (v)->_link)");
-      Append (Res, LF);
-      Append (Res, "#define HBNF_LIST_FIRST(h) ((h)->head)");
-      Append (Res, LF);
-      Append (Res, "#define HBNF_LIST_NEXT(e) ((e)->_link)");
-      Append (Res, LF);
-      Append (Res, "#define HBNF_LIST_RELINK(h) do { if (!(h)->head) (h)->tail = &(h)->head; } while (0)");
-      Append (Res, LF);
-      Append (Res, "#endif");
-      Append (Res, LF);
-      Append (Res, LF);
 
       if Idref then
          Append (Res, "/* object id: assigned by the serializer, resolved on "
@@ -1764,9 +1866,9 @@ package body HBNF_C is
               & " " & C_Type_Name (To_String (Rules (I).Name)) & ";");
             Append (Res, LF);
             if Infos (I).Kind = List then
-               Append (Res, "HBNF_LIST_HEAD("
-                 & Pfx & C_Name (To_String (Rules (I).Name)) & "_list, "
-                 & Pfx & C_Name (To_String (Rules (I).Name)) & ");");
+               Append (Res, L_Head
+                 (Pfx & C_Name (To_String (Rules (I).Name)) & "_list",
+                  Pfx & C_Name (To_String (Rules (I).Name))) & ";");
                Append (Res, LF);
             end if;
             Remaining := Remaining + 1;
@@ -2749,7 +2851,7 @@ package body HBNF_C is
             begin
                Append (Buf, "    struct " & Pfx & C_Name (NM) & "_list head;");
                Append (Buf, LF);
-               Append (Buf, "    HBNF_LIST_INIT(&head);");
+               Append (Buf, "    " & L_Init ("&head"));
                Append (Buf, LF);
                --  Repetition bounds: only a bounded rule pays for the count.
                if Bounded then
@@ -2808,7 +2910,7 @@ package body HBNF_C is
                Append (Buf, "have:");
                Append (Buf, LF);
                Emit_Number_Converts (Nums, "nn->", True, Buf, "        ");
-               Append (Buf, "        HBNF_LIST_APPEND(&head, nn);");
+               Append (Buf, "        " & L_Append ("&head", "nn"));
                Append (Buf, LF);
                if Bounded then
                   Append (Buf, "        count++;");
@@ -3520,11 +3622,11 @@ package body HBNF_C is
             Append (Buf, LF);
             Append (Buf, "    uint32_t n_ = 0;");
             Append (Buf, LF);
-            Append (Buf, "    HBNF_LIST_FOREACH(n, head) n_++;");
+            Append (Buf, "    " & L_Foreach ("n", "head") & " n_++;");
             Append (Buf, LF);
             Append (Buf, "    emit(MSG_COUNT, &n_, sizeof n_);");
             Append (Buf, LF);
-            Append (Buf, "    HBNF_LIST_FOREACH(n, head) {");
+            Append (Buf, "    " & L_Foreach ("n", "head") & " {");
             Append (Buf, LF);
             Emit_Body (CN, Info, Buf, "        ");
             Append (Buf, "    }");
@@ -3779,7 +3881,7 @@ package body HBNF_C is
             Append (Buf, LF);
             Append (Buf, "    memcpy(&_n, _d, sizeof _n);");
             Append (Buf, LF);
-            Append (Buf, "    HBNF_LIST_INIT(head);");
+            Append (Buf, "    " & L_Init ("head"));
             Append (Buf, LF);
             Append (Buf, "    for (uint32_t _i = 0; _i < _n; _i++) {");
             Append (Buf, LF);
@@ -3787,7 +3889,7 @@ package body HBNF_C is
             Append (Buf, LF);
             Append (Buf, "        decode_" & CN & "(rd, nn);");
             Append (Buf, LF);
-            Append (Buf, "        HBNF_LIST_APPEND(head, nn);");
+            Append (Buf, "        " & L_Append ("head", "nn"));
             Append (Buf, LF);
             Append (Buf, "    }");
             Append (Buf, LF);

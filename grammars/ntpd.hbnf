@@ -16,18 +16,18 @@
 
 language C
 wordchars "*/$@%"
-
 {
 #include <sys/queue.h>
-#define HBNF_LIST_HEAD(name,type)  TAILQ_HEAD(name,type)
-#define HBNF_LIST_ENTRY(type)      TAILQ_ENTRY(type) _link
-#define HBNF_LIST_INIT(h)          TAILQ_INIT(h)
-#define HBNF_LIST_APPEND(h,e)      TAILQ_INSERT_TAIL(h,e,_link)
-#define HBNF_LIST_FOREACH(v,h)     TAILQ_FOREACH(v,h,_link)
-#define HBNF_LIST_NEXT(e)          TAILQ_NEXT(e,_link)
-#define HBNF_LIST_FIRST(h)         TAILQ_FIRST(h)
-#define HBNF_LIST_RELINK(h)        do { if (TAILQ_EMPTY(h)) TAILQ_INIT(h); else TAILQ_FIRST(h)->_link.tqe_prev = &TAILQ_FIRST(h); } while (0)
 }
+list-head { TAILQ_HEAD(@name@, @elem@) }
+list-entry { TAILQ_ENTRY(@elem@) _link }
+list-init { TAILQ_INIT(@h@); }
+list-append { TAILQ_INSERT_TAIL(@h@, @e@, _link); }
+list-foreach { TAILQ_FOREACH(@v@, @h@, _link) }
+list-first { TAILQ_FIRST(@h@) }
+list-next { TAILQ_NEXT(@e@, _link) }
+list-relink { if (TAILQ_EMPTY(@h@)) TAILQ_INIT(@h@); else TAILQ_FIRST(@h@)->_link.tqe_prev = &TAILQ_FIRST(@h@); }
+
 include "commonconf.hbnf"
 
 

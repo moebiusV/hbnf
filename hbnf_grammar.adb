@@ -11,6 +11,14 @@ package body HBNF_Grammar is
    Epilogue_Code   : Unbounded_String := Null_Unbounded_String;
    Word_Chars_Code : Unbounded_String := Null_Unbounded_String;
    Type_Prefix_Code : Unbounded_String := Null_Unbounded_String;
+   List_Head_Code    : Unbounded_String := Null_Unbounded_String;
+   List_Entry_Code   : Unbounded_String := Null_Unbounded_String;
+   List_Init_Code    : Unbounded_String := Null_Unbounded_String;
+   List_Append_Code  : Unbounded_String := Null_Unbounded_String;
+   List_Foreach_Code : Unbounded_String := Null_Unbounded_String;
+   List_First_Code   : Unbounded_String := Null_Unbounded_String;
+   List_Next_Code    : Unbounded_String := Null_Unbounded_String;
+   List_Relink_Code  : Unbounded_String := Null_Unbounded_String;
 
    --  ====================================================================
    --  Lexer
@@ -440,6 +448,40 @@ package body HBNF_Grammar is
 
    function Cur (P : Parser) return Token is (P.Toks (P.Pos));
 
+   --  `list-<op> { … }` in the header: an override of one C list operation,
+   --  as opposed to a rule named `list-head`.
+   function Is_List_Op (P : Parser) return Boolean is
+      S : constant String := To_String (P.Toks (P.Pos).Text);
+   begin
+      return P.Toks (P.Pos).Kind = T_Name
+        and then (S = "list-head" or else S = "list-entry"
+                  or else S = "list-init" or else S = "list-append"
+                  or else S = "list-foreach" or else S = "list-first"
+                  or else S = "list-next" or else S = "list-relink");
+   end Is_List_Op;
+
+   procedure Set_List_Override (Op : String; Code : String) is
+      V : constant Unbounded_String := To_Unbounded_String (Code);
+   begin
+      if Op = "list-head" then
+         List_Head_Code := V;
+      elsif Op = "list-entry" then
+         List_Entry_Code := V;
+      elsif Op = "list-init" then
+         List_Init_Code := V;
+      elsif Op = "list-append" then
+         List_Append_Code := V;
+      elsif Op = "list-foreach" then
+         List_Foreach_Code := V;
+      elsif Op = "list-first" then
+         List_First_Code := V;
+      elsif Op = "list-next" then
+         List_Next_Code := V;
+      elsif Op = "list-relink" then
+         List_Relink_Code := V;
+      end if;
+   end Set_List_Override;
+
    --  A prefix must start a C identifier and continue one.
    function Valid_Prefix (S : String) return Boolean is
      (S'Length > 0
@@ -629,6 +671,7 @@ package body HBNF_Grammar is
             Next (P);
          end loop;
          if Cur (P).Kind = T_Code
+           or else Is_List_Op (P)
            or else (Cur (P).Kind = T_Name
                     and then (To_String (Cur (P).Text) = "language"
                               or else To_String (Cur (P).Text) = "wordchars"
@@ -686,6 +729,23 @@ package body HBNF_Grammar is
                   --  directive, seen last, wins; --prefix= wins over both.
                   Type_Prefix_Code := Cur (P).Text;
                   Next (P);
+               elsif Is_List_Op (P) then
+                  --  `list-<op> { … }`: the raw C for one list operation,
+                  --  so the emitter writes it (with @name@/@elem@/@h@/@e@/
+                  --  @v@ substituted) instead of hbnf's own slist.
+                  declare
+                     Op : constant String := To_String (Cur (P).Text);
+                  begin
+                     Next (P);
+                     if Cur (P).Kind /= T_Code then
+                        raise Parse_Error with
+                          Integer'Image (Cur (P).Line) & ":" &
+                          Integer'Image (Cur (P).Col) &
+                          ": expected a code block after `" & Op & "`";
+                     end if;
+                     Set_List_Override (Op, To_String (Cur (P).Text));
+                     Next (P);
+                  end;
                else
                   exit;
                end if;
@@ -923,6 +983,28 @@ package body HBNF_Grammar is
    function Epilogue return String is (To_String (Epilogue_Code));
 
    function Word_Chars return String is (To_String (Word_Chars_Code));
+
+   function List_Override (Op : String) return String is
+   begin
+      if Op = "head" then
+         return To_String (List_Head_Code);
+      elsif Op = "entry" then
+         return To_String (List_Entry_Code);
+      elsif Op = "init" then
+         return To_String (List_Init_Code);
+      elsif Op = "append" then
+         return To_String (List_Append_Code);
+      elsif Op = "foreach" then
+         return To_String (List_Foreach_Code);
+      elsif Op = "first" then
+         return To_String (List_First_Code);
+      elsif Op = "next" then
+         return To_String (List_Next_Code);
+      elsif Op = "relink" then
+         return To_String (List_Relink_Code);
+      end if;
+      return "";
+   end List_Override;
 
    function Type_Prefix return String is (To_String (Type_Prefix_Code));
 

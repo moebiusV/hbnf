@@ -99,6 +99,13 @@ package HBNF_Grammar is
    --  them into its word token.  "" when absent.
    function Word_Chars return String;
 
+   --  The raw code overriding one C list operation, from a top-level
+   --  `list-head { … }` … `list-relink { … }` directive; "" when absent, in
+   --  which case the C emitter writes hbnf's own head/tail singly-linked
+   --  list directly.  Op is one of "head", "entry", "init", "append",
+   --  "foreach", "first", "next", "relink".
+   function List_Override (Op : String) return String;
+
    --  The prefix declared by a top-level `prefix "pf_"` (or set with
    --  Set_Type_Prefix, for hbnf_cli's --prefix=, which wins), "" when absent.
    --  It is put in front of every generated C type and struct tag, so a rule
