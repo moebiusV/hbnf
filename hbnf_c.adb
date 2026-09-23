@@ -2586,6 +2586,7 @@ package body HBNF_C is
          if Is_List then
             declare
                E : constant Element_Access := P (1);
+               Bounded : constant Boolean := E.Min > 0 or else E.Max >= 0;
                Nums : constant String_Vectors.Vector :=
                  (if E.Kind = Group then Numeric_Fields (E.Items)
                   else String_Vectors.Empty_Vector);
@@ -2594,7 +2595,21 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    HBNF_LIST_INIT(&head);");
                Append (Buf, LF);
-               Append (Buf, "    while (p->pos < p->n) {");
+               --  Repetition bounds: only a bounded rule pays for the count.
+               if Bounded then
+                  Append (Buf, "    size_t count = 0;");
+                  Append (Buf, LF);
+               end if;
+               if E.Min > 0 then
+                  Append (Buf, "    size_t start = p->pos;");
+                  Append (Buf, LF);
+               end if;
+               if E.Max >= 0 then
+                  Append (Buf, "    while (p->pos < p->n && count < "
+                    & Img (Natural (E.Max)) & ") {");
+               else
+                  Append (Buf, "    while (p->pos < p->n) {");
+               end if;
                Append (Buf, LF);
                Append (Buf, "        " & C_Type_Name (NM) & " *nn ="
                  & " calloc(1, sizeof(*nn));");
@@ -2602,7 +2617,19 @@ package body HBNF_C is
                Append (Buf, "        size_t save = p->pos;");
                Append (Buf, LF);
                Emit_Number_Deferrals (Nums, Buf, "        ");
-               if E.Kind = Name then
+               if E.Kind = Name and then Is_Core (To_String (E.Name)) then
+                  --  A list of a core type (`1*word`): read the token in
+                  --  place; there is no parse_rule_ function for a core type.
+                  Append (Buf, "        if (p->toks[p->pos].kind == "
+                    & Scalar_Tok_Kind (To_String (E.Name)) & ") { nn->"
+                    & C_Field (To_String (E.Name)) & " = "
+                    & Scalar_Parse_Expr (To_String (E.Name))
+                    & "; p->pos++; goto have; }");
+                  Append (Buf, LF);
+                  Append (Buf, "        fail(p, """ & Core_Desc (To_String (E.Name))
+                    & """, 0, p->toks[p->pos].text);");
+                  Append (Buf, LF);
+               elsif E.Kind = Name then
                   Append (Buf, "        if (parse_rule_" & C_Name (To_String (E.Name))
                     & "(p, &nn->" & C_Field (To_String (E.Name)) & ")) goto have;");
                   Append (Buf, LF);
@@ -2627,8 +2654,17 @@ package body HBNF_C is
                Emit_Number_Converts (Nums, "nn->", True, Buf, "        ");
                Append (Buf, "        HBNF_LIST_APPEND(&head, nn);");
                Append (Buf, LF);
+               if Bounded then
+                  Append (Buf, "        count++;");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, "    }");
                Append (Buf, LF);
+               if E.Min > 0 then
+                  Append (Buf, "    if (count < " & Img (E.Min) & ") { free_"
+                    & CN & "(&head); p->pos = start; return false; }");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, "    *out = head; return true;");
                Append (Buf, LF);
             end;

@@ -4,6 +4,7 @@ with Ada.Command_Line;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with HBNF_Grammar;
+with HBNF_Compilable;
 with HBNF_C;
 with HBNF_Rust;
 with HBNF_Zig;
@@ -77,6 +78,7 @@ begin
       if Prefix /= Null_Unbounded_String then
          HBNF_Grammar.Set_Type_Prefix (To_String (Prefix));
       end if;
+      HBNF_Compilable.Check (Rules, B);
       if B = "c" then
          if Conf then
             Ada.Text_IO.Put_Line ("===== conf.h =====");

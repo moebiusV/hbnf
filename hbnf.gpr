@@ -11,6 +11,7 @@ library project HBNF is
      ("hbnf.ads", "hbnf.adb",
       "hbnf_grammar.ads", "hbnf_grammar.adb",
       "hbnf_match.ads", "hbnf_match.adb",
+      "hbnf_compilable.ads", "hbnf_compilable.adb",
       "hbnf_c.ads", "hbnf_c.adb",
       "hbnf_rust.ads", "hbnf_rust.adb",
       "hbnf_zig.ads", "hbnf_zig.adb",
