@@ -2207,6 +2207,17 @@ package body HBNF_C is
       return "TOK_ATOM";  --  atom / word / bool / flag
    end Scalar_Tok_Kind;
 
+   --  A `word`/`atom` scalar is a bareword the lexer did NOT intern as a
+   --  keyword; the match must reject keyword tokens, else `1*string` would
+   --  swallow the next directive's keyword (parse.y's lexer reserves them).
+   function Scalar_Kwid_Check (Name : String) return String is
+   begin
+      if Name = "atom" or else Name = "word" then
+         return " && p->toks[p->pos].kwid == KWID_NONE";
+      end if;
+      return "";
+   end Scalar_Kwid_Check;
+
    --  A human-readable description of a core scalar (for error messages).
    function Core_Desc (Name : String) return String is
    begin
@@ -3166,7 +3177,9 @@ package body HBNF_C is
                   --  A list of a core type (`1*word`): read the token in
                   --  place; there is no parse_rule_ function for a core type.
                   Append (Buf, "        if (p->toks[p->pos].kind == "
-                    & Scalar_Tok_Kind (To_String (E.Name)) & ") { nn->"
+                    & Scalar_Tok_Kind (To_String (E.Name))
+                    & Scalar_Kwid_Check (To_String (E.Name))
+                    & ") { nn->"
                     & C_Field (To_String (E.Name)) & " = "
                     & Scalar_Parse_Expr (To_String (E.Name))
                     & "; p->pos++; goto have; }");
@@ -3347,7 +3360,9 @@ package body HBNF_C is
                              and then Is_Core (To_String (E.Name))
                            then
                               Append (Buf, "    if (p->pos < p->n && p->toks[p->pos].kind == "
-                                & Scalar_Tok_Kind (To_String (E.Name)) & ") {");
+                                & Scalar_Tok_Kind (To_String (E.Name))
+                                & Scalar_Kwid_Check (To_String (E.Name))
+                                & ") {");
                               Append (Buf, LF);
                               Append (Buf, "        *out = "
                                 & Scalar_Parse_Expr (To_String (E.Name))
@@ -3542,7 +3557,8 @@ package body HBNF_C is
       Append (Res, "static bool expect_kind(parser_t *p, tok_kind_t k,"
         & " const char *desc) {");
       Append (Res, LF);
-      Append (Res, "    if (p->pos < p->n && p->toks[p->pos].kind == k) return true;");
+      Append (Res, "    if (p->pos < p->n && p->toks[p->pos].kind == k"
+        & " && (k != TOK_ATOM || p->toks[p->pos].kwid == KWID_NONE)) return true;");
       Append (Res, LF);
       Append (Res, "    fail(p, desc, 0, p->pos < p->n ? p->toks[p->pos].text"
         & " : ""end of input"");");
