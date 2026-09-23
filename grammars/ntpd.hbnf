@@ -3,23 +3,31 @@
 ;
 ;   %token keyword table   ->  "keyword" literals
 ;   STRING / NUMBER        ->  string (str/word) / int
-;   { ... } tree actions   ->  implicit — the binder builds the tree
+;   { ... } tree actions   ->  action jets (the bind walk builds the conf tree)
 ;   the lexer's address bareword (an IP or hostname, with `*` and `:` allowed,
 ;                          ->  resolved later by host()) -> the wildcard and
 ;                          ->  ipv6 inline jets below
 ;
-; parse.y's `_l` list rules and its `{ opts_default(); } _opts_l | { }`
-; option blocks are kept as top-level lists (`serveropts = *( serveropt )`)
-; and explicit two-way alternations (`with rtable / without`) — the same
-; shape parse.y spells out, minus the newline scaffolding (the generated
-; lexer skips newlines).
+; parse.y's option lists (listen_opts_l / server_opts_l / sensor_opts_l) are
+; kept as top-level lists (`serveropts = *( serveropt )`); each option rule is a
+; keyword-led alternation so hbnf tags every list node with a `kind` (which
+; option matched), which the action jet switches on.  A bare keyword option
+; (`trusted`) carries no value — its `kind` alone says it is set.
 
 language C
 wordchars "*/$@%"
+conf struct ntpd_conf
 include "tailq.hbnf"
 
 {
 #include <sys/queue.h>
+#include "ntpd.h"
+
+/* parse.y's parser-internal state: the `query from` address (copied into each
+   later server peer) and the constraint pool sequence number. */
+static struct sockaddr_in  query_addr4;
+static struct sockaddr_in6 query_addr6;
+static int                 poolseqnum;
 }
 
 include "commonconf.hbnf"
@@ -35,17 +43,20 @@ entry      = "listen" "on" address listenopts
            / "constraints" "from" string
            / "constraint" "from" stringlist
            / "sensor" string sensoropts {
-    struct ntp_addr *h, *next;
+    struct ntp_addr *h = NULL, *next;
     switch (n->kind) {
     case ENTRY_LISTEN: {
         struct listen_addr *la;
-        if (host(n->address, &h) == -1 || !h) break;
+        host(n->address, &h);
+        if (!h && (host_dns(n->address, 0, &h) == -1 || !h))
+            break;
         for (; h; h = next) {
             next = h->next;
             la = calloc(1, sizeof *la);
             la->fd = -1;
             la->rtable = 0;
-            { rtable_t *rt; TAILQ_FOREACH(rt, &n->listenopts, _link) la->rtable = (int)rt->rtable.int_; }
+            { listenopts_t *lo; TAILQ_FOREACH(lo, &n->listenopts, _link)
+                la->rtable = (int)lo->rtable.int_; }
             memcpy(&la->sa, &h->ss, sizeof la->sa);
             TAILQ_INSERT_TAIL(&conf->listen_addrs, la, entry);
         }
@@ -66,25 +77,97 @@ entry      = "listen" "on" address listenopts
     case ENTRY_SERVERS:
     case ENTRY_SERVER: {
         struct ntp_peer *p = new_peer();
+        p->weight = 1;
         host(n->address, &p->addr);
-        { serveropt_t *so; TAILQ_FOREACH(so, &n->serveropts, _link) {
-            p->weight = so->weight.int_;
-            p->trusted = so->trusted;
+        { serveropts_t *so; TAILQ_FOREACH(so, &n->serveropts, _link) {
+            if (so->serveropt.kind == SERVEROPT_WEIGHT)
+                p->weight = so->serveropt.int_;
+            else p->trusted = 1;
         } }
+        if (p->trusted) conf->trusted_peers = 1;
         p->query_addr4 = query_addr4;
         p->query_addr6 = query_addr6;
         TAILQ_INSERT_TAIL(&conf->ntp_peers, p, entry);
         break;
     }
+    case ENTRY_CONSTRAINTS: {
+        struct constraint *p;
+        char *name, *path;
+        const char *s = n->string;
+        if (strncmp(s, "https://", 8) == 0) {
+            name = strdup(s + 8);
+            {
+                char *slash = name + strcspn(name, "/\\");
+                if (*slash) { path = strdup(slash); *slash = '\0'; }
+                else path = strdup("/");
+            }
+        } else {
+            name = strdup(s);
+            path = strdup("/");
+        }
+        host(name, &h);
+        for (; h; h = next) {
+            next = h->next;
+            h->next = NULL;
+            p = new_constraint();
+            p->addr = h;
+            p->addr_head.a = h;
+            p->addr_head.pool = ++poolseqnum;
+            p->addr_head.name = strdup(name);
+            p->addr_head.path = strdup(path);
+            if (p->addr) p->state = STATE_DNS_DONE;
+            constraint_add(p);
+        }
+        free(name); free(path);
+        break;
+    }
+    case ENTRY_CONSTRAINT: {
+        struct constraint *p = new_constraint();
+        char *name = NULL, *path = NULL;
+        { stringlist_t *sl; int first = 1; TAILQ_FOREACH(sl, &n->stringlist, _link) {
+            if (first) {
+                first = 0;
+                const char *s = sl->string;
+                if (strncmp(s, "https://", 8) == 0) {
+                    name = strdup(s + 8);
+                    {
+                        char *slash = name + strcspn(name, "/\\");
+                        if (*slash) { path = strdup(slash); *slash = '\0'; }
+                        else path = strdup("/");
+                    }
+                } else {
+                    name = strdup(s);
+                    path = strdup("/");
+                }
+                host(name, &h);
+            } else {
+                h = NULL;
+                host(sl->string, &h);
+            }
+            if (h) { h->next = p->addr; p->addr = h; }
+        } }
+        p->addr_head.a = p->addr;
+        p->addr_head.pool = 0;
+        p->addr_head.name = name;
+        p->addr_head.path = path;
+        if (p->addr) p->state = STATE_DNS_DONE;
+        constraint_add(p);
+        break;
+    }
     case ENTRY_SENSOR: {
         struct ntp_conf_sensor *s = new_sensor(n->string);
-        { sensoropt_t *so; TAILQ_FOREACH(so, &n->sensoropts, _link) {
-            s->weight = so->weight.int_;
-            s->correction = so->correction.int_;
-            s->refstr = so->refid.string;
-            s->stratum = so->stratum.int_;
-            s->trusted = so->trusted;
+        s->weight = 1;
+        s->stratum = 1;
+        { sensoropts_t *so; TAILQ_FOREACH(so, &n->sensoropts, _link) {
+            switch (so->sensoropt.kind) {
+            case SENSOROPT_CORRECTION: s->correction = so->sensoropt.int_; break;
+            case SENSOROPT_REFID:      s->refstr = so->sensoropt.string; break;
+            case SENSOROPT_STRATUM:    s->stratum = so->sensoropt.int_; break;
+            case SENSOROPT_WEIGHT:     s->weight = so->sensoropt.int_; break;
+            case SENSOROPT_TRUSTED:    s->trusted = 1; break;
+            }
         } }
+        if (s->trusted) conf->trusted_sensors = 1;
         TAILQ_INSERT_TAIL(&conf->ntp_conf_sensors, s, entry);
         break;
     }
@@ -93,17 +176,24 @@ entry      = "listen" "on" address listenopts
 }
 
 rtable     = "rtable" int
-weight     = "weight" int
-trusted    = "trusted"
-correction = "correction" int
-refid      = "refid" string
-stratum    = "stratum" int
 
-; parse.y's listen_opts_l / server_opts_l / sensor_opts_l list rules
 listenopts = *( rtable )
 
 serveropts = *( serveropt )
-serveropt  = weight / trusted
+serveropt  = "weight" int / "trusted"
 
 sensoropts = *( sensoropt )
-sensoropt  = correction / refid / stratum / weight / trusted
+sensoropt  = "correction" int / "refid" string / "stratum" int
+           / "weight" int / "trusted"
+
+; parse.y's parse_config() resets the conf's list heads before the bind walk
+; runs (the action jets TAILQ_INSERT into them, so they must be initialised).
+; The C --conf wrapper calls conf_init() after setting `conf = xconf`.
+{
+static void conf_init(void) {
+    TAILQ_INIT(&conf->listen_addrs);
+    TAILQ_INIT(&conf->ntp_peers);
+    TAILQ_INIT(&conf->ntp_conf_sensors);
+    TAILQ_INIT(&conf->constraints);
+}
+}
