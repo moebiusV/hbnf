@@ -136,17 +136,17 @@ interpreter.
 | Typed core rules | `str`, `atom`/`word`, `int`, `bool`, `flag`, `u8…u64`, `i8…i64`; `dec`, `float` | C and Rust lack `dec` and `float` (interpreter only). `atom` rejects numbers in both engines, although `hbnf_grammar.ads` says otherwise. `bool` accepts any word (`maybe` → false). The compiled lexers reject `-5` for `int`/`iN`; the interpreter accepts it. Compiled `u16` accepts `70000`, truncated. `u7` emits `uint7_t`, which doesn't compile. |
 | Tree typing from rule shape | — | Literal alternation → enum; single core type → scalar; `*( x )` → list (a whole rule); sequence → struct; keyword-led alternations get a kind tag; alias rules (`src = host`) name a field with another rule's type. Plus `free_<rule>`, visit/map, `--conf`, `--idref`. |
 | Jets | `name = { code }` | Code in the schema's `language`. The spec comment says `%{ … %}`, which is rejected. The other backends get stubs that return 0: pfctl's C jets make `port != 80` parse in C and fail in Rust. |
-| Schema directives | `language C\|Rust\|Zig\|Ada`, `wordchars "…"`, `include "file"`, `list-head`/`list-entry`/…/`list-relink` `{ … }`, `prefix "pf_"` | `include` is relative to the including file, and a local rule overrides an included one. `prefix` goes in front of every generated C type and struct tag (`--prefix=` overrides it). The eight `list-<op> { … }` directives each supply the raw C for one list operation, with `@name@`/`@elem@`/`@h@`/`@e@`/`@v@` substituted in; the nine daemon grammars set them to OpenBSD's `TAILQ_*` from `<sys/queue.h>`. An operation without an override falls back to hbnf's own head/tail singly-linked list. |
+| Schema directives | `language C\|Rust\|Zig\|Ada`, `wordchars "…"`, `include "file"`, `listops { … }`, `prefix "pf_"` | `include` is relative to the including file, and a local rule overrides an included one. `prefix` goes in front of every generated C type and struct tag (`--prefix=` overrides it). `listops { head { … } entry { … } … }` names each of the eight list operations and its raw C, with `@name@`/`@elem@`/`@h@`/`@e@`/`@v@` substituted in; the nine daemon grammars set them to OpenBSD's `TAILQ_*` from `<sys/queue.h>`. An operation without an override falls back to hbnf's own head/tail singly-linked list. |
 | Code blocks | `{ … }` before the rules (preamble) and after (epilogue) | Copied verbatim |
 | Escapes in literals | `\a \b \f \n \r \t \v \\ \" \' \xHH` | `\xHH` reads hex digits greedily, as in C |
 | Rule names with `_`, comments carried into output, newline-before-`/` continuation | — | ✓ |
 
 The list container is the one place the generated C is driven by
-grammar-supplied fragments: the `list-<op> { … }` directives name each list
-operation and its C text, so the daemon grammars spell out OpenBSD's `TAILQ_*`
-there instead of `#define`ing macros in the preamble. hbnf's own structures
-are plain C — the default list is a head/tail singly-linked list written
-directly, and the arena chunk size is an `enum`, not a `#define`.
+grammar-supplied fragments: the `listops { … }` block names each list operation
+and its C text, so the daemon grammars spell out OpenBSD's `TAILQ_*` there
+instead of `#define`ing macros in the preamble. hbnf's own structures are
+plain C — the default list is a head/tail singly-linked list written directly,
+and the arena chunk size is an `enum`, not a `#define`.
 
 ## 6. Whitespace uses ABNF's names
 

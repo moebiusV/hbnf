@@ -15,17 +15,20 @@
 
 language C
 wordchars "$@%"
+listops {
+  head { TAILQ_HEAD(@name@, @elem@) }
+  entry { TAILQ_ENTRY(@elem@) _link }
+  init { TAILQ_INIT(@h@); }
+  append { TAILQ_INSERT_TAIL(@h@, @e@, _link); }
+  foreach { TAILQ_FOREACH(@v@, @h@, _link) }
+  first { TAILQ_FIRST(@h@) }
+  next { TAILQ_NEXT(@e@, _link) }
+  relink { if (TAILQ_EMPTY(@h@)) TAILQ_INIT(@h@); else TAILQ_FIRST(@h@)->_link.tqe_prev = &TAILQ_FIRST(@h@); }
+}
+
 {
 #include <sys/queue.h>
 }
-list-head { TAILQ_HEAD(@name@, @elem@) }
-list-entry { TAILQ_ENTRY(@elem@) _link }
-list-init { TAILQ_INIT(@h@); }
-list-append { TAILQ_INSERT_TAIL(@h@, @e@, _link); }
-list-foreach { TAILQ_FOREACH(@v@, @h@, _link) }
-list-first { TAILQ_FIRST(@h@) }
-list-next { TAILQ_NEXT(@e@, _link) }
-list-relink { if (TAILQ_EMPTY(@h@)) TAILQ_INIT(@h@); else TAILQ_FIRST(@h@)->_link.tqe_prev = &TAILQ_FIRST(@h@); }
 
 include "commonconf.hbnf"
 

@@ -448,37 +448,29 @@ package body HBNF_Grammar is
 
    function Cur (P : Parser) return Token is (P.Toks (P.Pos));
 
-   --  `list-<op> { … }` in the header: an override of one C list operation,
-   --  as opposed to a rule named `list-head`.
-   function Is_List_Op (P : Parser) return Boolean is
-      S : constant String := To_String (P.Toks (P.Pos).Text);
-   begin
-      return P.Toks (P.Pos).Kind = T_Name
-        and then (S = "list-head" or else S = "list-entry"
-                  or else S = "list-init" or else S = "list-append"
-                  or else S = "list-foreach" or else S = "list-first"
-                  or else S = "list-next" or else S = "list-relink");
-   end Is_List_Op;
-
+   --  Store the raw C for one list operation ("head", "entry", "init",
+   --  "append", "foreach", "first", "next", "relink").
    procedure Set_List_Override (Op : String; Code : String) is
       V : constant Unbounded_String := To_Unbounded_String (Code);
    begin
-      if Op = "list-head" then
+      if Op = "head" then
          List_Head_Code := V;
-      elsif Op = "list-entry" then
+      elsif Op = "entry" then
          List_Entry_Code := V;
-      elsif Op = "list-init" then
+      elsif Op = "init" then
          List_Init_Code := V;
-      elsif Op = "list-append" then
+      elsif Op = "append" then
          List_Append_Code := V;
-      elsif Op = "list-foreach" then
+      elsif Op = "foreach" then
          List_Foreach_Code := V;
-      elsif Op = "list-first" then
+      elsif Op = "first" then
          List_First_Code := V;
-      elsif Op = "list-next" then
+      elsif Op = "next" then
          List_Next_Code := V;
-      elsif Op = "list-relink" then
+      elsif Op = "relink" then
          List_Relink_Code := V;
+      else
+         raise Parse_Error with "listops: unknown operation `" & Op & "`";
       end if;
    end Set_List_Override;
 
@@ -671,11 +663,11 @@ package body HBNF_Grammar is
             Next (P);
          end loop;
          if Cur (P).Kind = T_Code
-           or else Is_List_Op (P)
            or else (Cur (P).Kind = T_Name
                     and then (To_String (Cur (P).Text) = "language"
                               or else To_String (Cur (P).Text) = "wordchars"
-                              or else To_String (Cur (P).Text) = "prefix"))
+                              or else To_String (Cur (P).Text) = "prefix"
+                              or else To_String (Cur (P).Text) = "listops"))
          then
             P.Pos := Mark;
             loop
@@ -729,23 +721,55 @@ package body HBNF_Grammar is
                   --  directive, seen last, wins; --prefix= wins over both.
                   Type_Prefix_Code := Cur (P).Text;
                   Next (P);
-               elsif Is_List_Op (P) then
-                  --  `list-<op> { … }`: the raw C for one list operation,
-                  --  so the emitter writes it (with @name@/@elem@/@h@/@e@/
-                  --  @v@ substituted) instead of hbnf's own slist.
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "listops"
+               then
+                  --  `listops { head { … } entry { … } … }`: the raw C for
+                  --  each list operation.  The block is re-lexed to read the
+                  --  `op { … }` pairs; each op is optional.
+                  Next (P);
+                  if Cur (P).Kind /= T_Code then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" &
+                       Integer'Image (Cur (P).Col) &
+                       ": expected a code block after `listops`";
+                  end if;
                   declare
-                     Op : constant String := To_String (Cur (P).Text);
+                     Tks : constant Token_Vectors.Vector :=
+                       Lex (To_String (Cur (P).Text));
+                     J   : Natural := 1;
                   begin
-                     Next (P);
-                     if Cur (P).Kind /= T_Code then
-                        raise Parse_Error with
-                          Integer'Image (Cur (P).Line) & ":" &
-                          Integer'Image (Cur (P).Col) &
-                          ": expected a code block after `" & Op & "`";
-                     end if;
-                     Set_List_Override (Op, To_String (Cur (P).Text));
-                     Next (P);
+                     while J <= Natural (Tks.Length) loop
+                        while J <= Natural (Tks.Length)
+                          and then Tks (J).Kind in T_Newline | T_Comment
+                        loop
+                           J := J + 1;
+                        end loop;
+                        exit when J > Natural (Tks.Length)
+                          or else Tks (J).Kind = T_EOF;
+                        if Tks (J).Kind /= T_Name then
+                           raise Parse_Error with
+                             "listops: expected an operation name (head, "
+                             & "entry, init, append, foreach, first, next, "
+                             & "relink)";
+                        end if;
+                        declare
+                           Op : constant String := To_String (Tks (J).Text);
+                        begin
+                           J := J + 1;
+                           if J > Natural (Tks.Length)
+                             or else Tks (J).Kind /= T_Code
+                           then
+                              raise Parse_Error with
+                                "listops: expected a code block after `"
+                                & Op & "`";
+                           end if;
+                           Set_List_Override (Op, To_String (Tks (J).Text));
+                           J := J + 1;
+                        end;
+                     end loop;
                   end;
+                  Next (P);
                else
                   exit;
                end if;
