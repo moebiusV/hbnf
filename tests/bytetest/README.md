@@ -1,0 +1,96 @@
+# bytetest — byte-identity harness against OpenBSD parse.y
+
+hbnf's daemon grammars re-implement nine OpenBSD config parsers, each of which
+has a `parse.y` (bison) grammar and a set of config structs. The goal of the
+byte-identity work is that the parser hbnf generates produces the **same bytes**
+as `parse.y` does for the same input: the `conf` tree must be byte-for-byte
+identical.
+
+This directory is the harness that measures that. It runs two checks per
+daemon, driven by the table in `daemons.tsv`:
+
+1. **bison build** — every `parse.y` is fed through bison, proving it is
+   brought in and parses. (This is the "bring the parse.y into the harness"
+   step.)
+2. **conf layout** — the daemon's real config header is compiled against
+   OpenBSD's own headers and `sizeof(struct conf)` is dumped. That size is the
+   byte-identity anchor the generated parser must reproduce field-for-field.
+
+Run it:
+
+    OBSD=/path/to/obsd79 ./bytetest.sh      # OBSD defaults to <repo>/.work/obsd79
+
+## The OpenBSD source tree
+
+The harness compiles against a real OpenBSD 7.9 tree, so struct layout is the
+real thing, not a re-typed copy. Fetch and extract it once:
+
+    mkdir -p .work/obsd79 && cd .work/obsd79
+    curl -O https://cdn.openbsd.org/pub/OpenBSD/7.9/src.tar.gz
+    curl -O https://cdn.openbsd.org/pub/OpenBSD/7.9/sys.tar.gz
+    mkdir extracted
+    tar xzf src.tar.gz -C extracted
+    tar xzf sys.tar.gz -C extracted
+
+Both tarballs are extracted whole (simplest; ~1.5 GB). The pieces the harness
+actually reads are: `sys/**` (kernel headers incl. `net/pfvar.h`),
+`include/`, `lib/libc/include`, `lib/libevent`, `lib/libutil`, `lib/libtls`,
+and the nine `sbin/*` / `usr.sbin/*` daemon directories.
+
+`sys/machine` (the `<machine/...>` headers) is a build-time symlink, not in the
+tarball; `bytetest.sh` recreates it as `arch/amd64/include`.
+
+## Why the compile recipe looks like that
+
+Compiling OpenBSD headers on Linux hits one real conflict: OpenBSD's
+`machine/_types.h` says `__int64_t` is `long long`, while glibc's
+`bits/types.h` says `long`. The two are ABI-identical on x86_64 (both 8 bytes,
+same alignment) but C-type-incompatible, so the compiler errors on the
+redefinition.
+
+The fix is to make the compiler see **OpenBSD's headers consistently**:
+
+    gcc -nostdinc -isystem "$(gcc -print-file-name=include)" \
+        -I bsdinc -I include -I lib/libc/include \
+        -I sys -I sys/arch/amd64/include \
+        -I lib/libevent -I lib/libutil -I lib/libtls ...
+
+- `-nostdinc` drops glibc's headers so OpenBSD's `__int64_t` never meets
+  glibc's.
+- `-isystem "$(gcc -print-file-name=include)"` re-adds only gcc's own
+  freestanding headers (`stdarg.h`, `stddef.h`, `float.h`, …).
+- `bsdinc/stdint.h` is a shim that maps the POSIX `intN_t` names the daemon
+  headers use onto OpenBSD's `__intN_t` (OpenBSD normally gets `<stdint.h>`
+  from the compiler, which isn't available under `-nostdinc`).
+- `lib/libevent`, `lib/libutil`, `lib/libtls` are OpenBSD's in-tree libs whose
+  headers the daemons include (`<event.h>`, `<imsg.h>`, `<ber.h>`, `<tls.h>`).
+
+`relayd.h` additionally includes `<openssl/ssl.h>`, taken from the host's
+OpenSSL (its `daemons.tsv` row carries the extra `-I` paths).
+
+## daemons.tsv
+
+One TAB-separated row per daemon:
+
+    name   parse.y path   conf struct   header   extra #includes (; / -)   extra -I (colon / -)
+
+`conf struct` is the tree `parse.y` builds. `pfctl` is the odd one out:
+`parse.y`'s output is a list of kernel `struct pf_rule` (assembled through
+parser-internal `node_*` helpers), so the grammar targets `pf_rule` in
+`sys/net/pfvar.h`, not `pfctl`'s own parser struct.
+
+## Status and next steps
+
+- `sizeof(struct conf)` for all nine daemons is measured and matches the real
+  header (this is the anchor, not yet the full proof).
+- `dump_pfrule.c` dumps the full field-by-field layout of `struct pf_rule`
+  (the active pfctl target): every `offsetof`/`sizeof`, the contract the
+  generated parser must meet.
+- Next: per-field `_Static_assert(offsetof(...) == offsetof(...))` against the
+  generated parser (needs the grammars flattened + type-jetted first), then a
+  runtime comparison — build each `parse.y` to a parser with bison, run it and
+  the generated parser on the same input, and `memcmp` the trees.
+
+Qemu is the fallback if a daemon's full `parse.y` support code (`pfctl.c`,
+OpenSSL-linked helpers, …) won't compile on Linux; the static layout checks
+above do not need it.

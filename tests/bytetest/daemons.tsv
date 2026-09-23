@@ -1,0 +1,20 @@
+# Byte-identity harness: one row per OpenBSD daemon whose parse.y hbnf
+# re-implements.  Columns (TAB-separated):
+#   name    parse.y path (rel. to extracted root)
+#           conf struct      header (rel. to extracted root)
+#           extra #includes (; separated, "-" for none)
+#           extra -I dirs (colon separated, "-" for none)
+# The conf struct is the tree parse.y builds; byte-identity is measured
+# against its layout in the real OpenBSD header.
+# pfctl is the odd one out: parse.y's output is a list of kernel `struct
+# pf_rule` (built via parser-internal node_* helpers), so the grammar targets
+# pf_rule, not the parser's own `struct pfctl`.
+pfctl	sbin/pfctl/parse.y	struct pf_rule	sys/net/pfvar.h	-	-
+dhcpleased	sbin/dhcpleased/parse.y	struct dhcpleased_conf	sbin/dhcpleased/dhcpleased.h	netinet/if_ether.h;imsg.h;event.h	-
+unwind	sbin/unwind/parse.y	struct uw_conf	sbin/unwind/unwind.h	-	-
+bgpd	usr.sbin/bgpd/parse.y	struct bgpd_config	usr.sbin/bgpd/bgpd.h	-	-
+httpd	usr.sbin/httpd/parse.y	struct httpd	usr.sbin/httpd/httpd.h	-	-
+ldpd	usr.sbin/ldpd/parse.y	struct ldpd_conf	usr.sbin/ldpd/ldpd.h	-	-
+ntpd	usr.sbin/ntpd/parse.y	struct ntpd_conf	usr.sbin/ntpd/ntpd.h	-	-
+relayd	usr.sbin/relayd/parse.y	struct relayd	usr.sbin/relayd/relayd.h	-	/usr/include:/usr/include/x86_64-linux-gnu
+snmpd	usr.sbin/snmpd/parse.y	struct snmpd	usr.sbin/snmpd/snmpd.h	-	-
