@@ -30,6 +30,7 @@ wordchars "*$@%"
 #define HBNF_LIST_FOREACH(v,h)     TAILQ_FOREACH(v,h,_link)
 #define HBNF_LIST_NEXT(e)          TAILQ_NEXT(e,_link)
 #define HBNF_LIST_FIRST(h)         TAILQ_FIRST(h)
+#define HBNF_LIST_RELINK(h)        do { if (TAILQ_EMPTY(h)) TAILQ_INIT(h); else TAILQ_FIRST(h)->_link.tqe_prev = &TAILQ_FIRST(h); } while (0)
 }
 include "commonconf.hbnf"
 

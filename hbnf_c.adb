@@ -1440,6 +1440,157 @@ package body HBNF_C is
          end loop;
       end Emit_Free;
 
+      --  relink_<CN>: the parser builds each list in a local head and copies
+      --  structs out by value, which leaves a TAILQ's first tqe_prev (and an
+      --  empty list's tail) pointing at the stack frame the head was built
+      --  in.  After a successful parse one walk over the tree repoints them
+      --  at the heads' final addresses, so the daemon may TAILQ_REMOVE,
+      --  TAILQ_INSERT_* or TAILQ_CONCAT on the tree as on its own lists.
+      --  The repoint itself is container-specific, so it is left to the
+      --  grammar's preamble via HBNF_LIST_RELINK, alongside the other
+      --  HBNF_LIST_* operations.
+      procedure Emit_Relink (Buf : in out U) is
+
+         function Ref_Kind (Name : String) return Class_Kind is
+            J : constant Natural := Find (Alias_Target (Rules, Name));
+         begin
+            if J = 0 then
+               return Scalar;
+            end if;
+            return Infos (J).Kind;
+         end Ref_Kind;
+
+         --  True when the rule's value holds a list head somewhere inside it
+         --  (itself, or a by-value struct member, transitively): only those
+         --  paths need walking.
+         function Holds_List (Name : String; Depth : Natural := 0)
+           return Boolean is
+            J : constant Natural := Find (Alias_Target (Rules, Name));
+         begin
+            if J = 0 or else Depth > 32 then
+               return False;
+            end if;
+            case Infos (J).Kind is
+               when List =>
+                  return True;
+               when Struct =>
+                  declare
+                     Info : constant Rule_Info := Infos (J);
+                  begin
+                     for M of Info.Members loop
+                        if Holds_List (To_String (M.Name), Depth + 1) then
+                           return True;
+                        end if;
+                     end loop;
+                  end;
+                  return False;
+               when others =>
+                  return False;
+            end case;
+         end Holds_List;
+
+         function Elem_Holds_List (Info : Rule_Info) return Boolean is
+         begin
+            if Info.Elem_Members.Is_Empty then
+               return Info.Elem_Name /= Null_Unbounded_String
+                 and then Holds_List (To_String (Info.Elem_Name));
+            end if;
+            for M of Info.Elem_Members loop
+               if Holds_List (To_String (M.Name)) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Elem_Holds_List;
+
+         procedure Field (Name : String; Buf : in out U) is
+         begin
+            if Ref_Kind (Name) in Struct | List and then Holds_List (Name) then
+               Append (Buf, "    relink_" & C_Name (Alias_Target (Rules, Name))
+                 & "(&n->" & C_Field (Name) & ");");
+               Append (Buf, LF);
+            end if;
+         end Field;
+
+      begin
+         Append (Buf, "/* ---- relink (repoint list heads at their final address) ---- */");
+         Append (Buf, LF);
+         for I in 1 .. N loop
+            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               declare
+                  CN : constant String := C_Name (To_String (Rules (I).Name));
+                  TN : constant String :=
+                    C_Type_Name (To_String (Rules (I).Name));
+               begin
+                  Append (Buf, "static void relink_" & CN & "_fields(" & TN
+                    & " *n);");
+                  Append (Buf, LF);
+                  if Infos (I).Kind = List then
+                     Append (Buf, "static void relink_" & CN & "(struct " & Pfx
+                       & CN & "_list *head);");
+                  else
+                     Append (Buf, "static void relink_" & CN & "(" & TN
+                       & " *n);");
+                  end if;
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+         Append (Buf, LF);
+         for I in 1 .. N loop
+            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               declare
+                  CN   : constant String := C_Name (To_String (Rules (I).Name));
+                  TN   : constant String :=
+                    C_Type_Name (To_String (Rules (I).Name));
+                  Info : constant Rule_Info := Infos (I);
+               begin
+                  Append (Buf, "static void relink_" & CN & "_fields(" & TN
+                    & " *n) {");
+                  Append (Buf, LF);
+                  Append (Buf, "    (void)n;");
+                  Append (Buf, LF);
+                  if Info.Kind = Struct then
+                     for M of Info.Members loop
+                        Field (To_String (M.Name), Buf);
+                     end loop;
+                  elsif Info.Elem_Members.Is_Empty then
+                     if Info.Elem_Name /= Null_Unbounded_String then
+                        Field (To_String (Info.Elem_Name), Buf);
+                     end if;
+                  else
+                     for M of Info.Elem_Members loop
+                        Field (To_String (M.Name), Buf);
+                     end loop;
+                  end if;
+                  Append (Buf, "}");
+                  Append (Buf, LF);
+                  if Info.Kind = Struct then
+                     Append (Buf, "static void relink_" & CN & "(" & TN
+                       & " *n) { relink_" & CN & "_fields(n); }");
+                     Append (Buf, LF);
+                  else
+                     Append (Buf, "static void relink_" & CN & "(struct " & Pfx
+                       & CN & "_list *head) {");
+                     Append (Buf, LF);
+                     Append (Buf, "    HBNF_LIST_RELINK(head);");
+                     Append (Buf, LF);
+                     if Elem_Holds_List (Info) then
+                        Append (Buf, "    " & TN & " *n;");
+                        Append (Buf, LF);
+                        Append (Buf, "    HBNF_LIST_FOREACH(n, head) relink_"
+                          & CN & "_fields(n);");
+                        Append (Buf, LF);
+                     end if;
+                     Append (Buf, "}");
+                     Append (Buf, LF);
+                  end if;
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+      end Emit_Relink;
+
       Emitted   : array (1 .. N) of Boolean := [others => False];
       Remaining : Natural := 0;
       Res       : U;
@@ -1589,6 +1740,8 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "#define HBNF_LIST_NEXT(e) ((e)->_link)");
       Append (Res, LF);
+      Append (Res, "#define HBNF_LIST_RELINK(h) do { if (!(h)->head) (h)->tail = &(h)->head; } while (0)");
+      Append (Res, LF);
       Append (Res, "#endif");
       Append (Res, LF);
       Append (Res, LF);
@@ -1720,6 +1873,9 @@ package body HBNF_C is
       Append (Res, LF);
 
       Emit_Free (Res);
+      Append (Res, LF);
+
+      Emit_Relink (Res);
       Append (Res, LF);
 
       return To_String (Res);
@@ -2990,6 +3146,11 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "    if (p.pos < p.n && p.toks[p.pos].kind != TOK_EOF) { fail(&p, ""end of config"", 0, p.toks[p.pos].text); goto err; }");
       Append (Res, LF);
+      if Analyze (Rules, 1).Kind in Struct | List then
+         Append (Res, "    relink_" & C_Name (To_String (Rules (1).Name))
+           & "(out);");
+         Append (Res, LF);
+      end if;
       Append (Res, "    return true;");
       Append (Res, LF);
       Append (Res, "err:");
