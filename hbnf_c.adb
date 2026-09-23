@@ -568,6 +568,43 @@ package body HBNF_C is
       end;
    end Analyze;
 
+   --  The rule a field really holds: an alias (`src = host`), followed
+   --  through any chain of aliases, names the struct or list it stands for,
+   --  and the free, walk and id-ref code must treat the field as that rule.
+   --  Anything else (a core scalar, a scalar alias, an enum) is itself.
+   function Alias_Target (Rules : Rule_Vectors.Vector; Name : String)
+      return String is
+      Cur : U := To_Unbounded_String (Name);
+   begin
+      for Hop in 1 .. 8 loop
+         declare
+            J : constant Natural := Find (Rules, To_String (Cur));
+         begin
+            exit when J = 0;
+            declare
+               R : constant Rule := Rules (J);
+               P : constant Element_Vectors.Vector := R.Pattern;
+            begin
+               exit when R.Jet_Code /= Null_Unbounded_String
+                 or else Natural (P.Length) /= 1
+                 or else P (1).Kind /= HBNF_Grammar.Name
+                 or else P (1).Min /= 1 or else P (1).Max /= 1
+                 or else Scalar_C_Type (To_String (P (1).Name)) /= "";
+               declare
+                  T : constant Natural := Find (Rules, To_String (P (1).Name));
+               begin
+                  exit when T = 0;
+                  if Analyze (Rules, T).Kind in Struct | List then
+                     return To_String (P (1).Name);
+                  end if;
+                  Cur := P (1).Name;
+               end;
+            end;
+         end;
+      end loop;
+      return Name;
+   end Alias_Target;
+
    function Emit (Rules : Rule_Vectors.Vector; Idref : Boolean := False)
       return String is
 
@@ -1084,7 +1121,7 @@ package body HBNF_C is
       procedure Emit_Walk (Buf : in out U) is
 
          function Ref_Kind (Name : String) return Class_Kind is
-            J : constant Natural := Find (Name);
+            J : constant Natural := Find (Alias_Target (Rules, Name));
          begin
             if J = 0 then
                return Scalar;
@@ -1100,10 +1137,12 @@ package body HBNF_C is
          begin
             case Ref_Kind (Name) is
                when Struct =>
-                  Append (Buf, Ind & Prefix & "_" & C_Name (Name)
+                  Append (Buf, Ind & Prefix & "_"
+                    & C_Name (Alias_Target (Rules, Name))
                     & "(&n->" & F & ", f, ctx);");
                when List =>
-                  Append (Buf, Ind & Prefix & "_" & C_Name (Name)
+                  Append (Buf, Ind & Prefix & "_"
+                    & C_Name (Alias_Target (Rules, Name))
                     & "(&n->" & F & ", f, ctx);");
                when others =>
                   return;
@@ -1268,7 +1307,7 @@ package body HBNF_C is
       procedure Emit_Free (Buf : in out U) is
 
          function Ref_Kind (Name : String) return Class_Kind is
-            J : constant Natural := Find (Name);
+            J : constant Natural := Find (Alias_Target (Rules, Name));
          begin
             if J = 0 then
                return Scalar;
@@ -1284,7 +1323,8 @@ package body HBNF_C is
          begin
             case Ref_Kind (Name) is
                when Struct | List =>
-                  Append (Buf, Ind & "free_" & C_Name (Name)
+                  Append (Buf, Ind & "free_"
+                    & C_Name (Alias_Target (Rules, Name))
                     & "(&n->" & F & ");");
                   Append (Buf, LF);
                when others =>
@@ -3089,7 +3129,7 @@ package body HBNF_C is
       Infos : Info_Vectors.Vector;
 
       function Ref_Kind (Name : String) return Class_Kind is
-         J : constant Natural := Find (Rules, Name);
+         J : constant Natural := Find (Rules, Alias_Target (Rules, Name));
       begin
          if J = 0 then
             return Scalar;
@@ -3145,7 +3185,8 @@ package body HBNF_C is
 
       --  A member is a child node (recursed) rather than a serialized leaf.
       function Is_Child (M : Member) return Boolean is
-         J : constant Natural := Find (Rules, To_String (M.Name));
+         J : constant Natural :=
+           Find (Rules, Alias_Target (Rules, To_String (M.Name)));
       begin
          return M.Is_List
            or else (J > 0 and then (Infos (J).Kind = Struct
@@ -3216,7 +3257,8 @@ package body HBNF_C is
                begin
                   --  Both by-value struct members and embedded list heads are
                   --  passed by address (&n->field).
-                  Append (Buf, Ind & "serialize_" & C_Name (To_String (M.Name))
+                  Append (Buf, Ind & "serialize_"
+                    & C_Name (Alias_Target (Rules, To_String (M.Name)))
                     & "(&n->" & F & ", id, emit);");
                   Append (Buf, LF);
                end;
@@ -3396,7 +3438,7 @@ package body HBNF_C is
       Infos : Info_Vectors.Vector;
 
       function Ref_Kind (Name : String) return Class_Kind is
-         J : constant Natural := Find (Rules, Name);
+         J : constant Natural := Find (Rules, Alias_Target (Rules, Name));
       begin
          if J = 0 then
             return Scalar;
@@ -3447,7 +3489,8 @@ package body HBNF_C is
          and then Info.Elem_Name = Null_Unbounded_String);
 
       function Is_Child (M : Member) return Boolean is
-         J : constant Natural := Find (Rules, To_String (M.Name));
+         J : constant Natural :=
+           Find (Rules, Alias_Target (Rules, To_String (M.Name)));
       begin
          return M.Is_List
            or else (J > 0 and then (Infos (J).Kind = Struct
@@ -3500,7 +3543,8 @@ package body HBNF_C is
             if Is_Child (M) then
                declare
                   F   : constant String := C_Field (To_String (M.Name));
-                  CN2 : constant String := C_Name (To_String (M.Name));
+                  CN2 : constant String :=
+                    C_Name (Alias_Target (Rules, To_String (M.Name)));
                   J   : constant Natural := Find (Rules, To_String (M.Name));
                begin
                   if M.Is_List or else (J > 0 and then Infos (J).Kind = List) then
