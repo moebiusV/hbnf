@@ -11,6 +11,7 @@ package body HBNF_Grammar is
    Epilogue_Code   : Unbounded_String := Null_Unbounded_String;
    Word_Chars_Code : Unbounded_String := Null_Unbounded_String;
    Type_Prefix_Code : Unbounded_String := Null_Unbounded_String;
+   Conf_Type_Code  : Unbounded_String := Null_Unbounded_String;
    List_Head_Code    : Unbounded_String := Null_Unbounded_String;
    List_Entry_Code   : Unbounded_String := Null_Unbounded_String;
    List_Init_Code    : Unbounded_String := Null_Unbounded_String;
@@ -685,6 +686,7 @@ package body HBNF_Grammar is
                     and then (To_String (Cur (P).Text) = "language"
                               or else To_String (Cur (P).Text) = "wordchars"
                               or else To_String (Cur (P).Text) = "prefix"
+                              or else To_String (Cur (P).Text) = "conf"
                               or else To_String (Cur (P).Text) = "listops"))
          then
             P.Pos := Mark;
@@ -739,6 +741,32 @@ package body HBNF_Grammar is
                   --  directive, seen last, wins; --prefix= wins over both.
                   Type_Prefix_Code := Cur (P).Text;
                   Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "conf"
+               then
+                  --  `conf struct ntpd_conf`: the daemon's own conf struct
+                  --  the C --conf wrapper fills (instead of an AST-shaped
+                  --  one).  The type is the bare C spelling, joined with
+                  --  single spaces (`struct ntpd_conf`).
+                  Next (P);
+                  declare
+                     Buf : Unbounded_String := Null_Unbounded_String;
+                  begin
+                     while Cur (P).Kind = T_Name loop
+                        if Buf /= Null_Unbounded_String then
+                           Append (Buf, " ");
+                        end if;
+                        Append (Buf, Cur (P).Text);
+                        Next (P);
+                     end loop;
+                     if Buf = Null_Unbounded_String then
+                        raise Parse_Error with
+                          Integer'Image (Cur (P).Line) & ":" &
+                          Integer'Image (Cur (P).Col) &
+                          ": expected a C struct type after `conf`";
+                     end if;
+                     Conf_Type_Code := Buf;
+                  end;
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "listops"
                then
@@ -1091,6 +1119,8 @@ package body HBNF_Grammar is
    end List_Override;
 
    function Type_Prefix return String is (To_String (Type_Prefix_Code));
+
+   function Conf_Type return String is (To_String (Conf_Type_Code));
 
    procedure Set_Type_Prefix (Prefix : String) is
    begin

@@ -462,6 +462,98 @@ package Templates is
      "" & LF &
      "@ROOT_TYPE@ *conf_ptr(void) { return conf; }";
 
+   --  The typed conf wrapper: the grammar declares `conf struct <daemon>` and
+   --  the action jets build the daemon's own tree into the caller's struct,
+   --  so parse_config takes that struct (not an AST-shaped one) and `conf`
+   --  is the daemon's global, not one the parser owns.
+   Conf_H_Typed : constant String :=
+     "/* The daemon's own conf tree, filled by parse_config(); the action jets" & LF &
+     "   build it into the caller's struct.  The `conf` global is the daemon's" & LF &
+     "   (declared in its header, included by the grammar's preamble). */" & LF &
+     "int parse_config(const char *filename, @CONF_TYPE@ *conf);" & LF &
+     "" & LF &
+     "/* yyerror-style error handler: called by the parser at the point of failure" & LF &
+     "   with the caret message and its 1-based line.  The default handler prints" & LF &
+     "   ""file:line: msg"" (file taken from conf_file) and exit(1)s; override" & LF &
+     "   conf_error to take the message yourself, in which case parse_config returns" & LF &
+     "   -1 after the handler. */" & LF &
+     "typedef void (*conf_error_fn)(size_t line, const char *msg);" & LF &
+     "extern conf_error_fn conf_error;" & LF &
+     "" & LF &
+     "/* Filename being parsed: set by parse_config, used by the default handler. */" & LF &
+     "extern const char *conf_file;";
+
+   Conf_Tail_C_Typed : constant String :=
+     "const char *conf_file = NULL;" & LF &
+     "" & LF &
+     "/* Default handler: print ""file:line: <caret message>"" and exit(1).  Override" & LF &
+     "   conf_error with your own to take the message elsewhere (then parse_config" & LF &
+     "   returns -1 after the handler). */" & LF &
+     "static void conf_error_default(size_t line, const char *msg) {" & LF &
+     "    if (conf_file) {" & LF &
+     "        if (line)" & LF &
+     "            fprintf(stderr, ""%s:%zu: %s\n"", conf_file, line, msg);" & LF &
+     "        else" & LF &
+     "            fprintf(stderr, ""%s: %s\n"", conf_file, msg);" & LF &
+     "    } else {" & LF &
+     "        if (line)" & LF &
+     "            fprintf(stderr, ""%zu: %s\n"", line, msg);" & LF &
+     "        else" & LF &
+     "            fprintf(stderr, ""%s\n"", msg);" & LF &
+     "    }" & LF &
+     "    exit(1);" & LF &
+     "}" & LF &
+     "conf_error_fn conf_error = conf_error_default;" & LF &
+     "" & LF &
+     "/* The grammar's epilogue defines conf_init() to reset the conf's list heads" & LF &
+     "   (the action jets append to them, so they must be TAILQ_INIT'd first). */" & LF &
+     "int parse_config(const char *filename, @CONF_TYPE@ *xconf) {" & LF &
+     "    FILE *f = fopen(filename, ""r"");" & LF &
+     "    char *buf;" & LF &
+     "    long len;" & LF &
+     "    char err[512];" & LF &
+     "    size_t line = 0, col = 0;" & LF &
+     "" & LF &
+     "    if (!f) {" & LF &
+     "        conf_error(0, ""cannot open file"");" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 ||" & LF &
+     "        fseek(f, 0, SEEK_SET) != 0) {" & LF &
+     "        fclose(f);" & LF &
+     "        conf_error(0, ""cannot read file"");" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    buf = (char *)malloc((size_t)len + 1);" & LF &
+     "    if (!buf) {" & LF &
+     "        fclose(f);" & LF &
+     "        conf_error(0, ""out of memory"");" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    if (len > 0 && fread(buf, 1, (size_t)len, f) != (size_t)len) {" & LF &
+     "        free(buf);" & LF &
+     "        fclose(f);" & LF &
+     "        conf_error(0, ""read error"");" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    buf[len] = '\0';" & LF &
+     "    fclose(f);" & LF &
+     "" & LF &
+     "    conf_file = filename;" & LF &
+     "    conf = xconf;" & LF &
+     "    conf_init();" & LF &
+     "    {" & LF &
+     "        @ROOT_TYPE@ ast;" & LF &
+     "        if (!parse_text(buf, &ast, err, sizeof err, &line, &col)) {" & LF &
+     "            conf_error(line, err);" & LF &
+     "            free(buf);" & LF &
+     "            return -1;" & LF &
+     "        }" & LF &
+     "    }" & LF &
+     "    free(buf);" & LF &
+     "    return 0;" & LF &
+     "}";
+
    Conf_Rust : constant String :=
      "// yyerror-style error handling: the parser calls config_error() at the point" & LF &
      "// of failure with the caret message.  The default handler prints" & LF &

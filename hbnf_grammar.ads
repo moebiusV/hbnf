@@ -125,4 +125,11 @@ package HBNF_Grammar is
    function Type_Prefix return String;
    procedure Set_Type_Prefix (Prefix : String);
 
+   --  The daemon's own conf struct, from a top-level `conf struct ntpd_conf`
+   --  directive; "" when absent.  When set, the C `--conf` wrapper emits
+   --  parse_config(filename, <conf>) — it fills the caller's conf instead of
+   --  allocating an AST-shaped one — so the action jets' `conf` global is the
+   --  daemon's real tree, not hbnf's parse tree.
+   function Conf_Type return String;
+
 end HBNF_Grammar;
