@@ -474,6 +474,23 @@ package body HBNF_Grammar is
       end if;
    end Set_List_Override;
 
+   --  The lexical spelling of a token: the text for names/numbers/strings/
+   --  code, the punctuation character itself otherwise (so a bare C type
+   --  like `char[16]` reconstructs its brackets and stars).
+   function Lexical (T : Token) return String is
+   begin
+      case T.Kind is
+         when T_Eq => return "=";
+         when T_Slash => return "/";
+         when T_LParen => return "(";
+         when T_RParen => return ")";
+         when T_LBrack => return "[";
+         when T_RBrack => return "]";
+         when T_Star => return "*";
+         when others => return To_String (T.Text);
+      end case;
+   end Lexical;
+
    --  A prefix must start a C identifier and continue one.
    function Valid_Prefix (S : String) return Boolean is
      (S'Length > 0
@@ -788,6 +805,7 @@ package body HBNF_Grammar is
          declare
             Leading  : Unbounded_String := Null_Unbounded_String;
             Trailing : Unbounded_String := Null_Unbounded_String;
+            C_Type   : Unbounded_String := Null_Unbounded_String;
          begin
             --  A leading comment block: `;` comment lines before the rule.
             --  Blank lines between them do not break the block.
@@ -811,8 +829,37 @@ package body HBNF_Grammar is
             end if;
             exit when Cur (P).Kind = T_EOF;
 
-            Name := Expect_Name (P);
-            Expect (P, T_Eq, "'='");
+            --  `[ C-type ] name =`: the name is the last identifier before
+            --  `=`; any tokens before it are the storage class, joined with
+            --  single spaces (`int port`, `struct pf_rule_addr src`,
+            --  `char[IFNAMSIZ] ifname`).  Untyped rules have a single name.
+            declare
+               Head : Token_Vectors.Vector;
+            begin
+               while Cur (P).Kind not in T_Eq | T_EOF loop
+                  Head.Append (Cur (P));
+                  Next (P);
+               end loop;
+               if Cur (P).Kind /= T_Eq then
+                  raise Parse_Error with
+                    Integer'Image (Cur (P).Line) & ":" &
+                    Integer'Image (Cur (P).Col) & ": expected '='";
+               end if;
+               if Head.Is_Empty or else Head.Last_Element.Kind /= T_Name then
+                  raise Parse_Error with
+                    Integer'Image (Cur (P).Line) & ":" &
+                    Integer'Image (Cur (P).Col) & ": expected a rule name";
+               end if;
+               Name := Head.Last_Element.Text;
+               C_Type := Null_Unbounded_String;
+               for I in 1 .. Natural (Head.Length) - 1 loop
+                  if C_Type /= Null_Unbounded_String then
+                     Append (C_Type, " ");
+                  end if;
+                  Append (C_Type, Lexical (Head (I)));
+               end loop;
+               Next (P);   --  the '='
+            end;
 
             if Cur (P).Kind = T_Code then
                --  A jet: `name = %{ <code> %}` — a hand-written scanner.
@@ -822,7 +869,8 @@ package body HBNF_Grammar is
                         Pattern         => Element_Vectors.Empty_Vector,
                         Leading_Comment => Leading,
                         Trailing_Comment => Trailing,
-                        Jet_Code        => Cur (P).Text));
+                        Jet_Code        => Cur (P).Text,
+                        C_Type          => C_Type));
                Next (P);
             else
                declare
@@ -841,7 +889,8 @@ package body HBNF_Grammar is
                            Pattern         => Pattern,
                            Leading_Comment => Leading,
                            Trailing_Comment => Trailing,
-                           Jet_Code        => Null_Unbounded_String));
+                           Jet_Code        => Null_Unbounded_String,
+                           C_Type          => C_Type));
                end;
             end if;
          end;

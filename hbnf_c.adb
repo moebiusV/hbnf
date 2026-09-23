@@ -420,12 +420,18 @@ package body HBNF_C is
 
    function C_Type_Of (Rules : Rule_Vectors.Vector; Ref : String) return String is
       S : constant String := Scalar_C_Type (Ref);
+      J : constant Natural := Find (Rules, Ref);
    begin
       if S /= "" then
          return S;
       end if;
-      if Find (Rules, Ref) = 0 then
+      if J = 0 then
          raise Parse_Error with "undefined rule: " & Ref;
+      end if;
+      --  A typed rule (`C-type name = …`) declares its storage class; use
+      --  it instead of the inferred type.
+      if Rules (J).C_Type /= Null_Unbounded_String then
+         return To_String (Rules (J).C_Type);
       end if;
       return C_Type_Name (Ref);
    end C_Type_Of;
@@ -751,12 +757,17 @@ package body HBNF_C is
 
       function C_Type_Of (Ref : String) return String is
          S : constant String := Scalar_C_Type (Ref);
+         J : constant Natural := Find (Ref);
       begin
          if S /= "" then
             return S;
          end if;
-         if Find (Ref) = 0 then
+         if J = 0 then
             raise Parse_Error with "undefined rule: " & Ref;
+         end if;
+         --  A typed rule declares its C storage class; use it.
+         if Rules (J).C_Type /= Null_Unbounded_String then
+            return To_String (Rules (J).C_Type);
          end if;
          return C_Type_Name (Ref);
       end C_Type_Of;
@@ -1137,6 +1148,13 @@ package body HBNF_C is
          if R.Leading_Comment /= Null_Unbounded_String then
             Append (Buf, "/* " & To_String (R.Leading_Comment) & " */");
             Append (Buf, LF);
+         end if;
+
+         --  A typed rule (`C-type name = …`) declares an external storage
+         --  class; no struct or typedef is emitted — the type comes from
+         --  the included header.
+         if R.C_Type /= Null_Unbounded_String then
+            return To_String (Buf);
          end if;
 
          case Info.Kind is
@@ -1858,12 +1876,18 @@ package body HBNF_C is
       end if;
 
       --  Forward-declare every struct and list node type; a list rule also
-      --  gets its list head type.
+      --  gets its list head type.  A typed rule's type is external, so it
+      --  is forward-declared as a typedef alias of the declared type.
       for I in 1 .. N loop
          if Is_By_Value (Infos (I)) or else Infos (I).Kind = List then
-            Append (Res, "typedef struct " & Pfx
-              & C_Name (To_String (Rules (I).Name))
-              & " " & C_Type_Name (To_String (Rules (I).Name)) & ";");
+            if Rules (I).C_Type /= Null_Unbounded_String then
+               Append (Res, "typedef " & To_String (Rules (I).C_Type) & " "
+                 & C_Type_Name (To_String (Rules (I).Name)) & ";");
+            else
+               Append (Res, "typedef struct " & Pfx
+                 & C_Name (To_String (Rules (I).Name))
+                 & " " & C_Type_Name (To_String (Rules (I).Name)) & ";");
+            end if;
             Append (Res, LF);
             if Infos (I).Kind = List then
                Append (Res, L_Head
@@ -2056,6 +2080,51 @@ package body HBNF_C is
       end if;
       return "hbnf_str_append(p->toks[p->pos].text, p->toks[p->pos].len)";
    end Scalar_Parse_Expr;
+
+   --  True when a declared storage class is a fixed-size char buffer
+   --  (`char[N]`, with whatever whitespace the schema used).
+   function Is_Char_Array (C_Type : String) return Boolean is
+   begin
+      if C_Type'Length < 4
+        or else C_Type (C_Type'First .. C_Type'First + 3) /= "char"
+      then
+         return False;
+      end if;
+      for C of C_Type (C_Type'First + 4 .. C_Type'Last) loop
+         if C = '[' then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Char_Array;
+
+   --  A pointer-to-array declaration for a `char[…]` storage class: the
+   --  name is inserted inside the `(*)`, so `char[16]` becomes
+   --  `char (*name)[ 16 ]` and `sizeof *name` is the array size.
+   function Array_Ptr (C_Type : String; Name : String) return String is
+      Buf  : U;
+      Done : Boolean := False;
+   begin
+      for I in C_Type'Range loop
+         if not Done and then C_Type (I) = '[' then
+            Append (Buf, "(*" & Name & ")");
+            Done := True;
+         end if;
+         Append (Buf, C_Type (I));
+      end loop;
+      return To_String (Buf);
+   end Array_Ptr;
+
+   --  The C text that stores a core-scalar value into a field whose rule
+   --  declared a storage class: a `char[…]` is copied in (the value is a
+   --  string), anything else is assigned with an explicit cast.
+   function Scalar_Store (C_Type : String; Expr : String) return String is
+   begin
+      if Is_Char_Array (C_Type) then
+         return "snprintf(*out, sizeof *out, ""%s"", " & Expr & ")";
+      end if;
+      return "*out = (" & C_Type & ")" & Expr;
+   end Scalar_Store;
 
    --  True for the numeric core scalars (int / uN / iN), whose strtol/atoll
    --  conversion is deferred to the branch's commit point instead of running
@@ -2392,12 +2461,18 @@ package body HBNF_C is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if R.C_Type /= Null_Unbounded_String then
+            if Is_Char_Array (To_String (R.C_Type)) then
+               return Array_Ptr (To_String (R.C_Type), "out");
+            end if;
+            return To_String (R.C_Type) & " *out";
+         end if;
          if Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1)
          then
-            return "struct " & Pfx & C_Name (To_String (R.Name)) & "_list *";
+            return "struct " & Pfx & C_Name (To_String (R.Name)) & "_list *out";
          end if;
-         return C_Type_Name (To_String (R.Name)) & " *";
+         return C_Type_Name (To_String (R.Name)) & " *out";
       end Out_Type;
 
       --  Emit matching + building for segment Els(First..Last), writing fields
@@ -3015,8 +3090,15 @@ package body HBNF_C is
                  & Scalar_Tok_Kind (To_String (P (1).Name)) & ", """
                  & Core_Desc (To_String (P (1).Name)) & """)) return false;");
                Append (Buf, LF);
-               Append (Buf, "    *out = "
-                 & Scalar_Parse_Expr (To_String (P (1).Name)) & "; p->pos++;");
+               if R.C_Type /= Null_Unbounded_String then
+                  Append (Buf, "    "
+                    & Scalar_Store (To_String (R.C_Type),
+                                    Scalar_Parse_Expr (To_String (P (1).Name)))
+                    & "; p->pos++;");
+               else
+                  Append (Buf, "    *out = "
+                    & Scalar_Parse_Expr (To_String (P (1).Name)) & "; p->pos++;");
+               end if;
                Append (Buf, LF);
                Append (Buf, "    return true;");
                Append (Buf, LF);
@@ -3213,7 +3295,7 @@ package body HBNF_C is
       --  Forward declarations of every parse function.
       for I in 1 .. N loop
          Append (Res, "static bool parse_rule_" & C_Name (To_String (Rules (I).Name))
-           & "(parser_t *p, " & Out_Type (I) & " out);");
+           & "(parser_t *p, " & Out_Type (I) & ");");
          Append (Res, LF);
       end loop;
       Append (Res, LF);
@@ -3223,7 +3305,7 @@ package body HBNF_C is
             R : constant Rule := Rules (I);
          begin
             Append (Res, "static bool parse_rule_" & C_Name (To_String (R.Name))
-              & "(parser_t *p, " & Out_Type (I) & " out) {");
+              & "(parser_t *p, " & Out_Type (I) & ") {");
             Append (Res, LF);
             Emit_Rule_Parser (I, Res);
             Append (Res, "}");
@@ -3234,7 +3316,7 @@ package body HBNF_C is
 
       --  The entry point: parse the root rule, then reject trailing input.
       Append (Res, "bool parse_tokens(const token_t *toks, size_t n, "
-        & Out_Type (1) & " out,");
+        & Out_Type (1) & ",");
       Append (Res, LF);
       Append (Res, "                  const char *text,");
       Append (Res, LF);
