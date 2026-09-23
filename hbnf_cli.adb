@@ -30,11 +30,12 @@ procedure Hbnf_Cli is
    Schema_Path  : Unbounded_String;
    Conf         : Boolean := False;
    Idref        : Boolean := False;
+   Prefix       : Unbounded_String;
 
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--prefix=NAME_]");
    end Usage;
 
 begin
@@ -55,6 +56,8 @@ begin
             Conf := True;
          elsif A = "--idref" then
             Idref := True;
+         elsif A'Length >= 9 and then A (1 .. 9) = "--prefix=" then
+            Prefix := To_Unbounded_String (A (10 .. A'Last));
          elsif A (A'First) /= '-' then
             Schema_Path := To_Unbounded_String (A);
          end if;
@@ -71,6 +74,9 @@ begin
         HBNF_Grammar.Parse_File (To_String (Schema_Path));
       B     : constant String := To_String (Backend);
    begin
+      if Prefix /= Null_Unbounded_String then
+         HBNF_Grammar.Set_Type_Prefix (To_String (Prefix));
+      end if;
       if B = "c" then
          if Conf then
             Ada.Text_IO.Put_Line ("===== conf.h =====");

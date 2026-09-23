@@ -10,6 +10,7 @@ package body HBNF_Grammar is
    Preamble_Code   : Unbounded_String := Null_Unbounded_String;
    Epilogue_Code   : Unbounded_String := Null_Unbounded_String;
    Word_Chars_Code : Unbounded_String := Null_Unbounded_String;
+   Type_Prefix_Code : Unbounded_String := Null_Unbounded_String;
 
    --  ====================================================================
    --  Lexer
@@ -439,6 +440,12 @@ package body HBNF_Grammar is
 
    function Cur (P : Parser) return Token is (P.Toks (P.Pos));
 
+   --  A prefix must start a C identifier and continue one.
+   function Valid_Prefix (S : String) return Boolean is
+     (S'Length > 0
+      and then (S (S'First) in 'a' .. 'z' | 'A' .. 'Z' | '_')
+      and then (for all C of S => C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_'));
+
    procedure Next (P : in out Parser) is
    begin
       P.Pos := P.Pos + 1;
@@ -624,7 +631,8 @@ package body HBNF_Grammar is
          if Cur (P).Kind = T_Code
            or else (Cur (P).Kind = T_Name
                     and then (To_String (Cur (P).Text) = "language"
-                              or else To_String (Cur (P).Text) = "wordchars"))
+                              or else To_String (Cur (P).Text) = "wordchars"
+                              or else To_String (Cur (P).Text) = "prefix"))
          then
             P.Pos := Mark;
             loop
@@ -659,6 +667,24 @@ package body HBNF_Grammar is
                        ": expected a quoted character set after `wordchars`";
                   end if;
                   Word_Chars_Code := Cur (P).Text;
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "prefix"
+               then
+                  --  `prefix "pf_"`: put in front of every generated type
+                  --  and struct tag, keeping them out of the system's names.
+                  Next (P);
+                  if Cur (P).Kind /= T_String
+                    or else not Valid_Prefix (To_String (Cur (P).Text))
+                  then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" &
+                       Integer'Image (Cur (P).Col) &
+                       ": expected a quoted C identifier prefix after `prefix`";
+                  end if;
+                  --  Includes are parsed first, so the including file's
+                  --  directive, seen last, wins; --prefix= wins over both.
+                  Type_Prefix_Code := Cur (P).Text;
                   Next (P);
                else
                   exit;
@@ -897,5 +923,15 @@ package body HBNF_Grammar is
    function Epilogue return String is (To_String (Epilogue_Code));
 
    function Word_Chars return String is (To_String (Word_Chars_Code));
+
+   function Type_Prefix return String is (To_String (Type_Prefix_Code));
+
+   procedure Set_Type_Prefix (Prefix : String) is
+   begin
+      if not Valid_Prefix (Prefix) then
+         raise Parse_Error with "--prefix: not a C identifier prefix: " & Prefix;
+      end if;
+      Type_Prefix_Code := To_Unbounded_String (Prefix);
+   end Set_Type_Prefix;
 
 end HBNF_Grammar;

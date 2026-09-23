@@ -99,4 +99,11 @@ package HBNF_Grammar is
    --  them into its word token.  "" when absent.
    function Word_Chars return String;
 
+   --  The prefix declared by a top-level `prefix "pf_"` (or set with
+   --  Set_Type_Prefix, for hbnf_cli's --prefix=, which wins), "" when absent.
+   --  It is put in front of every generated C type and struct tag, so a rule
+   --  named daddr becomes pf_daddr_t and cannot collide with <sys/types.h>.
+   function Type_Prefix return String;
+   procedure Set_Type_Prefix (Prefix : String);
+
 end HBNF_Grammar;

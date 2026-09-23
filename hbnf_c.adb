@@ -207,11 +207,20 @@ package body HBNF_C is
       return N;
    end C_Field;
 
+   --  The schema's type prefix (`prefix "pf_"`, or --prefix=), put in front
+   --  of every generated type and struct tag; "" when absent.
+   function Pfx return String is (HBNF_Grammar.Type_Prefix);
+
    --  The `_t` typedef name for a rule, with a "_" suffix when it would
    --  collide with a POSIX <sys/types.h> typedef (uid_t, gid_t, ...).
    function C_Type_Name (Ref : String) return String is
       T : constant String := C_Name (Ref) & "_t";
    begin
+      if Pfx /= "" then
+         --  A prefix keeps every generated type out of the system's
+         --  namespace, so no name needs special-casing.
+         return Pfx & T;
+      end if;
       if T = "uid_t" or else T = "gid_t" or else T = "pid_t"
         or else T = "off_t" or else T = "size_t" or else T = "ssize_t"
         or else T = "time_t" or else T = "mode_t" or else T = "dev_t"
@@ -234,7 +243,7 @@ package body HBNF_C is
         and then (Rules (1).Pattern (1).Min /= 1
                   or else Rules (1).Pattern (1).Max /= 1)
       then
-         return "struct " & C_Name (NM) & "_list";
+         return "struct " & Pfx & C_Name (NM) & "_list";
       end if;
       return C_Type_Name (NM);
    end Root_Type;
@@ -948,7 +957,7 @@ package body HBNF_C is
             Append (Buf, "   /* " & To_String (Tags (I)) & " */");
             Append (Buf, LF);
          end loop;
-         Append (Buf, "} " & CN & "_kind_t;");
+         Append (Buf, "} " & Pfx & CN & "_kind_t;");
          Append (Buf, LF);
          return To_String (Buf);
       end Kind_Enum;
@@ -992,14 +1001,14 @@ package body HBNF_C is
                if not Info.Tags.Is_Empty then
                   Append (Buf, Kind_Enum (CN, Info.Tags));
                end if;
-               Append (Buf, "struct " & CN & " {");
+               Append (Buf, "struct " & Pfx & CN & " {");
                Append (Buf, LF);
                if Idref then
                   Append (Buf, "    objid_t id, parent;");
                   Append (Buf, LF);
                end if;
                if not Info.Tags.Is_Empty then
-                  Append (Buf, "    " & CN & "_kind_t kind;");
+                  Append (Buf, "    " & Pfx & CN & "_kind_t kind;");
                   Append (Buf, LF);
                end if;
                for M of Info.Members loop
@@ -1010,7 +1019,7 @@ package body HBNF_C is
                          (J > 0 and then Infos (J).Kind = List);
                   begin
                      if Is_Head then
-                        Append (Buf, "    struct "
+                        Append (Buf, "    struct " & Pfx
                           & C_Name (To_String (M.Name)) & "_list "
                           & C_Field (To_String (M.Name)) & ";");
                      else
@@ -1028,17 +1037,17 @@ package body HBNF_C is
                if not Info.Tags.Is_Empty then
                   Append (Buf, Kind_Enum (CN, Info.Tags));
                end if;
-               Append (Buf, "struct " & CN & " {");
+               Append (Buf, "struct " & Pfx & CN & " {");
                Append (Buf, LF);
                if Idref then
                   Append (Buf, "    objid_t id, parent;");
                   Append (Buf, LF);
                end if;
                if not Info.Tags.Is_Empty then
-                  Append (Buf, "    " & CN & "_kind_t kind;");
+                  Append (Buf, "    " & Pfx & CN & "_kind_t kind;");
                   Append (Buf, LF);
                end if;
-               Append (Buf, "    HBNF_LIST_ENTRY(" & CN & ");");
+               Append (Buf, "    HBNF_LIST_ENTRY(" & Pfx & CN & ");");
                Append (Buf, LF);
                if Info.Elem_Members.Is_Empty then
                   if Info.Elem_Name /= Null_Unbounded_String then
@@ -1135,7 +1144,7 @@ package body HBNF_C is
                   Recurse (To_String (M.Name), "visit", Buf, "    ");
                end loop;
             else
-               Append (Buf, "static void visit_" & CN & "(const struct " & CN
+               Append (Buf, "static void visit_" & CN & "(const struct " & Pfx & CN
                  & "_list *head, visit_fn f, void *ctx) {");
                Append (Buf, LF);
                Append (Buf, "    const " & TN & " *n;");
@@ -1169,7 +1178,7 @@ package body HBNF_C is
                Append (Buf, "    f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
             else
-               Append (Buf, "static void map_" & CN & "(struct " & CN
+               Append (Buf, "static void map_" & CN & "(struct " & Pfx & CN
                  & "_list *head, map_fn f, void *ctx) {");
                Append (Buf, LF);
                Append (Buf, "    " & TN & " *n;");
@@ -1224,10 +1233,10 @@ package body HBNF_C is
                   TN : constant String := C_Type_Name (To_String (Rules (I).Name));
                begin
                   if Infos (I).Kind = List then
-                     Append (Buf, "static void visit_" & CN & "(const struct " & CN
+                     Append (Buf, "static void visit_" & CN & "(const struct " & Pfx & CN
                        & "_list *, visit_fn f, void *ctx);");
                      Append (Buf, LF);
-                     Append (Buf, "static void map_" & CN & "(struct " & CN
+                     Append (Buf, "static void map_" & CN & "(struct " & Pfx & CN
                        & "_list *, map_fn f, void *ctx);");
                   else
                      Append (Buf, "static void visit_" & CN & "(const "
@@ -1328,7 +1337,7 @@ package body HBNF_C is
                Append (Buf, "    free_" & CN & "_fields(n);");
                Append (Buf, LF);
             else
-               Append (Buf, "static void free_" & CN & "(struct " & CN
+               Append (Buf, "static void free_" & CN & "(struct " & Pfx & CN
                  & "_list *head) {");
                Append (Buf, LF);
                Append (Buf, "    " & TN & " *n = HBNF_LIST_FIRST(head), *next;");
@@ -1370,7 +1379,7 @@ package body HBNF_C is
                     & " *n);");
                   Append (Buf, LF);
                   if Infos (I).Kind = List then
-                     Append (Buf, "static void free_" & CN & "(struct " & CN
+                     Append (Buf, "static void free_" & CN & "(struct " & Pfx & CN
                        & "_list *head);");
                   else
                      Append (Buf, "static void free_" & CN & "(" & TN & " *n);");
@@ -1557,14 +1566,14 @@ package body HBNF_C is
       --  gets its list head type.
       for I in 1 .. N loop
          if Is_By_Value (Infos (I)) or else Infos (I).Kind = List then
-            Append (Res, "typedef struct "
+            Append (Res, "typedef struct " & Pfx
               & C_Name (To_String (Rules (I).Name))
               & " " & C_Type_Name (To_String (Rules (I).Name)) & ";");
             Append (Res, LF);
             if Infos (I).Kind = List then
                Append (Res, "HBNF_LIST_HEAD("
-                 & C_Name (To_String (Rules (I).Name)) & "_list, "
-                 & C_Name (To_String (Rules (I).Name)) & ");");
+                 & Pfx & C_Name (To_String (Rules (I).Name)) & "_list, "
+                 & Pfx & C_Name (To_String (Rules (I).Name)) & ");");
                Append (Res, LF);
             end if;
             Remaining := Remaining + 1;
@@ -2088,7 +2097,7 @@ package body HBNF_C is
          if Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1)
          then
-            return "struct " & C_Name (To_String (R.Name)) & "_list *";
+            return "struct " & Pfx & C_Name (To_String (R.Name)) & "_list *";
          end if;
          return C_Type_Name (To_String (R.Name)) & " *";
       end Out_Type;
@@ -2541,7 +2550,7 @@ package body HBNF_C is
                  (if E.Kind = Group then Numeric_Fields (E.Items)
                   else String_Vectors.Empty_Vector);
             begin
-               Append (Buf, "    struct " & C_Name (NM) & "_list head;");
+               Append (Buf, "    struct " & Pfx & C_Name (NM) & "_list head;");
                Append (Buf, LF);
                Append (Buf, "    HBNF_LIST_INIT(&head);");
                Append (Buf, LF);
@@ -3152,7 +3161,7 @@ package body HBNF_C is
       begin
          Append (Buf, Ind & "objid_t id = next_id++;");
          Append (Buf, LF);
-         Append (Buf, Ind & "struct " & CN & "_msg m; memset(&m, 0, sizeof m);");
+         Append (Buf, Ind & "struct " & Pfx & CN & "_msg m; memset(&m, 0, sizeof m);");
          Append (Buf, LF);
          Append (Buf, Ind & "m.id = id; m.parent = parent;");
          Append (Buf, LF);
@@ -3225,7 +3234,7 @@ package body HBNF_C is
       begin
          --  The wire record: ids plus the fixed-width leaves; string leaves
          --  become a length prefix, with the bytes emitted separately.
-         Append (Buf, "struct " & CN & "_msg {");
+         Append (Buf, "struct " & Pfx & CN & "_msg {");
          Append (Buf, LF);
          Append (Buf, "    objid_t id, parent;");
          Append (Buf, LF);
@@ -3265,7 +3274,7 @@ package body HBNF_C is
             Emit_Body (CN, Info, Buf, "    ");
             Append (Buf, "}");
          else
-            Append (Buf, "void serialize_" & CN & "(const struct " & CN
+            Append (Buf, "void serialize_" & CN & "(const struct " & Pfx & CN
               & "_list *head, objid_t parent, emit_fn emit) {");
             Append (Buf, LF);
             Append (Buf, "    const " & TN & " *n;");
@@ -3334,7 +3343,7 @@ package body HBNF_C is
                CN : constant String := C_Name (To_String (Rules (I).Name));
                TN : constant String := C_Type_Name (To_String (Rules (I).Name));
                PT : constant String :=
-                 (if Infos (I).Kind = List then "const struct " & CN & "_list *"
+                 (if Infos (I).Kind = List then "const struct " & Pfx & CN & "_list *"
                   else "const " & TN & " *");
             begin
                Append (Res, "void serialize_" & CN & "(" & PT
@@ -3356,7 +3365,7 @@ package body HBNF_C is
          RN          : constant String := C_Name (To_String (Rules (1).Name));
          Root_Is_List : constant Boolean := Infos (1).Kind = List;
          RT : constant String :=
-           (if Root_Is_List then "struct " & RN & "_list"
+           (if Root_Is_List then "struct " & Pfx & RN & "_list"
             else C_Type_Name (To_String (Rules (1).Name)));
       begin
          --  Named `serialize_tree` (not `serialize_config`) because the root
@@ -3455,7 +3464,7 @@ package body HBNF_C is
       begin
          Append (Buf, Ind & "uint32_t _t; const char *_d; uint32_t _l;");
          Append (Buf, LF);
-         Append (Buf, Ind & "struct " & CN & "_msg _m;");
+         Append (Buf, Ind & "struct " & Pfx & CN & "_msg _m;");
          Append (Buf, LF);
          Append (Buf, Ind & "hbnf_next(rd, &_t, &_d, &_l);");
          Append (Buf, LF);
@@ -3464,7 +3473,7 @@ package body HBNF_C is
          Append (Buf, Ind & "n->id = _m.id; n->parent = _m.parent;");
          Append (Buf, LF);
          if not Info.Tags.Is_Empty then
-            Append (Buf, Ind & "n->kind = (" & CN & "_kind_t)_m.kind;");
+            Append (Buf, Ind & "n->kind = (" & Pfx & CN & "_kind_t)_m.kind;");
             Append (Buf, LF);
          end if;
          if Bare then
@@ -3521,7 +3530,7 @@ package body HBNF_C is
          Append (Buf, LF);
          if Info.Kind = List then
             Append (Buf, "void decode_" & CN & "_list(struct hbnf_reader *rd,"
-              & " struct " & CN & "_list *head) {");
+              & " struct " & Pfx & CN & "_list *head) {");
             Append (Buf, LF);
             Append (Buf, "    uint32_t _t; const char *_d; uint32_t _l, _n;");
             Append (Buf, LF);
@@ -3598,7 +3607,7 @@ package body HBNF_C is
                Append (Res, LF);
                if Infos (I).Kind = List then
                   Append (Res, "void decode_" & CN
-                    & "_list(struct hbnf_reader *rd, struct " & CN
+                    & "_list(struct hbnf_reader *rd, struct " & Pfx & CN
                     & "_list *head);");
                   Append (Res, LF);
                end if;
