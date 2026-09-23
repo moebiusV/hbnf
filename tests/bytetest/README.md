@@ -101,6 +101,38 @@ parser-internal `node_*` helpers), so the grammar targets `pf_rule` in
   (keyword → constant) and action jets first, since its fields are mostly
   flags and constants.
 
+## ntpd -n proof (the first full drop-in)
+
+`ntpd-proof.sh` is the first daemon proven end-to-end: it builds the **real
+OpenBSD ntpd** with hbnf's generated parser in place of `parse.y`, then runs
+`ntpd -n` (configtest) against it — a valid config prints `configuration OK`
+and exits 0, a bad one prints a caret error and exits 1.
+
+    ./ntpd-proof.sh      # OBSD defaults to <repo>/.work/obsd79
+
+It compiles all twelve `usr.sbin/ntpd/*.c` files as-is against OpenBSD's own
+headers (the `-nostdinc` recipe above), links `libutil`'s imsg, and drops in
+the generated `conf.h`/`conf.c` (the `--conf` wrapper — `parse_config` now
+takes `struct ntpd_conf *`, which the grammar's `conf struct ntpd_conf`
+directive asks for). Two small shims make this possible on Linux:
+
+- `bsdinc/fcntl.h` + `bsdinc/syslog.h` — OpenBSD generates these userland
+  headers during its build; they just forward to `sys/sys/fcntl.h` and
+  `sys/sys/syslog.h`, which the tarball does ship.
+- `bsdinc/stdint.h` — the fixed-width typedefs plus the `*_MAX`/`*_MIN`
+  limits (the compiler normally supplies `<stdint.h>`, which `-nostdinc`
+  drops).
+- `ntpd-shims.c` — bridges the OpenBSD libc/syscall names glibc spells
+  differently (`__errno` → `__errno_location`, `__isfinite`, `__stderr`…),
+  no-ops the syscalls that don't exist on Linux (`pledge`/`unveil`/`sysctl`/
+  `setproctitle`/`adjfreq`), and stubs the runtime-only pieces `-n` never
+  reaches (TLS constraints, MD5 auth, the resolver).
+
+The proof found one real emitter bug: a `word`/`atom` scalar matched a
+keyword token, so `1*string` would swallow the *next* directive's keyword.
+`word`/`atom` now require `kwid == KWID_NONE` (parse.y's lexer reserves
+keywords the same way).
+
 Qemu is the fallback if a daemon's full `parse.y` support code (`pfctl.c`,
 OpenSSL-linked helpers, …) won't compile on Linux; the static layout checks
-above do not need it.
+above do not need it, and ntpd no longer needs it at all.
