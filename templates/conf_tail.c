@@ -60,8 +60,9 @@ int parse_config(const char *filename) {
         return -1;
     }
     if (!parse_text(buf, conf, err, sizeof err, &line, &col)) {
+        conf_error(line, err);
         free(buf);
-        return -1;  /* conf_error was already called at the fail() site */
+        return -1;
     }
     free(buf);
     return 0;

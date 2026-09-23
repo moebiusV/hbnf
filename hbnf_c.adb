@@ -56,6 +56,44 @@ package body HBNF_C is
       return To_String (Buf);
    end C_Ident;
 
+   --  Escape a literal for embedding in a C string literal: backslash and
+   --  double-quote take C escapes, the named controls map to their short
+   --  forms, and any other non-printable byte becomes a 3-digit octal escape
+   --  (C's `\x` is greedy over the following hex digits; `\NNN` is exactly
+   --  three, so it can never swallow what comes after).
+   function C_Escape (S : String) return String is
+      Buf : U;
+      Oct : constant String := "01234567";
+   begin
+      for C of S loop
+         case C is
+            when '\' => Append (Buf, "\\");
+            when '"' => Append (Buf, "\""");
+            when others =>
+               case Character'Pos (C) is
+                  when 7  => Append (Buf, "\a");
+                  when 8  => Append (Buf, "\b");
+                  when 9  => Append (Buf, "\t");
+                  when 10 => Append (Buf, "\n");
+                  when 11 => Append (Buf, "\v");
+                  when 12 => Append (Buf, "\f");
+                  when 13 => Append (Buf, "\r");
+                  when 32 .. 126 => Append (Buf, C);
+                  when others =>
+                     declare
+                        V : constant Natural := Character'Pos (C);
+                     begin
+                        Append (Buf, "\");
+                        Append (Buf, Oct (V / 64 + 1));
+                        Append (Buf, Oct ((V / 8) mod 8 + 1));
+                        Append (Buf, Oct (V mod 8 + 1));
+                     end;
+               end case;
+         end case;
+      end loop;
+      return To_String (Buf);
+   end C_Escape;
+
    --  Natural'Image with the leading blank stripped ("1", not " 1").
    function Img (N : Natural) return String is
       S : constant String := Natural'Image (N);
@@ -339,6 +377,17 @@ package body HBNF_C is
       Members : in out Member_Vectors.Vector;
       Lits    : in out String_Vectors.Vector;
       Has_Alt : in out Boolean) is
+      Seen : String_Vectors.Vector;
+
+      function Seen_Here (S : U) return Boolean is
+      begin
+         for X of Seen loop
+            if X = S then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Seen_Here;
    begin
       for E of Els loop
          case E.Kind is
@@ -347,6 +396,15 @@ package body HBNF_C is
                   Is_List : constant Boolean :=
                     E.Min /= 1 or else E.Max /= 1;
                begin
+                  if Seen_Here (E.Name) then
+                     raise Parse_Error with
+                       "rule """ & To_String (E.Name)
+                       & """ is referenced twice in one alternative;"
+                       & " split it into alias rules (e.g. `a = "
+                       & To_String (E.Name) & "; b = " & To_String (E.Name)
+                       & ";`) so each gets its own field";
+                  end if;
+                  Seen.Append (E.Name);
                   if Contains (Members, E.Name) then
                      if Is_List then
                         for K in 1 .. Natural (Members.Length) loop
@@ -366,6 +424,7 @@ package body HBNF_C is
                Lits.Append (E.Lit);
             when Alt =>
                Has_Alt := True;
+               Seen.Clear;
             when Group =>
                Collect (E.Items, Members, Lits, Has_Alt);
          end case;
@@ -623,6 +682,17 @@ package body HBNF_C is
          Members : in out Member_Vectors.Vector;
          Lits    : in out String_Vectors.Vector;
          Has_Alt : in out Boolean) is
+         Seen : String_Vectors.Vector;
+
+         function Seen_Here (S : U) return Boolean is
+         begin
+            for X of Seen loop
+               if X = S then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Seen_Here;
       begin
          for E of Els loop
             case E.Kind is
@@ -631,6 +701,15 @@ package body HBNF_C is
                      Is_List : constant Boolean :=
                        E.Min /= 1 or else E.Max /= 1;
                   begin
+                     if Seen_Here (E.Name) then
+                        raise Parse_Error with
+                          "rule """ & To_String (E.Name)
+                          & """ is referenced twice in one alternative;"
+                          & " split it into alias rules (e.g. `a = "
+                          & To_String (E.Name) & "; b = " & To_String (E.Name)
+                          & ";`) so each gets its own field";
+                     end if;
+                     Seen.Append (E.Name);
                      if Contains (Members, E.Name) then
                         if Is_List then
                            for K in 1 .. Natural (Members.Length) loop
@@ -650,6 +729,7 @@ package body HBNF_C is
                   Lits.Append (E.Lit);
                when Alt =>
                   Has_Alt := True;
+                  Seen.Clear;
                when Group =>
                   Collect (E.Items, Members, Lits, Has_Alt);
             end case;
@@ -792,9 +872,25 @@ package body HBNF_C is
             end if;
          end Add;
 
-         procedure Add_Ref (Name : U) is
-            J : constant Natural := Find (To_String (Name));
+         procedure Add_Ref (N : U) is
+            J : Natural := Find (To_String (N));
          begin
+            --  Chase a scalar alias (`src = host`) through to the struct its
+            --  by-value field really holds, so the containing struct is laid
+            --  out after that struct.  A direct struct member is already there.
+            while J > 0 and then Infos (J).Kind = Scalar loop
+               declare
+                  P : constant Element_Vectors.Vector := Rules (J).Pattern;
+               begin
+                  if Natural (P.Length) = 1 and then P (1).Kind = Name
+                    and then P (1).Min = 1 and then P (1).Max = 1
+                  then
+                     J := Find (To_String (P (1).Name));
+                  else
+                     J := 0;
+                  end if;
+               end;
+            end loop;
             if J > 0 and then Is_By_Value (Infos (J)) then
                Add (J);
             end if;
@@ -1482,11 +1578,22 @@ package body HBNF_C is
          function Scalar_Ref (Idx : Natural) return Natural is
             R : constant Rule := Rules (Idx);
             P : constant Element_Vectors.Vector := R.Pattern;
+            J : Natural;
          begin
             if Natural (P.Length) = 1 and then P (1).Kind = Name
               and then Scalar_C_Type (To_String (P (1).Name)) = ""
             then
-               return Find (To_String (P (1).Name));
+               J := Find (To_String (P (1).Name));
+               --  A scalar alias over a struct or list (`src = host`) is a
+               --  typedef, not a leaf that must follow its target: the struct
+               --  is forward-declared, so the alias emits immediately.  Only a
+               --  leaf target (another scalar or enum) orders the alias after
+               --  it.
+               if J > 0
+                 and then (Infos (J).Kind = Scalar or else Infos (J).Kind = Enum)
+               then
+                  return J;
+               end if;
             end if;
             return 0;
          end Scalar_Ref;
@@ -1698,14 +1805,25 @@ package body HBNF_C is
          end loop;
          return False;
       end Present;
-   begin
-      for E of Els loop
-         if E.Kind = Name and then Is_Number (To_String (E.Name)) then
-            if not Present (E.Name) then
-               V.Append (E.Name);
+
+      --  Recurse into `( … )` groups: a number nested there still needs its
+      --  `num_<field>` temporary declared at the commit point.
+      procedure Collect (Es : Element_Vectors.Vector);
+
+      procedure Collect (Es : Element_Vectors.Vector) is
+      begin
+         for E of Es loop
+            if E.Kind = Name and then Is_Number (To_String (E.Name)) then
+               if not Present (E.Name) then
+                  V.Append (E.Name);
+               end if;
+            elsif E.Kind = Group then
+               Collect (E.Items);
             end if;
-         end if;
-      end loop;
+         end loop;
+      end Collect;
+   begin
+      Collect (Els);
       return V;
    end Numeric_Fields;
 
@@ -1869,7 +1987,7 @@ package body HBNF_C is
                         for K2 of Keywords loop
                            if Len (K2) = L and then First (K2) = First (K) then
                               Append (Buf, "            if (memcmp(s, """
-                                & To_String (K2) & """, " & Img (L)
+                                & C_Escape (To_String (K2)) & """, " & Img (L)
                                 & ") == 0) return KW_" & C_Ident (To_String (K2)) & ";");
                               Append (Buf, LF);
                            end if;
@@ -1989,7 +2107,7 @@ package body HBNF_C is
                case E.Kind is
                   when Literal =>
                      Append (Buf, Ind & "if (!expect_lit(p, """
-                       & To_String (E.Lit) & """, "
+                       & C_Escape (To_String (E.Lit)) & """, "
                        & Img (To_String (E.Lit)'Length) & ")) { " & Fail & " }");
                      Append (Buf, LF);
                   when Name =>
@@ -2066,6 +2184,14 @@ package body HBNF_C is
       begin
          Known := True;
          if Depth > 8 then
+            Known := False;
+            return V;
+         end if;
+         --  A nullable leading element (e.g. `[ "x" ]`) can match without its
+         --  keyword, so its FIRST set is not a complete dispatch key: a switch
+         --  whose default fails fast would wrongly reject a token the branch
+         --  matches as empty.  Mark it unknown to fall back to linear probing.
+         if E.Min = 0 then
             Known := False;
             return V;
          end if;
@@ -2182,6 +2308,27 @@ package body HBNF_C is
          return True;
       end Unique_To;
 
+      --  The branch keyword K uniquely starts (0 when K starts no branch, or
+      --  two or more branches).
+      function Unique_Branch
+        (K : U; Flat : String_Vectors.Vector; Offs : Natural_Vectors.Vector)
+        return Natural is
+         Br : Natural := 0;
+      begin
+         for X in 1 .. Natural (Offs.Length) - 1 loop
+            for I in Offs (X) .. Offs (X + 1) - 1 loop
+               if Flat (I) = K then
+                  if Br = 0 then
+                     Br := X;
+                  else
+                     return 0;
+                  end if;
+               end if;
+            end loop;
+         end loop;
+         return Br;
+      end Unique_Branch;
+
       --  True when some branch after the first has a keyword unique to it, so
       --  a switch dispatch pays for itself.
       function Has_Dispatch
@@ -2258,9 +2405,10 @@ package body HBNF_C is
             --  Keyword dispatch: an O(1) jump table on the interned keyword
             --  id.  A keyword unique to one branch jumps straight to that
             --  branch's body in the linear chain below (branch 1 is entered
-            --  via alt_linear); a non-keyword, or a keyword shared by two
-            --  branches, falls through to the chain in source order, so
-            --  ordered-choice semantics are preserved.
+            --  via alt_linear); a keyword shared by two branches falls to the
+            --  chain to try them in order; anything else (a non-keyword, or a
+            --  keyword no branch can start with) fails fast on the last
+            --  branch's label, instead of probing every branch.
             Append (Buf, Ind & "switch (p->toks[p->pos].kwid) {");
             Append (Buf, LF);
             for X in 2 .. Natural (Offs.Length) - 1 loop
@@ -2282,7 +2430,32 @@ package body HBNF_C is
                   end if;
                end;
             end loop;
-            Append (Buf, Ind & "default: goto alt_linear;");
+            for I in 1 .. Natural (Flat.Length) loop
+               declare
+                  K    : constant U := Flat (I);
+                  Seen : Boolean := False;
+                  Br   : Natural;
+               begin
+                  for J in 1 .. I - 1 loop
+                     if Flat (J) = K then
+                        Seen := True;
+                     end if;
+                  end loop;
+                  if not Seen then
+                     --  A keyword the switch does not jump straight on (it
+                     --  leads branch 1, or several branches) enters the chain
+                     --  to honour source order.
+                     Br := Unique_Branch (K, Flat, Offs);
+                     if Br <= 1 then
+                        Append (Buf, Ind & "case KW_" & C_Ident (To_String (K))
+                          & ": goto alt_linear;");
+                        Append (Buf, LF);
+                     end if;
+                  end if;
+               end;
+            end loop;
+            Append (Buf, Ind & "default: goto alt_fail_"
+              & Img (Natural (Offs.Length) - 1) & ";");
             Append (Buf, LF);
             Append (Buf, Ind & "}");
             Append (Buf, LF);
@@ -2447,15 +2620,15 @@ package body HBNF_C is
                         if St <= K - 1 and then P (St).Kind = Literal then
                            if Branch = 0 then
                               Append (Buf, "        if (p->toks[p->pos].len == strlen("
-                                & '"' & To_String (P (St).Lit) & '"'
+                                & '"' & C_Escape (To_String (P (St).Lit)) & '"'
                                 & ") && strncmp(p->toks[p->pos].text, "
-                                & '"' & To_String (P (St).Lit) & '"'
+                                & '"' & C_Escape (To_String (P (St).Lit)) & '"'
                                 & ", p->toks[p->pos].len)==0)");
                            else
                               Append (Buf, "        else if (p->toks[p->pos].len == strlen("
-                                & '"' & To_String (P (St).Lit) & '"'
+                                & '"' & C_Escape (To_String (P (St).Lit)) & '"'
                                 & ") && strncmp(p->toks[p->pos].text, "
-                                & '"' & To_String (P (St).Lit) & '"'
+                                & '"' & C_Escape (To_String (P (St).Lit)) & '"'
                                 & ", p->toks[p->pos].len)==0)");
                            end if;
                            Append (Buf, " r = " & C_Ident (NM) & "_"
@@ -2478,7 +2651,7 @@ package body HBNF_C is
                            if not First then
                               Append (Buf, " or ");
                            end if;
-                           Append (Buf, "`" & To_String (P (St).Lit) & "`");
+                           Append (Buf, "`" & C_Escape (To_String (P (St).Lit)) & "`");
                            First := False;
                         end if;
                         St := K + 1;

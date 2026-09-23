@@ -8,15 +8,10 @@ typedef struct { token_t *toks; size_t n; } lexed_t;
 static int lex_digit(char c) { return c >= '0' && c <= '9'; }
 static int lex_word_start(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-        || c == '_' || c == '-';
+        || c == '_' || c == '-'@WORD_CHARS@;
 }
 static int lex_word_char(char c) {
     return lex_word_start(c) || lex_digit(c) || c == '.';
-}
-static char *lex_dup(const char *s, size_t n) {
-    char *p = (char *)malloc(n + 1);
-    if (p) { memcpy(p, s, n); p[n] = '\0'; }
-    return p;
 }
 
 lexed_t lex(const char *text) {
@@ -32,7 +27,7 @@ lexed_t lex(const char *text) {
             tok_kind_t jk;
             size_t jl = jet_dispatch(text, i, tlen, &jk);
             if (jl > 0) {
-                toks[r.n++] = (token_t){ jk, lex_dup(text + i, jl), line, col };
+                toks[r.n++] = (token_t){ jk, text + i, jl, KWID_NONE, line, col };
                 i += jl; col += jl;
                 continue;
             }
@@ -42,16 +37,16 @@ lexed_t lex(const char *text) {
         else if (c == '#') { while (text[i] && text[i] != '\n') i++; }
         else if (c == '"') {
             size_t sc = col;
-            char *buf = (char *)malloc(strlen(text + i) + 1);
-            size_t bn = 0;
             i++; col++;
             while (text[i] && text[i] != '"') {
                 if (text[i] == '\\' && text[i + 1]) { i++; col++; }
-                buf[bn++] = text[i++]; col++;
+                hbnf_str_put(text[i++]); col++;
             }
             if (text[i] == '"') { i++; col++; }
-            buf[bn] = '\0';
-            toks[r.n++] = (token_t){ TOK_STR, buf, line, sc };
+            { size_t n = hbnf_scratch_len;
+              const char *s = hbnf_str_append(hbnf_scratch, n);
+              hbnf_scratch_len = 0;
+              toks[r.n++] = (token_t){ TOK_STR, s, n, KWID_NONE, line, sc }; }
         }
         else if (lex_digit(c)) {
             size_t s = i, sc = col;
@@ -60,46 +55,32 @@ lexed_t lex(const char *text) {
                 /* dotted/alphanumeric run (1.2.3.4, 123abc) is one word */
                 i = s; col = sc;
                 while (lex_word_char(text[i])) { i++; col++; }
-                toks[r.n++] = (token_t){ TOK_ATOM, lex_dup(text + s, i - s), line, sc };
+                toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, kw_lookup(text + s, i - s), line, sc };
             } else {
-                toks[r.n++] = (token_t){ TOK_INT, lex_dup(text + s, i - s), line, sc };
+                toks[r.n++] = (token_t){ TOK_INT, text + s, i - s, KWID_NONE, line, sc };
             }
         }
         else if (lex_word_start(c)) {
             size_t s = i, sc = col;
             while (lex_word_char(text[i])) { i++; col++; }
-            toks[r.n++] = (token_t){ TOK_ATOM, lex_dup(text + s, i - s), line, sc };
+            toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, kw_lookup(text + s, i - s), line, sc };
         }
         else {
-            toks[r.n++] = (token_t){ TOK_PUNCT, lex_dup(text + i, 1), line, col };
+            toks[r.n++] = (token_t){ TOK_PUNCT, text + i, 1, KWID_NONE, line, col };
             i++; col++;
         }
     }
-    toks[r.n++] = (token_t){ TOK_EOF, lex_dup("", 0), line, col };
+    toks[r.n++] = (token_t){ TOK_EOF, "", 0, KWID_NONE, line, col };
     r.toks = toks;
     return r;
 }
 
-/* Convenience: lex, split text into lines (for the caret), then parse. */
+/* Convenience: lex, then parse (the caret line is drawn lazily on error). */
 bool parse_text(const char *text, @ROOT_TYPE@ *out,
                 char *err, size_t errlen, size_t *err_line, size_t *err_col) {
     lexed_t l = lex(text);
-    size_t nlines = 1, i, k = 0, s = 0;
-    const char *p;
-    for (p = text; *p; p++) if (*p == '\n') nlines++;
-    char **lines = (char **)malloc(nlines * sizeof *lines);
-    for (i = 0; ; i++) {
-        if (text[i] == '\n' || text[i] == '\0') {
-            lines[k++] = lex_dup(text + s, i - s);
-            if (text[i] == '\0') break;
-            s = i + 1;
-        }
-    }
-    bool ok = parse_tokens(l.toks, l.n, out, (const char *const *)lines, nlines,
+    bool ok = parse_tokens(l.toks, l.n, out, text,
                            err, errlen, err_line, err_col);
-    for (i = 0; i < l.n; i++) free((char *)l.toks[i].text);
     free(l.toks);
-    for (i = 0; i < nlines; i++) free(lines[i]);
-    free(lines);
     return ok;
 }

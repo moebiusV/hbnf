@@ -24,6 +24,10 @@ int parse_config(const char *filename);
    Convenience for FFI languages that cannot read the `conf` global. */
 @ROOT_TYPE@ *conf_ptr(void);
 
+/* Free the current config tree and reset the root (the SIGHUP reload
+   path).  Safe to call when conf is NULL. */
+void free_conf(void);
+
 #ifdef __cplusplus
 }
 #endif

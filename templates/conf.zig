@@ -32,5 +32,8 @@ pub fn parse_config(alloc: std.mem.Allocator, path: []const u8) ParseError!@ROOT
     var err: [512]u8 = undefined;
     var el: usize = 0;
     var ec: usize = 0;
-    return parse_text(alloc, text, &err, &el, &ec);
+    return parse_text(alloc, text, &err, &el, &ec) catch |e| {
+        config_error(el, std.mem.sliceTo(&err, 0));
+        return e;
+    };
 }

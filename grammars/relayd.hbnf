@@ -40,7 +40,17 @@ config        = *( include / varset / conf_main / rdr / tabledef / relay
 
 include       = "include" string
 
-varset        = string "=" string                  ; macro name = value
+varset        = vname "=" vvalue                 ; macro name = value
+vname         = string                            ; macro name
+vvalue        = string                            ; macro value
+ctxname       = string                            ; agentx context name
+ctxpath       = string                            ; agentx path
+cakey         = string                            ; ca key file
+capass        = string                            ; ca key password
+kpname        = string                            ; keypair name
+kpcert        = string                            ; keypair cert file
+kpkey         = string                            ; keypair key file
+kpocsp        = string                            ; keypair ocsp file
 
 ; ---- global configuration ----------------------------------------------
 
@@ -53,7 +63,7 @@ conf_main     = "interval" int
               / "log" "level" "brief"
               / "timeout" int
               / "prefork" int
-              / "agentx" "context" string "path" string
+              / "agentx" "context" ctxname "path" ctxpath
               / "agentx" "context" string
               / "agentx" "path" string
               / "agentx"
@@ -200,12 +210,12 @@ tlsflag       = "session" "tickets"
               / "edh" "params" string
               / "ecdhe" string
               / "ca" "file" string
-              / "ca" "key" string "password" string
+              / "ca" "key" cakey "password" capass
               / "ca" "cert" string
-              / "keypair" string
-              / "keypair" string "cert" string
-              / "keypair" string "key" string
-              / "keypair" string "ocsp" string
+              / "keypair" kpname
+              / "keypair" kpname "cert" kpcert
+              / "keypair" kpname "key" kpkey
+              / "keypair" kpname "ocsp" kpocsp
               / "client" "ca" string
               / "no" flag
               / flag

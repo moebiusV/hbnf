@@ -46,7 +46,7 @@ entry         = "prefork" int
 
 include       = "include" string
 
-varset        = string "=" string                ; macro name = value…
+varset        = vname "=" vvalue                ; macro name = value…
 
 server        = "server" "match" string "{" serveropts "}"
               / "server" string "{" serveropts "}"
@@ -93,12 +93,23 @@ location      = "location" "found" "match" string "{" serveropts "}"
               / "location" "match" string "{" serveropts "}"
               / "location" string "{" serveropts "}"
 
-header        = "header" "remove" string "always"
-              / "header" "remove" string
-              / "header" "add" string string "always"
-              / "header" "add" string string
-              / "header" "set" string string "always"
-              / "header" "set" string string
+vname         = string                          ; macro name
+vvalue        = string                          ; macro value
+hname         = string                          ; header name
+hvalue        = string                          ; header value
+pname         = string                          ; fastcgi param name
+pvalue        = string                          ; fastcgi param value
+authuser      = string                          ; authenticate user
+authpass      = string                          ; authenticate password
+mtype         = string                          ; MIME type (text/html -> text)
+msubtype      = string                          ; MIME subtype (text/html -> html)
+
+header        = "header" "remove" hname "always"
+              / "header" "remove" hname
+              / "header" "add" hname hvalue "always"
+              / "header" "add" hname hvalue
+              / "header" "set" hname hvalue "always"
+              / "header" "set" hname hvalue
 
 hsts          = "hsts" hstsflags
 hstsflags     = *( hstsflag )
@@ -112,7 +123,7 @@ fcgiflags     = *( fcgiflag )
 fcgiflag      = "socket" string
               / "socket" "tcp" string "port" int
               / "socket" "tcp" string
-              / "param" string string
+              / "param" pname pvalue
               / "strip" int
               / "pass" string
 
@@ -150,8 +161,8 @@ requestflag   = "rewrite" string
               / "no" "rewrite"
               / "strip" int
 
-authenticate  = "authenticate" string "with" string
-              / "authenticate" "with" string
+authenticate  = "authenticate" authuser "with" authpass
+              / "authenticate" "with" authpass
 
 directory     = "directory" dirflags
 dirflags      = *( dirflag )
@@ -190,6 +201,6 @@ mediaopts     = *( mediaopt )
 mediaopt      = mediastring medianames ";"
               / mediastring medianames
               / include
-mediastring   = string "/" string                ; a MIME type, e.g. text/html
+mediastring   = mtype "/" msubtype               ; a MIME type, e.g. text/html
 medianames    = 1*( medianame )
 medianame     = int / string

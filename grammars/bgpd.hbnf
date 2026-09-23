@@ -36,6 +36,31 @@ config     = *( include / varset / as_set / prefixset / roa_set / aspa_set
 
 include    = "include" string
 varset     = string "=" stringlist            ; macro name = value…
+dtype      = string                            ; dump table kind (table-v2/mp/table)
+drib       = string                            ; dump rib name
+dfile      = string                            ; dump output file
+mtype      = string                            ; mrt msg type (all/updates)
+mfile      = string                            ; mrt output file
+fmatch     = string                            ; flags to match
+fset       = string                            ; flags to set
+vpndesc    = string                            ; vpn description
+vpnon      = string                            ; vpn "on" target
+loport     = port                              ; port range low end
+hiport     = port                              ; port range high end
+lolen      = int                               ; length range low end
+hilen      = int                               ; length range high end
+plusnum    = int                               ; add-path "plus" count
+maxnum     = int                               ; add-path "max" count
+maxpfx     = int                               ; max-prefix count
+maxrestart = int                               ; max-prefix restart count
+plenlo     = int                               ; prefixlen range low end
+plenhi     = int                               ; prefixlen range high end
+authkey    = string                            ; ipsec spi auth key
+enckey     = string                            ; ipsec spi enc key
+encalg     = string                            ; ipsec enc algorithm
+encklen    = string                            ; ipsec enc key length
+aslo       = asnumber                          ; as-number range low end
+ashi       = asnumber                          ; as-number range high end
 
 ; ---------------------------------------------------------------- sets
 
@@ -90,10 +115,10 @@ conf_main   = "AS" asnumber int
             / "transparent-as" yesno
             / "reject" "as-set" yesno
             / "log" string
-            / "dump" string string int
-            / "dump" string string
-            / "dump" "rib" string string string int
-            / "dump" "rib" string string string
+            / "dump" dtype dfile int
+            / "dump" dtype dfile
+            / "dump" "rib" drib dtype dfile int
+            / "dump" "rib" drib dtype dfile
             / "rde" string "evaluate"
             / "rde" string "ignore"
             / "rde" "med" "compare" string
@@ -112,8 +137,8 @@ ribopts     = "fib-update" yesno
             / "rtable" int
             / yesno "evaluate"
 
-mrtdump     = "dump" string inout string int
-            / "dump" string inout string
+mrtdump     = "dump" mtype inout mfile int
+            / "dump" mtype inout mfile
 inout       = "in" / "out"
 
 network     = "network" prefix filterset
@@ -146,10 +171,10 @@ ipspec      = "any" / prefix
 portspec    = port_item
             / "{" port_list "}"
 port_list   = *( port_item "," / port_item )
-port_item   = unaryop port
-            / port binaryop port
+port_item   = unaryop loport
+            / loport binaryop hiport
             / range
-            / port
+            / loport
 port        = int / string
 
 proto       = "proto" protoitem
@@ -157,10 +182,10 @@ proto       = "proto" protoitem
 proto_list  = *( protoitem "," / protoitem )
 protoitem   = string / int
 
-flags       = string "/" string
-            / "/" string
+flags       = fmatch "/" fset
+            / "/" fset
             / "any"
-            / string
+            / fmatch
 
 icmpspec    = "icmp-type" icmp_item
             / "icmp-type" "{" icmp_list "}"
@@ -173,16 +198,16 @@ icmptype    = string / int
 lengthspec  = length_item
             / "{" length_list "}"
 length_list = *( length_item "," / length_item )
-length_item = unaryop int
-            / int binaryop int
+length_item = unaryop lolen
+            / lolen binaryop hilen
             / range
-            / int
+            / lolen
 
 tos         = string / int
 
 ; ---------------------------------------------------------------- l3vpn / peers
 
-l3vpn       = "vpn" string "on" string "{" l3vpnopts_l "}"
+l3vpn       = "vpn" vpndesc "on" vpnon "{" l3vpnopts_l "}"
 l3vpnopts_l = *( l3vpnopts )
 l3vpnopts   = "rd" rdvalue
             / "export-target" string commval
@@ -221,12 +246,12 @@ peeropts    = "remote-as" asnumber
             / "announce" "graceful" "notification" yesno
             / "announce" "as-4byte" yesnoenforce
             / "announce" "add-path" "recv" yesnoenforce
-            / "announce" "add-path" "send" string "plus" int "max" int "enforce"
-            / "announce" "add-path" "send" string "plus" int "max" int
-            / "announce" "add-path" "send" string "plus" int "enforce"
-            / "announce" "add-path" "send" string "plus" int
-            / "announce" "add-path" "send" string "max" int "enforce"
-            / "announce" "add-path" "send" string "max" int
+            / "announce" "add-path" "send" string "plus" plusnum "max" maxnum "enforce"
+            / "announce" "add-path" "send" string "plus" plusnum "max" maxnum
+            / "announce" "add-path" "send" string "plus" plusnum "enforce"
+            / "announce" "add-path" "send" string "plus" plusnum
+            / "announce" "add-path" "send" string "max" maxnum "enforce"
+            / "announce" "add-path" "send" string "max" maxnum
             / "announce" "add-path" "send" string "enforce"
             / "announce" "add-path" "send" string
             / "announce" "policy" yesnoenforce
@@ -239,10 +264,10 @@ peeropts    = "remote-as" asnumber
             / "enforce" "neighbor-as" yesno
             / "enforce" "local-as" yesno
             / "as-override" yesno
-            / "max-prefix" int "out" "restart" int
-            / "max-prefix" int "out"
-            / "max-prefix" int "restart" int
-            / "max-prefix" int
+            / "max-prefix" maxpfx "out" "restart" maxrestart
+            / "max-prefix" maxpfx "out"
+            / "max-prefix" maxpfx "restart" maxrestart
+            / "max-prefix" maxpfx
             / authconf
             / "ttl-security" yesno
             / setclause
@@ -262,10 +287,10 @@ yesnoenforce = "yes" / "no" / "enforce"
 authconf    = "tcp" "md5sig" "password" stringlist
             / "tcp" "md5sig" "key" stringlist
             / "ipsec" espah "ike"
-            / "ipsec" espah inout "spi" int string string encspec
-            / "ipsec" espah inout "spi" int string string
+            / "ipsec" espah inout "spi" int authkey enckey encspec
+            / "ipsec" espah inout "spi" int authkey enckey
 espah       = "esp" / "ah"
-encspec     = string string
+encspec     = encalg encklen
 
 ; ---------------------------------------------------------------- filters
 
@@ -310,10 +335,10 @@ filter_as_l_h = *( filter_as_grp )
 filter_as_grp = filter_as "," / filter_as / "{" filter_as_l "}"
 filter_as_l   = *( filter_as "," / filter_as )
 filter_as     = "neighbor-as"
-              / equalityop asnumber
-              / asnumber binaryop asnumber
+              / equalityop aslo
+              / aslo binaryop ashi
               / range
-              / asnumber
+              / aslo
 filter_as_type = "AS" / "source-as" / "transit-as" / "peer-as"
 
 filter_match_h = *( filter_elm )
@@ -336,9 +361,9 @@ filter_elm   = filter_prefix_h
              / "avs" aspa_validity
 
 prefixlenop = "or-longer"
-            / "maxlen" int
-            / "prefixlen" unaryop int
-            / "prefixlen" int binaryop int
+            / "maxlen" plenlo
+            / "prefixlen" unaryop plenlo
+            / "prefixlen" plenlo binaryop plenhi
             / "prefixlen" range
 
 filterset   = *( setclause )

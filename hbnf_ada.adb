@@ -96,6 +96,23 @@ package body HBNF_Ada is
       return N;
    end Ada_Field;
 
+   --  Escape a literal for an Ada string literal: Ada doubles its quote
+   --  delimiter, and every other byte is left alone (backslash is an ordinary
+   --  character in Ada, and a control byte — which cannot appear in an Ada
+   --  literal — does not occur in any current grammar).
+   function Ada_Escape (S : String) return String is
+      Buf : U;
+   begin
+      for C of S loop
+         Append (Buf, C);
+         if C = '"' then
+            --  Ada doubles the quote delimiter; append it once more.
+            Append (Buf, C);
+         end if;
+      end loop;
+      return To_String (Buf);
+   end Ada_Escape;
+
    --  True when every `/`-alternative is exactly one Literal — the shape an
    --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`), one that
    --  names another rule, or a single literal (no `/`) is not an enum.
@@ -350,6 +367,17 @@ package body HBNF_Ada is
          Members : in out Member_Vectors.Vector;
          Lits    : in out String_Vectors.Vector;
          Has_Alt : in out Boolean) is
+         Seen : String_Vectors.Vector;
+
+         function Seen_Here (S : U) return Boolean is
+         begin
+            for X of Seen loop
+               if X = S then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Seen_Here;
       begin
          for E of Els loop
             case E.Kind is
@@ -358,6 +386,15 @@ package body HBNF_Ada is
                      Is_List : constant Boolean :=
                        E.Min /= 1 or else E.Max /= 1;
                   begin
+                     if Seen_Here (E.Name) then
+                        raise Parse_Error with
+                          "rule """ & To_String (E.Name)
+                          & """ is referenced twice in one alternative;"
+                          & " split it into alias rules (e.g. `a = "
+                          & To_String (E.Name) & "; b = " & To_String (E.Name)
+                          & ";`) so each gets its own field";
+                     end if;
+                     Seen.Append (E.Name);
                      if Contains (Members, E.Name) then
                         if Is_List then
                            for K in 1 .. Natural (Members.Length) loop
@@ -377,6 +414,7 @@ package body HBNF_Ada is
                   Lits.Append (E.Lit);
                when Alt =>
                   Has_Alt := True;
+                  Seen.Clear;
                when Group =>
                   Collect (E.Items, Members, Lits, Has_Alt);
             end case;
@@ -671,11 +709,21 @@ package body HBNF_Ada is
          function Scalar_Ref (Idx : Natural) return Natural is
             R : constant Rule := Rules (Idx);
             P : constant Element_Vectors.Vector := R.Pattern;
+            J : Natural;
          begin
             if Natural (P.Length) = 1 and then P (1).Kind = Name
               and then Scalar_Ada_Type (To_String (P (1).Name)) = ""
             then
-               return Find (To_String (P (1).Name));
+               J := Find (To_String (P (1).Name));
+               --  A scalar alias over a record/list (`src = host`) is a
+               --  subtype, not a leaf that must follow its target.  Only a
+               --  leaf target (another scalar or enum) orders the alias after
+               --  it.
+               if J > 0
+                 and then (Infos (J).Kind = Scalar or else Infos (J).Kind = Enum)
+               then
+                  return J;
+               end if;
             end if;
             return 0;
          end Scalar_Ref;
@@ -1055,7 +1103,7 @@ package body HBNF_Ada is
                case E.Kind is
                   when Literal =>
                      Append (Buf, Ind & "Expect_Lit (P, """
-                       & To_String (E.Lit) & """);");
+                       & Ada_Escape (To_String (E.Lit)) & """);");
                      Append (Buf, LF);
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
@@ -1297,11 +1345,11 @@ package body HBNF_Ada is
                      if St <= K - 1 and then P (St).Kind = Literal then
                         if Branch = 0 then
                            Append (Buf, "      if To_String (P.Toks (P.Pos).Text) = """
-                             & To_String (P (St).Lit) & """ then R := "
+                             & Ada_Escape (To_String (P (St).Lit)) & """ then R := "
                              & Ada_Ident (NM) & "_" & To_String (Names (Branch + 1)) & ";");
                         else
                            Append (Buf, "      elsif To_String (P.Toks (P.Pos).Text) = """
-                             & To_String (P (St).Lit) & """ then R := "
+                             & Ada_Escape (To_String (P (St).Lit)) & """ then R := "
                              & Ada_Ident (NM) & "_" & To_String (Names (Branch + 1)) & ";");
                         end if;
                         Append (Buf, LF);
@@ -1322,7 +1370,7 @@ package body HBNF_Ada is
                         if not First then
                            Append (Buf, " or ");
                         end if;
-                        Append (Buf, "`" & To_String (P (St).Lit) & "`");
+                        Append (Buf, "`" & Ada_Escape (To_String (P (St).Lit)) & "`");
                         First := False;
                      end if;
                      St := K + 1;

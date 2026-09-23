@@ -71,13 +71,19 @@ port        = int / string
 
 ; a port spec: a single port, an "a:b" range, or "a:*" (parse.y parseport)
 ;   port — 1*5digit [ ":" ( 1*5digit / "*" ) ]
-portval     = port ":" port
-            / port ":" "*"
-            / port
+;   the two ends of a range are distinct fields (loport/hiport), not one
+;   overwritten `port`.
+loport      = port
+hiport      = port
+portval     = loport ":" hiport
+            / loport ":" "*"
+            / loport
 
-portitem    = portval portbin portval
-            / unaryop portval
-            / portval
+loportval   = portval
+hiportval   = portval
+portitem    = loportval portbin hiportval
+            / unaryop loportval
+            / loportval
 
 portlist    = 1*( portitem "," / portitem )
 
@@ -97,18 +103,24 @@ hostatom    = address ":" port
             / word
 
 ; a dynamic interface address: (em0), or (em0:network) / (em0:0) with a modifier
-dynaddr     = "(" word ":" word ")"
-            / "(" word ":" int ")"
-            / "(" word ")"
+ifname      = word                              ; the interface name
+ifaddr      = word                              ; the optional :address
+dynaddr     = "(" ifname ":" ifaddr ")"
+            / "(" ifname ":" int ")"
+            / "(" ifname ")"
 
+hostfrom    = hostatom                           ; range low end / bare host
+hostto      = hostatom                           ; range high end
+intnum      = int                                ; a bare numeric host/prefix
+pfx         = int                                ; prefix length after "/"
 host        = "route" string
-            / hostatom "-" hostatom
-            / hostatom "/" int
-            / int "/" int
-            / dynaddr "/" int
+            / hostfrom "-" hostto
+            / hostfrom "/" pfx
+            / intnum "/" pfx
+            / dynaddr "/" pfx
             / dynaddr
             / "<" string ">"
-            / hostatom
+            / hostfrom
 
 xhost       = "no-route"
             / "!" "no-route"
@@ -183,8 +195,10 @@ protolist   = 1*( protoitem "," / protoitem )
 proto       = "proto" protoitem
             / "proto" "{" protolist "}"
 
-flags       = "flags" string "/" string
-            / "flags" "/" string
+fmatch      = string                            ; flags to match
+fset        = string                            ; flags to set
+flags       = "flags" fmatch "/" fset
+            / "flags" "/" fset
             / "flags" "any"
 
 icmptype    = string / int
@@ -211,13 +225,17 @@ icmpspec    = "icmp-type" icmpitem
 uid         = string / int
 gid         = string / int
 
-uiditem     = uid portbin uid
-            / unaryop uid
-            / uid
+uidlo       = uid                               ; uid range low end
+uidhi       = uid                               ; uid range high end
+uiditem     = uidlo portbin uidhi
+            / unaryop uidlo
+            / uidlo
 
-giditem     = gid portbin gid
-            / unaryop gid
-            / gid
+gidlo       = gid                               ; gid range low end
+gidhi       = gid                               ; gid range high end
+giditem     = gidlo portbin gidhi
+            / unaryop gidlo
+            / gidlo
 
 uidlist     = 1*( uiditem "," / uiditem )
 gidlist     = 1*( giditem "," / giditem )
@@ -232,7 +250,7 @@ stateopt    = "max" int
             / "no-sync"
             / "max-src-states" int
             / "max-src-conn" int
-            / "max-src-conn-rate" int "/" int
+            / "max-src-conn-rate" ratenum "/" rateden
             / "overload" "<" string ">" "flush" "global"
             / "overload" "<" string ">" "flush"
             / "overload" "<" string ">"
@@ -275,6 +293,10 @@ redirspec   = host "weight" int
             / host
             / "{" redirhostlist "}"
 
+redirfrom   = redirpool                          ; af-to "from" pool
+redirto     = redirpool                          ; af-to "to" pool
+poolopts_from = *( poolopt )                     ; af-to "from" pool options
+poolopts_to   = *( poolopt )                     ; af-to "to" pool options
 redirpool   = redirspec "port" portval
             / redirspec
 
@@ -282,12 +304,20 @@ routespec   = redirspec poolopts
 
 ; ---------------------------------------------------------------- filter options
 
-qname       = string
-            / "(" string ")"
-            / "(" string "," string ")"
+qstr        = string                            ; queue name
+qiface      = string                            ; queue interface (tuple 2nd elem)
+qname       = qstr
+            / "(" qstr ")"
+            / "(" qstr "," qiface ")"
 
-prio        = "prio" "(" int "," int ")"
-            / "prio" int
+prioval     = int                               ; priority value
+priclass    = int                               ; priority class
+ratenum     = int                               ; rate numerator (count)
+rateden     = int                               ; rate denominator (seconds)
+abovenum    = int                               ; table "above" count
+belownum    = int                               ; table "below" count
+prio        = "prio" "(" prioval "," priclass ")"
+            / "prio" prioval
 
 tos         = string / int
 probability = string / int
@@ -347,7 +377,7 @@ filteropt   = "user" uids
             / "divert-packet" "port" portval
             / "scrub" "(" scrubopts ")"
             / "nat-to" redirpool poolopts
-            / "af-to" af "from" redirpool poolopts "to" redirpool poolopts
+            / "af-to" af "from" redirfrom poolopts_from "to" redirto poolopts_to
             / "af-to" af "from" redirpool poolopts
             / "rdr-to" redirpool poolopts
             / "binat-to" redirpool poolopts
@@ -357,7 +387,7 @@ filteropt   = "user" uids
             / "!" "received-on" ifitem
             / "received-on" ifitem
             / "once"
-            / "max-pkt-rate" int "/" int
+            / "max-pkt-rate" ratenum "/" rateden
             / filtersets
 
 filteropts  = *( filteropt )
@@ -484,14 +514,19 @@ bandwidth  = string
            / int "%"
            / int
 
-scspec     = bandwidth "burst" bandwidth "for" string
-           / bandwidth
+bwbase     = bandwidth                          ; scspec base bandwidth
+bwburst    = bandwidth                          ; scspec "burst" bandwidth
+scspec     = bwbase "burst" bwburst "for" string
+           / bwbase
 
-queueopt   = "bandwidth" scspec "," "min" scspec "," "max" scspec
-           / "bandwidth" scspec "," "max" scspec "," "min" scspec
-           / "bandwidth" scspec "," "min" scspec
-           / "bandwidth" scspec "," "max" scspec
-           / "bandwidth" scspec
+bwspec     = scspec                             ; queueopt "bandwidth" spec
+minspec    = scspec                             ; queueopt "min" spec
+maxspec    = scspec                             ; queueopt "max" spec
+queueopt   = "bandwidth" bwspec "," "min" minspec "," "max" maxspec
+           / "bandwidth" bwspec "," "max" maxspec "," "min" minspec
+           / "bandwidth" bwspec "," "min" minspec
+           / "bandwidth" bwspec "," "max" maxspec
+           / "bandwidth" bwspec
            / "parent" string
            / "default"
            / "qlimit" int
@@ -507,15 +542,15 @@ queuespec  = "queue" string interface queueopts
 
 statelimopt = "id" int
             / "limit" int
-            / "rate" int "/" int
+            / "rate" ratenum "/" rateden
 statelimopts = 1*( statelimopt )
 statelim   = "state" "limiter" stringlist statelimopts
 
 sourcelimopt = "id" int
              / "entries" int
              / "limit" int
-             / "rate" int "/" int
-             / "table" "<" string ">" "above" int "below" int
+             / "rate" ratenum "/" rateden
+             / "table" "<" string ">" "above" abovenum "below" belownum
              / "table" "<" string ">" "above" int
              / "inet" "mask" int
              / "inet6" "mask" int

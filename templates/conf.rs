@@ -40,5 +40,11 @@ pub fn parse_config(path: &str) -> Result<@ROOT_TYPE@, ParseError> {
             return Err(ParseError { line: 0, col: 0, msg: m });
         }
     };
-    parse_text(&text)
+    match parse_text(&text) {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            config_error(e.line, &e.msg);
+            Err(e)
+        }
+    }
 }

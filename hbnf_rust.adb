@@ -106,6 +106,37 @@ package body HBNF_Rust is
       return N;
    end Rust_Field;
 
+   --  Escape a literal for a Rust string literal.  Rust's `\x` takes exactly
+   --  two hex digits (unlike C), so `\xNN` is safe to emit for any non-ASCII-
+   --  printable byte; the named controls use their short forms.
+   function Rust_Escape (S : String) return String is
+      Buf : U;
+      Hex : constant String := "0123456789abcdef";
+   begin
+      for C of S loop
+         case C is
+            when '\' => Append (Buf, "\\");
+            when '"' => Append (Buf, "\""");
+            when others =>
+               case Character'Pos (C) is
+                  when 9  => Append (Buf, "\t");
+                  when 10 => Append (Buf, "\n");
+                  when 13 => Append (Buf, "\r");
+                  when 32 .. 126 => Append (Buf, C);
+                  when others =>
+                     declare
+                        V : constant Natural := Character'Pos (C);
+                     begin
+                        Append (Buf, "\x");
+                        Append (Buf, Hex (V / 16 + 1));
+                        Append (Buf, Hex (V mod 16 + 1));
+                     end;
+               end case;
+         end case;
+      end loop;
+      return To_String (Buf);
+   end Rust_Escape;
+
    --  True when every `/`-alternative is exactly one Literal — the shape an
    --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`), one that
    --  names another rule, or a single literal (no `/`) is not an enum.
@@ -344,6 +375,17 @@ package body HBNF_Rust is
          Members : in out Member_Vectors.Vector;
          Lits    : in out String_Vectors.Vector;
          Has_Alt : in out Boolean) is
+         Seen : String_Vectors.Vector;
+
+         function Seen_Here (S : U) return Boolean is
+         begin
+            for X of Seen loop
+               if X = S then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Seen_Here;
       begin
          for E of Els loop
             case E.Kind is
@@ -352,6 +394,15 @@ package body HBNF_Rust is
                      Is_List : constant Boolean :=
                        E.Min /= 1 or else E.Max /= 1;
                   begin
+                     if Seen_Here (E.Name) then
+                        raise Parse_Error with
+                          "rule """ & To_String (E.Name)
+                          & """ is referenced twice in one alternative;"
+                          & " split it into alias rules (e.g. `a = "
+                          & To_String (E.Name) & "; b = " & To_String (E.Name)
+                          & ";`) so each gets its own field";
+                     end if;
+                     Seen.Append (E.Name);
                      if Contains (Members, E.Name) then
                         if Is_List then
                            for K in 1 .. Natural (Members.Length) loop
@@ -371,6 +422,7 @@ package body HBNF_Rust is
                   Lits.Append (E.Lit);
                when Alt =>
                   Has_Alt := True;
+                  Seen.Clear;
                when Group =>
                   Collect (E.Items, Members, Lits, Has_Alt);
             end case;
@@ -1079,7 +1131,7 @@ package body HBNF_Rust is
                case E.Kind is
                   when Literal =>
                      Append (Buf, Ind & "p.expect_lit("""
-                       & To_String (E.Lit) & """)?;");
+                       & Rust_Escape (To_String (E.Lit)) & """)?;");
                      Append (Buf, LF);
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
@@ -1227,7 +1279,7 @@ package body HBNF_Rust is
                Append (Buf, "    p.expect_kind(Kind::Atom, ""a " & RT & """)?;");
                Append (Buf, LF);
                Append (Buf, "    let r = if p.toks[p.pos].text == """
-                 & To_String (P (1).Lit) & """ { " & RT & "::" & RT & "_"
+                 & Rust_Escape (To_String (P (1).Lit)) & """ { " & RT & "::" & RT & "_"
                  & To_String (Names (1)) & " }");
 
                St := 1;
@@ -1237,7 +1289,7 @@ package body HBNF_Rust is
                      if St <= K - 1 and then P (St).Kind = Literal then
                         if Branch > 0 then
                            Append (Buf, " else if p.toks[p.pos].text == """
-                             & To_String (P (St).Lit) & """ { " & RT & "::" & RT
+                             & Rust_Escape (To_String (P (St).Lit)) & """ { " & RT & "::" & RT
                              & "_" & To_String (Names (Branch + 1)) & " }");
                         end if;
                         Branch := Branch + 1;
@@ -1257,7 +1309,7 @@ package body HBNF_Rust is
                         if not First then
                            Append (Buf, " or ");
                         end if;
-                        Append (Buf, "`" & To_String (P (St).Lit) & "`");
+                        Append (Buf, "`" & Rust_Escape (To_String (P (St).Lit)) & "`");
                         First := False;
                      end if;
                      St := K + 1;
