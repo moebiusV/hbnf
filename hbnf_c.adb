@@ -1498,6 +1498,116 @@ package body HBNF_C is
          end loop;
       end Emit_Walk;
 
+      --  Emit bind_<rule>: the bottom-up walk that runs action jets.  After a
+      --  successful parse it recurses into a node's children first (so a
+      --  parent's action sees its children already processed) and then runs
+      --  the rule's action code, if any.  Actions never run during parsing,
+      --  so a backtracking re-parse cannot re-run their side effects.
+      procedure Emit_Bind (Buf : in out U) is
+
+         function Ref_Kind (Name : String) return Class_Kind is
+            J : constant Natural := Find (Alias_Target (Rules, Name));
+         begin
+            if J = 0 then
+               return Scalar;
+            end if;
+            return Infos (J).Kind;
+         end Ref_Kind;
+
+         procedure Recurse (Name : String; Buf : in out U; Ind : String) is
+            F : constant String := C_Field (Name);
+         begin
+            case Ref_Kind (Name) is
+               when Struct | List =>
+                  Append (Buf, Ind & "bind_"
+                    & C_Name (Alias_Target (Rules, Name)) & "(&n->" & F & ");");
+                  Append (Buf, LF);
+               when others =>
+                  null;
+            end case;
+         end Recurse;
+
+         procedure Recurse_Elem (Info : Rule_Info; Buf : in out U; Ind : String)
+         is
+         begin
+            if Info.Elem_Members.Is_Empty then
+               if Info.Elem_Name /= Null_Unbounded_String then
+                  Recurse (To_String (Info.Elem_Name), Buf, Ind);
+               end if;
+            else
+               for M of Info.Elem_Members loop
+                  Recurse (To_String (M.Name), Buf, Ind);
+               end loop;
+            end if;
+         end Recurse_Elem;
+
+         procedure Bind_Def (Idx : Natural; Buf : in out U) is
+            CN   : constant String := C_Name (To_String (Rules (Idx).Name));
+            TN   : constant String := C_Type_Name (To_String (Rules (Idx).Name));
+            Info : constant Rule_Info := Infos (Idx);
+            Act  : constant String := To_String (Rules (Idx).Action_Code);
+         begin
+            if Info.Kind = Struct then
+               Append (Buf, "static void bind_" & CN & "(" & TN & " *n) {");
+               Append (Buf, LF);
+               Append (Buf, "    if (!n) return;");
+               Append (Buf, LF);
+               for M of Info.Members loop
+                  Recurse (To_String (M.Name), Buf, "    ");
+               end loop;
+               if Act /= "" then
+                  Append (Buf, "    " & Act);
+                  Append (Buf, LF);
+               end if;
+            else
+               Append (Buf, "static void bind_" & CN & "(struct " & Pfx & CN
+                 & "_list *head) {");
+               Append (Buf, LF);
+               Append (Buf, "    " & TN & " *n;");
+               Append (Buf, LF);
+               Append (Buf, "    " & L_Foreach ("n", "head") & " {");
+               Append (Buf, LF);
+               Recurse_Elem (Info, Buf, "        ");
+               if Act /= "" then
+                  Append (Buf, "        " & Act);
+                  Append (Buf, LF);
+               end if;
+               Append (Buf, "    }");
+               Append (Buf, LF);
+            end if;
+            Append (Buf, "}");
+            Append (Buf, LF);
+         end Bind_Def;
+
+      begin
+         Append (Buf, "/* ---- bind (run action jets bottom-up, children first) ---- */");
+         Append (Buf, LF);
+         for I in 1 .. N loop
+            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               declare
+                  CN : constant String := C_Name (To_String (Rules (I).Name));
+                  TN : constant String :=
+                    C_Type_Name (To_String (Rules (I).Name));
+               begin
+                  if Infos (I).Kind = List then
+                     Append (Buf, "static void bind_" & CN & "(struct " & Pfx
+                       & CN & "_list *head);");
+                  else
+                     Append (Buf, "static void bind_" & CN & "(" & TN & " *n);");
+                  end if;
+                  Append (Buf, LF);
+               end;
+            end if;
+         end loop;
+         Append (Buf, LF);
+         for I in 1 .. N loop
+            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+               Bind_Def (I, Buf);
+               Append (Buf, LF);
+            end if;
+         end loop;
+      end Emit_Bind;
+
       --  Emit free_<rule>: drop a parsed tree, freeing every string and list
       --  node the parser allocated (the SIGHUP reload path).  A struct frees
       --  its contents in place (the struct itself is embedded); a list frees
@@ -1792,6 +1902,10 @@ package body HBNF_C is
       Emitted   : array (1 .. N) of Boolean := [others => False];
       Remaining : Natural := 0;
       Res       : U;
+      --  A rule with an action jet gets a bind walk; without one the walk is
+      --  dead code, so it is emitted only when some rule has an action.
+      Has_Action : constant Boolean :=
+        (for some I in 1 .. N => Rules (I).Action_Code /= Null_Unbounded_String);
    begin
       for I in 1 .. N loop
          Infos.Append (Analyze (I));
@@ -2055,6 +2169,11 @@ package body HBNF_C is
 
       if Has_Relink then
          Emit_Relink (Res);
+         Append (Res, LF);
+      end if;
+
+      if Has_Action then
+         Emit_Bind (Res);
          Append (Res, LF);
       end if;
 
@@ -3300,6 +3419,11 @@ package body HBNF_C is
       Has_Typed : constant Boolean :=
         (for some I in 1 .. N => Rules (I).C_Type /= Null_Unbounded_String);
 
+      --  A rule with an action jet gets a bind walk; without one the walk is
+      --  dead code, so it is emitted only when some rule has an action.
+      Has_Action : constant Boolean :=
+        (for some I in 1 .. N => Rules (I).Action_Code /= Null_Unbounded_String);
+
       Res : U;
    begin
       Append (Res, "/* generated by hbnf -- do not edit */");
@@ -3469,6 +3593,11 @@ package body HBNF_C is
       Append (Res, LF);
       if Analyze (Rules, 1).Kind in Struct | List and then Has_Relink then
          Append (Res, "    relink_" & C_Name (To_String (Rules (1).Name))
+           & "(out);");
+         Append (Res, LF);
+      end if;
+      if Analyze (Rules, 1).Kind in Struct | List and then Has_Action then
+         Append (Res, "    bind_" & C_Name (To_String (Rules (1).Name))
            & "(out);");
          Append (Res, LF);
       end if;

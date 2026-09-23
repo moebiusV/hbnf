@@ -628,7 +628,8 @@ package body HBNF_Grammar is
    begin
       loop
          exit when Cur (P).Kind in
-           T_Newline | T_RParen | T_RBrack | T_Slash | T_Comment | T_EOF;
+           T_Newline | T_RParen | T_RBrack | T_Slash | T_Comment | T_Code
+           | T_EOF;
          Element_Vectors.Append (V, Parse_Element (P));
       end loop;
       return V;
@@ -870,13 +871,22 @@ package body HBNF_Grammar is
                         Leading_Comment => Leading,
                         Trailing_Comment => Trailing,
                         Jet_Code        => Cur (P).Text,
-                        C_Type          => C_Type));
+                        C_Type          => C_Type,
+                        Action_Code     => Null_Unbounded_String));
                Next (P);
             else
                declare
+                  Action  : Unbounded_String := Null_Unbounded_String;
                   Pattern : constant Element_Vectors.Vector :=
                     Parse_Alternation (P);
                begin
+                  --  An action jet: `name = pattern { code }` — the code
+                  --  block after the pattern is run in the bind walk, not
+                  --  during parsing.  A trailing comment sits after it.
+                  if Cur (P).Kind = T_Code then
+                     Action := Cur (P).Text;
+                     Next (P);
+                  end if;
                   --  A trailing comment sits on the rule's own line, after
                   --  the pattern (Parse_Pattern stops at T_Comment).
                   if Cur (P).Kind = T_Comment then
@@ -890,7 +900,8 @@ package body HBNF_Grammar is
                            Leading_Comment => Leading,
                            Trailing_Comment => Trailing,
                            Jet_Code        => Null_Unbounded_String,
-                           C_Type          => C_Type));
+                           C_Type          => C_Type,
+                           Action_Code     => Action));
                end;
             end if;
          end;

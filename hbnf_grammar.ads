@@ -71,6 +71,13 @@ package HBNF_Grammar is
       --  the C storage class of the rule's value (e.g. `struct pf_rule_addr`,
       --  `char[IFNAMSIZ]`); the C emitter uses it in place of a type inferred
       --  from the pattern.
+      Action_Code     : Unbounded_String := Null_Unbounded_String;
+      --  Non-empty for an action jet: `name = pattern { <C-code> }`.  The
+      --  code is a fragment that builds the daemon's conf struct, run once
+      --  after a successful parse in the bottom-up bind walk (children before
+      --  parents), with the rule's node as `n` and the daemon's conf global
+      --  in scope.  It never runs during parsing, so a backtracking re-parse
+      --  cannot re-run its side effects.
    end record;
 
    package Rule_Vectors is new Ada.Containers.Vectors (Positive, Rule);
