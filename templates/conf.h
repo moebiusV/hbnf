@@ -1,7 +1,3 @@
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* The configuration tree root, populated by parse_config(). */
 extern @ROOT_TYPE@ *conf;
 
@@ -27,7 +23,3 @@ int parse_config(const char *filename);
 /* Free the current config tree and reset the root (the SIGHUP reload
    path).  Safe to call when conf is NULL. */
 void free_conf(void);
-
-#ifdef __cplusplus
-}
-#endif

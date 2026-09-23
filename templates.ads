@@ -363,10 +363,6 @@ package Templates is
      "   end Parse_Text;";
 
    Conf_H : constant String :=
-     "#ifdef __cplusplus" & LF &
-     "extern ""C"" {" & LF &
-     "#endif" & LF &
-     "" & LF &
      "/* The configuration tree root, populated by parse_config(). */" & LF &
      "extern @ROOT_TYPE@ *conf;" & LF &
      "" & LF &
@@ -391,11 +387,7 @@ package Templates is
      "" & LF &
      "/* Free the current config tree and reset the root (the SIGHUP reload" & LF &
      "   path).  Safe to call when conf is NULL. */" & LF &
-     "void free_conf(void);" & LF &
-     "" & LF &
-     "#ifdef __cplusplus" & LF &
-     "}" & LF &
-     "#endif";
+     "void free_conf(void);";
 
    Conf_Tail_C : constant String :=
      "@ROOT_TYPE@ *conf = NULL;" & LF &

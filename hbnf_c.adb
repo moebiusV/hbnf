@@ -772,6 +772,33 @@ package body HBNF_C is
          return C_Type_Name (Ref);
       end C_Type_Of;
 
+      --  A name-bearing declarator for a C storage class: the array suffix
+      --  (if any) moves after the name, so `char[16]` + "ifname" is
+      --  `char ifname[ 16 ]`, not the invalid `char[ 16 ] ifname`.
+      function Declarator (C_Type : String; Name : String) return String is
+         Bracket : Integer := 0;
+      begin
+         for I in C_Type'Range loop
+            if C_Type (I) = '[' then
+               Bracket := I;
+               exit;
+            end if;
+         end loop;
+         if Bracket = 0 then
+            return C_Type & " " & Name;
+         end if;
+         declare
+            Base_Last : Integer := Bracket - 1;
+         begin
+            while Base_Last >= C_Type'First and then C_Type (Base_Last) = ' '
+            loop
+               Base_Last := Base_Last - 1;
+            end loop;
+            return C_Type (C_Type'First .. Base_Last) & " " & Name
+              & C_Type (Bracket .. C_Type'Last);
+         end;
+      end Declarator;
+
       --  The underlying scalar C type a rule name resolves to, chasing
       --  single-name aliases and jets to their target (so `str / word` and
       --  `ipv4 / ipv6` both collapse to `const char *`).  "" if not scalar.
@@ -1207,8 +1234,9 @@ package body HBNF_C is
                           & C_Name (To_String (M.Name)) & "_list "
                           & C_Field (To_String (M.Name)) & ";");
                      else
-                        Append (Buf, "    " & C_Type_Of (To_String (M.Name))
-                          & " " & C_Field (To_String (M.Name)) & ";");
+                        Append (Buf, "    " & Declarator
+                          (C_Type_Of (To_String (M.Name)),
+                           C_Field (To_String (M.Name))) & ";");
                      end if;
                   end;
                   Append (Buf, LF);
@@ -1235,17 +1263,18 @@ package body HBNF_C is
                Append (Buf, LF);
                if Info.Elem_Members.Is_Empty then
                   if Info.Elem_Name /= Null_Unbounded_String then
-                     Append (Buf, "    " & C_Type_Of
-                       (To_String (Info.Elem_Name)) & " "
-                       & C_Field (To_String (Info.Elem_Name)) & ";");
+                     Append (Buf, "    " & Declarator
+                       (C_Type_Of (To_String (Info.Elem_Name)),
+                        C_Field (To_String (Info.Elem_Name))) & ";");
                   else
                      Append (Buf, "    const char *value;");
                   end if;
                   Append (Buf, LF);
                else
                   for M of Info.Elem_Members loop
-                     Append (Buf, "    " & C_Type_Of (To_String (M.Name))
-                       & " " & C_Field (To_String (M.Name)) & ";");
+                     Append (Buf, "    " & Declarator
+                       (C_Type_Of (To_String (M.Name)),
+                        C_Field (To_String (M.Name))) & ";");
                      Append (Buf, LF);
                   end loop;
                end if;
@@ -1881,8 +1910,9 @@ package body HBNF_C is
       for I in 1 .. N loop
          if Is_By_Value (Infos (I)) or else Infos (I).Kind = List then
             if Rules (I).C_Type /= Null_Unbounded_String then
-               Append (Res, "typedef " & To_String (Rules (I).C_Type) & " "
-                 & C_Type_Name (To_String (Rules (I).Name)) & ";");
+               Append (Res, "typedef " & Declarator
+                 (To_String (Rules (I).C_Type),
+                  C_Type_Name (To_String (Rules (I).Name))) & ";");
             else
                Append (Res, "typedef struct " & Pfx
                  & C_Name (To_String (Rules (I).Name))
@@ -2480,7 +2510,8 @@ package body HBNF_C is
       --  `Fail` statement ("goto ..." or "p->pos = save; return false;").
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural; Acc : String;
-         Buf  : in out U; Fail : String; Ind : String := "    ") is
+         Buf  : in out U; Fail : String; Ind : String := "    ";
+         Typed : Boolean := False) is
       begin
          for K in First .. Last loop
             declare
@@ -2509,14 +2540,50 @@ package body HBNF_C is
                         end if;
                         Append (Buf, LF);
                      else
-                        Append (Buf, Ind & "if (!parse_rule_"
-                          & C_Name (To_String (E.Name)) & "(p, &" & Acc
-                          & C_Field (To_String (E.Name)) & ")) { " & Fail & " }");
-                        Append (Buf, LF);
+                        declare
+                           J         : constant Natural := Find (To_String (E.Name));
+                           Is_Scalar : constant Boolean :=
+                             J > 0
+                             and then Rules (J).C_Type = Null_Unbounded_String
+                             and then Resolve_Type (To_String (E.Name)) /= "";
+                        begin
+                           if Typed and then Is_Scalar then
+                              --  The struct declared an external storage class,
+                              --  so this field's C type may be narrower than the
+                              --  scalar rule's own type.  Parse into a temporary
+                              --  of the rule's type, assign, and range-check the
+                              --  truncation/sign change in one comparison.
+                              Append (Buf, Ind & "{");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "    " & C_Type_Name
+                                (To_String (E.Name)) & " _tmp;");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "    if (!parse_rule_"
+                                & C_Name (To_String (E.Name)) & "(p, &_tmp)) { "
+                                & Fail & " }");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "    " & Acc
+                                & C_Field (To_String (E.Name)) & " = _tmp;");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "    if (" & Acc
+                                & C_Field (To_String (E.Name)) & " != _tmp) { "
+                                & "fail(p, ""value out of range"", 0, p->pos < p->n"
+                                & " ? p->toks[p->pos].text : ""end of input""); "
+                                & Fail & " }");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "}");
+                              Append (Buf, LF);
+                           else
+                              Append (Buf, Ind & "if (!parse_rule_"
+                                & C_Name (To_String (E.Name)) & "(p, &" & Acc
+                                & C_Field (To_String (E.Name)) & ")) { " & Fail & " }");
+                              Append (Buf, LF);
+                           end if;
+                        end;
                      end if;
                   when Group =>
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Acc, Buf,
-                               Fail, Ind & "    ");
+                               Fail, Ind & "    ", Typed);
                   when Alt =>
                      null;
                end case;
@@ -3180,7 +3247,8 @@ package body HBNF_C is
                Append (Buf, LF);
                Emit_Number_Deferrals (Nums, Buf, "    ");
                Emit_Seq (P, 1, Natural (P.Length), "r.", Buf,
-                         "p->pos = save; return false;");
+                         "p->pos = save; return false;",
+                         Typed => R.C_Type /= Null_Unbounded_String);
                Emit_Number_Converts (Nums, "r.", False, Buf, "    ");
                Append (Buf, "    *out = r; return true;");
                Append (Buf, LF);

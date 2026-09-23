@@ -65,10 +65,56 @@ package body HBNF_Compilable is
       and then R.Jet_Code = Null_Unbounded_String
       and then not (R.Pattern (1).Min = 1 and then R.Pattern (1).Max = 1));
 
+   procedure Append_Comma (S : in out Unbounded_String; Item : String) is
+   begin
+      if S /= Null_Unbounded_String then
+         Append (S, ", ");
+      end if;
+      Append (S, Item);
+   end Append_Comma;
+
    procedure Check
      (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
       Backend : String) is
    begin
+      if Natural (Rules.Length) = 0 then
+         raise Parse_Error with "the schema defines no rules";
+      end if;
+
+      --  A listops block overrides hbnf's built-in list operation by
+      --  operation.  The seven structural operations form one list, so a
+      --  partial block (mixing overridden and built-in operations) would
+      --  generate a list whose parts do not fit together.  Require all seven
+      --  when any is given; relink stays optional.
+      if Backend = "c" then
+         declare
+            Ops     : constant array (Positive range <>) of Unbounded_String :=
+              (To_Unbounded_String ("head"), To_Unbounded_String ("entry"),
+               To_Unbounded_String ("init"), To_Unbounded_String ("append"),
+               To_Unbounded_String ("foreach"), To_Unbounded_String ("first"),
+               To_Unbounded_String ("next"));
+            Given   : Unbounded_String;
+            Missing : Unbounded_String;
+         begin
+            for Op of Ops loop
+               if List_Override (To_String (Op)) /= "" then
+                  Append_Comma (Given, To_String (Op));
+               else
+                  Append_Comma (Missing, To_String (Op));
+               end if;
+            end loop;
+            if Given /= Null_Unbounded_String
+              and then Missing /= Null_Unbounded_String
+            then
+               raise Parse_Error with
+                 "listops: gives " & To_String (Given) & " but not "
+                 & To_String (Missing)
+                 & "; give all of head, entry, init, append, foreach, first, "
+                 & "next (relink is optional)";
+            end if;
+         end;
+      end if;
+
       for R of Rules loop
          declare
             P : constant Element_Vectors.Vector := R.Pattern;

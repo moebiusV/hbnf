@@ -80,3 +80,9 @@ spell out anyway.
 
 Each grammar round-trips through the `hbnf` generator (`hbnf_cli`): it
 emits a self-contained C parser that compiles and parses a sample config.
+
+`commonconf.hbnf` and `tailq.hbnf` are include-only, not daemon grammars:
+both are pulled in with `include "…"`.  `tailq.hbnf` carries the shared
+`listops { }` block and defines no rules, so any script that globs
+`grammars/*.hbnf` must skip the two of them (the nine daemons above are the
+grammars).

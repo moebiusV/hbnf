@@ -1,0 +1,15 @@
+; The shared OpenBSD <sys/queue.h> TAILQ container every daemon grammar uses.
+; Included (from each grammar) for its listops { } block, which overrides
+; hbnf's built-in singly-linked list with the daemons' TAILQ_* macros.  The
+; matching `{ #include <sys/queue.h> }` preamble stays in each top-level
+; grammar, since an included file's preamble does not take effect.
+listops {
+  head { TAILQ_HEAD(@name@, @elem@) }
+  entry { TAILQ_ENTRY(@elem@) _link }
+  init { TAILQ_INIT(@h@); }
+  append { TAILQ_INSERT_TAIL(@h@, @e@, _link); }
+  foreach { TAILQ_FOREACH(@v@, @h@, _link) }
+  first { TAILQ_FIRST(@h@) }
+  next { TAILQ_NEXT(@e@, _link) }
+  relink { if (TAILQ_EMPTY(@h@)) TAILQ_INIT(@h@); else TAILQ_FIRST(@h@)->_link.tqe_prev = &TAILQ_FIRST(@h@); }
+}
