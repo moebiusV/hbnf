@@ -1998,6 +1998,22 @@ package body HBNF_C is
       Append (Res, "#include <string.h>");
       Append (Res, LF);
       Append (Res, LF);
+      Append (Res, "/* Out of memory in a small allocation (an arena chunk, the string");
+      Append (Res, LF);
+      Append (Res, "   scratch, a node): stop, as parse.y's lexer does with err(1, ...).  The");
+      Append (Res, LF);
+      Append (Res, "   token array, the one large allocation, fails the parse instead. */");
+      Append (Res, LF);
+      Append (Res, "#include <stdio.h>");
+      Append (Res, LF);
+      Append (Res, "static void hbnf_oom(void) {");
+      Append (Res, LF);
+      Append (Res, "    fputs(""hbnf: out of memory\n"", stderr);");
+      Append (Res, LF);
+      Append (Res, "    exit(1);");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
       Append (Res, "/* Arena: a bump allocator over a chain of chunks, so a pointer into it");
       Append (Res, LF);
       Append (Res, "   stays valid for the arena's whole lifetime (chunks are never realloc'd).");
@@ -2025,6 +2041,8 @@ package body HBNF_C is
       Append (Res, "        size_t cap = n > (size_t)HBNF_ARENA_CHUNK ? n : (size_t)HBNF_ARENA_CHUNK;");
       Append (Res, LF);
       Append (Res, "        hbnf_chunk *c = (hbnf_chunk *)malloc(sizeof *c + cap);");
+      Append (Res, LF);
+      Append (Res, "        if (!c) hbnf_oom();");
       Append (Res, LF);
       Append (Res, "        c->next = hbnf_arena; c->used = 0; c->cap = cap;");
       Append (Res, LF);
@@ -2072,7 +2090,11 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "        hbnf_scratch_cap = hbnf_scratch_cap ? hbnf_scratch_cap * 2 : 64;");
       Append (Res, LF);
-      Append (Res, "        hbnf_scratch = (char *)realloc(hbnf_scratch, hbnf_scratch_cap);");
+      Append (Res, "        char *ns = (char *)realloc(hbnf_scratch, hbnf_scratch_cap);");
+      Append (Res, LF);
+      Append (Res, "        if (!ns) hbnf_oom();");
+      Append (Res, LF);
+      Append (Res, "        hbnf_scratch = ns;");
       Append (Res, LF);
       Append (Res, "    }");
       Append (Res, LF);
@@ -2579,6 +2601,10 @@ package body HBNF_C is
             return M;
          end Max_Len;
       begin
+         if Natural (Keywords.Length) >= 65535 then
+            raise HBNF_Grammar.Parse_Error with
+              "more than 65534 keywords: a token's keyword id is 16 bits";
+         end if;
          Append (Buf, "typedef enum { KWID_NONE = 0");
          for K of Keywords loop
             Append (Buf, ", KW_" & C_Ident (To_String (K)));
@@ -3238,6 +3264,8 @@ package body HBNF_C is
                Append (Buf, "        " & C_Type_Name (NM) & " *nn ="
                  & " calloc(1, sizeof(*nn));");
                Append (Buf, LF);
+               Append (Buf, "        if (!nn) hbnf_oom();");
+               Append (Buf, LF);
                Append (Buf, "        size_t save = p->pos;");
                Append (Buf, LF);
                Emit_Number_Deferrals (Nums, Buf, "        ");
@@ -3555,8 +3583,11 @@ package body HBNF_C is
       end;
       Emit_Keywords (Res);
       Append (Res, LF);
-      Append (Res, "typedef struct { tok_kind_t kind; const char *text;"
-        & " size_t len; kwid_t kwid; size_t line, col; } token_t;");
+      --  24 bytes a token (was 48): the lexer checks the input fits in
+      --  32-bit offsets, and kinds and keyword ids fit in 16 bits (checked
+      --  when generating).
+      Append (Res, "typedef struct { const char *text; uint32_t len, line, col;"
+        & " uint16_t kind, kwid; } token_t;");
       Append (Res, LF);
       Append (Res, LF);
       Append (Res, "typedef struct {");
@@ -4446,6 +4477,8 @@ package body HBNF_C is
             Append (Buf, "    for (uint32_t _i = 0; _i < _n; _i++) {");
             Append (Buf, LF);
             Append (Buf, "        " & TN & " *nn = calloc(1, sizeof *nn);");
+            Append (Buf, LF);
+            Append (Buf, "        if (!nn) hbnf_oom();");
             Append (Buf, LF);
             Append (Buf, "        decode_" & CN & "(rd, nn);");
             Append (Buf, LF);

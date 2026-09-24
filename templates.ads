@@ -15,6 +15,20 @@ package Templates is
      "" & LF &
      "typedef struct { token_t *toks; size_t n; } lexed_t;" & LF &
      "" & LF &
+     "/* Append a token, growing the array geometrically.  Returns 0 when memory" & LF &
+     "   runs out; the lexer then gives up and parse_text reports it. */" & LF &
+     "static int lex_push(lexed_t *r, size_t *cap, token_t t) {" & LF &
+     "    if (r->n == *cap) {" & LF &
+     "        size_t nc = *cap * 2;" & LF &
+     "        token_t *nt = (token_t *)realloc(r->toks, nc * sizeof *nt);" & LF &
+     "        if (!nt) return 0;" & LF &
+     "        r->toks = nt;" & LF &
+     "        *cap = nc;" & LF &
+     "    }" & LF &
+     "    r->toks[r->n++] = t;" & LF &
+     "    return 1;" & LF &
+     "}" & LF &
+     "" & LF &
      "static int lex_digit(char c) { return c >= '0' && c <= '9'; }" & LF &
      "static int lex_word_start(char c) {" & LF &
      "    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')" & LF &
@@ -24,11 +38,19 @@ package Templates is
      "    return lex_word_start(c) || lex_digit(c) || c == '.';" & LF &
      "}" & LF &
      "" & LF &
+     "/* The token array.  NULL toks (n = 0) means the input could not be" & LF &
+     "   lexed: it is over 4 GB (tokens hold 32-bit offsets) or memory ran out. */" & LF &
      "lexed_t lex(const char *text) {" & LF &
      "    lexed_t r = {0};" & LF &
-     "    token_t *toks = (token_t *)malloc((strlen(text) + 2) * sizeof *toks);" & LF &
      "    size_t i = 0, line = 1, col = 1;" & LF &
      "    size_t tlen = strlen(text);" & LF &
+     "    /* A first guess of one token per 4 bytes of input (real configs run" & LF &
+     "       5-6): usually no regrowth, and a fraction of the old one-per-byte. */" & LF &
+     "    size_t cap = tlen / 4 + 16;" & LF &
+     "" & LF &
+     "    if (tlen > (size_t)UINT32_MAX - 2) return r;" & LF &
+     "    r.toks = (token_t *)malloc(cap * sizeof *r.toks);" & LF &
+     "    if (!r.toks) return r;" & LF &
      "" & LF &
      "    while (text[i]) {" & LF &
      "        char c = text[i];" & LF &
@@ -37,7 +59,7 @@ package Templates is
      "            tok_kind_t jk;" & LF &
      "            size_t jl = jet_dispatch(text, i, tlen, &jk);" & LF &
      "            if (jl > 0) {" & LF &
-     "                toks[r.n++] = (token_t){ jk, text + i, jl, KWID_NONE, line, col };" & LF &
+     "                if (!lex_push(&r, &cap, (token_t){ .text = text + i, .len = jl, .line = line, .col = col, .kind = jk, .kwid = KWID_NONE })) goto oom;" & LF &
      "                i += jl; col += jl;" & LF &
      "                continue;" & LF &
      "            }" & LF &
@@ -56,7 +78,7 @@ package Templates is
      "            { size_t n = hbnf_scratch_len;" & LF &
      "              const char *s = hbnf_str_append(hbnf_scratch, n);" & LF &
      "              hbnf_scratch_len = 0;" & LF &
-     "              toks[r.n++] = (token_t){ TOK_STR, s, n, KWID_NONE, line, sc }; }" & LF &
+     "              if (!lex_push(&r, &cap, (token_t){ .text = s, .len = n, .line = line, .col = sc, .kind = TOK_STR, .kwid = KWID_NONE })) goto oom; }" & LF &
      "        }" & LF &
      "        else if (lex_digit(c) || (c == '-' && lex_digit(text[i + 1]))) {" & LF &
      "            /* -N is a number too, as in parse.y's lexers */" & LF &
@@ -67,23 +89,27 @@ package Templates is
      "                /* dotted/alphanumeric run (1.2.3.4, 123abc) is one word */" & LF &
      "                i = s; col = sc;" & LF &
      "                while (lex_word_char(text[i])) { i++; col++; }" & LF &
-     "                toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, kw_lookup(text + s, i - s), line, sc };" & LF &
+     "                if (!lex_push(&r, &cap, (token_t){ .text = text + s, .len = i - s, .line = line, .col = sc, .kind = TOK_ATOM, .kwid = kw_lookup(text + s, i - s) })) goto oom;" & LF &
      "            } else {" & LF &
-     "                toks[r.n++] = (token_t){ TOK_INT, text + s, i - s, KWID_NONE, line, sc };" & LF &
+     "                if (!lex_push(&r, &cap, (token_t){ .text = text + s, .len = i - s, .line = line, .col = sc, .kind = TOK_INT, .kwid = KWID_NONE })) goto oom;" & LF &
      "            }" & LF &
      "        }" & LF &
      "        else if (lex_word_start(c)) {" & LF &
      "            size_t s = i, sc = col;" & LF &
      "            while (lex_word_char(text[i])) { i++; col++; }" & LF &
-     "            toks[r.n++] = (token_t){ TOK_ATOM, text + s, i - s, kw_lookup(text + s, i - s), line, sc };" & LF &
+     "            if (!lex_push(&r, &cap, (token_t){ .text = text + s, .len = i - s, .line = line, .col = sc, .kind = TOK_ATOM, .kwid = kw_lookup(text + s, i - s) })) goto oom;" & LF &
      "        }" & LF &
      "        else {" & LF &
-     "            toks[r.n++] = (token_t){ TOK_PUNCT, text + i, 1, KWID_NONE, line, col };" & LF &
+     "            if (!lex_push(&r, &cap, (token_t){ .text = text + i, .len = 1, .line = line, .col = col, .kind = TOK_PUNCT, .kwid = KWID_NONE })) goto oom;" & LF &
      "            i++; col++;" & LF &
      "        }" & LF &
      "    }" & LF &
-     "    toks[r.n++] = (token_t){ TOK_EOF, """", 0, KWID_NONE, line, col };" & LF &
-     "    r.toks = toks;" & LF &
+     "    if (!lex_push(&r, &cap, (token_t){ .text = """", .len = 0, .line = line, .col = col, .kind = TOK_EOF, .kwid = KWID_NONE })) goto oom;" & LF &
+     "    return r;" & LF &
+     "oom:" & LF &
+     "    free(r.toks);" & LF &
+     "    r.toks = NULL;" & LF &
+     "    r.n = 0;" & LF &
      "    return r;" & LF &
      "}" & LF &
      "" & LF &
@@ -91,6 +117,12 @@ package Templates is
      "bool parse_text(const char *text, @ROOT_TYPE@ *out," & LF &
      "                char *err, size_t errlen, size_t *err_line, size_t *err_col) {" & LF &
      "    lexed_t l = lex(text);" & LF &
+     "    if (!l.toks) {" & LF &
+     "        snprintf(err, errlen, ""%s"", strlen(text) > (size_t)UINT32_MAX - 2" & LF &
+     "                 ? ""input too large"" : ""out of memory"");" & LF &
+     "        *err_line = *err_col = 0;" & LF &
+     "        return false;" & LF &
+     "    }" & LF &
      "    bool ok = parse_tokens(l.toks, l.n, out, text," & LF &
      "                           err, errlen, err_line, err_col);" & LF &
      "    free(l.toks);" & LF &
