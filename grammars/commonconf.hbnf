@@ -6,7 +6,7 @@
 ;
 ; a STRING token: quoted ("cpu0") or an OpenBSD bareword (10.0.0.1,
 ; example.com, /etc/pf.conf, $interface)
-string     = str / word
+string     = str / word / wildcard
 
 ; one or more STRING tokens (parse.y's `_l` list rules)
 stringlist = 1*string
