@@ -1570,7 +1570,15 @@ package body HBNF_C is
             if Info.Kind = Struct then
                Append (Buf, "static void bind_" & CN & "(" & TN & " *n) {");
                Append (Buf, LF);
-               Append (Buf, "    if (!n) return;");
+               if Act /= "" then
+                  --  A struct is embedded in its parent whether or not the
+                  --  parse matched it (one of an entry's alternatives, an
+                  --  optional part): _line, set when it matches, tells.
+                  Append (Buf, "    if (!n || !n->_line) return;"
+                    & "  /* not in the config */");
+               else
+                  Append (Buf, "    if (!n) return;");
+               end if;
                Append (Buf, LF);
                for M of Info.Members loop
                   Recurse (To_String (M.Name), Buf, "    ");

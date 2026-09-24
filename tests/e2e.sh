@@ -105,4 +105,7 @@ cp server_schema.ads server_schema-parser.ads server_schema-parser.adb /tmp/
 echo "== daemon grammars (tests/daemons) =="
 HBNF_CLI=/tmp/hbnf_cli sh tests/daemons.sh
 
+echo "== statements, macros, include (tests/stmt) =="
+HBNF_CLI=/tmp/hbnf_cli sh tests/stmt.sh
+
 rm -f server.c server.rs server.zig server_schema.ads server_schema-parser.ads server_schema-parser.adb

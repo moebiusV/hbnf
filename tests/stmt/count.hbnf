@@ -1,0 +1,24 @@
+; A toy binding of unwind.conf for tests/stmt.sh: it counts `preference`
+; and `forwarder` statements into its conf.  It exercises what the daemon
+; bindings will rely on -- parse_config reading one statement at a time,
+; `$macros`, `include`, `-D` (cmdline_symset), every error reported, and an
+; action running only on the alternative the statement matched.
+
+language C
+conf struct count_conf
+
+{
+#include <stdio.h>
+struct count_conf { int prefs; int forwarders; };
+extern struct count_conf *conf;
+struct count_conf *conf;
+}
+
+include "../../grammars/unwind.hbnf"
+
+action preference { (void)n; conf->prefs++; }
+action forwarder { (void)n; conf->forwarders++; }
+
+{
+static void conf_init(void) { conf->prefs = conf->forwarders = 0; }
+}

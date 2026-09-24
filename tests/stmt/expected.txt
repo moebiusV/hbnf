@@ -1,0 +1,20 @@
+top.conf:
+  sub.inc:2: expected `include`, found bogus
+  bogus line here
+  ^
+  sub.inc:3: macro 'nothere' not defined
+  top.conf:5: macro 'pref' not defined
+  parse_config = -1, preferences=0 forwarders=2
+ok.conf:
+  ok.conf:1: macro 'pref' not defined
+  parse_config = -1, preferences=0 forwarders=1
+-Dpref=DoT: 0
+-Dfw=198.51.100.1: 0
+top.conf:
+  sub.inc:2: expected `include`, found bogus
+  bogus line here
+  ^
+  sub.inc:3: macro 'nothere' not defined
+  parse_config = -1, preferences=1 forwarders=2
+ok.conf:
+  parse_config = 0, preferences=1 forwarders=1
