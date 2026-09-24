@@ -86,13 +86,15 @@ shapes compiled into parsers for a different language.
 
 | ABNF | Compiled backends | Interpreter | Notes |
 |---|---|---|---|
-| Concatenation, alternation, grouping | ✓ | ✓ | Alternation is ordered choice (§4) |
+| Concatenation, alternation, grouping | ✓ | ✓ | Alternation is ordered choice (§4). `\|` separates alternatives, as in BNF and yacc; ABNF's `/` still does. |
+| Direct left recursion, `a = a x \| y` | ✓ read as a loop, `y x*`, in all four backends | ✓ | The first entry of the list comes from the bases, each later one from the tails. Indirect left recursion is refused. |
 | `( a / b )` inside a sequence | *rejected* | ✓ | Previously flattened to `a b` |
 | `[ … ]` as a whole rule | ✓ | ✓ | |
 | `[ … ]` inside a sequence | *rejected* | ✓ | Previously became required |
 | Repeated group or reference inside a sequence | *rejected* | ✓ | Previously matched once, or did not compile |
-| `*`, `1*`, `n*`, `n*m`, `n` on a list rule | ✓ bounds enforced in C; Rust/Zig/Ada treat every bound as `*` and the CLI warns | ✓ | Previously `1*` accepted an empty list in every backend |
-| A list of a core type (`ws = 1*word`) | ✓ | ✓ | Previously failed to link |
+| `*`, `1*`, `n*`, `n*m`, `n` on a list rule | ✓ bounds enforced in all four backends | ✓ | Previously `1*` accepted an empty list in every backend |
+| A list of a core type (`ws = 1*word`) | ✓ | ✓ | Previously failed to link; Rust, Zig and Ada called a parse function that does not exist |
+| A list of literals only (`log = 0*1( "log" )`) | ✓ one entry, without a field, per match | ✓ | How a grammar records an optional word |
 | `*m` (`*2w`) | ✗ `expected a literal, name, or group` | ✗ | |
 | Precedence (§3.10) | same | same | |
 
@@ -100,11 +102,12 @@ shapes compiled into parsers for a different language.
 
 | ABNF | Status | Notes |
 |---|---|---|
-| `"…"` | ✓ | Case-sensitive and must be exactly one token (§4). hbnf adds C escapes, which every emitter now re-escapes for its target language. |
+| `"…"` | ✓ | Case-sensitive and must be exactly one token (§4). C's escapes, octal and `\?` included, which every emitter re-escapes for its target language. |
 | `%b` / `%d` / `%x`, ranges, `%d13.10` | ✗ by design | "No printf-isms": single characters are `"\xHH"`; classes are named rules (design, §2) |
 | `<prose-val>` | ✗ | Jets fill this role: a scanner written in the target language |
-| `%s"…"` (RFC 7405) | ✗ | Means exactly what hbnf's bare `"…"` means |
-| `%i"…"` (RFC 7405) | ✗ | |
+| `%s"…"` (RFC 7405) | ✓ | Means exactly what hbnf's bare `"…"` means |
+| `%i"…"` (RFC 7405) | ✓ in all four backends | Any case matches; a `%i` keyword is interned case-insensitively in C. A word written both `%i` and plain is refused. snmpd's `auth` and `enc` use it, as parse.y's strcasecmp does. |
+| `%scan{ … }`, `%action{ … }` | ✓ | The spelled-out forms of `name = { code }` (a jet) and `pattern { code }` (an action jet) |
 
 ### 3.4 Core rules (RFC 5234 Appendix B.1)
 
@@ -187,13 +190,11 @@ RFC 5234 §4's `c-nl` (`comment / CRLF`) repeated.
 |---|---|---|
 | Whitespace rules | §6, starting with `LF` | +1 token per line |
 | Groups, optionals and repetition inside a sequence | Emit them (inline loops, or synthetic rules), then drop the rejection | none |
-| Bounds in Rust/Zig/Ada | the counter the C backend now uses | one compare per element |
 | The character layer | the design of §2: character-level rules compiled to scanners in every backend, which also retires the C-only jet stubs | same as a hand-written jet |
 | `=/` | append alternatives, also across `include`, so a daemon can extend commonconf's `string` | none |
 | Duplicate definitions | error | none |
 | Case-insensitive rule names | fold for lookup; generated identifiers keep the spelling from the definition | none |
 | ABNF continuation; newlines in `( )`; `*m` | adopt | none |
-| RFC 7405 | `%s"…"` as a synonym; `%i"…"` as a case-folded keyword | only on `%i` keywords |
 
 Checks at generation time for the §4 differences, turning silent mismatches
 into schema errors:
