@@ -74,11 +74,41 @@ entry      = "listen" "on" address listenopts
             memcpy(&query_addr6, &sin6, sin6.sin6_len);
         break;
     }
-    case ENTRY_SERVERS:
+    case ENTRY_SERVERS: {
+        struct ntp_peer *p;
+        host(n->address, &h);
+        do {
+            if (h) { next = h->next; h->next = NULL; }
+            else next = NULL;
+            p = new_peer();
+            p->weight = 1;
+            { serveropts_t *so; TAILQ_FOREACH(so, &n->serveropts, _link) {
+                if (so->serveropt.kind == SERVEROPT_WEIGHT)
+                    p->weight = so->serveropt.int_;
+                else p->trusted = 1;
+            } }
+            if (p->trusted) conf->trusted_peers = 1;
+            p->query_addr4 = query_addr4;
+            p->query_addr6 = query_addr6;
+            p->addr = h;
+            p->addr_head.a = h;
+            p->addr_head.pool = ++poolseqnum;
+            p->addr_head.name = strdup(n->address);
+            if (p->addr) p->state = STATE_DNS_DONE;
+            TAILQ_INSERT_TAIL(&conf->ntp_peers, p, entry);
+            h = next;
+        } while (h);
+        break;
+    }
     case ENTRY_SERVER: {
         struct ntp_peer *p = new_peer();
+        host(n->address, &h);
+        for (; h; h = next) {
+            next = h->next;
+            h->next = p->addr;
+            p->addr = h;
+        }
         p->weight = 1;
-        host(n->address, &p->addr);
         { serveropts_t *so; TAILQ_FOREACH(so, &n->serveropts, _link) {
             if (so->serveropt.kind == SERVEROPT_WEIGHT)
                 p->weight = so->serveropt.int_;
@@ -87,6 +117,10 @@ entry      = "listen" "on" address listenopts
         if (p->trusted) conf->trusted_peers = 1;
         p->query_addr4 = query_addr4;
         p->query_addr6 = query_addr6;
+        p->addr_head.a = p->addr;
+        p->addr_head.pool = 0;
+        p->addr_head.name = strdup(n->address);
+        if (p->addr) p->state = STATE_DNS_DONE;
         TAILQ_INSERT_TAIL(&conf->ntp_peers, p, entry);
         break;
     }
@@ -106,9 +140,9 @@ entry      = "listen" "on" address listenopts
             path = strdup("/");
         }
         host(name, &h);
-        for (; h; h = next) {
-            next = h->next;
-            h->next = NULL;
+        do {
+            if (h) { next = h->next; h->next = NULL; }
+            else next = NULL;
             p = new_constraint();
             p->addr = h;
             p->addr_head.a = h;
@@ -117,14 +151,16 @@ entry      = "listen" "on" address listenopts
             p->addr_head.path = strdup(path);
             if (p->addr) p->state = STATE_DNS_DONE;
             constraint_add(p);
-        }
+            h = next;
+        } while (h);
         free(name); free(path);
         break;
     }
     case ENTRY_CONSTRAINT: {
         struct constraint *p = new_constraint();
         char *name = NULL, *path = NULL;
-        { stringlist_t *sl; int first = 1; TAILQ_FOREACH(sl, &n->stringlist, _link) {
+        { stringlist_t *sl; int first = 1; struct ntp_addr **tail = &p->addr;
+          TAILQ_FOREACH(sl, &n->stringlist, _link) {
             if (first) {
                 first = 0;
                 const char *s = sl->string;
@@ -144,8 +180,9 @@ entry      = "listen" "on" address listenopts
                 h = NULL;
                 host(sl->string, &h);
             }
-            if (h) { h->next = p->addr; p->addr = h; }
-        } }
+            if (h) { *tail = h; tail = &h->next; }
+          }
+          *tail = NULL; }
         p->addr_head.a = p->addr;
         p->addr_head.pool = 0;
         p->addr_head.name = name;
