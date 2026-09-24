@@ -12,7 +12,9 @@
 #     (scalars by value, strings by content, lists in order -- never
 #     pointers, TAILQ links or padding);
 #   - the error messages, except for cases named syntax-*.conf, where parse.y
-#     says "syntax error" and hbnf gives a caret message by design.
+#     says "syntax error" and hbnf gives a caret message by design; for those
+#     the file:line of every error must match (both read every statement and
+#     report each error, not just the first).
 #
 # Requires: host gcc, the extracted OpenBSD tree (see README.md), bison, and
 # hbnf_cli.  Local ones are used when present (bison on PATH; $HBNF_CLI or
@@ -95,7 +97,13 @@ for c in "$here"/byteident/cases/*.conf; do
 	why=""
 	[ "$yrc" = "$hrc" ] || why="exit $yrc vs $hrc"
 	[ -n "$why" ] || cmp -s "$scratch/yy.out" "$scratch/hb.out" || why="tree differs"
-	case "$name" in syntax-*) ;;
+	case "$name" in
+	syntax-*)
+		for w in yy hb; do
+			grep -o '^[^ ][^:]*:[0-9]*:' "$scratch/$w.err" > "$scratch/$w.lines" || true
+		done
+		[ -n "$why" ] || cmp -s "$scratch/yy.lines" "$scratch/hb.lines" \
+			|| why="error lines differ" ;;
 	*) [ -n "$why" ] || cmp -s "$scratch/yy.err" "$scratch/hb.err" \
 		|| why="error text differs" ;;
 	esac

@@ -131,12 +131,14 @@ For each case they must agree on:
   TAILQ links and padding never enter the comparison);
 - **the error messages**, byte for byte, for every case except
   `syntax-*.conf`: there parse.y says `syntax error` and hbnf gives a caret
-  message, by design.  Semantic errors come from the action jets, which use
-  parse.y's own messages.
+  message, by design, so only the `file:line:` of each error is compared.
+  Both go on past an error, so that is every error in the file.  Semantic
+  errors come from the action jets, which use parse.y's own messages.
 
 The cases cover every directive, IPv6 literals, hostnames, a negative
 number, an empty file, each semantic error parse.y reports, two errors in
-one file, and two syntax errors.  Add a case by dropping a `.conf` file in.
+one file, and syntax errors, alone and mixed with a semantic one
+(`syntax-several.conf`).  Add a case by dropping a `.conf` file in.
 
 Before comparing, `strict-cc.sh` builds the generated `conf.c` the way
 ntpd's own sources are built: the `-W` flags from ntpd's Makefile (`-Wall
