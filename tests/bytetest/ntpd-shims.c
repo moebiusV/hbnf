@@ -100,3 +100,9 @@ void freezero(void *ptr, size_t len) {
         free(ptr);
     }
 }
+
+/* getexecpath(3) is newer than 7.9: -current's ntpd calls it in main()
+ * before parsing.  -n only needs it to succeed. */
+int getexecpath(char *buf, size_t len) {
+    return snprintf(buf, len, "/usr/sbin/ntpd") >= (int)len ? -1 : 0;
+}

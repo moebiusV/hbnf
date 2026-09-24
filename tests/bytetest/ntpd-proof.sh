@@ -8,8 +8,9 @@
 #   ntpd-shims.c bridges the OpenBSD libc/syscall names glibc spells
 #   differently, and stubs the runtime-only pieces `-n` never reaches.
 #
-# Requires: host gcc, docker (for hbnf_cli, built in the ada-toolchain image),
-# and the extracted OpenBSD tree (see README.md).
+# Requires: host gcc, the extracted OpenBSD tree (see README.md), and
+# hbnf_cli: $HBNF_CLI or sources/hbnf/hbnf_cli when built, else docker (the
+# ada-toolchain image).
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -31,11 +32,17 @@ inc="$common_inc -I $ntpd"
 scratch="$(mktemp -d "$obsd/ntpdproof.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 
-echo "== generating the parser (hbnf_cli, in the ada-toolchain container) =="
-docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
-	sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
-	        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf' \
-	> "$scratch/conf-out.txt"
+echo "== generating the parser (hbnf_cli) =="
+cli="${HBNF_CLI:-$repo/hbnf_cli}"
+if [ -x "$cli" ]; then
+	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --conf) \
+		> "$scratch/conf-out.txt"
+else
+	docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
+		sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
+		        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf' \
+		> "$scratch/conf-out.txt"
+fi
 awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
      f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \
 	"$scratch/conf-out.txt"
@@ -51,9 +58,15 @@ for f in imsg imsg-buffer; do
 done
 gcc -w -std=gnu11 -c $inc "$scratch/conf.c" -o "$scratch/conf.o"
 gcc -w -std=gnu11 -c $inc "$here/ntpd-shims.c" -o "$scratch/shims.o"
+# glibc fills sockaddrs in its own layout (no sin_len, AF_INET6 = 10); the
+# wrappers rewrite them into OpenBSD's, as byteident.sh does, so host() and
+# parse.y's address-family checks read them correctly.
+gcc -w -std=gnu11 -c $inc "$here/byteident/getaddrinfo_wrap.c" \
+	-o "$scratch/gaiwrap.o"
 
 echo "== linking =="
-gcc -o "$scratch/ntpd" "$scratch"/*.o -lm
+gcc -o "$scratch/ntpd" "$scratch"/*.o -lm \
+	-Wl,--wrap=getaddrinfo -Wl,--wrap=inet_pton
 
 echo "== running ntpd -n (configtest) =="
 cat > "$scratch/test.conf" <<'EOF'
@@ -64,3 +77,11 @@ sensor uds0 correction 10 stratum 2 weight 4 trusted
 constraints from "https://www.google.com/"
 EOF
 "$scratch/ntpd" -n -f "$scratch/test.conf"
+
+echo "== running ntpd -n on a config parse.y rejects =="
+printf 'server 10.0.0.1 weight 11\n' > "$scratch/bad.conf"
+if "$scratch/ntpd" -n -f "$scratch/bad.conf"; then
+	echo "ntpd-proof: bad.conf was accepted" >&2
+	exit 1
+fi
+echo "rejected, as parse.y does"

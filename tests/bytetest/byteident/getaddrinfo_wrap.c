@@ -24,3 +24,12 @@ int __wrap_getaddrinfo(const char *hostname, const char *servname,
     }
     return r;
 }
+
+int __real_inet_pton(int, const char *, void *);
+
+/* The daemon passes OpenBSD's AF_INET6 (24) to glibc's inet_pton, which only
+ * knows 10 and fails, so every IPv6 literal looked invalid.  in6_addr has
+ * the same 16 bytes on both systems. */
+int __wrap_inet_pton(int af, const char *src, void *dst) {
+    return __real_inet_pton(af == 24 ? 10 : af, src, dst);
+}

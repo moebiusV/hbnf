@@ -1,17 +1,23 @@
 #!/bin/sh
 # Byte-identity harness: prove hbnf's generated parser is a drop-in for
-# parse.y by running BOTH on the same ntpd.conf and comparing the `struct
-# ntpd_conf` each builds.
+# parse.y by running BOTH on the same ntpd.conf files and comparing what each
+# does with them.
 #
 #   ntpd_yy   = bison's parser from parse.y  + the daemon's config.c
 #   ntpd_hbnf = hbnf's parser (conf.c)        + the same config.c
 #
-# Each parses the config, then dump_ntpd_conf() serializes the tree
-# canonically (scalars by value, strings by content, lists in order — never
-# pointers, TAILQ links or padding).  Identical dumps = identical trees.
+# For every byteident/cases/*.conf, both must agree on:
+#   - the exit status (accept or reject);
+#   - the tree: dump_ntpd_conf() serializes the `struct ntpd_conf` canonically
+#     (scalars by value, strings by content, lists in order -- never
+#     pointers, TAILQ links or padding);
+#   - the error messages, except for cases named syntax-*.conf, where parse.y
+#     says "syntax error" and hbnf gives a caret message by design.
 #
-# Requires: host gcc, docker (bison in alpine:edge, hbnf_cli in
-# ada-toolchain:edge-full), and the extracted OpenBSD tree (see README.md).
+# Requires: host gcc, the extracted OpenBSD tree (see README.md), bison, and
+# hbnf_cli.  Local ones are used when present (bison on PATH; $HBNF_CLI or
+# sources/hbnf/hbnf_cli); otherwise docker (bison in alpine:edge, hbnf_cli in
+# ada-toolchain:edge-full).  KEEP=1 keeps the scratch directory.
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -31,17 +37,28 @@ common_inc="-nostdinc -isystem $gccinc -I $here/bsdinc \
 inc="$common_inc -I $ntpd"
 
 scratch="$(mktemp -d "$obsd/byteident.XXXXXX")"
-trap 'rm -rf "$scratch"' EXIT
+if [ "${KEEP:-0}" = 1 ]; then echo "scratch: $scratch"
+else trap 'rm -rf "$scratch"' EXIT; fi
 
 echo "== bison: parse.y -> parser =="
-docker run --rm -v "$scratch":/out -v "$ntpd":/p -w /p alpine:edge \
-	sh -c 'apk add --no-cache bison >/dev/null 2>&1 && bison -d -o /out/parse_y.c parse.y'
+if command -v bison >/dev/null 2>&1; then
+	(cd "$ntpd" && bison -d -o "$scratch/parse_y.c" parse.y)
+else
+	docker run --rm -v "$scratch":/out -v "$ntpd":/p -w /p alpine:edge \
+		sh -c 'apk add --no-cache bison >/dev/null 2>&1 && bison -d -o /out/parse_y.c parse.y'
+fi
 
 echo "== hbnf: grammars/bind/ntpd.hbnf -> conf.c =="
-docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
-	sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
-	        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf' \
-	> "$scratch/conf-out.txt"
+cli="${HBNF_CLI:-$repo/hbnf_cli}"
+if [ -x "$cli" ]; then
+	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --conf) \
+		> "$scratch/conf-out.txt"
+else
+	docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
+		sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
+		        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf' \
+		> "$scratch/conf-out.txt"
+fi
 awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
      f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \
 	"$scratch/conf-out.txt"
@@ -58,26 +75,37 @@ gcc -w -std=gnu11 -c $inc "$scratch/parse_y.c" -o "$scratch/parse_y.o"
 gcc -w -std=gnu11 -c $inc "$scratch/conf.c" -o "$scratch/conf.o"
 
 echo "== linking =="
-wrap="-Wl,--wrap=getaddrinfo"
+wrap="-Wl,--wrap=getaddrinfo -Wl,--wrap=inet_pton"
 common="$scratch/config.o $scratch/log.o $scratch/shims.o \
         $scratch/dump.o $scratch/harness.o $scratch/gaiwrap.o"
 gcc -o "$scratch/ntpd_yy" "$scratch/parse_y.o" $common -lm $wrap
 gcc -o "$scratch/ntpd_hbnf" "$scratch/conf.o" $common -lm $wrap
 
 echo "== comparing =="
-cat > "$scratch/test.conf" <<'EOF'
-listen on 0.0.0.0
-query from 192.0.2.1
-servers 10.0.0.1
-server 10.0.0.2 weight 8 trusted
-constraints from "https://www.google.com/"
-constraint from "https://www.example.com/a" 8.8.8.8 8.8.4.4
-sensor uds0 correction 5 stratum 3 weight 2 trusted
-EOF
-"$scratch/ntpd_yy" "$scratch/test.conf" > "$scratch/yy.out" 2>/dev/null
-"$scratch/ntpd_hbnf" "$scratch/test.conf" > "$scratch/hbnf.out" 2>/dev/null
-if diff -u "$scratch/yy.out" "$scratch/hbnf.out"; then
-	echo "byteident: IDENTICAL"
+fail=0; n=0
+for c in "$here"/byteident/cases/*.conf; do
+	name=$(basename "$c" .conf); n=$((n + 1))
+	set +e
+	"$scratch/ntpd_yy" "$c" > "$scratch/yy.out" 2> "$scratch/yy.err"; yrc=$?
+	"$scratch/ntpd_hbnf" "$c" > "$scratch/hb.out" 2> "$scratch/hb.err"; hrc=$?
+	set -e
+	why=""
+	[ "$yrc" = "$hrc" ] || why="exit $yrc vs $hrc"
+	[ -n "$why" ] || cmp -s "$scratch/yy.out" "$scratch/hb.out" || why="tree differs"
+	case "$name" in syntax-*) ;;
+	*) [ -n "$why" ] || cmp -s "$scratch/yy.err" "$scratch/hb.err" \
+		|| why="error text differs" ;;
+	esac
+	if [ -z "$why" ]; then
+		printf '  %-28s same (exit %s)\n' "$name" "$yrc"
+	else
+		printf '  %-28s DIFFER: %s\n' "$name" "$why"; fail=1
+		diff -u "$scratch/yy.out" "$scratch/hb.out" | head -20
+		diff -u "$scratch/yy.err" "$scratch/hb.err" | head -20
+	fi
+done
+if [ "$fail" = 0 ]; then
+	echo "byteident: IDENTICAL ($n cases)"
 else
 	echo "byteident: DIFFER" >&2
 	exit 1

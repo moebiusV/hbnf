@@ -100,11 +100,12 @@ parser-internal `node_*` helpers), so the grammar targets `pf_rule` in
   round-trip) yield the same tree.
 - Byte-identity against `parse.y` itself is proven for ntpd: `byteident.sh`
   builds parse.y's parser (bison) and hbnf's parser against the same
-  `config.c`, runs both on one config, and `diff`s a canonical
-  `dump_ntpd_conf()` of each `struct ntpd_conf` — scalars/arrays by value,
-  strings by content, lists in order.  Identical dumps = identical trees
-  (see the section below).  The action jets fill the same fields parse.y
-  does (`addr_head.{a,pool,name}`, `state`, per-address `servers` pooling).
+  `config.c`, runs both on 17 configs, and compares accept/reject, a
+  canonical `dump_ntpd_conf()` of each `struct ntpd_conf` (scalars/arrays by
+  value, strings by content, lists in order) and the error messages (see the
+  section below).  The action jets fill the same fields parse.y does
+  (`addr_head.{a,pool,name}`, `state`, per-address `servers` pooling) and
+  reject the same values with the same messages.
 - pfctl's comparison point is a hand-off, not the parse: `parse.y` runs each
   rule through `expand_rule` and returns the expanded rules, so one grammar
   rule is not one `pf_rule`.  Reaching `pf_rule` at all needs value jets
@@ -113,18 +114,33 @@ parser-internal `node_*` helpers), so the grammar targets `pf_rule` in
 
 ## byte-identity proof (hbnf vs parse.y)
 
-`byteident.sh` is the proof that hbnf's generated parser is a byte-for-byte
-drop-in for `parse.y`, for ntpd:
+`byteident.sh` is the proof that hbnf's generated parser is a drop-in for
+`parse.y`, for ntpd:
 
     ./byteident.sh      # OBSD defaults to <repo>/.work/obsd79
 
 It builds **two** parsers against the same daemon `config.c` — `ntpd_yy`
-(bison's `parse.y`) and `ntpd_hbnf` (the generated `conf.c`) — runs each on
-one `ntpd.conf`, and `diff`s a canonical dump of the `struct ntpd_conf` each
-built.  Equal dumps mean equal trees.  The dump (`byteident/dump_ntpd_conf.c`)
-is the *daemon-conf* deep-compare: it walks the TAILQ lists and prints
-scalars/arrays by value, strings by content, and lists in order, so pointer
-addresses, TAILQ links and padding never enter the comparison.
+(bison's `parse.y`) and `ntpd_hbnf` (the `conf.c` generated from
+`grammars/bind/ntpd.hbnf`) — and runs both on every `byteident/cases/*.conf`.
+For each case they must agree on:
+
+- **accept or reject** (the exit status);
+- **the tree**: a canonical dump of the `struct ntpd_conf` each built
+  (`byteident/dump_ntpd_conf.c` walks the TAILQ lists and prints scalars and
+  arrays by value, strings by content, lists in order, so pointer addresses,
+  TAILQ links and padding never enter the comparison);
+- **the error messages**, byte for byte, for every case except
+  `syntax-*.conf`: there parse.y says `syntax error` and hbnf gives a caret
+  message, by design.  Semantic errors come from the action jets, which use
+  parse.y's own messages.
+
+The cases cover every directive, IPv6 literals, hostnames, a negative
+number, an empty file, each semantic error parse.y reports, two errors in
+one file, and two syntax errors.  Add a case by dropping a `.conf` file in.
+
+bison and `hbnf_cli` are used from the host when present (`bison` on PATH;
+`$HBNF_CLI`, or `sources/hbnf/hbnf_cli` once built); otherwise from docker.
+`KEEP=1` keeps the scratch directory with both binaries.
 
 Three pieces make bison's parser compile and agree on Linux:
 
@@ -133,28 +149,27 @@ Three pieces make bison's parser compile and agree on Linux:
   imsg/tls), and `strtonum()` (parse.y's lexer uses it; glibc lacks it).
 - `byteident/getaddrinfo_wrap.c` — OpenBSD's `sockaddr_*` prefix the family
   with `sin_len` and number `AF_INET6` as 24 (glibc: 10); `--wrap=getaddrinfo`
-  rewrites glibc's results into the OpenBSD layout so `host()` reads them.
-  This is the one place the ABI gap leaks through, and it is a harness shim,
-  not an hbnf concern.
-
-Error text is deliberately *not* compared: parse.y's `invalid address: %s`
-and hbnf's `expected a string, found …` + caret both reject the same input,
-but only the tree has to match.
+  rewrites glibc's results into the OpenBSD layout so `host()` reads them,
+  and `--wrap=inet_pton` maps AF_INET6 back to glibc's number (without it
+  every IPv6 literal looked invalid to both parsers).  This is the one place
+  the ABI gap leaks through, and it is a harness shim, not an hbnf concern.
 
 ## ntpd -n proof (the first full drop-in)
 
 `ntpd-proof.sh` is the first daemon proven end-to-end: it builds the **real
 OpenBSD ntpd** with hbnf's generated parser in place of `parse.y`, then runs
 `ntpd -n` (configtest) against it — a valid config prints `configuration OK`
-and exits 0, a bad one prints a caret error and exits 1.
+and exits 0; a config parse.y rejects prints parse.y's message and exits 1
+(the script checks both).  `parse_config` returns -1 and ntpd exits, as with
+parse.y; the generated parser never exits on its own.
 
     ./ntpd-proof.sh      # OBSD defaults to <repo>/.work/obsd79
 
 It compiles all twelve `usr.sbin/ntpd/*.c` files as-is against OpenBSD's own
 headers (the `-nostdinc` recipe above), links `libutil`'s imsg, and drops in
 the generated `conf.h`/`conf.c` (the `--conf` wrapper — `parse_config` now
-takes `struct ntpd_conf *`, which the grammar's `conf struct ntpd_conf`
-directive asks for). Two small shims make this possible on Linux:
+takes `struct ntpd_conf *`, which the binding's `conf struct ntpd_conf`
+directive asks for). A few small shims make this possible on Linux:
 
 - `bsdinc/fcntl.h` + `bsdinc/syslog.h` — OpenBSD generates these userland
   headers during its build; they just forward to `sys/sys/fcntl.h` and
@@ -166,12 +181,23 @@ directive asks for). Two small shims make this possible on Linux:
   differently (`__errno` → `__errno_location`, `__isfinite`, `__stderr`…),
   no-ops the syscalls that don't exist on Linux (`pledge`/`unveil`/`sysctl`/
   `setproctitle`/`adjfreq`), and stubs the runtime-only pieces `-n` never
-  reaches (TLS constraints, MD5 auth, the resolver).
+  reaches (TLS constraints, MD5 auth, the resolver).  It also stubs
+  `getexecpath()`, which -current's ntpd calls before parsing (7.9's does
+  not).
+- `byteident/getaddrinfo_wrap.c` — the same sockaddr-layout wrappers as
+  byteident.sh uses.  Without them host() sees glibc's layout, the address
+  family reads as 0, and parse.y's "IPv4 or IPv6 address or hostname
+  expected" check rejects every server.
+
+`hbnf_cli` comes from `$HBNF_CLI` or `sources/hbnf/hbnf_cli` when built,
+otherwise from docker.
 
 The proof found one real emitter bug: a `word`/`atom` scalar matched a
 keyword token, so `1*string` would swallow the *next* directive's keyword.
 `word`/`atom` now require `kwid == KWID_NONE` (parse.y's lexer reserves
-keywords the same way).
+keywords the same way).  Rules whose alternatives are all keywords
+(`dir = "in" / "out"`) match by keyword id, so that check does not apply to
+them.
 
 Qemu is the fallback if a daemon's full `parse.y` support code (`pfctl.c`,
 OpenSSL-linked helpers, …) won't compile on Linux; the static layout checks
