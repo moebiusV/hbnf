@@ -462,10 +462,6 @@ package Templates is
      "" & LF &
      "@ROOT_TYPE@ *conf_ptr(void) { return conf; }";
 
-   --  The typed conf wrapper: the grammar declares `conf struct <daemon>` and
-   --  the action jets build the daemon's own tree into the caller's struct,
-   --  so parse_config takes that struct (not an AST-shaped one) and `conf`
-   --  is the daemon's global, not one the parser owns.
    Conf_H_Typed : constant String :=
      "/* The daemon's own conf tree, filled by parse_config(); the action jets" & LF &
      "   build it into the caller's struct.  The `conf` global is the daemon's" & LF &

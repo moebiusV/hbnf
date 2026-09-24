@@ -104,6 +104,10 @@ begin
    Put_Line ("");
    Emit_Constant ("Conf_Tail_C", Read_File ("templates/conf_tail.c"));
    Put_Line ("");
+   Emit_Constant ("Conf_H_Typed", Read_File ("templates/conf_typed.h"));
+   Put_Line ("");
+   Emit_Constant ("Conf_Tail_C_Typed", Read_File ("templates/conf_tail_typed.c"));
+   Put_Line ("");
    Emit_Constant ("Conf_Rust", Read_File ("templates/conf.rs"));
    Put_Line ("");
    Emit_Constant ("Conf_Zig", Read_File ("templates/conf.zig"));
