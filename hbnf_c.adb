@@ -4543,7 +4543,13 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "    if (!hbnf_next(rd, &type, &data, &len)) return NULL;");
       Append (Res, LF);
-      Append (Res, "    return strndup(data, len);");
+      --  Into the arena, like the parser's strings, so the root's free_
+      --  releases them (free_ assumes the arena; strndup'd copies leaked).
+      Append (Res, "    char *s = (char *)hbnf_alloc((size_t)len + 1);");
+      Append (Res, LF);
+      Append (Res, "    if (len) memcpy(s, data, len);");
+      Append (Res, LF);
+      Append (Res, "    return s;");
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
