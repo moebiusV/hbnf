@@ -620,13 +620,16 @@ hbnf deliberately gives up four things yacc has, and each is a trade, not an
 oversight.  *Left recursion* (`list : list item | item`) is how yacc expresses
 repetition; hbnf's recursive-descent emitters cannot descend into it, so a
 schema spells the same thing as `*( item )` — a restructuring, not a loss of
-power.  *Semantic actions* — arbitrary C between rule symbols, with `$1`/`$2`
-access to sub-values — are the reason yacc is a "compiler-compiler" and hbnf is
-a recognizer that yields a typed tree; hbnf's bet is that config parsers do not
-need the action layer, and that removing it is what buys the one-grammar,
-four-language output.  *Lexer start conditions* (`%x STRING`) let one lexer
-re-tokenize the same bytes by parser state; hbnf's jets are stateless per token
-kind.  *Precedence declarations* (`%left`/`%right`) resolve expression
+power.  *Semantic actions* — arbitrary C between rule symbols, run as the
+parser reduces, with `$1`/`$2` access to sub-values — are the reason yacc is a
+"compiler-compiler".  hbnf keeps a narrower form: an action jet is C attached
+to a rule and run once per node in a bottom-up walk after the whole parse has
+succeeded, so backtracking never re-runs a side effect and no action can steer
+the parse.  A grammar without actions still yields a typed tree in all four
+languages; a daemon binding adds actions only to build the daemon's own
+structures, which is what a drop-in for its `parse.y` has to do.  *Lexer start
+conditions* (`%x STRING`) let one lexer re-tokenize the same bytes by parser
+state; hbnf's jets are stateless per token kind.  *Precedence declarations* (`%left`/`%right`) resolve expression
 ambiguity declaratively; hbnf resolves it structurally with ordered choice.
 None of these is beyond reach (§8), but a config schema needs none of them, and
 their absence is what keeps the notation small.

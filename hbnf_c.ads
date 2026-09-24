@@ -28,9 +28,10 @@ package HBNF_C is
    function Emit_Serializer (Rules : HBNF_Grammar.Rule_Vectors.Vector)
       return String;
 
-   --  Emit the rebuild side: a flat id-indexed config table, a `_find(id)`
-   --  helper per object type, and a `config_get_<name>()` per type that
-   --  allocates, fills scalars, and stores the object keyed by its id.
+   --  Emit the rebuild side: a reader over the serializer's records and a
+   --  decode_<rule> per struct and list that rebuilds the pointer tree in
+   --  pre-order, strings bump-allocated in the arena (so the root's free_
+   --  releases them).  No id-indexed table or _find helpers are generated.
    function Emit_Rebuild (Rules : HBNF_Grammar.Rule_Vectors.Vector)
       return String;
 

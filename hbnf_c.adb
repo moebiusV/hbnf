@@ -4359,11 +4359,11 @@ package body HBNF_C is
    end Emit_Serializer;
 
    --  =====================================================================
-   --  Emit_Rebuild: a flat id-indexed config table, a `_find(id)` helper per
-   --  object type, and a `config_get<name>()` per type that allocates, fills
-   --  scalars, and stores the object keyed by its id.  The consumer demarshal
-   --  s records in id order, sizes the arrays, and relinks children into
-   --  parents using the stored parent id and the *_find helpers.
+   --  Emit_Rebuild: the decode side of --idref.  A reader walks the records
+   --  in the order Emit_Serializer wrote them (pre-order), and a
+   --  decode_<rule> per struct and list rebuilds the pointer tree from them,
+   --  its strings bump-allocated in the arena so the root's free_ releases
+   --  them.  Parent ids are carried but not needed: pre-order is enough.
    function Emit_Rebuild (Rules : Rule_Vectors.Vector) return String is
       N     : constant Natural := Natural (Rules.Length);
       Infos : Info_Vectors.Vector;

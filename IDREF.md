@@ -1,7 +1,11 @@
 # id-ref serializer output for the hbnf C backend
 
-Status: design note (untracked, not implemented). Grounds a future `--backend=c
---idref` mode. The daemon claims below were verified against the OpenBSD source
+Status: implemented as `hbnf_cli --backend=c --idref`, which emits the `id,
+parent` fields, one typed wire record per object, a pre-order serializer
+(`serialize_tree`) and a decoder that rebuilds the pointer tree
+(`decode_<rule>`, strings in the arena, released by the root's `free_`).  The
+per-type `*_find()` helpers and the merge side described below are not
+generated.  The daemon claims below were verified against the OpenBSD source
 tree (bgpd, ospfd, relayd, httpd, ldpd; pfctl as the counter-example).
 
 ## Why
