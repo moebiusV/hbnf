@@ -94,6 +94,16 @@ begin
    Put_Line ("");
    Emit_Constant ("C_Lexer", Read_File ("templates/lexer.c"));
    Put_Line ("");
+   Emit_Constant ("C_Parse_Text", Read_File ("templates/parse_text.c"));
+   Put_Line ("");
+   Emit_Constant ("C_Statements", Read_File ("templates/statements.c"));
+   Put_Line ("");
+   Emit_Constant ("C_Stmt_Text", Read_File ("templates/stmt_text.c"));
+   Put_Line ("");
+   Emit_Constant ("C_Macros", Read_File ("templates/macros.c"));
+   Put_Line ("");
+   Emit_Constant ("C_No_Macros", Read_File ("templates/nomacros.c"));
+   Put_Line ("");
    Emit_Constant ("Rust_Lexer", Read_File ("templates/lexer.rs"));
    Put_Line ("");
    Emit_Constant ("Zig_Lexer", Read_File ("templates/lexer.zig"));
@@ -107,6 +117,9 @@ begin
    Emit_Constant ("Conf_H_Typed", Read_File ("templates/conf_typed.h"));
    Put_Line ("");
    Emit_Constant ("Conf_Tail_C_Typed", Read_File ("templates/conf_tail_typed.c"));
+   Put_Line ("");
+   Emit_Constant ("Conf_Tail_C_Typed_Stmt",
+                  Read_File ("templates/conf_tail_typed_stmt.c"));
    Put_Line ("");
    Emit_Constant ("Conf_Rust", Read_File ("templates/conf.rs"));
    Put_Line ("");

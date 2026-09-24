@@ -3169,13 +3169,40 @@ package body HBNF_C is
                   end if;
                end;
             end loop;
-            if Flat.Contains (Other_Tok) then
-               --  Some branch starts with a non-keyword token: try the
-               --  chain for one.  A keyword no branch starts with cannot
-               --  match those branches, so it still fails fast below.
-               Append (Buf, Ind & "case KWID_NONE: goto alt_linear;");
-               Append (Buf, LF);
-            end if;
+            --  The end of input (with `statements`, of every statement): no
+            --  branch can start there (none is nullable, or there would be
+            --  no dispatch), so fail at once, recording what probing the
+            --  chain would have -- the first branch's first keyword.
+            declare
+               Last : constant String := Img (Natural (Offs.Length) - 1);
+               At_End : constant String :=
+                 "if (p->toks[p->pos].kind == TOK_EOF) { fail(p, """
+                 & C_Escape (To_String (Flat (1))) & """, 1, "
+                 & "p->toks[p->pos].text); goto alt_fail_" & Last & "; }";
+            begin
+               if Flat.Contains (Other_Tok) then
+                  --  Some branch starts with a non-keyword token: try the
+                  --  chain for one.  A keyword no branch starts with cannot
+                  --  match those branches, so it still fails fast below.
+                  if Flat (1) /= Other_Tok then
+                     Append (Buf, Ind & "case KWID_NONE:");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "    " & At_End);
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "    goto alt_linear;");
+                  else
+                     Append (Buf, Ind & "case KWID_NONE: goto alt_linear;");
+                  end if;
+                  Append (Buf, LF);
+               else
+                  Append (Buf, Ind & "case KWID_NONE:");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "    " & At_End);
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "    goto alt_fail_" & Last & ";");
+                  Append (Buf, LF);
+               end if;
+            end;
             Append (Buf, Ind & "default: goto alt_fail_"
               & Img (Natural (Offs.Length) - 1) & ";");
             Append (Buf, LF);
@@ -3259,7 +3286,13 @@ package body HBNF_C is
          if Is_List then
             declare
                E : constant Element_Access := P (1);
-               Bounded : constant Boolean := E.Min > 0 or else E.Max >= 0;
+               --  With `statements` the root list is read one statement at
+               --  a time, and a statement is one entry, as each of parse.y's
+               --  `grammar : grammar entry '\n'` productions is.
+               Max : constant Integer :=
+                 (if Idx = 1 and then HBNF_Grammar.Statements then 1
+                  else E.Max);
+               Bounded : constant Boolean := E.Min > 0 or else Max >= 0;
                Nums : constant String_Vectors.Vector :=
                  (if E.Kind = Group then Numeric_Fields (E.Items)
                   else String_Vectors.Empty_Vector);
@@ -3277,9 +3310,9 @@ package body HBNF_C is
                   Append (Buf, "    size_t start = p->pos;");
                   Append (Buf, LF);
                end if;
-               if E.Max >= 0 then
+               if Max >= 0 then
                   Append (Buf, "    while (p->pos < p->n && count < "
-                    & Img (Natural (E.Max)) & ") {");
+                    & Img (Natural (Max)) & ") {");
                else
                   Append (Buf, "    while (p->pos < p->n) {");
                end if;
@@ -3598,6 +3631,115 @@ package body HBNF_C is
       Has_Action : constant Boolean :=
         (for some I in 1 .. N => Rules (I).Action_Code /= Null_Unbounded_String);
 
+      --  `statements`: what the driver (templates/statements.c) needs from
+      --  the grammar -- the root list's operations, whether an action jet
+      --  has already reported a failed bind, and the `macros` and
+      --  `includes` rules tried on each parsed statement.
+      procedure Emit_Statement_Hooks (Res : in out U) is
+         RC : constant String := C_Name (To_String (Rules (1).Name));
+         RH : constant String := Root_Type (Rules);
+         RE : constant String := C_Type_Name (To_String (Rules (1).Name));
+
+         procedure Line (S : String) is
+         begin
+            Append (Res, S);
+            Append (Res, LF);
+         end Line;
+
+         --  static bool/char *<Fn>(toks, n): does rule Name match the whole
+         --  statement?  The rule's value is built and freed again.
+         procedure Whole (Fn, Name, Ret, Yes, No : String) is
+            J    : constant Natural := Find (Name);
+            T    : constant String := Alias_Target (Rules, Name);
+            K    : constant Natural := Find (T);
+            Decl : constant String := Out_Type (J);
+         begin
+            Line ("static " & Ret & Fn
+                  & "(const token_t *toks, size_t n) {");
+            Line ("    parser_t p = { toks, n, 0, NULL, (size_t)-1, 0, 0 };");
+            Line ("    " & Decl (Decl'First .. Decl'Last - 4) & "v;");
+            Line ("    bool whole;");
+            Line ("");
+            Line ("    memset(&v, 0, sizeof v);");
+            Line ("    whole = parse_rule_" & C_Name (Name) & "(&p, &v)");
+            Line ("        && p.pos < p.n && p.toks[p.pos].kind == TOK_EOF;");
+            if K /= 0 and then Analyze (Rules, K).Kind in Struct | List then
+               Line ("    free_" & C_Name (T) & "(&v);");
+            end if;
+            if Yes = "true" and then No = "false" then
+               Line ("    return whole;");
+            else
+               Line ("    return whole ? " & Yes & " : " & No & ";");
+            end if;
+            Line ("}");
+            Line ("");
+         end Whole;
+      begin
+         Line ("");
+         Line ("/* ---- statements: the grammar's side of the driver ---- */");
+         Line ("static void hbnf_part_init(" & RH & " *h) { "
+               & L_Init ("h") & " }");
+         Line ("");
+         Line ("/* Move a statement's entries to the end of the config. */");
+         Line ("static void hbnf_part_move(" & RH & " *dst, " & RH
+               & " *src) {");
+         Line ("    " & RE & " *n = " & L_First ("src") & ", *next;");
+         Line ("    while (n) {");
+         Line ("        next = " & L_Next ("n") & ";");
+         Line ("        " & L_Append ("dst", "n"));
+         Line ("        n = next;");
+         Line ("    }");
+         Line ("    " & L_Init ("src"));
+         Line ("}");
+         Line ("");
+         Line ("/* A failed statement's entries go; the strings they point to"
+               & " stay in the");
+         Line ("   arena with the rest of the config's. */");
+         Line ("static void hbnf_part_drop(" & RH & " *h) {");
+         Line ("    " & RE & " *n = " & L_First ("h") & ", *next;");
+         Line ("    while (n) {");
+         Line ("        next = " & L_Next ("n") & ";");
+         Line ("        free_" & RC & "_fields(n);");
+         Line ("        free(n);");
+         Line ("        n = next;");
+         Line ("    }");
+         Line ("    " & L_Init ("h"));
+         Line ("}");
+         Line ("");
+         Line ("/* Nothing is kept: the entries and the string arena go. */");
+         Line ("static void hbnf_part_free(" & RH & " *h) { free_" & RC
+               & "(h); }");
+         Line ("");
+         Line ("/* A bind failure an action jet has already reported. */");
+         if Has_Action then
+            Line ("static int hbnf_bind_reported(void) {"
+                  & " return bind_errors && bind_report; }");
+         else
+            Line ("static int hbnf_bind_reported(void) { return 0; }");
+         end if;
+         Line ("");
+         if HBNF_Grammar.Macros_Rule /= "" then
+            Line ("/* `macros " & HBNF_Grammar.Macros_Rule
+                  & "`: this statement defines a macro. */");
+            Whole ("hbnf_is_macro", HBNF_Grammar.Macros_Rule, "bool ",
+                   "true", "false");
+         end if;
+         if HBNF_Grammar.Includes_Rule /= "" then
+            Line ("/* `includes " & HBNF_Grammar.Includes_Rule
+                  & "`: this statement includes the file its last token"
+                  & " names. */");
+            Whole ("hbnf_include_tok", HBNF_Grammar.Includes_Rule,
+                   "const token_t *", "&toks[p.pos - 1]", "NULL");
+         else
+            Line ("static const token_t *hbnf_include_tok(const token_t *toks,"
+                  & " size_t n) {");
+            Line ("    (void)toks;");
+            Line ("    (void)n;");
+            Line ("    return NULL;");
+            Line ("}");
+         end if;
+      end Emit_Statement_Hooks;
+
       Res : U;
    begin
       Append (Res, "/* generated by hbnf -- do not edit */");
@@ -3651,6 +3793,14 @@ package body HBNF_C is
       Append (Res, "    int err_is_lit;");
       Append (Res, LF);
       Append (Res, "} parser_t;");
+      Append (Res, LF);
+      Append (Res, LF);
+      Append (Res, "/* The line the text being lexed starts on: 1 for a whole file,"
+        & " a statement's");
+      Append (Res, LF);
+      Append (Res, "   first line when a config is read one statement at a time. */");
+      Append (Res, LF);
+      Append (Res, "static size_t hbnf_line_base = 1;");
       Append (Res, LF);
       Append (Res, LF);
       Append (Res, "static void fail(parser_t *p, const char *expected,"
@@ -3767,7 +3917,13 @@ package body HBNF_C is
       Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
         & "(&p, out)) goto err;");
       Append (Res, LF);
-      Append (Res, "    if (p.pos < p.n && p.toks[p.pos].kind != TOK_EOF) { fail(&p, ""end of config"", 0, p.toks[p.pos].text); goto err; }");
+      --  Input left over: with `statements`, nothing on the line was a
+      --  statement, or something follows one.
+      Append (Res, "    if (p.pos < p.n && p.toks[p.pos].kind != TOK_EOF) { fail(&p, "
+        & (if HBNF_Grammar.Statements
+           then "p.pos == 0 ? ""a statement"" : ""end of statement"""
+           else """end of config""")
+        & ", 0, p.toks[p.pos].text); goto err; }");
       Append (Res, LF);
       if Analyze (Rules, 1).Kind in Struct | List and then Has_Relink then
          Append (Res, "    relink_" & C_Name (To_String (Rules (1).Name))
@@ -3796,11 +3952,20 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "err:");
       Append (Res, LF);
+      --  Found at the end: the EOF token's text is empty, so say what ends
+      --  there (a statement, with `statements`; else the input).
       Append (Res, "    { const char *f = p.err_found ? p.err_found"
         & " : ""end of input"";");
       Append (Res, LF);
-      Append (Res, "      size_t fl = p.err_pos < p.n ? p.toks[p.err_pos].len"
-        & " : strlen(f);");
+      Append (Res, "      int at_end = p.err_pos >= p.n"
+        & " || p.toks[p.err_pos].kind == TOK_EOF;");
+      Append (Res, LF);
+      Append (Res, "      if (at_end) f = """
+        & (if HBNF_Grammar.Statements then "end of statement"
+           else "end of input") & """;");
+      Append (Res, LF);
+      Append (Res, "      size_t fl = at_end ? strlen(f)"
+        & " : p.toks[p.err_pos].len;");
       Append (Res, LF);
       Append (Res, "      char want[160];");
       Append (Res, LF);
@@ -3823,11 +3988,12 @@ package body HBNF_C is
            & " p.err_expected ? p.err_expected : """");");
          Append (Res, LF);
       end if;
-      Append (Res, "      if (p.text && p.err_line >= 1) {");
+      Append (Res, "      if (p.text && p.err_line >= hbnf_line_base) {");
       Append (Res, LF);
       Append (Res, "          const char *l; size_t ll;");
       Append (Res, LF);
-      Append (Res, "          { const char *s = p.text; size_t ln = p.err_line;");
+      Append (Res, "          { const char *s = p.text;"
+        & " size_t ln = p.err_line - hbnf_line_base + 1;");
       Append (Res, LF);
       Append (Res, "            while (ln > 1) {");
       Append (Res, LF);
@@ -3926,27 +4092,50 @@ package body HBNF_C is
       Append (Res, "}");
       Append (Res, LF);
 
+      if HBNF_Grammar.Statements then
+         Emit_Statement_Hooks (Res);
+      end if;
+
       return To_String (Res);
    end Emit_Parser;
 
-   function Emit_Lexer (Rules : Rule_Vectors.Vector) return String is
+   function Emit_Lexer
+     (Rules      : Rule_Vectors.Vector;
+      Text_Entry : Boolean := True) return String
+   is
       Root_T : constant String := Root_Type (Rules);
       Wc     : U;
+      Res    : U;
+
+      procedure Add (Template : String) is
+      begin
+         Append (Res, LF);
+         Append (Res, Templates.Substitute (Template, "@ROOT_TYPE@", Root_T));
+      end Add;
    begin
       for C of Word_Chars loop
          Append (Wc, " || c == '" & C & "'");
       end loop;
-      declare
-         Lexer : constant String := Templates.Substitute
-           (Templates.Substitute (Templates.C_Lexer, "@ROOT_TYPE@", Root_T),
-            "@WORD_CHARS@", To_String (Wc));
-      begin
-         if Epilogue = "" then
-            return Lexer;
-         else
-            return Lexer & LF & Epilogue;
+      Append (Res, Templates.Substitute
+                (Templates.C_Lexer, "@WORD_CHARS@", To_String (Wc)));
+      Append (Res, LF);
+      if HBNF_Grammar.Statements then
+         --  The statement driver, the macro expansion (or its stubs), and
+         --  parse_text over the driver.
+         Add (Templates.C_Statements);
+         Add (if HBNF_Grammar.Macros_Rule /= "" then Templates.C_Macros
+              else Templates.C_No_Macros);
+         if Text_Entry then
+            Add (Templates.C_Stmt_Text);
          end if;
-      end;
+      else
+         Add (Templates.C_Parse_Text);
+      end if;
+      if Epilogue /= "" then
+         Append (Res, LF);
+         Append (Res, Epilogue);
+      end if;
+      return To_String (Res);
    end Emit_Lexer;
 
    --  conf.h: the declarations plus the global `conf`, the error callback and
@@ -3974,6 +4163,13 @@ package body HBNF_C is
                              = "union ")
           then Conf_T & ";" & LF & LF
           else ""));
+
+      --  `macros`: -D name=value, as the daemons' cmdline_symset.
+      Symset : constant String :=
+        (if HBNF_Grammar.Macros_Rule /= "" then
+            LF & LF & "/* -D name=value: a macro the config cannot redefine; -1"
+            & " without `=`. */" & LF & "int cmdline_symset(char *s);" & LF
+         else "");
    begin
       if Conf_T /= "" then
          --  A daemon binding: the daemon's own header declares its conf
@@ -3985,6 +4181,7 @@ package body HBNF_C is
            "#include <stddef.h>" & LF & LF &
            Forward &
            Tail &
+           Symset &
            LF &
            "#endif" & LF;
       end if;
@@ -3994,6 +4191,7 @@ package body HBNF_C is
         Emit (Rules) &
         LF &
         Tail &
+        Symset &
         LF &
         "#endif" & LF;
    end Emit_Conf_Header;
@@ -4012,6 +4210,9 @@ package body HBNF_C is
          --  daemon's header) come first, then conf.h; parse_config is the
          --  one external function the daemon links against, so the parser's
          --  own entry points are made static.
+         --  With `statements`, parse_config reads the file through the
+         --  statement driver and drops each statement once bound, so there
+         --  is no parse_text.
          return
            "/* generated by hbnf -- do not edit */" & LF & LF &
            Emit (Rules, Walkers => False) &
@@ -4022,7 +4223,8 @@ package body HBNF_C is
               LF & "bool parse_tokens(", LF & "static bool parse_tokens(") &
            Templates.Substitute
              (Templates.Substitute
-                (Emit_Lexer (Rules),
+                (Emit_Lexer (Rules,
+                             Text_Entry => not HBNF_Grammar.Statements),
                  LF & "lexed_t lex(const char *text) {",
                  LF & "static lexed_t lex(const char *text) {"),
               LF & "bool parse_text(const char *text,",
@@ -4031,7 +4233,10 @@ package body HBNF_C is
            Templates.Substitute
              (Templates.Substitute
                 (Templates.Substitute
-                   (Templates.Conf_Tail_C_Typed, "@CONF_TYPE@", Conf_T),
+                   ((if HBNF_Grammar.Statements
+                     then Templates.Conf_Tail_C_Typed_Stmt
+                     else Templates.Conf_Tail_C_Typed),
+                    "@CONF_TYPE@", Conf_T),
                  "@ROOT_TYPE@", Root_T),
               "@ROOT_C@", Root_C);
       end if;

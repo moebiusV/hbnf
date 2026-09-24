@@ -16,7 +16,7 @@ package Templates is
      "typedef struct { token_t *toks; size_t n; } lexed_t;" & LF &
      "" & LF &
      "/* Append a token, growing the array geometrically.  Returns 0 when memory" & LF &
-     "   runs out; the lexer then gives up and parse_text reports it. */" & LF &
+     "   runs out; the lexer then gives up and its caller reports it. */" & LF &
      "static int lex_push(lexed_t *r, size_t *cap, token_t t) {" & LF &
      "    if (r->n == *cap) {" & LF &
      "        size_t nc = *cap * 2;" & LF &
@@ -39,10 +39,11 @@ package Templates is
      "}" & LF &
      "" & LF &
      "/* The token array.  NULL toks (n = 0) means the input could not be" & LF &
-     "   lexed: it is over 4 GB (tokens hold 32-bit offsets) or memory ran out. */" & LF &
+     "   lexed: it is over 4 GB (tokens hold 32-bit offsets) or memory ran out." & LF &
+     "   Lines are counted from hbnf_line_base (a statement's first line). */" & LF &
      "lexed_t lex(const char *text) {" & LF &
      "    lexed_t r = {0};" & LF &
-     "    size_t i = 0, line = 1, col = 1;" & LF &
+     "    size_t i = 0, line = hbnf_line_base, col = 1;" & LF &
      "    size_t tlen = strlen(text);" & LF &
      "    /* A first guess of one token per 4 bytes of input (real configs run" & LF &
      "       5-6): usually no regrowth, and a fraction of the old one-per-byte. */" & LF &
@@ -117,8 +118,9 @@ package Templates is
      "    r.toks = NULL;" & LF &
      "    r.n = 0;" & LF &
      "    return r;" & LF &
-     "}" & LF &
-     "" & LF &
+     "}";
+
+   C_Parse_Text : constant String :=
      "/* Convenience: lex, then parse (the caret line is drawn lazily on error). */" & LF &
      "bool parse_text(const char *text, @ROOT_TYPE@ *out," & LF &
      "                char *err, size_t errlen, size_t *err_line, size_t *err_col) {" & LF &
@@ -133,6 +135,565 @@ package Templates is
      "                           err, errlen, err_line, err_col);" & LF &
      "    free(l.toks);" & LF &
      "    return ok;" & LF &
+     "}";
+
+   C_Statements : constant String :=
+     "/* ------------------------------------------------------------------ */" & LF &
+     "/* Statements (the grammar's `statements` directive): the config is    */" & LF &
+     "/* read one statement at a time, as parse.y's yyparse reads it.  A     */" & LF &
+     "/* statement ends at a newline outside braces, quotes and comments;    */" & LF &
+     "/* backslash-newline continues it, and so does a next line that starts */" & LF &
+     "/* with `{`.  Each statement is expanded (macros), lexed, parsed, bound */" & LF &
+     "/* and then appended to the caller's list, or dropped once the action  */" & LF &
+     "/* jets have taken what they keep, so only one statement's tokens (and */" & LF &
+     "/* nodes) are held at a time.  A failed statement is reported and the  */" & LF &
+     "/* parse goes on with the next one, as parse.y's error rule does.      */" & LF &
+     "/* ------------------------------------------------------------------ */" & LF &
+     "" & LF &
+     "/* Each error as it is found (parse_config points it at conf_error), and" & LF &
+     "   the file being read: NULL for the top file, else the included one. */" & LF &
+     "static void (*hbnf_report)(size_t line, const char *msg);" & LF &
+     "static const char *hbnf_file;" & LF &
+     "" & LF &
+     "/* Macro hooks: macros.c, or stubs for a grammar without `macros`. */" & LF &
+     "static char *hbnf_expand(const char *s, size_t len, char *msg, size_t msglen);" & LF &
+     "static void hbnf_trail(char *msg, size_t msglen, size_t line, size_t col);" & LF &
+     "static void hbnf_define(const token_t *toks, size_t n, size_t line);" & LF &
+     "static void hbnf_macros_done(void);" & LF &
+     "" & LF &
+     "static char *hbnf_strndup(const char *s, size_t n) {" & LF &
+     "    char *d = (char *)malloc(n + 1);" & LF &
+     "" & LF &
+     "    if (!d)" & LF &
+     "        hbnf_oom();" & LF &
+     "    memcpy(d, s, n);" & LF &
+     "    d[n] = '\0';" & LF &
+     "    return d;" & LF &
+     "}" & LF &
+     "" & LF &
+     "typedef struct {" & LF &
+     "    @ROOT_TYPE@ *out;          /* the caller's list; NULL: keep nothing */" & LF &
+     "    char *err;                 /* the first error, for the caller */" & LF &
+     "    size_t errlen;" & LF &
+     "    size_t *err_line, *err_col;" & LF &
+     "    size_t errors;" & LF &
+     "    size_t top_line;           /* the top file's current statement */" & LF &
+     "} hbnf_run_t;" & LF &
+     "" & LF &
+     "/* A whole file, NUL-terminated; NULL, with *why, if it cannot be read. */" & LF &
+     "static char *hbnf_read_file(const char *path, const char **why) {" & LF &
+     "    FILE *f = fopen(path, ""r"");" & LF &
+     "    char *buf;" & LF &
+     "    long len;" & LF &
+     "" & LF &
+     "    if (!f) {" & LF &
+     "        *why = ""cannot open file"";" & LF &
+     "        return NULL;" & LF &
+     "    }" & LF &
+     "    if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 ||" & LF &
+     "        fseek(f, 0, SEEK_SET) != 0) {" & LF &
+     "        fclose(f);" & LF &
+     "        *why = ""cannot read file"";" & LF &
+     "        return NULL;" & LF &
+     "    }" & LF &
+     "    buf = (char *)malloc((size_t)len + 1);" & LF &
+     "    if (!buf) {" & LF &
+     "        fclose(f);" & LF &
+     "        *why = ""out of memory"";" & LF &
+     "        return NULL;" & LF &
+     "    }" & LF &
+     "    if (len > 0 && fread(buf, 1, (size_t)len, f) != (size_t)len) {" & LF &
+     "        free(buf);" & LF &
+     "        fclose(f);" & LF &
+     "        *why = ""read error"";" & LF &
+     "        return NULL;" & LF &
+     "    }" & LF &
+     "    buf[len] = '\0';" & LF &
+     "    fclose(f);" & LF &
+     "    return buf;" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* Count an error, report it unless an action jet already has, and keep" & LF &
+     "   the first for the caller: in an included file, as ""file:line: msg"" on" & LF &
+     "   the line of the top file's include. */" & LF &
+     "static void hbnf_error(hbnf_run_t *r, size_t line, size_t col," & LF &
+     "                       const char *msg, int reported) {" & LF &
+     "    r->errors++;" & LF &
+     "    if (!reported && hbnf_report)" & LF &
+     "        hbnf_report(line, msg);" & LF &
+     "    if (r->errors > 1)" & LF &
+     "        return;" & LF &
+     "    if (hbnf_file) {" & LF &
+     "        snprintf(r->err, r->errlen, ""%s:%zu: %s"", hbnf_file, line, msg);" & LF &
+     "        *r->err_line = r->top_line;" & LF &
+     "        *r->err_col = 0;" & LF &
+     "    } else {" & LF &
+     "        snprintf(r->err, r->errlen, ""%s"", msg);" & LF &
+     "        *r->err_line = line;" & LF &
+     "        *r->err_col = col;" & LF &
+     "    }" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* The end of the statement at s[i]: the newline that ends it, or the NUL." & LF &
+     "   *nl counts the newlines inside it; *empty is set when it holds only" & LF &
+     "   blanks and comments.  Quotes and comments are skipped as the lexer" & LF &
+     "   skips them, so a brace in either does not count. */" & LF &
+     "static size_t hbnf_stmt_end(const char *s, size_t i, size_t *nl, int *empty) {" & LF &
+     "    long depth = 0;" & LF &
+     "" & LF &
+     "    *nl = 0;" & LF &
+     "    *empty = 1;" & LF &
+     "    for (;;) {" & LF &
+     "        char c = s[i];" & LF &
+     "        if (!c)" & LF &
+     "            return i;" & LF &
+     "        if (c == '\n') {" & LF &
+     "            if (depth <= 0) {" & LF &
+     "                size_t j = i + 1;" & LF &
+     "                while (s[j] == ' ' || s[j] == '\t' || s[j] == '\r')" & LF &
+     "                    j++;" & LF &
+     "                if (*empty || s[j] != '{')" & LF &
+     "                    return i;" & LF &
+     "            }" & LF &
+     "            (*nl)++;" & LF &
+     "            i++;" & LF &
+     "        } else if (c == '\\' && s[i + 1] == '\n') {" & LF &
+     "            (*nl)++;" & LF &
+     "            i += 2;" & LF &
+     "        } else if (c == '#') {" & LF &
+     "            while (s[i] && s[i] != '\n')" & LF &
+     "                i++;" & LF &
+     "        } else if (c == ' ' || c == '\t' || c == '\r') {" & LF &
+     "            i++;" & LF &
+     "        } else if (c == '""') {" & LF &
+     "            *empty = 0;" & LF &
+     "            i++;" & LF &
+     "            while (s[i] && s[i] != '""') {" & LF &
+     "                if (s[i] == '\\' && s[i + 1]) {" & LF &
+     "                    if (s[i + 1] == '\n')" & LF &
+     "                        (*nl)++;" & LF &
+     "                    i += 2;" & LF &
+     "                    continue;" & LF &
+     "                }" & LF &
+     "                if (s[i] == '\n')" & LF &
+     "                    (*nl)++;" & LF &
+     "                i++;" & LF &
+     "            }" & LF &
+     "            if (s[i])" & LF &
+     "                i++;" & LF &
+     "        } else {" & LF &
+     "            *empty = 0;" & LF &
+     "            if (c == '{')" & LF &
+     "                depth++;" & LF &
+     "            else if (c == '}')" & LF &
+     "                depth--;" & LF &
+     "            i++;" & LF &
+     "        }" & LF &
+     "    }" & LF &
+     "}" & LF &
+     "" & LF &
+     "static void hbnf_run(hbnf_run_t *r, const char *text, int depth);" & LF &
+     "" & LF &
+     "/* An `include`: read the file's statements in its place. */" & LF &
+     "static void hbnf_include(hbnf_run_t *r, const char *path, size_t line," & LF &
+     "                         int depth) {" & LF &
+     "    char msg[512];" & LF &
+     "    const char *why, *outer = hbnf_file;" & LF &
+     "    char *text;" & LF &
+     "" & LF &
+     "    if (depth >= 16) {" & LF &
+     "        snprintf(msg, sizeof msg, ""%s: includes nested too deeply"", path);" & LF &
+     "        hbnf_error(r, line, 0, msg, 0);" & LF &
+     "        return;" & LF &
+     "    }" & LF &
+     "    text = hbnf_read_file(path, &why);" & LF &
+     "    if (!text) {" & LF &
+     "        snprintf(msg, sizeof msg, ""failed to include file %s"", path);" & LF &
+     "        hbnf_error(r, line, 0, msg, 0);" & LF &
+     "        return;" & LF &
+     "    }" & LF &
+     "    hbnf_file = path;" & LF &
+     "    hbnf_run(r, text, depth + 1);" & LF &
+     "    hbnf_file = outer;" & LF &
+     "    free(text);" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* One statement, s[0..len), which starts on line `line` of its file. */" & LF &
+     "static void hbnf_stmt(hbnf_run_t *r, const char *s, size_t len, size_t line," & LF &
+     "                      int depth) {" & LF &
+     "    char msg[512];" & LF &
+     "    char *buf, *inc = NULL;" & LF &
+     "    lexed_t l;" & LF &
+     "    @ROOT_TYPE@ part;" & LF &
+     "    size_t el = 0, ec = 0;" & LF &
+     "    bool ok;" & LF &
+     "" & LF &
+     "    buf = hbnf_expand(s, len, msg, sizeof msg);" & LF &
+     "    if (!buf) {" & LF &
+     "        hbnf_error(r, line, 0, msg, 0);" & LF &
+     "        return;" & LF &
+     "    }" & LF &
+     "    hbnf_line_base = line;" & LF &
+     "    l = lex(buf);" & LF &
+     "    if (!l.toks) {" & LF &
+     "        hbnf_line_base = 1;" & LF &
+     "        free(buf);" & LF &
+     "        hbnf_error(r, line, 0, len > (size_t)UINT32_MAX - 2" & LF &
+     "                   ? ""input too large"" : ""out of memory"", 0);" & LF &
+     "        return;" & LF &
+     "    }" & LF &
+     "    hbnf_part_init(&part);" & LF &
+     "    ok = parse_tokens(l.toks, l.n, &part, buf, msg, sizeof msg, &el, &ec);" & LF &
+     "    hbnf_line_base = 1;" & LF &
+     "    if (ok) {" & LF &
+     "        const token_t *t = hbnf_include_tok(l.toks, l.n);" & LF &
+     "        hbnf_define(l.toks, l.n, line);" & LF &
+     "        if (t)" & LF &
+     "            inc = hbnf_strndup(t->text, t->len);" & LF &
+     "    } else {" & LF &
+     "        if (el < line)" & LF &
+     "            el = line;" & LF &
+     "        hbnf_trail(msg, sizeof msg, el - line, ec);" & LF &
+     "        hbnf_error(r, el, ec, msg, hbnf_bind_reported());" & LF &
+     "    }" & LF &
+     "    if (!r->out)" & LF &
+     "        hbnf_part_free(&part);       /* the nodes and the string arena */" & LF &
+     "    else if (ok)" & LF &
+     "        hbnf_part_move(r->out, &part);" & LF &
+     "    else" & LF &
+     "        hbnf_part_drop(&part);" & LF &
+     "    free(l.toks);" & LF &
+     "    free(buf);" & LF &
+     "    if (inc) {" & LF &
+     "        hbnf_include(r, inc, line, depth);" & LF &
+     "        free(inc);" & LF &
+     "    }" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* Every statement of one file's text. */" & LF &
+     "static void hbnf_run(hbnf_run_t *r, const char *text, int depth) {" & LF &
+     "    size_t i = 0, line = 1;" & LF &
+     "" & LF &
+     "    for (;;) {" & LF &
+     "        size_t nl;" & LF &
+     "        int empty;" & LF &
+     "        size_t end = hbnf_stmt_end(text, i, &nl, &empty);" & LF &
+     "        if (!empty) {" & LF &
+     "            if (!depth)" & LF &
+     "                r->top_line = line;" & LF &
+     "            hbnf_stmt(r, text + i, end - i, line, depth);" & LF &
+     "        }" & LF &
+     "        line += nl;" & LF &
+     "        if (!text[end])" & LF &
+     "            break;" & LF &
+     "        i = end + 1;" & LF &
+     "        line++;" & LF &
+     "    }" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* Read a config: each statement is appended to *out, or with out NULL" & LF &
+     "   dropped once bound.  err, *err_line and *err_col hold the first error;" & LF &
+     "   false if there was any. */" & LF &
+     "static bool hbnf_stmts(const char *text, @ROOT_TYPE@ *out," & LF &
+     "                       char *err, size_t errlen," & LF &
+     "                       size_t *err_line, size_t *err_col) {" & LF &
+     "    hbnf_run_t r;" & LF &
+     "" & LF &
+     "    memset(&r, 0, sizeof r);" & LF &
+     "    r.out = out;" & LF &
+     "    r.err = err;" & LF &
+     "    r.errlen = errlen;" & LF &
+     "    r.err_line = err_line;" & LF &
+     "    r.err_col = err_col;" & LF &
+     "    if (errlen)" & LF &
+     "        err[0] = '\0';" & LF &
+     "    *err_line = *err_col = 0;" & LF &
+     "    hbnf_file = NULL;" & LF &
+     "    hbnf_run(&r, text, 0);" & LF &
+     "    hbnf_macros_done();" & LF &
+     "    return r.errors == 0;" & LF &
+     "}";
+
+   C_Stmt_Text : constant String :=
+     "/* Parse a whole config into *out (initialized here), one statement at a" & LF &
+     "   time.  err, *err_line and *err_col hold the first error (the parse goes" & LF &
+     "   on past it); false if there was any. */" & LF &
+     "bool parse_text(const char *text, @ROOT_TYPE@ *out," & LF &
+     "                char *err, size_t errlen, size_t *err_line, size_t *err_col) {" & LF &
+     "    hbnf_part_init(out);" & LF &
+     "    return hbnf_stmts(text, out, err, errlen, err_line, err_col);" & LF &
+     "}";
+
+   C_Macros : constant String :=
+     "/* ------------------------------------------------------------------ */" & LF &
+     "/* Macros (the grammar's `macros` directive), as parse.y has them.  A   */" & LF &
+     "/* statement the macros rule matches whole defines one: its first token */" & LF &
+     "/* is the name, and the tokens after `=`, joined by spaces, the value.  */" & LF &
+     "/* `$name` at the start of a word, outside quotes and comments, expands */" & LF &
+     "/* to the value, glued to what follows (`$net.5`) and not expanded      */" & LF &
+     "/* again.  cmdline_symset(""name=value"") (-D) defines one the config     */" & LF &
+     "/* cannot redefine; the others are dropped when the parse ends.         */" & LF &
+     "/* ------------------------------------------------------------------ */" & LF &
+     "" & LF &
+     "typedef struct hbnf_sym {" & LF &
+     "    struct hbnf_sym *next;" & LF &
+     "    char *nam, *val;" & LF &
+     "    char *file;         /* where it was defined: NULL for the top file */" & LF &
+     "    size_t line;        /* 0: the command line */" & LF &
+     "    int persist;" & LF &
+     "} hbnf_sym;" & LF &
+     "" & LF &
+     "static hbnf_sym *hbnf_syms;" & LF &
+     "" & LF &
+     "/* Where each expansion in the current statement landed (its line within" & LF &
+     "   the statement, its columns), for the trail on an error inside one. */" & LF &
+     "typedef struct {" & LF &
+     "    size_t line, col0, col1;" & LF &
+     "    const hbnf_sym *sym;" & LF &
+     "} hbnf_seg;" & LF &
+     "" & LF &
+     "static hbnf_seg hbnf_segs[16];" & LF &
+     "static size_t hbnf_nsegs;" & LF &
+     "" & LF &
+     "static void hbnf_sym_free(hbnf_sym *y) {" & LF &
+     "    free(y->nam);" & LF &
+     "    free(y->val);" & LF &
+     "    free(y->file);" & LF &
+     "    free(y);" & LF &
+     "}" & LF &
+     "" & LF &
+     "static hbnf_sym *hbnf_symget(const char *nam, size_t len) {" & LF &
+     "    hbnf_sym *y;" & LF &
+     "" & LF &
+     "    for (y = hbnf_syms; y; y = y->next)" & LF &
+     "        if (strlen(y->nam) == len && memcmp(y->nam, nam, len) == 0)" & LF &
+     "            return y;" & LF &
+     "    return NULL;" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* parse.y's symset: a command-line macro is not redefined. */" & LF &
+     "static int hbnf_symset(const char *nam, size_t len, const char *val," & LF &
+     "                       int persist, size_t line) {" & LF &
+     "    hbnf_sym *y = hbnf_symget(nam, len), **pp;" & LF &
+     "" & LF &
+     "    if (y) {" & LF &
+     "        if (y->persist)" & LF &
+     "            return 0;" & LF &
+     "        for (pp = &hbnf_syms; *pp != y; pp = &(*pp)->next)" & LF &
+     "            ;" & LF &
+     "        *pp = y->next;" & LF &
+     "        hbnf_sym_free(y);" & LF &
+     "    }" & LF &
+     "    y = (hbnf_sym *)calloc(1, sizeof *y);" & LF &
+     "    if (!y)" & LF &
+     "        hbnf_oom();" & LF &
+     "    y->nam = hbnf_strndup(nam, len);" & LF &
+     "    y->val = hbnf_strndup(val, strlen(val));" & LF &
+     "    y->file = hbnf_file ? hbnf_strndup(hbnf_file, strlen(hbnf_file)) : NULL;" & LF &
+     "    y->line = line;" & LF &
+     "    y->persist = persist;" & LF &
+     "    y->next = hbnf_syms;" & LF &
+     "    hbnf_syms = y;" & LF &
+     "    return 0;" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* -D name=value: the name ends at the last `=`, as in parse.y. */" & LF &
+     "int cmdline_symset(char *s) {" & LF &
+     "    const char *val = strrchr(s, '=');" & LF &
+     "" & LF &
+     "    if (!val)" & LF &
+     "        return -1;" & LF &
+     "    return hbnf_symset(s, (size_t)(val - s), val + 1, 1, 0);" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* A statement the macros rule matched: remember name = value. */" & LF &
+     "static void hbnf_define(const token_t *toks, size_t n, size_t line) {" & LF &
+     "    size_t i, eq, len = 0;" & LF &
+     "    char *val, *p;" & LF &
+     "" & LF &
+     "    if (!hbnf_is_macro(toks, n))" & LF &
+     "        return;" & LF &
+     "    for (eq = 1; eq < n; eq++)" & LF &
+     "        if (toks[eq].kind == TOK_PUNCT && toks[eq].len == 1" & LF &
+     "            && toks[eq].text[0] == '=')" & LF &
+     "            break;" & LF &
+     "    for (i = eq + 1; i < n && toks[i].kind != TOK_EOF; i++)" & LF &
+     "        len += toks[i].len + 1;" & LF &
+     "    val = p = (char *)malloc(len + 1);" & LF &
+     "    if (!val)" & LF &
+     "        hbnf_oom();" & LF &
+     "    for (i = eq + 1; i < n && toks[i].kind != TOK_EOF; i++) {" & LF &
+     "        size_t k;" & LF &
+     "        if (p != val)" & LF &
+     "            *p++ = ' ';" & LF &
+     "        for (k = 0; k < toks[i].len; k++)   /* a value is one line */" & LF &
+     "            *p++ = toks[i].text[k] == '\n' ? ' ' : toks[i].text[k];" & LF &
+     "    }" & LF &
+     "    *p = '\0';" & LF &
+     "    hbnf_symset(toks[0].text, toks[0].len, val, 0, line);" & LF &
+     "    free(val);" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* Append s[0..n) to the growing buffer *o. */" & LF &
+     "static void hbnf_put(char **o, size_t *used, size_t *cap, const char *s," & LF &
+     "                     size_t n) {" & LF &
+     "    if (*used + n + 1 > *cap) {" & LF &
+     "        size_t nc = (*used + n + 1) * 2;" & LF &
+     "        char *no = (char *)realloc(*o, nc);" & LF &
+     "        if (!no)" & LF &
+     "            hbnf_oom();" & LF &
+     "        *o = no;" & LF &
+     "        *cap = nc;" & LF &
+     "    }" & LF &
+     "    memcpy(*o + *used, s, n);" & LF &
+     "    *used += n;" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* The statement s[0..len) with its macros expanded, NUL-terminated;" & LF &
+     "   NULL, with msg, if one is not defined. */" & LF &
+     "static char *hbnf_expand(const char *s, size_t len, char *msg, size_t msglen) {" & LF &
+     "    size_t cap = len + 1, used = 0, i = 0, line = 0, col = 1;" & LF &
+     "    char *o = (char *)malloc(cap);" & LF &
+     "" & LF &
+     "    if (!o)" & LF &
+     "        hbnf_oom();" & LF &
+     "    hbnf_nsegs = 0;" & LF &
+     "    if (!memchr(s, '$', len)) {                 /* most statements */" & LF &
+     "        memcpy(o, s, len);" & LF &
+     "        o[len] = '\0';" & LF &
+     "        return o;" & LF &
+     "    }" & LF &
+     "    while (i < len) {" & LF &
+     "        char c = s[i];" & LF &
+     "        size_t j = i + 1;" & LF &
+     "        if (c != '""' && c != '#' && c != '$' && c != '\n') {" & LF &
+     "            while (j < len && s[j] != '""' && s[j] != '#' && s[j] != '$'" & LF &
+     "                   && s[j] != '\n')" & LF &
+     "                j++;" & LF &
+     "            hbnf_put(&o, &used, &cap, s + i, j - i);" & LF &
+     "            col += j - i;" & LF &
+     "            i = j;" & LF &
+     "            continue;" & LF &
+     "        }" & LF &
+     "        if (c == '""') {                         /* a quoted string, as is */" & LF &
+     "            while (j < len && s[j] != '""')" & LF &
+     "                j += (s[j] == '\\' && j + 1 < len) ? 2 : 1;" & LF &
+     "            if (j < len)" & LF &
+     "                j++;" & LF &
+     "        } else if (c == '#') {                  /* a comment, as is */" & LF &
+     "            while (j < len && s[j] != '\n')" & LF &
+     "                j++;" & LF &
+     "        } else if (c == '$' && (used == 0 || !lex_word_char(o[used - 1]))) {" & LF &
+     "            const hbnf_sym *y;" & LF &
+     "            size_t vl;" & LF &
+     "            while (j < len && (isalnum((unsigned char)s[j]) || s[j] == '_'))" & LF &
+     "                j++;" & LF &
+     "            y = hbnf_symget(s + i + 1, j - i - 1);" & LF &
+     "            if (!y) {" & LF &
+     "                snprintf(msg, msglen, ""macro '%.*s' not defined""," & LF &
+     "                         (int)(j - i - 1), s + i + 1);" & LF &
+     "                free(o);" & LF &
+     "                return NULL;" & LF &
+     "            }" & LF &
+     "            vl = strlen(y->val);" & LF &
+     "            if (hbnf_nsegs < sizeof hbnf_segs / sizeof hbnf_segs[0]) {" & LF &
+     "                hbnf_segs[hbnf_nsegs].line = line;" & LF &
+     "                hbnf_segs[hbnf_nsegs].col0 = col;" & LF &
+     "                hbnf_segs[hbnf_nsegs].col1 = col + vl;" & LF &
+     "                hbnf_segs[hbnf_nsegs].sym = y;" & LF &
+     "                hbnf_nsegs++;" & LF &
+     "            }" & LF &
+     "            hbnf_put(&o, &used, &cap, y->val, vl);" & LF &
+     "            col += vl;" & LF &
+     "            i = j;" & LF &
+     "            continue;" & LF &
+     "        }" & LF &
+     "        hbnf_put(&o, &used, &cap, s + i, j - i);" & LF &
+     "        for (; i < j; i++) {" & LF &
+     "            if (s[i] == '\n') {" & LF &
+     "                line++;" & LF &
+     "                col = 1;" & LF &
+     "            } else {" & LF &
+     "                col++;" & LF &
+     "            }" & LF &
+     "        }" & LF &
+     "    }" & LF &
+     "    o[used] = '\0';" & LF &
+     "    return o;" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* On an error in or after an expanded value on the error's line, say" & LF &
+     "   where the value came from: the one the error is in, else the last one" & LF &
+     "   before it. */" & LF &
+     "static void hbnf_trail(char *msg, size_t msglen, size_t line, size_t col) {" & LF &
+     "    size_t k, used = strlen(msg);" & LF &
+     "    const hbnf_seg *g = NULL;" & LF &
+     "" & LF &
+     "    for (k = 0; k < hbnf_nsegs; k++) {" & LF &
+     "        if (hbnf_segs[k].line != line || col < hbnf_segs[k].col0)" & LF &
+     "            continue;" & LF &
+     "        g = &hbnf_segs[k];" & LF &
+     "        if (col < g->col1)" & LF &
+     "            break;" & LF &
+     "    }" & LF &
+     "    if (g) {" & LF &
+     "        if (!g->sym->line)" & LF &
+     "            snprintf(msg + used, msglen - used," & LF &
+     "                     ""\n  ($%s = \""%s\"", from the command line)""," & LF &
+     "                     g->sym->nam, g->sym->val);" & LF &
+     "        else if (g->sym->file)" & LF &
+     "            snprintf(msg + used, msglen - used," & LF &
+     "                     ""\n  ($%s = \""%s\"", defined at %s:%zu)""," & LF &
+     "                     g->sym->nam, g->sym->val, g->sym->file, g->sym->line);" & LF &
+     "        else" & LF &
+     "            snprintf(msg + used, msglen - used," & LF &
+     "                     ""\n  ($%s = \""%s\"", defined at line %zu)""," & LF &
+     "                     g->sym->nam, g->sym->val, g->sym->line);" & LF &
+     "    }" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* The end of a parse: the config's own macros go, -D ones stay. */" & LF &
+     "static void hbnf_macros_done(void) {" & LF &
+     "    hbnf_sym **pp = &hbnf_syms, *y;" & LF &
+     "" & LF &
+     "    while ((y = *pp) != NULL) {" & LF &
+     "        if (y->persist) {" & LF &
+     "            pp = &y->next;" & LF &
+     "        } else {" & LF &
+     "            *pp = y->next;" & LF &
+     "            hbnf_sym_free(y);" & LF &
+     "        }" & LF &
+     "    }" & LF &
+     "}";
+
+   C_No_Macros : constant String :=
+     "/* No `macros` directive: a statement is lexed as it is written. */" & LF &
+     "static char *hbnf_expand(const char *s, size_t len, char *msg, size_t msglen) {" & LF &
+     "    char *o = (char *)malloc(len + 1);" & LF &
+     "" & LF &
+     "    (void)msg;" & LF &
+     "    (void)msglen;" & LF &
+     "    if (!o)" & LF &
+     "        hbnf_oom();" & LF &
+     "    memcpy(o, s, len);" & LF &
+     "    o[len] = '\0';" & LF &
+     "    return o;" & LF &
+     "}" & LF &
+     "" & LF &
+     "static void hbnf_trail(char *msg, size_t msglen, size_t line, size_t col) {" & LF &
+     "    (void)msg;" & LF &
+     "    (void)msglen;" & LF &
+     "    (void)line;" & LF &
+     "    (void)col;" & LF &
+     "}" & LF &
+     "" & LF &
+     "static void hbnf_define(const token_t *toks, size_t n, size_t line) {" & LF &
+     "    (void)toks;" & LF &
+     "    (void)n;" & LF &
+     "    (void)line;" & LF &
+     "}" & LF &
+     "" & LF &
+     "static void hbnf_macros_done(void) {" & LF &
      "}";
 
    Rust_Lexer : constant String :=
@@ -634,6 +1195,68 @@ package Templates is
      "        }" & LF &
      "    }" & LF &
      "    return 0;" & LF &
+     "}";
+
+   Conf_Tail_C_Typed_Stmt : constant String :=
+     "const char *conf_file = NULL;" & LF &
+     "" & LF &
+     "/* Default handler: print ""file:line: <message>"" to stderr and return, as" & LF &
+     "   parse.y's yyerror does; parse_config returns -1 once the parse is over." & LF &
+     "   Override conf_error with your own to take the messages elsewhere. */" & LF &
+     "static void conf_error_default(size_t line, const char *msg) {" & LF &
+     "    if (conf_file) {" & LF &
+     "        if (line)" & LF &
+     "            fprintf(stderr, ""%s:%zu: %s\n"", conf_file, line, msg);" & LF &
+     "        else" & LF &
+     "            fprintf(stderr, ""%s: %s\n"", conf_file, msg);" & LF &
+     "    } else {" & LF &
+     "        if (line)" & LF &
+     "            fprintf(stderr, ""%zu: %s\n"", line, msg);" & LF &
+     "        else" & LF &
+     "            fprintf(stderr, ""%s\n"", msg);" & LF &
+     "    }" & LF &
+     "}" & LF &
+     "conf_error_fn conf_error = conf_error_default;" & LF &
+     "" & LF &
+     "/* Every error, syntax or action, as it is found: conf_file names the" & LF &
+     "   file it is in (an included file while that one is read). */" & LF &
+     "static void conf_report(size_t line, const char *msg) {" & LF &
+     "    const char *top = conf_file;" & LF &
+     "" & LF &
+     "    if (hbnf_file)" & LF &
+     "        conf_file = hbnf_file;" & LF &
+     "    conf_error(line, msg);" & LF &
+     "    conf_file = top;" & LF &
+     "}" & LF &
+     "" & LF &
+     "/* The grammar's epilogue defines conf_init() to reset the conf's list heads" & LF &
+     "   (the action jets append to them, so they must be TAILQ_INIT'd first)." & LF &
+     "   The config is read one statement at a time: each is parsed, bound and" & LF &
+     "   freed, with its strings, before the next is read, so a jet copies" & LF &
+     "   whatever it keeps.  Every error is reported as it is found and the parse" & LF &
+     "   goes on, as parse.y's does; parse_config then returns -1. */" & LF &
+     "int parse_config(const char *filename, @CONF_TYPE@ *xconf) {" & LF &
+     "    char *buf;" & LF &
+     "    const char *why;" & LF &
+     "    char err[512];" & LF &
+     "    size_t line = 0, col = 0;" & LF &
+     "    bool ok;" & LF &
+     "" & LF &
+     "    conf_file = filename;" & LF &
+     "    buf = hbnf_read_file(filename, &why);" & LF &
+     "    if (!buf) {" & LF &
+     "        conf_error(0, why);" & LF &
+     "        return -1;" & LF &
+     "    }" & LF &
+     "    conf = xconf;" & LF &
+     "    conf_init();" & LF &
+     "    bind_report = conf_report;" & LF &
+     "    hbnf_report = conf_report;" & LF &
+     "    ok = hbnf_stmts(buf, NULL, err, sizeof err, &line, &col);" & LF &
+     "    hbnf_report = NULL;" & LF &
+     "    bind_report = NULL;" & LF &
+     "    free(buf);" & LF &
+     "    return ok ? 0 : -1;" & LF &
      "}";
 
    Conf_Rust : constant String :=

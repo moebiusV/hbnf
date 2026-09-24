@@ -127,6 +127,61 @@ package body HBNF_Compilable is
          end;
       end if;
 
+      --  `statements` reads the root list one entry per statement, so the
+      --  root must be an unbounded, possibly empty list; `macros` and
+      --  `includes` name rules the driver tries on each statement.
+      if Statements or else Macros_Rule /= "" or else Includes_Rule /= ""
+      then
+         declare
+            Root : constant Rule := Rules (1);
+            RN   : constant String := To_String (Root.Name);
+
+            procedure Need (Directive, Name : String) is
+               J : constant Natural := Find (Rules, Name);
+            begin
+               if Name = "" then
+                  return;
+               end if;
+               if J = 0 then
+                  raise Parse_Error with
+                    Directive & " " & Name & ": no rule `" & Name
+                    & "` that the root uses";
+               end if;
+               if Rules (J).Jet_Code /= Null_Unbounded_String
+                 or else Rules (J).C_Type /= Null_Unbounded_String
+               then
+                  raise Parse_Error with
+                    Directive & " " & Name & ": `" & Name
+                    & "` must be a plain rule (not a jet or a typed rule)";
+               end if;
+            end Need;
+         begin
+            if not Statements then
+               raise Parse_Error with
+                 "`macros` and `includes` work on statements; add "
+                 & "`statements`";
+            end if;
+            if not Is_List_Rule (Root)
+              or else Root.C_Type /= Null_Unbounded_String
+              or else Root.Pattern (1).Min /= 0
+              or else Root.Pattern (1).Max /= -1
+            then
+               raise Parse_Error with
+                 "statements: the root rule `" & RN & "` must be a list "
+                 & "`*( ... )`, one entry per statement";
+            end if;
+            Need ("macros", Macros_Rule);
+            Need ("includes", Includes_Rule);
+            if Backend /= "c" then
+               Ada.Text_IO.Put_Line
+                 (Ada.Text_IO.Standard_Error,
+                  "hbnf: warning: statements, macros and includes are "
+                  & "implemented by the C backend only; the " & Backend
+                  & " backend parses the whole file and expands no macros");
+            end if;
+         end;
+      end if;
+
       for R of Rules loop
          declare
             P : constant Element_Vectors.Vector := R.Pattern;

@@ -8,6 +8,11 @@ import sys
 # constant name -> source template path (the files gen_templates reads)
 CONSTANTS = {
     "C_Lexer": "templates/lexer.c",
+    "C_Parse_Text": "templates/parse_text.c",
+    "C_Statements": "templates/statements.c",
+    "C_Stmt_Text": "templates/stmt_text.c",
+    "C_Macros": "templates/macros.c",
+    "C_No_Macros": "templates/nomacros.c",
     "Rust_Lexer": "templates/lexer.rs",
     "Zig_Lexer": "templates/lexer.zig",
     "Ada_Lexer": "templates/lexer.ada",
@@ -15,6 +20,7 @@ CONSTANTS = {
     "Conf_Tail_C": "templates/conf_tail.c",
     "Conf_H_Typed": "templates/conf_typed.h",
     "Conf_Tail_C_Typed": "templates/conf_tail_typed.c",
+    "Conf_Tail_C_Typed_Stmt": "templates/conf_tail_typed_stmt.c",
     "Conf_Rust": "templates/conf.rs",
     "Conf_Zig": "templates/conf.zig",
     "Conf_Ada": "templates/conf.ada",

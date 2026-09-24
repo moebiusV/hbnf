@@ -47,8 +47,13 @@ package HBNF_C is
    --  Emit the lexer half: a schema-independent scanner that turns text into
    --  the token stream `Emit_Parser` consumes (word/string/number/punctuation
    --  tokens, skipping whitespace and `#` comments), plus a `parse_text`
-   --  convenience that lexes, splits lines and parses in one call.
-   function Emit_Lexer (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
+   --  convenience that lexes and parses in one call.  With `statements` the
+   --  driver that reads a config one statement at a time comes too (and
+   --  `macros`' expansion); Text_Entry False leaves out its `parse_text`,
+   --  for the typed wrapper, which calls the driver itself.
+   function Emit_Lexer
+     (Rules      : HBNF_Grammar.Rule_Vectors.Vector;
+      Text_Entry : Boolean := True) return String;
 
    --  Emit the OpenBSD-daemon shape: a conf.h/conf.c pair.  The header is the
    --  declarations plus a global `conf` root, an overridable `conf_error`

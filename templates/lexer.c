@@ -6,7 +6,7 @@
 typedef struct { token_t *toks; size_t n; } lexed_t;
 
 /* Append a token, growing the array geometrically.  Returns 0 when memory
-   runs out; the lexer then gives up and parse_text reports it. */
+   runs out; the lexer then gives up and its caller reports it. */
 static int lex_push(lexed_t *r, size_t *cap, token_t t) {
     if (r->n == *cap) {
         size_t nc = *cap * 2;
@@ -29,10 +29,11 @@ static int lex_word_char(char c) {
 }
 
 /* The token array.  NULL toks (n = 0) means the input could not be
-   lexed: it is over 4 GB (tokens hold 32-bit offsets) or memory ran out. */
+   lexed: it is over 4 GB (tokens hold 32-bit offsets) or memory ran out.
+   Lines are counted from hbnf_line_base (a statement's first line). */
 lexed_t lex(const char *text) {
     lexed_t r = {0};
-    size_t i = 0, line = 1, col = 1;
+    size_t i = 0, line = hbnf_line_base, col = 1;
     size_t tlen = strlen(text);
     /* A first guess of one token per 4 bytes of input (real configs run
        5-6): usually no regrowth, and a fraction of the old one-per-byte. */
@@ -107,20 +108,4 @@ oom:
     r.toks = NULL;
     r.n = 0;
     return r;
-}
-
-/* Convenience: lex, then parse (the caret line is drawn lazily on error). */
-bool parse_text(const char *text, @ROOT_TYPE@ *out,
-                char *err, size_t errlen, size_t *err_line, size_t *err_col) {
-    lexed_t l = lex(text);
-    if (!l.toks) {
-        snprintf(err, errlen, "%s", strlen(text) > (size_t)UINT32_MAX - 2
-                 ? "input too large" : "out of memory");
-        *err_line = *err_col = 0;
-        return false;
-    }
-    bool ok = parse_tokens(l.toks, l.n, out, text,
-                           err, errlen, err_line, err_col);
-    free(l.toks);
-    return ok;
 }

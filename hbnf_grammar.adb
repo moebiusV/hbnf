@@ -21,6 +21,12 @@ package body HBNF_Grammar is
    List_Next_Code    : Unbounded_String := Null_Unbounded_String;
    List_Relink_Code  : Unbounded_String := Null_Unbounded_String;
 
+   --  `statements`, `macros <rule>`, `includes <rule>`: how the C parser
+   --  reads a config (see the spec).
+   Statements_On   : Boolean := False;
+   Macros_Name     : Unbounded_String := Null_Unbounded_String;
+   Includes_Name   : Unbounded_String := Null_Unbounded_String;
+
    --  `action name { code }` directives waiting for their rule: a binding
    --  file attaches actions to rules an included grammar defines, so they
    --  are resolved once the includes are merged (Parse_File).
@@ -679,6 +685,13 @@ package body HBNF_Grammar is
       return V;
    end Parse_Alternation;
 
+   --  True when the token K after the current one ends a line: a header
+   --  word followed by `=` (or a name and `=`) starts a rule, not a
+   --  directive, so a grammar can still name a rule `macros`.
+   function Ends_Directive (P : Parser; K : Positive) return Boolean is
+     (P.Pos + K > Natural (P.Toks.Length)
+      or else P.Toks (P.Pos + K).Kind in T_Newline | T_Comment | T_EOF);
+
    function Parse (Text : String) return Rule_Vectors.Vector is
       P     : Parser := (Toks => Lex (Text), Pos => 1);
       Rules : Rule_Vectors.Vector;
@@ -701,7 +714,10 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "wordchars"
                               or else To_String (Cur (P).Text) = "prefix"
                               or else To_String (Cur (P).Text) = "conf"
-                              or else To_String (Cur (P).Text) = "listops"))
+                              or else To_String (Cur (P).Text) = "listops"
+                              or else To_String (Cur (P).Text) = "statements"
+                              or else To_String (Cur (P).Text) = "macros"
+                              or else To_String (Cur (P).Text) = "includes"))
          then
             P.Pos := Mark;
             loop
@@ -830,6 +846,38 @@ package body HBNF_Grammar is
                      end loop;
                   end;
                   Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "statements"
+                 and then Ends_Directive (P, 1)
+               then
+                  --  `statements`: the root list's entries are read one
+                  --  statement at a time (C backend).
+                  Statements_On := True;
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then (To_String (Cur (P).Text) = "macros"
+                           or else To_String (Cur (P).Text) = "includes")
+                 and then Ends_Directive (P, 2)
+               then
+                  --  `macros varset` / `includes include`: the rule whose
+                  --  statements define a macro / include a file.
+                  declare
+                     D : constant String := To_String (Cur (P).Text);
+                  begin
+                     Next (P);
+                     if Cur (P).Kind /= T_Name then
+                        raise Parse_Error with
+                          Integer'Image (Cur (P).Line) & ":" &
+                          Integer'Image (Cur (P).Col) &
+                          ": expected a rule name after `" & D & "`";
+                     end if;
+                     if D = "macros" then
+                        Macros_Name := Cur (P).Text;
+                     else
+                        Includes_Name := Cur (P).Text;
+                     end if;
+                     Next (P);
+                  end;
                else
                   exit;
                end if;
@@ -1180,6 +1228,9 @@ package body HBNF_Grammar is
          List_First_Code := Null_Unbounded_String;
          List_Next_Code := Null_Unbounded_String;
          List_Relink_Code := Null_Unbounded_String;
+         Statements_On := False;
+         Macros_Name := Null_Unbounded_String;
+         Includes_Name := Null_Unbounded_String;
          Pending_Actions.Clear;
       end if;
       File_Depth := File_Depth + 1;
@@ -1291,6 +1342,12 @@ package body HBNF_Grammar is
    function Type_Prefix return String is (To_String (Type_Prefix_Code));
 
    function Conf_Type return String is (To_String (Conf_Type_Code));
+
+   function Statements return Boolean is (Statements_On);
+
+   function Macros_Rule return String is (To_String (Macros_Name));
+
+   function Includes_Rule return String is (To_String (Includes_Name));
 
    procedure Set_Type_Prefix (Prefix : String) is
    begin

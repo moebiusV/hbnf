@@ -146,4 +146,24 @@ package HBNF_Grammar is
    --  daemon's real tree, not hbnf's parse tree.
    function Conf_Type return String;
 
+   --  `statements`: the root rule is a list whose entries are statements,
+   --  and the C parser reads the config one statement at a time, as
+   --  parse.y's yyparse does.  A statement ends at a newline outside `{ }`
+   --  (backslash-newline, and a next line starting with `{`, continue it).
+   --  Each is lexed, parsed, bound and handed on before the next is read,
+   --  a syntax error is reported and the parse goes on with the next
+   --  statement, and only one statement's tokens are held at a time.
+   function Statements return Boolean;
+
+   --  `macros varset`: a statement the named rule matches whole defines a
+   --  macro, as parse.y's varset: its first token is the name, the tokens
+   --  after `=` joined by spaces the value.  `$name` then expands, outside
+   --  quotes and comments, to the value.  "" when absent.
+   function Macros_Rule return String;
+
+   --  `includes include`: a statement the named rule matches whole
+   --  includes the file its last token names; the file's statements are
+   --  read in its place.  "" when absent.
+   function Includes_Rule return String;
+
 end HBNF_Grammar;
