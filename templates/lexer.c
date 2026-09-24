@@ -56,11 +56,17 @@ lexed_t lex(const char *text) {
         }
         if (c == ' ' || c == '\t' || c == '\r') { i++; col++; }
         else if (c == '\n') { i++; line++; col = 1; }
+        /* backslash-newline continues the line, as parse.y's lgetc() */
+        else if (c == '\\' && text[i + 1] == '\n') { i += 2; line++; col = 1; }
         else if (c == '#') { while (text[i] && text[i] != '\n') i++; }
         else if (c == '"') {
-            size_t sc = col;
+            size_t sc = col, sl = line;
             i++; col++;
             while (text[i] && text[i] != '"') {
+                /* inside quotes parse.y drops backslash-newline and a bare
+                   newline alike, counting the line */
+                if (text[i] == '\\' && text[i + 1] == '\n') { i += 2; line++; col = 1; continue; }
+                if (text[i] == '\n') { i++; line++; col = 1; continue; }
                 if (text[i] == '\\' && text[i + 1]) { i++; col++; }
                 hbnf_str_put(text[i++]); col++;
             }
@@ -68,7 +74,7 @@ lexed_t lex(const char *text) {
             { size_t n = hbnf_scratch_len;
               const char *s = hbnf_str_append(hbnf_scratch, n);
               hbnf_scratch_len = 0;
-              if (!lex_push(&r, &cap, (token_t){ .text = s, .len = n, .line = line, .col = sc, .kind = TOK_STR, .kwid = KWID_NONE })) goto oom; }
+              if (!lex_push(&r, &cap, (token_t){ .text = s, .len = n, .line = sl, .col = sc, .kind = TOK_STR, .kwid = KWID_NONE })) goto oom; }
         }
         else if (lex_digit(c) || (c == '-' && lex_digit(text[i + 1]))) {
             /* -N is a number too, as in parse.y's lexers */

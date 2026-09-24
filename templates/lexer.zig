@@ -22,18 +22,24 @@ pub fn lex(alloc: std.mem.Allocator, text: []const u8) ![]Token {
         }
         if (c == ' ' or c == '\t' or c == '\r') { i += 1; col += 1; }
         else if (c == '\n') { i += 1; line += 1; col = 1; }
+        // backslash-newline continues the line, as parse.y's lgetc()
+        else if (c == '\\' and i + 1 < text.len and text[i + 1] == '\n') { i += 2; line += 1; col = 1; }
         else if (c == '#') { while (i < text.len and text[i] != '\n') i += 1; }
         else if (c == '"') {
             const sc = col;
+            const sl = line;
             var s = std.ArrayList(u8).empty;
             i += 1; col += 1;
             while (i < text.len and text[i] != '"') {
+                // inside quotes parse.y drops backslash-newline and a bare newline
+                if (text[i] == '\\' and i + 1 < text.len and text[i + 1] == '\n') { i += 2; line += 1; col = 1; continue; }
+                if (text[i] == '\n') { i += 1; line += 1; col = 1; continue; }
                 if (text[i] == '\\' and i + 1 < text.len) { i += 1; col += 1; }
                 try s.append(alloc, text[i]);
                 i += 1; col += 1;
             }
             if (i < text.len and text[i] == '"') { i += 1; col += 1; }
-            try toks.append(alloc, .{ .kind = .str, .text = try s.toOwnedSlice(alloc), .line = line, .col = sc });
+            try toks.append(alloc, .{ .kind = .str, .text = try s.toOwnedSlice(alloc), .line = sl, .col = sc });
         }
         else if (lxDigit(c) or (c == '-' and i + 1 < text.len and lxDigit(text[i + 1]))) {
             // -N is a number too, as in parse.y's lexers

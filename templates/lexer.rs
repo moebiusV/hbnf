@@ -17,16 +17,21 @@ pub fn lex(text: &str) -> Vec<Token> {
         }
         if c == b' ' || c == b'\t' || c == b'\r' { i += 1; col += 1; }
         else if c == b'\n' { i += 1; line += 1; col = 1; }
+        // backslash-newline continues the line, as parse.y's lgetc()
+        else if c == b'\\' && i + 1 < b.len() && b[i + 1] == b'\n' { i += 2; line += 1; col = 1; }
         else if c == b'#' { while i < b.len() && b[i] != b'\n' { i += 1; } }
         else if c == b'"' {
-            let sc = col; let mut s = String::new();
+            let sc = col; let sl = line; let mut s = String::new();
             i += 1; col += 1;
             while i < b.len() && b[i] != b'"' {
+                // inside quotes parse.y drops backslash-newline and a bare newline
+                if b[i] == b'\\' && i + 1 < b.len() && b[i + 1] == b'\n' { i += 2; line += 1; col = 1; continue; }
+                if b[i] == b'\n' { i += 1; line += 1; col = 1; continue; }
                 if b[i] == b'\\' && i + 1 < b.len() { i += 1; col += 1; }
                 s.push(b[i] as char); i += 1; col += 1;
             }
             if i < b.len() && b[i] == b'"' { i += 1; col += 1; }
-            toks.push(Token { kind: Kind::Str, text: s, line, col: sc });
+            toks.push(Token { kind: Kind::Str, text: s, line: sl, col: sc });
         }
         else if lx_digit(c) || (c == b'-' && i + 1 < b.len() && lx_digit(b[i + 1])) {
             // -N is a number too, as in parse.y's lexers

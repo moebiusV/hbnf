@@ -66,11 +66,17 @@ package Templates is
      "        }" & LF &
      "        if (c == ' ' || c == '\t' || c == '\r') { i++; col++; }" & LF &
      "        else if (c == '\n') { i++; line++; col = 1; }" & LF &
+     "        /* backslash-newline continues the line, as parse.y's lgetc() */" & LF &
+     "        else if (c == '\\' && text[i + 1] == '\n') { i += 2; line++; col = 1; }" & LF &
      "        else if (c == '#') { while (text[i] && text[i] != '\n') i++; }" & LF &
      "        else if (c == '""') {" & LF &
-     "            size_t sc = col;" & LF &
+     "            size_t sc = col, sl = line;" & LF &
      "            i++; col++;" & LF &
      "            while (text[i] && text[i] != '""') {" & LF &
+     "                /* inside quotes parse.y drops backslash-newline and a bare" & LF &
+     "                   newline alike, counting the line */" & LF &
+     "                if (text[i] == '\\' && text[i + 1] == '\n') { i += 2; line++; col = 1; continue; }" & LF &
+     "                if (text[i] == '\n') { i++; line++; col = 1; continue; }" & LF &
      "                if (text[i] == '\\' && text[i + 1]) { i++; col++; }" & LF &
      "                hbnf_str_put(text[i++]); col++;" & LF &
      "            }" & LF &
@@ -78,7 +84,7 @@ package Templates is
      "            { size_t n = hbnf_scratch_len;" & LF &
      "              const char *s = hbnf_str_append(hbnf_scratch, n);" & LF &
      "              hbnf_scratch_len = 0;" & LF &
-     "              if (!lex_push(&r, &cap, (token_t){ .text = s, .len = n, .line = line, .col = sc, .kind = TOK_STR, .kwid = KWID_NONE })) goto oom; }" & LF &
+     "              if (!lex_push(&r, &cap, (token_t){ .text = s, .len = n, .line = sl, .col = sc, .kind = TOK_STR, .kwid = KWID_NONE })) goto oom; }" & LF &
      "        }" & LF &
      "        else if (lex_digit(c) || (c == '-' && lex_digit(text[i + 1]))) {" & LF &
      "            /* -N is a number too, as in parse.y's lexers */" & LF &
@@ -149,16 +155,21 @@ package Templates is
      "        }" & LF &
      "        if c == b' ' || c == b'\t' || c == b'\r' { i += 1; col += 1; }" & LF &
      "        else if c == b'\n' { i += 1; line += 1; col = 1; }" & LF &
+     "        // backslash-newline continues the line, as parse.y's lgetc()" & LF &
+     "        else if c == b'\\' && i + 1 < b.len() && b[i + 1] == b'\n' { i += 2; line += 1; col = 1; }" & LF &
      "        else if c == b'#' { while i < b.len() && b[i] != b'\n' { i += 1; } }" & LF &
      "        else if c == b'""' {" & LF &
-     "            let sc = col; let mut s = String::new();" & LF &
+     "            let sc = col; let sl = line; let mut s = String::new();" & LF &
      "            i += 1; col += 1;" & LF &
      "            while i < b.len() && b[i] != b'""' {" & LF &
+     "                // inside quotes parse.y drops backslash-newline and a bare newline" & LF &
+     "                if b[i] == b'\\' && i + 1 < b.len() && b[i + 1] == b'\n' { i += 2; line += 1; col = 1; continue; }" & LF &
+     "                if b[i] == b'\n' { i += 1; line += 1; col = 1; continue; }" & LF &
      "                if b[i] == b'\\' && i + 1 < b.len() { i += 1; col += 1; }" & LF &
      "                s.push(b[i] as char); i += 1; col += 1;" & LF &
      "            }" & LF &
      "            if i < b.len() && b[i] == b'""' { i += 1; col += 1; }" & LF &
-     "            toks.push(Token { kind: Kind::Str, text: s, line, col: sc });" & LF &
+     "            toks.push(Token { kind: Kind::Str, text: s, line: sl, col: sc });" & LF &
      "        }" & LF &
      "        else if lx_digit(c) || (c == b'-' && i + 1 < b.len() && lx_digit(b[i + 1])) {" & LF &
      "            // -N is a number too, as in parse.y's lexers" & LF &
@@ -219,18 +230,24 @@ package Templates is
      "        }" & LF &
      "        if (c == ' ' or c == '\t' or c == '\r') { i += 1; col += 1; }" & LF &
      "        else if (c == '\n') { i += 1; line += 1; col = 1; }" & LF &
+     "        // backslash-newline continues the line, as parse.y's lgetc()" & LF &
+     "        else if (c == '\\' and i + 1 < text.len and text[i + 1] == '\n') { i += 2; line += 1; col = 1; }" & LF &
      "        else if (c == '#') { while (i < text.len and text[i] != '\n') i += 1; }" & LF &
      "        else if (c == '""') {" & LF &
      "            const sc = col;" & LF &
+     "            const sl = line;" & LF &
      "            var s = std.ArrayList(u8).empty;" & LF &
      "            i += 1; col += 1;" & LF &
      "            while (i < text.len and text[i] != '""') {" & LF &
+     "                // inside quotes parse.y drops backslash-newline and a bare newline" & LF &
+     "                if (text[i] == '\\' and i + 1 < text.len and text[i + 1] == '\n') { i += 2; line += 1; col = 1; continue; }" & LF &
+     "                if (text[i] == '\n') { i += 1; line += 1; col = 1; continue; }" & LF &
      "                if (text[i] == '\\' and i + 1 < text.len) { i += 1; col += 1; }" & LF &
      "                try s.append(alloc, text[i]);" & LF &
      "                i += 1; col += 1;" & LF &
      "            }" & LF &
      "            if (i < text.len and text[i] == '""') { i += 1; col += 1; }" & LF &
-     "            try toks.append(alloc, .{ .kind = .str, .text = try s.toOwnedSlice(alloc), .line = line, .col = sc });" & LF &
+     "            try toks.append(alloc, .{ .kind = .str, .text = try s.toOwnedSlice(alloc), .line = sl, .col = sc });" & LF &
      "        }" & LF &
      "        else if (lxDigit(c) or (c == '-' and i + 1 < text.len and lxDigit(text[i + 1]))) {" & LF &
      "            // -N is a number too, as in parse.y's lexers" & LF &
@@ -296,6 +313,9 @@ package Templates is
      "               I := I + 1; Col := Col + 1;" & LF &
      "         elsif C = ASCII.LF then" & LF &
      "            I := I + 1; Line := Line + 1; Col := 1;" & LF &
+     "         --  backslash-newline continues the line, as parse.y's lgetc()" & LF &
+     "         elsif C = '\' and then I < Text'Last and then Text (I + 1) = ASCII.LF then" & LF &
+     "            I := I + 2; Line := Line + 1; Col := 1;" & LF &
      "         elsif C = '#' then" & LF &
      "            while I <= Text'Last and then Text (I) /= ASCII.LF loop" & LF &
      "               I := I + 1;" & LF &
@@ -303,20 +323,31 @@ package Templates is
      "         elsif C = '""' then" & LF &
      "            declare" & LF &
      "               SC  : constant Natural := Col;" & LF &
+     "               SL  : constant Natural := Line;" & LF &
      "               Buf : Unbounded_String;" & LF &
      "            begin" & LF &
      "               I := I + 1; Col := Col + 1;" & LF &
      "               while I <= Text'Last and then Text (I) /= '""' loop" & LF &
-     "                  if Text (I) = '\' and then I < Text'Last then" & LF &
+     "                  --  inside quotes parse.y drops backslash-newline and a" & LF &
+     "                  --  bare newline, counting the line" & LF &
+     "                  if Text (I) = '\' and then I < Text'Last" & LF &
+     "                    and then Text (I + 1) = ASCII.LF" & LF &
+     "                  then" & LF &
+     "                     I := I + 2; Line := Line + 1; Col := 1;" & LF &
+     "                  elsif Text (I) = ASCII.LF then" & LF &
+     "                     I := I + 1; Line := Line + 1; Col := 1;" & LF &
+     "                  else" & LF &
+     "                     if Text (I) = '\' and then I < Text'Last then" & LF &
+     "                        I := I + 1; Col := Col + 1;" & LF &
+     "                     end if;" & LF &
+     "                     Append (Buf, Text (I));" & LF &
      "                     I := I + 1; Col := Col + 1;" & LF &
      "                  end if;" & LF &
-     "                  Append (Buf, Text (I));" & LF &
-     "                  I := I + 1; Col := Col + 1;" & LF &
      "               end loop;" & LF &
      "               if I <= Text'Last then" & LF &
      "                  I := I + 1; Col := Col + 1;" & LF &
      "               end if;" & LF &
-     "               Toks.Append (Token'(Str, Buf, Line, SC));" & LF &
+     "               Toks.Append (Token'(Str, Buf, SL, SC));" & LF &
      "            end;" & LF &
      "         elsif C in '0' .. '9'" & LF &
      "           or else (C = '-' and then I < Text'Last" & LF &

@@ -18,6 +18,9 @@
                I := I + 1; Col := Col + 1;
          elsif C = ASCII.LF then
             I := I + 1; Line := Line + 1; Col := 1;
+         --  backslash-newline continues the line, as parse.y's lgetc()
+         elsif C = '\' and then I < Text'Last and then Text (I + 1) = ASCII.LF then
+            I := I + 2; Line := Line + 1; Col := 1;
          elsif C = '#' then
             while I <= Text'Last and then Text (I) /= ASCII.LF loop
                I := I + 1;
@@ -25,20 +28,31 @@
          elsif C = '"' then
             declare
                SC  : constant Natural := Col;
+               SL  : constant Natural := Line;
                Buf : Unbounded_String;
             begin
                I := I + 1; Col := Col + 1;
                while I <= Text'Last and then Text (I) /= '"' loop
-                  if Text (I) = '\' and then I < Text'Last then
+                  --  inside quotes parse.y drops backslash-newline and a
+                  --  bare newline, counting the line
+                  if Text (I) = '\' and then I < Text'Last
+                    and then Text (I + 1) = ASCII.LF
+                  then
+                     I := I + 2; Line := Line + 1; Col := 1;
+                  elsif Text (I) = ASCII.LF then
+                     I := I + 1; Line := Line + 1; Col := 1;
+                  else
+                     if Text (I) = '\' and then I < Text'Last then
+                        I := I + 1; Col := Col + 1;
+                     end if;
+                     Append (Buf, Text (I));
                      I := I + 1; Col := Col + 1;
                   end if;
-                  Append (Buf, Text (I));
-                  I := I + 1; Col := Col + 1;
                end loop;
                if I <= Text'Last then
                   I := I + 1; Col := Col + 1;
                end if;
-               Toks.Append (Token'(Str, Buf, Line, SC));
+               Toks.Append (Token'(Str, Buf, SL, SC));
             end;
          elsif C in '0' .. '9'
            or else (C = '-' and then I < Text'Last
