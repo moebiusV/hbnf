@@ -21,6 +21,20 @@ package body HBNF_Grammar is
    List_Next_Code    : Unbounded_String := Null_Unbounded_String;
    List_Relink_Code  : Unbounded_String := Null_Unbounded_String;
 
+   --  `action name { code }` directives waiting for their rule: a binding
+   --  file attaches actions to rules an included grammar defines, so they
+   --  are resolved once the includes are merged (Parse_File).
+   type Attach is record
+      Name : Unbounded_String;
+      Code : Unbounded_String;
+      Line : Positive := 1;
+   end record;
+   package Attach_Vectors is new Ada.Containers.Vectors (Positive, Attach);
+   Pending_Actions : Attach_Vectors.Vector;
+
+   --  Parse_File nesting: 0 outside any call, 1 for the top-level schema.
+   File_Depth : Natural := 0;
+
    --  ====================================================================
    --  Lexer
    --  ====================================================================
@@ -858,6 +872,28 @@ package body HBNF_Grammar is
             end if;
             exit when Cur (P).Kind = T_EOF;
 
+            --  `action name { code }`: an action jet for a rule defined here
+            --  or in an included file.  A binding file uses it to keep a
+            --  daemon's actions (and its C headers) out of the grammar.
+            if Cur (P).Kind = T_Name
+              and then To_String (Cur (P).Text) = "action"
+              and then P.Pos + 2 <= Natural (P.Toks.Length)
+              and then P.Toks (P.Pos + 1).Kind = T_Name
+              and then P.Toks (P.Pos + 2).Kind = T_Code
+            then
+               Pending_Actions.Append
+                 (Attach'(Name => P.Toks (P.Pos + 1).Text,
+                          Code => P.Toks (P.Pos + 2).Text,
+                          Line => Cur (P).Line));
+               Next (P);
+               Next (P);
+               Next (P);
+               if Cur (P).Kind = T_Comment then
+                  Next (P);
+               end if;
+               goto Next_Item;
+            end if;
+
             --  `[ C-type ] name =`: the name is the last identifier before
             --  `=`; any tokens before it are the storage class, joined with
             --  single spaces (`int port`, `struct pf_rule_addr src`,
@@ -933,6 +969,7 @@ package body HBNF_Grammar is
                end;
             end if;
          end;
+         <<Next_Item>>
       end loop;
       return Rules;
    end Parse;
@@ -1079,13 +1116,95 @@ package body HBNF_Grammar is
          return Result;
       end Override;
 
+      --  Included code first, then this file's, like C's #include.
+      function Join_Code (Inc, Own : Unbounded_String)
+        return Unbounded_String is
+      begin
+         if Inc = Null_Unbounded_String then
+            return Own;
+         elsif Own = Null_Unbounded_String then
+            return Inc;
+         else
+            return Inc & ASCII.LF & Own;
+         end if;
+      end Join_Code;
+
+      --  Attach each pending `action name { code }` whose rule is now known.
+      procedure Apply_Actions (Result : in out Rule_Vectors.Vector) is
+         Left : Attach_Vectors.Vector;
+         Hit  : Natural;
+      begin
+         for A of Pending_Actions loop
+            Hit := 0;
+            for J in 1 .. Natural (Result.Length) loop
+               if Result (J).Name = A.Name then
+                  Hit := J;
+                  exit;
+               end if;
+            end loop;
+            if Hit = 0 then
+               Left.Append (A);
+            elsif Result (Hit).Action_Code /= Null_Unbounded_String then
+               raise Parse_Error with
+                 Integer'Image (A.Line) & ": rule `" & To_String (A.Name)
+                 & "` already has an action";
+            else
+               Result (Hit).Action_Code := A.Code;
+            end if;
+         end loop;
+         Pending_Actions := Left;
+      end Apply_Actions;
+
       Included : Rule_Vectors.Vector;
       Local    : Rule_Vectors.Vector;
+      Result   : Rule_Vectors.Vector;
       Out_Text : Unbounded_String;
    begin
+      if File_Depth = 0 then
+         --  A new top-level schema: nothing carries over from the last one
+         --  parsed in this process.
+         Schema_Language := To_Unbounded_String ("C");
+         Preamble_Code := Null_Unbounded_String;
+         Epilogue_Code := Null_Unbounded_String;
+         Word_Chars_Code := Null_Unbounded_String;
+         Type_Prefix_Code := Null_Unbounded_String;
+         Conf_Type_Code := Null_Unbounded_String;
+         List_Head_Code := Null_Unbounded_String;
+         List_Entry_Code := Null_Unbounded_String;
+         List_Init_Code := Null_Unbounded_String;
+         List_Append_Code := Null_Unbounded_String;
+         List_Foreach_Code := Null_Unbounded_String;
+         List_First_Code := Null_Unbounded_String;
+         List_Next_Code := Null_Unbounded_String;
+         List_Relink_Code := Null_Unbounded_String;
+         Pending_Actions.Clear;
+      end if;
+      File_Depth := File_Depth + 1;
       Expand (Read_File (Path), Dir_Of (Path), Included, Out_Text);
-      Local := Parse (To_String (Out_Text));
-      return Override (Local, Included);
+      declare
+         Inc_Pre : constant Unbounded_String := Preamble_Code;
+         Inc_Epi : constant Unbounded_String := Epilogue_Code;
+      begin
+         Preamble_Code := Null_Unbounded_String;
+         Epilogue_Code := Null_Unbounded_String;
+         Local := Parse (To_String (Out_Text));
+         Preamble_Code := Join_Code (Inc_Pre, Preamble_Code);
+         Epilogue_Code := Join_Code (Inc_Epi, Epilogue_Code);
+      end;
+      Result := Override (Local, Included);
+      Apply_Actions (Result);
+      File_Depth := File_Depth - 1;
+      if File_Depth = 0 and then not Pending_Actions.Is_Empty then
+         raise Parse_Error with
+           Integer'Image (Pending_Actions.First_Element.Line)
+           & ": action for `" & To_String (Pending_Actions.First_Element.Name)
+           & "`, which no rule defines";
+      end if;
+      return Result;
+   exception
+      when others =>
+         File_Depth := 0;
+         raise;
    end Parse_File;
 
    function Language return String is (To_String (Schema_Language));

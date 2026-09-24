@@ -37,10 +37,10 @@ echo "== bison: parse.y -> parser =="
 docker run --rm -v "$scratch":/out -v "$ntpd":/p -w /p alpine:edge \
 	sh -c 'apk add --no-cache bison >/dev/null 2>&1 && bison -d -o /out/parse_y.c parse.y'
 
-echo "== hbnf: grammars/ntpd.hbnf -> conf.c =="
+echo "== hbnf: grammars/bind/ntpd.hbnf -> conf.c =="
 docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
 	sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
-	        ./hbnf_cli grammars/ntpd.hbnf --backend=c --conf' \
+	        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf' \
 	> "$scratch/conf-out.txt"
 awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
      f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \

@@ -2,7 +2,7 @@
 # ntpd -n proof: build the real OpenBSD ntpd with hbnf's generated parser in
 # place of parse.y, then run `ntpd -n` (configtest) against it.
 #
-#   parse.y   ->  grammars/ntpd.hbnf  (hbnf_cli --conf emits conf.h/conf.c)
+#   parse.y   ->  grammars/bind/ntpd.hbnf  (hbnf_cli --conf emits conf.h/conf.c)
 #   the rest of ntpd is compiled as-is from the OpenBSD source tree, against
 #   OpenBSD's own headers under -nostdinc (see README.md for the recipe).
 #   ntpd-shims.c bridges the OpenBSD libc/syscall names glibc spells
@@ -34,7 +34,7 @@ trap 'rm -rf "$scratch"' EXIT
 echo "== generating the parser (hbnf_cli, in the ada-toolchain container) =="
 docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
 	sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
-	        ./hbnf_cli grammars/ntpd.hbnf --backend=c --conf' \
+	        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf' \
 	> "$scratch/conf-out.txt"
 awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
      f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \

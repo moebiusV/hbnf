@@ -72,7 +72,8 @@ package HBNF_Grammar is
       --  `char[IFNAMSIZ]`); the C emitter uses it in place of a type inferred
       --  from the pattern.
       Action_Code     : Unbounded_String := Null_Unbounded_String;
-      --  Non-empty for an action jet: `name = pattern { <C-code> }`.  The
+      --  Non-empty for an action jet: `name = pattern { <C-code> }`, or a
+      --  separate `action name { <C-code> }` (e.g. in a binding file).  The
       --  code is a fragment that builds the daemon's conf struct, run once
       --  after a successful parse in the bottom-up bind walk (children before
       --  parents), with the rule's node as `n` and the daemon's conf global
@@ -89,8 +90,13 @@ package HBNF_Grammar is
    --  (each path relative to the including file's directory).  Included files
    --  are loaded first, depth-first; a same-named local rule overrides an
    --  included one, so a daemon schema can pull in a common core and replace
-   --  just the rules that differ.  The top file's `language`/preamble/epilogue
-   --  win; include files are expected to be rules-only.
+   --  just the rules that differ.  Preambles and epilogues are concatenated,
+   --  included files' first (like C's #include); for the other header
+   --  directives the including file, parsed last, wins.  `action name
+   --  { code }` attaches an action jet to a rule from any of the files, so a
+   --  binding file can include a grammar and add the daemon's actions and
+   --  headers without touching it.  Header state is reset at the start of
+   --  each top-level call, so nothing carries over between schemas.
    function Parse_File (Path : String) return Rule_Vectors.Vector;
 
    --  The schema language declared by the first non-blank line

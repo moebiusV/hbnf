@@ -86,3 +86,18 @@ both are pulled in with `include "…"`.  `tailq.hbnf` carries the shared
 `listops { }` block and defines no rules, so any script that globs
 `grammars/*.hbnf` must skip the two of them (the nine daemons above are the
 grammars).
+
+## Bindings (`bind/`)
+
+A grammar here is only the language: it compiles on its own, in every
+backend.  `bind/<daemon>.hbnf` turns one into a drop-in for the daemon's
+`parse.y`: it includes the grammar, declares the daemon's conf struct
+(`conf struct ntpd_conf`), adds the daemon's headers to the preamble, and
+attaches parse.y's tree actions with `action <rule> { … }`.  Generate the
+daemon's `conf.h`/`conf.c` from the binding:
+
+    hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf
+
+| daemon | binding |
+|---|---|
+| ntpd | `bind/ntpd.hbnf` |
