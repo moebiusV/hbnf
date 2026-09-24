@@ -172,6 +172,159 @@ package body HBNF_Compilable is
       and then R.Jet_Code = Null_Unbounded_String
       and then not (R.Pattern (1).Min = 1 and then R.Pattern (1).Max = 1));
 
+   --  Left recursion the reader did not turn into a loop: through other
+   --  rules (`a = b x`, `b = a y`), or behind something that can match
+   --  nothing (`a = [x] a y`).  The parser would call a rule again at the
+   --  same position, and recurse until the stack ran out.  A rule can
+   --  begin with the rules its leftmost elements name, and with the
+   --  elements after one that can match nothing; a list rewritten from
+   --  left recursion begins with its bases only, since a tail comes after
+   --  an entry.
+   procedure Check_Left_Recursion (Rules : Rule_Vectors.Vector) is
+      N        : constant Natural := Natural (Rules.Length);
+      Nullable : array (1 .. N) of Boolean := [others => False];
+      type Edge_Array is array (1 .. N) of Boolean;
+      Left     : array (1 .. N) of Edge_Array :=
+        [others => [others => False]];
+
+      function Rule_Of (E : Element_Access) return Natural is
+        (if E.Kind = Name then Find (Rules, To_String (E.Name)) else 0);
+
+      function Seq_Nullable (V : Element_Vectors.Vector;
+                             First, Last : Natural) return Boolean;
+
+      function El_Nullable (E : Element_Access) return Boolean is
+      begin
+         if E.Min = 0 then
+            return True;
+         end if;
+         case E.Kind is
+            when Name =>
+               return Rule_Of (E) /= 0 and then Nullable (Rule_Of (E));
+            when Group =>
+               return Seq_Nullable (E.Items, 1, Natural (E.Items.Length));
+            when Literal | Alt =>
+               return False;
+         end case;
+      end El_Nullable;
+
+      --  True when some branch of V (First .. Last) can match nothing.
+      function Seq_Nullable (V : Element_Vectors.Vector;
+                             First, Last : Natural) return Boolean is
+         All_Null : Boolean := True;
+      begin
+         for I in First .. Last + 1 loop
+            if I > Last or else V (I).Kind = Alt then
+               if All_Null then
+                  return True;
+               end if;
+               All_Null := True;
+            elsif not El_Nullable (V (I)) then
+               All_Null := False;
+            end if;
+         end loop;
+         return False;
+      end Seq_Nullable;
+
+      function Starts (R : Rule) return Element_Vectors.Vector is
+        (if R.Left_Bases > 0
+         and then not Seq_Nullable (Base_Branches (R), 1,
+                                    Natural (Base_Branches (R).Length))
+         then Base_Branches (R)
+         else R.Pattern);
+
+      --  Record in Left (From) every rule V's branches can begin with.
+      procedure Mark (From : Positive; V : Element_Vectors.Vector) is
+         Skip : Boolean := False;   --  past a branch's first solid element
+      begin
+         for E of V loop
+            if E.Kind = Alt then
+               Skip := False;
+            elsif not Skip then
+               if Rule_Of (E) /= 0 then
+                  Left (From) (Rule_Of (E)) := True;
+               elsif E.Kind = Group then
+                  Mark (From, E.Items);
+               end if;
+               Skip := not El_Nullable (E);
+            end if;
+         end loop;
+      end Mark;
+
+      Changed : Boolean := True;
+   begin
+      while Changed loop
+         Changed := False;
+         for I in 1 .. N loop
+            if not Nullable (I) and then Rules (I).Jet_Code = Null_Unbounded_String
+              and then Seq_Nullable (Rules (I).Pattern, 1,
+                                     Natural (Rules (I).Pattern.Length))
+            then
+               Nullable (I) := True;
+               Changed := True;
+            end if;
+         end loop;
+      end loop;
+      for I in 1 .. N loop
+         if Rules (I).Jet_Code = Null_Unbounded_String then
+            Mark (I, Starts (Rules (I)));
+         end if;
+      end loop;
+
+      --  A depth-first search from each rule for a way back to it.
+      for Root in 1 .. N loop
+         declare
+            From : array (1 .. N) of Natural := [others => 0];
+            Seen : Edge_Array := [others => False];
+            Stack : array (1 .. N) of Positive;
+            Top   : Natural := 1;
+         begin
+            Stack (1) := Root;
+            Seen (Root) := True;
+            while Top > 0 loop
+               declare
+                  At_R : constant Positive := Stack (Top);
+               begin
+                  Top := Top - 1;
+                  for J in 1 .. N loop
+                     if Left (At_R) (J) and then J = Root then
+                        declare
+                           Path : Unbounded_String :=
+                             To_Unbounded_String (To_String (Rules (Root).Name));
+                           K    : Natural := At_R;
+                           Hops : Unbounded_String;
+                        begin
+                           while K /= Root loop
+                              Hops := " -> " & Rules (K).Name & Hops;
+                              K := From (K);
+                           end loop;
+                           Append (Path, Hops);
+                           Append (Path, " -> " & To_String (Rules (Root).Name));
+                           --  GNAT cuts an exception message at 200
+                           --  characters: keep it short.
+                           raise Parse_Error with
+                             To_String (Rules (Root).Name)
+                             & ": left recursion "
+                             & (if At_R = Root
+                                then "after something that can match nothing"
+                                else "through another rule")
+                             & " (" & To_String (Path) & "); hbnf makes "
+                             & "only direct left recursion (a = a x | y) "
+                             & "into a loop";
+                        end;
+                     elsif Left (At_R) (J) and then not Seen (J) then
+                        Seen (J) := True;
+                        From (J) := At_R;
+                        Top := Top + 1;
+                        Stack (Top) := J;
+                     end if;
+                  end loop;
+               end;
+            end loop;
+         end;
+      end loop;
+   end Check_Left_Recursion;
+
    procedure Append_Comma (S : in out Unbounded_String; Item : String) is
    begin
       if S /= Null_Unbounded_String then
@@ -296,7 +449,20 @@ package body HBNF_Compilable is
             P : constant Element_Vectors.Vector := R.Pattern;
             N : constant String := To_String (R.Name);
          begin
-            Walk (N, P, Natural (P.Length) = 1);
+            if R.Left_Bases > 0 and then Backend /= "c" then
+               raise Parse_Error with
+                 N & ": left recursion is read as a loop by the C backend "
+                 & "only; the " & Backend & " backend would read the tails "
+                 & "as bases";
+            end if;
+            if R.Left_Bases > 0 then
+               --  A base and a tail are never tried at the same place, so
+               --  neither can shadow the other.
+               Walk (N, Base_Branches (R), False);
+               Walk (N, Tail_Branches (R), False);
+            else
+               Walk (N, P, Natural (P.Length) = 1);
+            end if;
             --  An alias of a list rule would take the list's node type,
             --  not its head type, in every backend.
             if Natural (P.Length) = 1 and then P (1).Kind = Name
@@ -326,6 +492,7 @@ package body HBNF_Compilable is
             end if;
          end;
       end loop;
+      Check_Left_Recursion (Rules);
       if Has_No_Case and then Backend /= "c" then
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error,

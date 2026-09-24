@@ -651,6 +651,27 @@ package body HBNF_C is
       return Tags;
    end Leading_Tags;
 
+   --  The C name of a kind tag.  Enum_Names spells punctuation as OP1,
+   --  OP2 ..., as an enum does, where C_Ident would give `_` for both "+"
+   --  and "-".
+   function Tag_Name (Tags : String_Vectors.Vector; Lit : U) return String is
+      Names : constant String_Vectors.Vector := Enum_Names (Tags);
+   begin
+      for I in 1 .. Natural (Tags.Length) loop
+         if Tags (I) = Lit then
+            return To_String (Names (I));
+         end if;
+      end loop;
+      return C_Ident (To_String (Lit));
+   end Tag_Name;
+
+   --  The kind tags of a list's entries.  A list rewritten from left
+   --  recursion tags the tails, `sum = sum "+" n | sum "-" n | n`; its
+   --  first entry, the base, gets <CN>_BASE (Kind_Enum), which is 0.
+   function List_Tags (R : Rule) return String_Vectors.Vector is
+     (if R.Left_Bases > 0 then Leading_Tags (Tail_Branches (R))
+      else Leading_Tags (R.Pattern (1).Items));
+
    function Analyze (Rules : Rule_Vectors.Vector; Idx : Natural)
       return Rule_Info is
       R : constant Rule := Rules (Idx);
@@ -681,7 +702,7 @@ package body HBNF_C is
                      return (Kind        => List,
                              Elem_Name    => Null_Unbounded_String,
                              Elem_Members => Members,
-                             Tags         => Leading_Tags (E.Items));
+                             Tags         => List_Tags (R));
                   end;
                else
                   return (Kind        => List,
@@ -1037,7 +1058,7 @@ package body HBNF_C is
                         return (Kind        => List,
                                 Elem_Name    => Null_Unbounded_String,
                                 Elem_Members => Members,
-                                Tags         => Leading_Tags (E.Items));
+                                Tags         => List_Tags (R));
                      end;
                   else
                      return (Kind        => List,
@@ -1183,16 +1204,25 @@ package body HBNF_C is
 
       --  The `kind` discriminator enum for a keyword-headed alternation:
       --  one value per distinct leading keyword, so the tree records which
-      --  alternative matched.
-      function Kind_Enum (CN : String; Tags : String_Vectors.Vector)
+      --  alternative matched.  A list rewritten from left recursion (Base)
+      --  has a first value, <CN>_BASE, for its first entry, the base.
+      function Kind_Enum (CN : String; Tags : String_Vectors.Vector;
+                          Base : Boolean := False)
          return String is
          Buf : U;
       begin
          Append (Buf, "typedef enum {");
          Append (Buf, LF);
+         if Base then
+            Append (Buf, "    " & C_Ident (CN) & "_BASE"
+              & (if (for some N of Enum_Names (Tags) => To_String (N) = "BASE")
+                 then "_0" else "")
+              & ",   /* the first entry */");
+            Append (Buf, LF);
+         end if;
          for I in 1 .. Natural (Tags.Length) loop
             Append (Buf, "    " & C_Ident (CN) & "_"
-              & C_Ident (To_String (Tags (I))));
+              & To_String (Enum_Names (Tags) (I)));
             if I < Natural (Tags.Length) then
                Append (Buf, ",");
             end if;
@@ -1289,7 +1319,7 @@ package body HBNF_C is
                --  A list-linked node; the head is a `struct <CN>_list`
                --  embedded in the parent.
                if not Info.Tags.Is_Empty then
-                  Append (Buf, Kind_Enum (CN, Info.Tags));
+                  Append (Buf, Kind_Enum (CN, Info.Tags, R.Left_Bases > 0));
                end if;
                Append (Buf, "struct " & Pfx & CN & " {");
                Append (Buf, LF);
@@ -3151,7 +3181,7 @@ package body HBNF_C is
       procedure Emit_Alternation
         (Els : Element_Vectors.Vector; Acc, Reset, Ok : String;
          Kind_Prefix : String := "";
-         Buf : in out U; Ind : String := "    ") is
+         Buf : in out U; Ind : String := "    "; Label : String := "") is
          N    : constant Natural := Natural (Els.Length);
          Flat : String_Vectors.Vector;
          Offs : Natural_Vectors.Vector;
@@ -3181,17 +3211,17 @@ package body HBNF_C is
                      Append (Buf, LF);
                   end if;
                   Emit_Seq (Els, LSt, K - 1, Acc, Buf,
-                            "goto alt_fail_" & Img (LBr) & ";", Ind);
+                            "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind);
                   if Kind_Prefix /= "" and then LSt <= K - 1
                     and then Els (LSt).Kind = Literal
                   then
                      Append (Buf, Ind & Acc & "kind = " & Kind_Prefix & "_"
-                       & C_Ident (To_String (Els (LSt).Lit)) & ";");
+                       & Tag_Name (Leading_Tags (Els), Els (LSt).Lit) & ";");
                      Append (Buf, LF);
                   end if;
                   Append (Buf, Ind & "goto " & Ok & ";");
                   Append (Buf, LF);
-                  Append (Buf, "alt_fail_" & Img (LBr) & ":");
+                  Append (Buf, Label & "alt_fail_" & Img (LBr) & ":");
                   Append (Buf, LF);
                   LSt := K + 1;
                end if;
@@ -3222,7 +3252,7 @@ package body HBNF_C is
                      end if;
                   end loop;
                   if Emitted then
-                     Append (Buf, Ind & "    goto alt_fail_"
+                     Append (Buf, Ind & "    goto " & Label & "alt_fail_"
                        & Img (X - 1) & ";");
                      Append (Buf, LF);
                   end if;
@@ -3246,7 +3276,7 @@ package body HBNF_C is
                      Br := Unique_Branch (K, Flat, Offs);
                      if Br <= 1 then
                         Append (Buf, Ind & "case " & Kw_Name (To_String (K))
-                          & ": goto alt_linear;");
+                          & ": goto " & Label & "alt_linear;");
                         Append (Buf, LF);
                      end if;
                   end if;
@@ -3261,7 +3291,8 @@ package body HBNF_C is
                At_End : constant String :=
                  "if (p->toks[p->pos].kind == TOK_EOF) { fail(p, """
                  & C_Escape (To_String (Flat (1))) & """, 1, "
-                 & "p->toks[p->pos].text); goto alt_fail_" & Last & "; }";
+                 & "p->toks[p->pos].text); goto " & Label & "alt_fail_" & Last
+                 & "; }";
             begin
                if Flat.Contains (Other_Tok) then
                   --  Some branch starts with a non-keyword token: try the
@@ -3272,9 +3303,10 @@ package body HBNF_C is
                      Append (Buf, LF);
                      Append (Buf, Ind & "    " & At_End);
                      Append (Buf, LF);
-                     Append (Buf, Ind & "    goto alt_linear;");
+                     Append (Buf, Ind & "    goto " & Label & "alt_linear;");
                   else
-                     Append (Buf, Ind & "case KWID_NONE: goto alt_linear;");
+                     Append (Buf, Ind & "case KWID_NONE: goto " & Label
+                       & "alt_linear;");
                   end if;
                   Append (Buf, LF);
                else
@@ -3282,16 +3314,17 @@ package body HBNF_C is
                   Append (Buf, LF);
                   Append (Buf, Ind & "    " & At_End);
                   Append (Buf, LF);
-                  Append (Buf, Ind & "    goto alt_fail_" & Last & ";");
+                  Append (Buf, Ind & "    goto " & Label & "alt_fail_" & Last
+                    & ";");
                   Append (Buf, LF);
                end if;
             end;
-            Append (Buf, Ind & "default: goto alt_fail_"
+            Append (Buf, Ind & "default: goto " & Label & "alt_fail_"
               & Img (Natural (Offs.Length) - 1) & ";");
             Append (Buf, LF);
             Append (Buf, Ind & "}");
             Append (Buf, LF);
-            Append (Buf, "alt_linear:");
+            Append (Buf, Label & "alt_linear:");
             Append (Buf, LF);
             Emit_Linear;
          else
@@ -3426,6 +3459,30 @@ package body HBNF_C is
                   Append (Buf, "        if (parse_rule_" & C_Name (To_String (E.Name))
                     & "(p, &nn->" & C_Field (To_String (E.Name)) & ")) goto have;");
                   Append (Buf, LF);
+               elsif R.Left_Bases > 0 then
+                  --  Left recursion, as a loop: the first entry is a base,
+                  --  each later one a tail.  A tail sets its kind; the
+                  --  base's stays 0, <CN>_BASE.
+                  declare
+                     Tags : constant String_Vectors.Vector := List_Tags (R);
+                     Reset : constant String :=
+                       "free_" & CN & "_fields(nn); memset(nn, 0, sizeof *nn)"
+                       & Num_Clears (Nums);
+                  begin
+                     Append (Buf, "        if (count == 0) {");
+                     Append (Buf, LF);
+                     Emit_Alternation
+                       (Base_Branches (R), "nn->", Reset, "have", "",
+                        Buf, "            ", Label => "base_");
+                     Append (Buf, "            p->pos = save; free(nn); break;");
+                     Append (Buf, LF);
+                     Append (Buf, "        }");
+                     Append (Buf, LF);
+                     Emit_Alternation
+                       (Tail_Branches (R), "nn->", Reset, "have",
+                        (if Tags.Is_Empty then "" else C_Ident (CN)),
+                        Buf, "        ");
+                  end;
                else
                   declare
                      Tags : constant String_Vectors.Vector :=

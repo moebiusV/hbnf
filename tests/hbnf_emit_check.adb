@@ -229,10 +229,48 @@ procedure Hbnf_Emit_Check is
       Check ("include local alias", Find_Rule (Rules, "alias") /= 0);
    end Check_Include;
 
+   --  Left recursion, which the reader turns into a list: the rule's
+   --  shape, and the generic matcher reading a base and then its tails.
+   procedure Check_Left_Recursion is
+      use HBNF_Match;
+      Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
+        HBNF_Grammar.Parse
+          ("hosts = hosts "","" host | host" & ASCII.LF
+           & "host = atom" & ASCII.LF);
+
+      function Toks (Spec : String) return Token_Vectors.Vector is
+         V : Token_Vectors.Vector;
+      begin
+         for C of Spec loop
+            V.Append
+              (Token'(if C = ','
+                      then (Kind => Punct, Text => To_Unbounded_String (","))
+                      else (Kind => Atom,
+                            Text => To_Unbounded_String ([1 => C]))));
+         end loop;
+         V.Append (Token'(Kind => Eof, Text => Null_Unbounded_String));
+         return V;
+      end Toks;
+   begin
+      Check ("left recursion: a list with one base",
+             Natural (Rules (1).Pattern.Length) = 1
+             and then Rules (1).Left_Bases = 1
+             and then Rules (1).Pattern (1).Min = 1
+             and then Rules (1).Pattern (1).Max = -1);
+      Check ("left recursion: base, tail, tail",
+             Match (Rules, Toks ("a,b,c"), "hosts"));
+      Check ("left recursion: the base alone", Match (Rules, Toks ("a"), "hosts"));
+      Check ("left recursion: no tail first",
+             not Match (Rules, Toks (",a"), "hosts"));
+      Check ("left recursion: no base after the first",
+             not Match (Rules, Toks ("ab"), "hosts"));
+   end Check_Left_Recursion;
+
 begin
    Check_Server (Ada.Command_Line.Argument (1));
    Check_Hbnf (Ada.Command_Line.Argument (2));
    Check_Include;
+   Check_Left_Recursion;
 
    Ada.Text_IO.Put_Line
      ("checks: " & Natural'Image (Checks) &

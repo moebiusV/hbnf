@@ -1,0 +1,19 @@
+good.conf: 6 entries
+  hosts a b c
+  hosts solo
+  calc 10 - 3 - 2 = 5
+  calc 1 + 2 - 4 + 8 = 7
+  calc 7 = 7
+  words one two three
+lead-comma.bad:1: expected a string, found ,
+  hosts , a;
+        ^
+lead-op.bad:1: expected a number, found +
+  calc + 1;
+       ^
+no-comma.bad:1: expected `,`, found b
+  hosts a b;
+          ^
+no-words.bad:1: expected a string, found ;
+  words ;
+        ^

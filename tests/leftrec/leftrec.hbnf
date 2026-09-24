@@ -1,0 +1,26 @@
+; Left recursion, which hbnf reads as a loop, for tests/leftrec.sh.
+
+language C
+statements
+keywords {
+    hosts calc words
+}
+
+; parse.y's `grammar : /* empty */ | grammar entry '\n'`.  The base is
+; empty, so this is the plain list *( entry ).
+config    = config entry |
+entry     = "hosts" host_list ";"
+          | "calc" sum ";"
+          | "words" string ";"
+
+; parse.y's host_list: the first entry is a host, each later one `, host`.
+host_list = host_list "," host | host
+host      = word
+
+; An operator rule.  The entries come in order, the base first, and the
+; caller folds them to the left: 10 - 3 - 2 is 5.
+sum       = sum "+" int | sum "-" int | int
+
+; parse.y's `string : string STRING | STRING`: the base and the tail are
+; the same, so this is the plain list 1*( word ).
+string    = string word | word

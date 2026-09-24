@@ -114,4 +114,7 @@ HBNF_CLI=/tmp/hbnf_cli sh tests/compare.sh
 echo "== notation beyond ABNF (tests/syntax) =="
 HBNF_CLI=/tmp/hbnf_cli sh tests/syntax.sh
 
+echo "== left recursion, read as a loop (tests/leftrec) =="
+HBNF_CLI=/tmp/hbnf_cli sh tests/leftrec.sh
+
 rm -f server.c server.rs server.zig server_schema.ads server_schema-parser.ads server_schema-parser.adb

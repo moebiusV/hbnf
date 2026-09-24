@@ -130,7 +130,27 @@ package body HBNF_Match is
       if RI = 0 then
          raise HBNF_Grammar.Parse_Error with "undefined rule: " & Name;
       end if;
-      R := Match_Alts (M, M.Rules (RI).Pattern, Pos);
+      if M.Rules (RI).Left_Bases > 0 then
+         --  Left recursion, as the reader rewrote it: a base, then as
+         --  many tails as match.
+         declare
+            Tails : constant Element_Vectors.Vector :=
+              Tail_Branches (M.Rules (RI));
+         begin
+            R := Match_Alts (M, Base_Branches (M.Rules (RI)), Pos);
+            while R.Pos /= 0 loop
+               declare
+                  Next : constant Match_Result := Match_Alts (M, Tails, R.Pos);
+               begin
+                  exit when Next.Pos = 0;
+                  R.Pos := Next.Pos;
+                  Append_All (R.Nodes, Next.Nodes);
+               end;
+            end loop;
+         end;
+      else
+         R := Match_Alts (M, M.Rules (RI).Pattern, Pos);
+      end if;
       if R.Pos /= 0 then
          declare
             N : constant Node_Access := new Node'

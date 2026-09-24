@@ -80,9 +80,22 @@ package HBNF_Grammar is
       --  parents), with the rule's node as `n` and the daemon's conf global
       --  in scope.  It never runs during parsing, so a backtracking re-parse
       --  cannot re-run its side effects.
+      Left_Bases      : Natural := 0;
+      --  Non-zero for a rule written with direct left recursion,
+      --  `a = a t1 | a t2 | b1 | b2`, which the reader turns into the
+      --  list `1*( b1 | b2 | t1 | t2 )`: the number of branches, at the
+      --  front of the list's group, that are bases.  The first entry is
+      --  read from the bases and every later one from the tails, so the
+      --  list is exactly b (t)*, in a loop rather than by recursion.
    end record;
 
    package Rule_Vectors is new Ada.Containers.Vectors (Positive, Rule);
+
+   --  The base branches and the tail branches of a list rewritten from
+   --  left recursion (R.Left_Bases > 0), each a flat vector with Alt
+   --  separators, as a group's items are.
+   function Base_Branches (R : Rule) return Element_Vectors.Vector;
+   function Tail_Branches (R : Rule) return Element_Vectors.Vector;
 
    package Word_Vectors is new
      Ada.Containers.Vectors (Positive, Unbounded_String);

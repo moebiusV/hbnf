@@ -766,6 +766,148 @@ package body HBNF_Grammar is
       return V;
    end Parse_Alternation;
 
+   function Same_Element (A, B : Element_Access) return Boolean;
+
+   function Same_Elements (A, B : Element_Vectors.Vector) return Boolean is
+     (Natural (A.Length) = Natural (B.Length)
+      and then (for all I in 1 .. Natural (A.Length) =>
+                  Same_Element (A (I), B (I))));
+
+   function Same_Element (A, B : Element_Access) return Boolean is
+     (A.Kind = B.Kind and then A.Min = B.Min and then A.Max = B.Max
+      and then (case A.Kind is
+                  when Literal => A.Lit = B.Lit and then A.No_Case = B.No_Case,
+                  when Name    => A.Name = B.Name,
+                  when Group   => Same_Elements (A.Items, B.Items),
+                  when Alt     => True));
+
+   --  Direct left recursion, `a = a t1 | a t2 | b1 | b2`, becomes the list
+   --  `1*( b1 | b2 | t1 | t2 )` with Bases = 2: the first entry is read
+   --  from the bases, each later one from the tails.  That is b (t)*, what
+   --  the recursion derives, read in a loop instead of by recursion, and
+   --  each entry is one step of the recursion, so an operator rule
+   --  (`sum = sum "-" n | n`) leaves its entries in left-to-right order
+   --  for the caller to fold.  Ordered choice holds among the bases and
+   --  among the tails.
+   --
+   --  Two shapes come out as a plain list, Bases = 0: an empty base
+   --  (`config = config entry |`, parse.y's `grammar : /* empty */ |
+   --  grammar entry`) gives `*( entry )`, and bases the same as the tails
+   --  (`string = string word | word`) give `1*( word )`.
+   --
+   --  Pattern is left as it is when no branch begins with the rule itself.
+   --  Left recursion through another rule, or behind something that can
+   --  match nothing, is not rewritten; HBNF_Compilable refuses it.
+   procedure Rewrite_Left_Recursion
+     (Name    : Unbounded_String;
+      Line    : Positive;
+      Pattern : in out Element_Vectors.Vector;
+      Bases   : out Natural)
+   is
+      Len        : constant Natural := Natural (Pattern.Length);
+      Base_V     : Element_Vectors.Vector;
+      Tail_V     : Element_Vectors.Vector;
+      N_Base     : Natural := 0;
+      N_Tail     : Natural := 0;
+      Empty_Base : Boolean := False;
+      St         : Positive := 1;
+
+      function Here return String is
+        (Integer'Image (Line) & ": " & To_String (Name) & ": ");
+
+      procedure Add (V : in out Element_Vectors.Vector; N : in out Natural;
+                     First, Last : Natural) is
+      begin
+         if N > 0 then
+            V.Append (new Element'(Kind => Alt, Min => 1, Max => 1));
+         end if;
+         for I in First .. Last loop
+            V.Append (Pattern (I));
+         end loop;
+         N := N + 1;
+      end Add;
+   begin
+      Bases := 0;
+      for K in 1 .. Len + 1 loop
+         if K > Len or else Pattern (K).Kind = Alt then
+            if St > K - 1 then
+               Empty_Base := True;
+            elsif Pattern (St).Kind = HBNF_Grammar.Name
+              and then Pattern (St).Name = Name
+              and then Pattern (St).Min = 1 and then Pattern (St).Max = 1
+            then
+               if St = K - 1 then
+                  raise Parse_Error with
+                    Here & "the alternative `" & To_String (Name)
+                    & "` is the rule itself, and adds nothing";
+               end if;
+               Add (Tail_V, N_Tail, St + 1, K - 1);
+            else
+               Add (Base_V, N_Base, St, K - 1);
+            end if;
+            St := K + 1;
+         end if;
+      end loop;
+      if N_Tail = 0 then
+         return;
+      end if;
+      if N_Base = 0 and then not Empty_Base then
+         raise Parse_Error with
+           Here & "every alternative begins with `" & To_String (Name)
+           & "`, so it can never start; add one that does not (`"
+           & To_String (Name) & " = " & To_String (Name) & " x | x`)";
+      end if;
+      if Empty_Base and then N_Base > 0 then
+         raise Parse_Error with
+           Here & "an empty alternative beside the other bases; drop it "
+           & "and write `[ " & To_String (Name) & " ]` where the rule is "
+           & "used";
+      end if;
+      declare
+         Items : Element_Vectors.Vector;
+      begin
+         if Empty_Base or else Same_Elements (Base_V, Tail_V) then
+            Items := Tail_V;
+         else
+            Items := Base_V;
+            Items.Append (new Element'(Kind => Alt, Min => 1, Max => 1));
+            for E of Tail_V loop
+               Items.Append (E);
+            end loop;
+            Bases := N_Base;
+         end if;
+         Pattern.Clear;
+         Pattern.Append
+           (new Element'(Kind => Group, Min => (if Empty_Base then 0 else 1),
+                         Max => -1, Items => Items));
+      end;
+   end Rewrite_Left_Recursion;
+
+   function Left_Part (R : Rule; Tails : Boolean)
+     return Element_Vectors.Vector is
+      V  : Element_Vectors.Vector;
+      Br : Positive := 1;
+   begin
+      for E of R.Pattern (1).Items loop
+         if E.Kind = Alt then
+            Br := Br + 1;
+         end if;
+         --  The Alt between the last base and the first tail is in neither.
+         if not (E.Kind = Alt and then Br = R.Left_Bases + 1)
+           and then (Br > R.Left_Bases) = Tails
+         then
+            V.Append (E);
+         end if;
+      end loop;
+      return V;
+   end Left_Part;
+
+   function Base_Branches (R : Rule) return Element_Vectors.Vector is
+     (Left_Part (R, Tails => False));
+
+   function Tail_Branches (R : Rule) return Element_Vectors.Vector is
+     (Left_Part (R, Tails => True));
+
    --  The words of a `keywords { ... }` block, added to Keyword_Words.  A
    --  keyword is what the lexer can intern: letter- or underscore-led, then
    --  letters, digits, `_`, `-` and `.`.
@@ -826,6 +968,7 @@ package body HBNF_Grammar is
       P     : Parser := (Toks => Lex (Text), Pos => 1);
       Rules : Rule_Vectors.Vector;
       Name  : Unbounded_String;
+      Name_Line : Positive := 1;
    begin
       --  Header: an optional `%{ ... %}` preamble and/or `language X`, each
       --  preceded by blank lines and `;` comment lines (which are discarded
@@ -1106,6 +1249,7 @@ package body HBNF_Grammar is
                     Integer'Image (Cur (P).Col) & ": expected a rule name";
                end if;
                Name := Head.Last_Element.Text;
+               Name_Line := Head.Last_Element.Line;
                C_Type := Null_Unbounded_String;
                for I in 1 .. Natural (Head.Length) - 1 loop
                   if C_Type /= Null_Unbounded_String then
@@ -1133,14 +1277,16 @@ package body HBNF_Grammar is
                         Trailing_Comment => Trailing,
                         Jet_Code        => Cur (P).Text,
                         C_Type          => C_Type,
-                        Action_Code     => Null_Unbounded_String));
+                        Action_Code     => Null_Unbounded_String,
+                        Left_Bases      => 0));
                Next (P);
             else
                declare
                   Action  : Unbounded_String := Null_Unbounded_String;
-                  Pattern : constant Element_Vectors.Vector :=
-                    Parse_Alternation (P);
+                  Pattern : Element_Vectors.Vector := Parse_Alternation (P);
+                  Bases   : Natural;
                begin
+                  Rewrite_Left_Recursion (Name, Name_Line, Pattern, Bases);
                   --  An action jet: `name = pattern { code }` — the code
                   --  block after the pattern is run in the bind walk, not
                   --  during parsing.  A trailing comment sits after it.
@@ -1178,7 +1324,8 @@ package body HBNF_Grammar is
                            Trailing_Comment => Trailing,
                            Jet_Code        => Null_Unbounded_String,
                            C_Type          => C_Type,
-                           Action_Code     => Action));
+                           Action_Code     => Action,
+                           Left_Bases      => Bases));
                end;
             end if;
          end;
