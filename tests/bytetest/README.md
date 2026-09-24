@@ -98,16 +98,48 @@ parser-internal `node_*` helpers), so the grammar targets `pf_rule` in
   recursively, and lists element by element — never pointer addresses, TAILQ
   links or padding.  It proves two hbnf parses (two backends, an idref
   round-trip) yield the same tree.
-- Byte-identity against `parse.y` itself still needs a *daemon-conf*
-  deep-compare: parse.y builds `struct <daemon>_conf` directly, not hbnf's
-  AST, so the two are compared over the daemon's own struct (the ntpd action
-  jets fill `struct ntpd_conf`; a hand-written walk over its TAILQ lists is
-  the missing half).
+- Byte-identity against `parse.y` itself is proven for ntpd: `byteident.sh`
+  builds parse.y's parser (bison) and hbnf's parser against the same
+  `config.c`, runs both on one config, and `diff`s a canonical
+  `dump_ntpd_conf()` of each `struct ntpd_conf` — scalars/arrays by value,
+  strings by content, lists in order.  Identical dumps = identical trees
+  (see the section below).  The action jets fill the same fields parse.y
+  does (`addr_head.{a,pool,name}`, `state`, per-address `servers` pooling).
 - pfctl's comparison point is a hand-off, not the parse: `parse.y` runs each
   rule through `expand_rule` and returns the expanded rules, so one grammar
   rule is not one `pf_rule`.  Reaching `pf_rule` at all needs value jets
   (keyword → constant) and action jets first, since its fields are mostly
   flags and constants.
+
+## byte-identity proof (hbnf vs parse.y)
+
+`byteident.sh` is the proof that hbnf's generated parser is a byte-for-byte
+drop-in for `parse.y`, for ntpd:
+
+    ./byteident.sh      # OBSD defaults to <repo>/.work/obsd79
+
+It builds **two** parsers against the same daemon `config.c` — `ntpd_yy`
+(bison's `parse.y`) and `ntpd_hbnf` (the generated `conf.c`) — runs each on
+one `ntpd.conf`, and `diff`s a canonical dump of the `struct ntpd_conf` each
+built.  Equal dumps mean equal trees.  The dump (`byteident/dump_ntpd_conf.c`)
+is the *daemon-conf* deep-compare: it walks the TAILQ lists and prints
+scalars/arrays by value, strings by content, and lists in order, so pointer
+addresses, TAILQ links and padding never enter the comparison.
+
+Three pieces make bison's parser compile and agree on Linux:
+
+- `byteident/harness.c` — the `parse_config` + dump `main`, the one
+  `constraint_add()` the parse needs (the rest of `constraint.c` drags in
+  imsg/tls), and `strtonum()` (parse.y's lexer uses it; glibc lacks it).
+- `byteident/getaddrinfo_wrap.c` — OpenBSD's `sockaddr_*` prefix the family
+  with `sin_len` and number `AF_INET6` as 24 (glibc: 10); `--wrap=getaddrinfo`
+  rewrites glibc's results into the OpenBSD layout so `host()` reads them.
+  This is the one place the ABI gap leaks through, and it is a harness shim,
+  not an hbnf concern.
+
+Error text is deliberately *not* compared: parse.y's `invalid address: %s`
+and hbnf's `expected a string, found …` + caret both reject the same input,
+but only the tree has to match.
 
 ## ntpd -n proof (the first full drop-in)
 
