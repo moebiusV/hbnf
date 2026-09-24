@@ -48,8 +48,8 @@ server        = "server" "match" string "{" serveropts "}"
 serveropts    = *( serveropt )
 
 ; the things that can live inside a `server { }` block
-serveropt     = "listen" "on" string "tls" port
-              / "listen" "on" string port
+serveropt     = "listen" "on" address "tls" port
+              / "listen" "on" address port
               / "alias" "match" string
               / "alias" string
               / "errdocs" string
@@ -106,14 +106,23 @@ header        = "header" "remove" hname "always"
               / "header" "set" hname hvalue "always"
               / "header" "set" hname hvalue
 
-hsts          = "hsts" hstsflags
+hsts          = "hsts" "{" hstsitems "}"
+              / "hsts" hstsflags
+hstsitems     = *( hstsitem )
+hstsitem      = hstsflag "," / hstsflag
 hstsflags     = *( hstsflag )
 hstsflag      = "max-age" int
               / "subdomains"
               / "preload"
 
+; parse.y's braced forms: `tls { certificate "x", key "y" }`, one option
+; per line or comma-separated; the generated lexer skips newlines, so the
+; comma is optional here.
 fastcgi       = "no" "fastcgi" fcgiflags
+              / "fastcgi" "{" fcgiitems "}"
               / "fastcgi" fcgiflags
+fcgiitems     = *( fcgiitem )
+fcgiitem      = fcgiflag "," / fcgiflag
 fcgiflags     = *( fcgiflag )
 fcgiflag      = "socket" string
               / "socket" "tcp" string "port" int
@@ -122,14 +131,20 @@ fcgiflag      = "socket" string
               / "strip" int
               / "pass" string
 
-connection    = "connection" conflags
+connection    = "connection" "{" conitems "}"
+              / "connection" conflags
+conitems      = *( conitem )
+conitem       = conflag "," / conflag
 conflags      = *( conflag )
 conflag       = "timeout" int
               / "request" "timeout" int
               / "max" "requests" int
               / "max" "request" "body" int
 
-tls           = "tls" tlsopts
+tls           = "tls" "{" tlsitems "}"
+              / "tls" tlsopts
+tlsitems      = *( tlsitem )
+tlsitem       = tlsopt "," / tlsopt
 tlsopts       = *( tlsopt )
 tlsopt        = "certificate" string
               / "key" string
@@ -150,7 +165,10 @@ root          = "root" "{" rootflags "}"
               / "root" string
 rootflags     = *( string )
 
-request       = "request" requestflags
+request       = "request" "{" reqitems "}"
+              / "request" requestflags
+reqitems      = *( reqitem )
+reqitem       = requestflag "," / requestflag
 requestflags  = *( requestflag )
 requestflag   = "rewrite" string
               / "no" "rewrite"
@@ -159,15 +177,21 @@ requestflag   = "rewrite" string
 authenticate  = "authenticate" authuser "with" authpass
               / "authenticate" "with" authpass
 
-directory     = "directory" dirflags
+directory     = "directory" "{" diritems "}"
+              / "directory" dirflags
+diritems      = *( diritem )
+diritem       = dirflag "," / dirflag
 dirflags      = *( dirflag )
 dirflag       = "index" string
               / "no" "index"
               / "auto" "index"
               / "no" "auto" "index"
 
-logformat     = "log" logflags
+logformat     = "log" "{" logitems "}"
+              / "log" logflags
               / "no" "log"
+logitems      = *( logitem )
+logitem       = logflag "," / logflag
 logflags      = *( logflag )
 logflag       = "style" logstyle
               / "syslog"
@@ -181,7 +205,10 @@ filter        = "block" "return" int string
               / "block" "drop"
               / "pass"
 
-tcpip         = "tcp" tcpflags
+tcpip         = "tcp" "{" tcpitems "}"
+              / "tcp" tcpflags
+tcpitems      = *( tcpitem )
+tcpitem       = tcpflag "," / tcpflag
 tcpflags      = *( tcpflag )
 tcpflag       = "sack"
               / "no" "sack"
