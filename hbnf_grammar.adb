@@ -1080,6 +1080,9 @@ package body HBNF_Grammar is
                            Acc.Append (R);
                         end loop;
                      end;
+                     --  Keep the line (empty), so errors in the rest of the
+                     --  file report the line numbers the author sees.
+                     Append (Kept, ASCII.LF);
                   else
                      Append (Kept, Line);
                      Append (Kept, ASCII.LF);
