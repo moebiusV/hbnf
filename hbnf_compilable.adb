@@ -44,7 +44,7 @@ package body HBNF_Compilable is
             when Literal => Append (Buf, '"' & To_String (V (I).Lit) & '"');
             when Name    => Append (Buf, V (I).Name);
             when Group   => Append (Buf, "( ... )");
-            when Alt     => Append (Buf, "/");
+            when Alt     => Append (Buf, "|");
          end case;
       end loop;
       return To_String (Buf);

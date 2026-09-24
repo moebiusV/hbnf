@@ -49,8 +49,8 @@ include "commonconf.hbnf"
 
 
 
-config        = *( include / varset / conf_main / rdr / tabledef / relay
-                 / proto / router )
+config        = *( include | varset | conf_main | rdr | tabledef | relay
+                 | proto | router )
 
 include       = "include" string
 
@@ -69,296 +69,296 @@ kpocsp        = string                            ; keypair ocsp file
 ; ---- global configuration ----------------------------------------------
 
 conf_main     = "interval" int
-              / "log" "state" "changes"
-              / "log" "host" "checks"
-              / "log" "connection" "errors"
-              / "log" "connection"
-              / "log" "level" "verbose"
-              / "log" "level" "brief"
-              / "timeout" int
-              / "prefork" int
-              / "agentx" "context" ctxname "path" ctxpath
-              / "agentx" "context" string
-              / "agentx" "path" string
-              / "agentx"
-              / "socket" string
+              | "log" "state" "changes"
+              | "log" "host" "checks"
+              | "log" "connection" "errors"
+              | "log" "connection"
+              | "log" "level" "verbose"
+              | "log" "level" "brief"
+              | "timeout" int
+              | "prefork" int
+              | "agentx" "context" ctxname "path" ctxpath
+              | "agentx" "context" string
+              | "agentx" "path" string
+              | "agentx"
+              | "socket" string
 
 ; ---- redirections ------------------------------------------------------
 
 rdr           = "redirect" string "{" rdropts "}"
 rdropts       = *( rdropt )
 rdropt        = "forward" "to" tablespec interface
-              / "forward" "to" tablespec
-              / "route" "to" tablespec interface
-              / "route" "to" tablespec
-              / "transparent" "forward" "to" tablespec interface
-              / "transparent" "forward" "to" tablespec
-              / "listen" "on" address redirect_proto port interface pflog
-              / "listen" "on" address redirect_proto port interface
-              / "listen" "on" address redirect_proto port pflog
-              / "listen" "on" address redirect_proto port
-              / "listen" "on" address port interface pflog
-              / "listen" "on" address port interface
-              / "listen" "on" address port pflog
-              / "listen" "on" address port
-              / "disable"
-              / "sticky-address"
-              / "match" "pftag" string
-              / "pftag" string
-              / "session" "timeout" int
-              / include
+              | "forward" "to" tablespec
+              | "route" "to" tablespec interface
+              | "route" "to" tablespec
+              | "transparent" "forward" "to" tablespec interface
+              | "transparent" "forward" "to" tablespec
+              | "listen" "on" address redirect_proto port interface pflog
+              | "listen" "on" address redirect_proto port interface
+              | "listen" "on" address redirect_proto port pflog
+              | "listen" "on" address redirect_proto port
+              | "listen" "on" address port interface pflog
+              | "listen" "on" address port interface
+              | "listen" "on" address port pflog
+              | "listen" "on" address port
+              | "disable"
+              | "sticky-address"
+              | "match" "pftag" string
+              | "pftag" string
+              | "session" "timeout" int
+              | include
 
-redirect_proto = "tcp" / string
+redirect_proto = "tcp" | string
 
 ; ---- tables ------------------------------------------------------------
 
 tabledef      = "table" table tabledefopts
 tabledefopts  = *( tabledefopt )
 tabledefopt   = "disable"
-              / "{" tablelist "}"
+              | "{" tablelist "}"
 tablelist     = *( tableitem )
-tableitem     = host "," / host / include "," / include
+tableitem     = host "," | host | include "," | include
 
 host          = address hostflags
 hostflags     = *( hostflag )
 hostflag      = "retry" int
-              / "parent" int
-              / "priority" int
-              / "ip" "ttl" int
+              | "parent" int
+              | "priority" int
+              | "ip" "ttl" int
 
 tablespec     = table tableopts
 tableopts     = *( tableopt )
 tableopt      = "check" tablecheck
-              / port
-              / "timeout" int
-              / "demote" string
-              / "interval" int
-              / "mode" dstmode string
-              / "mode" dstmode
-              / "mode" string
-              / "mode"
+              | port
+              | "timeout" int
+              | "demote" string
+              | "interval" int
+              | "mode" dstmode string
+              | "mode" dstmode
+              | "mode" string
+              | "mode"
 
 tablecheck    = "icmp"
-              / "tcp"
-              / "tls"
-              / http_type string hostname "code" int
-              / http_type string "code" int
-              / http_type string hostname digest
-              / http_type string digest
-              / "send" sendbuf "expect" string "tls"
-              / "send" sendbuf "expect" string
-              / "binary" "send" sendbinbuf "expect" string "tls"
-              / "binary" "send" sendbinbuf "expect" string
-              / "script" string
+              | "tcp"
+              | "tls"
+              | http_type string hostname "code" int
+              | http_type string "code" int
+              | http_type string hostname digest
+              | http_type string digest
+              | "send" sendbuf "expect" string "tls"
+              | "send" sendbuf "expect" string
+              | "binary" "send" sendbinbuf "expect" string "tls"
+              | "binary" "send" sendbinbuf "expect" string
+              | "script" string
 
-http_type     = "http" / "https"
+http_type     = "http" | "https"
 hostname      = "host" string
 digest        = "digest" string
-sendbuf       = "nothing" / string
-sendbinbuf    = "nothing" / string
+sendbuf       = "nothing" | string
+sendbinbuf    = "nothing" | string
 
 ; ---- relays ------------------------------------------------------------
 
 relay         = "relay" string "{" relayopts "}"
 relayopts     = *( relayopt )
 relayopt      = "listen" "on" address port "tls"
-              / "listen" "on" address port
-              / "forward" forwardrest
-              / "route" forwardrest
-              / "transparent" "forward" forwardrest
-              / "session" "timeout" int
-              / "protocol" string
-              / include
+              | "listen" "on" address port
+              | "forward" forwardrest
+              | "route" forwardrest
+              | "transparent" "forward" forwardrest
+              | "session" "timeout" int
+              | "protocol" string
+              | include
 
 forwardrest   = "with" "tls" "to" forwardspec forwardend
-              / "with" "tls" "to" forwardspec
-              / "to" forwardspec forwardend
-              / "to" forwardspec
+              | "with" "tls" "to" forwardspec
+              | "to" forwardspec forwardend
+              | "to" forwardspec
 
 forwardend    = "inet" "proxy-protocol" "v1"
-              / "inet" "proxy-protocol" "v2"
-              / "inet6" address "proxy-protocol" "v1"
-              / "inet6" address "proxy-protocol" "v2"
-              / "inet"
-              / "inet6" address
-              / "proxy-protocol" "v1"
-              / "proxy-protocol" "v2"
+              | "inet" "proxy-protocol" "v2"
+              | "inet6" address "proxy-protocol" "v1"
+              | "inet6" address "proxy-protocol" "v2"
+              | "inet"
+              | "inet6" address
+              | "proxy-protocol" "v1"
+              | "proxy-protocol" "v2"
 
 forwardspec   = address port "retry" int
-              / address port
-              / "nat" "lookup" "retry" int
-              / "nat" "lookup"
-              / "destination" "retry" int
-              / "destination"
-              / tablespec
+              | address port
+              | "nat" "lookup" "retry" int
+              | "nat" "lookup"
+              | "destination" "retry" int
+              | "destination"
+              | tablespec
 
 ; ---- protocols ---------------------------------------------------------
 
 proto         = relay_proto "protocol" string "{" protopts "}"
-              / relay_proto "protocol" string
-              / "protocol" string "{" protopts "}"
-              / "protocol" string
+              | relay_proto "protocol" string
+              | "protocol" string "{" protopts "}"
+              | "protocol" string
 
-relay_proto   = "tcp" / "http" / "dns"
+relay_proto   = "tcp" | "http" | "dns"
 
 protopts      = *( protopt )
 protopt       = "tls" tlsflag
-              / "tls" "{" tlsflags "}"
-              / "tcp" tcpflag
-              / "tcp" "{" tcpflags "}"
-              / "http" httpflag
-              / "http" "{" httpflags "}"
-              / "return" "error" "{" eflags "}"
-              / "return" "error" eflags
-              / "return" "error"
-              / filterrule
-              / include
+              | "tls" "{" tlsflags "}"
+              | "tcp" tcpflag
+              | "tcp" "{" tcpflags "}"
+              | "http" httpflag
+              | "http" "{" httpflags "}"
+              | "return" "error" "{" eflags "}"
+              | "return" "error" eflags
+              | "return" "error"
+              | filterrule
+              | include
 
 tlsflags      = *( tlsflagitem )
-tlsflagitem   = tlsflag "," / tlsflag
+tlsflagitem   = tlsflag "," | tlsflag
 tlsflag       = "session" "tickets"
-              / "no" "session" "tickets"
-              / "ciphers" string
-              / "no" "edh"
-              / "edh" "params" string
-              / "edh"
-              / "ecdhe" string
-              / "ca" "file" string
-              / "ca" "key" cakey "password" capass
-              / "ca" "cert" string
-              / "keypair" kpname "cert" kpcert
-              / "keypair" kpname "key" kpkey
-              / "keypair" kpname "ocsp" kpocsp
-              / "keypair" kpname
-              / "client" "ca" string
-              / "no" flag
-              / flag
+              | "no" "session" "tickets"
+              | "ciphers" string
+              | "no" "edh"
+              | "edh" "params" string
+              | "edh"
+              | "ecdhe" string
+              | "ca" "file" string
+              | "ca" "key" cakey "password" capass
+              | "ca" "cert" string
+              | "keypair" kpname "cert" kpcert
+              | "keypair" kpname "key" kpkey
+              | "keypair" kpname "ocsp" kpocsp
+              | "keypair" kpname
+              | "client" "ca" string
+              | "no" flag
+              | flag
 
 tcpflags      = *( tcpflagitem )
-tcpflagitem   = tcpflag "," / tcpflag
+tcpflagitem   = tcpflag "," | tcpflag
 tcpflag       = "sack"
-              / "no" "sack"
-              / "nodelay"
-              / "no" "nodelay"
-              / "splice"
-              / "no" "splice"
-              / "backlog" int
-              / "socket" "buffer" int
-              / "ip" string int
+              | "no" "sack"
+              | "nodelay"
+              | "no" "nodelay"
+              | "splice"
+              | "no" "splice"
+              | "backlog" int
+              | "socket" "buffer" int
+              | "ip" string int
 
 httpflags     = *( httpflagitem )
-httpflagitem  = httpflag "," / httpflag
+httpflagitem  = httpflag "," | httpflag
 httpflag      = "headerlen" int
-              / "websockets"
-              / "no" "websockets"
+              | "websockets"
+              | "no" "websockets"
 
 eflags        = *( eflagitem )
-eflagitem     = eflag "," / eflag
+eflagitem     = eflag "," | eflag
 eflag         = "style" string
 
-flag          = "sslv3" / "tlsv1" / "tlsv1.0" / "tlsv1.1" / "tlsv1.2"
-              / "tlsv1.3" / "cipher-server-preference" / "client-renegotiation"
+flag          = "sslv3" | "tlsv1" | "tlsv1.0" | "tlsv1.1" | "tlsv1.2"
+              | "tlsv1.3" | "cipher-server-preference" | "client-renegotiation"
 
 ; ---- filter rules ------------------------------------------------------
 
 filterrule    = action filterfront
-action        = "pass" / "block" / "match"
+action        = "pass" | "block" | "match"
 
 filterfront   = dir "quick" ruleaf filterback
-              / dir "quick" filterback
-              / dir ruleaf filterback
-              / dir filterback
-              / "quick" ruleaf filterback
-              / "quick" filterback
-              / ruleaf filterback
-              / filterback
+              | dir "quick" filterback
+              | dir ruleaf filterback
+              | dir filterback
+              | "quick" ruleaf filterback
+              | "quick" filterback
+              | ruleaf filterback
+              | filterback
 
 filterback    = rulesrc ruledst ruleopts
-              / rulesrc ruleopts
-              / ruledst ruleopts
-              / ruleopts
+              | rulesrc ruleopts
+              | ruledst ruleopts
+              | ruleopts
 
-dir           = "request" / "response"
-ruleaf        = "inet6" / "inet"
+dir           = "request" | "response"
+ruleaf        = "inet6" | "inet"
 rulesrc       = "from" addrprefix
 ruledst       = "to" addrprefix
 
 ruleopts      = *( ruleopt )
 ruleopt       = "method" string
-              / "cookie" kv
-              / "cookie" key_option
-              / "header" kv
-              / "header" key_option
-              / "path" "strip" int
-              / "path" kv
-              / "path" key_option
-              / "query" kv
-              / "query" key_option
-              / "url" urlkv
-              / "url" key_option
-              / "forward" "to" table
-              / "tag" string
-              / "no" "tag"
-              / "tagged" string
-              / "label" string
-              / "no" "label"
-              / "file" string value
-              / "file" string
+              | "cookie" kv
+              | "cookie" key_option
+              | "header" kv
+              | "header" key_option
+              | "path" "strip" int
+              | "path" kv
+              | "path" key_option
+              | "query" kv
+              | "query" key_option
+              | "url" urlkv
+              | "url" key_option
+              | "forward" "to" table
+              | "tag" string
+              | "no" "tag"
+              | "tagged" string
+              | "label" string
+              | "no" "label"
+              | "file" string value
+              | "file" string
 
 kv            = key_option "pattern" string value
-              / key_option "pattern" string
-              / key_option string value
-              / key_option string
-              / "pattern" string value
-              / "pattern" string
-              / string value
-              / string
+              | key_option "pattern" string
+              | key_option string value
+              | key_option string
+              | "pattern" string value
+              | "pattern" string
+              | string value
+              | string
 
 urlkv         = key_option "pattern" optdigest value
-              / key_option "pattern" optdigest
-              / key_option optdigest value
-              / key_option optdigest
-              / "pattern" optdigest value
-              / "pattern" optdigest
-              / optdigest value
-              / optdigest
+              | key_option "pattern" optdigest
+              | key_option optdigest value
+              | key_option optdigest
+              | "pattern" optdigest value
+              | "pattern" optdigest
+              | optdigest value
+              | optdigest
 
-key_option    = "append" / "set" / "remove" / "hash" / "log"
+key_option    = "append" | "set" | "remove" | "hash" | "log"
 value         = "value" "pattern" string
-              / "value" string
+              | "value" string
 optdigest     = "digest" string
-              / string
+              | string
 
 ; ---- routers -----------------------------------------------------------
 
 router        = "router" string "{" routeopts "}"
 routeopts     = *( routeopt )
 routeopt      = "route" addrprefix
-              / "forward" "to" tablespec
-              / "rtable" int
-              / "rtlabel" string
-              / "disable"
-              / include
+              | "forward" "to" tablespec
+              | "rtable" int
+              | "rtlabel" string
+              | "disable"
+              | include
 
 ; ---- shared scalars ----------------------------------------------------
 
 port          = "port" "http"
-              / "port" portrange
-              / "port" int
-              / "port" string
+              | "port" portrange
+              | "port" int
+              | "port" string
 
 table         = "<" string ">"
 interface     = "interface" string
 pflog         = "pflog"
-dstmode       = "loadbalance" / "roundrobin" / "hash"
-              / "least-states" / "source-hash" / "random"
+dstmode       = "loadbalance" | "roundrobin" | "hash"
+              | "least-states" | "source-hash" | "random"
 
 addrprefix    = address "/" int
-              / address
+              | address
 
 ; address — an IPv4/IPv6 literal, a hostname, or an interface name
 ; (parse.y: `address : STRING`, resolved later by host())
-address       = ipv6 / ipv4 / str / word
+address       = ipv6 | ipv4 | str | word
 
 ; ipv4 — 1*3digit "." 1*3digit "." 1*3digit "." 1*3digit, each octet 0..255
 ipv4          = {

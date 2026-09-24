@@ -56,17 +56,17 @@ ruleset     = *( rule )
 ; ---------------------------------------------------------------- top level
 ; the ten `ruleset : ... '\n'` productions, plus the top-level `{ ... }` anchor
 rule        = option
-            / pfrule
-            / anchorrule
-            / loadrule
-            / queuespec
-            / varset
-            / antispoof
-            / tabledef
-            / statelim
-            / sourcelim
-            / include
-            / anchorblock
+            | pfrule
+            | anchorrule
+            | loadrule
+            | queuespec
+            | varset
+            | antispoof
+            | tabledef
+            | statelim
+            | sourcelim
+            | include
+            | anchorblock
 
 include     = "include" string
 
@@ -76,17 +76,17 @@ varset      = string "=" varstring          ; macro name = value…
 stringlist  = 1*string
 
 ; a NUMBER or STRING token (parse.y's numberstring)
-numberstring = int / string / address
+numberstring = int | string | address
 
 ; one or more numberstrings (parse.y's varstring)
 varstring   = 1*numberstring
 
 ; an address: an IPv4 or IPv6 literal (parse.y host(): inet_pton)
-address     = ipv4 / ipv6
+address     = ipv4 | ipv6
 
 ; ---------------------------------------------------------------- ports
 ; a single port: a number or a service name (parse.y numberstring -> getservice)
-port        = int / string
+port        = int | string
 
 ; a port spec: a single port, an "a:b" range, or "a:*" (parse.y parseport)
 ;   port — 1*5digit [ ":" ( 1*5digit / "*" ) ]
@@ -95,231 +95,231 @@ port        = int / string
 loport      = port
 hiport      = port
 portval     = loport ":" hiport
-            / loport ":" "*"
-            / loport
+            | loport ":" "*"
+            | loport
 
 loportval   = portval
 hiportval   = portval
 portitem    = loportval portbin hiportval
-            / unaryop loportval
-            / loportval
+            | unaryop loportval
+            | loportval
 
-portlist    = 1*( portitem "," / portitem )
+portlist    = 1*( portitem "," | portitem )
 
 portspec    = portitem
-            / "{" portlist "}"
+            | "{" portlist "}"
 
 ; the ">/<" comparison operators (multi-char, so jets below)
-unaryop     = "=" / ne / le / "<" / ge / ">"
-portbin     = "<" ">" / xrange
+unaryop     = "=" | ne | le | "<" | ge | ">"
+portbin     = "<" ">" | xrange
 
 ; ---------------------------------------------------------------- hosts
 ; a host atom: an address, "address:port", ":port", or a bareword
 ; (interface name / hostname).  host — address [ ":" port ] / ":" port / word
 hostatom    = address ":" port
-            / address
-            / ":" port
-            / ifmod
-            / word
+            | address
+            | ":" port
+            | ifmod
+            | word
 
 ; a dynamic interface address: (em0), or (em0:network) / (em0:0) with a modifier
 ifname      = word                              ; the interface name
 ifaddr      = word                              ; the optional :address
 dynaddr     = "(" ifmod ")"
-            / "(" ifname ":" ifaddr ")"
-            / "(" ifname ":" int ")"
-            / "(" ifname ")"
+            | "(" ifname ":" ifaddr ")"
+            | "(" ifname ":" int ")"
+            | "(" ifname ")"
 
 hostfrom    = hostatom                           ; range low end / bare host
 hostto      = hostatom                           ; range high end
 intnum      = int                                ; a bare numeric host/prefix
 pfx         = int                                ; prefix length after "/"
 host        = "route" string
-            / hostfrom "-" hostto
-            / hostfrom "/" pfx
-            / intnum "/" pfx
-            / dynaddr "/" pfx
-            / dynaddr
-            / "<" string ">"
-            / hostfrom
+            | hostfrom "-" hostto
+            | hostfrom "/" pfx
+            | intnum "/" pfx
+            | dynaddr "/" pfx
+            | dynaddr
+            | "<" string ">"
+            | hostfrom
 
 xhost       = "no-route"
-            / "!" "no-route"
-            / "urpf-failed"
-            / "!" "urpf-failed"
-            / host
-            / "!" host
+            | "!" "no-route"
+            | "urpf-failed"
+            | "!" "urpf-failed"
+            | host
+            | "!" host
 
-hostlist    = 1*( ipspec "," / ipspec )
+hostlist    = 1*( ipspec "," | ipspec )
 
 ipspec      = "any"
-            / xhost
-            / "{" hostlist "}"
+            | xhost
+            | "{" hostlist "}"
 
 ipportspec  = ipspec "port" portspec
-            / "port" portspec
-            / ipspec
+            | "port" portspec
+            | ipspec
 
 from        = "from" ipportspec
 to          = "to" ipportspec
 os          = "os" string
-            / "os" "{" oslist "}"
-oslist      = 1*( string "," / string )
+            | "os" "{" oslist "}"
+oslist      = 1*( string "," | string )
 
 ; from os to, with from / os / to each optional (plus the "all" shorthand)
 fromto      = "all"
-            / from os to
-            / from os
-            / from to
-            / from
-            / os to
-            / os
-            / to
+            | from os to
+            | from os
+            | from to
+            | from
+            | os to
+            | os
+            | to
 
-dir         = "in" / "out"
-af          = "inet" / "inet6"
+dir         = "in" | "out"
+af          = "inet" | "inet6"
 
 ; ---------------------------------------------------------------- log / if
 
 logopt      = "all"
-            / "matches"
-            / "user"
-            / "to" string
+            | "matches"
+            | "user"
+            | "to" string
 
-logopts     = 1*( logopt "," / logopt )
+logopts     = 1*( logopt "," | logopt )
 
 log         = "log" "(" logopts ")"
-            / "log"
+            | "log"
 
 logquick    = log "quick"
-            / "quick" log
-            / log
-            / "quick"
+            | "quick" log
+            | log
+            | "quick"
 
 ifitem      = "any"
-            / "rdomain" int
-            / string
+            | "rdomain" int
+            | string
 
 ifitem_not  = "!" ifitem
-            / ifitem
+            | ifitem
 
-iflist      = 1*( ifitem_not "," / ifitem_not )
+iflist      = 1*( ifitem_not "," | ifitem_not )
 
 interface   = "on" ifitem_not
-            / "on" "{" iflist "}"
+            | "on" "{" iflist "}"
 
 ; ---------------------------------------------------------------- proto / flags / icmp
 
-protoitem   = string / int
-protolist   = 1*( protoitem "," / protoitem )
+protoitem   = string | int
+protolist   = 1*( protoitem "," | protoitem )
 
 proto       = "proto" protoitem
-            / "proto" "{" protolist "}"
+            | "proto" "{" protolist "}"
 
 fmatch      = string                            ; flags to match
 fset        = string                            ; flags to set
 flags       = "flags" fmatch "/" fset
-            / "flags" "/" fset
-            / "flags" "any"
+            | "flags" "/" fset
+            | "flags" "any"
 
-icmptype    = string / int
-icmp6type   = string / int
+icmptype    = string | int
+icmp6type   = string | int
 
 icmpitem    = icmptype "code" string
-            / icmptype "code" int
-            / icmptype
+            | icmptype "code" int
+            | icmptype
 
 icmp6item   = icmp6type "code" string
-            / icmp6type "code" int
-            / icmp6type
+            | icmp6type "code" int
+            | icmp6type
 
-icmplist    = 1*( icmpitem "," / icmpitem )
-icmp6list   = 1*( icmp6item "," / icmp6item )
+icmplist    = 1*( icmpitem "," | icmpitem )
+icmp6list   = 1*( icmp6item "," | icmp6item )
 
 icmpspec    = "icmp-type" icmpitem
-            / "icmp-type" "{" icmplist "}"
-            / "icmp6-type" icmp6item
-            / "icmp6-type" "{" icmp6list "}"
+            | "icmp-type" "{" icmplist "}"
+            | "icmp6-type" icmp6item
+            | "icmp6-type" "{" icmp6list "}"
 
 ; ---------------------------------------------------------------- user / group / state
 
-uid         = string / int
-gid         = string / int
+uid         = string | int
+gid         = string | int
 
 uidlo       = uid                               ; uid range low end
 uidhi       = uid                               ; uid range high end
 uiditem     = uidlo portbin uidhi
-            / unaryop uidlo
-            / uidlo
+            | unaryop uidlo
+            | uidlo
 
 gidlo       = gid                               ; gid range low end
 gidhi       = gid                               ; gid range high end
 giditem     = gidlo portbin gidhi
-            / unaryop gidlo
-            / gidlo
+            | unaryop gidlo
+            | gidlo
 
-uidlist     = 1*( uiditem "," / uiditem )
-gidlist     = 1*( giditem "," / giditem )
+uidlist     = 1*( uiditem "," | uiditem )
+gidlist     = 1*( giditem "," | giditem )
 
 uids        = uiditem
-            / "{" uidlist "}"
+            | "{" uidlist "}"
 
 gids        = giditem
-            / "{" gidlist "}"
+            | "{" gidlist "}"
 
 stateopt    = "max" int
-            / "no-sync"
-            / "max-src-states" int
-            / "max-src-conn" int
-            / "max-src-conn-rate" ratenum "/" rateden
-            / "overload" "<" string ">" "flush" "global"
-            / "overload" "<" string ">" "flush"
-            / "overload" "<" string ">"
-            / "max-src-nodes" int
-            / "source-track" "global"
-            / "source-track" "rule"
-            / "source-track"
-            / "if-bound"
-            / "floating"
-            / "sloppy"
-            / "pflow"
-            / string int                     ; tcp.first 120
+            | "no-sync"
+            | "max-src-states" int
+            | "max-src-conn" int
+            | "max-src-conn-rate" ratenum "/" rateden
+            | "overload" "<" string ">" "flush" "global"
+            | "overload" "<" string ">" "flush"
+            | "overload" "<" string ">"
+            | "max-src-nodes" int
+            | "source-track" "global"
+            | "source-track" "rule"
+            | "source-track"
+            | "if-bound"
+            | "floating"
+            | "sloppy"
+            | "pflow"
+            | string int                     ; tcp.first 120
 
-stateoptlist = 1*( stateopt "," / stateopt )
+stateoptlist = 1*( stateopt "," | stateopt )
 
 keep        = "no" "state"
-            / "keep" "state" "(" stateoptlist ")"
-            / "keep" "state"
-            / "modulate" "state" "(" stateoptlist ")"
-            / "modulate" "state"
-            / "synproxy" "state" "(" stateoptlist ")"
-            / "synproxy" "state"
+            | "keep" "state" "(" stateoptlist ")"
+            | "keep" "state"
+            | "modulate" "state" "(" stateoptlist ")"
+            | "modulate" "state"
+            | "synproxy" "state" "(" stateoptlist ")"
+            | "synproxy" "state"
 
 ; ---------------------------------------------------------------- pools / redirection
 
 poolopt     = "bitmask"
-            / "random"
-            / "source-hash" stringlist
-            / "source-hash"
-            / "round-robin"
-            / "least-states"
-            / "static-port"
-            / "sticky-address"
+            | "random"
+            | "source-hash" stringlist
+            | "source-hash"
+            | "round-robin"
+            | "least-states"
+            | "static-port"
+            | "sticky-address"
 
 poolopts    = *( poolopt )
 
-redirhostlist = 1*( host "," / host )
+redirhostlist = 1*( host "," | host )
 
 redirspec   = host "weight" int
-            / host
-            / "{" redirhostlist "}"
+            | host
+            | "{" redirhostlist "}"
 
 redirfrom   = redirpool                          ; af-to "from" pool
 redirto     = redirpool                          ; af-to "to" pool
 poolopts_from = *( poolopt )                     ; af-to "from" pool options
 poolopts_to   = *( poolopt )                     ; af-to "to" pool options
 redirpool   = redirspec "port" portval
-            / redirspec
+            | redirspec
 
 routespec   = redirspec poolopts
 
@@ -328,8 +328,8 @@ routespec   = redirspec poolopts
 qstr        = string                            ; queue name
 qiface      = string                            ; queue interface (tuple 2nd elem)
 qname       = qstr
-            / "(" qstr ")"
-            / "(" qstr "," qiface ")"
+            | "(" qstr ")"
+            | "(" qstr "," qiface ")"
 
 prioval     = int                               ; priority value
 priclass    = int                               ; priority class
@@ -338,124 +338,124 @@ rateden     = int                               ; rate denominator (seconds)
 abovenum    = int                               ; table "above" count
 belownum    = int                               ; table "below" count
 prio        = "prio" "(" prioval "," priclass ")"
-            / "prio" "(" prioval priclass ")"   ; parse.y's comma is optional
-            / "prio" prioval
+            | "prio" "(" prioval priclass ")"   ; parse.y's comma is optional
+            | "prio" prioval
 
-tos         = string / int
-probability = string / int
+tos         = string | int
+probability = string | int
 
 filterset   = prio
-            / "queue" qname
-            / "tos" tos
-            / "delay" int
+            | "queue" qname
+            | "tos" tos
+            | "delay" int
 
-filtersetlist = 1*( filterset "," / filterset )
+filtersetlist = 1*( filterset "," | filterset )
 
 filtersets  = "set" "(" filtersetlist ")"
-            / "set" filterset
+            | "set" filterset
 
 scrubopt    = "no-df"
-            / "min-ttl" int
-            / "max-mss" int
-            / "reassemble" string
-            / "random-id"
+            | "min-ttl" int
+            | "max-mss" int
+            | "reassemble" string
+            | "random-id"
 
-scrubopts   = 1*( scrubopt "," / scrubopt )
+scrubopts   = 1*( scrubopt "," | scrubopt )
 
 statelim_filter_opt = "state" "limiter" string "(" "block" ")"
-            / "state" "limiter" string "(" "no-match" ")"
-            / "state" "limiter" string
-            / "state" "limiter" "id" int "(" "block" ")"
-            / "state" "limiter" "id" int "(" "no-match" ")"
-            / "state" "limiter" "id" int
+            | "state" "limiter" string "(" "no-match" ")"
+            | "state" "limiter" string
+            | "state" "limiter" "id" int "(" "block" ")"
+            | "state" "limiter" "id" int "(" "no-match" ")"
+            | "state" "limiter" "id" int
 
 sourcelim_filter_opt = "source" "limiter" string "(" "block" ")"
-            / "source" "limiter" string "(" "no-match" ")"
-            / "source" "limiter" string
-            / "source" "limiter" "id" int "(" "block" ")"
-            / "source" "limiter" "id" int "(" "no-match" ")"
-            / "source" "limiter" "id" int
+            | "source" "limiter" string "(" "no-match" ")"
+            | "source" "limiter" string
+            | "source" "limiter" "id" int "(" "block" ")"
+            | "source" "limiter" "id" int "(" "no-match" ")"
+            | "source" "limiter" "id" int
 
 filteropt   = "user" uids
-            / "group" gids
-            / flags
-            / icmpspec
-            / "prio" int
-            / "tos" tos
-            / keep
-            / "fragment"
-            / "allow-opts"
-            / "label" string
-            / "queue" qname
-            / "tag" stringlist
-            / "!" "tagged" stringlist
-            / "tagged" stringlist
-            / "probability" probability
-            / statelim_filter_opt
-            / sourcelim_filter_opt
-            / "rtable" int
-            / "divert-to" hostatom "port" portval
-            / "divert-reply"
-            / "divert-packet" "port" portval
-            / "scrub" "(" scrubopts ")"
-            / "nat-to" redirpool poolopts
-            / "af-to" af "from" redirfrom poolopts_from "to" redirto poolopts_to
-            / "af-to" af "from" redirpool poolopts
-            / "rdr-to" redirpool poolopts
-            / "binat-to" redirpool poolopts
-            / "route-to" routespec
-            / "reply-to" routespec
-            / "dup-to" routespec
-            / "!" "received-on" ifitem
-            / "received-on" ifitem
-            / "once"
-            / "max-pkt-rate" ratenum "/" rateden
-            / filtersets
+            | "group" gids
+            | flags
+            | icmpspec
+            | "prio" int
+            | "tos" tos
+            | keep
+            | "fragment"
+            | "allow-opts"
+            | "label" string
+            | "queue" qname
+            | "tag" stringlist
+            | "!" "tagged" stringlist
+            | "tagged" stringlist
+            | "probability" probability
+            | statelim_filter_opt
+            | sourcelim_filter_opt
+            | "rtable" int
+            | "divert-to" hostatom "port" portval
+            | "divert-reply"
+            | "divert-packet" "port" portval
+            | "scrub" "(" scrubopts ")"
+            | "nat-to" redirpool poolopts
+            | "af-to" af "from" redirfrom poolopts_from "to" redirto poolopts_to
+            | "af-to" af "from" redirpool poolopts
+            | "rdr-to" redirpool poolopts
+            | "binat-to" redirpool poolopts
+            | "route-to" routespec
+            | "reply-to" routespec
+            | "dup-to" routespec
+            | "!" "received-on" ifitem
+            | "received-on" ifitem
+            | "once"
+            | "max-pkt-rate" ratenum "/" rateden
+            | filtersets
 
 filteropts  = *( filteropt )
 
 ; ---------------------------------------------------------------- a filter rule
 
 action      = "pass"
-            / "match"
-            / "block" "return-rst" "(" "ttl" int ")"
-            / "block" "return-icmp" "(" reticmpspec "," reticmp6spec ")"
-            / "block" "return-icmp" "(" reticmpspec ")"
-            / "block" "return-icmp6" "(" reticmp6spec ")"
-            / "block" "return-rst"
-            / "block" "return-icmp"
-            / "block" "return-icmp6"
-            / "block" "return"
-            / "block" "drop"
-            / "block"
+            | "match"
+            | "block" "return-rst" "(" "ttl" int ")"
+            | "block" "return-icmp" "(" reticmpspec "," reticmp6spec ")"
+            | "block" "return-icmp" "(" reticmpspec ")"
+            | "block" "return-icmp6" "(" reticmp6spec ")"
+            | "block" "return-rst"
+            | "block" "return-icmp"
+            | "block" "return-icmp6"
+            | "block" "return"
+            | "block" "drop"
+            | "block"
 
-reticmpspec = string / int
-reticmp6spec = string / int
+reticmpspec = string | int
+reticmp6spec = string | int
 
 ; action dir logquick interface af proto fromto filter_opts — each of the six
 ; middle slots optional, in order, flattened to a chain of two-way alternations
 pfrule      = action pfdir
-pfdir       = dir pflq / pflq
-pflq        = logquick pfif / pfif
-pfif        = interface pfaf / pfaf
-pfaf        = af pfproto / pfproto
-pfproto     = proto pffromto / pffromto
-pffromto    = fromto filteropts / filteropts
+pfdir       = dir pflq | pflq
+pflq        = logquick pfif | pfif
+pfif        = interface pfaf | pfaf
+pfaf        = af pfproto | pfproto
+pfproto     = proto pffromto | pffromto
+pffromto    = fromto filteropts | filteropts
 
 ; ---------------------------------------------------------------- anchors
 
-anchorlist  = *( anchorrule / pfrule / tabledef / include )
+anchorlist  = *( anchorrule | pfrule | tabledef | include )
 
 ; anchor name dir quick interface af proto fromto filter_opts [ { anchorlist } ]
 anchorrule  = "anchor" string anchdir
-            / "anchor" anchdir
-anchdir     = dir anchquick / anchquick
-anchquick   = "quick" anchif / anchif
-anchif      = interface anchaf / anchaf
-anchaf      = af anchproto / anchproto
-anchproto   = proto anchfromto / anchfromto
-anchfromto  = fromto anchfilter / anchfilter
-anchfilter  = filteropts "{" anchorlist "}" / filteropts
+            | "anchor" anchdir
+anchdir     = dir anchquick | anchquick
+anchquick   = "quick" anchif | anchif
+anchif      = interface anchaf | anchaf
+anchaf      = af anchproto | anchproto
+anchproto   = proto anchfromto | anchfromto
+anchfromto  = fromto anchfilter | anchfilter
+anchfilter  = filteropts "{" anchorlist "}" | filteropts
 
 anchorblock = "{" anchorlist "}"
 
@@ -463,69 +463,69 @@ loadrule    = "load" "anchor" string "from" stringlist
 
 ; ---------------------------------------------------------------- set options
 
-optimizer   = "none" / "basic" / "profile"
-statelock   = "if-bound" / "floating"
+optimizer   = "none" | "basic" | "profile"
+statelock   = "if-bound" | "floating"
 
-stringall   = "all" / string
+stringall   = "all" | string
 
 timeoutspec = string int
-timeoutlist = 1*( timeoutspec "," / timeoutspec )
+timeoutlist = 1*( timeoutspec "," | timeoutspec )
 limitspec   = string int
-limitlist   = 1*( limitspec "," / limitspec )
+limitlist   = 1*( limitspec "," | limitspec )
 
-syncookieval = "never" / "adaptive" / "always"
+syncookieval = "never" | "adaptive" | "always"
 syncookieopt = string int "%"
-syncookieoptlist = 1*( syncookieopt "," / syncookieopt )
+syncookieoptlist = 1*( syncookieopt "," | syncookieopt )
 
 option      = "set" "reassemble" yesno "no-df"
-            / "set" "reassemble" yesno
-            / "set" "optimization" string
-            / "set" "ruleset-optimization" optimizer
-            / "set" "timeout" "{" timeoutlist "}"
-            / "set" "timeout" timeoutspec
-            / "set" "limit" "{" limitlist "}"
-            / "set" "limit" limitspec
-            / "set" "loginterface" stringall
-            / "set" "hostid" int
-            / "set" "block-policy" "drop"
-            / "set" "block-policy" "return"
-            / "set" "fingerprints" string
-            / "set" "state-policy" statelock
-            / "set" "debug" string
-            / "set" "debug" "debug"
-            / "set" "skip" interface
-            / "set" "state-defaults" stateoptlist
-            / "set" "syncookies" syncookieval "(" syncookieoptlist ")"
-            / "set" "syncookies" syncookieval
+            | "set" "reassemble" yesno
+            | "set" "optimization" string
+            | "set" "ruleset-optimization" optimizer
+            | "set" "timeout" "{" timeoutlist "}"
+            | "set" "timeout" timeoutspec
+            | "set" "limit" "{" limitlist "}"
+            | "set" "limit" limitspec
+            | "set" "loginterface" stringall
+            | "set" "hostid" int
+            | "set" "block-policy" "drop"
+            | "set" "block-policy" "return"
+            | "set" "fingerprints" string
+            | "set" "state-policy" statelock
+            | "set" "debug" string
+            | "set" "debug" "debug"
+            | "set" "skip" interface
+            | "set" "state-defaults" stateoptlist
+            | "set" "syncookies" syncookieval "(" syncookieoptlist ")"
+            | "set" "syncookies" syncookieval
 
 ; ---------------------------------------------------------------- antispoof / table
 
 antispoofif = ifitem
-            / "(" ifitem ")"
-antispoofiflist = 1*( antispoofif "," / antispoofif )
+            | "(" ifitem ")"
+antispoofiflist = 1*( antispoofif "," | antispoofif )
 antispoofifspc = "for" antispoofif
-               / "for" "{" antispoofiflist "}"
+               | "for" "{" antispoofiflist "}"
 
 antispoofopt = "label" string
-             / "rtable" int
+             | "rtable" int
 antispoofopts = *( antispoofopt )
 
 antispoof  = "antispoof" logquick antispoofifspc af antispoofopts
-           / "antispoof" logquick antispoofifspc antispoofopts
-           / "antispoof" antispoofifspc af antispoofopts
-           / "antispoof" antispoofifspc antispoofopts
+           | "antispoof" logquick antispoofifspc antispoofopts
+           | "antispoof" antispoofifspc af antispoofopts
+           | "antispoof" antispoofifspc antispoofopts
 
 tablespec  = xhost "weight" int
-           / xhost
-           / "{" tablehostlist "}"
-tablehostlist = 1*( tablespec "," / tablespec )
+           | xhost
+           | "{" tablehostlist "}"
+tablehostlist = 1*( tablespec "," | tablespec )
 
 ; a table option: "const"/"persist"/"counters", an empty {} block, a { hosts }
 ; block, or a "file" path
 tableopt   = string
-           / "{" "}"
-           / "{" tablehostlist "}"
-           / "file" string
+           | "{" "}"
+           | "{" tablehostlist "}"
+           | "file" string
 tableopts  = *( tableopt )
 
 tabledef   = "table" "<" string ">" tableopts
@@ -533,49 +533,49 @@ tabledef   = "table" "<" string ">" tableopts
 ; ---------------------------------------------------------------- queues
 
 bandwidth  = string
-           / int "%"
-           / int
+           | int "%"
+           | int
 
 bwbase     = bandwidth                          ; scspec base bandwidth
 bwburst    = bandwidth                          ; scspec "burst" bandwidth
 scspec     = bwbase "burst" bwburst "for" string
-           / bwbase
+           | bwbase
 
 bwspec     = scspec                             ; queueopt "bandwidth" spec
 minspec    = scspec                             ; queueopt "min" spec
 maxspec    = scspec                             ; queueopt "max" spec
 queueopt   = "bandwidth" bwspec "," "min" minspec "," "max" maxspec
-           / "bandwidth" bwspec "," "max" maxspec "," "min" minspec
-           / "bandwidth" bwspec "," "min" minspec
-           / "bandwidth" bwspec "," "max" maxspec
-           / "bandwidth" bwspec
-           / "parent" string
-           / "default"
-           / "qlimit" int
-           / "flows" int
-           / "quantum" int
+           | "bandwidth" bwspec "," "max" maxspec "," "min" minspec
+           | "bandwidth" bwspec "," "min" minspec
+           | "bandwidth" bwspec "," "max" maxspec
+           | "bandwidth" bwspec
+           | "parent" string
+           | "default"
+           | "qlimit" int
+           | "flows" int
+           | "quantum" int
 
 queueopts  = 1*( queueopt )
 
 queuespec  = "queue" string interface queueopts
-           / "queue" string queueopts
+           | "queue" string queueopts
 
 ; ---------------------------------------------------------------- statelim / sourcelim
 
 statelimopt = "id" int
-            / "limit" int
-            / "rate" ratenum "/" rateden
+            | "limit" int
+            | "rate" ratenum "/" rateden
 statelimopts = 1*( statelimopt )
 statelim   = "state" "limiter" stringlist statelimopts
 
 sourcelimopt = "id" int
-             / "entries" int
-             / "limit" int
-             / "rate" ratenum "/" rateden
-             / "table" "<" string ">" "above" abovenum "below" belownum
-             / "table" "<" string ">" "above" int
-             / "inet" "mask" int
-             / "inet6" "mask" int
+             | "entries" int
+             | "limit" int
+             | "rate" ratenum "/" rateden
+             | "table" "<" string ">" "above" abovenum "below" belownum
+             | "table" "<" string ">" "above" int
+             | "inet" "mask" int
+             | "inet6" "mask" int
 sourcelimopts = 1*( sourcelimopt )
 sourcelim  = "source" "limiter" stringlist sourcelimopts
 

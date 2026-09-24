@@ -38,7 +38,7 @@ include "commonconf.hbnf"
 config     = *( entry )
 
 entry      = varset
-           / interface
+           | interface
 
 ; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
 stringlist = 1*string
@@ -49,10 +49,10 @@ interface  = "interface" string "{" ifaceopts "}"
 ifaceopts  = *( ifaceopt )
 
 ifaceopt   = "send" "vendor" "class" "id" string
-           / "send" "client" "id" string
-           / "send" "host" "name" string
-           / "send" "no" "host" "name"
-           / "ignore" "routes"
-           / "ignore" "dns"
-           / "ignore" string
-           / "prefer" "ipv6"
+           | "send" "client" "id" string
+           | "send" "host" "name" string
+           | "send" "no" "host" "name"
+           | "ignore" "routes"
+           | "ignore" "dns"
+           | "ignore" string
+           | "prefer" "ipv6"

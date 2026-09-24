@@ -50,9 +50,9 @@ include "commonconf.hbnf"
 
 
 
-config     = *( include / varset / as_set / prefixset / roa_set / aspa_set
-             / origin_set / rtr / network / flowspec / mrtdump / conf_main
-             / l3vpn / neighbor / group / filterrule / rib )
+config     = *( include | varset | as_set | prefixset | roa_set | aspa_set
+             | origin_set | rtr | network | flowspec | mrtdump | conf_main
+             | l3vpn | neighbor | group | filterrule | rib )
 
 include    = "include" string
 varset     = string "=" stringlist            ; macro name = value…
@@ -85,374 +85,374 @@ ashi       = asnumber                          ; as-number range high end
 ; ---------------------------------------------------------------- sets
 
 as_set     = "as-set" string "{" as_set_l "}"
-           / "as-set" string "{" "}"
-as_set_l   = *( asnumber "," / asnumber )
+           | "as-set" string "{" "}"
+as_set_l   = *( asnumber "," | asnumber )
 
 prefixset    = "prefix-set" string "{" prefixset_l "}"
-             / "prefix-set" string "{" "}"
-prefixset_l  = *( prefixsetitem "," / prefixsetitem )
+             | "prefix-set" string "{" "}"
+prefixset_l  = *( prefixsetitem "," | prefixsetitem )
 prefixsetitem = prefix prefixlenop
-              / prefix
+              | prefix
 
 roa_set     = "roa-set" "{" roa_set_l "}"
-            / "roa-set" "{" "}"
-roa_set_l   = *( roa_set_item "," / roa_set_item )
+            | "roa-set" "{" "}"
+roa_set_l   = *( roa_set_item "," | roa_set_item )
 roa_set_item = prefixsetitem "source-as" asnumber expires
-             / prefixsetitem "source-as" asnumber
+             | prefixsetitem "source-as" asnumber
 expires     = "expires" int
 
 origin_set  = "origin-set" string "{" roa_set_l "}"
-            / "origin-set" string "{" "}"
+            | "origin-set" string "{" "}"
 
 aspa_set    = "aspa-set" "{" aspa_set_l "}"
-            / "aspa-set" "{" "}"
-aspa_set_l  = *( aspa_elm "," / aspa_elm )
+            | "aspa-set" "{" "}"
+aspa_set_l  = *( aspa_elm "," | aspa_elm )
 aspa_elm    = "customer-as" asnumber expires "provider-as" "{" aspa_tas_l "}"
-            / "customer-as" asnumber "provider-as" "{" aspa_tas_l "}"
-aspa_tas_l  = *( aspa_tas "," / aspa_tas )
+            | "customer-as" asnumber "provider-as" "{" aspa_tas_l "}"
+aspa_tas_l  = *( aspa_tas "," | aspa_tas )
 ; a provider AS, with an address family bgpd accepts and ignores
 ; (regress bgpd.conf.14: `provider-as { 1, 2 inet, 7 inet6 }` prints as
 ; `{ 1 2 7 }`)
-aspa_tas    = asnumber af / asnumber
+aspa_tas    = asnumber af | asnumber
 
 rtr         = "rtr" address "{" rtropt_l "}"
-            / "rtr" address
+            | "rtr" address
 rtropt_l    = *( rtropt )
 rtropt      = "descr" string
-            / "local-address" address
-            / "port" port
-            / "min-version" int
-            / authconf
+            | "local-address" address
+            | "port" port
+            | "min-version" int
+            | authconf
 
 ; ---------------------------------------------------------------- main config
 
 conf_main   = "AS" asnumber int
-            / "AS" asnumber
-            / "router-id" address
-            / "holdtime" int
-            / "holdtime" "min" int
-            / "staletime" int
-            / "listen" "on" address "port" port
-            / "listen" "on" address
-            / "fib-priority" int
-            / "fib-update" yesno
-            / "transparent-as" yesno
-            / "reject" "as-set" yesno
-            / "log" string
-            / "dump" dtype dfile int
-            / "dump" dtype dfile
-            / "dump" "rib" drib dtype dfile int
-            / "dump" "rib" drib dtype dfile
-            / "rde" string "evaluate"
-            / "rde" string "ignore"
-            / "rde" "med" "compare" string
-            / "rde" "evaluate" string
-            / "rde" "rib" string "include" "filtered"
-            / "nexthop" "qualify" "via" string
-            / "rtable" int
-            / "connect-retry" int
-            / "socket" string "restricted"
-            / "socket" string
+            | "AS" asnumber
+            | "router-id" address
+            | "holdtime" int
+            | "holdtime" "min" int
+            | "staletime" int
+            | "listen" "on" address "port" port
+            | "listen" "on" address
+            | "fib-priority" int
+            | "fib-update" yesno
+            | "transparent-as" yesno
+            | "reject" "as-set" yesno
+            | "log" string
+            | "dump" dtype dfile int
+            | "dump" dtype dfile
+            | "dump" "rib" drib dtype dfile int
+            | "dump" "rib" drib dtype dfile
+            | "rde" string "evaluate"
+            | "rde" string "ignore"
+            | "rde" "med" "compare" string
+            | "rde" "evaluate" string
+            | "rde" "rib" string "include" "filtered"
+            | "nexthop" "qualify" "via" string
+            | "rtable" int
+            | "connect-retry" int
+            | "socket" string "restricted"
+            | "socket" string
 
 rib         = "rde" "rib" string ribopts
-            / "rde" "rib" string
+            | "rde" "rib" string
 ribopts     = "fib-update" yesno
-            / "rtable" int "fib-update" yesno
-            / "rtable" int
-            / yesno "evaluate"
+            | "rtable" int "fib-update" yesno
+            | "rtable" int
+            | yesno "evaluate"
 
 mrtdump     = "dump" mtype inout mfile int
-            / "dump" mtype inout mfile
-inout       = "in" / "out"
+            | "dump" mtype inout mfile
+inout       = "in" | "out"
 
 network     = "network" prefix filterset
-            / "network" "prefix-set" string filterset
-            / "network" af "rtlabel" string filterset
-            / "network" af "priority" int filterset
-            / "network" af nettype filterset
-nettype     = "static" / "connected"
+            | "network" "prefix-set" string filterset
+            | "network" af "rtlabel" string filterset
+            | "network" af "priority" int filterset
+            | "network" af nettype filterset
+nettype     = "static" | "connected"
 
-af          = "IPv4" / "IPv6" / "inet" / "inet6"
-safi        = "none" / "unicast" / "vpn" / "flowspec"
+af          = "IPv4" | "IPv6" | "inet" | "inet6"
+safi        = "none" | "unicast" | "vpn" | "flowspec"
 
 ; ---------------------------------------------------------------- flowspec
 
 flowspec    = "flowspec" af flowrules filterset
 flowrules   = *( flowrule )
 flowrule    = "from" ipportspec
-            / "to" ipportspec
-            / "flags" flags
-            / "fragment" flags
-            / icmpspec
-            / "length" lengthspec
-            / proto
-            / "tos" tos
+            | "to" ipportspec
+            | "flags" flags
+            | "fragment" flags
+            | icmpspec
+            | "length" lengthspec
+            | proto
+            | "tos" tos
 
 ipportspec  = ipspec "port" portspec
-            / ipspec
-            / "port" portspec
-ipspec      = "any" / prefix
+            | ipspec
+            | "port" portspec
+ipspec      = "any" | prefix
 portspec    = port_item
-            / "{" port_list "}"
-port_list   = *( port_item "," / port_item )
+            | "{" port_list "}"
+port_list   = *( port_item "," | port_item )
 port_item   = unaryop loport
-            / loport binaryop hiport
-            / range
-            / loport
-port        = int / string
+            | loport binaryop hiport
+            | range
+            | loport
+port        = int | string
 
 proto       = "proto" protoitem
-            / "proto" "{" proto_list "}"
-proto_list  = *( protoitem "," / protoitem )
-protoitem   = string / int
+            | "proto" "{" proto_list "}"
+proto_list  = *( protoitem "," | protoitem )
+protoitem   = string | int
 
 flags       = fmatch "/" fset
-            / "/" fset
-            / "any"
-            / fmatch
+            | "/" fset
+            | "any"
+            | fmatch
 
 icmpspec    = "icmp-type" icmp_item
-            / "icmp-type" "{" icmp_list "}"
-icmp_list   = *( icmp_item "," / icmp_item )
+            | "icmp-type" "{" icmp_list "}"
+icmp_list   = *( icmp_item "," | icmp_item )
 icmp_item   = icmptype "code" string
-            / icmptype "code" int
-            / icmptype
-icmptype    = string / int
+            | icmptype "code" int
+            | icmptype
+icmptype    = string | int
 
 lengthspec  = length_item
-            / "{" length_list "}"
-length_list = *( length_item "," / length_item )
+            | "{" length_list "}"
+length_list = *( length_item "," | length_item )
 length_item = unaryop lolen
-            / lolen binaryop hilen
-            / range
-            / lolen
+            | lolen binaryop hilen
+            | range
+            | lolen
 
-tos         = string / int
+tos         = string | int
 
 ; ---------------------------------------------------------------- l3vpn / peers
 
 l3vpn       = "vpn" vpndesc "on" vpnon "{" l3vpnopts_l "}"
 l3vpnopts_l = *( l3vpnopts )
 l3vpnopts   = "rd" rdvalue
-            / "export-target" string commval
-            / "import-target" string commval
-            / "fib-update" yesno
-            / network
+            | "export-target" string commval
+            | "import-target" string commval
+            | "fib-update" yesno
+            | network
 
 neighbor    = "neighbor" addrspec "{" peeropts_l "}"
-            / "neighbor" addrspec
+            | "neighbor" addrspec
 peeropts_l  = *( peeropts )
 
 group       = "group" stringlist "{" groupopts_l "}"
-groupopts_l = *( peeropts / neighbor )
+groupopts_l = *( peeropts | neighbor )
 
 peeropts    = "remote-as" asnumber
-            / "local-as" asnumber int
-            / "local-as" asnumber
-            / "descr" stringlist
-            / "local-address" address
-            / yesno "local-address"
-            / "multihop" int
-            / "passive"
-            / "down" string
-            / "down"
-            / "rib" string
-            / "holdtime" int
-            / "holdtime" "min" int
-            / "staletime" int
-            / "announce" af safi "enforce"
-            / "announce" af safi
-            / "announce" "EVPN" "enforce"
-            / "announce" "EVPN"
-            / "announce" "refresh" yesnoenforce
-            / "announce" "enhanced" "refresh" yesnoenforce
-            / "announce" "restart" yesnoenforce
-            / "announce" "graceful" "notification" yesno
-            / "announce" "as-4byte" yesnoenforce
-            / "announce" "add-path" "recv" yesnoenforce
-            / "announce" "add-path" "send" string "plus" plusnum "max" maxnum "enforce"
-            / "announce" "add-path" "send" string "plus" plusnum "max" maxnum
-            / "announce" "add-path" "send" string "plus" plusnum "enforce"
-            / "announce" "add-path" "send" string "plus" plusnum
-            / "announce" "add-path" "send" string "max" maxnum "enforce"
-            / "announce" "add-path" "send" string "max" maxnum
-            / "announce" "add-path" "send" string "enforce"
-            / "announce" "add-path" "send" string
-            / "announce" "policy" yesnoenforce
-            / "announce" "extended" "message" yesnoenforce
-            / "announce" "extended" "nexthop" yesnoenforce
-            / "role" "none"
-            / "role" string
-            / "export" "none"
-            / "export" "default-route"
-            / "enforce" "neighbor-as" yesno
-            / "enforce" "local-as" yesno
-            / "as-override" yesno
-            / "max-prefix" maxpfx "out" "restart" maxrestart
-            / "max-prefix" maxpfx "out"
-            / "max-prefix" maxpfx "restart" maxrestart
-            / "max-prefix" maxpfx
-            / authconf
-            / "ttl-security" yesno
-            / setclause
-            / mrtdump
-            / "route-reflector" address
-            / "route-reflector"
-            / "depend" "on" string
-            / "demote" string
-            / "transparent-as" yesno
-            / "log" string
-            / "reject" "as-set" yesno
-            / "port" port
-            / "rde" "evaluate" string
+            | "local-as" asnumber int
+            | "local-as" asnumber
+            | "descr" stringlist
+            | "local-address" address
+            | yesno "local-address"
+            | "multihop" int
+            | "passive"
+            | "down" string
+            | "down"
+            | "rib" string
+            | "holdtime" int
+            | "holdtime" "min" int
+            | "staletime" int
+            | "announce" af safi "enforce"
+            | "announce" af safi
+            | "announce" "EVPN" "enforce"
+            | "announce" "EVPN"
+            | "announce" "refresh" yesnoenforce
+            | "announce" "enhanced" "refresh" yesnoenforce
+            | "announce" "restart" yesnoenforce
+            | "announce" "graceful" "notification" yesno
+            | "announce" "as-4byte" yesnoenforce
+            | "announce" "add-path" "recv" yesnoenforce
+            | "announce" "add-path" "send" string "plus" plusnum "max" maxnum "enforce"
+            | "announce" "add-path" "send" string "plus" plusnum "max" maxnum
+            | "announce" "add-path" "send" string "plus" plusnum "enforce"
+            | "announce" "add-path" "send" string "plus" plusnum
+            | "announce" "add-path" "send" string "max" maxnum "enforce"
+            | "announce" "add-path" "send" string "max" maxnum
+            | "announce" "add-path" "send" string "enforce"
+            | "announce" "add-path" "send" string
+            | "announce" "policy" yesnoenforce
+            | "announce" "extended" "message" yesnoenforce
+            | "announce" "extended" "nexthop" yesnoenforce
+            | "role" "none"
+            | "role" string
+            | "export" "none"
+            | "export" "default-route"
+            | "enforce" "neighbor-as" yesno
+            | "enforce" "local-as" yesno
+            | "as-override" yesno
+            | "max-prefix" maxpfx "out" "restart" maxrestart
+            | "max-prefix" maxpfx "out"
+            | "max-prefix" maxpfx "restart" maxrestart
+            | "max-prefix" maxpfx
+            | authconf
+            | "ttl-security" yesno
+            | setclause
+            | mrtdump
+            | "route-reflector" address
+            | "route-reflector"
+            | "depend" "on" string
+            | "demote" string
+            | "transparent-as" yesno
+            | "log" string
+            | "reject" "as-set" yesno
+            | "port" port
+            | "rde" "evaluate" string
 
-yesnoenforce = "yes" / "no" / "enforce"
+yesnoenforce = "yes" | "no" | "enforce"
 
 authconf    = "tcp" "md5sig" "password" stringlist
-            / "tcp" "md5sig" "key" stringlist
-            / "ipsec" espah "ike"
-            / "ipsec" espah inout "spi" int authkey enckey encspec
-            / "ipsec" espah inout "spi" int authkey enckey
-espah       = "esp" / "ah"
+            | "tcp" "md5sig" "key" stringlist
+            | "ipsec" espah "ike"
+            | "ipsec" espah inout "spi" int authkey enckey encspec
+            | "ipsec" espah inout "spi" int authkey enckey
+espah       = "esp" | "ah"
 encspec     = encalg encklen
 
 ; ---------------------------------------------------------------- filters
 
 filterrule  = action "quick" ribspec direction filter_peer_h filter_match_h filterset
-            / action ribspec direction filter_peer_h filter_match_h filterset
-            / action "quick" direction filter_peer_h filter_match_h filterset
-            / action direction filter_peer_h filter_match_h filterset
-action      = "allow" / "deny" / "match"
-direction   = "from" / "to"
+            | action ribspec direction filter_peer_h filter_match_h filterset
+            | action "quick" direction filter_peer_h filter_match_h filterset
+            | action direction filter_peer_h filter_match_h filterset
+action      = "allow" | "deny" | "match"
+direction   = "from" | "to"
 
 ribspec     = "rib" string
-            / "rib" "{" filter_rib_l "}"
-filter_rib_l = *( string "," / string )
+            | "rib" "{" filter_rib_l "}"
+filter_rib_l = *( string "," | string )
 
 filter_peer_h = filter_peer
-              / "{" filter_peer_l "}"
-filter_peer_l = *( filter_peer "," / filter_peer )
+              | "{" filter_peer_l "}"
+filter_peer_l = *( filter_peer "," | filter_peer )
 filter_peer   = "any"
-              / address
-              / "AS" asnumber
-              / "group" string
-              / "ebgp"
-              / "ibgp"
+              | address
+              | "AS" asnumber
+              | "group" string
+              | "ebgp"
+              | "ibgp"
 
 filter_prefix_h = af prefixlenop
-                / af
-                / "prefix" filter_prefix
-                / "prefix" "{" filter_prefix_m "}"
+                | af
+                | "prefix" filter_prefix
+                | "prefix" "{" filter_prefix_m "}"
 filter_prefix_m = *( filter_prefix_grp )
-filter_prefix_grp = filter_prefix "," / filter_prefix / "{" filter_prefix_l "}"
-filter_prefix_l = *( filter_prefix "," / filter_prefix )
+filter_prefix_grp = filter_prefix "," | filter_prefix | "{" filter_prefix_l "}"
+filter_prefix_l = *( filter_prefix "," | filter_prefix )
 filter_prefix   = prefix prefixlenop
-                / prefix
+                | prefix
 
 filter_as_h   = filter_as_t
-              / "{" filter_as_t_l "}"
-filter_as_t_l = *( filter_as_t "," / filter_as_t )
+              | "{" filter_as_t_l "}"
+filter_as_t_l = *( filter_as_t "," | filter_as_t )
 filter_as_t   = filter_as_type filter_as
-              / filter_as_type "{" filter_as_l_h "}"
-              / filter_as_type "as-set" string
+              | filter_as_type "{" filter_as_l_h "}"
+              | filter_as_type "as-set" string
 filter_as_l_h = *( filter_as_grp )
-filter_as_grp = filter_as "," / filter_as / "{" filter_as_l "}"
-filter_as_l   = *( filter_as "," / filter_as )
+filter_as_grp = filter_as "," | filter_as | "{" filter_as_l "}"
+filter_as_l   = *( filter_as "," | filter_as )
 filter_as     = "neighbor-as"
-              / equalityop aslo
-              / aslo binaryop ashi
-              / range
-              / aslo
-filter_as_type = "AS" / "source-as" / "transit-as" / "peer-as"
+              | equalityop aslo
+              | aslo binaryop ashi
+              | range
+              | aslo
+filter_as_type = "AS" | "source-as" | "transit-as" | "peer-as"
 
 filter_match_h = *( filter_elm )
 filter_elm   = filter_prefix_h
-             / filter_as_h
-             / "max-as-len" int
-             / "max-as-seq" int
-             / commtype commval
-             / "ext-community" "ovs" ovsval
-             / "ext-community" string commval
-             / "max-communities" int
-             / "max-ext-communities" int
-             / "max-large-communities" int
-             / "nexthop" address
-             / "nexthop" "neighbor"
-             / "prefix-set" string prefixlenop
-             / "prefix-set" string
-             / "origin-set" string
-             / "ovs" validity
-             / "avs" aspa_validity
+             | filter_as_h
+             | "max-as-len" int
+             | "max-as-seq" int
+             | commtype commval
+             | "ext-community" "ovs" ovsval
+             | "ext-community" string commval
+             | "max-communities" int
+             | "max-ext-communities" int
+             | "max-large-communities" int
+             | "nexthop" address
+             | "nexthop" "neighbor"
+             | "prefix-set" string prefixlenop
+             | "prefix-set" string
+             | "origin-set" string
+             | "ovs" validity
+             | "avs" aspa_validity
 
 prefixlenop = "or-longer"
-            / "maxlen" plenlo
-            / "prefixlen" unaryop plenlo
-            / "prefixlen" plenlo binaryop plenhi
-            / "prefixlen" range
+            | "maxlen" plenlo
+            | "prefixlen" unaryop plenlo
+            | "prefixlen" plenlo binaryop plenhi
+            | "prefixlen" range
 
 filterset   = *( setclause )
 setclause   = "set" filterset_opt
-            / "set" "{" filterset_l "}"
-filterset_l = *( filterset_opt "," / filterset_opt )
+            | "set" "{" filterset_l "}"
+filterset_l = *( filterset_opt "," | filterset_opt )
 
 filterset_opt = "localpref" int
-              / "localpref" "+" int
-              / "localpref" "-" int
-              / "med" int
-              / "med" "+" int
-              / "med" "-" int
-              / "metric" int
-              / "metric" "+" int
-              / "metric" "-" int
-              / "weight" int
-              / "weight" "+" int
-              / "weight" "-" int
-              / "nexthop" address
-              / "nexthop" "blackhole"
-              / "nexthop" "reject"
-              / "nexthop" "no-modify"
-              / "nexthop" "self"
-              / "prepend-self" int
-              / "prepend-neighbor" int
-              / "as-override"
-              / "pftable" string
-              / "rtlabel" string
-              / "community" "delete" commval
-              / "community" commval
-              / "large-community" "delete" commval
-              / "large-community" commval
-              / "ext-community" "delete" "ovs" ovsval
-              / "ext-community" "delete" string commval
-              / "ext-community" "ovs" ovsval
-              / "ext-community" string commval
-              / "origin" origincode
+              | "localpref" "+" int
+              | "localpref" "-" int
+              | "med" int
+              | "med" "+" int
+              | "med" "-" int
+              | "metric" int
+              | "metric" "+" int
+              | "metric" "-" int
+              | "weight" int
+              | "weight" "+" int
+              | "weight" "-" int
+              | "nexthop" address
+              | "nexthop" "blackhole"
+              | "nexthop" "reject"
+              | "nexthop" "no-modify"
+              | "nexthop" "self"
+              | "prepend-self" int
+              | "prepend-neighbor" int
+              | "as-override"
+              | "pftable" string
+              | "rtlabel" string
+              | "community" "delete" commval
+              | "community" commval
+              | "large-community" "delete" commval
+              | "large-community" commval
+              | "ext-community" "delete" "ovs" ovsval
+              | "ext-community" "delete" string commval
+              | "ext-community" "ovs" ovsval
+              | "ext-community" string commval
+              | "origin" origincode
 
-commtype    = "community" / "large-community"
-origincode  = "egp" / "igp" / "incomplete"
-validity    = "not-found" / "invalid" / "valid"
-aspa_validity = "unknown" / "invalid" / "valid"
-ovsval      = "valid" / "invalid" / "not-found" / "*"
+commtype    = "community" | "large-community"
+origincode  = "egp" | "igp" | "incomplete"
+validity    = "not-found" | "invalid" | "valid"
+aspa_validity = "unknown" | "invalid" | "valid"
+ovsval      = "valid" | "invalid" | "not-found" | "*"
 
-unaryop     = "=" / ne / le / "<" / ge / ">"
-equalityop  = "=" / ne
-binaryop    = "-" / xrange
+unaryop     = "=" | ne | le | "<" | ge | ">"
+equalityop  = "=" | ne
+binaryop    = "-" | xrange
 
 ; ---------------------------------------------------------------- scalars
 ; an AS number: a plain integer ("64512") or 4-byte asdot ("1.10")
-asnumber    = asdot / int
+asnumber    = asdot | int
 
 ; address — an IPv4 or IPv6 literal (parse.y: host())
-address     = ipv4 / ipv6
+address     = ipv4 | ipv6
 
 ; a neighbor address: a bare address or an address/len prefix (parse.y: addrspec)
-addrspec    = address / prefix
+addrspec    = address | prefix
 
 ; a community / large-community / ext-community value: a numeric as:data form
 ; (the jets), a well-known name ("NO_EXPORT", "neighbor-as"), or "*"
-commval     = largecommunity / community / colonword / "*" / string
+commval     = largecommunity | community | colonword | "*" | string
 
 ; a route distinguisher value ("64512:100" or "1.2.3.4:100")
-rdvalue     = community / colonword
+rdvalue     = community | colonword
 
 ; ---------------------------------------------------------------- jets
 ; prefix — address "/" 1*2digit (address an ipv4 or ipv6 literal)

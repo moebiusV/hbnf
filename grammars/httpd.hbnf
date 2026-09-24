@@ -44,64 +44,64 @@ include "commonconf.hbnf"
 config        = *( entry )
 
 entry         = "prefork" int
-              / "chroot" string
-              / "errdocs" string
-              / "logdir" string
-              / "no" "banner"
-              / "default" "type" mediastring
-              / server
-              / types
-              / include
-              / varset
+              | "chroot" string
+              | "errdocs" string
+              | "logdir" string
+              | "no" "banner"
+              | "default" "type" mediastring
+              | server
+              | types
+              | include
+              | varset
 
 include       = "include" string
 
 varset        = vname "=" vvalue                ; macro name = value…
 
 server        = "server" "match" string "{" serveropts "}"
-              / "server" string "{" serveropts "}"
+              | "server" string "{" serveropts "}"
 serveropts    = *( serveropt )
 
 ; the things that can live inside a `server { }` block
 serveropt     = "listen" "on" address "tls" port
-              / "listen" "on" address port
-              / "alias" "match" string
-              / "alias" string
-              / "errdocs" string
-              / "no" "errdocs"
-              / tcpip
-              / connection
-              / tls
-              / request
-              / root
-              / directory
-              / "banner"
-              / "no" "banner"
-              / header
-              / "static-cache-control"
-              / "no" "static-cache-control"
-              / logformat
-              / fastcgi
-              / authenticate
-              / "gzip-static"
-              / "no" "gzip-static"
-              / filter
-              / location
-              / "default" "type" mediastring
-              / include
-              / hsts
+              | "listen" "on" address port
+              | "alias" "match" string
+              | "alias" string
+              | "errdocs" string
+              | "no" "errdocs"
+              | tcpip
+              | connection
+              | tls
+              | request
+              | root
+              | directory
+              | "banner"
+              | "no" "banner"
+              | header
+              | "static-cache-control"
+              | "no" "static-cache-control"
+              | logformat
+              | fastcgi
+              | authenticate
+              | "gzip-static"
+              | "no" "gzip-static"
+              | filter
+              | location
+              | "default" "type" mediastring
+              | include
+              | hsts
 
 ; a port number or service name (parse.y `port : PORT NUMBER | PORT STRING`)
 port          = "port" int
-              / "port" string
+              | "port" string
 
 ; a location: `location [found] [match] STRING { ... }`
 location      = "location" "found" "match" string "{" serveropts "}"
-              / "location" "found" string "{" serveropts "}"
-              / "location" "not" "found" "match" string "{" serveropts "}"
-              / "location" "not" "found" string "{" serveropts "}"
-              / "location" "match" string "{" serveropts "}"
-              / "location" string "{" serveropts "}"
+              | "location" "found" string "{" serveropts "}"
+              | "location" "not" "found" "match" string "{" serveropts "}"
+              | "location" "not" "found" string "{" serveropts "}"
+              | "location" "match" string "{" serveropts "}"
+              | "location" string "{" serveropts "}"
 
 vname         = string                          ; macro name
 vvalue        = string                          ; macro value
@@ -115,129 +115,129 @@ mtype         = string                          ; MIME type (text/html -> text)
 msubtype      = string                          ; MIME subtype (text/html -> html)
 
 header        = "header" "remove" hname "always"
-              / "header" "remove" hname
-              / "header" "add" hname hvalue "always"
-              / "header" "add" hname hvalue
-              / "header" "set" hname hvalue "always"
-              / "header" "set" hname hvalue
+              | "header" "remove" hname
+              | "header" "add" hname hvalue "always"
+              | "header" "add" hname hvalue
+              | "header" "set" hname hvalue "always"
+              | "header" "set" hname hvalue
 
 hsts          = "hsts" "{" hstsitems "}"
-              / "hsts" hstsflags
+              | "hsts" hstsflags
 hstsitems     = *( hstsitem )
-hstsitem      = hstsflag "," / hstsflag
+hstsitem      = hstsflag "," | hstsflag
 hstsflags     = *( hstsflag )
 hstsflag      = "max-age" int
-              / "subdomains"
-              / "preload"
+              | "subdomains"
+              | "preload"
 
 ; parse.y's braced forms: `tls { certificate "x", key "y" }`, one option
 ; per line or comma-separated; the generated lexer skips newlines, so the
 ; comma is optional here.
 fastcgi       = "no" "fastcgi" fcgiflags
-              / "fastcgi" "{" fcgiitems "}"
-              / "fastcgi" fcgiflags
+              | "fastcgi" "{" fcgiitems "}"
+              | "fastcgi" fcgiflags
 fcgiitems     = *( fcgiitem )
-fcgiitem      = fcgiflag "," / fcgiflag
+fcgiitem      = fcgiflag "," | fcgiflag
 fcgiflags     = *( fcgiflag )
 fcgiflag      = "socket" string
-              / "socket" "tcp" string "port" int
-              / "socket" "tcp" string
-              / "param" pname pvalue
-              / "strip" int
-              / "pass" string
+              | "socket" "tcp" string "port" int
+              | "socket" "tcp" string
+              | "param" pname pvalue
+              | "strip" int
+              | "pass" string
 
 connection    = "connection" "{" conitems "}"
-              / "connection" conflags
+              | "connection" conflags
 conitems      = *( conitem )
-conitem       = conflag "," / conflag
+conitem       = conflag "," | conflag
 conflags      = *( conflag )
 conflag       = "timeout" int
-              / "request" "timeout" int
-              / "max" "requests" int
-              / "max" "request" "body" int
+              | "request" "timeout" int
+              | "max" "requests" int
+              | "max" "request" "body" int
 
 tls           = "tls" "{" tlsitems "}"
-              / "tls" tlsopts
+              | "tls" tlsopts
 tlsitems      = *( tlsitem )
-tlsitem       = tlsopt "," / tlsopt
+tlsitem       = tlsopt "," | tlsopt
 tlsopts       = *( tlsopt )
 tlsopt        = "certificate" string
-              / "key" string
-              / "ocsp" string
-              / "ciphers" string
-              / "client" "ca" string tlsclientopts
-              / "dhe" string
-              / "ecdhe" string
-              / "protocols" string
-              / "ticket" "lifetime" "default"
-              / "ticket" "lifetime" int
-              / "no" "ticket"
+              | "key" string
+              | "ocsp" string
+              | "ciphers" string
+              | "client" "ca" string tlsclientopts
+              | "dhe" string
+              | "ecdhe" string
+              | "protocols" string
+              | "ticket" "lifetime" "default"
+              | "ticket" "lifetime" int
+              | "no" "ticket"
 tlsclientopts = *( tlsclientopt )
 tlsclientopt  = "crl" string
-              / "optional"
+              | "optional"
 
 root          = "root" "{" rootflags "}"
-              / "root" string
+              | "root" string
 rootflags     = *( string )
 
 request       = "request" "{" reqitems "}"
-              / "request" requestflags
+              | "request" requestflags
 reqitems      = *( reqitem )
-reqitem       = requestflag "," / requestflag
+reqitem       = requestflag "," | requestflag
 requestflags  = *( requestflag )
 requestflag   = "rewrite" string
-              / "no" "rewrite"
-              / "strip" int
+              | "no" "rewrite"
+              | "strip" int
 
 authenticate  = "authenticate" authuser "with" authpass
-              / "authenticate" "with" authpass
+              | "authenticate" "with" authpass
 
 directory     = "directory" "{" diritems "}"
-              / "directory" dirflags
+              | "directory" dirflags
 diritems      = *( diritem )
-diritem       = dirflag "," / dirflag
+diritem       = dirflag "," | dirflag
 dirflags      = *( dirflag )
 dirflag       = "index" string
-              / "no" "index"
-              / "auto" "index"
-              / "no" "auto" "index"
+              | "no" "index"
+              | "auto" "index"
+              | "no" "auto" "index"
 
 logformat     = "log" "{" logitems "}"
-              / "log" logflags
-              / "no" "log"
+              | "log" logflags
+              | "no" "log"
 logitems      = *( logitem )
-logitem       = logflag "," / logflag
+logitem       = logflag "," | logflag
 logflags      = *( logflag )
 logflag       = "style" logstyle
-              / "syslog"
-              / "no" "syslog"
-              / "access" string
-              / "error" string
-logstyle      = "common" / "combined" / "connection" / "forwarded"
+              | "syslog"
+              | "no" "syslog"
+              | "access" string
+              | "error" string
+logstyle      = "common" | "combined" | "connection" | "forwarded"
 
 filter        = "block" "return" int string
-              / "block" "return" int
-              / "block" "drop"
-              / "pass"
+              | "block" "return" int
+              | "block" "drop"
+              | "pass"
 
 tcpip         = "tcp" "{" tcpitems "}"
-              / "tcp" tcpflags
+              | "tcp" tcpflags
 tcpitems      = *( tcpitem )
-tcpitem       = tcpflag "," / tcpflag
+tcpitem       = tcpflag "," | tcpflag
 tcpflags      = *( tcpflag )
 tcpflag       = "sack"
-              / "no" "sack"
-              / "nodelay"
-              / "no" "nodelay"
-              / "backlog" int
-              / "socket" "buffer" int
-              / "ip" string int
+              | "no" "sack"
+              | "nodelay"
+              | "no" "nodelay"
+              | "backlog" int
+              | "socket" "buffer" int
+              | "ip" string int
 
 types         = "types" "{" mediaopts "}"
 mediaopts     = *( mediaopt )
 mediaopt      = mediastring medianames ";"
-              / mediastring medianames
-              / include
+              | mediastring medianames
+              | include
 mediastring   = mtype "/" msubtype               ; a MIME type, e.g. text/html
 medianames    = 1*( medianame )
-medianame     = int / string
+medianame     = int | string

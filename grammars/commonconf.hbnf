@@ -6,13 +6,13 @@
 ;
 ; a STRING token: quoted ("cpu0") or an OpenBSD bareword (10.0.0.1,
 ; example.com, /etc/pf.conf, $interface)
-string     = str / word / wildcard
+string     = str | word | wildcard
 
 ; one or more STRING tokens (parse.y's `_l` list rules)
 stringlist = 1*string
 
 ; a yes/no keyword pair (the "flag" core rule is single-token; yesno is not)
-yesno      = "yes" / "no"
+yesno      = "yes" | "no"
 
 ; "*" — parse.y's bareword start char; `listen on *` binds all
 wildcard   = {
@@ -37,7 +37,7 @@ ipv6       = {
 ; an address: a hostname, IPv4/IPv6 literal, or "*" — `str`/`word` plus the two
 ; forms the generated `word` cannot match (":" and "*"), spelled out so the
 ; value stays a single string (a scalar union, as in ntpd/relayd/unwind)
-address    = wildcard / ipv6 / str / word
+address    = wildcard | ipv6 | str | word
 
 ; a number: a signed or unsigned integer (the core `int`)
 number     = int

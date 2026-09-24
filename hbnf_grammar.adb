@@ -284,7 +284,9 @@ package body HBNF_Grammar is
                   Emit (T_String, To_String (Buf));
                end;
             when '=' => Emit (T_Eq);     I := I + 1;  Col := Col + 1;
-            when '/' => Emit (T_Slash);  I := I + 1;  Col := Col + 1;
+            --  `|` separates alternatives, as in BNF, EBNF and yacc; `/`,
+            --  ABNF's spelling, still does.
+            when '/' | '|' => Emit (T_Slash);  I := I + 1;  Col := Col + 1;
             when '(' => Emit (T_LParen); I := I + 1;  Col := Col + 1;
             when ')' => Emit (T_RParen); I := I + 1;  Col := Col + 1;
             when '[' => Emit (T_LBrack); I := I + 1;  Col := Col + 1;
@@ -506,7 +508,7 @@ package body HBNF_Grammar is
    begin
       case T.Kind is
          when T_Eq => return "=";
-         when T_Slash => return "/";
+         when T_Slash => return "|";
          when T_LParen => return "(";
          when T_RParen => return ")";
          when T_LBrack => return "[";

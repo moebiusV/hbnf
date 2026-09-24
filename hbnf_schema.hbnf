@@ -10,11 +10,11 @@
 ; and comments, which are whitespace exactly as hbnf's own parser treats them.
 
 config    = [ws] *( entry [semicolon] [ws] ) [ws]
-entry     = block / statement
+entry     = block | statement
 statement = name *arg
 block     = name [qualifier] "{" [ws] *( entry [semicolon] [ws] ) [ws] "}"
 name      = atom
-qualifier = str / atom
-arg       = atom / str / int / dec
-ws        = 1*( "\n" / comment )
+qualifier = str | atom
+arg       = atom | str | int | dec
+ws        = 1*( "\n" | comment )
 semicolon = ";"

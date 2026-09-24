@@ -37,7 +37,7 @@ include "commonconf.hbnf"
 
 
 
-config     = *( include / varset / preference / forwarder / block_list / force )
+config     = *( include | varset | preference | forwarder | block_list | force )
 
 include    = "include" string
 
@@ -47,36 +47,36 @@ stringlist = 1*string
 varset     = string "=" stringlist                ; macro name = value…
 
 preference = "preference" "{" prefopts "}"
-           / "preference" prefopt
+           | "preference" prefopt
 prefopts   = 1*prefopt
 
 prefopt    = dot
-           / prefopt_kw
-prefopt_kw = "forwarder" / "oDoT-forwarder" / "recursor" / "autoconf"
-           / "dhcp" / "oDoT-autoconf" / "oDoT-dhcp" / "stub"
+           | prefopt_kw
+prefopt_kw = "forwarder" | "oDoT-forwarder" | "recursor" | "autoconf"
+           | "dhcp" | "oDoT-autoconf" | "oDoT-dhcp" | "stub"
 
 forwarder  = "forwarder" "{" forwarderopts "}"
-           / "forwarder" forwarderopt
+           | "forwarder" forwarderopt
 forwarderopts = 1*forwarderopt
 
 forwarderopt = address "port" int "authentication" "name" string dot
-             / address "port" int "authentication" "name" string
-             / address "port" int dot
-             / address "port" int
-             / address "authentication" "name" string dot
-             / address "authentication" "name" string
-             / address dot
-             / address
+             | address "port" int "authentication" "name" string
+             | address "port" int dot
+             | address "port" int
+             | address "authentication" "name" string dot
+             | address "authentication" "name" string
+             | address dot
+             | address
 
 block_list = "block" "list" string "log"
-           / "block" "list" string
+           | "block" "list" string
 
 force      = "force" "accept" "bogus" prefopt "{" forcelist "}"
-           / "force" prefopt "{" forcelist "}"
+           | "force" prefopt "{" forcelist "}"
 forcelist  = *string
 
 ; the forwarder IP: a STRING, or an IPv6 literal the bare `word` can't reach
-address    = str / word / ipv6
+address    = str | word | ipv6
 
 ; dot — the DOT keyword: parse.y's lookup() folds the three spellings into one
 ; token (a keyword-only enum would emit colliding C enumerators DOT_DOT).

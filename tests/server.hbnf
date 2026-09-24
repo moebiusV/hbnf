@@ -12,7 +12,7 @@ port      = u16
 root      = str
 
 ; redirect one target to another, or to a group
-redirects = *( "to" dest / "to-group" group )
+redirects = *( "to" dest | "to-group" group )
 
 dest      = str
 group     = word
@@ -22,4 +22,4 @@ aliases   = 1*alias
 
 alias     = str
 tls       = flag
-direction = "in" / "out"
+direction = "in" | "out"
