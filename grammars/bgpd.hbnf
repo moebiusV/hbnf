@@ -469,13 +469,13 @@ ipv6        = {
 ; largecommunity — 1*( digit / "*" ) ":" 1*( digit / "*" ) ":" 1*( digit / "*" )
 largecommunity = {
     size_t i = pos, n = 0;
-    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
     if (n == 0 || i >= len || s[i] != ':') return 0;
     i++; n = 0;
-    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
     if (n == 0 || i >= len || s[i] != ':') return 0;
     i++; n = 0;
-    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
     if (n == 0) return 0;
     return i - pos;
 }
@@ -483,10 +483,10 @@ largecommunity = {
 ; community — 1*( digit / "*" ) ":" 1*( digit / "*" )
 community   = {
     size_t i = pos, n = 0;
-    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
     if (n == 0 || i >= len || s[i] != ':') return 0;
     i++; n = 0;
-    while (i < len && (s[i] >= '0' && s[i] <= '9' || s[i] == '*')) { n++; i++; }
+    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
     if (n == 0) return 0;
     return i - pos;
 }
