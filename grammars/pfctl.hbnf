@@ -95,12 +95,14 @@ portbin     = "<" ">" / xrange
 hostatom    = address ":" port
             / address
             / ":" port
+            / ifmod
             / word
 
 ; a dynamic interface address: (em0), or (em0:network) / (em0:0) with a modifier
 ifname      = word                              ; the interface name
 ifaddr      = word                              ; the optional :address
-dynaddr     = "(" ifname ":" ifaddr ")"
+dynaddr     = "(" ifmod ")"
+            / "(" ifname ":" ifaddr ")"
             / "(" ifname ":" int ")"
             / "(" ifname ")"
 
@@ -595,6 +597,39 @@ ipv6        = {
             i++;
     }
     return i - pos;
+}
+
+; ifmod — an interface name with address modifiers, one bareword to parse.y's
+; lexer (`:` is allowed in its strings): lo0:network, em0:broadcast,
+; (lo0:peer:0), nat-to lo0:0.  parse.y's host() and dynaddr split the
+; modifiers off.  A letter leads, so port ranges (8000:8010) never match.
+;   ifmod = ALPHA *( ALPHA / DIGIT / "_" ) 1*( ":" ( "network" / "broadcast"
+;           / "peer" / "0" ) )
+ifmod       = {
+    static const char *const mod[] = { "network", "broadcast", "peer", "0" };
+    size_t i = pos, k, m, mods = 0;
+    if (i >= len || !((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z')))
+        return 0;
+    while (i < len && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z')
+                       || (s[i] >= '0' && s[i] <= '9') || s[i] == '_'))
+        i++;
+    while (i < len && s[i] == ':') {
+        for (k = 0; k < 4; k++) {
+            m = strlen(mod[k]);
+            if (i + 1 + m <= len && memcmp(s + i + 1, mod[k], m) == 0
+                && (i + 1 + m == len
+                    || !((s[i + 1 + m] >= 'a' && s[i + 1 + m] <= 'z')
+                         || (s[i + 1 + m] >= 'A' && s[i + 1 + m] <= 'Z')
+                         || (s[i + 1 + m] >= '0' && s[i + 1 + m] <= '9')
+                         || s[i + 1 + m] == '_')))
+                break;
+        }
+        if (k == 4)
+            break;
+        i += 1 + m;
+        mods++;
+    }
+    return mods ? i - pos : 0;
 }
 
 ; ne — "!" "=" (not equal)
