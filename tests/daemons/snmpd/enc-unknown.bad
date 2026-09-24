@@ -1,0 +1,2 @@
+# not a cipher parse.y knows, in any case
+user "dave" enckey "password2" enc AES-256
