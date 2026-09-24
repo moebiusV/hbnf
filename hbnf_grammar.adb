@@ -1207,6 +1207,54 @@ package body HBNF_Grammar is
          raise;
    end Parse_File;
 
+   function Reachable (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector
+   is
+      N    : constant Natural := Natural (Rules.Length);
+      Seen : array (1 .. N) of Boolean := [others => False];
+
+      procedure Mark (Name : Unbounded_String);
+
+      procedure Walk (V : Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            case E.Kind is
+               when Name =>
+                  Mark (E.Name);
+               when Group =>
+                  Walk (E.Items);
+               when others =>
+                  null;
+            end case;
+         end loop;
+      end Walk;
+
+      procedure Mark (Name : Unbounded_String) is
+      begin
+         for I in 1 .. N loop
+            if Rules (I).Name = Name then
+               if not Seen (I) then
+                  Seen (I) := True;
+                  Walk (Rules (I).Pattern);
+               end if;
+               return;
+            end if;
+         end loop;
+      end Mark;
+
+      Result : Rule_Vectors.Vector;
+   begin
+      if N = 0 then
+         return Rules;
+      end if;
+      Mark (Rules (1).Name);
+      for I in 1 .. N loop
+         if Seen (I) or else Rules (I).Jet_Code /= Null_Unbounded_String then
+            Result.Append (Rules (I));
+         end if;
+      end loop;
+      return Result;
+   end Reachable;
+
    function Language return String is (To_String (Schema_Language));
 
    function Preamble return String is (To_String (Preamble_Code));

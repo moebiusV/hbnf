@@ -77,7 +77,8 @@ begin
 
    declare
       Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
-        HBNF_Grammar.Parse_File (To_String (Schema_Path));
+        HBNF_Grammar.Reachable
+          (HBNF_Grammar.Parse_File (To_String (Schema_Path)));
       B     : constant String := To_String (Backend);
    begin
       if Prefix /= Null_Unbounded_String then
