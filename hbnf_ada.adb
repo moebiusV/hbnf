@@ -1091,6 +1091,14 @@ package body HBNF_Ada is
       function Ret_Type (Idx : Natural) return String is
         (Ada_Ident (To_String (Rules (Idx).Name)) & "_Type");
 
+      --  True when some branch of an enum is a punctuation literal
+      --  ("+", "<="): the lexer makes it a punct token, not an atom.
+      function Has_Punct_Lit (V : Element_Vectors.Vector) return Boolean is
+        (for some E of V =>
+           E.Kind = Literal and then Length (E.Lit) > 0
+           and then Ada.Strings.Unbounded.Element (E.Lit, 1) not in
+             'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural;
          Dst : String; Buf : in out U; Ind : String := "      ";
@@ -1339,7 +1347,12 @@ package body HBNF_Ada is
                Append (Buf, LF);
             end;
          elsif Is_Enum then
-            Append (Buf, "      Expect_Kind (P, Atom, ""a " & TN & """);");
+            if Has_Punct_Lit (P) then
+               Append (Buf, "      if P.Toks (P.Pos).Kind /= Atom and then P.Toks (P.Pos).Kind /= Punct"
+                 & " then Fail (P, ""a " & TN & """); end if;");
+            else
+               Append (Buf, "      Expect_Kind (P, Atom, ""a " & TN & """);");
+            end if;
             Append (Buf, LF);
             declare
                Lits   : String_Vectors.Vector;
@@ -1377,7 +1390,7 @@ package body HBNF_Ada is
                   end if;
                end loop;
             end;
-            Append (Buf, "      else Fail (P, ""`");
+            Append (Buf, "      else Fail (P, """);
             declare
                St    : Natural := 1;
                First : Boolean := True;
@@ -1618,6 +1631,14 @@ package body HBNF_Ada is
       Append (Bdy, "         L := P.Toks (P.Pos).Line;");
       Append (Bdy, LF);
       Append (Bdy, "         C := P.Toks (P.Pos).Col;");
+      Append (Bdy, LF);
+      Append (Bdy, "      end if;");
+      Append (Bdy, LF);
+      --  The message starts with the line, as the other backends report
+      --  it beside theirs: an exception carries only a string.
+      Append (Bdy, "      if L >= 1 then");
+      Append (Bdy, LF);
+      Append (Bdy, "         Append (Msg, ""line"" & Natural'Image (L) & "": "");");
       Append (Bdy, LF);
       Append (Bdy, "      end if;");
       Append (Bdy, LF);

@@ -1137,6 +1137,14 @@ package body HBNF_Zig is
          return Zig_Type (To_String (R.Name));
       end Ret_Type;
 
+      --  True when some branch of an enum is a punctuation literal
+      --  ("+", "<="): the lexer makes it a punct token, not an atom.
+      function Has_Punct_Lit (V : Element_Vectors.Vector) return Boolean is
+        (for some E of V =>
+           E.Kind = Literal and then Length (E.Lit) > 0
+           and then Ada.Strings.Unbounded.Element (E.Lit, 1) not in
+             'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural;
          Dst  : String; Buf : in out U; Fail : String := ""; Ind : String := "    ") is
@@ -1340,7 +1348,12 @@ package body HBNF_Zig is
                end loop;
                Names := Enum_Names (Lits);
 
-               Append (Buf, "    try p.expect_kind(.atom, ""a " & ZT & """);");
+               if Has_Punct_Lit (P) then
+                  Append (Buf, "    if (p.toks[p.pos].kind != .atom and p.toks[p.pos].kind != .punct)"
+                    & " try p.fail(""a " & ZT & """);");
+               else
+                  Append (Buf, "    try p.expect_kind(.atom, ""a " & ZT & """);");
+               end if;
                Append (Buf, LF);
                Append (Buf, "    var r: " & ZT & " = undefined;");
                Append (Buf, LF);
@@ -1366,7 +1379,7 @@ package body HBNF_Zig is
                   end if;
                end loop;
             end;
-            Append (Buf, "    } else { try p.fail(""`");
+            Append (Buf, "    } else { try p.fail(""");
             declare
                St    : Natural := 1;
                First : Boolean := True;

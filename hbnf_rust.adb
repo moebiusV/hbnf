@@ -1120,6 +1120,14 @@ package body HBNF_Rust is
          return Rust_Type (To_String (R.Name));
       end Ret_Type;
 
+      --  True when some branch of an enum is a punctuation literal
+      --  ("+", "<="): the lexer makes it a punct token, not an atom.
+      function Has_Punct_Lit (V : Element_Vectors.Vector) return Boolean is
+        (for some E of V =>
+           E.Kind = Literal and then Length (E.Lit) > 0
+           and then Ada.Strings.Unbounded.Element (E.Lit, 1) not in
+             'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural;
          Dst  : String; Buf : in out U; Ind : String := "    ") is
@@ -1276,7 +1284,12 @@ package body HBNF_Rust is
                end loop;
                Names := Enum_Names (Lits);
 
-               Append (Buf, "    p.expect_kind(Kind::Atom, ""a " & RT & """)?;");
+               if Has_Punct_Lit (P) then
+                  Append (Buf, "    if !matches!(p.toks[p.pos].kind, Kind::Atom | Kind::Punct)"
+                    & " { return Err(p.fail(""a " & RT & """)); }");
+               else
+                  Append (Buf, "    p.expect_kind(Kind::Atom, ""a " & RT & """)?;");
+               end if;
                Append (Buf, LF);
                Append (Buf, "    let r = if p.toks[p.pos].text == """
                  & Rust_Escape (To_String (P (1).Lit)) & """ { " & RT & "::" & RT & "_"
@@ -1298,7 +1311,7 @@ package body HBNF_Rust is
                   end if;
                end loop;
             end;
-            Append (Buf, " else { return Err(p.fail(""`");
+            Append (Buf, " else { return Err(p.fail(""");
             declare
                St    : Natural := 1;
                First : Boolean := True;
@@ -1528,7 +1541,10 @@ package body HBNF_Rust is
          end if;
       end loop;
 
-      Append (Res, "fn jet_dispatch(s: &[u8], pos: usize, len: usize)"
+      --  A schema without jets never reads the arguments.
+      Append (Res, (if (for some R of Rules => R.Jet_Code /= Null_Unbounded_String)
+                    then "fn jet_dispatch(s: &[u8], pos: usize, len: usize)"
+                    else "fn jet_dispatch(_s: &[u8], _pos: usize, _len: usize)")
         & " -> (usize, Kind) {");
       Append (Res, LF);
       for I in 1 .. N loop
