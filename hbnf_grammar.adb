@@ -165,10 +165,14 @@ package body HBNF_Grammar is
       Col  : Positive := 1;
       Lang : constant Lang_Kind := Detect_Language (Text);
 
-      procedure Emit (K : Tok_Kind; S : String := "") is
+      --  First_Col is the token's first column, for a token Emit sees
+      --  only once it has been read past (a quoted string); 0 means Col.
+      procedure Emit
+        (K : Tok_Kind; S : String := ""; First_Col : Natural := 0) is
       begin
          Token_Vectors.Append
-           (Toks, Token'(K, Line, Col, To_Unbounded_String (S)));
+           (Toks, Token'(K, Line, (if First_Col = 0 then Col else First_Col),
+                         To_Unbounded_String (S)));
       end Emit;
 
       function Name_Start (C : Character) return Boolean is
@@ -205,6 +209,7 @@ package body HBNF_Grammar is
                declare
                   Buf    : Unbounded_String := Null_Unbounded_String;
                   Closed : Boolean := False;
+                  At_Col : constant Natural := Col;
                begin
                   I := I + 1;
                   Col := Col + 1;
@@ -308,7 +313,7 @@ package body HBNF_Grammar is
                        Integer'Image (Line) & ":" & Integer'Image (Col) &
                        ": unterminated string literal";
                   end if;
-                  Emit (T_String, To_String (Buf));
+                  Emit (T_String, To_String (Buf), At_Col);
                end;
             when '%' =>
                declare
@@ -1243,7 +1248,18 @@ package body HBNF_Grammar is
             declare
                Head : Token_Vectors.Vector;
             begin
-               while Cur (P).Kind not in T_Eq | T_EOF loop
+               --  The head is on one line.  A line of elements that is not
+               --  a rule (a sequence continued on the next line, which
+               --  only `|` allows) would otherwise run into the next
+               --  rule's head and become its C type.
+               while Cur (P).Kind not in T_Eq | T_EOF | T_Newline loop
+                  if Cur (P).Kind in T_String | T_Pct | T_Slash then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" &
+                       Integer'Image (Cur (P).Col) &
+                       ": expected `name =`; a rule goes on past its line "
+                       & "only at a `|`";
+                  end if;
                   Head.Append (Cur (P));
                   Next (P);
                end loop;

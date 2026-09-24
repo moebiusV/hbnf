@@ -35,4 +35,7 @@ refuse "an action runs on a node" 'r = *( e )
 e = "a" m
 m = "x" | "y" %action{ (void)n; }'
 refuse "bad octal escape" 'r = "\777"'
+refuse "a rule goes on past its line only at a" 'r = "a" x
+    "b" x
+x = word'
 echo "syntax: OK (refusals)"
