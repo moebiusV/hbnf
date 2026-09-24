@@ -1,0 +1,5 @@
+# `real` is in relayd's lookup() table, so it is a keyword and cannot name
+# a relay, as parse.y has it.
+relay real {
+	listen on 127.0.0.1 port 8080
+}

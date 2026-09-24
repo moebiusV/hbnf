@@ -23,6 +23,22 @@ wordchars "*$@%"
 statements
 macros varset
 includes include
+; The words usr.sbin/relayd/parse.y's lookup() reserves (119, OpenBSD -current):
+; a literal listed here is a keyword, any other matches a word by its text.
+keywords {
+    agentx append backlog binary block brief buffer ca cache cert changes
+    check checks ciphers client code connection context cookie demote
+    destination digest disable ecdhe edh error errors expect external file
+    forward from hash header headerlen host http icmp include inet inet6
+    interface interval ip key keypair label least-states level listen
+    loadbalance log lookup match method mode nat no nodelay nothing on
+    params parent pass password path pattern pflog pftag port prefork
+    priority protocol proxy-protocol query quick random real redirect
+    relay remove request response retry return roundrobin route router
+    rtable rtlabel sack script send session set socket source-hash splice
+    state sticky-address strip style table tag tagged tcp tickets timeout
+    tls to transparent ttl url v1 v2 value verbose websockets with
+}
 include "tailq.hbnf"
 
 {

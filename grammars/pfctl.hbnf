@@ -21,6 +21,26 @@ wordchars "$@%"
 statements
 macros varset
 includes include
+; The words sbin/pfctl/parse.y's lookup() reserves (130, OpenBSD -current):
+; a literal listed here is a keyword, any other matches a word by its text.
+keywords {
+    above af-to all allow-opts anchor antispoof any bandwidth below
+    binat-to bitmask block block-policy burst code debug default delay
+    divert-packet divert-reply divert-to drop dup-to entries file
+    fingerprints flags floating flows flush for fragment from global group
+    hostid icmp-type icmp6-type id if-bound in include inet inet6 keep
+    label least-states limit limiter load log loginterface mask match
+    matches max max-mss max-pkt-rate max-src-conn max-src-conn-rate
+    max-src-nodes max-src-states min min-ttl modulate nat-to no no-df
+    no-match no-route no-sync on once optimization os out overload parent
+    pass pflow port prio probability proto qlimit quantum queue quick
+    random random-id rate rdomain rdr-to reassemble received-on reply-to
+    return return-icmp return-icmp6 return-rst round-robin route route-to
+    rtable rule ruleset-optimization scrub set skip sloppy source
+    source-hash source-track state state-defaults state-policy static-port
+    sticky-address syncookies synproxy table tag tagged timeout to tos ttl
+    urpf-failed user weight
+}
 include "tailq.hbnf"
 
 {

@@ -18,6 +18,28 @@ wordchars "$@%"
 statements
 macros varset
 includes include
+; The words usr.sbin/bgpd/parse.y's lookup() reserves (144, OpenBSD -current):
+; a literal listed here is a keyword, any other matches a word by its text.
+keywords {
+    AS EVPN IPv4 IPv6 add-path ah allow announce any as-4byte as-override
+    as-set aspa-set avs blackhole community compare connect-retry
+    connected customer-as default-route delete demote deny depend descr
+    down dump ebgp enforce enhanced esp evaluate expires export
+    export-target ext-community extended fib-priority fib-update filtered
+    flags flowspec fragment from graceful group holdtime ibgp ignore ike
+    import-target in include inet inet6 ipsec key large-community listen
+    local-address local-as localpref log match max max-as-len max-as-seq
+    max-communities max-ext-communities max-large-communities max-prefix
+    maxlen md5sig med message metric min min-version multihop neighbor
+    neighbor-as network nexthop no-modify none notification on or-longer
+    origin origin-set out ovs passive password peer-as pftable plus policy
+    port prefix prefix-set prefixlen prepend-neighbor prepend-self
+    priority proto provider-as qualify quick rd rde recv refresh reject
+    remote-as restart restricted rib roa-set role route-reflector
+    router-id rtable rtlabel rtr self send set socket source-as spi
+    staletime static tcp to tos transit-as transparent-as ttl-security
+    unicast via vpn weight
+}
 include "tailq.hbnf"
 
 {

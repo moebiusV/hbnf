@@ -19,6 +19,18 @@ wordchars "*$@%"
 statements
 macros varset
 includes include
+; The words usr.sbin/httpd/parse.y's lookup() reserves (79, OpenBSD -current):
+; a literal listed here is a keyword, any other matches a word by its text.
+keywords {
+    access add alias always authenticate auto backlog banner block body
+    buffer ca certificate chroot ciphers client combined common connection
+    crl default dhe directory drop ecdhe errdocs error fastcgi forwarded
+    found gzip-static header hsts include index ip key lifetime listen
+    location log logdir match max max-age no nodelay not ocsp on optional
+    param pass port prefork preload protocols remove request requests
+    return rewrite root sack server set socket static-cache-control strip
+    style subdomains syslog tcp ticket timeout tls type types with
+}
 include "tailq.hbnf"
 
 {

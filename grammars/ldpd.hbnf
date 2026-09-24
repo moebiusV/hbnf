@@ -17,6 +17,18 @@ wordchars "*$@%"
 statements
 macros varset
 includes include
+; The words usr.sbin/ldpd/parse.y's lookup() reserves (44, OpenBSD -current):
+; a literal listed here is a keyword, any other matches a word by its text.
+keywords {
+    address-family bridge control-word ds-cisco-interop ethernet
+    ethernet-tagged explicit-null fib-update gtsm-enable gtsm-hops include
+    inet inet6 interface ipv4 ipv6 keepalive key l2vpn link-hello-holdtime
+    link-hello-interval md5sig mtu neighbor neighbor-addr neighbor-id no
+    password pseudowire pw-id pw-type rdomain router-id status-tlv
+    targeted-hello-accept targeted-hello-holdtime targeted-hello-interval
+    targeted-neighbor tcp transport-address transport-preference type vpls
+    yes
+}
 include "tailq.hbnf"
 
 {

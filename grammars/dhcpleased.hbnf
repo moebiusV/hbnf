@@ -19,6 +19,12 @@ language C
 wordchars "*/$@%"
 statements
 macros varset
+; The words sbin/dhcpleased/parse.y's lookup() reserves (14, OpenBSD -current):
+; a literal listed here is a keyword, any other matches a word by its text.
+keywords {
+    class client dns host id ignore interface ipv6 name no prefer routes
+    send vendor
+}
 include "tailq.hbnf"
 
 {

@@ -20,6 +20,13 @@ wordchars "*/$@%"
 statements
 macros varset
 includes include
+; The words sbin/unwind/parse.y's lookup() reserves (22, OpenBSD -current):
+; a literal listed here is a keyword, any other matches a word by its text.
+keywords {
+    DoT accept authentication autoconf block bogus dhcp dot force
+    forwarder include list log name oDoT-autoconf oDoT-dhcp oDoT-forwarder
+    port preference recursor stub tls
+}
 include "tailq.hbnf"
 
 {

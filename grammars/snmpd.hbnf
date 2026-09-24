@@ -20,6 +20,16 @@ wordchars "*/$@%"
 statements
 macros varset
 includes include
+; The words usr.sbin/snmpd/parse.y's lookup() reserves (55, OpenBSD -current):
+; a literal listed here is a keyword, any other matches a word by its text.
+keywords {
+    agentid agentx auth authkey blocklist community contact default
+    description directory enc enckey engineid filter-routes group handle
+    hosthash include integer ipv4 ipv6 listen location mac mib mode name
+    none notify octets oid on openbsd owner path pen port read read-only
+    read-write receiver seclevel services snmpv1 snmpv2c snmpv3
+    source-address string system tcp text trap udp user write
+}
 include "tailq.hbnf"
 
 {

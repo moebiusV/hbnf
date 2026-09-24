@@ -18,6 +18,12 @@
 language C
 wordchars "*/$@%"
 statements
+; The words usr.sbin/ntpd/parse.y's lookup() reserves (15, OpenBSD -current):
+; a literal listed here is a keyword, any other matches a word by its text.
+keywords {
+    constraint constraints correction from listen on query refid rtable
+    sensor server servers stratum trusted weight
+}
 include "tailq.hbnf"
 
 {
