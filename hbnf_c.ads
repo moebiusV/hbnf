@@ -49,8 +49,9 @@ package HBNF_C is
    --  tokens, skipping whitespace and `#` comments), plus a `parse_text`
    --  convenience that lexes and parses in one call.  With `statements` the
    --  driver that reads a config one statement at a time comes too (and
-   --  `macros`' expansion); Text_Entry False leaves out its `parse_text`,
-   --  for the typed wrapper, which calls the driver itself.
+   --  `macros`' expansion), with parse_file, which reads a file a block at
+   --  a time; Text_Entry False leaves out parse_text and parse_file, for
+   --  the typed wrapper, which calls the driver itself.
    function Emit_Lexer
      (Rules      : HBNF_Grammar.Rule_Vectors.Vector;
       Text_Entry : Boolean := True) return String;

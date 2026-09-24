@@ -4279,7 +4279,9 @@ package body HBNF_C is
         Emit_Parser (Rules) &
         Emit_Lexer (Rules) &
         LF &
-        Templates.Substitute (Templates.Conf_Tail_C, "@ROOT_TYPE@", Root_T) &
+        Templates.Substitute
+          ((if HBNF_Grammar.Statements then Templates.Conf_Tail_C_Stmt
+            else Templates.Conf_Tail_C), "@ROOT_TYPE@", Root_T) &
         LF &
         "/* Drop the current config tree (the SIGHUP reload path). */" & LF &
         "void free_conf(void) {" & LF &

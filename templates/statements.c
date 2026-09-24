@@ -3,11 +3,12 @@
 /* read one statement at a time, as parse.y's yyparse reads it.  A     */
 /* statement ends at a newline outside braces, quotes and comments;    */
 /* backslash-newline continues it, and so does a next line that starts */
-/* with `{`.  Each statement is expanded (macros), lexed, parsed, bound */
-/* and then appended to the caller's list, or dropped once the action  */
-/* jets have taken what they keep, so only one statement's tokens (and */
-/* nodes) are held at a time.  A failed statement is reported and the  */
-/* parse goes on with the next one, as parse.y's error rule does.      */
+/* with `{`.  A file is read in blocks, not whole.  Each statement is  */
+/* expanded (macros), lexed, parsed, bound and then appended to the    */
+/* caller's list, or dropped once the action jets have taken what they */
+/* keep, so only one statement's text, tokens (and nodes) are held at  */
+/* a time.  A failed statement is reported and the parse goes on with  */
+/* the next one, as parse.y's error rule does.                         */
 /* ------------------------------------------------------------------ */
 
 /* Each error as it is found (parse_config points it at conf_error), and
@@ -40,39 +41,6 @@ typedef struct {
     size_t top_line;           /* the top file's current statement */
 } hbnf_run_t;
 
-/* A whole file, NUL-terminated; NULL, with *why, if it cannot be read. */
-static char *hbnf_read_file(const char *path, const char **why) {
-    FILE *f = fopen(path, "r");
-    char *buf;
-    long len;
-
-    if (!f) {
-        *why = "cannot open file";
-        return NULL;
-    }
-    if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 ||
-        fseek(f, 0, SEEK_SET) != 0) {
-        fclose(f);
-        *why = "cannot read file";
-        return NULL;
-    }
-    buf = (char *)malloc((size_t)len + 1);
-    if (!buf) {
-        fclose(f);
-        *why = "out of memory";
-        return NULL;
-    }
-    if (len > 0 && fread(buf, 1, (size_t)len, f) != (size_t)len) {
-        free(buf);
-        fclose(f);
-        *why = "read error";
-        return NULL;
-    }
-    buf[len] = '\0';
-    fclose(f);
-    return buf;
-}
-
 /* Count an error, report it unless an action jet already has, and keep
    the first for the caller: in an included file, as "file:line: msg" on
    the line of the top file's include. */
@@ -94,88 +62,227 @@ static void hbnf_error(hbnf_run_t *r, size_t line, size_t col,
     }
 }
 
-/* The end of the statement at s[i]: the newline that ends it, or the NUL.
-   *nl counts the newlines inside it; *empty is set when it holds only
-   blanks and comments.  Quotes and comments are skipped as the lexer
-   skips them, so a brace in either does not count. */
-static size_t hbnf_stmt_end(const char *s, size_t i, size_t *nl, int *empty) {
-    long depth = 0;
+/* Where statements come from: a file, read a block at a time, or a
+   string.  Characters read ahead and not used are given back. */
+enum { HBNF_BLOCK = 65536 };
 
+typedef struct {
+    FILE *f;                   /* the file, or NULL for a string */
+    const char *p, *end;       /* the unread part of the block (or string) */
+    char *blk;                 /* the block, for a file */
+    char *back;                /* given back, last in first out */
+    size_t nback, capback;
+    int err;                   /* the file could not be read */
+} hbnf_src_t;
+
+static void hbnf_src_file(hbnf_src_t *s, FILE *f) {
+    memset(s, 0, sizeof *s);
+    s->f = f;
+    s->blk = (char *)malloc(HBNF_BLOCK);
+    if (!s->blk)
+        hbnf_oom();
+}
+
+static void hbnf_src_done(hbnf_src_t *s) {
+    free(s->blk);
+    free(s->back);
+}
+
+static int hbnf_getc(hbnf_src_t *s) {
+    if (s->nback)
+        return (unsigned char)s->back[--s->nback];
+    if (s->p == s->end) {
+        size_t n;
+        if (!s->f)
+            return EOF;
+        n = fread(s->blk, 1, HBNF_BLOCK, s->f);
+        if (n == 0) {
+            if (ferror(s->f))
+                s->err = 1;
+            return EOF;
+        }
+        s->p = s->blk;
+        s->end = s->blk + n;
+    }
+    return (unsigned char)*s->p++;
+}
+
+static void hbnf_ungetc(hbnf_src_t *s, int c) {
+    if (c == EOF)
+        return;
+    if (s->nback == s->capback) {
+        size_t nc = s->capback ? s->capback * 2 : 64;
+        char *nb = (char *)realloc(s->back, nc);
+        if (!nb)
+            hbnf_oom();
+        s->back = nb;
+        s->capback = nc;
+    }
+    s->back[s->nback++] = (char)c;
+}
+
+/* One statement's text, reused from statement to statement. */
+typedef struct {
+    char *s;
+    size_t len, cap;
+} hbnf_buf_t;
+
+static void hbnf_buf_grow(hbnf_buf_t *b, size_t n) {
+    if (b->len + n + 1 > b->cap) {
+        size_t nc = b->cap ? b->cap * 2 : 256;
+        char *ns;
+        while (nc < b->len + n + 1)
+            nc *= 2;
+        if (!(ns = (char *)realloc(b->s, nc)))
+            hbnf_oom();
+        b->s = ns;
+        b->cap = nc;
+    }
+}
+
+static void hbnf_buf_put(hbnf_buf_t *b, int c) {
+    hbnf_buf_grow(b, 1);
+    b->s[b->len++] = (char)c;
+}
+
+enum { HBNF_NO_MORE, HBNF_AT_NEWLINE, HBNF_AT_END };
+
+/* Read the next statement into b, NUL-terminated: up to the newline that
+   ends it, which is read and not kept.  *nl counts the newlines inside
+   it; *empty is set when it holds only blanks and comments.  Quotes and
+   comments are read as the lexer reads them, so a brace in either does
+   not count.  Returns what ended it: a newline, the end of the input, or
+   HBNF_NO_MORE when there was nothing left to read. */
+static int hbnf_read_stmt(hbnf_src_t *s, hbnf_buf_t *b, size_t *nl,
+                          int *empty) {
+    long depth = 0;
+    int c, any = 0;
+
+    b->len = 0;
     *nl = 0;
     *empty = 1;
     for (;;) {
-        char c = s[i];
-        if (!c)
-            return i;
+        if (!s->nback && s->p < s->end) {
+            /* a run of characters that need no care, copied at once */
+            const char *q = s->p;
+            while (q < s->end && *q != '\n' && *q != '\\' && *q != '#'
+                   && *q != '"' && *q != '{' && *q != '}') {
+                if (*q != ' ' && *q != '\t' && *q != '\r')
+                    *empty = 0;
+                q++;
+            }
+            if (q > s->p) {
+                hbnf_buf_grow(b, (size_t)(q - s->p));
+                memcpy(b->s + b->len, s->p, (size_t)(q - s->p));
+                b->len += (size_t)(q - s->p);
+                s->p = q;
+                any = 1;
+                continue;
+            }
+        }
+        c = hbnf_getc(s);
+        if (c == EOF)
+            break;
+        any = 1;
         if (c == '\n') {
             if (depth <= 0) {
-                size_t j = i + 1;
-                while (s[j] == ' ' || s[j] == '\t' || s[j] == '\r')
-                    j++;
-                if (*empty || s[j] != '{')
-                    return i;
+                /* a `{` opening the next line continues this statement;
+                   anything else there starts the next one */
+                size_t keep = b->len;
+                int d;
+                if (*empty)
+                    goto at_newline;
+                hbnf_buf_put(b, '\n');
+                while ((d = hbnf_getc(s)) == ' ' || d == '\t' || d == '\r')
+                    hbnf_buf_put(b, d);
+                hbnf_ungetc(s, d);
+                if (d != '{') {
+                    while (b->len > keep + 1)
+                        hbnf_ungetc(s, (unsigned char)b->s[--b->len]);
+                    b->len = keep;
+                    goto at_newline;
+                }
+                (*nl)++;
+                continue;
             }
             (*nl)++;
-            i++;
-        } else if (c == '\\' && s[i + 1] == '\n') {
-            (*nl)++;
-            i += 2;
+            hbnf_buf_put(b, c);
+        } else if (c == '\\') {
+            int d = hbnf_getc(s);
+            hbnf_buf_put(b, c);
+            if (d == '\n') {
+                (*nl)++;
+                hbnf_buf_put(b, d);
+            } else {
+                *empty = 0;
+                hbnf_ungetc(s, d);
+            }
         } else if (c == '#') {
-            while (s[i] && s[i] != '\n')
-                i++;
+            do
+                hbnf_buf_put(b, c);
+            while ((c = hbnf_getc(s)) != EOF && c != '\n');
+            hbnf_ungetc(s, c);
         } else if (c == ' ' || c == '\t' || c == '\r') {
-            i++;
+            hbnf_buf_put(b, c);
         } else if (c == '"') {
             *empty = 0;
-            i++;
-            while (s[i] && s[i] != '"') {
-                if (s[i] == '\\' && s[i + 1]) {
-                    if (s[i + 1] == '\n')
-                        (*nl)++;
-                    i += 2;
-                    continue;
+            hbnf_buf_put(b, c);
+            while ((c = hbnf_getc(s)) != EOF) {
+                hbnf_buf_put(b, c);
+                if (c == '"')
+                    break;
+                if (c == '\\') {
+                    if ((c = hbnf_getc(s)) == EOF)
+                        break;
+                    hbnf_buf_put(b, c);
                 }
-                if (s[i] == '\n')
+                if (c == '\n')
                     (*nl)++;
-                i++;
             }
-            if (s[i])
-                i++;
         } else {
             *empty = 0;
             if (c == '{')
                 depth++;
             else if (c == '}')
                 depth--;
-            i++;
+            hbnf_buf_put(b, c);
         }
     }
+    hbnf_buf_put(b, '\0');
+    b->len--;
+    return any ? HBNF_AT_END : HBNF_NO_MORE;
+at_newline:
+    hbnf_buf_put(b, '\0');
+    b->len--;
+    return HBNF_AT_NEWLINE;
 }
 
-static void hbnf_run(hbnf_run_t *r, const char *text, int depth);
+static void hbnf_run(hbnf_run_t *r, hbnf_src_t *src, int depth);
 
 /* An `include`: read the file's statements in its place. */
 static void hbnf_include(hbnf_run_t *r, const char *path, size_t line,
                          int depth) {
     char msg[512];
-    const char *why, *outer = hbnf_file;
-    char *text;
+    const char *outer = hbnf_file;
+    hbnf_src_t src;
+    FILE *f;
 
     if (depth >= 16) {
         snprintf(msg, sizeof msg, "%s: includes nested too deeply", path);
         hbnf_error(r, line, 0, msg, 0);
         return;
     }
-    text = hbnf_read_file(path, &why);
-    if (!text) {
+    if (!(f = fopen(path, "r"))) {
         snprintf(msg, sizeof msg, "failed to include file %s", path);
         hbnf_error(r, line, 0, msg, 0);
         return;
     }
+    hbnf_src_file(&src, f);
     hbnf_file = path;
-    hbnf_run(r, text, depth + 1);
+    hbnf_run(r, &src, depth + 1);
     hbnf_file = outer;
-    free(text);
+    hbnf_src_done(&src);
+    fclose(f);
 }
 
 /* One statement, s[0..len), which starts on line `line` of its file. */
@@ -230,31 +337,33 @@ static void hbnf_stmt(hbnf_run_t *r, const char *s, size_t len, size_t line,
     }
 }
 
-/* Every statement of one file's text. */
-static void hbnf_run(hbnf_run_t *r, const char *text, int depth) {
-    size_t i = 0, line = 1;
+/* Every statement of one file (or string). */
+static void hbnf_run(hbnf_run_t *r, hbnf_src_t *src, int depth) {
+    hbnf_buf_t b;
+    size_t line = 1, nl;
+    int empty, end;
 
-    for (;;) {
-        size_t nl;
-        int empty;
-        size_t end = hbnf_stmt_end(text, i, &nl, &empty);
+    memset(&b, 0, sizeof b);
+    while ((end = hbnf_read_stmt(src, &b, &nl, &empty)) != HBNF_NO_MORE) {
         if (!empty) {
             if (!depth)
                 r->top_line = line;
-            hbnf_stmt(r, text + i, end - i, line, depth);
+            hbnf_stmt(r, b.s, b.len, line, depth);
         }
         line += nl;
-        if (!text[end])
+        if (end == HBNF_AT_END)
             break;
-        i = end + 1;
         line++;
     }
+    free(b.s);
+    if (src->err)
+        hbnf_error(r, line, 0, "read error", 0);
 }
 
 /* Read a config: each statement is appended to *out, or with out NULL
    dropped once bound.  err, *err_line and *err_col hold the first error;
    false if there was any. */
-static bool hbnf_stmts(const char *text, @ROOT_TYPE@ *out,
+static bool hbnf_stmts(hbnf_src_t *src, @ROOT_TYPE@ *out,
                        char *err, size_t errlen,
                        size_t *err_line, size_t *err_col) {
     hbnf_run_t r;
@@ -269,7 +378,7 @@ static bool hbnf_stmts(const char *text, @ROOT_TYPE@ *out,
         err[0] = '\0';
     *err_line = *err_col = 0;
     hbnf_file = NULL;
-    hbnf_run(&r, text, 0);
+    hbnf_run(&r, src, 0);
     hbnf_macros_done();
     return r.errors == 0;
 }

@@ -18,6 +18,7 @@ CONSTANTS = {
     "Ada_Lexer": "templates/lexer.ada",
     "Conf_H": "templates/conf.h",
     "Conf_Tail_C": "templates/conf_tail.c",
+    "Conf_Tail_C_Stmt": "templates/conf_tail_stmt.c",
     "Conf_H_Typed": "templates/conf_typed.h",
     "Conf_Tail_C_Typed": "templates/conf_tail_typed.c",
     "Conf_Tail_C_Typed_Stmt": "templates/conf_tail_typed_stmt.c",

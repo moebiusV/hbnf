@@ -31,30 +31,32 @@ static void conf_report(size_t line, const char *msg) {
 
 /* The grammar's epilogue defines conf_init() to reset the conf's list heads
    (the action jets append to them, so they must be TAILQ_INIT'd first).
-   The config is read one statement at a time: each is parsed, bound and
-   freed, with its strings, before the next is read, so a jet copies
-   whatever it keeps.  Every error is reported as it is found and the parse
-   goes on, as parse.y's does; parse_config then returns -1. */
+   The file is read a block at a time and parsed one statement at a time:
+   each statement is parsed, bound and freed, with its strings, before the
+   next is read, so a jet copies whatever it keeps.  Every error is
+   reported as it is found and the parse goes on, as parse.y's does;
+   parse_config then returns -1. */
 int parse_config(const char *filename, @CONF_TYPE@ *xconf) {
-    char *buf;
-    const char *why;
+    FILE *f;
+    hbnf_src_t src;
     char err[512];
     size_t line = 0, col = 0;
     bool ok;
 
     conf_file = filename;
-    buf = hbnf_read_file(filename, &why);
-    if (!buf) {
-        conf_error(0, why);
+    if (!(f = fopen(filename, "r"))) {
+        conf_error(0, "cannot open file");
         return -1;
     }
     conf = xconf;
     conf_init();
     bind_report = conf_report;
     hbnf_report = conf_report;
-    ok = hbnf_stmts(buf, NULL, err, sizeof err, &line, &col);
+    hbnf_src_file(&src, f);
+    ok = hbnf_stmts(&src, NULL, err, sizeof err, &line, &col);
+    hbnf_src_done(&src);
     hbnf_report = NULL;
     bind_report = NULL;
-    free(buf);
+    fclose(f);
     return ok ? 0 : -1;
 }
