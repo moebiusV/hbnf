@@ -20,6 +20,12 @@ accepting and rejecting inputs. The Rust backend was spot-checked, and each
 construct also went through the interpreter (`HBNF_Match.Match`). Zig was not
 available and Ada output was compile-checked only where stated.
 
+## Backends
+
+The four compiled backends are **C**, **Rust**, **Zig** and **Ada**.  Planned,
+not yet implemented: **D**, **Fortran**, **Free Pascal**, **Nim**, **Odin**,
+**Objective-C**, **ATS** and **V**.
+
 ## 1. The shape
 
 **Borrowed from ABNF:** the rule syntax — `name = elements`, concatenation, `/`,
