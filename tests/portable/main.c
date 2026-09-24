@@ -27,6 +27,7 @@ int main(int argc, char **argv) {
         const sum_t *s;
         const modes_t *m;
         const pair_t *p;
+        const words_t *w;
         long long acc = 0;
 
         if (!parse_text(text, &c, err, sizeof err, &line, &col)) {
@@ -47,12 +48,15 @@ int main(int argc, char **argv) {
                 printf(" %s %lld", s->op == OP_OP1 ? "+" : "-", s->int_);
             }
         }
-        printf(" = %lld; modes", acc);
+        printf(" = %lld%s; modes", acc, c.loud.head ? " loudly" : "");
         for (m = c.modes.head; m; m = m->_link)
             printf(" %s", m->modeset.mode == MODE_FAST ? "fast" : "slow");
         printf("; pair");
         for (p = c.pair.head; p; p = p->_link)
             printf(" %s", p->host);
+        printf("; words");
+        for (w = c.words.head; w; w = w->_link)
+            printf(" %s", w->word);
         printf("\n");
         free_config(&c);
         free(text);

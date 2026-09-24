@@ -1121,6 +1121,13 @@ package body HBNF_Zig is
          return "";
       end Start_Kind;
 
+      --  A group of literals only, `0*1( "log" )`: its list entries carry
+      --  no field, so each is a []const u8, as the list's type says.
+      function Lit_Only (V : Element_Vectors.Vector) return Boolean is
+        (for all X of V =>
+           X.Kind /= HBNF_Grammar.Name
+           and then (X.Kind /= HBNF_Grammar.Group or else Lit_Only (X.Items)));
+
       function Ret_Type (Idx : Natural) return String is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
@@ -1130,6 +1137,9 @@ package body HBNF_Zig is
          then
             if P (1).Kind = HBNF_Grammar.Name then
                return "[]" & Zig_Type_Of (To_String (P (1).Name));
+            elsif P (1).Kind = HBNF_Grammar.Group and then Lit_Only (P (1).Items)
+            then
+               return "[][]const u8";
             else
                return "[]" & Zig_Type (To_String (R.Name)) & "Entry";
             end if;
@@ -1266,7 +1276,11 @@ package body HBNF_Zig is
                Elem : constant String :=
                  (if E.Kind = HBNF_Grammar.Name
                   then Zig_Type_Of (To_String (E.Name))
+                  elsif Lit_Only (E.Items) then "[]const u8"
                   else ZT & "Entry");
+               --  An entry with no field is never written.
+               No_Fields : constant Boolean :=
+                 E.Kind = HBNF_Grammar.Group and then Lit_Only (E.Items);
                --  Repetition bounds, as the C backend enforces them.
                Max_Stop : constant String :=
                  (if E.Max >= 0
@@ -1288,8 +1302,9 @@ package body HBNF_Zig is
                         if St <= K - 1 then
                            Branch := Branch + 1;
                            if Branch > 1 then
-                              Append (Buf, Ind & "p.pos = save; e = std.mem.zeroes("
-                                & Elem & ");");
+                              Append (Buf, Ind & "p.pos = save;"
+                                & (if No_Fields then ""
+                                   else " e = std.mem.zeroes(" & Elem & ");"));
                               Append (Buf, LF);
                            end if;
                            Append (Buf, Ind & Label & "blk_" & Img (Branch) & ": {");
@@ -1332,19 +1347,32 @@ package body HBNF_Zig is
                   end if;
                   --  PEG's `*`: stop at the first element that fails, with
                   --  the position restored, as C does; the caller decides.
-                  Append (Buf, "        const save = p.pos;");
-                  Append (Buf, LF);
-                  Append (Buf, "        const v = parse_"
-                    & Zig_Snake (To_String (E.Name)) & "(p) catch |err| switch (err) {");
-                  Append (Buf, LF);
-                  Append (Buf, "            error.OutOfMemory => return err,");
-                  Append (Buf, LF);
-                  Append (Buf, "            else => { p.pos = save; break; },");
-                  Append (Buf, LF);
-                  Append (Buf, "        };");
-                  Append (Buf, LF);
-                  Append (Buf, "        try list.append(p.alloc, v);");
-                  Append (Buf, LF);
+                  if Is_Core (To_String (E.Name)) then
+                     --  A list of a core type (`*word`): read the token in
+                     --  place; there is no parse_ function for a core type.
+                     Append (Buf, "        if (p.toks[p.pos].kind != "
+                       & Scalar_Kind (To_String (E.Name)) & ") break;");
+                     Append (Buf, LF);
+                     Append (Buf, "        try list.append(p.alloc, "
+                       & Scalar_Parse (To_String (E.Name)) & ");");
+                     Append (Buf, LF);
+                     Append (Buf, "        p.pos += 1;");
+                     Append (Buf, LF);
+                  else
+                     Append (Buf, "        const save = p.pos;");
+                     Append (Buf, LF);
+                     Append (Buf, "        const v = parse_"
+                       & Zig_Snake (To_String (E.Name)) & "(p) catch |err| switch (err) {");
+                     Append (Buf, LF);
+                     Append (Buf, "            error.OutOfMemory => return err,");
+                     Append (Buf, LF);
+                     Append (Buf, "            else => { p.pos = save; break; },");
+                     Append (Buf, LF);
+                     Append (Buf, "        };");
+                     Append (Buf, LF);
+                     Append (Buf, "        try list.append(p.alloc, v);");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "    }");
                   Append (Buf, LF);
                elsif E.Kind = Group then
@@ -1356,7 +1384,9 @@ package body HBNF_Zig is
                   end if;
                   Append (Buf, "        const save = p.pos;");
                   Append (Buf, LF);
-                  Append (Buf, "        var e = std.mem.zeroes(" & Elem & ");");
+                  Append (Buf, (if No_Fields
+                                then "        const e: []const u8 = """";"
+                                else "        var e = std.mem.zeroes(" & Elem & ");"));
                   Append (Buf, LF);
                   Append (Buf, "        blk_alt: {");
                   Append (Buf, LF);

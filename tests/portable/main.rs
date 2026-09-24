@@ -30,13 +30,17 @@ fn main() {
                 print!(" {} {}", if plus { "+" } else { "-" }, s.int);
             }
         }
-        print!(" = {}; modes", acc);
+        print!(" = {}{}; modes", acc, if c.loud.is_empty() { "" } else { " loudly" });
         for m in &c.modes {
             print!(" {}", if matches!(m.modeset.mode, Mode::Mode_Fast) { "fast" } else { "slow" });
         }
         print!("; pair");
         for p in &c.pair {
             print!(" {}", p);
+        }
+        print!("; words");
+        for w in &c.words {
+            print!(" {}", w);
         }
         println!();
     }

@@ -1252,9 +1252,18 @@ package body HBNF_Ada is
                     and then E.Items (1).Kind = HBNF_Grammar.Name
                   then E.Items (1).Name
                   else Null_Unbounded_String);
+               --  A group of literals only, `0*1( "log" )`, has no fields:
+               --  its entries are strings, as the type declaration says.
+               function Has_Name (V : Element_Vectors.Vector) return Boolean is
+                 (for some X of V =>
+                    X.Kind = HBNF_Grammar.Name
+                    or else (X.Kind = HBNF_Grammar.Group
+                             and then Has_Name (X.Items)));
                Elem : constant String :=
                  (if Simple /= Null_Unbounded_String
                   then Ada_Type_Of (To_String (Simple))
+                  elsif E.Kind = HBNF_Grammar.Group and then not Has_Name (E.Items)
+                  then "Unbounded_String"
                   else Ada_Ident (NM) & "_Entry");
             begin
                if E.Min > 0 then
@@ -1295,7 +1304,17 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                   Append (Buf, "         begin");
                   Append (Buf, LF);
-                  if Is_Struct (To_String (Simple)) then
+                  if Is_Core (To_String (Simple)) then
+                     --  A list of a core type (`*word`): read the token in
+                     --  place; there is no Parse_ function for a core type.
+                     Append (Buf, "            exit when P.Toks (P.Pos).Kind /= "
+                       & Scalar_Kind (To_String (Simple)) & ";");
+                     Append (Buf, LF);
+                     Append (Buf, "            R.Append ("
+                       & Scalar_Parse (To_String (Simple)) & ");");
+                     Append (Buf, LF);
+                     Append (Buf, "            P.Pos := P.Pos + 1;");
+                  elsif Is_Struct (To_String (Simple)) then
                      Append (Buf, "            R.Append (new "
                        & Ada_Ident (To_String (Simple)) & "_Type'(Parse_"
                        & Ada_Ident (To_String (Simple)) & " (P)));");

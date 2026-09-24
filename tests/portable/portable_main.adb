@@ -74,13 +74,18 @@ begin
                   end if;
                end;
             end loop;
-            Put (" = " & Img (Acc) & "; modes");
+            Put (" = " & Img (Acc)
+                 & (if C.Loud.Is_Empty then "" else " loudly") & "; modes");
             for M of C.Modes loop
                Put (if M.Mode = Mode_Fast then " fast" else " slow");
             end loop;
             Put ("; pair");
             for P of C.Pair loop
                Put (" " & To_String (P));
+            end loop;
+            Put ("; words");
+            for W of C.Words loop
+               Put (" " & To_String (W));
             end loop;
             New_Line;
          end;

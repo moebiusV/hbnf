@@ -1104,6 +1104,13 @@ package body HBNF_Rust is
 
       --  A list's element type: Vec<T> wraps the referenced rule's type (a
       --  plain reference) or the entry struct a grouped alternation builds.
+      --  A group of literals only, `0*1( "log" )`: its list entries carry
+      --  no field, so each is a String, as the list's type says.
+      function Lit_Only (V : Element_Vectors.Vector) return Boolean is
+        (for all X of V =>
+           X.Kind /= HBNF_Grammar.Name
+           and then (X.Kind /= HBNF_Grammar.Group or else Lit_Only (X.Items)));
+
       function Ret_Type (Idx : Natural) return String is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
@@ -1113,6 +1120,9 @@ package body HBNF_Rust is
          then
             if P (1).Kind = HBNF_Grammar.Name then
                return "Vec<" & Rust_Type_Of (To_String (P (1).Name)) & ">";
+            elsif P (1).Kind = HBNF_Grammar.Group and then Lit_Only (P (1).Items)
+            then
+               return "Vec<String>";
             else
                return "Vec<" & Rust_Type (To_String (R.Name)) & "Entry>";
             end if;
@@ -1194,7 +1204,8 @@ package body HBNF_Rust is
             if K > N or else Els (K).Kind = Alt then
                Br := Br + 1;
                if Br > 1 then
-                  Append (Buf, Ind & "p.pos = save; " & Reset & ";");
+                  Append (Buf, Ind & "p.pos = save;"
+                    & (if Reset = "" then "" else " " & Reset & ";"));
                   Append (Buf, LF);
                end if;
                Append (Buf, Ind & "if (|| -> Result<(), ParseError> {");
@@ -1264,11 +1275,22 @@ package body HBNF_Rust is
                           else "") & " { break; }");
                      Append (Buf, LF);
                   end;
-                  Append (Buf, "        let save = p.pos;");
-                  Append (Buf, LF);
-                  Append (Buf, "        match parse_" & Rust_Snake (To_String (E.Name))
-                    & "(p) { Ok(v) => r.push(v), Err(_) => { p.pos = save; break; } }");
-                  Append (Buf, LF);
+                  if Is_Core (To_String (E.Name)) then
+                     --  A list of a core type (`*word`): read the token in
+                     --  place; there is no parse_ function for a core type.
+                     Append (Buf, "        if !matches!(p.toks[p.pos].kind, "
+                       & Scalar_Kind (To_String (E.Name)) & ") { break; }");
+                     Append (Buf, LF);
+                     Append (Buf, "        r.push(" & Scalar_Parse (To_String (E.Name))
+                       & "); p.pos += 1;");
+                     Append (Buf, LF);
+                  else
+                     Append (Buf, "        let save = p.pos;");
+                     Append (Buf, LF);
+                     Append (Buf, "        match parse_" & Rust_Snake (To_String (E.Name))
+                       & "(p) { Ok(v) => r.push(v), Err(_) => { p.pos = save; break; } }");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "    }");
                   Append (Buf, LF);
                elsif E.Kind = Group then
@@ -1280,7 +1302,9 @@ package body HBNF_Rust is
                   end if;
                   Append (Buf, "        let save = p.pos;");
                   Append (Buf, LF);
-                  Append (Buf, "        let mut e = " & RT & "Entry::default();");
+                  Append (Buf, (if Lit_Only (E.Items)
+                                then "        let e = String::new();"
+                                else "        let mut e = " & RT & "Entry::default();"));
                   Append (Buf, LF);
                   Append (Buf, "        'alt: {");
                   Append (Buf, LF);
@@ -1290,18 +1314,21 @@ package body HBNF_Rust is
                      Append (Buf, "            if r.is_empty() {");
                      Append (Buf, LF);
                      Emit_Alternation (Base_Branches (R), "e.",
-                                       "e = " & RT & "Entry::default()", Buf,
+                                       (if Lit_Only (E.Items) then ""
+                                        else "e = " & RT & "Entry::default()"), Buf,
                                        "                ");
                      Append (Buf, "                p.pos = save; break 'list;");
                      Append (Buf, LF);
                      Append (Buf, "            }");
                      Append (Buf, LF);
                      Emit_Alternation (Tail_Branches (R), "e.",
-                                       "e = " & RT & "Entry::default()", Buf,
+                                       (if Lit_Only (E.Items) then ""
+                                        else "e = " & RT & "Entry::default()"), Buf,
                                        "            ");
                   else
                      Emit_Alternation (E.Items, "e.",
-                                       "e = " & RT & "Entry::default()", Buf,
+                                       (if Lit_Only (E.Items) then ""
+                                        else "e = " & RT & "Entry::default()"), Buf,
                                        "            ");
                   end if;
                   Append (Buf, "            p.pos = save; break 'list;");

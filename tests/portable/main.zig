@@ -8,8 +8,10 @@ const cases = [_]struct { name: []const u8, text: []const u8 }{
     .{ .name = "good.conf", .text = @embedFile("good.conf") },
     .{ .name = "lead-comma.bad", .text = @embedFile("lead-comma.bad") },
     .{ .name = "lead-op.bad", .text = @embedFile("lead-op.bad") },
+    .{ .name = "loud-twice.bad", .text = @embedFile("loud-twice.bad") },
     .{ .name = "pair-four.bad", .text = @embedFile("pair-four.bad") },
     .{ .name = "pair-one.bad", .text = @embedFile("pair-one.bad") },
+    .{ .name = "quiet.conf", .text = @embedFile("quiet.conf") },
     .{ .name = "slow-line4.bad", .text = @embedFile("slow-line4.bad") },
     .{ .name = "slow-upper.bad", .text = @embedFile("slow-upper.bad") },
     .{ .name = "trailing-op.bad", .text = @embedFile("trailing-op.bad") },
@@ -38,10 +40,12 @@ pub fn main() void {
                 std.debug.print(" {s} {d}", .{ if (plus) "+" else "-", s.int });
             }
         }
-        std.debug.print(" = {d}; modes", .{acc});
+        std.debug.print(" = {d}{s}; modes", .{ acc, if (c.loud.len > 0) " loudly" else "" });
         for (c.modes) |m| std.debug.print(" {s}", .{if (m.modeset.mode == .fast) "fast" else "slow"});
         std.debug.print("; pair", .{});
         for (c.pair) |p| std.debug.print(" {s}", .{p});
+        std.debug.print("; words", .{});
+        for (c.words) |w| std.debug.print(" {s}", .{w});
         std.debug.print("\n", .{});
     }
 }
