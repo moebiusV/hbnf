@@ -102,4 +102,7 @@ cp server_schema.ads server_schema-parser.ads server_schema-parser.adb /tmp/
 ( cd /tmp && rm -f server_schema*.ali server_schema*.o ada_conf_main.ali ada_conf_main.o \
     && gnatmake -q -gnat2022 ada_conf_main.adb -o ada_conf_test 2>&1 | head -30 && ./ada_conf_test )
 
+echo "== daemon grammars (tests/daemons) =="
+HBNF_CLI=/tmp/hbnf_cli sh tests/daemons.sh
+
 rm -f server.c server.rs server.zig server_schema.ads server_schema-parser.ads server_schema-parser.adb

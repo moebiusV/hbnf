@@ -56,6 +56,15 @@ package body HBNF_C is
       return To_String (Buf);
    end C_Ident;
 
+   --  A literal the lexer interns as a keyword (it gets a KW_ id): one led
+   --  by a letter or underscore.  Punctuation and digit-led literals are not
+   --  atoms.
+   function Is_Keyword_Lit (S : String) return Boolean is
+     (S'Length > 0
+      and then (S (S'First) in 'a' .. 'z'
+                or else S (S'First) in 'A' .. 'Z'
+                or else S (S'First) = '_'));
+
    --  Escape a literal for embedding in a C string literal: backslash and
    --  double-quote take C escapes, the named controls map to their short
    --  forms, and any other non-printable byte becomes a 3-digit octal escape
@@ -2465,10 +2474,7 @@ package body HBNF_C is
                      begin
                         --  Keywords only: a letter/underscore-led literal
                         --  (punctuation and digit-led literals are not atoms).
-                        if S'Length > 0
-                          and then (S (S'First) in 'a' .. 'z'
-                                    or else S (S'First) in 'A' .. 'Z'
-                                    or else S (S'First) = '_')
+                        if Is_Keyword_Lit (S)
                           and then not Present (E.Lit)
                         then
                            K.Append (E.Lit);
@@ -3246,8 +3252,13 @@ package body HBNF_C is
                end;
                Names := Enum_Names (Lits);
 
-               Append (Buf, "    if (!expect_kind(p, TOK_ATOM, ""a "
-                 & CN & """)) return false;");
+               --  The alternatives are keywords, so the token is a keyword
+               --  atom: gate on the kind alone (expect_kind rejects keyword
+               --  atoms, which is right for word/atom values but not here).
+               Append (Buf, "    if (p->pos >= p->n || p->toks[p->pos].kind"
+                 & " != TOK_ATOM) { fail(p, ""a " & CN
+                 & """, 0, p->pos < p->n ? p->toks[p->pos].text"
+                 & " : ""end of input""); return false; }");
                Append (Buf, LF);
                Append (Buf, "    {");
                Append (Buf, LF);
@@ -3261,19 +3272,21 @@ package body HBNF_C is
                   for K in 1 .. Natural (P.Length) + 1 loop
                      if K > Natural (P.Length) or else P (K).Kind = Alt then
                         if St <= K - 1 and then P (St).Kind = Literal then
-                           if Branch = 0 then
-                              Append (Buf, "        if (p->toks[p->pos].len == strlen("
-                                & '"' & C_Escape (To_String (P (St).Lit)) & '"'
-                                & ") && strncmp(p->toks[p->pos].text, "
-                                & '"' & C_Escape (To_String (P (St).Lit)) & '"'
-                                & ", p->toks[p->pos].len)==0)");
-                           else
-                              Append (Buf, "        else if (p->toks[p->pos].len == strlen("
-                                & '"' & C_Escape (To_String (P (St).Lit)) & '"'
-                                & ") && strncmp(p->toks[p->pos].text, "
-                                & '"' & C_Escape (To_String (P (St).Lit)) & '"'
-                                & ", p->toks[p->pos].len)==0)");
-                           end if;
+                           declare
+                              L    : constant String := To_String (P (St).Lit);
+                              Cond : constant String :=
+                                (if Is_Keyword_Lit (L)
+                                 then "p->toks[p->pos].kwid == KW_" & C_Ident (L)
+                                 else "p->toks[p->pos].len == strlen("
+                                   & '"' & C_Escape (L) & '"'
+                                   & ") && strncmp(p->toks[p->pos].text, "
+                                   & '"' & C_Escape (L) & '"'
+                                   & ", p->toks[p->pos].len)==0");
+                           begin
+                              Append (Buf, (if Branch = 0 then "        if ("
+                                            else "        else if (")
+                                & Cond & ")");
+                           end;
                            Append (Buf, " r = " & C_Ident (NM) & "_"
                              & To_String (Names (Branch + 1)) & ";");
                            Append (Buf, LF);
@@ -3283,7 +3296,7 @@ package body HBNF_C is
                      end if;
                   end loop;
                end;
-               Append (Buf, "        else { fail(p, ""`");
+               Append (Buf, "        else { fail(p, """);
                declare
                   St     : Natural := 1;
                   First  : Boolean := True;
