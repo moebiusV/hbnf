@@ -3539,7 +3539,11 @@ package body HBNF_C is
                                  "ok",
                                  (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
                                  Buf);
-               Append (Buf, "    p->pos = save; return false;");
+               --  The last branch failed: free what it built (a list it
+               --  had filled before a later token failed), as each
+               --  earlier branch's failure does.
+               Append (Buf, "    p->pos = save; free_" & CN
+                 & "_fields(&r); return false;");
                Append (Buf, LF);
                Append (Buf, "ok:");
                Append (Buf, LF);
