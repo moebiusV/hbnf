@@ -27,7 +27,7 @@ package body HBNF_Compilable is
    function Same (A, B : Element_Access) return Boolean is
      (A.Kind = B.Kind and then A.Min = B.Min and then A.Max = B.Max
       and then (case A.Kind is
-                  when Literal => A.Lit = B.Lit,
+                  when Literal => A.Lit = B.Lit and then A.No_Case = B.No_Case,
                   when Name    => A.Name = B.Name,
                   when Group   => Same_Seq (A.Items, B.Items),
                   when Alt     => True));
@@ -41,7 +41,9 @@ package body HBNF_Compilable is
             Append (Buf, " ");
          end if;
          case V (I).Kind is
-            when Literal => Append (Buf, '"' & To_String (V (I).Lit) & '"');
+            when Literal =>
+               Append (Buf, (if V (I).No_Case then "%i" else "")
+                            & '"' & To_String (V (I).Lit) & '"');
             when Name    => Append (Buf, V (I).Name);
             when Group   => Append (Buf, "( ... )");
             when Alt     => Append (Buf, "|");
@@ -118,10 +120,18 @@ package body HBNF_Compilable is
    --  is a rule's whole pattern and has exactly one element: that element's
    --  repetition or grouping is the rule itself (a list, an optional rule,
    --  a grouped alternation) and the emitters handle it.
+   --  A %i literal, for the backends that match it case-sensitively.
+   Has_No_Case : Boolean := False;
+
    procedure Walk
      (Rule_Name : String; V : Element_Vectors.Vector; Sole : Boolean) is
    begin
       Check_Shadowing (Rule_Name, V);
+      for E of V loop
+         if E.Kind = Literal and then E.No_Case then
+            Has_No_Case := True;
+         end if;
+      end loop;
       for E of V loop
          case E.Kind is
             when Group =>
@@ -178,6 +188,7 @@ package body HBNF_Compilable is
          raise Parse_Error with "the schema defines no rules";
       end if;
       Shadowed := 0;
+      Has_No_Case := False;
 
       --  `conf struct X` hands parse_config the daemon's own struct, which
       --  only action jets fill: without one the parse would succeed and
@@ -315,6 +326,13 @@ package body HBNF_Compilable is
             end if;
          end;
       end loop;
+      if Has_No_Case and then Backend /= "c" then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "hbnf: warning: %i literals are case-insensitive in the C "
+            & "backend only; the " & Backend & " backend matches them as "
+            & "written");
+      end if;
       if Shadowed > 0 then
          raise Parse_Error with
            Natural'Image (Shadowed) & " alternative(s) can never match "

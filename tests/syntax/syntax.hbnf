@@ -1,0 +1,32 @@
+; hbnf's notation beyond RFC 5234, one of each, for tests/syntax.sh.
+
+language C
+statements
+keywords {
+    set mode proto quote level
+}
+
+{
+static int modes_seen;
+}
+
+config  = *( entry )
+entry   = setmode
+        | "proto" proto
+        / "quote" str quote_end        ; `/`, ABNF's spelling, still works
+        | %i"level" %i"high"           ; a %i keyword, then a %i word
+        | tag
+
+; an action, spelled %action{ }
+setmode = "set" "mode" mode %action{ (void)n; modes_seen++; }
+
+; %s is the default spelled out; %i matches any case.  Neither word is in
+; the keyword table, so both are matched by their text.
+mode    = %i"fast" | %s"slow"
+proto   = "tcp" | %i"udp"
+
+; C escapes: \073 is `;` (octal), \? is `?`.
+quote_end = "\073" | "\?"
+
+; a jet, spelled %scan{ }
+tag     = %scan{ return (pos < len && s[pos] == '@') ? 1 : 0; }

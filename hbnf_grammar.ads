@@ -45,6 +45,7 @@ package HBNF_Grammar is
       case Kind is
          when Literal =>
             Lit : Unbounded_String;      --  keyword to match-and-skip
+            No_Case : Boolean := False;  --  %i"...": any case matches
          when Name =>
             Name : Unbounded_String;     --  rule/core reference
          when Group =>

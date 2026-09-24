@@ -111,4 +111,7 @@ HBNF_CLI=/tmp/hbnf_cli sh tests/stmt.sh
 echo "== macros against hand expansion (tests/compare) =="
 HBNF_CLI=/tmp/hbnf_cli sh tests/compare.sh
 
+echo "== notation beyond ABNF (tests/syntax) =="
+HBNF_CLI=/tmp/hbnf_cli sh tests/syntax.sh
+
 rm -f server.c server.rs server.zig server_schema.ads server_schema-parser.ads server_schema-parser.adb

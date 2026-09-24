@@ -1,0 +1,10 @@
+good.conf: 10 entries, 3 set mode
+quote-end.bad:1: expected `;` or `?`, found !
+  quote "x" !
+            ^
+slow-upper.bad:1: expected `fast` or `slow`, found SLOW
+  set mode SLOW
+           ^
+tcp-upper.bad:1: expected `tcp` or `udp`, found TCP
+  proto TCP
+        ^

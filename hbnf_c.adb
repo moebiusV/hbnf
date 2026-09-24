@@ -1666,6 +1666,14 @@ package body HBNF_C is
             if Infos (I).Kind = Struct or else Infos (I).Kind = List then
                Bind_Def (I, Buf);
                Append (Buf, LF);
+            elsif Rules (I).Action_Code /= Null_Unbounded_String then
+               --  The walk visits nodes; an enum or scalar is a field of
+               --  one, and its action would silently never run.
+               raise HBNF_Grammar.Parse_Error with
+                 To_String (Rules (I).Name) & ": an action runs on a node "
+                 & "(a sequence, alternation or list rule); this rule is "
+                 & (if Infos (I).Kind = Enum then "an enum" else "a scalar")
+                 & ", so put the action on the rule that uses it";
             end if;
          end loop;
       end Emit_Bind;
@@ -2600,6 +2608,34 @@ package body HBNF_C is
 
       Keywords : constant String_Vectors.Vector := Collect_Keywords;
 
+      --  The words the grammar writes %i"..." (case-insensitive) and the
+      --  ones it writes plain.  A keyword is interned one way or the other,
+      --  so it may not be both (checked where the prologue is emitted).
+      Nocase_Words, Case_Words : String_Vectors.Vector;
+
+      procedure Collect_Case (Els : Element_Vectors.Vector) is
+      begin
+         for E of Els loop
+            case E.Kind is
+               when Literal =>
+                  if E.No_Case then
+                     if not Nocase_Words.Contains (E.Lit) then
+                        Nocase_Words.Append (E.Lit);
+                     end if;
+                  elsif not Case_Words.Contains (E.Lit) then
+                     Case_Words.Append (E.Lit);
+                  end if;
+               when Group =>
+                  Collect_Case (E.Items);
+               when others =>
+                  null;
+            end case;
+         end loop;
+      end Collect_Case;
+
+      function Nocase_Keyword (K : String) return Boolean is
+        (Nocase_Words.Contains (To_Unbounded_String (K)));
+
       --  A keyword's enumerator: KW_ and its C identifier, with a suffix
       --  when an earlier keyword maps to the same one (unwind's table has
       --  both `DoT` and `dot`; `-` and `_` both become `_`).
@@ -2651,6 +2687,15 @@ package body HBNF_C is
 
          Append (Buf, "static kwid_t kw_lookup(const char *s, size_t len) {");
          Append (Buf, LF);
+         for K of Keywords loop
+            if Nocase_Keyword (To_String (K)) then
+               Append (Buf, "    if (len == " & Img (Len (K))
+                 & " && strncasecmp(s, """ & C_Escape (To_String (K))
+                 & """, " & Img (Len (K)) & ") == 0) return "
+                 & Kw_Name (To_String (K)) & ";   /* %i */");
+               Append (Buf, LF);
+            end if;
+         end loop;
          Append (Buf, "    switch (len) {");
          Append (Buf, LF);
          for L in 1 .. Max_Len loop
@@ -2659,7 +2704,8 @@ package body HBNF_C is
                Any  : Boolean := False;
             begin
                for K of Keywords loop
-                  if Len (K) = L then
+                  if Len (K) = L and then not Nocase_Keyword (To_String (K))
+                  then
                      Any := True;
                      exit;
                   end if;
@@ -2670,12 +2716,16 @@ package body HBNF_C is
                   Append (Buf, "        switch (s[0]) {");
                   Append (Buf, LF);
                   for K of Keywords loop
-                     if Len (K) = L and then not Seen (First (K)) then
+                     if Len (K) = L and then not Seen (First (K))
+                       and then not Nocase_Keyword (To_String (K))
+                     then
                         Seen (First (K)) := True;
                         Append (Buf, "        case '" & First (K) & "':");
                         Append (Buf, LF);
                         for K2 of Keywords loop
-                           if Len (K2) = L and then First (K2) = First (K) then
+                           if Len (K2) = L and then First (K2) = First (K)
+                             and then not Nocase_Keyword (To_String (K2))
+                           then
                               Append (Buf, "            if (memcmp(s, """
                                 & C_Escape (To_String (K2)) & """, " & Img (L)
                                 & ") == 0) return " & Kw_Name (To_String (K2)) & ";");
@@ -2803,7 +2853,8 @@ package body HBNF_C is
             begin
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & "if (!expect_lit(p, """
+                     Append (Buf, Ind & "if (!expect_lit"
+                       & (if E.No_Case then "_nocase" else "") & "(p, """
                        & C_Escape (To_String (E.Lit)) & """, "
                        & Img (To_String (E.Lit)'Length) & ")) { " & Fail & " }");
                      Append (Buf, LF);
@@ -3470,7 +3521,10 @@ package body HBNF_C is
                                  then "p->toks[p->pos].kwid == " & Kw_Name (L)
                                  else "p->toks[p->pos].len == strlen("
                                    & '"' & C_Escape (L) & '"'
-                                   & ") && strncmp(p->toks[p->pos].text, "
+                                   & ") && "
+                                   & (if P (St).No_Case then "strncasecmp"
+                                      else "strncmp")
+                                   & "(p->toks[p->pos].text, "
                                    & '"' & C_Escape (L) & '"'
                                    & ", p->toks[p->pos].len)==0");
                            begin
@@ -3784,6 +3838,21 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "#include <ctype.h>");
       Append (Res, LF);
+      for R of Rules loop
+         Collect_Case (R.Pattern);
+      end loop;
+      for W of Nocase_Words loop
+         if Case_Words.Contains (W) and then Is_Keyword_Lit (To_String (W))
+         then
+            raise HBNF_Grammar.Parse_Error with
+              "the keyword `" & To_String (W) & "` is written both with %i "
+              & "and without; a keyword matches one way or the other";
+         end if;
+      end loop;
+      if not Nocase_Words.Is_Empty then
+         Append (Res, "#include <strings.h>");
+         Append (Res, LF);
+      end if;
       Append (Res, LF);
       declare
          Enum : U := To_Unbounded_String
@@ -3898,6 +3967,32 @@ package body HBNF_C is
       Append (Res, "}");
       Append (Res, LF);
       Append (Res, LF);
+      if not Nocase_Words.Is_Empty then
+         --  %i"...": the same, in any case.  Unused when every %i literal
+         --  is an alternative of an enum rule, which compares in place.
+         Append (Res, "__attribute__((unused))");
+         Append (Res, LF);
+         Append (Res, "static bool expect_lit_nocase(parser_t *p,"
+           & " const char *lit, size_t lit_len) {");
+         Append (Res, LF);
+         Append (Res, "    if (p->pos < p->n && (p->toks[p->pos].kind == TOK_ATOM"
+           & " || p->toks[p->pos].kind == TOK_PUNCT)");
+         Append (Res, LF);
+         Append (Res, "        && p->toks[p->pos].text && p->toks[p->pos].len == lit_len");
+         Append (Res, LF);
+         Append (Res, "        && strncasecmp(p->toks[p->pos].text, lit, lit_len) == 0) {");
+         Append (Res, LF);
+         Append (Res, "        p->pos++; return true;");
+         Append (Res, LF);
+         Append (Res, "    }");
+         Append (Res, LF);
+         Append (Res, "    fail(p, lit, 1, p->pos < p->n ? p->toks[p->pos].text"
+           & " : ""end of input""); return false;");
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+         Append (Res, LF);
+      end if;
       Append (Res, "static bool expect_kind(parser_t *p, tok_kind_t k,"
         & " const char *desc) {");
       Append (Res, LF);

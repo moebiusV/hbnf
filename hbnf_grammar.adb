@@ -49,9 +49,11 @@ package body HBNF_Grammar is
    --  Lexer
    --  ====================================================================
 
+   --  T_Pct: `%` and the word after it (`%i`, `%s`, `%scan`, `%action`,
+   --  `%x20-7E`); its Text is the word without the `%`.
    type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Slash, T_LParen,
                      T_RParen, T_LBrack, T_RBrack, T_Star, T_Code,
-                     T_Comment, T_Newline, T_EOF);
+                     T_Comment, T_Newline, T_Pct, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -213,8 +215,9 @@ package body HBNF_Grammar is
                         Closed := True;
                         exit;
                      elsif Text (I) = '\' then
-                        --  Decode a C-style escape: "\n" is the newline token
-                        --  and "\xHH" any byte.
+                        --  Decode a C escape, as a C string literal has them:
+                        --  \a \b \f \n \r \t \v \\ \" \' \?, \ooo (one to
+                        --  three octal digits) and \xHH (hex digits, greedy).
                         I := I + 1;
                         Col := Col + 1;
                         if I > Text'Last then
@@ -222,7 +225,30 @@ package body HBNF_Grammar is
                              Integer'Image (Line) & ":" & Integer'Image (Col) &
                              ": escape at end of string";
                         end if;
-                        if Text (I) = 'x' then
+                        if Text (I) in '0' .. '7' then
+                           --  C's octal escape: one to three digits.
+                           declare
+                              Val : Natural := 0;
+                              N   : Natural := 0;
+                           begin
+                              while N < 3 and then I <= Text'Last
+                                and then Text (I) in '0' .. '7'
+                              loop
+                                 Val := Val * 8
+                                   + (Character'Pos (Text (I))
+                                      - Character'Pos ('0'));
+                                 N := N + 1;
+                                 I := I + 1;
+                                 Col := Col + 1;
+                              end loop;
+                              if Val > 255 then
+                                 raise Parse_Error with
+                                   Integer'Image (Line) & ":" &
+                                   Integer'Image (Col) & ": bad octal escape";
+                              end if;
+                              Append (Buf, Character'Val (Val));
+                           end;
+                        elsif Text (I) = 'x' then
                            declare
                               Val : Natural := 0;
                               N   : Natural := 0;
@@ -259,6 +285,7 @@ package body HBNF_Grammar is
                                  when '\' => Ch := '\';
                                  when '"' => Ch := '"';
                                  when ''' => Ch := ''';
+                                 when '?' => Ch := '?';
                                  when others =>
                                     raise Parse_Error with
                                       Integer'Image (Line) & ":" &
@@ -282,6 +309,20 @@ package body HBNF_Grammar is
                        ": unterminated string literal";
                   end if;
                   Emit (T_String, To_String (Buf));
+               end;
+            when '%' =>
+               declare
+                  Start : constant Positive := I + 1;
+               begin
+                  I := I + 1;
+                  while I <= Text'Last
+                    and then (Text (I) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9'
+                                        | '.' | '-')
+                  loop
+                     I := I + 1;
+                  end loop;
+                  Emit (T_Pct, Text (Start .. I - 1));
+                  Col := Col + (I - Start + 1);
                end;
             when '=' => Emit (T_Eq);     I := I + 1;  Col := Col + 1;
             --  `|` separates alternatives, as in BNF, EBNF and yacc; `/`,
@@ -575,7 +616,39 @@ package body HBNF_Grammar is
             begin
                Next (P);
                return new Element'(Kind => Literal, Min => 1, Max => 1,
-                                   Lit => Lit);
+                                   Lit => Lit, No_Case => False);
+            end;
+         when T_Pct =>
+            declare
+               T : constant Token := Cur (P);
+               W : constant String := To_String (T.Text);
+            begin
+               if W = "i" or else W = "s" then
+                  --  RFC 7405's case markers.  hbnf literals are
+                  --  case-sensitive, so %s is the default spelled out.
+                  Next (P);
+                  if Cur (P).Kind /= T_String then
+                     raise Parse_Error with
+                       Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                       & ": expected a quoted literal after %" & W;
+                  end if;
+                  declare
+                     Lit : constant Unbounded_String := Cur (P).Text;
+                  begin
+                     Next (P);
+                     return new Element'(Kind => Literal, Min => 1, Max => 1,
+                                         Lit => Lit, No_Case => W = "i");
+                  end;
+               end if;
+               raise Parse_Error with
+                 Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                 & ": %" & W & (if W'Length > 0
+                                   and then W (W'First) in 'b' | 'd' | 'x'
+                                then ": numeric terminals are not supported "
+                                     & "yet (a jet can match the characters)"
+                                else ": expected %i or %s before a literal, "
+                                     & "or %scan or %action before a code "
+                                     & "block");
             end;
          when T_Name =>
             declare
@@ -657,6 +730,8 @@ package body HBNF_Grammar is
          exit when Cur (P).Kind in
            T_Newline | T_RParen | T_RBrack | T_Slash | T_Comment | T_Code
            | T_EOF;
+         exit when Cur (P).Kind = T_Pct
+           and then To_String (Cur (P).Text) in "scan" | "action";
          Element_Vectors.Append (V, Parse_Element (P));
       end loop;
       return V;
@@ -1041,8 +1116,15 @@ package body HBNF_Grammar is
                Next (P);   --  the '='
             end;
 
+            --  `name = %scan{ code }` is a jet, as `name = { code }` is.
+            if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "scan"
+              and then P.Pos + 1 <= Natural (P.Toks.Length)
+              and then P.Toks (P.Pos + 1).Kind = T_Code
+            then
+               Next (P);
+            end if;
             if Cur (P).Kind = T_Code then
-               --  A jet: `name = %{ <code> %}` — a hand-written scanner.
+               --  A jet: `name = { <code> }` — a hand-written scanner.
                Rule_Vectors.Append
                  (Rules,
                   Rule'(Name            => Name,
@@ -1062,6 +1144,22 @@ package body HBNF_Grammar is
                   --  An action jet: `name = pattern { code }` — the code
                   --  block after the pattern is run in the bind walk, not
                   --  during parsing.  A trailing comment sits after it.
+                  if Cur (P).Kind = T_Pct then
+                     --  `pattern %action{ code }`, the explicit spelling.
+                     --  A %scan after a pattern is not supported yet.
+                     if To_String (Cur (P).Text) /= "action"
+                       or else P.Toks (P.Pos + 1).Kind /= T_Code
+                     then
+                        raise Parse_Error with
+                          Integer'Image (Cur (P).Line) & ":"
+                          & Integer'Image (Cur (P).Col) & ": "
+                          & (if To_String (Cur (P).Text) = "scan"
+                             then "%scan{ } takes the place of a pattern "
+                                  & "(name = %scan{ ... })"
+                             else "expected %action{ ... } after the pattern");
+                     end if;
+                     Next (P);
+                  end if;
                   if Cur (P).Kind = T_Code then
                      Action := Cur (P).Text;
                      Next (P);
