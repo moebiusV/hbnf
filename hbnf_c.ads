@@ -12,9 +12,13 @@ package HBNF_C is
    --  Emit the C declarations.  When Idref is true, every struct and list
    --  node gains leading `objid_t id, parent;` fields (and the `objid_t`
    --  typedef) so the tree can be flattened by Emit_Serializer and rebuilt
-   --  by Emit_Rebuild for a privsep (imsg) consumer.
+   --  by Emit_Rebuild for a privsep (imsg) consumer.  Walkers emits the
+   --  visit_/map_ helpers, the tree API for callers; a daemon binding's
+   --  conf.c has no caller for them, so it leaves them out.
    function Emit
-     (Rules : HBNF_Grammar.Rule_Vectors.Vector; Idref : Boolean := False)
+     (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
+      Idref   : Boolean := False;
+      Walkers : Boolean := True)
       return String;
 
    --  Emit the serializer: a pre-order walk of the tree Emit declares that
@@ -51,6 +55,12 @@ package HBNF_C is
    --  parse_config(filename) prototype.  The source is the lexer + parser +
    --  parse_config, which slurps the file, populates `conf`, and reports
    --  errors through the callback.
+   --
+   --  With `conf struct X` (a daemon binding) the pair is a drop-in for the
+   --  daemon's parse.y instead: conf.h only declares parse_config(filename,
+   --  X *), conf_error and conf_file, and conf.c holds everything else,
+   --  with parse_config the only other external function (lex, parse_text
+   --  and parse_tokens are static, and the tree walkers are left out).
    function Emit_Conf_Header (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
    function Emit_Conf_Source (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
 
