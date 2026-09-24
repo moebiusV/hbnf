@@ -2872,6 +2872,14 @@ package body HBNF_C is
          return R;
       end First_Union;
 
+      --  A FIRST-set member standing for "a token that is not a keyword":
+      --  punctuation, a digit-led literal, or a jet's own token kind.  Such a
+      --  token has kwid KWID_NONE, and can never be a keyword, so a branch
+      --  that starts with one is reached through `case KWID_NONE` while a
+      --  keyword that starts no branch still fails fast.  (It cannot clash
+      --  with a keyword: those start with a letter or `_`.)
+      Other_Tok : constant U := To_Unbounded_String ("<non-keyword>");
+
       function First_Of (Els : Element_Vectors.Vector; Depth : Natural;
                          Known : out Boolean) return String_Vectors.Vector;
       function First_Elem (E : Element_Access; Depth : Natural;
@@ -2898,6 +2906,8 @@ package body HBNF_C is
             when Literal =>
                if Is_Keyword (To_String (E.Lit)) then
                   V.Append (E.Lit);
+               else
+                  V.Append (Other_Tok);
                end if;
             when Name =>
                if Is_Core (To_String (E.Name)) then
@@ -2908,6 +2918,9 @@ package body HBNF_C is
                   begin
                      if J = 0 then
                         Known := False;
+                     elsif Rules (J).Jet_Code /= Null_Unbounded_String then
+                        --  A jet has no pattern: it is its own token kind.
+                        V.Append (Other_Tok);
                      else
                         return First_Of (Rules (J).Pattern, Depth + 1, Known);
                      end if;
@@ -2995,6 +3008,9 @@ package body HBNF_C is
         (K : U; Flat : String_Vectors.Vector; Offs : Natural_Vectors.Vector;
          Br : Positive) return Boolean is
       begin
+         if K = Other_Tok then
+            return False;
+         end if;
          for X in 1 .. Natural (Offs.Length) - 1 loop
             if X /= Br then
                for I in Offs (X) .. Offs (X + 1) - 1 loop
@@ -3140,7 +3156,7 @@ package body HBNF_C is
                         Seen := True;
                      end if;
                   end loop;
-                  if not Seen then
+                  if not Seen and then K /= Other_Tok then
                      --  A keyword the switch does not jump straight on (it
                      --  leads branch 1, or several branches) enters the chain
                      --  to honour source order.
@@ -3153,6 +3169,13 @@ package body HBNF_C is
                   end if;
                end;
             end loop;
+            if Flat.Contains (Other_Tok) then
+               --  Some branch starts with a non-keyword token: try the
+               --  chain for one.  A keyword no branch starts with cannot
+               --  match those branches, so it still fails fast below.
+               Append (Buf, Ind & "case KWID_NONE: goto alt_linear;");
+               Append (Buf, LF);
+            end if;
             Append (Buf, Ind & "default: goto alt_fail_"
               & Img (Natural (Offs.Length) - 1) & ";");
             Append (Buf, LF);
