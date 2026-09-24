@@ -3319,8 +3319,18 @@ package body HBNF_C is
                Append (Buf, "    }");
                Append (Buf, LF);
                if E.Min > 0 then
-                  Append (Buf, "    if (count < " & Img (E.Min) & ") { free_"
-                    & CN & "(&head); p->pos = start; return false; }");
+                  --  The root's free_ also frees the arena, which the
+                  --  error message still reads: free just the nodes there.
+                  if Idx = 1 then
+                     Append (Buf, "    if (count < " & Img (E.Min) & ") { "
+                       & C_Type_Name (NM) & " *dn = " & L_First ("&head")
+                       & ", *dx; while (dn) { dx = " & L_Next ("dn")
+                       & "; free_" & CN & "_fields(dn); free(dn); dn = dx; }"
+                       & " p->pos = start; return false; }");
+                  else
+                     Append (Buf, "    if (count < " & Img (E.Min) & ") { free_"
+                       & CN & "(&head); p->pos = start; return false; }");
+                  end if;
                   Append (Buf, LF);
                end if;
                Append (Buf, "    *out = head; return true;");
@@ -3529,8 +3539,16 @@ package body HBNF_C is
                Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
                Append (Buf, LF);
                Emit_Number_Deferrals (Nums, Buf, "    ");
+               --  On failure, free what the sequence built so far (its
+               --  lists): the caller only restores the position.  The
+               --  _fields variant, since the root's free_ also frees the
+               --  arena, which the error message still reads.
                Emit_Seq (P, 1, Natural (P.Length), "r.", Buf,
-                         "p->pos = save; return false;",
+                         (if R.C_Type = Null_Unbounded_String
+                            and then Analyze (Rules, Idx).Kind = Struct
+                          then "free_" & CN & "_fields(&r); "
+                          else "")
+                         & "p->pos = save; return false;",
                          Typed => R.C_Type /= Null_Unbounded_String);
                Emit_Number_Converts (Nums, "r.", False, Buf, "    ");
                if R.Action_Code /= Null_Unbounded_String then
