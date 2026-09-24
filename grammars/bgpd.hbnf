@@ -15,6 +15,9 @@
 
 language C
 wordchars "$@%"
+statements
+macros varset
+includes include
 include "tailq.hbnf"
 
 {

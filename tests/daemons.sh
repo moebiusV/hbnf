@@ -1,6 +1,8 @@
 #!/bin/sh
 # Daemon grammars against sample configs.  tests/daemons/<grammar>/*.conf must
-# all be accepted by the plain C parser generated from grammars/<grammar>.hbnf.
+# all be accepted by the plain C parser generated from grammars/<grammar>.hbnf,
+# and each *.bad rejected.  They are parsed in their own directory, as pfctl's
+# regress runs, so an `include "x.inc"` there finds x.inc.
 # server.hbnf cannot catch what only a real grammar exercises (keyword enums
 # such as pfctl's `dir = "in" / "out"`, keyword-led option lists).
 #   HBNF_CLI=/path/to/hbnf_cli sh tests/daemons.sh      (default ./hbnf_cli)
@@ -41,8 +43,16 @@ EOC
 	if ! gcc -std=gnu11 -D_GNU_SOURCE -w -Itests/bsdinc "$W/$g.main.c" -o "$W/$g" 2>"$W/$g.err"; then
 		echo "$g: FAIL (compile: $(grep -m1 error "$W/$g.err"))"; rc=1; continue
 	fi
-	if out=$("$W/$g" "$d"*.conf); then
-		echo "$g: OK ($(ls "$d"*.conf | wc -l | tr -d ' ') configs)"
+	nbad=0; wrong=""
+	for b in "$d"*.bad; do
+		[ -f "$b" ] || continue
+		nbad=$((nbad + 1))
+		(cd "$d" && "$W/$g" "$(basename "$b")") >/dev/null && wrong="$wrong $(basename "$b")"
+	done
+	if [ -n "$wrong" ]; then
+		echo "$g: FAIL (accepted:$wrong)"; rc=1
+	elif out=$(cd "$d" && "$W/$g" *.conf); then
+		echo "$g: OK ($(ls "$d"*.conf | wc -l | tr -d ' ') configs, $nbad rejected)"
 	else
 		echo "$g: FAIL"; printf '%s\n' "$out" | head -8; rc=1
 	fi

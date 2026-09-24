@@ -1,0 +1,3 @@
+# an error does not stop the parse: every statement is still read
+pass in on lo0 from { 10.0.0.1 to any
+pass out on lo0

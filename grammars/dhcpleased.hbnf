@@ -17,6 +17,8 @@
 
 language C
 wordchars "*/$@%"
+statements
+macros varset
 include "tailq.hbnf"
 
 {

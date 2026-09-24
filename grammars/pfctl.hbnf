@@ -13,10 +13,14 @@
 ; optional `comma` (empty / "," / newline) is dropped, so a list element is
 ; `y "," / y`.  An optional `[ X ]` in a sequence is flattened to a two-way
 ; alternation (see the pfhead/anchorhead chains for the interleaved optionals
-; of a filter rule).  Newlines are skipped by the lexer.
+; of a filter rule).  A newline ends a statement (`statements`), one rule per
+; statement as in parse.y.
 
 language C
 wordchars "$@%"
+statements
+macros varset
+includes include
 include "tailq.hbnf"
 
 {
@@ -52,7 +56,7 @@ varset      = string "=" varstring          ; macro name = value…
 stringlist  = 1*string
 
 ; a NUMBER or STRING token (parse.y's numberstring)
-numberstring = int / string
+numberstring = int / string / address
 
 ; one or more numberstrings (parse.y's varstring)
 varstring   = 1*numberstring

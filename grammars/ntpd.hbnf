@@ -17,6 +17,7 @@
 
 language C
 wordchars "*/$@%"
+statements
 include "tailq.hbnf"
 
 {

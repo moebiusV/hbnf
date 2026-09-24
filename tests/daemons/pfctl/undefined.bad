@@ -1,0 +1,2 @@
+# a macro that is not defined is an error, as in parse.y
+pass in on $nope
