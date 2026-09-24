@@ -18,6 +18,102 @@ package body HBNF_Compilable is
         & "the compiled backends yet; move it into a rule of its own";
    end Reject;
 
+   function Same (A, B : Element_Access) return Boolean;
+
+   function Same_Seq (A, B : Element_Vectors.Vector) return Boolean is
+     (Natural (A.Length) = Natural (B.Length)
+      and then (for all I in 1 .. Natural (A.Length) => Same (A (I), B (I))));
+
+   function Same (A, B : Element_Access) return Boolean is
+     (A.Kind = B.Kind and then A.Min = B.Min and then A.Max = B.Max
+      and then (case A.Kind is
+                  when Literal => A.Lit = B.Lit,
+                  when Name    => A.Name = B.Name,
+                  when Group   => Same_Seq (A.Items, B.Items),
+                  when Alt     => True));
+
+   function Image (V : Element_Vectors.Vector; First, Last : Natural)
+     return String is
+      Buf : Unbounded_String;
+   begin
+      for I in First .. Last loop
+         if I > First then
+            Append (Buf, " ");
+         end if;
+         case V (I).Kind is
+            when Literal => Append (Buf, '"' & To_String (V (I).Lit) & '"');
+            when Name    => Append (Buf, V (I).Name);
+            when Group   => Append (Buf, "( ... )");
+            when Alt     => Append (Buf, "/");
+         end case;
+      end loop;
+      return To_String (Buf);
+   end Image;
+
+   --  Shadowed alternatives found: each is printed as it is found, and the
+   --  check fails once the whole schema has been walked.
+   Shadowed : Natural := 0;
+
+   --  Ordered choice keeps the first branch that matches, so a branch that
+   --  begins with the whole of an earlier one can never be reached: the
+   --  earlier one matches first (`"keypair" name / "keypair" name "key" k`
+   --  never reads the key).  Reject it rather than parse less than the
+   --  grammar says.
+   procedure Check_Shadowing (Rule_Name : String; V : Element_Vectors.Vector)
+   is
+      type Span is record
+         First, Last : Natural;
+      end record;
+      type Span_Array is array (Positive range <>) of Span;
+      Count : Natural := 1;
+   begin
+      for E of V loop
+         if E.Kind = Alt then
+            Count := Count + 1;
+         end if;
+      end loop;
+      if Count = 1 then
+         return;
+      end if;
+      declare
+         Br : Span_Array (1 .. Count);
+         K  : Positive := 1;
+         St : Positive := 1;
+      begin
+         for I in 1 .. Natural (V.Length) + 1 loop
+            if I > Natural (V.Length) or else V (I).Kind = Alt then
+               Br (K) := (St, I - 1);
+               K := K + 1;
+               St := I + 1;
+            end if;
+         end loop;
+         for I in Br'Range loop
+            for J in I + 1 .. Br'Last loop
+               declare
+                  LI : constant Natural := Br (I).Last - Br (I).First + 1;
+                  LJ : constant Natural := Br (J).Last - Br (J).First + 1;
+               begin
+                  if LI > 0 and then LI < LJ
+                    and then (for all X in 0 .. LI - 1 =>
+                                Same (V (Br (I).First + X),
+                                      V (Br (J).First + X)))
+                  then
+                     Shadowed := Shadowed + 1;
+                     Ada.Text_IO.Put_Line
+                       (Ada.Text_IO.Standard_Error,
+                        "hbnf: " & Rule_Name & ": the alternative `"
+                        & Image (V, Br (J).First, Br (J).Last)
+                        & "` can never match: the earlier `"
+                        & Image (V, Br (I).First, Br (I).Last)
+                        & "` matches its start first (put the longer one "
+                        & "first)");
+                  end if;
+               end;
+            end loop;
+         end loop;
+      end;
+   end Check_Shadowing;
+
    --  Walk a sequence (or an alternation's branches).  Sole is True when V
    --  is a rule's whole pattern and has exactly one element: that element's
    --  repetition or grouping is the rule itself (a list, an optional rule,
@@ -25,6 +121,7 @@ package body HBNF_Compilable is
    procedure Walk
      (Rule_Name : String; V : Element_Vectors.Vector; Sole : Boolean) is
    begin
+      Check_Shadowing (Rule_Name, V);
       for E of V loop
          case E.Kind is
             when Group =>
@@ -80,6 +177,7 @@ package body HBNF_Compilable is
       if Natural (Rules.Length) = 0 then
          raise Parse_Error with "the schema defines no rules";
       end if;
+      Shadowed := 0;
 
       --  `conf struct X` hands parse_config the daemon's own struct, which
       --  only action jets fill: without one the parse would succeed and
@@ -217,6 +315,11 @@ package body HBNF_Compilable is
             end if;
          end;
       end loop;
+      if Shadowed > 0 then
+         raise Parse_Error with
+           Natural'Image (Shadowed) & " alternative(s) can never match "
+           & "(listed above)";
+      end if;
    end Check;
 
 end HBNF_Compilable;
