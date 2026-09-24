@@ -4890,6 +4890,18 @@ package body HBNF_C is
          return Infos (J).Kind;
       end Ref_Kind;
 
+      --  A string leaf: a rule that resolves to `const char *`, directly or
+      --  as a union of such rules (commonconf's `string = str / word /
+      --  wildcard`), which Resolve_Type leaves unresolved.
+      function Is_String (Name : String) return Boolean is
+         J : constant Natural := Find (Rules, Alias_Target (Rules, Name));
+      begin
+         return Resolve_Type (Rules, Name) = "const char *"
+           or else (J /= 0
+                    and then Scalar_Union_Type (Rules, Rules (J).Pattern)
+                             = "const char *");
+      end Is_String;
+
       --  Compare one member field of two nodes named A and B.
       procedure Cmp_Field (Name : String; A, B : String;
                            Buf : in out U; Ind : String) is
@@ -4910,7 +4922,7 @@ package body HBNF_C is
                   Append (Buf, Ind & "if (memcmp(" & A & "->" & F & ", " & B
                     & "->" & F & ", sizeof " & A & "->" & F & ") != 0) return false;");
                   Append (Buf, LF);
-               elsif Resolve_Type (Rules, Name) = "const char *" then
+               elsif Is_String (Name) then
                   Append (Buf, Ind & "if ((" & A & "->" & F & " == NULL) != ("
                     & B & "->" & F & " == NULL)) return false;");
                   Append (Buf, LF);
