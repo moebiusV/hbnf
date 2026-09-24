@@ -70,6 +70,18 @@ and `includes include` name the rules whose statements define a macro and
 include a file: `$name` then expands as in `parse.y`'s lexer, and `include`
 reads the file in place.  ntpd has neither; dhcpleased has no `include`.
 
+Each grammar also carries its `parse.y`'s keyword table, `keywords { … }`:
+only those words are reserved, so a literal like pfctl's `"none"` (a STRING
+that `parse.y` compares in an action) matches the word and does not stop it
+being a value elsewhere (`set loginterface none`).  Copy the table from the
+`lookup()` function; `tests/bytetest/keywords.sh` checks each against its
+`parse.y`.
+
+Ordered choice keeps the first alternative that matches, so write the longer
+of two alternatives with the same start first (`"keypair" name "key" file /
+"keypair" name`).  The C backend refuses a grammar where it is the other way
+round.
+
 ## Covered
 
 | daemon | file | parse.y |

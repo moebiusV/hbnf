@@ -223,17 +223,17 @@ reader actually needs when the two are not on the same line.  The same entry
 point is what the FFI bindings expose (`conf_ptr()` returns the parsed root).
 
 The wrapper reads a config the way `yyparse` does, one statement at a time
-(the schema's `statements` directive).  A statement ends at a newline outside
-braces; each is lexed, parsed and, in a daemon binding, handed to the actions
-and freed before the next is read.  A syntax error is reported and the parse
+(the schema's `statements` directive).  The file is read a block at a time, a
+statement ends at a newline outside braces, and each is lexed, parsed and, in
+a daemon binding, handed to the actions and freed before the next is read.  A syntax error is reported and the parse
 goes on with the next statement, so every error in the file is reported, as
 parse.y's `error` rule does.  `macros varset` and `includes include` name the
 rules whose statements define a macro and include a file, which gives parse.y's
 `$name` expansion and `include`.  Holding one statement at a time is what
-brings the ntpd binding's memory close to byacc's: on a 100,000-sensor config
-(7 MB), peak RSS is 19 MB, against 12 MB for ntpd's parse.y through byacc and
-82 MB when the whole file was tokenized and parsed at once.  Most of what is
-left is the file itself, which the wrapper reads whole.
+brings the ntpd binding's memory to byacc's: on a 100,000-sensor config
+(7 MB), peak RSS is 12.6 MB, against 12.4 MB for ntpd's parse.y through byacc
+and 82 MB when the whole file was tokenized and parsed at once.  The parse
+tree is the same daemon struct either way.
 
 ### 3.3 Extensions over ABNF
 
