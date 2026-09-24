@@ -22,9 +22,10 @@ parser this way lets a grammar distinguish `a > b` from a bareword containing
 `str "/" str` or `1*DIGIT "." 2DIGIT` without touching any lexer code.
 
 hbnf is evaluated on a synthetic pf-style firewall ruleset — the motivating
-workload, where production rulesets exceed 100,000 rules.  The current
-generated C parser consumes 100,000 rules (8.5 MB) in 72.7 ms (1.38 M rules/s,
-111 MB/s, 127 MB peak RSS).  The same grammar notation compresses OpenBSD's
+workload, where production rulesets exceed 100,000 rules.  On a five-field
+pf-style schema the generated C parser consumes 100,000 rules (8.4 MB) in
+57 ms (1.75 M rules/s, 147 MB/s, 53 MB peak RSS); the full pfctl grammar
+takes about half a second and 380 MB for 100,000 real rules.  The same grammar notation compresses OpenBSD's
 httpd configuration grammar from 2,785 lines of parse.y (63 rules, 79 keyword
 tokens) to under two hundred lines.
 
@@ -405,10 +406,10 @@ The worry with character-level parsing is that it means one token per character
 and one heap allocation per character.  It does not have to.  The scanner
 contract is `(kind, len)` over a source slice, not a pile of per-character
 tokens; a run-level scanner (a bareword, a number) is emitted as a tight loop
-over the slice, and only the *result* is materialized.  The measured baseline
-(§6) is a token-level parser that already does per-token allocation and still
-parses a million rules a second; the character-level form with run-level
-scanners removes, not adds, allocation.  Jets exist for the cases where a
+over the slice, and only the *result* is materialized.  The token-level
+parser measured in §6 allocates nothing per token and parses 1.8 million toy
+rules a second; the character-level form with run-level scanners need not add
+allocation either.  Jets exist for the cases where a
 hand-written loop genuinely beats a generated one — the same reason OpenBSD's
 hand-written `yylex` beats a table-driven flex lexer.
 
@@ -490,8 +491,8 @@ The first implementation lesson is about memory.  The unoptimized generated pars
 materializes every token as a heap string (`lex_dup` in the lexer) and then,
 for every string- or number-valued field, copies the token's text into the
 result tree (`strdup`).  For a 100k-rule ruleset that is on the order of two
-million `malloc`s and two million copies of short strings — and the benchmark
-in §6 shows the cost plainly: 127 MB of peak RSS, about 1.25 KB per rule,
+million `malloc`s and two million copies of short strings.  The first
+generator, run on §6's toy ruleset, peaks at 122 MB, about 1.25 KB per rule,
 nearly all of it these transient copies rather than the result tree itself.
 
 The fix is to stop allocating per token.  A token becomes a zero-copy slice —
@@ -503,9 +504,10 @@ stream is the source slice that a run-level scanner points at, not a pile of
 allocated tokens.  The result tree still needs its own storage, but that can be
 an arena, allocated once and freed once, instead of a `strdup` per field.
 
-The measured baseline deliberately keeps the per-token copies, so the
-number in §6 is the *before* picture against which the zero-copy and arena
-changes are measured.
+Both changes are in: a token is a pointer and a length into the source, and
+a field's string is copied once, into an arena freed with the tree.  §6
+measures the generator with them; on the toy ruleset peak RSS falls from
+122 MB to 53 MB.
 
 ### 5.2 UTF-8 in, UTF-8 out
 
@@ -545,45 +547,65 @@ bindings trivial.
 
 The motivating question is whether a generated parser can load a firewall
 ruleset of the size OpenBSD operators actually deploy.  The evaluation
-measures the generated C parser on a synthetic pf-style config.
+measures the generated C parser on two workloads: a toy pf-style schema, and
+the full `grammars/pfctl.hbnf`.
 
-**Setup.**  A schema with the shape of a pf rule — action (`pass`/`block`/
-`match`), direction (`in`/`out`), interface, protocol, and a `from`/`to` pair
-of address-plus-port — and a generator that emits 100,000 rules (8.46 MB) with
-a realistic mix of keywords, dotted addresses, and port numbers.  The parser is
-compiled with GCC at `-O2`; timing is wall-clock around a single `parse_text`
-call; peak RSS is `getrusage`'s `ru_maxrss`.
+**Setup.**  The toy schema has the shape of a pf rule — action (`pass`/
+`block`/`match`), direction (`in`/`out`), interface, protocol, and a
+`from`/`to` pair of address-plus-port — and its generator writes rules like
+`pass in on em0 proto tcp from 192.168.3.7 port 51234 to 192.168.9.1 port
+443`, 84 bytes each.  The pfctl rules are real pf syntax, `pass in quick on
+em0 inet proto tcp from 10.1.2.3 port 1234 to 10.4.5.6 port 80 keep state`,
+105 bytes each.  Both generators are deterministic and ship with the
+schemas in the evaluation harness (`section6.sh`, `bench/`).  The parsers are
+compiled with GCC at `-O2`.  Each parse runs in its own process, five
+times; the time is the best of the five, wall-clock around the parse call,
+and the memory is `getrusage`'s `ru_maxrss`.  The machine is a two-core
+2.1 GHz Xeon virtual machine; times vary by about ten percent from run to
+run.
 
-| N | bytes | time | rules/s | MB/s | peak RSS |
-|---|---:|---:|---:|---:|---:|
-| 100,000 | 8.46 MB | 72.7 ms | 1.38 M | 111 | 127 MB |
-| 1,000,000 | 84.6 MB | 0.72 s | 1.39 M | 117 | 1.24 GB |
+| schema | N | bytes | time | rules/s | MB/s | peak RSS |
+|---|---:|---:|---:|---:|---:|---:|
+| toy | 100,000 | 8.41 MB | 57 ms | 1.75 M | 147 | 53 MB |
+| toy | 1,000,000 | 84.1 MB | 0.55 s | 1.81 M | 152 | 517 MB |
 
-Throughput is linear in the rule count, at roughly 1.4 million rules per second
-and ~120 MB/s, with memory at about 1.25 KB per rule — dominated by the
-per-token and per-field string copies that §5 flags as the baseline.  The
-100k-rule case completes in under 75 ms, well inside the "load a big ruleset
-fast" criterion that motivated the work.
+Throughput is linear in the rule count, at about 1.8 million rules and
+150 MB per second, and memory is about 530 bytes per rule, text included.
+The first generator (the one this table first reported) takes 132 ms and
+122 MB for the same 100,000 rules on the same machine.  Since then tokens
+became slices of the source, field strings moved to an arena (§5.1), and
+an alternation of keywords jumps on an interned keyword id instead of
+trying each branch in turn.
 
-The toy schema is a minimal shape, so those numbers understate the real cost.
-Measured the same way against the shipped `grammars/pfctl.hbnf` — the full
-grammar, with its 36-way filter-option alternation and address/port/IP parsing
-rather than the toy's five fields — the generated parser takes longer and holds
-more, as a reviewer who runs the motivating workload would find:
+The toy is a minimal shape, so those numbers understate the real cost.  The
+full grammar, with its 35-way filter-option alternation and its address,
+port and interface parsing, does far more per rule:
 
-| N | bytes | time | rules/s | MB/s | peak RSS |
-|---|---:|---:|---:|---:|---:|
-| 100,000 | 4.48 MB | 310 ms | 322 K | 14.5 | 310 MB |
-| 1,000,000 | 44.8 MB | 3.36 s | 297 K | 13.3 | 3.01 GB |
+| pfctl.hbnf | N | bytes | time | rules/s | MB/s | peak RSS |
+|---|---:|---:|---:|---:|---:|---:|
+| `parse_text` | 100,000 | 10.5 MB | 0.56 s | 180 K | 19 | 389 MB |
+| `parse_file` | 100,000 | 10.5 MB | 0.48 s | 209 K | 22 | 379 MB |
+| `parse_file` | 1,000,000 | 105 MB | 5.9 s | 168 K | 18 | 3.77 GB |
 
-The real grammar is about four times slower per rule and holds two-and-a-half
-times the memory: the toy schema's five-field rule simply does far less work per
-token.  Both ratios are what the rest of §5 is spent on — the filter-option
-dispatch (§5.2's FIRST-set switch) took the full grammar from 0.70 s down to
-310 ms, and the string arena (§5.3) accounts for most of the remaining RSS.
-This is the honest number for the "load a big firewall ruleset" criterion: a
-100k-rule `pf.conf` parses in about 310 ms at 310 MB, and a 1M-rule one in 3.4 s
-at 3 GB.
+(`parse_text` parses a string already in memory; `parse_file` reads the
+file a block at a time.  Across runs both take 0.48 to 0.60 s at 100,000
+rules.)  Per rule the full grammar is nine to ten times slower than the toy
+and holds seven times the memory.  A profile of 20,000 rules explains most
+of both.  Time: 17% of the instructions are literal probes, about 170 per
+rule, ten per token, most of them failing as ordered choice tries each
+alternative in turn; 12% is the lexer; 11% is `strtol`, called 24 times per
+rule by speculative numeric branches.  Memory: the tree is about 4 KB per
+rule, and strings are a tenth of it.  The rest is layout: a list entry
+embeds the fields of every alternative, so pfctl's `rule` entry is
+2,000 bytes whichever alternative matched.
+
+These are the figures for the plain parser, which keeps hbnf's own tree.  A
+daemon binding does not: with `statements`, each statement's tree is handed
+to the action jets and freed before the next statement is read (§3.2),
+which is how the ntpd binding matches byacc's memory.  pfctl has no binding
+yet.  So for the "load a big firewall ruleset" criterion, the honest number
+today is that a 100,000-rule `pf.conf` parses in about half a second at
+380 MB, and a 1,000,000-rule one in 6 s at 3.8 GB.
 
 **Compactness.**  The same notation compresses a real grammar.  OpenBSD's
 `httpd.conf` is 2,785 lines of parse.y — 63 rules and 79 keyword tokens — most
@@ -610,18 +632,17 @@ ratio holds on every daemon at a factor of roughly ten to twenty:
 | unwind | 975 | 105 |
 | **total** | **25,794** | **2,255** |
 
-**Status.**  The measured baseline is the token-level parser with per-token
-allocation (§5.1) — deliberately the unoptimized version.  The inline-jet mechanism
-(§4.3–4.4), the `language` declaration, the preamble/epilogue blocks, and the
-id-ref serializer and rebuild side (§3.4) are implemented in the C backend: the
-schema parses them, the C emitter produces a working parser, a jet that
-recognizes IPv4 addresses round-trips through the generator, and the nine
-OpenBSD daemon schemas compile through all four emitters (the e2e suite and the
-52-check conformance suite pass).  The character-level grammar (§4.1), the
-zero-copy/arena token representation (§5.1), the UTF-8 code-point path (§5.2),
-and the Rust/Zig/Ada jet emission are the remaining increments.  The baseline
-is reported to establish what the design is being compared against, and because
-it already meets the performance criterion.
+**Status.**  Implemented in the C backend: inline jets (§4.3–4.4), the
+`language` declaration, the preamble/epilogue blocks, the id-ref serializer
+and rebuild side (§3.4), zero-copy tokens and the string arena (§5.1),
+keyword tables, statement-at-a-time parsing with macros and includes (§3.2),
+and left recursion read as a loop.  Rust, Zig and Ada have the grammar
+(including left recursion, `%i` and repetition bounds) but not jets, keyword
+tables or statements.  The nine OpenBSD daemon schemas compile through all
+four emitters; the e2e suite passes, and so does the conformance suite
+(`tests/check.gpr`: 40 corpus checks and 57 emitter checks).  The character-level grammar
+(§4.1), the UTF-8 code-point path (§5.2) and jets outside C are the
+remaining increments.
 
 ## 7. Related work
 
@@ -677,13 +698,15 @@ safety property that makes hand-optimizing a hot token acceptable.
 This paper has described hbnf, a parser generator whose schema is an extension of
 ABNF, whose generated lexer is a thin character stream, and whose token
 definitions live in the grammar — as BNF, as hand-written jets, or as
-refinements of either.  The baseline already parses a 100k-rule firewall
-ruleset in 75 ms, and the grammar notation compresses a 2,785-line yacc
-grammar to under two hundred lines.
+refinements of either.  The generated parser loads 100,000 toy rules in 57 ms
+and 100,000 real pf rules in about half a second, and the grammar notation
+compresses a 2,785-line yacc grammar to under two hundred lines.
 
-Near-term work is to finish the implemented surface — the jet and refinement
-syntax across the four emitters, the spec-vs-jet cross-check, the zero-copy or
-arena token representation — and to re-measure against the baseline in §6.
+Near-term work is to finish the implemented surface — jets, keyword tables
+and statements across the four emitters, and the spec-vs-jet cross-check —
+and to bring the full pfctl grammar's cost per rule (§6) toward the toy's:
+fewer failing literal probes, and a tree that does not embed every
+alternative's fields.
 
 Two research directions follow from the design.
 
