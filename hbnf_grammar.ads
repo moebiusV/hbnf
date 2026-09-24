@@ -168,6 +168,13 @@ package HBNF_Grammar is
    --  daemon's real tree, not hbnf's parse tree.
    function Conf_Type return String;
 
+   --  `entry hbnf_parse_config`: the name of the function the `conf`
+   --  wrapper defines, "parse_config" when absent.  A daemon whose
+   --  parse.y declares parse_config differently (unwind's returns a new
+   --  struct uw_conf *) names the generated one otherwise, and its
+   --  binding's epilogue defines the daemon's parse_config around it.
+   function Entry_Name return String;
+
    --  `statements`: the root rule is a list whose entries are statements,
    --  and the C parser reads the config one statement at a time, as
    --  parse.y's yyparse does.  A statement ends at a newline outside `{ }`

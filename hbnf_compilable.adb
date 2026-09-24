@@ -346,6 +346,14 @@ package body HBNF_Compilable is
            & "has one (add `action <rule> { ... }`)";
       end if;
 
+      --  `entry` renames the function the conf wrapper defines, which
+      --  exists only with `conf`.
+      if Entry_Name /= "parse_config" and then Conf_Type = "" then
+         raise Parse_Error with
+           "`entry " & Entry_Name & "` names the function the `conf` "
+           & "wrapper defines; add `conf struct <daemon conf>`";
+      end if;
+
       --  A listops block overrides hbnf's built-in list operation by
       --  operation.  The seven structural operations form one list, so a
       --  partial block (mixing overridden and built-in operations) would

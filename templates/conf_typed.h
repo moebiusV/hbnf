@@ -1,7 +1,8 @@
-/* The daemon's own conf tree, filled by parse_config(); the action jets
-   build it into the caller's struct.  The `conf` global is the daemon's
-   (declared in its header, included by the grammar's preamble). */
-int parse_config(const char *filename, @CONF_TYPE@ *conf);
+/* The daemon's own conf tree, filled by parse_config() (or the name an
+   `entry` directive gives it); the action jets build it into the caller's
+   struct.  The `conf` global is the daemon's (declared in its header,
+   included by the grammar's preamble). */
+int @ENTRY@(const char *filename, @CONF_TYPE@ *conf);
 
 /* yyerror-style error handler: called with each error's message and its
    1-based line (a syntax error, or every error an action jet reports).  The

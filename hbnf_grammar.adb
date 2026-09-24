@@ -12,6 +12,7 @@ package body HBNF_Grammar is
    Word_Chars_Code : Unbounded_String := Null_Unbounded_String;
    Type_Prefix_Code : Unbounded_String := Null_Unbounded_String;
    Conf_Type_Code  : Unbounded_String := Null_Unbounded_String;
+   Entry_Code      : Unbounded_String := Null_Unbounded_String;
    List_Head_Code    : Unbounded_String := Null_Unbounded_String;
    List_Entry_Code   : Unbounded_String := Null_Unbounded_String;
    List_Init_Code    : Unbounded_String := Null_Unbounded_String;
@@ -1004,6 +1005,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "listops"
                               or else To_String (Cur (P).Text) = "statements"
                               or else To_String (Cur (P).Text) = "macros"
+                              or else To_String (Cur (P).Text) = "entry"
                               or else To_String (Cur (P).Text) = "includes"
                               or else To_String (Cur (P).Text) = "keywords"))
          then
@@ -1155,7 +1157,8 @@ package body HBNF_Grammar is
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then (To_String (Cur (P).Text) = "macros"
-                           or else To_String (Cur (P).Text) = "includes")
+                           or else To_String (Cur (P).Text) = "includes"
+                           or else To_String (Cur (P).Text) = "entry")
                  and then Ends_Directive (P, 2)
                then
                   --  `macros varset` / `includes include`: the rule whose
@@ -1168,10 +1171,15 @@ package body HBNF_Grammar is
                         raise Parse_Error with
                           Integer'Image (Cur (P).Line) & ":" &
                           Integer'Image (Cur (P).Col) &
-                          ": expected a rule name after `" & D & "`";
+                          ": expected "
+                          & (if D = "entry" then "a C function name"
+                             else "a rule name")
+                          & " after `" & D & "`";
                      end if;
                      if D = "macros" then
                         Macros_Name := Cur (P).Text;
+                     elsif D = "entry" then
+                        Entry_Code := Cur (P).Text;
                      else
                         Includes_Name := Cur (P).Text;
                      end if;
@@ -1557,6 +1565,7 @@ package body HBNF_Grammar is
          Word_Chars_Code := Null_Unbounded_String;
          Type_Prefix_Code := Null_Unbounded_String;
          Conf_Type_Code := Null_Unbounded_String;
+         Entry_Code := Null_Unbounded_String;
          List_Head_Code := Null_Unbounded_String;
          List_Entry_Code := Null_Unbounded_String;
          List_Init_Code := Null_Unbounded_String;
@@ -1680,6 +1689,10 @@ package body HBNF_Grammar is
    function Type_Prefix return String is (To_String (Type_Prefix_Code));
 
    function Conf_Type return String is (To_String (Conf_Type_Code));
+
+   function Entry_Name return String is
+     (if Entry_Code = Null_Unbounded_String then "parse_config"
+      else To_String (Entry_Code));
 
    function Statements return Boolean is (Statements_On);
 

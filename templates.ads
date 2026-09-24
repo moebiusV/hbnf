@@ -1286,10 +1286,11 @@ package Templates is
      "@ROOT_TYPE@ *conf_ptr(void) { return conf; }";
 
    Conf_H_Typed : constant String :=
-     "/* The daemon's own conf tree, filled by parse_config(); the action jets" & LF &
-     "   build it into the caller's struct.  The `conf` global is the daemon's" & LF &
-     "   (declared in its header, included by the grammar's preamble). */" & LF &
-     "int parse_config(const char *filename, @CONF_TYPE@ *conf);" & LF &
+     "/* The daemon's own conf tree, filled by parse_config() (or the name an" & LF &
+     "   `entry` directive gives it); the action jets build it into the caller's" & LF &
+     "   struct.  The `conf` global is the daemon's (declared in its header," & LF &
+     "   included by the grammar's preamble). */" & LF &
+     "int @ENTRY@(const char *filename, @CONF_TYPE@ *conf);" & LF &
      "" & LF &
      "/* yyerror-style error handler: called with each error's message and its" & LF &
      "   1-based line (a syntax error, or every error an action jet reports).  The" & LF &
@@ -1329,7 +1330,7 @@ package Templates is
      "   The parse tree is only the action jets' input: it is freed, with the" & LF &
      "   string arena, before parse_config returns, so a jet copies whatever it" & LF &
      "   keeps. */" & LF &
-     "int parse_config(const char *filename, @CONF_TYPE@ *xconf) {" & LF &
+     "int @ENTRY@(const char *filename, @CONF_TYPE@ *xconf) {" & LF &
      "    FILE *f = fopen(filename, ""r"");" & LF &
      "    char *buf;" & LF &
      "    long len;" & LF &
@@ -1422,7 +1423,7 @@ package Templates is
      "   next is read, so a jet copies whatever it keeps.  Every error is" & LF &
      "   reported as it is found and the parse goes on, as parse.y's does;" & LF &
      "   parse_config then returns -1. */" & LF &
-     "int parse_config(const char *filename, @CONF_TYPE@ *xconf) {" & LF &
+     "int @ENTRY@(const char *filename, @CONF_TYPE@ *xconf) {" & LF &
      "    FILE *f;" & LF &
      "    hbnf_src_t src;" & LF &
      "    char err[512];" & LF &

@@ -36,7 +36,7 @@ static void conf_report(size_t line, const char *msg) {
    next is read, so a jet copies whatever it keeps.  Every error is
    reported as it is found and the parse goes on, as parse.y's does;
    parse_config then returns -1. */
-int parse_config(const char *filename, @CONF_TYPE@ *xconf) {
+int @ENTRY@(const char *filename, @CONF_TYPE@ *xconf) {
     FILE *f;
     hbnf_src_t src;
     char err[512];

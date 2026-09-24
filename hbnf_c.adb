@@ -4331,7 +4331,9 @@ package body HBNF_C is
         (if Conf_T /= "" then
             Templates.Substitute
               (Templates.Substitute
-                 (Templates.Conf_H_Typed, "@CONF_TYPE@", Conf_T),
+                 (Templates.Substitute
+                    (Templates.Conf_H_Typed, "@CONF_TYPE@", Conf_T),
+                  "@ENTRY@", HBNF_Grammar.Entry_Name),
                "@ROOT_TYPE@", Root_T)
          else
             Templates.Substitute (Templates.Conf_H, "@ROOT_TYPE@", Root_T));
@@ -4417,9 +4419,11 @@ package body HBNF_C is
            Templates.Substitute
              (Templates.Substitute
                 (Templates.Substitute
-                   ((if HBNF_Grammar.Statements
-                     then Templates.Conf_Tail_C_Typed_Stmt
-                     else Templates.Conf_Tail_C_Typed),
+                   (Templates.Substitute
+                      ((if HBNF_Grammar.Statements
+                        then Templates.Conf_Tail_C_Typed_Stmt
+                        else Templates.Conf_Tail_C_Typed),
+                       "@ENTRY@", HBNF_Grammar.Entry_Name),
                     "@CONF_TYPE@", Conf_T),
                  "@ROOT_TYPE@", Root_T),
               "@ROOT_C@", Root_C);
