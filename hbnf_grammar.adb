@@ -27,6 +27,10 @@ package body HBNF_Grammar is
    Macros_Name     : Unbounded_String := Null_Unbounded_String;
    Includes_Name   : Unbounded_String := Null_Unbounded_String;
 
+   --  `keywords { ... }`: the reserved words (empty: every letter-led
+   --  literal is one).
+   Keyword_Words   : Word_Vectors.Vector;
+
    --  `action name { code }` directives waiting for their rule: a binding
    --  file attaches actions to rules an included grammar defines, so they
    --  are resolved once the includes are merged (Parse_File).
@@ -685,6 +689,55 @@ package body HBNF_Grammar is
       return V;
    end Parse_Alternation;
 
+   --  The words of a `keywords { ... }` block, added to Keyword_Words.  A
+   --  keyword is what the lexer can intern: letter- or underscore-led, then
+   --  letters, digits, `_`, `-` and `.`.
+   procedure Add_Keywords (Block : String; Line : Positive) is
+      I : Natural := Block'First;
+
+      procedure Add (W : String) is
+         function Word_Char (C : Character) return Boolean is
+           (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.');
+      begin
+         if not (W (W'First) in 'a' .. 'z' | 'A' .. 'Z' | '_')
+           or else (for some C of W => not Word_Char (C))
+         then
+            raise Parse_Error with
+              Integer'Image (Line) & ": keywords: `" & W
+              & "` is not a word (a letter or `_`, then letters, digits, "
+              & "`_`, `-`, `.`)";
+         end if;
+         if Keyword_Words.Contains (To_Unbounded_String (W)) then
+            raise Parse_Error with
+              Integer'Image (Line) & ": keywords: `" & W & "` listed twice";
+         end if;
+         Keyword_Words.Append (To_Unbounded_String (W));
+      end Add;
+   begin
+      while I <= Block'Last loop
+         if Block (I) = ';' then
+            while I <= Block'Last and then Block (I) /= ASCII.LF loop
+               I := I + 1;
+            end loop;
+         elsif Block (I) in ' ' | ASCII.HT | ASCII.LF | ASCII.CR then
+            I := I + 1;
+         else
+            declare
+               J : Natural := I;
+            begin
+               while J <= Block'Last
+                 and then Block (J) not in ' ' | ASCII.HT | ASCII.LF
+                                         | ASCII.CR | ';'
+               loop
+                  J := J + 1;
+               end loop;
+               Add (Block (I .. J - 1));
+               I := J;
+            end;
+         end if;
+      end loop;
+   end Add_Keywords;
+
    --  True when the token K after the current one ends a line: a header
    --  word followed by `=` (or a name and `=`) starts a rule, not a
    --  directive, so a grammar can still name a rule `macros`.
@@ -717,7 +770,8 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "listops"
                               or else To_String (Cur (P).Text) = "statements"
                               or else To_String (Cur (P).Text) = "macros"
-                              or else To_String (Cur (P).Text) = "includes"))
+                              or else To_String (Cur (P).Text) = "includes"
+                              or else To_String (Cur (P).Text) = "keywords"))
          then
             P.Pos := Mark;
             loop
@@ -845,6 +899,17 @@ package body HBNF_Grammar is
                         end;
                      end loop;
                   end;
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "keywords"
+                 and then P.Pos + 1 <= Natural (P.Toks.Length)
+                 and then P.Toks (P.Pos + 1).Kind = T_Code
+               then
+                  --  `keywords { all any anchor ... }`: the reserved words,
+                  --  as parse.y's lookup() table has them, separated by
+                  --  blanks; `;` starts a comment to the end of the line.
+                  Next (P);
+                  Add_Keywords (To_String (Cur (P).Text), Cur (P).Line);
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "statements"
@@ -1231,6 +1296,7 @@ package body HBNF_Grammar is
          Statements_On := False;
          Macros_Name := Null_Unbounded_String;
          Includes_Name := Null_Unbounded_String;
+         Keyword_Words.Clear;
          Pending_Actions.Clear;
       end if;
       File_Depth := File_Depth + 1;
@@ -1348,6 +1414,8 @@ package body HBNF_Grammar is
    function Macros_Rule return String is (To_String (Macros_Name));
 
    function Includes_Rule return String is (To_String (Includes_Name));
+
+   function Keyword_Table return Word_Vectors.Vector is (Keyword_Words);
 
    procedure Set_Type_Prefix (Prefix : String) is
    begin

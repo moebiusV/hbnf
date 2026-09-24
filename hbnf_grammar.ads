@@ -83,6 +83,9 @@ package HBNF_Grammar is
 
    package Rule_Vectors is new Ada.Containers.Vectors (Positive, Rule);
 
+   package Word_Vectors is new
+     Ada.Containers.Vectors (Positive, Unbounded_String);
+
    --  Parse HBNF_Grammar (ABNF) source text into a flat list of rules, in order.
    function Parse (Text : String) return Rule_Vectors.Vector;
 
@@ -165,5 +168,14 @@ package HBNF_Grammar is
    --  includes the file its last token names; the file's statements are
    --  read in its place.  "" when absent.
    function Includes_Rule return String;
+
+   --  `keywords { all any anchor ... }`: the words the C lexer reserves, as
+   --  parse.y's lookup() table does.  A letter-led literal in the table is a
+   --  keyword: interned, refused as a `word`, dispatched on by id.  Any other
+   --  literal matches a word by its text and reserves nothing, as parse.y's
+   --  STRING compared with strcmp in an action.  A word in the table that no
+   --  rule uses is still reserved.  Empty when the directive is absent, and
+   --  then every letter-led literal is a keyword.
+   function Keyword_Table return Word_Vectors.Vector;
 
 end HBNF_Grammar;

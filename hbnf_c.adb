@@ -57,13 +57,17 @@ package body HBNF_C is
    end C_Ident;
 
    --  A literal the lexer interns as a keyword (it gets a KW_ id): one led
-   --  by a letter or underscore.  Punctuation and digit-led literals are not
-   --  atoms.
+   --  by a letter or underscore -- punctuation and digit-led literals are
+   --  not atoms -- and, when the grammar has a `keywords` table, one in it.
+   --  Any other literal is matched by its text and reserves nothing.
    function Is_Keyword_Lit (S : String) return Boolean is
      (S'Length > 0
       and then (S (S'First) in 'a' .. 'z'
                 or else S (S'First) in 'A' .. 'Z'
-                or else S (S'First) = '_'));
+                or else S (S'First) = '_')
+      and then (HBNF_Grammar.Keyword_Table.Is_Empty
+                or else HBNF_Grammar.Keyword_Table.Contains
+                          (To_Unbounded_String (S))));
 
    --  Escape a literal for embedding in a C string literal: backslash and
    --  double-quote take C escapes, the named controls map to their short
@@ -2541,8 +2545,10 @@ package body HBNF_C is
          return Has_Alt;
       end Is_Pure_Literal_Alt;
 
-      --  Every literal in the grammar, deduped in first-appearance order.
-      --  These are the keywords the lexer interns against.
+      --  The keywords the lexer interns against: the `keywords` table when
+      --  there is one (every word in it, used or not, as parse.y reserves
+      --  its whole lookup() table), else every letter-led literal in the
+      --  grammar, deduped in first-appearance order.
       function Collect_Keywords return String_Vectors.Vector is
          K : String_Vectors.Vector;
 
@@ -2580,6 +2586,12 @@ package body HBNF_C is
             end loop;
          end Walk;
       begin
+         if not HBNF_Grammar.Keyword_Table.Is_Empty then
+            for W of HBNF_Grammar.Keyword_Table loop
+               K.Append (W);
+            end loop;
+            return K;
+         end if;
          for I in 1 .. N loop
             Walk (Rules (I).Pattern);
          end loop;
@@ -2587,6 +2599,22 @@ package body HBNF_C is
       end Collect_Keywords;
 
       Keywords : constant String_Vectors.Vector := Collect_Keywords;
+
+      --  A keyword's enumerator: KW_ and its C identifier, with a suffix
+      --  when an earlier keyword maps to the same one (unwind's table has
+      --  both `DoT` and `dot`; `-` and `_` both become `_`).
+      function Kw_Name (S : String) return String is
+         Id    : constant String := C_Ident (S);
+         Count : Natural := 0;
+      begin
+         for K of Keywords loop
+            exit when To_String (K) = S;
+            if C_Ident (To_String (K)) = Id then
+               Count := Count + 1;
+            end if;
+         end loop;
+         return "KW_" & Id & (if Count = 0 then "" else "_" & Img (Count + 1));
+      end Kw_Name;
 
       --  Emit the keyword-id enum plus the interning lookup: a switch on
       --  length, then first character, then one inlined memcmp per keyword in
@@ -2615,7 +2643,7 @@ package body HBNF_C is
          end if;
          Append (Buf, "typedef enum { KWID_NONE = 0");
          for K of Keywords loop
-            Append (Buf, ", KW_" & C_Ident (To_String (K)));
+            Append (Buf, ", " & Kw_Name (To_String (K)));
          end loop;
          Append (Buf, " } kwid_t;");
          Append (Buf, LF);
@@ -2650,7 +2678,7 @@ package body HBNF_C is
                            if Len (K2) = L and then First (K2) = First (K) then
                               Append (Buf, "            if (memcmp(s, """
                                 & C_Escape (To_String (K2)) & """, " & Img (L)
-                                & ") == 0) return KW_" & C_Ident (To_String (K2)) & ";");
+                                & ") == 0) return " & Kw_Name (To_String (K2)) & ";");
                               Append (Buf, LF);
                            end if;
                         end loop;
@@ -2853,11 +2881,7 @@ package body HBNF_C is
       --  can begin an element, transitively through rule references.  A core
       --  scalar (word / atom / int / str / …) or a jet has no bounded keyword
       --  set, so it makes the whole alternation fall back to linear probing.
-      function Is_Keyword (S : String) return Boolean is
-        (S'Length > 0
-         and then (S (S'First) in 'a' .. 'z'
-                   or else S (S'First) in 'A' .. 'Z'
-                   or else S (S'First) = '_'));
+      function Is_Keyword (S : String) return Boolean renames Is_Keyword_Lit;
 
       function First_Union (A : String_Vectors.Vector; B : String_Vectors.Vector)
         return String_Vectors.Vector is
@@ -3140,8 +3164,8 @@ package body HBNF_C is
                begin
                   for I in Offs (X) .. Offs (X + 1) - 1 loop
                      if Unique_To (Flat (I), Flat, Offs, X) then
-                        Append (Buf, Ind & "case KW_"
-                          & C_Ident (To_String (Flat (I))) & ":");
+                        Append (Buf, Ind & "case "
+                          & Kw_Name (To_String (Flat (I))) & ":");
                         Append (Buf, LF);
                         Emitted := True;
                      end if;
@@ -3170,7 +3194,7 @@ package body HBNF_C is
                      --  to honour source order.
                      Br := Unique_Branch (K, Flat, Offs);
                      if Br <= 1 then
-                        Append (Buf, Ind & "case KW_" & C_Ident (To_String (K))
+                        Append (Buf, Ind & "case " & Kw_Name (To_String (K))
                           & ": goto alt_linear;");
                         Append (Buf, LF);
                      end if;
@@ -3443,7 +3467,7 @@ package body HBNF_C is
                               L    : constant String := To_String (P (St).Lit);
                               Cond : constant String :=
                                 (if Is_Keyword_Lit (L)
-                                 then "p->toks[p->pos].kwid == KW_" & C_Ident (L)
+                                 then "p->toks[p->pos].kwid == " & Kw_Name (L)
                                  else "p->toks[p->pos].len == strlen("
                                    & '"' & C_Escape (L) & '"'
                                    & ") && strncmp(p->toks[p->pos].text, "
