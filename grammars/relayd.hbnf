@@ -208,9 +208,9 @@ protopt       = "tls" tlsflag
               / "tcp" "{" tcpflags "}"
               / "http" httpflag
               / "http" "{" httpflags "}"
+              / "return" "error" "{" eflags "}"
               / "return" "error" eflags
               / "return" "error"
-              / "return" "error" "{" eflags "}"
               / filterrule
               / include
 
@@ -220,16 +220,16 @@ tlsflag       = "session" "tickets"
               / "no" "session" "tickets"
               / "ciphers" string
               / "no" "edh"
-              / "edh"
               / "edh" "params" string
+              / "edh"
               / "ecdhe" string
               / "ca" "file" string
               / "ca" "key" cakey "password" capass
               / "ca" "cert" string
-              / "keypair" kpname
               / "keypair" kpname "cert" kpcert
               / "keypair" kpname "key" kpkey
               / "keypair" kpname "ocsp" kpocsp
+              / "keypair" kpname
               / "client" "ca" string
               / "no" flag
               / flag
@@ -390,7 +390,8 @@ ipv6          = {
     return (hex && colons >= 2) ? n : 0;
 }
 
-; portrange — a port range "low:high" (numbers or service names), one ":"
+; portrange — a port range "low:high" (numbers or service names), one ":".
+; Each part is a run of name characters, so a quoted "a:b" stays a string.
 portrange     = {
     size_t i = 0, colon = 0, part = 0;
     while (pos + i < len) {
@@ -398,10 +399,12 @@ portrange     = {
         if (c == ':') {
             if (colon == 1 || part == 0) return 0;
             colon = 1; part = 0; i++;
-        } else if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '#') {
-            break;
-        } else {
+        } else if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')
+                   || (c >= 'A' && c <= 'Z') || c == '-' || c == '_'
+                   || c == '.') {
             part = 1; i++;
+        } else {
+            break;
         }
     }
     return (colon && part) ? i : 0;

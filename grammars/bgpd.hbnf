@@ -296,8 +296,8 @@ peeropts    = "remote-as" asnumber
             / "ttl-security" yesno
             / setclause
             / mrtdump
-            / "route-reflector"
             / "route-reflector" address
+            / "route-reflector"
             / "depend" "on" string
             / "demote" string
             / "transparent-as" yesno
