@@ -3379,13 +3379,12 @@ package body HBNF_C is
                end;
                Names := Enum_Names (Lits);
 
-               --  The alternatives are keywords, so the token is a keyword
-               --  atom: gate on the kind alone (expect_kind rejects keyword
-               --  atoms, which is right for word/atom values but not here).
-               Append (Buf, "    if (p->pos >= p->n || p->toks[p->pos].kind"
-                 & " != TOK_ATOM) { fail(p, ""a " & CN
-                 & """, 0, p->pos < p->n ? p->toks[p->pos].text"
-                 & " : ""end of input""); return false; }");
+               --  Each alternative checks the token itself: a keyword by its
+               --  keyword id, any other literal by its text.  No kind gate: a
+               --  non-keyword literal like "*" may arrive as a jet's token
+               --  (commonconf's wildcard), which is not an atom.
+               Append (Buf, "    if (p->pos >= p->n) { fail(p, ""a " & CN
+                 & """, 0, ""end of input""); return false; }");
                Append (Buf, LF);
                Append (Buf, "    {");
                Append (Buf, LF);
