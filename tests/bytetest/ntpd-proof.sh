@@ -47,6 +47,9 @@ awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
      f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \
 	"$scratch/conf-out.txt"
 
+echo "== the generated parser, built as ntpd's sources are =="
+sh "$here/strict-cc.sh" "$root" "$ntpd" "$scratch/conf.c"
+
 echo "== compiling ntpd + imsg + the generated parser + shims =="
 for f in log config constraint util ntp ntp_msg server client sensors \
 	ntp_dns control ntpd; do
@@ -63,6 +66,23 @@ gcc -w -std=gnu11 -c $inc "$here/ntpd-shims.c" -o "$scratch/shims.o"
 # parse.y's address-family checks read them correctly.
 gcc -w -std=gnu11 -c $inc "$here/byteident/getaddrinfo_wrap.c" \
 	-o "$scratch/gaiwrap.o"
+
+echo "== what the rest of ntpd needs from its parser =="
+# Link everything but the parser: what is left undefined is what parse.y
+# gives the rest of the daemon, so the generated parser must define it.
+need=$(gcc -o /dev/null $(ls "$scratch"/*.o | grep -v '/conf\.o$') -lm \
+	-Wl,--wrap=getaddrinfo -Wl,--wrap=inet_pton 2>&1 \
+	| sed -n "s/.*undefined reference to \`\([^']*\)'.*/\1/p" | sort -u)
+[ -n "$need" ] || { echo "ntpd-proof: nothing left undefined without the parser?" >&2; exit 1; }
+miss=0
+for sym in $need; do
+	if nm -g --defined-only "$scratch/conf.o" | grep -q " $sym\$"; then
+		echo "  $sym: defined by the generated parser"
+	else
+		echo "  $sym: MISSING from the generated parser"; miss=1
+	fi
+done
+[ "$miss" = 0 ] || exit 1
 
 echo "== linking =="
 gcc -o "$scratch/ntpd" "$scratch"/*.o -lm \

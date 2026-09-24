@@ -63,6 +63,9 @@ awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
      f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \
 	"$scratch/conf-out.txt"
 
+echo "== the generated parser, built as ntpd's sources are =="
+sh "$here/strict-cc.sh" "$root" "$ntpd" "$scratch/conf.c"
+
 echo "== compiling (shared: config.c, log.c, shims, dump, harness) =="
 for f in config log; do
 	gcc -w -std=gnu11 -c $inc "$ntpd/$f.c" -o "$scratch/$f.o"

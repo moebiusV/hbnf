@@ -138,6 +138,16 @@ The cases cover every directive, IPv6 literals, hostnames, a negative
 number, an empty file, each semantic error parse.y reports, two errors in
 one file, and two syntax errors.  Add a case by dropping a `.conf` file in.
 
+Before comparing, `strict-cc.sh` builds the generated `conf.c` the way
+ntpd's own sources are built: the `-W` flags from ntpd's Makefile (`-Wall
+-Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wshadow
+-Wpointer-arith -Wcast-qual -Wsign-compare`), plus the errors gcc 14 and
+clang make of implicit declarations and pointer mismatches, with gcc and
+with clang (OpenBSD's compiler) when present.  Any warning in the generated
+files fails the run.  Everything else in the harness is built with `-w`, so
+without this step a missing `#include` or a `const` mismatch in the
+generated code goes unnoticed on an older gcc.
+
 bison and `hbnf_cli` are used from the host when present (`bison` on PATH;
 `$HBNF_CLI`, or `sources/hbnf/hbnf_cli` once built); otherwise from docker.
 `KEEP=1` keeps the scratch directory with both binaries.
@@ -191,6 +201,13 @@ directive asks for). A few small shims make this possible on Linux:
 
 `hbnf_cli` comes from `$HBNF_CLI` or `sources/hbnf/hbnf_cli` when built,
 otherwise from docker.
+
+Two more checks run before `ntpd -n`: `strict-cc.sh` (as above), and the
+symbol contract.  The script links ntpd without any parser; what is left
+undefined is what parse.y provides to the rest of the daemon, and each of
+those symbols must be defined by the generated `conf.o`.  For ntpd that is
+`parse_config` alone.  Other daemons need more (for example
+`cmdline_symset()` for `-D`), and the same link finds exactly what.
 
 The proof found one real emitter bug: a `word`/`atom` scalar matched a
 keyword token, so `1*string` would swallow the *next* directive's keyword.
