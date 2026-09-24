@@ -30,16 +30,22 @@ include "commonconf.hbnf"
 config     = *( entry )
 
 entry      = "listen" "on" address listenopts
-           / "query" "from" string
+           / "query" "from" address
            / "servers" address serveropts
            / "server" address serveropts
-           / "constraints" "from" string
-           / "constraint" "from" stringlist
+           / "constraints" "from" address
+           / "constraint" "from" urllist
            / "sensor" string sensoropts
 
 rtable     = "rtable" int
 
 listenopts = *( rtable )
+
+; parse.y's STRING takes any bareword its lexer allows, IPv6 literals
+; included, so the places parse.y reads an address or a url take `address`
+; (a quoted string, a word, `*` or an IPv6 literal), not `string`.  urllist:
+; a url, then the addresses to use for it.
+urllist    = 1*( address )
 
 serveropts = *( serveropt )
 serveropt  = "weight" int / "trusted"
