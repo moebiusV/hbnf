@@ -1243,22 +1243,40 @@ package body HBNF_Ada is
                   declare
                      SK : constant String := Start_Kind (To_String (Simple));
                   begin
-                     if SK /= "" then
-                        Append (Buf, "      while P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = "
-                          & SK & " loop");
-                     else
-                        Append (Buf, "      while P.Pos <= Natural (P.Toks.Length) loop");
-                     end if;
+                     --  PEG's `*`: stop at the end of input (the token
+                     --  vector ends in Eof), and at the first element that
+                     --  fails, with the position restored; the caller then
+                     --  decides.  (The loop used to run into Eof and raise,
+                     --  so every list-root schema failed.)
+                     Append (Buf, "      loop");
+                     Append (Buf, LF);
+                     Append (Buf, "         exit when P.Pos > Natural (P.Toks.Length)"
+                       & " or else P.Toks (P.Pos).Kind = Eof"
+                       & (if SK /= ""
+                          then " or else P.Toks (P.Pos).Kind /= " & SK
+                          else "") & ";");
+                     Append (Buf, LF);
                   end;
+                  Append (Buf, "         declare");
+                  Append (Buf, LF);
+                  Append (Buf, "            Start : constant Natural := P.Pos;");
+                  Append (Buf, LF);
+                  Append (Buf, "         begin");
                   Append (Buf, LF);
                   if Is_Struct (To_String (Simple)) then
-                     Append (Buf, "         R.Append (new "
+                     Append (Buf, "            R.Append (new "
                        & Ada_Ident (To_String (Simple)) & "_Type'(Parse_"
                        & Ada_Ident (To_String (Simple)) & " (P)));");
                   else
-                     Append (Buf, "         R.Append (Parse_"
+                     Append (Buf, "            R.Append (Parse_"
                        & Ada_Ident (To_String (Simple)) & " (P));");
                   end if;
+                  Append (Buf, LF);
+                  Append (Buf, "         exception");
+                  Append (Buf, LF);
+                  Append (Buf, "            when Parse_Error => P.Pos := Start; exit;");
+                  Append (Buf, LF);
+                  Append (Buf, "         end;");
                   Append (Buf, LF);
                   Append (Buf, "      end loop;");
                   Append (Buf, LF);
