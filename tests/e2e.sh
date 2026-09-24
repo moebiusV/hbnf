@@ -117,4 +117,7 @@ HBNF_CLI=/tmp/hbnf_cli sh tests/syntax.sh
 echo "== left recursion, read as a loop (tests/leftrec) =="
 HBNF_CLI=/tmp/hbnf_cli sh tests/leftrec.sh
 
+echo "== one schema through every backend (tests/portable) =="
+HBNF_CLI=/tmp/hbnf_cli sh tests/portable.sh
+
 rm -f server.c server.rs server.zig server_schema.ads server_schema-parser.ads server_schema-parser.adb

@@ -1128,6 +1128,15 @@ package body HBNF_Rust is
            and then Ada.Strings.Unbounded.Element (E.Lit, 1) not in
              'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
 
+      --  The current token's text is literal L: as written, or in any case
+      --  for a %i literal.
+      function Text_Is (L : Element_Access) return String is
+        (if L.No_Case
+         then "p.toks[p.pos].text.eq_ignore_ascii_case("""
+              & Rust_Escape (To_String (L.Lit)) & """)"
+         else "p.toks[p.pos].text == """ & Rust_Escape (To_String (L.Lit))
+              & """");
+
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural;
          Dst  : String; Buf : in out U; Ind : String := "    ") is
@@ -1138,7 +1147,8 @@ package body HBNF_Rust is
             begin
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & "p.expect_lit("""
+                     Append (Buf, Ind & "p.expect_lit"
+                       & (if E.No_Case then "_nocase" else "") & "("""
                        & Rust_Escape (To_String (E.Lit)) & """)?;");
                      Append (Buf, LF);
                   when Name =>
@@ -1223,38 +1233,77 @@ package body HBNF_Rust is
          if Is_List then
             declare
                E : constant Element_Access := P (1);
+               --  Repetition bounds, as the C backend enforces them.
+               Max_Stop : constant String :=
+                 (if E.Max >= 0
+                  then "if r.len() >= " & Img (Natural (E.Max)) & " { break"
+                  else "");
             begin
                Append (Buf, "    let mut r = Vec::new();");
                Append (Buf, LF);
+               if E.Min > 0 then
+                  Append (Buf, "    let start = p.pos;");
+                  Append (Buf, LF);
+               end if;
                if E.Kind = Name then
                   declare
                      SK : constant String := Start_Kind (To_String (E.Name));
                   begin
-                     if SK /= "" then
-                        Append (Buf, "    while p.pos < p.toks.len() && matches!(p.toks[p.pos].kind, "
-                          & SK & ") {");
-                     else
-                        Append (Buf, "    while p.pos < p.toks.len() {");
+                     --  PEG's `*`: stop at the first element that fails,
+                     --  with the position restored, as C does; the caller
+                     --  decides.
+                     Append (Buf, "    loop {");
+                     Append (Buf, LF);
+                     if Max_Stop /= "" then
+                        Append (Buf, "        " & Max_Stop & "; }");
+                        Append (Buf, LF);
                      end if;
+                     Append (Buf, "        if p.pos >= p.toks.len()"
+                       & (if SK /= ""
+                          then " || !matches!(p.toks[p.pos].kind, " & SK & ")"
+                          else "") & " { break; }");
+                     Append (Buf, LF);
                   end;
+                  Append (Buf, "        let save = p.pos;");
                   Append (Buf, LF);
-                  Append (Buf, "        r.push(parse_" & Rust_Snake (To_String (E.Name))
-                    & "(p)?);");
+                  Append (Buf, "        match parse_" & Rust_Snake (To_String (E.Name))
+                    & "(p) { Ok(v) => r.push(v), Err(_) => { p.pos = save; break; } }");
                   Append (Buf, LF);
                   Append (Buf, "    }");
                   Append (Buf, LF);
                elsif E.Kind = Group then
                   Append (Buf, "    'list: loop {");
                   Append (Buf, LF);
+                  if Max_Stop /= "" then
+                     Append (Buf, "        " & Max_Stop & " 'list; }");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "        let save = p.pos;");
                   Append (Buf, LF);
                   Append (Buf, "        let mut e = " & RT & "Entry::default();");
                   Append (Buf, LF);
                   Append (Buf, "        'alt: {");
                   Append (Buf, LF);
-                  Emit_Alternation (E.Items, "e.",
-                                    "e = " & RT & "Entry::default()", Buf,
-                                    "            ");
+                  if R.Left_Bases > 0 then
+                     --  Left recursion, as a loop: the first entry is a
+                     --  base, each later one a tail.
+                     Append (Buf, "            if r.is_empty() {");
+                     Append (Buf, LF);
+                     Emit_Alternation (Base_Branches (R), "e.",
+                                       "e = " & RT & "Entry::default()", Buf,
+                                       "                ");
+                     Append (Buf, "                p.pos = save; break 'list;");
+                     Append (Buf, LF);
+                     Append (Buf, "            }");
+                     Append (Buf, LF);
+                     Emit_Alternation (Tail_Branches (R), "e.",
+                                       "e = " & RT & "Entry::default()", Buf,
+                                       "            ");
+                  else
+                     Emit_Alternation (E.Items, "e.",
+                                       "e = " & RT & "Entry::default()", Buf,
+                                       "            ");
+                  end if;
                   Append (Buf, "            p.pos = save; break 'list;");
                   Append (Buf, LF);
                   Append (Buf, "        }");
@@ -1262,6 +1311,11 @@ package body HBNF_Rust is
                   Append (Buf, "        r.push(e);");
                   Append (Buf, LF);
                   Append (Buf, "    }");
+                  Append (Buf, LF);
+               end if;
+               if E.Min > 0 then
+                  Append (Buf, "    if r.len() < " & Img (E.Min)
+                    & " { p.pos = start; return Err(p.fail(""a " & NM & """)); }");
                   Append (Buf, LF);
                end if;
                Append (Buf, "    Ok(r)");
@@ -1291,8 +1345,8 @@ package body HBNF_Rust is
                   Append (Buf, "    p.expect_kind(Kind::Atom, ""a " & RT & """)?;");
                end if;
                Append (Buf, LF);
-               Append (Buf, "    let r = if p.toks[p.pos].text == """
-                 & Rust_Escape (To_String (P (1).Lit)) & """ { " & RT & "::" & RT & "_"
+               Append (Buf, "    let r = if " & Text_Is (P (1))
+                 & " { " & RT & "::" & RT & "_"
                  & To_String (Names (1)) & " }");
 
                St := 1;
@@ -1301,8 +1355,8 @@ package body HBNF_Rust is
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
                      if St <= K - 1 and then P (St).Kind = Literal then
                         if Branch > 0 then
-                           Append (Buf, " else if p.toks[p.pos].text == """
-                             & Rust_Escape (To_String (P (St).Lit)) & """ { " & RT & "::" & RT
+                           Append (Buf, " else if " & Text_Is (P (St))
+                             & " { " & RT & "::" & RT
                              & "_" & To_String (Names (Branch + 1)) & " }");
                         end if;
                         Branch := Branch + 1;
@@ -1485,6 +1539,18 @@ package body HBNF_Rust is
       Append (Res, LF);
       Append (Res, "    }");
       Append (Res, LF);
+      if Has_No_Case (Rules) then
+         Append (Res, "    fn expect_lit_nocase(&mut self, lit: &str) -> Result<(), ParseError> {");
+         Append (Res, LF);
+         Append (Res, "        if self.pos < self.toks.len() && matches!(self.toks[self.pos].kind, Kind::Atom | Kind::Punct)");
+         Append (Res, LF);
+         Append (Res, "            && self.toks[self.pos].text.eq_ignore_ascii_case(lit) { self.pos += 1; return Ok(()); }");
+         Append (Res, LF);
+         Append (Res, "        Err(self.fail(&format!(""`{}`"", lit)))");
+         Append (Res, LF);
+         Append (Res, "    }");
+         Append (Res, LF);
+      end if;
       Append (Res, "    fn expect_kind(&mut self, k: Kind, desc: &str) -> Result<(), ParseError> {");
       Append (Res, LF);
       Append (Res, "        if self.pos < self.toks.len() && self.toks[self.pos].kind == k { return Ok(()); }");

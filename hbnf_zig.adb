@@ -1145,6 +1145,12 @@ package body HBNF_Zig is
            and then Ada.Strings.Unbounded.Element (E.Lit, 1) not in
              'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
 
+      --  The current token's text is literal L: as written, or in any case
+      --  for a %i literal.
+      function Text_Is (L : Element_Access) return String is
+        ((if L.No_Case then "std.ascii.eqlIgnoreCase(" else "std.mem.eql(u8, ")
+         & "p.toks[p.pos].text, """ & Zig_Escape (To_String (L.Lit)) & """)");
+
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural;
          Dst  : String; Buf : in out U; Fail : String := ""; Ind : String := "    ") is
@@ -1157,7 +1163,8 @@ package body HBNF_Zig is
             begin
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & Pref & "p.expect_lit("""
+                     Append (Buf, Ind & Pref & "p.expect_lit"
+                       & (if E.No_Case then "_nocase" else "") & "("""
                        & Zig_Escape (To_String (E.Lit)) & """, ""`"
                        & Zig_Escape (To_String (E.Lit)) & "`"")" & Cat & ";");
                      Append (Buf, LF);
@@ -1260,10 +1267,53 @@ package body HBNF_Zig is
                  (if E.Kind = HBNF_Grammar.Name
                   then Zig_Type_Of (To_String (E.Name))
                   else ZT & "Entry");
+               --  Repetition bounds, as the C backend enforces them.
+               Max_Stop : constant String :=
+                 (if E.Max >= 0
+                  then "if (list.items.len >= " & Img (Natural (E.Max))
+                       & ") break"
+                  else "");
+
+               --  The alternatives of V as labelled blocks: a branch that
+               --  matches breaks out of blk_alt with e filled in; one that
+               --  fails breaks out of its own block, and the next starts
+               --  from save.
+               procedure Alt_Blocks (V : Element_Vectors.Vector;
+                                     Label, Ind : String) is
+                  St     : Natural := 1;
+                  Branch : Natural := 0;
+               begin
+                  for K in 1 .. Natural (V.Length) + 1 loop
+                     if K > Natural (V.Length) or else V (K).Kind = Alt then
+                        if St <= K - 1 then
+                           Branch := Branch + 1;
+                           if Branch > 1 then
+                              Append (Buf, Ind & "p.pos = save; e = std.mem.zeroes("
+                                & Elem & ");");
+                              Append (Buf, LF);
+                           end if;
+                           Append (Buf, Ind & Label & "blk_" & Img (Branch) & ": {");
+                           Append (Buf, LF);
+                           Emit_Seq (V, St, K - 1, "e.", Buf,
+                                     "break :" & Label & "blk_" & Img (Branch),
+                                     Ind & "    ");
+                           Append (Buf, Ind & "    break :blk_alt;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "}");
+                           Append (Buf, LF);
+                        end if;
+                        St := K + 1;
+                     end if;
+                  end loop;
+               end Alt_Blocks;
             begin
                Append (Buf, "    var list = std.ArrayList(" & Elem
                  & ").empty;");
                Append (Buf, LF);
+               if E.Min > 0 then
+                  Append (Buf, "    const start = p.pos;");
+                  Append (Buf, LF);
+               end if;
                if E.Kind = Name then
                   declare
                      SK : constant String := Start_Kind (To_String (E.Name));
@@ -1276,49 +1326,54 @@ package body HBNF_Zig is
                      end if;
                   end;
                   Append (Buf, LF);
-                  Append (Buf, "        try list.append(p.alloc, try parse_"
-                    & Zig_Snake (To_String (E.Name)) & "(p));");
+                  if Max_Stop /= "" then
+                     Append (Buf, "        " & Max_Stop & ";");
+                     Append (Buf, LF);
+                  end if;
+                  --  PEG's `*`: stop at the first element that fails, with
+                  --  the position restored, as C does; the caller decides.
+                  Append (Buf, "        const save = p.pos;");
+                  Append (Buf, LF);
+                  Append (Buf, "        const v = parse_"
+                    & Zig_Snake (To_String (E.Name)) & "(p) catch |err| switch (err) {");
+                  Append (Buf, LF);
+                  Append (Buf, "            error.OutOfMemory => return err,");
+                  Append (Buf, LF);
+                  Append (Buf, "            else => { p.pos = save; break; },");
+                  Append (Buf, LF);
+                  Append (Buf, "        };");
+                  Append (Buf, LF);
+                  Append (Buf, "        try list.append(p.alloc, v);");
                   Append (Buf, LF);
                   Append (Buf, "    }");
                   Append (Buf, LF);
                elsif E.Kind = Group then
                   Append (Buf, "    list: while (p.pos < p.toks.len) {");
                   Append (Buf, LF);
+                  if Max_Stop /= "" then
+                     Append (Buf, "        " & Max_Stop & " :list;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "        const save = p.pos;");
                   Append (Buf, LF);
                   Append (Buf, "        var e = std.mem.zeroes(" & Elem & ");");
                   Append (Buf, LF);
                   Append (Buf, "        blk_alt: {");
                   Append (Buf, LF);
-                  declare
-                     St     : Natural := 1;
-                     Branch : Natural := 0;
-                  begin
-                     for K in 1 .. Natural (E.Items.Length) + 1 loop
-                        if K > Natural (E.Items.Length)
-                          or else E.Items (K).Kind = Alt
-                        then
-                           if St <= K - 1 then
-                              Branch := Branch + 1;
-                              if Branch > 1 then
-                                 Append (Buf, "            p.pos = save; e = std.mem.zeroes("
-                                   & Elem & ");");
-                                 Append (Buf, LF);
-                              end if;
-                              Append (Buf, "            blk_" & Img (Branch) & ": {");
-                              Append (Buf, LF);
-                              Emit_Seq (E.Items, St, K - 1, "e.", Buf,
-                                        "break :blk_" & Img (Branch),
-                                        "                ");
-                              Append (Buf, "                break :blk_alt;");
-                              Append (Buf, LF);
-                              Append (Buf, "            }");
-                              Append (Buf, LF);
-                           end if;
-                           St := K + 1;
-                        end if;
-                     end loop;
-                  end;
+                  if R.Left_Bases > 0 then
+                     --  Left recursion, as a loop: the first entry is a
+                     --  base, each later one a tail.
+                     Append (Buf, "            if (list.items.len == 0) {");
+                     Append (Buf, LF);
+                     Alt_Blocks (Base_Branches (R), "base_", "                ");
+                     Append (Buf, "                p.pos = save; break :list;");
+                     Append (Buf, LF);
+                     Append (Buf, "            }");
+                     Append (Buf, LF);
+                     Alt_Blocks (Tail_Branches (R), "", "            ");
+                  else
+                     Alt_Blocks (E.Items, "", "            ");
+                  end if;
                   Append (Buf, "            p.pos = save; break :list;");
                   Append (Buf, LF);
                   Append (Buf, "        }");
@@ -1326,6 +1381,12 @@ package body HBNF_Zig is
                   Append (Buf, "        try list.append(p.alloc, e);");
                   Append (Buf, LF);
                   Append (Buf, "    }");
+                  Append (Buf, LF);
+               end if;
+               if E.Min > 0 then
+                  Append (Buf, "    if (list.items.len < " & Img (E.Min)
+                    & ") { p.pos = start; list.deinit(p.alloc); try p.fail(""a "
+                    & NM & """); }");
                   Append (Buf, LF);
                end if;
                Append (Buf, "    return list.toOwnedSlice(p.alloc);");
@@ -1364,11 +1425,9 @@ package body HBNF_Zig is
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
                      if St <= K - 1 and then P (St).Kind = Literal then
                         if Branch = 0 then
-                           Append (Buf, "    if (std.mem.eql(u8, p.toks[p.pos].text, """
-                             & Zig_Escape (To_String (P (St).Lit)) & """)) {");
+                           Append (Buf, "    if (" & Text_Is (P (St)) & ") {");
                         else
-                           Append (Buf, "    } else if (std.mem.eql(u8, p.toks[p.pos].text, """
-                             & Zig_Escape (To_String (P (St).Lit)) & """)) {");
+                           Append (Buf, "    } else if (" & Text_Is (P (St)) & ") {");
                         end if;
                         Append (Buf, LF);
                         Append (Buf, "        r = ." & To_String (Names (Branch + 1)) & ";");
@@ -1586,6 +1645,19 @@ package body HBNF_Zig is
       Append (Res, "    }");
       Append (Res, LF);
       Append (Res, LF);
+      if Has_No_Case (Rules) then
+         Append (Res, "    fn expect_lit_nocase(self: *P, lit: []const u8, want: []const u8) ParseError!void {");
+         Append (Res, LF);
+         Append (Res, "        if (self.pos < self.toks.len and (self.toks[self.pos].kind == .atom or self.toks[self.pos].kind == .punct)");
+         Append (Res, LF);
+         Append (Res, "            and std.ascii.eqlIgnoreCase(self.toks[self.pos].text, lit)) { self.pos += 1; return; }");
+         Append (Res, LF);
+         Append (Res, "        return self.fail(want);");
+         Append (Res, LF);
+         Append (Res, "    }");
+         Append (Res, LF);
+         Append (Res, LF);
+      end if;
       Append (Res, "    fn expect_kind(self: *P, k: Kind, desc: []const u8) ParseError!void {");
       Append (Res, LF);
       Append (Res, "        if (self.pos < self.toks.len and self.toks[self.pos].kind == k) return;");

@@ -1,0 +1,8 @@
+good.conf: hosts a b c; calc 10 - 3 - 2 = 5; modes fast fast slow; pair x y z
+lead-comma.bad: rejected at line 1
+lead-op.bad: rejected at line 1
+pair-four.bad: rejected at line 1
+pair-one.bad: rejected at line 1
+slow-line4.bad: rejected at line 4
+slow-upper.bad: rejected at line 1
+trailing-op.bad: rejected at line 1

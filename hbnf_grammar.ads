@@ -6,8 +6,9 @@ with Ada.Strings.Unbounded;
 --  HBNF_Grammar: a schema for mapping a preparsed *generic* AST (a tree of named
 --  nodes carrying symbol/string values, children and comments) to typed C/Ada.
 --
---  The schema notation is plain RFC 5234 ABNF.  Types are *not* part of the
---  grammar: they are a reserved set of built-in rule names the code emitter
+--  The schema notation is RFC 5234 ABNF, with `|` for `/` and the other
+--  additions ABNF.md lists.  Types are *not* part of the grammar: they
+--  are a reserved set of built-in rule names the code emitter
 --  interprets.  `str` is a quoted c-string; `atom` (synonym `word`) is a bare
 --  token, a symbol or a number, that the matcher narrows against the typed
 --  core types (`int`, `dec`, `float`, `u8`..`u64`, `i8`..`i64`, `bool`,
@@ -17,9 +18,9 @@ with Ada.Strings.Unbounded;
 --
 --     name      = str                      ; a field (single core type)
 --     tls       = flag                     ; a flag (the `flag` core type)
---     direction = "in" / "out"             ; an enum (literal alternation)
+--     direction = "in" | "out"             ; an enum (literal alternation)
 --     listen    = "on" iface "port" port   ; a directive (literals + refs)
---     server    = name 1*( listen / root ) ; a struct (ref + children)
+--     server    = name 1*( listen | root ) ; a struct (ref + children)
 package HBNF_Grammar is
 
    use Ada.Strings.Unbounded;
@@ -96,6 +97,10 @@ package HBNF_Grammar is
    --  separators, as a group's items are.
    function Base_Branches (R : Rule) return Element_Vectors.Vector;
    function Tail_Branches (R : Rule) return Element_Vectors.Vector;
+
+   --  True when some rule has a %i literal, so an emitter writes its
+   --  case-insensitive match only for a schema that uses one.
+   function Has_No_Case (Rules : Rule_Vectors.Vector) return Boolean;
 
    package Word_Vectors is new
      Ada.Containers.Vectors (Positive, Unbounded_String);

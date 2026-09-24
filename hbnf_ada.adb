@@ -1099,6 +1099,15 @@ package body HBNF_Ada is
            and then Ada.Strings.Unbounded.Element (E.Lit, 1) not in
              'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
 
+      --  The current token's text is literal L: as written, or in any case
+      --  for a %i literal.
+      function Text_Is (L : Element_Access) return String is
+        (if L.No_Case
+         then "Ada.Strings.Equal_Case_Insensitive (To_String (P.Toks (P.Pos).Text), """
+              & Ada_Escape (To_String (L.Lit)) & """)"
+         else "To_String (P.Toks (P.Pos).Text) = """
+              & Ada_Escape (To_String (L.Lit)) & """");
+
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural;
          Dst : String; Buf : in out U; Ind : String := "      ";
@@ -1110,7 +1119,8 @@ package body HBNF_Ada is
             begin
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & "Expect_Lit (P, """
+                     Append (Buf, Ind & "Expect_Lit"
+                       & (if E.No_Case then "_Nocase" else "") & " (P, """
                        & Ada_Escape (To_String (E.Lit)) & """);");
                      Append (Buf, LF);
                   when Name =>
@@ -1247,6 +1257,15 @@ package body HBNF_Ada is
                   then Ada_Type_Of (To_String (Simple))
                   else Ada_Ident (NM) & "_Entry");
             begin
+               if E.Min > 0 then
+                  --  Repetition bounds, as the C backend enforces them.
+                  Append (Buf, "      declare");
+                  Append (Buf, LF);
+                  Append (Buf, "         Start : constant Natural := P.Pos;");
+                  Append (Buf, LF);
+                  Append (Buf, "      begin");
+                  Append (Buf, LF);
+               end if;
                if Simple /= Null_Unbounded_String then
                   declare
                      SK : constant String := Start_Kind (To_String (Simple));
@@ -1264,6 +1283,11 @@ package body HBNF_Ada is
                           then " or else P.Toks (P.Pos).Kind /= " & SK
                           else "") & ";");
                      Append (Buf, LF);
+                     if E.Max >= 0 then
+                        Append (Buf, "         exit when Natural (R.Length) >= "
+                          & Img (Natural (E.Max)) & ";");
+                        Append (Buf, LF);
+                     end if;
                   end;
                   Append (Buf, "         declare");
                   Append (Buf, LF);
@@ -1291,6 +1315,11 @@ package body HBNF_Ada is
                elsif E.Kind = Group then
                   Append (Buf, "      loop");
                   Append (Buf, LF);
+                  if E.Max >= 0 then
+                     Append (Buf, "         exit when Natural (R.Length) >= "
+                       & Img (Natural (E.Max)) & ";");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "         Save := P.Pos;");
                   Append (Buf, LF);
                   Append (Buf, "         declare");
@@ -1303,13 +1332,22 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                   declare
                      St : Natural := 1;
+                     Br : Natural := 0;
                   begin
                      for K in 1 .. Natural (E.Items.Length) + 1 loop
                         if K > Natural (E.Items.Length)
                           or else E.Items (K).Kind = Alt
                         then
+                           Br := Br + 1;
                            if St <= K - 1 then
-                              Append (Buf, "            if not Matched then");
+                              --  Left recursion, as a loop: the first entry
+                              --  is a base, each later one a tail.
+                              Append (Buf, "            if not Matched"
+                                & (if R.Left_Bases = 0 then ""
+                                   elsif Br <= R.Left_Bases
+                                   then " and then R.Is_Empty"
+                                   else " and then not R.Is_Empty")
+                                & " then");
                               Append (Buf, LF);
                               Append (Buf, "               declare");
                               Append (Buf, LF);
@@ -1343,6 +1381,13 @@ package body HBNF_Ada is
                   Append (Buf, "      end loop;");
                   Append (Buf, LF);
                end if;
+               if E.Min > 0 then
+                  Append (Buf, "         if Natural (R.Length) < " & Img (E.Min)
+                    & " then P.Pos := Start; Fail (P, ""a " & NM & """); end if;");
+                  Append (Buf, LF);
+                  Append (Buf, "      end;");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, "      return R;");
                Append (Buf, LF);
             end;
@@ -1374,15 +1419,9 @@ package body HBNF_Ada is
                for K in 1 .. Natural (P.Length) + 1 loop
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
                      if St <= K - 1 and then P (St).Kind = Literal then
-                        if Branch = 0 then
-                           Append (Buf, "      if To_String (P.Toks (P.Pos).Text) = """
-                             & Ada_Escape (To_String (P (St).Lit)) & """ then R := "
-                             & Ada_Ident (NM) & "_" & To_String (Names (Branch + 1)) & ";");
-                        else
-                           Append (Buf, "      elsif To_String (P.Toks (P.Pos).Text) = """
-                             & Ada_Escape (To_String (P (St).Lit)) & """ then R := "
-                             & Ada_Ident (NM) & "_" & To_String (Names (Branch + 1)) & ";");
-                        end if;
+                        Append (Buf, (if Branch = 0 then "      if " else "      elsif ")
+                          & Text_Is (P (St)) & " then R := "
+                          & Ada_Ident (NM) & "_" & To_String (Names (Branch + 1)) & ";");
                         Append (Buf, LF);
                         Branch := Branch + 1;
                      end if;
@@ -1572,6 +1611,10 @@ package body HBNF_Ada is
       --  Package body: the recursive-descent parser.
       Append (Bdy, "with Interfaces;");
       Append (Bdy, LF);
+      if Has_No_Case (Rules) then
+         Append (Bdy, "with Ada.Strings.Equal_Case_Insensitive;");
+         Append (Bdy, LF);
+      end if;
       if Conf then
          Append (Bdy, "with Ada.Text_IO;");
          Append (Bdy, LF);
@@ -1692,6 +1735,31 @@ package body HBNF_Ada is
       Append (Bdy, "   end Expect_Lit;");
       Append (Bdy, LF);
       Append (Bdy, LF);
+      if Has_No_Case (Rules) then
+         Append (Bdy, "   procedure Expect_Lit_Nocase (P : in out Parser; Lit : String) is");
+         Append (Bdy, LF);
+         Append (Bdy, "   begin");
+         Append (Bdy, LF);
+         Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length)");
+         Append (Bdy, LF);
+         Append (Bdy, "        and then (P.Toks (P.Pos).Kind = Atom or else P.Toks (P.Pos).Kind = Punct)");
+         Append (Bdy, LF);
+         Append (Bdy, "        and then Ada.Strings.Equal_Case_Insensitive (To_String (P.Toks (P.Pos).Text), Lit)");
+         Append (Bdy, LF);
+         Append (Bdy, "      then");
+         Append (Bdy, LF);
+         Append (Bdy, "         P.Pos := P.Pos + 1;");
+         Append (Bdy, LF);
+         Append (Bdy, "      else");
+         Append (Bdy, LF);
+         Append (Bdy, "         Fail (P, ""`"" & Lit & ""`"");");
+         Append (Bdy, LF);
+         Append (Bdy, "      end if;");
+         Append (Bdy, LF);
+         Append (Bdy, "   end Expect_Lit_Nocase;");
+         Append (Bdy, LF);
+         Append (Bdy, LF);
+      end if;
       Append (Bdy, "   procedure Expect_Kind (P : in out Parser; K : Token_Kind; Desc : String) is");
       Append (Bdy, LF);
       Append (Bdy, "   begin");

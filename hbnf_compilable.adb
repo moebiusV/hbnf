@@ -120,18 +120,10 @@ package body HBNF_Compilable is
    --  is a rule's whole pattern and has exactly one element: that element's
    --  repetition or grouping is the rule itself (a list, an optional rule,
    --  a grouped alternation) and the emitters handle it.
-   --  A %i literal, for the backends that match it case-sensitively.
-   Has_No_Case : Boolean := False;
-
    procedure Walk
      (Rule_Name : String; V : Element_Vectors.Vector; Sole : Boolean) is
    begin
       Check_Shadowing (Rule_Name, V);
-      for E of V loop
-         if E.Kind = Literal and then E.No_Case then
-            Has_No_Case := True;
-         end if;
-      end loop;
       for E of V loop
          case E.Kind is
             when Group =>
@@ -341,7 +333,6 @@ package body HBNF_Compilable is
          raise Parse_Error with "the schema defines no rules";
       end if;
       Shadowed := 0;
-      Has_No_Case := False;
 
       --  `conf struct X` hands parse_config the daemon's own struct, which
       --  only action jets fill: without one the parse would succeed and
@@ -449,12 +440,6 @@ package body HBNF_Compilable is
             P : constant Element_Vectors.Vector := R.Pattern;
             N : constant String := To_String (R.Name);
          begin
-            if R.Left_Bases > 0 and then Backend /= "c" then
-               raise Parse_Error with
-                 N & ": left recursion is read as a loop by the C backend "
-                 & "only; the " & Backend & " backend would read the tails "
-                 & "as bases";
-            end if;
             if R.Left_Bases > 0 then
                --  A base and a tail are never tried at the same place, so
                --  neither can shadow the other.
@@ -479,27 +464,9 @@ package body HBNF_Compilable is
                   end if;
                end;
             end if;
-            if Backend /= "c"
-              and then Natural (P.Length) = 1
-              and then not (P (1).Min = 1 and then P (1).Max = 1)
-              and then not (P (1).Min = 0 and then P (1).Max = -1)
-            then
-               Ada.Text_IO.Put_Line
-                 (Ada.Text_IO.Standard_Error,
-                  "hbnf: warning: " & N & ": repetition bounds are enforced "
-                  & "by the C backend only; the " & Backend
-                  & " backend treats this rule as *");
-            end if;
          end;
       end loop;
       Check_Left_Recursion (Rules);
-      if Has_No_Case and then Backend /= "c" then
-         Ada.Text_IO.Put_Line
-           (Ada.Text_IO.Standard_Error,
-            "hbnf: warning: %i literals are case-insensitive in the C "
-            & "backend only; the " & Backend & " backend matches them as "
-            & "written");
-      end if;
       if Shadowed > 0 then
          raise Parse_Error with
            Natural'Image (Shadowed) & " alternative(s) can never match "

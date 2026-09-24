@@ -1,0 +1,5 @@
+hosts a;
+calc 1;
+mode fast;
+MODE SLOW;
+pair x y;

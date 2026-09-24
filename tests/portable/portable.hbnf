@@ -1,0 +1,22 @@
+; One schema through every backend, for tests/portable.sh: left recursion,
+; %i literals and repetition bounds, which C, Rust, Zig and Ada must all
+; read the same way.
+
+config    = "hosts" host_list ";" "calc" sum ";" modes "pair" pair ";"
+
+; parse.y's host_list: the first entry is a host, each later one `, host`.
+host_list = host_list "," host | host
+host      = word
+
+; An operator rule, left-recursive; the entries come in order, the base
+; first, and op records which operator each later one had.
+sum       = sum op int | int
+op        = "+" | "-"
+
+; %i: `mode` in any case, `fast` in any case, `slow` only as written.
+modes     = *( modeset )
+modeset   = %i"mode" mode ";"
+mode      = %i"fast" | "slow"
+
+; two or three hosts
+pair      = 2*3host

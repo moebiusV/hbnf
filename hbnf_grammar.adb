@@ -908,6 +908,15 @@ package body HBNF_Grammar is
    function Tail_Branches (R : Rule) return Element_Vectors.Vector is
      (Left_Part (R, Tails => True));
 
+   function Has_No_Case (Rules : Rule_Vectors.Vector) return Boolean is
+      function In_Seq (V : Element_Vectors.Vector) return Boolean is
+        (for some E of V =>
+           (E.Kind = Literal and then E.No_Case)
+           or else (E.Kind = Group and then In_Seq (E.Items)));
+   begin
+      return (for some R of Rules => In_Seq (R.Pattern));
+   end Has_No_Case;
+
    --  The words of a `keywords { ... }` block, added to Keyword_Words.  A
    --  keyword is what the lexer can intern: letter- or underscore-led, then
    --  letters, digits, `_`, `-` and `.`.
