@@ -319,7 +319,16 @@ action entry {
                 break;
             }
         }
-        s = new_sensor(n->string);
+        {
+            /* new_sensor() takes a char * and copies it; parse.y hands it
+               the lexer's string and frees that.  Do the same with a copy,
+               rather than cast the tree's const away. */
+            char *device = strdup(n->string);
+            if (device == NULL)
+                fatal(NULL);
+            s = new_sensor(device);
+            free(device);
+        }
         s->weight = sweight;
         s->correction = correction;
         s->stratum = stratum;
