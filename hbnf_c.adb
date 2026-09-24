@@ -1611,6 +1611,7 @@ package body HBNF_C is
            "   (the --conf wrapper points it at conf_error); otherwise the first" & LF &
            "   becomes the parse error. */" & LF &
            "#include <stdarg.h>" & LF &
+           "#include <stdio.h>" & LF &
            "static size_t bind_errors, bind_line, bind_err_line;" & LF &
            "static char bind_err_msg[512];" & LF &
            "static void (*bind_report)(size_t line, const char *msg);" & LF &
