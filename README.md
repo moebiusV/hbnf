@@ -68,7 +68,9 @@ relay "webserver" {
 - `#` starts a comment that runs to end of line.
 - No macros, no includes, no arithmetic, no conditionals: everything is
   decidable at parse time, and a parse either succeeds completely or fails
-  with a `line:column`.
+  with a `line:column`.  (A daemon grammar can declare parse.y's macros and
+  `include` with the `macros` and `includes` directives; see
+  `grammars/README.md`.)
 
 ## Comments
 

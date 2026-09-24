@@ -60,9 +60,15 @@ Two shape rules keep the generated parser simple and match `parse.y` exactly:
   `prefix X / prefix`.
 
 The generated lexer skips whitespace and newlines, so there is no `nl`/`ws`/
-`comment` scaffolding — entries are token sequences delimited by their leading
-keywords and `{ }` blocks, which is what `parse.y`'s `'\n'`-terminated rules
-spell out anyway.
+`comment` scaffolding.  The daemon grammars declare `statements` instead: the
+C parser reads one statement at a time, a statement ending at a newline
+outside `{ }` (backslash-newline, and a next line starting with `{`, continue
+it), and each statement is one entry of the root list — `parse.y`'s
+`grammar : grammar entry '\n'`.  An error is reported and the parse goes on
+with the next statement, as `parse.y`'s `error` rule does.  `macros varset`
+and `includes include` name the rules whose statements define a macro and
+include a file: `$name` then expands as in `parse.y`'s lexer, and `include`
+reads the file in place.  ntpd has neither; dhcpleased has no `include`.
 
 ## Covered
 
