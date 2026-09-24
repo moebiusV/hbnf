@@ -1867,19 +1867,34 @@ package body HBNF_C is
             end if;
          end Field;
 
+         --  Only what the walk calls is emitted: relink_<rule> for the root
+         --  and for every rule that holds a list (the only fields a parent
+         --  walks into), and a list's relink_<rule>_fields only when its
+         --  elements hold a list.  The rest would be unused static functions.
+         function Need_Node (I : Positive) return Boolean is
+           (I = 1 or else Holds_List (To_String (Rules (I).Name)));
+
+         function Need_Fields (I : Positive) return Boolean is
+           (if Infos (I).Kind = Struct then Need_Node (I)
+            else Elem_Holds_List (Infos (I)));
+
       begin
          Append (Buf, "/* ---- relink (repoint list heads at their final address) ---- */");
          Append (Buf, LF);
          for I in 1 .. N loop
-            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+            if (Infos (I).Kind = Struct or else Infos (I).Kind = List)
+              and then Need_Node (I)
+            then
                declare
                   CN : constant String := C_Name (To_String (Rules (I).Name));
                   TN : constant String :=
                     C_Type_Name (To_String (Rules (I).Name));
                begin
-                  Append (Buf, "static void relink_" & CN & "_fields(" & TN
-                    & " *n);");
-                  Append (Buf, LF);
+                  if Need_Fields (I) then
+                     Append (Buf, "static void relink_" & CN & "_fields(" & TN
+                       & " *n);");
+                     Append (Buf, LF);
+                  end if;
                   if Infos (I).Kind = List then
                      Append (Buf, "static void relink_" & CN & "(struct " & Pfx
                        & CN & "_list *head);");
@@ -1893,33 +1908,37 @@ package body HBNF_C is
          end loop;
          Append (Buf, LF);
          for I in 1 .. N loop
-            if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+            if (Infos (I).Kind = Struct or else Infos (I).Kind = List)
+              and then Need_Node (I)
+            then
                declare
                   CN   : constant String := C_Name (To_String (Rules (I).Name));
                   TN   : constant String :=
                     C_Type_Name (To_String (Rules (I).Name));
                   Info : constant Rule_Info := Infos (I);
                begin
-                  Append (Buf, "static void relink_" & CN & "_fields(" & TN
-                    & " *n) {");
-                  Append (Buf, LF);
-                  Append (Buf, "    (void)n;");
-                  Append (Buf, LF);
-                  if Info.Kind = Struct then
-                     for M of Info.Members loop
-                        Field (To_String (M.Name), Buf);
-                     end loop;
-                  elsif Info.Elem_Members.Is_Empty then
-                     if Info.Elem_Name /= Null_Unbounded_String then
-                        Field (To_String (Info.Elem_Name), Buf);
+                  if Need_Fields (I) then
+                     Append (Buf, "static void relink_" & CN & "_fields(" & TN
+                       & " *n) {");
+                     Append (Buf, LF);
+                     Append (Buf, "    (void)n;");
+                     Append (Buf, LF);
+                     if Info.Kind = Struct then
+                        for M of Info.Members loop
+                           Field (To_String (M.Name), Buf);
+                        end loop;
+                     elsif Info.Elem_Members.Is_Empty then
+                        if Info.Elem_Name /= Null_Unbounded_String then
+                           Field (To_String (Info.Elem_Name), Buf);
+                        end if;
+                     else
+                        for M of Info.Elem_Members loop
+                           Field (To_String (M.Name), Buf);
+                        end loop;
                      end if;
-                  else
-                     for M of Info.Elem_Members loop
-                        Field (To_String (M.Name), Buf);
-                     end loop;
+                     Append (Buf, "}");
+                     Append (Buf, LF);
                   end if;
-                  Append (Buf, "}");
-                  Append (Buf, LF);
                   if Info.Kind = Struct then
                      Append (Buf, "static void relink_" & CN & "(" & TN
                        & " *n) { relink_" & CN & "_fields(n); }");
