@@ -84,7 +84,11 @@ aspa_set    = "aspa-set" "{" aspa_set_l "}"
 aspa_set_l  = *( aspa_elm "," / aspa_elm )
 aspa_elm    = "customer-as" asnumber expires "provider-as" "{" aspa_tas_l "}"
             / "customer-as" asnumber "provider-as" "{" aspa_tas_l "}"
-aspa_tas_l  = *( asnumber "," / asnumber )
+aspa_tas_l  = *( aspa_tas "," / aspa_tas )
+; a provider AS, with an address family bgpd accepts and ignores
+; (regress bgpd.conf.14: `provider-as { 1, 2 inet, 7 inet6 }` prints as
+; `{ 1 2 7 }`)
+aspa_tas    = asnumber af / asnumber
 
 rtr         = "rtr" address "{" rtropt_l "}"
             / "rtr" address
@@ -440,7 +444,16 @@ prefix      = {
         i++;
     }
     if (i >= len || s[i] != '/') return 0;  /* no /len: an address, not a prefix */
-    if (!has_dot && !has_colon) return 0;   /* "10/8" is not an address prefix */
+    if (!has_dot && !has_colon) {           /* 10/8: parse.y's NUMBER '/' NUMBER */
+        size_t k;
+        unsigned v = 0;
+        if (i - pos > 3) return 0;
+        for (k = pos; k < i; k++) {
+            if (s[k] < '0' || s[k] > '9') return 0;
+            v = v * 10 + (unsigned)(s[k] - '0');
+        }
+        if (v > 255) return 0;
+    }
     i++;                                    /* skip '/' */
     while (i < len && s[i] >= '0' && s[i] <= '9') { digits++; i++; }
     if (digits == 0) return 0;
@@ -466,28 +479,54 @@ ipv6        = {
     return i - pos;
 }
 
-; largecommunity — 1*( digit / "*" ) ":" 1*( digit / "*" ) ":" 1*( digit / "*" )
+; A community part: digits or "*", or a name parse.y's parsecommunity()
+; resolves when the filter runs ("local-as", "neighbor-as"), e.g.
+; `large-community 1234:local-as:90`, `community local-as:5678`.
+;   part = 1*( DIGIT / "*" ) / "local-as" / "neighbor-as"
+; largecommunity — part ":" part ":" part
 largecommunity = {
-    size_t i = pos, n = 0;
-    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
-    if (n == 0 || i >= len || s[i] != ':') return 0;
-    i++; n = 0;
-    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
-    if (n == 0 || i >= len || s[i] != ':') return 0;
-    i++; n = 0;
-    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
-    if (n == 0) return 0;
+    static const char *const nm[] = { "local-as", "neighbor-as" };
+    size_t i = pos, part, k, m, n;
+    for (part = 0; part < 3; part++) {
+        if (part) {
+            if (i >= len || s[i] != ':') return 0;
+            i++;
+        }
+        n = 0;
+        for (k = 0; k < 2; k++) {
+            m = strlen(nm[k]);
+            if (i + m <= len && memcmp(s + i, nm[k], m) == 0) { n = m; break; }
+        }
+        if (n == 0)
+            while (i + n < len && ((s[i + n] >= '0' && s[i + n] <= '9') || s[i + n] == '*'))
+                n++;
+        if (n == 0) return 0;
+        i += n;
+    }
     return i - pos;
 }
 
-; community — 1*( digit / "*" ) ":" 1*( digit / "*" )
+; community — part ":" part, not followed by a third ":" part
 community   = {
-    size_t i = pos, n = 0;
-    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
-    if (n == 0 || i >= len || s[i] != ':') return 0;
-    i++; n = 0;
-    while (i < len && ((s[i] >= '0' && s[i] <= '9') || s[i] == '*')) { n++; i++; }
-    if (n == 0) return 0;
+    static const char *const nm[] = { "local-as", "neighbor-as" };
+    size_t i = pos, part, k, m, n;
+    for (part = 0; part < 2; part++) {
+        if (part) {
+            if (i >= len || s[i] != ':') return 0;
+            i++;
+        }
+        n = 0;
+        for (k = 0; k < 2; k++) {
+            m = strlen(nm[k]);
+            if (i + m <= len && memcmp(s + i, nm[k], m) == 0) { n = m; break; }
+        }
+        if (n == 0)
+            while (i + n < len && ((s[i + n] >= '0' && s[i + n] <= '9') || s[i + n] == '*'))
+                n++;
+        if (n == 0) return 0;
+        i += n;
+    }
+    if (i < len && s[i] == ':') return 0;   /* three parts: a large community */
     return i - pos;
 }
 
