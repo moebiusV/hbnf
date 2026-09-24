@@ -12,8 +12,10 @@
 ;
 ; parse.y's `_l` list rules and its `'{' optnl X '}' | X` blocks are kept as
 ; top-level lists (`prefopts = 1*( prefopt )`) and explicit two-way
-; alternations (`"{" prefopts "}" / prefopts`) — the same shape parse.y spells
+; alternations (`"{" prefopts "}" | prefopts`) — the same shape parse.y spells
 ; out, minus the newline scaffolding (the generated lexer skips newlines).
+; parse.y's optional words (`log`, `accept bogus`) are 0*1 lists, so the
+; tree says whether the word was there.
 
 language C
 wordchars "*/$@%"
@@ -68,11 +70,11 @@ forwarderopt = address "port" int "authentication" "name" string dot
              | address dot
              | address
 
-block_list = "block" "list" string "log"
-           | "block" "list" string
+block_list = "block" "list" string blocklog
+blocklog   = 0*1( "log" )
 
-force      = "force" "accept" "bogus" prefopt "{" forcelist "}"
-           | "force" prefopt "{" forcelist "}"
+force      = "force" acceptbogus prefopt "{" forcelist "}"
+acceptbogus = 0*1( "accept" "bogus" )
 forcelist  = *string
 
 ; the forwarder IP: a STRING, or an IPv6 literal the bare `word` can't reach

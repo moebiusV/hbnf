@@ -16,9 +16,11 @@ root=$1; dir=$2; shift 2
 wflags=$(sed -n 's/^CFLAGS+=//p' "$dir/Makefile" | grep -o -- '-W[^ ]*' | tr '\n' ' ')
 strict="-Werror=implicit-function-declaration -Werror=incompatible-pointer-types \
 	-Werror=int-conversion -Werror=return-type"
-inc="-I $here/bsdinc -I $root/include -I $root/lib/libc/include \
+# The daemon's directory first, as its Makefile's -I${.CURDIR}: its
+# "log.h" is not libevent's.
+inc="-I $dir -I $here/bsdinc -I $root/include -I $root/lib/libc/include \
 	-I $root/sys -I $root/sys/arch/amd64/include \
-	-I $root/lib/libevent -I $root/lib/libutil -I $root/lib/libtls -I $dir"
+	-I $root/lib/libevent -I $root/lib/libutil -I $root/lib/libtls"
 rc=0
 for cc in gcc clang; do
 	command -v $cc >/dev/null 2>&1 || continue

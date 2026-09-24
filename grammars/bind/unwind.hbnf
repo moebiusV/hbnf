@@ -1,0 +1,320 @@
+; unwind.conf bound to unwind(8)'s own `struct uw_conf`: the grammar in
+; ../unwind.hbnf plus parse.y's actions as action jets.
+;   hbnf_cli grammars/bind/unwind.hbnf --backend=c --conf
+; parse.y's parse_config(char *filename) returns a new struct uw_conf *, not
+; the int hbnf's conf wrapper returns, so the generated function is named
+; hbnf_parse_config (`entry`) and the epilogue defines parse_config around
+; it, as parse.y's is: the default preference, a missing default file, and
+; NULL after an error.  It compiles only against unwind's headers.
+;
+; parse.y runs an action as it reduces each option; its YYERROR then skips
+; the rest of the line.  Here the options' actions run in order after the
+; statement has parsed, and after the first error in a statement the rest
+; of its options are skipped (the *_failed flags, which the statement's own
+; action, run last, clears).  An error is reported on the line of the
+; option it is about, as parse.y reports it on its lookahead's line.
+
+language C
+conf struct uw_conf
+entry hbnf_parse_config
+
+{
+#include <sys/param.h>
+#include <sys/socket.h>
+#include <sys/tree.h>
+
+#include <err.h>
+#include <errno.h>
+#include <limits.h>
+#include <netdb.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "log.h"
+#include "unwind.h"
+
+/* parse.y's own: the tree being built, and its two helpers. */
+static struct uw_conf *conf;
+
+static struct sockaddr_storage *
+host_ip(const char *s)
+{
+	struct addrinfo hints, *res;
+	struct sockaddr_storage *ss = NULL;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM; /*dummy*/
+	hints.ai_flags = AI_NUMERICHOST;
+	if (getaddrinfo(s, "0", &hints, &res) == 0) {
+		if (res->ai_family == AF_INET ||
+		    res->ai_family == AF_INET6) {
+			if ((ss = calloc(1, sizeof(*ss))) == NULL)
+				fatal(NULL);
+			memcpy(ss, res->ai_addr, res->ai_addrlen);
+		}
+		freeaddrinfo(res);
+	}
+	return (ss);
+}
+
+static void
+clear_config(struct uw_conf *xconf)
+{
+	struct uw_forwarder *uw_forwarder;
+
+	while ((uw_forwarder = TAILQ_FIRST(&xconf->uw_forwarder_list)) !=
+	    NULL) {
+		TAILQ_REMOVE(&xconf->uw_forwarder_list, uw_forwarder, entry);
+		free(uw_forwarder);
+	}
+	while ((uw_forwarder = TAILQ_FIRST(&xconf->uw_dot_forwarder_list)) !=
+	    NULL) {
+		TAILQ_REMOVE(&xconf->uw_dot_forwarder_list, uw_forwarder,
+		    entry);
+		free(uw_forwarder);
+	}
+	free(xconf);
+}
+
+/* A statement's first error skips the rest of its options. */
+static int pref_started, pref_failed, fwd_failed;
+
+/* In the epilogue: they read the generated tree types. */
+struct prefopt;
+static enum uw_resolver_type uw_type(const struct prefopt *);
+static void uw_pref(const struct prefopt *);
+}
+
+include "../unwind.hbnf"
+
+action prefopts {
+    uw_pref(&n->prefopt);
+}
+
+action preference {
+    if (TAILQ_EMPTY(&n->prefopts))
+        uw_pref(&n->prefopt);
+    pref_started = pref_failed = 0;
+}
+
+; parse.y's forwarderoptsl: STRING port authname dot.
+action forwarderopt {
+    struct uw_forwarder *uw_fwd;
+    struct sockaddr_storage *ss;
+
+    if (fwd_failed)
+        return;
+    fwd_failed = 1;
+    if ((ss = host_ip(n->address)) == NULL) {
+        bind_error("%s is not an ip-address", n->address);
+        return;
+    }
+    free(ss);
+    if ((uw_fwd = calloc(1, sizeof(*uw_fwd))) == NULL)
+        err(1, NULL);
+    if (n->int_ < 0 || n->int_ > (int)USHRT_MAX) {
+        bind_error("invalid port: %lld", n->int_);
+        free(uw_fwd);
+        return;
+    }
+    if (n->int_ == 0)
+        uw_fwd->port = n->dot != NULL ? 853 : 53;
+    else
+        uw_fwd->port = n->int_;
+    if (n->string != NULL && n->dot == NULL) {
+        bind_error("authentication name can only be used with DoT");
+        free(uw_fwd);
+        return;
+    }
+    if (strlcpy(uw_fwd->ip, n->address, sizeof(uw_fwd->ip))
+        >= sizeof(uw_fwd->ip)) {
+        free(uw_fwd);
+        bind_error("forwarder %s too long", n->address);
+        return;
+    }
+    if (n->dot != NULL && n->string != NULL) {
+        if (strlcpy(uw_fwd->auth_name, n->string,
+            sizeof(uw_fwd->auth_name)) >= sizeof(uw_fwd->auth_name)) {
+            free(uw_fwd);
+            bind_error("authentication name %s too long", n->string);
+            return;
+        }
+    }
+    if (n->dot != NULL)
+        TAILQ_INSERT_TAIL(&conf->uw_dot_forwarder_list, uw_fwd, entry);
+    else
+        TAILQ_INSERT_TAIL(&conf->uw_forwarder_list, uw_fwd, entry);
+    fwd_failed = 0;
+}
+
+action forwarder {
+    (void)n;
+    fwd_failed = 0;
+}
+
+; parse.y's block_list: BLOCK LIST STRING log.
+action block_list {
+    if (conf->blocklist_file != NULL) {
+        bind_error("block list already configured");
+        return;
+    }
+    conf->blocklist_file = strdup(n->string);
+    if (conf->blocklist_file == NULL)
+        err(1, "strdup");
+    conf->blocklist_log = !TAILQ_EMPTY(&n->blocklog);
+}
+
+; parse.y's force: FORCE acceptbogus prefopt '{' force_list optnl '}', with
+; force_list's action for each domain first.
+action force {
+    struct force_tree list;
+    struct force_tree_entry *e, *nxt;
+    forcelist_t *d;
+    enum uw_resolver_type t = uw_type(&n->prefopt);
+    int error = 0;
+
+    RB_INIT(&list);
+    TAILQ_FOREACH(d, &n->forcelist, _link) {
+        size_t len = strlen(d->string);
+
+        if ((e = calloc(1, sizeof(*e))) == NULL)
+            err(1, NULL);
+        if (strlcpy(e->domain, d->string, sizeof(e->domain)) >=
+            sizeof(e->domain)) {
+            bind_error("force %s too long", d->string);
+            return;
+        }
+        if (len == 0 || e->domain[len - 1] != '.') {
+            if (strlcat(e->domain, ".", sizeof(e->domain)) >=
+                sizeof(e->domain)) {
+                bind_error("force %s too long", d->string);
+                return;
+            }
+        }
+        if (RB_INSERT(force_tree, &list, e) != NULL) {
+            log_warnx("duplicate force %s", e->domain);
+            free(e);
+        }
+    }
+    RB_FOREACH_SAFE(e, force_tree, &list, nxt) {
+        e->acceptbogus = !TAILQ_EMPTY(&n->acceptbogus);
+        e->type = t;
+        conf->force_resolvers[t] = 1;
+        conf->enabled_resolvers[t] = 1;
+        RB_REMOVE(force_tree, &list, e);
+        if (RB_INSERT(force_tree, &conf->force, e)) {
+            bind_error("%s already in a force list", e->domain);
+            error = 1;
+        }
+    }
+    (void)error;
+}
+
+; The generated hbnf_parse_config fills the caller's conf, which
+; parse_config below has set up, so conf_init has nothing to reset.  Then
+; the helpers the actions call, and parse.y's parse_config around
+; hbnf_parse_config.
+{
+static void conf_init(void) {
+}
+
+/* A preference or force resolver type: parse.y's prefopt. */
+static enum uw_resolver_type
+uw_type(const struct prefopt *p)
+{
+	if (p->dot != NULL)
+		return (UW_RES_DOT);
+	switch (p->prefopt_kw) {
+	case PREFOPT_KW_FORWARDER:
+		return (UW_RES_FORWARDER);
+	case PREFOPT_KW_ODOT_FORWARDER:
+		return (UW_RES_ODOT_FORWARDER);
+	case PREFOPT_KW_RECURSOR:
+		return (UW_RES_RECURSOR);
+	case PREFOPT_KW_AUTOCONF:
+	case PREFOPT_KW_DHCP:
+		return (UW_RES_AUTOCONF);
+	case PREFOPT_KW_ODOT_AUTOCONF:
+	case PREFOPT_KW_ODOT_DHCP:
+		return (UW_RES_ODOT_AUTOCONF);
+	case PREFOPT_KW_STUB:
+		break;
+	}
+	return (UW_RES_ASR);
+}
+
+/* parse.y's prefoptsl: one preference, after the PREFERENCE mid-rule
+   action has emptied the list. */
+static void
+uw_pref(const struct prefopt *p)
+{
+	enum uw_resolver_type t = uw_type(p);
+	int i;
+
+	if (!pref_started) {
+		conf->res_pref.len = 0;
+		memset(conf->enabled_resolvers, 0,
+		    sizeof(conf->enabled_resolvers));
+		pref_started = 1;
+	}
+	if (pref_failed)
+		return;
+	for (i = 0; i < conf->res_pref.len; i++)
+		if (conf->res_pref.types[i] == t) {
+			bind_error("%s is already in the preference list",
+			    uw_resolver_type_str[t]);
+			pref_failed = 1;
+			return;
+		}
+	if (conf->res_pref.len >= UW_RES_NONE) {
+		bind_error("preference list too long");
+		pref_failed = 1;
+		return;
+	}
+	conf->res_pref.types[conf->res_pref.len++] = t;
+	conf->enabled_resolvers[t] = 1;
+}
+
+struct uw_conf *
+parse_config(char *filename)
+{
+	static enum uw_resolver_type default_res_pref[] = {
+	    UW_RES_DOT,
+	    UW_RES_ODOT_FORWARDER,
+	    UW_RES_FORWARDER,
+	    UW_RES_RECURSOR,
+	    UW_RES_ODOT_AUTOCONF,
+	    UW_RES_AUTOCONF,
+	    UW_RES_ASR};
+	const char *path = filename != NULL ? filename : _PATH_CONF_FILE;
+	struct uw_conf *xconf;
+	FILE *f;
+	int i;
+
+	xconf = config_new_empty();
+
+	memcpy(&xconf->res_pref.types, &default_res_pref,
+	    sizeof(default_res_pref));
+	xconf->res_pref.len = nitems(default_res_pref);
+	for (i = 0; i < xconf->res_pref.len; i++)
+		xconf->enabled_resolvers[xconf->res_pref.types[i]] = 1;
+
+	if ((f = fopen(path, "r")) == NULL) {
+		/* no default config file is fine */
+		if (errno == ENOENT && filename == NULL)
+			return (xconf);
+		log_warn("%s", filename);
+		free(xconf);
+		return (NULL);
+	}
+	fclose(f);
+
+	if (hbnf_parse_config(path, xconf) == -1) {
+		clear_config(xconf);
+		return (NULL);
+	}
+	return (xconf);
+}
+}
