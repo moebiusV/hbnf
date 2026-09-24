@@ -35,8 +35,10 @@ pub fn lex(alloc: std.mem.Allocator, text: []const u8) ![]Token {
             if (i < text.len and text[i] == '"') { i += 1; col += 1; }
             try toks.append(alloc, .{ .kind = .str, .text = try s.toOwnedSlice(alloc), .line = line, .col = sc });
         }
-        else if (lxDigit(c)) {
+        else if (lxDigit(c) or (c == '-' and i + 1 < text.len and lxDigit(text[i + 1]))) {
+            // -N is a number too, as in parse.y's lexers
             const s = i; const sc = col;
+            if (c == '-') { i += 1; col += 1; }
             while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }
             if (i < text.len and lxWordChar(text[i])) {
                 // dotted/alphanumeric run (1.2.3.4, 123abc) is one word

@@ -40,12 +40,19 @@
                end if;
                Toks.Append (Token'(Str, Buf, Line, SC));
             end;
-         elsif C in '0' .. '9' then
+         elsif C in '0' .. '9'
+           or else (C = '-' and then I < Text'Last
+                    and then Text (I + 1) in '0' .. '9')
+         then
+            --  -N is a number too, as in parse.y's lexers
             declare
                SC      : constant Natural := Col;
                Start_I : constant Natural := I;
                Buf     : Unbounded_String;
             begin
+               if C = '-' then
+                  Append (Buf, C); I := I + 1; Col := Col + 1;
+               end if;
                while I <= Text'Last and then Text (I) in '0' .. '9' loop
                   Append (Buf, Text (I)); I := I + 1; Col := Col + 1;
                end loop;

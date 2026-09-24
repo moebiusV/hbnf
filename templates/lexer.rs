@@ -28,8 +28,10 @@ pub fn lex(text: &str) -> Vec<Token> {
             if i < b.len() && b[i] == b'"' { i += 1; col += 1; }
             toks.push(Token { kind: Kind::Str, text: s, line, col: sc });
         }
-        else if lx_digit(c) {
+        else if lx_digit(c) || (c == b'-' && i + 1 < b.len() && lx_digit(b[i + 1])) {
+            // -N is a number too, as in parse.y's lexers
             let s = i; let sc = col;
+            if c == b'-' { i += 1; col += 1; }
             while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }
             if i < b.len() && lx_word_char(b[i]) {
                 // dotted/alphanumeric run (1.2.3.4, 123abc) is one word

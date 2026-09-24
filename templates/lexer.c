@@ -48,8 +48,10 @@ lexed_t lex(const char *text) {
               hbnf_scratch_len = 0;
               toks[r.n++] = (token_t){ TOK_STR, s, n, KWID_NONE, line, sc }; }
         }
-        else if (lex_digit(c)) {
+        else if (lex_digit(c) || (c == '-' && lex_digit(text[i + 1]))) {
+            /* -N is a number too, as in parse.y's lexers */
             size_t s = i, sc = col;
+            if (c == '-') { i++; col++; }
             while (lex_digit(text[i])) { i++; col++; }
             if (lex_word_char(text[i])) {
                 /* dotted/alphanumeric run (1.2.3.4, 123abc) is one word */

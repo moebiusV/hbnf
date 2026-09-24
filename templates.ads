@@ -58,8 +58,10 @@ package Templates is
      "              hbnf_scratch_len = 0;" & LF &
      "              toks[r.n++] = (token_t){ TOK_STR, s, n, KWID_NONE, line, sc }; }" & LF &
      "        }" & LF &
-     "        else if (lex_digit(c)) {" & LF &
+     "        else if (lex_digit(c) || (c == '-' && lex_digit(text[i + 1]))) {" & LF &
+     "            /* -N is a number too, as in parse.y's lexers */" & LF &
      "            size_t s = i, sc = col;" & LF &
+     "            if (c == '-') { i++; col++; }" & LF &
      "            while (lex_digit(text[i])) { i++; col++; }" & LF &
      "            if (lex_word_char(text[i])) {" & LF &
      "                /* dotted/alphanumeric run (1.2.3.4, 123abc) is one word */" & LF &
@@ -126,8 +128,10 @@ package Templates is
      "            if i < b.len() && b[i] == b'""' { i += 1; col += 1; }" & LF &
      "            toks.push(Token { kind: Kind::Str, text: s, line, col: sc });" & LF &
      "        }" & LF &
-     "        else if lx_digit(c) {" & LF &
+     "        else if lx_digit(c) || (c == b'-' && i + 1 < b.len() && lx_digit(b[i + 1])) {" & LF &
+     "            // -N is a number too, as in parse.y's lexers" & LF &
      "            let s = i; let sc = col;" & LF &
+     "            if c == b'-' { i += 1; col += 1; }" & LF &
      "            while i < b.len() && lx_digit(b[i]) { i += 1; col += 1; }" & LF &
      "            if i < b.len() && lx_word_char(b[i]) {" & LF &
      "                // dotted/alphanumeric run (1.2.3.4, 123abc) is one word" & LF &
@@ -196,8 +200,10 @@ package Templates is
      "            if (i < text.len and text[i] == '""') { i += 1; col += 1; }" & LF &
      "            try toks.append(alloc, .{ .kind = .str, .text = try s.toOwnedSlice(alloc), .line = line, .col = sc });" & LF &
      "        }" & LF &
-     "        else if (lxDigit(c)) {" & LF &
+     "        else if (lxDigit(c) or (c == '-' and i + 1 < text.len and lxDigit(text[i + 1]))) {" & LF &
+     "            // -N is a number too, as in parse.y's lexers" & LF &
      "            const s = i; const sc = col;" & LF &
+     "            if (c == '-') { i += 1; col += 1; }" & LF &
      "            while (i < text.len and lxDigit(text[i])) { i += 1; col += 1; }" & LF &
      "            if (i < text.len and lxWordChar(text[i])) {" & LF &
      "                // dotted/alphanumeric run (1.2.3.4, 123abc) is one word" & LF &
@@ -280,12 +286,19 @@ package Templates is
      "               end if;" & LF &
      "               Toks.Append (Token'(Str, Buf, Line, SC));" & LF &
      "            end;" & LF &
-     "         elsif C in '0' .. '9' then" & LF &
+     "         elsif C in '0' .. '9'" & LF &
+     "           or else (C = '-' and then I < Text'Last" & LF &
+     "                    and then Text (I + 1) in '0' .. '9')" & LF &
+     "         then" & LF &
+     "            --  -N is a number too, as in parse.y's lexers" & LF &
      "            declare" & LF &
      "               SC      : constant Natural := Col;" & LF &
      "               Start_I : constant Natural := I;" & LF &
      "               Buf     : Unbounded_String;" & LF &
      "            begin" & LF &
+     "               if C = '-' then" & LF &
+     "                  Append (Buf, C); I := I + 1; Col := Col + 1;" & LF &
+     "               end if;" & LF &
      "               while I <= Text'Last and then Text (I) in '0' .. '9' loop" & LF &
      "                  Append (Buf, Text (I)); I := I + 1; Col := Col + 1;" & LF &
      "               end loop;" & LF &
