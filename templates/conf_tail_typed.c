@@ -1,8 +1,8 @@
 const char *conf_file = NULL;
 
-/* Default handler: print "file:line: <caret message>" and exit(1).  Override
-   conf_error with your own to take the message elsewhere (then parse_config
-   returns -1 after the handler). */
+/* Default handler: print "file:line: <message>" to stderr and return, as
+   parse.y's yyerror does; parse_config returns -1 once the parse is over.
+   Override conf_error with your own to take the messages elsewhere. */
 static void conf_error_default(size_t line, const char *msg) {
     if (conf_file) {
         if (line)
@@ -15,12 +15,14 @@ static void conf_error_default(size_t line, const char *msg) {
         else
             fprintf(stderr, "%s\n", msg);
     }
-    exit(1);
 }
 conf_error_fn conf_error = conf_error_default;
 
 /* The grammar's epilogue defines conf_init() to reset the conf's list heads
-   (the action jets append to them, so they must be TAILQ_INIT'd first). */
+   (the action jets append to them, so they must be TAILQ_INIT'd first).
+   The parse tree is only the action jets' input: it is freed, with the
+   string arena, before parse_config returns, so a jet copies whatever it
+   keeps. */
 int parse_config(const char *filename, @CONF_TYPE@ *xconf) {
     FILE *f = fopen(filename, "r");
     char *buf;
@@ -58,12 +60,19 @@ int parse_config(const char *filename, @CONF_TYPE@ *xconf) {
     conf_init();
     {
         @ROOT_TYPE@ ast;
-        if (!parse_text(buf, &ast, err, sizeof err, &line, &col)) {
-            conf_error(line, err);
-            free(buf);
+        bool ok;
+        memset(&ast, 0, sizeof ast);
+        bind_errors = 0;
+        bind_report = conf_error;   /* every action error, as it happens */
+        ok = parse_text(buf, &ast, err, sizeof err, &line, &col);
+        bind_report = NULL;
+        free_@ROOT_C@(&ast);        /* the tree and the string arena */
+        free(buf);
+        if (!ok) {
+            if (!bind_errors)      /* a syntax error: not reported yet */
+                conf_error(line, err);
             return -1;
         }
     }
-    free(buf);
     return 0;
 }

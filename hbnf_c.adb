@@ -1272,6 +1272,10 @@ package body HBNF_C is
                   end;
                   Append (Buf, LF);
                end loop;
+               if R.Action_Code /= Null_Unbounded_String then
+                  Append (Buf, "    size_t _line;   /* for bind_error */");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, "};");
                Append (Buf, LF);
             when List =>
@@ -1308,6 +1312,10 @@ package body HBNF_C is
                         C_Field (To_String (M.Name))) & ";");
                      Append (Buf, LF);
                   end loop;
+               end if;
+               if R.Action_Code /= Null_Unbounded_String then
+                  Append (Buf, "    size_t _line;   /* for bind_error */");
+                  Append (Buf, LF);
                end if;
                Append (Buf, "};");
                Append (Buf, LF);
@@ -1565,6 +1573,8 @@ package body HBNF_C is
                   Recurse (To_String (M.Name), Buf, "    ");
                end loop;
                if Act /= "" then
+                  Append (Buf, "    bind_line = n->_line;");
+                  Append (Buf, LF);
                   Append (Buf, "    " & Act);
                   Append (Buf, LF);
                end if;
@@ -1578,6 +1588,8 @@ package body HBNF_C is
                Append (Buf, LF);
                Recurse_Elem (Info, Buf, "        ");
                if Act /= "" then
+                  Append (Buf, "        bind_line = n->_line;");
+                  Append (Buf, LF);
                   Append (Buf, "        " & Act);
                   Append (Buf, LF);
                end if;
@@ -1591,6 +1603,31 @@ package body HBNF_C is
       begin
          Append (Buf, "/* ---- bind (run action jets bottom-up, children first) ---- */");
          Append (Buf, LF);
+         Append (Buf,
+           "/* An action reports a semantic error with bind_error(""fmt"", ...)," & LF &
+           "   as a parse.y action calls yyerror: the walk carries on, and the" & LF &
+           "   parse fails once it ends.  The message is tagged with the line the" & LF &
+           "   action's node starts on.  bind_report, when set, sees every error" & LF &
+           "   (the --conf wrapper points it at conf_error); otherwise the first" & LF &
+           "   becomes the parse error. */" & LF &
+           "#include <stdarg.h>" & LF &
+           "static size_t bind_errors, bind_line, bind_err_line;" & LF &
+           "static char bind_err_msg[512];" & LF &
+           "static void (*bind_report)(size_t line, const char *msg);" & LF &
+           "static void bind_error(const char *fmt, ...)" & LF &
+           "    __attribute__((format(printf, 1, 2), unused));" & LF &
+           "static void bind_error(const char *fmt, ...) {" & LF &
+           "    char msg[512];" & LF &
+           "    va_list ap;" & LF &
+           "    va_start(ap, fmt);" & LF &
+           "    vsnprintf(msg, sizeof msg, fmt, ap);" & LF &
+           "    va_end(ap);" & LF &
+           "    if (bind_errors++ == 0) {" & LF &
+           "        bind_err_line = bind_line;" & LF &
+           "        snprintf(bind_err_msg, sizeof bind_err_msg, ""%s"", msg);" & LF &
+           "    }" & LF &
+           "    if (bind_report) bind_report(bind_line, msg);" & LF &
+           "}" & LF & LF);
          for I in 1 .. N loop
             if Infos (I).Kind = Struct or else Infos (I).Kind = List then
                declare
@@ -3216,6 +3253,10 @@ package body HBNF_C is
                Append (Buf, "have:");
                Append (Buf, LF);
                Emit_Number_Converts (Nums, "nn->", True, Buf, "        ");
+               if R.Action_Code /= Null_Unbounded_String then
+                  Append (Buf, "        nn->_line = p->toks[save].line;");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, "        " & L_Append ("&head", "nn"));
                Append (Buf, LF);
                if Bounded then
@@ -3418,6 +3459,10 @@ package body HBNF_C is
                Append (Buf, "ok:");
                Append (Buf, LF);
                Emit_Number_Converts (Nums, "r.", True, Buf, "    ");
+               if R.Action_Code /= Null_Unbounded_String then
+                  Append (Buf, "    r._line = p->toks[save].line;");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, "    *out = r; return true;");
                Append (Buf, LF);
             end;
@@ -3435,6 +3480,10 @@ package body HBNF_C is
                          "p->pos = save; return false;",
                          Typed => R.C_Type /= Null_Unbounded_String);
                Emit_Number_Converts (Nums, "r.", False, Buf, "    ");
+               if R.Action_Code /= Null_Unbounded_String then
+                  Append (Buf, "    r._line = p->toks[save].line;");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, "    *out = r; return true;");
                Append (Buf, LF);
             end;
@@ -3626,8 +3675,21 @@ package body HBNF_C is
          Append (Res, LF);
       end if;
       if Analyze (Rules, 1).Kind in Struct | List and then Has_Action then
+         Append (Res, "    bind_errors = 0; bind_line = 0; bind_err_line = 0;"
+           & " bind_err_msg[0] = '\0';");
+         Append (Res, LF);
          Append (Res, "    bind_" & C_Name (To_String (Rules (1).Name))
            & "(out);");
+         Append (Res, LF);
+         Append (Res, "    if (bind_errors) {");
+         Append (Res, LF);
+         Append (Res, "        snprintf(err, errlen, ""%s"", bind_err_msg);");
+         Append (Res, LF);
+         Append (Res, "        *err_line = bind_err_line; *err_col = 0;");
+         Append (Res, LF);
+         Append (Res, "        return false;");
+         Append (Res, LF);
+         Append (Res, "    }");
          Append (Res, LF);
       end if;
       Append (Res, "    return true;");
@@ -3829,8 +3891,10 @@ package body HBNF_C is
            LF &
            Templates.Substitute
              (Templates.Substitute
-                (Templates.Conf_Tail_C_Typed, "@CONF_TYPE@", Conf_T),
-              "@ROOT_TYPE@", Root_T);
+                (Templates.Substitute
+                   (Templates.Conf_Tail_C_Typed, "@CONF_TYPE@", Conf_T),
+                 "@ROOT_TYPE@", Root_T),
+              "@ROOT_C@", Root_C);
       end if;
 
       return

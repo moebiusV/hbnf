@@ -468,11 +468,12 @@ package Templates is
      "   (declared in its header, included by the grammar's preamble). */" & LF &
      "int parse_config(const char *filename, @CONF_TYPE@ *conf);" & LF &
      "" & LF &
-     "/* yyerror-style error handler: called by the parser at the point of failure" & LF &
-     "   with the caret message and its 1-based line.  The default handler prints" & LF &
-     "   ""file:line: msg"" (file taken from conf_file) and exit(1)s; override" & LF &
-     "   conf_error to take the message yourself, in which case parse_config returns" & LF &
-     "   -1 after the handler. */" & LF &
+     "/* yyerror-style error handler: called with each error's message and its" & LF &
+     "   1-based line (a syntax error, or every error an action jet reports).  The" & LF &
+     "   default handler prints ""file:line: msg"" (file taken from conf_file) to" & LF &
+     "   stderr and returns, as parse.y's yyerror does; parse_config then returns" & LF &
+     "   -1 and the daemon decides (exit at startup, keep the running config on a" & LF &
+     "   reload).  Override conf_error to take the messages yourself. */" & LF &
      "typedef void (*conf_error_fn)(size_t line, const char *msg);" & LF &
      "extern conf_error_fn conf_error;" & LF &
      "" & LF &
@@ -482,9 +483,9 @@ package Templates is
    Conf_Tail_C_Typed : constant String :=
      "const char *conf_file = NULL;" & LF &
      "" & LF &
-     "/* Default handler: print ""file:line: <caret message>"" and exit(1).  Override" & LF &
-     "   conf_error with your own to take the message elsewhere (then parse_config" & LF &
-     "   returns -1 after the handler). */" & LF &
+     "/* Default handler: print ""file:line: <message>"" to stderr and return, as" & LF &
+     "   parse.y's yyerror does; parse_config returns -1 once the parse is over." & LF &
+     "   Override conf_error with your own to take the messages elsewhere. */" & LF &
      "static void conf_error_default(size_t line, const char *msg) {" & LF &
      "    if (conf_file) {" & LF &
      "        if (line)" & LF &
@@ -497,12 +498,14 @@ package Templates is
      "        else" & LF &
      "            fprintf(stderr, ""%s\n"", msg);" & LF &
      "    }" & LF &
-     "    exit(1);" & LF &
      "}" & LF &
      "conf_error_fn conf_error = conf_error_default;" & LF &
      "" & LF &
      "/* The grammar's epilogue defines conf_init() to reset the conf's list heads" & LF &
-     "   (the action jets append to them, so they must be TAILQ_INIT'd first). */" & LF &
+     "   (the action jets append to them, so they must be TAILQ_INIT'd first)." & LF &
+     "   The parse tree is only the action jets' input: it is freed, with the" & LF &
+     "   string arena, before parse_config returns, so a jet copies whatever it" & LF &
+     "   keeps. */" & LF &
      "int parse_config(const char *filename, @CONF_TYPE@ *xconf) {" & LF &
      "    FILE *f = fopen(filename, ""r"");" & LF &
      "    char *buf;" & LF &
@@ -540,13 +543,20 @@ package Templates is
      "    conf_init();" & LF &
      "    {" & LF &
      "        @ROOT_TYPE@ ast;" & LF &
-     "        if (!parse_text(buf, &ast, err, sizeof err, &line, &col)) {" & LF &
-     "            conf_error(line, err);" & LF &
-     "            free(buf);" & LF &
+     "        bool ok;" & LF &
+     "        memset(&ast, 0, sizeof ast);" & LF &
+     "        bind_errors = 0;" & LF &
+     "        bind_report = conf_error;   /* every action error, as it happens */" & LF &
+     "        ok = parse_text(buf, &ast, err, sizeof err, &line, &col);" & LF &
+     "        bind_report = NULL;" & LF &
+     "        free_@ROOT_C@(&ast);        /* the tree and the string arena */" & LF &
+     "        free(buf);" & LF &
+     "        if (!ok) {" & LF &
+     "            if (!bind_errors)      /* a syntax error: not reported yet */" & LF &
+     "                conf_error(line, err);" & LF &
      "            return -1;" & LF &
      "        }" & LF &
      "    }" & LF &
-     "    free(buf);" & LF &
      "    return 0;" & LF &
      "}";
 
