@@ -13,7 +13,7 @@ with HBNF_Ada;
 --  hbnf: read a schema and emit a self-contained parser (declarations +
 --  lexer + parser) in the chosen backend language.
 --
---    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref]
+--    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare]
 --
 --  c/rust/zig print one compilable file to stdout; ada prints the parent
 --  package spec, then the child package spec+body (split them apart yourself).
@@ -22,6 +22,8 @@ with HBNF_Ada;
 --  markers); for rust/zig/ada it appends the conf wrapper to the single file.
 --  --idref (C only) adds an id-ref serializer and rebuild side, for a privsep
 --  (imsg) consumer: the tree cross-references by id instead of pointer.
+--  --compare (C only) appends the deep-compare walk (compare_tree), for
+--  byte-identity checks between two parses.
 procedure Hbnf_Cli is
 
    use Ada.Strings.Unbounded;
@@ -31,12 +33,13 @@ procedure Hbnf_Cli is
    Schema_Path  : Unbounded_String;
    Conf         : Boolean := False;
    Idref        : Boolean := False;
+   Compare      : Boolean := False;
    Prefix       : Unbounded_String;
 
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--prefix=NAME_]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare] [--prefix=NAME_]");
    end Usage;
 
 begin
@@ -57,6 +60,8 @@ begin
             Conf := True;
          elsif A = "--idref" then
             Idref := True;
+         elsif A = "--compare" then
+            Compare := True;
          elsif A'Length >= 9 and then A (1 .. 9) = "--prefix=" then
             Prefix := To_Unbounded_String (A (10 .. A'Last));
          elsif A (A'First) /= '-' then
@@ -92,6 +97,9 @@ begin
             if Idref then
                Ada.Text_IO.Put (HBNF_C.Emit_Serializer (Rules));
                Ada.Text_IO.Put (HBNF_C.Emit_Rebuild (Rules));
+            end if;
+            if Compare then
+               Ada.Text_IO.Put (HBNF_C.Emit_Compare (Rules));
             end if;
          end if;
       elsif B = "rust" then

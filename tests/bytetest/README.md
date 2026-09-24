@@ -91,10 +91,18 @@ parser-internal `node_*` helpers), so the grammar targets `pf_rule` in
   generated parser (needs the grammars flattened + type-jetted first).
 - The trees cannot be compared with `memcmp` once pointers are involved:
   TAILQ links, strings and malloc'd children sit at different addresses in any
-  two parsers, and padding bytes need not match.  Generate a **deep-compare
-  walk** instead, built the same way as the relink walk — scalars and arrays
-  by value, strings by content, lists element by element, pointers by what
-  they point to.
+  two parsers, and padding bytes need not match.  The **deep-compare walk**
+  is now generated: `hbnf_cli --compare` emits `compare_tree(a, b)` plus one
+  `compare_<rule>` per struct/list, comparing scalars and arrays by value,
+  strings by content (`strcmp`), enums and kind tags by value, structs
+  recursively, and lists element by element — never pointer addresses, TAILQ
+  links or padding.  It proves two hbnf parses (two backends, an idref
+  round-trip) yield the same tree.
+- Byte-identity against `parse.y` itself still needs a *daemon-conf*
+  deep-compare: parse.y builds `struct <daemon>_conf` directly, not hbnf's
+  AST, so the two are compared over the daemon's own struct (the ntpd action
+  jets fill `struct ntpd_conf`; a hand-written walk over its TAILQ lists is
+  the missing half).
 - pfctl's comparison point is a hand-off, not the parse: `parse.y` runs each
   rule through `expand_rule` and returns the expanded rules, so one grammar
   rule is not one `pf_rule`.  Reaching `pf_rule` at all needs value jets

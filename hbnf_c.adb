@@ -4406,4 +4406,192 @@ package body HBNF_C is
       return To_String (Res);
    end Emit_Rebuild;
 
+   --  =====================================================================
+   --  Emit_Compare: a deep-equality walk of the typed tree, for byte-identity
+   --  checking.  Two trees are equal when every scalar compares by value
+   --  (strings by content, char[N] by memcmp), every enum and kind tag by
+   --  value, every struct recurses, and every list matches element by element.
+   --  Pointer addresses, TAILQ links and padding are never compared, so the
+   --  same input parsed by two different parsers yields trees that compare
+   --  equal regardless of allocation order.
+   function Emit_Compare (Rules : Rule_Vectors.Vector) return String is
+      N     : constant Natural := Natural (Rules.Length);
+      Infos : Info_Vectors.Vector;
+
+      function Ref_Kind (Name : String) return Class_Kind is
+         J : constant Natural := Find (Rules, Alias_Target (Rules, Name));
+      begin
+         if J = 0 then
+            return Scalar;
+         end if;
+         return Infos (J).Kind;
+      end Ref_Kind;
+
+      --  Compare one member field of two nodes named A and B.
+      procedure Cmp_Field (Name : String; A, B : String;
+                           Buf : in out U; Ind : String) is
+         F : constant String := C_Field (Name);
+      begin
+         case Ref_Kind (Name) is
+            when Struct | List =>
+               Append (Buf, Ind & "if (!compare_"
+                 & C_Name (Alias_Target (Rules, Name))
+                 & "(&" & A & "->" & F & ", &" & B & "->" & F
+                 & ")) return false;");
+               Append (Buf, LF);
+            when Enum | Scalar =>
+               --  A `char[N]` type jet is a fixed buffer (memcmp); a scalar
+               --  that resolves to `const char *` is a string (strcmp, NULL
+               --  handled); anything else (numbers, bools, enums) by value.
+               if Is_Char_Array (C_Type_Of (Rules, Name)) then
+                  Append (Buf, Ind & "if (memcmp(" & A & "->" & F & ", " & B
+                    & "->" & F & ", sizeof " & A & "->" & F & ") != 0) return false;");
+                  Append (Buf, LF);
+               elsif Resolve_Type (Rules, Name) = "const char *" then
+                  Append (Buf, Ind & "if ((" & A & "->" & F & " == NULL) != ("
+                    & B & "->" & F & " == NULL)) return false;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "if (" & A & "->" & F & " && strcmp(" & A
+                    & "->" & F & ", " & B & "->" & F & ") != 0) return false;");
+                  Append (Buf, LF);
+               else
+                  Append (Buf, Ind & "if (" & A & "->" & F & " != " & B & "->"
+                    & F & ") return false;");
+                  Append (Buf, LF);
+               end if;
+         end case;
+      end Cmp_Field;
+
+      --  The element fields of a list node: a single named element, or the
+      --  members of a grouped element.
+      procedure Cmp_Elem (Info : Rule_Info; A, B : String;
+                          Buf : in out U; Ind : String) is
+      begin
+         if Info.Elem_Members.Is_Empty then
+            if Info.Elem_Name /= Null_Unbounded_String then
+               Cmp_Field (To_String (Info.Elem_Name), A, B, Buf, Ind);
+            end if;
+         else
+            for M of Info.Elem_Members loop
+               Cmp_Field (To_String (M.Name), A, B, Buf, Ind);
+            end loop;
+         end if;
+      end Cmp_Elem;
+
+      procedure Compare_Fields_Def (Idx : Natural; Buf : in out U) is
+         CN   : constant String := C_Name (To_String (Rules (Idx).Name));
+         TN   : constant String := C_Type_Name (To_String (Rules (Idx).Name));
+         Info : constant Rule_Info := Infos (Idx);
+      begin
+         Append (Buf, "static bool compare_" & CN & "_fields(const " & TN
+           & " *a, const " & TN & " *b) {");
+         Append (Buf, LF);
+         if not Info.Tags.Is_Empty then
+            Append (Buf, "    if (a->kind != b->kind) return false;");
+            Append (Buf, LF);
+         end if;
+         if Info.Kind = Struct then
+            for M of Info.Members loop
+               Cmp_Field (To_String (M.Name), "a", "b", Buf, "    ");
+            end loop;
+         else
+            Cmp_Elem (Info, "a", "b", Buf, "    ");
+         end if;
+         Append (Buf, "    return true;");
+         Append (Buf, LF);
+         Append (Buf, "}");
+         Append (Buf, LF);
+      end Compare_Fields_Def;
+
+      procedure Compare_Def (Idx : Natural; Buf : in out U) is
+         CN   : constant String := C_Name (To_String (Rules (Idx).Name));
+         TN   : constant String := C_Type_Name (To_String (Rules (Idx).Name));
+         Info : constant Rule_Info := Infos (Idx);
+      begin
+         if Info.Kind = Struct then
+            Append (Buf, "static bool compare_" & CN & "(const " & TN
+              & " *a, const " & TN & " *b) {");
+            Append (Buf, LF);
+            Append (Buf, "    if (!a || !b) return a == b;");
+            Append (Buf, LF);
+            Append (Buf, "    return compare_" & CN & "_fields(a, b);");
+            Append (Buf, LF);
+         else
+            Append (Buf, "static bool compare_" & CN & "(const struct " & Pfx
+              & CN & "_list *a, const struct " & Pfx & CN & "_list *b) {");
+            Append (Buf, LF);
+            Append (Buf, "    const " & TN & " *na = " & L_First ("a")
+              & ", *nb = " & L_First ("b") & ";");
+            Append (Buf, LF);
+            Append (Buf, "    while (na && nb) {");
+            Append (Buf, LF);
+            Append (Buf, "        if (!compare_" & CN & "_fields(na, nb)) return false;");
+            Append (Buf, LF);
+            Append (Buf, "        na = " & L_Next ("na") & "; nb = " & L_Next ("nb") & ";");
+            Append (Buf, LF);
+            Append (Buf, "    }");
+            Append (Buf, LF);
+            Append (Buf, "    return na == NULL && nb == NULL;");
+            Append (Buf, LF);
+         end if;
+         Append (Buf, "}");
+         Append (Buf, LF);
+      end Compare_Def;
+
+      Res : U;
+   begin
+      for I in 1 .. N loop
+         Infos.Append (Analyze (Rules, I));
+      end loop;
+
+      Append (Res, "/* ---- deep compare (semantic equality for byte-identity) ---- */");
+      Append (Res, LF);
+
+      --  Forward-declare every compare function (they recurse into each
+      --  other through by-value struct members and list elements).
+      for I in 1 .. N loop
+         if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+            declare
+               CN : constant String := C_Name (To_String (Rules (I).Name));
+               TN : constant String := C_Type_Name (To_String (Rules (I).Name));
+               PT : constant String :=
+                 (if Infos (I).Kind = List then "const struct " & Pfx & CN & "_list *"
+                  else "const " & TN & " *");
+            begin
+               Append (Res, "static bool compare_" & CN & "(" & PT
+                 & "a, " & PT & "b);");
+               Append (Res, LF);
+            end;
+         end if;
+      end loop;
+      Append (Res, LF);
+
+      for I in 1 .. N loop
+         if Infos (I).Kind = Struct or else Infos (I).Kind = List then
+            Compare_Fields_Def (I, Res);
+            Append (Res, LF);
+            Compare_Def (I, Res);
+            Append (Res, LF);
+         end if;
+      end loop;
+
+      declare
+         RN           : constant String := C_Name (To_String (Rules (1).Name));
+         Root_Is_List : constant Boolean := Infos (1).Kind = List;
+         RT : constant String :=
+           (if Root_Is_List then "struct " & Pfx & RN & "_list"
+            else C_Type_Name (To_String (Rules (1).Name)));
+      begin
+         Append (Res, "bool compare_tree(const " & RT & " *a, const " & RT
+           & " *b) {");
+         Append (Res, LF);
+         Append (Res, "    return compare_" & RN & "(a, b);");
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+      end;
+
+      return To_String (Res);
+   end Emit_Compare;
+
 end HBNF_C;

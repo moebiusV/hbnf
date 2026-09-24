@@ -54,4 +54,12 @@ package HBNF_C is
    function Emit_Conf_Header (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
    function Emit_Conf_Source (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
 
+   --  Emit the deep-compare walk: one `compare_<rule>` per struct/list plus a
+   --  `compare_tree(a, b)` entry, for byte-identity checking.  Two trees are
+   --  equal when every scalar compares by value (strings by content, `char[N]`
+   --  by memcmp), every enum and kind tag by value, every struct recurses, and
+   --  every list matches element by element — never pointer addresses, TAILQ
+   --  links, or padding.  Emitted after Emit (needs its types + list macros).
+   function Emit_Compare (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
+
 end HBNF_C;
