@@ -408,12 +408,10 @@ package body HBNF_Compilable is
                     Directive & " " & Name & ": no rule `" & Name
                     & "` that the root uses";
                end if;
-               if Rules (J).Jet_Code /= Null_Unbounded_String
-                 or else Rules (J).C_Type /= Null_Unbounded_String
-               then
+               if Rules (J).Jet_Code /= Null_Unbounded_String then
                   raise Parse_Error with
                     Directive & " " & Name & ": `" & Name
-                    & "` must be a plain rule (not a jet or a typed rule)";
+                    & "` must be a plain rule (not a jet)";
                end if;
             end Need;
          begin
@@ -423,7 +421,6 @@ package body HBNF_Compilable is
                  & "`statements`";
             end if;
             if not Is_List_Rule (Root)
-              or else Root.C_Type /= Null_Unbounded_String
               or else Root.Pattern (1).Min /= 0
               or else Root.Pattern (1).Max /= -1
             then

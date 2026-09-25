@@ -38,4 +38,5 @@ refuse "bad octal escape" 'r = "\777"'
 refuse "a rule goes on past its line only at a" 'r = "a" x
     "b" x
 x = word'
+refuse "a rule.s head is its name alone" 'char[16] ifname = word'
 echo "syntax: OK (refusals)"

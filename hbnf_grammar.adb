@@ -548,23 +548,6 @@ package body HBNF_Grammar is
       end if;
    end Set_List_Override;
 
-   --  The lexical spelling of a token: the text for names/numbers/strings/
-   --  code, the punctuation character itself otherwise (so a bare C type
-   --  like `char[16]` reconstructs its brackets and stars).
-   function Lexical (T : Token) return String is
-   begin
-      case T.Kind is
-         when T_Eq => return "=";
-         when T_Slash => return "|";
-         when T_LParen => return "(";
-         when T_RParen => return ")";
-         when T_LBrack => return "[";
-         when T_RBrack => return "]";
-         when T_Star => return "*";
-         when others => return To_String (T.Text);
-      end case;
-   end Lexical;
-
    --  A prefix must start a C identifier and continue one.
    function Valid_Prefix (S : String) return Boolean is
      (S'Length > 0
@@ -1203,7 +1186,6 @@ package body HBNF_Grammar is
          declare
             Leading  : Unbounded_String := Null_Unbounded_String;
             Trailing : Unbounded_String := Null_Unbounded_String;
-            C_Type   : Unbounded_String := Null_Unbounded_String;
          begin
             --  A leading comment block: `;` comment lines before the rule.
             --  Blank lines between them do not break the block.
@@ -1249,49 +1231,40 @@ package body HBNF_Grammar is
                goto Next_Item;
             end if;
 
-            --  `[ C-type ] name =`: the name is the last identifier before
-            --  `=`; any tokens before it are the storage class, joined with
-            --  single spaces (`int port`, `struct pf_rule_addr src`,
-            --  `char[IFNAMSIZ] ifname`).  Untyped rules have a single name.
-            declare
-               Head : Token_Vectors.Vector;
-            begin
-               --  The head is on one line.  A line of elements that is not
-               --  a rule (a sequence continued on the next line, which
-               --  only `|` allows) would otherwise run into the next
-               --  rule's head and become its C type.
-               while Cur (P).Kind not in T_Eq | T_EOF | T_Newline loop
-                  if Cur (P).Kind in T_String | T_Pct | T_Slash then
-                     raise Parse_Error with
-                       Integer'Image (Cur (P).Line) & ":" &
-                       Integer'Image (Cur (P).Col) &
-                       ": expected `name =`; a rule goes on past its line "
-                       & "only at a `|`";
-                  end if;
-                  Head.Append (Cur (P));
-                  Next (P);
-               end loop;
-               if Cur (P).Kind /= T_Eq then
+            --  `name =`: a rule's head is its name alone, as in RFC 5234.
+            --  Anything else before the `=` is a mistake worth naming: a
+            --  C type (hbnf once read `char[IFNAMSIZ] ifname =`; a
+            --  binding's %action now converts the value into the daemon's
+            --  type), or a line of elements that is not a rule (a sequence
+            --  goes on to the next line only at a `|`).
+            if Cur (P).Kind /= T_Name
+              or else P.Toks (P.Pos + 1).Kind /= T_Eq
+            then
+               declare
+                  K      : Positive := P.Pos;
+                  Has_Eq : Boolean := False;
+               begin
+                  while P.Toks (K).Kind not in T_Newline | T_EOF loop
+                     if P.Toks (K).Kind = T_Eq then
+                        Has_Eq := True;
+                        exit;
+                     end if;
+                     K := K + 1;
+                  end loop;
                   raise Parse_Error with
                     Integer'Image (Cur (P).Line) & ":" &
-                    Integer'Image (Cur (P).Col) & ": expected '='";
-               end if;
-               if Head.Is_Empty or else Head.Last_Element.Kind /= T_Name then
-                  raise Parse_Error with
-                    Integer'Image (Cur (P).Line) & ":" &
-                    Integer'Image (Cur (P).Col) & ": expected a rule name";
-               end if;
-               Name := Head.Last_Element.Text;
-               Name_Line := Head.Last_Element.Line;
-               C_Type := Null_Unbounded_String;
-               for I in 1 .. Natural (Head.Length) - 1 loop
-                  if C_Type /= Null_Unbounded_String then
-                     Append (C_Type, " ");
-                  end if;
-                  Append (C_Type, Lexical (Head (I)));
-               end loop;
-               Next (P);   --  the '='
-            end;
+                    Integer'Image (Cur (P).Col) & ": expected `name =`"
+                    & (if Has_Eq
+                       then "; a rule's head is its name alone (a C type "
+                            & "before it is not read: an %action converts "
+                            & "the value to the daemon's type)"
+                       else "; a rule goes on past its line only at a `|`");
+               end;
+            end if;
+            Name := Cur (P).Text;
+            Name_Line := Cur (P).Line;
+            Next (P);
+            Next (P);   --  the '='
 
             --  `name = %scan{ code }` is a jet, as `name = { code }` is.
             if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "scan"
@@ -1309,7 +1282,6 @@ package body HBNF_Grammar is
                         Leading_Comment => Leading,
                         Trailing_Comment => Trailing,
                         Jet_Code        => Cur (P).Text,
-                        C_Type          => C_Type,
                         Action_Code     => Null_Unbounded_String,
                         Left_Bases      => 0));
                Next (P);
@@ -1356,7 +1328,6 @@ package body HBNF_Grammar is
                            Leading_Comment => Leading,
                            Trailing_Comment => Trailing,
                            Jet_Code        => Null_Unbounded_String,
-                           C_Type          => C_Type,
                            Action_Code     => Action,
                            Left_Bases      => Bases));
                end;

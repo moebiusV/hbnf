@@ -68,11 +68,6 @@ package HBNF_Grammar is
       Jet_Code        : Unbounded_String := Null_Unbounded_String;
       --  Non-empty for a jet: `name = %{ <code> %}`.  The code is a
       --  hand-written scanner body emitted verbatim; Pattern stays empty.
-      C_Type          : Unbounded_String := Null_Unbounded_String;
-      --  Non-empty for a typed rule: `{ <C-type> } name = pattern` declares
-      --  the C storage class of the rule's value (e.g. `struct pf_rule_addr`,
-      --  `char[IFNAMSIZ]`); the C emitter uses it in place of a type inferred
-      --  from the pattern.
       Action_Code     : Unbounded_String := Null_Unbounded_String;
       --  Non-empty for an action jet: `name = pattern { <C-code> }`, or a
       --  separate `action name { <C-code> }` (e.g. in a binding file).  The
