@@ -28,8 +28,9 @@ not yet implemented: **D**, **Fortran**, **Free Pascal**, **Nim**, **Odin**,
 
 ## 1. The shape
 
-**Borrowed from ABNF:** the rule syntax — `name = elements`, concatenation, `/`,
-`( )`, `[ ]`, `n*m` repetition, `"…"` literals, `;` comments.
+**Borrowed from ABNF:** the rule syntax — `name = elements`, concatenation,
+`( )`, `[ ]`, `n*m` repetition, `"…"` literals, `;` comments.  Alternatives
+are separated by `|`, as in BNF and yacc, not ABNF's `/`.
 
 **Extended downward (design):** a schema can describe input below the token:
 - characters, through character-level rules and named character classes;
@@ -83,7 +84,7 @@ shapes compiled into parsers for a different language.
 | Case-insensitive rule names (§2.1) | ✗ | ✗ | `E` does not find `e`. Adopting ABNF's rule would make the README's `digit` the same rule as ABNF's `DIGIT`. |
 | `=/` incremental alternatives (§3.3) | ✗ (C: `redefinition of struct e`) | ✗ (the first definition wins; the `=/` alternative is dropped) | The schema parser takes it as a second definition |
 | One definition per rule | ✗ | ✗ | Duplicates are not diagnosed |
-| Continuation by indentation (§4 `c-wsp`) | ✗ `expected '='` | ✗ | hbnf continues a rule only on a newline before `/` |
+| Continuation by indentation (§4 `c-wsp`) | ✗ `expected `name =`` | ✗ | hbnf continues a rule only on a newline before `\|` |
 | Newline inside `( … )` | ✗ `expected ')'` | ✗ | |
 | `;` comments | ✓ | ✓ | hbnf also copies them into the generated code |
 | At least one element per alternative | accepts empty | accepts empty | `e = "a" word /` is accepted; ABNF forbids it |
@@ -92,9 +93,9 @@ shapes compiled into parsers for a different language.
 
 | ABNF | Compiled backends | Interpreter | Notes |
 |---|---|---|---|
-| Concatenation, alternation, grouping | ✓ | ✓ | Alternation is ordered choice (§4). `\|` separates alternatives, as in BNF and yacc; ABNF's `/` still does. |
+| Concatenation, alternation, grouping | ✓ | ✓ | Alternation is ordered choice (§4). `\|` separates alternatives, as in BNF and yacc. ABNF's `/` is refused, with a message saying to write `\|`. |
 | Direct left recursion, `a = a x \| y` | ✓ read as a loop, `y x*`, in all four backends | ✓ | The first entry of the list comes from the bases, each later one from the tails. Indirect left recursion is refused. |
-| `( a / b )` inside a sequence | *rejected* | ✓ | Previously flattened to `a b` |
+| `( a \| b )` inside a sequence | *rejected* | ✓ | Previously flattened to `a b` |
 | `[ … ]` as a whole rule | ✓ | ✓ | |
 | `[ … ]` inside a sequence | *rejected* | ✓ | Previously became required |
 | Repeated group or reference inside a sequence | *rejected* | ✓ | Previously matched once, or did not compile |

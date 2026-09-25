@@ -1,5 +1,5 @@
 #!/bin/sh
-# hbnf's notation beyond RFC 5234 (tests/syntax/syntax.hbnf): `|` and `/`,
+# hbnf's notation beyond RFC 5234 (tests/syntax/syntax.hbnf): `|`,
 # %i and %s literals, a %i keyword, C escapes in a literal, %scan{ } and
 # %action{ }.  good.conf must parse as tests/syntax/expected.txt says; each
 # *.bad must fail.
@@ -39,4 +39,5 @@ refuse "a rule goes on past its line only at a" 'r = "a" x
     "b" x
 x = word'
 refuse "a rule.s head is its name alone" 'char[16] ifname = word'
+refuse "is ABNF.s alternative; hbnf writes" 'r = "a" / "b"'
 echo "syntax: OK (refusals)"

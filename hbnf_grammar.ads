@@ -6,9 +6,9 @@ with Ada.Strings.Unbounded;
 --  HBNF_Grammar: a schema for mapping a preparsed *generic* AST (a tree of named
 --  nodes carrying symbol/string values, children and comments) to typed C/Ada.
 --
---  The schema notation is RFC 5234 ABNF, with `|` for `/` and the other
---  additions ABNF.md lists.  Types are *not* part of the grammar: they
---  are a reserved set of built-in rule names the code emitter
+--  The schema notation is RFC 5234 ABNF, with `|` in place of `/` and
+--  the other additions ABNF.md lists.  Types are *not* part of the
+--  grammar: they are a reserved set of built-in rule names the code emitter
 --  interprets.  `str` is a quoted c-string; `atom` (synonym `word`) is a bare
 --  token, a symbol or a number, that the matcher narrows against the typed
 --  core types (`int`, `dec`, `float`, `u8`..`u64`, `i8`..`i64`, `bool`,

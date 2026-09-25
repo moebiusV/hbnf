@@ -140,7 +140,7 @@ procedure Hbnf_Emit_Check is
    begin
       Check ("hbnf 9 rules", Natural (Rules.Length) = 9);
 
-      --  entry = block / statement : block first, so a block's "{" wins.
+      --  entry = block | statement : block first, so a block's "{" wins.
       I := Find_Rule (Rules, "entry");
       Check ("entry is block/statement",
              I /= 0 and then Natural (Rules (I).Pattern.Length) = 3
@@ -156,7 +156,7 @@ procedure Hbnf_Emit_Check is
                and then Rules (I).Pattern (2).Min = 0
                and then Rules (I).Pattern (2).Max = -1);
 
-      --  ws = 1*( "\n" / comment ) — newlines and comments are whitespace.
+      --  ws = 1*( "\n" | comment ) — newlines and comments are whitespace.
       I := Find_Rule (Rules, "ws");
       Check ("ws is newline/comment",
              I /= 0 and then Natural (Rules (I).Pattern.Length) = 1

@@ -13,7 +13,7 @@ static int modes_seen;
 config  = *( entry )
 entry   = setmode
         | "proto" proto
-        / "quote" str quote_end        ; `/`, ABNF's spelling, still works
+        | "quote" str quote_end
         | %i"level" %i"high"           ; a %i keyword, then a %i word
         | tag
 

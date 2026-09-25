@@ -52,7 +52,7 @@ package body HBNF_Grammar is
 
    --  T_Pct: `%` and the word after it (`%i`, `%s`, `%scan`, `%action`,
    --  `%x20-7E`); its Text is the word without the `%`.
-   type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Slash, T_LParen,
+   type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Bar, T_LParen,
                      T_RParen, T_LBrack, T_RBrack, T_Star, T_Code,
                      T_Comment, T_Newline, T_Pct, T_EOF);
 
@@ -331,9 +331,13 @@ package body HBNF_Grammar is
                   Col := Col + (I - Start + 1);
                end;
             when '=' => Emit (T_Eq);     I := I + 1;  Col := Col + 1;
-            --  `|` separates alternatives, as in BNF, EBNF and yacc; `/`,
-            --  ABNF's spelling, still does.
-            when '/' | '|' => Emit (T_Slash);  I := I + 1;  Col := Col + 1;
+            --  `|` separates alternatives, as in BNF, EBNF and yacc.
+            --  ABNF's `/` is refused rather than read two ways.
+            when '|' => Emit (T_Bar);  I := I + 1;  Col := Col + 1;
+            when '/' =>
+               raise Parse_Error with
+                 Integer'Image (Line) & ":" & Integer'Image (Col)
+                 & ": `/` is ABNF's alternative; hbnf writes `|`";
             when '(' => Emit (T_LParen); I := I + 1;  Col := Col + 1;
             when ')' => Emit (T_RParen); I := I + 1;  Col := Col + 1;
             when '[' => Emit (T_LBrack); I := I + 1;  Col := Col + 1;
@@ -717,7 +721,7 @@ package body HBNF_Grammar is
    begin
       loop
          exit when Cur (P).Kind in
-           T_Newline | T_RParen | T_RBrack | T_Slash | T_Comment | T_Code
+           T_Newline | T_RParen | T_RBrack | T_Bar | T_Comment | T_Code
            | T_EOF;
          exit when Cur (P).Kind = T_Pct
            and then To_String (Cur (P).Text) in "scan" | "action";
@@ -744,7 +748,7 @@ package body HBNF_Grammar is
             while P.Toks (Pos).Kind in T_Newline | T_Comment loop
                Pos := Pos + 1;
             end loop;
-            exit when P.Toks (Pos).Kind /= T_Slash;
+            exit when P.Toks (Pos).Kind /= T_Bar;
             P.Pos := Pos;
          end;
          Next (P);
