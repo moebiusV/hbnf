@@ -20,4 +20,10 @@ project HBNF_Cli is
          "-gnaty3abcefhiklmnprt");
    end Compiler;
 
+   --  Fully static executable (musl): no libgnat/libgcc/libc dynamic deps, so
+   --  hbnf_cli runs on any x86-64 Linux (glibc or musl), not just Alpine.
+   package Linker is
+      for Switches ("Ada") use ("-static");
+   end Linker;
+
 end HBNF_Cli;
