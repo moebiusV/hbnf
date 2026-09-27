@@ -3,11 +3,13 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Templates;
+with HBNF_Compilable;
 
 package body HBNF_Rust is
 
    use Ada.Strings.Unbounded;
    use HBNF_Grammar;
+   use HBNF_Compilable;
 
    subtype U is Unbounded_String;
 
@@ -39,12 +41,18 @@ package body HBNF_Rust is
       return "";
    end Scalar_Rust_Type;
 
-   --  A snake_case identifier from a schema name ('-' -> '_').
+   --  A snake_case identifier from a schema name ('-' -> '_', upper -> lower).
    function Rust_Snake (S : String) return String is
       Buf : U;
    begin
       for C of S loop
-         Append (Buf, (if C = '-' then '_' else C));
+         if C = '-' then
+            Append (Buf, '_');
+         elsif C in 'A' .. 'Z' then
+            Append (Buf, Character'Val (Character'Pos (C) + 32));
+         else
+            Append (Buf, C);
+         end if;
       end loop;
       return To_String (Buf);
    end Rust_Snake;
@@ -425,6 +433,8 @@ package body HBNF_Rust is
                   Seen.Clear;
                when Group =>
                   Collect (E.Items, Members, Lits, Has_Alt);
+               when Char_Range =>
+                  null;
             end case;
          end loop;
       end Collect;
@@ -451,6 +461,12 @@ package body HBNF_Rust is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if Is_Char_Rule (Rules, To_String (R.Name)) then
+            --  A character-level rule compiles to a scanner + token; its value
+            --  is the matched text, so it is a scalar string.
+            return (Kind => Scalar,
+                    Inline_Type => To_Unbounded_String ("String"));
+         end if;
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet reads its own token kind and yields the matched text.
             return (Kind => Scalar,
@@ -1130,6 +1146,63 @@ package body HBNF_Rust is
          return Rust_Type (To_String (R.Name));
       end Ret_Type;
 
+      --  The condition that the code point (in `c`) is in the ranges a single
+      --  char atom matches; a Name reference resolves through the referenced
+      --  rule's Char_Ranges (single-char rules only, as in the C backend).
+      function Atom_Cond (E : Element_Access; Depth : Natural) return U is
+         Cond : U := Null_Unbounded_String;
+
+         procedure Add_Range (Lo, Hi : Natural) is
+         begin
+            if Cond /= Null_Unbounded_String then
+               Append (Cond, " || ");
+            end if;
+            --  `c >= 0` is a useless comparison for an unsigned code point
+            --  (rustc's -D unused-comparisons rejects it), so drop the lower
+            --  bound when Lo = 0.  The upper bound is never useless: a
+            --  permissive 4-byte decode can yield code points above 0x10FFFF.
+            if Lo = 0 then
+               Append (Cond, "(c <= " & Img (Hi) & ")");
+            else
+               Append (Cond, "(c >= " & Img (Lo) & " && c <= " & Img (Hi) & ")");
+            end if;
+         end Add_Range;
+
+         procedure Walk (J : Natural; D : Natural) is
+            R : constant Rule := Rules (J);
+         begin
+            if D = 0 then
+               return;
+            end if;
+            for F of R.Pattern loop
+               if F.Kind = Char_Range then
+                  Add_Range (F.Lo, F.Hi);
+               elsif F.Kind = Name then
+                  declare
+                     K : constant Natural := Find (To_String (F.Name));
+                  begin
+                     if K /= 0 then
+                        Walk (K, D - 1);
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end Walk;
+      begin
+         if E.Kind = Char_Range then
+            Add_Range (E.Lo, E.Hi);
+         elsif E.Kind = Name then
+            declare
+               K : constant Natural := Find (To_String (E.Name));
+            begin
+               if K /= 0 then
+                  Walk (K, Depth - 1);
+               end if;
+            end;
+         end if;
+         return Cond;
+      end Atom_Cond;
+
       --  True when some branch of an enum is a punctuation literal
       --  ("+", "<="): the lexer makes it a punct token, not an atom.
       function Has_Punct_Lit (V : Element_Vectors.Vector) return Boolean is
@@ -1171,6 +1244,16 @@ package body HBNF_Rust is
                           & Rust_Field (To_String (E.Name)) & " = "
                           & Scalar_Parse (To_String (E.Name)) & "; p.pos += 1;");
                         Append (Buf, LF);
+                     elsif Is_Char_Rule (Rules, To_String (E.Name)) then
+                        --  A char-rule reference matches its token and yields the text.
+                        Append (Buf, Ind & "p.expect_kind(Kind::"
+                          & Rust_Type (To_String (E.Name)) & ", """
+                          & To_String (E.Name) & """)?;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & Dst
+                          & Rust_Field (To_String (E.Name))
+                          & " = p.toks[p.pos].text.clone(); p.pos += 1;");
+                        Append (Buf, LF);
                      else
                         Append (Buf, Ind & Dst
                           & Rust_Field (To_String (E.Name)) & " = parse_"
@@ -1181,6 +1264,8 @@ package body HBNF_Rust is
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Dst, Buf,
                                Ind & "    ");
                   when Alt =>
+                     null;
+                  when Char_Range =>
                      null;
                end case;
             end;
@@ -1230,6 +1315,17 @@ package body HBNF_Rust is
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
          SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
       begin
+         if Is_Char_Rule (Rules, NM) then
+            --  A char rule is a token: expect its kind and capture the text.
+            Append (Buf, "    p.expect_kind(Kind::" & Rust_Type (NM) & ", """
+              & NM & """)?;");
+            Append (Buf, LF);
+            Append (Buf, "    let r = p.toks[p.pos].text.clone(); p.pos += 1;");
+            Append (Buf, LF);
+            Append (Buf, "    Ok(r)");
+            Append (Buf, LF);
+            return;
+         end if;
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet is a hand-written C scanner; this backend can't run it,
             --  so read the token the generic lexer produced instead.
@@ -1512,6 +1608,11 @@ package body HBNF_Rust is
                Append (Enum, ", " & Rust_Type (To_String (Rules (I).Name)));
             end if;
          end loop;
+         for I in 1 .. N loop
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               Append (Enum, ", " & Rust_Type (To_String (Rules (I).Name)));
+            end if;
+         end loop;
          Append (Enum, ", Eof }");
          Append (Res, To_String (Enum));
          Append (Res, LF);
@@ -1656,6 +1757,145 @@ package body HBNF_Rust is
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
+      Append (Res, LF);
+
+      --  Character-layer scanners (code-point matching, mirroring the C and Ada
+      --  backends): each char-level rule compiles to a scanner over decoded UTF-8
+      --  code points, and char_dispatch takes the longest match — maximal munch.
+      --  The lexer calls char_dispatch after jet_dispatch.
+      declare
+         Has_Char : constant Boolean :=
+           (for some I in 1 .. N => Is_Char_Rule (Rules, To_String (Rules (I).Name)));
+      begin
+         if Has_Char then
+            Append (Res, "fn decode_utf8(s: &[u8], pos: usize, len: usize) -> (usize, u32) {");
+            Append (Res, LF);
+            Append (Res, "    if pos >= len { return (0, 0); }");
+            Append (Res, LF);
+            Append (Res, "    let b0 = s[pos] as u32;");
+            Append (Res, LF);
+            Append (Res, "    if b0 < 0x80 { return (1, b0); }");
+            Append (Res, LF);
+            Append (Res, "    let (n, mut c) = if b0 & 0xE0 == 0xC0 { (2, b0 & 0x1F) }");
+            Append (Res, LF);
+            Append (Res, "        else if b0 & 0xF0 == 0xE0 { (3, b0 & 0x0F) }");
+            Append (Res, LF);
+            Append (Res, "        else if b0 & 0xF8 == 0xF0 { (4, b0 & 0x07) }");
+            Append (Res, LF);
+            Append (Res, "        else { return (0, 0); };");
+            Append (Res, LF);
+            Append (Res, "    if pos + n > len { return (0, 0); }");
+            Append (Res, LF);
+            Append (Res, "    for k in 1..n {");
+            Append (Res, LF);
+            Append (Res, "        let b = s[pos + k] as u32;");
+            Append (Res, LF);
+            Append (Res, "        if b & 0xC0 != 0x80 { return (0, 0); }");
+            Append (Res, LF);
+            Append (Res, "        c = (c << 6) | (b & 0x3F);");
+            Append (Res, LF);
+            Append (Res, "    }");
+            Append (Res, LF);
+            Append (Res, "    (n, c)");
+            Append (Res, LF);
+            Append (Res, "}");
+            Append (Res, LF);
+            Append (Res, LF);
+         end if;
+
+         for I in 1 .. N loop
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               declare
+                  NM      : constant String := To_String (Rules (I).Name);
+                  R       : constant Rule := Rules (I);
+                  Has_Alt : Boolean := False;
+               begin
+                  for E of R.Pattern loop
+                     if E.Kind = Alt then
+                        Has_Alt := True;
+                     end if;
+                  end loop;
+                  Append (Res, "fn scan_" & Rust_Snake (NM)
+                    & "(s: &[u8], pos: usize, len: usize) -> usize {");
+                  Append (Res, LF);
+                  if Has_Alt or else Natural (R.Pattern.Length) = 1 then
+                     declare
+                        Cond : U := Null_Unbounded_String;
+                     begin
+                        for E of R.Pattern loop
+                           if E.Kind /= Alt then
+                              declare
+                                 AC : constant U := Atom_Cond (E, 20);
+                              begin
+                                 if AC /= Null_Unbounded_String then
+                                    if Cond /= Null_Unbounded_String then
+                                       Append (Cond, " || ");
+                                    end if;
+                                    Append (Cond, To_String (AC));
+                                 end if;
+                              end;
+                           end if;
+                        end loop;
+                        Append (Res, "    let (n, c) = decode_utf8(s, pos, len);");
+                        Append (Res, LF);
+                        Append (Res, "    if n > 0 && (" & To_String (Cond) & ") { n } else { 0 }");
+                        Append (Res, LF);
+                     end;
+                  else
+                     Append (Res, "    let mut off = 0usize;");
+                     Append (Res, LF);
+                     for E of R.Pattern loop
+                        if E.Kind /= Alt then
+                           declare
+                              AC : constant U := Atom_Cond (E, 20);
+                           begin
+                              Append (Res, "    { let (n, c) = decode_utf8(s, pos + off, len);"
+                                & " if n == 0 || !(" & To_String (AC)
+                                & ") { return 0; } off += n; }");
+                              Append (Res, LF);
+                           end;
+                        end if;
+                     end loop;
+                     Append (Res, "    off");
+                     Append (Res, LF);
+                  end if;
+                  Append (Res, "}");
+                  Append (Res, LF);
+                  Append (Res, LF);
+               end;
+            end if;
+         end loop;
+
+         Append (Res, (if Has_Char
+                       then "fn char_dispatch(s: &[u8], pos: usize, len: usize)"
+                       else "fn char_dispatch(_s: &[u8], _pos: usize, _len: usize)")
+           & " -> (usize, Kind) {");
+         Append (Res, LF);
+         if Has_Char then
+            Append (Res, "    let mut best = 0usize;");
+            Append (Res, LF);
+            Append (Res, "    let mut best_kind = Kind::Eof;");
+            Append (Res, LF);
+            for I in 1 .. N loop
+               if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+                  declare
+                     NM : constant String := To_String (Rules (I).Name);
+                  begin
+                     Append (Res, "    { let n = scan_" & Rust_Snake (NM)
+                       & "(s, pos, len); if n > best { best = n; best_kind = Kind::"
+                       & Rust_Type (NM) & "; } }");
+                     Append (Res, LF);
+                  end;
+               end if;
+            end loop;
+            Append (Res, "    (best, best_kind)");
+         else
+            Append (Res, "    (0, Kind::Eof)");
+         end if;
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+      end;
 
       return To_String (Res);
    end Emit_Parser;

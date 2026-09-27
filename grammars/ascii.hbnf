@@ -1,0 +1,64 @@
+; ascii.hbnf — the ASCII character set, named.
+;
+; Include this to name code points by their ASCII names: the C0 control
+; characters (NUL .. US), the special non-printing/punctuation characters
+; (SP, DEL, DQUOTE, HT/HTAB), and the RFC 5234 Appendix B.1 character
+; classes (DIGIT, ALPHA, HEXDIG, ...).
+;
+; Every rule here matches exactly one code point, so the character-layer
+; lexer compiles each into a single-character scanner (a "token").  The
+; composites (CRLF, WSP, LWSP) are omitted — they are multi-character and
+; belong with the caller's grammar, not this alphabet.
+
+; --- C0 control characters (0x00 .. 0x1F) ---
+NUL = %x00
+SOH = %x01
+STX = %x02
+ETX = %x03
+EOT = %x04
+ENQ = %x05
+ACK = %x06
+BEL = %x07
+BS  = %x08
+HT  = %x09
+LF  = %x0A
+VT  = %x0B
+FF  = %x0C
+CR  = %x0D
+SO  = %x0E
+SI  = %x0F
+DLE = %x10
+DC1 = %x11
+DC2 = %x12
+DC3 = %x13
+DC4 = %x14
+NAK = %x15
+SYN = %x16
+ETB = %x17
+CAN = %x18
+EM  = %x19
+SUB = %x1A
+ESC = %x1B
+FS  = %x1C
+GS  = %x1D
+RS  = %x1E
+US  = %x1F
+
+; --- special non-printing and punctuation ---
+SP     = %x20
+DEL    = %x7F
+DQUOTE = %x22
+HTAB   = %x09
+
+; --- RFC 5234 Appendix B.1 character classes (each matches one code point) ---
+DIGIT  = %x30-39
+LOWER  = %x61-7A
+UPPER  = %x41-5A
+ALPHA  = %x41-5A | %x61-7A
+ALNUM  = %x30-39 | %x41-5A | %x61-7A
+HEXDIG = %x30-39 | %x41-46 | %x61-66
+BIT    = %x30 | %x31
+CHAR   = %x01-7F
+CTL    = %x00-1F | %x7F
+VCHAR  = %x21-7E
+OCTET  = %x00-FF

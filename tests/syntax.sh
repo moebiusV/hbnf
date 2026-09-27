@@ -27,7 +27,7 @@ refuse() {
 	fi
 	grep -q "$1" "$W/err.txt" || { echo "syntax: FAIL ($2: $(tail -1 "$W/err.txt"))"; exit 1; }
 }
-refuse "numeric terminals are not supported" 'r = %x41-5A'
+refuse "dotted concatenation" 'r = %d13.10'
 refuse "takes the place of a pattern" 'r = "a" %scan{ return 0; }'
 refuse "both with %i and without" 'r = "go" | x
 x = %i"go" "now"'

@@ -54,7 +54,7 @@ package body HBNF_Grammar is
    --  `%x20-7E`); its Text is the word without the `%`.
    type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Bar, T_LParen,
                      T_RParen, T_LBrack, T_RBrack, T_Star, T_Code,
-                     T_Comment, T_Newline, T_Pct, T_EOF);
+                     T_Comment, T_Newline, T_Pct, T_Char, T_Dash, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -343,6 +343,106 @@ package body HBNF_Grammar is
             when '[' => Emit (T_LBrack); I := I + 1;  Col := Col + 1;
             when ']' => Emit (T_RBrack); I := I + 1;  Col := Col + 1;
             when '*' => Emit (T_Star);   I := I + 1;  Col := Col + 1;
+            when '-' => Emit (T_Dash);   I := I + 1;  Col := Col + 1;
+            when ''' =>
+               --  A character literal 'c' (or a C escape): one code point.
+               declare
+                  At_Col : constant Natural := Col;
+                  Buf    : Unbounded_String := Null_Unbounded_String;
+               begin
+                  I := I + 1;  Col := Col + 1;
+                  if I > Text'Last then
+                     raise Parse_Error with
+                       Integer'Image (Line) & ":" & Integer'Image (Col) &
+                       ": unterminated character literal";
+                  end if;
+                  if Text (I) = ''' then
+                     raise Parse_Error with
+                       Integer'Image (Line) & ":" & Integer'Image (Col) &
+                       ": empty character literal";
+                  end if;
+                  if Text (I) = '\' then
+                     I := I + 1;  Col := Col + 1;
+                     if I > Text'Last then
+                        raise Parse_Error with
+                          Integer'Image (Line) & ":" & Integer'Image (Col) &
+                          ": escape at end of character literal";
+                     end if;
+                     if Text (I) in '0' .. '7' then
+                        declare
+                           Val : Natural := 0;
+                           N   : Natural := 0;
+                        begin
+                           while N < 3 and then I <= Text'Last
+                             and then Text (I) in '0' .. '7' loop
+                              Val := Val * 8
+                                + (Character'Pos (Text (I))
+                                   - Character'Pos ('0'));
+                              N := N + 1;  I := I + 1;  Col := Col + 1;
+                           end loop;
+                           if Val > 255 then
+                              raise Parse_Error with
+                                Integer'Image (Line) & ":" &
+                                Integer'Image (Col) & ": bad octal escape";
+                           end if;
+                           Append (Buf, Character'Val (Val));
+                        end;
+                     elsif Text (I) = 'x' then
+                        declare
+                           Val : Natural := 0;
+                           N   : Natural := 0;
+                        begin
+                           I := I + 1;  Col := Col + 1;
+                           while I <= Text'Last
+                             and then Hex_Digit (Text (I)) >= 0 loop
+                              Val := Val * 16 + Hex_Digit (Text (I));
+                              N := N + 1;  I := I + 1;  Col := Col + 1;
+                           end loop;
+                           if N = 0 or else Val > 255 then
+                              raise Parse_Error with
+                                Integer'Image (Line) & ":" &
+                                Integer'Image (Col) & ": bad hex escape";
+                           end if;
+                           Append (Buf, Character'Val (Val));
+                        end;
+                     else
+                        declare
+                           Ch : Character;
+                        begin
+                           case Text (I) is
+                              when 'a' => Ch := Character'Val (7);
+                              when 'b' => Ch := Character'Val (8);
+                              when 'f' => Ch := Character'Val (12);
+                              when 'n' => Ch := Character'Val (10);
+                              when 'r' => Ch := Character'Val (13);
+                              when 't' => Ch := Character'Val (9);
+                              when 'v' => Ch := Character'Val (11);
+                              when '\' => Ch := '\';
+                              when '"' => Ch := '"';
+                              when ''' => Ch := ''';
+                              when '?' => Ch := '?';
+                              when others =>
+                                 raise Parse_Error with
+                                   Integer'Image (Line) & ":" &
+                                   Integer'Image (Col) & ": unknown escape '"
+                                   & Text (I) & "'";
+                           end case;
+                           Append (Buf, Ch);
+                           I := I + 1;  Col := Col + 1;
+                        end;
+                     end if;
+                  else
+                     Append (Buf, Text (I));
+                     I := I + 1;  Col := Col + 1;
+                  end if;
+                  if I > Text'Last or else Text (I) /= ''' then
+                     raise Parse_Error with
+                       Integer'Image (Line) & ":" & Integer'Image (Col) &
+                       ": character literal must be one character";
+                  end if;
+                  I := I + 1;  Col := Col + 1;   --  closing quote
+                  Emit (T_Char, To_String (Buf), At_Col);
+               end;
             when '{' =>
                --  A raw code block (preamble, jet, or epilogue): capture the
                --  text between matching braces.  Braces nest, and a `"` string
@@ -633,15 +733,125 @@ package body HBNF_Grammar is
                                          Lit => Lit, No_Case => W = "i");
                   end;
                end if;
+               if W'Length > 0
+                 and then W (W'First) in 'b' | 'd' | 'o' | 'u' | 'x'
+               then
+                  --  %b.. / %d.. / %o.. / %x.., each with an optional
+                  --  -suffix for a range: a single code point or a range, in
+                  --  binary/decimal/octal/hex (RFC 5234 §2.3's numeric
+                  --  terminals, plus %o as C's octal spelling).  These are
+                  --  the character-layer terminals.
+                  declare
+                     Base : constant Positive :=
+                       (if W (W'First) = 'b' then 2
+                        elsif W (W'First) = 'o' then 8
+                        elsif W (W'First) = 'd' then 10
+                        else 16);
+
+                     function Num_Val (S : String) return Natural is
+                        V : Natural := 0;
+                        D : Integer;
+                     begin
+                        for C of S loop
+                           D := Hex_Digit (C);
+                           if D < 0 or else D >= Base then
+                              raise Parse_Error with
+                                Integer'Image (T.Line) & ":" &
+                                Integer'Image (T.Col) & ": bad digit in %"
+                                & W;
+                           end if;
+                           V := V * Base + D;
+                        end loop;
+                        return V;
+                     end Num_Val;
+
+                     Dash : Natural := 0;
+                     Lo   : Natural;
+                     Hi   : Natural;
+                  begin
+                     if W'Length = 1 then
+                        raise Parse_Error with
+                          Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                          & ": %" & W & " needs digits";
+                     end if;
+                     for I in W'First + 1 .. W'Last loop
+                        if W (I) = '.' then
+                           raise Parse_Error with
+                             Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                             & ": dotted concatenation (%" & W & ") is not "
+                             & "supported; write the terminals as a sequence";
+                        end if;
+                     end loop;
+                     for I in W'First + 1 .. W'Last loop
+                        if W (I) = '-' then
+                           Dash := I;
+                           exit;
+                        end if;
+                     end loop;
+                     if Dash = 0 then
+                        Lo := Num_Val (W (W'First + 1 .. W'Last));
+                        Hi := Lo;
+                     else
+                        Lo := Num_Val (W (W'First + 1 .. Dash - 1));
+                        Hi := Num_Val (W (Dash + 1 .. W'Last));
+                     end if;
+                     if Lo > Hi then
+                        --  The endpoint order does not matter: %x39-30 is the
+                        --  range [30, 39], the same as %x30-39.
+                        declare
+                           T : constant Natural := Lo;
+                        begin
+                           Lo := Hi;
+                           Hi := T;
+                        end;
+                     end if;
+                     if W (W'First) = 'u' and then Hi > 16#10FFFF# then
+                        raise Parse_Error with
+                          Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                          & ": code point out of Unicode range in %" & W;
+                     end if;
+                     Next (P);
+                     return new Element'
+                       (Kind => Char_Range, Min => 1, Max => 1,
+                        Lo => Lo, Hi => Hi);
+                  end;
+               end if;
+
                raise Parse_Error with
                  Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
-                 & ": %" & W & (if W'Length > 0
-                                   and then W (W'First) in 'b' | 'd' | 'x'
-                                then ": numeric terminals are not supported "
-                                     & "yet (a jet can match the characters)"
-                                else ": expected %i or %s before a literal, "
-                                     & "or %scan or %action before a code "
-                                     & "block");
+                 & ": %" & W & ": expected %i or %s before a literal, or a "
+                 & "%b/%d/%o/%u/%x numeric terminal";
+            end;
+         when T_Char =>
+            --  A character literal 'c': a single code point, or with a
+            --  following '-' a code-point range ('a'-'c').
+            declare
+               S   : constant String := To_String (Cur (P).Text);
+               Cp1 : constant Natural := Character'Pos (S (S'First));
+            begin
+               Next (P);
+               if Cur (P).Kind = T_Dash then
+                  Next (P);
+                  if Cur (P).Kind /= T_Char then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" &
+                       Integer'Image (Cur (P).Col) &
+                       ": expected a character literal after '-'";
+                  end if;
+                  declare
+                     S2  : constant String := To_String (Cur (P).Text);
+                     Cp2 : constant Natural := Character'Pos (S2 (S2'First));
+                  begin
+                     Next (P);
+                     return new Element'
+                       (Kind => Char_Range, Min => 1, Max => 1,
+                        Lo => Natural'Min (Cp1, Cp2),
+                        Hi => Natural'Max (Cp1, Cp2));
+                  end;
+               end if;
+               return new Element'
+                 (Kind => Char_Range, Min => 1, Max => 1,
+                  Lo => Cp1, Hi => Cp1);
             end;
          when T_Name =>
             declare
@@ -772,6 +982,7 @@ package body HBNF_Grammar is
                   when Literal => A.Lit = B.Lit and then A.No_Case = B.No_Case,
                   when Name    => A.Name = B.Name,
                   when Group   => Same_Elements (A.Items, B.Items),
+                  when Char_Range   => A.Lo = B.Lo and then A.Hi = B.Hi,
                   when Alt     => True));
 
    --  Direct left recursion, `a = a t1 | a t2 | b1 | b2`, becomes the list

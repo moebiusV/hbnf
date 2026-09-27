@@ -3,11 +3,13 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Templates;
+with HBNF_Compilable;
 
 package body HBNF_Ada is
 
    use Ada.Strings.Unbounded;
    use HBNF_Grammar;
+   use HBNF_Compilable;
 
    subtype U is Unbounded_String;
 
@@ -417,6 +419,8 @@ package body HBNF_Ada is
                   Seen.Clear;
                when Group =>
                   Collect (E.Items, Members, Lits, Has_Alt);
+               when Char_Range =>
+                  null;
             end case;
          end loop;
       end Collect;
@@ -443,6 +447,12 @@ package body HBNF_Ada is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if Is_Char_Rule (Rules, To_String (R.Name)) then
+            --  A character-level rule compiles to a scanner and a token; its
+            --  value is the matched text, so it is a scalar string.
+            return (Kind        => Scalar,
+                    Inline_Type => To_Unbounded_String ("Unbounded_String"));
+         end if;
          if R.Jet_Code /= Null_Unbounded_String then
             return (Kind        => Scalar,
                     Inline_Type => To_Unbounded_String ("Unbounded_String"));
@@ -989,6 +999,9 @@ package body HBNF_Ada is
          if J = 0 then
             return False;
          end if;
+         if Is_Char_Rule (Rules, Name) then
+            return False;  -- a char rule is a scalar (Unbounded_String)
+         end if;
          declare
             R : constant Rule := Rules (J);
             P : constant Element_Vectors.Vector := R.Pattern;
@@ -1011,6 +1024,55 @@ package body HBNF_Ada is
             end if;
          end;
       end Is_Struct;
+
+      --  The condition that the code point (in Cp) is in the ranges a single
+      --  char atom matches; a Name reference resolves through the referenced
+      --  rule's Char_Ranges (single-char rules only, as in the C backend).
+      function Atom_Cond (E : Element_Access; Depth : Natural) return U is
+         Cond : U := Null_Unbounded_String;
+
+         procedure Add_Range (Lo, Hi : Natural) is
+         begin
+            if Cond /= Null_Unbounded_String then
+               Append (Cond, " or else ");
+            end if;
+            Append (Cond, "(Cp >= " & Img (Lo) & " and then Cp <= " & Img (Hi) & ")");
+         end Add_Range;
+
+         procedure Walk (J : Natural; D : Natural) is
+            R : constant Rule := Rules (J);
+         begin
+            if D = 0 then
+               return;
+            end if;
+            for F of R.Pattern loop
+               if F.Kind = Char_Range then
+                  Add_Range (F.Lo, F.Hi);
+               elsif F.Kind = Name then
+                  declare
+                     K : constant Natural := Find (To_String (F.Name));
+                  begin
+                     if K /= 0 then
+                        Walk (K, D - 1);
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end Walk;
+      begin
+         if E.Kind = Char_Range then
+            Add_Range (E.Lo, E.Hi);
+         elsif E.Kind = Name then
+            declare
+               K : constant Natural := Find (To_String (E.Name));
+            begin
+               if K /= 0 then
+                  Walk (K, Depth - 1);
+               end if;
+            end;
+         end if;
+         return Cond;
+      end Atom_Cond;
 
       function Core_Desc (Name : String) return String is
       begin
@@ -1133,6 +1195,17 @@ package body HBNF_Ada is
                           & Ada_Field (To_String (E.Name)) & " := "
                           & Scalar_Parse (To_String (E.Name)) & "; P.Pos := P.Pos + 1;");
                         Append (Buf, LF);
+                     elsif Is_Char_Rule (Rules, To_String (E.Name)) then
+                        --  A char-rule reference matches its token and yields
+                        --  the matched text, as a core `str` would.
+                        Append (Buf, Ind & "Expect_Kind (P, "
+                          & Ada_Field (To_String (E.Name)) & ", """
+                          & To_String (E.Name) & """);");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & Dst
+                          & Ada_Field (To_String (E.Name))
+                          & " := P.Toks (P.Pos).Text; P.Pos := P.Pos + 1;");
+                        Append (Buf, LF);
                      else
                         if Alloc_Records and then Is_Struct (To_String (E.Name))
                         then
@@ -1151,6 +1224,8 @@ package body HBNF_Ada is
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Dst, Buf,
                                Ind & "   ", Alloc_Records);
                   when Alt =>
+                     null;
+                  when Char_Range =>
                      null;
                end case;
             end;
@@ -1205,7 +1280,8 @@ package body HBNF_Ada is
          Delegate : constant Boolean :=
            Natural (P.Length) = 1 and then P (1).Kind = HBNF_Grammar.Name
              and then P (1).Min = 1 and then P (1).Max = 1
-             and then not Is_Core (To_String (P (1).Name));
+             and then not Is_Core (To_String (P (1).Name))
+             and then not Is_Char_Rule (Rules, To_String (R.Name));
       begin
          if not Delegate then
             Append (Buf, "   R : " & TN & ";");
@@ -1230,6 +1306,17 @@ package body HBNF_Ada is
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
          SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
       begin
+         if Is_Char_Rule (Rules, NM) then
+            --  A char rule is a token: expect its kind and capture the text.
+            Append (Buf, "      Expect_Kind (P, " & Ada_Field (NM) & ", """
+              & NM & """);");
+            Append (Buf, LF);
+            Append (Buf, "      R := P.Toks (P.Pos).Text; P.Pos := P.Pos + 1;");
+            Append (Buf, LF);
+            Append (Buf, "      return R;");
+            Append (Buf, LF);
+            return;
+         end if;
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet is a hand-written C scanner; this backend can't run it,
             --  so read the token the generic lexer produced instead.
@@ -1585,6 +1672,11 @@ package body HBNF_Ada is
                Append (Enum, ", " & Ada_Field (To_String (Rules (I).Name)));
             end if;
          end loop;
+         for I in 1 .. N loop
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               Append (Enum, ", " & Ada_Field (To_String (Rules (I).Name)));
+            end if;
+         end loop;
          Append (Enum, ", Eof);");
          Append (Spec, To_String (Enum));
          Append (Spec, LF);
@@ -1889,6 +1981,180 @@ package body HBNF_Ada is
       Append (Bdy, "      return 0;");
       Append (Bdy, LF);
       Append (Bdy, "   end Jet_Dispatch;");
+      Append (Bdy, LF);
+      Append (Bdy, LF);
+
+      --  Character-layer scanners (code-point matching, mirroring the C
+      --  backend): each char-level rule compiles to a scanner over decoded
+      --  UTF-8 code points, and Char_Dispatch takes the longest match --
+      --  maximal munch.  The lexer calls Char_Dispatch after Jet_Dispatch.
+      declare
+         Has_Char : Boolean := False;
+      begin
+         for I in 1 .. N loop
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               Has_Char := True;
+            end if;
+         end loop;
+         if Has_Char then
+            Append (Bdy, "   function Decode_Utf8 (S : String; Pos, Len : Natural; Cp : out Natural) return Natural is");
+            Append (Bdy, LF);
+            Append (Bdy, "      B0 : Unsigned_32;");
+            Append (Bdy, LF);
+            Append (Bdy, "      N  : Natural := 0;");
+            Append (Bdy, LF);
+            Append (Bdy, "      C  : Unsigned_32 := 0;");
+            Append (Bdy, LF);
+            Append (Bdy, "      B  : Unsigned_32;");
+            Append (Bdy, LF);
+            Append (Bdy, "   begin");
+            Append (Bdy, LF);
+            Append (Bdy, "      Cp := 0;");
+            Append (Bdy, LF);
+            Append (Bdy, "      if Pos > Len then return 0; end if;");
+            Append (Bdy, LF);
+            Append (Bdy, "      B0 := Unsigned_32 (Character'Pos (S (Pos)));");
+            Append (Bdy, LF);
+            Append (Bdy, "      if B0 < 16#80# then");
+            Append (Bdy, LF);
+            Append (Bdy, "         Cp := Natural (B0); return 1;");
+            Append (Bdy, LF);
+            Append (Bdy, "      elsif (B0 and 16#E0#) = 16#C0# then N := 2; C := B0 and 16#1F#;");
+            Append (Bdy, LF);
+            Append (Bdy, "      elsif (B0 and 16#F0#) = 16#E0# then N := 3; C := B0 and 16#0F#;");
+            Append (Bdy, LF);
+            Append (Bdy, "      elsif (B0 and 16#F8#) = 16#F0# then N := 4; C := B0 and 16#07#;");
+            Append (Bdy, LF);
+            Append (Bdy, "      else return 0;");
+            Append (Bdy, LF);
+            Append (Bdy, "      end if;");
+            Append (Bdy, LF);
+            Append (Bdy, "      if Pos + N - 1 > Len then return 0; end if;");
+            Append (Bdy, LF);
+            Append (Bdy, "      for J in 1 .. N - 1 loop");
+            Append (Bdy, LF);
+            Append (Bdy, "         B := Unsigned_32 (Character'Pos (S (Pos + J)));");
+            Append (Bdy, LF);
+            Append (Bdy, "         if (B and 16#C0#) /= 16#80# then return 0; end if;");
+            Append (Bdy, LF);
+            Append (Bdy, "         C := C * 16#40# or (B and 16#3F#);");
+            Append (Bdy, LF);
+            Append (Bdy, "      end loop;");
+            Append (Bdy, LF);
+            Append (Bdy, "      Cp := Natural (C); return N;");
+            Append (Bdy, LF);
+            Append (Bdy, "   end Decode_Utf8;");
+            Append (Bdy, LF);
+            Append (Bdy, LF);
+         end if;
+      end;
+
+      for I in 1 .. N loop
+         if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+            declare
+               NM      : constant String := To_String (Rules (I).Name);
+               R       : constant Rule := Rules (I);
+               Has_Alt : Boolean := False;
+            begin
+               for E of R.Pattern loop
+                  if E.Kind = Alt then
+                     Has_Alt := True;
+                  end if;
+               end loop;
+               Append (Bdy, "   function Scan_" & Ada_Ident (NM)
+                 & " (S : String; Pos, Len : Natural) return Natural is");
+               Append (Bdy, LF);
+               if Has_Alt or else Natural (R.Pattern.Length) = 1 then
+                  declare
+                     Cond : U := Null_Unbounded_String;
+                  begin
+                     for E of R.Pattern loop
+                        if E.Kind /= Alt then
+                           declare
+                              AC : constant U := Atom_Cond (E, 20);
+                           begin
+                              if AC /= Null_Unbounded_String then
+                                 if Cond /= Null_Unbounded_String then
+                                    Append (Cond, " or else ");
+                                 end if;
+                                 Append (Cond, To_String (AC));
+                              end if;
+                           end;
+                        end if;
+                     end loop;
+                     Append (Bdy, "      Cp : Natural;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      N  : constant Natural := Decode_Utf8 (S, Pos, Len, Cp);");
+                     Append (Bdy, LF);
+                     Append (Bdy, "   begin");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      if N > 0 and then (" & To_String (Cond) & ") then");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         return N;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      end if;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      return 0;");
+                     Append (Bdy, LF);
+                  end;
+               else
+                  Append (Bdy, "      Cp  : Natural;");
+                  Append (Bdy, LF);
+                  Append (Bdy, "      N   : Natural;");
+                  Append (Bdy, LF);
+                  Append (Bdy, "      Off : Natural := 0;");
+                  Append (Bdy, LF);
+                  Append (Bdy, "   begin");
+                  Append (Bdy, LF);
+                  for E of R.Pattern loop
+                     if E.Kind /= Alt then
+                        declare
+                           AC : constant U := Atom_Cond (E, 20);
+                        begin
+                           Append (Bdy, "      N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
+                           Append (Bdy, LF);
+                           Append (Bdy, "      if N = 0 or else not (" & To_String (AC) & ") then return 0; end if;");
+                           Append (Bdy, LF);
+                           Append (Bdy, "      Off := Off + N;");
+                           Append (Bdy, LF);
+                        end;
+                     end if;
+                  end loop;
+                  Append (Bdy, "      return Off;");
+                  Append (Bdy, LF);
+               end if;
+               Append (Bdy, "   end Scan_" & Ada_Ident (NM) & ";");
+               Append (Bdy, LF);
+               Append (Bdy, LF);
+            end;
+         end if;
+      end loop;
+
+      Append (Bdy, "   function Char_Dispatch (S : String; Pos, Len : Natural; Kind : out Token_Kind) return Natural is");
+      Append (Bdy, LF);
+      Append (Bdy, "      Best : Natural := 0;");
+      Append (Bdy, LF);
+      Append (Bdy, "      N    : Natural;");
+      Append (Bdy, LF);
+      Append (Bdy, "   begin");
+      Append (Bdy, LF);
+      Append (Bdy, "      Kind := Eof;");
+      Append (Bdy, LF);
+      for I in 1 .. N loop
+         if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+            declare
+               NM : constant String := To_String (Rules (I).Name);
+            begin
+               Append (Bdy, "      N := Scan_" & Ada_Ident (NM)
+                 & " (S, Pos, Len); if N > Best then Best := N; Kind := "
+                 & Ada_Field (NM) & "; end if;");
+               Append (Bdy, LF);
+            end;
+         end if;
+      end loop;
+      Append (Bdy, "      return Best;");
+      Append (Bdy, LF);
+      Append (Bdy, "   end Char_Dispatch;");
       Append (Bdy, LF);
       Append (Bdy, LF);
 

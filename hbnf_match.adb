@@ -185,6 +185,11 @@ package body HBNF_Match is
             end if;
          when Group =>
             return Match_Alts (M, E.Items, Pos);
+         when Char_Range =>
+            --  Character-level; the token matcher has no code points to
+            --  test.  Reachable only through the (not-yet-emitted) char
+            --  layer, so treat as never matching.
+            R.Pos := 0;
          when Alt =>
             return R;
       end case;

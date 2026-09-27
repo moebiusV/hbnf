@@ -3,11 +3,13 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Templates;
+with HBNF_Compilable;
 
 package body HBNF_C is
 
    use Ada.Strings.Unbounded;
    use HBNF_Grammar;
+   use HBNF_Compilable;
 
    subtype U is Unbounded_String;
 
@@ -39,6 +41,12 @@ package body HBNF_C is
       end if;
       return "";
    end Scalar_C_Type;
+
+   --  True when the rule named Nm is character-level: its pattern is a
+   --  sequence/alternation of Char_Range terminals and references to other
+   --  char-level rules, each matching code points.  Shared by the shape
+   --  analyzer (Emit) and the parser/lexer emission (Emit_Parser).
+   --  (The classification itself lives in HBNF_Compilable.Is_Char_Rule.)
 
    --  Upper-case C identifier fragment (for enum constants).
    function C_Ident (S : String) return String is
@@ -601,6 +609,8 @@ package body HBNF_C is
                Seen.Clear;
             when Group =>
                Collect (E.Items, Members, Lits, Has_Alt);
+            when Char_Range =>
+               null;
          end case;
       end loop;
    end Collect;
@@ -673,6 +683,12 @@ package body HBNF_C is
       P : constant Element_Vectors.Vector := R.Pattern;
    begin
       if R.Jet_Code /= Null_Unbounded_String then
+         return (Kind        => Scalar,
+                 Inline_Type => To_Unbounded_String ("const char *"),
+                 others      => <>);
+      end if;
+      if Is_Char_Rule (Rules, To_String (R.Name)) then
+         --  A char-level rule is a token definition, like a jet.
          return (Kind        => Scalar,
                  Inline_Type => To_Unbounded_String ("const char *"),
                  others      => <>);
@@ -968,6 +984,8 @@ package body HBNF_C is
                   Seen.Clear;
                when Group =>
                   Collect (E.Items, Members, Lits, Has_Alt);
+               when Char_Range =>
+                  null;
             end case;
          end loop;
       end Collect;
@@ -997,6 +1015,12 @@ package body HBNF_C is
       begin
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet reads its own token kind and yields the matched text.
+            return (Kind        => Scalar,
+                    Inline_Type => To_Unbounded_String ("const char *"),
+                    others      => <>);
+         end if;
+         if Is_Char_Rule (Rules, To_String (R.Name)) then
+            --  A char-level rule is a token definition, like a jet.
             return (Kind        => Scalar,
                     Inline_Type => To_Unbounded_String ("const char *"),
                     others      => <>);
@@ -1458,6 +1482,13 @@ package body HBNF_C is
                   First := False;
                end if;
             end loop;
+            if First then
+               --  No tree nodes (an all-scalar schema, e.g. a char-only
+               --  alphabet): give the enum a sentinel so it is not empty
+               --  (an empty enum is invalid C).
+               Append (Buf, "    NODE_NONE");
+               First := False;
+            end if;
          end;
          Append (Buf, LF);
          Append (Buf, "} node_kind_t;");
@@ -2449,6 +2480,62 @@ package body HBNF_C is
       function Is_Core (Name : String) return Boolean is
         (Scalar_C_Type (Name) /= "");
 
+      --  True when the rule named Name is character-level: its pattern is a
+      --  sequence/alternation of Char_Range terminals and references to other
+      --  char-level rules, each matching code points.  Such a rule is a token
+      --  definition (compiled to a scanner), not a tree-building rule, so it
+      --  emits no struct and its references match a token instead of recursing.
+      --  (The classification itself is the package-level Is_Char_Rule.)
+
+      --  The C condition that the current code point (in `c`) is one of the
+      --  ranges a single-character atom matches.  A Name reference resolves
+      --  through the referenced rule's Char_Ranges (single-char rules only).
+      function Atom_Cond (E : Element_Access; Depth : Natural) return U is
+         Cond : U := Null_Unbounded_String;
+
+         procedure Add_Range (Lo, Hi : Natural) is
+         begin
+            if Cond /= Null_Unbounded_String then
+               Append (Cond, " || ");
+            end if;
+            Append (Cond, "(c >= " & Img (Lo) & " && c <= " & Img (Hi) & ")");
+         end Add_Range;
+
+         procedure Walk (J : Natural; D : Natural) is
+            R : constant Rule := Rules (J);
+         begin
+            if D = 0 then
+               return;
+            end if;
+            for F of R.Pattern loop
+               if F.Kind = Char_Range then
+                  Add_Range (F.Lo, F.Hi);
+               elsif F.Kind = Name then
+                  declare
+                     K : constant Natural := Find (To_String (F.Name));
+                  begin
+                     if K /= 0 then
+                        Walk (K, D - 1);
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end Walk;
+      begin
+         if E.Kind = Char_Range then
+            Add_Range (E.Lo, E.Hi);
+         elsif E.Kind = Name then
+            declare
+               K : constant Natural := Find (To_String (E.Name));
+            begin
+               if K /= 0 then
+                  Walk (K, Depth - 1);
+               end if;
+            end;
+         end if;
+         return Cond;
+      end Atom_Cond;
+
       function Has_Alt (Els : Element_Vectors.Vector) return Boolean is
       begin
          for E of Els loop
@@ -2810,6 +2897,8 @@ package body HBNF_C is
                                Fail, Ind & "    ");
                   when Alt =>
                      null;
+                  when Char_Range =>
+                     null;
                end case;
             end;
          end loop;
@@ -2899,6 +2988,8 @@ package body HBNF_C is
             when Group =>
                return First_Of (E.Items, Depth + 1, Known);
             when Alt =>
+               null;
+            when Char_Range =>
                null;
          end case;
          return V;
@@ -3248,6 +3339,19 @@ package body HBNF_C is
             --  A jet: match its own token kind and yield the matched text.
             Append (Buf, "    if (!expect_kind(p, TOK_" & C_Ident (NM)
               & ", ""a " & NM & """)) return false;");
+            Append (Buf, LF);
+            Append (Buf, "    *out = hbnf_str_append(p->toks[p->pos].text,"
+              & " p->toks[p->pos].len); p->pos++;");
+            Append (Buf, LF);
+            Append (Buf, "    return true;");
+            Append (Buf, LF);
+            return;
+         end if;
+         if Is_Char_Rule (Rules, NM) then
+            --  A character-level rule: match its char token and yield the
+            --  matched text, exactly like a jet.
+            Append (Buf, "    if (!expect_kind(p, TOK_" & C_Ident (NM)
+              & ", """ & NM & """)) return false;");
             Append (Buf, LF);
             Append (Buf, "    *out = hbnf_str_append(p->toks[p->pos].text,"
               & " p->toks[p->pos].len); p->pos++;");
@@ -3749,6 +3853,9 @@ package body HBNF_C is
             if Rules (I).Jet_Code /= Null_Unbounded_String then
                Append (Enum, ", TOK_"
                  & C_Ident (To_String (Rules (I).Name)));
+            elsif Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               Append (Enum, ", TOK_"
+                 & C_Ident (To_String (Rules (I).Name)));
             end if;
          end loop;
          Append (Enum, ", TOK_EOF } tok_kind_t;");
@@ -4046,6 +4153,153 @@ package body HBNF_C is
             end;
          end if;
       end loop;
+      Append (Res, "    return 0;");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+
+      --  Character-layer scanners: each char-level rule compiles to a scanner
+      --  over its code points (one position for a single code point or an
+      --  alternation, several for a sequence), and char_dispatch picks the
+      --  longest match — maximal munch.  The scanners match decoded UTF-8
+      --  code points, so a token may begin with a multi-byte sequence; the
+      --  shared decoder is emitted once, only when some rule is char-level.
+      declare
+         Has_Char : Boolean := False;
+      begin
+         for I in 1 .. N loop
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               Has_Char := True;
+            end if;
+         end loop;
+         if Has_Char then
+            Append (Res, "static size_t hbnf_decode_utf8(const char *s, size_t pos,"
+              & " size_t len, uint32_t *cp) {");
+            Append (Res, LF);
+            Append (Res, "    if (pos >= len) return 0;");
+            Append (Res, LF);
+            Append (Res, "    unsigned char b0 = (unsigned char)s[pos];");
+            Append (Res, LF);
+            Append (Res, "    uint32_t c; size_t n;");
+            Append (Res, LF);
+            Append (Res, "    if (b0 < 0x80) { *cp = b0; return 1; }");
+            Append (Res, LF);
+            Append (Res, "    else if ((b0 & 0xE0) == 0xC0) { n = 2; c = b0 & 0x1F; }");
+            Append (Res, LF);
+            Append (Res, "    else if ((b0 & 0xF0) == 0xE0) { n = 3; c = b0 & 0x0F; }");
+            Append (Res, LF);
+            Append (Res, "    else if ((b0 & 0xF8) == 0xF0) { n = 4; c = b0 & 0x07; }");
+            Append (Res, LF);
+            Append (Res, "    else return 0;");
+            Append (Res, LF);
+            Append (Res, "    if (pos + n > len) return 0;");
+            Append (Res, LF);
+            Append (Res, "    for (size_t k = 1; k < n; k++) {");
+            Append (Res, LF);
+            Append (Res, "        unsigned char b = (unsigned char)s[pos + k];");
+            Append (Res, LF);
+            Append (Res, "        if ((b & 0xC0) != 0x80) return 0;");
+            Append (Res, LF);
+            Append (Res, "        c = (c << 6) | (b & 0x3F);");
+            Append (Res, LF);
+            Append (Res, "    }");
+            Append (Res, LF);
+            Append (Res, "    *cp = c; return n;");
+            Append (Res, LF);
+            Append (Res, "}");
+            Append (Res, LF);
+            Append (Res, LF);
+         end if;
+      end;
+      for I in 1 .. N loop
+         if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+            declare
+               NM      : constant String := To_String (Rules (I).Name);
+               R       : constant Rule := Rules (I);
+               Has_Alt : Boolean := False;
+            begin
+               for E of R.Pattern loop
+                  if E.Kind = Alt then
+                     Has_Alt := True;
+                  end if;
+               end loop;
+               Append (Res, "static size_t scan_" & C_Name (NM)
+                 & "(const char *s, size_t pos, size_t len) {");
+               Append (Res, LF);
+               if Has_Alt or else Natural (R.Pattern.Length) = 1 then
+                  declare
+                     Cond : U := Null_Unbounded_String;
+                  begin
+                     for E of R.Pattern loop
+                        if E.Kind /= Alt then
+                           declare
+                              AC : constant U := Atom_Cond (E, 20);
+                           begin
+                              if AC /= Null_Unbounded_String then
+                                 if Cond /= Null_Unbounded_String then
+                                    Append (Cond, " || ");
+                                 end if;
+                                 Append (Cond, To_String (AC));
+                              end if;
+                           end;
+                        end if;
+                     end loop;
+                     Append (Res, "    if (pos >= len) return 0;");
+                     Append (Res, LF);
+                     Append (Res, "    { uint32_t c; size_t n = hbnf_decode_utf8(s,"
+                       & " pos, len, &c); if (n && (" & To_String (Cond)
+                       & ")) return n; }");
+                     Append (Res, LF);
+                  end;
+               else
+                  Append (Res, "    size_t off = 0;");
+                  Append (Res, LF);
+                  for E of R.Pattern loop
+                     if E.Kind /= Alt then
+                        declare
+                           AC : constant U := Atom_Cond (E, 20);
+                        begin
+                           Append (Res, "    { uint32_t c; size_t n ="
+                             & " hbnf_decode_utf8(s, pos + off, len, &c);"
+                             & " if (!n || !(" & To_String (AC)
+                             & ")) return 0; off += n; }");
+                           Append (Res, LF);
+                        end;
+                     end if;
+                  end loop;
+                  Append (Res, "    return off;");
+                  Append (Res, LF);
+               end if;
+               Append (Res, "    return 0;");
+               Append (Res, LF);
+               Append (Res, "}");
+               Append (Res, LF);
+               Append (Res, LF);
+            end;
+         end if;
+      end loop;
+
+      Append (Res, "static size_t char_dispatch(const char *s, size_t pos,"
+        & " size_t len, tok_kind_t *kind) {");
+      Append (Res, LF);
+      Append (Res, "    size_t best = 0;");
+      Append (Res, LF);
+      Append (Res, "    tok_kind_t best_kind = TOK_EOF;");
+      Append (Res, LF);
+      for I in 1 .. N loop
+         if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+            declare
+               NM : constant String := To_String (Rules (I).Name);
+            begin
+               Append (Res, "    { size_t n = scan_" & C_Name (NM)
+                 & "(s, pos, len); if (n > best) { best = n; best_kind = TOK_"
+                 & C_Ident (NM) & "; } }");
+               Append (Res, LF);
+            end;
+         end if;
+      end loop;
+      Append (Res, "    if (best > 0) { *kind = best_kind; return best; }");
+      Append (Res, LF);
       Append (Res, "    return 0;");
       Append (Res, LF);
       Append (Res, "}");

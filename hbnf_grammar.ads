@@ -28,7 +28,10 @@ package HBNF_Grammar is
    Parse_Error : exception;
    --  Raised by Parse on malformed schema text; message carries "line: col:".
 
-   type Element_Kind is (Literal, Name, Group, Alt);
+   type Element_Kind is (Literal, Name, Group, Alt, Char_Range);
+   --  Char_Range = a character-level terminal: %xHH (one code point) or
+   --  %xHH-HH (a code-point range).  Unlike Literal (a whole token), a Char_Range
+   --  matches one code point; it appears only inside a character-level rule.
    --  Literal = "quoted" keyword to match-and-skip; Name = a bare rule/core
    --  reference; Group = a parenthesized/bracketed group; Alt = a separator
    --  between a group's alternatives (a group's children are a flat list, Alt
@@ -51,6 +54,9 @@ package HBNF_Grammar is
             Name : Unbounded_String;     --  rule/core reference
          when Group =>
             Items : Element_Vectors.Vector;   --  flat; Alt splits alternatives
+         when Char_Range =>
+            Lo : Natural := 0;   --  low code point, inclusive
+            Hi : Natural := 0;   --  high code point, inclusive (Lo <= Hi)
          when Alt =>
             null;
       end case;

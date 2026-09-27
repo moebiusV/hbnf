@@ -3,11 +3,13 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Templates;
+with HBNF_Compilable;
 
 package body HBNF_Zig is
 
    use Ada.Strings.Unbounded;
    use HBNF_Grammar;
+   use HBNF_Compilable;
 
    subtype U is Unbounded_String;
 
@@ -40,12 +42,18 @@ package body HBNF_Zig is
       return "";
    end Scalar_Zig_Type;
 
-   --  A snake_case identifier from a schema name ('-' -> '_').
+   --  A snake_case identifier from a schema name ('-' -> '_', upper -> lower).
    function Zig_Snake (S : String) return String is
       Buf : U;
    begin
       for C of S loop
-         Append (Buf, (if C = '-' then '_' else C));
+         if C = '-' then
+            Append (Buf, '_');
+         elsif C in 'A' .. 'Z' then
+            Append (Buf, Character'Val (Character'Pos (C) + 32));
+         else
+            Append (Buf, C);
+         end if;
       end loop;
       return To_String (Buf);
    end Zig_Snake;
@@ -418,6 +426,8 @@ package body HBNF_Zig is
                   Seen.Clear;
                when Group =>
                   Collect (E.Items, Members, Lits, Has_Alt);
+               when Char_Range =>
+                  null;
             end case;
          end loop;
       end Collect;
@@ -444,6 +454,12 @@ package body HBNF_Zig is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if Is_Char_Rule (Rules, To_String (R.Name)) then
+            --  A character-level rule compiles to a scanner and a token; its
+            --  value is the matched text, so it is a scalar string.
+            return (Kind        => Scalar,
+                    Inline_Type => To_Unbounded_String ("[]const u8"));
+         end if;
          if R.Jet_Code /= Null_Unbounded_String then
             return (Kind        => Scalar,
                     Inline_Type => To_Unbounded_String ("[]const u8"));
@@ -1147,6 +1163,63 @@ package body HBNF_Zig is
          return Zig_Type (To_String (R.Name));
       end Ret_Type;
 
+      --  The code-point match condition for a char-rule element, as a Zig
+      --  boolean expression over the decoded code point `c` (a u32).  A Name
+      --  reference recurses through its char-rule definition.
+      function Atom_Cond (E : Element_Access; Depth : Natural) return U is
+         Cond : U := Null_Unbounded_String;
+
+         procedure Add_Range (Lo, Hi : Natural) is
+         begin
+            if Cond /= Null_Unbounded_String then
+               Append (Cond, " or ");
+            end if;
+            --  `c >= 0` is a useless comparison for an unsigned code point
+            --  (Zig rejects it), so drop the lower bound when Lo = 0.  The
+            --  upper bound is never useless: a permissive 4-byte decode can
+            --  yield code points above 0x10FFFF.
+            if Lo = 0 then
+               Append (Cond, "(c <= " & Img (Hi) & ")");
+            else
+               Append (Cond, "(c >= " & Img (Lo) & " and c <= " & Img (Hi) & ")");
+            end if;
+         end Add_Range;
+
+         procedure Walk (J : Natural; D : Natural) is
+            R : constant Rule := Rules (J);
+         begin
+            if D = 0 then
+               return;
+            end if;
+            for F of R.Pattern loop
+               if F.Kind = Char_Range then
+                  Add_Range (F.Lo, F.Hi);
+               elsif F.Kind = Name then
+                  declare
+                     K : constant Natural := Find (To_String (F.Name));
+                  begin
+                     if K /= 0 then
+                        Walk (K, D - 1);
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end Walk;
+      begin
+         if E.Kind = Char_Range then
+            Add_Range (E.Lo, E.Hi);
+         elsif E.Kind = Name then
+            declare
+               K : constant Natural := Find (To_String (E.Name));
+            begin
+               if K /= 0 then
+                  Walk (K, Depth - 1);
+               end if;
+            end;
+         end if;
+         return Cond;
+      end Atom_Cond;
+
       --  True when some branch of an enum is a punctuation literal
       --  ("+", "<="): the lexer makes it a punct token, not an atom.
       function Has_Punct_Lit (V : Element_Vectors.Vector) return Boolean is
@@ -1188,6 +1261,17 @@ package body HBNF_Zig is
                           & Zig_Field (To_String (E.Name)) & " = "
                           & Scalar_Parse (To_String (E.Name)) & "; p.pos += 1;");
                         Append (Buf, LF);
+                     elsif Is_Char_Rule (Rules, To_String (E.Name)) then
+                        --  A char-rule reference matches its token and yields
+                        --  the matched text, as a core `str` would.
+                        Append (Buf, Ind & Pref & "p.expect_kind(."
+                          & Zig_Snake (To_String (E.Name)) & ", """
+                          & To_String (E.Name) & """)" & Cat & ";");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & Dst
+                          & Zig_Field (To_String (E.Name))
+                          & " = p.toks[p.pos].text; p.pos += 1;");
+                        Append (Buf, LF);
                      else
                         Append (Buf, Ind & Dst
                           & Zig_Field (To_String (E.Name)) & " = "
@@ -1199,6 +1283,8 @@ package body HBNF_Zig is
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Dst, Buf,
                                Fail, Ind & "    ");
                   when Alt =>
+                     null;
+                  when Char_Range =>
                      null;
                end case;
             end;
@@ -1259,6 +1345,17 @@ package body HBNF_Zig is
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
          SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
       begin
+         if Is_Char_Rule (Rules, NM) then
+            --  A char rule is a token: expect its kind and capture the text.
+            Append (Buf, "    try p.expect_kind(." & Zig_Snake (NM) & ", """
+              & NM & """);");
+            Append (Buf, LF);
+            Append (Buf, "    const r = p.toks[p.pos].text; p.pos += 1;");
+            Append (Buf, LF);
+            Append (Buf, "    return r;");
+            Append (Buf, LF);
+            return;
+         end if;
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet is a hand-written C scanner; this backend can't run it,
             --  so read the token the generic lexer produced instead.
@@ -1586,7 +1683,9 @@ package body HBNF_Zig is
            ("pub const Kind = enum { atom, str, int, punct");
       begin
          for I in 1 .. N loop
-            if Rules (I).Jet_Code /= Null_Unbounded_String then
+            if Rules (I).Jet_Code /= Null_Unbounded_String
+              or else Is_Char_Rule (Rules, To_String (Rules (I).Name))
+            then
                Append (Enum, ", " & Zig_Snake (To_String (Rules (I).Name)));
             end if;
          end loop;
@@ -1796,6 +1895,172 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
+
+      --  Character-level scanners: a code point matches a char rule, and
+      --  char_dispatch takes the longest match -- maximal munch.  The lexer
+      --  calls char_dispatch after jet_dispatch.
+      declare
+         Has_Char : Boolean := False;
+      begin
+         for I in 1 .. N loop
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               Has_Char := True;
+            end if;
+         end loop;
+
+         if Has_Char then
+            Append (Res, "fn decode_utf8(s: []const u8, pos: usize, len: usize, cp: *u32) usize {");
+            Append (Res, LF);
+            Append (Res, "    if (pos >= len) return 0;");
+            Append (Res, LF);
+            Append (Res, "    const b0: u32 = s[pos];");
+            Append (Res, LF);
+            Append (Res, "    if (b0 < 0x80) { cp.* = b0; return 1; }");
+            Append (Res, LF);
+            Append (Res, "    var n: usize = 0;");
+            Append (Res, LF);
+            Append (Res, "    var c: u32 = 0;");
+            Append (Res, LF);
+            Append (Res, "    if (b0 & 0xE0 == 0xC0) { n = 2; c = b0 & 0x1F; }");
+            Append (Res, LF);
+            Append (Res, "    else if (b0 & 0xF0 == 0xE0) { n = 3; c = b0 & 0x0F; }");
+            Append (Res, LF);
+            Append (Res, "    else if (b0 & 0xF8 == 0xF0) { n = 4; c = b0 & 0x07; }");
+            Append (Res, LF);
+            Append (Res, "    else return 0;");
+            Append (Res, LF);
+            Append (Res, "    if (pos + n > len) return 0;");
+            Append (Res, LF);
+            Append (Res, "    var k: usize = 1;");
+            Append (Res, LF);
+            Append (Res, "    while (k < n) : (k += 1) {");
+            Append (Res, LF);
+            Append (Res, "        const b: u32 = s[pos + k];");
+            Append (Res, LF);
+            Append (Res, "        if (b & 0xC0 != 0x80) return 0;");
+            Append (Res, LF);
+            Append (Res, "        c = (c << 6) | (b & 0x3F);");
+            Append (Res, LF);
+            Append (Res, "    }");
+            Append (Res, LF);
+            Append (Res, "    cp.* = c;");
+            Append (Res, LF);
+            Append (Res, "    return n;");
+            Append (Res, LF);
+            Append (Res, "}");
+            Append (Res, LF);
+            Append (Res, LF);
+         end if;
+
+         for I in 1 .. N loop
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               declare
+                  NM      : constant String := To_String (Rules (I).Name);
+                  R       : constant Rule := Rules (I);
+                  Has_Alt : Boolean := False;
+               begin
+                  for E of R.Pattern loop
+                     if E.Kind = Alt then
+                        Has_Alt := True;
+                     end if;
+                  end loop;
+                  Append (Res, "fn scan_" & Zig_Snake (NM)
+                    & "(s: []const u8, pos: usize, len: usize) usize {");
+                  Append (Res, LF);
+                  if Has_Alt or else Natural (R.Pattern.Length) = 1 then
+                     declare
+                        Cond : U := Null_Unbounded_String;
+                     begin
+                        for E of R.Pattern loop
+                           if E.Kind /= Alt then
+                              declare
+                                 AC : constant U := Atom_Cond (E, 20);
+                              begin
+                                 if AC /= Null_Unbounded_String then
+                                    if Cond /= Null_Unbounded_String then
+                                       Append (Cond, " or ");
+                                    end if;
+                                    Append (Cond, To_String (AC));
+                                 end if;
+                              end;
+                           end if;
+                        end loop;
+                        Append (Res, "    var c: u32 = 0;");
+                        Append (Res, LF);
+                        Append (Res, "    const n = decode_utf8(s, pos, len, &c);");
+                        Append (Res, LF);
+                        Append (Res, "    if (n > 0 and (" & To_String (Cond)
+                          & ")) return n;");
+                        Append (Res, LF);
+                        Append (Res, "    return 0;");
+                        Append (Res, LF);
+                     end;
+                  else
+                     Append (Res, "    var off: usize = 0;");
+                     Append (Res, LF);
+                     for E of R.Pattern loop
+                        if E.Kind /= Alt then
+                           declare
+                              AC : constant U := Atom_Cond (E, 20);
+                           begin
+                              Append (Res, "    {");
+                              Append (Res, LF);
+                              Append (Res, "        var c: u32 = 0;");
+                              Append (Res, LF);
+                              Append (Res, "        const n = decode_utf8(s, pos + off, len, &c);");
+                              Append (Res, LF);
+                              Append (Res, "        if (n == 0 or !(" & To_String (AC)
+                                & ")) return 0;");
+                              Append (Res, LF);
+                              Append (Res, "        off += n;");
+                              Append (Res, LF);
+                              Append (Res, "    }");
+                              Append (Res, LF);
+                           end;
+                        end if;
+                     end loop;
+                     Append (Res, "    return off;");
+                     Append (Res, LF);
+                  end if;
+                  Append (Res, "}");
+                  Append (Res, LF);
+                  Append (Res, LF);
+               end;
+            end if;
+         end loop;
+
+         Append (Res, "fn char_dispatch(s: []const u8, pos: usize, len: usize,"
+           & " kind: *Kind) usize {");
+         Append (Res, LF);
+         if Has_Char then
+            Append (Res, "    var best: usize = 0;");
+            Append (Res, LF);
+            Append (Res, "    var best_kind: Kind = .eof;");
+            Append (Res, LF);
+            for I in 1 .. N loop
+               if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+                  declare
+                     NM : constant String := To_String (Rules (I).Name);
+                  begin
+                     Append (Res, "    { const n = scan_" & Zig_Snake (NM)
+                       & "(s, pos, len); if (n > best) { best = n; best_kind = ."
+                       & Zig_Snake (NM) & "; } }");
+                     Append (Res, LF);
+                  end;
+               end if;
+            end loop;
+            Append (Res, "    if (best > 0) kind.* = best_kind;");
+            Append (Res, LF);
+            Append (Res, "    return best;");
+         else
+            Append (Res, "    _ = s; _ = pos; _ = len; _ = kind;");
+            Append (Res, LF);
+            Append (Res, "    return 0;");
+         end if;
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+      end;
 
       return To_String (Res);
    end Emit_Parser;

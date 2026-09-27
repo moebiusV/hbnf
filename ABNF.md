@@ -52,9 +52,10 @@ generated from them.
 ABNF's union; literals are case-sensitive, like parse.y keywords; a rule
 referenced for a field is a type, not just a pattern.
 
-**Left out:** ABNF's `%d`/`%x`/`%b` numeric notation is left out by design
-(`grammars/README.md`: "no `%d`/`%x`/`%b` printf-isms"); character classes are
-named rules instead. Some other ABNF features are simply not there yet (§3).
+**Left out:** ABNF's `%d13.10` dotted-concatenation is left out.  The `%b`/
+`%d`/`%o`/`%u`/`%x` numeric terminals and ranges are supported now (§3.3).
+Character classes are named rules.  Some other ABNF features are simply not
+there yet (§3).
 
 ## 2. The layers: design and implementation
 
@@ -62,8 +63,8 @@ named rules instead. Some other ABNF features are simply not there yet (§3).
 |---|---|---|
 | Bits | `binary` mode: a field is `name:N` with N in bits, packed big-endian in RFC order, read by generated shift-and-mask code (§4.7) | No. `binary` / `a:4` → `unexpected character ':'`. The paper says "design, not yet implemented". |
 | Octets | the unit of `binary` mode; `*u8` payloads; `dst:[6]` (§4.7) | No |
-| Code points | UTF-8 decoded on the way in; the matcher works on code points; a literal can name `"café"` (§3.3, §5.2) | No. Compiled lexers work on bytes (`café x` is rejected in C); the interpreter compares bytes. The paper's Status paragraph lists this as remaining. |
-| Characters | character-level rules compiled to scanners (`int = ["-"] 1*DIGIT`, `money = 1*DIGIT "." 2DIGIT`); named classes `digit`, `alpha`, `hexdig`; `where` refinements; the lexer generated from these rules, taking the longest match (§4.1–4.3) | No. `digit`, `alpha`, `hexdig`, `decint`…`binint` → `undefined rule`; `where` → `undefined rule: where`. The Status paragraph lists the character-level grammar as remaining. |
+| Code points | UTF-8 decoded on the way in; the matcher works on code points; a literal can name `"café"` (§3.3, §5.2) | All four backends: yes. Each lexer's character-layer scanners decode UTF-8 (`hbnf_decode_utf8` in C, `Decode_Utf8` in Ada, `decode_utf8` in Rust/Zig) and match code points, so `%u20AC` (€) and `%x20-10FFFF` match multi-byte sequences. The interpreter still compares bytes (§2, §5). |
+| Characters | character-level rules compiled to scanners (`int = ["-"] 1*DIGIT`, `money = 1*DIGIT "." 2DIGIT`); named classes `digit`, `alpha`, `hexdig`; `where` refinements; the lexer generated from these rules, taking the longest match (§4.1–4.3) | Partial. The numeric terminals `%b`/`%d`/`%o`/`%u`/`%x` and ranges parse (into a `Char_Range` element), and every backend compiles character-level rules to scanners with a maximal-munch `char_dispatch` (single-char, multi-char sequence, list elements); named classes come from `grammars/ascii.hbnf`. `where` is still deferred. |
 | Tokens | jets as the fast path, each with its character-level fallback written above it; `wordchars` | Yes. A fixed lexer template (`Templates.C_Lexer`) forms words, numbers, strings and punctuation; jets run first, in declaration order, first match wins; `wordchars` widens the word set. |
 
 The rest of this document describes the implemented token layer, and marks
@@ -110,7 +111,8 @@ shapes compiled into parsers for a different language.
 | ABNF | Status | Notes |
 |---|---|---|
 | `"…"` | ✓ | Case-sensitive and must be exactly one token (§4). C's escapes, octal and `\?` included, which every emitter re-escapes for its target language. |
-| `%b` / `%d` / `%x`, ranges, `%d13.10` | ✗ by design | "No printf-isms": single characters are `"\xHH"`; classes are named rules (design, §2) |
+| `%b` / `%d` / `%o` / `%u` / `%x`, ranges | ✓ | Numeric terminals — binary/decimal/octal/hex, plus `%u` for an encoding-agnostic Unicode code point (bounded to `10FFFF`) — and code-point ranges, read into a `Char_Range` element. The endpoint order does not matter (`%x39-30` = `%x30-39`). Every backend compiles them to scanners that match decoded UTF-8 code points (§2). `%d13.10` (dotted concatenation) stays unsupported. |
+| `'c'` (character literal) | ✓ | A yacc-style character literal: one code point, with C escapes (`'\n'`, `'\x41'`). `'a'-'c'` is a code-point range — the same `Char_Range` as `%x61-63`. Non-ASCII code points work via the UTF-8 decode in every backend (§2). |
 | `<prose-val>` | ✗ | Jets fill this role: a scanner written in the target language |
 | `%s"…"` (RFC 7405) | ✓ | Means exactly what hbnf's bare `"…"` means |
 | `%i"…"` (RFC 7405) | ✓ in all four backends | Any case matches; a `%i` keyword is interned case-insensitively in C. A word written both `%i` and plain is refused. snmpd's `auth` and `enc` use it, as parse.y's strcasecmp does. |
@@ -218,6 +220,6 @@ into schema errors:
 | `hbnf_grammar.ads` | jets are `name = %{ <code> %}` | `%` is rejected; the syntax is `{ … }` |
 | `USENIXSUBMISSION.md` §3.3 | repetition, `[…]`, `;` comments are "extensions over ABNF", with "the usual ABNF semantics" | They are ABNF. Bounds were ignored before this series and still are outside C; `*m` isn't parsed. |
 | §3.3 | multi-line rules as an extension | Replaces ABNF's continuation rule rather than extending it |
-| §3.3, §5.2 | input decoded to code points | Not yet (§2) |
-| §4.1–§4.3 | a code-point lexer, `ALPHA`/`DIGIT`/`DQUOTE`/`%x` in examples, `where`, longest match | Design, not yet implemented (§2). Jets are first match, in declaration order. |
+| §3.3, §5.2 | input decoded to code points | all four backends: yes (§2); the interpreter: not yet |
+| §4.1–§4.3 | a code-point lexer, `ALPHA`/`DIGIT`/`DQUOTE`/`%x` in examples, `where`, longest match | all four backends: character-level rules compile to scanners with UTF-8 decode and maximal munch (`where` still deferred). Jets are first match, in declaration order. |
 | Status paragraph | zero-copy slices and the arena as "remaining increments" | Both have landed |

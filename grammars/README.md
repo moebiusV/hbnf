@@ -19,12 +19,20 @@ language C
   line comment.
 - **Keywords** are quoted literals in their config spelling (`"router-id"`,
   `"read-only"`), never the yacc `%token` identifier.
-- **Readable typed tokens** (no `%d`/`%x`/`%b` printf-isms): `str` (quoted
-  string), `word`/`atom` (bareword), `int`, `bool`/`flag`, `u8`..`u64`/
-  `i8`..`i64` (fixed-width), and `decint`/`hexint`/`octint`/`binint` for
-  base-specific integers.  Character classes are named core rules
-  (`digit`, `alpha`, `hexdig`, …) — the character level is the foundation;
-  tokens and jets are sugar over it.
+- **Readable typed tokens** — `str` (quoted string), `word`/`atom` (bareword),
+  `int`, `bool`/`flag`, `u8`..`u64`/`i8`..`i64` (fixed-width), and
+  `decint`/`hexint`/`octint`/`binint` for base-specific integers.  Character
+  classes are named core rules (`digit`, `alpha`, `hexdig`, …), and single
+  code points/ranges are the `%b`/`%d`/`%o`/`%x` numeric terminals — the
+  character level is the foundation; tokens and jets are sugar over it.
+- **`%` is the dispatch prefix** — the reader macro of hbnf, what `#'` is to
+  Common Lisp: it marks a special form rather than a rule name.  `%i`/`%s`
+  (case markers), `%b`/`%d`/`%o`/`%x` (numeric terminals), `%u` (a Unicode
+  code point), and `%scan`/`%action` (code blocks).
+- **Character literals** — `'a'` is a single code point (C escapes allowed),
+  and `-` ranges two code-point designators: `'a'-'c'` = `%x61-63`, the
+  endpoint order not mattering.  `-` is a range only after `'` or `%`, so it
+  never collides with `-` in a rule name (`close-ma9`).
 - **Jets** — a rule whose body is hand-written scanner code instead of a
   token sequence:
 

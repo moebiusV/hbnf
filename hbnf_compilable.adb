@@ -11,6 +11,56 @@ package body HBNF_Compilable is
    function Has_Alt (V : Element_Vectors.Vector) return Boolean is
      (for some E of V => E.Kind = Alt);
 
+   --  True when the rule named Nm is character-level: its pattern is a
+   --  sequence/alternation of Char_Range terminals and references to other
+   --  char-level rules, each element matching one code point.  Shared by the
+   --  emitters' shape analyzers and their parser/lexer emission.
+   function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean is
+      function Rec (N : String; Depth : Natural) return Boolean is
+         J : Natural := 0;
+      begin
+         for I in 1 .. Natural (Rules.Length) loop
+            if To_String (Rules (I).Name) = N then
+               J := I;
+               exit;
+            end if;
+         end loop;
+         if J = 0 or else Depth = 0 then
+            return False;
+         end if;
+         declare
+            R : constant Rule := Rules (J);
+         begin
+            if R.Jet_Code /= Null_Unbounded_String
+              or else Natural (R.Pattern.Length) = 0
+            then
+               return False;
+            end if;
+            for E of R.Pattern loop
+               --  A char rule is a fixed-length match (one code point per
+               --  element); a repeated or optional element makes it a list,
+               --  not a token, so such a rule is not char-level.
+               if E.Min /= 1 or else E.Max /= 1 then
+                  return False;
+               end if;
+               if E.Kind = Char_Range or else E.Kind = Alt then
+                  null;
+               elsif E.Kind = Name then
+                  if not Rec (To_String (E.Name), Depth - 1) then
+                     return False;
+                  end if;
+               else
+                  return False;
+               end if;
+            end loop;
+            return True;
+         end;
+      end Rec;
+   begin
+      return Rec (Nm, 20);
+   end Is_Char_Rule;
+
    procedure Reject (Rule_Name, What : String) is
    begin
       raise Parse_Error with
@@ -30,6 +80,7 @@ package body HBNF_Compilable is
                   when Literal => A.Lit = B.Lit and then A.No_Case = B.No_Case,
                   when Name    => A.Name = B.Name,
                   when Group   => Same_Seq (A.Items, B.Items),
+                  when Char_Range   => A.Lo = B.Lo and then A.Hi = B.Hi,
                   when Alt     => True));
 
    function Image (V : Element_Vectors.Vector; First, Last : Natural)
@@ -46,6 +97,7 @@ package body HBNF_Compilable is
                             & '"' & To_String (V (I).Lit) & '"');
             when Name    => Append (Buf, V (I).Name);
             when Group   => Append (Buf, "( ... )");
+            when Char_Range   => Append (Buf, "%x..");
             when Alt     => Append (Buf, "|");
          end case;
       end loop;
@@ -143,7 +195,7 @@ package body HBNF_Compilable is
                   Reject (Rule_Name,
                           "a repeated reference to " & To_String (E.Name));
                end if;
-            when Literal | Alt =>
+            when Literal | Alt | Char_Range =>
                null;
          end case;
       end loop;
@@ -195,7 +247,7 @@ package body HBNF_Compilable is
                return Rule_Of (E) /= 0 and then Nullable (Rule_Of (E));
             when Group =>
                return Seq_Nullable (E.Items, 1, Natural (E.Items.Length));
-            when Literal | Alt =>
+            when Literal | Alt | Char_Range =>
                return False;
          end case;
       end El_Nullable;

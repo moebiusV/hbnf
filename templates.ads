@@ -65,6 +65,16 @@ package Templates is
      "                continue;" & LF &
      "            }" & LF &
      "        }" & LF &
+     "        {" & LF &
+     "            /* Character-layer scanners (char-level rules) run after jets. */" & LF &
+     "            tok_kind_t ck;" & LF &
+     "            size_t cl = char_dispatch(text, i, tlen, &ck);" & LF &
+     "            if (cl > 0) {" & LF &
+     "                if (!lex_push(&r, &cap, (token_t){ .text = text + i, .len = cl, .line = line, .col = col, .kind = ck, .kwid = KWID_NONE })) goto oom;" & LF &
+     "                i += cl; col += cl;" & LF &
+     "                continue;" & LF &
+     "            }" & LF &
+     "        }" & LF &
      "        if (c == ' ' || c == '\t' || c == '\r') { i++; col++; }" & LF &
      "        else if (c == '\n') { i++; line++; col = 1; }" & LF &
      "        /* backslash-newline continues the line, as parse.y's lgetc() */" & LF &
@@ -856,6 +866,13 @@ package Templates is
      "            i += jl; col += jl;" & LF &
      "            continue;" & LF &
      "        }" & LF &
+     "        // Character-level scanners (char rules) next." & LF &
+     "        let (cl, ck) = char_dispatch(b, i, b.len());" & LF &
+     "        if cl > 0 {" & LF &
+     "            toks.push(Token { kind: ck, text: text[i..i + cl].to_string(), line, col });" & LF &
+     "            i += cl; col += cl;" & LF &
+     "            continue;" & LF &
+     "        }" & LF &
      "        if c == b' ' || c == b'\t' || c == b'\r' { i += 1; col += 1; }" & LF &
      "        else if c == b'\n' { i += 1; line += 1; col = 1; }" & LF &
      "        // backslash-newline continues the line, as parse.y's lgetc()" & LF &
@@ -928,6 +945,16 @@ package Templates is
      "            if (jl > 0) {" & LF &
      "                try toks.append(alloc, .{ .kind = jk, .text = text[i..i + jl], .line = line, .col = col });" & LF &
      "                i += jl; col += jl;" & LF &
+     "                continue;" & LF &
+     "            }" & LF &
+     "        }" & LF &
+     "        {" & LF &
+     "            // Character-level scanners (char rules) next." & LF &
+     "            var ck: Kind = .eof;" & LF &
+     "            const cl = char_dispatch(text, i, text.len, &ck);" & LF &
+     "            if (cl > 0) {" & LF &
+     "                try toks.append(alloc, .{ .kind = ck, .text = text[i..i + cl], .line = line, .col = col });" & LF &
+     "                i += cl; col += cl;" & LF &
      "                continue;" & LF &
      "            }" & LF &
      "        }" & LF &
@@ -1008,10 +1035,15 @@ package Templates is
      "         declare" & LF &
      "            JK : Token_Kind;" & LF &
      "            JL : constant Natural := Jet_Dispatch (Text, I, Text'Last, JK);" & LF &
+     "            CK : Token_Kind;" & LF &
+     "            CL : constant Natural := Char_Dispatch (Text, I, Text'Last, CK);" & LF &
      "         begin" & LF &
      "            if JL > 0 then" & LF &
      "               Toks.Append (Token'(JK, To_Unbounded_String (Text (I .. I + JL - 1)), Line, Col));" & LF &
      "               I := I + JL; Col := Col + JL;" & LF &
+     "            elsif CL > 0 then" & LF &
+     "               Toks.Append (Token'(CK, To_Unbounded_String (Text (I .. I + CL - 1)), Line, Col));" & LF &
+     "               I := I + CL; Col := Col + CL;" & LF &
      "            elsif C = ' ' or else C = ASCII.HT or else C = ASCII.CR then" & LF &
      "               I := I + 1; Col := Col + 1;" & LF &
      "         elsif C = ASCII.LF then" & LF &
