@@ -1163,62 +1163,18 @@ package body HBNF_Zig is
          return Zig_Type (To_String (R.Name));
       end Ret_Type;
 
-      --  The code-point match condition for a char-rule element, as a Zig
-      --  boolean expression over the decoded code point `c` (a u32).  A Name
-      --  reference recurses through its char-rule definition.
-      function Atom_Cond (E : Element_Access; Depth : Natural) return U is
-         Cond : U := Null_Unbounded_String;
-
-         procedure Add_Range (Lo, Hi : Natural) is
-         begin
-            if Cond /= Null_Unbounded_String then
-               Append (Cond, " or ");
-            end if;
-            --  `c >= 0` is a useless comparison for an unsigned code point
-            --  (Zig rejects it), so drop the lower bound when Lo = 0.  The
-            --  upper bound is never useless: a permissive 4-byte decode can
-            --  yield code points above 0x10FFFF.
-            if Lo = 0 then
-               Append (Cond, "(c <= " & Img (Hi) & ")");
-            else
-               Append (Cond, "(c >= " & Img (Lo) & " and c <= " & Img (Hi) & ")");
-            end if;
-         end Add_Range;
-
-         procedure Walk (J : Natural; D : Natural) is
-            R : constant Rule := Rules (J);
-         begin
-            if D = 0 then
-               return;
-            end if;
-            for F of R.Pattern loop
-               if F.Kind = Char_Range then
-                  Add_Range (F.Lo, F.Hi);
-               elsif F.Kind = Name then
-                  declare
-                     K : constant Natural := Find (To_String (F.Name));
-                  begin
-                     if K /= 0 then
-                        Walk (K, D - 1);
-                     end if;
-                  end;
-               end if;
-            end loop;
-         end Walk;
+      --  The code-point match condition for one range, as a Zig boolean
+      --  expression over the decoded code point `c` (a u32).  `c >= 0` is a
+      --  useless comparison for an unsigned code point (Zig rejects it), so
+      --  the lower bound is dropped when Lo = 0.
+      function Range_Cond (Lo, Hi : Natural) return String is
       begin
-         if E.Kind = Char_Range then
-            Add_Range (E.Lo, E.Hi);
-         elsif E.Kind = Name then
-            declare
-               K : constant Natural := Find (To_String (E.Name));
-            begin
-               if K /= 0 then
-                  Walk (K, Depth - 1);
-               end if;
-            end;
+         if Lo = 0 then
+            return "(c <= " & Img (Hi) & ")";
+         else
+            return "(c >= " & Img (Lo) & " and c <= " & Img (Hi) & ")";
          end if;
-         return Cond;
-      end Atom_Cond;
+      end Range_Cond;
 
       --  True when some branch of an enum is a punctuation literal
       --  ("+", "<="): the lexer makes it a punct token, not an atom.
@@ -1955,71 +1911,69 @@ package body HBNF_Zig is
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
                declare
-                  NM      : constant String := To_String (Rules (I).Name);
-                  R       : constant Rule := Rules (I);
-                  Has_Alt : Boolean := False;
+                  NM  : constant String := To_String (Rules (I).Name);
+                  DNF : constant Cp_Branch_Vectors.Vector := Char_DNF (Rules, NM);
                begin
-                  for E of R.Pattern loop
-                     if E.Kind = Alt then
-                        Has_Alt := True;
-                     end if;
-                  end loop;
                   Append (Res, "fn scan_" & Zig_Snake (NM)
                     & "(s: []const u8, pos: usize, len: usize) usize {");
                   Append (Res, LF);
-                  if Has_Alt or else Natural (R.Pattern.Length) = 1 then
-                     declare
-                        Cond : U := Null_Unbounded_String;
-                     begin
-                        for E of R.Pattern loop
-                           if E.Kind /= Alt then
-                              declare
-                                 AC : constant U := Atom_Cond (E, 20);
-                              begin
-                                 if AC /= Null_Unbounded_String then
-                                    if Cond /= Null_Unbounded_String then
-                                       Append (Cond, " or ");
-                                    end if;
-                                    Append (Cond, To_String (AC));
-                                 end if;
-                              end;
-                           end if;
-                        end loop;
-                        Append (Res, "    var c: u32 = 0;");
-                        Append (Res, LF);
-                        Append (Res, "    const n = decode_utf8(s, pos, len, &c);");
-                        Append (Res, LF);
-                        Append (Res, "    if (n > 0 and (" & To_String (Cond)
-                          & ")) return n;");
-                        Append (Res, LF);
-                        Append (Res, "    return 0;");
-                        Append (Res, LF);
-                     end;
-                  else
+                  if Natural (DNF.Length) = 1 then
+                     --  One branch: a sequence of code points, decoded in turn.
                      Append (Res, "    var off: usize = 0;");
                      Append (Res, LF);
-                     for E of R.Pattern loop
-                        if E.Kind /= Alt then
-                           declare
-                              AC : constant U := Atom_Cond (E, 20);
-                           begin
-                              Append (Res, "    {");
-                              Append (Res, LF);
-                              Append (Res, "        var c: u32 = 0;");
-                              Append (Res, LF);
-                              Append (Res, "        const n = decode_utf8(s, pos + off, len, &c);");
-                              Append (Res, LF);
-                              Append (Res, "        if (n == 0 or !(" & To_String (AC)
-                                & ")) return 0;");
-                              Append (Res, LF);
-                              Append (Res, "        off += n;");
-                              Append (Res, LF);
-                              Append (Res, "    }");
-                              Append (Res, LF);
-                           end;
-                        end if;
+                     for Rg of DNF (1) loop
+                        Append (Res, "    {");
+                        Append (Res, LF);
+                        Append (Res, "        var c: u32 = 0;");
+                        Append (Res, LF);
+                        Append (Res, "        const n = decode_utf8(s, pos + off, len, &c);");
+                        Append (Res, LF);
+                        Append (Res, "        if (n == 0 or !" & Range_Cond (Rg.Lo, Rg.Hi)
+                          & ") return 0;");
+                        Append (Res, LF);
+                        Append (Res, "        off += n;");
+                        Append (Res, LF);
+                        Append (Res, "    }");
+                        Append (Res, LF);
                      end loop;
                      Append (Res, "    return off;");
+                     Append (Res, LF);
+                  else
+                     --  Alternation: try each branch, keep the longest match.
+                     Append (Res, "    var best: usize = 0;");
+                     Append (Res, LF);
+                     declare
+                        Br : Natural := 0;
+                     begin
+                        for B of DNF loop
+                           Br := Br + 1;
+                           Append (Res, "    br" & Img (Br) & ": {");
+                           Append (Res, LF);
+                           Append (Res, "        var off: usize = 0;");
+                           Append (Res, LF);
+                           for Rg of B loop
+                              Append (Res, "        {");
+                              Append (Res, LF);
+                              Append (Res, "            var c: u32 = 0;");
+                              Append (Res, LF);
+                              Append (Res, "            const n = decode_utf8(s, pos + off, len, &c);");
+                              Append (Res, LF);
+                              Append (Res, "            if (n == 0 or !"
+                                & Range_Cond (Rg.Lo, Rg.Hi) & ") break :br"
+                                & Img (Br) & ";");
+                              Append (Res, LF);
+                              Append (Res, "            off += n;");
+                              Append (Res, LF);
+                              Append (Res, "        }");
+                              Append (Res, LF);
+                           end loop;
+                           Append (Res, "        if (off > best) best = off;");
+                           Append (Res, LF);
+                           Append (Res, "    }");
+                           Append (Res, LF);
+                        end loop;
+                     end;
+                     Append (Res, "    return best;");
                      Append (Res, LF);
                   end if;
                   Append (Res, "}");

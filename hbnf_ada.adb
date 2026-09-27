@@ -1025,54 +1025,17 @@ package body HBNF_Ada is
          end;
       end Is_Struct;
 
-      --  The condition that the code point (in Cp) is in the ranges a single
-      --  char atom matches; a Name reference resolves through the referenced
-      --  rule's Char_Ranges (single-char rules only, as in the C backend).
-      function Atom_Cond (E : Element_Access; Depth : Natural) return U is
-         Cond : U := Null_Unbounded_String;
-
-         procedure Add_Range (Lo, Hi : Natural) is
-         begin
-            if Cond /= Null_Unbounded_String then
-               Append (Cond, " or else ");
-            end if;
-            Append (Cond, "(Cp >= " & Img (Lo) & " and then Cp <= " & Img (Hi) & ")");
-         end Add_Range;
-
-         procedure Walk (J : Natural; D : Natural) is
-            R : constant Rule := Rules (J);
-         begin
-            if D = 0 then
-               return;
-            end if;
-            for F of R.Pattern loop
-               if F.Kind = Char_Range then
-                  Add_Range (F.Lo, F.Hi);
-               elsif F.Kind = Name then
-                  declare
-                     K : constant Natural := Find (To_String (F.Name));
-                  begin
-                     if K /= 0 then
-                        Walk (K, D - 1);
-                     end if;
-                  end;
-               end if;
-            end loop;
-         end Walk;
+      --  The condition that the code point (in Cp) lies in [Lo, Hi].  `Cp >= 0`
+      --  is a useless comparison (Cp is Natural), so the lower bound is dropped
+      --  when Lo = 0.
+      function Range_Cond (Lo, Hi : Natural) return String is
       begin
-         if E.Kind = Char_Range then
-            Add_Range (E.Lo, E.Hi);
-         elsif E.Kind = Name then
-            declare
-               K : constant Natural := Find (To_String (E.Name));
-            begin
-               if K /= 0 then
-                  Walk (K, Depth - 1);
-               end if;
-            end;
+         if Lo = 0 then
+            return "(Cp <= " & Img (Hi) & ")";
+         else
+            return "(Cp >= " & Img (Lo) & " and then Cp <= " & Img (Hi) & ")";
          end if;
-         return Cond;
-      end Atom_Cond;
+      end Range_Cond;
 
       function Core_Desc (Name : String) return String is
       begin
@@ -2052,52 +2015,14 @@ package body HBNF_Ada is
       for I in 1 .. N loop
          if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
             declare
-               NM      : constant String := To_String (Rules (I).Name);
-               R       : constant Rule := Rules (I);
-               Has_Alt : Boolean := False;
+               NM  : constant String := To_String (Rules (I).Name);
+               DNF : constant Cp_Branch_Vectors.Vector := Char_DNF (Rules, NM);
             begin
-               for E of R.Pattern loop
-                  if E.Kind = Alt then
-                     Has_Alt := True;
-                  end if;
-               end loop;
                Append (Bdy, "   function Scan_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
                Append (Bdy, LF);
-               if Has_Alt or else Natural (R.Pattern.Length) = 1 then
-                  declare
-                     Cond : U := Null_Unbounded_String;
-                  begin
-                     for E of R.Pattern loop
-                        if E.Kind /= Alt then
-                           declare
-                              AC : constant U := Atom_Cond (E, 20);
-                           begin
-                              if AC /= Null_Unbounded_String then
-                                 if Cond /= Null_Unbounded_String then
-                                    Append (Cond, " or else ");
-                                 end if;
-                                 Append (Cond, To_String (AC));
-                              end if;
-                           end;
-                        end if;
-                     end loop;
-                     Append (Bdy, "      Cp : Natural;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      N  : constant Natural := Decode_Utf8 (S, Pos, Len, Cp);");
-                     Append (Bdy, LF);
-                     Append (Bdy, "   begin");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      if N > 0 and then (" & To_String (Cond) & ") then");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         return N;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      end if;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      return 0;");
-                     Append (Bdy, LF);
-                  end;
-               else
+               if Natural (DNF.Length) = 1 then
+                  --  One branch: a sequence of code points, decoded in turn.
                   Append (Bdy, "      Cp  : Natural;");
                   Append (Bdy, LF);
                   Append (Bdy, "      N   : Natural;");
@@ -2106,21 +2031,53 @@ package body HBNF_Ada is
                   Append (Bdy, LF);
                   Append (Bdy, "   begin");
                   Append (Bdy, LF);
-                  for E of R.Pattern loop
-                     if E.Kind /= Alt then
-                        declare
-                           AC : constant U := Atom_Cond (E, 20);
-                        begin
-                           Append (Bdy, "      N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
-                           Append (Bdy, LF);
-                           Append (Bdy, "      if N = 0 or else not (" & To_String (AC) & ") then return 0; end if;");
-                           Append (Bdy, LF);
-                           Append (Bdy, "      Off := Off + N;");
-                           Append (Bdy, LF);
-                        end;
-                     end if;
+                  for Rg of DNF (1) loop
+                     Append (Bdy, "      N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      if N = 0 or else not "
+                       & Range_Cond (Rg.Lo, Rg.Hi) & " then return 0; end if;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      Off := Off + N;");
+                     Append (Bdy, LF);
                   end loop;
                   Append (Bdy, "      return Off;");
+                  Append (Bdy, LF);
+               else
+                  --  Alternation: try each branch, keep the longest match.
+                  Append (Bdy, "      Cp   : Natural;");
+                  Append (Bdy, LF);
+                  Append (Bdy, "      N    : Natural;");
+                  Append (Bdy, LF);
+                  Append (Bdy, "      Best : Natural := 0;");
+                  Append (Bdy, LF);
+                  Append (Bdy, "      Off  : Natural;");
+                  Append (Bdy, LF);
+                  Append (Bdy, "      Ok   : Boolean;");
+                  Append (Bdy, LF);
+                  Append (Bdy, "   begin");
+                  Append (Bdy, LF);
+                  for B of DNF loop
+                     Append (Bdy, "      Off := 0;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      Ok := True;");
+                     Append (Bdy, LF);
+                     for Rg of B loop
+                        Append (Bdy, "      if Ok then");
+                        Append (Bdy, LF);
+                        Append (Bdy, "         N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
+                        Append (Bdy, LF);
+                        Append (Bdy, "         Ok := N > 0 and then "
+                          & Range_Cond (Rg.Lo, Rg.Hi) & ";");
+                        Append (Bdy, LF);
+                        Append (Bdy, "         if Ok then Off := Off + N; end if;");
+                        Append (Bdy, LF);
+                        Append (Bdy, "      end if;");
+                        Append (Bdy, LF);
+                     end loop;
+                     Append (Bdy, "      if Ok and then Off > Best then Best := Off; end if;");
+                     Append (Bdy, LF);
+                  end loop;
+                  Append (Bdy, "      return Best;");
                   Append (Bdy, LF);
                end if;
                Append (Bdy, "   end Scan_" & Ada_Ident (NM) & ";");

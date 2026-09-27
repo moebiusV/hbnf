@@ -115,6 +115,14 @@ Scope (user directive, 2026-09-26):
    (`Natural` = 32-bit already; the scanner is byte-level until I2).
 6. **Binary** — `binary` directive + whole-byte fields + `*u8`; no sub-byte
    bitfields; deferred (I4).
+7. **Char rules are tokens, expanded to DNF** — a char rule's pattern (a
+   sequence/alternation of code-point atoms and Name references) is expanded to
+   disjunctive normal form by `Char_DNF`: a list of branches, each a flat
+   sequence of code-point ranges.  A Name reference is inlined (its DNF
+   distributed over the sequence position), so `A | B C` becomes two branches
+   `[A]` and `[B, C]`, and `CRLF CRLF` (where `CRLF = CR LF`) becomes the single
+   branch `[CR, LF, CR, LF]`.  The scanner matches the longest branch — maximal
+   munch — not a flattened `or` of single code points.
 
 ## Files touched (verified)
 

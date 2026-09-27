@@ -2487,54 +2487,17 @@ package body HBNF_C is
       --  emits no struct and its references match a token instead of recursing.
       --  (The classification itself is the package-level Is_Char_Rule.)
 
-      --  The C condition that the current code point (in `c`) is one of the
-      --  ranges a single-character atom matches.  A Name reference resolves
-      --  through the referenced rule's Char_Ranges (single-char rules only).
-      function Atom_Cond (E : Element_Access; Depth : Natural) return U is
-         Cond : U := Null_Unbounded_String;
-
-         procedure Add_Range (Lo, Hi : Natural) is
-         begin
-            if Cond /= Null_Unbounded_String then
-               Append (Cond, " || ");
-            end if;
-            Append (Cond, "(c >= " & Img (Lo) & " && c <= " & Img (Hi) & ")");
-         end Add_Range;
-
-         procedure Walk (J : Natural; D : Natural) is
-            R : constant Rule := Rules (J);
-         begin
-            if D = 0 then
-               return;
-            end if;
-            for F of R.Pattern loop
-               if F.Kind = Char_Range then
-                  Add_Range (F.Lo, F.Hi);
-               elsif F.Kind = Name then
-                  declare
-                     K : constant Natural := Find (To_String (F.Name));
-                  begin
-                     if K /= 0 then
-                        Walk (K, D - 1);
-                     end if;
-                  end;
-               end if;
-            end loop;
-         end Walk;
+      --  The C condition that the current code point (in `c`) lies in [Lo, Hi].
+      --  `c >= 0` is a useless comparison for an unsigned code point, so the
+      --  lower bound is dropped when Lo = 0.
+      function Range_Cond (Lo, Hi : Natural) return String is
       begin
-         if E.Kind = Char_Range then
-            Add_Range (E.Lo, E.Hi);
-         elsif E.Kind = Name then
-            declare
-               K : constant Natural := Find (To_String (E.Name));
-            begin
-               if K /= 0 then
-                  Walk (K, Depth - 1);
-               end if;
-            end;
+         if Lo = 0 then
+            return "(c <= " & Img (Hi) & ")";
+         else
+            return "(c >= " & Img (Lo) & " && c <= " & Img (Hi) & ")";
          end if;
-         return Cond;
-      end Atom_Cond;
+      end Range_Cond;
 
       function Has_Alt (Els : Element_Vectors.Vector) return Boolean is
       begin
@@ -4214,64 +4177,47 @@ package body HBNF_C is
       for I in 1 .. N loop
          if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
             declare
-               NM      : constant String := To_String (Rules (I).Name);
-               R       : constant Rule := Rules (I);
-               Has_Alt : Boolean := False;
+               NM  : constant String := To_String (Rules (I).Name);
+               DNF : constant Cp_Branch_Vectors.Vector := Char_DNF (Rules, NM);
             begin
-               for E of R.Pattern loop
-                  if E.Kind = Alt then
-                     Has_Alt := True;
-                  end if;
-               end loop;
                Append (Res, "static size_t scan_" & C_Name (NM)
                  & "(const char *s, size_t pos, size_t len) {");
                Append (Res, LF);
-               if Has_Alt or else Natural (R.Pattern.Length) = 1 then
-                  declare
-                     Cond : U := Null_Unbounded_String;
-                  begin
-                     for E of R.Pattern loop
-                        if E.Kind /= Alt then
-                           declare
-                              AC : constant U := Atom_Cond (E, 20);
-                           begin
-                              if AC /= Null_Unbounded_String then
-                                 if Cond /= Null_Unbounded_String then
-                                    Append (Cond, " || ");
-                                 end if;
-                                 Append (Cond, To_String (AC));
-                              end if;
-                           end;
-                        end if;
-                     end loop;
-                     Append (Res, "    if (pos >= len) return 0;");
-                     Append (Res, LF);
-                     Append (Res, "    { uint32_t c; size_t n = hbnf_decode_utf8(s,"
-                       & " pos, len, &c); if (n && (" & To_String (Cond)
-                       & ")) return n; }");
-                     Append (Res, LF);
-                  end;
-               else
+               if Natural (DNF.Length) = 1 then
+                  --  One branch: a sequence of code points, decoded in turn.
                   Append (Res, "    size_t off = 0;");
                   Append (Res, LF);
-                  for E of R.Pattern loop
-                     if E.Kind /= Alt then
-                        declare
-                           AC : constant U := Atom_Cond (E, 20);
-                        begin
-                           Append (Res, "    { uint32_t c; size_t n ="
-                             & " hbnf_decode_utf8(s, pos + off, len, &c);"
-                             & " if (!n || !(" & To_String (AC)
-                             & ")) return 0; off += n; }");
-                           Append (Res, LF);
-                        end;
-                     end if;
+                  for Rg of DNF (1) loop
+                     Append (Res, "    { uint32_t c; size_t n = hbnf_decode_utf8(s,"
+                       & " pos + off, len, &c); if (!n || !"
+                       & Range_Cond (Rg.Lo, Rg.Hi) & ") return 0; off += n; }");
+                     Append (Res, LF);
                   end loop;
                   Append (Res, "    return off;");
                   Append (Res, LF);
+               else
+                  --  Alternation: try each branch, keep the longest match.
+                  Append (Res, "    size_t best = 0;");
+                  Append (Res, LF);
+                  for B of DNF loop
+                     Append (Res, "    do {");
+                     Append (Res, LF);
+                     Append (Res, "        size_t off = 0; uint32_t c; size_t n;");
+                     Append (Res, LF);
+                     for Rg of B loop
+                        Append (Res, "        n = hbnf_decode_utf8(s, pos + off, len, &c);"
+                          & " if (!n || !" & Range_Cond (Rg.Lo, Rg.Hi)
+                          & ") break; off += n;");
+                        Append (Res, LF);
+                     end loop;
+                     Append (Res, "        if (off > best) best = off;");
+                     Append (Res, LF);
+                     Append (Res, "    } while (0);");
+                     Append (Res, LF);
+                  end loop;
+                  Append (Res, "    return best;");
+                  Append (Res, LF);
                end if;
-               Append (Res, "    return 0;");
-               Append (Res, LF);
                Append (Res, "}");
                Append (Res, LF);
                Append (Res, LF);

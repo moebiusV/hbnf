@@ -66,6 +66,32 @@ check FAIL "$(printf '\342\202\254')" "euro alone (digit required)"
 check FAIL "$(printf '\342\202\254\343\201\202')" "euro+hiragana (not a digit)"
 check FAIL "$(printf '\067\342\202\254')" "digit+euro (wrong order)"
 
+echo "== alternation with a multi-code-point branch =="
+gen <<'G'
+doc = A | B C
+A = %x41
+B = %x42
+C = %x43
+G
+harness
+check OK   "A"     "A (the 1-code-point branch)"
+check OK   "BC"    "BC (the 2-code-point branch, maximal munch)"
+check FAIL "B"     "B alone (B C needs C)"
+check FAIL "AB"    "A then a leftover B"
+check FAIL "ABC"   "A then a leftover BC"
+
+echo "== a reference to a multi-code-point rule =="
+gen <<'G'
+doc = PAIR PAIR
+PAIR = A B
+A = %x41
+B = %x42
+G
+harness
+check OK   "ABAB" "PAIR PAIR (A B A B, 4 code points)"
+check FAIL "ABA"  "PAIR + A (3 code points, short)"
+check FAIL "AB"   "PAIR alone (2 code points)"
+
 echo "== ascii.hbnf still generates (no regression) =="
 "$CLI" grammars/ascii.hbnf --backend=c > "$W/ascii.c" 2>&1 && echo "  PASS: ascii.hbnf generates"
 

@@ -211,6 +211,92 @@ package body HBNF_Compilable is
       return 0;
    end Find;
 
+   function Char_DNF (Rules : Rule_Vectors.Vector; Nm : String)
+      return Cp_Branch_Vectors.Vector is
+
+      function Expand (J : Natural; Depth : Natural) return Cp_Branch_Vectors.Vector is
+         R : constant Rule := Rules (J);
+
+         --  Expand one branch (a run of Char_Range / Name elements, no Alt).
+         --  A Name's DNF is distributed over the accumulated sequences, so a
+         --  reference to an alternation multiplies the branches.
+         function Expand_Seq (First, Last : Natural) return Cp_Branch_Vectors.Vector is
+            Branches : Cp_Branch_Vectors.Vector;
+         begin
+            Branches.Append (Cp_Range_Vectors.Empty_Vector);
+            for K in First .. Last loop
+               declare
+                  E : constant Element_Access := R.Pattern (K);
+               begin
+                  if E.Kind = Char_Range then
+                     for B of Branches loop
+                        B.Append (Cp_Range'(Lo => E.Lo, Hi => E.Hi));
+                     end loop;
+                  elsif E.Kind = Name then
+                     declare
+                        Idx : constant Natural := Find (Rules, To_String (E.Name));
+                        Sub : Cp_Branch_Vectors.Vector;
+                        New_Branches : Cp_Branch_Vectors.Vector;
+                     begin
+                        --  Is_Char_Rule already ensured every Name resolves;
+                        --  if it does not, Sub stays empty and the branch dies.
+                        if Idx /= 0 then
+                           Sub := Expand (Idx, Depth - 1);
+                        end if;
+                        for B of Branches loop
+                           for S of Sub loop
+                              declare
+                                 Cat : Cp_Range_Vectors.Vector := B;
+                              begin
+                                 for Rg of S loop
+                                    Cat.Append (Rg);
+                                 end loop;
+                                 New_Branches.Append (Cat);
+                              end;
+                           end loop;
+                        end loop;
+                        Branches := New_Branches;
+                     end;
+                  end if;
+               end;
+            end loop;
+            return Branches;
+         end Expand_Seq;
+      begin
+         --  Degenerate guards (never hit for a rule Is_Char_Rule accepted)
+         --  yield one empty branch, i.e. a zero-code-point match.
+         if J = 0 or else Depth = 0 or else Natural (R.Pattern.Length) = 0 then
+            declare
+               One : Cp_Branch_Vectors.Vector;
+            begin
+               One.Append (Cp_Range_Vectors.Empty_Vector);
+               return One;
+            end;
+         end if;
+         declare
+            P        : constant Element_Vectors.Vector := R.Pattern;
+            Branches : Cp_Branch_Vectors.Vector;
+            St       : Natural := 1;
+         begin
+            for K in 1 .. Natural (P.Length) + 1 loop
+               if K > Natural (P.Length) or else P (K).Kind = Alt then
+                  declare
+                     Sub : Cp_Branch_Vectors.Vector := Expand_Seq (St, K - 1);
+                  begin
+                     for S of Sub loop
+                        Branches.Append (S);
+                     end loop;
+                  end;
+                  St := K + 1;
+               end if;
+            end loop;
+            return Branches;
+         end;
+      end Expand;
+   begin
+      return Expand (Find (Rules, Nm), 20);
+   end Char_DNF;
+
    function Is_List_Rule (R : Rule) return Boolean is
      (Natural (R.Pattern.Length) = 1
       and then R.Jet_Code = Null_Unbounded_String
