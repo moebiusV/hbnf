@@ -1,0 +1,5 @@
+; The same `prefix` as prefix_b.hbnf: allowed.  The keyword lists merge.
+prefix "b_"
+keywords { alpha beta }
+include "prefix_b.hbnf"
+top = b

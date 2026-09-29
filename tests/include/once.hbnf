@@ -1,0 +1,10 @@
+; Include once, and a later `=` overrides (hbnf_emit_check, Check_Scoping).
+; once_a.hbnf is included three times, by three paths (one through
+; once_b.hbnf): it is read once, so its preamble appears once.
+include "once_a.hbnf"
+include "once_b.hbnf"
+include "./once_a.hbnf"
+
+top = x y z
+x   = "first"
+x   = "second" "x"   ; overrides the line above, and keeps its place

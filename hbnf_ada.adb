@@ -2126,8 +2126,8 @@ package body HBNF_Ada is
            (Templates.Conf_Ada, "@ROOT_TYPE@", Ret_Type (1)));
          Append (Bdy, LF);
       end if;
-      if Epilogue /= "" then
-         Append (Bdy, Epilogue);
+      if Epilogue ("Ada") /= "" then
+         Append (Bdy, Epilogue ("Ada"));
          Append (Bdy, LF);
       end if;
       Append (Bdy, "end " & Package_Name & ".Parser;");

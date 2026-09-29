@@ -1,6 +1,7 @@
 pragma Ada_2022;
 
 with Ada.Command_Line;
+with Ada.Exceptions;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with HBNF_Grammar;
@@ -229,6 +230,81 @@ procedure Hbnf_Emit_Check is
       Check ("include local alias", Find_Rule (Rules, "alias") /= 0);
    end Check_Include;
 
+   --  Include once, a later `=` overrides, and the two kinds of directive
+   --  (RFCPLAN.md decisions 3 to 5), on the files in tests/include/.
+   procedure Check_Scoping is
+      use HBNF_Grammar;
+
+      --  The number of times Needle occurs in Hay.
+      function Count (Hay, Needle : String) return Natural is
+         N : Natural := 0;
+      begin
+         for I in Hay'First .. Hay'Last - Needle'Length + 1 loop
+            if Hay (I .. I + Needle'Length - 1) = Needle then
+               N := N + 1;
+            end if;
+         end loop;
+         return N;
+      end Count;
+
+      --  True when Parse_File (Path) is refused with a message that
+      --  contains Needle.
+      function Refused (Path, Needle : String) return Boolean is
+         R : Rule_Vectors.Vector;
+      begin
+         R := Parse_File (Path);
+         return R.Is_Empty and then False;   --  accepted: not refused
+      exception
+         when E : Parse_Error =>
+            Ada.Text_IO.Put_Line
+              ("   (" & Ada.Exceptions.Exception_Message (E) & ")");
+            return Has (Ada.Exceptions.Exception_Message (E), Needle);
+      end Refused;
+   begin
+      declare
+         Rules : constant Rule_Vectors.Vector :=
+           Parse_File ("tests/include/once.hbnf");
+         X, Y  : Natural;
+      begin
+         Check ("include once: four rules", Natural (Rules.Length) = 4);
+         Check ("include once: one preamble",
+                Count (Preamble ("C"), "/* once_a */") = 1);
+         Check ("override: the root stays the root",
+                To_String (Rules (1).Name) = "top");
+         X := Find_Rule (Rules, "x");
+         Check ("override in one file: the later x, in the first x's place",
+                X = 2 and then Natural (Rules (X).Pattern.Length) = 2);
+         Y := Find_Rule (Rules, "y");
+         Check ("override across includes: the later file's y",
+                Y /= 0 and then Natural (Rules (Y).Pattern.Length) = 2);
+      end;
+      Check ("an include after a rule is refused",
+             Refused ("tests/include/late.hbnf", "after the first rule"));
+      Check ("a whole-parser directive set twice alike is kept",
+             Natural (Parse_File ("tests/include/prefix_same.hbnf").Length) = 2
+             and then Type_Prefix = "b_");
+      Check ("keyword lists merge",
+             Natural (Keyword_Table.Length) = 3);
+      Check ("a whole-parser directive set twice differently is refused",
+             Refused ("tests/include/prefix_clash.hbnf", "`prefix`"));
+      Check ("the refusal names the file",
+             Refused ("tests/include/prefix_clash.hbnf",
+                      "tests/include/prefix_clash.hbnf:"));
+      declare
+         Rules : constant Rule_Vectors.Vector :=
+           Parse_File ("tests/include/lang_rust.hbnf");
+      begin
+         Check ("language is per file: the top file's",
+                Natural (Rules.Length) = 2 and then Language = "Rust");
+         Check ("language is per file: the Rust preamble",
+                Has (Preamble ("Rust"), "// rust preamble")
+                and then not Has (Preamble ("Rust"), "c preamble"));
+         Check ("language is per file: the included C preamble",
+                Has (Preamble ("C"), "/* c preamble */")
+                and then not Has (Preamble ("C"), "rust"));
+      end;
+   end Check_Scoping;
+
    --  Left recursion, which the reader turns into a list: the rule's
    --  shape, and the generic matcher reading a base and then its tails.
    procedure Check_Left_Recursion is
@@ -270,6 +346,7 @@ begin
    Check_Server (Ada.Command_Line.Argument (1));
    Check_Hbnf (Ada.Command_Line.Argument (2));
    Check_Include;
+   Check_Scoping;
    Check_Left_Recursion;
 
    Ada.Text_IO.Put_Line

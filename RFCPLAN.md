@@ -86,8 +86,10 @@ backends).  Where the notation differs from ABNF today: ABNF.md §4.
    Most of today's 29 jets become character rules instead, which also makes
    them work in Rust, Zig and Ada.
 9. **`<prose-val>`** reads as a rule nobody has written yet: generation
-   stops with the rule's name and the text in the angle brackets, and the
-   author writes a jet.
+   stops with `file:line:col`, the source line with a caret under the
+   `<…>`, and "not written yet:" and the text in the angle brackets.  The
+   author writes the rule or a jet.  A hole left for later is then a
+   schema error that points at itself, rather than an `XXX` in a comment.
 10. **Core rules.**  `WSP = SP | HTAB` joins `ascii.hbnf` (one code point).
     `CRLF = CR LF` goes in a new `core.hbnf`, which includes `ascii.hbnf`:
     RFC 5234 Appendix B.1 in one include.  `LWSP` waits for repetition
@@ -99,7 +101,9 @@ Each step leaves the nine daemon grammars, e2e, byteident (ntpd) and
 unwind-ident passing; each lands as reviewed patches.
 
 0. **Docs and comments that disagree with the code**; include once; the
-   two kinds of directive; a later `=` overrides.
+   two kinds of directive; a later `=` overrides.  *Done 2026-09-28.*  An
+   include goes before the file's first rule (so "later" is always
+   textual), and a schema error names its file.
 1. **Reading grammars** (no backend work):
    - `=/`; `sensitivity`; `/` between character ranges;
    - `%d13.10`, `*m` (`*2DIGIT`), continuation by indentation (ABNF's

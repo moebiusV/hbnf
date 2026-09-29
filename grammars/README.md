@@ -21,6 +21,12 @@ language C
   for now; `../RFCPLAN.md` plans it.  Direct left recursion, as parse.y
   writes lists (`xs = xs "," x | x`), is read as a loop.  `;` starts a line
   comment.
+- **Include and override** — `include "file"`, before the first rule, reads
+  a file once, however often it is included.  A later `name =` overrides an
+  earlier one, in the same file or another, so a daemon grammar replaces the
+  `commonconf.hbnf` rules it needs to.  `language` applies to its own file;
+  the other directives describe the one generated parser, and two files
+  that set one differently are an error.
 - **Keywords** are quoted literals in their config spelling (`"router-id"`,
   `"read-only"`), never the yacc `%token` identifier.
 - **Readable typed tokens** — `str` (quoted string), `word`/`atom`
@@ -116,8 +122,8 @@ emits a self-contained C parser that compiles and parses a sample config.
 daemon grammars: each is pulled in with `include "…"`.  `commonconf.hbnf`
 holds the rules the daemons share (`string`, `address`, …), which a daemon
 grammar may override; `tailq.hbnf` carries the shared `listops { }` block
-and defines no rules; `ascii.hbnf` is the ASCII names and the RFC 5234
-character classes.  Any script that globs `grammars/*.hbnf` must skip the
+and the `#include <sys/queue.h>` it needs, and defines no rules;
+`ascii.hbnf` is the ASCII names and the RFC 5234 character classes.  Any script that globs `grammars/*.hbnf` must skip the
 three of them (the nine daemons above are the grammars).
 
 ## Bindings (`bind/`)

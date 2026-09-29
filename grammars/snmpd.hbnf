@@ -31,11 +31,6 @@ keywords {
     source-address string system tcp text trap udp user write
 }
 include "tailq.hbnf"
-
-{
-#include <sys/queue.h>
-}
-
 include "commonconf.hbnf"
 
 

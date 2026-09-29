@@ -32,11 +32,6 @@ keywords {
     style subdomains syslog tcp ticket timeout tls type types with
 }
 include "tailq.hbnf"
-
-{
-#include <sys/queue.h>
-}
-
 include "commonconf.hbnf"
 
 

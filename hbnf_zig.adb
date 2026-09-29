@@ -1629,8 +1629,8 @@ package body HBNF_Zig is
       Append (Res, "const std = @import(""std"");");
       Append (Res, LF);
       Append (Res, LF);
-      if Preamble /= "" and then Language = "Zig" then
-         Append (Res, Preamble);
+      if Preamble ("Zig") /= "" then
+         Append (Res, Preamble ("Zig"));
          Append (Res, LF);
          Append (Res, LF);
       end if;
@@ -2035,10 +2035,10 @@ package body HBNF_Zig is
       Lexer  : constant String :=
         Templates.Substitute (Templates.Zig_Lexer, "@ROOT_TYPE@", Root_T);
    begin
-      if Epilogue = "" then
+      if Epilogue ("Zig") = "" then
          return Lexer;
       else
-         return Lexer & LF & Epilogue;
+         return Lexer & LF & Epilogue ("Zig");
       end if;
    end Emit_Lexer;
 

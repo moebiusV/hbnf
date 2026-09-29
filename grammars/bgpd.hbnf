@@ -41,11 +41,6 @@ keywords {
     unicast via vpn weight
 }
 include "tailq.hbnf"
-
-{
-#include <sys/queue.h>
-}
-
 include "commonconf.hbnf"
 
 

@@ -1549,8 +1549,8 @@ package body HBNF_Rust is
 
       Res : U;
    begin
-      if Preamble /= "" and then Language = "Rust" then
-         Append (Res, Preamble);
+      if Preamble ("Rust") /= "" then
+         Append (Res, Preamble ("Rust"));
          Append (Res, LF);
          Append (Res, LF);
       end if;
@@ -1866,10 +1866,10 @@ package body HBNF_Rust is
       Lexer  : constant String :=
         Templates.Substitute (Templates.Rust_Lexer, "@ROOT_TYPE@", Root_T);
    begin
-      if Epilogue = "" then
+      if Epilogue ("Rust") = "" then
          return Lexer;
       else
-         return Lexer & LF & Epilogue;
+         return Lexer & LF & Epilogue ("Rust");
       end if;
    end Emit_Lexer;
 

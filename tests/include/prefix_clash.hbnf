@@ -1,0 +1,4 @@
+; A different `prefix` from prefix_b.hbnf: refused.
+prefix "a_"
+include "prefix_b.hbnf"
+top = b

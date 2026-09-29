@@ -26,11 +26,6 @@ keywords {
     send vendor
 }
 include "tailq.hbnf"
-
-{
-#include <sys/queue.h>
-}
-
 include "commonconf.hbnf"
 
 

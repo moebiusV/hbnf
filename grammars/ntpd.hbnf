@@ -25,11 +25,6 @@ keywords {
     sensor server servers stratum trusted weight
 }
 include "tailq.hbnf"
-
-{
-#include <sys/queue.h>
-}
-
 include "commonconf.hbnf"
 
 

@@ -42,11 +42,6 @@ keywords {
     urpf-failed user weight
 }
 include "tailq.hbnf"
-
-{
-#include <sys/queue.h>
-}
-
 include "commonconf.hbnf"
 
 

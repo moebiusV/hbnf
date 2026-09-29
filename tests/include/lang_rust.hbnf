@@ -1,0 +1,7 @@
+; `language` is per file: this file's code is Rust, lang_c.hbnf's is C.
+language Rust
+{
+// rust preamble
+}
+include "lang_c.hbnf"
+top = c

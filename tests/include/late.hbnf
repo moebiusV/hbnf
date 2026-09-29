@@ -1,0 +1,2 @@
+top = "a"
+include "once_a.hbnf"

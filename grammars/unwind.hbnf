@@ -30,11 +30,6 @@ keywords {
     port preference recursor stub tls
 }
 include "tailq.hbnf"
-
-{
-#include <sys/queue.h>
-}
-
 include "commonconf.hbnf"
 
 

@@ -1,14 +1,36 @@
 pragma Ada_2022;
 
+with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Indefinite_Hashed_Sets;
+with Ada.Containers.Indefinite_Ordered_Maps;
+with Ada.Exceptions;
+with Ada.Strings.Hash;
 with Ada.Text_IO;
+with GNAT.OS_Lib;
 
 package body HBNF_Grammar is
 
-   --  Schema-level metadata gathered by Parse: the declared language (default
-   --  "C") and the optional raw `{ ... }` preamble and epilogue blocks.
+   --  Schema-level metadata gathered by Parse.  A directive is one of two
+   --  kinds (RFCPLAN.md decision 5):
+   --  - per file: `language`, the language of the file's own code blocks;
+   --  - whole parser: the rest.  Any file may set one; two settings that
+   --    differ are refused (Set_Directive), `keywords` lists merge, and
+   --    code blocks are joined in include order.
+   --  Schema_Language is the language of the file read last, which is the
+   --  top-level one (its includes are read before it).
    Schema_Language : Unbounded_String := To_Unbounded_String ("C");
-   Preamble_Code   : Unbounded_String := Null_Unbounded_String;
-   Epilogue_Code   : Unbounded_String := Null_Unbounded_String;
+
+   --  The `{ ... }` code blocks before the rules (preamble) and after them
+   --  (epilogue), each with the language of the file it came from, in
+   --  include order.
+   type Code_Piece is record
+      Lang : Unbounded_String;
+      Code : Unbounded_String;
+   end record;
+   package Piece_Vectors is new Ada.Containers.Vectors (Positive, Code_Piece);
+   Preamble_Pieces : Piece_Vectors.Vector;
+   Epilogue_Pieces : Piece_Vectors.Vector;
+
    Word_Chars_Code : Unbounded_String := Null_Unbounded_String;
    Type_Prefix_Code : Unbounded_String := Null_Unbounded_String;
    Conf_Type_Code  : Unbounded_String := Null_Unbounded_String;
@@ -38,6 +60,7 @@ package body HBNF_Grammar is
    type Attach is record
       Name : Unbounded_String;
       Code : Unbounded_String;
+      File : Unbounded_String;   --  where it is written, for messages
       Line : Positive := 1;
    end record;
    package Attach_Vectors is new Ada.Containers.Vectors (Positive, Attach);
@@ -45,6 +68,111 @@ package body HBNF_Grammar is
 
    --  Parse_File nesting: 0 outside any call, 1 for the top-level schema.
    File_Depth : Natural := 0;
+
+   --  The file Parse is reading ("" for Parse (Text)), for messages, and
+   --  the line of its first rule (0 before one), which no include may
+   --  follow.
+   Current_File    : Unbounded_String := Null_Unbounded_String;
+   First_Rule_Line : Natural := 0;
+
+   --  Include once: the files read so far, by resolved path.
+   package Path_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (String, Ada.Strings.Hash, "=");
+   Seen_Files : Path_Sets.Set;
+
+   --  Each whole-parser directive set so far (`listops init` for one list
+   --  operation), with its value and where it was set.
+   type Setting is record
+      Value : Unbounded_String;
+      File  : Unbounded_String;
+      Line  : Positive := 1;
+   end record;
+   package Setting_Maps is new Ada.Containers.Indefinite_Ordered_Maps
+     (String, Setting);
+   Settings : Setting_Maps.Map;
+
+   --  Set a whole-parser directive: Target gets Value unless another file,
+   --  or this one, already set Name to something else.
+   procedure Set_Directive
+     (Target : in out Unbounded_String; Name, Value : String; Line : Positive)
+   is
+      C : constant Setting_Maps.Cursor := Settings.Find (Name);
+
+      function Where (F : Unbounded_String; L : Positive) return String is
+        ((if F = Null_Unbounded_String then "line " else To_String (F) & ":")
+         & Integer'Image (L) (2 .. Integer'Image (L)'Last));
+   begin
+      if Setting_Maps.Has_Element (C) then
+         declare
+            Was : constant Setting := Setting_Maps.Element (C);
+         begin
+            if To_String (Was.Value) /= Value then
+               raise Parse_Error with
+                 Integer'Image (Line) & ": `" & Name & "` is set here to `"
+                 & Value & "` and at " & Where (Was.File, Was.Line)
+                 & " to `" & To_String (Was.Value) & "`; it describes the "
+                 & "one generated parser, so it can have one value";
+            end if;
+         end;
+      else
+         Settings.Insert
+           (Name, Setting'(Value => To_Unbounded_String (Value),
+                           File  => Current_File,
+                           Line  => Line));
+      end if;
+      Target := To_Unbounded_String (Value);
+   end Set_Directive;
+
+   --  A rule's place in a rule list, by name.
+   package Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (String, Positive, Ada.Strings.Hash, "=");
+
+   --  Add R to Rules.  A later `=` overrides: a rule already there with
+   --  R's name is replaced in its place, so an overridden root is still
+   --  the root.
+   procedure Define (Rules : in out Rule_Vectors.Vector;
+                     Index : in out Index_Maps.Map;
+                     R     : Rule)
+   is
+      C : constant Index_Maps.Cursor := Index.Find (To_String (R.Name));
+   begin
+      if Index_Maps.Has_Element (C) then
+         Rules.Replace_Element (Index_Maps.Element (C), R);
+      else
+         Rules.Append (R);
+         Index.Insert (To_String (R.Name), Natural (Rules.Length));
+      end if;
+   end Define;
+
+   --  A new top-level schema: nothing carries over from the last one read
+   --  in this process.
+   procedure Reset is
+   begin
+      Schema_Language := To_Unbounded_String ("C");
+      Preamble_Pieces.Clear;
+      Epilogue_Pieces.Clear;
+      Word_Chars_Code := Null_Unbounded_String;
+      Type_Prefix_Code := Null_Unbounded_String;
+      Conf_Type_Code := Null_Unbounded_String;
+      Entry_Code := Null_Unbounded_String;
+      List_Head_Code := Null_Unbounded_String;
+      List_Entry_Code := Null_Unbounded_String;
+      List_Init_Code := Null_Unbounded_String;
+      List_Append_Code := Null_Unbounded_String;
+      List_Foreach_Code := Null_Unbounded_String;
+      List_First_Code := Null_Unbounded_String;
+      List_Next_Code := Null_Unbounded_String;
+      List_Relink_Code := Null_Unbounded_String;
+      Statements_On := False;
+      Macros_Name := Null_Unbounded_String;
+      Includes_Name := Null_Unbounded_String;
+      Keyword_Words.Clear;
+      Pending_Actions.Clear;
+      Settings.Clear;
+      Seen_Files.Clear;
+      Current_File := Null_Unbounded_String;
+      First_Rule_Line := 0;
+   end Reset;
 
    --  ====================================================================
    --  Lexer
@@ -629,25 +757,26 @@ package body HBNF_Grammar is
 
    --  Store the raw C for one list operation ("head", "entry", "init",
    --  "append", "foreach", "first", "next", "relink").
-   procedure Set_List_Override (Op : String; Code : String) is
-      V : constant Unbounded_String := To_Unbounded_String (Code);
+   procedure Set_List_Override (Op : String; Code : String; Line : Positive)
+   is
+      N : constant String := "listops " & Op;
    begin
       if Op = "head" then
-         List_Head_Code := V;
+         Set_Directive (List_Head_Code, N, Code, Line);
       elsif Op = "entry" then
-         List_Entry_Code := V;
+         Set_Directive (List_Entry_Code, N, Code, Line);
       elsif Op = "init" then
-         List_Init_Code := V;
+         Set_Directive (List_Init_Code, N, Code, Line);
       elsif Op = "append" then
-         List_Append_Code := V;
+         Set_Directive (List_Append_Code, N, Code, Line);
       elsif Op = "foreach" then
-         List_Foreach_Code := V;
+         Set_Directive (List_Foreach_Code, N, Code, Line);
       elsif Op = "first" then
-         List_First_Code := V;
+         Set_Directive (List_First_Code, N, Code, Line);
       elsif Op = "next" then
-         List_Next_Code := V;
+         Set_Directive (List_Next_Code, N, Code, Line);
       elsif Op = "relink" then
-         List_Relink_Code := V;
+         Set_Directive (List_Relink_Code, N, Code, Line);
       else
          raise Parse_Error with "listops: unknown operation `" & Op & "`";
       end if;
@@ -1125,7 +1254,11 @@ package body HBNF_Grammar is
    --  The words of a `keywords { ... }` block, added to Keyword_Words.  A
    --  keyword is what the lexer can intern: letter- or underscore-led, then
    --  letters, digits, `_`, `-` and `.`.
-   procedure Add_Keywords (Block : String; Line : Positive) is
+   --  Own: the words this file has listed, for the listed-twice check;
+   --  lists from several files merge.
+   procedure Add_Keywords (Block : String; Line : Positive;
+                           Own : in out Word_Vectors.Vector)
+   is
       I : Natural := Block'First;
 
       procedure Add (W : String) is
@@ -1140,11 +1273,14 @@ package body HBNF_Grammar is
               & "` is not a word (a letter or `_`, then letters, digits, "
               & "`_`, `-`, `.`)";
          end if;
-         if Keyword_Words.Contains (To_Unbounded_String (W)) then
+         if Own.Contains (To_Unbounded_String (W)) then
             raise Parse_Error with
               Integer'Image (Line) & ": keywords: `" & W & "` listed twice";
          end if;
-         Keyword_Words.Append (To_Unbounded_String (W));
+         Own.Append (To_Unbounded_String (W));
+         if not Keyword_Words.Contains (To_Unbounded_String (W)) then
+            Keyword_Words.Append (To_Unbounded_String (W));
+         end if;
       end Add;
    begin
       while I <= Block'Last loop
@@ -1181,9 +1317,20 @@ package body HBNF_Grammar is
    function Parse (Text : String) return Rule_Vectors.Vector is
       P     : Parser := (Toks => Lex (Text), Pos => 1);
       Rules : Rule_Vectors.Vector;
+      Index : Index_Maps.Map;
       Name  : Unbounded_String;
       Name_Line : Positive := 1;
+      --  This file's own: its `language` (C when it has none) and the line
+      --  that set it, its header code blocks, and the keywords it lists.
+      File_Lang : Unbounded_String := To_Unbounded_String ("C");
+      Lang_Line : Natural := 0;
+      Head_Code : Word_Vectors.Vector;
+      Own_Words : Word_Vectors.Vector;
    begin
+      if File_Depth = 0 then
+         Reset;
+      end if;
+      First_Rule_Line := 0;
       --  Header: an optional `{ ... }` preamble and/or `language X`, each
       --  preceded by blank lines and `;` comment lines (which are discarded
       --  as header material).  Lookahead keeps a leading comment block that
@@ -1214,9 +1361,7 @@ package body HBNF_Grammar is
                   Next (P);
                end loop;
                if Cur (P).Kind = T_Code then
-                  if Preamble_Code = Null_Unbounded_String then
-                     Preamble_Code := Cur (P).Text;
-                  end if;
+                  Head_Code.Append (Cur (P).Text);
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "language"
@@ -1228,7 +1373,16 @@ package body HBNF_Grammar is
                        Integer'Image (Cur (P).Col) &
                        ": expected a language name (C, Rust, Zig, or Ada)";
                   end if;
-                  Schema_Language := Cur (P).Text;
+                  --  Per file: the language of this file's code blocks.
+                  if Lang_Line /= 0 and then Cur (P).Text /= File_Lang then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ": `language` is "
+                       & To_String (File_Lang) & " already (line"
+                       & Integer'Image (Lang_Line) & "); a file's code "
+                       & "blocks are in one language";
+                  end if;
+                  File_Lang := Cur (P).Text;
+                  Lang_Line := Cur (P).Line;
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "wordchars"
@@ -1240,7 +1394,8 @@ package body HBNF_Grammar is
                        Integer'Image (Cur (P).Col) &
                        ": expected a quoted character set after `wordchars`";
                   end if;
-                  Word_Chars_Code := Cur (P).Text;
+                  Set_Directive (Word_Chars_Code, "wordchars",
+                                 To_String (Cur (P).Text), Cur (P).Line);
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "prefix"
@@ -1256,9 +1411,9 @@ package body HBNF_Grammar is
                        Integer'Image (Cur (P).Col) &
                        ": expected a quoted C identifier prefix after `prefix`";
                   end if;
-                  --  Includes are parsed first, so the including file's
-                  --  directive, seen last, wins; --prefix= wins over both.
-                  Type_Prefix_Code := Cur (P).Text;
+                  --  --prefix= wins over it (Set_Type_Prefix).
+                  Set_Directive (Type_Prefix_Code, "prefix",
+                                 To_String (Cur (P).Text), Cur (P).Line);
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "conf"
@@ -1270,6 +1425,7 @@ package body HBNF_Grammar is
                   Next (P);
                   declare
                      Buf : Unbounded_String := Null_Unbounded_String;
+                     At_Line : constant Positive := Cur (P).Line;
                   begin
                      while Cur (P).Kind = T_Name loop
                         if Buf /= Null_Unbounded_String then
@@ -1284,7 +1440,8 @@ package body HBNF_Grammar is
                           Integer'Image (Cur (P).Col) &
                           ": expected a C struct type after `conf`";
                      end if;
-                     Conf_Type_Code := Buf;
+                     Set_Directive (Conf_Type_Code, "conf", To_String (Buf),
+                                    At_Line);
                   end;
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "listops"
@@ -1329,7 +1486,8 @@ package body HBNF_Grammar is
                                 "listops: expected a code block after `"
                                 & Op & "`";
                            end if;
-                           Set_List_Override (Op, To_String (Tks (J).Text));
+                           Set_List_Override
+                             (Op, To_String (Tks (J).Text), Cur (P).Line);
                            J := J + 1;
                         end;
                      end loop;
@@ -1344,7 +1502,8 @@ package body HBNF_Grammar is
                   --  as parse.y's lookup() table has them, separated by
                   --  blanks; `;` starts a comment to the end of the line.
                   Next (P);
-                  Add_Keywords (To_String (Cur (P).Text), Cur (P).Line);
+                  Add_Keywords (To_String (Cur (P).Text), Cur (P).Line,
+                                Own_Words);
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "statements"
@@ -1376,11 +1535,14 @@ package body HBNF_Grammar is
                           & " after `" & D & "`";
                      end if;
                      if D = "macros" then
-                        Macros_Name := Cur (P).Text;
+                        Set_Directive (Macros_Name, D,
+                                       To_String (Cur (P).Text), Cur (P).Line);
                      elsif D = "entry" then
-                        Entry_Code := Cur (P).Text;
+                        Set_Directive (Entry_Code, D,
+                                       To_String (Cur (P).Text), Cur (P).Line);
                      else
-                        Includes_Name := Cur (P).Text;
+                        Set_Directive (Includes_Name, D,
+                                       To_String (Cur (P).Text), Cur (P).Line);
                      end if;
                      Next (P);
                   end;
@@ -1392,6 +1554,10 @@ package body HBNF_Grammar is
             P.Pos := Mark;
          end if;
       end;
+      Schema_Language := File_Lang;
+      for C of Head_Code loop
+         Preamble_Pieces.Append (Code_Piece'(Lang => File_Lang, Code => C));
+      end loop;
 
       loop
          while Cur (P).Kind = T_Newline loop
@@ -1419,7 +1585,8 @@ package body HBNF_Grammar is
 
             --  Epilogue: a raw code block after the rules.
             if Cur (P).Kind = T_Code then
-               Epilogue_Code := Cur (P).Text;
+               Epilogue_Pieces.Append
+                 (Code_Piece'(Lang => File_Lang, Code => Cur (P).Text));
                Next (P);
                exit;
             end if;
@@ -1437,6 +1604,7 @@ package body HBNF_Grammar is
                Pending_Actions.Append
                  (Attach'(Name => P.Toks (P.Pos + 1).Text,
                           Code => P.Toks (P.Pos + 2).Text,
+                          File => Current_File,
                           Line => Cur (P).Line));
                Next (P);
                Next (P);
@@ -1479,6 +1647,9 @@ package body HBNF_Grammar is
             end if;
             Name := Cur (P).Text;
             Name_Line := Cur (P).Line;
+            if First_Rule_Line = 0 then
+               First_Rule_Line := Name_Line;
+            end if;
             Next (P);
             Next (P);   --  the '='
 
@@ -1491,8 +1662,8 @@ package body HBNF_Grammar is
             end if;
             if Cur (P).Kind = T_Code then
                --  A jet: `name = { <code> }` — a hand-written scanner.
-               Rule_Vectors.Append
-                 (Rules,
+               Define
+                 (Rules, Index,
                   Rule'(Name            => Name,
                         Pattern         => Element_Vectors.Empty_Vector,
                         Leading_Comment => Leading,
@@ -1537,8 +1708,8 @@ package body HBNF_Grammar is
                      Trailing := Cur (P).Text;
                      Next (P);
                   end if;
-                  Rule_Vectors.Append
-                    (Rules,
+                  Define
+                    (Rules, Index,
                      Rule'(Name            => Name,
                            Pattern         => Pattern,
                            Leading_Comment => Leading,
@@ -1632,13 +1803,32 @@ package body HBNF_Grammar is
          end;
       end Include_Target;
 
-      --  Walk Text (a file in directory Dir) line by line: `include` lines are
-      --  loaded recursively into Acc; every other line is kept verbatim in Out.
+      --  Where a path leads, links resolved, so a file included twice by
+      --  different paths is still read once.
+      function Resolved (P : String) return String is
+        (GNAT.OS_Lib.Normalize_Pathname (P, Resolve_Links => True));
+
+      --  An `include` line: the file it names and the line it is on.
+      type Include_Line is record
+         Target : Unbounded_String;
+         Line   : Positive := 1;
+      end record;
+      package Include_Vectors is new
+        Ada.Containers.Vectors (Positive, Include_Line);
+
+      --  Walk Text (a file in directory Dir) line by line.  An `include`
+      --  line reads the file it names into Acc, the first time that file
+      --  is included, and is recorded in Incs; every other line is kept
+      --  verbatim in Kept.  Of two included files, the later one's rule
+      --  overrides the earlier one's.
       procedure Expand (Text : String; Dir : String;
                         Acc : in out Rule_Vectors.Vector;
+                        Acc_Index : in out Index_Maps.Map;
+                        Incs : in out Include_Vectors.Vector;
                         Kept : in out Unbounded_String)
       is
          Start : Natural := Text'First;
+         Line_No : Positive := 1;
       begin
          while Start <= Text'Last loop
             declare
@@ -1652,13 +1842,16 @@ package body HBNF_Grammar is
                   Target : constant Unbounded_String := Include_Target (Line);
                begin
                   if Target /= Null_Unbounded_String then
+                     Incs.Append (Include_Line'(Target, Line_No));
                      declare
-                        Sub : constant Rule_Vectors.Vector :=
-                          Parse_File (Join (Dir, To_String (Target)));
+                        Sub_Path : constant String :=
+                          Join (Dir, To_String (Target));
                      begin
-                        for R of Sub loop
-                           Acc.Append (R);
-                        end loop;
+                        if not Seen_Files.Contains (Resolved (Sub_Path)) then
+                           for R of Parse_File (Sub_Path) loop
+                              Define (Acc, Acc_Index, R);
+                           end loop;
+                        end if;
                      end;
                      --  Keep the line (empty), so errors in the rest of the
                      --  file report the line numbers the author sees.
@@ -1669,53 +1862,36 @@ package body HBNF_Grammar is
                   end if;
                end;
                Start := Stop + 1;
+               Line_No := Line_No + 1;
             end;
          end loop;
       end Expand;
 
-      --  The top file's rules come first (its first rule is the root).  A
-      --  local rule with an included rule's name overrides it; the remaining
-      --  included rules append after.
+      --  The file's own rules come first (the top file's first rule is the
+      --  root).  Its includes are read before it, so its own rule overrides
+      --  an included one of the same name; the remaining included rules
+      --  append after.
       function Override (Local, Included : Rule_Vectors.Vector)
         return Rule_Vectors.Vector
       is
          Result : Rule_Vectors.Vector := Local;
-
-         function Has (Name : Unbounded_String) return Boolean is
-         begin
-            for R of Result loop
-               if R.Name = Name then
-                  return True;
-               end if;
-            end loop;
-            return False;
-         end Has;
+         Names  : Path_Sets.Set;
       begin
+         for R of Local loop
+            Names.Include (To_String (R.Name));
+         end loop;
          for R of Included loop
-            if not Has (R.Name) then
+            if not Names.Contains (To_String (R.Name)) then
                Result.Append (R);
             end if;
          end loop;
          return Result;
       end Override;
 
-      --  Included code first, then this file's, like C's #include.
-      function Join_Code (Inc, Own : Unbounded_String)
-        return Unbounded_String is
-      begin
-         if Inc = Null_Unbounded_String then
-            return Own;
-         elsif Own = Null_Unbounded_String then
-            return Inc;
-         else
-            return Inc & ASCII.LF & Own;
-         end if;
-      end Join_Code;
-
-      --  Attach each pending `action name { code }` whose rule is now known.
+      --  Attach each pending `action name { code }` to its rule, once every
+      --  file is read, so an action goes with the definition that stands.
       procedure Apply_Actions (Result : in out Rule_Vectors.Vector) is
-         Left : Attach_Vectors.Vector;
-         Hit  : Natural;
+         Hit : Natural;
       begin
          for A of Pending_Actions loop
             Hit := 0;
@@ -1726,70 +1902,70 @@ package body HBNF_Grammar is
                end if;
             end loop;
             if Hit = 0 then
-               Left.Append (A);
+               raise Parse_Error with
+                 To_String (A.File) & ":" & Integer'Image (A.Line)
+                 & ": action for `" & To_String (A.Name)
+                 & "`, which no rule defines";
             elsif Result (Hit).Action_Code /= Null_Unbounded_String then
                raise Parse_Error with
-                 Integer'Image (A.Line) & ": rule `" & To_String (A.Name)
+                 To_String (A.File) & ":" & Integer'Image (A.Line)
+                 & ": rule `" & To_String (A.Name)
                  & "` already has an action";
             else
                Result (Hit).Action_Code := A.Code;
             end if;
          end loop;
-         Pending_Actions := Left;
+         Pending_Actions.Clear;
       end Apply_Actions;
 
       Included : Rule_Vectors.Vector;
+      Inc_Index : Index_Maps.Map;
+      Incs     : Include_Vectors.Vector;
       Local    : Rule_Vectors.Vector;
       Result   : Rule_Vectors.Vector;
       Out_Text : Unbounded_String;
    begin
       if File_Depth = 0 then
-         --  A new top-level schema: nothing carries over from the last one
-         --  parsed in this process.
-         Schema_Language := To_Unbounded_String ("C");
-         Preamble_Code := Null_Unbounded_String;
-         Epilogue_Code := Null_Unbounded_String;
-         Word_Chars_Code := Null_Unbounded_String;
-         Type_Prefix_Code := Null_Unbounded_String;
-         Conf_Type_Code := Null_Unbounded_String;
-         Entry_Code := Null_Unbounded_String;
-         List_Head_Code := Null_Unbounded_String;
-         List_Entry_Code := Null_Unbounded_String;
-         List_Init_Code := Null_Unbounded_String;
-         List_Append_Code := Null_Unbounded_String;
-         List_Foreach_Code := Null_Unbounded_String;
-         List_First_Code := Null_Unbounded_String;
-         List_Next_Code := Null_Unbounded_String;
-         List_Relink_Code := Null_Unbounded_String;
-         Statements_On := False;
-         Macros_Name := Null_Unbounded_String;
-         Includes_Name := Null_Unbounded_String;
-         Keyword_Words.Clear;
-         Pending_Actions.Clear;
+         Reset;
       end if;
       File_Depth := File_Depth + 1;
-      Expand (Read_File (Path), Dir_Of (Path), Included, Out_Text);
-      declare
-         Inc_Pre : constant Unbounded_String := Preamble_Code;
-         Inc_Epi : constant Unbounded_String := Epilogue_Code;
-      begin
-         Preamble_Code := Null_Unbounded_String;
-         Epilogue_Code := Null_Unbounded_String;
-         Local := Parse (To_String (Out_Text));
-         Preamble_Code := Join_Code (Inc_Pre, Preamble_Code);
-         Epilogue_Code := Join_Code (Inc_Epi, Epilogue_Code);
-      end;
+      Seen_Files.Include (Resolved (Path));
+      Expand (Read_File (Path), Dir_Of (Path), Included, Inc_Index, Incs,
+              Out_Text);
+      Current_File := To_Unbounded_String (Path);
+      Local := Parse (To_String (Out_Text));
+      --  An include goes before the file's rules, so that "a later `=`
+      --  overrides" holds: the file's own rules come after what it
+      --  includes.
+      for I of Incs loop
+         if First_Rule_Line /= 0 and then I.Line > First_Rule_Line then
+            raise Parse_Error with
+              Integer'Image (I.Line) & ": include """ & To_String (I.Target)
+              & """ after the first rule (line"
+              & Integer'Image (First_Rule_Line) & "); includes go before "
+              & "the rules, so the file's own rules override what it "
+              & "includes";
+         end if;
+      end loop;
       Result := Override (Local, Included);
-      Apply_Actions (Result);
-      File_Depth := File_Depth - 1;
-      if File_Depth = 0 and then not Pending_Actions.Is_Empty then
-         raise Parse_Error with
-           Integer'Image (Pending_Actions.First_Element.Line)
-           & ": action for `" & To_String (Pending_Actions.First_Element.Name)
-           & "`, which no rule defines";
+      if File_Depth = 1 then
+         Apply_Actions (Result);
       end if;
+      File_Depth := File_Depth - 1;
       return Result;
    exception
+      when E : Parse_Error =>
+         File_Depth := 0;
+         declare
+            M : constant String := Ada.Exceptions.Exception_Message (E);
+         begin
+            --  Name the file once, at the innermost one: " 3: 7: …"
+            --  becomes "grammars/ntpd.hbnf: 3: 7: …".
+            if M'Length > 0 and then M (M'First) = ' ' then
+               raise Parse_Error with Path & ":" & M;
+            end if;
+            raise;
+         end;
       when others =>
          File_Depth := 0;
          raise;
@@ -1845,9 +2021,28 @@ package body HBNF_Grammar is
 
    function Language return String is (To_String (Schema_Language));
 
-   function Preamble return String is (To_String (Preamble_Code));
+   --  The pieces in language Lang, joined with a newline.
+   function Joined (Pieces : Piece_Vectors.Vector; Lang : String)
+     return String
+   is
+      Buf : Unbounded_String;
+   begin
+      for P of Pieces loop
+         if To_String (P.Lang) = Lang then
+            if Buf /= Null_Unbounded_String then
+               Append (Buf, ASCII.LF);
+            end if;
+            Append (Buf, P.Code);
+         end if;
+      end loop;
+      return To_String (Buf);
+   end Joined;
 
-   function Epilogue return String is (To_String (Epilogue_Code));
+   function Preamble (Lang : String) return String is
+     (Joined (Preamble_Pieces, Lang));
+
+   function Epilogue (Lang : String) return String is
+     (Joined (Epilogue_Pieces, Lang));
 
    function Word_Chars return String is (To_String (Word_Chars_Code));
 

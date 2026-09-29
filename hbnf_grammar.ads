@@ -112,20 +112,35 @@ package HBNF_Grammar is
    package Word_Vectors is new
      Ada.Containers.Vectors (Positive, Unbounded_String);
 
-   --  Parse schema text into a flat list of rules, in order.
+   --  Parse schema text into a flat list of rules, in order.  A later
+   --  `name =` overrides an earlier one: it replaces it in its place, so an
+   --  overridden root is still the root.  Text is one file; `include` lines
+   --  are Parse_File's.
    function Parse (Text : String) return Rule_Vectors.Vector;
 
-   --  Parse a schema file, resolving top-level `include "path"` directives
-   --  (each path relative to the including file's directory).  Included files
-   --  are loaded first, depth-first; a same-named local rule overrides an
-   --  included one, so a daemon schema can pull in a common core and replace
-   --  just the rules that differ.  Preambles and epilogues are concatenated,
-   --  included files' first (like C's #include); for the other header
-   --  directives the including file, parsed last, wins.  `action name
-   --  { code }` attaches an action jet to a rule from any of the files, so a
-   --  binding file can include a grammar and add the daemon's actions and
-   --  headers without touching it.  Header state is reset at the start of
-   --  each top-level call, so nothing carries over between schemas.
+   --  Parse a schema file, resolving its `include "path"` lines (each path
+   --  relative to the including file's directory).  The rules (RFCPLAN.md
+   --  decisions 3 to 5):
+   --  - A file is read once: a later include of it, by any path, does
+   --    nothing.
+   --  - Includes go before a file's first rule and are read before it,
+   --    depth-first.  A later `name =` overrides an earlier one, in the same
+   --    file or another: a file's own rule overrides one it includes, and
+   --    of two included files the later one's wins.  So a daemon schema
+   --    pulls in a common core and replaces just the rules that differ.
+   --  - `language` is per file: the language of that file's code blocks,
+   --    C when it has no `language` line.
+   --  - The other directives describe the one generated parser.  Any file
+   --    may set one; two different values are an error, the same value
+   --    twice is not.  `keywords` lists merge.  Code blocks (preambles,
+   --    epilogues) are joined in the order the files are read, included
+   --    files' first, like C's #include.
+   --  - `action name { code }` attaches an action jet to the rule that
+   --    stands once every file is read, so a binding file can include a
+   --    grammar and add the daemon's actions and headers without touching
+   --    it.
+   --  A schema error names the file it is in.  State is reset at the start
+   --  of each top-level call, so nothing carries over between schemas.
    function Parse_File (Path : String) return Rule_Vectors.Vector;
 
    --  Rules, minus those nothing uses: the root (Rules (1)), every rule
@@ -136,18 +151,21 @@ package HBNF_Grammar is
    --  warnings, and their literals would still become keywords.
    function Reachable (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector;
 
-   --  The schema language declared by the first non-blank line
-   --  (`language C|Rust|Zig|Ada`), or "C" when absent.  Jet code blocks are
-   --  written in this language.
+   --  The top-level file's `language C|Rust|Zig|Ada`, or "C" when it has
+   --  none.  Jets are C today whatever the language: the other backends
+   --  read a jet's token with their own lexer.
    function Language return String;
 
    --  The raw `{ ... }` code blocks before the rules (emitted before the
-   --  declarations), joined in include order; "" when there are none.
-   function Preamble return String;
+   --  declarations) from the files whose language is Lang, joined in
+   --  include order; "" when there are none.  A backend asks for its own
+   --  language, so a C preamble never lands in Rust.
+   function Preamble (Lang : String) return String;
 
    --  The raw `{ ... }` code blocks after the rules (emitted after the
-   --  parser), joined in include order; "" when there are none.
-   function Epilogue return String;
+   --  parser), from the files whose language is Lang, joined in include
+   --  order; "" when there are none.
+   function Epilogue (Lang : String) return String;
 
    --  Extra bareword characters declared by a top-level `wordchars "..."`,
    --  beyond the base set (letters, digits, `.`, `_`, `-`); the lexer folds
