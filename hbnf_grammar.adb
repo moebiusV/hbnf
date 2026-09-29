@@ -2830,6 +2830,118 @@ package body HBNF_Grammar is
       return Result;
    end Reachable;
 
+   function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector is
+      Result : Rule_Vectors.Vector := Rules;
+      Names  : Path_Sets.Set;
+
+      --  An element the backends take inside a sequence as it is.
+      function Simple (E : Element_Access) return Boolean is
+        (E.Kind = Alt
+         or else (E.Min = 1 and then E.Max = 1
+                  and then (E.Kind in Literal | Name | Char_Range
+                            or else (E.Kind = Group
+                                     and then (for all X of E.Items =>
+                                                 X.Kind /= Alt)))));
+
+      procedure Lift_Rule (J : Positive);
+
+      --  Make every element of V's branches one the backends take inside a
+      --  sequence: a plain `( a b )` is spliced in, and an optional, a
+      --  repetition or an alternation group becomes a new rule, named
+      --  `<rule>_<n>`, that the branch refers to.
+      procedure Flatten (V : in out Element_Vectors.Vector; Owner : String;
+                         N : in out Natural) is
+         Out_V : Element_Vectors.Vector;
+      begin
+         for E of V loop
+            if Simple (E) and then E.Kind /= Group then
+               Out_V.Append (E);
+            elsif Simple (E) then
+               --  `( a b )`: the same as `a b`.
+               declare
+                  Inner : Element_Vectors.Vector := E.Items;
+               begin
+                  Flatten (Inner, Owner, N);
+                  for X of Inner loop
+                     Out_V.Append (X);
+                  end loop;
+               end;
+            else
+               declare
+                  H : Unbounded_String;
+                  P : Element_Vectors.Vector;
+               begin
+                  loop
+                     N := N + 1;
+                     H := To_Unbounded_String (Owner & "_" & Img (N));
+                     exit when not Names.Contains (To_String (H));
+                  end loop;
+                  Names.Include (To_String (H));
+                  if E.Kind = Group and then E.Min = 1 and then E.Max = 1 then
+                     --  `( a | b )`: a rule of the alternation.
+                     P := E.Items;
+                  else
+                     --  `[ x ]`, `*x`, `1*( a b )`: a rule that is the
+                     --  optional or the list, as a rule of its own is.
+                     P.Append (E);
+                  end if;
+                  Result.Append
+                    (Rule'(Name             => H,
+                           Pattern          => P,
+                           Leading_Comment  => Null_Unbounded_String,
+                           Trailing_Comment => Null_Unbounded_String,
+                           Jet_Code         => Null_Unbounded_String,
+                           Action_Code      => Null_Unbounded_String,
+                           Left_Bases       => 0));
+                  Lift_Rule (Natural (Result.Length));
+                  Out_V.Append
+                    (new Element'(Kind => Name, Min => 1, Max => 1,
+                                  Name => H, Fold => False));
+               end;
+            end if;
+         end loop;
+         V := Out_V;
+      end Flatten;
+
+      procedure Lift_Rule (J : Positive) is
+         R : Rule := Result (J);
+         N : Natural := 0;
+      begin
+         if R.Jet_Code /= Null_Unbounded_String or else R.Pattern.Is_Empty then
+            return;
+         end if;
+         if Natural (R.Pattern.Length) = 1
+           and then R.Pattern (1).Kind = Group
+         then
+            --  A rule that is one group: a list, an optional or a grouped
+            --  alternation, which the backends take whole.  Its branches
+            --  are sequences like any other.  The group is copied, so a
+            --  pattern the reader shares (left recursion's raw form) is
+            --  not changed under it.
+            declare
+               G : constant Element_Access := new Element'(R.Pattern (1).all);
+            begin
+               Flatten (G.Items, To_String (R.Name), N);
+               R.Pattern.Replace_Element (1, G);
+            end;
+         elsif Natural (R.Pattern.Length) = 1 then
+            --  One element: `x = *y` is a list, `x = y` an alias.
+            return;
+         else
+            Flatten (R.Pattern, To_String (R.Name), N);
+         end if;
+         Result.Replace_Element (J, R);
+      end Lift_Rule;
+   begin
+      for R of Rules loop
+         Names.Include (To_String (R.Name));
+      end loop;
+      for J in 1 .. Natural (Rules.Length) loop
+         Lift_Rule (J);
+      end loop;
+      return Result;
+   end Lift;
+
    function Language return String is (To_String (Schema_Language));
 
    --  The pieces in language Lang, joined with a newline.

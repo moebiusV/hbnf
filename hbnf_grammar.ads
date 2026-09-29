@@ -179,6 +179,18 @@ package HBNF_Grammar is
    --  warnings, and their literals would still become keywords.
    function Reachable (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector;
 
+   --  Rules, with what the backends do not take inside a sequence given a
+   --  rule of its own (RFCPLAN.md step 2), before code generation:
+   --     x = a [ b c ] d        x = a x_1 d       x_1 = [ b c ]
+   --     x = a *( "," b )       x = a x_1         x_1 = *( "," b )
+   --     x = a ( b | c ) d      x = a x_1 d       x_1 = b | c
+   --  A new rule is named `<rule>_<n>`, numbered in order within its rule
+   --  and never the name of another; it is appended after the others.  A
+   --  plain `( a b )` is spliced in.  A rule that is one group (a list, an
+   --  optional, a grouped alternation) keeps it, and its branches are
+   --  treated the same way; so are a left-recursive list's.
+   function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector;
+
    --  The top-level file's `language C|Rust|Zig|Ada`, or "C" when it has
    --  none.  Jets are C today whatever the language: the other backends
    --  read a jet's token with their own lexer.

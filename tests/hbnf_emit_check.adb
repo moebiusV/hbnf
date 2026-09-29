@@ -414,6 +414,54 @@ procedure Hbnf_Emit_Check is
                       "differ only in case"));
    end Check_Abnf;
 
+   --  Step 2: what the backends do not take inside a sequence becomes a
+   --  rule of its own (HBNF_Grammar.Lift).
+   procedure Check_Lift is
+      use HBNF_Grammar;
+      LF : constant Character := ASCII.LF;
+      R  : constant Rule_Vectors.Vector :=
+        Lift (Parse ("x = a [ b c ] d *( ',' e ) ( f | g ) ( a b )" & LF
+                     & "x_2 = word" & LF
+                     & "xs = xs ',' [ ""q"" ] e | e" & LF
+                     & "a = word" & LF & "b = word" & LF & "c = word" & LF
+                     & "d = word" & LF & "e = word" & LF & "f = ""f""" & LF
+                     & "g = ""g""" & LF));
+
+      function Named (N : String) return Natural is
+        (Find_Rule (R, N));
+
+      function Ref (V : Element_Vectors.Vector; I : Positive; N : String)
+        return Boolean is
+        (Natural (V.Length) >= I and then V (I).Kind = Name
+         and then To_String (V (I).Name) = N
+         and then V (I).Min = 1 and then V (I).Max = 1);
+   begin
+      Check ("lift: x reads a x_1 d x_3 x_4 a b",
+             Natural (R (1).Pattern.Length) = 7
+             and then Ref (R (1).Pattern, 2, "x_1")
+             and then Ref (R (1).Pattern, 4, "x_3")
+             and then Ref (R (1).Pattern, 5, "x_4")
+             and then Ref (R (1).Pattern, 6, "a")
+             and then Ref (R (1).Pattern, 7, "b"));
+      Check ("lift: x_1 is the optional [ b c ]",
+             Named ("x_1") /= 0
+             and then R (Named ("x_1")).Pattern (1).Kind = Group
+             and then R (Named ("x_1")).Pattern (1).Min = 0
+             and then R (Named ("x_1")).Pattern (1).Max = 1);
+      Check ("lift: x_2 is the user's rule; the repetition is x_3",
+             Named ("x_3") /= 0
+             and then R (Named ("x_3")).Pattern (1).Max = -1
+             and then R (Named ("x_2")).Pattern (1).Kind = Name);
+      Check ("lift: x_4 is the alternation f | g",
+             Named ("x_4") /= 0
+             and then Natural (R (Named ("x_4")).Pattern.Length) = 3
+             and then R (Named ("x_4")).Pattern (2).Kind = Alt);
+      Check ("lift: a left-recursive list keeps its bases and tails",
+             R (Named ("xs")).Left_Bases = 1
+             and then Named ("xs_1") /= 0
+             and then R (Named ("xs_1")).Pattern (1).Min = 0);
+   end Check_Lift;
+
    --  Left recursion, which the reader turns into a list: the rule's
    --  shape, and the generic matcher reading a base and then its tails.
    procedure Check_Left_Recursion is
@@ -457,6 +505,7 @@ begin
    Check_Include;
    Check_Scoping;
    Check_Abnf;
+   Check_Lift;
    Check_Left_Recursion;
 
    Ada.Text_IO.Put_Line

@@ -28,6 +28,7 @@ int main(int argc, char **argv) {
         const modes_t *m;
         const pair_t *p;
         const words_t *w;
+        const config_2_t *o;
         long long acc = 0;
 
         if (!parse_text(text, &c, err, sizeof err, &line, &col)) {
@@ -57,7 +58,14 @@ int main(int argc, char **argv) {
         printf("; words");
         for (w = c.words.head; w; w = w->_link)
             printf(" %s", w->word);
-        printf("\n");
+        /* the optional, the repetition and the alternation inside the
+           sequence, each read into a rule of its own (config_1 .. 3) */
+        printf("; opts");
+        if (c.config_1.head)
+            printf(" log %s", c.config_1.head->word);
+        for (o = c.config_2.head; o; o = o->_link)
+            printf(" %s", o->word);
+        printf(" %s\n", c.config_3 == CONFIG_3_ON ? "on" : "off");
         free_config(&c);
         free(text);
     }

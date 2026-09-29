@@ -87,7 +87,16 @@ begin
             for W of C.Words loop
                Put (" " & To_String (W));
             end loop;
-            New_Line;
+            --  the optional, the repetition and the alternation inside the
+            --  sequence, each read into a rule of its own (Config_1 .. 3)
+            Put ("; opts");
+            if not C.Config_1.Is_Empty then
+               Put (" log " & To_String (C.Config_1.First_Element.Word));
+            end if;
+            for O of C.Config_2 loop
+               Put (" " & To_String (O.Word));
+            end loop;
+            Put_Line (if C.Config_3 = Config_3_On then " on" else " off");
          end;
       exception
          when E : Parser.Parse_Error =>

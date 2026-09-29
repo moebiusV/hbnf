@@ -42,6 +42,15 @@ fn main() {
         for w in &c.words {
             print!(" {}", w);
         }
-        println!();
+        // the optional, the repetition and the alternation inside the
+        // sequence, each read into a rule of its own (config_1 .. 3)
+        print!("; opts");
+        if let Some(l) = c.config_1.first() {
+            print!(" log {}", l.word);
+        }
+        for o in &c.config_2 {
+            print!(" {}", o.word);
+        }
+        println!(" {}", if matches!(c.config_3, Config3::Config3_On) { "on" } else { "off" });
     }
 }

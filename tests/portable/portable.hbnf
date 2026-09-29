@@ -1,8 +1,10 @@
 ; One schema through every backend, for tests/portable.sh: left recursion,
-; %i literals, repetition bounds, a list of literals and a list of a core
-; type, which C, Rust, Zig and Ada must all read the same way.
+; %i literals, repetition bounds, a list of literals, a list of a core type,
+; and an optional, a repetition and an alternation inside a sequence, which
+; C, Rust, Zig and Ada must all read the same way.
 
 config = "hosts" host_list ";" "calc" sum loud ";" modes "pair" pair ";" "words" words ";"
+         "opts" [ "log" word ] *( ',' word ) ( "on" | "off" ) ";"
 
 ; parse.y's host_list: the first entry is a host, each later one `, host`.
 host_list = host_list "," host | host

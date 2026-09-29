@@ -96,11 +96,15 @@ Two shape rules keep the generated parser simple and match `parse.y` exactly:
   left-recursive `_l` rule stays left-recursive (`hosts = hosts ',' host |
   hosts host | host`), and a block body references it (`"{" hosts "}"`).
   Left recursion is read as a loop, so a long list costs no stack.  A list
-  parse.y writes right-recursive is `*( y )` or `1*( y )`.  Never nest
-  `*( … )` inside a sequence (RFCPLAN.md step 2 lifts that).
-- **Optionals are flattened** — `prefix [ X ]` becomes the two-way alternation
-  `prefix X | prefix`.  To record an optional word, make it a list of its
-  own: `blocklog = 0*1( "log" )` is empty when `log` is absent.
+  parse.y writes right-recursive is `*( y )` or `1*( y )`.  A group, an
+  optional or a repetition inside a sequence (`"on" [ "log" ] *( ',' w )`)
+  works too: before code generation each becomes a rule of its own, named
+  `<rule>_<n>` in the tree, so name it yourself where a binding reads it.
+- **Optionals are flattened** where parse.y writes them so —
+  `prefix [ X ]` becomes the two-way alternation `prefix X | prefix`.  An
+  optional word can be written inline, `"block" [ "log" ]`, and records
+  whether it was there; a rule of its own (`blocklog = 0*1( "log" )`) gives
+  the tree field a name of your choosing.
 
 The generated lexer skips whitespace and newlines, so there is no `nl`/`ws`/
 `comment` scaffolding.  The daemon grammars declare `statements` instead: the

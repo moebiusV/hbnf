@@ -1,7 +1,8 @@
 #!/bin/sh
 # One schema through every backend (tests/portable/portable.hbnf): left
-# recursion, %i literals, repetition bounds, a list of literals and a list
-# of a core type.  Each backend's driver parses the *.conf and *.bad
+# recursion, %i literals, repetition bounds, a list of literals, a list of
+# a core type, and an optional, a repetition and an alternation inside a
+# sequence.  Each backend's driver parses the *.conf and *.bad
 # configs and prints what it read; every one must print
 # tests/portable/expected.txt.  C always runs; Rust, Zig and Ada run when
 # rustc, zig and gnatmake are installed.
@@ -12,7 +13,7 @@ CLI=${HBNF_CLI:-./hbnf_cli}
 T=tests/portable
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
-FILES="good.conf lead-comma.bad lead-op.bad loud-twice.bad pair-four.bad pair-one.bad quiet.conf slow-line4.bad slow-upper.bad trailing-op.bad"
+FILES="good.conf lead-comma.bad lead-op.bad loud-twice.bad opts-log.bad pair-four.bad pair-one.bad quiet.conf slow-line4.bad slow-upper.bad trailing-op.bad"
 rc=0
 
 check() {   # check BACKEND OUTPUT

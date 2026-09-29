@@ -1,10 +1,11 @@
-good.conf: hosts a b c; calc 10 - 3 - 2 = 5 loudly; modes fast fast slow; pair x y z; words one two three
+good.conf: hosts a b c; calc 10 - 3 - 2 = 5 loudly; modes fast fast slow; pair x y z; words one two three; opts log file1 a b on
 lead-comma.bad: rejected at line 1
 lead-op.bad: rejected at line 1
 loud-twice.bad: rejected at line 1
+opts-log.bad: rejected at line 2
 pair-four.bad: rejected at line 1
 pair-one.bad: rejected at line 1
-quiet.conf: hosts solo; calc 7 = 7; modes; pair x y; words
+quiet.conf: hosts solo; calc 7 = 7; modes; pair x y; words; opts off
 slow-line4.bad: rejected at line 4
 slow-upper.bad: rejected at line 1
 trailing-op.bad: rejected at line 1

@@ -100,10 +100,10 @@ shapes compiled into parsers for a different language.
 |---|---|---|---|
 | Concatenation, alternation, grouping | ✓ | ✓ | Alternation is ordered choice (§4). `\|` separates alternatives, as in BNF and yacc. ABNF's `/` (union) is taken between alternatives that each match one code point, where union and ordered choice are the same (`DIGIT / ALPHA`); between longer ones it is refused, with its line and a caret, until RFCPLAN.md step 5. The check covers only the rules the parser uses. |
 | Direct left recursion, `a = a x \| y` | ✓ read as a loop, `y x*`, in all four backends | ✓ | The first entry of the list comes from the bases, each later one from the tails. Indirect left recursion is refused. |
-| `( a \| b )` inside a sequence | *rejected* | ✓ | Previously flattened to `a b` |
+| `( a \| b )` inside a sequence | ✓ lifted into a rule of its own | ✓ | `x = a ( b \| c ) d` is read as `x = a x_1 d`, `x_1 = b \| c` before code generation (`Lift`), so all four backends take it; a literal-only alternation is an enum. A plain `( a b )` is spliced in. Before RFCPLAN.md step 2 it was refused, and before that flattened to `a b` |
 | `[ … ]` as a whole rule | ✓ | ✓ | |
-| `[ … ]` inside a sequence | *rejected* | ✓ | Previously became required |
-| Repeated group or reference inside a sequence | *rejected* | ✓ | Previously matched once, or did not compile |
+| `[ … ]` inside a sequence | ✓ lifted | ✓ | `x = a [ b c ] d` is `x = a x_1 d`, `x_1 = [ b c ]`: a list of none or one entry, which records whether it was there (`[ "log" ]` too). Before step 2 refused, and before that it became required |
+| Repeated group or reference inside a sequence | ✓ lifted | ✓ | `x = a *( ',' b )` is `x = a x_1`, `x_1 = *( ',' b )`, and `1*alias` likewise; the repetition bounds hold in all four backends. A lifted rule is named `<rule>_<n>`, numbered within its rule: give the part a rule of its own where the tree's field name matters (a binding). Before step 2 refused, and before that it matched once, or did not compile |
 | `*`, `1*`, `n*`, `n*m`, `n` on a list rule | ✓ bounds enforced in all four backends | ✓ | Previously `1*` accepted an empty list in every backend |
 | A list of a core type (`ws = 1*word`) | ✓ | ✓ | Previously failed to link; Rust, Zig and Ada called a parse function that does not exist |
 | A list of literals only (`log = 0*1( "log" )`) | ✓ one entry, without a field, per match | ✓ | How a grammar records an optional word |
@@ -207,7 +207,6 @@ orders this work, and adds what an RFC's ABNF needs beyond it.
 | Gap | Proposal | Runtime cost |
 |---|---|---|
 | Whitespace rules | §6, starting with `LF` | +1 token per line |
-| Groups, optionals and repetition inside a sequence | Emit them (inline loops, or synthetic rules), then drop the rejection | none |
 | The character layer | done in all four backends (CHARLAYER.md); converting the daemons' jets to character rules retires the C-only jet stubs | same as a hand-written jet |
 | `/` and `=/` between longer alternatives | union compiled without search (RFCPLAN.md decision 1, step 5) | none |
 

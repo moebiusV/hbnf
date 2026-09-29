@@ -125,6 +125,16 @@ refuse "is in a rule that is not a character rule" "a range in a rule of words" 
 r = word %x30-39
 G
 
+echo "== groups, optionals and repetition inside a sequence (step 2) =="
+rm -f "$W/t"; gen <<'G'
+hosts = '{' host *( ',' host ) '}'
+host  = word [ "port" int ] ( "tcp" | "udp" )
+G
+check OK   "{ a tcp, b port 22 udp }" "RFC-style list, an optional, an alternation"
+check FAIL "{ a tcp, }"               "a trailing comma"
+check FAIL "{ a port udp }"           "port without its number"
+check FAIL "{ a }"                    "neither tcp nor udp"
+
 echo "== %d65.66 and *m =="
 rm -f "$W/t"; gen <<'G'
 doc  = 1*pair

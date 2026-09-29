@@ -76,10 +76,24 @@ begin
    end if;
 
    declare
+      --  The rules the parser uses, with what the backends do not take
+      --  inside a sequence given a rule of its own.
       Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
-        HBNF_Grammar.Reachable
-          (HBNF_Grammar.Parse_File (To_String (Schema_Path)));
+        HBNF_Grammar.Lift
+          (HBNF_Grammar.Reachable
+             (HBNF_Grammar.Parse_File (To_String (Schema_Path))));
       B     : constant String := To_String (Backend);
+      Output : Unbounded_String;
+
+      procedure Put (S : String) is
+      begin
+         Append (Output, S);
+      end Put;
+
+      procedure Put_Line (S : String) is
+      begin
+         Append (Output, S & ASCII.LF);
+      end Put_Line;
    begin
       if Prefix /= Null_Unbounded_String then
          HBNF_Grammar.Set_Type_Prefix (To_String (Prefix));
@@ -87,47 +101,50 @@ begin
       HBNF_Compilable.Check (Rules, B);
       if B = "c" then
          if Conf then
-            Ada.Text_IO.Put_Line ("===== conf.h =====");
-            Ada.Text_IO.Put (HBNF_C.Emit_Conf_Header (Rules));
-            Ada.Text_IO.Put_Line ("===== conf.c =====");
-            Ada.Text_IO.Put (HBNF_C.Emit_Conf_Source (Rules));
+            Put_Line ("===== conf.h =====");
+            Put (HBNF_C.Emit_Conf_Header (Rules));
+            Put_Line ("===== conf.c =====");
+            Put (HBNF_C.Emit_Conf_Source (Rules));
          else
-            Ada.Text_IO.Put (HBNF_C.Emit (Rules, Idref));
-            Ada.Text_IO.Put (HBNF_C.Emit_Parser (Rules));
-            Ada.Text_IO.Put (HBNF_C.Emit_Lexer (Rules));
+            Put (HBNF_C.Emit (Rules, Idref));
+            Put (HBNF_C.Emit_Parser (Rules));
+            Put (HBNF_C.Emit_Lexer (Rules));
             if Idref then
-               Ada.Text_IO.Put (HBNF_C.Emit_Serializer (Rules));
-               Ada.Text_IO.Put (HBNF_C.Emit_Rebuild (Rules));
+               Put (HBNF_C.Emit_Serializer (Rules));
+               Put (HBNF_C.Emit_Rebuild (Rules));
             end if;
             if Compare then
-               Ada.Text_IO.Put (HBNF_C.Emit_Compare (Rules));
+               Put (HBNF_C.Emit_Compare (Rules));
             end if;
          end if;
       elsif B = "rust" then
-         Ada.Text_IO.Put (HBNF_Rust.Emit (Rules));
-         Ada.Text_IO.Put (HBNF_Rust.Emit_Parser (Rules));
-         Ada.Text_IO.Put (HBNF_Rust.Emit_Lexer (Rules));
+         Put (HBNF_Rust.Emit (Rules));
+         Put (HBNF_Rust.Emit_Parser (Rules));
+         Put (HBNF_Rust.Emit_Lexer (Rules));
          if Conf then
-            Ada.Text_IO.New_Line;
-            Ada.Text_IO.Put (HBNF_Rust.Emit_Conf (Rules));
+            Put ([1 => ASCII.LF]);
+            Put (HBNF_Rust.Emit_Conf (Rules));
          end if;
       elsif B = "zig" then
-         Ada.Text_IO.Put (HBNF_Zig.Emit (Rules));
-         Ada.Text_IO.Put (HBNF_Zig.Emit_Parser (Rules));
-         Ada.Text_IO.Put (HBNF_Zig.Emit_Lexer (Rules));
+         Put (HBNF_Zig.Emit (Rules));
+         Put (HBNF_Zig.Emit_Parser (Rules));
+         Put (HBNF_Zig.Emit_Lexer (Rules));
          if Conf then
-            Ada.Text_IO.New_Line;
-            Ada.Text_IO.Put (HBNF_Zig.Emit_Conf (Rules));
+            Put ([1 => ASCII.LF]);
+            Put (HBNF_Zig.Emit_Conf (Rules));
          end if;
       elsif B = "ada" then
-         Ada.Text_IO.Put (HBNF_Ada.Emit (Rules, To_String (Package_Name)));
-         Ada.Text_IO.Put
+         Put (HBNF_Ada.Emit (Rules, To_String (Package_Name)));
+         Put
            (HBNF_Ada.Emit_Parser (Rules, To_String (Package_Name), Conf));
       else
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error, "unknown backend: " & B);
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       end if;
+      --  Written only once all of it is made, so a schema a backend
+      --  refuses part way leaves no half a file.
+      Ada.Text_IO.Put (To_String (Output));
    end;
 exception
    when E : HBNF_Grammar.Parse_Error =>

@@ -9,6 +9,7 @@ const cases = [_]struct { name: []const u8, text: []const u8 }{
     .{ .name = "lead-comma.bad", .text = @embedFile("lead-comma.bad") },
     .{ .name = "lead-op.bad", .text = @embedFile("lead-op.bad") },
     .{ .name = "loud-twice.bad", .text = @embedFile("loud-twice.bad") },
+    .{ .name = "opts-log.bad", .text = @embedFile("opts-log.bad") },
     .{ .name = "pair-four.bad", .text = @embedFile("pair-four.bad") },
     .{ .name = "pair-one.bad", .text = @embedFile("pair-one.bad") },
     .{ .name = "quiet.conf", .text = @embedFile("quiet.conf") },
@@ -46,6 +47,11 @@ pub fn main() void {
         for (c.pair) |p| std.debug.print(" {s}", .{p});
         std.debug.print("; words", .{});
         for (c.words) |w| std.debug.print(" {s}", .{w});
-        std.debug.print("\n", .{});
+        // the optional, the repetition and the alternation inside the
+        // sequence, each read into a rule of its own (config_1 .. 3)
+        std.debug.print("; opts", .{});
+        if (c.config_1.len > 0) std.debug.print(" log {s}", .{c.config_1[0].word});
+        for (c.config_2) |o| std.debug.print(" {s}", .{o.word});
+        std.debug.print(" {s}\n", .{if (c.config_3 == .on) "on" else "off"});
     }
 }

@@ -131,7 +131,12 @@ unwind-ident passing; each lands as reviewed patches.
 2. **Groups, optionals and repetition inside a sequence**: rewritten into
    hidden named rules before code generation, so all four backends get them
    at once and the three rejections go.  (An optional word then records
-   whether it was there, instead of `0*1( "log" )`.)
+   whether it was there, instead of `0*1( "log" )`.)  *Done 2026-09-28*
+   (`HBNF_Grammar.Lift`): the new rules are named `<rule>_<n>`;
+   tests/portable reads one of each through all four backends.  `'c'` in
+   a rule of words is the one-character literal, and the list commas read
+   `','` (a `comma` rule once the backends take a rule that is only
+   literals and an empty alternative).
 3. **`${name}` templates** for the emitters: each construct's code in a
    small file per language, `$$` for a literal `$`, an unfilled or unused
    hole an error.  Pilot on Zig; the gate is byte-identical output for
