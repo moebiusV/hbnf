@@ -11,6 +11,7 @@ with HBNF_C;
 with HBNF_Match;
 with HBNF_Rust;
 with HBNF_Zig;
+with Templates;
 
 --  Check the parser and the four emitters against two schema files passed on
 --  the command line.  Usage: hbnf_emit_check <server.hbnf> <hbnf_schema.hbnf>
@@ -499,6 +500,68 @@ procedure Hbnf_Emit_Check is
              not Match (Rules, Toks ("ab"), "hosts"));
    end Check_Left_Recursion;
 
+   --  The ${name} template engine (RFCPLAN.md step 3): substitution, $$
+   --  for a literal $, and the unfilled / unused / unbalanced hole errors.
+   procedure Check_Templates is
+      use Templates;
+      use Ada.Exceptions;
+
+      function Refused (Text : String; B : in out Bindings; Needle : String)
+        return Boolean
+      is
+         Len : Natural;
+      begin
+         --  Render in statement context (not a declarative-part initializer),
+         --  so a Template_Error raised here is caught below.
+         Len := Render (Text, B)'Length;
+         return Len = 0 and then False;   --  rendered: not refused
+      exception
+         when E : Templates.Template_Error =>
+            return Has (Ada.Exceptions.Exception_Message (E), Needle);
+      end Refused;
+   begin
+      declare
+         B : Bindings;
+      begin
+         Set (B, "name", "Foo");
+         Set (B, "type", "u8");
+         Check ("template: holes fill and $$ is a literal $",
+                Render ("${name} = ${type}; $$100", B) = "Foo = u8; $100"
+                and then Unused (B) = "");
+      end;
+      declare
+         B : Bindings;
+      begin
+         Set (B, "name", "Foo");
+         Check ("template: an unfilled hole is refused",
+                Refused ("${name} ${missing}", B, "${missing}"));
+      end;
+      declare
+         B : Bindings;
+      begin
+         Set (B, "name", "Foo");
+         Set (B, "unused", "x");
+         declare
+            S : constant String := Render ("${name}", B);
+         begin
+            Check ("template: an unused binding is named",
+                   S = "Foo" and then Unused (B) = "unused");
+         end;
+      end;
+      declare
+         B : Bindings;
+      begin
+         Check ("template: a bare $ is refused",
+                Refused ("a $ b", B, "must be"));
+      end;
+      declare
+         B : Bindings;
+      begin
+         Check ("template: an unterminated hole is refused",
+                Refused ("${name", B, "no closing"));
+      end;
+   end Check_Templates;
+
 begin
    Check_Server (Ada.Command_Line.Argument (1));
    Check_Hbnf (Ada.Command_Line.Argument (2));
@@ -507,6 +570,7 @@ begin
    Check_Abnf;
    Check_Lift;
    Check_Left_Recursion;
+   Check_Templates;
 
    Ada.Text_IO.Put_Line
      ("checks: " & Natural'Image (Checks) &

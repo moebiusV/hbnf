@@ -598,6 +598,20 @@ package body HBNF_Zig is
          return D;
       end Deps;
 
+      --  Render a template and check every binding was used: Render raises on
+      --  an unfilled hole; this raises on a binding no hole used (RFCPLAN.md
+      --  step 3: "an unfilled or unused hole an error").
+      function Tpl (Text : String; B : in out Templates.Bindings) return String is
+         Result : constant String := Templates.Render (Text, B);
+         U      : constant String := Templates.Unused (B);
+      begin
+         if U /= "" then
+            raise Parse_Error with
+              "template binding `${" & U & "}` is never used";
+         end if;
+         return Result;
+      end Tpl;
+
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
          R    : constant Rule := Rules (Idx);
          Base : constant String := Zig_Type (To_String (R.Name));
@@ -609,38 +623,60 @@ package body HBNF_Zig is
 
          case Info.Kind is
             when Scalar =>
-               Append (Buf, "pub const " & Base & " = " &
-                       To_String (Info.Inline_Type) & ";");
+               declare
+                  B : Templates.Bindings;
+               begin
+                  Templates.Set (B, "name", Base);
+                  Templates.Set (B, "type", To_String (Info.Inline_Type));
+                  Append (Buf, Tpl (Templates.Zig_Scalar, B));
+               end;
                Append (Buf, LF);
             when Enum =>
                declare
-                  Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
+                  B     : Templates.Bindings;
+                  Names : constant String_Vectors.Vector :=
+                    Enum_Names (Info.Literals);
+                  Items : U;
                begin
-                  Append (Buf, "pub const " & Base & " = enum {");
-                  Append (Buf, LF);
                   for I in 1 .. Natural (Info.Literals.Length) loop
-                     Append (Buf, "    " &
-                             To_String (Names (I)) & ",");
-                     Append (Buf, LF);
+                     declare
+                        IB : Templates.Bindings;
+                     begin
+                        Templates.Set (IB, "item", To_String (Names (I)));
+                        Append (Items, Tpl (Templates.Zig_Enum_Item, IB));
+                     end;
+                     Append (Items, LF);
                   end loop;
-                  Append (Buf, "};");
-                  Append (Buf, LF);
+                  Templates.Set (B, "name", Base);
+                  Templates.Set (B, "items", To_String (Items));
+                  Append (Buf, Tpl (Templates.Zig_Enum, B));
                end;
-            when Struct =>
-               Append (Buf, "pub const " & Base & " = struct {");
                Append (Buf, LF);
-               for M of Info.Members loop
-                  Append (Buf, "    " &
-                          Zig_Field (To_String (M.Name)) & ": ");
-                  if M.Is_List then
-                     Append (Buf, "[]" &
-                             Zig_Type_Of (To_String (M.Name)) & ",");
-                  else
-                     Append (Buf, Zig_Type_Of (To_String (M.Name)) & ",");
-                  end if;
-                  Append (Buf, LF);
-               end loop;
-               Append (Buf, "};");
+            when Struct =>
+               declare
+                  B     : Templates.Bindings;
+                  Items : U;
+               begin
+                  for M of Info.Members loop
+                     declare
+                        IB : Templates.Bindings;
+                     begin
+                        Templates.Set (IB, "field", Zig_Field (To_String (M.Name)));
+                        if M.Is_List then
+                           Templates.Set (IB, "type",
+                             "[]" & Zig_Type_Of (To_String (M.Name)));
+                        else
+                           Templates.Set (IB, "type",
+                             Zig_Type_Of (To_String (M.Name)));
+                        end if;
+                        Append (Items, Tpl (Templates.Zig_Struct_Item, IB));
+                     end;
+                     Append (Items, LF);
+                  end loop;
+                  Templates.Set (B, "name", Base);
+                  Templates.Set (B, "items", To_String (Items));
+                  Append (Buf, Tpl (Templates.Zig_Struct, B));
+               end;
                Append (Buf, LF);
             when List =>
                null;  --  handled by Emit_List
@@ -666,23 +702,41 @@ package body HBNF_Zig is
 
          if Info.Elem_Members.Is_Empty then
             if Info.Elem_Name = Null_Unbounded_String then
-               Append (Buf, "pub const " & Base & " = [][]const u8;");
+               declare
+                  B : Templates.Bindings;
+               begin
+                  Templates.Set (B, "name", Base);
+                  Append (Buf, Tpl (Templates.Zig_List_Bytes, B));
+               end;
             else
-               Append (Buf, "pub const " & Base & " = []" &
-                       Zig_Type_Of (To_String (Info.Elem_Name)) & ";");
+               declare
+                  B : Templates.Bindings;
+               begin
+                  Templates.Set (B, "name", Base);
+                  Templates.Set (B, "type",
+                    Zig_Type_Of (To_String (Info.Elem_Name)));
+                  Append (Buf, Tpl (Templates.Zig_List_Simple, B));
+               end;
             end if;
          else
-            Append (Buf, "pub const " & Base & "Entry = struct {");
-            Append (Buf, LF);
-            for M of Info.Elem_Members loop
-               Append (Buf, "    " &
-                       Zig_Field (To_String (M.Name)) & ": " &
-                       Zig_Type_Of (To_String (M.Name)) & ",");
-               Append (Buf, LF);
-            end loop;
-            Append (Buf, "};");
-            Append (Buf, LF);
-            Append (Buf, "pub const " & Base & " = []" & Base & "Entry;");
+            declare
+               B     : Templates.Bindings;
+               Items : U;
+            begin
+               for M of Info.Elem_Members loop
+                  declare
+                     IB : Templates.Bindings;
+                  begin
+                     Templates.Set (IB, "field", Zig_Field (To_String (M.Name)));
+                     Templates.Set (IB, "type", Zig_Type_Of (To_String (M.Name)));
+                     Append (Items, Tpl (Templates.Zig_Struct_Item, IB));
+                  end;
+                  Append (Items, LF);
+               end loop;
+               Templates.Set (B, "name", Base);
+               Templates.Set (B, "items", To_String (Items));
+               Append (Buf, Tpl (Templates.Zig_List_Entry, B));
+            end;
          end if;
          Append (Buf, LF);
 
