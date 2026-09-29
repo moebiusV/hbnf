@@ -120,4 +120,7 @@ HBNF_CLI=/tmp/hbnf_cli sh tests/leftrec.sh
 echo "== one schema through every backend (tests/portable) =="
 HBNF_CLI=/tmp/hbnf_cli sh tests/portable.sh
 
+echo "== character rules and UTF-8 (tests/utf8-test.sh) =="
+HBNF_CLI=/tmp/hbnf_cli sh tests/utf8-test.sh
+
 rm -f server.c server.rs server.zig server_schema.ads server_schema-parser.ads server_schema-parser.adb

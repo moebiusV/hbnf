@@ -1,9 +1,10 @@
 #!/bin/sh
 # UTF-8 code-point matching: single-char multi-byte tokens and a multi-byte
-# sequence (maximal munch across bytes).  Runs inside the toolchain image.
+# sequence (maximal munch across bytes).
+#   HBNF_CLI=/path/to/hbnf_cli sh tests/utf8-test.sh      (default ./hbnf_cli)
 set -u
 cd "$(dirname "$0")/.."
-CLI=./hbnf_cli.new
+CLI=${HBNF_CLI:-./hbnf_cli}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 rc=0
