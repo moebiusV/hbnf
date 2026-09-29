@@ -1610,10 +1610,14 @@ package body HBNF_Grammar is
    --    spelling of the one rule it names when case is ignored;
    --  - a `/` is accepted where union and ordered choice mean the same:
    --    between alternatives that each match exactly one code point;
-   --  - a <prose-val> the parser would use stops generation.
-   --  The last two look only at the rules the parser uses (Reachable), so
-   --  a grammar can include an RFC's rules and replace the ones it needs.
-   procedure Finish (Rules : Rule_Vectors.Vector) is
+   --  - a <prose-val> the parser would use stops generation;
+   --  - in a rule that is not a character rule, a single code point (`','`,
+   --    `%x2C`) becomes the one-character literal (`","`), which is how the
+   --    backends match it until the character model (RFCPLAN.md step 4),
+   --    and a range there is refused, since they would drop it.
+   --  The checks look only at the rules the parser uses (Reachable), so a
+   --  grammar can include an RFC's rules and replace the ones it needs.
+   procedure Finish (Rules : in out Rule_Vectors.Vector) is
       use Ada.Characters.Handling;
 
       By_Name : Index_Maps.Map;   --  exact name -> place
@@ -1791,6 +1795,113 @@ package body HBNF_Grammar is
                           & "name, and so would the generated code");
                else
                   Lower.Insert (K, J);
+               end if;
+            end;
+         end loop;
+      end;
+      --  Single code points in the other rules, now the checks are done.
+      declare
+         Used : Path_Sets.Set;
+
+         --  A character rule, as HBNF_Compilable.Is_Char_Rule decides:
+         --  every element one code point in sequence, a range or the name
+         --  of another character rule.
+         function Is_Char (N : String; Depth : Natural) return Boolean is
+         begin
+            if Depth = 0 or else not By_Name.Contains (N) then
+               return False;
+            end if;
+            declare
+               R : constant Rule := Rules (By_Name (N));
+            begin
+               if R.Jet_Code /= Null_Unbounded_String or else R.Pattern.Is_Empty
+               then
+                  return False;
+               end if;
+               for E of R.Pattern loop
+                  if E.Min /= 1 or else E.Max /= 1 then
+                     return False;
+                  end if;
+                  case E.Kind is
+                     when Char_Range | Alt =>
+                        null;
+                     when Name =>
+                        if not Is_Char (To_String (E.Name), Depth - 1) then
+                           return False;
+                        end if;
+                     when others =>
+                        return False;
+                  end case;
+               end loop;
+               return True;
+            end;
+         end Is_Char;
+
+         function UTF8 (C : Natural) return String is
+            function B (X : Natural) return Character is (Character'Val (X));
+         begin
+            if C < 16#80# then
+               return [1 => B (C)];
+            elsif C < 16#800# then
+               return [B (16#C0# + C / 64), B (16#80# + C mod 64)];
+            elsif C < 16#10000# then
+               return [B (16#E0# + C / 4096), B (16#80# + (C / 64) mod 64),
+                       B (16#80# + C mod 64)];
+            else
+               return [B (16#F0# + C / 262144),
+                       B (16#80# + (C / 4096) mod 64),
+                       B (16#80# + (C / 64) mod 64), B (16#80# + C mod 64)];
+            end if;
+         end UTF8;
+
+         function Hex (C : Natural) return String is
+            D : constant String := "0123456789ABCDEF";
+         begin
+            if C < 16 then
+               return [D (C + 1)];
+            end if;
+            return Hex (C / 16) & D (C mod 16 + 1);
+         end Hex;
+
+         procedure Literalize (V : in out Element_Vectors.Vector;
+                               In_Rule : String; Is_Used : Boolean) is
+         begin
+            for I in 1 .. Natural (V.Length) loop
+               declare
+                  E : constant Element_Access := V (I);
+               begin
+                  if E.Kind = Char_Range then
+                     if E.Lo = E.Hi then
+                        V.Replace_Element
+                          (I, new Element'(Kind => Literal, Min => E.Min,
+                                           Max => E.Max,
+                                           Lit => To_Unbounded_String
+                                                    (UTF8 (E.Lo)),
+                                           No_Case => False));
+                     elsif Is_Used then
+                        Report ("rule `" & In_Rule & "`: the range %x"
+                                & Hex (E.Lo) & "-" & Hex (E.Hi) & " is in a "
+                                & "rule that is not a character rule, where "
+                                & "it is not matched yet (RFCPLAN.md step "
+                                & "4); give it a rule of its own (`DIGIT = "
+                                & "%x30-39`) and use the name");
+                     end if;
+                  elsif E.Kind = Group then
+                     Literalize (E.Items, In_Rule, Is_Used);
+                  end if;
+               end;
+            end loop;
+         end Literalize;
+      begin
+         for R of Reachable (Rules) loop
+            Used.Include (To_String (R.Name));
+         end loop;
+         for J in 1 .. Natural (Rules.Length) loop
+            declare
+               N : constant String := To_String (Rules (J).Name);
+            begin
+               if not Is_Char (N, 32) then
+                  Literalize (Rules (J).Pattern, N, Used.Contains (N));
                end if;
             end;
          end loop;

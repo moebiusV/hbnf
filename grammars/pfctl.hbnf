@@ -10,7 +10,7 @@
 ;   literals are the inline jets.
 ;
 ; parse.y's left-recursive lists are written as it writes them, with its
-; `comma` (a "," that may be left out) written out: `hostlist = hostlist ","
+; `comma` (a ',' that may be left out) written out: `hostlist = hostlist ','
 ; ipspec | hostlist ipspec | ipspec`.  Its right-recursive `string` and
 ; `varstring` are `1*string` and `1*numberstring`.  An optional `[ X ]` in a
 ; sequence is flattened to a two-way
@@ -101,7 +101,7 @@ portitem    = loportval portbin hiportval
             | unaryop loportval
             | loportval
 
-portlist    = portlist "," portitem | portlist portitem | portitem
+portlist    = portlist ',' portitem | portlist portitem | portitem
 
 portspec    = portitem
             | "{" portlist "}"
@@ -147,7 +147,7 @@ xhost       = "no-route"
             | host
             | "!" host
 
-hostlist    = hostlist "," ipspec | hostlist ipspec | ipspec
+hostlist    = hostlist ',' ipspec | hostlist ipspec | ipspec
 
 ipspec      = "any"
             | xhost
@@ -161,7 +161,7 @@ from        = "from" ipportspec
 to          = "to" ipportspec
 os          = "os" string
             | "os" "{" oslist "}"
-oslist      = oslist "," string | oslist string | string
+oslist      = oslist ',' string | oslist string | string
 
 ; from os to, with from / os / to each optional (plus the "all" shorthand)
 fromto      = "all"
@@ -183,7 +183,7 @@ logopt      = "all"
             | "user"
             | "to" string
 
-logopts     = logopts "," logopt | logopts logopt | logopt
+logopts     = logopts ',' logopt | logopts logopt | logopt
 
 log         = "log" "(" logopts ")"
             | "log"
@@ -200,7 +200,7 @@ ifitem      = "any"
 ifitem_not  = "!" ifitem
             | ifitem
 
-iflist      = iflist "," ifitem_not | iflist ifitem_not | ifitem_not
+iflist      = iflist ',' ifitem_not | iflist ifitem_not | ifitem_not
 
 interface   = "on" ifitem_not
             | "on" "{" iflist "}"
@@ -208,7 +208,7 @@ interface   = "on" ifitem_not
 ; ---------------------------------------------------------------- proto / flags / icmp
 
 protoitem   = string | int
-protolist   = protolist "," protoitem | protolist protoitem | protoitem
+protolist   = protolist ',' protoitem | protolist protoitem | protoitem
 
 proto       = "proto" protoitem
             | "proto" "{" protolist "}"
@@ -230,8 +230,8 @@ icmp6item   = icmp6type "code" string
             | icmp6type "code" int
             | icmp6type
 
-icmplist    = icmplist "," icmpitem | icmplist icmpitem | icmpitem
-icmp6list   = icmp6list "," icmp6item | icmp6list icmp6item | icmp6item
+icmplist    = icmplist ',' icmpitem | icmplist icmpitem | icmpitem
+icmp6list   = icmp6list ',' icmp6item | icmp6list icmp6item | icmp6item
 
 icmpspec    = "icmp-type" icmpitem
             | "icmp-type" "{" icmplist "}"
@@ -255,8 +255,8 @@ giditem     = gidlo portbin gidhi
             | unaryop gidlo
             | gidlo
 
-uidlist     = uidlist "," uiditem | uidlist uiditem | uiditem
-gidlist     = gidlist "," giditem | gidlist giditem | giditem
+uidlist     = uidlist ',' uiditem | uidlist uiditem | uiditem
+gidlist     = gidlist ',' giditem | gidlist giditem | giditem
 
 uids        = uiditem
             | "{" uidlist "}"
@@ -282,7 +282,7 @@ stateopt    = "max" int
             | "pflow"
             | string int                     ; tcp.first 120
 
-stateoptlist = stateoptlist "," stateopt | stateoptlist stateopt | stateopt
+stateoptlist = stateoptlist ',' stateopt | stateoptlist stateopt | stateopt
 
 keep        = "no" "state"
             | "keep" "state" "(" stateoptlist ")"
@@ -305,7 +305,7 @@ poolopt     = "bitmask"
 
 poolopts    = | poolopts poolopt
 
-redirhostlist = redirhostlist "," host | redirhostlist host | host
+redirhostlist = redirhostlist ',' host | redirhostlist host | host
 
 redirspec   = host "weight" int
             | host
@@ -346,7 +346,7 @@ filterset   = prio
             | "tos" tos
             | "delay" int
 
-filtersetlist = filtersetlist "," filterset
+filtersetlist = filtersetlist ',' filterset
               | filtersetlist filterset
               | filterset
 
@@ -359,7 +359,7 @@ scrubopt    = "no-df"
             | "reassemble" string
             | "random-id"
 
-scrubopts   = scrubopts "," scrubopt | scrubopts scrubopt | scrubopt
+scrubopts   = scrubopts ',' scrubopt | scrubopts scrubopt | scrubopt
 
 statelim_filter_opt = "state" "limiter" string "(" "block" ")"
             | "state" "limiter" string "(" "no-match" ")"
@@ -472,15 +472,15 @@ statelock   = "if-bound" | "floating"
 stringall   = "all" | string
 
 timeoutspec = string int
-timeoutlist = timeoutlist "," timeoutspec
+timeoutlist = timeoutlist ',' timeoutspec
             | timeoutlist timeoutspec
             | timeoutspec
 limitspec   = string int
-limitlist   = limitlist "," limitspec | limitlist limitspec | limitspec
+limitlist   = limitlist ',' limitspec | limitlist limitspec | limitspec
 
 syncookieval = "never" | "adaptive" | "always"
 syncookieopt = string int "%"
-syncookieoptlist = syncookieoptlist "," syncookieopt
+syncookieoptlist = syncookieoptlist ',' syncookieopt
                  | syncookieoptlist syncookieopt
                  | syncookieopt
 
@@ -509,7 +509,7 @@ option      = "set" "reassemble" yesno "no-df"
 
 antispoofif = ifitem
             | "(" ifitem ")"
-antispoofiflist = antispoofiflist "," antispoofif
+antispoofiflist = antispoofiflist ',' antispoofif
                 | antispoofiflist antispoofif
                 | antispoofif
 antispoofifspc = "for" antispoofif
@@ -527,7 +527,7 @@ antispoof  = "antispoof" logquick antispoofifspc af antispoofopts
 tablespec  = xhost "weight" int
            | xhost
            | "{" tablehostlist "}"
-tablehostlist = tablehostlist "," tablespec
+tablehostlist = tablehostlist ',' tablespec
               | tablehostlist tablespec
               | tablespec
 

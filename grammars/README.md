@@ -55,7 +55,12 @@ language C
 - **Character literals** — `'a'` is a single code point (C escapes allowed),
   and `-` ranges two code-point designators: `'a'-'c'` = `%x61-63`, the
   endpoint order not mattering.  `-` is a range only after `'` or `%`, so it
-  never collides with `-` in a rule name (`close-ma9`).
+  never collides with `-` in a rule name (`close-ma9`).  In a rule that is
+  not a character rule, a single character (`','`, `%x2C`) is the
+  one-character literal: `'{'` and `"{"` are the same there.  Write a
+  single character in `'…'` and a longer literal in `"…"`.  A range in such
+  a rule is refused until the character model (RFCPLAN.md step 4); name it
+  in a rule of its own.
 - **Jets** — a rule whose body is hand-written scanner code instead of a
   token sequence:
 
@@ -79,7 +84,7 @@ language C
 | `x : y \| z` | `x = y \| z` |
 | `x_l : x_l y \| y` | as written: `xs = xs y \| y`, read as a loop |
 | `x : /* empty */ \| x_l` with `x_l : x_l y \| y` | `xs = \| xs y` (the empty alternative first, where parse.y writes `/* empty */`) |
-| `x_l : y \| x_l comma y`, with `comma : ',' \| /* empty */` | `xs = xs "," y \| xs y \| y`: the comma written out |
+| `x_l : y \| x_l comma y`, with `comma : ',' \| /* empty */` | `xs = xs ',' y \| xs y \| y`: the comma written out |
 | `x_l : y x_l \| y` (right-recursive) | `xs = 1*( y )` |
 | `x : y \| /* empty */` / `[ y ]` | flattened: `prefix y \| prefix` |
 | `{ … }` action (TAILQ/alloc/logic) | dropped — the binder builds the tree |
@@ -88,7 +93,7 @@ language C
 Two shape rules keep the generated parser simple and match `parse.y` exactly:
 
 - **Lists are rules of their own**, written as parse.y writes them: a
-  left-recursive `_l` rule stays left-recursive (`hosts = hosts "," host |
+  left-recursive `_l` rule stays left-recursive (`hosts = hosts ',' host |
   hosts host | host`), and a block body references it (`"{" hosts "}"`).
   Left recursion is read as a loop, so a long list costs no stack.  A list
   parse.y writes right-recursive is `*( y )` or `1*( y )`.  Never nest

@@ -7,8 +7,8 @@
 ;   host()/parsecommunity()/the asdot scanner -> the inline jets below
 ;
 ; parse.y's lists are written as it writes them, left-recursive
-; (`port_list = port_list "," port_item | port_list port_item | port_item`:
-; its `comma`, a "," that may be left out, written out); an optional
+; (`port_list = port_list ',' port_item | port_list port_item | port_item`:
+; its `comma`, a ',' that may be left out, written out); an optional
 ; `[ X ]` suffix is flattened to a two-way alternation — the same shapes
 ; parse.y spells out, minus the newline scaffolding (the lexer skips newlines).
 ; `rib` is listed after `conf_main` so that `rde rib Loc-RIB include filtered`
@@ -97,11 +97,11 @@ ashi       = asnumber                          ; as-number range high end
 
 as_set     = "as-set" string "{" as_set_l "}"
            | "as-set" string "{" "}"
-as_set_l   = as_set_l "," asnumber | as_set_l asnumber | asnumber
+as_set_l   = as_set_l ',' asnumber | as_set_l asnumber | asnumber
 
 prefixset    = "prefix-set" string "{" prefixset_l "}"
              | "prefix-set" string "{" "}"
-prefixset_l  = prefixset_l "," prefixsetitem
+prefixset_l  = prefixset_l ',' prefixsetitem
              | prefixset_l prefixsetitem
              | prefixsetitem
 prefixsetitem = prefix prefixlenop
@@ -109,7 +109,7 @@ prefixsetitem = prefix prefixlenop
 
 roa_set     = "roa-set" "{" roa_set_l "}"
             | "roa-set" "{" "}"
-roa_set_l   = roa_set_l "," roa_set_item
+roa_set_l   = roa_set_l ',' roa_set_item
             | roa_set_l roa_set_item
             | roa_set_item
 roa_set_item = prefixsetitem "source-as" asnumber expires
@@ -121,10 +121,10 @@ origin_set  = "origin-set" string "{" roa_set_l "}"
 
 aspa_set    = "aspa-set" "{" aspa_set_l "}"
             | "aspa-set" "{" "}"
-aspa_set_l  = aspa_set_l "," aspa_elm | aspa_set_l aspa_elm | aspa_elm
+aspa_set_l  = aspa_set_l ',' aspa_elm | aspa_set_l aspa_elm | aspa_elm
 aspa_elm    = "customer-as" asnumber expires "provider-as" "{" aspa_tas_l "}"
             | "customer-as" asnumber "provider-as" "{" aspa_tas_l "}"
-aspa_tas_l  = aspa_tas_l "," aspa_tas | aspa_tas_l aspa_tas | aspa_tas
+aspa_tas_l  = aspa_tas_l ',' aspa_tas | aspa_tas_l aspa_tas | aspa_tas
 ; a provider AS, with an address family bgpd accepts and ignores
 ; (regress bgpd.conf.14: `provider-as { 1, 2 inet, 7 inet6 }` prints as
 ; `{ 1 2 7 }`)
@@ -209,7 +209,7 @@ ipportspec  = ipspec "port" portspec
 ipspec      = "any" | prefix
 portspec    = port_item
             | "{" port_list "}"
-port_list   = port_list "," port_item | port_list port_item | port_item
+port_list   = port_list ',' port_item | port_list port_item | port_item
 port_item   = unaryop loport
             | loport binaryop hiport
             | range
@@ -218,7 +218,7 @@ port        = int | string
 
 proto       = "proto" protoitem
             | "proto" "{" proto_list "}"
-proto_list  = proto_list "," protoitem | proto_list protoitem | protoitem
+proto_list  = proto_list ',' protoitem | proto_list protoitem | protoitem
 protoitem   = string | int
 
 flags       = fmatch "/" fset
@@ -228,7 +228,7 @@ flags       = fmatch "/" fset
 
 icmpspec    = "icmp-type" icmp_item
             | "icmp-type" "{" icmp_list "}"
-icmp_list   = icmp_list "," icmp_item | icmp_list icmp_item | icmp_item
+icmp_list   = icmp_list ',' icmp_item | icmp_list icmp_item | icmp_item
 icmp_item   = icmptype "code" string
             | icmptype "code" int
             | icmptype
@@ -236,7 +236,7 @@ icmptype    = string | int
 
 lengthspec  = length_item
             | "{" length_list "}"
-length_list = length_list "," length_item
+length_list = length_list ',' length_item
             | length_list length_item
             | length_item
 length_item = unaryop lolen
@@ -344,11 +344,11 @@ direction   = "from" | "to"
 
 ribspec     = "rib" string
             | "rib" "{" filter_rib_l "}"
-filter_rib_l = filter_rib_l "," string | filter_rib_l string | string
+filter_rib_l = filter_rib_l ',' string | filter_rib_l string | string
 
 filter_peer_h = filter_peer
               | "{" filter_peer_l "}"
-filter_peer_l = filter_peer_l "," filter_peer
+filter_peer_l = filter_peer_l ',' filter_peer
               | filter_peer_l filter_peer
               | filter_peer
 filter_peer   = "any"
@@ -364,7 +364,7 @@ filter_prefix_h = af prefixlenop
                 | "prefix" "{" filter_prefix_m "}"
 filter_prefix_m = *( filter_prefix_grp )
 filter_prefix_grp = filter_prefix "," | filter_prefix | "{" filter_prefix_l "}"
-filter_prefix_l = filter_prefix_l "," filter_prefix
+filter_prefix_l = filter_prefix_l ',' filter_prefix
                 | filter_prefix_l filter_prefix
                 | filter_prefix
 filter_prefix   = prefix prefixlenop
@@ -372,7 +372,7 @@ filter_prefix   = prefix prefixlenop
 
 filter_as_h   = filter_as_t
               | "{" filter_as_t_l "}"
-filter_as_t_l = filter_as_t_l "," filter_as_t
+filter_as_t_l = filter_as_t_l ',' filter_as_t
               | filter_as_t_l filter_as_t
               | filter_as_t
 filter_as_t   = filter_as_type filter_as
@@ -380,7 +380,7 @@ filter_as_t   = filter_as_type filter_as
               | filter_as_type "as-set" string
 filter_as_l_h = *( filter_as_grp )
 filter_as_grp = filter_as "," | filter_as | "{" filter_as_l "}"
-filter_as_l   = filter_as_l "," filter_as | filter_as_l filter_as | filter_as
+filter_as_l   = filter_as_l ',' filter_as | filter_as_l filter_as | filter_as
 filter_as     = "neighbor-as"
               | equalityop aslo
               | aslo binaryop ashi
@@ -416,7 +416,7 @@ prefixlenop = "or-longer"
 filterset   = *( setclause )
 setclause   = "set" filterset_opt
             | "set" "{" filterset_l "}"
-filterset_l = filterset_l "," filterset_opt
+filterset_l = filterset_l ',' filterset_opt
             | filterset_l filterset_opt
             | filterset_opt
 

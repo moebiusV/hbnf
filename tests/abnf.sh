@@ -113,6 +113,18 @@ doc   = 1*digit
 digit = DIGIT
 G
 
+echo "== ',' in a rule of words: the literal \",\" =="
+rm -f "$W/t"; gen <<'G'
+hosts    = '{' hostlist '}'
+hostlist = hostlist ',' host | hostlist host | host
+host     = word
+G
+check OK   "{ a, b c }" "commas that may be left out"
+check FAIL "{ a, }"     "a trailing comma"
+refuse "is in a rule that is not a character rule" "a range in a rule of words" <<'G'
+r = word %x30-39
+G
+
 echo "== %d65.66 and *m =="
 rm -f "$W/t"; gen <<'G'
 doc  = 1*pair

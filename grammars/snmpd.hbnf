@@ -129,7 +129,7 @@ cmd             = string
 host            = "{" hostlist "}"
                 | hostdef
 
-hostlist        = | hostlist "," hostdef | hostlist hostdef
+hostlist        = | hostlist ',' hostdef | hostlist hostdef
 
 hostdef         = string "oid" oid hostauth srcaddr
                 | string "oid" oid hostauth

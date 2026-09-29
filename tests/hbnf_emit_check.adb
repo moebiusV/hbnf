@@ -395,6 +395,20 @@ procedure Hbnf_Emit_Check is
              Refused ("r = ""a"" ""b"" / ""c""" & LF, "ABNF's union"));
       Check ("=/ with no = before it is refused",
              Refused ("r =/ ""a""" & LF, "which no `=` before it defines"));
+      declare
+         R : constant Rule_Vectors.Vector :=
+           Parse ("r = w ',' w" & LF & "w = word" & LF
+                  & "ne = '!' '='" & LF);
+      begin
+         Check ("',' in a rule of words is the literal "",""",
+                R (1).Pattern (2).Kind = Literal
+                and then To_String (R (1).Pattern (2).Lit) = ",");
+         Check ("'!' in a character rule stays a code point",
+                R (3).Pattern (1).Kind = Char_Range);
+      end;
+      Check ("a range in a rule of words is refused",
+             Refused ("r = w %x30-39" & LF & "w = word" & LF,
+                      "is in a rule that is not a character rule"));
       Check ("names that differ only in case are refused",
              Refused ("r = a A" & LF & "a = %x41" & LF & "A = %x42" & LF,
                       "differ only in case"));
