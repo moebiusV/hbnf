@@ -110,7 +110,7 @@ package body HBNF_Compilable is
 
    --  Ordered choice keeps the first branch that matches, so a branch that
    --  begins with the whole of an earlier one can never be reached: the
-   --  earlier one matches first (`"keypair" name / "keypair" name "key" k`
+   --  earlier one matches first (`"keypair" name | "keypair" name "key" k`
    --  never reads the key).  Reject it rather than parse less than the
    --  grammar says.
    procedure Check_Shadowing (Rule_Name : String; V : Element_Vectors.Vector)

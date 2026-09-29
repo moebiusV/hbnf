@@ -3,24 +3,28 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 
---  HBNF_Grammar: a schema for mapping a preparsed *generic* AST (a tree of named
---  nodes carrying symbol/string values, children and comments) to typed C/Ada.
+--  HBNF_Grammar: the schema reader.  A schema is a grammar from which the
+--  emitters (hbnf_c, hbnf_rust, hbnf_zig, hbnf_ada) generate a parser and
+--  its typed tree, and which the interpreter (HBNF_Match) runs directly.
 --
---  The schema notation is RFC 5234 ABNF, with `|` in place of `/` and
---  the other additions ABNF.md lists.  Types are *not* part of the
---  grammar: they are a reserved set of built-in rule names the code emitter
---  interprets.  `str` is a quoted c-string; `atom` (synonym `word`) is a bare
---  token, a symbol or a number, that the matcher narrows against the typed
---  core types (`int`, `dec`, `float`, `u8`..`u64`, `i8`..`i64`, `bool`,
---  `flag`) with full type checking.  This package is only the ABNF parser: it
---  turns the schema text into a flat list of rules and has no notion of type,
---  struct, enum or flag.  The emitter walks these rules and reads the shapes:
+--  The notation borrows RFC 5234's rule syntax, but it is not ABNF: `|` is
+--  ordered choice, a bare literal is case-sensitive, and a literal matches
+--  one token of the generated lexer (ABNF.md §4 lists the differences, and
+--  RFCPLAN.md the plan to close them).  Types are *not* part of the
+--  grammar: they are a reserved set of built-in rule names the emitters
+--  interpret.  `str` is a quoted string; `atom` (synonym `word`) is a
+--  bareword, not a number; `int`, `u8`..`u64`, `i8`..`i64`, `bool` and
+--  `flag` are the typed scalars (the interpreter also has `dec` and
+--  `float`).  This package only reads the text: it turns the schema into a
+--  flat list of rules and has no notion of type, struct, enum or flag.  The
+--  emitters walk these rules and read the shapes:
 --
 --     name      = str                      ; a field (single core type)
---     tls       = flag                     ; a flag (the `flag` core type)
+--     tls       = flag                     ; yes/no (the `flag` core type)
 --     direction = "in" | "out"             ; an enum (literal alternation)
 --     listen    = "on" iface "port" port   ; a directive (literals + refs)
---     server    = name 1*( listen | root ) ; a struct (ref + children)
+--     options   = 1*( listen | root )      ; a list (a rule of its own)
+--     server    = name options             ; a struct (ref + children)
 package HBNF_Grammar is
 
    use Ada.Strings.Unbounded;
@@ -72,11 +76,13 @@ package HBNF_Grammar is
       Leading_Comment : Unbounded_String := Null_Unbounded_String;
       Trailing_Comment : Unbounded_String := Null_Unbounded_String;
       Jet_Code        : Unbounded_String := Null_Unbounded_String;
-      --  Non-empty for a jet: `name = %{ <code> %}`.  The code is a
-      --  hand-written scanner body emitted verbatim; Pattern stays empty.
+      --  Non-empty for a jet: `name = %scan{ <code> }` (or `name = { <code> }`).
+      --  The code is a hand-written scanner body emitted verbatim; Pattern
+      --  stays empty.
       Action_Code     : Unbounded_String := Null_Unbounded_String;
-      --  Non-empty for an action jet: `name = pattern { <C-code> }`, or a
-      --  separate `action name { <C-code> }` (e.g. in a binding file).  The
+      --  Non-empty for an action jet: `name = pattern %action{ <C-code> }`
+      --  (or `pattern { <C-code> }`), or a separate `action name { <C-code> }`
+      --  (e.g. in a binding file).  The
       --  code is a fragment that builds the daemon's conf struct, run once
       --  after a successful parse in the bottom-up bind walk (children before
       --  parents), with the rule's node as `n` and the daemon's conf global
@@ -106,7 +112,7 @@ package HBNF_Grammar is
    package Word_Vectors is new
      Ada.Containers.Vectors (Positive, Unbounded_String);
 
-   --  Parse HBNF_Grammar (ABNF) source text into a flat list of rules, in order.
+   --  Parse schema text into a flat list of rules, in order.
    function Parse (Text : String) return Rule_Vectors.Vector;
 
    --  Parse a schema file, resolving top-level `include "path"` directives
@@ -135,12 +141,12 @@ package HBNF_Grammar is
    --  written in this language.
    function Language return String;
 
-   --  A raw `%{ ... %}` block at the top of the file (emitted before the
-   --  declarations), or "" when absent.
+   --  The raw `{ ... }` code blocks before the rules (emitted before the
+   --  declarations), joined in include order; "" when there are none.
    function Preamble return String;
 
-   --  A raw `%{ ... %}` block after the rules (emitted after the parser), or
-   --  "" when absent.
+   --  The raw `{ ... }` code blocks after the rules (emitted after the
+   --  parser), joined in include order; "" when there are none.
    function Epilogue return String;
 
    --  Extra bareword characters declared by a top-level `wordchars "..."`,

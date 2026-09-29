@@ -138,9 +138,9 @@ package body HBNF_Zig is
       return To_String (Buf);
    end Zig_Escape;
 
-   --  True when every `/`-alternative is exactly one Literal — the shape an
-   --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`), one that
-   --  names another rule, or a single literal (no `/`) is not an enum.
+   --  True when every `|`-alternative is exactly one Literal — the shape an
+   --  enum can hold.  A multi-token alternative (`"a" "b" | "c" "d"`), one that
+   --  names another rule, or a single literal (no `|`) is not an enum.
    function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
       N       : constant Natural := Natural (Els.Length);
       St      : Natural := 1;
@@ -281,8 +281,8 @@ package body HBNF_Zig is
       end Zig_Type_Of;
 
       --  The underlying scalar Zig type a rule name resolves to, chasing
-      --  single-name aliases and jets to their target (so `str / word` and
-      --  `ipv4 / ipv6` both collapse to `[]const u8`).  "" if not scalar.
+      --  single-name aliases and jets to their target (so `str | word` and
+      --  `ipv4 | ipv6` both collapse to `[]const u8`).  "" if not scalar.
       function Resolve_Type (N : String; Depth : Natural := 0) return String is
          C : constant String := Scalar_Zig_Type (N);
       begin
@@ -370,7 +370,7 @@ package body HBNF_Zig is
 
       --  Walk a pattern, collecting referenced rule names (deduped, in order)
       --  as Members (Is_List marks a repeated reference), the literal strings,
-      --  and whether any '/' alternation appears.
+      --  and whether any '|' alternation appears.
       procedure Collect
         (Els     : Element_Vectors.Vector;
          Members : in out Member_Vectors.Vector;
@@ -949,7 +949,7 @@ package body HBNF_Zig is
          return False;
       end Has_Alt;
 
-      --  True when every `/`-alternative is exactly one Literal — the shape
+      --  True when every `|`-alternative is exactly one Literal — the shape
       --  an enum can hold.
       function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
          N       : constant Natural := Natural (Els.Length);
@@ -1561,7 +1561,7 @@ package body HBNF_Zig is
                Append (Buf, LF);
             end if;
          elsif SU /= "" then
-            --  A scalar union (str / word, ipv4 / ipv6): try each branch as a
+            --  A scalar union (str | word, ipv4 | ipv6): try each branch as a
             --  single scalar read; the first that matches yields the value.
             declare
                St : Natural := 1;

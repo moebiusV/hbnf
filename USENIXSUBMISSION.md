@@ -174,7 +174,7 @@ listen    = "on" iface "port" port
 iface     = word
 port      = u16
 root      = str
-redirects = *( "to" dest / "to-group" group )
+redirects = *( "to" dest | "to-group" group )
 dest      = str
 group     = word
 aliases   = 1*alias
@@ -187,7 +187,7 @@ Three things are happening that plain ABNF does not do:
 1. **Named subrules become typed fields.**  `server` has fields `name`, `listen`,
    `root`, `redirects`, `aliases`, `tls`; the generator emits a struct (or
    record/enum) whose members are those rules' types.  A rule that is a
-   literal alternation (`"in" / "out"`) becomes an enum; a rule that is a
+   literal alternation (`"in" | "out"`) becomes an enum; a rule that is a
    repetition (`1*alias`) becomes a list.
 
 2. **Core rules are typed sugar.**  `str`, `word`, `int`, `u16`, `flag`, and
@@ -236,19 +236,29 @@ brings the ntpd binding's memory to byacc's: on a 100,000-sensor config
 and 82 MB when the whole file was tokenized and parsed at once.  The parse
 tree is the same daemon struct either way.
 
-### 3.3 Extensions over ABNF
+### 3.3 Where the notation departs from ABNF
 
-- **Multi-line rules.**  A newline before a `/` is a continuation, so a long
-  alternation reads as a column of alternatives rather than one horizontal
-  line — which is what makes the httpd grammar (§5) readable.
-- **Repetition.**  `*`, `1*`, and `n*m` with the usual ABNF semantics, plus
-  `[...]` as shorthand for `0*1`.
-- **Comments.**  `;` to end of line (the IETF convention), with a `#` comment
-  convention in the emitted lexers for the config files themselves.
-- **Unicode.**  The input is treated as UTF-8 and decoded to code points; the
-  matcher operates on code points, and the emitted parsers emit UTF-8.  A
-  literal can name a non-ASCII character (`"café"`), which is meaningful only
-  once the lexer's unit is a code point rather than a byte.
+Repetition (`*`, `1*`, `n*m`), `[...]` and `;` comments are ABNF's own.
+What differs:
+
+- **Ordered choice.**  `|` separates alternatives and means PEG's ordered
+  choice, which is how parse.y grammars are read: the first alternative that
+  matches wins.  A later alternative that begins with the whole of an
+  earlier one could never match, and is refused.  ABNF's `/` means union;
+  hbnf reserves it for that.
+- **Multi-line rules.**  A newline before a `|` continues the rule, so a
+  long alternation reads as a column of alternatives rather than one
+  horizontal line — which is what makes the httpd grammar (§5) readable.
+  ABNF continues a rule on any indented line instead.
+- **Case.**  A literal is case-sensitive, like a parse.y keyword; `%i"…"`
+  (RFC 7405) matches any case.
+- **Tokens.**  A literal matches one token of the generated lexer, so
+  `"!="` needs a character rule (`NE = '!' '='`) rather than a literal.
+- **Left recursion.**  `xs = xs "," x | x`, as parse.y writes lists, is read
+  as a loop.
+- **Unicode.**  Character rules decode UTF-8 and match code points, so a
+  range like `%x20-10FFFF` matches multi-byte characters; the emitted
+  parsers emit UTF-8.
 
 ### 3.4 The privsep wire shape
 
@@ -291,7 +301,7 @@ forms on its own.  Everything else — barewords, numbers, operators — is left
 to the grammar.  A bareword is just a rule:
 
 ```
-bareword = 1*( ALPHA / DIGIT / "." / "_" / "-" )
+bareword = 1*( ALPHA | DIGIT | "." | "_" | "-" )
 ```
 
 and a number is `1*DIGIT` with an optional sign.  This is why the "who decides
@@ -316,7 +326,7 @@ differ per rule.
 The same logic reaches quoted strings.  A C string is a regular language:
 
 ```
-str = DQUOTE *( %x20-21 / %x23-7E / ( "\" DQUOTE ) ) DQUOTE
+str = DQUOTE *( %x20-21 | %x23-7E | ( "\" DQUOTE ) ) DQUOTE
 ```
 
 so it too is sugar over the character stream, not a lexer special case.  The
@@ -450,7 +460,7 @@ Read top to bottom, matching the RFC's packet diagram:
 
     ; Ethernet II (RFC 894) — 6 + 6 + 2 octets
     ethernet   = dst:48 src:48 ethertype:16 payload:*u8
-    ethertype  = 0x0800 / 0x0806 / 0x86DD      ; IPv4 · ARP · IPv6
+    ethertype  = 0x0800 | 0x0806 | 0x86DD      ; IPv4 · ARP · IPv6
 
     ; ARP (RFC 826) — pure fixed-width (Ethernet + IPv4 case)
     arp = htype:16 ptype:16 hlen:8 plen:8 oper:16
@@ -514,11 +524,13 @@ measures the generator with them; on the toy ruleset peak RSS falls from
 The second lesson is about text.  A configuration file is bytes on disk but
 characters to a human; an ASCII-only parser treats a multi-byte UTF-8 sequence
 as three unrelated bytes, so `"café"` in a comment or literal is mangled on the
-way through.  hbnf treats the schema and the config as UTF-8 end to end: the
-input is decoded to code points on the way in, the matcher operates on code
-points, and the emitted parser writes UTF-8 on the way out.  A literal can name
-a non-ASCII character, and a comment can contain one, because the lexer's unit
-is a code point, not a byte.
+way through.  hbnf treats the schema and the config as UTF-8 end to end.  A
+character rule decodes the code point under the cursor, so `%x20-10FFFF`
+matches a multi-byte character as one; literals, words and quoted strings are
+compared byte for byte, which is exact for UTF-8, since a code point has only
+one encoding; and the emitted parser writes UTF-8 on the way out.  A literal
+can name a non-ASCII character, and a comment can contain one.  (The
+interpreter still works byte by byte.)
 
 This is the same move as §4, seen from the encoding side: making the character
 stream the unit of matching is what makes UTF-8 free.  A scanner may still
@@ -711,16 +723,16 @@ alternative's fields.
 Two research directions follow from the design.
 
 **A grammar library, with includes and overrides.**  The nine OpenBSD schemas
-already repeat the same boilerplate — `string = str / word`, `yesno =
-"yes" / "no"`, IPv4/IPv6 and port handling — so a schema should be able to
-`include "stdlib.hbnf"` and override individual definitions locally.  yacc has
+already repeat the same boilerplate — `string = str | word`, `yesno =
+"yes" | "no"`, IPv4/IPv6 and port handling — so a schema should be able to
+`include "stdlib.hbnf"` and override individual definitions locally.
+`include` exists (the daemons share `commonconf.hbnf`), and a later
+definition overrides an earlier one.  yacc has
 no grammar-level include at all (its only `#include` reaches the verbatim C
 blocks, not the rules), so this is hbnf exceeding yacc rather than matching it;
 a token override and a rule override become the same operation, since a token
-*is* a rule.  The open question is the override semantics — local-shadows-
-include, last-definition-wins, or an explicit `override` — and how a
-cross-checked jet from a library behaves when a program overrides only its
-fallback.
+*is* a rule.  The open question is how a cross-checked jet from a
+library behaves when a program overrides only its fallback.
 
 **From recognizer to compiler-compiler.**  A "compiler-compiler" is a
 recognizer plus a way to write passes over the tree it produces, and every pass

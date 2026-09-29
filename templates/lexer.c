@@ -46,12 +46,22 @@ lexed_t lex(const char *text) {
     while (text[i]) {
         char c = text[i];
         {
-            /* Hand-written jet scanners (schema `%{ %}` blocks) win first. */
+            /* Hand-written jet scanners (the schema's `%scan{ }` blocks) win first. */
             tok_kind_t jk;
             size_t jl = jet_dispatch(text, i, tlen, &jk);
             if (jl > 0) {
                 if (!lex_push(&r, &cap, (token_t){ .text = text + i, .len = jl, .line = line, .col = col, .kind = jk, .kwid = KWID_NONE })) goto oom;
                 i += jl; col += jl;
+                continue;
+            }
+        }
+        {
+            /* Character-layer scanners (char-level rules) run after jets. */
+            tok_kind_t ck;
+            size_t cl = char_dispatch(text, i, tlen, &ck);
+            if (cl > 0) {
+                if (!lex_push(&r, &cap, (token_t){ .text = text + i, .len = cl, .line = line, .col = col, .kind = ck, .kwid = KWID_NONE })) goto oom;
+                i += cl; col += cl;
                 continue;
             }
         }

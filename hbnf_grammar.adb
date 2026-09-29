@@ -5,7 +5,7 @@ with Ada.Text_IO;
 package body HBNF_Grammar is
 
    --  Schema-level metadata gathered by Parse: the declared language (default
-   --  "C") and the optional raw `%{ ... %}` preamble and epilogue blocks.
+   --  "C") and the optional raw `{ ... }` preamble and epilogue blocks.
    Schema_Language : Unbounded_String := To_Unbounded_String ("C");
    Preamble_Code   : Unbounded_String := Null_Unbounded_String;
    Epilogue_Code   : Unbounded_String := Null_Unbounded_String;
@@ -331,8 +331,9 @@ package body HBNF_Grammar is
                   Col := Col + (I - Start + 1);
                end;
             when '=' => Emit (T_Eq);     I := I + 1;  Col := Col + 1;
-            --  `|` separates alternatives, as in BNF, EBNF and yacc.
-            --  ABNF's `/` is refused rather than read two ways.
+            --  `|` separates alternatives, as in BNF, EBNF and yacc, and
+            --  means ordered choice.  ABNF's `/` (union) is refused until it
+            --  is implemented (RFCPLAN.md, decision 1).
             when '|' => Emit (T_Bar);  I := I + 1;  Col := Col + 1;
             when '/' =>
                raise Parse_Error with
@@ -940,7 +941,7 @@ package body HBNF_Grammar is
       return V;
    end Parse_Pattern;
 
-   --  ABNF "alternation": concatenation *( "/" concatenation ), flattened
+   --  An alternation: concatenation *( "|" concatenation ), flattened
    --  with Alt separator elements, used for a group/bracket's inside and a
    --  rule's whole RHS; the caller checks the terminating token.
    function Parse_Alternation (P : in out Parser)
@@ -949,9 +950,9 @@ package body HBNF_Grammar is
    begin
       Append_All (V, Parse_Pattern (P));
       loop
-         --  A newline before `/` is a continuation, not the end of the rule:
+         --  A newline before `|` is a continuation, not the end of the rule:
          --  allow a multi-line alternation (`x = a` newline `/ b`).  Peek
-         --  past the newline run and commit only if the next token is `/`.
+         --  past the newline run and commit only if the next token is `|`.
          declare
             Pos : Positive := P.Pos;
          begin
@@ -1183,7 +1184,7 @@ package body HBNF_Grammar is
       Name  : Unbounded_String;
       Name_Line : Positive := 1;
    begin
-      --  Header: an optional `%{ ... %}` preamble and/or `language X`, each
+      --  Header: an optional `{ ... }` preamble and/or `language X`, each
       --  preceded by blank lines and `;` comment lines (which are discarded
       --  as header material).  Lookahead keeps a leading comment block that
       --  belongs to the first rule instead.

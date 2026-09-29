@@ -30,7 +30,9 @@ not yet implemented: **D**, **Fortran**, **Free Pascal**, **Nim**, **Odin**,
 
 **Borrowed from ABNF:** the rule syntax — `name = elements`, concatenation,
 `( )`, `[ ]`, `n*m` repetition, `"…"` literals, `;` comments.  Alternatives
-are separated by `|`, as in BNF and yacc, not ABNF's `/`.
+are separated by `|`, ordered choice, as in PEG and as parse.y grammars are
+read.  ABNF's `/` (union) is refused for now; RFCPLAN.md plans it, and the
+other steps that let an RFC's ABNF compile as written.
 
 **Extended downward (design):** a schema can describe input below the token:
 - characters, through character-level rules and named character classes;
@@ -65,7 +67,7 @@ there yet (§3).
 | Octets | the unit of `binary` mode; `*u8` payloads; `dst:[6]` (§4.7) | No |
 | Code points | UTF-8 decoded on the way in; the matcher works on code points; a literal can name `"café"` (§3.3, §5.2) | All four backends: yes. Each lexer's character-layer scanners decode UTF-8 (`hbnf_decode_utf8` in C, `Decode_Utf8` in Ada, `decode_utf8` in Rust/Zig) and match code points, so `%u20AC` (€) and `%x20-10FFFF` match multi-byte sequences. The interpreter still compares bytes (§2, §5). |
 | Characters | character-level rules compiled to scanners (`int = ["-"] 1*DIGIT`, `money = 1*DIGIT "." 2DIGIT`); named classes `digit`, `alpha`, `hexdig`; `where` refinements; the lexer generated from these rules, taking the longest match (§4.1–4.3) | Partial. The numeric terminals `%b`/`%d`/`%o`/`%u`/`%x` and ranges parse (into a `Char_Range` element), and every backend compiles character-level rules to scanners with a maximal-munch `char_dispatch` (single-char, multi-char sequence, list elements); named classes come from `grammars/ascii.hbnf`. `where` is still deferred. |
-| Tokens | jets as the fast path, each with its character-level fallback written above it; `wordchars` | Yes. A fixed lexer template (`Templates.C_Lexer`) forms words, numbers, strings and punctuation; jets run first, in declaration order, first match wins; `wordchars` widens the word set. |
+| Tokens | jets as the fast path, each with its character-level fallback written above it; `wordchars` | Yes. The lexer tries the jets first, in declaration order, first match wins; then the character rules, longest match; then a fixed template (`templates/lexer.c` and its Rust, Zig and Ada twins) that skips blanks and comments and forms words, numbers, quoted strings and punctuation.  `wordchars` widens the word set. RFCPLAN.md decision 7 replaces the template with grammar. |
 
 The rest of this document describes the implemented token layer, and marks
 where the design says otherwise.
@@ -83,12 +85,12 @@ shapes compiled into parsers for a different language.
 | `name = elements` | ✓ | ✓ | |
 | Rule name `ALPHA *(ALPHA / DIGIT / "-")` | ✓ | ✓ | hbnf also allows `_` |
 | Case-insensitive rule names (§2.1) | ✗ | ✗ | `E` does not find `e`. Adopting ABNF's rule would make the README's `digit` the same rule as ABNF's `DIGIT`. |
-| `=/` incremental alternatives (§3.3) | ✗ (C: `redefinition of struct e`) | ✗ (the first definition wins; the `=/` alternative is dropped) | The schema parser takes it as a second definition |
+| `=/` incremental alternatives (§3.3) | ✗ refused: `/` is ABNF's alternative | ✗ | Planned (RFCPLAN.md) |
 | One definition per rule | ✗ | ✗ | Duplicates are not diagnosed |
 | Continuation by indentation (§4 `c-wsp`) | ✗ `expected `name =`` | ✗ | hbnf continues a rule only on a newline before `\|` |
 | Newline inside `( … )` | ✗ `expected ')'` | ✗ | |
 | `;` comments | ✓ | ✓ | hbnf also copies them into the generated code |
-| At least one element per alternative | accepts empty | accepts empty | `e = "a" word /` is accepted; ABNF forbids it |
+| At least one element per alternative | accepts empty | accepts empty | `e = "a" word \|` is accepted; ABNF forbids it |
 
 ### 3.2 Operators (RFC 5234 §3)
 
@@ -135,8 +137,8 @@ interpreter.
 |---|---|---|---|---|
 | The unit a rule matches | characters | tokens today (a fixed lexer); characters and below in the design | — | — |
 | `"abc"` | case-insensitive | case-sensitive, like parse.y keywords | `ABC x` is rejected by both engines | `%s"abc"` is the ABNF spelling of hbnf's meaning |
-| `"a b"`, `"!="` | a sequence of characters | exactly one token | never matches | `"a" "b"`; multi-character operators need a jet today (pfctl's `ne`/`le`/`ge`) |
-| `A / B` | union | ordered choice: the first alternative that matches is kept, and a later failure does not come back for the next | `e = p "c"`, `p = "a" / "a" "b"` rejects `a b c` in the interpreter; the compiled backends refuse the schema, since `"a" "b"` begins with the whole of `"a"` before it and can never match | longest alternative first |
+| `"a b"`, `"!="` | a sequence of characters | exactly one token | never matches | `"a" "b"`; a multi-character operator is a character rule (`NE = '!' '='`) or a jet (pfctl's `ne`/`le`/`ge` still are) |
+| `A / B` | union | hbnf writes `A \| B`: ordered choice, the first alternative that matches is kept, and a later failure does not come back for the next.  `/` is refused. | `e = p "c"`, `p = "a" \| "a" "b"` rejects `a b c` in the interpreter; the compiled backends refuse the schema, since `"a" "b"` begins with the whole of `"a"` before it and can never match | longest alternative first |
 | `*x x` | at least one `x` | never matches: `*x` takes every `x` | rejected by C, Rust and the interpreter | `1*x`, or restructure |
 | A rule referenced twice in one alternative | two occurrences | one field named after the rule | *rejected* with a suggested alias. Previously the second value overwrote the first, in 37 places across the daemon grammars. | an alias rule: `port_hi = port` |
 | Lowercase core names (`int`, `str`, `word`, …) | ordinary rule names | reserved types | — | don't define rules with those names |
@@ -145,15 +147,17 @@ interpreter.
 
 | Extension | Syntax | Status and caveats |
 |---|---|---|
-| Typed core rules | `str`, `atom`/`word`, `int`, `bool`, `flag`, `u8…u64`, `i8…i64`; `dec`, `float` | C and Rust lack `dec` and `float` (interpreter only). `atom` rejects numbers in both engines, although `hbnf_grammar.ads` says otherwise. `bool` accepts any word (`maybe` → false). The compiled lexers reject `-5` for `int`/`iN`; the interpreter accepts it. Compiled `u16` accepts `70000`, truncated. `u7` emits `uint7_t`, which doesn't compile. |
+| Typed core rules | `str`, `atom`/`word`, `int`, `bool`, `flag`, `u8…u64`, `i8…i64`; `dec`, `float` | C and Rust lack `dec` and `float` (interpreter only). `atom` rejects numbers in both engines. `bool` accepts any word (`maybe` → false). The compiled lexers reject `-5` for `int`/`iN`; the interpreter accepts it. Compiled `u16` accepts `70000`, truncated. `u7` emits `uint7_t`, which doesn't compile. |
 | Tree typing from rule shape | — | Literal alternation → enum; single core type → scalar; `*( x )` → list (a whole rule); sequence → struct; keyword-led alternations get a kind tag; alias rules (`src = host`) name a field with another rule's type. Plus `free_<rule>`, visit/map, `--conf`, `--idref`. |
-| Jets | `name = { code }` | Code in the schema's `language`. The spec comment says `%{ … %}`, which is rejected. The other backends get stubs that return 0: pfctl's C jets make `port != 80` parse in C and fail in Rust. |
-| Schema directives | `language C\|Rust\|Zig\|Ada`, `wordchars "…"`, `include "file"`, `listops { … }`, `prefix "pf_"` | `include` is relative to the including file, and a local rule overrides an included one. `prefix` goes in front of every generated C type and struct tag (`--prefix=` overrides it). `listops { head { … } entry { … } … }` names each of the eight list operations and its raw C, with `@name@`/`@elem@`/`@h@`/`@e@`/`@v@` substituted in; the nine daemon grammars set them to OpenBSD's `TAILQ_*` from `<sys/queue.h>`. An operation without an override falls back to hbnf's own head/tail singly-linked list. |
+| Jets | `name = %scan{ code }`, or `name = { code }` | Code in the schema's `language`, which sees `s`, `pos` and `len` and returns the length it matched. The other backends get stubs that return 0: pfctl's C jets make `port != 80` parse in C and fail in Rust. A character rule does the same job in all four backends. |
+| Actions | `pattern %action{ code }`, `pattern { code }`, or `action name { code }` | C only. Run bottom-up after a statement parses, with the rule's node as `n`; `bind_error()` reports as parse.y's `yyerror` does. The ntpd and unwind bindings (`grammars/bind/`) are built from them. |
+| Schema directives | `language C\|Rust\|Zig\|Ada`, `wordchars "…"`, `include "file"`, `listops { … }`, `prefix "pf_"`, `conf struct …`, `entry name` | `include` is relative to the including file, and a local rule overrides an included one. `prefix` goes in front of every generated C type and struct tag (`--prefix=` overrides it). `listops { head { … } entry { … } … }` names each of the eight list operations and its raw C, with `@name@`/`@elem@`/`@h@`/`@e@`/`@v@` substituted in; the nine daemon grammars set them to OpenBSD's `TAILQ_*` from `<sys/queue.h>`. An operation without an override falls back to hbnf's own head/tail singly-linked list. |
 | Statements, macros, includes | `statements`, `macros <rule>`, `includes <rule>` | C only (the other backends warn and parse the whole file). `statements`: the root must be a `*( … )` list; the parser reads one statement at a time, one root entry each, as parse.y's `grammar : grammar entry '\n'`. A statement ends at a newline outside braces, quotes and comments; backslash-newline and a next line starting with `{` continue it. A failed statement is reported and the parse goes on. `macros varset`: a statement the rule matches whole defines a macro (first token the name, the tokens after `=` joined by spaces the value), and `$name` at the start of a word, outside quotes and comments, expands to it, glued to what follows; `cmdline_symset("n=v")` defines one the config cannot redefine. `includes include`: a statement the rule matches whole reads the file its last token names, relative to the working directory, as parse.y does. A file (`parse_file`, `parse_config`, an include) is read a block at a time, not whole. |
 | Keyword table | `keywords { all any anchor … }` | C only. The words the lexer reserves, as parse.y's `lookup()` table: a letter-led literal in the table is a keyword (interned, refused as a `word`, dispatched on by id); any other literal matches a word by its text and reserves nothing, as parse.y's `STRING` compared with `strcmp`. A listed word no rule uses is still reserved. Without the directive every letter-led literal is a keyword. The nine daemon grammars carry their parse.y's table; `tests/bytetest/keywords.sh` checks that they match. |
 | Code blocks | `{ … }` before the rules (preamble) and after (epilogue) | Copied verbatim |
 | Escapes in literals | `\a \b \f \n \r \t \v \\ \" \' \xHH` | `\xHH` reads hex digits greedily, as in C |
-| Rule names with `_`, comments carried into output, newline-before-`/` continuation | — | ✓ |
+| Rule names with `_`, comments carried into output, newline-before-`\|` continuation | — | ✓ |
+| Left recursion | `xs = xs "," x \| x` | Direct left recursion is read as a loop (`x ("," x)*`) in all four backends; indirect left recursion is refused |
 
 The list container is the one place the generated C is driven by
 grammar-supplied fragments: the `listops { … }` block names each list operation
@@ -193,15 +197,16 @@ RFC 5234 §4's `c-nl` (`comment / CRLF`) repeated.
 
 ## 7. Closing the gaps
 
-"Generation-time" means the generated parser pays nothing.
+"Generation-time" means the generated parser pays nothing.  RFCPLAN.md
+orders this work, and adds what an RFC's ABNF needs beyond it.
 
 | Gap | Proposal | Runtime cost |
 |---|---|---|
 | Whitespace rules | §6, starting with `LF` | +1 token per line |
 | Groups, optionals and repetition inside a sequence | Emit them (inline loops, or synthetic rules), then drop the rejection | none |
-| The character layer | the design of §2: character-level rules compiled to scanners in every backend, which also retires the C-only jet stubs | same as a hand-written jet |
+| The character layer | done in all four backends (CHARLAYER.md); converting the daemons' jets to character rules retires the C-only jet stubs | same as a hand-written jet |
 | `=/` | append alternatives, also across `include`, so a daemon can extend commonconf's `string` | none |
-| Duplicate definitions | error | none |
+| Duplicate definitions | a later `=` overrides the earlier one, in the same file or another (RFCPLAN.md decision 3) | none |
 | Case-insensitive rule names | fold for lookup; generated identifiers keep the spelling from the definition | none |
 | ABNF continuation; newlines in `( )`; `*m` | adopt | none |
 
@@ -215,11 +220,4 @@ into schema errors:
 
 | Where | Says | Code |
 |---|---|---|
-| `hbnf_grammar.ads` | "The schema notation is plain RFC 5234 ABNF" | §1–§4 |
-| `hbnf_grammar.ads` | `atom` is "a symbol or a number" | `atom` rejects numbers |
-| `hbnf_grammar.ads` | jets are `name = %{ <code> %}` | `%` is rejected; the syntax is `{ … }` |
-| `USENIXSUBMISSION.md` §3.3 | repetition, `[…]`, `;` comments are "extensions over ABNF", with "the usual ABNF semantics" | They are ABNF. Bounds were ignored before this series and still are outside C; `*m` isn't parsed. |
-| §3.3 | multi-line rules as an extension | Replaces ABNF's continuation rule rather than extending it |
-| §3.3, §5.2 | input decoded to code points | all four backends: yes (§2); the interpreter: not yet |
-| §4.1–§4.3 | a code-point lexer, `ALPHA`/`DIGIT`/`DQUOTE`/`%x` in examples, `where`, longest match | all four backends: character-level rules compile to scanners with UTF-8 decode and maximal munch (`where` still deferred). Jets are first match, in declaration order. |
-| Status paragraph | zero-copy slices and the arena as "remaining increments" | Both have landed |
+| `USENIXSUBMISSION.md` §4.1–§4.3 | a code-point lexer generated from grammar rules, `where`, longest match | character rules compile to scanners with UTF-8 decode and maximal munch, but a fixed template still forms words, numbers and strings, and `where` is not implemented. Jets are first match, in declaration order. |

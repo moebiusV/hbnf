@@ -9,9 +9,9 @@
 ;   building blocks below; the "!="/"<="/">="/"><" operators and the address
 ;   literals are the inline jets.
 ;
-; parse.y's `_l` list rules become top-level `xs = *( y "," / y )` lists; an
+; parse.y's `_l` list rules become top-level `xs = *( y "," | y )` lists; an
 ; optional `comma` (empty / "," / newline) is dropped, so a list element is
-; `y "," / y`.  An optional `[ X ]` in a sequence is flattened to a two-way
+; `y "," | y`.  An optional `[ X ]` in a sequence is flattened to a two-way
 ; alternation (see the pfhead/anchorhead chains for the interleaved optionals
 ; of a filter rule).  A newline ends a statement (`statements`), one rule per
 ; statement as in parse.y.

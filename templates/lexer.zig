@@ -20,6 +20,16 @@ pub fn lex(alloc: std.mem.Allocator, text: []const u8) ![]Token {
                 continue;
             }
         }
+        {
+            // Character-level scanners (char rules) next.
+            var ck: Kind = .eof;
+            const cl = char_dispatch(text, i, text.len, &ck);
+            if (cl > 0) {
+                try toks.append(alloc, .{ .kind = ck, .text = text[i..i + cl], .line = line, .col = col });
+                i += cl; col += cl;
+                continue;
+            }
+        }
         if (c == ' ' or c == '\t' or c == '\r') { i += 1; col += 1; }
         else if (c == '\n') { i += 1; line += 1; col = 1; }
         // backslash-newline continues the line, as parse.y's lgetc()

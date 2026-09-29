@@ -15,6 +15,27 @@ three initials spell **BNF** (Backus–Naur Form), so the name also reads as
 "Hartmeier's BNF". When explaining it to someone who already knows the genre,
 call it "parse.y style".
 
+## Two products
+
+This directory holds two things:
+
+1. **The crate** (the rest of this README): read an OpenBSD-style config
+   into a generic tree and walk it.
+2. **The parser generator**, `hbnf_cli`: read a schema — a grammar in hbnf's
+   ABNF-like notation — and generate a parser and its typed tree in C,
+   Rust, Zig or Ada.
+
+       hbnf_cli grammars/ntpd.hbnf --backend=c|rust|zig|ada
+       hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf   # ntpd's parse_config
+
+   The generator's documents:
+   - `grammars/README.md`: the notation, and the nine daemon grammars
+     translated from their `parse.y`;
+   - `ABNF.md`: the notation against RFC 5234, feature by feature;
+   - `CHARLAYER.md`: character rules, numeric terminals and UTF-8;
+   - `RFCPLAN.md`: the plan to compile RFC grammars as written;
+   - `USENIXSUBMISSION.md`: the design paper, with measurements.
+
 ## Naming
 
 - **HBNF** — the notation, and the Ada package (`HBNF.Parse`, `HBNF.Tree`).

@@ -7,7 +7,7 @@
 ;   host()/parsecommunity()/the asdot scanner -> the inline jets below
 ;
 ; parse.y's `_l` list rules become top-level `xs = *( y )` lists; its optional
-; `comma` separator (empty / "," / newline) becomes `y "," / y`; an optional
+; `comma` separator (empty / "," / newline) becomes `y "," | y`; an optional
 ; `[ X ]` suffix is flattened to a two-way alternation — the same shapes
 ; parse.y spells out, minus the newline scaffolding (the lexer skips newlines).
 ; `rib` is listed after `conf_main` so that `rde rib Loc-RIB include filtered`

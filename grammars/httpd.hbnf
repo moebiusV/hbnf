@@ -7,12 +7,12 @@
 ;
 ; parse.y's `optcommanl`-separated flag runs and its `[ X ]` optionals are kept
 ; as top-level lists (`tlsopts = *( tlsopt )`) and explicit alternations
-; (`prefix X / prefix`) — the same shape parse.y spells out, minus the comma
+; (`prefix X | prefix`) — the same shape parse.y spells out, minus the comma
 ; and newline scaffolding (the generated lexer skips newlines).
 ;
 ; There are no jets: httpd's `port` is `PORT (NUMBER | STRING)` at the grammar
 ; level — getservice() only validates the token it is handed — so it becomes
-; the `"port" (int / string)` alternation below, not a hand-written scanner.
+; the `"port" (int | string)` alternation below, not a hand-written scanner.
 
 language C
 wordchars "*$@%"

@@ -319,9 +319,9 @@ package body HBNF_C is
       return Names;
    end Enum_Names;
 
-   --  True when every `/`-alternative is exactly one Literal — the shape an
-   --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`), one that
-   --  names another rule, or a single literal (no `/`) is not an enum.
+   --  True when every `|`-alternative is exactly one Literal — the shape an
+   --  enum can hold.  A multi-token alternative (`"a" "b" | "c" "d"`), one that
+   --  names another rule, or a single literal (no `|`) is not an enum.
    function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
       N       : constant Natural := Natural (Els.Length);
       St      : Natural := 1;
@@ -616,7 +616,7 @@ package body HBNF_C is
    end Collect;
 
    --  The distinct leading keywords of a keyword-headed alternation: the
-   --  first literal of each '/' branch, deduped in order; empty if there is
+   --  first literal of each '|' branch, deduped in order; empty if there is
    --  no alternation (a plain sequence is not tagged) or if any branch does
    --  not begin with a literal.
    function Leading_Tags (Els : Element_Vectors.Vector)
@@ -839,8 +839,8 @@ package body HBNF_C is
       end C_Type_Of;
 
       --  The underlying scalar C type a rule name resolves to, chasing
-      --  single-name aliases and jets to their target (so `str / word` and
-      --  `ipv4 / ipv6` both collapse to `const char *`).  "" if not scalar.
+      --  single-name aliases and jets to their target (so `str | word` and
+      --  `ipv4 | ipv6` both collapse to `const char *`).  "" if not scalar.
       function Resolve_Type (N : String; Depth : Natural := 0) return String is
          C : constant String := Scalar_C_Type (N);
       begin
@@ -928,7 +928,7 @@ package body HBNF_C is
 
       --  Walk a pattern, collecting referenced rule names (deduped, in order)
       --  as Members (Is_List marks a repeated reference), the literal strings,
-      --  and whether any '/' alternation appears.
+      --  and whether any '|' alternation appears.
       procedure Collect
         (Els     : Element_Vectors.Vector;
          Members : in out Member_Vectors.Vector;
@@ -2509,8 +2509,8 @@ package body HBNF_C is
          return False;
       end Has_Alt;
 
-      --  True when every `/`-alternative is exactly one Literal — the shape an
-      --  enum can hold.  A multi-token alternative (`"a" "b" / "c" "d"`) or one
+      --  True when every `|`-alternative is exactly one Literal — the shape an
+      --  enum can hold.  A multi-token alternative (`"a" "b" | "c" "d"`) or one
       --  that names another rule is not an enum.
       function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
          N       : constant Natural := Natural (Els.Length);
@@ -2990,7 +2990,7 @@ package body HBNF_C is
          end if;
       end First_Of;
 
-      --  The FIRST set of each '/' branch, flattened into one vector: branch
+      --  The FIRST set of each '|' branch, flattened into one vector: branch
       --  Br's keywords are Flat (Offs (Br) .. Offs (Br + 1) - 1).  Offs is
       --  empty when any branch's leading keyword is unbounded (a core scalar
       --  or jet), so the caller falls back to linear probing.
@@ -3565,7 +3565,7 @@ package body HBNF_C is
                Append (Buf, LF);
             end if;
          elsif SU /= "" then
-            --  A scalar union (str / word, ipv4 / ipv6): try each branch as a
+            --  A scalar union (str | word, ipv4 | ipv6): try each branch as a
             --  single scalar read; the first that matches yields the value.
             declare
                St : Natural := 1;
@@ -5022,7 +5022,7 @@ package body HBNF_C is
       end Ref_Kind;
 
       --  A string leaf: a rule that resolves to `const char *`, directly or
-      --  as a union of such rules (commonconf's `string = str / word /
+      --  as a union of such rules (commonconf's `string = str | word |
       --  wildcard`), which Resolve_Type leaves unresolved.
       function Is_String (Name : String) return Boolean is
          J : constant Natural := Find (Rules, Alias_Target (Rules, Name));

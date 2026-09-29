@@ -15,6 +15,13 @@ pub fn lex(text: &str) -> Vec<Token> {
             i += jl; col += jl;
             continue;
         }
+        // Character-level scanners (char rules) next.
+        let (cl, ck) = char_dispatch(b, i, b.len());
+        if cl > 0 {
+            toks.push(Token { kind: ck, text: text[i..i + cl].to_string(), line, col });
+            i += cl; col += cl;
+            continue;
+        }
         if c == b' ' || c == b'\t' || c == b'\r' { i += 1; col += 1; }
         else if c == b'\n' { i += 1; line += 1; col = 1; }
         // backslash-newline continues the line, as parse.y's lgetc()

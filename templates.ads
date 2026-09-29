@@ -56,7 +56,7 @@ package Templates is
      "    while (text[i]) {" & LF &
      "        char c = text[i];" & LF &
      "        {" & LF &
-     "            /* Hand-written jet scanners (schema `%{ %}` blocks) win first. */" & LF &
+     "            /* Hand-written jet scanners (the schema's `%scan{ }` blocks) win first. */" & LF &
      "            tok_kind_t jk;" & LF &
      "            size_t jl = jet_dispatch(text, i, tlen, &jk);" & LF &
      "            if (jl > 0) {" & LF &
