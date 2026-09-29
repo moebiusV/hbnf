@@ -10,8 +10,8 @@
 ;                          ->  ipv6 inline jets below
 ;
 ; parse.y's option lists (listen_opts_l / server_opts_l / sensor_opts_l) are
-; kept as top-level lists (`serveropts = *( serveropt )`); each option rule is a
-; keyword-led alternation so hbnf tags every list node with a `kind` (which
+; written as it writes them, left-recursive (`serveropts = | serveropts
+; serveropt`); each option rule is a keyword-led alternation so hbnf tags every list node with a `kind` (which
 ; option matched), which the action jet switches on.  A bare keyword option
 ; (`trusted`) carries no value — its `kind` alone says it is set.
 
@@ -29,7 +29,7 @@ include "commonconf.hbnf"
 
 
 
-config     = *( entry )
+config     = | config entry
 
 entry      = "listen" "on" address listenopts
            | "query" "from" address
@@ -41,17 +41,17 @@ entry      = "listen" "on" address listenopts
 
 rtable     = "rtable" int
 
-listenopts = *( rtable )
+listenopts = | listenopts rtable
 
 ; parse.y's STRING takes any bareword its lexer allows, IPv6 literals
 ; included, so the places parse.y reads an address or a url take `address`
 ; (a quoted string, a word, `*` or an IPv6 literal), not `string`.  urllist:
 ; a url, then the addresses to use for it.
-urllist    = 1*( address )
+urllist    = urllist address | address
 
-serveropts = *( serveropt )
+serveropts = | serveropts serveropt
 serveropt  = "weight" int | "trusted"
 
-sensoropts = *( sensoropt )
+sensoropts = | sensoropts sensoropt
 sensoropt  = "correction" int | "refid" string | "stratum" int
            | "weight" int | "trusted"

@@ -6,10 +6,11 @@
 ;   NUMBER                 ->  lexed but never accepted (no rule names NUMBER)
 ;   { ... } tree actions   ->  implicit — the binder builds the tree
 ;
-; parse.y's `iface_block : optnl ifaceopts_l` block is a hoisted top-level list
-; (`ifaceopts = *( ifaceopt )`) and the `{ iface_block }` body is the explicit
-; `"{" ifaceopts "}"` — the same shape parse.y spells out, minus the newline
-; scaffolding (the generated lexer skips newlines).
+; parse.y's `iface_block : optnl ifaceopts_l` block is a list of its own,
+; left-recursive as parse.y writes it (`ifaceopts = | ifaceopts ifaceopt`),
+; and the `{ iface_block }` body is the explicit `"{" ifaceopts "}"` — the
+; same shape parse.y spells out, minus the newline scaffolding (the generated
+; lexer skips newlines).
 ;
 ; The address / vendor-id / client-id checks (inet_pton, strnunvis, the hex
 ; client-id decode) all run in parse.y's actions, not in its scanner — there is
@@ -30,18 +31,18 @@ include "commonconf.hbnf"
 
 
 
-config     = *( entry )
+config     = | config entry
 
 entry      = varset
            | interface
 
 ; one or more STRING tokens (parse.y's `string : string STRING | STRING`)
-stringlist = 1*string
+stringlist = stringlist string | string
 
 varset     = string "=" stringlist                ; macro name = value…
 
 interface  = "interface" string "{" ifaceopts "}"
-ifaceopts  = *( ifaceopt )
+ifaceopts  = | ifaceopts ifaceopt
 
 ifaceopt   = "send" "vendor" "class" "id" string
            | "send" "client" "id" string

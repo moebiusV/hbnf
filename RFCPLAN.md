@@ -122,6 +122,12 @@ unwind-ident passing; each lands as reviewed patches.
    identifiers would clash); `%X41` and `%I"…"` read as `%x41` and
    `%i"…"`; and the CLI prints a schema error whole (GNAT keeps 200
    characters of an exception's message).
+1b. **Lists as parse.y writes them.**  *Done 2026-09-28.*  The nine
+   grammars' lists that parse.y writes left-recursive are left-recursive
+   (90 rules), with parse.y's `comma` written out (`xs = xs "," y | xs y |
+   y`).  That also makes the comma lists accept what parse.y accepts: no
+   trailing comma, no empty `{ }` list in bgpd, and snmpd's leading comma.  Lists parse.y writes right-recursive stay
+   `*( y )`.
 2. **Groups, optionals and repetition inside a sequence**: rewritten into
    hidden named rules before code generation, so all four backends get them
    at once and the three rejections go.  (An optional word then records

@@ -5,9 +5,10 @@
 ;   STRING / NUMBER        ->  string (str/word/ipv6) / int
 ;   { ... } tree actions   ->  implicit — the binder builds the tree
 ;
-; parse.y's `_l` list rules and optional keywords are kept as top-level lists
-; (`userspecs = *( userspec )`) and explicit alternations, minus the newline
-; scaffolding (the generated lexer skips newlines).
+; parse.y's lists are written as it writes them, left-recursive
+; (`userspecs = | userspecs userspec`), and its optional keywords are
+; explicit alternations, minus the newline scaffolding (the generated lexer
+; skips newlines).
 ;
 ; snmpd's yylex is generic — the OID/engineid "parsing" happens in the
 ; actions (mib_string2oid / fromhexstr / inet_pton), not in the lexer, so
@@ -35,7 +36,13 @@ include "commonconf.hbnf"
 
 
 
-config          = *( include | varset | conf_main | system | object | mib )
+config          =             ; nothing, or
+                | config include
+                | config varset
+                | config conf_main
+                | config system
+                | config object
+                | config mib
 
 include         = "include" string
 
@@ -68,11 +75,11 @@ listen          = "listen" "on" "udp" string port listenflags
 port            = "port" string
                 | "port" int
 
-listenflags     = *( listenflag )
+listenflags     = | listenflags listenflag
 listenflag      = "read" | "write" | "notify" | "snmpv1" | "snmpv2c" | "snmpv3"
 
 agentx          = "agentx" agentxopts
-agentxopts      = *( agentxopt )
+agentxopts      = | agentxopts agentxopt
 agentxopt       = "path" string
                 | "owner" int
                 | "owner" string
@@ -122,7 +129,7 @@ cmd             = string
 host            = "{" hostlist "}"
                 | hostdef
 
-hostlist        = *( hostdef "," | hostdef )
+hostlist        = | hostlist "," hostdef | hostlist hostdef
 
 hostdef         = string "oid" oid hostauth srcaddr
                 | string "oid" oid hostauth
@@ -134,7 +141,7 @@ hostauth        = "snmpv2c" "community" string
                 | "snmpv3" usmauthopts
                 | usmauthopts
 
-usmauthopts     = *( usmauthopt )
+usmauthopts     = | usmauthopts usmauthopt
 
 usmauthopt      = usmuser
                 | seclevel
@@ -147,7 +154,7 @@ seclevel_type   = "none" | "auth" | "enc"
 
 srcaddr         = "source-address" string
 
-userspecs       = *( userspec )
+userspecs       = | userspecs userspec
 
 userspec        = "authkey" string
                 | "auth" auth

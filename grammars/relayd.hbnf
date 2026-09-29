@@ -5,10 +5,12 @@
 ;   STRING / NUMBER        ->  string (str/word) / int
 ;   { ... } tree actions   ->  implicit — the binder builds the tree
 ;
-; parse.y's `_l` list rules and its `'{' optnl X '}'` blocks are kept as
-; top-level lists (`opts = *( opt )`) and the `/* empty */` optionals are
-; flattened to explicit alternations — the same shape parse.y spells out,
-; minus the newline scaffolding (the generated lexer skips newlines).
+; parse.y's `_l` list rules are written as it writes them, left-recursive
+; (`rdropts = | rdropts rdropt`); its right-recursive lists and `'{' optnl X
+; '}'` blocks are top-level lists (`tableopts = *( tableopt )`), and the
+; `/* empty */` optionals are flattened to explicit alternations — the same
+; shape parse.y spells out, minus the newline scaffolding (the generated
+; lexer skips newlines).
 ;
 ; relayd's yylex is generic; address resolution happens in the actions
 ; (host() -> host_ip / host_dns / host_if), not the lexer.  The gaps the
@@ -44,8 +46,15 @@ include "commonconf.hbnf"
 
 
 
-config        = *( include | varset | conf_main | rdr | tabledef | relay
-                 | proto | router )
+config        =               ; nothing, or
+              | config include
+              | config varset
+              | config conf_main
+              | config rdr
+              | config tabledef
+              | config relay
+              | config proto
+              | config router
 
 include       = "include" string
 
@@ -81,7 +90,7 @@ conf_main     = "interval" int
 ; ---- redirections ------------------------------------------------------
 
 rdr           = "redirect" string "{" rdropts "}"
-rdropts       = *( rdropt )
+rdropts       = | rdropts rdropt
 rdropt        = "forward" "to" tablespec interface
               | "forward" "to" tablespec
               | "route" "to" tablespec interface
@@ -108,7 +117,7 @@ redirect_proto = "tcp" | string
 ; ---- tables ------------------------------------------------------------
 
 tabledef      = "table" table tabledefopts
-tabledefopts  = *( tabledefopt )
+tabledefopts  = | tabledefopts tabledefopt
 tabledefopt   = "disable"
               | "{" tablelist "}"
 tablelist     = *( tableitem )
@@ -155,7 +164,7 @@ sendbinbuf    = "nothing" | string
 ; ---- relays ------------------------------------------------------------
 
 relay         = "relay" string "{" relayopts "}"
-relayopts     = *( relayopt )
+relayopts     = | relayopts relayopt
 relayopt      = "listen" "on" address port "tls"
               | "listen" "on" address port
               | "forward" forwardrest
@@ -196,7 +205,7 @@ proto         = relay_proto "protocol" string "{" protopts "}"
 
 relay_proto   = "tcp" | "http" | "dns"
 
-protopts      = *( protopt )
+protopts      = | protopts protopt
 protopt       = "tls" tlsflag
               | "tls" "{" tlsflags "}"
               | "tcp" tcpflag
@@ -327,7 +336,7 @@ optdigest     = "digest" string
 ; ---- routers -----------------------------------------------------------
 
 router        = "router" string "{" routeopts "}"
-routeopts     = *( routeopt )
+routeopts     = | routeopts routeopt
 routeopt      = "route" addrprefix
               | "forward" "to" tablespec
               | "rtable" int

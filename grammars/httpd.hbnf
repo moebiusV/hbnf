@@ -5,8 +5,10 @@
 ;   STRING / NUMBER        ->  string (str/word) / int
 ;   { ... } tree actions   ->  implicit — the binder builds the tree
 ;
-; parse.y's `optcommanl`-separated flag runs and its `[ X ]` optionals are kept
-; as top-level lists (`tlsopts = *( tlsopt )`) and explicit alternations
+; parse.y's left-recursive lists are written as it writes them
+; (`serveropts = | serveropts serveropt`).  Its `optcommanl`-separated flag
+; runs, which it writes right-recursive, are top-level lists
+; (`tlsopts = *( tlsopt )`), and its `[ X ]` optionals explicit alternations
 ; (`prefix X | prefix`) — the same shape parse.y spells out, minus the comma
 ; and newline scaffolding (the generated lexer skips newlines).
 ;
@@ -36,7 +38,7 @@ include "commonconf.hbnf"
 
 
 
-config        = *( entry )
+config        = | config entry
 
 entry         = "prefork" int
               | "chroot" string
@@ -55,7 +57,7 @@ varset        = vname "=" vvalue                ; macro name = value…
 
 server        = "server" "match" string "{" serveropts "}"
               | "server" string "{" serveropts "}"
-serveropts    = *( serveropt )
+serveropts    = | serveropts serveropt
 
 ; the things that can live inside a `server { }` block
 serveropt     = "listen" "on" address "tls" port
@@ -167,7 +169,7 @@ tlsopt        = "certificate" string
               | "ticket" "lifetime" "default"
               | "ticket" "lifetime" int
               | "no" "ticket"
-tlsclientopts = *( tlsclientopt )
+tlsclientopts = | tlsclientopts tlsclientopt
 tlsclientopt  = "crl" string
               | "optional"
 
@@ -229,10 +231,10 @@ tcpflag       = "sack"
               | "ip" string int
 
 types         = "types" "{" mediaopts "}"
-mediaopts     = *( mediaopt )
+mediaopts     = | mediaopts mediaopt
 mediaopt      = mediastring medianames ";"
               | mediastring medianames
               | include
 mediastring   = mtype "/" msubtype               ; a MIME type, e.g. text/html
-medianames    = 1*( medianame )
+medianames    = medianames medianame | medianame
 medianame     = int | string

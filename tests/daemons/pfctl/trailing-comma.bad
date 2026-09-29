@@ -1,0 +1,2 @@
+# but a list does not end with one: parse.y's `port_list comma port_item`
+pass in proto tcp to any port { 22, 80, }

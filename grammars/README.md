@@ -77,16 +77,22 @@ language C
 | `NUMBER` | `int` |
 | `x : y z` | `x = y z` |
 | `x : y \| z` | `x = y \| z` |
-| `x_l : x_l y \| y` (list boilerplate) | as written (`xs = xs y \| y`, read as a loop), or `xs = 1*( y )`; either way a rule of its own |
+| `x_l : x_l y \| y` | as written: `xs = xs y \| y`, read as a loop |
+| `x : /* empty */ \| x_l` with `x_l : x_l y \| y` | `xs = \| xs y` (the empty alternative first, where parse.y writes `/* empty */`) |
+| `x_l : y \| x_l comma y`, with `comma : ',' \| /* empty */` | `xs = xs "," y \| xs y \| y`: the comma written out |
+| `x_l : y x_l \| y` (right-recursive) | `xs = 1*( y )` |
 | `x : y \| /* empty */` / `[ y ]` | flattened: `prefix y \| prefix` |
 | `{ … }` action (TAILQ/alloc/logic) | dropped — the binder builds the tree |
 | a hand-written scanner (`host()`, `get_address()`, the OID/AS/port parse) | an inline jet, with a fallback line |
 
 Two shape rules keep the generated parser simple and match `parse.y` exactly:
 
-- **Lists are hoisted** — a `_l` rule becomes a top-level `xs = *( y )`, and
-  a block body references it (`"{" xs "}"`).  Never nest `*( … )` inside a
-  sequence.
+- **Lists are rules of their own**, written as parse.y writes them: a
+  left-recursive `_l` rule stays left-recursive (`hosts = hosts "," host |
+  hosts host | host`), and a block body references it (`"{" hosts "}"`).
+  Left recursion is read as a loop, so a long list costs no stack.  A list
+  parse.y writes right-recursive is `*( y )` or `1*( y )`.  Never nest
+  `*( … )` inside a sequence (RFCPLAN.md step 2 lifts that).
 - **Optionals are flattened** — `prefix [ X ]` becomes the two-way alternation
   `prefix X | prefix`.  To record an optional word, make it a list of its
   own: `blocklog = 0*1( "log" )` is empty when `log` is absent.

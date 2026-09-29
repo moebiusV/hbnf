@@ -1,0 +1,2 @@
+# a list does not end with a comma: parse.y's `as_set_l comma as4number_any`
+as-set foo { 1, 2, }

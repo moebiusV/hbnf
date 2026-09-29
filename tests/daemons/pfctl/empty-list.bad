@@ -1,0 +1,2 @@
+# nor is a list empty: parse.y's port_list has at least one port_item
+pass in proto tcp to any port { }
