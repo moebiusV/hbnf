@@ -1,0 +1,6 @@
+; An RFC-style grammar with a rule described in words.
+include "../../grammars/core.hbnf"
+
+doc  = 1*unit
+unit = <one of the units, which the RFC lists in section 9>
+note = <unused, so never reported>

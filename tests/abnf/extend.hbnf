@@ -1,0 +1,4 @@
+; Only `=/` and no rule of its own: the root stays hexdig.hbnf's `doc`.
+include "hexdig.hbnf"
+
+hex =/ %x61-66 / %x41-46

@@ -17,16 +17,29 @@ language C
 
 - **Operators** — juxtaposition (sequence), `|` (ordered choice: the first
   alternative that matches wins), `( ... )` (grouping), `[ ... ]`
-  (optional), `*`, `1*`, `n*m` (repetition).  ABNF's `/` (union) is refused
-  for now; `../RFCPLAN.md` plans it.  Direct left recursion, as parse.y
-  writes lists (`xs = xs "," x | x`), is read as a loop.  `;` starts a line
-  comment.
+  (optional), `*`, `1*`, `n*m`, `*m` (repetition).  ABNF's `/` (union) is
+  taken between alternatives of one character each, where it means the
+  same as `|`; `../RFCPLAN.md` plans the rest.  Direct left recursion, as
+  parse.y writes lists (`xs = xs "," x | x`), is read as a loop.  `;`
+  starts a line comment.
+- **Lines** — a rule goes on to a line that is indented or starts with `|`,
+  and across newlines inside `( )` and `[ ]`.
+- **`=/`** adds alternatives to a rule defined before it, here or in an
+  included file, joined with `/`.
+- **`<prose-val>`** — a rule described in words, not written yet.  If the
+  parser would use it, generation stops and points at it, with a caret.
 - **Include and override** — `include "file"`, before the first rule, reads
   a file once, however often it is included.  A later `name =` overrides an
   earlier one, in the same file or another, so a daemon grammar replaces the
-  `commonconf.hbnf` rules it needs to.  `language` applies to its own file;
-  the other directives describe the one generated parser, and two files
-  that set one differently are an error.
+  `commonconf.hbnf` rules it needs to.  The root is the top file's first
+  new rule; a file that only overrides and extends keeps the root of what
+  it includes.  `language` and `sensitivity` apply to their own file; the
+  other directives describe the one generated parser, and two files that
+  set one differently are an error.
+- **`sensitivity`** — `sensitivity %i` makes the file's bare literals and
+  rule references ignore case, as ABNF's do; `sensitivity string %i` or
+  `sensitivity rule-name %i` does one of the two.  A literal's own `%i` or
+  `%s` wins.
 - **Keywords** are quoted literals in their config spelling (`"router-id"`,
   `"read-only"`), never the yacc `%token` identifier.
 - **Readable typed tokens** — `str` (quoted string), `word`/`atom`
@@ -118,13 +131,15 @@ round.
 Each grammar round-trips through the `hbnf` generator (`hbnf_cli`): it
 emits a self-contained C parser that compiles and parses a sample config.
 
-`commonconf.hbnf`, `tailq.hbnf` and `ascii.hbnf` are include-only, not
-daemon grammars: each is pulled in with `include "…"`.  `commonconf.hbnf`
-holds the rules the daemons share (`string`, `address`, …), which a daemon
-grammar may override; `tailq.hbnf` carries the shared `listops { }` block
-and the `#include <sys/queue.h>` it needs, and defines no rules;
-`ascii.hbnf` is the ASCII names and the RFC 5234 character classes.  Any script that globs `grammars/*.hbnf` must skip the
-three of them (the nine daemons above are the grammars).
+`commonconf.hbnf`, `tailq.hbnf`, `ascii.hbnf` and `core.hbnf` are
+include-only, not daemon grammars: each is pulled in with `include "…"`.
+`commonconf.hbnf` holds the rules the daemons share (`string`, `address`,
+…), which a daemon grammar may override; `tailq.hbnf` carries the shared
+`listops { }` block and the `#include <sys/queue.h>` it needs, and defines
+no rules; `ascii.hbnf` is the ASCII names and the RFC 5234 character
+classes, and `core.hbnf` adds `CRLF` to them: RFC 5234 Appendix B.1 in one
+include.  Any script that globs `grammars/*.hbnf` must skip the four of
+them (the nine daemons above are the grammars).
 
 ## Bindings (`bind/`)
 

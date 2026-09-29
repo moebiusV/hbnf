@@ -19,15 +19,17 @@ Scope (user directive, 2026-09-26):
   decimal/octal/hex + `%u` Unicode code point bounded to `10FFFF`), character
   literals `'c'` (with C escapes), and `-` ranges between any two code-point
   designators (`'a'-'c'` = `%x61-63`). Endpoint order-insensitive (normalized
-  to `Lo<=Hi`). Dotted concatenation (`%d13.10`) rejected with a pointer to
-  juxtaposition. All parse into a `Char_Range(Lo, Hi)` element. `%` is the
+  to `Lo<=Hi`). Dotted concatenation (`%d13.10`) was rejected here at first;
+  since RFCPLAN.md step 1 it reads as the code points in sequence. All parse
+  into `Char_Range(Lo, Hi)` elements. `%` is the
   reader-macro dispatch prefix (what `#'` is to Lisp). Build clean; 9-daemon
   round-trip + server round-trip pass.
 - **`grammars/ascii.hbnf` — DONE.** The ASCII names as a library grammar (no
   emitter code): `NUL`..`US` (C0 controls), `SP` `DEL` `DQUOTE` `HT` `HTAB`,
   and the RFC 5234 App B.1 classes `DIGIT ALPHA ALNUM LOWER UPPER HEXDIG BIT
-  CHAR CTL VCHAR OCTET`. Every rule matches one code point. (Uppercase, the
-  ASCII/RFC spelling — *not* lowercase as an earlier draft had it.)
+  CHAR CTL VCHAR OCTET WSP`. Every rule matches one code point. (Uppercase,
+  the ASCII/RFC spelling — *not* lowercase as an earlier draft had it.)
+  `grammars/core.hbnf` includes it and adds `CRLF`.
 - **I1 — C char lexer: DONE.** `Is_Char_Rule` classifies a rule whose pattern
   is an alternation of `Char_Range`; such rules get a `TOK_<name>` token kind,
   a `scan_<name>` scanner, and a `char_dispatch` the lexer calls after jets.
@@ -102,7 +104,8 @@ Scope (user directive, 2026-09-26):
 ## Design decisions (settled)
 
 1. **Numeric terminals / ranges** — `%b`/`%d`/`%o`/`%x` + `%u` (Unicode-bounded),
-   `-` ranges, order-insensitive, dotted concat rejected. See I0.
+   `-` ranges, order-insensitive, dotted concatenation read as a sequence.
+   See I0.
 2. **Character literals** — `'a'` is a code point (C escapes), ranges with `-`.
 3. **Named chars / classes as grammar, not code** — `ascii.hbnf` defines them
    as ordinary rules; the emitters stay generic.

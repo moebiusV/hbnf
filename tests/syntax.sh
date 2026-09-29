@@ -27,7 +27,7 @@ refuse() {
 	fi
 	grep -q "$1" "$W/err.txt" || { echo "syntax: FAIL ($2: $(tail -1 "$W/err.txt"))"; exit 1; }
 }
-refuse "dotted concatenation" 'r = %d13.10'
+refuse "a range or a sequence, not both" 'r = %d13.10-12'
 refuse "takes the place of a pattern" 'r = "a" %scan{ return 0; }'
 refuse "both with %i and without" 'r = "go" | x
 x = %i"go" "now"'
@@ -35,9 +35,9 @@ refuse "an action runs on a node" 'r = *( e )
 e = "a" m
 m = "x" | "y" %action{ (void)n; }'
 refuse "bad octal escape" 'r = "\777"'
-refuse "a rule goes on past its line only at a" 'r = "a" x
-    "b" x
+refuse "only when that line is indented" 'r = "a" x
+"b" x
 x = word'
 refuse "a rule.s head is its name alone" 'char[16] ifname = word'
-refuse "is ABNF.s alternative; hbnf writes" 'r = "a" / "b"'
+refuse "is ABNF.s union" 'r = "a" / "b"'
 echo "syntax: OK (refusals)"

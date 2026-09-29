@@ -1,16 +1,20 @@
 pragma Ada_2022;
 
 with Ada.Containers.Vectors;
+with Ada.Exceptions;
 with Ada.Strings.Unbounded;
 
 --  HBNF_Grammar: the schema reader.  A schema is a grammar from which the
 --  emitters (hbnf_c, hbnf_rust, hbnf_zig, hbnf_ada) generate a parser and
 --  its typed tree, and which the interpreter (HBNF_Match) runs directly.
 --
---  The notation borrows RFC 5234's rule syntax, but it is not ABNF: `|` is
---  ordered choice, a bare literal is case-sensitive, and a literal matches
---  one token of the generated lexer (ABNF.md §4 lists the differences, and
---  RFCPLAN.md the plan to close them).  Types are *not* part of the
+--  The notation reads RFC 5234's syntax (`=/`, `%d13.10`, `*m`, a rule
+--  going on to an indented line, <prose-val>), but it is not ABNF yet: `|`
+--  is ordered choice and ABNF's `/` (union) is taken only between
+--  alternatives of one character, a bare literal is case-sensitive unless
+--  the file says `sensitivity`, and a literal matches one token of the
+--  generated lexer (ABNF.md §4 lists the differences, and RFCPLAN.md the
+--  plan to close them).  Types are *not* part of the
 --  grammar: they are a reserved set of built-in rule names the emitters
 --  interpret.  `str` is a quoted string; `atom` (synonym `word`) is a
 --  bareword, not a number; `int`, `u8`..`u64`, `i8`..`i64`, `bool` and
@@ -31,6 +35,12 @@ package HBNF_Grammar is
 
    Parse_Error : exception;
    --  Raised by Parse on malformed schema text; message carries "line: col:".
+
+   --  The whole message of a Parse_Error.  GNAT keeps only the first 200
+   --  characters of an exception's message; a message that quotes its line
+   --  with a caret, or lists several problems, is longer.
+   function Error_Message (E : Ada.Exceptions.Exception_Occurrence)
+     return String;
 
    type Element_Kind is (Literal, Name, Group, Alt, Char_Range);
    --  Char_Range = a character-level terminal: %xHH (one code point) or
@@ -56,13 +66,20 @@ package HBNF_Grammar is
             No_Case : Boolean := False;  --  %i"...": any case matches
          when Name =>
             Name : Unbounded_String;     --  rule/core reference
+            Fold : Boolean := False;
+            --  Written in a file with `sensitivity rule-name %i`: the
+            --  reference finds a rule whatever the case of its name, and
+            --  the reader rewrites Name to the definition's spelling.
          when Group =>
             Items : Element_Vectors.Vector;   --  flat; Alt splits alternatives
          when Char_Range =>
             Lo : Natural := 0;   --  low code point, inclusive
             Hi : Natural := 0;   --  high code point, inclusive (Lo <= Hi)
          when Alt =>
-            null;
+            Union : Boolean := False;
+            --  Written `/`, ABNF's union, rather than `|`.  The reader
+            --  accepts it where both mean the same: between alternatives
+            --  that each match exactly one code point.
       end case;
    end record;
 
@@ -114,8 +131,9 @@ package HBNF_Grammar is
 
    --  Parse schema text into a flat list of rules, in order.  A later
    --  `name =` overrides an earlier one: it replaces it in its place, so an
-   --  overridden root is still the root.  Text is one file; `include` lines
-   --  are Parse_File's.
+   --  overridden root is still the root; `name =/ alternatives` adds to
+   --  it.  Text is one file; `include` lines are Parse_File's.  Called on
+   --  its own, it finishes the schema as Parse_File does.
    function Parse (Text : String) return Rule_Vectors.Vector;
 
    --  Parse a schema file, resolving its `include "path"` lines (each path
@@ -128,8 +146,13 @@ package HBNF_Grammar is
    --    file or another: a file's own rule overrides one it includes, and
    --    of two included files the later one's wins.  So a daemon schema
    --    pulls in a common core and replaces just the rules that differ.
+   --  - `name =/ alternatives` adds to the definition that stands, from
+   --    this file or one read before it, joined with `/`.
+   --  - The root is the top file's first new rule (defined with `=`, not
+   --    overriding an earlier one); a file with none keeps the root of
+   --    what it includes.
    --  - `language` is per file: the language of that file's code blocks,
-   --    C when it has no `language` line.
+   --    C when it has no `language` line.  So is `sensitivity`.
    --  - The other directives describe the one generated parser.  Any file
    --    may set one; two different values are an error, the same value
    --    twice is not.  `keywords` lists merge.  Code blocks (preambles,
@@ -139,8 +162,13 @@ package HBNF_Grammar is
    --    stands once every file is read, so a binding file can include a
    --    grammar and add the daemon's actions and headers without touching
    --    it.
-   --  A schema error names the file it is in.  State is reset at the start
-   --  of each top-level call, so nothing carries over between schemas.
+   --  Once every file is read, in the rules the parser uses (Reachable):
+   --  a `/` must join alternatives of one code point each, a <prose-val>
+   --  is reported as not written yet, with its line and a caret, and two
+   --  rule names may not differ only in case.  A schema error names the
+   --  file it is in (Error_Message has all of it).  State is reset at the
+   --  start of each top-level call, so nothing carries over between
+   --  schemas.
    function Parse_File (Path : String) return Rule_Vectors.Vector;
 
    --  Rules, minus those nothing uses: the root (Rules (1)), every rule

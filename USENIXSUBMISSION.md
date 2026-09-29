@@ -238,20 +238,24 @@ tree is the same daemon struct either way.
 
 ### 3.3 Where the notation departs from ABNF
 
-Repetition (`*`, `1*`, `n*m`), `[...]` and `;` comments are ABNF's own.
-What differs:
+The reader takes RFC 5234's syntax: repetition (`*`, `1*`, `n*m`, `*m`),
+`[...]`, `;` comments, `=/`, `%d13.10`, a rule going on to an indented
+line, and `<prose-val>`, which stops generation with the line and a caret
+if the parser would use it.  What differs:
 
 - **Ordered choice.**  `|` separates alternatives and means PEG's ordered
   choice, which is how parse.y grammars are read: the first alternative that
   matches wins.  A later alternative that begins with the whole of an
   earlier one could never match, and is refused.  ABNF's `/` means union;
-  hbnf reserves it for that.
-- **Multi-line rules.**  A newline before a `|` continues the rule, so a
-  long alternation reads as a column of alternatives rather than one
-  horizontal line — which is what makes the httpd grammar (§5) readable.
-  ABNF continues a rule on any indented line instead.
-- **Case.**  A literal is case-sensitive, like a parse.y keyword; `%i"…"`
-  (RFC 7405) matches any case.
+  hbnf takes it where the two agree, between alternatives of one character
+  each, and refuses it elsewhere for now.
+- **Multi-line rules.**  A line that starts with `|` continues the rule, as
+  an indented line does, so a long alternation reads as a column of
+  alternatives rather than one horizontal line — which is what makes the
+  httpd grammar (§5) readable.
+- **Case.**  A literal is case-sensitive, like a parse.y keyword, and so is
+  a rule name; `%i"…"` (RFC 7405) matches any case, and a file that says
+  `sensitivity %i` reads its literals and rule names as ABNF does.
 - **Tokens.**  A literal matches one token of the generated lexer, so
   `"!="` needs a character rule (`NE = '!' '='`) rather than a literal.
 - **Left recursion.**  `xs = xs "," x | x`, as parse.y writes lists, is read

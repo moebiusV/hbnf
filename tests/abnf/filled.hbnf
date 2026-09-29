@@ -1,0 +1,4 @@
+; hole.hbnf with its hole filled: a later `=` overrides.
+include "hole.hbnf"
+
+unit = DIGIT

@@ -29,10 +29,16 @@ backends).  Where the notation differs from ABNF today: ABNF.md §4.
 2. **Incremental alternatives are `=/`, ABNF's spelling, and nothing
    else.**  No BNF dialect we know has `=|` or `|=`.  (yacc gets the same
    effect by allowing `name :` more than once.)  `=/` extends the current
-   definition; an `=/` with no `=` before it is an error.
+   definition; an `=/` with no `=` before it is an error.  The new
+   alternatives join with `/`, so `=/` is union, and compiles where `/`
+   does.
 3. **A later `=` overrides.**  It replaces the earlier definition, in the
    same file or another; the rule keeps its place, so an overridden root is
-   still the root.
+   still the root.  (As built: in one file, or between two included files,
+   the rule keeps its place; a file's own rules come before what it
+   includes, in the order it writes them, since that order is the jets'
+   order.  The root is the top file's first new rule, or, when it has none,
+   the root of what it includes.)
 4. **Include once.**  A file is read the first time it is included; later
    includes of it (by any path to the same file) do nothing.
 5. **Directives come in two kinds.**
@@ -109,6 +115,13 @@ unwind-ident passing; each lands as reviewed patches.
    - `%d13.10`, `*m` (`*2DIGIT`), continuation by indentation (ABNF's
      `c-wsp`), newlines inside `( )` and `[ ]`;
    - `<prose-val>`; `WSP`, `CRLF` and `core.hbnf`.
+
+   *Done 2026-09-28.*  Also: `/` is checked only in the rules the parser
+   uses, like `<prose-val>`, so an included RFC's rules can be replaced;
+   two rules whose names differ only in case are refused (the generated
+   identifiers would clash); `%X41` and `%I"…"` read as `%x41` and
+   `%i"…"`; and the CLI prints a schema error whole (GNAT keeps 200
+   characters of an exception's message).
 2. **Groups, optionals and repetition inside a sequence**: rewritten into
    hidden named rules before code generation, so all four backends get them
    at once and the three rejections go.  (An optional word then records

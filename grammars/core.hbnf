@@ -1,0 +1,18 @@
+; core.hbnf — RFC 5234 Appendix B.1, the core rules, in one include.
+;
+; An RFC grammar that uses the core rules includes this file:
+;
+;   include "core.hbnf"
+;
+; ascii.hbnf names every ASCII code point and has the one-character core
+; rules (ALPHA, BIT, CHAR, CR, CTL, DIGIT, DQUOTE, HEXDIG, HTAB, LF, OCTET,
+; SP, VCHAR, WSP).  This file adds the one that is a sequence, CRLF.  LWSP
+; (`*(WSP / CRLF WSP)`) waits until a character rule can repeat.
+;
+; A grammar that includes this file may define any of these rules again: a
+; later `=` overrides.  RFC 5234 notes, for example, that a grammar may
+; want a bare LF to end a line as well as CRLF.
+
+include "ascii.hbnf"
+
+CRLF = CR LF                   ; Internet standard newline

@@ -31,8 +31,11 @@ not yet implemented: **D**, **Fortran**, **Free Pascal**, **Nim**, **Odin**,
 **Borrowed from ABNF:** the rule syntax — `name = elements`, concatenation,
 `( )`, `[ ]`, `n*m` repetition, `"…"` literals, `;` comments.  Alternatives
 are separated by `|`, ordered choice, as in PEG and as parse.y grammars are
-read.  ABNF's `/` (union) is refused for now; RFCPLAN.md plans it, and the
-other steps that let an RFC's ABNF compile as written.
+read.  ABNF's `/` (union) is taken where it means the same as `|`, between
+alternatives of one character each; RFCPLAN.md plans the rest, and the
+other steps that let an RFC's ABNF compile as written.  The reader takes
+RFC 5234's other forms: `=/`, `%d13.10`, `*m`, a rule going on to an
+indented line, newlines inside `( )` and `[ ]`, and `<prose-val>`.
 
 **Extended downward (design):** a schema can describe input below the token:
 - characters, through character-level rules and named character classes;
@@ -54,10 +57,9 @@ generated from them.
 ABNF's union; literals are case-sensitive, like parse.y keywords; a rule
 referenced for a field is a type, not just a pattern.
 
-**Left out:** ABNF's `%d13.10` dotted-concatenation is left out.  The `%b`/
-`%d`/`%o`/`%u`/`%x` numeric terminals and ranges are supported now (§3.3).
-Character classes are named rules.  Some other ABNF features are simply not
-there yet (§3).
+**Left out:** nothing in RFC 5234's syntax is refused by the reader now.
+Character classes are named rules (`grammars/core.hbnf`).  Some ABNF
+features are not there yet in the backends (§3).
 
 ## 2. The layers: design and implementation
 
@@ -84,11 +86,11 @@ shapes compiled into parsers for a different language.
 |---|---|---|---|
 | `name = elements` | ✓ | ✓ | |
 | Rule name `ALPHA *(ALPHA / DIGIT / "-")` | ✓ | ✓ | hbnf also allows `_` |
-| Case-insensitive rule names (§2.1) | ✗ | ✗ | `E` does not find `e`. Adopting ABNF's rule would make the README's `digit` the same rule as ABNF's `DIGIT`. |
-| `=/` incremental alternatives (§3.3) | ✗ refused: `/` is ABNF's alternative | ✗ | Planned (RFCPLAN.md) |
+| Case-insensitive rule names (§2.1) | with `sensitivity rule-name %i` | same | Per file: a reference finds its rule whatever the case (`digit` finds `DIGIT`) and takes the definition's spelling; one that finds two rules is an error. Without it `E` does not find `e`. Two rules whose names differ only in case are refused either way: the generated identifiers would be one name. |
+| `=/` incremental alternatives (§3.3) | ✓ reader | ✓ reader | Adds alternatives to the definition that stands, in the same file or one it includes, joined with `/` (union), so the same limit applies as to `/` (§3.2). An `=/` with no `=` before it is an error. |
 | One definition per rule | a later `=` overrides | same | ABNF gives no meaning to a second `=`.  hbnf's later definition replaces the earlier one in its place, in the same file or across `include` (so an overridden root is still the root). |
-| Continuation by indentation (§4 `c-wsp`) | ✗ `expected `name =`` | ✗ | hbnf continues a rule only on a newline before `\|` |
-| Newline inside `( … )` | ✗ `expected ')'` | ✗ | |
+| Continuation by indentation (§4 `c-wsp`) | ✓ | ✓ | A rule goes on to an indented line, and to one that starts with `\|`. A comment inside a rule is dropped; the last one on the rule's last line is its trailing comment. |
+| Newline inside `( … )` | ✓ | ✓ | And inside `[ … ]`; a comment there is dropped |
 | `;` comments | ✓ | ✓ | hbnf also copies them into the generated code |
 | At least one element per alternative | accepts empty | accepts empty | `e = "a" word \|` is accepted; ABNF forbids it |
 
@@ -96,7 +98,7 @@ shapes compiled into parsers for a different language.
 
 | ABNF | Compiled backends | Interpreter | Notes |
 |---|---|---|---|
-| Concatenation, alternation, grouping | ✓ | ✓ | Alternation is ordered choice (§4). `\|` separates alternatives, as in BNF and yacc. ABNF's `/` is refused, with a message saying to write `\|`. |
+| Concatenation, alternation, grouping | ✓ | ✓ | Alternation is ordered choice (§4). `\|` separates alternatives, as in BNF and yacc. ABNF's `/` (union) is taken between alternatives that each match one code point, where union and ordered choice are the same (`DIGIT / ALPHA`); between longer ones it is refused, with its line and a caret, until RFCPLAN.md step 5. The check covers only the rules the parser uses. |
 | Direct left recursion, `a = a x \| y` | ✓ read as a loop, `y x*`, in all four backends | ✓ | The first entry of the list comes from the bases, each later one from the tails. Indirect left recursion is refused. |
 | `( a \| b )` inside a sequence | *rejected* | ✓ | Previously flattened to `a b` |
 | `[ … ]` as a whole rule | ✓ | ✓ | |
@@ -105,31 +107,33 @@ shapes compiled into parsers for a different language.
 | `*`, `1*`, `n*`, `n*m`, `n` on a list rule | ✓ bounds enforced in all four backends | ✓ | Previously `1*` accepted an empty list in every backend |
 | A list of a core type (`ws = 1*word`) | ✓ | ✓ | Previously failed to link; Rust, Zig and Ada called a parse function that does not exist |
 | A list of literals only (`log = 0*1( "log" )`) | ✓ one entry, without a field, per match | ✓ | How a grammar records an optional word |
-| `*m` (`*2w`) | ✗ `expected a literal, name, or group` | ✗ | |
+| `*m` (`*2w`) | ✓ | ✓ | Zero to m |
 | Precedence (§3.10) | same | same | |
 
 ### 3.3 Terminal values (RFC 5234 §2.3, §3.4; RFC 7405)
 
 | ABNF | Status | Notes |
 |---|---|---|
-| `"…"` | ✓ | Case-sensitive and must be exactly one token (§4). C's escapes, octal and `\?` included, which every emitter re-escapes for its target language. |
-| `%b` / `%d` / `%o` / `%u` / `%x`, ranges | ✓ | Numeric terminals — binary/decimal/octal/hex, plus `%u` for an encoding-agnostic Unicode code point (bounded to `10FFFF`) — and code-point ranges, read into a `Char_Range` element. The endpoint order does not matter (`%x39-30` = `%x30-39`). Every backend compiles them to scanners that match decoded UTF-8 code points (§2). `%d13.10` (dotted concatenation) stays unsupported. |
+| `"…"` | ✓ | Case-sensitive, unless the file says `sensitivity string %i` (then `%s"…"` is how to ask for case), and must be exactly one token (§4). C's escapes, octal and `\?` included, which every emitter re-escapes for its target language. |
+| `%b` / `%d` / `%o` / `%u` / `%x`, ranges | ✓ | Numeric terminals — binary/decimal/octal/hex, plus `%u` for an encoding-agnostic Unicode code point (bounded to `10FFFF`) — and code-point ranges, read into a `Char_Range` element. The endpoint order does not matter (`%x39-30` = `%x30-39`). Every backend compiles them to scanners that match decoded UTF-8 code points (§2). `%d13.10` is the code points in sequence, two elements of the rule. `%X41` is `%x41`. |
 | `'c'` (character literal) | ✓ | A yacc-style character literal: one code point, with C escapes (`'\n'`, `'\x41'`). `'a'-'c'` is a code-point range — the same `Char_Range` as `%x61-63`. Non-ASCII code points work via the UTF-8 decode in every backend (§2). |
-| `<prose-val>` | ✗ | Jets fill this role: a scanner written in the target language |
+| `<prose-val>` | ✓ reader | A rule nobody has written yet. If the parser would use it, generation stops with `file:line:col: not written yet, in `rule`: <…>`, the line, and a caret under it, for every such hole. A later `=` that defines the rule, or a jet, fills it. One in a rule the parser does not use is not reported. |
 | `%s"…"` (RFC 7405) | ✓ | Means exactly what hbnf's bare `"…"` means |
 | `%i"…"` (RFC 7405) | ✓ in all four backends | Any case matches; a `%i` keyword is interned case-insensitively in C. A word written both `%i` and plain is refused. snmpd's `auth` and `enc` use it, as parse.y's strcasecmp does. |
 | `%scan{ … }`, `%action{ … }` | ✓ | The spelled-out forms of `name = { code }` (a jet) and `pattern { code }` (an action jet) |
 
 ### 3.4 Core rules (RFC 5234 Appendix B.1)
 
-None is defined: `undefined rule` in the compiled backends, an exception in the
-interpreter.
+`include "core.hbnf"` defines them, from `grammars/`; it includes
+`ascii.hbnf`, which names every ASCII code point.  A grammar may define any
+of them again (a later `=` overrides).
 
-| Name | ABNF | Role in hbnf |
+| Name | ABNF | In hbnf |
 |---|---|---|
-| `SP`, `HTAB`, `CR`, `LF` | `%x20`, `%x09`, `%x0D`, `%x0A` | Whitespace tokens, significant only where the grammar references them (§6). `LF` is parse.y's `'\n'`. |
-| `WSP`, `CRLF`, `LWSP` | `SP / HTAB`, `CR LF`, `*(WSP / CRLF WSP)` | Ordinary rules over the four above (RFC 5234 itself warns about `LWSP`) |
-| `ALPHA`, `DIGIT`, `HEXDIG`, `BIT`, `CHAR`, `CTL`, `VCHAR`, `OCTET`, `DQUOTE` | character classes | The character layer (§2). The README spells them `alpha`, `digit`, `hexdig`: the same rules once names are case-insensitive. |
+| `SP`, `HTAB`, `CR`, `LF` | `%x20`, `%x09`, `%x0D`, `%x0A` | `ascii.hbnf`. Whitespace tokens, significant only where the grammar references them (§6). `LF` is parse.y's `'\n'`. |
+| `WSP`, `CRLF` | `SP / HTAB`, `CR LF` | `WSP` in `ascii.hbnf` (one code point), `CRLF` in `core.hbnf` |
+| `LWSP` | `*(WSP / CRLF WSP)` | Not yet: a character rule cannot repeat (RFC 5234 itself warns about `LWSP`) |
+| `ALPHA`, `DIGIT`, `HEXDIG`, `BIT`, `CHAR`, `CTL`, `VCHAR`, `OCTET`, `DQUOTE` | character classes | `ascii.hbnf`; the character layer (§2). A file with `sensitivity rule-name %i` may write them `alpha`, `digit`, `hexdig`. |
 
 ## 4. Same spelling, different meaning
 
@@ -138,7 +142,7 @@ interpreter.
 | The unit a rule matches | characters | tokens today (a fixed lexer); characters and below in the design | — | — |
 | `"abc"` | case-insensitive | case-sensitive, like parse.y keywords | `ABC x` is rejected by both engines | `%s"abc"` is the ABNF spelling of hbnf's meaning |
 | `"a b"`, `"!="` | a sequence of characters | exactly one token | never matches | `"a" "b"`; a multi-character operator is a character rule (`NE = '!' '='`) or a jet (pfctl's `ne`/`le`/`ge` still are) |
-| `A / B` | union | hbnf writes `A \| B`: ordered choice, the first alternative that matches is kept, and a later failure does not come back for the next.  `/` is refused. | `e = p "c"`, `p = "a" \| "a" "b"` rejects `a b c` in the interpreter; the compiled backends refuse the schema, since `"a" "b"` begins with the whole of `"a"` before it and can never match | longest alternative first |
+| `A / B` | union | hbnf writes `A \| B`: ordered choice, the first alternative that matches is kept, and a later failure does not come back for the next.  `/` is taken only between alternatives of one code point each, where the two agree. | `e = p "c"`, `p = "a" \| "a" "b"` rejects `a b c` in the interpreter; the compiled backends refuse the schema, since `"a" "b"` begins with the whole of `"a"` before it and can never match | longest alternative first |
 | `*x x` | at least one `x` | never matches: `*x` takes every `x` | rejected by C, Rust and the interpreter | `1*x`, or restructure |
 | A rule referenced twice in one alternative | two occurrences | one field named after the rule | *rejected* with a suggested alias. Previously the second value overwrote the first, in 37 places across the daemon grammars. | an alias rule: `port_hi = port` |
 | Lowercase core names (`int`, `str`, `word`, …) | ordinary rule names | reserved types | — | don't define rules with those names |
@@ -205,9 +209,7 @@ orders this work, and adds what an RFC's ABNF needs beyond it.
 | Whitespace rules | §6, starting with `LF` | +1 token per line |
 | Groups, optionals and repetition inside a sequence | Emit them (inline loops, or synthetic rules), then drop the rejection | none |
 | The character layer | done in all four backends (CHARLAYER.md); converting the daemons' jets to character rules retires the C-only jet stubs | same as a hand-written jet |
-| `=/` | append alternatives, also across `include`, so a daemon can extend commonconf's `string` | none |
-| Case-insensitive rule names | fold for lookup; generated identifiers keep the spelling from the definition | none |
-| ABNF continuation; newlines in `( )`; `*m` | adopt | none |
+| `/` and `=/` between longer alternatives | union compiled without search (RFCPLAN.md decision 1, step 5) | none |
 
 Checks at generation time for the §4 differences, turning silent mismatches
 into schema errors:

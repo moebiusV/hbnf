@@ -1,9 +1,9 @@
 pragma Ada_2022;
 
+with Ada.Characters.Handling;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Indefinite_Ordered_Maps;
-with Ada.Exceptions;
 with Ada.Strings.Hash;
 with Ada.Text_IO;
 with GNAT.OS_Lib;
@@ -69,11 +69,41 @@ package body HBNF_Grammar is
    --  Parse_File nesting: 0 outside any call, 1 for the top-level schema.
    File_Depth : Natural := 0;
 
+   --  The whole text of the last schema error.  GNAT keeps only the first
+   --  200 characters of an exception's message, and a message that quotes
+   --  its line, or lists several problems, runs longer (Error_Message).
+   Full_Error : Unbounded_String := Null_Unbounded_String;
+
+   procedure Fail (Msg : String) with No_Return;
+
+   procedure Fail (Msg : String) is
+   begin
+      Full_Error := To_Unbounded_String (Msg);
+      raise Parse_Error with Msg;
+   end Fail;
+
+   function Error_Message (E : Ada.Exceptions.Exception_Occurrence)
+     return String
+   is
+      M : constant String := Ada.Exceptions.Exception_Message (E);
+   begin
+      if Length (Full_Error) >= M'Length
+        and then Slice (Full_Error, 1, M'Length) = M
+      then
+         return To_String (Full_Error);
+      end if;
+      return M;
+   end Error_Message;
+
    --  The file Parse is reading ("" for Parse (Text)), for messages, and
    --  the line of its first rule (0 before one), which no include may
    --  follow.
    Current_File    : Unbounded_String := Null_Unbounded_String;
    First_Rule_Line : Natural := 0;
+
+   --  The first rule the file Parse read defines with `=` that no file
+   --  read before it defines ("" when there is none): its root.
+   First_Defined : Unbounded_String := Null_Unbounded_String;
 
    --  Include once: the files read so far, by resolved path.
    package Path_Sets is new Ada.Containers.Indefinite_Hashed_Sets
@@ -123,9 +153,10 @@ package body HBNF_Grammar is
       Target := To_Unbounded_String (Value);
    end Set_Directive;
 
-   --  A rule's place in a rule list, by name.
+   --  A rule's place in a rule list, by name (0 where Finish finds more
+   --  than one).
    package Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
-     (String, Positive, Ada.Strings.Hash, "=");
+     (String, Natural, Ada.Strings.Hash, "=");
 
    --  Add R to Rules.  A later `=` overrides: a rule already there with
    --  R's name is replaced in its place, so an overridden root is still
@@ -143,6 +174,85 @@ package body HBNF_Grammar is
          Index.Insert (To_String (R.Name), Natural (Rules.Length));
       end if;
    end Define;
+
+   --  Per file, from its `sensitivity` line, for Parse_Atom: a bare
+   --  literal matches any case (File_No_Case); a rule reference finds its
+   --  rule whatever the case (File_Fold_Names).
+   File_No_Case    : Boolean := False;
+   File_Fold_Names : Boolean := False;
+
+   --  The text of the file Parse is reading, and where each of its lines
+   --  starts, for a message that quotes a line.
+   Current_Source : Unbounded_String := Null_Unbounded_String;
+   package Natural_Vectors is new Ada.Containers.Vectors (Positive, Natural);
+   Line_Starts : Natural_Vectors.Vector;
+
+   function Source_Line (N : Positive) return String is
+      S : constant String := To_String (Current_Source);
+      I : Natural;
+      J : Natural;
+   begin
+      if N > Natural (Line_Starts.Length) then
+         return "";
+      end if;
+      I := Line_Starts (N);
+      J := I;
+      while J <= S'Last and then S (J) not in ASCII.LF | ASCII.CR loop
+         J := J + 1;
+      end loop;
+      return S (I .. J - 1);
+   end Source_Line;
+
+   --  Where something was written, for a message that quotes its line
+   --  with a caret under it: a <prose-val> (Text is its words) or a `/`
+   --  (Alt is the separator it became; Text is "/" or "=/").
+   type Site is record
+      File : Unbounded_String;
+      Line : Positive := 1;
+      Col  : Positive := 1;
+      Src  : Unbounded_String;
+      Text : Unbounded_String;
+      Alt  : Element_Access;
+   end record;
+   package Site_Vectors is new Ada.Containers.Vectors (Positive, Site);
+   Prose_Sites : Site_Vectors.Vector;
+   Union_Sites : Site_Vectors.Vector;
+
+   function Here (Line, Col : Positive; Text : String;
+                  Alt : Element_Access := null) return Site is
+     (Site'(File => Current_File, Line => Line, Col => Col,
+            Src  => To_Unbounded_String (Source_Line (Line)),
+            Text => To_Unbounded_String (Text), Alt => Alt));
+
+   function Img (N : Natural) return String is
+     (Integer'Image (N) (2 .. Integer'Image (N)'Last));
+
+   --  "file:line:col: Msg", then the line, and a caret under the column
+   --  (a tab in the line stays a tab, so the caret lines up).
+   function Pointed (S : Site; Msg : String) return String is
+      Src : constant String := To_String (S.Src);
+      Pad : Unbounded_String;
+   begin
+      for I in Src'First .. Src'First + S.Col - 2 loop
+         exit when I > Src'Last;
+         Append (Pad, (if Src (I) = ASCII.HT then ASCII.HT else ' '));
+      end loop;
+      return (if S.File = Null_Unbounded_String then ""
+              else To_String (S.File) & ":")
+        & Img (S.Line) & ":" & Img (S.Col) & ": " & Msg & ASCII.LF
+        & "  " & Src & ASCII.LF & "  " & To_String (Pad) & "^";
+   end Pointed;
+
+   --  The definition that stands for each rule name so far, in the order
+   --  the files are read, with its pattern as written (before left
+   --  recursion is rewritten into a loop), which `=/` extends.
+   type Standing_Rule is record
+      R   : Rule;
+      Raw : Element_Vectors.Vector;
+   end record;
+   package Standing_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (String, Standing_Rule, Ada.Strings.Hash, "=");
+   Standing : Standing_Maps.Map;
 
    --  A new top-level schema: nothing carries over from the last one read
    --  in this process.
@@ -172,6 +282,9 @@ package body HBNF_Grammar is
       Seen_Files.Clear;
       Current_File := Null_Unbounded_String;
       First_Rule_Line := 0;
+      Prose_Sites.Clear;
+      Union_Sites.Clear;
+      Standing.Clear;
    end Reset;
 
    --  ====================================================================
@@ -180,9 +293,13 @@ package body HBNF_Grammar is
 
    --  T_Pct: `%` and the word after it (`%i`, `%s`, `%scan`, `%action`,
    --  `%x20-7E`); its Text is the word without the `%`.
-   type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Bar, T_LParen,
-                     T_RParen, T_LBrack, T_RBrack, T_Star, T_Code,
-                     T_Comment, T_Newline, T_Pct, T_Char, T_Dash, T_EOF);
+   --  T_Eq_Slash: `=/`, ABNF's incremental alternatives.  T_Slash: `/`,
+   --  ABNF's union.  T_Prose: a <prose-val>; its Text is what is between
+   --  the angle brackets.
+   type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Eq_Slash, T_Bar,
+                     T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
+                     T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
+                     T_Prose, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -310,13 +427,75 @@ package body HBNF_Grammar is
       function Name_Char (C : Character) return Boolean is
          (Name_Start (C) or (C in '0' .. '9') or C = '-');
 
+      --  Open `(` and `[`: inside them a newline is only white space.
+      Group_Depth : Natural := 0;
+
+      --  J starts a line.  The start of the next line with content when
+      --  that line is indented, skipping indented comment-only lines, so
+      --  the rule goes on there (ABNF's c-wsp); 0 when it is not: the next
+      --  line is blank, starts in column 1, or there is none.  Skipped
+      --  counts the lines passed over.
+      function Continuation (J : Natural; Skipped : out Natural)
+        return Natural
+      is
+         K       : Natural := J;
+         L_Start : Natural;
+      begin
+         Skipped := 0;
+         loop
+            if K > Text'Last or else Text (K) not in ' ' | ASCII.HT then
+               return 0;
+            end if;
+            L_Start := K;
+            while K <= Text'Last and then Text (K) in ' ' | ASCII.HT loop
+               K := K + 1;
+            end loop;
+            if K > Text'Last or else Text (K) in ASCII.LF | ASCII.CR then
+               return 0;
+            elsif Text (K) = ';' then
+               while K <= Text'Last and then Text (K) /= ASCII.LF loop
+                  K := K + 1;
+               end loop;
+               K := K + 1;
+               Skipped := Skipped + 1;
+            else
+               return L_Start;
+            end if;
+         end loop;
+      end Continuation;
+
    begin
       while I <= Text'Last loop
          case Text (I) is
             when ' ' | ASCII.HT =>
                I := I + 1;  Col := Col + 1;
             when ASCII.LF =>
-               Emit (T_Newline);  I := I + 1;  Line := Line + 1;  Col := 1;
+               declare
+                  Skipped : Natural;
+                  Next_At : constant Natural :=
+                    (if Group_Depth > 0 then 0
+                     else Continuation (I + 1, Skipped));
+               begin
+                  if Group_Depth > 0 or else Next_At /= 0 then
+                     --  The rule goes on: inside ( ) or [ ], or on an
+                     --  indented line.  A comment at the end of this line
+                     --  is inside the rule, and is dropped.
+                     if not Toks.Is_Empty
+                       and then Toks.Last_Element.Kind = T_Comment
+                       and then Toks.Last_Element.Line = Line
+                     then
+                        Toks.Delete_Last;
+                     end if;
+                     I := I + 1;  Line := Line + 1;  Col := 1;
+                     if Next_At /= 0 then
+                        I := Next_At;
+                        Line := Line + Skipped;
+                     end if;
+                  else
+                     Emit (T_Newline);  I := I + 1;  Line := Line + 1;
+                     Col := 1;
+                  end if;
+               end;
             when ASCII.CR =>
                I := I + 1;
             when ';' =>
@@ -329,10 +508,14 @@ package body HBNF_Grammar is
                   while I <= Text'Last and then Text (I) /= ASCII.LF loop
                      I := I + 1;
                   end loop;
-                  Token_Vectors.Append
-                    (Toks, Token'(T_Comment, CL, CC,
-                                  To_Unbounded_String
-                                    (Trim (Text (Start .. I - 1)))));
+                  --  Inside ( ) or [ ] a comment is part of the rule and
+                  --  is dropped.
+                  if Group_Depth = 0 then
+                     Token_Vectors.Append
+                       (Toks, Token'(T_Comment, CL, CC,
+                                     To_Unbounded_String
+                                       (Trim (Text (Start .. I - 1)))));
+                  end if;
                end;
             when '"' =>
                declare
@@ -458,19 +641,48 @@ package body HBNF_Grammar is
                   Emit (T_Pct, Text (Start .. I - 1));
                   Col := Col + (I - Start + 1);
                end;
-            when '=' => Emit (T_Eq);     I := I + 1;  Col := Col + 1;
+            when '=' =>
+               --  `=/` adds alternatives to a rule (RFC 5234 §3.3).
+               if I < Text'Last and then Text (I + 1) = '/' then
+                  Emit (T_Eq_Slash);  I := I + 2;  Col := Col + 2;
+               else
+                  Emit (T_Eq);  I := I + 1;  Col := Col + 1;
+               end if;
             --  `|` separates alternatives, as in BNF, EBNF and yacc, and
-            --  means ordered choice.  ABNF's `/` (union) is refused until it
-            --  is implemented (RFCPLAN.md, decision 1).
-            when '|' => Emit (T_Bar);  I := I + 1;  Col := Col + 1;
-            when '/' =>
-               raise Parse_Error with
-                 Integer'Image (Line) & ":" & Integer'Image (Col)
-                 & ": `/` is ABNF's alternative; hbnf writes `|`";
-            when '(' => Emit (T_LParen); I := I + 1;  Col := Col + 1;
-            when ')' => Emit (T_RParen); I := I + 1;  Col := Col + 1;
-            when '[' => Emit (T_LBrack); I := I + 1;  Col := Col + 1;
-            when ']' => Emit (T_RBrack); I := I + 1;  Col := Col + 1;
+            --  means ordered choice.  `/` is ABNF's union (RFCPLAN.md,
+            --  decision 1); the reader takes it where the two mean the same.
+            when '|' => Emit (T_Bar);    I := I + 1;  Col := Col + 1;
+            when '/' => Emit (T_Slash);  I := I + 1;  Col := Col + 1;
+            when '(' | '[' =>
+               Emit (if Text (I) = '(' then T_LParen else T_LBrack);
+               Group_Depth := Group_Depth + 1;
+               I := I + 1;  Col := Col + 1;
+            when ')' | ']' =>
+               Emit (if Text (I) = ')' then T_RParen else T_RBrack);
+               if Group_Depth > 0 then
+                  Group_Depth := Group_Depth - 1;
+               end if;
+               I := I + 1;  Col := Col + 1;
+            when '<' =>
+               --  A <prose-val> (RFC 5234 §4): a rule described in words,
+               --  not written yet.  It ends at the `>` on the same line.
+               declare
+                  At_Col : constant Positive := Col;
+                  Start  : constant Positive := I + 1;
+               begin
+                  I := I + 1;  Col := Col + 1;
+                  while I <= Text'Last and then Text (I) not in '>' | ASCII.LF
+                  loop
+                     I := I + 1;  Col := Col + 1;
+                  end loop;
+                  if I > Text'Last or else Text (I) /= '>' then
+                     raise Parse_Error with
+                       Integer'Image (Line) & ":" & Integer'Image (At_Col)
+                       & ": a <prose-val> ends with `>` on the same line";
+                  end if;
+                  Emit (T_Prose, Text (Start .. I - 1), At_Col);
+                  I := I + 1;  Col := Col + 1;
+               end;
             when '*' => Emit (T_Star);   I := I + 1;  Col := Col + 1;
             when '-' => Emit (T_Dash);   I := I + 1;  Col := Col + 1;
             when ''' =>
@@ -838,13 +1050,17 @@ package body HBNF_Grammar is
                Lit : constant Unbounded_String := Cur (P).Text;
             begin
                Next (P);
+               --  A bare literal takes its file's `sensitivity string`.
                return new Element'(Kind => Literal, Min => 1, Max => 1,
-                                   Lit => Lit, No_Case => False);
+                                   Lit => Lit, No_Case => File_No_Case);
             end;
          when T_Pct =>
             declare
-               T : constant Token := Cur (P);
-               W : constant String := To_String (T.Text);
+               T  : constant Token := Cur (P);
+               --  ABNF's own strings are case-insensitive, so `%X41` and
+               --  `%I"..."` are the same as `%x41` and `%i"..."`.
+               W  : constant String :=
+                 Ada.Characters.Handling.To_Lower (To_String (T.Text));
             begin
                if W = "i" or else W = "s" then
                   --  RFC 7405's case markers.  hbnf literals are
@@ -904,14 +1120,46 @@ package body HBNF_Grammar is
                           Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
                           & ": %" & W & " needs digits";
                      end if;
-                     for I in W'First + 1 .. W'Last loop
-                        if W (I) = '.' then
+                     if (for some C of W => C = '.') then
+                        --  `%d13.10`: the code points in sequence (RFC 5234
+                        --  §2.3), returned as a group that Parse_Pattern
+                        --  splices into the sequence around it.
+                        if (for some C of W => C = '-') then
                            raise Parse_Error with
-                             Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
-                             & ": dotted concatenation (%" & W & ") is not "
-                             & "supported; write the terminals as a sequence";
+                             Integer'Image (T.Line) & ":"
+                             & Integer'Image (T.Col) & ": %" & W
+                             & ": a numeric value is a range or a sequence, "
+                             & "not both";
                         end if;
-                     end loop;
+                        declare
+                           Items : Element_Vectors.Vector;
+                           St    : Positive := W'First + 1;
+                        begin
+                           for I in W'First + 1 .. W'Last + 1 loop
+                              if I > W'Last or else W (I) = '.' then
+                                 if I = St then
+                                    raise Parse_Error with
+                                      Integer'Image (T.Line) & ":"
+                                      & Integer'Image (T.Col) & ": %" & W
+                                      & ": empty value between dots";
+                                 end if;
+                                 declare
+                                    V : constant Natural :=
+                                      Num_Val (W (St .. I - 1));
+                                 begin
+                                    Items.Append
+                                      (new Element'(Kind => Char_Range,
+                                                    Min => 1, Max => 1,
+                                                    Lo => V, Hi => V));
+                                 end;
+                                 St := I + 1;
+                              end if;
+                           end loop;
+                           Next (P);
+                           return new Element'(Kind => Group, Min => 1,
+                                               Max => 1, Items => Items);
+                        end;
+                     end if;
                      for I in W'First + 1 .. W'Last loop
                         if W (I) = '-' then
                            Dash := I;
@@ -988,7 +1236,23 @@ package body HBNF_Grammar is
                N : constant Unbounded_String := Expect_Name (P);
             begin
                return new Element'
-                 (Kind => Name, Min => 1, Max => 1, Name => N);
+                 (Kind => Name, Min => 1, Max => 1, Name => N,
+                  Fold => File_Fold_Names);
+            end;
+         when T_Prose =>
+            --  A <prose-val>: a rule nobody has written yet.  It stands
+            --  as a reference to "<n>", a name no rule can have; Finish
+            --  reports it, with its line, if the parser would use it.
+            declare
+               T : constant Token := Cur (P);
+            begin
+               Prose_Sites.Append (Here (T.Line, T.Col, To_String (T.Text)));
+               Next (P);
+               return new Element'
+                 (Kind => Name, Min => 1, Max => 1,
+                  Name => To_Unbounded_String
+                            ("<" & Img (Natural (Prose_Sites.Length)) & ">"),
+                  Fold => False);
             end;
          when T_LParen =>
             Next (P);
@@ -1029,6 +1293,10 @@ package body HBNF_Grammar is
       --  ABNF prefix repetition:  *elem, 1*elem, n*melem, nelem.
       if Cur (P).Kind = T_Star then
          Min := 0;  Max := -1;  Has_Prefix := True;  Next (P);
+         --  `*m`: at most m (`*2DIGIT`).
+         if Cur (P).Kind = T_Number then
+            Max := Integer'Value (To_String (Cur (P).Text));  Next (P);
+         end if;
       elsif Cur (P).Kind = T_Number then
          Min := Natural'Value (To_String (Cur (P).Text));  Next (P);
          if Cur (P).Kind = T_Star then
@@ -1061,11 +1329,18 @@ package body HBNF_Grammar is
    begin
       loop
          exit when Cur (P).Kind in
-           T_Newline | T_RParen | T_RBrack | T_Bar | T_Comment | T_Code
-           | T_EOF;
+           T_Newline | T_RParen | T_RBrack | T_Bar | T_Slash | T_Comment
+           | T_Code | T_EOF;
          exit when Cur (P).Kind = T_Pct
            and then To_String (Cur (P).Text) in "scan" | "action";
-         Element_Vectors.Append (V, Parse_Element (P));
+         if Cur (P).Kind = T_Pct
+           and then (for some C of To_String (Cur (P).Text) => C = '.')
+         then
+            --  `%d13.10` is two elements of this sequence.
+            Append_All (V, Parse_Atom (P).Items);
+         else
+            Element_Vectors.Append (V, Parse_Element (P));
+         end if;
       end loop;
       return V;
    end Parse_Pattern;
@@ -1088,12 +1363,21 @@ package body HBNF_Grammar is
             while P.Toks (Pos).Kind in T_Newline | T_Comment loop
                Pos := Pos + 1;
             end loop;
-            exit when P.Toks (Pos).Kind /= T_Bar;
+            exit when P.Toks (Pos).Kind not in T_Bar | T_Slash;
             P.Pos := Pos;
          end;
-         Next (P);
-         Element_Vectors.Append
-           (V, new Element'(Kind => Alt, Min => 1, Max => 1));
+         declare
+            T : constant Token := Cur (P);
+            A : constant Element_Access :=
+              new Element'(Kind => Alt, Min => 1, Max => 1,
+                           Union => T.Kind = T_Slash);
+         begin
+            if A.Union then
+               Union_Sites.Append (Here (T.Line, T.Col, "/", A));
+            end if;
+            Next (P);
+            Element_Vectors.Append (V, A);
+         end;
          Append_All (V, Parse_Pattern (P));
       end loop;
       return V;
@@ -1153,7 +1437,8 @@ package body HBNF_Grammar is
                      First, Last : Natural) is
       begin
          if N > 0 then
-            V.Append (new Element'(Kind => Alt, Min => 1, Max => 1));
+            V.Append (new Element'(Kind => Alt, Min => 1, Max => 1,
+                                   Union => False));
          end if;
          for I in First .. Last loop
             V.Append (Pattern (I));
@@ -1167,7 +1452,12 @@ package body HBNF_Grammar is
             if St > K - 1 then
                Empty_Base := True;
             elsif Pattern (St).Kind = HBNF_Grammar.Name
-              and then Pattern (St).Name = Name
+              and then (Pattern (St).Name = Name
+                        or else (Pattern (St).Fold
+                                 and then Ada.Characters.Handling.To_Lower
+                                            (To_String (Pattern (St).Name))
+                                          = Ada.Characters.Handling.To_Lower
+                                              (To_String (Name))))
               and then Pattern (St).Min = 1 and then Pattern (St).Max = 1
             then
                if St = K - 1 then
@@ -1204,7 +1494,8 @@ package body HBNF_Grammar is
             Items := Tail_V;
          else
             Items := Base_V;
-            Items.Append (new Element'(Kind => Alt, Min => 1, Max => 1));
+            Items.Append (new Element'(Kind => Alt, Min => 1, Max => 1,
+                                       Union => False));
             for E of Tail_V loop
                Items.Append (E);
             end loop;
@@ -1314,6 +1605,291 @@ package body HBNF_Grammar is
      (P.Pos + K > Natural (P.Toks.Length)
       or else P.Toks (P.Pos + K).Kind in T_Newline | T_Comment | T_EOF);
 
+   --  Once every file is read (Parse_File, or Parse on its own):
+   --  - a reference from a file with `sensitivity rule-name %i` takes the
+   --    spelling of the one rule it names when case is ignored;
+   --  - a `/` is accepted where union and ordered choice mean the same:
+   --    between alternatives that each match exactly one code point;
+   --  - a <prose-val> the parser would use stops generation.
+   --  The last two look only at the rules the parser uses (Reachable), so
+   --  a grammar can include an RFC's rules and replace the ones it needs.
+   procedure Finish (Rules : Rule_Vectors.Vector) is
+      use Ada.Characters.Handling;
+
+      By_Name : Index_Maps.Map;   --  exact name -> place
+      Folded  : Index_Maps.Map;   --  lower-case name -> place (0: several)
+
+      procedure Resolve (V : Element_Vectors.Vector; In_Rule : String) is
+      begin
+         for E of V loop
+            if E.Kind = Name and then E.Fold then
+               declare
+                  C : constant Index_Maps.Cursor :=
+                    Folded.Find (To_Lower (To_String (E.Name)));
+               begin
+                  if Index_Maps.Has_Element (C) then
+                     if Index_Maps.Element (C) = 0 then
+                        raise Parse_Error with
+                          "rule `" & In_Rule & "`: `" & To_String (E.Name)
+                          & "` names more than one rule when case is "
+                          & "ignored (`sensitivity rule-name %i`)";
+                     end if;
+                     E.Name := Rules (Index_Maps.Element (C)).Name;
+                  end if;
+               end;
+            elsif E.Kind = Group then
+               Resolve (E.Items, In_Rule);
+            end if;
+         end loop;
+      end Resolve;
+
+      --  True when E matches exactly one code point: a range, or a rule
+      --  whose every alternative is one element that does.
+      function One_Point (E : Element_Access; Depth : Natural)
+        return Boolean
+      is
+      begin
+         if E.Min /= 1 or else E.Max /= 1 or else Depth = 0 then
+            return False;
+         elsif E.Kind = Char_Range then
+            return True;
+         elsif E.Kind /= Name
+           or else not By_Name.Contains (To_String (E.Name))
+         then
+            return False;
+         end if;
+         declare
+            R : constant Rule := Rules (By_Name (To_String (E.Name)));
+            N : Natural := 0;   --  elements in the current alternative
+         begin
+            if R.Jet_Code /= Null_Unbounded_String or else R.Pattern.Is_Empty
+            then
+               return False;
+            end if;
+            for X of R.Pattern loop
+               if X.Kind = Alt then
+                  if N /= 1 then
+                     return False;
+                  end if;
+                  N := 0;
+               else
+                  N := N + 1;
+                  if N > 1 or else not One_Point (X, Depth - 1) then
+                     return False;
+                  end if;
+               end if;
+            end loop;
+            return N = 1;
+         end;
+      end One_Point;
+
+      Problems : Unbounded_String;
+
+      procedure Report (Msg : String) is
+      begin
+         if Problems /= Null_Unbounded_String then
+            Append (Problems, ASCII.LF);
+         end if;
+         Append (Problems, Msg);
+      end Report;
+
+      procedure Report (S : Site; Msg : String) is
+      begin
+         Report (Pointed (S, Msg));
+      end Report;
+
+      procedure Check_Unions (V : Element_Vectors.Vector) is
+         Union : Element_Access := null;
+         N     : Natural := 0;
+         Fits  : Boolean := True;
+      begin
+         for E of V loop
+            if E.Kind = Alt then
+               if E.Union and then Union = null then
+                  Union := E;
+               end if;
+               Fits := Fits and then N = 1;
+               N := 0;
+            else
+               N := N + 1;
+               Fits := Fits and then One_Point (E, 32);
+               if E.Kind = Group then
+                  Check_Unions (E.Items);
+               end if;
+            end if;
+         end loop;
+         Fits := Fits and then N = 1;
+         if Union /= null and then not Fits then
+            for S of Union_Sites loop
+               if S.Alt = Union then
+                  Report
+                    (S, "`" & To_String (S.Text) & "` is ABNF's union, "
+                     & "which hbnf takes only between alternatives that "
+                     & "each match one code point (a %x value, a 'c' "
+                     & "literal, or a rule of them) so far (RFCPLAN.md step "
+                     & "5); write `|`, ordered choice, longest first");
+                  exit;
+               end if;
+            end loop;
+         end if;
+      end Check_Unions;
+
+      procedure Check_Prose (V : Element_Vectors.Vector; In_Rule : String) is
+      begin
+         for E of V loop
+            if E.Kind = Name and then Length (E.Name) > 0
+              and then Slice (E.Name, 1, 1) = "<"
+            then
+               declare
+                  S : constant String := To_String (E.Name);
+                  N : constant Positive :=
+                    Positive'Value (S (S'First + 1 .. S'Last - 1));
+               begin
+                  Report
+                    (Prose_Sites (N),
+                     "not written yet, in `" & In_Rule & "`: <"
+                     & To_String (Prose_Sites (N).Text) & ">");
+               end;
+            elsif E.Kind = Group then
+               Check_Prose (E.Items, In_Rule);
+            end if;
+         end loop;
+      end Check_Prose;
+   begin
+      for J in 1 .. Natural (Rules.Length) loop
+         declare
+            K : constant String := To_Lower (To_String (Rules (J).Name));
+         begin
+            By_Name.Include (To_String (Rules (J).Name), J);
+            if Folded.Contains (K) then
+               Folded.Replace (K, 0);
+            else
+               Folded.Insert (K, J);
+            end if;
+         end;
+      end loop;
+      for R of Rules loop
+         Resolve (R.Pattern, To_String (R.Name));
+      end loop;
+      declare
+         Used  : constant Rule_Vectors.Vector := Reachable (Rules);
+         Lower : Index_Maps.Map;
+      begin
+         for J in 1 .. Natural (Used.Length) loop
+            Check_Unions (Used (J).Pattern);
+            Check_Prose (Used (J).Pattern, To_String (Used (J).Name));
+            --  ABNF's rule names ignore case, and so do the identifiers
+            --  the backends make of them (TOK_DIGIT, Digit): two rules
+            --  whose names differ only in case would be one name there.
+            declare
+               K : constant String := To_Lower (To_String (Used (J).Name));
+            begin
+               if Lower.Contains (K) then
+                  Report ("rules `" & To_String (Used (Lower (K)).Name)
+                          & "` and `" & To_String (Used (J).Name)
+                          & "` differ only in case; ABNF reads them as one "
+                          & "name, and so would the generated code");
+               else
+                  Lower.Insert (K, J);
+               end if;
+            end;
+         end loop;
+      end;
+      if Problems /= Null_Unbounded_String then
+         Fail (To_String (Problems));
+      end if;
+   end Finish;
+
+   --  `name =/ alternatives` (RFC 5234 §3.3): add alternatives to the
+   --  definition that stands, which may be in another file, joined with
+   --  `/`, ABNF's union.  P is at the name.  The rule keeps its comments
+   --  and action, and left recursion is read again over the whole.  In a
+   --  file with `sensitivity rule-name %i` the name is found whatever its
+   --  case.
+   procedure Extend (P     : in out Parser;
+                     Rules : in out Rule_Vectors.Vector;
+                     Index : in out Index_Maps.Map;
+                     Name  : Unbounded_String;
+                     Line  : Positive)
+   is
+      use Ada.Characters.Handling;
+      Op  : constant Token := P.Toks (P.Pos + 1);
+      Where_Op : constant String :=
+        Integer'Image (Op.Line) & ":" & Integer'Image (Op.Col) & ": ";
+      Key : Unbounded_String := Name;
+   begin
+      if File_Fold_Names and then not Standing.Contains (To_String (Name))
+      then
+         declare
+            Hits : Natural := 0;
+         begin
+            for C in Standing.Iterate loop
+               if To_Lower (Standing_Maps.Key (C))
+                  = To_Lower (To_String (Name))
+               then
+                  Hits := Hits + 1;
+                  Key := To_Unbounded_String (Standing_Maps.Key (C));
+               end if;
+            end loop;
+            if Hits > 1 then
+               raise Parse_Error with
+                 Where_Op & "`" & To_String (Name) & "` names more than one "
+                 & "rule when case is ignored";
+            end if;
+         end;
+      end if;
+      if not Standing.Contains (To_String (Key)) then
+         raise Parse_Error with
+           Where_Op & "`=/` adds alternatives to `" & To_String (Name)
+           & "`, which no `=` before it defines";
+      end if;
+      Next (P);
+      Next (P);   --  the `=/`
+      declare
+         Old     : constant Standing_Rule := Standing (To_String (Key));
+         Sep     : constant Element_Access :=
+           new Element'(Kind => Alt, Min => 1, Max => 1, Union => True);
+         Raw     : Element_Vectors.Vector := Old.Raw;
+         Pattern : Element_Vectors.Vector;
+         Bases   : Natural;
+         R       : Rule := Old.R;
+      begin
+         if Old.R.Jet_Code /= Null_Unbounded_String then
+            raise Parse_Error with
+              Where_Op & "`" & To_String (Key) & "` is a jet; `=/` cannot add "
+              & "alternatives to it";
+         end if;
+         if Cur (P).Kind = T_Code
+           or else (Cur (P).Kind = T_Pct
+                    and then To_String (Cur (P).Text) in "scan" | "action")
+         then
+            raise Parse_Error with
+              Where_Op & "`=/` takes alternatives; a jet or an action goes "
+              & "with the `=` definition";
+         end if;
+         Union_Sites.Append (Here (Op.Line, Op.Col, "=/", Sep));
+         Raw.Append (Sep);
+         Append_All (Raw, Parse_Alternation (P));
+         if Cur (P).Kind in T_Code | T_Pct then
+            --  Parse_Alternation stops at a %action or a code block.
+            raise Parse_Error with
+              Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+              & ": an action goes with the `=` definition, or in "
+              & "`action " & To_String (Key) & " { }`";
+         end if;
+         if Cur (P).Kind = T_Comment then
+            Next (P);
+         end if;
+         Pattern := Raw;
+         Rewrite_Left_Recursion (R.Name, Line, Pattern, Bases);
+         R.Pattern := Pattern;
+         R.Left_Bases := Bases;
+         Define (Rules, Index, R);
+         Standing.Include
+           (To_String (Key), Standing_Rule'(R => R, Raw => Raw));
+      end;
+   end Extend;
+
    function Parse (Text : String) return Rule_Vectors.Vector is
       P     : Parser := (Toks => Lex (Text), Pos => 1);
       Rules : Rule_Vectors.Vector;
@@ -1326,11 +1902,25 @@ package body HBNF_Grammar is
       Lang_Line : Natural := 0;
       Head_Code : Word_Vectors.Vector;
       Own_Words : Word_Vectors.Vector;
+      --  The lines that set this file's `sensitivity`, per axis (0: none).
+      Names_Line   : Natural := 0;
+      Strings_Line : Natural := 0;
    begin
       if File_Depth = 0 then
          Reset;
       end if;
       First_Rule_Line := 0;
+      First_Defined := Null_Unbounded_String;
+      File_No_Case := False;
+      File_Fold_Names := False;
+      Current_Source := To_Unbounded_String (Text);
+      Line_Starts.Clear;
+      Line_Starts.Append (Text'First);
+      for I in Text'Range loop
+         if Text (I) = ASCII.LF then
+            Line_Starts.Append (I + 1);
+         end if;
+      end loop;
       --  Header: an optional `{ ... }` preamble and/or `language X`, each
       --  preceded by blank lines and `;` comment lines (which are discarded
       --  as header material).  Lookahead keeps a leading comment block that
@@ -1353,6 +1943,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "macros"
                               or else To_String (Cur (P).Text) = "entry"
                               or else To_String (Cur (P).Text) = "includes"
+                              or else To_String (Cur (P).Text) = "sensitivity"
                               or else To_String (Cur (P).Text) = "keywords"))
          then
             P.Pos := Mark;
@@ -1384,6 +1975,67 @@ package body HBNF_Grammar is
                   File_Lang := Cur (P).Text;
                   Lang_Line := Cur (P).Line;
                   Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "sensitivity"
+               then
+                  --  Per file: `sensitivity [rule-name | string] %i | %s`.
+                  --  %i makes rule references (`digit` finds `DIGIT`),
+                  --  bare literals (`"HTTP"` matches `http`), or both,
+                  --  ignore case; %s, the default, does not.  A literal's
+                  --  own %i or %s wins.
+                  declare
+                     At_Line : constant Positive := Cur (P).Line;
+                     Axis    : Unbounded_String := To_Unbounded_String ("");
+                  begin
+                     Next (P);
+                     if Cur (P).Kind = T_Name then
+                        Axis := Cur (P).Text;
+                        if To_String (Axis) not in "rule-name" | "string" then
+                           raise Parse_Error with
+                             Integer'Image (Cur (P).Line) & ":"
+                             & Integer'Image (Cur (P).Col)
+                             & ": `sensitivity` takes `rule-name`, `string` "
+                             & "or neither, then %i or %s";
+                        end if;
+                        Next (P);
+                     end if;
+                     if Cur (P).Kind /= T_Pct
+                       or else Ada.Characters.Handling.To_Lower
+                                 (To_String (Cur (P).Text)) not in "i" | "s"
+                     then
+                        raise Parse_Error with
+                          Integer'Image (Cur (P).Line) & ":"
+                          & Integer'Image (Cur (P).Col)
+                          & ": expected %i or %s after `sensitivity`";
+                     end if;
+                     declare
+                        No_Case : constant Boolean :=
+                          Ada.Characters.Handling.To_Lower
+                            (To_String (Cur (P).Text)) = "i";
+
+                        procedure Set (V : in out Boolean;
+                                       Set_At : in out Natural;
+                                       What : String) is
+                        begin
+                           if Set_At /= 0 and then V /= No_Case then
+                              raise Parse_Error with
+                                Integer'Image (At_Line) & ": `sensitivity"
+                                & What & "` is set otherwise already (line"
+                                & Integer'Image (Set_At) & ")";
+                           end if;
+                           V := No_Case;
+                           Set_At := At_Line;
+                        end Set;
+                     begin
+                        if To_String (Axis) /= "string" then
+                           Set (File_Fold_Names, Names_Line, " rule-name");
+                        end if;
+                        if To_String (Axis) /= "rule-name" then
+                           Set (File_No_Case, Strings_Line, " string");
+                        end if;
+                     end;
+                     Next (P);
+                  end;
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "wordchars"
                then
@@ -1619,17 +2271,17 @@ package body HBNF_Grammar is
             --  Anything else before the `=` is a mistake worth naming: a
             --  C type (hbnf once read `char[IFNAMSIZ] ifname =`; a
             --  binding's %action now converts the value into the daemon's
-            --  type), or a line of elements that is not a rule (a sequence
-            --  goes on to the next line only at a `|`).
+            --  type), or a line of elements that is not a rule (a rule
+            --  goes on to an indented line, or one that starts with `|`).
             if Cur (P).Kind /= T_Name
-              or else P.Toks (P.Pos + 1).Kind /= T_Eq
+              or else P.Toks (P.Pos + 1).Kind not in T_Eq | T_Eq_Slash
             then
                declare
                   K      : Positive := P.Pos;
                   Has_Eq : Boolean := False;
                begin
                   while P.Toks (K).Kind not in T_Newline | T_EOF loop
-                     if P.Toks (K).Kind = T_Eq then
+                     if P.Toks (K).Kind in T_Eq | T_Eq_Slash then
                         Has_Eq := True;
                         exit;
                      end if;
@@ -1642,13 +2294,23 @@ package body HBNF_Grammar is
                        then "; a rule's head is its name alone (a C type "
                             & "before it is not read: an %action converts "
                             & "the value to the daemon's type)"
-                       else "; a rule goes on past its line only at a `|`");
+                       else "; a rule goes on to the next line only when "
+                            & "that line is indented or starts with `|`");
                end;
             end if;
             Name := Cur (P).Text;
             Name_Line := Cur (P).Line;
             if First_Rule_Line = 0 then
                First_Rule_Line := Name_Line;
+            end if;
+            if P.Toks (P.Pos + 1).Kind = T_Eq_Slash then
+               Extend (P, Rules, Index, Name, Name_Line);
+               goto Next_Item;
+            end if;
+            if First_Defined = Null_Unbounded_String
+              and then not Standing.Contains (To_String (Name))
+            then
+               First_Defined := Name;
             end if;
             Next (P);
             Next (P);   --  the '='
@@ -1671,11 +2333,16 @@ package body HBNF_Grammar is
                         Jet_Code        => Cur (P).Text,
                         Action_Code     => Null_Unbounded_String,
                         Left_Bases      => 0));
+               Standing.Include
+                 (To_String (Name),
+                  Standing_Rule'(R   => Rules (Index (To_String (Name))),
+                                 Raw => Element_Vectors.Empty_Vector));
                Next (P);
             else
                declare
                   Action  : Unbounded_String := Null_Unbounded_String;
                   Pattern : Element_Vectors.Vector := Parse_Alternation (P);
+                  Raw     : constant Element_Vectors.Vector := Pattern;
                   Bases   : Natural;
                begin
                   Rewrite_Left_Recursion (Name, Name_Line, Pattern, Bases);
@@ -1717,11 +2384,18 @@ package body HBNF_Grammar is
                            Jet_Code        => Null_Unbounded_String,
                            Action_Code     => Action,
                            Left_Bases      => Bases));
+                  Standing.Include
+                    (To_String (Name),
+                     Standing_Rule'(R   => Rules (Index (To_String (Name))),
+                                    Raw => Raw));
                end;
             end if;
          end;
          <<Next_Item>>
       end loop;
+      if File_Depth = 0 then
+         Finish (Rules);
+      end if;
       return Rules;
    end Parse;
 
@@ -1754,7 +2428,8 @@ package body HBNF_Grammar is
 
       function Join (Dir, Name : String) return String is
       begin
-         if Dir = "" then
+         if Dir = "" or else (Name'Length > 0 and then Name (Name'First) = '/')
+         then
             return Name;
          end if;
          return Dir & "/" & Name;
@@ -1867,15 +2542,25 @@ package body HBNF_Grammar is
          end loop;
       end Expand;
 
-      --  The file's own rules come first (the top file's first rule is the
-      --  root).  Its includes are read before it, so its own rule overrides
-      --  an included one of the same name; the remaining included rules
-      --  append after.
-      function Override (Local, Included : Rule_Vectors.Vector)
+      --  The file's own rules come first, in the order it writes them (so a
+      --  jet's place among the jets is where it is written).  Its includes
+      --  are read before it, so its own rule overrides an included one of
+      --  the same name; the remaining included rules append after.  The
+      --  root, put first, is the file's first new rule: the first it
+      --  defines with `=` that it does not override.  A file with none (a
+      --  binding that only adds actions, or fills in an RFC's rules with
+      --  overrides and `=/`) keeps the root of what it includes.
+      function Override (Local, Included : Rule_Vectors.Vector;
+                         First : Unbounded_String)
         return Rule_Vectors.Vector
       is
          Result : Rule_Vectors.Vector := Local;
          Names  : Path_Sets.Set;
+         Root   : Natural := 0;
+         Want   : constant Unbounded_String :=
+           (if First /= Null_Unbounded_String then First
+            elsif not Included.Is_Empty then Included.First_Element.Name
+            else Null_Unbounded_String);
       begin
          for R of Local loop
             Names.Include (To_String (R.Name));
@@ -1885,6 +2570,20 @@ package body HBNF_Grammar is
                Result.Append (R);
             end if;
          end loop;
+         for J in 1 .. Natural (Result.Length) loop
+            if Result (J).Name = Want then
+               Root := J;
+               exit;
+            end if;
+         end loop;
+         if Root > 1 then
+            declare
+               Top : constant Rule := Result (Root);
+            begin
+               Result.Delete (Root);
+               Result.Prepend (Top);
+            end;
+         end if;
          return Result;
       end Override;
 
@@ -1947,9 +2646,10 @@ package body HBNF_Grammar is
               & "includes";
          end if;
       end loop;
-      Result := Override (Local, Included);
+      Result := Override (Local, Included, First_Defined);
       if File_Depth = 1 then
          Apply_Actions (Result);
+         Finish (Result);
       end if;
       File_Depth := File_Depth - 1;
       return Result;
@@ -1957,14 +2657,14 @@ package body HBNF_Grammar is
       when E : Parse_Error =>
          File_Depth := 0;
          declare
-            M : constant String := Ada.Exceptions.Exception_Message (E);
+            M : constant String := Error_Message (E);
          begin
             --  Name the file once, at the innermost one: " 3: 7: …"
             --  becomes "grammars/ntpd.hbnf: 3: 7: …".
             if M'Length > 0 and then M (M'First) = ' ' then
-               raise Parse_Error with Path & ":" & M;
+               Fail (Path & ":" & M);
             end if;
-            raise;
+            Fail (M);
          end;
       when others =>
          File_Depth := 0;

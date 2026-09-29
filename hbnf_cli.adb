@@ -129,4 +129,12 @@ begin
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       end if;
    end;
+exception
+   when E : HBNF_Grammar.Parse_Error =>
+      --  A schema error: the whole message (it can quote the line, with a
+      --  caret, and run past the 200 characters GNAT keeps).
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "hbnf_cli: " & HBNF_Grammar.Error_Message (E));
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
 end Hbnf_Cli;

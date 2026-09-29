@@ -6,9 +6,9 @@
 ; classes (DIGIT, ALPHA, HEXDIG, ...).
 ;
 ; Every rule here matches exactly one code point, so the character-layer
-; lexer compiles each into a single-character scanner (a "token").  The
-; composites (CRLF, WSP, LWSP) are omitted — they are multi-character and
-; belong with the caller's grammar, not this alphabet.
+; lexer compiles each into a single-character scanner (a "token").  RFC
+; 5234's multi-character core rules are in core.hbnf, which includes this
+; file: CRLF, and LWSP once a character rule can repeat.
 
 ; --- C0 control characters (0x00 .. 0x1F) ---
 NUL = %x00
@@ -62,3 +62,4 @@ CHAR   = %x01-7F
 CTL    = %x00-1F | %x7F
 VCHAR  = %x21-7E
 OCTET  = %x00-FF
+WSP    = SP | HTAB             ; white space

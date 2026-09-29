@@ -305,6 +305,101 @@ procedure Hbnf_Emit_Check is
       end;
    end Check_Scoping;
 
+   --  RFC 5234 forms the reader takes (RFCPLAN.md step 1), at the level
+   --  of the rules it makes; tests/abnf.sh runs them through C.
+   procedure Check_Abnf is
+      use HBNF_Grammar;
+      LF : constant Character := ASCII.LF;
+
+      function Refused (Text, Needle : String) return Boolean is
+         R : Rule_Vectors.Vector;
+      begin
+         R := Parse (Text);
+         return R.Is_Empty and then False;   --  accepted: not refused
+      exception
+         when E : Parse_Error =>
+            return Has (Error_Message (E), Needle);
+      end Refused;
+   begin
+      declare
+         R : constant Rule_Vectors.Vector := Parse ("crlf = %d13.10" & LF);
+      begin
+         Check ("%d13.10 is two code points in sequence",
+                Natural (R (1).Pattern.Length) = 2
+                and then R (1).Pattern (1).Kind = Char_Range
+                and then R (1).Pattern (1).Lo = 13
+                and then R (1).Pattern (2).Lo = 10);
+      end;
+      declare
+         R : constant Rule_Vectors.Vector :=
+           Parse ("d = *2x" & LF & "x = %x30-39" & LF);
+      begin
+         Check ("*2x is zero to two",
+                R (1).Pattern (1).Min = 0 and then R (1).Pattern (1).Max = 2);
+      end;
+      declare
+         R : constant Rule_Vectors.Vector :=
+           Parse ("r = a ; a comment inside the rule" & LF
+                  & "    b" & LF & "a = %x41" & LF & "b = %x42" & LF);
+      begin
+         Check ("an indented line goes on with the rule",
+                Natural (R.Length) = 3
+                and then Natural (R (1).Pattern.Length) = 2);
+      end;
+      declare
+         R : constant Rule_Vectors.Vector :=
+           Parse ("r = 1*( a" & LF & "  / b )" & LF
+                  & "a = %x41" & LF & "b = %x42" & LF);
+      begin
+         Check ("a group across lines, joined by /",
+                Natural (R (1).Pattern (1).Items.Length) = 3
+                and then R (1).Pattern (1).Items (2).Kind = Alt
+                and then R (1).Pattern (1).Items (2).Union);
+      end;
+      declare
+         R : constant Rule_Vectors.Vector :=
+           Parse ("r = a" & LF & "a = %x41" & LF & "a =/ %x42" & LF);
+      begin
+         Check ("=/ adds an alternative in the rule's place",
+                Natural (R.Length) = 2
+                and then To_String (R (2).Name) = "a"
+                and then Natural (R (2).Pattern.Length) = 3
+                and then R (2).Pattern (2).Union);
+      end;
+      declare
+         R : constant Rule_Vectors.Vector :=
+           Parse ("sensitivity string %i" & LF
+                  & "r = ""a"" %s""b"" %i""c""" & LF);
+      begin
+         Check ("sensitivity string %i: a bare literal ignores case",
+                R (1).Pattern (1).No_Case
+                and then not R (1).Pattern (2).No_Case
+                and then R (1).Pattern (3).No_Case);
+      end;
+      declare
+         R : constant Rule_Vectors.Vector :=
+           Parse ("sensitivity rule-name %i" & LF
+                  & "r = digit" & LF & "DIGIT = %x30-39" & LF);
+      begin
+         Check ("sensitivity rule-name %i: digit finds DIGIT",
+                To_String (R (1).Pattern (1).Name) = "DIGIT");
+      end;
+      Check ("a <prose-val> the parser uses is reported with its line",
+             Refused ("r = x <to be written>" & LF & "x = %x41" & LF,
+                      "1:7: not written yet, in `r`: <to be written>"
+                      & LF & "  r = x <to be written>" & LF & "        ^"));
+      Check ("an unused <prose-val> is not",
+             not Refused ("r = x" & LF & "x = %x41" & LF & "y = <later>" & LF,
+                          "not written yet"));
+      Check ("/ between phrases is refused",
+             Refused ("r = ""a"" ""b"" / ""c""" & LF, "ABNF's union"));
+      Check ("=/ with no = before it is refused",
+             Refused ("r =/ ""a""" & LF, "which no `=` before it defines"));
+      Check ("names that differ only in case are refused",
+             Refused ("r = a A" & LF & "a = %x41" & LF & "A = %x42" & LF,
+                      "differ only in case"));
+   end Check_Abnf;
+
    --  Left recursion, which the reader turns into a list: the rule's
    --  shape, and the generic matcher reading a base and then its tails.
    procedure Check_Left_Recursion is
@@ -347,6 +442,7 @@ begin
    Check_Hbnf (Ada.Command_Line.Argument (2));
    Check_Include;
    Check_Scoping;
+   Check_Abnf;
    Check_Left_Recursion;
 
    Ada.Text_IO.Put_Line

@@ -123,6 +123,9 @@ HBNF_CLI=/tmp/hbnf_cli sh tests/portable.sh
 echo "== character rules and UTF-8 (tests/utf8-test.sh) =="
 HBNF_CLI=/tmp/hbnf_cli sh tests/utf8-test.sh
 
+echo "== RFC 5234 forms (tests/abnf.sh) =="
+HBNF_CLI=/tmp/hbnf_cli sh tests/abnf.sh
+
 echo "== the reader and emitters (tests/hbnf_emit_check.adb) =="
 gnatmake -q -gnat2022 -I. -Itests tests/hbnf_emit_check.adb -o /tmp/hbnf_emit_check \
     && /tmp/hbnf_emit_check tests/server.hbnf hbnf_schema.hbnf | grep -v '^ok:'
