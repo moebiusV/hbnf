@@ -4,7 +4,7 @@ Agreed 2026-09-28.  The goal: paste RFC 5234-family ABNF and get a
 working parser, and make the nine daemon grammars smaller, clearer and more
 coherent on the way.  There is one parsing model, not two profiles, and the
 generated parsers stay recursive descent, linear in their input, with no
-packrat table and no unbounded backtracking.
+unbounded backtracking.
 
 Where the tree stands, and what this plan builds on: CHARLAYER.md (numeric
 terminals, `'c'` literals, `ascii.hbnf`, UTF-8 scanners in all four
@@ -245,8 +245,9 @@ unwind-ident passing; each lands as reviewed patches.
        (no pre-cut token array); a literal compares bytes at the position, a
        char-rule reference runs its scanner there, and `whitespace ws` makes
        phrase-level rules skip `ws` between elements (character rules never
-       do).  Keywords still branch on the first byte.  The §6 memoization
-       comes later, only if the numbers regress.
+       do).  Keywords still branch on the first byte.  Memoization (caching a
+       rule's result at a position) is an implementation optimization, added
+       only if the §6 numbers regress; it never changes what is accepted.
 
    4d. **Convert ntpd first**, then the other eight daemons; jets become
        character rules where they can.
@@ -293,6 +294,6 @@ unwind-ident passing; each lands as reviewed patches.
 ## Not in this plan
 
 - HTTP's and RFC 822's `#` list operator, RBNF.
-- Packrat, GLR, or trying another alternative after a later failure.
+- GLR, or trying another alternative after a later failure.
 - Case-folding non-ASCII rule names.
 - Guessing any setting from an include or from seeing `%x`.
