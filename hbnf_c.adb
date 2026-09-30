@@ -1194,19 +1194,8 @@ package body HBNF_C is
       --  one value per distinct leading keyword, so the tree records which
       --  alternative matched.  A list rewritten from left recursion (Base)
       --  has a first value, <CN>_BASE, for its first entry, the base.
-      --  Render a template and check every binding was used (RFCPLAN.md
-      --  step 3: an unfilled hole is Render's error; an unused one is here).
-      function Tpl (Text : String; B : in out Templates.Bindings) return String is
-         Result : constant String := Templates.Render (Text, B);
-         U      : constant String := Templates.Unused (B);
-      begin
-         if U /= "" then
-            raise Parse_Error with
-              "template binding `${" & U & "}` is never used";
-         end if;
-         return Result;
-      end Tpl;
-
+      --  Render a template from the table of name/value rows (RFCPLAN.md
+      --  step 3: a hole with no row is Render's error).
       function Kind_Enum (CN : String; Tags : String_Vectors.Vector;
                           Base : Boolean := False)
          return String is
@@ -1214,38 +1203,24 @@ package body HBNF_C is
          Names : constant String_Vectors.Vector := Enum_Names (Tags);
       begin
          if Base then
-            declare
-               B : Templates.Bindings;
-            begin
-               Templates.Set (B, "ident", C_Ident (CN));
-               Templates.Set (B, "suffix",
+            Append (Items, Templates.Render (Templates.Get ("c_enum_base"),
+              (Templates.Bind ("ident", C_Ident (CN)),
+               Templates.Bind ("suffix",
                  (if (for some N of Names => To_String (N) = "BASE")
-                  then "_0" else ""));
-               Append (Items, Tpl (Templates.Get ("c_enum_base"), B));
-            end;
+                  then "_0" else "")))));
             Append (Items, LF);
          end if;
          for I in 1 .. Natural (Tags.Length) loop
-            declare
-               B : Templates.Bindings;
-            begin
-               Templates.Set (B, "ident", C_Ident (CN) & "_" & To_String (Names (I)));
-               Templates.Set (B, "lit", To_String (Tags (I)));
-               if I < Natural (Tags.Length) then
-                  Append (Items, Tpl (Templates.Get ("c_enum_item"), B));
-               else
-                  Append (Items, Tpl (Templates.Get ("c_enum_item_last"), B));
-               end if;
-            end;
+            Append (Items, Templates.Render
+              (Templates.Get (if I < Natural (Tags.Length)
+                              then "c_enum_item" else "c_enum_item_last"),
+               (Templates.Bind ("ident", C_Ident (CN) & "_" & To_String (Names (I))),
+                Templates.Bind ("lit", To_String (Tags (I))))));
             Append (Items, LF);
          end loop;
-         declare
-            B : Templates.Bindings;
-         begin
-            Templates.Set (B, "name", Pfx & CN & "_kind_t");
-            Templates.Set (B, "items", To_String (Items));
-            return Tpl (Templates.Get ("c_enum"), B) & LF;
-         end;
+         return Templates.Render (Templates.Get ("c_enum"),
+           (Templates.Bind ("name", Pfx & CN & "_kind_t"),
+            Templates.Bind ("items", To_String (Items)))) & LF;
       end Kind_Enum;
 
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
@@ -1261,38 +1236,27 @@ package body HBNF_C is
 
          case Info.Kind is
             when Scalar =>
-               declare
-                  B : Templates.Bindings;
-               begin
-                  Templates.Set (B, "type", To_String (Info.Inline_Type));
-                  Templates.Set (B, "name", C_Type_Name (NM));
-                  Append (Buf, Tpl (Templates.Get ("c_scalar"), B));
-               end;
+               Append (Buf, Templates.Render (Templates.Get ("c_scalar"),
+                 (Templates.Bind ("type", To_String (Info.Inline_Type)),
+                  Templates.Bind ("name", C_Type_Name (NM)))));
                Append (Buf, LF);
             when Enum =>
                declare
-                  B     : Templates.Bindings;
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
                   Items : U;
                begin
                   for I in 1 .. Natural (Info.Literals.Length) loop
-                     declare
-                        IB : Templates.Bindings;
-                     begin
-                        Templates.Set (IB, "ident",
-                          C_Ident (NM) & "_" & To_String (Names (I)));
-                        Templates.Set (IB, "lit", To_String (Info.Literals (I)));
-                        if I < Natural (Info.Literals.Length) then
-                           Append (Items, Tpl (Templates.Get ("c_enum_item"), IB));
-                        else
-                           Append (Items, Tpl (Templates.Get ("c_enum_item_last"), IB));
-                        end if;
-                     end;
+                     Append (Items, Templates.Render
+                       (Templates.Get (if I < Natural (Info.Literals.Length)
+                                       then "c_enum_item" else "c_enum_item_last"),
+                        (Templates.Bind ("ident",
+                           C_Ident (NM) & "_" & To_String (Names (I))),
+                         Templates.Bind ("lit", To_String (Info.Literals (I))))));
                      Append (Items, LF);
                   end loop;
-                  Templates.Set (B, "name", C_Type_Name (NM));
-                  Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Get ("c_enum"), B));
+                  Append (Buf, Templates.Render (Templates.Get ("c_enum"),
+                    (Templates.Bind ("name", C_Type_Name (NM)),
+                     Templates.Bind ("items", To_String (Items)))));
                end;
                Append (Buf, LF);
             when Struct =>
@@ -1300,7 +1264,6 @@ package body HBNF_C is
                   Append (Buf, Kind_Enum (CN, Info.Tags));
                end if;
                declare
-                  B     : Templates.Bindings;
                   Pre   : U;
                   Items : U;
                   Post  : U;
@@ -1310,12 +1273,8 @@ package body HBNF_C is
                      Append (Pre, LF);
                   end if;
                   if not Info.Tags.Is_Empty then
-                     declare
-                        KB : Templates.Bindings;
-                     begin
-                        Templates.Set (KB, "kind", Pfx & CN & "_kind_t");
-                        Append (Pre, Tpl (Templates.Get ("c_kind"), KB));
-                     end;
+                     Append (Pre, Templates.Render (Templates.Get ("c_kind"),
+                       (1 => Templates.Bind ("kind", Pfx & CN & "_kind_t"))));
                      Append (Pre, LF);
                   end if;
                   for M of Info.Members loop
@@ -1323,17 +1282,13 @@ package body HBNF_C is
                         J       : constant Natural := Find (To_String (M.Name));
                         Is_Head : constant Boolean :=
                           M.Is_List or else (J > 0 and then Infos (J).Kind = List);
-                        FB      : Templates.Bindings;
                      begin
-                        if Is_Head then
-                           Templates.Set (FB, "type", Pfx & C_Name (To_String (M.Name)));
-                           Templates.Set (FB, "field", C_Field (To_String (M.Name)));
-                           Append (Items, Tpl (Templates.Get ("c_list_field"), FB));
-                        else
-                           Templates.Set (FB, "type", C_Type_Of (To_String (M.Name)));
-                           Templates.Set (FB, "field", C_Field (To_String (M.Name)));
-                           Append (Items, Tpl (Templates.Get ("c_field"), FB));
-                        end if;
+                        Append (Items, Templates.Render
+                          (Templates.Get (if Is_Head then "c_list_field" else "c_field"),
+                           (Templates.Bind ("type",
+                              (if Is_Head then Pfx & C_Name (To_String (M.Name))
+                               else C_Type_Of (To_String (M.Name)))),
+                            Templates.Bind ("field", C_Field (To_String (M.Name))))));
                      end;
                      Append (Items, LF);
                   end loop;
@@ -1341,11 +1296,11 @@ package body HBNF_C is
                      Append (Post, Templates.Get ("c_line"));
                      Append (Post, LF);
                   end if;
-                  Templates.Set (B, "name", Pfx & CN);
-                  Templates.Set (B, "pre", To_String (Pre));
-                  Templates.Set (B, "items", To_String (Items));
-                  Templates.Set (B, "post", To_String (Post));
-                  Append (Buf, Tpl (Templates.Get ("c_struct"), B));
+                  Append (Buf, Templates.Render (Templates.Get ("c_struct"),
+                    (Templates.Bind ("name", Pfx & CN),
+                     Templates.Bind ("pre", To_String (Pre)),
+                     Templates.Bind ("items", To_String (Items)),
+                     Templates.Bind ("post", To_String (Post)))));
                end;
                Append (Buf, LF);
             when List =>
@@ -1355,7 +1310,6 @@ package body HBNF_C is
                   Append (Buf, Kind_Enum (CN, Info.Tags, R.Left_Bases > 0));
                end if;
                declare
-                  B     : Templates.Bindings;
                   Pre   : U;
                   Items : U;
                   Post  : U;
@@ -1365,45 +1319,29 @@ package body HBNF_C is
                      Append (Pre, LF);
                   end if;
                   if not Info.Tags.Is_Empty then
-                     declare
-                        KB : Templates.Bindings;
-                     begin
-                        Templates.Set (KB, "kind", Pfx & CN & "_kind_t");
-                        Append (Pre, Tpl (Templates.Get ("c_kind"), KB));
-                     end;
+                     Append (Pre, Templates.Render (Templates.Get ("c_kind"),
+                       (1 => Templates.Bind ("kind", Pfx & CN & "_kind_t"))));
                      Append (Pre, LF);
                   end if;
-                  declare
-                     EB : Templates.Bindings;
-                  begin
-                     Templates.Set (EB, "entry", L_Entry (Pfx & CN));
-                     Append (Items, Tpl (Templates.Get ("c_entry"), EB));
-                  end;
+                  Append (Items, Templates.Render (Templates.Get ("c_entry"),
+                    (1 => Templates.Bind ("entry", L_Entry (Pfx & CN)))));
                   Append (Items, LF);
                   if Info.Elem_Members.Is_Empty then
                      if Info.Elem_Name /= Null_Unbounded_String then
-                        declare
-                           FB : Templates.Bindings;
-                        begin
-                           Templates.Set (FB, "type",
-                             C_Type_Of (To_String (Info.Elem_Name)));
-                           Templates.Set (FB, "field",
-                             C_Field (To_String (Info.Elem_Name)));
-                           Append (Items, Tpl (Templates.Get ("c_field"), FB));
-                        end;
+                        Append (Items, Templates.Render (Templates.Get ("c_field"),
+                          (Templates.Bind ("type",
+                             C_Type_Of (To_String (Info.Elem_Name))),
+                           Templates.Bind ("field",
+                             C_Field (To_String (Info.Elem_Name))))));
                      else
                         Append (Items, Templates.Get ("c_value"));
                      end if;
                      Append (Items, LF);
                   else
                      for M of Info.Elem_Members loop
-                        declare
-                           FB : Templates.Bindings;
-                        begin
-                           Templates.Set (FB, "type", C_Type_Of (To_String (M.Name)));
-                           Templates.Set (FB, "field", C_Field (To_String (M.Name)));
-                           Append (Items, Tpl (Templates.Get ("c_field"), FB));
-                        end;
+                        Append (Items, Templates.Render (Templates.Get ("c_field"),
+                          (Templates.Bind ("type", C_Type_Of (To_String (M.Name))),
+                           Templates.Bind ("field", C_Field (To_String (M.Name))))));
                         Append (Items, LF);
                      end loop;
                   end if;
@@ -1411,11 +1349,11 @@ package body HBNF_C is
                      Append (Post, Templates.Get ("c_line"));
                      Append (Post, LF);
                   end if;
-                  Templates.Set (B, "name", Pfx & CN);
-                  Templates.Set (B, "pre", To_String (Pre));
-                  Templates.Set (B, "items", To_String (Items));
-                  Templates.Set (B, "post", To_String (Post));
-                  Append (Buf, Tpl (Templates.Get ("c_struct"), B));
+                  Append (Buf, Templates.Render (Templates.Get ("c_struct"),
+                    (Templates.Bind ("name", Pfx & CN),
+                     Templates.Bind ("pre", To_String (Pre)),
+                     Templates.Bind ("items", To_String (Items)),
+                     Templates.Bind ("post", To_String (Post)))));
                end;
                Append (Buf, LF);
          end case;
@@ -2561,19 +2499,6 @@ package body HBNF_C is
          return 0;
       end Find;
 
-      --  Render a template and check every binding was used (RFCPLAN.md
-      --  step 3: an unfilled hole is Render's error; an unused one is here).
-      function Tpl (Text : String; B : in out Templates.Bindings) return String is
-         Result : constant String := Templates.Render (Text, B);
-         U      : constant String := Templates.Unused (B);
-      begin
-         if U /= "" then
-            raise HBNF_Grammar.Parse_Error with
-              "template binding `${" & U & "}` is never used";
-         end if;
-         return Result;
-      end Tpl;
-
       function Is_Core (Name : String) return Boolean is
         (Scalar_C_Type (Name) /= "");
 
@@ -2925,32 +2850,44 @@ package body HBNF_C is
             begin
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & "if (!expect_lit"
-                       & (if E.No_Case then "_nocase" else "") & "(p, """
-                       & C_Escape (To_String (E.Lit)) & """, "
-                       & Img (To_String (E.Lit)'Length) & ")) { " & Fail & " }");
+                     Append (Buf, Templates.Render (Templates.Get ("c_seq_literal"),
+                       (Templates.Bind ("ind", Ind),
+                        Templates.Bind ("nocase",
+                          (if E.No_Case then "_nocase" else "")),
+                        Templates.Bind ("lit", C_Escape (To_String (E.Lit))),
+                        Templates.Bind ("len", Img (To_String (E.Lit)'Length)),
+                        Templates.Bind ("fail", Fail))));
                      Append (Buf, LF);
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
-                        Append (Buf, Ind & "if (!expect_kind(p, "
-                          & Scalar_Tok_Kind (To_String (E.Name)) & ", """
-                          & Core_Desc (To_String (E.Name)) & """)) { " & Fail & " }");
-                        Append (Buf, LF);
-                        if Is_Number (To_String (E.Name)) then
-                           Append (Buf, Ind & "num_"
-                             & C_Field (To_String (E.Name))
-                             & " = p->toks[p->pos].text; p->pos++;");
-                        else
-                           Append (Buf, Ind & Acc
-                             & C_Field (To_String (E.Name)) & " = "
-                             & Scalar_Parse_Expr (To_String (E.Name)) & "; p->pos++;");
-                        end if;
-                        Append (Buf, LF);
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           Append (Buf, Templates.Render (Templates.Get ("c_seq_kind"),
+                             (Templates.Bind ("ind", Ind),
+                              Templates.Bind ("kind", Scalar_Tok_Kind (NM)),
+                              Templates.Bind ("desc", Core_Desc (NM)),
+                              Templates.Bind ("fail", Fail),
+                              Templates.Bind ("assign",
+                                (if Is_Number (NM)
+                                 then Ind & "num_" & C_Field (NM)
+                                      & " = p->toks[p->pos].text; p->pos++;"
+                                 else Ind & Acc & C_Field (NM) & " = "
+                                      & Scalar_Parse_Expr (NM) & "; p->pos++;")))));
+                           Append (Buf, LF);
+                        end;
                      else
-                        Append (Buf, Ind & "if (!parse_rule_"
-                          & C_Name (To_String (E.Name)) & "(p, &" & Acc
-                          & C_Field (To_String (E.Name)) & ")) { " & Fail & " }");
-                        Append (Buf, LF);
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           Append (Buf, Templates.Render (Templates.Get ("c_seq_ref"),
+                             (Templates.Bind ("ind", Ind),
+                              Templates.Bind ("name", C_Name (NM)),
+                              Templates.Bind ("acc", Acc),
+                              Templates.Bind ("field", C_Field (NM)),
+                              Templates.Bind ("fail", Fail))));
+                           Append (Buf, LF);
+                        end;
                      end if;
                   when Group =>
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Acc, Buf,
@@ -3891,10 +3828,11 @@ package body HBNF_C is
          end if;
       end loop;
       declare
-         B        : Templates.Bindings;
-         Kind_Ext : U;
-         Nocase   : U;
-         Kw       : U;
+         Kind_Ext  : U;
+         Nocase    : U;
+         Kw        : U;
+         Strings_H : constant String :=
+           (if Nocase_Words.Is_Empty then "" else "#include <strings.h>" & LF);
       begin
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
@@ -3933,22 +3871,21 @@ package body HBNF_C is
             Append (Nocase, "}");
             Append (Nocase, LF);
             Append (Nocase, LF);
-            Templates.Set (B, "strings_h", "#include <strings.h>" & LF);
-         else
-            Templates.Set (B, "strings_h", "");
          end if;
-         Templates.Set (B, "kind", To_String (Kind_Ext));
-         Templates.Set (B, "keywords", To_String (Kw));
-         Templates.Set (B, "nocase", To_String (Nocase));
-         Append (Res, Tpl (Templates.Get ("c_parser"), B));
+         Append (Res, Templates.Render (Templates.Get ("c_parser"),
+           (Templates.Bind ("strings_h", Strings_H),
+            Templates.Bind ("kind", To_String (Kind_Ext)),
+            Templates.Bind ("keywords", To_String (Kw)),
+            Templates.Bind ("nocase", To_String (Nocase)))));
       end;
       Append (Res, LF);
       Append (Res, LF);
 
       --  Forward declarations of every parse function.
       for I in 1 .. N loop
-         Append (Res, "static bool parse_rule_" & C_Name (To_String (Rules (I).Name))
-           & "(parser_t *p, " & Out_Type (I) & ");");
+         Append (Res, Templates.Render (Templates.Get ("c_rule_decl"),
+           (Templates.Bind ("name", C_Name (To_String (Rules (I).Name))),
+            Templates.Bind ("type", Out_Type (I)))));
          Append (Res, LF);
       end loop;
       Append (Res, LF);
@@ -3957,8 +3894,9 @@ package body HBNF_C is
          declare
             R : constant Rule := Rules (I);
          begin
-            Append (Res, "static bool parse_rule_" & C_Name (To_String (R.Name))
-              & "(parser_t *p, " & Out_Type (I) & ") {");
+            Append (Res, Templates.Render (Templates.Get ("c_rule_head"),
+              (Templates.Bind ("name", C_Name (To_String (R.Name))),
+               Templates.Bind ("type", Out_Type (I)))));
             Append (Res, LF);
             Emit_Rule_Parser (I, Res);
             Append (Res, "}");

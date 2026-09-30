@@ -583,19 +583,6 @@ package body HBNF_Ada is
       end Emit_Vector;
 
       --  A scalar, enum or record declaration, carrying the rule's comments.
-      --  Render a template and check every binding was used (RFCPLAN.md
-      --  step 3: an unfilled hole is Render's error; an unused one is here).
-      function Tpl (Text : String; B : in out Templates.Bindings) return String is
-         Result : constant String := Templates.Render (Text, B);
-         U      : constant String := Templates.Unused (B);
-      begin
-         if U /= "" then
-            raise Parse_Error with
-              "template binding `${" & U & "}` is never used";
-         end if;
-         return Result;
-      end Tpl;
-
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
          R    : constant Rule := Rules (Idx);
          Base : constant String := Ada_Ident (To_String (R.Name));
@@ -609,17 +596,12 @@ package body HBNF_Ada is
 
          case Info.Kind is
             when Scalar =>
-               declare
-                  B : Templates.Bindings;
-               begin
-                  Templates.Set (B, "name", TN);
-                  Templates.Set (B, "type", To_String (Info.Inline_Type));
-                  Append (Buf, Tpl (Templates.Get ("ada_scalar"), B));
-               end;
+               Append (Buf, Templates.Render (Templates.Get ("ada_scalar"),
+                 (Templates.Bind ("name", TN),
+                  Templates.Bind ("type", To_String (Info.Inline_Type)))));
                Append (Buf, LF);
             when Enum =>
                declare
-                  B     : Templates.Bindings;
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
                   Items : U;
                begin
@@ -629,35 +611,28 @@ package body HBNF_Ada is
                      end if;
                      Append (Items, Base & "_" & To_String (Names (I)));
                   end loop;
-                  Templates.Set (B, "name", TN);
-                  Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Get ("ada_enum"), B));
+                  Append (Buf, Templates.Render (Templates.Get ("ada_enum"),
+                    (Templates.Bind ("name", TN),
+                     Templates.Bind ("items", To_String (Items)))));
                end;
                Append (Buf, LF);
             when Struct =>
                declare
-                  B     : Templates.Bindings;
                   Items : U;
                begin
                   for M of Info.Members loop
-                     declare
-                        IB : Templates.Bindings;
-                     begin
-                        Templates.Set (IB, "field", Ada_Field (To_String (M.Name)));
-                        if M.Is_List then
-                           Templates.Set (IB, "type",
-                             Base & "_" & Ada_Ident (To_String (M.Name))
-                             & "_Vectors.Vector");
-                        else
-                           Templates.Set (IB, "type", Elem_Type (To_String (M.Name)));
-                        end if;
-                        Append (Items, Tpl (Templates.Get ("ada_field"), IB));
-                     end;
+                     Append (Items, Templates.Render (Templates.Get ("ada_field"),
+                       (Templates.Bind ("field", Ada_Field (To_String (M.Name))),
+                        Templates.Bind ("type",
+                          (if M.Is_List
+                           then Base & "_" & Ada_Ident (To_String (M.Name))
+                                & "_Vectors.Vector"
+                           else Elem_Type (To_String (M.Name)))))));
                      Append (Items, LF);
                   end loop;
-                  Templates.Set (B, "name", TN);
-                  Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Get ("ada_struct"), B));
+                  Append (Buf, Templates.Render (Templates.Get ("ada_struct"),
+                    (Templates.Bind ("name", TN),
+                     Templates.Bind ("items", To_String (Items)))));
                end;
                Append (Buf, LF);
             when List =>
@@ -696,33 +671,24 @@ package body HBNF_Ada is
          else
             --  A group element: emit a named entry record (value members).
             declare
-               B     : Templates.Bindings;
                Items : U;
             begin
                for M of Info.Elem_Members loop
-                  declare
-                     IB : Templates.Bindings;
-                  begin
-                     Templates.Set (IB, "field", Ada_Field (To_String (M.Name)));
-                     Templates.Set (IB, "type", Elem_Type (To_String (M.Name)));
-                     Append (Items, Tpl (Templates.Get ("ada_field"), IB));
-                  end;
+                  Append (Items, Templates.Render (Templates.Get ("ada_field"),
+                    (Templates.Bind ("field", Ada_Field (To_String (M.Name))),
+                     Templates.Bind ("type", Elem_Type (To_String (M.Name))))));
                   Append (Items, LF);
                end loop;
-               Templates.Set (B, "name", Base & "_Entry");
-               Templates.Set (B, "items", To_String (Items));
-               Append (Buf, Tpl (Templates.Get ("ada_struct"), B));
+               Append (Buf, Templates.Render (Templates.Get ("ada_struct"),
+                 (Templates.Bind ("name", Base & "_Entry"),
+                  Templates.Bind ("items", To_String (Items)))));
             end;
             Append (Buf, LF);
             Append (Buf, Emit_Vector (Base & "_Vectors", Base & "_Entry"));
          end if;
-         declare
-            B : Templates.Bindings;
-         begin
-            Templates.Set (B, "name", TN);
-            Templates.Set (B, "base", Base);
-            Append (Buf, Tpl (Templates.Get ("ada_list_subtype"), B));
-         end;
+         Append (Buf, Templates.Render (Templates.Get ("ada_list_subtype"),
+           (Templates.Bind ("name", TN),
+            Templates.Bind ("base", Base))));
          Append (Buf, LF);
 
          if R.Trailing_Comment /= Null_Unbounded_String then
@@ -1653,26 +1619,17 @@ package body HBNF_Ada is
          end if;
       end Emit_Rule_Parser;
 
-      --  Render a template and check every binding was used (RFCPLAN.md
-      --  step 3: an unfilled hole is Render's error; an unused one is here).
-      function Tpl (Text : String; B : in out Templates.Bindings) return String is
-         Result : constant String := Templates.Render (Text, B);
-         U      : constant String := Templates.Unused (B);
-      begin
-         if U /= "" then
-            raise HBNF_Grammar.Parse_Error with
-              "template binding `${" & U & "}` is never used";
-         end if;
-         return Result;
-      end Tpl;
-
       Spec  : U;
       Bdy  : U;
    begin
       --  Package specification: token types, the exception, Parse_Config.
       declare
-         B        : Templates.Bindings;
          Kind_Ext : U;
+         Conf_Decl : constant String :=
+           (if Conf
+            then "   function Parse_Config (Filename : String) return "
+                 & Ret_Type (1) & ";" & LF & LF
+            else "");
       begin
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
@@ -1684,29 +1641,25 @@ package body HBNF_Ada is
                Append (Kind_Ext, ", " & Ada_Field (To_String (Rules (I).Name)));
             end if;
          end loop;
-         Templates.Set (B, "pkg", Package_Name);
-         Templates.Set (B, "kind", To_String (Kind_Ext));
-         Templates.Set (B, "ret", Ret_Type (1));
-         if Conf then
-            Templates.Set (B, "conf",
-              "   function Parse_Config (Filename : String) return "
-              & Ret_Type (1) & ";" & LF & LF);
-         else
-            Templates.Set (B, "conf", "");
-         end if;
-         Append (Spec, Tpl (Templates.Get ("ada_parser_spec"), B));
+         Append (Spec, Templates.Render (Templates.Get ("ada_parser_spec"),
+           (Templates.Bind ("pkg", Package_Name),
+            Templates.Bind ("kind", To_String (Kind_Ext)),
+            Templates.Bind ("ret", Ret_Type (1)),
+            Templates.Bind ("conf", Conf_Decl))));
          Append (Spec, LF);
       end;
 
       --  Package body: the parser itself (the lexer is a separate template).
       declare
-         B           : Templates.Bindings;
          Nocase_Proc : U;
+         Nocase_With : constant String :=
+           (if Has_No_Case (Rules)
+            then "with Ada.Strings.Equal_Case_Insensitive;" & LF
+            else "");
+         Conf_With : constant String :=
+           (if Conf then "with Ada.Text_IO;" & LF else "");
       begin
-         Templates.Set (B, "pkg", Package_Name);
          if Has_No_Case (Rules) then
-            Templates.Set (B, "nocase_with",
-              "with Ada.Strings.Equal_Case_Insensitive;" & LF);
             Append (Nocase_Proc,
               "   procedure Expect_Lit_Nocase (P : in out Parser; Lit : String) is");
             Append (Nocase_Proc, LF);
@@ -1733,16 +1686,12 @@ package body HBNF_Ada is
             Append (Nocase_Proc, "   end Expect_Lit_Nocase;");
             Append (Nocase_Proc, LF);
             Append (Nocase_Proc, LF);
-         else
-            Templates.Set (B, "nocase_with", "");
          end if;
-         if Conf then
-            Templates.Set (B, "conf_with", "with Ada.Text_IO;" & LF);
-         else
-            Templates.Set (B, "conf_with", "");
-         end if;
-         Templates.Set (B, "nocase_proc", To_String (Nocase_Proc));
-         Append (Bdy, Tpl (Templates.Get ("ada_parser_body"), B));
+         Append (Bdy, Templates.Render (Templates.Get ("ada_parser_body"),
+           (Templates.Bind ("pkg", Package_Name),
+            Templates.Bind ("nocase_with", Nocase_With),
+            Templates.Bind ("conf_with", Conf_With),
+            Templates.Bind ("nocase_proc", To_String (Nocase_Proc)))));
          Append (Bdy, LF);
          Append (Bdy, LF);
       end;

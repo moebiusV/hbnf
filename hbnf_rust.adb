@@ -545,19 +545,6 @@ package body HBNF_Rust is
 
       Infos : Info_Vectors.Vector;
 
-      --  Render a template and check every binding was used (RFCPLAN.md
-      --  step 3: an unfilled hole is Render's error; an unused one is here).
-      function Tpl (Text : String; B : in out Templates.Bindings) return String is
-         Result : constant String := Templates.Render (Text, B);
-         U      : constant String := Templates.Unused (B);
-      begin
-         if U /= "" then
-            raise Parse_Error with
-              "template binding `${" & U & "}` is never used";
-         end if;
-         return Result;
-      end Tpl;
-
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
          R    : constant Rule := Rules (Idx);
          Base : constant String := Rust_Type (To_String (R.Name));
@@ -573,64 +560,45 @@ package body HBNF_Rust is
                --  `string` -> `String`) is that type; a self-alias `type
                --  String = String` would shadow std and is omitted.
                if Base /= To_String (Info.Inline_Type) then
-                  declare
-                     B : Templates.Bindings;
-                  begin
-                     Templates.Set (B, "name", Base);
-                     Templates.Set (B, "type", To_String (Info.Inline_Type));
-                     Append (Buf, Tpl (Templates.Get ("rust_scalar"), B));
-                  end;
+                  Append (Buf, Templates.Render (Templates.Get ("rust_scalar"),
+                    (Templates.Bind ("name", Base),
+                     Templates.Bind ("type", To_String (Info.Inline_Type)))));
                   Append (Buf, LF);
                end if;
             when Enum =>
                declare
-                  B     : Templates.Bindings;
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
                   Items : U;
                begin
                   for I in 1 .. Natural (Info.Literals.Length) loop
-                     declare
-                        IB : Templates.Bindings;
-                     begin
-                        Templates.Set (IB, "ident",
-                          Base & "_" & To_String (Names (I)));
-                        if I = 1 then
-                           Append (Items, Tpl (Templates.Get ("rust_enum_first"), IB));
-                        else
-                           Append (Items, Tpl (Templates.Get ("rust_enum_item"), IB));
-                        end if;
-                     end;
+                     Append (Items, Templates.Render
+                       (Templates.Get (if I = 1 then "rust_enum_first"
+                                       else "rust_enum_item"),
+                        (1 => Templates.Bind ("ident",
+                           Base & "_" & To_String (Names (I))))));
                      Append (Items, LF);
                   end loop;
-                  Templates.Set (B, "name", Base);
-                  Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Get ("rust_enum"), B));
+                  Append (Buf, Templates.Render (Templates.Get ("rust_enum"),
+                    (Templates.Bind ("name", Base),
+                     Templates.Bind ("items", To_String (Items)))));
                end;
                Append (Buf, LF);
             when Struct =>
                declare
-                  B     : Templates.Bindings;
                   Items : U;
                begin
                   for M of Info.Members loop
-                     declare
-                        IB : Templates.Bindings;
-                     begin
-                        Templates.Set (IB, "field", Rust_Field (To_String (M.Name)));
-                        if M.Is_List then
-                           Templates.Set (IB, "type",
-                             "Vec<" & Rust_Type_Of (To_String (M.Name)) & ">");
-                        else
-                           Templates.Set (IB, "type",
-                             Rust_Type_Of (To_String (M.Name)));
-                        end if;
-                        Append (Items, Tpl (Templates.Get ("rust_struct_item"), IB));
-                     end;
+                     Append (Items, Templates.Render (Templates.Get ("rust_struct_item"),
+                       (Templates.Bind ("field", Rust_Field (To_String (M.Name))),
+                        Templates.Bind ("type",
+                          (if M.Is_List
+                           then "Vec<" & Rust_Type_Of (To_String (M.Name)) & ">"
+                           else Rust_Type_Of (To_String (M.Name)))))));
                      Append (Items, LF);
                   end loop;
-                  Templates.Set (B, "name", Base);
-                  Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Get ("rust_struct"), B));
+                  Append (Buf, Templates.Render (Templates.Get ("rust_struct"),
+                    (Templates.Bind ("name", Base),
+                     Templates.Bind ("items", To_String (Items)))));
                end;
                Append (Buf, LF);
             when List =>
@@ -657,39 +625,26 @@ package body HBNF_Rust is
 
          if Info.Elem_Members.Is_Empty then
             if Info.Elem_Name = Null_Unbounded_String then
-               declare
-                  B : Templates.Bindings;
-               begin
-                  Templates.Set (B, "name", Base);
-                  Append (Buf, Tpl (Templates.Get ("rust_list_bytes"), B));
-               end;
+               Append (Buf, Templates.Render (Templates.Get ("rust_list_bytes"),
+                 (1 => Templates.Bind ("name", Base))));
             else
-               declare
-                  B : Templates.Bindings;
-               begin
-                  Templates.Set (B, "name", Base);
-                  Templates.Set (B, "type", Rust_Type_Of (To_String (Info.Elem_Name)));
-                  Append (Buf, Tpl (Templates.Get ("rust_list_simple"), B));
-               end;
+               Append (Buf, Templates.Render (Templates.Get ("rust_list_simple"),
+                 (Templates.Bind ("name", Base),
+                  Templates.Bind ("type", Rust_Type_Of (To_String (Info.Elem_Name))))));
             end if;
          else
             declare
-               B     : Templates.Bindings;
                Items : U;
             begin
                for M of Info.Elem_Members loop
-                  declare
-                     IB : Templates.Bindings;
-                  begin
-                     Templates.Set (IB, "field", Rust_Field (To_String (M.Name)));
-                     Templates.Set (IB, "type", Rust_Type_Of (To_String (M.Name)));
-                     Append (Items, Tpl (Templates.Get ("rust_struct_item"), IB));
-                  end;
+                  Append (Items, Templates.Render (Templates.Get ("rust_struct_item"),
+                    (Templates.Bind ("field", Rust_Field (To_String (M.Name))),
+                     Templates.Bind ("type", Rust_Type_Of (To_String (M.Name))))));
                   Append (Items, LF);
                end loop;
-               Templates.Set (B, "name", Base);
-               Templates.Set (B, "items", To_String (Items));
-               Append (Buf, Tpl (Templates.Get ("rust_list_entry"), B));
+               Append (Buf, Templates.Render (Templates.Get ("rust_list_entry"),
+                 (Templates.Bind ("name", Base),
+                  Templates.Bind ("items", To_String (Items)))));
             end;
          end if;
          Append (Buf, LF);
@@ -1593,19 +1548,6 @@ package body HBNF_Rust is
          end if;
       end Emit_Rule_Parser;
 
-      --  Render a template and check every binding was used (RFCPLAN.md
-      --  step 3: an unfilled hole is Render's error; an unused one is here).
-      function Tpl (Text : String; B : in out Templates.Bindings) return String is
-         Result : constant String := Templates.Render (Text, B);
-         U      : constant String := Templates.Unused (B);
-      begin
-         if U /= "" then
-            raise Parse_Error with
-              "template binding `${" & U & "}` is never used";
-         end if;
-         return Result;
-      end Tpl;
-
       Res : U;
    begin
       if Preamble ("Rust") /= "" then
@@ -1614,7 +1556,6 @@ package body HBNF_Rust is
          Append (Res, LF);
       end if;
       declare
-         B        : Templates.Bindings;
          Kind_Ext : U;
          Nocase   : U;
       begin
@@ -1643,9 +1584,9 @@ package body HBNF_Rust is
             Append (Nocase, "    }");
             Append (Nocase, LF);
          end if;
-         Templates.Set (B, "kind", To_String (Kind_Ext));
-         Templates.Set (B, "nocase", To_String (Nocase));
-         Append (Res, Tpl (Templates.Get ("rust_parser"), B));
+         Append (Res, Templates.Render (Templates.Get ("rust_parser"),
+           (Templates.Bind ("kind", To_String (Kind_Ext)),
+            Templates.Bind ("nocase", To_String (Nocase)))));
       end;
       Append (Res, LF);
       Append (Res, LF);

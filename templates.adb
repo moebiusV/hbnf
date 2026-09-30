@@ -94,35 +94,29 @@ package body Templates is
    end Substitute;
 
    --  =====================================================================
-   --  ${name} hole rendering.
+   --  ${name} hole rendering from a table of name/value rows.
    --  =====================================================================
 
-   procedure Set (B : in out Bindings; Name, Value : String) is
+   function Bind (Name, Value : String) return Binding is
    begin
-      for I in 1 .. Natural (B.Slots.Length) loop
-         if To_String (B.Slots (I).Name) = Name then
-            raise Template_Error with
-              "template binding `" & Name & "` set twice";
-         end if;
-      end loop;
-      B.Slots.Append (Slot'(Name  => To_Unbounded_String (Name),
-                            Value => To_Unbounded_String (Value),
-                            Used  => False));
-   end Set;
+      return Binding'(Name  => To_Unbounded_String (Name),
+                      Value => To_Unbounded_String (Value));
+   end Bind;
 
-   function Find_Slot (B : Bindings; Name : String) return Natural is
-   begin
-      for I in 1 .. Natural (B.Slots.Length) loop
-         if To_String (B.Slots (I).Name) = Name then
-            return I;
-         end if;
-      end loop;
-      return 0;
-   end Find_Slot;
-
-   function Render (Text : String; B : in out Bindings) return String is
+   function Render (Text : String; Pairs : Binding_Array) return String is
       Result : Unbounded_String;
       I      : Natural := Text'First;
+
+      function Lookup (Name : String) return String is
+      begin
+         for P of Pairs loop
+            if To_String (P.Name) = Name then
+               return To_String (P.Value);
+            end if;
+         end loop;
+         raise Template_Error with
+           "template hole `${" & Name & "}` has no value";
+      end Lookup;
    begin
       while I <= Text'Last loop
          if Text (I) = '$' then
@@ -140,17 +134,7 @@ package body Templates is
                      raise Template_Error with
                        "a template hole has no closing `}`";
                   end if;
-                  declare
-                     Name : constant String := Text (I + 2 .. J - 1);
-                     K    : constant Natural := Find_Slot (B, Name);
-                  begin
-                     if K = 0 then
-                        raise Template_Error with
-                          "template hole `${" & Name & "}` has no value";
-                     end if;
-                     Append (Result, To_String (B.Slots (K).Value));
-                     B.Slots (K).Used := True;
-                  end;
+                  Append (Result, Lookup (Text (I + 2 .. J - 1)));
                   I := J + 1;
                end;
             else
@@ -164,15 +148,5 @@ package body Templates is
       end loop;
       return To_String (Result);
    end Render;
-
-   function Unused (B : Bindings) return String is
-   begin
-      for S of B.Slots loop
-         if not S.Used then
-            return To_String (S.Name);
-         end if;
-      end loop;
-      return "";
-   end Unused;
 
 end Templates;

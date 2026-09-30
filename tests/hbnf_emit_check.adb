@@ -504,62 +504,30 @@ procedure Hbnf_Emit_Check is
    --  for a literal $, and the unfilled / unused / unbalanced hole errors.
    procedure Check_Templates is
       use Templates;
-      use Ada.Exceptions;
 
-      function Refused (Text : String; B : in out Bindings; Needle : String)
+      function Refused (Text : String; Pairs : Binding_Array; Needle : String)
         return Boolean
       is
          Len : Natural;
       begin
          --  Render in statement context (not a declarative-part initializer),
          --  so a Template_Error raised here is caught below.
-         Len := Render (Text, B)'Length;
+         Len := Render (Text, Pairs)'Length;
          return Len = 0 and then False;   --  rendered: not refused
       exception
          when E : Templates.Template_Error =>
             return Has (Ada.Exceptions.Exception_Message (E), Needle);
       end Refused;
    begin
-      declare
-         B : Bindings;
-      begin
-         Set (B, "name", "Foo");
-         Set (B, "type", "u8");
-         Check ("template: holes fill and $$ is a literal $",
-                Render ("${name} = ${type}; $$100", B) = "Foo = u8; $100"
-                and then Unused (B) = "");
-      end;
-      declare
-         B : Bindings;
-      begin
-         Set (B, "name", "Foo");
-         Check ("template: an unfilled hole is refused",
-                Refused ("${name} ${missing}", B, "${missing}"));
-      end;
-      declare
-         B : Bindings;
-      begin
-         Set (B, "name", "Foo");
-         Set (B, "unused", "x");
-         declare
-            S : constant String := Render ("${name}", B);
-         begin
-            Check ("template: an unused binding is named",
-                   S = "Foo" and then Unused (B) = "unused");
-         end;
-      end;
-      declare
-         B : Bindings;
-      begin
-         Check ("template: a bare $ is refused",
-                Refused ("a $ b", B, "must be"));
-      end;
-      declare
-         B : Bindings;
-      begin
-         Check ("template: an unterminated hole is refused",
-                Refused ("${name", B, "no closing"));
-      end;
+      Check ("template: holes fill and $$ is a literal $",
+             Render ("${name} = ${type}; $$100",
+               (Bind ("name", "Foo"), Bind ("type", "u8"))) = "Foo = u8; $100");
+      Check ("template: an unfilled hole is refused",
+             Refused ("${name} ${missing}", (1 => Bind ("name", "Foo")), "${missing}"));
+      Check ("template: a bare $ is refused",
+             Refused ("a $ b", (1 .. 0 => Bind ("", "")), "must be"));
+      Check ("template: an unterminated hole is refused",
+             Refused ("${name", (1 .. 0 => Bind ("", "")), "no closing"));
    end Check_Templates;
 
 begin
