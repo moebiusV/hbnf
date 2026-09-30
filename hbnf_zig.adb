@@ -628,7 +628,7 @@ package body HBNF_Zig is
                begin
                   Templates.Set (B, "name", Base);
                   Templates.Set (B, "type", To_String (Info.Inline_Type));
-                  Append (Buf, Tpl (Templates.Zig_Scalar, B));
+                  Append (Buf, Tpl (Templates.Get ("zig_scalar"), B));
                end;
                Append (Buf, LF);
             when Enum =>
@@ -643,13 +643,13 @@ package body HBNF_Zig is
                         IB : Templates.Bindings;
                      begin
                         Templates.Set (IB, "item", To_String (Names (I)));
-                        Append (Items, Tpl (Templates.Zig_Enum_Item, IB));
+                        Append (Items, Tpl (Templates.Get ("zig_enum_item"), IB));
                      end;
                      Append (Items, LF);
                   end loop;
                   Templates.Set (B, "name", Base);
                   Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Zig_Enum, B));
+                  Append (Buf, Tpl (Templates.Get ("zig_enum"), B));
                end;
                Append (Buf, LF);
             when Struct =>
@@ -669,13 +669,13 @@ package body HBNF_Zig is
                            Templates.Set (IB, "type",
                              Zig_Type_Of (To_String (M.Name)));
                         end if;
-                        Append (Items, Tpl (Templates.Zig_Struct_Item, IB));
+                        Append (Items, Tpl (Templates.Get ("zig_struct_item"), IB));
                      end;
                      Append (Items, LF);
                   end loop;
                   Templates.Set (B, "name", Base);
                   Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Zig_Struct, B));
+                  Append (Buf, Tpl (Templates.Get ("zig_struct"), B));
                end;
                Append (Buf, LF);
             when List =>
@@ -706,7 +706,7 @@ package body HBNF_Zig is
                   B : Templates.Bindings;
                begin
                   Templates.Set (B, "name", Base);
-                  Append (Buf, Tpl (Templates.Zig_List_Bytes, B));
+                  Append (Buf, Tpl (Templates.Get ("zig_list_bytes"), B));
                end;
             else
                declare
@@ -715,7 +715,7 @@ package body HBNF_Zig is
                   Templates.Set (B, "name", Base);
                   Templates.Set (B, "type",
                     Zig_Type_Of (To_String (Info.Elem_Name)));
-                  Append (Buf, Tpl (Templates.Zig_List_Simple, B));
+                  Append (Buf, Tpl (Templates.Get ("zig_list_simple"), B));
                end;
             end if;
          else
@@ -729,13 +729,13 @@ package body HBNF_Zig is
                   begin
                      Templates.Set (IB, "field", Zig_Field (To_String (M.Name)));
                      Templates.Set (IB, "type", Zig_Type_Of (To_String (M.Name)));
-                     Append (Items, Tpl (Templates.Zig_Struct_Item, IB));
+                     Append (Items, Tpl (Templates.Get ("zig_struct_item"), IB));
                   end;
                   Append (Items, LF);
                end loop;
                Templates.Set (B, "name", Base);
                Templates.Set (B, "items", To_String (Items));
-               Append (Buf, Tpl (Templates.Zig_List_Entry, B));
+               Append (Buf, Tpl (Templates.Get ("zig_list_entry"), B));
             end;
          end if;
          Append (Buf, LF);
@@ -2087,7 +2087,7 @@ package body HBNF_Zig is
              else "[]" & Zig_Type (To_String (R.Name)) & "Entry")
          else Zig_Type (To_String (R.Name)));
       Lexer  : constant String :=
-        Templates.Substitute (Templates.Zig_Lexer, "@ROOT_TYPE@", Root_T);
+        Templates.Substitute (Templates.Get ("zig_lexer"), "@ROOT_TYPE@", Root_T);
    begin
       if Epilogue ("Zig") = "" then
          return Lexer;
@@ -2099,7 +2099,7 @@ package body HBNF_Zig is
    function Emit_Conf (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
       Root_T : constant String := Zig_Type (To_String (Rules (1).Name));
    begin
-      return Templates.Substitute (Templates.Conf_Zig, "@ROOT_TYPE@", Root_T);
+      return Templates.Substitute (Templates.Get ("conf_zig"), "@ROOT_TYPE@", Root_T);
    end Emit_Conf;
 
 end HBNF_Zig;

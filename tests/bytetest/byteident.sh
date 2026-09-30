@@ -53,12 +53,12 @@ fi
 echo "== hbnf: grammars/bind/ntpd.hbnf -> conf.c =="
 cli="${HBNF_CLI:-$repo/hbnf_cli}"
 if [ -x "$cli" ]; then
-	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --conf) \
+	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates) \
 		> "$scratch/conf-out.txt"
 else
 	docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
 		sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
-		        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf' \
+		        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates' \
 		> "$scratch/conf-out.txt"
 fi
 awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \

@@ -7,6 +7,7 @@
 #   HBNF_CLI=/path/to/hbnf_cli sh tests/abnf.sh      (default ./hbnf_cli)
 set -u
 cd "$(dirname "$0")/.."
+export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 CLI=${HBNF_CLI:-./hbnf_cli}
 HERE=$(pwd)
 W=$(mktemp -d)

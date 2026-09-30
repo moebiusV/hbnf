@@ -614,7 +614,7 @@ package body HBNF_Ada is
                begin
                   Templates.Set (B, "name", TN);
                   Templates.Set (B, "type", To_String (Info.Inline_Type));
-                  Append (Buf, Tpl (Templates.Ada_Scalar, B));
+                  Append (Buf, Tpl (Templates.Get ("ada_scalar"), B));
                end;
                Append (Buf, LF);
             when Enum =>
@@ -631,7 +631,7 @@ package body HBNF_Ada is
                   end loop;
                   Templates.Set (B, "name", TN);
                   Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Ada_Enum, B));
+                  Append (Buf, Tpl (Templates.Get ("ada_enum"), B));
                end;
                Append (Buf, LF);
             when Struct =>
@@ -651,13 +651,13 @@ package body HBNF_Ada is
                         else
                            Templates.Set (IB, "type", Elem_Type (To_String (M.Name)));
                         end if;
-                        Append (Items, Tpl (Templates.Ada_Field, IB));
+                        Append (Items, Tpl (Templates.Get ("ada_field"), IB));
                      end;
                      Append (Items, LF);
                   end loop;
                   Templates.Set (B, "name", TN);
                   Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Ada_Struct, B));
+                  Append (Buf, Tpl (Templates.Get ("ada_struct"), B));
                end;
                Append (Buf, LF);
             when List =>
@@ -705,13 +705,13 @@ package body HBNF_Ada is
                   begin
                      Templates.Set (IB, "field", Ada_Field (To_String (M.Name)));
                      Templates.Set (IB, "type", Elem_Type (To_String (M.Name)));
-                     Append (Items, Tpl (Templates.Ada_Field, IB));
+                     Append (Items, Tpl (Templates.Get ("ada_field"), IB));
                   end;
                   Append (Items, LF);
                end loop;
                Templates.Set (B, "name", Base & "_Entry");
                Templates.Set (B, "items", To_String (Items));
-               Append (Buf, Tpl (Templates.Ada_Struct, B));
+               Append (Buf, Tpl (Templates.Get ("ada_struct"), B));
             end;
             Append (Buf, LF);
             Append (Buf, Emit_Vector (Base & "_Vectors", Base & "_Entry"));
@@ -721,7 +721,7 @@ package body HBNF_Ada is
          begin
             Templates.Set (B, "name", TN);
             Templates.Set (B, "base", Base);
-            Append (Buf, Tpl (Templates.Ada_List_Subtype, B));
+            Append (Buf, Tpl (Templates.Get ("ada_list_subtype"), B));
          end;
          Append (Buf, LF);
 
@@ -1694,7 +1694,7 @@ package body HBNF_Ada is
          else
             Templates.Set (B, "conf", "");
          end if;
-         Append (Spec, Tpl (Templates.Ada_Parser_Spec, B));
+         Append (Spec, Tpl (Templates.Get ("ada_parser_spec"), B));
          Append (Spec, LF);
       end;
 
@@ -1742,7 +1742,7 @@ package body HBNF_Ada is
             Templates.Set (B, "conf_with", "");
          end if;
          Templates.Set (B, "nocase_proc", To_String (Nocase_Proc));
-         Append (Bdy, Tpl (Templates.Ada_Parser_Body, B));
+         Append (Bdy, Tpl (Templates.Get ("ada_parser_body"), B));
          Append (Bdy, LF);
          Append (Bdy, LF);
       end;
@@ -2012,13 +2012,13 @@ package body HBNF_Ada is
 
       --  Lexer: text -> token stream (schema-independent).
       Append (Bdy, Templates.Substitute (Templates.Substitute
-        (Templates.Ada_Lexer, "@ROOT_TYPE@", Ret_Type (1)),
+        (Templates.Get ("ada_lexer"), "@ROOT_TYPE@", Ret_Type (1)),
         "@ROOT_FN@", "Parse_" & Ada_Ident (To_String (Rules (1).Name))));
       Append (Bdy, LF);
       Append (Bdy, LF);
       if Conf then
          Append (Bdy, Templates.Substitute
-           (Templates.Conf_Ada, "@ROOT_TYPE@", Ret_Type (1)));
+           (Templates.Get ("conf_ada"), "@ROOT_TYPE@", Ret_Type (1)));
          Append (Bdy, LF);
       end if;
       if Epilogue ("Ada") /= "" then

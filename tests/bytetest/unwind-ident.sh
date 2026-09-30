@@ -50,7 +50,7 @@ echo "== bison: parse.y -> parser =="
 
 echo "== hbnf: grammars/bind/unwind.hbnf -> conf.c =="
 cli="${HBNF_CLI:-$repo/hbnf_cli}"
-(cd "$repo" && "$cli" grammars/bind/unwind.hbnf --backend=c --conf) \
+(cd "$repo" && "$cli" grammars/bind/unwind.hbnf --backend=c --conf --templates=templates) \
 	> "$scratch/conf-out.txt"
 awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
      f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \

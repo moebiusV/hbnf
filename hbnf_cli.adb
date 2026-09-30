@@ -1,8 +1,12 @@
 pragma Ada_2022;
 
 with Ada.Command_Line;
+with Ada.Directories;
+with Ada.Environment_Variables;
+with Ada.Exceptions;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with Templates;
 with HBNF_Grammar;
 with HBNF_Compilable;
 with HBNF_C;
@@ -31,15 +35,77 @@ procedure Hbnf_Cli is
    Backend      : Unbounded_String := To_Unbounded_String ("c");
    Package_Name : Unbounded_String := To_Unbounded_String ("Schema");
    Schema_Path  : Unbounded_String;
+   Template_Dir : Unbounded_String;
    Conf         : Boolean := False;
    Idref        : Boolean := False;
    Compare      : Boolean := False;
    Prefix       : Unbounded_String;
 
+   --  The directory the .tmpl templates load from: --templates=DIR, else the
+   --  first XDG data dir that holds a hbnf/ subdirectory -- $XDG_DATA_HOME or
+   --  ~/.local/share, then each $XDG_DATA_DIRS entry (/usr/local/share and
+   --  /usr/share by default).  "" when none is found.
+   function Template_Directory return String is
+      use type Ada.Directories.File_Kind;
+
+      function Env (Name : String) return String is
+      begin
+         if Ada.Environment_Variables.Exists (Name) then
+            return Ada.Environment_Variables.Value (Name);
+         end if;
+         return "";
+      end Env;
+
+      function Is_Dir (Path : String) return Boolean is
+      begin
+         return Ada.Directories.Exists (Path)
+           and then Ada.Directories.Kind (Path) = Ada.Directories.Directory;
+      exception
+         when others => return False;
+      end Is_Dir;
+
+      Xdg_Home : constant String := Env ("XDG_DATA_HOME");
+      Xdg_Dirs : constant String := Env ("XDG_DATA_DIRS");
+      Home     : constant String := Env ("HOME");
+      Tmpl_Env : constant String := Env ("HBNF_TEMPLATES");
+      Data_Home : constant String :=
+        (if Xdg_Home /= "" then Xdg_Home
+         elsif Home /= "" then Home & "/.local/share" else "");
+      Data_Dirs : constant String :=
+        (if Xdg_Dirs /= "" then Xdg_Dirs
+         else "/usr/local/share:/usr/share");
+      Start : Natural := Data_Dirs'First;
+   begin
+      if Template_Dir /= Null_Unbounded_String then
+         return To_String (Template_Dir);
+      end if;
+      if Tmpl_Env /= "" then
+         return Tmpl_Env;
+      end if;
+      if Data_Home /= "" and then Is_Dir (Data_Home & "/hbnf") then
+         return Data_Home & "/hbnf";
+      end if;
+      for I in Data_Dirs'Range loop
+         if I = Data_Dirs'Last or else Data_Dirs (I) = ':' then
+            declare
+               Last : constant Natural :=
+                 (if I = Data_Dirs'Last then Data_Dirs'Last else I - 1);
+               D    : constant String := Data_Dirs (Start .. Last);
+            begin
+               if D /= "" and then Is_Dir (D & "/hbnf") then
+                  return D & "/hbnf";
+               end if;
+            end;
+            Start := I + 1;
+         end if;
+      end loop;
+      return "";
+   end Template_Directory;
+
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare] [--prefix=NAME_]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -64,6 +130,8 @@ begin
             Compare := True;
          elsif A'Length >= 9 and then A (1 .. 9) = "--prefix=" then
             Prefix := To_Unbounded_String (A (10 .. A'Last));
+         elsif A'Length >= 12 and then A (1 .. 12) = "--templates=" then
+            Template_Dir := To_Unbounded_String (A (13 .. A'Last));
          elsif A (A'First) /= '-' then
             Schema_Path := To_Unbounded_String (A);
          end if;
@@ -74,6 +142,19 @@ begin
       Usage;
       return;
    end if;
+
+   declare
+      Dir : constant String := Template_Directory;
+   begin
+      if Dir = "" then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "hbnf: no template directory found; use --templates=DIR");
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+      Templates.Load (Dir);
+   end;
 
    declare
       --  The rules the parser uses, with what the backends do not take
@@ -153,5 +234,10 @@ exception
       Ada.Text_IO.Put_Line
         (Ada.Text_IO.Standard_Error,
          "hbnf_cli: " & HBNF_Grammar.Error_Message (E));
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   when E : Templates.Template_Error =>
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "hbnf: " & Ada.Exceptions.Exception_Message (E));
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
 end Hbnf_Cli;

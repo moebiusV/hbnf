@@ -7,6 +7,7 @@
 #   HBNF_CLI=/path/to/hbnf_cli sh tests/leftrec.sh     (default ./hbnf_cli)
 set -u
 cd "$(dirname "$0")/.."
+export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 CLI=${HBNF_CLI:-./hbnf_cli}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT

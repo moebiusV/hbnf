@@ -1221,7 +1221,7 @@ package body HBNF_C is
                Templates.Set (B, "suffix",
                  (if (for some N of Names => To_String (N) = "BASE")
                   then "_0" else ""));
-               Append (Items, Tpl (Templates.C_Enum_Base, B));
+               Append (Items, Tpl (Templates.Get ("c_enum_base"), B));
             end;
             Append (Items, LF);
          end if;
@@ -1232,9 +1232,9 @@ package body HBNF_C is
                Templates.Set (B, "ident", C_Ident (CN) & "_" & To_String (Names (I)));
                Templates.Set (B, "lit", To_String (Tags (I)));
                if I < Natural (Tags.Length) then
-                  Append (Items, Tpl (Templates.C_Enum_Item, B));
+                  Append (Items, Tpl (Templates.Get ("c_enum_item"), B));
                else
-                  Append (Items, Tpl (Templates.C_Enum_Item_Last, B));
+                  Append (Items, Tpl (Templates.Get ("c_enum_item_last"), B));
                end if;
             end;
             Append (Items, LF);
@@ -1244,7 +1244,7 @@ package body HBNF_C is
          begin
             Templates.Set (B, "name", Pfx & CN & "_kind_t");
             Templates.Set (B, "items", To_String (Items));
-            return Tpl (Templates.C_Enum, B) & LF;
+            return Tpl (Templates.Get ("c_enum"), B) & LF;
          end;
       end Kind_Enum;
 
@@ -1266,7 +1266,7 @@ package body HBNF_C is
                begin
                   Templates.Set (B, "type", To_String (Info.Inline_Type));
                   Templates.Set (B, "name", C_Type_Name (NM));
-                  Append (Buf, Tpl (Templates.C_Scalar, B));
+                  Append (Buf, Tpl (Templates.Get ("c_scalar"), B));
                end;
                Append (Buf, LF);
             when Enum =>
@@ -1283,16 +1283,16 @@ package body HBNF_C is
                           C_Ident (NM) & "_" & To_String (Names (I)));
                         Templates.Set (IB, "lit", To_String (Info.Literals (I)));
                         if I < Natural (Info.Literals.Length) then
-                           Append (Items, Tpl (Templates.C_Enum_Item, IB));
+                           Append (Items, Tpl (Templates.Get ("c_enum_item"), IB));
                         else
-                           Append (Items, Tpl (Templates.C_Enum_Item_Last, IB));
+                           Append (Items, Tpl (Templates.Get ("c_enum_item_last"), IB));
                         end if;
                      end;
                      Append (Items, LF);
                   end loop;
                   Templates.Set (B, "name", C_Type_Name (NM));
                   Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.C_Enum, B));
+                  Append (Buf, Tpl (Templates.Get ("c_enum"), B));
                end;
                Append (Buf, LF);
             when Struct =>
@@ -1306,7 +1306,7 @@ package body HBNF_C is
                   Post  : U;
                begin
                   if Idref then
-                     Append (Pre, Templates.C_Idref);
+                     Append (Pre, Templates.Get ("c_idref"));
                      Append (Pre, LF);
                   end if;
                   if not Info.Tags.Is_Empty then
@@ -1314,7 +1314,7 @@ package body HBNF_C is
                         KB : Templates.Bindings;
                      begin
                         Templates.Set (KB, "kind", Pfx & CN & "_kind_t");
-                        Append (Pre, Tpl (Templates.C_Kind, KB));
+                        Append (Pre, Tpl (Templates.Get ("c_kind"), KB));
                      end;
                      Append (Pre, LF);
                   end if;
@@ -1328,24 +1328,24 @@ package body HBNF_C is
                         if Is_Head then
                            Templates.Set (FB, "type", Pfx & C_Name (To_String (M.Name)));
                            Templates.Set (FB, "field", C_Field (To_String (M.Name)));
-                           Append (Items, Tpl (Templates.C_List_Field, FB));
+                           Append (Items, Tpl (Templates.Get ("c_list_field"), FB));
                         else
                            Templates.Set (FB, "type", C_Type_Of (To_String (M.Name)));
                            Templates.Set (FB, "field", C_Field (To_String (M.Name)));
-                           Append (Items, Tpl (Templates.C_Field, FB));
+                           Append (Items, Tpl (Templates.Get ("c_field"), FB));
                         end if;
                      end;
                      Append (Items, LF);
                   end loop;
                   if R.Action_Code /= Null_Unbounded_String then
-                     Append (Post, Templates.C_Line);
+                     Append (Post, Templates.Get ("c_line"));
                      Append (Post, LF);
                   end if;
                   Templates.Set (B, "name", Pfx & CN);
                   Templates.Set (B, "pre", To_String (Pre));
                   Templates.Set (B, "items", To_String (Items));
                   Templates.Set (B, "post", To_String (Post));
-                  Append (Buf, Tpl (Templates.C_Struct, B));
+                  Append (Buf, Tpl (Templates.Get ("c_struct"), B));
                end;
                Append (Buf, LF);
             when List =>
@@ -1361,7 +1361,7 @@ package body HBNF_C is
                   Post  : U;
                begin
                   if Idref then
-                     Append (Pre, Templates.C_Idref);
+                     Append (Pre, Templates.Get ("c_idref"));
                      Append (Pre, LF);
                   end if;
                   if not Info.Tags.Is_Empty then
@@ -1369,7 +1369,7 @@ package body HBNF_C is
                         KB : Templates.Bindings;
                      begin
                         Templates.Set (KB, "kind", Pfx & CN & "_kind_t");
-                        Append (Pre, Tpl (Templates.C_Kind, KB));
+                        Append (Pre, Tpl (Templates.Get ("c_kind"), KB));
                      end;
                      Append (Pre, LF);
                   end if;
@@ -1377,7 +1377,7 @@ package body HBNF_C is
                      EB : Templates.Bindings;
                   begin
                      Templates.Set (EB, "entry", L_Entry (Pfx & CN));
-                     Append (Items, Tpl (Templates.C_Entry, EB));
+                     Append (Items, Tpl (Templates.Get ("c_entry"), EB));
                   end;
                   Append (Items, LF);
                   if Info.Elem_Members.Is_Empty then
@@ -1389,10 +1389,10 @@ package body HBNF_C is
                              C_Type_Of (To_String (Info.Elem_Name)));
                            Templates.Set (FB, "field",
                              C_Field (To_String (Info.Elem_Name)));
-                           Append (Items, Tpl (Templates.C_Field, FB));
+                           Append (Items, Tpl (Templates.Get ("c_field"), FB));
                         end;
                      else
-                        Append (Items, Templates.C_Value);
+                        Append (Items, Templates.Get ("c_value"));
                      end if;
                      Append (Items, LF);
                   else
@@ -1402,20 +1402,20 @@ package body HBNF_C is
                         begin
                            Templates.Set (FB, "type", C_Type_Of (To_String (M.Name)));
                            Templates.Set (FB, "field", C_Field (To_String (M.Name)));
-                           Append (Items, Tpl (Templates.C_Field, FB));
+                           Append (Items, Tpl (Templates.Get ("c_field"), FB));
                         end;
                         Append (Items, LF);
                      end loop;
                   end if;
                   if R.Action_Code /= Null_Unbounded_String then
-                     Append (Post, Templates.C_Line);
+                     Append (Post, Templates.Get ("c_line"));
                      Append (Post, LF);
                   end if;
                   Templates.Set (B, "name", Pfx & CN);
                   Templates.Set (B, "pre", To_String (Pre));
                   Templates.Set (B, "items", To_String (Items));
                   Templates.Set (B, "post", To_String (Post));
-                  Append (Buf, Tpl (Templates.C_Struct, B));
+                  Append (Buf, Tpl (Templates.Get ("c_struct"), B));
                end;
                Append (Buf, LF);
          end case;
@@ -2560,6 +2560,19 @@ package body HBNF_C is
          end loop;
          return 0;
       end Find;
+
+      --  Render a template and check every binding was used (RFCPLAN.md
+      --  step 3: an unfilled hole is Render's error; an unused one is here).
+      function Tpl (Text : String; B : in out Templates.Bindings) return String is
+         Result : constant String := Templates.Render (Text, B);
+         U      : constant String := Templates.Unused (B);
+      begin
+         if U /= "" then
+            raise HBNF_Grammar.Parse_Error with
+              "template binding `${" & U & "}` is never used";
+         end if;
+         return Result;
+      end Tpl;
 
       function Is_Core (Name : String) return Boolean is
         (Scalar_C_Type (Name) /= "");
@@ -3864,19 +3877,6 @@ package body HBNF_C is
          end if;
       end Emit_Statement_Hooks;
 
-      --  Render a template and check every binding was used (RFCPLAN.md
-      --  step 3: an unfilled hole is Render's error; an unused one is here).
-      function Tpl (Text : String; B : in out Templates.Bindings) return String is
-         Result : constant String := Templates.Render (Text, B);
-         U      : constant String := Templates.Unused (B);
-      begin
-         if U /= "" then
-            raise HBNF_Grammar.Parse_Error with
-              "template binding `${" & U & "}` is never used";
-         end if;
-         return Result;
-      end Tpl;
-
       Res : U;
    begin
       for R of Rules loop
@@ -3940,7 +3940,7 @@ package body HBNF_C is
          Templates.Set (B, "kind", To_String (Kind_Ext));
          Templates.Set (B, "keywords", To_String (Kw));
          Templates.Set (B, "nocase", To_String (Nocase));
-         Append (Res, Tpl (Templates.C_Parser, B));
+         Append (Res, Tpl (Templates.Get ("c_parser"), B));
       end;
       Append (Res, LF);
       Append (Res, LF);
@@ -4281,19 +4281,19 @@ package body HBNF_C is
          Append (Wc, " || c == '" & C & "'");
       end loop;
       Append (Res, Templates.Substitute
-                (Templates.C_Lexer, "@WORD_CHARS@", To_String (Wc)));
+                (Templates.Get ("c_lexer"), "@WORD_CHARS@", To_String (Wc)));
       Append (Res, LF);
       if HBNF_Grammar.Statements then
          --  The statement driver, the macro expansion (or its stubs), and
          --  parse_text over the driver.
-         Add (Templates.C_Statements);
-         Add (if HBNF_Grammar.Macros_Rule /= "" then Templates.C_Macros
-              else Templates.C_No_Macros);
+         Add (Templates.Get ("c_statements"));
+         Add (if HBNF_Grammar.Macros_Rule /= "" then Templates.Get ("c_macros")
+              else Templates.Get ("c_no_macros"));
          if Text_Entry then
-            Add (Templates.C_Stmt_Text);
+            Add (Templates.Get ("c_stmt_text"));
          end if;
       else
-         Add (Templates.C_Parse_Text);
+         Add (Templates.Get ("c_parse_text"));
       end if;
       if Epilogue ("C") /= "" then
          Append (Res, LF);
@@ -4312,11 +4312,11 @@ package body HBNF_C is
             Templates.Substitute
               (Templates.Substitute
                  (Templates.Substitute
-                    (Templates.Conf_H_Typed, "@CONF_TYPE@", Conf_T),
+                    (Templates.Get ("conf_h_typed"), "@CONF_TYPE@", Conf_T),
                   "@ENTRY@", HBNF_Grammar.Entry_Name),
                "@ROOT_TYPE@", Root_T)
          else
-            Templates.Substitute (Templates.Conf_H, "@ROOT_TYPE@", Root_T));
+            Templates.Substitute (Templates.Get ("conf_h"), "@ROOT_TYPE@", Root_T));
 
       --  `struct X` / `union X` can be declared ahead of the prototype, so
       --  the header stands alone; a typedef name comes from the daemon's
@@ -4401,8 +4401,8 @@ package body HBNF_C is
                 (Templates.Substitute
                    (Templates.Substitute
                       ((if HBNF_Grammar.Statements
-                        then Templates.Conf_Tail_C_Typed_Stmt
-                        else Templates.Conf_Tail_C_Typed),
+                        then Templates.Get ("conf_tail_c_typed_stmt")
+                        else Templates.Get ("conf_tail_c_typed")),
                        "@ENTRY@", HBNF_Grammar.Entry_Name),
                     "@CONF_TYPE@", Conf_T),
                  "@ROOT_TYPE@", Root_T),
@@ -4416,8 +4416,8 @@ package body HBNF_C is
         Emit_Lexer (Rules) &
         LF &
         Templates.Substitute
-          ((if HBNF_Grammar.Statements then Templates.Conf_Tail_C_Stmt
-            else Templates.Conf_Tail_C), "@ROOT_TYPE@", Root_T) &
+          ((if HBNF_Grammar.Statements then Templates.Get ("conf_tail_c_stmt")
+            else Templates.Get ("conf_tail_c")), "@ROOT_TYPE@", Root_T) &
         LF &
         "/* Drop the current config tree (the SIGHUP reload path). */" & LF &
         "void free_conf(void) {" & LF &

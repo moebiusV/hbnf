@@ -1,12 +1,77 @@
 pragma Ada_2022;
 
+with Ada.Containers.Indefinite_Ordered_Maps;
+with Ada.Directories;
 with Ada.Strings.Unbounded;
+with Ada.Text_IO;
 
 package body Templates is
 
    use Ada.Strings.Unbounded;
 
-   --  Replace every occurrence of From in Text with To.
+   package Text_Maps is new Ada.Containers.Indefinite_Ordered_Maps
+     (String, Unbounded_String);
+
+   use type Text_Maps.Cursor;
+
+   Store : Text_Maps.Map;
+
+   --  =====================================================================
+   --  Loading: read every Dir/*.tmpl, keyed by its base name.
+   --  =====================================================================
+
+   function Read_File (Path : String) return String is
+      F   : Ada.Text_IO.File_Type;
+      Buf : Unbounded_String;
+   begin
+      Ada.Text_IO.Open (F, Ada.Text_IO.In_File, Path);
+      while not Ada.Text_IO.End_Of_File (F) loop
+         Append (Buf, Ada.Text_IO.Get_Line (F));
+         if not Ada.Text_IO.End_Of_File (F) then
+            Append (Buf, ASCII.LF);
+         end if;
+      end loop;
+      Ada.Text_IO.Close (F);
+      return To_String (Buf);
+   end Read_File;
+
+   procedure Load (Dir : String) is
+      Filter : constant Ada.Directories.Filter_Type :=
+        (Ada.Directories.Ordinary_File => True, others => False);
+
+      procedure Visit (Dir_Entry : Ada.Directories.Directory_Entry_Type) is
+         Name : constant String := Ada.Directories.Simple_Name (Dir_Entry);
+      begin
+         if Name'Length > 5
+           and then Name (Name'Last - 4 .. Name'Last) = ".tmpl"
+         then
+            Store.Insert
+              (Name (Name'First .. Name'Last - 5),
+               To_Unbounded_String
+                 (Read_File (Ada.Directories.Full_Name (Dir_Entry))));
+         end if;
+      end Visit;
+   begin
+      Store.Clear;
+      Ada.Directories.Search (Dir, "*.tmpl", Filter, Visit'Access);
+   exception
+      when Ada.Directories.Name_Error | Ada.Directories.Use_Error =>
+         raise Template_Error with "no template directory `" & Dir & "`";
+   end Load;
+
+   function Get (Name : String) return String is
+      C : constant Text_Maps.Cursor := Store.Find (Name);
+   begin
+      if C = Text_Maps.No_Element then
+         raise Template_Error with "no template `" & Name & "` loaded";
+      end if;
+      return To_String (Text_Maps.Element (C));
+   end Get;
+
+   --  =====================================================================
+   --  @PLACEHOLDER@ substitution (the lexer/conf templates).
+   --  =====================================================================
+
    function Substitute (Text, From, To : String) return String is
       Result : Unbounded_String;
       I      : Natural := Text'First;
@@ -29,9 +94,7 @@ package body Templates is
    end Substitute;
 
    --  =====================================================================
-   --  ${name} hole rendering.  A template is plain text with ${name} holes;
-   --  $$ writes a literal $.  Set adds a binding; Render fills the holes and
-   --  marks each used; Unused names the first binding no hole used.
+   --  ${name} hole rendering.
    --  =====================================================================
 
    procedure Set (B : in out Bindings; Name, Value : String) is

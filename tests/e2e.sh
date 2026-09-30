@@ -4,6 +4,7 @@
 # Run inside the Alpine container (has gcc-gnat; rust/zig are optional).
 set -u
 cd "$(dirname "$0")/.."
+export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 HERE=$(pwd)
 
 echo "== building generators =="

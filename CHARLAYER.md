@@ -136,7 +136,7 @@ Scope (user directive, 2026-09-26):
   and Ada backends) + `Walk`/`El_Nullable`/`Same`/`Image` accept Char_Range.
 - `hbnf_c.adb` — token enum, `hbnf_decode_utf8`, `scan_*` + `char_dispatch`,
   `Emit_Seq` char-rule branch, `First_Elem`/`Collect` Char_Range arms.
-- `templates.ads` — all four lexer templates (C, Rust, Zig, Ada) call
+- `templates/*_lexer.tmpl` — all four lexer templates (C, Rust, Zig, Ada) call
   `char_dispatch`/`Char_Dispatch` after jets.
 - `hbnf_ada.adb` — full char-lexer port (`Atom_Cond`, `Decode_Utf8`, `Scan_*`,
   `Char_Dispatch`; a char rule is scalar `Unbounded_String`).

@@ -578,7 +578,7 @@ package body HBNF_Rust is
                   begin
                      Templates.Set (B, "name", Base);
                      Templates.Set (B, "type", To_String (Info.Inline_Type));
-                     Append (Buf, Tpl (Templates.Rust_Scalar, B));
+                     Append (Buf, Tpl (Templates.Get ("rust_scalar"), B));
                   end;
                   Append (Buf, LF);
                end if;
@@ -595,16 +595,16 @@ package body HBNF_Rust is
                         Templates.Set (IB, "ident",
                           Base & "_" & To_String (Names (I)));
                         if I = 1 then
-                           Append (Items, Tpl (Templates.Rust_Enum_First, IB));
+                           Append (Items, Tpl (Templates.Get ("rust_enum_first"), IB));
                         else
-                           Append (Items, Tpl (Templates.Rust_Enum_Item, IB));
+                           Append (Items, Tpl (Templates.Get ("rust_enum_item"), IB));
                         end if;
                      end;
                      Append (Items, LF);
                   end loop;
                   Templates.Set (B, "name", Base);
                   Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Rust_Enum, B));
+                  Append (Buf, Tpl (Templates.Get ("rust_enum"), B));
                end;
                Append (Buf, LF);
             when Struct =>
@@ -624,13 +624,13 @@ package body HBNF_Rust is
                            Templates.Set (IB, "type",
                              Rust_Type_Of (To_String (M.Name)));
                         end if;
-                        Append (Items, Tpl (Templates.Rust_Struct_Item, IB));
+                        Append (Items, Tpl (Templates.Get ("rust_struct_item"), IB));
                      end;
                      Append (Items, LF);
                   end loop;
                   Templates.Set (B, "name", Base);
                   Templates.Set (B, "items", To_String (Items));
-                  Append (Buf, Tpl (Templates.Rust_Struct, B));
+                  Append (Buf, Tpl (Templates.Get ("rust_struct"), B));
                end;
                Append (Buf, LF);
             when List =>
@@ -661,7 +661,7 @@ package body HBNF_Rust is
                   B : Templates.Bindings;
                begin
                   Templates.Set (B, "name", Base);
-                  Append (Buf, Tpl (Templates.Rust_List_Bytes, B));
+                  Append (Buf, Tpl (Templates.Get ("rust_list_bytes"), B));
                end;
             else
                declare
@@ -669,7 +669,7 @@ package body HBNF_Rust is
                begin
                   Templates.Set (B, "name", Base);
                   Templates.Set (B, "type", Rust_Type_Of (To_String (Info.Elem_Name)));
-                  Append (Buf, Tpl (Templates.Rust_List_Simple, B));
+                  Append (Buf, Tpl (Templates.Get ("rust_list_simple"), B));
                end;
             end if;
          else
@@ -683,13 +683,13 @@ package body HBNF_Rust is
                   begin
                      Templates.Set (IB, "field", Rust_Field (To_String (M.Name)));
                      Templates.Set (IB, "type", Rust_Type_Of (To_String (M.Name)));
-                     Append (Items, Tpl (Templates.Rust_Struct_Item, IB));
+                     Append (Items, Tpl (Templates.Get ("rust_struct_item"), IB));
                   end;
                   Append (Items, LF);
                end loop;
                Templates.Set (B, "name", Base);
                Templates.Set (B, "items", To_String (Items));
-               Append (Buf, Tpl (Templates.Rust_List_Entry, B));
+               Append (Buf, Tpl (Templates.Get ("rust_list_entry"), B));
             end;
          end if;
          Append (Buf, LF);
@@ -1645,7 +1645,7 @@ package body HBNF_Rust is
          end if;
          Templates.Set (B, "kind", To_String (Kind_Ext));
          Templates.Set (B, "nocase", To_String (Nocase));
-         Append (Res, Tpl (Templates.Rust_Parser, B));
+         Append (Res, Tpl (Templates.Get ("rust_parser"), B));
       end;
       Append (Res, LF);
       Append (Res, LF);
@@ -1866,7 +1866,7 @@ package body HBNF_Rust is
              else "Vec<" & Rust_Type (To_String (R.Name)) & "Entry>")
          else Rust_Type (To_String (R.Name)));
       Lexer  : constant String :=
-        Templates.Substitute (Templates.Rust_Lexer, "@ROOT_TYPE@", Root_T);
+        Templates.Substitute (Templates.Get ("rust_lexer"), "@ROOT_TYPE@", Root_T);
    begin
       if Epilogue ("Rust") = "" then
          return Lexer;
@@ -1878,7 +1878,7 @@ package body HBNF_Rust is
    function Emit_Conf (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
       Root_T : constant String := Rust_Type (To_String (Rules (1).Name));
    begin
-      return Templates.Substitute (Templates.Conf_Rust, "@ROOT_TYPE@", Root_T);
+      return Templates.Substitute (Templates.Get ("conf_rust"), "@ROOT_TYPE@", Root_T);
    end Emit_Conf;
 
 end HBNF_Rust;

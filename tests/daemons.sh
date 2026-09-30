@@ -9,6 +9,7 @@
 # Prints one "<grammar>: OK" or "<grammar>: FAIL ..." line per grammar.
 set -u
 cd "$(dirname "$0")/.."
+export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 CLI=${HBNF_CLI:-./hbnf_cli}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT

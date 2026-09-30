@@ -563,6 +563,7 @@ procedure Hbnf_Emit_Check is
    end Check_Templates;
 
 begin
+   Templates.Load ("templates");
    Check_Server (Ada.Command_Line.Argument (1));
    Check_Hbnf (Ada.Command_Line.Argument (2));
    Check_Include;
