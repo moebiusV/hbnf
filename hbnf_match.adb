@@ -111,7 +111,11 @@ package body HBNF_Match is
    end Match_Core;
 
    --  Mutually recursive match functions (PEG-style: ordered choice, greedy
-   --  repetition), each building the matched subtree.
+   --  repetition), each building the matched subtree.  Every successful
+   --  iteration of an unbounded repetition must advance Pos; a nullable
+   --  iteration is counted once (enough to satisfy Min) and then stops the
+   --  repetition.  The same progress rule applies to the tail loop used for
+   --  rewritten direct left recursion.
    function Match_Alts (M : Matcher; Els : Element_Vectors.Vector;
                         Pos : Natural) return Match_Result;
    function Match_Concat (M : Matcher; Els : Element_Vectors.Vector;
@@ -145,7 +149,10 @@ package body HBNF_Match is
                declare
                   Next : constant Match_Result := Match_Alts (M, Tails, R.Pos);
                begin
-                  exit when Next.Pos = 0;
+                  --  A tail that succeeds without advancing the position is
+                  --  a nullable tail; it contributes nothing and repeating it
+                  --  would spin forever, so stop the chain here.
+                  exit when Next.Pos = 0 or else Next.Pos = R.Pos;
                   R.Pos := Next.Pos;
                   Append_All (R.Nodes, Next.Nodes);
                end;
@@ -209,12 +216,23 @@ package body HBNF_Match is
       loop
          exit when E.Max >= 0 and then Count >= E.Max;
          declare
+            Prev : constant Natural := P;
             Next : constant Match_Result := Match_Atom (M, E, P);
          begin
             exit when Next.Pos = 0;
             P := Next.Pos;
             Append_All (R.Nodes, Next.Nodes);
             Count := Count + 1;
+            --  A nullable iteration matches without consuming input, so
+            --  repeating it would spin forever.  One such match satisfies
+            --  any Min (the empty string repeats to any length), so treat
+            --  the repetition as complete.
+            if P = Prev then
+               if Count < E.Min then
+                  Count := E.Min;
+               end if;
+               exit;
+            end if;
          end;
       end loop;
       if Count >= E.Min then

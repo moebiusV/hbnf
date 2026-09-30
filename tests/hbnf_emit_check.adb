@@ -500,6 +500,44 @@ procedure Hbnf_Emit_Check is
              not Match (Rules, Toks ("ab"), "hosts"));
    end Check_Left_Recursion;
 
+   --  A repeated nullable rule must terminate: Match_Element and the
+   --  rewritten left-recursion tail both stop when an iteration matches
+   --  without advancing the input position.
+   procedure Check_Zero_Width_Repetition is
+      use HBNF_Match;
+
+      function Toks (With_A : Boolean) return Token_Vectors.Vector is
+         V : Token_Vectors.Vector;
+      begin
+         if With_A then
+            V.Append (Token'(Kind => Atom, Text => To_Unbounded_String ("a")));
+         end if;
+         V.Append (Token'(Kind => Eof, Text => Null_Unbounded_String));
+         return V;
+      end Toks;
+   begin
+      declare
+         Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
+           HBNF_Grammar.Parse
+             ("x = *empty" & ASCII.LF & "empty = [ ""a"" ]" & ASCII.LF);
+      begin
+         Check ("nullable repetition: empty input terminates",
+                Match (Rules, Toks (False), "x"));
+         Check ("nullable repetition: consuming then nullable terminates",
+                Match (Rules, Toks (True), "x"));
+      end;
+      declare
+         Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
+           HBNF_Grammar.Parse
+             ("x = 1*empty" & ASCII.LF & "empty = [ ""a"" ]" & ASCII.LF);
+      begin
+         Check ("nullable repetition: one empty satisfies Min = 1",
+                Match (Rules, Toks (False), "x"));
+         Check ("nullable repetition: Min = 1 consumes when it can",
+                Match (Rules, Toks (True), "x"));
+      end;
+   end Check_Zero_Width_Repetition;
+
    --  The ${name} template engine (RFCPLAN.md step 3): substitution, $$
    --  for a literal $, and the unfilled / unused / unbalanced hole errors.
    procedure Check_Templates is
@@ -539,6 +577,7 @@ begin
    Check_Abnf;
    Check_Lift;
    Check_Left_Recursion;
+   Check_Zero_Width_Repetition;
    Check_Templates;
 
    Ada.Text_IO.Put_Line
