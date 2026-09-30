@@ -28,8 +28,12 @@ not yet implemented, the rest of the compiled targets: **D**, **Fortran**,
 beyond those, the garbage-collected languages **Go**, **Java**, **JavaScript**,
 **Common Lisp** and **newLISP**.
 
-The C backend always emits code that C++ can consume directly — no modification
-and no shim — so a C++ codebase can use a generated parser as-is.
+The C backend is pinned to **C99** (OpenBSD-kernel compatible) and always emits
+code that C++ can consume directly — valid C++11 onward, no modification and no
+shim — so a C++ codebase can use a generated parser as-is.  Should C++ support
+ever need more than that (idiomatic C++ types, exceptions, anything beyond a
+simple `extern "C"` header guard), a separate C++ backend takes over rather
+than complicating the C backend.
 
 ## 1. The shape
 

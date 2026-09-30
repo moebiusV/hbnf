@@ -101,6 +101,56 @@ backends).  Where the notation differs from ABNF today: ABNF.md §4.
     RFC 5234 Appendix B.1 in one include.  `LWSP` waits for repetition
     inside character rules, which `Is_Char_Rule` refuses today.
 
+## Compiler-compiler completion criteria
+
+The end state is deliberately broader than "an ABNF parser generator": one
+human-readable grammar describes syntax, lexical boundaries, wire
+representation and semantic construction, so the author never maintains a
+separate lex spec, yacc semantic-value protocol, AST schema and serializer.
+`%scan{}` and `%action{}` stay the escape hatches for target-language code;
+the remaining work adds the *interfaces around* them — not yacc's global
+state (`yylval`, `yyparse`, `$1`/`$$`), LR tables, or GLR.
+
+A grammar is compiler-compiler ready when:
+
+1. **Source locations are first-class.**  Every node and semantic value keeps
+   a source span; diagnostics name file, line/column and the span, not just
+   the current token.
+2. **Semantic values are typed and named.**  `%action{}` sees named children,
+   not positional `$1`/`$2`; impossible assignments are rejected at generation
+   time where the target language allows it.
+3. **Parser state is reentrant.**  Input position, diagnostics, scanner state
+   and semantic state ride in an explicit context; no global parser state.
+4. **Scanner modes are first-class.**  `%scan{}` gets a flex-style
+   start-condition mechanism with push/pop, for strings, interpolation,
+   heredocs and other lexical sublanguages; a small state machine, not a
+   second grammar language.
+5. **Input sources are abstracted.**  Memory buffer, file stream or
+   caller-provided source, with contiguous memory as the fast path.
+6. **Error recovery is explicit and opt-in.**  Fail-fast stays the default; a
+   grammar may declare synchronization points, and recovery never runs
+   `%action{}` side effects speculatively.
+7. **Wire values are semantic values.**  Width, signedness, endianness, exact
+   byte sequences and range constraints are explicit; `u8`/`u16` mean the same
+   in the interpreter and every backend.
+8. **One semantic model.**  The interpreter and all emitters agree on ordered
+   choice, repetition, left recursion, characters and wire values; a backend
+   limitation is a generation-time error, never a silent divergence.
+9. **Progress is an invariant.**  Every unbounded repetition and rewritten
+   left-recursive tail consumes input or terminates.
+10. **The representation is inspectable.**  A shared semantic IR beneath the
+    `${name}` templates, so a compiler can inspect rules, locations, semantic
+    values and wire values before emission.
+11. **Round-trip and byte-identity gates are mandatory.**  Text grammars keep
+    their source/value distinctions; wire grammars have byte fixtures; the
+    backends agree with the interpreter on acceptance and values.
+
+**RFC copy-paste is a design goal.**  An RFC's ABNF should compile almost
+verbatim.  Spelling variants (`::=`, `:=` for `=`) are accepted silently —
+silence makes cut-and-paste easier — and where hbnf needs something different,
+the error names the RFC form and says how hbnf spells it, so a pasted RFC is
+corrected by the messages, not by reading the manual.
+
 ## Order
 
 Each step leaves the nine daemon grammars, e2e, byteident (ntpd) and
@@ -186,6 +236,35 @@ unwind-ident passing; each lands as reviewed patches.
    - the character model in Rust, Zig and Ada through the templates, and
      the interpreter (HBNF_Match) on the same rewrites;
    - `json.hbnf`, `where`, then binary (CHARLAYER.md I2–I4).
+
+6. **Compiler-compiler interfaces.**  After the character model is stable:
+   source-span objects through the shared IR, matcher and all backends; named
+   typed `%action{}` bindings executed post-parse/bottom-up; explicit
+   reentrant parser/scanner state; scanner modes with push/pop; input-source
+   abstraction (contiguous-buffer fast path retained); opt-in recovery with
+   tests proving actions are not repeated; and a shared semantic IR below the
+   `${name}` templates.
+
+7. **RFC copy-paste and wire layer.**  Accept `::=`/`:=` as `=` silently, and
+   make the RFC excerpts compile with only the changes the messages point at
+   ("you wrote X; if you meant Y, hbnf spells it Z").  Then one cross-backend
+   representation for typed scalars and protocol values — exact bytes/code
+   points, width, signedness, byte order, range checks — with fixtures
+   comparing interpreter and backends on bytes and values.
+
+8. **Compiler-quality diagnostics.**  Expected-error fixtures, source-span
+   diagnostics, rule traces, and a schema linter (nullable repetition,
+   unreachable rules, shadowed ordered choice, ambiguous `/`, unsupported
+   backend constructs) that runs before generation.
+
+9. **Completion gate and backend spectrum.**  C/Ada/Rust/Zig and the
+   interpreter agree on the same corpus, parsers are reentrant, actions have
+   named typed inputs and locations, scanner modes work, and the RFC/wire
+   fixtures have byte-identity tests.  Then fill out the compiled targets (D,
+   Fortran, Free Pascal, Nim, Odin, Objective-C, ATS, V) and the GC languages
+   (Go, Java, JavaScript, Common Lisp, newLISP).  The C backend stays C99 and
+   C++-clean; a separate C++ backend appears only if C++ needs more than an
+   `extern "C"` guard.
 
 ## Not in this plan
 
