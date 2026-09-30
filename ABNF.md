@@ -23,8 +23,10 @@ available and Ada output was compile-checked only where stated.
 ## Backends
 
 The four compiled backends are **C**, **Rust**, **Zig** and **Ada**.  Planned,
-not yet implemented: **D**, **Fortran**, **Free Pascal**, **Nim**, **Odin**,
-**Objective-C**, **ATS** and **V**.
+not yet implemented, the rest of the compiled targets: **D**, **Fortran**,
+**Free Pascal**, **Nim**, **Odin**, **Objective-C**, **ATS** and **V** — and,
+beyond those, the garbage-collected languages **Go**, **Java**, **JavaScript**,
+**Common Lisp** and **newLISP**.
 
 ## 1. The shape
 
