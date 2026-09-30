@@ -1,0 +1,3 @@
+    if (!expect_kind(p, TOK_${name}, "${desc}")) return false;
+    *out = hbnf_str_append(p->toks[p->pos].text, p->toks[p->pos].len); p->pos++;
+    return true;

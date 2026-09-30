@@ -26,7 +26,7 @@ package HBNF is
 
    type Token_Kind is
      (Word, Str, Int, Dec, Comment, Eol_Comment,
-      LBrace, RBrace, Semicolon, Newline, Eof);
+      LBrace, RBrace, Semicolon, Percent, Newline, Eof);
 
    type Token is record
       Kind : Token_Kind;
@@ -61,14 +61,17 @@ package HBNF is
 
    --  A scalar value.  For Word/Str only Text is set; for Int only Num is
    --  set (integers round-trip via Num); for Dec both Text (exact literal)
-   --  and Num (fixed-point) are set.
+   --  and Num (fixed-point) are set.  Percent is set when the value carried
+   --  a `%` suffix (`8%`, a percentage) as opposed to a bare number (`8`, a
+   --  multiplier); it is only ever set on an Int or Dec.
    type Value is record
-      Kind : Value_Kind := Word;
-      Line : Positive   := 1;
-      Col  : Positive   := 1;
-      Text : Unbounded_String;     -- Word/Str/Dec literal
-      Num  : Long_Long_Integer;    -- Int value
-      Dec  : Decimal;              -- Dec fixed-point value
+      Kind    : Value_Kind := Word;
+      Line    : Positive   := 1;
+      Col     : Positive   := 1;
+      Text    : Unbounded_String;     -- Word/Str/Dec literal
+      Num     : Long_Long_Integer;    -- Int value
+      Dec     : Decimal;              -- Dec fixed-point value
+      Percent : Boolean := False;     -- `%` suffix on Int/Dec
    end record;
 
    package Value_Vectors is new Ada.Containers.Vectors (Positive, Value);

@@ -18,10 +18,11 @@ package HBNF_Match is
    use Ada.Strings.Unbounded;
 
    type Token_Kind is (Atom, Str, Int, Dec, Comment, Eol_Comment,
-                       Punct, Newline, Eof);
+                       Punct, Percent, Newline, Eof);
    --  Atom = a bare word; Str = a quoted string; Int/Dec = numbers;
    --  Comment/Eol_Comment = own-line / end-of-line comment; Punct = a
-   --  punctuation character (Text holds it); Newline = a line break.
+   --  punctuation character (Text holds it); Percent = a `%` suffix on a
+   --  number; Newline = a line break.
 
    type Token is record
       Kind : Token_Kind := Eof;

@@ -33,6 +33,7 @@ package body HBNF_Match is
       if Name = "atom" or else Name = "word" or else Name = "str"
         or else Name = "int" or else Name = "dec" or else Name = "float"
         or else Name = "bool" or else Name = "flag" or else Name = "comment"
+        or else Name = "percent"
       then
          return True;
       end if;
@@ -102,6 +103,8 @@ package body HBNF_Match is
       elsif Name = "comment" then
          return (if T.Kind = Comment or else T.Kind = Eol_Comment
                  then Pos + 1 else 0);
+      elsif Name = "percent" then
+         return (if T.Kind = Percent then Pos + 1 else 0);
       else
          return (if T.Kind = Int then Pos + 1 else 0);  --  u8..u64 / i8..i64
       end if;

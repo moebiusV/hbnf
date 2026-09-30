@@ -15,6 +15,6 @@ statement = name *arg
 block     = name [qualifier] "{" [ws] *( entry [semicolon] [ws] ) [ws] "}"
 name      = atom
 qualifier = str | atom
-arg       = atom | str | int | dec
+arg       = atom | str | int [ percent ] | dec [ percent ]
 ws        = 1*( "\n" | comment )
 semicolon = ";"

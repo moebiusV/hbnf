@@ -378,7 +378,34 @@ package body HBNF is
                declare
                   W : constant String := To_String (Buf);
                begin
-                  if Is_Integer (W) then
+                  --  A trailing `%` on a number is a percentage suffix: the
+                  --  number (integer or decimal) is one token and the `%` a
+                  --  second, so a grammar can match `[ percent ]` and a
+                  --  caller tell a bare multiplier (`8`) from a percentage
+                  --  (`8%`).  Anything else keeps the `%` in the word.
+                  if W'Length >= 2 and then W (W'Last) = '%' then
+                     declare
+                        P : constant String := W (W'First .. W'Last - 1);
+                     begin
+                        if Is_Integer (P) then
+                           Tokens.Append
+                             (Token'(Int, Line, Start_Col,
+                                     To_Unbounded_String (P)));
+                           Tokens.Append
+                             (Token'(Percent, Line, Col - 1,
+                                     Null_Unbounded_String));
+                        elsif Is_Decimal (P) then
+                           Tokens.Append
+                             (Token'(Dec, Line, Start_Col,
+                                     To_Unbounded_String (P)));
+                           Tokens.Append
+                             (Token'(Percent, Line, Col - 1,
+                                     Null_Unbounded_String));
+                        else
+                           Tokens.Append (Token'(Word, Line, Start_Col, Buf));
+                        end if;
+                     end;
+                  elsif Is_Integer (W) then
                      Tokens.Append (Token'(Int, Line, Start_Col, Buf));
                   elsif Is_Decimal (W) then
                      Tokens.Append (Token'(Dec, Line, Start_Col, Buf));
@@ -468,6 +495,24 @@ package body HBNF is
             case Tokens (I).Kind is
                when Word | Str | Int | Dec =>
                   N.Values.Append (Parse_Value (Tokens (I)));
+                  I := I + 1;
+               when Percent =>
+                  --  The lexer splits `8%` into Int/Dec then Percent, so the
+                  --  `%` always follows a number value; mark it a percentage.
+                  if N.Values.Is_Empty then
+                     Fail (Tokens (I).Line, Tokens (I).Col,
+                           "'%' with no preceding number");
+                  end if;
+                  declare
+                     V : Value := N.Values.Last_Element;
+                  begin
+                     if V.Kind /= Int and then V.Kind /= Dec then
+                        Fail (Tokens (I).Line, Tokens (I).Col,
+                              "'%' must follow a number");
+                     end if;
+                     V.Percent := True;
+                     N.Values.Replace_Element (N.Values.Last_Index, V);
+                  end;
                   I := I + 1;
                when LBrace =>
                   N.Kind := Block;
@@ -627,6 +672,8 @@ package body HBNF is
             return (HBNF_Match.Punct, To_Unbounded_String ("}"));
          when Semicolon =>
             return (HBNF_Match.Punct, To_Unbounded_String (";"));
+         when Percent   =>
+            return (HBNF_Match.Percent, To_Unbounded_String ("%"));
          when Newline   =>
             return (HBNF_Match.Newline, Null_Unbounded_String);
          when Eof       =>
@@ -657,6 +704,24 @@ package body HBNF is
       end loop;
       return (Kind => HBNF_Match.Eof, Text => Null_Unbounded_String);
    end Rule_Token;
+
+   --  True when the subtree of N contains a `percent` token, i.e. the rule
+   --  matched an optional `%` suffix on a number.
+   function Has_Percent (N : HBNF_Match.Node_Access) return Boolean is
+   begin
+      if N = null then
+         return False;
+      end if;
+      if N.Kind = HBNF_Match.Token_Node then
+         return N.Tok.Kind = HBNF_Match.Percent;
+      end if;
+      for K of N.Kids loop
+         if Has_Percent (K) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Has_Percent;
 
    --  Rebuild a Value from a matched token, re-running the same Int/Dec
    --  conversion (and range checks) as the hand-written parser's Parse_Value.
@@ -721,7 +786,14 @@ package body HBNF is
                   if Is_Rule (K, "name") then
                      Result.Name := Rule_Token (K).Text;
                   elsif Is_Rule (K, "arg") then
-                     Result.Values.Append (To_Value (Rule_Token (K)));
+                     declare
+                        V : HBNF.Value := To_Value (Rule_Token (K));
+                     begin
+                        if Has_Percent (K) then
+                           V.Percent := True;
+                        end if;
+                        Result.Values.Append (V);
+                     end;
                   end if;
                end loop;
             elsif Is_Rule (Kid, "block") then
@@ -921,22 +993,28 @@ package body HBNF is
       end Escape;
 
       function Value_Text (V : Value) return String is
+         Base : String;
       begin
          case V.Kind is
-            when Word => return To_String (V.Text);
-            when Str  => return '"' & Escape (To_String (V.Text)) & '"';
+            when Word => Base := To_String (V.Text);
+            when Str  => Base := '"' & Escape (To_String (V.Text)) & '"';
             when Int  =>
                declare
                   S : constant String := Long_Long_Integer'Image (V.Num);
                begin
                   if S (S'First) = ' ' then
-                     return S (S'First + 1 .. S'Last);
+                     Base := S (S'First + 1 .. S'Last);
                   else
-                     return S;
+                     Base := S;
                   end if;
                end;
-            when Dec  => return To_String (V.Text);
+            when Dec  => Base := To_String (V.Text);
          end case;
+         if V.Percent then
+            return Base & "%";
+         else
+            return Base;
+         end if;
       end Value_Text;
 
       function Comment_Block (Indent : Natural; Text : String) return String is

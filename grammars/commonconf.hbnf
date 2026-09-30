@@ -41,3 +41,8 @@ address    = wildcard | ipv6 | str | word
 
 ; a number: a signed or unsigned integer (the core `int`)
 number     = int
+
+; a percentage: a number with a literal "%" suffix (`8%` = 8 percent, as
+; opposed to a bare multiplier).  The "%" is matched and dropped; the bound
+; value is the integer.  Override in a grammar that needs fractional percents.
+pct        = number '%'

@@ -3152,7 +3152,9 @@ package body HBNF_C is
                if K > N or else Els (K).Kind = Alt then
                   LBr := LBr + 1;
                   if LBr > 1 then
-                     Append (Buf, Ind & "p->pos = save; " & Reset & ";");
+                     Append (Buf, Templates.Render (Templates.Get ("c_alt_reset"),
+                       (Templates.Bind ("ind", Ind),
+                        Templates.Bind ("reset", Reset))));
                      Append (Buf, LF);
                   end if;
                   Emit_Seq (Els, LSt, K - 1, Acc, Buf,
@@ -3160,8 +3162,12 @@ package body HBNF_C is
                   if Kind_Prefix /= "" and then LSt <= K - 1
                     and then Els (LSt).Kind = Literal
                   then
-                     Append (Buf, Ind & Acc & "kind = " & Kind_Prefix & "_"
-                       & Tag_Name (Leading_Tags (Els), Els (LSt).Lit) & ";");
+                     Append (Buf, Templates.Render (Templates.Get ("c_alt_kind"),
+                       (Templates.Bind ("ind", Ind),
+                        Templates.Bind ("acc", Acc),
+                        Templates.Bind ("prefix", Kind_Prefix),
+                        Templates.Bind ("tag",
+                          Tag_Name (Leading_Tags (Els), Els (LSt).Lit)))));
                      Append (Buf, LF);
                   end if;
                   Append (Buf, Ind & "goto " & Ok & ";");
@@ -3234,10 +3240,10 @@ package body HBNF_C is
             declare
                Last : constant String := Img (Natural (Offs.Length) - 1);
                At_End : constant String :=
-                 "if (p->toks[p->pos].kind == TOK_EOF) { fail(p, """
-                 & C_Escape (To_String (Flat (1))) & """, 1, "
-                 & "p->toks[p->pos].text); goto " & Label & "alt_fail_" & Last
-                 & "; }";
+                 Templates.Render (Templates.Get ("c_alt_atend"),
+                   (Templates.Bind ("ind", Ind & "    "),
+                    Templates.Bind ("lit", C_Escape (To_String (Flat (1)))),
+                    Templates.Bind ("label", Label & "alt_fail_" & Last)));
             begin
                if Flat.Contains (Other_Tok) then
                   --  Some branch starts with a non-keyword token: try the
@@ -3246,7 +3252,7 @@ package body HBNF_C is
                   if Flat (1) /= Other_Tok then
                      Append (Buf, Ind & "case KWID_NONE:");
                      Append (Buf, LF);
-                     Append (Buf, Ind & "    " & At_End);
+                     Append (Buf, At_End);
                      Append (Buf, LF);
                      Append (Buf, Ind & "    goto " & Label & "alt_linear;");
                   else
@@ -3257,7 +3263,7 @@ package body HBNF_C is
                else
                   Append (Buf, Ind & "case KWID_NONE:");
                   Append (Buf, LF);
-                  Append (Buf, Ind & "    " & At_End);
+                  Append (Buf, At_End);
                   Append (Buf, LF);
                   Append (Buf, Ind & "    goto " & Label & "alt_fail_" & Last
                     & ";");
@@ -3285,8 +3291,9 @@ package body HBNF_C is
         (Nums : String_Vectors.Vector; Buf : in out U; Ind : String) is
       begin
          for N of Nums loop
-            Append (Buf, Ind & "const char *num_"
-              & C_Field (To_String (N)) & " = NULL;");
+            Append (Buf, Templates.Render (Templates.Get ("c_num_defer"),
+              (Templates.Bind ("ind", Ind),
+               Templates.Bind ("field", C_Field (To_String (N))))));
             Append (Buf, LF);
          end loop;
       end Emit_Number_Deferrals;
@@ -3296,16 +3303,18 @@ package body HBNF_C is
          Buf : in out U; Ind : String) is
       begin
          for N of Nums loop
-            if Check then
-               Append (Buf, Ind & "if (num_" & C_Field (To_String (N)) & ") "
-                 & Acc & C_Field (To_String (N)) & " = "
-                 & Scalar_Convert (To_String (N),
-                                   "num_" & C_Field (To_String (N))) & ";");
-            else
-               Append (Buf, Ind & Acc & C_Field (To_String (N)) & " = "
-                 & Scalar_Convert (To_String (N),
-                                   "num_" & C_Field (To_String (N))) & ";");
-            end if;
+            declare
+               F : constant String := C_Field (To_String (N));
+            begin
+               Append (Buf, Templates.Render (Templates.Get ("c_num_convert"),
+                 (Templates.Bind ("ind", Ind),
+                  Templates.Bind ("check",
+                    (if Check then "if (num_" & F & ") " else "")),
+                  Templates.Bind ("acc", Acc),
+                  Templates.Bind ("field", F),
+                  Templates.Bind ("convert",
+                    Scalar_Convert (To_String (N), "num_" & F)))));
+            end;
             Append (Buf, LF);
          end loop;
       end Emit_Number_Converts;
@@ -3334,26 +3343,18 @@ package body HBNF_C is
       begin
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet: match its own token kind and yield the matched text.
-            Append (Buf, "    if (!expect_kind(p, TOK_" & C_Ident (NM)
-              & ", ""a " & NM & """)) return false;");
-            Append (Buf, LF);
-            Append (Buf, "    *out = hbnf_str_append(p->toks[p->pos].text,"
-              & " p->toks[p->pos].len); p->pos++;");
-            Append (Buf, LF);
-            Append (Buf, "    return true;");
+            Append (Buf, Templates.Render (Templates.Get ("c_rule_jet"),
+              (Templates.Bind ("name", C_Ident (NM)),
+               Templates.Bind ("desc", "a " & NM))));
             Append (Buf, LF);
             return;
          end if;
          if Is_Char_Rule (Rules, NM) then
             --  A character-level rule: match its char token and yield the
             --  matched text, exactly like a jet.
-            Append (Buf, "    if (!expect_kind(p, TOK_" & C_Ident (NM)
-              & ", """ & NM & """)) return false;");
-            Append (Buf, LF);
-            Append (Buf, "    *out = hbnf_str_append(p->toks[p->pos].text,"
-              & " p->toks[p->pos].len); p->pos++;");
-            Append (Buf, LF);
-            Append (Buf, "    return true;");
+            Append (Buf, Templates.Render (Templates.Get ("c_rule_jet"),
+              (Templates.Bind ("name", C_Ident (NM)),
+               Templates.Bind ("desc", NM))));
             Append (Buf, LF);
             return;
          end if;
@@ -3402,20 +3403,21 @@ package body HBNF_C is
                if E.Kind = Name and then Is_Core (To_String (E.Name)) then
                   --  A list of a core type (`1*word`): read the token in
                   --  place; there is no parse_rule_ function for a core type.
-                  Append (Buf, "        if (p->toks[p->pos].kind == "
-                    & Scalar_Tok_Kind (To_String (E.Name))
-                    & Scalar_Kwid_Check (To_String (E.Name))
-                    & ") { nn->"
-                    & C_Field (To_String (E.Name)) & " = "
-                    & Scalar_Parse_Expr (To_String (E.Name))
-                    & "; p->pos++; goto have; }");
-                  Append (Buf, LF);
-                  Append (Buf, "        fail(p, """ & Core_Desc (To_String (E.Name))
-                    & """, 0, p->toks[p->pos].text);");
+                  declare
+                     NM : constant String := To_String (E.Name);
+                  begin
+                     Append (Buf, Templates.Render (Templates.Get ("c_rule_list_core"),
+                       (Templates.Bind ("kind", Scalar_Tok_Kind (NM)),
+                        Templates.Bind ("kwid", Scalar_Kwid_Check (NM)),
+                        Templates.Bind ("field", C_Field (NM)),
+                        Templates.Bind ("expr", Scalar_Parse_Expr (NM)),
+                        Templates.Bind ("desc", Core_Desc (NM)))));
+                  end;
                   Append (Buf, LF);
                elsif E.Kind = Name then
-                  Append (Buf, "        if (parse_rule_" & C_Name (To_String (E.Name))
-                    & "(p, &nn->" & C_Field (To_String (E.Name)) & ")) goto have;");
+                  Append (Buf, Templates.Render (Templates.Get ("c_rule_list_name"),
+                    (Templates.Bind ("name", C_Name (To_String (E.Name))),
+                     Templates.Bind ("field", C_Field (To_String (E.Name))))));
                   Append (Buf, LF);
                elsif R.Left_Bases > 0 then
                   --  Left recursion, as a loop: the first entry is a base,
@@ -3461,7 +3463,9 @@ package body HBNF_C is
                Append (Buf, LF);
                Emit_Number_Converts (Nums, "nn->", True, Buf, "        ");
                if R.Action_Code /= Null_Unbounded_String then
-                  Append (Buf, "        nn->_line = p->toks[save].line;");
+                  Append (Buf, Templates.Render (Templates.Get ("c_rule_line"),
+                    (Templates.Bind ("ind", "        "),
+                     Templates.Bind ("acc", "nn->"))));
                   Append (Buf, LF);
                end if;
                Append (Buf, "        " & L_Append ("&head", "nn"));
@@ -3584,18 +3588,18 @@ package body HBNF_C is
          elsif Natural (P.Length) = 1 and then P (1).Kind = Name then
             --  A scalar alias: read a core token, or delegate to the rule.
             if Is_Core (To_String (P (1).Name)) then
-               Append (Buf, "    if (!expect_kind(p, "
-                 & Scalar_Tok_Kind (To_String (P (1).Name)) & ", """
-                 & Core_Desc (To_String (P (1).Name)) & """)) return false;");
-               Append (Buf, LF);
-               Append (Buf, "    *out = "
-                 & Scalar_Parse_Expr (To_String (P (1).Name)) & "; p->pos++;");
-               Append (Buf, LF);
-               Append (Buf, "    return true;");
+               declare
+                  PN : constant String := To_String (P (1).Name);
+               begin
+                  Append (Buf, Templates.Render (Templates.Get ("c_rule_alias_core"),
+                    (Templates.Bind ("kind", Scalar_Tok_Kind (PN)),
+                     Templates.Bind ("desc", Core_Desc (PN)),
+                     Templates.Bind ("expr", Scalar_Parse_Expr (PN)))));
+               end;
                Append (Buf, LF);
             else
-               Append (Buf, "    return parse_rule_" & C_Name (To_String (P (1).Name))
-                 & "(p, out);");
+               Append (Buf, Templates.Render (Templates.Get ("c_rule_alias_ref"),
+                 (1 => Templates.Bind ("name", C_Name (To_String (P (1).Name))))));
                Append (Buf, LF);
             end if;
          elsif SU /= "" then
@@ -3664,7 +3668,9 @@ package body HBNF_C is
                Append (Buf, LF);
                Emit_Number_Converts (Nums, "r.", True, Buf, "    ");
                if R.Action_Code /= Null_Unbounded_String then
-                  Append (Buf, "    r._line = p->toks[save].line;");
+                  Append (Buf, Templates.Render (Templates.Get ("c_rule_line"),
+                    (Templates.Bind ("ind", "    "),
+                     Templates.Bind ("acc", "r."))));
                   Append (Buf, LF);
                end if;
                Append (Buf, "    *out = r; return true;");
@@ -3691,7 +3697,9 @@ package body HBNF_C is
                          & "p->pos = save; return false;");
                Emit_Number_Converts (Nums, "r.", False, Buf, "    ");
                if R.Action_Code /= Null_Unbounded_String then
-                  Append (Buf, "    r._line = p->toks[save].line;");
+                  Append (Buf, Templates.Render (Templates.Get ("c_rule_line"),
+                    (Templates.Bind ("ind", "    "),
+                     Templates.Bind ("acc", "r."))));
                   Append (Buf, LF);
                end if;
                Append (Buf, "    *out = r; return true;");
