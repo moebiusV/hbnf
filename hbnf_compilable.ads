@@ -27,8 +27,10 @@ package HBNF_Compilable is
    --  or alternation of Char_Range terminals, plain string literals and
    --  references to other char-level rules, each element matching some number
    --  of code points (Min..Max; Max = -1 unbounded).  Such a rule compiles to
-   --  a scanner and a token kind, not a tree node.  A %i literal or a group
-   --  is not char-level (Char_DNF raises for the shapes it cannot yet scan).
+   --  a scanner and a token kind, not a tree node.  A repeated element must be
+   --  a character class (one code point): a repetition over a longer sequence
+   --  stays a list.  A %i literal or a group is not char-level (Char_DNF
+   --  raises for the shapes it cannot yet scan).
 
    --  A code-point range: one code point of a char rule's match.
    type Cp_Range is record

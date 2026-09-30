@@ -151,14 +151,16 @@ unwind-ident passing; each lands as reviewed patches.
 
    4a. **Char-rule literals and repetition.** Lift `Is_Char_Rule` and
        `Char_DNF` so a char rule may hold a string literal (a fixed run of
-       code points) and a repetition (`*`, `1*`, `n*m`) of a flat character
-       class (`word = 1*ALNUM`, `hexnum = "0x" 1*HEXDIG`).  The scanner
+       code points) and a repetition (`*`, `1*`, `n*m`) of a character class
+       (`word = 1*ALNUM`, `hexnum = "0x" 1*HEXDIG`).  The scanner
        becomes a sequence of atoms, each one code point or a greedy repeat
-       loop; maximal munch is unchanged.  First slice: repetition only as
-       the last atom of a branch (nothing after it), no `%i` literal inside
-       a char rule, no nested repetition — each a clean generation-time
-       diagnostic, lifted when a grammar needs it.  Gate: byte-identical
-       output for the existing char rules.
+       loop; maximal munch is unchanged.  First slice: repetition only over a
+       single-code-point class (a repetition of a longer sequence such as
+       `1*CRLF` stays a list, as before), only as the last atom of a branch
+       (nothing after it), no `%i` literal inside a char rule, no nested
+       repetition — each a clean generation-time diagnostic, lifted when a
+       grammar needs it.  Gate: byte-identical output for the existing char
+       rules.
 
    4b. **Lexer as grammar.** The old lexer's `word`, `number`, quoted
        strings with escapes, `#` comments and backslash continuation become

@@ -1809,6 +1809,59 @@ package body HBNF_Grammar is
          --  terminals stay ranges; a single code point elsewhere becomes a
          --  literal.
          function Is_Char (N : String; Depth : Natural) return Boolean is
+            --  A character class: every branch matches one code point, with
+            --  no repetition.  Repetition is valid only over a class.
+            function Is_Class (N : String; Depth : Natural) return Boolean is
+            begin
+               if Depth = 0 or else not By_Name.Contains (N) then
+                  return False;
+               end if;
+               declare
+                  R : constant Rule := Rules (By_Name (N));
+               begin
+                  if R.Jet_Code /= Null_Unbounded_String
+                    or else R.Pattern.Is_Empty
+                  then
+                     return False;
+                  end if;
+                  declare
+                     In_Branch : Natural := 0;
+                  begin
+                     for E of R.Pattern loop
+                        if E.Kind = Alt then
+                           In_Branch := 0;
+                        else
+                           if E.Min /= 1 or else E.Max /= 1 then
+                              return False;   --  a class has no repetition
+                           end if;
+                           In_Branch := In_Branch + 1;
+                           if In_Branch > 1 then
+                              return False;   --  more than one code point
+                           end if;
+                           case E.Kind is
+                              when Char_Range =>
+                                 null;
+                              when Literal =>
+                                 if E.No_Case
+                                   or else To_String (E.Lit)'Length /= 1
+                                 then
+                                    return False;
+                                 end if;
+                              when Name =>
+                                 if not Is_Class
+                                   (To_String (E.Name), Depth - 1)
+                                 then
+                                    return False;
+                                 end if;
+                              when others =>
+                                 return False;
+                           end case;
+                        end if;
+                     end loop;
+                     return In_Branch = 1;
+                  end;
+               end;
+            end Is_Class;
          begin
             if Depth = 0 or else not By_Name.Contains (N) then
                return False;
@@ -1833,11 +1886,26 @@ package body HBNF_Grammar is
                            if E.No_Case then
                               return False;
                            end if;
+                           --  A repeated literal is a run of that one code
+                           --  point; a longer one stays a list.
+                           if (E.Min /= 1 or else E.Max /= 1)
+                             and then To_String (E.Lit)'Length /= 1
+                           then
+                              return False;
+                           end if;
                         when Name =>
                            if not Is_Char (To_String (E.Name), Depth - 1) then
                               return False;
                            end if;
                            Has_Anchor := True;
+                           --  A repeated reference is a run of a character
+                           --  class; a longer sequence stays a list.
+                           if (E.Min /= 1 or else E.Max /= 1)
+                             and then not Is_Class
+                               (To_String (E.Name), Depth - 1)
+                           then
+                              return False;
+                           end if;
                         when others =>
                            return False;
                      end case;

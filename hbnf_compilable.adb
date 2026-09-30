@@ -11,14 +11,123 @@ package body HBNF_Compilable is
    function Has_Alt (V : Element_Vectors.Vector) return Boolean is
      (for some E of V => E.Kind = Alt);
 
+   --  A literal's UTF-8 bytes as single-code-point ranges.
+   function Code_Points (S : String) return Cp_Range_Vectors.Vector is
+      V : Cp_Range_Vectors.Vector;
+      I : Natural := S'First;
+   begin
+      while I <= S'Last loop
+         declare
+            B0 : constant Natural := Character'Pos (S (I));
+            C  : Natural;
+            N  : Natural;
+         begin
+            if B0 < 16#80# then
+               C := B0; N := 1;
+            elsif B0 in 16#C0# .. 16#DF# then
+               C := B0 - 16#C0#; N := 2;
+            elsif B0 in 16#E0# .. 16#EF# then
+               C := B0 - 16#E0#; N := 3;
+            elsif B0 in 16#F0# .. 16#F7# then
+               C := B0 - 16#F0#; N := 4;
+            else
+               C := B0; N := 1;
+            end if;
+            for K in 1 .. N - 1 loop
+               exit when I + K > S'Last;
+               declare
+                  B : constant Natural := Character'Pos (S (I + K));
+               begin
+                  if B not in 16#80# .. 16#BF# then
+                     N := 1; C := B0; exit;
+                  end if;
+                  C := C * 16#40# + (B - 16#80#);
+               end;
+            end loop;
+            V.Append (Cp_Range'(Lo => C, Hi => C));
+            I := I + N;
+         end;
+      end loop;
+      return V;
+   end Code_Points;
+
+   --  A character class matches exactly one code point: every branch of its
+   --  DNF is a single range.  Repetition is valid only over a class (a run of
+   --  code points, as a word or number); a longer sequence stays a list.
+   function Is_Char_Class (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean is
+      function Rec (N : String; Depth : Natural) return Boolean is
+         J : Natural := 0;
+      begin
+         for I in 1 .. Natural (Rules.Length) loop
+            if To_String (Rules (I).Name) = N then
+               J := I;
+               exit;
+            end if;
+         end loop;
+         if J = 0 or else Depth = 0 then
+            return False;
+         end if;
+         declare
+            R : constant Rule := Rules (J);
+         begin
+            if R.Jet_Code /= Null_Unbounded_String
+              or else Natural (R.Pattern.Length) = 0
+            then
+               return False;
+            end if;
+            declare
+               In_Branch : Natural := 0;
+            begin
+               for E of R.Pattern loop
+                  if E.Kind = Alt then
+                     In_Branch := 0;
+                  else
+                     if E.Min /= 1 or else E.Max /= 1 then
+                        return False;   --  a class has no repetition
+                     end if;
+                     In_Branch := In_Branch + 1;
+                     if In_Branch > 1 then
+                        return False;   --  more than one code point per branch
+                     end if;
+                     case E.Kind is
+                        when Char_Range =>
+                           null;
+                        when Literal =>
+                           if E.No_Case
+                             or else Natural
+                               (Code_Points (To_String (E.Lit)).Length) /= 1
+                           then
+                              return False;
+                           end if;
+                        when Name =>
+                           if not Rec (To_String (E.Name), Depth - 1) then
+                              return False;
+                           end if;
+                        when others =>
+                           return False;
+                     end case;
+                  end if;
+               end loop;
+               --  The trailing run is a branch too; it must be one code point
+               --  (In_Branch is 0 only for an empty pattern, guarded above).
+               return In_Branch = 1;
+            end;
+         end;
+      end Rec;
+   begin
+      return Rec (Nm, 20);
+   end Is_Char_Class;
+
    --  True when the rule named Nm is character-level: its pattern is a
    --  sequence/alternation of Char_Range terminals, plain string literals and
    --  references to other char-level rules, each matching some number of code
    --  points (Min..Max; Max = -1 unbounded).  Shared by the emitters' shape
-   --  analyzers and their parser/lexer emission.  The extra constraints the
-   --  scanner still cannot express (a repetition followed by more elements,
-   --  a repetition of a repetition, a %i literal) are diagnosed by
-   --  Validate_Char_Rules, not reflected here.
+   --  analyzers and their parser/lexer emission.  A repeated element must be a
+   --  character class (one code point); a repetition over a longer sequence
+   --  stays a list, and a %i literal is not char-level.  Char_DNF additionally
+   --  rejects the shapes the scanner cannot express (a repetition followed by
+   --  more elements, a repetition of a repetition).
    function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean is
       function Rec (N : String; Depth : Natural) return Boolean is
@@ -54,11 +163,27 @@ package body HBNF_Compilable is
                         if E.No_Case then
                            return False;
                         end if;
+                        --  A repeated literal is a run of that one code
+                        --  point; a longer one is a list of the token.
+                        if (E.Min /= 1 or else E.Max /= 1)
+                          and then Natural
+                            (Code_Points (To_String (E.Lit)).Length) /= 1
+                        then
+                           return False;
+                        end if;
                      when Name =>
                         if not Rec (To_String (E.Name), Depth - 1) then
                            return False;
                         end if;
                         Has_Anchor := True;
+                        --  A repeated reference is a run of a character
+                        --  class; a longer sequence stays a list.
+                        if (E.Min /= 1 or else E.Max /= 1)
+                          and then not Is_Char_Class
+                            (Rules, To_String (E.Name))
+                        then
+                           return False;
+                        end if;
                      when Group =>
                         return False;
                   end case;
@@ -226,46 +351,6 @@ package body HBNF_Compilable is
    function Char_DNF (Rules : Rule_Vectors.Vector; Nm : String)
       return Cp_Branch_Atom_Vectors.Vector is
 
-      --  A literal's UTF-8 bytes as single-code-point ranges.
-      function Code_Points (S : String) return Cp_Range_Vectors.Vector is
-         V : Cp_Range_Vectors.Vector;
-         I : Natural := S'First;
-      begin
-         while I <= S'Last loop
-            declare
-               B0 : constant Natural := Character'Pos (S (I));
-               C  : Natural;
-               N  : Natural;
-            begin
-               if B0 < 16#80# then
-                  C := B0; N := 1;
-               elsif B0 in 16#C0# .. 16#DF# then
-                  C := B0 - 16#C0#; N := 2;
-               elsif B0 in 16#E0# .. 16#EF# then
-                  C := B0 - 16#E0#; N := 3;
-               elsif B0 in 16#F0# .. 16#F7# then
-                  C := B0 - 16#F0#; N := 4;
-               else
-                  C := B0; N := 1;
-               end if;
-               for K in 1 .. N - 1 loop
-                  exit when I + K > S'Last;
-                  declare
-                     B : constant Natural := Character'Pos (S (I + K));
-                  begin
-                     if B not in 16#80# .. 16#BF# then
-                        N := 1; C := B0; exit;
-                     end if;
-                     C := C * 16#40# + (B - 16#80#);
-                  end;
-               end loop;
-               V.Append (Cp_Range'(Lo => C, Hi => C));
-               I := I + N;
-            end;
-         end loop;
-         return V;
-      end Code_Points;
-
       function Has_Trailing_Rep (Sub : Cp_Branch_Atom_Vectors.Vector)
         return Boolean is
         (for some B of Sub =>
@@ -359,9 +444,9 @@ package body HBNF_Compilable is
       end Flat;
 
       --  The flat DNF of one repeated element: a Char_Range, a plain Literal,
-      --  or a Name of a repetition-free rule (nested repetition raises).  A
-      --  repetition matches one code point per iteration, so the result must
-      --  be a char class -- one range per branch -- not a sequence.
+      --  or a Name of a repetition-free rule (nested repetition raises).
+      --  Is_Char_Rule has already ensured the element is a character class
+      --  (one code point per iteration); the check below is defensive.
       function Flat_Element (E : Element_Access; Depth : Natural;
                              In_Rule : String)
         return Cp_Branch_Vectors.Vector is
