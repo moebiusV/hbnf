@@ -3399,7 +3399,7 @@ package body HBNF_C is
                end if;
                Append (Buf, LF);
                Append (Buf, "        " & C_Type_Name (NM) & " *nn ="
-                 & " calloc(1, sizeof(*nn));");
+                 & " (" & C_Type_Name (NM) & " *)calloc(1, sizeof(*nn));");
                Append (Buf, LF);
                Append (Buf, "        if (!nn) hbnf_oom();");
                Append (Buf, LF);
@@ -3655,7 +3655,8 @@ package body HBNF_C is
             begin
                Append (Buf, "    size_t save = p->pos;");
                Append (Buf, LF);
-               Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
+               Append (Buf, "    " & C_Type_Name (NM)
+                 & " r; memset(&r, 0, sizeof r);");
                Append (Buf, LF);
                Emit_Number_Deferrals (Nums, Buf, "    ");
                Emit_Alternation (P, "r.",
@@ -3689,7 +3690,8 @@ package body HBNF_C is
             begin
                Append (Buf, "    size_t save = p->pos;");
                Append (Buf, LF);
-               Append (Buf, "    " & C_Type_Name (NM) & " r = {0};");
+               Append (Buf, "    " & C_Type_Name (NM)
+                 & " r; memset(&r, 0, sizeof r);");
                Append (Buf, LF);
                Emit_Number_Deferrals (Nums, Buf, "    ");
                --  On failure, free what the sequence built so far (its
@@ -4910,7 +4912,7 @@ package body HBNF_C is
             Append (Buf, LF);
             Append (Buf, "    for (uint32_t _i = 0; _i < _n; _i++) {");
             Append (Buf, LF);
-            Append (Buf, "        " & TN & " *nn = calloc(1, sizeof *nn);");
+            Append (Buf, "        " & TN & " *nn = (" & TN & " *)calloc(1, sizeof *nn);");
             Append (Buf, LF);
             Append (Buf, "        if (!nn) hbnf_oom();");
             Append (Buf, LF);
