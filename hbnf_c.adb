@@ -406,6 +406,12 @@ package body HBNF_C is
       return T;
    end C_Type_Name;
 
+   --  The struct tag for a rule: the rule name with a "_s" suffix, so the
+   --  tag can never collide with a `_t` typedef.  C keeps tags and typedefs
+   --  in separate namespaces, but C++ puts them in one, so the tag is
+   --  `typedef struct foo_s foo_t;`.
+   function C_Tag (S : String) return String is (C_Name (S) & "_s");
+
    --  The C type of the root (first) rule: a list root is its list head
    --  (`struct <CN>_list`), a struct root its `_t` typedef.
    function Root_Type (Rules : Rule_Vectors.Vector) return String is
@@ -1300,7 +1306,7 @@ package body HBNF_C is
                      Append (Post, LF);
                   end if;
                   Append (Buf, Templates.Render (Templates.Get ("c_struct"),
-                    (Templates.Bind ("name", Pfx & CN),
+                    (Templates.Bind ("name", Pfx & C_Tag (NM)),
                      Templates.Bind ("pre", To_String (Pre)),
                      Templates.Bind ("items", To_String (Items)),
                      Templates.Bind ("post", To_String (Post)))));
@@ -1327,7 +1333,7 @@ package body HBNF_C is
                      Append (Pre, LF);
                   end if;
                   Append (Items, Templates.Render (Templates.Get ("c_entry"),
-                    (1 => Templates.Bind ("entry", L_Entry (Pfx & CN)))));
+                    (1 => Templates.Bind ("entry", L_Entry (Pfx & C_Tag (NM))))));
                   Append (Items, LF);
                   if Info.Elem_Members.Is_Empty then
                      if Info.Elem_Name /= Null_Unbounded_String then
@@ -1353,7 +1359,7 @@ package body HBNF_C is
                      Append (Post, LF);
                   end if;
                   Append (Buf, Templates.Render (Templates.Get ("c_struct"),
-                    (Templates.Bind ("name", Pfx & CN),
+                    (Templates.Bind ("name", Pfx & C_Tag (NM)),
                      Templates.Bind ("pre", To_String (Pre)),
                      Templates.Bind ("items", To_String (Items)),
                      Templates.Bind ("post", To_String (Post)))));
@@ -2196,13 +2202,13 @@ package body HBNF_C is
       for I in 1 .. N loop
          if Is_By_Value (Infos (I)) or else Infos (I).Kind = List then
             Append (Res, "typedef struct " & Pfx
-              & C_Name (To_String (Rules (I).Name))
+              & C_Tag (To_String (Rules (I).Name))
               & " " & C_Type_Name (To_String (Rules (I).Name)) & ";");
             Append (Res, LF);
             if Infos (I).Kind = List then
                Append (Res, L_Head
                  (Pfx & C_Name (To_String (Rules (I).Name)) & "_list",
-                  Pfx & C_Name (To_String (Rules (I).Name))) & ";");
+                  Pfx & C_Tag (To_String (Rules (I).Name))) & ";");
                Append (Res, LF);
             end if;
             Remaining := Remaining + 1;

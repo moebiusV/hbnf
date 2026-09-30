@@ -68,10 +68,10 @@ Grammar:
 Current pointer output (today's `Emit`):
 
 ```c
-typedef struct node node_t;
-struct node     { node_t *next; int kind; char *value; node_t *children; };
-typedef struct document document_t;
-struct document { node_t *head; };
+typedef struct node_s node_t;
+struct node_s     { node_t *next; int kind; char *value; node_t *children; };
+typedef struct document_s document_t;
+struct document_s { node_t *head; };
 ```
 
 Proposed id-ref output — the flat in-memory table the parser produces (strings
