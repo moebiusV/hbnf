@@ -1194,32 +1194,58 @@ package body HBNF_C is
       --  one value per distinct leading keyword, so the tree records which
       --  alternative matched.  A list rewritten from left recursion (Base)
       --  has a first value, <CN>_BASE, for its first entry, the base.
+      --  Render a template and check every binding was used (RFCPLAN.md
+      --  step 3: an unfilled hole is Render's error; an unused one is here).
+      function Tpl (Text : String; B : in out Templates.Bindings) return String is
+         Result : constant String := Templates.Render (Text, B);
+         U      : constant String := Templates.Unused (B);
+      begin
+         if U /= "" then
+            raise Parse_Error with
+              "template binding `${" & U & "}` is never used";
+         end if;
+         return Result;
+      end Tpl;
+
       function Kind_Enum (CN : String; Tags : String_Vectors.Vector;
                           Base : Boolean := False)
          return String is
-         Buf : U;
+         Items : U;
+         Names : constant String_Vectors.Vector := Enum_Names (Tags);
       begin
-         Append (Buf, "typedef enum {");
-         Append (Buf, LF);
          if Base then
-            Append (Buf, "    " & C_Ident (CN) & "_BASE"
-              & (if (for some N of Enum_Names (Tags) => To_String (N) = "BASE")
-                 then "_0" else "")
-              & ",   /* the first entry */");
-            Append (Buf, LF);
+            declare
+               B : Templates.Bindings;
+            begin
+               Templates.Set (B, "ident", C_Ident (CN));
+               Templates.Set (B, "suffix",
+                 (if (for some N of Names => To_String (N) = "BASE")
+                  then "_0" else ""));
+               Append (Items, Tpl (Templates.C_Enum_Base, B));
+            end;
+            Append (Items, LF);
          end if;
          for I in 1 .. Natural (Tags.Length) loop
-            Append (Buf, "    " & C_Ident (CN) & "_"
-              & To_String (Enum_Names (Tags) (I)));
-            if I < Natural (Tags.Length) then
-               Append (Buf, ",");
-            end if;
-            Append (Buf, "   /* " & To_String (Tags (I)) & " */");
-            Append (Buf, LF);
+            declare
+               B : Templates.Bindings;
+            begin
+               Templates.Set (B, "ident", C_Ident (CN) & "_" & To_String (Names (I)));
+               Templates.Set (B, "lit", To_String (Tags (I)));
+               if I < Natural (Tags.Length) then
+                  Append (Items, Tpl (Templates.C_Enum_Item, B));
+               else
+                  Append (Items, Tpl (Templates.C_Enum_Item_Last, B));
+               end if;
+            end;
+            Append (Items, LF);
          end loop;
-         Append (Buf, "} " & Pfx & CN & "_kind_t;");
-         Append (Buf, LF);
-         return To_String (Buf);
+         declare
+            B : Templates.Bindings;
+         begin
+            Templates.Set (B, "name", Pfx & CN & "_kind_t");
+            Templates.Set (B, "items", To_String (Items));
+            return Tpl (Templates.C_Enum, B) & LF;
+         end;
       end Kind_Enum;
 
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
@@ -1235,65 +1261,92 @@ package body HBNF_C is
 
          case Info.Kind is
             when Scalar =>
-               Append (Buf, "typedef " & To_String (Info.Inline_Type) & " "
-                 & C_Type_Name (NM) & ";");
+               declare
+                  B : Templates.Bindings;
+               begin
+                  Templates.Set (B, "type", To_String (Info.Inline_Type));
+                  Templates.Set (B, "name", C_Type_Name (NM));
+                  Append (Buf, Tpl (Templates.C_Scalar, B));
+               end;
                Append (Buf, LF);
             when Enum =>
                declare
+                  B     : Templates.Bindings;
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
+                  Items : U;
                begin
-                  Append (Buf, "typedef enum {");
-                  Append (Buf, LF);
                   for I in 1 .. Natural (Info.Literals.Length) loop
-                     Append (Buf, "    " & C_Ident (NM) & "_"
-                       & To_String (Names (I)));
-                     if I < Natural (Info.Literals.Length) then
-                        Append (Buf, ",");
-                     end if;
-                     Append (Buf, "   /* "
-                       & To_String (Info.Literals (I)) & " */");
-                     Append (Buf, LF);
+                     declare
+                        IB : Templates.Bindings;
+                     begin
+                        Templates.Set (IB, "ident",
+                          C_Ident (NM) & "_" & To_String (Names (I)));
+                        Templates.Set (IB, "lit", To_String (Info.Literals (I)));
+                        if I < Natural (Info.Literals.Length) then
+                           Append (Items, Tpl (Templates.C_Enum_Item, IB));
+                        else
+                           Append (Items, Tpl (Templates.C_Enum_Item_Last, IB));
+                        end if;
+                     end;
+                     Append (Items, LF);
                   end loop;
-                  Append (Buf, "} " & C_Type_Name (NM) & ";");
-                  Append (Buf, LF);
+                  Templates.Set (B, "name", C_Type_Name (NM));
+                  Templates.Set (B, "items", To_String (Items));
+                  Append (Buf, Tpl (Templates.C_Enum, B));
                end;
+               Append (Buf, LF);
             when Struct =>
                if not Info.Tags.Is_Empty then
                   Append (Buf, Kind_Enum (CN, Info.Tags));
                end if;
-               Append (Buf, "struct " & Pfx & CN & " {");
-               Append (Buf, LF);
-               if Idref then
-                  Append (Buf, "    objid_t id, parent;");
-                  Append (Buf, LF);
-               end if;
-               if not Info.Tags.Is_Empty then
-                  Append (Buf, "    " & Pfx & CN & "_kind_t kind;");
-                  Append (Buf, LF);
-               end if;
-               for M of Info.Members loop
-                  declare
-                     J : constant Natural := Find (To_String (M.Name));
-                     Is_Head : constant Boolean :=
-                       M.Is_List or else
-                         (J > 0 and then Infos (J).Kind = List);
-                  begin
-                     if Is_Head then
-                        Append (Buf, "    struct " & Pfx
-                          & C_Name (To_String (M.Name)) & "_list "
-                          & C_Field (To_String (M.Name)) & ";");
-                     else
-                        Append (Buf, "    " & C_Type_Of (To_String (M.Name))
-                          & " " & C_Field (To_String (M.Name)) & ";");
-                     end if;
-                  end;
-                  Append (Buf, LF);
-               end loop;
-               if R.Action_Code /= Null_Unbounded_String then
-                  Append (Buf, "    size_t _line;   /* for bind_error */");
-                  Append (Buf, LF);
-               end if;
-               Append (Buf, "};");
+               declare
+                  B     : Templates.Bindings;
+                  Pre   : U;
+                  Items : U;
+                  Post  : U;
+               begin
+                  if Idref then
+                     Append (Pre, Templates.C_Idref);
+                     Append (Pre, LF);
+                  end if;
+                  if not Info.Tags.Is_Empty then
+                     declare
+                        KB : Templates.Bindings;
+                     begin
+                        Templates.Set (KB, "kind", Pfx & CN & "_kind_t");
+                        Append (Pre, Tpl (Templates.C_Kind, KB));
+                     end;
+                     Append (Pre, LF);
+                  end if;
+                  for M of Info.Members loop
+                     declare
+                        J       : constant Natural := Find (To_String (M.Name));
+                        Is_Head : constant Boolean :=
+                          M.Is_List or else (J > 0 and then Infos (J).Kind = List);
+                        FB      : Templates.Bindings;
+                     begin
+                        if Is_Head then
+                           Templates.Set (FB, "type", Pfx & C_Name (To_String (M.Name)));
+                           Templates.Set (FB, "field", C_Field (To_String (M.Name)));
+                           Append (Items, Tpl (Templates.C_List_Field, FB));
+                        else
+                           Templates.Set (FB, "type", C_Type_Of (To_String (M.Name)));
+                           Templates.Set (FB, "field", C_Field (To_String (M.Name)));
+                           Append (Items, Tpl (Templates.C_Field, FB));
+                        end if;
+                     end;
+                     Append (Items, LF);
+                  end loop;
+                  if R.Action_Code /= Null_Unbounded_String then
+                     Append (Post, Templates.C_Line);
+                     Append (Post, LF);
+                  end if;
+                  Templates.Set (B, "name", Pfx & CN);
+                  Templates.Set (B, "pre", To_String (Pre));
+                  Templates.Set (B, "items", To_String (Items));
+                  Templates.Set (B, "post", To_String (Post));
+                  Append (Buf, Tpl (Templates.C_Struct, B));
+               end;
                Append (Buf, LF);
             when List =>
                --  A list-linked node; the head is a `struct <CN>_list`
@@ -1301,38 +1354,69 @@ package body HBNF_C is
                if not Info.Tags.Is_Empty then
                   Append (Buf, Kind_Enum (CN, Info.Tags, R.Left_Bases > 0));
                end if;
-               Append (Buf, "struct " & Pfx & CN & " {");
-               Append (Buf, LF);
-               if Idref then
-                  Append (Buf, "    objid_t id, parent;");
-                  Append (Buf, LF);
-               end if;
-               if not Info.Tags.Is_Empty then
-                  Append (Buf, "    " & Pfx & CN & "_kind_t kind;");
-                  Append (Buf, LF);
-               end if;
-               Append (Buf, "    " & L_Entry (Pfx & CN) & ";");
-               Append (Buf, LF);
-               if Info.Elem_Members.Is_Empty then
-                  if Info.Elem_Name /= Null_Unbounded_String then
-                     Append (Buf, "    " & C_Type_Of (To_String (Info.Elem_Name))
-                       & " " & C_Field (To_String (Info.Elem_Name)) & ";");
-                  else
-                     Append (Buf, "    const char *value;");
+               declare
+                  B     : Templates.Bindings;
+                  Pre   : U;
+                  Items : U;
+                  Post  : U;
+               begin
+                  if Idref then
+                     Append (Pre, Templates.C_Idref);
+                     Append (Pre, LF);
                   end if;
-                  Append (Buf, LF);
-               else
-                  for M of Info.Elem_Members loop
-                     Append (Buf, "    " & C_Type_Of (To_String (M.Name))
-                       & " " & C_Field (To_String (M.Name)) & ";");
-                     Append (Buf, LF);
-                  end loop;
-               end if;
-               if R.Action_Code /= Null_Unbounded_String then
-                  Append (Buf, "    size_t _line;   /* for bind_error */");
-                  Append (Buf, LF);
-               end if;
-               Append (Buf, "};");
+                  if not Info.Tags.Is_Empty then
+                     declare
+                        KB : Templates.Bindings;
+                     begin
+                        Templates.Set (KB, "kind", Pfx & CN & "_kind_t");
+                        Append (Pre, Tpl (Templates.C_Kind, KB));
+                     end;
+                     Append (Pre, LF);
+                  end if;
+                  declare
+                     EB : Templates.Bindings;
+                  begin
+                     Templates.Set (EB, "entry", L_Entry (Pfx & CN));
+                     Append (Items, Tpl (Templates.C_Entry, EB));
+                  end;
+                  Append (Items, LF);
+                  if Info.Elem_Members.Is_Empty then
+                     if Info.Elem_Name /= Null_Unbounded_String then
+                        declare
+                           FB : Templates.Bindings;
+                        begin
+                           Templates.Set (FB, "type",
+                             C_Type_Of (To_String (Info.Elem_Name)));
+                           Templates.Set (FB, "field",
+                             C_Field (To_String (Info.Elem_Name)));
+                           Append (Items, Tpl (Templates.C_Field, FB));
+                        end;
+                     else
+                        Append (Items, Templates.C_Value);
+                     end if;
+                     Append (Items, LF);
+                  else
+                     for M of Info.Elem_Members loop
+                        declare
+                           FB : Templates.Bindings;
+                        begin
+                           Templates.Set (FB, "type", C_Type_Of (To_String (M.Name)));
+                           Templates.Set (FB, "field", C_Field (To_String (M.Name)));
+                           Append (Items, Tpl (Templates.C_Field, FB));
+                        end;
+                        Append (Items, LF);
+                     end loop;
+                  end if;
+                  if R.Action_Code /= Null_Unbounded_String then
+                     Append (Post, Templates.C_Line);
+                     Append (Post, LF);
+                  end if;
+                  Templates.Set (B, "name", Pfx & CN);
+                  Templates.Set (B, "pre", To_String (Pre));
+                  Templates.Set (B, "items", To_String (Items));
+                  Templates.Set (B, "post", To_String (Post));
+                  Append (Buf, Tpl (Templates.C_Struct, B));
+               end;
                Append (Buf, LF);
          end case;
 
@@ -3780,18 +3864,21 @@ package body HBNF_C is
          end if;
       end Emit_Statement_Hooks;
 
+      --  Render a template and check every binding was used (RFCPLAN.md
+      --  step 3: an unfilled hole is Render's error; an unused one is here).
+      function Tpl (Text : String; B : in out Templates.Bindings) return String is
+         Result : constant String := Templates.Render (Text, B);
+         U      : constant String := Templates.Unused (B);
+      begin
+         if U /= "" then
+            raise HBNF_Grammar.Parse_Error with
+              "template binding `${" & U & "}` is never used";
+         end if;
+         return Result;
+      end Tpl;
+
       Res : U;
    begin
-      Append (Res, "/* generated by hbnf -- do not edit */");
-      Append (Res, LF);
-      Append (Res, "#include <stdlib.h>");
-      Append (Res, LF);
-      Append (Res, "#include <string.h>");
-      Append (Res, LF);
-      Append (Res, "#include <stdio.h>");
-      Append (Res, LF);
-      Append (Res, "#include <ctype.h>");
-      Append (Res, LF);
       for R of Rules loop
          Collect_Case (R.Pattern);
       end loop;
@@ -3803,140 +3890,58 @@ package body HBNF_C is
               & "and without; a keyword matches one way or the other";
          end if;
       end loop;
-      if not Nocase_Words.Is_Empty then
-         Append (Res, "#include <strings.h>");
-         Append (Res, LF);
-      end if;
-      Append (Res, LF);
       declare
-         Enum : U := To_Unbounded_String
-           ("typedef enum { TOK_ATOM, TOK_STR, TOK_INT, TOK_PUNCT");
+         B        : Templates.Bindings;
+         Kind_Ext : U;
+         Nocase   : U;
+         Kw       : U;
       begin
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
-               Append (Enum, ", TOK_"
+               Append (Kind_Ext, ", TOK_"
                  & C_Ident (To_String (Rules (I).Name)));
             elsif Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
-               Append (Enum, ", TOK_"
+               Append (Kind_Ext, ", TOK_"
                  & C_Ident (To_String (Rules (I).Name)));
             end if;
          end loop;
-         Append (Enum, ", TOK_EOF } tok_kind_t;");
-         Append (Res, To_String (Enum));
-         Append (Res, LF);
+         Emit_Keywords (Kw);
+         if not Nocase_Words.Is_Empty then
+            Append (Nocase, "__attribute__((unused))");
+            Append (Nocase, LF);
+            Append (Nocase, "static bool expect_lit_nocase(parser_t *p,"
+              & " const char *lit, size_t lit_len) {");
+            Append (Nocase, LF);
+            Append (Nocase,
+              "    if (p->pos < p->n && (p->toks[p->pos].kind == TOK_ATOM"
+              & " || p->toks[p->pos].kind == TOK_PUNCT)");
+            Append (Nocase, LF);
+            Append (Nocase,
+              "        && p->toks[p->pos].text && p->toks[p->pos].len == lit_len");
+            Append (Nocase, LF);
+            Append (Nocase,
+              "        && strncasecmp(p->toks[p->pos].text, lit, lit_len) == 0) {");
+            Append (Nocase, LF);
+            Append (Nocase, "        p->pos++; return true;");
+            Append (Nocase, LF);
+            Append (Nocase, "    }");
+            Append (Nocase, LF);
+            Append (Nocase,
+              "    fail(p, lit, 1, p->pos < p->n ? p->toks[p->pos].text"
+              & " : ""end of input""); return false;");
+            Append (Nocase, LF);
+            Append (Nocase, "}");
+            Append (Nocase, LF);
+            Append (Nocase, LF);
+            Templates.Set (B, "strings_h", "#include <strings.h>" & LF);
+         else
+            Templates.Set (B, "strings_h", "");
+         end if;
+         Templates.Set (B, "kind", To_String (Kind_Ext));
+         Templates.Set (B, "keywords", To_String (Kw));
+         Templates.Set (B, "nocase", To_String (Nocase));
+         Append (Res, Tpl (Templates.C_Parser, B));
       end;
-      Emit_Keywords (Res);
-      Append (Res, LF);
-      --  24 bytes a token (was 48): the lexer checks the input fits in
-      --  32-bit offsets, and kinds and keyword ids fit in 16 bits (checked
-      --  when generating).
-      Append (Res, "typedef struct { const char *text; uint32_t len, line, col;"
-        & " uint16_t kind, kwid; } token_t;");
-      Append (Res, LF);
-      Append (Res, LF);
-      Append (Res, "typedef struct {");
-      Append (Res, LF);
-      Append (Res, "    const token_t *toks;");
-      Append (Res, LF);
-      Append (Res, "    size_t n, pos;");
-      Append (Res, LF);
-      Append (Res, "    const char *text;   /* source, for the lazy caret line */");
-      Append (Res, LF);
-      Append (Res, "    size_t err_pos;");
-      Append (Res, LF);
-      Append (Res, "    size_t err_line, err_col;");
-      Append (Res, LF);
-      Append (Res, "    const char *err_expected, *err_found;");
-      Append (Res, LF);
-      Append (Res, "    int err_is_lit;");
-      Append (Res, LF);
-      Append (Res, "} parser_t;");
-      Append (Res, LF);
-      Append (Res, LF);
-      Append (Res, "/* The line the text being lexed starts on: 1 for a whole file,"
-        & " a statement's");
-      Append (Res, LF);
-      Append (Res, "   first line when a config is read one statement at a time. */");
-      Append (Res, LF);
-      Append (Res, "static size_t hbnf_line_base = 1;");
-      Append (Res, LF);
-      Append (Res, LF);
-      Append (Res, "static void fail(parser_t *p, const char *expected,"
-        & " int is_lit, const char *found) {");
-      Append (Res, LF);
-      Append (Res, "    if (p->err_pos != (size_t)-1 && p->pos <= p->err_pos)"
-        & " return;  /* a deeper failure already recorded */");
-      Append (Res, LF);
-      Append (Res, "    p->err_pos = p->pos;");
-      Append (Res, LF);
-      Append (Res, "    p->err_expected = expected; p->err_found = found;"
-        & " p->err_is_lit = is_lit;");
-      Append (Res, LF);
-      Append (Res, "    p->err_line = p->pos < p->n ? p->toks[p->pos].line : 0;");
-      Append (Res, LF);
-      Append (Res, "    p->err_col  = p->pos < p->n ? p->toks[p->pos].col  : 0;");
-      Append (Res, LF);
-      Append (Res, "}");
-      Append (Res, LF);
-      Append (Res, LF);
-      Append (Res, "static bool expect_lit(parser_t *p, const char *lit,"
-        & " size_t lit_len) {");
-      Append (Res, LF);
-      Append (Res, "    if (p->pos < p->n && (p->toks[p->pos].kind == TOK_ATOM"
-        & " || p->toks[p->pos].kind == TOK_PUNCT)");
-      Append (Res, LF);
-      Append (Res, "        && p->toks[p->pos].text && p->toks[p->pos].len == lit_len");
-      Append (Res, LF);
-      Append (Res, "        && strncmp(p->toks[p->pos].text, lit, p->toks[p->pos].len) == 0) {");
-      Append (Res, LF);
-      Append (Res, "        p->pos++; return true;");
-      Append (Res, LF);
-      Append (Res, "    }");
-      Append (Res, LF);
-      Append (Res, "    fail(p, lit, 1, p->pos < p->n ? p->toks[p->pos].text"
-        & " : ""end of input""); return false;");
-      Append (Res, LF);
-      Append (Res, "}");
-      Append (Res, LF);
-      Append (Res, LF);
-      if not Nocase_Words.Is_Empty then
-         --  %i"...": the same, in any case.  Unused when every %i literal
-         --  is an alternative of an enum rule, which compares in place.
-         Append (Res, "__attribute__((unused))");
-         Append (Res, LF);
-         Append (Res, "static bool expect_lit_nocase(parser_t *p,"
-           & " const char *lit, size_t lit_len) {");
-         Append (Res, LF);
-         Append (Res, "    if (p->pos < p->n && (p->toks[p->pos].kind == TOK_ATOM"
-           & " || p->toks[p->pos].kind == TOK_PUNCT)");
-         Append (Res, LF);
-         Append (Res, "        && p->toks[p->pos].text && p->toks[p->pos].len == lit_len");
-         Append (Res, LF);
-         Append (Res, "        && strncasecmp(p->toks[p->pos].text, lit, lit_len) == 0) {");
-         Append (Res, LF);
-         Append (Res, "        p->pos++; return true;");
-         Append (Res, LF);
-         Append (Res, "    }");
-         Append (Res, LF);
-         Append (Res, "    fail(p, lit, 1, p->pos < p->n ? p->toks[p->pos].text"
-           & " : ""end of input""); return false;");
-         Append (Res, LF);
-         Append (Res, "}");
-         Append (Res, LF);
-         Append (Res, LF);
-      end if;
-      Append (Res, "static bool expect_kind(parser_t *p, tok_kind_t k,"
-        & " const char *desc) {");
-      Append (Res, LF);
-      Append (Res, "    if (p->pos < p->n && p->toks[p->pos].kind == k"
-        & " && (k != TOK_ATOM || p->toks[p->pos].kwid == KWID_NONE)) return true;");
-      Append (Res, LF);
-      Append (Res, "    fail(p, desc, 0, p->pos < p->n ? p->toks[p->pos].text"
-        & " : ""end of input"");");
-      Append (Res, LF);
-      Append (Res, "    return false;");
-      Append (Res, LF);
-      Append (Res, "}");
       Append (Res, LF);
       Append (Res, LF);
 

@@ -545,6 +545,19 @@ package body HBNF_Rust is
 
       Infos : Info_Vectors.Vector;
 
+      --  Render a template and check every binding was used (RFCPLAN.md
+      --  step 3: an unfilled hole is Render's error; an unused one is here).
+      function Tpl (Text : String; B : in out Templates.Bindings) return String is
+         Result : constant String := Templates.Render (Text, B);
+         U      : constant String := Templates.Unused (B);
+      begin
+         if U /= "" then
+            raise Parse_Error with
+              "template binding `${" & U & "}` is never used";
+         end if;
+         return Result;
+      end Tpl;
+
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
          R    : constant Rule := Rules (Idx);
          Base : constant String := Rust_Type (To_String (R.Name));
@@ -560,47 +573,65 @@ package body HBNF_Rust is
                --  `string` -> `String`) is that type; a self-alias `type
                --  String = String` would shadow std and is omitted.
                if Base /= To_String (Info.Inline_Type) then
-                  Append (Buf, "pub type " & Base & " = " &
-                          To_String (Info.Inline_Type) & ";");
+                  declare
+                     B : Templates.Bindings;
+                  begin
+                     Templates.Set (B, "name", Base);
+                     Templates.Set (B, "type", To_String (Info.Inline_Type));
+                     Append (Buf, Tpl (Templates.Rust_Scalar, B));
+                  end;
                   Append (Buf, LF);
                end if;
             when Enum =>
                declare
+                  B     : Templates.Bindings;
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
+                  Items : U;
                begin
-                  Append (Buf, "#[derive(Default)]");
-                  Append (Buf, LF);
-                  Append (Buf, "pub enum " & Base & " {");
-                  Append (Buf, LF);
                   for I in 1 .. Natural (Info.Literals.Length) loop
-                     if I = 1 then
-                        Append (Buf, "    #[default]");
-                        Append (Buf, LF);
-                     end if;
-                     Append (Buf, "    " & Base & "_" &
-                             To_String (Names (I)) & ",");
-                     Append (Buf, LF);
+                     declare
+                        IB : Templates.Bindings;
+                     begin
+                        Templates.Set (IB, "ident",
+                          Base & "_" & To_String (Names (I)));
+                        if I = 1 then
+                           Append (Items, Tpl (Templates.Rust_Enum_First, IB));
+                        else
+                           Append (Items, Tpl (Templates.Rust_Enum_Item, IB));
+                        end if;
+                     end;
+                     Append (Items, LF);
                   end loop;
-                  Append (Buf, "}");
-                  Append (Buf, LF);
+                  Templates.Set (B, "name", Base);
+                  Templates.Set (B, "items", To_String (Items));
+                  Append (Buf, Tpl (Templates.Rust_Enum, B));
                end;
+               Append (Buf, LF);
             when Struct =>
-               Append (Buf, "#[derive(Default)]");
-               Append (Buf, LF);
-               Append (Buf, "pub struct " & Base & " {");
-               Append (Buf, LF);
-               for M of Info.Members loop
-                  Append (Buf, "    pub " &
-                          Rust_Field (To_String (M.Name)) & ": ");
-                  if M.Is_List then
-                     Append (Buf, "Vec<" &
-                             Rust_Type_Of (To_String (M.Name)) & ">,");
-                  else
-                     Append (Buf, Rust_Type_Of (To_String (M.Name)) & ",");
-                  end if;
-                  Append (Buf, LF);
-               end loop;
-               Append (Buf, "}");
+               declare
+                  B     : Templates.Bindings;
+                  Items : U;
+               begin
+                  for M of Info.Members loop
+                     declare
+                        IB : Templates.Bindings;
+                     begin
+                        Templates.Set (IB, "field", Rust_Field (To_String (M.Name)));
+                        if M.Is_List then
+                           Templates.Set (IB, "type",
+                             "Vec<" & Rust_Type_Of (To_String (M.Name)) & ">");
+                        else
+                           Templates.Set (IB, "type",
+                             Rust_Type_Of (To_String (M.Name)));
+                        end if;
+                        Append (Items, Tpl (Templates.Rust_Struct_Item, IB));
+                     end;
+                     Append (Items, LF);
+                  end loop;
+                  Templates.Set (B, "name", Base);
+                  Templates.Set (B, "items", To_String (Items));
+                  Append (Buf, Tpl (Templates.Rust_Struct, B));
+               end;
                Append (Buf, LF);
             when List =>
                null;  --  handled by Emit_List
@@ -626,25 +657,40 @@ package body HBNF_Rust is
 
          if Info.Elem_Members.Is_Empty then
             if Info.Elem_Name = Null_Unbounded_String then
-               Append (Buf, "pub type " & Base & " = Vec<String>;");
+               declare
+                  B : Templates.Bindings;
+               begin
+                  Templates.Set (B, "name", Base);
+                  Append (Buf, Tpl (Templates.Rust_List_Bytes, B));
+               end;
             else
-               Append (Buf, "pub type " & Base & " = Vec<" &
-                       Rust_Type_Of (To_String (Info.Elem_Name)) & ">;");
+               declare
+                  B : Templates.Bindings;
+               begin
+                  Templates.Set (B, "name", Base);
+                  Templates.Set (B, "type", Rust_Type_Of (To_String (Info.Elem_Name)));
+                  Append (Buf, Tpl (Templates.Rust_List_Simple, B));
+               end;
             end if;
          else
-            Append (Buf, "#[derive(Default)]");
-            Append (Buf, LF);
-            Append (Buf, "pub struct " & Base & "Entry {");
-            Append (Buf, LF);
-            for M of Info.Elem_Members loop
-               Append (Buf, "    pub " &
-                       Rust_Field (To_String (M.Name)) & ": " &
-                       Rust_Type_Of (To_String (M.Name)) & ",");
-               Append (Buf, LF);
-            end loop;
-            Append (Buf, "}");
-            Append (Buf, LF);
-            Append (Buf, "pub type " & Base & " = Vec<" & Base & "Entry>;");
+            declare
+               B     : Templates.Bindings;
+               Items : U;
+            begin
+               for M of Info.Elem_Members loop
+                  declare
+                     IB : Templates.Bindings;
+                  begin
+                     Templates.Set (IB, "field", Rust_Field (To_String (M.Name)));
+                     Templates.Set (IB, "type", Rust_Type_Of (To_String (M.Name)));
+                     Append (Items, Tpl (Templates.Rust_Struct_Item, IB));
+                  end;
+                  Append (Items, LF);
+               end loop;
+               Templates.Set (B, "name", Base);
+               Templates.Set (B, "items", To_String (Items));
+               Append (Buf, Tpl (Templates.Rust_List_Entry, B));
+            end;
          end if;
          Append (Buf, LF);
 
@@ -1547,6 +1593,19 @@ package body HBNF_Rust is
          end if;
       end Emit_Rule_Parser;
 
+      --  Render a template and check every binding was used (RFCPLAN.md
+      --  step 3: an unfilled hole is Render's error; an unused one is here).
+      function Tpl (Text : String; B : in out Templates.Bindings) return String is
+         Result : constant String := Templates.Render (Text, B);
+         U      : constant String := Templates.Unused (B);
+      begin
+         if U /= "" then
+            raise Parse_Error with
+              "template binding `${" & U & "}` is never used";
+         end if;
+         return Result;
+      end Tpl;
+
       Res : U;
    begin
       if Preamble ("Rust") /= "" then
@@ -1554,97 +1613,40 @@ package body HBNF_Rust is
          Append (Res, LF);
          Append (Res, LF);
       end if;
-      Append (Res, "// generated by hbnf -- do not edit");
-      Append (Res, LF);
       declare
-         Enum : U := To_Unbounded_String
-           ("#[derive(Clone, PartialEq)] pub enum Kind { Atom, Str, Int, Punct");
+         B        : Templates.Bindings;
+         Kind_Ext : U;
+         Nocase   : U;
       begin
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
-               Append (Enum, ", " & Rust_Type (To_String (Rules (I).Name)));
+               Append (Kind_Ext, ", " & Rust_Type (To_String (Rules (I).Name)));
             end if;
          end loop;
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
-               Append (Enum, ", " & Rust_Type (To_String (Rules (I).Name)));
+               Append (Kind_Ext, ", " & Rust_Type (To_String (Rules (I).Name)));
             end if;
          end loop;
-         Append (Enum, ", Eof }");
-         Append (Res, To_String (Enum));
-         Append (Res, LF);
+         if Has_No_Case (Rules) then
+            Append (Nocase,
+              "    fn expect_lit_nocase(&mut self, lit: &str) -> Result<(), ParseError> {");
+            Append (Nocase, LF);
+            Append (Nocase,
+              "        if self.pos < self.toks.len() && matches!(self.toks[self.pos].kind, Kind::Atom | Kind::Punct)");
+            Append (Nocase, LF);
+            Append (Nocase,
+              "            && self.toks[self.pos].text.eq_ignore_ascii_case(lit) { self.pos += 1; return Ok(()); }");
+            Append (Nocase, LF);
+            Append (Nocase, "        Err(self.fail(&format!(""`{}`"", lit)))");
+            Append (Nocase, LF);
+            Append (Nocase, "    }");
+            Append (Nocase, LF);
+         end if;
+         Templates.Set (B, "kind", To_String (Kind_Ext));
+         Templates.Set (B, "nocase", To_String (Nocase));
+         Append (Res, Tpl (Templates.Rust_Parser, B));
       end;
-      Append (Res, "pub struct Token { pub kind: Kind, pub text: String, pub line: usize, pub col: usize }");
-      Append (Res, LF);
-      Append (Res, "#[derive(Debug, Clone)] pub struct ParseError { pub line: usize, pub col: usize, pub msg: String }");
-      Append (Res, LF);
-      Append (Res, "struct P<'a> { toks: &'a [Token], lines: &'a [&'a str], pos: usize, err_pos: usize, err: Option<ParseError> }");
-      Append (Res, LF);
-      Append (Res, "impl<'a> P<'a> {");
-      Append (Res, LF);
-      Append (Res, "    fn fail(&mut self, expected: &str) -> ParseError {");
-      Append (Res, LF);
-      Append (Res, "        if self.err.is_none() || self.pos > self.err_pos {");
-      Append (Res, LF);
-      Append (Res, "            self.err_pos = self.pos;");
-      Append (Res, LF);
-      Append (Res, "            let (line, col) = if self.pos < self.toks.len() { (self.toks[self.pos].line, self.toks[self.pos].col) } else { (0, 0) };");
-      Append (Res, LF);
-      Append (Res, "            let found = if self.pos < self.toks.len() { self.toks[self.pos].text.clone() } else { ""end of input"".to_string() };");
-      Append (Res, LF);
-      Append (Res, "            let msg = if line >= 1 && line <= self.lines.len() {");
-      Append (Res, LF);
-      Append (Res, "                let l = self.lines[line - 1];");
-      Append (Res, LF);
-      Append (Res, "                let pad = "" "".repeat(if col > 1 { col - 1 } else { 0 });");
-      Append (Res, LF);
-      Append (Res, "                format!(""expected {}, found {}\n  {}\n  {}^"", expected, found, l, pad)");
-      Append (Res, LF);
-      Append (Res, "            } else {");
-      Append (Res, LF);
-      Append (Res, "                format!(""expected {}, found {}"", expected, found)");
-      Append (Res, LF);
-      Append (Res, "            };");
-      Append (Res, LF);
-      Append (Res, "            self.err = Some(ParseError { line, col, msg });");
-      Append (Res, LF);
-      Append (Res, "        }");
-      Append (Res, LF);
-      Append (Res, "        self.err.clone().unwrap()");
-      Append (Res, LF);
-      Append (Res, "    }");
-      Append (Res, LF);
-      Append (Res, "    fn expect_lit(&mut self, lit: &str) -> Result<(), ParseError> {");
-      Append (Res, LF);
-      Append (Res, "        if self.pos < self.toks.len() && matches!(self.toks[self.pos].kind, Kind::Atom | Kind::Punct)");
-      Append (Res, LF);
-      Append (Res, "            && self.toks[self.pos].text == lit { self.pos += 1; return Ok(()); }");
-      Append (Res, LF);
-      Append (Res, "        Err(self.fail(&format!(""`{}`"", lit)))");
-      Append (Res, LF);
-      Append (Res, "    }");
-      Append (Res, LF);
-      if Has_No_Case (Rules) then
-         Append (Res, "    fn expect_lit_nocase(&mut self, lit: &str) -> Result<(), ParseError> {");
-         Append (Res, LF);
-         Append (Res, "        if self.pos < self.toks.len() && matches!(self.toks[self.pos].kind, Kind::Atom | Kind::Punct)");
-         Append (Res, LF);
-         Append (Res, "            && self.toks[self.pos].text.eq_ignore_ascii_case(lit) { self.pos += 1; return Ok(()); }");
-         Append (Res, LF);
-         Append (Res, "        Err(self.fail(&format!(""`{}`"", lit)))");
-         Append (Res, LF);
-         Append (Res, "    }");
-         Append (Res, LF);
-      end if;
-      Append (Res, "    fn expect_kind(&mut self, k: Kind, desc: &str) -> Result<(), ParseError> {");
-      Append (Res, LF);
-      Append (Res, "        if self.pos < self.toks.len() && self.toks[self.pos].kind == k { return Ok(()); }");
-      Append (Res, LF);
-      Append (Res, "        Err(self.fail(desc))");
-      Append (Res, LF);
-      Append (Res, "    }");
-      Append (Res, LF);
-      Append (Res, "}");
       Append (Res, LF);
       Append (Res, LF);
 

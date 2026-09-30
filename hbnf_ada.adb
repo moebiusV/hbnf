@@ -583,6 +583,19 @@ package body HBNF_Ada is
       end Emit_Vector;
 
       --  A scalar, enum or record declaration, carrying the rule's comments.
+      --  Render a template and check every binding was used (RFCPLAN.md
+      --  step 3: an unfilled hole is Render's error; an unused one is here).
+      function Tpl (Text : String; B : in out Templates.Bindings) return String is
+         Result : constant String := Templates.Render (Text, B);
+         U      : constant String := Templates.Unused (B);
+      begin
+         if U /= "" then
+            raise Parse_Error with
+              "template binding `${" & U & "}` is never used";
+         end if;
+         return Result;
+      end Tpl;
+
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
          R    : constant Rule := Rules (Idx);
          Base : constant String := Ada_Ident (To_String (R.Name));
@@ -596,39 +609,56 @@ package body HBNF_Ada is
 
          case Info.Kind is
             when Scalar =>
-               Append (Buf, "   subtype " & TN & " is " &
-                       To_String (Info.Inline_Type) & ";");
+               declare
+                  B : Templates.Bindings;
+               begin
+                  Templates.Set (B, "name", TN);
+                  Templates.Set (B, "type", To_String (Info.Inline_Type));
+                  Append (Buf, Tpl (Templates.Ada_Scalar, B));
+               end;
                Append (Buf, LF);
             when Enum =>
                declare
+                  B     : Templates.Bindings;
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
+                  Items : U;
                begin
-                  Append (Buf, "   type " & TN & " is (");
                   for I in 1 .. Natural (Info.Literals.Length) loop
                      if I > 1 then
-                        Append (Buf, ", ");
+                        Append (Items, ", ");
                      end if;
-                     Append (Buf, Base & "_" & To_String (Names (I)));
+                     Append (Items, Base & "_" & To_String (Names (I)));
                   end loop;
-                  Append (Buf, ");");
-                  Append (Buf, LF);
+                  Templates.Set (B, "name", TN);
+                  Templates.Set (B, "items", To_String (Items));
+                  Append (Buf, Tpl (Templates.Ada_Enum, B));
                end;
-            when Struct =>
-               Append (Buf, "   type " & TN & " is record");
                Append (Buf, LF);
-               for M of Info.Members loop
-                  if M.Is_List then
-                     Append (Buf, "      " & Ada_Field (To_String (M.Name)) &
-                             " : " & Base & "_" &
-                             Ada_Ident (To_String (M.Name)) &
-                             "_Vectors.Vector;");
-                  else
-                     Append (Buf, "      " & Ada_Field (To_String (M.Name)) &
-                             " : " & Elem_Type (To_String (M.Name)) & ";");
-                  end if;
-                  Append (Buf, LF);
-               end loop;
-               Append (Buf, "   end record;");
+            when Struct =>
+               declare
+                  B     : Templates.Bindings;
+                  Items : U;
+               begin
+                  for M of Info.Members loop
+                     declare
+                        IB : Templates.Bindings;
+                     begin
+                        Templates.Set (IB, "field", Ada_Field (To_String (M.Name)));
+                        if M.Is_List then
+                           Templates.Set (IB, "type",
+                             Base & "_" & Ada_Ident (To_String (M.Name))
+                             & "_Vectors.Vector");
+                        else
+                           Templates.Set (IB, "type", Elem_Type (To_String (M.Name)));
+                        end if;
+                        Append (Items, Tpl (Templates.Ada_Field, IB));
+                     end;
+                     Append (Items, LF);
+                  end loop;
+                  Templates.Set (B, "name", TN);
+                  Templates.Set (B, "items", To_String (Items));
+                  Append (Buf, Tpl (Templates.Ada_Struct, B));
+               end;
                Append (Buf, LF);
             when List =>
                null;  --  handled by Emit_List
@@ -665,18 +695,34 @@ package body HBNF_Ada is
             end if;
          else
             --  A group element: emit a named entry record (value members).
-            Append (Buf, "   type " & Base & "_Entry is record");
-            Append (Buf, LF);
-            for M of Info.Elem_Members loop
-               Append (Buf, "      " & Ada_Field (To_String (M.Name)) &
-                       " : " & Elem_Type (To_String (M.Name)) & ";");
-               Append (Buf, LF);
-            end loop;
-            Append (Buf, "   end record;");
+            declare
+               B     : Templates.Bindings;
+               Items : U;
+            begin
+               for M of Info.Elem_Members loop
+                  declare
+                     IB : Templates.Bindings;
+                  begin
+                     Templates.Set (IB, "field", Ada_Field (To_String (M.Name)));
+                     Templates.Set (IB, "type", Elem_Type (To_String (M.Name)));
+                     Append (Items, Tpl (Templates.Ada_Field, IB));
+                  end;
+                  Append (Items, LF);
+               end loop;
+               Templates.Set (B, "name", Base & "_Entry");
+               Templates.Set (B, "items", To_String (Items));
+               Append (Buf, Tpl (Templates.Ada_Struct, B));
+            end;
             Append (Buf, LF);
             Append (Buf, Emit_Vector (Base & "_Vectors", Base & "_Entry"));
          end if;
-         Append (Buf, "   subtype " & TN & " is " & Base & "_Vectors.Vector;");
+         declare
+            B : Templates.Bindings;
+         begin
+            Templates.Set (B, "name", TN);
+            Templates.Set (B, "base", Base);
+            Append (Buf, Tpl (Templates.Ada_List_Subtype, B));
+         end;
          Append (Buf, LF);
 
          if R.Trailing_Comment /= Null_Unbounded_String then
@@ -1607,250 +1653,99 @@ package body HBNF_Ada is
          end if;
       end Emit_Rule_Parser;
 
+      --  Render a template and check every binding was used (RFCPLAN.md
+      --  step 3: an unfilled hole is Render's error; an unused one is here).
+      function Tpl (Text : String; B : in out Templates.Bindings) return String is
+         Result : constant String := Templates.Render (Text, B);
+         U      : constant String := Templates.Unused (B);
+      begin
+         if U /= "" then
+            raise HBNF_Grammar.Parse_Error with
+              "template binding `${" & U & "}` is never used";
+         end if;
+         return Result;
+      end Tpl;
+
       Spec  : U;
       Bdy  : U;
    begin
       --  Package specification: token types, the exception, Parse_Config.
-      Append (Spec, "--  generated by hbnf -- do not edit");
-      Append (Spec, LF);
-      Append (Spec, "with Ada.Containers.Vectors;");
-      Append (Spec, LF);
-      Append (Spec, "with Ada.Strings.Unbounded;");
-      Append (Spec, LF);
-      Append (Spec, "with " & Package_Name & ";");
-      Append (Spec, LF);
-      Append (Spec, LF);
-      Append (Spec, "package " & Package_Name & ".Parser is");
-      Append (Spec, LF);
-      Append (Spec, LF);
-      Append (Spec, "   use Ada.Strings.Unbounded;");
-      Append (Spec, LF);
-      Append (Spec, LF);
       declare
-         Enum : U := To_Unbounded_String
-           ("   type Token_Kind is (Atom, Str, Int, Punct");
+         B        : Templates.Bindings;
+         Kind_Ext : U;
       begin
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
-               Append (Enum, ", " & Ada_Field (To_String (Rules (I).Name)));
+               Append (Kind_Ext, ", " & Ada_Field (To_String (Rules (I).Name)));
             end if;
          end loop;
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
-               Append (Enum, ", " & Ada_Field (To_String (Rules (I).Name)));
+               Append (Kind_Ext, ", " & Ada_Field (To_String (Rules (I).Name)));
             end if;
          end loop;
-         Append (Enum, ", Eof);");
-         Append (Spec, To_String (Enum));
+         Templates.Set (B, "pkg", Package_Name);
+         Templates.Set (B, "kind", To_String (Kind_Ext));
+         Templates.Set (B, "ret", Ret_Type (1));
+         if Conf then
+            Templates.Set (B, "conf",
+              "   function Parse_Config (Filename : String) return "
+              & Ret_Type (1) & ";" & LF & LF);
+         else
+            Templates.Set (B, "conf", "");
+         end if;
+         Append (Spec, Tpl (Templates.Ada_Parser_Spec, B));
          Append (Spec, LF);
       end;
-      Append (Spec, "   type Token is record");
-      Append (Spec, LF);
-      Append (Spec, "      Kind : Token_Kind;");
-      Append (Spec, LF);
-      Append (Spec, "      Text : Unbounded_String;");
-      Append (Spec, LF);
-      Append (Spec, "      Line : Natural;");
-      Append (Spec, LF);
-      Append (Spec, "      Col  : Natural;");
-      Append (Spec, LF);
-      Append (Spec, "   end record;");
-      Append (Spec, LF);
-      Append (Spec, "   package Token_Vectors is new Ada.Containers.Vectors (Positive, Token);");
-      Append (Spec, LF);
-      Append (Spec, "   package Line_Vectors is new Ada.Containers.Vectors (Positive, Unbounded_String);");
-      Append (Spec, LF);
-      Append (Spec, LF);
-      Append (Spec, "   Parse_Error : exception;");
-      Append (Spec, LF);
-      Append (Spec, LF);
-      Append (Spec, "   function Parse_Tokens");
-      Append (Spec, LF);
-      Append (Spec, "     (Toks  : Token_Vectors.Vector;");
-      Append (Spec, LF);
-      Append (Spec, "      Lines : Line_Vectors.Vector) return " & Ret_Type (1) & ";");
-      Append (Spec, LF);
-      Append (Spec, LF);
-      Append (Spec, "   function Parse_Text (Text : String) return " & Ret_Type (1) & ";");
-      Append (Spec, LF);
-      Append (Spec, LF);
-      if Conf then
-         Append (Spec, "   function Parse_Config (Filename : String) return " & Ret_Type (1) & ";");
-         Append (Spec, LF);
-         Append (Spec, LF);
-      end if;
-      Append (Spec, "end " & Package_Name & ".Parser;");
-      Append (Spec, LF);
 
-      --  Package body: the recursive-descent parser.
-      Append (Bdy, "with Interfaces;");
-      Append (Bdy, LF);
-      if Has_No_Case (Rules) then
-         Append (Bdy, "with Ada.Strings.Equal_Case_Insensitive;");
-         Append (Bdy, LF);
-      end if;
-      if Conf then
-         Append (Bdy, "with Ada.Text_IO;");
-         Append (Bdy, LF);
-      end if;
-      Append (Bdy, LF);
-      Append (Bdy, "package body " & Package_Name & ".Parser is");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
-      Append (Bdy, "   use Ada.Strings.Unbounded;");
-      Append (Bdy, LF);
-      Append (Bdy, "   use Interfaces;");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
-      Append (Bdy, "   type Parser is record");
-      Append (Bdy, LF);
-      Append (Bdy, "      Toks  : Token_Vectors.Vector;");
-      Append (Bdy, LF);
-      Append (Bdy, "      Lines : Line_Vectors.Vector;");
-      Append (Bdy, LF);
-      Append (Bdy, "      Pos   : Natural := 1;");
-      Append (Bdy, LF);
-      Append (Bdy, "   end record;");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
-      Append (Bdy, "   Spaces : constant String :=");
-      Append (Bdy, LF);
-      Append (Bdy, "     ""                                                                "";");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
-      Append (Bdy, "   function Found (P : Parser) return String is");
-      Append (Bdy, LF);
-      Append (Bdy, "   begin");
-      Append (Bdy, LF);
-      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length) then");
-      Append (Bdy, LF);
-      Append (Bdy, "         return To_String (P.Toks (P.Pos).Text);");
-      Append (Bdy, LF);
-      Append (Bdy, "      end if;");
-      Append (Bdy, LF);
-      Append (Bdy, "      return ""end of input"";");
-      Append (Bdy, LF);
-      Append (Bdy, "   end Found;");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
-      Append (Bdy, "   procedure Fail (P : Parser; Expected : String) is");
-      Append (Bdy, LF);
-      Append (Bdy, "      L : Natural := 0;");
-      Append (Bdy, LF);
-      Append (Bdy, "      C : Natural := 0;");
-      Append (Bdy, LF);
-      Append (Bdy, "      Msg : Unbounded_String;");
-      Append (Bdy, LF);
-      Append (Bdy, "   begin");
-      Append (Bdy, LF);
-      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length) then");
-      Append (Bdy, LF);
-      Append (Bdy, "         L := P.Toks (P.Pos).Line;");
-      Append (Bdy, LF);
-      Append (Bdy, "         C := P.Toks (P.Pos).Col;");
-      Append (Bdy, LF);
-      Append (Bdy, "      end if;");
-      Append (Bdy, LF);
-      --  The message starts with the line, as the other backends report
-      --  it beside theirs: an exception carries only a string.
-      Append (Bdy, "      if L >= 1 then");
-      Append (Bdy, LF);
-      Append (Bdy, "         Append (Msg, ""line"" & Natural'Image (L) & "": "");");
-      Append (Bdy, LF);
-      Append (Bdy, "      end if;");
-      Append (Bdy, LF);
-      Append (Bdy, "      Append (Msg, ""expected "" & Expected & "", found "" & Found (P));");
-      Append (Bdy, LF);
-      Append (Bdy, "      if L >= 1 and then L <= Natural (P.Lines.Length) then");
-      Append (Bdy, LF);
-      Append (Bdy, "         declare");
-      Append (Bdy, LF);
-      Append (Bdy, "            W   : constant Natural := (if C > 1 then C - 1 else 0);");
-      Append (Bdy, LF);
-      Append (Bdy, "            Pad : constant String :=");
-      Append (Bdy, LF);
-      Append (Bdy, "              (if W <= Spaces'Length then Spaces (1 .. W) else Spaces);");
-      Append (Bdy, LF);
-      Append (Bdy, "         begin");
-      Append (Bdy, LF);
-      Append (Bdy, "            Append (Msg, ASCII.LF & ""  "" & To_String (P.Lines (L))");
-      Append (Bdy, LF);
-      Append (Bdy, "              & ASCII.LF & ""  "" & Pad & ""^"");");
-      Append (Bdy, LF);
-      Append (Bdy, "         end;");
-      Append (Bdy, LF);
-      Append (Bdy, "      end if;");
-      Append (Bdy, LF);
-      Append (Bdy, "      raise Parse_Error with To_String (Msg);");
-      Append (Bdy, LF);
-      Append (Bdy, "   end Fail;");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
-      Append (Bdy, "   procedure Expect_Lit (P : in out Parser; Lit : String) is");
-      Append (Bdy, LF);
-      Append (Bdy, "   begin");
-      Append (Bdy, LF);
-      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length)");
-      Append (Bdy, LF);
-      Append (Bdy, "        and then (P.Toks (P.Pos).Kind = Atom or else P.Toks (P.Pos).Kind = Punct)");
-      Append (Bdy, LF);
-      Append (Bdy, "        and then To_String (P.Toks (P.Pos).Text) = Lit");
-      Append (Bdy, LF);
-      Append (Bdy, "      then");
-      Append (Bdy, LF);
-      Append (Bdy, "         P.Pos := P.Pos + 1;");
-      Append (Bdy, LF);
-      Append (Bdy, "      else");
-      Append (Bdy, LF);
-      Append (Bdy, "         Fail (P, ""`"" & Lit & ""`"");");
-      Append (Bdy, LF);
-      Append (Bdy, "      end if;");
-      Append (Bdy, LF);
-      Append (Bdy, "   end Expect_Lit;");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
-      if Has_No_Case (Rules) then
-         Append (Bdy, "   procedure Expect_Lit_Nocase (P : in out Parser; Lit : String) is");
-         Append (Bdy, LF);
-         Append (Bdy, "   begin");
-         Append (Bdy, LF);
-         Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length)");
-         Append (Bdy, LF);
-         Append (Bdy, "        and then (P.Toks (P.Pos).Kind = Atom or else P.Toks (P.Pos).Kind = Punct)");
-         Append (Bdy, LF);
-         Append (Bdy, "        and then Ada.Strings.Equal_Case_Insensitive (To_String (P.Toks (P.Pos).Text), Lit)");
-         Append (Bdy, LF);
-         Append (Bdy, "      then");
-         Append (Bdy, LF);
-         Append (Bdy, "         P.Pos := P.Pos + 1;");
-         Append (Bdy, LF);
-         Append (Bdy, "      else");
-         Append (Bdy, LF);
-         Append (Bdy, "         Fail (P, ""`"" & Lit & ""`"");");
-         Append (Bdy, LF);
-         Append (Bdy, "      end if;");
-         Append (Bdy, LF);
-         Append (Bdy, "   end Expect_Lit_Nocase;");
+      --  Package body: the parser itself (the lexer is a separate template).
+      declare
+         B           : Templates.Bindings;
+         Nocase_Proc : U;
+      begin
+         Templates.Set (B, "pkg", Package_Name);
+         if Has_No_Case (Rules) then
+            Templates.Set (B, "nocase_with",
+              "with Ada.Strings.Equal_Case_Insensitive;" & LF);
+            Append (Nocase_Proc,
+              "   procedure Expect_Lit_Nocase (P : in out Parser; Lit : String) is");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc, "   begin");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc, "      if P.Pos <= Natural (P.Toks.Length)");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc,
+              "        and then (P.Toks (P.Pos).Kind = Atom or else P.Toks (P.Pos).Kind = Punct)");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc,
+              "        and then Ada.Strings.Equal_Case_Insensitive (To_String (P.Toks (P.Pos).Text), Lit)");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc, "      then");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc, "         P.Pos := P.Pos + 1;");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc, "      else");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc, "         Fail (P, ""`"" & Lit & ""`"");");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc, "      end if;");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc, "   end Expect_Lit_Nocase;");
+            Append (Nocase_Proc, LF);
+            Append (Nocase_Proc, LF);
+         else
+            Templates.Set (B, "nocase_with", "");
+         end if;
+         if Conf then
+            Templates.Set (B, "conf_with", "with Ada.Text_IO;" & LF);
+         else
+            Templates.Set (B, "conf_with", "");
+         end if;
+         Templates.Set (B, "nocase_proc", To_String (Nocase_Proc));
+         Append (Bdy, Tpl (Templates.Ada_Parser_Body, B));
          Append (Bdy, LF);
          Append (Bdy, LF);
-      end if;
-      Append (Bdy, "   procedure Expect_Kind (P : in out Parser; K : Token_Kind; Desc : String) is");
-      Append (Bdy, LF);
-      Append (Bdy, "   begin");
-      Append (Bdy, LF);
-      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = K then");
-      Append (Bdy, LF);
-      Append (Bdy, "         null;");
-      Append (Bdy, LF);
-      Append (Bdy, "      else");
-      Append (Bdy, LF);
-      Append (Bdy, "         Fail (P, Desc);");
-      Append (Bdy, LF);
-      Append (Bdy, "      end if;");
-      Append (Bdy, LF);
-      Append (Bdy, "   end Expect_Kind;");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
+      end;
 
       --  Forward declarations: a rule may call any other, in any order.
       for I in 1 .. N loop

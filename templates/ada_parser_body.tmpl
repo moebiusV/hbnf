@@ -1,0 +1,70 @@
+with Interfaces;
+${nocase_with}${conf_with}
+package body ${pkg}.Parser is
+
+   use Ada.Strings.Unbounded;
+   use Interfaces;
+
+   type Parser is record
+      Toks  : Token_Vectors.Vector;
+      Lines : Line_Vectors.Vector;
+      Pos   : Natural := 1;
+   end record;
+
+   Spaces : constant String :=
+     "                                                                ";
+
+   function Found (P : Parser) return String is
+   begin
+      if P.Pos <= Natural (P.Toks.Length) then
+         return To_String (P.Toks (P.Pos).Text);
+      end if;
+      return "end of input";
+   end Found;
+
+   procedure Fail (P : Parser; Expected : String) is
+      L : Natural := 0;
+      C : Natural := 0;
+      Msg : Unbounded_String;
+   begin
+      if P.Pos <= Natural (P.Toks.Length) then
+         L := P.Toks (P.Pos).Line;
+         C := P.Toks (P.Pos).Col;
+      end if;
+      if L >= 1 then
+         Append (Msg, "line" & Natural'Image (L) & ": ");
+      end if;
+      Append (Msg, "expected " & Expected & ", found " & Found (P));
+      if L >= 1 and then L <= Natural (P.Lines.Length) then
+         declare
+            W   : constant Natural := (if C > 1 then C - 1 else 0);
+            Pad : constant String :=
+              (if W <= Spaces'Length then Spaces (1 .. W) else Spaces);
+         begin
+            Append (Msg, ASCII.LF & "  " & To_String (P.Lines (L))
+              & ASCII.LF & "  " & Pad & "^");
+         end;
+      end if;
+      raise Parse_Error with To_String (Msg);
+   end Fail;
+
+   procedure Expect_Lit (P : in out Parser; Lit : String) is
+   begin
+      if P.Pos <= Natural (P.Toks.Length)
+        and then (P.Toks (P.Pos).Kind = Atom or else P.Toks (P.Pos).Kind = Punct)
+        and then To_String (P.Toks (P.Pos).Text) = Lit
+      then
+         P.Pos := P.Pos + 1;
+      else
+         Fail (P, "`" & Lit & "`");
+      end if;
+   end Expect_Lit;
+
+${nocase_proc}   procedure Expect_Kind (P : in out Parser; K : Token_Kind; Desc : String) is
+   begin
+      if P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = K then
+         null;
+      else
+         Fail (P, Desc);
+      end if;
+   end Expect_Kind;
