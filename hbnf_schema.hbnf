@@ -3,6 +3,7 @@
 ; Built-in core types (interpreted by the codegen, never part of the grammar):
 ;   str   = a quoted c-string      atom  = a bare token (symbol or number)
 ;   int / dec / float / bool / flag / u8..u64 / i8..i64 = typed atoms.
+;   percent = a `%` suffix on an int/dec (interpreter-only, like dec/float).
 ;
 ; hbnf AST nodes map to these rules: Directive -> statement, Block -> block.
 ; Word -> atom, Str -> str, Int -> int, Dec -> dec.  An entry ends with ";"

@@ -993,27 +993,29 @@ package body HBNF is
       end Escape;
 
       function Value_Text (V : Value) return String is
-         Base : String;
+         function Base_Text return String is
+         begin
+            case V.Kind is
+               when Word => return To_String (V.Text);
+               when Str  => return '"' & Escape (To_String (V.Text)) & '"';
+               when Int  =>
+                  declare
+                     S : constant String := Long_Long_Integer'Image (V.Num);
+                  begin
+                     if S (S'First) = ' ' then
+                        return S (S'First + 1 .. S'Last);
+                     else
+                        return S;
+                     end if;
+                  end;
+               when Dec  => return To_String (V.Text);
+            end case;
+         end Base_Text;
       begin
-         case V.Kind is
-            when Word => Base := To_String (V.Text);
-            when Str  => Base := '"' & Escape (To_String (V.Text)) & '"';
-            when Int  =>
-               declare
-                  S : constant String := Long_Long_Integer'Image (V.Num);
-               begin
-                  if S (S'First) = ' ' then
-                     Base := S (S'First + 1 .. S'Last);
-                  else
-                     Base := S;
-                  end if;
-               end;
-            when Dec  => Base := To_String (V.Text);
-         end case;
          if V.Percent then
-            return Base & "%";
+            return Base_Text & "%";
          else
-            return Base;
+            return Base_Text;
          end if;
       end Value_Text;
 

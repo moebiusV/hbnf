@@ -177,8 +177,8 @@ procedure Hbnf_Emit_Check is
                and then Rules (I).Pattern (2).Kind = HBNF_Grammar.Alt);
 
       I := Find_Rule (Rules, "arg");
-      Check ("arg alternates atom/str/int/dec",
-             I /= 0 and then Natural (Rules (I).Pattern.Length) = 7);
+      Check ("arg alternates atom/str/int/dec, int/dec optional percent",
+             I /= 0 and then Natural (Rules (I).Pattern.Length) = 9);
 
       --  semicolon = ";" — the entry terminator, captured so the binder can
       --  set Semicolon_After.
