@@ -16,9 +16,10 @@ sets out that relationship precisely:
 Statuses were checked by running them against this tree. Each ABNF construct
 was written as a two- or three-rule schema and pushed through the schema
 parser, the C emitter and `gcc`, then through the generated parser on
-accepting and rejecting inputs. The Rust backend was spot-checked, and each
-construct also went through the interpreter (`HBNF_Match.Match`). Zig was not
-available and Ada output was compile-checked only where stated.
+accepting and rejecting inputs, and through the interpreter
+(`HBNF_Match.Match`).  The C, Rust, Zig and Ada backends are checked
+end-to-end by tests/e2e.sh and tests/portable.sh, run in the
+ada-toolchain:edge-full container (gcc-gnat, g++, rust and zig).
 
 ## Backends
 

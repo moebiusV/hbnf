@@ -1,7 +1,7 @@
 #!/bin/sh
 # Cross-language end-to-end smoke test for the hbnf CLI: emit a self-contained
 # parser (declarations + lexer + parser) in each language, compile and run it.
-# Run inside the Alpine container (has gcc-gnat; rust/zig are optional).
+# Run inside the ada-toolchain:edge-full container (gcc-gnat, g++, rust, zig).
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
