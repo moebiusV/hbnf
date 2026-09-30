@@ -28,6 +28,9 @@ not yet implemented, the rest of the compiled targets: **D**, **Fortran**,
 beyond those, the garbage-collected languages **Go**, **Java**, **JavaScript**,
 **Common Lisp** and **newLISP**.
 
+The C backend always emits code that C++ can consume directly — no modification
+and no shim — so a C++ codebase can use a generated parser as-is.
+
 ## 1. The shape
 
 **Borrowed from ABNF:** the rule syntax — `name = elements`, concatenation,
