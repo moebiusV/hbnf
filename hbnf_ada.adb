@@ -1621,6 +1621,66 @@ package body HBNF_Ada is
 
       Spec  : U;
       Bdy  : U;
+
+      --  The Ada condition that the current code point `Cp` lies in the union
+      --  of a repetition's character class (each branch one range).
+      function Or_Cond (Sub : Cp_Branch_Vectors.Vector) return String is
+         Buf   : U;
+         First : Boolean := True;
+      begin
+         if Natural (Sub.Length) = 1 then
+            declare
+               B : constant Cp_Range_Vectors.Vector := Sub (1);
+            begin
+               return Range_Cond (B (1).Lo, B (1).Hi);
+            end;
+         end if;
+         Append (Buf, "(");
+         for B of Sub loop
+            if not First then
+               Append (Buf, " or else ");
+            end if;
+            First := False;
+            Append (Buf, Range_Cond (B (1).Lo, B (1).Hi));
+         end loop;
+         Append (Buf, ")");
+         return To_String (Buf);
+      end Or_Cond;
+
+      --  Emit the greedy loop for a trailing repetition.  Fail is the
+      --  statement run when fewer than Min iterations matched (`return 0` in
+      --  a single branch, `Ok := False` in an alternation branch).
+      procedure Emit_Repeat (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         Append (Bdy, Ind & "declare");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "   Cnt : Natural := 0;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "begin");
+         Append (Bdy, LF);
+         if A.Max = 0 then
+            Append (Bdy, Ind & "   loop");
+         else
+            Append (Bdy, Ind & "   while Cnt < " & Img (A.Max) & " loop");
+         end if;
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      exit when N = 0 or else not " & Or_Cond (A.Sub) & ";");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      Off := Off + N;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      Cnt := Cnt + 1;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "   end loop;");
+         Append (Bdy, LF);
+         if A.Min > 0 then
+            Append (Bdy, Ind & "   if Cnt < " & Img (A.Min) & " then " & Fail & "; end if;");
+            Append (Bdy, LF);
+         end if;
+         Append (Bdy, Ind & "end;");
+         Append (Bdy, LF);
+      end Emit_Repeat;
    begin
       --  Package specification: token types, the exception, Parse_Config.
       declare
@@ -1860,13 +1920,14 @@ package body HBNF_Ada is
          if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
             declare
                NM  : constant String := To_String (Rules (I).Name);
-               DNF : constant Cp_Branch_Vectors.Vector := Char_DNF (Rules, NM);
+               DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
             begin
                Append (Bdy, "   function Scan_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
                Append (Bdy, LF);
                if Natural (DNF.Length) = 1 then
-                  --  One branch: a sequence of code points, decoded in turn.
+                  --  One branch: a sequence of code points, decoded in turn,
+                  --  ending at most in one repetition.
                   Append (Bdy, "      Cp  : Natural;");
                   Append (Bdy, LF);
                   Append (Bdy, "      N   : Natural;");
@@ -1875,14 +1936,19 @@ package body HBNF_Ada is
                   Append (Bdy, LF);
                   Append (Bdy, "   begin");
                   Append (Bdy, LF);
-                  for Rg of DNF (1) loop
-                     Append (Bdy, "      N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      if N = 0 or else not "
-                       & Range_Cond (Rg.Lo, Rg.Hi) & " then return 0; end if;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      Off := Off + N;");
-                     Append (Bdy, LF);
+                  for A of DNF (1) loop
+                     case A.Kind is
+                        when Single =>
+                           Append (Bdy, "      N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
+                           Append (Bdy, LF);
+                           Append (Bdy, "      if N = 0 or else not "
+                             & Range_Cond (A.Lo, A.Hi) & " then return 0; end if;");
+                           Append (Bdy, LF);
+                           Append (Bdy, "      Off := Off + N;");
+                           Append (Bdy, LF);
+                        when Repeat =>
+                           Emit_Repeat (A, "      ", "return 0");
+                     end case;
                   end loop;
                   Append (Bdy, "      return Off;");
                   Append (Bdy, LF);
@@ -1905,18 +1971,27 @@ package body HBNF_Ada is
                      Append (Bdy, LF);
                      Append (Bdy, "      Ok := True;");
                      Append (Bdy, LF);
-                     for Rg of B loop
-                        Append (Bdy, "      if Ok then");
-                        Append (Bdy, LF);
-                        Append (Bdy, "         N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
-                        Append (Bdy, LF);
-                        Append (Bdy, "         Ok := N > 0 and then "
-                          & Range_Cond (Rg.Lo, Rg.Hi) & ";");
-                        Append (Bdy, LF);
-                        Append (Bdy, "         if Ok then Off := Off + N; end if;");
-                        Append (Bdy, LF);
-                        Append (Bdy, "      end if;");
-                        Append (Bdy, LF);
+                     for A of B loop
+                        case A.Kind is
+                           when Single =>
+                              Append (Bdy, "      if Ok then");
+                              Append (Bdy, LF);
+                              Append (Bdy, "         N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
+                              Append (Bdy, LF);
+                              Append (Bdy, "         Ok := N > 0 and then "
+                                & Range_Cond (A.Lo, A.Hi) & ";");
+                              Append (Bdy, LF);
+                              Append (Bdy, "         if Ok then Off := Off + N; end if;");
+                              Append (Bdy, LF);
+                              Append (Bdy, "      end if;");
+                              Append (Bdy, LF);
+                           when Repeat =>
+                              Append (Bdy, "      if Ok then");
+                              Append (Bdy, LF);
+                              Emit_Repeat (A, "         ", "Ok := False");
+                              Append (Bdy, "      end if;");
+                              Append (Bdy, LF);
+                        end case;
                      end loop;
                      Append (Bdy, "      if Ok and then Off > Best then Best := Off; end if;");
                      Append (Bdy, LF);

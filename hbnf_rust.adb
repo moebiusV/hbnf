@@ -1132,6 +1132,9 @@ package body HBNF_Rust is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if Is_Char_Rule (Rules, To_String (R.Name)) then
+            return Rust_Type (To_String (R.Name));
+         end if;
          if Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1)
          then
@@ -1549,6 +1552,57 @@ package body HBNF_Rust is
       end Emit_Rule_Parser;
 
       Res : U;
+
+      --  The Rust condition that the current code point `c` lies in the union
+      --  of a repetition's character class (each branch one range).
+      function Or_Cond (Sub : Cp_Branch_Vectors.Vector) return String is
+         Buf   : U;
+         First : Boolean := True;
+      begin
+         if Natural (Sub.Length) = 1 then
+            declare
+               B : constant Cp_Range_Vectors.Vector := Sub (1);
+            begin
+               return Range_Cond (B (1).Lo, B (1).Hi);
+            end;
+         end if;
+         Append (Buf, "(");
+         for B of Sub loop
+            if not First then
+               Append (Buf, " || ");
+            end if;
+            First := False;
+            Append (Buf, Range_Cond (B (1).Lo, B (1).Hi));
+         end loop;
+         Append (Buf, ")");
+         return To_String (Buf);
+      end Or_Cond;
+
+      --  Emit the greedy loop for a trailing repetition.
+      procedure Emit_Repeat (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "{ let mut cnt = 0usize;");
+         Append (Res, LF);
+         if A.Max = 0 then
+            Append (Res, Ind & "    loop {");
+         else
+            Append (Res, Ind & "    while cnt < " & Img (A.Max) & " {");
+         end if;
+         Append (Res, LF);
+         Append (Res, Ind & "        { let (n, c) = decode_utf8(s, pos + off, len);"
+           & " if n == 0 || !" & Or_Cond (A.Sub)
+           & " { break; } off += n; cnt += 1; }");
+         Append (Res, LF);
+         Append (Res, Ind & "    }");
+         Append (Res, LF);
+         if A.Min > 0 then
+            Append (Res, Ind & "    if cnt < " & Img (A.Min) & " { " & Fail
+              & "; }");
+            Append (Res, LF);
+         end if;
+         Append (Res, Ind & "}");
+         Append (Res, LF);
+      end Emit_Repeat;
    begin
       if Preamble ("Rust") /= "" then
          Append (Res, Preamble ("Rust"));
@@ -1707,20 +1761,26 @@ package body HBNF_Rust is
             if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
                declare
                   NM  : constant String := To_String (Rules (I).Name);
-                  DNF : constant Cp_Branch_Vectors.Vector := Char_DNF (Rules, NM);
+                  DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
                begin
                   Append (Res, "fn scan_" & Rust_Snake (NM)
                     & "(s: &[u8], pos: usize, len: usize) -> usize {");
                   Append (Res, LF);
                   if Natural (DNF.Length) = 1 then
-                     --  One branch: a sequence of code points, decoded in turn.
+                     --  One branch: a sequence of code points, decoded in turn,
+                     --  ending at most in one repetition.
                      Append (Res, "    let mut off = 0usize;");
                      Append (Res, LF);
-                     for Rg of DNF (1) loop
-                        Append (Res, "    { let (n, c) = decode_utf8(s, pos + off, len);"
-                          & " if n == 0 || !" & Range_Cond (Rg.Lo, Rg.Hi)
-                          & " { return 0; } off += n; }");
-                        Append (Res, LF);
+                     for A of DNF (1) loop
+                        case A.Kind is
+                           when Single =>
+                              Append (Res, "    { let (n, c) = decode_utf8(s, pos + off, len);"
+                                & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi)
+                                & " { return 0; } off += n; }");
+                              Append (Res, LF);
+                           when Repeat =>
+                              Emit_Repeat (A, "    ", "return 0");
+                        end case;
                      end loop;
                      Append (Res, "    off");
                      Append (Res, LF);
@@ -1737,11 +1797,16 @@ package body HBNF_Rust is
                            Append (Res, LF);
                            Append (Res, "        let mut off = 0usize;");
                            Append (Res, LF);
-                           for Rg of B loop
-                              Append (Res, "        let (n, c) = decode_utf8(s, pos + off, len);"
-                                & " if n == 0 || !" & Range_Cond (Rg.Lo, Rg.Hi)
-                                & " { break 'br" & Img (Br) & "; } off += n;");
-                              Append (Res, LF);
+                           for A of B loop
+                              case A.Kind is
+                                 when Single =>
+                                    Append (Res, "        let (n, c) = decode_utf8(s, pos + off, len);"
+                                      & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi)
+                                      & " { break 'br" & Img (Br) & "; } off += n;");
+                                    Append (Res, LF);
+                                 when Repeat =>
+                                    Emit_Repeat (A, "        ", "break 'br" & Img (Br));
+                              end case;
                            end loop;
                            Append (Res, "        if off > best { best = off; }");
                            Append (Res, LF);
@@ -1797,7 +1862,9 @@ package body HBNF_Rust is
       R  : constant HBNF_Grammar.Rule := Rules (1);
       P  : constant HBNF_Grammar.Element_Vectors.Vector := R.Pattern;
       Root_T : constant String :=
-        (if Natural (P.Length) = 1
+        (if Is_Char_Rule (Rules, To_String (R.Name))
+         then Rust_Type (To_String (R.Name))
+         elsif Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1)
          then
             (if P (1).Kind = HBNF_Grammar.Name then

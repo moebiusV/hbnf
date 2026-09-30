@@ -146,6 +146,37 @@ unwind-ident passing; each lands as reviewed patches.
    - ntpd converted first (it has the byte-identity proof), then the other
      eight, their jets turned into character rules where they can be;
    - §6 measured again.
+
+   Dependency order within step 4:
+
+   4a. **Char-rule literals and repetition.** Lift `Is_Char_Rule` and
+       `Char_DNF` so a char rule may hold a string literal (a fixed run of
+       code points) and a repetition (`*`, `1*`, `n*m`) of a flat character
+       class (`word = 1*ALNUM`, `hexnum = "0x" 1*HEXDIG`).  The scanner
+       becomes a sequence of atoms, each one code point or a greedy repeat
+       loop; maximal munch is unchanged.  First slice: repetition only as
+       the last atom of a branch (nothing after it), no `%i` literal inside
+       a char rule, no nested repetition — each a clean generation-time
+       diagnostic, lifted when a grammar needs it.  Gate: byte-identical
+       output for the existing char rules.
+
+   4b. **Lexer as grammar.** The old lexer's `word`, `number`, quoted
+       strings with escapes, `#` comments and backslash continuation become
+       char rules in a shared include; `wordchars` goes away.  Keywords stay
+       a table (a listed word does not match `word`).
+
+   4c. **Character-model parser in C.** `parser_t` becomes text/len/pos
+       (no pre-cut token array); a literal compares bytes at the position, a
+       char-rule reference runs its scanner there, and `whitespace ws` makes
+       phrase-level rules skip `ws` between elements (character rules never
+       do).  Keywords still branch on the first byte.  The §6 memoization
+       comes later, only if the numbers regress.
+
+   4d. **Convert ntpd first**, then the other eight daemons; jets become
+       character rules where they can.
+
+   4e. **Re-measure §6** (57 ms for the 100,000-rule toy, ~0.5 s for 100,000
+       pfctl rules) and hold it.
 5. **`/` between phrases** (decision 1; factoring needs step 2).  Then:
    - RFC excerpts as regression tests: RFC 5234 Appendix B.1 verbatim, RFC
      3986 `scheme` and `host`, RFC 5322 `addr-spec`, RFC 9112

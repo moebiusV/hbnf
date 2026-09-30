@@ -1803,9 +1803,11 @@ package body HBNF_Grammar is
       declare
          Used : Path_Sets.Set;
 
-         --  A character rule, as HBNF_Compilable.Is_Char_Rule decides:
-         --  every element one code point in sequence, a range or the name
-         --  of another character rule.
+         --  A character rule, as HBNF_Compilable.Is_Char_Rule decides: a
+         --  sequence/alternation of ranges, plain literals and references
+         --  to other character rules (repetition allowed).  Its Char_Range
+         --  terminals stay ranges; a single code point elsewhere becomes a
+         --  literal.
          function Is_Char (N : String; Depth : Natural) return Boolean is
          begin
             if Depth = 0 or else not By_Name.Contains (N) then
@@ -1818,22 +1820,30 @@ package body HBNF_Grammar is
                then
                   return False;
                end if;
-               for E of R.Pattern loop
-                  if E.Min /= 1 or else E.Max /= 1 then
-                     return False;
-                  end if;
-                  case E.Kind is
-                     when Char_Range | Alt =>
-                        null;
-                     when Name =>
-                        if not Is_Char (To_String (E.Name), Depth - 1) then
+               declare
+                  Has_Anchor : Boolean := False;
+               begin
+                  for E of R.Pattern loop
+                     case E.Kind is
+                        when Char_Range =>
+                           Has_Anchor := True;
+                        when Alt =>
+                           null;
+                        when Literal =>
+                           if E.No_Case then
+                              return False;
+                           end if;
+                        when Name =>
+                           if not Is_Char (To_String (E.Name), Depth - 1) then
+                              return False;
+                           end if;
+                           Has_Anchor := True;
+                        when others =>
                            return False;
-                        end if;
-                     when others =>
-                        return False;
-                  end case;
-               end loop;
-               return True;
+                     end case;
+                  end loop;
+                  return Has_Anchor;
+               end;
             end;
          end Is_Char;
 

@@ -411,6 +411,9 @@ package body HBNF_C is
    function Root_Type (Rules : Rule_Vectors.Vector) return String is
       NM : constant String := To_String (Rules (1).Name);
    begin
+      if Is_Char_Rule (Rules, NM) then
+         return C_Type_Name (NM);
+      end if;
       if Natural (Rules (1).Pattern.Length) = 1
         and then (Rules (1).Pattern (1).Min /= 1
                   or else Rules (1).Pattern (1).Max /= 1)
@@ -2829,6 +2832,9 @@ package body HBNF_C is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if Is_Char_Rule (Rules, To_String (R.Name)) then
+            return C_Type_Name (To_String (R.Name)) & " *out";
+         end if;
          if Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1)
          then
@@ -3823,6 +3829,58 @@ package body HBNF_C is
       end Emit_Statement_Hooks;
 
       Res : U;
+
+      --  The C condition that the current code point `c` lies in the union of
+      --  a repetition's character class (each branch is one range).
+      function Or_Cond (Sub : Cp_Branch_Vectors.Vector) return String is
+         Buf   : U;
+         First : Boolean := True;
+      begin
+         if Natural (Sub.Length) = 1 then
+            declare
+               B : constant Cp_Range_Vectors.Vector := Sub (1);
+            begin
+               return Range_Cond (B (1).Lo, B (1).Hi);
+            end;
+         end if;
+         Append (Buf, "(");
+         for B of Sub loop
+            if not First then
+               Append (Buf, " || ");
+            end if;
+            First := False;
+            Append (Buf, Range_Cond (B (1).Lo, B (1).Hi));
+         end loop;
+         Append (Buf, ")");
+         return To_String (Buf);
+      end Or_Cond;
+
+      --  Emit the greedy loop for a trailing repetition: match the character
+      --  class as many times as Max allows (0 = unbounded), then require Min.
+      procedure Emit_Repeat (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "{ size_t cnt = 0;");
+         Append (Res, LF);
+         if A.Max = 0 then
+            Append (Res, Ind & "    for (;;) {");
+         else
+            Append (Res, Ind & "    while (cnt < " & Img (A.Max) & ") {");
+         end if;
+         Append (Res, LF);
+         Append (Res, Ind & "        { uint32_t c; size_t n = hbnf_decode_utf8(s,"
+           & " pos + off, len, &c); if (!n || !" & Or_Cond (A.Sub)
+           & ") break; off += n; cnt++; }");
+         Append (Res, LF);
+         Append (Res, Ind & "    }");
+         Append (Res, LF);
+         if A.Min > 0 then
+            Append (Res, Ind & "    if (cnt < " & Img (A.Min) & ") " & Fail
+              & ";");
+            Append (Res, LF);
+         end if;
+         Append (Res, Ind & "}");
+         Append (Res, LF);
+      end Emit_Repeat;
    begin
       for R of Rules loop
          Collect_Case (R.Pattern);
@@ -4129,20 +4187,26 @@ package body HBNF_C is
          if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
             declare
                NM  : constant String := To_String (Rules (I).Name);
-               DNF : constant Cp_Branch_Vectors.Vector := Char_DNF (Rules, NM);
+               DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
             begin
                Append (Res, "static size_t scan_" & C_Name (NM)
                  & "(const char *s, size_t pos, size_t len) {");
                Append (Res, LF);
                if Natural (DNF.Length) = 1 then
-                  --  One branch: a sequence of code points, decoded in turn.
+                  --  One branch: a sequence of code points, decoded in turn,
+                  --  ending at most in one repetition.
                   Append (Res, "    size_t off = 0;");
                   Append (Res, LF);
-                  for Rg of DNF (1) loop
-                     Append (Res, "    { uint32_t c; size_t n = hbnf_decode_utf8(s,"
-                       & " pos + off, len, &c); if (!n || !"
-                       & Range_Cond (Rg.Lo, Rg.Hi) & ") return 0; off += n; }");
-                     Append (Res, LF);
+                  for A of DNF (1) loop
+                     case A.Kind is
+                        when Single =>
+                           Append (Res, "    { uint32_t c; size_t n = hbnf_decode_utf8(s,"
+                             & " pos + off, len, &c); if (!n || !"
+                             & Range_Cond (A.Lo, A.Hi) & ") return 0; off += n; }");
+                           Append (Res, LF);
+                        when Repeat =>
+                           Emit_Repeat (A, "    ", "return 0");
+                     end case;
                   end loop;
                   Append (Res, "    return off;");
                   Append (Res, LF);
@@ -4155,11 +4219,16 @@ package body HBNF_C is
                      Append (Res, LF);
                      Append (Res, "        size_t off = 0; uint32_t c; size_t n;");
                      Append (Res, LF);
-                     for Rg of B loop
-                        Append (Res, "        n = hbnf_decode_utf8(s, pos + off, len, &c);"
-                          & " if (!n || !" & Range_Cond (Rg.Lo, Rg.Hi)
-                          & ") break; off += n;");
-                        Append (Res, LF);
+                     for A of B loop
+                        case A.Kind is
+                           when Single =>
+                              Append (Res, "        n = hbnf_decode_utf8(s, pos + off, len, &c);"
+                                & " if (!n || !" & Range_Cond (A.Lo, A.Hi)
+                                & ") break; off += n;");
+                              Append (Res, LF);
+                           when Repeat =>
+                              Emit_Repeat (A, "        ", "break");
+                        end case;
                      end loop;
                      Append (Res, "        if (off > best) best = off;");
                      Append (Res, LF);

@@ -97,4 +97,19 @@ check FAIL "AB"   "PAIR alone (2 code points)"
 echo "== ascii.hbnf still generates (no regression) =="
 "$CLI" grammars/ascii.hbnf --backend=c > "$W/ascii.c" 2>&1 && echo "  PASS: ascii.hbnf generates"
 
+echo "== a repeated character class and a literal + repetition =="
+gen <<'G'
+doc = 1*( ident | hex )
+ident = 1*ALPHA
+hex = "0x" 1*HEXDIG
+ALPHA = %x41-5A / %x61-7A
+HEXDIG = %x30-39 / %x41-46 / %x61-66
+G
+harness
+check OK   "abc"        "an ident (letters only)"
+check OK   "0x1F"       "a hex literal"
+check OK   "abc 0x1F"   "an ident then a hex literal"
+check FAIL ""           "empty (1* needs one entry)"
+check FAIL "123"        "digits are neither ALPHA nor a 0x hex"
+
 exit $rc

@@ -12,9 +12,13 @@ package body HBNF_Compilable is
      (for some E of V => E.Kind = Alt);
 
    --  True when the rule named Nm is character-level: its pattern is a
-   --  sequence/alternation of Char_Range terminals and references to other
-   --  char-level rules, each element matching one code point.  Shared by the
-   --  emitters' shape analyzers and their parser/lexer emission.
+   --  sequence/alternation of Char_Range terminals, plain string literals and
+   --  references to other char-level rules, each matching some number of code
+   --  points (Min..Max; Max = -1 unbounded).  Shared by the emitters' shape
+   --  analyzers and their parser/lexer emission.  The extra constraints the
+   --  scanner still cannot express (a repetition followed by more elements,
+   --  a repetition of a repetition, a %i literal) are diagnosed by
+   --  Validate_Char_Rules, not reflected here.
    function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean is
       function Rec (N : String; Depth : Natural) return Boolean is
@@ -37,24 +41,32 @@ package body HBNF_Compilable is
             then
                return False;
             end if;
-            for E of R.Pattern loop
-               --  A char rule is a fixed-length match (one code point per
-               --  element); a repeated or optional element makes it a list,
-               --  not a token, so such a rule is not char-level.
-               if E.Min /= 1 or else E.Max /= 1 then
-                  return False;
-               end if;
-               if E.Kind = Char_Range or else E.Kind = Alt then
-                  null;
-               elsif E.Kind = Name then
-                  if not Rec (To_String (E.Name), Depth - 1) then
-                     return False;
-                  end if;
-               else
-                  return False;
-               end if;
-            end loop;
-            return True;
+            declare
+               Has_Anchor : Boolean := False;
+            begin
+               for E of R.Pattern loop
+                  case E.Kind is
+                     when Char_Range =>
+                        Has_Anchor := True;
+                     when Alt =>
+                        null;
+                     when Literal =>
+                        if E.No_Case then
+                           return False;
+                        end if;
+                     when Name =>
+                        if not Rec (To_String (E.Name), Depth - 1) then
+                           return False;
+                        end if;
+                        Has_Anchor := True;
+                     when Group =>
+                        return False;
+                  end case;
+               end loop;
+               --  A literal-only rule (no character terminal, no char-rule
+               --  reference) is a keyword enum, not a scanner.
+               return Has_Anchor;
+            end;
          end;
       end Rec;
    begin
@@ -212,15 +224,61 @@ package body HBNF_Compilable is
    end Find;
 
    function Char_DNF (Rules : Rule_Vectors.Vector; Nm : String)
-      return Cp_Branch_Vectors.Vector is
+      return Cp_Branch_Atom_Vectors.Vector is
 
-      function Expand (J : Natural; Depth : Natural) return Cp_Branch_Vectors.Vector is
+      --  A literal's UTF-8 bytes as single-code-point ranges.
+      function Code_Points (S : String) return Cp_Range_Vectors.Vector is
+         V : Cp_Range_Vectors.Vector;
+         I : Natural := S'First;
+      begin
+         while I <= S'Last loop
+            declare
+               B0 : constant Natural := Character'Pos (S (I));
+               C  : Natural;
+               N  : Natural;
+            begin
+               if B0 < 16#80# then
+                  C := B0; N := 1;
+               elsif B0 in 16#C0# .. 16#DF# then
+                  C := B0 - 16#C0#; N := 2;
+               elsif B0 in 16#E0# .. 16#EF# then
+                  C := B0 - 16#E0#; N := 3;
+               elsif B0 in 16#F0# .. 16#F7# then
+                  C := B0 - 16#F0#; N := 4;
+               else
+                  C := B0; N := 1;
+               end if;
+               for K in 1 .. N - 1 loop
+                  exit when I + K > S'Last;
+                  declare
+                     B : constant Natural := Character'Pos (S (I + K));
+                  begin
+                     if B not in 16#80# .. 16#BF# then
+                        N := 1; C := B0; exit;
+                     end if;
+                     C := C * 16#40# + (B - 16#80#);
+                  end;
+               end loop;
+               V.Append (Cp_Range'(Lo => C, Hi => C));
+               I := I + N;
+            end;
+         end loop;
+         return V;
+      end Code_Points;
+
+      function Has_Trailing_Rep (Sub : Cp_Branch_Atom_Vectors.Vector)
+        return Boolean is
+        (for some B of Sub =>
+           Natural (B.Length) > 0
+           and then B (Natural (B.Length)).Kind = Repeat);
+
+      --  The flat DNF (branches of single code points) of a rule that is not
+      --  repeated: a repetition inside it is a repetition of a repetition,
+      --  which the scanner cannot express.
+      function Flat (J : Natural; Depth : Natural) return Cp_Branch_Vectors.Vector is
          R : constant Rule := Rules (J);
 
-         --  Expand one branch (a run of Char_Range / Name elements, no Alt).
-         --  A Name's DNF is distributed over the accumulated sequences, so a
-         --  reference to an alternation multiplies the branches.
-         function Expand_Seq (First, Last : Natural) return Cp_Branch_Vectors.Vector is
+         function Flat_Seq (First, Last : Natural) return Cp_Branch_Vectors.Vector is
             Branches : Cp_Branch_Vectors.Vector;
          begin
             Branches.Append (Cp_Range_Vectors.Empty_Vector);
@@ -228,9 +286,19 @@ package body HBNF_Compilable is
                declare
                   E : constant Element_Access := R.Pattern (K);
                begin
+                  if E.Min /= 1 or else E.Max /= 1 then
+                     raise Parse_Error with To_String (R.Name)
+                       & ": a repetition of a repetition is not a scanner";
+                  end if;
                   if E.Kind = Char_Range then
                      for B of Branches loop
                         B.Append (Cp_Range'(Lo => E.Lo, Hi => E.Hi));
+                     end loop;
+                  elsif E.Kind = Literal then
+                     for B of Branches loop
+                        for Rg of Code_Points (To_String (E.Lit)) loop
+                           B.Append (Rg);
+                        end loop;
                      end loop;
                   elsif E.Kind = Name then
                      declare
@@ -238,10 +306,8 @@ package body HBNF_Compilable is
                         Sub : Cp_Branch_Vectors.Vector;
                         New_Branches : Cp_Branch_Vectors.Vector;
                      begin
-                        --  Is_Char_Rule already ensured every Name resolves;
-                        --  if it does not, Sub stays empty and the branch dies.
                         if Idx /= 0 then
-                           Sub := Expand (Idx, Depth - 1);
+                           Sub := Flat (Idx, Depth - 1);
                         end if;
                         for B of Branches loop
                            for S of Sub loop
@@ -261,10 +327,8 @@ package body HBNF_Compilable is
                end;
             end loop;
             return Branches;
-         end Expand_Seq;
+         end Flat_Seq;
       begin
-         --  Degenerate guards (never hit for a rule Is_Char_Rule accepted)
-         --  yield one empty branch, i.e. a zero-code-point match.
          if J = 0 or else Depth = 0 or else Natural (R.Pattern.Length) = 0 then
             declare
                One : Cp_Branch_Vectors.Vector;
@@ -281,7 +345,7 @@ package body HBNF_Compilable is
             for K in 1 .. Natural (P.Length) + 1 loop
                if K > Natural (P.Length) or else P (K).Kind = Alt then
                   declare
-                     Sub : Cp_Branch_Vectors.Vector := Expand_Seq (St, K - 1);
+                     Sub : Cp_Branch_Vectors.Vector := Flat_Seq (St, K - 1);
                   begin
                      for S of Sub loop
                         Branches.Append (S);
@@ -292,9 +356,163 @@ package body HBNF_Compilable is
             end loop;
             return Branches;
          end;
-      end Expand;
+      end Flat;
+
+      --  The flat DNF of one repeated element: a Char_Range, a plain Literal,
+      --  or a Name of a repetition-free rule (nested repetition raises).  A
+      --  repetition matches one code point per iteration, so the result must
+      --  be a char class -- one range per branch -- not a sequence.
+      function Flat_Element (E : Element_Access; Depth : Natural;
+                             In_Rule : String)
+        return Cp_Branch_Vectors.Vector is
+         Result : Cp_Branch_Vectors.Vector;
+      begin
+         if E.Kind = Char_Range then
+            declare
+               Inner : Cp_Range_Vectors.Vector;
+            begin
+               Inner.Append (Cp_Range'(Lo => E.Lo, Hi => E.Hi));
+               Result.Append (Inner);
+            end;
+         elsif E.Kind = Literal then
+            declare
+               Inner : constant Cp_Range_Vectors.Vector :=
+                 Code_Points (To_String (E.Lit));
+            begin
+               Result.Append (Inner);
+            end;
+         else
+            declare
+               Idx : constant Natural := Find (Rules, To_String (E.Name));
+            begin
+               if Idx = 0 then
+                  Result.Append (Cp_Range_Vectors.Empty_Vector);
+               else
+                  Result := Flat (Idx, Depth - 1);
+               end if;
+            end;
+         end if;
+         if (for some B of Result => Natural (B.Length) /= 1) then
+            raise Parse_Error with In_Rule
+              & ": a repetition matches one code point per iteration (a "
+              & "character class), not a sequence";
+         end if;
+         return Result;
+      end Flat_Element;
+
+      --  The atom DNF (branches of Single/Repeat atoms) of a rule.
+      function Atom (J : Natural; Depth : Natural)
+        return Cp_Branch_Atom_Vectors.Vector is
+         R : constant Rule := Rules (J);
+
+         function Atom_Seq (First, Last : Natural)
+           return Cp_Branch_Atom_Vectors.Vector is
+            Branches : Cp_Branch_Atom_Vectors.Vector;
+         begin
+            Branches.Append (Cp_Atom_Vectors.Empty_Vector);
+            for K in First .. Last loop
+               declare
+                  E       : constant Element_Access := R.Pattern (K);
+                  Rep     : constant Boolean := E.Min /= 1 or else E.Max /= 1;
+                  Last_El : constant Boolean := K = Last;
+               begin
+                  if Rep and then not Last_El then
+                     raise Parse_Error with To_String (R.Name)
+                       & ": a repetition must be the last element of a "
+                       & "character rule (it would need backtracking)";
+                  end if;
+                  if Rep then
+                     declare
+                        Rpt : constant Cp_Atom :=
+                          Cp_Atom'(Kind => Repeat, Lo => 0, Hi => 0,
+                                   Min => E.Min,
+                                   Max => (if E.Max = -1 then 0
+                                           else Natural (E.Max)),
+                                   Sub => Flat_Element
+                                            (E, Depth, To_String (R.Name)));
+                     begin
+                        for B of Branches loop
+                           B.Append (Rpt);
+                        end loop;
+                     end;
+                  elsif E.Kind = Char_Range then
+                     for B of Branches loop
+                        B.Append (Cp_Atom'(Kind => Single,
+                                           Lo => E.Lo, Hi => E.Hi));
+                     end loop;
+                  elsif E.Kind = Literal then
+                     for B of Branches loop
+                        for Rg of Code_Points (To_String (E.Lit)) loop
+                           B.Append (Cp_Atom'(Kind => Single,
+                                              Lo => Rg.Lo, Hi => Rg.Hi));
+                        end loop;
+                     end loop;
+                  else
+                     --  A non-repeated Name: distribute its atom DNF.
+                     declare
+                        Idx : constant Natural := Find (Rules, To_String (E.Name));
+                        Sub : Cp_Branch_Atom_Vectors.Vector;
+                        New_Branches : Cp_Branch_Atom_Vectors.Vector;
+                     begin
+                        if Idx /= 0 then
+                           Sub := Atom (Idx, Depth - 1);
+                        end if;
+                        if not Last_El and then Has_Trailing_Rep (Sub) then
+                           raise Parse_Error with To_String (R.Name)
+                             & ": `" & To_String (E.Name)
+                             & "` ends in a repetition and is followed by "
+                             & "more; write the repetition last";
+                        end if;
+                        for B of Branches loop
+                           for S of Sub loop
+                              declare
+                                 Cat : Cp_Atom_Vectors.Vector := B;
+                              begin
+                                 for A of S loop
+                                    Cat.Append (A);
+                                 end loop;
+                                 New_Branches.Append (Cat);
+                              end;
+                           end loop;
+                        end loop;
+                        Branches := New_Branches;
+                     end;
+                  end if;
+               end;
+            end loop;
+            return Branches;
+         end Atom_Seq;
+      begin
+         if J = 0 or else Depth = 0 or else Natural (R.Pattern.Length) = 0 then
+            declare
+               One : Cp_Branch_Atom_Vectors.Vector;
+            begin
+               One.Append (Cp_Atom_Vectors.Empty_Vector);
+               return One;
+            end;
+         end if;
+         declare
+            P        : constant Element_Vectors.Vector := R.Pattern;
+            Branches : Cp_Branch_Atom_Vectors.Vector;
+            St       : Natural := 1;
+         begin
+            for K in 1 .. Natural (P.Length) + 1 loop
+               if K > Natural (P.Length) or else P (K).Kind = Alt then
+                  declare
+                     Sub : Cp_Branch_Atom_Vectors.Vector := Atom_Seq (St, K - 1);
+                  begin
+                     for S of Sub loop
+                        Branches.Append (S);
+                     end loop;
+                  end;
+                  St := K + 1;
+               end if;
+            end loop;
+            return Branches;
+         end;
+      end Atom;
    begin
-      return Expand (Find (Rules, Nm), 20);
+      return Atom (Find (Rules, Nm), 20);
    end Char_DNF;
 
    function Is_List_Rule (R : Rule) return Boolean is
@@ -609,6 +827,22 @@ package body HBNF_Compilable is
             end if;
          end;
       end loop;
+
+      --  A character rule the scanner cannot express -- a repetition followed
+      --  by more elements, or a repetition of a repetition -- is diagnosed
+      --  here, before emission, by running the DNF builder once (it raises).
+      for R of Rules loop
+         if Is_Char_Rule (Rules, To_String (R.Name)) then
+            declare
+               Dummy : constant Cp_Branch_Atom_Vectors.Vector :=
+                 Char_DNF (Rules, To_String (R.Name));
+               pragma Unreferenced (Dummy);
+            begin
+               null;
+            end;
+         end if;
+      end loop;
+
       Check_Left_Recursion (Rules);
       if Shadowed > 0 then
          raise Parse_Error with
