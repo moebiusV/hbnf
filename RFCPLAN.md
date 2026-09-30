@@ -10,6 +10,30 @@ Where the tree stands, and what this plan builds on: CHARLAYER.md (numeric
 terminals, `'c'` literals, `ascii.hbnf`, UTF-8 scanners in all four
 backends).  Where the notation differs from ABNF today: ABNF.md §4.
 
+## Corpora
+
+Two validation corpora, both exercised every step.
+
+**Daemon corpus.**  The nine OpenBSD daemon grammars (bgpd, dhcpleased,
+httpd, ldpd, ntpd, pfctl, relayd, snmpd, unwind), each derived from that
+daemon's `parse.y`.  These are drop-in replacements: their parsers accept and
+reject exactly what parse.y does (byte-identity for ntpd, unwind-identity
+elsewhere).
+
+**RFC corpus** (`tests/rfc/`).  The BNF fragments of the RFCs, pulled in whole
+where they compile and in pieces where they do not.  Each fragment keeps:
+
+- the RFC's ABNF verbatim — a `.hbnf` when it compiles as-is;
+- the error messages hbnf gives and what each means;
+- the **fixed-up** version, or — where the repair is involved — a note saying
+  how to make it (e.g. a `<prose-val>` that defers its real definition to two
+  or three other RFCs is rewritten to the rules those RFCs give, with the
+  provenance named).
+
+The corpus is where discoverability is proven: a fragment is "done" when its
+messages alone tell the author how to fix what hbnf could not accept
+silently.
+
 ## Decisions
 
 1. **Two alternation operators, two meanings.**
