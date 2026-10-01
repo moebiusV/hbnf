@@ -156,9 +156,9 @@ Scope (user directive, 2026-09-26):
 ## Verification
 
 - Build: `docker run --rm -v "$PWD":/work -w /work ada-toolchain:edge gnatmake
-  -q -gnat2022 -I. -Itests hbnf_cli.adb -o /tmp/hbnf_cli` (host has gcc, not
-  gnat). Then `cp /tmp/hbnf_cli /work/hbnf_cli.new`.
-- C compile/run smoke: generate with `hbnf_cli.new … --backend=c`, `gcc
+  -q -gnat2022 -I. -Itests hbnf.adb -o /tmp/hbnf` (host has gcc, not
+  gnat). Then `cp /tmp/hbnf /work/hbnf.new`.
+- C compile/run smoke: generate with `hbnf.new … --backend=c`, `gcc
   -std=gnu11 -D_GNU_SOURCE`, run a small main.
 - Regression: `sh tests/daemons.sh` (9 daemon grammars) and the `server.hbnf`
-  round-trip via `hbnf_cli.new … --backend=c`.
+  round-trip via `hbnf.new … --backend=c`.

@@ -8,12 +8,12 @@
 # five times; the reported time is the best of the five, wall-clock around the
 # parse call, and memory is getrusage's ru_maxrss (KiB).
 #
-#   HBNF_CLI=/path/to/hbnf_cli sh bench/section6.sh
+#   HBNF=/path/to/hbnf sh bench/section6.sh
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$root/templates}"
-CLI=${HBNF_CLI:-$root/hbnf_cli}
+CLI=${HBNF:-$root/hbnf}
 
 # best_of N CMD...: run CMD N times, print "time_ms rss_kib" of the fastest.
 best_of() {

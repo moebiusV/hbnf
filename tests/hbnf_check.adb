@@ -13,7 +13,7 @@ with Ada.Command_Line;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Text_IO;           use Ada.Text_IO;
 with Ada.Text_IO.Unbounded_IO;
-with HBNF;
+with HBNF_Config;
 
 procedure Hbnf_Check is
 
@@ -32,7 +32,7 @@ procedure Hbnf_Check is
       return To_String (Buf);
    end Slurp;
 
-   procedure Reject (Path, Why : String; R : HBNF.Parse_Result) is
+   procedure Reject (Path, Why : String; R : HBNF_Config.Parse_Result) is
    begin
       Put_Line (Standard_Error, Why & ": " & Path);
       if not R.Success then
@@ -54,7 +54,7 @@ begin
       Path : constant String := Ada.Command_Line.Argument (1);
       Mode : constant String := Ada.Command_Line.Argument (2);
       Text : constant String := Slurp (Path);
-      R    : constant HBNF.Parse_Result := HBNF.Parse (Text);
+      R    : constant HBNF_Config.Parse_Result := HBNF_Config.Parse (Text);
    begin
       if Mode = "accept" then
          if not R.Success then
@@ -62,15 +62,15 @@ begin
             return;
          end if;
          declare
-            P1 : constant String := HBNF.Print (R.Root);
-            R2 : constant HBNF.Parse_Result := HBNF.Parse (P1);
+            P1 : constant String := HBNF_Config.Print (R.Root);
+            R2 : constant HBNF_Config.Parse_Result := HBNF_Config.Parse (P1);
          begin
             if not R2.Success then
                Reject (Path, "ROUNDTRIP REJECT", R2);
                return;
             end if;
             declare
-               P2 : constant String := HBNF.Print (R2.Root);
+               P2 : constant String := HBNF_Config.Print (R2.Root);
             begin
                if P1 /= P2 then
                   Put_Line (Standard_Error, "NOT IDEMPOTENT: " & Path);

@@ -2,11 +2,11 @@
 # Macros expand to what a hand-expanded config says: pfctl's parser, with the
 # generated deep compare (--compare), finds tests/compare/macros.conf and
 # expanded.conf equal rule by rule, and different.conf not.
-#   HBNF_CLI=/path/to/hbnf_cli sh tests/compare.sh     (default ./hbnf_cli)
+#   HBNF=/path/to/hbnf sh tests/compare.sh     (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
-CLI=${HBNF_CLI:-./hbnf_cli}
+CLI=${HBNF:-./hbnf}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 "$CLI" grammars/pfctl.hbnf --backend=c --compare > "$W/pf.c" || { echo "compare: FAIL (generate)"; exit 1; }

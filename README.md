@@ -66,7 +66,7 @@ This directory holds two things:
   project file (`hbnf.gpr`).
 - **oconf**: a configuration language, implemented as a grammar in hbnf, for
   OpenBSD config files — keyword arguments, `{ }` blocks, `#` comments.
-- **HBNF**: the Ada package (`HBNF.Parse`, `HBNF.Tree`) for parsing and
+- **HBNF_Config**: the Ada package (`HBNF_Config.Parse`, `HBNF_Config.Tree`) for parsing and
   walking an oconf configuration file.
 - **libhbnf**: reserved for a C reference implementation (`libhbnf.so`,
   `-lhbnf`, `hbnf.pc`); not spent on this Ada crate.
@@ -154,20 +154,20 @@ A `#` comment is one of three kinds, distinguished by where it sits:
 ## API
 
 ```ada
-R : constant HBNF.Parse_Result := HBNF.Parse (Text);
+R : constant HBNF_Config.Parse_Result := HBNF_Config.Parse (Text);
 if not R.Success then
    --  R.Line, R.Col, R.Msg describe the first error
 end if;
 
-Root : constant HBNF.Node_Access := R.Root;
-for C of HBNF.Children (Root.all) loop ... end loop;
+Root : constant HBNF_Config.Node_Access := R.Root;
+for C of HBNF_Config.Children (Root.all) loop ... end loop;
 
-Slot : constant HBNF.Node_Access := HBNF.Find (Root.all, "slot");
-Cap  : constant HBNF.Node_Access := HBNF.Find (Slot.all, "total-capital");
-V    : constant HBNF.Value := HBNF.Value_At (Cap.all, 1);
+Slot : constant HBNF_Config.Node_Access := HBNF_Config.Find (Root.all, "slot");
+Cap  : constant HBNF_Config.Node_Access := HBNF_Config.Find (Slot.all, "total-capital");
+V    : constant HBNF_Config.Value := HBNF_Config.Value_At (Cap.all, 1);
 
-Amount : constant HBNF.Decimal := HBNF.As_Decimal (V);  -- fixed-point
-Exact  : constant String       := HBNF.As_Text (V);      -- as written
+Amount : constant HBNF_Config.Decimal := HBNF_Config.As_Decimal (V);  -- fixed-point
+Exact  : constant String       := HBNF_Config.As_Text (V);      -- as written
 ```
 
 `Parse` returns a synthetic block root; `Children` / `Find` / `Find_All` walk
@@ -187,7 +187,7 @@ Both are populated by the parser; neither requires the caller to convert.
 
 ## Pretty-printing
 
-`HBNF.Print` renders a parsed tree back to canonical text: single-space token
+`HBNF_Config.Print` renders a parsed tree back to canonical text: single-space token
 separation, three-space indentation, `{` on the header line and `}` alone at
 the parent indent. Values round-trip exactly (a decimal keeps its literal, a
 string is re-quoted with the escape set). Comments are preserved: a leading
@@ -199,8 +199,8 @@ normalizes two configs that differ only in whitespace or brace position.
 ## Building
 
 ```
-gprbuild -P hbnf.gpr -p -XLIBRARY_TYPE=static
-gprinstall -P hbnf.gpr -p --prefix=/usr --sources-subdir=include/hbnf
+gprbuild -P hbnf_config.gpr -p -XLIBRARY_TYPE=static
+gprinstall -P hbnf_config.gpr -p --prefix=/usr --sources-subdir=include/hbnf
 ```
 
 Packaged for Alpine by the `ada-on-alpine` aports overlay as `testing/hbnf`.

@@ -17,8 +17,8 @@
 #     report each error, not just the first).
 #
 # Requires: host gcc, the extracted OpenBSD tree (see README.md), bison, and
-# hbnf_cli.  Local ones are used when present (bison on PATH; $HBNF_CLI or
-# sources/hbnf/hbnf_cli); otherwise docker (bison in alpine:edge, hbnf_cli in
+# hbnf.  Local ones are used when present (bison on PATH; $HBNF or
+# sources/hbnf/hbnf); otherwise docker (bison in alpine:edge, hbnf in
 # ada-toolchain:edge-full).  KEEP=1 keeps the scratch directory.
 set -eu
 
@@ -51,14 +51,14 @@ else
 fi
 
 echo "== hbnf: grammars/bind/ntpd.hbnf -> conf.c =="
-cli="${HBNF_CLI:-$repo/hbnf_cli}"
+cli="${HBNF:-$repo/hbnf}"
 if [ -x "$cli" ]; then
 	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates) \
 		> "$scratch/conf-out.txt"
 else
 	docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
-		sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
-		        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates' \
+		sh -lc 'gprbuild -q -P hbnf.gpr >/dev/null 2>&1
+		        ./hbnf grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates' \
 		> "$scratch/conf-out.txt"
 fi
 awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \

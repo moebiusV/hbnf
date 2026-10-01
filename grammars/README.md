@@ -143,7 +143,7 @@ round.
 | bgpd | `bgpd.hbnf` | `usr.sbin/bgpd/parse.y` |
 | pfctl | `pfctl.hbnf` | `sbin/pfctl/parse.y` |
 
-Each grammar round-trips through the `hbnf` generator (`hbnf_cli`): it
+Each grammar round-trips through the `hbnf` generator (`hbnf`): it
 emits a self-contained C parser that compiles and parses a sample config.
 
 `commonconf.hbnf`, `tailq.hbnf`, `ascii.hbnf` and `core.hbnf` are
@@ -168,7 +168,7 @@ daemon's `parse_config` has another signature (unwind's returns a new
 function and the binding's epilogue defines `parse_config` around it.
 Generate the daemon's `conf.h`/`conf.c` from the binding:
 
-    hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf
+    hbnf grammars/bind/ntpd.hbnf --backend=c --conf
 
 | daemon | binding |
 |---|---|

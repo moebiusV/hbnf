@@ -23,7 +23,7 @@ For each fragment, keep three things:
 
 1. **The verbatim ABNF** — as the RFC writes it.  Where it compiles as-is,
    name it `<fragment>.hbnf` and say so in the README.
-2. **The errors** — the exact `hbnf_cli` output, and a sentence on what each
+2. **The errors** — the exact `hbnf` output, and a sentence on what each
    means and how to fix it.
 3. **The fixed-up version** — the `.hbnf` that compiles.  Where the repair is
    involved rather than a mechanical spelling change, describe it instead of

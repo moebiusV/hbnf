@@ -1,6 +1,6 @@
 # id-ref serializer output for the hbnf C backend
 
-Status: implemented as `hbnf_cli --backend=c --idref`, which emits the `id,
+Status: implemented as `hbnf --backend=c --idref`, which emits the `id,
 parent` fields, one typed wire record per object, a pre-order serializer
 (`serialize_tree`) and a decoder that rebuilds the pointer tree
 (`decode_<rule>`, strings in the arena, released by the root's `free_`).  The

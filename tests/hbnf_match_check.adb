@@ -3,11 +3,11 @@ pragma Ada_2022;
 with Ada.Command_Line;
 with Ada.Text_IO;
 with Ada.Strings.Unbounded;
-with HBNF;
+with HBNF_Config;
 with HBNF_Grammar;
 
 --  Equivalence check: parse one config file with hbnf's own hand-written
---  parser and with the hbnf matcher/binder (HBNF.Parse_Against), and assert
+--  parser and with the hbnf matcher/binder (HBNF_Config.Parse_Against), and assert
 --  they agree — both succeed and produce the same tree (accept), or both fail
 --  (reject).  The tree comparison is Print for Print, which includes comment
 --  placement, so it also verifies comments land in the same places.
@@ -36,13 +36,13 @@ begin
       Path   : constant String := Ada.Command_Line.Argument (2);
       Mode   : constant String := Ada.Command_Line.Argument (3);
       Text   : constant String := Read_File (Path);
-      P1     : constant HBNF.Parse_Result := HBNF.Parse (Text);
-      P2     : constant HBNF.Parse_Result := HBNF.Parse_Against (Text, Schema);
+      P1     : constant HBNF_Config.Parse_Result := HBNF_Config.Parse (Text);
+      P2     : constant HBNF_Config.Parse_Result := HBNF_Config.Parse_Against (Text, Schema);
       Pass   : Boolean;
    begin
       Pass :=
         (Mode = "accept" and then P1.Success and then P2.Success
-           and then HBNF.Print (P1.Root) = HBNF.Print (P2.Root))
+           and then HBNF_Config.Print (P1.Root) = HBNF_Config.Print (P2.Root))
         or else
         (Mode = "reject" and then not P1.Success and then not P2.Success);
 

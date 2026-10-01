@@ -6,11 +6,11 @@
 # configs and prints what it read; every one must print
 # tests/portable/expected.txt.  C always runs; Rust, Zig and Ada run when
 # rustc, zig and gnatmake are installed.
-#   HBNF_CLI=/path/to/hbnf_cli sh tests/portable.sh     (default ./hbnf_cli)
+#   HBNF=/path/to/hbnf sh tests/portable.sh     (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
-CLI=${HBNF_CLI:-./hbnf_cli}
+CLI=${HBNF:-./hbnf}
 T=tests/portable
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
