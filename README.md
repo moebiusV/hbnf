@@ -1,11 +1,19 @@
 # hbnf
 
-`hbnf` is an Ada crate that reads the **HBNF** configuration grammar — the
-declarative, block-structured form that OpenBSD daemons have shared since
-`pf.conf` (2001) and `bgpd` (2002): keyword arguments, `{ }` blocks,
-double-quoted strings, `#` comments, no shell interpolation and no evaluation.
-It parses a file into an abstract syntax tree you walk with a handful of
-accessors.
+`hbnf` is a parser generator — a compiler compiler — that reads a grammar in an
+ABNF-like notation and emits a parser and its typed tree in C, Rust, Zig or
+Ada. It is meant to be pleasant to use: anyone who knows the RFC series should
+be able to write a grammar with minimal adjustment. Almost no one uses yacc
+for anything serious because it is a pain to use; hbnf aims to take that pain
+away — helpful `line:column` error messages and lossless source round-tripping
+— without giving up speed, performance, or your favorite programming language.
+
+Its first use case is **oconf**, the OpenBSD-style configuration language: the
+declarative, block-structured form OpenBSD daemons have shared since `pf.conf`
+(2001) and `bgpd` (2002) — keyword arguments, `{ }` blocks, double-quoted
+strings, `#` comments, no shell interpolation, no evaluation. In oconf,
+comments are preserved and come back out in the right places when the parsed
+source is re-emitted.
 
 The name is the initials of the four developers it is named for — Daniel
 **H**artmeier (pf.conf, 2001), Henning **B**rauer (bgpd, 2002), Esben
@@ -19,8 +27,8 @@ call it "parse.y style".
 
 This directory holds two things:
 
-1. **The crate** (the rest of this README): read an OpenBSD-style config
-   into a generic tree and walk it.
+1. **The crate** (the rest of this README): read an **oconf** file into a
+   generic tree and walk it.
 2. **The parser generator**, `hbnf_cli`: read a schema — a grammar in hbnf's
    ABNF-like notation — and generate a parser and its typed tree in C,
    Rust, Zig or Ada.
@@ -38,6 +46,8 @@ This directory holds two things:
 
 ## Naming
 
+- **oconf** — the OpenBSD-style configuration language, this project's first
+  use case: keyword arguments, `{ }` blocks, `#` comments.
 - **HBNF** — the notation, and the Ada package (`HBNF.Parse`, `HBNF.Tree`).
 - **hbnf** — this crate; the Alire name, the project file (`hbnf.gpr`).
 - **libhbnf** — reserved for a C reference implementation
