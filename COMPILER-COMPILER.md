@@ -47,6 +47,8 @@ meaning for one backend.
 Compiled today: **C** (pinned to C99, output also valid C++11+), **Rust**,
 **Zig**, **Ada**.  Planned compiled targets: **D**, **Fortran**, **Free
 Pascal**, **Nim**, **Odin**, **Objective-C**, **ATS**, **V**; then the GC
-languages **Go**, **Java**, **JavaScript**, **Common Lisp**, **newLISP**.  A
+languages **Go**, **Java**, **JavaScript**, **C#**, **F#**, **Julia**,
+**Common Lisp**, **newLISP**.  A Java backend also serves Kotlin, Scala and
+Clojure through the same jar, so they need no backend of their own.  A
 separate C++ backend appears only if C++ needs more than an `extern "C"`
 header guard.

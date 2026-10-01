@@ -126,8 +126,9 @@ C#, C++, Python 3, JavaScript, TypeScript, Go, Swift, PHP and Dart, each of
 which must be linked. hbnf's four backends are C, Rust, Zig and Ada, each a
 self-contained single file. The sets do not overlap today: ANTLR has no C,
 Rust, Zig or Ada. hbnf's planned backends are D, Fortran, Free Pascal, Nim,
-Odin, Objective-C, ATS and V, then the GC languages Go, Java, JavaScript,
-Common Lisp and newLISP; of those, only Go, Java and JavaScript also have an
-ANTLR runtime, and even there hbnf's output stays self-contained. ANTLR
-aims at managed and JIT languages, where a runtime is normal; hbnf aims at
-systems languages, where it is not, and that is the point.
+Odin, Objective-C, ATS and V, then the GC languages Go, Java, JavaScript, C#,
+F#, Julia, Common Lisp and newLISP; of those, only Go, Java, JavaScript and C#
+also have an ANTLR runtime, and even there hbnf's output stays self-contained.
+The difference is the runtime, not the language family: ANTLR's parser links
+the ANTLR runtime, and hbnf's links nothing beyond the target language's own
+standard library.
