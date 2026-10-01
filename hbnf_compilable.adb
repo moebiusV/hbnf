@@ -357,6 +357,8 @@ package body HBNF_Compilable is
            Natural (B.Length) > 0
            and then B (Natural (B.Length)).Kind = Repeat);
 
+      pragma Unreferenced (Has_Trailing_Rep);
+
       --  The flat DNF (branches of single code points) of a rule that is not
       --  repeated: a repetition inside it is a repetition of a repetition,
       --  which the scanner cannot express.
@@ -499,13 +501,13 @@ package body HBNF_Compilable is
                declare
                   E       : constant Element_Access := R.Pattern (K);
                   Rep     : constant Boolean := E.Min /= 1 or else E.Max /= 1;
-                  Last_El : constant Boolean := K = Last;
                begin
-                  if Rep and then not Last_El then
-                     raise Parse_Error with To_String (R.Name)
-                       & ": a repetition must be the last element of a "
-                       & "character rule (it would need backtracking)";
-                  end if;
+                  --  A repetition may sit in the middle of a branch: the
+                  --  scanner matches the atoms in order, greedily, with no
+                  --  backtracking (`1*DIGIT word_non_digit *word_char`).  A
+                  --  following atom that overlaps the repetition's class
+                  --  makes the branch unsatisfiable, which the author sees
+                  --  as a never-matching rule rather than a wrong parse.
                   if Rep then
                      declare
                         Rpt : constant Cp_Atom :=
@@ -542,12 +544,9 @@ package body HBNF_Compilable is
                         if Idx /= 0 then
                            Sub := Atom (Idx, Depth - 1);
                         end if;
-                        if not Last_El and then Has_Trailing_Rep (Sub) then
-                           raise Parse_Error with To_String (R.Name)
-                             & ": `" & To_String (E.Name)
-                             & "` ends in a repetition and is followed by "
-                             & "more; write the repetition last";
-                        end if;
+                        --  A referenced rule whose DNF ends in a repetition is
+                        --  inlined here, so its repetition lands mid-sequence;
+                        --  the scanner matches it greedily, in order.
                         for B of Branches loop
                            for S of Sub loop
                               declare
