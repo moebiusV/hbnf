@@ -149,4 +149,58 @@ package body Templates is
       return To_String (Result);
    end Render;
 
+   --  =====================================================================
+   --  Recursive context model: builders and the scope stack.
+   --  =====================================================================
+
+   function New_Scalar (Text : String) return Value_Access is
+     (new Template_Value'(Kind => Scalar, Text => To_Unbounded_String (Text)));
+
+   function New_List return Value_Access is
+     (new Template_Value'(Kind => List, Items => Value_Lists.Empty_Vector));
+
+   function New_Map return Value_Access is
+     (new Template_Value'(Kind => Map, Fields => Value_Maps.Empty_Map));
+
+   procedure Append (V : Value_Access; Item : Value_Access) is
+   begin
+      case V.Kind is
+         when List =>
+            V.Items.Append (Item);
+         when others =>
+            raise Template_Error with "append to a non-list template value";
+      end case;
+   end Append;
+
+   procedure Insert (V : Value_Access; Key : String; Item : Value_Access) is
+   begin
+      case V.Kind is
+         when Map =>
+            if V.Fields.Contains (Key) then
+               raise Template_Error with
+                 "template key `" & Key & "` bound twice";
+            end if;
+            V.Fields.Insert (Key, Item);
+         when others =>
+            raise Template_Error with "insert into a non-map template value";
+      end case;
+   end Insert;
+
+   function Context (Root : Value_Access) return Template_Context is
+      Ctx : Template_Context;
+   begin
+      Ctx.Scopes.Append (Root);
+      return Ctx;
+   end Context;
+
+   procedure Push (Ctx : in out Template_Context; Scope : Value_Access) is
+   begin
+      Ctx.Scopes.Append (Scope);
+   end Push;
+
+   procedure Pop (Ctx : in out Template_Context) is
+   begin
+      Ctx.Scopes.Delete_Last;
+   end Pop;
+
 end Templates;
