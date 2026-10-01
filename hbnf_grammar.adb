@@ -1762,6 +1762,81 @@ package body HBNF_Grammar is
          end loop;
       end Check_Prose;
    begin
+      --  The built-in lexical jets: the classic word/int/str scanners and the
+      --  default whitespace, as hand-written `%scan{}` code a grammar
+      --  (commonconf) may override.  A grammar that defines its own rule keeps
+      --  it; `Reachable` drops an injected jet nothing references.
+      declare
+         procedure Inject_Jet (Name, Code : String) is
+            Present : Boolean := False;
+         begin
+            for R of Rules loop
+               if To_String (R.Name) = Name then
+                  Present := True;
+                  exit;
+               end if;
+            end loop;
+            if not Present then
+               Rules.Append
+                 (Rule'(Name            => To_Unbounded_String (Name),
+                        Pattern         => Element_Vectors.Empty_Vector,
+                        Leading_Comment => Null_Unbounded_String,
+                        Trailing_Comment => Null_Unbounded_String,
+                        Jet_Code        => To_Unbounded_String (Code),
+                        Action_Code     => Null_Unbounded_String,
+                        Left_Bases      => 0,
+                        Whitespace      => Null_Unbounded_String));
+            end if;
+         end Inject_Jet;
+      begin
+         Inject_Jet ("word",
+           "size_t i = pos;" & ASCII.LF &
+           "if (i >= len" & ASCII.LF &
+           "    || !((s[i] >= 'a' && s[i] <= 'z')" & ASCII.LF &
+           "         || (s[i] >= 'A' && s[i] <= 'Z')" & ASCII.LF &
+           "         || s[i] == '_' || s[i] == '-'))" & ASCII.LF &
+           "    return 0;" & ASCII.LF &
+           "i++;" & ASCII.LF &
+           "while (i < len" & ASCII.LF &
+           "       && ((s[i] >= 'a' && s[i] <= 'z')" & ASCII.LF &
+           "           || (s[i] >= 'A' && s[i] <= 'Z')" & ASCII.LF &
+           "           || (s[i] >= '0' && s[i] <= '9')" & ASCII.LF &
+           "           || s[i] == '_' || s[i] == '-'" & ASCII.LF &
+           "           || s[i] == '.'))" & ASCII.LF &
+           "    i++;" & ASCII.LF &
+           "return i - pos;");
+         Inject_Jet ("int",
+           "size_t i = pos, start;" & ASCII.LF &
+           "if (i < len && s[i] == '-' && i + 1 < len" & ASCII.LF &
+           "    && s[i + 1] >= '0' && s[i + 1] <= '9')" & ASCII.LF &
+           "    i++;" & ASCII.LF &
+           "start = i;" & ASCII.LF &
+           "while (i < len && s[i] >= '0' && s[i] <= '9')" & ASCII.LF &
+           "    i++;" & ASCII.LF &
+           "return i > start ? i - pos : 0;");
+         Inject_Jet ("str",
+           "size_t i;" & ASCII.LF &
+           "if (pos >= len || s[pos] != '""')" & ASCII.LF &
+           "    return 0;" & ASCII.LF &
+           "i = pos + 1;" & ASCII.LF &
+           "while (i < len && s[i] != '""') {" & ASCII.LF &
+           "    if (s[i] == '\\' && i + 1 < len)" & ASCII.LF &
+           "        i++;" & ASCII.LF &
+           "    i++;" & ASCII.LF &
+           "}" & ASCII.LF &
+           "if (i >= len || s[i] != '""')" & ASCII.LF &
+           "    return 0;" & ASCII.LF &
+           "return i + 1 - pos;");
+         Inject_Jet ("ws",
+           "if (pos < len) {" & ASCII.LF &
+           "    char c = s[pos];" & ASCII.LF &
+           "    if (c == ' ' || c == '\t' || c == '\r'" & ASCII.LF &
+           "        || c == '\n')" & ASCII.LF &
+           "        return 1;" & ASCII.LF &
+           "}" & ASCII.LF &
+           "return 0;");
+      end;
+
       for J in 1 .. Natural (Rules.Length) loop
          declare
             K : constant String := To_Lower (To_String (Rules (J).Name));

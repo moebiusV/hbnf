@@ -88,7 +88,8 @@ procedure Hbnf_Emit_Check is
       Rust_Parser : constant String := HBNF_Rust.Emit_Parser (Rules);
       Zig_Parser  : constant String := HBNF_Zig.Emit_Parser (Rules);
    begin
-      Check ("13 rules", Natural (Rules.Length) = 13);
+      --  Plus the four built-in lexical jets (word/int/str/ws).
+      Check ("13 rules", Natural (Rules.Length) = 17);
       Check ("first rule server", To_String (Rules (1).Name) = "server");
 
       Check ("C enum", Has (C_Text, "DIRECTION_IN"));
@@ -140,7 +141,8 @@ procedure Hbnf_Emit_Check is
         HBNF_Grammar.Parse (Read_File (Path));
       I     : Natural;
    begin
-      Check ("hbnf 9 rules", Natural (Rules.Length) = 9);
+      --  Plus the built-in word/int/str jets (it defines ws itself).
+      Check ("hbnf 9 rules", Natural (Rules.Length) = 12);
 
       --  entry = block | statement : block first, so a block's "{" wins.
       I := Find_Rule (Rules, "entry");
@@ -215,7 +217,7 @@ procedure Hbnf_Emit_Check is
    begin
       --  core.hbnf (listen, iface, port) + httpd.hbnf (listen override, tls,
       --  server, alias) merge to six distinct rules.
-      Check ("include 6 rules", Natural (Rules.Length) = 6);
+      Check ("include 6 rules", Natural (Rules.Length) = 10);
 
       --  listen comes from core but the daemon overrides it: five elements
       --  ("on" iface "port" port tls), not the core's four.
@@ -267,7 +269,7 @@ procedure Hbnf_Emit_Check is
            Parse_File ("tests/include/once.hbnf");
          X, Y  : Natural;
       begin
-         Check ("include once: four rules", Natural (Rules.Length) = 4);
+         Check ("include once: four rules", Natural (Rules.Length) = 8);
          Check ("include once: one preamble",
                 Count (Preamble ("C"), "/* once_a */") = 1);
          Check ("override: the root stays the root",
@@ -282,7 +284,7 @@ procedure Hbnf_Emit_Check is
       Check ("an include after a rule is refused",
              Refused ("tests/include/late.hbnf", "after the first rule"));
       Check ("a whole-parser directive set twice alike is kept",
-             Natural (Parse_File ("tests/include/prefix_same.hbnf").Length) = 2
+             Natural (Parse_File ("tests/include/prefix_same.hbnf").Length) = 6
              and then Type_Prefix = "b_");
       Check ("keyword lists merge",
              Natural (Keyword_Table.Length) = 3);
@@ -296,7 +298,7 @@ procedure Hbnf_Emit_Check is
            Parse_File ("tests/include/lang_rust.hbnf");
       begin
          Check ("language is per file: the top file's",
-                Natural (Rules.Length) = 2 and then Language = "Rust");
+                Natural (Rules.Length) = 6 and then Language = "Rust");
          Check ("language is per file: the Rust preamble",
                 Has (Preamble ("Rust"), "// rust preamble")
                 and then not Has (Preamble ("Rust"), "c preamble"));
@@ -344,7 +346,7 @@ procedure Hbnf_Emit_Check is
                   & "    b" & LF & "a = %x41" & LF & "b = %x42" & LF);
       begin
          Check ("an indented line goes on with the rule",
-                Natural (R.Length) = 3
+                Natural (R.Length) = 7
                 and then Natural (R (1).Pattern.Length) = 2);
       end;
       declare
@@ -362,7 +364,7 @@ procedure Hbnf_Emit_Check is
            Parse ("r = a" & LF & "a = %x41" & LF & "a =/ %x42" & LF);
       begin
          Check ("=/ adds an alternative in the rule's place",
-                Natural (R.Length) = 2
+                Natural (R.Length) = 6
                 and then To_String (R (2).Name) = "a"
                 and then Natural (R (2).Pattern.Length) = 3
                 and then R (2).Pattern (2).Union);

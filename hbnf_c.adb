@@ -482,6 +482,40 @@ package body HBNF_C is
       return Null_Unbounded_String;
    end Whitespace_Rule_Name;
 
+   --  True when a rule is parsed by name: a core type (word/int/str/…, char
+   --  rule or jet) is read as a scalar in place, a building block is inlined
+   --  into a token's scanner, and the whitespace rule is only scanned by
+   --  skip_ws — none of them gets a parse_rule_<name>.
+   function Needs_Parse_Fn (Rules : Rule_Vectors.Vector; NM : String)
+      return Boolean
+   is
+   begin
+      if Is_Core_Name (NM) then
+         return False;
+      end if;
+      if Is_Char_Rule (Rules, NM) and then not Is_Char_Token (Rules, NM) then
+         return False;
+      end if;
+      if NM = To_String (Whitespace_Rule_Name (Rules)) then
+         return False;
+      end if;
+      return True;
+   end Needs_Parse_Fn;
+
+   --  The scanner a rule runs: its jet, or a char-rule scanner.  The whitespace
+   --  rule is one or the other, never a core scalar, so Scalar_Scan_Fn (which
+   --  maps any non-core name onto `word`) would be wrong for it.
+   function Rule_Scanner (Rules : Rule_Vectors.Vector; Name : String)
+      return String
+   is
+      J : constant Natural := Find (Rules, Name);
+   begin
+      if J /= 0 and then Rules (J).Jet_Code /= Null_Unbounded_String then
+         return "jet_" & C_Name (Name);
+      end if;
+      return "scan_" & C_Name (Name);
+   end Rule_Scanner;
+
    function C_Type_Of (Rules : Rule_Vectors.Vector; Ref : String) return String is
       S : constant String := Scalar_C_Type (Ref);
       J : constant Natural := Find (Rules, Ref);
@@ -2351,27 +2385,34 @@ package body HBNF_C is
 
    --  The token kind a core scalar reads (mirrors the matcher's Match_Core).
    --  The scanner a core scalar runs: `word`/`atom`/`bool`/`flag` read the
-   --  `word` char rule, `int`/`uN`/`iN` the `int` rule, `str` the `str` rule.
-   function Scalar_Scan_Fn (Name : String) return String is
+   --  `word` rule, `int`/`uN`/`iN` the `int` rule, `str` the `str` rule.  The
+   --  core rule is a hand-written jet (`jet_*`) when the grammar does not
+   --  define it (the injected built-in), else a char rule (`scan_*`).
+   function Scalar_Scan_Fn (Rules : Rule_Vectors.Vector; Name : String)
+      return String
+   is
+      Core : constant String :=
+        (if Name = "str" then "str"
+         elsif Name = "int" then "int"
+         elsif Name'Length >= 2
+           and then (Name (Name'First) = 'u' or else Name (Name'First) = 'i')
+           and then (for all K in Name'First + 1 .. Name'Last
+                     => Name (K) in '0' .. '9')
+         then "int"
+         else "word");
+      J : constant Natural := Find (Rules, Core);
    begin
-      if Name = "str" then
-         return "scan_str";
-      elsif Name = "int" then
-         return "scan_int";
-      elsif Name'Length >= 2 then
-         declare
-            P : constant Character := Name (Name'First);
-            R : constant String := Name (Name'First + 1 .. Name'Last);
-         begin
-            if (P = 'u' or else P = 'i')
-              and then (for all C of R => C in '0' .. '9')
-            then
-               return "scan_int";
-            end if;
-         end;
+      if J /= 0 and then Rules (J).Jet_Code /= Null_Unbounded_String then
+         return "jet_" & Core;
       end if;
-      return "scan_word";  --  word / atom / bool / flag
+      return "scan_" & Core;
    end Scalar_Scan_Fn;
+
+   --  The scanner the `word` core rule runs (jet or scan), for a keyword read.
+   function Word_Scanner (Rules : Rule_Vectors.Vector) return String is
+     ((if Find (Rules, "word") /= 0
+         and then Rules (Find (Rules, "word")).Jet_Code /= Null_Unbounded_String
+       then "jet_word" else "scan_word"));
 
    --  A human-readable description of a core scalar (for error messages).
    function Core_Desc (Name : String) return String is
@@ -2914,7 +2955,7 @@ package body HBNF_C is
                         begin
                            Ws_Skip;
                            Append (Buf, Ind & "{ size_t n = "
-                             & Scalar_Scan_Fn (NM)
+                             & Scalar_Scan_Fn (Rules, NM)
                              & "(p->text, p->pos, p->len); if (!n"
                              & Scalar_Reject (NM, "n")
                              & ") { fail(p, """ & Core_Desc (NM)
@@ -3468,7 +3509,7 @@ package body HBNF_C is
                      NM : constant String := To_String (E.Name);
                   begin
                      Append (Buf, Templates.Render (Templates.Get ("c_rule_list_core"),
-                       (Templates.Bind ("scan", Scalar_Scan_Fn (NM)),
+                       (Templates.Bind ("scan", Scalar_Scan_Fn (Rules, NM)),
                         Templates.Bind ("reject", Scalar_Reject (NM, "n")),
                         Templates.Bind ("field", C_Field (NM)),
                         Templates.Bind ("expr", Scalar_Value (NM, "n")),
@@ -3592,7 +3633,8 @@ package body HBNF_C is
                               L  : constant String := To_String (P (St).Lit);
                               NL : constant Natural := L'Length;
                               Fn : constant String :=
-                                (if Is_Keyword_Lit (L) then "scan_word" else "");
+                                (if Is_Keyword_Lit (L) then Word_Scanner (Rules)
+                                 else "");
                            begin
                               Append (Buf, (if Branch = 0 then "    if ("
                                             else "    else if ("));
@@ -3650,7 +3692,7 @@ package body HBNF_C is
                   PN : constant String := To_String (P (1).Name);
                begin
                   Append (Buf, Templates.Render (Templates.Get ("c_rule_alias_core"),
-                    (Templates.Bind ("scan", Scalar_Scan_Fn (PN)),
+                    (Templates.Bind ("scan", Scalar_Scan_Fn (Rules, PN)),
                      Templates.Bind ("reject", Scalar_Reject (PN, "n")),
                      Templates.Bind ("desc", Core_Desc (PN)),
                      Templates.Bind ("expr", Scalar_Value (PN, "n")))));
@@ -3677,7 +3719,7 @@ package body HBNF_C is
                              and then Is_Core (To_String (E.Name))
                            then
                               Append (Buf, "    { size_t n = "
-                                & Scalar_Scan_Fn (To_String (E.Name))
+                                & Scalar_Scan_Fn (Rules, To_String (E.Name))
                                 & "(p->text, p->pos, p->len); if (n"
                                 & Scalar_Guard (To_String (E.Name), "n")
                                 & ") { *out = "
@@ -4004,6 +4046,9 @@ package body HBNF_C is
                Append (Scanners, "static size_t jet_"
                  & C_Name (To_String (Rules (I).Name))
                  & "(const char *s, size_t pos, size_t len);" & LF);
+               if To_String (Rules (I).Name) = "word" then
+                  Has_Word := True;
+               end if;
             elsif Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
                declare
                   NM : constant String := To_String (Rules (I).Name);
@@ -4021,29 +4066,6 @@ package body HBNF_C is
             end if;
          end loop;
 
-         --  The core types `word`/`int`/`str` are built in (the fixed
-         --  template a grammar without commonconf still gets); a grammar that
-         --  defines them (commonconf) generated its own scanner above.
-         if Find (Rules, "word") = 0 then
-            Append (Scanners, "static size_t scan_word"
-              & "(const char *s, size_t pos, size_t len);" & LF);
-            Has_Word := True;
-         end if;
-         if Find (Rules, "int") = 0 then
-            Append (Scanners, "static size_t scan_int"
-              & "(const char *s, size_t pos, size_t len);" & LF);
-         end if;
-         if Find (Rules, "str") = 0 then
-            Append (Scanners, "static size_t scan_str"
-              & "(const char *s, size_t pos, size_t len);" & LF);
-         end if;
-         --  The default `ws` (the classic blanks) is built in too, when the
-         --  grammar does not define a `ws` of its own.
-         if To_String (Ws_Name) = "ws" and then Find (Rules, "ws") = 0 then
-            Append (Scanners, "static size_t scan_ws"
-              & "(const char *s, size_t pos, size_t len);" & LF);
-         end if;
-
          Emit_Keywords (Kw);
 
          --  A keyword is matched by scanning `word` and comparing its length and
@@ -4052,8 +4074,8 @@ package body HBNF_C is
             Append (Word_Match, "__attribute__((unused))" & LF);
             Append (Word_Match, "static bool expect_word(parser_t *p,"
               & " const char *lit, size_t lit_len) {" & LF);
-            Append (Word_Match, "    size_t n = scan_word(p->text, p->pos,"
-              & " p->len);" & LF);
+            Append (Word_Match, "    size_t n = " & Word_Scanner (Rules)
+              & "(p->text, p->pos, p->len);" & LF);
             Append (Word_Match, "    if (n == lit_len && memcmp(p->text + p->pos,"
               & " lit, lit_len) == 0) { p->pos += n; return true; }" & LF);
             Append (Word_Match, "    fail(p, lit, 1, p->text + p->pos,"
@@ -4066,7 +4088,8 @@ package body HBNF_C is
             Append (Ws_Skip, "__attribute__((unused))" & LF);
             Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
             Append (Ws_Skip, "    size_t n;" & LF);
-            Append (Ws_Skip, "    while ((n = scan_" & C_Name (To_String (Ws_Name))
+            Append (Ws_Skip, "    while ((n = "
+              & Rule_Scanner (Rules, To_String (Ws_Name))
               & "(p->text, p->pos, p->len)) > 0) p->pos += n;" & LF);
             Append (Ws_Skip, "}" & LF & LF);
          end if;
@@ -4075,8 +4098,8 @@ package body HBNF_C is
             Append (Nocase, "__attribute__((unused))" & LF);
             Append (Nocase, "static bool expect_word_nocase(parser_t *p,"
               & " const char *lit, size_t lit_len) {" & LF);
-            Append (Nocase, "    size_t n = scan_word(p->text, p->pos,"
-              & " p->len);" & LF);
+            Append (Nocase, "    size_t n = " & Word_Scanner (Rules)
+              & "(p->text, p->pos, p->len);" & LF);
             Append (Nocase, "    if (n == lit_len && strncasecmp(p->text + p->pos,"
               & " lit, lit_len) == 0) { p->pos += n; return true; }" & LF);
             Append (Nocase, "    fail(p, lit, 1, p->text + p->pos,"
@@ -4101,10 +4124,7 @@ package body HBNF_C is
          declare
             NM : constant String := To_String (Rules (I).Name);
          begin
-            if not (Is_Char_Rule (Rules, NM)
-                    and then (Is_Core_Name (NM)
-                              or else not Is_Char_Token (Rules, NM)))
-            then
+            if Needs_Parse_Fn (Rules, NM) then
                Append (Res, Templates.Render (Templates.Get ("c_rule_decl"),
                  (Templates.Bind ("name", C_Name (NM)),
                   Templates.Bind ("type", Out_Type (I)))));
@@ -4119,10 +4139,7 @@ package body HBNF_C is
             R  : constant Rule := Rules (I);
             NM : constant String := To_String (R.Name);
          begin
-            if not (Is_Char_Rule (Rules, NM)
-                    and then (Is_Core_Name (NM)
-                              or else not Is_Char_Token (Rules, NM)))
-            then
+            if Needs_Parse_Fn (Rules, NM) then
                Append (Res, Templates.Render (Templates.Get ("c_rule_head"),
                  (Templates.Bind ("name", C_Name (NM)),
                   Templates.Bind ("type", Out_Type (I)))));
@@ -4401,76 +4418,6 @@ package body HBNF_C is
             end;
          end if;
       end loop;
-
-      --  Built-in scanners for the core types the grammar did not redefine:
-      --  the classic word/int/str, matching the pre-character-model lexer.
-      if Find (Rules, "word") = 0 then
-         Append (Res, "__attribute__((unused))" & LF);
-         Append (Res, "static size_t scan_word(const char *s, size_t pos,"
-           & " size_t len) {" & LF);
-         Append (Res, "    size_t i = pos;" & LF);
-         Append (Res, "    if (i >= len" & LF);
-         Append (Res, "        || !((s[i] >= 'a' && s[i] <= 'z')"
-           & " || (s[i] >= 'A' && s[i] <= 'Z')" & LF);
-         Append (Res, "             || s[i] == '_' || s[i] == '-'))" & LF);
-         Append (Res, "        return 0;" & LF);
-         Append (Res, "    i++;" & LF);
-         Append (Res, "    while (i < len" & LF);
-         Append (Res, "           && ((s[i] >= 'a' && s[i] <= 'z')"
-           & " || (s[i] >= 'A' && s[i] <= 'Z')" & LF);
-         Append (Res, "               || (s[i] >= '0' && s[i] <= '9')"
-           & " || s[i] == '_' || s[i] == '-'" & LF);
-         Append (Res, "               || s[i] == '.'))" & LF);
-         Append (Res, "        i++;" & LF);
-         Append (Res, "    return i - pos;" & LF);
-         Append (Res, "}" & LF & LF);
-      end if;
-      if Find (Rules, "int") = 0 then
-         Append (Res, "__attribute__((unused))" & LF);
-         Append (Res, "static size_t scan_int(const char *s, size_t pos,"
-           & " size_t len) {" & LF);
-         Append (Res, "    size_t i = pos, start;" & LF);
-         Append (Res, "    if (i < len && s[i] == '-' && i + 1 < len" & LF);
-         Append (Res, "        && s[i + 1] >= '0' && s[i + 1] <= '9')" & LF);
-         Append (Res, "        i++;" & LF);
-         Append (Res, "    start = i;" & LF);
-         Append (Res, "    while (i < len && s[i] >= '0' && s[i] <= '9')" & LF);
-         Append (Res, "        i++;" & LF);
-         Append (Res, "    return i > start ? i - pos : 0;" & LF);
-         Append (Res, "}" & LF & LF);
-      end if;
-      if Find (Rules, "str") = 0 then
-         Append (Res, "__attribute__((unused))" & LF);
-         Append (Res, "static size_t scan_str(const char *s, size_t pos,"
-           & " size_t len) {" & LF);
-         Append (Res, "    size_t i;" & LF);
-         Append (Res, "    if (pos >= len || s[pos] != '""')" & LF);
-         Append (Res, "        return 0;" & LF);
-         Append (Res, "    i = pos + 1;" & LF);
-         Append (Res, "    while (i < len && s[i] != '""') {" & LF);
-         Append (Res, "        if (s[i] == '\\' && i + 1 < len)" & LF);
-         Append (Res, "            i++;" & LF);
-         Append (Res, "        i++;" & LF);
-         Append (Res, "    }" & LF);
-         Append (Res, "    if (i >= len || s[i] != '""')" & LF);
-         Append (Res, "        return 0;" & LF);
-         Append (Res, "    return i + 1 - pos;" & LF);
-         Append (Res, "}" & LF & LF);
-      end if;
-      --  The default `ws`: space, tab, CR, LF (a grammar without `ws`).
-      if Find (Rules, "ws") = 0 then
-         Append (Res, "__attribute__((unused))" & LF);
-         Append (Res, "static size_t scan_ws(const char *s, size_t pos,"
-           & " size_t len) {" & LF);
-         Append (Res, "    if (pos < len) {" & LF);
-         Append (Res, "        char c = s[pos];" & LF);
-         Append (Res, "        if (c == ' ' || c == '\t' || c == '\r'"
-           & " || c == '\n')" & LF);
-         Append (Res, "            return 1;" & LF);
-         Append (Res, "    }" & LF);
-         Append (Res, "    return 0;" & LF);
-         Append (Res, "}" & LF & LF);
-      end if;
 
       if HBNF_Grammar.Statements then
          Emit_Statement_Hooks (Res);
