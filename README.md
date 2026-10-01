@@ -200,6 +200,13 @@ gprinstall -P hbnf.gpr -p --prefix=/usr --sources-subdir=include/hbnf
 
 Packaged for Alpine by the `ada-on-alpine` aports overlay as `testing/hbnf`.
 
+## Contributing
+
+Ada is written in the functional style in `STYLE.md`: constants by default,
+expression functions, no `out`/`in out` parameters, loops replaced by `'Reduce`
+and comprehensions, and side effects kept at the edges. Read it before
+contributing.
+
 ## License
 
 ISC. See `LICENSE`.
