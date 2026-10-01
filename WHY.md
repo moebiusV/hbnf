@@ -1,8 +1,8 @@
-# Why hbnf is not yacc
+# The grammar, and why
 
-If your baseline is reading the descriptive BNF in the RFCs, pasting one into a
-parser generator is a gamble. How far the tool's debugging experience diverges
-from "read the BNF, get a parser" depends on the parsing theory underneath it.
+For the reader who already reads the RFCs, hbnf's grammar is meant to be
+obvious: it looks like the BNF the RFCs wrote, and where it differs, the
+difference is a choice with a reason.
 
 ## Shift/reduce conflicts are an LR artifact
 
@@ -52,13 +52,28 @@ Left recursion is the trap. RFCs write lists and expressions left-recursively
 hacks. A PEG loops forever on left recursion and needs a manual rewrite into
 repetition. ANTLR v4 keeps the grammar almost identical to the RFC text.
 
+## Notation: every RFC era, and what ABNF lacks
+
+hbnf accepts the spellings of every RFC era, for the human's convenience, to
+lessen the cognitive load of pasting a grammar. The early RFC BNF (RFC 733,
+RFC 822) wrote a rule `name ::= definition` and alternation with `|`; ABNF,
+from RFC 2234 into RFC 5234, wrote `name = definition` and `/`. hbnf reads `=`,
+`::=` and `:=` as one rule definition, and `|` as alternation, as the early
+RFCs wrote it and as PEG and OpenBSD's parse.y read it; `/` means ABNF's union.
+A grammar copied from any era compiles without retyping.
+
+ABNF also stops at syntax. It has no `{ }` blocks for a prologue and epilogue,
+no `%scan{}` scanner escape hatch, and no `%action{}` semantic construction.
+hbnf adds all three, because a grammar that only recognizes input cannot build
+a tree or drive a program. See `COMPILER-COMPILER.md` for those, and `ABNF.md`
+for which `/` forms are implemented and which are still planned.
+
 ## Where hbnf lands
 
-hbnf is aimed at exactly this reader, and it picks a side on each point above.
-
-It is recursive descent with ordered choice, so there is no LR state machine and
-no shift/reduce conflict to debug. Direct left recursion (`xs = xs "," x | x`)
-is read as a loop in all four backends, so the RFC form is not rewritten.
+hbnf picks a side on each point above. It is recursive descent with ordered
+choice, so there is no LR state machine and no shift/reduce conflict to debug.
+Direct left recursion (`xs = xs "," x | x`) is read as a loop in all four
+backends, so the RFC form is not rewritten.
 
 Ordered choice keeps the PEG property that makes conflicts impossible, and hbnf
 keeps PEG's one failure mode from being silent. An alternative shadowed by an
@@ -66,14 +81,15 @@ earlier one that matches a prefix of it is found at schema time and refused with
 a diagnostic ("N alternative(s) can never match"), where a PEG would compile it
 and fail at runtime on valid input.
 
-A parse failure is a `line:column` with a caret under where the error starts and
-the token that was expected, not a state-machine dump and not a cryptic
-"unexpected token".
+## Ergonomics
 
-## `|` and `/`
+Two things make hbnf pleasant to use beyond the notation.
 
-The early RFC BNF (RFC 733, RFC 822) wrote alternation with `|`. ABNF's `/` is
-the later spelling, introduced in RFC 2234 (1997) and carried into RFC 5234.
-hbnf keeps the two apart: `|` means alternation, as the early RFCs wrote it and
-as PEG and OpenBSD's parse.y read it, and `/` means ABNF's union. `ABNF.md`
-notes which `/` forms are implemented and which are still planned.
+**Helpful errors.** A parse failure is a `line:column` with a caret under where
+the error starts and the token that was expected, not a state-machine dump and
+not a cryptic "unexpected token".
+
+**Pretty-printing.** A parsed tree renders back to canonical text and
+round-trips exactly: a decimal keeps its literal, a string is re-quoted with
+the escape set. Comments are preserved and come back out in the right places
+when the source is re-emitted, and printing is idempotent.
