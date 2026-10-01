@@ -120,3 +120,11 @@ hbnf refuses on purpose, plus the ecosystem around ANTLR (grammar libraries,
 IDE support, incremental parsing) that hbnf does not aim to replace. hbnf's
 narrowness is where it wins: the config-file shape (jets, `--conf`, id-ref
 output) is something ANTLR does not address.
+
+The targets point the same way. ANTLR's ten runtimes are Java (the reference),
+C#, C++, Python 3, JavaScript, TypeScript, Go, Swift, PHP and Dart, each of
+which must be linked. hbnf's four backends are C, Rust, Zig and Ada, each a
+self-contained single file. The sets do not overlap today: ANTLR has no C,
+Rust, Zig or Ada, and Go and JavaScript sit only on hbnf's planned list. ANTLR
+aims at managed and JIT languages, where a runtime is normal; hbnf aims at
+systems languages, where it is not, and that is the point.
