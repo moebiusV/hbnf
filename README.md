@@ -56,26 +56,37 @@ This directory holds two things:
 ## Credits
 
 Four initials cannot hold the whole lineage: HBNF is *named for* Hartmeier,
-Brauer, Norby and Floeter, not credited to them alone. The single best
-artifact of that lineage is the copyright block of `relayd/parse.y`, copied
-forward for two decades and still accumulating authors:
+Brauer, Norby and Floeter, not credited to them alone. Across the 18 daemon
+`parse.y` config parsers in OpenBSD, the copyright blocks name 18 people. Four
+appear in every file, carried forward for two decades:
 
-```
- * Copyright (c) 2007 - 2014 Reyk Floeter <reyk@openbsd.org>
- * Copyright (c) 2008 Gilles Chehade <gilles@openbsd.org>
- * Copyright (c) 2006 Pierre-Yves Ritschard <pyr@openbsd.org>
- * Copyright (c) 2004, 2005 Esben Norby <norby@openbsd.org>
- * Copyright (c) 2004 Ryan McBride <mcbride@openbsd.org>
- * Copyright (c) 2002, 2003, 2004 Henning Brauer <henning@openbsd.org>
- * Copyright (c) 2001 Markus Friedl.  All rights reserved.
- * Copyright (c) 2001 Daniel Hartmeier.  All rights reserved.
- * Copyright (c) 2001 Theo de Raadt.  All rights reserved.
-```
+- Daniel Hartmeier (pf.conf, 2001)
+- Henning Brauer (bgpd, 2002)
+- Markus Friedl
+- Theo de Raadt
 
-That header is one among several; each daemon carries its own `parse.y`
-(bgpd's credits Claudio Jeker's sustained work on that grammar). A
-surname-initial name is precedented too: Fowler–Noll–Vo (FNV) is three people,
-and nobody expands it aloud.
+Copied into most of them:
+
+- Ryan McBride (12 files), Esben Norby (11), Reyk Floeter (6),
+  Pierre-Yves Ritschard (3)
+
+And the rest, each tied to one or two parsers:
+
+| Author | Daemons |
+|---|---|
+| Florian Obser | dhcpleased, unwind |
+| Gilles Chehade | httpd, relayd |
+| Renato Westphal | eigrpd, ldpd |
+| Hans-Joerg Hoexer | iked |
+| Job Snijders | bgpd |
+| Matthias Pressfreund | httpd |
+| Michele Marchetto | ripd |
+| Peter Hessler | bgpd |
+| Sebastian Benoit | bgpd |
+| Tobias Heider | iked |
+
+A surname-initial name is precedented too: Fowler–Noll–Vo (FNV) is three
+people, and nobody expands it aloud.
 
 ## The grammar
 
