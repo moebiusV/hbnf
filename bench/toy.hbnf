@@ -1,0 +1,25 @@
+; toy.hbnf — the §6 toy schema: the shape of a pf rule, minimal.
+;
+;   pass in on em0 proto tcp from 192.168.3.7 port 51234 to 192.168.9.1 port 443
+;
+; action, direction, interface, protocol, and a from/to pair of
+; address-plus-port.  It is not `statements`: the root is a list of rules
+; separated by newlines, which `ws` skips between elements, so the whole
+; file parses in one parse_text call.  The lexer is commonconf's char rules
+; (word/int/ws), the same as the daemon grammars'.
+
+language C
+include "../grammars/commonconf.hbnf"
+
+config     = 1*rule
+
+rule       = action direction "on" interface "proto" protocol from to
+
+from       = "from" addr "port" int
+to         = "to" addr "port" int
+
+action     = "pass" | "block" | "match"
+direction  = "in" | "out"
+interface  = word
+protocol   = word
+addr       = word
