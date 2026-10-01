@@ -4,7 +4,8 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with HBNF_Grammar;
 
---  HBNF: an OpenBSD-style ("parse.y style") configuration parser.
+--  HBNF: parse an oconf configuration file into a tree.  (oconf is a grammar
+--  implemented in hbnf, the parser generator this crate also hosts.)
 --
 --  A declarative, block-structured grammar — keyword arguments, `{ }`
 --  blocks, double-quoted strings with a fixed escape set, `#` comments, no

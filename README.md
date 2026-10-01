@@ -14,28 +14,29 @@ of newer RFCs specify their protocols in it. Start from the notation people
 already read fluently, and a grammar is documentation first and a parser
 second.
 
-hbnf began as a project to implement **oconf**, the OpenBSD-style
-configuration language, as pleasantly as possible, for a project that needed a
-config file. That work exposed how bad the state of parser generation is:
-almost no one uses yacc for anything serious, because it is a pain. So hbnf
-became a parser generator in its own right, one that removes that pain with
-helpful errors and lossless source round-tripping, without giving up speed,
-performance, or your favorite programming language.
+hbnf began as a project to implement **oconf**, a configuration language for
+OpenBSD-style config files, so that other programs could use it without
+having to learn yacc, lex, bison or flex. That work exposed how bad the state
+of parser generation is: almost no one uses yacc for anything serious, because
+it is a pain. So hbnf became a parser generator in its own right — a compiler
+compiler — one that removes that pain with helpful errors and lossless source
+round-tripping, without giving up speed, performance, or your favorite
+programming language.
 
-oconf is the config language; hbnf is the tool. oconf is the declarative,
-block-structured form OpenBSD daemons have shared since `pf.conf` (2001) and
-`bgpd` (2002): keyword arguments, `{ }` blocks, double-quoted strings, `#`
-comments, no shell interpolation and no evaluation. In oconf, comments are
-preserved and come back out in the right places when the parsed source is
-re-emitted.
+oconf is a configuration language, implemented as a grammar in hbnf. It
+describes the declarative, block-structured form OpenBSD daemons have shared
+since `pf.conf` (2001) and `bgpd` (2002): keyword arguments, `{ }` blocks,
+double-quoted strings, `#` comments, no shell interpolation and no evaluation.
+Parsing with oconf preserves comments and puts them back in the right places
+when the source is re-emitted.
 
 The name is the initials of the four developers it is named for: Daniel
 **H**artmeier (pf.conf, 2001), Henning **B**rauer (bgpd, 2002), Esben
 **N**orby (ospfd, 2004), and Reyk **F**loeter (hoststated, 2007), whose
 hand-written `parse.y` was cloned verbatim from daemon to daemon. The last
 three initials spell **BNF** (Backus–Naur Form), so the name also reads as
-"Hartmeier's BNF". To someone who already knows the genre, it is "parse.y
-style".
+"Hartmeier's BNF". To someone who already knows the genre, it is **oconf** —
+OpenBSD configuration style.
 
 ## Two products
 
@@ -60,46 +61,50 @@ This directory holds two things:
 
 ## Naming
 
-- **oconf**: the configuration language. OpenBSD-style keyword arguments,
-  `{ }` blocks, `#` comments. The thing being parsed.
-- **hbnf**: the parser generator. Reads a grammar, emits a parser. Also this
-  crate, the Alire name, and the project file (`hbnf.gpr`).
-- **HBNF**: the notation the parser generator reads, and the Ada package
-  (`HBNF.Parse`, `HBNF.Tree`) for walking an oconf tree.
+- **hbnf**: the parser generator and compiler compiler. Reads a grammar, emits
+  a parser in C, Rust, Zig or Ada. Also this crate, the Alire name, and the
+  project file (`hbnf.gpr`).
+- **oconf**: a configuration language, implemented as a grammar in hbnf, for
+  OpenBSD config files — keyword arguments, `{ }` blocks, `#` comments.
+- **HBNF**: the Ada package (`HBNF.Parse`, `HBNF.Tree`) for parsing and
+  walking an oconf configuration file.
 - **libhbnf**: reserved for a C reference implementation (`libhbnf.so`,
   `-lhbnf`, `hbnf.pc`); not spent on this Ada crate.
 
 ## Credits
 
 Four initials cannot hold the whole lineage: HBNF is *named for* Hartmeier,
-Brauer, Norby and Floeter, not credited to them alone. Across the 18 daemon
-`parse.y` config parsers in OpenBSD, the copyright blocks name 18 people. Four
-appear in every file, carried forward for two decades:
+Brauer, Norby and Floeter, not credited to them alone. The oconf grammar
+descends from the hand-written `parse.y` config parsers of the OpenBSD
+daemons, each of which carries forward a copyright block naming everyone who
+has touched it. Everyone, in the order they first appear:
 
-- Daniel Hartmeier (pf.conf, 2001)
-- Henning Brauer (bgpd, 2002)
-- Markus Friedl
-- Theo de Raadt
+| Year | Author | First parser |
+|---|---|---|
+| 2001 | Markus Friedl | pfctl |
+| 2001 | Daniel Hartmeier | pfctl |
+| 2001 | Theo de Raadt | pfctl |
+| 2002 | Henning Brauer | bgpd |
+| 2004 | Ryan McBride | ifstated |
+| 2004 | Esben Norby | ospfd |
+| 2004 | Hans-Joerg Hoexer | iked |
+| 2006 | Michele Marchetto | ripd |
+| 2006 | Pierre-Yves Ritschard | hoststated |
+| 2007 | Reyk Floeter | hoststated |
+| 2008 | Gilles Chehade | smtpd |
+| 2009 | Martin Hedenfalk | ldapd |
+| 2013 | Renato Westphal | ldpd |
+| 2016 | Job Snijders | bgpd |
+| 2016 | Peter Hessler | bgpd |
+| 2017 | Sebastian Benoit | bgpd |
+| 2018 | Florian Obser | dhcpleased |
+| 2019 | Tobias Heider | iked |
+| 2020 | Matthias Pressfreund | httpd |
 
-Copied into most of them:
-
-- Ryan McBride (12 files), Esben Norby (11), Reyk Floeter (6),
-  Pierre-Yves Ritschard (3)
-
-And the rest, each tied to one or two parsers:
-
-| Author | Daemons |
-|---|---|
-| Florian Obser | dhcpleased, unwind |
-| Gilles Chehade | httpd, relayd |
-| Renato Westphal | eigrpd, ldpd |
-| Hans-Joerg Hoexer | iked |
-| Job Snijders | bgpd |
-| Matthias Pressfreund | httpd |
-| Michele Marchetto | ripd |
-| Peter Hessler | bgpd |
-| Sebastian Benoit | bgpd |
-| Tobias Heider | iked |
+The four the name spells — Hartmeier, Brauer, Norby and Floeter — are the
+lineage it names; the last three initials spell **BNF** (Backus–Naur Form),
+so the name also reads as "Hartmeier's BNF". Friedl, Hartmeier, de Raadt and
+Brauer appear in every parser's block, carried forward for two decades.
 
 A surname-initial name is precedented too: Fowler–Noll–Vo (FNV) is three
 people, and nobody expands it aloud.
