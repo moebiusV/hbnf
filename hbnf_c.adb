@@ -3962,6 +3962,74 @@ package body HBNF_C is
 
       Res : U;
 
+      --  True when a repetition's DNF is a flat ASCII character class: every
+      --  branch is a single code-point range below 0x80.  Such a class can be
+      --  matched as raw bytes (a multi-byte UTF-8 lead byte is >= 0x80 and so
+      --  never matches), so the scanner skips the per-code-point
+      --  hbnf_decode_utf8 the general path emits -- one call per range, per
+      --  position: a ten-way `wordchars` decodes each byte ten times.
+      function Is_Ascii_Class (Sub : Cp_Branch_Vectors.Vector) return Boolean is
+      begin
+         if Sub.Is_Empty then
+            return False;
+         end if;
+         for B of Sub loop
+            if Natural (B.Length) /= 1 or else B (1).Hi >= 16#80# then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Is_Ascii_Class;
+
+      --  The byte test for an ASCII class: `(b >= lo && b <= hi) || ...`.
+      function Class_Cond (Sub : Cp_Branch_Vectors.Vector) return String is
+         Buf   : U;
+         First : Boolean := True;
+      begin
+         for B of Sub loop
+            if not First then
+               Append (Buf, " || ");
+            end if;
+            First := False;
+            Append (Buf, "(b >= " & Img (B (1).Lo) & " && b <= "
+              & Img (B (1).Hi) & ")");
+         end loop;
+         return To_String (Buf);
+      end Class_Cond;
+
+      --  A byte test for one ASCII code point: `b <= hi` when lo is 0, else
+      --  `b >= lo && b <= hi` (b is `unsigned char`).
+      function Byte_Cond (Lo, Hi : Natural) return String is
+      begin
+         if Lo = 0 then
+            return "(b <= " & Img (Hi) & ")";
+         else
+            return "(b >= " & Img (Lo) & " && b <= " & Img (Hi) & ")";
+         end if;
+      end Byte_Cond;
+
+      --  Emit one single code point: a direct byte compare when it is ASCII,
+      --  else a UTF-8 decode (the code point may be multi-byte).
+      procedure Emit_Single (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         if A.Hi < 16#80# then
+            Append (Res, Ind & "if (pos + off >= len) " & Fail & ";");
+            Append (Res, LF);
+            Append (Res, Ind & "{ unsigned char b = (unsigned char)s[pos + off];");
+            Append (Res, LF);
+            Append (Res, Ind & "  if (!" & Byte_Cond (A.Lo, A.Hi) & ") "
+              & Fail & "; }");
+            Append (Res, LF);
+            Append (Res, Ind & "off++;");
+            Append (Res, LF);
+         else
+            Append (Res, Ind & "{ uint32_t c; size_t n = hbnf_decode_utf8(s,"
+              & " pos + off, len, &c); if (!n || !"
+              & Range_Cond (A.Lo, A.Hi) & ") " & Fail & "; off += n; }");
+            Append (Res, LF);
+         end if;
+      end Emit_Single;
+
       --  Emit the greedy loop for a repetition: match one full branch of the
       --  DNF (the longest one) as many times as Max allows (0 = unbounded),
       --  then require Min.  A branch is a sequence of decoded code points.
@@ -3980,32 +4048,63 @@ package body HBNF_C is
             Append (Res, LF);
          end Emit_Branch;
       begin
-         Append (Res, Ind & "{ size_t cnt = 0;");
-         Append (Res, LF);
-         if A.Max = 0 then
-            Append (Res, Ind & "    for (;;) {");
+         if Is_Ascii_Class (A.Sub) then
+            --  A flat ASCII class: match it as raw bytes in one tight loop,
+            --  no per-code-point decode.
+            Append (Res, Ind & "{ size_t cnt = 0;");
+            Append (Res, LF);
+            if A.Max = 0 then
+               Append (Res, Ind & "    for (;;) {");
+            else
+               Append (Res, Ind & "    while (cnt < " & Img (A.Max) & ") {");
+            end if;
+            Append (Res, LF);
+            Append (Res, Ind & "        if (pos + off >= len) break;");
+            Append (Res, LF);
+            Append (Res, Ind & "        { unsigned char b = (unsigned char)s[pos + off];");
+            Append (Res, LF);
+            Append (Res, Ind & "          if (!(" & Class_Cond (A.Sub)
+              & ")) break; }");
+            Append (Res, LF);
+            Append (Res, Ind & "        off++; cnt++;");
+            Append (Res, LF);
+            Append (Res, Ind & "    }");
+            Append (Res, LF);
+            if A.Min > 0 then
+               Append (Res, Ind & "    if (cnt < " & Img (A.Min) & ") " & Fail
+                 & ";");
+               Append (Res, LF);
+            end if;
+            Append (Res, Ind & "}");
+            Append (Res, LF);
          else
-            Append (Res, Ind & "    while (cnt < " & Img (A.Max) & ") {");
-         end if;
-         Append (Res, LF);
-         Append (Res, Ind & "        size_t br = 0;");
-         Append (Res, LF);
-         for B of A.Sub loop
-            Emit_Branch (B);
-         end loop;
-         Append (Res, Ind & "        if (br == 0) break;");
-         Append (Res, LF);
-         Append (Res, Ind & "        off += br; cnt++;");
-         Append (Res, LF);
-         Append (Res, Ind & "    }");
-         Append (Res, LF);
-         if A.Min > 0 then
-            Append (Res, Ind & "    if (cnt < " & Img (A.Min) & ") " & Fail
-              & ";");
+            Append (Res, Ind & "{ size_t cnt = 0;");
+            Append (Res, LF);
+            if A.Max = 0 then
+               Append (Res, Ind & "    for (;;) {");
+            else
+               Append (Res, Ind & "    while (cnt < " & Img (A.Max) & ") {");
+            end if;
+            Append (Res, LF);
+            Append (Res, Ind & "        size_t br = 0;");
+            Append (Res, LF);
+            for B of A.Sub loop
+               Emit_Branch (B);
+            end loop;
+            Append (Res, Ind & "        if (br == 0) break;");
+            Append (Res, LF);
+            Append (Res, Ind & "        off += br; cnt++;");
+            Append (Res, LF);
+            Append (Res, Ind & "    }");
+            Append (Res, LF);
+            if A.Min > 0 then
+               Append (Res, Ind & "    if (cnt < " & Img (A.Min) & ") " & Fail
+                 & ";");
+               Append (Res, LF);
+            end if;
+            Append (Res, Ind & "}");
             Append (Res, LF);
          end if;
-         Append (Res, Ind & "}");
-         Append (Res, LF);
       end Emit_Repeat;
    begin
       for R of Rules loop
@@ -4373,10 +4472,7 @@ package body HBNF_C is
                   for A of DNF (1) loop
                      case A.Kind is
                         when Single =>
-                           Append (Res, "    { uint32_t c; size_t n = hbnf_decode_utf8(s,"
-                             & " pos + off, len, &c); if (!n || !"
-                             & Range_Cond (A.Lo, A.Hi) & ") return 0; off += n; }");
-                           Append (Res, LF);
+                           Emit_Single (A, "    ", "return 0");
                         when Repeat =>
                            Emit_Repeat (A, "    ", "return 0");
                      end case;
@@ -4395,11 +4491,7 @@ package body HBNF_C is
                      for A of B loop
                         case A.Kind is
                            when Single =>
-                              Append (Res, "        { uint32_t c; size_t n = hbnf_decode_utf8(s,"
-                                & " pos + off, len, &c); if (!n || !"
-                                & Range_Cond (A.Lo, A.Hi)
-                                & ") break; off += n; }");
-                              Append (Res, LF);
+                              Emit_Single (A, "        ", "break");
                            when Repeat =>
                               Emit_Repeat (A, "        ", "break");
                         end case;
