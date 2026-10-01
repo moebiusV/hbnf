@@ -93,3 +93,26 @@ not a cryptic "unexpected token".
 round-trips exactly: a decimal keeps its literal, a string is re-quoted with
 the escape set. Comments are preserved and come back out in the right places
 when the source is re-emitted, and printing is idempotent.
+
+## hbnf and ANTLR
+
+ANTLR v4 is the right comparison, not yacc: it already removes shift/reduce
+conflicts, handles left recursion, and reports readable errors. The two part
+ways on what they optimize for.
+
+hbnf emits a self-contained single file with no runtime library, where ANTLR
+needs its runtime in the target language. hbnf gives a typed tree out of the
+box, where ANTLR gives a generic parse tree and you write a visitor or listener
+to build your own. hbnf's notation is ABNF, so an RFC grammar compiles almost
+verbatim, and comments are preserved and round-tripped; ANTLR's grammar is its
+own syntax, and its parse tree drops comments. hbnf's maximal-munch lexer plus
+LL(1)-ish grammar parses a large grammar linearly, where ANTLR's ALL(*) explores
+at runtime.
+
+ANTLR is ahead on generality: ALL(*) takes indirect left recursion and full
+programming languages. hbnf reads direct left recursion as a loop and does not
+yet rewrite indirect left recursion, though the standard elimination algorithm
+turns indirect into direct before the same loop, so this is a gap to close
+rather than a difference in kind. hbnf's narrowness is where it wins: the
+config-file shape (jets, `--conf`, id-ref output) is something ANTLR does not
+address.
