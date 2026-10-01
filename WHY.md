@@ -109,10 +109,14 @@ own syntax, and its parse tree drops comments. hbnf's maximal-munch lexer plus
 LL(1)-ish grammar parses a large grammar linearly, where ANTLR's ALL(*) explores
 at runtime.
 
-ANTLR is ahead on generality: ALL(*) takes indirect left recursion and full
-programming languages. hbnf reads direct left recursion as a loop and does not
-yet rewrite indirect left recursion, though the standard elimination algorithm
-turns indirect into direct before the same loop, so this is a gap to close
-rather than a difference in kind. hbnf's narrowness is where it wins: the
-config-file shape (jets, `--conf`, id-ref output) is something ANTLR does not
-address.
+The remaining gap is narrow. ALL(*) parses genuinely ambiguous grammars, and
+ANTLR runs actions during the parse and lets them steer recognition with
+semantic predicates; hbnf is ordered choice, so it is never ambiguous, and its
+actions run after the parse and never steer it. Indirect left recursion is a
+temporary gap: hbnf reads direct left recursion as a loop, and the standard
+elimination algorithm turns indirect into direct before the same loop. The
+permanent differences are parse-time semantic feedback and ambiguity, which
+hbnf refuses on purpose, plus the ecosystem around ANTLR (grammar libraries,
+IDE support, incremental parsing) that hbnf does not aim to replace. hbnf's
+narrowness is where it wins: the config-file shape (jets, `--conf`, id-ref
+output) is something ANTLR does not address.
