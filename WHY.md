@@ -74,7 +74,6 @@ the token that was expected, not a state-machine dump and not a cryptic
 
 The early RFC BNF (RFC 733, RFC 822) wrote alternation with `|`. ABNF's `/` is
 the later spelling, introduced in RFC 2234 (1997) and carried into RFC 5234.
-hbnf writes `|`, as the early RFCs did, as PEG does, and as OpenBSD's parse.y
-grammars are read; it accepts `/` only where union and ordered choice agree
-(between one-character alternatives), and refuses it elsewhere with a line and a
-caret. See `ABNF.md`.
+hbnf keeps the two apart: `|` means alternation, as the early RFCs wrote it and
+as PEG and OpenBSD's parse.y read it, and `/` means ABNF's union. `ABNF.md`
+notes which `/` forms are implemented and which are still planned.
