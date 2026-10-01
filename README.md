@@ -50,6 +50,8 @@ This directory holds two things:
        hbnf grammars/bind/ntpd.hbnf --backend=c --conf   # ntpd's parse_config
 
    The generator's documents:
+   - `WHY.md`: shift/reduce conflicts, error messages, and hbnf's place, for an
+     RFC reader;
    - `grammars/README.md`: the notation, and the nine daemon grammars
      translated from their `parse.y`;
    - `ABNF.md`: the notation against RFC 5234, feature by feature;
