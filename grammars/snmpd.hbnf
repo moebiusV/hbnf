@@ -17,7 +17,6 @@
 ; which the generic hbnf lexer cannot produce — the ipv6 jet below closes it.
 
 language C
-wordchars "*/$@%"
 statements
 macros varset
 includes include
@@ -33,6 +32,9 @@ keywords {
 }
 include "tailq.hbnf"
 include "commonconf.hbnf"
+
+wordchars = ALPHA | DIGIT | "_" | "-" | "." | "*" | "/" | "$" | "@" | "%"
+word_start = ALPHA | "_" | "-" | "*" | "/" | "$" | "@" | "%"
 
 
 

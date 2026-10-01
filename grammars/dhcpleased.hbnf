@@ -17,7 +17,6 @@
 ; no hand-written token here, so no jet.
 
 language C
-wordchars "*/$@%"
 statements
 macros varset
 ; The words sbin/dhcpleased/parse.y's lookup() reserves (14, OpenBSD -current):
@@ -28,6 +27,9 @@ keywords {
 }
 include "tailq.hbnf"
 include "commonconf.hbnf"
+
+wordchars = ALPHA | DIGIT | "_" | "-" | "." | "*" | "/" | "$" | "@" | "%"
+word_start = ALPHA | "_" | "-" | "*" | "/" | "$" | "@" | "%"
 
 
 

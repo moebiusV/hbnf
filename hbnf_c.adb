@@ -3356,7 +3356,7 @@ package body HBNF_C is
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet: match its own token kind and yield the matched text.
             Append (Buf, Templates.Render (Templates.Get ("c_rule_jet"),
-              (Templates.Bind ("name", C_Ident (NM)),
+              (Templates.Bind ("kind", "TOK_" & C_Ident (NM)),
                Templates.Bind ("desc", "a " & NM))));
             Append (Buf, LF);
             return;
@@ -3365,7 +3365,9 @@ package body HBNF_C is
             --  A character-level rule: match its char token and yield the
             --  matched text, exactly like a jet.
             Append (Buf, Templates.Render (Templates.Get ("c_rule_jet"),
-              (Templates.Bind ("name", C_Ident (NM)),
+              (Templates.Bind ("kind",
+                 (if Is_Core_Name (NM) then Scalar_Tok_Kind (NM)
+                  else "TOK_" & C_Ident (NM))),
                Templates.Bind ("desc", NM))));
             Append (Buf, LF);
             return;
@@ -3838,34 +3840,23 @@ package body HBNF_C is
 
       Res : U;
 
-      --  The C condition that the current code point `c` lies in the union of
-      --  a repetition's character class (each branch is one range).
-      function Or_Cond (Sub : Cp_Branch_Vectors.Vector) return String is
-         Buf   : U;
-         First : Boolean := True;
-      begin
-         if Natural (Sub.Length) = 1 then
-            declare
-               B : constant Cp_Range_Vectors.Vector := Sub (1);
-            begin
-               return Range_Cond (B (1).Lo, B (1).Hi);
-            end;
-         end if;
-         Append (Buf, "(");
-         for B of Sub loop
-            if not First then
-               Append (Buf, " || ");
-            end if;
-            First := False;
-            Append (Buf, Range_Cond (B (1).Lo, B (1).Hi));
-         end loop;
-         Append (Buf, ")");
-         return To_String (Buf);
-      end Or_Cond;
-
-      --  Emit the greedy loop for a trailing repetition: match the character
-      --  class as many times as Max allows (0 = unbounded), then require Min.
+      --  Emit the greedy loop for a repetition: match one full branch of the
+      --  DNF (the longest one) as many times as Max allows (0 = unbounded),
+      --  then require Min.  A branch is a sequence of decoded code points.
       procedure Emit_Repeat (A : Cp_Atom; Ind : String; Fail : String) is
+         procedure Emit_Branch (B : Cp_Range_Vectors.Vector) is
+         begin
+            Append (Res, Ind & "        { size_t o = 0; int ok = 1;");
+            Append (Res, LF);
+            for Rg of B loop
+               Append (Res, Ind & "          if (ok) { uint32_t c; size_t n = hbnf_decode_utf8(s,"
+                 & " pos + off + o, len, &c); if (!n || !"
+                 & Range_Cond (Rg.Lo, Rg.Hi) & ") ok = 0; else o += n; }");
+               Append (Res, LF);
+            end loop;
+            Append (Res, Ind & "          if (ok && o > br) br = o; }");
+            Append (Res, LF);
+         end Emit_Branch;
       begin
          Append (Res, Ind & "{ size_t cnt = 0;");
          Append (Res, LF);
@@ -3875,9 +3866,14 @@ package body HBNF_C is
             Append (Res, Ind & "    while (cnt < " & Img (A.Max) & ") {");
          end if;
          Append (Res, LF);
-         Append (Res, Ind & "        { uint32_t c; size_t n = hbnf_decode_utf8(s,"
-           & " pos + off, len, &c); if (!n || !" & Or_Cond (A.Sub)
-           & ") break; off += n; cnt++; }");
+         Append (Res, Ind & "        size_t br = 0;");
+         Append (Res, LF);
+         for B of A.Sub loop
+            Emit_Branch (B);
+         end loop;
+         Append (Res, Ind & "        if (br == 0) break;");
+         Append (Res, LF);
+         Append (Res, Ind & "        off += br; cnt++;");
          Append (Res, LF);
          Append (Res, Ind & "    }");
          Append (Res, LF);
@@ -3910,11 +3906,26 @@ package body HBNF_C is
       begin
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
-               Append (Kind_Ext, ", TOK_"
-                 & C_Ident (To_String (Rules (I).Name)));
+               declare
+                  K : constant String := C_Ident (To_String (Rules (I).Name));
+               begin
+                  if K not in "ATOM" | "STR" | "INT" | "PUNCT" | "EOF" then
+                     Append (Kind_Ext, ", TOK_" & K);
+                  end if;
+               end;
             elsif Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
-               Append (Kind_Ext, ", TOK_"
-                 & C_Ident (To_String (Rules (I).Name)));
+               declare
+                  NM : constant String := To_String (Rules (I).Name);
+               begin
+                  --  A core-type char rule (word/int/str) reuses the base
+                  --  kind; another token gets its own kind.  A building block
+                  --  is inlined, so it has neither.
+                  if not Is_Core_Name (NM)
+                    and then Is_Char_Token (Rules, NM)
+                  then
+                     Append (Kind_Ext, ", TOK_" & C_Ident (NM));
+                  end if;
+               end;
             end if;
          end loop;
          Emit_Keywords (Kw);
@@ -3955,27 +3966,44 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, LF);
 
-      --  Forward declarations of every parse function.
+      --  Forward declarations of every parse function.  A core-type char rule
+      --  (str/int/word) is read as a scalar in place, and a building block is
+      --  inlined into a token's scanner; neither is parsed by name.
       for I in 1 .. N loop
-         Append (Res, Templates.Render (Templates.Get ("c_rule_decl"),
-           (Templates.Bind ("name", C_Name (To_String (Rules (I).Name))),
-            Templates.Bind ("type", Out_Type (I)))));
-         Append (Res, LF);
+         declare
+            NM : constant String := To_String (Rules (I).Name);
+         begin
+            if not (Is_Char_Rule (Rules, NM)
+                    and then (Is_Core_Name (NM)
+                              or else not Is_Char_Token (Rules, NM)))
+            then
+               Append (Res, Templates.Render (Templates.Get ("c_rule_decl"),
+                 (Templates.Bind ("name", C_Name (NM)),
+                  Templates.Bind ("type", Out_Type (I)))));
+               Append (Res, LF);
+            end if;
+         end;
       end loop;
       Append (Res, LF);
 
       for I in 1 .. N loop
          declare
-            R : constant Rule := Rules (I);
+            R  : constant Rule := Rules (I);
+            NM : constant String := To_String (R.Name);
          begin
-            Append (Res, Templates.Render (Templates.Get ("c_rule_head"),
-              (Templates.Bind ("name", C_Name (To_String (R.Name))),
-               Templates.Bind ("type", Out_Type (I)))));
-            Append (Res, LF);
-            Emit_Rule_Parser (I, Res);
-            Append (Res, "}");
-            Append (Res, LF);
-            Append (Res, LF);
+            if not (Is_Char_Rule (Rules, NM)
+                    and then (Is_Core_Name (NM)
+                              or else not Is_Char_Token (Rules, NM)))
+            then
+               Append (Res, Templates.Render (Templates.Get ("c_rule_head"),
+                 (Templates.Bind ("name", C_Name (NM)),
+                  Templates.Bind ("type", Out_Type (I)))));
+               Append (Res, LF);
+               Emit_Rule_Parser (I, Res);
+               Append (Res, "}");
+               Append (Res, LF);
+               Append (Res, LF);
+            end if;
          end;
       end loop;
 
@@ -4192,7 +4220,9 @@ package body HBNF_C is
          end if;
       end;
       for I in 1 .. N loop
-         if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+         if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+           and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+         then
             declare
                NM  : constant String := To_String (Rules (I).Name);
                DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
@@ -4225,14 +4255,15 @@ package body HBNF_C is
                   for B of DNF loop
                      Append (Res, "    do {");
                      Append (Res, LF);
-                     Append (Res, "        size_t off = 0; uint32_t c; size_t n;");
+                     Append (Res, "        size_t off = 0;");
                      Append (Res, LF);
                      for A of B loop
                         case A.Kind is
                            when Single =>
-                              Append (Res, "        n = hbnf_decode_utf8(s, pos + off, len, &c);"
-                                & " if (!n || !" & Range_Cond (A.Lo, A.Hi)
-                                & ") break; off += n;");
+                              Append (Res, "        { uint32_t c; size_t n = hbnf_decode_utf8(s,"
+                                & " pos + off, len, &c); if (!n || !"
+                                & Range_Cond (A.Lo, A.Hi)
+                                & ") break; off += n; }");
                               Append (Res, LF);
                            when Repeat =>
                               Emit_Repeat (A, "        ", "break");
@@ -4261,13 +4292,20 @@ package body HBNF_C is
       Append (Res, "    tok_kind_t best_kind = TOK_EOF;");
       Append (Res, LF);
       for I in 1 .. N loop
-         if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+         if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+           and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+         then
             declare
                NM : constant String := To_String (Rules (I).Name);
+               --  A core-type char rule reuses the base kind; any other token
+               --  gets its own.  Building blocks are inlined, not dispatched.
+               Kind : constant String :=
+                 (if Is_Core_Name (NM) then Scalar_Tok_Kind (NM)
+                  else "TOK_" & C_Ident (NM));
             begin
                Append (Res, "    { size_t n = scan_" & C_Name (NM)
-                 & "(s, pos, len); if (n > best) { best = n; best_kind = TOK_"
-                 & C_Ident (NM) & "; } }");
+                 & "(s, pos, len); if (n > best) { best = n; best_kind = "
+                 & Kind & "; } }");
                Append (Res, LF);
             end;
          end if;
@@ -4291,7 +4329,6 @@ package body HBNF_C is
       Text_Entry : Boolean := True) return String
    is
       Root_T : constant String := Root_Type (Rules);
-      Wc     : U;
       Res    : U;
 
       procedure Add (Template : String) is
@@ -4300,11 +4337,7 @@ package body HBNF_C is
          Append (Res, Templates.Substitute (Template, "@ROOT_TYPE@", Root_T));
       end Add;
    begin
-      for C of Word_Chars loop
-         Append (Wc, " || c == '" & C & "'");
-      end loop;
-      Append (Res, Templates.Substitute
-                (Templates.Get ("c_lexer"), "@WORD_CHARS@", To_String (Wc)));
+      Append (Res, Templates.Get ("c_lexer"));
       Append (Res, LF);
       if HBNF_Grammar.Statements then
          --  The statement driver, the macro expansion (or its stubs), and

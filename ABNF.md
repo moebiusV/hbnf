@@ -170,6 +170,8 @@ of them again (a later `=` overrides).
 | Keyword table | `keywords { all any anchor … }` | C only. The words the lexer reserves, as parse.y's `lookup()` table: a letter-led literal in the table is a keyword (interned, refused as a `word`, dispatched on by id); any other literal matches a word by its text and reserves nothing, as parse.y's `STRING` compared with `strcmp`. A listed word no rule uses is still reserved. Without the directive every letter-led literal is a keyword. The nine daemon grammars carry their parse.y's table; `tests/bytetest/keywords.sh` checks that they match. |
 | Code blocks | `{ … }` before the rules (preamble) and after (epilogue) | Copied verbatim |
 | Escapes in literals | `\a \b \f \n \r \t \v \\ \" \' \xHH` | `\xHH` reads hex digits greedily, as in C |
+| Negation | `~rule`, `*~rule` | `~rule` matches one code point not in the set `rule` matches (a complement); repetition composes, so `*~rule` is "until rule" (SNOBOL's `BREAK`).  A hbnf extension — ABNF has no negation — planned (RFCPLAN.md decision 11), not implemented. |
+| Comma list | `n#m element`, `#element` | `#` is `*` with an implicit comma separator: `n#m` is comma-separated repetition, `#element` is `1#element`, sugar for `element *("," element)`.  Inherits parse.y's list semantics (no trailing comma, no empty elements); deliberately stricter than HTTP's `#rule`, which allows empty elements.  Planned (RFCPLAN.md decision 12), not implemented. |
 | Rule names with `_`, comments carried into output, newline-before-`\|` continuation | — | ✓ |
 | Left recursion | `xs = xs "," x \| x` | Direct left recursion is read as a loop (`x ("," x)*`) in all four backends; indirect left recursion is refused |
 

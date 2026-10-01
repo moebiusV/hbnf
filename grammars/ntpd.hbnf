@@ -16,7 +16,6 @@
 ; (`trusted`) carries no value — its `kind` alone says it is set.
 
 language C
-wordchars "*/$@%"
 statements
 ; The words usr.sbin/ntpd/parse.y's lookup() reserves (15, OpenBSD -current):
 ; a literal listed here is a keyword, any other matches a word by its text.
@@ -26,6 +25,9 @@ keywords {
 }
 include "tailq.hbnf"
 include "commonconf.hbnf"
+
+wordchars = ALPHA | DIGIT | "_" | "-" | "." | "*" | "/" | "$" | "@" | "%"
+word_start = ALPHA | "_" | "-" | "*" | "/" | "$" | "@" | "%"
 
 
 

@@ -33,7 +33,7 @@ static int lex_push(lexed_t *r, size_t *cap, const char *text, size_t len,
 static int lex_digit(char c) { return c >= '0' && c <= '9'; }
 static int lex_word_start(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-        || c == '_' || c == '-'@WORD_CHARS@;
+        || c == '_' || c == '-';
 }
 static int lex_word_char(char c) {
     return lex_word_start(c) || lex_digit(c) || c == '.';
@@ -71,7 +71,13 @@ lexed_t lex(const char *text) {
             tok_kind_t ck;
             size_t cl = char_dispatch(text, i, tlen, &ck);
             if (cl > 0) {
-                if (!lex_push(&r, &cap, text + i, cl, line, col, ck, KWID_NONE)) goto oom;
+                kwid_t kw = KWID_NONE;
+                const char *tx = text + i;
+                size_t tl = cl;
+                if (ck == TOK_ATOM) kw = kw_lookup(tx, tl);
+                /* a quoted string yields its content, quotes stripped */
+                if (ck == TOK_STR && tl >= 2 && tx[0] == '"') { tx++; tl -= 2; }
+                if (!lex_push(&r, &cap, tx, tl, line, col, ck, kw)) goto oom;
                 i += cl; col += cl;
                 continue;
             }

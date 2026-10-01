@@ -97,7 +97,7 @@ silently.
    position, and a jet is called there.
    - The old lexer becomes grammar in a shared include: `word`, `number`,
      quoted strings with escapes, `#` comments and backslash continuation,
-     as character rules anyone can read and change.  `wordchars` goes away.
+     as character rules anyone can read and change.  `wordchars` becomes a grammar rule.
    - **`whitespace ws`**, per file: phrase-level rules in that file skip
      the rule `ws` between their elements; character rules never do.
      Daemon grammars say `whitespace ws` with `ws = SP | HTAB | comment`;
@@ -124,6 +124,18 @@ silently.
     `CRLF = CR LF` goes in a new `core.hbnf`, which includes `ascii.hbnf`:
     RFC 5234 Appendix B.1 in one include.  `LWSP` waits for repetition
     inside character rules, which `Is_Char_Rule` refuses today.
+11. **Negation is `~`.**  `~rule` matches one code point not in the set
+    `rule` matches (a complement); repetition composes, so `*~rule` is
+    "until rule" (SNOBOL's `BREAK`).  A hbnf extension — ABNF has no
+    negation — and it collapses the explicit `%x` complements the lexer
+    rules would otherwise spell out: `comment = "#" *~LF`,
+    `string = DQUOTE *( "\\" %x00-10FFFF | ~(DQUOTE | "\\") ) DQUOTE`.
+12. **Comma lists are `#`.**  `#` is `*` with an implicit comma separator:
+    `n#m element` is comma-separated repetition, `#element` is `1#element`.
+    It is sugar for `element *("," element)` — the same list the daemon
+    grammars write left-recursive — so it inherits parse.y's semantics: no
+    trailing comma, no empty elements.  Deliberately stricter than HTTP's
+    `#rule`, which allows empty elements (a known server-bug source).
 
 ## Compiler-compiler completion criteria
 
@@ -239,7 +251,7 @@ unwind-ident passing; each lands as reviewed patches.
 
    4b. **Lexer as grammar.** The old lexer's `word`, `number`, quoted
        strings with escapes, `#` comments and backslash continuation become
-       char rules in a shared include; `wordchars` goes away.  Keywords stay
+       char rules in a shared include; `wordchars` becomes a grammar rule.  Keywords stay
        a table (a listed word does not match `word`).
 
    4c. **Character-model parser in C.** `parser_t` becomes text/len/pos
@@ -294,7 +306,7 @@ unwind-ident passing; each lands as reviewed patches.
 
 ## Not in this plan
 
-- HTTP's and RFC 822's `#` list operator, RBNF.
+- RBNF (RFC 5511's routing BNF).
 - GLR, or trying another alternative after a later failure.
 - Case-folding non-ASCII rule names.
 - Guessing any setting from an include or from seeing `%x`.

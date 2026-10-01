@@ -544,17 +544,73 @@ package body HBNF_Ada is
 
       Infos : Info_Vectors.Vector;
 
-      --  The record rule indices this struct rule must be emitted after: its
-      --  non-list members that reference another record type (a by-value
-      --  member needs that type complete first).
-      function Deps (Idx : Natural) return Natural_Vectors.Vector is
-         --  No by-value record dependencies: every record member is an
-         --  _Access (see Emit_Rule), so records may be emitted in any order
-         --  and no cycle is possible.
-         D : Natural_Vectors.Vector;
+      --  True when a scalar rule is an alias (directly or through further
+      --  aliases) to a record or list (`src = host`, `a = b` with `b = host`):
+      --  its subtype must follow the target's full type, so it is emitted in
+      --  the record+alias phase rather than among the leaves.
+      function Over_Leaf (Idx : Natural) return Boolean is
+         J : Natural := Idx;
       begin
+         for K in 1 .. 20 loop
+            declare
+               P : constant Element_Vectors.Vector := Rules (J).Pattern;
+            begin
+               if Infos (J).Kind = Scalar
+                 and then Natural (P.Length) = 1
+                 and then P (1).Kind = Name
+                 and then Scalar_Ada_Type (To_String (P (1).Name)) = ""
+               then
+                  declare
+                     N : constant Natural := Find (To_String (P (1).Name));
+                  begin
+                     exit when N = 0;
+                     J := N;
+                  end;
+               else
+                  exit;
+               end if;
+            end;
+         end loop;
+         return Infos (J).Kind = Struct or else Infos (J).Kind = List;
+      end Over_Leaf;
+
+      --  The rules a record or deferred alias must follow in the combined
+      --  record+alias emission: a record follows the deferred aliases its
+      --  by-value members name, and a deferred alias (`src = host`) follows
+      --  its target when that target is in the same phase (a record or a
+      --  further alias); a list target was already emitted with the vectors.
+      function Type_Deps (Idx : Natural) return Natural_Vectors.Vector is
+         Info : constant Rule_Info := Infos (Idx);
+         D    : Natural_Vectors.Vector;
+      begin
+         if Info.Kind = Struct then
+            for M of Info.Members loop
+               if not M.Is_List then
+                  declare
+                     J : constant Natural := Find (To_String (M.Name));
+                  begin
+                     if J > 0 and then Over_Leaf (J) then
+                        D.Append (J);
+                     end if;
+                  end;
+               end if;
+            end loop;
+         elsif Info.Kind = Scalar and then Over_Leaf (Idx) then
+            declare
+               P : constant Element_Vectors.Vector := Rules (Idx).Pattern;
+               J : constant Natural := Find (To_String (P (1).Name));
+            begin
+               if J > 0
+                 and then (Is_Record (Infos (J))
+                           or else (Infos (J).Kind = Scalar
+                                    and then Over_Leaf (J)))
+               then
+                  D.Append (J);
+               end if;
+            end;
+         end if;
          return D;
-      end Deps;
+      end Type_Deps;
 
       --  The vector element type for a list of Ref: an access to the record
       --  (so recursion can be broken), or the scalar inlined by value.
@@ -753,7 +809,9 @@ package body HBNF_Ada is
          Remaining_Leaves : Natural := 0;
       begin
          for I in 1 .. N loop
-            if Infos (I).Kind = Scalar or else Infos (I).Kind = Enum then
+            if (Infos (I).Kind = Scalar or else Infos (I).Kind = Enum)
+              and then not Over_Leaf (I)
+            then
                Remaining_Leaves := Remaining_Leaves + 1;
             end if;
          end loop;
@@ -763,6 +821,7 @@ package body HBNF_Ada is
             begin
                for I in 1 .. N loop
                   if (Infos (I).Kind = Scalar or else Infos (I).Kind = Enum)
+                    and then not Over_Leaf (I)
                     and then not Emitted (I)
                   then
                      declare
@@ -829,11 +888,15 @@ package body HBNF_Ada is
          end if;
       end loop;
 
-      --  Record bodies, in by-value dependency order.  A cycle here means a
-      --  record contains another by value, transitively, with no list to
-      --  break it — infinite size.
+      --  Record bodies and their subtype aliases (`loport = port`), in
+      --  by-value dependency order: a record follows the aliases its by-value
+      --  members name, and an alias follows its target record.  A cycle here
+      --  means a record contains another by value, transitively, with no list
+      --  to break it — infinite size.
       for I in 1 .. N loop
-         if Is_Record (Infos (I)) then
+         if Is_Record (Infos (I))
+           or else (Infos (I).Kind = Scalar and then Over_Leaf (I))
+         then
             Remaining := Remaining + 1;
          end if;
       end loop;
@@ -842,11 +905,14 @@ package body HBNF_Ada is
             Progress : Boolean := False;
          begin
             for I in 1 .. N loop
-               if Is_Record (Infos (I)) and then not Emitted (I) then
+               if (Is_Record (Infos (I))
+                   or else (Infos (I).Kind = Scalar and then Over_Leaf (I)))
+                 and then not Emitted (I)
+               then
                   declare
                      Ready : Boolean := True;
                   begin
-                     for D of Deps (I) loop
+                     for D of Type_Deps (I) loop
                         if not Emitted (D) then
                            Ready := False;
                         end if;
@@ -1283,7 +1349,10 @@ package body HBNF_Ada is
       begin
          if Is_Char_Rule (Rules, NM) then
             --  A char rule is a token: expect its kind and capture the text.
-            Append (Buf, "      Expect_Kind (P, " & Ada_Field (NM) & ", """
+            --  A core-type char rule reuses the base Token_Kind.
+            Append (Buf, "      Expect_Kind (P, "
+              & (if Is_Core_Name (NM) then Scalar_Kind (NM)
+                 else Ada_Field (NM)) & ", """
               & NM & """);");
             Append (Buf, LF);
             Append (Buf, "      R := P.Toks (P.Pos).Text; P.Pos := P.Pos + 1;");
@@ -1622,34 +1691,13 @@ package body HBNF_Ada is
       Spec  : U;
       Bdy  : U;
 
-      --  The Ada condition that the current code point `Cp` lies in the union
-      --  of a repetition's character class (each branch one range).
-      function Or_Cond (Sub : Cp_Branch_Vectors.Vector) return String is
-         Buf   : U;
-         First : Boolean := True;
-      begin
-         if Natural (Sub.Length) = 1 then
-            declare
-               B : constant Cp_Range_Vectors.Vector := Sub (1);
-            begin
-               return Range_Cond (B (1).Lo, B (1).Hi);
-            end;
-         end if;
-         Append (Buf, "(");
-         for B of Sub loop
-            if not First then
-               Append (Buf, " or else ");
-            end if;
-            First := False;
-            Append (Buf, Range_Cond (B (1).Lo, B (1).Hi));
-         end loop;
-         Append (Buf, ")");
-         return To_String (Buf);
-      end Or_Cond;
-
-      --  Emit the greedy loop for a trailing repetition.  Fail is the
-      --  statement run when fewer than Min iterations matched (`return 0` in
-      --  a single branch, `Ok := False` in an alternation branch).
+      --  Emit the greedy loop for a repetition: match one full branch of the
+      --  DNF (the longest one) as many times as Max allows (0 = unbounded),
+      --  then require Min.  A branch is a sequence of decoded code points.
+      --  Fail runs when fewer than Min iterations matched (`return 0` in a
+      --  single branch, `Ok := False` in an alternation branch) and names the
+      --  caller's variables, so the branch locals are `Match`/`O`/`Br`, not
+      --  the caller's `Ok`.
       procedure Emit_Repeat (A : Cp_Atom; Ind : String; Fail : String) is
       begin
          Append (Bdy, Ind & "declare");
@@ -1664,13 +1712,44 @@ package body HBNF_Ada is
             Append (Bdy, Ind & "   while Cnt < " & Img (A.Max) & " loop");
          end if;
          Append (Bdy, LF);
-         Append (Bdy, Ind & "      N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
+         Append (Bdy, Ind & "      declare");
          Append (Bdy, LF);
-         Append (Bdy, Ind & "      exit when N = 0 or else not " & Or_Cond (A.Sub) & ";");
+         Append (Bdy, Ind & "         Br    : Natural := 0;");
          Append (Bdy, LF);
-         Append (Bdy, Ind & "      Off := Off + N;");
+         Append (Bdy, Ind & "         O     : Natural;");
          Append (Bdy, LF);
-         Append (Bdy, Ind & "      Cnt := Cnt + 1;");
+         Append (Bdy, Ind & "         Match : Boolean;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      begin");
+         Append (Bdy, LF);
+         for B of A.Sub loop
+            Append (Bdy, Ind & "         O := 0;");
+            Append (Bdy, LF);
+            Append (Bdy, Ind & "         Match := True;");
+            Append (Bdy, LF);
+            for Rg of B loop
+               Append (Bdy, Ind & "         if Match then");
+               Append (Bdy, LF);
+               Append (Bdy, Ind & "            N := Decode_Utf8 (S, Pos + Off + O, Len, Cp);");
+               Append (Bdy, LF);
+               Append (Bdy, Ind & "            Match := N > 0 and then "
+                 & Range_Cond (Rg.Lo, Rg.Hi) & ";");
+               Append (Bdy, LF);
+               Append (Bdy, Ind & "            if Match then O := O + N; end if;");
+               Append (Bdy, LF);
+               Append (Bdy, Ind & "         end if;");
+               Append (Bdy, LF);
+            end loop;
+            Append (Bdy, Ind & "         if Match and then O > Br then Br := O; end if;");
+            Append (Bdy, LF);
+         end loop;
+         Append (Bdy, Ind & "         exit when Br = 0;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "         Off := Off + Br;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "         Cnt := Cnt + 1;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      end;");
          Append (Bdy, LF);
          Append (Bdy, Ind & "   end loop;");
          Append (Bdy, LF);
@@ -1693,12 +1772,28 @@ package body HBNF_Ada is
       begin
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
-               Append (Kind_Ext, ", " & Ada_Field (To_String (Rules (I).Name)));
+               declare
+                  K : constant String := Ada_Field (To_String (Rules (I).Name));
+               begin
+                  if K not in "Atom" | "Str" | "Int" | "Punct" | "Eof" then
+                     Append (Kind_Ext, ", " & K);
+                  end if;
+               end;
             end if;
          end loop;
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
-               Append (Kind_Ext, ", " & Ada_Field (To_String (Rules (I).Name)));
+               declare
+                  NM : constant String := To_String (Rules (I).Name);
+               begin
+                  --  A core-type char rule reuses the base kind; another token
+                  --  takes its own; a building block is inlined, no kind at all.
+                  if not Is_Core_Name (NM)
+                    and then Is_Char_Token (Rules, NM)
+                  then
+                     Append (Kind_Ext, ", " & Ada_Field (NM));
+                  end if;
+               end;
             end if;
          end loop;
          Append (Spec, Templates.Render (Templates.Get ("ada_parser_spec"),
@@ -1757,24 +1852,45 @@ package body HBNF_Ada is
       end;
 
       --  Forward declarations: a rule may call any other, in any order.
+      --  A core-type char rule (str/int/word) is read as a scalar in place,
+      --  and a building block is inlined into a token's scanner; neither
+      --  needs a Parse function of its own.
       for I in 1 .. N loop
-         Append (Bdy, "   function Parse_" & Ada_Ident (To_String (Rules (I).Name))
-           & " (P : in out Parser) return " & Ret_Type (I) & ";");
-         Append (Bdy, LF);
+         declare
+            NM : constant String := To_String (Rules (I).Name);
+         begin
+            if not (Is_Char_Rule (Rules, NM)
+                    and then (Is_Core_Name (NM)
+                              or else not Is_Char_Token (Rules, NM)))
+            then
+               Append (Bdy, "   function Parse_" & Ada_Ident (NM)
+                 & " (P : in out Parser) return " & Ret_Type (I) & ";");
+               Append (Bdy, LF);
+            end if;
+         end;
       end loop;
       Append (Bdy, LF);
 
       for I in 1 .. N loop
-         Append (Bdy, "   function Parse_" & Ada_Ident (To_String (Rules (I).Name))
-           & " (P : in out Parser) return " & Ret_Type (I) & " is");
-         Append (Bdy, LF);
-         Emit_Rule_Decl (I, Bdy);
-         Append (Bdy, "   begin");
-         Append (Bdy, LF);
-         Emit_Rule_Parser (I, Bdy);
-         Append (Bdy, "   end Parse_" & Ada_Ident (To_String (Rules (I).Name)) & ";");
-         Append (Bdy, LF);
-         Append (Bdy, LF);
+         declare
+            NM : constant String := To_String (Rules (I).Name);
+         begin
+            if not (Is_Char_Rule (Rules, NM)
+                    and then (Is_Core_Name (NM)
+                              or else not Is_Char_Token (Rules, NM)))
+            then
+               Append (Bdy, "   function Parse_" & Ada_Ident (NM)
+                 & " (P : in out Parser) return " & Ret_Type (I) & " is");
+               Append (Bdy, LF);
+               Emit_Rule_Decl (I, Bdy);
+               Append (Bdy, "   begin");
+               Append (Bdy, LF);
+               Emit_Rule_Parser (I, Bdy);
+               Append (Bdy, "   end Parse_" & Ada_Ident (NM) & ";");
+               Append (Bdy, LF);
+               Append (Bdy, LF);
+            end if;
+         end;
       end loop;
 
       Append (Bdy, "   function Parse_Tokens");
@@ -1917,7 +2033,9 @@ package body HBNF_Ada is
       end;
 
       for I in 1 .. N loop
-         if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+         if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+           and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+         then
             declare
                NM  : constant String := To_String (Rules (I).Name);
                DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
@@ -2017,13 +2135,19 @@ package body HBNF_Ada is
       Append (Bdy, "      Kind := Eof;");
       Append (Bdy, LF);
       for I in 1 .. N loop
-         if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+         if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+           and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+         then
             declare
                NM : constant String := To_String (Rules (I).Name);
+               --  A core-type char rule reuses the base Token_Kind.
+               Kind : constant String :=
+                 (if Is_Core_Name (NM) then Scalar_Kind (NM)
+                  else Ada_Field (NM));
             begin
                Append (Bdy, "      N := Scan_" & Ada_Ident (NM)
                  & " (S, Pos, Len); if N > Best then Best := N; Kind := "
-                 & Ada_Field (NM) & "; end if;");
+                 & Kind & "; end if;");
                Append (Bdy, LF);
             end;
          end if;

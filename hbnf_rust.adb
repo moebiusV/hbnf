@@ -41,6 +41,30 @@ package body HBNF_Rust is
       return "";
    end Scalar_Rust_Type;
 
+   --  The base `Kind` variant a core-type char rule produces: the lexer's
+   --  `int`/`str`/`word` scanners reuse `Kind::Int`/`Kind::Str`/`Kind::Atom`
+   --  rather than taking a variant of their own.
+   function Scalar_Rust_Kind (Name : String) return String is
+   begin
+      if Name = "str" then
+         return "Str";
+      elsif Name = "int" then
+         return "Int";
+      elsif Name'Length >= 2 then
+         declare
+            P : constant Character := Name (Name'First);
+            R : constant String := Name (Name'First + 1 .. Name'Last);
+         begin
+            if (P = 'u' or else P = 'i')
+              and then (for all C of R => C in '0' .. '9')
+            then
+               return "Int";
+            end if;
+         end;
+      end if;
+      return "Atom";  --  atom / word / bool / flag
+   end Scalar_Rust_Kind;
+
    --  A snake_case identifier from a schema name ('-' -> '_', upper -> lower).
    function Rust_Snake (S : String) return String is
       Buf : U;
@@ -1278,7 +1302,10 @@ package body HBNF_Rust is
       begin
          if Is_Char_Rule (Rules, NM) then
             --  A char rule is a token: expect its kind and capture the text.
-            Append (Buf, "    p.expect_kind(Kind::" & Rust_Type (NM) & ", """
+            --  A core-type char rule reuses the base Kind variant.
+            Append (Buf, "    p.expect_kind(Kind::"
+              & (if Is_Core_Name (NM) then Scalar_Rust_Kind (NM)
+                 else Rust_Type (NM)) & ", """
               & NM & """)?;");
             Append (Buf, LF);
             Append (Buf, "    let r = p.toks[p.pos].text.clone(); p.pos += 1;");
@@ -1553,33 +1580,23 @@ package body HBNF_Rust is
 
       Res : U;
 
-      --  The Rust condition that the current code point `c` lies in the union
-      --  of a repetition's character class (each branch one range).
-      function Or_Cond (Sub : Cp_Branch_Vectors.Vector) return String is
-         Buf   : U;
-         First : Boolean := True;
-      begin
-         if Natural (Sub.Length) = 1 then
-            declare
-               B : constant Cp_Range_Vectors.Vector := Sub (1);
-            begin
-               return Range_Cond (B (1).Lo, B (1).Hi);
-            end;
-         end if;
-         Append (Buf, "(");
-         for B of Sub loop
-            if not First then
-               Append (Buf, " || ");
-            end if;
-            First := False;
-            Append (Buf, Range_Cond (B (1).Lo, B (1).Hi));
-         end loop;
-         Append (Buf, ")");
-         return To_String (Buf);
-      end Or_Cond;
-
-      --  Emit the greedy loop for a trailing repetition.
+      --  Emit the greedy loop for a repetition: match one full branch of the
+      --  DNF (the longest one) as many times as Max allows (0 = unbounded),
+      --  then require Min.  A branch is a sequence of decoded code points.
       procedure Emit_Repeat (A : Cp_Atom; Ind : String; Fail : String) is
+         procedure Emit_Branch (B : Cp_Range_Vectors.Vector) is
+         begin
+            Append (Res, Ind & "        { let mut o = 0usize; let mut ok = true;");
+            Append (Res, LF);
+            for Rg of B loop
+               Append (Res, Ind & "          if ok { let (n, c) = decode_utf8(s, pos + off + o, len);"
+                 & " if n == 0 || !" & Range_Cond (Rg.Lo, Rg.Hi)
+                 & " { ok = false; } else { o += n; } }");
+               Append (Res, LF);
+            end loop;
+            Append (Res, Ind & "          if ok && o > br { br = o; } }");
+            Append (Res, LF);
+         end Emit_Branch;
       begin
          Append (Res, Ind & "{ let mut cnt = 0usize;");
          Append (Res, LF);
@@ -1589,9 +1606,14 @@ package body HBNF_Rust is
             Append (Res, Ind & "    while cnt < " & Img (A.Max) & " {");
          end if;
          Append (Res, LF);
-         Append (Res, Ind & "        { let (n, c) = decode_utf8(s, pos + off, len);"
-           & " if n == 0 || !" & Or_Cond (A.Sub)
-           & " { break; } off += n; cnt += 1; }");
+         Append (Res, Ind & "        let mut br = 0usize;");
+         Append (Res, LF);
+         for B of A.Sub loop
+            Emit_Branch (B);
+         end loop;
+         Append (Res, Ind & "        if br == 0 { break; }");
+         Append (Res, LF);
+         Append (Res, Ind & "        off += br; cnt += 1;");
          Append (Res, LF);
          Append (Res, Ind & "    }");
          Append (Res, LF);
@@ -1615,12 +1637,28 @@ package body HBNF_Rust is
       begin
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
-               Append (Kind_Ext, ", " & Rust_Type (To_String (Rules (I).Name)));
+               declare
+                  K : constant String := Rust_Type (To_String (Rules (I).Name));
+               begin
+                  if K not in "Atom" | "Str" | "Int" | "Punct" | "Eof" then
+                     Append (Kind_Ext, ", " & K);
+                  end if;
+               end;
             end if;
          end loop;
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
-               Append (Kind_Ext, ", " & Rust_Type (To_String (Rules (I).Name)));
+               declare
+                  NM : constant String := To_String (Rules (I).Name);
+               begin
+                  --  A core-type char rule reuses the base kind; another token
+                  --  takes its own; a building block is inlined, no kind at all.
+                  if not Is_Core_Name (NM)
+                    and then Is_Char_Token (Rules, NM)
+                  then
+                     Append (Kind_Ext, ", " & Rust_Type (NM));
+                  end if;
+               end;
             end if;
          end loop;
          if Has_No_Case (Rules) then
@@ -1646,13 +1684,25 @@ package body HBNF_Rust is
       Append (Res, LF);
 
       for I in 1 .. N loop
-         Append (Res, "fn parse_" & Rust_Snake (To_String (Rules (I).Name))
-           & "(p: &mut P) -> Result<" & Ret_Type (I) & ", ParseError> {");
-         Append (Res, LF);
-         Emit_Rule_Parser (I, Res);
-         Append (Res, "}");
-         Append (Res, LF);
-         Append (Res, LF);
+         declare
+            NM : constant String := To_String (Rules (I).Name);
+         begin
+            --  A core-type char rule (str/int/word) is read as a scalar in
+            --  place, and a building block is inlined into a token's scanner;
+            --  neither needs a parse function of its own.
+            if not (Is_Char_Rule (Rules, NM)
+                    and then (Is_Core_Name (NM)
+                              or else not Is_Char_Token (Rules, NM)))
+            then
+               Append (Res, "fn parse_" & Rust_Snake (NM)
+                 & "(p: &mut P) -> Result<" & Ret_Type (I) & ", ParseError> {");
+               Append (Res, LF);
+               Emit_Rule_Parser (I, Res);
+               Append (Res, "}");
+               Append (Res, LF);
+               Append (Res, LF);
+            end if;
+         end;
       end loop;
 
       Append (Res, "pub fn parse_tokens(toks: &[Token], lines: &[&str]) -> Result<"
@@ -1758,7 +1808,9 @@ package body HBNF_Rust is
          end if;
 
          for I in 1 .. N loop
-            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+              and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+            then
                declare
                   NM  : constant String := To_String (Rules (I).Name);
                   DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
@@ -1835,13 +1887,19 @@ package body HBNF_Rust is
             Append (Res, "    let mut best_kind = Kind::Eof;");
             Append (Res, LF);
             for I in 1 .. N loop
-               if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+                 and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+               then
                   declare
                      NM : constant String := To_String (Rules (I).Name);
+                     --  A core-type char rule reuses the base Kind variant.
+                     Kind : constant String :=
+                       (if Is_Core_Name (NM) then Scalar_Rust_Kind (NM)
+                        else Rust_Type (NM));
                   begin
                      Append (Res, "    { let n = scan_" & Rust_Snake (NM)
                        & "(s, pos, len); if n > best { best = n; best_kind = Kind::"
-                       & Rust_Type (NM) & "; } }");
+                       & Kind & "; } }");
                      Append (Res, LF);
                   end;
                end if;

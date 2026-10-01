@@ -19,7 +19,6 @@
 ; statement as in parse.y.
 
 language C
-wordchars "$@%"
 statements
 macros varset
 includes include
@@ -45,6 +44,9 @@ keywords {
 }
 include "tailq.hbnf"
 include "commonconf.hbnf"
+
+wordchars = ALPHA | DIGIT | "_" | "-" | "." | "$" | "@" | "%"
+word_start = ALPHA | "_" | "-" | "$" | "@" | "%"
 
 
 

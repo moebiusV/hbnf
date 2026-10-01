@@ -21,7 +21,6 @@
 ; the `addrprefix` (address/len) rule needs.
 
 language C
-wordchars "*$@%"
 statements
 macros varset
 includes include
@@ -43,6 +42,9 @@ keywords {
 }
 include "tailq.hbnf"
 include "commonconf.hbnf"
+
+wordchars = ALPHA | DIGIT | "_" | "-" | "." | "*" | "$" | "@" | "%"
+word_start = ALPHA | "_" | "-" | "*" | "$" | "@" | "%"
 
 
 

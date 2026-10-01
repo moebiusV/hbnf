@@ -1316,7 +1316,10 @@ package body HBNF_Zig is
       begin
          if Is_Char_Rule (Rules, NM) then
             --  A char rule is a token: expect its kind and capture the text.
-            Append (Buf, "    try p.expect_kind(." & Zig_Snake (NM) & ", """
+            --  A core-type char rule reuses the base Kind variant.
+            Append (Buf, "    try p.expect_kind("
+              & (if Is_Core_Name (NM) then Scalar_Kind (NM)
+                 else "." & Zig_Snake (NM)) & ", """
               & NM & """);");
             Append (Buf, LF);
             Append (Buf, "    const r = p.toks[p.pos].text; p.pos += 1;");
@@ -1637,33 +1640,23 @@ package body HBNF_Zig is
 
       Res : U;
 
-      --  The Zig condition that the current code point `c` lies in the union
-      --  of a repetition's character class (each branch one range).
-      function Or_Cond (Sub : Cp_Branch_Vectors.Vector) return String is
-         Buf   : U;
-         First : Boolean := True;
-      begin
-         if Natural (Sub.Length) = 1 then
-            declare
-               B : constant Cp_Range_Vectors.Vector := Sub (1);
-            begin
-               return Range_Cond (B (1).Lo, B (1).Hi);
-            end;
-         end if;
-         Append (Buf, "(");
-         for B of Sub loop
-            if not First then
-               Append (Buf, " or ");
-            end if;
-            First := False;
-            Append (Buf, Range_Cond (B (1).Lo, B (1).Hi));
-         end loop;
-         Append (Buf, ")");
-         return To_String (Buf);
-      end Or_Cond;
-
-      --  Emit the greedy loop for a trailing repetition.
+      --  Emit the greedy loop for a repetition: match one full branch of the
+      --  DNF (the longest one) as many times as Max allows (0 = unbounded),
+      --  then require Min.  A branch is a sequence of decoded code points.
       procedure Emit_Repeat (A : Cp_Atom; Ind : String; Fail : String) is
+         procedure Emit_Branch (B : Cp_Range_Vectors.Vector) is
+         begin
+            Append (Res, Ind & "        { var o: usize = 0; var ok = true;");
+            Append (Res, LF);
+            for Rg of B loop
+               Append (Res, Ind & "          if (ok) { var c: u32 = 0; const n = decode_utf8(s,"
+                 & " pos + off + o, len, &c); if (n == 0 or !"
+                 & Range_Cond (Rg.Lo, Rg.Hi) & ") { ok = false; } else { o += n; } }");
+               Append (Res, LF);
+            end loop;
+            Append (Res, Ind & "          if (ok and o > br) { br = o; } }");
+            Append (Res, LF);
+         end Emit_Branch;
       begin
          Append (Res, Ind & "{ var cnt: usize = 0;");
          Append (Res, LF);
@@ -1673,9 +1666,14 @@ package body HBNF_Zig is
             Append (Res, Ind & "    while (cnt < " & Img (A.Max) & ") {");
          end if;
          Append (Res, LF);
-         Append (Res, Ind & "        { var c: u32 = 0; const n = decode_utf8(s, pos + off, len, &c);"
-           & " if (n == 0 or !" & Or_Cond (A.Sub)
-           & ") break; off += n; cnt += 1; }");
+         Append (Res, Ind & "        var br: usize = 0;");
+         Append (Res, LF);
+         for B of A.Sub loop
+            Emit_Branch (B);
+         end loop;
+         Append (Res, Ind & "        if (br == 0) break;");
+         Append (Res, LF);
+         Append (Res, Ind & "        off += br; cnt += 1;");
          Append (Res, LF);
          Append (Res, Ind & "    }");
          Append (Res, LF);
@@ -1702,10 +1700,26 @@ package body HBNF_Zig is
            ("pub const Kind = enum { atom, str, int, punct");
       begin
          for I in 1 .. N loop
-            if Rules (I).Jet_Code /= Null_Unbounded_String
-              or else Is_Char_Rule (Rules, To_String (Rules (I).Name))
-            then
-               Append (Enum, ", " & Zig_Snake (To_String (Rules (I).Name)));
+            if Rules (I).Jet_Code /= Null_Unbounded_String then
+               declare
+                  K : constant String := Zig_Snake (To_String (Rules (I).Name));
+               begin
+                  if K not in "atom" | "str" | "int" | "punct" | "eof" then
+                     Append (Enum, ", " & K);
+                  end if;
+               end;
+            elsif Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               declare
+                  NM : constant String := To_String (Rules (I).Name);
+               begin
+                  --  A core-type char rule reuses the base variant; another
+                  --  token takes its own; a building block is inlined.
+                  if not Is_Core_Name (NM)
+                    and then Is_Char_Token (Rules, NM)
+                  then
+                     Append (Enum, ", " & Zig_Snake (NM));
+                  end if;
+               end;
             end if;
          end loop;
          Append (Enum, ", eof };");
@@ -1834,13 +1848,25 @@ package body HBNF_Zig is
       Append (Res, LF);
 
       for I in 1 .. N loop
-         Append (Res, "fn parse_" & Zig_Snake (To_String (Rules (I).Name))
-           & "(p: *P) ParseError!" & Ret_Type (I) & " {");
-         Append (Res, LF);
-         Emit_Rule_Parser (I, Res);
-         Append (Res, "}");
-         Append (Res, LF);
-         Append (Res, LF);
+         declare
+            NM : constant String := To_String (Rules (I).Name);
+         begin
+            --  A core-type char rule (str/int/word) is read as a scalar in
+            --  place, and a building block is inlined into a token's scanner;
+            --  neither needs a parse function of its own.
+            if not (Is_Char_Rule (Rules, NM)
+                    and then (Is_Core_Name (NM)
+                              or else not Is_Char_Token (Rules, NM)))
+            then
+               Append (Res, "fn parse_" & Zig_Snake (NM)
+                 & "(p: *P) ParseError!" & Ret_Type (I) & " {");
+               Append (Res, LF);
+               Emit_Rule_Parser (I, Res);
+               Append (Res, "}");
+               Append (Res, LF);
+               Append (Res, LF);
+            end if;
+         end;
       end loop;
 
       Append (Res, "pub fn parse_tokens(alloc: std.mem.Allocator, toks: []const Token,");
@@ -1972,7 +1998,9 @@ package body HBNF_Zig is
          end if;
 
          for I in 1 .. N loop
-            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+              and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+            then
                declare
                   NM  : constant String := To_String (Rules (I).Name);
                   DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
@@ -2066,13 +2094,19 @@ package body HBNF_Zig is
             Append (Res, "    var best_kind: Kind = .eof;");
             Append (Res, LF);
             for I in 1 .. N loop
-               if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+               if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+                 and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+               then
                   declare
                      NM : constant String := To_String (Rules (I).Name);
+                     --  A core-type char rule reuses the base Kind variant.
+                     Kind : constant String :=
+                       (if Is_Core_Name (NM) then Scalar_Kind (NM)
+                        else "." & Zig_Snake (NM));
                   begin
                      Append (Res, "    { const n = scan_" & Zig_Snake (NM)
-                       & "(s, pos, len); if (n > best) { best = n; best_kind = ."
-                       & Zig_Snake (NM) & "; } }");
+                       & "(s, pos, len); if (n > best) { best = n; best_kind = "
+                       & Kind & "; } }");
                      Append (Res, LF);
                   end;
                end if;

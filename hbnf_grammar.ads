@@ -189,6 +189,29 @@ package HBNF_Grammar is
    --  plain `( a b )` is spliced in.  A rule that is one group (a list, an
    --  optional, a grouped alternation) keeps it, and its branches are
    --  treated the same way; so are a left-recursive list's.
+   --  A name reserved as a core type (`int`, `str`, `word`, `u8`, …).  A char
+   --  rule with such a name is a lexer token (the `int`/`str`/`word` scanners),
+   --  not a building block to inline.
+   function Is_Core_Name (N : String) return Boolean;
+
+   --  True when the named rule is character-level: its pattern is a sequence
+   --  or alternation of Char_Range terminals, plain string literals and
+   --  references to other char-level rules, each element matching some number
+   --  of code points (Min..Max; Max = -1 unbounded).  Such a rule compiles to
+   --  a scanner and a token kind, not a tree node.  A repetition is scanned
+   --  one full DNF branch per iteration (multi-code-point included).  A %i
+   --  literal or a group is not char-level (Char_DNF raises for the shapes it
+   --  cannot yet scan).
+   function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean;
+
+   --  True when the char rule named Nm is a lexer token: a core-type name
+   --  (`int`/`str`/`word`), the root, or referenced directly by a phrase
+   --  (non-char) rule.  The other char rules are building blocks, inlined
+   --  into the tokens' scanners, not dispatched themselves.
+   function Is_Char_Token (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean;
+
    function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector;
 
    --  The top-level file's `language C|Rust|Zig|Ada`, or "C" when it has
@@ -206,11 +229,6 @@ package HBNF_Grammar is
    --  parser), from the files whose language is Lang, joined in include
    --  order; "" when there are none.
    function Epilogue (Lang : String) return String;
-
-   --  Extra bareword characters declared by a top-level `wordchars "..."`,
-   --  beyond the base set (letters, digits, `.`, `_`, `-`); the lexer folds
-   --  them into its word token.  "" when absent.
-   function Word_Chars return String;
 
    --  The raw code overriding one C list operation, from a top-level
    --  `list-head { … }` … `list-relink { … }` directive; "" when absent, in

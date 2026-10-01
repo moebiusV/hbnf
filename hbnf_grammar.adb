@@ -31,7 +31,6 @@ package body HBNF_Grammar is
    Preamble_Pieces : Piece_Vectors.Vector;
    Epilogue_Pieces : Piece_Vectors.Vector;
 
-   Word_Chars_Code : Unbounded_String := Null_Unbounded_String;
    Type_Prefix_Code : Unbounded_String := Null_Unbounded_String;
    Conf_Type_Code  : Unbounded_String := Null_Unbounded_String;
    Entry_Code      : Unbounded_String := Null_Unbounded_String;
@@ -261,7 +260,6 @@ package body HBNF_Grammar is
       Schema_Language := To_Unbounded_String ("C");
       Preamble_Pieces.Clear;
       Epilogue_Pieces.Clear;
-      Word_Chars_Code := Null_Unbounded_String;
       Type_Prefix_Code := Null_Unbounded_String;
       Conf_Type_Code := Null_Unbounded_String;
       Entry_Code := Null_Unbounded_String;
@@ -2124,7 +2122,6 @@ package body HBNF_Grammar is
          if Cur (P).Kind = T_Code
            or else (Cur (P).Kind = T_Name
                     and then (To_String (Cur (P).Text) = "language"
-                              or else To_String (Cur (P).Text) = "wordchars"
                               or else To_String (Cur (P).Text) = "prefix"
                               or else To_String (Cur (P).Text) = "conf"
                               or else To_String (Cur (P).Text) = "listops"
@@ -2225,19 +2222,6 @@ package body HBNF_Grammar is
                      end;
                      Next (P);
                   end;
-               elsif Cur (P).Kind = T_Name
-                 and then To_String (Cur (P).Text) = "wordchars"
-               then
-                  Next (P);
-                  if Cur (P).Kind /= T_String then
-                     raise Parse_Error with
-                       Integer'Image (Cur (P).Line) & ":" &
-                       Integer'Image (Cur (P).Col) &
-                       ": expected a quoted character set after `wordchars`";
-                  end if;
-                  Set_Directive (Word_Chars_Code, "wordchars",
-                                 To_String (Cur (P).Text), Cur (P).Line);
-                  Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "prefix"
                then
@@ -2908,6 +2892,242 @@ package body HBNF_Grammar is
       return Result;
    end Reachable;
 
+   --  A name reserved as a core type (`int`, `str`, `word`, `u8`, …).  A char
+   --  rule with such a name is a token (the lexer's `int`/`str`/`word`), not a
+   --  building block to inline: a rule referencing one is a phrase rule.
+   function Is_Core_Name (N : String) return Boolean is
+   begin
+      if N = "str" or else N = "atom" or else N = "word"
+        or else N = "int" or else N = "bool" or else N = "flag"
+        or else N = "dec" or else N = "float"
+      then
+         return True;
+      end if;
+      return N'Length >= 2
+        and then (N (N'First) = 'u' or else N (N'First) = 'i')
+        and then (for all K in N'First + 1 .. N'Last => N (K) in '0' .. '9');
+   end Is_Core_Name;
+
+   --  True when S holds exactly one UTF-8 code point (a lone ASCII byte or
+   --  one 2-4-byte sequence), so a literal can repeat as a run of that one
+   --  character rather than a list of it.
+   function Single_Code_Point (S : String) return Boolean is
+      Len : Natural;
+   begin
+      if S'Length = 0 then
+         return False;
+      end if;
+      declare
+         B : constant Natural := Character'Pos (S (S'First));
+      begin
+         if B < 16#80# then
+            Len := 1;
+         elsif B < 16#E0# then
+            Len := 2;
+         elsif B < 16#F0# then
+            Len := 3;
+         else
+            Len := 4;
+         end if;
+      end;
+      return S'Length = Len;
+   end Single_Code_Point;
+
+   --  True when the named rule is a character class: every branch matches
+   --  exactly one code point (a Char_Range, a one-code-point literal, or a
+   --  reference to another class), with no repetition.  A repeated reference
+   --  to a class is a run of one code point (a scanner); over anything
+   --  longer it stays a list.
+   function Is_Char_Class (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean is
+      function Rec (N : String; Depth : Natural) return Boolean is
+         J : Natural := 0;
+      begin
+         for I in 1 .. Natural (Rules.Length) loop
+            if To_String (Rules (I).Name) = N then
+               J := I;
+               exit;
+            end if;
+         end loop;
+         if J = 0 or else Depth = 0 then
+            return False;
+         end if;
+         declare
+            R : constant Rule := Rules (J);
+         begin
+            if R.Jet_Code /= Null_Unbounded_String
+              or else Natural (R.Pattern.Length) = 0
+            then
+               return False;
+            end if;
+            declare
+               In_Branch : Natural := 0;
+            begin
+               for E of R.Pattern loop
+                  if E.Kind = Alt then
+                     In_Branch := 0;
+                  else
+                     if E.Min /= 1 or else E.Max /= 1 then
+                        return False;   --  a class has no repetition
+                     end if;
+                     In_Branch := In_Branch + 1;
+                     if In_Branch > 1 then
+                        return False;   --  more than one code point a branch
+                     end if;
+                     case E.Kind is
+                        when Char_Range =>
+                           null;
+                        when Literal =>
+                           if E.No_Case
+                             or else not Single_Code_Point (To_String (E.Lit))
+                           then
+                              return False;
+                           end if;
+                        when Name =>
+                           if not Rec (To_String (E.Name), Depth - 1) then
+                              return False;
+                           end if;
+                        when others =>
+                           return False;
+                     end case;
+                  end if;
+               end loop;
+               --  The trailing run is a branch too; it must be one code point
+               --  (In_Branch is 0 only for an empty pattern, guarded above).
+               return In_Branch = 1;
+            end;
+         end;
+      end Rec;
+   begin
+      return Rec (Nm, 20);
+   end Is_Char_Class;
+
+   function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean is
+      function Rec (N : String; Depth : Natural) return Boolean is
+         J : Natural := 0;
+      begin
+         for I in 1 .. Natural (Rules.Length) loop
+            if To_String (Rules (I).Name) = N then
+               J := I;
+               exit;
+            end if;
+         end loop;
+         if J = 0 or else Depth = 0 then
+            return False;
+         end if;
+         declare
+            R : constant Rule := Rules (J);
+            --  The core scanners `int`/`str`/`word` may repeat a multi-code-point
+            --  building block (`str`'s `*str_char`); a repetition over a longer
+            --  sequence in any other rule stays a list.
+            Core_Scanner : constant Boolean := Is_Core_Name (N);
+         begin
+            if R.Jet_Code /= Null_Unbounded_String
+              or else Natural (R.Pattern.Length) = 0
+            then
+               return False;
+            end if;
+            declare
+               Has_Anchor : Boolean := False;
+            begin
+               for E of R.Pattern loop
+                  case E.Kind is
+                     when Char_Range =>
+                        Has_Anchor := True;
+                     when Alt =>
+                        null;
+                     when Literal =>
+                        if E.No_Case then
+                           return False;
+                        end if;
+                        --  A letter/underscore-led literal is a word (a keyword
+                        --  or a word matched by text), not a run of code
+                        --  points; a rule with one is a phrase rule
+                        --  (`rtable = "rtable" int`).  A punctuation or
+                        --  digit-led literal (`"-"`, `"0x"`) stays char-level.
+                        declare
+                           S : constant String := To_String (E.Lit);
+                        begin
+                           if S'Length > 0
+                             and then (S (S'First) in 'a' .. 'z'
+                                       or else S (S'First) in 'A' .. 'Z'
+                                       or else (S (S'First) = '_'
+                                                and then S'Length > 1))
+                           then
+                              return False;
+                           end if;
+                           --  A repeated multi-code-point literal is a list
+                           --  (`1*"0x"`); a one-code-point one a run.
+                           if not Core_Scanner
+                             and then (E.Min /= 1 or else E.Max /= 1)
+                             and then not Single_Code_Point (S)
+                           then
+                              return False;
+                           end if;
+                        end;
+                     when Name =>
+                        if Is_Core_Name (To_String (E.Name)) then
+                           return False;
+                        end if;
+                        if not Rec (To_String (E.Name), Depth - 1) then
+                           return False;
+                        end if;
+                        Has_Anchor := True;
+                        if not Core_Scanner
+                          and then (E.Min /= 1 or else E.Max /= 1)
+                          and then not Is_Char_Class
+                            (Rules, To_String (E.Name))
+                        then
+                           return False;
+                        end if;
+                     when Group =>
+                        return False;
+                  end case;
+               end loop;
+               return Has_Anchor;
+            end;
+         end;
+      end Rec;
+   begin
+      return Rec (Nm, 20);
+   end Is_Char_Rule;
+
+   function Is_Char_Token (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean is
+      --  True when a phrase rule's pattern references Nm, at any depth: a
+      --  group (a list entry's alternation) may hold the reference, and Lift
+      --  keeps a list's group inline rather than giving it a rule of its own.
+      function Refers (Els : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of Els loop
+            if E.Kind = Name and then To_String (E.Name) = Nm then
+               return True;
+            elsif E.Kind = Group and then Refers (E.Items) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Refers;
+   begin
+      if Is_Core_Name (Nm) then
+         return True;
+      end if;
+      if Natural (Rules.Length) > 0
+        and then To_String (Rules (1).Name) = Nm
+      then
+         return True;
+      end if;
+      for R of Rules loop
+         if not Is_Char_Rule (Rules, To_String (R.Name)) then
+            if Refers (R.Pattern) then
+               return True;
+            end if;
+         end if;
+      end loop;
+      return False;
+   end Is_Char_Token;
+
    function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector is
       Result : Rule_Vectors.Vector := Rules;
       Names  : Path_Sets.Set;
@@ -2988,6 +3208,11 @@ package body HBNF_Grammar is
          if R.Jet_Code /= Null_Unbounded_String or else R.Pattern.Is_Empty then
             return;
          end if;
+         --  A char rule is a scanner (compiled by Char_DNF), not lifted: its
+         --  repetitions are greedy scanner loops, not lists.
+         if Is_Char_Rule (Result, To_String (R.Name)) then
+            return;
+         end if;
          if Natural (R.Pattern.Length) = 1
            and then R.Pattern (1).Kind = Group
          then
@@ -3044,8 +3269,6 @@ package body HBNF_Grammar is
 
    function Epilogue (Lang : String) return String is
      (Joined (Epilogue_Pieces, Lang));
-
-   function Word_Chars return String is (To_String (Word_Chars_Code));
 
    function List_Override (Op : String) return String is
    begin
