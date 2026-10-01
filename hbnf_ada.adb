@@ -1975,7 +1975,9 @@ package body HBNF_Ada is
          Has_Char : Boolean := False;
       begin
          for I in 1 .. N loop
-            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+              and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+            then
                Has_Char := True;
             end if;
          end loop;

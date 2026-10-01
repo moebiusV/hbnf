@@ -19,7 +19,7 @@ static const char *hbnf_file;
 /* Macro hooks: macros.c, or stubs for a grammar without `macros`. */
 static char *hbnf_expand(const char *s, size_t len, char *msg, size_t msglen);
 static void hbnf_trail(char *msg, size_t msglen, size_t line, size_t col);
-static void hbnf_define(const token_t *toks, size_t n, size_t line);
+static void hbnf_define(const char *s, size_t len, size_t line);
 static void hbnf_macros_done(void);
 
 static char *hbnf_strndup(const char *s, size_t n) {
@@ -290,7 +290,6 @@ static void hbnf_stmt(hbnf_run_t *r, const char *s, size_t len, size_t line,
                       int depth) {
     char msg[512];
     char *buf, *inc = NULL;
-    lexed_t l;
     @ROOT_TYPE@ part;
     size_t el = 0, ec = 0;
     bool ok;
@@ -301,22 +300,12 @@ static void hbnf_stmt(hbnf_run_t *r, const char *s, size_t len, size_t line,
         return;
     }
     hbnf_line_base = line;
-    l = lex(buf);
-    if (!l.toks) {
-        hbnf_line_base = 1;
-        free(buf);
-        hbnf_error(r, line, 0, len > (size_t)UINT32_MAX - 2
-                   ? "input too large" : "out of memory", 0);
-        return;
-    }
     hbnf_part_init(&part);
-    ok = parse_tokens(l.toks, l.n, &part, buf, msg, sizeof msg, &el, &ec);
+    ok = hbnf_parse(buf, &part, msg, sizeof msg, &el, &ec);
     hbnf_line_base = 1;
     if (ok) {
-        const token_t *t = hbnf_include_tok(l.toks, l.n);
-        hbnf_define(l.toks, l.n, line);
-        if (t)
-            inc = hbnf_strndup(t->text, t->len);
+        inc = hbnf_include_name(buf, strlen(buf));
+        hbnf_define(buf, strlen(buf), line);
     } else {
         if (el < line)
             el = line;
@@ -329,7 +318,6 @@ static void hbnf_stmt(hbnf_run_t *r, const char *s, size_t len, size_t line,
         hbnf_part_move(r->out, &part);
     else
         hbnf_part_drop(&part);
-    free(l.toks);
     free(buf);
     if (inc) {
         hbnf_include(r, inc, line, depth);

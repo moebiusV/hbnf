@@ -79,32 +79,101 @@ int cmdline_symset(char *s) {
     return hbnf_symset(s, (size_t)(val - s), val + 1, 1, 0);
 }
 
-/* A statement the macros rule matched: remember name = value. */
-static void hbnf_define(const token_t *toks, size_t n, size_t line) {
-    size_t i, eq, len = 0;
-    char *val, *p;
+/* s[0..n) as a macro value: quoted strings lose their quotes and escapes,
+   runs of blanks (newlines included) collapse to one space, and leading and
+   trailing blanks drop. */
+static char *hbnf_join_value(const char *s, size_t n) {
+    char *o = (char *)malloc(n + 1);
+    size_t used = 0;
+    int inq = 0;
 
-    if (!hbnf_is_macro(toks, n))
-        return;
-    for (eq = 1; eq < n; eq++)
-        if (toks[eq].kind == TOK_PUNCT && toks[eq].len == 1
-            && toks[eq].text[0] == '=')
-            break;
-    for (i = eq + 1; i < n && toks[i].kind != TOK_EOF; i++)
-        len += toks[i].len + 1;
-    val = p = (char *)malloc(len + 1);
-    if (!val)
+    if (!o)
         hbnf_oom();
-    for (i = eq + 1; i < n && toks[i].kind != TOK_EOF; i++) {
-        size_t k;
-        if (p != val)
-            *p++ = ' ';
-        for (k = 0; k < toks[i].len; k++)   /* a value is one line */
-            *p++ = toks[i].text[k] == '\n' ? ' ' : toks[i].text[k];
+    for (size_t i = 0; i < n; i++) {
+        char c = s[i];
+        if (inq) {
+            if (c == '"') {
+                inq = 0;
+            } else if (c == '\\' && i + 1 < n) {
+                i++;
+                if (s[i] != '\n')
+                    o[used++] = s[i];
+            } else {
+                o[used++] = (c == '\n') ? ' ' : c;
+            }
+        } else if (c == '"') {
+            inq = 1;
+        } else if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+            if (used && o[used - 1] != ' ')
+                o[used++] = ' ';
+        } else {
+            o[used++] = c;
+        }
     }
-    *p = '\0';
-    hbnf_symset(toks[0].text, toks[0].len, val, 0, line);
+    while (used && o[used - 1] == ' ')
+        used--;
+    o[used] = '\0';
+    return o;
+}
+
+/* A statement the macros rule matched: remember name = value.  The name is
+   the statement's first string (quoted or bare), the value the text after
+   `=`; both are read from the text, so a value keeps its source spelling. */
+static void hbnf_define(const char *s, size_t len, size_t line) {
+    size_t i = 0, ni;
+    char *name, *val;
+    size_t name_len;
+
+    if (!hbnf_is_macro(s, len))
+        return;
+    while (i < len && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r'
+                       || s[i] == '\n'))
+        i++;
+    if (i < len && s[i] == '"') {
+        size_t j = i + 1;
+        name = (char *)malloc(len + 1);
+        if (!name)
+            hbnf_oom();
+        name_len = 0;
+        for (; j < len && s[j] != '"'; j++) {
+            if (s[j] == '\\' && j + 1 < len) {
+                j++;
+                if (s[j] == '\n')
+                    continue;
+            }
+            name[name_len++] = s[j];
+        }
+        name[name_len] = '\0';
+        i = j < len ? j + 1 : j;
+    } else {
+        ni = i;
+        while (i < len && s[i] != '=' && s[i] != ' ' && s[i] != '\t'
+               && s[i] != '\r' && s[i] != '\n')
+            i++;
+        name = hbnf_strndup(s + ni, i - ni);
+        name_len = i - ni;
+    }
+    while (i < len && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r'
+                       || s[i] == '\n'))
+        i++;
+    if (i < len && s[i] == '=')
+        i++;
+    while (i < len && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r'
+                       || s[i] == '\n'))
+        i++;
+    val = hbnf_join_value(s + i, len - i);
+    hbnf_symset(name, name_len, val, 0, line);
+    free(name);
     free(val);
+}
+
+/* The word characters a macro name may hold: `$name` reads one word. */
+static int hbnf_word_start(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+        || c == '_' || c == '-';
+}
+static int hbnf_word_char(char c) {
+    return hbnf_word_start(c) || (c >= '0' && c <= '9') || c == '.';
 }
 
 /* Append s[0..n) to the growing buffer *o. */
@@ -156,7 +225,7 @@ static char *hbnf_expand(const char *s, size_t len, char *msg, size_t msglen) {
         } else if (c == '#') {                  /* a comment, as is */
             while (j < len && s[j] != '\n')
                 j++;
-        } else if (c == '$' && (used == 0 || !lex_word_char(o[used - 1]))) {
+        } else if (c == '$' && (used == 0 || !hbnf_word_char(o[used - 1]))) {
             const hbnf_sym *y;
             size_t vl;
             while (j < len && (isalnum((unsigned char)s[j]) || s[j] == '_'))

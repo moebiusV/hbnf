@@ -9,9 +9,13 @@
 
 include "ascii.hbnf"
 
+; phrase rules in this file (and a daemon's own file, which says it too)
+; skip `ws` between elements; char rules never do.
+whitespace ws
+
 ; -- the lexer (the fixed template becomes these char rules) ---------------
-; `int`, `str` and `word` are tokens; blank space, `comment` and
-; `continuation` are matched and skipped, never tokens.  Order matters: the
+; `int`, `str` and `word` are tokens; `ws` (blank space, comments and
+; continuation) is matched and skipped, never a token.  Order matters: the
 ; scanner tries char rules in declaration order and keeps the longest match,
 ; first-declared on a tie, so `int` precedes `word` and a bare `-5` wins the
 ; tie over `word`'s `word_start *wordchars` branch.
@@ -41,10 +45,16 @@ str = DQUOTE *str_char DQUOTE
 str_char = %x5C %x00-10FFFF | %x00-21 | %x23-5B | %x5D-10FFFF
 
 ; `#` to end of line (matched and skipped, not a token).
-comment = "#" *(%x01-09 | %x0B-10FFFF)
+comment = "#" *comment_char
+comment_char = %x01-09 | %x0B-10FFFF
 
 ; backslash-newline continuation (parse.y's lgetc), matched and skipped.
 continuation = %x5C LF
+
+; what a phrase rule skips between its elements: inline white space (a newline
+; included — a block's entries sit on their own lines), a comment or a
+; continuation.  One element per match; the parser repeats it.
+ws = SP | HTAB | CR | LF | comment | continuation
 
 ; -- the OpenBSD STRING and its companions ---------------------------------
 
