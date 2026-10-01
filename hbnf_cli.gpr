@@ -13,7 +13,10 @@ project HBNF_Cli is
    for Object_Dir use "obj-cli";
    for Create_Missing_Dirs use "True";
    for Exec_Dir use ".";
-   for Executable ("hbnf_cli.adb") use "hbnf";
+
+   package Builder is
+      for Executable ("hbnf_cli.adb") use "hbnf";
+   end Builder;
 
    package Compiler is
       for Default_Switches ("Ada") use
