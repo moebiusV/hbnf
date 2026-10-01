@@ -110,4 +110,21 @@ package Templates is
    procedure Pop (Ctx : in out Template_Context);
    --  Drop the top scope.
 
+   function Render_Template (Name : String; Ctx : Template_Context)
+      return String;
+   --  Render the loaded template Name against the scope stack Ctx.
+   --
+   --    {{var}}                     scalar interpolation; an unfilled or
+   --                                non-scalar name is an error
+   --    {{.}}                       the current element of a {{#each}} over
+   --                                scalars
+   --    {{#each var}} ... {{/each}} iterate a List, each element pushed as a
+   --                                scope
+   --    {{#var}} ... {{/var}}       section: a List iterates, a Map is pushed
+   --                                once, a non-empty Scalar renders once
+   --    {{^var}} ... {{/var}}       inverted: render iff var is absent or
+   --                                empty
+   --    {{> partial}}               include another loaded template, same
+   --                                stack
+
 end Templates;
