@@ -46,12 +46,24 @@ if [ "${KEEP:-0}" = 1 ]; then echo "scratch: $scratch"
 else trap 'rm -rf "$scratch"' EXIT; fi
 
 echo "== bison: parse.y -> parser =="
-(cd "$unwind" && bison -d -o "$scratch/parse_y.c" parse.y)
+if command -v bison >/dev/null 2>&1; then
+	(cd "$unwind" && bison -d -o "$scratch/parse_y.c" parse.y)
+else
+	docker run --rm -v "$scratch":/out -v "$unwind":/p -w /p alpine:edge \
+		sh -c 'apk add --no-cache bison >/dev/null 2>&1 && bison -d -o /out/parse_y.c parse.y'
+fi
 
 echo "== hbnf: grammars/bind/unwind.hbnf -> conf.c =="
 cli="${HBNF_CLI:-$repo/hbnf_cli}"
-(cd "$repo" && "$cli" grammars/bind/unwind.hbnf --backend=c --conf --templates=templates) \
-	> "$scratch/conf-out.txt"
+if [ -x "$cli" ]; then
+	(cd "$repo" && "$cli" grammars/bind/unwind.hbnf --backend=c --conf --templates=templates) \
+		> "$scratch/conf-out.txt"
+else
+	docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
+		sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
+		        ./hbnf_cli grammars/bind/unwind.hbnf --backend=c --conf --templates=templates' \
+		> "$scratch/conf-out.txt"
+fi
 awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
      f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \
 	"$scratch/conf-out.txt"
