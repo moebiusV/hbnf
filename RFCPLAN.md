@@ -163,8 +163,9 @@ A grammar is compiler-compiler ready when:
 9. **Progress is an invariant.**  Every unbounded repetition and rewritten
    left-recursive tail consumes input or terminates.
 10. **The representation is inspectable.**  A shared semantic IR beneath the
-    `${name}` templates, so a compiler can inspect rules, locations, semantic
-    values and wire values before emission.
+    templates, rendered by the Mustache-style `{{ }}` renderer in
+    `templates.adb` (a recursive Scalar/List/Map context), so a compiler can
+    inspect rules, locations, semantic values and wire values before emission.
 11. **Round-trip and byte-identity gates are mandatory.**  Text grammars keep
     their source/value distinctions; wire grammars have byte fixtures; the
     backends agree with the interpreter on acceptance and values.
@@ -268,7 +269,7 @@ unwind-ident passing; each lands as reviewed patches.
    reentrant parser/scanner state; scanner modes with push/pop; input-source
    abstraction (contiguous-buffer fast path retained); opt-in recovery with
    tests proving actions are not repeated; and a shared semantic IR below the
-   `${name}` templates.
+   templates, feeding the Mustache-style renderer in `templates.adb`.
 
 7. **RFC copy-paste and wire layer.**  Accept `::=`/`:=` as `=` silently, and
    make the RFC excerpts compile with only the changes the messages point at
@@ -287,7 +288,7 @@ unwind-ident passing; each lands as reviewed patches.
    named typed inputs and locations, scanner modes work, and the RFC/wire
    fixtures have byte-identity tests.  Then fill out the compiled targets (D,
    Fortran, Free Pascal, Nim, Odin, Objective-C, ATS, V) and the GC languages
-   (Go, Java, JavaScript, Common Lisp, newLISP).  The C backend stays C99 and
+   (Go, Java, JavaScript, C#, F#, Julia, Common Lisp, newLISP).  The C backend stays C99 and
    C++-clean; a separate C++ backend appears only if C++ needs more than an
    `extern "C"` guard.
 

@@ -27,7 +27,7 @@ The four compiled backends are **C**, **Rust**, **Zig** and **Ada**.  Planned,
 not yet implemented, the rest of the compiled targets: **D**, **Fortran**,
 **Free Pascal**, **Nim**, **Odin**, **Objective-C**, **ATS** and **V** — and,
 beyond those, the garbage-collected languages **Go**, **Java**, **JavaScript**,
-**Common Lisp** and **newLISP**.
+**C#**, **F#**, **Julia**, **Common Lisp** and **newLISP**.
 
 The C backend is pinned to **C99** (OpenBSD-kernel compatible) and always emits
 code that C++ can consume directly — valid C++11 onward, no modification and no
