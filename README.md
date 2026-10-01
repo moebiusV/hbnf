@@ -1,27 +1,27 @@
 # hbnf
 
-`hbnf` is a parser generator — a compiler compiler — that reads a grammar in an
+`hbnf` is a parser generator (a compiler compiler) that reads a grammar in an
 ABNF-like notation and emits a parser and its typed tree in C, Rust, Zig or
-Ada. It is meant to be pleasant to use: anyone who knows the RFC series should
-be able to write a grammar with minimal adjustment. Almost no one uses yacc
-for anything serious because it is a pain to use; hbnf aims to take that pain
-away — helpful `line:column` error messages and lossless source round-tripping
-— without giving up speed, performance, or your favorite programming language.
+Ada. It is pleasant to use: anyone who knows the RFC series can write a grammar
+with minimal adjustment. Almost no one uses yacc for anything serious, because
+it is a pain; hbnf removes that pain with helpful `line:column` errors and
+lossless source round-tripping, without giving up speed, performance, or your
+favorite programming language.
 
 Its first use case is **oconf**, the OpenBSD-style configuration language: the
 declarative, block-structured form OpenBSD daemons have shared since `pf.conf`
-(2001) and `bgpd` (2002) — keyword arguments, `{ }` blocks, double-quoted
-strings, `#` comments, no shell interpolation, no evaluation. In oconf,
+(2001) and `bgpd` (2002), with keyword arguments, `{ }` blocks, double-quoted
+strings, `#` comments, no shell interpolation and no evaluation. In oconf,
 comments are preserved and come back out in the right places when the parsed
 source is re-emitted.
 
-The name is the initials of the four developers it is named for — Daniel
+The name is the initials of the four developers it is named for: Daniel
 **H**artmeier (pf.conf, 2001), Henning **B**rauer (bgpd, 2002), Esben
-**N**orby (ospfd, 2004), and Reyk **F**loeter (hoststated, 2007) — whose
+**N**orby (ospfd, 2004), and Reyk **F**loeter (hoststated, 2007), whose
 hand-written `parse.y` was cloned verbatim from daemon to daemon. The last
 three initials spell **BNF** (Backus–Naur Form), so the name also reads as
-"Hartmeier's BNF". When explaining it to someone who already knows the genre,
-call it "parse.y style".
+"Hartmeier's BNF". To someone who already knows the genre, it is "parse.y
+style".
 
 ## Two products
 
@@ -29,12 +29,11 @@ This directory holds two things:
 
 1. **The crate** (the rest of this README): read an **oconf** file into a
    generic tree and walk it.
-2. **The parser generator**, `hbnf_cli`: read a schema — a grammar in hbnf's
-   ABNF-like notation — and generate a parser and its typed tree in C,
-   Rust, Zig or Ada.
+2. **The parser generator**, `hbnf`: read a schema in hbnf's ABNF-like
+   notation and generate a parser and its typed tree in C, Rust, Zig or Ada.
 
-       hbnf_cli grammars/ntpd.hbnf --backend=c|rust|zig|ada
-       hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf   # ntpd's parse_config
+       hbnf grammars/ntpd.hbnf --backend=c|rust|zig|ada
+       hbnf grammars/bind/ntpd.hbnf --backend=c --conf   # ntpd's parse_config
 
    The generator's documents:
    - `grammars/README.md`: the notation, and the nine daemon grammars
@@ -46,12 +45,13 @@ This directory holds two things:
 
 ## Naming
 
-- **oconf** — the OpenBSD-style configuration language, this project's first
-  use case: keyword arguments, `{ }` blocks, `#` comments.
-- **HBNF** — the notation, and the Ada package (`HBNF.Parse`, `HBNF.Tree`).
-- **hbnf** — this crate; the Alire name, the project file (`hbnf.gpr`).
-- **libhbnf** — reserved for a C reference implementation
-  (`libhbnf.so`, `-lhbnf`, `hbnf.pc`); not spent on this Ada crate.
+- **oconf**: the OpenBSD-style configuration language, this project's first
+  use case. Keyword arguments, `{ }` blocks, `#` comments.
+- **HBNF**: the notation, and the Ada package (`HBNF.Parse`, `HBNF.Tree`).
+- **hbnf**: this crate; the Alire name, the project file (`hbnf.gpr`), and the
+  command-line tool.
+- **libhbnf**: reserved for a C reference implementation (`libhbnf.so`,
+  `-lhbnf`, `hbnf.pc`); not spent on this Ada crate.
 
 ## Credits
 
@@ -72,7 +72,7 @@ forward for two decades and still accumulating authors:
  * Copyright (c) 2001 Theo de Raadt.  All rights reserved.
 ```
 
-That header is one among several — each daemon carries its own `parse.y`
+That header is one among several; each daemon carries its own `parse.y`
 (bgpd's credits Claudio Jeker's sustained work on that grammar). A
 surname-initial name is precedented too: Fowler–Noll–Vo (FNV) is three people,
 and nobody expands it aloud.
@@ -99,7 +99,7 @@ relay "webserver" {
 - `#` starts a comment that runs to end of line.
 - No macros, no includes, no arithmetic, no conditionals: everything is
   decidable at parse time, and a parse either succeeds completely or fails
-  with a `line:column`.  (A daemon grammar can declare parse.y's macros and
+  with a `line:column`. (A daemon grammar can declare parse.y's macros and
   `include` with the `macros` and `includes` directives; see
   `grammars/README.md`.)
 
@@ -107,12 +107,12 @@ relay "webserver" {
 
 A `#` comment is one of three kinds, distinguished by where it sits:
 
-- **Leading** — a block of own-line comments attaches to the directive or
+- **Leading**: a block of own-line comments attaches to the directive or
   block that follows it, held in that entry's `Leading_Comment`. Blank lines
   in between do not break the attachment.
-- **Trailing** — a comment on the same line as a directive or block annotates
+- **Trailing**: a comment on the same line as a directive or block annotates
   that line, held in `Trailing_Comment`.
-- **Standalone** — a comment block with nothing after it is kept as its own
+- **Standalone**: a comment block with nothing after it is kept as its own
   `Comment` node in the children sequence: the file header before the first
   directive (which documents the whole file) and trailing lines before a `}`.
   `Find` and `Find_All` skip `Comment` nodes.
@@ -144,16 +144,16 @@ of `Word`, `Str`, `Int`, or `Dec`.
 
 `Dec` stores the literal twice:
 
-- `Text` — the exact characters as written (`"100000.00"`, `"0.001"`), so a
+- `Text`: the exact characters as written (`"100000.00"`, `"0.001"`), so a
   value can be written back out bit-for-bit without numeric conversion.
-- `Num` — a fixed-point `Decimal` (`delta 10.0 ** (-8) digits 38`), so callers
+- `Num`: a fixed-point `Decimal` (`delta 10.0 ** (-8) digits 38`), so callers
   can compare and compute directly without parsing a string.
 
 Both are populated by the parser; neither requires the caller to convert.
 
 ## Pretty-printing
 
-`HBNF.Print` renders a parsed tree back to canonical text — single-space token
+`HBNF.Print` renders a parsed tree back to canonical text: single-space token
 separation, three-space indentation, `{` on the header line and `}` alone at
 the parent indent. Values round-trip exactly (a decimal keeps its literal, a
 string is re-quoted with the escape set). Comments are preserved: a leading
