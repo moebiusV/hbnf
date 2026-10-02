@@ -246,8 +246,11 @@ shell's reserved words resolve by position, not by name binding, so this
 grammar does not need it.
 
 **Order.**  The reader extensions and the `%token` diagnostics ride with
-step 7 (RFC copy-paste); the token messages are the RFC-corpus
-discoverability test applied to POSIX.  The gate: POSIX.1 §2.10 pastes
+step 7a, which is first in the running order and carries the assignment
+operators and the comment styles — `/* … */` here, and `(* … *)` with it,
+since a notation whose `:=` hbnf accepts should take its comments too.
+The token messages are the RFC-corpus discoverability test applied to
+POSIX.  The gate: POSIX.1 §2.10 pastes
 with only the definitions the messages name, and the resulting grammar
 parses the test suite's own shell command lines.
 
@@ -291,7 +294,9 @@ A grammar is compiler-compiler ready when:
 10. **The representation is inspectable.**  A shared semantic IR beneath the
     templates, rendered by the Mustache-style `{{ }}` renderer in
     `templates.adb` (a recursive Scalar/List/Map context), so a compiler can
-    inspect rules, locations, semantic values and wire values before emission.
+    inspect rules, locations, semantic values and wire values before
+    emission.  *The renderer is written; nothing calls it yet, and the
+    templates are still `${name}` and `@PLACEHOLDER@* — see step 3b.
 11. **Round-trip and byte-identity gates are mandatory.**  Text grammars keep
     their source/value distinctions; wire grammars have byte fixtures; the
     backends agree with the interpreter on acceptance and values.
@@ -306,6 +311,22 @@ corrected by the messages, not by reading the manual.
 
 Each step leaves the nine daemon grammars, e2e, byteident (ntpd) and
 unwind-ident passing; each lands as reviewed patches.
+
+The numbers are stable labels — error messages and comments in the code
+cite them — so a step that moves keeps its number and this list gives the
+running order:
+
+> **0, 1, 2, 3, 4a–4e done; 9a done.**  Then **7a first**, then **9b**,
+> **3b**, **5**, **6**, **7b**, **8**, **4f**, **10**.  **11** is not gated
+> on any of them.
+
+Three principles decide that order.  **Syntax first**: 7a — the
+copy-paste assignment operators and comment styles — goes ahead of
+everything, because it is reader-only, costs nothing to land, and every
+grammar anybody tries after it is cheaper to try.  **Correctness before
+speed**, which is why 4f sits near the end holding its measurements rather
+than near the front.  And **a step waits for what it reads against**,
+which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
 
 0. **Docs and comments that disagree with the code**; include once; the
    two kinds of directive; a later `=` overrides.  *Done 2026-09-28.*  An
@@ -341,7 +362,48 @@ unwind-ident passing; each lands as reviewed patches.
 3. **`${name}` templates** for the emitters: each construct's code in a
    small file per language, `$$` for a literal `$`, an unfilled or unused
    hole an error.  Pilot on Zig; the gate is byte-identical output for
-   every schema through every backend.
+   every schema through every backend.  *Done* — 71 `.tmpl` files loaded
+   from disk at startup, nothing baked in.
+
+   3b. **The Mustache renderer is written and nothing uses it.**  Measured
+       2026-10-02, in the tree: `Templates.Render_Template` implements the
+       subset — `{{var}}`, `{{.}}`, `{{#each}}`, `{{#var}}`/`{{^var}}`
+       sections, `{{> partial}}` — over the recursive Scalar/List/Map
+       context model in `templates.ads`, with a scope stack that shadows
+       and inherits.  **Zero callers.**  No `.tmpl` file contains `{{`.
+       The three hole styles as they actually stand:
+
+       | style | templates | emitter calls |
+       |---|---|---|
+       | `${name}`, flat binding table | 52 | 51 `Templates.Render` |
+       | `@PLACEHOLDER@`, plain substitution | 14 | 17 `Templates.Substitute` |
+       | `{{ }}`, recursive context | **0** | **0** |
+
+       So completion criterion 10 and step 6 below, which both speak of
+       "the Mustache-style renderer in `templates.adb`" as though it were
+       in use, describe the renderer correctly and its use not at all.
+       That is the gap, and it is the whole of it: the per-element loops
+       `{{#each}}` exists to absorb are still written out in Ada in each
+       backend (`for M of Info.Members loop ... Append (Items, ...)`), one
+       copy per backend, which is also why the step 9a fix had to be made
+       in two places before it was folded into one `Field_Decl`.
+
+       The work: move the 52 `${name}` templates and the 14
+       `@PLACEHOLDER@` templates to `{{ }}`, build the context tree in each
+       emitter instead of a binding table, and delete `Render` and
+       `Substitute` once nothing calls them.  The gate is step 3's own:
+       byte-identical output for every schema through every backend, all
+       132 snapshot files.
+
+       **One decision first, and it is not mine to make.**  `templates.adb`
+       carries its own inline implementation of the subset.  There is also
+       `moebiusV/mustache-ada`, a real port, with an aport in
+       `ada-on-alpine`.  Those are two implementations of the same thing.
+       Either hbnf gains a dependency on the aport and `templates.adb`
+       keeps only the loader and the context builders, or the inline subset
+       stays and the plan stops implying otherwise.  Nothing in the tree
+       references the aport today: no `with` clause, no `.gpr` dependency,
+       no submodule.
 4. **The character model** (decision 7) in C, with `whitespace`:
    - the old lexer moved into a shared include;
    - ntpd converted first (it has the byte-identity proof), then the other
@@ -517,7 +579,8 @@ unwind-ident passing; each lands as reviewed patches.
      `request-line`;
    - the character model in Rust, Zig and Ada through the templates, and
      the interpreter (HBNF_Match) on the same rewrites;
-   - `json.hbnf`, `where`, then binary (CHARLAYER.md I2–I4).
+   - `json.hbnf`, then binary (CHARLAYER.md I2–I4).  `where` moved to
+     step 6, where the IR it reads against is built.
 
 6. **Compiler-compiler interfaces.**  After the character model is stable:
    source-span objects through the shared IR, matcher and all backends; named
@@ -525,14 +588,71 @@ unwind-ident passing; each lands as reviewed patches.
    reentrant parser/scanner state; scanner modes with push/pop; input-source
    abstraction (contiguous-buffer fast path retained); opt-in recovery with
    tests proving actions are not repeated; and a shared semantic IR below the
-   templates, feeding the Mustache-style renderer in `templates.adb`.
+   templates, feeding the `{{ }}` renderer once 3b has the emitters using it.
 
-7. **RFC copy-paste and wire layer.**  Accept `::=`/`:=` as `=` silently, and
-   make the RFC excerpts compile with only the changes the messages point at
-   ("you wrote X; if you meant Y, hbnf spells it Z").  Then one cross-backend
-   representation for typed scalars and protocol values — exact bytes/code
-   points, width, signedness, byte order, range checks — with fixtures
-   comparing interpreter and backends on bytes and values.
+   **`where` clauses** land here, moved out of step 5: a `where` reads
+   against the IR this step builds, so doing it earlier means writing it
+   twice.
+
+7. **RFC copy-paste and the wire layer.**  Split, because the two halves
+   cost very different amounts and only one of them is syntax.
+
+   7a. **Copy-paste syntax — first, ahead of everything.**
+       Reader-only: no backend touched, no generated byte moved.  The point
+       is that a grammar lifted out of an RFC, a POSIX spec or a yacc file
+       compiles where it can, and where it cannot the message says what to
+       write instead ("you wrote X; if you meant Y, hbnf spells it Z").
+       Cheap to land, and it makes every excerpt step 5 adds as a
+       regression test cheaper to try.  It is the next patch.
+
+       None of this is accepted today — checked 2026-10-02, all four
+       spellings are refused.
+
+       **Assignment.**  `::=` (Naur/ALGOL), `:=` (Wirth) and `:`
+       (yacc/POSIX) all read as `=`.  The POSIX BNF section above has the
+       rest of the yacc reader work — `;` as a terminator, `%token`,
+       `%start`, `%%`, the token diagnostics — and the Bourne shell
+       grammar as its gate; this item is the operators and the comment
+       styles, which everything there rests on.
+
+       **Comments: three styles, not two.**  `(* ... *)` (Wirth,
+       ISO 14977) alongside `/* ... */` (C/yacc) and `;` to end of line.
+       The POSIX section names `/* ... */` only, because its subject is
+       yacc; `(* ... *)` is what an ISO 14977 or Wirth-notation grammar
+       pastes with, and a notation hbnf accepts the assignment operator of
+       should accept its comments too.  Neither new form nests, and both
+       may span lines.
+
+       Two things to get right, both already solved for `;`:
+
+       - A `/*` inside a `%scan{ }` or `%action{ }` block is C, not a
+         grammar comment.  The brace counter already reads it that way, so
+         the grammar-level reader must not reach inside those blocks.
+       - A comment inside `( )` or `[ ]` is part of the rule.  The reader
+         handles that for `;` today and must handle it the same way for
+         the two new forms, including the round-trip of a trailing comment
+         into the generated output.
+
+       **One thing not to paper over.**  The POSIX section reads `|` as
+       "ordered choice, parse.y's own reading", which holds for the
+       OpenBSD grammars this project started from — their `|` is written
+       longest-first and parse.y's LALR tables happen to agree.  It does
+       not hold for yacc in general: yacc's `|` is unordered and the
+       tables resolve it, hbnf's is PEG first-match, and that is the same
+       mismatch recorded for tree-sitter under step 11.  So a pasted yacc
+       grammar can compile and mean something else.  Accepting `:` is
+       therefore not the same as accepting yacc, and the reader says so:
+       a file whose assignment operator is `:` warns once that `|` is
+       first-match and names `/` for the union case.  Taking a grammar and
+       quietly changing its meaning is the one outcome this step must not
+       produce.
+
+   7b. **The wire layer — after step 6.**  One cross-backend
+       representation for typed scalars and protocol values: exact
+       bytes/code points, width, signedness, byte order, range checks,
+       with fixtures comparing the interpreter and the backends on bytes
+       and on values.  This needs the shared IR and the typed `%action{}`
+       bindings step 6 builds, so it cannot move with 7a.
 
 8. **Compiler-quality diagnostics and error recovery.**  Expected-error
    fixtures, source-span diagnostics, rule traces, and a schema linter
