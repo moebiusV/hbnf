@@ -174,6 +174,66 @@ else echo "  FAIL [no caret]: $(cat "$W/err.txt")"; rc=1; fi
 rm -f "$W/t"; gen_file tests/abnf/filled.hbnf
 check OK   "123" "the hole filled by a later ="
 
+echo "== copy-paste syntax: the other notations' operators (step 7a) =="
+# A grammar lifted out of an RFC, a POSIX spec or a yacc file reads as
+# written.  Each spelling has to produce the same parser.
+for op in "=" "::=" ":=" ":"; do
+	rm -f "$W/t"; gen <<G
+include "$CORE"
+doc  $op sum
+sum  $op num "+" num
+num  $op 1*DIGIT
+G
+	check OK   "1+2" "\`$op\` as the assignment operator"
+	check FAIL "1-2" "\`$op\`: a wrong operator is still refused"
+done
+
+# A yacc production, pasted: `:`, `|`, and the `;` terminator on its own
+# line under the last alternative.  The `;` works because it starts an ABNF
+# comment, so the rule has already ended at the newline.
+rm -f "$W/t"; gen <<G
+include "$CORE"
+doc  : expr
+expr : term "+" term
+     | term
+     ;
+term : 1*DIGIT
+G
+check OK   "1+2" "a pasted yacc production: sum"
+check OK   "7"   "a pasted yacc production: bare term"
+check FAIL "+"   "a pasted yacc production still refuses nonsense"
+
+echo "== copy-paste syntax: three comment styles (step 7a) =="
+rm -f "$W/t"; gen <<G
+include "$CORE"
+/* a C and yacc comment, on its own line */
+doc  = sum                  ; an ABNF comment
+sum  = num "+" num          /* a trailing C comment */
+num  = 1*DIGIT              (* a trailing Wirth comment *)
+/* a C comment
+   spanning lines, read as white space */
+G
+check OK   "1+2" "all three comment styles in one schema"
+check FAIL "1"   "and the rule still means what it said"
+
+# `(*` opens a Wirth comment only when a blank follows, so a group holding a
+# repetition is still a group.
+rm -f "$W/t"; gen <<G
+include "$CORE"
+doc = 1*(*LETTERS)
+LETTERS = ALPHA
+G
+check OK "abc" "\`(*LETTERS)\` is a group, not a comment"
+
+refuse 'comment is never closed' "an unclosed /* is named" <<G
+include "$CORE"
+doc = "a" /* and then nothing
+G
+refuse 'comment is never closed' "an unclosed (* is named" <<G
+include "$CORE"
+doc = "a" (* and then nothing
+G
+
 echo "== recursive tree types (RFCPLAN step 9) =="
 # A rule whose value really does contain itself is still refused -- step 9b
 # adds the pointer that breaks it -- but all four backends must refuse it,

@@ -466,6 +466,56 @@ package body HBNF_Grammar is
          end loop;
       end Continuation;
 
+      --  A block comment, `/* ... */` (C, yacc, POSIX BNF) or `(* ... *)`
+      --  (Wirth, ISO 14977), read alongside `;` (RFCPLAN.md step 7a).  I is
+      --  at the opening `/` or `(`; Close is the two characters that end it.
+      --  Neither form nests.  The comment is white space: the lines inside
+      --  it are counted but no T_Newline is emitted for them, which is yacc's
+      --  reading and what a pasted grammar needs.  A comment that opened and
+      --  closed on one line becomes a T_Comment, exactly as `;` does, so a
+      --  trailing comment still round-trips into the generated output; one
+      --  that spanned lines is dropped, because there is no single line for
+      --  it to trail.
+      procedure Block_Comment (Close : String) is
+         Open_Line : constant Positive := Line;
+         CC        : constant Positive := Col;
+         Start     : constant Positive := I + 2;
+      begin
+         I := I + 2;
+         Col := Col + 2;
+         loop
+            if I > Text'Last then
+               raise Parse_Error with
+                 Integer'Image (Open_Line) & ":" & Integer'Image (CC)
+                 & ": a `" & Text (Start - 2 .. Start - 1)
+                 & "` comment is never closed; it needs a `" & Close & "`";
+            end if;
+            exit when I < Text'Last
+              and then Text (I) = Close (Close'First)
+              and then Text (I + 1) = Close (Close'Last);
+            if Text (I) = ASCII.LF then
+               Line := Line + 1;
+               Col := 1;
+            else
+               Col := Col + 1;
+            end if;
+            I := I + 1;
+         end loop;
+         declare
+            Body_Text : constant String := Text (Start .. I - 1);
+         begin
+            I := I + 2;
+            Col := Col + 2;
+            --  Inside ( ) or [ ] a comment is part of the rule and is
+            --  dropped, as a `;` comment there is.
+            if Group_Depth = 0 and then Line = Open_Line then
+               Token_Vectors.Append
+                 (Toks, Token'(T_Comment, Open_Line, CC,
+                               To_Unbounded_String (Trim (Body_Text))));
+            end if;
+         end;
+      end Block_Comment;
+
    begin
       while I <= Text'Last loop
          case Text (I) is
@@ -650,15 +700,49 @@ package body HBNF_Grammar is
                else
                   Emit (T_Eq);  I := I + 1;  Col := Col + 1;
                end if;
+            when ':' =>
+               --  The other notations' assignment operators, so a grammar
+               --  lifted out of a spec reads as written (RFCPLAN.md step
+               --  7a): `::=` is Naur's and ALGOL 60's, `:=` is Wirth's,
+               --  and a bare `:` is yacc's and POSIX's.  All three are `=`.
+               --
+               --  When wire widths land (step 7b) a width is a `:` glued to
+               --  a name and followed by a digit; nothing here may consume
+               --  that, so the `:` cases stay as narrow as they are.
+               if I + 1 < Text'Last and then Text (I + 1) = ':'
+                 and then Text (I + 2) = '='
+               then
+                  Emit (T_Eq);  I := I + 3;  Col := Col + 3;
+               elsif I < Text'Last and then Text (I + 1) = '=' then
+                  Emit (T_Eq);  I := I + 2;  Col := Col + 2;
+               else
+                  Emit (T_Eq);  I := I + 1;  Col := Col + 1;
+               end if;
             --  `|` separates alternatives, as in BNF, EBNF and yacc, and
             --  means ordered choice.  `/` is ABNF's union (RFCPLAN.md,
             --  decision 1); the reader takes it where the two mean the same.
             when '|' => Emit (T_Bar);    I := I + 1;  Col := Col + 1;
-            when '/' => Emit (T_Slash);  I := I + 1;  Col := Col + 1;
+            when '/' =>
+               if I < Text'Last and then Text (I + 1) = '*' then
+                  Block_Comment ("*/");
+               else
+                  Emit (T_Slash);  I := I + 1;  Col := Col + 1;
+               end if;
             when '(' | '[' =>
-               Emit (if Text (I) = '(' then T_LParen else T_LBrack);
-               Group_Depth := Group_Depth + 1;
-               I := I + 1;  Col := Col + 1;
+               --  `(*` opens a Wirth comment only when a blank follows it.
+               --  `(*word)` is a group holding a repetition and stays one;
+               --  ISO 14977 writes `(* text *)`, so the blank is the whole
+               --  of the difference and it is cheap to require.
+               if Text (I) = '(' and then I + 1 < Text'Last
+                 and then Text (I + 1) = '*'
+                 and then Text (I + 2) in ' ' | ASCII.HT | ASCII.LF | ASCII.CR
+               then
+                  Block_Comment ("*)");
+               else
+                  Emit (if Text (I) = '(' then T_LParen else T_LBrack);
+                  Group_Depth := Group_Depth + 1;
+                  I := I + 1;  Col := Col + 1;
+               end if;
             when ')' | ']' =>
                Emit (if Text (I) = ')' then T_RParen else T_RBrack);
                if Group_Depth > 0 then
