@@ -133,15 +133,15 @@ round.
 
 | daemon | file | parse.y |
 |---|---|---|
-| dhcpleased | `dhcpleased.hbnf` | `sbin/dhcpleased/parse.y` |
-| httpd | `httpd.hbnf` | `usr.sbin/httpd/parse.y` |
-| ntpd | `ntpd.hbnf` | `usr.sbin/ntpd/parse.y` |
-| unwind | `unwind.hbnf` | `sbin/unwind/parse.y` |
-| ldpd | `ldpd.hbnf` | `usr.sbin/ldpd/parse.y` |
-| snmpd | `snmpd.hbnf` | `usr.sbin/snmpd/parse.y` |
-| relayd | `relayd.hbnf` | `usr.sbin/relayd/parse.y` |
-| bgpd | `bgpd.hbnf` | `usr.sbin/bgpd/parse.y` |
-| pfctl | `pfctl.hbnf` | `sbin/pfctl/parse.y` |
+| dhcpleased | `obconf_dhcpleased.hbnf` | `sbin/dhcpleased/parse.y` |
+| httpd | `obconf_httpd.hbnf` | `usr.sbin/httpd/parse.y` |
+| ntpd | `obconf_ntpd.hbnf` | `usr.sbin/ntpd/parse.y` |
+| unwind | `obconf_unwind.hbnf` | `sbin/unwind/parse.y` |
+| ldpd | `obconf_ldpd.hbnf` | `usr.sbin/ldpd/parse.y` |
+| snmpd | `obconf_snmpd.hbnf` | `usr.sbin/snmpd/parse.y` |
+| relayd | `obconf_relayd.hbnf` | `usr.sbin/relayd/parse.y` |
+| bgpd | `obconf_bgpd.hbnf` | `usr.sbin/bgpd/parse.y` |
+| pfctl | `obconf_pfctl.hbnf` | `sbin/pfctl/parse.y` |
 
 Each grammar round-trips through the `hbnf` generator (`hbnf`): it
 emits a self-contained C parser that compiles and parses a sample config.
@@ -160,12 +160,9 @@ Planned: `common.hbnf` holds what any parsing effort needs — the RFC 5234
 character classes and core rules (`DIGIT`, `ALPHA`, `HEXDIG`, `WS`, `WSP`,
 `CRLF`, …), today `ascii.hbnf` plus `core.hbnf`.  `ascii.hbnf` shrinks to
 just the non-printable named characters (the C0 controls, `DEL`, `ESC`,
-`BEL`, `NAK`, and the blanks `SP`/`HTAB`/`CR`/`LF`).  `obconf.hbnf` (renamed
-from `commonconf.hbnf`) holds the OpenBSD config core — the lexer (`word`,
-`str`, `int`, `ws`), `string`/`address`, and the shared jets
-(`ne`/`le`/`ge`/`xrange`, `octet`, `ipv4`) — and each daemon becomes
-`obconf_<daemon>.hbnf` (today `bgpd.hbnf`, `httpd.hbnf`, …), `include
-"obconf.hbnf"`.  The standalone round-trip demo is `obconf_roundtrip.hbnf`.
+`BEL`, `NAK`, and the blanks `SP`/`HTAB`/`CR`/`LF`).  The shared core is
+`obconf.hbnf`, the nine daemons are `obconf_<daemon>.hbnf`, and the
+standalone round-trip demo is `obconf_roundtrip.hbnf`.
 
 ## Bindings (`bind/`)
 

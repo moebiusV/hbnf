@@ -1,5 +1,5 @@
 ; ntpd.conf bound to ntpd(8)'s own `struct ntpd_conf`: the grammar in
-; ../ntpd.hbnf plus parse.y's tree actions as action jets.  The generated
+; ../obconf_ntpd.hbnf plus parse.y's tree actions as action jets.  The generated
 ; parse_config(filename, struct ntpd_conf *) is a drop-in for parse.y's:
 ;   hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf
 ; It compiles only against ntpd's headers (ntpd.h); the grammar itself stays
@@ -18,7 +18,7 @@ static struct sockaddr_in6 query_addr6;
 static int                 poolseqnum;
 }
 
-include "../ntpd.hbnf"
+include "../obconf_ntpd.hbnf"
 
 ; parse.y's `main` actions, one case per directive (entry's kind tag).
 ; parse.y checks each option as it reads it and the first bad value discards

@@ -14,7 +14,7 @@ extern struct count_conf *conf;
 struct count_conf *conf;
 }
 
-include "../../grammars/unwind.hbnf"
+include "../../grammars/obconf_unwind.hbnf"
 
 action preference { (void)n; conf->prefs++; }
 action forwarder { (void)n; conf->forwarders++; }

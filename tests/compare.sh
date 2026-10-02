@@ -9,7 +9,7 @@ export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 CLI=${HBNF:-./hbnf}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
-"$CLI" grammars/pfctl.hbnf --backend=c --compare > "$W/pf.c" || { echo "compare: FAIL (generate)"; exit 1; }
+"$CLI" grammars/obconf_pfctl.hbnf --backend=c --compare > "$W/pf.c" || { echo "compare: FAIL (generate)"; exit 1; }
 cat "$W/pf.c" tests/compare/main.c > "$W/cmp.c"
 cc -std=gnu11 -D_GNU_SOURCE -w -Itests/bsdinc "$W/cmp.c" -o "$W/cmp" || { echo "compare: FAIL (compile)"; exit 1; }
 if ! out=$("$W/cmp" tests/compare/macros.conf tests/compare/expanded.conf); then

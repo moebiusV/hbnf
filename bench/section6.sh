@@ -2,7 +2,7 @@
 # section6.sh — re-measure §6 of USENIXSUBMISSION.md.
 #
 #   - toy schema (bench/toy.hbnf): parse_text, 100,000 and 1,000,000 rules.
-#   - pfctl grammar (grammars/pfctl.hbnf, --conf): parse_config, 100,000 rules.
+#   - pfctl grammar (grammars/obconf_pfctl.hbnf, --conf): parse_config, 100,000 rules.
 #
 # The parsers are compiled with gcc -O2.  Each parse runs in its own process,
 # five times; the reported time is the best of the five, wall-clock around the
@@ -53,7 +53,7 @@ for n in 100000 1000000; do
 done
 
 # --- pfctl: parse_config ---------------------------------------------------
-"$CLI" "$root/grammars/pfctl.hbnf" --backend=c --conf > "$W/conf.txt" 2> "$W/pfctl.err" \
+"$CLI" "$root/grammars/obconf_pfctl.hbnf" --backend=c --conf > "$W/conf.txt" 2> "$W/pfctl.err" \
 	|| { echo "pfctl: generate failed"; cat "$W/pfctl.err"; exit 1; }
 awk '/^===== conf.h =====$/{f="h"; next} /^===== conf.c =====$/{f="c"; next} f=="h"{print > "'"$W"'/conf.h"} f=="c"{print > "'"$W"'/conf.c"}' "$W/conf.txt"
 if ! gcc -O2 -std=gnu11 -I"$W" -I"$root/tests/bsdinc" "$W/conf.c" "$here/time_conf.c" -o "$W/pfctl" 2> "$W/cc.err"; then

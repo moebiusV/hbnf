@@ -1,5 +1,5 @@
 ; unwind.conf bound to unwind(8)'s own `struct uw_conf`: the grammar in
-; ../unwind.hbnf plus parse.y's actions as action jets.
+; ../obconf_unwind.hbnf plus parse.y's actions as action jets.
 ;   hbnf_cli grammars/bind/unwind.hbnf --backend=c --conf
 ; parse.y's parse_config(char *filename) returns a new struct uw_conf *, not
 ; the int hbnf's conf wrapper returns, so the generated function is named
@@ -87,7 +87,7 @@ static enum uw_resolver_type uw_type(const struct prefopt *);
 static void uw_pref(const struct prefopt *);
 }
 
-include "../unwind.hbnf"
+include "../obconf_unwind.hbnf"
 
 action prefopts {
     uw_pref(&n->prefopt);

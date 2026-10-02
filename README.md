@@ -47,7 +47,7 @@ This directory holds two things:
 2. **The parser generator**, `hbnf`: read a schema in hbnf's ABNF-like
    notation and generate a parser and its typed tree in C, Rust, Zig or Ada.
 
-       hbnf grammars/ntpd.hbnf --backend=c|rust|zig|ada
+       hbnf grammars/obconf_ntpd.hbnf --backend=c|rust|zig|ada
        hbnf grammars/bind/ntpd.hbnf --backend=c --conf   # ntpd's parse_config
 
    The generator's documents:

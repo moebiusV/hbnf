@@ -2936,7 +2936,7 @@ package body HBNF_Grammar is
             M : constant String := Error_Message (E);
          begin
             --  Name the file once, at the innermost one: " 3: 7: …"
-            --  becomes "grammars/ntpd.hbnf: 3: 7: …".
+            --  becomes "grammars/obconf_ntpd.hbnf: 3: 7: …".
             if M'Length > 0 and then M (M'First) = ' ' then
                Fail (Path & ":" & M);
             end if;

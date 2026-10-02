@@ -1,6 +1,6 @@
 #!/bin/sh
 # Daemon grammars against sample configs.  tests/daemons/<grammar>/*.conf must
-# all be accepted by the plain C parser generated from grammars/<grammar>.hbnf,
+# all be accepted by the plain C parser generated from grammars/obconf_<grammar>.hbnf,
 # and each *.bad rejected.  They are parsed in their own directory, as pfctl's
 # regress runs, so an `include "x.inc"` there finds x.inc.
 # server.hbnf cannot catch what only a real grammar exercises (keyword enums
@@ -16,7 +16,7 @@ trap 'rm -rf "$W"' EXIT
 rc=0
 for d in tests/daemons/*/; do
 	g=$(basename "$d")
-	if ! "$CLI" "grammars/$g.hbnf" --backend=c >"$W/$g.c" 2>"$W/$g.err"; then
+	if ! "$CLI" "grammars/obconf_$g.hbnf" --backend=c >"$W/$g.c" 2>"$W/$g.err"; then
 		echo "$g: FAIL (generate: $(tail -1 "$W/$g.err"))"; rc=1; continue
 	fi
 	root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/$g.c")

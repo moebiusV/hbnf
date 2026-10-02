@@ -564,7 +564,7 @@ bindings trivial.
 The motivating question is whether a generated parser can load a firewall
 ruleset of the size OpenBSD operators actually deploy.  The evaluation
 measures the generated C parser on two workloads: a toy pf-style schema, and
-the full `grammars/pfctl.hbnf`.
+the full `grammars/obconf_pfctl.hbnf`.
 
 **Setup.**  The toy schema has the shape of a pf rule — action (`pass`/
 `block`/`match`), direction (`in`/`out`), interface, protocol, and a
@@ -597,7 +597,7 @@ The toy is a minimal shape, so those numbers understate the real cost.  The
 full grammar, with its 35-way filter-option alternation and its address,
 port and interface parsing, does far more per rule:
 
-| pfctl.hbnf | N | bytes | time | rules/s | MB/s | peak RSS |
+| obconf_pfctl.hbnf | N | bytes | time | rules/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|---:|
 | `parse_text` | 100,000 | 10.5 MB | 0.56 s | 180 K | 19 | 389 MB |
 | `parse_file` | 100,000 | 10.5 MB | 0.48 s | 209 K | 22 | 379 MB |
