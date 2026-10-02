@@ -1,5 +1,23 @@
 # A Short History of the Parser Generator
 
+Named in what follows, in order of appearance:
+
+- **Noam Chomsky** — generative grammar and the Chomsky hierarchy.
+- **Emil Post** — the production systems Backus drew from.
+- **John Backus** — the metalinguistic formulas that described ALGOL 58.
+- **Peter Naur** — the ALGOL 60 notation: `::=`, `< >`, `|`.
+- **Donald Knuth** — renamed Backus Normal Form to Backus–Naur Form; the literate-programming style the appendix borrows.
+- **Stephen Johnson** — Yacc.
+- **Al Aho** — pointed Johnson at Knuth's LR papers.
+- **David Crocker** — RFC 822, and the ABNF it produced.
+- **Terence Parr** — ANTLR.
+- **Dennis Ritchie** — the hand-written recursive-descent C parser.
+- **Joseph Myers** — the GCC C front end that returned to recursive descent.
+- **Bryan Ford** — parsing expression grammars.
+- **Max Brunsfeld** — Tree-sitter.
+- **Jeff Fox** — UltraForth: do not solve the hard problem, remove it.
+- **Isaac Mozeson** — Edenics: language as the thing that brings people together.
+
 Before any of this was engineering, it was linguistics. Noam Chomsky asked how
 a person produces and understands sentences never spoken before, and answered:
 with a grammar — a finite set of rules that generates the infinite set of legal
@@ -223,3 +241,40 @@ the more useful end.
 An intelligence that must read what people wrote and act on it needs exactly
 that bridge — a text a person can read, a machine can run, an intention carried
 whole. HBNF was not written for AI. That is what will make it useful to AI.
+
+## Appendix — Incremental Parsing without Giving Up the Grammar
+
+1. Tree-sitter's two real wins are incremental reparse and error recovery. Both
+rest on a concrete tree whose nodes carry byte spans: an edit reuses every
+subtree it does not touch, and a broken file still yields a tree with ERROR and
+MISSING nodes instead of nothing.
+
+2. Tree-sitter needs generalized LR for this because it must preserve ambiguity
+across an edit. HBNF has no ambiguity to preserve, because it refuses it up
+front. A deterministic parser has exactly one result at a position, so an edit
+invalidates only the nodes whose span it touches; the rest is reused as-is, and
+re-parsing the touched range is guaranteed to match what a full parse would
+have produced. Incremental parsing falls out of determinism, not out of a stack
+of stacks.
+
+3. Recovery is the same trick in the other direction. Where the parser fails it
+does not fork; it writes an ERROR node, skips to the next synchronizing token,
+resumes, and writes MISSING where a token was expected. The valid regions stay
+correct because the core parser never changed. Recovery is a wrapper, not a
+replacement.
+
+4. The grammar stays the document. The extended ABNF — `=`, `|`, `/`, `*`,
+`1*`, `n*m`, `[ ]`, the character classes, the `%scan{}` jets, `whitespace ws`
+— remains the single source, read by the person and run by the machine. The
+spans and the recovery are added underneath, invisible in the notation.
+
+5. One thing is worth taking back, lost when ABNF dropped it: the angle
+brackets. Naur's 1960 report wrote `<expression>` for a non-terminal and the
+terminal bare, and Knuth kept the convention in *The Art of Computer
+Programming* and WEB. ABNF threw the brackets away to fit ASCII. HBNF already
+reads `=` and `::=`, `|` and `/`, side by side, so reading `<name>` as sugar for
+`name` is the same move, and it is the one a literate grammar wants — the
+bracket marks the thing being defined for the reader, and the parser ignores
+it. The brackets are for non-terminals. That was the point: a terminal is
+written as itself, a non-terminal is written as a name in brackets, and the
+reader tells the two apart at a glance.
