@@ -172,6 +172,85 @@ silently.
     until a grammar actually needs it.  It also does not make hbnf ambiguous:
     the predicate decides a branch, it does not explore several.
 
+## POSIX BNF
+
+Step 7's copy-paste goal is for RFC ABNF.  POSIX's own grammars are a
+second notation worth the same treatment: the yacc BNF POSIX writes its
+standard utilities in — `name : rhs`, `;`-terminated, `%token`
+declarations, `/* … */` comments, and left recursion for every list.  The
+test case is the **Shell Command Language grammar** (POSIX.1 §2.10, the
+Bourne shell): the largest such grammar, and the one that leans hardest on
+yacc's tokenizer feedback, so it exercises every difference at once.  It
+becomes a third corpus once the reader work below lands.
+
+The bar is the RFC one: a pasted spec is corrected by the messages, not by
+reading the manual.  POSIX BNF needs one change to the pasted text — give
+each `%token` name a definition — and one rewrite where yacc steers its
+lexer from the parser and hbnf's character model makes the steering
+unnecessary.  Both are kinds hbnf already knows how to point at.
+
+**Pasted unchanged (reader extensions).**
+
+| POSIX BNF | hbnf | how |
+|---|---|---|
+| `name : rhs` | `name = rhs` | `:` read as `=` (with `::=` and `:=`, step 7).  `name:N` wire widths are not yet implemented; when they are, a width is `:` glued to the name and a rule's `:` is surrounded by blanks, so the two never clash. |
+| `;` after a rule | a `;` comment | `;` already starts a comment and POSIX puts it at end of line, so the rule ends at the newline; a lone `;` line under the last alternative is an indented comment line and is skipped.  `';'` (quoted) stays the semicolon *operator*, distinct from the bare terminator. |
+| `'|'`, `'('`, `')'`, `'&'`, `';'`, `'<'`, `'>'` | `'|'` &c. | the one-character literal is hbnf's `'c'`; `'('` and `')'` are quoted, so they do not group. |
+| `\|` | `\|` | ordered choice, parse.y's own reading. |
+| left recursion | a loop | direct left recursion is already `y (t y)*`, and the shell grammar's is all direct: `pattern : pattern '|' WORD` becomes `WORD *("|" WORD)` — the case pattern with a literal `|`. |
+| `/* … */` | a comment | read as a comment alongside `;` (no nesting).  `| /* empty */` is then a trailing empty alternative, which is accepted; the message suggests the plainer `[ … ]`. |
+| `%token NAME`, `%start R`, `%%` | declared, root, nothing | `%token` registers the name as declared-but-undefined, `%start` names the root, `%%` is dropped. |
+
+**The one alteration: define the `%token` names.**  A declared name that
+no rule defines is an error that names the definition, by kind:
+
+- operators — `%token DLESS` with POSIX's `/* '<<' */`:
+  `shell.y:7:10: DLESS is declared %token but not defined; write
+  DLESS = "<<"`.  The spelling is the name's known spelling (the quoted
+  text in POSIX's comment, or a table): `AND_IF`/`&&`, `OR_IF`/`||`,
+  `DSEMI`/`;;`, `DLESS`/`<<`, `DGREAT`/`>>`, `LESSAND`/`<&`,
+  `GREATAND`/`>&`, `LESSGREAT`/`<>`, `DLESSDASH`/`<<-`, `CLOBBER`/`>|`.
+- reserved words — `%token If`: `If is declared %token but not defined;
+  write If = "if"` (the lower-cased name; `Lbrace`/`Rbrace`/`Bang` are
+  `"{"`/`"}"`/`"!"`).
+- lexical classes — `%token WORD`: `WORD is declared %token but not
+  defined; write WORD = …` — a char rule the author supplies (`NEWLINE`
+  is `LF` from common.hbnf; `NAME`, `IO_NUMBER`, `WORD` and
+  `ASSIGNMENT_WORD` are class rules).
+
+**The one rewrite: tokenizer feedback becomes structure.**  The shell
+grammar's rules 1–10 tell the lexer which token a word is — `WORD` or
+`ASSIGNMENT_WORD`, a reserved word or not — by parser state.  hbnf has no
+lexer to steer; the same distinction is ordered choice over char rules,
+and most of the hacks disappear:
+
+- `cmd_prefix` takes `ASSIGNMENT_WORD` where `cmd_word` takes `WORD`.
+  Define `ASSIGNMENT_WORD = NAME '=' word` as a char rule — no whitespace,
+  as POSIX requires — and `WORD = word`; then `foo=bar` is an assignment
+  where the grammar has `cmd_prefix` and a plain word where it has
+  `cmd_word`, with no lexer state steering it.  yacc needs the feedback
+  because its lexer must cut `foo=bar` into one token before the parser
+  sees it; hbnf matches the char rule at the position.
+- reserved-word recognition (rules 1 and 6) is positional, so the global
+  `keywords` table is the wrong tool: it reserves everywhere.  The message
+  says so: `if is reserved only in command position; do not list it in
+  keywords — write it as the "if" alternative in the rules that recognize
+  it`.  The grammar then spells `if`/`then`/… as literal branches of
+  `cmd_name` and `compound_command`, not as a keyword table.
+
+What does not paste is lexical, not grammatical: alias substitution (rule
+10) rewrites the input before the parser sees it, and stays out of scope
+as it is for the daemon grammars.  The residue that is grammatical but
+needs a symbol table mid-parse is decision 13's predicate, deferred — the
+shell's reserved words resolve by position, not by name binding, so this
+grammar does not need it.
+
+**Order.**  The reader extensions and the `%token` diagnostics ride with
+step 7 (RFC copy-paste); the token messages are the RFC-corpus
+discoverability test applied to POSIX.  The gate: POSIX.1 §2.10 pastes
+with only the definitions the messages name, and the resulting grammar
+parses the test suite's own shell command lines.
+
 ## Compiler-compiler completion criteria
 
 The end state is deliberately broader than "an ABNF parser generator": one
