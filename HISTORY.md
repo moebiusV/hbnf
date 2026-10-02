@@ -155,6 +155,13 @@ a grammar should be documentation first and a parser second. The same file that
 explains a language to a reader compiles to a parser and a typed tree in C,
 Rust, Zig, or Ada, self-contained, with no runtime library.
 
+It keeps the best of each system and dodges the worst, in the way Jeff Fox
+taught at UltraForth (may he rest in peace): do not solve the hard problem,
+remove what makes it hard. Ordered choice leaves no shift/reduce conflict to
+resolve. Left recursion read as a loop leaves nothing to rewrite. A shadowed
+alternative refused up front leaves no ambiguity to stumble on at runtime. Each
+system's pain is not fought; it is not built in.
+
 **Where it succeeds.** An RFC grammar compiles nearly verbatim: `=`, `|`, `/`,
 `*`, `1*`, `n*m`, `[ ]`, and the core character classes all mean what an RFC
 reader already expects. Character-level rules compile to scanners — `int = 1*DIGIT`,
@@ -204,9 +211,15 @@ producing strings and started describing the ones that exist. Generation lost.
 Description won.
 
 Isaac Mozeson would be pleased. Chomsky was cruel to him — an Orthodox Jewish
-linguist who described the actual words, tracing them back to their roots,
-instead of generating abstract sentences from rules — and Chomsky dismissed him
-as he dismissed everyone who disagreed. The field came around to Mozeson's side
-anyway. The descriptive method, looking at the language as it is and naming
-what is there, is the one that now runs the software. Chomsky was nasty, and
-Chomsky was wrong. Mozeson's way proved more useful in the end.
+linguist who described the actual words, tracing every tongue back to a single
+source, and who saw language as the thing that brings people together — and
+Chomsky dismissed him as he dismissed everyone who disagreed. The field came
+around to his side anyway. The descriptive method won, and it won pointing the
+way he pointed: a grammar that names what is there can join a person to a
+machine as readily as it joins one person to another. Chomsky was nasty, and
+Chomsky was wrong. Bringing people and machines together through language is
+the more useful end.
+
+An intelligence that must read what people wrote and act on it needs exactly
+that bridge — a text a person can read, a machine can run, an intention carried
+whole. HBNF was not written for AI. That is what will make it useful to AI.
