@@ -254,6 +254,105 @@ POSIX.  The gate: POSIX.1 §2.10 pastes
 with only the definitions the messages name, and the resulting grammar
 parses the test suite's own shell command lines.
 
+## Ordering and token tables
+
+Researched 2026-10-02, because the question deserves an answer and not a
+restatement of decision 7: *why did we go against token tables, shouldn't
+`foo = "bar"` go into one, and why is `%token` needed at all?*
+
+Three answers, and the first thing to separate is the two different things
+"token table" can mean.  A **keyword table** interns the fixed literals a
+grammar names and gives each an id.  A **token array** cuts the whole input
+into tokens before any rule runs.  hbnf kept the first and dropped the
+second, and the confusion between them is doing real damage to this plan.
+
+**1. `foo = "bar"` already goes into a token table.**  `Is_Keyword_Lit`
+in the C backend: a literal led by a letter or `_` is a keyword, and when a
+grammar has no `keywords { }` table **every** such literal is one.  So
+`"bar"` is already interned, already in the generated `kwid_t` enum, and
+already looked up by `kw_lookup`.  The user's instinct is the
+implementation; nothing needs adding.
+
+The `keywords { }` directive only ever *narrows* that default, and it
+exists for exactly one reason: parse.y's `lookup()` reserves a word
+**everywhere in the file**, so a word in the table does not match `STRING`
+anywhere.  Byte-identity with parse.y therefore requires hbnf to reserve
+the same set, no more and no less — which a default of "every letter-led
+literal" does not give, because the daemon grammars name literals parse.y
+does not reserve.  The POSIX shell grammar shows the other edge of the same
+tool: `if` is reserved only in command position, so a table that reserves
+everywhere is the wrong instrument there and the rules must spell `if` as
+an alternative instead.
+
+**2. What was dropped was the token array, and the reason was correctness,
+not speed.**  Decision 7 has it: the pre-cut array imposed a tokenization
+the grammar never asked for.  `"x" "y"` accepted `x y` and rejected `xy` —
+the exact opposite of ABNF, where concatenation is adjacency — and
+`1*VCHAR` failed on `/x`, because the lexer had already decided `x` was a
+word.  For RFC 5234 that is not a performance trade, it is the wrong
+language.  The array also put the lexer outside the notation: `wordchars`
+was a directive, so a grammar could not say what a word is.  Now it is a
+rule (`wordchars = ALPHA | DIGIT | "_" | "-" | "."`) that any grammar
+overrides, which is what let pfctl add `$`, `@` and `%` and ntpd not.
+
+So "we went against ordering and token tables" is not what happened.  The
+keyword table is still there.  What the array also carried, and what
+genuinely went with it, is the subject of the third answer.
+
+**3. The id dispatch is what we lost, and it is recoverable without the
+array.**  Measured in the generated pfctl parser: `expect_kind` — the
+token-era jump that read a token's interned id and branched on it —
+appears **72 times** before 4c and **zero times** after.  `kw_lookup`
+survives at three sites, all of them negative ("this word is reserved, so
+it is not a `word`").  Nothing dispatches on an id any more.  A wide
+alternation instead calls `expect_word` per branch, which re-scans the word
+and `memcmp`s it, and `cc89c9e` recovered part of the loss by switching on
+the first byte — which separates **7 of pfctl's 35** `filteropt` branches,
+because the rest share a leading letter.
+
+That is most of the 1.61x instruction-count gap (190.3M against 306.6M at
+5,000 rules): 73 `scan_word` calls and 191 `skip_ws` calls per rule, for a
+rule holding 14 words.  Decision 7 predicted exactly this and promised two
+remedies — "remembering the last token scanned at a position and branching
+on the first byte."  The first byte landed; the remembering did not.
+
+**So the benefit the question asks about is real, and here is the shape it
+takes.**  Not a token array: a position-keyed scan, which is the same
+economy without the wrong language.
+
+- **Scan once per position** (4c's deferred memoization).  Prototyped
+  2026-10-02 in the generated C: a (position -> scan length) table for the
+  word scanner with a generation stamp, 306.6M -> 258.7M instructions and
+  1.28x -> 1.12x against the token array.  This is "remembering the last
+  token scanned at a position", and it is the half of decision 7 still owed.
+- **Dispatch on the id, not the first byte.**  Scan the word once at the
+  branch position, `kw_lookup` it, and `switch` on the `kwid_t` — the
+  token-era `expect_kind` jump, restored over characters.  Correctness
+  condition: a case for keyword K may jump to branch N only if no branch
+  before N can begin with K, which is a FIRST-set computation hbnf already
+  needs for its FIRST/FOLLOW-disjoint compilation.  Branches led by a rule
+  rather than a literal stay in the linear chain.
+- **Measure it on an input that exercises it.**  A hand-built kwid dispatch
+  over `filteropt` measured 307.1M, very slightly *worse* — because
+  `bench/gen.sh` emits one rule shape whose only filter option is
+  `keep state`, and `keep` is one of the 7 that first-byte dispatch already
+  separates.  The gate is being held against an input narrower than the
+  thing it measures.  `gen.sh` needs a mode that cycles the filter options
+  before any of this is worth doing.
+
+**4. `%token` is not needed at all, and hbnf should never require it.**  In
+yacc, `%token NAME` declares a terminal whose *spelling lives in the lexer*,
+in C, outside the grammar; the declaration is the only thing tying the
+parser to a symbol it cannot see.  hbnf has no outside lexer — the lexer is
+grammar — so a `%token` carries no information: either the name has a
+definition in the file, and the declaration is redundant, or it has none,
+and the grammar is simply incomplete.  `%token` is therefore a **paste
+artifact and nothing more**: the reader accepts it so a POSIX or yacc
+grammar pastes unchanged, registers the name as declared-but-undefined so
+the error can name it by kind (operator, reserved word, lexical class), and
+requires it from nobody.  A grammar written in hbnf never writes one.  That
+is what the POSIX BNF section above specifies, and the reasoning is this.
+
 ## Compiler-compiler completion criteria
 
 The end state is deliberately broader than "an ABNF parser generator": one
@@ -316,17 +415,40 @@ The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
 
-> **0, 1, 2, 3, 4a–4e done; 9a done.**  Then **7a first**, then **9b**,
-> **3b**, **5**, **6**, **7b**, **8**, **4f**, **10**.  **11** is not gated
-> on any of them.
+> **Done:** 0, 1, 2, 3, 4a–4e, 7a (bar its warning), 9a.
+> **Critical path:** **3b** → **12** → **9b** → **5** → **6** → **7b**
+> → **8** → **4f** → **10** → **13**.  **11** is not gated on any of them
+> and can land in any gap.
 
-Three principles decide that order.  **Syntax first**: 7a — the
-copy-paste assignment operators and comment styles — goes ahead of
-everything, because it is reader-only, costs nothing to land, and every
-grammar anybody tries after it is cheaper to try.  **Correctness before
-speed**, which is why 4f sits near the end holding its measurements rather
-than near the front.  And **a step waits for what it reads against**,
-which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
+Four things decide that order, and each one is a dependency rather than a
+preference:
+
+- **3b is first because it makes every later step cheaper.**  The
+  switchover to mustache-ada moves the per-element loops out of the four
+  emitters and into the templates.  Every step after it that touches the
+  type emitter or the parse emitter — 9b above all, which adds an
+  indirection to a field in all four backends — then writes its change
+  once instead of four times.  Doing 9b first means doing 9b four times and
+  then moving all four into templates anyway.  9a is the evidence: the
+  same one-line type decision had to be made in two places before it was
+  folded into one `Field_Decl`, and the Rust and Zig cycle checks are a
+  third and fourth copy of a detector that should be one.
+- **12 is second because the defects are cheap and they are load-bearing.**
+  One of them is a crash, one is the warning channel 7a and step 8 both
+  need, and one is a build hazard that has already cost an afternoon of
+  false results.
+- **A step waits for what it reads against.**  `where` moved from 5 to 6
+  because it reads the IR 6 builds; the wire layer is 7b, behind 6, for the
+  same reason; step 8's recovery needs 6's spans and the warning channel
+  from 12.
+- **Correctness before speed, and measurement before optimization.**  4f
+  sits late holding its numbers.  It is also now blocked on its own
+  benchmark: `bench/gen.sh` emits one rule shape, so §6's input does not
+  exercise the wide alternation the remaining cost lives in (see "Ordering
+  and token tables").
+
+13 is last because it is a claim that the notation is finished, and nothing
+should claim that before 10.
 
 0. **Docs and comments that disagree with the code**; include once; the
    two kinds of directive; a later `=` overrides.  *Done 2026-09-28.*  An
@@ -365,7 +487,8 @@ which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
    every schema through every backend.  *Done* — 71 `.tmpl` files loaded
    from disk at startup, nothing baked in.
 
-   3b. **The Mustache renderer is written and nothing uses it.**  Measured
+   3b. **The Mustache renderer is written and nothing uses it — first on
+       the critical path.**  Measured
        2026-10-02, in the tree: `Templates.Render_Template` implements the
        subset — `{{var}}`, `{{.}}`, `{{#each}}`, `{{#var}}`/`{{^var}}`
        sections, `{{> partial}}` — over the recursive Scalar/List/Map
@@ -395,15 +518,39 @@ which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
        byte-identical output for every schema through every backend, all
        132 snapshot files.
 
-       **One decision first, and it is not mine to make.**  `templates.adb`
-       carries its own inline implementation of the subset.  There is also
-       `moebiusV/mustache-ada`, a real port, with an aport in
-       `ada-on-alpine`.  Those are two implementations of the same thing.
-       Either hbnf gains a dependency on the aport and `templates.adb`
-       keeps only the loader and the context builders, or the inline subset
-       stays and the plan stops implying otherwise.  Nothing in the tree
-       references the aport today: no `with` clause, no `.gpr` dependency,
-       no submodule.
+       **Decided 2026-10-02: `moebiusV/mustache-ada` is the canonical
+       Mustache and hbnf must use it.**  So the inline subset in
+       `templates.adb` is not the renderer to switch the templates onto; it
+       is a second implementation to retire.  Nothing in the tree references
+       the aport today — no `with` clause, no `.gpr` dependency, no
+       submodule — so this step is three things, in order:
+
+       1. **Depend on mustache-ada.**  Add it to `hbnf.gpr`, from the
+          `ada-on-alpine` aport where it is packaged.  `hbnf_config.gpr`
+          and whatever the build instructions say about prerequisites move
+          with it.  Note for the Alpine side: hbnf then needs the aport to
+          be installable, so whatever is still outstanding there is
+          upstream of this step.
+       2. **Retire the inline subset.**  `Render_Template` and the
+          `{{ }}` scanner in `templates.adb` go; `Templates` keeps the
+          `.tmpl` loader, `Get`, and the context builders (`New_Scalar`,
+          `New_List`, `New_Map`, `Append`, `Insert`, `Push`, `Pop`),
+          re-expressed over mustache-ada's own value and context types if
+          it has them.  The `Scalar`/`List`/`Map` model in `templates.ads`
+          is the interface the emitters will build against, so it is worth
+          keeping in hbnf's own vocabulary even when the rendering is
+          delegated.
+       3. **Move the templates and the emitters.**  52 `${name}` templates
+          and 14 `@PLACEHOLDER@` templates become `{{ }}`; each emitter
+          builds a context tree instead of a binding table; `Render` and
+          `Substitute` go once nothing calls them.  The per-element loops
+          become `{{#each}}` in the template, which is the point of the
+          whole exercise and what makes 9b a one-place change.
+
+       The gate is step 3's own: byte-identical output for every schema
+       through every backend, all 132 snapshot files.  Nothing about the
+       generated parsers changes — only where the shape of the output is
+       written down.
 4. **The character model** (decision 7) in C, with `whitespace`:
    - the old lexer moved into a shared include;
    - ntpd converted first (it has the byte-identity proof), then the other
@@ -585,6 +732,13 @@ which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
        input narrower than the thing it is meant to measure.  Before any
        more work on the alternation, `gen.sh` needs a mode that cycles
        through the filter options.
+
+       *Why any of this is a keyword-id dispatch and not a token array* is
+       the subject of "Ordering and token tables" above, which answers the
+       question this entry keeps circling: the keyword table never went
+       away, the pre-cut array went for correctness, and the id jump that
+       went with it — `expect_kind`, 72 sites before 4c and zero after —
+       is the recoverable part.
 5. **`/` between phrases** (decision 1; factoring needs step 2).  Then:
    - RFC excerpts as regression tests: RFC 5234 Appendix B.1 verbatim, RFC
      3986 `scheme` and `host`, RFC 5322 `addr-spec`, RFC 9112
@@ -609,16 +763,15 @@ which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
 7. **RFC copy-paste and the wire layer.**  Split, because the two halves
    cost very different amounts and only one of them is syntax.
 
-   7a. **Copy-paste syntax — first, ahead of everything.**
-       Reader-only: no backend touched, no generated byte moved.  The point
-       is that a grammar lifted out of an RFC, a POSIX spec or a yacc file
-       compiles where it can, and where it cannot the message says what to
-       write instead ("you wrote X; if you meant Y, hbnf spells it Z").
-       Cheap to land, and it makes every excerpt step 5 adds as a
-       regression test cheaper to try.  It is the next patch.
+   7a. **Copy-paste syntax.**  *Done 2026-10-02, bar the warning below.*
+       Reader-only: no backend touched, and all 132 generated files stayed
+       byte-identical.  The point is that a grammar lifted out of an RFC, a
+       POSIX spec or a yacc file compiles where it can, and where it cannot
+       the message says what to write instead ("you wrote X; if you meant
+       Y, hbnf spells it Z").
 
-       None of this is accepted today — checked 2026-10-02, all four
-       spellings are refused.
+       **What is left is the warning** at the end of this item, and it
+       needs a channel the reader does not have: see step 12.
 
        **Assignment.**  `::=` (Naur/ALGOL), `:=` (Wirth) and `:`
        (yacc/POSIX) all read as `=`.  The POSIX BNF section above has the
@@ -657,7 +810,8 @@ which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
        a file whose assignment operator is `:` warns once that `|` is
        first-match and names `/` for the union case.  Taking a grammar and
        quietly changing its meaning is the one outcome this step must not
-       produce.
+       produce — which is why the missing warning channel is a defect in
+       step 12 and not a nicety.
 
    7b. **The wire layer — after step 6.**  One cross-backend
        representation for typed scalars and protocol values: exact
@@ -775,17 +929,26 @@ which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
    emitter — and it is *not* the typedef problem, which is separate and
    discussed under decision 13.
 
-   **It kept the number 9, but it no longer waits.**  The earlier text here
-   said a programming language was not a goal, so this bought generality
-   the product did not need.  That is no longer true: parsing real
-   programming languages, including non-regular ones, is a stated goal
-   alongside config files and RFC wire formats.  The mechanical argument
-   for the old order has also expired — 9b allocates at a rule's commit
-   point, and 4c had just rewritten where those are, but 4c through 4f are
-   done, so the commit points are settled and the allocation is written
-   once.  And correctness comes before speed: 9 is four backends
-   disagreeing about which schemas are legal, 4f is a constant factor.  9
-   is the live item; 4f holds its measurements and waits.
+   **It kept the number 9, and it is third on the critical path.**  The
+   earlier text here said a programming language was not a goal, so this
+   bought generality the product did not need.  That is no longer true:
+   parsing real programming languages, including non-regular ones, is a
+   stated goal alongside config files and RFC wire formats.  The mechanical
+   argument for the old order has expired too — 9b allocates at a rule's
+   commit point, and 4c had just rewritten where those are, but 4c through
+   4f are done, so the commit points are settled.  And correctness comes
+   before speed: 9 is four backends disagreeing about which schemas are
+   legal, 4f is a constant factor.
+
+   What it now waits for is 3b and 12, and for a reason, not a preference.
+   9b adds an indirection to one field in all four backends and teaches the
+   free function and both walkers to follow it.  Written against today's
+   emitters that is the same change four times, in Ada, plus a fifth copy
+   of the cycle detector.  Written after 3b it is one `{{ }}` template and
+   one detector in `HBNF_Compilable`.  9a is the proof of the arithmetic:
+   one type decision, two places, before it was folded into a single
+   `Field_Decl` — and the Rust and Zig checks that patch added are the
+   third and fourth copies of something that should be one.
 
 10. **Completion gate and backend spectrum.**  C/Ada/Rust/Zig and the
    interpreter agree on the same corpus, parsers are reentrant, actions have
@@ -883,6 +1046,92 @@ which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
    *On the number:* the proposal filed this as "4b", which is taken (the
    lexer as grammar, done).  It is 11 because it is not on the path to any
    gate above, not because it comes last.
+
+12. **Known defects.**  Second on the critical path, after 3b: all three
+   are cheap, and two of them are in the way of later steps.  Found
+   2026-10-02 while testing 7a; none was caused by it.
+
+   - **A group whose whole content is a repetition crashes the C backend.**
+     `x = ( *"a" )` — and `x = (*"a")`, the same thing — raises
+     `CONSTRAINT_ERROR` from `hbnf_c.adb:3681`, a discriminant check, rather
+     than parsing or saying what is wrong.  Reproduced on main without 7a,
+     so it predates it; step 2 lifted groups into their own rules and this
+     shape slipped through.  An unhandled exception where a diagnostic
+     belongs is the worst of both: no parser and no message.
+   - **The reader has no warning channel**, only `Parse_Error`.  That is
+     why 7a's one remaining piece is unbuilt: a file whose assignment
+     operator is `:` must warn once that `|` is PEG first-match and name
+     `/` for the union case, and there is nowhere for that to go.  Step 8's
+     linter (nullable repetition, unreachable rules, shadowed ordered
+     choice, ambiguous `/`) needs the same channel for every one of its
+     findings, so building it here serves both.  It wants: a severity, a
+     source span, a once-per-file suppression for the `:` case, and a
+     `--werror` for the test harnesses.
+   - **Stale `.o` and `.ali` files in the source directory silently win the
+     link.**  `gnatmake -I. -D <tmpdir> hbnf.adb` compiles into the temp
+     directory, but `gnatlink` takes `hbnf.ali` from `.`, so a build can
+     link yesterday's objects and report success.  They are gitignored, so
+     `git status` stays clean while the binary is stale.  This cost a
+     confused afternoon: 7a's lexer changes compiled and did nothing, and
+     every result taken against that binary had to be re-run.  The fix is
+     documentation and a build rule, not code — build through `hbnf.gpr`,
+     which keeps its own object directory, or `rm -f *.o *.ali` first — and
+     the test harnesses should refuse to run against a binary older than
+     its newest source.
+
+13. **hbnf in hbnf, and a round-trip pretty printer.**  The last step,
+   because it is a claim that the notation is finished.
+
+   **Not the file that already exists.**  `hbnf_schema.hbnf` is a grammar
+   for *hbnf the configuration format* — `config = *( entry )`, blocks and
+   statements, the pf.conf-shaped language — and is for the interpreter;
+   all four backends refuse it today (undefined `dec`, `comment`).  This
+   step wants the other thing: a grammar for **the `.hbnf` schema notation
+   itself**, so hbnf describes the language hbnf is written in.  Different
+   file, and the names must not be confused: call it `hbnf.hbnf`.
+
+   That makes hbnf self-describing, which is the thread HISTORY.md follows
+   from McCarthy's `eval` onward — and the same caution applies.  A
+   self-description is trivial when the defining language is understood,
+   so the thing that makes it worth more than a demonstration is the
+   second half:
+
+   **A round-trip pretty printer.**  Read a schema, print it, and get the
+   same meaning back — with comments preserved, not discarded, because a
+   grammar's comments are half of what it is for.  The reader already keeps
+   a leading and a trailing comment per rule and round-trips them into
+   generated output, which is the foundation; this needs them kept through
+   a full re-print.
+
+   - **Normalizing by default.**  One rule per definition, spelled `=`:
+     `::=`, `:=` and `:` all print as `=`.  Comments print as `;` to end of
+     line: `/* */` and `(* *)` are read and normalized away.  The point is
+     that a grammar pasted from anywhere comes out in one house style, and
+     a diff between two schemas is about the grammar and not the notation.
+   - **`--preserve`** keeps each definition's and each comment's own
+     spelling as written, so a pasted RFC or POSIX grammar round-trips
+     byte-for-byte.  That is the stronger gate and the one worth testing:
+     read, print, compare to the input.
+   - **Historical styles on request.**  Print a schema as ALGOL 60 BNF
+     (`::=`, angle-bracketed names), as Wirth EBNF (`:=`, `(* *)`,
+     `{ }` repetition, `[ ]` option), as yacc/POSIX BNF (`:`, `;`
+     terminators, `/* */`, `%token` declarations for the char rules), or as
+     RFC 5234 ABNF (`=`, `=/`, `/` union, `*`/`n*m` repetition, `;`
+     comments).  Each is a projection of the one grammar onto one notation,
+     and each is a test of the reader: whatever the printer emits in style
+     X, the reader must read back to the same grammar.
+   - **Where it cannot be faithful it says so.**  Not every grammar
+     projects onto every notation: ordered choice has no ABNF spelling,
+     `n*m` has no yacc spelling, a jet has no spelling anywhere.  The
+     printer names the rule and the construct rather than emitting
+     something that reads as equivalent and is not — the same rule step 11
+     holds for the tree-sitter emitter.
+
+   **Gates.**  `hbnf.hbnf` reads every schema in the tree, including
+   itself.  `--preserve` round-trips all of them byte-for-byte.  Normalized
+   output of any schema generates parsers byte-identical to the original's
+   (the snapshot, run on printed schemas).  And every historical style
+   reads back to the grammar it was printed from.
 
 ## Not in this plan
 
