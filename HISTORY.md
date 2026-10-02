@@ -74,9 +74,10 @@ language.
 Then the metacompilers. Dewey Val Schorre's META II (1964) wrote a language as
 "syntax equations" in the shape of BNF and compiled each equation to the
 subroutine that recognized it; META II compiled itself, the first documented
-metacompiler. Robert McClure's TMG (1965) did the same at Bell Labs, and Ken
-Thompson used TMG around 1970 to write B — the language C grew out of — in
-place of the FORTRAN compiler he had set out to build.
+metacompiler. Robert McClure's TMG (1965) did the same, at Texas Instruments;
+McIlroy ported it to Unix, and Ken Thompson used it around 1970 to write B —
+the language C grew out of — in place of the FORTRAN compiler he had set out to
+build.
 
 None of them became the way compilers were written. Each was a demonstration
 tied to one machine, with a notation of its own and no settled algorithm
@@ -436,20 +437,23 @@ computer scientist. He led the Cambridge–London effort behind CPL (Combined
 Programming Language, 1963), the ALGOL descendant whose simplifications became
 BCPL, then B, then C. He went on to found denotational semantics.
 
-**Donald Knuth (1964).** Donald E. Knuth (b. 1938), at Stanford. "On the
-Translation of Languages from Left to Right" (1965) founded LR parsing theory,
-the family Yacc mechanized. He insisted the name be Backus–Naur Form and not
-Backus Normal Form, because it is not a normal form. *The Art of Computer
-Programming*, and WEB, kept the literate-programming convention alive.
+**Donald Knuth (1964).** Donald E. Knuth (b. 1938), at Stanford. He founded
+the theory this history mechanizes — "On the Translation of Languages from
+Left to Right" (1965) — and, in *The Art of Computer Programming* and WEB, the
+literate ideal that one document can be both prose a person reads and code a
+machine runs. He insisted the name be Backus–Naur Form, not Backus Normal
+Form, because it is not a normal form: the honesty of naming, applied to a
+whole field. Turing Award, 1974.
 
 **Dewey Val Schorre (1964).** Dewey Val Schorre, at UCLA. META II (1964), the
 first documented metacompiler: a language written as "syntax equations" in the
 shape of BNF, each equation compiled to the subroutine that recognized it.
-META II compiled itself.
+META II compiled itself; he went on to the CWIC compiler-writing project at
+System Development Corporation.
 
-**Robert McClure (1965).** Robert M. McClure, at Bell Labs. TMG
-(TransMoGrifier, 1965), a recursive-descent compiler-compiler; it was TMG that
-Ken Thompson used to write B.
+**Robert McClure (1965).** Robert M. McClure, at Texas Instruments. TMG
+(TransMoGrifier, 1965), a recursive-descent compiler-compiler; ported to Unix
+by McIlroy, it was TMG that Ken Thompson used to write B.
 
 **Martin Richards (1966).** Martin Richards (b. 1940), at Cambridge. BCPL
 (Basic CPL, 1966), the typeless language C descended from; his `writef` is
@@ -492,7 +496,7 @@ GCC 1.0 (22 March 1987), fed to Bison; the GNU project and free software.
 Yacc-based C++ grammar that became the standing lesson in what the machine
 could not do.
 
-**Leonard Tower (1987).** Leonard Tower. Parts of the GCC parser, the RTL
+**Leonard Tower (1987).** Leonard H. Tower Jr. (b. 1949). Parts of the GCC parser, the RTL
 generator and definitions, and the VAX machine description.
 
 **Paul Rubin (1987).** Paul Rubin. Most of the GCC preprocessor.
@@ -516,9 +520,13 @@ Word* (1989), his Edenics dictionary, traces words across languages to a single
 source; he saw language as the thing that brings people together. Chomsky
 dismissed him. The descriptive method came around to his side anyway.
 
-**Jeff Fox (1996).** Jeffrey Arthur Fox (1949–2011), of UltraTechnology and UltraForth. The Forth
-discipline this document borrows as its epigraph: do not solve the hard
-problem, remove what makes it hard. May he rest in peace.
+**Jeff Fox (1996).** Jeffrey Arthur Fox (1949–2011), of UltraTechnology. A
+Forth programmer who, from 1990, worked beside Chuck Moore on minimal computing
+taken to its limit: he commissioned the F21, a "low fat" chip — a 500 MIPS
+Forth engine with video, network and analog I/O, a whole workstation on a die
+he priced at about a dollar. The discipline this document borrows as its
+epigraph — do not solve the hard problem, remove what makes it hard — is his.
+May he rest in peace.
 
 **Bryan Ford (2002).** Bryan Ford, at MIT and later EPFL. Packrat parsing
 (2002) and Parsing Expression Grammars (2004), recognition-based grammars
