@@ -2,7 +2,7 @@
 
 © 2026 David Walther · 1 October 2026
 
-Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Donald Knuth (1964) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
+Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Donald Knuth (1964) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
 
 Before any of this was engineering, it was linguistics. Noam Chomsky asked how
 a person produces and understands sentences never spoken before, and answered:
@@ -17,7 +17,9 @@ follows is the story of people building that machine.
 A grammar has two readers: the person and the machine. Every system in this
 history leans toward one of them — easier for a person to read, or easier for a
 machine to turn into code. The aim underneath never changes: get the writer's
-intention into the machine without losing it.
+intention into the machine without losing it, and make plain to the next reader
+what the machine was meant to do. One is a person talking to a machine. The
+other is a person talking to a person.
 
 A language used to be described the way a recipe is: prose and examples. Two
 implementors reading the same manual could ship two different languages. That
@@ -106,6 +108,14 @@ grammar. Where finite lookahead could not decide, it added predicates and
 backtracking — "try this, and if it fails try that" — instead of forcing the
 grammar to be LALR(1). Left recursion still had to be rewritten, and backtracking
 could go exponential. Those were the price of a parser a person could debug.
+
+GCC itself began on the machine, its grammar fed to Bison rather than
+Johnson's Yacc. Stallman wrote the C grammar, copyright 1987, and shipped GCC
+1.0 that March; Michael Tiemann wrote the C++ grammar for g++, and that one
+became the standing lesson in what the machine could not do. Bison itself was
+half Stallman's — the C skeleton — and half Robert Corbett's — the LALR engine,
+from his Berkeley Yacc. The largest compiler project in the world started on
+that machine.
 
 The industrial confirmation came from a compiler project. In 2004–06 GCC threw
 out its Bison LALR grammars for C and C++ and went back to hand-written
