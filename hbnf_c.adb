@@ -2958,10 +2958,14 @@ package body HBNF_C is
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural; Acc : String;
          Buf  : in out U; Fail : String; Ind : String := "    ";
-         Ws   : Boolean := False) is
+         Ws   : Boolean := False; Lead_Ws : Boolean := True) is
+         --  Lead_Ws is False when the caller has already skipped whitespace
+         --  at this position (Emit_Linear hoists it out of an alternation,
+         --  where every branch would otherwise re-skip the same run).
+         At_First : Boolean := True;
          procedure Ws_Skip is
          begin
-            if Ws then
+            if Ws and then (Lead_Ws or else not At_First) then
                Append (Buf, Ind & "skip_ws(p);");
                Append (Buf, LF);
             end if;
@@ -3030,6 +3034,7 @@ package body HBNF_C is
                   when Char_Range =>
                      null;
                end case;
+               At_First := False;
             end;
          end loop;
       end Emit_Seq;
@@ -3281,7 +3286,19 @@ package body HBNF_C is
          procedure Emit_Linear is
             LSt : Natural := 1;
             LBr : Natural := 0;
+            --  Every branch starts at the same position, so each would skip
+            --  the same whitespace run again.  Skip it once and move `save`
+            --  past it, so a failed branch returns to the first real byte.
+            --  skip_ws is a pure function of the position, so this is the
+            --  same language, one call instead of one per branch.
+            Hoist : constant Boolean := Ws and then Has_Alt (Els);
          begin
+            if Hoist then
+               Append (Buf, Ind & "skip_ws(p);");
+               Append (Buf, LF);
+               Append (Buf, Ind & "save = p->pos;");
+               Append (Buf, LF);
+            end if;
             for K in 1 .. N + 1 loop
                if K > N or else Els (K).Kind = Alt then
                   LBr := LBr + 1;
@@ -3293,7 +3310,7 @@ package body HBNF_C is
                   end if;
                   Emit_Seq (Els, LSt, K - 1, Acc, Buf,
                             "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind,
-                            Ws);
+                            Ws, Lead_Ws => not Hoist);
                   if Kind_Prefix /= "" and then LSt <= K - 1
                     and then Els (LSt).Kind = Literal
                   then
@@ -4278,14 +4295,70 @@ package body HBNF_C is
          end if;
 
          --  Skip the file's `whitespace` rule as many times as it matches.
+         --  The scanner tries every alternative of the rule and returns one
+         --  match, so skipping a run of blanks through it costs one call and
+         --  one pass over the alternatives per character.  A run is almost
+         --  all single blanks, so the rule's own single-code-point ASCII
+         --  alternatives are coalesced into one byte test and consumed
+         --  inline; the scanner is called only where a longer alternative (a
+         --  comment, a backslash continuation) could begin.  The test is
+         --  derived from the grammar, so a file whose `ws` is something else
+         --  gets its own, and a rule with no single-code-point alternative
+         --  falls back to the scanner alone.
          if Ws_Name /= Null_Unbounded_String then
-            Append (Ws_Skip, "__attribute__((unused))" & LF);
-            Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
-            Append (Ws_Skip, "    size_t n;" & LF);
-            Append (Ws_Skip, "    while ((n = "
-              & Rule_Scanner (Rules, To_String (Ws_Name))
-              & "(p->text, p->pos, p->len)) > 0) p->pos += n;" & LF);
-            Append (Ws_Skip, "}" & LF & LF);
+            declare
+               DNF   : constant Cp_Branch_Atom_Vectors.Vector :=
+                 Char_DNF (Rules, To_String (Ws_Name));
+               Fast  : U;
+               Rest  : Boolean := False;
+               First : Boolean := True;
+            begin
+               for B of DNF loop
+                  if Natural (B.Length) = 1 and then B (1).Kind = Single
+                    and then B (1).Hi < 16#80#
+                  then
+                     if not First then
+                        Append (Fast, " || ");
+                     end if;
+                     First := False;
+                     Append (Fast, "(b >= " & Img (B (1).Lo) & " && b <= "
+                       & Img (B (1).Hi) & ")");
+                  else
+                     Rest := True;
+                  end if;
+               end loop;
+               Append (Ws_Skip, "__attribute__((unused))" & LF);
+               Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
+               if First then
+                  --  No single-code-point alternative: the scanner alone.
+                  Append (Ws_Skip, "    size_t n;" & LF);
+                  Append (Ws_Skip, "    while ((n = "
+                    & Rule_Scanner (Rules, To_String (Ws_Name))
+                    & "(p->text, p->pos, p->len)) > 0) p->pos += n;" & LF);
+               else
+                  Append (Ws_Skip, "    for (;;) {" & LF);
+                  Append (Ws_Skip, "        while (p->pos < p->len) {" & LF);
+                  Append (Ws_Skip, "            unsigned char b = "
+                    & "(unsigned char)p->text[p->pos];" & LF);
+                  Append (Ws_Skip, "            if (!(" & To_String (Fast)
+                    & ")) break;" & LF);
+                  Append (Ws_Skip, "            p->pos++;" & LF);
+                  Append (Ws_Skip, "        }" & LF);
+                  if Rest then
+                     Append (Ws_Skip, "        { size_t n = "
+                       & Rule_Scanner (Rules, To_String (Ws_Name))
+                       & "(p->text, p->pos, p->len);" & LF);
+                     Append (Ws_Skip, "          if (n == 0) break;" & LF);
+                     Append (Ws_Skip, "          p->pos += n; }" & LF);
+                  else
+                     --  Every alternative is one of the bytes above, so the
+                     --  loop has already consumed the whole run.
+                     Append (Ws_Skip, "        break;" & LF);
+                  end if;
+                  Append (Ws_Skip, "    }" & LF);
+               end if;
+               Append (Ws_Skip, "}" & LF & LF);
+            end;
          end if;
 
          if not Nocase_Words.Is_Empty then

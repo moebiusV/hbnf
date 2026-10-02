@@ -124,7 +124,11 @@ hostatom    = address ":" port
             | word
 
 ; a dynamic interface address: (em0), or (em0:network) / (em0:0) with a modifier
-ifname      = word                              ; the interface name
+; A dynamic interface name: a letter leads, as parse.y's dynaddr requires —
+; "dynamic interfaces need not exist at load-time, but names must start with
+; a letter", which is what regress/sbin/pfctl/pfail49.in checks.  `word`
+; alone would take (10.1.2.3), since a word may lead with digits.
+ifname      = ALPHA *wordchars                   ; the interface name
 ifaddr      = word                              ; the optional :address
 dynaddr     = "(" ifmod ")"
             | "(" ifname ":" ifaddr ")"
