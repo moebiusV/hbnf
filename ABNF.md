@@ -68,7 +68,7 @@ ABNF's union; literals are case-sensitive, like parse.y keywords; a rule
 referenced for a field is a type, not just a pattern.
 
 **Left out:** nothing in RFC 5234's syntax is refused by the reader now.
-Character classes are named rules (`grammars/core.hbnf`).  Some ABNF
+Character classes are named rules (`grammars/common.hbnf`).  Some ABNF
 features are not there yet in the backends (§3).
 
 ## 2. The layers: design and implementation
@@ -78,7 +78,7 @@ features are not there yet in the backends (§3).
 | Bits | `binary` mode: a field is `name:N` with N in bits, packed big-endian in RFC order, read by generated shift-and-mask code (§4.7) | No. `binary` / `a:4` → `unexpected character ':'`. The paper says "design, not yet implemented". |
 | Octets | the unit of `binary` mode; `*u8` payloads; `dst:[6]` (§4.7) | No |
 | Code points | UTF-8 decoded on the way in; the matcher works on code points; a literal can name `"café"` (§3.3, §5.2) | All four backends: yes. Each lexer's character-layer scanners decode UTF-8 (`hbnf_decode_utf8` in C, `Decode_Utf8` in Ada, `decode_utf8` in Rust/Zig) and match code points, so `%u20AC` (€) and `%x20-10FFFF` match multi-byte sequences. The interpreter still compares bytes (§2, §5). |
-| Characters | character-level rules compiled to scanners (`int = ["-"] 1*DIGIT`, `money = 1*DIGIT "." 2DIGIT`); named classes `digit`, `alpha`, `hexdig`; `where` refinements; the lexer generated from these rules, taking the longest match (§4.1–4.3) | Partial. The numeric terminals `%b`/`%d`/`%o`/`%u`/`%x` and ranges parse (into a `Char_Range` element), and every backend compiles character-level rules to scanners with a maximal-munch `char_dispatch` (single-char, multi-char sequence, list elements); named classes come from `grammars/ascii.hbnf`. `where` is still deferred. |
+| Characters | character-level rules compiled to scanners (`int = ["-"] 1*DIGIT`, `money = 1*DIGIT "." 2DIGIT`); named classes `digit`, `alpha`, `hexdig`; `where` refinements; the lexer generated from these rules, taking the longest match (§4.1–4.3) | Partial. The numeric terminals `%b`/`%d`/`%o`/`%u`/`%x` and ranges parse (into a `Char_Range` element), and every backend compiles character-level rules to scanners with a maximal-munch `char_dispatch` (single-char, multi-char sequence, list elements); named classes come from `grammars/common.hbnf`. `where` is still deferred. |
 | Tokens | jets as the fast path, each with its character-level fallback written above it; `wordchars` | Yes. The lexer tries the jets first, in declaration order, first match wins; then the character rules, longest match; then a fixed template (`templates/c_lexer.tmpl` and its Rust, Zig and Ada twins) that skips blanks and comments and forms words, numbers, quoted strings and punctuation.  `wordchars` widens the word set. RFCPLAN.md decision 7 replaces the template with grammar. |
 
 The rest of this document describes the implemented token layer, and marks
@@ -134,16 +134,16 @@ shapes compiled into parsers for a different language.
 
 ### 3.4 Core rules (RFC 5234 Appendix B.1)
 
-`include "core.hbnf"` defines them, from `grammars/`; it includes
-`ascii.hbnf`, which names every ASCII code point.  A grammar may define any
+`include "common.hbnf"` defines them, from `grammars/`; it includes
+`ascii.hbnf`, which names the non-printable code points.  A grammar may define any
 of them again (a later `=` overrides).
 
 | Name | ABNF | In hbnf |
 |---|---|---|
 | `SP`, `HTAB`, `CR`, `LF` | `%x20`, `%x09`, `%x0D`, `%x0A` | `ascii.hbnf`. Whitespace tokens, significant only where the grammar references them (§6). `LF` is parse.y's `'\n'`. |
-| `WSP`, `CRLF` | `SP / HTAB`, `CR LF` | `WSP` in `ascii.hbnf` (one code point), `CRLF` in `core.hbnf` |
+| `WSP`, `CRLF` | `SP / HTAB`, `CR LF` | both in `common.hbnf` |
 | `LWSP` | `*(WSP / CRLF WSP)` | Not yet: a character rule cannot repeat (RFC 5234 itself warns about `LWSP`) |
-| `ALPHA`, `DIGIT`, `HEXDIG`, `BIT`, `CHAR`, `CTL`, `VCHAR`, `OCTET`, `DQUOTE` | character classes | `ascii.hbnf`; the character layer (§2). A file with `sensitivity rule-name %i` may write them `alpha`, `digit`, `hexdig`. |
+| `ALPHA`, `DIGIT`, `HEXDIG`, `BIT`, `CHAR`, `CTL`, `VCHAR`, `OCTET`, `DQUOTE` | character classes | `common.hbnf`; the character layer (§2). A file with `sensitivity rule-name %i` may write them `alpha`, `digit`, `hexdig`. |
 
 ## 4. Same spelling, different meaning
 

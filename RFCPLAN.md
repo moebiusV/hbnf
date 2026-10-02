@@ -120,9 +120,10 @@ silently.
    `<…>`, and "not written yet:" and the text in the angle brackets.  The
    author writes the rule or a jet.  A hole left for later is then a
    schema error that points at itself, rather than an `XXX` in a comment.
-10. **Core rules.**  `WSP = SP | HTAB` joins `ascii.hbnf` (one code point).
-    `CRLF = CR LF` goes in a new `core.hbnf`, which includes `ascii.hbnf`:
-    RFC 5234 Appendix B.1 in one include.  `LWSP` waits for repetition
+10. **Core rules.**  `common.hbnf` includes `ascii.hbnf` and holds the RFC 5234
+    Appendix B.1 classes (`DIGIT`, `ALPHA`, …, `WSP = SP | HTAB`), `DQUOTE`, and
+    `CRLF = CR LF`; `ascii.hbnf` holds only the non-printable names (the C0
+    controls, blanks, `DEL`).  `LWSP` waits for repetition
     inside character rules, which `Is_Char_Rule` refuses today.
 11. **Negation is `~`.**  `~rule` matches one code point not in the set
     `rule` matches (a complement); repetition composes, so `*~rule` is
@@ -201,7 +202,7 @@ unwind-ident passing; each lands as reviewed patches.
    - `=/`; `sensitivity`; `/` between character ranges;
    - `%d13.10`, `*m` (`*2DIGIT`), continuation by indentation (ABNF's
      `c-wsp`), newlines inside `( )` and `[ ]`;
-   - `<prose-val>`; `WSP`, `CRLF` and `core.hbnf`.
+   - `<prose-val>`; `WSP`, `CRLF` and `common.hbnf`.
 
    *Done 2026-09-28.*  Also: `/` is checked only in the rules the parser
    uses, like `<prose-val>`, so an included RFC's rules can be replaced;

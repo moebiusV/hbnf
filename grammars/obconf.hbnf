@@ -7,7 +7,7 @@
 ; as a literal separator, e.g. pfctl's `flags S/SA`, so the set is not shared
 ; here.
 
-include "ascii.hbnf"
+include "common.hbnf"
 
 ; phrase rules in this file (and a daemon's own file, which says it too)
 ; skip `ws` between elements; char rules never do.

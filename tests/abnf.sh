@@ -1,7 +1,7 @@
 #!/bin/sh
 # RFC 5234 forms the reader takes (RFCPLAN.md step 1): `/` between single
 # characters, `=/`, `%d13.10`, `*m`, continuation by indentation, newlines
-# inside ( ), `sensitivity`, <prose-val>, and core.hbnf.  Each grammar is
+# inside ( ), `sensitivity`, <prose-val>, and common.hbnf.  Each grammar is
 # generated as C, compiled, and run on inputs it must accept or reject;
 # the schemas it must refuse are checked for the reason given.
 #   HBNF=/path/to/hbnf sh tests/abnf.sh      (default ./hbnf)
@@ -63,7 +63,7 @@ refuse_file() { # $1=schema file, $2=text the message must hold, $3=label
 	fi
 }
 
-CORE="$HERE/grammars/core.hbnf"
+CORE="$HERE/grammars/common.hbnf"
 
 echo "== \`/\` between single characters =="
 rm -f "$W/t"; gen <<G
@@ -174,7 +174,7 @@ else echo "  FAIL [no caret]: $(cat "$W/err.txt")"; rc=1; fi
 rm -f "$W/t"; gen_file tests/abnf/filled.hbnf
 check OK   "123" "the hole filled by a later ="
 
-echo "== core.hbnf: CRLF and WSP =="
+echo "== common.hbnf: CRLF and WSP =="
 rm -f "$W/t"; gen <<G
 include "$CORE"
 doc   = lines END

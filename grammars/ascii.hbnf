@@ -1,14 +1,8 @@
-; ascii.hbnf — the ASCII character set, named.
+; ascii.hbnf — the non-printable ASCII characters, named.
 ;
-; Include this to name code points by their ASCII names: the C0 control
-; characters (NUL .. US), the special non-printing/punctuation characters
-; (SP, DEL, DQUOTE, HT/HTAB), and the RFC 5234 Appendix B.1 character
-; classes (DIGIT, ALPHA, HEXDIG, ...).
-;
-; Every rule here matches exactly one code point, so the character-layer
-; lexer compiles each into a single-character scanner (a "token").  RFC
-; 5234's multi-character core rules are in core.hbnf, which includes this
-; file: CRLF, and LWSP once a character rule can repeat.
+; The C0 control characters (NUL .. US), DEL, and the blanks SP and HT/HTAB.
+; Everything printable — and every character class — lives in common.hbnf,
+; which includes this file.
 
 ; --- C0 control characters (0x00 .. 0x1F) ---
 NUL = %x00
@@ -44,22 +38,7 @@ GS  = %x1D
 RS  = %x1E
 US  = %x1F
 
-; --- special non-printing and punctuation ---
-SP     = %x20
-DEL    = %x7F
-DQUOTE = %x22
-HTAB   = %x09
-
-; --- RFC 5234 Appendix B.1 character classes (each matches one code point) ---
-DIGIT  = %x30-39
-LOWER  = %x61-7A
-UPPER  = %x41-5A
-ALPHA  = %x41-5A | %x61-7A
-ALNUM  = %x30-39 | %x41-5A | %x61-7A
-HEXDIG = %x30-39 | %x41-46 | %x61-66
-BIT    = %x30 | %x31
-CHAR   = %x01-7F
-CTL    = %x00-1F | %x7F
-VCHAR  = %x21-7E
-OCTET  = %x00-FF
-WSP    = SP | HTAB             ; white space
+; --- blanks and DEL ---
+SP   = %x20
+HTAB = %x09
+DEL  = %x7F

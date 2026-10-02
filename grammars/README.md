@@ -45,7 +45,7 @@ language C
 - **Readable typed tokens** — `str` (quoted string), `word`/`atom`
   (bareword), `int`, `bool`/`flag` (yes/no), `u8`..`u64`/`i8`..`i64`
   (fixed-width).  Character classes are the RFC 5234 names in
-  `ascii.hbnf` (`DIGIT`, `ALPHA`, `HEXDIG`, …, uppercase), and single code
+  `common.hbnf` (`DIGIT`, `ALPHA`, `HEXDIG`, …, uppercase), and single code
   points and ranges are the `%b`/`%d`/`%o`/`%u`/`%x` numeric terminals.  A
   rule made only of these is a character rule, compiled to a scanner.
 - **`%` is the dispatch prefix** — the reader macro of hbnf, what `#'` is to
@@ -146,23 +146,16 @@ round.
 Each grammar round-trips through the `hbnf` generator (`hbnf`): it
 emits a self-contained C parser that compiles and parses a sample config.
 
-`obconf.hbnf`, `tailq.hbnf`, `ascii.hbnf` and `core.hbnf` are
+`common.hbnf`, `obconf.hbnf`, `tailq.hbnf` and `ascii.hbnf` are
 include-only, not daemon grammars: each is pulled in with `include "…"`.
-`obconf.hbnf` holds the rules the daemons share (`string`, `address`,
-…), which a daemon grammar may override; `tailq.hbnf` carries the shared
-`listops { }` block and the `#include <sys/queue.h>` it needs, and defines
-no rules; `ascii.hbnf` is the ASCII names and the RFC 5234 character
-classes, and `core.hbnf` adds `CRLF` to them: RFC 5234 Appendix B.1 in one
-include.  Any script that globs `grammars/*.hbnf` must skip the four of
-them (the nine daemons above are the grammars).
-
-Planned: `common.hbnf` holds what any parsing effort needs — the RFC 5234
-character classes and core rules (`DIGIT`, `ALPHA`, `HEXDIG`, `WS`, `WSP`,
-`CRLF`, …), today `ascii.hbnf` plus `core.hbnf`.  `ascii.hbnf` shrinks to
-just the non-printable named characters (the C0 controls, `DEL`, `ESC`,
-`BEL`, `NAK`, and the blanks `SP`/`HTAB`/`CR`/`LF`).  The shared core is
-`obconf.hbnf`, the nine daemons are `obconf_<daemon>.hbnf`, and the
-standalone round-trip demo is `obconf_roundtrip.hbnf`.
+`common.hbnf` holds the RFC 5234 character classes and core rules (`DIGIT`,
+`ALPHA`, `HEXDIG`, `WSP`, `CRLF`, …), and includes `ascii.hbnf` for the
+non-printable names (the C0 controls, `DEL`, and the blanks); `obconf.hbnf`
+holds the rules the daemons share (`string`, `address`, …), which a daemon
+grammar may override; `tailq.hbnf` carries the shared `listops { }` block and
+the `#include <sys/queue.h>` it needs, and defines no rules.  Any script that
+globs `grammars/*.hbnf` must skip the four of them (the nine daemons above
+are the grammars).
 
 ## Bindings (`bind/`)
 
