@@ -921,7 +921,11 @@ package body HBNF_Zig is
             end loop;
             if not Progress then
                raise Parse_Error with
-                 "by-value cycle in schema (add a * repetition)";
+                 "a rule's value cannot contain itself: the tree types are structs "
+                 & "by value, so this one would be infinitely sized.  Routing "
+                 & "the recursion through a list does not help (a list node "
+                 & "holds its element by value too); RFCPLAN.md step 9 adds "
+                 & "the pointer that breaks the cycle";
             end if;
          end;
       end loop;

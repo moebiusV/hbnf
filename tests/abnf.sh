@@ -174,6 +174,21 @@ else echo "  FAIL [no caret]: $(cat "$W/err.txt")"; rc=1; fi
 rm -f "$W/t"; gen_file tests/abnf/filled.hbnf
 check OK   "123" "the hole filled by a later ="
 
+echo "== recursive tree types: the known gap (RFCPLAN step 9) =="
+# A rule whose value contains itself.  C refuses it with a message that says
+# why; when step 9 lands this becomes a parse test instead.
+refuse_file tests/abnf/recursive.hbnf "cannot contain itself" \
+	"a recursive tree type is refused, with the reason"
+if "$CLI" tests/abnf/recursive-via-list.hbnf --backend=c > "$W/rl.c" 2>/dev/null; then
+	if gcc -c -w -o /dev/null -Itests/bsdinc "$W/rl.c" 2>/dev/null; then
+		echo "  UNEXPECTED [a list-laundered cycle now compiles]: step 9a is done, update this test"
+	else
+		echo "  PASS [known gap: a list-laundered cycle still emits uncompilable C]"
+	fi
+else
+	echo "  PASS [a list-laundered cycle is now refused: step 9a done, update this test]"
+fi
+
 echo "== common.hbnf: CRLF and WSP =="
 rm -f "$W/t"; gen <<G
 include "$CORE"

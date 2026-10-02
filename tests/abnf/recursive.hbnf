@@ -1,0 +1,10 @@
+; A recursive tree type: every expression language needs this, and no
+; backend emits it yet (RFCPLAN.md step 9).  C and Ada refuse the schema;
+; Rust and Zig generate code their compilers then reject.
+;
+; Kept as a fixture so step 9 has something to turn green.
+language C
+include "../../grammars/obconf.hbnf"
+
+prim = '(' expr ')' | int
+expr = prim

@@ -138,6 +138,40 @@ silently.
     trailing comma, no empty elements.  Deliberately stricter than HTTP's
     `#rule`, which allows empty elements (a known server-bug source).
 
+13. **Context-sensitivity: a pure predicate, not a parse-time action.**  C
+    is the standing example: with `typedef int A;` in scope, `(A) * 0` is a
+    cast of `*0`, and with `int B;` in scope `(B) * 0` is a multiplication.
+    The two cannot be told apart without consulting a symbol table *during*
+    the parse, so no context-free grammar settles it.
+
+    The bar here is lower than it looks, because tree-sitter does not solve
+    this either.  Measured 2026-10-01 against tree-sitter-c: both lines
+    produce the *same* tree, `(binary_expression (parenthesized_expression
+    (identifier)) (number_literal))`.  The typedef case is simply wrong — it
+    has a `cast_expression` rule and cannot tell when to use it, so
+    precedence picks multiplication both times.  That is fine for
+    highlighting and is not a correct parse.  So "as general as
+    tree-sitter" does not require this; being *right* does.
+
+    When it is wanted, the shape is a **predicate**, which is not the
+    parse-time action hbnf refuses:
+
+        typedef-name = word &{ hbnf_is_typedef(tok, len) }
+
+    The distinction is the whole reason it is admissible.  An `%action{}` has
+    effects, so it must run once, after the parse, bottom-up — ordered choice
+    backtracks, and a re-run action would double its effects.  A predicate is
+    a *pure query*: no effects, idempotent, safe to evaluate as often as
+    backtracking needs.  Rules: it may read state, never write it; its value
+    may not depend on evaluation order; and the state it reads is written
+    only by `%action{}` after the parse, or by the author's own code before
+    it.  A predicate that writes is the yacc lexer hack, with yacc's
+    problems, and stays refused.
+
+    This is a separate axis from step 9 and much less certain, so it waits
+    until a grammar actually needs it.  It also does not make hbnf ambiguous:
+    the predicate decides a branch, it does not explore several.
+
 ## Compiler-compiler completion criteria
 
 The end state is deliberately broader than "an ABNF parser generator": one
@@ -291,12 +325,84 @@ unwind-ident passing; each lands as reviewed patches.
    points, width, signedness, byte order, range checks — with fixtures
    comparing interpreter and backends on bytes and values.
 
-8. **Compiler-quality diagnostics.**  Expected-error fixtures, source-span
-   diagnostics, rule traces, and a schema linter (nullable repetition,
-   unreachable rules, shadowed ordered choice, ambiguous `/`, unsupported
-   backend constructs) that runs before generation.
+8. **Compiler-quality diagnostics and error recovery.**  Expected-error
+   fixtures, source-span diagnostics, rule traces, and a schema linter
+   (nullable repetition, unreachable rules, shadowed ordered choice,
+   ambiguous `/`, unsupported backend constructs) that runs before
+   generation.
 
-9. **Completion gate and backend spectrum.**  C/Ada/Rust/Zig and the
+   Recovery borrows from tree-sitter, which does this better than anything
+   here.  Measured 2026-10-01: given three config rules whose middle one is
+   malformed, it recovered and still produced all three, flagging only the
+   bad one (`has_error` on that subtree, the siblings clean).  What is worth
+   taking:
+   - **A cost model, not a panic rule.**  Recovery is a scored search —
+     tree-sitter prices a skipped or inserted token and keeps the cheapest
+     repair — rather than "discard to the next newline".
+   - **Error as a tree node.**  The bad region becomes a node with its own
+     span, so the siblings around it stay typed and the caller sees exactly
+     what was not understood.  `statements` today reports and moves on, and
+     the entry is simply absent.
+   - **Per-subtree error marks**, so a caller can ask whether a particular
+     entry is trustworthy instead of only whether the file was.
+
+   What is not worth taking: tree-sitter recovers because GLR is already
+   exploring alternatives, and this stays ordered choice (see "Not in this
+   plan").  So the cost model is reimplemented over backtracking, bounded,
+   and the fail-fast default is kept — recovery stays opt-in per the
+   compiler-compiler decision, and the test that actions are not re-run
+   stands.
+
+9. **Recursive tree types** — the one blocker for a real programming
+   language.  A grammar whose tree contains itself (`prim = '(' expr ')' |
+   int`, which is every expression language) cannot be emitted today,
+   because a rule's value is a struct by value and the struct would be
+   infinitely sized.  Measured 2026-10-01, the four backends disagree,
+   which is itself the bug:
+
+   | backend | on `prim = '(' expr ')' \| int`, `expr = prim` |
+   |---|---|
+   | C | refuses: "by-value cycle in schema (add a `*` repetition)" |
+   | Ada | refuses, same message |
+   | Rust | generates; `rustc` says `E0072: recursive type has infinite size` |
+   | Zig | generates; `zig` says "depends on itself" once a size is needed |
+
+   Two things to fix, one mechanism:
+
+   9a. **The cycle check has a hole, and its advice is wrong.**  A list node
+       embeds its element by value, so routing recursion through a list
+       (`sums = 1*sum`) breaks the *detector* without breaking the cycle.
+       The generator then accepts the schema and emits C that does not
+       compile.  Three rules reproduce it:
+
+           sum  = sum '+' term | term
+           term = '(' sums ')' | int
+           sums = 1*sum
+
+       `gcc`: "field 'sum' has incomplete type".  So the "add a `*`
+       repetition" hint must go whatever else happens.
+
+   9b. **Break the cycle with a pointer.**  The dependency graph is already
+       computed for emission order; instead of giving up when it cannot be
+       topologically sorted, pick a back edge per strongly-connected
+       component and emit that one field indirect — `expr_t *expr` in C,
+       `Box<Expr>` in Rust, `*Expr` in Zig, an access type in Ada —
+       allocating at the commit point and following it in the free function
+       and the walkers.  The arena already owns the string leaves and can
+       own these.  Choose the back edge deterministically (lowest rule
+       index) so output stays byte-stable.
+
+   Gate: the four backends accept or refuse the same schemas, the
+   expression grammar above compiles and parses in all four, and the nine
+   daemon grammars stay byte-identical (none of them recurses, so nothing
+   should move).
+
+   This is what an earlier review meant by "not general enough for a real
+   language".  It is narrower than it sounded — one mechanism, in the type
+   emitter — and it is *not* the typedef problem, which is separate and
+   discussed under decision 13.
+
+10. **Completion gate and backend spectrum.**  C/Ada/Rust/Zig and the
    interpreter agree on the same corpus, parsers are reentrant, actions have
    named typed inputs and locations, scanner modes work, and the RFC/wire
    fixtures have byte-identity tests.  Then fill out the compiled targets (D,

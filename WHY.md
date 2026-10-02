@@ -127,6 +127,73 @@ IDE support, incremental parsing) that hbnf does not aim to replace. hbnf's
 narrowness is where it wins: the config-file shape (jets, `--conf`, id-ref
 output) is something ANTLR does not address.
 
+## hbnf and tree-sitter
+
+tree-sitter is the other obvious comparison, and the one most likely to be
+proposed as a replacement, so it is worth being exact about. Measured
+2026-10-01: the §6 toy grammar written twice — once in hbnf, once as a
+tree-sitter grammar accepting the same language — generated, compiled `gcc
+-O2`, and run over byte-identical input, best of five.
+
+| input | hbnf | tree-sitter 0.27 |
+|---|---|---|
+| 7.68 MB | **48 ms**, 21 MB RSS | 502 ms, 117 MB |
+| 76.9 MB | **489 ms**, 202 MB | 5159 ms, 1155 MB |
+
+Both parses complete and correct (tree-sitter: 100,000 and 1,000,000
+children, no error). About 159 MB/s against about 15 MB/s.
+
+**On the comparison being fair.** tree-sitter has no BNF notation, so the
+two notations cannot be compared; what is compared is the *task* — parse
+this language, this input, build a usable tree — with each tool's grammar
+written idiomatically. Three asymmetries are worth stating. The trees differ:
+tree-sitter materialises a CST node per token with byte offsets, hbnf builds
+typed structs, and tree-sitter's is the larger object. tree-sitter cannot
+turn off the GLR and error-recovery machinery it carries. And the comparison
+above is a *cold* parse, which is not what tree-sitter optimises.
+
+So the cold number alone would be unfair, and the incremental one was
+measured too: after a one-byte edit, re-parsing the 7.68 MB file takes **87
+ms** — still slower than hbnf's 48 ms cold parse. The reason is structural,
+and the honest caveat: a config file is a flat list of N independent rules,
+so an edit forces the root's N-child list to be rebuilt and incrementality
+has almost nothing to prune. For deeply nested source code, which is what
+tree-sitter is for, the win would be large. The conclusion is therefore
+narrow and not a general claim: **for the shape of input hbnf targets, a
+flat list parsed once, tree-sitter's design advantage does not apply.**
+
+Beyond speed, three structural differences. tree-sitter's output is a generic
+CST walked with a cursor and compared by node-type string, where hbnf's
+`parse_config()` fills the daemon's own `struct ntpd_conf` byte-identically
+to parse.y — reading one field out of the CST took about twenty lines
+against `r.from.int_`. tree-sitter refuses to generate on an ambiguity ABNF
+considers legal, demanding hand-annotated `prec()` or a `conflicts`
+declaration at each one, which is the opposite of pasting an RFC in. And it
+cannot ship where this has to: a 16,800-line C runtime, grammars authored in
+JavaScript, a Rust CLI to build them, and parse tables that run from 94,000
+lines (javascript) to 471,000 (ruby), against 2,466 lines for hbnf's entire
+ntpd parser with no runtime at all.
+
+The deeper point is about jets. tree-sitter's external scanner *is* a jet,
+and a richer one — `create`/`destroy`/`scan`/`serialize`/`deserialize`, a
+stateful scanner whose state is snapshotted so an incremental re-parse can
+resume — handed a raw cursor (`lookahead`, `advance`, `mark_end`). It leaned
+on that hard enough that there is no character-level grammar at all:
+tree-sitter's answer to "what is a token" is a regex, or C, never grammar,
+and the runtime hardcodes `keyword_capture_token` and a `reserved_words` set
+for what a character grammar would say. In the main grammars, bash ships
+1,217 lines of hand-written C, ruby 1,110, python 437, javascript 364; only
+C and Go escape, being the languages whose tokens are genuinely regular.
+Adopting it would mean writing *more* jets, and stateful ones. hbnf is going
+the other way: 18 jets left and falling as the character layer absorbs them,
+toward a parser with no hand-written scanner, where a jet is an optimisation
+one may drop rather than the only way to say what a token is.
+
+Where tree-sitter is better: error recovery, which RFCPLAN step 8 borrows
+from deliberately. And it is the right tool for the other job — if `pf.conf`
+ever wants editor highlighting, that is a tree-sitter grammar, a separate
+artifact from the daemon's parser.
+
 The targets point the same way. ANTLR's ten runtimes are Java (the reference),
 C#, C++, Python 3, JavaScript, TypeScript, Go, Swift, PHP and Dart, each of
 which must be linked. hbnf's four backends are C, Rust, Zig and Ada, each a
