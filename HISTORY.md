@@ -1,23 +1,8 @@
 # A Short History of the Parser Generator
 
-Named here, by year of first contribution:
+© 2026 David Walther · 1 October 2026
 
-- Emil Post, 1943
-- Noam Chomsky, 1956
-- John Backus, 1959
-- Peter Naur, 1960
-- Donald Knuth, 1964
-- Stephen Johnson, 1971
-- Al Aho, 1971
-- Dennis Ritchie, 1972
-- David Crocker, 1982
-- Terence Parr, 1988
-- Isaac Mozeson, 1989
-- Jeff Fox, 1996
-- Bryan Ford, 2002
-- Anders Magnusson, 2002
-- Joseph Myers, 2004
-- Max Brunsfeld, 2014
+Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Donald Knuth (1964) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
 
 Before any of this was engineering, it was linguistics. Noam Chomsky asked how
 a person produces and understands sentences never spoken before, and answered:
