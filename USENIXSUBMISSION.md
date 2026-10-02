@@ -730,7 +730,7 @@ Two research directions follow from the design.
 already repeat the same boilerplate — `string = str | word`, `yesno =
 "yes" | "no"`, IPv4/IPv6 and port handling — so a schema should be able to
 `include "stdlib.hbnf"` and override individual definitions locally.
-`include` exists (the daemons share `commonconf.hbnf`), and a later
+`include` exists (the daemons share `obconf.hbnf`), and a later
 definition overrides an earlier one.  yacc has
 no grammar-level include at all (its only `#include` reaches the verbatim C
 blocks, not the rules), so this is hbnf exceeding yacc rather than matching it;

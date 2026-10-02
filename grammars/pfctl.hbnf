@@ -43,7 +43,7 @@ keywords {
     urpf-failed user weight
 }
 include "tailq.hbnf"
-include "commonconf.hbnf"
+include "obconf.hbnf"
 
 whitespace ws
 

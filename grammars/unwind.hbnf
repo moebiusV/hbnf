@@ -30,7 +30,7 @@ keywords {
     port preference recursor stub tls
 }
 include "tailq.hbnf"
-include "commonconf.hbnf"
+include "obconf.hbnf"
 
 whitespace ws
 

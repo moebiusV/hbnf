@@ -41,7 +41,7 @@ keywords {
     unicast via vpn weight
 }
 include "tailq.hbnf"
-include "commonconf.hbnf"
+include "obconf.hbnf"
 
 whitespace ws
 

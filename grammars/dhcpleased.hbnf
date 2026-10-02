@@ -26,7 +26,7 @@ keywords {
     send vendor
 }
 include "tailq.hbnf"
-include "commonconf.hbnf"
+include "obconf.hbnf"
 
 whitespace ws
 

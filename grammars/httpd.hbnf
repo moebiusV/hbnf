@@ -33,7 +33,7 @@ keywords {
     style subdomains syslog tcp ticket timeout tls type types with
 }
 include "tailq.hbnf"
-include "commonconf.hbnf"
+include "obconf.hbnf"
 
 whitespace ws
 

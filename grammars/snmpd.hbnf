@@ -31,7 +31,7 @@ keywords {
     source-address string system tcp text trap udp user write
 }
 include "tailq.hbnf"
-include "commonconf.hbnf"
+include "obconf.hbnf"
 
 whitespace ws
 

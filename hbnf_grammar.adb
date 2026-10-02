@@ -1764,7 +1764,7 @@ package body HBNF_Grammar is
    begin
       --  The built-in lexical jets: the classic word/int/str scanners and the
       --  default whitespace, as hand-written `%scan{}` code a grammar
-      --  (commonconf) may override.  A grammar that defines its own rule keeps
+      --  (obconf) may override.  A grammar that defines its own rule keeps
       --  it; `Reachable` drops an injected jet nothing references.
       declare
          procedure Inject_Jet (Name, Code : String) is

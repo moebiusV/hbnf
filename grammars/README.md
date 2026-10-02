@@ -31,7 +31,7 @@ language C
 - **Include and override** — `include "file"`, before the first rule, reads
   a file once, however often it is included.  A later `name =` overrides an
   earlier one, in the same file or another, so a daemon grammar replaces the
-  `commonconf.hbnf` rules it needs to.  The root is the top file's first
+  `obconf.hbnf` rules it needs to.  The root is the top file's first
   new rule; a file that only overrides and extends keeps the root of what
   it includes.  `language` and `sensitivity` apply to their own file; the
   other directives describe the one generated parser, and two files that
@@ -78,7 +78,7 @@ language C
 | parse.y | hbnf |
 |---|---|
 | `%token` keyword + `lookup()` table | a quoted literal, in keyword-table spelling |
-| `STRING` (quoted or bareword) | `string` — defined once in `commonconf.hbnf` as `string = str \| word \| wildcard` |
+| `STRING` (quoted or bareword) | `string` — defined once in `obconf.hbnf` as `string = str \| word \| wildcard` |
 | `NUMBER` | `int` |
 | `x : y z` | `x = y z` |
 | `x : y \| z` | `x = y \| z` |
@@ -146,9 +146,9 @@ round.
 Each grammar round-trips through the `hbnf` generator (`hbnf`): it
 emits a self-contained C parser that compiles and parses a sample config.
 
-`commonconf.hbnf`, `tailq.hbnf`, `ascii.hbnf` and `core.hbnf` are
+`obconf.hbnf`, `tailq.hbnf`, `ascii.hbnf` and `core.hbnf` are
 include-only, not daemon grammars: each is pulled in with `include "…"`.
-`commonconf.hbnf` holds the rules the daemons share (`string`, `address`,
+`obconf.hbnf` holds the rules the daemons share (`string`, `address`,
 …), which a daemon grammar may override; `tailq.hbnf` carries the shared
 `listops { }` block and the `#include <sys/queue.h>` it needs, and defines
 no rules; `ascii.hbnf` is the ASCII names and the RFC 5234 character
@@ -156,13 +156,16 @@ classes, and `core.hbnf` adds `CRLF` to them: RFC 5234 Appendix B.1 in one
 include.  Any script that globs `grammars/*.hbnf` must skip the four of
 them (the nine daemons above are the grammars).
 
-Planned: consolidate the daemon layout into `obconf.hbnf` — the shared core,
-today `commonconf.hbnf`, widened to hold the shared jets (the operator
-literals `ne`/`le`/`ge`/`xrange`, plus `octet` and `ipv4`) — plus one
-`obconf_<daemon>.hbnf` per daemon, each `include "obconf.hbnf"`.  Rules two
-or more daemons share move into the common file; the per-daemon file keeps
-only what is daemon-specific.  (The standalone `obconf.hbnf` round-trip
-grammar needs a new name or a merge with the common file first.)
+Planned: `common.hbnf` holds what any parsing effort needs — the RFC 5234
+character classes and core rules (`DIGIT`, `ALPHA`, `HEXDIG`, `WS`, `WSP`,
+`CRLF`, …), today `ascii.hbnf` plus `core.hbnf`.  `ascii.hbnf` shrinks to
+just the non-printable named characters (the C0 controls, `DEL`, `ESC`,
+`BEL`, `NAK`, and the blanks `SP`/`HTAB`/`CR`/`LF`).  `obconf.hbnf` (renamed
+from `commonconf.hbnf`) holds the OpenBSD config core — the lexer (`word`,
+`str`, `int`, `ws`), `string`/`address`, and the shared jets
+(`ne`/`le`/`ge`/`xrange`, `octet`, `ipv4`) — and each daemon becomes
+`obconf_<daemon>.hbnf` (today `bgpd.hbnf`, `httpd.hbnf`, …), `include
+"obconf.hbnf"`.  The standalone round-trip demo is `obconf_roundtrip.hbnf`.
 
 ## Bindings (`bind/`)
 

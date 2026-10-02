@@ -1,5 +1,5 @@
-; commonconf.hbnf — the shared OpenBSD config core, pulled in (and overridable)
-; with `include "commonconf.hbnf"`.  Rules only: the including schema owns
+; obconf.hbnf — the shared OpenBSD config core, pulled in (and overridable)
+; with `include "obconf.hbnf"`.  Rules only: the including schema owns
 ; `language`, the preamble and the epilogue.  The lexer is grammar here: the
 ; core types `int`, `str` and `word` are char rules (decision 7), and a daemon
 ; widens the bareword set by overriding `wordchars` (and, until a negative

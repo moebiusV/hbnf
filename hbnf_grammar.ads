@@ -178,7 +178,7 @@ package HBNF_Grammar is
    --  Rules, minus those nothing uses: the root (Rules (1)), every rule
    --  reachable from it through references (groups included), and every jet
    --  rule (the lexer runs jets whether or not a rule names them), in their
-   --  original order.  An include like commonconf.hbnf brings rules a
+   --  original order.  An include like obconf.hbnf brings rules a
    --  grammar never references; emitting them costs code and unused-function
    --  warnings, and their literals would still become keywords.
    function Reachable (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector;

@@ -41,7 +41,7 @@ keywords {
     tls to transparent ttl url v1 v2 value websockets with
 }
 include "tailq.hbnf"
-include "commonconf.hbnf"
+include "obconf.hbnf"
 
 whitespace ws
 

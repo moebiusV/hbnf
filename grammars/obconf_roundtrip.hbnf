@@ -1,5 +1,5 @@
 ; obconf — the OpenBSD configuration grammar, as a self-contained hbnf
-; grammar: the lexer (commonconf's char rules: word, str, int) and the parser
+; grammar: the lexer (obconf's char rules: word, str, int) and the parser
 ; (the declarative, block-structured form) in one file.  `hbnf` compiles this
 ; directly; there is no separate hand-written lexer or interpreter.
 ;
@@ -7,7 +7,7 @@
 ;   relay "webserver" { forward to "127.0.0.1" port 8080 }
 
 language C
-include "commonconf.hbnf"
+include "obconf.hbnf"
 
 ; Comments are not whitespace: `ws` here skips only the real blanks.  A
 ; comment is its own token, captured and attached by position — own-line
