@@ -60,7 +60,11 @@ RFC 822) wrote a rule `name ::= definition` and alternation with `|`; ABNF,
 from RFC 2234 into RFC 5234, wrote `name = definition` and `/`. hbnf reads `=`,
 `::=` and `:=` as one rule definition, and `|` as alternation, as the early
 RFCs wrote it and as PEG and OpenBSD's parse.y read it; `/` means ABNF's union.
-A grammar copied from any era compiles without retyping.
+A grammar copied from any era compiles without retyping. `[ … ]` for an
+optional is established the same way, from both sides at once: it is ABNF's
+spelling, and it is also the one every manpage synopsis and command-line usage
+line already writes (`ls [OPTION]… [FILE]…`), so the brackets mean "optional"
+in a grammar exactly as they do everywhere else.
 
 ABNF also stops at syntax. It has no `{ }` blocks for a prologue and epilogue,
 no `%scan{}` scanner escape hatch, and no `%action{}` semantic construction.

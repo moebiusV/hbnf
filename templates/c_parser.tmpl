@@ -4,43 +4,86 @@
 #include <stdio.h>
 #include <ctype.h>
 ${strings_h}
-typedef enum { TOK_ATOM, TOK_STR, TOK_INT, TOK_PUNCT${kind}, TOK_EOF } tok_kind_t;
 ${keywords}
-typedef struct { const char *text; uint32_t len, line, col; uint16_t kind, kwid; } token_t;
+${scanners}
 
 typedef struct {
-    const token_t *toks;
-    size_t n, pos;
-    const char *text;   /* source, for the lazy caret line */
+    const char *text;
+    size_t len, pos;
     size_t err_pos;
     size_t err_line, err_col;
     const char *err_expected, *err_found;
+    size_t err_found_len;
     int err_is_lit;
 } parser_t;
 
-/* The line the text being lexed starts on: 1 for a whole file, a statement's
+/* The line the text being parsed starts on: 1 for a whole file, a statement's
    first line when a config is read one statement at a time. */
 static size_t hbnf_line_base = 1;
 
-static void fail(parser_t *p, const char *expected, int is_lit, const char *found) {
+/* 1-based line and column of a byte offset, counting from hbnf_line_base. */
+static void line_col(parser_t *p, size_t pos, size_t *line, size_t *col) {
+    size_t l = hbnf_line_base, c = 1;
+    for (size_t i = 0; i < pos; i++) {
+        if (p->text[i] == '\n') { l++; c = 1; } else c++;
+    }
+    *line = l; *col = c;
+}
+
+static void fail(parser_t *p, const char *expected, int is_lit,
+                 const char *found, size_t found_len) {
     if (p->err_pos != (size_t)-1 && p->pos <= p->err_pos) return;  /* a deeper failure already recorded */
     p->err_pos = p->pos;
-    p->err_expected = expected; p->err_found = found; p->err_is_lit = is_lit;
-    p->err_line = p->pos < p->n ? p->toks[p->pos].line : 0;
-    p->err_col  = p->pos < p->n ? p->toks[p->pos].col  : 0;
-}
-
-static bool expect_lit(parser_t *p, const char *lit, size_t lit_len) {
-    if (p->pos < p->n && (p->toks[p->pos].kind == TOK_ATOM || p->toks[p->pos].kind == TOK_PUNCT)
-        && p->toks[p->pos].text && p->toks[p->pos].len == lit_len
-        && strncmp(p->toks[p->pos].text, lit, p->toks[p->pos].len) == 0) {
-        p->pos++; return true;
+    p->err_expected = expected; p->err_found = found;
+    if (found_len == 0 && p->pos < p->len) {
+        /* a token-sized span at pos, so the error names what was found */
+        char c = p->text[p->pos];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+            || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+            size_t i = p->pos + 1;
+            while (i < p->len && ((p->text[i] >= 'a' && p->text[i] <= 'z')
+                   || (p->text[i] >= 'A' && p->text[i] <= 'Z')
+                   || (p->text[i] >= '0' && p->text[i] <= '9')
+                   || p->text[i] == '_' || p->text[i] == '-'
+                   || p->text[i] == '.'))
+                i++;
+            found_len = i - p->pos;
+        } else {
+            found_len = 1;
+        }
     }
-    fail(p, lit, 1, p->pos < p->n ? p->toks[p->pos].text : "end of input"); return false;
+    p->err_found_len = found_len; p->err_is_lit = is_lit;
+    line_col(p, p->pos, &p->err_line, &p->err_col);
 }
 
-${nocase}static bool expect_kind(parser_t *p, tok_kind_t k, const char *desc) {
-    if (p->pos < p->n && p->toks[p->pos].kind == k && (k != TOK_ATOM || p->toks[p->pos].kwid == KWID_NONE)) return true;
-    fail(p, desc, 0, p->pos < p->n ? p->toks[p->pos].text : "end of input");
+/* A punctuation- or digit-led literal: compare bytes at pos (a prefix is
+   correct there, e.g. "-" in "-5", "0x" in "0x1F"). */
+static bool expect_lit(parser_t *p, const char *lit, size_t lit_len) {
+    if (p->pos + lit_len <= p->len
+        && memcmp(p->text + p->pos, lit, lit_len) == 0) {
+        p->pos += lit_len; return true;
+    }
+    fail(p, lit, 1, p->pos < p->len ? p->text + p->pos : "end of input",
+         p->pos < p->len ? 1 : 0);
     return false;
 }
+
+/* The content of a quoted string s[0..n): strip the quotes and process a
+   backslash escape or a backslash-newline, as the old lexer did. */
+__attribute__((unused))
+static const char *hbnf_str_value(const char *s, size_t n) {
+    hbnf_scratch_len = 0;
+    for (size_t i = 1; i + 1 < n; i++) {
+        if (s[i] == '\\') {
+            i++;
+            if (s[i] == '\n') continue;   /* backslash-newline: dropped */
+        }
+        hbnf_str_put(s[i]);
+    }
+    { size_t m = hbnf_scratch_len;
+      const char *r = hbnf_str_append(hbnf_scratch, m);
+      hbnf_scratch_len = 0;
+      return r; }
+}
+
+${nocase}${word_matcher}${ws_skip}

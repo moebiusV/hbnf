@@ -4,7 +4,8 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with HBNF_Grammar;
 
---  HBNF: an OpenBSD-style ("parse.y style") configuration parser.
+--  HBNF_Config: parse an obconf configuration file into a tree.  (obconf is a
+--  grammar implemented in hbnf, the parser generator this crate also hosts.)
 --
 --  A declarative, block-structured grammar — keyword arguments, `{ }`
 --  blocks, double-quoted strings with a fixed escape set, `#` comments, no
@@ -13,7 +14,7 @@ with HBNF_Grammar;
 --  typed (word / string / integer / decimal); a decimal keeps both its exact
 --  text (for perfect round-tripping) and a fixed-point value (so callers need
 --  not convert).
-package HBNF is
+package HBNF_Config is
 
    use Ada.Strings.Unbounded;
 
@@ -143,7 +144,7 @@ package HBNF is
 
    --  The number of values and the Index'th value of a directive.
    function Value_Count (N : Node) return Natural;
-   function Value_At (N : Node; Index : Positive) return HBNF.Value;
+   function Value_At (N : Node; Index : Positive) return HBNF_Config.Value;
 
    --  Scalar extraction --------------------------------------------------
 
@@ -160,4 +161,4 @@ package HBNF is
    --  preserved as Comment nodes in the children sequence.
    function Print (Root : Node_Access) return String;
 
-end HBNF;
+end HBNF_Config;

@@ -4,11 +4,11 @@
 # the left, and `string : string STRING | STRING`.  good.conf must parse as
 # tests/leftrec/expected.txt says, each *.bad must fail, and a 100,000-term
 # sum must parse with a 256 KB stack.  Then the left recursion hbnf refuses.
-#   HBNF_CLI=/path/to/hbnf_cli sh tests/leftrec.sh     (default ./hbnf_cli)
+#   HBNF=/path/to/hbnf sh tests/leftrec.sh     (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
-CLI=${HBNF_CLI:-./hbnf_cli}
+CLI=${HBNF:-./hbnf}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 "$CLI" tests/leftrec/leftrec.hbnf --backend=c > "$W/l.c" || { echo "leftrec: FAIL (generate)"; exit 1; }

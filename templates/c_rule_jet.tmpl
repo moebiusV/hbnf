@@ -1,3 +1,4 @@
-    if (!expect_kind(p, ${kind}, "${desc}")) return false;
-    *out = hbnf_str_append(p->toks[p->pos].text, p->toks[p->pos].len); p->pos++;
+    { size_t n = ${scan}(p->text, p->pos, p->len);
+      if (!n) { fail(p, "${desc}", 0, p->text + p->pos, 0); return false; }
+      *out = hbnf_str_append(p->text + p->pos, n); p->pos += n; }
     return true;

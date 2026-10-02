@@ -1,1 +1,1 @@
-${ind}${acc}_line = p->toks[save].line;
+${ind}{ size_t _l, _c; line_col(p, save, &_l, &_c); ${acc}_line = _l; }

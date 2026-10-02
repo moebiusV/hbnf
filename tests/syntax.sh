@@ -3,11 +3,11 @@
 # %i and %s literals, a %i keyword, C escapes in a literal, %scan{ } and
 # %action{ }.  good.conf must parse as tests/syntax/expected.txt says; each
 # *.bad must fail.
-#   HBNF_CLI=/path/to/hbnf_cli sh tests/syntax.sh      (default ./hbnf_cli)
+#   HBNF=/path/to/hbnf sh tests/syntax.sh      (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
-CLI=${HBNF_CLI:-./hbnf_cli}
+CLI=${HBNF:-./hbnf}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 "$CLI" tests/syntax/syntax.hbnf --backend=c > "$W/s.c" || { echo "syntax: FAIL (generate)"; exit 1; }

@@ -5,12 +5,12 @@
 # regress runs, so an `include "x.inc"` there finds x.inc.
 # server.hbnf cannot catch what only a real grammar exercises (keyword enums
 # such as pfctl's `dir = "in" / "out"`, keyword-led option lists).
-#   HBNF_CLI=/path/to/hbnf_cli sh tests/daemons.sh      (default ./hbnf_cli)
+#   HBNF=/path/to/hbnf sh tests/daemons.sh      (default ./hbnf)
 # Prints one "<grammar>: OK" or "<grammar>: FAIL ..." line per grammar.
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
-CLI=${HBNF_CLI:-./hbnf_cli}
+CLI=${HBNF:-./hbnf}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 rc=0

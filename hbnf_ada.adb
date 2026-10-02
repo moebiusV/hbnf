@@ -956,6 +956,39 @@ package body HBNF_Ada is
          return 0;
       end Find;
 
+      --  "own" when a rule is the own-line comment, "eol" when it is the
+      --  same-line comment (chasing single-name aliases such as
+      --  `trailing = eol_comment`), "" otherwise.
+      function Comment_Kind (Nm : String; Depth : Natural := 0) return String is
+      begin
+         if Nm = "comment" then
+            return "own";
+         end if;
+         if Nm = "eol_comment" then
+            return "eol";
+         end if;
+         if Depth >= 8 then
+            return "";
+         end if;
+         declare
+            J : constant Natural := Find (Nm);
+         begin
+            if J = 0 then
+               return "";
+            end if;
+            declare
+               P : constant Element_Vectors.Vector := Rules (J).Pattern;
+            begin
+               if Natural (P.Length) = 1 and then P (1).Kind = Name
+                 and then P (1).Min = 1 and then P (1).Max = 1
+               then
+                  return Comment_Kind (To_String (P (1).Name), Depth + 1);
+               end if;
+            end;
+         end;
+         return "";
+      end Comment_Kind;
+
       function Is_Core (Name : String) return Boolean is
         (Scalar_Ada_Type (Name) /= "");
 
@@ -1975,7 +2008,9 @@ package body HBNF_Ada is
          Has_Char : Boolean := False;
       begin
          for I in 1 .. N loop
-            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
+            if Is_Char_Rule (Rules, To_String (Rules (I).Name))
+              and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+            then
                Has_Char := True;
             end if;
          end loop;
@@ -2039,6 +2074,75 @@ package body HBNF_Ada is
             declare
                NM  : constant String := To_String (Rules (I).Name);
                DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
+
+               procedure Emit_Guard (Kind : String) is
+               begin
+                  if Kind = "own" then
+                     Append (Bdy, "      declare");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         I : Natural := Pos;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      begin");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         while I > S'First loop");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            exit when S (I - 1) = ASCII.LF;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            if S (I - 1) /= ' ' and then S (I - 1) /= ASCII.HT");
+                     Append (Bdy, LF);
+                     Append (Bdy, "              and then S (I - 1) /= ASCII.CR");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            then");
+                     Append (Bdy, LF);
+                     Append (Bdy, "               return 0;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            end if;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            I := I - 1;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         end loop;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      end;");
+                     Append (Bdy, LF);
+                  elsif Kind = "eol" then
+                     Append (Bdy, "      declare");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         I   : Natural := Pos;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         Own : Boolean := True;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      begin");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         while I > S'First loop");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            exit when S (I - 1) = ASCII.LF;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            if S (I - 1) /= ' ' and then S (I - 1) /= ASCII.HT");
+                     Append (Bdy, LF);
+                     Append (Bdy, "              and then S (I - 1) /= ASCII.CR");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            then");
+                     Append (Bdy, LF);
+                     Append (Bdy, "               Own := False;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "               exit;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            end if;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            I := I - 1;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         end loop;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         if Own then");
+                     Append (Bdy, LF);
+                     Append (Bdy, "            return 0;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         end if;");
+                     Append (Bdy, LF);
+                     Append (Bdy, "      end;");
+                     Append (Bdy, LF);
+                  end if;
+               end Emit_Guard;
             begin
                Append (Bdy, "   function Scan_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
@@ -2054,6 +2158,7 @@ package body HBNF_Ada is
                   Append (Bdy, LF);
                   Append (Bdy, "   begin");
                   Append (Bdy, LF);
+                  Emit_Guard (Comment_Kind (NM));
                   for A of DNF (1) loop
                      case A.Kind is
                         when Single =>
@@ -2084,6 +2189,7 @@ package body HBNF_Ada is
                   Append (Bdy, LF);
                   Append (Bdy, "   begin");
                   Append (Bdy, LF);
+                  Emit_Guard (Comment_Kind (NM));
                   for B of DNF loop
                      Append (Bdy, "      Off := 0;");
                      Append (Bdy, LF);

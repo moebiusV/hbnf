@@ -2,14 +2,14 @@
 # ntpd -n proof: build the real OpenBSD ntpd with hbnf's generated parser in
 # place of parse.y, then run `ntpd -n` (configtest) against it.
 #
-#   parse.y   ->  grammars/bind/ntpd.hbnf  (hbnf_cli --conf emits conf.h/conf.c)
+#   parse.y   ->  grammars/bind/ntpd.hbnf  (hbnf --conf emits conf.h/conf.c)
 #   the rest of ntpd is compiled as-is from the OpenBSD source tree, against
 #   OpenBSD's own headers under -nostdinc (see README.md for the recipe).
 #   ntpd-shims.c bridges the OpenBSD libc/syscall names glibc spells
 #   differently, and stubs the runtime-only pieces `-n` never reaches.
 #
 # Requires: host gcc, the extracted OpenBSD tree (see README.md), and
-# hbnf_cli: $HBNF_CLI or sources/hbnf/hbnf_cli when built, else docker (the
+# hbnf: $HBNF or sources/hbnf/hbnf when built, else docker (the
 # ada-toolchain image).
 set -eu
 
@@ -32,15 +32,15 @@ inc="$common_inc -I $ntpd"
 scratch="$(mktemp -d "$obsd/ntpdproof.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 
-echo "== generating the parser (hbnf_cli) =="
-cli="${HBNF_CLI:-$repo/hbnf_cli}"
+echo "== generating the parser (hbnf) =="
+cli="${HBNF:-$repo/hbnf}"
 if [ -x "$cli" ]; then
 	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates) \
 		> "$scratch/conf-out.txt"
 else
 	docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
-		sh -lc 'gprbuild -q -P hbnf_cli.gpr >/dev/null 2>&1
-		        ./hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates' \
+		sh -lc 'gprbuild -q -P hbnf.gpr >/dev/null 2>&1
+		        ./hbnf grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates' \
 		> "$scratch/conf-out.txt"
 fi
 awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \

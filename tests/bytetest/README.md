@@ -92,7 +92,7 @@ parser-internal `node_*` helpers), so the grammar targets `pf_rule` in
 - The trees cannot be compared with `memcmp` once pointers are involved:
   TAILQ links, strings and malloc'd children sit at different addresses in any
   two parsers, and padding bytes need not match.  The **deep-compare walk**
-  is now generated: `hbnf_cli --compare` emits `compare_tree(a, b)` plus one
+  is now generated: `hbnf --compare` emits `compare_tree(a, b)` plus one
   `compare_<rule>` per struct/list, comparing scalars and arrays by value,
   strings by content (`strcmp`), enums and kind tags by value, structs
   recursively, and lists element by element — never pointer addresses, TAILQ
@@ -150,8 +150,8 @@ files fails the run.  Everything else in the harness is built with `-w`, so
 without this step a missing `#include` or a `const` mismatch in the
 generated code goes unnoticed on an older gcc.
 
-bison and `hbnf_cli` are used from the host when present (`bison` on PATH;
-`$HBNF_CLI`, or `sources/hbnf/hbnf_cli` once built); otherwise from docker.
+bison and `hbnf` are used from the host when present (`bison` on PATH;
+`$HBNF`, or `sources/hbnf/hbnf` once built); otherwise from docker.
 `KEEP=1` keeps the scratch directory with both binaries.
 
 Three pieces make bison's parser compile and agree on Linux:
@@ -201,7 +201,7 @@ directive asks for). A few small shims make this possible on Linux:
   family reads as 0, and parse.y's "IPv4 or IPv6 address or hostname
   expected" check rejects every server.
 
-`hbnf_cli` comes from `$HBNF_CLI` or `sources/hbnf/hbnf_cli` when built,
+`hbnf` comes from `$HBNF` or `sources/hbnf/hbnf` when built,
 otherwise from docker.
 
 Two more checks run before `ntpd -n`: `strict-cc.sh` (as above), and the

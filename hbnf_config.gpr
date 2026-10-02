@@ -1,0 +1,49 @@
+--  Standalone project for HBNF_Config: the OpenBSD-style configuration parser and
+--  the ABNF schema engine (parser, matcher/binder, and the C/Rust/Zig/Ada
+--  emitters) in one static library, libhbnf.a.  Pure Ada, no C dependencies.
+--  Built and gprinstalled as a static library by the ada-on-alpine aport.
+
+library project HBNF_Config is
+
+   for Languages use ("Ada");
+   for Source_Dirs use (".");
+   for Source_Files use
+     ("hbnf_config.ads", "hbnf_config.adb",
+      "hbnf_grammar.ads", "hbnf_grammar.adb",
+      "hbnf_match.ads", "hbnf_match.adb",
+      "hbnf_compilable.ads", "hbnf_compilable.adb",
+      "hbnf_c.ads", "hbnf_c.adb",
+      "hbnf_rust.ads", "hbnf_rust.adb",
+      "hbnf_zig.ads", "hbnf_zig.adb",
+      "hbnf_ada.ads", "hbnf_ada.adb",
+      "templates.ads", "templates.adb");
+   for Object_Dir use "obj-hbnf";
+   for Create_Missing_Dirs use "True";
+   for Library_Dir use "lib-hbnf";
+   for Library_Name use "hbnf";
+
+   --  Scenario variable, so gprinstall emits the installed "library_type :=
+   --  static" marker that tells consuming projects this is a static library
+   --  (without it gprbuild defaults to relocatable and forces -lgnat-15).
+   type Library_Type_Type is ("relocatable", "static", "static-pic");
+   Library_Type : Library_Type_Type :=
+     external ("HBNF_LIBRARY_TYPE", external ("LIBRARY_TYPE", "static"));
+   for Library_Kind use Library_Type;
+
+   package Compiler is
+      --  -gnatwe (warnings-as-errors) is deliberately absent: it is right for
+      --  development but brittle in a package rebuilt against each new GNAT.
+      for Default_Switches ("Ada") use
+        ("-gnat2022", "-gnatwa", "-gnatVa", "-gnato",
+         "-gnaty3abcefhiklmnprt");
+   end Compiler;
+
+   package Binder is
+      for Switches ("Ada") use ("-Es");
+   end Binder;
+
+   package Install is
+      for Active use "True";
+   end Install;
+
+end HBNF_Config;

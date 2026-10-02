@@ -3,11 +3,11 @@
 # (tests/stmt/count.hbnf): macros, include, -D, every error reported with
 # its file and line, and actions only on the statements they belong to.
 # The generated conf.c must build warning-free with the daemons' flags.
-#   HBNF_CLI=/path/to/hbnf_cli sh tests/stmt.sh     (default ./hbnf_cli)
+#   HBNF=/path/to/hbnf sh tests/stmt.sh     (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
-CLI=${HBNF_CLI:-./hbnf_cli}
+CLI=${HBNF:-./hbnf}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 "$CLI" tests/stmt/count.hbnf --backend=c --conf > "$W/out.txt" || { echo "stmt: FAIL (generate)"; exit 1; }

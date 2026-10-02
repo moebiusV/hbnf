@@ -112,6 +112,10 @@ package HBNF_Grammar is
       --  front of the list's group, that are bases.  The first entry is
       --  read from the bases and every later one from the tails, so the
       --  list is exactly b (t)*, in a loop rather than by recursion.
+      Whitespace      : Unbounded_String := Null_Unbounded_String;
+      --  The name of the char rule a phrase rule's file skips between its
+      --  elements, from that file's `whitespace ws` directive; "" when the
+      --  file sets none (char rules never skip it).
    end record;
 
    package Rule_Vectors is new Ada.Containers.Vectors (Positive, Rule);
@@ -238,7 +242,7 @@ package HBNF_Grammar is
    function List_Override (Op : String) return String;
 
    --  The prefix declared by a top-level `prefix "pf_"` (or set with
-   --  Set_Type_Prefix, for hbnf_cli's --prefix=, which wins), "" when absent.
+   --  Set_Type_Prefix, for hbnf's --prefix=, which wins), "" when absent.
    --  It is put in front of every generated C type and struct tag, so a rule
    --  named daddr becomes pf_daddr_t and cannot collide with <sys/types.h>.
    function Type_Prefix return String;

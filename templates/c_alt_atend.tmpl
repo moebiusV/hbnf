@@ -1,1 +1,1 @@
-${ind}if (p->toks[p->pos].kind == TOK_EOF) { fail(p, "${lit}", 1, p->toks[p->pos].text); goto ${label}; }
+${ind}if (p->pos >= p->len) { fail(p, "${lit}", 1, "end of input", 0); goto ${label}; }

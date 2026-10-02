@@ -1,1102 +1,243 @@
 pragma Ada_2022;
 
-with Ada.Containers;
-with HBNF_Match;
+with Ada.Command_Line;
+with Ada.Directories;
+with Ada.Environment_Variables;
+with Ada.Exceptions;
+with Ada.Strings.Unbounded;
+with Ada.Text_IO;
+with Templates;
+with HBNF_Grammar;
+with HBNF_Compilable;
+with HBNF_C;
+with HBNF_Rust;
+with HBNF_Zig;
+with HBNF_Ada;
 
-package body HBNF is
+--  hbnf: read a schema and emit a self-contained parser (declarations +
+--  lexer + parser) in the chosen backend language.
+--
+--    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare]
+--
+--  c/rust/zig print one compilable file to stdout; ada prints the parent
+--  package spec, then the child package spec+body (split them apart yourself).
+--  --conf adds the OpenBSD parse_config(filename) entry: for C it prints the
+--  conf.h/conf.c pair (delimited by "===== conf.h =====" and "===== conf.c ====="
+--  markers); for rust/zig/ada it appends the conf wrapper to the single file.
+--  --idref (C only) adds an id-ref serializer and rebuild side, for a privsep
+--  (imsg) consumer: the tree cross-references by id instead of pointer.
+--  --compare (C only) appends the deep-compare walk (compare_tree), for
+--  byte-identity checks between two parses.
+procedure Hbnf is
 
-   --  Lexer ----------------------------------------------------------------
+   use Ada.Strings.Unbounded;
 
-   function Lex_Error (L, C : Positive; M : String) return Lex_Result is
-   begin
-      return (Success => False, Line => L, Col => C,
-              Msg => To_Unbounded_String (M));
-   end Lex_Error;
+   Backend      : Unbounded_String := To_Unbounded_String ("c");
+   Package_Name : Unbounded_String := To_Unbounded_String ("Schema");
+   Schema_Path  : Unbounded_String;
+   Template_Dir : Unbounded_String;
+   Conf         : Boolean := False;
+   Idref        : Boolean := False;
+   Compare      : Boolean := False;
+   Prefix       : Unbounded_String;
 
-   function Is_Integer (S : String) return Boolean is
-      J : Natural := S'First;
-   begin
-      if S'Length = 0 then
-         return False;
-      end if;
-      if S (J) = '+' or else S (J) = '-' then
-         J := J + 1;
-         if J > S'Last then
-            return False;
+   --  The directory the .tmpl templates load from: --templates=DIR, else the
+   --  first XDG data dir that holds a hbnf/ subdirectory -- $XDG_DATA_HOME or
+   --  ~/.local/share, then each $XDG_DATA_DIRS entry (/usr/local/share and
+   --  /usr/share by default).  "" when none is found.
+   function Template_Directory return String is
+      use type Ada.Directories.File_Kind;
+
+      function Env (Name : String) return String is
+      begin
+         if Ada.Environment_Variables.Exists (Name) then
+            return Ada.Environment_Variables.Value (Name);
          end if;
-      end if;
-      for K in J .. S'Last loop
-         if S (K) not in '0' .. '9' then
-            return False;
-         end if;
-      end loop;
-      return True;
-   end Is_Integer;
-
-   function Is_Decimal (S : String) return Boolean is
-      J         : Natural := S'First;
-      Has_Digit : Boolean := False;
-      Has_Dot   : Boolean := False;
-      Has_Exp   : Boolean := False;
-   begin
-      if S'Length = 0 then
-         return False;
-      end if;
-      if S (J) = '+' or else S (J) = '-' then
-         J := J + 1;
-         if J > S'Last then
-            return False;
-         end if;
-      end if;
-      while J <= S'Last and then S (J) in '0' .. '9' loop
-         Has_Digit := True;
-         J := J + 1;
-      end loop;
-      if J <= S'Last and then S (J) = '.' then
-         Has_Dot := True;
-         J := J + 1;
-         while J <= S'Last and then S (J) in '0' .. '9' loop
-            Has_Digit := True;
-            J := J + 1;
-         end loop;
-      end if;
-      if J <= S'Last and then (S (J) = 'e' or else S (J) = 'E') then
-         Has_Exp := True;
-         J := J + 1;
-         if J <= S'Last and then (S (J) = '+' or else S (J) = '-') then
-            J := J + 1;
-         end if;
-         if J > S'Last or else S (J) not in '0' .. '9' then
-            return False;
-         end if;
-         while J <= S'Last and then S (J) in '0' .. '9' loop
-            Has_Digit := True;
-            J := J + 1;
-         end loop;
-      end if;
-      return J > S'Last and then Has_Digit and then (Has_Dot or Has_Exp);
-   end Is_Decimal;
-
-   function Trim (S : String) return String is
-      First : Natural := S'First;
-      Last  : Natural := S'Last;
-   begin
-      while First <= Last
-        and then (S (First) = ' ' or else S (First) = Character'Val (9))
-      loop
-         First := First + 1;
-      end loop;
-      while Last >= First
-        and then (S (Last) = ' ' or else S (Last) = Character'Val (9))
-      loop
-         Last := Last - 1;
-      end loop;
-      if First > Last then
          return "";
+      end Env;
+
+      function Is_Dir (Path : String) return Boolean is
+      begin
+         return Ada.Directories.Exists (Path)
+           and then Ada.Directories.Kind (Path) = Ada.Directories.Directory;
+      exception
+         when others => return False;
+      end Is_Dir;
+
+      Xdg_Home : constant String := Env ("XDG_DATA_HOME");
+      Xdg_Dirs : constant String := Env ("XDG_DATA_DIRS");
+      Home     : constant String := Env ("HOME");
+      Tmpl_Env : constant String := Env ("HBNF_TEMPLATES");
+      Data_Home : constant String :=
+        (if Xdg_Home /= "" then Xdg_Home
+         elsif Home /= "" then Home & "/.local/share" else "");
+      Data_Dirs : constant String :=
+        (if Xdg_Dirs /= "" then Xdg_Dirs
+         else "/usr/local/share:/usr/share");
+      Start : Natural := Data_Dirs'First;
+   begin
+      if Template_Dir /= Null_Unbounded_String then
+         return To_String (Template_Dir);
       end if;
-      return S (First .. Last);
-   end Trim;
-
-   --  The value of a hexadecimal digit, or -1 when C is not one.
-   function Hex_Digit (C : Character) return Integer is
-   begin
-      if C in '0' .. '9' then
-         return Character'Pos (C) - Character'Pos ('0');
-      elsif C in 'a' .. 'f' then
-         return Character'Pos (C) - Character'Pos ('a') + 10;
-      elsif C in 'A' .. 'F' then
-         return Character'Pos (C) - Character'Pos ('A') + 10;
-      else
-         return -1;
+      if Tmpl_Env /= "" then
+         return Tmpl_Env;
       end if;
-   end Hex_Digit;
-
-   --  The hexadecimal digit for N in 0 .. 15.
-   function Hex_Char (N : Natural) return Character is
-      H : constant String := "0123456789ABCDEF";
-   begin
-      return H (N + 1);
-   end Hex_Char;
-
-   --  Append Code as UTF-8 bytes (the C23 universal-character-name encoding).
-   procedure Put_Utf8 (B : in out Unbounded_String; Code : Natural) is
-   begin
-      if Code <= 16#7F# then
-         Append (B, Character'Val (Code));
-      elsif Code <= 16#7FF# then
-         Append (B, Character'Val (16#C0# + Code / 64));
-         Append (B, Character'Val (16#80# + Code mod 64));
-      elsif Code <= 16#FFFF# then
-         Append (B, Character'Val (16#E0# + Code / 4096));
-         Append (B, Character'Val (16#80# + (Code / 64) mod 64));
-         Append (B, Character'Val (16#80# + Code mod 64));
-      else
-         Append (B, Character'Val (16#F0# + Code / 262144));
-         Append (B, Character'Val (16#80# + (Code / 4096) mod 64));
-         Append (B, Character'Val (16#80# + (Code / 64) mod 64));
-         Append (B, Character'Val (16#80# + Code mod 64));
+      if Data_Home /= "" and then Is_Dir (Data_Home & "/hbnf") then
+         return Data_Home & "/hbnf";
       end if;
-   end Put_Utf8;
-
-   function Lex (Text : String) return Lex_Result is
-      Tokens : Token_Vectors.Vector := Token_Vectors.Empty_Vector;
-      I      : Natural := Text'First;
-      Line   : Positive := 1;
-      Col    : Positive := 1;
-      C      : Character;
-      On_Line : Boolean := False;
-   begin
-      while I <= Text'Last loop
-         C := Text (I);
-         if C = ' ' or else C = Character'Val (9) then
-            I := I + 1;
-            Col := Col + 1;
-         elsif C = Character'Val (10) then
-            Tokens.Append (Token'(Newline, Line, Col, Null_Unbounded_String));
-            I := I + 1;
-            Line := Line + 1;
-            Col := 1;
-            On_Line := False;
-         elsif C = Character'Val (13) then
-            I := I + 1;
-            Col := Col + 1;
-         elsif C = '#' then
+      for I in Data_Dirs'Range loop
+         if I = Data_Dirs'Last or else Data_Dirs (I) = ':' then
             declare
-               Start_Line : constant Positive := Line;
-               Start_Col  : constant Positive := Col;
-               Buf        : Unbounded_String := Null_Unbounded_String;
-               Kind       : constant Token_Kind :=
-                 (if On_Line then Eol_Comment else Comment);
+               Last : constant Natural :=
+                 (if I = Data_Dirs'Last then Data_Dirs'Last else I - 1);
+               D    : constant String := Data_Dirs (Start .. Last);
             begin
-               I := I + 1;
-               Col := Col + 1;
-               while I <= Text'Last
-                 and then Text (I) /= Character'Val (10)
-               loop
-                  Append (Buf, Text (I));
-                  I := I + 1;
-                  Col := Col + 1;
-               end loop;
-               Tokens.Append
-                 (Token'(Kind, Start_Line, Start_Col,
-                         To_Unbounded_String (Trim (To_String (Buf)))));
-            end;
-         elsif C = '{' then
-            Tokens.Append (Token'(LBrace, Line, Col, Null_Unbounded_String));
-            I := I + 1;
-            Col := Col + 1;
-            On_Line := True;
-         elsif C = '}' then
-            Tokens.Append (Token'(RBrace, Line, Col, Null_Unbounded_String));
-            I := I + 1;
-            Col := Col + 1;
-            On_Line := True;
-         elsif C = ';' then
-            Tokens.Append
-              (Token'(Semicolon, Line, Col, Null_Unbounded_String));
-            I := I + 1;
-            Col := Col + 1;
-            On_Line := True;
-         elsif C = '"' then
-            declare
-               Start_Col : constant Positive := Col;
-               Buf       : Unbounded_String := Null_Unbounded_String;
-               Closed    : Boolean := False;
-            begin
-               I := I + 1;
-               Col := Col + 1;
-               while I <= Text'Last loop
-                  C := Text (I);
-                  if C = '"' then
-                     I := I + 1;
-                     Col := Col + 1;
-                     Closed := True;
-                     exit;
-                  elsif C = '\' then
-                     I := I + 1;
-                     Col := Col + 1;
-                     if I > Text'Last then
-                        return Lex_Error (Line, Col, "escape at end of file");
-                     end if;
-                     --  Decode one C23 escape sequence (I indexes its first
-                     --  character).  The multi-character branches advance I
-                     --  and Col past the whole sequence themselves.
-                     case Text (I) is
-                        when 'x' =>
-                           declare
-                              Val : Natural := 0;
-                              N   : Natural := 0;
-                           begin
-                              I := I + 1;
-                              Col := Col + 1;
-                              while I <= Text'Last
-                                and then Hex_Digit (Text (I)) >= 0
-                              loop
-                                 Val := Val * 16 + Hex_Digit (Text (I));
-                                 N := N + 1;
-                                 I := I + 1;
-                                 Col := Col + 1;
-                              end loop;
-                              if N = 0 then
-                                 return Lex_Error
-                                   (Line, Col, "hex escape needs a digit");
-                              end if;
-                              if Val > 255 then
-                                 return Lex_Error
-                                   (Line, Col, "hex escape out of range");
-                              end if;
-                              Append (Buf, Character'Val (Val));
-                           end;
-                        when 'u' | 'U' =>
-                           declare
-                              Hex_Len : constant Natural :=
-                                (if Text (I) = 'u' then 4 else 8);
-                              Code : Natural := 0;
-                           begin
-                              I := I + 1;
-                              Col := Col + 1;
-                              for K in 1 .. Hex_Len loop
-                                 if I > Text'Last
-                                   or else Hex_Digit (Text (I)) < 0
-                                 then
-                                    return Lex_Error
-                                      (Line, Col, "bad unicode escape");
-                                 end if;
-                                 Code := Code * 16 + Hex_Digit (Text (I));
-                                 I := I + 1;
-                                 Col := Col + 1;
-                              end loop;
-                              if Code > 16#10FFFF# then
-                                 return Lex_Error
-                                   (Line, Col, "unicode escape out of range");
-                              end if;
-                              Put_Utf8 (Buf, Code);
-                           end;
-                        when '0' .. '7' =>
-                           declare
-                              Val : Natural := 0;
-                              N   : Natural := 0;
-                           begin
-                              while I <= Text'Last and then N < 3
-                                and then Text (I) in '0' .. '7'
-                              loop
-                                 Val := Val * 8
-                                   + Character'Pos (Text (I))
-                                   - Character'Pos ('0');
-                                 N := N + 1;
-                                 I := I + 1;
-                                 Col := Col + 1;
-                              end loop;
-                              if Val > 255 then
-                                 return Lex_Error
-                                   (Line, Col, "octal escape out of range");
-                              end if;
-                              Append (Buf, Character'Val (Val));
-                           end;
-                        when others =>
-                           --  A one-character escape (or an error).
-                           declare
-                              Ch : Character;
-                           begin
-                              case Text (I) is
-                                 when 'a' => Ch := Character'Val (7);
-                                 when 'b' => Ch := Character'Val (8);
-                                 when 'f' => Ch := Character'Val (12);
-                                 when 'n' => Ch := Character'Val (10);
-                                 when 'r' => Ch := Character'Val (13);
-                                 when 't' => Ch := Character'Val (9);
-                                 when 'v' => Ch := Character'Val (11);
-                                 when ''' => Ch := ''';
-                                 when '"' => Ch := '"';
-                                 when '?' => Ch := '?';
-                                 when '\' => Ch := '\';
-                                 when others =>
-                                    return Lex_Error
-                                      (Line, Col,
-                                       "unknown escape in string");
-                              end case;
-                              Append (Buf, Ch);
-                              I := I + 1;
-                              Col := Col + 1;
-                           end;
-                     end case;
-                  elsif C = Character'Val (10) then
-                     return Lex_Error (Line, Col, "newline in string literal");
-                  else
-                     Append (Buf, C);
-                     I := I + 1;
-                     Col := Col + 1;
-                  end if;
-               end loop;
-               if not Closed then
-                  return Lex_Error (Line, Col, "unterminated string literal");
+               if D /= "" and then Is_Dir (D & "/hbnf") then
+                  return D & "/hbnf";
                end if;
-               Tokens.Append (Token'(Str, Line, Start_Col, Buf));
-               On_Line := True;
             end;
-         elsif C = '\' then
-            --  Backslash outside a string: backslash-newline is a line
-            --  continuation (parse.y's lgetc); a backslash before any other
-            --  character is consumed and dropped.
-            I := I + 1;
-            Col := Col + 1;
-            if I <= Text'Last and then Text (I) = Character'Val (10) then
-               I := I + 1;
-               Line := Line + 1;
-               Col := 1;
-            end if;
+            Start := I + 1;
+         end if;
+      end loop;
+      return "";
+   end Template_Directory;
+
+   procedure Usage is
+   begin
+      Ada.Text_IO.Put_Line
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare] [--prefix=NAME_] [--templates=DIR]");
+   end Usage;
+
+begin
+   if Ada.Command_Line.Argument_Count = 0 then
+      Usage;
+      return;
+   end if;
+
+   for I in 1 .. Ada.Command_Line.Argument_Count loop
+      declare
+         A : constant String := Ada.Command_Line.Argument (I);
+      begin
+         if A'Length >= 10 and then A (1 .. 10) = "--backend=" then
+            Backend := To_Unbounded_String (A (11 .. A'Last));
+         elsif A'Length >= 10 and then A (1 .. 10) = "--package=" then
+            Package_Name := To_Unbounded_String (A (11 .. A'Last));
+         elsif A = "--conf" then
+            Conf := True;
+         elsif A = "--idref" then
+            Idref := True;
+         elsif A = "--compare" then
+            Compare := True;
+         elsif A'Length >= 9 and then A (1 .. 9) = "--prefix=" then
+            Prefix := To_Unbounded_String (A (10 .. A'Last));
+         elsif A'Length >= 12 and then A (1 .. 12) = "--templates=" then
+            Template_Dir := To_Unbounded_String (A (13 .. A'Last));
+         elsif A (A'First) /= '-' then
+            Schema_Path := To_Unbounded_String (A);
+         end if;
+      end;
+   end loop;
+
+   if Schema_Path = Null_Unbounded_String then
+      Usage;
+      return;
+   end if;
+
+   declare
+      Dir : constant String := Template_Directory;
+   begin
+      if Dir = "" then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "hbnf: no template directory found; use --templates=DIR");
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+      Templates.Load (Dir);
+   end;
+
+   declare
+      --  The rules the parser uses, with what the backends do not take
+      --  inside a sequence given a rule of its own.
+      Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
+        HBNF_Grammar.Lift
+          (HBNF_Grammar.Reachable
+             (HBNF_Grammar.Parse_File (To_String (Schema_Path))));
+      B     : constant String := To_String (Backend);
+      Output : Unbounded_String;
+
+      procedure Put (S : String) is
+      begin
+         Append (Output, S);
+      end Put;
+
+      procedure Put_Line (S : String) is
+      begin
+         Append (Output, S & ASCII.LF);
+      end Put_Line;
+   begin
+      if Prefix /= Null_Unbounded_String then
+         HBNF_Grammar.Set_Type_Prefix (To_String (Prefix));
+      end if;
+      HBNF_Compilable.Check (Rules, B);
+      if B = "c" then
+         if Conf then
+            Put_Line ("===== conf.h =====");
+            Put (HBNF_C.Emit_Conf_Header (Rules));
+            Put_Line ("===== conf.c =====");
+            Put (HBNF_C.Emit_Conf_Source (Rules));
          else
-            declare
-               Start_Col : constant Positive := Col;
-               Buf       : Unbounded_String := Null_Unbounded_String;
-            begin
-               while I <= Text'Last loop
-                  C := Text (I);
-                  exit when C = ' ' or else C = Character'Val (9)
-                    or else C = Character'Val (10)
-                    or else C = Character'Val (13)
-                    or else C = '{' or else C = '}'
-                    or else C = '"' or else C = '#';
-                  if C = '\' then
-                     --  backslash-newline continues the word across the
-                     --  line; a backslash before any other char is dropped.
-                     I := I + 1;
-                     Col := Col + 1;
-                     if I <= Text'Last
-                       and then Text (I) = Character'Val (10)
-                     then
-                        I := I + 1;
-                        Line := Line + 1;
-                        Col := 1;
-                     end if;
-                  else
-                     Append (Buf, C);
-                     I := I + 1;
-                     Col := Col + 1;
-                  end if;
-               end loop;
-               declare
-                  W : constant String := To_String (Buf);
-               begin
-                  --  A trailing `%` on a number is a percentage suffix: the
-                  --  number (integer or decimal) is one token and the `%` a
-                  --  second, so a grammar can match `[ percent ]` and a
-                  --  caller tell a bare multiplier (`8`) from a percentage
-                  --  (`8%`).  Anything else keeps the `%` in the word.
-                  if W'Length >= 2 and then W (W'Last) = '%' then
-                     declare
-                        P : constant String := W (W'First .. W'Last - 1);
-                     begin
-                        if Is_Integer (P) then
-                           Tokens.Append
-                             (Token'(Int, Line, Start_Col,
-                                     To_Unbounded_String (P)));
-                           Tokens.Append
-                             (Token'(Percent, Line, Col - 1,
-                                     Null_Unbounded_String));
-                        elsif Is_Decimal (P) then
-                           Tokens.Append
-                             (Token'(Dec, Line, Start_Col,
-                                     To_Unbounded_String (P)));
-                           Tokens.Append
-                             (Token'(Percent, Line, Col - 1,
-                                     Null_Unbounded_String));
-                        else
-                           Tokens.Append (Token'(Word, Line, Start_Col, Buf));
-                        end if;
-                     end;
-                  elsif Is_Integer (W) then
-                     Tokens.Append (Token'(Int, Line, Start_Col, Buf));
-                  elsif Is_Decimal (W) then
-                     Tokens.Append (Token'(Dec, Line, Start_Col, Buf));
-                  else
-                     Tokens.Append (Token'(Word, Line, Start_Col, Buf));
-                  end if;
-                  On_Line := True;
-               end;
-            end;
-         end if;
-      end loop;
-      Tokens.Append (Token'(Eof, Line, Col, Null_Unbounded_String));
-      return (Success => True, Tokens => Tokens);
-   end Lex;
-
-   --  Parser ---------------------------------------------------------------
-
-   function Parse (Text : String) return Parse_Result is
-
-      Parse_Error : exception;
-
-      L      : constant Lex_Result := Lex (Text);
-      Err_L  : Positive := 1;
-      Err_C  : Positive := 1;
-      Err_M  : Unbounded_String := Null_Unbounded_String;
-      Tokens : Token_Vectors.Vector := Token_Vectors.Empty_Vector;
-
-      procedure Fail (L, C : Positive; M : String) with No_Return is
-      begin
-         Err_L := L;
-         Err_C := C;
-         Err_M := To_Unbounded_String (M);
-         raise Parse_Error;
-      end Fail;
-
-      function Parse_Value (T : Token) return HBNF.Value is
-         V : HBNF.Value;
-      begin
-         V.Line := T.Line;
-         V.Col  := T.Col;
-         case T.Kind is
-            when Word =>
-               V.Kind := Word;
-               V.Text := T.Text;
-            when Str =>
-               V.Kind := Str;
-               V.Text := T.Text;
-            when Int =>
-               V.Kind := Int;
-               V.Num := Long_Long_Integer'Value (To_String (T.Text));
-            when Dec =>
-               V.Kind := Dec;
-               V.Text := T.Text;
-               begin
-                  V.Dec := Decimal'Value (To_String (T.Text));
-               exception
-                  when Constraint_Error =>
-                     Fail (T.Line, T.Col, "decimal out of range");
-               end;
-            when others =>
-               Fail (T.Line, T.Col, "internal: unexpected value token");
-         end case;
-         return V;
-      end Parse_Value;
-
-      procedure Parse_Entry
-        (Parent : Node_Access; I : in out Positive;
-         Leading : Unbounded_String);
-      procedure Parse_Children
-        (Parent : Node_Access; I : in out Positive; At_Top : Boolean);
-      procedure Parse_Comment
-        (Parent : Node_Access; Text : String; L, C : Positive);
-
-      procedure Parse_Entry
-        (Parent : Node_Access; I : in out Positive;
-         Leading : Unbounded_String) is
-         N : constant Node_Access := new Node;
-      begin
-         N.Leading_Comment := Leading;
-         N.Kind := Directive;
-         N.Name := Tokens (I).Text;
-         N.Line := Tokens (I).Line;
-         N.Col  := Tokens (I).Col;
-         I := I + 1;
-         loop
-            exit when I > Tokens.Last_Index;
-            case Tokens (I).Kind is
-               when Word | Str | Int | Dec =>
-                  N.Values.Append (Parse_Value (Tokens (I)));
-                  I := I + 1;
-               when Percent =>
-                  --  The lexer splits `8%` into Int/Dec then Percent, so the
-                  --  `%` always follows a number value; mark it a percentage.
-                  if N.Values.Is_Empty then
-                     Fail (Tokens (I).Line, Tokens (I).Col,
-                           "'%' with no preceding number");
-                  end if;
-                  declare
-                     V : Value := N.Values.Last_Element;
-                  begin
-                     if V.Kind /= Int and then V.Kind /= Dec then
-                        Fail (Tokens (I).Line, Tokens (I).Col,
-                              "'%' must follow a number");
-                     end if;
-                     V.Percent := True;
-                     N.Values.Replace_Element (N.Values.Last_Index, V);
-                  end;
-                  I := I + 1;
-               when LBrace =>
-                  N.Kind := Block;
-                  if not N.Values.Is_Empty
-                    and then (N.Values.First_Element.Kind = Word
-                              or else N.Values.First_Element.Kind = Str)
-                  then
-                     N.Qualifier := N.Values.First_Element.Text;
-                  end if;
-                  I := I + 1;
-                  Parse_Children (N, I, False);
-                  exit;
-               when others =>
-                  exit;
-            end case;
-         end loop;
-         --  A `;` terminates the entry (vs the newline the caller skips); an
-         --  end-of-line comment may still follow the terminator.
-         if I <= Tokens.Last_Index and then Tokens (I).Kind = Semicolon then
-            N.Semicolon_After := True;
-            I := I + 1;
-         end if;
-         if I <= Tokens.Last_Index and then Tokens (I).Kind = Eol_Comment then
-            N.Trailing_Comment := Tokens (I).Text;
-            I := I + 1;
-         end if;
-         Parent.Children.Append (N);
-      end Parse_Entry;
-
-      procedure Parse_Comment
-        (Parent : Node_Access; Text : String; L, C : Positive) is
-         N : constant Node_Access := new Node;
-      begin
-         N.Kind := Comment;
-         N.Name := To_Unbounded_String (Text);
-         N.Line := L;
-         N.Col  := C;
-         Parent.Children.Append (N);
-      end Parse_Comment;
-
-      procedure Parse_Children
-        (Parent : Node_Access; I : in out Positive; At_Top : Boolean) is
-         Leading    : Unbounded_String := Null_Unbounded_String;
-         Seen_Entry : Boolean := False;
-
-         procedure Flush_Leading is
-            Txt   : constant String := To_String (Leading);
-            Start : Natural := Txt'First;
-         begin
-            if Leading /= Null_Unbounded_String then
-               for K in Txt'Range loop
-                  if Txt (K) = Character'Val (10) then
-                     Parse_Comment (Parent, Txt (Start .. K - 1),
-                                    Tokens (I).Line, Tokens (I).Col);
-                     Start := K + 1;
-                  end if;
-               end loop;
-               Parse_Comment (Parent, Txt (Start .. Txt'Last),
-                              Tokens (I).Line, Tokens (I).Col);
-               Leading := Null_Unbounded_String;
+            Put (HBNF_C.Emit (Rules, Idref));
+            Put (HBNF_C.Emit_Parser (Rules));
+            Put (HBNF_C.Emit_Lexer (Rules));
+            if Idref then
+               Put (HBNF_C.Emit_Serializer (Rules));
+               Put (HBNF_C.Emit_Rebuild (Rules));
             end if;
-         end Flush_Leading;
-      begin
-         loop
-            exit when I > Tokens.Last_Index;
-            if Tokens (I).Kind = Newline then
-               --  Newlines separate entries but never detach a comment block
-               --  from the entry that follows it (whitespace is fine).
-               I := I + 1;
-            elsif Tokens (I).Kind = RBrace then
-               Flush_Leading;
-               if At_Top then
-                  Fail (Tokens (I).Line, Tokens (I).Col, "unexpected '}'");
-               end if;
-               I := I + 1;
-               exit;
-            elsif Tokens (I).Kind = Eof then
-               Flush_Leading;
-               if At_Top then
-                  exit;
-               end if;
-               Fail (Tokens (I).Line, Tokens (I).Col, "unterminated block");
-            elsif Tokens (I).Kind = Comment
-              or else Tokens (I).Kind = Eol_Comment
-            then
-               if Leading /= Null_Unbounded_String then
-                  Append (Leading, Character'Val (10));
-               end if;
-               Append (Leading, Tokens (I).Text);
-               I := I + 1;
-            elsif Tokens (I).Kind = Word then
-               if At_Top and then not Seen_Entry
-                 and then Leading /= Null_Unbounded_String
-               then
-                  --  A comment block before the first directive is the file
-                  --  header: it applies to the whole file, so keep it as a
-                  --  standalone comment rather than the first entry's leader.
-                  Flush_Leading;
-               end if;
-               Parse_Entry (Parent, I, Leading);
-               Seen_Entry := True;
-               Leading := Null_Unbounded_String;
-            else
-               Fail (Tokens (I).Line, Tokens (I).Col,
-                     "expected directive name, found '" &
-                     To_String (Tokens (I).Text) & "'");
+            if Compare then
+               Put (HBNF_C.Emit_Compare (Rules));
             end if;
-         end loop;
-      end Parse_Children;
-
-      Root : constant Node_Access := new Node;
-      Idx  : Positive := 1;
-   begin
-      if not L.Success then
-         return (Success => False, Line => L.Line, Col => L.Col, Msg => L.Msg);
+         end if;
+      elsif B = "rust" then
+         Put (HBNF_Rust.Emit (Rules));
+         Put (HBNF_Rust.Emit_Parser (Rules));
+         Put (HBNF_Rust.Emit_Lexer (Rules));
+         if Conf then
+            Put ([1 => ASCII.LF]);
+            Put (HBNF_Rust.Emit_Conf (Rules));
+         end if;
+      elsif B = "zig" then
+         Put (HBNF_Zig.Emit (Rules));
+         Put (HBNF_Zig.Emit_Parser (Rules));
+         Put (HBNF_Zig.Emit_Lexer (Rules));
+         if Conf then
+            Put ([1 => ASCII.LF]);
+            Put (HBNF_Zig.Emit_Conf (Rules));
+         end if;
+      elsif B = "ada" then
+         Put (HBNF_Ada.Emit (Rules, To_String (Package_Name)));
+         Put
+           (HBNF_Ada.Emit_Parser (Rules, To_String (Package_Name), Conf));
+      else
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error, "unknown backend: " & B);
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       end if;
-      Tokens := L.Tokens;
-      Root.Kind := Block;
-      Root.Line := 1;
-      Root.Col  := 1;
-      Parse_Children (Root, Idx, True);
-      return (Success => True, Root => Root);
-   exception
-      when Parse_Error =>
-         return (Success => False, Line => Err_L, Col => Err_C, Msg => Err_M);
-   end Parse;
-
-   --  hbnf backend ------------------------------------------------------
-   --
-   --  Parse with hbnf's matcher/binder instead of the hand-written parser
-   --  above: lex the text, map the tokens onto hbnf's generic kinds, bind
-   --  the schema's root rule to a parse tree, then interpret that tree back
-   --  into this package's Node tree.  Comments land by position: an own-line
-   --  comment in the `ws` before an entry becomes its Leading_Comment (or a
-   --  standalone file-header / block-trailer comment), an end-of-line comment
-   --  after an entry becomes its Trailing_Comment; a `;` terminator becomes
-   --  Semicolon_After.
-
-   use type HBNF_Match.Node_Kind;
-   use type HBNF_Match.Node_Access;
-   use type HBNF_Match.Token_Kind;
-
-   Backend_Error : exception;
-
-   --  Map an hbnf token onto the matcher's generic token (mirrors the adapter
-   --  in tests/hbnf_match_check.adb).
-   function To_Match_Token (T : Token) return HBNF_Match.Token is
-   begin
-      case T.Kind is
-         when Word      => return (HBNF_Match.Atom, T.Text);
-         when Str       => return (HBNF_Match.Str, T.Text);
-         when Int       => return (HBNF_Match.Int, T.Text);
-         when Dec       => return (HBNF_Match.Dec, T.Text);
-         when LBrace    =>
-            return (HBNF_Match.Punct, To_Unbounded_String ("{"));
-         when RBrace    =>
-            return (HBNF_Match.Punct, To_Unbounded_String ("}"));
-         when Semicolon =>
-            return (HBNF_Match.Punct, To_Unbounded_String (";"));
-         when Percent   =>
-            return (HBNF_Match.Percent, To_Unbounded_String ("%"));
-         when Newline   =>
-            return (HBNF_Match.Newline, Null_Unbounded_String);
-         when Eof       =>
-            return (HBNF_Match.Eof, Null_Unbounded_String);
-         when Comment     =>
-            return (HBNF_Match.Comment, T.Text);
-         when Eol_Comment =>
-            return (HBNF_Match.Eol_Comment, T.Text);
-      end case;
-   end To_Match_Token;
-
-   --  Is N a Rule_Node named Name?
-   function Is_Rule (N : HBNF_Match.Node_Access; Name : String)
-     return Boolean
-   is
-     (N /= null and then N.Kind = HBNF_Match.Rule_Node
-      and then To_String (N.Rule_Name) = Name);
-
-   --  The token a name/arg/qualifier rule matched (its single Token_Node kid).
-   function Rule_Token (N : HBNF_Match.Node_Access)
-     return HBNF_Match.Token
-   is
-   begin
-      for K of N.Kids loop
-         if K.Kind = HBNF_Match.Token_Node then
-            return K.Tok;
-         end if;
-      end loop;
-      return (Kind => HBNF_Match.Eof, Text => Null_Unbounded_String);
-   end Rule_Token;
-
-   --  True when the subtree of N contains a `percent` token, i.e. the rule
-   --  matched an optional `%` suffix on a number.
-   function Has_Percent (N : HBNF_Match.Node_Access) return Boolean is
-   begin
-      if N = null then
-         return False;
-      end if;
-      if N.Kind = HBNF_Match.Token_Node then
-         return N.Tok.Kind = HBNF_Match.Percent;
-      end if;
-      for K of N.Kids loop
-         if Has_Percent (K) then
-            return True;
-         end if;
-      end loop;
-      return False;
-   end Has_Percent;
-
-   --  Rebuild a Value from a matched token, re-running the same Int/Dec
-   --  conversion (and range checks) as the hand-written parser's Parse_Value.
-   function To_Value (T : HBNF_Match.Token) return HBNF.Value is
-      V : HBNF.Value;
-      S : constant String := To_String (T.Text);
-   begin
-      case T.Kind is
-         when HBNF_Match.Atom =>
-            V.Kind := Word;
-            V.Text := T.Text;
-         when HBNF_Match.Str =>
-            V.Kind := Str;
-            V.Text := T.Text;
-         when HBNF_Match.Int =>
-            V.Kind := Int;
-            V.Num := Long_Long_Integer'Value (S);
-         when HBNF_Match.Dec =>
-            V.Kind := Dec;
-            V.Text := T.Text;
-            begin
-               V.Dec := Decimal'Value (S);
-            exception
-               when Constraint_Error =>
-                  raise Backend_Error with "decimal out of range";
-            end;
-         when others =>
-            raise Backend_Error with "internal: unexpected value token";
-      end case;
-      return V;
-   end To_Value;
-
-   --  Interpret a bound tree into a Node tree.
-   function Interpret (Root : HBNF_Match.Node_Access) return Node_Access is
-
-      function Interpret_Entry
-        (N : HBNF_Match.Node_Access; Leading : Unbounded_String)
-        return Node_Access;
-      procedure Interpret_Children
-        (Parent : HBNF_Match.Node_Access; Dst : Node_Access;
-         At_Top : Boolean);
-
-      function Make_Comment (Text : String) return Node_Access is
-         N : constant Node_Access := new Node;
-      begin
-         N.Kind := Comment;
-         N.Name := To_Unbounded_String (Text);
-         return N;
-      end Make_Comment;
-
-      function Interpret_Entry
-        (N : HBNF_Match.Node_Access; Leading : Unbounded_String)
-        return Node_Access
-      is
-         Result : constant Node_Access := new Node;
-      begin
-         Result.Kind := Directive;
-         Result.Leading_Comment := Leading;
-         for Kid of N.Kids loop
-            if Is_Rule (Kid, "statement") then
-               for K of Kid.Kids loop
-                  if Is_Rule (K, "name") then
-                     Result.Name := Rule_Token (K).Text;
-                  elsif Is_Rule (K, "arg") then
-                     declare
-                        V : HBNF.Value := To_Value (Rule_Token (K));
-                     begin
-                        if Has_Percent (K) then
-                           V.Percent := True;
-                        end if;
-                        Result.Values.Append (V);
-                     end;
-                  end if;
-               end loop;
-            elsif Is_Rule (Kid, "block") then
-               Result.Kind := Block;
-               for K of Kid.Kids loop
-                  if Is_Rule (K, "name") then
-                     Result.Name := Rule_Token (K).Text;
-                  elsif Is_Rule (K, "qualifier") then
-                     --  hbnf keeps the qualifier as the block's first value
-                     --  (a block is `name value { ... }`), so record it both
-                     --  ways: Qualifier and Values(1).
-                     declare
-                        QT : constant HBNF_Match.Token := Rule_Token (K);
-                     begin
-                        Result.Qualifier := QT.Text;
-                        Result.Values.Append (To_Value (QT));
-                     end;
-                  end if;
-               end loop;
-               Interpret_Children (Kid, Result, False);
-            end if;
-         end loop;
-         return Result;
-      end Interpret_Entry;
-
-      procedure Interpret_Children
-        (Parent : HBNF_Match.Node_Access; Dst : Node_Access;
-         At_Top : Boolean)
-      is
-         Leading    : Unbounded_String := Null_Unbounded_String;
-         Seen_Entry : Boolean := False;
-         Last       : Node_Access := null;
-
-         procedure Flush_Leading is
-            Txt   : constant String := To_String (Leading);
-            Start : Natural := Txt'First;
-         begin
-            if Leading /= Null_Unbounded_String then
-               for K in Txt'Range loop
-                  if Txt (K) = Character'Val (10) then
-                     Dst.Children.Append (Make_Comment (Txt (Start .. K - 1)));
-                     Start := K + 1;
-                  end if;
-               end loop;
-               Dst.Children.Append (Make_Comment (Txt (Start .. Txt'Last)));
-               Leading := Null_Unbounded_String;
-            end if;
-         end Flush_Leading;
-      begin
-         for Kid of Parent.Kids loop
-            if Is_Rule (Kid, "entry") then
-               if At_Top and then not Seen_Entry
-                 and then Leading /= Null_Unbounded_String
-               then
-                  Flush_Leading;  --  file header: standalone comments
-               end if;
-               Last := Interpret_Entry (Kid, Leading);
-               Dst.Children.Append (Last);
-               Seen_Entry := True;
-               Leading := Null_Unbounded_String;
-            elsif Is_Rule (Kid, "semicolon") then
-               if Last /= null then
-                  Last.Semicolon_After := True;
-               end if;
-            elsif Is_Rule (Kid, "ws") then
-               for C of Kid.Kids loop
-                  if C.Kind = HBNF_Match.Token_Node then
-                     if C.Tok.Kind = HBNF_Match.Eol_Comment then
-                        if Last /= null then
-                           Last.Trailing_Comment := C.Tok.Text;
-                        end if;
-                     else  --  own-line comment: accumulate as leading
-                        if Leading /= Null_Unbounded_String then
-                           Append (Leading, Character'Val (10));
-                        end if;
-                        Append (Leading, C.Tok.Text);
-                     end if;
-                  end if;
-               end loop;
-            end if;
-         end loop;
-         Flush_Leading;  --  trailer before `}` or end of file
-      end Interpret_Children;
-
-      Result : constant Node_Access := new Node;
-   begin
-      Result.Kind := Block;
-      Result.Line := 1;
-      Result.Col  := 1;
-      Interpret_Children (Root, Result, True);
-      return Result;
-   end Interpret;
-
-   function Parse_Against
-     (Text : String; Schema : HBNF_Grammar.Rule_Vectors.Vector) return Parse_Result
-   is
-      L    : constant Lex_Result := Lex (Text);
-      Toks : HBNF_Match.Token_Vectors.Vector;
-      Tree : HBNF_Match.Node_Access;
-   begin
-      if not L.Success then
-         return (Success => False, Line => L.Line, Col => L.Col, Msg => L.Msg);
-      end if;
-      for T of L.Tokens loop
-         Toks.Append (To_Match_Token (T));
-      end loop;
-      Tree := HBNF_Match.Bind (Schema, Toks, "config");
-      if Tree = null then
-         return (Success => False, Line => 1, Col => 1,
-                 Msg => To_Unbounded_String ("does not match the grammar"));
-      end if;
-      return (Success => True, Root => Interpret (Tree));
-   exception
-      when Backend_Error | Constraint_Error =>
-         return (Success => False, Line => 1, Col => 1,
-                 Msg => To_Unbounded_String ("value out of range"));
-   end Parse_Against;
-
-   --  Accessors ------------------------------------------------------------
-
-   function Children (N : Node) return Node_Vectors.Vector is (N.Children);
-
-   function Find (N : Node; Name : String) return Node_Access is
-   begin
-      for C of N.Children loop
-         if C /= null and then C.Kind /= Comment
-           and then To_String (C.Name) = Name
-         then
-            return C;
-         end if;
-      end loop;
-      return null;
-   end Find;
-
-   function Find_All (N : Node; Name : String) return Node_Vectors.Vector is
-      R : Node_Vectors.Vector := Node_Vectors.Empty_Vector;
-   begin
-      for C of N.Children loop
-         if C /= null and then C.Kind /= Comment
-           and then To_String (C.Name) = Name
-         then
-            R.Append (C);
-         end if;
-      end loop;
-      return R;
-   end Find_All;
-
-   function Value_Count (N : Node) return Natural is
-     (Natural (N.Values.Length));
-
-   function Value_At (N : Node; Index : Positive) return HBNF.Value is
-     (N.Values.Element (Index));
-
-   function As_Text (V : Value) return String is (To_String (V.Text));
-
-   function As_Integer (V : Value) return Long_Long_Integer is (V.Num);
-
-   function As_Decimal (V : Value) return Decimal is (V.Dec);
-
-   function Print (Root : Node_Access) return String is
-
-      Indent_Step : constant := 3;
-
-      function Spaces (N : Natural) return String is
-         S : constant String (1 .. N) := [others => ' '];
-      begin
-         return S;
-      end Spaces;
-
-      function Escape (S : String) return String is
-         Buf : Unbounded_String := Null_Unbounded_String;
-      begin
-         for C of S loop
-            case C is
-               when '"' => Append (Buf, "\""");
-               when '\' => Append (Buf, "\\");
-               when Character'Val (7)  => Append (Buf, "\a");
-               when Character'Val (8)  => Append (Buf, "\b");
-               when Character'Val (9)  => Append (Buf, "\t");
-               when Character'Val (10) => Append (Buf, "\n");
-               when Character'Val (11) => Append (Buf, "\v");
-               when Character'Val (12) => Append (Buf, "\f");
-               when Character'Val (13) => Append (Buf, "\r");
-               when others =>
-                  if C < Character'Val (32)
-                    or else C = Character'Val (127)
-                  then
-                     Append (Buf, "\x");
-                     Append (Buf, Hex_Char (Character'Pos (C) / 16));
-                     Append (Buf, Hex_Char (Character'Pos (C) mod 16));
-                  else
-                     Append (Buf, C);
-                  end if;
-            end case;
-         end loop;
-         return To_String (Buf);
-      end Escape;
-
-      function Value_Text (V : Value) return String is
-         function Base_Text return String is
-         begin
-            case V.Kind is
-               when Word => return To_String (V.Text);
-               when Str  => return '"' & Escape (To_String (V.Text)) & '"';
-               when Int  =>
-                  declare
-                     S : constant String := Long_Long_Integer'Image (V.Num);
-                  begin
-                     if S (S'First) = ' ' then
-                        return S (S'First + 1 .. S'Last);
-                     else
-                        return S;
-                     end if;
-                  end;
-               when Dec  => return To_String (V.Text);
-            end case;
-         end Base_Text;
-      begin
-         if V.Percent then
-            return Base_Text & "%";
-         else
-            return Base_Text;
-         end if;
-      end Value_Text;
-
-      function Comment_Block (Indent : Natural; Text : String) return String is
-         Buf   : Unbounded_String := Null_Unbounded_String;
-         Start : Natural := Text'First;
-      begin
-         for K in Text'Range loop
-            if Text (K) = Character'Val (10) then
-               Append (Buf, Spaces (Indent));
-               Append (Buf, '#');
-               if K - 1 >= Start then
-                  Append (Buf, ' ');
-                  Append (Buf, Text (Start .. K - 1));
-               end if;
-               Append (Buf, Character'Val (10));
-               Start := K + 1;
-            end if;
-         end loop;
-         Append (Buf, Spaces (Indent));
-         Append (Buf, '#');
-         if Start <= Text'Last then
-            Append (Buf, ' ');
-            Append (Buf, Text (Start .. Text'Last));
-         end if;
-         Append (Buf, Character'Val (10));
-         return To_String (Buf);
-      end Comment_Block;
-
-      function Node_Text (N : Node; Indent : Natural) return String is
-         Buf : Unbounded_String := To_Unbounded_String (Spaces (Indent));
-      begin
-         if N.Kind = Comment then
-            Append (Buf, '#');
-            if To_String (N.Name) /= "" then
-               Append (Buf, ' ');
-               Append (Buf, To_String (N.Name));
-            end if;
-            Append (Buf, Character'Val (10));
-            return To_String (Buf);
-         end if;
-         if N.Leading_Comment /= Null_Unbounded_String then
-            Append (Buf,
-                    Comment_Block (Indent, To_String (N.Leading_Comment)));
-         end if;
-         Append (Buf, To_String (N.Name));
-         for V of N.Values loop
-            Append (Buf, ' ');
-            Append (Buf, Value_Text (V));
-         end loop;
-         if N.Kind = Block then
-            Append (Buf, " {");
-            Append (Buf, Character'Val (10));
-            for C of N.Children loop
-               Append (Buf, Node_Text (C.all, Indent + Indent_Step));
-            end loop;
-            Append (Buf, Spaces (Indent));
-            Append (Buf, '}');
-         end if;
-         if N.Semicolon_After then
-            Append (Buf, ";");
-         end if;
-         if N.Trailing_Comment /= Null_Unbounded_String then
-            Append (Buf, " #");
-            if To_String (N.Trailing_Comment) /= "" then
-               Append (Buf, ' ');
-               Append (Buf, To_String (N.Trailing_Comment));
-            end if;
-         end if;
-         Append (Buf, Character'Val (10));
-         return To_String (Buf);
-      end Node_Text;
-
-      Buf : Unbounded_String := Null_Unbounded_String;
-   begin
-      if Root /= null then
-         for C of Root.Children loop
-            Append (Buf, Node_Text (C.all, 0));
-         end loop;
-      end if;
-      return To_String (Buf);
-   end Print;
-
-end HBNF;
+      --  Written only once all of it is made, so a schema a backend
+      --  refuses part way leaves no half a file.
+      Ada.Text_IO.Put (To_String (Output));
+   end;
+exception
+   when E : HBNF_Grammar.Parse_Error =>
+      --  A schema error: the whole message (it can quote the line, with a
+      --  caret, and run past the 200 characters GNAT keeps).
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "hbnf: " & HBNF_Grammar.Error_Message (E));
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   when E : Templates.Template_Error =>
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "hbnf: " & Ada.Exceptions.Exception_Message (E));
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+end Hbnf;

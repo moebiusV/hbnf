@@ -1769,7 +1769,9 @@ package body HBNF_Rust is
       --  The lexer calls char_dispatch after jet_dispatch.
       declare
          Has_Char : constant Boolean :=
-           (for some I in 1 .. N => Is_Char_Rule (Rules, To_String (Rules (I).Name)));
+           (for some I in 1 .. N =>
+              Is_Char_Rule (Rules, To_String (Rules (I).Name))
+                and then Is_Char_Token (Rules, To_String (Rules (I).Name)));
       begin
          if Has_Char then
             Append (Res, "fn decode_utf8(s: &[u8], pos: usize, len: usize) -> (usize, u32) {");

@@ -470,6 +470,52 @@ package body HBNF_C is
       return 0;
    end Find;
 
+   function Whitespace_Rule_Name (Rules : Rule_Vectors.Vector)
+     return Unbounded_String
+   is
+   begin
+      for I in 1 .. Natural (Rules.Length) loop
+         if Rules (I).Whitespace /= Null_Unbounded_String then
+            return Rules (I).Whitespace;
+         end if;
+      end loop;
+      return Null_Unbounded_String;
+   end Whitespace_Rule_Name;
+
+   --  True when a rule is parsed by name: a core type (word/int/str/…, char
+   --  rule or jet) is read as a scalar in place, a building block is inlined
+   --  into a token's scanner, and the whitespace rule is only scanned by
+   --  skip_ws — none of them gets a parse_rule_<name>.
+   function Needs_Parse_Fn (Rules : Rule_Vectors.Vector; NM : String)
+      return Boolean
+   is
+   begin
+      if Is_Core_Name (NM) then
+         return False;
+      end if;
+      if Is_Char_Rule (Rules, NM) and then not Is_Char_Token (Rules, NM) then
+         return False;
+      end if;
+      if NM = To_String (Whitespace_Rule_Name (Rules)) then
+         return False;
+      end if;
+      return True;
+   end Needs_Parse_Fn;
+
+   --  The scanner a rule runs: its jet, or a char-rule scanner.  The whitespace
+   --  rule is one or the other, never a core scalar, so Scalar_Scan_Fn (which
+   --  maps any non-core name onto `word`) would be wrong for it.
+   function Rule_Scanner (Rules : Rule_Vectors.Vector; Name : String)
+      return String
+   is
+      J : constant Natural := Find (Rules, Name);
+   begin
+      if J /= 0 and then Rules (J).Jet_Code /= Null_Unbounded_String then
+         return "jet_" & C_Name (Name);
+      end if;
+      return "scan_" & C_Name (Name);
+   end Rule_Scanner;
+
    function C_Type_Of (Rules : Rule_Vectors.Vector; Ref : String) return String is
       S : constant String := Scalar_C_Type (Ref);
       J : constant Natural := Find (Rules, Ref);
@@ -2338,37 +2384,35 @@ package body HBNF_C is
    --  =====================================================================
 
    --  The token kind a core scalar reads (mirrors the matcher's Match_Core).
-   function Scalar_Tok_Kind (Name : String) return String is
+   --  The scanner a core scalar runs: `word`/`atom`/`bool`/`flag` read the
+   --  `word` rule, `int`/`uN`/`iN` the `int` rule, `str` the `str` rule.  The
+   --  core rule is a hand-written jet (`jet_*`) when the grammar does not
+   --  define it (the injected built-in), else a char rule (`scan_*`).
+   function Scalar_Scan_Fn (Rules : Rule_Vectors.Vector; Name : String)
+      return String
+   is
+      Core : constant String :=
+        (if Name = "str" then "str"
+         elsif Name = "int" then "int"
+         elsif Name'Length >= 2
+           and then (Name (Name'First) = 'u' or else Name (Name'First) = 'i')
+           and then (for all K in Name'First + 1 .. Name'Last
+                     => Name (K) in '0' .. '9')
+         then "int"
+         else "word");
+      J : constant Natural := Find (Rules, Core);
    begin
-      if Name = "str" then
-         return "TOK_STR";
-      elsif Name = "int" then
-         return "TOK_INT";
-      elsif Name'Length >= 2 then
-         declare
-            P : constant Character := Name (Name'First);
-            R : constant String := Name (Name'First + 1 .. Name'Last);
-         begin
-            if (P = 'u' or else P = 'i')
-              and then (for all C of R => C in '0' .. '9')
-            then
-               return "TOK_INT";
-            end if;
-         end;
+      if J /= 0 and then Rules (J).Jet_Code /= Null_Unbounded_String then
+         return "jet_" & Core;
       end if;
-      return "TOK_ATOM";  --  atom / word / bool / flag
-   end Scalar_Tok_Kind;
+      return "scan_" & Core;
+   end Scalar_Scan_Fn;
 
-   --  A `word`/`atom` scalar is a bareword the lexer did NOT intern as a
-   --  keyword; the match must reject keyword tokens, else `1*string` would
-   --  swallow the next directive's keyword (parse.y's lexer reserves them).
-   function Scalar_Kwid_Check (Name : String) return String is
-   begin
-      if Name = "atom" or else Name = "word" then
-         return " && p->toks[p->pos].kwid == KWID_NONE";
-      end if;
-      return "";
-   end Scalar_Kwid_Check;
+   --  The scanner the `word` core rule runs (jet or scan), for a keyword read.
+   function Word_Scanner (Rules : Rule_Vectors.Vector) return String is
+     ((if Find (Rules, "word") /= 0
+         and then Rules (Find (Rules, "word")).Jet_Code /= Null_Unbounded_String
+       then "jet_word" else "scan_word"));
 
    --  A human-readable description of a core scalar (for error messages).
    function Core_Desc (Name : String) return String is
@@ -2382,20 +2426,41 @@ package body HBNF_C is
       end if;
    end Core_Desc;
 
-   --  The C expression that converts the token at p->pos into a core value.
-   function Scalar_Parse_Expr (Name : String) return String is
+   --  The extra condition that rejects a matched bareword which is a keyword
+   --  (`word`/`atom` must not swallow a directive's keyword).
+   function Scalar_Reject (Name, N : String) return String is
+   begin
+      if Name = "atom" or else Name = "word" then
+         return " || kw_lookup(p->text + p->pos, " & N & ") != KWID_NONE";
+      end if;
+      return "";
+   end Scalar_Reject;
+
+   --  The positive form of Scalar_Reject, for a branch that accepts on `n`:
+   --  a matched bareword must not be a keyword either.
+   function Scalar_Guard (Name, N : String) return String is
+   begin
+      if Name = "atom" or else Name = "word" then
+         return " && kw_lookup(p->text + p->pos, " & N & ") == KWID_NONE";
+      end if;
+      return "";
+   end Scalar_Guard;
+
+   --  The C expression converting a matched scalar (length N, text at p->pos)
+   --  into its value.
+   function Scalar_Value (Name, N : String) return String is
    begin
       if Name = "str" then
-         --  Quoted strings are already unescaped into the arena, NUL-terminated.
-         return "p->toks[p->pos].text";
+         --  Unquote + unescape the matched quoted string.
+         return "hbnf_str_value(p->text + p->pos, " & N & ")";
       elsif Name = "atom" or else Name = "word" then
-         return "hbnf_str_append(p->toks[p->pos].text, p->toks[p->pos].len)";
+         return "hbnf_str_append(p->text + p->pos, " & N & ")";
       elsif Name = "int" then
-         return "atoll(p->toks[p->pos].text)";
+         return "atoll(p->text + p->pos)";
       elsif Name = "bool" or else Name = "flag" then
-         return "((p->toks[p->pos].len==3 && strncmp(p->toks[p->pos].text,""yes"",3)==0) "
-           & "|| (p->toks[p->pos].len==2 && strncmp(p->toks[p->pos].text,""on"",2)==0) "
-           & "|| (p->toks[p->pos].len==4 && strncmp(p->toks[p->pos].text,""true"",4)==0))";
+         return "((" & N & "==3 && strncmp(p->text+p->pos,""yes"",3)==0) "
+           & "|| (" & N & "==2 && strncmp(p->text+p->pos,""on"",2)==0) "
+           & "|| (" & N & "==4 && strncmp(p->text+p->pos,""true"",4)==0))";
       elsif Name'Length >= 2 then
          declare
             P : constant Character := Name (Name'First);
@@ -2406,16 +2471,16 @@ package body HBNF_C is
             then
                if P = 'u' then
                   return "(uint" & R
-                    & "_t)strtoull(p->toks[p->pos].text, NULL, 10)";
+                    & "_t)strtoull(p->text + p->pos, NULL, 10)";
                else
                   return "(int" & R
-                    & "_t)strtoll(p->toks[p->pos].text, NULL, 10)";
+                    & "_t)strtoll(p->text + p->pos, NULL, 10)";
                end if;
             end if;
          end;
       end if;
-      return "hbnf_str_append(p->toks[p->pos].text, p->toks[p->pos].len)";
-   end Scalar_Parse_Expr;
+      return "hbnf_str_append(p->text + p->pos, " & N & ")";
+   end Scalar_Value;
 
    --  True for the numeric core scalars (int / uN / iN), whose strtol/atoll
    --  conversion is deferred to the branch's commit point instead of running
@@ -2854,7 +2919,15 @@ package body HBNF_C is
       --  `Fail` statement ("goto ..." or "p->pos = save; return false;").
       procedure Emit_Seq
         (Els : Element_Vectors.Vector; First, Last : Natural; Acc : String;
-         Buf  : in out U; Fail : String; Ind : String := "    ") is
+         Buf  : in out U; Fail : String; Ind : String := "    ";
+         Ws   : Boolean := False) is
+         procedure Ws_Skip is
+         begin
+            if Ws then
+               Append (Buf, Ind & "skip_ws(p);");
+               Append (Buf, LF);
+            end if;
+         end Ws_Skip;
       begin
          for K in First .. Last loop
             declare
@@ -2862,48 +2935,58 @@ package body HBNF_C is
             begin
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Templates.Render (Templates.Get ("c_seq_literal"),
-                       (Templates.Bind ("ind", Ind),
-                        Templates.Bind ("nocase",
-                          (if E.No_Case then "_nocase" else "")),
-                        Templates.Bind ("lit", C_Escape (To_String (E.Lit))),
-                        Templates.Bind ("len", Img (To_String (E.Lit)'Length)),
-                        Templates.Bind ("fail", Fail))));
-                     Append (Buf, LF);
+                     declare
+                        Lit : constant String := To_String (E.Lit);
+                        Fn  : constant String :=
+                          (if E.No_Case then "expect_word_nocase"
+                           elsif Is_Keyword_Lit (Lit) then "expect_word"
+                           else "expect_lit");
+                     begin
+                        Ws_Skip;
+                        Append (Buf, Ind & "if (!" & Fn & "(p, """
+                          & C_Escape (Lit) & """, " & Img (Lit'Length)
+                          & ")) { " & Fail & " }");
+                        Append (Buf, LF);
+                     end;
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
                         declare
                            NM : constant String := To_String (E.Name);
                         begin
-                           Append (Buf, Templates.Render (Templates.Get ("c_seq_kind"),
-                             (Templates.Bind ("ind", Ind),
-                              Templates.Bind ("kind", Scalar_Tok_Kind (NM)),
-                              Templates.Bind ("desc", Core_Desc (NM)),
-                              Templates.Bind ("fail", Fail),
-                              Templates.Bind ("assign",
-                                (if Is_Number (NM)
-                                 then Ind & "num_" & C_Field (NM)
-                                      & " = p->toks[p->pos].text; p->pos++;"
-                                 else Ind & Acc & C_Field (NM) & " = "
-                                      & Scalar_Parse_Expr (NM) & "; p->pos++;")))));
+                           Ws_Skip;
+                           Append (Buf, Ind & "{ size_t n = "
+                             & Scalar_Scan_Fn (Rules, NM)
+                             & "(p->text, p->pos, p->len); if (!n"
+                             & Scalar_Reject (NM, "n")
+                             & ") { fail(p, """ & Core_Desc (NM)
+                             & """, 0, p->text + p->pos, 0); " & Fail & " } ");
+                           if Is_Number (NM) then
+                              Append (Buf, "num_" & C_Field (NM)
+                                & " = p->text + p->pos; p->pos += n; }");
+                           else
+                              Append (Buf, Acc & C_Field (NM) & " = "
+                                & Scalar_Value (NM, "n") & "; p->pos += n; }");
+                           end if;
                            Append (Buf, LF);
                         end;
                      else
                         declare
                            NM : constant String := To_String (E.Name);
                         begin
-                           Append (Buf, Templates.Render (Templates.Get ("c_seq_ref"),
-                             (Templates.Bind ("ind", Ind),
-                              Templates.Bind ("name", C_Name (NM)),
-                              Templates.Bind ("acc", Acc),
-                              Templates.Bind ("field", C_Field (NM)),
-                              Templates.Bind ("fail", Fail))));
+                           Ws_Skip;
+                           Append (Buf, Templates.Render
+                             (Templates.Get ("c_seq_ref"),
+                              (Templates.Bind ("ind", Ind),
+                               Templates.Bind ("name", C_Name (NM)),
+                               Templates.Bind ("acc", Acc),
+                               Templates.Bind ("field", C_Field (NM)),
+                               Templates.Bind ("fail", Fail))));
                            Append (Buf, LF);
                         end;
                      end if;
                   when Group =>
                      Emit_Seq (E.Items, 1, Natural (E.Items.Length), Acc, Buf,
-                               Fail, Ind & "    ");
+                               Fail, Ind & "    ", Ws);
                   when Alt =>
                      null;
                   when Char_Range =>
@@ -3138,7 +3221,8 @@ package body HBNF_C is
       procedure Emit_Alternation
         (Els : Element_Vectors.Vector; Acc, Reset, Ok : String;
          Kind_Prefix : String := "";
-         Buf : in out U; Ind : String := "    "; Label : String := "") is
+         Buf : in out U; Ind : String := "    "; Label : String := "";
+         Ws   : Boolean := False) is
          N    : constant Natural := Natural (Els.Length);
          Flat : String_Vectors.Vector;
          Offs : Natural_Vectors.Vector;
@@ -3170,7 +3254,8 @@ package body HBNF_C is
                      Append (Buf, LF);
                   end if;
                   Emit_Seq (Els, LSt, K - 1, Acc, Buf,
-                            "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind);
+                            "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind,
+                            Ws);
                   if Kind_Prefix /= "" and then LSt <= K - 1
                     and then Els (LSt).Kind = Literal
                   then
@@ -3192,7 +3277,8 @@ package body HBNF_C is
          end Emit_Linear;
       begin
          Branch_Firsts (Els, Flat, Offs);
-         if not Offs.Is_Empty and then Has_Dispatch (Flat, Offs) then
+         if False then  --  first-byte keyword dispatch: re-add after §6
+
             --  Keyword dispatch: an O(1) jump table on the interned keyword
             --  id.  A keyword unique to one branch jumps straight to that
             --  branch's body in the linear chain below (branch 1 is entered
@@ -3352,22 +3438,20 @@ package body HBNF_C is
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
          SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
+         Ws : constant Boolean := R.Whitespace /= Null_Unbounded_String;
       begin
          if R.Jet_Code /= Null_Unbounded_String then
-            --  A jet: match its own token kind and yield the matched text.
+            --  A jet: run its hand-written scanner and yield the matched text.
             Append (Buf, Templates.Render (Templates.Get ("c_rule_jet"),
-              (Templates.Bind ("kind", "TOK_" & C_Ident (NM)),
+              (Templates.Bind ("scan", "jet_" & C_Name (NM)),
                Templates.Bind ("desc", "a " & NM))));
             Append (Buf, LF);
             return;
          end if;
          if Is_Char_Rule (Rules, NM) then
-            --  A character-level rule: match its char token and yield the
-            --  matched text, exactly like a jet.
+            --  A character-level rule: run its scanner and yield the text.
             Append (Buf, Templates.Render (Templates.Get ("c_rule_jet"),
-              (Templates.Bind ("kind",
-                 (if Is_Core_Name (NM) then Scalar_Tok_Kind (NM)
-                  else "TOK_" & C_Ident (NM))),
+              (Templates.Bind ("scan", "scan_" & C_Name (NM)),
                Templates.Bind ("desc", NM))));
             Append (Buf, LF);
             return;
@@ -3400,10 +3484,10 @@ package body HBNF_C is
                   Append (Buf, LF);
                end if;
                if Max >= 0 then
-                  Append (Buf, "    while (p->pos < p->n && count < "
+                  Append (Buf, "    while (p->pos < p->len && count < "
                     & Img (Natural (Max)) & ") {");
                else
-                  Append (Buf, "    while (p->pos < p->n) {");
+                  Append (Buf, "    while (p->pos < p->len) {");
                end if;
                Append (Buf, LF);
                Append (Buf, "        " & C_Type_Name (NM) & " *nn ="
@@ -3413,18 +3497,22 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "        size_t save = p->pos;");
                Append (Buf, LF);
+               if Ws then
+                  Append (Buf, "        skip_ws(p);");
+                  Append (Buf, LF);
+               end if;
                Emit_Number_Deferrals (Nums, Buf, "        ");
                if E.Kind = Name and then Is_Core (To_String (E.Name)) then
-                  --  A list of a core type (`1*word`): read the token in
-                  --  place; there is no parse_rule_ function for a core type.
+                  --  A list of a core type (`1*word`): scan it in place;
+                  --  there is no parse_rule_ function for a core type.
                   declare
                      NM : constant String := To_String (E.Name);
                   begin
                      Append (Buf, Templates.Render (Templates.Get ("c_rule_list_core"),
-                       (Templates.Bind ("kind", Scalar_Tok_Kind (NM)),
-                        Templates.Bind ("kwid", Scalar_Kwid_Check (NM)),
+                       (Templates.Bind ("scan", Scalar_Scan_Fn (Rules, NM)),
+                        Templates.Bind ("reject", Scalar_Reject (NM, "n")),
                         Templates.Bind ("field", C_Field (NM)),
-                        Templates.Bind ("expr", Scalar_Parse_Expr (NM)),
+                        Templates.Bind ("expr", Scalar_Value (NM, "n")),
                         Templates.Bind ("desc", Core_Desc (NM)))));
                   end;
                   Append (Buf, LF);
@@ -3447,7 +3535,7 @@ package body HBNF_C is
                      Append (Buf, LF);
                      Emit_Alternation
                        (Base_Branches (R), "nn->", Reset, "have", "",
-                        Buf, "            ", Label => "base_");
+                        Buf, "            ", Label => "base_", Ws => Ws);
                      Append (Buf, "            p->pos = save; free(nn); break;");
                      Append (Buf, LF);
                      Append (Buf, "        }");
@@ -3455,7 +3543,7 @@ package body HBNF_C is
                      Emit_Alternation
                        (Tail_Branches (R), "nn->", Reset, "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
-                        Buf, "        ");
+                        Buf, "        ", Ws => Ws);
                   end;
                else
                   declare
@@ -3468,7 +3556,7 @@ package body HBNF_C is
                         & Num_Clears (Nums),
                         "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
-                        Buf, "        ");
+                        Buf, "        ", Ws => Ws);
                   end;
                end if;
                Append (Buf, "        p->pos = save; free(nn); break;");
@@ -3528,17 +3616,11 @@ package body HBNF_C is
                end;
                Names := Enum_Names (Lits);
 
-               --  Each alternative checks the token itself: a keyword by its
-               --  keyword id, any other literal by its text.  No kind gate: a
-               --  non-keyword literal like "*" may arrive as a jet's token
-               --  (commonconf's wildcard), which is not an atom.
-               Append (Buf, "    if (p->pos >= p->n) { fail(p, ""a " & CN
-                 & """, 0, ""end of input""); return false; }");
-               Append (Buf, LF);
-               Append (Buf, "    {");
-               Append (Buf, LF);
-               Append (Buf, "        " & C_Type_Name (NM) & " r = " & C_Ident (NM) & "_"
-                 & To_String (Names (1)) & ";");
+               --  Each alternative matches its literal at pos: a keyword by the
+               --  `word` scanner (so `in` never matches `input`), any other
+               --  literal by its bytes.
+               Append (Buf, "    if (p->pos >= p->len) { fail(p, ""a " & CN
+                 & """, 0, ""end of input"", 0); return false; }");
                Append (Buf, LF);
                declare
                   St     : Natural := 1;
@@ -3548,33 +3630,41 @@ package body HBNF_C is
                      if K > Natural (P.Length) or else P (K).Kind = Alt then
                         if St <= K - 1 and then P (St).Kind = Literal then
                            declare
-                              L    : constant String := To_String (P (St).Lit);
-                              Cond : constant String :=
-                                (if Is_Keyword_Lit (L)
-                                 then "p->toks[p->pos].kwid == " & Kw_Name (L)
-                                 else "p->toks[p->pos].len == strlen("
-                                   & '"' & C_Escape (L) & '"'
-                                   & ") && "
-                                   & (if P (St).No_Case then "strncasecmp"
-                                      else "strncmp")
-                                   & "(p->toks[p->pos].text, "
-                                   & '"' & C_Escape (L) & '"'
-                                   & ", p->toks[p->pos].len)==0");
+                              L  : constant String := To_String (P (St).Lit);
+                              NL : constant Natural := L'Length;
+                              Fn : constant String :=
+                                (if Is_Keyword_Lit (L) then Word_Scanner (Rules)
+                                 else "");
                            begin
-                              Append (Buf, (if Branch = 0 then "        if ("
-                                            else "        else if (")
-                                & Cond & ")");
+                              Append (Buf, (if Branch = 0 then "    if ("
+                                            else "    else if ("));
+                              if Fn /= "" then
+                                 Append (Buf, Fn
+                                   & "(p->text, p->pos, p->len) == "
+                                   & Img (NL) & " && ");
+                              else
+                                 Append (Buf, "p->pos + " & Img (NL)
+                                   & " <= p->len && ");
+                              end if;
+                              Append (Buf, (if P (St).No_Case then "strncasecmp"
+                                            elsif Fn /= "" then "memcmp"
+                                            else "strncmp")
+                                & "(p->text + p->pos, """
+                                & C_Escape (L) & """, " & Img (NL) & ") == 0) {");
+                              Append (Buf, LF);
+                              Append (Buf, "        p->pos += " & Img (NL)
+                                & "; *out = " & C_Ident (NM) & "_"
+                                & To_String (Names (Branch + 1))
+                                & "; return true; }");
+                              Append (Buf, LF);
+                              Branch := Branch + 1;
                            end;
-                           Append (Buf, " r = " & C_Ident (NM) & "_"
-                             & To_String (Names (Branch + 1)) & ";");
-                           Append (Buf, LF);
-                           Branch := Branch + 1;
                         end if;
                         St := K + 1;
                      end if;
                   end loop;
                end;
-               Append (Buf, "        else { fail(p, """);
+               Append (Buf, "    else { fail(p, """);
                declare
                   St     : Natural := 1;
                   First  : Boolean := True;
@@ -3592,23 +3682,20 @@ package body HBNF_C is
                      end if;
                   end loop;
                end;
-               Append (Buf, """, 0, p->toks[p->pos].text); return false; }");
-               Append (Buf, LF);
-               Append (Buf, "        p->pos++; *out = r; return true;");
-               Append (Buf, LF);
-               Append (Buf, "    }");
+               Append (Buf, """, 0, p->text + p->pos, 0); return false; }");
                Append (Buf, LF);
             end;
          elsif Natural (P.Length) = 1 and then P (1).Kind = Name then
-            --  A scalar alias: read a core token, or delegate to the rule.
+            --  A scalar alias: scan a core scalar, or delegate to the rule.
             if Is_Core (To_String (P (1).Name)) then
                declare
                   PN : constant String := To_String (P (1).Name);
                begin
                   Append (Buf, Templates.Render (Templates.Get ("c_rule_alias_core"),
-                    (Templates.Bind ("kind", Scalar_Tok_Kind (PN)),
+                    (Templates.Bind ("scan", Scalar_Scan_Fn (Rules, PN)),
+                     Templates.Bind ("reject", Scalar_Reject (PN, "n")),
                      Templates.Bind ("desc", Core_Desc (PN)),
-                     Templates.Bind ("expr", Scalar_Parse_Expr (PN)))));
+                     Templates.Bind ("expr", Scalar_Value (PN, "n")))));
                end;
                Append (Buf, LF);
             else
@@ -3631,14 +3718,13 @@ package body HBNF_C is
                            if E.Kind = Name
                              and then Is_Core (To_String (E.Name))
                            then
-                              Append (Buf, "    if (p->pos < p->n && p->toks[p->pos].kind == "
-                                & Scalar_Tok_Kind (To_String (E.Name))
-                                & Scalar_Kwid_Check (To_String (E.Name))
-                                & ") {");
-                              Append (Buf, LF);
-                              Append (Buf, "        *out = "
-                                & Scalar_Parse_Expr (To_String (E.Name))
-                                & "; p->pos++; return true; }");
+                              Append (Buf, "    { size_t n = "
+                                & Scalar_Scan_Fn (Rules, To_String (E.Name))
+                                & "(p->text, p->pos, p->len); if (n"
+                                & Scalar_Guard (To_String (E.Name), "n")
+                                & ") { *out = "
+                                & Scalar_Value (To_String (E.Name), "n")
+                                & "; p->pos += n; return true; } }");
                               Append (Buf, LF);
                            elsif E.Kind = Name then
                               Append (Buf, "    if (parse_rule_"
@@ -3651,8 +3737,7 @@ package body HBNF_C is
                   end if;
                end loop;
             end;
-            Append (Buf, "    fail(p, ""a " & NM & """, 0, p->pos < p->n"
-              & " ? p->toks[p->pos].text : ""end of input"");");
+            Append (Buf, "    fail(p, ""a " & NM & """, 0, p->text + p->pos, 0);");
             Append (Buf, LF);
             Append (Buf, "    return false;");
             Append (Buf, LF);
@@ -3672,7 +3757,7 @@ package body HBNF_C is
                                  & Num_Clears (Nums),
                                  "ok",
                                  (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
-                                 Buf);
+                                 Buf, Ws => Ws);
                --  The last branch failed: free what it built (a list it
                --  had filled before a later token failed), as each
                --  earlier branch's failure does.
@@ -3710,7 +3795,8 @@ package body HBNF_C is
                          (if Analyze (Rules, Idx).Kind = Struct
                           then "free_" & CN & "_fields(&r); "
                           else "")
-                         & "p->pos = save; return false;");
+                         & "p->pos = save; return false;",
+                         Ws => Ws);
                Emit_Number_Converts (Nums, "r.", False, Buf, "    ");
                if R.Action_Code /= Null_Unbounded_String then
                   Append (Buf, Templates.Render (Templates.Get ("c_rule_line"),
@@ -3746,32 +3832,69 @@ package body HBNF_C is
 
          --  static bool/char *<Fn>(toks, n): does rule Name match the whole
          --  statement?  The rule's value is built and freed again.
-         procedure Whole (Fn, Name, Ret, Yes, No : String) is
+         --  A char-model parse of one rule over s[0..len): returns whether
+         --  the rule matched the whole text.
+         procedure Whole (Fn, Name, Ret : String) is
             J    : constant Natural := Find (Name);
             T    : constant String := Alias_Target (Rules, Name);
             K    : constant Natural := Find (T);
             Decl : constant String := Out_Type (J);
          begin
-            Line ("static " & Ret & Fn
-                  & "(const token_t *toks, size_t n) {");
-            Line ("    parser_t p = { toks, n, 0, NULL, (size_t)-1, 0, 0 };");
+            Line ("static " & Ret & Fn & "(const char *s, size_t len) {");
+            Line ("    parser_t p = { s, len, 0, (size_t)-1, 0, 0, NULL,"
+                  & " NULL, 0, 0 };");
             Line ("    " & Decl (Decl'First .. Decl'Last - 4) & "v;");
             Line ("    bool whole;");
             Line ("");
             Line ("    memset(&v, 0, sizeof v);");
-            Line ("    whole = parse_rule_" & C_Name (Name) & "(&p, &v)");
-            Line ("        && p.pos < p.n && p.toks[p.pos].kind == TOK_EOF;");
+            Line ("    whole = parse_rule_" & C_Name (Name) & "(&p, &v);");
+            Line ("    if (whole) { skip_ws(&p); whole = p.pos == p.len; }");
             if K /= 0 and then Analyze (Rules, K).Kind in Struct | List then
                Line ("    free_" & C_Name (T) & "(&v);");
             end if;
-            if Yes = "true" and then No = "false" then
-               Line ("    return whole;");
-            else
-               Line ("    return whole ? " & Yes & " : " & No & ";");
-            end if;
+            Line ("    return whole;");
             Line ("}");
             Line ("");
          end Whole;
+
+         --  The last non-blank string a rule names: the filename the includes
+         --  rule read, copied out of the arena into the caller's heap.
+         procedure Include_Name is
+            J    : constant Natural := Find (HBNF_Grammar.Includes_Rule);
+            T    : constant String := Alias_Target (Rules, HBNF_Grammar.Includes_Rule);
+            K    : constant Natural := Find (T);
+            Info : constant Rule_Info := Analyze (Rules, K);
+            Decl : constant String := Out_Type (J);
+         begin
+            if Info.Kind = Struct and then not Info.Members.Is_Empty then
+               declare
+                  Fld : constant String := C_Field (To_String (Info.Members (1).Name));
+               begin
+                  Line ("static char *hbnf_include_name(const char *s,"
+                        & " size_t len) {");
+                  Line ("    parser_t p = { s, len, 0, (size_t)-1, 0, 0, NULL,"
+                        & " NULL, 0, 0 };");
+                  Line ("    " & Decl (Decl'First .. Decl'Last - 4) & "v;");
+                  Line ("    char *r = NULL;");
+                  Line ("    memset(&v, 0, sizeof v);");
+                  Line ("    if (parse_rule_" & C_Name (T) & "(&p, &v)) {");
+                  Line ("        skip_ws(&p);");
+                  Line ("        if (p.pos == p.len) r = hbnf_strndup(v."
+                        & Fld & ", strlen(v." & Fld & "));");
+                  Line ("    }");
+                  Line ("    free_" & C_Name (T) & "(&v);");
+                  Line ("    return r;");
+                  Line ("}");
+                  Line ("");
+               end;
+            else
+               Line ("static char *hbnf_include_name(const char *s,"
+                     & " size_t len) {");
+               Line ("    (void)s; (void)len; return NULL;");
+               Line ("}");
+               Line ("");
+            end if;
+         end Include_Name;
       begin
          Line ("");
          Line ("/* ---- statements: the grammar's side of the driver ---- */");
@@ -3816,29 +3939,128 @@ package body HBNF_C is
             Line ("static int hbnf_bind_reported(void) { return 0; }");
          end if;
          Line ("");
+         Line ("/* The statement driver's copy-out helper, defined below. */");
+         Line ("static char *hbnf_strndup(const char *s, size_t n);");
+         Line ("");
+         if HBNF_Grammar.Includes_Rule /= "" then
+            Line ("/* `includes " & HBNF_Grammar.Includes_Rule
+                  & "`: this statement includes the file its string names. */");
+            Include_Name;
+         else
+            Line ("static char *hbnf_include_name(const char *s,"
+                  & " size_t len) {");
+            Line ("    (void)s; (void)len; return NULL;");
+            Line ("}");
+            Line ("");
+         end if;
          if HBNF_Grammar.Macros_Rule /= "" then
             Line ("/* `macros " & HBNF_Grammar.Macros_Rule
                   & "`: this statement defines a macro. */");
-            Whole ("hbnf_is_macro", HBNF_Grammar.Macros_Rule, "bool ",
-                   "true", "false");
-         end if;
-         if HBNF_Grammar.Includes_Rule /= "" then
-            Line ("/* `includes " & HBNF_Grammar.Includes_Rule
-                  & "`: this statement includes the file its last token"
-                  & " names. */");
-            Whole ("hbnf_include_tok", HBNF_Grammar.Includes_Rule,
-                   "const token_t *", "&toks[p.pos - 1]", "NULL");
-         else
-            Line ("static const token_t *hbnf_include_tok(const token_t *toks,"
-                  & " size_t n) {");
-            Line ("    (void)toks;");
-            Line ("    (void)n;");
-            Line ("    return NULL;");
-            Line ("}");
+            Whole ("hbnf_is_macro", HBNF_Grammar.Macros_Rule, "bool ");
          end if;
       end Emit_Statement_Hooks;
 
       Res : U;
+
+      --  True when a repetition's DNF is a flat ASCII character class: every
+      --  branch is a single code-point range below 0x80.  Such a class can be
+      --  matched as raw bytes (a multi-byte UTF-8 lead byte is >= 0x80 and so
+      --  never matches), so the scanner skips the per-code-point
+      --  hbnf_decode_utf8 the general path emits -- one call per range, per
+      --  position: a ten-way `wordchars` decodes each byte ten times.
+      function Is_Ascii_Class (Sub : Cp_Branch_Vectors.Vector) return Boolean is
+      begin
+         if Sub.Is_Empty then
+            return False;
+         end if;
+         for B of Sub loop
+            if Natural (B.Length) /= 1 or else B (1).Hi >= 16#80# then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Is_Ascii_Class;
+
+      --  The byte test for an ASCII class: `(b >= lo && b <= hi) || ...`.
+      function Class_Cond (Sub : Cp_Branch_Vectors.Vector) return String is
+         Buf   : U;
+         First : Boolean := True;
+      begin
+         for B of Sub loop
+            if not First then
+               Append (Buf, " || ");
+            end if;
+            First := False;
+            Append (Buf, "(b >= " & Img (B (1).Lo) & " && b <= "
+              & Img (B (1).Hi) & ")");
+         end loop;
+         return To_String (Buf);
+      end Class_Cond;
+
+      --  A byte test for one ASCII code point: `b <= hi` when lo is 0, else
+      --  `b >= lo && b <= hi` (b is `unsigned char`).
+      function Byte_Cond (Lo, Hi : Natural) return String is
+      begin
+         if Lo = 0 then
+            return "(b <= " & Img (Hi) & ")";
+         else
+            return "(b >= " & Img (Lo) & " && b <= " & Img (Hi) & ")";
+         end if;
+      end Byte_Cond;
+
+      --  Emit one single code point: a direct byte compare when it is ASCII,
+      --  else a UTF-8 decode (the code point may be multi-byte).
+      procedure Emit_Single (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         if A.Hi < 16#80# then
+            Append (Res, Ind & "if (pos + off >= len) " & Fail & ";");
+            Append (Res, LF);
+            Append (Res, Ind & "{ unsigned char b = (unsigned char)s[pos + off];");
+            Append (Res, LF);
+            Append (Res, Ind & "  if (!" & Byte_Cond (A.Lo, A.Hi) & ") "
+              & Fail & "; }");
+            Append (Res, LF);
+            Append (Res, Ind & "off++;");
+            Append (Res, LF);
+         else
+            Append (Res, Ind & "{ uint32_t c; size_t n = hbnf_decode_utf8(s,"
+              & " pos + off, len, &c); if (!n || !"
+              & Range_Cond (A.Lo, A.Hi) & ") " & Fail & "; off += n; }");
+            Append (Res, LF);
+         end if;
+      end Emit_Single;
+
+      --  "own" when a rule is the own-line comment, "eol" when it is the
+      --  same-line comment (chasing single-name aliases such as
+      --  `trailing = eol_comment`), "" otherwise.
+      function Comment_Kind (Rules : Rule_Vectors.Vector; Nm : String;
+                             Depth : Natural := 0) return String is
+         J : Natural;
+      begin
+         if Nm = "comment" then
+            return "own";
+         end if;
+         if Nm = "eol_comment" then
+            return "eol";
+         end if;
+         if Depth >= 8 then
+            return "";
+         end if;
+         J := Find (Rules, Nm);
+         if J /= 0 then
+            declare
+               P : constant Element_Vectors.Vector := Rules (J).Pattern;
+            begin
+               if Natural (P.Length) = 1 and then P (1).Kind = Name
+                 and then P (1).Min = 1 and then P (1).Max = 1
+               then
+                  return Comment_Kind (Rules, To_String (P (1).Name),
+                                       Depth + 1);
+               end if;
+            end;
+         end if;
+         return "";
+      end Comment_Kind;
 
       --  Emit the greedy loop for a repetition: match one full branch of the
       --  DNF (the longest one) as many times as Max allows (0 = unbounded),
@@ -3858,32 +4080,63 @@ package body HBNF_C is
             Append (Res, LF);
          end Emit_Branch;
       begin
-         Append (Res, Ind & "{ size_t cnt = 0;");
-         Append (Res, LF);
-         if A.Max = 0 then
-            Append (Res, Ind & "    for (;;) {");
+         if Is_Ascii_Class (A.Sub) then
+            --  A flat ASCII class: match it as raw bytes in one tight loop,
+            --  no per-code-point decode.
+            Append (Res, Ind & "{ size_t cnt = 0;");
+            Append (Res, LF);
+            if A.Max = 0 then
+               Append (Res, Ind & "    for (;;) {");
+            else
+               Append (Res, Ind & "    while (cnt < " & Img (A.Max) & ") {");
+            end if;
+            Append (Res, LF);
+            Append (Res, Ind & "        if (pos + off >= len) break;");
+            Append (Res, LF);
+            Append (Res, Ind & "        { unsigned char b = (unsigned char)s[pos + off];");
+            Append (Res, LF);
+            Append (Res, Ind & "          if (!(" & Class_Cond (A.Sub)
+              & ")) break; }");
+            Append (Res, LF);
+            Append (Res, Ind & "        off++; cnt++;");
+            Append (Res, LF);
+            Append (Res, Ind & "    }");
+            Append (Res, LF);
+            if A.Min > 0 then
+               Append (Res, Ind & "    if (cnt < " & Img (A.Min) & ") " & Fail
+                 & ";");
+               Append (Res, LF);
+            end if;
+            Append (Res, Ind & "}");
+            Append (Res, LF);
          else
-            Append (Res, Ind & "    while (cnt < " & Img (A.Max) & ") {");
-         end if;
-         Append (Res, LF);
-         Append (Res, Ind & "        size_t br = 0;");
-         Append (Res, LF);
-         for B of A.Sub loop
-            Emit_Branch (B);
-         end loop;
-         Append (Res, Ind & "        if (br == 0) break;");
-         Append (Res, LF);
-         Append (Res, Ind & "        off += br; cnt++;");
-         Append (Res, LF);
-         Append (Res, Ind & "    }");
-         Append (Res, LF);
-         if A.Min > 0 then
-            Append (Res, Ind & "    if (cnt < " & Img (A.Min) & ") " & Fail
-              & ";");
+            Append (Res, Ind & "{ size_t cnt = 0;");
+            Append (Res, LF);
+            if A.Max = 0 then
+               Append (Res, Ind & "    for (;;) {");
+            else
+               Append (Res, Ind & "    while (cnt < " & Img (A.Max) & ") {");
+            end if;
+            Append (Res, LF);
+            Append (Res, Ind & "        size_t br = 0;");
+            Append (Res, LF);
+            for B of A.Sub loop
+               Emit_Branch (B);
+            end loop;
+            Append (Res, Ind & "        if (br == 0) break;");
+            Append (Res, LF);
+            Append (Res, Ind & "        off += br; cnt++;");
+            Append (Res, LF);
+            Append (Res, Ind & "    }");
+            Append (Res, LF);
+            if A.Min > 0 then
+               Append (Res, Ind & "    if (cnt < " & Img (A.Min) & ") " & Fail
+                 & ";");
+               Append (Res, LF);
+            end if;
+            Append (Res, Ind & "}");
             Append (Res, LF);
          end if;
-         Append (Res, Ind & "}");
-         Append (Res, LF);
       end Emit_Repeat;
    begin
       for R of Rules loop
@@ -3898,69 +4151,98 @@ package body HBNF_C is
          end if;
       end loop;
       declare
-         Kind_Ext  : U;
-         Nocase    : U;
-         Kw        : U;
-         Strings_H : constant String :=
+         Scanners   : U;  -- forward declarations of the scanners the parser calls
+         Word_Match : U;  -- expect_word: a keyword matched through the `word` scanner
+         Ws_Skip    : U;  -- skip_ws: skip the `whitespace` rule at phrase level
+         Nocase     : U;
+         Kw         : U;
+         Ws_Name    : Unbounded_String := Null_Unbounded_String;
+         Has_Word   : Boolean := False;
+         Strings_H  : constant String :=
            (if Nocase_Words.Is_Empty then "" else "#include <strings.h>" & LF);
       begin
+         --  The rule the `whitespace` directive names (one value, else the
+         --  reader reports it).
+         for I in 1 .. N loop
+            if Rules (I).Whitespace /= Null_Unbounded_String then
+               Ws_Name := Rules (I).Whitespace;
+               exit;
+            end if;
+         end loop;
+         --  Forward declarations for every scanner the parser may call, so the
+         --  parse functions (and expect_word/skip_ws) can precede the scanner
+         --  bodies emitted later.
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String then
-               declare
-                  K : constant String := C_Ident (To_String (Rules (I).Name));
-               begin
-                  if K not in "ATOM" | "STR" | "INT" | "PUNCT" | "EOF" then
-                     Append (Kind_Ext, ", TOK_" & K);
-                  end if;
-               end;
+               Append (Scanners, "static size_t jet_"
+                 & C_Name (To_String (Rules (I).Name))
+                 & "(const char *s, size_t pos, size_t len);" & LF);
+               if To_String (Rules (I).Name) = "word" then
+                  Has_Word := True;
+               end if;
             elsif Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
                declare
                   NM : constant String := To_String (Rules (I).Name);
                begin
-                  --  A core-type char rule (word/int/str) reuses the base
-                  --  kind; another token gets its own kind.  A building block
-                  --  is inlined, so it has neither.
-                  if not Is_Core_Name (NM)
-                    and then Is_Char_Token (Rules, NM)
+                  if Is_Char_Token (Rules, NM)
+                    or else NM = To_String (Ws_Name)
                   then
-                     Append (Kind_Ext, ", TOK_" & C_Ident (NM));
+                     Append (Scanners, "static size_t scan_" & C_Name (NM)
+                       & "(const char *s, size_t pos, size_t len);" & LF);
+                     if NM = "word" then
+                        Has_Word := True;
+                     end if;
                   end if;
                end;
             end if;
          end loop;
+
          Emit_Keywords (Kw);
+
+         --  A keyword is matched by scanning `word` and comparing its length and
+         --  bytes, so `in` never matches `input` (the boundary is grammar).
+         if Has_Word then
+            Append (Word_Match, "__attribute__((unused))" & LF);
+            Append (Word_Match, "static bool expect_word(parser_t *p,"
+              & " const char *lit, size_t lit_len) {" & LF);
+            Append (Word_Match, "    size_t n = " & Word_Scanner (Rules)
+              & "(p->text, p->pos, p->len);" & LF);
+            Append (Word_Match, "    if (n == lit_len && memcmp(p->text + p->pos,"
+              & " lit, lit_len) == 0) { p->pos += n; return true; }" & LF);
+            Append (Word_Match, "    fail(p, lit, 1, p->text + p->pos,"
+              & " n ? n : (p->pos < p->len ? 1 : 0)); return false;" & LF);
+            Append (Word_Match, "}" & LF & LF);
+         end if;
+
+         --  Skip the file's `whitespace` rule as many times as it matches.
+         if Ws_Name /= Null_Unbounded_String then
+            Append (Ws_Skip, "__attribute__((unused))" & LF);
+            Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
+            Append (Ws_Skip, "    size_t n;" & LF);
+            Append (Ws_Skip, "    while ((n = "
+              & Rule_Scanner (Rules, To_String (Ws_Name))
+              & "(p->text, p->pos, p->len)) > 0) p->pos += n;" & LF);
+            Append (Ws_Skip, "}" & LF & LF);
+         end if;
+
          if not Nocase_Words.Is_Empty then
-            Append (Nocase, "__attribute__((unused))");
-            Append (Nocase, LF);
-            Append (Nocase, "static bool expect_lit_nocase(parser_t *p,"
-              & " const char *lit, size_t lit_len) {");
-            Append (Nocase, LF);
-            Append (Nocase,
-              "    if (p->pos < p->n && (p->toks[p->pos].kind == TOK_ATOM"
-              & " || p->toks[p->pos].kind == TOK_PUNCT)");
-            Append (Nocase, LF);
-            Append (Nocase,
-              "        && p->toks[p->pos].text && p->toks[p->pos].len == lit_len");
-            Append (Nocase, LF);
-            Append (Nocase,
-              "        && strncasecmp(p->toks[p->pos].text, lit, lit_len) == 0) {");
-            Append (Nocase, LF);
-            Append (Nocase, "        p->pos++; return true;");
-            Append (Nocase, LF);
-            Append (Nocase, "    }");
-            Append (Nocase, LF);
-            Append (Nocase,
-              "    fail(p, lit, 1, p->pos < p->n ? p->toks[p->pos].text"
-              & " : ""end of input""); return false;");
-            Append (Nocase, LF);
-            Append (Nocase, "}");
-            Append (Nocase, LF);
-            Append (Nocase, LF);
+            Append (Nocase, "__attribute__((unused))" & LF);
+            Append (Nocase, "static bool expect_word_nocase(parser_t *p,"
+              & " const char *lit, size_t lit_len) {" & LF);
+            Append (Nocase, "    size_t n = " & Word_Scanner (Rules)
+              & "(p->text, p->pos, p->len);" & LF);
+            Append (Nocase, "    if (n == lit_len && strncasecmp(p->text + p->pos,"
+              & " lit, lit_len) == 0) { p->pos += n; return true; }" & LF);
+            Append (Nocase, "    fail(p, lit, 1, p->text + p->pos,"
+              & " n ? n : (p->pos < p->len ? 1 : 0)); return false;" & LF);
+            Append (Nocase, "}" & LF & LF);
          end if;
          Append (Res, Templates.Render (Templates.Get ("c_parser"),
            (Templates.Bind ("strings_h", Strings_H),
-            Templates.Bind ("kind", To_String (Kind_Ext)),
             Templates.Bind ("keywords", To_String (Kw)),
+            Templates.Bind ("scanners", To_String (Scanners)),
+            Templates.Bind ("word_matcher", To_String (Word_Match)),
+            Templates.Bind ("ws_skip", To_String (Ws_Skip)),
             Templates.Bind ("nocase", To_String (Nocase)))));
       end;
       Append (Res, LF);
@@ -3973,10 +4255,7 @@ package body HBNF_C is
          declare
             NM : constant String := To_String (Rules (I).Name);
          begin
-            if not (Is_Char_Rule (Rules, NM)
-                    and then (Is_Core_Name (NM)
-                              or else not Is_Char_Token (Rules, NM)))
-            then
+            if Needs_Parse_Fn (Rules, NM) then
                Append (Res, Templates.Render (Templates.Get ("c_rule_decl"),
                  (Templates.Bind ("name", C_Name (NM)),
                   Templates.Bind ("type", Out_Type (I)))));
@@ -3991,10 +4270,7 @@ package body HBNF_C is
             R  : constant Rule := Rules (I);
             NM : constant String := To_String (R.Name);
          begin
-            if not (Is_Char_Rule (Rules, NM)
-                    and then (Is_Core_Name (NM)
-                              or else not Is_Char_Token (Rules, NM)))
-            then
+            if Needs_Parse_Fn (Rules, NM) then
                Append (Res, Templates.Render (Templates.Get ("c_rule_head"),
                  (Templates.Bind ("name", C_Name (NM)),
                   Templates.Bind ("type", Out_Type (I)))));
@@ -4008,124 +4284,133 @@ package body HBNF_C is
       end loop;
 
       --  The entry point: parse the root rule, then reject trailing input.
-      Append (Res, "bool parse_tokens(const token_t *toks, size_t n, "
-        & Out_Type (1) & ",");
-      Append (Res, LF);
-      Append (Res, "                  const char *text,");
-      Append (Res, LF);
-      Append (Res, "                  char *err, size_t errlen,"
-        & " size_t *err_line, size_t *err_col) {");
-      Append (Res, LF);
-      Append (Res, "    parser_t p = { toks, n, 0, text, (size_t)-1, 0, 0 };");
-      Append (Res, LF);
-      Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
-        & "(&p, out)) goto err;");
-      Append (Res, LF);
-      --  Input left over: with `statements`, nothing on the line was a
-      --  statement, or something follows one.
-      Append (Res, "    if (p.pos < p.n && p.toks[p.pos].kind != TOK_EOF) { fail(&p, "
-        & (if HBNF_Grammar.Statements
-           then "p.pos == 0 ? ""a statement"" : ""end of statement"""
-           else """end of config""")
-        & ", 0, p.toks[p.pos].text); goto err; }");
-      Append (Res, LF);
-      if Analyze (Rules, 1).Kind in Struct | List and then Has_Relink then
-         Append (Res, "    relink_" & C_Name (To_String (Rules (1).Name))
-           & "(out);");
+      --  With `statements` the statement driver calls this per statement as
+      --  hbnf_parse; otherwise it is the public parse_text.
+      declare
+         Entry_Nm : constant String :=
+           (if HBNF_Grammar.Statements then "hbnf_parse" else "parse_text");
+         Root_Out : constant String := Out_Type (1);
+         Root_Decl : constant String :=
+           Root_Out (Root_Out'First .. Root_Out'Last - 4);
+      begin
+         Append (Res, "bool " & Entry_Nm & "(const char *text, "
+           & Root_Decl & "*out,");
          Append (Res, LF);
-      end if;
-      if Analyze (Rules, 1).Kind in Struct | List and then Has_Action then
-         Append (Res, "    bind_errors = 0; bind_line = 0; bind_err_line = 0;"
-           & " bind_err_msg[0] = '\0';");
+         Append (Res, "                  char *err, size_t errlen,"
+           & " size_t *err_line, size_t *err_col) {");
          Append (Res, LF);
-         Append (Res, "    bind_" & C_Name (To_String (Rules (1).Name))
-           & "(out);");
+         Append (Res, "    parser_t p = { text, strlen(text), 0, (size_t)-1,"
+           & " 0, 0, NULL, NULL, 0, 0 };");
          Append (Res, LF);
-         Append (Res, "    if (bind_errors) {");
+         Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
+           & "(&p, out)) goto err;");
          Append (Res, LF);
-         Append (Res, "        snprintf(err, errlen, ""%s"", bind_err_msg);");
+         Append (Res, "    skip_ws(&p);");
          Append (Res, LF);
-         Append (Res, "        *err_line = bind_err_line; *err_col = 0;");
+         --  Input left over: with `statements`, nothing on the line was a
+         --  statement, or something follows one.
+         Append (Res, "    if (p.pos != p.len) { fail(&p, "
+           & (if HBNF_Grammar.Statements
+              then "p.pos == 0 ? ""a statement"" : ""end of statement"""
+              else """end of config""")
+           & ", 0, p.text + p.pos, 1); goto err; }");
          Append (Res, LF);
-         Append (Res, "        return false;");
+         if Analyze (Rules, 1).Kind in Struct | List and then Has_Relink then
+            Append (Res, "    relink_" & C_Name (To_String (Rules (1).Name))
+              & "(out);");
+            Append (Res, LF);
+         end if;
+         if Analyze (Rules, 1).Kind in Struct | List and then Has_Action then
+            Append (Res, "    bind_errors = 0; bind_line = 0; bind_err_line = 0;"
+              & " bind_err_msg[0] = '\0';");
+            Append (Res, LF);
+            Append (Res, "    bind_" & C_Name (To_String (Rules (1).Name))
+              & "(out);");
+            Append (Res, LF);
+            Append (Res, "    if (bind_errors) {");
+            Append (Res, LF);
+            Append (Res, "        snprintf(err, errlen, ""%s"", bind_err_msg);");
+            Append (Res, LF);
+            Append (Res, "        *err_line = bind_err_line; *err_col = 0;");
+            Append (Res, LF);
+            Append (Res, "        return false;");
+            Append (Res, LF);
+            Append (Res, "    }");
+            Append (Res, LF);
+         end if;
+         Append (Res, "    return true;");
+         Append (Res, LF);
+         Append (Res, "err:");
+         Append (Res, LF);
+         --  Found at the end of the input: say what ends there (a statement,
+         --  with `statements`; else the input).
+         Append (Res, "    { const char *f = p.err_found ? p.err_found"
+           & " : ""end of input"";");
+         Append (Res, LF);
+         Append (Res, "      int at_end = p.err_pos >= p.len;");
+         Append (Res, LF);
+         Append (Res, "      if (at_end) f = """
+           & (if HBNF_Grammar.Statements then "end of statement"
+              else "end of input") & """;");
+         Append (Res, LF);
+         Append (Res, "      size_t fl = at_end ? strlen(f) : p.err_found_len;");
+         Append (Res, LF);
+         Append (Res, "      char want[160];");
+         Append (Res, LF);
+         Append (Res, "      if (p.err_is_lit) snprintf(want, sizeof want, ""`%s`"","
+           & " p.err_expected ? p.err_expected : """");");
+         Append (Res, LF);
+         Append (Res, "      else snprintf(want, sizeof want, ""%s"","
+           & " p.err_expected ? p.err_expected : """");");
+         Append (Res, LF);
+         Append (Res, "      if (p.text && p.err_line >= hbnf_line_base) {");
+         Append (Res, LF);
+         Append (Res, "          const char *l; size_t ll;");
+         Append (Res, LF);
+         Append (Res, "          { const char *s = p.text;"
+           & " size_t ln = p.err_line - hbnf_line_base + 1;");
+         Append (Res, LF);
+         Append (Res, "            while (ln > 1) {");
+         Append (Res, LF);
+         Append (Res, "                const char *nl = strchr(s, '\n');");
+         Append (Res, LF);
+         Append (Res, "                if (!nl) break;");
+         Append (Res, LF);
+         Append (Res, "                s = nl + 1; ln--;");
+         Append (Res, LF);
+         Append (Res, "            }");
+         Append (Res, LF);
+         Append (Res, "            const char *nl = strchr(s, '\n');");
+         Append (Res, LF);
+         Append (Res, "            l = s; ll = nl ? (size_t)(nl - s) : strlen(s); }");
+         Append (Res, LF);
+         Append (Res, "          char pad[64];");
+         Append (Res, LF);
+         Append (Res, "          size_t w = p.err_col > 1 ? p.err_col - 1 : 0;");
+         Append (Res, LF);
+         Append (Res, "          if (w > sizeof pad - 1) w = sizeof pad - 1;");
+         Append (Res, LF);
+         Append (Res, "          memset(pad, ' ', w); pad[w] = '\0';");
+         Append (Res, LF);
+         Append (Res, "          snprintf(err, errlen,"
+           & " ""expected %s, found %.*s\n  %.*s\n  %s^"", want, (int)fl, f, (int)ll, l, pad);");
+         Append (Res, LF);
+         Append (Res, "      } else {");
+         Append (Res, LF);
+         Append (Res, "          snprintf(err, errlen, ""expected %s, found %.*s"","
+           & " want, (int)fl, f);");
+         Append (Res, LF);
+         Append (Res, "      }");
          Append (Res, LF);
          Append (Res, "    }");
          Append (Res, LF);
-      end if;
-      Append (Res, "    return true;");
-      Append (Res, LF);
-      Append (Res, "err:");
-      Append (Res, LF);
-      --  Found at the end: the EOF token's text is empty, so say what ends
-      --  there (a statement, with `statements`; else the input).
-      Append (Res, "    { const char *f = p.err_found ? p.err_found"
-        & " : ""end of input"";");
-      Append (Res, LF);
-      Append (Res, "      int at_end = p.err_pos >= p.n"
-        & " || p.toks[p.err_pos].kind == TOK_EOF;");
-      Append (Res, LF);
-      Append (Res, "      if (at_end) f = """
-        & (if HBNF_Grammar.Statements then "end of statement"
-           else "end of input") & """;");
-      Append (Res, LF);
-      Append (Res, "      size_t fl = at_end ? strlen(f)"
-        & " : p.toks[p.err_pos].len;");
-      Append (Res, LF);
-      Append (Res, "      char want[160];");
-      Append (Res, LF);
-      Append (Res, "      if (p.err_is_lit) snprintf(want, sizeof want, ""`%s`"","
-        & " p.err_expected ? p.err_expected : """");");
-      Append (Res, LF);
-      Append (Res, "      else snprintf(want, sizeof want, ""%s"","
-        & " p.err_expected ? p.err_expected : """");");
-      Append (Res, LF);
-      Append (Res, "      if (p.text && p.err_line >= hbnf_line_base) {");
-      Append (Res, LF);
-      Append (Res, "          const char *l; size_t ll;");
-      Append (Res, LF);
-      Append (Res, "          { const char *s = p.text;"
-        & " size_t ln = p.err_line - hbnf_line_base + 1;");
-      Append (Res, LF);
-      Append (Res, "            while (ln > 1) {");
-      Append (Res, LF);
-      Append (Res, "                const char *nl = strchr(s, '\n');");
-      Append (Res, LF);
-      Append (Res, "                if (!nl) break;");
-      Append (Res, LF);
-      Append (Res, "                s = nl + 1; ln--;");
-      Append (Res, LF);
-      Append (Res, "            }");
-      Append (Res, LF);
-      Append (Res, "            const char *nl = strchr(s, '\n');");
-      Append (Res, LF);
-      Append (Res, "            l = s; ll = nl ? (size_t)(nl - s) : strlen(s); }");
-      Append (Res, LF);
-      Append (Res, "          char pad[64];");
-      Append (Res, LF);
-      Append (Res, "          size_t w = p.err_col > 1 ? p.err_col - 1 : 0;");
-      Append (Res, LF);
-      Append (Res, "          if (w > sizeof pad - 1) w = sizeof pad - 1;");
-      Append (Res, LF);
-      Append (Res, "          memset(pad, ' ', w); pad[w] = '\0';");
-      Append (Res, LF);
-      Append (Res, "          snprintf(err, errlen,"
-        & " ""expected %s, found %.*s\n  %.*s\n  %s^"", want, (int)fl, f, (int)ll, l, pad);");
-      Append (Res, LF);
-      Append (Res, "      } else {");
-      Append (Res, LF);
-      Append (Res, "          snprintf(err, errlen, ""expected %s, found %.*s"","
-        & " want, (int)fl, f);");
-      Append (Res, LF);
-      Append (Res, "      }");
-      Append (Res, LF);
-      Append (Res, "    }");
-      Append (Res, LF);
-      Append (Res, "    *err_line = p.err_line; *err_col = p.err_col;");
-      Append (Res, LF);
-      Append (Res, "    return false;");
-      Append (Res, LF);
-      Append (Res, "}");
-      Append (Res, LF);
+         Append (Res, "    *err_line = p.err_line; *err_col = p.err_col;");
+         Append (Res, LF);
+         Append (Res, "    return false;");
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+      end;
 
       --  Jets: hand-written scanners, plus the dispatch the lexer calls.
       for I in 1 .. N loop
@@ -4146,32 +4431,11 @@ package body HBNF_C is
          end if;
       end loop;
 
-      Append (Res, "static size_t jet_dispatch(const char *s, size_t pos,"
-        & " size_t len, tok_kind_t *kind) {");
-      Append (Res, LF);
-      for I in 1 .. N loop
-         if Rules (I).Jet_Code /= Null_Unbounded_String then
-            declare
-               NM : constant String := To_String (Rules (I).Name);
-            begin
-               Append (Res, "    { size_t n = jet_" & C_Name (NM)
-                 & "(s, pos, len); if (n > 0) { *kind = TOK_" & C_Ident (NM)
-                 & "; return n; } }");
-               Append (Res, LF);
-            end;
-         end if;
-      end loop;
-      Append (Res, "    return 0;");
-      Append (Res, LF);
-      Append (Res, "}");
-      Append (Res, LF);
-
       --  Character-layer scanners: each char-level rule compiles to a scanner
       --  over its code points (one position for a single code point or an
-      --  alternation, several for a sequence), and char_dispatch picks the
-      --  longest match — maximal munch.  The scanners match decoded UTF-8
-      --  code points, so a token may begin with a multi-byte sequence; the
-      --  shared decoder is emitted once, only when some rule is char-level.
+      --  alternation, several for a sequence).  The scanners match decoded
+      --  UTF-8 code points, so a token may begin with a multi-byte sequence;
+      --  the shared decoder is emitted once, only when some rule is char-level.
       declare
          Has_Char : Boolean := False;
       begin
@@ -4221,7 +4485,9 @@ package body HBNF_C is
       end;
       for I in 1 .. N loop
          if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-           and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+           and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
+                     or else To_String (Rules (I).Name)
+                             = To_String (Whitespace_Rule_Name (Rules)))
          then
             declare
                NM  : constant String := To_String (Rules (I).Name);
@@ -4230,6 +4496,33 @@ package body HBNF_C is
                Append (Res, "static size_t scan_" & C_Name (NM)
                  & "(const char *s, size_t pos, size_t len) {");
                Append (Res, LF);
+               if Comment_Kind (Rules, NM) = "own" then
+                  --  An own-line comment: only blanks between it and the
+                  --  previous newline (or the start of the text).
+                  Append (Res, "    { size_t i = pos;");
+                  Append (Res, LF);
+                  Append (Res, "      while (i > 0) { char c = s[i - 1];");
+                  Append (Res, LF);
+                  Append (Res, "        if (c == '\n') break;");
+                  Append (Res, LF);
+                  Append (Res, "        if (c != ' ' && c != '\t' && c != '\r') return 0;");
+                  Append (Res, LF);
+                  Append (Res, "        i--; } }");
+                  Append (Res, LF);
+               elsif Comment_Kind (Rules, NM) = "eol" then
+                  --  A same-line comment: some non-blank precedes it on the
+                  --  line it sits on.
+                  Append (Res, "    { size_t i = pos; int own = 1;");
+                  Append (Res, LF);
+                  Append (Res, "      while (i > 0) { char c = s[i - 1];");
+                  Append (Res, LF);
+                  Append (Res, "        if (c == '\n') break;");
+                  Append (Res, LF);
+                  Append (Res, "        if (c != ' ' && c != '\t' && c != '\r') { own = 0; break; }");
+                  Append (Res, LF);
+                  Append (Res, "        i--; } if (own) return 0; }");
+                  Append (Res, LF);
+               end if;
                if Natural (DNF.Length) = 1 then
                   --  One branch: a sequence of code points, decoded in turn,
                   --  ending at most in one repetition.
@@ -4238,10 +4531,7 @@ package body HBNF_C is
                   for A of DNF (1) loop
                      case A.Kind is
                         when Single =>
-                           Append (Res, "    { uint32_t c; size_t n = hbnf_decode_utf8(s,"
-                             & " pos + off, len, &c); if (!n || !"
-                             & Range_Cond (A.Lo, A.Hi) & ") return 0; off += n; }");
-                           Append (Res, LF);
+                           Emit_Single (A, "    ", "return 0");
                         when Repeat =>
                            Emit_Repeat (A, "    ", "return 0");
                      end case;
@@ -4260,11 +4550,7 @@ package body HBNF_C is
                      for A of B loop
                         case A.Kind is
                            when Single =>
-                              Append (Res, "        { uint32_t c; size_t n = hbnf_decode_utf8(s,"
-                                & " pos + off, len, &c); if (!n || !"
-                                & Range_Cond (A.Lo, A.Hi)
-                                & ") break; off += n; }");
-                              Append (Res, LF);
+                              Emit_Single (A, "        ", "break");
                            when Repeat =>
                               Emit_Repeat (A, "        ", "break");
                         end case;
@@ -4283,39 +4569,6 @@ package body HBNF_C is
             end;
          end if;
       end loop;
-
-      Append (Res, "static size_t char_dispatch(const char *s, size_t pos,"
-        & " size_t len, tok_kind_t *kind) {");
-      Append (Res, LF);
-      Append (Res, "    size_t best = 0;");
-      Append (Res, LF);
-      Append (Res, "    tok_kind_t best_kind = TOK_EOF;");
-      Append (Res, LF);
-      for I in 1 .. N loop
-         if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-           and then Is_Char_Token (Rules, To_String (Rules (I).Name))
-         then
-            declare
-               NM : constant String := To_String (Rules (I).Name);
-               --  A core-type char rule reuses the base kind; any other token
-               --  gets its own.  Building blocks are inlined, not dispatched.
-               Kind : constant String :=
-                 (if Is_Core_Name (NM) then Scalar_Tok_Kind (NM)
-                  else "TOK_" & C_Ident (NM));
-            begin
-               Append (Res, "    { size_t n = scan_" & C_Name (NM)
-                 & "(s, pos, len); if (n > best) { best = n; best_kind = "
-                 & Kind & "; } }");
-               Append (Res, LF);
-            end;
-         end if;
-      end loop;
-      Append (Res, "    if (best > 0) { *kind = best_kind; return best; }");
-      Append (Res, LF);
-      Append (Res, "    return 0;");
-      Append (Res, LF);
-      Append (Res, "}");
-      Append (Res, LF);
 
       if HBNF_Grammar.Statements then
          Emit_Statement_Hooks (Res);
@@ -4337,8 +4590,6 @@ package body HBNF_C is
          Append (Res, Templates.Substitute (Template, "@ROOT_TYPE@", Root_T));
       end Add;
    begin
-      Append (Res, Templates.Get ("c_lexer"));
-      Append (Res, LF);
       if HBNF_Grammar.Statements then
          --  The statement driver, the macro expansion (or its stubs), and
          --  parse_text over the driver.
@@ -4348,8 +4599,6 @@ package body HBNF_C is
          if Text_Entry then
             Add (Templates.Get ("c_stmt_text"));
          end if;
-      else
-         Add (Templates.Get ("c_parse_text"));
       end if;
       if Epilogue ("C") /= "" then
          Append (Res, LF);
@@ -4435,34 +4684,39 @@ package body HBNF_C is
          --  With `statements`, parse_config reads the file through the
          --  statement driver and drops each statement once bound, so there
          --  is no parse_text.
-         return
-           "/* generated by hbnf -- do not edit */" & LF & LF &
-           Emit (Rules, Walkers => False) &
-           LF &
-           "#include ""conf.h""" & LF & LF &
-           Templates.Substitute
-             (Emit_Parser (Rules),
-              LF & "bool parse_tokens(", LF & "static bool parse_tokens(") &
-           Templates.Substitute
-             (Templates.Substitute
-                (Emit_Lexer (Rules,
-                             Text_Entry => not HBNF_Grammar.Statements),
-                 LF & "lexed_t lex(const char *text) {",
-                 LF & "static lexed_t lex(const char *text) {"),
-              LF & "bool parse_text(const char *text,",
-              LF & "static bool parse_text(const char *text,") &
-           LF &
-           Templates.Substitute
-             (Templates.Substitute
+         declare
+            --  The parser entry is hbnf_parse with `statements` (the driver
+            --  calls it per statement), else parse_text; either way it is
+            --  internal to conf.c.
+            Entry_Nm : constant String :=
+              (if HBNF_Grammar.Statements then "hbnf_parse" else "parse_text");
+            Parser : constant String :=
+              Templates.Substitute
+                (Emit_Parser (Rules),
+                 LF & "bool " & Entry_Nm & "(",
+                 LF & "static bool " & Entry_Nm & "(");
+         begin
+            return
+              "/* generated by hbnf -- do not edit */" & LF & LF &
+              Emit (Rules, Walkers => False) &
+              LF &
+              "#include ""conf.h""" & LF & LF &
+              Parser &
+              Emit_Lexer (Rules,
+                          Text_Entry => not HBNF_Grammar.Statements) &
+              LF &
+              Templates.Substitute
                 (Templates.Substitute
                    (Templates.Substitute
-                      ((if HBNF_Grammar.Statements
-                        then Templates.Get ("conf_tail_c_typed_stmt")
-                        else Templates.Get ("conf_tail_c_typed")),
-                       "@ENTRY@", HBNF_Grammar.Entry_Name),
-                    "@CONF_TYPE@", Conf_T),
-                 "@ROOT_TYPE@", Root_T),
-              "@ROOT_C@", Root_C);
+                      (Templates.Substitute
+                         ((if HBNF_Grammar.Statements
+                           then Templates.Get ("conf_tail_c_typed_stmt")
+                           else Templates.Get ("conf_tail_c_typed")),
+                          "@ENTRY@", HBNF_Grammar.Entry_Name),
+                       "@CONF_TYPE@", Conf_T),
+                    "@ROOT_TYPE@", Root_T),
+                 "@ROOT_C@", Root_C);
+         end;
       end if;
 
       return

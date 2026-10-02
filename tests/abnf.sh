@@ -4,11 +4,11 @@
 # inside ( ), `sensitivity`, <prose-val>, and core.hbnf.  Each grammar is
 # generated as C, compiled, and run on inputs it must accept or reject;
 # the schemas it must refuse are checked for the reason given.
-#   HBNF_CLI=/path/to/hbnf_cli sh tests/abnf.sh      (default ./hbnf_cli)
+#   HBNF=/path/to/hbnf sh tests/abnf.sh      (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
-CLI=${HBNF_CLI:-./hbnf_cli}
+CLI=${HBNF:-./hbnf}
 HERE=$(pwd)
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT

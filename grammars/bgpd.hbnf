@@ -43,6 +43,8 @@ keywords {
 include "tailq.hbnf"
 include "commonconf.hbnf"
 
+whitespace ws
+
 wordchars = ALPHA | DIGIT | "_" | "-" | "." | "$" | "@" | "%"
 word_start = ALPHA | "_" | "-" | "$" | "@" | "%"
 

@@ -180,6 +180,10 @@ package body HBNF_Grammar is
    File_No_Case    : Boolean := False;
    File_Fold_Names : Boolean := False;
 
+   --  Per file, from its `whitespace ws` line: the char rule a phrase rule
+   --  in this file skips between its elements.  "" when the file sets none.
+   File_Whitespace : Unbounded_String := Null_Unbounded_String;
+
    --  The text of the file Parse is reading, and where each of its lines
    --  starts, for a message that quotes a line.
    Current_Source : Unbounded_String := Null_Unbounded_String;
@@ -1758,6 +1762,81 @@ package body HBNF_Grammar is
          end loop;
       end Check_Prose;
    begin
+      --  The built-in lexical jets: the classic word/int/str scanners and the
+      --  default whitespace, as hand-written `%scan{}` code a grammar
+      --  (commonconf) may override.  A grammar that defines its own rule keeps
+      --  it; `Reachable` drops an injected jet nothing references.
+      declare
+         procedure Inject_Jet (Name, Code : String) is
+            Present : Boolean := False;
+         begin
+            for R of Rules loop
+               if To_String (R.Name) = Name then
+                  Present := True;
+                  exit;
+               end if;
+            end loop;
+            if not Present then
+               Rules.Append
+                 (Rule'(Name            => To_Unbounded_String (Name),
+                        Pattern         => Element_Vectors.Empty_Vector,
+                        Leading_Comment => Null_Unbounded_String,
+                        Trailing_Comment => Null_Unbounded_String,
+                        Jet_Code        => To_Unbounded_String (Code),
+                        Action_Code     => Null_Unbounded_String,
+                        Left_Bases      => 0,
+                        Whitespace      => Null_Unbounded_String));
+            end if;
+         end Inject_Jet;
+      begin
+         Inject_Jet ("word",
+           "size_t i = pos;" & ASCII.LF &
+           "if (i >= len" & ASCII.LF &
+           "    || !((s[i] >= 'a' && s[i] <= 'z')" & ASCII.LF &
+           "         || (s[i] >= 'A' && s[i] <= 'Z')" & ASCII.LF &
+           "         || s[i] == '_' || s[i] == '-'))" & ASCII.LF &
+           "    return 0;" & ASCII.LF &
+           "i++;" & ASCII.LF &
+           "while (i < len" & ASCII.LF &
+           "       && ((s[i] >= 'a' && s[i] <= 'z')" & ASCII.LF &
+           "           || (s[i] >= 'A' && s[i] <= 'Z')" & ASCII.LF &
+           "           || (s[i] >= '0' && s[i] <= '9')" & ASCII.LF &
+           "           || s[i] == '_' || s[i] == '-'" & ASCII.LF &
+           "           || s[i] == '.'))" & ASCII.LF &
+           "    i++;" & ASCII.LF &
+           "return i - pos;");
+         Inject_Jet ("int",
+           "size_t i = pos, start;" & ASCII.LF &
+           "if (i < len && s[i] == '-' && i + 1 < len" & ASCII.LF &
+           "    && s[i + 1] >= '0' && s[i + 1] <= '9')" & ASCII.LF &
+           "    i++;" & ASCII.LF &
+           "start = i;" & ASCII.LF &
+           "while (i < len && s[i] >= '0' && s[i] <= '9')" & ASCII.LF &
+           "    i++;" & ASCII.LF &
+           "return i > start ? i - pos : 0;");
+         Inject_Jet ("str",
+           "size_t i;" & ASCII.LF &
+           "if (pos >= len || s[pos] != '""')" & ASCII.LF &
+           "    return 0;" & ASCII.LF &
+           "i = pos + 1;" & ASCII.LF &
+           "while (i < len && s[i] != '""') {" & ASCII.LF &
+           "    if (s[i] == '\\' && i + 1 < len)" & ASCII.LF &
+           "        i++;" & ASCII.LF &
+           "    i++;" & ASCII.LF &
+           "}" & ASCII.LF &
+           "if (i >= len || s[i] != '""')" & ASCII.LF &
+           "    return 0;" & ASCII.LF &
+           "return i + 1 - pos;");
+         Inject_Jet ("ws",
+           "if (pos < len) {" & ASCII.LF &
+           "    char c = s[pos];" & ASCII.LF &
+           "    if (c == ' ' || c == '\t' || c == '\r'" & ASCII.LF &
+           "        || c == '\n')" & ASCII.LF &
+           "        return 1;" & ASCII.LF &
+           "}" & ASCII.LF &
+           "return 0;");
+      end;
+
       for J in 1 .. Natural (Rules.Length) loop
          declare
             K : constant String := To_Lower (To_String (Rules (J).Name));
@@ -2100,6 +2179,10 @@ package body HBNF_Grammar is
       First_Defined := Null_Unbounded_String;
       File_No_Case := False;
       File_Fold_Names := False;
+      --  `ws` (the classic blanks) is the default until a `whitespace`
+      --  directive names another rule; the C emitter generates a built-in
+      --  `ws` scanner when the grammar does not define one of its own.
+      File_Whitespace := To_Unbounded_String ("ws");
       Current_Source := To_Unbounded_String (Text);
       Line_Starts.Clear;
       Line_Starts.Append (Text'First);
@@ -2130,6 +2213,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "entry"
                               or else To_String (Cur (P).Text) = "includes"
                               or else To_String (Cur (P).Text) = "sensitivity"
+                              or else To_String (Cur (P).Text) = "whitespace"
                               or else To_String (Cur (P).Text) = "keywords"))
          then
             P.Pos := Mark;
@@ -2222,6 +2306,23 @@ package body HBNF_Grammar is
                      end;
                      Next (P);
                   end;
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "whitespace"
+                 and then Ends_Directive (P, 2)
+               then
+                  --  `whitespace ws`, per file: phrase rules in this file skip
+                  --  the char rule ws between their elements; char rules never
+                  --  do.  RFC grammars that write their whitespace explicitly
+                  --  set no such line.
+                  Next (P);
+                  if Cur (P).Kind /= T_Name then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" &
+                       Integer'Image (Cur (P).Col) &
+                       ": expected a char-rule name after `whitespace`";
+                  end if;
+                  File_Whitespace := Cur (P).Text;
+                  Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "prefix"
                then
@@ -2505,7 +2606,8 @@ package body HBNF_Grammar is
                         Trailing_Comment => Trailing,
                         Jet_Code        => Cur (P).Text,
                         Action_Code     => Null_Unbounded_String,
-                        Left_Bases      => 0));
+                        Left_Bases      => 0,
+                        Whitespace      => File_Whitespace));
                Standing.Include
                  (To_String (Name),
                   Standing_Rule'(R   => Rules (Index (To_String (Name))),
@@ -2556,7 +2658,8 @@ package body HBNF_Grammar is
                            Trailing_Comment => Trailing,
                            Jet_Code        => Null_Unbounded_String,
                            Action_Code     => Action,
-                           Left_Bases      => Bases));
+                           Left_Bases      => Bases,
+                           Whitespace      => File_Whitespace));
                   Standing.Include
                     (To_String (Name),
                      Standing_Rule'(R   => Rules (Index (To_String (Name))),
@@ -2872,6 +2975,11 @@ package body HBNF_Grammar is
                if not Seen (I) then
                   Seen (I) := True;
                   Walk (Rules (I).Pattern);
+                  --  The file's `whitespace ws` rule is needed too (the
+                  --  parser scans it), even though no pattern names it.
+                  if Rules (I).Whitespace /= Null_Unbounded_String then
+                     Mark (Rules (I).Whitespace);
+                  end if;
                end if;
                return;
             end if;
@@ -3148,7 +3256,7 @@ package body HBNF_Grammar is
       --  repetition or an alternation group becomes a new rule, named
       --  `<rule>_<n>`, that the branch refers to.
       procedure Flatten (V : in out Element_Vectors.Vector; Owner : String;
-                         N : in out Natural) is
+                         N : in out Natural; Ws : Unbounded_String) is
          Out_V : Element_Vectors.Vector;
       begin
          for E of V loop
@@ -3159,7 +3267,7 @@ package body HBNF_Grammar is
                declare
                   Inner : Element_Vectors.Vector := E.Items;
                begin
-                  Flatten (Inner, Owner, N);
+                  Flatten (Inner, Owner, N, Ws);
                   for X of Inner loop
                      Out_V.Append (X);
                   end loop;
@@ -3190,7 +3298,8 @@ package body HBNF_Grammar is
                            Trailing_Comment => Null_Unbounded_String,
                            Jet_Code         => Null_Unbounded_String,
                            Action_Code      => Null_Unbounded_String,
-                           Left_Bases       => 0));
+                           Left_Bases       => 0,
+                           Whitespace       => Ws));
                   Lift_Rule (Natural (Result.Length));
                   Out_V.Append
                     (new Element'(Kind => Name, Min => 1, Max => 1,
@@ -3224,14 +3333,14 @@ package body HBNF_Grammar is
             declare
                G : constant Element_Access := new Element'(R.Pattern (1).all);
             begin
-               Flatten (G.Items, To_String (R.Name), N);
+               Flatten (G.Items, To_String (R.Name), N, R.Whitespace);
                R.Pattern.Replace_Element (1, G);
             end;
          elsif Natural (R.Pattern.Length) = 1 then
             --  One element: `x = *y` is a list, `x = y` an alias.
             return;
          else
-            Flatten (R.Pattern, To_String (R.Name), N);
+            Flatten (R.Pattern, To_String (R.Name), N, R.Whitespace);
          end if;
          Result.Replace_Element (J, R);
       end Lift_Rule;

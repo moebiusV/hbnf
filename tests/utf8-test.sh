@@ -1,11 +1,11 @@
 #!/bin/sh
 # UTF-8 code-point matching: single-char multi-byte tokens and a multi-byte
 # sequence (maximal munch across bytes).
-#   HBNF_CLI=/path/to/hbnf_cli sh tests/utf8-test.sh      (default ./hbnf_cli)
+#   HBNF=/path/to/hbnf sh tests/utf8-test.sh      (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
-CLI=${HBNF_CLI:-./hbnf_cli}
+CLI=${HBNF:-./hbnf}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 rc=0
