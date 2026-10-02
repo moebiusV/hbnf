@@ -1,9 +1,9 @@
 ; ascii.hbnf — the named ASCII characters.
 ;
 ; The C0 control characters (NUL .. US), DEL, the blanks SP and HT/HTAB, and
-; the printable characters a grammar names rather than writes as a literal
-; (DQUOTE).  The character classes live in common.hbnf, which includes this
-; file.
+; the printable punctuation a grammar names rather than writes as a literal
+; (DQUOTE, LPAREN, COMMA, PERIOD, ...).  The character classes live in
+; common.hbnf, which includes this file.
 
 ; --- C0 control characters (0x00 .. 0x1F) ---
 NUL = %x00
@@ -39,8 +39,41 @@ GS  = %x1D
 RS  = %x1E
 US  = %x1F
 
-; --- blanks, DEL, and the named printable DQUOTE ---
-SP     = %x20
-HTAB   = %x09
-DEL    = %x7F
-DQUOTE = %x22
+; --- blanks and DEL ---
+SP   = %x20
+HTAB = %x09
+DEL  = %x7F
+
+; --- printable punctuation (non-alphanumeric, 0x21 .. 0x7E) ---
+EXCLAIM    = %x21   ; !
+DQUOTE     = %x22   ; "
+HASH       = %x23   ; #
+DOLLAR     = %x24   ; $
+PERCENT    = %x25   ; %
+AMP        = %x26   ; &
+SQUOTE     = %x27   ; '
+LPAREN     = %x28   ; (
+RPAREN     = %x29   ; )
+STAR       = %x2A   ; *
+PLUS       = %x2B   ; +
+COMMA      = %x2C   ; ,
+MINUS      = %x2D   ; -
+PERIOD     = %x2E   ; .
+SLASH      = %x2F   ; /
+COLON      = %x3A   ; :
+SEMI       = %x3B   ; ;
+LANGLE     = %x3C   ; <
+EQUALS     = %x3D   ; =
+RANGLE     = %x3E   ; >
+QUESTION   = %x3F   ; ?
+AT         = %x40   ; @
+LBRACKET   = %x5B   ; [
+BACKSLASH  = %x5C   ; backslash
+RBRACKET   = %x5D   ; ]
+CARET      = %x5E   ; ^
+UNDERSCORE = %x5F   ; _
+BACKTICK   = %x60   ; `
+LBRACE     = %x7B   ; {
+PIPE       = %x7C   ; |
+RBRACE     = %x7D   ; }
+TILDE      = %x7E   ; ~
