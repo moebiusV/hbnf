@@ -284,24 +284,72 @@ unwind-ident passing; each lands as reviewed patches.
        grammar needs it.  Gate: byte-identical output for the existing char
        rules.
 
-   4b. **Lexer as grammar.** The old lexer's `word`, `number`, quoted
-       strings with escapes, `#` comments and backslash continuation become
-       char rules in a shared include; `wordchars` becomes a grammar rule.  Keywords stay
+   4b. **Lexer as grammar.** *Done* (c2eb521 and the obconf work).  The old
+       lexer's `word`, `number`, quoted strings with escapes, `#` comments
+       and backslash continuation are char rules in `obconf.hbnf`, and
+       `wordchars` is a grammar rule (`wordchars = ALPHA | DIGIT | "_" |
+       "-" | "."`), overridable per daemon, not a directive.  Keywords stay
        a table (a listed word does not match `word`).
 
-   4c. **Character-model parser in C.** `parser_t` becomes text/len/pos
-       (no pre-cut token array); a literal compares bytes at the position, a
-       char-rule reference runs its scanner there, and `whitespace ws` makes
-       phrase-level rules skip `ws` between elements (character rules never
-       do).  Keywords still branch on the first byte.  Memoization (caching a
-       rule's result at a position) is an implementation optimization, added
-       only if the §6 numbers regress; it never changes what is accepted.
+   4c. **Character-model parser in C.** *Done* (98f462a, c69574c, 98cbbd2).
+       `parser_t` is text/len/pos with no pre-cut token array; a literal
+       compares bytes at the position, a char-rule reference runs its
+       scanner there, and `whitespace ws` makes phrase-level rules skip `ws`
+       between elements (character rules never do).  Keywords still branch
+       on the first byte.  Memoization (caching a rule's result at a
+       position) was deferred as an implementation optimization, to be added
+       **only if the §6 numbers regress**; it never changes what is
+       accepted.  They did — see 4f.
 
    4d. **Convert ntpd first**, then the other eight daemons; jets become
-       character rules where they can.
+       character rules where they can.  *Done* (26366f1 and the 4d merge):
+       the operator, wildcard and AS jets are char rules, and 18 jets remain
+       across all nine grammars.
 
-   4e. **Re-measure §6** (57 ms for the 100,000-rule toy, ~0.5 s for 100,000
-       pfctl rules) and hold it.
+   4e. **Coalesce ASCII char-rule scans into byte loops.** *Done*
+       (0de04f6).
+
+   4f. **The gate is not met for pfctl: pay for it with the memoization 4c
+       deferred.**  Measured 2026-10-02, the same machine, the same inputs,
+       the harness's own best-of-five, pre-4c (c2eb521, token array) against
+       current:
+
+       | case | pre-4c | character model | |
+       |---|---|---|---|
+       | toy 100,000 | 64 ms, 53 MB | **50 ms, 21 MB** | 1.27x faster, 2.5x leaner |
+       | toy 1,000,000 | 675 ms, 517 MB | **496 ms, 196 MB** | 1.36x faster, 2.6x leaner |
+       | pfctl 100,000 | **666 ms**, 378 MB | 1052 ms, 378 MB | **1.58x slower** |
+
+       The toy improved on both axes, and dropping the token array is why
+       the memory more than halved.  pfctl went the other way, and against
+       the gate as written ("about 0.5 s for 100,000 pfctl rules") it is now
+       about 2x over.
+
+       The cause is the one 4c anticipated.  §6's profile already found
+       about 170 literal probes per rule, "most of them failing as ordered
+       choice tries each alternative in turn".  With a token array a failing
+       probe compared a token that had been cut once; with the character
+       model each failing probe re-scans the characters.  pfctl's 35-way
+       filter-option alternation pays that on every branch, and the toy —
+       one shape, no wide alternation — does not.  So the regression is
+       concentrated exactly where the design predicted, which is why the
+       remedy was planned rather than invented now:
+
+       - **Cache the scan, not the rule.** Key a char-rule scan by (rule,
+         position) and reuse the length and kind.  That is what the token
+         array did implicitly, restored without materialising the array.
+       - Bound the cache so memory does not go back up (pfctl's 378 MB is
+         already the number to beat, and it has not moved).
+       - It must not change what is accepted: the gate is the full corpus
+         plus byte-identity, unchanged.
+
+       Also: **§6's table is now wrong**, which the project's own rule
+       forbids — paper claims match measurements.  The toy row understates
+       (53 MB where it is now 21 MB) and the pfctl row overstates (0.56 s
+       where it is now about 1.05 s).  The numbers above are from this VM,
+       not §6's two-core Xeon, so the table should be re-measured on that
+       machine rather than overwritten with these; recorded here so the
+       discrepancy is not lost.
 5. **`/` between phrases** (decision 1; factoring needs step 2).  Then:
    - RFC excerpts as regression tests: RFC 5234 Appendix B.1 verbatim, RFC
      3986 `scheme` and `host`, RFC 5322 `addr-spec`, RFC 9112
@@ -401,6 +449,14 @@ unwind-ident passing; each lands as reviewed patches.
    language".  It is narrower than it sounded — one mechanism, in the type
    emitter — and it is *not* the typedef problem, which is separate and
    discussed under decision 13.
+
+   **It is numbered 9 because it comes after the character model, not
+   instead of it.**  Config files, RFC grammars and wire formats are the
+   goal; a programming language is not, so this buys generality the product
+   does not need yet, and it waits.  There is a mechanical reason for the
+   order too: 9b allocates at a rule's commit point, and step 4c has just
+   rewritten where the commit points are, so doing 9 first means doing the
+   allocation twice.  4f (holding the §6 gate) is the live item.
 
 10. **Completion gate and backend spectrum.**  C/Ada/Rust/Zig and the
    interpreter agree on the same corpus, parsers are reentrant, actions have
