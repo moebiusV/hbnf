@@ -450,9 +450,18 @@ which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
    4e. **Coalesce ASCII char-rule scans into byte loops.** *Done*
        (0de04f6).
 
-   4f. **The gate is not met for pfctl: pay for it with the memoization 4c
-       deferred.**  Measured 2026-10-02, the same machine, the same inputs,
-       the harness's own best-of-five, pre-4c (c2eb521, token array) against
+   4f. **The absolute gate is met; the regression against the token array
+       is not.**  Read this entry with §6 open: re-measured on the author's
+       workstation (Ryzen 5 7600), `parse_file` does 100,000 pfctl rules in
+       **0.51 s**, which is the gate as written ("about 0.5 s").  So the
+       gate is not failing on real hardware, and everything below is the
+       weaker and still-true claim: the character model costs about 1.28x
+       what the token array cost for pfctl, on the same machine, same
+       inputs.  The numbers in this entry are from a shared VM roughly 1.6x
+       slower than that workstation; only their *ratios* carry over.
+
+       Measured 2026-10-02, the same machine, the same inputs, the
+       harness's own best-of-five, pre-4c (c2eb521, token array) against
        current:
 
        | case | pre-4c | character model | |
@@ -462,9 +471,12 @@ which is why `where` moved to 6 and the wire layer (7b) stayed behind it.
        | pfctl 100,000 | **666 ms**, 378 MB | 1052 ms, 378 MB | **1.58x slower** |
 
        The toy improved on both axes, and dropping the token array is why
-       the memory more than halved.  pfctl went the other way, and against
-       the gate as written ("about 0.5 s for 100,000 pfctl rules") it is now
-       about 2x over.
+       the memory more than halved.  pfctl went the other way: 1.58x at the
+       time, 1.28x after the three 4f commits below.  On this VM that reads
+       as "2x over the 0.5 s gate", which is what an earlier draft of this
+       entry said — but the VM is the wrong machine to say it on, and §6's
+       own hardware makes the gate.  What is left is the ratio, not the
+       absolute.
 
        The cause is the one 4c anticipated.  §6's profile already found
        about 170 literal probes per rule, "most of them failing as ordered
