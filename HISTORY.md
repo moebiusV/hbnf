@@ -2,7 +2,7 @@
 
 © 2026 David Walther · 1 October 2026
 
-Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Donald Knuth (1964) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Leonard Tower (1987) · Paul Rubin (1987) · John Gilmore (1987) · Keith Bostic (1987) · Mike Karels (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
+Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Edgar Irons (1961) · R. A. Brooker (1963) · D. Morris (1963) · Donald Knuth (1964) · Dewey Val Schorre (1964) · Robert McClure (1965) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Leonard Tower (1987) · Paul Rubin (1987) · John Gilmore (1987) · Keith Bostic (1987) · Mike Karels (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
 
 A parser generator reads a grammar — a precise description of what a language
 may say — and writes the program that recognizes exactly that. It matters
@@ -44,13 +44,40 @@ formalism. Donald Knuth insisted it be called Backus–Naur Form and not Backus
 Normal Form, because it is not a normal form. The name stuck, and the notation
 became the default way to write a language down.
 
+## The first compiler compilers
+
+BNF was meant to be read, and it turned out to be nearly executable. Within a
+year of the ALGOL 60 Report, Edgar Irons published *A Syntax-Directed Compiler
+for ALGOL 60* (1961): the parser was driven straight off the BNF Naur had just
+written, the grammar supplying the recognition tables as a program supplies its
+data. The notation was written for people; it happened to run.
+
+The name "compiler compiler" came next, from R. A. Brooker and D. Morris at
+Manchester (1963). Their Compiler Compiler read a phrase-structure description
+of a language — BNF with the semantics hung off the rules — and generated a
+machine-code compiler for the Atlas. It was a working tool, not a toy; it built
+compilers for Algol and Atlas Autocode.
+
+Then the metacompilers. Dewey Val Schorre's META II (1964) wrote a language as
+"syntax equations" in the shape of BNF and compiled each equation to the
+subroutine that recognized it; META II compiled itself, the first documented
+metacompiler. Robert McClure's TMG (1965) did the same at Bell Labs, and Ken
+Thompson used TMG around 1970 to write B — the language C grew out of — in
+place of the FORTRAN compiler he had set out to build.
+
+None of them became the way compilers were written. Each was a demonstration
+tied to one machine, with a notation of its own and no settled algorithm
+underneath: the grammar drove the parser, but how was still open. They proved
+the idea. What was missing was a reliable way to do it.
+
 ## The machine: Yacc
 
-BNF describes a language. It does not build a parser. For a decade the two were
-separate jobs: a language was specified in BNF, and a compiler was written by
-hand against the specification.
+Yacc did not invent the compiler compiler; it found the algorithm that made one
+stick. The decade of attempts before it had proved a grammar could drive a
+parser, but each was a machine-specific experiment, and none had answered how
+to turn an arbitrary grammar into a correct parser on its own.
 
-Stephen Johnson ended the division. At Bell Labs in the early 1970s he wanted
+Stephen Johnson answered it. At Bell Labs in the early 1970s he wanted
 to add an exclusive-or operator to the B compiler and found the hand-written
 parser impossible to change cleanly. Al Aho pointed him at Knuth's LR parsing
 papers, and Yacc was the result. A Yacc grammar is BNF plus C code that runs
