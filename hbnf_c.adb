@@ -3262,7 +3262,7 @@ package body HBNF_C is
       --  branch jumps to label `Ok`.  After the last branch fails, control
       --  falls through for the caller's own failure handling.
       procedure Emit_Alternation
-        (Els : Element_Vectors.Vector; Acc, Reset, Ok : String;
+        (Els : Element_Vectors.Vector; Acc, Free, Clears, Ok : String;
          Kind_Prefix : String := "";
          Buf : in out U; Ind : String := "    "; Label : String := "";
          Ws   : Boolean := False) is
@@ -3278,6 +3278,55 @@ package body HBNF_C is
             end if;
             return S;
          end Img;
+
+         --  The field names a branch writes (its Name elements and, when a
+         --  keyword tag is set, `kind`), for a per-branch reset that zeroes
+         --  only what the branch touched instead of the whole union-shaped
+         --  struct.  Numbers are excluded: they write a deferred `num_<field>`
+         --  pointer, cleared separately (Clears).
+         function Written_Fields (Els : Element_Vectors.Vector;
+                                  First, Last : Natural;
+                                  Kind : Boolean) return String_Vectors.Vector is
+            R : String_Vectors.Vector;
+            procedure Add (S : String) is
+               Present : Boolean := False;
+            begin
+               for X of R loop
+                  if To_String (X) = S then
+                     Present := True;
+                  end if;
+               end loop;
+               if not Present then
+                  R.Append (To_Unbounded_String (S));
+               end if;
+            end Add;
+            procedure Walk (Els2 : Element_Vectors.Vector; F, L : Natural) is
+            begin
+               for K in F .. L loop
+                  case Els2 (K).Kind is
+                     when Literal => null;
+                     when Name =>
+                        declare
+                           NM : constant String := To_String (Els2 (K).Name);
+                        begin
+                           if not Is_Number (NM) then
+                              Add (C_Field (NM));
+                           end if;
+                        end;
+                     when Group =>
+                        Walk (Els2 (K).Items, 1, Natural (Els2 (K).Items.Length));
+                     when Alt => null;
+                     when Char_Range => null;
+                  end case;
+               end loop;
+            end Walk;
+         begin
+            Walk (Els, First, Last);
+            if Kind then
+               Add ("kind");
+            end if;
+            return R;
+         end Written_Fields;
 
          --  The linear ordered-choice chain: try each branch in source order,
          --  restoring p->pos and resetting the struct between attempts.  After
@@ -3405,9 +3454,20 @@ package body HBNF_C is
                if K > N or else Els (K).Kind = Alt then
                   LBr := LBr + 1;
                   if LBr > 1 then
-                     Append (Buf, Templates.Render (Templates.Get ("c_alt_reset"),
-                       (Templates.Bind ("ind", Ind),
-                        Templates.Bind ("reset", Reset))));
+                     Append (Buf, Ind & "p->pos = save; " & Free);
+                     declare
+                        Fs : constant String_Vectors.Vector :=
+                          Written_Fields (Els, LSt, K - 1,
+                            Kind_Prefix /= ""
+                              and then Els (LSt).Kind = Literal);
+                     begin
+                        for F of Fs loop
+                           Append (Buf, "; memset(&" & Acc & To_String (F)
+                             & ", 0, sizeof " & Acc & To_String (F) & ")");
+                        end loop;
+                     end;
+                     Append (Buf, Clears);
+                     Append (Buf, ";");
                      Append (Buf, LF);
                      if Disp and then Has_Unique_Byte (LBr) then
                         --  The dispatch target: after the reset, so a branch
@@ -3589,21 +3649,20 @@ package body HBNF_C is
                   --  base's stays 0, <CN>_BASE.
                   declare
                      Tags : constant String_Vectors.Vector := List_Tags (R);
-                     Reset : constant String :=
-                       "free_" & CN & "_fields(nn); memset(nn, 0, sizeof *nn)"
-                       & Num_Clears (Nums);
+                     Free : constant String := "free_" & CN & "_fields(nn)";
+                     Clears : constant String := Num_Clears (Nums);
                   begin
                      Append (Buf, "        if (count == 0) {");
                      Append (Buf, LF);
                      Emit_Alternation
-                       (Base_Branches (R), "nn->", Reset, "have", "",
+                       (Base_Branches (R), "nn->", Free, Clears, "have", "",
                         Buf, "            ", Label => "base_", Ws => Ws);
                      Append (Buf, "            p->pos = save; free(nn); break;");
                      Append (Buf, LF);
                      Append (Buf, "        }");
                      Append (Buf, LF);
                      Emit_Alternation
-                       (Tail_Branches (R), "nn->", Reset, "have",
+                       (Tail_Branches (R), "nn->", Free, Clears, "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
                         Buf, "        ", Ws => Ws);
                   end;
@@ -3614,8 +3673,7 @@ package body HBNF_C is
                   begin
                      Emit_Alternation
                        (E.Items, "nn->",
-                        "free_" & CN & "_fields(nn); memset(nn, 0, sizeof *nn)"
-                        & Num_Clears (Nums),
+                        "free_" & CN & "_fields(nn)", Num_Clears (Nums),
                         "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
                         Buf, "        ", Ws => Ws);
@@ -3837,8 +3895,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Emit_Number_Deferrals (Nums, Buf, "    ");
                Emit_Alternation (P, "r.",
-                                 "free_" & CN & "_fields(&r); memset(&r, 0, sizeof r)"
-                                 & Num_Clears (Nums),
+                                 "free_" & CN & "_fields(&r)", Num_Clears (Nums),
                                  "ok",
                                  (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
                                  Buf, Ws => Ws);
