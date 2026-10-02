@@ -508,19 +508,17 @@ million `malloc`s and two million copies of short strings.  The first
 generator, run on §6's toy ruleset, peaks at 122 MB, about 1.25 KB per rule,
 nearly all of it these transient copies rather than the result tree itself.
 
-The fix is to stop allocating per token.  A token becomes a zero-copy slice —
-`(kind, offset, length)` into the source buffer — so lexing allocates nothing
-per token, and the character-level matching of §4 reads characters *inside* a
-run's slice rather than from per-character tokens.  This is precisely why
-"character-level" need not mean "one heap token per character": the character
-stream is the source slice that a run-level scanner points at, not a pile of
-allocated tokens.  The result tree still needs its own storage, but that can be
-an arena, allocated once and freed once, instead of a `strdup` per field.
-
-Both changes are in: a token is a pointer and a length into the source, and
-a field's string is copied once, into an arena freed with the tree.  §6
-measures the generator with them; on the toy ruleset peak RSS falls from
-122 MB to 53 MB.
+The first fix is to stop allocating per token.  A token becomes a zero-copy
+slice — `(kind, offset, length)` into the source buffer — so lexing allocates
+nothing per token, and the result tree copies each field's text once, into an
+arena allocated and freed once, instead of a `strdup` per field.  That cut the
+toy ruleset to 53 MB.  The character model of §4.1 goes the rest of the way,
+and removes the reason for the first fix: the token array is gone, so there is
+no token to slice or allocate at all.  The parser reads the text in place, a
+run-level scanner points into it, and a rule materializes only its result — a
+string is a slice, copied to the arena only when it must outlive the text.  §6
+measures this form: the toy ruleset peaks at 21 MB, about 215 bytes per rule,
+text included.
 
 ### 5.2 UTF-8 in, UTF-8 out
 
