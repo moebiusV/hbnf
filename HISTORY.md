@@ -163,8 +163,11 @@ line that kept ALGOL's block structure and dropped everything else. What C took
 from ALGOL 68, Ritchie said, was the scheme of type composition and its names:
 `int`, `char`, `long`, `short`, `union`, `struct` and `void` are all ALGOL 68's,
 the cast is named after ALGOL 68's, and the compound-assignment operators came
-the same way, through Douglas McIlroy's TMG. So the C grammar Stallman later
-fed to Bison was, in its bones, an ALGOL grammar.
+the same way, through Douglas McIlroy's TMG. The library borrowed too: ALGOL 68's
+formatted output was already `printf`, and C kept the name and the idea of a
+format string — though the `%` directives themselves came from BCPL's `writef`,
+which had them in 1966. So the C grammar Stallman later fed to Bison was, in its
+bones, an ALGOL grammar.
 
 Johnson's own compiler carried the machine into production. pcc shipped with
 Seventh Edition Unix in 1979, moved to the VAX through 32V, and became the

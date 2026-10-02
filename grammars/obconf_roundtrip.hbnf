@@ -1,0 +1,38 @@
+; obconf — the OpenBSD configuration grammar, as a self-contained hbnf
+; grammar: the lexer (commonconf's char rules: word, str, int) and the parser
+; (the declarative, block-structured form) in one file.  `hbnf` compiles this
+; directly; there is no separate hand-written lexer or interpreter.
+;
+;   listen on egress port 443 tls
+;   relay "webserver" { forward to "127.0.0.1" port 8080 }
+
+language C
+include "commonconf.hbnf"
+
+; Comments are not whitespace: `ws` here skips only the real blanks.  A
+; comment is its own token, captured and attached by position — own-line
+; comments are an entry's `leading`, a same-line comment its `trailing`.
+ws = SP | HTAB | CR | LF | continuation
+
+config    = *( entry )
+entry     = block | statement | comment_block
+statement = leading name *arg [ trailing ]
+block     = leading name [ qualifier ] "{" [ brace_trailing ] *( entry ) "}" [ trailing ]
+name      = word
+qualifier = str | word
+arg       = word | str | int
+semicolon = ";"
+leading   = *comment
+trailing  = eol_comment
+
+; A block's `{` line can carry its own same-line comment (rare), kept apart
+; from the `}` line's `trailing` so each round-trips back to its own line.
+brace_trailing = eol_comment
+
+; A run of own-line comments with no entry after them — the file header before
+; the first directive, or the trailer lines before a `}` — kept as its own node.
+comment_block = 1*comment
+
+; A same-line comment: the same `# ...` run, but only when something non-blank
+; precedes it on the line (the emitter's guard marks it, as for `comment`).
+eol_comment = "#" *comment_char

@@ -1,38 +1,100 @@
-; obconf — the OpenBSD configuration grammar, as a self-contained hbnf
-; grammar: the lexer (commonconf's char rules: word, str, int) and the parser
-; (the declarative, block-structured form) in one file.  `hbnf` compiles this
-; directly; there is no separate hand-written lexer or interpreter.
-;
-;   listen on egress port 443 tls
-;   relay "webserver" { forward to "127.0.0.1" port 8080 }
+; commonconf.hbnf — the shared OpenBSD config core, pulled in (and overridable)
+; with `include "commonconf.hbnf"`.  Rules only: the including schema owns
+; `language`, the preamble and the epilogue.  The lexer is grammar here: the
+; core types `int`, `str` and `word` are char rules (decision 7), and a daemon
+; widens the bareword set by overriding `wordchars` (and, until a negative
+; class derives them, `word_start` and `word_non_digit`) — some use `/` or `*`
+; as a literal separator, e.g. pfctl's `flags S/SA`, so the set is not shared
+; here.
 
-language C
-include "commonconf.hbnf"
+include "ascii.hbnf"
 
-; Comments are not whitespace: `ws` here skips only the real blanks.  A
-; comment is its own token, captured and attached by position — own-line
-; comments are an entry's `leading`, a same-line comment its `trailing`.
-ws = SP | HTAB | CR | LF | continuation
+; phrase rules in this file (and a daemon's own file, which says it too)
+; skip `ws` between elements; char rules never do.
+whitespace ws
 
-config    = *( entry )
-entry     = block | statement | comment_block
-statement = leading name *arg [ trailing ]
-block     = leading name [ qualifier ] "{" [ brace_trailing ] *( entry ) "}" [ trailing ]
-name      = word
-qualifier = str | word
-arg       = word | str | int
-semicolon = ";"
-leading   = *comment
-trailing  = eol_comment
+; -- the lexer (the fixed template becomes these char rules) ---------------
+; `int`, `str` and `word` are tokens; `ws` (blank space, comments and
+; continuation) is matched and skipped, never a token.  Order matters: the
+; scanner tries char rules in declaration order and keeps the longest match,
+; first-declared on a tie, so `int` precedes `word` and a bare `-5` wins the
+; tie over `word`'s `word_start *wordchars` branch.
 
-; A block's `{` line can carry its own same-line comment (rare), kept apart
-; from the `}` line's `trailing` so each round-trips back to its own line.
-brace_trailing = eol_comment
+; wordchars: the full bareword character class, base set.  A daemon overrides
+; it to add its own characters (pfctl uses `*` and `/`; unwind uses `@`).
+wordchars = ALPHA | DIGIT | "_" | "-" | "."
 
-; A run of own-line comments with no entry after them — the file header before
-; the first directive, or the trailer lines before a `}` — kept as its own node.
-comment_block = 1*comment
+; word_start: the wordchars that may begin a word — not a digit, not a dot.
+word_start = ALPHA | "_" | "-"
 
-; A same-line comment: the same `# ...` run, but only when something non-blank
-; precedes it on the line (the emitter's guard marks it, as for `comment`).
-eol_comment = "#" *comment_char
+; word_non_digit: a wordchar that is not a digit.  The digit-led dotted run
+; (`10.0.0.1`, `123abc`) is `1*DIGIT word_non_digit *wordchars`, one word; a
+; bare `123` fails it (no non-digit) and falls through to `int`.
+word_non_digit = word_start | "."
+
+; a signed or unsigned integer.  Declared before `word` (see the header).
+int = 1*DIGIT | "-" 1*DIGIT
+
+; a bareword: letter-led, or a digit-led run containing a non-digit wordchar.
+word = word_start *wordchars | 1*DIGIT word_non_digit *wordchars
+
+; a quoted string: `"` ... `"`, backslash escapes and a bare newline inside.
+; The interior repeats `\` + any code point, or any code point except `"` and
+; `\` — a repetition over a DNF (one full branch per iteration, longest match).
+str = DQUOTE *str_char DQUOTE
+str_char = %x5C %x00-10FFFF | %x00-21 | %x23-5B | %x5D-10FFFF
+
+; `#` to end of line (matched and skipped, not a token).
+comment = "#" *comment_char
+comment_char = %x01-09 | %x0B-10FFFF
+
+; backslash-newline continuation (parse.y's lgetc), matched and skipped.
+continuation = %x5C LF
+
+; what a phrase rule skips between its elements: inline white space (a newline
+; included — a block's entries sit on their own lines), a comment or a
+; continuation.  One element per match; the parser repeats it.
+ws = SP | HTAB | CR | LF | comment | continuation
+
+; -- the OpenBSD STRING and its companions ---------------------------------
+
+; a STRING token: quoted ("cpu0") or an OpenBSD bareword (10.0.0.1,
+; example.com, /etc/pf.conf, $interface)
+string     = str | word | wildcard
+
+; one or more STRING tokens (parse.y's `_l` list rules)
+stringlist = 1*string
+
+; a yes/no keyword pair (the "flag" core rule is single-token; yesno is not)
+yesno      = "yes" | "no"
+
+; "*" — parse.y's bareword start char; `listen on *` binds all
+wildcard   = "*"
+
+; ipv6 — hex groups separated by ":", with "::" and an IPv4-mapped tail
+; (".d.d.d.d") allowed (syntax only; parse.y resolves the address later)
+ipv6       = {
+    size_t n = 0, hex = 0, colon = 0;
+    while (pos + n < len) {
+        char c = s[pos + n];
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+            || (c >= 'A' && c <= 'F')) { hex = 1; n++; }
+        else if (c == ':') { colon = 1; n++; }
+        else if (c == '.') { n++; }
+        else break;
+    }
+    return (hex && colon) ? n : 0;
+}
+
+; an address: a hostname, IPv4/IPv6 literal, or "*" — `str`/`word` plus the two
+; forms the generated `word` cannot match (":" and "*"), spelled out so the
+; value stays a single string (a scalar union, as in ntpd/relayd/unwind)
+address    = wildcard | ipv6 | str | word
+
+; a number: a signed or unsigned integer (the char rule `int`)
+number     = int
+
+; a percentage: a number with a literal "%" suffix (`8%` = 8 percent, as
+; opposed to a bare multiplier).  The "%" is matched and dropped; the bound
+; value is the integer.  Override in a grammar that needs fractional percents.
+pct        = number '%'
