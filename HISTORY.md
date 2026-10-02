@@ -367,3 +367,159 @@ bracket marks the thing being defined for the reader, and the parser ignores
 it. The brackets are for non-terminals. That was the point: a terminal is
 written as itself, a non-terminal is written as a name in brackets, and the
 reader tells the two apart at a glance.
+
+## Appendix — The people
+
+In the order of the list under the title.
+
+**Emil Post (1943).** Emil Leon Post (1897–1954), a Polish-American logician.
+His "Formal reductions of the general combinatorial decision problem" (1943)
+gave production systems — strings rewritten by rules — the mechanism Backus
+later took for his metalinguistic formulas. He had already shown, independently
+of Turing and Gödel, the limits of formal computation.
+
+**Noam Chomsky (1956).** Noam Chomsky (b. 1928), linguist at MIT. Generative
+grammar turned language from examples into a formal object: a finite rule set
+that generates the infinite legal sentences. The Chomsky hierarchy — regular,
+context-free, context-sensitive — is the ladder every parser in this history
+sits on. That a grammar is a machine for generating strings is his idea.
+
+**John Backus (1959).** John Warner Backus (1924–2007) led the IBM team that
+built FORTRAN, then spent the rest of his career arguing that programming
+should move away from the von Neumann style he had helped entrench. At UNESCO's
+ICIP in Paris, June 1959, he published the ALGOL 58 syntax as "metalinguistic
+formulas" derived from Post's production systems — the first finite set of
+rewrite rules that generated exactly the legal strings. Turing Award, 1977.
+
+**Peter Naur (1960).** Peter Naur (1928–2016), a Danish astronomer who had used
+EDSAC for comet orbits and moved to computing at Regnecentralen. As editor of
+the ALGOL 60 Report (CACM, May 1960) he made the notation usable: angle
+brackets, `::=`, `|`, with recursion and block structure in the one formalism.
+Backus wrote a paper; Naur wrote the reference grammar of a real language.
+Turing Award, 2005.
+
+**Edgar Irons (1961).** Edgar T. "Ned" Irons, at Princeton. His
+"A Syntax-Directed Compiler for ALGOL 60" (January 1961) was the first compiler
+whose parser ran straight off the BNF, the grammar supplying the recognition
+tables as a program supplies its data. Then he went further than anyone in this
+story: he built IMP, a syntax-extensible language whose production rules,
+written in the program itself, rewrote the compiler's own grammar on the fly —
+the grammar not merely executed, but evolving as it ran. He used those
+techniques to build early time-sharing operating systems for the NSA and the
+Cray supercomputers. He is the hero of this history: the man who showed a
+grammar could not merely describe a language but run it, and then change it.
+
+**R. A. Brooker (1963).** R. A. Brooker, at Manchester. With D. Morris he built
+the Compiler Compiler for the Atlas — the system that gave the field its name.
+It read a phrase-structure description of a language and generated a
+machine-code compiler for it; it built compilers for Algol and Atlas Autocode.
+
+**D. Morris (1963).** D. Morris, at Manchester. Co-designer, with Brooker, of
+the Compiler Compiler.
+
+**Christopher Strachey (1963).** Christopher Strachey (1916–1975), a British
+computer scientist. He led the Cambridge–London effort behind CPL (Combined
+Programming Language, 1963), the ALGOL descendant whose simplifications became
+BCPL, then B, then C. He went on to found denotational semantics.
+
+**Donald Knuth (1964).** Donald E. Knuth (b. 1938), at Stanford. "On the
+Translation of Languages from Left to Right" (1965) founded LR parsing theory,
+the family Yacc mechanized. He insisted the name be Backus–Naur Form and not
+Backus Normal Form, because it is not a normal form. *The Art of Computer
+Programming*, and WEB, kept the literate-programming convention alive.
+
+**Dewey Val Schorre (1964).** Dewey Val Schorre, at UCLA. META II (1964), the
+first documented metacompiler: a language written as "syntax equations" in the
+shape of BNF, each equation compiled to the subroutine that recognized it.
+META II compiled itself.
+
+**Robert McClure (1965).** Robert M. McClure, at Bell Labs. TMG
+(TransMoGrifier, 1965), a recursive-descent compiler-compiler; it was TMG that
+Ken Thompson used to write B.
+
+**Martin Richards (1966).** Martin Richards (b. 1940), at Cambridge. BCPL
+(Basic CPL, 1966), the typeless language C descended from; his `writef` is
+where C's `%` format directives came from.
+
+**Douglas McIlroy (1968).** Douglas McIlroy (b. 1932), at Bell Labs. The
+inventor of the Unix pipe; he implemented TMG on the PDP-7, and it was through
+his TMG that the compound-assignment operators passed from ALGOL 68 into B and
+C.
+
+**Ken Thompson (1969).** Ken Thompson (b. 1943), at Bell Labs. Co-creator of
+Unix (1969); he set out to write a FORTRAN compiler with TMG and wrote B
+instead, the language C grew out of. Later Go.
+
+**Stephen Johnson (1971).** Stephen Curtis Johnson (b. 1944), at Bell Labs.
+Yacc, lint, and the Portable C Compiler. He wanted to add an exclusive-or to
+the B compiler and found the hand-written parser impossible to change; Al Aho
+pointed him at Knuth's LR papers, and Jeff Ullman's "another compiler-compiler?"
+supplied the name.
+
+**Al Aho (1971).** Alfred Aho (b. 1941), at Bell Labs and later Columbia.
+"LR Parsing" (1974, with Johnson) and the "dragon book"; AWK. It was his
+pointer to Knuth's LR papers that set Johnson on Yacc.
+
+**Dennis Ritchie (1972).** Dennis Ritchie (1941–2011), at Bell Labs. Co-creator
+of Unix and the author of C (1972), the language every later system in this
+history was written in or against.
+
+**David Crocker (1982).** David H. Crocker, an Arpanet mail practitioner.
+RFC 822 (1982), the mail-format spec whose section 2 everyone cited as "the BNF
+in RFC 822" — the citation habit that produced ABNF. IEEE Internet Award, 2004.
+
+**Robert Corbett (1985).** Robert Corbett. Berkeley Yacc (1985), the LALR
+engine Bison adopted.
+
+**Richard Stallman (1987).** Richard Stallman (b. 1953). The C grammar of
+GCC 1.0 (22 March 1987), fed to Bison; the GNU project and free software.
+
+**Michael Tiemann (1987).** Michael Tiemann. The g++ C++ front end, the
+Yacc-based C++ grammar that became the standing lesson in what the machine
+could not do.
+
+**Leonard Tower (1987).** Leonard Tower. Parts of the GCC parser, the RTL
+generator and definitions, and the VAX machine description.
+
+**Paul Rubin (1987).** Paul Rubin. Most of the GCC preprocessor.
+
+**John Gilmore (1987).** John Gilmore. Compiled the whole BSD source tree with
+the VAX GCC in 1987–88 so CSRG could drop pcc — for ANSI C, better code, and a
+way out from under the AT&T copyright.
+
+**Keith Bostic (1987).** Keith Bostic, of CSRG. Endorsed the GCC switch that
+took Berkeley off pcc.
+
+**Mike Karels (1987).** Mike Karels, of CSRG. Endorsed the same switch.
+
+**Terence Parr (1988).** Terence John Parr, at Purdue and later the University
+of San Francisco. ANTLR (1988–90), the parser generator that generated the
+recursive descent he was already writing by hand, with predicates and
+backtracking for what finite lookahead cannot decide.
+
+**Isaac Mozeson (1989).** Isaac Mozeson, an Orthodox Jewish linguist. *The
+Word* (1989), his Edenics dictionary, traces words across languages to a single
+source; he saw language as the thing that brings people together. Chomsky
+dismissed him. The descriptive method came around to his side anyway.
+
+**Jeff Fox (1996).** Jeff Fox, of UltraTechnology and UltraForth. The Forth
+discipline this document borrows as its epigraph: do not solve the hard
+problem, remove what makes it hard. May he rest in peace.
+
+**Bryan Ford (2002).** Bryan Ford, at MIT and later EPFL. Packrat parsing
+(2002) and Parsing Expression Grammars (2004), recognition-based grammars
+where ordered choice makes ambiguity impossible.
+
+**Anders Magnusson (2002).** Anders Magnusson. Revived pcc from the opened 32V
+sources from 2002, rewriting half the front end and most of the back end, and
+kept the last Yacc-driven C compiler alive.
+
+**Joseph Myers (2004).** Joseph S. Myers, a Cambridge mathematician and the
+long-time GNU C front-end maintainer. Wrote the hand-written recursive-descent
+C parser that replaced the Bison grammar in GCC 4.1 (2006) — the end of the age
+of LALR parsing in the world's most visible C compiler.
+
+**Max Brunsfeld (2014).** Max Brunsfeld, on GitHub's Atom team. Tree-sitter
+(2014–18), the incremental GLR parser for editors, now the usual answer
+whenever a tool needs a real syntax tree for a language it does not itself
+compile.
