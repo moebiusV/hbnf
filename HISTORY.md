@@ -1,5 +1,15 @@
 # A Short History of the Parser Generator
 
+Before any of this was engineering, it was linguistics. Noam Chomsky asked how
+a person produces and understands sentences never spoken before, and answered:
+with a grammar — a finite set of rules that generates the infinite set of legal
+sentences. Generative grammar turned language from examples into a formal
+object. It gave computing the Chomsky hierarchy, a ladder from regular to
+context-free to context-sensitive, and every parser in this history sits on one
+rung of that ladder, almost always the context-free one. The idea that a
+grammar is a machine for generating strings is Chomsky's; everything that
+follows is the story of people building that machine.
+
 A language used to be described the way a recipe is: prose and examples. Two
 implementors reading the same manual could ship two different languages. That
 stopped in 1959, when John Backus needed to describe ALGOL 58 well enough that
@@ -57,6 +67,13 @@ exactly which bytes a header may contain. So it dropped the angle brackets,
 changed `::=` to `=`, changed `|` to `/`, and let a literal be a quoted string
 or a byte value. It specified a language, not a parser. There were no actions,
 no conflict tables, no commitment to LL or LR.
+
+Formal grammars reached ordinary people through this door. BNF and Yacc were
+tools for a priesthood of compiler writers. RFC 822 was a tool for anyone who
+had to implement a mail client, and in the 1980s that meant nearly everyone who
+wrote software. A network engineer who had never heard of Chomsky could still
+read a rule and know what it meant. Without the RFC series, most of those
+people would never have seen a formal grammar at all.
 
 It was good enough that for fifteen years every other RFC cited "the BNF in
 RFC 822" instead of writing its own. That citation habit produced ABNF. RFC
@@ -161,3 +178,19 @@ grammars, because that is not a missing feature to add later — it is the thing
 the design refuses on purpose. ALL(*) and GLR exist for the languages that need
 them. HBNF exists for the ones that do not, and for the person who wants the
 grammar and the parser to be the same document.
+
+The line ends where it began, and it ends against Chomsky. Generative grammar
+started as a claim about the mind: a language is a set of rules that produces
+its sentences. That method drove the early years — BNF and Yacc both generate.
+But the useful work drifted the other way. ABNF defines a language without an
+automaton; PEG replaces generation with ordered recognition; the grammar stopped
+producing strings and started describing the ones that exist. Generation lost.
+Description won.
+
+Isaac Mozeson would be pleased. Chomsky was cruel to him — an Orthodox Jewish
+linguist who described the actual words, tracing them back to their roots,
+instead of generating abstract sentences from rules — and Chomsky dismissed him
+as he dismissed everyone who disagreed. The field came around to Mozeson's side
+anyway. The descriptive method, looking at the language as it is and naming
+what is there, is the one that now runs the software. Chomsky was nasty, and
+Chomsky was wrong. Mozeson's way proved more useful in the end.
