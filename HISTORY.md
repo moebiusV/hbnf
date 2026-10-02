@@ -1,22 +1,22 @@
 # A Short History of the Parser Generator
 
-Named in what follows, in order of appearance:
+Named here, by year of first contribution:
 
-- **Noam Chomsky** — generative grammar and the Chomsky hierarchy.
-- **Emil Post** — the production systems Backus drew from.
-- **John Backus** — the metalinguistic formulas that described ALGOL 58.
-- **Peter Naur** — the ALGOL 60 notation: `::=`, `< >`, `|`.
-- **Donald Knuth** — renamed Backus Normal Form to Backus–Naur Form; the literate-programming style the appendix borrows.
-- **Stephen Johnson** — Yacc.
-- **Al Aho** — pointed Johnson at Knuth's LR papers.
-- **David Crocker** — RFC 822, and the ABNF it produced.
-- **Terence Parr** — ANTLR.
-- **Dennis Ritchie** — the hand-written recursive-descent C parser.
-- **Joseph Myers** — the GCC C front end that returned to recursive descent.
-- **Bryan Ford** — parsing expression grammars.
-- **Max Brunsfeld** — Tree-sitter.
-- **Jeff Fox** — UltraForth: do not solve the hard problem, remove it.
-- **Isaac Mozeson** — Edenics: language as the thing that brings people together.
+- Emil Post, 1943
+- Noam Chomsky, 1956
+- John Backus, 1959
+- Peter Naur, 1960
+- Donald Knuth, 1964
+- Stephen Johnson, 1971
+- Al Aho, 1971
+- Dennis Ritchie, 1972
+- David Crocker, 1982
+- Terence Parr, 1988
+- Isaac Mozeson, 1989
+- Jeff Fox, 1996
+- Bryan Ford, 2002
+- Joseph Myers, 2004
+- Max Brunsfeld, 2014
 
 Before any of this was engineering, it was linguistics. Noam Chomsky asked how
 a person produces and understands sentences never spoken before, and answered:
