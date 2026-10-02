@@ -422,13 +422,95 @@ unwind-ident passing; each lands as reviewed patches.
        - It must not change what is accepted: the gate is the full corpus
          plus byte-identity, unchanged.
 
-       Also: **§6's table is now wrong**, which the project's own rule
-       forbids — paper claims match measurements.  The toy row understates
-       (53 MB where it is now 21 MB) and the pfctl row overstates (0.56 s
-       where it is now about 1.05 s).  The numbers above are from this VM,
-       not §6's two-core Xeon, so the table should be re-measured on that
-       machine rather than overwritten with these; recorded here so the
-       discrepancy is not lost.
+       Also: **§6's table was wrong**, which the project's own rule forbids
+       — paper claims match measurements.  It has been re-measured and
+       corrected on the author's workstation (an AMD Ryzen 5 7600).
+
+       **Measured again 2026-10-02, properly this time, and 4f now waits
+       behind step 9.**  Make it correct, then make it fast.  The three 4f
+       commits took the pfctl regression from 1.58x to 1.29x, which is
+       progress and not the gate; the rest of the gate is bought with work
+       that belongs after the correctness items, so this entry records what
+       is known and stops.
+
+       *Method, because the first pass got it wrong.*  Wall-clock numbers
+       from different sessions are not comparable: this VM ran 1.35x slower
+       in the afternoon than in the morning, and the proof is the toy
+       parser, whose generated C is byte-identical across all three 4f
+       commits — it measured 42.9 ms in the morning and 57.9 ms in the
+       afternoon on the same input.  An earlier reading of 940 ms against
+       900 ms, which looked like upstream's two commits costing 40 ms, was
+       entirely that drift.  So: every comparison interleaves the builds in
+       one run (run A, run B, run C, repeat, keep each build's best), and
+       `valgrind --tool=callgrind` instruction counts are the noise-free
+       metric — deterministic, and they do not care what else the host is
+       doing.  `bench/section6.sh` should grow both: a `CLOCK_PROCESS_CPUTIME_ID`
+       option and an interleaved A/B mode.
+
+       | build | pfctl 100,000, CPU ms, best of 9, interleaved | vs baseline |
+       |---|---|---|
+       | c2eb521, pre-4c, token array | **824** | 1.00x |
+       | f709353, the skip_ws fast path and the hoist | 1129 | 1.37x |
+       | cc89c9e, + first-byte dispatch | 1088 | 1.32x |
+       | 598dd10, + per-branch reset | 1054 | 1.28x |
+
+       So upstream's two commits did help, about 7% between them; the
+       earlier worry that they had cost time was the drift above.  The
+       instruction counts say the same thing without the noise: 190.3M for
+       the token array against 306.6M now, 1.61x, at 5,000 rules.
+
+       *Where the extra 116M goes* (callgrind, 5,000 rules).  New in the
+       character model: `scan_word` 65.5M, `skip_ws` 40.2M, `fail` 23.8M,
+       `expect_word` 13.3M, `scan_int` 5.4M — 124.4M of scanning against
+       the token model's `lex` 23.8M plus `lex_word_char` 3.9M.  Everything
+       else roughly cancels (`expect_lit` 33.5M -> 21.4M, `parse_tokens`
+       8.7M and `expect_kind` 5.5M gone, `parse_rule_address` 3.0M ->
+       19.2M).  Per rule, for a rule holding 14 words: **73 `scan_word`
+       calls and 191 `skip_ws` calls.**  The cost is the call count, not the
+       cost per call — a `skip_ws` that finds nothing is already about 40
+       instructions and a word scan about 180 — so the remedy has to probe
+       less, not probe cheaper.
+
+       *Three things that do not work*, measured so nobody tries them
+       again:
+
+       - **Merging the word scanner's DNF branches.**  `scan_word` expands
+         to 15 branches (7 leads for `word_start`, 8 for the digit-led
+         form), each re-scanning `*wordchars`.  Hand-merging them to 2 by
+         unioning the leading classes: 306.6M -> no change, 1068 ms.  gcc
+         already bails out of the branches that cannot match on the first
+         byte.
+       - **Guarding `skip_ws`'s slow branch on its first byte** (only `#`
+         and `\` can start a comment or a continuation, so the `scan_ws`
+         call is skippable): 40.15M -> 39.77M.  Nothing.
+       - **Memoizing `ws`, `int` and `str` alongside `word`.**  More
+         instructions saved (256.6M against 258.7M for `word` alone) and a
+         *worse* wall clock, because four tables of 16 KB cleared per
+         statement trade instructions for cache traffic.  The `ws` memo hits
+         82% of the time and buys nothing, because the calls it serves were
+         the ones that were already nearly free.
+
+       *What does work, and it is 4c's own deferred remedy.*  A
+       (position -> scan length) table for the word scanner, one generation
+       stamp in the high bits so the table retires in a single store with no
+       per-statement clear, 12 bits of length so a statement over 4094 bytes
+       runs uncached: 306.6M -> 258.7M instructions and 1054 -> 942 ms,
+       i.e. **1.28x -> 1.12x**.  Prototyped in the generated C, not in the
+       emitter.  When 4f becomes live again, that is the shape to emit, and
+       the open question is whether the last 12% is worth a keyword-id
+       dispatch (below).
+
+       *One more measurement worth keeping.*  A full keyword-id dispatch
+       over the 35-way `filteropt` alternation — scan the word once, look up
+       its id, switch, instead of the 7 of 35 branches that first-byte
+       dispatch can separate — came out at 307.1M, very slightly worse.  The
+       reason is the benchmark, not the idea: `bench/gen.sh` emits one rule
+       shape, whose only filter option is `keep state`, and `keep` is one of
+       the 7 that already dispatch.  **So §6's input does not exercise the
+       wide alternation at all**, and the gate is being held against an
+       input narrower than the thing it is meant to measure.  Before any
+       more work on the alternation, `gen.sh` needs a mode that cycles
+       through the filter options.
 5. **`/` between phrases** (decision 1; factoring needs step 2).  Then:
    - RFC excerpts as regression tests: RFC 5234 Appendix B.1 verbatim, RFC
      3986 `scheme` and `host`, RFC 5322 `addr-spec`, RFC 9112
@@ -481,11 +563,13 @@ unwind-ident passing; each lands as reviewed patches.
    stands.
 
 9. **Recursive tree types** — the one blocker for a real programming
-   language.  A grammar whose tree contains itself (`prim = '(' expr ')' |
-   int`, which is every expression language) cannot be emitted today,
-   because a rule's value is a struct by value and the struct would be
-   infinitely sized.  Measured 2026-10-01, the four backends disagree,
-   which is itself the bug:
+   language, and **the live item**: parsing real programming languages,
+   including the ones that are not regular, is a goal, and make it correct
+   before making it fast.  A grammar whose tree contains itself (`prim =
+   '(' expr ')' | int`, which is every expression language) cannot be
+   emitted, because a rule's value is a struct by value and the struct
+   would be infinitely sized.  Measured 2026-10-01, the four backends
+   disagreed, which was itself the bug:
 
    | backend | on `prim = '(' expr ')' \| int`, `expr = prim` |
    |---|---|
@@ -496,18 +580,48 @@ unwind-ident passing; each lands as reviewed patches.
 
    Two things to fix, one mechanism:
 
-   9a. **The cycle check has a hole, and its advice is wrong.**  A list node
-       embeds its element by value, so routing recursion through a list
-       (`sums = 1*sum`) breaks the *detector* without breaking the cycle.
-       The generator then accepts the schema and emits C that does not
-       compile.  Three rules reproduce it:
+   9a. **The four backends now agree, and the list case was never a cycle.**
+       *Done 2026-10-02.*  Two defects, both correctness, both fixed:
 
-           sum  = sum '+' term | term
-           term = '(' sums ')' | int
-           sums = 1*sum
+       - **A field whose rule is a list holds the list's head.**  The C
+         backend declared one of the list's *nodes* there instead, by
+         value, so three rules
 
-       `gcc`: "field 'sum' has incomplete type".  So the "add a `*`
-       repetition" hint must go whatever else happens.
+               sum  = sum '+' term | term
+               term = '(' sums ')' | int
+               sums = 1*sum
+
+         emitted C that gcc rejected with "field 'sum' has incomplete
+         type".  The parse code, the free function and the walkers already
+         passed `&n->field` to the list-taking entry points, so the field
+         declaration was the only thing out of step.  The struct branch of
+         the C type emitter already had the head/node test; the list branch
+         did not, and both now share one `Field_Decl`.  With the type right
+         the cycle is genuinely broken — a head is two pointers, so a
+         forward declaration is enough — and `sums = 1*sum` compiles and the
+         four backends all take it.
+
+       - **Rust and Zig refused nothing.**  Both emitted code their own
+         compilers reject, which is the worse failure: Rust had no by-value
+         cycle check at all (it needs no declaration order, so it had no
+         topological sort to fall over), and Zig's sort only orders structs
+         and lists, so a cycle through a scalar alias slipped past it.  Both
+         now carry an explicit three-colour DFS over by-value edges — a
+         struct's non-list members and a scalar's alias, with `Vec<T>` and
+         `[]T` counted as indirect — and refuse `recursive.hbnf` with the
+         same message C and Ada give.
+
+       `tests/abnf.sh` now asserts both halves across all four backends (42
+       checks, up from 34), and the 132-file snapshot is byte-identical:
+       no existing schema moved.
+
+       **There are four copies of this detector, and that is the next
+       thing to fix.**  9b should not add a fifth.  One detector belongs in
+       `HBNF_Compilable`, parameterised by the backend's set of indirect
+       constructors (C: a list head and a pointer; Ada: a vector and an
+       access type; Rust: `Vec` and `Box`; Zig: a slice and a pointer), so
+       that "the four backends accept or refuse the same schemas" holds by
+       construction rather than by four hand-kept copies.
 
    9b. **Break the cycle with a pointer.**  The dependency graph is already
        computed for emission order; instead of giving up when it cannot be
@@ -529,13 +643,17 @@ unwind-ident passing; each lands as reviewed patches.
    emitter — and it is *not* the typedef problem, which is separate and
    discussed under decision 13.
 
-   **It is numbered 9 because it comes after the character model, not
-   instead of it.**  Config files, RFC grammars and wire formats are the
-   goal; a programming language is not, so this buys generality the product
-   does not need yet, and it waits.  There is a mechanical reason for the
-   order too: 9b allocates at a rule's commit point, and step 4c has just
-   rewritten where the commit points are, so doing 9 first means doing the
-   allocation twice.  4f (holding the §6 gate) is the live item.
+   **It kept the number 9, but it no longer waits.**  The earlier text here
+   said a programming language was not a goal, so this bought generality
+   the product did not need.  That is no longer true: parsing real
+   programming languages, including non-regular ones, is a stated goal
+   alongside config files and RFC wire formats.  The mechanical argument
+   for the old order has also expired — 9b allocates at a rule's commit
+   point, and 4c had just rewritten where those are, but 4c through 4f are
+   done, so the commit points are settled and the allocation is written
+   once.  And correctness comes before speed: 9 is four backends
+   disagreeing about which schemas are legal, 4f is a constant factor.  9
+   is the live item; 4f holds its measurements and waits.
 
 10. **Completion gate and backend spectrum.**  C/Ada/Rust/Zig and the
    interpreter agree on the same corpus, parsers are reentrant, actions have
@@ -545,6 +663,94 @@ unwind-ident passing; each lands as reviewed patches.
    (Go, Java, JavaScript, C#, F#, Julia, Common Lisp, newLISP).  The C backend stays C99 and
    C++-clean; a separate C++ backend appears only if C++ needs more than an
    `extern "C"` guard.
+
+11. **A tree-sitter emitter, as an editor backend.**  Not a replacement for
+   the C backend and not gated on anything above: it can land between any
+   two other steps.  The idea is to generate a `grammar.js` (and a stub
+   `scanner.c` where a jet is needed) from the lifted schema, so one
+   grammar gives both the daemon's parser and the editor's highlighting,
+   folding and structural selection.  Today a daemon ships a `parse.y` and,
+   separately, somebody hand-writes a tree-sitter grammar that drifts from
+   it; one source removes the drift.
+
+   The mapping is mostly mechanical, because tree-sitter's `grammar.js` is
+   the same shapes under different names:
+
+   | hbnf | grammar.js |
+   |---|---|
+   | a rule | an entry in `rules` |
+   | concatenation | `seq(...)` |
+   | `\|` | `choice(...)` — see the catch below |
+   | `[ x ]` | `optional(x)` |
+   | `*( x )` / `1*( x )` | `repeat(x)` / `repeat1(x)` |
+   | a character rule | `token(seq(...))` |
+   | a lifted `rule_1` | an `inline:` rule, so the CST keeps the written shape |
+   | `whitespace ws` | `extras:` |
+   | the keyword table | `word:` |
+
+   **What does not map, stated plainly rather than papered over.**  This
+   list is the reason the emitter is a separate backend and not a mode of
+   the others:
+
+   - **`choice` is not `|`.**  hbnf's `|` is PEG ordered choice: the first
+     branch that matches wins, and that is what makes a parse deterministic
+     without annotations.  tree-sitter is GLR; `choice` is unordered, and
+     an ambiguity it cannot resolve is a build error demanding hand-written
+     `prec()` or `conflicts`.  So a schema hbnf compiles can fail to build
+     as a tree-sitter grammar, and the emitter must say so rather than
+     guess a precedence.  `/` (ABNF union) maps better than `|` does.
+   - **`n*m` bounds.**  tree-sitter has `repeat` and `repeat1` and nothing
+     else; `3*5( x )` has to be unrolled, and the unrolling shows up in the
+     CST.
+   - **Jets** become `externals:` plus a `scanner.c`.  The emitter can stub
+     the scanner with the jet's own code where the jet is already C, and
+     must otherwise leave a named hole.
+   - **`<prose-val>`** has no analogue: an unwritten rule cannot highlight.
+     It emits as an `externals:` hole with the prose as its comment.
+   - **`sensitivity`/`%i`** has no analogue either; a case-insensitive
+     literal becomes a regex, which changes the token boundaries.
+   - **Typed fields, `--conf`, actions and bindings are out of scope.**  An
+     editor backend produces a CST of named nodes; it does not produce the
+     daemon's structs, and nothing in it is byte-identity tested against a
+     `parse.y`.
+
+   **Gate:** the nine `obconf` grammars build as tree-sitter grammars, the
+   obconf sample configs highlight, and every CST node name is the rule
+   name that produced it.  Where a grammar cannot build without a
+   hand-written precedence, the emitter names the rule and the conflicting
+   branches.
+
+   *Two claims in the original proposal are wrong, and the corrected
+   numbers are why this is an editor backend rather than a parser
+   strategy.*  Measured 2026-10-01, same grammar, same input, gcc -O2,
+   best of 5:
+
+   | input | hbnf | tree-sitter |
+   |---|---|---|
+   | 7.68 MB | **48.33 ms, 21 MB** | 501.75 ms, 117 MB |
+   | 76.9 MB | **488.82 ms, 202 MB** | 5158.51 ms, 1155 MB |
+
+   - "A full parse of a config is in the same league as your RD parser" —
+     it is 10x slower and takes 5.6x the memory (~159 MB/s against ~15
+     MB/s).
+   - "Incremental reparse is the win" — for a config it mostly is not.  A
+     one-byte edit in the 7.68 MB file reparses in 87 ms, still worse than
+     hbnf's 48 ms cold parse, because a config is a flat list of N siblings
+     and an edit prunes nothing.  For deeply nested source tree-sitter wins
+     this outright; the conclusion is scoped to the input shape hbnf
+     targets.
+
+   *On the size estimate* ("smaller than the Zig backend, a few hundred
+   lines, call it a week"): the backends measure `hbnf_rust.adb` 1,952
+   lines, `hbnf_zig.adb` 2,167, `hbnf_ada.adb` 2,292, `hbnf_c.adb` 5,650.
+   A few hundred lines is plausible for the `grammar.js` emitter alone —
+   it writes no types, no free functions, no walkers and no parse functions
+   — but the scanner stubs, the conflict reporting and the highlight
+   fixtures are the rest of it.
+
+   *On the number:* the proposal filed this as "4b", which is taken (the
+   lexer as grammar, done).  It is 11 because it is not on the path to any
+   gate above, not because it comes last.
 
 ## Not in this plan
 
