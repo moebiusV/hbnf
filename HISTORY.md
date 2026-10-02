@@ -4,7 +4,7 @@
 
 © 2026 David Walther · 1 October 2026
 
-Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Edgar Irons (1961) · R. A. Brooker (1963) · D. Morris (1963) · Christopher Strachey (1963) · Donald Knuth (1964) · Dewey Val Schorre (1964) · Robert McClure (1965) · Martin Richards (1966) · Douglas McIlroy (1968) · Ken Thompson (1969) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Leonard Tower (1987) · Paul Rubin (1987) · John Gilmore (1987) · Keith Bostic (1987) · Mike Karels (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
+Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · John McCarthy (1960) · Edgar Irons (1961) · R. A. Brooker (1963) · D. Morris (1963) · Christopher Strachey (1963) · Donald Knuth (1964) · Dewey Val Schorre (1964) · Robert McClure (1965) · Martin Richards (1966) · Douglas McIlroy (1968) · Ken Thompson (1969) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Leonard Tower (1987) · Paul Rubin (1987) · John Gilmore (1987) · Keith Bostic (1987) · Mike Karels (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
 
 A parser generator reads a grammar — a precise description of what a language
 may say — and writes the program that recognizes exactly that. It matters
@@ -62,6 +62,15 @@ of a language — BNF with the semantics hung off the rules — and generated a
 machine-code compiler for the Atlas. It was a working tool, not a toy; it built
 compilers for Algol and Atlas Autocode.
 
+A program describing itself came earlier still. John McCarthy's Lisp paper
+(1960) defined the language with a metacircular evaluator — `eval` written in
+Lisp, a self-interpreter — four years before META II. Kragen Sitaker, of the
+StoneKnifeForth project, later called the thing a bodge: the half-page `eval`
+handwaved the details a real compiler must confront, lexical scoping and tail
+calls among them, with a lot of magic baked in. McCarthy himself meant it "for
+reading, not for computing"; Steve Russell had to run it for it to become a
+language.
+
 Then the metacompilers. Dewey Val Schorre's META II (1964) wrote a language as
 "syntax equations" in the shape of BNF and compiled each equation to the
 subroutine that recognized it; META II compiled itself, the first documented
@@ -74,7 +83,7 @@ tied to one machine, with a notation of its own and no settled algorithm
 underneath: the grammar drove the parser, but how was still open. They proved
 the idea. What was missing was a reliable way to do it.
 
-*Sources:* [Irons, "A Syntax-Directed Compiler for ALGOL 60" (1961)](https://doi.org/10.1145/366062.366083) · [Brooker, MacCallum, Morris & Rohl, "The Compiler Compiler" (1963)](https://curation.cs.manchester.ac.uk/atlas/docs/ccPaperDL.pdf) · [Schorre, "META II: A Syntax-Oriented Compiler Writing Language" (1964)](https://en.wikipedia.org/wiki/Meta-II) · McClure, TMG (1965).
+*Sources:* [McCarthy, "Recursive Functions of Symbolic Expressions and Their Computation by Machine" (1960)](https://doi.org/10.1145/367177.367199) · [Irons, "A Syntax-Directed Compiler for ALGOL 60" (1961)](https://doi.org/10.1145/366062.366083) · [Brooker, MacCallum, Morris & Rohl, "The Compiler Compiler" (1963)](https://curation.cs.manchester.ac.uk/atlas/docs/ccPaperDL.pdf) · [Schorre, "META II: A Syntax-Oriented Compiler Writing Language" (1964)](https://en.wikipedia.org/wiki/Meta-II) · McClure, TMG (1965).
 
 ## The machine: Yacc
 
@@ -398,6 +407,11 @@ brackets, `::=`, `|`, with recursion and block structure in the one formalism.
 Backus wrote a paper; Naur wrote the reference grammar of a real language.
 Turing Award, 2005.
 
+**John McCarthy (1960).** John McCarthy (1927–2011), at MIT and later Stanford.
+Inventor of Lisp; his 1960 paper defined the language with a metacircular
+evaluator, `eval` written in Lisp — a program that describes itself, four years
+before META II. Turing Award, 1971.
+
 **Edgar Irons (1961).** Edgar T. "Ned" Irons, at Princeton. His
 "A Syntax-Directed Compiler for ALGOL 60" (January 1961) was the first compiler
 whose parser ran straight off the BNF, the grammar supplying the recognition
@@ -409,12 +423,12 @@ techniques to build early time-sharing operating systems for the NSA and the
 Cray supercomputers. He is the hero of this history: the man who showed a
 grammar could not merely describe a language but run it, and then change it.
 
-**R. A. Brooker (1963).** R. A. Brooker, at Manchester. With D. Morris he built
+**R. A. Brooker (1963).** Ralph Anthony "Tony" Brooker (1925–2019), at Manchester. With D. Morris he built
 the Compiler Compiler for the Atlas — the system that gave the field its name.
 It read a phrase-structure description of a language and generated a
 machine-code compiler for it; it built compilers for Algol and Atlas Autocode.
 
-**D. Morris (1963).** D. Morris, at Manchester. Co-designer, with Brooker, of
+**D. Morris (1963).** Derrick Morris, at Manchester. Co-designer, with Brooker, of
 the Compiler Compiler.
 
 **Christopher Strachey (1963).** Christopher Strachey (1916–1975), a British
@@ -474,7 +488,7 @@ engine Bison adopted.
 **Richard Stallman (1987).** Richard Stallman (b. 1953). The C grammar of
 GCC 1.0 (22 March 1987), fed to Bison; the GNU project and free software.
 
-**Michael Tiemann (1987).** Michael Tiemann. The g++ C++ front end, the
+**Michael Tiemann (1987).** Michael Tiemann (b. 1964). The g++ C++ front end, the
 Yacc-based C++ grammar that became the standing lesson in what the machine
 could not do.
 
@@ -483,26 +497,26 @@ generator and definitions, and the VAX machine description.
 
 **Paul Rubin (1987).** Paul Rubin. Most of the GCC preprocessor.
 
-**John Gilmore (1987).** John Gilmore. Compiled the whole BSD source tree with
+**John Gilmore (1987).** John Gilmore (b. 1955). Compiled the whole BSD source tree with
 the VAX GCC in 1987–88 so CSRG could drop pcc — for ANSI C, better code, and a
 way out from under the AT&T copyright.
 
-**Keith Bostic (1987).** Keith Bostic, of CSRG. Endorsed the GCC switch that
+**Keith Bostic (1987).** Keith Bostic (b. 1959), of CSRG. Endorsed the GCC switch that
 took Berkeley off pcc.
 
-**Mike Karels (1987).** Mike Karels, of CSRG. Endorsed the same switch.
+**Mike Karels (1987).** Michael J. Karels (1956–2024), of CSRG. Endorsed the same switch.
 
 **Terence Parr (1988).** Terence John Parr, at Purdue and later the University
 of San Francisco. ANTLR (1988–90), the parser generator that generated the
 recursive descent he was already writing by hand, with predicates and
 backtracking for what finite lookahead cannot decide.
 
-**Isaac Mozeson (1989).** Isaac Mozeson, an Orthodox Jewish linguist. *The
+**Isaac Mozeson (1989).** Isaac Elchanan Mozeson (b. 1951), an Orthodox Jewish linguist. *The
 Word* (1989), his Edenics dictionary, traces words across languages to a single
 source; he saw language as the thing that brings people together. Chomsky
 dismissed him. The descriptive method came around to his side anyway.
 
-**Jeff Fox (1996).** Jeff Fox, of UltraTechnology and UltraForth. The Forth
+**Jeff Fox (1996).** Jeffrey Arthur Fox (1949–2011), of UltraTechnology and UltraForth. The Forth
 discipline this document borrows as its epigraph: do not solve the hard
 problem, remove what makes it hard. May he rest in peace.
 
