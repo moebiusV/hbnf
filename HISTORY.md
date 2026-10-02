@@ -64,12 +64,36 @@ compilers for Algol and Atlas Autocode.
 
 A program describing itself came earlier still. John McCarthy's Lisp paper
 (1960) defined the language with a metacircular evaluator — `eval` written in
-Lisp, a self-interpreter — four years before META II. Kragen Sitaker, of the
-StoneKnifeForth project, later called the thing a bodge: the half-page `eval`
-handwaved the details a real compiler must confront, lexical scoping and tail
-calls among them, with a lot of magic baked in. McCarthy himself meant it "for
+Lisp, a self-interpreter — four years before META II. McCarthy meant it "for
 reading, not for computing"; Steve Russell had to run it for it to become a
 language.
+
+Running it is where the half-page stops being a definition. Kragen Sitaker,
+who went on to write StoneKnifeForth, translated the Lisp 1.5 metacircular
+interpreter into a low-level language in 2007 and found that about half the
+code went to things the metacircular interpreter says nothing about: memory
+management, argument evaluation order, laziness versus strictness, the rest of
+control flow, the representation and comparison of atoms, the representation
+of pairs, parsing, type checking and type testing, recursive call and return,
+tail calls, and lexical versus dynamic scoping. The gap is not an oversight in
+McCarthy's `eval`; it is what self-definition is. Reynolds, revisiting his own
+definitional interpreters in 1998, put it plainly: a metacircular interpreter
+"is not really a definition, since it is trivial when the defining language is
+understood, and otherwise it is ambiguous" — his Interpreters I and II say
+nothing about order of application. He quotes Jim Morris going further: "The
+activity of defining features in terms of themselves is highly suspect,
+especially when they are as subtle as functional objects. It is a fad that
+should be debunked." Reynolds then grants what the thing is good for: he
+remembers McCarthy's definition as a great help when he first learned Lisp,
+"but it was not the sole support of my understanding."
+
+Sitaker's conclusion is the one that bears on a compiler compiler: a
+metacircular *compiler* forces you to confront that complexity, because it has
+to emit the memory management and the calling convention rather than inherit
+them, and it is self-sustaining in a way an interpreter is not — once it runs,
+features added to the language are available to the compiler itself. That is
+the line this story follows from here: not a description that reads well, but
+one that has to produce the code.
 
 Then the metacompilers. Dewey Val Schorre's META II (1964) wrote a language as
 "syntax equations" in the shape of BNF and compiled each equation to the
@@ -84,7 +108,7 @@ tied to one machine, with a notation of its own and no settled algorithm
 underneath: the grammar drove the parser, but how was still open. They proved
 the idea. What was missing was a reliable way to do it.
 
-*Sources:* [McCarthy, "Recursive Functions of Symbolic Expressions and Their Computation by Machine" (1960)](https://doi.org/10.1145/367177.367199) · [Irons, "A Syntax-Directed Compiler for ALGOL 60" (1961)](https://doi.org/10.1145/366062.366083) · [Brooker, MacCallum, Morris & Rohl, "The Compiler Compiler" (1963)](https://curation.cs.manchester.ac.uk/atlas/docs/ccPaperDL.pdf) · [Schorre, "META II: A Syntax-Oriented Compiler Writing Language" (1964)](https://en.wikipedia.org/wiki/Meta-II) · McClure, TMG (1965).
+*Sources:* [McCarthy, "Recursive Functions of Symbolic Expressions and Their Computation by Machine" (1960)](https://doi.org/10.1145/367177.367199) · [Sitaker, "A metacircular Lisp interpreter in a low-level language" (kragen-hacks, September 2007)](http://lists.canonical.org/pipermail/kragen-hacks/2007-September/000464.html) · [Reynolds, "Definitional Interpreters Revisited", *Higher-Order and Symbolic Computation* 11, 355–361 (1998)](http://www.brics.dk/~hosc/local/HOSC-11-4-pp355-361.pdf) · [Irons, "A Syntax-Directed Compiler for ALGOL 60" (1961)](https://doi.org/10.1145/366062.366083) · [Brooker, MacCallum, Morris & Rohl, "The Compiler Compiler" (1963)](https://curation.cs.manchester.ac.uk/atlas/docs/ccPaperDL.pdf) · [Schorre, "META II: A Syntax-Oriented Compiler Writing Language" (1964)](https://en.wikipedia.org/wiki/Meta-II) · McClure, TMG (1965).
 
 ## The machine: Yacc
 
