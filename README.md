@@ -19,8 +19,8 @@ OpenBSD-style config files, so that other programs could use it without
 having to learn yacc, lex, bison or flex. That work exposed how bad the state
 of parser generation is: almost no one uses yacc for anything serious, because
 it is a pain. So hbnf became a parser generator in its own right — a compiler
-compiler — one that removes that pain with helpful errors and lossless source
-round-tripping, without giving up speed, performance, or your favorite
+compiler — one that removes that pain with helpful errors and grammars that can
+round-trip losslessly, without giving up speed, performance, or your favorite
 programming language.
 
 obconf is a configuration language, implemented as a grammar in hbnf. It

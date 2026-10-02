@@ -93,10 +93,11 @@ Two things make hbnf pleasant to use beyond the notation.
 the error starts and the token that was expected, not a state-machine dump and
 not a cryptic "unexpected token".
 
-**Pretty-printing.** A parsed tree renders back to canonical text and
-round-trips exactly: a decimal keeps its literal, a string is re-quoted with
-the escape set. Comments are preserved and come back out in the right places
-when the source is re-emitted, and printing is idempotent.
+**Pretty-printing.** A parsed tree renders back to canonical text, and a
+grammar that wants to can round-trip exactly: a decimal keeps its literal, a
+string is re-quoted with the escape set. Comments are preserved and come back
+out in the right places when the source is re-emitted, and printing is
+idempotent.
 
 ## hbnf and ANTLR
 
@@ -108,8 +109,9 @@ hbnf emits a self-contained single file with no runtime library, where ANTLR
 needs its runtime in the target language. hbnf gives a typed tree out of the
 box, where ANTLR gives a generic parse tree and you write a visitor or listener
 to build your own. hbnf's notation is ABNF, so an RFC grammar compiles almost
-verbatim, and comments are preserved and round-tripped; ANTLR's grammar is its
-own syntax, and its parse tree drops comments. hbnf's maximal-munch lexer plus
+verbatim, and comments are first-class tokens a grammar can keep and
+round-trip; ANTLR's grammar is its own syntax, and its parse tree drops
+comments. hbnf's maximal-munch lexer plus
 LL(1)-ish grammar parses a large grammar linearly, where ANTLR's ALL(*) explores
 at runtime.
 

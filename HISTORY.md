@@ -521,12 +521,13 @@ source; he saw language as the thing that brings people together. Chomsky
 dismissed him. The descriptive method came around to his side anyway.
 
 **Jeff Fox (1996).** Jeffrey Arthur Fox (1949–2011), of UltraTechnology. A
-Forth programmer who, from 1990, worked beside Chuck Moore on minimal computing
-taken to its limit: he commissioned the F21, a "low fat" chip — a 500 MIPS
-Forth engine with video, network and analog I/O, a whole workstation on a die
-he priced at about a dollar. The discipline this document borrows as its
-epigraph — do not solve the hard problem, remove what makes it hard — is his.
-May he rest in peace.
+Forth programmer and a close personal friend of Chuck Moore, the language's
+inventor; from 1990 they worked side by side on minimal computing taken to its
+limit: Fox commissioned the F21, a "low fat" chip — a 500 MIPS Forth engine
+with video, network and analog I/O, a whole workstation on a die he priced at
+about a dollar. The discipline this document borrows as its epigraph — do not
+solve the hard problem, remove what makes it hard — is his. May he rest in
+peace.
 
 **Bryan Ford (2002).** Bryan Ford, at MIT and later EPFL. Packrat parsing
 (2002) and Parsing Expression Grammars (2004), recognition-based grammars
