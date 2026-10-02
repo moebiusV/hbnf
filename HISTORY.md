@@ -275,11 +275,11 @@ regex. Direct left recursion is read as a loop, not rejected. Ordered choice
 keeps conflicts impossible, and a shadowed alternative is refused at schema time
 with a diagnostic rather than failing at runtime. The tree is typed from the
 shape of the rule — enum, scalar, list, struct — with no visitor to write. And
-the thing HBNF does that none of its ancestors did: it round-trips. Comments are
-first-class tokens, not whitespace, so a config file comes back out with its
-comments in the right places, and a value written `0xFF` comes back as `0xFF`,
-not 255. A parse failure is a line, a column, and a caret under the token that
-was expected.
+HBNF makes round-tripping easy: comments are first-class tokens, not
+whitespace, and a value written `0xFF` comes back as `0xFF`, not 255, so a
+grammar that wants it — obconf does — hands the file back unchanged, and
+pretty-printing and debug printouts become simple and pleasant. A parse failure
+is a line, a column, and a caret under the token that was expected.
 
 The literal syntax is C's on purpose: a string is `"…"`, a character `'a'`, a
 code point `%x21` or `%d33`, an escape `\n`. The reader already knows these
@@ -312,10 +312,10 @@ grammar and the parser to be the same document.
 Judged on that single aim — one document that serves both the person and the
 machine — the others all pick a side. BNF and ABNF are for people; Yacc and
 Tree-sitter are for machines; ANTLR and PEG generate code but drop the writer's
-comments and exact spellings. HBNF tries to be both at once, and its round trip
-is the proof: the text a person reads is what the machine runs, and the machine
-hands it back unchanged. The writer's intention arrives whole, and no earlier
-tool managed that.
+comments and exact spellings. HBNF tries to be both at once, and the round trip
+a grammar can build is the proof: the text a person reads is what the machine
+runs, and the machine hands it back unchanged. The writer's intention arrives
+whole, and no earlier tool managed that.
 
 The line ends where it began, and it ends against Chomsky. Generative grammar
 started as a claim about the mind: a language is a set of rules that produces
