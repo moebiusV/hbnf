@@ -2,7 +2,7 @@
 
 © 2026 David Walther · 1 October 2026
 
-Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Donald Knuth (1964) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
+Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Donald Knuth (1964) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Leonard Tower (1987) · Paul Rubin (1987) · John Gilmore (1987) · Keith Bostic (1987) · Mike Karels (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
 
 Before any of this was engineering, it was linguistics. Noam Chomsky asked how
 a person produces and understands sentences never spoken before, and answered:
@@ -95,7 +95,7 @@ rules (`ALPHA`, `DIGIT`, `CRLF`) ship with the spec. Ambiguity is legal. There
 is no generated automaton. ABNF exists so two protocol authors cannot silently
 disagree about the bytes on the wire.
 
-## The return to top-down: ANTLR and GCC
+## The return to top-down: ANTLR
 
 Yacc won because it was easier than hand-writing a parser. It lost for the same
 reason. The shift-reduce automaton is fast, but when it rejects a grammar it
@@ -109,29 +109,37 @@ backtracking — "try this, and if it fails try that" — instead of forcing the
 grammar to be LALR(1). Left recursion still had to be rewritten, and backtracking
 could go exponential. Those were the price of a parser a person could debug.
 
-GCC itself began on the machine, its grammar fed to Bison rather than
-Johnson's Yacc. Stallman wrote the C grammar, copyright 1987, and shipped GCC
-1.0 that March; Michael Tiemann wrote the C++ grammar for g++, and that one
-became the standing lesson in what the machine could not do. Bison itself was
-half Stallman's — the C skeleton — and half Robert Corbett's — the LALR engine,
-from his Berkeley Yacc. The largest compiler project in the world started on
-that machine.
+## The compilers: pcc, GCC, and C++
 
-The industrial confirmation came from a compiler project. In 2004–06 GCC threw
-out its Bison LALR grammars for C and C++ and went back to hand-written
-recursive descent. Joseph Myers wrote the C front end the way Ritchie had
-written the original — shift and reduce became calls and returns, error messages
-became ordinary C, and the typedef hack became a real symbol table. The dogma
-that a production compiler must use an LALR generator died there. Clang followed.
+Johnson's own compiler carried the machine into production. pcc shipped with
+Seventh Edition Unix in 1979, moved to the VAX through 32V, and became the
+compiler that let C leave the PDP-11. For a decade nearly every serious C
+compiler was pcc or a descendant of it.
 
-The one compiler that kept the machine is Johnson's own. pcc left Bell Labs
-with Seventh Edition Unix, moved to the VAX, and then lost to GCC across the
-late 1980s; after 1994 it had no maintainer. Anders Magnusson revived it in
-2002 from the opened 32V sources — half the front end and most of the back end
-rewritten — and it still lives today, still driven by a Yacc grammar. That is
-the cautionary end of the story. GCC and LLVM, which do not use Yacc or Bison,
-are the compilers the world develops. pcc, which still does, crawls. The
-machine was right for 1975. It is why the work is hard now.
+Then came GCC. Richard Stallman wrote the C grammar — copyright 1987, GCC 1.0
+shipped 22 March 1987 — and fed it to Bison rather than Johnson's Yacc. GCC 1.0
+credits Stallman as author, Leonard Tower for parts of the parser and the RTL,
+and Paul Rubin for most of the preprocessor. Bison itself was a half-breed:
+Stallman wrote its C skeleton, Robert Corbett its LALR engine from his Berkeley
+Yacc. Michael Tiemann wrote the C++ grammar for g++, the same kind of grammar,
+and that one became the standing lesson in what the machine could not do.
+
+GCC pushed pcc out. John Gilmore did the work in 1987–88, compiling the whole
+BSD tree with the VAX GCC so CSRG could drop pcc; Keith Bostic and Mike Karels
+endorsed it, for ANSI C, better code, and a way out from under the AT&T
+copyright. By 1994 pcc was out of the BSD line and unmaintained.
+
+Then GCC climbed off the machine. The C++ front end dropped its Bison grammar
+for hand-written recursive descent in 2004; Joseph Myers wrote the C replacement
+for GCC 4.1 in 2006, the way Ritchie had written the original — shift and reduce
+became calls and returns, and the typedef hack became a real symbol table. Clang,
+when it came, never used a generator at all.
+
+The one compiler that kept Yacc was pcc. Anders Magnusson revived it in 2002
+from the opened 32V sources, half the front end and most of the back end
+rewritten. It still lives today, still driven by a Yacc grammar, and it crawls
+while GCC and LLVM, which do not use Yacc or Bison, are the compilers the world
+develops. The machine was right for 1975. It is why the work is hard now.
 
 ## Ordered recognition: PEG
 
