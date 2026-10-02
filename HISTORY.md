@@ -15,6 +15,7 @@ Named here, by year of first contribution:
 - Isaac Mozeson, 1989
 - Jeff Fox, 1996
 - Bryan Ford, 2002
+- Anders Magnusson, 2002
 - Joseph Myers, 2004
 - Max Brunsfeld, 2014
 
@@ -127,6 +128,15 @@ recursive descent. Joseph Myers wrote the C front end the way Ritchie had
 written the original — shift and reduce became calls and returns, error messages
 became ordinary C, and the typedef hack became a real symbol table. The dogma
 that a production compiler must use an LALR generator died there. Clang followed.
+
+The one compiler that kept the machine is Johnson's own. pcc left Bell Labs
+with Seventh Edition Unix, moved to the VAX, and then lost to GCC across the
+late 1980s; after 1994 it had no maintainer. Anders Magnusson revived it in
+2002 from the opened 32V sources — half the front end and most of the back end
+rewritten — and it still lives today, still driven by a Yacc grammar. That is
+the cautionary end of the story. GCC and LLVM, which do not use Yacc or Bison,
+are the compilers the world develops. pcc, which still does, crawls. The
+machine was right for 1975. It is why the work is hard now.
 
 ## Ordered recognition: PEG
 
