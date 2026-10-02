@@ -24,12 +24,12 @@ Scope (user directive, 2026-09-26):
   into `Char_Range(Lo, Hi)` elements. `%` is the
   reader-macro dispatch prefix (what `#'` is to Lisp). Build clean; 9-daemon
   round-trip + server round-trip pass.
-- **`grammars/ascii.hbnf` — DONE.** The non-printable ASCII names as a library
-  grammar (no emitter code): `NUL`..`US` (C0 controls), `SP` `HT` `HTAB` `DEL`.
-  Every rule matches one code point. (Uppercase, the ASCII/RFC spelling — *not*
-  lowercase as an earlier draft had it.)  `grammars/common.hbnf` includes it and
-  adds `DQUOTE`, the RFC 5234 App B.1 classes `DIGIT ALPHA ALNUM LOWER UPPER
-  HEXDIG BIT CHAR CTL VCHAR OCTET WSP`, and `CRLF`.
+- **`grammars/ascii.hbnf` — DONE.** The named ASCII characters as a library
+  grammar (no emitter code): `NUL`..`US` (C0 controls), `SP` `HT` `HTAB` `DEL`
+  `DQUOTE`.  Every rule matches one code point. (Uppercase, the ASCII/RFC
+  spelling — *not* lowercase as an earlier draft had it.)  `grammars/common.hbnf`
+  includes it and adds the RFC 5234 App B.1 classes `DIGIT ALPHA ALNUM LOWER
+  UPPER HEXDIG BIT CHAR CTL VCHAR OCTET WSP`, and `CRLF`.
 - **I1 — C char lexer: DONE.** `Is_Char_Rule` classifies a rule whose pattern
   is an alternation of `Char_Range`; such rules get a `TOK_<name>` token kind,
   a `scan_<name>` scanner, and a `char_dispatch` the lexer calls after jets.
@@ -155,8 +155,8 @@ Scope (user directive, 2026-09-26):
 - `hbnf_zig.adb` — full char-lexer port (`Atom_Cond`, `decode_utf8`, `scan_*`,
   `char_dispatch`; a char rule is scalar `[]const u8`; `Zig_Snake` lowercases).
 - `hbnf_match.adb` — exhaustive `case` Char_Range arms.
-- `grammars/ascii.hbnf` — the non-printable ASCII names (C0 controls, blanks,
-  `DEL`); `grammars/common.hbnf` — the classes, `DQUOTE`, and `CRLF`.
+- `grammars/ascii.hbnf` — the named ASCII characters (C0 controls, blanks,
+  `DEL`, `DQUOTE`); `grammars/common.hbnf` — the classes and `CRLF`.
 - `tests/utf8-test.sh` — single-char, sequence, control and invalid-UTF-8 cases
   (run inside the toolchain image).
 - `tests/syntax.sh` — the `%x41-5A` refusal became `%d13.10` (numeric terminals

@@ -1,8 +1,9 @@
-; ascii.hbnf — the non-printable ASCII characters, named.
+; ascii.hbnf — the named ASCII characters.
 ;
-; The C0 control characters (NUL .. US), DEL, and the blanks SP and HT/HTAB.
-; Everything printable — and every character class — lives in common.hbnf,
-; which includes this file.
+; The C0 control characters (NUL .. US), DEL, the blanks SP and HT/HTAB, and
+; the printable characters a grammar names rather than writes as a literal
+; (DQUOTE).  The character classes live in common.hbnf, which includes this
+; file.
 
 ; --- C0 control characters (0x00 .. 0x1F) ---
 NUL = %x00
@@ -38,7 +39,8 @@ GS  = %x1D
 RS  = %x1E
 US  = %x1F
 
-; --- blanks and DEL ---
-SP   = %x20
-HTAB = %x09
-DEL  = %x7F
+; --- blanks, DEL, and the named printable DQUOTE ---
+SP     = %x20
+HTAB   = %x09
+DEL    = %x7F
+DQUOTE = %x22

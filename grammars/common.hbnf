@@ -1,13 +1,11 @@
 ; common.hbnf — the character classes and core rules any grammar shares.
 ;
-; The RFC 5234 Appendix B.1 character classes (DIGIT, ALPHA, HEXDIG, ...),
-; the printable special DQUOTE, and the one multi-character core rule, CRLF.
-; It includes ascii.hbnf for the non-printable named characters, so a grammar
-; that includes this one file gets the whole set.
+; The RFC 5234 Appendix B.1 character classes (DIGIT, ALPHA, HEXDIG, ...) and
+; the one multi-character core rule, CRLF.  It includes ascii.hbnf for the
+; named ASCII characters, so a grammar that includes this one file gets the
+; whole set.
 
 include "ascii.hbnf"
-
-DQUOTE = %x22
 
 ; --- RFC 5234 Appendix B.1 character classes (each matches one code point) ---
 DIGIT  = %x30-39

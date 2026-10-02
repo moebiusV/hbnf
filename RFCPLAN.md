@@ -121,9 +121,9 @@ silently.
    author writes the rule or a jet.  A hole left for later is then a
    schema error that points at itself, rather than an `XXX` in a comment.
 10. **Core rules.**  `common.hbnf` includes `ascii.hbnf` and holds the RFC 5234
-    Appendix B.1 classes (`DIGIT`, `ALPHA`, …, `WSP = SP | HTAB`), `DQUOTE`, and
-    `CRLF = CR LF`; `ascii.hbnf` holds only the non-printable names (the C0
-    controls, blanks, `DEL`).  `LWSP` waits for repetition
+    Appendix B.1 classes (`DIGIT`, `ALPHA`, …, `WSP = SP | HTAB`) and
+    `CRLF = CR LF`; `ascii.hbnf` holds the named single characters (the C0
+    controls, blanks, `DEL`, `DQUOTE`).  `LWSP` waits for repetition
     inside character rules, which `Is_Char_Rule` refuses today.
 11. **Negation is `~`.**  `~rule` matches one code point not in the set
     `rule` matches (a complement); repetition composes, so `*~rule` is

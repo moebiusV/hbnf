@@ -150,7 +150,7 @@ emits a self-contained C parser that compiles and parses a sample config.
 include-only, not daemon grammars: each is pulled in with `include "…"`.
 `common.hbnf` holds the RFC 5234 character classes and core rules (`DIGIT`,
 `ALPHA`, `HEXDIG`, `WSP`, `CRLF`, …), and includes `ascii.hbnf` for the
-non-printable names (the C0 controls, `DEL`, and the blanks); `obconf.hbnf`
+named ASCII characters (the C0 controls, `DEL`, the blanks, and `DQUOTE`); `obconf.hbnf`
 holds the rules the daemons share (`string`, `address`, …), which a daemon
 grammar may override; `tailq.hbnf` carries the shared `listops { }` block and
 the `#include <sys/queue.h>` it needs, and defines no rules.  Any script that

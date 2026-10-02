@@ -140,10 +140,10 @@ of them again (a later `=` overrides).
 
 | Name | ABNF | In hbnf |
 |---|---|---|
-| `SP`, `HTAB`, `CR`, `LF` | `%x20`, `%x09`, `%x0D`, `%x0A` | `ascii.hbnf`. Whitespace tokens, significant only where the grammar references them (§6). `LF` is parse.y's `'\n'`. |
+| `SP`, `HTAB`, `CR`, `LF`, `DQUOTE` | `%x20`, `%x09`, `%x0D`, `%x0A`, `%x22` | `ascii.hbnf` — the named single characters. The whitespace ones are significant only where the grammar references them (§6); `LF` is parse.y's `'\n'`, `DQUOTE` a named double quote. |
 | `WSP`, `CRLF` | `SP / HTAB`, `CR LF` | both in `common.hbnf` |
 | `LWSP` | `*(WSP / CRLF WSP)` | Not yet: a character rule cannot repeat (RFC 5234 itself warns about `LWSP`) |
-| `ALPHA`, `DIGIT`, `HEXDIG`, `BIT`, `CHAR`, `CTL`, `VCHAR`, `OCTET`, `DQUOTE` | character classes | `common.hbnf`; the character layer (§2). A file with `sensitivity rule-name %i` may write them `alpha`, `digit`, `hexdig`. |
+| `ALPHA`, `DIGIT`, `HEXDIG`, `BIT`, `CHAR`, `CTL`, `VCHAR`, `OCTET` | character classes | `common.hbnf`; the character layer (§2). A file with `sensitivity rule-name %i` may write them `alpha`, `digit`, `hexdig`. |
 
 ## 4. Same spelling, different meaning
 
