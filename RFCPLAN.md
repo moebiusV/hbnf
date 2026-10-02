@@ -385,9 +385,14 @@ A grammar is compiler-compiler ready when:
 7. **Wire values are semantic values.**  Width, signedness, endianness, exact
    byte sequences and range constraints are explicit; `u8`/`u16` mean the same
    in the interpreter and every backend.
-8. **One semantic model.**  The interpreter and all emitters agree on ordered
-   choice, repetition, left recursion, characters and wire values; a backend
-   limitation is a generation-time error, never a silent divergence.
+8. **One semantic model.**  The emitters agree on ordered choice,
+   repetition, left recursion, characters and wire values; a backend
+   limitation is a generation-time error, never a silent divergence.  This
+   criterion used to read "the interpreter and all emitters agree", which
+   was the wrong shape of promise: a second implementation cannot be made
+   to agree, only kept in step, and it was not — it stayed on the token
+   model through all of step 4 (step 9c retires it).  **One model means one
+   implementation**, and the gate for that is that no second one exists.
 9. **Progress is an invariant.**  Every unbounded repetition and rewritten
    left-recursive tail consumes input or terminates.
 10. **The representation is inspectable.**  A shared semantic IR beneath the
@@ -411,16 +416,30 @@ corrected by the messages, not by reading the manual.
 Each step leaves the nine daemon grammars, e2e, byteident (ntpd) and
 unwind-ident passing; each lands as reviewed patches.
 
+**A switchover step's gate must name the old mechanism and assert it is
+gone.**  Two switchovers in this plan were marked done while half-finished,
+and both times the gate was structurally unable to see it.  Step 3's gate
+was "byte-identical output for every schema through every backend" — which
+a flat `${name}` substituter passes exactly as well as Mustache does, so a
+renderer could be written, wired to nothing, and the step still close.
+Step 4's gate was the daemon grammars, byteident and the corpus, all of
+which run through the backends — so the interpreter could stay on tokens
+and every gate still pass.  Testing the output cannot test the mechanism.
+A switchover therefore gates on a count: zero `Templates.Render` callers
+and zero `${` in the templates (3b), zero `Token_Vectors` outside the
+reader's own lexer (9c).  Those are the assertions that fail loudly while
+the old path is still there.
+
 The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
 
 > **Done:** 0, 1, 2, 3, 4a–4e, 7a (bar its warning), 9a.
-> **Critical path:** **3b** → **12** → **9b** → **5** → **6** → **7b**
-> → **8** → **4f** → **10** → **13**.  **11** is not gated on any of them
-> and can land in any gap.
+> **Critical path:** **3b** → **12** → **9b** → **9c** → **5** → **6**
+> → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
+> any of them and can land in any gap.
 
-Four things decide that order, and each one is a dependency rather than a
+Five things decide that order, and each one is a dependency rather than a
 preference:
 
 - **3b is first because it makes every later step cheaper.**  The
@@ -441,6 +460,10 @@ preference:
   because it reads the IR 6 builds; the wire layer is 7b, behind 6, for the
   same reason; step 8's recovery needs 6's spans and the warning channel
   from 12.
+- **9c waits on 9b because 9b is why 9c is possible.**  The interpreter's
+  one distinctive capability is running the mutually recursive grammar the
+  backends refuse, which is the gap 9b closes.  Retiring it any earlier
+  would mean losing a test; retiring it after costs nothing.
 - **Correctness before speed, and measurement before optimization.**  4f
   sits late holding its numbers.  It is also now blocked on its own
   benchmark: `bench/gen.sh` emits one rule shape, so §6's input does not
@@ -521,7 +544,10 @@ should claim that before 10.
        **Decided 2026-10-02: `moebiusV/mustache-ada` is the canonical
        Mustache and hbnf must use it.**  So the inline subset in
        `templates.adb` is not the renderer to switch the templates onto; it
-       is a second implementation to retire.  Nothing in the tree references
+       is a second implementation to retire — the same judgement as 9c
+       makes about the interpreter, for the same reason.  A second
+       implementation of something the project already has is not a
+       fallback, it is a thing that drifts.  Nothing in the tree references
        the aport today — no `with` clause, no `.gpr` dependency, no
        submodule — so this step is three things, in order:
 
@@ -743,8 +769,9 @@ should claim that before 10.
    - RFC excerpts as regression tests: RFC 5234 Appendix B.1 verbatim, RFC
      3986 `scheme` and `host`, RFC 5322 `addr-spec`, RFC 9112
      `request-line`;
-   - the character model in Rust, Zig and Ada through the templates, and
-     the interpreter (HBNF_Match) on the same rewrites;
+   - the character model in Rust, Zig and Ada through the templates.  (The
+     interpreter used to be named here too, "on the same rewrites".  It is
+     not converted, it is retired — step 9c.)
    - `json.hbnf`, then binary (CHARLAYER.md I2–I4).  `where` moved to
      step 6, where the IR it reads against is built.
 
@@ -929,6 +956,79 @@ should claim that before 10.
    emitter — and it is *not* the typedef problem, which is separate and
    discussed under decision 13.
 
+   9c. **Retire the interpreter.**  There is no reason to keep it, and the
+       reason it existed is 9b.
+
+       **What it is.**  `HBNF_Match` (379 lines): "the matcher and binder —
+       given a parsed schema and a token stream, recognize whether the
+       tokens spell out the schema's root rule and bind them to a parse
+       tree."  A grammar run directly instead of compiled.  Beside it,
+       `HBNF_Config` (1,266 lines): a **hand-written** reader for
+       obconf-format config files, and `HBNF_Match`'s only non-test caller.
+
+       **Nothing ships it.**  `hbnf.adb`, the CLI, withs `Templates`,
+       `HBNF_Grammar`, `HBNF_Compilable` and the four backends — and
+       nothing else.  `HBNF_Match` is reached only from `HBNF_Config` and
+       `tests/hbnf_emit_check.adb`; `HBNF_Config` only from
+       `tests/hbnf_check.adb` and `tests/hbnf_match_check.adb`, neither of
+       which e2e runs.  So 1,645 lines of token-model code sit in the build
+       serving one test.
+
+       **Its one distinctive capability is the gap 9b closes.**
+       `hbnf_emit_check` says why it reaches for the matcher, in its own
+       words: `hbnf_schema.hbnf` is "checked at the parse level (its
+       entry/block rules are mutually recursive, which the
+       declaration-only emitters reject as a cyclic reference)".  That is
+       step 9, exactly.  `entry = block | statement` and `block = name
+       [qualifier] "{" ... *( entry ) ... "}"` is a cycle, the backends
+       refuse it, and the interpreter was the way round.  Once 9b emits a
+       pointer on a back edge the backends take that schema and the
+       interpreter has no job left.  Hence 9c, and hence after 9b.
+
+       **So retire rather than convert**, which is the stronger reading of
+       "a switchover should be complete":
+
+       - `HBNF_Config` is a hand-written parser for a grammar hbnf can
+         generate — `grammars/obconf.hbnf` through the Ada backend.
+         Replace it with generated code.  hbnf eats its own output, and
+         ~1,266 hand-written lines go rather than being ported to
+         characters.
+       - `HBNF_Match` goes with it.  `hbnf_emit_check`'s `Match` assertions
+         become what every other schema's already are: generate, compile,
+         run.
+       - `hbnf_schema.hbnf` is rewritten in character-rule vocabulary.  It
+         is refused today for two separate reasons — the token-era
+         built-ins (`atom`, `dec`, `percent`; obconf has `word`, and there
+         is no `atom` rule anywhere) and the mutual recursion.  9b fixes
+         the second; this fixes the first.  Its header still says "as an
+         hbnf grammar **over the token stream**", which is the model
+         decision 7 removed.
+       - **Do not lose what the retired tests prove.**  `hbnf_check` is a
+         conformance driver whose "accept" requires round-tripping: parse,
+         print, re-parse, re-print, and the printer must be idempotent.
+         `hbnf_match_check` asserts the hand-written parser and the
+         grammar-driven one produce the same tree, comments in the same
+         places.  Both are prior art for step 13's pretty printer, at the
+         config-format layer rather than the notation layer.  The
+         idempotence driver should be rebuilt against the generated reader
+         before `HBNF_Config` is deleted, not after.
+
+       **Also to be clear about the naming**, because it has already caused
+       confusion: `hbnf_schema.hbnf` and `grammars/obconf.hbnf` are not two
+       names for one thing.  `obconf.hbnf` is the lexical and leaf layer —
+       `wordchars`, `word`, `int`, `str`, `ws`, `comment`, plus the shared
+       leaves — with no structure rules at all.  `hbnf_schema.hbnf` is pure
+       structure — `config`, `entry`, `block`, `statement`, `arg` — with no
+       lexical rules at all, because it assumes its leaves are codegen
+       built-ins.  They are complements written against different parsing
+       models.  And neither is step 13's `hbnf.hbnf`, which describes the
+       `.hbnf` notation rather than a config file.
+
+       **Gate.**  Zero `Token_Vectors` outside the reader's own lexer; the
+       CLI and the test programs build with `HBNF_Match` and `HBNF_Config`
+       deleted; `hbnf_schema.hbnf` generates through all four backends;
+       e2e's check count does not drop.
+
    **It kept the number 9, and it is third on the critical path.**  The
    earlier text here said a programming language was not a goal, so this
    bought generality the product did not need.  That is no longer true:
@@ -1102,6 +1202,13 @@ should claim that before 10.
    a leading and a trailing comment per rule and round-trips them into
    generated output, which is the foundation; this needs them kept through
    a full re-print.
+
+   There is prior art one layer down, and 9c must not throw it away:
+   `tests/hbnf_check.adb` is a conformance driver whose "accept" requires
+   exactly this — parse, print, re-parse, re-print, and the printer must be
+   idempotent — for the *config format*, against `HBNF_Config`'s printer.
+   9c rebuilds that driver against generated code; this step is the same
+   discipline applied to the notation.
 
    - **Normalizing by default.**  One rule per definition, spelled `=`:
      `::=`, `:=` and `:` all print as `=`.  Comments print as `;` to end of
