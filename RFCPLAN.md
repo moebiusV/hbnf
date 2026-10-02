@@ -528,18 +528,12 @@ should claim that before 10.
        So completion criterion 10 and step 6 below, which both speak of
        "the Mustache-style renderer in `templates.adb`" as though it were
        in use, describe the renderer correctly and its use not at all.
-       That is the gap, and it is the whole of it: the per-element loops
-       `{{#each}}` exists to absorb are still written out in Ada in each
-       backend (`for M of Info.Members loop ... Append (Items, ...)`), one
-       copy per backend, which is also why the step 9a fix had to be made
-       in two places before it was folded into one `Field_Decl`.
-
-       The work: move the 52 `${name}` templates and the 14
-       `@PLACEHOLDER@` templates to `{{ }}`, build the context tree in each
-       emitter instead of a binding table, and delete `Render` and
-       `Substitute` once nothing calls them.  The gate is step 3's own:
-       byte-identical output for every schema through every backend, all
-       132 snapshot files.
+       What that costs: the per-element loops `{{#each}}` exists to absorb
+       are still written out in Ada in each backend (`for M of
+       Info.Members loop ... Append (Items, ...)`), one copy per backend,
+       which is also why the step 9a fix had to be made in two places
+       before it was folded into one `Field_Decl`.  (It is not the whole of
+       the duplication — see below.)
 
        **Decided 2026-10-02: `moebiusV/mustache-ada` is the canonical
        Mustache and hbnf must use it.**  So the inline subset in
@@ -548,35 +542,67 @@ should claim that before 10.
        makes about the interpreter, for the same reason.  A second
        implementation of something the project already has is not a
        fallback, it is a thing that drifts.  Nothing in the tree references
-       the aport today — no `with` clause, no `.gpr` dependency, no
-       submodule — so this step is three things, in order:
+       the aport today: no `with` clause, no `.gpr` dependency, no
+       submodule.
 
-       1. **Depend on mustache-ada.**  Add it to `hbnf.gpr`, from the
-          `ada-on-alpine` aport where it is packaged.  `hbnf_config.gpr`
-          and whatever the build instructions say about prerequisites move
-          with it.  Note for the Alpine side: hbnf then needs the aport to
-          be installable, so whatever is still outstanding there is
-          upstream of this step.
-       2. **Retire the inline subset.**  `Render_Template` and the
-          `{{ }}` scanner in `templates.adb` go; `Templates` keeps the
-          `.tmpl` loader, `Get`, and the context builders (`New_Scalar`,
-          `New_List`, `New_Map`, `Append`, `Insert`, `Push`, `Pop`),
-          re-expressed over mustache-ada's own value and context types if
-          it has them.  The `Scalar`/`List`/`Map` model in `templates.ads`
-          is the interface the emitters will build against, so it is worth
-          keeping in hbnf's own vocabulary even when the rendering is
-          delegated.
+       **And the duplication is larger than "a renderer".**  Read
+       2026-10-02 at tag `v0.2.1` (`c7ef6d9`, the version
+       `testing/mustache-ada/APKBUILD` builds): `mustache.ads` is 107 lines
+       and declares
+
+           type Value_Kind is (Scalar, List, Map);
+           New_Scalar / New_List / New_Map / Append / Insert
+           type Context;  View / Put / Push / Pop
+           Render (Source, View) / Render_File (Name, View)
+           Load (Dir) / Define (Name, Source) / Get (Name) / Reset
+
+       — the same `Scalar`/`List`/`Map` model, the same builder names, the
+       same scope stack, **and the template store**.  `Load (Dir)` and
+       `Get (Name)` are what `Templates` exists to provide.  So hbnf did
+       not duplicate a renderer; it duplicated nearly the whole package,
+       loader included.  What `Templates` has that `Mustache` does not is
+       `Bind`, `Binding_Array`, `Render (Text, Pairs)` and `Substitute` —
+       which is to say the `${name}` and `@PLACEHOLDER@` paths, the two
+       things this step deletes.  Afterwards there is nothing left in
+       `Templates` worth keeping: it is `Mustache` under another name.
+       mustache-ada is also pure Ada on the GNAT runtime with no C
+       dependencies and no external GPR projects, ships relocatable and
+       static, and carries a Mustache **spec** suite
+       (`tests/spec_check tests/spec`) — which the inline subset does not
+       pass and was never measured against.
+
+       Three things, in order:
+
+       1. **Depend on mustache-ada.**  `hbnf.gpr` withs `mustache.gpr`,
+          from the `ada-on-alpine` aport (`testing/mustache-ada`, pkgver
+          0.2.1) where it is packaged.  The build instructions gain it as a
+          prerequisite.  Note for the Alpine side: hbnf then needs that
+          aport installable, so whatever is outstanding there is upstream
+          of this step.
+       2. **Delete `templates.ads` and `templates.adb`, and `with
+          Mustache` directly.**  Not "retire the inline renderer and keep
+          the loader" — there is no loader to keep, `Mustache.Load` is the
+          loader.  789 lines of upstream library replace about 400 lines of
+          hbnf's own, and the `Value`/`Context` types the emitters build
+          against become mustache-ada's.  If a thin shim turns out to be
+          wanted — for hbnf's own `.tmpl` directory convention, say — it is
+          a renaming of `Load` and `Get` and nothing else, and it carries
+          no second renderer.
        3. **Move the templates and the emitters.**  52 `${name}` templates
           and 14 `@PLACEHOLDER@` templates become `{{ }}`; each emitter
-          builds a context tree instead of a binding table; `Render` and
-          `Substitute` go once nothing calls them.  The per-element loops
-          become `{{#each}}` in the template, which is the point of the
-          whole exercise and what makes 9b a one-place change.
+          builds a context tree instead of a binding table.  The
+          per-element loops become `{{#each}}` in the template, which is
+          the point of the whole exercise and what makes 9b a one-place
+          change.
 
-       The gate is step 3's own: byte-identical output for every schema
-       through every backend, all 132 snapshot files.  Nothing about the
-       generated parsers changes — only where the shape of the output is
-       written down.
+       **Gate**, under the switchover rule at the head of this section — the
+       old mechanism named and asserted gone, not just the output checked:
+       **zero references to `Templates` anywhere in the tree**, zero `${`
+       and zero `@PLACEHOLDER@` in `templates/`, and `templates.ads` and
+       `templates.adb` deleted.  Then step 3's own gate on top:
+       byte-identical output for every schema through every backend, all
+       132 snapshot files.  Nothing about the generated parsers changes —
+       only where the shape of the output is written down.
 4. **The character model** (decision 7) in C, with `whitespace`:
    - the old lexer moved into a shared include;
    - ntpd converted first (it has the byte-identity proof), then the other
