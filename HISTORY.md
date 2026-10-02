@@ -10,6 +10,11 @@ rung of that ladder, almost always the context-free one. The idea that a
 grammar is a machine for generating strings is Chomsky's; everything that
 follows is the story of people building that machine.
 
+A grammar has two readers: the person and the machine. Every system in this
+history leans toward one of them — easier for a person to read, or easier for a
+machine to turn into code. The aim underneath never changes: get the writer's
+intention into the machine without losing it.
+
 A language used to be described the way a recipe is: prose and examples. Two
 implementors reading the same manual could ship two different languages. That
 stopped in 1959, when John Backus needed to describe ALGOL 58 well enough that
@@ -139,6 +144,9 @@ debuggable top-down code, Ford replaced generative choice with ordered
 recognition, and Brunsfeld optimized the tree for a buffer that is never
 finished.
 
+It is a pendulum between the two readers, each swing trading one reader's ease
+for the other's.
+
 ## HBNF
 
 HBNF starts from where that thread left off and picks a side. Its bet is that
@@ -178,6 +186,14 @@ grammars, because that is not a missing feature to add later — it is the thing
 the design refuses on purpose. ALL(*) and GLR exist for the languages that need
 them. HBNF exists for the ones that do not, and for the person who wants the
 grammar and the parser to be the same document.
+
+Judged on that single aim — one document that serves both the person and the
+machine — the others all pick a side. BNF and ABNF are for people; Yacc and
+Tree-sitter are for machines; ANTLR and PEG generate code but drop the writer's
+comments and exact spellings. HBNF tries to be both at once, and its round trip
+is the proof: the text a person reads is what the machine runs, and the machine
+hands it back unchanged. The writer's intention arrives whole, and no earlier
+tool managed that.
 
 The line ends where it began, and it ends against Chomsky. Generative grammar
 started as a claim about the mind: a language is a set of rules that produces
