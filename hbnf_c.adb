@@ -1307,6 +1307,25 @@ package body HBNF_C is
          NM : constant String := To_String (R.Name);
          CN : constant String := C_Name (NM);
          Buf : U;
+
+         --  One field of a struct or of a list's node.  A field whose rule
+         --  is itself a list holds that list's head, not one of its nodes:
+         --  the head is two pointers, so a forward declaration is enough and
+         --  the parse code, the free function and the walkers already pass
+         --  `&n->field` to the list-taking entry points.  Declaring the node
+         --  type here instead is what made a list of a list (`sums = 1*sum`
+         --  with `sum` left-recursive) emit C that does not compile.
+         function Field_Decl (Nm : String; Forced : Boolean) return String is
+            J       : constant Natural := Find (Nm);
+            Is_Head : constant Boolean :=
+              Forced or else (J > 0 and then Infos (J).Kind = List);
+         begin
+            return Templates.Render
+              (Templates.Get (if Is_Head then "c_list_field" else "c_field"),
+               (Templates.Bind ("type",
+                  (if Is_Head then Pfx & C_Name (Nm) else C_Type_Of (Nm))),
+                Templates.Bind ("field", C_Field (Nm))));
+         end Field_Decl;
       begin
          if R.Leading_Comment /= Null_Unbounded_String then
             Append (Buf, "/* " & To_String (R.Leading_Comment) & " */");
@@ -1357,18 +1376,8 @@ package body HBNF_C is
                      Append (Pre, LF);
                   end if;
                   for M of Info.Members loop
-                     declare
-                        J       : constant Natural := Find (To_String (M.Name));
-                        Is_Head : constant Boolean :=
-                          M.Is_List or else (J > 0 and then Infos (J).Kind = List);
-                     begin
-                        Append (Items, Templates.Render
-                          (Templates.Get (if Is_Head then "c_list_field" else "c_field"),
-                           (Templates.Bind ("type",
-                              (if Is_Head then Pfx & C_Name (To_String (M.Name))
-                               else C_Type_Of (To_String (M.Name)))),
-                            Templates.Bind ("field", C_Field (To_String (M.Name))))));
-                     end;
+                     Append (Items,
+                       Field_Decl (To_String (M.Name), M.Is_List));
                      Append (Items, LF);
                   end loop;
                   if R.Action_Code /= Null_Unbounded_String then
@@ -1407,20 +1416,16 @@ package body HBNF_C is
                   Append (Items, LF);
                   if Info.Elem_Members.Is_Empty then
                      if Info.Elem_Name /= Null_Unbounded_String then
-                        Append (Items, Templates.Render (Templates.Get ("c_field"),
-                          (Templates.Bind ("type",
-                             C_Type_Of (To_String (Info.Elem_Name))),
-                           Templates.Bind ("field",
-                             C_Field (To_String (Info.Elem_Name))))));
+                        Append (Items,
+                          Field_Decl (To_String (Info.Elem_Name), False));
                      else
                         Append (Items, Templates.Get ("c_value"));
                      end if;
                      Append (Items, LF);
                   else
                      for M of Info.Elem_Members loop
-                        Append (Items, Templates.Render (Templates.Get ("c_field"),
-                          (Templates.Bind ("type", C_Type_Of (To_String (M.Name))),
-                           Templates.Bind ("field", C_Field (To_String (M.Name))))));
+                        Append (Items,
+                          Field_Decl (To_String (M.Name), M.Is_List));
                         Append (Items, LF);
                      end loop;
                   end if;
@@ -3619,7 +3624,11 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "        size_t save = p->pos;");
                Append (Buf, LF);
-               if Ws then
+               --  Only the two template paths below need the skip here; the
+               --  Emit_Alternation paths lead with it themselves (Emit_Seq)
+               --  or hoist it over the branches (Emit_Linear), so emitting
+               --  it for them too left two skip_ws calls in a row.
+               if Ws and then E.Kind = Name then
                   Append (Buf, "        skip_ws(p);");
                   Append (Buf, LF);
                end if;

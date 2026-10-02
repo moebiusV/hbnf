@@ -1,10 +1,11 @@
-; The same cycle laundered through a list.  The by-value cycle check does
-; not see it (a list node embeds its element by value), so the generator
-; accepts this and emits C that does not compile:
+; The same cycle laundered through a list.  This is not a by-value cycle at
+; all: a field whose rule is a list holds that list's head, two pointers, so
+; a forward declaration is enough.  The C backend used to declare one of the
+; list's *nodes* there instead, and gcc said
 ;   field 'sum' has incomplete type
 ;
-; RFCPLAN.md step 9a.  Kept as a fixture; do not "fix" by changing the
-; grammar — the generator is what is wrong.
+; RFCPLAN.md step 9a, fixed.  All four backends take this schema and the C
+; compiles; do not "fix" by changing the grammar.
 language C
 include "../../grammars/obconf.hbnf"
 

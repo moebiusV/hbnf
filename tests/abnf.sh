@@ -174,20 +174,41 @@ else echo "  FAIL [no caret]: $(cat "$W/err.txt")"; rc=1; fi
 rm -f "$W/t"; gen_file tests/abnf/filled.hbnf
 check OK   "123" "the hole filled by a later ="
 
-echo "== recursive tree types: the known gap (RFCPLAN step 9) =="
-# A rule whose value contains itself.  C refuses it with a message that says
-# why; when step 9 lands this becomes a parse test instead.
+echo "== recursive tree types (RFCPLAN step 9) =="
+# A rule whose value really does contain itself is still refused -- step 9b
+# adds the pointer that breaks it -- but all four backends must refuse it,
+# with a message that says why.  Rust used to emit code rustc rejected
+# (E0072) and Zig code that failed the moment a size was forced.
 refuse_file tests/abnf/recursive.hbnf "cannot contain itself" \
 	"a recursive tree type is refused, with the reason"
-if "$CLI" tests/abnf/recursive-via-list.hbnf --backend=c > "$W/rl.c" 2>/dev/null; then
-	if gcc -c -w -o /dev/null -Itests/bsdinc "$W/rl.c" 2>/dev/null; then
-		echo "  UNEXPECTED [a list-laundered cycle now compiles]: step 9a is done, update this test"
+for b in ada rust zig; do
+	if "$CLI" tests/abnf/recursive.hbnf --backend=$b > /dev/null 2> "$W/err.txt"; then
+		echo "  FAIL [the $b backend refuses the same cycle]: accepted"; rc=1
+	elif grep -q "cannot contain itself" "$W/err.txt"; then
+		echo "  PASS [the $b backend refuses the same cycle]"
 	else
-		echo "  PASS [known gap: a list-laundered cycle still emits uncompilable C]"
+		echo "  FAIL [the $b backend refuses the same cycle]: $(head -1 "$W/err.txt")"; rc=1
+	fi
+done
+# A cycle laundered through a list is *not* a cycle: a list field holds the
+# list's head, which is two pointers.  It used to be emitted as one of the
+# list's nodes by value, which is the C that would not compile (step 9a).
+if "$CLI" tests/abnf/recursive-via-list.hbnf --backend=c > "$W/rl.c" 2>"$W/err.txt"; then
+	if gcc -c -w -o /dev/null -Itests/bsdinc -xc "$W/rl.c" 2>"$W/cc.txt"; then
+		echo "  PASS [a list breaks the cycle, and the C compiles]"
+	else
+		echo "  FAIL [a list breaks the cycle, and the C compiles]: $(grep -m1 error "$W/cc.txt")"; rc=1
 	fi
 else
-	echo "  PASS [a list-laundered cycle is now refused: step 9a done, update this test]"
+	echo "  FAIL [a list breaks the cycle, and the C compiles]: $(head -1 "$W/err.txt")"; rc=1
 fi
+for b in ada rust zig; do
+	if "$CLI" tests/abnf/recursive-via-list.hbnf --backend=$b > /dev/null 2>"$W/err.txt"; then
+		echo "  PASS [the $b backend takes it too]"
+	else
+		echo "  FAIL [the $b backend takes it too]: $(head -1 "$W/err.txt")"; rc=1
+	fi
+done
 
 echo "== common.hbnf: CRLF and WSP =="
 rm -f "$W/t"; gen <<G

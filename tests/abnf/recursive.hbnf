@@ -1,8 +1,9 @@
 ; A recursive tree type: every expression language needs this, and no
-; backend emits it yet (RFCPLAN.md step 9).  C and Ada refuse the schema;
-; Rust and Zig generate code their compilers then reject.
+; backend emits it yet (RFCPLAN.md step 9b).  All four now refuse it with
+; the same message — Rust used to emit code rustc rejected (E0072), and Zig
+; code that failed the moment a size was forced (step 9a).
 ;
-; Kept as a fixture so step 9 has something to turn green.
+; Kept as a fixture so step 9b has something to turn green.
 language C
 include "../../grammars/obconf.hbnf"
 
