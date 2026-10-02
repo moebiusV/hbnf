@@ -4030,6 +4030,38 @@ package body HBNF_C is
          end if;
       end Emit_Single;
 
+      --  "own" when a rule is the own-line comment, "eol" when it is the
+      --  same-line comment (chasing single-name aliases such as
+      --  `trailing = eol_comment`), "" otherwise.
+      function Comment_Kind (Rules : Rule_Vectors.Vector; Nm : String;
+                             Depth : Natural := 0) return String is
+         J : Natural;
+      begin
+         if Nm = "comment" then
+            return "own";
+         end if;
+         if Nm = "eol_comment" then
+            return "eol";
+         end if;
+         if Depth >= 8 then
+            return "";
+         end if;
+         J := Find (Rules, Nm);
+         if J /= 0 then
+            declare
+               P : constant Element_Vectors.Vector := Rules (J).Pattern;
+            begin
+               if Natural (P.Length) = 1 and then P (1).Kind = Name
+                 and then P (1).Min = 1 and then P (1).Max = 1
+               then
+                  return Comment_Kind (Rules, To_String (P (1).Name),
+                                       Depth + 1);
+               end if;
+            end;
+         end if;
+         return "";
+      end Comment_Kind;
+
       --  Emit the greedy loop for a repetition: match one full branch of the
       --  DNF (the longest one) as many times as Max allows (0 = unbounded),
       --  then require Min.  A branch is a sequence of decoded code points.
@@ -4464,6 +4496,33 @@ package body HBNF_C is
                Append (Res, "static size_t scan_" & C_Name (NM)
                  & "(const char *s, size_t pos, size_t len) {");
                Append (Res, LF);
+               if Comment_Kind (Rules, NM) = "own" then
+                  --  An own-line comment: only blanks between it and the
+                  --  previous newline (or the start of the text).
+                  Append (Res, "    { size_t i = pos;");
+                  Append (Res, LF);
+                  Append (Res, "      while (i > 0) { char c = s[i - 1];");
+                  Append (Res, LF);
+                  Append (Res, "        if (c == '\n') break;");
+                  Append (Res, LF);
+                  Append (Res, "        if (c != ' ' && c != '\t' && c != '\r') return 0;");
+                  Append (Res, LF);
+                  Append (Res, "        i--; } }");
+                  Append (Res, LF);
+               elsif Comment_Kind (Rules, NM) = "eol" then
+                  --  A same-line comment: some non-blank precedes it on the
+                  --  line it sits on.
+                  Append (Res, "    { size_t i = pos; int own = 1;");
+                  Append (Res, LF);
+                  Append (Res, "      while (i > 0) { char c = s[i - 1];");
+                  Append (Res, LF);
+                  Append (Res, "        if (c == '\n') break;");
+                  Append (Res, LF);
+                  Append (Res, "        if (c != ' ' && c != '\t' && c != '\r') { own = 0; break; }");
+                  Append (Res, LF);
+                  Append (Res, "        i--; } if (own) return 0; }");
+                  Append (Res, LF);
+               end if;
                if Natural (DNF.Length) = 1 then
                   --  One branch: a sequence of code points, decoded in turn,
                   --  ending at most in one repetition.

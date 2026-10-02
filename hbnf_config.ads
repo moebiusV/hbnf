@@ -4,7 +4,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with HBNF_Grammar;
 
---  HBNF_Config: parse an oconf configuration file into a tree.  (oconf is a
+--  HBNF_Config: parse an obconf configuration file into a tree.  (obconf is a
 --  grammar implemented in hbnf, the parser generator this crate also hosts.)
 --
 --  A declarative, block-structured grammar — keyword arguments, `{ }`

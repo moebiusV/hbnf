@@ -14,7 +14,7 @@ of newer RFCs specify their protocols in it. Start from the notation people
 already read fluently, and a grammar is documentation first and a parser
 second.
 
-hbnf began as a project to implement **oconf**, a configuration language for
+hbnf began as a project to implement **obconf**, a configuration language for
 OpenBSD-style config files, so that other programs could use it without
 having to learn yacc, lex, bison or flex. That work exposed how bad the state
 of parser generation is: almost no one uses yacc for anything serious, because
@@ -23,11 +23,11 @@ compiler — one that removes that pain with helpful errors and lossless source
 round-tripping, without giving up speed, performance, or your favorite
 programming language.
 
-oconf is a configuration language, implemented as a grammar in hbnf. It
+obconf is a configuration language, implemented as a grammar in hbnf. It
 describes the declarative, block-structured form OpenBSD daemons have shared
 since `pf.conf` (2001) and `bgpd` (2002): keyword arguments, `{ }` blocks,
 double-quoted strings, `#` comments, no shell interpolation and no evaluation.
-Parsing with oconf preserves comments and puts them back in the right places
+Parsing with obconf preserves comments and puts them back in the right places
 when the source is re-emitted.
 
 The name is the initials of the four developers it is named for: Daniel
@@ -35,14 +35,14 @@ The name is the initials of the four developers it is named for: Daniel
 **N**orby (ospfd, 2004), and Reyk **F**loeter (hoststated, 2007), whose
 hand-written `parse.y` was cloned verbatim from daemon to daemon. The last
 three initials spell **BNF** (Backus–Naur Form), so the name also reads as
-"Hartmeier's BNF". To someone who already knows the genre, it is **oconf** —
+"Hartmeier's BNF". To someone who already knows the genre, it is **obconf** —
 OpenBSD configuration style.
 
 ## Two products
 
 This directory holds two things:
 
-1. **The crate** (the rest of this README): read an **oconf** file into a
+1. **The crate** (the rest of this README): read an **obconf** file into a
    generic tree and walk it.
 2. **The parser generator**, `hbnf`: read a schema in hbnf's ABNF-like
    notation and generate a parser and its typed tree in C, Rust, Zig or Ada.
@@ -64,17 +64,17 @@ This directory holds two things:
 - **hbnf**: the parser generator and compiler compiler. Reads a grammar, emits
   a parser in C, Rust, Zig or Ada. Also this crate, the Alire name, and the
   project file (`hbnf.gpr`).
-- **oconf**: a configuration language, implemented as a grammar in hbnf, for
+- **obconf**: a configuration language, implemented as a grammar in hbnf, for
   OpenBSD config files — keyword arguments, `{ }` blocks, `#` comments.
 - **HBNF_Config**: the Ada package (`HBNF_Config.Parse`, `HBNF_Config.Tree`) for parsing and
-  walking an oconf configuration file.
+  walking an obconf configuration file.
 - **libhbnf**: reserved for a C reference implementation (`libhbnf.so`,
   `-lhbnf`, `hbnf.pc`); not spent on this Ada crate.
 
 ## Credits
 
 Four initials cannot hold the whole lineage: HBNF is *named for* Hartmeier,
-Brauer, Norby and Floeter, not credited to them alone. The oconf grammar
+Brauer, Norby and Floeter, not credited to them alone. The obconf grammar
 descends from the hand-written `parse.y` config parsers of the OpenBSD
 daemons, each of which carries forward a copyright block naming everyone who
 has touched it. Everyone, in the order they first appear:
