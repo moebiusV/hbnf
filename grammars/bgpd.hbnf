@@ -587,19 +587,8 @@ community   = {
 ; colonword — 1*( alnum / "." / "-" / "_" / "*" ) ":" 1*( alnum / "." / "-" /
 ; "_" / "*" )  — an RD or ext-community value that is not a plain as:data
 ; community, e.g. "1.2.3.4:10"
-colonword   = {
-    size_t i = pos;
-    int colon = 0;
-    while (i < len) {
-        char c = s[i];
-        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')
-            || (c >= 'A' && c <= 'Z') || c == '.' || c == '-'
-            || c == '_' || c == '*') { i++; }
-        else if (c == ':') { colon = 1; i++; }
-        else break;
-    }
-    return (colon && i > pos) ? i - pos : 0;
-}
+colonwordchar = ALPHA | DIGIT | "." | "-" | "_" | "*"
+colonword     = 1*colonwordchar ":" 1*colonwordchar
 
 ; ipv4 — 1*3digit "." 1*3digit "." 1*3digit "." 1*3digit, each octet 0..255
 ipv4        = {
@@ -618,38 +607,19 @@ ipv4        = {
 }
 
 ; asdot — 1*digit "." 1*digit (a 4-byte AS number, e.g. "1.10")
-asdot       = {
-    size_t i = pos, n = 0;
-    while (i < len && s[i] >= '0' && s[i] <= '9') { n++; i++; }
-    if (n == 0 || i >= len || s[i] != '.') return 0;
-    i++; n = 0;
-    while (i < len && s[i] >= '0' && s[i] <= '9') { n++; i++; }
-    if (n == 0) return 0;
-    return i - pos;
-}
+asdot       = 1*DIGIT "." 1*DIGIT
 
 ; range — 1*digit ( "-" / "><" ) 1*digit (an inclusive/exclusive numeric range)
-range       = {
-    size_t i = pos, n = 0;
-    while (i < len && s[i] >= '0' && s[i] <= '9') { n++; i++; }
-    if (n == 0) return 0;
-    if (i < len && s[i] == '-') i++;
-    else if (i + 1 < len && s[i] == '>' && s[i + 1] == '<') i += 2;
-    else return 0;
-    n = 0;
-    while (i < len && s[i] >= '0' && s[i] <= '9') { n++; i++; }
-    if (n == 0) return 0;
-    return i - pos;
-}
+range       = 1*DIGIT "-" 1*DIGIT | 1*DIGIT "><" 1*DIGIT
 
 ; xrange — ">" "<" (exclusive range operator)
-xrange      = { return (pos + 1 < len && s[pos] == '>' && s[pos + 1] == '<') ? 2 : 0; }
+xrange      = "><"
 
 ; ne — "!" "=" (not equal)
-ne          = { return (pos + 1 < len && s[pos] == '!' && s[pos + 1] == '=') ? 2 : 0; }
+ne          = "!="
 
 ; le — "<" "=" (less than or equal)
-le          = { return (pos + 1 < len && s[pos] == '<' && s[pos + 1] == '=') ? 2 : 0; }
+le          = "<="
 
 ; ge — ">" "=" (greater than or equal)
-ge          = { return (pos + 1 < len && s[pos] == '>' && s[pos + 1] == '=') ? 2 : 0; }
+ge          = ">="

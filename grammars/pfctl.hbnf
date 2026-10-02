@@ -672,13 +672,13 @@ ifmod       = {
 }
 
 ; ne — "!" "=" (not equal)
-ne          = { return (pos + 1 < len && s[pos] == '!' && s[pos + 1] == '=') ? 2 : 0; }
+ne          = "!="
 
 ; le — "<" "=" (less than or equal)
-le          = { return (pos + 1 < len && s[pos] == '<' && s[pos + 1] == '=') ? 2 : 0; }
+le          = "<="
 
 ; ge — ">" "=" (greater than or equal)
-ge          = { return (pos + 1 < len && s[pos] == '>' && s[pos + 1] == '=') ? 2 : 0; }
+ge          = ">="
 
 ; xrange — ">" "<" (the inclusive port/uid/gid range operator)
-xrange      = { return (pos + 1 < len && s[pos] == '>' && s[pos + 1] == '<') ? 2 : 0; }
+xrange      = "><"

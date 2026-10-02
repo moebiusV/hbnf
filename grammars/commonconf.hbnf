@@ -69,9 +69,7 @@ stringlist = 1*string
 yesno      = "yes" | "no"
 
 ; "*" — parse.y's bareword start char; `listen on *` binds all
-wildcard   = {
-    return (s[pos] == '*') ? 1 : 0;
-}
+wildcard   = "*"
 
 ; ipv6 — hex groups separated by ":", with "::" and an IPv4-mapped tail
 ; (".d.d.d.d") allowed (syntax only; parse.y resolves the address later)

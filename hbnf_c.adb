@@ -554,6 +554,16 @@ package body HBNF_C is
             if R.Jet_Code /= Null_Unbounded_String then
                return "const char *";
             end if;
+            if Is_Char_Rule (Rules, N) then
+               return "const char *";
+            end if;
+            if Natural (P.Length) = 1
+              and then P (1).Kind = Literal
+              and then P (1).Min = 1
+              and then P (1).Max = 1
+            then
+               return "const char *";
+            end if;
             if Natural (P.Length) = 1
               and then P (1).Kind = Name
               and then P (1).Min = 1
@@ -916,6 +926,16 @@ package body HBNF_C is
                P : constant Element_Vectors.Vector := R.Pattern;
             begin
                if R.Jet_Code /= Null_Unbounded_String then
+                  return "const char *";
+               end if;
+               if Is_Char_Rule (Rules, N) then
+                  return "const char *";
+               end if;
+               if Natural (P.Length) = 1
+                 and then P (1).Kind = Literal
+                 and then P (1).Min = 1
+                 and then P (1).Max = 1
+               then
                   return "const char *";
                end if;
                if Natural (P.Length) = 1
@@ -2853,6 +2873,16 @@ package body HBNF_C is
                if R.Jet_Code /= Null_Unbounded_String then
                   return "const char *";
                end if;
+               if Is_Char_Rule (Rules, N) then
+                  return "const char *";
+               end if;
+               if Natural (P.Length) = 1
+                 and then P (1).Kind = Literal
+                 and then P (1).Min = 1
+                 and then P (1).Max = 1
+               then
+                  return "const char *";
+               end if;
                if Natural (P.Length) = 1
                  and then P (1).Kind = Name
                  and then P (1).Min = 1
@@ -3741,6 +3771,28 @@ package body HBNF_C is
             Append (Buf, LF);
             Append (Buf, "    return false;");
             Append (Buf, LF);
+         elsif Natural (P.Length) = 1 and then P (1).Kind = Literal then
+            --  A scalar that is a single literal (`ne = "!="`): match it and
+            --  yield its text, as a char rule would.  (Not a char rule itself
+            --  — no character class anchors it — so it is read here.)
+            declare
+               L  : constant String := To_String (P (1).Lit);
+               Fn : constant String :=
+                 (if P (1).No_Case then "expect_word_nocase"
+                  elsif Is_Keyword_Lit (L) then "expect_word"
+                  else "expect_lit");
+            begin
+               Append (Buf, "    size_t start = p->pos;");
+               Append (Buf, LF);
+               Append (Buf, "    if (!" & Fn & "(p, """ & C_Escape (L)
+                 & """, " & Img (L'Length) & ")) return false;");
+               Append (Buf, LF);
+               Append (Buf, "    *out = hbnf_str_append(p->text + start, "
+                 & Img (L'Length) & ");");
+               Append (Buf, LF);
+               Append (Buf, "    return true;");
+               Append (Buf, LF);
+            end;
          elsif Has_Alt (P) then
             --  A struct alternation: try each branch with backtracking.
             declare
