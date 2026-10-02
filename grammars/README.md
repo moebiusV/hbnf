@@ -156,6 +156,14 @@ classes, and `core.hbnf` adds `CRLF` to them: RFC 5234 Appendix B.1 in one
 include.  Any script that globs `grammars/*.hbnf` must skip the four of
 them (the nine daemons above are the grammars).
 
+Planned: consolidate the daemon layout into `obconf.hbnf` — the shared core,
+today `commonconf.hbnf`, widened to hold the shared jets (the operator
+literals `ne`/`le`/`ge`/`xrange`, plus `octet` and `ipv4`) — plus one
+`obconf_<daemon>.hbnf` per daemon, each `include "obconf.hbnf"`.  Rules two
+or more daemons share move into the common file; the per-daemon file keeps
+only what is daemon-specific.  (The standalone `obconf.hbnf` round-trip
+grammar needs a new name or a merge with the common file first.)
+
 ## Bindings (`bind/`)
 
 A grammar here is only the language: it compiles on its own, in every

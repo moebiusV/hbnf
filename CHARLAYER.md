@@ -109,7 +109,14 @@ Scope (user directive, 2026-09-26):
 2. **Character literals** — `'a'` is a code point (C escapes), ranges with `-`.
 3. **Named chars / classes as grammar, not code** — `ascii.hbnf` defines them
    as ordinary rules; the emitters stay generic.
-4. **`where`** — `u16 = int where (v <= 65535)`; deferred (I2).
+4. **`where`** — `u16 = int where (v <= 65535)`; deferred (I2).  The predicate
+   is over the matched *value* `v`, not the text, so `where` sits on the typed
+   scalar layer (`u8`..`u64`) above the bits.  It fills the *value-constraint*
+   half of a jet — the reason `ipv4`'s octet (0..255) is hand-written — but
+   never the *lexical-shape* half (`ipv6`'s "hex ∩ colon", `community`'s
+   lookahead), which has no char-rule spelling and stays a jet.  The predicate
+   language must stay a closed, schema-checkable subset (comparisons, ranges,
+   `&`/`|`; no calls or side effects) so it emits to all four backends.
 5. **UTF-8 / UTF-16** — code-point primitives; deferred (I2).  Encoding is a
    *stream-level* property (a stream is UTF-8 **or** UTF-16, one or the other),
    not a per-terminal one, so `%u` stays "code point, encoding-agnostic" and a
