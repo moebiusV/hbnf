@@ -1,3 +1,13 @@
+static char *hbnf_strndup(const char *s, size_t n) {
+    char *d = (char *)malloc(n + 1);
+
+    if (!d)
+        hbnf_oom();
+    memcpy(d, s, n);
+    d[n] = '\0';
+    return d;
+}
+
 /* ------------------------------------------------------------------ */
 /* Macros (the grammar's `macros` directive), as parse.y has them.  A   */
 /* statement the macros rule matches whole defines one: its first token */

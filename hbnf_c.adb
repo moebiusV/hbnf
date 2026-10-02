@@ -1276,13 +1276,17 @@ package body HBNF_C is
          return String is
          Items : U;
          Names : constant String_Vectors.Vector := Enum_Names (Tags);
+         --  Hoisted out of the Bind aggregate below: GNAT 13.3.0 raises
+         --  Program_Error (sem_type.adb:811) on a quantified expression
+         --  inside an array aggregate of function calls.
+         Has_Base : constant Boolean :=
+           (for some N of Names => To_String (N) = "BASE");
       begin
          if Base then
             Append (Items, Templates.Render (Templates.Get ("c_enum_base"),
               (Templates.Bind ("ident", C_Ident (CN)),
                Templates.Bind ("suffix",
-                 (if (for some N of Names => To_String (N) = "BASE")
-                  then "_0" else "")))));
+                 (if Has_Base then "_0" else "")))));
             Append (Items, LF);
          end if;
          for I in 1 .. Natural (Tags.Length) loop
@@ -3991,9 +3995,11 @@ package body HBNF_C is
             Line ("static int hbnf_bind_reported(void) { return 0; }");
          end if;
          Line ("");
-         Line ("/* The statement driver's copy-out helper, defined below. */");
-         Line ("static char *hbnf_strndup(const char *s, size_t n);");
-         Line ("");
+         if HBNF_Grammar.Macros_Rule /= "" then
+            Line ("/* The macro driver's copy-out helper, defined below. */");
+            Line ("static char *hbnf_strndup(const char *s, size_t n);");
+            Line ("");
+         end if;
          if HBNF_Grammar.Includes_Rule /= "" then
             Line ("/* `includes " & HBNF_Grammar.Includes_Rule
                   & "`: this statement includes the file its string names. */");
@@ -4131,11 +4137,12 @@ package body HBNF_C is
             Append (Res, Ind & "          if (ok && o > br) br = o; }");
             Append (Res, LF);
          end Emit_Branch;
+         Needs_Cnt : constant Boolean := A.Max /= 0 or else A.Min > 0;
       begin
          if Is_Ascii_Class (A.Sub) then
             --  A flat ASCII class: match it as raw bytes in one tight loop,
             --  no per-code-point decode.
-            Append (Res, Ind & "{ size_t cnt = 0;");
+            Append (Res, Ind & "{" & (if Needs_Cnt then " size_t cnt = 0;" else ""));
             Append (Res, LF);
             if A.Max = 0 then
                Append (Res, Ind & "    for (;;) {");
@@ -4150,7 +4157,7 @@ package body HBNF_C is
             Append (Res, Ind & "          if (!(" & Class_Cond (A.Sub)
               & ")) break; }");
             Append (Res, LF);
-            Append (Res, Ind & "        off++; cnt++;");
+            Append (Res, Ind & "        off++;" & (if Needs_Cnt then " cnt++;" else ""));
             Append (Res, LF);
             Append (Res, Ind & "    }");
             Append (Res, LF);
@@ -4162,7 +4169,7 @@ package body HBNF_C is
             Append (Res, Ind & "}");
             Append (Res, LF);
          else
-            Append (Res, Ind & "{ size_t cnt = 0;");
+            Append (Res, Ind & "{" & (if Needs_Cnt then " size_t cnt = 0;" else ""));
             Append (Res, LF);
             if A.Max = 0 then
                Append (Res, Ind & "    for (;;) {");
@@ -4177,7 +4184,7 @@ package body HBNF_C is
             end loop;
             Append (Res, Ind & "        if (br == 0) break;");
             Append (Res, LF);
-            Append (Res, Ind & "        off += br; cnt++;");
+            Append (Res, Ind & "        off += br;" & (if Needs_Cnt then " cnt++;" else ""));
             Append (Res, LF);
             Append (Res, Ind & "    }");
             Append (Res, LF);

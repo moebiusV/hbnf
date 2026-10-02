@@ -21,7 +21,7 @@ for pair in pfctl:sbin/pfctl bgpd:usr.sbin/bgpd relayd:usr.sbin/relayd \
 	awk '/^lookup\(char \*s\)/{f=1} f&&/^}/{f=0} f' "$y" \
 	    | grep -oE '\{[[:space:]]*"[^"]+",[[:space:]]*[A-Z0-9_]+[[:space:]]*\}' \
 	    | sed -E 's/^\{[[:space:]]*"([^"]+)".*/\1/' | sort > "$W/y"
-	awk '/^keywords[[:space:]]*\{/{f=1;next} f&&/^\}/{f=0} f' "$repo/grammars/$g.hbnf" \
+	awk '/^keywords[[:space:]]*\{/{f=1;next} f&&/^\}/{f=0} f' "$repo/grammars/obconf_$g.hbnf" \
 	    | sed 's/;.*//' | tr -s ' \t' '\n\n' | grep -v '^$' | sort > "$W/h"
 	if cmp -s "$W/y" "$W/h"; then
 		echo "$g: OK ($(wc -l < "$W/y" | tr -d ' ') keywords)"

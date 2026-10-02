@@ -22,16 +22,6 @@ static void hbnf_trail(char *msg, size_t msglen, size_t line, size_t col);
 static void hbnf_define(const char *s, size_t len, size_t line);
 static void hbnf_macros_done(void);
 
-static char *hbnf_strndup(const char *s, size_t n) {
-    char *d = (char *)malloc(n + 1);
-
-    if (!d)
-        hbnf_oom();
-    memcpy(d, s, n);
-    d[n] = '\0';
-    return d;
-}
-
 typedef struct {
     @ROOT_TYPE@ *out;          /* the caller's list; NULL: keep nothing */
     char *err;                 /* the first error, for the caller */

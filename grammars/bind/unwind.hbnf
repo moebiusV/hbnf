@@ -82,9 +82,9 @@ clear_config(struct uw_conf *xconf)
 static int pref_started, pref_failed, fwd_failed;
 
 /* In the epilogue: they read the generated tree types. */
-struct prefopt;
-static enum uw_resolver_type uw_type(const struct prefopt *);
-static void uw_pref(const struct prefopt *);
+struct prefopt_s;
+static enum uw_resolver_type uw_type(const struct prefopt_s *);
+static void uw_pref(const struct prefopt_s *);
 }
 
 include "../obconf_unwind.hbnf"
@@ -222,7 +222,7 @@ static void conf_init(void) {
 
 /* A preference or force resolver type: parse.y's prefopt. */
 static enum uw_resolver_type
-uw_type(const struct prefopt *p)
+uw_type(const struct prefopt_s *p)
 {
 	if (p->dot != NULL)
 		return (UW_RES_DOT);
@@ -248,7 +248,7 @@ uw_type(const struct prefopt *p)
 /* parse.y's prefoptsl: one preference, after the PREFERENCE mid-rule
    action has emptied the list. */
 static void
-uw_pref(const struct prefopt *p)
+uw_pref(const struct prefopt_s *p)
 {
 	enum uw_resolver_type t = uw_type(p);
 	int i;
