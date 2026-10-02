@@ -1,4 +1,6 @@
-# A Short History of the Parser Generator
+# HBNF: Return of the Metacompiler
+
+*A short history of the parser generator.*
 
 © 2026 David Walther · 1 October 2026
 
@@ -44,6 +46,8 @@ formalism. Donald Knuth insisted it be called Backus–Naur Form and not Backus
 Normal Form, because it is not a normal form. The name stuck, and the notation
 became the default way to write a language down.
 
+*Sources:* Chomsky, *Syntactic Structures* (1957); Post, "Formal reductions of the general combinatorial decision problem" (1943); Backus, "The syntax and semantics of the proposed international algebraic language" (1959); Naur (ed.), "Revised Report on the Algorithmic Language ALGOL 60" (1963); [Knuth, "On the translation of languages from left to right" (1965)](https://doi.org/10.1016/S0019-9958(65)90426-2).
+
 ## The first compiler compilers
 
 BNF was meant to be read, and it turned out to be nearly executable. Within a
@@ -69,6 +73,8 @@ None of them became the way compilers were written. Each was a demonstration
 tied to one machine, with a notation of its own and no settled algorithm
 underneath: the grammar drove the parser, but how was still open. They proved
 the idea. What was missing was a reliable way to do it.
+
+*Sources:* [Irons, "A Syntax-Directed Compiler for ALGOL 60" (1961)](https://doi.org/10.1145/366062.366083) · [Brooker, MacCallum, Morris & Rohl, "The Compiler Compiler" (1963)](https://curation.cs.manchester.ac.uk/atlas/docs/ccPaperDL.pdf) · [Schorre, "META II: A Syntax-Oriented Compiler Writing Language" (1964)](https://en.wikipedia.org/wiki/Meta-II) · McClure, TMG (1965).
 
 ## The machine: Yacc
 
@@ -102,6 +108,8 @@ the symbol table, because a typedef name and an identifier are the same token
 until they are not. The hack worked. It was the cost of the machine, and it
 stayed hidden in the grammar file for thirty years.
 
+*Sources:* [Johnson, "Yacc: Yet Another Compiler-Compiler" (1975), Bell Labs CSTR 32](https://www.cs.utexas.edu/~novak/yaccpaper.htm) · [Knuth, "On the translation of languages from left to right" (1965)](https://doi.org/10.1016/S0019-9958(65)90426-2) · [Aho & Johnson, "LR Parsing" (1974)](https://doi.org/10.1145/356616.356620).
+
 ## The protocol metalanguage: ABNF
 
 Meanwhile the people writing network standards needed something else. RFC 822
@@ -128,6 +136,8 @@ rules (`ALPHA`, `DIGIT`, `CRLF`) ship with the spec. Ambiguity is legal. There
 is no generated automaton. ABNF exists so two protocol authors cannot silently
 disagree about the bytes on the wire.
 
+*Sources:* [RFC 822 (Crocker, 1982)](https://www.rfc-editor.org/rfc/rfc822) · [RFC 2234 (1997)](https://www.rfc-editor.org/rfc/rfc2234) · [RFC 5234 (2008)](https://www.rfc-editor.org/rfc/rfc5234).
+
 ## The return to top-down: ANTLR
 
 Yacc won because it was easier than hand-writing a parser. It lost for the same
@@ -141,6 +151,8 @@ grammar. Where finite lookahead could not decide, it added predicates and
 backtracking — "try this, and if it fails try that" — instead of forcing the
 grammar to be LALR(1). Left recursion still had to be rewritten, and backtracking
 could go exponential. Those were the price of a parser a person could debug.
+
+*Sources:* [Parr & Quong, "ANTLR: A Predicated-LL(k) Parser Generator" (1995)](https://doi.org/10.1002/spe.4380250705).
 
 ## The compilers: pcc, GCC, and C++
 
@@ -174,6 +186,8 @@ rewritten. It still lives today, still driven by a Yacc grammar, and it crawls
 while GCC and LLVM, which do not use Yacc or Bison, are the compilers the world
 develops. The machine was right for 1975. It is why the work is hard now.
 
+*Sources:* Johnson, pcc (1979); Stallman, GCC 1.0 (1987); Corbett, Berkeley Yacc (1985); Tiemann, g++ (1987).
+
 ## Ordered recognition: PEG
 
 Bryan Ford asked a different question. Context-free grammars were built to
@@ -190,6 +204,8 @@ every `(rule, position)` pair gives linear time. Ford was explicit that he was
 rehabilitating a 1970 recognition scheme, not inventing one. The differences
 that bite are left recursion and the greed of ordered choice.
 
+*Sources:* [Ford, "Parsing Expression Grammars: A Recognition-Based Syntactic Foundation" (2004)](https://bford.info/pub/lang/peg.pdf).
+
 ## The incremental tree: Tree-sitter
 
 The last turn was not about compilers at all. Max Brunsfeld built Tree-sitter
@@ -200,6 +216,8 @@ ambiguity can be represented, and writes ERROR and MISSING nodes into the tree
 rather than failing. The grammar is a JavaScript DSL that compiles to C. Atom
 is gone; Tree-sitter is now the usual answer whenever a tool needs a real
 syntax tree for a language it does not itself compile.
+
+*Sources:* [Brunsfeld, "Tree-sitter: A New Parsing System for Programming Tools" (2018)](https://www.thestrangeloop.com/2018/treesitter---a-new-parsing-system-for-programming-tools.html).
 
 The thread through all of it: Backus and Naur gave a generative notation,
 Johnson mechanized the LR subset of it, Crocker loosened the notation for
@@ -239,6 +257,16 @@ first-class tokens, not whitespace, so a config file comes back out with its
 comments in the right places, and a value written `0xFF` comes back as `0xFF`,
 not 255. A parse failure is a line, a column, and a caret under the token that
 was expected.
+
+The literal syntax is C's on purpose: a string is `"…"`, a character `'a'`, a
+code point `%x21` or `%d33`, an escape `\n`. The reader already knows these
+spellings, and a notation should astonish no one — every mark it invents is one
+more thing to learn before the grammar is readable. The choice is not cosmetic.
+At the root a token is a sequence of bits, and nothing else; `%x21` and `"!"`
+name the same byte, so a grammar can reach straight down to the bytes it
+describes instead of floating above them in a lexer's abstractions. Human
+readability and machine exactness meet there: spell the bits the way a person
+already spells them, and keep the design honest about what is underneath.
 
 **Where it could do better.** It has no incremental parse; an edit means parsing
 the file again. It has no error recovery; bad input fails instead of producing a
@@ -287,6 +315,8 @@ the more useful end.
 An intelligence that must read what people wrote and act on it needs exactly
 that bridge — a text a person can read, a machine can run, an intention carried
 whole. HBNF was not written for AI. That is what will make it useful to AI.
+
+*Sources:* the [hbnf repository](https://github.com/moebiusV/hbnf), and [RFC 5234](https://www.rfc-editor.org/rfc/rfc5234) for the ABNF it compiles.
 
 ## Appendix — Incremental Parsing without Giving Up the Grammar
 
