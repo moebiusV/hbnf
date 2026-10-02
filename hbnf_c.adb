@@ -3292,6 +3292,79 @@ package body HBNF_C is
             --  skip_ws is a pure function of the position, so this is the
             --  same language, one call instead of one per branch.
             Hoist : constant Boolean := Ws and then Has_Alt (Els);
+
+            --  The first byte of a leading keyword literal: the dispatch key
+            --  in the character model, reimplementing the token array's
+            --  keyword-id jump on the first byte instead of the interned id.
+            function First_Byte (K : U) return Natural is
+               S : constant String := To_String (K);
+            begin
+               return Character'Pos (S (S'First));
+            end First_Byte;
+
+            --  True when byte B leads branch Br and no other branch, so the
+            --  switch can jump straight to Br on B.  (Punctuation -- Other_Tok
+            --  -- and unknown leading elements fall through to the chain.)
+            function Byte_Unique_To (B : Natural; Br : Positive)
+               return Boolean is
+               Has : Boolean := False;
+            begin
+               --  The branch itself must lead with a keyword of first byte B
+               --  (so a byte no branch leads with never dispatches to it).
+               for I in Offs (Br) .. Offs (Br + 1) - 1 loop
+                  if Flat (I) /= Other_Tok
+                    and then First_Byte (Flat (I)) = B
+                  then
+                     Has := True;
+                  end if;
+               end loop;
+               if not Has then
+                  return False;
+               end if;
+               for X in 1 .. Natural (Offs.Length) - 1 loop
+                  if X /= Br then
+                     for I in Offs (X) .. Offs (X + 1) - 1 loop
+                        if Flat (I) /= Other_Tok
+                          and then First_Byte (Flat (I)) = B
+                        then
+                           return False;
+                        end if;
+                     end loop;
+                  end if;
+               end loop;
+               return True;
+            end Byte_Unique_To;
+
+            --  True when branch X leads with a keyword whose first byte no
+            --  other branch leads with, so the switch can jump straight to X.
+            function Has_Unique_Byte (X : Positive) return Boolean is
+            begin
+               for I in Offs (X) .. Offs (X + 1) - 1 loop
+                  if Flat (I) /= Other_Tok
+                    and then Byte_Unique_To (First_Byte (Flat (I)), X)
+                  then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end Has_Unique_Byte;
+
+            --  Some branch after the first has such a keyword, so a
+            --  first-byte switch pays for itself.
+            function Has_Byte_Dispatch return Boolean is
+            begin
+               if Natural (Offs.Length) < 3 then
+                  return False;
+               end if;
+               for X in 2 .. Natural (Offs.Length) - 1 loop
+                  if Has_Unique_Byte (X) then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end Has_Byte_Dispatch;
+
+            Disp : constant Boolean := Has_Byte_Dispatch;
          begin
             if Hoist then
                Append (Buf, Ind & "skip_ws(p);");
@@ -3299,6 +3372,35 @@ package body HBNF_C is
                Append (Buf, Ind & "save = p->pos;");
                Append (Buf, LF);
             end if;
+
+            if Disp then
+               --  Jump straight to a branch whose leading keyword starts with
+               --  a byte no other branch starts with.  A shared byte, a
+               --  punctuation-led branch, or the end of input falls through
+               --  to the linear chain, which is always correct.
+               Append (Buf, Ind & "if (p->pos < p->len) {");
+               Append (Buf, LF);
+               Append (Buf, Ind & "    switch ((unsigned char)p->text[p->pos]) {");
+               Append (Buf, LF);
+               for X in 2 .. Natural (Offs.Length) - 1 loop
+                  if Has_Unique_Byte (X) then
+                     for B in 0 .. 255 loop
+                        if Byte_Unique_To (B, X) then
+                           Append (Buf, Ind & "    case " & Img (B) & ":");
+                           Append (Buf, LF);
+                        end if;
+                     end loop;
+                     Append (Buf, Ind & "        goto " & Label
+                       & "alt_entry_" & Img (X) & ";");
+                     Append (Buf, LF);
+                  end if;
+               end loop;
+               Append (Buf, Ind & "    }");
+               Append (Buf, LF);
+               Append (Buf, Ind & "}");
+               Append (Buf, LF);
+            end if;
+
             for K in 1 .. N + 1 loop
                if K > N or else Els (K).Kind = Alt then
                   LBr := LBr + 1;
@@ -3307,6 +3409,12 @@ package body HBNF_C is
                        (Templates.Bind ("ind", Ind),
                         Templates.Bind ("reset", Reset))));
                      Append (Buf, LF);
+                     if Disp and then Has_Unique_Byte (LBr) then
+                        --  The dispatch target: after the reset, so a branch
+                        --  reached by the switch starts with a clean struct.
+                        Append (Buf, Label & "alt_entry_" & Img (LBr) & ":");
+                        Append (Buf, LF);
+                     end if;
                   end if;
                   Emit_Seq (Els, LSt, K - 1, Acc, Buf,
                             "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind,
@@ -3332,108 +3440,7 @@ package body HBNF_C is
          end Emit_Linear;
       begin
          Branch_Firsts (Els, Flat, Offs);
-         if False then  --  first-byte keyword dispatch: re-add after §6
-
-            --  Keyword dispatch: an O(1) jump table on the interned keyword
-            --  id.  A keyword unique to one branch jumps straight to that
-            --  branch's body in the linear chain below (branch 1 is entered
-            --  via alt_linear); a keyword shared by two branches falls to the
-            --  chain to try them in order; anything else (a non-keyword, or a
-            --  keyword no branch can start with) fails fast on the last
-            --  branch's label, instead of probing every branch.
-            Append (Buf, Ind & "switch (p->toks[p->pos].kwid) {");
-            Append (Buf, LF);
-            for X in 2 .. Natural (Offs.Length) - 1 loop
-               declare
-                  Emitted : Boolean := False;
-               begin
-                  for I in Offs (X) .. Offs (X + 1) - 1 loop
-                     if Unique_To (Flat (I), Flat, Offs, X) then
-                        Append (Buf, Ind & "case "
-                          & Kw_Name (To_String (Flat (I))) & ":");
-                        Append (Buf, LF);
-                        Emitted := True;
-                     end if;
-                  end loop;
-                  if Emitted then
-                     Append (Buf, Ind & "    goto " & Label & "alt_fail_"
-                       & Img (X - 1) & ";");
-                     Append (Buf, LF);
-                  end if;
-               end;
-            end loop;
-            for I in 1 .. Natural (Flat.Length) loop
-               declare
-                  K    : constant U := Flat (I);
-                  Seen : Boolean := False;
-                  Br   : Natural;
-               begin
-                  for J in 1 .. I - 1 loop
-                     if Flat (J) = K then
-                        Seen := True;
-                     end if;
-                  end loop;
-                  if not Seen and then K /= Other_Tok then
-                     --  A keyword the switch does not jump straight on (it
-                     --  leads branch 1, or several branches) enters the chain
-                     --  to honour source order.
-                     Br := Unique_Branch (K, Flat, Offs);
-                     if Br <= 1 then
-                        Append (Buf, Ind & "case " & Kw_Name (To_String (K))
-                          & ": goto " & Label & "alt_linear;");
-                        Append (Buf, LF);
-                     end if;
-                  end if;
-               end;
-            end loop;
-            --  The end of input (with `statements`, of every statement): no
-            --  branch can start there (none is nullable, or there would be
-            --  no dispatch), so fail at once, recording what probing the
-            --  chain would have -- the first branch's first keyword.
-            declare
-               Last : constant String := Img (Natural (Offs.Length) - 1);
-               At_End : constant String :=
-                 Templates.Render (Templates.Get ("c_alt_atend"),
-                   (Templates.Bind ("ind", Ind & "    "),
-                    Templates.Bind ("lit", C_Escape (To_String (Flat (1)))),
-                    Templates.Bind ("label", Label & "alt_fail_" & Last)));
-            begin
-               if Flat.Contains (Other_Tok) then
-                  --  Some branch starts with a non-keyword token: try the
-                  --  chain for one.  A keyword no branch starts with cannot
-                  --  match those branches, so it still fails fast below.
-                  if Flat (1) /= Other_Tok then
-                     Append (Buf, Ind & "case KWID_NONE:");
-                     Append (Buf, LF);
-                     Append (Buf, At_End);
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "    goto " & Label & "alt_linear;");
-                  else
-                     Append (Buf, Ind & "case KWID_NONE: goto " & Label
-                       & "alt_linear;");
-                  end if;
-                  Append (Buf, LF);
-               else
-                  Append (Buf, Ind & "case KWID_NONE:");
-                  Append (Buf, LF);
-                  Append (Buf, At_End);
-                  Append (Buf, LF);
-                  Append (Buf, Ind & "    goto " & Label & "alt_fail_" & Last
-                    & ";");
-                  Append (Buf, LF);
-               end if;
-            end;
-            Append (Buf, Ind & "default: goto " & Label & "alt_fail_"
-              & Img (Natural (Offs.Length) - 1) & ";");
-            Append (Buf, LF);
-            Append (Buf, Ind & "}");
-            Append (Buf, LF);
-            Append (Buf, Label & "alt_linear:");
-            Append (Buf, LF);
-            Emit_Linear;
-         else
-            Emit_Linear;
-         end if;
+         Emit_Linear;
       end Emit_Alternation;
 
       --  Deferred-number plumbing: a numeric field (`int` / `uN` / `iN`) is
