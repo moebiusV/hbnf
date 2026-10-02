@@ -27,16 +27,9 @@
          elsif C = '\' and then I < Text'Last and then Text (I + 1) = ASCII.LF then
             I := I + 2; Line := Line + 1; Col := 1;
          elsif C = '#' then
-            declare
-               SC  : constant Natural := Col;
-               Buf : Unbounded_String;
-            begin
-               while I <= Text'Last and then Text (I) /= ASCII.LF loop
-                  Append (Buf, Text (I));
-                  I := I + 1; Col := Col + 1;
-               end loop;
-               Toks.Append (Token'(Comment, Buf, Line, SC));
-            end;
+            while I <= Text'Last and then Text (I) /= ASCII.LF loop
+               I := I + 1; Col := Col + 1;
+            end loop;
          elsif C = '"' then
             declare
                SC  : constant Natural := Col;
