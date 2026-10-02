@@ -4,7 +4,7 @@
 
 © 2026 David Walther · 1 October 2026
 
-Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Edgar Irons (1961) · R. A. Brooker (1963) · D. Morris (1963) · Donald Knuth (1964) · Dewey Val Schorre (1964) · Robert McClure (1965) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Leonard Tower (1987) · Paul Rubin (1987) · John Gilmore (1987) · Keith Bostic (1987) · Mike Karels (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
+Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Edgar Irons (1961) · R. A. Brooker (1963) · D. Morris (1963) · Christopher Strachey (1963) · Donald Knuth (1964) · Dewey Val Schorre (1964) · Robert McClure (1965) · Martin Richards (1966) · Douglas McIlroy (1968) · Ken Thompson (1969) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Leonard Tower (1987) · Paul Rubin (1987) · John Gilmore (1987) · Keith Bostic (1987) · Mike Karels (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
 
 A parser generator reads a grammar — a precise description of what a language
 may say — and writes the program that recognizes exactly that. It matters
@@ -156,6 +156,16 @@ could go exponential. Those were the price of a parser a person could debug.
 
 ## The compilers: pcc, GCC, and C++
 
+The language those compilers compiled had the same parent. C reaches ALGOL 60
+through a chain of simplifications — Christopher Strachey's CPL, Martin
+Richards's BCPL, Ken Thompson's B, and finally Ritchie's C — the curly-brace
+line that kept ALGOL's block structure and dropped everything else. What C took
+from ALGOL 68, Ritchie said, was the scheme of type composition and its names:
+`int`, `char`, `long`, `short`, `union`, `struct` and `void` are all ALGOL 68's,
+the cast is named after ALGOL 68's, and the compound-assignment operators came
+the same way, through Douglas McIlroy's TMG. So the C grammar Stallman later
+fed to Bison was, in its bones, an ALGOL grammar.
+
 Johnson's own compiler carried the machine into production. pcc shipped with
 Seventh Edition Unix in 1979, moved to the VAX through 32V, and became the
 compiler that let C leave the PDP-11. For a decade nearly every serious C
@@ -186,7 +196,7 @@ rewritten. It still lives today, still driven by a Yacc grammar, and it crawls
 while GCC and LLVM, which do not use Yacc or Bison, are the compilers the world
 develops. The machine was right for 1975. It is why the work is hard now.
 
-*Sources:* Johnson, pcc (1979); Stallman, GCC 1.0 (1987); Corbett, Berkeley Yacc (1985); Tiemann, g++ (1987).
+*Sources:* [Ritchie, "The Development of the C Language" (1993)](https://www.bell-labs.com/usr/dmr/www/chist.html); Johnson, pcc (1979); Stallman, GCC 1.0 (1987); Corbett, Berkeley Yacc (1985); Tiemann, g++ (1987).
 
 ## Ordered recognition: PEG
 
