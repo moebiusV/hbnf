@@ -4,6 +4,12 @@
 
 Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · Donald Knuth (1964) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Leonard Tower (1987) · Paul Rubin (1987) · John Gilmore (1987) · Keith Bostic (1987) · Mike Karels (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).
 
+A parser generator reads a grammar — a precise description of what a language
+may say — and writes the program that recognizes exactly that. It matters
+because every compiler, every config-file reader, every network protocol has to
+parse text, and a parser written by hand is slow, error-prone, and thrown away
+whenever the language grows.
+
 Before any of this was engineering, it was linguistics. Noam Chomsky asked how
 a person produces and understands sentences never spoken before, and answered:
 with a grammar — a finite set of rules that generates the infinite set of legal
