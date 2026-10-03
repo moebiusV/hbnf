@@ -455,7 +455,7 @@ running order:
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
 > any of them and can land in any gap.
 
-Five things decide that order, and each one is a dependency rather than a
+Six things decide that order, and each one is a dependency rather than a
 preference:
 
 - **3b came first because it makes every later step cheaper.**  *Done.*
@@ -468,10 +468,18 @@ preference:
   same one-line type decision had to be made in two places before it was
   folded into one `Field_Decl`, and the Rust and Zig cycle checks are a
   third and fourth copy of a detector that should be one.
-- **12 is second because the defects are cheap and they are load-bearing.**
-  One of them is a crash, one is the warning channel 7a and step 8 both
-  need, and one is a build hazard that has already cost an afternoon of
-  false results.
+- **12 is second because its items are cheap and they are load-bearing.**
+  One is a crash, one is the warning channel 7a and step 8 both need, and
+  one is a build hazard that has already cost an afternoon of false
+  results.
+- **Notation decisions go before 13a, which is why they are in 12 and not
+  near the end.**  13a's pretty printer projects every construct onto four
+  historical notations, so anything added to the notation after it is
+  written is added in five places.  A rule referenced twice (`expr = term
+  '+' term`), a `%action{ }` between elements, an explicit empty
+  alternative and an optional terminator are all notation, all small, and
+  all cheaper now than later.  The mid-sequence block is also what 13b
+  would need.
 - **A step waits for what it reads against.**  `where` moved from 5 to 6
   because it reads the IR 6 builds; the wire layer is 7b, behind 6, for the
   same reason; step 8's recovery needs 6's spans and the warning channel
@@ -1232,9 +1240,20 @@ should claim that before 10.
    lexer as grammar, done).  It is 11 because it is not on the path to any
    gate above, not because it comes last.
 
-12. **Known defects.**  Second on the critical path, after 3b: all three
-   are cheap, and two of them are in the way of later steps.  Found
-   2026-10-02 while testing 7a; none was caused by it.
+12. **Known defects and notation decisions.**  Second on the critical
+   path, after 3b.  Five items, in two groups, and both groups are in the
+   way of later steps:
+
+   - Three **defects** — a crash, a missing diagnostic channel, and a build
+     hazard.  Found 2026-10-02 while testing 7a; none was caused by it.
+   - Two **notation decisions** — how a rule referenced twice names its
+     fields, and where a `%action{ }` may sit (with the empty alternative
+     and the terminator riding along).  These are cheap to build and
+     expensive to defer: **13a freezes the notation**, and its pretty
+     printer has to project every construct onto ALGOL 60, Wirth, yacc and
+     ABNF.  A construct added after the printer is written is a construct
+     added to five places.  So they land here, well before their size
+     suggests.
 
    - **A group whose whole content is a repetition crashes the C backend.**
      `x = ( *"a" )` — and `x = (*"a")`, the same thing — raises
@@ -1326,7 +1345,12 @@ should claim that before 10.
    notation can describe the tool.
 
    13a. **A grammar for the notation, and a round-trip pretty printer.**
-   The last step, because it is a claim that the notation is finished.
+   The last step, because it is a claim that the notation is finished —
+   which is also the sense in which **this step freezes the notation**.  Its
+   printer projects every construct onto four historical notations, so a
+   construct added after it is written is a construct added in five places.
+   Step 12 therefore carries the outstanding notation decisions, small as
+   they are, and nothing should arrive here unsettled.
 
    **Not the file that already exists.**  `hbnf_schema.hbnf` is a grammar
    for *hbnf the configuration format* — `config = *( entry )`, blocks and
