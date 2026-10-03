@@ -450,16 +450,16 @@ The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
 
-> **Done:** 0, 1, 2, 3, 4a–4e, 7a (bar its warning), 9a.
-> **Critical path:** **3b** → **12** → **9b** → **9c** → **5** → **6**
+> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a (bar its warning), 9a.
+> **Critical path:** **12** → **9b** → **9c** → **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
 > any of them and can land in any gap.
 
 Five things decide that order, and each one is a dependency rather than a
 preference:
 
-- **3b is first because it makes every later step cheaper.**  The
-  switchover to mustache-ada moves the per-element loops out of the four
+- **3b came first because it makes every later step cheaper.**  *Done.*
+  The switchover to mustache-ada moved the per-element loops out of the four
   emitters and into the templates.  Every step after it that touches the
   type emitter or the parse emitter — 9b above all, which adds an
   indirection to a field in all four backends — then writes its change
@@ -527,8 +527,37 @@ should claim that before 10.
    every schema through every backend.  *Done* — 71 `.tmpl` files loaded
    from disk at startup, nothing baked in.
 
-   3b. **The Mustache renderer is written and nothing uses it — first on
-       the critical path.**  Measured
+   3b. **Done 2026-10-02/03: mustache-ada renders the templates and
+       `Templates` is gone.**  All four gates met — zero references to
+       `Templates`, zero `${` and `@PLACEHOLDER@` in `templates/`,
+       `templates.ads` and `templates.adb` deleted, 132 snapshot files
+       byte-identical — with e2e 98/0, byte-identity 18 + 24 cases, and the
+       corpus unchanged.  965 lines deleted against 485 added; 71 templates
+       down to 65.  Six item templates and seven per-element emitter loops
+       became sections.  Three findings worth keeping:
+
+       - **Every hole is `{{&name}}`, never `{{name}}`.**  mustache-ada is
+         spec-conformant, so the plain form HTML-escapes and a generated C
+         type holding `& < > "` comes back corrupted.  Checked with a probe
+         before a template was written; `hbnf_emit_check` now asserts both
+         halves.
+       - **Mustache has no `#each` and no join.**  A section over a list
+         iterates it, so it is `{{#items}} … {{/items}}`; Rust's
+         `#[default]` on the first variant and Ada's comma-separated enum
+         needed a per-row flag (`{{#first}}`, `{{#sep}}`).
+       - **An unfilled hole no longer raises.**  `Templates.Render` raised
+         `Template_Error`; Mustache renders a missing name as empty, per
+         spec.  The byte-identity gate is what catches it now, and it did,
+         repeatedly, during the work.  Whether mustache-ada should gain a
+         strict mode is a question for that library.
+
+       Left as refinement, not switchover: the C emitter's 25 flat call
+       sites go through a local `Fill (template, holes)` adapter rather than
+       an inline context block each, and its remaining item loops
+       (`c_enum_item`/`_last`, and the `c_struct` field path) are not yet
+       sections.
+
+       The finding this step started from, for the record.  Measured
        2026-10-02, in the tree: `Templates.Render_Template` implements the
        subset — `{{var}}`, `{{.}}`, `{{#each}}`, `{{#var}}`/`{{^var}}`
        sections, `{{> partial}}` — over the recursive Scalar/List/Map
