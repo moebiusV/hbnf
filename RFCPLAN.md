@@ -131,9 +131,9 @@ silently.
    built, and the semantics the three share are not finished: a block
    should be able to sit *between* elements rather than only at the end of
    a rule (step 12), which also gives one block per alternative instead of
-   one per rule, and a block should be able to name a template instead of
-   holding code.  Those are changes to the family, not to one member, which
-   is the test of whether a member belongs in it.
+   one per rule, and a block may name a template as shorthand for the code
+   that renders it.  Those are changes to the family, not to one member,
+   which is the test of whether a member belongs in it.
 9. **`<prose-val>`** reads as a rule nobody has written yet: generation
    stops with `file:line:col`, the source line with a caret under the
    `<…>`, and "not written yet:" and the text in the angle brackets.  The
@@ -1478,9 +1478,11 @@ should claim that before 10.
      which `Lift` already has the machinery for.
    - **Per-alternative**, which falls out of position-awareness: today one
      action serves a whole rule and discriminates on `n->kind`.
-   - **A block may name a template instead of holding code.**
-     `%emit{ c_struct }` renders that template against the node.  After 3b
-     this is what the four backends do; it just is not sayable in a schema.
+   - **A block may name a template, as shorthand for the code that renders
+     it.**  `%emit{ c_struct }` renders that template against the node;
+     after 3b this is what the four backends do, just not sayable in a
+     schema.  Whether the family is `%emit{ }` only or `%action{ }` too is
+     open — `%scan{ }` is not a candidate: a recognizer renders nothing.
    - Available to every backend, not C only, which `%action{}` is today.
 
    **What it must not break.**  The nine daemon parsers stay byte-identical
