@@ -98,9 +98,37 @@ one that has to produce the code.
 Then the metacompilers. Dewey Val Schorre's META II (1964) wrote a language as
 "syntax equations" in the shape of BNF and compiled each equation to the
 subroutine that recognized it; META II compiled itself, the first documented
-metacompiler. Robert McClure's TMG (1965) did the same, at Texas Instruments;
-McIlroy ported it to Unix, and Ken Thompson used it around 1970 to write B —
-the language C grew out of — in place of the FORTRAN compiler he had set out to
+metacompiler.
+
+Its notation is worth reading closely, because most of it is still in use.
+Schorre dropped Naur's angle brackets and `::=` for ordinary algebraic
+punctuation — a bare `=` between the name and its definition, `/` between
+alternatives, each equation closed by a terminator — and added the one
+operator BNF lacked. A top-down parser cannot take BNF's left-recursive
+`<list> ::= <item> | <list> <item>` without running off its own stack, so
+META II wrote repetition out as an operator instead: `$` for "zero or
+more", with `( )` to group what it repeated. Four built-in recognizers
+covered the token level — `.ID`, `.NUMBER`, `.STRING`, and `.EMPTY` for a
+production that matches nothing — and `.OUT('…')` emitted a line of target
+assembly from inside the equation, with `*` standing for whatever token had
+just matched. The whole of an expression translator is one line:
+
+    EXPR = TERM $( '+' TERM .OUT('ADD') / '-' TERM .OUT('SUB') );
+
+Read that and you are reading EBNF a decade early: the `=`, the explicit
+repetition operator in place of recursion, the parenthesised group. Wirth's
+EBNF kept the first two and spelled the repetition `{ }`; ABNF kept the `=`
+and the `/`, and wrote repetition as a prefix count. The inheritance is the
+*decision* rather than the character — that a grammar for a top-down parser
+says "repeat this" instead of naming itself again — and every notation since
+has made it, hbnf included. What did not survive is the part that made META
+II a compiler-compiler rather than a parser generator: output directives
+living inside the syntax, which is also the part this project has not yet
+adopted.
+
+Robert McClure's TMG (1965) did the same, at Texas Instruments; McIlroy
+ported it to Unix, and Ken Thompson used it around 1970 to write B — the
+language C grew out of — in place of the FORTRAN compiler he had set out to
 build.
 
 None of them became the way compilers were written. Each was a demonstration
@@ -108,7 +136,7 @@ tied to one machine, with a notation of its own and no settled algorithm
 underneath: the grammar drove the parser, but how was still open. They proved
 the idea. What was missing was a reliable way to do it.
 
-*Sources:* [McCarthy, "Recursive Functions of Symbolic Expressions and Their Computation by Machine" (1960)](https://doi.org/10.1145/367177.367199) · [Sitaker, "A metacircular Lisp interpreter in a low-level language" (kragen-hacks, September 2007)](http://lists.canonical.org/pipermail/kragen-hacks/2007-September/000464.html) · [Reynolds, "Definitional Interpreters Revisited", *Higher-Order and Symbolic Computation* 11, 355–361 (1998)](http://www.brics.dk/~hosc/local/HOSC-11-4-pp355-361.pdf) · [Irons, "A Syntax-Directed Compiler for ALGOL 60" (1961)](https://doi.org/10.1145/366062.366083) · [Brooker, MacCallum, Morris & Rohl, "The Compiler Compiler" (1963)](https://curation.cs.manchester.ac.uk/atlas/docs/ccPaperDL.pdf) · [Schorre, "META II: A Syntax-Oriented Compiler Writing Language" (1964)](https://en.wikipedia.org/wiki/Meta-II) · McClure, TMG (1965).
+*Sources:* [McCarthy, "Recursive Functions of Symbolic Expressions and Their Computation by Machine" (1960)](https://doi.org/10.1145/367177.367199) · [Sitaker, "A metacircular Lisp interpreter in a low-level language" (kragen-hacks, September 2007)](http://lists.canonical.org/pipermail/kragen-hacks/2007-September/000464.html) · [Reynolds, "Definitional Interpreters Revisited", *Higher-Order and Symbolic Computation* 11, 355–361 (1998)](http://www.brics.dk/~hosc/local/HOSC-11-4-pp355-361.pdf) · [Irons, "A Syntax-Directed Compiler for ALGOL 60" (1961)](https://doi.org/10.1145/366062.366083) · [Brooker, MacCallum, Morris & Rohl, "The Compiler Compiler" (1963)](https://curation.cs.manchester.ac.uk/atlas/docs/ccPaperDL.pdf) · [Schorre, "META II: A Syntax-Oriented Compiler Writing Language", *Proc. ACM SYMSAM* (1964)](https://dl.acm.org/doi/10.1145/800257.808896) ([scan](https://ibm-1401.info/Meta-II-schorre.pdf)) · McClure, TMG (1965).
 
 ## The machine: Yacc
 
@@ -472,8 +500,11 @@ whole field. Turing Award, 1974.
 **Dewey Val Schorre (1964).** Dewey Val Schorre, at UCLA. META II (1964), the
 first documented metacompiler: a language written as "syntax equations" in the
 shape of BNF, each equation compiled to the subroutine that recognized it.
-META II compiled itself; he went on to the CWIC compiler-writing project at
-System Development Corporation.
+He replaced `::=` with `=` and `|` with `/`, and introduced `$` for
+repetition because a top-down parser cannot survive left recursion — three
+decisions every later notation inherited in one form or another. META II
+compiled itself; he went on to the CWIC compiler-writing project at System
+Development Corporation.
 
 **Robert McClure (1965).** Robert M. McClure, at Texas Instruments. TMG
 (TransMoGrifier, 1965), a recursive-descent compiler-compiler; ported to Unix
