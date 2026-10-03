@@ -6,6 +6,7 @@ with Ada.Environment_Variables;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with Mustache;
 with Templates;
 with HBNF_Grammar;
 with HBNF_Compilable;
@@ -154,6 +155,7 @@ begin
          return;
       end if;
       Templates.Load (Dir);
+      Mustache.Load (Dir);
    end;
 
    declare

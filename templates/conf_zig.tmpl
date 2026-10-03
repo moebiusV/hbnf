@@ -21,7 +21,7 @@ fn defaultConfigError(line: usize, msg: []const u8) void {
     std.process.exit(1);
 }
 
-pub fn parse_config(alloc: std.mem.Allocator, path: []const u8) ParseError!@ROOT_TYPE@ {
+pub fn parse_config(alloc: std.mem.Allocator, path: []const u8) ParseError!{{&root_type}} {
     conf_file = path;
     var threaded = std.Io.Threaded.init(alloc, .{});
     const text = std.Io.Dir.cwd().readFileAlloc(

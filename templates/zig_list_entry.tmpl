@@ -1,3 +1,4 @@
-pub const ${name}Entry = struct {
-${items}};
-pub const ${name} = []${name}Entry;
+pub const {{&name}}Entry = struct {
+{{#items}}    {{&field}}: {{&type}},
+{{/items}}};
+pub const {{&name}} = []{{&name}}Entry;

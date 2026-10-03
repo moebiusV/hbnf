@@ -7,9 +7,20 @@ cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 HERE=$(pwd)
 
+# mustache-ada (moebiusV/mustache-ada, the ada-on-alpine aport) renders the
+# code templates.  gprinstall puts its sources here; MUSTACHE_INC overrides
+# for a different prefix or a source checkout.  gnatmake compiles the two
+# sources itself, so no library link is needed.
+MUSTACHE_INC="${MUSTACHE_INC:-/usr/include/mustache}"
+if [ ! -f "$MUSTACHE_INC/mustache.ads" ]; then
+	echo "e2e: no mustache.ads under $MUSTACHE_INC (set MUSTACHE_INC=)" >&2
+	exit 1
+fi
+A="-gnat2022 -I. -Itests -I$MUSTACHE_INC"
+
 echo "== building generators =="
-gnatmake -q -gnat2022 -I. -Itests hbnf.adb -o /tmp/hbnf
-gnatmake -q -gnat2022 -I. -Itests tests/gen_all.adb -o /tmp/gen_all
+gnatmake -q $A hbnf.adb -o /tmp/hbnf
+gnatmake -q $A tests/gen_all.adb -o /tmp/gen_all
 
 echo "== C =="
 /tmp/hbnf tests/server.hbnf --backend=c > /tmp/server.c
@@ -128,7 +139,7 @@ echo "== RFC 5234 forms (tests/abnf.sh) =="
 HBNF=/tmp/hbnf sh tests/abnf.sh
 
 echo "== the reader and emitters (tests/hbnf_emit_check.adb) =="
-gnatmake -q -gnat2022 -I. -Itests tests/hbnf_emit_check.adb -o /tmp/hbnf_emit_check \
+gnatmake -q $A tests/hbnf_emit_check.adb -o /tmp/hbnf_emit_check \
     && /tmp/hbnf_emit_check tests/server.hbnf hbnf_schema.hbnf | grep -v '^ok:'
 
 rm -f server.c server.rs server.zig server_schema.ads server_schema-parser.ads server_schema-parser.adb

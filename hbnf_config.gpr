@@ -2,6 +2,12 @@
 --  the ABNF schema engine (parser, matcher/binder, and the C/Rust/Zig/Ada
 --  emitters) in one static library, libhbnf.a.  Pure Ada, no C dependencies.
 --  Built and gprinstalled as a static library by the ada-on-alpine aport.
+--
+--  Depends on mustache-ada (moebiusV/mustache-ada, also an ada-on-alpine
+--  aport): the code templates are Mustache, rendered by that library.  Pure
+--  Ada on the GNAT runtime, so it adds no C dependency.
+
+with "mustache.gpr";
 
 library project HBNF_Config is
 

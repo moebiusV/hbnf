@@ -11,6 +11,7 @@ with HBNF_C;
 with HBNF_Match;
 with HBNF_Rust;
 with HBNF_Zig;
+with Mustache;
 with Templates;
 
 --  Check the parser and the four emitters against two schema files passed on
@@ -572,6 +573,7 @@ procedure Hbnf_Emit_Check is
 
 begin
    Templates.Load ("templates");
+   Mustache.Load ("templates");
    Check_Server (Ada.Command_Line.Argument (1));
    Check_Hbnf (Ada.Command_Line.Argument (2));
    Check_Include;

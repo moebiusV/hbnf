@@ -1,2 +1,3 @@
-pub const ${name} = struct {
-${items}};
+pub const {{&name}} = struct {
+{{#items}}    {{&field}}: {{&type}},
+{{/items}}};

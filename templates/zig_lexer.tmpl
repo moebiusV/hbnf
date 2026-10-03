@@ -80,7 +80,7 @@ pub fn lex(alloc: std.mem.Allocator, text: []const u8) ![]Token {
 }
 
 pub fn parse_text(alloc: std.mem.Allocator, text: []const u8,
-                  err: *[512]u8, err_line: *usize, err_col: *usize) ParseError!@ROOT_TYPE@ {
+                  err: *[512]u8, err_line: *usize, err_col: *usize) ParseError!{{&root_type}} {
     const toks = try lex(alloc, text);
     var lines = std.ArrayList([]const u8).empty;
     var s: usize = 0;

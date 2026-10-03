@@ -2,7 +2,7 @@ pragma Ada_2022;
 
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
-with Templates;
+with Mustache;
 with HBNF_Compilable;
 
 package body HBNF_Zig is
@@ -14,6 +14,16 @@ package body HBNF_Zig is
    subtype U is Unbounded_String;
 
    LF : constant Character := ASCII.LF;
+
+   --  A whole-file template whose one hole is the root rule's type.  The
+   --  `@ROOT_TYPE@` substitution these two templates used is now
+   --  `{{&root_type}}` like every other hole (RFCPLAN.md step 3b).
+   function Render_Root (Name, Root_T : String) return String is
+      V : Mustache.Context := Mustache.View;
+   begin
+      Mustache.Put (V, "root_type", Root_T);
+      return Mustache.Render_File (Name, V);
+   end Render_Root;
 
    package String_Vectors is new Ada.Containers.Vectors (Positive, U);
    package Natural_Vectors is new Ada.Containers.Vectors (Positive, Natural);
@@ -609,42 +619,56 @@ package body HBNF_Zig is
 
          case Info.Kind is
             when Scalar =>
-               Append (Buf, Templates.Render (Templates.Get ("zig_scalar"),
-                 (Templates.Bind ("name", Base),
-                  Templates.Bind ("type", To_String (Info.Inline_Type)))));
+               declare
+                  V : Mustache.Context := Mustache.View;
+               begin
+                  Mustache.Put (V, "name", Base);
+                  Mustache.Put (V, "type", To_String (Info.Inline_Type));
+                  Append (Buf, Mustache.Render_File ("zig_scalar", V));
+               end;
                Append (Buf, LF);
             when Enum =>
                declare
                   Names : constant String_Vectors.Vector :=
                     Enum_Names (Info.Literals);
-                  Items : U;
+                  Items : constant Mustache.Value_Access := Mustache.New_List;
+                  Row   : Mustache.Value_Access;
+                  V     : Mustache.Context := Mustache.View;
                begin
                   for I in 1 .. Natural (Info.Literals.Length) loop
-                     Append (Items, Templates.Render (Templates.Get ("zig_enum_item"),
-                       (1 => Templates.Bind ("item", To_String (Names (I))))));
-                     Append (Items, LF);
+                     Row := Mustache.New_Map;
+                     Mustache.Insert
+                       (Row, "item",
+                        Mustache.New_Scalar (To_String (Names (I))));
+                     Mustache.Append (Items, Row);
                   end loop;
-                  Append (Buf, Templates.Render (Templates.Get ("zig_enum"),
-                    (Templates.Bind ("name", Base),
-                     Templates.Bind ("items", To_String (Items)))));
+                  Mustache.Put (V, "name", Base);
+                  Mustache.Put (V, "items", Items);
+                  Append (Buf, Mustache.Render_File ("zig_enum", V));
                end;
                Append (Buf, LF);
             when Struct =>
                declare
-                  Items : U;
+                  Items : constant Mustache.Value_Access := Mustache.New_List;
+                  Row   : Mustache.Value_Access;
+                  V     : Mustache.Context := Mustache.View;
                begin
                   for M of Info.Members loop
-                     Append (Items, Templates.Render (Templates.Get ("zig_struct_item"),
-                       (Templates.Bind ("field", Zig_Field (To_String (M.Name))),
-                        Templates.Bind ("type",
+                     Row := Mustache.New_Map;
+                     Mustache.Insert
+                       (Row, "field",
+                        Mustache.New_Scalar (Zig_Field (To_String (M.Name))));
+                     Mustache.Insert
+                       (Row, "type",
+                        Mustache.New_Scalar
                           (if M.Is_List
                            then "[]" & Zig_Type_Of (To_String (M.Name))
-                           else Zig_Type_Of (To_String (M.Name)))))));
-                     Append (Items, LF);
+                           else Zig_Type_Of (To_String (M.Name))));
+                     Mustache.Append (Items, Row);
                   end loop;
-                  Append (Buf, Templates.Render (Templates.Get ("zig_struct"),
-                    (Templates.Bind ("name", Base),
-                     Templates.Bind ("items", To_String (Items)))));
+                  Mustache.Put (V, "name", Base);
+                  Mustache.Put (V, "items", Items);
+                  Append (Buf, Mustache.Render_File ("zig_struct", V));
                end;
                Append (Buf, LF);
             when List =>
@@ -670,28 +694,37 @@ package body HBNF_Zig is
          end if;
 
          if Info.Elem_Members.Is_Empty then
-            if Info.Elem_Name = Null_Unbounded_String then
-               Append (Buf, Templates.Render (Templates.Get ("zig_list_bytes"),
-                 (1 => Templates.Bind ("name", Base))));
-            else
-               Append (Buf, Templates.Render (Templates.Get ("zig_list_simple"),
-                 (Templates.Bind ("name", Base),
-                  Templates.Bind ("type",
-                    Zig_Type_Of (To_String (Info.Elem_Name))))));
-            end if;
+            declare
+               V : Mustache.Context := Mustache.View;
+            begin
+               Mustache.Put (V, "name", Base);
+               if Info.Elem_Name = Null_Unbounded_String then
+                  Append (Buf, Mustache.Render_File ("zig_list_bytes", V));
+               else
+                  Mustache.Put
+                    (V, "type", Zig_Type_Of (To_String (Info.Elem_Name)));
+                  Append (Buf, Mustache.Render_File ("zig_list_simple", V));
+               end if;
+            end;
          else
             declare
-               Items : U;
+               Items : constant Mustache.Value_Access := Mustache.New_List;
+               Row   : Mustache.Value_Access;
+               V     : Mustache.Context := Mustache.View;
             begin
                for M of Info.Elem_Members loop
-                  Append (Items, Templates.Render (Templates.Get ("zig_struct_item"),
-                    (Templates.Bind ("field", Zig_Field (To_String (M.Name))),
-                     Templates.Bind ("type", Zig_Type_Of (To_String (M.Name))))));
-                  Append (Items, LF);
+                  Row := Mustache.New_Map;
+                  Mustache.Insert
+                    (Row, "field",
+                     Mustache.New_Scalar (Zig_Field (To_String (M.Name))));
+                  Mustache.Insert
+                    (Row, "type",
+                     Mustache.New_Scalar (Zig_Type_Of (To_String (M.Name))));
+                  Mustache.Append (Items, Row);
                end loop;
-               Append (Buf, Templates.Render (Templates.Get ("zig_list_entry"),
-                 (Templates.Bind ("name", Base),
-                  Templates.Bind ("items", To_String (Items)))));
+               Mustache.Put (V, "name", Base);
+               Mustache.Put (V, "items", Items);
+               Append (Buf, Mustache.Render_File ("zig_list_entry", V));
             end;
          end if;
          Append (Buf, LF);
@@ -2227,7 +2260,7 @@ package body HBNF_Zig is
              else "[]" & Zig_Type (To_String (R.Name)) & "Entry")
          else Zig_Type (To_String (R.Name)));
       Lexer  : constant String :=
-        Templates.Substitute (Templates.Get ("zig_lexer"), "@ROOT_TYPE@", Root_T);
+        Render_Root ("zig_lexer", Root_T);
    begin
       if Epilogue ("Zig") = "" then
          return Lexer;
@@ -2239,7 +2272,7 @@ package body HBNF_Zig is
    function Emit_Conf (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
       Root_T : constant String := Zig_Type (To_String (Rules (1).Name));
    begin
-      return Templates.Substitute (Templates.Get ("conf_zig"), "@ROOT_TYPE@", Root_T);
+      return Render_Root ("conf_zig", Root_T);
    end Emit_Conf;
 
 end HBNF_Zig;
