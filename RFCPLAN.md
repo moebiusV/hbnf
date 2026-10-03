@@ -1243,6 +1243,24 @@ should claim that before 10.
      so it predates it; step 2 lifted groups into their own rules and this
      shape slipped through.  An unhandled exception where a diagnostic
      belongs is the worst of both: no parser and no message.
+   - **An action cannot sit between elements.**  `%action{ }` must end its
+     rule: `expr = term "+" %action{ emit("ADD"); } term` is refused at the
+     column after the block, and a multi-alternative rule gets one action
+     for the whole rule, discriminating on `n->kind`.  That is META II's
+     `.OUT` position, and it is the difference between a parser generator
+     and a compiler-compiler (`COMPILER-COMPILER.md` claims the latter).
+     The machinery exists: step 2's `Lift` already turns a mid-sequence
+     group into its own `<rule>_<n>`, so a mid-sequence block is the same
+     transformation — lift the position into a rule, attach the block to
+     it — and per-alternative actions fall out of it.  Reader-only, no
+     backend change, and 13b needs it.  Two smaller notation items belong
+     with it, both cheap and both wanted before 13a freezes the notation:
+     an explicit **empty alternative** (today a bare leading `|`, as in
+     `xs = | xs y`, written ninety times by the lists patch to match
+     parse.y's `/* empty */`; META II spelled it `.EMPTY`), and an
+     **optional rule terminator**, so a machine-generated or pretty-printed
+     schema does not depend on the indentation rule — 7a made yacc's
+     trailing `;` survive only because `;` starts a comment.
    - **The reader has no warning channel**, only `Parse_Error`.  That is
      why 7a's one remaining piece is unbuilt: a file whose assignment
      operator is `:` must warn once that `|` is PEG first-match and name
@@ -1252,6 +1270,45 @@ should claim that before 10.
      findings, so building it here serves both.  It wants: a severity, a
      source span, a once-per-file suppression for the `:` case, and a
      `--werror` for the test harnesses.
+   - **`expr = term '+' term` is refused, and that is a design bug.**  All
+     four backends raise "rule `term` is referenced twice in one
+     alternative; split it into alias rules … so each gets its own field"
+     — five copies of the check, two of them in `hbnf_c.adb`, the same
+     multi-copy problem as the cycle detector.  The message states the real
+     cause: a tree field is named after the rule it references and after
+     nothing else, so two references to one rule collide.  The grammar is
+     well-formed; the naming scheme is not.  And the case it refuses is the
+     canonical expression production — it is META II's own one-line example
+     (`EXPR = TERM $( '+' TERM .OUT('ADD') …`), and every arithmetic
+     grammar since.  Forcing `lhs = term` / `rhs = term` adds two rules and
+     two tree types to say nothing.
+
+     **The hard constraint on any fix: the nine daemon parsers stay
+     byte-identical.**  Field names are what the bindings read (`n->host`,
+     `n->port`) and what makes `parse_config` a drop-in for `parse.y`, so a
+     fix may not rename a field that exists today.  Two parts, and only the
+     first is required:
+
+     1. **Positional by default.**  `expr = term '+' term` compiles, with
+        fields `term` and `term_2`.  A first reference keeps the bare rule
+        name, so nothing existing moves, and the suffix follows `Lift`'s
+        own `<rule>_<n>` convention rather than inventing a second one.
+     2. **An optional label where the names matter.**  `term_2` is
+        position-dependent and reads badly in a binding, so a grammar that
+        cares says so: `expr = lhs:term '+' rhs:term`.  `label:item` is the
+        most widely recognised spelling outside yacc, and it reuses a
+        character this plan has already committed to disambiguating by
+        position — 7b's wire width is a `:` glued to a name and followed by
+        a digit, 7a's assignment operator is a `:` surrounded by blanks, so
+        a `:` glued to a name and followed by a *name* is the label.  Worth
+        saying plainly: three meanings for one character is a lot.  The
+        collision-free alternative is Bison's `term[lhs]`, which `[ ]`
+        already owns as the optional, so the gluing rule is the lesser
+        evil.  If a better spelling turns up before this lands, take it.
+
+     The check itself should end up in `HBNF_Compilable` beside the cycle
+     detector rather than five times over, per 9a.
+
    - **Stale `.o` and `.ali` files in the source directory silently win the
      link.**  `gnatmake -I. -D <tmpdir> hbnf.adb` compiles into the temp
      directory, but `gnatlink` takes `hbnf.ali` from `.`, so a build can
@@ -1264,8 +1321,12 @@ should claim that before 10.
      the test harnesses should refuse to run against a binary older than
      its newest source.
 
-13. **hbnf in hbnf, and a round-trip pretty printer.**  The last step,
-   because it is a claim that the notation is finished.
+13. **hbnf in hbnf.**  The last area, because it is a claim that the
+   notation is finished.  13a describes the notation; 13b asks whether the
+   notation can describe the tool.
+
+   13a. **A grammar for the notation, and a round-trip pretty printer.**
+   The last step, because it is a claim that the notation is finished.
 
    **Not the file that already exists.**  `hbnf_schema.hbnf` is a grammar
    for *hbnf the configuration format* — `config = *( entry )`, blocks and
@@ -1324,6 +1385,86 @@ should claim that before 10.
    output of any schema generates parsers byte-identical to the original's
    (the snapshot, run on printed schemas).  And every historical style
    reads back to the grammar it was printed from.
+
+   13b. **Closing META II's loop: the classification in the notation.**
+   *Open, and open to argument.*  Not scheduled; recorded because it is
+   the one thing between 13a and a self-hosting hbnf, and because the
+   shape it should take is a design question worth settling before anyone
+   writes code.
+
+   **What stands in the way.**  13a makes hbnf self-*describing*, which is
+   weaker than self-*compiling* — `hbnf.hbnf` through hbnf yields a parser
+   for hbnf schemas, not hbnf.  What is missing is the part that chooses
+   *how a rule is emitted*: `Analyze`, `Rule_Info`, and the
+   Scalar/Enum/Struct/List classification, which decide which template a
+   rule shape gets.  Those are Ada, and until they are expressible in the
+   notation the loop does not close.
+
+   3b moved this much closer than it looks.  The emitters are no longer
+   Ada that writes C; they are 65 `{{ }}` templates driven by the tree,
+   with the Ada reduced to choosing which template a rule shape gets.  The
+   output shape is already data.  Only the choosing is not.
+
+   **The requirement, stated as a constraint and not a wish: it must not
+   feel bolted on.**  A per-rule shape declaration would be a bolt-on
+   twice over — it adds notation, and it duplicates what the rule's
+   pattern already says.  Whatever this becomes has to read like the
+   notation grew it.
+
+   **The recommendation, as a sketch to argue with.**  There is a family
+   with two members and an obvious gap:
+
+   | | level | runs |
+   |---|---|---|
+   | `%scan{ }` | lexical | recognize characters at this position |
+   | `%action{ }` | semantic | on this node, after the parse |
+   | **`%emit{ }`** | generative | **write output for this node** |
+
+   With `%emit{ }`, a backend stops being Ada and becomes a schema: a
+   grammar whose input language is the hbnf notation (`hbnf.hbnf`) and
+   whose rules match rule *shapes*, each with an `%emit` block naming the
+   template that shape renders through.  Scalar, Enum, Struct and List
+   stop being an Ada enumeration and become four alternatives of a rule.
+   That is META II's `.OUT`, one level up: output directives inside the
+   syntax, which the HISTORY.md passage names as the part of META II that
+   did not survive into the parser generators.
+
+   **The semantics it needs are the ones already wanted elsewhere**, which
+   is the argument that this is a family extension and not a new feature:
+
+   - **Position-aware**, so a block can sit between elements rather than
+     only at the end of a rule — step 12's mid-sequence `%action{}` fix,
+     which `Lift` already has the machinery for.
+   - **Per-alternative**, which falls out of position-awareness: today one
+     action serves a whole rule and discriminates on `n->kind`.
+   - **A block may name a template instead of holding code.**
+     `%emit{ c_struct }` renders that template against the node.  After 3b
+     this is what the four backends do; it just is not sayable in a schema.
+   - Available to every backend, not C only, which `%action{}` is today.
+
+   **What it must not break.**  The nine daemon parsers stay byte-identical
+   and `parse_config` stays a drop-in for `parse.y`.  A self-hosting path
+   that cost the project its only hard external gate would be a bad trade;
+   byteident is the gate here as everywhere.
+
+   **And one ordering fact.**  This is second-order — a grammar whose input
+   is grammars — so it needs `hbnf.hbnf`'s own tree types to exist, which
+   means 9b first.  `hbnf_schema.hbnf`'s mutually recursive `entry`/`block`
+   is already the case in point: the backends refuse it today, and that
+   refusal is why the interpreter still exists (9c).
+
+   **Alternatives worth weighing before committing to `%emit{ }`.**  A
+   second-order *grammar* over rule shapes, as above, is the most
+   BNF-native reading.  A pattern-matching sublanguage over `Rule_Info`
+   would be more direct and less native.  Leaving the classifier in Ada and
+   calling 13a the end is also a defensible answer — self-describing is a
+   real property, and McCarthy's `eval` was useful without being a
+   compiler.  Reynolds' warning in the HISTORY.md passage applies to this
+   step more than to any other: a self-definition is trivial when the
+   defining language is understood.  The reason to do it anyway is
+   Sitaker's: a metacircular *compiler* has to confront what an
+   interpreter glosses over, and that confrontation is where the design
+   errors show up.
 
 ## Not in this plan
 
