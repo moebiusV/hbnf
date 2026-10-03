@@ -109,12 +109,31 @@ silently.
      remembering the last token scanned at a position and branching on the
      first byte.  The §6 numbers (57 ms for the 100,000-rule toy, about
      0.5 s for 100,000 pfctl rules) must not get worse.
-8. **Jets and actions are code.**  A `%scan{ }` or `%action{ }` block holds
-   the code that runs, usually one call to a function the file defines in
-   its epilogue (`%scan{ return ipv6_match(s, pos, len); }`), with the
-   function's prototype in the preamble.  hbnf never rewrites the code.
-   Most of today's 29 jets become character rules instead, which also makes
-   them work in Rust, Zig and Ada.
+8. **Jets, actions and emitters are code — one family of three.**  A
+   `%scan{ }`, `%action{ }` or `%emit{ }` block holds the code that runs,
+   usually one call to a function the file defines in its epilogue
+   (`%scan{ return ipv6_match(s, pos, len); }`), with the function's
+   prototype in the preamble.  hbnf never rewrites the code.  Most of the
+   remaining 17 jets become character rules instead, which also makes them
+   work in Rust, Zig and Ada.
+
+   The family has one member per level, and the levels are the compiler's
+   own:
+
+   | | level | runs |
+   |---|---|---|
+   | `%scan{ }` | lexical | recognize characters at this position |
+   | `%action{ }` | semantic | on this node, after the parse |
+   | `%emit{ }` | generative | write output for this node |
+
+   **`%emit{ }` is agreed as the third member** (2026-10-03) and is what
+   would let a backend be a schema rather than Ada — step 13b.  It is not
+   built, and the semantics the three share are not finished: a block
+   should be able to sit *between* elements rather than only at the end of
+   a rule (step 12), which also gives one block per alternative instead of
+   one per rule, and a block should be able to name a template instead of
+   holding code.  Those are changes to the family, not to one member, which
+   is the test of whether a member belongs in it.
 9. **`<prose-val>`** reads as a rule nobody has written yet: generation
    stops with `file:line:col`, the source line with a caret under the
    `<…>`, and "not written yet:" and the text in the angle brackets.  The
@@ -1262,16 +1281,18 @@ should claim that before 10.
      so it predates it; step 2 lifted groups into their own rules and this
      shape slipped through.  An unhandled exception where a diagnostic
      belongs is the worst of both: no parser and no message.
-   - **An action cannot sit between elements.**  `%action{ }` must end its
-     rule: `expr = term "+" %action{ emit("ADD"); } term` is refused at the
-     column after the block, and a multi-alternative rule gets one action
-     for the whole rule, discriminating on `n->kind`.  That is META II's
-     `.OUT` position, and it is the difference between a parser generator
-     and a compiler-compiler (`COMPILER-COMPILER.md` claims the latter).
-     The machinery exists: step 2's `Lift` already turns a mid-sequence
-     group into its own `<rule>_<n>`, so a mid-sequence block is the same
-     transformation — lift the position into a rule, attach the block to
-     it — and per-alternative actions fall out of it.  Reader-only, no
+   - **A block cannot sit between elements.**  This is a property of the
+     whole `%scan{ }` / `%action{ }` / `%emit{ }` family (decision 8), not
+     of one member: a block must end its rule.  `expr = term "+"
+     %action{ emit("ADD"); } term` is refused at the column after the
+     block, and a multi-alternative rule gets one action for the whole
+     rule, discriminating on `n->kind`.  That is META II's `.OUT` position,
+     and it is the difference between a parser generator and a
+     compiler-compiler (`COMPILER-COMPILER.md` claims the latter).  The
+     machinery exists: step 2's `Lift` already turns a mid-sequence group
+     into its own `<rule>_<n>`, so a mid-sequence block is the same
+     transformation — lift the position into a rule, attach the block to it
+     — and one block per alternative falls out of it.  Reader-only, no
      backend change, and 13b needs it.  Two smaller notation items belong
      with it, both cheap and both wanted before 13a freezes the notation:
      an explicit **empty alternative** (today a bare leading `|`, as in
@@ -1435,14 +1456,10 @@ should claim that before 10.
    pattern already says.  Whatever this becomes has to read like the
    notation grew it.
 
-   **The recommendation, as a sketch to argue with.**  There is a family
-   with two members and an obvious gap:
-
-   | | level | runs |
-   |---|---|---|
-   | `%scan{ }` | lexical | recognize characters at this position |
-   | `%action{ }` | semantic | on this node, after the parse |
-   | **`%emit{ }`** | generative | **write output for this node** |
+   **The shape is decided: `%emit{ }`, the family's third member** (agreed
+   2026-10-03, decision 8).  The family had two members and a gap at the
+   generative level; that is the gap.  What remains open is not *whether*
+   but *how*, and the open questions are listed below.
 
    With `%emit{ }`, a backend stops being Ada and becomes a schema: a
    grammar whose input language is the hbnf notation (`hbnf.hbnf`) and
@@ -1477,18 +1494,40 @@ should claim that before 10.
    is already the case in point: the backends refuse it today, and that
    refusal is why the interpreter still exists (9c).
 
-   **Alternatives worth weighing before committing to `%emit{ }`.**  A
-   second-order *grammar* over rule shapes, as above, is the most
-   BNF-native reading.  A pattern-matching sublanguage over `Rule_Info`
-   would be more direct and less native.  Leaving the classifier in Ada and
-   calling 13a the end is also a defensible answer — self-describing is a
-   real property, and McCarthy's `eval` was useful without being a
-   compiler.  Reynolds' warning in the HISTORY.md passage applies to this
-   step more than to any other: a self-definition is trivial when the
-   defining language is understood.  The reason to do it anyway is
-   Sitaker's: a metacircular *compiler* has to confront what an
-   interpreter glosses over, and that confrontation is where the design
-   errors show up.
+   **What is still open, now that the member is settled.**  Four questions,
+   and the first is the one that decides whether this feels native:
+
+   1. **How does a rule match a rule *shape*?**  A schema whose input is
+      schemas needs to say "a rule that is one reference", "a rule whose
+      alternatives are all literals", "a rule with a trailing repetition".
+      A second-order *grammar* over `hbnf.hbnf`'s own tree is the most
+      BNF-native reading — those four are alternatives of a rule, and
+      Scalar/Enum/Struct/List stop being an Ada enumeration.  A
+      pattern-matching sublanguage over `Rule_Info` would be more direct
+      and less native, which is the trade.
+   2. **One schema per backend, or one schema with a language directive?**
+      `language C` already exists per file and decides which code blocks a
+      backend takes; four schemas sharing an include is the obvious first
+      answer and matches how `obconf.hbnf` is shared today.
+   3. **How does a block name a template?**  `%emit{ c_struct }` reads
+      well, but a bare name inside a block that otherwise holds code is a
+      second meaning for the same brackets.  It may want its own spelling.
+   4. **Does `%action{ }` change, or only `%emit{ }` differ?**  Position
+      and per-alternative behaviour are wanted for both (step 12).  Running
+      bottom-up after the parse is right for a binding and wrong for a
+      one-pass translator, so the two members may legitimately differ on
+      *when*, while sharing *where*.
+
+   **And a standing alternative.**  Leaving the classifier in Ada and
+   calling 13a the end is defensible — self-describing is a real property,
+   and McCarthy's `eval` was useful without being a compiler.  Reynolds'
+   warning in the HISTORY.md passage applies here more than anywhere: a
+   self-definition is trivial when the defining language is understood.
+   The reason to do it anyway is Sitaker's — a metacircular *compiler* has
+   to confront what an interpreter glosses over, and that confrontation is
+   where the design errors show up.  `expr = term '+' term` is the
+   evidence: it was found by asking what META II could do that hbnf
+   cannot, not by any test.
 
 ## Not in this plan
 
