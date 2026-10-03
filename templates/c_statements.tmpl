@@ -23,7 +23,7 @@ static void hbnf_define(const char *s, size_t len, size_t line);
 static void hbnf_macros_done(void);
 
 typedef struct {
-    @ROOT_TYPE@ *out;          /* the caller's list; NULL: keep nothing */
+    {{&root_type}} *out;          /* the caller's list; NULL: keep nothing */
     char *err;                 /* the first error, for the caller */
     size_t errlen;
     size_t *err_line, *err_col;
@@ -280,7 +280,7 @@ static void hbnf_stmt(hbnf_run_t *r, const char *s, size_t len, size_t line,
                       int depth) {
     char msg[512];
     char *buf, *inc = NULL;
-    @ROOT_TYPE@ part;
+    {{&root_type}} part;
     size_t el = 0, ec = 0;
     bool ok;
 
@@ -341,7 +341,7 @@ static void hbnf_run(hbnf_run_t *r, hbnf_src_t *src, int depth) {
 /* Read a config: each statement is appended to *out, or with out NULL
    dropped once bound.  err, *err_line and *err_col hold the first error;
    false if there was any. */
-static bool hbnf_stmts(hbnf_src_t *src, @ROOT_TYPE@ *out,
+static bool hbnf_stmts(hbnf_src_t *src, {{&root_type}} *out,
                        char *err, size_t errlen,
                        size_t *err_line, size_t *err_col) {
     hbnf_run_t r;

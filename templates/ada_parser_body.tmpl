@@ -1,6 +1,6 @@
 with Interfaces;
-${nocase_with}${conf_with}
-package body ${pkg}.Parser is
+{{&nocase_with}}{{&conf_with}}
+package body {{&pkg}}.Parser is
 
    use Ada.Strings.Unbounded;
    use Interfaces;
@@ -60,7 +60,7 @@ package body ${pkg}.Parser is
       end if;
    end Expect_Lit;
 
-${nocase_proc}   procedure Expect_Kind (P : in out Parser; K : Token_Kind; Desc : String) is
+{{&nocase_proc}}   procedure Expect_Kind (P : in out Parser; K : Token_Kind; Desc : String) is
    begin
       if P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = K then
          null;

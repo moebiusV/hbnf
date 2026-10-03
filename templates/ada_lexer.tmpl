@@ -124,7 +124,7 @@
       return Toks;
    end Lex;
 
-   function Parse_Text (Text : String) return @ROOT_TYPE@ is
+   function Parse_Text (Text : String) return {{&root_type}} is
       Toks  : Token_Vectors.Vector := Lex (Text);
       Lines : Line_Vectors.Vector;
       S     : Natural := Text'First;
@@ -138,9 +138,9 @@
       Lines.Append (To_Unbounded_String (Text (S .. Text'Last)));
       declare
          P : Parser := (Toks => Toks, Lines => Lines, Pos => 1);
-         R : @ROOT_TYPE@;
+         R : {{&root_type}};
       begin
-         R := @ROOT_FN@ (P);
+         R := {{&root_fn}} (P);
          if P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind /= Eof then
             Fail (P, "end of config");
          end if;

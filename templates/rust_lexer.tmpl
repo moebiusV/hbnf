@@ -68,7 +68,7 @@ pub fn lex(text: &str) -> Vec<Token> {
     toks
 }
 
-pub fn parse_text(text: &str) -> Result<@ROOT_TYPE@, ParseError> {
+pub fn parse_text(text: &str) -> Result<{{&root_type}}, ParseError> {
     let toks = lex(text);
     let lines: Vec<&str> = text.split('\n').collect();
     parse_tokens(&toks, &lines)

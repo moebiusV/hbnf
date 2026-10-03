@@ -1,3 +1,4 @@
 #[derive(Default)]
-pub struct ${name} {
-${items}}
+pub struct {{&name}} {
+{{#items}}    pub {{&field}}: {{&type}},
+{{/items}}}

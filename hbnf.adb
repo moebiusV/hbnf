@@ -7,7 +7,6 @@ with Ada.Exceptions;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Mustache;
-with Templates;
 with HBNF_Grammar;
 with HBNF_Compilable;
 with HBNF_C;
@@ -154,7 +153,6 @@ begin
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
       end if;
-      Templates.Load (Dir);
       Mustache.Load (Dir);
    end;
 
@@ -237,7 +235,7 @@ exception
         (Ada.Text_IO.Standard_Error,
          "hbnf: " & HBNF_Grammar.Error_Message (E));
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-   when E : Templates.Template_Error =>
+   when E : Mustache.Template_Error =>
       Ada.Text_IO.Put_Line
         (Ada.Text_IO.Standard_Error,
          "hbnf: " & Ada.Exceptions.Exception_Message (E));

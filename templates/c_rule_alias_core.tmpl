@@ -1,4 +1,4 @@
-    { size_t n = ${scan}(p->text, p->pos, p->len);
-      if (!n${reject}) { fail(p, "${desc}", 0, p->text + p->pos, 0); return false; }
-      *out = ${expr}; p->pos += n; }
+    { size_t n = {{&scan}}(p->text, p->pos, p->len);
+      if (!n{{&reject}}) { fail(p, "{{&desc}}", 0, p->text + p->pos, 0); return false; }
+      *out = {{&expr}}; p->pos += n; }
     return true;

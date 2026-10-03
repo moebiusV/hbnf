@@ -2,7 +2,7 @@ pragma Ada_2022;
 
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
-with Templates;
+with Mustache;
 with HBNF_Compilable;
 
 package body HBNF_Ada is
@@ -652,43 +652,62 @@ package body HBNF_Ada is
 
          case Info.Kind is
             when Scalar =>
-               Append (Buf, Templates.Render (Templates.Get ("ada_scalar"),
-                 (Templates.Bind ("name", TN),
-                  Templates.Bind ("type", To_String (Info.Inline_Type)))));
+               declare
+                  V : Mustache.Context := Mustache.View;
+               begin
+                  Mustache.Put (V, "name", TN);
+                  Mustache.Put (V, "type", To_String (Info.Inline_Type));
+                  Append (Buf, Mustache.Render_File ("ada_scalar", V));
+               end;
                Append (Buf, LF);
             when Enum =>
                declare
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
-                  Items : U;
+                  Items : constant Mustache.Value_Access := Mustache.New_List;
+                  Row   : Mustache.Value_Access;
+                  V     : Mustache.Context := Mustache.View;
                begin
                   for I in 1 .. Natural (Info.Literals.Length) loop
+                     Row := Mustache.New_Map;
+                     Mustache.Insert
+                       (Row, "ident",
+                        Mustache.New_Scalar
+                          (Base & "_" & To_String (Names (I))));
+                     --  Mustache has no join, so the separator is a flag on
+                     --  every row but the first: `{{#sep}}, {{/sep}}`.
                      if I > 1 then
-                        Append (Items, ", ");
+                        Mustache.Insert (Row, "sep", Mustache.New_Scalar ("1"));
                      end if;
-                     Append (Items, Base & "_" & To_String (Names (I)));
+                     Mustache.Append (Items, Row);
                   end loop;
-                  Append (Buf, Templates.Render (Templates.Get ("ada_enum"),
-                    (Templates.Bind ("name", TN),
-                     Templates.Bind ("items", To_String (Items)))));
+                  Mustache.Put (V, "name", TN);
+                  Mustache.Put (V, "items", Items);
+                  Append (Buf, Mustache.Render_File ("ada_enum", V));
                end;
                Append (Buf, LF);
             when Struct =>
                declare
-                  Items : U;
+                  Items : constant Mustache.Value_Access := Mustache.New_List;
+                  Row   : Mustache.Value_Access;
+                  V     : Mustache.Context := Mustache.View;
                begin
                   for M of Info.Members loop
-                     Append (Items, Templates.Render (Templates.Get ("ada_field"),
-                       (Templates.Bind ("field", Ada_Field (To_String (M.Name))),
-                        Templates.Bind ("type",
+                     Row := Mustache.New_Map;
+                     Mustache.Insert
+                       (Row, "field",
+                        Mustache.New_Scalar (Ada_Field (To_String (M.Name))));
+                     Mustache.Insert
+                       (Row, "type",
+                        Mustache.New_Scalar
                           (if M.Is_List
                            then Base & "_" & Ada_Ident (To_String (M.Name))
                                 & "_Vectors.Vector"
-                           else Elem_Type (To_String (M.Name)))))));
-                     Append (Items, LF);
+                           else Elem_Type (To_String (M.Name))));
+                     Mustache.Append (Items, Row);
                   end loop;
-                  Append (Buf, Templates.Render (Templates.Get ("ada_struct"),
-                    (Templates.Bind ("name", TN),
-                     Templates.Bind ("items", To_String (Items)))));
+                  Mustache.Put (V, "name", TN);
+                  Mustache.Put (V, "items", Items);
+                  Append (Buf, Mustache.Render_File ("ada_struct", V));
                end;
                Append (Buf, LF);
             when List =>
@@ -727,24 +746,34 @@ package body HBNF_Ada is
          else
             --  A group element: emit a named entry record (value members).
             declare
-               Items : U;
+               Items : constant Mustache.Value_Access := Mustache.New_List;
+               Row   : Mustache.Value_Access;
+               V     : Mustache.Context := Mustache.View;
             begin
                for M of Info.Elem_Members loop
-                  Append (Items, Templates.Render (Templates.Get ("ada_field"),
-                    (Templates.Bind ("field", Ada_Field (To_String (M.Name))),
-                     Templates.Bind ("type", Elem_Type (To_String (M.Name))))));
-                  Append (Items, LF);
+                  Row := Mustache.New_Map;
+                  Mustache.Insert
+                    (Row, "field",
+                     Mustache.New_Scalar (Ada_Field (To_String (M.Name))));
+                  Mustache.Insert
+                    (Row, "type",
+                     Mustache.New_Scalar (Elem_Type (To_String (M.Name))));
+                  Mustache.Append (Items, Row);
                end loop;
-               Append (Buf, Templates.Render (Templates.Get ("ada_struct"),
-                 (Templates.Bind ("name", Base & "_Entry"),
-                  Templates.Bind ("items", To_String (Items)))));
+               Mustache.Put (V, "name", Base & "_Entry");
+               Mustache.Put (V, "items", Items);
+               Append (Buf, Mustache.Render_File ("ada_struct", V));
             end;
             Append (Buf, LF);
             Append (Buf, Emit_Vector (Base & "_Vectors", Base & "_Entry"));
          end if;
-         Append (Buf, Templates.Render (Templates.Get ("ada_list_subtype"),
-           (Templates.Bind ("name", TN),
-            Templates.Bind ("base", Base))));
+         declare
+            V : Mustache.Context := Mustache.View;
+         begin
+            Mustache.Put (V, "name", TN);
+            Mustache.Put (V, "base", Base);
+            Append (Buf, Mustache.Render_File ("ada_list_subtype", V));
+         end;
          Append (Buf, LF);
 
          if R.Trailing_Comment /= Null_Unbounded_String then
@@ -1833,11 +1862,15 @@ package body HBNF_Ada is
                end;
             end if;
          end loop;
-         Append (Spec, Templates.Render (Templates.Get ("ada_parser_spec"),
-           (Templates.Bind ("pkg", Package_Name),
-            Templates.Bind ("kind", To_String (Kind_Ext)),
-            Templates.Bind ("ret", Ret_Type (1)),
-            Templates.Bind ("conf", Conf_Decl))));
+         declare
+            V : Mustache.Context := Mustache.View;
+         begin
+            Mustache.Put (V, "pkg", Package_Name);
+            Mustache.Put (V, "kind", To_String (Kind_Ext));
+            Mustache.Put (V, "ret", Ret_Type (1));
+            Mustache.Put (V, "conf", Conf_Decl);
+            Append (Spec, Mustache.Render_File ("ada_parser_spec", V));
+         end;
          Append (Spec, LF);
       end;
 
@@ -1879,11 +1912,15 @@ package body HBNF_Ada is
             Append (Nocase_Proc, LF);
             Append (Nocase_Proc, LF);
          end if;
-         Append (Bdy, Templates.Render (Templates.Get ("ada_parser_body"),
-           (Templates.Bind ("pkg", Package_Name),
-            Templates.Bind ("nocase_with", Nocase_With),
-            Templates.Bind ("conf_with", Conf_With),
-            Templates.Bind ("nocase_proc", To_String (Nocase_Proc)))));
+         declare
+            V : Mustache.Context := Mustache.View;
+         begin
+            Mustache.Put (V, "pkg", Package_Name);
+            Mustache.Put (V, "nocase_with", Nocase_With);
+            Mustache.Put (V, "conf_with", Conf_With);
+            Mustache.Put (V, "nocase_proc", To_String (Nocase_Proc));
+            Append (Bdy, Mustache.Render_File ("ada_parser_body", V));
+         end;
          Append (Bdy, LF);
          Append (Bdy, LF);
       end;
@@ -2269,14 +2306,23 @@ package body HBNF_Ada is
       Append (Bdy, LF);
 
       --  Lexer: text -> token stream (schema-independent).
-      Append (Bdy, Templates.Substitute (Templates.Substitute
-        (Templates.Get ("ada_lexer"), "@ROOT_TYPE@", Ret_Type (1)),
-        "@ROOT_FN@", "Parse_" & Ada_Ident (To_String (Rules (1).Name))));
+      declare
+         V : Mustache.Context := Mustache.View;
+      begin
+         Mustache.Put (V, "root_type", Ret_Type (1));
+         Mustache.Put (V, "root_fn",
+           "Parse_" & Ada_Ident (To_String (Rules (1).Name)));
+         Append (Bdy, Mustache.Render_File ("ada_lexer", V));
+      end;
       Append (Bdy, LF);
       Append (Bdy, LF);
       if Conf then
-         Append (Bdy, Templates.Substitute
-           (Templates.Get ("conf_ada"), "@ROOT_TYPE@", Ret_Type (1)));
+         declare
+            V : Mustache.Context := Mustache.View;
+         begin
+            Mustache.Put (V, "root_type", Ret_Type (1));
+            Append (Bdy, Mustache.Render_File ("conf_ada", V));
+         end;
          Append (Bdy, LF);
       end if;
       if Epilogue ("Ada") /= "" then

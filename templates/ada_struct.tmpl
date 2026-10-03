@@ -1,2 +1,3 @@
-   type ${name} is record
-${items}   end record;
+   type {{&name}} is record
+{{#items}}      {{&field}} : {{&type}};
+{{/items}}   end record;

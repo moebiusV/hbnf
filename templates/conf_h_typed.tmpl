@@ -2,7 +2,7 @@
    `entry` directive gives it); the action jets build it into the caller's
    struct.  The `conf` global is the daemon's (declared in its header,
    included by the grammar's preamble). */
-int @ENTRY@(const char *filename, @CONF_TYPE@ *conf);
+int {{&entry}}(const char *filename, {{&conf_type}} *conf);
 
 /* yyerror-style error handler: called with each error's message and its
    1-based line (a syntax error, or every error an action jet reports).  The

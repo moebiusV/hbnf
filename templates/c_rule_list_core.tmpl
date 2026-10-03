@@ -1,3 +1,3 @@
-        { size_t n = ${scan}(p->text, p->pos, p->len);
-          if (n${reject}) { nn->${field} = ${expr}; p->pos += n; goto have; }
-          fail(p, "${desc}", 0, p->text + p->pos, 0); }
+        { size_t n = {{&scan}}(p->text, p->pos, p->len);
+          if (n{{&reject}}) { nn->{{&field}} = {{&expr}}; p->pos += n; goto have; }
+          fail(p, "{{&desc}}", 0, p->text + p->pos, 0); }

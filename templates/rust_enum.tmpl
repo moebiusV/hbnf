@@ -1,3 +1,5 @@
 #[derive(Default)]
-pub enum ${name} {
-${items}}
+pub enum {{&name}} {
+{{#items}}{{#first}}    #[default]
+{{/first}}    {{&ident}},
+{{/items}}}

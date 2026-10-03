@@ -3,9 +3,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
-${strings_h}
-${keywords}
-${scanners}
+{{&strings_h}}
+{{&keywords}}
+{{&scanners}}
 
 typedef struct {
     const char *text;
@@ -86,4 +86,4 @@ static const char *hbnf_str_value(const char *s, size_t n) {
       return r; }
 }
 
-${nocase}${word_matcher}${ws_skip}
+{{&nocase}}{{&word_matcher}}{{&ws_skip}}

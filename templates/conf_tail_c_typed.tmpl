@@ -23,7 +23,7 @@ conf_error_fn conf_error = conf_error_default;
    The parse tree is only the action jets' input: it is freed, with the
    string arena, before parse_config returns, so a jet copies whatever it
    keeps. */
-int @ENTRY@(const char *filename, @CONF_TYPE@ *xconf) {
+int {{&entry}}(const char *filename, {{&conf_type}} *xconf) {
     FILE *f = fopen(filename, "r");
     char *buf;
     long len;
@@ -59,14 +59,14 @@ int @ENTRY@(const char *filename, @CONF_TYPE@ *xconf) {
     conf = xconf;
     conf_init();
     {
-        @ROOT_TYPE@ ast;
+        {{&root_type}} ast;
         bool ok;
         memset(&ast, 0, sizeof ast);
         bind_errors = 0;
         bind_report = conf_error;   /* every action error, as it happens */
         ok = parse_text(buf, &ast, err, sizeof err, &line, &col);
         bind_report = NULL;
-        free_@ROOT_C@(&ast);        /* the tree and the string arena */
+        free_{{&root_c}}(&ast);        /* the tree and the string arena */
         free(buf);
         if (!ok) {
             if (!bind_errors)      /* a syntax error: not reported yet */

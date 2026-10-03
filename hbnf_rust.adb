@@ -2,10 +2,19 @@ pragma Ada_2022;
 
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
-with Templates;
+with Mustache;
 with HBNF_Compilable;
 
 package body HBNF_Rust is
+
+   --  A whole-file template whose one hole is the root rule's type: the
+   --  `@ROOT_TYPE@` substitution is now `{{&root_type}}` (RFCPLAN step 3b).
+   function Render_Root (Name, Root_T : String) return String is
+      V : Mustache.Context := Mustache.View;
+   begin
+      Mustache.Put (V, "root_type", Root_T);
+      return Mustache.Render_File (Name, V);
+   end Render_Root;
 
    use Ada.Strings.Unbounded;
    use HBNF_Grammar;
@@ -584,45 +593,62 @@ package body HBNF_Rust is
                --  `string` -> `String`) is that type; a self-alias `type
                --  String = String` would shadow std and is omitted.
                if Base /= To_String (Info.Inline_Type) then
-                  Append (Buf, Templates.Render (Templates.Get ("rust_scalar"),
-                    (Templates.Bind ("name", Base),
-                     Templates.Bind ("type", To_String (Info.Inline_Type)))));
+                  declare
+                     V : Mustache.Context := Mustache.View;
+                  begin
+                     Mustache.Put (V, "name", Base);
+                     Mustache.Put (V, "type", To_String (Info.Inline_Type));
+                     Append (Buf, Mustache.Render_File ("rust_scalar", V));
+                  end;
                   Append (Buf, LF);
                end if;
             when Enum =>
                declare
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
-                  Items : U;
+                  Items : constant Mustache.Value_Access := Mustache.New_List;
+                  Row   : Mustache.Value_Access;
+                  V     : Mustache.Context := Mustache.View;
                begin
                   for I in 1 .. Natural (Info.Literals.Length) loop
-                     Append (Items, Templates.Render
-                       (Templates.Get (if I = 1 then "rust_enum_first"
-                                       else "rust_enum_item"),
-                        (1 => Templates.Bind ("ident",
-                           Base & "_" & To_String (Names (I))))));
-                     Append (Items, LF);
+                     Row := Mustache.New_Map;
+                     Mustache.Insert
+                       (Row, "ident",
+                        Mustache.New_Scalar
+                          (Base & "_" & To_String (Names (I))));
+                     --  `#[default]` goes on the first variant only: the two
+                     --  item templates became one `{{#first}}` section.
+                     if I = 1 then
+                        Mustache.Insert (Row, "first", Mustache.New_Scalar ("1"));
+                     end if;
+                     Mustache.Append (Items, Row);
                   end loop;
-                  Append (Buf, Templates.Render (Templates.Get ("rust_enum"),
-                    (Templates.Bind ("name", Base),
-                     Templates.Bind ("items", To_String (Items)))));
+                  Mustache.Put (V, "name", Base);
+                  Mustache.Put (V, "items", Items);
+                  Append (Buf, Mustache.Render_File ("rust_enum", V));
                end;
                Append (Buf, LF);
             when Struct =>
                declare
-                  Items : U;
+                  Items : constant Mustache.Value_Access := Mustache.New_List;
+                  Row   : Mustache.Value_Access;
+                  V     : Mustache.Context := Mustache.View;
                begin
                   for M of Info.Members loop
-                     Append (Items, Templates.Render (Templates.Get ("rust_struct_item"),
-                       (Templates.Bind ("field", Rust_Field (To_String (M.Name))),
-                        Templates.Bind ("type",
+                     Row := Mustache.New_Map;
+                     Mustache.Insert
+                       (Row, "field",
+                        Mustache.New_Scalar (Rust_Field (To_String (M.Name))));
+                     Mustache.Insert
+                       (Row, "type",
+                        Mustache.New_Scalar
                           (if M.Is_List
                            then "Vec<" & Rust_Type_Of (To_String (M.Name)) & ">"
-                           else Rust_Type_Of (To_String (M.Name)))))));
-                     Append (Items, LF);
+                           else Rust_Type_Of (To_String (M.Name))));
+                     Mustache.Append (Items, Row);
                   end loop;
-                  Append (Buf, Templates.Render (Templates.Get ("rust_struct"),
-                    (Templates.Bind ("name", Base),
-                     Templates.Bind ("items", To_String (Items)))));
+                  Mustache.Put (V, "name", Base);
+                  Mustache.Put (V, "items", Items);
+                  Append (Buf, Mustache.Render_File ("rust_struct", V));
                end;
                Append (Buf, LF);
             when List =>
@@ -649,26 +675,41 @@ package body HBNF_Rust is
 
          if Info.Elem_Members.Is_Empty then
             if Info.Elem_Name = Null_Unbounded_String then
-               Append (Buf, Templates.Render (Templates.Get ("rust_list_bytes"),
-                 (1 => Templates.Bind ("name", Base))));
+               declare
+                  V : Mustache.Context := Mustache.View;
+               begin
+                  Mustache.Put (V, "name", Base);
+                  Append (Buf, Mustache.Render_File ("rust_list_bytes", V));
+               end;
             else
-               Append (Buf, Templates.Render (Templates.Get ("rust_list_simple"),
-                 (Templates.Bind ("name", Base),
-                  Templates.Bind ("type", Rust_Type_Of (To_String (Info.Elem_Name))))));
+               declare
+                  V : Mustache.Context := Mustache.View;
+               begin
+                  Mustache.Put (V, "name", Base);
+                  Mustache.Put
+                    (V, "type", Rust_Type_Of (To_String (Info.Elem_Name)));
+                  Append (Buf, Mustache.Render_File ("rust_list_simple", V));
+               end;
             end if;
          else
             declare
-               Items : U;
+               Items : constant Mustache.Value_Access := Mustache.New_List;
+               Row   : Mustache.Value_Access;
+               V     : Mustache.Context := Mustache.View;
             begin
                for M of Info.Elem_Members loop
-                  Append (Items, Templates.Render (Templates.Get ("rust_struct_item"),
-                    (Templates.Bind ("field", Rust_Field (To_String (M.Name))),
-                     Templates.Bind ("type", Rust_Type_Of (To_String (M.Name))))));
-                  Append (Items, LF);
+                  Row := Mustache.New_Map;
+                  Mustache.Insert
+                    (Row, "field",
+                     Mustache.New_Scalar (Rust_Field (To_String (M.Name))));
+                  Mustache.Insert
+                    (Row, "type",
+                     Mustache.New_Scalar (Rust_Type_Of (To_String (M.Name))));
+                  Mustache.Append (Items, Row);
                end loop;
-               Append (Buf, Templates.Render (Templates.Get ("rust_list_entry"),
-                 (Templates.Bind ("name", Base),
-                  Templates.Bind ("items", To_String (Items)))));
+               Mustache.Put (V, "name", Base);
+               Mustache.Put (V, "items", Items);
+               Append (Buf, Mustache.Render_File ("rust_list_entry", V));
             end;
          end if;
          Append (Buf, LF);
@@ -1757,9 +1798,13 @@ package body HBNF_Rust is
             Append (Nocase, "    }");
             Append (Nocase, LF);
          end if;
-         Append (Res, Templates.Render (Templates.Get ("rust_parser"),
-           (Templates.Bind ("kind", To_String (Kind_Ext)),
-            Templates.Bind ("nocase", To_String (Nocase)))));
+         declare
+            V : Mustache.Context := Mustache.View;
+         begin
+            Mustache.Put (V, "kind", To_String (Kind_Ext));
+            Mustache.Put (V, "nocase", To_String (Nocase));
+            Append (Res, Mustache.Render_File ("rust_parser", V));
+         end;
       end;
       Append (Res, LF);
       Append (Res, LF);
@@ -2015,7 +2060,7 @@ package body HBNF_Rust is
              else "Vec<" & Rust_Type (To_String (R.Name)) & "Entry>")
          else Rust_Type (To_String (R.Name)));
       Lexer  : constant String :=
-        Templates.Substitute (Templates.Get ("rust_lexer"), "@ROOT_TYPE@", Root_T);
+        Render_Root ("rust_lexer", Root_T);
    begin
       if Epilogue ("Rust") = "" then
          return Lexer;
@@ -2027,7 +2072,7 @@ package body HBNF_Rust is
    function Emit_Conf (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
       Root_T : constant String := Rust_Type (To_String (Rules (1).Name));
    begin
-      return Templates.Substitute (Templates.Get ("conf_rust"), "@ROOT_TYPE@", Root_T);
+      return Render_Root ("conf_rust", Root_T);
    end Emit_Conf;
 
 end HBNF_Rust;

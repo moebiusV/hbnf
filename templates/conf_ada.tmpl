@@ -13,7 +13,7 @@
       return To_String (Buf);
    end Read_File;
 
-   function Parse_Config (Filename : String) return @ROOT_TYPE@ is
+   function Parse_Config (Filename : String) return {{&root_type}} is
    begin
       return Parse_Text (Read_File (Filename));
    end Parse_Config;

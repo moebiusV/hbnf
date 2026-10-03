@@ -12,7 +12,6 @@ with HBNF_Match;
 with HBNF_Rust;
 with HBNF_Zig;
 with Mustache;
-with Templates;
 
 --  Check the parser and the four emitters against two schema files passed on
 --  the command line.  Usage: hbnf_emit_check <server.hbnf> <hbnf_schema.hbnf>
@@ -541,38 +540,49 @@ procedure Hbnf_Emit_Check is
       end;
    end Check_Zero_Width_Repetition;
 
-   --  The ${name} template engine (RFCPLAN.md step 3): substitution, $$
-   --  for a literal $, and the unfilled / unused / unbalanced hole errors.
+   --  The Mustache renderer (mustache-ada, RFCPLAN.md step 3b): the raw
+   --  interpolation hbnf's templates must use, sections over a list, and the
+   --  one guarantee the switchover gave up.
    procedure Check_Templates is
-      use Templates;
-
-      function Refused (Text : String; Pairs : Binding_Array; Needle : String)
-        return Boolean
-      is
-         Len : Natural;
-      begin
-         --  Render in statement context (not a declarative-part initializer),
-         --  so a Template_Error raised here is caught below.
-         Len := Render (Text, Pairs)'Length;
-         return Len = 0 and then False;   --  rendered: not refused
-      exception
-         when E : Templates.Template_Error =>
-            return Has (Ada.Exceptions.Exception_Message (E), Needle);
-      end Refused;
+      use Mustache;
+      LFc : constant Character := ASCII.LF;
    begin
-      Check ("template: holes fill and $$ is a literal $",
-             Render ("${name} = ${type}; $$100",
-               (Bind ("name", "Foo"), Bind ("type", "u8"))) = "Foo = u8; $100");
-      Check ("template: an unfilled hole is refused",
-             Refused ("${name} ${missing}", (1 => Bind ("name", "Foo")), "${missing}"));
-      Check ("template: a bare $ is refused",
-             Refused ("a $ b", (1 .. 0 => Bind ("", "")), "must be"));
-      Check ("template: an unterminated hole is refused",
-             Refused ("${name", (1 .. 0 => Bind ("", "")), "no closing"));
+      --  Every hole in hbnf's templates is `{{&name}}`, never `{{name}}`:
+      --  Mustache is spec-conformant, so the plain form HTML-escapes, and a
+      --  generated C type holding & < > " would come back corrupted.
+      declare
+         V : Context := View;
+      begin
+         Put (V, "t", "struct l &x <y>");
+         Check ("template: {{&x}} is raw",
+                Render ("[{{&t}}]", V) = "[struct l &x <y>]");
+         Check ("template: {{x}} escapes, which is why hbnf never uses it",
+                Render ("[{{t}}]", V) = "[struct l &amp;x &lt;y&gt;]");
+      end;
+
+      --  A section over a list is the per-element loop the emitters used to
+      --  write out in Ada, one copy per backend.
+      declare
+         V   : Context := View;
+         Lst : constant Value_Access := New_List;
+         Row : Value_Access;
+      begin
+         for C of String'("ab") loop
+            Row := New_Map;
+            Insert (Row, "f", New_Scalar ((1 => C)));
+            Append (Lst, Row);
+         end loop;
+         Put (V, "items", Lst);
+         Check ("template: a section iterates a list",
+                Render ("{{#items}}<{{&f}}>" & LFc & "{{/items}}", V)
+                  = "<a>" & LFc & "<b>" & LFc);
+         Check ("template: an inverted section covers the empty case",
+                Render ("{{^none}}none{{/none}}{{^items}}some{{/items}}", V)
+                  = "none");
+      end;
    end Check_Templates;
 
 begin
-   Templates.Load ("templates");
    Mustache.Load ("templates");
    Check_Server (Ada.Command_Line.Argument (1));
    Check_Hbnf (Ada.Command_Line.Argument (2));

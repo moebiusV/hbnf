@@ -1,4 +1,5 @@
 #[derive(Default)]
-pub struct ${name}Entry {
-${items}}
-pub type ${name} = Vec<${name}Entry>;
+pub struct {{&name}}Entry {
+{{#items}}    pub {{&field}}: {{&type}},
+{{/items}}}
+pub type {{&name}} = Vec<{{&name}}Entry>;

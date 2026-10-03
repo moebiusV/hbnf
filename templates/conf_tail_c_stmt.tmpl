@@ -1,4 +1,4 @@
-@ROOT_TYPE@ *conf = NULL;
+{{&root_type}} *conf = NULL;
 const char *conf_file = NULL;
 
 /* Default handler: print "file:line: <caret message>" and exit(1).  Override
@@ -27,7 +27,7 @@ int parse_config(const char *filename) {
     size_t line = 0, col = 0;
 
     conf_file = filename;
-    conf = (@ROOT_TYPE@ *)calloc(1, sizeof *conf);
+    conf = ({{&root_type}} *)calloc(1, sizeof *conf);
     if (!conf) {
         conf_error(0, "out of memory");
         return -1;
@@ -39,4 +39,4 @@ int parse_config(const char *filename) {
     return 0;
 }
 
-@ROOT_TYPE@ *conf_ptr(void) { return conf; }
+{{&root_type}} *conf_ptr(void) { return conf; }

@@ -10,7 +10,6 @@ with HBNF_Rust;
 with HBNF_Zig;
 with HBNF_Ada;
 with Mustache;
-with Templates;
 
 --  Dump every backend's declarations + parser for a schema (arg 1) into the
 --  current directory under fixed names, for the cross-language compile smoke
@@ -46,7 +45,6 @@ procedure Gen_All is
    Conf : constant Boolean := Ada.Command_Line.Argument_Count >= 2
      and then Ada.Command_Line.Argument (2) = "--conf";
 begin
-   Templates.Load ("templates");
    Mustache.Load ("templates");
    declare
       Ada_Parser : constant String :=

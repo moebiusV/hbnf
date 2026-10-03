@@ -1,5 +1,5 @@
 /* The configuration tree root, populated by parse_config(). */
-extern @ROOT_TYPE@ *conf;
+extern {{&root_type}} *conf;
 
 /* yyerror-style error handler: called by the parser at the point of failure
    with the caret message and its 1-based line.  The default handler prints
@@ -18,7 +18,7 @@ int parse_config(const char *filename);
 
 /* Return the current config root (NULL before a successful parse_config).
    Convenience for FFI languages that cannot read the `conf` global. */
-@ROOT_TYPE@ *conf_ptr(void);
+{{&root_type}} *conf_ptr(void);
 
 /* Free the current config tree and reset the root (the SIGHUP reload
    path).  Safe to call when conf is NULL. */

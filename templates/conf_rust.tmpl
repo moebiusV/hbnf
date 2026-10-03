@@ -30,7 +30,7 @@ fn config_error(line: usize, msg: &str) {
     CONFIG_ERROR.get().copied().unwrap_or(default_config_error)(line, msg);
 }
 
-pub fn parse_config(path: &str) -> Result<@ROOT_TYPE@, ParseError> {
+pub fn parse_config(path: &str) -> Result<{{&root_type}}, ParseError> {
     *CONF_FILE.lock().unwrap() = path.to_string();
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
