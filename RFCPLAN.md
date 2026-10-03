@@ -430,6 +430,22 @@ and zero `${` in the templates (3b), zero `Token_Vectors` outside the
 reader's own lexer (9c).  Those are the assertions that fail loudly while
 the old path is still there.
 
+**Correct first, optimize after — and a regression that buys correctness is
+expected, not a defect.**  Every step still ahead adds accuracy or adds a
+feature: characters where there were tokens, a pointer where a type was
+refused, a warning channel, spans, recovery, a wire layer.  Each of those
+costs cycles, and the cost is *predictable* — a parser that checks more does
+more work.  So a performance number that moves the wrong way after a
+correctness step is recorded and left alone; it is not a reason to stop, to
+revert, or to interleave optimization into the step that caused it.
+Optimization happens once the feature set is settled, against a measurement
+taken then, and 4f sits at the end of the running order for that reason.
+
+What does **not** relax is the honesty rule: **paper claims match
+measurements.**  A step that moves a number re-measures and updates §6
+rather than leaving the old figure standing.  Recording a regression is
+cheap; a stale claim is the thing this project does not ship.
+
 The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
@@ -464,11 +480,12 @@ preference:
   one distinctive capability is running the mutually recursive grammar the
   backends refuse, which is the gap 9b closes.  Retiring it any earlier
   would mean losing a test; retiring it after costs nothing.
-- **Correctness before speed, and measurement before optimization.**  4f
-  sits late holding its numbers.  It is also now blocked on its own
-  benchmark: `bench/gen.sh` emits one rule shape, so §6's input does not
-  exercise the wide alternation the remaining cost lives in (see "Ordering
-  and token tables").
+- **4f is last of the work, by policy, not by accident.**  Every step
+  before it adds correctness and costs cycles, so optimizing earlier means
+  optimizing against a shape that is about to change.  It is also blocked
+  on its own benchmark: `bench/gen.sh` emits one rule shape, so §6's input
+  does not exercise the wide alternation the remaining cost lives in (see
+  "Ordering and token tables").
 
 13 is last because it is a claim that the notation is finished, and nothing
 should claim that before 10.
@@ -649,15 +666,28 @@ should claim that before 10.
    4e. **Coalesce ASCII char-rule scans into byte loops.** *Done*
        (0de04f6).
 
-   4f. **The absolute gate is met; the regression against the token array
-       is not.**  Read this entry with §6 open: re-measured on the author's
-       workstation (Ryzen 5 7600), `parse_file` does 100,000 pfctl rules in
-       **0.51 s**, which is the gate as written ("about 0.5 s").  So the
-       gate is not failing on real hardware, and everything below is the
-       weaker and still-true claim: the character model costs about 1.28x
-       what the token array cost for pfctl, on the same machine, same
-       inputs.  The numbers in this entry are from a shared VM roughly 1.6x
-       slower than that workstation; only their *ratios* carry over.
+   4f. **Measurements, held for later — not a gate blocking anything.**
+       Under "correct first, optimize after" at the head of this section,
+       this entry is a record, not an obstacle.  The absolute gate is met:
+       re-measured on the author's workstation (Ryzen 5 7600), `parse_file`
+       does 100,000 pfctl rules in **0.51 s**, which is the gate as written
+       ("about 0.5 s").  What remains is the weaker claim that the
+       character model costs about 1.28x what the token array cost for
+       pfctl on the same machine with the same inputs — and that is the
+       expected shape of the trade, because the character model is the one
+       that reads ABNF correctly (decision 7: the token array accepted
+       `x y` for `"x" "y"` and rejected `xy`).  A parser that checks more
+       does more work.
+
+       **So this number is expected to get worse again** as 9b adds an
+       indirection, 12 adds a warning channel, 6 adds spans and 8 adds
+       recovery.  Each of those steps re-measures and updates §6, and none
+       of them stops for the figure.  The optimization work below waits
+       until the feature set is settled, and is then done against a
+       measurement taken then rather than against the ratios here.
+
+       The numbers in this entry are from a shared VM roughly 1.6x slower
+       than that workstation; only their *ratios* carry over.
 
        Measured 2026-10-02, the same machine, the same inputs, the
        harness's own best-of-five, pre-4c (c2eb521, token array) against
