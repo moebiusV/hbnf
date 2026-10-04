@@ -1,4 +1,4 @@
-with "../hbnf.gpr";
+with "../hbnf_config.gpr";
 
 --  Conformance suite for the hbnf package: builds hbnf_check, hbnf_match_check
 --  and hbnf_emit_check against the static library.  Object files land outside
