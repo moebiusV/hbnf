@@ -234,6 +234,39 @@ include "$CORE"
 doc = "a" (* and then nothing
 G
 
+echo "== a repeated bare literal is refused, not crashed on (step 12) =="
+# `doc = *"a"` is a list whose every entry holds nothing.  C and Zig used to
+# raise CONSTRAINT_ERROR on a discriminant check; Rust and Ada emitted a
+# parser referencing an entry type they never declared.  One check in
+# HBNF_Compilable now refuses it for all four, and names both spellings that
+# work.
+for shape in '*"a"' '( *"a" )' '1*"a"' '"k" *"a"' '3*5"a"'; do
+	printf 'language C\ndoc = %s\n' "$shape" > "$W/rl.hbnf"
+	for b in c rust zig ada; do
+		if "$CLI" "$W/rl.hbnf" --backend=$b > /dev/null 2> "$W/err.txt"; then
+			echo "  FAIL [doc = $shape refused by $b]: accepted"; rc=1
+		elif grep -q "repeated literal" "$W/err.txt"; then
+			:
+		else
+			echo "  FAIL [doc = $shape refused by $b]: $(head -1 "$W/err.txt")"; rc=1
+		fi
+	done
+	echo "  PASS [doc = $shape: all four backends refuse it, with the reason]"
+done
+# and the spellings the message names do work
+for shape in '*( "a" )' '*%x41' '"k" *word'; do
+	printf 'language C\ndoc = %s\n' "$shape" > "$W/rl.hbnf"
+	ok=1
+	for b in c rust zig ada; do
+		"$CLI" "$W/rl.hbnf" --backend=$b > /dev/null 2> "$W/err.txt" || ok=0
+	done
+	if [ "$ok" = 1 ]; then
+		echo "  PASS [doc = $shape still compiles everywhere]"
+	else
+		echo "  FAIL [doc = $shape still compiles everywhere]: $(head -1 "$W/err.txt")"; rc=1
+	fi
+done
+
 echo "== recursive tree types (RFCPLAN step 9) =="
 # A rule whose value really does contain itself is still refused -- step 9b
 # adds the pointer that breaks it -- but all four backends must refuse it,

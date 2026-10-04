@@ -620,6 +620,34 @@ package body HBNF_Compilable is
       end if;
       Shadowed := 0;
 
+      --  A repeated bare literal at phrase level (`doc = *"a"`, `1*"a"`,
+      --  `( *"a" )`, or `"k" *"a"`) is a list whose every entry holds
+      --  nothing, and no backend represents it: C and Zig raised
+      --  CONSTRAINT_ERROR on a discriminant check, and Rust and Ada emitted
+      --  a parser referencing an entry type they never declared (rustc:
+      --  "cannot find type `DocEntry`").  The backend contract says to
+      --  reject during schema validation rather than let one backend crash
+      --  and another emit code that does not compile, so it is refused here,
+      --  once, for all four.  The two spellings that do work are named,
+      --  since each is a character away.
+      for R of Rules loop
+         if not HBNF_Grammar.Is_Char_Rule (Rules, To_String (R.Name)) then
+            for E of R.Pattern loop
+               if E.Kind = HBNF_Grammar.Literal
+                 and then (E.Min /= 1 or else E.Max /= 1)
+               then
+                  raise Parse_Error with
+                    To_String (R.Name) & ": a repeated literal would make "
+                    & "every list entry hold nothing, which no backend "
+                    & "represents; group it (`*( " & '"' & To_String (E.Lit)
+                    & '"' & " )`) for a list of entries, or make it a "
+                    & "character rule (`%x`, or a `'c'` literal) to repeat "
+                    & "the character";
+               end if;
+            end loop;
+         end if;
+      end loop;
+
       --  `conf struct X` hands parse_config the daemon's own struct, which
       --  only action jets fill: without one the parse would succeed and
       --  leave the daemon's conf empty.
