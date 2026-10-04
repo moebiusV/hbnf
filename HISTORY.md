@@ -121,10 +121,20 @@ EBNF kept the first two and spelled the repetition `{ }`; ABNF kept the `=`
 and the `/`, and wrote repetition as a prefix count. The inheritance is the
 *decision* rather than the character — that a grammar for a top-down parser
 says "repeat this" instead of naming itself again — and every notation since
-has made it, hbnf included. What did not survive is the part that made META
-II a compiler-compiler rather than a parser generator: output directives
-living inside the syntax, which is also the part this project has not yet
-adopted.
+has made it, hbnf included.
+
+What did not survive into the parser generators is the part that made META
+II a compiler-compiler rather than one of them: output directives living
+inside the syntax. Yacc put its actions at the end of a production, ANTLR
+and its successors built a tree and walked it afterwards, and hbnf did the
+same — a `%action{ }` block had to end its rule, so there was nowhere to put
+`.OUT` where META II puts it. That is being repaired rather than admired:
+the block positions are a notation decision in `RFCPLAN.md` step 12, and
+`%emit{ }` — the generative sibling of `%scan{ }` and `%action{ }` — is the
+`.OUT` directive sixty years on, one level up, writing a target language
+instead of one machine's assembly. Schorre's loop closed because the
+directives were in the grammar. Whether hbnf's closes depends on the same
+thing.
 
 Robert McClure's TMG (1965) did the same, at Texas Instruments; McIlroy
 ported it to Unix, and Ken Thompson used it around 1970 to write B — the
