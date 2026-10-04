@@ -42,6 +42,40 @@ package HBNF_Grammar is
    function Error_Message (E : Ada.Exceptions.Exception_Occurrence)
      return String;
 
+   --  =====================================================================
+   --  Warnings.
+   --
+   --  A Parse_Error stops generation; a warning does not.  The reader and
+   --  the schema checks both need one (RFCPLAN.md step 12): 7a's `:` file
+   --  warns once that `|` is first-match, and step 8's linter reports
+   --  nullable repetitions, unreachable rules and shadowed alternatives
+   --  through the same channel.
+   --
+   --  A warning carries where it is and what it is, goes to standard error
+   --  as `hbnf: <where>: warning: <text>`, and is counted.  `Warn_Once`
+   --  takes a key and reports only the first warning with that key, which
+   --  is what a per-file notice needs.  With Werror set, Warnings > 0 is an
+   --  error the caller raises at the end -- so the whole schema is still
+   --  reported, rather than stopping at the first warning.
+   --  =====================================================================
+
+   procedure Warn (Where, Text : String);
+   --  Report a warning.  Where is "file:line:col", "file" or "" (no
+   --  location); Text is the message, which may carry its own newlines.
+
+   procedure Warn_Once (Key, Where, Text : String);
+   --  Warn, unless a warning with this Key was already reported.
+
+   function Warnings return Natural;
+   --  How many warnings have been reported since Reset_Warnings.
+
+   procedure Reset_Warnings;
+   --  Forget the count and every Warn_Once key.  Called per schema.
+
+   procedure Set_Werror (On : Boolean);
+   function Werror return Boolean;
+   --  `--werror`: the caller treats Warnings > 0 as a failure.
+
    type Element_Kind is (Literal, Name, Group, Alt, Char_Range);
    --  Char_Range = a character-level terminal: %xHH (one code point) or
    --  %xHH-HH (a code-point range).  Unlike Literal (a whole token), a Char_Range

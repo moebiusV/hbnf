@@ -128,6 +128,8 @@ begin
             Idref := True;
          elsif A = "--compare" then
             Compare := True;
+         elsif A = "--werror" then
+            HBNF_Grammar.Set_Werror (True);
          elsif A'Length >= 9 and then A (1 .. 9) = "--prefix=" then
             Prefix := To_Unbounded_String (A (10 .. A'Last));
          elsif A'Length >= 12 and then A (1 .. 12) = "--templates=" then
@@ -155,6 +157,13 @@ begin
       end if;
       Mustache.Load (Dir);
    end;
+
+   --  One schema per run, so the warning count starts clean.  A process that
+   --  reads several schemas calls Reset_Warnings between them; the reader does
+   --  not do it itself, because Parse_File recurses for includes and a reset
+   --  there would drop the including file's warnings and re-arm its
+   --  once-per-file keys.
+   HBNF_Grammar.Reset_Warnings;
 
    declare
       --  The rules the parser uses, with what the backends do not take

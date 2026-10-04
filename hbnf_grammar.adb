@@ -94,6 +94,54 @@ package body HBNF_Grammar is
       return M;
    end Error_Message;
 
+   --  =====================================================================
+   --  Warnings (see the spec).  A warning goes to standard error and is
+   --  counted; Werror makes the caller fail at the end rather than here, so
+   --  every warning in a schema is reported before anything stops.
+   --  =====================================================================
+
+   package Key_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
+
+   Warn_Count : Natural := 0;
+   Warn_Keys  : Key_Sets.Set;
+   Werror_On  : Boolean := False;
+
+   procedure Warn (Where, Text : String) is
+   begin
+      Warn_Count := Warn_Count + 1;
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "hbnf: " & (if Where = "" then "" else Where & ": ")
+         & "warning: " & Text);
+   end Warn;
+
+   procedure Warn_Once (Key, Where, Text : String) is
+   begin
+      if Warn_Keys.Contains (Key) then
+         return;
+      end if;
+      Warn_Keys.Insert (Key);
+      Warn (Where, Text);
+   end Warn_Once;
+
+   function Warnings return Natural is (Warn_Count);
+
+   procedure Reset_Warnings is
+   begin
+      Warn_Count := 0;
+      Warn_Keys.Clear;
+   end Reset_Warnings;
+
+   procedure Set_Werror (On : Boolean) is
+   begin
+      Werror_On := On;
+   end Set_Werror;
+
+   function Werror return Boolean is (Werror_On);
+
    --  The file Parse is reading ("" for Parse (Text)), for messages, and
    --  the line of its first rule (0 before one), which no include may
    --  follow.
@@ -716,6 +764,22 @@ package body HBNF_Grammar is
                elsif I < Text'Last and then Text (I + 1) = '=' then
                   Emit (T_Eq);  I := I + 2;  Col := Col + 2;
                else
+                  --  A bare `:` is yacc's, and yacc's `|` is unordered: its
+                  --  tables resolve the choice.  hbnf's `|` is PEG
+                  --  first-match, so a pasted yacc grammar compiles and can
+                  --  mean something else.  Say so once per file — silently
+                  --  changing a grammar's meaning is the one outcome 7a
+                  --  must not produce.
+                  Warn_Once
+                    ("yacc-colon:" & To_String (Current_File),
+                     (if Current_File = Null_Unbounded_String then ""
+                      else To_String (Current_File) & ":")
+                     & Img (Line),
+                     "`:` is yacc's assignment operator, and yacc's `|` is "
+                     & "unordered — its tables resolve the choice.  hbnf's "
+                     & "`|` is ordered: the first branch that matches wins, "
+                     & "so write the longer alternative first.  For ABNF's "
+                     & "union, where order does not matter, write `/`.");
                   Emit (T_Eq);  I := I + 1;  Col := Col + 1;
                end if;
             --  `|` separates alternatives, as in BNF, EBNF and yacc, and

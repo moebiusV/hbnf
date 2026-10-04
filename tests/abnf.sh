@@ -234,6 +234,61 @@ include "$CORE"
 doc = "a" (* and then nothing
 G
 
+echo "== the warning channel, and 7a's `:` notice (step 12) =="
+# A warning does not stop generation; --werror makes it fail at the end, so
+# every warning is reported first.  7a left this notice unbuilt for want of
+# a channel: a yacc `:` grammar compiles, and yacc's `|` is unordered while
+# hbnf's is first-match, so it must say so -- once per file.
+rm -f "$W/t"
+cat > "$W/y.hbnf" <<Y
+language C
+include "$CORE"
+doc  : sum
+sum  : num "+" num2
+num  : 1*DIGIT
+num2 : 1*DIGIT
+Y
+if "$CLI" "$W/y.hbnf" --backend=c > /dev/null 2> "$W/err.txt"; then
+	n=$(grep -c "warning:" "$W/err.txt")
+	if [ "$n" = 1 ] && grep -q "ordered" "$W/err.txt"; then
+		echo "  PASS [a \`:\` schema warns once and still generates]"
+	else
+		echo "  FAIL [a \`:\` schema warns once and still generates]: $n warning(s)"; rc=1
+	fi
+else
+	echo "  FAIL [a \`:\` schema warns once and still generates]: refused"; rc=1
+fi
+if "$CLI" "$W/y.hbnf" --backend=c --werror > /dev/null 2> "$W/err.txt"; then
+	echo "  FAIL [--werror turns it into a failure]: accepted"; rc=1
+else
+	if grep -q -- "--werror" "$W/err.txt"; then
+		echo "  PASS [--werror turns it into a failure]"
+	else
+		echo "  FAIL [--werror turns it into a failure]: $(head -1 "$W/err.txt")"; rc=1
+	fi
+fi
+sed 's/ : / = /' "$W/y.hbnf" > "$W/e.hbnf"
+if "$CLI" "$W/e.hbnf" --backend=c --werror > /dev/null 2> "$W/err.txt" \
+   && [ ! -s "$W/err.txt" ]; then
+	echo "  PASS [an \`=\` schema is silent under --werror]"
+else
+	echo "  FAIL [an \`=\` schema is silent under --werror]: $(head -1 "$W/err.txt")"; rc=1
+fi
+# the shadowing report moved onto the same channel
+cat > "$W/sh.hbnf" <<Y
+language C
+include "$CORE"
+doc = a
+a = "x" | "x" "y"
+Y
+if "$CLI" "$W/sh.hbnf" --backend=c > /dev/null 2> "$W/err.txt"; then
+	echo "  FAIL [a shadowed alternative warns and fails]: accepted"; rc=1
+elif grep -q "warning:.*can never match" "$W/err.txt"; then
+	echo "  PASS [a shadowed alternative warns and fails]"
+else
+	echo "  FAIL [a shadowed alternative warns and fails]: $(head -1 "$W/err.txt")"; rc=1
+fi
+
 echo "== a repeated bare literal is refused, not crashed on (step 12) =="
 # `doc = *"a"` is a list whose every entry holds nothing.  C and Zig used to
 # raise CONSTRAINT_ERROR on a discriminant check; Rust and Ada emitted a

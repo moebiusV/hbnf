@@ -143,9 +143,9 @@ package body HBNF_Compilable is
                                       V (Br (J).First + X)))
                   then
                      Shadowed := Shadowed + 1;
-                     Ada.Text_IO.Put_Line
-                       (Ada.Text_IO.Standard_Error,
-                        "hbnf: " & Rule_Name & ": the alternative `"
+                     HBNF_Grammar.Warn
+                       (Rule_Name,
+                        "the alternative `"
                         & Image (V, Br (J).First, Br (J).Last)
                         & "` can never match: the earlier `"
                         & Image (V, Br (I).First, Br (I).Last)
@@ -810,6 +810,14 @@ package body HBNF_Compilable is
          raise Parse_Error with
            Natural'Image (Shadowed) & " alternative(s) can never match "
            & "(listed above)";
+      end if;
+
+      --  --werror: every warning in the schema has been reported by now, so
+      --  failing here reports them all rather than stopping at the first.
+      if HBNF_Grammar.Werror and then HBNF_Grammar.Warnings > 0 then
+         raise Parse_Error with
+           Natural'Image (HBNF_Grammar.Warnings)
+           & " warning(s), and --werror (listed above)";
       end if;
    end Check;
 
