@@ -198,12 +198,25 @@ normalizes two configs that differ only in whitespace or brace position.
 
 ## Building
 
+Needs [mustache-ada](https://github.com/moebiusV/mustache-ada) installed: it
+renders the code templates.  Pure Ada on the GNAT runtime, no C dependency.
+
 ```
 gprbuild -P hbnf_config.gpr -p -XLIBRARY_TYPE=static
 gprinstall -P hbnf_config.gpr -p --prefix=/usr --sources-subdir=include/hbnf
 ```
 
-Packaged for Alpine by the `ada-on-alpine` aports overlay as `testing/hbnf`.
+Packaged for Alpine by the `ada-on-alpine` aports overlay as `testing/hbnf`,
+which also carries `testing/mustache-ada`.
+
+**Build through the project files, not `gnatmake -I.`.**  `gprbuild` keeps its
+own object directory; `gnatmake -I. -D <tmpdir>` compiles into the temp
+directory but `gnatlink` takes `hbnf.ali` from `.`, so a stale `.o` left in the
+source directory wins the link and the build reports success while running
+yesterday's code.  Those files are `.gitignore`d, so `git status` stays clean
+while it happens.  If you must use `gnatmake`, `rm -f *.o *.ali` first;
+`tests/e2e.sh` does that for you and refuses to run against a binary older
+than its newest source.
 
 ## Contributing
 

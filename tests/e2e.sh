@@ -18,9 +18,32 @@ if [ ! -f "$MUSTACHE_INC/mustache.ads" ]; then
 fi
 A="-gnat2022 -I. -Itests -I$MUSTACHE_INC"
 
+# A stale .o in the source directory wins the link: gnatmake -D <tmpdir>
+# compiles into the temp directory, but gnatlink takes hbnf.ali from `.`, so
+# the build reports success while running yesterday's code.  They are
+# .gitignore'd, so `git status` does not show it.  Clear them, then check the
+# binary really is newer than every source that went into it.
+rm -f ./*.o ./*.ali
+
+newer_than_sources() { # $1 = binary
+	[ -f "$1" ] || return 1
+	for f in ./*.ad[bs] tests/*.ad[bs] "$MUSTACHE_INC"/*.ad[bs]; do
+		[ -f "$f" ] || continue
+		[ "$f" -nt "$1" ] && return 1
+	done
+	return 0
+}
+
 echo "== building generators =="
 gnatmake -q $A hbnf.adb -o /tmp/hbnf
 gnatmake -q $A tests/gen_all.adb -o /tmp/gen_all
+for b in /tmp/hbnf /tmp/gen_all; do
+	newer_than_sources "$b" || {
+		echo "e2e: $b is older than a source it was built from;" \
+		     "a stale object won the link (rm -f *.o *.ali)" >&2
+		exit 1
+	}
+done
 
 echo "== C =="
 /tmp/hbnf tests/server.hbnf --backend=c > /tmp/server.c
