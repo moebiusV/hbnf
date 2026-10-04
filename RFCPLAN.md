@@ -469,7 +469,7 @@ The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
 
-> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a (bar its warning), 9a.
+> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a, 9a; 12 in part (three of five).
 > **Critical path:** **12** → **9b** → **9c** → **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
 > any of them and can land in any gap.
@@ -909,8 +909,9 @@ should claim that before 10.
        the message says what to write instead ("you wrote X; if you meant
        Y, hbnf spells it Z").
 
-       **What is left is the warning** at the end of this item, and it
-       needs a channel the reader does not have: see step 12.
+       *Completed 2026-10-04* by step 12's warning channel: a file whose
+       assignment operator is `:` now warns once that `|` is first-match and
+       names `/` for the union case.
 
        **Assignment.**  `::=` (Naur/ALGOL), `:=` (Wirth) and `:`
        (yacc/POSIX) all read as `=`.  The POSIX BNF section above has the
@@ -1259,9 +1260,9 @@ should claim that before 10.
    lexer as grammar, done).  It is 11 because it is not on the path to any
    gate above, not because it comes last.
 
-12. **Known defects and notation decisions.**  Second on the critical
-   path, after 3b.  Five items, in two groups, and both groups are in the
-   way of later steps:
+12. **Known defects and notation decisions.**  *Three of five done
+   2026-10-04.*  Five items, in two groups, and both groups are in the way
+   of later steps:
 
    - Three **defects** — a crash, a missing diagnostic channel, and a build
      hazard.  Found 2026-10-02 while testing 7a; none was caused by it.
@@ -1274,13 +1275,21 @@ should claim that before 10.
      added to five places.  So they land here, well before their size
      suggests.
 
-   - **A group whose whole content is a repetition crashes the C backend.**
-     `x = ( *"a" )` — and `x = (*"a")`, the same thing — raises
-     `CONSTRAINT_ERROR` from `hbnf_c.adb:3681`, a discriminant check, rather
-     than parsing or saying what is wrong.  Reproduced on main without 7a,
-     so it predates it; step 2 lifted groups into their own rules and this
-     shape slipped through.  An unhandled exception where a diagnostic
-     belongs is the worst of both: no parser and no message.
+   - **A repeated bare literal is refused, not crashed on.**  *Done
+     (32d25df).*  The entry said "a group whose whole content is a
+     repetition crashes the C backend"; probing found it wider on both
+     axes.  The shapes are `*"a"`, `1*"a"`, `( *"a" )`, `"k" *"a"` and
+     `3*5"a"` — any repeated bare literal at phrase level, grouped or not —
+     and it is not one backend: C raised `CONSTRAINT_ERROR` at
+     `hbnf_c.adb:3724` and Zig at `hbnf_zig.adb:1463`, both discriminant
+     checks on an `E.Items` the element does not have, while Rust and Ada
+     "succeeded" and emitted a parser referencing an entry type they never
+     declared (`rustc: cannot find type DocEntry`).  So no backend
+     represents it: two crash and two emit code that does not compile.
+     Such an entry would hold nothing, so the fix is the backend contract's
+     — one check in `HBNF_Compilable`, for all four, naming the two
+     spellings that work (`*( "a" )` for a list of entries, or a character
+     rule to repeat the character).
    - **A block cannot sit between elements.**  This is a property of the
      whole `%scan{ }` / `%action{ }` / `%emit{ }` family (decision 8), not
      of one member: a block must end its rule.  `expr = term "+"
@@ -1301,7 +1310,12 @@ should claim that before 10.
      **optional rule terminator**, so a machine-generated or pretty-printed
      schema does not depend on the indentation rule — 7a made yacc's
      trailing `;` survive only because `;` starts a comment.
-   - **The reader has no warning channel**, only `Parse_Error`.  That is
+   - **A warning channel.**  *Done (32fae64).*  `HBNF_Grammar.Warn`,
+     `Warn_Once`, `Warnings`, `Reset_Warnings`, `Set_Werror`, and
+     `--werror`; the shadowing report moved onto it and 7a's `:` notice is
+     its first new user.  The original entry follows.
+
+     The reader had no warning channel, only `Parse_Error`.  That is
      why 7a's one remaining piece is unbuilt: a file whose assignment
      operator is `:` must warn once that `|` is PEG first-match and name
      `/` for the union case, and there is nowhere for that to go.  Step 8's
@@ -1350,7 +1364,9 @@ should claim that before 10.
      detector rather than five times over, per 9a.
 
    - **Stale `.o` and `.ali` files in the source directory silently win the
-     link.**  `gnatmake -I. -D <tmpdir> hbnf.adb` compiles into the temp
+     link.**  *Done (0444e66)* — `tests/e2e.sh` clears them and refuses to
+     run against a binary older than its newest source; README says to
+     build through the project files and why.  `gnatmake -I. -D <tmpdir> hbnf.adb` compiles into the temp
      directory, but `gnatlink` takes `hbnf.ali` from `.`, so a build can
      link yesterday's objects and report success.  They are gitignored, so
      `git status` stays clean while the binary is stale.  This cost a
