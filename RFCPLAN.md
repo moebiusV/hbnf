@@ -1547,6 +1547,44 @@ should claim that before 10.
    evidence: it was found by asking what META II could do that hbnf
    cannot, not by any test.
 
+**Code-size optimization, deferred like 4f.**  The generated parser for a
+small wire grammar (the IRC message) is ~1,000 lines against ~280
+hand-written, and the gap is structural, not a correctness cost.  It is
+not a gate; it is recorded here so the shrink lands once the feature set
+is settled, against a generated-line-count figure taken then (4f's
+byte-identity gate is the cycle analogue).  The five items, in payoff
+order:
+
+1. **Emit only reachable rules.**  A grammar may `include "common.hbnf"`
+   and reach three of its rules; every backend still emits a `Parse_*`
+   function and type for every rule in every included file, dead or not.
+   Reachability from the root — through includes, `=/` extensions and
+   overrides — decides what is emitted; the rest is never called.  This is
+   what lets a grammar keep its includes whole and stay small: a schema
+   that includes `common.hbnf` and uses `SP` must not carry `Parse_NUL`
+   … `Parse_TILDE`.  The grammar is not expected to trim its own includes
+   to work around the emitter.
+2. **Optional is a nullable field, not a one-element vector.**  `[ X ]`
+   currently becomes a `package …_Vectors` instantiation, an entry record
+   and a subtype — three declarations to say "maybe".  A nullable access or
+   a discriminant is one.
+3. **Repetition reuses one list type.**  Each `*( X )` instantiates a fresh
+   `Vectors` plus an entry record; a shared parameterized element list
+   collapses that per-rule boilerplate.
+4. **Emit the token layer only when a grammar tokens.**  A pure
+   character-rule grammar still gets `Token_Kind`, `Token`, `Token_Vectors`,
+   `Line_Vectors` and `Parse_Tokens`; gate that layer on the grammar using
+   jets/`%scan`, and emit a direct string reader otherwise.
+5. **Share the per-rule save/backtrack boilerplate.**  Every `Parse_*`
+   repeats save-position / `when Parse_Error => P.Pos := Save`; a single
+   helper — or emitting the backtrack only where ordered choice or
+   optionals actually need it — removes most of it.
+
+Each item changes no parser's accept/reject behaviour, so the daemon
+corpus, e2e and byte-identity gates hold throughout; each is
+regression-tested by a generated-line-count figure, the way 4f is by
+cycles.
+
 ## Not in this plan
 
 - RBNF (RFC 5511's routing BNF).
