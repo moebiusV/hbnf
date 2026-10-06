@@ -34,7 +34,7 @@ pub fn main() void {
         g.fold_prim(&r, &w);
         g.deinit_prim(&r, alloc);
     }
-    // The token and line arrays parse_text makes are not freed by it, so the
-    // report is not empty; recursive.sh looks for the tree's own boxes in it.
-    _ = da.deinit();
+    // Nothing may be left: the tree is released by deinit_ and parse_text
+    // frees its own scaffolding.
+    if (da.deinit() == .leak) std.debug.print("LEAK\n", .{});
 }

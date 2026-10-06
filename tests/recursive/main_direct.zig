@@ -34,7 +34,7 @@ pub fn main() void {
         std.debug.print("{s}: OK visited={d} folded={d}\n", .{ text, v.n, f.n });
         g.deinit_x(&r, alloc);
     }
-    // The token and line arrays parse_text makes are not freed by it, so the
-    // report is not empty; recursive.sh looks for the tree's own boxes in it.
-    _ = da.deinit();
+    // Nothing may be left: the tree is released by deinit_ and parse_text
+    // frees its own scaffolding.
+    if (da.deinit() == .leak) std.debug.print("LEAK\n", .{});
 }

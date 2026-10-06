@@ -132,14 +132,14 @@ fi
 
 # ---- Zig -----------------------------------------------------------------
 # `?*T`, zero-initialised null, and a generated deinit_<rule> that releases
-# the box.  The drivers run under std.heap.DebugAllocator, whose leak report
-# also names parse_text's own token and line arrays (it never frees them), so
-# the gate is that no leaked allocation was made by the box (`box__anon`).
+# the box.  The drivers run under std.heap.DebugAllocator and print LEAK if
+# anything is left, so the gate is that deinit_ and parse_text between them
+# free everything the parse allocated.
 zig_run() { # DIR EXE -> $W/zig.out holds the case lines
 	"$1/$2" > "$W/zig.raw" 2>&1
 	grep -E '^[^ ].*: (OK|REJECT)' "$W/zig.raw" > "$W/zig.out"
-	if grep -q 'in box__' "$W/zig.raw"; then
-		echo "recursive: Zig $3 FAIL (a box leaked)"; rc=1; return 1
+	if grep -q 'LEAK' "$W/zig.raw"; then
+		echo "recursive: Zig $3 FAIL (leaked)"; rc=1; return 1
 	fi
 }
 if command -v zig > /dev/null 2>&1; then
@@ -155,7 +155,7 @@ if command -v zig > /dev/null 2>&1; then
 1): REJECT
 ((1)): OK expr=set
 (1: REJECT" ]; then
-					echo "recursive: Zig OK (accepts (1) ((1)), rejects 1) (1; no box leaked)"
+					echo "recursive: Zig OK (accepts (1) ((1)), rejects 1) (1; nothing leaked)"
 				else
 					echo "recursive: Zig FAIL ($(head -4 "$W/zig.out" | tr '\n' '|'))"; rc=1
 				fi
@@ -180,7 +180,7 @@ if command -v zig > /dev/null 2>&1; then
 				# of them through the pointer, not stop at it.
 				if [ "$(cat "$W/zig.out")" = "(((5))): OK visited=3 folded=3
 ((5): REJECT" ]; then
-					echo "recursive: Zig direct OK (walkers reach all 3 nodes; no box leaked)"
+					echo "recursive: Zig direct OK (walkers reach all 3 nodes; nothing leaked)"
 				else
 					echo "recursive: Zig direct FAIL ($(head -2 "$W/zig.out" | tr '\n' '|'))"; rc=1
 				fi
@@ -200,10 +200,8 @@ if command -v zig > /dev/null 2>&1; then
 			> "$W/zp.err" 2>&1
 		then
 			"$W/zp/main" > "$W/zp.raw" 2>&1
-			# A leak the tree made has a parse_<rule> frame; parse_text's own
-			# arrays have only lex and parse_text.
-			if grep -E ' in parse_[a-z_]+ ' "$W/zp.raw" | grep -qv ' in parse_text '; then
-				echo "recursive: Zig deinit FAIL (the tree leaked)"; rc=1
+			if grep -q 'LEAK' "$W/zp.raw"; then
+				echo "recursive: Zig deinit FAIL (leaked)"; rc=1
 			elif grep -qi 'invalid free\|double free' "$W/zp.raw"; then
 				echo "recursive: Zig deinit FAIL (freed what it did not own)"; rc=1
 			elif [ "$(grep -E '^(OK|REJECT)' "$W/zp.raw")" = "OK hosts=3

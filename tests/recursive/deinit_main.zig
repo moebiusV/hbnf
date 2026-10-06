@@ -21,6 +21,7 @@ pub fn main() void {
         std.debug.print("OK hosts={d}\n", .{c.host_list.len});
         g.deinit_config(&c, alloc);
     }
-    // parse_text's own token and line arrays are reported; the tree's are not.
-    _ = da.deinit();
+    // Nothing may be left: the tree is released by deinit_ and parse_text
+    // frees its own scaffolding.
+    if (da.deinit() == .leak) std.debug.print("LEAK\n", .{});
 }

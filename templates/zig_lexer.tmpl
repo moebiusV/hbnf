@@ -7,6 +7,7 @@ fn lxWordChar(c: u8) bool { return lxWordStart(c) or lxDigit(c) or c == '.'; }
 
 pub fn lex(alloc: std.mem.Allocator, text: []const u8) ![]Token {
     var toks = std.ArrayList(Token).empty;
+    errdefer toks.deinit(alloc);
     var i: usize = 0; var line: usize = 1; var col: usize = 1;
     while (i < text.len) {
         const c = text[i];
@@ -81,8 +82,13 @@ pub fn lex(alloc: std.mem.Allocator, text: []const u8) ![]Token {
 
 pub fn parse_text(alloc: std.mem.Allocator, text: []const u8,
                   err: *[512]u8, err_line: *usize, err_col: *usize) ParseError!{{&root_type}} {
+    // The token array and the line list are scaffolding for this one parse:
+    // a tree string is a slice of `text` (or, for a quoted string, of its own
+    // allocation), never of either, so both go when the parse does.
     const toks = try lex(alloc, text);
+    defer alloc.free(toks);
     var lines = std.ArrayList([]const u8).empty;
+    defer lines.deinit(alloc);
     var s: usize = 0;
     for (text, 0..) |ch, idx| {
         if (ch == '\n') {
