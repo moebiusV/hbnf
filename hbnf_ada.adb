@@ -226,104 +226,467 @@ package body HBNF_Ada is
       return Names;
    end Enum_Names;
 
+   --  =====================================================================
+   --  Rule classification, and the by-value graph the one cycle detector in
+   --  HBNF_Compilable runs on.
+   --
+   --  These live at package level, parameterised by Rules, because Emit (the
+   --  type package) and Emit_Parser (the child parser package) are separate
+   --  functions with separate local state, and both need the same answers --
+   --  Emit for the record, alias and access declarations, Emit_Parser for the
+   --  commit point and the free walk.  This is not a unification of the four
+   --  backends' analyzers, which is a separate job; it only stops Ada keeping
+   --  two copies of its own classification.
+
+   function Find (Rules : Rule_Vectors.Vector; Name : String)
+     return Natural
+   is
+   begin
+      for I in 1 .. Natural (Rules.Length) loop
+         if To_String (Rules (I).Name) = Name then
+            return I;
+         end if;
+      end loop;
+      return 0;
+   end Find;
+
+   --  The Ada type a rule reference denotes: a core scalar inlines; any
+   --  other reference resolves to the referenced rule's own type name.
+   function Ada_Type_Of (Rules : Rule_Vectors.Vector; Ref : String)
+     return String is
+      S : constant String := Scalar_Ada_Type (Ref);
+   begin
+      if S /= "" then
+         return S;
+      end if;
+      if Find (Rules, Ref) = 0 then
+         raise Parse_Error with "undefined rule: " & Ref;
+      end if;
+      return Ada_Ident (Ref) & "_Type";
+   end Ada_Type_Of;
+
+   --  The underlying scalar Ada type a rule name resolves to, chasing
+   --  single-name aliases and jets to their target (so `str | word` and
+   --  `ipv4 | ipv6` both collapse to `Unbounded_String`).  "" if not scalar.
+   function Resolve_Type
+     (Rules : Rule_Vectors.Vector; N : String; Depth : Natural := 0)
+      return String
+   is
+      C : constant String := Scalar_Ada_Type (N);
+   begin
+      if C /= "" then
+         return C;
+      end if;
+      if Depth > 8 then
+         return "";
+      end if;
+      declare
+         J : constant Natural := Find (Rules, N);
+      begin
+         if J = 0 then
+            return "";
+         end if;
+         declare
+            R : constant Rule := Rules (J);
+            P : constant Element_Vectors.Vector := R.Pattern;
+         begin
+            if R.Jet_Code /= Null_Unbounded_String then
+               return "Unbounded_String";
+            end if;
+            if Natural (P.Length) = 1
+              and then P (1).Kind = Name
+              and then P (1).Min = 1
+              and then P (1).Max = 1
+            then
+               return Resolve_Type (Rules, To_String (P (1).Name), Depth + 1);
+            end if;
+         end;
+      end;
+      return "";
+   end Resolve_Type;
+
+   --  If the pattern is a pure alternation of names that all resolve to
+   --  the same scalar Ada type, that type (a scalar union); else "".
+   function Scalar_Union_Type
+     (Rules : Rule_Vectors.Vector; Els : Element_Vectors.Vector)
+      return String
+   is
+      T       : U := Null_Unbounded_String;
+      Has_Alt : Boolean := False;
+   begin
+      for E of Els loop
+         if E.Kind = Alt then
+            Has_Alt := True;
+         elsif E.Kind = Name then
+            declare
+               R : constant String := Resolve_Type (Rules, To_String (E.Name));
+            begin
+               if R = "" then
+                  return "";
+               end if;
+               if T = Null_Unbounded_String then
+                  T := To_Unbounded_String (R);
+               elsif To_String (T) /= R then
+                  return "";
+               end if;
+            end;
+         else
+            return "";
+         end if;
+      end loop;
+      if Has_Alt and then T /= Null_Unbounded_String then
+         return To_String (T);
+      end if;
+      return "";
+   end Scalar_Union_Type;
+
+   --  A struct member: the referenced name, and whether it is a list
+   --  (appeared with a repetition prefix) rather than a single value.
+   type Member is record
+      Name    : U;
+      Is_List : Boolean;
+   end record;
+   package Member_Vectors is new Ada.Containers.Vectors (Positive, Member);
+   function Contains (V : Member_Vectors.Vector; S : U) return Boolean is
+   begin
+      for X of V loop
+         if X.Name = S then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Contains;
+
+   --  Walk a pattern, collecting referenced rule names (deduped, in order)
+   --  as Members (Is_List marks a repeated reference), the literal strings,
+   --  and whether any '|' alternation appears.
+   procedure Collect
+     (Els     : Element_Vectors.Vector;
+      Members : in out Member_Vectors.Vector;
+      Lits    : in out String_Vectors.Vector;
+      Has_Alt : in out Boolean) is
+      Seen : String_Vectors.Vector;
+
+      function Seen_Here (S : U) return Boolean is
+      begin
+         for X of Seen loop
+            if X = S then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Seen_Here;
+   begin
+      for E of Els loop
+         case E.Kind is
+            when Name =>
+               declare
+                  Is_List : constant Boolean :=
+                    E.Min /= 1 or else E.Max /= 1;
+               begin
+                  if Seen_Here (E.Name) then
+                     raise Parse_Error with
+                       "rule """ & To_String (E.Name)
+                       & """ is referenced twice in one alternative;"
+                       & " split it into alias rules (e.g. `a = "
+                       & To_String (E.Name) & "; b = " & To_String (E.Name)
+                       & ";`) so each gets its own field";
+                  end if;
+                  Seen.Append (E.Name);
+                  if Contains (Members, E.Name) then
+                     if Is_List then
+                        for K in 1 .. Natural (Members.Length) loop
+                           if Members (K).Name = E.Name then
+                              Members.Replace_Element
+                                (K,
+                                 Member'(Name => E.Name, Is_List => True));
+                           end if;
+                        end loop;
+                     end if;
+                  else
+                     Members.Append
+                       (Member'(Name => E.Name, Is_List => Is_List));
+                  end if;
+               end;
+            when Literal =>
+               Lits.Append (E.Lit);
+            when Alt =>
+               Has_Alt := True;
+               Seen.Clear;
+            when Group =>
+               Collect (E.Items, Members, Lits, Has_Alt);
+            when Char_Range =>
+               null;
+            when Block =>
+               null;  --  lifted to a rule of its own before emission
+         end case;
+      end loop;
+   end Collect;
+
+   type Class_Kind is (Enum, Scalar, List, Struct);
+   type Rule_Info (Kind : Class_Kind := Scalar) is record
+      case Kind is
+         when Enum =>
+            Literals : String_Vectors.Vector := String_Vectors.Empty_Vector;
+         when Scalar =>
+            Inline_Type : U := Null_Unbounded_String;
+         when List =>
+            Elem_Name    : U := Null_Unbounded_String;
+            Elem_Members : Member_Vectors.Vector;
+         when Struct =>
+            Members : Member_Vectors.Vector := Member_Vectors.Empty_Vector;
+      end case;
+   end record;
+   package Info_Vectors is new Ada.Containers.Vectors (Positive, Rule_Info);
+
+   function Analyze (Rules : Rule_Vectors.Vector; Idx : Natural)
+     return Rule_Info is
+      R : constant Rule := Rules (Idx);
+      P : constant Element_Vectors.Vector := R.Pattern;
+   begin
+      if Is_Char_Rule (Rules, To_String (R.Name)) then
+         --  A character-level rule compiles to a scanner and a token; its
+         --  value is the matched text, so it is a scalar string.
+         return (Kind        => Scalar,
+                 Inline_Type => To_Unbounded_String ("Unbounded_String"));
+      end if;
+      if R.Jet_Code /= Null_Unbounded_String then
+         return (Kind        => Scalar,
+                 Inline_Type => To_Unbounded_String ("Unbounded_String"));
+      end if;
+      if Natural (P.Length) = 1 then
+         declare
+            E : constant Element_Access := P (1);
+         begin
+            --  Repetition => a list.
+            if E.Min /= 1 or else E.Max /= 1 then
+               if E.Kind = Name then
+                  return (Kind        => List,
+                          Elem_Name    => E.Name,
+                          Elem_Members => Member_Vectors.Empty_Vector);
+               elsif E.Kind = Group then
+                  --  A group of a single rule reference (`*( entry )`) is
+                  --  a list of that rule's type, not an anonymous struct.
+                  if Natural (E.Items.Length) = 1
+                    and then E.Items (1).Kind = Name
+                  then
+                     return (Kind        => List,
+                             Elem_Name    => E.Items (1).Name,
+                             Elem_Members => Member_Vectors.Empty_Vector);
+                  else
+                     declare
+                        Members : Member_Vectors.Vector;
+                        Lits    : String_Vectors.Vector;
+                        Has_Alt : Boolean := False;
+                     begin
+                        Collect (E.Items, Members, Lits, Has_Alt);
+                        return (Kind        => List,
+                                Elem_Name    => Null_Unbounded_String,
+                                Elem_Members => Members);
+                     end;
+                  end if;
+               else
+                  return (Kind        => List,
+                          Elem_Name    => Null_Unbounded_String,
+                          Elem_Members => Member_Vectors.Empty_Vector);
+               end if;
+            end if;
+
+            --  Single element, no repetition.
+            if E.Kind = Name then
+               return (Kind => Scalar,
+                       Inline_Type =>
+                         To_Unbounded_String
+                           (Ada_Type_Of (Rules, To_String (E.Name))));
+            elsif E.Kind = Group then
+               declare
+                  Members : Member_Vectors.Vector;
+                  Lits    : String_Vectors.Vector;
+                  Has_Alt : Boolean := False;
+               begin
+                  Collect (E.Items, Members, Lits, Has_Alt);
+                  return (Kind => Struct, Members => Members);
+               end;
+            else
+               return (Kind        => Scalar,
+                       Inline_Type => To_Unbounded_String
+                         ("Unbounded_String"));
+            end if;
+         end;
+      end if;
+
+      declare
+         Members : Member_Vectors.Vector;
+         Lits    : String_Vectors.Vector;
+         Has_Alt : Boolean := False;
+      begin
+         Collect (P, Members, Lits, Has_Alt);
+         if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
+            return (Kind => Enum, Literals => Lits);
+         else
+            declare
+               SU : constant String := Scalar_Union_Type (Rules, P);
+            begin
+               if SU /= "" then
+                  return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
+               end if;
+            end;
+            return (Kind => Struct, Members => Members);
+         end if;
+      end;
+   end Analyze;
+
+   function Is_Record (Info : Rule_Info) return Boolean is
+     (Info.Kind = Struct);
+
+   --  The rule an alias chain ends at: Over_Leaf is then "the target is a
+   --  record or a list".  A chosen back edge always resolves to a record
+   --  (a list rule contributes no outgoing edges, so it cannot be on a
+   --  cycle), which is what lets the callers use its declared access type.
+   function Leaf_Target (Rules : Rule_Vectors.Vector; Idx : Natural)
+     return Natural
+   is
+      J : Natural := Idx;
+   begin
+      for K in 1 .. 20 loop
+         declare
+            P : constant Element_Vectors.Vector := Rules (J).Pattern;
+         begin
+            if Analyze (Rules, J).Kind = Scalar
+              and then Natural (P.Length) = 1
+              and then P (1).Kind = Name
+              and then Scalar_Ada_Type (To_String (P (1).Name)) = ""
+            then
+               declare
+                  Nx : constant Natural := Find (Rules, To_String (P (1).Name));
+               begin
+                  exit when Nx = 0;
+                  J := Nx;
+               end;
+            else
+               exit;
+            end if;
+         end;
+      end loop;
+      return J;
+   end Leaf_Target;
+
+   --  True when a scalar rule is an alias (directly or through further
+   --  aliases) to a record or list (`src = host`, `a = b` with `b = host`):
+   --  its subtype must follow the target's full type, so it is emitted in
+   --  the record+alias phase rather than among the leaves.
+   function Over_Leaf (Rules : Rule_Vectors.Vector; Idx : Natural)
+     return Boolean
+   is (Analyze (Rules, Leaf_Target (Rules, Idx)).Kind in Struct | List);
+
+   --  The rules a record or deferred alias must follow in the combined
+   --  record+alias emission: a record follows the deferred aliases its
+   --  by-value members name, and a deferred alias (`src = host`) follows
+   --  its target when that target is in the same phase (a record or a
+   --  further alias); a list target was already emitted with the vectors.
+   function Type_Deps (Rules : Rule_Vectors.Vector; Idx : Natural)
+     return Natural_Vectors.Vector
+   is
+      Info : constant Rule_Info := Analyze (Rules, Idx);
+      D    : Natural_Vectors.Vector;
+   begin
+      if Info.Kind = Struct then
+         for M of Info.Members loop
+            if not M.Is_List then
+               declare
+                  J : constant Natural := Find (Rules, To_String (M.Name));
+               begin
+                  if J > 0 and then Over_Leaf (Rules, J) then
+                     D.Append (J);
+                  end if;
+               end;
+            end if;
+         end loop;
+      elsif Info.Kind = Scalar and then Over_Leaf (Rules, Idx) then
+         declare
+            P : constant Element_Vectors.Vector := Rules (Idx).Pattern;
+            J : constant Natural := Find (Rules, To_String (P (1).Name));
+         begin
+            if J > 0
+              and then (Is_Record (Analyze (Rules, J))
+                        or else (Analyze (Rules, J).Kind = Scalar
+                                 and then Over_Leaf (Rules, J)))
+            then
+               D.Append (J);
+            end if;
+         end;
+      end if;
+      return D;
+   end Type_Deps;
+
+   --  The fields Ada must hold indirectly, one per cycle in the by-value
+   --  graph, chosen by the one detector in HBNF_Compilable.  A record already refers to another
+   --  record through an access type, so the edges that embed by value are
+   --  the ones that reach a record through an alias (`Over_Leaf`): a member
+   --  naming a scalar alias over a record, and an alias naming one.  A list
+   --  member is a vector, which is indirect, so it imposes no order.  This
+   --  is `Type_Deps` in edge form, so the detector refuses exactly the
+   --  schemas the sort below used to stall on.
+   function Back_Edges_Ada (Rules : Rule_Vectors.Vector)
+     return Edge_Vectors.Vector
+   is
+      E : HBNF_Compilable.Edge_Vectors.Vector;
+   begin
+      for I in 1 .. Natural (Rules.Length) loop
+         declare
+            Info : constant Rule_Info := Analyze (Rules, I);
+         begin
+            case Info.Kind is
+               when Struct =>
+                  for M of Info.Members loop
+                     if not M.Is_List then
+                        declare
+                           J : constant Natural := Find (Rules, To_String (M.Name));
+                        begin
+                           if J > 0 and then Over_Leaf (Rules, J) then
+                              E.Append
+                                (HBNF_Compilable.By_Value_Edge'
+                                   (Owner => I, Member => M.Name,
+                                    Target => J));
+                           end if;
+                        end;
+                     end if;
+                  end loop;
+               when Scalar =>
+                  --  A rule that is one name is an alias; the edge has no
+                  --  member, so it can order but never be broken.
+                  if Over_Leaf (Rules, I) then
+                     declare
+                        P : constant Element_Vectors.Vector :=
+                          Rules (I).Pattern;
+                        J : constant Natural := Find (Rules, To_String (P (1).Name));
+                     begin
+                        if J > 0
+                          and then (Is_Record (Analyze (Rules, J))
+                                    or else (Analyze (Rules, J).Kind = Scalar
+                                             and then Over_Leaf (Rules, J)))
+                        then
+                           E.Append
+                             (HBNF_Compilable.By_Value_Edge'
+                                (Owner => I,
+                                 Member => Null_Unbounded_String,
+                                 Target => J));
+                        end if;
+                     end;
+                  end if;
+               when others =>
+                  null;
+            end case;
+         end;
+      end loop;
+      return Back_Edges (Natural (Rules.Length), E);
+   end Back_Edges_Ada;
+
    function Emit (Rules : Rule_Vectors.Vector; Package_Name : String)
      return String
    is
 
       N : constant Natural := Natural (Rules.Length);
-
-      function Find (Name : String) return Natural is
-      begin
-         for I in 1 .. N loop
-            if To_String (Rules (I).Name) = Name then
-               return I;
-            end if;
-         end loop;
-         return 0;
-      end Find;
-
-      --  The Ada type a rule reference denotes: a core scalar inlines; any
-      --  other reference resolves to the referenced rule's own type name.
-      function Ada_Type_Of (Ref : String) return String is
-         S : constant String := Scalar_Ada_Type (Ref);
-      begin
-         if S /= "" then
-            return S;
-         end if;
-         if Find (Ref) = 0 then
-            raise Parse_Error with "undefined rule: " & Ref;
-         end if;
-         return Ada_Ident (Ref) & "_Type";
-      end Ada_Type_Of;
-
-      --  The underlying scalar Ada type a rule name resolves to, chasing
-      --  single-name aliases and jets to their target (so `str | word` and
-      --  `ipv4 | ipv6` both collapse to `Unbounded_String`).  "" if not scalar.
-      function Resolve_Type (N : String; Depth : Natural := 0) return String is
-         C : constant String := Scalar_Ada_Type (N);
-      begin
-         if C /= "" then
-            return C;
-         end if;
-         if Depth > 8 then
-            return "";
-         end if;
-         declare
-            J : constant Natural := Find (N);
-         begin
-            if J = 0 then
-               return "";
-            end if;
-            declare
-               R : constant Rule := Rules (J);
-               P : constant Element_Vectors.Vector := R.Pattern;
-            begin
-               if R.Jet_Code /= Null_Unbounded_String then
-                  return "Unbounded_String";
-               end if;
-               if Natural (P.Length) = 1
-                 and then P (1).Kind = Name
-                 and then P (1).Min = 1
-                 and then P (1).Max = 1
-               then
-                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
-               end if;
-            end;
-         end;
-         return "";
-      end Resolve_Type;
-
-      --  If the pattern is a pure alternation of names that all resolve to
-      --  the same scalar Ada type, that type (a scalar union); else "".
-      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
-         T       : U := Null_Unbounded_String;
-         Has_Alt : Boolean := False;
-      begin
-         for E of Els loop
-            if E.Kind = Alt then
-               Has_Alt := True;
-            elsif E.Kind = Name then
-               declare
-                  R : constant String := Resolve_Type (To_String (E.Name));
-               begin
-                  if R = "" then
-                     return "";
-                  end if;
-                  if T = Null_Unbounded_String then
-                     T := To_Unbounded_String (R);
-                  elsif To_String (T) /= R then
-                     return "";
-                  end if;
-               end;
-            else
-               return "";
-            end if;
-         end loop;
-         if Has_Alt and then T /= Null_Unbounded_String then
-            return To_String (T);
-         end if;
-         return "";
-      end Scalar_Union_Type;
 
       --  Append Text as an Ada comment block, one "-- " per line (a leading
       --  comment may span several schema lines).
@@ -342,351 +705,20 @@ package body HBNF_Ada is
          Append (B, "   -- " & Text (Line_Start .. Text'Last));
       end Append_Comment;
 
-      --  A struct member: the referenced name, and whether it is a list
-      --  (appeared with a repetition prefix) rather than a single value.
-      type Member is record
-         Name    : U;
-         Is_List : Boolean;
-      end record;
-
-      package Member_Vectors is new Ada.Containers.Vectors (Positive, Member);
-
-      function Contains (V : Member_Vectors.Vector; S : U) return Boolean is
-      begin
-         for X of V loop
-            if X.Name = S then
-               return True;
-            end if;
-         end loop;
-         return False;
-      end Contains;
-
-      --  Walk a pattern, collecting referenced rule names (deduped, in order)
-      --  as Members (Is_List marks a repeated reference), the literal strings,
-      --  and whether any '|' alternation appears.
-      procedure Collect
-        (Els     : Element_Vectors.Vector;
-         Members : in out Member_Vectors.Vector;
-         Lits    : in out String_Vectors.Vector;
-         Has_Alt : in out Boolean) is
-         Seen : String_Vectors.Vector;
-
-         function Seen_Here (S : U) return Boolean is
-         begin
-            for X of Seen loop
-               if X = S then
-                  return True;
-               end if;
-            end loop;
-            return False;
-         end Seen_Here;
-      begin
-         for E of Els loop
-            case E.Kind is
-               when Name =>
-                  declare
-                     Is_List : constant Boolean :=
-                       E.Min /= 1 or else E.Max /= 1;
-                  begin
-                     if Seen_Here (E.Name) then
-                        raise Parse_Error with
-                          "rule """ & To_String (E.Name)
-                          & """ is referenced twice in one alternative;"
-                          & " split it into alias rules (e.g. `a = "
-                          & To_String (E.Name) & "; b = " & To_String (E.Name)
-                          & ";`) so each gets its own field";
-                     end if;
-                     Seen.Append (E.Name);
-                     if Contains (Members, E.Name) then
-                        if Is_List then
-                           for K in 1 .. Natural (Members.Length) loop
-                              if Members (K).Name = E.Name then
-                                 Members.Replace_Element
-                                   (K,
-                                    Member'(Name => E.Name, Is_List => True));
-                              end if;
-                           end loop;
-                        end if;
-                     else
-                        Members.Append
-                          (Member'(Name => E.Name, Is_List => Is_List));
-                     end if;
-                  end;
-               when Literal =>
-                  Lits.Append (E.Lit);
-               when Alt =>
-                  Has_Alt := True;
-                  Seen.Clear;
-               when Group =>
-                  Collect (E.Items, Members, Lits, Has_Alt);
-               when Char_Range =>
-                  null;
-               when Block =>
-                  null;  --  lifted to a rule of its own before emission
-            end case;
-         end loop;
-      end Collect;
-
-      type Class_Kind is (Enum, Scalar, List, Struct);
-
-      type Rule_Info (Kind : Class_Kind := Scalar) is record
-         case Kind is
-            when Enum =>
-               Literals : String_Vectors.Vector := String_Vectors.Empty_Vector;
-            when Scalar =>
-               Inline_Type : U := Null_Unbounded_String;
-            when List =>
-               Elem_Name    : U := Null_Unbounded_String;
-               Elem_Members : Member_Vectors.Vector;
-            when Struct =>
-               Members : Member_Vectors.Vector := Member_Vectors.Empty_Vector;
-         end case;
-      end record;
-
-      package Info_Vectors is new Ada.Containers.Vectors (Positive, Rule_Info);
-
-      function Analyze (Idx : Natural) return Rule_Info is
-         R : constant Rule := Rules (Idx);
-         P : constant Element_Vectors.Vector := R.Pattern;
-      begin
-         if Is_Char_Rule (Rules, To_String (R.Name)) then
-            --  A character-level rule compiles to a scanner and a token; its
-            --  value is the matched text, so it is a scalar string.
-            return (Kind        => Scalar,
-                    Inline_Type => To_Unbounded_String ("Unbounded_String"));
-         end if;
-         if R.Jet_Code /= Null_Unbounded_String then
-            return (Kind        => Scalar,
-                    Inline_Type => To_Unbounded_String ("Unbounded_String"));
-         end if;
-         if Natural (P.Length) = 1 then
-            declare
-               E : constant Element_Access := P (1);
-            begin
-               --  Repetition => a list.
-               if E.Min /= 1 or else E.Max /= 1 then
-                  if E.Kind = Name then
-                     return (Kind        => List,
-                             Elem_Name    => E.Name,
-                             Elem_Members => Member_Vectors.Empty_Vector);
-                  elsif E.Kind = Group then
-                     --  A group of a single rule reference (`*( entry )`) is
-                     --  a list of that rule's type, not an anonymous struct.
-                     if Natural (E.Items.Length) = 1
-                       and then E.Items (1).Kind = Name
-                     then
-                        return (Kind        => List,
-                                Elem_Name    => E.Items (1).Name,
-                                Elem_Members => Member_Vectors.Empty_Vector);
-                     else
-                        declare
-                           Members : Member_Vectors.Vector;
-                           Lits    : String_Vectors.Vector;
-                           Has_Alt : Boolean := False;
-                        begin
-                           Collect (E.Items, Members, Lits, Has_Alt);
-                           return (Kind        => List,
-                                   Elem_Name    => Null_Unbounded_String,
-                                   Elem_Members => Members);
-                        end;
-                     end if;
-                  else
-                     return (Kind        => List,
-                             Elem_Name    => Null_Unbounded_String,
-                             Elem_Members => Member_Vectors.Empty_Vector);
-                  end if;
-               end if;
-
-               --  Single element, no repetition.
-               if E.Kind = Name then
-                  return (Kind => Scalar,
-                          Inline_Type =>
-                            To_Unbounded_String
-                              (Ada_Type_Of (To_String (E.Name))));
-               elsif E.Kind = Group then
-                  declare
-                     Members : Member_Vectors.Vector;
-                     Lits    : String_Vectors.Vector;
-                     Has_Alt : Boolean := False;
-                  begin
-                     Collect (E.Items, Members, Lits, Has_Alt);
-                     return (Kind => Struct, Members => Members);
-                  end;
-               else
-                  return (Kind        => Scalar,
-                          Inline_Type => To_Unbounded_String
-                            ("Unbounded_String"));
-               end if;
-            end;
-         end if;
-
-         declare
-            Members : Member_Vectors.Vector;
-            Lits    : String_Vectors.Vector;
-            Has_Alt : Boolean := False;
-         begin
-            Collect (P, Members, Lits, Has_Alt);
-            if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
-               return (Kind => Enum, Literals => Lits);
-            else
-               declare
-                  SU : constant String := Scalar_Union_Type (P);
-               begin
-                  if SU /= "" then
-                     return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
-                  end if;
-               end;
-               return (Kind => Struct, Members => Members);
-            end if;
-         end;
-      end Analyze;
-
-      function Is_Record (Info : Rule_Info) return Boolean is
-        (Info.Kind = Struct);
-
       Infos : Info_Vectors.Vector;
-
-      --  True when a scalar rule is an alias (directly or through further
-      --  aliases) to a record or list (`src = host`, `a = b` with `b = host`):
-      --  its subtype must follow the target's full type, so it is emitted in
-      --  the record+alias phase rather than among the leaves.
-      function Over_Leaf (Idx : Natural) return Boolean is
-         J : Natural := Idx;
-      begin
-         for K in 1 .. 20 loop
-            declare
-               P : constant Element_Vectors.Vector := Rules (J).Pattern;
-            begin
-               if Infos (J).Kind = Scalar
-                 and then Natural (P.Length) = 1
-                 and then P (1).Kind = Name
-                 and then Scalar_Ada_Type (To_String (P (1).Name)) = ""
-               then
-                  declare
-                     N : constant Natural := Find (To_String (P (1).Name));
-                  begin
-                     exit when N = 0;
-                     J := N;
-                  end;
-               else
-                  exit;
-               end if;
-            end;
-         end loop;
-         return Infos (J).Kind = Struct or else Infos (J).Kind = List;
-      end Over_Leaf;
-
-      --  The rules a record or deferred alias must follow in the combined
-      --  record+alias emission: a record follows the deferred aliases its
-      --  by-value members name, and a deferred alias (`src = host`) follows
-      --  its target when that target is in the same phase (a record or a
-      --  further alias); a list target was already emitted with the vectors.
-      function Type_Deps (Idx : Natural) return Natural_Vectors.Vector is
-         Info : constant Rule_Info := Infos (Idx);
-         D    : Natural_Vectors.Vector;
-      begin
-         if Info.Kind = Struct then
-            for M of Info.Members loop
-               if not M.Is_List then
-                  declare
-                     J : constant Natural := Find (To_String (M.Name));
-                  begin
-                     if J > 0 and then Over_Leaf (J) then
-                        D.Append (J);
-                     end if;
-                  end;
-               end if;
-            end loop;
-         elsif Info.Kind = Scalar and then Over_Leaf (Idx) then
-            declare
-               P : constant Element_Vectors.Vector := Rules (Idx).Pattern;
-               J : constant Natural := Find (To_String (P (1).Name));
-            begin
-               if J > 0
-                 and then (Is_Record (Infos (J))
-                           or else (Infos (J).Kind = Scalar
-                                    and then Over_Leaf (J)))
-               then
-                  D.Append (J);
-               end if;
-            end;
-         end if;
-         return D;
-      end Type_Deps;
-
-      --  The by-value edges of the tree-type graph, for the one cycle
-      --  detector in HBNF_Compilable.  A record already refers to another
-      --  record through an access type, so the edges that embed by value are
-      --  the ones that reach a record through an alias (`Over_Leaf`): a member
-      --  naming a scalar alias over a record, and an alias naming one.  A list
-      --  member is a vector, which is indirect, so it imposes no order.  This
-      --  is `Type_Deps` in edge form, so the detector refuses exactly the
-      --  schemas the sort below used to stall on.
-      function By_Value_Edges return HBNF_Compilable.Edge_Vectors.Vector is
-         E : HBNF_Compilable.Edge_Vectors.Vector;
-      begin
-         for I in 1 .. N loop
-            declare
-               Info : constant Rule_Info := Infos (I);
-            begin
-               case Info.Kind is
-                  when Struct =>
-                     for M of Info.Members loop
-                        if not M.Is_List then
-                           declare
-                              J : constant Natural := Find (To_String (M.Name));
-                           begin
-                              if J > 0 and then Over_Leaf (J) then
-                                 E.Append
-                                   (HBNF_Compilable.By_Value_Edge'
-                                      (Owner => I, Member => M.Name,
-                                       Target => J));
-                              end if;
-                           end;
-                        end if;
-                     end loop;
-                  when Scalar =>
-                     --  A rule that is one name is an alias; the edge has no
-                     --  member, so it can order but never be broken.
-                     if Over_Leaf (I) then
-                        declare
-                           P : constant Element_Vectors.Vector :=
-                             Rules (I).Pattern;
-                           J : constant Natural := Find (To_String (P (1).Name));
-                        begin
-                           if J > 0
-                             and then (Is_Record (Infos (J))
-                                       or else (Infos (J).Kind = Scalar
-                                                and then Over_Leaf (J)))
-                           then
-                              E.Append
-                                (HBNF_Compilable.By_Value_Edge'
-                                   (Owner => I,
-                                    Member => Null_Unbounded_String,
-                                    Target => J));
-                           end if;
-                        end;
-                     end if;
-                  when others =>
-                     null;
-               end case;
-            end;
-         end loop;
-         return E;
-      end By_Value_Edges;
 
       --  The vector element type for a list of Ref: an access to the record
       --  (so recursion can be broken), or the scalar inlined by value.
       function Elem_Type (Ref : String) return String is
          S : constant String := Scalar_Ada_Type (Ref);
-         J : constant Natural := Find (Ref);
+         J : constant Natural := Find (Rules, Ref);
       begin
          if S /= "" then
             return S;                           -- a core scalar
          elsif J > 0 and then Is_Record (Infos (J)) then
             return Ada_Ident (Ref) & "_Access"; -- a record: access breaks it
          else
-            return Ada_Type_Of (Ref);           -- a scalar/enum/list rule
+            return Ada_Type_Of (Rules, Ref);           -- a scalar/enum/list rule
          end if;
       end Elem_Type;
 
@@ -851,7 +883,7 @@ package body HBNF_Ada is
       Res       : U;
    begin
       for I in 1 .. N loop
-         Infos.Append (Analyze (I));
+         Infos.Append (Analyze (Rules, I));
       end loop;
 
       Append (Res, "--  generated by hbnf -- do not edit");
@@ -884,7 +916,7 @@ package body HBNF_Ada is
             if Natural (P.Length) = 1 and then P (1).Kind = Name
               and then Scalar_Ada_Type (To_String (P (1).Name)) = ""
             then
-               J := Find (To_String (P (1).Name));
+               J := Find (Rules, To_String (P (1).Name));
                --  A scalar alias over a record/list (`src = host`) is a
                --  subtype, not a leaf that must follow its target.  Only a
                --  leaf target (another scalar or enum) orders the alias after
@@ -902,7 +934,7 @@ package body HBNF_Ada is
       begin
          for I in 1 .. N loop
             if (Infos (I).Kind = Scalar or else Infos (I).Kind = Enum)
-              and then not Over_Leaf (I)
+              and then not Over_Leaf (Rules, I)
             then
                Remaining_Leaves := Remaining_Leaves + 1;
             end if;
@@ -913,7 +945,7 @@ package body HBNF_Ada is
             begin
                for I in 1 .. N loop
                   if (Infos (I).Kind = Scalar or else Infos (I).Kind = Enum)
-                    and then not Over_Leaf (I)
+                    and then not Over_Leaf (Rules, I)
                     and then not Emitted (I)
                   then
                      declare
@@ -986,7 +1018,7 @@ package body HBNF_Ada is
       --  it hand back the field to emit indirect, and until the backends act
       --  on that the cycle is still refused, with the same message the
       --  stalled sort below used to give.
-      if not HBNF_Compilable.Back_Edges (N, By_Value_Edges).Is_Empty then
+      if not Back_Edges_Ada (Rules).Is_Empty then
          raise Parse_Error with
            "a rule's value cannot contain itself: the tree types are structs "
            & "by value, so this one would be infinitely sized.  Routing "
@@ -1002,7 +1034,7 @@ package body HBNF_Ada is
       --  to break it — infinite size.
       for I in 1 .. N loop
          if Is_Record (Infos (I))
-           or else (Infos (I).Kind = Scalar and then Over_Leaf (I))
+           or else (Infos (I).Kind = Scalar and then Over_Leaf (Rules, I))
          then
             Remaining := Remaining + 1;
          end if;
@@ -1013,13 +1045,13 @@ package body HBNF_Ada is
          begin
             for I in 1 .. N loop
                if (Is_Record (Infos (I))
-                   or else (Infos (I).Kind = Scalar and then Over_Leaf (I)))
+                   or else (Infos (I).Kind = Scalar and then Over_Leaf (Rules, I)))
                  and then not Emitted (I)
                then
                   declare
                      Ready : Boolean := True;
                   begin
-                     for D of Type_Deps (I) loop
+                     for D of Type_Deps (Rules, I) loop
                         if not Emitted (D) then
                            Ready := False;
                         end if;
@@ -1057,16 +1089,6 @@ package body HBNF_Ada is
 
       N : constant Natural := Natural (Rules.Length);
 
-      function Find (Name : String) return Natural is
-      begin
-         for I in 1 .. N loop
-            if To_String (Rules (I).Name) = Name then
-               return I;
-            end if;
-         end loop;
-         return 0;
-      end Find;
-
       --  "own" when a rule is the own-line comment, "eol" when it is the
       --  same-line comment (chasing single-name aliases such as
       --  `trailing = eol_comment`), "" otherwise.
@@ -1082,7 +1104,7 @@ package body HBNF_Ada is
             return "";
          end if;
          declare
-            J : constant Natural := Find (Nm);
+            J : constant Natural := Find (Rules, Nm);
          begin
             if J = 0 then
                return "";
@@ -1136,87 +1158,11 @@ package body HBNF_Ada is
          return Has_Alt;
       end Is_Pure_Literal_Alt;
 
-      function Ada_Type_Of (Ref : String) return String is
-         S : constant String := Scalar_Ada_Type (Ref);
-      begin
-         if S /= "" then
-            return S;
-         end if;
-         return Ada_Ident (Ref) & "_Type";
-      end Ada_Type_Of;
-
-      --  The underlying scalar Ada type a rule name resolves to, chasing
-      --  single-name aliases and jets to their target.  "" if not scalar.
-      function Resolve_Type (N : String; Depth : Natural := 0) return String is
-         C : constant String := Scalar_Ada_Type (N);
-      begin
-         if C /= "" then
-            return C;
-         end if;
-         if Depth > 8 then
-            return "";
-         end if;
-         declare
-            J : constant Natural := Find (N);
-         begin
-            if J = 0 then
-               return "";
-            end if;
-            declare
-               R : constant Rule := Rules (J);
-               P : constant Element_Vectors.Vector := R.Pattern;
-            begin
-               if R.Jet_Code /= Null_Unbounded_String then
-                  return "Unbounded_String";
-               end if;
-               if Natural (P.Length) = 1
-                 and then P (1).Kind = Name
-                 and then P (1).Min = 1
-                 and then P (1).Max = 1
-               then
-                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
-               end if;
-            end;
-         end;
-         return "";
-      end Resolve_Type;
-
-      --  A pure alternation of names resolving to one scalar type; "" else.
-      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
-         T       : U := Null_Unbounded_String;
-         Has_Alt : Boolean := False;
-      begin
-         for E of Els loop
-            if E.Kind = Alt then
-               Has_Alt := True;
-            elsif E.Kind = Name then
-               declare
-                  R : constant String := Resolve_Type (To_String (E.Name));
-               begin
-                  if R = "" then
-                     return "";
-                  end if;
-                  if T = Null_Unbounded_String then
-                     T := To_Unbounded_String (R);
-                  elsif To_String (T) /= R then
-                     return "";
-                  end if;
-               end;
-            else
-               return "";
-            end if;
-         end loop;
-         if Has_Alt and then T /= Null_Unbounded_String then
-            return To_String (T);
-         end if;
-         return "";
-      end Scalar_Union_Type;
-
       --  True when a rule is a record (struct): its parse yields a _Type whose
       --  full declaration may come after its use, so a list of it stores an
       --  _Access.  Scalars (core, alias, or union) and enums are not records.
       function Is_Struct (Name : String) return Boolean is
-         J : constant Natural := Find (Name);
+         J : constant Natural := Find (Rules, Name);
       begin
          if J = 0 then
             return False;
@@ -1242,7 +1188,7 @@ package body HBNF_Ada is
                end;
             else
                return not Is_Pure_Literal_Alt (P)
-                 and then Scalar_Union_Type (P) = "";
+                 and then Scalar_Union_Type (Rules, P) = "";
             end if;
          end;
       end Is_Struct;
@@ -1318,7 +1264,7 @@ package body HBNF_Ada is
       end Scalar_Parse;
 
       function Start_Kind (Rule_Name : String) return String is
-         J : constant Natural := Find (Rule_Name);
+         J : constant Natural := Find (Rules, Rule_Name);
       begin
          if J = 0 then
             return "";
@@ -1491,7 +1437,7 @@ package body HBNF_Ada is
          Is_List : constant Boolean := Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
-         SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
+         SU : constant String := (if not Is_List then Scalar_Union_Type (Rules, P) else "");
       begin
          if Is_Char_Rule (Rules, NM) then
             --  A char rule is a token: expect its kind and capture the text.
@@ -1538,7 +1484,7 @@ package body HBNF_Ada is
                              and then Has_Name (X.Items)));
                Elem : constant String :=
                  (if Simple /= Null_Unbounded_String
-                  then Ada_Type_Of (To_String (Simple))
+                  then Ada_Type_Of (Rules, To_String (Simple))
                   elsif E.Kind = HBNF_Grammar.Group and then not Has_Name (E.Items)
                   then "Unbounded_String"
                   else Ada_Ident (NM) & "_Entry");
