@@ -20,9 +20,15 @@ procedure Recursive_Main is
    R : Recursive.Prim_Type;
 begin
    R := Recursive.Parser.Parse_Text (Text);
-   --  `expr` is the back-edge member: for `(1)` the first branch set it,
-   --  and reading it here is what proves the field is real, not just typed.
-   Put_Line ("OK expr=" & (if R.Expr = null then "null" else "set"));
+   declare
+      --  Read the back-edge member before disposing: Free_<rule> nulls the
+      --  pointer it releases, which is what makes a double free impossible.
+      Msg : constant String :=
+        "OK expr=" & (if R.Expr = null then "null" else "set");
+   begin
+      Recursive.Parser.Free_Prim (R);
+      Put_Line (Msg);
+   end;
 exception
    when E : Recursive.Parser.Parse_Error =>
       Put_Line ("REJECT " & Ada.Exceptions.Exception_Message (E));

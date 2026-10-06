@@ -1840,6 +1840,11 @@ package body HBNF_Ada is
       Spec  : U;
       Bdy  : U;
 
+      --  The generated Free_<rule> declarations (for the child spec) and
+      --  bodies (for the child body), filled once before either is rendered.
+      Free_Decls : U;
+      Free_Body  : U;
+
       --  Emit the greedy loop for a repetition: match one full branch of the
       --  DNF (the longest one) as many times as Max allows (0 = unbounded),
       --  then require Min.  A branch is a sequence of decoded code points.
@@ -1910,6 +1915,159 @@ package body HBNF_Ada is
          Append (Bdy, LF);
       end Emit_Repeat;
    begin
+      --  Free_<rule>: release a tree the parse functions built.  A consumer
+      --  calls Free_<root> once it is finished with one, and the access nodes
+      --  go back to the heap.  The parser is untouched -- a parse that fails
+      --  part-way still abandons its partial tree, as it always has -- so this
+      --  is purely a dispose for the caller, and the first lifetime code the
+      --  Ada backend emits.  It lives in this child package because the
+      --  parent is a spec with no body, and adding one would change the files
+      --  the generator writes.
+      declare
+         --  The loop releasing every element of a vector of the named record:
+         --  each element is an access node the parse appended with `new`.  A
+         --  local stands in for the element because Unchecked_Deallocation
+         --  takes its argument `in out`, and a vector element reached through
+         --  `V (K)` is a function call, not a variable.
+         procedure Free_Vector (Buf : in out U; Vec, Elem : String) is
+         begin
+            Append (Buf, "   for K in " & Vec & ".First_Index .. "
+                    & Vec & ".Last_Index loop" & LF);
+            Append (Buf, "      declare" & LF);
+            Append (Buf, "         E : " & Elem & "_Access := " & Vec
+                    & " (K);" & LF);
+            Append (Buf, "      begin" & LF);
+            Append (Buf, "         if E /= null then" & LF);
+            Append (Buf, "            Free_" & Elem & " (E.all);" & LF);
+            Append (Buf, "            " & Vec & ".Replace_Element (K, null);"
+                    & LF);
+            Append (Buf, "            Dealloc_" & Elem & " (E);" & LF);
+            Append (Buf, "         end if;" & LF);
+            Append (Buf, "      end;" & LF);
+            Append (Buf, "   end loop;" & LF);
+         end Free_Vector;
+
+         --  One member of a record, released in place.
+         procedure Free_Member (Idx : Natural; M : Member; Buf : in out U) is
+            NM  : constant String := To_String (M.Name);
+            F   : constant String := Ada_Field (NM);
+            J   : constant Natural := Find (Rules, NM);
+            --  The record this member's field is an access to: its own rule
+            --  when that is a record, else the record its alias chain reaches
+            --  (which is what a back-edge member names).
+            Rec : constant Natural :=
+              (if J > 0 and then Is_Record (Analyze (Rules, J)) then
+                  J
+               elsif Is_Back (Backs, Idx, NM) then
+                  Leaf_Record (Rules, NM)
+               else
+                  0);
+         begin
+            if M.Is_List then
+               --  A vector declared for this member.  Its elements are the
+               --  element rule's access nodes whenever Emit made that rule a
+               --  record, which is exactly when they were allocated.
+               if J > 0 and then Is_Record (Analyze (Rules, J)) then
+                  Free_Vector (Buf, "V." & F, Ada_Ident (NM));
+               end if;
+            elsif Rec > 0 then
+               Append (Buf, "   if V." & F & " /= null then" & LF);
+               Append (Buf, "      Free_"
+                       & Ada_Ident (To_String (Rules (Rec).Name))
+                       & " (V." & F & ".all);" & LF);
+               Append (Buf, "      Dealloc_"
+                       & Ada_Ident (To_String (Rules (Rec).Name))
+                       & " (V." & F & ");" & LF);
+               Append (Buf, "   end if;" & LF);
+            elsif J > 0 and then Analyze (Rules, J).Kind = List then
+               --  A member naming a list rule: that rule's own Free_ walks
+               --  the vector it is a subtype of.
+               Append (Buf, "   Free_" & Ada_Ident (NM) & " (V." & F & ");"
+                       & LF);
+            elsif J > 0 and then Analyze (Rules, J).Kind = Scalar
+              and then Over_Leaf (Rules, J)
+            then
+               --  A record held by value through an alias (`src = host`).
+               --  The alias's subtype denotes the same record, so its own
+               --  Free_ takes it as it stands.
+               Append (Buf, "   Free_"
+                       & Ada_Ident
+                           (To_String (Rules (Leaf_Record (Rules, NM)).Name))
+                       & " (V." & F & ");" & LF);
+            end if;
+            --  Anything else -- a scalar, an enum, an Unbounded_String --
+            --  owns no heap node; the string finalizes itself.
+         end Free_Member;
+      begin
+         --  One Unchecked_Deallocation instance per record access type, in the
+         --  child body so a consumer never sees them.
+         for I in 1 .. N loop
+            if Is_Record (Analyze (Rules, I)) then
+               Append (Free_Body, "   procedure Dealloc_"
+                       & Ada_Ident (To_String (Rules (I).Name))
+                       & " is new Ada.Unchecked_Deallocation ("
+                       & Ada_Ident (To_String (Rules (I).Name)) & "_Type, "
+                       & Ada_Ident (To_String (Rules (I).Name)) & "_Access);"
+                       & LF);
+            end if;
+         end loop;
+         Append (Free_Body, LF);
+
+         for I in 1 .. N loop
+            declare
+               Info : constant Rule_Info := Analyze (Rules, I);
+               CN   : constant String :=
+                 Ada_Ident (To_String (Rules (I).Name));
+            begin
+               if Is_Record (Info) or else Info.Kind = List then
+                  declare
+                     Stmts : U;
+                  begin
+                     if Is_Record (Info) then
+                        for M of Info.Members loop
+                           Free_Member (I, M, Stmts);
+                        end loop;
+                     elsif Info.Elem_Members.Is_Empty
+                       and then Info.Elem_Name /= Null_Unbounded_String
+                     then
+                        declare
+                           E : constant Natural :=
+                             Find (Rules, To_String (Info.Elem_Name));
+                        begin
+                           if E > 0 and then Is_Record (Analyze (Rules, E))
+                           then
+                              Free_Vector (Stmts, "V",
+                                Ada_Ident (To_String (Info.Elem_Name)));
+                           end if;
+                        end;
+                     end if;
+                     --  A group element is a record held by value, and such a
+                     --  vector does not compile today (its element type has
+                     --  no visible "="), so there is nothing to free there yet.
+
+                     Append (Free_Decls, "   procedure Free_" & CN
+                             & " (V : in out " & CN & "_Type);" & LF);
+                     Append (Free_Body, "   procedure Free_" & CN
+                             & " (V : in out " & CN & "_Type) is" & LF);
+                     if To_String (Stmts) = "" then
+                        --  Nothing to release: say so, and say the parameter
+                        --  is deliberately unused (a statement list may not
+                        --  be empty, and a silent unused parameter warns).
+                        Append (Free_Body, "      pragma Unreferenced (V);" & LF);
+                        Append (Free_Body, "   begin" & LF);
+                        Append (Free_Body, "      null;" & LF);
+                     else
+                        Append (Free_Body, "   begin" & LF);
+                        Append (Free_Body, To_String (Stmts));
+                     end if;
+                     Append (Free_Body, "   end Free_" & CN & ";" & LF);
+                     Append (Free_Body, LF);
+                  end;
+               end if;
+            end;
+         end loop;
+      end;
+
       --  Package specification: token types, the exception, Parse_Config.
       declare
          Kind_Ext : U;
@@ -1952,6 +2110,7 @@ package body HBNF_Ada is
             Mustache.Put (V, "kind", To_String (Kind_Ext));
             Mustache.Put (V, "ret", Ret_Type (1));
             Mustache.Put (V, "conf", Conf_Decl);
+            Mustache.Put (V, "frees", To_String (Free_Decls));
             Append (Spec, Mustache.Render_File ("ada_parser_spec", V));
          end;
          Append (Spec, LF);
@@ -2002,10 +2161,13 @@ package body HBNF_Ada is
             Mustache.Put (V, "nocase_with", Nocase_With);
             Mustache.Put (V, "conf_with", Conf_With);
             Mustache.Put (V, "nocase_proc", To_String (Nocase_Proc));
+            Mustache.Put (V, "free_with",
+              "with Ada.Unchecked_Deallocation;" & LF);
             Append (Bdy, Mustache.Render_File ("ada_parser_body", V));
          end;
          Append (Bdy, LF);
          Append (Bdy, LF);
+         Append (Bdy, To_String (Free_Body));
       end;
 
       --  Forward declarations: a rule may call any other, in any order.
