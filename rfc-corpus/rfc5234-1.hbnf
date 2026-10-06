@@ -1,4 +1,4 @@
-; RFC 5234, Appendix B.1 "Core Rules", as hbnf reads it.  core.hbnf is the RFC's
+; RFC 5234, Appendix B.1 "Core Rules", as hbnf reads it.  rfc5234-1.bnf is the RFC's
 ; text; this is the same rules with the changes hbnf needs, each marked
 ; `; hbnf:`.  The rest is the RFC's, character for character.
 

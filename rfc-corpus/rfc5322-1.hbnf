@@ -1,4 +1,4 @@
-; RFC 5322, "addr-spec" and every rule it reaches, as hbnf reads it.  addr-spec.hbnf
+; RFC 5322, "addr-spec" and every rule it reaches, as hbnf reads it.  rfc5322-1.bnf
 ; is the RFC's text; this is the same rules with the changes hbnf needs.  The
 ; change made everywhere, and not marked each time, is `|` for `/` (ordered
 ; choice, where the RFC's `/` is a union).  A change to anything else is marked
@@ -9,7 +9,7 @@
 whitespace none                  ; hbnf: ABNF skips nothing; where a space counts it is written
 sensitivity string %i            ; hbnf: ABNF's "..." is case-insensitive; hbnf's is not unless the file says so
 
-include "../rfc5234/core.fixed.hbnf"
+include "rfc5234-1.hbnf"
 
 quoted-pair     =   (%x5C (VCHAR / WSP)) / obs-qp   ; hbnf: "\" is %x5C: in hbnf a backslash in "..." starts an escape
                                                   ;   (`"\n"`), so the RFC's `"\"` never closes

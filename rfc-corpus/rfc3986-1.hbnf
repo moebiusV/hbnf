@@ -1,4 +1,4 @@
-; RFC 3986, Appendix A "Collected ABNF for URI", as hbnf reads it.  uri.hbnf is the
+; RFC 3986, Appendix A "Collected ABNF for URI", as hbnf reads it.  rfc3986-1.bnf is the
 ; RFC's text; this is the same rules with the changes hbnf needs.  The change
 ; made everywhere, and not marked each time, is `|` for `/` (ordered choice,
 ; where the RFC's `/` is a union).  A change to anything else is marked
@@ -7,7 +7,7 @@
 whitespace none                  ; hbnf: ABNF skips nothing; where a space counts it is written
 sensitivity string %i            ; hbnf: ABNF's "..." is case-insensitive; hbnf's is not unless the file says so
 
-include "../rfc5234/core.fixed.hbnf"
+include "rfc5234-1.hbnf"
 
 URI           = scheme ":" hier-part [ "?" query ] [ "#" fragment ]
 
@@ -16,7 +16,7 @@ hier-part     = "//" authority path-abempty
               / path-rootless
               / path-empty
 
-URI-reference = URI | relative-ref
+URI-reference = URI / relative-ref
 
 absolute-URI  = scheme ":" hier-part [ "?" query ]
 
@@ -31,7 +31,7 @@ scheme        = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
 
 authority     = [ userinfo "@" ] host [ ":" port ]
 userinfo      = *( unreserved / pct-encoded / sub-delims / ":" )
-host          = IP-literal | reg-name   ; hbnf: IPv4address is dropped from the choice.  A dotted
+host          = IP-literal / reg-name   ; hbnf: IPv4address is dropped from the choice.  A dotted
                                         ;   quad is also a reg-name, and `|` commits to the first
                                         ;   alternative that matches: IPv4address would take "1.2.3.4"
                                         ;   out of "1.2.3.4.5", and a later `:`/end would fail with no
@@ -44,17 +44,17 @@ IP-literal    = "[" ( IPv6address / IPvFuture  ) "]"
 IPvFuture     = "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )
 
 IPv6address   =                            6( h16 ":" ) ls32
-              |                       "::" 5( h16 ":" ) ls32
-              | [               h16 ] "::" 4( h16 ":" ) ls32
-              | [ h16 *1( ":" h16 ) ] "::" 3( h16 ":" ) ls32  ; hbnf: from here, the left part is written
-              | [ h16 *2( ":" h16 ) ] "::" 2( h16 ":" ) ls32  ;   h16 *k( ":" h16 ) where the RFC has
-              | [ h16 *3( ":" h16 ) ] "::"    h16 ":"   ls32  ;   *k( h16 ":" ) h16.  The same groups, but
-              | [ h16 *4( ":" h16 ) ] "::"              ls32  ;   the RFC's takes the `:` of "::" for a
-              | [ h16 *5( ":" h16 ) ] "::"              h16   ;   separator, finds no h16 after it, and
-              | [ h16 *6( ":" h16 ) ] "::"                    ;   (as an optional that failed) gives up its groups.
+              /                       "::" 5( h16 ":" ) ls32
+              / [               h16 ] "::" 4( h16 ":" ) ls32
+              / [ *1( h16 ":" ) h16 ] "::" 3( h16 ":" ) ls32
+              / [ *2( h16 ":" ) h16 ] "::" 2( h16 ":" ) ls32
+              / [ *3( h16 ":" ) h16 ] "::"    h16 ":"   ls32
+              / [ *4( h16 ":" ) h16 ] "::"              ls32
+              / [ *5( h16 ":" ) h16 ] "::"              h16
+              / [ *6( h16 ":" ) h16 ] "::"
 
 h16           = 1*4HEXDIG
-ls32          = ( h16 ":" h16 ) | IPv4address
+ls32          = ( h16 ":" h16 ) / IPv4address
 IPv4address   = dec-octet "." dec-octet "." dec-octet "." dec-octet
 
 dec-octet     = DIGIT                 ; 0-9

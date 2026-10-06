@@ -1,6 +1,6 @@
 ; RFC 5234, Appendix B.1 "Core Rules", verbatim.
 ; Only the RFC's page headers and footers are removed, and the left margin
-; its rules are indented by.  See README.md in this directory.
+; its rules are indented by.  See the .md file of the same name.
 
 
 ALPHA          =  %x41-5A / %x61-7A   ; A-Z / a-z

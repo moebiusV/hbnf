@@ -2,9 +2,9 @@
 ; Only the RFC's page headers and footers are removed, and the left margin its
 ; rules are indented by.  ALPHA, DIGIT and HEXDIG are RFC 5234's (Appendix A
 ; says "the core rules"); the one line below that is not the RFC's is the
-; include that supplies them.  See README.md in this directory.
+; include that supplies them.  See the .md file of the same name.
 
-include "../rfc5234/core.hbnf"
+include "rfc5234-1.bnf"
 
 URI           = scheme ":" hier-part [ "?" query ] [ "#" fragment ]
 

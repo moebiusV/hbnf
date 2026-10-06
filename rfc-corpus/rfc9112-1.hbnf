@@ -1,5 +1,5 @@
 ; RFC 9112, "request-line" (section 3) and the rules it uses, as hbnf reads it.
-; request-line.hbnf is the RFC's text; this is the same rules with the changes hbnf
+; rfc9112-1.bnf is the RFC's text; this is the same rules with the changes hbnf
 ; needs.  The change made everywhere, and not marked each time, is `|` for `/`
 ; (ordered choice, where the RFC's `/` is a union).  A change to anything else is
 ; marked `; hbnf:`.  See README.md in this directory.
@@ -7,7 +7,7 @@
 whitespace none                  ; hbnf: ABNF skips nothing; where a space counts it is written
 sensitivity string %i            ; hbnf: ABNF's "..." is case-insensitive; hbnf's is not unless the file says so
 
-include "../rfc3986/uri.fixed.hbnf"
+include "rfc3986-1.hbnf"
 
 ; ---- RFC 9112, section 3 and 2.3 ----
 HTTP-version  = HTTP-name "/" DIGIT "." DIGIT

@@ -5,7 +5,7 @@
 ; removed, and the left margin its rules are indented by.  See README.md in this
 ; directory.
 
-include "../rfc3986/uri.hbnf"
+include "rfc3986-1.bnf"
 
 ; ---- RFC 9112, section 3 and 2.3 ----
 HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
