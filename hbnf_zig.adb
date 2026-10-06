@@ -1332,37 +1332,60 @@ package body HBNF_Zig is
          end if;
       end Core_Desc;
 
-      function Scalar_Kind (Name : String) return String is
+      --  The core scanner a core scalar reads: `word`/`atom`/`bool`/`flag`
+      --  read the `word` rule, `int`/`uN`/`iN` the `int` rule, `str` the `str`
+      --  rule.  The rule is the grammar's own char rule when it defines one,
+      --  else the built-in scanner of the same name.
+      function Core_Base (Name : String) return String is
       begin
          if Name = "str" then
-            return ".str";
+            return "str";
          elsif Name = "int" then
-            return ".int";
-         elsif Name'Length >= 2 then
-            declare
-               P : constant Character := Name (Name'First);
-               R : constant String := Name (Name'First + 1 .. Name'Last);
-            begin
-               if (P = 'u' or else P = 'i')
-                 and then (for all C of R => C in '0' .. '9')
-               then
-                  return ".int";
-               end if;
-            end;
+            return "int";
+         elsif Name'Length >= 2
+           and then (Name (Name'First) = 'u' or else Name (Name'First) = 'i')
+           and then (for all C of Name (Name'First + 1 .. Name'Last)
+                     => C in '0' .. '9')
+         then
+            return "int";
          end if;
-         return ".atom";
-      end Scalar_Kind;
+         return "word";
+      end Core_Base;
 
-      function Scalar_Parse (Name : String) return String is
+      --  The call that scans a core scalar at the parser's position.
+      function Scan_Call (Name : String) return String is
+        ("scan_" & Zig_Snake (Core_Base (Name))
+         & "(p.text, p.pos, p.text.len)");
+
+      --  The extra condition that rejects a matched bareword that is a
+      --  keyword (`word` must not swallow a directive's keyword), and its
+      --  positive form.  n is the matched length, the text starts at p.pos.
+      function Scalar_Reject (Name : String) return String is
+        (if Name = "atom" or else Name = "word"
+         then " or is_keyword(p.text[p.pos .. p.pos + n])"
+         else "");
+
+      function Scalar_Guard (Name : String) return String is
+        (if Name = "atom" or else Name = "word"
+         then " and !is_keyword(p.text[p.pos .. p.pos + n])"
+         else "");
+
+      --  The Zig expression that converts the matched text into a core value.
+      --  Pref and Cat make the `try` of str_value, which may allocate, into
+      --  the `catch` of a branch that must not return.
+      function Scalar_Value (Name : String; Pref, Cat : String := "")
+        return String
+      is
+         Sl : constant String := "p.text[p.pos .. p.pos + n]";
       begin
-         if Name = "str" or else Name = "atom" or else Name = "word" then
-            return "p.toks[p.pos].text";
+         if Name = "str" then
+            return Pref & "str_value(p.alloc, " & Sl & ")" & Cat;
          elsif Name = "bool" or else Name = "flag" then
-            return "(std.mem.eql(u8, p.toks[p.pos].text, ""yes"") or "
-              & "std.mem.eql(u8, p.toks[p.pos].text, ""on"") or "
-              & "std.mem.eql(u8, p.toks[p.pos].text, ""true""))";
+            return "(std.mem.eql(u8, " & Sl & ", ""yes"") or "
+              & "std.mem.eql(u8, " & Sl & ", ""on"") or "
+              & "std.mem.eql(u8, " & Sl & ", ""true""))";
          elsif Name = "int" then
-            return "std.fmt.parseInt(i64, p.toks[p.pos].text, 10) catch 0";
+            return "std.fmt.parseInt(i64, " & Sl & ", 10) catch 0";
          elsif Name'Length >= 2 then
             declare
                P : constant Character := Name (Name'First);
@@ -1372,30 +1395,88 @@ package body HBNF_Zig is
                  and then (for all C of R => C in '0' .. '9')
                then
                   return "std.fmt.parseInt(" & (if P = 'u' then "u" else "i")
-                    & R & ", p.toks[p.pos].text, 10) catch 0";
+                    & R & ", " & Sl & ", 10) catch 0";
                end if;
             end;
          end if;
-         return "p.toks[p.pos].text";
-      end Scalar_Parse;
+         return Sl;
+      end Scalar_Value;
 
-      function Start_Kind (Rule_Name : String) return String is
-         J : constant Natural := Find (Rules, Rule_Name);
+      --  A letter-led literal is a keyword: matched by the `word` scanner, so
+      --  `in` never matches the front of `input`.  Any other literal compares
+      --  bytes.  (Same rule as the C backend's.)
+      function Is_Keyword_Lit (S : String) return Boolean is
+        (S'Length > 0
+         and then (S (S'First) in 'a' .. 'z'
+                   or else S (S'First) in 'A' .. 'Z'
+                   or else S (S'First) = '_')
+         and then (HBNF_Grammar.Keyword_Table.Is_Empty
+                   or else HBNF_Grammar.Keyword_Table.Contains
+                             (To_Unbounded_String (S))));
+
+      --  The rule phrase rules skip between their elements, "" when none.
+      function Whitespace_Rule_Name return String is
       begin
-         if J = 0 then
-            return "";
-         end if;
-         declare
-            P : constant Element_Vectors.Vector := Rules (J).Pattern;
-         begin
-            if Natural (P.Length) = 1 and then P (1).Kind = HBNF_Grammar.Name
-              and then Is_Core (To_String (P (1).Name))
-            then
-               return Scalar_Kind (To_String (P (1).Name));
+         for I in 1 .. N loop
+            if Rules (I).Whitespace /= Null_Unbounded_String then
+               return To_String (Rules (I).Whitespace);
             end if;
-         end;
+         end loop;
          return "";
-      end Start_Kind;
+      end Whitespace_Rule_Name;
+
+      Ws_Name : constant String := Whitespace_Rule_Name;
+
+      --  The words `word` must not match: the `keywords` table when there is
+      --  one, else every letter-led literal in the grammar, in first-appearance
+      --  order.  (As the C backend collects them.)
+      function Collect_Keywords return String_Vectors.Vector is
+         K : String_Vectors.Vector;
+
+         function Present (X : U) return Boolean is
+           (for some Y of K => Y = X);
+
+         procedure Walk (Els : Element_Vectors.Vector) is
+         begin
+            for E of Els loop
+               case E.Kind is
+                  when Literal =>
+                     if Is_Keyword_Lit (To_String (E.Lit))
+                       and then not Present (E.Lit)
+                     then
+                        K.Append (E.Lit);
+                     end if;
+                  when Group =>
+                     Walk (E.Items);
+                  when others =>
+                     null;
+               end case;
+            end loop;
+         end Walk;
+      begin
+         if not HBNF_Grammar.Keyword_Table.Is_Empty then
+            for W of HBNF_Grammar.Keyword_Table loop
+               K.Append (W);
+            end loop;
+            return K;
+         end if;
+         for I in 1 .. N loop
+            Walk (Rules (I).Pattern);
+         end loop;
+         return K;
+      end Collect_Keywords;
+
+      Keywords : constant String_Vectors.Vector := Collect_Keywords;
+
+      --  The four core scanners a grammar may leave undefined: the compiler
+      --  injects each as a C jet, and this backend has its own Zig for them.
+      function Is_Builtin_Jet (Nm : String) return Boolean is
+        (Nm = "word" or else Nm = "int" or else Nm = "str" or else Nm = "ws");
+
+      --  The scanner a jet rule runs: the built-in one, or the stub for
+      --  hand-written C.
+      function Jet_Fn (Nm : String) return String is
+        ((if Is_Builtin_Jet (Nm) then "scan_" else "jet_") & Zig_Snake (Nm));
 
       --  A group of literals only, `0*1( "log" )`: its list entries carry
       --  no field, so each is a []const u8, as the list's type says.
@@ -1439,20 +1520,6 @@ package body HBNF_Zig is
          end if;
       end Range_Cond;
 
-      --  True when some branch of an enum is a punctuation literal
-      --  ("+", "<="): the lexer makes it a punct token, not an atom.
-      function Has_Punct_Lit (V : Element_Vectors.Vector) return Boolean is
-        (for some E of V =>
-           E.Kind = Literal and then Length (E.Lit) > 0
-           and then Ada.Strings.Unbounded.Element (E.Lit, 1) not in
-             'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
-
-      --  The current token's text is literal L: as written, or in any case
-      --  for a %i literal.
-      function Text_Is (L : Element_Access) return String is
-        ((if L.No_Case then "std.ascii.eqlIgnoreCase(" else "std.mem.eql(u8, ")
-         & "p.toks[p.pos].text, """ & Zig_Escape (To_String (L.Lit)) & """)");
-
       procedure Emit_Seq
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural;
@@ -1464,34 +1531,52 @@ package body HBNF_Zig is
             declare
                E : constant Element_Access := Els (K);
             begin
+               --  A phrase rule skips whitespace before each element.
+               if E.Kind = Literal or else E.Kind = Name then
+                  Append (Buf, Ind & "p.skip_ws();");
+                  Append (Buf, LF);
+               end if;
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & Pref & "p.expect_lit"
-                       & (if E.No_Case then "_nocase" else "") & "("""
-                       & Zig_Escape (To_String (E.Lit)) & """, ""`"
-                       & Zig_Escape (To_String (E.Lit)) & "`"")" & Cat & ";");
-                     Append (Buf, LF);
+                     declare
+                        Lit : constant String := To_String (E.Lit);
+                     begin
+                        Append (Buf, Ind & Pref
+                          & (if E.No_Case then "p.expect_word_nocase"
+                             elsif Is_Keyword_Lit (Lit) then "p.expect_word"
+                             else "p.expect_lit")
+                          & "(""" & Zig_Escape (Lit) & """, ""`"
+                          & Zig_Escape (Lit) & "`"")" & Cat & ";");
+                        Append (Buf, LF);
+                     end;
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
-                        Append (Buf, Ind & Pref & "p.expect_kind("
-                          & Scalar_Kind (To_String (E.Name)) & ", """
-                          & Core_Desc (To_String (E.Name)) & """)" & Cat & ";");
-                        Append (Buf, LF);
-                        Append (Buf, Ind & Dst
-                          & Zig_Field (To_String (E.Name)) & " = "
-                          & Scalar_Parse (To_String (E.Name)) & "; p.pos += 1;");
-                        Append (Buf, LF);
+                        --  A core scalar: run its scanner at the position and
+                        --  convert the matched text.
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           Append (Buf, Ind & "{ const n = " & Scan_Call (NM)
+                             & "; if (n == 0" & Scalar_Reject (NM) & ") { "
+                             & Pref & "p.fail(""" & Core_Desc (NM) & """)"
+                             & Cat & "; } " & Dst & Zig_Field (NM) & " = "
+                             & Scalar_Value (NM, Pref, Cat)
+                             & "; p.pos += n; }");
+                           Append (Buf, LF);
+                        end;
                      elsif Is_Char_Rule (Rules, To_String (E.Name)) then
-                        --  A char-rule reference matches its token and yields
-                        --  the matched text, as a core `str` would.
-                        Append (Buf, Ind & Pref & "p.expect_kind(."
-                          & Zig_Snake (To_String (E.Name)) & ", """
-                          & To_String (E.Name) & """)" & Cat & ";");
-                        Append (Buf, LF);
-                        Append (Buf, Ind & Dst
-                          & Zig_Field (To_String (E.Name))
-                          & " = p.toks[p.pos].text; p.pos += 1;");
-                        Append (Buf, LF);
+                        --  A char-rule reference runs its scanner here and
+                        --  yields the matched text.
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           Append (Buf, Ind & "{ const n = scan_" & Zig_Snake (NM)
+                             & "(p.text, p.pos, p.text.len); if (n == 0) { "
+                             & Pref & "p.fail(""" & NM & """)" & Cat & "; } "
+                             & Dst & Zig_Field (NM)
+                             & " = p.text[p.pos .. p.pos + n]; p.pos += n; }");
+                           Append (Buf, LF);
+                        end;
                      elsif Back_Target (Backs, Owner, To_String (E.Name)) > 0
                      then
                         --  The back edge: parse the subtree, then box it.
@@ -1591,26 +1676,20 @@ package body HBNF_Zig is
            (if Owns then Release & "; " else "")
            & "r = std.mem.zeroes(" & ZT & ")";
       begin
-         if Is_Char_Rule (Rules, NM) then
-            --  A char rule is a token: expect its kind and capture the text.
-            --  A core-type char rule reuses the base Kind variant.
-            Append (Buf, "    try p.expect_kind("
-              & (if Is_Core_Name (NM) then Scalar_Kind (NM)
-                 else "." & Zig_Snake (NM)) & ", """
+         if Is_Char_Rule (Rules, NM) or else R.Jet_Code /= Null_Unbounded_String
+         then
+            --  A char rule is a scanner: run it here and capture the text.  A
+            --  jet is its built-in scanner, or the stub for hand-written C.
+            Append (Buf, "    const n = "
+              & (if R.Jet_Code /= Null_Unbounded_String
+                 then Jet_Fn (NM) else "scan_" & Zig_Snake (NM))
+              & "(p.text, p.pos, p.text.len);");
+            Append (Buf, LF);
+            Append (Buf, "    if (n == 0) try p.fail("""
+              & (if R.Jet_Code /= Null_Unbounded_String then "a " else "")
               & NM & """);");
             Append (Buf, LF);
-            Append (Buf, "    const r = p.toks[p.pos].text; p.pos += 1;");
-            Append (Buf, LF);
-            Append (Buf, "    return r;");
-            Append (Buf, LF);
-            return;
-         end if;
-         if R.Jet_Code /= Null_Unbounded_String then
-            --  A jet is a hand-written C scanner; this backend can't run it,
-            --  so read the token the generic lexer produced instead.
-            Append (Buf, "    try p.expect_kind(.atom, ""a " & NM & """);");
-            Append (Buf, LF);
-            Append (Buf, "    const r = p.toks[p.pos].text; p.pos += 1;");
+            Append (Buf, "    const r = p.text[p.pos .. p.pos + n]; p.pos += n;");
             Append (Buf, LF);
             Append (Buf, "    return r;");
             Append (Buf, LF);
@@ -1676,37 +1755,37 @@ package body HBNF_Zig is
                   Append (Buf, LF);
                end if;
                if E.Kind = Name then
-                  declare
-                     SK : constant String := Start_Kind (To_String (E.Name));
-                  begin
-                     if SK /= "" then
-                        Append (Buf, "    while (p.pos < p.toks.len and p.toks[p.pos].kind == "
-                          & SK & ") {");
-                     else
-                        Append (Buf, "    while (p.pos < p.toks.len) {");
-                     end if;
-                  end;
+                  --  PEG's `*`: stop at the end of input and at the first
+                  --  element that fails, with the position restored, as C
+                  --  does; the caller decides.
+                  Append (Buf, "    while (true) {");
                   Append (Buf, LF);
                   if Max_Stop /= "" then
                      Append (Buf, "        " & Max_Stop & ";");
                      Append (Buf, LF);
                   end if;
-                  --  PEG's `*`: stop at the first element that fails, with
-                  --  the position restored, as C does; the caller decides.
+                  Append (Buf, "        const save = p.pos;");
+                  Append (Buf, LF);
+                  Append (Buf, "        p.skip_ws();");
+                  Append (Buf, LF);
+                  if not Repeated_Body_Nullable (Rules, E) then
+                     Append (Buf, "        if (p.pos >= p.text.len) { p.pos = save; break; }");
+                     Append (Buf, LF);
+                  end if;
                   if Is_Core (To_String (E.Name)) then
-                     --  A list of a core type (`*word`): read the token in
+                     --  A list of a core type (`*word`): read the text in
                      --  place; there is no parse_ function for a core type.
-                     Append (Buf, "        if (p.toks[p.pos].kind != "
-                       & Scalar_Kind (To_String (E.Name)) & ") break;");
+                     Append (Buf, "        const n = " & Scan_Call (To_String (E.Name)) & ";");
+                     Append (Buf, LF);
+                     Append (Buf, "        if (n == 0" & Scalar_Reject (To_String (E.Name))
+                       & ") { p.pos = save; break; }");
                      Append (Buf, LF);
                      Append (Buf, "        try list.append(p.alloc, "
-                       & Scalar_Parse (To_String (E.Name)) & ");");
+                       & Scalar_Value (To_String (E.Name), "try ", "") & ");");
                      Append (Buf, LF);
-                     Append (Buf, "        p.pos += 1;");
+                     Append (Buf, "        p.pos += n;");
                      Append (Buf, LF);
                   else
-                     Append (Buf, "        const save = p.pos;");
-                     Append (Buf, LF);
                      Append (Buf, "        const v = parse_"
                        & Zig_Snake (To_String (E.Name)) & "(p) catch |err| switch (err) {");
                      Append (Buf, LF);
@@ -1719,10 +1798,18 @@ package body HBNF_Zig is
                      Append (Buf, "        try list.append(p.alloc, v);");
                      Append (Buf, LF);
                   end if;
+                  --  What is repeated can match nothing: an iteration that
+                  --  did not advance would match the same nothing again.
+                  if Repeated_Body_Nullable (Rules, E) then
+                     Append (Buf, "        if (p.pos == save) break;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "    }");
                   Append (Buf, LF);
                elsif E.Kind = Group then
-                  Append (Buf, "    list: while (p.pos < p.toks.len) {");
+                  Append (Buf, "    list: while ("
+                    & (if Repeated_Body_Nullable (Rules, E) then "true"
+                       else "p.pos < p.text.len") & ") {");
                   Append (Buf, LF);
                   if Max_Stop /= "" then
                      Append (Buf, "        " & Max_Stop & " :list;");
@@ -1756,6 +1843,10 @@ package body HBNF_Zig is
                   Append (Buf, LF);
                   Append (Buf, "        try list.append(p.alloc, e);");
                   Append (Buf, LF);
+                  if Repeated_Body_Nullable (Rules, E) then
+                     Append (Buf, "        if (p.pos == save) break :list;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "    }");
                   Append (Buf, LF);
                end if;
@@ -1769,11 +1860,30 @@ package body HBNF_Zig is
                Append (Buf, LF);
             end;
          elsif Is_Enum then
+            --  Each alternative matches its literal at the position, in order:
+            --  a keyword by the `word` scanner, any other literal by its bytes.
             declare
                Lits   : String_Vectors.Vector;
                Names  : String_Vectors.Vector;
                St     : Natural := 1;
                Branch : Natural := 0;
+
+               function Lit_At (L : Element_Access) return String is
+                  S  : constant String := To_String (L.Lit);
+                  NL : constant String := Img (S'Length);
+                  Sl : constant String := "p.text[p.pos .. p.pos + " & NL & "]";
+                  Eq : constant String :=
+                    (if L.No_Case then "std.ascii.eqlIgnoreCase(" & Sl & ", """
+                                       & Zig_Escape (S) & """)"
+                     else "std.mem.eql(u8, " & Sl & ", """
+                          & Zig_Escape (S) & """)");
+               begin
+                  if Is_Keyword_Lit (S) then
+                     return "scan_word(p.text, p.pos, p.text.len) == " & NL
+                       & " and " & Eq;
+                  end if;
+                  return "p.pos + " & NL & " <= p.text.len and " & Eq;
+               end Lit_At;
             begin
                for K in 1 .. Natural (P.Length) + 1 loop
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
@@ -1785,12 +1895,7 @@ package body HBNF_Zig is
                end loop;
                Names := Enum_Names (Lits);
 
-               if Has_Punct_Lit (P) then
-                  Append (Buf, "    if (p.toks[p.pos].kind != .atom and p.toks[p.pos].kind != .punct)"
-                    & " try p.fail(""a " & ZT & """);");
-               else
-                  Append (Buf, "    try p.expect_kind(.atom, ""a " & ZT & """);");
-               end if;
+               Append (Buf, "    if (p.pos >= p.text.len) try p.fail(""a " & ZT & """);");
                Append (Buf, LF);
                Append (Buf, "    var r: " & ZT & " = undefined;");
                Append (Buf, LF);
@@ -1800,13 +1905,12 @@ package body HBNF_Zig is
                for K in 1 .. Natural (P.Length) + 1 loop
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
                      if St <= K - 1 and then P (St).Kind = Literal then
-                        if Branch = 0 then
-                           Append (Buf, "    if (" & Text_Is (P (St)) & ") {");
-                        else
-                           Append (Buf, "    } else if (" & Text_Is (P (St)) & ") {");
-                        end if;
+                        Append (Buf, (if Branch = 0 then "    if (" else "    } else if (")
+                          & Lit_At (P (St)) & ") {");
                         Append (Buf, LF);
-                        Append (Buf, "        r = ." & To_String (Names (Branch + 1)) & ";");
+                        Append (Buf, "        r = ." & To_String (Names (Branch + 1))
+                          & "; p.pos += "
+                          & Img (To_String (P (St).Lit)'Length) & ";");
                         Append (Buf, LF);
                         Branch := Branch + 1;
                      end if;
@@ -1834,17 +1938,17 @@ package body HBNF_Zig is
             end;
             Append (Buf, """); }");
             Append (Buf, LF);
-            Append (Buf, "    p.pos += 1;");
-            Append (Buf, LF);
             Append (Buf, "    return r;");
             Append (Buf, LF);
          elsif Natural (P.Length) = 1 and then P (1).Kind = Name then
             if Is_Core (To_String (P (1).Name)) then
-               Append (Buf, "    try p.expect_kind(" & Scalar_Kind (To_String (P (1).Name))
-                 & ", """ & Core_Desc (To_String (P (1).Name)) & """);");
+               Append (Buf, "    const n = " & Scan_Call (To_String (P (1).Name)) & ";");
                Append (Buf, LF);
-               Append (Buf, "    const r = " & Scalar_Parse (To_String (P (1).Name))
-                 & "; p.pos += 1;");
+               Append (Buf, "    if (n == 0" & Scalar_Reject (To_String (P (1).Name))
+                 & ") try p.fail(""" & Core_Desc (To_String (P (1).Name)) & """);");
+               Append (Buf, LF);
+               Append (Buf, "    const r = " & Scalar_Value (To_String (P (1).Name), "try ", "")
+                 & "; p.pos += n;");
                Append (Buf, LF);
                Append (Buf, "    return r;");
                Append (Buf, LF);
@@ -1866,11 +1970,11 @@ package body HBNF_Zig is
                            E : constant Element_Access := P (St);
                         begin
                            if E.Kind = Name and then Is_Core (To_String (E.Name)) then
-                              Append (Buf, "    if (p.pos < p.toks.len and p.toks[p.pos].kind == "
-                                & Scalar_Kind (To_String (E.Name)) & ") {");
-                              Append (Buf, LF);
-                              Append (Buf, "        const r = " & Scalar_Parse (To_String (E.Name))
-                                & "; p.pos += 1; return r; }");
+                              Append (Buf, "    { const n = " & Scan_Call (To_String (E.Name))
+                                & "; if (n > 0" & Scalar_Guard (To_String (E.Name))
+                                & ") { const r = "
+                                & Scalar_Value (To_String (E.Name), "try ", "")
+                                & "; p.pos += n; return r; } }");
                               Append (Buf, LF);
                            elsif E.Kind = Name then
                               Append (Buf, "    if (parse_" & Zig_Snake (To_String (E.Name))
@@ -1980,49 +2084,22 @@ package body HBNF_Zig is
          Append (Res, LF);
          Append (Res, LF);
       end if;
-      declare
-         Enum : U := To_Unbounded_String
-           ("pub const Kind = enum { atom, str, int, punct");
-      begin
-         for I in 1 .. N loop
-            if Rules (I).Jet_Code /= Null_Unbounded_String then
-               declare
-                  K : constant String := Zig_Snake (To_String (Rules (I).Name));
-               begin
-                  if K not in "atom" | "str" | "int" | "punct" | "eof" then
-                     Append (Enum, ", " & K);
-                  end if;
-               end;
-            elsif Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
-               declare
-                  NM : constant String := To_String (Rules (I).Name);
-               begin
-                  --  A core-type char rule reuses the base variant; another
-                  --  token takes its own; a building block is inlined.
-                  if not Is_Core_Name (NM)
-                    and then Is_Char_Token (Rules, NM)
-                  then
-                     Append (Enum, ", " & Zig_Snake (NM));
-                  end if;
-               end;
-            end if;
-         end loop;
-         Append (Enum, ", eof };");
-         Append (Res, To_String (Enum));
-         Append (Res, LF);
-      end;
-      Append (Res, "pub const Token = struct { kind: Kind, text: []const u8, line: usize, col: usize };");
-      Append (Res, LF);
       Append (Res, "pub const ParseError = error{ Invalid, OutOfMemory };");
       Append (Res, LF);
       Append (Res, "const SPACES = ""                                                                "";");
       Append (Res, LF);
+      Append (Res, "fn is_word_char(c: u8) bool {");
+      Append (Res, LF);
+      Append (Res, "    return std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.';");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, LF);
+      Append (Res, "// The parser reads the text itself: a byte position in it, no token array.");
       Append (Res, LF);
       Append (Res, "const P = struct {");
       Append (Res, LF);
-      Append (Res, "    toks: []const Token,");
-      Append (Res, LF);
-      Append (Res, "    lines: []const []const u8,");
+      Append (Res, "    text: []const u8,");
       Append (Res, LF);
       Append (Res, "    alloc: std.mem.Allocator,");
       Append (Res, LF);
@@ -2054,81 +2131,91 @@ package body HBNF_Zig is
          Append (Res, LF);
          Append (Res, LF);
       end if;
-      Append (Res, "    fn set_err(self: *P, expected: []const u8) void {");
-      Append (Res, LF);
-      Append (Res, "        if (self.err_len != 0 and self.pos <= self.err_pos) return;");
-      Append (Res, LF);
-      Append (Res, "        self.err_pos = self.pos;");
-      Append (Res, LF);
-      Append (Res, "        const tok = if (self.pos < self.toks.len) self.toks[self.pos] else self.toks[self.toks.len - 1];");
-      Append (Res, LF);
-      Append (Res, "        self.err_line = tok.line;");
-      Append (Res, LF);
-      Append (Res, "        self.err_col = tok.col;");
-      Append (Res, LF);
-      Append (Res, "        const found = if (self.pos < self.toks.len) self.toks[self.pos].text else ""end of input"";");
-      Append (Res, LF);
-      Append (Res, "        const msg = if (self.err_line >= 1 and self.err_line <= self.lines.len) blk: {");
-      Append (Res, LF);
-      Append (Res, "            const l = self.lines[self.err_line - 1];");
-      Append (Res, LF);
-      Append (Res, "            const w0 = if (self.err_col > 1) self.err_col - 1 else 0;");
-      Append (Res, LF);
-      Append (Res, "            const w = if (w0 > SPACES.len) SPACES.len else w0;");
-      Append (Res, LF);
-      Append (Res, "            break :blk std.fmt.bufPrint(self.err[0..], ""expected {s}, found {s}\n  {s}\n  {s}^"", .{ expected, found, l, SPACES[0..w] });");
-      Append (Res, LF);
-      Append (Res, "        } else std.fmt.bufPrint(self.err[0..], ""expected {s}, found {s}"", .{ expected, found });");
-      Append (Res, LF);
-      Append (Res, "        const m = msg catch { self.err_len = self.err.len; return; };");
-      Append (Res, LF);
-      Append (Res, "        self.err_len = m.len;");
-      Append (Res, LF);
-      Append (Res, "    }");
-      Append (Res, LF);
-      Append (Res, LF);
-      Append (Res, "    fn fail(self: *P, expected: []const u8) ParseError!void {");
-      Append (Res, LF);
-      Append (Res, "        self.set_err(expected);");
-      Append (Res, LF);
-      Append (Res, "        return error.Invalid;");
-      Append (Res, LF);
-      Append (Res, "    }");
-      Append (Res, LF);
-      Append (Res, LF);
-      Append (Res, "    fn expect_lit(self: *P, lit: []const u8, want: []const u8) ParseError!void {");
-      Append (Res, LF);
-      Append (Res, "        if (self.pos < self.toks.len and (self.toks[self.pos].kind == .atom or self.toks[self.pos].kind == .punct)");
-      Append (Res, LF);
-      Append (Res, "            and std.mem.eql(u8, self.toks[self.pos].text, lit)) { self.pos += 1; return; }");
-      Append (Res, LF);
-      Append (Res, "        return self.fail(want);");
-      Append (Res, LF);
-      Append (Res, "    }");
-      Append (Res, LF);
-      Append (Res, LF);
-      if Has_No_Case (Rules) then
-         Append (Res, "    fn expect_lit_nocase(self: *P, lit: []const u8, want: []const u8) ParseError!void {");
-         Append (Res, LF);
-         Append (Res, "        if (self.pos < self.toks.len and (self.toks[self.pos].kind == .atom or self.toks[self.pos].kind == .punct)");
-         Append (Res, LF);
-         Append (Res, "            and std.ascii.eqlIgnoreCase(self.toks[self.pos].text, lit)) { self.pos += 1; return; }");
-         Append (Res, LF);
-         Append (Res, "        return self.fail(want);");
-         Append (Res, LF);
-         Append (Res, "    }");
-         Append (Res, LF);
-         Append (Res, LF);
-      end if;
-      Append (Res, "    fn expect_kind(self: *P, k: Kind, desc: []const u8) ParseError!void {");
-      Append (Res, LF);
-      Append (Res, "        if (self.pos < self.toks.len and self.toks[self.pos].kind == k) return;");
-      Append (Res, LF);
-      Append (Res, "        return self.fail(desc);");
-      Append (Res, LF);
-      Append (Res, "    }");
-      Append (Res, LF);
-      Append (Res, LF);
+      declare
+         procedure Put (Text : String) is
+         begin
+            Append (Res, Text);
+            Append (Res, LF);
+         end Put;
+      begin
+         Put ("    fn set_err(self: *P, expected: []const u8) void {");
+         Put ("        if (self.err_len != 0 and self.pos <= self.err_pos) return;");
+         Put ("        self.err_pos = self.pos;");
+         Put ("        // The line and column of the position, and the text of its line.");
+         Put ("        const end = if (self.pos < self.text.len) self.pos else self.text.len;");
+         Put ("        var line: usize = 1;");
+         Put ("        var start: usize = 0;");
+         Put ("        var i: usize = 0;");
+         Put ("        while (i < end) : (i += 1) {");
+         Put ("            if (self.text[i] == '\n') { line += 1; start = i + 1; }");
+         Put ("        }");
+         Put ("        const col = end - start + 1;");
+         Put ("        var stop = start;");
+         Put ("        while (stop < self.text.len and self.text[stop] != '\n') stop += 1;");
+         Put ("        self.err_line = line;");
+         Put ("        self.err_col = col;");
+         Put ("        // What stands there: the bareword that starts at the position,");
+         Put ("        // else the one character, else the end of the text.");
+         Put ("        var fend = self.pos;");
+         Put ("        const found = if (self.pos >= self.text.len) ""end of input"" else blk: {");
+         Put ("            if (is_word_char(self.text[self.pos])) {");
+         Put ("                while (fend < self.text.len and is_word_char(self.text[fend])) fend += 1;");
+         Put ("            } else {");
+         Put ("                fend += 1;");
+         Put ("                while (fend < self.text.len and (self.text[fend] & 0xC0) == 0x80) fend += 1;");
+         Put ("            }");
+         Put ("            break :blk self.text[self.pos..fend];");
+         Put ("        };");
+         Put ("        const w = if (col - 1 > SPACES.len) SPACES.len else col - 1;");
+         Put ("        const msg = std.fmt.bufPrint(self.err[0..], ""expected {s}, found {s}\n  {s}\n  {s}^"", .{ expected, found, self.text[start..stop], SPACES[0..w] });");
+         Put ("        const m = msg catch { self.err_len = self.err.len; return; };");
+         Put ("        self.err_len = m.len;");
+         Put ("    }");
+         Put ("");
+         Put ("    fn fail(self: *P, expected: []const u8) ParseError!void {");
+         Put ("        self.set_err(expected);");
+         Put ("        return error.Invalid;");
+         Put ("    }");
+         Put ("");
+         Put ("    // A punctuation- or digit-led literal: compare bytes at the position (a");
+         Put ("    // prefix is correct there, e.g. ""-"" in ""-5"", ""0x"" in ""0x1F"").");
+         Put ("    fn expect_lit(self: *P, lit: []const u8, want: []const u8) ParseError!void {");
+         Put ("        if (self.pos + lit.len <= self.text.len");
+         Put ("            and std.mem.eql(u8, self.text[self.pos .. self.pos + lit.len], lit)) { self.pos += lit.len; return; }");
+         Put ("        return self.fail(want);");
+         Put ("    }");
+         Put ("");
+         Put ("    // A keyword: the whole bareword at the position must be the literal, so");
+         Put ("    // `in` does not match the front of `input`.");
+         Put ("    fn expect_word(self: *P, lit: []const u8, want: []const u8) ParseError!void {");
+         Put ("        const n = scan_word(self.text, self.pos, self.text.len);");
+         Put ("        if (n == lit.len and std.mem.eql(u8, self.text[self.pos .. self.pos + n], lit)) { self.pos += n; return; }");
+         Put ("        return self.fail(want);");
+         Put ("    }");
+         Put ("");
+         if Has_No_Case (Rules) then
+            Put ("    fn expect_word_nocase(self: *P, lit: []const u8, want: []const u8) ParseError!void {");
+            Put ("        const n = scan_word(self.text, self.pos, self.text.len);");
+            Put ("        if (n == lit.len and std.ascii.eqlIgnoreCase(self.text[self.pos .. self.pos + n], lit)) { self.pos += n; return; }");
+            Put ("        return self.fail(want);");
+            Put ("    }");
+            Put ("");
+         end if;
+         Put ("    // Skip what the grammar calls whitespace, one match at a time.");
+         Put ("    fn skip_ws(self: *P) void {");
+         if Ws_Name = "" then
+            Put ("        _ = self;");
+         else
+            Put ("        while (true) {");
+            Put ("            const n = scan_" & Zig_Snake (Ws_Name)
+              & "(self.text, self.pos, self.text.len);");
+            Put ("            if (n == 0) break;");
+            Put ("            self.pos += n;");
+            Put ("        }");
+         end if;
+         Put ("    }");
+         Put ("");
+      end;
       Append (Res, "    fn err_out(self: *P, out: *[512]u8, line: *usize, col: *usize) ParseError {");
       Append (Res, LF);
       Append (Res, "        @memcpy(out[0..self.err_len], self.err[0..self.err_len]);");
@@ -2180,87 +2267,125 @@ package body HBNF_Zig is
          end;
       end loop;
 
-      Append (Res, "pub fn parse_tokens(alloc: std.mem.Allocator, toks: []const Token,");
-      Append (Res, LF);
-      Append (Res, "                    lines: []const []const u8,");
-      Append (Res, LF);
-      Append (Res, "                    err: *[512]u8, err_line: *usize, err_col: *usize) ParseError!"
-        & Ret_Type (1) & " {");
-      Append (Res, LF);
-      Append (Res, "    var p = P{ .toks = toks, .lines = lines, .alloc = alloc };");
-      Append (Res, LF);
-      Append (Res, "    const out = parse_" & Zig_Snake (To_String (Rules (1).Name))
-        & "(&p) catch return p.err_out(err, err_line, err_col);");
-      Append (Res, LF);
-      Append (Res, "    if (p.pos < p.toks.len and p.toks[p.pos].kind != .eof) { p.set_err(""end of config""); return p.err_out(err, err_line, err_col); }");
-      Append (Res, LF);
-      Append (Res, "    return out;");
-      Append (Res, LF);
-      Append (Res, "}");
-      Append (Res, LF);
-
-      --  Jets: hand-written scanners, plus the dispatch the lexer calls.
-      for I in 1 .. N loop
-         if Rules (I).Jet_Code /= Null_Unbounded_String then
-            declare
-               R  : constant Rule := Rules (I);
-               NM : constant String := To_String (R.Name);
-            begin
-               Append (Res, "fn jet_" & Zig_Snake (NM)
-                 & "(_: []const u8, _: usize, _: usize) usize {");
-               Append (Res, LF);
-               Append (Res, "    return 0;");
-               Append (Res, LF);
-               Append (Res, "}");
-               Append (Res, LF);
-               Append (Res, LF);
-            end;
-         end if;
-      end loop;
-
-      Append (Res, "fn jet_dispatch(s: []const u8, pos: usize, len: usize,"
-        & " kind: *Kind) usize {");
-      Append (Res, LF);
+      --  The scanners.  A core rule the grammar does not define (`word`,
+      --  `int`, `str`, `ws`) is a built-in: hand-written Zig, the same scan
+      --  the C backend's jets make.  Any other jet is hand-written C, which
+      --  this backend cannot run, so it is a stub that matches nothing.
       declare
-         Has_Jet : Boolean := False;
+         procedure Put (Text : String) is
+         begin
+            Append (Res, Text);
+            Append (Res, LF);
+         end Put;
+
+         function Is_Jet (Nm : String) return Boolean is
+            J : constant Natural := Find (Rules, Nm);
+         begin
+            return J > 0 and then Rules (J).Jet_Code /= Null_Unbounded_String;
+         end Is_Jet;
       begin
+         if Is_Jet ("word") or else Find (Rules, "word") = 0 then
+            Put ("fn scan_word(s: []const u8, pos: usize, len: usize) usize {");
+            Put ("    var i = pos;");
+            Put ("    if (i >= len or !(std.ascii.isAlphabetic(s[i]) or s[i] == '_' or s[i] == '-')) return 0;");
+            Put ("    i += 1;");
+            Put ("    while (i < len and is_word_char(s[i])) i += 1;");
+            Put ("    return i - pos;");
+            Put ("}");
+            Put ("");
+         end if;
+         if Is_Jet ("int") then
+            Put ("fn scan_int(s: []const u8, pos: usize, len: usize) usize {");
+            Put ("    var i = pos;");
+            Put ("    if (i + 1 < len and s[i] == '-' and std.ascii.isDigit(s[i + 1])) i += 1;");
+            Put ("    const start = i;");
+            Put ("    while (i < len and std.ascii.isDigit(s[i])) i += 1;");
+            Put ("    return if (i > start) i - pos else 0;");
+            Put ("}");
+            Put ("");
+         end if;
+         if Is_Jet ("str") then
+            Put ("fn scan_str(s: []const u8, pos: usize, len: usize) usize {");
+            Put ("    if (pos >= len or s[pos] != '""') return 0;");
+            Put ("    var i = pos + 1;");
+            Put ("    while (i < len and s[i] != '""') {");
+            Put ("        if (s[i] == '\\' and i + 1 < len) i += 1;");
+            Put ("        i += 1;");
+            Put ("    }");
+            Put ("    if (i >= len) return 0;");
+            Put ("    return i + 1 - pos;");
+            Put ("}");
+            Put ("");
+         end if;
+         if Is_Jet ("ws") then
+            Put ("fn scan_ws(s: []const u8, pos: usize, len: usize) usize {");
+            Put ("    if (pos < len and (s[pos] == ' ' or s[pos] == '\t' or s[pos] == '\r' or s[pos] == '\n')) return 1;");
+            Put ("    return 0;");
+            Put ("}");
+            Put ("");
+         end if;
          for I in 1 .. N loop
-            if Rules (I).Jet_Code /= Null_Unbounded_String then
-               Has_Jet := True;
-               exit;
+            if Rules (I).Jet_Code /= Null_Unbounded_String
+              and then not Is_Builtin_Jet (To_String (Rules (I).Name))
+            then
+               Put ("fn jet_" & Zig_Snake (To_String (Rules (I).Name))
+                 & "(_: []const u8, _: usize, _: usize) usize {");
+               Put ("    return 0;  // a %scan{} jet: C code only");
+               Put ("}");
+               Put ("");
             end if;
          end loop;
-         if not Has_Jet then
-            Append (Res, "    _ = s; _ = pos; _ = len; _ = kind;");
-            Append (Res, LF);
-         end if;
-      end;
-      for I in 1 .. N loop
-         if Rules (I).Jet_Code /= Null_Unbounded_String then
-            declare
-               NM : constant String := To_String (Rules (I).Name);
-            begin
-               Append (Res, "    { const n = jet_" & Zig_Snake (NM)
-                 & "(s, pos, len); if (n > 0) { kind.* = ." & Zig_Snake (NM)
-                 & "; return n; } }");
-               Append (Res, LF);
-            end;
-         end if;
-      end loop;
-      Append (Res, "    return 0;");
-      Append (Res, LF);
-      Append (Res, "}");
-      Append (Res, LF);
 
-      --  Character-level scanners: a code point matches a char rule, and
-      --  char_dispatch takes the longest match -- maximal munch.  The lexer
-      --  calls char_dispatch after jet_dispatch.
+         --  The content of a quoted string: strip the quotes, and drop a
+         --  backslash (keeping the character after it) or a backslash-newline.
+         --  With no backslash it is a slice of the text and needs no copy.
+         Put ("fn str_value(alloc: std.mem.Allocator, s: []const u8) ParseError![]const u8 {");
+         Put ("    const inner = s[1 .. s.len - 1];");
+         Put ("    if (std.mem.indexOfScalar(u8, inner, '\\') == null) return inner;");
+         Put ("    var r = std.ArrayList(u8).empty;");
+         Put ("    errdefer r.deinit(alloc);");
+         Put ("    var i: usize = 0;");
+         Put ("    while (i < inner.len) : (i += 1) {");
+         Put ("        if (inner[i] == '\\' and i + 1 < inner.len) {");
+         Put ("            i += 1;");
+         Put ("            if (inner[i] != '\n') try r.append(alloc, inner[i]);");
+         Put ("        } else {");
+         Put ("            try r.append(alloc, inner[i]);");
+         Put ("        }");
+         Put ("    }");
+         Put ("    return r.toOwnedSlice(alloc);");
+         Put ("}");
+         Put ("");
+
+         --  The words `word` must not match.
+         if Keywords.Is_Empty then
+            Put ("fn is_keyword(s: []const u8) bool {");
+            Put ("    _ = s;");
+            Put ("    return false;");
+            Put ("}");
+         else
+            Put ("fn is_keyword(s: []const u8) bool {");
+            Append (Res, "    return");
+            for K in 1 .. Natural (Keywords.Length) loop
+               Append (Res, (if K = 1 then " " else LF & "        or ")
+                 & "std.mem.eql(u8, s, """ & Zig_Escape (To_String (Keywords (K))) & """)");
+            end loop;
+            Put (";");
+            Put ("}");
+         end if;
+         Put ("");
+      end;
+
+      --  Character-level scanners: a code point matches a char rule, the
+      --  longest branch wins -- maximal munch -- and a phrase rule runs the
+      --  scanner where it names the rule.
       declare
          Has_Char : Boolean := False;
       begin
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-              and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+              and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
+                        or else To_String (Rules (I).Name) = Ws_Name)
             then
                Has_Char := True;
             end if;
@@ -2312,7 +2437,8 @@ package body HBNF_Zig is
 
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-              and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+              and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
+                        or else To_String (Rules (I).Name) = Ws_Name)
             then
                declare
                   NM  : constant String := To_String (Rules (I).Name);
@@ -2398,43 +2524,6 @@ package body HBNF_Zig is
             end if;
          end loop;
 
-         Append (Res, "fn char_dispatch(s: []const u8, pos: usize, len: usize,"
-           & " kind: *Kind) usize {");
-         Append (Res, LF);
-         if Has_Char then
-            Append (Res, "    var best: usize = 0;");
-            Append (Res, LF);
-            Append (Res, "    var best_kind: Kind = .eof;");
-            Append (Res, LF);
-            for I in 1 .. N loop
-               if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-                 and then Is_Char_Token (Rules, To_String (Rules (I).Name))
-               then
-                  declare
-                     NM : constant String := To_String (Rules (I).Name);
-                     --  A core-type char rule reuses the base Kind variant.
-                     Kind : constant String :=
-                       (if Is_Core_Name (NM) then Scalar_Kind (NM)
-                        else "." & Zig_Snake (NM));
-                  begin
-                     Append (Res, "    { const n = scan_" & Zig_Snake (NM)
-                       & "(s, pos, len); if (n > best) { best = n; best_kind = "
-                       & Kind & "; } }");
-                     Append (Res, LF);
-                  end;
-               end if;
-            end loop;
-            Append (Res, "    if (best > 0) kind.* = best_kind;");
-            Append (Res, LF);
-            Append (Res, "    return best;");
-         else
-            Append (Res, "    _ = s; _ = pos; _ = len; _ = kind;");
-            Append (Res, LF);
-            Append (Res, "    return 0;");
-         end if;
-         Append (Res, LF);
-         Append (Res, "}");
-         Append (Res, LF);
       end;
 
       return To_String (Res);
@@ -2455,8 +2544,17 @@ package body HBNF_Zig is
                        else Zig_Type (To_String (P (1).Name)))
              else "[]" & Zig_Type (To_String (R.Name)) & "Entry")
          else Zig_Type (To_String (R.Name)));
-      Lexer  : constant String :=
-        Render_Root ("zig_lexer", Root_T);
+      --  parse_text: the whole text through the root rule.
+      function Parse_Text_Src return String is
+         V : Mustache.Context := Mustache.View;
+      begin
+         Mustache.Put (V, "root_type", Root_T);
+         Mustache.Put (V, "root_fn",
+           "parse_" & Zig_Snake (To_String (R.Name)));
+         return Mustache.Render_File ("zig_parse_text", V);
+      end Parse_Text_Src;
+
+      Lexer  : constant String := Parse_Text_Src;
    begin
       if Epilogue ("Zig") = "" then
          return Lexer;

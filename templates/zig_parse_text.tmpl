@@ -1,0 +1,9 @@
+pub fn parse_text(alloc: std.mem.Allocator, text: []const u8,
+                  err: *[512]u8, err_line: *usize, err_col: *usize) ParseError!{{&root_type}} {
+    var p = P{ .text = text, .alloc = alloc };
+    p.skip_ws();
+    const out = {{&root_fn}}(&p) catch return p.err_out(err, err_line, err_col);
+    p.skip_ws();
+    if (p.pos < p.text.len) { p.set_err("end of config"); return p.err_out(err, err_line, err_col); }
+    return out;
+}
