@@ -1,6 +1,7 @@
 pragma Ada_2022;
 
 with Ada.Characters.Handling;
+with Ada.Environment_Variables;
 with HBNF_Lookahead;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
@@ -483,9 +484,58 @@ package body HBNF_Grammar is
       end if;
    end Hex_Digit;
 
+   --  The rule a `<...>` names: its words joined with `-`, so `<table
+   --  reference>` is `table-reference` and `<pchar>` is `pchar`.  Text that is
+   --  not a name (`<host, see [URI], Section 3.2.2>`) keeps its characters as
+   --  `_` and a checksum, so it is a rule of its own that nothing defines.
+   function Prose_Id (S : String) return String is
+      R       : Unbounded_String;
+      Gap     : Boolean := False;
+      Altered : Boolean := False;
+      Sum     : Natural := 0;
+      Hex     : constant String := "0123456789abcdef";
+   begin
+      for C of S loop
+         Sum := (Sum * 31 + Character'Pos (C)) mod 65536;
+         if C = ' ' or else C = ASCII.HT then
+            Gap := Length (R) > 0;
+         else
+            if Gap then
+               Append (R, '-');
+               Gap := False;
+            end if;
+            if C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' then
+               Append (R, C);
+            else
+               Append (R, '_');
+               Altered := True;
+            end if;
+         end if;
+      end loop;
+      if Length (R) = 0 then
+         return "";
+      end if;
+      if To_String (R) (1) in '0' .. '9' | '-' then
+         R := To_Unbounded_String ("n-") & R;
+      end if;
+      if Altered then
+         Append (R, "_" & Hex (Sum / 4096 + 1) & Hex (Sum / 256 mod 16 + 1)
+                 & Hex (Sum / 16 mod 16 + 1) & Hex (Sum mod 16 + 1));
+      end if;
+      return To_String (R);
+   end Prose_Id;
+
+   --  True when the text is words and nothing else: a rule's name, not a
+   --  description with punctuation in it.
+   function Plain_Words (S : String) return Boolean is
+     (S'Length > 0
+      and then (for all C of S =>
+                  C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-'
+                       | ' ' | ASCII.HT));
+
    --  What to add to "unexpected character" when it is another notation's
    --  symbol: how that notation writes it and how hbnf does.
-   function Character_Hint (C : Character; Bnf : Boolean) return String is
+   function Character_Hint (C : Character) return String is
       LF2 : constant String := (1 => ASCII.LF) & "  ";
    begin
       case C is
@@ -506,8 +556,6 @@ package body HBNF_Grammar is
          when others =>
             return LF2 & "If this is a terminal, hbnf writes it in quotes, "
               & "`""x""`, or as `'x'` for one character"
-              & (if Bnf then "; a bare word or number is read as a terminal "
-                   & "only after `::=`" else "")
               & ".";
       end case;
    end Character_Hint;
@@ -519,107 +567,11 @@ package body HBNF_Grammar is
       Col  : Positive := 1;
       Lang : constant Lang_Kind := Detect_Language (Text);
 
-      --  A file that assigns with `::=` is written in Backus-Naur form, where
-      --  `<name>` is a rule (it may have spaces: `<table reference>`) and a
-      --  word or a number outside brackets is a terminal.  Anywhere else
-      --  `<...>` is ABNF's prose-val.
-      --  Backus-Naur form proper: a rule is headed by `<name>`, in column 1.
-      --  Which of `::=`, `:=`, `:` or `=` assigns makes no difference: they
-      --  are one operator, and a file is read the same with any of them.
-      function Is_Bnf return Boolean is
-         K : Natural := Text'First;
-      begin
-         while K <= Text'Last loop
-            declare
-               E : Natural := K;
-            begin
-               while E <= Text'Last and then Text (E) /= ASCII.LF loop
-                  E := E + 1;
-               end loop;
-               if K < E and then Text (K) = '<' then
-                  declare
-                     G : Natural := K + 1;
-                  begin
-                     while G < E and then Text (G) /= '>' loop
-                        G := G + 1;
-                     end loop;
-                     if G < E then
-                        G := G + 1;
-                        while G < E and then Text (G) in ' ' | ASCII.HT loop
-                           G := G + 1;
-                        end loop;
-                        if G < E and then Text (G) in ':' | '=' then
-                           return True;
-                        end if;
-                     end if;
-                  end;
-               end if;
-               K := E + 1;
-            end;
-         end loop;
-         return False;
-      end Is_Bnf;
-
-      Bnf : constant Boolean := Is_Bnf;
-
-      --  What `<...>` means: `angle-brackets rule | prose`, a
-      --  directive on a line of its own, else a rule in a BNF file and prose
-      --  anywhere else.  (The directive is read here, ahead of the lexing it
-      --  steers; the parser accepts it afterwards.)
-      function Angle_Setting return String is
-         K : Natural := Text'First;
-      begin
-         while K <= Text'Last loop
-            declare
-               L : Natural := K;   --  the first non-blank of this line
-               E : Natural;
-            begin
-               while L <= Text'Last and then Text (L) in ' ' | ASCII.HT loop
-                  L := L + 1;
-               end loop;
-               E := L;
-               while E <= Text'Last and then Text (E) /= ASCII.LF loop
-                  E := E + 1;
-               end loop;
-               if E - L > 15 and then Text (L .. L + 14) = "angle-brackets " then
-                  declare
-                     V : Natural := L + 15;
-                     W : Natural;
-                  begin
-                     while V < E and then Text (V) in ' ' | ASCII.HT loop
-                        V := V + 1;
-                     end loop;
-                     W := V;
-                     while W < E and then Text (W) not in ' ' | ASCII.HT
-                       | ';' | ASCII.CR
-                     loop
-                        W := W + 1;
-                     end loop;
-                     return Text (V .. W - 1);
-                  end;
-               end if;
-               K := E + 1;
-            end;
-         end loop;
-         return (if Bnf then "rule" else "prose");
-      end Angle_Setting;
-
-      Angle    : constant String := Angle_Setting;
-      Bracket_Names : constant Boolean := Angle /= "prose";   --  `rule`
-
       --  First_Col is the token's first column, for a token Emit sees
       --  only once it has been read past (a quoted string); 0 means Col.
-      --  In a BNF file: after `::=` on a rule, where a bare word is a terminal.
-      In_Body : Boolean := False;
-
       procedure Emit
         (K : Tok_Kind; S : String := ""; First_Col : Natural := 0) is
       begin
-         if K = T_Eq then
-            In_Body := True;
-         elsif K = T_Newline then
-            In_Body := False;
-         end if;
          Token_Vectors.Append
            (Toks, Token'(K, Line, (if First_Col = 0 then Col else First_Col),
                          To_Unbounded_String (S)));
@@ -981,10 +933,13 @@ package body HBNF_Grammar is
                end if;
                I := I + 1;  Col := Col + 1;
             when '<' =>
-               --  In a BNF file, a rule: <table reference> is the name
-               --  `table-reference`.  Elsewhere a <prose-val> (RFC 5234 §4):
-               --  a rule described in words, not written yet.  Either ends
-               --  at the `>` on the same line.
+               --  `<...>` names a rule, and may have spaces, as a section
+               --  does in literate programming: `<table reference>` is the
+               --  rule `table-reference`, and `<pchar>` is `pchar`.  At the
+               --  start of a line it is a rule's name; anywhere else it is a
+               --  reference, which Finish resolves, or reports as a rule that
+               --  is not written yet (what ABNF calls a prose-val: words
+               --  for a rule).  It ends at the `>` on the same line.
                declare
                   At_Col : constant Positive := Col;
                   Start  : constant Positive := I + 1;
@@ -997,49 +952,22 @@ package body HBNF_Grammar is
                   if I > Text'Last or else Text (I) /= '>' then
                      raise Parse_Error with
                        Integer'Image (Line) & ":" & Integer'Image (At_Col)
-                       & (if Bracket_Names then ": a `<...>` name ends with "
-                                      & "`>` on the same line"
-                          else ": a <prose-val> ends with `>` on the same "
-                               & "line");
+                       & ": a `<...>` rule name ends with `>` on the same "
+                       & "line";
                   end if;
-                  if Bracket_Names then
+                  if At_Col = 1 then
                      declare
-                        Shown : constant String := Text (Start - 1 .. I);
-                        Id    : Unbounded_String;
-                        Gap   : Boolean := False;
+                        Id : constant String := Prose_Id (Text (Start .. I - 1));
                      begin
-                        for C of Text (Start .. I - 1) loop
-                           if C = ' ' or else C = ASCII.HT then
-                              Gap := Length (Id) > 0;
-                           elsif Name_Char (C) then
-                              if Gap then
-                                 Append (Id, '-');
-                                 Gap := False;
-                              end if;
-                              Append (Id, C);
-                           else
-                              raise Parse_Error with
-                                Integer'Image (Line) & ":"
-                                & Integer'Image (At_Col)
-                                & ": `" & Shown & "` is a rule name in BNF, "
-                                & "but hbnf names are letters, digits, `-` "
-                                & "and `_`: `" & C & "` is none.  Spell the "
-                                & "name with those (a space between words "
-                                & "becomes `-`)";
-                           end if;
-                        end loop;
-                        if Length (Id) = 0 then
+                        if Id = "" then
                            raise Parse_Error with
-                             Integer'Image (Line) & ":" & Integer'Image (At_Col)
-                             & ": `<>` names no rule";
+                             Integer'Image (Line) & ": 1: `<>` names no rule";
                         end if;
-                        if not Name_Start (To_String (Id) (1)) then
-                           Id := To_Unbounded_String ("n-") & Id;
+                        if not Bnf_Spellings.Contains (Id) then
+                           Bnf_Spellings.Insert
+                             (Id, Text (Start - 1 .. I));
                         end if;
-                        if not Bnf_Spellings.Contains (To_String (Id)) then
-                           Bnf_Spellings.Insert (To_String (Id), Shown);
-                        end if;
-                        Emit (T_Name, To_String (Id), At_Col);
+                        Emit (T_Name, Id, At_Col);
                      end;
                   else
                      Emit (T_Prose, Text (Start .. I - 1), At_Col);
@@ -1314,8 +1242,7 @@ package body HBNF_Grammar is
                   while I <= Text'Last and then Text (I) in '0' .. '9' loop
                      I := I + 1;
                   end loop;
-                  Emit ((if Bnf and then In_Body then T_String else T_Number),
-                        Text (Start .. I - 1));
+                  Emit (T_Number, Text (Start .. I - 1));
                   Col := Col + (I - Start);
                end;
             when others =>
@@ -1326,22 +1253,14 @@ package body HBNF_Grammar is
                      while I <= Text'Last and then Name_Char (Text (I)) loop
                         I := I + 1;
                      end loop;
-                     Emit ((if Bnf and then In_Body then T_String else T_Name),
-                           Text (Start .. I - 1));
+                     Emit (T_Name, Text (Start .. I - 1));
                      Col := Col + (I - Start);
                   end;
-               elsif Bnf and then In_Body
-                 and then Text (I) in '.' | ',' | '+' | '!' | '@' | '#' | '$'
-                                    | '^' | '&' | '?' | '~' | '`'
-               then
-                  --  A terminal written bare, as BNF writes `+` and `.`.
-                  Emit (T_String, String'(1 => Text (I)));
-                  I := I + 1;  Col := Col + 1;
                else
                   raise Parse_Error with
                     Integer'Image (Line) & ":" & Integer'Image (Col) &
                     ": unexpected character '" & Text (I) & "'"
-                    & Character_Hint (Text (I), Bnf);
+                    & Character_Hint (Text (I));
                end if;
          end case;
       end loop;
@@ -1657,14 +1576,33 @@ package body HBNF_Grammar is
                   Fold => File_Fold_Names);
             end;
          when T_Prose =>
-            --  A <prose-val>: a rule nobody has written yet.  It stands
-            --  as a reference to "<n>", a name no rule can have; Finish
-            --  reports it, with its line, if the parser would use it.
+            --  `<...>` in a rule: a reference to the rule it names.  Plain
+            --  words (`<table reference>`, `<pchar>`) are the name they
+            --  spell, as a bare `pchar` is, so a rule may refer to itself and
+            --  Finish finds what defines it.  Anything else (`<host, see
+            --  [URI]>`) stands as a reference to "<n>", a name no rule can
+            --  have, which Finish resolves against a rule of that spelling
+            --  or reports.  Either way the position is kept for the message.
             declare
-               T : constant Token := Cur (P);
+               T  : constant Token := Cur (P);
+               Id : constant String := Prose_Id (To_String (T.Text));
             begin
-               Prose_Sites.Append (Here (T.Line, T.Col, To_String (T.Text)));
                Next (P);
+               if Id /= "" and then Plain_Words (To_String (T.Text)) then
+                  declare
+                     E : constant Element_Access := new Element'
+                       (Kind => Name, Min => 1, Max => 1,
+                        Name => To_Unbounded_String (Id), Fold => False);
+                  begin
+                     Prose_Sites.Append
+                       (Here (T.Line, T.Col, To_String (T.Text), E));
+                     if not Bnf_Spellings.Contains (Id) then
+                        Bnf_Spellings.Insert (Id, "<" & To_String (T.Text) & ">");
+                     end if;
+                     return E;
+                  end;
+               end if;
+               Prose_Sites.Append (Here (T.Line, T.Col, To_String (T.Text)));
                return new Element'
                  (Kind => Name, Min => 1, Max => 1,
                   Name => To_Unbounded_String
@@ -1697,7 +1635,13 @@ package body HBNF_Grammar is
             begin
                raise Parse_Error with
                  Integer'Image (T.Line) & ":" & Integer'Image (T.Col) &
-                 ": expected a literal, name, or group";
+                 ": expected a literal, name, or group"
+                 & (if T.Kind = T_Number then
+                      ASCII.LF & "  A bare number: Backus-Naur form writes a "
+                      & "terminal bare, but hbnf writes it in quotes, `"""
+                      & To_String (T.Text) & """`.  (A number in front of an "
+                      & "element repeats it: `3DIGIT`.)"
+                    else "");
             end;
       end case;
    end Parse_Atom;
@@ -1716,7 +1660,21 @@ package body HBNF_Grammar is
             Max := Integer'Value (To_String (Cur (P).Text));  Next (P);
          end if;
       elsif Cur (P).Kind = T_Number then
-         Min := Natural'Value (To_String (Cur (P).Text));  Next (P);
+         Min := Natural'Value (To_String (Cur (P).Text));
+         --  A number with nothing to repeat is a bare terminal, as Backus-Naur
+         --  form writes `0`; hbnf writes it in quotes.
+         if P.Toks (P.Pos + 1).Kind in T_Bar | T_Slash | T_Newline | T_EOF
+           | T_RParen | T_RBrack | T_Comment | T_Code
+         then
+            raise Parse_Error with
+              Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+              & ": a bare number" & ASCII.LF
+              & "  Backus-Naur form writes a terminal bare, `"
+              & To_String (Cur (P).Text) & "`; hbnf writes it in quotes, `"""
+              & To_String (Cur (P).Text) & """`.  (A number in front of an "
+              & "element repeats it: `3DIGIT`.)";
+         end if;
+         Next (P);
          if Cur (P).Kind = T_Star then
             Next (P);
             if Cur (P).Kind = T_Number then
@@ -1831,6 +1789,87 @@ package body HBNF_Grammar is
       end loop;
       return V;
    end Parse_Alternation;
+
+   --  The text of a file, for `%grammar`.
+   function Read_Text (Path : String) return String is
+      F   : Ada.Text_IO.File_Type;
+      Buf : Unbounded_String;
+   begin
+      Ada.Text_IO.Open (F, Ada.Text_IO.In_File, Path);
+      while not Ada.Text_IO.End_Of_File (F) loop
+         Append (Buf, Ada.Text_IO.Get_Line (F));
+         Append (Buf, ASCII.LF);
+      end loop;
+      Ada.Text_IO.Close (F);
+      return To_String (Buf);
+   end Read_Text;
+
+   --  Where `%grammar "path"` finds its file: `~/x` in the home directory, an
+   --  absolute path as it is, anything else beside the file that names it.
+   function Grammar_Path (Given : String) return String is
+      Cur : constant String := To_String (Current_File);
+      Dir : Unbounded_String;
+   begin
+      if Given'Length >= 2 and then Given (Given'First .. Given'First + 1) = "~/"
+      then
+         return Ada.Environment_Variables.Value ("HOME", "")
+           & Given (Given'First + 1 .. Given'Last);
+      elsif Given'Length > 0 and then Given (Given'First) = '/' then
+         return Given;
+      end if;
+      for K in reverse Cur'Range loop
+         if Cur (K) = '/' then
+            Dir := To_Unbounded_String (Cur (Cur'First .. K));
+            exit;
+         end if;
+      end loop;
+      return To_String (Dir) & Given;
+   end Grammar_Path;
+
+   --  What follows a rule's `=`: a pattern, or `%grammar "file"`, a pattern
+   --  kept in a file of its own (a section of a literate grammar): the file
+   --  holds the rule's body, as the rest of this line would.
+   function Parse_Body (P : in out Parser) return Element_Vectors.Vector is
+   begin
+      if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "grammar" then
+         if P.Toks (P.Pos + 1).Kind /= T_String then
+            raise Parse_Error with
+              Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+              & ": %grammar takes the file the rule's body is in: "
+              & "name = %grammar ""file.hbnf""";
+         end if;
+         declare
+            Given : constant String := To_String (P.Toks (P.Pos + 1).Text);
+            Path  : constant String := Grammar_Path (Given);
+            Line  : constant Positive := Cur (P).Line;
+         begin
+            Next (P);
+            Next (P);
+            declare
+               Sub : Parser := (Toks => Lex (Read_Text (Path)), Pos => 1);
+               V   : constant Element_Vectors.Vector := Parse_Alternation (Sub);
+            begin
+               while Cur (Sub).Kind in T_Newline | T_Comment loop
+                  Next (Sub);
+               end loop;
+               if Cur (Sub).Kind /= T_EOF then
+                  raise Parse_Error with
+                    Integer'Image (Line) & ": " & Path & ":"
+                    & Integer'Image (Cur (Sub).Line) & ": the file is a "
+                    & "rule's body (what follows `=`), and this is not part "
+                    & "of one; a file of whole rules is `include`d";
+               end if;
+               return V;
+            end;
+         exception
+            when Ada.Text_IO.Name_Error | Ada.Text_IO.Use_Error =>
+               raise Parse_Error with
+                 Integer'Image (Line) & ": %grammar """ & Given
+                 & """: no such file (looked for " & Path & ")";
+         end;
+      end if;
+      return Parse_Alternation (P);
+   end Parse_Body;
 
    function Same_Element (A, B : Element_Access) return Boolean;
 
@@ -2365,6 +2404,90 @@ package body HBNF_Grammar is
          end loop;
       end Check_Greedy;
 
+
+
+      --  A `<...>` that names a rule written in the file is that rule:
+      --  `<pchar>` is `pchar`.  One that names none stays what it was, a rule
+      --  not written yet, which Check_Prose reports.
+      procedure Resolve_Brackets (V : Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            if E.Kind = Name and then Length (E.Name) > 0
+              and then Slice (E.Name, 1, 1) = "<"
+            then
+               declare
+                  S  : constant String := To_String (E.Name);
+                  N  : constant Positive :=
+                    Positive'Value (S (S'First + 1 .. S'Last - 1));
+                  Id : constant String :=
+                    Prose_Id (To_String (Prose_Sites (N).Text));
+               begin
+                  if Id /= "" and then By_Name.Contains (Id) then
+                     E.Name := To_Unbounded_String (Id);
+                     if not Bnf_Spellings.Contains (Id) then
+                        Bnf_Spellings.Insert
+                          (Id, "<" & To_String (Prose_Sites (N).Text) & ">");
+                     end if;
+                  end if;
+               end;
+            elsif E.Kind = Group then
+               Resolve_Brackets (E.Items);
+            end if;
+         end loop;
+      end Resolve_Brackets;
+
+      --  The message for a rule written between brackets that nothing
+      --  defines: T is what is between them, Max the repetition in front of
+      --  it, Only whether it is the whole of the rule it is in.
+      function Not_Written
+        (T : String; Max : Integer; Only : Boolean; In_Rule : String)
+         return String
+      is
+         Last : Natural := 0;
+      begin
+         while Last < T'Length
+           and then (T (T'First + Last) in 'a' .. 'z' | 'A' .. 'Z'
+                     | '0' .. '9' | '-')
+         loop
+            Last := Last + 1;
+         end loop;
+         declare
+            --  A rule name: the whole description, or its first word before
+            --  a comma (`<host, see ...>`); not the start of a sentence
+            --  (`<to be written>`).
+            Guess : constant String :=
+              (if Last > 0
+                 and then (Last = T'Length or else T (T'First + Last) = ',')
+               then T (T'First .. T'First + Last - 1) else "");
+         begin
+            return
+              "not written yet, in `" & In_Rule & "`: <" & T & ">"
+              & ASCII.LF
+              & "  `<...>` names a rule, as Backus and Naur write a "
+              & "nonterminal (ABNF also uses it to describe a rule in "
+              & "words), and no rule of that name is written.  Write it: `<"
+              & T & "> = ...` at the start of a line, or `" & Prose_Id (T)
+              & " = ...`."
+              & (if Max = 0 then
+                   ASCII.LF & "  `0<" & T & ">` repeats a description zero "
+                   & "times, which is to say it matches nothing: write it `0"
+                   & Guess & "`, or leave it out"
+                 elsif Guess = In_Rule then
+                   ASCII.LF & "  This says `" & In_Rule & "` is defined "
+                   & "elsewhere, and this rule has the same name: `include` "
+                   & "the file that defines it and delete this line.  (A "
+                   & "later `=` replaces an earlier one, so keeping it would "
+                   & "replace the real rule with nothing.)"
+                 elsif Guess'Length > 0 then
+                   ASCII.LF & "  This probably means the rule `" & Guess
+                   & "`, defined elsewhere: "
+                   & (if Only then "write `" & In_Rule & " = " & Guess & "`"
+                      else "write `" & Guess & "` here")
+                   & ", and `include` the file that defines it"
+                 else "");
+         end;
+      end Not_Written;
+
       procedure Check_Prose (V : Element_Vectors.Vector; In_Rule : String) is
       begin
          for E of V loop
@@ -2375,64 +2498,65 @@ package body HBNF_Grammar is
                   S : constant String := To_String (E.Name);
                   N : constant Positive :=
                     Positive'Value (S (S'First + 1 .. S'Last - 1));
-                  T : constant String := To_String (Prose_Sites (N).Text);
-                  --  The first word of the description, if it reads as a
-                  --  rule name: `<host, see [URI], Section 3.2.2>` is `host`.
-                  Last : Natural := 0;
-                  Only : constant Boolean :=
-                    Natural (V.Length) = 1 and then V.First_Element = E
-                    and then E.Min = 1 and then E.Max = 1;
                begin
-                  while Last < T'Length
-                    and then (T (T'First + Last) in 'a' .. 'z' | 'A' .. 'Z'
-                              | '0' .. '9' | '-')
-                  loop
-                     Last := Last + 1;
-                  end loop;
-                  declare
-                     --  A rule name: the whole description, or its first
-                     --  word before a comma (`<host, see ...>`); not the
-                     --  start of a sentence (`<to be written>`).
-                     Guess : constant String :=
-                       (if Last > 0
-                          and then (Last = T'Length
-                                    or else T (T'First + Last) = ',')
-                        then T (T'First .. T'First + Last - 1) else "");
-                  begin
-                     Report
-                       (Prose_Sites (N),
-                        "not written yet, in `" & In_Rule & "`: <" & T & ">"
-                        & ASCII.LF
-                        & "  In ABNF, `<...>` describes a rule in words and "
-                        & "leaves its text to the reader.  hbnf has no prose: "
-                        & "every rule it parses is written out."
-                        & (if E.Max = 0 then
-                             ASCII.LF & "  `0<" & T & ">` repeats a description "
-                             & "zero times, which is to say it matches "
-                             & "nothing: write it `0" & Guess & "`, or leave "
-                             & "it out"
-                           elsif Guess = In_Rule then
-                             ASCII.LF & "  This says `" & In_Rule & "` is "
-                             & "defined elsewhere, and this rule has the same "
-                             & "name: `include` the file that defines it "
-                             & "and delete this line.  (A later `=` replaces "
-                             & "an earlier one, so keeping it would replace "
-                             & "the real rule with nothing.)"
-                           elsif Guess'Length > 0 then
-                             ASCII.LF & "  This probably means the rule `"
-                             & Guess & "`, defined elsewhere: "
-                             & (if Only then
-                                  "write `" & In_Rule & " = " & Guess & "`"
-                                else "write `" & Guess & "` here")
-                             & ", and `include` the file that defines it"
-                           else ""));
-                  end;
+                  Report
+                    (Prose_Sites (N),
+                     Not_Written
+                       (To_String (Prose_Sites (N).Text), E.Max,
+                        Natural (V.Length) = 1 and then V.First_Element = E
+                        and then E.Min = 1 and then E.Max = 1,
+                        In_Rule));
                end;
             elsif E.Kind = Group then
                Check_Prose (E.Items, In_Rule);
             end if;
          end loop;
       end Check_Prose;
+
+      --  A name nothing defines.  Backus and Naur write a terminal bare, and
+      --  ABNF a rule bare, so a bare word may be either; hbnf says a terminal
+      --  is quoted, and only a rule is a bare name.  One written between
+      --  brackets is a rule not written yet.
+      procedure Check_Undefined (V : Element_Vectors.Vector; In_Rule : String)
+      is
+      begin
+         for E of V loop
+            if E.Kind = Name and then Length (E.Name) > 0
+              and then Slice (E.Name, 1, 1) /= "<"
+              and then not By_Name.Contains (To_String (E.Name))
+              and then not Is_Core_Name (To_String (E.Name))
+            then
+               declare
+                  Sited : Boolean := False;
+               begin
+                  for S of Prose_Sites loop
+                     if S.Alt = E then
+                        Sited := True;
+                        Report
+                          (S, Not_Written
+                                (To_String (S.Text), E.Max,
+                                 Natural (V.Length) = 1
+                                 and then V.First_Element = E
+                                 and then E.Min = 1 and then E.Max = 1,
+                                 In_Rule));
+                        exit;
+                     end if;
+                  end loop;
+                  if not Sited then
+                     Report ("in rule `" & In_Rule & "`: `" & To_String (E.Name)
+                             & "` is not defined as a rule" & ASCII.LF
+                             & "  Backus-Naur form writes a terminal bare, `"
+                             & To_String (E.Name) & "`; hbnf writes it in "
+                             & "quotes, `""" & To_String (E.Name) & """`, and "
+                             & "a bare name is a rule.  If it is a rule, "
+                             & "write `" & To_String (E.Name) & " = ...`");
+                  end if;
+               end;
+            elsif E.Kind = Group then
+               Check_Undefined (E.Items, In_Rule);
+            end if;
+         end loop;
+      end Check_Undefined;
    begin
       --  --root=: the named rule goes first, which is what makes it the root.
       --  Every later step (the checks, the lifting, the emitters) then sees
@@ -2564,6 +2688,9 @@ package body HBNF_Grammar is
          end;
       end loop;
       for R of Rules loop
+         Resolve_Brackets (R.Pattern);
+      end loop;
+      for R of Rules loop
          Resolve (R.Pattern, To_String (R.Name));
       end loop;
       for J in 1 .. Natural (Rules.Length) loop
@@ -2613,6 +2740,7 @@ package body HBNF_Grammar is
                   Element_Vectors.Empty_Vector);
             end if;
             Check_Prose (Used (J).Pattern, To_String (Used (J).Name));
+            Check_Undefined (Used (J).Pattern, To_String (Used (J).Name));
             --  `str`, `atom`, `word`, `int`, `bool`, `flag`, `uN` and `iN` are
             --  the built-in types: a reference to one is a scalar, in every
             --  backend.  A character rule of that name is a scanner for the
@@ -2996,7 +3124,6 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "entry"
                               or else To_String (Cur (P).Text) = "includes"
                               or else To_String (Cur (P).Text) = "sensitivity"
-                              or else To_String (Cur (P).Text) = "angle-brackets"
                               or else To_String (Cur (P).Text) = "whitespace"
                               or else To_String (Cur (P).Text) = "keywords"))
          then
@@ -3028,25 +3155,6 @@ package body HBNF_Grammar is
                   end if;
                   File_Lang := Cur (P).Text;
                   Lang_Line := Cur (P).Line;
-                  Next (P);
-               elsif Cur (P).Kind = T_Name
-                 and then To_String (Cur (P).Text) = "angle-brackets"
-               then
-                  --  `angle-brackets rule | prose`: what `<...>` means in this
-                  --  file.  The lexer has already used it; this checks it and
-                  --  takes it off the rule list.
-                  Next (P);
-                  if Cur (P).Kind /= T_Name
-                    or else To_String (Cur (P).Text) not in "rule" | "prose"
-                  then
-                     raise Parse_Error with
-                       Integer'Image (Cur (P).Line) & ":"
-                       & Integer'Image (Cur (P).Col)
-                       & ": `angle-brackets` takes `rule` (<name> is a "
-                       & "nonterminal, as Backus and Naur write it) or "
-                       & "`prose` (<words> describe a rule that is not "
-                       & "written, as ABNF does)";
-                  end if;
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "sensitivity"
@@ -3463,7 +3571,7 @@ package body HBNF_Grammar is
             else
                declare
                   Action  : Unbounded_String := Null_Unbounded_String;
-                  Pattern : Element_Vectors.Vector := Parse_Alternation (P);
+                  Pattern : Element_Vectors.Vector := Parse_Body (P);
                   Raw     : constant Element_Vectors.Vector := Pattern;
                   Bases   : Natural;
                begin
