@@ -439,13 +439,21 @@ procedure Hbnf_Emit_Check is
          and then To_String (V (I).Name) = N
          and then V (I).Min = 1 and then V (I).Max = 1);
    begin
-      Check ("lift: x reads a x_1 d x_3 x_4 a b",
+      Check ("lift: x reads a x_1 d x_3 x_4 a_2 b",
              Natural (R (1).Pattern.Length) = 7
              and then Ref (R (1).Pattern, 2, "x_1")
              and then Ref (R (1).Pattern, 4, "x_3")
              and then Ref (R (1).Pattern, 5, "x_4")
-             and then Ref (R (1).Pattern, 6, "a")
+             and then Ref (R (1).Pattern, 6, "a_2")
              and then Ref (R (1).Pattern, 7, "b"));
+      --  `a` is named twice in one alternative (the spliced `( a b )` is the
+      --  second), so the later one becomes an alias rule: the field is `a_2`
+      --  and its type is still a's.
+      Check ("lift: the second `a` is an alias rule a_2 = a",
+             Named ("a_2") /= 0
+             and then Natural (R (Named ("a_2")).Pattern.Length) = 1
+             and then R (Named ("a_2")).Pattern (1).Kind = Name
+             and then To_String (R (Named ("a_2")).Pattern (1).Name) = "a");
       Check ("lift: x_1 is the optional [ b c ]",
              Named ("x_1") /= 0
              and then R (Named ("x_1")).Pattern (1).Kind = Group

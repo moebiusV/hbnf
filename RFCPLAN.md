@@ -469,8 +469,8 @@ The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
 
-> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a, 9a; 12 in part (three of five).
-> **Critical path:** **12** → **9b** → **9c** → **5** → **6**
+> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a, 9a, 12.
+> **Critical path:** **9b** → **9c** → **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
 > any of them and can land in any gap.
 
@@ -1260,12 +1260,16 @@ should claim that before 10.
    lexer as grammar, done).  It is 11 because it is not on the path to any
    gate above, not because it comes last.
 
-12. **Known defects and notation decisions.**  *Three of five done
-   2026-10-04.*  Five items, in two groups, and both groups are in the way
+12. **Known defects and notation decisions.**  *Done 2026-10-05* (three of
+   the five items on 2026-10-04; the two notation decisions on 2026-10-05).
+   Five items, in two groups, and both groups were in the way
    of later steps:
 
    - Three **defects** — a crash, a missing diagnostic channel, and a build
      hazard.  Found 2026-10-02 while testing 7a; none was caused by it.
+     Commits `1e7432a` (repeated bare literal), `244840c` (warning channel),
+     `d036c21` (stale object); an earlier draft of this entry quoted
+     `32d25df`, `32fae64` and `0444e66`, which do not exist in this tree.
    - Two **notation decisions** — how a rule referenced twice names its
      fields, and where a `%action{ }` may sit (with the empty alternative
      and the terminator riding along).  These are cheap to build and
@@ -1276,7 +1280,7 @@ should claim that before 10.
      suggests.
 
    - **A repeated bare literal is refused, not crashed on.**  *Done
-     (32d25df).*  The entry said "a group whose whole content is a
+     (1e7432a).*  The entry said "a group whose whole content is a
      repetition crashes the C backend"; probing found it wider on both
      axes.  The shapes are `*"a"`, `1*"a"`, `( *"a" )`, `"k" *"a"` and
      `3*5"a"` — any repeated bare literal at phrase level, grouped or not —
@@ -1290,27 +1294,88 @@ should claim that before 10.
      — one check in `HBNF_Compilable`, for all four, naming the two
      spellings that work (`*( "a" )` for a list of entries, or a character
      rule to repeat the character).
-   - **A block cannot sit between elements.**  This is a property of the
-     whole `%scan{ }` / `%action{ }` / `%emit{ }` family (decision 8), not
-     of one member: a block must end its rule.  `expr = term "+"
-     %action{ emit("ADD"); } term` is refused at the column after the
-     block, and a multi-alternative rule gets one action for the whole
+   - **A block between elements.**  *Done 2026-10-05.*  This was a property
+     of the whole `%scan{ }` / `%action{ }` / `%emit{ }` family (decision 8),
+     not of one member: a block had to end its rule, so `expr = term "+"
+     %action{ emit("ADD"); } term` was refused at the column after the
+     block, and a multi-alternative rule got one action for the whole
      rule, discriminating on `n->kind`.  That is META II's `.OUT` position,
      and it is the difference between a parser generator and a
-     compiler-compiler (`COMPILER-COMPILER.md` claims the latter).  The
-     machinery exists: step 2's `Lift` already turns a mid-sequence group
-     into its own `<rule>_<n>`, so a mid-sequence block is the same
-     transformation — lift the position into a rule, attach the block to it
-     — and one block per alternative falls out of it.  Reader-only, no
-     backend change, and 13b needs it.  Two smaller notation items belong
-     with it, both cheap and both wanted before 13a freezes the notation:
-     an explicit **empty alternative** (today a bare leading `|`, as in
+     compiler-compiler (`COMPILER-COMPILER.md` claims the latter).
+
+     **Built as the same transformation `Lift` already did for a group.**
+     `Element_Kind` gains `Block`; `Parse_Pattern` appends one when a
+     `%action{ }` sits between elements and further elements follow (a block
+     that *ends* the sequence is still not one — it stays the rule's own
+     `Action_Code`, which is what keeps every existing grammar's output
+     unchanged).  `Lift` then turns each `Block` into a hidden rule
+     `<owner>_<n>` whose pattern is empty and whose `Action_Code` is the
+     block, and puts a `Name` reference in its place.  One block per
+     alternative falls out, because each alternative's block is lifted
+     separately.  `%scan{ }` between elements stays refused: a recognizer
+     that matches nothing is a contradiction, and the existing message
+     ("`%scan{ }` takes the place of a pattern") is the right one.  A
+     `Block` never reaches a backend.
+
+     **The `Block` variant is the one thing that touched the backends**, and
+     only at compile level: adding a value to `Element_Kind` obliges an arm
+     in every exhaustive `case` (the same shape as the existing
+     `when Char_Range => null;`), so the four emitters, `HBNF_Compilable`
+     and `HBNF_Match` each gained one.  Two of them are semantic rather than
+     `null`: `El_Nullable` returns True (a block matches nothing), and
+     `Image` renders it as `%action{ ... }`.
+
+     **What the entry claimed and this falsified.**  An earlier draft said
+     "reader-only, no backend change".  That was untested and wrong — see
+     the empty-rule defect below, which the lift necessarily triggers.
+
+     Still open from this item, and deliberately not built here: an explicit
+     **empty alternative** (today a bare leading `|`, as in
      `xs = | xs y`, written ninety times by the lists patch to match
-     parse.y's `/* empty */`; META II spelled it `.EMPTY`), and an
+     parse.y's `/* empty */`; META II spelled it `.EMPTY`) and an
      **optional rule terminator**, so a machine-generated or pretty-printed
      schema does not depend on the indentation rule — 7a made yacc's
-     trailing `;` survive only because `;` starts a comment.
-   - **A warning channel.**  *Done (32fae64).*  `HBNF_Grammar.Warn`,
+     trailing `;` survive only because `;` starts a comment.  Neither is
+     needed by 13b; both are still wanted before 13a freezes the notation.
+
+   - **A rule whose shape is empty or unassigned breaks three backends.**
+     *Found 2026-10-05 by the verify-first step above, and fixed.*  A
+     zero-member rule is what the mid-sequence lift produces, so it had to
+     be settled first — and it turned out to be a latent cross-backend
+     defect that no grammar in the tree exercises (none has an empty rule,
+     which is why the suite was green):
+
+     | backend | what an empty rule emitted | |
+     |---|---|---|
+     | C | `struct mid_s { size_t _line; };` | fine |
+     | Ada | `type Mid_Type is record` / `end record;` | **illegal Ada** — "component declaration expected" |
+     | Rust | `let mut r = Mid::default();`, unused `p` | fails `-D warnings`, which `portable.sh` passes |
+     | Zig | `fn parse_mid(p: *P)` with `p` unused | **hard error**, always |
+
+     Fixed in `ada_struct.tmpl` (`{{^items}} null;`) and in the Rust and Zig
+     signature/body emission.  A jet rule also has an empty pattern but does
+     read `p`, so the parameter renaming tests *empty pattern and no jet*.
+
+     Two more Rust defects came out of the same thread, both pre-existing and
+     both visible only once the daemons' Rust was held to `-D warnings`:
+     `let mut r` was emitted whenever the sequence branch was taken, even
+     when nothing assigns `r` (`wildcard = "*"`, `doc = "n"`); and the
+     scanner's repetition counter, `let mut cnt`, is incremented but never
+     read when the repetition is unbounded with no minimum.  Both fixed, and
+     **all ten daemon parsers now compile under `-D warnings`; before this
+     none of them did.**
+
+     **The byte-identity gate, stated honestly.**  C, Ada and Zig output is
+     **byte-identical** to the committed emitters for all ten daemons — the
+     empty-struct and Block arms are inert on every grammar in the tree.
+     Rust is **not**: 380 lines across the ten files, and every one of them
+     is one of those two fixes (`let mut r` -> `let r`, and dropping the
+     unused `cnt`).  This is a deliberate, proven correction to generated
+     code that did not compile, not drift; it is recorded here rather than
+     left to be discovered.  The snapshot baseline for the Rust backend
+     moves with it.
+
+   - **A warning channel.**  *Done (244840c).*  `HBNF_Grammar.Warn`,
      `Warn_Once`, `Warnings`, `Reset_Warnings`, `Set_Werror`, and
      `--werror`; the shadowing report moved onto it and 7a's `:` notice is
      its first new user.  The original entry follows.
@@ -1343,10 +1408,29 @@ should claim that before 10.
      fix may not rename a field that exists today.  Two parts, and only the
      first is required:
 
-     1. **Positional by default.**  `expr = term '+' term` compiles, with
-        fields `term` and `term_2`.  A first reference keeps the bare rule
-        name, so nothing existing moves, and the suffix follows `Lift`'s
-        own `<rule>_<n>` convention rather than inventing a second one.
+     1. **Positional by default.**  *Done 2026-10-05*, and by a smaller
+        route than this entry assumed.  Rather than thread a second name
+        through `Member` in all four backends (its `Name` does double duty:
+        the field name and the rule the type is looked up on), the split
+        happens in `Lift`, as a pass beside the group flattening: the second
+        and later references to a rule in one alternative become **alias
+        rules** — `expr = term '+' term` is rewritten to
+        `expr = term '+' term_2` with `term_2 = term`.  The existing alias
+        machinery already resolves such a reference to the target's type,
+        so the field is `term_2` and its type is still `term`'s; the first
+        reference keeps the bare name, so nothing existing moves, and the
+        suffix is the `<rule>_<n>` convention `Lift` already uses.  One
+        place, not five, and no change to any `Member` record.  The five
+        copies of the old check are now unreachable rather than removed —
+        they are left as an invariant, since they fire only if a duplicate
+        reaches a backend, which the pass prevents.
+
+        **Character rules are exempt**, and finding that out was the whole
+        of the first attempt: `string = DQUOTE *( … ) DQUOTE` names one
+        class twice as its normal spelling, has no fields to collide, and
+        `Lift` already skips char rules for the same reason.  Without the
+        exemption the pass renamed `DQUOTE` in every daemon.
+
      2. **An optional label where the names matter.**  `term_2` is
         position-dependent and reads badly in a binding, so a grammar that
         cares says so: `expr = lhs:term '+' rhs:term`.  `label:item` is the
@@ -1359,12 +1443,19 @@ should claim that before 10.
         collision-free alternative is Bison's `term[lhs]`, which `[ ]`
         already owns as the optional, so the gluing rule is the lesser
         evil.  If a better spelling turns up before this lands, take it.
+        **Still open — deliberately deferred.**  Positional naming alone
+        closes the defect below; the label is for readability, and it can
+        land before 13a freezes the notation without holding up 9b.
 
-     The check itself should end up in `HBNF_Compilable` beside the cycle
-     detector rather than five times over, per 9a.
+     **The coupling this entry missed: it is not independent of the
+     mid-sequence block above.**  That item's canonical example is
+     `expr = term "+" %action{ } term` — the same two references — so the
+     lift alone still hit this check, and the two land together or the
+     example does not compile.  Verified in the tree: with the lift built
+     and this not, the example was refused with exactly this message.
 
    - **Stale `.o` and `.ali` files in the source directory silently win the
-     link.**  *Done (0444e66)* — `tests/e2e.sh` clears them and refuses to
+     link.**  *Done (d036c21)* — `tests/e2e.sh` clears them and refuses to
      run against a binary older than its newest source; README says to
      build through the project files and why.  `gnatmake -I. -D <tmpdir> hbnf.adb` compiles into the temp
      directory, but `gnatlink` takes `hbnf.ali` from `.`, so a build can

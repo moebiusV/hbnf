@@ -1476,20 +1476,48 @@ package body HBNF_Grammar is
    --  inspects what stopped it.
    function Parse_Pattern (P : in out Parser) return Element_Vectors.Vector is
       V : Element_Vectors.Vector;
+
+      --  True when the token at K ends this sequence (or ends the rule): the
+      --  elements after it — if any — belong to something else.
+      function Ends_Pattern (K : Positive) return Boolean is
+        (P.Toks (K).Kind in
+           T_Newline | T_RParen | T_RBrack | T_Bar | T_Slash | T_Comment
+           | T_Code | T_EOF
+         or else (P.Toks (K).Kind = T_Pct
+                  and then To_String (P.Toks (K).Text) in "scan" | "action"));
    begin
       loop
-         exit when Cur (P).Kind in
-           T_Newline | T_RParen | T_RBrack | T_Bar | T_Slash | T_Comment
-           | T_Code | T_EOF;
-         exit when Cur (P).Kind = T_Pct
-           and then To_String (Cur (P).Text) in "scan" | "action";
+         --  A block *between* elements is lifted into a rule of its own (Lift
+         --  names it `<owner>_<n>`), which is what gives a multi-alternative
+         --  rule one block per alternative.  A block that ends the sequence
+         --  stays the rule's own action, read by the caller.  `%scan` is
+         --  never lifted: it takes the place of a pattern.
          if Cur (P).Kind = T_Pct
-           and then (for some C of To_String (Cur (P).Text) => C = '.')
+           and then To_String (Cur (P).Text) = "action"
+           and then P.Toks (P.Pos + 1).Kind = T_Code
+           and then not Ends_Pattern (P.Pos + 2)
          then
-            --  `%d13.10` is two elements of this sequence.
-            Append_All (V, Parse_Atom (P).Items);
+            Element_Vectors.Append
+              (V, new Element'(Kind => Block, Min => 1, Max => 1,
+                               Code => P.Toks (P.Pos + 1).Text));
+            P.Pos := P.Pos + 2;
+         elsif Cur (P).Kind = T_Code
+           and then not Ends_Pattern (P.Pos + 1)
+         then
+            Element_Vectors.Append
+              (V, new Element'(Kind => Block, Min => 1, Max => 1,
+                               Code => Cur (P).Text));
+            Next (P);
          else
-            Element_Vectors.Append (V, Parse_Element (P));
+            exit when Ends_Pattern (P.Pos);
+            if Cur (P).Kind = T_Pct
+              and then (for some C of To_String (Cur (P).Text) => C = '.')
+            then
+               --  `%d13.10` is two elements of this sequence.
+               Append_All (V, Parse_Atom (P).Items);
+            else
+               Element_Vectors.Append (V, Parse_Element (P));
+            end if;
          end if;
       end loop;
       return V;
@@ -1547,6 +1575,7 @@ package body HBNF_Grammar is
                   when Name    => A.Name = B.Name,
                   when Group   => Same_Elements (A.Items, B.Items),
                   when Char_Range   => A.Lo = B.Lo and then A.Hi = B.Hi,
+                  when Block   => A.Code = B.Code,
                   when Alt     => True));
 
    --  Direct left recursion, `a = a t1 | a t2 | b1 | b2`, becomes the list
@@ -3339,6 +3368,10 @@ package body HBNF_Grammar is
                         end if;
                      when Group =>
                         return False;
+                     when Block =>
+                        --  A character rule is code points; a `%action{ }` in
+                        --  one is not char-level.
+                        return False;
                   end case;
                end loop;
                return Has_Anchor;
@@ -3408,7 +3441,36 @@ package body HBNF_Grammar is
          Out_V : Element_Vectors.Vector;
       begin
          for E of V loop
-            if Simple (E) and then E.Kind /= Group then
+            if E.Kind = Block then
+               --  A block between elements: a rule of its own that matches
+               --  nothing and runs the code.  `expr = term "+" %action{ … }
+               --  term` then runs the action at its own point in the tree,
+               --  and an alternative's own block belongs to the rule lifted
+               --  for that alternative.  The rule is empty, so there is
+               --  nothing to recurse into.
+               declare
+                  H : Unbounded_String;
+               begin
+                  loop
+                     N := N + 1;
+                     H := To_Unbounded_String (Owner & "_" & Img (N));
+                     exit when not Names.Contains (To_String (H));
+                  end loop;
+                  Names.Include (To_String (H));
+                  Result.Append
+                    (Rule'(Name             => H,
+                           Pattern          => Element_Vectors.Empty_Vector,
+                           Leading_Comment  => Null_Unbounded_String,
+                           Trailing_Comment => Null_Unbounded_String,
+                           Jet_Code         => Null_Unbounded_String,
+                           Action_Code      => E.Code,
+                           Left_Bases       => 0,
+                           Whitespace       => Ws));
+                  Out_V.Append
+                    (new Element'(Kind => Name, Min => 1, Max => 1,
+                                  Name => H, Fold => False));
+               end;
+            elsif Simple (E) and then E.Kind /= Group then
                Out_V.Append (E);
             elsif Simple (E) then
                --  `( a b )`: the same as `a b`.
@@ -3492,12 +3554,120 @@ package body HBNF_Grammar is
          end if;
          Result.Replace_Element (J, R);
       end Lift_Rule;
+
+      --  `expr = term '+' term` names one rule twice in one alternative.  A
+      --  tree field is named after the rule it references and after nothing
+      --  else, so the two references would collide on one field — which is
+      --  why the backends used to refuse the shape.  The grammar is
+      --  well-formed and the case is the canonical expression production, so
+      --  instead of refusing it the second and later references become alias
+      --  rules: `expr = term '+' term_2` with `term_2 = term`.  The first
+      --  reference keeps the bare name, so no field that exists today moves,
+      --  and the suffix follows the `<rule>_<n>` convention `Flatten` uses
+      --  for the rules it lifts.  The alias resolves to the same type, so
+      --  the two fields differ only in name.
+      procedure Split_Repeats (J : Positive) is
+         R : Rule := Result (J);
+
+         --  How many elements before K in the same alternative (back to the
+         --  last Alt, or the start) reference the same rule.  Counted on the
+         --  original sequence, since rewriting replaces a reference by its
+         --  alias.
+         function Earlier (Orig : Element_Vectors.Vector; K : Positive;
+                           Nm : Unbounded_String) return Natural is
+            C : Natural := 0;
+            I : Natural := K - 1;
+         begin
+            while I >= 1 loop
+               exit when Orig (I).Kind = Alt;
+               if Orig (I).Kind = Name and then Orig (I).Name = Nm then
+                  C := C + 1;
+               end if;
+               I := I - 1;
+            end loop;
+            return C;
+         end Earlier;
+
+         procedure Walk (V : in out Element_Vectors.Vector) is
+            Orig : constant Element_Vectors.Vector := V;
+         begin
+            for K in 1 .. Natural (Orig.Length) loop
+               if Orig (K).Kind = Name then
+                  declare
+                     Occ : constant Natural := Earlier (Orig, K, Orig (K).Name);
+                  begin
+                     if Occ > 0 then
+                        --  The (Occ + 1)-th reference: `term_2`, `term_3`, …,
+                        --  bumped past any rule that already has the name.
+                        declare
+                           H      : Unbounded_String;
+                           Suffix : Natural := Occ + 1;
+                           P      : Element_Vectors.Vector;
+                        begin
+                           loop
+                              H := To_Unbounded_String
+                                (To_String (Orig (K).Name) & "_"
+                                 & Img (Suffix));
+                              exit when not Names.Contains (To_String (H));
+                              Suffix := Suffix + 1;
+                           end loop;
+                           Names.Include (To_String (H));
+                           P.Append
+                             (new Element'(Kind => Name, Min => 1, Max => 1,
+                                           Name => Orig (K).Name,
+                                           Fold => False));
+                           Result.Append
+                             (Rule'(Name             => H,
+                                    Pattern          => P,
+                                    Leading_Comment  => Null_Unbounded_String,
+                                    Trailing_Comment => Null_Unbounded_String,
+                                    Jet_Code         => Null_Unbounded_String,
+                                    Action_Code      => Null_Unbounded_String,
+                                    Left_Bases       => 0,
+                                    Whitespace       => R.Whitespace));
+                           V.Replace_Element
+                             (K, new Element'(Kind => Name, Min => 1, Max => 1,
+                                              Name => H, Fold => False));
+                        end;
+                     end if;
+                  end;
+               elsif Orig (K).Kind = Group then
+                  --  A group's branches are a scope of their own, and it is
+                  --  copied so a shared pattern is not changed under it.
+                  declare
+                     G : constant Element_Access := new Element'(Orig (K).all);
+                  begin
+                     Walk (G.Items);
+                     V.Replace_Element (K, G);
+                  end;
+               end if;
+            end loop;
+         end Walk;
+      begin
+         if R.Pattern.Is_Empty
+           or else R.Jet_Code /= Null_Unbounded_String
+         then
+            return;
+         end if;
+         --  A char rule is a scanner, not a tree: the same character class
+         --  twice (`string = DQUOTE *( … ) DQUOTE`) is the normal spelling
+         --  and has no fields to collide.
+         if Is_Char_Rule (Result, To_String (R.Name)) then
+            return;
+         end if;
+         Walk (R.Pattern);
+         Result.Replace_Element (J, R);
+      end Split_Repeats;
    begin
       for R of Rules loop
          Names.Include (To_String (R.Name));
       end loop;
       for J in 1 .. Natural (Rules.Length) loop
          Lift_Rule (J);
+      end loop;
+      --  After lifting, so the elements a lifted rule holds are seen too.
+      for J in 1 .. Natural (Rules.Length) loop
+         Split_Repeats (J);
       end loop;
       return Result;
    end Lift;

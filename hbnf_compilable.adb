@@ -71,6 +71,7 @@ package body HBNF_Compilable is
                   when Name    => A.Name = B.Name,
                   when Group   => Same_Seq (A.Items, B.Items),
                   when Char_Range   => A.Lo = B.Lo and then A.Hi = B.Hi,
+                  when Block   => A.Code = B.Code,
                   when Alt     => True));
 
    function Image (V : Element_Vectors.Vector; First, Last : Natural)
@@ -88,6 +89,7 @@ package body HBNF_Compilable is
             when Name    => Append (Buf, V (I).Name);
             when Group   => Append (Buf, "( ... )");
             when Char_Range   => Append (Buf, "%x..");
+            when Block   => Append (Buf, "%action{ ... }");
             when Alt     => Append (Buf, "|");
          end case;
       end loop;
@@ -185,7 +187,7 @@ package body HBNF_Compilable is
                   Reject (Rule_Name,
                           "a repeated reference to " & To_String (E.Name));
                end if;
-            when Literal | Alt | Char_Range =>
+            when Literal | Alt | Char_Range | Block =>
                null;
          end case;
       end loop;
@@ -483,6 +485,11 @@ package body HBNF_Compilable is
                return Seq_Nullable (E.Items, 1, Natural (E.Items.Length));
             when Literal | Alt | Char_Range =>
                return False;
+            when Block =>
+               --  A `%action{ }` between elements matches nothing, so it is
+               --  nullable.  `Lift` has already replaced it by the time this
+               --  runs, so the arm is here for completeness.
+               return True;
          end case;
       end El_Nullable;
 

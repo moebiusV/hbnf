@@ -421,6 +421,8 @@ package body HBNF_Ada is
                   Collect (E.Items, Members, Lits, Has_Alt);
                when Char_Range =>
                   null;
+               when Block =>
+                  null;  --  lifted to a rule of its own before emission
             end case;
          end loop;
       end Collect;
@@ -1334,6 +1336,8 @@ package body HBNF_Ada is
                      null;
                   when Char_Range =>
                      null;
+                  when Block =>
+                     null;  --  lifted to a rule of its own before emission
                end case;
             end;
          end loop;

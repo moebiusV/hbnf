@@ -720,6 +720,8 @@ package body HBNF_C is
                Collect (E.Items, Members, Lits, Has_Alt);
             when Char_Range =>
                null;
+            when Block =>
+               null;  --  lifted to a rule of its own before emission
          end case;
       end loop;
    end Collect;
@@ -1105,6 +1107,8 @@ package body HBNF_C is
                   Collect (E.Items, Members, Lits, Has_Alt);
                when Char_Range =>
                   null;
+               when Block =>
+                  null;  --  lifted to a rule of its own before emission
             end case;
          end loop;
       end Collect;
@@ -3081,6 +3085,8 @@ package body HBNF_C is
                      null;
                   when Char_Range =>
                      null;
+                  when Block =>
+                     null;  --  lifted to a rule of its own before emission
                end case;
                At_First := False;
             end;
@@ -3174,6 +3180,8 @@ package body HBNF_C is
                null;
             when Char_Range =>
                null;
+            when Block =>
+               null;  --  lifted to a rule of its own before emission
          end case;
          return V;
       end First_Elem;
@@ -3365,6 +3373,7 @@ package body HBNF_C is
                         Walk (Els2 (K).Items, 1, Natural (Els2 (K).Items.Length));
                      when Alt => null;
                      when Char_Range => null;
+                     when Block => null;  --  lifted to a rule before emission
                   end case;
                end loop;
             end Walk;

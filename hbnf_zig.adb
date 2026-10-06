@@ -438,6 +438,8 @@ package body HBNF_Zig is
                   Collect (E.Items, Members, Lits, Has_Alt);
                when Char_Range =>
                   null;
+               when Block =>
+                  null;  --  lifted to a rule of its own before emission
             end case;
          end loop;
       end Collect;
@@ -1370,6 +1372,8 @@ package body HBNF_Zig is
                      null;
                   when Char_Range =>
                      null;
+                  when Block =>
+                     null;  --  lifted to a rule of its own before emission
                end case;
             end;
          end loop;
@@ -1973,13 +1977,24 @@ package body HBNF_Zig is
                     and then (Is_Core_Name (NM)
                               or else not Is_Char_Token (Rules, NM)))
             then
-               Append (Res, "fn parse_" & Zig_Snake (NM)
-                 & "(p: *P) ParseError!" & Ret_Type (I) & " {");
-               Append (Res, LF);
-               Emit_Rule_Parser (I, Res);
-               Append (Res, "}");
-               Append (Res, LF);
-               Append (Res, LF);
+               --  An empty rule's body never reads the parser, so its
+               --  parameter is anonymous: Zig rejects an unused function
+               --  parameter outright, not just as a warning.  A jet rule also
+               --  has an empty pattern but does read `p`, so it keeps the name.
+               declare
+                  Param : constant String :=
+                    (if Rules (I).Pattern.Is_Empty
+                       and then Rules (I).Jet_Code = Null_Unbounded_String
+                     then "_" else "p");
+               begin
+                  Append (Res, "fn parse_" & Zig_Snake (NM)
+                    & "(" & Param & ": *P) ParseError!" & Ret_Type (I) & " {");
+                  Append (Res, LF);
+                  Emit_Rule_Parser (I, Res);
+                  Append (Res, "}");
+                  Append (Res, LF);
+                  Append (Res, LF);
+               end;
             end if;
          end;
       end loop;

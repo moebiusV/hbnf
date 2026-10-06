@@ -1,3 +1,4 @@
    type {{&name}} is record
 {{#items}}      {{&field}} : {{&type}};
+{{/items}}{{^items}}      null;
 {{/items}}   end record;

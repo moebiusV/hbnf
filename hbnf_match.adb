@@ -200,6 +200,10 @@ package body HBNF_Match is
             --  test.  Reachable only through the (not-yet-emitted) char
             --  layer, so treat as never matching.
             R.Pos := 0;
+         when Block =>
+            --  A `%action{ }` between elements matches nothing and has no
+            --  token counterpart; `Lift` replaces it before this runs.
+            R.Pos := 0;
          when Alt =>
             return R;
       end case;

@@ -468,6 +468,8 @@ package body HBNF_Rust is
                   Collect (E.Items, Members, Lits, Has_Alt);
                when Char_Range =>
                   null;
+               when Block =>
+                  null;  --  lifted to a rule of its own before emission
             end case;
          end loop;
       end Collect;
@@ -1374,6 +1376,8 @@ package body HBNF_Rust is
                      null;
                   when Char_Range =>
                      null;
+                  when Block =>
+                     null;  --  lifted to a rule of its own before emission
                end case;
             end;
          end loop;
@@ -1421,6 +1425,23 @@ package body HBNF_Rust is
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
          SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
+
+         --  True when the sequence assigns any field of `r`.  Only a rule
+         --  reference does: a literal, a character range and an empty rule
+         --  assign nothing (a group is assigned through, as Emit_Seq does).
+         --  `r` must not be `mut` when nothing is assigned: rustc rejects it
+         --  under `-D unused-mut`, which tests/portable.sh passes.
+         function Assigns (Els : Element_Vectors.Vector) return Boolean is
+         begin
+            for E of Els loop
+               if E.Kind = Name then
+                  return True;
+               elsif E.Kind = Group and then Assigns (E.Items) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Assigns;
       begin
          if Is_Char_Rule (Rules, NM) then
             --  A char rule is a token: expect its kind and capture the text.
@@ -1692,7 +1713,10 @@ package body HBNF_Rust is
             Append (Buf, LF);
          else
             --  A struct sequence: match literals and references in order.
-            Append (Buf, "    let mut r = " & RT & "::default();");
+            --  `mut` only when a reference assigns a field (see Assigns).
+            Append (Buf, (if Assigns (P)
+                          then "    let mut r = " else "    let r = ")
+              & RT & "::default();");
             Append (Buf, LF);
             Emit_Seq (P, 1, Natural (P.Length), "r.", Buf);
             Append (Buf, "    Ok(r)");
@@ -1720,32 +1744,43 @@ package body HBNF_Rust is
             Append (Res, LF);
          end Emit_Branch;
       begin
-         Append (Res, Ind & "{ let mut cnt = 0usize;");
-         Append (Res, LF);
-         if A.Max = 0 then
-            Append (Res, Ind & "    loop {");
-         else
-            Append (Res, Ind & "    while cnt < " & Img (A.Max) & " {");
-         end if;
-         Append (Res, LF);
-         Append (Res, Ind & "        let mut br = 0usize;");
-         Append (Res, LF);
-         for B of A.Sub loop
-            Emit_Branch (B);
-         end loop;
-         Append (Res, Ind & "        if br == 0 { break; }");
-         Append (Res, LF);
-         Append (Res, Ind & "        off += br; cnt += 1;");
-         Append (Res, LF);
-         Append (Res, Ind & "    }");
-         Append (Res, LF);
-         if A.Min > 0 then
-            Append (Res, Ind & "    if cnt < " & Img (A.Min) & " { " & Fail
-              & "; }");
+         --  `cnt` is read only by the upper-bound test and by the minimum
+         --  test.  An unbounded repetition with no minimum reads it never, and
+         --  rustc rejects a variable that is only assigned (`-D
+         --  unused-variables`, which tests/portable.sh passes).
+         declare
+            Cnt_Used : constant Boolean := A.Max /= 0 or else A.Min > 0;
+         begin
+            Append (Res, Ind & (if Cnt_Used
+                                then "{ let mut cnt = 0usize;" else "{"));
             Append (Res, LF);
-         end if;
-         Append (Res, Ind & "}");
-         Append (Res, LF);
+            if A.Max = 0 then
+               Append (Res, Ind & "    loop {");
+            else
+               Append (Res, Ind & "    while cnt < " & Img (A.Max) & " {");
+            end if;
+            Append (Res, LF);
+            Append (Res, Ind & "        let mut br = 0usize;");
+            Append (Res, LF);
+            for B of A.Sub loop
+               Emit_Branch (B);
+            end loop;
+            Append (Res, Ind & "        if br == 0 { break; }");
+            Append (Res, LF);
+            Append (Res, Ind & (if Cnt_Used
+                                then "        off += br; cnt += 1;"
+                                else "        off += br;"));
+            Append (Res, LF);
+            Append (Res, Ind & "    }");
+            Append (Res, LF);
+            if A.Min > 0 then
+               Append (Res, Ind & "    if cnt < " & Img (A.Min) & " { " & Fail
+                 & "; }");
+               Append (Res, LF);
+            end if;
+            Append (Res, Ind & "}");
+            Append (Res, LF);
+         end;
       end Emit_Repeat;
    begin
       if Preamble ("Rust") /= "" then
@@ -1820,13 +1855,26 @@ package body HBNF_Rust is
                     and then (Is_Core_Name (NM)
                               or else not Is_Char_Token (Rules, NM)))
             then
-               Append (Res, "fn parse_" & Rust_Snake (NM)
-                 & "(p: &mut P) -> Result<" & Ret_Type (I) & ", ParseError> {");
-               Append (Res, LF);
-               Emit_Rule_Parser (I, Res);
-               Append (Res, "}");
-               Append (Res, LF);
-               Append (Res, LF);
+               --  An empty rule's body never reads the parser, so its
+               --  parameter is `_p`: rustc rejects an unused one under
+               --  `-D unused-variables`, which tests/portable.sh passes.  A
+               --  jet rule also has an empty pattern but does read `p`, so it
+               --  keeps the name.
+               declare
+                  Param : constant String :=
+                    (if Rules (I).Pattern.Is_Empty
+                       and then Rules (I).Jet_Code = Null_Unbounded_String
+                     then "_p" else "p");
+               begin
+                  Append (Res, "fn parse_" & Rust_Snake (NM)
+                    & "(" & Param & ": &mut P) -> Result<" & Ret_Type (I)
+                    & ", ParseError> {");
+                  Append (Res, LF);
+                  Emit_Rule_Parser (I, Res);
+                  Append (Res, "}");
+                  Append (Res, LF);
+                  Append (Res, LF);
+               end;
             end if;
          end;
       end loop;

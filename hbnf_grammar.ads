@@ -76,7 +76,7 @@ package HBNF_Grammar is
    function Werror return Boolean;
    --  `--werror`: the caller treats Warnings > 0 as a failure.
 
-   type Element_Kind is (Literal, Name, Group, Alt, Char_Range);
+   type Element_Kind is (Literal, Name, Group, Alt, Char_Range, Block);
    --  Char_Range = a character-level terminal: %xHH (one code point) or
    --  %xHH-HH (a code-point range).  Unlike Literal (a whole token), a Char_Range
    --  matches one code point; it appears only inside a character-level rule.
@@ -114,6 +114,14 @@ package HBNF_Grammar is
             --  Written `/`, ABNF's union, rather than `|`.  The reader
             --  accepts it where both mean the same: between alternatives
             --  that each match exactly one code point.
+         when Block =>
+            Code : Unbounded_String := Null_Unbounded_String;
+            --  A `%action{ }` met *between* a rule's elements rather than at
+            --  its end.  The reader leaves it here; `Lift` turns it into a
+            --  hidden rule `<owner>_<n>` carrying the code, with an empty
+            --  pattern, and puts a Name reference in its place, so no
+            --  backend ever sees one.  A block at the end of an alternative
+            --  is not this: it stays the rule's own Action_Code.
       end case;
    end record;
 
