@@ -6,20 +6,20 @@ with Ada.Strings.Unbounded;
 
 --  HBNF_Grammar: the schema reader.  A schema is a grammar from which the
 --  emitters (hbnf_c, hbnf_rust, hbnf_zig, hbnf_ada) generate a parser and
---  its typed tree, and which the interpreter (HBNF_Match) runs directly.
+--  its typed tree.
 --
 --  The notation reads RFC 5234's syntax (`=/`, `%d13.10`, `*m`, a rule
 --  going on to an indented line, <prose-val>), but it is not ABNF yet: `|`
 --  is ordered choice and ABNF's `/` (union) is taken only between
 --  alternatives of one character, a bare literal is case-sensitive unless
 --  the file says `sensitivity`, and a literal matches one token of the
---  generated lexer (ABNF.md §4 lists the differences, and RFCPLAN.md the
+--  generated scanner (ABNF.md §4 lists the differences, and RFCPLAN.md the
 --  plan to close them).  Types are *not* part of the
 --  grammar: they are a reserved set of built-in rule names the emitters
 --  interpret.  `str` is a quoted string; `atom` (synonym `word`) is a
 --  bareword, not a number; `int`, `u8`..`u64`, `i8`..`i64`, `bool` and
---  `flag` are the typed scalars (the interpreter also has `dec` and
---  `float`).  This package only reads the text: it turns the schema into a
+--  `flag` are the typed scalars (`dec` and `float` are reserved too, but no
+--  backend emits them).  This package only reads the text: it turns the schema into a
 --  flat list of rules and has no notion of type, struct, enum or flag.  The
 --  emitters walk these rules and read the shapes:
 --

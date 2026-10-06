@@ -4,11 +4,11 @@ with Ada.Command_Line;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with HBNF_Compilable;
 with HBNF_Grammar;
 use type HBNF_Grammar.Element_Kind;
 with HBNF_Ada;
 with HBNF_C;
-with HBNF_Match;
 with HBNF_Rust;
 with HBNF_Zig;
 with Mustache;
@@ -136,13 +136,31 @@ procedure Hbnf_Emit_Check is
    end Check_Server;
 
    procedure Check_Hbnf (Path : String) is
-      use HBNF_Match;
+      --  The schema includes grammars/obconf.hbnf for its leaves, so it is
+      --  read as a file (an include is resolved against the file's own
+      --  directory), not parsed from text.
       Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
-        HBNF_Grammar.Parse (Read_File (Path));
+        HBNF_Grammar.Parse_File (Path);
       I     : Natural;
+
+      procedure Need (Name : String) is
+      begin
+         Check ("hbnf has rule " & Name, Find_Rule (Rules, Name) /= 0);
+      end Need;
    begin
-      --  Plus the built-in word/int/str jets (it defines ws itself).
-      Check ("hbnf 9 rules", Natural (Rules.Length) = 12);
+      Need ("config");
+      Need ("entry");
+      Need ("statement");
+      Need ("block");
+      Need ("qualifier");
+      Need ("arg");
+      Need ("percent");
+      Need ("semicolon");
+
+      --  The first rule is the root, as the backends read it.
+      Check ("hbnf root is config",
+             not Rules.Is_Empty
+               and then To_String (Rules (1).Name) = "config");
 
       --  entry = block | statement : block first, so a block's "{" wins.
       I := Find_Rule (Rules, "entry");
@@ -152,62 +170,40 @@ procedure Hbnf_Emit_Check is
                and then To_String (Rules (I).Pattern (1).Name) = "block"
                and then To_String (Rules (I).Pattern (3).Name) = "statement");
 
-      --  statement = name *arg (the terminator is handled by `sep`).
+      --  statement = word *arg (a statement ends where its line does).
       I := Find_Rule (Rules, "statement");
-      Check ("statement is name *arg",
+      Check ("statement is word *arg",
              I /= 0 and then Natural (Rules (I).Pattern.Length) = 2
-               and then To_String (Rules (I).Pattern (1).Name) = "name"
+               and then To_String (Rules (I).Pattern (1).Name) = "word"
                and then Rules (I).Pattern (2).Min = 0
                and then Rules (I).Pattern (2).Max = -1);
 
-      --  ws = 1*( "\n" | comment ) — newlines and comments are whitespace.
+      --  ws is what a phrase rule skips between its elements.  It must not
+      --  hold the newline, or `statement` could never stop at the end of its
+      --  line: that is the whole reason the schema overrides obconf's `ws`.
       I := Find_Rule (Rules, "ws");
-      Check ("ws is newline/comment",
-             I /= 0 and then Natural (Rules (I).Pattern.Length) = 1
-               and then Rules (I).Pattern (1).Kind = HBNF_Grammar.Group
-               and then Rules (I).Pattern (1).Min = 1
-               and then Rules (I).Pattern (1).Max = -1);
+      Check ("ws is defined",
+             I /= 0);
+      if I /= 0 then
+         declare
+            No_LF : Boolean := True;
+         begin
+            for E of Rules (I).Pattern loop
+               if E.Kind = HBNF_Grammar.Name
+                 and then To_String (E.Name) = "LF"
+               then
+                  No_LF := False;
+               end if;
+            end loop;
+            Check ("ws does not skip the newline", No_LF);
+         end;
+      end if;
 
-      I := Find_Rule (Rules, "name");
-      Check ("name is an atom",
-             I /= 0 and then Natural (Rules (I).Pattern.Length) = 1
-               and then To_String (Rules (I).Pattern (1).Name) = "atom");
-
-      I := Find_Rule (Rules, "qualifier");
-      Check ("qualifier alternates str/atom",
-             I /= 0 and then Natural (Rules (I).Pattern.Length) = 3
-               and then Rules (I).Pattern (2).Kind = HBNF_Grammar.Alt);
-
-      I := Find_Rule (Rules, "arg");
-      Check ("arg alternates atom/str/int/dec, int/dec optional percent",
-             I /= 0 and then Natural (Rules (I).Pattern.Length) = 9);
-
-      --  semicolon = ";" — the entry terminator, captured so the binder can
-      --  set Semicolon_After.
       I := Find_Rule (Rules, "semicolon");
       Check ("semicolon is a literal ';'",
              I /= 0 and then Natural (Rules (I).Pattern.Length) = 1
                and then Rules (I).Pattern (1).Kind = HBNF_Grammar.Literal
                and then To_String (Rules (I).Pattern (1).Lit) = ";");
-
-      --  The matcher recognizes the schema against a token stream.
-      declare
-         T : Token_Vectors.Vector;
-      begin
-         T.Append (Token'(Atom, To_Unbounded_String ("listen")));
-         T.Append (Token'(Atom, To_Unbounded_String ("on")));
-         T.Append (Token'(Int, To_Unbounded_String ("443")));
-         T.Append (Token'(Newline, Null_Unbounded_String));
-         T.Append (Token'(Eof, Null_Unbounded_String));
-         Check ("matcher accepts a directive",
-                HBNF_Match.Match (Rules, T, "config"));
-
-         T.Clear;
-         T.Append (Token'(Punct, To_Unbounded_String ("}")));
-         T.Append (Token'(Eof, Null_Unbounded_String));
-         Check ("matcher rejects a stray brace",
-                not HBNF_Match.Match (Rules, T, "config"));
-      end;
    end Check_Hbnf;
 
    procedure Check_Include is
@@ -475,78 +471,60 @@ procedure Hbnf_Emit_Check is
 
    --  Left recursion, which the reader turns into a list: the rule's
    --  shape, and the generic matcher reading a base and then its tails.
+   --  Left recursion is rewritten into a loop by the reader: a list with one
+   --  base.  That the generated parsers then accept `a,b,c` and refuse `,a` is
+   --  tests/portable.sh's (all four backends), and that a repeated rule that
+   --  can match nothing still terminates is tests/schema.sh's.
    procedure Check_Left_Recursion is
-      use HBNF_Match;
       Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
         HBNF_Grammar.Parse
           ("hosts = hosts "","" host | host" & ASCII.LF
            & "host = atom" & ASCII.LF);
-
-      function Toks (Spec : String) return Token_Vectors.Vector is
-         V : Token_Vectors.Vector;
-      begin
-         for C of Spec loop
-            V.Append
-              (Token'(if C = ','
-                      then (Kind => Punct, Text => To_Unbounded_String (","))
-                      else (Kind => Atom,
-                            Text => To_Unbounded_String ([1 => C]))));
-         end loop;
-         V.Append (Token'(Kind => Eof, Text => Null_Unbounded_String));
-         return V;
-      end Toks;
    begin
       Check ("left recursion: a list with one base",
              Natural (Rules (1).Pattern.Length) = 1
              and then Rules (1).Left_Bases = 1
              and then Rules (1).Pattern (1).Min = 1
              and then Rules (1).Pattern (1).Max = -1);
-      Check ("left recursion: base, tail, tail",
-             Match (Rules, Toks ("a,b,c"), "hosts"));
-      Check ("left recursion: the base alone", Match (Rules, Toks ("a"), "hosts"));
-      Check ("left recursion: no tail first",
-             not Match (Rules, Toks (",a"), "hosts"));
-      Check ("left recursion: no base after the first",
-             not Match (Rules, Toks ("ab"), "hosts"));
    end Check_Left_Recursion;
 
-   --  A repeated nullable rule must terminate: Match_Element and the
-   --  rewritten left-recursion tail both stop when an iteration matches
-   --  without advancing the input position.
-   procedure Check_Zero_Width_Repetition is
-      use HBNF_Match;
+   --  Whether what a repetition repeats can match nothing.  A loop over such
+   --  a body must stop when an iteration does not advance, or it never ends
+   --  (RFCPLAN decision 9); the backends ask this to decide, and
+   --  tests/schema.sh runs the parsers it makes.
+   procedure Check_Nullable_Repetition is
+      LF : constant Character := ASCII.LF;
 
-      function Toks (With_A : Boolean) return Token_Vectors.Vector is
-         V : Token_Vectors.Vector;
+      --  The repeated element of the first rule of Text.
+      function Body_Nullable (Text : String) return Boolean is
+         Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
+           HBNF_Grammar.Parse (Text);
       begin
-         if With_A then
-            V.Append (Token'(Kind => Atom, Text => To_Unbounded_String ("a")));
-         end if;
-         V.Append (Token'(Kind => Eof, Text => Null_Unbounded_String));
-         return V;
-      end Toks;
+         return HBNF_Compilable.Repeated_Body_Nullable
+           (Rules, Rules (1).Pattern (1));
+      end Body_Nullable;
    begin
-      declare
-         Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
-           HBNF_Grammar.Parse
-             ("x = *empty" & ASCII.LF & "empty = [ ""a"" ]" & ASCII.LF);
-      begin
-         Check ("nullable repetition: empty input terminates",
-                Match (Rules, Toks (False), "x"));
-         Check ("nullable repetition: consuming then nullable terminates",
-                Match (Rules, Toks (True), "x"));
-      end;
-      declare
-         Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
-           HBNF_Grammar.Parse
-             ("x = 1*empty" & ASCII.LF & "empty = [ ""a"" ]" & ASCII.LF);
-      begin
-         Check ("nullable repetition: one empty satisfies Min = 1",
-                Match (Rules, Toks (False), "x"));
-         Check ("nullable repetition: Min = 1 consumes when it can",
-                Match (Rules, Toks (True), "x"));
-      end;
-   end Check_Zero_Width_Repetition;
+      Check ("nullable body: a rule that is one optional",
+             Body_Nullable ("x = *empty" & LF & "empty = [ ""a"" ]" & LF));
+      Check ("nullable body: under a minimum of one",
+             Body_Nullable ("x = 1*empty" & LF & "empty = [ ""a"" ]" & LF));
+      Check ("nullable body: a group of one optional",
+             Body_Nullable ("x = *( [ ""a"" ] )" & LF));
+      Check ("nullable body: an alternation with an empty branch",
+             Body_Nullable ("x = *( ""a"" | [ ""b"" ] )" & LF));
+      Check ("nullable body: a rule with a nullable branch",
+             Body_Nullable ("x = *a" & LF & "a = ""a"" | empty" & LF
+                            & "empty = [ ""b"" ]" & LF));
+      Check ("nullable body: through a chain of rules",
+             Body_Nullable ("x = *a" & LF & "a = b" & LF & "b = *c" & LF
+                            & "c = ""c""" & LF));
+      Check ("solid body: a literal",
+             not Body_Nullable ("x = *item" & LF & "item = ""a""" & LF));
+      Check ("solid body: a group of two literals",
+             not Body_Nullable ("x = *( ""a"" ""b"" )" & LF));
+      Check ("solid body: a character class",
+             not Body_Nullable ("x = *d" & LF & "d = %x30-39" & LF));
+   end Check_Nullable_Repetition;
 
    --  The Mustache renderer (mustache-ada, RFCPLAN.md step 3b): the raw
    --  interpolation hbnf's templates must use, sections over a list, and the
@@ -599,7 +577,7 @@ begin
    Check_Abnf;
    Check_Lift;
    Check_Left_Recursion;
-   Check_Zero_Width_Repetition;
+   Check_Nullable_Repetition;
    Check_Templates;
 
    Ada.Text_IO.Put_Line

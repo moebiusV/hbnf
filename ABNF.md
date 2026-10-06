@@ -16,8 +16,7 @@ sets out that relationship precisely:
 Statuses were checked by running them against this tree. Each ABNF construct
 was written as a two- or three-rule schema and pushed through the schema
 parser, the C emitter and `gcc`, then through the generated parser on
-accepting and rejecting inputs, and through the interpreter
-(`HBNF_Match.Match`).  The C, Rust, Zig and Ada backends are checked
+accepting and rejecting inputs.  The C, Rust, Zig and Ada backends are checked
 end-to-end by tests/e2e.sh and tests/portable.sh, run in the
 ada-toolchain:edge-full container (gcc-gnat, g++, rust and zig).
 
@@ -77,9 +76,9 @@ features are not there yet in the backends (§3).
 |---|---|---|
 | Bits | `binary` mode: a field is `name:N` with N in bits, packed big-endian in RFC order, read by generated shift-and-mask code (§4.7) | No. `binary` / `a:4` → `unexpected character ':'`. The paper says "design, not yet implemented". |
 | Octets | the unit of `binary` mode; `*u8` payloads; `dst:[6]` (§4.7) | No |
-| Code points | UTF-8 decoded on the way in; the matcher works on code points; a literal can name `"café"` (§3.3, §5.2) | All four backends: yes. Each lexer's character-layer scanners decode UTF-8 (`hbnf_decode_utf8` in C, `Decode_Utf8` in Ada, `decode_utf8` in Rust/Zig) and match code points, so `%u20AC` (€) and `%x20-10FFFF` match multi-byte sequences. The interpreter still compares bytes (§2, §5). |
-| Characters | character-level rules compiled to scanners (`int = ["-"] 1*DIGIT`, `money = 1*DIGIT "." 2DIGIT`); named classes `digit`, `alpha`, `hexdig`; `where` refinements; the lexer generated from these rules, taking the longest match (§4.1–4.3) | Partial. The numeric terminals `%b`/`%d`/`%o`/`%u`/`%x` and ranges parse (into a `Char_Range` element), and every backend compiles character-level rules to scanners with a maximal-munch `char_dispatch` (single-char, multi-char sequence, list elements); named classes come from `grammars/common.hbnf`. `where` is still deferred. |
-| Tokens | jets as the fast path, each with its character-level fallback written above it; `wordchars` | Yes. The lexer tries the jets first, in declaration order, first match wins; then the character rules, longest match; then a fixed template (`templates/c_lexer.tmpl` and its Rust, Zig and Ada twins) that skips blanks and comments and forms words, numbers, quoted strings and punctuation.  `wordchars` widens the word set. RFCPLAN.md decision 7 replaces the template with grammar. |
+| Code points | UTF-8 decoded on the way in; the matcher works on code points; a literal can name `"café"` (§3.3, §5.2) | All four backends: yes. Each backend's character-layer scanners decode UTF-8 (`hbnf_decode_utf8` in C, `Decode_Utf8` in Ada, `decode_utf8` in Rust/Zig) and match code points, so `%u20AC` (€) and `%x20-10FFFF` match multi-byte sequences (§2, §5). |
+| Characters | character-level rules compiled to scanners (`int = ["-"] 1*DIGIT`, `money = 1*DIGIT "." 2DIGIT`); named classes `digit`, `alpha`, `hexdig`; `where` refinements; the lexer generated from these rules, taking the longest match (§4.1–4.3) | Partial. The numeric terminals `%b`/`%d`/`%o`/`%u`/`%x` and ranges parse (into a `Char_Range` element), and every backend compiles character-level rules to scanners that take the longest branch (single-char, multi-char sequence, list elements); named classes come from `grammars/common.hbnf`. `where` is still deferred. |
+| Tokens | jets as the fast path, each with its character-level fallback written above it; `wordchars` | Yes, in all four backends: there is no token array and no fixed lexer.  A phrase rule reads the text at a position and runs the scanner a rule names there; whitespace is the grammar's `ws` rule, skipped between elements; a letter-led literal is matched by the `word` scanner, so it never matches the front of a longer word.  `word`, `int`, `str` and `ws` are grammar rules (`grammars/obconf.hbnf`) or, where the grammar leaves one undefined, a built-in scanner.  A `%scan{}` jet is C code, so only the C backend runs it; the others generate a stub that matches nothing.  `wordchars` widens the word set. |
 
 The rest of this document describes the implemented token layer, and marks
 where the design says otherwise.
@@ -153,7 +152,7 @@ of them again (a later `=` overrides).
 | `"abc"` | case-insensitive | case-sensitive, like parse.y keywords | `ABC x` is rejected by both engines | `%s"abc"` is the ABNF spelling of hbnf's meaning |
 | `"a b"`, `"!="` | a sequence of characters | exactly one token | never matches | `"a" "b"`; a multi-character operator is a character rule (`NE = '!' '='`) or a jet (pfctl's `ne`/`le`/`ge` still are) |
 | `A / B` | union | hbnf writes `A \| B`: ordered choice, the first alternative that matches is kept, and a later failure does not come back for the next.  `/` is taken only between alternatives of one code point each, where the two agree. | `e = p "c"`, `p = "a" \| "a" "b"` rejects `a b c` in the interpreter; the compiled backends refuse the schema, since `"a" "b"` begins with the whole of `"a"` before it and can never match | longest alternative first |
-| `*x x` | at least one `x` | never matches: `*x` takes every `x` | rejected by C, Rust and the interpreter | `1*x`, or restructure |
+| `*x x` | at least one `x` | never matches: `*x` takes every `x` | rejected by C and Rust | `1*x`, or restructure |
 | A rule referenced twice in one alternative | two occurrences | one field named after the rule | *rejected* with a suggested alias. Previously the second value overwrote the first, in 37 places across the daemon grammars. | an alias rule: `port_hi = port` |
 | Lowercase core names (`int`, `str`, `word`, …) | ordinary rule names | reserved types | — | don't define rules with those names |
 
@@ -161,7 +160,7 @@ of them again (a later `=` overrides).
 
 | Extension | Syntax | Status and caveats |
 |---|---|---|
-| Typed core rules | `str`, `atom`/`word`, `int`, `bool`, `flag`, `u8…u64`, `i8…i64`; `dec`, `float` | C and Rust lack `dec` and `float` (interpreter only). `atom` rejects numbers in both engines. `bool` accepts any word (`maybe` → false). The compiled lexers reject `-5` for `int`/`iN`; the interpreter accepts it. Compiled `u16` accepts `70000`, truncated. `u7` emits `uint7_t`, which doesn't compile. |
+| Typed core rules | `str`, `atom`/`word`, `int`, `bool`, `flag`, `u8…u64`, `i8…i64`; `dec`, `float` | No backend has `dec` or `float`. `atom` rejects numbers. `bool` accepts any word (`maybe` → false). `int` takes `-5` (a `-` before a digit is part of the number). Compiled `u16` accepts `70000`, truncated. `u7` emits `uint7_t`, which doesn't compile. |
 | Tree typing from rule shape | — | Literal alternation → enum; single core type → scalar; `*( x )` → list (a whole rule); sequence → struct; keyword-led alternations get a kind tag; alias rules (`src = host`) name a field with another rule's type. Plus `free_<rule>`, visit/map, `--conf`, `--idref`. |
 | Jets | `name = %scan{ code }`, or `name = { code }` | Code in the schema's `language`, which sees `s`, `pos` and `len` and returns the length it matched. The other backends get stubs that return 0: pfctl's C jets make `port != 80` parse in C and fail in Rust. A character rule does the same job in all four backends. |
 | Actions | `pattern %action{ code }`, `pattern { code }`, or `action name { code }` | C only. Run bottom-up after a statement parses, with the rule's node as `n`; `bind_error()` reports as parse.y's `yyerror` does. The ntpd and unwind bindings (`grammars/bind/`) are built from them. |

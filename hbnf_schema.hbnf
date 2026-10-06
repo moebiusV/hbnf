@@ -1,21 +1,53 @@
-; hbnf config grammar, as an hbnf grammar over the token stream.
+; hbnf_schema.hbnf — the obconf configuration-file grammar: directives and
+; `{ }` blocks, as an hbnf grammar in the character model (decision 7).
 ;
-; Built-in core types (interpreted by the codegen, never part of the grammar):
-;   str   = a quoted c-string      atom  = a bare token (symbol or number)
-;   int / dec / float / bool / flag / u8..u64 / i8..i64 = typed atoms.
-;   percent = a `%` suffix on an int/dec (interpreter-only, like dec/float).
+; It is the structure over grammars/obconf.hbnf's leaves.  obconf.hbnf is the
+; lexical layer (`word`, `int`, `str`, `comment`, `ws`) and has no structure
+; rules; this file is the structure (`config`, `entry`, `block`, `statement`,
+; `arg`) and is complete on its own.  A parse tree for an obconf file comes
+; from generating this schema in any backend.
 ;
-; hbnf AST nodes map to these rules: Directive -> statement, Block -> block.
-; Word -> atom, Str -> str, Int -> int, Dec -> dec.  An entry ends with ";"
-; (optional) and is separated from the next by `ws` — one or more newlines
-; and comments, which are whitespace exactly as hbnf's own parser treats them.
+; A statement ends at a newline, so `ws` here is blank space, a comment and a
+; continuation, and not a newline: that is what lets `arg` stop at the end of
+; the line without a `statements` directive, which only the C backend has.  An
+; entry may also end at a `;`, and the next may follow on the same line.
+;
+; Comments are skipped, not kept: this grammar recognises a file, it does not
+; reprint one.
 
-config    = [ws] *( entry [semicolon] [ws] ) [ws]
+include "grammars/obconf.hbnf"
+
+config    = *( LF | entry [semicolon] )
 entry     = block | statement
-statement = name *arg
-block     = name [qualifier] "{" [ws] *( entry [semicolon] [ws] ) [ws] "}"
-name      = atom
-qualifier = str | atom
-arg       = atom | str | int [ percent ] | dec [ percent ]
-ws        = 1*( "\n" | comment )
+statement = word *arg
+block     = word [qualifier] "{" *( LF | entry [semicolon] ) "}"
+qualifier = str | word
+arg       = string [percent] | int [percent]
+percent   = "%"
 semicolon = ";"
+
+; blank space, a comment or a continuation, but never a newline: the end of a
+; statement is the end of its line.
+ws = SP | HTAB | CR | comment | continuation
+
+; a string with a fixed escape set (C23's): the one-character escapes, octal,
+; `\x` hex and `\u` code points.  Anything else after a backslash is
+; an unknown escape and the string is refused, which obconf.hbnf's `str` is
+; not (it takes a backslash and any code point).
+;
+; `str` repeats `str_char` as one branch per iteration, and a branch cannot
+; itself repeat, so every escape is a fixed shape of its own: one to three
+; octal digits and one or two hex digits are spelled out as alternatives, not
+; as `1*3OCTDIG`.  (The hand-written reader this replaces took any number of
+; hex digits and checked the value's range; a grammar cannot, so a longer
+; `\x` run is refused here, and so is `\U`, whose eight hex digits would
+; expand to thousands of scanner branches for an escape no config uses.)
+str_char   = str_escape | %x00-09 | %x0B-21 | %x23-5B | %x5D-10FFFF
+str_escape = esc_simple | esc_oct | esc_hex | esc_u
+esc_simple = %x5C esc_one
+esc_one    = %x61 | %x62 | %x66 | %x6E | %x72 | %x74 | %x76
+           | %x5C | %x27 | %x22 | %x3F | LF
+esc_oct    = %x5C OCTDIG | %x5C OCTDIG OCTDIG | %x5C OCTDIG OCTDIG OCTDIG
+esc_hex    = %x5C %x78 HEXDIG | %x5C %x78 HEXDIG HEXDIG
+esc_u      = %x5C %x75 HEXDIG HEXDIG HEXDIG HEXDIG
+OCTDIG     = %x30-37

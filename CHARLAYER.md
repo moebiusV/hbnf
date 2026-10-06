@@ -154,7 +154,6 @@ Scope (user directive, 2026-09-26):
   `char_dispatch`; a char rule is scalar `String`; `Rust_Snake` lowercases).
 - `hbnf_zig.adb` — full char-lexer port (`Atom_Cond`, `decode_utf8`, `scan_*`,
   `char_dispatch`; a char rule is scalar `[]const u8`; `Zig_Snake` lowercases).
-- `hbnf_match.adb` — exhaustive `case` Char_Range arms.
 - `grammars/ascii.hbnf` — the named ASCII characters (C0 controls, blanks,
   `DEL`, `DQUOTE`); `grammars/common.hbnf` — the classes and `CRLF`.
 - `tests/utf8-test.sh` — single-char, sequence, control and invalid-UTF-8 cases

@@ -158,6 +158,9 @@ HBNF=/tmp/hbnf sh tests/portable.sh
 echo "== a recursive tree type, compiled and run (tests/recursive) =="
 HBNF=/tmp/hbnf sh tests/recursive.sh
 
+echo "== the obconf configuration-file grammar, against tests/accept and tests/reject =="
+HBNF=/tmp/hbnf sh tests/schema.sh
+
 echo "== character rules and UTF-8 (tests/utf8-test.sh) =="
 HBNF=/tmp/hbnf sh tests/utf8-test.sh
 

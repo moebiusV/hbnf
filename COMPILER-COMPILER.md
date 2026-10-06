@@ -32,12 +32,13 @@ implementation rather than problems HBNF currently has.
 ## Invariant
 
 Every unbounded repetition must make progress or terminate.  A nullable rule
-may be repeated semantically, but the matcher/generator must stop when an
-iteration leaves the input position unchanged.
+may be repeated semantically, but the generated parser must stop when an
+iteration leaves the input position unchanged.  Every backend does: a loop over
+a nullable rule stops when an iteration does not advance (`tests/schema.sh`).
 
 ## Backend contract
 
-`HBNF_Match` and every generated backend are implementations of one language.
+Every generated backend is an implementation of one language.
 If a construct cannot be represented by a backend, reject it during schema
 validation with a source-located diagnostic — never silently change its
 meaning for one backend.

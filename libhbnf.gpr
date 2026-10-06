@@ -1,6 +1,7 @@
---  Standalone project for HBNF_Config: the OpenBSD-style configuration parser and
---  the ABNF schema engine (parser, matcher/binder, and the C/Rust/Zig/Ada
---  emitters) in one static library, libhbnf.a.  Pure Ada, no C dependencies.
+--  libhbnf: the ABNF schema engine (the grammar reader, the compilability
+--  checks and the C/Rust/Zig/Ada emitters) in one static library, libhbnf.a.
+--  The `hbnf` command line (hbnf.gpr) is a thin wrapper over it.  Pure Ada, no
+--  C dependencies.
 --  Built and gprinstalled as a static library by the ada-on-alpine aport.
 --
 --  Depends on mustache-ada (moebiusV/mustache-ada, also an ada-on-alpine
@@ -9,14 +10,12 @@
 
 with "mustache.gpr";
 
-library project HBNF_Config is
+library project Libhbnf is
 
    for Languages use ("Ada");
    for Source_Dirs use (".");
    for Source_Files use
-     ("hbnf_config.ads", "hbnf_config.adb",
-      "hbnf_grammar.ads", "hbnf_grammar.adb",
-      "hbnf_match.ads", "hbnf_match.adb",
+     ("hbnf_grammar.ads", "hbnf_grammar.adb",
       "hbnf_compilable.ads", "hbnf_compilable.adb",
       "hbnf_c.ads", "hbnf_c.adb",
       "hbnf_rust.ads", "hbnf_rust.adb",
@@ -51,4 +50,4 @@ library project HBNF_Config is
       for Active use "True";
    end Install;
 
-end HBNF_Config;
+end Libhbnf;

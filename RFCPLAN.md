@@ -469,8 +469,8 @@ The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
 
-> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a, 9a, 9b, 12.
-> **Critical path:** **9b** → **9c** → **5** → **6**
+> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a, 9a, 9b, 9c, 12.
+> **Critical path:** **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
 > any of them and can land in any gap.
 
@@ -881,9 +881,10 @@ should claim that before 10.
    - RFC excerpts as regression tests: RFC 5234 Appendix B.1 verbatim, RFC
      3986 `scheme` and `host`, RFC 5322 `addr-spec`, RFC 9112
      `request-line`;
-   - the character model in Rust, Zig and Ada through the templates.  (The
-     interpreter used to be named here too, "on the same rewrites".  It is
-     not converted, it is retired — step 9c.)
+   - the character model in Rust, Zig and Ada through the templates.  *Done
+     2026-10-06, inside step 9c*, which could not retire its reader without
+     it.  (The interpreter used to be named here too, "on the same
+     rewrites".  It is not converted, it is retired — step 9c.)
    - `json.hbnf`, then binary (CHARLAYER.md I2–I4).  `where` moved to
      step 6, where the IR it reads against is built.
 
@@ -1118,8 +1119,8 @@ should claim that before 10.
    emitter — and it is *not* the typedef problem, which is separate and
    discussed under decision 13.
 
-   9c. **Retire the interpreter.**  There is no reason to keep it, and the
-       reason it existed is 9b.
+   9c. **Retire the interpreter.**  *Done 2026-10-06.*  There is no reason
+       to keep it, and the reason it existed is 9b.
 
        **What it is.**  `HBNF_Match` (379 lines): "the matcher and binder —
        given a parsed schema and a token stream, recognize whether the
@@ -1190,6 +1191,49 @@ should claim that before 10.
        CLI and the test programs build with `HBNF_Match` and `HBNF_Config`
        deleted; `hbnf_schema.hbnf` generates through all four backends;
        e2e's check count does not drop.
+
+       **What landed.**  The plan's replacement for `HBNF_Config` is a parser
+       generated from `hbnf_schema.hbnf`, but the Ada backend that would have
+       generated it still read tokens: the character model existed in C only,
+       and was step 5's second bullet, *after* this step.  So this step took
+       it in, rather than retiring a conformant reader for a lenient one (the
+       Rust parser accepted an unterminated string):
+
+       - **The character model in Ada, Rust and Zig**, the shape C already
+         had: no token array, a parser that reads the text at a position, the
+         grammar's `ws` skipped between phrase elements, a letter-led literal
+         matched by the `word` scanner so `in` never matches `input`.  `word`,
+         `int`, `str` and `ws` are the grammar's own char rules or a built-in
+         scanner.  A `%scan{}` jet is C code, so the other three get a stub
+         that matches nothing (and the daemons' Ada, Rust and Zig output now
+         shows it: it still compiles, and no longer parses what its jets did).
+       - **`hbnf_schema.hbnf` rewritten** on `grammars/obconf.hbnf`.  `ws`
+         excludes the newline, which is how a statement ends at its line
+         without C's `statements`.  `tests/schema.sh` runs `tests/accept` and
+         `tests/reject` through all four backends, and prints and re-parses
+         every accepted file in Ada to a fixed point.  One reject file cannot
+         be expressed: `x 1e40`, refused by the old reader's fixed-point
+         `Decimal`, a value range a grammar does not have.
+       - **Two backend bugs the work found**: a repeated rule that can match
+         nothing hung in every backend (decision 9's invariant, which only the
+         interpreter had tested), and `*X` in a phrase rule failed in C when
+         there was no `X`.  Both fixed, with `Repeated_Body_Nullable` in
+         `HBNF_Compilable` and tests in `tests/schema.sh` and `abnf.sh`.
+       - **Retired**: `HBNF_Match`, `HBNF_Config`, `tests/hbnf_check.adb` and
+         `tests/hbnf_match_check.adb`.  The library project is now
+         `libhbnf.gpr` (project `Libhbnf`, still `libhbnf.a`), which the `hbnf`
+         command line wraps; the aport builds `-P libhbnf.gpr`.
+
+       **What was given up**, said plainly: `HBNF_Config` was a documented
+       Ada API (`Parse`, `Find`, `Value_At`, `As_Decimal`, `Print`).  A
+       generated parser has a typed tree instead, no fixed-point `Decimal`,
+       and the old printer's comment-preserving round trip, which comes back
+       with step 13's printer.  The e2e count is 104 (it was 99).
+
+       *Still open here*: the tree does not own its strings in Zig, which is
+       step 6's typed values; and the gate's "`hbnf_schema.hbnf` generates
+       through all four backends" is stronger than asked, since all four also
+       parse the conformance files.
 
    **It kept the number 9, and it is third on the critical path.**  The
    earlier text here said a programming language was not a goal, so this
@@ -1550,12 +1594,14 @@ should claim that before 10.
    generated output, which is the foundation; this needs them kept through
    a full re-print.
 
-   There is prior art one layer down, and 9c must not throw it away:
-   `tests/hbnf_check.adb` is a conformance driver whose "accept" requires
+   There is prior art one layer down, and 9c did not throw it away:
+   `tests/hbnf_check.adb` was a conformance driver whose "accept" required
    exactly this — parse, print, re-parse, re-print, and the printer must be
    idempotent — for the *config format*, against `HBNF_Config`'s printer.
-   9c rebuilds that driver against generated code; this step is the same
-   discipline applied to the notation.
+   9c rebuilt that driver against generated code
+   (`tests/schema/print_main.adb`, run by `tests/schema.sh`); this step is the
+   same discipline applied to the notation.  The old printer also kept
+   comments, which the generated tree does not yet: that is this step's.
 
    - **Normalizing by default.**  One rule per definition, spelled `=`:
      `::=`, `:=` and `:` all print as `=`.  Comments print as `;` to end of

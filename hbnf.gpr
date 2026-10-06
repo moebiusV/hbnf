@@ -2,7 +2,7 @@
 --  parser (declarations + lexer + parser) in the chosen backend language.
 --  Links against the static libhbnf.a.
 
-with "hbnf_config.gpr";
+with "libhbnf.gpr";
 
 project Hbnf is
 

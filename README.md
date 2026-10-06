@@ -27,8 +27,9 @@ obconf is a configuration language, implemented as a grammar in hbnf. It
 describes the declarative, block-structured form OpenBSD daemons have shared
 since `pf.conf` (2001) and `bgpd` (2002): keyword arguments, `{ }` blocks,
 double-quoted strings, `#` comments, no shell interpolation and no evaluation.
-Parsing with obconf preserves comments and puts them back in the right places
-when the source is re-emitted.
+A parser generated from obconf reads the comments and skips them.  Keeping
+them, and putting them back in the right places when the source is re-emitted,
+is the pretty printer of RFCPLAN.md step 13.
 
 The name is the initials of the four developers it is named for: Daniel
 **H**artmeier (pf.conf, 2001), Henning **B**rauer (bgpd, 2002), Esben
@@ -38,12 +39,14 @@ three initials spell **BNF** (Backus–Naur Form), so the name also reads as
 "Hartmeier's BNF". To someone who already knows the genre, it is **obconf** —
 OpenBSD configuration style.
 
-## Two products
+## Two things
 
 This directory holds two things:
 
-1. **The crate** (the rest of this README): read an **obconf** file into a
-   generic tree and walk it.
+1. **libhbnf**, a static Ada library: the grammar reader, the compilability
+   checks and the four emitters (C, Rust, Zig, Ada).  Everything `hbnf` does is
+   in it, and `hbnf`, the command line, is a thin wrapper over it: argument
+   parsing, finding the templates, and printing what the library returns.
 2. **The parser generator**, `hbnf`: read a schema in hbnf's ABNF-like
    notation and generate a parser and its typed tree in C, Rust, Zig or Ada.
 
@@ -62,14 +65,15 @@ This directory holds two things:
 ## Naming
 
 - **hbnf**: the parser generator and compiler compiler. Reads a grammar, emits
-  a parser in C, Rust, Zig or Ada. Also this crate, the Alire name, and the
-  project file (`hbnf.gpr`).
+  a parser in C, Rust, Zig or Ada. Also the command line, the Alire name, and
+  the project file (`hbnf.gpr`).
 - **obconf**: a configuration language, implemented as a grammar in hbnf, for
   OpenBSD config files — keyword arguments, `{ }` blocks, `#` comments.
-- **HBNF_Config**: the Ada package (`HBNF_Config.Parse`, `HBNF_Config.Tree`) for parsing and
-  walking an obconf configuration file.
-- **libhbnf**: reserved for a C reference implementation (`libhbnf.so`,
-  `-lhbnf`, `hbnf.pc`); not spent on this Ada crate.
+- **libhbnf**: the static Ada library (`libhbnf.a`, project `libhbnf.gpr`)
+  that the `hbnf` command line wraps.  A C reference implementation, if there
+  is one, will not take this name for its shared library.  (There used to be an
+  Ada package `HBNF_Config` here, a hand-written obconf reader.  Its job is
+  done by a parser generated from `hbnf_schema.hbnf`; see below.)
 
 ## Credits
 
@@ -122,12 +126,13 @@ relay "webserver" {
 ```
 
 - Words are unquoted tokens; `"quoted strings"` may contain spaces and a fixed
-  escape set (`\"`, `\\`, `\n`, `\t`, `\r`).
+  escape set (C's: `\"`, `\\`, `\n`, `\t`, octal, `\x` and `\u`).  Only the
+  backslash is dropped, as in the C backend: `\n` reads as `n`.
 - A backslash at the end of a line continues the line (as in OpenBSD's
   `parse.y`): the `\` and the newline are consumed and no newline token is
   emitted, so a directive or a word can span physical lines.
-- Integers and decimals are classified automatically. A decimal is kept
-  **both** as its exact source text and as a fixed-point value.
+- An integer is `int`; any other bareword is a `word`, including a number with
+  a dot (`3.14`, `10.0.0.1`).  A grammar that wants a decimal type defines one.
 - `#` starts a comment that runs to end of line.
 - No macros, no includes, no arithmetic, no conditionals: everything is
   decidable at parse time, and a parse either succeeds completely or fails
@@ -137,64 +142,25 @@ relay "webserver" {
   `include` with the `macros` and `includes` directives; see
   `grammars/README.md`.)
 
-## Comments
+## Reading an obconf file
 
-A `#` comment is one of three kinds, distinguished by where it sits:
+`hbnf_schema.hbnf` is the structure of an obconf file (`config`, `entry`,
+`block`, `statement`, `arg`) over the lexical rules of `grammars/obconf.hbnf`.
+Generate a parser from it in the language you want:
 
-- **Leading**: a block of own-line comments attaches to the directive or
-  block that follows it, held in that entry's `Leading_Comment`. Blank lines
-  in between do not break the attachment.
-- **Trailing**: a comment on the same line as a directive or block annotates
-  that line, held in `Trailing_Comment`.
-- **Standalone**: a comment block with nothing after it is kept as its own
-  `Comment` node in the children sequence: the file header before the first
-  directive (which documents the whole file) and trailing lines before a `}`.
-  `Find` and `Find_All` skip `Comment` nodes.
+    hbnf hbnf_schema.hbnf --backend=ada --package=Obconf
+    hbnf hbnf_schema.hbnf --backend=rust
+    hbnf hbnf_schema.hbnf --backend=zig
+    hbnf hbnf_schema.hbnf --backend=c
 
-## API
+and walk the typed tree it returns.  `tests/accept` and `tests/reject` are its
+conformance files, and `tests/schema.sh` runs them through all four backends.
 
-```ada
-R : constant HBNF_Config.Parse_Result := HBNF_Config.Parse (Text);
-if not R.Success then
-   --  R.Line, R.Col, R.Msg describe the first error
-end if;
-
-Root : constant HBNF_Config.Node_Access := R.Root;
-for C of HBNF_Config.Children (Root.all) loop ... end loop;
-
-Slot : constant HBNF_Config.Node_Access := HBNF_Config.Find (Root.all, "slot");
-Cap  : constant HBNF_Config.Node_Access := HBNF_Config.Find (Slot.all, "total-capital");
-V    : constant HBNF_Config.Value := HBNF_Config.Value_At (Cap.all, 1);
-
-Amount : constant HBNF_Config.Decimal := HBNF_Config.As_Decimal (V);  -- fixed-point
-Exact  : constant String       := HBNF_Config.As_Text (V);      -- as written
-```
-
-`Parse` returns a synthetic block root; `Children` / `Find` / `Find_All` walk
-it; `Value_At` and the `As_*` functions extract typed values. A `Value` is one
-of `Word`, `Str`, `Int`, or `Dec`.
-
-## Decimal round-tripping
-
-`Dec` stores the literal twice:
-
-- `Text`: the exact characters as written (`"100000.00"`, `"0.001"`), so a
-  value can be written back out bit-for-bit without numeric conversion.
-- `Num`: a fixed-point `Decimal` (`delta 10.0 ** (-8) digits 38`), so callers
-  can compare and compute directly without parsing a string.
-
-Both are populated by the parser; neither requires the caller to convert.
-
-## Pretty-printing
-
-`HBNF_Config.Print` renders a parsed tree back to canonical text: single-space token
-separation, three-space indentation, `{` on the header line and `}` alone at
-the parent indent. Values round-trip exactly (a decimal keeps its literal, a
-string is re-quoted with the escape set). Comments are preserved: a leading
-block stays on its own lines before the entry it documents, a trailing
-comment stays on its line, and a standalone comment (file header, or a block
-trailer before `}`) stays a comment of its own. Printing is idempotent, so it
-normalizes two configs that differ only in whitespace or brace position.
+What the tree keeps is what the grammar names.  Comments are skipped, not
+kept, and a decimal is a `word` with no fixed-point value.  The comment-keeping
+round trip the old reader had comes back with the pretty printer (RFCPLAN.md
+step 13); `tests/schema.sh` already prints a tree and checks the print is a
+fixed point.
 
 ## Building
 
@@ -202,8 +168,8 @@ Needs [mustache-ada](https://github.com/moebiusV/mustache-ada) installed: it
 renders the code templates.  Pure Ada on the GNAT runtime, no C dependency.
 
 ```
-gprbuild -P hbnf_config.gpr -p -XLIBRARY_TYPE=static
-gprinstall -P hbnf_config.gpr -p --prefix=/usr --sources-subdir=include/hbnf
+gprbuild -P libhbnf.gpr -p -XLIBRARY_TYPE=static
+gprinstall -P libhbnf.gpr -p --prefix=/usr --sources-subdir=include/hbnf
 ```
 
 Packaged for Alpine by the `ada-on-alpine` aports overlay as `testing/hbnf`,
