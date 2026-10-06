@@ -323,28 +323,18 @@ for shape in '*( "a" )' '*%x41' '"k" *word'; do
 done
 
 echo "== recursive tree types (RFCPLAN step 9) =="
-# C, Ada and Rust emit the field that breaks the cycle as a pointer (step
-# 9b), so the grammar generates; C is compiled and run here, Ada and Rust by
-# tests/recursive.sh.  Zig still refuses until its own step lands, and must
-# refuse with the same reason.  Rust used to emit code rustc rejected (E0072)
-# and Zig code that failed the moment a size was forced.
+# All four backends emit the field that breaks the cycle as a pointer (step
+# 9b), so the grammar generates; C is compiled and run here, the others by
+# tests/recursive.sh.  Rust used to emit code rustc rejected (E0072) and Zig
+# code that failed the moment a size was forced (step 9a).
 rm -f "$W/t"; gen_file tests/abnf/recursive.hbnf
 check OK "(1)" "a recursive tree type parses, in C"
 check FAIL "1)" "and an unbalanced one is rejected"
-for b in ada rust; do
+for b in ada rust zig; do
 	if "$CLI" tests/abnf/recursive.hbnf --backend=$b > /dev/null 2> "$W/err.txt"; then
 		echo "  PASS [the $b backend emits it now]"
 	else
 		echo "  FAIL [the $b backend emits it now]: $(head -1 "$W/err.txt")"; rc=1
-	fi
-done
-for b in zig; do
-	if "$CLI" tests/abnf/recursive.hbnf --backend=$b > /dev/null 2> "$W/err.txt"; then
-		echo "  FAIL [the $b backend refuses the same cycle]: accepted"; rc=1
-	elif grep -q "cannot contain itself" "$W/err.txt"; then
-		echo "  PASS [the $b backend refuses the same cycle]"
-	else
-		echo "  FAIL [the $b backend refuses the same cycle]: $(head -1 "$W/err.txt")"; rc=1
 	fi
 done
 # A cycle laundered through a list is *not* a cycle: a list field holds the

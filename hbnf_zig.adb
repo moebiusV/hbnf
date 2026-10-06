@@ -666,11 +666,34 @@ package body HBNF_Zig is
       return HBNF_Compilable.Back_Edges (N, By_Value_Edges);
    end Back_Edges_Zig;
 
+   --  The rule a back edge points at, or 0 when (Owner, Member) is not one.
+   --  A member name is unique within its struct, so the pair names the edge.
+   function Back_Target (Backs : HBNF_Compilable.Edge_Vectors.Vector;
+                         Owner : Natural; Member : String) return Natural is
+   begin
+      for E of Backs loop
+         if E.Owner = Owner and then To_String (E.Member) = Member then
+            return E.Target;
+         end if;
+      end loop;
+      return 0;
+   end Back_Target;
+
+   --  True when Owner has a field that breaks a cycle, so that its struct
+   --  holds something to release and a failed branch must release it.
+   function Has_Back (Backs : HBNF_Compilable.Edge_Vectors.Vector;
+                      Owner : Natural) return Boolean is
+     (for some E of Backs => E.Owner = Owner);
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
 
       Infos : Info_Vectors.Vector;
+
+      --  The fields that break a cycle, emitted `?*T`.
+      Backs : constant HBNF_Compilable.Edge_Vectors.Vector :=
+        Back_Edges_Zig (Rules);
 
       --  The rule indices this rule must be emitted after: only the structs it
       --  embeds by value.  List members and list references are slices, which
@@ -708,7 +731,9 @@ package body HBNF_Zig is
             case Info.Kind is
                when Struct =>
                   for M of Info.Members loop
-                     if not M.Is_List then
+                     if not M.Is_List
+                       and then Back_Target (Backs, Idx, To_String (M.Name)) = 0
+                     then
                         Add_Ref (M.Name);
                      end if;
                   end loop;
@@ -776,6 +801,8 @@ package body HBNF_Zig is
                         Mustache.New_Scalar
                           (if M.Is_List
                            then "[]" & Zig_Type_Of (Rules, To_String (M.Name))
+                           elsif Back_Target (Backs, Idx, To_String (M.Name)) > 0
+                           then "?*" & Zig_Type_Of (Rules, To_String (M.Name))
                            else Zig_Type_Of (Rules, To_String (M.Name))));
                      Mustache.Append (Items, Row);
                   end loop;
@@ -885,9 +912,20 @@ package body HBNF_Zig is
             end if;
          end Elem_Fn;
 
-         procedure Visit_Field (Name : String; Buf : in out U; Ind : String) is
+         --  Back is the rule a back edge points at, or 0.  The box holds that
+         --  rule whatever the member names, so it is walked through `Back`
+         --  rather than through the member's own kind (which, for a member
+         --  naming a scalar alias, is not Struct and would not be walked).
+         procedure Visit_Field
+           (Name : String; Back : Natural; Buf : in out U; Ind : String) is
             F : constant String := Zig_Field (Name);
          begin
+            if Back > 0 then
+               Append (Buf, Ind & "if (n." & F & ") |c| visit_"
+                 & Zig_Snake (To_String (Rules (Back).Name)) & "(c, v);");
+               Append (Buf, LF);
+               return;
+            end if;
             case Ref_Kind (Name) is
                when Struct =>
                   Append (Buf, Ind & "visit_" & Zig_Snake (Name)
@@ -908,9 +946,16 @@ package body HBNF_Zig is
             end case;
          end Visit_Field;
 
-         procedure Fold_Field (Name : String; Buf : in out U; Ind : String) is
+         procedure Fold_Field
+           (Name : String; Back : Natural; Buf : in out U; Ind : String) is
             F : constant String := Zig_Field (Name);
          begin
+            if Back > 0 then
+               Append (Buf, Ind & "if (n." & F & ") |c| fold_"
+                 & Zig_Snake (To_String (Rules (Back).Name)) & "(c, f);");
+               Append (Buf, LF);
+               return;
+            end if;
             case Ref_Kind (Name) is
                when Struct =>
                   Append (Buf, Ind & "fold_" & Zig_Snake (Name)
@@ -931,7 +976,7 @@ package body HBNF_Zig is
             end case;
          end Fold_Field;
 
-         procedure Emit_Node (Type_Name, Fn : String;
+         procedure Emit_Node (Owner : Natural; Type_Name, Fn : String;
                               Members : Member_Vectors.Vector;
                               Buf : in out U) is
          begin
@@ -941,7 +986,9 @@ package body HBNF_Zig is
             Append (Buf, "    v.visit_" & Fn & "(n);");
             Append (Buf, LF);
             for M of Members loop
-               Visit_Field (To_String (M.Name), Buf, "    ");
+               Visit_Field
+                 (To_String (M.Name),
+                  Back_Target (Backs, Owner, To_String (M.Name)), Buf, "    ");
             end loop;
             Append (Buf, "}");
             Append (Buf, LF);
@@ -951,7 +998,9 @@ package body HBNF_Zig is
               & ", f: anytype) void {");
             Append (Buf, LF);
             for M of Members loop
-               Fold_Field (To_String (M.Name), Buf, "    ");
+               Fold_Field
+                 (To_String (M.Name),
+                  Back_Target (Backs, Owner, To_String (M.Name)), Buf, "    ");
             end loop;
             Append (Buf, "    f.fold_" & Fn & "(n);");
             Append (Buf, LF);
@@ -998,15 +1047,161 @@ package body HBNF_Zig is
             end if;
          end Node_Members;
 
+         --  The composite rule a reference ends at, chasing scalar aliases
+         --  (`expr = prim`): a struct or a list, the two that own something
+         --  to release.  0 for a core scalar, an enum or an undefined name.
+         function Leaf (Ref : String) return Natural is
+            J    : Natural := Find (Rules, Ref);
+            Hops : Natural := 0;
+         begin
+            while J > 0 and then Hops < 20 and then Infos (J).Kind = Scalar
+            loop
+               Hops := Hops + 1;
+               declare
+                  P : constant Element_Vectors.Vector := Rules (J).Pattern;
+               begin
+                  if Natural (P.Length) = 1 and then P (1).Kind = Name
+                    and then P (1).Min = 1 and then P (1).Max = 1
+                  then
+                     J := Find (Rules, To_String (P (1).Name));
+                  else
+                     J := 0;
+                  end if;
+               end;
+            end loop;
+            if J > 0 and then Hops < 20
+              and then (Infos (J).Kind = Struct or else Infos (J).Kind = List)
+            then
+               return J;
+            end if;
+            return 0;
+         end Leaf;
+
+         --  deinit_<rule>(n, alloc) releases what the parser allocated under
+         --  a node: the box a back edge made, the slice a list returned, and
+         --  whatever those hold, and never the node itself.  It is for a tree
+         --  parsed with the same allocator.  Strings are slices of the token
+         --  text and are not the tree's to free.  Rep is whether a repeated
+         --  member is a slice of its own (a struct's) or not (an entry's).
+         procedure Deinit_Member
+           (Owner : Natural; M : Member; Rep : Boolean; Any : in out Boolean;
+            Buf : in out U) is
+            Name : constant String := To_String (M.Name);
+            F    : constant String := Zig_Field (Name);
+            Back : constant Natural := Back_Target (Backs, Owner, Name);
+            L    : constant Natural := Leaf (Name);
+         begin
+            if Back > 0 then
+               Append (Buf, "    if (n." & F & ") |c| { deinit_"
+                 & Zig_Snake (To_String (Rules (Back).Name))
+                 & "(c, alloc); alloc.destroy(c); }");
+               Append (Buf, LF);
+               Any := True;
+            elsif Rep and then M.Is_List then
+               if L > 0 then
+                  Append (Buf, "    for (n." & F & ") |*e| deinit_"
+                    & Zig_Snake (To_String (Rules (L).Name)) & "(e, alloc);");
+                  Append (Buf, LF);
+               end if;
+               Append (Buf, "    alloc.free(n." & F & ");");
+               Append (Buf, LF);
+               Any := True;
+            elsif L > 0 then
+               Append (Buf, "    deinit_" & Zig_Snake (To_String (Rules (L).Name))
+                 & "(&n." & F & ", alloc);");
+               Append (Buf, LF);
+               Any := True;
+            end if;
+         end Deinit_Member;
+
+         procedure Deinit_Node
+           (Owner : Natural; Type_Name, Fn : String; Rep : Boolean;
+            Members : Member_Vectors.Vector; Buf : in out U) is
+            Body_Buf : U;
+            Any      : Boolean := False;
+         begin
+            for M of Members loop
+               Deinit_Member (Owner, M, Rep, Any, Body_Buf);
+            end loop;
+            Append (Buf, "pub fn deinit_" & Fn & "(n: *" & Type_Name
+              & ", alloc: std.mem.Allocator) void {");
+            Append (Buf, LF);
+            if Any then
+               Append (Buf, To_String (Body_Buf));
+            else
+               Append (Buf, "    _ = n;");
+               Append (Buf, LF);
+               Append (Buf, "    _ = alloc;");
+               Append (Buf, LF);
+            end if;
+            Append (Buf, "}");
+            Append (Buf, LF);
+            Append (Buf, LF);
+         end Deinit_Node;
+
+         --  A list rule's own release: each composite element, then the slice.
+         procedure Deinit_List (Idx : Natural; Buf : in out U) is
+            Info : constant Rule_Info := Infos (Idx);
+            Base : constant String := Zig_Type (To_String (Rules (Idx).Name));
+            Fn   : constant String := Zig_Snake (To_String (Rules (Idx).Name));
+            E    : constant Natural :=
+              (if Info.Elem_Name /= Null_Unbounded_String
+               then Leaf (To_String (Info.Elem_Name)) else 0);
+         begin
+            Append (Buf, "pub fn deinit_" & Fn & "(n: *" & Base
+              & ", alloc: std.mem.Allocator) void {");
+            Append (Buf, LF);
+            if not Info.Elem_Members.Is_Empty then
+               Append (Buf, "    for (n.*) |*e| deinit_" & Fn & "_entry(e, alloc);");
+               Append (Buf, LF);
+            elsif E > 0 then
+               Append (Buf, "    for (n.*) |*e| deinit_"
+                 & Zig_Snake (To_String (Rules (E).Name)) & "(e, alloc);");
+               Append (Buf, LF);
+            end if;
+            Append (Buf, "    alloc.free(n.*);");
+            Append (Buf, LF);
+            Append (Buf, "}");
+            Append (Buf, LF);
+            Append (Buf, LF);
+         end Deinit_List;
+
+         procedure Emit_Deinit (Buf : in out U) is
+         begin
+            Append (Buf, "// ---- release (deinit) ----");
+            Append (Buf, LF);
+            for I in 1 .. N loop
+               case Infos (I).Kind is
+                  when Struct =>
+                     Deinit_Node
+                       (I, Node_Type (I), Node_Fn (I), True,
+                        Node_Members (I), Buf);
+                  when List =>
+                     if not Infos (I).Elem_Members.Is_Empty then
+                        --  An entry's members are typed bare, not as slices.
+                        Deinit_Node
+                          (I, Node_Type (I), Node_Fn (I), False,
+                           Node_Members (I), Buf);
+                     end if;
+                     Deinit_List (I, Buf);
+                  when others =>
+                     null;
+               end case;
+            end loop;
+         end Emit_Deinit;
+
       begin
          Append (Buf, "// ---- AST traversal (visit) and transform (fold) ----");
          Append (Buf, LF);
          for I in 1 .. N loop
             if Is_Node (I) then
-               Emit_Node (Node_Type (I), Node_Fn (I), Node_Members (I), Buf);
+               Emit_Node
+                 (I, Node_Type (I), Node_Fn (I), Node_Members (I), Buf);
                Append (Buf, LF);
             end if;
          end loop;
+
+         Emit_Deinit (Buf);
       end Emit_Walk;
 
       Emitted   : array (1 .. N) of Boolean := [others => False];
@@ -1016,24 +1211,6 @@ package body HBNF_Zig is
       for I in 1 .. N loop
          Infos.Append (Analyze (Rules, I));
       end loop;
-
-      --  A rule's value cannot contain itself: the tree types are structs by
-      --  value, so one of them would be infinitely sized.  The sort below only
-      --  orders structs and lists, so a cycle that runs through a scalar alias
-      --  slips past it: `prim = '(' expr ')' | int` with `expr = prim` emitted,
-      --  and `zig` then said "type depends on itself" the moment a size was
-      --  forced.  The detector is the one in HBNF_Compilable now, not a copy
-      --  kept here; step 9b makes it hand back the field to emit indirect, and
-      --  until that lands the cycle is still refused, with the same message
-      --  this detector used to give.
-      if not Back_Edges_Zig (Rules).Is_Empty then
-         raise Parse_Error with
-           "a rule's value cannot contain itself: the tree types are structs "
-           & "by value, so this one would be infinitely sized.  Routing "
-           & "the recursion through a list does not help (a list node "
-           & "holds its element by value too); RFCPLAN.md step 9 adds "
-           & "the pointer that breaks the cycle";
-      end if;
 
       Append (Res, "// generated by hbnf -- do not edit");
       Append (Res, LF);
@@ -1103,6 +1280,11 @@ package body HBNF_Zig is
    function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
+
+      --  The fields Emit declared `?*T`: the commit point boxes what it
+      --  parsed, and a rule that owns one releases it when a branch fails.
+      Backs : constant HBNF_Compilable.Edge_Vectors.Vector :=
+        Back_Edges_Zig (Rules);
 
       function Is_Core (Name : String) return Boolean is
         (Scalar_Zig_Type (Name) /= "");
@@ -1272,7 +1454,8 @@ package body HBNF_Zig is
          & "p.toks[p.pos].text, """ & Zig_Escape (To_String (L.Lit)) & """)");
 
       procedure Emit_Seq
-        (Els : Element_Vectors.Vector; First, Last : Natural;
+        (Owner : Natural;
+         Els : Element_Vectors.Vector; First, Last : Natural;
          Dst  : String; Buf : in out U; Fail : String := ""; Ind : String := "    ") is
          Pref : constant String := (if Fail = "" then "try " else "");
          Cat  : constant String := (if Fail = "" then "" else " catch " & Fail);
@@ -1309,6 +1492,18 @@ package body HBNF_Zig is
                           & Zig_Field (To_String (E.Name))
                           & " = p.toks[p.pos].text; p.pos += 1;");
                         Append (Buf, LF);
+                     elsif Back_Target (Backs, Owner, To_String (E.Name)) > 0
+                     then
+                        --  The back edge: parse the subtree, then box it.
+                        --  Parsing first leaves nothing allocated to leak
+                        --  when the subtree does not match.
+                        Append (Buf, Ind & Dst
+                          & Zig_Field (To_String (E.Name)) & " = "
+                          & Pref & "p.box("
+                          & Zig_Type_Of (To_String (E.Name)) & ", "
+                          & Pref & "parse_" & Zig_Snake (To_String (E.Name))
+                          & "(p)" & Cat & ")" & Cat & ";");
+                        Append (Buf, LF);
                      else
                         Append (Buf, Ind & Dst
                           & Zig_Field (To_String (E.Name)) & " = "
@@ -1317,7 +1512,7 @@ package body HBNF_Zig is
                         Append (Buf, LF);
                      end if;
                   when Group =>
-                     Emit_Seq (E.Items, 1, Natural (E.Items.Length), Dst, Buf,
+                     Emit_Seq (Owner, E.Items, 1, Natural (E.Items.Length), Dst, Buf,
                                Fail, Ind & "    ");
                   when Alt =>
                      null;
@@ -1337,7 +1532,8 @@ package body HBNF_Zig is
       --  last branch fails, control falls through for the caller's own failure
       --  handling.
       procedure Emit_Alternation
-        (Els : Element_Vectors.Vector; Acc, Reset : String;
+        (Owner : Natural;
+         Els : Element_Vectors.Vector; Acc, Reset : String;
          Buf : in out U; Ind : String := "    ") is
          N  : constant Natural := Natural (Els.Length);
          St : Natural := 1;
@@ -1361,7 +1557,7 @@ package body HBNF_Zig is
                end if;
                Append (Buf, Ind & "blk_" & Img (Br) & ": {");
                Append (Buf, LF);
-               Emit_Seq (Els, St, K - 1, Acc, Buf,
+               Emit_Seq (Owner, Els, St, K - 1, Acc, Buf,
                          "break :blk_" & Img (Br), Ind & "    ");
                Append (Buf, Ind & "    matched = true;");
                Append (Buf, LF);
@@ -1384,6 +1580,16 @@ package body HBNF_Zig is
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
          SU : constant String :=
            (if not Is_List then Scalar_Union_Type (Rules, P) else "");
+
+         --  A rule that owns a box releases it when it fails after the field
+         --  was set: on a failed branch (before the next one runs) and on the
+         --  error return (the last branch, or a plain sequence).
+         Owns    : constant Boolean := Has_Back (Backs, Idx);
+         Release : constant String :=
+           "deinit_" & Zig_Snake (NM) & "(&r, p.alloc)";
+         Reset   : constant String :=
+           (if Owns then Release & "; " else "")
+           & "r = std.mem.zeroes(" & ZT & ")";
       begin
          if Is_Char_Rule (Rules, NM) then
             --  A char rule is a token: expect its kind and capture the text.
@@ -1449,7 +1655,7 @@ package body HBNF_Zig is
                            end if;
                            Append (Buf, Ind & Label & "blk_" & Img (Branch) & ": {");
                            Append (Buf, LF);
-                           Emit_Seq (V, St, K - 1, "e.", Buf,
+                           Emit_Seq (Idx, V, St, K - 1, "e.", Buf,
                                      "break :" & Label & "blk_" & Img (Branch),
                                      Ind & "    ");
                            Append (Buf, Ind & "    break :blk_alt;");
@@ -1687,9 +1893,13 @@ package body HBNF_Zig is
             Append (Buf, LF);
             Append (Buf, "    var r: " & ZT & " = std.mem.zeroes(" & ZT & ");");
             Append (Buf, LF);
+            if Owns then
+               Append (Buf, "    errdefer " & Release & ";");
+               Append (Buf, LF);
+            end if;
             Append (Buf, "    var matched = false;");
             Append (Buf, LF);
-            Emit_Alternation (P, "r.", "r = std.mem.zeroes(" & ZT & ")", Buf);
+            Emit_Alternation (Idx, P, "r.", Reset, Buf);
             Append (Buf, "    p.pos = save;");
             Append (Buf, LF);
             Append (Buf, "    try p.fail(""a " & NM & """);");
@@ -1699,11 +1909,15 @@ package body HBNF_Zig is
          else
             if Has_Name (P) then
                Append (Buf, "    var r: " & ZT & " = std.mem.zeroes(" & ZT & ");");
+               if Owns then
+                  Append (Buf, LF);
+                  Append (Buf, "    errdefer " & Release & ";");
+               end if;
             else
                Append (Buf, "    const r: " & ZT & " = std.mem.zeroes(" & ZT & ");");
             end if;
             Append (Buf, LF);
-            Emit_Seq (P, 1, Natural (P.Length), "r.", Buf);
+            Emit_Seq (Idx, P, 1, Natural (P.Length), "r.", Buf);
             Append (Buf, "    return r;");
             Append (Buf, LF);
          end if;
@@ -1825,6 +2039,21 @@ package body HBNF_Zig is
       Append (Res, "    err_pos: usize = 0,");
       Append (Res, LF);
       Append (Res, LF);
+      if not Backs.Is_Empty then
+         --  A back edge's subtree lives behind a pointer: move the parsed
+         --  value onto the heap.
+         Append (Res, "    fn box(self: *P, comptime T: type, v: T) ParseError!*T {");
+         Append (Res, LF);
+         Append (Res, "        const c = try self.alloc.create(T);");
+         Append (Res, LF);
+         Append (Res, "        c.* = v;");
+         Append (Res, LF);
+         Append (Res, "        return c;");
+         Append (Res, LF);
+         Append (Res, "    }");
+         Append (Res, LF);
+         Append (Res, LF);
+      end if;
       Append (Res, "    fn set_err(self: *P, expected: []const u8) void {");
       Append (Res, LF);
       Append (Res, "        if (self.err_len != 0 and self.pos <= self.err_pos) return;");
