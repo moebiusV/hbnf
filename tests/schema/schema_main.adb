@@ -1,26 +1,28 @@
 --  tests/schema.sh's Ada driver: read each file named on the command line
 --  and say whether hbnf_schema.hbnf's generated parser accepts it.
 with Ada.Command_Line;
-with Ada.Strings.Unbounded;
+with Ada.Streams.Stream_IO;
 with Ada.Text_IO;
 with Schema;
 with Schema.Parser;
 
 procedure Schema_Main is
-   use Ada.Strings.Unbounded;
    use Ada.Text_IO;
 
+   --  The file exactly as it is: no newline is added.  An RFC's input may be
+   --  empty, or end in a space, or in a CR, and a parser must see just that.
    function Slurp (Path : String) return String is
-      F   : File_Type;
-      Buf : Unbounded_String;
+      package SIO renames Ada.Streams.Stream_IO;
+      F : SIO.File_Type;
    begin
-      Open (F, In_File, Path);
-      while not End_Of_File (F) loop
-         Append (Buf, Get_Line (F));
-         Append (Buf, Character'Val (10));
-      end loop;
-      Close (F);
-      return To_String (Buf);
+      SIO.Open (F, SIO.In_File, Path);
+      declare
+         Text : String (1 .. Natural (SIO.Size (F)));
+      begin
+         String'Read (SIO.Stream (F), Text);
+         SIO.Close (F);
+         return Text;
+      end;
    end Slurp;
 begin
    for K in 1 .. Ada.Command_Line.Argument_Count loop

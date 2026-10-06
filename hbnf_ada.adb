@@ -1419,7 +1419,8 @@ package body HBNF_Ada is
       --  scanner, so `in` never matches the front of `input`.  Any other
       --  literal compares bytes.  (Same rule as the C backend's.)
       function Is_Keyword_Lit (S : String) return Boolean is
-        (S'Length > 0
+        (HBNF_Grammar.Keywords_Apply
+         and then S'Length > 0
          and then (S (S'First) in 'a' .. 'z'
                    or else S (S'First) in 'A' .. 'Z'
                    or else S (S'First) = '_')
@@ -1499,6 +1500,10 @@ package body HBNF_Ada is
          Els : Element_Vectors.Vector; First, Last : Natural;
          Dst : String; Buf : in out U; Ind : String := "      ";
          Alloc_Records : Boolean := False) is
+         --  Whether this rule's file skips whitespace between elements
+         --  (`whitespace none` says it does not).
+         Skips : constant Boolean :=
+           Rules (Owner).Whitespace /= Null_Unbounded_String;
       begin
          for K in First .. Last loop
             declare
@@ -1509,10 +1514,14 @@ package body HBNF_Ada is
                      declare
                         Lit : constant String := To_String (E.Lit);
                      begin
-                        Append (Buf, Ind & "Skip_Ws (P);");
-                        Append (Buf, LF);
+                        if Skips then
+                           Append (Buf, Ind & "Skip_Ws (P);");
+                           Append (Buf, LF);
+                        end if;
                         Append (Buf, Ind
-                          & (if E.No_Case then "Expect_Word_Nocase"
+                          & (if E.No_Case and then Is_Keyword_Lit (Lit)
+                             then "Expect_Word_Nocase"
+                             elsif E.No_Case then "Expect_Lit_Nocase"
                              elsif Is_Keyword_Lit (Lit) then "Expect_Word"
                              else "Expect_Lit")
                           & " (P, """ & Ada_Escape (Lit) & """);");
@@ -1525,8 +1534,10 @@ package body HBNF_Ada is
                         declare
                            NM : constant String := To_String (E.Name);
                         begin
-                           Append (Buf, Ind & "Skip_Ws (P);");
-                           Append (Buf, LF);
+                           if Skips then
+                              Append (Buf, Ind & "Skip_Ws (P);");
+                              Append (Buf, LF);
+                           end if;
                            Append (Buf, Ind & "declare");
                            Append (Buf, LF);
                            Append (Buf, Ind & "   N : constant Natural := "
@@ -1552,8 +1563,10 @@ package body HBNF_Ada is
                         declare
                            NM : constant String := To_String (E.Name);
                         begin
-                           Append (Buf, Ind & "Skip_Ws (P);");
-                           Append (Buf, LF);
+                           if Skips then
+                              Append (Buf, Ind & "Skip_Ws (P);");
+                              Append (Buf, LF);
+                           end if;
                            Append (Buf, Ind & "declare");
                            Append (Buf, LF);
                            Append (Buf, Ind & "   N : constant Natural := Scan_"
@@ -1589,8 +1602,10 @@ package body HBNF_Ada is
                                 & "_Type"
                               else Ada_Ident (NM) & "_Type");
                         begin
-                           Append (Buf, Ind & "Skip_Ws (P);");
-                           Append (Buf, LF);
+                           if Skips then
+                              Append (Buf, Ind & "Skip_Ws (P);");
+                              Append (Buf, LF);
+                           end if;
                            if Alloc_Records
                              and then (Is_Struct (NM) or else Back)
                            then
@@ -1799,8 +1814,10 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                   Append (Buf, "         begin");
                   Append (Buf, LF);
-                  Append (Buf, "            Skip_Ws (P);");
-                  Append (Buf, LF);
+                  if R.Whitespace /= Null_Unbounded_String then
+                     Append (Buf, "            Skip_Ws (P);");
+                     Append (Buf, LF);
+                  end if;
                   if not Repeated_Body_Nullable (Rules, E) then
                      Append (Buf, "            if P.Pos > P.Text'Last then P.Pos := Start; exit; end if;");
                      Append (Buf, LF);
@@ -2728,7 +2745,19 @@ package body HBNF_Ada is
               & "      else" & LF
               & "         Fail (P, ""`"" & Lit & ""`"");" & LF
               & "      end if;" & LF
-              & "   end Expect_Word_Nocase;" & LF & LF);
+              & "   end Expect_Word_Nocase;" & LF & LF
+              & "   --  A case-insensitive literal that is not a keyword: its characters." & LF
+              & "   procedure Expect_Lit_Nocase (P : in out Parser; Lit : String) is" & LF
+              & "   begin" & LF
+              & "      if P.Pos + Lit'Length - 1 <= P.Text'Last" & LF
+              & "        and then Ada.Strings.Equal_Case_Insensitive" & LF
+              & "                   (P.Text (P.Pos .. P.Pos + Lit'Length - 1), Lit)" & LF
+              & "      then" & LF
+              & "         P.Pos := P.Pos + Lit'Length;" & LF
+              & "      else" & LF
+              & "         Fail (P, ""`"" & Lit & ""`"");" & LF
+              & "      end if;" & LF
+              & "   end Expect_Lit_Nocase;" & LF & LF);
          end if;
          if Ws_Name = "" then
             Append (Skip_Body, "   begin" & LF & "      null;" & LF
@@ -2814,6 +2843,13 @@ package body HBNF_Ada is
          Mustache.Put (V, "root_type", Ret_Type (1));
          Mustache.Put (V, "root_fn",
            "Parse_" & Ada_Ident (To_String (Rules (1).Name)));
+         --  The root skips whitespace around itself if its file does.
+         Mustache.Put (V, "lead_ws",
+           (if Rules (1).Whitespace /= Null_Unbounded_String
+            then "      Skip_Ws (P);" & LF else ""));
+         Mustache.Put (V, "trail_ws",
+           (if Rules (1).Whitespace /= Null_Unbounded_String
+            then "      Skip_Ws (P);" & LF else ""));
          Append (Bdy, Mustache.Render_File ("ada_parse_text", V));
       end;
       Append (Bdy, LF);

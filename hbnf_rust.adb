@@ -1252,7 +1252,8 @@ package body HBNF_Rust is
       --  `in` never matches the front of `input`.  Any other literal compares
       --  bytes.  (Same rule as the C backend's.)
       function Is_Keyword_Lit (S : String) return Boolean is
-        (S'Length > 0
+        (HBNF_Grammar.Keywords_Apply
+         and then S'Length > 0
          and then (S (S'First) in 'a' .. 'z'
                    or else S (S'First) in 'A' .. 'Z'
                    or else S (S'First) = '_')
@@ -1373,13 +1374,17 @@ package body HBNF_Rust is
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural;
          Dst  : String; Buf : in out U; Ind : String := "    ") is
+         --  Whether this rule's file skips whitespace between elements
+         --  (`whitespace none` says it does not).
+         Skips : constant Boolean :=
+           Rules (Owner).Whitespace /= Null_Unbounded_String;
       begin
          for K in First .. Last loop
             declare
                E : constant Element_Access := Els (K);
             begin
                --  A phrase rule skips whitespace before each element.
-               if E.Kind = Literal or else E.Kind = Name then
+               if Skips and then (E.Kind = Literal or else E.Kind = Name) then
                   Append (Buf, Ind & "p.skip_ws();");
                   Append (Buf, LF);
                end if;
@@ -1389,7 +1394,9 @@ package body HBNF_Rust is
                         Lit : constant String := To_String (E.Lit);
                      begin
                         Append (Buf, Ind
-                          & (if E.No_Case then "p.expect_word_nocase"
+                          & (if E.No_Case and then Is_Keyword_Lit (Lit)
+                             then "p.expect_word_nocase"
+                             elsif E.No_Case then "p.expect_lit_nocase"
                              elsif Is_Keyword_Lit (Lit) then "p.expect_word"
                              else "p.expect_lit")
                           & "(""" & Rust_Escape (Lit) & """)?;");
@@ -1535,7 +1542,12 @@ package body HBNF_Rust is
                --  Repetition bounds, as the C backend enforces them.
                Max_Stop : constant String :=
                  (if E.Max >= 0
-                  then "if r.len() >= " & Img (Natural (E.Max)) & " { break"
+                  then (if E.Max = 0
+                        --  `0x`: none at all.  `r.len() >= 0` is always true,
+                        --  and rustc's -D warnings refuses the comparison.
+                        then "if true { break"
+                        else "if r.len() >= " & Img (Natural (E.Max))
+                             & " { break")
                   else "");
             begin
                Append (Buf, "    let mut r = Vec::new();");
@@ -1556,8 +1568,10 @@ package body HBNF_Rust is
                   end if;
                   Append (Buf, "        let save = p.pos;");
                   Append (Buf, LF);
-                  Append (Buf, "        p.skip_ws();");
-                  Append (Buf, LF);
+                  if R.Whitespace /= Null_Unbounded_String then
+                     Append (Buf, "        p.skip_ws();");
+                     Append (Buf, LF);
+                  end if;
                   if not Repeated_Body_Nullable (Rules, E) then
                      Append (Buf, "        if p.pos >= p.text.len() { p.pos = save; break; }");
                      Append (Buf, LF);
@@ -1888,6 +1902,22 @@ package body HBNF_Rust is
             Append (Nocase, LF);
             Append (Nocase, "    }");
             Append (Nocase, LF);
+            --  A case-insensitive literal that is not a keyword: its characters.
+            Append (Nocase,
+              "    fn expect_lit_nocase(&mut self, lit: &str) -> Result<(), ParseError> {");
+            Append (Nocase, LF);
+            Append (Nocase,
+              "        if let Some(b) = self.text.as_bytes().get(self.pos..self.pos + lit.len()) {");
+            Append (Nocase, LF);
+            Append (Nocase,
+              "            if b.eq_ignore_ascii_case(lit.as_bytes()) { self.pos += lit.len(); return Ok(()); }");
+            Append (Nocase, LF);
+            Append (Nocase, "        }");
+            Append (Nocase, LF);
+            Append (Nocase, "        Err(self.fail(&format!(""`{}`"", lit)))");
+            Append (Nocase, LF);
+            Append (Nocase, "    }");
+            Append (Nocase, LF);
          end if;
          if Ws_Name = "" then
             Append (Skip_Ws, "");
@@ -2190,6 +2220,13 @@ package body HBNF_Rust is
          Mustache.Put (V, "root_type", Root_T);
          Mustache.Put (V, "root_fn",
            "parse_" & Rust_Snake (To_String (R.Name)));
+         --  The root skips whitespace around itself if its file does.
+         Mustache.Put (V, "lead_ws",
+           (if R.Whitespace /= Null_Unbounded_String
+            then "    p.skip_ws();" & LF else ""));
+         Mustache.Put (V, "trail_ws",
+           (if R.Whitespace /= Null_Unbounded_String
+            then "    p.skip_ws();" & LF else ""));
          return Mustache.Render_File ("rust_parse_text", V);
       end Parse_Text_Src;
 

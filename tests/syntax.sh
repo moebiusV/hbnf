@@ -30,7 +30,7 @@ refuse() {
 }
 refuse "a range or a sequence, not both" 'r = %d13.10-12'
 refuse "takes the place of a pattern" 'r = "a" %scan{ return 0; }'
-refuse "both with %i and without" 'r = "go" | x
+refuse "both with %i and without" 'r = "go" | x | word
 x = %i"go" "now"'
 refuse "an action runs on a node" 'r = *( e )
 e = "a" m
@@ -40,5 +40,5 @@ refuse "only when that line is indented" 'r = "a" x
 "b" x
 x = word'
 refuse "a rule.s head is its name alone" 'char[16] ifname = word'
-refuse "is ABNF.s union" 'r = "a" / "b"'
+refuse "is ABNF.s union" 'r = "ab" / "cd"'
 echo "syntax: OK (refusals)"

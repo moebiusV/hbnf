@@ -12,10 +12,8 @@
       P : Parser := (Text => T'Unchecked_Access, Pos => 1);
       R : {{&root_type}};
    begin
-      Skip_Ws (P);
-      R := {{&root_fn}} (P);
-      Skip_Ws (P);
-      if P.Pos <= T'Last then
+{{&lead_ws}}      R := {{&root_fn}} (P);
+{{&trail_ws}}      if P.Pos <= T'Last then
          Fail (P, "end of config");
       end if;
       return R;

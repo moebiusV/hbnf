@@ -113,7 +113,8 @@ package body HBNF_C is
    --  not atoms -- and, when the grammar has a `keywords` table, one in it.
    --  Any other literal is matched by its text and reserves nothing.
    function Is_Keyword_Lit (S : String) return Boolean is
-     (S'Length > 0
+     (HBNF_Grammar.Keywords_Apply
+      and then S'Length > 0
       and then (S (S'First) in 'a' .. 'z'
                 or else S (S'First) in 'A' .. 'Z'
                 or else S (S'First) = '_')
@@ -3225,7 +3226,9 @@ package body HBNF_C is
                      declare
                         Lit : constant String := To_String (E.Lit);
                         Fn  : constant String :=
-                          (if E.No_Case then "expect_word_nocase"
+                          (if E.No_Case and then Is_Keyword_Lit (Lit)
+                           then "expect_word_nocase"
+                           elsif E.No_Case then "expect_lit_nocase"
                            elsif Is_Keyword_Lit (Lit) then "expect_word"
                            else "expect_lit");
                      begin
@@ -4162,7 +4165,9 @@ package body HBNF_C is
             declare
                L  : constant String := To_String (P (1).Lit);
                Fn : constant String :=
-                 (if P (1).No_Case then "expect_word_nocase"
+                 (if P (1).No_Case and then Is_Keyword_Lit (L)
+                  then "expect_word_nocase"
+                  elsif P (1).No_Case then "expect_lit_nocase"
                   elsif Is_Keyword_Lit (L) then "expect_word"
                   else "expect_lit");
             begin
@@ -4283,7 +4288,10 @@ package body HBNF_C is
             Line ("");
             Line ("    memset(&v, 0, sizeof v);");
             Line ("    whole = parse_rule_" & C_Name (Name) & "(&p, &v);");
-            Line ("    if (whole) { skip_ws(&p); whole = p.pos == p.len; }");
+            Line ("    if (whole) { "
+                 & (if Whitespace_Rule_Name (Rules) = Null_Unbounded_String
+                    then "" else "skip_ws(&p); ")
+                 & "whole = p.pos == p.len; }");
             if K /= 0 and then Analyze (Rules, K).Kind in Struct | List then
                Line ("    free_" & C_Name (T) & "(&v);");
             end if;
@@ -4313,7 +4321,9 @@ package body HBNF_C is
                   Line ("    char *r = NULL;");
                   Line ("    memset(&v, 0, sizeof v);");
                   Line ("    if (parse_rule_" & C_Name (T) & "(&p, &v)) {");
-                  Line ("        skip_ws(&p);");
+                  if Whitespace_Rule_Name (Rules) /= Null_Unbounded_String then
+                     Line ("        skip_ws(&p);");
+                  end if;
                   Line ("        if (p.pos == p.len) r = hbnf_strndup(v."
                         & Fld & ", strlen(v." & Fld & "));");
                   Line ("    }");
@@ -4730,6 +4740,17 @@ package body HBNF_C is
             Append (Nocase, "    fail(p, lit, 1, p->text + p->pos,"
               & " n ? n : (p->pos < p->len ? 1 : 0)); return false;" & LF);
             Append (Nocase, "}" & LF & LF);
+            --  A case-insensitive literal that is not a keyword (a grammar with
+            --  no words, as an RFC's ABNF): its characters, in either case.
+            Append (Nocase, "__attribute__((unused))" & LF);
+            Append (Nocase, "static bool expect_lit_nocase(parser_t *p,"
+              & " const char *lit, size_t lit_len) {" & LF);
+            Append (Nocase, "    if (p->pos + lit_len <= p->len && strncasecmp("
+              & "p->text + p->pos, lit, lit_len) == 0) {"
+              & " p->pos += lit_len; return true; }" & LF);
+            Append (Nocase, "    fail(p, lit, 1, p->pos < p->len ? p->text + p->pos"
+              & " : ""end of input"", p->pos < p->len ? 1 : 0); return false;" & LF);
+            Append (Nocase, "}" & LF & LF);
          end if;
          Append (Res, Fill ("c_parser",
            (H ("strings_h", Strings_H),
@@ -4799,8 +4820,12 @@ package body HBNF_C is
          Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
            & "(&p, out)) goto err;");
          Append (Res, LF);
-         Append (Res, "    skip_ws(&p);");
-         Append (Res, LF);
+         --  The text after the root may be whitespace, if the grammar skips any
+         --  (`whitespace none`, as an RFC's ABNF reads, defines no skip_ws).
+         if Whitespace_Rule_Name (Rules) /= Null_Unbounded_String then
+            Append (Res, "    skip_ws(&p);");
+            Append (Res, LF);
+         end if;
          --  Input left over: with `statements`, nothing on the line was a
          --  statement, or something follows one.
          Append (Res, "    if (p.pos != p.len) { fail(&p, "

@@ -290,6 +290,13 @@ package HBNF_Grammar is
    function Type_Prefix return String;
    procedure Set_Type_Prefix (Prefix : String);
 
+   --  Start the grammar at rule Name instead of the first rule, for hbnf's
+   --  --root=: the root is the rule a parser starts from, and the checks and
+   --  the emitters see only what it reaches.  Say it before the schema is read;
+   --  a name no rule has is an error there.  It lets one RFC's collected ABNF
+   --  generate a parser for any of its rules (RFC 3986's `host`, say).
+   procedure Set_Root (Name : String);
+
    --  The daemon's own conf struct, from a top-level `conf struct ntpd_conf`
    --  directive; "" when absent.  When set, the C `--conf` wrapper emits
    --  parse_config(filename, <conf>) — it fills the caller's conf instead of
@@ -332,5 +339,13 @@ package HBNF_Grammar is
    --  rule uses is still reserved.  Empty when the directive is absent, and
    --  then every letter-led literal is a keyword.
    function Keyword_Table return Word_Vectors.Vector;
+
+   --  Whether a letter-led literal is a keyword at all.  It is where the grammar
+   --  has words to keep it out of: some rule names `word` or `atom`, or the
+   --  `keywords` directive lists some.  There it matches only as a whole word,
+   --  so `in` never matches the front of `input`.  In a grammar with no words,
+   --  an RFC's ABNF, a literal is the characters it spells and nothing more,
+   --  and `"v"` matches the `v` of `v1.a`.
+   function Keywords_Apply return Boolean;
 
 end HBNF_Grammar;

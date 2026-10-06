@@ -1406,7 +1406,8 @@ package body HBNF_Zig is
       --  `in` never matches the front of `input`.  Any other literal compares
       --  bytes.  (Same rule as the C backend's.)
       function Is_Keyword_Lit (S : String) return Boolean is
-        (S'Length > 0
+        (HBNF_Grammar.Keywords_Apply
+         and then S'Length > 0
          and then (S (S'First) in 'a' .. 'z'
                    or else S (S'First) in 'A' .. 'Z'
                    or else S (S'First) = '_')
@@ -1524,6 +1525,10 @@ package body HBNF_Zig is
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural;
          Dst  : String; Buf : in out U; Fail : String := ""; Ind : String := "    ") is
+         --  Whether this rule's file skips whitespace between elements
+         --  (`whitespace none` says it does not).
+         Skips : constant Boolean :=
+           Rules (Owner).Whitespace /= Null_Unbounded_String;
          Pref : constant String := (if Fail = "" then "try " else "");
          Cat  : constant String := (if Fail = "" then "" else " catch " & Fail);
       begin
@@ -1532,7 +1537,7 @@ package body HBNF_Zig is
                E : constant Element_Access := Els (K);
             begin
                --  A phrase rule skips whitespace before each element.
-               if E.Kind = Literal or else E.Kind = Name then
+               if Skips and then (E.Kind = Literal or else E.Kind = Name) then
                   Append (Buf, Ind & "p.skip_ws();");
                   Append (Buf, LF);
                end if;
@@ -1542,7 +1547,9 @@ package body HBNF_Zig is
                         Lit : constant String := To_String (E.Lit);
                      begin
                         Append (Buf, Ind & Pref
-                          & (if E.No_Case then "p.expect_word_nocase"
+                          & (if E.No_Case and then Is_Keyword_Lit (Lit)
+                             then "p.expect_word_nocase"
+                             elsif E.No_Case then "p.expect_lit_nocase"
                              elsif Is_Keyword_Lit (Lit) then "p.expect_word"
                              else "p.expect_lit")
                           & "(""" & Zig_Escape (Lit) & """, ""`"
@@ -1766,8 +1773,10 @@ package body HBNF_Zig is
                   end if;
                   Append (Buf, "        const save = p.pos;");
                   Append (Buf, LF);
-                  Append (Buf, "        p.skip_ws();");
-                  Append (Buf, LF);
+                  if R.Whitespace /= Null_Unbounded_String then
+                     Append (Buf, "        p.skip_ws();");
+                     Append (Buf, LF);
+                  end if;
                   if not Repeated_Body_Nullable (Rules, E) then
                      Append (Buf, "        if (p.pos >= p.text.len) { p.pos = save; break; }");
                      Append (Buf, LF);
@@ -2200,6 +2209,13 @@ package body HBNF_Zig is
             Put ("        return self.fail(want);");
             Put ("    }");
             Put ("");
+            Put ("    // A case-insensitive literal that is not a keyword: its characters.");
+            Put ("    fn expect_lit_nocase(self: *P, lit: []const u8, want: []const u8) ParseError!void {");
+            Put ("        if (self.pos + lit.len <= self.text.len");
+            Put ("            and std.ascii.eqlIgnoreCase(self.text[self.pos .. self.pos + lit.len], lit)) { self.pos += lit.len; return; }");
+            Put ("        return self.fail(want);");
+            Put ("    }");
+            Put ("");
          end if;
          Put ("    // Skip what the grammar calls whitespace, one match at a time.");
          Put ("    fn skip_ws(self: *P) void {");
@@ -2551,6 +2567,13 @@ package body HBNF_Zig is
          Mustache.Put (V, "root_type", Root_T);
          Mustache.Put (V, "root_fn",
            "parse_" & Zig_Snake (To_String (R.Name)));
+         --  The root skips whitespace around itself if its file does.
+         Mustache.Put (V, "lead_ws",
+           (if R.Whitespace /= Null_Unbounded_String
+            then "    p.skip_ws();" & LF else ""));
+         Mustache.Put (V, "trail_ws",
+           (if R.Whitespace /= Null_Unbounded_String
+            then "    p.skip_ws();" & LF else ""));
          return Mustache.Render_File ("zig_parse_text", V);
       end Parse_Text_Src;
 

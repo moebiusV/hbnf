@@ -51,6 +51,46 @@ package body HBNF_Compilable is
       return V;
    end Code_Points;
 
+   --  The code points a literal matches, one branch per spelling.  A
+   --  case-insensitive one (`%i"A"`) is each ASCII letter in both cases, so
+   --  `%i"ab"` is four branches; the caller has capped the letters.  A plain one
+   --  is the one branch it always was.
+   function Case_Variants (S : String; No_Case : Boolean)
+     return Cp_Branch_Vectors.Vector is
+      Result : Cp_Branch_Vectors.Vector;
+   begin
+      Result.Append (Cp_Range_Vectors.Empty_Vector);
+      for Rg of Code_Points (S) loop
+         declare
+            Next  : Cp_Branch_Vectors.Vector;
+            Other : constant Natural :=
+              (if not No_Case or else Rg.Lo /= Rg.Hi then 0
+               elsif Rg.Lo in 65 .. 90 then Rg.Lo + 32
+               elsif Rg.Lo in 97 .. 122 then Rg.Lo - 32
+               else 0);
+         begin
+            for B of Result loop
+               declare
+                  First : Cp_Range_Vectors.Vector := B;
+               begin
+                  First.Append (Rg);
+                  Next.Append (First);
+               end;
+               if Other /= 0 then
+                  declare
+                     Second : Cp_Range_Vectors.Vector := B;
+                  begin
+                     Second.Append (Cp_Range'(Lo => Other, Hi => Other));
+                     Next.Append (Second);
+                  end;
+               end if;
+            end loop;
+            Result := Next;
+         end;
+      end loop;
+      return Result;
+   end Case_Variants;
+
    procedure Reject (Rule_Name, What : String) is
    begin
       raise Parse_Error with
@@ -237,11 +277,25 @@ package body HBNF_Compilable is
                         B.Append (Cp_Range'(Lo => E.Lo, Hi => E.Hi));
                      end loop;
                   elsif E.Kind = Literal then
-                     for B of Branches loop
-                        for Rg of Code_Points (To_String (E.Lit)) loop
-                           B.Append (Rg);
+                     declare
+                        Variants     : constant Cp_Branch_Vectors.Vector :=
+                          Case_Variants (To_String (E.Lit), E.No_Case);
+                        New_Branches : Cp_Branch_Vectors.Vector;
+                     begin
+                        for B of Branches loop
+                           for V of Variants loop
+                              declare
+                                 Cat : Cp_Range_Vectors.Vector := B;
+                              begin
+                                 for Rg of V loop
+                                    Cat.Append (Rg);
+                                 end loop;
+                                 New_Branches.Append (Cat);
+                              end;
+                           end loop;
                         end loop;
-                     end loop;
+                        Branches := New_Branches;
+                     end;
                   elsif E.Kind = Name then
                      declare
                         Idx : constant Natural := Find (Rules, To_String (E.Name));
@@ -316,12 +370,7 @@ package body HBNF_Compilable is
                Result.Append (Inner);
             end;
          elsif E.Kind = Literal then
-            declare
-               Inner : constant Cp_Range_Vectors.Vector :=
-                 Code_Points (To_String (E.Lit));
-            begin
-               Result.Append (Inner);
-            end;
+            Result := Case_Variants (To_String (E.Lit), E.No_Case);
          else
             declare
                Idx : constant Natural := Find (Rules, To_String (E.Name));
@@ -376,12 +425,26 @@ package body HBNF_Compilable is
                                            Lo => E.Lo, Hi => E.Hi));
                      end loop;
                   elsif E.Kind = Literal then
-                     for B of Branches loop
-                        for Rg of Code_Points (To_String (E.Lit)) loop
-                           B.Append (Cp_Atom'(Kind => Single,
-                                              Lo => Rg.Lo, Hi => Rg.Hi));
+                     declare
+                        Variants     : constant Cp_Branch_Vectors.Vector :=
+                          Case_Variants (To_String (E.Lit), E.No_Case);
+                        New_Branches : Cp_Branch_Atom_Vectors.Vector;
+                     begin
+                        for B of Branches loop
+                           for V of Variants loop
+                              declare
+                                 Cat : Cp_Atom_Vectors.Vector := B;
+                              begin
+                                 for Rg of V loop
+                                    Cat.Append (Cp_Atom'(Kind => Single,
+                                                         Lo => Rg.Lo, Hi => Rg.Hi));
+                                 end loop;
+                                 New_Branches.Append (Cat);
+                              end;
+                           end loop;
                         end loop;
-                     end loop;
+                        Branches := New_Branches;
+                     end;
                   else
                      --  A non-repeated Name: distribute its atom DNF.
                      declare

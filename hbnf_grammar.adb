@@ -232,6 +232,12 @@ package body HBNF_Grammar is
    --  in this file skips between its elements.  "" when the file sets none.
    File_Whitespace : Unbounded_String := Null_Unbounded_String;
 
+   --  Some rule names `word` or `atom`, as of the last schema read.
+   Words_Used : Boolean := False;
+
+   --  The rule to start from instead of the first one (Set_Root), or "".
+   Root_Rule : Unbounded_String := Null_Unbounded_String;
+
    --  The text of the file Parse is reading, and where each of its lines
    --  starts, for a message that quotes a line.
    Current_Source : Unbounded_String := Null_Unbounded_String;
@@ -714,6 +720,17 @@ package body HBNF_Grammar is
                               Col := Col + 1;
                            end;
                         end if;
+                     elsif Text (I) = ASCII.LF then
+                        --  A literal does not run onto the next line.  The
+                        --  usual cause is ABNF's `"\"`, the one-character
+                        --  string: here a backslash starts an escape, so
+                        --  `\"` is a quote inside the string and it goes on.
+                        raise Parse_Error with
+                          Integer'Image (Line) & ":" & Integer'Image (At_Col) &
+                          ": this string literal does not end on its line.  "
+                          & "A backslash in ""..."" starts an escape, so `\""` "
+                          & "is a quote inside the string and `""\""` never "
+                          & "closes: write a backslash as `\\` or %x5C";
                      else
                         Append (Buf, Text (I));
                         I := I + 1;
@@ -1192,6 +1209,27 @@ package body HBNF_Grammar is
       end loop;
    end Append_All;
 
+   --  True when a literal has a letter, so that case could tell two spellings
+   --  of it apart.  `"1"` is `"1"` whatever the file's `sensitivity`, and a
+   --  literal that is no different either way is a plain one, which also lets
+   --  a rule made of such literals be a character rule.
+   function Has_Letter (S : Unbounded_String) return Boolean is
+     (for some C of To_String (S) => C in 'a' .. 'z' | 'A' .. 'Z');
+
+   --  How many ASCII letters a literal has: a case-insensitive one is that many
+   --  more branches in a scanner (each letter in both cases), so a long one
+   --  stays a phrase rule.
+   function Letter_Count (S : Unbounded_String) return Natural is
+      N : Natural := 0;
+   begin
+      for C of To_String (S) loop
+         if C in 'a' .. 'z' | 'A' .. 'Z' then
+            N := N + 1;
+         end if;
+      end loop;
+      return N;
+   end Letter_Count;
+
    function Parse_Atom (P : in out Parser) return Element_Access is
    begin
       case Cur (P).Kind is
@@ -1202,7 +1240,9 @@ package body HBNF_Grammar is
                Next (P);
                --  A bare literal takes its file's `sensitivity string`.
                return new Element'(Kind => Literal, Min => 1, Max => 1,
-                                   Lit => Lit, No_Case => File_No_Case);
+                                   Lit => Lit,
+                                   No_Case => File_No_Case
+                                              and then Has_Letter (Lit));
             end;
          when T_Pct =>
             declare
@@ -1226,7 +1266,8 @@ package body HBNF_Grammar is
                   begin
                      Next (P);
                      return new Element'(Kind => Literal, Min => 1, Max => 1,
-                                         Lit => Lit, No_Case => W = "i");
+                                         Lit => Lit,
+                                         No_Case => W = "i" and then Has_Letter (Lit));
                   end;
                end if;
                if W'Length > 0
@@ -1836,6 +1877,19 @@ package body HBNF_Grammar is
             return False;
          elsif E.Kind = Char_Range then
             return True;
+         elsif E.Kind = Literal then
+            --  ABNF writes a one-character class as "0" / "1" as often as %x30
+            --  / %x31: a string of one code point is one, in UTF-8 as in ASCII.
+            declare
+               S : constant String := To_String (E.Lit);
+               B : constant Natural :=
+                 (if S'Length = 0 then 0 else Character'Pos (S (S'First)));
+            begin
+               return S'Length = 1
+                 or else (S'Length = 2 and then B in 16#C0# .. 16#DF#)
+                 or else (S'Length = 3 and then B in 16#E0# .. 16#EF#)
+                 or else (S'Length = 4 and then B in 16#F0# .. 16#F7#);
+            end;
          elsif E.Kind /= Name
            or else not By_Name.Contains (To_String (E.Name))
          then
@@ -1909,8 +1963,9 @@ package body HBNF_Grammar is
                     (S, "`" & To_String (S.Text) & "` is ABNF's union, "
                      & "which hbnf takes only between alternatives that "
                      & "each match one code point (a %x value, a 'c' "
-                     & "literal, or a rule of them) so far (RFCPLAN.md step "
-                     & "5); write `|`, ordered choice, longest first");
+                     & "literal, a one-character string, or a rule of them) "
+                     & "so far (RFCPLAN.md step 5); write `|`, ordered "
+                     & "choice, longest first");
                   exit;
                end if;
             end loop;
@@ -1939,6 +1994,48 @@ package body HBNF_Grammar is
          end loop;
       end Check_Prose;
    begin
+      --  --root=: the named rule goes first, which is what makes it the root.
+      --  Every later step (the checks, the lifting, the emitters) then sees
+      --  the grammar as that rule's, and what it does not reach is dropped.
+      if Root_Rule /= Null_Unbounded_String then
+         declare
+            J : Natural := 0;
+         begin
+            for K in 1 .. Natural (Rules.Length) loop
+               if To_String (Rules (K).Name) = To_String (Root_Rule) then
+                  J := K;
+                  exit;
+               end if;
+            end loop;
+            if J = 0 then
+               raise Parse_Error with
+                 "--root=" & To_String (Root_Rule) & ": the schema has no rule"
+                 & " of that name";
+            end if;
+            if J > 1 then
+               declare
+                  R : constant Rule := Rules (J);
+               begin
+                  Rules.Delete (J);
+                  Rules.Insert (1, R);
+               end;
+            end if;
+         end;
+      end if;
+
+      --  Do keywords exist here?  (See Keywords_Apply.)  Said first: whether a
+      --  rule is a character rule depends on it.
+      declare
+         function Names_Word (Els : Element_Vectors.Vector) return Boolean is
+           (for some E of Els =>
+              (E.Kind = Name
+               and then (To_String (E.Name) = "word"
+                         or else To_String (E.Name) = "atom"))
+              or else (E.Kind = Group and then Names_Word (E.Items)));
+      begin
+         Words_Used := (for some R of Rules => Names_Word (R.Pattern));
+      end;
+
       --  The built-in lexical jets: the classic word/int/str scanners and the
       --  default whitespace, as hand-written `%scan{}` code a grammar
       --  (obconf) may override.  A grammar that defines its own rule keeps
@@ -2036,6 +2133,24 @@ package body HBNF_Grammar is
          for J in 1 .. Natural (Used.Length) loop
             Check_Unions (Used (J).Pattern);
             Check_Prose (Used (J).Pattern, To_String (Used (J).Name));
+            --  `str`, `atom`, `word`, `int`, `bool`, `flag`, `uN` and `iN` are
+            --  the built-in types: a reference to one is a scalar, in every
+            --  backend.  A character rule of that name is a scanner for the
+            --  same scalar and is the way to widen one (obconf does), but a
+            --  rule that builds a struct under such a name would be read as the
+            --  scalar in some places and as the struct in others.
+            if Is_Core_Name (To_String (Used (J).Name))
+              and then Used (J).Jet_Code = Null_Unbounded_String
+              and then not Is_Char_Rule (Rules, To_String (Used (J).Name))
+              and then (for some E of Used (J).Pattern =>
+                          E.Kind = Name or else E.Kind = Group)
+            then
+               Report ("rule `" & To_String (Used (J).Name) & "` has the name "
+                       & "of a built-in type, which the generated code reads "
+                       & "as a scalar; give the rule another name (RFC 5322 "
+                       & "defines `atom` and `word` as structures: write "
+                       & "`atom-rule` and `word-rule`)");
+            end if;
             --  ABNF's rule names ignore case, and so do the identifiers
             --  the backends make of them (TOK_DIGIT, Digit): two rules
             --  whose names differ only in case would be one name there.
@@ -2137,7 +2252,7 @@ package body HBNF_Grammar is
                         when Alt =>
                            null;
                         when Literal =>
-                           if E.No_Case then
+                           if E.No_Case and then Letter_Count (E.Lit) > 4 then
                               return False;
                            end if;
                            --  A repeated literal is a run of that one code
@@ -2241,6 +2356,7 @@ package body HBNF_Grammar is
       if Problems /= Null_Unbounded_String then
          Fail (To_String (Problems));
       end if;
+
    end Finish;
 
    --  `name =/ alternatives` (RFC 5234 §3.3): add alternatives to the
@@ -2489,8 +2605,8 @@ package body HBNF_Grammar is
                then
                   --  `whitespace ws`, per file: phrase rules in this file skip
                   --  the char rule ws between their elements; char rules never
-                  --  do.  RFC grammars that write their whitespace explicitly
-                  --  set no such line.
+                  --  do.  RFC grammars that write their whitespace explicitly say
+                  --  `whitespace none`, since the default is `ws`.
                   Next (P);
                   if Cur (P).Kind /= T_Name then
                      raise Parse_Error with
@@ -2498,7 +2614,11 @@ package body HBNF_Grammar is
                        Integer'Image (Cur (P).Col) &
                        ": expected a char-rule name after `whitespace`";
                   end if;
-                  File_Whitespace := Cur (P).Text;
+                  --  `whitespace none`: this file's phrase rules skip nothing,
+                  --  as an RFC's ABNF reads: where a space counts, it is written.
+                  File_Whitespace :=
+                    (if To_String (Cur (P).Text) = "none"
+                     then Null_Unbounded_String else Cur (P).Text);
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "prefix"
@@ -3263,9 +3383,9 @@ package body HBNF_Grammar is
                         when Char_Range =>
                            null;
                         when Literal =>
-                           if E.No_Case
-                             or else not Single_Code_Point (To_String (E.Lit))
-                           then
+                           --  A case-insensitive letter is still one code point
+                           --  an iteration: `A` or `a`.
+                           if not Single_Code_Point (To_String (E.Lit)) then
                               return False;
                            end if;
                         when Name =>
@@ -3323,7 +3443,7 @@ package body HBNF_Grammar is
                      when Alt =>
                         null;
                      when Literal =>
-                        if E.No_Case then
+                        if E.No_Case and then Letter_Count (E.Lit) > 4 then
                            return False;
                         end if;
                         --  A letter/underscore-led literal is a word (a keyword
@@ -3334,7 +3454,8 @@ package body HBNF_Grammar is
                         declare
                            S : constant String := To_String (E.Lit);
                         begin
-                           if S'Length > 0
+                           if Keywords_Apply
+                             and then S'Length > 0
                              and then (S (S'First) in 'a' .. 'z'
                                        or else S (S'First) in 'A' .. 'Z'
                                        or else (S (S'First) = '_'
@@ -3734,6 +3855,14 @@ package body HBNF_Grammar is
    function Includes_Rule return String is (To_String (Includes_Name));
 
    function Keyword_Table return Word_Vectors.Vector is (Keyword_Words);
+
+   function Keywords_Apply return Boolean is
+     (Words_Used or else not Keyword_Words.Is_Empty);
+
+   procedure Set_Root (Name : String) is
+   begin
+      Root_Rule := To_Unbounded_String (Name);
+   end Set_Root;
 
    procedure Set_Type_Prefix (Prefix : String) is
    begin
