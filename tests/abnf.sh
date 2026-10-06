@@ -73,11 +73,13 @@ item = DIGIT / ALPHA
 G
 check OK   "a1B" "letters and digits"
 check FAIL "-"   "neither"
-refuse "is ABNF.s union" "/ between phrases that begin alike" <<'G'
-doc = "a" "b" "c" / "a" "b" "d"
+refuse "is ABNF.s union" "/ between phrases that match the same text" <<'G'
+doc = x / y
+x = "a" "b"
+y = 1*( "a" / "b" )
 G
 
-echo "== \`/\` between phrases: ordered choice where the alternatives cannot begin alike (step 5) =="
+echo "== \`/\` between phrases: the reader finds the order that works (step 5) =="
 rm -f "$W/t"; gen <<'G'
 doc = "a" "b" / "c" "d"
 G
@@ -113,13 +115,59 @@ check OK   "7"   "a character rule takes the longest alternative: one digit"
 check OK   "42"  "two digits"
 check OK   "199" "three digits, in the RFC's own order"
 check FAIL "a"   "not a digit"
-refuse "can match nothing" "a nullable alternative the choice's follow set can begin" <<'G'
+echo "== a repetition ABNF would give back (step 5) =="
+rm -f "$W/t"; gen <<G
+include "$CORE"
+doc = [ *1( h ":" ) h ] "::" "z"
+h = 1*4DIGIT
+G
+check OK   "1::z"     "the RFC's own form: the group is not taken from the :: "
+check OK   "1:2::z"   "one group, then ::"
+check OK   "::z"      "nothing before ::"
+check FAIL "1:2:3::z" "more groups than *1 allows"
+refuse "matched greedily" "a repetition that takes what follows needed" <<'G'
+whitespace none
+doc = *( "a" ) "a"
+G
+rm -f "$W/t"; gen <<'G'
+whitespace none
+doc = *( "a" ) "b"
+G
+check OK   "aaab" "a repetition that cannot take what follows"
+check FAIL "aaa"  "nothing after the repetitions"
+refuse "can both match text" "an alternative that can match nothing, and the follow set can begin another" <<'G'
 doc = x "a"
 x = "a" / [ "b" ]
 G
-refuse "can both begin with" "two alternatives that share two code points" <<'G'
+rm -f "$W/t"; gen <<'G'
 doc = "a" "b" "c" / "a" "b" "d"
 G
+check OK   "abc" "a shared prefix of any length"
+check OK   "abd" "the other alternative"
+check FAIL "ab"  "neither"
+check FAIL "abe" "neither, after the prefix"
+rm -f "$W/t"; gen <<'G'
+doc = "a" / "a" "b"
+G
+check OK   "a"   "the shorter alternative, written first"
+check OK   "ab"  "the longer: the reader tries it first"
+check FAIL "abb" "a leftover"
+rm -f "$W/t"; gen <<'G'
+doc = x / y
+x = "a" "b" "c"
+y = "a" "b" "d"
+G
+check OK   "abc" "alternatives that are rules, with a shared prefix"
+check OK   "abd" "the other"
+rm -f "$W/t"; gen <<G
+include "$CORE"
+doc = a / b
+a = 1*DIGIT "."
+b = 1*DIGIT ":"
+G
+check OK   "123." "told apart after any number of digits"
+check OK   "123:" "the other"
+check FAIL "123"  "neither"
 
 echo "== newlines inside ( ), and a rule going on to an indented line =="
 rm -f "$W/t"; gen <<G

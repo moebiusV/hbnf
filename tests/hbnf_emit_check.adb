@@ -385,13 +385,15 @@ procedure Hbnf_Emit_Check is
       end;
       Check ("a <prose-val> the parser uses is reported with its line",
              Refused ("r = x <to be written>" & LF & "x = %x41" & LF,
-                      "1:7: not written yet, in `r`: <to be written>"
-                      & LF & "  r = x <to be written>" & LF & "        ^"));
+                      "1:7: not written yet, in `r`: <to be written>")
+             and then Refused ("r = x <to be written>" & LF & "x = %x41" & LF,
+                               "  r = x <to be written>" & LF & "        ^"));
       Check ("an unused <prose-val> is not",
              not Refused ("r = x" & LF & "x = %x41" & LF & "y = <later>" & LF,
                           "not written yet"));
       Check ("/ between phrases is refused",
-             Refused ("r = ""a"" ""b"" ""c"" / ""a"" ""b"" ""d""" & LF,
+             Refused ("r = x / y" & LF & "x = ""a"" ""b""" & LF
+                      & "y = 1*( ""a"" / ""b"" )" & LF,
                       "ABNF's union"));
       Check ("=/ with no = before it is refused",
              Refused ("r =/ ""a""" & LF, "which no `=` before it defines"));

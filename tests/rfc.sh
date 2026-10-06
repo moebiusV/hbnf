@@ -1,16 +1,17 @@
 #!/bin/sh
-# The RFC corpus (tests/rfc/): each fragment's fixed-up grammar, run on the
-# rules the RFC defines.  For every <rfc>/vectors/<RULE>.accept and .reject,
-# the fixed-up file in that directory (<name>.fixed.hbnf) is generated with
-# --root=RULE and every input line must parse (.accept) or not (.reject).
+# The RFC corpus (rfc-corpus/): each snippet is <id>.bnf, the RFC's text as
+# published, and <id>.hbnf, the form hbnf compiles (<id>.md says what changed
+# and why).  For every <id>.vectors/<RULE>.accept and .reject, <id>.hbnf is
+# generated with --root=RULE and every input line must parse (.accept) or not
+# (.reject).
 #
 # A vector is one line, read with printf's %b: `\r`, `\n`, `\t` and `\NNN` are
 # the characters, `\\` a backslash, and an empty line is the empty input.
 #
-# Every rule runs in C.  The rules listed in tests/rfc/headline.txt (one `<rfc>
+# Every rule runs in C.  The rules listed in rfc-corpus/headline.txt (one `<id>
 # <RULE>` per line) run in Ada, Rust and Zig as well.
 #   HBNF=/path/to/hbnf sh tests/rfc.sh      (default ./hbnf)
-#   RFC_ONLY=rfc3986 sh tests/rfc.sh        (one RFC's directory)
+#   RFC_ONLY=rfc3986-1 sh tests/rfc.sh      (one snippet)
 #   RFC_QUICK=1 sh tests/rfc.sh             (only the headline rules; what e2e.sh runs)
 set -u
 cd "$(dirname "$0")/.."
@@ -36,23 +37,23 @@ vectors() {
 	done < "$1"
 }
 
-for dir in tests/rfc/${RFC_ONLY:-rfc*}/; do
-	d=${dir%/}; r=$(basename "$d")
-	fixed=$(ls "$d"/*.fixed.hbnf 2> /dev/null | head -1)
-	[ -n "$fixed" ] || continue
-	for af in "$d"/vectors/*.accept; do
+for hb in rfc-corpus/${RFC_ONLY:-rfc*}.hbnf; do
+	[ -f "$hb" ] || continue
+	r=$(basename "$hb" .hbnf)
+	vdir=rfc-corpus/$r.vectors
+	for af in "$vdir"/*.accept; do
 		[ -f "$af" ] || continue
 		rule=$(basename "$af" .accept)
 		mkdir -p "$W/$r/$rule"
 		ACCEPT=$(vectors "$af" "$W/$r/$rule/a")
-		REJECT=$(vectors "$d/vectors/$rule.reject" "$W/$r/$rule/r")
+		REJECT=$(vectors "$vdir/$rule.reject" "$W/$r/$rule/r")
 		BACKENDS=c
-		if grep -qx "$r $rule" tests/rfc/headline.txt 2> /dev/null; then
+		if grep -qx "$r $rule" rfc-corpus/headline.txt 2> /dev/null; then
 			BACKENDS=$ALL
 		elif [ -n "${RFC_QUICK:-}" ]; then
 			continue
 		fi
-		suite "$r $rule" "$fixed" "$rule"
+		suite "$r $rule" "$hb" "$rule"
 	done
 done
 exit $rc

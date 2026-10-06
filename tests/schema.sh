@@ -51,4 +51,31 @@ for body in 'config = *empty' 'config = 1*empty' 'config = *( [ "a" ] )'; do
 	suite "repeat $n" "$W/rep/g$n.hbnf"
 done
 
+# A scanner written once for each backend (`name = Rust { ... }`): the same
+# grammar means the same in all four.
+mkdir "$W/term"
+cat > "$W/term/g.hbnf" <<'G'
+language C
+doc = digits ( "," | ";" ) digits
+digits = C { size_t i = pos; while (i < len && s[i] >= '0' && s[i] <= '9') i++; return i - pos; }
+digits = Rust { let mut i = pos; while i < len && s[i].is_ascii_digit() { i += 1; } i - pos }
+digits = Zig { var i = pos; while (i < len and s[i] >= '0' and s[i] <= '9') i += 1; return i - pos; }
+digits = Ada {
+      I : Natural := Pos;
+   begin
+      while I <= Len and then S (I) in '0' .. '9' loop
+         I := I + 1;
+      end loop;
+      return I - Pos;
+G
+printf '%s\n' '}' >> "$W/term/g.hbnf"
+printf '12,345' > "$W/term/a1.txt"
+printf '7;8' > "$W/term/a2.txt"
+printf '12,' > "$W/term/r1.txt"
+printf '1;;2' > "$W/term/r2.txt"
+printf 'a,1' > "$W/term/r3.txt"
+ACCEPT="$W/term/a1.txt $W/term/a2.txt"
+REJECT="$W/term/r1.txt $W/term/r2.txt $W/term/r3.txt"
+suite "terminal scanners" "$W/term/g.hbnf"
+
 exit $rc

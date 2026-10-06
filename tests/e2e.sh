@@ -161,7 +161,7 @@ HBNF=/tmp/hbnf sh tests/recursive.sh
 echo "== the obconf configuration-file grammar, against tests/accept and tests/reject =="
 HBNF=/tmp/hbnf sh tests/schema.sh
 
-echo "== the RFC corpus: fixed-up RFC 5234, 3986, 5322, 9112 (tests/rfc.sh, headline rules) =="
+echo "== the RFC corpus: rfc-corpus/, RFC 5234, 3986, 5322, 9112 (tests/rfc.sh, headline rules) =="
 RFC_QUICK=1 HBNF=/tmp/hbnf sh tests/rfc.sh
 
 echo "== character rules and UTF-8 (tests/utf8-test.sh) =="
