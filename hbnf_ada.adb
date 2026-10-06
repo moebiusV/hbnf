@@ -1058,29 +1058,128 @@ package body HBNF_Ada is
       Append (Res, LF);
 
       --  Vector packages: one per top-level list rule, and one per repeated
-      --  member of a record rule.
-      for I in 1 .. N loop
-         if Infos (I).Kind = List then
-            Append (Res, Emit_List (I, Infos (I)));
-            Append (Res, LF);
-            Emitted (I) := True;
-         elsif Infos (I).Kind = Struct then
+      --  member of a record rule.  A vector's element, or a group entry's
+      --  member, may itself be a list, whose type must be declared first, so
+      --  these go in dependency order: rule order wherever nothing is out of
+      --  order, and an item whose list is not yet declared waits a pass.
+      declare
+         --  The list rule a reference ends at (through aliases), 0 if none.
+         function List_Leaf (Ref : String) return Natural is
+            J : constant Natural := Find (Rules, Ref);
+         begin
+            if J = 0 or else Scalar_Ada_Type (Ref) /= "" then
+               return 0;
+            end if;
             declare
-               Members : constant Member_Vectors.Vector := Infos (I).Members;
+               L : constant Natural := Leaf_Target (Rules, J);
             begin
-               for M of Members loop
-                  if M.Is_List then
-                     Append (Res, Emit_Vector
-                       (Ada_Ident (To_String (Rules (I).Name)) & "_" &
-                        Ada_Ident (To_String (M.Name)) & "_Vectors",
-                        Elem_Type (I, To_String (M.Name)),
-                        Vector_Pkg (To_String (M.Name))));
-                     Append (Res, LF);
+               return (if Infos (L).Kind = List then L else 0);
+            end;
+         end List_Leaf;
+
+         function Declared (Ref : String; Self : Natural) return Boolean is
+            L : constant Natural := List_Leaf (Ref);
+         begin
+            return L = 0 or else L = Self or else Emitted (L);
+         end Declared;
+
+         type Item_Done is array (1 .. N) of Boolean;
+         List_Done : Item_Done := [others => False];
+         --  A record's repeated-member vectors, done per record.
+         Rec_Done  : Item_Done := [others => False];
+         Left      : Natural := 0;
+
+         function Rec_Ready (I : Natural) return Boolean is
+            Mem : constant Member_Vectors.Vector := Infos (I).Members;
+         begin
+            for M of Mem loop
+               if M.Is_List and then not Declared (To_String (M.Name), 0) then
+                  return False;
+               end if;
+            end loop;
+            return True;
+         end Rec_Ready;
+
+         function List_Ready (I : Natural) return Boolean is
+            Info : constant Rule_Info := Infos (I);
+            Ent  : constant Member_Vectors.Vector := Info.Elem_Members;
+         begin
+            if not Ent.Is_Empty then
+               for M of Ent loop
+                  if not Declared (To_String (M.Name), I) then
+                     return False;
                   end if;
                end loop;
+            elsif Info.Elem_Name /= Null_Unbounded_String then
+               return Declared (To_String (Info.Elem_Name), I);
+            end if;
+            return True;
+         end List_Ready;
+      begin
+         for I in 1 .. N loop
+            if Infos (I).Kind = List then
+               Left := Left + 1;
+            elsif Infos (I).Kind = Struct then
+               declare
+                  Mem : constant Member_Vectors.Vector := Infos (I).Members;
+               begin
+                  for M of Mem loop
+                     if M.Is_List then
+                        Left := Left + 1;
+                        exit;
+                     end if;
+                  end loop;
+               end;
+            end if;
+         end loop;
+         while Left > 0 loop
+            declare
+               Progress : Boolean := False;
+            begin
+               for I in 1 .. N loop
+                  if Infos (I).Kind = List
+                    and then not List_Done (I) and then List_Ready (I)
+                  then
+                     Append (Res, Emit_List (I, Infos (I)));
+                     Append (Res, LF);
+                     Emitted (I) := True;
+                     List_Done (I) := True;
+                     Left := Left - 1;
+                     Progress := True;
+                  elsif Infos (I).Kind = Struct and then not Rec_Done (I)
+                    and then Rec_Ready (I)
+                  then
+                     Rec_Done (I) := True;
+                     declare
+                        Any : Boolean := False;
+                        Mem : constant Member_Vectors.Vector := Infos (I).Members;
+                     begin
+                        for M of Mem loop
+                           if M.Is_List then
+                              Any := True;
+                              Append (Res, Emit_Vector
+                                (Ada_Ident (To_String (Rules (I).Name)) & "_" &
+                                 Ada_Ident (To_String (M.Name)) & "_Vectors",
+                                 Elem_Type (I, To_String (M.Name)),
+                                 Vector_Pkg (To_String (M.Name))));
+                              Append (Res, LF);
+                           end if;
+                        end loop;
+                        if Any then
+                           Left := Left - 1;
+                           Progress := True;
+                        end if;
+                     end;
+                  end if;
+               end loop;
+               if not Progress then
+                  raise Parse_Error with
+                    "a list's element or entry names a list that names it "
+                    & "back: the vector types would contain each other";
+               end if;
             end;
-         end if;
-      end loop;
+         end loop;
+      end;
 
       --  The fields to hold indirectly are already in Backs, computed at the
       --  top: a cycle with no field to break (an all-alias cycle) is still
@@ -1155,39 +1254,6 @@ package body HBNF_Ada is
       --  Two independent computations of one graph: Emit and Emit_Parser do
       --  not share state, and Back_Edges is a pure function of the rules.
       Backs : constant Edge_Vectors.Vector := Back_Edges_Ada (Rules);
-
-      --  "own" when a rule is the own-line comment, "eol" when it is the
-      --  same-line comment (chasing single-name aliases such as
-      --  `trailing = eol_comment`), "" otherwise.
-      function Comment_Kind (Nm : String; Depth : Natural := 0) return String is
-      begin
-         if Nm = "comment" then
-            return "own";
-         end if;
-         if Nm = "eol_comment" then
-            return "eol";
-         end if;
-         if Depth >= 8 then
-            return "";
-         end if;
-         declare
-            J : constant Natural := Find (Rules, Nm);
-         begin
-            if J = 0 then
-               return "";
-            end if;
-            declare
-               P : constant Element_Vectors.Vector := Rules (J).Pattern;
-            begin
-               if Natural (P.Length) = 1 and then P (1).Kind = Name
-                 and then P (1).Min = 1 and then P (1).Max = 1
-               then
-                  return Comment_Kind (To_String (P (1).Name), Depth + 1);
-               end if;
-            end;
-         end;
-         return "";
-      end Comment_Kind;
 
       function Is_Core (Name : String) return Boolean is
         (Scalar_Ada_Type (Name) /= "");
@@ -1283,37 +1349,56 @@ package body HBNF_Ada is
          end if;
       end Core_Desc;
 
-      function Scalar_Kind (Name : String) return String is
+      --  The core scanner a core scalar reads: `word`/`atom`/`bool`/`flag`
+      --  read the `word` rule, `int`/`uN`/`iN` the `int` rule, `str` the `str`
+      --  rule.  The rule is the grammar's own char rule when it defines one,
+      --  else the built-in scanner of the same name (see Emit_Builtin_Scans).
+      function Core_Base (Name : String) return String is
       begin
          if Name = "str" then
-            return "Str";
+            return "str";
          elsif Name = "int" then
-            return "Int";
-         elsif Name'Length >= 2 then
-            declare
-               P : constant Character := Name (Name'First);
-               R : constant String := Name (Name'First + 1 .. Name'Last);
-            begin
-               if (P = 'u' or else P = 'i')
-                 and then (for all C of R => C in '0' .. '9')
-               then
-                  return "Int";
-               end if;
-            end;
+            return "int";
+         elsif Name'Length >= 2
+           and then (Name (Name'First) = 'u' or else Name (Name'First) = 'i')
+           and then (for all C of Name (Name'First + 1 .. Name'Last)
+                     => C in '0' .. '9')
+         then
+            return "int";
          end if;
-         return "Atom";
-      end Scalar_Kind;
+         return "word";
+      end Core_Base;
 
-      function Scalar_Parse (Name : String) return String is
+      function Scan_Fn (Name : String) return String is
+        ("Scan_" & Ada_Ident (Core_Base (Name)));
+
+      --  The condition that rejects a matched bareword that is a keyword: a
+      --  `word` must not swallow a directive's keyword.  N is the matched
+      --  length, the text starts at P.Pos.
+      function Scalar_Reject (Name : String) return String is
+        (if Name = "atom" or else Name = "word"
+         then " or else Is_Keyword (P.Text (P.Pos .. P.Pos + N - 1))"
+         else "");
+
+      --  The positive form of Scalar_Reject, for a branch that accepts on N: a
+      --  matched bareword must not be a keyword either.
+      function Scalar_Guard (Name : String) return String is
+        (if Name = "atom" or else Name = "word"
+         then " and then not Is_Keyword (P.Text (P.Pos .. P.Pos + N - 1))"
+         else "");
+
+      --  The Ada expression converting the matched text (length N, at P.Pos)
+      --  into the core scalar's value.
+      function Scalar_Value (Name : String) return String is
+         Sl : constant String := "P.Text (P.Pos .. P.Pos + N - 1)";
       begin
-         if Name = "str" or else Name = "atom" or else Name = "word" then
-            return "P.Toks (P.Pos).Text";
+         if Name = "str" then
+            return "Str_Value (" & Sl & ")";
          elsif Name = "int" then
-            return "Long_Long_Integer'Value (To_String (P.Toks (P.Pos).Text))";
+            return "Long_Long_Integer'Value (" & Sl & ")";
          elsif Name = "bool" or else Name = "flag" then
-            return "To_String (P.Toks (P.Pos).Text) = ""yes"" or "
-              & "To_String (P.Toks (P.Pos).Text) = ""on"" or "
-              & "To_String (P.Toks (P.Pos).Text) = ""true""";
+            return Sl & " = ""yes"" or else " & Sl & " = ""on"" or else "
+              & Sl & " = ""true""";
          elsif Name'Length >= 2 then
             declare
                P : constant Character := Name (Name'First);
@@ -1323,50 +1408,91 @@ package body HBNF_Ada is
                  and then (for all C of R => C in '0' .. '9')
                then
                   return (if P = 'u' then "Unsigned_" else "Integer_") & R
-                    & "'Value (To_String (P.Toks (P.Pos).Text))";
+                    & "'Value (" & Sl & ")";
                end if;
             end;
          end if;
-         return "P.Toks (P.Pos).Text";
-      end Scalar_Parse;
+         return "To_Unbounded_String (" & Sl & ")";
+      end Scalar_Value;
 
-      function Start_Kind (Rule_Name : String) return String is
-         J : constant Natural := Find (Rules, Rule_Name);
+      --  A letter-led literal is a keyword: it is matched by the `word`
+      --  scanner, so `in` never matches the front of `input`.  Any other
+      --  literal compares bytes.  (Same rule as the C backend's.)
+      function Is_Keyword_Lit (S : String) return Boolean is
+        (S'Length > 0
+         and then (S (S'First) in 'a' .. 'z'
+                   or else S (S'First) in 'A' .. 'Z'
+                   or else S (S'First) = '_')
+         and then (HBNF_Grammar.Keyword_Table.Is_Empty
+                   or else HBNF_Grammar.Keyword_Table.Contains
+                             (To_Unbounded_String (S))));
+
+      --  The rule phrase rules skip between their elements, "" when none.
+      function Whitespace_Rule_Name return String is
       begin
-         if J = 0 then
-            return "";
-         end if;
-         declare
-            P : constant Element_Vectors.Vector := Rules (J).Pattern;
-         begin
-            if Natural (P.Length) = 1 and then P (1).Kind = HBNF_Grammar.Name
-              and then Is_Core (To_String (P (1).Name))
-            then
-               return Scalar_Kind (To_String (P (1).Name));
+         for I in 1 .. N loop
+            if Rules (I).Whitespace /= Null_Unbounded_String then
+               return To_String (Rules (I).Whitespace);
             end if;
-         end;
+         end loop;
          return "";
-      end Start_Kind;
+      end Whitespace_Rule_Name;
+
+      Ws_Name : constant String := Whitespace_Rule_Name;
+
+      --  The words `word` must not match: the `keywords` table when there is
+      --  one, else every letter-led literal in the grammar, in first-appearance
+      --  order.  (As the C backend collects them.)
+      function Collect_Keywords return String_Vectors.Vector is
+         K : String_Vectors.Vector;
+
+         function Present (X : U) return Boolean is
+           (for some Y of K => Y = X);
+
+         procedure Walk (Els : Element_Vectors.Vector) is
+         begin
+            for E of Els loop
+               case E.Kind is
+                  when Literal =>
+                     if Is_Keyword_Lit (To_String (E.Lit))
+                       and then not Present (E.Lit)
+                     then
+                        K.Append (E.Lit);
+                     end if;
+                  when Group =>
+                     Walk (E.Items);
+                  when others =>
+                     null;
+               end case;
+            end loop;
+         end Walk;
+      begin
+         if not HBNF_Grammar.Keyword_Table.Is_Empty then
+            for W of HBNF_Grammar.Keyword_Table loop
+               K.Append (W);
+            end loop;
+            return K;
+         end if;
+         for I in 1 .. N loop
+            Walk (Rules (I).Pattern);
+         end loop;
+         return K;
+      end Collect_Keywords;
+
+      Keywords : constant String_Vectors.Vector := Collect_Keywords;
+
+      --  The four core scanners a grammar may leave undefined: the compiler
+      --  injects each as a C jet, and this backend has its own Ada for them.
+      function Is_Builtin_Jet (Nm : String) return Boolean is
+        (Nm = "word" or else Nm = "int" or else Nm = "str" or else Nm = "ws");
+
+      --  The scanner a jet rule runs: the built-in Ada one, or the stub for
+      --  hand-written C.
+      function Jet_Fn (Nm : String) return String is
+        ((if Is_Builtin_Jet (Nm) then "Scan_" else "Jet_") & Ada_Ident (Nm));
 
       function Ret_Type (Idx : Natural) return String is
         (Ada_Ident (To_String (Rules (Idx).Name)) & "_Type");
-
-      --  True when some branch of an enum is a punctuation literal
-      --  ("+", "<="): the lexer makes it a punct token, not an atom.
-      function Has_Punct_Lit (V : Element_Vectors.Vector) return Boolean is
-        (for some E of V =>
-           E.Kind = Literal and then Length (E.Lit) > 0
-           and then Ada.Strings.Unbounded.Element (E.Lit, 1) not in
-             'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
-
-      --  The current token's text is literal L: as written, or in any case
-      --  for a %i literal.
-      function Text_Is (L : Element_Access) return String is
-        (if L.No_Case
-         then "Ada.Strings.Equal_Case_Insensitive (To_String (P.Toks (P.Pos).Text), """
-              & Ada_Escape (To_String (L.Lit)) & """)"
-         else "To_String (P.Toks (P.Pos).Text) = """
-              & Ada_Escape (To_String (L.Lit)) & """");
 
       procedure Emit_Seq
         (Owner : Natural;
@@ -1380,31 +1506,73 @@ package body HBNF_Ada is
             begin
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & "Expect_Lit"
-                       & (if E.No_Case then "_Nocase" else "") & " (P, """
-                       & Ada_Escape (To_String (E.Lit)) & """);");
-                     Append (Buf, LF);
+                     declare
+                        Lit : constant String := To_String (E.Lit);
+                     begin
+                        Append (Buf, Ind & "Skip_Ws (P);");
+                        Append (Buf, LF);
+                        Append (Buf, Ind
+                          & (if E.No_Case then "Expect_Word_Nocase"
+                             elsif Is_Keyword_Lit (Lit) then "Expect_Word"
+                             else "Expect_Lit")
+                          & " (P, """ & Ada_Escape (Lit) & """);");
+                        Append (Buf, LF);
+                     end;
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
-                        Append (Buf, Ind & "Expect_Kind (P, "
-                          & Scalar_Kind (To_String (E.Name)) & ", """
-                          & Core_Desc (To_String (E.Name)) & """);");
-                        Append (Buf, LF);
-                        Append (Buf, Ind & Dst
-                          & Ada_Field (To_String (E.Name)) & " := "
-                          & Scalar_Parse (To_String (E.Name)) & "; P.Pos := P.Pos + 1;");
-                        Append (Buf, LF);
+                        --  A core scalar: run its scanner at the position and
+                        --  convert the matched text.
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           Append (Buf, Ind & "Skip_Ws (P);");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "declare");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   N : constant Natural := "
+                             & Scan_Fn (NM)
+                             & " (P.Text.all, P.Pos, P.Text'Last);");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "begin");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   if N = 0" & Scalar_Reject (NM)
+                             & " then Fail (P, """ & Core_Desc (NM)
+                             & """); end if;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   " & Dst
+                             & Ada_Field (NM) & " := " & Scalar_Value (NM)
+                             & "; P.Pos := P.Pos + N;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "end;");
+                           Append (Buf, LF);
+                        end;
                      elsif Is_Char_Rule (Rules, To_String (E.Name)) then
-                        --  A char-rule reference matches its token and yields
-                        --  the matched text, as a core `str` would.
-                        Append (Buf, Ind & "Expect_Kind (P, "
-                          & Ada_Field (To_String (E.Name)) & ", """
-                          & To_String (E.Name) & """);");
-                        Append (Buf, LF);
-                        Append (Buf, Ind & Dst
-                          & Ada_Field (To_String (E.Name))
-                          & " := P.Toks (P.Pos).Text; P.Pos := P.Pos + 1;");
-                        Append (Buf, LF);
+                        --  A char-rule reference runs its scanner here and
+                        --  yields the matched text, as a core `str` would.
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           Append (Buf, Ind & "Skip_Ws (P);");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "declare");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   N : constant Natural := Scan_"
+                             & Ada_Ident (NM)
+                             & " (P.Text.all, P.Pos, P.Text'Last);");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "begin");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   if N = 0 then Fail (P, """
+                             & NM & """); end if;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   " & Dst & Ada_Field (NM)
+                             & " := To_Unbounded_String"
+                             & " (P.Text (P.Pos .. P.Pos + N - 1));"
+                             & " P.Pos := P.Pos + N;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "end;");
+                           Append (Buf, LF);
+                        end;
                      else
                         declare
                            NM : constant String := To_String (E.Name);
@@ -1421,6 +1589,8 @@ package body HBNF_Ada is
                                 & "_Type"
                               else Ada_Ident (NM) & "_Type");
                         begin
+                           Append (Buf, Ind & "Skip_Ws (P);");
+                           Append (Buf, LF);
                            if Alloc_Records
                              and then (Is_Struct (NM) or else Back)
                            then
@@ -1523,30 +1693,59 @@ package body HBNF_Ada is
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
          SU : constant String := (if not Is_List then Scalar_Union_Type (Rules, P) else "");
+
+         --  The lines that run a scanner at the position and, when it matched,
+         --  yield the text: a char rule, or a jet (a built-in scanner or the
+         --  stub for C code this backend cannot run).
+         procedure Emit_Scan_Text (Fn, Desc : String) is
+         begin
+            Append (Buf, "      declare");
+            Append (Buf, LF);
+            Append (Buf, "         N : constant Natural := " & Fn
+              & " (P.Text.all, P.Pos, P.Text'Last);");
+            Append (Buf, LF);
+            Append (Buf, "      begin");
+            Append (Buf, LF);
+            Append (Buf, "         if N = 0 then Fail (P, """ & Desc & """); end if;");
+            Append (Buf, LF);
+            Append (Buf, "         R := To_Unbounded_String (P.Text (P.Pos .. P.Pos + N - 1));");
+            Append (Buf, LF);
+            Append (Buf, "         P.Pos := P.Pos + N;");
+            Append (Buf, LF);
+            Append (Buf, "         return R;");
+            Append (Buf, LF);
+            Append (Buf, "      end;");
+            Append (Buf, LF);
+         end Emit_Scan_Text;
+
+         --  The condition that literal L is at the position: a keyword by the
+         --  `word` scanner (so `in` never matches `input`), any other literal
+         --  by its bytes; in any case for a %i literal.
+         function Lit_At (L : Element_Access) return String is
+            S  : constant String := To_String (L.Lit);
+            NL : constant String := Img (S'Length);
+            Sl : constant String := "P.Text (P.Pos .. P.Pos + " & NL & " - 1)";
+            Eq : constant String :=
+              (if L.No_Case
+               then "Ada.Strings.Equal_Case_Insensitive (" & Sl & ", """
+                    & Ada_Escape (S) & """)"
+               else Sl & " = """ & Ada_Escape (S) & """");
+         begin
+            if Is_Keyword_Lit (S) then
+               return "Scan_Word (P.Text.all, P.Pos, P.Text'Last) = " & NL
+                 & " and then " & Eq;
+            end if;
+            return "P.Pos + " & NL & " - 1 <= P.Text'Last and then " & Eq;
+         end Lit_At;
       begin
          if Is_Char_Rule (Rules, NM) then
-            --  A char rule is a token: expect its kind and capture the text.
-            --  A core-type char rule reuses the base Token_Kind.
-            Append (Buf, "      Expect_Kind (P, "
-              & (if Is_Core_Name (NM) then Scalar_Kind (NM)
-                 else Ada_Field (NM)) & ", """
-              & NM & """);");
-            Append (Buf, LF);
-            Append (Buf, "      R := P.Toks (P.Pos).Text; P.Pos := P.Pos + 1;");
-            Append (Buf, LF);
-            Append (Buf, "      return R;");
-            Append (Buf, LF);
+            --  A char rule is a scanner: run it here and capture the text.
+            Emit_Scan_Text ("Scan_" & Ada_Ident (NM), NM);
             return;
          end if;
          if R.Jet_Code /= Null_Unbounded_String then
-            --  A jet is a hand-written C scanner; this backend can't run it,
-            --  so read the token the generic lexer produced instead.
-            Append (Buf, "      Expect_Kind (P, Atom, ""a " & NM & """);");
-            Append (Buf, LF);
-            Append (Buf, "      R := P.Toks (P.Pos).Text; P.Pos := P.Pos + 1;");
-            Append (Buf, LF);
-            Append (Buf, "      return R;");
-            Append (Buf, LF);
+            --  A jet: its scanner (a built-in) or the stub for hand-written C.
+            Emit_Scan_Text (Jet_Fn (NM), "a " & NM);
             return;
          end if;
          if Is_List then
@@ -1584,44 +1783,49 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                end if;
                if Simple /= Null_Unbounded_String then
-                  declare
-                     SK : constant String := Start_Kind (To_String (Simple));
-                  begin
-                     --  PEG's `*`: stop at the end of input (the token
-                     --  vector ends in Eof), and at the first element that
-                     --  fails, with the position restored; the caller then
-                     --  decides.  (The loop used to run into Eof and raise,
-                     --  so every list-root schema failed.)
-                     Append (Buf, "      loop");
+                  --  PEG's `*`: stop at the end of input and at the first
+                  --  element that fails, with the position restored; the
+                  --  caller then decides.
+                  Append (Buf, "      loop");
+                  Append (Buf, LF);
+                  if E.Max >= 0 then
+                     Append (Buf, "         exit when Natural (R.Length) >= "
+                       & Img (Natural (E.Max)) & ";");
                      Append (Buf, LF);
-                     Append (Buf, "         exit when P.Pos > Natural (P.Toks.Length)"
-                       & " or else P.Toks (P.Pos).Kind = Eof"
-                       & (if SK /= ""
-                          then " or else P.Toks (P.Pos).Kind /= " & SK
-                          else "") & ";");
-                     Append (Buf, LF);
-                     if E.Max >= 0 then
-                        Append (Buf, "         exit when Natural (R.Length) >= "
-                          & Img (Natural (E.Max)) & ";");
-                        Append (Buf, LF);
-                     end if;
-                  end;
+                  end if;
                   Append (Buf, "         declare");
                   Append (Buf, LF);
                   Append (Buf, "            Start : constant Natural := P.Pos;");
                   Append (Buf, LF);
                   Append (Buf, "         begin");
                   Append (Buf, LF);
+                  Append (Buf, "            Skip_Ws (P);");
+                  Append (Buf, LF);
+                  if not Repeated_Body_Nullable (Rules, E) then
+                     Append (Buf, "            if P.Pos > P.Text'Last then P.Pos := Start; exit; end if;");
+                     Append (Buf, LF);
+                  end if;
                   if Is_Core (To_String (Simple)) then
-                     --  A list of a core type (`*word`): read the token in
+                     --  A list of a core type (`*word`): read the text in
                      --  place; there is no Parse_ function for a core type.
-                     Append (Buf, "            exit when P.Toks (P.Pos).Kind /= "
-                       & Scalar_Kind (To_String (Simple)) & ";");
+                     Append (Buf, "            declare");
                      Append (Buf, LF);
-                     Append (Buf, "            R.Append ("
-                       & Scalar_Parse (To_String (Simple)) & ");");
+                     Append (Buf, "               N : constant Natural := "
+                       & Scan_Fn (To_String (Simple))
+                       & " (P.Text.all, P.Pos, P.Text'Last);");
                      Append (Buf, LF);
-                     Append (Buf, "            P.Pos := P.Pos + 1;");
+                     Append (Buf, "            begin");
+                     Append (Buf, LF);
+                     Append (Buf, "               if N = 0"
+                       & Scalar_Reject (To_String (Simple))
+                       & " then P.Pos := Start; exit; end if;");
+                     Append (Buf, LF);
+                     Append (Buf, "               R.Append ("
+                       & Scalar_Value (To_String (Simple)) & ");");
+                     Append (Buf, LF);
+                     Append (Buf, "               P.Pos := P.Pos + N;");
+                     Append (Buf, LF);
+                     Append (Buf, "            end;");
                   elsif Is_Struct (To_String (Simple)) then
                      Append (Buf, "            R.Append (new "
                        & Ada_Ident (To_String (Simple)) & "_Type'(Parse_"
@@ -1631,6 +1835,12 @@ package body HBNF_Ada is
                        & Ada_Ident (To_String (Simple)) & " (P));");
                   end if;
                   Append (Buf, LF);
+                  --  What is repeated can match nothing: an iteration that
+                  --  did not advance would match the same nothing again.
+                  if Repeated_Body_Nullable (Rules, E) then
+                     Append (Buf, "            exit when P.Pos = Start;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "         exception");
                   Append (Buf, LF);
                   Append (Buf, "            when Parse_Error => P.Pos := Start; exit;");
@@ -1703,6 +1913,10 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                   Append (Buf, "            R.Append (E);");
                   Append (Buf, LF);
+                  if Repeated_Body_Nullable (Rules, E) then
+                     Append (Buf, "            exit when P.Pos = Save;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "         end;");
                   Append (Buf, LF);
                   Append (Buf, "      end loop;");
@@ -1719,12 +1933,9 @@ package body HBNF_Ada is
                Append (Buf, LF);
             end;
          elsif Is_Enum then
-            if Has_Punct_Lit (P) then
-               Append (Buf, "      if P.Toks (P.Pos).Kind /= Atom and then P.Toks (P.Pos).Kind /= Punct"
-                 & " then Fail (P, ""a " & TN & """); end if;");
-            else
-               Append (Buf, "      Expect_Kind (P, Atom, ""a " & TN & """);");
-            end if;
+            --  Each alternative matches its literal at the position, in order:
+            --  a keyword by the `word` scanner, any other literal by its bytes.
+            Append (Buf, "      if P.Pos > P.Text'Last then Fail (P, ""a " & TN & """); end if;");
             Append (Buf, LF);
             declare
                Lits   : String_Vectors.Vector;
@@ -1747,8 +1958,12 @@ package body HBNF_Ada is
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
                      if St <= K - 1 and then P (St).Kind = Literal then
                         Append (Buf, (if Branch = 0 then "      if " else "      elsif ")
-                          & Text_Is (P (St)) & " then R := "
-                          & Ada_Ident (NM) & "_" & To_String (Names (Branch + 1)) & ";");
+                          & Lit_At (P (St)) & " then");
+                        Append (Buf, LF);
+                        Append (Buf, "         R := " & Ada_Ident (NM) & "_"
+                          & To_String (Names (Branch + 1))
+                          & "; P.Pos := P.Pos + "
+                          & Img (To_String (P (St).Lit)'Length) & ";");
                         Append (Buf, LF);
                         Branch := Branch + 1;
                      end if;
@@ -1776,21 +1991,31 @@ package body HBNF_Ada is
             end;
             Append (Buf, """); end if;");
             Append (Buf, LF);
-            Append (Buf, "      P.Pos := P.Pos + 1;");
-            Append (Buf, LF);
             Append (Buf, "      return R;");
             Append (Buf, LF);
          elsif Natural (P.Length) = 1 and then P (1).Kind = Name then
             if Is_Core (To_String (P (1).Name)) then
-               Append (Buf, "      Expect_Kind (P, "
-                 & Scalar_Kind (To_String (P (1).Name)) & ", """
-                 & Core_Desc (To_String (P (1).Name)) & """);");
-               Append (Buf, LF);
-               Append (Buf, "      R := " & Scalar_Parse (To_String (P (1).Name))
-                 & "; P.Pos := P.Pos + 1;");
-               Append (Buf, LF);
-               Append (Buf, "      return R;");
-               Append (Buf, LF);
+               declare
+                  CN : constant String := To_String (P (1).Name);
+               begin
+                  Append (Buf, "      declare");
+                  Append (Buf, LF);
+                  Append (Buf, "         N : constant Natural := " & Scan_Fn (CN)
+                    & " (P.Text.all, P.Pos, P.Text'Last);");
+                  Append (Buf, LF);
+                  Append (Buf, "      begin");
+                  Append (Buf, LF);
+                  Append (Buf, "         if N = 0" & Scalar_Reject (CN)
+                    & " then Fail (P, """ & Core_Desc (CN) & """); end if;");
+                  Append (Buf, LF);
+                  Append (Buf, "         R := " & Scalar_Value (CN)
+                    & "; P.Pos := P.Pos + N;");
+                  Append (Buf, LF);
+                  Append (Buf, "         return R;");
+                  Append (Buf, LF);
+                  Append (Buf, "      end;");
+                  Append (Buf, LF);
+               end;
             else
                Append (Buf, "      return Parse_"
                  & Ada_Ident (To_String (P (1).Name)) & " (P);");
@@ -1809,14 +2034,28 @@ package body HBNF_Ada is
                            E : constant Element_Access := P (St);
                         begin
                            if E.Kind = Name and then Is_Core (To_String (E.Name)) then
-                              Append (Buf, "      if P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind = "
-                                & Scalar_Kind (To_String (E.Name)) & " then");
-                              Append (Buf, LF);
-                              Append (Buf, "         R := " & Scalar_Parse (To_String (E.Name))
-                                & "; P.Pos := P.Pos + 1; return R;");
-                              Append (Buf, LF);
-                              Append (Buf, "      end if;");
-                              Append (Buf, LF);
+                              declare
+                                 CN : constant String := To_String (E.Name);
+                              begin
+                                 Append (Buf, "      declare");
+                                 Append (Buf, LF);
+                                 Append (Buf, "         N : constant Natural := "
+                                   & Scan_Fn (CN)
+                                   & " (P.Text.all, P.Pos, P.Text'Last);");
+                                 Append (Buf, LF);
+                                 Append (Buf, "      begin");
+                                 Append (Buf, LF);
+                                 Append (Buf, "         if N > 0"
+                                   & Scalar_Guard (CN) & " then");
+                                 Append (Buf, LF);
+                                 Append (Buf, "            R := " & Scalar_Value (CN)
+                                   & "; P.Pos := P.Pos + N; return R;");
+                                 Append (Buf, LF);
+                                 Append (Buf, "         end if;");
+                                 Append (Buf, LF);
+                                 Append (Buf, "      end;");
+                                 Append (Buf, LF);
+                              end;
                            elsif E.Kind = Name then
                               Append (Buf, "      begin");
                               Append (Buf, LF);
@@ -1868,6 +2107,92 @@ package body HBNF_Ada is
 
       Spec  : U;
       Bdy  : U;
+
+      --  The built-in scanners, for each of word/int/str/ws that is a jet in
+      --  the grammar (not defined as a char rule), and `word` besides when
+      --  the grammar names no `word` at all, since a keyword is matched by it.
+      procedure Emit_Builtin_Scans is
+         function Is_Jet (Nm : String) return Boolean is
+            J : constant Natural := Find (Rules, Nm);
+         begin
+            return J > 0 and then Rules (J).Jet_Code /= Null_Unbounded_String;
+         end Is_Jet;
+
+         procedure Put (Text : String) is
+         begin
+            Append (Bdy, Text);
+            Append (Bdy, LF);
+         end Put;
+      begin
+         if Is_Jet ("word") or else Find (Rules, "word") = 0 then
+            Put ("   function Scan_Word (S : String; Pos, Len : Natural) return Natural is");
+            Put ("      I : Natural := Pos;");
+            Put ("   begin");
+            Put ("      if I > Len");
+            Put ("        or else S (I) not in 'a' .. 'z' | 'A' .. 'Z' | '_' | '-'");
+            Put ("      then");
+            Put ("         return 0;");
+            Put ("      end if;");
+            Put ("      I := I + 1;");
+            Put ("      while I <= Len");
+            Put ("        and then S (I) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.'");
+            Put ("      loop");
+            Put ("         I := I + 1;");
+            Put ("      end loop;");
+            Put ("      return I - Pos;");
+            Put ("   end Scan_Word;");
+            Put ("");
+         end if;
+         if Is_Jet ("int") then
+            Put ("   function Scan_Int (S : String; Pos, Len : Natural) return Natural is");
+            Put ("      I     : Natural := Pos;");
+            Put ("      Start : Natural;");
+            Put ("   begin");
+            Put ("      if I < Len and then S (I) = '-' and then S (I + 1) in '0' .. '9' then");
+            Put ("         I := I + 1;");
+            Put ("      end if;");
+            Put ("      Start := I;");
+            Put ("      while I <= Len and then S (I) in '0' .. '9' loop");
+            Put ("         I := I + 1;");
+            Put ("      end loop;");
+            Put ("      return (if I > Start then I - Pos else 0);");
+            Put ("   end Scan_Int;");
+            Put ("");
+         end if;
+         if Is_Jet ("str") then
+            Put ("   function Scan_Str (S : String; Pos, Len : Natural) return Natural is");
+            Put ("      I : Natural;");
+            Put ("   begin");
+            Put ("      if Pos > Len or else S (Pos) /= '""' then");
+            Put ("         return 0;");
+            Put ("      end if;");
+            Put ("      I := Pos + 1;");
+            Put ("      while I <= Len and then S (I) /= '""' loop");
+            Put ("         if S (I) = '\' and then I < Len then");
+            Put ("            I := I + 1;");
+            Put ("         end if;");
+            Put ("         I := I + 1;");
+            Put ("      end loop;");
+            Put ("      if I > Len then");
+            Put ("         return 0;");
+            Put ("      end if;");
+            Put ("      return I + 1 - Pos;");
+            Put ("   end Scan_Str;");
+            Put ("");
+         end if;
+         if Is_Jet ("ws") then
+            Put ("   function Scan_Ws (S : String; Pos, Len : Natural) return Natural is");
+            Put ("   begin");
+            Put ("      if Pos <= Len");
+            Put ("        and then S (Pos) in ' ' | ASCII.HT | ASCII.CR | ASCII.LF");
+            Put ("      then");
+            Put ("         return 1;");
+            Put ("      end if;");
+            Put ("      return 0;");
+            Put ("   end Scan_Ws;");
+            Put ("");
+         end if;
+      end Emit_Builtin_Scans;
 
       --  The generated Free_<rule> declarations (for the child spec) and
       --  bodies (for the child body), filled once before either is rendered.
@@ -2158,182 +2483,52 @@ package body HBNF_Ada is
          end loop;
       end;
 
-      --  Package specification: token types, the exception, Parse_Config.
+      --  Package specification: the exception and Parse_Text (and Parse_Config).
       declare
-         Kind_Ext : U;
          Conf_Decl : constant String :=
            (if Conf
             then "   function Parse_Config (Filename : String) return "
                  & Ret_Type (1) & ";" & LF & LF
             else "");
+         V : Mustache.Context := Mustache.View;
       begin
-         for I in 1 .. N loop
-            if Rules (I).Jet_Code /= Null_Unbounded_String then
-               declare
-                  K : constant String := Ada_Field (To_String (Rules (I).Name));
-               begin
-                  if K not in "Atom" | "Str" | "Int" | "Punct" | "Eof" then
-                     Append (Kind_Ext, ", " & K);
-                  end if;
-               end;
-            end if;
-         end loop;
-         for I in 1 .. N loop
-            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
-               declare
-                  NM : constant String := To_String (Rules (I).Name);
-               begin
-                  --  A core-type char rule reuses the base kind; another token
-                  --  takes its own; a building block is inlined, no kind at all.
-                  if not Is_Core_Name (NM)
-                    and then Is_Char_Token (Rules, NM)
-                  then
-                     Append (Kind_Ext, ", " & Ada_Field (NM));
-                  end if;
-               end;
-            end if;
-         end loop;
-         declare
-            V : Mustache.Context := Mustache.View;
-         begin
-            Mustache.Put (V, "pkg", Package_Name);
-            Mustache.Put (V, "kind", To_String (Kind_Ext));
-            Mustache.Put (V, "ret", Ret_Type (1));
-            Mustache.Put (V, "conf", Conf_Decl);
-            Mustache.Put (V, "frees", To_String (Free_Decls));
-            Append (Spec, Mustache.Render_File ("ada_parser_spec", V));
-         end;
+         Mustache.Put (V, "pkg", Package_Name);
+         Mustache.Put (V, "ret", Ret_Type (1));
+         Mustache.Put (V, "conf", Conf_Decl);
+         Mustache.Put (V, "frees", To_String (Free_Decls));
+         Append (Spec, Mustache.Render_File ("ada_parser_spec", V));
          Append (Spec, LF);
       end;
 
-      --  Package body: the parser itself (the lexer is a separate template).
+      --  Package body, in the order Ada needs: the scanners, then the parser
+      --  primitives that call them, then the rules.
       declare
-         Nocase_Proc : U;
          Nocase_With : constant String :=
            (if Has_No_Case (Rules)
             then "with Ada.Strings.Equal_Case_Insensitive;" & LF
             else "");
          Conf_With : constant String :=
            (if Conf then "with Ada.Text_IO;" & LF else "");
+         V : Mustache.Context := Mustache.View;
       begin
-         if Has_No_Case (Rules) then
-            Append (Nocase_Proc,
-              "   procedure Expect_Lit_Nocase (P : in out Parser; Lit : String) is");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc, "   begin");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc, "      if P.Pos <= Natural (P.Toks.Length)");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc,
-              "        and then (P.Toks (P.Pos).Kind = Atom or else P.Toks (P.Pos).Kind = Punct)");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc,
-              "        and then Ada.Strings.Equal_Case_Insensitive (To_String (P.Toks (P.Pos).Text), Lit)");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc, "      then");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc, "         P.Pos := P.Pos + 1;");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc, "      else");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc, "         Fail (P, ""`"" & Lit & ""`"");");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc, "      end if;");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc, "   end Expect_Lit_Nocase;");
-            Append (Nocase_Proc, LF);
-            Append (Nocase_Proc, LF);
-         end if;
-         declare
-            V : Mustache.Context := Mustache.View;
-         begin
-            Mustache.Put (V, "pkg", Package_Name);
-            Mustache.Put (V, "nocase_with", Nocase_With);
-            Mustache.Put (V, "conf_with", Conf_With);
-            Mustache.Put (V, "nocase_proc", To_String (Nocase_Proc));
-            Mustache.Put (V, "free_with",
-              "with Ada.Unchecked_Deallocation;" & LF);
-            Append (Bdy, Mustache.Render_File ("ada_parser_body", V));
-         end;
-         Append (Bdy, LF);
-         Append (Bdy, LF);
-         Append (Bdy, To_String (Free_Body));
+         Mustache.Put (V, "pkg", Package_Name);
+         Mustache.Put (V, "nocase_with", Nocase_With);
+         Mustache.Put (V, "conf_with", Conf_With);
+         Mustache.Put (V, "free_with", "with Ada.Unchecked_Deallocation;" & LF);
+         Append (Bdy, Mustache.Render_File ("ada_parser_body", V));
       end;
 
-      --  Forward declarations: a rule may call any other, in any order.
-      --  A core-type char rule (str/int/word) is read as a scalar in place,
-      --  and a building block is inlined into a token's scanner; neither
-      --  needs a Parse function of its own.
+      --  The scanners.  A core rule the grammar does not define (`word`,
+      --  `int`, `str`, `ws`) is a built-in: hand-written Ada, the same scan
+      --  the C backend's jets make.  Any other jet is hand-written C, which
+      --  this backend cannot run, so it is a stub that matches nothing.
+      Emit_Builtin_Scans;
       for I in 1 .. N loop
-         declare
-            NM : constant String := To_String (Rules (I).Name);
-         begin
-            if not (Is_Char_Rule (Rules, NM)
-                    and then (Is_Core_Name (NM)
-                              or else not Is_Char_Token (Rules, NM)))
-            then
-               Append (Bdy, "   function Parse_" & Ada_Ident (NM)
-                 & " (P : in out Parser) return " & Ret_Type (I) & ";");
-               Append (Bdy, LF);
-            end if;
-         end;
-      end loop;
-      Append (Bdy, LF);
-
-      for I in 1 .. N loop
-         declare
-            NM : constant String := To_String (Rules (I).Name);
-         begin
-            if not (Is_Char_Rule (Rules, NM)
-                    and then (Is_Core_Name (NM)
-                              or else not Is_Char_Token (Rules, NM)))
-            then
-               Append (Bdy, "   function Parse_" & Ada_Ident (NM)
-                 & " (P : in out Parser) return " & Ret_Type (I) & " is");
-               Append (Bdy, LF);
-               Emit_Rule_Decl (I, Bdy);
-               Append (Bdy, "   begin");
-               Append (Bdy, LF);
-               Emit_Rule_Parser (I, Bdy);
-               Append (Bdy, "   end Parse_" & Ada_Ident (NM) & ";");
-               Append (Bdy, LF);
-               Append (Bdy, LF);
-            end if;
-         end;
-      end loop;
-
-      Append (Bdy, "   function Parse_Tokens");
-      Append (Bdy, LF);
-      Append (Bdy, "     (Toks  : Token_Vectors.Vector;");
-      Append (Bdy, LF);
-      Append (Bdy, "      Lines : Line_Vectors.Vector) return " & Ret_Type (1) & " is");
-      Append (Bdy, LF);
-      Append (Bdy, "      P : Parser := (Toks => Toks, Lines => Lines, Pos => 1);");
-      Append (Bdy, LF);
-      Append (Bdy, "      R : " & Ret_Type (1) & ";");
-      Append (Bdy, LF);
-      Append (Bdy, "   begin");
-      Append (Bdy, LF);
-      Append (Bdy, "      R := Parse_" & Ada_Ident (To_String (Rules (1).Name)) & " (P);");
-      Append (Bdy, LF);
-      Append (Bdy, "      if P.Pos <= Natural (P.Toks.Length) and then P.Toks (P.Pos).Kind /= Eof then");
-      Append (Bdy, LF);
-      Append (Bdy, "         Fail (P, ""end of config"");");
-      Append (Bdy, LF);
-      Append (Bdy, "      end if;");
-      Append (Bdy, LF);
-      Append (Bdy, "      return R;");
-      Append (Bdy, LF);
-      Append (Bdy, "   end Parse_Tokens;");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
-
-      --  Jets: hand-written scanners, plus the dispatch the lexer calls.
-      for I in 1 .. N loop
-         if Rules (I).Jet_Code /= Null_Unbounded_String then
+         if Rules (I).Jet_Code /= Null_Unbounded_String
+           and then not Is_Builtin_Jet (To_String (Rules (I).Name))
+         then
             declare
-               R  : constant Rule := Rules (I);
-               NM : constant String := To_String (R.Name);
+               NM : constant String := To_String (Rules (I).Name);
             begin
                Append (Bdy, "   function Jet_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
@@ -2342,7 +2537,7 @@ package body HBNF_Ada is
                Append (Bdy, LF);
                Append (Bdy, "   begin");
                Append (Bdy, LF);
-               Append (Bdy, "      return 0;");
+               Append (Bdy, "      return 0;  --  a %scan{} jet: C code only");
                Append (Bdy, LF);
                Append (Bdy, "   end Jet_" & Ada_Ident (NM) & ";");
                Append (Bdy, LF);
@@ -2351,41 +2546,16 @@ package body HBNF_Ada is
          end if;
       end loop;
 
-      Append (Bdy, "   function Jet_Dispatch (S : String; Pos, Len : Natural;"
-        & " Kind : out Token_Kind) return Natural is");
-      Append (Bdy, LF);
-      Append (Bdy, "      N : Natural;");
-      Append (Bdy, LF);
-      Append (Bdy, "   begin");
-      Append (Bdy, LF);
-      for I in 1 .. N loop
-         if Rules (I).Jet_Code /= Null_Unbounded_String then
-            declare
-               NM : constant String := To_String (Rules (I).Name);
-            begin
-               Append (Bdy, "      N := Jet_" & Ada_Ident (NM)
-                 & " (S, Pos, Len); if N > 0 then Kind := " & Ada_Field (NM)
-                 & "; return N; end if;");
-               Append (Bdy, LF);
-            end;
-         end if;
-      end loop;
-      Append (Bdy, "      return 0;");
-      Append (Bdy, LF);
-      Append (Bdy, "   end Jet_Dispatch;");
-      Append (Bdy, LF);
-      Append (Bdy, LF);
-
       --  Character-layer scanners (code-point matching, mirroring the C
       --  backend): each char-level rule compiles to a scanner over decoded
-      --  UTF-8 code points, and Char_Dispatch takes the longest match --
-      --  maximal munch.  The lexer calls Char_Dispatch after Jet_Dispatch.
+      --  UTF-8 code points, and a phrase rule runs it where it names the rule.
       declare
          Has_Char : Boolean := False;
       begin
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-              and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+              and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
+                        or else To_String (Rules (I).Name) = Ws_Name)
             then
                Has_Char := True;
             end if;
@@ -2445,80 +2615,13 @@ package body HBNF_Ada is
 
       for I in 1 .. N loop
          if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-           and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+           and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
+                     or else To_String (Rules (I).Name) = Ws_Name)
          then
             declare
                NM  : constant String := To_String (Rules (I).Name);
                DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
 
-               procedure Emit_Guard (Kind : String) is
-               begin
-                  if Kind = "own" then
-                     Append (Bdy, "      declare");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         I : Natural := Pos;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      begin");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         while I > S'First loop");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            exit when S (I - 1) = ASCII.LF;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            if S (I - 1) /= ' ' and then S (I - 1) /= ASCII.HT");
-                     Append (Bdy, LF);
-                     Append (Bdy, "              and then S (I - 1) /= ASCII.CR");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            then");
-                     Append (Bdy, LF);
-                     Append (Bdy, "               return 0;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            end if;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            I := I - 1;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         end loop;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      end;");
-                     Append (Bdy, LF);
-                  elsif Kind = "eol" then
-                     Append (Bdy, "      declare");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         I   : Natural := Pos;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         Own : Boolean := True;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      begin");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         while I > S'First loop");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            exit when S (I - 1) = ASCII.LF;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            if S (I - 1) /= ' ' and then S (I - 1) /= ASCII.HT");
-                     Append (Bdy, LF);
-                     Append (Bdy, "              and then S (I - 1) /= ASCII.CR");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            then");
-                     Append (Bdy, LF);
-                     Append (Bdy, "               Own := False;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "               exit;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            end if;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            I := I - 1;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         end loop;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         if Own then");
-                     Append (Bdy, LF);
-                     Append (Bdy, "            return 0;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "         end if;");
-                     Append (Bdy, LF);
-                     Append (Bdy, "      end;");
-                     Append (Bdy, LF);
-                  end if;
-               end Emit_Guard;
             begin
                Append (Bdy, "   function Scan_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
@@ -2534,7 +2637,6 @@ package body HBNF_Ada is
                   Append (Bdy, LF);
                   Append (Bdy, "   begin");
                   Append (Bdy, LF);
-                  Emit_Guard (Comment_Kind (NM));
                   for A of DNF (1) loop
                      case A.Kind is
                         when Single =>
@@ -2565,7 +2667,6 @@ package body HBNF_Ada is
                   Append (Bdy, LF);
                   Append (Bdy, "   begin");
                   Append (Bdy, LF);
-                  Emit_Guard (Comment_Kind (NM));
                   for B of DNF loop
                      Append (Bdy, "      Off := 0;");
                      Append (Bdy, LF);
@@ -2606,48 +2707,114 @@ package body HBNF_Ada is
          end if;
       end loop;
 
-      Append (Bdy, "   function Char_Dispatch (S : String; Pos, Len : Natural; Kind : out Token_Kind) return Natural is");
-      Append (Bdy, LF);
-      Append (Bdy, "      Best : Natural := 0;");
-      Append (Bdy, LF);
-      Append (Bdy, "      N    : Natural;");
-      Append (Bdy, LF);
-      Append (Bdy, "   begin");
-      Append (Bdy, LF);
-      Append (Bdy, "      Kind := Eof;");
-      Append (Bdy, LF);
-      for I in 1 .. N loop
-         if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-           and then Is_Char_Token (Rules, To_String (Rules (I).Name))
-         then
-            declare
-               NM : constant String := To_String (Rules (I).Name);
-               --  A core-type char rule reuses the base Token_Kind.
-               Kind : constant String :=
-                 (if Is_Core_Name (NM) then Scalar_Kind (NM)
-                  else Ada_Field (NM));
-            begin
-               Append (Bdy, "      N := Scan_" & Ada_Ident (NM)
-                 & " (S, Pos, Len); if N > Best then Best := N; Kind := "
-                 & Kind & "; end if;");
-               Append (Bdy, LF);
-            end;
+
+      --  The parser primitives (position, errors, literals, whitespace).
+      declare
+         Nocase_Proc : U;
+         Skip_Body   : U;
+         Kw_Fn       : U;
+         V : Mustache.Context := Mustache.View;
+      begin
+         if Has_No_Case (Rules) then
+            Append (Nocase_Proc,
+              "   procedure Expect_Word_Nocase (P : in out Parser; Lit : String) is" & LF
+              & "      N : constant Natural := Scan_Word (P.Text.all, P.Pos, P.Text'Last);" & LF
+              & "   begin" & LF
+              & "      if N = Lit'Length" & LF
+              & "        and then Ada.Strings.Equal_Case_Insensitive" & LF
+              & "                   (P.Text (P.Pos .. P.Pos + N - 1), Lit)" & LF
+              & "      then" & LF
+              & "         P.Pos := P.Pos + N;" & LF
+              & "      else" & LF
+              & "         Fail (P, ""`"" & Lit & ""`"");" & LF
+              & "      end if;" & LF
+              & "   end Expect_Word_Nocase;" & LF & LF);
          end if;
+         if Ws_Name = "" then
+            Append (Skip_Body, "   begin" & LF & "      null;" & LF
+              & "   end Skip_Ws;");
+         else
+            Append (Skip_Body, "      N : Natural;" & LF & "   begin" & LF
+              & "      loop" & LF
+              & "         N := Scan_" & Ada_Ident (Ws_Name)
+              & " (P.Text.all, P.Pos, P.Text'Last);" & LF
+              & "         exit when N = 0;" & LF
+              & "         P.Pos := P.Pos + N;" & LF
+              & "      end loop;" & LF
+              & "   end Skip_Ws;");
+         end if;
+         Append (Kw_Fn, "   function Is_Keyword (S : String) return Boolean is" & LF
+           & "   begin" & LF);
+         if Keywords.Is_Empty then
+            Append (Kw_Fn, "      pragma Unreferenced (S);" & LF
+              & "      return False;" & LF);
+         else
+            Append (Kw_Fn, "      return");
+            for K in 1 .. Natural (Keywords.Length) loop
+               Append (Kw_Fn, (if K = 1 then " " else LF & "        or else ")
+                 & "S = """ & Ada_Escape (To_String (Keywords (K))) & """");
+            end loop;
+            Append (Kw_Fn, ";" & LF);
+         end if;
+         Append (Kw_Fn, "   end Is_Keyword;" & LF);
+         Mustache.Put (V, "nocase_proc", To_String (Nocase_Proc));
+         Mustache.Put (V, "skip_ws", To_String (Skip_Body));
+         Mustache.Put (V, "keyword_fn", To_String (Kw_Fn));
+         Append (Bdy, Mustache.Render_File ("ada_parser_prims", V));
+      end;
+      Append (Bdy, LF);
+      Append (Bdy, To_String (Free_Body));
+
+      --  Forward declarations: a rule may call any other, in any order.
+      --  A core-type char rule (str/int/word) is read as a scalar in place,
+      --  and a building block is inlined into a scanner; neither needs a
+      --  Parse function of its own.
+      for I in 1 .. N loop
+         declare
+            NM : constant String := To_String (Rules (I).Name);
+         begin
+            if not (Is_Char_Rule (Rules, NM)
+                    and then (Is_Core_Name (NM)
+                              or else not Is_Char_Token (Rules, NM)))
+            then
+               Append (Bdy, "   function Parse_" & Ada_Ident (NM)
+                 & " (P : in out Parser) return " & Ret_Type (I) & ";");
+               Append (Bdy, LF);
+            end if;
+         end;
       end loop;
-      Append (Bdy, "      return Best;");
-      Append (Bdy, LF);
-      Append (Bdy, "   end Char_Dispatch;");
-      Append (Bdy, LF);
       Append (Bdy, LF);
 
-      --  Lexer: text -> token stream (schema-independent).
+      for I in 1 .. N loop
+         declare
+            NM : constant String := To_String (Rules (I).Name);
+         begin
+            if not (Is_Char_Rule (Rules, NM)
+                    and then (Is_Core_Name (NM)
+                              or else not Is_Char_Token (Rules, NM)))
+            then
+               Append (Bdy, "   function Parse_" & Ada_Ident (NM)
+                 & " (P : in out Parser) return " & Ret_Type (I) & " is");
+               Append (Bdy, LF);
+               Emit_Rule_Decl (I, Bdy);
+               Append (Bdy, "   begin");
+               Append (Bdy, LF);
+               Emit_Rule_Parser (I, Bdy);
+               Append (Bdy, "   end Parse_" & Ada_Ident (NM) & ";");
+               Append (Bdy, LF);
+               Append (Bdy, LF);
+            end if;
+         end;
+      end loop;
+
+      --  Parse_Text: the whole text through the root rule.
       declare
          V : Mustache.Context := Mustache.View;
       begin
          Mustache.Put (V, "root_type", Ret_Type (1));
          Mustache.Put (V, "root_fn",
            "Parse_" & Ada_Ident (To_String (Rules (1).Name)));
-         Append (Bdy, Mustache.Render_File ("ada_lexer", V));
+         Append (Bdy, Mustache.Render_File ("ada_parse_text", V));
       end;
       Append (Bdy, LF);
       Append (Bdy, LF);

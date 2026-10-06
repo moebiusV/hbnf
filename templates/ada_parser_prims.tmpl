@@ -1,0 +1,118 @@
+   type Text_Access is access constant String;
+
+   --  The parser reads the text itself: a position in it, no token array.
+   type Parser is record
+      Text : Text_Access;
+      Pos  : Natural := 1;
+   end record;
+
+   Spaces : constant String :=
+     "                                                                ";
+
+   --  What stands at the position, for an error message: the bareword that
+   --  starts there, else the one character, else the end of the text.
+   function Found (P : Parser) return String is
+      Last : constant Natural := P.Text'Last;
+      I    : Natural := P.Pos;
+
+      function Word_Char (C : Character) return Boolean is
+        (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.');
+   begin
+      if P.Pos > Last then
+         return "end of input";
+      end if;
+      if Word_Char (P.Text (I)) then
+         while I <= Last and then Word_Char (P.Text (I)) loop
+            I := I + 1;
+         end loop;
+         return P.Text (P.Pos .. I - 1);
+      end if;
+      return P.Text (P.Pos .. P.Pos);
+   end Found;
+
+   procedure Fail (P : Parser; Expected : String) is
+      Line  : Natural := 1;
+      Col   : Natural := 1;
+      Start : Natural := 1;
+      Msg   : Unbounded_String;
+      Last  : constant Natural := P.Text'Last;
+   begin
+      for I in 1 .. Natural'Min (P.Pos, Last + 1) - 1 loop
+         if P.Text (I) = ASCII.LF then
+            Line := Line + 1;
+            Col := 1;
+            Start := I + 1;
+         else
+            Col := Col + 1;
+         end if;
+      end loop;
+      Append (Msg, "line" & Natural'Image (Line) & ": expected " & Expected
+        & ", found " & Found (P));
+      declare
+         Stop : Natural := Start;
+      begin
+         while Stop <= Last and then P.Text (Stop) /= ASCII.LF loop
+            Stop := Stop + 1;
+         end loop;
+         declare
+            W   : constant Natural := Col - 1;
+            Pad : constant String :=
+              (if W <= Spaces'Length then Spaces (1 .. W) else Spaces);
+         begin
+            Append (Msg, ASCII.LF & "  " & P.Text (Start .. Stop - 1)
+              & ASCII.LF & "  " & Pad & "^");
+         end;
+      end;
+      raise Parse_Error with To_String (Msg);
+   end Fail;
+
+   --  A punctuation- or digit-led literal: compare bytes at the position (a
+   --  prefix is correct there, e.g. "-" in "-5", "0x" in "0x1F").
+   procedure Expect_Lit (P : in out Parser; Lit : String) is
+   begin
+      if P.Pos + Lit'Length - 1 <= P.Text'Last
+        and then P.Text (P.Pos .. P.Pos + Lit'Length - 1) = Lit
+      then
+         P.Pos := P.Pos + Lit'Length;
+      else
+         Fail (P, "`" & Lit & "`");
+      end if;
+   end Expect_Lit;
+
+   --  A keyword: the whole bareword at the position must be the literal, so
+   --  `in` does not match the front of `input`.
+   procedure Expect_Word (P : in out Parser; Lit : String) is
+      N : constant Natural := Scan_Word (P.Text.all, P.Pos, P.Text'Last);
+   begin
+      if N = Lit'Length and then P.Text (P.Pos .. P.Pos + N - 1) = Lit then
+         P.Pos := P.Pos + N;
+      else
+         Fail (P, "`" & Lit & "`");
+      end if;
+   end Expect_Word;
+
+{{&nocase_proc}}   --  Skip what the grammar calls whitespace, one match at a time.
+   procedure Skip_Ws (P : in out Parser) is
+{{&skip_ws}}
+
+   --  The content of a quoted string: strip the quotes, and drop a backslash
+   --  (keeping the character after it) or a backslash-newline.
+   function Str_Value (S : String) return Unbounded_String is
+      R : Unbounded_String;
+      I : Natural := S'First + 1;
+   begin
+      while I < S'Last loop
+         if S (I) = '\' and then I + 1 < S'Last then
+            I := I + 1;
+            if S (I) /= ASCII.LF then
+               Append (R, S (I));
+            end if;
+         else
+            Append (R, S (I));
+         end if;
+         I := I + 1;
+      end loop;
+      return R;
+   end Str_Value;
+
+{{&keyword_fn}}
