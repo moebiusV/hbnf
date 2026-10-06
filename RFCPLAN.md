@@ -20,10 +20,10 @@ daemon's `parse.y`.  These are drop-in replacements: their parsers accept and
 reject exactly what parse.y does (byte-identity for ntpd, unwind-identity
 elsewhere).
 
-**RFC corpus** (`tests/rfc/`).  The BNF fragments of the RFCs, pulled in whole
+**RFC corpus** (`rfc-corpus/`).  The BNF fragments of the RFCs, pulled in whole
 where they compile and in pieces where they do not.  Each fragment keeps:
 
-- the RFC's ABNF verbatim — a `.hbnf` when it compiles as-is;
+- the RFC's ABNF verbatim — `<rfc>-<n>.bnf`, with the form hbnf compiles beside it as `<rfc>-<n>.hbnf`, its `.md`, and `.vectors/`;
 - the error messages hbnf gives and what each means;
 - the **fixed-up** version, or — where the repair is involved — a note saying
   how to make it (e.g. a `<prose-val>` that defers its real definition to two
@@ -41,22 +41,29 @@ silently.
      the first alternative that matches wins.  The shadowed-alternative
      check stays.
    - `/` is ABNF's union: every alternative is legal.  Between character
-     ranges it is a set, the same as `|`.  Between phrases it is compiled
-     without search:
-     - alternatives whose FIRST sets (and, for an optional or repeated
-       part, FIRST and FOLLOW) are disjoint become ordinary one-token
-       decisions;
-     - alternatives that begin alike are told apart by a second code point
-       (*Amended 2026-10-06, step 5*: the plan was to factor a shared
-       prefix, `p = "a" / "a" "b"` into `p = "a" [ "b" ]`.  The RFC corpus
-       has no prefix written out in one rule — every overlap goes through a
-       rule name — and factoring would change the tree types.  Two code
-       points of lookahead resolve `hier-part`, `relative-part` and
-       `quoted-pair` and leave the trees alone.);
-     - anything else is an error that names the two alternatives and the
-       code points they share, and says to write `|`, with the one to try
-       first first.  An alternative that can match nothing is allowed if
-       what follows the choice cannot begin the others; it is tried last.
+     ranges it is a set, the same as `|`; in a character rule the scanner
+     takes the longest alternative.  Between phrases it compiles without
+     backtracking, and the author writes it as the RFC does:
+     - the reader looks for an order of the alternatives in which ordered
+       choice accepts the same language — no alternative can match text that a
+       later one matches more of, or (when it matches the same text and what
+       follows the choice could continue it) less of — and writes the choice in
+       that order.  "Longest first" is found, not required of the author; the
+       one that can match nothing goes last;
+     - this is decided on the alternatives' text, with an automaton per
+       alternative searched for the shared text, so there is no limit on how
+       many code points it takes to tell two alternatives apart
+       (`1*DIGIT "." / 1*DIGIT ":"`, `"a" "b" "c" / "a" "b" "d"`);
+     - what no order fixes is a union that needs backtracking: two alternatives
+       that match the same text with different continuations
+       (`IPv4address / reg-name`).  That is an error naming the two and a
+       text both match, and says to write `|`, with the one to try first first.
+     (*Amended 2026-10-06, step 5.*  The plan was FIRST/FOLLOW sets and factoring
+     a shared prefix, `p = "a" / "a" "b"` into `p = "a" [ "b" ]`.  A first cut
+     with two code points of lookahead resolved the RFC corpus's `/` except
+     where the difference came later (`h16 ":" h16 / IPv4address`), and a
+     fixed depth is a surprise.  The automaton check needs no factoring, and
+     keeps the tree types: reordering does not change them.)
 2. **Incremental alternatives are `=/`, ABNF's spelling, and nothing
    else.**  No BNF dialect we know has `=|` or `|=`.  (yacc gets the same
    effect by allowing `name :` more than once.)  `=/` extends the current
@@ -887,7 +894,7 @@ should claim that before 10.
 5. **`/` between phrases** (decision 1; factoring needs step 2).  Then:
    - RFC excerpts as regression tests: RFC 5234 Appendix B.1 verbatim, RFC
      3986 `scheme` and `host`, RFC 5322 `addr-spec`, RFC 9112
-     `request-line`.  *Done 2026-10-06* (`tests/rfc/`, run by `tests/rfc.sh`;
+     `request-line`.  *Done 2026-10-06* (`rfc-corpus/`, run by `tests/rfc.sh`;
      the headline rules in `tests/e2e.sh`).  Each fragment has the verbatim
      ABNF, a fixed-up file, vectors and a README with hbnf's exact messages.
      It found, and this step fixed: `whitespace none`; `--root=RULE`;
@@ -896,15 +903,17 @@ should claim that before 10.
      case-insensitive letters in char rules and `/` unions; a string
      crossing a newline (`"\"`) says why; rules named `atom`/`word` are an
      error.  **Still open, and the work of this step's first bullet:**
-     `/` between phrases (the fixed-up files write `|` and repair each
-     overlap by hand: `dec-octet`, `host`, `IPv6address`, `FWS`,
-     `local-part`/`domain`); the byte-vs-code-point `OCTET` divergence; poor
+     `/` between phrases (the fixed-up files wrote `|` and repaired each
+     overlap by hand); the byte-vs-code-point `OCTET` divergence; poor
      messages for lifted rules ("expected IPvFuture_2").  *`/` between
-     phrases done 2026-10-06* (`hbnf_lookahead.ad[sb]`: FIRST/FOLLOW and two
-     code points, over the reader's rules; no backend changed).  What stays
-     a `|` in the fixed-up files is genuine overlap the union itself would
-     need backtracking for: `host`, `IPv6address`, `ls32`, `URI-reference`,
-     `path`, `request-target`, `FWS`, `CFWS`, `word`, `domain`.
+     phrases done 2026-10-06* (`hbnf_lookahead.ad[sb]`: an automaton per
+     alternative, searched for text one matches more of than another, and an
+     order that no alternative shadows a later one in; no backend changed, no
+     tree type changed).  What stays a `|` in the fixed-up files is a union
+     that needs backtracking: `host` (`IPv4address` is also a `reg-name`),
+     `request-target`, and RFC 5322's obsolete folding (`FWS`, `CFWS`,
+     `word`, `domain`); `path` is a documentation rule the grammar does not
+     use.
    - the character model in Rust, Zig and Ada through the templates.  *Done
      2026-10-06, inside step 9c*, which could not retire its reader without
      it.  (The interpreter used to be named here too, "on the same
