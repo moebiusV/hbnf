@@ -1,6 +1,7 @@
 pragma Ada_2022;
 
 with Ada.Containers.Vectors;
+with Ada.Strings.Unbounded;
 with HBNF_Grammar;
 
 --  HBNF_Compilable: schema shapes the compiled backends cannot yet express.
@@ -66,5 +67,41 @@ package HBNF_Compilable is
    --  over the sequence position.  A string literal becomes one Single atom
    --  per code point; a repeated element becomes one trailing Repeat atom.
    --  The scanner matches the longest branch (maximal munch).
+
+   --  ----  the tree-type graph, and the one cycle detector  ----
+   --
+   --  A rule's value is a struct by value, so a rule that contains itself --
+   --  `prim = '(' expr ')' | int` with `expr = prim`, which is every
+   --  expression language -- has no finite size.  Each backend used to carry
+   --  its own way of finding that (C and Ada by a topological sort that
+   --  stalled; Rust and Zig by a three-colour DFS); this is the one detector,
+   --  so the four agree on which schemas they take by construction rather
+   --  than by four hand-kept copies.
+   --
+   --  The graph is handed in, not derived here: what counts as "by value"
+   --  differs per backend (a member whose rule is a record is a C struct by
+   --  value but an Ada access type), and each backend already knows its own
+   --  answer.
+
+   type By_Value_Edge is record
+      Owner  : Natural := 0;
+      --  The rule whose field this is.
+      Member : Ada.Strings.Unbounded.Unbounded_String :=
+        Ada.Strings.Unbounded.Null_Unbounded_String;
+      --  The field's name, or "" for an edge that is not a field at all: a
+      --  scalar alias (`expr = prim`) has no field to make indirect.
+      Target : Natural := 0;
+      --  The rule the field holds by value.
+   end record;
+
+   package Edge_Vectors is new Ada.Containers.Vectors (Positive, By_Value_Edge);
+
+   function Back_Edges (N : Natural; Edges : Edge_Vectors.Vector)
+     return Edge_Vectors.Vector;
+   --  One field per cycle to make indirect, chosen deterministically so
+   --  output stays byte-stable: the field edge on the cycle whose owner has
+   --  the lowest rule index (then the lowest member name, then target).
+   --  Raises Parse_Error when a cycle has no field edge to break -- an
+   --  all-alias cycle (`a = b`, `b = a`) has nothing to point at.
 
 end HBNF_Compilable;

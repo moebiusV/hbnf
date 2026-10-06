@@ -1234,6 +1234,88 @@ package body HBNF_C is
 
       Infos : Info_Vectors.Vector;
 
+      --  The rule a reference holds by value: chase a scalar alias
+      --  (`src = host`) through to the struct its field really holds, so the
+      --  containing struct is laid out after that struct and so the cycle
+      --  detector sees the edge the field really makes.  A direct struct
+      --  member is already there.  0 when it holds nothing by value.
+      function Resolve (N : U) return Natural is
+         J : Natural := Find (To_String (N));
+      begin
+         while J > 0 and then Infos (J).Kind = Scalar loop
+            declare
+               P : constant Element_Vectors.Vector := Rules (J).Pattern;
+            begin
+               if Natural (P.Length) = 1 and then P (1).Kind = Name
+                 and then P (1).Min = 1 and then P (1).Max = 1
+               then
+                  J := Find (To_String (P (1).Name));
+               else
+                  J := 0;
+               end if;
+            end;
+         end loop;
+         if J > 0 and then Is_By_Value (Infos (J)) then
+            return J;
+         end if;
+         return 0;
+      end Resolve;
+
+      --  The by-value edges of the tree-type graph, for the one cycle
+      --  detector in HBNF_Compilable.  Only a struct's non-list member and a
+      --  scalar's alias are edges: a list field holds the list's head, two
+      --  pointers, so it is indirect and imposes no order.
+      function By_Value_Edges return HBNF_Compilable.Edge_Vectors.Vector is
+         E : HBNF_Compilable.Edge_Vectors.Vector;
+      begin
+         for I in 1 .. N loop
+            declare
+               Info : constant Rule_Info := Infos (I);
+            begin
+               case Info.Kind is
+                  when Struct =>
+                     for M of Info.Members loop
+                        if not M.Is_List then
+                           declare
+                              J : constant Natural := Resolve (M.Name);
+                           begin
+                              if J > 0 then
+                                 E.Append
+                                   (HBNF_Compilable.By_Value_Edge'
+                                      (Owner => I, Member => M.Name,
+                                       Target => J));
+                              end if;
+                           end;
+                        end if;
+                     end loop;
+                  when Scalar =>
+                     --  A rule that is one name is an alias; the edge has no
+                     --  member, so it can order but never be broken.
+                     if Info.Inline_Type /= Null_Unbounded_String then
+                        declare
+                           P : constant Element_Vectors.Vector :=
+                             Rules (I).Pattern;
+                           J : constant Natural := Resolve (Rules (I).Name);
+                        begin
+                           if J > 0
+                             and then Natural (P.Length) = 1
+                             and then P (1).Kind = Name
+                           then
+                              E.Append
+                                (HBNF_Compilable.By_Value_Edge'
+                                   (Owner => I, Member => Null_Unbounded_String,
+                                    Target => J));
+                           end if;
+                        end;
+                     end if;
+                  when others =>
+                     null;
+               end case;
+            end;
+         end loop;
+         return E;
+      end By_Value_Edges;
+
       --  The rule indices this rule must be emitted after: its by-value
       --  members that reference another struct.
       function Deps (Idx : Natural) return Natural_Vectors.Vector is
@@ -1256,25 +1338,9 @@ package body HBNF_C is
          end Add;
 
          procedure Add_Ref (N : U) is
-            J : Natural := Find (To_String (N));
+            J : constant Natural := Resolve (N);
          begin
-            --  Chase a scalar alias (`src = host`) through to the struct its
-            --  by-value field really holds, so the containing struct is laid
-            --  out after that struct.  A direct struct member is already there.
-            while J > 0 and then Infos (J).Kind = Scalar loop
-               declare
-                  P : constant Element_Vectors.Vector := Rules (J).Pattern;
-               begin
-                  if Natural (P.Length) = 1 and then P (1).Kind = Name
-                    and then P (1).Min = 1 and then P (1).Max = 1
-                  then
-                     J := Find (To_String (P (1).Name));
-                  else
-                     J := 0;
-                  end if;
-               end;
-            end loop;
-            if J > 0 and then Is_By_Value (Infos (J)) then
+            if J > 0 then
                Add (J);
             end if;
          end Add_Ref;
@@ -2399,6 +2465,21 @@ package body HBNF_C is
             end;
          end loop;
       end;
+
+      --  A rule's value cannot contain itself: the tree types are structs by
+      --  value, so one of them would be infinitely sized.  The detector is
+      --  the one in HBNF_Compilable now, not a copy kept here; step 9b makes
+      --  it hand back the field to emit indirect, and until the backends act
+      --  on that the cycle is still refused, with the same message the
+      --  stalled sort below used to give.
+      if not HBNF_Compilable.Back_Edges (N, By_Value_Edges).Is_Empty then
+         raise Parse_Error with
+           "a rule's value cannot contain itself: the tree types are structs "
+           & "by value, so this one would be infinitely sized.  Routing "
+           & "the recursion through a list does not help (a list node "
+           & "holds its element by value too); RFCPLAN.md step 9 adds "
+           & "the pointer that breaks the cycle";
+      end if;
 
       --  Struct and list bodies, in by-value dependency order.
       while Remaining > 0 loop

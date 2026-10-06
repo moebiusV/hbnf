@@ -828,4 +828,120 @@ package body HBNF_Compilable is
       end if;
    end Check;
 
+   --  ----  the tree-type graph, and the one cycle detector  ----
+
+   function Back_Edges (N : Natural; Edges : Edge_Vectors.Vector)
+     return Edge_Vectors.Vector
+   is
+      --  Edges already broken, so the next pass does not see them.
+      Broken : array (1 .. Natural (Edges.Length)) of Boolean :=
+        (others => False);
+      Result : Edge_Vectors.Vector;
+
+      package Nat_Vectors is new Ada.Containers.Vectors (Positive, Natural);
+
+      --  The edges on the cycle the last pass found, in path order.
+      Cycle : Nat_Vectors.Vector;
+
+      --  One depth-first pass over the edges that are not broken yet.  On a
+      --  hit -- an edge into a node still on the path -- fills Cycle with the
+      --  path's edges from that node back round, plus the edge that closed
+      --  it, and returns True.
+      function Find_Cycle return Boolean is
+         White : constant := 0;
+         Grey  : constant := 1;
+         Black : constant := 2;
+         Colour : array (1 .. N) of Natural := (others => White);
+         --  The path being walked: the node, and the edge index that reached
+         --  it (0 for the node the pass started from).
+         Path_Node : Nat_Vectors.Vector;
+         Path_Edge : Nat_Vectors.Vector;
+         Found : Boolean := False;
+
+         procedure Walk (I : Natural) is
+         begin
+            Colour (I) := Grey;
+            for K in 1 .. Natural (Edges.Length) loop
+               exit when Found;
+               if not Broken (K) and then Edges (K).Owner = I then
+                  declare
+                     J : constant Natural := Edges (K).Target;
+                  begin
+                     if J in 1 .. N then
+                        if Colour (J) = Grey then
+                           --  A back edge into the path: everything from J
+                           --  onward, plus this edge, is the cycle.
+                           Found := True;
+                           Cycle.Clear;
+                           for P in 1 .. Natural (Path_Node.Length) loop
+                              if Path_Node (P) = J then
+                                 for Q in P .. Natural (Path_Node.Length) loop
+                                    if Path_Edge (Q) /= 0 then
+                                       Cycle.Append (Path_Edge (Q));
+                                    end if;
+                                 end loop;
+                                 exit;
+                              end if;
+                           end loop;
+                           Cycle.Append (K);
+                        elsif Colour (J) = White then
+                           Path_Node.Append (J);
+                           Path_Edge.Append (K);
+                           Walk (J);
+                           Path_Node.Delete_Last;
+                           Path_Edge.Delete_Last;
+                        end if;
+                     end if;
+                  end;
+               end if;
+            end loop;
+            Colour (I) := Black;
+         end Walk;
+      begin
+         for I in 1 .. N loop
+            exit when Found;
+            if Colour (I) = White then
+               Path_Node.Clear;
+               Path_Edge.Clear;
+               Path_Node.Append (I);
+               Path_Edge.Append (0);
+               Walk (I);
+            end if;
+         end loop;
+         return Found;
+      end Find_Cycle;
+   begin
+      loop
+         Cycle.Clear;
+         exit when not Find_Cycle;
+
+         --  The field edge on this cycle to break.  A cycle of nothing but
+         --  aliases has no field to point at, and is refused.
+         declare
+            Best : Natural := 0;
+         begin
+            for K of Cycle loop
+               if Edges (K).Member /= Null_Unbounded_String then
+                  if Best = 0
+                    or else Edges (K).Owner < Edges (Best).Owner
+                    or else (Edges (K).Owner = Edges (Best).Owner
+                             and then Edges (K).Member < Edges (Best).Member)
+                  then
+                     Best := K;
+                  end if;
+               end if;
+            end loop;
+            if Best = 0 then
+               raise Parse_Error with
+                 "scalar cycle in schema: "
+                 & "a cycle of scalar aliases has no field to make indirect, "
+                 & "so a rule's value cannot be stopped from containing itself";
+            end if;
+            Broken (Best) := True;
+            Result.Append (Edges (Best));
+         end;
+      end loop;
+      return Result;
+   end Back_Edges;
+
 end HBNF_Compilable;
