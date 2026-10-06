@@ -679,6 +679,37 @@ package body HBNF_Compilable is
       end if;
       Shadowed := 0;
 
+      --  A scanner written for other backends only matches nothing in this
+      --  one, and the grammar parses differently here than where it was
+      --  written: say so, and how to write it.  (`word`, `int`, `str` and
+      --  `ws` have a built-in scanner in every backend.)
+      for R of Rules loop
+         declare
+            NM : constant String := To_String (R.Name);
+            Lang : constant String :=
+              (if Backend = "rust" then "Rust" elsif Backend = "zig" then "Zig"
+               elsif Backend = "ada" then "Ada" else "C");
+            Target : constant HBNF_Grammar.Target :=
+              (if Backend = "rust" then HBNF_Grammar.Rust_Target
+               elsif Backend = "zig" then HBNF_Grammar.Zig_Target
+               elsif Backend = "ada" then HBNF_Grammar.Ada_Target
+               else HBNF_Grammar.C_Target);
+         begin
+            if R.Jet_Code /= Null_Unbounded_String
+              and then NM not in "word" | "int" | "str" | "ws"
+              and then (if Target = HBNF_Grammar.C_Target
+                        then To_String (R.Jet_Code) = HBNF_Grammar.No_C_Code
+                        else HBNF_Grammar.Jet_Body (NM, Target) = "")
+            then
+               HBNF_Grammar.Warn
+                 (NM, "the scanner `" & NM & "` has no " & Lang & " code, "
+                  & "so here it matches nothing and the grammar parses "
+                  & "differently than where it was written.  Each backend "
+                  & "has its own: `" & NM & " = " & Lang & " { ... }`");
+            end if;
+         end;
+      end loop;
+
       --  A repeated bare literal at phrase level (`doc = *"a"`, `1*"a"`,
       --  `( *"a" )`, or `"k" *"a"`) is a list whose every entry holds
       --  nothing, and no backend represents it: C and Zig raised

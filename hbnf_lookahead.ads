@@ -4,21 +4,26 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with HBNF_Grammar;
 
---  HBNF_Lookahead: what a grammar's alternatives can begin with.
+--  HBNF_Lookahead: can a union be compiled as an ordered choice?
 --
 --  ABNF's `/` is a union: every alternative is legal, with backtracking into
 --  the rest of the rule.  hbnf's generated parsers choose in order and commit
---  (PEG), so a union is compiled as an ordered choice only where that accepts
---  the same language: where the alternatives cannot begin alike, so at most
---  one of them can match at any position (RFCPLAN.md decision 1).  This
---  package finds out which, with the textbook FIRST and FOLLOW sets over code
---  points.
+--  (PEG).  A union is compiled as an ordered choice, in some order of its
+--  alternatives, whenever that accepts the same language (RFCPLAN.md decision
+--  1): the reader finds the order, and the author writes `/` as the RFC does.
 --
---  An alternative that can match nothing is allowed too, if what may follow
---  the choice cannot begin the others; the caller moves it last.
+--  Whether an order exists is decided on the alternatives' text, not on how
+--  many code points of lookahead tell them apart.  An alternative tried first
+--  takes input a later one needed when the two can match text one of which is
+--  a prefix of the other: the earlier one matches the shorter text, and
+--  commits, where the later one needed the longer.  Each alternative is built
+--  into an automaton and the pair is searched for such text.  Matching nothing
+--  is text like any other: an alternative that can match nothing shadows every
+--  other, so it goes last, and is refused if what follows the choice could
+--  begin another.
 --
---  A jet, a built-in scanner or a name that is no rule has a first code point
---  hbnf cannot see; its set is "anything", which meets every other.
+--  A jet, a built-in scanner, a name that is no rule, or a rule that refers to
+--  itself is taken to match any text, which only ever makes the answer "no".
 package HBNF_Lookahead is
    use HBNF_Grammar;
 
@@ -27,12 +32,6 @@ package HBNF_Lookahead is
    type Cp_Set is private;
 
    Empty : constant Cp_Set;
-
-   --  What a rule can start with, to two code points: the code points it can
-   --  match whole, the pairs it can begin with when it matches more, and
-   --  whether it can match nothing.  (One code point of lookahead is not
-   --  always enough: `"//" x` and `"/" y` both begin with `/`.)
-   type Leading is private;
 
    function Is_Empty (S : Cp_Set) return Boolean;
    function "or" (A, B : Cp_Set) return Cp_Set;
@@ -44,7 +43,6 @@ package HBNF_Lookahead is
 
    type Flags is array (Positive range <>) of Boolean;
    type Set_Array is array (Positive range <>) of Cp_Set;
-   type Leading_Array is array (Positive range <>) of Leading;
 
    --  Which rules can match nothing, as a fixpoint over the rules.  A rule can
    --  when some branch is all elements that can; an element can when it
@@ -64,7 +62,6 @@ package HBNF_Lookahead is
       Nullable : Flags (1 .. N);
       First    : Set_Array (1 .. N);   --  what a rule can begin with
       Follow   : Set_Array (1 .. N);   --  what can come right after it
-      Lead     : Leading_Array (1 .. N);
    end record;
 
    function Analyze (Rules : Rule_Vectors.Vector) return Analysis;
@@ -87,17 +84,40 @@ package HBNF_Lookahead is
    --  Follow_Branch can come after the branch itself.  A repeated element is
    --  followed by itself as well.
 
+   function First_Of
+     (A : Analysis; Rules : Rule_Vectors.Vector; E : Element_Access)
+      return Cp_Set;
+   --  What an element can begin with.
+
+   package Order_Vectors is new Ada.Containers.Vectors (Positive, Positive);
+
    procedure Check_Choice
-     (A : Analysis; Rules : Rule_Vectors.Vector;
+     (A : Analysis; Rules : Rule_Vectors.Vector; Owner : Natural;
       V : Element_Vectors.Vector; Follow_Here : Cp_Set;
       Ok : out Boolean;
       Message : out Ada.Strings.Unbounded.Unbounded_String;
-      Nullable_Branch : out Natural);
-   --  V is a flat alternation.  Ok when its alternatives cannot begin alike:
-   --  their FIRST sets are disjoint; at most one can match nothing, and then
-   --  Follow_Here (what comes after the choice) cannot begin any other.
-   --  Nullable_Branch is the number of the one that can match nothing, or 0.
-   --  Otherwise Message says which two meet, and where.
+      Order : out Order_Vectors.Vector);
+   --  V is a flat alternation, written as a union, in the rule Owner (0: none).
+   --  Ok when some order of its alternatives makes ordered choice (take the
+   --  first that matches) accept the same language: no alternative may be able
+   --  to match text that a later one matches more of, or (when it is followed
+   --  by what the choice is followed by) less of; at most one can match
+   --  nothing, and it goes last, and Follow_Here (what comes after the choice)
+   --  cannot begin any other.  Order is that order, as branch numbers.
+   --  Otherwise Message says which two cannot be told apart, and on what text.
+
+   procedure Greedy_Overlap
+     (Rules : Rule_Vectors.Vector; Owner : Natural; E : Element_Access;
+      V : Element_Vectors.Vector; From, To : Natural;
+      Found : out Boolean;
+      Witness : out Ada.Strings.Unbounded.Unbounded_String);
+   --  E repeats a variable number of times (`*x`, `[ x ]`, `1*4x`) and V
+   --  (From .. To) is what follows it in its sequence.  The generated parser
+   --  takes as many repetitions as match and does not give one back, where
+   --  ABNF would if the rest needed it.  Found when some text begins with a
+   --  repetition and is also the start of the rest, so the two differ;
+   --  Witness is that text.  A jet, a recursive rule or a built-in scanner is
+   --  taken to match nothing here, so this never refuses a grammar on a guess.
 
 private
 
@@ -116,17 +136,5 @@ private
    Empty : constant Cp_Set :=
      (Ranges => Range_Vectors.Empty_Vector, Eoi => False, Any => False);
 
-   --  Two code points: the first is in A and the second in B.
-   type Pair is record
-      A, B : Cp_Set;
-   end record;
-
-   package Pair_Vectors is new Ada.Containers.Vectors (Positive, Pair);
-
-   type Leading is record
-      Singles : Cp_Set;                       --  matches of one code point
-      Pairs   : Pair_Vectors.Vector;          --  begins of longer matches
-      Null_Ok : Boolean := False;             --  can match nothing
-   end record;
 
 end HBNF_Lookahead;

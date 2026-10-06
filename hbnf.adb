@@ -17,13 +17,16 @@ with HBNF_Ada;
 --  hbnf: read a schema and emit a self-contained parser (declarations +
 --  lexer + parser) in the chosen backend language.
 --
---    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--root=RULE] [--conf] [--idref] [--compare]
+--    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--root=RULE] [--abnf] [--conf] [--idref] [--compare]
 --
 --  c/rust/zig print one compilable file to stdout; ada prints the parent
 --  package spec, then the child package spec+body (split them apart yourself).
 --  --conf adds the OpenBSD parse_config(filename) entry: for C it prints the
 --  conf.h/conf.c pair (delimited by "===== conf.h =====" and "===== conf.c ====="
 --  markers); for rust/zig/ada it appends the conf wrapper to the single file.
+--  --abnf reads every file as RFC 5234 reads ABNF: nothing is skipped between
+--  a rule's elements and a string is case-insensitive, so an RFC's text
+--  compiles as pasted.
 --  --root=RULE starts the grammar at that rule instead of the first one, so a
 --  collected ABNF (an RFC's appendix) can generate a parser for any of its rules.
 --  --idref (C only) adds an id-ref serializer and rebuild side, for a privsep
@@ -107,7 +110,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare] [--root=RULE] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare] [--root=RULE] [--abnf] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -128,6 +131,8 @@ begin
             Conf := True;
          elsif A'Length >= 7 and then A (1 .. 7) = "--root=" then
             HBNF_Grammar.Set_Root (A (8 .. A'Last));
+         elsif A = "--abnf" then
+            HBNF_Grammar.Set_Abnf (True);
          elsif A = "--idref" then
             Idref := True;
          elsif A = "--compare" then

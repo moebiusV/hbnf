@@ -569,7 +569,8 @@ package body HBNF_C is
          return S;
       end if;
       if J = 0 then
-         raise Parse_Error with "undefined rule: " & Ref;
+         raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
+           & (if HBNF_Grammar.Spelled (Ref) /= Ref then ", which no `::=` defines" else "");
       end if;
       return C_Type_Name (Ref);
    end C_Type_Of;
@@ -1039,7 +1040,8 @@ package body HBNF_C is
             return S;
          end if;
          if J = 0 then
-            raise Parse_Error with "undefined rule: " & Ref;
+            raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
+           & (if HBNF_Grammar.Spelled (Ref) /= Ref then ", which no `::=` defines" else "");
          end if;
          return C_Type_Name (Ref);
       end C_Type_Of;

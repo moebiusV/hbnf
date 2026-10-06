@@ -295,7 +295,8 @@ package body HBNF_Rust is
          return S;
       end if;
       if Find (Rules, Ref) = 0 then
-         raise Parse_Error with "undefined rule: " & Ref;
+         raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
+           & (if HBNF_Grammar.Spelled (Ref) /= Ref then ", which no `::=` defines" else "");
       end if;
       return Rust_Type (Ref);
    end Rust_Type_Of;
@@ -2035,12 +2036,24 @@ package body HBNF_Rust is
             if Rules (I).Jet_Code /= Null_Unbounded_String
               and then not Is_Builtin_Jet (To_String (Rules (I).Name))
             then
-               Put ("fn jet_" & Rust_Snake (To_String (Rules (I).Name))
-                 & "(s: &[u8], pos: usize, len: usize) -> usize {");
-               Put ("    let _ = (s, pos, len);");
-               Put ("    0  // a %scan{} jet: C code only");
-               Put ("}");
-               Put ("");
+               declare
+                  NM   : constant String := To_String (Rules (I).Name);
+                  Code : constant String :=
+                    HBNF_Grammar.Jet_Body (NM, HBNF_Grammar.Rust_Target);
+               begin
+                  --  `name = Rust { ... }` is the body.
+                  Put ("fn jet_" & Rust_Snake (NM)
+                    & "(s: &[u8], pos: usize, len: usize) -> usize {");
+                  Put ("    let _ = (s, pos, len);");
+                  if Code /= "" then
+                     Put (Code);
+                  else
+                     Put ("    0  // no Rust code: write `" & NM
+                       & " = Rust { ... }`");
+                  end if;
+                  Put ("}");
+                  Put ("");
+               end;
             end if;
          end loop;
 

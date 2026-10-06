@@ -66,6 +66,10 @@ package HBNF_Grammar is
    procedure Warn_Once (Key, Where, Text : String);
    --  Warn, unless a warning with this Key was already reported.
 
+   function Spelled (Name : String) return String;
+   --  A rule as its author wrote it, for a message: `<table reference>` for a
+   --  rule a BNF file names that way, else the name.
+
    function Warnings return Natural;
    --  How many warnings have been reported since Reset_Warnings.
 
@@ -135,9 +139,12 @@ package HBNF_Grammar is
       Leading_Comment : Unbounded_String := Null_Unbounded_String;
       Trailing_Comment : Unbounded_String := Null_Unbounded_String;
       Jet_Code        : Unbounded_String := Null_Unbounded_String;
-      --  Non-empty for a jet: `name = %scan{ <code> }` (or `name = { <code> }`).
-      --  The code is a hand-written scanner body emitted verbatim; Pattern
-      --  stays empty.
+      --  Non-empty for a jet: `name = %scan{ <code> }` (or `name = { <code> }`,
+      --  or `<name> = C { <code> }`).  The code is a hand-written scanner
+      --  body emitted verbatim; Pattern stays empty.  A scanner may also be
+      --  written for another backend (`<name> = Rust { <code> }`): see
+      --  Jet_Body.  One written for no C has No_C_Code here, so every test
+      --  for "is a jet" still holds.
       Action_Code     : Unbounded_String := Null_Unbounded_String;
       --  Non-empty for an action jet: `name = pattern %action{ <C-code> }`
       --  (or `pattern { <C-code> }`), or a separate `action name { <C-code> }`
@@ -159,6 +166,16 @@ package HBNF_Grammar is
       --  elements, from that file's `whitespace ws` directive; "" when the
       --  file sets none (char rules never skip it).
    end record;
+
+   --  The C body of a scanner written for no C backend.
+   No_C_Code : constant String := "    return 0;";
+
+   type Target is (C_Target, Rust_Target, Zig_Target, Ada_Target);
+
+   function Jet_Body (Name : String; T : Target) return String;
+   --  The code written for scanner Name in T's language, or "".  C's is the
+   --  rule's Jet_Code (the file's own `language` and `%scan{}` spelling); the
+   --  others come from `<name> = Rust { ... }`, `Zig`, `Ada`.
 
    package Rule_Vectors is new Ada.Containers.Vectors (Positive, Rule);
 
@@ -295,6 +312,12 @@ package HBNF_Grammar is
    --  the emitters see only what it reaches.  Say it before the schema is read;
    --  a name no rule has is an error there.  It lets one RFC's collected ABNF
    --  generate a parser for any of its rules (RFC 3986's `host`, say).
+   procedure Set_Abnf (On : Boolean);
+   --  `--abnf`: read every file as RFC 5234 reads it: nothing is skipped
+   --  between a rule's elements (`whitespace none`) and a string is
+   --  case-insensitive (`sensitivity string %i`), without either line in the
+   --  file.  A file's own directives still win.
+
    procedure Set_Root (Name : String);
 
    --  The daemon's own conf struct, from a top-level `conf struct ntpd_conf`

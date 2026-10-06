@@ -289,7 +289,8 @@ package body HBNF_Zig is
          return S;
       end if;
       if Find (Rules, Ref) = 0 then
-         raise Parse_Error with "undefined rule: " & Ref;
+         raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
+           & (if HBNF_Grammar.Spelled (Ref) /= Ref then ", which no `::=` defines" else "");
       end if;
       return Zig_Type (Ref);
    end Zig_Type_Of;
@@ -2344,11 +2345,27 @@ package body HBNF_Zig is
             if Rules (I).Jet_Code /= Null_Unbounded_String
               and then not Is_Builtin_Jet (To_String (Rules (I).Name))
             then
-               Put ("fn jet_" & Zig_Snake (To_String (Rules (I).Name))
-                 & "(_: []const u8, _: usize, _: usize) usize {");
-               Put ("    return 0;  // a %scan{} jet: C code only");
-               Put ("}");
-               Put ("");
+               declare
+                  NM   : constant String := To_String (Rules (I).Name);
+                  Code : constant String :=
+                    HBNF_Grammar.Jet_Body (NM, HBNF_Grammar.Zig_Target);
+               begin
+                  if Code /= "" then
+                     Put ("fn jet_" & Zig_Snake (NM)
+                       & "(s: []const u8, pos: usize, len: usize) usize {");
+                     Put ("    _ = .{ s, pos, len };");
+                     Put (Code);
+                     Put ("}");
+                     Put ("");
+                  else
+                     Put ("fn jet_" & Zig_Snake (NM)
+                       & "(_: []const u8, _: usize, _: usize) usize {");
+                     Put ("    return 0;  // no Zig code: write `" & NM
+                       & " = Zig { ... }`");
+                     Put ("}");
+                     Put ("");
+                  end if;
+               end;
             end if;
          end loop;
 

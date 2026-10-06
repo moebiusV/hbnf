@@ -260,7 +260,8 @@ package body HBNF_Ada is
          return S;
       end if;
       if Find (Rules, Ref) = 0 then
-         raise Parse_Error with "undefined rule: " & Ref;
+         raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
+           & (if HBNF_Grammar.Spelled (Ref) /= Ref then ", which no `::=` defines" else "");
       end if;
       return Ada_Ident (Ref) & "_Type";
    end Ada_Type_Of;
@@ -2545,17 +2546,26 @@ package body HBNF_Ada is
            and then not Is_Builtin_Jet (To_String (Rules (I).Name))
          then
             declare
-               NM : constant String := To_String (Rules (I).Name);
+               NM   : constant String := To_String (Rules (I).Name);
+               Code : constant String :=
+                 HBNF_Grammar.Jet_Body (NM, HBNF_Grammar.Ada_Target);
             begin
                Append (Bdy, "   function Jet_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
                Append (Bdy, LF);
-               Append (Bdy, "      pragma Unreferenced (S, Pos, Len);");
-               Append (Bdy, LF);
-               Append (Bdy, "   begin");
-               Append (Bdy, LF);
-               Append (Bdy, "      return 0;  --  a %scan{} jet: C code only");
-               Append (Bdy, LF);
+               if Code /= "" then
+                  --  The author's body, declarations and `begin` included.
+                  Append (Bdy, Code);
+                  Append (Bdy, LF);
+               else
+                  Append (Bdy, "      pragma Unreferenced (S, Pos, Len);");
+                  Append (Bdy, LF);
+                  Append (Bdy, "   begin");
+                  Append (Bdy, LF);
+                  Append (Bdy, "      return 0;  --  no Ada code: write `"
+                    & NM & " = Ada { ... }`");
+                  Append (Bdy, LF);
+               end if;
                Append (Bdy, "   end Jet_" & Ada_Ident (NM) & ";");
                Append (Bdy, LF);
                Append (Bdy, LF);
