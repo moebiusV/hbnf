@@ -67,6 +67,42 @@ if command -v gnatmake > /dev/null 2>&1; then
 			echo "recursive: Ada FAIL (compile)"; head -20 "$W/ada.err"; rc=1
 		fi
 	fi
+
+	# The same cycle laundered through a list (tests/abnf/recursive-via-list.hbnf,
+	# step 9a) must compile too, not only generate: a vector of vectors needs the
+	# element vector's `=` in scope, which the generated spec has to arrange.
+	mkdir "$W/rvl"
+	"$CLI" tests/abnf/recursive-via-list.hbnf --backend=ada --package=Rvl \
+		> "$W/rvl/all.ada" \
+		|| { echo "recursive: Ada via-list FAIL (does not generate)"; rc=1; }
+	if [ -s "$W/rvl/all.ada" ]; then
+		if (cd "$W/rvl" && gnatchop -q -w all.ada \
+			&& gcc -c -gnat2022 rvl.ads && gcc -c -gnat2022 rvl-parser.adb) \
+			> "$W/rvl.err" 2>&1
+		then
+			echo "recursive: Ada via-list OK (compiles)"
+			# And run it under AddressSanitizer, freeing the tree: every access
+			# node a list of group entries and a list of lists hold must go
+			# back.  Skipped where GNAT cannot build with the sanitizer.
+			cp $T/rvl_main.adb "$W/rvl/"
+			if (cd "$W/rvl" && gnatmake -q -f -gnat2022 -g -fsanitize=address \
+				rvl_main.adb -largs -fsanitize=address) > "$W/rvl.err" 2>&1
+			then
+				"$W/rvl/rvl_main" "((1+2)+3)" > "$W/rvl.out" 2>&1
+				if [ "$(head -1 "$W/rvl.out")" = "OK" ] \
+					&& ! grep -q "AddressSanitizer" "$W/rvl.out"
+				then
+					echo "recursive: Ada via-list OK (the tree is freed whole)"
+				else
+					echo "recursive: Ada via-list FAIL (free)"; head -6 "$W/rvl.out"; rc=1
+				fi
+			else
+				echo "recursive: Ada via-list free skipped (no sanitizer)"
+			fi
+		else
+			echo "recursive: Ada via-list FAIL (compile)"; head -10 "$W/rvl.err"; rc=1
+		fi
+	fi
 else
 	echo "recursive: Ada skipped (no gnatmake)"
 fi

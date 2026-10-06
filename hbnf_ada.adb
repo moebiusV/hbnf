@@ -763,10 +763,37 @@ package body HBNF_Ada is
          end if;
       end Elem_Type;
 
-      --  A vector package instantiation.
-      function Emit_Vector (Name, Elem : String) return String is
+      --  The vector package behind a reference whose rule is a list (through
+      --  any aliases), or "" when it is not one.  A vector of vectors needs
+      --  the element vector's `=` in scope at the instantiation, and that `=`
+      --  is declared in the element's own vector package.
+      function Vector_Pkg (Ref : String) return String is
+         J : constant Natural := Find (Rules, Ref);
+      begin
+         if J = 0 or else Scalar_Ada_Type (Ref) /= "" then
+            return "";
+         end if;
+         declare
+            L : constant Natural := Leaf_Target (Rules, J);
+         begin
+            if Infos (L).Kind = List then
+               return Ada_Ident (To_String (Rules (L).Name)) & "_Vectors";
+            end if;
+         end;
+         return "";
+      end Vector_Pkg;
+
+      --  A vector package instantiation.  Elem_Pkg is the vector package of
+      --  the element when the element is itself a vector.
+      function Emit_Vector
+        (Name, Elem : String; Elem_Pkg : String := "") return String is
          B : U;
       begin
+         --  Before the instantiation, which is where the `=` is needed.
+         if Elem_Pkg /= "" then
+            Append (B, "   use type " & Elem_Pkg & ".Vector;");
+            Append (B, LF);
+         end if;
          Append (B, "   package " & Name & " is new Ada.Containers.Vectors");
          Append (B, LF);
          Append (B, "     (Positive, " & Elem & ");");
@@ -877,7 +904,8 @@ package body HBNF_Ada is
                                          "Unbounded_String"));
             else
                Append (Buf, Emit_Vector
-                 (Base & "_Vectors", Elem_Type (Idx, To_String (Info.Elem_Name))));
+                 (Base & "_Vectors", Elem_Type (Idx, To_String (Info.Elem_Name)),
+                  Vector_Pkg (To_String (Info.Elem_Name))));
             end if;
          else
             --  A group element: emit a named entry record (value members).
@@ -1045,7 +1073,8 @@ package body HBNF_Ada is
                      Append (Res, Emit_Vector
                        (Ada_Ident (To_String (Rules (I).Name)) & "_" &
                         Ada_Ident (To_String (M.Name)) & "_Vectors",
-                        Elem_Type (I, To_String (M.Name))));
+                        Elem_Type (I, To_String (M.Name)),
+                        Vector_Pkg (To_String (M.Name))));
                      Append (Res, LF);
                   end if;
                end loop;
@@ -1947,8 +1976,29 @@ package body HBNF_Ada is
             Append (Buf, "   end loop;" & LF);
          end Free_Vector;
 
-         --  One member of a record, released in place.
-         procedure Free_Member (Idx : Natural; M : Member; Buf : in out U) is
+         --  The loop releasing every element of a vector whose elements are
+         --  themselves vectors, each freed by its own list rule's Free_.  The
+         --  element is a copy (Free_ takes it `in out`), so it is stored back:
+         --  the original would otherwise keep the pointers just released.
+         procedure Free_List_Vector (Buf : in out U; Vec, Elem : String) is
+         begin
+            Append (Buf, "   for K in " & Vec & ".First_Index .. "
+                    & Vec & ".Last_Index loop" & LF);
+            Append (Buf, "      declare" & LF);
+            Append (Buf, "         E : " & Elem & "_Type := " & Vec
+                    & " (K);" & LF);
+            Append (Buf, "      begin" & LF);
+            Append (Buf, "         Free_" & Elem & " (E);" & LF);
+            Append (Buf, "         " & Vec & ".Replace_Element (K, E);" & LF);
+            Append (Buf, "      end;" & LF);
+            Append (Buf, "   end loop;" & LF);
+         end Free_List_Vector;
+
+         --  One member of a record, released in place.  Prefix is how the record
+         --  is named: `V.` for the parameter, `E.` for a local copy of a vector
+         --  element.
+         procedure Free_Member
+           (Idx : Natural; M : Member; Prefix : String; Buf : in out U) is
             NM  : constant String := To_String (M.Name);
             F   : constant String := Ada_Field (NM);
             J   : constant Natural := Find (Rules, NM);
@@ -1968,21 +2018,27 @@ package body HBNF_Ada is
                --  element rule's access nodes whenever Emit made that rule a
                --  record, which is exactly when they were allocated.
                if J > 0 and then Is_Record (Analyze (Rules, J)) then
-                  Free_Vector (Buf, "V." & F, Ada_Ident (NM));
+                  Free_Vector (Buf, Prefix & F, Ada_Ident (NM));
+               elsif J > 0 and then Over_Leaf (Rules, J)
+                 and then Analyze (Rules, Leaf_Target (Rules, J)).Kind = List
+               then
+                  Free_List_Vector
+                    (Buf, Prefix & F,
+                     Ada_Ident (To_String (Rules (Leaf_Target (Rules, J)).Name)));
                end if;
             elsif Rec > 0 then
-               Append (Buf, "   if V." & F & " /= null then" & LF);
+               Append (Buf, "   if " & Prefix & F & " /= null then" & LF);
                Append (Buf, "      Free_"
                        & Ada_Ident (To_String (Rules (Rec).Name))
-                       & " (V." & F & ".all);" & LF);
+                       & " (" & Prefix & F & ".all);" & LF);
                Append (Buf, "      Dealloc_"
                        & Ada_Ident (To_String (Rules (Rec).Name))
-                       & " (V." & F & ");" & LF);
+                       & " (" & Prefix & F & ");" & LF);
                Append (Buf, "   end if;" & LF);
             elsif J > 0 and then Analyze (Rules, J).Kind = List then
                --  A member naming a list rule: that rule's own Free_ walks
                --  the vector it is a subtype of.
-               Append (Buf, "   Free_" & Ada_Ident (NM) & " (V." & F & ");"
+               Append (Buf, "   Free_" & Ada_Ident (NM) & " (" & Prefix & F & ");"
                        & LF);
             elsif J > 0 and then Analyze (Rules, J).Kind = Scalar
               and then Over_Leaf (Rules, J)
@@ -1993,7 +2049,7 @@ package body HBNF_Ada is
                Append (Buf, "   Free_"
                        & Ada_Ident
                            (To_String (Rules (Leaf_Record (Rules, NM)).Name))
-                       & " (V." & F & ");" & LF);
+                       & " (" & Prefix & F & ");" & LF);
             end if;
             --  Anything else -- a scalar, an enum, an Unbounded_String --
             --  owns no heap node; the string finalizes itself.
@@ -2025,7 +2081,7 @@ package body HBNF_Ada is
                   begin
                      if Is_Record (Info) then
                         for M of Info.Members loop
-                           Free_Member (I, M, Stmts);
+                           Free_Member (I, M, "V.", Stmts);
                         end loop;
                      elsif Info.Elem_Members.Is_Empty
                        and then Info.Elem_Name /= Null_Unbounded_String
@@ -2038,12 +2094,46 @@ package body HBNF_Ada is
                            then
                               Free_Vector (Stmts, "V",
                                 Ada_Ident (To_String (Info.Elem_Name)));
+                           elsif E > 0 and then Over_Leaf (Rules, E)
+                             and then Analyze
+                               (Rules, Leaf_Target (Rules, E)).Kind = List
+                           then
+                              --  A list of lists (`sums = 1*sum`).
+                              Free_List_Vector
+                                (Stmts, "V",
+                                 Ada_Ident
+                                   (To_String
+                                      (Rules (Leaf_Target (Rules, E)).Name)));
+                           end if;
+                        end;
+                     elsif not Info.Elem_Members.Is_Empty then
+                        --  A group element is a record held by value in the
+                        --  vector, holding the access nodes of its members.
+                        --  Each is freed on a copy that is then stored back.
+                        --  An entry's members are typed bare, not as vectors.
+                        declare
+                           Inner : U;
+                        begin
+                           for M of Info.Elem_Members loop
+                              Free_Member
+                                (I, (Name => M.Name, Is_List => False),
+                                 "E.", Inner);
+                           end loop;
+                           if To_String (Inner) /= "" then
+                              Append (Stmts, "   for K in V.First_Index .. "
+                                      & "V.Last_Index loop" & LF);
+                              Append (Stmts, "      declare" & LF);
+                              Append (Stmts, "         E : " & CN & "_Entry := V (K);"
+                                      & LF);
+                              Append (Stmts, "      begin" & LF);
+                              Append (Stmts, To_String (Inner));
+                              Append (Stmts, "         V.Replace_Element (K, E);"
+                                      & LF);
+                              Append (Stmts, "      end;" & LF);
+                              Append (Stmts, "   end loop;" & LF);
                            end if;
                         end;
                      end if;
-                     --  A group element is a record held by value, and such a
-                     --  vector does not compile today (its element type has
-                     --  no visible "="), so there is nothing to free there yet.
 
                      Append (Free_Decls, "   procedure Free_" & CN
                              & " (V : in out " & CN & "_Type);" & LF);
