@@ -322,6 +322,19 @@ for shape in '*( "a" )' '*%x41' '"k" *word'; do
 	fi
 done
 
+echo "== a run that may be empty (*X) in a phrase rule =="
+# `*DIGIT` before another element used to fail the rule when no digit was
+# there: its hidden scanner rule demanded at least one character.  The rule
+# has to be a phrase rule (the literal `go` makes it one) to be lifted.
+rm -f "$W/t"; gen <<G
+include "$CORE"
+whitespace SP
+doc = *DIGIT "go"
+G
+check OK   "go"   "no digit at all"
+check OK   "42go" "digits first"
+check FAIL "42"   "but the word is still required"
+
 echo "== recursive tree types (RFCPLAN step 9) =="
 # All four backends emit the field that breaks the cycle as a pointer (step
 # 9b), so the grammar generates; C is compiled and run here, the others by

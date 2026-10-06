@@ -2640,7 +2640,6 @@ package body HBNF_C is
    --  consumes a token stream and allocates/populates the structs above.
    --  =====================================================================
 
-   --  The token kind a core scalar reads (mirrors the matcher's Match_Core).
    --  The scanner a core scalar runs: `word`/`atom`/`bool`/`flag` read the
    --  `word` rule, `int`/`uN`/`iN` the `int` rule, `str` the `str` rule.  The
    --  core rule is a hand-written jet (`jet_*`) when the grammar does not
@@ -3841,9 +3840,14 @@ package body HBNF_C is
          end if;
          if Is_Char_Rule (Rules, NM) then
             --  A character-level rule: run its scanner and yield the text.
-            Append (Buf, Fill ("c_rule_jet",
-              (H ("scan", "scan_" & C_Name (NM)),
-               H ("desc", NM))));
+            --  A scanner that matches nothing fails the rule, unless the rule
+            --  is a single `*X`: a run that may be empty (`*LF`) matches the
+            --  empty string, and the phrase rule that named it goes on.
+            Append (Buf, Fill
+              ((if Natural (P.Length) = 1 and then P (1).Min = 0
+                then "c_rule_scan_opt" else "c_rule_jet"),
+               (H ("scan", "scan_" & C_Name (NM)),
+                H ("desc", NM))));
             Append (Buf, LF);
             return;
          end if;
@@ -3874,12 +3878,23 @@ package body HBNF_C is
                   Append (Buf, "    size_t start = p->pos;");
                   Append (Buf, LF);
                end if;
-               if Max >= 0 then
-                  Append (Buf, "    while (p->pos < p->len && count < "
-                    & Img (Natural (Max)) & ") {");
-               else
-                  Append (Buf, "    while (p->pos < p->len) {");
-               end if;
+               --  The loop stops at the end of the text, unless what it repeats
+               --  can match nothing: then an iteration there is still one
+               --  (`1*x` over an empty `x` is satisfied by no input at all).
+               declare
+                  At_End : constant String :=
+                    (if Repeated_Body_Nullable (Rules, E) then ""
+                     else "p->pos < p->len");
+               begin
+                  if Max >= 0 then
+                     Append (Buf, "    while ("
+                       & (if At_End = "" then "" else At_End & " && ")
+                       & "count < " & Img (Natural (Max)) & ") {");
+                  else
+                     Append (Buf, "    while ("
+                       & (if At_End = "" then "1" else At_End) & ") {");
+                  end if;
+               end;
                Append (Buf, LF);
                Append (Buf, "        " & C_Type_Name (NM) & " *nn ="
                  & " (" & C_Type_Name (NM) & " *)calloc(1, sizeof(*nn));");
@@ -3967,6 +3982,12 @@ package body HBNF_C is
                Append (Buf, LF);
                if Bounded then
                   Append (Buf, "        count++;");
+                  Append (Buf, LF);
+               end if;
+               --  What is repeated can match nothing: an iteration that did
+               --  not advance would match the same nothing again, forever.
+               if Repeated_Body_Nullable (Rules, E) then
+                  Append (Buf, "        if (p->pos == save) break;");
                   Append (Buf, LF);
                end if;
                Append (Buf, "    }");

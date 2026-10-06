@@ -452,6 +452,100 @@ package body HBNF_Compilable is
       and then R.Jet_Code = Null_Unbounded_String
       and then not (R.Pattern (1).Min = 1 and then R.Pattern (1).Max = 1));
 
+   --  Which rules can match nothing, as a fixpoint over the rules.  A rule
+   --  can when some branch is all elements that can; an element can when it
+   --  repeats from zero, or is a rule that can, or a group with such a branch.
+   type Flags is array (Positive range <>) of Boolean;
+
+   function Seq_Nullable (Rules : Rule_Vectors.Vector; Nullable : Flags;
+                          V : Element_Vectors.Vector;
+                          First, Last : Natural) return Boolean;
+
+   function El_Nullable (Rules : Rule_Vectors.Vector; Nullable : Flags;
+                         E : Element_Access) return Boolean is
+   begin
+      if E.Min = 0 then
+         return True;
+      end if;
+      case E.Kind is
+         when Name =>
+            declare
+               J : constant Natural := Find (Rules, To_String (E.Name));
+            begin
+               return J /= 0 and then Nullable (J);
+            end;
+         when Group =>
+            return Seq_Nullable
+              (Rules, Nullable, E.Items, 1, Natural (E.Items.Length));
+         when Literal | Alt | Char_Range =>
+            return False;
+         when Block =>
+            --  A `%action{ }` between elements matches nothing, so it is
+            --  nullable.  `Lift` has already replaced it by the time this
+            --  runs, so the arm is here for completeness.
+            return True;
+      end case;
+   end El_Nullable;
+
+   --  True when some branch of V (First .. Last) can match nothing.
+   function Seq_Nullable (Rules : Rule_Vectors.Vector; Nullable : Flags;
+                          V : Element_Vectors.Vector;
+                          First, Last : Natural) return Boolean is
+      All_Null : Boolean := True;
+   begin
+      for I in First .. Last + 1 loop
+         if I > Last or else V (I).Kind = Alt then
+            if All_Null then
+               return True;
+            end if;
+            All_Null := True;
+         elsif not El_Nullable (Rules, Nullable, V (I)) then
+            All_Null := False;
+         end if;
+      end loop;
+      return False;
+   end Seq_Nullable;
+
+   function Nullable_Set (Rules : Rule_Vectors.Vector) return Flags is
+      N        : constant Natural := Natural (Rules.Length);
+      Nullable : Flags (1 .. N) := [others => False];
+      Changed  : Boolean := True;
+   begin
+      while Changed loop
+         Changed := False;
+         for I in 1 .. N loop
+            if not Nullable (I)
+              and then Rules (I).Jet_Code = Null_Unbounded_String
+              and then Seq_Nullable (Rules, Nullable, Rules (I).Pattern, 1,
+                                     Natural (Rules (I).Pattern.Length))
+            then
+               Nullable (I) := True;
+               Changed := True;
+            end if;
+         end loop;
+      end loop;
+      return Nullable;
+   end Nullable_Set;
+
+   function Repeated_Body_Nullable
+     (Rules : Rule_Vectors.Vector; E : Element_Access) return Boolean is
+      Nullable : constant Flags := Nullable_Set (Rules);
+   begin
+      case E.Kind is
+         when Name =>
+            declare
+               J : constant Natural := Find (Rules, To_String (E.Name));
+            begin
+               return J /= 0 and then Nullable (J);
+            end;
+         when Group =>
+            return Seq_Nullable
+              (Rules, Nullable, E.Items, 1, Natural (E.Items.Length));
+         when others =>
+            return False;
+      end case;
+   end Repeated_Body_Nullable;
+
    --  Left recursion the reader did not turn into a loop: through other
    --  rules (`a = b x`, `b = a y`), or behind something that can match
    --  nothing (`a = [x] a y`).  The parser would call a rule again at the
@@ -462,7 +556,7 @@ package body HBNF_Compilable is
    --  an entry.
    procedure Check_Left_Recursion (Rules : Rule_Vectors.Vector) is
       N        : constant Natural := Natural (Rules.Length);
-      Nullable : array (1 .. N) of Boolean := [others => False];
+      Nullable : constant Flags := Nullable_Set (Rules);
       type Edge_Array is array (1 .. N) of Boolean;
       Left     : array (1 .. N) of Edge_Array :=
         [others => [others => False]];
@@ -470,46 +564,12 @@ package body HBNF_Compilable is
       function Rule_Of (E : Element_Access) return Natural is
         (if E.Kind = Name then Find (Rules, To_String (E.Name)) else 0);
 
-      function Seq_Nullable (V : Element_Vectors.Vector;
-                             First, Last : Natural) return Boolean;
-
       function El_Nullable (E : Element_Access) return Boolean is
-      begin
-         if E.Min = 0 then
-            return True;
-         end if;
-         case E.Kind is
-            when Name =>
-               return Rule_Of (E) /= 0 and then Nullable (Rule_Of (E));
-            when Group =>
-               return Seq_Nullable (E.Items, 1, Natural (E.Items.Length));
-            when Literal | Alt | Char_Range =>
-               return False;
-            when Block =>
-               --  A `%action{ }` between elements matches nothing, so it is
-               --  nullable.  `Lift` has already replaced it by the time this
-               --  runs, so the arm is here for completeness.
-               return True;
-         end case;
-      end El_Nullable;
+        (El_Nullable (Rules, Nullable, E));
 
-      --  True when some branch of V (First .. Last) can match nothing.
       function Seq_Nullable (V : Element_Vectors.Vector;
                              First, Last : Natural) return Boolean is
-         All_Null : Boolean := True;
-      begin
-         for I in First .. Last + 1 loop
-            if I > Last or else V (I).Kind = Alt then
-               if All_Null then
-                  return True;
-               end if;
-               All_Null := True;
-            elsif not El_Nullable (V (I)) then
-               All_Null := False;
-            end if;
-         end loop;
-         return False;
-      end Seq_Nullable;
+        (Seq_Nullable (Rules, Nullable, V, First, Last));
 
       function Starts (R : Rule) return Element_Vectors.Vector is
         (if R.Left_Bases > 0
@@ -536,20 +596,7 @@ package body HBNF_Compilable is
          end loop;
       end Mark;
 
-      Changed : Boolean := True;
    begin
-      while Changed loop
-         Changed := False;
-         for I in 1 .. N loop
-            if not Nullable (I) and then Rules (I).Jet_Code = Null_Unbounded_String
-              and then Seq_Nullable (Rules (I).Pattern, 1,
-                                     Natural (Rules (I).Pattern.Length))
-            then
-               Nullable (I) := True;
-               Changed := True;
-            end if;
-         end loop;
-      end loop;
       for I in 1 .. N loop
          if Rules (I).Jet_Code = Null_Unbounded_String then
             Mark (I, Starts (Rules (I)));

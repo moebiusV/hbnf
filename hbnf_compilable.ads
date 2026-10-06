@@ -9,8 +9,7 @@ with HBNF_Grammar;
 --  The emitters flatten a group inside a sequence into plain concatenation,
 --  so an alternation, an optional or a repetition there used to compile into
 --  a parser for a different language, with no diagnostic.  Check turns those
---  into generation-time errors until the emitters implement them; the
---  interpreter (HBNF_Match) handles all of them and does not call this.
+--  into generation-time errors until the emitters implement them.
 --
 --  Backend is the --backend= value; repetition bounds other than `*` are
 --  enforced by the C backend only, so the other backends get a warning.
@@ -95,6 +94,14 @@ package HBNF_Compilable is
    end record;
 
    package Edge_Vectors is new Ada.Containers.Vectors (Positive, By_Value_Edge);
+
+   --  True when what a repetition repeats can match nothing, so one
+   --  iteration may not advance the input.  A loop over it must stop when an
+   --  iteration does not advance, or it never ends (RFCPLAN decision 9).  E is
+   --  the repeated element: a rule reference, or a group.
+   function Repeated_Body_Nullable
+     (Rules : HBNF_Grammar.Rule_Vectors.Vector;
+      E     : HBNF_Grammar.Element_Access) return Boolean;
 
    function Back_Edges (N : Natural; Edges : Edge_Vectors.Vector)
      return Edge_Vectors.Vector;
