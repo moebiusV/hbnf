@@ -100,7 +100,9 @@ package HBNF_Compilable is
      return Edge_Vectors.Vector;
    --  One field per cycle to make indirect, chosen deterministically so
    --  output stays byte-stable: the field edge on the cycle whose owner has
-   --  the lowest rule index (then the lowest member name, then target).
+   --  the lowest rule index (then the lowest member name).  A member name
+   --  is unique within its owner, so that pair names one edge and the choice
+   --  never depends on iteration order.
    --  Raises Parse_Error when a cycle has no field edge to break -- an
    --  all-alias cycle (`a = b`, `b = a`) has nothing to point at.
 

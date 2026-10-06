@@ -1092,11 +1092,21 @@ should claim that before 10.
        allocator.  The ten daemon grammars are byte-identical for C, Ada and
        Rust; Zig's gain `deinit_*` functions and lose nothing.
 
-       **Known gaps, none blocking.**  C leaves a failed branch's pointer
-       non-NULL in the unused union arm: memory-safe, and Rust and Zig do
-       not share it.  Ada's `recursive-via-list` output does
-       not compile (a vector of records needs the record's `=` in scope),
-       which predates 9b.
+       **Known gaps, none blocking.**  Zig's tree does not own its strings:
+       a quoted string's text is its own allocation that nothing frees, and
+       `parse_config` never frees the file text the other strings slice.
+       Fixing that means the tree owning its strings, which belongs with
+       step 6's typed semantic values, not here.
+
+       **Found and fixed on the way.**  C's backtracking reset freed a failed
+       branch's fields but zeroed the *next* branch's, so a field only the
+       failed branch set read as set in the branch that matched (and a later
+       reset could free it twice); it now zeroes the failed branch's, and a
+       freed back-edge pointer is nulled.  Ada's `recursive-via-list` output
+       did not compile (a vector of vectors needs the element vector's `=`
+       in scope) and its `Free_` skipped lists of group entries and lists of
+       lists, leaking their access nodes; both fixed, and
+       `tests/recursive.sh` builds the fixture under AddressSanitizer.
 
    Gate: the four backends accept or refuse the same schemas, the
    expression grammar above compiles and parses in all four, and the nine
