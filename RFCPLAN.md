@@ -880,7 +880,19 @@ should claim that before 10.
 5. **`/` between phrases** (decision 1; factoring needs step 2).  Then:
    - RFC excerpts as regression tests: RFC 5234 Appendix B.1 verbatim, RFC
      3986 `scheme` and `host`, RFC 5322 `addr-spec`, RFC 9112
-     `request-line`;
+     `request-line`.  *Done 2026-10-06* (`tests/rfc/`, run by `tests/rfc.sh`;
+     the headline rules in `tests/e2e.sh`).  Each fragment has the verbatim
+     ABNF, a fixed-up file, vectors and a README with hbnf's exact messages.
+     It found, and this step fixed: `whitespace none`; `--root=RULE`;
+     keywords only in a grammar that has words (`word`/`atom` or `keywords`);
+     a literal with no letters never `%i`; one-character strings and
+     case-insensitive letters in char rules and `/` unions; a string
+     crossing a newline (`"\"`) says why; rules named `atom`/`word` are an
+     error.  **Still open, and the work of this step's first bullet:**
+     `/` between phrases (the fixed-up files write `|` and repair each
+     overlap by hand: `dec-octet`, `host`, `IPv6address`, `FWS`,
+     `local-part`/`domain`); the byte-vs-code-point `OCTET` divergence; poor
+     messages for lifted rules ("expected IPvFuture_2").
    - the character model in Rust, Zig and Ada through the templates.  *Done
      2026-10-06, inside step 9c*, which could not retire its reader without
      it.  (The interpreter used to be named here too, "on the same
