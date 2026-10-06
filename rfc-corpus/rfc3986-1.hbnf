@@ -75,8 +75,7 @@ path-abempty  = *( "/" segment )
 path-absolute = "/" [ segment-nz *( "/" segment ) ]
 path-noscheme = segment-nz-nc *( "/" segment )
 path-rootless = segment-nz *( "/" segment )
-path-empty    = 0pchar                  ; hbnf: `0<pchar>` is a prose-val in ABNF's grammar, and
-                                        ;   it means zero pchar; written as the rule it names
+path-empty    = 0<pchar>
 
 segment       = *pchar
 segment-nz    = 1*pchar

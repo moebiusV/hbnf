@@ -115,6 +115,53 @@ check OK   "7"   "a character rule takes the longest alternative: one digit"
 check OK   "42"  "two digits"
 check OK   "199" "three digits, in the RFC's own order"
 check FAIL "a"   "not a digit"
+echo "== <name> rules, as Backus and Naur write them: one rule, whatever the operator =="
+for op in "::=" ":=" ":" "="; do
+	rm -f "$W/t"; gen <<G 2>/dev/null
+<number> $op <digit> <digit>
+<digit> $op "0" | "1"
+G
+	check OK   "01"  "\`$op\`: rules named <number> and <digit>"
+	check FAIL "02"  "\`$op\`: 2 is no digit"
+done
+rm -f "$W/t"; gen <<'G'
+<unsigned integer> = <digit> | <unsigned integer> <digit>
+<digit> = "0" | "1"
+G
+check OK   "1011" "a name with a space, and left recursion through it"
+check FAIL "12"   "2 is no digit"
+rm -f "$W/t"; gen <<'G'
+doc = <d> d
+d = "y"
+G
+check OK   "yy"   "<d> is the rule d"
+rm -f "$W/t"; gen <<'G'
+doc = <my scanner> "x"
+<my scanner> = %scan { size_t i = pos; while (i < len && s[i] == 'a') i++; return i - pos; }
+G
+check OK   "aax"  "%scan under a <name>"
+check FAIL "x"    "the scanner needs an a"
+printf '"a" | "b"\n' > "$W/body.txt"
+rm -f "$W/t"; gen <<G
+doc = <letter> "!"
+<letter> = %grammar "$W/body.txt"
+G
+check OK   "a!"   "%grammar reads the body of a rule from a file"
+check FAIL "c!"   "c is not in the file's body"
+refuse "no such file" "%grammar with no such file" <<'G'
+doc = x
+x = %grammar "/no/such/file.hbnf"
+G
+refuse "a bare number" "a terminal written bare, as BNF writes it" <<'G'
+<digit> ::= 0 | 1
+G
+refuse "writes it in quotes" "a bare name that no rule defines" <<'G'
+doc = foo
+G
+refuse "names a rule" "a <...> that no rule defines" <<'G'
+doc = <not written yet> "x"
+G
+
 echo "== a repetition ABNF would give back (step 5) =="
 rm -f "$W/t"; gen <<G
 include "$CORE"

@@ -62,7 +62,7 @@ around it, and the plan has the step.
 | `whitespace`: a phrase rule skipped blank space before every element, so `method SP request-target` never matched its `SP`; there was no way to turn it off, and with none, C's `parse_text` called a `skip_ws` it had not defined | **fixed**: `whitespace none`, and the C bug |
 | A literal with no letters was marked case-insensitive by `sensitivity string %i` (`"1"`), which made `dec-octet` not a character rule | **fixed** |
 | Generating one rule of a collected ABNF (`host` out of RFC 3986) meant moving it to the top of the file | **fixed**: `--root=RULE` |
-| `<prose-val>` for a rule defined elsewhere (`uri-host = <host, see [URI]...>`, `path-empty = 0<pchar>`) is refused with "not written yet" | works as designed; the message does not say where to look, and `0<x>` could simply be empty.  The fixed-up files write the rule |
+| `<...>` for a rule defined elsewhere (`uri-host = <host, see [URI]...>`) was a "prose-val" refused with a bare "not written yet"; `0<pchar>` was refused the same way | **fixed**: `<...>` always names a rule, so `<pchar>` is `pchar` and `0<pchar>` compiles as written; one nothing defines is "not written yet", with the rule it probably means and what to write |
 | A later definition replaces an earlier one, so RFC 9110's prose `port` would replace RFC 3986's real one | works as designed; noted in `rfc9112/README.md` |
 | `OCTET = %x00-FF` is a byte in ABNF and a code point up to U+00FF in hbnf, which reads UTF-8 | **open**, the `binary` layer (step 5) |
 | Rust: a repetition with a maximum of zero (`0pchar`) emitted a comparison rustc rejects | **fixed** |
@@ -73,7 +73,7 @@ There are two kinds, and each says more than "no":
 
 - **The ABNF is wrong** (or says less than it means): the message says *why* it
   is wrong, and, where what the author meant can be guessed, the form to write
-  (`0<pchar>` is `0pchar`; `uri-host = <host, see [URI]>` is `uri-host = host`
+  (`uri-host = <host, see [URI]>` is `uri-host = host`
   and an `include`).
 - **The ABNF is fine, and hbnf does it differently**: the message says what the
   notation means in ABNF, what it means in hbnf, and how to write it in hbnf
