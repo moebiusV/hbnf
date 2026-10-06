@@ -50,30 +50,6 @@ package body HBNF_Rust is
       return "";
    end Scalar_Rust_Type;
 
-   --  The base `Kind` variant a core-type char rule produces: the lexer's
-   --  `int`/`str`/`word` scanners reuse `Kind::Int`/`Kind::Str`/`Kind::Atom`
-   --  rather than taking a variant of their own.
-   function Scalar_Rust_Kind (Name : String) return String is
-   begin
-      if Name = "str" then
-         return "Str";
-      elsif Name = "int" then
-         return "Int";
-      elsif Name'Length >= 2 then
-         declare
-            P : constant Character := Name (Name'First);
-            R : constant String := Name (Name'First + 1 .. Name'Last);
-         begin
-            if (P = 'u' or else P = 'i')
-              and then (for all C of R => C in '0' .. '9')
-            then
-               return "Int";
-            end if;
-         end;
-      end if;
-      return "Atom";  --  atom / word / bool / flag
-   end Scalar_Rust_Kind;
-
    --  A snake_case identifier from a schema name ('-' -> '_', upper -> lower).
    function Rust_Snake (S : String) return String is
       Buf : U;
@@ -1219,57 +1195,134 @@ package body HBNF_Rust is
       end Core_Desc;
 
       --  The token kind a core scalar reads.
-      function Scalar_Kind (Name : String) return String is
+      --  The core scanner a core scalar reads: `word`/`atom`/`bool`/`flag`
+      --  read the `word` rule, `int`/`uN`/`iN` the `int` rule, `str` the `str`
+      --  rule.  The rule is the grammar's own char rule when it defines one,
+      --  else the built-in scanner of the same name.
+      function Core_Base (Name : String) return String is
       begin
          if Name = "str" then
-            return "Kind::Str";
+            return "str";
          elsif Name = "int" then
-            return "Kind::Int";
-         elsif Name'Length >= 2 then
-            declare
-               P : constant Character := Name (Name'First);
-               R : constant String := Name (Name'First + 1 .. Name'Last);
-            begin
-               if (P = 'u' or else P = 'i')
-                 and then (for all C of R => C in '0' .. '9')
-               then
-                  return "Kind::Int";
-               end if;
-            end;
+            return "int";
+         elsif Name'Length >= 2
+           and then (Name (Name'First) = 'u' or else Name (Name'First) = 'i')
+           and then (for all C of Name (Name'First + 1 .. Name'Last)
+                     => C in '0' .. '9')
+         then
+            return "int";
          end if;
-         return "Kind::Atom";
-      end Scalar_Kind;
+         return "word";
+      end Core_Base;
 
-      --  The Rust expression that converts the token into a core value.
-      function Scalar_Parse (Name : String) return String is
+      --  The call that scans a core scalar at the parser's position.
+      function Scan_Call (Name : String) return String is
+        ("scan_" & Rust_Snake (Core_Base (Name))
+         & "(p.text.as_bytes(), p.pos, p.text.len())");
+
+      --  The extra condition that rejects a matched bareword that is a
+      --  keyword (`word` must not swallow a directive's keyword), and its
+      --  positive form.  n is the matched length, the text starts at p.pos.
+      function Scalar_Reject (Name : String) return String is
+        (if Name = "atom" or else Name = "word"
+         then " || is_keyword(&p.text[p.pos..p.pos + n])"
+         else "");
+
+      function Scalar_Guard (Name : String) return String is
+        (if Name = "atom" or else Name = "word"
+         then " && !is_keyword(&p.text[p.pos..p.pos + n])"
+         else "");
+
+      --  The Rust expression that converts the matched text into a core value.
+      function Scalar_Value (Name : String) return String is
+         Raw : constant String := "p.text[p.pos..p.pos + n]";
       begin
-         if Name = "str" or else Name = "atom" or else Name = "word" then
-            return "p.toks[p.pos].text.clone()";
+         if Name = "str" then
+            return "str_value(&" & Raw & ")";
+         elsif Name = "atom" or else Name = "word" then
+            return Raw & ".to_string()";
          elsif Name = "bool" or else Name = "flag" then
-            return "matches!(p.toks[p.pos].text.as_str(), ""yes"" | ""on"" | ""true"")";
+            return "matches!(&" & Raw & ", ""yes"" | ""on"" | ""true"")";
          else
-            return "p.toks[p.pos].text.parse().unwrap()";
+            return Raw & ".parse().unwrap()";
          end if;
-      end Scalar_Parse;
+      end Scalar_Value;
 
-      --  The token kind that begins a parse of `Rule_Name`, or "" if unknown.
-      function Start_Kind (Rule_Name : String) return String is
-         J : constant Natural := Find (Rules, Rule_Name);
+      --  A letter-led literal is a keyword: matched by the `word` scanner, so
+      --  `in` never matches the front of `input`.  Any other literal compares
+      --  bytes.  (Same rule as the C backend's.)
+      function Is_Keyword_Lit (S : String) return Boolean is
+        (S'Length > 0
+         and then (S (S'First) in 'a' .. 'z'
+                   or else S (S'First) in 'A' .. 'Z'
+                   or else S (S'First) = '_')
+         and then (HBNF_Grammar.Keyword_Table.Is_Empty
+                   or else HBNF_Grammar.Keyword_Table.Contains
+                             (To_Unbounded_String (S))));
+
+      --  The rule phrase rules skip between their elements, "" when none.
+      function Whitespace_Rule_Name return String is
       begin
-         if J = 0 then
-            return "";
-         end if;
-         declare
-            P : constant Element_Vectors.Vector := Rules (J).Pattern;
-         begin
-            if Natural (P.Length) = 1 and then P (1).Kind = HBNF_Grammar.Name
-              and then Is_Core (To_String (P (1).Name))
-            then
-               return Scalar_Kind (To_String (P (1).Name));
+         for I in 1 .. N loop
+            if Rules (I).Whitespace /= Null_Unbounded_String then
+               return To_String (Rules (I).Whitespace);
             end if;
-         end;
+         end loop;
          return "";
-      end Start_Kind;
+      end Whitespace_Rule_Name;
+
+      Ws_Name : constant String := Whitespace_Rule_Name;
+
+      --  The words `word` must not match: the `keywords` table when there is
+      --  one, else every letter-led literal in the grammar, in first-appearance
+      --  order.  (As the C backend collects them.)
+      function Collect_Keywords return String_Vectors.Vector is
+         K : String_Vectors.Vector;
+
+         function Present (X : U) return Boolean is
+           (for some Y of K => Y = X);
+
+         procedure Walk (Els : Element_Vectors.Vector) is
+         begin
+            for E of Els loop
+               case E.Kind is
+                  when Literal =>
+                     if Is_Keyword_Lit (To_String (E.Lit))
+                       and then not Present (E.Lit)
+                     then
+                        K.Append (E.Lit);
+                     end if;
+                  when Group =>
+                     Walk (E.Items);
+                  when others =>
+                     null;
+               end case;
+            end loop;
+         end Walk;
+      begin
+         if not HBNF_Grammar.Keyword_Table.Is_Empty then
+            for W of HBNF_Grammar.Keyword_Table loop
+               K.Append (W);
+            end loop;
+            return K;
+         end if;
+         for I in 1 .. N loop
+            Walk (Rules (I).Pattern);
+         end loop;
+         return K;
+      end Collect_Keywords;
+
+      Keywords : constant String_Vectors.Vector := Collect_Keywords;
+
+      --  The four core scanners a grammar may leave undefined: the compiler
+      --  injects each as a C jet, and this backend has its own Rust for them.
+      function Is_Builtin_Jet (Nm : String) return Boolean is
+        (Nm = "word" or else Nm = "int" or else Nm = "str" or else Nm = "ws");
+
+      --  The scanner a jet rule runs: the built-in one, or the stub for
+      --  hand-written C.
+      function Jet_Fn (Nm : String) return String is
+        ((if Is_Builtin_Jet (Nm) then "scan_" else "jet_") & Rust_Snake (Nm));
 
       --  A list's element type: Vec<T> wraps the referenced rule's type (a
       --  plain reference) or the entry struct a grouped alternation builds.
@@ -1316,23 +1369,6 @@ package body HBNF_Rust is
          end if;
       end Range_Cond;
 
-      --  True when some branch of an enum is a punctuation literal
-      --  ("+", "<="): the lexer makes it a punct token, not an atom.
-      function Has_Punct_Lit (V : Element_Vectors.Vector) return Boolean is
-        (for some E of V =>
-           E.Kind = Literal and then Length (E.Lit) > 0
-           and then Ada.Strings.Unbounded.Element (E.Lit, 1) not in
-             'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
-
-      --  The current token's text is literal L: as written, or in any case
-      --  for a %i literal.
-      function Text_Is (L : Element_Access) return String is
-        (if L.No_Case
-         then "p.toks[p.pos].text.eq_ignore_ascii_case("""
-              & Rust_Escape (To_String (L.Lit)) & """)"
-         else "p.toks[p.pos].text == """ & Rust_Escape (To_String (L.Lit))
-              & """");
-
       procedure Emit_Seq
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural;
@@ -1342,32 +1378,51 @@ package body HBNF_Rust is
             declare
                E : constant Element_Access := Els (K);
             begin
+               --  A phrase rule skips whitespace before each element.
+               if E.Kind = Literal or else E.Kind = Name then
+                  Append (Buf, Ind & "p.skip_ws();");
+                  Append (Buf, LF);
+               end if;
                case E.Kind is
                   when Literal =>
-                     Append (Buf, Ind & "p.expect_lit"
-                       & (if E.No_Case then "_nocase" else "") & "("""
-                       & Rust_Escape (To_String (E.Lit)) & """)?;");
-                     Append (Buf, LF);
+                     declare
+                        Lit : constant String := To_String (E.Lit);
+                     begin
+                        Append (Buf, Ind
+                          & (if E.No_Case then "p.expect_word_nocase"
+                             elsif Is_Keyword_Lit (Lit) then "p.expect_word"
+                             else "p.expect_lit")
+                          & "(""" & Rust_Escape (Lit) & """)?;");
+                        Append (Buf, LF);
+                     end;
                   when Name =>
                      if Is_Core (To_String (E.Name)) then
-                        Append (Buf, Ind & "p.expect_kind("
-                          & Scalar_Kind (To_String (E.Name)) & ", """
-                          & Core_Desc (To_String (E.Name)) & """)?;");
-                        Append (Buf, LF);
-                        Append (Buf, Ind & Dst
-                          & Rust_Field (To_String (E.Name)) & " = "
-                          & Scalar_Parse (To_String (E.Name)) & "; p.pos += 1;");
-                        Append (Buf, LF);
+                        --  A core scalar: run its scanner at the position and
+                        --  convert the matched text.
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           Append (Buf, Ind & "{ let n = " & Scan_Call (NM)
+                             & "; if n == 0" & Scalar_Reject (NM)
+                             & " { return Err(p.fail(""" & Core_Desc (NM)
+                             & """)); } " & Dst & Rust_Field (NM) & " = "
+                             & Scalar_Value (NM) & "; p.pos += n; }");
+                           Append (Buf, LF);
+                        end;
                      elsif Is_Char_Rule (Rules, To_String (E.Name)) then
-                        --  A char-rule reference matches its token and yields the text.
-                        Append (Buf, Ind & "p.expect_kind(Kind::"
-                          & Rust_Type (To_String (E.Name)) & ", """
-                          & To_String (E.Name) & """)?;");
-                        Append (Buf, LF);
-                        Append (Buf, Ind & Dst
-                          & Rust_Field (To_String (E.Name))
-                          & " = p.toks[p.pos].text.clone(); p.pos += 1;");
-                        Append (Buf, LF);
+                        --  A char-rule reference runs its scanner here and
+                        --  yields the matched text.
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           Append (Buf, Ind & "{ let n = scan_" & Rust_Snake (NM)
+                             & "(p.text.as_bytes(), p.pos, p.text.len());"
+                             & " if n == 0 { return Err(p.fail(""" & NM
+                             & """)); } " & Dst & Rust_Field (NM)
+                             & " = p.text[p.pos..p.pos + n].to_string();"
+                             & " p.pos += n; }");
+                           Append (Buf, LF);
+                        end;
                      elsif Is_Back (Backs, Owner, To_String (E.Name)) then
                         Append (Buf, Ind & Dst
                           & Rust_Field (To_String (E.Name)) & " = Some(Box::new(parse_"
@@ -1455,26 +1510,20 @@ package body HBNF_Rust is
             return False;
          end Assigns;
       begin
-         if Is_Char_Rule (Rules, NM) then
-            --  A char rule is a token: expect its kind and capture the text.
-            --  A core-type char rule reuses the base Kind variant.
-            Append (Buf, "    p.expect_kind(Kind::"
-              & (if Is_Core_Name (NM) then Scalar_Rust_Kind (NM)
-                 else Rust_Type (NM)) & ", """
-              & NM & """)?;");
+         if Is_Char_Rule (Rules, NM) or else R.Jet_Code /= Null_Unbounded_String
+         then
+            --  A char rule is a scanner: run it here and capture the text.  A
+            --  jet is its built-in scanner, or the stub for hand-written C.
+            Append (Buf, "    let n = "
+              & (if R.Jet_Code /= Null_Unbounded_String
+                 then Jet_Fn (NM) else "scan_" & Rust_Snake (NM))
+              & "(p.text.as_bytes(), p.pos, p.text.len());");
             Append (Buf, LF);
-            Append (Buf, "    let r = p.toks[p.pos].text.clone(); p.pos += 1;");
+            Append (Buf, "    if n == 0 { return Err(p.fail("""
+              & (if R.Jet_Code /= Null_Unbounded_String then "a " else "")
+              & NM & """)); }");
             Append (Buf, LF);
-            Append (Buf, "    Ok(r)");
-            Append (Buf, LF);
-            return;
-         end if;
-         if R.Jet_Code /= Null_Unbounded_String then
-            --  A jet is a hand-written C scanner; this backend can't run it,
-            --  so read the token the generic lexer produced instead.
-            Append (Buf, "    p.expect_kind(Kind::Atom, ""a " & NM & """)?;");
-            Append (Buf, LF);
-            Append (Buf, "    let r = p.toks[p.pos].text.clone(); p.pos += 1;");
+            Append (Buf, "    let r = p.text[p.pos..p.pos + n].to_string(); p.pos += n;");
             Append (Buf, LF);
             Append (Buf, "    Ok(r)");
             Append (Buf, LF);
@@ -1496,38 +1545,43 @@ package body HBNF_Rust is
                   Append (Buf, LF);
                end if;
                if E.Kind = Name then
-                  declare
-                     SK : constant String := Start_Kind (To_String (E.Name));
-                  begin
-                     --  PEG's `*`: stop at the first element that fails,
-                     --  with the position restored, as C does; the caller
-                     --  decides.
-                     Append (Buf, "    loop {");
+                  --  PEG's `*`: stop at the end of input and at the first
+                  --  element that fails, with the position restored, as C
+                  --  does; the caller decides.
+                  Append (Buf, "    loop {");
+                  Append (Buf, LF);
+                  if Max_Stop /= "" then
+                     Append (Buf, "        " & Max_Stop & "; }");
                      Append (Buf, LF);
-                     if Max_Stop /= "" then
-                        Append (Buf, "        " & Max_Stop & "; }");
-                        Append (Buf, LF);
-                     end if;
-                     Append (Buf, "        if p.pos >= p.toks.len()"
-                       & (if SK /= ""
-                          then " || !matches!(p.toks[p.pos].kind, " & SK & ")"
-                          else "") & " { break; }");
+                  end if;
+                  Append (Buf, "        let save = p.pos;");
+                  Append (Buf, LF);
+                  Append (Buf, "        p.skip_ws();");
+                  Append (Buf, LF);
+                  if not Repeated_Body_Nullable (Rules, E) then
+                     Append (Buf, "        if p.pos >= p.text.len() { p.pos = save; break; }");
                      Append (Buf, LF);
-                  end;
+                  end if;
                   if Is_Core (To_String (E.Name)) then
-                     --  A list of a core type (`*word`): read the token in
+                     --  A list of a core type (`*word`): read the text in
                      --  place; there is no parse_ function for a core type.
-                     Append (Buf, "        if !matches!(p.toks[p.pos].kind, "
-                       & Scalar_Kind (To_String (E.Name)) & ") { break; }");
+                     Append (Buf, "        let n = " & Scan_Call (To_String (E.Name)) & ";");
                      Append (Buf, LF);
-                     Append (Buf, "        r.push(" & Scalar_Parse (To_String (E.Name))
-                       & "); p.pos += 1;");
+                     Append (Buf, "        if n == 0" & Scalar_Reject (To_String (E.Name))
+                       & " { p.pos = save; break; }");
+                     Append (Buf, LF);
+                     Append (Buf, "        r.push(" & Scalar_Value (To_String (E.Name))
+                       & "); p.pos += n;");
                      Append (Buf, LF);
                   else
-                     Append (Buf, "        let save = p.pos;");
-                     Append (Buf, LF);
                      Append (Buf, "        match parse_" & Rust_Snake (To_String (E.Name))
                        & "(p) { Ok(v) => r.push(v), Err(_) => { p.pos = save; break; } }");
+                     Append (Buf, LF);
+                  end if;
+                  --  What is repeated can match nothing: an iteration that
+                  --  did not advance would match the same nothing again.
+                  if Repeated_Body_Nullable (Rules, E) then
+                     Append (Buf, "        if p.pos == save { break; }");
                      Append (Buf, LF);
                   end if;
                   Append (Buf, "    }");
@@ -1576,6 +1630,10 @@ package body HBNF_Rust is
                   Append (Buf, LF);
                   Append (Buf, "        r.push(e);");
                   Append (Buf, LF);
+                  if Repeated_Body_Nullable (Rules, E) then
+                     Append (Buf, "        if p.pos == save { break; }");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "    }");
                   Append (Buf, LF);
                end if;
@@ -1588,11 +1646,31 @@ package body HBNF_Rust is
                Append (Buf, LF);
             end;
          elsif Is_Enum then
+            --  Each alternative matches its literal at the position, in order:
+            --  a keyword by the `word` scanner, any other literal by its bytes.
             declare
                Lits   : String_Vectors.Vector;
                Names  : String_Vectors.Vector;
                St     : Natural := 1;
                Branch : Natural := 0;
+
+               function Lit_At (L : Element_Access) return String is
+                  S  : constant String := To_String (L.Lit);
+                  NL : constant String := Img (S'Length);
+                  B  : constant String := "p.text.as_bytes()";
+                  Sl : constant String := B & "[p.pos..p.pos + " & NL & "]";
+                  Eq : constant String :=
+                    (if L.No_Case
+                     then Sl & ".eq_ignore_ascii_case(""" & Rust_Escape (S)
+                          & """.as_bytes())"
+                     else Sl & " == *""" & Rust_Escape (S) & """.as_bytes()");
+               begin
+                  if Is_Keyword_Lit (S) then
+                     return "scan_word(" & B & ", p.pos, p.text.len()) == "
+                       & NL & " && " & Eq;
+                  end if;
+                  return "p.pos + " & NL & " <= p.text.len() && " & Eq;
+               end Lit_At;
             begin
                for K in 1 .. Natural (P.Length) + 1 loop
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
@@ -1604,27 +1682,19 @@ package body HBNF_Rust is
                end loop;
                Names := Enum_Names (Lits);
 
-               if Has_Punct_Lit (P) then
-                  Append (Buf, "    if !matches!(p.toks[p.pos].kind, Kind::Atom | Kind::Punct)"
-                    & " { return Err(p.fail(""a " & RT & """)); }");
-               else
-                  Append (Buf, "    p.expect_kind(Kind::Atom, ""a " & RT & """)?;");
-               end if;
+               Append (Buf, "    if p.pos >= p.text.len() { return Err(p.fail(""a "
+                 & RT & """)); }");
                Append (Buf, LF);
-               Append (Buf, "    let r = if " & Text_Is (P (1))
-                 & " { " & RT & "::" & RT & "_"
-                 & To_String (Names (1)) & " }");
-
+               Append (Buf, "    let r = ");
                St := 1;
-               Branch := 0;
                for K in 1 .. Natural (P.Length) + 1 loop
                   if K > Natural (P.Length) or else P (K).Kind = Alt then
                      if St <= K - 1 and then P (St).Kind = Literal then
-                        if Branch > 0 then
-                           Append (Buf, " else if " & Text_Is (P (St))
-                             & " { " & RT & "::" & RT
-                             & "_" & To_String (Names (Branch + 1)) & " }");
-                        end if;
+                        Append (Buf, (if Branch = 0 then "if " else " else if ")
+                          & Lit_At (P (St)) & " { p.pos += "
+                          & Img (To_String (P (St).Lit)'Length) & "; "
+                          & RT & "::" & RT & "_"
+                          & To_String (Names (Branch + 1)) & " }");
                         Branch := Branch + 1;
                      end if;
                      St := K + 1;
@@ -1651,17 +1721,18 @@ package body HBNF_Rust is
             end;
             Append (Buf, """)); };");
             Append (Buf, LF);
-            Append (Buf, "    p.pos += 1;");
-            Append (Buf, LF);
             Append (Buf, "    Ok(r)");
             Append (Buf, LF);
          elsif Natural (P.Length) = 1 and then P (1).Kind = Name then
             if Is_Core (To_String (P (1).Name)) then
-               Append (Buf, "    p.expect_kind(" & Scalar_Kind (To_String (P (1).Name))
-                 & ", """ & Core_Desc (To_String (P (1).Name)) & """)?;");
+               Append (Buf, "    let n = " & Scan_Call (To_String (P (1).Name)) & ";");
                Append (Buf, LF);
-               Append (Buf, "    let r = " & Scalar_Parse (To_String (P (1).Name))
-                 & "; p.pos += 1;");
+               Append (Buf, "    if n == 0" & Scalar_Reject (To_String (P (1).Name))
+                 & " { return Err(p.fail(""" & Core_Desc (To_String (P (1).Name))
+                 & """)); }");
+               Append (Buf, LF);
+               Append (Buf, "    let r = " & Scalar_Value (To_String (P (1).Name))
+                 & "; p.pos += n;");
                Append (Buf, LF);
                Append (Buf, "    Ok(r)");
                Append (Buf, LF);
@@ -1685,11 +1756,10 @@ package body HBNF_Rust is
                            if E.Kind = Name
                              and then Is_Core (To_String (E.Name))
                            then
-                              Append (Buf, "    if p.pos < p.toks.len() && matches!(p.toks[p.pos].kind, "
-                                & Scalar_Kind (To_String (E.Name)) & ") {");
-                              Append (Buf, LF);
-                              Append (Buf, "        let r = " & Scalar_Parse (To_String (E.Name))
-                                & "; p.pos += 1; return Ok(r); }");
+                              Append (Buf, "    { let n = " & Scan_Call (To_String (E.Name))
+                                & "; if n > 0" & Scalar_Guard (To_String (E.Name))
+                                & " { let r = " & Scalar_Value (To_String (E.Name))
+                                & "; p.pos += n; return Ok(r); } }");
                               Append (Buf, LF);
                            elsif E.Kind = Name then
                               Append (Buf, "    if let Ok(r) = parse_"
@@ -1801,55 +1871,39 @@ package body HBNF_Rust is
          Append (Res, LF);
       end if;
       declare
-         Kind_Ext : U;
-         Nocase   : U;
+         Nocase  : U;
+         Skip_Ws : U;
       begin
-         for I in 1 .. N loop
-            if Rules (I).Jet_Code /= Null_Unbounded_String then
-               declare
-                  K : constant String := Rust_Type (To_String (Rules (I).Name));
-               begin
-                  if K not in "Atom" | "Str" | "Int" | "Punct" | "Eof" then
-                     Append (Kind_Ext, ", " & K);
-                  end if;
-               end;
-            end if;
-         end loop;
-         for I in 1 .. N loop
-            if Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
-               declare
-                  NM : constant String := To_String (Rules (I).Name);
-               begin
-                  --  A core-type char rule reuses the base kind; another token
-                  --  takes its own; a building block is inlined, no kind at all.
-                  if not Is_Core_Name (NM)
-                    and then Is_Char_Token (Rules, NM)
-                  then
-                     Append (Kind_Ext, ", " & Rust_Type (NM));
-                  end if;
-               end;
-            end if;
-         end loop;
          if Has_No_Case (Rules) then
             Append (Nocase,
-              "    fn expect_lit_nocase(&mut self, lit: &str) -> Result<(), ParseError> {");
+              "    fn expect_word_nocase(&mut self, lit: &str) -> Result<(), ParseError> {");
             Append (Nocase, LF);
             Append (Nocase,
-              "        if self.pos < self.toks.len() && matches!(self.toks[self.pos].kind, Kind::Atom | Kind::Punct)");
+              "        let n = scan_word(self.text.as_bytes(), self.pos, self.text.len());");
             Append (Nocase, LF);
             Append (Nocase,
-              "            && self.toks[self.pos].text.eq_ignore_ascii_case(lit) { self.pos += 1; return Ok(()); }");
+              "        if n == lit.len() && self.text[self.pos..self.pos + n].eq_ignore_ascii_case(lit) { self.pos += n; return Ok(()); }");
             Append (Nocase, LF);
             Append (Nocase, "        Err(self.fail(&format!(""`{}`"", lit)))");
             Append (Nocase, LF);
             Append (Nocase, "    }");
             Append (Nocase, LF);
          end if;
+         if Ws_Name = "" then
+            Append (Skip_Ws, "");
+         else
+            Append (Skip_Ws, "        loop {" & LF
+              & "            let n = scan_" & Rust_Snake (Ws_Name)
+              & "(self.text.as_bytes(), self.pos, self.text.len());" & LF
+              & "            if n == 0 { break; }" & LF
+              & "            self.pos += n;" & LF
+              & "        }" & LF);
+         end if;
          declare
             V : Mustache.Context := Mustache.View;
          begin
-            Mustache.Put (V, "kind", To_String (Kind_Ext));
             Mustache.Put (V, "nocase", To_String (Nocase));
+            Mustache.Put (V, "skip_ws", To_String (Skip_Ws));
             Append (Res, Mustache.Render_File ("rust_parser", V));
          end;
       end;
@@ -1891,73 +1945,117 @@ package body HBNF_Rust is
          end;
       end loop;
 
-      Append (Res, "pub fn parse_tokens(toks: &[Token], lines: &[&str]) -> Result<"
-        & Ret_Type (1) & ", ParseError> {");
-      Append (Res, LF);
-      Append (Res, "    let mut p = P { toks, lines, pos: 0, err_pos: 0, err: None };");
-      Append (Res, LF);
-      Append (Res, "    let out = parse_" & Rust_Snake (To_String (Rules (1).Name))
-        & "(&mut p)?;");
-      Append (Res, LF);
-      Append (Res, "    if p.pos < p.toks.len() && p.toks[p.pos].kind != Kind::Eof { return Err(p.fail(""end of config"")); }");
-      Append (Res, LF);
-      Append (Res, "    Ok(out)");
-      Append (Res, LF);
-      Append (Res, "}");
-      Append (Res, LF);
+      --  The scanners.  A core rule the grammar does not define (`word`,
+      --  `int`, `str`, `ws`) is a built-in: hand-written Rust, the same scan
+      --  the C backend's jets make.  Any other jet is hand-written C, which
+      --  this backend cannot run, so it is a stub that matches nothing.
+      declare
+         procedure Put (Text : String) is
+         begin
+            Append (Res, Text);
+            Append (Res, LF);
+         end Put;
 
-      --  Jets: hand-written scanners, plus the dispatch the lexer calls.
-      for I in 1 .. N loop
-         if Rules (I).Jet_Code /= Null_Unbounded_String then
-            declare
-               R  : constant Rule := Rules (I);
-               NM : constant String := To_String (R.Name);
-            begin
-               Append (Res, "fn jet_" & Rust_Snake (NM)
+         function Is_Jet (Nm : String) return Boolean is
+            J : constant Natural := Find (Rules, Nm);
+         begin
+            return J > 0 and then Rules (J).Jet_Code /= Null_Unbounded_String;
+         end Is_Jet;
+      begin
+         if Is_Jet ("word") or else Find (Rules, "word") = 0 then
+            Put ("fn scan_word(s: &[u8], pos: usize, len: usize) -> usize {");
+            Put ("    let mut i = pos;");
+            Put ("    if i >= len || !(s[i].is_ascii_alphabetic() || s[i] == b'_' || s[i] == b'-') { return 0; }");
+            Put ("    i += 1;");
+            Put ("    while i < len && is_word_char(s[i]) { i += 1; }");
+            Put ("    i - pos");
+            Put ("}");
+            Put ("");
+         end if;
+         if Is_Jet ("int") then
+            Put ("fn scan_int(s: &[u8], pos: usize, len: usize) -> usize {");
+            Put ("    let mut i = pos;");
+            Put ("    if i + 1 < len && s[i] == b'-' && s[i + 1].is_ascii_digit() { i += 1; }");
+            Put ("    let start = i;");
+            Put ("    while i < len && s[i].is_ascii_digit() { i += 1; }");
+            Put ("    if i > start { i - pos } else { 0 }");
+            Put ("}");
+            Put ("");
+         end if;
+         if Is_Jet ("str") then
+            Put ("fn scan_str(s: &[u8], pos: usize, len: usize) -> usize {");
+            Put ("    if pos >= len || s[pos] != b'""' { return 0; }");
+            Put ("    let mut i = pos + 1;");
+            Put ("    while i < len && s[i] != b'""' {");
+            Put ("        if s[i] == b'\\' && i + 1 < len { i += 1; }");
+            Put ("        i += 1;");
+            Put ("    }");
+            Put ("    if i >= len { return 0; }");
+            Put ("    i + 1 - pos");
+            Put ("}");
+            Put ("");
+         end if;
+         if Is_Jet ("ws") then
+            Put ("fn scan_ws(s: &[u8], pos: usize, len: usize) -> usize {");
+            Put ("    if pos < len && matches!(s[pos], b' ' | b'\t' | b'\r' | b'\n') { 1 } else { 0 }");
+            Put ("}");
+            Put ("");
+         end if;
+         for I in 1 .. N loop
+            if Rules (I).Jet_Code /= Null_Unbounded_String
+              and then not Is_Builtin_Jet (To_String (Rules (I).Name))
+            then
+               Put ("fn jet_" & Rust_Snake (To_String (Rules (I).Name))
                  & "(s: &[u8], pos: usize, len: usize) -> usize {");
-               Append (Res, LF);
-               Append (Res, "    let _ = (s, pos, len); 0");
-               Append (Res, LF);
-               Append (Res, "}");
-               Append (Res, LF);
-               Append (Res, LF);
-            end;
-         end if;
-      end loop;
+               Put ("    let _ = (s, pos, len);");
+               Put ("    0  // a %scan{} jet: C code only");
+               Put ("}");
+               Put ("");
+            end if;
+         end loop;
 
-      --  A schema without jets never reads the arguments.
-      Append (Res, (if (for some R of Rules => R.Jet_Code /= Null_Unbounded_String)
-                    then "fn jet_dispatch(s: &[u8], pos: usize, len: usize)"
-                    else "fn jet_dispatch(_s: &[u8], _pos: usize, _len: usize)")
-        & " -> (usize, Kind) {");
-      Append (Res, LF);
-      for I in 1 .. N loop
-         if Rules (I).Jet_Code /= Null_Unbounded_String then
-            declare
-               NM : constant String := To_String (Rules (I).Name);
-            begin
-               Append (Res, "    { let n = jet_" & Rust_Snake (NM)
-                 & "(s, pos, len); if n > 0 { return (n, Kind::" & Rust_Type (NM)
-                 & "); } }");
-               Append (Res, LF);
-            end;
+         --  The content of a quoted string: strip the quotes, and drop a
+         --  backslash (keeping the character after it) or a backslash-newline.
+         Put ("fn str_value(s: &str) -> String {");
+         Put ("    let b = s.as_bytes();");
+         Put ("    let mut r: Vec<u8> = Vec::new();");
+         Put ("    let mut i = 1usize;");
+         Put ("    while i + 1 < b.len() {");
+         Put ("        if b[i] == b'\\' && i + 2 < b.len() {");
+         Put ("            i += 1;");
+         Put ("            if b[i] != b'\n' { r.push(b[i]); }");
+         Put ("        } else {");
+         Put ("            r.push(b[i]);");
+         Put ("        }");
+         Put ("        i += 1;");
+         Put ("    }");
+         Put ("    String::from_utf8_lossy(&r).into_owned()");
+         Put ("}");
+         Put ("");
+
+         --  The words `word` must not match.
+         if Keywords.Is_Empty then
+            Put ("fn is_keyword(_s: &str) -> bool { false }");
+         else
+            Append (Res, "fn is_keyword(s: &str) -> bool { matches!(s, ");
+            for K in 1 .. Natural (Keywords.Length) loop
+               Append (Res, (if K = 1 then "" else " | ") & """"
+                 & Rust_Escape (To_String (Keywords (K))) & """");
+            end loop;
+            Put (") }");
          end if;
-      end loop;
-      Append (Res, "    (0, Kind::Eof)");
-      Append (Res, LF);
-      Append (Res, "}");
-      Append (Res, LF);
-      Append (Res, LF);
+         Put ("");
+      end;
 
       --  Character-layer scanners (code-point matching, mirroring the C and Ada
       --  backends): each char-level rule compiles to a scanner over decoded UTF-8
-      --  code points, and char_dispatch takes the longest match — maximal munch.
-      --  The lexer calls char_dispatch after jet_dispatch.
+      --  code points, and a phrase rule runs it where it names the rule.
       declare
          Has_Char : constant Boolean :=
            (for some I in 1 .. N =>
               Is_Char_Rule (Rules, To_String (Rules (I).Name))
-                and then Is_Char_Token (Rules, To_String (Rules (I).Name)));
+                and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
+                          or else To_String (Rules (I).Name) = Ws_Name));
       begin
          if Has_Char then
             Append (Res, "fn decode_utf8(s: &[u8], pos: usize, len: usize) -> (usize, u32) {");
@@ -1997,7 +2095,8 @@ package body HBNF_Rust is
 
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-              and then Is_Char_Token (Rules, To_String (Rules (I).Name))
+              and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
+                        or else To_String (Rules (I).Name) = Ws_Name)
             then
                declare
                   NM  : constant String := To_String (Rules (I).Name);
@@ -2064,41 +2163,6 @@ package body HBNF_Rust is
             end if;
          end loop;
 
-         Append (Res, (if Has_Char
-                       then "fn char_dispatch(s: &[u8], pos: usize, len: usize)"
-                       else "fn char_dispatch(_s: &[u8], _pos: usize, _len: usize)")
-           & " -> (usize, Kind) {");
-         Append (Res, LF);
-         if Has_Char then
-            Append (Res, "    let mut best = 0usize;");
-            Append (Res, LF);
-            Append (Res, "    let mut best_kind = Kind::Eof;");
-            Append (Res, LF);
-            for I in 1 .. N loop
-               if Is_Char_Rule (Rules, To_String (Rules (I).Name))
-                 and then Is_Char_Token (Rules, To_String (Rules (I).Name))
-               then
-                  declare
-                     NM : constant String := To_String (Rules (I).Name);
-                     --  A core-type char rule reuses the base Kind variant.
-                     Kind : constant String :=
-                       (if Is_Core_Name (NM) then Scalar_Rust_Kind (NM)
-                        else Rust_Type (NM));
-                  begin
-                     Append (Res, "    { let n = scan_" & Rust_Snake (NM)
-                       & "(s, pos, len); if n > best { best = n; best_kind = Kind::"
-                       & Kind & "; } }");
-                     Append (Res, LF);
-                  end;
-               end if;
-            end loop;
-            Append (Res, "    (best, best_kind)");
-         else
-            Append (Res, "    (0, Kind::Eof)");
-         end if;
-         Append (Res, LF);
-         Append (Res, "}");
-         Append (Res, LF);
       end;
 
       return To_String (Res);
@@ -2119,8 +2183,17 @@ package body HBNF_Rust is
                          else Rust_Type (To_String (P (1).Name))) & ">"
              else "Vec<" & Rust_Type (To_String (R.Name)) & "Entry>")
          else Rust_Type (To_String (R.Name)));
-      Lexer  : constant String :=
-        Render_Root ("rust_lexer", Root_T);
+      --  parse_text: the whole text through the root rule.
+      function Parse_Text_Src return String is
+         V : Mustache.Context := Mustache.View;
+      begin
+         Mustache.Put (V, "root_type", Root_T);
+         Mustache.Put (V, "root_fn",
+           "parse_" & Rust_Snake (To_String (R.Name)));
+         return Mustache.Render_File ("rust_parse_text", V);
+      end Parse_Text_Src;
+
+      Lexer  : constant String := Parse_Text_Src;
    begin
       if Epilogue ("Rust") = "" then
          return Lexer;
