@@ -606,9 +606,11 @@ package body HBNF_Rust is
       --  detector sees the edge the field really makes.  A direct struct
       --  member is already there.  0 when it holds nothing by value.
       function Resolve (N : U) return Natural is
-         J : Natural := Find (Rules, To_String (N));
+         J    : Natural := Find (Rules, To_String (N));
+         Hops : Natural := 0;
       begin
-         while J > 0 and then Infos (J).Kind = Scalar loop
+         while J > 0 and then Hops < 20 and then Infos (J).Kind = Scalar loop
+            Hops := Hops + 1;
             declare
                P : constant Element_Vectors.Vector := Rules (J).Pattern;
             begin
@@ -621,7 +623,7 @@ package body HBNF_Rust is
                end if;
             end;
          end loop;
-         if J > 0 and then Is_By_Value (Infos (J)) then
+         if J > 0 and then Hops < 20 and then Is_By_Value (Infos (J)) then
             return J;
          end if;
          return 0;
@@ -689,11 +691,29 @@ package body HBNF_Rust is
       return HBNF_Compilable.Back_Edges (N, By_Value_Edges);
    end Back_Edges_Rust;
 
+   --  True when (Owner, Member) is a back edge: that field is emitted
+   --  indirectly.  A member name is unique within its struct, so the pair
+   --  names the edge.
+   function Is_Back (Backs : HBNF_Compilable.Edge_Vectors.Vector;
+                     Owner : Natural; Member : String) return Boolean is
+   begin
+      for E of Backs loop
+         if E.Owner = Owner and then To_String (E.Member) = Member then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Back;
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
 
       Infos : Info_Vectors.Vector;
+
+      --  The fields that break a cycle, emitted `Option<Box<T>>`.
+      Backs : constant HBNF_Compilable.Edge_Vectors.Vector :=
+        Back_Edges_Rust (Rules);
 
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
          R    : constant Rule := Rules (Idx);
@@ -755,11 +775,18 @@ package body HBNF_Rust is
                      Mustache.Insert
                        (Row, "field",
                         Mustache.New_Scalar (Rust_Field (To_String (M.Name))));
+                     --  A back edge is the one field that holds its subtree
+                     --  behind a pointer.  `Option`, because a struct
+                     --  derives Default and `Box<T>::default()` would
+                     --  recurse without end; `None` is the empty field.
                      Mustache.Insert
                        (Row, "type",
                         Mustache.New_Scalar
                           (if M.Is_List
                            then "Vec<" & Rust_Type_Of (Rules, To_String (M.Name)) & ">"
+                           elsif Is_Back (Backs, Idx, To_String (M.Name))
+                           then "Option<Box<"
+                                & Rust_Type_Of (Rules, To_String (M.Name)) & ">>"
                            else Rust_Type_Of (Rules, To_String (M.Name))));
                      Mustache.Append (Items, Row);
                   end loop;
@@ -887,13 +914,19 @@ package body HBNF_Rust is
             end case;
          end Recurses;
 
-         procedure Visit_Field (Name : String; Buf : in out U; Ind : String) is
+         procedure Visit_Field
+           (Name : String; Back : Boolean; Buf : in out U; Ind : String) is
             F : constant String := Rust_Field (Name);
          begin
             case Ref_Kind (Name) is
                when Struct =>
-                  Append (Buf, Ind & "visit_" & Rust_Snake (Name)
-                    & "(&n." & F & ", v);");
+                  if Back then
+                     Append (Buf, Ind & "if let Some(" & F & ") = &n." & F
+                       & " { visit_" & Rust_Snake (Name) & "(" & F & ", v); }");
+                  else
+                     Append (Buf, Ind & "visit_" & Rust_Snake (Name)
+                       & "(&n." & F & ", v);");
+                  end if;
                   Append (Buf, LF);
                when List =>
                   declare
@@ -910,13 +943,20 @@ package body HBNF_Rust is
             end case;
          end Visit_Field;
 
-         procedure Fold_Field (Name : String; Buf : in out U; Ind : String) is
+         procedure Fold_Field
+           (Name : String; Back : Boolean; Buf : in out U; Ind : String) is
             F : constant String := Rust_Field (Name);
          begin
             case Ref_Kind (Name) is
                when Struct =>
-                  Append (Buf, Ind & "let " & F & " = fold_"
-                    & Rust_Snake (Name) & "(" & F & ", f);");
+                  if Back then
+                     Append (Buf, Ind & "let " & F & " = " & F
+                       & ".map(|b| Box::new(fold_" & Rust_Snake (Name)
+                       & "(*b, f)));");
+                  else
+                     Append (Buf, Ind & "let " & F & " = fold_"
+                       & Rust_Snake (Name) & "(" & F & ", f);");
+                  end if;
                   Append (Buf, LF);
                when List =>
                   declare
@@ -934,7 +974,7 @@ package body HBNF_Rust is
             end case;
          end Fold_Field;
 
-         procedure Emit_Node (Type_Name, Fn : String;
+         procedure Emit_Node (Owner : Natural; Type_Name, Fn : String;
                               Members : Member_Vectors.Vector;
                               Buf : in out U) is
             Has_Child : Boolean := False;
@@ -951,7 +991,9 @@ package body HBNF_Rust is
             Append (Buf, "    v.visit_" & Fn & "(n);");
             Append (Buf, LF);
             for M of Members loop
-               Visit_Field (To_String (M.Name), Buf, "    ");
+               Visit_Field
+                 (To_String (M.Name),
+                  Is_Back (Backs, Owner, To_String (M.Name)), Buf, "    ");
             end loop;
             Append (Buf, "}");
             Append (Buf, LF);
@@ -978,7 +1020,9 @@ package body HBNF_Rust is
                Append (Buf, " } = n;");
                Append (Buf, LF);
                for M of Members loop
-                  Fold_Field (To_String (M.Name), Buf, "    ");
+                  Fold_Field
+                    (To_String (M.Name),
+                     Is_Back (Backs, Owner, To_String (M.Name)), Buf, "    ");
                end loop;
                Append (Buf, "    let n = " & Type_Name & " { ");
                declare
@@ -1073,7 +1117,7 @@ package body HBNF_Rust is
 
          for I in 1 .. N loop
             if Is_Node (I) then
-               Emit_Node (Node_Type (I), Node_Fn (I), Node_Members (I), Buf);
+               Emit_Node (I, Node_Type (I), Node_Fn (I), Node_Members (I), Buf);
                Append (Buf, LF);
             end if;
          end loop;
@@ -1084,24 +1128,6 @@ package body HBNF_Rust is
       for I in 1 .. N loop
          Infos.Append (Analyze (Rules, I));
       end loop;
-
-      --  A rule's value cannot contain itself: the tree types are structs by
-      --  value, so one of them would be infinitely sized.  Rust needs no
-      --  declaration order, so there is no topological sort here to fall over
-      --  on a cycle -- and without this check the generator emitted `pub
-      --  struct Prim { expr: Expr }` beside `pub type Expr = Prim`, which
-      --  rustc rejects (E0072).  The detector is the one in HBNF_Compilable
-      --  now, not a copy kept here; step 9b makes it hand back the field to
-      --  emit indirect, and until that lands the cycle is still refused, with
-      --  the same message this detector used to give.
-      if not Back_Edges_Rust (Rules).Is_Empty then
-         raise Parse_Error with
-           "a rule's value cannot contain itself: the tree types are structs "
-           & "by value, so this one would be infinitely sized.  Routing "
-           & "the recursion through a list does not help (a list node "
-           & "holds its element by value too); RFCPLAN.md step 9 adds "
-           & "the pointer that breaks the cycle";
-      end if;
 
       Append (Res, "// generated by hbnf -- do not edit");
       Append (Res, LF);
@@ -1130,6 +1156,11 @@ package body HBNF_Rust is
    function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
+
+      --  The fields Emit declared `Option<Box<T>>`: the commit point boxes
+      --  what it parsed.
+      Backs : constant HBNF_Compilable.Edge_Vectors.Vector :=
+        Back_Edges_Rust (Rules);
 
       function Is_Core (Name : String) return Boolean is
         (Scalar_Rust_Type (Name) /= "");
@@ -1282,7 +1313,8 @@ package body HBNF_Rust is
               & """");
 
       procedure Emit_Seq
-        (Els : Element_Vectors.Vector; First, Last : Natural;
+        (Owner : Natural;
+         Els : Element_Vectors.Vector; First, Last : Natural;
          Dst  : String; Buf : in out U; Ind : String := "    ") is
       begin
          for K in First .. Last loop
@@ -1315,6 +1347,11 @@ package body HBNF_Rust is
                           & Rust_Field (To_String (E.Name))
                           & " = p.toks[p.pos].text.clone(); p.pos += 1;");
                         Append (Buf, LF);
+                     elsif Is_Back (Backs, Owner, To_String (E.Name)) then
+                        Append (Buf, Ind & Dst
+                          & Rust_Field (To_String (E.Name)) & " = Some(Box::new(parse_"
+                          & Rust_Snake (To_String (E.Name)) & "(p)?));");
+                        Append (Buf, LF);
                      else
                         Append (Buf, Ind & Dst
                           & Rust_Field (To_String (E.Name)) & " = parse_"
@@ -1322,7 +1359,7 @@ package body HBNF_Rust is
                         Append (Buf, LF);
                      end if;
                   when Group =>
-                     Emit_Seq (E.Items, 1, Natural (E.Items.Length), Dst, Buf,
+                     Emit_Seq (Owner, E.Items, 1, Natural (E.Items.Length), Dst, Buf,
                                Ind & "    ");
                   when Alt =>
                      null;
@@ -1342,7 +1379,8 @@ package body HBNF_Rust is
       --  After the last branch fails, control falls through for the caller's
       --  own failure handling.
       procedure Emit_Alternation
-        (Els : Element_Vectors.Vector; Acc, Reset : String;
+        (Owner : Natural;
+         Els : Element_Vectors.Vector; Acc, Reset : String;
          Buf : in out U; Ind : String := "    ") is
          N  : constant Natural := Natural (Els.Length);
          St : Natural := 1;
@@ -1358,7 +1396,7 @@ package body HBNF_Rust is
                end if;
                Append (Buf, Ind & "if (|| -> Result<(), ParseError> {");
                Append (Buf, LF);
-               Emit_Seq (Els, St, K - 1, Acc, Buf, Ind & "    ");
+               Emit_Seq (Owner, Els, St, K - 1, Acc, Buf, Ind & "    ");
                Append (Buf, Ind & "    Ok(())");
                Append (Buf, LF);
                Append (Buf, Ind & "})().is_ok() { break 'alt; }");
@@ -1493,7 +1531,7 @@ package body HBNF_Rust is
                      --  base, each later one a tail.
                      Append (Buf, "            if r.is_empty() {");
                      Append (Buf, LF);
-                     Emit_Alternation (Base_Branches (R), "e.",
+                     Emit_Alternation (Idx, Base_Branches (R), "e.",
                                        (if Lit_Only (E.Items) then ""
                                         else "e = " & RT & "Entry::default()"), Buf,
                                        "                ");
@@ -1501,12 +1539,12 @@ package body HBNF_Rust is
                      Append (Buf, LF);
                      Append (Buf, "            }");
                      Append (Buf, LF);
-                     Emit_Alternation (Tail_Branches (R), "e.",
+                     Emit_Alternation (Idx, Tail_Branches (R), "e.",
                                        (if Lit_Only (E.Items) then ""
                                         else "e = " & RT & "Entry::default()"), Buf,
                                        "            ");
                   else
-                     Emit_Alternation (E.Items, "e.",
+                     Emit_Alternation (Idx, E.Items, "e.",
                                        (if Lit_Only (E.Items) then ""
                                         else "e = " & RT & "Entry::default()"), Buf,
                                        "            ");
@@ -1654,7 +1692,7 @@ package body HBNF_Rust is
             Append (Buf, LF);
             Append (Buf, "    'alt: {");
             Append (Buf, LF);
-            Emit_Alternation (P, "r.", "r = " & RT & "::default()", Buf,
+            Emit_Alternation (Idx, P, "r.", "r = " & RT & "::default()", Buf,
                               "        ");
             Append (Buf, "        p.pos = save;");
             Append (Buf, LF);
@@ -1671,7 +1709,7 @@ package body HBNF_Rust is
                           then "    let mut r = " else "    let r = ")
               & RT & "::default();");
             Append (Buf, LF);
-            Emit_Seq (P, 1, Natural (P.Length), "r.", Buf);
+            Emit_Seq (Idx, P, 1, Natural (P.Length), "r.", Buf);
             Append (Buf, "    Ok(r)");
             Append (Buf, LF);
          end if;

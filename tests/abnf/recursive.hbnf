@@ -1,9 +1,10 @@
-; A recursive tree type: every expression language needs this, and no
-; backend emits it yet (RFCPLAN.md step 9b).  All four now refuse it with
-; the same message — Rust used to emit code rustc rejected (E0072), and Zig
-; code that failed the moment a size was forced (step 9a).
+; A recursive tree type: every expression language needs this.  C, Ada and
+; Rust break the cycle with a pointer (RFCPLAN.md step 9b); Zig still refuses
+; it with "a rule's value cannot contain itself".  Rust used to emit code
+; rustc rejected (E0072) and Zig code that failed the moment a size was
+; forced (step 9a).
 ;
-; Kept as a fixture so step 9b has something to turn green.
+; tests/abnf.sh and tests/recursive.sh compile and run it.
 language C
 include "../../grammars/obconf.hbnf"
 

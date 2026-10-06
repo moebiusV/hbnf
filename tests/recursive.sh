@@ -11,7 +11,7 @@
 # a schema that is not recursive.
 #
 # C is gated in tests/abnf.sh's recursive block (gen_file/check).  This script
-# covers the backends whose driver lives here: Ada now; Rust and Zig as their
+# covers the backends whose driver lives here: Ada and Rust now; Zig as its
 # stage of 9b lands.
 #   HBNF=/path/to/hbnf sh tests/recursive.sh      (default ./hbnf)
 set -u
@@ -70,6 +70,57 @@ if command -v gnatmake > /dev/null 2>&1; then
 	fi
 else
 	echo "recursive: Ada skipped (no gnatmake)"
+fi
+
+# ---- Rust ----------------------------------------------------------------
+# `Option<Box<T>>`, so the struct still derives Default (a bare Box<T> would
+# recurse without end building the default).  -D warnings as tests/portable.sh.
+if command -v rustc > /dev/null 2>&1; then
+	mkdir "$W/rs"
+	"$CLI" "$SCHEMA" --backend=rust > "$W/rs/recursive.rs" \
+		|| { echo "recursive: Rust FAIL (does not generate)"; rc=1; }
+	if [ -s "$W/rs/recursive.rs" ]; then
+		cp $T/main.rs "$W/rs/"
+		if (cd "$W/rs" && rustc -D warnings main.rs -o main) > "$W/rs.err" 2>&1
+		then
+			check Rust 0   "$W/rs/main" "(1)"
+			check Rust 1   "$W/rs/main" "1)"
+			check Rust 0   "$W/rs/main" "((1))"
+			check Rust 1   "$W/rs/main" "(1"
+		else
+			echo "recursive: Rust FAIL (compile)"; head -20 "$W/rs.err"; rc=1
+		fi
+	fi
+
+	# The direct-member cycle, whose walkers descend through the box.
+	mkdir "$W/rd"
+	"$CLI" tests/abnf/recursive-direct.hbnf --backend=rust \
+		> "$W/rd/recursive_direct.rs" \
+		|| { echo "recursive: Rust direct FAIL (does not generate)"; rc=1; }
+	if [ -s "$W/rd/recursive_direct.rs" ]; then
+		cp $T/main_direct.rs "$W/rd/"
+		if (cd "$W/rd" && rustc -D warnings main_direct.rs -o main) \
+			> "$W/rd.err" 2>&1
+		then
+			# `(((5)))` is three x nodes deep; each walker must reach them all
+			# through the box, so a walker that stopped at the pointer says 1.
+			"$W/rd/main" "(((5)))" > "$W/got.txt" 2>&1
+			if [ "$(cat "$W/got.txt")" = "OK visited=3 folded=3" ]; then
+				echo "recursive: Rust direct OK (walkers reach all 3 nodes)"
+			else
+				echo "recursive: Rust direct FAIL ($(head -1 "$W/got.txt"))"; rc=1
+			fi
+			if "$W/rd/main" "((5)" > /dev/null 2>&1; then
+				echo "recursive: Rust direct FAIL (accepted an unbalanced input)"; rc=1
+			else
+				echo "recursive: Rust direct OK (rejects ((5) )"
+			fi
+		else
+			echo "recursive: Rust direct FAIL (compile)"; head -20 "$W/rd.err"; rc=1
+		fi
+	fi
+else
+	echo "recursive: Rust skipped (no rustc)"
 fi
 
 exit $rc

@@ -1,0 +1,8 @@
+; A recursive tree type whose cycle runs through a DIRECT struct member
+; (`x` names `x`), not through a scalar alias as recursive.hbnf's does.  The
+; visit_/fold_ walkers only descend into a struct member, so this is the
+; fixture that makes the Rust backend walk through its box (RFCPLAN step 9b).
+language C
+include "../../grammars/obconf.hbnf"
+
+x = '(' x ')' | '(' int ')'
