@@ -1,6 +1,7 @@
 pragma Ada_2022;
 
 with Ada.Characters.Handling;
+with HBNF_Lookahead;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Indefinite_Ordered_Maps;
@@ -1935,10 +1936,26 @@ package body HBNF_Grammar is
          Report (Pointed (S, Msg));
       end Report;
 
-      procedure Check_Unions (V : Element_Vectors.Vector) is
+      --  `/` is ABNF's union, and a parser that chooses in order and commits
+      --  accepts the same language only where the alternatives cannot begin
+      --  alike.  Alternatives that are each one code point are a set, and so
+      --  is a union in a character rule (its scanner takes the longest branch);
+      --  elsewhere HBNF_Lookahead decides, with Follow_Here what comes after
+      --  the choice.  An alternative that can match nothing goes last, as it
+      --  must for ordered choice to take it only when the others fail.
+      type Analysis_Access is access HBNF_Lookahead.Analysis;
+      Look : Analysis_Access;   --  made once the rules are all in
+
+      procedure Check_Unions
+        (V           : in out Element_Vectors.Vector;
+         Follow_Here : HBNF_Lookahead.Cp_Set;
+         Char_Rule   : Boolean)
+      is
          Union : Element_Access := null;
          N     : Natural := 0;
          Fits  : Boolean := True;
+         Bs    : constant HBNF_Lookahead.Bounds_Vectors.Vector :=
+           HBNF_Lookahead.Branches (V);
       begin
          for E of V loop
             if E.Kind = Alt then
@@ -1950,26 +1967,67 @@ package body HBNF_Grammar is
             else
                N := N + 1;
                Fits := Fits and then One_Point (E, 32);
-               if E.Kind = Group then
-                  Check_Unions (E.Items);
-               end if;
             end if;
          end loop;
          Fits := Fits and then N = 1;
-         if Union /= null and then not Fits then
-            for S of Union_Sites loop
-               if S.Alt = Union then
-                  Report
-                    (S, "`" & To_String (S.Text) & "` is ABNF's union, "
-                     & "which hbnf takes only between alternatives that "
-                     & "each match one code point (a %x value, a 'c' "
-                     & "literal, a one-character string, or a rule of them) "
-                     & "so far (RFCPLAN.md step 5); write `|`, ordered "
-                     & "choice, longest first");
-                  exit;
+         for B of Bs loop
+            for P in B.First .. B.Last loop
+               if V (P).Kind = Group then
+                  Check_Unions
+                    (V (P).Items,
+                     HBNF_Lookahead.Follow_After
+                       (Look.all, Rules, V, B, P, Follow_Here),
+                     Char_Rule);
                end if;
             end loop;
+         end loop;
+         if Union = null or else Fits or else Char_Rule then
+            return;
          end if;
+         declare
+            Ok      : Boolean;
+            Message : Unbounded_String;
+            Nb      : Natural;
+         begin
+            HBNF_Lookahead.Check_Choice
+              (Look.all, Rules, V, Follow_Here, Ok, Message, Nb);
+            if not Ok then
+               for S of Union_Sites loop
+                  if S.Alt = Union then
+                     Report
+                       (S, "`" & To_String (S.Text) & "` is ABNF's union, "
+                        & "which hbnf compiles only where the alternatives "
+                        & "cannot begin alike (RFCPLAN.md decision 1): "
+                        & To_String (Message) & "; write `|`, ordered "
+                        & "choice, with the one to try first first");
+                     exit;
+                  end if;
+               end loop;
+            elsif Nb /= 0 and then Nb /= Natural (Bs.Length) then
+               declare
+                  Reordered : Element_Vectors.Vector;
+                  Sep       : constant Element_Access := Union;
+
+                  procedure Add (K : Positive) is
+                  begin
+                     if not Reordered.Is_Empty then
+                        Reordered.Append (Sep);
+                     end if;
+                     for I in Bs (K).First .. Bs (K).Last loop
+                        Reordered.Append (V (I));
+                     end loop;
+                  end Add;
+               begin
+                  for K in 1 .. Natural (Bs.Length) loop
+                     if K /= Nb then
+                        Add (K);
+                     end if;
+                  end loop;
+                  Add (Nb);
+                  V := Reordered;
+               end;
+            end if;
+         end;
       end Check_Unions;
 
       procedure Check_Prose (V : Element_Vectors.Vector; In_Rule : String) is
@@ -2126,12 +2184,29 @@ package body HBNF_Grammar is
       for R of Rules loop
          Resolve (R.Pattern, To_String (R.Name));
       end loop;
+      Look := new HBNF_Lookahead.Analysis'(HBNF_Lookahead.Analyze (Rules));
       declare
          Used  : constant Rule_Vectors.Vector := Reachable (Rules);
          Lower : Index_Maps.Map;
       begin
          for J in 1 .. Natural (Used.Length) loop
-            Check_Unions (Used (J).Pattern);
+            declare
+               At_Rule : constant Natural :=
+                 By_Name (To_String (Used (J).Name));
+               Pat     : Element_Vectors.Vector := Rules (At_Rule).Pattern;
+            begin
+               Check_Unions
+                 (Pat, Look.Follow (At_Rule),
+                  Is_Char_Rule (Rules, To_String (Used (J).Name)));
+               if not Element_Vectors."=" (Pat, Rules (At_Rule).Pattern) then
+                  declare
+                     R : Rule := Rules (At_Rule);
+                  begin
+                     R.Pattern := Pat;
+                     Rules.Replace_Element (At_Rule, R);
+                  end;
+               end if;
+            end;
             Check_Prose (Used (J).Pattern, To_String (Used (J).Name));
             --  `str`, `atom`, `word`, `int`, `bool`, `flag`, `uN` and `iN` are
             --  the built-in types: a reference to one is a scalar, in every

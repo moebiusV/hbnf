@@ -2,6 +2,7 @@ pragma Ada_2022;
 
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with HBNF_Lookahead;
 
 package body HBNF_Compilable is
 
@@ -515,80 +516,21 @@ package body HBNF_Compilable is
       and then R.Jet_Code = Null_Unbounded_String
       and then not (R.Pattern (1).Min = 1 and then R.Pattern (1).Max = 1));
 
-   --  Which rules can match nothing, as a fixpoint over the rules.  A rule
-   --  can when some branch is all elements that can; an element can when it
-   --  repeats from zero, or is a rule that can, or a group with such a branch.
-   type Flags is array (Positive range <>) of Boolean;
+   --  Which rules can match nothing: HBNF_Lookahead's analysis, which also
+   --  needs it for FIRST and FOLLOW.
+   subtype Flags is HBNF_Lookahead.Flags;
 
-   function Seq_Nullable (Rules : Rule_Vectors.Vector; Nullable : Flags;
-                          V : Element_Vectors.Vector;
-                          First, Last : Natural) return Boolean;
+   function Nullable_Set (Rules : Rule_Vectors.Vector) return Flags
+     renames HBNF_Lookahead.Nullable_Set;
 
    function El_Nullable (Rules : Rule_Vectors.Vector; Nullable : Flags;
-                         E : Element_Access) return Boolean is
-   begin
-      if E.Min = 0 then
-         return True;
-      end if;
-      case E.Kind is
-         when Name =>
-            declare
-               J : constant Natural := Find (Rules, To_String (E.Name));
-            begin
-               return J /= 0 and then Nullable (J);
-            end;
-         when Group =>
-            return Seq_Nullable
-              (Rules, Nullable, E.Items, 1, Natural (E.Items.Length));
-         when Literal | Alt | Char_Range =>
-            return False;
-         when Block =>
-            --  A `%action{ }` between elements matches nothing, so it is
-            --  nullable.  `Lift` has already replaced it by the time this
-            --  runs, so the arm is here for completeness.
-            return True;
-      end case;
-   end El_Nullable;
+                         E : Element_Access) return Boolean
+     renames HBNF_Lookahead.El_Nullable;
 
-   --  True when some branch of V (First .. Last) can match nothing.
    function Seq_Nullable (Rules : Rule_Vectors.Vector; Nullable : Flags;
                           V : Element_Vectors.Vector;
-                          First, Last : Natural) return Boolean is
-      All_Null : Boolean := True;
-   begin
-      for I in First .. Last + 1 loop
-         if I > Last or else V (I).Kind = Alt then
-            if All_Null then
-               return True;
-            end if;
-            All_Null := True;
-         elsif not El_Nullable (Rules, Nullable, V (I)) then
-            All_Null := False;
-         end if;
-      end loop;
-      return False;
-   end Seq_Nullable;
-
-   function Nullable_Set (Rules : Rule_Vectors.Vector) return Flags is
-      N        : constant Natural := Natural (Rules.Length);
-      Nullable : Flags (1 .. N) := [others => False];
-      Changed  : Boolean := True;
-   begin
-      while Changed loop
-         Changed := False;
-         for I in 1 .. N loop
-            if not Nullable (I)
-              and then Rules (I).Jet_Code = Null_Unbounded_String
-              and then Seq_Nullable (Rules, Nullable, Rules (I).Pattern, 1,
-                                     Natural (Rules (I).Pattern.Length))
-            then
-               Nullable (I) := True;
-               Changed := True;
-            end if;
-         end loop;
-      end loop;
-      return Nullable;
-   end Nullable_Set;
+                          First, Last : Natural) return Boolean
+     renames HBNF_Lookahead.Seq_Nullable;
 
    function Repeated_Body_Nullable
      (Rules : Rule_Vectors.Vector; E : Element_Access) return Boolean is
