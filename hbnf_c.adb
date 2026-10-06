@@ -881,6 +881,100 @@ package body HBNF_C is
       end;
    end Analyze;
 
+   --  The fields the C backend must emit indirectly, one per cycle in the
+   --  by-value graph, chosen by the one detector in HBNF_Compilable.  Emit
+   --  (the types, free and walkers) and Emit_Parser (the commit point) are
+   --  separate functions with separate local state, so both ask here for the
+   --  same answer rather than each rebuilding the graph.
+   function Back_Edges_C (Rules : Rule_Vectors.Vector)
+     return Edge_Vectors.Vector
+   is
+      N     : constant Natural := Natural (Rules.Length);
+      Infos : Info_Vectors.Vector;
+
+      --  The struct a field really holds: a scalar alias is followed to its
+      --  target, and only a struct is embedded by value, so anything else
+      --  yields 0.  Bounded like Alias_Target: an all-alias cycle is refused
+      --  by Emit's leaf sort before Emit gets here, but Emit_Parser can meet
+      --  one directly on the --conf path, and this must not spin.
+      function Resolve (N : U) return Natural is
+         J : Natural := Find (Rules, To_String (N));
+      begin
+         for Hop in 1 .. 8 loop
+            exit when J = 0 or else Infos (J).Kind /= Scalar;
+            declare
+               P : constant Element_Vectors.Vector := Rules (J).Pattern;
+            begin
+               if Natural (P.Length) = 1 and then P (1).Kind = Name
+                 and then P (1).Min = 1 and then P (1).Max = 1
+               then
+                  J := Find (Rules, To_String (P (1).Name));
+               else
+                  J := 0;
+               end if;
+            end;
+         end loop;
+         if J > 0 and then Infos (J).Kind = Struct then
+            return J;
+         end if;
+         return 0;
+      end Resolve;
+
+      E : Edge_Vectors.Vector;
+   begin
+      for I in 1 .. N loop
+         Infos.Append (Analyze (Rules, I));
+      end loop;
+
+      for I in 1 .. N loop
+         declare
+            Info : constant Rule_Info := Infos (I);
+         begin
+            case Info.Kind is
+               when Struct =>
+                  for M of Info.Members loop
+                     if not M.Is_List then
+                        declare
+                           J : constant Natural := Resolve (M.Name);
+                        begin
+                           if J > 0 then
+                              E.Append
+                                (By_Value_Edge'
+                                   (Owner => I, Member => M.Name,
+                                    Target => J));
+                           end if;
+                        end;
+                     end if;
+                  end loop;
+               when Scalar =>
+                  --  A rule that is one name is an alias; the edge has no
+                  --  member, so it can order but never be broken.
+                  if Info.Inline_Type /= Null_Unbounded_String then
+                     declare
+                        P : constant Element_Vectors.Vector :=
+                          Rules (I).Pattern;
+                        J : constant Natural := Resolve (Rules (I).Name);
+                     begin
+                        if J > 0
+                          and then Natural (P.Length) = 1
+                          and then P (1).Kind = Name
+                        then
+                           E.Append
+                             (By_Value_Edge'
+                                (Owner => I, Member => Null_Unbounded_String,
+                                 Target => J));
+                        end if;
+                     end;
+                  end if;
+               when others =>
+                  null;
+            end case;
+         end;
+      end loop;
+
+      return Back_Edges (N, E);
+   end Back_Edges_C;
+
    --  The rule a field really holds: an alias (`src = host`), followed
    --  through any chain of aliases, names the struct or list it stands for,
    --  and the free, walk and id-ref code must treat the field as that rule.
@@ -1261,60 +1355,25 @@ package body HBNF_C is
          return 0;
       end Resolve;
 
-      --  The by-value edges of the tree-type graph, for the one cycle
-      --  detector in HBNF_Compilable.  Only a struct's non-list member and a
-      --  scalar's alias are edges: a list field holds the list's head, two
-      --  pointers, so it is indirect and imposes no order.
-      function By_Value_Edges return HBNF_Compilable.Edge_Vectors.Vector is
-         E : HBNF_Compilable.Edge_Vectors.Vector;
+      --  The fields to emit indirectly, one per by-value cycle: the same set
+      --  Emit_Parser asks for at the commit point.  Assigned in the statement
+      --  part, after the leaf sort has rejected a scalar cycle -- the alias
+      --  chase inside Back_Edges_C is finite only once that has passed, so it
+      --  cannot be a constant elaborated here.
+      Backs : Edge_Vectors.Vector := Edge_Vectors.Empty_Vector;
+
+      --  True when this struct field is the one chosen to break a cycle, so
+      --  it is held and passed as a pointer.  A member name is unique within
+      --  its struct, so (Owner, Member) names the edge.
+      function Is_Back (Owner : Natural; Member : String) return Boolean is
       begin
-         for I in 1 .. N loop
-            declare
-               Info : constant Rule_Info := Infos (I);
-            begin
-               case Info.Kind is
-                  when Struct =>
-                     for M of Info.Members loop
-                        if not M.Is_List then
-                           declare
-                              J : constant Natural := Resolve (M.Name);
-                           begin
-                              if J > 0 then
-                                 E.Append
-                                   (HBNF_Compilable.By_Value_Edge'
-                                      (Owner => I, Member => M.Name,
-                                       Target => J));
-                              end if;
-                           end;
-                        end if;
-                     end loop;
-                  when Scalar =>
-                     --  A rule that is one name is an alias; the edge has no
-                     --  member, so it can order but never be broken.
-                     if Info.Inline_Type /= Null_Unbounded_String then
-                        declare
-                           P : constant Element_Vectors.Vector :=
-                             Rules (I).Pattern;
-                           J : constant Natural := Resolve (Rules (I).Name);
-                        begin
-                           if J > 0
-                             and then Natural (P.Length) = 1
-                             and then P (1).Kind = Name
-                           then
-                              E.Append
-                                (HBNF_Compilable.By_Value_Edge'
-                                   (Owner => I, Member => Null_Unbounded_String,
-                                    Target => J));
-                           end if;
-                        end;
-                     end if;
-                  when others =>
-                     null;
-               end case;
-            end;
+         for E of Backs loop
+            if E.Owner = Owner and then To_String (E.Member) = Member then
+               return True;
+            end if;
          end loop;
-         return E;
-      end By_Value_Edges;
+         return False;
+      end Is_Back;
 
       --  The rule indices this rule must be emitted after: its by-value
       --  members that reference another struct.
@@ -1351,7 +1410,12 @@ package body HBNF_C is
             case Info.Kind is
                when Struct =>
                   for M of Info.Members loop
-                     if not M.Is_List then
+                     --  A list field already holds two pointers, and a
+                     --  back-edge field is about to become one, so neither
+                     --  imposes a by-value order.
+                     if not M.Is_List
+                       and then not Is_Back (Idx, To_String (M.Name))
+                     then
                         Add_Ref (M.Name);
                      end if;
                   end loop;
@@ -1433,9 +1497,16 @@ package body HBNF_C is
             J       : constant Natural := Find (Nm);
             Is_Head : constant Boolean :=
               Forced or else (J > 0 and then Infos (J).Kind = List);
+            --  The field chosen to break a by-value cycle: its rule's type
+            --  contains this struct, so it is held as a pointer instead of
+            --  by value, which is what stops the type being infinitely sized.
+            Ptr     : constant Boolean :=
+              not Is_Head and then Is_Back (Idx, Nm);
          begin
             return Fill
-              ((if Is_Head then "c_list_field" else "c_field"),
+              ((if Is_Head then "c_list_field"
+                elsif Ptr then "c_ptr_field"
+                else "c_field"),
                (H ("type",
                   (if Is_Head then Pfx & C_Name (Nm) else C_Type_Of (Nm))),
                 H ("field", C_Field (Nm))));
@@ -1581,19 +1652,21 @@ package body HBNF_C is
 
          --  The recursive call into node field `n-><Name>`: a by-value struct
          --  passes &n->f, a list head passes n->f, a leaf emits nothing.
-         procedure Recurse (Name : String; Prefix : String;
+         procedure Recurse (Idx : Natural; Name : String; Prefix : String;
                             Buf : in out U; Ind : String) is
             F : constant String := C_Field (Name);
+            --  A back-edge struct field is a pointer, so the walker takes it
+            --  as it stands; every other field is held by value and is
+            --  addressed.  A list field is a head by value either way.
+            Ref : constant String :=
+              (if Ref_Kind (Name) = Struct and then Is_Back (Idx, Name)
+               then "n->" & F else "&n->" & F);
          begin
             case Ref_Kind (Name) is
-               when Struct =>
+               when Struct | List =>
                   Append (Buf, Ind & Prefix & "_"
                     & C_Name (Alias_Target (Rules, Name))
-                    & "(&n->" & F & ", f, ctx);");
-               when List =>
-                  Append (Buf, Ind & Prefix & "_"
-                    & C_Name (Alias_Target (Rules, Name))
-                    & "(&n->" & F & ", f, ctx);");
+                    & "(" & Ref & ", f, ctx);");
                when others =>
                   return;
             end case;
@@ -1602,16 +1675,17 @@ package body HBNF_C is
 
          --  The element fields of a list node: a single named element, the
          --  bare `value` field, or the members of a grouped element.
-         procedure Recurse_Elem (Info : Rule_Info; Prefix : String;
+         procedure Recurse_Elem (Idx : Natural; Info : Rule_Info;
+                                 Prefix : String;
                                  Buf : in out U; Ind : String) is
          begin
             if Info.Elem_Members.Is_Empty then
                if Info.Elem_Name /= Null_Unbounded_String then
-                  Recurse (To_String (Info.Elem_Name), Prefix, Buf, Ind);
+                  Recurse (Idx, To_String (Info.Elem_Name), Prefix, Buf, Ind);
                end if;
             else
                for M of Info.Elem_Members loop
-                  Recurse (To_String (M.Name), Prefix, Buf, Ind);
+                  Recurse (Idx, To_String (M.Name), Prefix, Buf, Ind);
                end loop;
             end if;
          end Recurse_Elem;
@@ -1630,7 +1704,7 @@ package body HBNF_C is
                Append (Buf, "    f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
                for M of Info.Members loop
-                  Recurse (To_String (M.Name), "visit", Buf, "    ");
+                  Recurse (Idx, To_String (M.Name), "visit", Buf, "    ");
                end loop;
             else
                Append (Buf, "static void visit_" & CN & "(const struct " & Pfx & CN
@@ -1642,7 +1716,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
-               Recurse_Elem (Info, "visit", Buf, "        ");
+               Recurse_Elem (Idx, Info, "visit", Buf, "        ");
                Append (Buf, "    }");
                Append (Buf, LF);
             end if;
@@ -1662,7 +1736,7 @@ package body HBNF_C is
                Append (Buf, "    if (!n) return;");
                Append (Buf, LF);
                for M of Info.Members loop
-                  Recurse (To_String (M.Name), "map", Buf, "    ");
+                  Recurse (Idx, To_String (M.Name), "map", Buf, "    ");
                end loop;
                Append (Buf, "    f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
@@ -1674,7 +1748,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    " & L_Foreach ("n", "head") & " {");
                Append (Buf, LF);
-               Recurse_Elem (Info, "map", Buf, "        ");
+               Recurse_Elem (Idx, Info, "map", Buf, "        ");
                Append (Buf, "        f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
                Append (Buf, "    }");
@@ -1773,29 +1847,36 @@ package body HBNF_C is
             return Infos (J).Kind;
          end Ref_Kind;
 
-         procedure Recurse (Name : String; Buf : in out U; Ind : String) is
+         procedure Recurse (Idx : Natural; Name : String;
+                            Buf : in out U; Ind : String) is
             F : constant String := C_Field (Name);
+            --  As in Emit_Walk: a back-edge struct field is a pointer and is
+            --  passed as it stands; every other field is addressed.
+            Ref : constant String :=
+              (if Ref_Kind (Name) = Struct and then Is_Back (Idx, Name)
+               then "n->" & F else "&n->" & F);
          begin
             case Ref_Kind (Name) is
                when Struct | List =>
                   Append (Buf, Ind & "bind_"
-                    & C_Name (Alias_Target (Rules, Name)) & "(&n->" & F & ");");
+                    & C_Name (Alias_Target (Rules, Name)) & "(" & Ref & ");");
                   Append (Buf, LF);
                when others =>
                   null;
             end case;
          end Recurse;
 
-         procedure Recurse_Elem (Info : Rule_Info; Buf : in out U; Ind : String)
+         procedure Recurse_Elem (Idx : Natural; Info : Rule_Info;
+                                 Buf : in out U; Ind : String)
          is
          begin
             if Info.Elem_Members.Is_Empty then
                if Info.Elem_Name /= Null_Unbounded_String then
-                  Recurse (To_String (Info.Elem_Name), Buf, Ind);
+                  Recurse (Idx, To_String (Info.Elem_Name), Buf, Ind);
                end if;
             else
                for M of Info.Elem_Members loop
-                  Recurse (To_String (M.Name), Buf, Ind);
+                  Recurse (Idx, To_String (M.Name), Buf, Ind);
                end loop;
             end if;
          end Recurse_Elem;
@@ -1820,7 +1901,7 @@ package body HBNF_C is
                end if;
                Append (Buf, LF);
                for M of Info.Members loop
-                  Recurse (To_String (M.Name), Buf, "    ");
+                  Recurse (Idx, To_String (M.Name), Buf, "    ");
                end loop;
                if Act /= "" then
                   Append (Buf, "    bind_line = n->_line;");
@@ -1836,7 +1917,7 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    " & L_Foreach ("n", "head") & " {");
                Append (Buf, LF);
-               Recurse_Elem (Info, Buf, "        ");
+               Recurse_Elem (Idx, Info, Buf, "        ");
                if Act /= "" then
                   Append (Buf, "        bind_line = n->_line;");
                   Append (Buf, LF);
@@ -1929,16 +2010,29 @@ package body HBNF_C is
          end Ref_Kind;
 
          --  Free the field `n-><F>`: recurse into a child struct/list, free a
-         --  string leaf, leave a numeric/enum leaf alone.  The child's full
-         --  free_<child> is called (a non-root child never touches the arena).
-         procedure Free_Field (Name : String; Buf : in out U; Ind : String) is
+         --  string leaf, leave a numeric/enum leaf alone.  An ordinary child
+         --  takes its full free_<child>, which never touches the arena; a
+         --  back-edge child takes the _fields variant, for the reason below.
+         procedure Free_Field (Idx : Natural; Name : String;
+                               Buf : in out U; Ind : String) is
             F : constant String := C_Field (Name);
+            T : constant String := C_Name (Alias_Target (Rules, Name));
+            --  A back-edge struct field is a pointer into the arena: the
+            --  walker follows it rather than addressing it.  Its children
+            --  are released with the _fields variant, never the public
+            --  free_<T>: a back edge can point straight back at the root
+            --  rule, whose free_ calls free_arena(), and the backtracking
+            --  reset calls this mid-parse -- that would release the tree
+            --  the parse is still building.  The pointee itself is arena
+            --  memory, released by free_arena() at the root.
+            Back : constant Boolean :=
+              Ref_Kind (Name) = Struct and then Is_Back (Idx, Name);
          begin
             case Ref_Kind (Name) is
                when Struct | List =>
-                  Append (Buf, Ind & "free_"
-                    & C_Name (Alias_Target (Rules, Name))
-                    & "(&n->" & F & ");");
+                  Append (Buf, Ind & "free_" & T
+                    & (if Back then "_fields(n->" & F & ");"
+                       else "(&n->" & F & ");"));
                   Append (Buf, LF);
                when others =>
                   null;  --  string leaves point into the source/arena, not owned
@@ -1960,15 +2054,15 @@ package body HBNF_C is
             Append (Buf, LF);
             if Info.Kind = Struct then
                for M of Info.Members loop
-                  Free_Field (To_String (M.Name), Buf, "    ");
+                  Free_Field (Idx, To_String (M.Name), Buf, "    ");
                end loop;
             elsif Info.Elem_Members.Is_Empty then
                if Info.Elem_Name /= Null_Unbounded_String then
-                  Free_Field (To_String (Info.Elem_Name), Buf, "    ");
+                  Free_Field (Idx, To_String (Info.Elem_Name), Buf, "    ");
                end if;
             else
                for M of Info.Elem_Members loop
-                  Free_Field (To_String (M.Name), Buf, "    ");
+                  Free_Field (Idx, To_String (M.Name), Buf, "    ");
                end loop;
             end if;
             Append (Buf, "}");
@@ -2466,20 +2560,13 @@ package body HBNF_C is
          end loop;
       end;
 
-      --  A rule's value cannot contain itself: the tree types are structs by
-      --  value, so one of them would be infinitely sized.  The detector is
-      --  the one in HBNF_Compilable now, not a copy kept here; step 9b makes
-      --  it hand back the field to emit indirect, and until the backends act
-      --  on that the cycle is still refused, with the same message the
-      --  stalled sort below used to give.
-      if not HBNF_Compilable.Back_Edges (N, By_Value_Edges).Is_Empty then
-         raise Parse_Error with
-           "a rule's value cannot contain itself: the tree types are structs "
-           & "by value, so this one would be infinitely sized.  Routing "
-           & "the recursion through a list does not help (a list node "
-           & "holds its element by value too); RFCPLAN.md step 9 adds "
-           & "the pointer that breaks the cycle";
-      end if;
+      --  The fields to emit indirectly, one per by-value cycle: the detector
+      --  in HBNF_Compilable picks one field per cycle, and the types, free,
+      --  walkers and parse code all ask Is_Back for it.  A cycle with no
+      --  field to break (an all-alias cycle) is still refused, by Back_Edges
+      --  itself.  This runs after the leaf sort, which is what keeps the
+      --  alias chase inside Back_Edges_C finite.
+      Backs := Back_Edges_C (Rules);
 
       --  Struct and list bodies, in by-value dependency order.
       while Remaining > 0 loop
@@ -2737,6 +2824,22 @@ package body HBNF_C is
 
       function Is_Core (Name : String) return Boolean is
         (Scalar_C_Type (Name) /= "");
+
+      --  The same fields Emit emits as pointers, so that here they are
+      --  allocated and parsed through the pointer rather than written into.
+      --  Two independent computations of one graph: Emit and Emit_Parser do
+      --  not share state, and Back_Edges is a pure function of the rules.
+      Backs : constant Edge_Vectors.Vector := Back_Edges_C (Rules);
+
+      function Is_Back (Owner : Natural; Member : String) return Boolean is
+      begin
+         for E of Backs loop
+            if E.Owner = Owner and then To_String (E.Member) = Member then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Is_Back;
 
       --  True when the rule named Name is character-level: its pattern is a
       --  sequence/alternation of Char_Range terminals and references to other
@@ -3090,7 +3193,8 @@ package body HBNF_C is
       --  through the accessor Acc ("r." or "nn->").  On failure emits the
       --  `Fail` statement ("goto ..." or "p->pos = save; return false;").
       procedure Emit_Seq
-        (Els : Element_Vectors.Vector; First, Last : Natural; Acc : String;
+        (Owner : Natural;
+         Els : Element_Vectors.Vector; First, Last : Natural; Acc : String;
          Buf  : in out U; Fail : String; Ind : String := "    ";
          Ws   : Boolean := False; Lead_Ws : Boolean := True) is
          --  Lead_Ws is False when the caller has already skipped whitespace
@@ -3150,7 +3254,15 @@ package body HBNF_C is
                            NM : constant String := To_String (E.Name);
                         begin
                            Ws_Skip;
-                           Append (Buf, Fill ("c_seq_ref",
+                           --  A back-edge field is a pointer: allocate the
+                           --  node from the arena, then parse into it.  The
+                           --  callee takes a pointer already, so unlike the
+                           --  by-value case there is no `&` -- and the `&`
+                           --  literal in c_seq_ref is why this is a second
+                           --  template rather than a hole.
+                           Append (Buf, Fill
+                             ((if Is_Back (Owner, NM)
+                               then "c_seq_ref_ptr" else "c_seq_ref"),
                               (H ("ind", Ind),
                                H ("name", C_Name (NM)),
                                H ("acc", Acc),
@@ -3160,8 +3272,8 @@ package body HBNF_C is
                         end;
                      end if;
                   when Group =>
-                     Emit_Seq (E.Items, 1, Natural (E.Items.Length), Acc, Buf,
-                               Fail, Ind & "    ", Ws);
+                     Emit_Seq (Owner, E.Items, 1, Natural (E.Items.Length),
+                               Acc, Buf, Fail, Ind & "    ", Ws);
                   when Alt =>
                      null;
                   when Char_Range =>
@@ -3399,7 +3511,8 @@ package body HBNF_C is
       --  branch jumps to label `Ok`.  After the last branch fails, control
       --  falls through for the caller's own failure handling.
       procedure Emit_Alternation
-        (Els : Element_Vectors.Vector; Acc, Free, Clears, Ok : String;
+        (Owner : Natural;
+         Els : Element_Vectors.Vector; Acc, Free, Clears, Ok : String;
          Kind_Prefix : String := "";
          Buf : in out U; Ind : String := "    "; Label : String := "";
          Ws   : Boolean := False) is
@@ -3614,7 +3727,7 @@ package body HBNF_C is
                         Append (Buf, LF);
                      end if;
                   end if;
-                  Emit_Seq (Els, LSt, K - 1, Acc, Buf,
+                  Emit_Seq (Owner, Els, LSt, K - 1, Acc, Buf,
                             "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind,
                             Ws, Lead_Ws => not Hoist);
                   if Kind_Prefix /= "" and then LSt <= K - 1
@@ -3797,14 +3910,14 @@ package body HBNF_C is
                      Append (Buf, "        if (count == 0) {");
                      Append (Buf, LF);
                      Emit_Alternation
-                       (Base_Branches (R), "nn->", Free, Clears, "have", "",
+                       (Idx, Base_Branches (R), "nn->", Free, Clears, "have", "",
                         Buf, "            ", Label => "base_", Ws => Ws);
                      Append (Buf, "            p->pos = save; free(nn); break;");
                      Append (Buf, LF);
                      Append (Buf, "        }");
                      Append (Buf, LF);
                      Emit_Alternation
-                       (Tail_Branches (R), "nn->", Free, Clears, "have",
+                       (Idx, Tail_Branches (R), "nn->", Free, Clears, "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
                         Buf, "        ", Ws => Ws);
                   end;
@@ -3814,7 +3927,7 @@ package body HBNF_C is
                        Leading_Tags (E.Items);
                   begin
                      Emit_Alternation
-                       (E.Items, "nn->",
+                       (Idx, E.Items, "nn->",
                         "free_" & CN & "_fields(nn)", Num_Clears (Nums),
                         "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
@@ -4036,7 +4149,7 @@ package body HBNF_C is
                  & " r; memset(&r, 0, sizeof r);");
                Append (Buf, LF);
                Emit_Number_Deferrals (Nums, Buf, "    ");
-               Emit_Alternation (P, "r.",
+               Emit_Alternation (Idx, P, "r.",
                                  "free_" & CN & "_fields(&r)", Num_Clears (Nums),
                                  "ok",
                                  (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
@@ -4074,7 +4187,7 @@ package body HBNF_C is
                --  lists): the caller only restores the position.  The
                --  _fields variant, since the root's free_ also frees the
                --  arena, which the error message still reads.
-               Emit_Seq (P, 1, Natural (P.Length), "r.", Buf,
+               Emit_Seq (Idx, P, 1, Natural (P.Length), "r.", Buf,
                          (if Analyze (Rules, Idx).Kind = Struct
                           then "free_" & CN & "_fields(&r); "
                           else "")

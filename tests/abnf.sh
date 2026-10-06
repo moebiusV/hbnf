@@ -323,12 +323,14 @@ for shape in '*( "a" )' '*%x41' '"k" *word'; do
 done
 
 echo "== recursive tree types (RFCPLAN step 9) =="
-# A rule whose value really does contain itself is still refused -- step 9b
-# adds the pointer that breaks it -- but all four backends must refuse it,
-# with a message that says why.  Rust used to emit code rustc rejected
-# (E0072) and Zig code that failed the moment a size was forced.
-refuse_file tests/abnf/recursive.hbnf "cannot contain itself" \
-	"a recursive tree type is refused, with the reason"
+# C emits the field that breaks the cycle as a pointer (step 9b), so the
+# grammar compiles and parses.  Ada, Rust and Zig still refuse until their
+# own step lands, and each must refuse with the same reason.  Rust used to
+# emit code rustc rejected (E0072) and Zig code that failed the moment a
+# size was forced.
+rm -f "$W/t"; gen_file tests/abnf/recursive.hbnf
+check OK "(1)" "a recursive tree type parses, in C"
+check FAIL "1)" "and an unbalanced one is rejected"
 for b in ada rust zig; do
 	if "$CLI" tests/abnf/recursive.hbnf --backend=$b > /dev/null 2> "$W/err.txt"; then
 		echo "  FAIL [the $b backend refuses the same cycle]: accepted"; rc=1
