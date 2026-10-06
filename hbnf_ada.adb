@@ -614,6 +614,67 @@ package body HBNF_Ada is
          return D;
       end Type_Deps;
 
+      --  The by-value edges of the tree-type graph, for the one cycle
+      --  detector in HBNF_Compilable.  A record already refers to another
+      --  record through an access type, so the edges that embed by value are
+      --  the ones that reach a record through an alias (`Over_Leaf`): a member
+      --  naming a scalar alias over a record, and an alias naming one.  A list
+      --  member is a vector, which is indirect, so it imposes no order.  This
+      --  is `Type_Deps` in edge form, so the detector refuses exactly the
+      --  schemas the sort below used to stall on.
+      function By_Value_Edges return HBNF_Compilable.Edge_Vectors.Vector is
+         E : HBNF_Compilable.Edge_Vectors.Vector;
+      begin
+         for I in 1 .. N loop
+            declare
+               Info : constant Rule_Info := Infos (I);
+            begin
+               case Info.Kind is
+                  when Struct =>
+                     for M of Info.Members loop
+                        if not M.Is_List then
+                           declare
+                              J : constant Natural := Find (To_String (M.Name));
+                           begin
+                              if J > 0 and then Over_Leaf (J) then
+                                 E.Append
+                                   (HBNF_Compilable.By_Value_Edge'
+                                      (Owner => I, Member => M.Name,
+                                       Target => J));
+                              end if;
+                           end;
+                        end if;
+                     end loop;
+                  when Scalar =>
+                     --  A rule that is one name is an alias; the edge has no
+                     --  member, so it can order but never be broken.
+                     if Over_Leaf (I) then
+                        declare
+                           P : constant Element_Vectors.Vector :=
+                             Rules (I).Pattern;
+                           J : constant Natural := Find (To_String (P (1).Name));
+                        begin
+                           if J > 0
+                             and then (Is_Record (Infos (J))
+                                       or else (Infos (J).Kind = Scalar
+                                                and then Over_Leaf (J)))
+                           then
+                              E.Append
+                                (HBNF_Compilable.By_Value_Edge'
+                                   (Owner => I,
+                                    Member => Null_Unbounded_String,
+                                    Target => J));
+                           end if;
+                        end;
+                     end if;
+                  when others =>
+                     null;
+               end case;
+            end;
+         end loop;
+         return E;
+      end By_Value_Edges;
+
       --  The vector element type for a list of Ref: an access to the record
       --  (so recursion can be broken), or the scalar inlined by value.
       function Elem_Type (Ref : String) return String is
@@ -918,6 +979,21 @@ package body HBNF_Ada is
             end;
          end if;
       end loop;
+
+      --  A rule's value cannot contain itself: the tree types are structs by
+      --  value, so one of them would be infinitely sized.  The detector is
+      --  the one in HBNF_Compilable now, not a copy kept here; step 9b makes
+      --  it hand back the field to emit indirect, and until the backends act
+      --  on that the cycle is still refused, with the same message the
+      --  stalled sort below used to give.
+      if not HBNF_Compilable.Back_Edges (N, By_Value_Edges).Is_Empty then
+         raise Parse_Error with
+           "a rule's value cannot contain itself: the tree types are structs "
+           & "by value, so this one would be infinitely sized.  Routing "
+           & "the recursion through a list does not help (a list node "
+           & "holds its element by value too); RFCPLAN.md step 9 adds "
+           & "the pointer that breaks the cycle";
+      end if;
 
       --  Record bodies and their subtype aliases (`loport = port`), in
       --  by-value dependency order: a record follows the aliases its by-value

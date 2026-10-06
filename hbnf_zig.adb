@@ -610,6 +610,88 @@ package body HBNF_Zig is
          return D;
       end Deps;
 
+      --  The rule a reference holds by value: chase a scalar alias
+      --  (`src = host`) through to the struct its field really holds, so the
+      --  containing struct is laid out after that struct and so the cycle
+      --  detector sees the edge the field really makes.  A direct struct
+      --  member is already there.  0 when it holds nothing by value.
+      function Resolve (N : U) return Natural is
+         J : Natural := Find (To_String (N));
+      begin
+         while J > 0 and then Infos (J).Kind = Scalar loop
+            declare
+               P : constant Element_Vectors.Vector := Rules (J).Pattern;
+            begin
+               if Natural (P.Length) = 1 and then P (1).Kind = Name
+                 and then P (1).Min = 1 and then P (1).Max = 1
+               then
+                  J := Find (To_String (P (1).Name));
+               else
+                  J := 0;
+               end if;
+            end;
+         end loop;
+         if J > 0 and then Is_By_Value (Infos (J)) then
+            return J;
+         end if;
+         return 0;
+      end Resolve;
+
+      --  The by-value edges of the tree-type graph, for the one cycle
+      --  detector in HBNF_Compilable.  Only a struct's non-list member and a
+      --  scalar's alias are edges: a list field holds a `[]T` slice, which is
+      --  indirect, so it imposes no order.
+      function By_Value_Edges return HBNF_Compilable.Edge_Vectors.Vector is
+         E : HBNF_Compilable.Edge_Vectors.Vector;
+      begin
+         for I in 1 .. N loop
+            declare
+               Info : constant Rule_Info := Infos (I);
+            begin
+               case Info.Kind is
+                  when Struct =>
+                     for M of Info.Members loop
+                        if not M.Is_List then
+                           declare
+                              J : constant Natural := Resolve (M.Name);
+                           begin
+                              if J > 0 then
+                                 E.Append
+                                   (HBNF_Compilable.By_Value_Edge'
+                                      (Owner => I, Member => M.Name,
+                                       Target => J));
+                              end if;
+                           end;
+                        end if;
+                     end loop;
+                  when Scalar =>
+                     --  A rule that is one name is an alias; the edge has no
+                     --  member, so it can order but never be broken.
+                     if Info.Inline_Type /= Null_Unbounded_String then
+                        declare
+                           P : constant Element_Vectors.Vector :=
+                             Rules (I).Pattern;
+                           J : constant Natural := Resolve (Rules (I).Name);
+                        begin
+                           if J > 0
+                             and then Natural (P.Length) = 1
+                             and then P (1).Kind = Name
+                           then
+                              E.Append
+                                (HBNF_Compilable.By_Value_Edge'
+                                   (Owner => I, Member => Null_Unbounded_String,
+                                    Target => J));
+                           end if;
+                        end;
+                     end if;
+                  when others =>
+                     null;
+               end case;
+            end;
+         end loop;
+         return E;
+      end By_Value_Edges;
+
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
          R    : constant Rule := Rules (Idx);
          Base : constant String := Zig_Type (To_String (R.Name));
@@ -906,83 +988,23 @@ package body HBNF_Zig is
          Infos.Append (Analyze (I));
       end loop;
 
-      --  By-value cycle check, ahead of the dependency sort below.  The sort
-      --  only orders structs and lists, so a cycle that runs through a scalar
-      --  alias slips past it: `prim = '(' expr ')' | int` with `expr = prim`
-      --  emitted, and `zig` then said "type depends on itself" the moment a
-      --  size was forced.  C, Ada and Rust refuse that schema; refusing here
-      --  is what makes the four backends agree.  A slice (`[]T`) is indirect,
-      --  so an edge into a list rule is not by value.  RFCPLAN.md step 9b
-      --  replaces the four refusals with a pointer on one back edge.
-      declare
-         White : constant := 0;
-         Grey  : constant := 1;
-         Black : constant := 2;
-         Mark  : array (1 .. N) of Natural := (others => White);
-
-         --  The rule an emitted field type denotes, by value: 0 for a core
-         --  scalar, an unknown name, or a list rule (a slice).
-         function By_Value_Target (T : String) return Natural is
-         begin
-            for J in 1 .. N loop
-               if Zig_Type (To_String (Rules (J).Name)) = T then
-                  return (if Infos (J).Kind = List then 0 else J);
-               end if;
-            end loop;
-            return 0;
-         end By_Value_Target;
-
-         procedure Visit (I : Natural);
-
-         --  Every by-value edge out of rule I, following what Emit_Rule
-         --  writes: a struct's non-list members, and a scalar's alias.
-         procedure Edges (I : Natural) is
-            Info : constant Rule_Info := Infos (I);
-
-            procedure Edge (T : String) is
-               J : constant Natural := By_Value_Target (T);
-            begin
-               if J > 0 then
-                  Visit (J);
-               end if;
-            end Edge;
-         begin
-            case Info.Kind is
-               when Struct =>
-                  for M of Info.Members loop
-                     if not M.Is_List then
-                        Edge (Zig_Type_Of (To_String (M.Name)));
-                     end if;
-                  end loop;
-               when Scalar =>
-                  Edge (To_String (Info.Inline_Type));
-               when others =>
-                  null;
-            end case;
-         end Edges;
-
-         procedure Visit (I : Natural) is
-         begin
-            if Mark (I) = Black then
-               return;
-            end if;
-            if Mark (I) = Grey then
-               raise Parse_Error with
-                 "a rule's value cannot contain itself: the tree types are structs "
-                 & "by value, so this one would be infinitely sized.  Routing "
-                 & "the recursion through a list does not help (a list node "
-                 & "holds its element by value too); RFCPLAN.md step 9 adds "
-                 & "the pointer that breaks the cycle";
-            end if;
-            Mark (I) := Grey;
-            Edges (I);
-            Mark (I) := Black;
-         end Visit;
-      begin
-         for I in 1 .. N loop
-            Visit (I);
-         end loop;
-      end;
+      --  A rule's value cannot contain itself: the tree types are structs by
+      --  value, so one of them would be infinitely sized.  The sort below only
+      --  orders structs and lists, so a cycle that runs through a scalar alias
+      --  slips past it: `prim = '(' expr ')' | int` with `expr = prim` emitted,
+      --  and `zig` then said "type depends on itself" the moment a size was
+      --  forced.  The detector is the one in HBNF_Compilable now, not a copy
+      --  kept here; step 9b makes it hand back the field to emit indirect, and
+      --  until that lands the cycle is still refused, with the same message
+      --  this detector used to give.
+      if not HBNF_Compilable.Back_Edges (N, By_Value_Edges).Is_Empty then
+         raise Parse_Error with
+           "a rule's value cannot contain itself: the tree types are structs "
+           & "by value, so this one would be infinitely sized.  Routing "
+           & "the recursion through a list does not help (a list node "
+           & "holds its element by value too); RFCPLAN.md step 9 adds "
+           & "the pointer that breaks the cycle";
+      end if;
 
       Append (Res, "// generated by hbnf -- do not edit");
       Append (Res, LF);
