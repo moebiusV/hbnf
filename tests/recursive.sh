@@ -86,6 +86,14 @@ if command -v rustc > /dev/null 2>&1; then
 			check Rust 1   "$W/rs/main" "1)"
 			check Rust 0   "$W/rs/main" "((1))"
 			check Rust 1   "$W/rs/main" "(1"
+			# `((1))` is three prim nodes, and the cycle runs through the alias
+			# `expr`: each walker must follow the box to all three.
+			"$W/rs/main" "((1))" walk > "$W/got.txt" 2>&1
+			if [ "$(cat "$W/got.txt")" = "OK visited=3 folded=3" ]; then
+				echo "recursive: Rust OK (walkers reach all 3 nodes through an alias)"
+			else
+				echo "recursive: Rust FAIL (walkers: $(head -1 "$W/got.txt"))"; rc=1
+			fi
 		else
 			echo "recursive: Rust FAIL (compile)"; head -20 "$W/rs.err"; rc=1
 		fi

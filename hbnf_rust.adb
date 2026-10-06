@@ -705,6 +705,18 @@ package body HBNF_Rust is
       return False;
    end Is_Back;
 
+   --  The rule a back edge points at, or 0 when (Owner, Member) is not one.
+   function Back_Target (Backs : HBNF_Compilable.Edge_Vectors.Vector;
+                         Owner : Natural; Member : String) return Natural is
+   begin
+      for E of Backs loop
+         if E.Owner = Owner and then To_String (E.Member) = Member then
+            return E.Target;
+         end if;
+      end loop;
+      return 0;
+   end Back_Target;
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
@@ -914,19 +926,25 @@ package body HBNF_Rust is
             end case;
          end Recurses;
 
+         --  Back is the rule a back edge points at, or 0.  The box holds that
+         --  rule whatever the member names, so it is walked through `Back`
+         --  rather than through the member's own kind, which for a member
+         --  naming a scalar alias (`expr = prim`) is not Struct.
          procedure Visit_Field
-           (Name : String; Back : Boolean; Buf : in out U; Ind : String) is
+           (Name : String; Back : Natural; Buf : in out U; Ind : String) is
             F : constant String := Rust_Field (Name);
          begin
+            if Back > 0 then
+               Append (Buf, Ind & "if let Some(" & F & ") = &n." & F
+                 & " { visit_" & Rust_Snake (To_String (Rules (Back).Name))
+                 & "(" & F & ", v); }");
+               Append (Buf, LF);
+               return;
+            end if;
             case Ref_Kind (Name) is
                when Struct =>
-                  if Back then
-                     Append (Buf, Ind & "if let Some(" & F & ") = &n." & F
-                       & " { visit_" & Rust_Snake (Name) & "(" & F & ", v); }");
-                  else
-                     Append (Buf, Ind & "visit_" & Rust_Snake (Name)
-                       & "(&n." & F & ", v);");
-                  end if;
+                  Append (Buf, Ind & "visit_" & Rust_Snake (Name)
+                    & "(&n." & F & ", v);");
                   Append (Buf, LF);
                when List =>
                   declare
@@ -944,19 +962,20 @@ package body HBNF_Rust is
          end Visit_Field;
 
          procedure Fold_Field
-           (Name : String; Back : Boolean; Buf : in out U; Ind : String) is
+           (Name : String; Back : Natural; Buf : in out U; Ind : String) is
             F : constant String := Rust_Field (Name);
          begin
+            if Back > 0 then
+               Append (Buf, Ind & "let " & F & " = " & F
+                 & ".map(|b| Box::new(fold_"
+                 & Rust_Snake (To_String (Rules (Back).Name)) & "(*b, f)));");
+               Append (Buf, LF);
+               return;
+            end if;
             case Ref_Kind (Name) is
                when Struct =>
-                  if Back then
-                     Append (Buf, Ind & "let " & F & " = " & F
-                       & ".map(|b| Box::new(fold_" & Rust_Snake (Name)
-                       & "(*b, f)));");
-                  else
-                     Append (Buf, Ind & "let " & F & " = fold_"
-                       & Rust_Snake (Name) & "(" & F & ", f);");
-                  end if;
+                  Append (Buf, Ind & "let " & F & " = fold_"
+                    & Rust_Snake (Name) & "(" & F & ", f);");
                   Append (Buf, LF);
                when List =>
                   declare
@@ -980,7 +999,9 @@ package body HBNF_Rust is
             Has_Child : Boolean := False;
          begin
             for M of Members loop
-               if Recurses (To_String (M.Name)) then
+               if Recurses (To_String (M.Name))
+                 or else Back_Target (Backs, Owner, To_String (M.Name)) > 0
+               then
                   Has_Child := True;
                end if;
             end loop;
@@ -993,7 +1014,7 @@ package body HBNF_Rust is
             for M of Members loop
                Visit_Field
                  (To_String (M.Name),
-                  Is_Back (Backs, Owner, To_String (M.Name)), Buf, "    ");
+                  Back_Target (Backs, Owner, To_String (M.Name)), Buf, "    ");
             end loop;
             Append (Buf, "}");
             Append (Buf, LF);
@@ -1022,7 +1043,7 @@ package body HBNF_Rust is
                for M of Members loop
                   Fold_Field
                     (To_String (M.Name),
-                     Is_Back (Backs, Owner, To_String (M.Name)), Buf, "    ");
+                     Back_Target (Backs, Owner, To_String (M.Name)), Buf, "    ");
                end loop;
                Append (Buf, "    let n = " & Type_Name & " { ");
                declare

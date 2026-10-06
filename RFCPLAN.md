@@ -1092,11 +1092,9 @@ should claim that before 10.
        allocator.  The ten daemon grammars are byte-identical for C, Ada and
        Rust; Zig's gain `deinit_*` functions and lose nothing.
 
-       **Known gaps, none blocking.**  Rust's `visit_`/`fold_` descend a
-       direct struct member only, so a back edge through a scalar alias is
-       not walked (Zig's are, via the edge's target).  C leaves a failed
-       branch's pointer non-NULL in the unused union arm: memory-safe, and
-       Rust and Zig do not share it.  Ada's `recursive-via-list` output does
+       **Known gaps, none blocking.**  C leaves a failed branch's pointer
+       non-NULL in the unused union arm: memory-safe, and Rust and Zig do
+       not share it.  Ada's `recursive-via-list` output does
        not compile (a vector of records needs the record's `=` in scope),
        which predates 9b.
 
