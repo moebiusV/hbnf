@@ -29,8 +29,10 @@ word.
 
 ## The fixed-up version
 
-`|` for `/` everywhere, `whitespace none` and `sensitivity string %i` as in
-RFC 5234, and:
+`/` stays where it compiles (`ccontent`, `qcontent`, `obs-dtext`, `quoted-pair`:
+`\` then a printable or white space against `\` then a control character), `|`
+where it did not, `whitespace none` and `sensitivity string %i` as in RFC 5234,
+and:
 
 - `"\"` is `%x5C` (twice: `quoted-pair`, `obs-qp`).
 - `atom` and `word` are `atom-rule` and `word-rule`, at every use.
@@ -38,9 +40,10 @@ RFC 5234, and:
   range in a rule that also names a phrase rule, and says to give it one; the
   RFC's `dtext` names `obs-dtext`, which names `quoted-pair`.
 - `FWS = obs-FWS | ([*WSP CRLF] 1*WSP)`, the RFC's two alternatives reversed.
-  The first alternative takes one fold of `  \r\n  \r\n  ` and leaves the
+  They begin alike (white space, then a fold), so `/` is refused, and the
+  first alternative takes one fold of `  \r\n  \r\n  ` and leaves the
   second; `obs-FWS` takes both, and only text that begins with the CRLF is left
-  for the other one.
+  for the other one.  `CFWS` is refused for the same reason and left `|`.
 - `local-part = obs-local-part` and `domain = obs-domain | domain-literal`.
   `|` commits to the first alternative that matches, so `dot-atom` would take
   `a` out of `a. b` and the `@` would never be found, where the RFC's union goes

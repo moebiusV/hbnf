@@ -40,5 +40,5 @@ refuse "only when that line is indented" 'r = "a" x
 "b" x
 x = word'
 refuse "a rule.s head is its name alone" 'char[16] ifname = word'
-refuse "is ABNF.s union" 'r = "ab" / "cd"'
+refuse "is ABNF.s union" 'r = "a" "b" "c" / "a" "b" "d"'
 echo "syntax: OK (refusals)"

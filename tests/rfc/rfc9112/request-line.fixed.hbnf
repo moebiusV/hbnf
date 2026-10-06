@@ -42,8 +42,8 @@ absolute-path = 1*( "/" segment )
 
 token          = 1*tchar
 
-tchar          = "!" | "#" | "$" | "%" | "&" | "'" | "*"
-               | "+" | "-" | "." | "^" | "_" | "`" | "|" | "~"
-               | DIGIT | ALPHA
+tchar          = "!" / "#" / "$" / "%" / "&" / "'" / "*"
+               / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
+               / DIGIT / ALPHA
                ; any VCHAR, except delimiters
 

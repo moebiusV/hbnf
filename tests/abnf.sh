@@ -73,8 +73,52 @@ item = DIGIT / ALPHA
 G
 check OK   "a1B" "letters and digits"
 check FAIL "-"   "neither"
-refuse "is ABNF.s union" "/ between phrases" <<'G'
-doc = "a" "b" / "c"
+refuse "is ABNF.s union" "/ between phrases that begin alike" <<'G'
+doc = "a" "b" "c" / "a" "b" "d"
+G
+
+echo "== \`/\` between phrases: ordered choice where the alternatives cannot begin alike (step 5) =="
+rm -f "$W/t"; gen <<'G'
+doc = "a" "b" / "c" "d"
+G
+check OK   "ab"  "first alternative"
+check OK   "cd"  "second alternative"
+check FAIL "ad"  "neither"
+check FAIL "a"   "a prefix of the first"
+rm -f "$W/t"; gen <<'G'
+doc = [ "x" ] / "y"
+G
+check OK   "y"   "the empty alternative, written first, is tried last"
+check OK   "x"   "the optional one"
+check OK   ""    "nothing at all"
+check FAIL "z"   "neither"
+rm -f "$W/t"; gen <<'G'
+doc = *( "a" "b" / "c" )
+G
+check OK   "abcab" "a union inside a repeated group"
+check FAIL "abb"   "a leftover"
+rm -f "$W/t"; gen <<'G'
+doc = "/" "/" "x" / "/" "y"
+G
+check OK   "//x" "two code points tell them apart"
+check OK   "/y"  "the other alternative"
+check FAIL "/x"  "neither"
+check FAIL "//y" "neither, the other way"
+rm -f "$W/t"; gen <<G
+include "$CORE"
+doc = oct
+oct = DIGIT / %x31-39 DIGIT / "1" 2DIGIT
+G
+check OK   "7"   "a character rule takes the longest alternative: one digit"
+check OK   "42"  "two digits"
+check OK   "199" "three digits, in the RFC's own order"
+check FAIL "a"   "not a digit"
+refuse "can match nothing" "a nullable alternative the choice's follow set can begin" <<'G'
+doc = x "a"
+x = "a" / [ "b" ]
+G
+refuse "can both begin with" "two alternatives that share two code points" <<'G'
+doc = "a" "b" "c" / "a" "b" "d"
 G
 
 echo "== newlines inside ( ), and a rule going on to an indented line =="

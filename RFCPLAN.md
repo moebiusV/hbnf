@@ -46,10 +46,17 @@ silently.
      - alternatives whose FIRST sets (and, for an optional or repeated
        part, FIRST and FOLLOW) are disjoint become ordinary one-token
        decisions;
-     - alternatives that share a prefix are factored (`p = "a" / "a" "b"`
-       becomes `p = "a" [ "b" ]`);
-     - anything else is an error that says to write `|`, longest first,
-       or to factor it by hand.
+     - alternatives that begin alike are told apart by a second code point
+       (*Amended 2026-10-06, step 5*: the plan was to factor a shared
+       prefix, `p = "a" / "a" "b"` into `p = "a" [ "b" ]`.  The RFC corpus
+       has no prefix written out in one rule — every overlap goes through a
+       rule name — and factoring would change the tree types.  Two code
+       points of lookahead resolve `hier-part`, `relative-part` and
+       `quoted-pair` and leave the trees alone.);
+     - anything else is an error that names the two alternatives and the
+       code points they share, and says to write `|`, with the one to try
+       first first.  An alternative that can match nothing is allowed if
+       what follows the choice cannot begin the others; it is tried last.
 2. **Incremental alternatives are `=/`, ABNF's spelling, and nothing
    else.**  No BNF dialect we know has `=|` or `|=`.  (yacc gets the same
    effect by allowing `name :` more than once.)  `=/` extends the current
@@ -892,7 +899,12 @@ should claim that before 10.
      `/` between phrases (the fixed-up files write `|` and repair each
      overlap by hand: `dec-octet`, `host`, `IPv6address`, `FWS`,
      `local-part`/`domain`); the byte-vs-code-point `OCTET` divergence; poor
-     messages for lifted rules ("expected IPvFuture_2").
+     messages for lifted rules ("expected IPvFuture_2").  *`/` between
+     phrases done 2026-10-06* (`hbnf_lookahead.ad[sb]`: FIRST/FOLLOW and two
+     code points, over the reader's rules; no backend changed).  What stays
+     a `|` in the fixed-up files is genuine overlap the union itself would
+     need backtracking for: `host`, `IPv6address`, `ls32`, `URI-reference`,
+     `path`, `request-target`, `FWS`, `CFWS`, `word`, `domain`.
    - the character model in Rust, Zig and Ada through the templates.  *Done
      2026-10-06, inside step 9c*, which could not retire its reader without
      it.  (The interpreter used to be named here too, "on the same

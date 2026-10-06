@@ -12,9 +12,9 @@ include "../rfc5234/core.fixed.hbnf"
 URI           = scheme ":" hier-part [ "?" query ] [ "#" fragment ]
 
 hier-part     = "//" authority path-abempty
-              | path-absolute
-              | path-rootless
-              | path-empty
+              / path-absolute
+              / path-rootless
+              / path-empty
 
 URI-reference = URI | relative-ref
 
@@ -23,14 +23,14 @@ absolute-URI  = scheme ":" hier-part [ "?" query ]
 relative-ref  = relative-part [ "?" query ] [ "#" fragment ]
 
 relative-part = "//" authority path-abempty
-              | path-absolute
-              | path-noscheme
-              | path-empty
+              / path-absolute
+              / path-noscheme
+              / path-empty
 
-scheme        = ALPHA *( ALPHA | DIGIT | "+" | "-" | "." )
+scheme        = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
 
 authority     = [ userinfo "@" ] host [ ":" port ]
-userinfo      = *( unreserved | pct-encoded | sub-delims | ":" )
+userinfo      = *( unreserved / pct-encoded / sub-delims / ":" )
 host          = IP-literal | reg-name   ; hbnf: IPv4address is dropped from the choice.  A dotted
                                         ;   quad is also a reg-name, and `|` commits to the first
                                         ;   alternative that matches: IPv4address would take "1.2.3.4"
@@ -39,9 +39,9 @@ host          = IP-literal | reg-name   ; hbnf: IPv4address is dropped from the 
                                         ;   Same language; an address parses as a reg-name.
 port          = *DIGIT
 
-IP-literal    = "[" ( IPv6address | IPvFuture  ) "]"
+IP-literal    = "[" ( IPv6address / IPvFuture  ) "]"
 
-IPvFuture     = "v" 1*HEXDIG "." 1*( unreserved | sub-delims | ":" )
+IPvFuture     = "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )
 
 IPv6address   =                            6( h16 ":" ) ls32
               |                       "::" 5( h16 ":" ) ls32
@@ -57,13 +57,13 @@ h16           = 1*4HEXDIG
 ls32          = ( h16 ":" h16 ) | IPv4address
 IPv4address   = dec-octet "." dec-octet "." dec-octet "." dec-octet
 
-dec-octet     = "25" %x30-35          ; 250-255   hbnf: longest first.  `|` commits to the first
-              | "2" %x30-34 DIGIT     ; 200-249     alternative that matches, so the RFC's order
-              | "1" 2DIGIT            ; 100-199     (shortest first) would take "2" out of "255"
-              | %x31-39 DIGIT         ; 10-99       and never try the rest.
-              | DIGIT                 ; 0-9
+dec-octet     = DIGIT                 ; 0-9
+              / %x31-39 DIGIT         ; 10-99
+              / "1" 2DIGIT            ; 100-199
+              / "2" %x30-34 DIGIT     ; 200-249
+              / "25" %x30-35          ; 250-255
 
-reg-name      = *( unreserved | pct-encoded | sub-delims )
+reg-name      = *( unreserved / pct-encoded / sub-delims )
 
 path          = path-abempty    ; begins with "/" or is empty
               | path-absolute   ; begins with "/" but not "//"
@@ -80,19 +80,19 @@ path-empty    = 0pchar                  ; hbnf: `0<pchar>` is a prose-val in ABN
 
 segment       = *pchar
 segment-nz    = 1*pchar
-segment-nz-nc = 1*( unreserved | pct-encoded | sub-delims | "@" )
+segment-nz-nc = 1*( unreserved / pct-encoded / sub-delims / "@" )
               ; non-zero-length segment without any colon ":"
 
-pchar         = unreserved | pct-encoded | sub-delims | ":" | "@"
+pchar         = unreserved / pct-encoded / sub-delims / ":" / "@"
 
-query         = *( pchar | "/" | "?" )
+query         = *( pchar / "/" / "?" )
 
-fragment      = *( pchar | "/" | "?" )
+fragment      = *( pchar / "/" / "?" )
 
 pct-encoded   = "%" HEXDIG HEXDIG
 
-unreserved    = ALPHA | DIGIT | "-" | "." | "_" | "~"
-reserved      = gen-delims | sub-delims
-gen-delims    = ":" | "/" | "?" | "#" | "[" | "]" | "@"
-sub-delims    = "!" | "$" | "&" | "'" | "(" | ")"
-              | "*" | "+" | "," | ";" | "="
+unreserved    = ALPHA / DIGIT / "-" / "." / "_" / "~"
+reserved      = gen-delims / sub-delims
+gen-delims    = ":" / "/" / "?" / "#" / "[" / "]" / "@"
+sub-delims    = "!" / "$" / "&" / "'" / "(" / ")"
+              / "*" / "+" / "," / ";" / "="

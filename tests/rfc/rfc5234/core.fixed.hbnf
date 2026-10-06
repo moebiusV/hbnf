@@ -36,8 +36,7 @@ HTAB           =  %x09
 LF             =  %x0A
                        ; linefeed
 
-LWSP           =  *(WSP | CRLF WSP)                                 ; hbnf: `|`.  `/` between phrases is not taken yet (step 5);
-                                                                     ;   WSP and CRLF WSP cannot begin alike, so ordered choice is the union
+LWSP           =  *(WSP / CRLF WSP)
                        ; Use of this linear-white-space rule
                        ;  permits lines containing only white
                        ;  space that are no longer legal in

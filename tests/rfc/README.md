@@ -20,7 +20,7 @@ Each directory has, for its fragment:
   from another.  `hbnf FILE --root=RULE` says what hbnf makes of any rule.
 - `<name>.fixed.hbnf`: the same rules as hbnf reads them.  Every change from the
   verbatim file is marked `; hbnf:` with the reason, except `|` for `/`, which
-  is made throughout and explained in the README.
+  is kept only where `/` is still refused, and explained in the README.
 - `vectors/<RULE>.accept` and `.reject`: inputs, one per line (`\r`, `\n`,
   `\t`, `\NNN` and `\\` as printf's `%b` reads them; an empty line is the empty
   input).
@@ -44,8 +44,8 @@ around it, and the plan has the step.
 
 | What the RFC's text did | Status |
 |---|---|
-| `/` between whole phrases (`host = IP-literal / IPv4address / reg-name`, every `request-target`, `IPv6address`) is refused | **open**, RFCPLAN.md step 5 (`/` between phrases).  The fixed-up files write `\|`, ordered choice, and the READMEs say where that is not the same language and what was done instead |
-| `|` commits to the first alternative that matches, so overlapping alternatives in the RFC's order lose input (`dec-octet` shortest first; `host`; `IPv6address`'s left part; `FWS`; `local-part`) | **open**, same step.  Each is repaired by hand in the fixed-up file, and tested |
+| `/` between whole phrases (`host = IP-literal / IPv4address / reg-name`, every `request-target`, `IPv6address`) was refused | **fixed** where ordered choice accepts the same language: alternatives that cannot begin alike, by one code point of lookahead or two (RFCPLAN.md decision 1, `hbnf_lookahead.adb`), and character rules.  The rest are refused with the two alternatives and what they share |
+| `|` commits to the first alternative that matches, so overlapping alternatives lose input (`host`; `IPv6address`'s left part; `FWS`; `local-part`/`domain`) | **open**, by design: the union there needs backtracking, which the generated parsers do not do.  Each is repaired by hand in the fixed-up file, and tested.  (`dec-octet` is no longer one: a character rule takes the longest alternative) |
 | `/` between one-character strings (`BIT = "0" / "1"`, `HEXDIG`, `tchar`, `atext`) was refused though each is one code point | **fixed** |
 | A string literal in `"..."` has C escapes in hbnf and none in ABNF: `"\"` ran on to the next quote and reported `unexpected character '\'` hundreds of columns away | **fixed**: the message names the line and the cause |
 | A rule named `atom` or `word` (RFC 5322 defines both, as structures) was read as hbnf's built-in scalar of that name, and the generated code disagreed with itself in three backends | **fixed**: a generation-time error that says to rename the rule |

@@ -28,12 +28,13 @@ the prose-val does (`[URI]` is RFC 3986).
 - `uri-host = host`, the rule the prose-val names.
 - **`port = <port, ...>` is left out.**  A later `=` replaces an earlier one, so
   it would replace RFC 3986's `port = *DIGIT`, the rule it points at.
-- `request-target`'s order is the RFC's: `absolute-form` before
+- `request-target` stays `|`, in the RFC's order: `absolute-form` before
   `authority-form`.  `example.com:80` is an `absolute-URI` (`example.com` is a
-  valid scheme) as well as an `authority-form`, and ordered choice takes the
-  first; the RFC says `authority-form` is used only by `CONNECT`, which the
-  method decides and this rule cannot see.  The language is the same; the form
-  recorded for `CONNECT example.com:80` is `absolute-form`.
+  valid scheme) as well as an `authority-form`, so the two begin alike and the
+  union is refused; the RFC says `authority-form` is used only by `CONNECT`,
+  which the method decides and this rule cannot see.  The language is the same;
+  the form recorded for `CONNECT example.com:80` is `absolute-form`.
+- `tchar` is the RFC's, with `/`.
 
-`HTTP-name = %s"HTTP"` needed nothing: `%s` is hbnf's own spelling of RFC 7405's
+HTTP-name = %s"HTTP"` needed nothing: `%s` is hbnf's own spelling of RFC 7405's
 case-sensitive string, and the vectors check that `http/1.1` is refused.

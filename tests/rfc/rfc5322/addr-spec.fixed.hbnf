@@ -11,7 +11,7 @@ sensitivity string %i            ; hbnf: ABNF's "..." is case-insensitive; hbnf'
 
 include "../rfc5234/core.fixed.hbnf"
 
-quoted-pair     =   (%x5C (VCHAR | WSP)) | obs-qp   ; hbnf: "\" is %x5C: in hbnf a backslash in "..." starts an escape
+quoted-pair     =   (%x5C (VCHAR / WSP)) / obs-qp   ; hbnf: "\" is %x5C: in hbnf a backslash in "..." starts an escape
                                                   ;   (`"\n"`), so the RFC's `"\"` never closes
 
 FWS             =   obs-FWS | ([*WSP CRLF] 1*WSP)   ; hbnf: obs-FWS first.  The RFC's first alternative would take one
@@ -19,27 +19,27 @@ FWS             =   obs-FWS | ([*WSP CRLF] 1*WSP)   ; hbnf: obs-FWS first.  The 
                                         ;   and only text that begins with the CRLF is left for the other one
                                        ; Folding white space
 
-ctext           =   %d33-39 |          ; Printable US-ASCII
-                    %d42-91 |          ;  characters not including
-                    %d93-126 |         ;  "(", ")", or "\"
+ctext           =   %d33-39 /          ; Printable US-ASCII
+                    %d42-91 /          ;  characters not including
+                    %d93-126 /         ;  "(", ")", or "\"
                     obs-ctext
 
-ccontent        =   ctext | quoted-pair | comment
+ccontent        =   ctext / quoted-pair / comment
 
 comment         =   "(" *([FWS] ccontent) [FWS] ")"
 
 CFWS            =   (1*([FWS] comment) [FWS]) | FWS
 
-atext           =   ALPHA | DIGIT |    ; Printable US-ASCII
-                    "!" | "#" |        ;  characters not including
-                    "$" | "%" |        ;  specials.  Used for atoms.
-                    "&" | "'" |
-                    "*" | "+" |
-                    "-" | "/" |
-                    "=" | "?" |
-                    "^" | "_" |
-                    "`" | "{" |
-                    "|" | "}" |
+atext           =   ALPHA / DIGIT /    ; Printable US-ASCII
+                    "!" / "#" /        ;  characters not including
+                    "$" / "%" /        ;  specials.  Used for atoms.
+                    "&" / "'" /
+                    "*" / "+" /
+                    "-" / "/" /
+                    "=" / "?" /
+                    "^" / "_" /
+                    "`" / "{" /
+                    "|" / "}" /
                     "~"
 
 atom-rule            =   [CFWS] 1*atext [CFWS]
@@ -48,12 +48,12 @@ dot-atom-text   =   1*atext *("." 1*atext)
 
 dot-atom        =   [CFWS] dot-atom-text [CFWS]
 
-qtext           =   %d33 |             ; Printable US-ASCII
-                    %d35-91 |          ;  characters not including
-                    %d93-126 |         ;  "\" or the quote character
+qtext           =   %d33 /             ; Printable US-ASCII
+                    %d35-91 /          ;  characters not including
+                    %d93-126 /         ;  "\" or the quote character
                     obs-qtext
 
-qcontent        =   qtext | quoted-pair
+qcontent        =   qtext / quoted-pair
 
 quoted-string   =   [CFWS]
                     DQUOTE *([FWS] qcontent) [FWS] DQUOTE
@@ -75,23 +75,23 @@ domain          =   obs-domain | domain-literal   ; hbnf: obs-domain holds every
 
 domain-literal  =   [CFWS] "[" *([FWS] dtext) [FWS] "]" [CFWS]
 
-dtext           =   dtext-char |       ; hbnf: the two ranges are a rule of their own (dtext-char), as the message
+dtext           =   dtext-char /       ; hbnf: the two ranges are a rule of their own (dtext-char), as the message
                     obs-dtext          ;   asks: a range may not sit in a rule that also names quoted-pair
-dtext-char      =   %d33-90 |          ; Printable US-ASCII
+dtext-char      =   %d33-90 /          ; Printable US-ASCII
                     %d94-126           ;  characters not including
                                        ;  "[", "]", or "\"
 
-obs-NO-WS-CTL   =   %d1-8 |            ; US-ASCII control
-                    %d11 |             ;  characters that do not
-                    %d12 |             ;  include the carriage
-                    %d14-31 |          ;  return, line feed, and
+obs-NO-WS-CTL   =   %d1-8 /            ; US-ASCII control
+                    %d11 /             ;  characters that do not
+                    %d12 /             ;  include the carriage
+                    %d14-31 /          ;  return, line feed, and
                     %d127              ;  white space characters
 
 obs-ctext       =   obs-NO-WS-CTL
 
 obs-qtext       =   obs-NO-WS-CTL
 
-obs-qp          =   %x5C (%d0 | obs-NO-WS-CTL | LF | CR)   ; hbnf: "\" is %x5C, as above
+obs-qp          =   %x5C (%d0 / obs-NO-WS-CTL / LF / CR)   ; hbnf: "\" is %x5C, as above
 
 obs-FWS         =   1*WSP *(CRLF 1*WSP)
 
@@ -99,4 +99,4 @@ obs-local-part  =   word-rule *("." word-rule)
 
 obs-domain      =   atom-rule *("." atom-rule)
 
-obs-dtext       =   obs-NO-WS-CTL | quoted-pair
+obs-dtext       =   obs-NO-WS-CTL / quoted-pair

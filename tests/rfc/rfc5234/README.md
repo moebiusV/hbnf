@@ -8,23 +8,15 @@ inputs each rule must accept and refuse; `tests/rfc.sh` runs them.
 
 Any rule can be tried on its own: `hbnf core.hbnf --root=RULE`.
 
-Fifteen of the sixteen rules compile as written.  That includes the ones that
-write `/`, because every alternative is one code point (`BIT = "0" / "1"`,
-`HEXDIG = DIGIT / "A" / "B" / ...`, `CTL = %x00-1F / %x7F`).  One does not:
-
-    LWSP = *(WSP / CRLF WSP)
-
-    hbnf: core.hbnf:37:25: `/` is ABNF's union, which hbnf takes only between
-    alternatives that each match one code point (a %x value, a 'c' literal, a
-    one-character string, or a rule of them) so far (RFCPLAN.md step 5); write
-    `|`, ordered choice, longest first
-
-`WSP` and `CRLF WSP` cannot begin with the same character, so ordered choice is
-the union, and writing `|` is the whole repair.
+All sixteen rules compile as written.  That includes the ones that write `/`:
+`BIT = "0" / "1"` and `HEXDIG = DIGIT / "A" / ...` are one code point an
+alternative, and `LWSP = *(WSP / CRLF WSP)` is two alternatives that cannot
+begin alike (`WSP` is a space or a tab, `CRLF` begins with a carriage return),
+so ordered choice is the union (RFCPLAN.md decision 1).
 
 ## The fixed-up version
 
-Two lines are added, and one rule changes.
+The rules are the RFC's, character for character.  Two lines are added:
 
 - `whitespace none`.  hbnf skips blank space between the elements of a rule
   unless told not to; ABNF skips nothing, and where a space counts the RFC
@@ -33,9 +25,8 @@ Two lines are added, and one rule changes.
 - `sensitivity string %i`.  A literal in ABNF is case-insensitive (`"A"` is `a`
   or `A`); in hbnf it is not unless the file says so.  Without this, `HEXDIG`
   would refuse `a` and every RFC that uses it would silently disagree with the
-  RFC.  A case-insensitive literal in a grammar with no words compares bytes, in
-  either case.
-- `LWSP`: `/` becomes `|`.
+  RFC.  A case-insensitive literal in a grammar with no words compares bytes,
+  in either case.
 
 ## What the vectors say about the text itself
 
