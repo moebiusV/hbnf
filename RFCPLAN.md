@@ -469,7 +469,7 @@ The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
 
-> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a, 9a, 12.
+> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a, 9a, 9b, 12.
 > **Critical path:** **9b** → **9c** → **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
 > any of them and can land in any gap.
@@ -1042,14 +1042,15 @@ should claim that before 10.
        no existing schema moved.
 
        **There are four copies of this detector, and that is the next
-       thing to fix.**  9b should not add a fifth.  One detector belongs in
+       thing to fix.**  (Fixed by 9b, below: one detector, in
+       `HBNF_Compilable`.)  9b should not add a fifth.  One detector belongs in
        `HBNF_Compilable`, parameterised by the backend's set of indirect
        constructors (C: a list head and a pointer; Ada: a vector and an
        access type; Rust: `Vec` and `Box`; Zig: a slice and a pointer), so
        that "the four backends accept or refuse the same schemas" holds by
        construction rather than by four hand-kept copies.
 
-   9b. **Break the cycle with a pointer.**  The dependency graph is already
+   9b. **Break the cycle with a pointer.**  *Done 2026-10-05.*  The dependency graph is already
        computed for emission order; instead of giving up when it cannot be
        topologically sorted, pick a back edge per strongly-connected
        component and emit that one field indirect — `expr_t *expr` in C,
@@ -1058,6 +1059,46 @@ should claim that before 10.
        and the walkers.  The arena already owns the string leaves and can
        own these.  Choose the back edge deterministically (lowest rule
        index) so output stays byte-stable.
+
+       **What landed.**  One detector, `HBNF_Compilable.Back_Edges`, takes
+       each backend's own by-value edges and returns one edge per cycle (the
+       algorithm is shared; the graph is not, and is deliberately
+       backend-specific: Ada already indirects a direct struct member, so
+       its edges run through scalar aliases).  Each backend then emits that
+       field indirectly:
+
+       | backend | field | commit point | release |
+       |---|---|---|---|
+       | C | `T *f` | `hbnf_alloc` | `free_<rule>_fields` |
+       | Ada | `<Record>_Access` | `new X_Type'(…)` | new `Free_<rule>` |
+       | Rust | `Option<Box<T>>` | `Some(Box::new(parse_x(p)?))` | `drop` |
+       | Zig | `?*T` | `try p.box(T, try parse_x(p))` | new `deinit_<rule>` |
+
+       Two things differ from the sketch above.  Rust and Zig use the
+       *nullable* form, not a bare `Box<T>` / `*T`: every struct is
+       default- or zero-initialised and reset that way, and a bare
+       `Box<T>::default()` recurses without end (it compiles, then
+       overflows the stack on the first parse).  And "the arena owns these"
+       holds only for C: Ada and Zig had no free walk at all, so each gained
+       one, and a failed branch's reset must release a box without touching
+       the arena (C's `free_arena` ends the public `free_<root>`, and calling
+       it mid-parse was a use-after-free that ASan found).
+
+       `tests/recursive.sh` compiles and runs the expression grammar in Ada,
+       Rust and Zig (C is `tests/abnf.sh`'s recursive block), plus a fixture
+       whose cycle runs through a *direct* member
+       (`tests/abnf/recursive-direct.hbnf`) so the walkers must descend
+       through the pointer, and Zig's drivers run under a leak-checking
+       allocator.  The ten daemon grammars are byte-identical for C, Ada and
+       Rust; Zig's gain `deinit_*` functions and lose nothing.
+
+       **Known gaps, none blocking.**  Rust's `visit_`/`fold_` descend a
+       direct struct member only, so a back edge through a scalar alias is
+       not walked (Zig's are, via the edge's target).  C leaves a failed
+       branch's pointer non-NULL in the unused union arm: memory-safe, and
+       Rust and Zig do not share it.  Ada's `recursive-via-list` output does
+       not compile (a vector of records needs the record's `=` in scope),
+       which predates 9b.
 
    Gate: the four backends accept or refuse the same schemas, the
    expression grammar above compiles and parses in all four, and the nine
