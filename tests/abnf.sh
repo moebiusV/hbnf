@@ -323,15 +323,20 @@ for shape in '*( "a" )' '*%x41' '"k" *word'; do
 done
 
 echo "== recursive tree types (RFCPLAN step 9) =="
-# C emits the field that breaks the cycle as a pointer (step 9b), so the
-# grammar compiles and parses.  Ada, Rust and Zig still refuse until their
-# own step lands, and each must refuse with the same reason.  Rust used to
-# emit code rustc rejected (E0072) and Zig code that failed the moment a
-# size was forced.
+# C and Ada emit the field that breaks the cycle as a pointer (step 9b), so
+# the grammar generates; C is compiled and run here, Ada by tests/recursive.sh.
+# Rust and Zig still refuse until their own step lands, and each must refuse
+# with the same reason.  Rust used to emit code rustc rejected (E0072) and Zig
+# code that failed the moment a size was forced.
 rm -f "$W/t"; gen_file tests/abnf/recursive.hbnf
 check OK "(1)" "a recursive tree type parses, in C"
 check FAIL "1)" "and an unbalanced one is rejected"
-for b in ada rust zig; do
+if "$CLI" tests/abnf/recursive.hbnf --backend=ada > /dev/null 2> "$W/err.txt"; then
+	echo "  PASS [the ada backend emits it now]"
+else
+	echo "  FAIL [the ada backend emits it now]: $(head -1 "$W/err.txt")"; rc=1
+fi
+for b in rust zig; do
 	if "$CLI" tests/abnf/recursive.hbnf --backend=$b > /dev/null 2> "$W/err.txt"; then
 		echo "  FAIL [the $b backend refuses the same cycle]: accepted"; rc=1
 	elif grep -q "cannot contain itself" "$W/err.txt"; then

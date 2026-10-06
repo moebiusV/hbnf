@@ -579,20 +579,47 @@ package body HBNF_Ada is
      return Boolean
    is (Analyze (Rules, Leaf_Target (Rules, Idx)).Kind in Struct | List);
 
+   --  True when (Owner, Member) is the field the detector chose to hold
+   --  indirectly.  A member name is unique within its record, so the pair
+   --  names the edge.
+   function Is_Back (Backs : Edge_Vectors.Vector;
+                     Owner : Natural; Member : String) return Boolean is
+   begin
+      for E of Backs loop
+         if E.Owner = Owner and then To_String (E.Member) = Member then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Back;
+
+   --  The rule a reference resolves to through its alias chain: for a member
+   --  naming `expr` with `expr = prim`, that is `prim`.  A chosen back edge
+   --  always resolves to a record, because a list rule contributes no
+   --  outgoing edges and so cannot lie on a cycle.
+   function Leaf_Record (Rules : Rule_Vectors.Vector; Ref : String)
+     return Natural
+   is (Leaf_Target (Rules, Find (Rules, Ref)));
+
    --  The rules a record or deferred alias must follow in the combined
    --  record+alias emission: a record follows the deferred aliases its
    --  by-value members name, and a deferred alias (`src = host`) follows
    --  its target when that target is in the same phase (a record or a
    --  further alias); a list target was already emitted with the vectors.
-   function Type_Deps (Rules : Rule_Vectors.Vector; Idx : Natural)
-     return Natural_Vectors.Vector
+   --  A back edge is left out: it is about to become an access type, so it
+   --  no longer orders anything (and would otherwise stall the sort).
+   function Type_Deps
+     (Rules : Rule_Vectors.Vector; Backs : Edge_Vectors.Vector; Idx : Natural)
+      return Natural_Vectors.Vector
    is
       Info : constant Rule_Info := Analyze (Rules, Idx);
       D    : Natural_Vectors.Vector;
    begin
       if Info.Kind = Struct then
          for M of Info.Members loop
-            if not M.Is_List then
+            if not M.Is_List
+              and then not Is_Back (Backs, Idx, To_String (M.Name))
+            then
                declare
                   J : constant Natural := Find (Rules, To_String (M.Name));
                begin
@@ -620,17 +647,17 @@ package body HBNF_Ada is
    end Type_Deps;
 
    --  The fields Ada must hold indirectly, one per cycle in the by-value
-   --  graph, chosen by the one detector in HBNF_Compilable.  A record already refers to another
-   --  record through an access type, so the edges that embed by value are
-   --  the ones that reach a record through an alias (`Over_Leaf`): a member
-   --  naming a scalar alias over a record, and an alias naming one.  A list
-   --  member is a vector, which is indirect, so it imposes no order.  This
-   --  is `Type_Deps` in edge form, so the detector refuses exactly the
-   --  schemas the sort below used to stall on.
+   --  graph, chosen by the one detector in HBNF_Compilable.  A record already
+   --  refers to another record through an access type, so the edges that
+   --  embed by value are the ones that reach a record through an alias
+   --  (`Over_Leaf`): a member naming a scalar alias over a record, and an
+   --  alias naming one.  A list member is a vector, which is indirect, so it
+   --  imposes no order.  This is `Type_Deps` in edge form, so the detector
+   --  refuses exactly the schemas the sort used to stall on.
    function Back_Edges_Ada (Rules : Rule_Vectors.Vector)
      return Edge_Vectors.Vector
    is
-      E : HBNF_Compilable.Edge_Vectors.Vector;
+      E : Edge_Vectors.Vector;
    begin
       for I in 1 .. Natural (Rules.Length) loop
          declare
@@ -688,6 +715,11 @@ package body HBNF_Ada is
 
       N : constant Natural := Natural (Rules.Length);
 
+      --  The fields to hold indirectly, one per by-value cycle.  Unlike C
+      --  this can be a constant elaborated here: Over_Leaf's alias chase is
+      --  bounded, so there is no unbounded search to run away with.
+      Backs : constant Edge_Vectors.Vector := Back_Edges_Ada (Rules);
+
       --  Append Text as an Ada comment block, one "-- " per line (a leading
       --  comment may span several schema lines).
       procedure Append_Comment (B : in out U; Text : String) is
@@ -707,9 +739,10 @@ package body HBNF_Ada is
 
       Infos : Info_Vectors.Vector;
 
-      --  The vector element type for a list of Ref: an access to the record
-      --  (so recursion can be broken), or the scalar inlined by value.
-      function Elem_Type (Ref : String) return String is
+      --  The vector element type for a list of Ref, or the type of a record's
+      --  member: an access to the record (so recursion can be broken), or the
+      --  scalar inlined by value.
+      function Elem_Type (Owner : Natural; Ref : String) return String is
          S : constant String := Scalar_Ada_Type (Ref);
          J : constant Natural := Find (Rules, Ref);
       begin
@@ -717,8 +750,16 @@ package body HBNF_Ada is
             return S;                           -- a core scalar
          elsif J > 0 and then Is_Record (Infos (J)) then
             return Ada_Ident (Ref) & "_Access"; -- a record: access breaks it
+         elsif Is_Back (Backs, Owner, Ref) then
+            --  The field chosen to break a cycle, naming an alias over a
+            --  record: the alias's subtype would embed that record by value,
+            --  which is the cycle.  Point at the resolved record instead; its
+            --  access type is declared with the other records, before any
+            --  record body, so this can be referenced where the body is.
+            return Ada_Ident
+              (To_String (Rules (Leaf_Record (Rules, Ref)).Name)) & "_Access";
          else
-            return Ada_Type_Of (Rules, Ref);           -- a scalar/enum/list rule
+            return Ada_Type_Of (Rules, Ref);    -- a scalar/enum/list rule
          end if;
       end Elem_Type;
 
@@ -797,7 +838,7 @@ package body HBNF_Ada is
                           (if M.Is_List
                            then Base & "_" & Ada_Ident (To_String (M.Name))
                                 & "_Vectors.Vector"
-                           else Elem_Type (To_String (M.Name))));
+                           else Elem_Type (Idx, To_String (M.Name))));
                      Mustache.Append (Items, Row);
                   end loop;
                   Mustache.Put (V, "name", TN);
@@ -836,7 +877,7 @@ package body HBNF_Ada is
                                          "Unbounded_String"));
             else
                Append (Buf, Emit_Vector
-                 (Base & "_Vectors", Elem_Type (To_String (Info.Elem_Name))));
+                 (Base & "_Vectors", Elem_Type (Idx, To_String (Info.Elem_Name))));
             end if;
          else
             --  A group element: emit a named entry record (value members).
@@ -852,7 +893,7 @@ package body HBNF_Ada is
                      Mustache.New_Scalar (Ada_Field (To_String (M.Name))));
                   Mustache.Insert
                     (Row, "type",
-                     Mustache.New_Scalar (Elem_Type (To_String (M.Name))));
+                     Mustache.New_Scalar (Elem_Type (Idx, To_String (M.Name))));
                   Mustache.Append (Items, Row);
                end loop;
                Mustache.Put (V, "name", Base & "_Entry");
@@ -1004,7 +1045,7 @@ package body HBNF_Ada is
                      Append (Res, Emit_Vector
                        (Ada_Ident (To_String (Rules (I).Name)) & "_" &
                         Ada_Ident (To_String (M.Name)) & "_Vectors",
-                        Elem_Type (To_String (M.Name))));
+                        Elem_Type (I, To_String (M.Name))));
                      Append (Res, LF);
                   end if;
                end loop;
@@ -1012,20 +1053,11 @@ package body HBNF_Ada is
          end if;
       end loop;
 
-      --  A rule's value cannot contain itself: the tree types are structs by
-      --  value, so one of them would be infinitely sized.  The detector is
-      --  the one in HBNF_Compilable now, not a copy kept here; step 9b makes
-      --  it hand back the field to emit indirect, and until the backends act
-      --  on that the cycle is still refused, with the same message the
-      --  stalled sort below used to give.
-      if not Back_Edges_Ada (Rules).Is_Empty then
-         raise Parse_Error with
-           "a rule's value cannot contain itself: the tree types are structs "
-           & "by value, so this one would be infinitely sized.  Routing "
-           & "the recursion through a list does not help (a list node "
-           & "holds its element by value too); RFCPLAN.md step 9 adds "
-           & "the pointer that breaks the cycle";
-      end if;
+      --  The fields to hold indirectly are already in Backs, computed at the
+      --  top: a cycle with no field to break (an all-alias cycle) is still
+      --  refused there, by Back_Edges itself.  The sort below is where a
+      --  record cycle used to be caught, and its stall-raise stays as
+      --  now-unreachable defense, as it does in C.
 
       --  Record bodies and their subtype aliases (`loport = port`), in
       --  by-value dependency order: a record follows the aliases its by-value
@@ -1051,7 +1083,7 @@ package body HBNF_Ada is
                   declare
                      Ready : Boolean := True;
                   begin
-                     for D of Type_Deps (Rules, I) loop
+                     for D of Type_Deps (Rules, Backs, I) loop
                         if not Emitted (D) then
                            Ready := False;
                         end if;
@@ -1088,6 +1120,12 @@ package body HBNF_Ada is
    is
 
       N : constant Natural := Natural (Rules.Length);
+
+      --  The same fields Emit declares as access types, so that here they are
+      --  allocated through the pointer rather than assigned into a record.
+      --  Two independent computations of one graph: Emit and Emit_Parser do
+      --  not share state, and Back_Edges is a pure function of the rules.
+      Backs : constant Edge_Vectors.Vector := Back_Edges_Ada (Rules);
 
       --  "own" when a rule is the own-line comment, "eol" when it is the
       --  same-line comment (chasing single-name aliases such as
@@ -1302,7 +1340,8 @@ package body HBNF_Ada is
               & Ada_Escape (To_String (L.Lit)) & """");
 
       procedure Emit_Seq
-        (Els : Element_Vectors.Vector; First, Last : Natural;
+        (Owner : Natural;
+         Els : Element_Vectors.Vector; First, Last : Natural;
          Dst : String; Buf : in out U; Ind : String := "      ";
          Alloc_Records : Boolean := False) is
       begin
@@ -1338,22 +1377,37 @@ package body HBNF_Ada is
                           & " := P.Toks (P.Pos).Text; P.Pos := P.Pos + 1;");
                         Append (Buf, LF);
                      else
-                        if Alloc_Records and then Is_Struct (To_String (E.Name))
-                        then
-                           Append (Buf, Ind & Dst
-                             & Ada_Field (To_String (E.Name)) & " := new "
-                             & Ada_Ident (To_String (E.Name)) & "_Type'(Parse_"
-                             & Ada_Ident (To_String (E.Name)) & " (P));");
-                        else
-                           Append (Buf, Ind & Dst
-                             & Ada_Field (To_String (E.Name)) & " := Parse_"
-                             & Ada_Ident (To_String (E.Name)) & " (P);");
-                        end if;
-                        Append (Buf, LF);
+                        declare
+                           NM : constant String := To_String (E.Name);
+                           Back : constant Boolean :=
+                             Is_Back (Backs, Owner, NM);
+                           --  A back-edge member names an alias over a record,
+                           --  so it is allocated as that record; a struct
+                           --  member is allocated as itself.
+                           TN : constant String :=
+                             (if Back
+                              then Ada_Ident
+                                (To_String
+                                   (Rules (Leaf_Record (Rules, NM)).Name))
+                                & "_Type"
+                              else Ada_Ident (NM) & "_Type");
+                        begin
+                           if Alloc_Records
+                             and then (Is_Struct (NM) or else Back)
+                           then
+                              Append (Buf, Ind & Dst & Ada_Field (NM)
+                                & " := new " & TN & "'(Parse_"
+                                & Ada_Ident (NM) & " (P));");
+                           else
+                              Append (Buf, Ind & Dst & Ada_Field (NM)
+                                & " := Parse_" & Ada_Ident (NM) & " (P);");
+                           end if;
+                           Append (Buf, LF);
+                        end;
                      end if;
                   when Group =>
-                     Emit_Seq (E.Items, 1, Natural (E.Items.Length), Dst, Buf,
-                               Ind & "   ", Alloc_Records);
+                     Emit_Seq (Owner, E.Items, 1, Natural (E.Items.Length),
+                               Dst, Buf, Ind & "   ", Alloc_Records);
                   when Alt =>
                      null;
                   when Char_Range =>
@@ -1372,7 +1426,8 @@ package body HBNF_Ada is
       --  returns R directly.  After the last branch fails, control falls
       --  through for the caller's own failure handling.
       procedure Emit_Alternation
-        (Els : Element_Vectors.Vector; TN : String;
+        (Owner : Natural;
+         Els : Element_Vectors.Vector; TN : String;
          Buf : in out U; Ind : String := "         ";
          Alloc_Records : Boolean := False) is
          N  : constant Natural := Natural (Els.Length);
@@ -1392,7 +1447,8 @@ package body HBNF_Ada is
                Append (Buf, LF);
                Append (Buf, Ind & "begin");
                Append (Buf, LF);
-               Emit_Seq (Els, St, K - 1, "R.", Buf, Ind & "   ", Alloc_Records);
+               Emit_Seq (Owner, Els, St, K - 1, "R.", Buf, Ind & "   ",
+                        Alloc_Records);
                Append (Buf, Ind & "   return R;");
                Append (Buf, LF);
                Append (Buf, Ind & "exception");
@@ -1597,8 +1653,8 @@ package body HBNF_Ada is
                               Append (Buf, LF);
                               Append (Buf, "               begin");
                               Append (Buf, LF);
-                              Emit_Seq (E.Items, St, K - 1, "El.", Buf,
-                                        "                  ", True);
+                              Emit_Seq (Idx, E.Items, St, K - 1, "El.",
+                                        Buf, "                  ", True);
                               Append (Buf, "                  E := El; Matched := True;");
                               Append (Buf, LF);
                               Append (Buf, "               exception");
@@ -1764,7 +1820,7 @@ package body HBNF_Ada is
             Append (Buf, LF);
             Append (Buf, "      begin");
             Append (Buf, LF);
-            Emit_Alternation (P, TN, Buf, "         ", True);
+            Emit_Alternation (Idx, P, TN, Buf, "         ", True);
             Append (Buf, "         P.Pos := Save;");
             Append (Buf, LF);
             Append (Buf, "         Fail (P, ""a " & NM & """);");
@@ -1774,7 +1830,8 @@ package body HBNF_Ada is
             Append (Buf, "      end;");
             Append (Buf, LF);
          else
-            Emit_Seq (P, 1, Natural (P.Length), "R.", Buf, "      ", True);
+            Emit_Seq (Idx, P, 1, Natural (P.Length), "R.", Buf, "      ",
+                      True);
             Append (Buf, "      return R;");
             Append (Buf, LF);
          end if;
