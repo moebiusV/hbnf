@@ -391,7 +391,8 @@ procedure Hbnf_Emit_Check is
              not Refused ("r = x" & LF & "x = %x41" & LF & "y = <later>" & LF,
                           "not written yet"));
       Check ("/ between phrases is refused",
-             Refused ("r = ""a"" ""b"" / ""c""" & LF, "ABNF's union"));
+             Refused ("r = ""a"" ""b"" ""c"" / ""a"" ""b"" ""d""" & LF,
+                      "ABNF's union"));
       Check ("=/ with no = before it is refused",
              Refused ("r =/ ""a""" & LF, "which no `=` before it defines"));
       declare
