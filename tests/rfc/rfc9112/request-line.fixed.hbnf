@@ -1,0 +1,49 @@
+; RFC 9112, "request-line" (section 3) and the rules it uses, as hbnf reads it.
+; request-line.hbnf is the RFC's text; this is the same rules with the changes hbnf
+; needs.  The change made everywhere, and not marked each time, is `|` for `/`
+; (ordered choice, where the RFC's `/` is a union).  A change to anything else is
+; marked `; hbnf:`.  See README.md in this directory.
+
+whitespace none                  ; hbnf: ABNF skips nothing; where a space counts it is written
+sensitivity string %i            ; hbnf: ABNF's "..." is case-insensitive; hbnf's is not unless the file says so
+
+include "../rfc3986/uri.fixed.hbnf"
+
+; ---- RFC 9112, section 3 and 2.3 ----
+HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
+
+HTTP-name     = %s"HTTP"
+
+request-line   = method SP request-target SP HTTP-version
+
+method         = token
+
+request-target = origin-form
+               | absolute-form
+               | authority-form
+               | asterisk-form
+
+origin-form    = absolute-path [ "?" query ]
+
+absolute-form  = absolute-URI
+
+authority-form = uri-host ":" port
+
+asterisk-form  = "*"
+
+; ---- RFC 9110, as RFC 9112 imports them ----
+uri-host      = host                    ; hbnf: the RFC writes <host, see [URI], Section 3.2.2>, a prose-val: "not
+                                        ;   written yet".  It points at RFC 3986's `host`, which this file has.
+
+; hbnf: `port = <port, see [URI], Section 3.2.3>` is left out.  A later `=` replaces an
+; earlier one, so it would replace RFC 3986's `port = *DIGIT`, which is the rule it points at.
+
+absolute-path = 1*( "/" segment )
+
+token          = 1*tchar
+
+tchar          = "!" | "#" | "$" | "%" | "&" | "'" | "*"
+               | "+" | "-" | "." | "^" | "_" | "`" | "|" | "~"
+               | DIGIT | ALPHA
+               ; any VCHAR, except delimiters
+

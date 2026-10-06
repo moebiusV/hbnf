@@ -1,0 +1,7 @@
+/
+/a?b
+*
+http://x/
+example.com:80
+[::1]:8080
+/a/b?c=d

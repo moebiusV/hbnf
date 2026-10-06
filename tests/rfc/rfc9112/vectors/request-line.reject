@@ -1,0 +1,13 @@
+GET  / HTTP/1.1
+GET / HTTP/1.1 
+ GET / HTTP/1.1
+GET /HTTP/1.1
+GET / http/1.1
+GET / HTTP/1.10
+GET / HTTP/1
+GET HTTP/1.1
+/ HTTP/1.1
+GET / HTTP/1.1\r\n
+GE T / HTTP/1.1
+
+GET /a b HTTP/1.1

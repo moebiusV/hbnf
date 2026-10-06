@@ -1,0 +1,16 @@
+john@example.com
+john.doe@example.com
+"john doe"@example.com
+john@[192.168.0.1]
+john@example
+a@b
+john(comment)@example.com
+(c)john@example.com
+john@(c)example.com
+ john@example.com
+a.b.c@d.e.f
+"a\\"b"@example.com
+john@[::1]
+!#$%&'*+-/=?^_`{|}~@example.com
+john @example.com
+john@ example.com

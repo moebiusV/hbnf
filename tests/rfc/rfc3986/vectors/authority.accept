@@ -1,0 +1,7 @@
+example.com
+example.com:80
+user@example.com
+user:pw@host:8080
+[::1]:80
+@h
+h:

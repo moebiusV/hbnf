@@ -1,0 +1,86 @@
+; RFC 5322, "addr-spec" (section 3.4.1) and every rule it reaches, verbatim, in
+; the order the RFC defines them.  Only the RFC's page headers and footers are
+; removed, and the left margin its rules are indented by.  ALPHA, DIGIT, DQUOTE,
+; WSP, CRLF, LF, CR and VCHAR are RFC 5234's: the line below that is not the
+; RFC's is the include that supplies them.  See README.md in this directory.
+
+include "../rfc5234/core.hbnf"
+
+quoted-pair     =   ("\" (VCHAR / WSP)) / obs-qp
+
+FWS             =   ([*WSP CRLF] 1*WSP) /  obs-FWS
+                                       ; Folding white space
+
+ctext           =   %d33-39 /          ; Printable US-ASCII
+                    %d42-91 /          ;  characters not including
+                    %d93-126 /         ;  "(", ")", or "\"
+                    obs-ctext
+
+ccontent        =   ctext / quoted-pair / comment
+
+comment         =   "(" *([FWS] ccontent) [FWS] ")"
+
+CFWS            =   (1*([FWS] comment) [FWS]) / FWS
+
+atext           =   ALPHA / DIGIT /    ; Printable US-ASCII
+                    "!" / "#" /        ;  characters not including
+                    "$" / "%" /        ;  specials.  Used for atoms.
+                    "&" / "'" /
+                    "*" / "+" /
+                    "-" / "/" /
+                    "=" / "?" /
+                    "^" / "_" /
+                    "`" / "{" /
+                    "|" / "}" /
+                    "~"
+
+atom            =   [CFWS] 1*atext [CFWS]
+
+dot-atom-text   =   1*atext *("." 1*atext)
+
+dot-atom        =   [CFWS] dot-atom-text [CFWS]
+
+qtext           =   %d33 /             ; Printable US-ASCII
+                    %d35-91 /          ;  characters not including
+                    %d93-126 /         ;  "\" or the quote character
+                    obs-qtext
+
+qcontent        =   qtext / quoted-pair
+
+quoted-string   =   [CFWS]
+                    DQUOTE *([FWS] qcontent) [FWS] DQUOTE
+                    [CFWS]
+
+word            =   atom / quoted-string
+
+addr-spec       =   local-part "@" domain
+
+local-part      =   dot-atom / quoted-string / obs-local-part
+
+domain          =   dot-atom / domain-literal / obs-domain
+
+domain-literal  =   [CFWS] "[" *([FWS] dtext) [FWS] "]" [CFWS]
+
+dtext           =   %d33-90 /          ; Printable US-ASCII
+                    %d94-126 /         ;  characters not including
+                    obs-dtext          ;  "[", "]", or "\"
+
+obs-NO-WS-CTL   =   %d1-8 /            ; US-ASCII control
+                    %d11 /             ;  characters that do not
+                    %d12 /             ;  include the carriage
+                    %d14-31 /          ;  return, line feed, and
+                    %d127              ;  white space characters
+
+obs-ctext       =   obs-NO-WS-CTL
+
+obs-qtext       =   obs-NO-WS-CTL
+
+obs-qp          =   "\" (%d0 / obs-NO-WS-CTL / LF / CR)
+
+obs-FWS         =   1*WSP *(CRLF 1*WSP)
+
+obs-local-part  =   word *("." word)
+
+obs-domain      =   atom *("." atom)
+
+obs-dtext       =   obs-NO-WS-CTL / quoted-pair

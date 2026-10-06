@@ -1,0 +1,9 @@
+http://example.com/
+http://user@host:80/p?q#f
+mailto:a@b
+urn:isbn:0451450523
+file:///etc/passwd
+ftp://[::1]/x
+x:
+x:#
+x:?#

@@ -1,0 +1,13 @@
+
+john
+@example.com
+john@
+john doe@example.com
+john@@example.com
+john@example..com
+a.@b
+"unterminated@example.com
+john@exa mple.com
+john@[1.2.3.4
+john@example.com.
+.john@example.com
