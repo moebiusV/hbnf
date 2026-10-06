@@ -262,254 +262,238 @@ package body HBNF_Zig is
       Append (B, "// " & Text (Line_Start .. Text'Last) & LF);
    end Append_Comment;
 
-   function Emit (Rules : Rule_Vectors.Vector) return String is
+   --  =====================================================================
+   --  Rule classification, and the by-value graph the one cycle detector in
+   --  HBNF_Compilable runs on.  At package level, parameterised by Rules,
+   --  because Emit (the types and walkers) and Emit_Parser (the commit
+   --  point) are separate functions with separate local state and both need
+   --  to know which member is the back edge.
 
-      N : constant Natural := Natural (Rules.Length);
-
-      function Find (Name : String) return Natural is
-      begin
-         for I in 1 .. N loop
-            if To_String (Rules (I).Name) = Name then
-               return I;
-            end if;
-         end loop;
-         return 0;
-      end Find;
-
-      --  The Zig type a rule reference denotes: a core scalar inlines; any
-      --  other reference resolves to the referenced rule's own type name.
-      function Zig_Type_Of (Ref : String) return String is
-         S : constant String := Scalar_Zig_Type (Ref);
-      begin
-         if S /= "" then
-            return S;
+   function Find (Rules : Rule_Vectors.Vector; Name : String) return Natural is
+   begin
+      for I in 1 .. Natural (Rules.Length) loop
+         if To_String (Rules (I).Name) = Name then
+            return I;
          end if;
-         if Find (Ref) = 0 then
-            raise Parse_Error with "undefined rule: " & Ref;
-         end if;
-         return Zig_Type (Ref);
-      end Zig_Type_Of;
+      end loop;
+      return 0;
+   end Find;
 
-      --  The underlying scalar Zig type a rule name resolves to, chasing
-      --  single-name aliases and jets to their target (so `str | word` and
-      --  `ipv4 | ipv6` both collapse to `[]const u8`).  "" if not scalar.
-      function Resolve_Type (N : String; Depth : Natural := 0) return String is
-         C : constant String := Scalar_Zig_Type (N);
+   --  The Zig type a rule reference denotes: a core scalar inlines; any
+   --  other reference resolves to the referenced rule's own type name.
+   function Zig_Type_Of (Rules : Rule_Vectors.Vector; Ref : String)
+     return String is
+      S : constant String := Scalar_Zig_Type (Ref);
+   begin
+      if S /= "" then
+         return S;
+      end if;
+      if Find (Rules, Ref) = 0 then
+         raise Parse_Error with "undefined rule: " & Ref;
+      end if;
+      return Zig_Type (Ref);
+   end Zig_Type_Of;
+
+   --  The underlying scalar Zig type a rule name resolves to, chasing
+   --  single-name aliases and jets to their target (so `str | word` and
+   --  `ipv4 | ipv6` both collapse to `[]const u8`).  "" if not scalar.
+   function Resolve_Type
+     (Rules : Rule_Vectors.Vector; N : String; Depth : Natural := 0)
+     return String is
+      C : constant String := Scalar_Zig_Type (N);
+   begin
+      if C /= "" then
+         return C;
+      end if;
+      if Depth > 8 then
+         return "";
+      end if;
+      declare
+         J : constant Natural := Find (Rules, N);
       begin
-         if C /= "" then
-            return C;
-         end if;
-         if Depth > 8 then
+         if J = 0 then
             return "";
          end if;
          declare
-            J : constant Natural := Find (N);
+            R : constant Rule := Rules (J);
+            P : constant Element_Vectors.Vector := R.Pattern;
          begin
-            if J = 0 then
-               return "";
+            if R.Jet_Code /= Null_Unbounded_String then
+               return "[]const u8";
             end if;
+            if Natural (P.Length) = 1
+              and then P (1).Kind = Name
+              and then P (1).Min = 1
+              and then P (1).Max = 1
+            then
+               return Resolve_Type (Rules, To_String (P (1).Name), Depth + 1);
+            end if;
+         end;
+      end;
+      return "";
+   end Resolve_Type;
+
+   --  If the pattern is a pure alternation of names that all resolve to
+   --  the same scalar Zig type, that type (a scalar union); else "".
+   function Scalar_Union_Type
+     (Rules : Rule_Vectors.Vector; Els : Element_Vectors.Vector) return String is
+      T       : U := Null_Unbounded_String;
+      Has_Alt : Boolean := False;
+   begin
+      for E of Els loop
+         if E.Kind = Alt then
+            Has_Alt := True;
+         elsif E.Kind = Name then
             declare
-               R : constant Rule := Rules (J);
-               P : constant Element_Vectors.Vector := R.Pattern;
+               R : constant String := Resolve_Type (Rules, To_String (E.Name));
             begin
-               if R.Jet_Code /= Null_Unbounded_String then
-                  return "[]const u8";
+               if R = "" then
+                  return "";
                end if;
-               if Natural (P.Length) = 1
-                 and then P (1).Kind = Name
-                 and then P (1).Min = 1
-                 and then P (1).Max = 1
-               then
-                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
+               if T = Null_Unbounded_String then
+                  T := To_Unbounded_String (R);
+               elsif To_String (T) /= R then
+                  return "";
                end if;
             end;
-         end;
-         return "";
-      end Resolve_Type;
-
-      --  If the pattern is a pure alternation of names that all resolve to
-      --  the same scalar Zig type, that type (a scalar union); else "".
-      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
-         T       : U := Null_Unbounded_String;
-         Has_Alt : Boolean := False;
-      begin
-         for E of Els loop
-            if E.Kind = Alt then
-               Has_Alt := True;
-            elsif E.Kind = Name then
-               declare
-                  R : constant String := Resolve_Type (To_String (E.Name));
-               begin
-                  if R = "" then
-                     return "";
-                  end if;
-                  if T = Null_Unbounded_String then
-                     T := To_Unbounded_String (R);
-                  elsif To_String (T) /= R then
-                     return "";
-                  end if;
-               end;
-            else
-               return "";
-            end if;
-         end loop;
-         if Has_Alt and then T /= Null_Unbounded_String then
-            return To_String (T);
+         else
+            return "";
          end if;
-         return "";
-      end Scalar_Union_Type;
+      end loop;
+      if Has_Alt and then T /= Null_Unbounded_String then
+         return To_String (T);
+      end if;
+      return "";
+   end Scalar_Union_Type;
 
-      --  A struct member: the referenced name, and whether it is a list
-      --  (appeared with a repetition prefix) rather than a single value.
-      type Member is record
-         Name    : U;
-         Is_List : Boolean;
-      end record;
+   --  A struct member: the referenced name, and whether it is a list
+   --  (appeared with a repetition prefix) rather than a single value.
+   type Member is record
+      Name    : U;
+      Is_List : Boolean;
+   end record;
 
-      package Member_Vectors is new Ada.Containers.Vectors (Positive, Member);
+   package Member_Vectors is new Ada.Containers.Vectors (Positive, Member);
 
-      function Contains (V : Member_Vectors.Vector; S : U) return Boolean is
+   function Contains (V : Member_Vectors.Vector; S : U) return Boolean is
+   begin
+      for X of V loop
+         if X.Name = S then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Contains;
+
+   --  Walk a pattern, collecting referenced rule names (deduped, in order)
+   --  as Members (Is_List marks a repeated reference), the literal strings,
+   --  and whether any '|' alternation appears.
+   procedure Collect
+     (Els     : Element_Vectors.Vector;
+      Members : in out Member_Vectors.Vector;
+      Lits    : in out String_Vectors.Vector;
+      Has_Alt : in out Boolean) is
+      Seen : String_Vectors.Vector;
+
+      function Seen_Here (S : U) return Boolean is
       begin
-         for X of V loop
-            if X.Name = S then
+         for X of Seen loop
+            if X = S then
                return True;
             end if;
          end loop;
          return False;
-      end Contains;
-
-      --  Walk a pattern, collecting referenced rule names (deduped, in order)
-      --  as Members (Is_List marks a repeated reference), the literal strings,
-      --  and whether any '|' alternation appears.
-      procedure Collect
-        (Els     : Element_Vectors.Vector;
-         Members : in out Member_Vectors.Vector;
-         Lits    : in out String_Vectors.Vector;
-         Has_Alt : in out Boolean) is
-         Seen : String_Vectors.Vector;
-
-         function Seen_Here (S : U) return Boolean is
-         begin
-            for X of Seen loop
-               if X = S then
-                  return True;
-               end if;
-            end loop;
-            return False;
-         end Seen_Here;
-      begin
-         for E of Els loop
-            case E.Kind is
-               when Name =>
-                  declare
-                     Is_List : constant Boolean :=
-                       E.Min /= 1 or else E.Max /= 1;
-                  begin
-                     if Seen_Here (E.Name) then
-                        raise Parse_Error with
-                          "rule """ & To_String (E.Name)
-                          & """ is referenced twice in one alternative;"
-                          & " split it into alias rules (e.g. `a = "
-                          & To_String (E.Name) & "; b = " & To_String (E.Name)
-                          & ";`) so each gets its own field";
-                     end if;
-                     Seen.Append (E.Name);
-                     if Contains (Members, E.Name) then
-                        if Is_List then
-                           for K in 1 .. Natural (Members.Length) loop
-                              if Members (K).Name = E.Name then
-                                 Members.Replace_Element
-                                   (K,
-                                    Member'(Name => E.Name, Is_List => True));
-                              end if;
-                           end loop;
-                        end if;
-                     else
-                        Members.Append
-                          (Member'(Name => E.Name, Is_List => Is_List));
-                     end if;
-                  end;
-               when Literal =>
-                  Lits.Append (E.Lit);
-               when Alt =>
-                  Has_Alt := True;
-                  Seen.Clear;
-               when Group =>
-                  Collect (E.Items, Members, Lits, Has_Alt);
-               when Char_Range =>
-                  null;
-               when Block =>
-                  null;  --  lifted to a rule of its own before emission
-            end case;
-         end loop;
-      end Collect;
-
-      type Class_Kind is (Enum, Scalar, List, Struct);
-
-      type Rule_Info (Kind : Class_Kind := Scalar) is record
-         case Kind is
-            when Enum =>
-               Literals : String_Vectors.Vector := String_Vectors.Empty_Vector;
-            when Scalar =>
-               Inline_Type : U := Null_Unbounded_String;
-            when List =>
-               Elem_Name    : U := Null_Unbounded_String;
-               Elem_Members : Member_Vectors.Vector;
-            when Struct =>
-               Members : Member_Vectors.Vector := Member_Vectors.Empty_Vector;
-         end case;
-      end record;
-
-      package Info_Vectors is new Ada.Containers.Vectors (Positive, Rule_Info);
-
-      function Analyze (Idx : Natural) return Rule_Info is
-         R : constant Rule := Rules (Idx);
-         P : constant Element_Vectors.Vector := R.Pattern;
-      begin
-         if Is_Char_Rule (Rules, To_String (R.Name)) then
-            --  A character-level rule compiles to a scanner and a token; its
-            --  value is the matched text, so it is a scalar string.
-            return (Kind        => Scalar,
-                    Inline_Type => To_Unbounded_String ("[]const u8"));
-         end if;
-         if R.Jet_Code /= Null_Unbounded_String then
-            return (Kind        => Scalar,
-                    Inline_Type => To_Unbounded_String ("[]const u8"));
-         end if;
-         if Natural (P.Length) = 1 then
-            declare
-               E : constant Element_Access := P (1);
-            begin
-               --  Repetition => a list.
-               if E.Min /= 1 or else E.Max /= 1 then
-                  if E.Kind = Name then
-                     return (Kind        => List,
-                             Elem_Name    => E.Name,
-                             Elem_Members => Member_Vectors.Empty_Vector);
-                  elsif E.Kind = Group then
-                     declare
-                        Members : Member_Vectors.Vector;
-                        Lits    : String_Vectors.Vector;
-                        Has_Alt : Boolean := False;
-                     begin
-                        Collect (E.Items, Members, Lits, Has_Alt);
-                        return (Kind        => List,
-                                Elem_Name    => Null_Unbounded_String,
-                                Elem_Members => Members);
-                     end;
-                  else
-                     return (Kind        => List,
-                             Elem_Name    => Null_Unbounded_String,
-                             Elem_Members => Member_Vectors.Empty_Vector);
+      end Seen_Here;
+   begin
+      for E of Els loop
+         case E.Kind is
+            when Name =>
+               declare
+                  Is_List : constant Boolean :=
+                    E.Min /= 1 or else E.Max /= 1;
+               begin
+                  if Seen_Here (E.Name) then
+                     raise Parse_Error with
+                       "rule """ & To_String (E.Name)
+                       & """ is referenced twice in one alternative;"
+                       & " split it into alias rules (e.g. `a = "
+                       & To_String (E.Name) & "; b = " & To_String (E.Name)
+                       & ";`) so each gets its own field";
                   end if;
-               end if;
+                  Seen.Append (E.Name);
+                  if Contains (Members, E.Name) then
+                     if Is_List then
+                        for K in 1 .. Natural (Members.Length) loop
+                           if Members (K).Name = E.Name then
+                              Members.Replace_Element
+                                (K,
+                                 Member'(Name => E.Name, Is_List => True));
+                           end if;
+                        end loop;
+                     end if;
+                  else
+                     Members.Append
+                       (Member'(Name => E.Name, Is_List => Is_List));
+                  end if;
+               end;
+            when Literal =>
+               Lits.Append (E.Lit);
+            when Alt =>
+               Has_Alt := True;
+               Seen.Clear;
+            when Group =>
+               Collect (E.Items, Members, Lits, Has_Alt);
+            when Char_Range =>
+               null;
+            when Block =>
+               null;  --  lifted to a rule of its own before emission
+         end case;
+      end loop;
+   end Collect;
 
-               --  Single element, no repetition.
+   type Class_Kind is (Enum, Scalar, List, Struct);
+
+   type Rule_Info (Kind : Class_Kind := Scalar) is record
+      case Kind is
+         when Enum =>
+            Literals : String_Vectors.Vector := String_Vectors.Empty_Vector;
+         when Scalar =>
+            Inline_Type : U := Null_Unbounded_String;
+         when List =>
+            Elem_Name    : U := Null_Unbounded_String;
+            Elem_Members : Member_Vectors.Vector;
+         when Struct =>
+            Members : Member_Vectors.Vector := Member_Vectors.Empty_Vector;
+      end case;
+   end record;
+
+   package Info_Vectors is new Ada.Containers.Vectors (Positive, Rule_Info);
+
+   function Analyze (Rules : Rule_Vectors.Vector; Idx : Natural)
+     return Rule_Info is
+      R : constant Rule := Rules (Idx);
+      P : constant Element_Vectors.Vector := R.Pattern;
+   begin
+      if Is_Char_Rule (Rules, To_String (R.Name)) then
+         --  A character-level rule compiles to a scanner and a token; its
+         --  value is the matched text, so it is a scalar string.
+         return (Kind        => Scalar,
+                 Inline_Type => To_Unbounded_String ("[]const u8"));
+      end if;
+      if R.Jet_Code /= Null_Unbounded_String then
+         return (Kind        => Scalar,
+                 Inline_Type => To_Unbounded_String ("[]const u8"));
+      end if;
+      if Natural (P.Length) = 1 then
+         declare
+            E : constant Element_Access := P (1);
+         begin
+            --  Repetition => a list.
+            if E.Min /= 1 or else E.Max /= 1 then
                if E.Kind = Name then
-                  return (Kind => Scalar,
-                          Inline_Type =>
-                            To_Unbounded_String
-                              (Zig_Type_Of (To_String (E.Name))));
+                  return (Kind        => List,
+                          Elem_Name    => E.Name,
+                          Elem_Members => Member_Vectors.Empty_Vector);
                elsif E.Kind = Group then
                   declare
                      Members : Member_Vectors.Vector;
@@ -517,98 +501,79 @@ package body HBNF_Zig is
                      Has_Alt : Boolean := False;
                   begin
                      Collect (E.Items, Members, Lits, Has_Alt);
-                     return (Kind => Struct, Members => Members);
+                     return (Kind        => List,
+                             Elem_Name    => Null_Unbounded_String,
+                             Elem_Members => Members);
                   end;
                else
-                  return (Kind        => Scalar,
-                          Inline_Type => To_Unbounded_String ("[]const u8"));
+                  return (Kind        => List,
+                          Elem_Name    => Null_Unbounded_String,
+                          Elem_Members => Member_Vectors.Empty_Vector);
+               end if;
+            end if;
+
+            --  Single element, no repetition.
+            if E.Kind = Name then
+               return (Kind => Scalar,
+                       Inline_Type =>
+                         To_Unbounded_String
+                           (Zig_Type_Of (Rules, To_String (E.Name))));
+            elsif E.Kind = Group then
+               declare
+                  Members : Member_Vectors.Vector;
+                  Lits    : String_Vectors.Vector;
+                  Has_Alt : Boolean := False;
+               begin
+                  Collect (E.Items, Members, Lits, Has_Alt);
+                  return (Kind => Struct, Members => Members);
+               end;
+            else
+               return (Kind        => Scalar,
+                       Inline_Type => To_Unbounded_String ("[]const u8"));
+            end if;
+         end;
+      end if;
+
+      declare
+         Members : Member_Vectors.Vector;
+         Lits    : String_Vectors.Vector;
+         Has_Alt : Boolean := False;
+      begin
+         Collect (P, Members, Lits, Has_Alt);
+         if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
+            return (Kind => Enum, Literals => Lits);
+         else
+            declare
+               SU : constant String := Scalar_Union_Type (Rules, P);
+            begin
+               if SU /= "" then
+                  return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
                end if;
             end;
+            return (Kind => Struct, Members => Members);
          end if;
+      end;
+   end Analyze;
 
-         declare
-            Members : Member_Vectors.Vector;
-            Lits    : String_Vectors.Vector;
-            Has_Alt : Boolean := False;
-         begin
-            Collect (P, Members, Lits, Has_Alt);
-            if Members.Is_Empty and then Is_Pure_Literal_Alt (P) then
-               return (Kind => Enum, Literals => Lits);
-            else
-               declare
-                  SU : constant String := Scalar_Union_Type (P);
-               begin
-                  if SU /= "" then
-                     return (Kind => Scalar, Inline_Type => To_Unbounded_String (SU));
-                  end if;
-               end;
-               return (Kind => Struct, Members => Members);
-            end if;
-         end;
-      end Analyze;
+   --  Structs and lists both name a type.  Zig's lazy analysis lets a
+   --  declaration refer to a type declared later, so only a genuine
+   --  by-value embedding imposes an ordering constraint (and, transitively,
+   --  the infinite-type cycle the sort below guards against).
+   function Is_Type (Info : Rule_Info) return Boolean is
+     (Info.Kind = Struct or else Info.Kind = List);
 
-      --  Structs and lists both name a type.  Zig's lazy analysis lets a
-      --  declaration refer to a type declared later, so only a genuine
-      --  by-value embedding imposes an ordering constraint (and, transitively,
-      --  the infinite-type cycle the sort below guards against).
-      function Is_Type (Info : Rule_Info) return Boolean is
-        (Info.Kind = Struct or else Info.Kind = List);
+   --  A struct member embedded by value; a list is a `[]T` slice (and a
+   --  reference to a list is its slice alias), so neither embeds by value.
+   function Is_By_Value (Info : Rule_Info) return Boolean is
+     (Info.Kind = Struct);
 
-      --  A struct member embedded by value; a list is a `[]T` slice (and a
-      --  reference to a list is its slice alias), so neither embeds by value.
-      function Is_By_Value (Info : Rule_Info) return Boolean is
-        (Info.Kind = Struct);
-
+   --  The by-value edges of the tree-type graph, for the one cycle detector
+   --  in HBNF_Compilable; the edges it picks to make indirect come back.
+   function Back_Edges_Zig (Rules : Rule_Vectors.Vector)
+     return HBNF_Compilable.Edge_Vectors.Vector
+   is
+      N     : constant Natural := Natural (Rules.Length);
       Infos : Info_Vectors.Vector;
-
-      --  The rule indices this rule must be emitted after: only the structs it
-      --  embeds by value.  List members and list references are slices, which
-      --  break the cycle.
-      function Deps (Idx : Natural) return Natural_Vectors.Vector is
-         D : Natural_Vectors.Vector;
-
-         procedure Add (J : Natural) is
-            Present : Boolean := False;
-         begin
-            if J = 0 then
-               return;
-            end if;
-            for X of D loop
-               if X = J then
-                  Present := True;
-               end if;
-            end loop;
-            if not Present then
-               D.Append (J);
-            end if;
-         end Add;
-
-         procedure Add_Ref (Name : U) is
-            J : constant Natural := Find (To_String (Name));
-         begin
-            if J > 0 and then Is_By_Value (Infos (J)) then
-               Add (J);
-            end if;
-         end Add_Ref;
-      begin
-         declare
-            Info : constant Rule_Info := Infos (Idx);
-         begin
-            case Info.Kind is
-               when Struct =>
-                  for M of Info.Members loop
-                     if not M.Is_List then
-                        Add_Ref (M.Name);
-                     end if;
-                  end loop;
-               when List =>
-                  null;  --  a slice; its element type is not embedded by value
-               when others =>
-                  null;
-            end case;
-         end;
-         return D;
-      end Deps;
 
       --  The rule a reference holds by value: chase a scalar alias
       --  (`src = host`) through to the struct its field really holds, so the
@@ -616,22 +581,24 @@ package body HBNF_Zig is
       --  detector sees the edge the field really makes.  A direct struct
       --  member is already there.  0 when it holds nothing by value.
       function Resolve (N : U) return Natural is
-         J : Natural := Find (To_String (N));
+         J    : Natural := Find (Rules, To_String (N));
+         Hops : Natural := 0;
       begin
-         while J > 0 and then Infos (J).Kind = Scalar loop
+         while J > 0 and then Hops < 20 and then Infos (J).Kind = Scalar loop
+            Hops := Hops + 1;
             declare
                P : constant Element_Vectors.Vector := Rules (J).Pattern;
             begin
                if Natural (P.Length) = 1 and then P (1).Kind = Name
                  and then P (1).Min = 1 and then P (1).Max = 1
                then
-                  J := Find (To_String (P (1).Name));
+                  J := Find (Rules, To_String (P (1).Name));
                else
                   J := 0;
                end if;
             end;
          end loop;
-         if J > 0 and then Is_By_Value (Infos (J)) then
+         if J > 0 and then Hops < 20 and then Is_By_Value (Infos (J)) then
             return J;
          end if;
          return 0;
@@ -692,6 +659,68 @@ package body HBNF_Zig is
          return E;
       end By_Value_Edges;
 
+   begin
+      for I in 1 .. N loop
+         Infos.Append (Analyze (Rules, I));
+      end loop;
+      return HBNF_Compilable.Back_Edges (N, By_Value_Edges);
+   end Back_Edges_Zig;
+
+   function Emit (Rules : Rule_Vectors.Vector) return String is
+
+      N : constant Natural := Natural (Rules.Length);
+
+      Infos : Info_Vectors.Vector;
+
+      --  The rule indices this rule must be emitted after: only the structs it
+      --  embeds by value.  List members and list references are slices, which
+      --  break the cycle.
+      function Deps (Idx : Natural) return Natural_Vectors.Vector is
+         D : Natural_Vectors.Vector;
+
+         procedure Add (J : Natural) is
+            Present : Boolean := False;
+         begin
+            if J = 0 then
+               return;
+            end if;
+            for X of D loop
+               if X = J then
+                  Present := True;
+               end if;
+            end loop;
+            if not Present then
+               D.Append (J);
+            end if;
+         end Add;
+
+         procedure Add_Ref (Name : U) is
+            J : constant Natural := Find (Rules, To_String (Name));
+         begin
+            if J > 0 and then Is_By_Value (Infos (J)) then
+               Add (J);
+            end if;
+         end Add_Ref;
+      begin
+         declare
+            Info : constant Rule_Info := Infos (Idx);
+         begin
+            case Info.Kind is
+               when Struct =>
+                  for M of Info.Members loop
+                     if not M.Is_List then
+                        Add_Ref (M.Name);
+                     end if;
+                  end loop;
+               when List =>
+                  null;  --  a slice; its element type is not embedded by value
+               when others =>
+                  null;
+            end case;
+         end;
+         return D;
+      end Deps;
+
       function Emit_Rule (Idx : Natural; Info : Rule_Info) return String is
          R    : constant Rule := Rules (Idx);
          Base : constant String := Zig_Type (To_String (R.Name));
@@ -746,8 +775,8 @@ package body HBNF_Zig is
                        (Row, "type",
                         Mustache.New_Scalar
                           (if M.Is_List
-                           then "[]" & Zig_Type_Of (To_String (M.Name))
-                           else Zig_Type_Of (To_String (M.Name))));
+                           then "[]" & Zig_Type_Of (Rules, To_String (M.Name))
+                           else Zig_Type_Of (Rules, To_String (M.Name))));
                      Mustache.Append (Items, Row);
                   end loop;
                   Mustache.Put (V, "name", Base);
@@ -786,7 +815,7 @@ package body HBNF_Zig is
                   Append (Buf, Mustache.Render_File ("zig_list_bytes", V));
                else
                   Mustache.Put
-                    (V, "type", Zig_Type_Of (To_String (Info.Elem_Name)));
+                    (V, "type", Zig_Type_Of (Rules, To_String (Info.Elem_Name)));
                   Append (Buf, Mustache.Render_File ("zig_list_simple", V));
                end if;
             end;
@@ -803,7 +832,7 @@ package body HBNF_Zig is
                      Mustache.New_Scalar (Zig_Field (To_String (M.Name))));
                   Mustache.Insert
                     (Row, "type",
-                     Mustache.New_Scalar (Zig_Type_Of (To_String (M.Name))));
+                     Mustache.New_Scalar (Zig_Type_Of (Rules, To_String (M.Name))));
                   Mustache.Append (Items, Row);
                end loop;
                Mustache.Put (V, "name", Base);
@@ -828,7 +857,7 @@ package body HBNF_Zig is
       procedure Emit_Walk (Buf : in out U) is
 
          function Ref_Kind (Name : String) return Class_Kind is
-            J : constant Natural := Find (Name);
+            J : constant Natural := Find (Rules, Name);
          begin
             if J = 0 then
                return Scalar;
@@ -839,7 +868,7 @@ package body HBNF_Zig is
          --  The visit/fold function base for the ELEMENT of a list rule Name,
          --  or "" when the element is a scalar/enum leaf.
          function Elem_Fn (Name : String) return String is
-            J    : constant Natural := Find (Name);
+            J    : constant Natural := Find (Rules, Name);
             Info : constant Rule_Info := Infos (J);
          begin
             if J = 0 then
@@ -985,7 +1014,7 @@ package body HBNF_Zig is
       Res       : U;
    begin
       for I in 1 .. N loop
-         Infos.Append (Analyze (I));
+         Infos.Append (Analyze (Rules, I));
       end loop;
 
       --  A rule's value cannot contain itself: the tree types are structs by
@@ -997,7 +1026,7 @@ package body HBNF_Zig is
       --  kept here; step 9b makes it hand back the field to emit indirect, and
       --  until that lands the cycle is still refused, with the same message
       --  this detector used to give.
-      if not HBNF_Compilable.Back_Edges (N, By_Value_Edges).Is_Empty then
+      if not Back_Edges_Zig (Rules).Is_Empty then
          raise Parse_Error with
            "a rule's value cannot contain itself: the tree types are structs "
            & "by value, so this one would be infinitely sized.  Routing "
@@ -1075,16 +1104,6 @@ package body HBNF_Zig is
 
       N : constant Natural := Natural (Rules.Length);
 
-      function Find (Name : String) return Natural is
-      begin
-         for I in 1 .. N loop
-            if To_String (Rules (I).Name) = Name then
-               return I;
-            end if;
-         end loop;
-         return 0;
-      end Find;
-
       function Is_Core (Name : String) return Boolean is
         (Scalar_Zig_Type (Name) /= "");
 
@@ -1098,29 +1117,6 @@ package body HBNF_Zig is
          return False;
       end Has_Alt;
 
-      --  True when every `|`-alternative is exactly one Literal — the shape
-      --  an enum can hold.
-      function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
-         N       : constant Natural := Natural (Els.Length);
-         St      : Natural := 1;
-         Has_Alt : Boolean := False;
-      begin
-         for K in 1 .. N + 1 loop
-            if K > N then
-               if N /= St or else Els (St).Kind /= Literal then
-                  return False;
-               end if;
-            elsif Els (K).Kind = Alt then
-               if K - 1 /= St or else Els (St).Kind /= Literal then
-                  return False;
-               end if;
-               St := K + 1;
-               Has_Alt := True;
-            end if;
-         end loop;
-         return Has_Alt;
-      end Is_Pure_Literal_Alt;
-
       function Zig_Type_Of (Ref : String) return String is
          S : constant String := Scalar_Zig_Type (Ref);
       begin
@@ -1129,73 +1125,6 @@ package body HBNF_Zig is
          end if;
          return Zig_Type (Ref);
       end Zig_Type_Of;
-
-      --  The underlying scalar Zig type a rule name resolves to, chasing
-      --  single-name aliases and jets to their target.  "" if not scalar.
-      function Resolve_Type (N : String; Depth : Natural := 0) return String is
-         C : constant String := Scalar_Zig_Type (N);
-      begin
-         if C /= "" then
-            return C;
-         end if;
-         if Depth > 8 then
-            return "";
-         end if;
-         declare
-            J : constant Natural := Find (N);
-         begin
-            if J = 0 then
-               return "";
-            end if;
-            declare
-               R : constant Rule := Rules (J);
-               P : constant Element_Vectors.Vector := R.Pattern;
-            begin
-               if R.Jet_Code /= Null_Unbounded_String then
-                  return "[]const u8";
-               end if;
-               if Natural (P.Length) = 1
-                 and then P (1).Kind = Name
-                 and then P (1).Min = 1
-                 and then P (1).Max = 1
-               then
-                  return Resolve_Type (To_String (P (1).Name), Depth + 1);
-               end if;
-            end;
-         end;
-         return "";
-      end Resolve_Type;
-
-      --  A pure alternation of names resolving to one scalar type; "" else.
-      function Scalar_Union_Type (Els : Element_Vectors.Vector) return String is
-         T       : U := Null_Unbounded_String;
-         Has_Alt : Boolean := False;
-      begin
-         for E of Els loop
-            if E.Kind = Alt then
-               Has_Alt := True;
-            elsif E.Kind = Name then
-               declare
-                  R : constant String := Resolve_Type (To_String (E.Name));
-               begin
-                  if R = "" then
-                     return "";
-                  end if;
-                  if T = Null_Unbounded_String then
-                     T := To_Unbounded_String (R);
-                  elsif To_String (T) /= R then
-                     return "";
-                  end if;
-               end;
-            else
-               return "";
-            end if;
-         end loop;
-         if Has_Alt and then T /= Null_Unbounded_String then
-            return To_String (T);
-         end if;
-         return "";
-      end Scalar_Union_Type;
 
       --  True when a pattern (or any nested group) names a rule reference.
       function Has_Name (Els : Element_Vectors.Vector) return Boolean is
@@ -1269,7 +1198,7 @@ package body HBNF_Zig is
       end Scalar_Parse;
 
       function Start_Kind (Rule_Name : String) return String is
-         J : constant Natural := Find (Rule_Name);
+         J : constant Natural := Find (Rules, Rule_Name);
       begin
          if J = 0 then
             return "";
@@ -1453,7 +1382,8 @@ package body HBNF_Zig is
          Is_List : constant Boolean := Natural (P.Length) = 1
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
-         SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
+         SU : constant String :=
+           (if not Is_List then Scalar_Union_Type (Rules, P) else "");
       begin
          if Is_Char_Rule (Rules, NM) then
             --  A char rule is a token: expect its kind and capture the text.
