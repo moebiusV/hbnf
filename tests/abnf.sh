@@ -337,6 +337,72 @@ for b in ada rust zig; do
 		echo "  FAIL [the $b backend emits it now]: $(head -1 "$W/err.txt")"; rc=1
 	fi
 done
+# A failed branch's pointer must not read as set in the branch that matched:
+# `(5)` matches `'(' int ')'`, after `'(' x ')'` set the back-edge field and
+# failed, and the reset frees what the failed branch set.
+if "$CLI" tests/abnf/recursive-direct.hbnf --backend=c > "$W/rd.c" 2> "$W/err.txt"; then
+	RDROOT=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/rd.c")
+	cp "$W/rd.c" "$W/rdm.c"
+	cat >> "$W/rdm.c" <<EOC
+int main(int argc, char **argv) {
+    $RDROOT out; char err[512]; size_t l = 0, c = 0;
+    if (argc < 2 || !parse_text(argv[1], &out, err, sizeof err, &l, &c)) return 1;
+    printf("%s\n", out.x ? "set" : "null"); return 0;
+}
+EOC
+	if gcc -std=gnu11 -D_GNU_SOURCE -w -Itests/bsdinc "$W/rdm.c" -o "$W/rd"; then
+		for want in "(5):null" "((5)):set"; do
+			in=${want%%:*}; exp=${want##*:}
+			got=$("$W/rd" "$in" 2>&1)
+			if [ "$got" = "$exp" ]; then
+				echo "  PASS [a failed branch leaves the back edge empty: $in -> $got]"
+			else
+				echo "  FAIL [a failed branch leaves the back edge empty: $in -> '$got', wanted $exp]"; rc=1
+			fi
+		done
+	else
+		echo "  FAIL [recursive-direct does not compile in C]"; rc=1
+	fi
+else
+	echo "  FAIL [recursive-direct generates in C]: $(head -1 "$W/err.txt")"; rc=1
+fi
+# The same for an ordinary field: a failed branch is freed and then zeroed, so
+# the field it set does not read as set in the branch that matched.  `a` is set
+# by the first branch, which then fails on `)`; the second sets `b` only.
+cat > "$W/stale.hbnf" <<EOG
+language C
+include "$CORE"
+
+t = a ')' | b
+a = word
+b = word
+EOG
+if "$CLI" "$W/stale.hbnf" --backend=c > "$W/st.c" 2> "$W/err.txt"; then
+	STROOT=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/st.c")
+	cp "$W/st.c" "$W/stm.c"
+	cat >> "$W/stm.c" <<EOC
+int main(int argc, char **argv) {
+    $STROOT out; char err[512]; size_t l = 0, c = 0;
+    if (argc < 2 || !parse_text(argv[1], &out, err, sizeof err, &l, &c)) return 1;
+    printf("a=%s b=%s\n", out.a ? "set" : "null", out.b ? "set" : "null"); return 0;
+}
+EOC
+	if gcc -std=gnu11 -D_GNU_SOURCE -w -Itests/bsdinc "$W/stm.c" -o "$W/st"; then
+		for want in "foo:a=null b=set" "foo):a=set b=null"; do
+			in=${want%%:*}; exp=${want#*:}
+			got=$("$W/st" "$in" 2>&1)
+			if [ "$got" = "$exp" ]; then
+				echo "  PASS [a failed branch's field is cleared: $in -> $got]"
+			else
+				echo "  FAIL [a failed branch's field is cleared: $in -> '$got', wanted '$exp']"; rc=1
+			fi
+		done
+	else
+		echo "  FAIL [the stale-field grammar does not compile in C]"; rc=1
+	fi
+else
+	echo "  FAIL [the stale-field grammar generates in C]: $(head -1 "$W/err.txt")"; rc=1
+fi
 # A cycle laundered through a list is *not* a cycle: a list field holds the
 # list's head, which is two pointers.  It used to be emitted as one of the
 # list's nodes by value, which is the C that would not compile (step 9a).

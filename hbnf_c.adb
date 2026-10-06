@@ -2034,6 +2034,14 @@ package body HBNF_C is
                     & (if Back then "_fields(n->" & F & ");"
                        else "(&n->" & F & ");"));
                   Append (Buf, LF);
+                  --  The pointee is released with the arena, not here, so the
+                  --  pointer must not outlive the walk: a failed branch is
+                  --  freed by the backtracking reset, and the field it set
+                  --  would otherwise read as set in the branch that matched.
+                  if Back then
+                     Append (Buf, Ind & "n->" & F & " = NULL;");
+                     Append (Buf, LF);
+                  end if;
                when others =>
                   null;  --  string leaves point into the source/arena, not owned
             end case;
@@ -3586,6 +3594,9 @@ package body HBNF_C is
          procedure Emit_Linear is
             LSt : Natural := 1;
             LBr : Natural := 0;
+            --  The branch that has just failed: the fields it may have set
+            --  are what the reset must clear.
+            PSt, PEn : Natural := 0;
             --  Every branch starts at the same position, so each would skip
             --  the same whitespace run again.  Skip it once and move `save`
             --  past it, so a failed branch returns to the first real byte.
@@ -3706,11 +3717,16 @@ package body HBNF_C is
                   LBr := LBr + 1;
                   if LBr > 1 then
                      Append (Buf, Ind & "p->pos = save; " & Free);
+                     --  Free releases what the failed branch set, and the fields
+                     --  are then zeroed so a later branch (or the caller, on a
+                     --  branch that matched) never sees them, and a later
+                     --  Free never releases them twice.  It is the failed
+                     --  branch's fields that are dirty, not the next one's.
                      declare
                         Fs : constant String_Vectors.Vector :=
-                          Written_Fields (Els, LSt, K - 1,
-                            Kind_Prefix /= ""
-                              and then Els (LSt).Kind = Literal);
+                          Written_Fields (Els, PSt, PEn,
+                            Kind_Prefix /= "" and then PSt <= PEn
+                              and then Els (PSt).Kind = Literal);
                      begin
                         for F of Fs loop
                            Append (Buf, "; memset(&" & Acc & To_String (F)
@@ -3745,6 +3761,8 @@ package body HBNF_C is
                   Append (Buf, LF);
                   Append (Buf, Label & "alt_fail_" & Img (LBr) & ":");
                   Append (Buf, LF);
+                  PSt := LSt;
+                  PEn := K - 1;
                   LSt := K + 1;
                end if;
             end loop;
