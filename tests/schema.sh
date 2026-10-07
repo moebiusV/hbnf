@@ -78,4 +78,30 @@ ACCEPT="$W/term/a1.txt $W/term/a2.txt"
 REJECT="$W/term/r1.txt $W/term/r2.txt $W/term/r3.txt"
 suite "terminal scanners" "$W/term/g.hbnf"
 
+# First match wins (RFC 3986 section 3.2.2, `host`): an address is a name too,
+# so the union needs backtracking; hbnf takes the first alternative that is
+# followed by something that can follow the choice, here `:` or the end.
+mkdir "$W/fm"
+cat > "$W/fm/g.hbnf" <<G
+whitespace none
+include "$(pwd)/grammars/common.hbnf"
+doc = host [ ":" 1*DIGIT ]
+host = addr / name
+addr = octet "." octet "." octet "." octet
+octet = 1*3DIGIT
+name = label *( "." label )
+label = 1*( ALPHA / DIGIT )
+G
+n=0
+for v in 1.2.3.4 1.2.3.4.5 a.b example 1.2.3.4:80 1.2.3.4.5:80; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/fm/a$n.txt"
+done
+n=0
+for v in 1.2.3.4: :80 1.2.3.4..5 ""; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/fm/r$n.txt"
+done
+ACCEPT=$(ls "$W"/fm/a*.txt)
+REJECT=$(ls "$W"/fm/r*.txt)
+suite "first match wins" "$W/fm/g.hbnf" 2>/dev/null
+
 exit $rc

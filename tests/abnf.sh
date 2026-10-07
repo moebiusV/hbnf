@@ -52,6 +52,18 @@ refuse() { # $1=text the message must hold, $2=label; grammar on stdin
 	refuse_file "$W/bad.hbnf" "$1" "$2"
 }
 
+warns() { # $1=text the warning must hold, $2=label; grammar on stdin: it generates, and says so
+	cat > "$W/warn.hbnf"
+	if ! "$CLI" "$W/warn.hbnf" --backend=c > /dev/null 2> "$W/err.txt"; then
+		echo "  FAIL [$2]: refused: $(head -1 "$W/err.txt")"; rc=1; return
+	fi
+	if grep -q -- "$1" "$W/err.txt"; then
+		echo "  PASS [$2]: compiled, with the warning"
+	else
+		echo "  FAIL [$2]: compiled, but no warning with: $1"; rc=1
+	fi
+}
+
 refuse_file() { # $1=schema file, $2=text the message must hold, $3=label
 	if "$CLI" "$1" --backend=c > /dev/null 2> "$W/err.txt"; then
 		echo "  FAIL [$3]: accepted"; rc=1; return
@@ -73,11 +85,19 @@ item = DIGIT / ALPHA
 G
 check OK   "a1B" "letters and digits"
 check FAIL "-"   "neither"
-refuse "is ABNF.s union" "/ between phrases that match the same text" <<'G'
+warns "first match wins" "/ between phrases that match the same text" <<'G'
 doc = x / y
 x = "a" "b"
 y = 1*( "a" / "b" )
 G
+rm -f "$W/t"; gen <<'G' 2>/dev/null
+doc = x / y
+x = "a" "b"
+y = 1*( "a" / "b" )
+G
+check OK   "ab"    "x is taken first: it is followed by the end"
+check OK   "abab"  "y when x is not followed by what can follow doc"
+check FAIL "abc"   "neither"
 
 echo "== \`/\` between phrases: the reader finds the order that works (step 5) =="
 rm -f "$W/t"; gen <<'G'
@@ -182,7 +202,7 @@ doc = *( "a" ) "b"
 G
 check OK   "aaab" "a repetition that cannot take what follows"
 check FAIL "aaa"  "nothing after the repetitions"
-refuse "can both match text" "an alternative that can match nothing, and the follow set can begin another" <<'G'
+warns "first match wins" "an alternative that can match nothing, and the follow set can begin another" <<'G'
 doc = x "a"
 x = "a" / [ "b" ]
 G
@@ -261,9 +281,11 @@ host     = word
 G
 check OK   "{ a, b c }" "commas that may be left out"
 check FAIL "{ a, }"     "a trailing comma"
-refuse "is in a rule that is not a character rule" "a range in a rule of words" <<'G'
+rm -f "$W/t"; gen <<'G'
 r = word %x30-39
 G
+check OK   "ab 7" "a range in a rule of words is a rule of its own, which the reader writes"
+check FAIL "ab"   "the range needs a digit"
 
 echo "== groups, optionals and repetition inside a sequence (step 2) =="
 rm -f "$W/t"; gen <<'G'

@@ -391,10 +391,10 @@ procedure Hbnf_Emit_Check is
       Check ("an unused <prose-val> is not",
              not Refused ("r = x" & LF & "x = %x41" & LF & "y = <later>" & LF,
                           "not written yet"));
-      Check ("/ between phrases is refused",
-             Refused ("r = x / y" & LF & "x = ""a"" ""b""" & LF
-                      & "y = 1*( ""a"" / ""b"" )" & LF,
-                      "ABNF's union"));
+      Check ("/ between phrases that match the same text is first match wins",
+             not Refused ("r = x / y" & LF & "x = ""a"" ""b""" & LF
+                          & "y = 1*( ""a"" / ""b"" )" & LF,
+                          "ABNF's union"));
       Check ("=/ with no = before it is refused",
              Refused ("r =/ ""a""" & LF, "which no `=` before it defines"));
       declare
@@ -408,9 +408,9 @@ procedure Hbnf_Emit_Check is
          Check ("'!' in a character rule stays a code point",
                 R (3).Pattern (1).Kind = Char_Range);
       end;
-      Check ("a range in a rule of words is refused",
-             Refused ("r = w %x30-39" & LF & "w = word" & LF,
-                      "is in a rule that is not a character rule"));
+      Check ("a range in a rule of words is a rule of its own",
+             not Refused ("r = w %x30-39" & LF & "w = word" & LF,
+                          "is in a rule that is not a character rule"));
       Check ("names that differ only in case are refused",
              Refused ("r = a A" & LF & "a = %x41" & LF & "A = %x42" & LF,
                       "differ only in case"));

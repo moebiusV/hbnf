@@ -13,6 +13,9 @@
 #   HBNF=/path/to/hbnf sh tests/rfc.sh      (default ./hbnf)
 #   RFC_ONLY=rfc3986-1 sh tests/rfc.sh      (one snippet)
 #   RFC_QUICK=1 sh tests/rfc.sh             (only the headline rules; what e2e.sh runs)
+#
+# The rules listed in rfc-corpus/<id>.verbatim are also run on the RFC's own
+# text, <id>.bnf, with --abnf: it must give the same answers.
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
@@ -54,6 +57,15 @@ for hb in rfc-corpus/${RFC_ONLY:-rfc*}.hbnf; do
 			continue
 		fi
 		suite "$r $rule" "$hb" "$rule"
+		#  The RFC's own text, read as RFC 5234 reads it, must give the same
+		#  answers wherever it compiles at all (`<id>.md` says where it does
+		#  not and why).
+		if [ -f "rfc-corpus/$r.verbatim" ] && grep -qx "$rule" "rfc-corpus/$r.verbatim"; then
+			REAL_CLI=$CLI
+			printf '#!/bin/sh\nexec %s "$@" --abnf\n' "$REAL_CLI" > "$W/abnf-cli"
+			chmod +x "$W/abnf-cli"
+			CLI="$W/abnf-cli" suite "$r $rule (verbatim)" "rfc-corpus/$r.bnf" "$rule"
+		fi
 	done
 done
 exit $rc
