@@ -2,7 +2,7 @@
 ; rfc9112-1.bnf is the RFC's text; this is the same rules with the changes hbnf
 ; needs.  Every change from the RFC's text is marked `; hbnf:`.  See README.md in this directory.
 
-abnf                             ; hbnf: this file is RFC 5234's notation: nothing skipped, strings case-insensitive
+dialect abnf                     ; hbnf: this file is RFC 5234's notation: nothing skipped, strings case-insensitive
 
 include "rfc3986-1.hbnf"
 

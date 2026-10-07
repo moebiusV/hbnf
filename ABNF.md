@@ -151,24 +151,24 @@ of them again (a later `=` overrides).
 BNF, EBNF, ABNF, YBNF (the grammar language of yacc and bison) and HBNF
 (Hyper BNF, this notation) are dialects of one notation, and hbnf reads the
 superset: a spelling any of them uses is accepted wherever it cannot be taken
-for something else, and a directive (`abnf`, or `--abnf` for a run) is needed
+for something else, and a line `dialect NAME` (or `--dialect=NAME` for a run) is needed
 only where two dialects spell different things the same way.
 
 | Construct | BNF | ISO EBNF | ABNF | In hbnf |
 |---|---|---|---|---|
 | Assignment | `::=` (YBNF: `:`) | `=` | `=` | `::=`, `:=`, `:` and `=` are one operator |
 | A rule | `<table reference>` | `table reference` | `table-reference` | all three are the rule `table-reference`; a bare name and `<name>` are the same |
-| A rule described in words | — | `? words ?` | `<words>` | `<words>`, and under `ebnf` `? words ?`: a rule nothing defines, "not written yet", with the rule it probably means |
+| A rule described in words | — | `? words ?` | `<words>` | `<words>`, and under `dialect ebnf` `? words ?`: a rule nothing defines, "not written yet", with the rule it probably means |
 | Alternation | `\|` | `\|` | `/` | `\|` ordered choice; `/` union, in whatever order or first-match-wins; a `/` or `\|` in a BNF or EBNF file is read the same |
-| A terminal | bare | `'x'`, `"x"` | `"x"` (case-insensitive), `%x41` | quoted, or `%x41`; `'x'` is one code point, and under `ebnf` a string like `"x"`; a bare word is a rule, a bare number or symbol gets a message saying to quote it |
+| A terminal | bare | `'x'`, `"x"` | `"x"` (case-insensitive), `%x41` | quoted, or `%x41`; `'x'` is one code point, and under `dialect ebnf` a string like `"x"`; a bare word is a rule, a bare number or symbol gets a message saying to quote it |
 | Optional | — | `[ x ]` | `[ x ]` | `[ x ]` |
-| Repetition | recursion | `{ x }`, `n * x` (exactly n) | `*x`, `n*m x`, `nx` (exactly n) | `*x`, `n*m x`, `nx`; under `ebnf`, `{ x }` is `*( x )` and `n * x` is `nx`; in the default notation a spaced `3 * x` is an error that says to write `3x` (`3*x` is three or more) or to read the file as EBNF |
-| Concatenation | juxtaposition | `a , b` | juxtaposition | juxtaposition; under `ebnf`, `,` joins; elsewhere `,` gets a message saying so |
-| End of a rule | line | `;` | line | end of the line (a line that goes on is indented); `;` starts a comment, so a `;` at the end of a line is harmless; under `ebnf`, `;` ends a rule and a line end is white space |
+| Repetition | recursion | `{ x }`, `n * x` (exactly n) | `*x`, `n*m x`, `nx` (exactly n) | `*x`, `n*m x`, `nx`; under `dialect ebnf`, `{ x }` is `*( x )` and `n * x` is `nx`; in the default notation a spaced `3 * x` is an error that says to write `3x` (`3*x` is three or more) or to read the file as EBNF |
+| Concatenation | juxtaposition | `a , b` | juxtaposition | juxtaposition; under `dialect ebnf`, `,` joins; elsewhere `,` gets a message saying so |
+| End of a rule | line | `;` | line | end of the line (a line that goes on is indented); `;` starts a comment, so a `;` at the end of a line is harmless; under `dialect ebnf`, `;` ends a rule and a line end is white space |
 | Comments | — | `(* *)` | `;` | `;`, `(* *)` and `/* */` |
 | Exception | — | `a - b` | — | not yet |
-| Strings | — | no escapes | no escapes | C escapes, except where the file says `abnf` or `ebnf` (or `--abnf`, `--ebnf`) |
-| White space | — | skipped | significant | skipped, except where the file says `abnf` (`whitespace none`) |
+| Strings | — | no escapes | no escapes | C escapes, except where the file says `dialect abnf` or `dialect ebnf` (or `--abnf`, `--ebnf`) |
+| White space | — | skipped | significant | skipped, except where the file says `dialect abnf` (`whitespace none`) |
 
 YBNF, yacc's grammar notation (and bison's), is a dialect of BNF, not of EBNF: a rule
 is a production, `name : alt \| alt ;`, lists are written by recursion, and it
@@ -206,7 +206,7 @@ section is the plan for the rest.
 | Escapes in literals | `\a \b \f \n \r \t \v \\ \" \' \xHH` | `\xHH` reads hex digits greedily, as in C |
 | Negation | `~rule`, `*~rule` | `~rule` matches one code point not in the set `rule` matches (a complement); repetition composes, so `*~rule` is "until rule" (SNOBOL's `BREAK`).  A hbnf extension — ABNF has no negation — planned (RFCPLAN.md decision 11), not implemented. |
 | Comma list | `n#m element`, `#element` | `#` is `*` with an implicit comma separator: `n#m` is comma-separated repetition, `#element` is `1#element`, sugar for `element *("," element)`.  Inherits parse.y's list semantics (no trailing comma, no empty elements); deliberately stricter than HTTP's `#rule`, which allows empty elements.  Planned (RFCPLAN.md decision 12), not implemented. |
-| `abnf`, `--abnf`, `whitespace none`, `sensitivity string %i`, `--root=RULE` | per file; CLI | `abnf` (a directive on a line of its own) reads the file as RFC 5234 reads ABNF, and `--abnf` does the same for every file of a run: nothing is skipped between a rule's elements (`whitespace none`), a string is case-insensitive (`sensitivity string %i`), and a backslash in a string is a backslash (`"\"` is one character).  The two directives may be given alone.  A literal with no letters is never marked case-insensitive.  In a grammar with no `word`/`atom` and no `keywords`, a letter-led literal is its characters, not a keyword; a case-insensitive one matches either case, and inside a character rule (up to four letters) it is both cases.  `--root=RULE` generates from the named rule instead of the first.  Three things the reader does to an RFC's text so it need not be edited: a rule named like a built-in type (`atom`, `word`, `str`, `int`, `bool`, `flag`, `uN`, `iN`) that builds a structure is called `<name>-rule`, in the tree too, with a notice; a range in a rule that also names other rules becomes a rule of its own (`dtext-x21-5A`); and a union that needs backtracking is first-match-wins (above).  See `rfc-corpus/README.md`. |
+| `dialect`, `--dialect=`, `--abnf`, `--ebnf`, `whitespace none`, `sensitivity string %i`, `--root=RULE` | per file; CLI | `dialect bnf \| ebnf \| abnf \| ybnf \| hbnf`, a line like `language` and `include`, names the notation the file is written in; `hbnf` is the default.  `dialect abnf` reads the file as RFC 5234 reads ABNF, and `--abnf` (or `--dialect=abnf`) does the same for every file of a run: nothing is skipped between a rule's elements (`whitespace none`), a string is case-insensitive (`sensitivity string %i`), and a backslash in a string is a backslash (`"\"` is one character).  The two directives may be given alone.  A literal with no letters is never marked case-insensitive.  In a grammar with no `word`/`atom` and no `keywords`, a letter-led literal is its characters, not a keyword; a case-insensitive one matches either case, and inside a character rule (up to four letters) it is both cases.  `--root=RULE` generates from the named rule instead of the first.  Three things the reader does to an RFC's text so it need not be edited: a rule named like a built-in type (`atom`, `word`, `str`, `int`, `bool`, `flag`, `uN`, `iN`) that builds a structure is called `<name>-rule`, in the tree too, with a notice; a range in a rule that also names other rules becomes a rule of its own (`dtext-x21-5A`); and a union that needs backtracking is first-match-wins (above).  See `rfc-corpus/README.md`. |
 | Rule names with `_`, comments carried into output, newline-before-`\|` continuation | — | ✓ |
 | Left recursion | `xs = xs "," x \| x` | Direct left recursion is read as a loop (`x ("," x)*`) in all four backends; indirect left recursion is refused |
 

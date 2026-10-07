@@ -908,7 +908,7 @@ should claim that before 10.
      it: an RFC snippet either compiles as written or hbnf says why not and
      how to write it in hbnf, and where the ABNF is wrong it says why and what
      was probably meant.  Now the `.bnf` itself compiles under `--abnf`, so the
-     `.hbnf` is the same text plus the directive `abnf` (RFC 5234, 3986 and 5322
+     `.hbnf` is the same text plus the line `dialect abnf` (RFC 5234, 3986 and 5322
      as written; RFC 9112 needs `uri-host = host` and its prose `port` left
      out), and the corpus checks both files on the same vectors.
    - `/` between phrases: the reader finds an order of the alternatives in
@@ -918,7 +918,7 @@ should claim that before 10.
      `host`, with a guard on the alternative that backends check where it
      succeeds; a repetition ABNF would give back is rewritten (`*n( A S ) A`)
      or said; no tree type changes.
-   - What the corpus found and this step fixed: `whitespace none`, `abnf` and
+   - What the corpus found and this step fixed: `whitespace none`, `dialect abnf` and
      `--abnf`; `--root=RULE`; keywords only in a grammar with words; case
      handling for ABNF's strings; a rule named like a built-in type
      (`atom-rule`); a range in a rule of words becomes a rule; `<...>` is
@@ -928,7 +928,7 @@ should claim that before 10.
      (`name = Rust { }`), and a warning, not a silent stub, where a backend has
      none; the four assignment operators are one; messages that say how ABNF,
      BNF, EBNF and hbnf differ.  The dialect table is in ABNF.md.
-   - `--ebnf`, and the directive `ebnf`, read ISO 14977: `n * x` is exactly n,
+   - `--ebnf`, and the line `dialect ebnf`, read ISO 14977: `n * x` is exactly n,
      `{ x }` repeats, `,` joins, `;` ends a rule (a line end is white space),
      `'..'` and `".."` are strings without escapes, `? .. ?` is a rule not
      written yet.  In the default notation a spaced `3 * x` is an error that

@@ -3,11 +3,11 @@
 ; removed, and the left margin its rules are indented by.  ALPHA, DIGIT, DQUOTE,
 ; WSP, CRLF, LF, CR and VCHAR are RFC 5234's: the line below that is not the
 ; RFC's is the include that supplies them.  See the .md file of the same name.
-; hbnf: this is rfc5322-1.bnf, the RFC's text as published, with one directive added:
-;   `abnf` reads the file as RFC 5234 reads ABNF (nothing skipped between a rule's
+; hbnf: this is rfc5322-1.bnf, the RFC's text as published, with one line added:
+;   `dialect abnf` reads the file as RFC 5234 reads ABNF (nothing skipped between a rule's
 ;   elements, strings case-insensitive, a backslash in a string a backslash).
 
-abnf
+dialect abnf
 
 include "rfc5234-1.hbnf"
 
