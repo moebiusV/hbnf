@@ -1,11 +1,13 @@
-; RFC 3986, Appendix A "Collected ABNF for URI", as hbnf reads it.  rfc3986-1.bnf is the
-; RFC's text; this is the same rules with the changes hbnf needs.  The change
-; made everywhere, and not marked each time, is `|` for `/` (ordered choice,
-; where the RFC's `/` is a union).  A change to anything else is marked
-; `; hbnf:`.  See README.md in this directory.
+; RFC 3986, Appendix A "Collected ABNF for URI", verbatim.
+; Only the RFC's page headers and footers are removed, and the left margin its
+; rules are indented by.  ALPHA, DIGIT and HEXDIG are RFC 5234's (Appendix A
+; says "the core rules"); the one line below that is not the RFC's is the
+; include that supplies them.  See the .md file of the same name.
+; hbnf: this is rfc3986-1.bnf, the RFC's text as published, with one directive added:
+;   `abnf` reads the file as RFC 5234 reads ABNF (nothing skipped between a rule's
+;   elements, strings case-insensitive, a backslash in a string a backslash).
 
-whitespace none                  ; hbnf: ABNF skips nothing; where a space counts it is written
-sensitivity string %i            ; hbnf: ABNF's "..." is case-insensitive; hbnf's is not unless the file says so
+abnf
 
 include "rfc5234-1.hbnf"
 
@@ -31,12 +33,7 @@ scheme        = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
 
 authority     = [ userinfo "@" ] host [ ":" port ]
 userinfo      = *( unreserved / pct-encoded / sub-delims / ":" )
-host          = IP-literal / reg-name   ; hbnf: IPv4address is dropped from the choice.  A dotted
-                                        ;   quad is also a reg-name, and `|` commits to the first
-                                        ;   alternative that matches: IPv4address would take "1.2.3.4"
-                                        ;   out of "1.2.3.4.5", and a later `:`/end would fail with no
-                                        ;   way back to reg-name, which is what the RFC's union gives.
-                                        ;   Same language; an address parses as a reg-name.
+host          = IP-literal / IPv4address / reg-name
 port          = *DIGIT
 
 IP-literal    = "[" ( IPv6address / IPvFuture  ) "]"
@@ -66,10 +63,10 @@ dec-octet     = DIGIT                 ; 0-9
 reg-name      = *( unreserved / pct-encoded / sub-delims )
 
 path          = path-abempty    ; begins with "/" or is empty
-              | path-absolute   ; begins with "/" but not "//"
-              | path-noscheme   ; begins with a non-colon segment
-              | path-rootless   ; begins with a segment
-              | path-empty      ; zero characters
+              / path-absolute   ; begins with "/" but not "//"
+              / path-noscheme   ; begins with a non-colon segment
+              / path-rootless   ; begins with a segment
+              / path-empty      ; zero characters
 
 path-abempty  = *( "/" segment )
 path-absolute = "/" [ segment-nz *( "/" segment ) ]

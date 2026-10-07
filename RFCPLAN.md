@@ -56,8 +56,11 @@ silently.
        (`1*DIGIT "." / 1*DIGIT ":"`, `"a" "b" "c" / "a" "b" "d"`);
      - what no order fixes is a union that needs backtracking: two alternatives
        that match the same text with different continuations
-       (`IPv4address / reg-name`).  That is an error naming the two and a
-       text both match, and says to write `|`, with the one to try first first.
+       (`IPv4address / reg-name`).  hbnf takes the first alternative that
+       matches and is followed by something that can follow the choice, as
+       RFC 3986 section 3.2.2 says for `host` ("first match wins"), with a
+       warning naming the two; a `%where { }` block (decision 13) is the
+       author-written form of the same check.
      (*Amended 2026-10-06, step 5.*  The plan was FIRST/FOLLOW sets and factoring
      a shared prefix, `p = "a" / "a" "b"` into `p = "a" [ "b" ]`.  A first cut
      with two code points of lookahead resolved the RFC corpus's `/` except
@@ -171,11 +174,12 @@ silently.
     trailing comma, no empty elements.  Deliberately stricter than HTTP's
     `#rule`, which allows empty elements (a known server-bug source).
 
-13. **Context-sensitivity: a pure predicate, not a parse-time action.**  C
-    is the standing example: with `typedef int A;` in scope, `(A) * 0` is a
-    cast of `*0`, and with `int B;` in scope `(B) * 0` is a multiplication.
-    The two cannot be told apart without consulting a symbol table *during*
-    the parse, so no context-free grammar settles it.
+13. **Context-sensitivity: a `%where { }` block.**  C is the standing
+    example: with `typedef int A;` in scope, `(A) * 0` is a cast of `*0`, and
+    with `int B;` in scope `(B) * 0` is a multiplication.  The two cannot be
+    told apart without consulting a symbol table *during* the parse, so no
+    context-free grammar settles it.  So does a name that parses and still has
+    to be looked up (`host` as a DNS name).
 
     The bar here is lower than it looks, because tree-sitter does not solve
     this either.  Measured 2026-10-01 against tree-sitter-c: both lines
@@ -186,24 +190,28 @@ silently.
     highlighting and is not a correct parse.  So "as general as
     tree-sitter" does not require this; being *right* does.
 
-    When it is wanted, the shape is a **predicate**, which is not the
-    parse-time action hbnf refuses:
+    The shape is a block after an alternative, like `%action{}`, that decides
+    whether the alternative holds:
 
-        typedef-name = word &{ hbnf_is_typedef(tok, len) }
+        typedef-name = word %where { return is_typedef(text, len); }
+        host = IP-literal / IPv4address / reg-name %where { return in_dns(text, len); }
 
-    The distinction is the whole reason it is admissible.  An `%action{}` has
-    effects, so it must run once, after the parse, bottom-up — ordered choice
-    backtracks, and a re-run action would double its effects.  A predicate is
-    a *pure query*: no effects, idempotent, safe to evaluate as often as
-    backtracking needs.  Rules: it may read state, never write it; its value
-    may not depend on evaluation order; and the state it reads is written
-    only by `%action{}` after the parse, or by the author's own code before
-    it.  A predicate that writes is the yacc lexer hack, with yacc's
-    problems, and stays refused.
+    It is code, and hbnf does not restrict what the code does: it reads state,
+    writes it, calls out to the network.  What hbnf owes the author is the
+    order it runs in, stated plainly: a `%where` runs each time its
+    alternative is tried and has matched, in parse order, and an alternative
+    that fails it (or a later element) is backed out of, so the block runs
+    again where the parse backtracks and the same alternative is tried
+    again.  `%scan{}` is called the same way, at each position its rule is
+    tried.  `%action{}` is the one that runs once, after the parse, bottom-up,
+    because the tree it reads is only complete then.  Like the scanners, a
+    `%where` is written per backend (`%where Rust { }`), and the guard hbnf
+    writes itself for a union that needs backtracking (first match wins, see
+    decision 1) is the same hook with generated code.
 
     This is a separate axis from step 9 and much less certain, so it waits
-    until a grammar actually needs it.  It also does not make hbnf ambiguous:
-    the predicate decides a branch, it does not explore several.
+    until a grammar actually needs it.  It does not make hbnf ambiguous: the
+    block decides a branch, it does not explore several.
 
 ## POSIX BNF
 
@@ -891,29 +899,50 @@ should claim that before 10.
        away, the pre-cut array went for correctness, and the id jump that
        went with it — `expect_kind`, 72 sites before 4c and zero after —
        is the recoverable part.
-5. **`/` between phrases** (decision 1; factoring needs step 2).  Then:
-   - RFC excerpts as regression tests: RFC 5234 Appendix B.1 verbatim, RFC
-     3986 `scheme` and `host`, RFC 5322 `addr-spec`, RFC 9112
-     `request-line`.  *Done 2026-10-06* (`rfc-corpus/`, run by `tests/rfc.sh`;
-     the headline rules in `tests/e2e.sh`).  Each fragment has the verbatim
-     ABNF, a fixed-up file, vectors and a README with hbnf's exact messages.
-     It found, and this step fixed: `whitespace none`; `--root=RULE`;
-     keywords only in a grammar that has words (`word`/`atom` or `keywords`);
-     a literal with no letters never `%i`; one-character strings and
-     case-insensitive letters in char rules and `/` unions; a string
-     crossing a newline (`"\"`) says why; rules named `atom`/`word` are an
-     error.  **Still open, and the work of this step's first bullet:**
-     `/` between phrases (the fixed-up files wrote `|` and repaired each
-     overlap by hand); the byte-vs-code-point `OCTET` divergence; poor
-     messages for lifted rules ("expected IPvFuture_2").  *`/` between
-     phrases done 2026-10-06* (`hbnf_lookahead.ad[sb]`: an automaton per
-     alternative, searched for text one matches more of than another, and an
-     order that no alternative shadows a later one in; no backend changed, no
-     tree type changed).  What stays a `|` in the fixed-up files is a union
-     that needs backtracking: `host` (`IPv4address` is also a `reg-name`),
-     `request-target`, and RFC 5322's obsolete folding (`FWS`, `CFWS`,
-     `word`, `domain`); `path` is a documentation rule the grammar does not
-     use.
+5. **`/` between phrases** (decision 1).  *Done 2026-10-06.*  Then:
+   - RFC excerpts as regression tests, in `rfc-corpus/`, one id per snippet
+     (`rfc5234-1`, `rfc3986-1`, `rfc5322-1`, `rfc9112-1`): `<id>.bnf` the RFC's
+     text as published, `<id>.hbnf` the form hbnf compiles, `<id>.md` the
+     account, `<id>.vectors/` the inputs; run by `tests/rfc.sh` (the headline
+     rules in `tests/e2e.sh`).  *Done 2026-10-06.*  The policy that came out of
+     it: an RFC snippet either compiles as written or hbnf says why not and
+     how to write it in hbnf, and where the ABNF is wrong it says why and what
+     was probably meant.  Now the `.bnf` itself compiles under `--abnf`, so the
+     `.hbnf` is the same text plus the directive `abnf` (RFC 5234, 3986 and 5322
+     as written; RFC 9112 needs `uri-host = host` and its prose `port` left
+     out), and the corpus checks both files on the same vectors.
+   - `/` between phrases: the reader finds an order of the alternatives in
+     which ordered choice accepts the same language (an automaton per
+     alternative, `hbnf_lookahead.ad[sb]`), and where a union needs
+     backtracking it is first match wins, as RFC 3986 section 3.2.2 settles
+     `host`, with a guard on the alternative that backends check where it
+     succeeds; a repetition ABNF would give back is rewritten (`*n( A S ) A`)
+     or said; no tree type changes.
+   - What the corpus found and this step fixed: `whitespace none`, `abnf` and
+     `--abnf`; `--root=RULE`; keywords only in a grammar with words; case
+     handling for ABNF's strings; a rule named like a built-in type
+     (`atom-rule`); a range in a rule of words becomes a rule; `<...>` is
+     always a rule (`<pchar>` is `pchar`, `0<pchar>` compiles) and a
+     `<...>` nothing defines is "not written yet" with what it probably
+     means; `name = %grammar "file"`; per-language scanners
+     (`name = Rust { }`), and a warning, not a silent stub, where a backend has
+     none; the four assignment operators are one; messages that say how ABNF,
+     BNF, EBNF and hbnf differ.  The dialect table is in ABNF.md.
+   - **Open, from this step:**
+     - `--ebnf` (ISO 14977: `n * x` exactly n, `{ x }`, `,`, `;` as the rule
+       end, `'..'` strings, `? .. ?`), and an error on a spaced `3 * x` in the
+       default notation;
+     - YBNF (yacc's grammar language: `%token`, `%%`, actions) and the POSIX
+       corpus (`posix-corpus/`, same layout), RFC 822 as a snippet (its `#`
+       lists, `<n>*<m>` counts, prose);
+     - `%where { }` (decision 13): code, not required to be pure;
+     - `request-target` (RFC 9112) depends on the method, which a `%where`
+       could ask; `path` (RFC 3986) is a documentation rule;
+     - `OCTET` is a byte in ABNF and a code point up to U+00FF here: the
+       binary layer, with bit-precise syntax, below;
+     - generation of RFC 5322's full text takes about nine seconds, most of it
+       deciding unions; poor messages for lifted rules ("expected
+       IPvFuture_2").
    - the character model in Rust, Zig and Ada through the templates.  *Done
      2026-10-06, inside step 9c*, which could not retire its reader without
      it.  (The interpreter used to be named here too, "on the same

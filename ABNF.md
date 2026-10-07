@@ -1,6 +1,7 @@
 # hbnf and ABNF
 
-hbnf is not ABNF. It borrows ABNF's rule notation (RFC 5234, and RFC 7405's
+hbnf (named for Hartmeier, Brauer, Norby and Floeter, and read as Hyper BNF)
+is not ABNF. It borrows ABNF's rule notation (RFC 5234, and RFC 7405's
 case-sensitive strings) and builds a different language on it. It extends the
 notation downward, below characters to code points, octets and bits, and
 upward, to types, trees and hand-written scanners. It also folds the lexer
@@ -107,7 +108,7 @@ shapes compiled into parsers for a different language.
 
 | ABNF | Compiled backends | Interpreter | Notes |
 |---|---|---|---|
-| Concatenation, alternation, grouping | ✓ | ✓ | Alternation is ordered choice (§4). `\|` separates alternatives, as in BNF and yacc. ABNF's `/` (union) is taken wherever ordered choice, in some order of the alternatives, accepts the same language: between one-code-point alternatives (`DIGIT / ALPHA`); in a character rule, whose scanner takes the longest alternative (`dec-octet` in the RFC's own order); and between longer alternatives. The reader looks for an order in which no alternative can match text that a later one matches more of, and writes the choice in that order, so `"a" / "a" "b"` and `h16 ":" h16 / IPv4address` need no rewriting by the author and no tree type changes; one that can match nothing goes last, and is refused if what follows the choice could begin another. It is decided on the alternatives' text, with no limit on how far into the input they look. What it refuses is a union that needs backtracking: two alternatives that match the same text with different continuations (`host = IP-literal / IPv4address / reg-name`), naming the two and a text both match; write `\|`, with the one to try first first. The check covers only the rules the parser uses. |
+| Concatenation, alternation, grouping | ✓ | ✓ | Alternation is ordered choice (§4). `\|` separates alternatives, as in BNF and yacc. ABNF's `/` (union) is taken wherever ordered choice, in some order of the alternatives, accepts the same language: between one-code-point alternatives (`DIGIT / ALPHA`); in a character rule, whose scanner takes the longest alternative (`dec-octet` in the RFC's own order); and between longer alternatives. The reader looks for an order in which no alternative can match text that a later one matches more of, and writes the choice in that order, so `"a" / "a" "b"` and `h16 ":" h16 / IPv4address` need no rewriting by the author and no tree type changes; one that can match nothing goes last, and is refused if what follows the choice could begin another. It is decided on the alternatives' text, with no limit on how far into the input they look. Where a union needs backtracking (two alternatives match the same text and go on differently: `host = IP-literal / IPv4address / reg-name`), hbnf takes the first alternative that matches and is followed by something that can follow the choice, which is how RFC 3986 section 3.2.2 settles `host` (first match wins), and says so in a warning naming the two; an alternative that could never be chosen is not reordered ahead of the one written before it.  Where ABNF's backtracking would choose differently, write `\|` with the one to prefer first.  If what follows is not known (a scanner), it is refused. The check covers only the rules the parser uses. |
 | Direct left recursion, `a = a x \| y` | ✓ read as a loop, `y x*`, in all four backends | ✓ | The first entry of the list comes from the bases, each later one from the tails. Indirect left recursion is refused. |
 | `( a \| b )` inside a sequence | ✓ lifted into a rule of its own | ✓ | `x = a ( b \| c ) d` is read as `x = a x_1 d`, `x_1 = b \| c` before code generation (`Lift`), so all four backends take it; a literal-only alternation is an enum. A plain `( a b )` is spliced in. Before RFCPLAN.md step 2 it was refused, and before that flattened to `a b` |
 | `[ … ]` as a whole rule | ✓ | ✓ | |
@@ -145,6 +146,39 @@ of them again (a later `=` overrides).
 | `LWSP` | `*(WSP / CRLF WSP)` | Not yet: a character rule cannot repeat (RFC 5234 itself warns about `LWSP`) |
 | `ALPHA`, `DIGIT`, `HEXDIG`, `BIT`, `CHAR`, `CTL`, `VCHAR`, `OCTET` | character classes | `common.hbnf`; the character layer (§2). A file with `sensitivity rule-name %i` may write them `alpha`, `digit`, `hexdig`. |
 
+## Dialects: one notation
+
+BNF, EBNF, ABNF, YBNF (the grammar language of yacc and bison) and HBNF
+(Hyper BNF, this notation) are dialects of one notation, and hbnf reads the
+superset: a spelling any of them uses is accepted wherever it cannot be taken
+for something else, and a directive (`abnf`, or `--abnf` for a run) is needed
+only where two dialects spell different things the same way.
+
+| Construct | BNF | ISO EBNF | ABNF | In hbnf |
+|---|---|---|---|---|
+| Assignment | `::=` (YBNF: `:`) | `=` | `=` | `::=`, `:=`, `:` and `=` are one operator |
+| A rule | `<table reference>` | `table reference` | `table-reference` | all three are the rule `table-reference`; a bare name and `<name>` are the same |
+| A rule described in words | — | `? words ?` | `<words>` | `<words>`: a rule nothing defines, "not written yet", with the rule it probably means |
+| Alternation | `\|` | `\|` | `/` | `\|` ordered choice; `/` union, in whatever order or first-match-wins; a `/` or `\|` in a BNF or EBNF file is read the same |
+| A terminal | bare | `'x'`, `"x"` | `"x"` (case-insensitive), `%x41` | quoted, or `%x41`, `'x'`; a bare word is a rule, a bare number or symbol gets a message saying to quote it |
+| Optional | — | `[ x ]` | `[ x ]` | `[ x ]` |
+| Repetition | recursion | `{ x }`, `n * x` (exactly n) | `*x`, `n*m x`, `nx` (exactly n) | `*x`, `n*m x`, `nx`; `{ x }` clashes with code blocks and gets a message saying to write `*x`.  **A trap, not yet closed:** EBNF's `3 * x` is hbnf's `3x`, but hbnf reads `3 * x` as ABNF's `3*x`, three or more |
+| Concatenation | juxtaposition | `a , b` | juxtaposition | juxtaposition; `,` gets a message |
+| End of a rule | line | `;` | line | end of the line (a line that goes on is indented); `;` starts a comment, so a `;` at the end of a line is harmless |
+| Comments | — | `(* *)` | `;` | `;`, `(* *)` and `/* */` |
+| Exception | — | `a - b` | — | not yet |
+| Strings | — | no escapes | no escapes | C escapes, except where the file says `abnf` |
+| White space | — | skipped | significant | skipped, except where the file says `abnf` (`whitespace none`) |
+
+YBNF, yacc's grammar notation (and bison's), is a dialect of BNF, not of EBNF: a rule
+is a production, `name : alt \| alt ;`, lists are written by recursion, and it
+adds `%token`, `%start`, `%%` and C actions in braces.  What differs in meaning
+is that yacc's `\|` is unordered (its tables settle a conflict) where hbnf's is
+ordered, and that its actions run as the parser reduces, where hbnf's
+`%action{}` runs once, after the parse.  A file whose assignment is `:` says so
+in a notice that names `/`, which is the unordered one.  RFCPLAN.md's POSIX
+section is the plan for the rest.
+
 ## 4. Same spelling, different meaning
 
 | Construct | ABNF | hbnf | Observed | Writing it in hbnf |
@@ -172,7 +206,7 @@ of them again (a later `=` overrides).
 | Escapes in literals | `\a \b \f \n \r \t \v \\ \" \' \xHH` | `\xHH` reads hex digits greedily, as in C |
 | Negation | `~rule`, `*~rule` | `~rule` matches one code point not in the set `rule` matches (a complement); repetition composes, so `*~rule` is "until rule" (SNOBOL's `BREAK`).  A hbnf extension — ABNF has no negation — planned (RFCPLAN.md decision 11), not implemented. |
 | Comma list | `n#m element`, `#element` | `#` is `*` with an implicit comma separator: `n#m` is comma-separated repetition, `#element` is `1#element`, sugar for `element *("," element)`.  Inherits parse.y's list semantics (no trailing comma, no empty elements); deliberately stricter than HTTP's `#rule`, which allows empty elements.  Planned (RFCPLAN.md decision 12), not implemented. |
-| `whitespace none`, `--abnf`, `--root=RULE`, `sensitivity string %i` | per file; CLI | `whitespace none` makes phrase rules skip nothing, as ABNF does (the RFC corpus uses it). `--abnf` is those two lines for every file, so an RFC's text compiles as pasted. `--root=RULE` generates from the named rule instead of the first. `sensitivity string %i` makes literals case-insensitive, as ABNF's are; a literal with no letters is never marked. In a grammar with no `word`/`atom` and no `keywords`, a letter-led literal is its characters, not a keyword; a case-insensitive one matches either case, and inside a character rule (up to four letters) it is both cases. A rule named `atom`, `word`, `str`, `int`, `bool`, `uN` or `iN` that builds a struct is an error: rename it. See `rfc-corpus/README.md`. |
+| `abnf`, `--abnf`, `whitespace none`, `sensitivity string %i`, `--root=RULE` | per file; CLI | `abnf` (a directive on a line of its own) reads the file as RFC 5234 reads ABNF, and `--abnf` does the same for every file of a run: nothing is skipped between a rule's elements (`whitespace none`), a string is case-insensitive (`sensitivity string %i`), and a backslash in a string is a backslash (`"\"` is one character).  The two directives may be given alone.  A literal with no letters is never marked case-insensitive.  In a grammar with no `word`/`atom` and no `keywords`, a letter-led literal is its characters, not a keyword; a case-insensitive one matches either case, and inside a character rule (up to four letters) it is both cases.  `--root=RULE` generates from the named rule instead of the first.  Three things the reader does to an RFC's text so it need not be edited: a rule named like a built-in type (`atom`, `word`, `str`, `int`, `bool`, `flag`, `uN`, `iN`) that builds a structure is called `<name>-rule`, in the tree too, with a notice; a range in a rule that also names other rules becomes a rule of its own (`dtext-x21-5A`); and a union that needs backtracking is first-match-wins (above).  See `rfc-corpus/README.md`. |
 | Rule names with `_`, comments carried into output, newline-before-`\|` continuation | — | ✓ |
 | Left recursion | `xs = xs "," x \| x` | Direct left recursion is read as a loop (`x ("," x)*`) in all four backends; indirect left recursion is refused |
 

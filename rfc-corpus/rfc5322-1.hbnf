@@ -1,22 +1,19 @@
-; RFC 5322, "addr-spec" and every rule it reaches, as hbnf reads it.  rfc5322-1.bnf
-; is the RFC's text; this is the same rules with the changes hbnf needs.  The
-; change made everywhere, and not marked each time, is `|` for `/` (ordered
-; choice, where the RFC's `/` is a union).  A change to anything else is marked
-; `; hbnf:`.  The RFC's `atom` and `word` are written `atom-rule` and `word-rule`, at
-; every use, because those two are the names of hbnf's built-in types.  See
-; README.md in this directory.
+; RFC 5322, "addr-spec" (section 3.4.1) and every rule it reaches, verbatim, in
+; the order the RFC defines them.  Only the RFC's page headers and footers are
+; removed, and the left margin its rules are indented by.  ALPHA, DIGIT, DQUOTE,
+; WSP, CRLF, LF, CR and VCHAR are RFC 5234's: the line below that is not the
+; RFC's is the include that supplies them.  See the .md file of the same name.
+; hbnf: this is rfc5322-1.bnf, the RFC's text as published, with one directive added:
+;   `abnf` reads the file as RFC 5234 reads ABNF (nothing skipped between a rule's
+;   elements, strings case-insensitive, a backslash in a string a backslash).
 
-whitespace none                  ; hbnf: ABNF skips nothing; where a space counts it is written
-sensitivity string %i            ; hbnf: ABNF's "..." is case-insensitive; hbnf's is not unless the file says so
+abnf
 
 include "rfc5234-1.hbnf"
 
-quoted-pair     =   (%x5C (VCHAR / WSP)) / obs-qp   ; hbnf: "\" is %x5C: in hbnf a backslash in "..." starts an escape
-                                                  ;   (`"\n"`), so the RFC's `"\"` never closes
+quoted-pair     =   ("\" (VCHAR / WSP)) / obs-qp
 
-FWS             =   obs-FWS | ([*WSP CRLF] 1*WSP)   ; hbnf: obs-FWS first.  The RFC's first alternative would take one
-                                        ;   fold of "  \r\n  \r\n  " and leave the second; obs-FWS takes both,
-                                        ;   and only text that begins with the CRLF is left for the other one
+FWS             =   ([*WSP CRLF] 1*WSP) /  obs-FWS
                                        ; Folding white space
 
 ctext           =   %d33-39 /          ; Printable US-ASCII
@@ -28,7 +25,7 @@ ccontent        =   ctext / quoted-pair / comment
 
 comment         =   "(" *([FWS] ccontent) [FWS] ")"
 
-CFWS            =   (1*([FWS] comment) [FWS]) | FWS
+CFWS            =   (1*([FWS] comment) [FWS]) / FWS
 
 atext           =   ALPHA / DIGIT /    ; Printable US-ASCII
                     "!" / "#" /        ;  characters not including
@@ -42,7 +39,7 @@ atext           =   ALPHA / DIGIT /    ; Printable US-ASCII
                     "|" / "}" /
                     "~"
 
-atom-rule            =   [CFWS] 1*atext [CFWS]
+atom            =   [CFWS] 1*atext [CFWS]
 
 dot-atom-text   =   1*atext *("." 1*atext)
 
@@ -59,27 +56,19 @@ quoted-string   =   [CFWS]
                     DQUOTE *([FWS] qcontent) [FWS] DQUOTE
                     [CFWS]
 
-word-rule            =   atom-rule | quoted-string
+word            =   atom / quoted-string
 
 addr-spec       =   local-part "@" domain
 
-local-part      =   obs-local-part      ; hbnf: obs-local-part alone.  `|` commits to the first alternative
-                                        ;   that matches, so dot-atom would take "a" out of "a. b" and leave
-                                        ;   the rest to fail, where the RFC's union goes on to obs-local-part.
-                                        ;   obs-local-part = word *("." word) already holds every dot-atom
-                                        ;   and every quoted-string, so the language is the union's.
+local-part      =   dot-atom / quoted-string / obs-local-part
 
-domain          =   obs-domain | domain-literal   ; hbnf: obs-domain holds every dot-atom (an atom is
-                                        ;   [CFWS] 1*atext [CFWS]), so dot-atom is dropped, and a literal,
-                                        ;   which begins with "[", is tried after it
+domain          =   dot-atom / domain-literal / obs-domain
 
 domain-literal  =   [CFWS] "[" *([FWS] dtext) [FWS] "]" [CFWS]
 
-dtext           =   dtext-char /       ; hbnf: the two ranges are a rule of their own (dtext-char), as the message
-                    obs-dtext          ;   asks: a range may not sit in a rule that also names quoted-pair
-dtext-char      =   %d33-90 /          ; Printable US-ASCII
-                    %d94-126           ;  characters not including
-                                       ;  "[", "]", or "\"
+dtext           =   %d33-90 /          ; Printable US-ASCII
+                    %d94-126 /         ;  characters not including
+                    obs-dtext          ;  "[", "]", or "\"
 
 obs-NO-WS-CTL   =   %d1-8 /            ; US-ASCII control
                     %d11 /             ;  characters that do not
@@ -91,12 +80,12 @@ obs-ctext       =   obs-NO-WS-CTL
 
 obs-qtext       =   obs-NO-WS-CTL
 
-obs-qp          =   %x5C (%d0 / obs-NO-WS-CTL / LF / CR)   ; hbnf: "\" is %x5C, as above
+obs-qp          =   "\" (%d0 / obs-NO-WS-CTL / LF / CR)
 
 obs-FWS         =   1*WSP *(CRLF 1*WSP)
 
-obs-local-part  =   word-rule *("." word-rule)
+obs-local-part  =   word *("." word)
 
-obs-domain      =   atom-rule *("." atom-rule)
+obs-domain      =   atom *("." atom)
 
 obs-dtext       =   obs-NO-WS-CTL / quoted-pair

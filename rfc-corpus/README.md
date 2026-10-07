@@ -22,9 +22,10 @@ One snippet is one numbered id, `<rfc>-<n>`, and its files sit side by side:
   file is the RFC's text, and an `include` at the top supplies what the RFC takes
   from another snippet.  `hbnf FILE.bnf --abnf --root=RULE` reads it as RFC
   5234 reads ABNF and says what hbnf makes of any rule.
-- `<id>.hbnf`: the same rules as hbnf compiles them.  It starts with the two
-  directives `--abnf` stands for (`whitespace none`, `sensitivity string %i`),
-  and every other change from the `.bnf` is marked `; hbnf:` with the reason.
+- `<id>.hbnf`: the form hbnf compiles: the `.bnf` with the one directive `abnf`
+  (what `--abnf` is for a run), and any other change from the `.bnf` marked
+  `; hbnf:` with the reason.  Where the `.bnf` compiles on its own, the two
+  files are checked on the same vectors (`<id>.verbatim` lists the rules).
 - `<id>.vectors/<RULE>.accept` and `.reject`: inputs, one per line (`\r`, `\n`,
   `\t`, `\NNN` and `\\` as printf's `%b` reads them; an empty line is the empty
   input).

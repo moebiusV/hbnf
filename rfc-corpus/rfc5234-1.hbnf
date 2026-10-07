@@ -1,9 +1,12 @@
-; RFC 5234, Appendix B.1 "Core Rules", as hbnf reads it.  rfc5234-1.bnf is the RFC's
-; text; this is the same rules with the changes hbnf needs, each marked
-; `; hbnf:`.  The rest is the RFC's, character for character.
+; RFC 5234, Appendix B.1 "Core Rules", verbatim.
+; Only the RFC's page headers and footers are removed, and the left margin
+; its rules are indented by.  See the .md file of the same name.
+; hbnf: this is rfc5234-1.bnf, the RFC's text as published, with one directive added:
+;   `abnf` reads the file as RFC 5234 reads ABNF (nothing skipped between a rule's
+;   elements, strings case-insensitive, a backslash in a string a backslash).
 
-whitespace none                  ; hbnf: ABNF skips nothing; where a space counts it is written
-sensitivity string %i            ; hbnf: ABNF's "..." is case-insensitive; hbnf's is not unless the file says so
+abnf
+
 
 ALPHA          =  %x41-5A / %x61-7A   ; A-Z / a-z
 

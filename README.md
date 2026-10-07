@@ -1,7 +1,8 @@
 # hbnf
 
-`hbnf` is a parser generator (a compiler compiler). It reads a grammar in an
-ABNF-like notation and emits a parser and its typed tree in C, Rust, Zig or
+`hbnf` is a parser generator (a compiler compiler). It reads a grammar in a
+notation that is a superset of BNF, EBNF, ABNF and yacc's grammar language
+(called YBNF here), and emits a parser and its typed tree in C, Rust, Zig or
 Ada.
 
 The design is for anyone who is comfortable reading the RFCs. HBNF makes BNF
@@ -36,8 +37,10 @@ The name is the initials of the four developers it is named for: Daniel
 **N**orby (ospfd, 2004), and Reyk **F**loeter (hoststated, 2007), whose
 hand-written `parse.y` was cloned verbatim from daemon to daemon. The last
 three initials spell **BNF** (Backus–Naur Form), so the name also reads as
-"Hartmeier's BNF". To someone who already knows the genre, it is **obconf** —
-OpenBSD configuration style.
+"Hartmeier's BNF". It also reads as **Hyper BNF**, which is what the notation
+has grown into: the dialects of BNF, read as one.  It is not obconf: the wish
+to implement obconf (OpenBSD configuration style) is what inspired it, and
+obconf is one grammar written in it.
 
 ## Two things
 
