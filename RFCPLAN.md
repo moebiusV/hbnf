@@ -951,9 +951,10 @@ should claim that before 10.
        concept (it changes the generated type of rules like
        `x = 1*( "a" / "b" )`, now a list of empty nodes; check the daemon
        grammars first); the octet mode of the scanner (edges are numeric, so
-       it skips the UTF-8 decode); and the dialect prefix on every generated
-       identifier (`ybnf_if`), in place of the ad-hoc `atom-rule`/`WORD-rule`
-       renames;
+       it skips the UTF-8 decode).  The dialect prefix on every generated
+       identifier (`ybnf_if`) is *done 2026-10-07*: it applies to a file that
+       names a dialect, and the `atom-rule`/`WORD-rule` renames remain only
+       for a file with none;
      - `%where { }` (decision 13): code, not required to be pure;
      - `request-target` (RFC 9112) depends on the method, which a `%where`
        could ask; `path` (RFC 3986) is a documentation rule;
