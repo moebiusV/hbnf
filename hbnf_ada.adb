@@ -4,6 +4,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Mustache;
 with HBNF_Compilable;
+with HBNF_Lookahead;
 
 package body HBNF_Ada is
 
@@ -2717,6 +2718,11 @@ package body HBNF_Ada is
          end if;
       end;
 
+      declare
+         --  The exceptions (`X = A - B`) call the scanner of B, which may come
+         --  after X: their wrappers go after every scanner.
+         Wrappers : U;
+      begin
       for I in 1 .. N loop
          if Is_Char_Rule (Rules, To_String (Rules (I).Name))
            and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
@@ -2724,9 +2730,68 @@ package body HBNF_Ada is
          then
             declare
                NM  : constant String := To_String (Rules (I).Name);
-               DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
+               DNF : constant Cp_Branch_Atom_Vectors.Vector := (if Is_Dfa_Token (Rules, NM)
+                       or else HBNF_Grammar.Except_Operand (NM) /= ""
+                    then Cp_Branch_Atom_Vectors.Empty_Vector
+                    else Char_DNF (Rules, NM));
 
             begin
+               if HBNF_Grammar.Except_Operand (NM) /= "" then
+                  --  `X = A - B`: A's text, unless B matches exactly that text.
+                  Append (Wrappers, "   function Scan_" & Ada_Ident (NM)
+                    & " (S : String; Pos, Len : Natural) return Natural is" & LF);
+                  Append (Wrappers, "      N : constant Natural := Scan_"
+                    & Ada_Ident (HBNF_Grammar.Except_Base (NM))
+                    & " (S, Pos, Len);" & LF);
+                  Append (Wrappers, "   begin" & LF);
+                  Append (Wrappers, "      if N = 0 or else Scan_"
+                    & Ada_Ident (HBNF_Grammar.Except_Operand (NM))
+                    & " (S, Pos, Pos + N - 1) = N then" & LF);
+                  Append (Wrappers, "         return 0;" & LF);
+                  Append (Wrappers, "      end if;" & LF);
+                  Append (Wrappers, "      return N;" & LF);
+                  Append (Wrappers, "   end Scan_" & Ada_Ident (NM) & ";" & LF & LF);
+               elsif Is_Dfa_Token (Rules, NM) then
+                  declare
+                     D   : HBNF_Lookahead.Dfa_State_Vectors.Vector;
+                     Ok  : Boolean;
+                     Why : Unbounded_String;
+                     Lo, Hi, To, First, Acc : Unbounded_String;
+                  begin
+                     HBNF_Lookahead.Token_Dfa (Rules, NM, D, Ok, Why);
+                     HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
+                     Append (Bdy, "   function Scan_" & Ada_Ident (NM)
+                       & " (S : String; Pos, Len : Natural) return Natural is" & LF);
+                     Append (Bdy, "      type Table is array (Natural range <>) of Natural;" & LF);
+                     Append (Bdy, "      Lo    : constant Table := (" & To_String (Lo) & ");" & LF);
+                     Append (Bdy, "      Hi    : constant Table := (" & To_String (Hi) & ");" & LF);
+                     Append (Bdy, "      To    : constant Table := (" & To_String (To) & ");" & LF);
+                     Append (Bdy, "      First : constant Table := (" & To_String (First) & ");" & LF);
+                     Append (Bdy, "      Acc   : constant Table := (" & To_String (Acc) & ");" & LF);
+                     Append (Bdy, "      I     : Natural := Pos;" & LF);
+                     Append (Bdy, "      Best  : Natural := 0;" & LF);
+                     Append (Bdy, "      St    : Natural := 0;" & LF);
+                     Append (Bdy, "      Cp, N, K : Natural;" & LF);
+                     Append (Bdy, "   begin" & LF);
+                     Append (Bdy, "      loop" & LF);
+                     Append (Bdy, "         if Acc (St) /= 0 then Best := I - Pos; end if;" & LF);
+                     Append (Bdy, "         exit when I > Len;" & LF);
+                     Append (Bdy, "         N := Decode_Utf8 (S, I, Len, Cp);" & LF);
+                     Append (Bdy, "         exit when N = 0;" & LF);
+                     Append (Bdy, "         K := First (St);" & LF);
+                     Append (Bdy, "         while K < First (St + 1)" & LF);
+                     Append (Bdy, "           and then not (Cp >= Lo (K) and then Cp <= Hi (K))" & LF);
+                     Append (Bdy, "         loop" & LF);
+                     Append (Bdy, "            K := K + 1;" & LF);
+                     Append (Bdy, "         end loop;" & LF);
+                     Append (Bdy, "         exit when K = First (St + 1);" & LF);
+                     Append (Bdy, "         St := To (K);" & LF);
+                     Append (Bdy, "         I := I + N;" & LF);
+                     Append (Bdy, "      end loop;" & LF);
+                     Append (Bdy, "      return Best;" & LF);
+                     Append (Bdy, "   end Scan_" & Ada_Ident (NM) & ";" & LF & LF);
+                  end;
+               else
                Append (Bdy, "   function Scan_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
                Append (Bdy, LF);
@@ -2807,9 +2872,12 @@ package body HBNF_Ada is
                Append (Bdy, "   end Scan_" & Ada_Ident (NM) & ";");
                Append (Bdy, LF);
                Append (Bdy, LF);
+               end if;
             end;
          end if;
       end loop;
+      Append (Bdy, To_String (Wrappers));
+      end;
 
 
       --  The parser primitives (position, errors, literals, whitespace).

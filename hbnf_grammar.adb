@@ -299,6 +299,30 @@ package body HBNF_Grammar is
      (String, Jet_Entry, Ada.Strings.Hash, "=");
    Jets : Jet_Maps.Map;
 
+   --  Exception rules, `X = A - B`: X to its B, and to its A, for the check.
+   package Except_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (String, String, Ada.Strings.Hash, "=");
+   Excepts       : Except_Maps.Map;   --  X -> B
+   Except_Bases  : Except_Maps.Map;   --  X -> A
+   Pending_Except_A : Unbounded_String;   --  set by Parse_Body for its rule
+   Pending_Except_B : Unbounded_String;
+
+   function Index_Of (Rules : Rule_Vectors.Vector; Name : String)
+      return Natural is
+   begin
+      for I in 1 .. Natural (Rules.Length) loop
+         if To_String (Rules (I).Name) = Name then
+            return I;
+         end if;
+      end loop;
+      return 0;
+   end Index_Of;
+
+   function Is_Char_Rule_Plain (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean;
+   --  The scanner shapes (a sequence of code points ending in one repetition),
+   --  without the exception rules and their operands.
+
    --  yacc's %token declarations (see the parser): each name, with the
    --  spelling the comment under it gives, if any.
    type Declared_Token is record
@@ -391,6 +415,9 @@ package body HBNF_Grammar is
       Bnf_Spellings.Clear;
       Jets.Clear;
       Guards.Clear;
+      Excepts.Clear;
+      Except_Bases.Clear;
+      Pending_Except_B := Null_Unbounded_String;
       Declared_Tokens.Clear;
       Union_Sites.Clear;
       Greedy_Sites.Clear;
@@ -2053,6 +2080,26 @@ package body HBNF_Grammar is
    --  holds the rule's body, as the rest of this line would.
    function Parse_Body (P : in out Parser) return Element_Vectors.Vector is
    begin
+      --  `A - B`, the whole of a rule: A except what B matches (ISO 14977).
+      if Cur (P).Kind = T_Name
+        and then P.Toks (P.Pos + 1).Kind = T_Dash
+        and then P.Toks (P.Pos + 2).Kind = T_Name
+        and then P.Toks (P.Pos + 3).Kind in T_Newline | T_EOF | T_Comment
+      then
+         declare
+            V : Element_Vectors.Vector;
+         begin
+            Pending_Except_A := Cur (P).Text;
+            Pending_Except_B := P.Toks (P.Pos + 2).Text;
+            V.Append
+              (new Element'(Kind => Name, Min => 1, Max => 1,
+                            Name => Cur (P).Text, Fold => File_Fold_Names));
+            Next (P);
+            Next (P);
+            Next (P);
+            return V;
+         end;
+      end if;
       if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "grammar" then
          if P.Toks (P.Pos + 1).Kind /= T_String then
             raise Parse_Error with
@@ -3122,6 +3169,47 @@ package body HBNF_Grammar is
                   By_Name (To_String (Used (J).Name)),
                   Element_Vectors.Empty_Vector);
             end if;
+            --  The operands of an exception are tokens: text, read exactly.
+            if Excepts.Contains (To_String (Used (J).Name)) then
+               declare
+                  X : constant String := To_String (Used (J).Name);
+               begin
+                  for Side in 1 .. 2 loop
+                     declare
+                        Op : constant String :=
+                          (if Side = 1 then Except_Bases.Element (X)
+                           else Excepts.Element (X));
+                        D  : HBNF_Lookahead.Dfa_State_Vectors.Vector;
+                        Ok : Boolean := True;
+                        Why : Unbounded_String;
+                        K  : constant Natural := Index_Of (Rules, Op);
+                     begin
+                        if Is_Core_Name (Op) then
+                           null;
+                        elsif K = 0 then
+                           null;   --  an undefined name has its own message
+                        elsif Is_Dfa_Token (Rules, Op) then
+                           HBNF_Lookahead.Token_Dfa (Rules, Op, D, Ok, Why);
+                        elsif not Is_Char_Rule_Plain (Rules, Op) then
+                           Ok  := False;
+                           Why := To_Unbounded_String
+                             ("it is code, not text hbnf can read");
+                        end if;
+                        if not Ok then
+                           Report ("in rule `" & X & "`: `" & Op
+                                   & "` cannot be one token in `"
+                                   & Except_Bases.Element (X) & " - "
+                                   & Excepts.Element (X) & "`: "
+                                   & To_String (Why) & ASCII.LF
+                                   & "  `a - b` is the text `a` matches, "
+                                   & "unless `b` matches exactly that text; "
+                                   & "both are read as text, with no "
+                                   & "whitespace skipped inside");
+                        end if;
+                     end;
+                  end loop;
+               end;
+            end if;
             Check_Prose (Used (J).Pattern, To_String (Used (J).Name));
             Check_Undefined (Used (J).Pattern, To_String (Used (J).Name));
             --  `str`, `atom`, `word`, `int`, `bool`, `flag`, `uN` and `iN` are
@@ -4165,6 +4253,16 @@ package body HBNF_Grammar is
                     (To_String (Name),
                      Standing_Rule'(R   => Rules (Index (To_String (Name))),
                                     Raw => Raw));
+                  if Pending_Except_B /= Null_Unbounded_String then
+                     Excepts.Include (To_String (Name),
+                                      To_String (Pending_Except_B));
+                     Except_Bases.Include (To_String (Name),
+                                           To_String (Pending_Except_A));
+                     Pending_Except_B := Null_Unbounded_String;
+                  else
+                     Excepts.Exclude (To_String (Name));
+                     Except_Bases.Exclude (To_String (Name));
+                  end if;
                end;
             end if;
          end;
@@ -4476,6 +4574,11 @@ package body HBNF_Grammar is
                if not Seen (I) then
                   Seen (I) := True;
                   Walk (Rules (I).Pattern);
+                  --  An exception's second operand is in no pattern.
+                  if Excepts.Contains (To_String (Rules (I).Name)) then
+                     Mark (To_Unbounded_String
+                             (Excepts.Element (To_String (Rules (I).Name))));
+                  end if;
                   --  The file's `whitespace ws` rule is needed too (the
                   --  parser scans it), even though no pattern names it.
                   if Rules (I).Whitespace /= Null_Unbounded_String then
@@ -4611,7 +4714,20 @@ package body HBNF_Grammar is
       return Rec (Nm, 20);
    end Is_Char_Class;
 
-   function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
+   --  Is Name an operand of an exception rule (`X = A - B`: A or B)?
+   function Is_Except_Operand (Name : String) return Boolean is
+   begin
+      for C in Excepts.Iterate loop
+         if Except_Maps.Element (C) = Name
+           or else Except_Bases.Element (Except_Maps.Key (C)) = Name
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Except_Operand;
+
+   function Is_Char_Rule_Plain (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean is
       function Rec (N : String; Depth : Natural) return Boolean is
          J : Natural := 0;
@@ -4680,6 +4796,13 @@ package body HBNF_Grammar is
                         if Is_Core_Name (To_String (E.Name)) then
                            return False;
                         end if;
+                        --  An exception (`X = A - B`) is a token scanned by a
+                        --  function of its own; a rule that refers to it is a
+                        --  phrase rule that calls it, not one whose scanner
+                        --  would inline A and lose the exception.
+                        if Excepts.Contains (To_String (E.Name)) then
+                           return False;
+                        end if;
                         if not Rec (To_String (E.Name), Depth - 1) then
                            return False;
                         end if;
@@ -4705,7 +4828,26 @@ package body HBNF_Grammar is
       end Rec;
    begin
       return Rec (Nm, 20);
-   end Is_Char_Rule;
+   end Is_Char_Rule_Plain;
+
+   --  An operand of an exception that is not a scanner already is a token
+   --  whatever it is made of (groups, nested repetitions, alternatives of
+   --  words): its scanner is a deterministic automaton built from its text.
+   function Is_Dfa_Token (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean is
+      J : constant Natural := Index_Of (Rules, Nm);
+   begin
+      return Is_Except_Operand (Nm)
+        and then not Is_Core_Name (Nm)
+        and then J /= 0
+        and then Rules (J).Jet_Code = Null_Unbounded_String
+        and then not Is_Char_Rule_Plain (Rules, Nm);
+   end Is_Dfa_Token;
+
+   function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean is
+     (Excepts.Contains (Nm) or else Is_Dfa_Token (Rules, Nm)
+      or else Is_Char_Rule_Plain (Rules, Nm));
 
    function Is_Char_Token (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean is
@@ -4732,6 +4874,14 @@ package body HBNF_Grammar is
       then
          return True;
       end if;
+      --  The operands of an exception are scanned by the rule that excepts.
+      for C in Excepts.Iterate loop
+         if Except_Maps.Element (C) = Nm
+           or else Except_Bases.Element (Except_Maps.Key (C)) = Nm
+         then
+            return True;
+         end if;
+      end loop;
       for R of Rules loop
          if not Is_Char_Rule (Rules, To_String (R.Name)) then
             if Refers (R.Pattern) then
@@ -5077,6 +5227,12 @@ package body HBNF_Grammar is
                               when others      => E.Ada);
       end;
    end Jet_Body;
+
+   function Except_Base (Name : String) return String is
+     (if Except_Bases.Contains (Name) then Except_Bases.Element (Name) else "");
+
+   function Except_Operand (Name : String) return String is
+     (if Excepts.Contains (Name) then Excepts.Element (Name) else "");
 
    function Guard_Count return Natural is (Natural (Guards.Length));
 

@@ -884,7 +884,10 @@ package body HBNF_Compilable is
       --  by more elements, or a repetition of a repetition -- is diagnosed
       --  here, before emission, by running the DNF builder once (it raises).
       for R of Rules loop
-         if Is_Char_Rule (Rules, To_String (R.Name)) then
+         if Is_Char_Rule (Rules, To_String (R.Name))
+           and then not Is_Dfa_Token (Rules, To_String (R.Name))
+           and then HBNF_Grammar.Except_Operand (To_String (R.Name)) = ""
+         then
             declare
                Dummy : constant Cp_Branch_Atom_Vectors.Vector :=
                  Char_DNF (Rules, To_String (R.Name));

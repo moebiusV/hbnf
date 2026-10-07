@@ -4,6 +4,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Mustache;
 with HBNF_Compilable;
+with HBNF_Lookahead;
 
 package body HBNF_Zig is
 
@@ -2521,9 +2522,55 @@ package body HBNF_Zig is
             then
                declare
                   NM  : constant String := To_String (Rules (I).Name);
-                  DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
+                  DNF : constant Cp_Branch_Atom_Vectors.Vector := (if Is_Dfa_Token (Rules, NM)
+                       or else HBNF_Grammar.Except_Operand (NM) /= ""
+                    then Cp_Branch_Atom_Vectors.Empty_Vector
+                    else Char_DNF (Rules, NM));
                begin
-                  Append (Res, "fn scan_" & Zig_Snake (NM)
+                  if HBNF_Grammar.Except_Operand (NM) /= "" then
+Append (Res, "fn scan_" & Zig_Snake (NM)
+  & "(s: []const u8, pos: usize, len: usize) usize {" & LF);
+Append (Res, "    const n = scan_" & Zig_Snake (HBNF_Grammar.Except_Base (NM))
+  & "(s, pos, len);" & LF);
+Append (Res, "    if (n == 0 or scan_" & Zig_Snake (HBNF_Grammar.Except_Operand (NM))
+  & "(s, pos, pos + n) == n) return 0;" & LF);
+Append (Res, "    return n;" & LF & "}" & LF & LF);
+elsif Is_Dfa_Token (Rules, NM) then
+declare
+   D   : HBNF_Lookahead.Dfa_State_Vectors.Vector;
+   Ok  : Boolean;
+   Why : Unbounded_String;
+   Lo, Hi, To, First, Acc : Unbounded_String;
+begin
+   HBNF_Lookahead.Token_Dfa (Rules, NM, D, Ok, Why);
+   HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
+   Append (Res, "fn scan_" & Zig_Snake (NM)
+     & "(s: []const u8, pos: usize, len: usize) usize {" & LF);
+   Append (Res, "    const lo = [_]u32{" & To_String (Lo) & "};" & LF);
+   Append (Res, "    const hi = [_]u32{" & To_String (Hi) & "};" & LF);
+   Append (Res, "    const to = [_]u16{" & To_String (To) & "};" & LF);
+   Append (Res, "    const first = [_]u16{" & To_String (First) & "};" & LF);
+   Append (Res, "    const acc = [_]u8{" & To_String (Acc) & "};" & LF);
+   Append (Res, "    var i: usize = pos;" & LF);
+   Append (Res, "    var best: usize = 0;" & LF);
+   Append (Res, "    var st: usize = 0;" & LF);
+   Append (Res, "    while (true) {" & LF);
+   Append (Res, "        if (acc[st] != 0) best = i - pos;" & LF);
+   Append (Res, "        if (i >= len) break;" & LF);
+   Append (Res, "        var c: u32 = 0;" & LF);
+   Append (Res, "        const n = decode_utf8(s, i, len, &c);" & LF);
+   Append (Res, "        if (n == 0) break;" & LF);
+   Append (Res, "        var k: usize = first[st];" & LF);
+   Append (Res, "        const end: usize = first[st + 1];" & LF);
+   Append (Res, "        while (k < end and !(c >= lo[k] and c <= hi[k])) k += 1;" & LF);
+   Append (Res, "        if (k == end) break;" & LF);
+   Append (Res, "        st = to[k];" & LF);
+   Append (Res, "        i += n;" & LF);
+   Append (Res, "    }" & LF);
+   Append (Res, "    return best;" & LF & "}" & LF & LF);
+end;
+else
+Append (Res, "fn scan_" & Zig_Snake (NM)
                     & "(s: []const u8, pos: usize, len: usize) usize {");
                   Append (Res, LF);
                   if Natural (DNF.Length) = 1 then
@@ -2599,6 +2646,7 @@ package body HBNF_Zig is
                   Append (Res, "}");
                   Append (Res, LF);
                   Append (Res, LF);
+                  end if;
                end;
             end if;
          end loop;

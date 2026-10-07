@@ -4,6 +4,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Mustache;
 with HBNF_Compilable;
+with HBNF_Lookahead;
 
 package body HBNF_C is
 
@@ -5061,9 +5062,51 @@ package body HBNF_C is
          then
             declare
                NM  : constant String := To_String (Rules (I).Name);
-               DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
+               DNF : constant Cp_Branch_Atom_Vectors.Vector := (if Is_Dfa_Token (Rules, NM)
+                       or else HBNF_Grammar.Except_Operand (NM) /= ""
+                    then Cp_Branch_Atom_Vectors.Empty_Vector
+                    else Char_DNF (Rules, NM));
             begin
-               Append (Res, "static size_t scan_" & C_Name (NM)
+               if HBNF_Grammar.Except_Operand (NM) /= "" then
+Append (Res, "static size_t scan_" & C_Name (NM)
+  & "(const char *s, size_t pos, size_t len) {" & LF);
+Append (Res, "    size_t n = scan_" & C_Name (HBNF_Grammar.Except_Base (NM))
+  & "(s, pos, len);" & LF);
+Append (Res, "    if (n == 0 || scan_" & C_Name (HBNF_Grammar.Except_Operand (NM))
+  & "(s, pos, pos + n) == n) return 0;" & LF);
+Append (Res, "    return n;" & LF & "}" & LF & LF);
+elsif Is_Dfa_Token (Rules, NM) then
+declare
+   D   : HBNF_Lookahead.Dfa_State_Vectors.Vector;
+   Ok  : Boolean;
+   Why : Unbounded_String;
+   Lo, Hi, To, First, Acc : Unbounded_String;
+begin
+   HBNF_Lookahead.Token_Dfa (Rules, NM, D, Ok, Why);
+   HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
+   Append (Res, "static size_t scan_" & C_Name (NM)
+     & "(const char *s, size_t pos, size_t len) {" & LF);
+   Append (Res, "    static const uint32_t lo[] = {" & To_String (Lo) & "};" & LF);
+   Append (Res, "    static const uint32_t hi[] = {" & To_String (Hi) & "};" & LF);
+   Append (Res, "    static const uint16_t to[] = {" & To_String (To) & "};" & LF);
+   Append (Res, "    static const uint16_t first[] = {" & To_String (First) & "};" & LF);
+   Append (Res, "    static const unsigned char acc[] = {" & To_String (Acc) & "};" & LF);
+   Append (Res, "    size_t i = pos, best = 0; unsigned st = 0;" & LF);
+   Append (Res, "    for (;;) {" & LF);
+   Append (Res, "        uint32_t c; size_t n; unsigned k;" & LF);
+   Append (Res, "        if (acc[st]) best = i - pos;" & LF);
+   Append (Res, "        if (i >= len) break;" & LF);
+   Append (Res, "        n = hbnf_decode_utf8(s, i, len, &c);" & LF);
+   Append (Res, "        if (!n) break;" & LF);
+   Append (Res, "        for (k = first[st]; k < first[st + 1]; k++)" & LF);
+   Append (Res, "            if (c >= lo[k] && c <= hi[k]) break;" & LF);
+   Append (Res, "        if (k == first[st + 1]) break;" & LF);
+   Append (Res, "        st = to[k]; i += n;" & LF);
+   Append (Res, "    }" & LF);
+   Append (Res, "    return best;" & LF & "}" & LF & LF);
+end;
+else
+Append (Res, "static size_t scan_" & C_Name (NM)
                  & "(const char *s, size_t pos, size_t len) {");
                Append (Res, LF);
                if Comment_Kind (Rules, NM) = "own" then
@@ -5136,6 +5179,7 @@ package body HBNF_C is
                Append (Res, "}");
                Append (Res, LF);
                Append (Res, LF);
+               end if;
             end;
          end if;
       end loop;

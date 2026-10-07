@@ -4,6 +4,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Mustache;
 with HBNF_Compilable;
+with HBNF_Lookahead;
 
 package body HBNF_Rust is
 
@@ -2190,9 +2191,51 @@ package body HBNF_Rust is
             then
                declare
                   NM  : constant String := To_String (Rules (I).Name);
-                  DNF : constant Cp_Branch_Atom_Vectors.Vector := Char_DNF (Rules, NM);
+                  DNF : constant Cp_Branch_Atom_Vectors.Vector := (if Is_Dfa_Token (Rules, NM)
+                       or else HBNF_Grammar.Except_Operand (NM) /= ""
+                    then Cp_Branch_Atom_Vectors.Empty_Vector
+                    else Char_DNF (Rules, NM));
                begin
-                  Append (Res, "fn scan_" & Rust_Snake (NM)
+                  if HBNF_Grammar.Except_Operand (NM) /= "" then
+Append (Res, "fn scan_" & Rust_Snake (NM)
+  & "(s: &[u8], pos: usize, len: usize) -> usize {" & LF);
+Append (Res, "    let n = scan_" & Rust_Snake (HBNF_Grammar.Except_Base (NM))
+  & "(s, pos, len);" & LF);
+Append (Res, "    if n == 0 || scan_" & Rust_Snake (HBNF_Grammar.Except_Operand (NM))
+  & "(s, pos, pos + n) == n { return 0; }" & LF);
+Append (Res, "    n" & LF & "}" & LF & LF);
+elsif Is_Dfa_Token (Rules, NM) then
+declare
+   D   : HBNF_Lookahead.Dfa_State_Vectors.Vector;
+   Ok  : Boolean;
+   Why : Unbounded_String;
+   Lo, Hi, To, First, Acc : Unbounded_String;
+begin
+   HBNF_Lookahead.Token_Dfa (Rules, NM, D, Ok, Why);
+   HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
+   Append (Res, "fn scan_" & Rust_Snake (NM)
+     & "(s: &[u8], pos: usize, len: usize) -> usize {" & LF);
+   Append (Res, "    const LO: &[u32] = &[" & To_String (Lo) & "];" & LF);
+   Append (Res, "    const HI: &[u32] = &[" & To_String (Hi) & "];" & LF);
+   Append (Res, "    const TO: &[u16] = &[" & To_String (To) & "];" & LF);
+   Append (Res, "    const FIRST: &[u16] = &[" & To_String (First) & "];" & LF);
+   Append (Res, "    const ACC: &[u8] = &[" & To_String (Acc) & "];" & LF);
+   Append (Res, "    let (mut i, mut best, mut st) = (pos, 0usize, 0usize);" & LF);
+   Append (Res, "    loop {" & LF);
+   Append (Res, "        if ACC[st] != 0 { best = i - pos; }" & LF);
+   Append (Res, "        if i >= len { break; }" & LF);
+   Append (Res, "        let (n, c) = decode_utf8(s, i, len);" & LF);
+   Append (Res, "        if n == 0 { break; }" & LF);
+   Append (Res, "        let mut k = FIRST[st] as usize;" & LF);
+   Append (Res, "        let end = FIRST[st + 1] as usize;" & LF);
+   Append (Res, "        while k < end && !(c >= LO[k] && c <= HI[k]) { k += 1; }" & LF);
+   Append (Res, "        if k == end { break; }" & LF);
+   Append (Res, "        st = TO[k] as usize; i += n;" & LF);
+   Append (Res, "    }" & LF);
+   Append (Res, "    best" & LF & "}" & LF & LF);
+end;
+else
+Append (Res, "fn scan_" & Rust_Snake (NM)
                     & "(s: &[u8], pos: usize, len: usize) -> usize {");
                   Append (Res, LF);
                   if Natural (DNF.Length) = 1 then
@@ -2249,6 +2292,7 @@ package body HBNF_Rust is
                   Append (Res, "}");
                   Append (Res, LF);
                   Append (Res, LF);
+                  end if;
                end;
             end if;
          end loop;

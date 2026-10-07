@@ -126,6 +126,45 @@ package HBNF_Lookahead is
    --  Witness is that text.  A jet, a recursive rule or a built-in scanner is
    --  taken to match nothing here, so this never refuses a grammar on a guess.
 
+   --  A token as a deterministic automaton, for the scanners the backends
+   --  write.  State 1 is the start; a code point with no edge from a state is
+   --  a dead end.  The scanner takes the longest text that ends in an
+   --  accepting state, so there is no choice to make and nothing to conflict.
+   type Dfa_Edge is record
+      Lo, Hi : Natural;   --  code points
+      To     : Positive;
+   end record;
+
+   package Dfa_Edge_Vectors is new Ada.Containers.Vectors (Positive, Dfa_Edge);
+
+   type Dfa_State is record
+      Accepting : Boolean := False;
+      Edges  : Dfa_Edge_Vectors.Vector;   --  sorted, disjoint
+   end record;
+
+   package Dfa_State_Vectors is new Ada.Containers.Vectors (Positive, Dfa_State);
+
+   procedure Dfa_Tables
+     (D : Dfa_State_Vectors.Vector;
+      Lo, Hi, To, First, Acc : out Ada.Strings.Unbounded.Unbounded_String);
+   --  The automaton as comma-separated number lists for a backend's table:
+   --  the edges (Lo, Hi, To: 0-based state), where each state's edges begin
+   --  (First, one more entry than states) and which states accept (Acc, 0/1).
+   --  Each list is padded with two harmless entries so none is ever shorter
+   --  than two (a one-element aggregate is not valid in every language).
+
+   procedure Token_Dfa
+     (Rules : Rule_Vectors.Vector; Nm : String;
+      D     : out Dfa_State_Vectors.Vector;
+      Ok    : out Boolean;
+      Why   : out Ada.Strings.Unbounded.Unbounded_String);
+   --  The rule Nm, read as text: literals, classes, groups, alternatives,
+   --  repetitions and other rules built of those.  Not Ok, and Why says what
+   --  stops it, when it uses a jet or a built-in scanner, refers to itself,
+   --  repeats more than 32 times with an upper bound, or needs more than 2000
+   --  states: it is never approximated, because a scanner must match exactly
+   --  what the grammar says.
+
 private
 
    type Cp_Range is record

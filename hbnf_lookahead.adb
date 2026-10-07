@@ -516,6 +516,11 @@ package body HBNF_Lookahead is
    Max_States     : constant := 2_000;   --  past this a rule is "any text"
    Max_Nodes      : constant := 400;   --  pairs of state sets searched
 
+   Approximated : Boolean := False;
+   --  Set by Build when the automaton is larger than the text it stands for
+   --  (a jet, a recursion, a bounded repetition past 32): Token_Dfa refuses.
+   Why_Approximated : Unbounded_String;
+
    type Edge is record
       Lo, Hi : Natural;
       To     : Positive;
@@ -603,6 +608,7 @@ package body HBNF_Lookahead is
             --  Matches nothing: no way from here to the end.
             return (S, New_State);
          end if;
+         Approximated := True;
          Edge_To (S, 0, Max_Code_Point, S);
          return (S, S);
       end Any_Run;
@@ -654,6 +660,14 @@ package body HBNF_Lookahead is
                     or else Rules (J).Jet_Code /= Null_Unbounded_String
                     or else (for some X of Stack => X = J)
                   then
+                     Why_Approximated := To_Unbounded_String
+                       ((if J = 0 then "`" & To_String (E.Name)
+                                       & "` is not a rule"
+                         elsif Rules (J).Jet_Code /= Null_Unbounded_String
+                         then "`" & To_String (E.Name)
+                              & "` is code (a built-in scanner or %scan), "
+                              & "not text hbnf can see into"
+                         else "`" & To_String (E.Name) & "` refers to itself"));
                      return Any_Run;
                   end if;
                   Stack.Append (J);
@@ -683,6 +697,12 @@ package body HBNF_Lookahead is
       begin
          if E.Min = 1 and then E.Max = 1 then
             return One (E, Depth);
+         end if;
+         if E.Min > 32 or else E.Max > 32 then
+            Approximated := True;
+            Why_Approximated := To_Unbounded_String
+              ("a repetition with a bound past 32 (write it as `n*` and a "
+               & "check, or split it)");
          end if;
          S := New_State;
          Cur := S;
@@ -1341,5 +1361,150 @@ package body HBNF_Lookahead is
          end loop;
       end loop;
    end Check_Choice;
+
+   procedure Token_Dfa
+     (Rules : Rule_Vectors.Vector; Nm : String;
+      D     : out Dfa_State_Vectors.Vector;
+      Ok    : out Boolean;
+      Why   : out Ada.Strings.Unbounded.Unbounded_String)
+   is
+      J : constant Natural := Find (Rules, Nm);
+
+      package Set_Vectors is new Ada.Containers.Vectors
+        (Positive, State_Sets.Set, State_Sets."=");
+      package Cp_Sets2 is new Ada.Containers.Ordered_Sets (Natural);
+      Seen : Set_Vectors.Vector;   --  the NFA state set of each DFA state
+   begin
+      D.Clear;
+      Why := Null_Unbounded_String;
+      Ok  := False;
+      if J = 0 then
+         Why := To_Unbounded_String ("`" & Nm & "` is not a rule");
+         return;
+      end if;
+      Approximated := False;
+      Why_Approximated := Null_Unbounded_String;
+      declare
+         A : constant Automaton :=
+           Build (Rules, J, Rules (J).Pattern, 1,
+                  Natural (Rules (J).Pattern.Length));
+         Start : State_Sets.Set;
+         Next  : Positive := 1;
+      begin
+         if Approximated then
+            Why := Why_Approximated;
+            return;
+         end if;
+         Start.Insert (A.Start);
+         Seen.Append (Closure (A, Start));
+         D.Append (Dfa_State'(others => <>));
+         while Next <= Natural (Seen.Length) loop
+            declare
+               Cur    : constant State_Sets.Set := Seen (Next);
+               Bounds : Cp_Sets2.Set;
+               Edges  : Dfa_Edge_Vectors.Vector;
+            begin
+               D (Next).Accepting := Cur.Contains (A.Final);
+               for X of Cur loop
+                  for E of A.States (X).Edges loop
+                     Bounds.Include (E.Lo);
+                     if E.Hi < Max_Code_Point then
+                        Bounds.Include (E.Hi + 1);
+                     end if;
+                  end loop;
+               end loop;
+               declare
+                  Lo : Natural;
+               begin
+                  for C in Bounds.Iterate loop
+                     Lo := Cp_Sets2.Element (C);
+                     declare
+                        Hi : constant Natural :=
+                          (if not Cp_Sets2.Has_Element (Cp_Sets2.Next (C))
+                           then Max_Code_Point
+                           else Cp_Sets2.Element (Cp_Sets2.Next (C)) - 1);
+                        T  : constant State_Sets.Set := Step (A, Cur, Lo);
+                        Id : Natural := 0;
+                     begin
+                        if not T.Is_Empty then
+                           for K in 1 .. Natural (Seen.Length) loop
+                              if State_Sets."=" (Seen (K), T) then
+                                 Id := K;
+                                 exit;
+                              end if;
+                           end loop;
+                           if Id = 0 then
+                              if Natural (Seen.Length) >= Max_States then
+                                 Why := To_Unbounded_String
+                                   ("it needs more than"
+                                    & Integer'Image (Max_States)
+                                    & " states as one token");
+                                 D.Clear;
+                                 return;
+                              end if;
+                              Seen.Append (T);
+                              D.Append (Dfa_State'(others => <>));
+                              Id := Natural (Seen.Length);
+                           end if;
+                           --  Join a neighbour that goes to the same state.
+                           if not Edges.Is_Empty
+                             and then Edges.Last_Element.To = Id
+                             and then Edges.Last_Element.Hi + 1 = Lo
+                           then
+                              Edges.Reference (Edges.Last_Index).Hi := Hi;
+                           else
+                              Edges.Append (Dfa_Edge'(Lo, Hi, Id));
+                           end if;
+                        end if;
+                     end;
+                  end loop;
+               end;
+               D (Next).Edges := Edges;
+               Next := Next + 1;
+            end;
+         end loop;
+      end;
+      Ok := True;
+   end Token_Dfa;
+
+   procedure Dfa_Tables
+     (D : Dfa_State_Vectors.Vector;
+      Lo, Hi, To, First, Acc : out Ada.Strings.Unbounded.Unbounded_String)
+   is
+      Count : Natural := 0;
+
+      function Num (N : Natural) return String is
+         I : constant String := Natural'Image (N);
+      begin
+         return I (I'First + 1 .. I'Last) & ", ";
+      end Num;
+   begin
+      Lo := Null_Unbounded_String;
+      Hi := Null_Unbounded_String;
+      To := Null_Unbounded_String;
+      First := Null_Unbounded_String;
+      Acc := Null_Unbounded_String;
+      for S of D loop
+         Append (First, Num (Count));
+         Append (Acc, (if S.Accepting then "1, " else "0, "));
+         for E of S.Edges loop
+            Append (Lo, Num (E.Lo));
+            Append (Hi, Num (E.Hi));
+            Append (To, Num (E.To - 1));
+            Count := Count + 1;
+         end loop;
+      end loop;
+      declare
+         I : constant String := Natural'Image (Count);
+      begin
+         Append (First, I (I'First + 1 .. I'Last));
+      end;
+      --  The padding: an edge that matches nothing (lo > hi), and a state
+      --  that does not accept.
+      Append (Lo, "1, 1");
+      Append (Hi, "0, 0");
+      Append (To, "0, 0");
+      Append (Acc, "0");
+   end Dfa_Tables;
 
 end HBNF_Lookahead;

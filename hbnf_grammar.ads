@@ -72,6 +72,14 @@ package HBNF_Grammar is
       Lo, Hi : Natural;
    end record;
    type Guard_Range_Array is array (Positive range <>) of Guard_Range;
+   --  The exception `X = A - B` (ISO 14977's): X matches what A matches unless
+   --  B matches exactly the same text.  A and B are rules of characters.
+   function Except_Base (Name : String) return String;
+   --  The A of the exception rule Name, or "".
+   function Except_Operand (Name : String) return String;
+   --  The B of the exception rule Name, or "" when Name is not one.  Its A is
+   --  the rule's own body, a single name.
+
    function Guard_Count return Natural;
    function Guard_Ranges (Id : Positive) return Guard_Range_Array;
    function Guard_Eoi (Id : Positive) return Boolean;
@@ -280,6 +288,11 @@ package HBNF_Grammar is
    --  one full DNF branch per iteration (multi-code-point included).  A %i
    --  literal or a group is not char-level (Char_DNF raises for the shapes it
    --  cannot yet scan).
+   function Is_Dfa_Token (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean;
+   --  An operand of an exception (`A - B`) whose scanner is an automaton
+   --  built from its text rather than a sequence of code points.
+
    function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean;
 
