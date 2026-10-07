@@ -337,7 +337,7 @@ package HBNF_Grammar is
    --  `--ebnf`: read every file as ISO 14977 EBNF: `;` ends a rule (and is
    --  not a comment), `,` joins elements, `{ x }` repeats, `n * x` is exactly
    --  n, `'x'` and `"x"` are strings without escapes, `? words ?` is a rule
-   --  not written yet.  The directive `ebnf` does the same for one file.
+   --  not written yet.  The line `dialect ebnf` does the same for one file.
 
    procedure Set_Root (Name : String);
 

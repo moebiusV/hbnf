@@ -110,7 +110,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare] [--root=RULE] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -131,6 +131,15 @@ begin
             Conf := True;
          elsif A'Length >= 7 and then A (1 .. 7) = "--root=" then
             HBNF_Grammar.Set_Root (A (8 .. A'Last));
+         elsif A'Length >= 10 and then A (1 .. 10) = "--dialect=" then
+            if A (11 .. A'Last) = "abnf" then
+               HBNF_Grammar.Set_Abnf (True);
+            elsif A (11 .. A'Last) = "ebnf" then
+               HBNF_Grammar.Set_Ebnf (True);
+            elsif A (11 .. A'Last) not in "bnf" | "ybnf" | "hbnf" then
+               raise HBNF_Grammar.Parse_Error with
+                 "--dialect= takes bnf, ebnf, abnf, ybnf or hbnf";
+            end if;
          elsif A = "--abnf" then
             HBNF_Grammar.Set_Abnf (True);
          elsif A = "--ebnf" then

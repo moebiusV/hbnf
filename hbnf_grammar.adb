@@ -582,11 +582,12 @@ package body HBNF_Grammar is
       Col  : Positive := 1;
       Lang : constant Lang_Kind := Detect_Language (Text);
 
-      --  `abnf`, a directive on a line of its own, reads this file as RFC 5234
-      --  reads ABNF, as `--abnf` does for a run: a backslash in a string is a
-      --  backslash.  (Read here, ahead of the lexing it changes; the parser
-      --  takes it afterwards and sets the rest.)
-      function Has_Directive (Word : String) return Boolean is
+      --  `dialect abnf | ebnf | ...`, a directive on a line of its own, or
+      --  `--dialect=` / `--abnf` / `--ebnf`.  The lexer needs two of them
+      --  ahead of the lexing they change: ABNF reads a backslash in a string
+      --  as a backslash; ISO 14977 ends a rule with `;`, repeats with
+      --  `{ x }`, joins with `,`, and reads `n * x` as exactly n.
+      function Dialect_Is (Name : String) return Boolean is
          K : Natural := Text'First;
       begin
          while K <= Text'Last loop
@@ -601,26 +602,34 @@ package body HBNF_Grammar is
                while E <= Text'Last and then Text (E) /= ASCII.LF loop
                   E := E + 1;
                end loop;
-               if E - L >= Word'Length
-                 and then Text (L .. L + Word'Length - 1) = Word
-                 and then (E - L = Word'Length
-                           or else Text (L + Word'Length) in ' ' | ASCII.HT
-                                   | ';' | ASCII.CR)
+               if E - L > 8 and then Text (L .. L + 7) = "dialect "
                then
-                  return True;
+                  declare
+                     V : Natural := L + 8;
+                     W : Natural;
+                  begin
+                     while V < E and then Text (V) in ' ' | ASCII.HT loop
+                        V := V + 1;
+                     end loop;
+                     W := V;
+                     while W < E and then Text (W) not in ' ' | ASCII.HT
+                       | ';' | ASCII.CR
+                     loop
+                        W := W + 1;
+                     end loop;
+                     if Text (V .. W - 1) = Name then
+                        return True;
+                     end if;
+                  end;
                end if;
                K := E + 1;
             end;
          end loop;
          return False;
-      end Has_Directive;
+      end Dialect_Is;
 
-      Abnf_Here : constant Boolean := Abnf_Mode or else Has_Directive ("abnf");
-
-      --  `ebnf`, a directive on a line of its own, or `--ebnf`: ISO 14977.  A
-      --  line end is white space, `;` ends a rule, `,` joins, `{ x }` repeats,
-      --  `n * x` is exactly n, and strings have no escapes.
-      Ebnf_Here : constant Boolean := Ebnf_Mode or else Has_Directive ("ebnf");
+      Abnf_Here : constant Boolean := Abnf_Mode or else Dialect_Is ("abnf");
+      Ebnf_Here : constant Boolean := Ebnf_Mode or else Dialect_Is ("ebnf");
 
       --  A backslash in a string is a backslash, in ABNF and in EBNF.
       Raw_Strings : constant Boolean := Abnf_Here or else Ebnf_Here;
@@ -747,7 +756,7 @@ package body HBNF_Grammar is
                        and then Toks (K).Line = Line
                        and then Toks (K).Kind = T_Name
                        and then To_String (Toks (K).Text) in
-                                  "ebnf" | "abnf" | "include" | "language"
+                                  "dialect" | "include" | "language"
                                   | "sensitivity" | "whitespace" | "keywords"
                                   | "statements" | "macros" | "includes"
                                   | "entry" | "prefix" | "wordchars"
@@ -3453,8 +3462,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "entry"
                               or else To_String (Cur (P).Text) = "includes"
                               or else To_String (Cur (P).Text) = "sensitivity"
-                              or else To_String (Cur (P).Text) = "abnf"
-                              or else To_String (Cur (P).Text) = "ebnf"
+                              or else To_String (Cur (P).Text) = "dialect"
                               or else To_String (Cur (P).Text) = "whitespace"
                               or else To_String (Cur (P).Text) = "keywords"))
          then
@@ -3488,22 +3496,32 @@ package body HBNF_Grammar is
                   Lang_Line := Cur (P).Line;
                   Next (P);
                elsif Cur (P).Kind = T_Name
-                 and then To_String (Cur (P).Text) = "ebnf"
-                 and then Ends_Directive (P, 1)
+                 and then To_String (Cur (P).Text) = "dialect"
                then
-                  --  `ebnf`: this file is ISO 14977's notation.  The lexer has
-                  --  read it as such; there is nothing more to set.
+                  --  `dialect bnf | ebnf | abnf | ybnf | hbnf`: the notation
+                  --  this file is written in, one notation read in its
+                  --  dialects.  The lexer has read abnf and ebnf already (a
+                  --  backslash, a `;`, a `{`); here `abnf` also says nothing
+                  --  is skipped between a rule's elements and a string is
+                  --  case-insensitive, which later directives may still
+                  --  change.  The others change nothing more: their
+                  --  spellings are read in every file.
                   Next (P);
-               elsif Cur (P).Kind = T_Name
-                 and then To_String (Cur (P).Text) = "abnf"
-                 and then Ends_Directive (P, 1)
-               then
-                  --  `abnf`: this file is RFC 5234's notation: nothing is
-                  --  skipped between a rule's elements, a string is
-                  --  case-insensitive, and a backslash in one is a backslash.
-                  --  Later directives may still say otherwise.
-                  File_No_Case := True;
-                  File_Whitespace := Null_Unbounded_String;
+                  if Cur (P).Kind /= T_Name
+                    or else To_String (Cur (P).Text)
+                            not in "bnf" | "ebnf" | "abnf" | "ybnf" | "hbnf"
+                  then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":"
+                       & Integer'Image (Cur (P).Col)
+                       & ": `dialect` takes `bnf`, `ebnf` (ISO 14977), "
+                       & "`abnf` (RFC 5234), `ybnf` (yacc and bison) or "
+                       & "`hbnf` (this notation, the default)";
+                  end if;
+                  if To_String (Cur (P).Text) = "abnf" then
+                     File_No_Case := True;
+                     File_Whitespace := Null_Unbounded_String;
+                  end if;
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "sensitivity"
