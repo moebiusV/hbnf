@@ -49,7 +49,7 @@ package body HBNF_Ada is
       Buf   : U;
       First : Boolean := True;
    begin
-      for C of S loop
+      for C of HBNF_Grammar.Prefixed (S) loop
          if C = '-' then
             Append (Buf, '_');
          elsif First and then C in 'a' .. 'z' then

@@ -395,7 +395,7 @@ package body HBNF_C is
    function C_Name (S : String) return String is
       Buf : U;
    begin
-      for C of S loop
+      for C of HBNF_Grammar.Prefixed (S) loop
          Append (Buf, (if C = '-' then '_' else C));
       end loop;
       return To_String (Buf);

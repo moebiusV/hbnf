@@ -201,6 +201,7 @@ begin
       if Prefix /= Null_Unbounded_String then
          HBNF_Grammar.Set_Type_Prefix (To_String (Prefix));
       end if;
+      HBNF_Grammar.Note_Rule_Names (Rules);
       HBNF_Compilable.Check (Rules, B);
       if B = "c" then
          if Conf then

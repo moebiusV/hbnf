@@ -307,6 +307,12 @@ package body HBNF_Grammar is
    Pending_Except_A : Unbounded_String;   --  set by Parse_Body for its rule
    Pending_Except_B : Unbounded_String;
 
+   --  The dialect, for the prefix on generated identifiers: the one a flag
+   --  named (kept across files), else the first a file's `dialect` line named.
+   Flag_Dialect : Unbounded_String;
+   Emitted_Rules : Path_Sets.Set;
+   File_Dialect : Unbounded_String;
+
    function Index_Of (Rules : Rule_Vectors.Vector; Name : String)
       return Natural is
    begin
@@ -417,6 +423,7 @@ package body HBNF_Grammar is
       Guards.Clear;
       Excepts.Clear;
       Except_Bases.Clear;
+      File_Dialect := Null_Unbounded_String;
       Pending_Except_B := Null_Unbounded_String;
       Declared_Tokens.Clear;
       Union_Sites.Clear;
@@ -3056,7 +3063,11 @@ package body HBNF_Grammar is
                      and then (for some E of Rules (J).Pattern =>
                                  E.Kind = Name or else E.Kind = Group))
                     or else (Old /= To_Lower (Old)
-                             and then Is_Core_Name (To_Lower (Old))))
+                             and then Is_Core_Name (To_Lower (Old))
+                             --  A dialect's prefix already keeps `WORD`
+                             --  and `word` apart.
+                             and then Flag_Dialect = Null_Unbounded_String
+                             and then File_Dialect = Null_Unbounded_String))
                then
                   declare
                      Fresh : constant Unbounded_String :=
@@ -3242,13 +3253,22 @@ package body HBNF_Grammar is
             declare
                K : constant String := To_Lower (To_String (Used (J).Name));
             begin
-               if Lower.Contains (K) then
+               if Lower.Contains (K)
+                 --  A dialect's prefix keeps a rule `WORD` apart from the
+                 --  built-in `word`, which has none.
+                 and then not ((Flag_Dialect /= Null_Unbounded_String
+                                or else File_Dialect /= Null_Unbounded_String)
+                               and then
+                                 (Is_Core_Name (To_String (Used (J).Name))
+                                  or else Is_Core_Name
+                                    (To_String (Used (Lower (K)).Name))))
+               then
                   Report ("rules `" & To_String (Used (Lower (K)).Name)
                           & "` and `" & To_String (Used (J).Name)
                           & "` differ only in case; ABNF reads them as one "
                           & "name, and so would the generated code");
                else
-                  Lower.Insert (K, J);
+                  Lower.Include (K, J);
                end if;
             end;
          end loop;
@@ -3784,6 +3804,9 @@ package body HBNF_Grammar is
                        & ": `dialect` takes `bnf`, `ebnf` (ISO 14977), "
                        & "`abnf` (RFC 5234), `ybnf` (yacc and bison) or "
                        & "`hbnf` (this notation, the default)";
+                  end if;
+                  if File_Dialect = Null_Unbounded_String then
+                     File_Dialect := Cur (P).Text;
                   end if;
                   if To_String (Cur (P).Text) = "abnf" then
                      File_No_Case := True;
@@ -5255,10 +5278,16 @@ package body HBNF_Grammar is
    procedure Set_Ebnf (On : Boolean) is
    begin
       Ebnf_Mode := On;
+      if On and then Flag_Dialect = Null_Unbounded_String then
+         Flag_Dialect := To_Unbounded_String ("ebnf");
+      end if;
    end Set_Ebnf;
 
    procedure Set_Dialect (Name : String) is
    begin
+      if Name in "bnf" | "ebnf" | "abnf" | "ybnf" | "hbnf" then
+         Flag_Dialect := To_Unbounded_String (Name);
+      end if;
       if Name = "abnf" then
          Abnf_Mode := True;
       elsif Name = "ebnf" then
@@ -5275,7 +5304,31 @@ package body HBNF_Grammar is
    procedure Set_Abnf (On : Boolean) is
    begin
       Abnf_Mode := On;
+      if On and then Flag_Dialect = Null_Unbounded_String then
+         Flag_Dialect := To_Unbounded_String ("abnf");
+      end if;
    end Set_Abnf;
+
+   procedure Note_Rule_Names (Rules : Rule_Vectors.Vector) is
+   begin
+      Emitted_Rules.Clear;
+      for R of Rules loop
+         Emitted_Rules.Include (To_String (R.Name));
+      end loop;
+   end Note_Rule_Names;
+
+   function Prefixed (S : String) return String is
+      D : constant Unbounded_String :=
+        (if Flag_Dialect /= Null_Unbounded_String then Flag_Dialect
+         else File_Dialect);
+   begin
+      if D = Null_Unbounded_String or else Is_Core_Name (S) or else S = "ws"
+        or else not Emitted_Rules.Contains (S)
+      then
+         return S;
+      end if;
+      return To_String (D) & "_" & S;
+   end Prefixed;
 
    procedure Set_Root (Name : String) is
    begin

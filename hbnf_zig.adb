@@ -57,7 +57,7 @@ package body HBNF_Zig is
    function Zig_Snake (S : String) return String is
       Buf : U;
    begin
-      for C of S loop
+      for C of HBNF_Grammar.Prefixed (S) loop
          if C = '-' then
             Append (Buf, '_');
          elsif C in 'A' .. 'Z' then
@@ -74,7 +74,7 @@ package body HBNF_Zig is
       Buf : U;
       Up  : Boolean := True;
    begin
-      for C of S loop
+      for C of HBNF_Grammar.Prefixed (S) loop
          if C = '-' or else C = '_' then
             Up := True;
          elsif Up then

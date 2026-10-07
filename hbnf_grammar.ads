@@ -74,6 +74,14 @@ package HBNF_Grammar is
    type Guard_Range_Array is array (Positive range <>) of Guard_Range;
    --  The exception `X = A - B` (ISO 14977's): X matches what A matches unless
    --  B matches exactly the same text.  A and B are rules of characters.
+   function Prefixed (S : String) return String;
+   --  The name of a generated identifier built from the rule S: the dialect
+   --  the file names (`dialect ybnf`, `--abnf`, ...) and an underscore in
+   --  front (`ybnf_if`), so no rule is ever a reserved word of the language
+   --  generated, and no per-name fix is needed.  A file that names no dialect,
+   --  and a built-in (`word`, `int`, `u8`), keep their names.  Messages show
+   --  the rule as written, never this.
+
    function Except_Base (Name : String) return String;
    --  The A of the exception rule Name, or "".
    function Except_Operand (Name : String) return String;
@@ -220,6 +228,10 @@ package HBNF_Grammar is
    --  overridden root is still the root; `name =/ alternatives` adds to
    --  it.  Text is one file; `include` lines are Parse_File's.  Called on
    --  its own, it finishes the schema as Parse_File does.
+   procedure Note_Rule_Names (Rules : Rule_Vectors.Vector);
+   --  The rules the backends will emit: Prefixed applies to these names and
+   --  to no other string (an enum literal made from `"!"` is not a rule).
+
    function Parse (Text : String) return Rule_Vectors.Vector;
 
    --  Parse a schema file, resolving its `include "path"` lines (each path
