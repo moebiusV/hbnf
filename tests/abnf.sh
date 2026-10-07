@@ -223,6 +223,47 @@ dialect pascal
 doc = "a"
 G
 
+echo "== YBNF, yacc's grammar language: %token, %start, %%, and | as the union =="
+rm -f "$W/t"; gen <<'G'
+dialect ybnf
+%token WORD
+%start list
+%%
+list : list WORD
+     | WORD
+     ;
+WORD = 1*ALPHA
+ALPHA = %x41-5A / %x61-7A
+G
+check OK   "ab cd ef" "a list of tokens, left recursive, the standard's way"
+check FAIL "ab 12"   "12 is no token"
+rm -f "$W/t"; gen <<'G'
+dialect ybnf
+%start doc
+%%
+doc : 'x' 'y'
+    | 'x'
+    ;
+G
+check OK   "xy" "| is the union: the longer alternative is found, though written second"
+check OK   "x"  "and the shorter one"
+refuse 'AND_IF = "&&"' "a %token with no rule says how to write it, with the standard's spelling" <<'G'
+dialect ybnf
+%token AND_IF
+/*      '&&'      */
+%%
+list : list AND_IF list
+     | 'x'
+     ;
+G
+refuse "class of text" "a %token with no spelling is a class of text" <<'G'
+dialect ybnf
+%token WORD
+%%
+list : WORD
+     ;
+G
+
 echo "== a repetition ABNF would give back (step 5) =="
 rm -f "$W/t"; gen <<G
 include "$CORE"
