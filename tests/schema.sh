@@ -104,4 +104,22 @@ ACCEPT=$(ls "$W"/fm/a*.txt)
 REJECT=$(ls "$W"/fm/r*.txt)
 suite "first match wins" "$W/fm/g.hbnf" 2>/dev/null
 
+# An exception, a - b: the same in all four backends.
+mkdir "$W/ex"
+cat > "$W/ex/g.hbnf" <<G
+whitespace none
+doc = word-ok "." tail
+word-ok = word-any - reserved
+word-any = lower *( lower / digit / "-" )
+lower = %x61-7A
+digit = %x30-39
+reserved = ( "if" / "then" ) / "fi" / 2( "x" / "y" )
+tail = word-any
+G
+printf 'abc.x' > "$W/ex/a1.txt"; printf 'iff.d' > "$W/ex/a2.txt"; printf 'if-1.a' > "$W/ex/a3.txt"; printf 'xyz.b' > "$W/ex/a4.txt"
+printf 'if.a' > "$W/ex/r1.txt"; printf 'then.b' > "$W/ex/r2.txt"; printf 'fi.c' > "$W/ex/r3.txt"; printf '.a' > "$W/ex/r4.txt"; printf 'xy.b' > "$W/ex/r5.txt"
+ACCEPT=$(ls "$W"/ex/a*.txt)
+REJECT=$(ls "$W"/ex/r*.txt)
+suite "exception" "$W/ex/g.hbnf" 2>/dev/null
+
 exit $rc

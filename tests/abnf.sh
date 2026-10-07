@@ -223,6 +223,33 @@ dialect pascal
 doc = "a"
 G
 
+echo "== the exception a - b: a token that is not one of a few =="
+rm -f "$W/t"; gen <<'G'
+whitespace none
+doc = word-ok "." tail
+word-ok = word-any - reserved
+word-any = lower *( lower / digit / "-" )
+lower = %x61-7A
+digit = %x30-39
+reserved = ( "if" / "then" ) / "fi" / 2( "x" / "y" )
+tail = word-any
+G
+check OK   "abc.x"    "a word that is not reserved"
+check OK   "iff.d"    "a word that begins with one is not that word"
+check OK   "if-1.a"   "a longer word that begins with one"
+check FAIL "if.a"     "if is reserved"
+check FAIL "then.b"   "so is then"
+check FAIL "xy.b"     "a group repeated is a token too"
+check OK   "xyz.b"    "but not a longer word"
+refuse "cannot be one token" "an operand with a built-in scanner inside" <<'G'
+whitespace none
+doc = word-ok "."
+word-ok = word-any - phrase
+word-any = 1*lower
+lower = %x61-7A
+phrase = word "!"
+G
+
 echo "== YBNF, yacc's grammar language: %token, %start, %%, and | as the union =="
 rm -f "$W/t"; gen <<'G'
 dialect ybnf
