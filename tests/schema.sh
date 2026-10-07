@@ -122,4 +122,25 @@ ACCEPT=$(ls "$W"/ex/a*.txt)
 REJECT=$(ls "$W"/ex/r*.txt)
 suite "exception" "$W/ex/g.hbnf" 2>/dev/null
 
+# A dialect line prefixes every generated identifier (`ybnf_if`), so a rule
+# named like a keyword of any target language needs no special case.
+mkdir "$W/kw"
+cat > "$W/kw/g.hbnf" <<G
+dialect ybnf
+whitespace none
+doc = begin if match type fn end loop
+begin = "b"
+if = "i"
+match = "m"
+type = "t"
+fn = "f"
+end = "e"
+loop = "l"
+G
+printf 'bimtfel' > "$W/kw/a1.txt"
+printf 'bimtfe' > "$W/kw/r1.txt"; printf 'bimtfl' > "$W/kw/r2.txt"
+ACCEPT=$(ls "$W"/kw/a*.txt)
+REJECT=$(ls "$W"/kw/r*.txt)
+suite "keyword rules" "$W/kw/g.hbnf" 2>/dev/null
+
 exit $rc
