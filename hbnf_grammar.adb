@@ -240,6 +240,9 @@ package body HBNF_Grammar is
    --  `--abnf` (Set_Abnf): files read as RFC 5234 reads them by default.
    Abnf_Mode : Boolean := False;
 
+   --  `--ebnf` (Set_Ebnf): files read as ISO 14977 reads them.
+   Ebnf_Mode : Boolean := False;
+
    --  The rule to start from instead of the first one (Set_Root), or "".
    Root_Rule : Unbounded_String := Null_Unbounded_String;
 
@@ -553,7 +556,9 @@ package body HBNF_Grammar is
             return LF2 & "In EBNF (ISO 14977) `,` joins the elements of a "
               & "rule, and `{ x }` repeats `x`.  hbnf joins elements by "
               & "writing them in a row, and repeats with `*x`: `a , { b }` is "
-              & "`a *b`.  (`[ x ]` and `( x )` mean the same in both.)";
+              & "`a *b`.  (`[ x ]` and `( x )` mean the same in both.)  To "
+              & "read a file as EBNF, put a line `ebnf` in it, or pass "
+              & "`--ebnf`.";
          when '.' =>
             return LF2 & "In Wirth's EBNF a rule ends with `.`.  hbnf's rule "
               & "ends at the end of the line (a line that goes on is "
@@ -581,7 +586,7 @@ package body HBNF_Grammar is
       --  reads ABNF, as `--abnf` does for a run: a backslash in a string is a
       --  backslash.  (Read here, ahead of the lexing it changes; the parser
       --  takes it afterwards and sets the rest.)
-      function File_Is_Abnf return Boolean is
+      function Has_Directive (Word : String) return Boolean is
          K : Natural := Text'First;
       begin
          while K <= Text'Last loop
@@ -596,9 +601,11 @@ package body HBNF_Grammar is
                while E <= Text'Last and then Text (E) /= ASCII.LF loop
                   E := E + 1;
                end loop;
-               if E - L >= 4 and then Text (L .. L + 3) = "abnf"
-                 and then (E - L = 4 or else Text (L + 4) in ' ' | ASCII.HT
-                           | ';' | ASCII.CR)
+               if E - L >= Word'Length
+                 and then Text (L .. L + Word'Length - 1) = Word
+                 and then (E - L = Word'Length
+                           or else Text (L + Word'Length) in ' ' | ASCII.HT
+                                   | ';' | ASCII.CR)
                then
                   return True;
                end if;
@@ -606,9 +613,17 @@ package body HBNF_Grammar is
             end;
          end loop;
          return False;
-      end File_Is_Abnf;
+      end Has_Directive;
 
-      Abnf_Here : constant Boolean := Abnf_Mode or else File_Is_Abnf;
+      Abnf_Here : constant Boolean := Abnf_Mode or else Has_Directive ("abnf");
+
+      --  `ebnf`, a directive on a line of its own, or `--ebnf`: ISO 14977.  A
+      --  line end is white space, `;` ends a rule, `,` joins, `{ x }` repeats,
+      --  `n * x` is exactly n, and strings have no escapes.
+      Ebnf_Here : constant Boolean := Ebnf_Mode or else Has_Directive ("ebnf");
+
+      --  A backslash in a string is a backslash, in ABNF and in EBNF.
+      Raw_Strings : constant Boolean := Abnf_Here or else Ebnf_Here;
 
       --  First_Col is the token's first column, for a token Emit sees
       --  only once it has been read past (a quoted string); 0 means Col.
@@ -719,53 +734,82 @@ package body HBNF_Grammar is
             when ' ' | ASCII.HT =>
                I := I + 1;  Col := Col + 1;
             when ASCII.LF =>
-               declare
-                  Skipped : Natural;
-                  Next_At : constant Natural :=
-                    (if Group_Depth > 0 then 0
-                     else Continuation (I + 1, Skipped));
-               begin
-                  if Group_Depth > 0 or else Next_At /= 0 then
-                     --  The rule goes on: inside ( ) or [ ], or on an
-                     --  indented line.  A comment at the end of this line
-                     --  is inside the rule, and is dropped.
-                     if not Toks.Is_Empty
-                       and then Toks.Last_Element.Kind = T_Comment
-                       and then Toks.Last_Element.Line = Line
+               if Ebnf_Here then
+                  --  A line end is white space; only `;` ends a rule.  But a
+                  --  directive (`ebnf`, `include "x"`, `language C`) is a line.
+                  declare
+                     K : Natural := Natural (Toks.Length);
+                  begin
+                     while K > 1 and then Toks (K - 1).Line = Line loop
+                        K := K - 1;
+                     end loop;
+                     if K >= 1 and then Natural (Toks.Length) >= K
+                       and then Toks (K).Line = Line
+                       and then Toks (K).Kind = T_Name
+                       and then To_String (Toks (K).Text) in
+                                  "ebnf" | "abnf" | "include" | "language"
+                                  | "sensitivity" | "whitespace" | "keywords"
+                                  | "statements" | "macros" | "includes"
+                                  | "entry" | "prefix" | "wordchars"
                      then
-                        Toks.Delete_Last;
+                        Emit (T_Newline);
                      end if;
-                     I := I + 1;  Line := Line + 1;  Col := 1;
-                     if Next_At /= 0 then
-                        I := Next_At;
-                        Line := Line + Skipped;
+                  end;
+                  I := I + 1;  Line := Line + 1;  Col := 1;
+               else
+                  declare
+                     Skipped : Natural;
+                     Next_At : constant Natural :=
+                       (if Group_Depth > 0 then 0
+                        else Continuation (I + 1, Skipped));
+                  begin
+                     if Group_Depth > 0 or else Next_At /= 0 then
+                        --  The rule goes on: inside ( ) or [ ], or on an
+                        --  indented line.  A comment at the end of this line
+                        --  is inside the rule, and is dropped.
+                        if not Toks.Is_Empty
+                          and then Toks.Last_Element.Kind = T_Comment
+                          and then Toks.Last_Element.Line = Line
+                        then
+                           Toks.Delete_Last;
+                        end if;
+                        I := I + 1;  Line := Line + 1;  Col := 1;
+                        if Next_At /= 0 then
+                           I := Next_At;
+                           Line := Line + Skipped;
+                        end if;
+                     else
+                        Emit (T_Newline);  I := I + 1;  Line := Line + 1;
+                        Col := 1;
                      end if;
-                  else
-                     Emit (T_Newline);  I := I + 1;  Line := Line + 1;
-                     Col := 1;
-                  end if;
-               end;
+                  end;
+               end if;
             when ASCII.CR =>
                I := I + 1;
             when ';' =>
-               declare
-                  CL    : constant Positive := Line;
-                  CC    : constant Positive := Col;
-                  Start : constant Positive := I + 1;
-               begin
-                  I := I + 1;
-                  while I <= Text'Last and then Text (I) /= ASCII.LF loop
+               if Ebnf_Here then
+                  --  ISO 14977: `;` ends a rule.
+                  Emit (T_Newline);  I := I + 1;  Col := Col + 1;
+               else
+                  declare
+                     CL    : constant Positive := Line;
+                     CC    : constant Positive := Col;
+                     Start : constant Positive := I + 1;
+                  begin
                      I := I + 1;
-                  end loop;
-                  --  Inside ( ) or [ ] a comment is part of the rule and
-                  --  is dropped.
-                  if Group_Depth = 0 then
-                     Token_Vectors.Append
-                       (Toks, Token'(T_Comment, CL, CC,
-                                     To_Unbounded_String
-                                       (Trim (Text (Start .. I - 1)))));
-                  end if;
-               end;
+                     while I <= Text'Last and then Text (I) /= ASCII.LF loop
+                        I := I + 1;
+                     end loop;
+                     --  Inside ( ) or [ ] a comment is part of the rule and
+                     --  is dropped.
+                     if Group_Depth = 0 then
+                        Token_Vectors.Append
+                          (Toks, Token'(T_Comment, CL, CC,
+                                        To_Unbounded_String
+                                          (Trim (Text (Start .. I - 1)))));
+                     end if;
+                  end;
+               end if;
             when '"' =>
                declare
                   Buf    : Unbounded_String := Null_Unbounded_String;
@@ -780,7 +824,7 @@ package body HBNF_Grammar is
                         Col := Col + 1;
                         Closed := True;
                         exit;
-                     elsif Text (I) = '\' and then not Abnf_Here then
+                     elsif Text (I) = '\' and then not Raw_Strings then
                         --  (Under `--abnf` a backslash is a backslash, as
                         --  RFC 5234 reads `"\"`.)
                         --  Decode a C escape, as a C string literal has them:
@@ -1019,190 +1063,208 @@ package body HBNF_Grammar is
                   end if;
                   I := I + 1;  Col := Col + 1;
                end;
-            when '*' => Emit (T_Star);   I := I + 1;  Col := Col + 1;
+            when '*' =>
+               if Ebnf_Here and then not Toks.Is_Empty
+                 and then Toks.Last_Element.Kind = T_Number
+               then
+                  --  ISO 14977's `n * x` is exactly n, which is `nx` here.
+                  I := I + 1;  Col := Col + 1;
+               elsif I > Text'First and then Text (I - 1) in ' ' | ASCII.HT
+                 and then not Toks.Is_Empty
+                 and then Toks.Last_Element.Kind = T_Number
+                 and then Toks.Last_Element.Line = Line
+               then
+                  raise Parse_Error with
+                    Integer'Image (Line) & ":" & Integer'Image (Col)
+                    & ": `" & To_String (Toks.Last_Element.Text) & " * x` is "
+                    & "EBNF's way of writing exactly "
+                    & To_String (Toks.Last_Element.Text) & ", which neither "
+                    & "ABNF nor hbnf spells that way" & ASCII.LF
+                    & "  Write `" & To_String (Toks.Last_Element.Text)
+                    & "x` for exactly " & To_String (Toks.Last_Element.Text)
+                    & " (`" & To_String (Toks.Last_Element.Text)
+                    & "*x` is that many or more), or read the file as EBNF: "
+                    & "a line `ebnf` in it, or `--ebnf`";
+               else
+                  Emit (T_Star);   I := I + 1;  Col := Col + 1;
+               end if;
             when '-' => Emit (T_Dash);   I := I + 1;  Col := Col + 1;
             when ''' =>
-               --  A character literal 'c' (or a C escape): one code point.
-               declare
-                  At_Col : constant Natural := Col;
-                  Buf    : Unbounded_String := Null_Unbounded_String;
-               begin
-                  I := I + 1;  Col := Col + 1;
-                  if I > Text'Last then
-                     raise Parse_Error with
-                       Integer'Image (Line) & ":" & Integer'Image (Col) &
-                       ": unterminated character literal";
-                  end if;
-                  if Text (I) = ''' then
-                     raise Parse_Error with
-                       Integer'Image (Line) & ":" & Integer'Image (Col) &
-                       ": empty character literal";
-                  end if;
-                  if Text (I) = '\' then
+               if Ebnf_Here then
+                  --  ISO 14977: 'abc' is a string, as "abc" is.
+                  declare
+                     At_Col : constant Positive := Col;
+                     Start  : constant Positive := I + 1;
+                  begin
+                     I := I + 1;  Col := Col + 1;
+                     while I <= Text'Last and then Text (I) not in ''' | ASCII.LF
+                     loop
+                        I := I + 1;  Col := Col + 1;
+                     end loop;
+                     if I > Text'Last or else Text (I) /= ''' then
+                        raise Parse_Error with
+                          Integer'Image (Line) & ":" & Integer'Image (At_Col)
+                          & ": this string does not end on its line";
+                     end if;
+                     Emit (T_String, Text (Start .. I - 1), At_Col);
+                     I := I + 1;  Col := Col + 1;
+                  end;
+               else
+                  --  A character literal 'c' (or a C escape): one code point.
+                  declare
+                     At_Col : constant Natural := Col;
+                     Buf    : Unbounded_String := Null_Unbounded_String;
+                  begin
                      I := I + 1;  Col := Col + 1;
                      if I > Text'Last then
                         raise Parse_Error with
                           Integer'Image (Line) & ":" & Integer'Image (Col) &
-                          ": escape at end of character literal";
+                          ": unterminated character literal";
                      end if;
-                     if Text (I) in '0' .. '7' then
-                        declare
-                           Val : Natural := 0;
-                           N   : Natural := 0;
-                        begin
-                           while N < 3 and then I <= Text'Last
-                             and then Text (I) in '0' .. '7' loop
-                              Val := Val * 8
-                                + (Character'Pos (Text (I))
-                                   - Character'Pos ('0'));
-                              N := N + 1;  I := I + 1;  Col := Col + 1;
-                           end loop;
-                           if Val > 255 then
-                              raise Parse_Error with
-                                Integer'Image (Line) & ":" &
-                                Integer'Image (Col) & ": bad octal escape";
-                           end if;
-                           Append (Buf, Character'Val (Val));
-                        end;
-                     elsif Text (I) = 'x' then
-                        declare
-                           Val : Natural := 0;
-                           N   : Natural := 0;
-                        begin
-                           I := I + 1;  Col := Col + 1;
-                           while I <= Text'Last
-                             and then Hex_Digit (Text (I)) >= 0 loop
-                              Val := Val * 16 + Hex_Digit (Text (I));
-                              N := N + 1;  I := I + 1;  Col := Col + 1;
-                           end loop;
-                           if N = 0 or else Val > 255 then
-                              raise Parse_Error with
-                                Integer'Image (Line) & ":" &
-                                Integer'Image (Col) & ": bad hex escape";
-                           end if;
-                           Append (Buf, Character'Val (Val));
-                        end;
-                     else
-                        declare
-                           Ch : Character;
-                        begin
-                           case Text (I) is
-                              when 'a' => Ch := Character'Val (7);
-                              when 'b' => Ch := Character'Val (8);
-                              when 'f' => Ch := Character'Val (12);
-                              when 'n' => Ch := Character'Val (10);
-                              when 'r' => Ch := Character'Val (13);
-                              when 't' => Ch := Character'Val (9);
-                              when 'v' => Ch := Character'Val (11);
-                              when '\' => Ch := '\';
-                              when '"' => Ch := '"';
-                              when ''' => Ch := ''';
-                              when '?' => Ch := '?';
-                              when others =>
+                     if Text (I) = ''' then
+                        raise Parse_Error with
+                          Integer'Image (Line) & ":" & Integer'Image (Col) &
+                          ": empty character literal";
+                     end if;
+                     if Text (I) = '\' then
+                        I := I + 1;  Col := Col + 1;
+                        if I > Text'Last then
+                           raise Parse_Error with
+                             Integer'Image (Line) & ":" & Integer'Image (Col) &
+                             ": escape at end of character literal";
+                        end if;
+                        if Text (I) in '0' .. '7' then
+                           declare
+                              Val : Natural := 0;
+                              N   : Natural := 0;
+                           begin
+                              while N < 3 and then I <= Text'Last
+                                and then Text (I) in '0' .. '7' loop
+                                 Val := Val * 8
+                                   + (Character'Pos (Text (I))
+                                      - Character'Pos ('0'));
+                                 N := N + 1;  I := I + 1;  Col := Col + 1;
+                              end loop;
+                              if Val > 255 then
                                  raise Parse_Error with
                                    Integer'Image (Line) & ":" &
-                                   Integer'Image (Col) & ": unknown escape '"
-                                   & Text (I) & "'";
-                           end case;
-                           Append (Buf, Ch);
-                           I := I + 1;  Col := Col + 1;
+                                   Integer'Image (Col) & ": bad octal escape";
+                              end if;
+                              Append (Buf, Character'Val (Val));
+                           end;
+                        elsif Text (I) = 'x' then
+                           declare
+                              Val : Natural := 0;
+                              N   : Natural := 0;
+                           begin
+                              I := I + 1;  Col := Col + 1;
+                              while I <= Text'Last
+                                and then Hex_Digit (Text (I)) >= 0 loop
+                                 Val := Val * 16 + Hex_Digit (Text (I));
+                                 N := N + 1;  I := I + 1;  Col := Col + 1;
+                              end loop;
+                              if N = 0 or else Val > 255 then
+                                 raise Parse_Error with
+                                   Integer'Image (Line) & ":" &
+                                   Integer'Image (Col) & ": bad hex escape";
+                              end if;
+                              Append (Buf, Character'Val (Val));
+                           end;
+                        else
+                           declare
+                              Ch : Character;
+                           begin
+                              case Text (I) is
+                                 when 'a' => Ch := Character'Val (7);
+                                 when 'b' => Ch := Character'Val (8);
+                                 when 'f' => Ch := Character'Val (12);
+                                 when 'n' => Ch := Character'Val (10);
+                                 when 'r' => Ch := Character'Val (13);
+                                 when 't' => Ch := Character'Val (9);
+                                 when 'v' => Ch := Character'Val (11);
+                                 when '\' => Ch := '\';
+                                 when '"' => Ch := '"';
+                                 when ''' => Ch := ''';
+                                 when '?' => Ch := '?';
+                                 when others =>
+                                    raise Parse_Error with
+                                      Integer'Image (Line) & ":" &
+                                      Integer'Image (Col) & ": unknown escape '"
+                                      & Text (I) & "'";
+                              end case;
+                              Append (Buf, Ch);
+                              I := I + 1;  Col := Col + 1;
+                           end;
+                        end if;
+                     else
+                        Append (Buf, Text (I));
+                        I := I + 1;  Col := Col + 1;
+                     end if;
+                     if I > Text'Last or else Text (I) /= ''' then
+                        raise Parse_Error with
+                          Integer'Image (Line) & ":" & Integer'Image (Col) &
+                          ": character literal must be one character";
+                     end if;
+                     I := I + 1;  Col := Col + 1;   --  closing quote
+                     Emit (T_Char, To_String (Buf), At_Col);
+                  end;
+               end if;
+            when '{' =>
+               if Ebnf_Here
+                 and then not (not Toks.Is_Empty
+                               and then Toks.Last_Element.Kind = T_Pct)
+               then
+                  --  ISO 14977: `{ x }` repeats x, zero or more times.
+                  Emit (T_Star);  Emit (T_LParen);
+                  I := I + 1;  Col := Col + 1;
+               else
+                  --  A raw code block (preamble, jet, or epilogue): capture the
+                  --  text between matching braces.  Braces nest, and a `"` string
+                  --  literal is copied verbatim so a `}` inside one is not taken
+                  --  as the block's close.
+                  declare
+                     Depth : Natural := 1;
+                     Buf   : Unbounded_String := Null_Unbounded_String;
+
+                     --  `<name> = Rust { ... }`: the block is that language's,
+                     --  whatever the file's `language` is.
+                     Block_Lang : Lang_Kind := Lang;
+                  begin
+                     if Natural (Toks.Length) >= 2
+                       and then Toks.Last_Element.Kind = T_Name
+                       and then Toks (Toks.Last_Index - 1).Kind = T_Eq
+                     then
+                        declare
+                           Tag : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (To_String (Toks.Last_Element.Text));
+                        begin
+                           if Tag = "c" then Block_Lang := C_Lang;
+                           elsif Tag = "rust" then Block_Lang := Rust_Lang;
+                           elsif Tag = "zig" then Block_Lang := Zig_Lang;
+                           elsif Tag = "ada" then Block_Lang := Ada_Lang;
+                           end if;
                         end;
                      end if;
-                  else
-                     Append (Buf, Text (I));
                      I := I + 1;  Col := Col + 1;
-                  end if;
-                  if I > Text'Last or else Text (I) /= ''' then
-                     raise Parse_Error with
-                       Integer'Image (Line) & ":" & Integer'Image (Col) &
-                       ": character literal must be one character";
-                  end if;
-                  I := I + 1;  Col := Col + 1;   --  closing quote
-                  Emit (T_Char, To_String (Buf), At_Col);
-               end;
-            when '{' =>
-               --  A raw code block (preamble, jet, or epilogue): capture the
-               --  text between matching braces.  Braces nest, and a `"` string
-               --  literal is copied verbatim so a `}` inside one is not taken
-               --  as the block's close.
-               declare
-                  Depth : Natural := 1;
-                  Buf   : Unbounded_String := Null_Unbounded_String;
-
-                  --  `<name> = Rust { ... }`: the block is that language's,
-                  --  whatever the file's `language` is.
-                  Block_Lang : Lang_Kind := Lang;
-               begin
-                  if Natural (Toks.Length) >= 2
-                    and then Toks.Last_Element.Kind = T_Name
-                    and then Toks (Toks.Last_Index - 1).Kind = T_Eq
-                  then
-                     declare
-                        Tag : constant String :=
-                          Ada.Characters.Handling.To_Lower
-                            (To_String (Toks.Last_Element.Text));
-                     begin
-                        if Tag = "c" then Block_Lang := C_Lang;
-                        elsif Tag = "rust" then Block_Lang := Rust_Lang;
-                        elsif Tag = "zig" then Block_Lang := Zig_Lang;
-                        elsif Tag = "ada" then Block_Lang := Ada_Lang;
-                        end if;
-                     end;
-                  end if;
-                  I := I + 1;  Col := Col + 1;
-                  while I <= Text'Last loop
-                     case Text (I) is
-                        when '{' =>
-                           Depth := Depth + 1;
-                           Append (Buf, Text (I));
-                           I := I + 1;  Col := Col + 1;
-                        when '}' =>
-                           Depth := Depth - 1;
-                           if Depth = 0 then
+                     while I <= Text'Last loop
+                        case Text (I) is
+                           when '{' =>
+                              Depth := Depth + 1;
+                              Append (Buf, Text (I));
                               I := I + 1;  Col := Col + 1;
-                              exit;
-                           end if;
-                           Append (Buf, Text (I));
-                           I := I + 1;  Col := Col + 1;
-                        when '"' =>
-                           Append (Buf, Text (I));
-                           I := I + 1;  Col := Col + 1;
-                           while I <= Text'Last and then Text (I) /= '"' loop
-                              if Text (I) = '\' and then I < Text'Last then
-                                 Append (Buf, Text (I));
+                           when '}' =>
+                              Depth := Depth - 1;
+                              if Depth = 0 then
                                  I := I + 1;  Col := Col + 1;
+                                 exit;
                               end if;
                               Append (Buf, Text (I));
                               I := I + 1;  Col := Col + 1;
-                           end loop;
-                           if I <= Text'Last then
+                           when '"' =>
                               Append (Buf, Text (I));
                               I := I + 1;  Col := Col + 1;
-                           end if;
-                        when ''' =>
-                           if Block_Lang = Ada_Lang and then I > Text'First
-                             and then (Text (I - 1) in 'a' .. 'z'
-                               or else Text (I - 1) in 'A' .. 'Z'
-                               or else Text (I - 1) in '0' .. '9'
-                               or else Text (I - 1) = '_')
-                           then
-                              --  Ada attribute (X'Pos): skip quote + name.
-                              Append (Buf, Text (I));
-                              I := I + 1;  Col := Col + 1;
-                              while I <= Text'Last
-                                and then (Text (I) in 'a' .. 'z'
-                                  or else Text (I) in 'A' .. 'Z'
-                                  or else Text (I) in '0' .. '9'
-                                  or else Text (I) = '_')
-                              loop
-                                 Append (Buf, Text (I));
-                                 I := I + 1;  Col := Col + 1;
-                              end loop;
-                           else
-                              --  Char literal 'x': copied verbatim.
-                              Append (Buf, Text (I));
-                              I := I + 1;  Col := Col + 1;
-                              while I <= Text'Last and then Text (I) /= ''' loop
+                              while I <= Text'Last and then Text (I) /= '"' loop
                                  if Text (I) = '\' and then I < Text'Last then
                                     Append (Buf, Text (I));
                                     I := I + 1;  Col := Col + 1;
@@ -1214,72 +1276,151 @@ package body HBNF_Grammar is
                                  Append (Buf, Text (I));
                                  I := I + 1;  Col := Col + 1;
                               end if;
-                           end if;
-                        when '/' =>
-                           if (Block_Lang = C_Lang or else Block_Lang = Rust_Lang)
-                             and then I < Text'Last and then Text (I + 1) = '*'
-                           then
-                              --  Block comment: skip to */.
-                              Append (Buf, Text (I));
-                              Append (Buf, Text (I + 1));
-                              I := I + 2;  Col := Col + 2;
-                              while I <= Text'Last loop
-                                 if Text (I) = '*' and then I < Text'Last
-                                   and then Text (I + 1) = '/'
-                                 then
+                           when ''' =>
+                              if Block_Lang = Ada_Lang and then I > Text'First
+                                and then (Text (I - 1) in 'a' .. 'z'
+                                  or else Text (I - 1) in 'A' .. 'Z'
+                                  or else Text (I - 1) in '0' .. '9'
+                                  or else Text (I - 1) = '_')
+                              then
+                                 --  Ada attribute (X'Pos): skip quote + name.
+                                 Append (Buf, Text (I));
+                                 I := I + 1;  Col := Col + 1;
+                                 while I <= Text'Last
+                                   and then (Text (I) in 'a' .. 'z'
+                                     or else Text (I) in 'A' .. 'Z'
+                                     or else Text (I) in '0' .. '9'
+                                     or else Text (I) = '_')
+                                 loop
                                     Append (Buf, Text (I));
-                                    Append (Buf, Text (I + 1));
-                                    I := I + 2;  Col := Col + 2;
-                                    exit;
-                                 end if;
-                                 if Text (I) = ASCII.LF then
-                                    Line := Line + 1;  Col := 1;
-                                 else
-                                    Col := Col + 1;
-                                 end if;
-                                 Append (Buf, Text (I));
-                                 I := I + 1;
-                              end loop;
-                           elsif Block_Lang /= Ada_Lang
-                             and then I < Text'Last and then Text (I + 1) = '/'
-                           then
-                              --  Line comment: skip to newline.
-                              while I <= Text'Last and then Text (I) /= ASCII.LF loop
+                                    I := I + 1;  Col := Col + 1;
+                                 end loop;
+                              else
+                                 --  Char literal 'x': copied verbatim.
                                  Append (Buf, Text (I));
                                  I := I + 1;  Col := Col + 1;
-                              end loop;
-                           else
-                              Append (Buf, Text (I));
-                              I := I + 1;  Col := Col + 1;
-                           end if;
-                        when '-' =>
-                           if Block_Lang = Ada_Lang and then I < Text'Last
-                             and then Text (I + 1) = '-'
-                           then
-                              --  Ada line comment: skip to newline.
-                              while I <= Text'Last and then Text (I) /= ASCII.LF loop
+                                 while I <= Text'Last and then Text (I) /= ''' loop
+                                    if Text (I) = '\' and then I < Text'Last then
+                                       Append (Buf, Text (I));
+                                       I := I + 1;  Col := Col + 1;
+                                    end if;
+                                    Append (Buf, Text (I));
+                                    I := I + 1;  Col := Col + 1;
+                                 end loop;
+                                 if I <= Text'Last then
+                                    Append (Buf, Text (I));
+                                    I := I + 1;  Col := Col + 1;
+                                 end if;
+                              end if;
+                           when '/' =>
+                              if (Block_Lang = C_Lang or else Block_Lang = Rust_Lang)
+                                and then I < Text'Last and then Text (I + 1) = '*'
+                              then
+                                 --  Block comment: skip to */.
+                                 Append (Buf, Text (I));
+                                 Append (Buf, Text (I + 1));
+                                 I := I + 2;  Col := Col + 2;
+                                 while I <= Text'Last loop
+                                    if Text (I) = '*' and then I < Text'Last
+                                      and then Text (I + 1) = '/'
+                                    then
+                                       Append (Buf, Text (I));
+                                       Append (Buf, Text (I + 1));
+                                       I := I + 2;  Col := Col + 2;
+                                       exit;
+                                    end if;
+                                    if Text (I) = ASCII.LF then
+                                       Line := Line + 1;  Col := 1;
+                                    else
+                                       Col := Col + 1;
+                                    end if;
+                                    Append (Buf, Text (I));
+                                    I := I + 1;
+                                 end loop;
+                              elsif Block_Lang /= Ada_Lang
+                                and then I < Text'Last and then Text (I + 1) = '/'
+                              then
+                                 --  Line comment: skip to newline.
+                                 while I <= Text'Last and then Text (I) /= ASCII.LF loop
+                                    Append (Buf, Text (I));
+                                    I := I + 1;  Col := Col + 1;
+                                 end loop;
+                              else
                                  Append (Buf, Text (I));
                                  I := I + 1;  Col := Col + 1;
-                              end loop;
-                           else
+                              end if;
+                           when '-' =>
+                              if Block_Lang = Ada_Lang and then I < Text'Last
+                                and then Text (I + 1) = '-'
+                              then
+                                 --  Ada line comment: skip to newline.
+                                 while I <= Text'Last and then Text (I) /= ASCII.LF loop
+                                    Append (Buf, Text (I));
+                                    I := I + 1;  Col := Col + 1;
+                                 end loop;
+                              else
+                                 Append (Buf, Text (I));
+                                 I := I + 1;  Col := Col + 1;
+                              end if;
+                           when ASCII.LF =>
+                              Append (Buf, Text (I));
+                              I := I + 1;  Line := Line + 1;  Col := 1;
+                           when others =>
                               Append (Buf, Text (I));
                               I := I + 1;  Col := Col + 1;
-                           end if;
-                        when ASCII.LF =>
-                           Append (Buf, Text (I));
-                           I := I + 1;  Line := Line + 1;  Col := 1;
-                        when others =>
-                           Append (Buf, Text (I));
-                           I := I + 1;  Col := Col + 1;
-                     end case;
-                  end loop;
-                  if Depth > 0 then
-                     raise Parse_Error with
-                       Integer'Image (Line) & ":" & Integer'Image (Col) &
-                       ": unterminated code block (missing '}')";
-                  end if;
-                  Emit (T_Code, To_String (Buf));
-               end;
+                        end case;
+                     end loop;
+                     if Depth > 0 then
+                        raise Parse_Error with
+                          Integer'Image (Line) & ":" & Integer'Image (Col) &
+                          ": unterminated code block (missing '}')";
+                     end if;
+                     Emit (T_Code, To_String (Buf));
+                  end;
+               end if;
+            when '}' =>
+               if Ebnf_Here then
+                  Emit (T_RParen);  I := I + 1;  Col := Col + 1;
+               else
+                  raise Parse_Error with
+                    Integer'Image (Line) & ":" & Integer'Image (Col) &
+                    ": unexpected character '}'" & Character_Hint ('}');
+               end if;
+            when ',' =>
+               if Ebnf_Here then
+                  I := I + 1;  Col := Col + 1;   --  concatenation
+               else
+                  raise Parse_Error with
+                    Integer'Image (Line) & ":" & Integer'Image (Col) &
+                    ": unexpected character ','" & Character_Hint (',');
+               end if;
+            when '?' =>
+               if Ebnf_Here then
+                  --  ISO 14977's special sequence `? words ?`: a rule
+                  --  described in words, so a rule not written yet.
+                  declare
+                     At_Col : constant Positive := Col;
+                     Start  : constant Positive := I + 1;
+                  begin
+                     I := I + 1;  Col := Col + 1;
+                     while I <= Text'Last and then Text (I) not in '?' | ASCII.LF
+                     loop
+                        I := I + 1;  Col := Col + 1;
+                     end loop;
+                     if I > Text'Last or else Text (I) /= '?' then
+                        raise Parse_Error with
+                          Integer'Image (Line) & ":" & Integer'Image (At_Col)
+                          & ": a special sequence `? ... ?` ends with `?` on "
+                          & "the same line";
+                     end if;
+                     Emit (T_Prose, Text (Start .. I - 1), At_Col);
+                     I := I + 1;  Col := Col + 1;
+                  end;
+               else
+                  raise Parse_Error with
+                    Integer'Image (Line) & ":" & Integer'Image (Col) &
+                    ": unexpected character '?'" & Character_Hint ('?');
+               end if;
             when '0' .. '9' =>
                declare
                   Start : constant Positive := I;
@@ -3313,6 +3454,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "includes"
                               or else To_String (Cur (P).Text) = "sensitivity"
                               or else To_String (Cur (P).Text) = "abnf"
+                              or else To_String (Cur (P).Text) = "ebnf"
                               or else To_String (Cur (P).Text) = "whitespace"
                               or else To_String (Cur (P).Text) = "keywords"))
          then
@@ -3344,6 +3486,13 @@ package body HBNF_Grammar is
                   end if;
                   File_Lang := Cur (P).Text;
                   Lang_Line := Cur (P).Line;
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "ebnf"
+                 and then Ends_Directive (P, 1)
+               then
+                  --  `ebnf`: this file is ISO 14977's notation.  The lexer has
+                  --  read it as such; there is nothing more to set.
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "abnf"
@@ -4749,6 +4898,11 @@ package body HBNF_Grammar is
    function Spelled (Name : String) return String is
      (if Bnf_Spellings.Contains (Name) then Bnf_Spellings.Element (Name)
       else Name);
+
+   procedure Set_Ebnf (On : Boolean) is
+   begin
+      Ebnf_Mode := On;
+   end Set_Ebnf;
 
    procedure Set_Abnf (On : Boolean) is
    begin

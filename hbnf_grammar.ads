@@ -333,6 +333,12 @@ package HBNF_Grammar is
    --  case-insensitive (`sensitivity string %i`), without either line in the
    --  file.  A file's own directives still win.
 
+   procedure Set_Ebnf (On : Boolean);
+   --  `--ebnf`: read every file as ISO 14977 EBNF: `;` ends a rule (and is
+   --  not a comment), `,` joins elements, `{ x }` repeats, `n * x` is exactly
+   --  n, `'x'` and `"x"` are strings without escapes, `? words ?` is a rule
+   --  not written yet.  The directive `ebnf` does the same for one file.
+
    procedure Set_Root (Name : String);
 
    --  The daemon's own conf struct, from a top-level `conf struct ntpd_conf`
