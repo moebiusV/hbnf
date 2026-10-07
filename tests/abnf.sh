@@ -182,9 +182,9 @@ refuse "names a rule" "a <...> that no rule defines" <<'G'
 doc = <not written yet> "x"
 G
 
-echo "== ISO 14977 EBNF: the \`ebnf\` directive =="
+echo "== the \`dialect\` line: ISO 14977 EBNF and RFC 5234 ABNF =="
 rm -f "$W/t"; gen <<'G'
-ebnf
+dialect ebnf
 (* a number: three digits, a point, then as many digits as you like *)
 doc = num , "!" ;
 num = 3 * digit
@@ -201,8 +201,26 @@ digit = "0" | "1"
 doc = 3 * digit
 G
 refuse "not written yet" "a special sequence is a rule not written yet" <<'G'
-ebnf
+dialect ebnf
 doc = ? any character ? , "x" ;
+G
+
+rm -f "$W/t"; gen <<'G'
+dialect abnf
+doc = 2DIGIT "\" 1*ALPHA
+DIGIT = %x30-39
+ALPHA = %x41-5A / %x61-7A
+G
+check OK   '12\ab' "dialect abnf: nothing is skipped, and \"\\\" is a backslash"
+check FAIL '12 \ab' "a space is not skipped"
+rm -f "$W/t"; gen <<'G'
+dialect hbnf
+doc = "a" "b"
+G
+check OK   "a b"  "dialect hbnf is the default notation"
+refuse "takes .bnf., .ebnf." "a dialect that is not one" <<'G'
+dialect pascal
+doc = "a"
 G
 
 echo "== a repetition ABNF would give back (step 5) =="
