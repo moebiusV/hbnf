@@ -1652,6 +1652,17 @@ package body HBNF_Zig is
                Append (Buf, LF);
                Emit_Seq (Owner, Els, St, K - 1, Acc, Buf,
                          "break :blk_" & Img (Br), Ind & "    ");
+               --  First match wins: this branch is taken only if the next
+               --  code point can follow the choice.
+               if K <= N and then Els (K).Kind = Alt and then Els (K).Guard /= 0
+               then
+                  Append (Buf, Ind & "    { const sv = p.pos;"
+                    & (if Rules (Owner).Whitespace /= Null_Unbounded_String
+                       then " p.skip_ws();" else "")
+                    & " const g = p.guard_" & Img (Els (K).Guard)
+                    & "(); p.pos = sv; if (!g) break :blk_" & Img (Br) & "; }");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, Ind & "    matched = true;");
                Append (Buf, LF);
                Append (Buf, Ind & "}");
@@ -2195,6 +2206,41 @@ package body HBNF_Zig is
          Put ("        return self.fail(want);");
          Put ("    }");
          Put ("");
+         --  The guards `/` sets where a union needs backtracking (first match
+         --  wins, as RFC 3986 section 3.2.2 settles `host`).
+         for G in 1 .. HBNF_Grammar.Guard_Count loop
+            declare
+               Rs  : constant HBNF_Grammar.Guard_Range_Array :=
+                 HBNF_Grammar.Guard_Ranges (G);
+               Gid : constant String := Natural'Image (G);
+               Cond : Unbounded_String := To_Unbounded_String ("false");
+            begin
+               for R of Rs loop
+                  Append (Cond, " or (c >= " & Natural'Image (R.Lo) & " and c <= "
+                    & Natural'Image (R.Hi) & ")");
+               end loop;
+               Put ("    fn guard_" & Gid (Gid'First + 1 .. Gid'Last)
+                 & "(self: *P) bool {");
+               Put ("        if (self.pos >= self.text.len) return "
+                 & (if HBNF_Grammar.Guard_Eoi (G) then "true" else "false") & ";");
+               if Rs'Length = 0 then
+                  Put ("        return false;");
+                  Put ("    }");
+                  Put ("");
+                  goto Next_Guard_Z;
+               end if;
+               Put ("        const b = self.text[self.pos];");
+               Put ("        const n: usize = if (b < 0x80) 1 else if (b < 0xE0) 2 else if (b < 0xF0) 3 else 4;");
+               Put ("        if (self.pos + n > self.text.len) return false;");
+               Put ("        var c: u32 = if (n == 1) b else if (n == 2) (b & 0x1F) else if (n == 3) (b & 0x0F) else (b & 0x07);");
+               Put ("        var i: usize = 1;");
+               Put ("        while (i < n) : (i += 1) c = (c << 6) | (self.text[self.pos + i] & 0x3F);");
+               Put ("        return " & To_String (Cond) & ";");
+               Put ("    }");
+               Put ("");
+               <<Next_Guard_Z>> null;
+            end;
+         end loop;
          Put ("    // A keyword: the whole bareword at the position must be the literal, so");
          Put ("    // `in` does not match the front of `input`.");
          Put ("    fn expect_word(self: *P, lit: []const u8, want: []const u8) ParseError!void {");

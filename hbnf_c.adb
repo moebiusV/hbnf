@@ -3679,7 +3679,11 @@ package body HBNF_C is
                return False;
             end Has_Byte_Dispatch;
 
-            Disp : constant Boolean := Has_Byte_Dispatch;
+            --  A guarded choice is a plain chain: each branch's guard is
+            --  checked where it succeeds.
+            Disp : constant Boolean := Has_Byte_Dispatch
+              and then not (for some E of Els =>
+                              E.Kind = Alt and then E.Guard /= 0);
          begin
             if Hoist then
                Append (Buf, Ind & "skip_ws(p);");
@@ -3759,6 +3763,17 @@ package body HBNF_C is
                         H ("prefix", Kind_Prefix),
                         H ("tag",
                           Tag_Name (Leading_Tags (Els), Els (LSt).Lit)))));
+                     Append (Buf, LF);
+                  end if;
+                  --  First match wins: this branch is taken only if the next
+                  --  code point can follow the choice.
+                  if K <= N and then Els (K).Kind = Alt and then Els (K).Guard /= 0
+                  then
+                     Append (Buf, Ind & "{ size_t g_sv = p->pos;"
+                       & (if Ws then " skip_ws(p);" else "")
+                       & " bool g_ok = guard_" & Img (Els (K).Guard)
+                       & "(p); p->pos = g_sv; if (!g_ok) goto " & Label
+                       & "alt_fail_" & Img (LBr) & "; }");
                      Append (Buf, LF);
                   end if;
                   Append (Buf, Ind & "goto " & Ok & ";");
@@ -4754,6 +4769,40 @@ package body HBNF_C is
               & " : ""end of input"", p->pos < p->len ? 1 : 0); return false;" & LF);
             Append (Nocase, "}" & LF & LF);
          end if;
+         --  The guards `/` set where a union needs backtracking: the next code
+         --  point, if one more can follow, must be in the set that can follow
+         --  the choice (first match wins, as RFC 3986 section 3.2.2 settles
+         --  `host`).  Self-contained: a UTF-8 decode, then the ranges.
+         for G in 1 .. HBNF_Grammar.Guard_Count loop
+            declare
+               Rs  : constant HBNF_Grammar.Guard_Range_Array :=
+                 HBNF_Grammar.Guard_Ranges (G);
+               Gid : constant String := Natural'Image (G);
+            begin
+               Append (Nocase, "__attribute__((unused))" & LF);
+               Append (Nocase, "static bool guard_" & Gid (Gid'First + 1 .. Gid'Last)
+                 & "(parser_t *p) {" & LF);
+               Append (Nocase, "    if (p->pos >= p->len) return "
+                 & (if HBNF_Grammar.Guard_Eoi (G) then "true" else "false")
+                 & ";" & LF);
+               if Rs'Length = 0 then
+                  Append (Nocase, "    return false;" & LF & "}" & LF & LF);
+                  goto Next_Guard_C;
+               end if;
+               Append (Nocase, "    unsigned char b = (unsigned char)p->text[p->pos];" & LF);
+               Append (Nocase, "    size_t n = b < 0x80 ? 1 : b < 0xE0 ? 2 : b < 0xF0 ? 3 : 4;" & LF);
+               Append (Nocase, "    if (p->pos + n > p->len) return false;" & LF);
+               Append (Nocase, "    uint32_t c = n == 1 ? b : n == 2 ? (b & 0x1F) : n == 3 ? (b & 0x0F) : (b & 0x07);" & LF);
+               Append (Nocase, "    for (size_t i = 1; i < n; i++) c = (c << 6) | ((unsigned char)p->text[p->pos + i] & 0x3F);" & LF);
+               Append (Nocase, "    return false");
+               for R of Rs loop
+                  Append (Nocase, " || (c >= " & Natural'Image (R.Lo) & "u && c <= "
+                    & Natural'Image (R.Hi) & "u)");
+               end loop;
+               Append (Nocase, ";" & LF & "}" & LF & LF);
+               <<Next_Guard_C>> null;
+            end;
+         end loop;
          Append (Res, Fill ("c_parser",
            (H ("strings_h", Strings_H),
             H ("keywords", To_String (Kw)),

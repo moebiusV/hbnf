@@ -38,6 +38,13 @@ package HBNF_Lookahead is
    function Meet (A, B : Cp_Set) return Cp_Set;
    --  The code points both sets hold.  Anything meets every non-empty set.
 
+   function Range_Count (S : Cp_Set) return Natural;
+   function Range_Lo (S : Cp_Set; K : Positive) return Natural;
+   function Range_Hi (S : Cp_Set; K : Positive) return Natural;
+   function Has_Eoi (S : Cp_Set) return Boolean;
+   function Has_Any (S : Cp_Set) return Boolean;
+   --  The set as ranges, for a guard.
+
    function Image (S : Cp_Set) return String;
    --  `0`-`9` `_` ... : for a message.
 

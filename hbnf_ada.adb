@@ -1664,6 +1664,37 @@ package body HBNF_Ada is
                Append (Buf, LF);
                Emit_Seq (Owner, Els, St, K - 1, "R.", Buf, Ind & "   ",
                         Alloc_Records);
+               --  First match wins: this branch is taken only if the next
+               --  code point can follow the choice.
+               if K <= N and then Els (K).Kind = Alt and then Els (K).Guard /= 0
+               then
+                  declare
+                     G : constant String := Natural'Image (Els (K).Guard);
+                  begin
+                     Append (Buf, Ind & "   declare");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "      Sv : constant Natural := P.Pos;");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "      Ok : Boolean;");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "   begin");
+                     Append (Buf, LF);
+                     if Rules (Owner).Whitespace /= Null_Unbounded_String then
+                        Append (Buf, Ind & "      Skip_Ws (P);");
+                        Append (Buf, LF);
+                     end if;
+                     Append (Buf, Ind & "      Ok := Guard_" & G (G'First + 1 .. G'Last)
+                       & " (P.Text.all, P.Pos);");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "      P.Pos := Sv;");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "      if not Ok then Fail (P, ""what can "
+                       & "follow here""); end if;");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "   end;");
+                     Append (Buf, LF);
+                  end;
+               end if;
                Append (Buf, Ind & "   return R;");
                Append (Buf, LF);
                Append (Buf, Ind & "exception");
@@ -2541,6 +2572,52 @@ package body HBNF_Ada is
       --  the C backend's jets make.  Any other jet is hand-written C, which
       --  this backend cannot run, so it is a stub that matches nothing.
       Emit_Builtin_Scans;
+      --  The guards `/` sets where a union needs backtracking (first match
+      --  wins, as RFC 3986 section 3.2.2 settles `host`): is the next code
+      --  point one that can follow the choice?
+      for G in 1 .. HBNF_Grammar.Guard_Count loop
+         declare
+            Rs  : constant HBNF_Grammar.Guard_Range_Array :=
+              HBNF_Grammar.Guard_Ranges (G);
+            Gid : constant String := Natural'Image (G);
+         begin
+            Append (Bdy, "   function Guard_" & Gid (Gid'First + 1 .. Gid'Last)
+              & " (S : String; Pos : Natural) return Boolean is" & LF);
+            if Rs'Length = 0 then
+               Append (Bdy, "   begin" & LF);
+               Append (Bdy, "      return Pos > S'Last"
+                 & (if HBNF_Grammar.Guard_Eoi (G) then "" else " and then False")
+                 & ";" & LF);
+               Append (Bdy, "   end Guard_" & Gid (Gid'First + 1 .. Gid'Last) & ";"
+                 & LF & LF);
+               goto Next_Guard_A;
+            end if;
+            Append (Bdy, "      B : Natural;" & LF);
+            Append (Bdy, "      N : Natural;" & LF);
+            Append (Bdy, "      C : Natural;" & LF);
+            Append (Bdy, "   begin" & LF);
+            Append (Bdy, "      if Pos > S'Last then return "
+              & (if HBNF_Grammar.Guard_Eoi (G) then "True" else "False")
+              & "; end if;" & LF);
+            Append (Bdy, "      B := Character'Pos (S (Pos));" & LF);
+            Append (Bdy, "      N := (if B < 16#80# then 1 elsif B < 16#E0# then 2"
+              & " elsif B < 16#F0# then 3 else 4);" & LF);
+            Append (Bdy, "      if Pos + N - 1 > S'Last then return False; end if;" & LF);
+            Append (Bdy, "      C := (if N = 1 then B elsif N = 2 then B mod 16#20#"
+              & " elsif N = 3 then B mod 16#10# else B mod 8);" & LF);
+            Append (Bdy, "      for K in 1 .. N - 1 loop" & LF);
+            Append (Bdy, "         C := C * 64 + Character'Pos (S (Pos + K)) mod 64;" & LF);
+            Append (Bdy, "      end loop;" & LF);
+            Append (Bdy, "      return False");
+            for R of Rs loop
+               Append (Bdy, " or else (C >= " & Natural'Image (R.Lo)
+                 & " and then C <= " & Natural'Image (R.Hi) & ")");
+            end loop;
+            Append (Bdy, ";" & LF);
+            Append (Bdy, "   end Guard_" & Gid (Gid'First + 1 .. Gid'Last) & ";" & LF & LF);
+            <<Next_Guard_A>> null;
+         end;
+      end loop;
       for I in 1 .. N loop
          if Rules (I).Jet_Code /= Null_Unbounded_String
            and then not Is_Builtin_Jet (To_String (Rules (I).Name))

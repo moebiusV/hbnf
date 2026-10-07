@@ -66,6 +66,16 @@ package HBNF_Grammar is
    procedure Warn_Once (Key, Where, Text : String);
    --  Warn, unless a warning with this Key was already reported.
 
+   --  The sets a guard (Alt.Guard) tests the next code point against: what
+   --  can follow the choice.  Guard_Eoi: the end of the input passes too.
+   type Guard_Range is record
+      Lo, Hi : Natural;
+   end record;
+   type Guard_Range_Array is array (Positive range <>) of Guard_Range;
+   function Guard_Count return Natural;
+   function Guard_Ranges (Id : Positive) return Guard_Range_Array;
+   function Guard_Eoi (Id : Positive) return Boolean;
+
    function Spelled (Name : String) return String;
    --  A rule as its author wrote it, for a message: `<table reference>` for a
    --  rule a BNF file names that way, else the name.
@@ -114,6 +124,11 @@ package HBNF_Grammar is
             Lo : Natural := 0;   --  low code point, inclusive
             Hi : Natural := 0;   --  high code point, inclusive (Lo <= Hi)
          when Alt =>
+            Guard : Natural := 0;
+            --  Non-zero: the branch before this separator is taken only if
+            --  the next code point is in guard set Guard (Guard_Ranges), as
+            --  RFC 3986 section 3.2.2 settles `host` by "first match wins".
+            --  Written by the reader where a union needs backtracking.
             Union : Boolean := False;
             --  Written `/`, ABNF's union, rather than `|`.  The reader
             --  accepts it where both mean the same: between alternatives

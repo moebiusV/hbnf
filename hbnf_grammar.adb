@@ -293,6 +293,15 @@ package body HBNF_Grammar is
      (String, Jet_Entry, Ada.Strings.Hash, "=");
    Jets : Jet_Maps.Map;
 
+   --  The sets Alt.Guard names (see Guard_Ranges).
+   package Range_Lists is new Ada.Containers.Vectors (Positive, Guard_Range);
+   type Guard_Set is record
+      Ranges : Range_Lists.Vector;
+      Eoi    : Boolean := False;
+   end record;
+   package Guard_Vectors is new Ada.Containers.Vectors (Positive, Guard_Set);
+   Guards : Guard_Vectors.Vector;
+
    Union_Sites : Site_Vectors.Vector;
    Greedy_Sites : Site_Vectors.Vector;   --  elements that repeat a variable number of times
 
@@ -362,6 +371,7 @@ package body HBNF_Grammar is
       Prose_Sites.Clear;
       Bnf_Spellings.Clear;
       Jets.Clear;
+      Guards.Clear;
       Union_Sites.Clear;
       Greedy_Sites.Clear;
       Standing.Clear;
@@ -567,6 +577,39 @@ package body HBNF_Grammar is
       Col  : Positive := 1;
       Lang : constant Lang_Kind := Detect_Language (Text);
 
+      --  `abnf`, a directive on a line of its own, reads this file as RFC 5234
+      --  reads ABNF, as `--abnf` does for a run: a backslash in a string is a
+      --  backslash.  (Read here, ahead of the lexing it changes; the parser
+      --  takes it afterwards and sets the rest.)
+      function File_Is_Abnf return Boolean is
+         K : Natural := Text'First;
+      begin
+         while K <= Text'Last loop
+            declare
+               L : Natural := K;
+               E : Natural;
+            begin
+               while L <= Text'Last and then Text (L) in ' ' | ASCII.HT loop
+                  L := L + 1;
+               end loop;
+               E := L;
+               while E <= Text'Last and then Text (E) /= ASCII.LF loop
+                  E := E + 1;
+               end loop;
+               if E - L >= 4 and then Text (L .. L + 3) = "abnf"
+                 and then (E - L = 4 or else Text (L + 4) in ' ' | ASCII.HT
+                           | ';' | ASCII.CR)
+               then
+                  return True;
+               end if;
+               K := E + 1;
+            end;
+         end loop;
+         return False;
+      end File_Is_Abnf;
+
+      Abnf_Here : constant Boolean := Abnf_Mode or else File_Is_Abnf;
+
       --  First_Col is the token's first column, for a token Emit sees
       --  only once it has been read past (a quoted string); 0 means Col.
       procedure Emit
@@ -737,7 +780,9 @@ package body HBNF_Grammar is
                         Col := Col + 1;
                         Closed := True;
                         exit;
-                     elsif Text (I) = '\' then
+                     elsif Text (I) = '\' and then not Abnf_Here then
+                        --  (Under `--abnf` a backslash is a backslash, as
+                        --  RFC 5234 reads `"\"`.)
                         --  Decode a C escape, as a C string literal has them:
                         --  \a \b \f \n \r \t \v \\ \" \' \?, \ooo (one to
                         --  three octal digits) and \xHH (hex digits, greedy).
@@ -1777,7 +1822,7 @@ package body HBNF_Grammar is
             T : constant Token := Cur (P);
             A : constant Element_Access :=
               new Element'(Kind => Alt, Min => 1, Max => 1,
-                           Union => T.Kind = T_Slash);
+                           Guard => 0, Union => T.Kind = T_Slash);
          begin
             if A.Union then
                Union_Sites.Append (Here (T.Line, T.Col, "/", A));
@@ -1927,7 +1972,7 @@ package body HBNF_Grammar is
       begin
          if N > 0 then
             V.Append (new Element'(Kind => Alt, Min => 1, Max => 1,
-                                   Union => False));
+                                   Guard => 0, Union => False));
          end if;
          for I in First .. Last loop
             V.Append (Pattern (I));
@@ -1984,7 +2029,7 @@ package body HBNF_Grammar is
          else
             Items := Base_V;
             Items.Append (new Element'(Kind => Alt, Min => 1, Max => 1,
-                                       Union => False));
+                                       Guard => 0, Union => False));
             for E of Tail_V loop
                Items.Append (E);
             end loop;
@@ -2296,15 +2341,63 @@ package body HBNF_Grammar is
                if not Ok then
                   for S of Union_Sites loop
                      if S.Alt = Union then
-                        Report
-                          (S, "`" & To_String (S.Text) & "` is ABNF's union, "
-                           & "and here hbnf cannot compile it" & ASCII.LF
-                           & "  ABNF tries every alternative and goes back if "
-                           & "what follows does not fit.  hbnf chooses once "
-                           & "and does not go back, so it writes a union as "
-                           & "an ordered choice in whatever order gives the "
-                           & "same language; here no order does: "
-                           & To_String (Message));
+                        if HBNF_Lookahead.Has_Any (Follow_Here) then
+                           --  What follows is not known (a scanner, a core
+                           --  type): no guard can be written.
+                           Report
+                             (S, "`" & To_String (S.Text) & "` is ABNF's "
+                              & "union, and here hbnf cannot compile it"
+                              & ASCII.LF
+                              & "  ABNF tries every alternative and goes back "
+                              & "if what follows does not fit.  hbnf chooses "
+                              & "once and does not go back, so it writes a "
+                              & "union as an ordered choice in whatever order "
+                              & "gives the same language; here no order does: "
+                              & To_String (Message));
+                        else
+                           --  First match wins, as RFC 3986 section 3.2.2
+                           --  settles `host`: the first alternative that
+                           --  matches and is followed by something that can
+                           --  follow the choice.
+                           declare
+                              G : Guard_Set;
+                              K : Positive;
+                           begin
+                              for R in 1 .. HBNF_Lookahead.Range_Count
+                                             (Follow_Here)
+                              loop
+                                 G.Ranges.Append
+                                   (Guard_Range'
+                                      (Lo => HBNF_Lookahead.Range_Lo
+                                               (Follow_Here, R),
+                                       Hi => HBNF_Lookahead.Range_Hi
+                                               (Follow_Here, R)));
+                              end loop;
+                              G.Eoi := HBNF_Lookahead.Has_Eoi (Follow_Here);
+                              Guards.Append (G);
+                              K := Positive (Guards.Length);
+                              for E of V loop
+                                 if E.Kind = Alt then
+                                    E.Guard := K;
+                                 end if;
+                              end loop;
+                           end;
+                           Warn
+                             ((if S.File = Null_Unbounded_String then ""
+                               else To_String (S.File) & ":")
+                              & Img (S.Line) & ":" & Img (S.Col),
+                              "`" & To_String (S.Text) & "` is ABNF's union, "
+                              & "and here it needs backtracking: "
+                              & To_String (Message) & ASCII.LF
+                              & "  hbnf takes the first alternative that "
+                              & "matches and is followed by something that "
+                              & "can follow the choice (first match wins, as "
+                              & "RFC 3986 section 3.2.2 settles `host`).  "
+                              & "Where ABNF's backtracking would choose "
+                              & "differently, write `|` with the one to "
+                              & "prefer first, or change an alternative so "
+                              & "that it cannot match what another does");
+                        end if;
                         exit;
                      end if;
                   end loop;
@@ -2675,6 +2768,64 @@ package body HBNF_Grammar is
            "return 0;");
       end;
 
+      --  An RFC may define a rule with the name of one of hbnf's built-in
+      --  types (RFC 5322 defines `atom` and `word` as structures).  In hbnf
+      --  such a name reads as a value, in every backend, so the reader gives
+      --  the rule another name, `atom-rule`, here and everywhere it is
+      --  referred to, and says so.
+      declare
+         procedure Rename_In
+           (V : Element_Vectors.Vector; Old : String; Fresh : Unbounded_String)
+         is
+         begin
+            for E of V loop
+               if E.Kind = Name and then To_String (E.Name) = Old then
+                  E.Name := Fresh;
+               elsif E.Kind = Group then
+                  Rename_In (E.Items, Old, Fresh);
+               end if;
+            end loop;
+         end Rename_In;
+      begin
+         for J in 1 .. Natural (Rules.Length) loop
+            declare
+               Old : constant String := To_String (Rules (J).Name);
+            begin
+               if Is_Core_Name (Old)
+                 and then Rules (J).Jet_Code = Null_Unbounded_String
+                 and then not Is_Char_Rule (Rules, Old)
+                 and then (for some E of Rules (J).Pattern =>
+                             E.Kind = Name or else E.Kind = Group)
+               then
+                  declare
+                     Fresh : constant Unbounded_String :=
+                       To_Unbounded_String (Old & "-rule");
+                  begin
+                     for K in 1 .. Natural (Rules.Length) loop
+                        Rename_In (Rules (K).Pattern, Old, Fresh);
+                     end loop;
+                     declare
+                        R : Rule := Rules (J);
+                     begin
+                        R.Name := Fresh;
+                        Rules.Replace_Element (J, R);
+                     end;
+                     if not Bnf_Spellings.Contains (To_String (Fresh)) then
+                        Bnf_Spellings.Insert (To_String (Fresh), Old);
+                     end if;
+                     Warn_Once
+                       ("core-name:" & Old, "",
+                        "the rule `" & Old & "` has the name of a built-in "
+                        & "type, which hbnf reads as one value in every "
+                        & "backend, so here it is called `" & To_String (Fresh)
+                        & "` (in the tree too) wherever the grammar refers to "
+                        & "it");
+                  end;
+               end if;
+            end;
+         end loop;
+      end;
+
       for J in 1 .. Natural (Rules.Length) loop
          declare
             K : constant String := To_Lower (To_String (Rules (J).Name));
@@ -2924,6 +3075,8 @@ package body HBNF_Grammar is
             return Hex (C / 16) & D (C mod 16 + 1);
          end Hex;
 
+         Lifted_Ranges : Rule_Vectors.Vector;
+
          procedure Literalize (V : in out Element_Vectors.Vector;
                                In_Rule : String; Is_Used : Boolean) is
          begin
@@ -2940,12 +3093,43 @@ package body HBNF_Grammar is
                                                     (UTF8 (E.Lo)),
                                            No_Case => False));
                      elsif Is_Used then
-                        Report ("rule `" & In_Rule & "`: the range %x"
-                                & Hex (E.Lo) & "-" & Hex (E.Hi) & " is in a "
-                                & "rule that is not a character rule, where "
-                                & "it is not matched yet (RFCPLAN.md step "
-                                & "4); give it a rule of its own (`DIGIT = "
-                                & "%x30-39`) and use the name");
+                        --  A range in a rule that also names other rules is
+                        --  not matched there; it is a rule of its own, and
+                        --  the reader writes that rule: `dtext = %x21-5A /
+                        --  obs-dtext` is `dtext = dtext-x21-5A / obs-dtext`
+                        --  with `dtext-x21-5A = %x21-5A`.
+                        declare
+                           Fresh : constant String :=
+                             In_Rule & "-x" & Hex (E.Lo) & "-" & Hex (E.Hi);
+                        begin
+                           if not By_Name.Contains (Fresh)
+                             and then not (for some R of Lifted_Ranges =>
+                                             To_String (R.Name) = Fresh)
+                           then
+                              declare
+                                 Pat : Element_Vectors.Vector;
+                              begin
+                                 Pat.Append
+                                   (new Element'(Kind => Char_Range, Min => 1,
+                                                 Max => 1, Lo => E.Lo,
+                                                 Hi => E.Hi));
+                                 Lifted_Ranges.Append
+                                   (Rule'(Name => To_Unbounded_String (Fresh),
+                                          Pattern => Pat,
+                                          Leading_Comment => Null_Unbounded_String,
+                                          Trailing_Comment => Null_Unbounded_String,
+                                          Jet_Code => Null_Unbounded_String,
+                                          Action_Code => Null_Unbounded_String,
+                                          Left_Bases => 0,
+                                          Whitespace => Null_Unbounded_String));
+                              end;
+                           end if;
+                           V.Replace_Element
+                             (I, new Element'(Kind => Name, Min => E.Min,
+                                              Max => E.Max,
+                                              Name => To_Unbounded_String (Fresh),
+                                              Fold => False));
+                        end;
                      end if;
                   elsif E.Kind = Group then
                      Literalize (E.Items, In_Rule, Is_Used);
@@ -2965,6 +3149,10 @@ package body HBNF_Grammar is
                   Literalize (Rules (J).Pattern, N, Used.Contains (N));
                end if;
             end;
+         end loop;
+         for R of Lifted_Ranges loop
+            Rules.Append (R);
+            By_Name.Include (To_String (R.Name), Natural (Rules.Length));
          end loop;
       end;
       if Problems /= Null_Unbounded_String then
@@ -3021,7 +3209,7 @@ package body HBNF_Grammar is
       declare
          Old     : constant Standing_Rule := Standing (To_String (Key));
          Sep     : constant Element_Access :=
-           new Element'(Kind => Alt, Min => 1, Max => 1, Union => True);
+           new Element'(Kind => Alt, Min => 1, Max => 1, Guard => 0, Union => True);
          Raw     : Element_Vectors.Vector := Old.Raw;
          Pattern : Element_Vectors.Vector;
          Bases   : Natural;
@@ -3124,6 +3312,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "entry"
                               or else To_String (Cur (P).Text) = "includes"
                               or else To_String (Cur (P).Text) = "sensitivity"
+                              or else To_String (Cur (P).Text) = "abnf"
                               or else To_String (Cur (P).Text) = "whitespace"
                               or else To_String (Cur (P).Text) = "keywords"))
          then
@@ -3155,6 +3344,17 @@ package body HBNF_Grammar is
                   end if;
                   File_Lang := Cur (P).Text;
                   Lang_Line := Cur (P).Line;
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "abnf"
+                 and then Ends_Directive (P, 1)
+               then
+                  --  `abnf`: this file is RFC 5234's notation: nothing is
+                  --  skipped between a rule's elements, a string is
+                  --  case-insensitive, and a backslash in one is a backslash.
+                  --  Later directives may still say otherwise.
+                  File_No_Case := True;
+                  File_Whitespace := Null_Unbounded_String;
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "sensitivity"
@@ -4531,6 +4731,20 @@ package body HBNF_Grammar is
                               when others      => E.Ada);
       end;
    end Jet_Body;
+
+   function Guard_Count return Natural is (Natural (Guards.Length));
+
+   function Guard_Ranges (Id : Positive) return Guard_Range_Array is
+      G : constant Guard_Set := Guards (Id);
+      R : Guard_Range_Array (1 .. Natural (G.Ranges.Length));
+   begin
+      for K in R'Range loop
+         R (K) := G.Ranges (K);
+      end loop;
+      return R;
+   end Guard_Ranges;
+
+   function Guard_Eoi (Id : Positive) return Boolean is (Guards (Id).Eoi);
 
    function Spelled (Name : String) return String is
      (if Bnf_Spellings.Contains (Name) then Bnf_Spellings.Element (Name)

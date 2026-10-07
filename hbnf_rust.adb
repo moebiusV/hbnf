@@ -1481,6 +1481,22 @@ package body HBNF_Rust is
                Append (Buf, Ind & "if (|| -> Result<(), ParseError> {");
                Append (Buf, LF);
                Emit_Seq (Owner, Els, St, K - 1, Acc, Buf, Ind & "    ");
+               --  First match wins: this branch is taken only if the next
+               --  code point can follow the choice.
+               if K <= N and then Els (K).Kind = Alt and then Els (K).Guard /= 0
+               then
+                  declare
+                     G : constant String := Natural'Image (Els (K).Guard);
+                  begin
+                     Append (Buf, Ind & "    { let sv = p.pos;"
+                       & (if Rules (Owner).Whitespace /= Null_Unbounded_String
+                          then " p.skip_ws();" else "")
+                       & " let g = p.guard_" & G (G'First + 1 .. G'Last)
+                       & "(); p.pos = sv; if !g { return Err(p.fail(""what "
+                       & "can follow here"")); } }");
+                     Append (Buf, LF);
+                  end;
+               end if;
                Append (Buf, Ind & "    Ok(())");
                Append (Buf, LF);
                Append (Buf, Ind & "})().is_ok() { break 'alt; }");
@@ -1889,6 +1905,37 @@ package body HBNF_Rust is
          Nocase  : U;
          Skip_Ws : U;
       begin
+         --  The guards `/` sets where a union needs backtracking (first match
+         --  wins, as RFC 3986 section 3.2.2 settles `host`): is the next code
+         --  point one that can follow the choice?
+         for G in 1 .. HBNF_Grammar.Guard_Count loop
+            declare
+               Rs  : constant HBNF_Grammar.Guard_Range_Array :=
+                 HBNF_Grammar.Guard_Ranges (G);
+               Gid : constant String := Natural'Image (G);
+            begin
+               Append (Nocase, "    #[allow(dead_code)]" & LF);
+               Append (Nocase, "    fn guard_" & Gid (Gid'First + 1 .. Gid'Last)
+                 & "(&self) -> bool {" & LF);
+               if Rs'Length = 0 then
+                  Append (Nocase, "        " & (if HBNF_Grammar.Guard_Eoi (G)
+                    then "self.pos >= self.text.len()" else "false") & LF
+                    & "    }" & LF);
+                  goto Next_Guard_R;
+               end if;
+               Append (Nocase, "        let c = match self.text[self.pos..].chars().next() {"
+                 & " Some(c) => c as u32, None => return "
+                 & (if HBNF_Grammar.Guard_Eoi (G) then "true" else "false")
+                 & " };" & LF);
+               Append (Nocase, "        false");
+               for R of Rs loop
+                  Append (Nocase, " || (c >= " & Natural'Image (R.Lo) & " && c <= "
+                    & Natural'Image (R.Hi) & ")");
+               end loop;
+               Append (Nocase, LF & "    }" & LF);
+               <<Next_Guard_R>> null;
+            end;
+         end loop;
          if Has_No_Case (Rules) then
             Append (Nocase,
               "    fn expect_word_nocase(&mut self, lit: &str) -> Result<(), ParseError> {");

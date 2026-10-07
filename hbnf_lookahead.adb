@@ -48,6 +48,15 @@ package body HBNF_Lookahead is
       return S;
    end Any_Set;
 
+   function Range_Count (S : Cp_Set) return Natural is
+     (Natural (S.Ranges.Length));
+   function Range_Lo (S : Cp_Set; K : Positive) return Natural is
+     (S.Ranges (K).Lo);
+   function Range_Hi (S : Cp_Set; K : Positive) return Natural is
+     (S.Ranges (K).Hi);
+   function Has_Eoi (S : Cp_Set) return Boolean is (S.Eoi);
+   function Has_Any (S : Cp_Set) return Boolean is (S.Any);
+
    function Is_Empty (S : Cp_Set) return Boolean is
      (S.Ranges.Is_Empty and then not S.Eoi and then not S.Any);
 
@@ -504,8 +513,8 @@ package body HBNF_Lookahead is
      (String, Ada.Strings.Hash, "=");
 
    Max_Code_Point : constant := 16#10FFFF#;
-   Max_States     : constant := 20_000;   --  past this a rule is "any text"
-   Max_Nodes      : constant := 20_000;   --  pairs of state sets searched
+   Max_States     : constant := 2_000;   --  past this a rule is "any text"
+   Max_Nodes      : constant := 400;   --  pairs of state sets searched
 
    type Edge is record
       Lo, Hi : Natural;
@@ -1102,7 +1111,11 @@ package body HBNF_Lookahead is
                              (Text (Here) & Cp_Image (Lo));
                            return;
                         end if;
-                        if not Greedy and then A_Done and then not TB.Is_Empty
+                        --  The earlier alternative stops here, with L able to go
+                        --  on, only if it cannot take the next code point
+                        --  itself: a repetition in it takes as many as match.
+                        if not Greedy and then A_Done and then TA.Is_Empty
+                          and then not TB.Is_Empty
                         then
                            Found := True;
                            Witness := To_Unbounded_String (Text (Here));
@@ -1253,7 +1266,11 @@ package body HBNF_Lookahead is
                   else
                      Message := To_Unbounded_String
                        (D (I) & " and " & D (J) & " can both match text "
-                        & "beginning `" & To_String (Why (I, J)) & "`, and "
+                        & (if To_String (Why (I, J)) = "..."
+                           then "that is too long and varied for hbnf to tell "
+                                & "them apart; they "
+                           else "beginning `" & To_String (Why (I, J))
+                                & "`, and ")
                         & "go on differently, so choosing between them "
                         & "needs backtracking, which hbnf does not do.  "
                         & "Write `|`, ordered choice, with the one to prefer "
@@ -1301,6 +1318,28 @@ package body HBNF_Lookahead is
             end;
          end loop;
       end;
+      --  An order that puts a broader alternative ahead of a narrower one the
+      --  author wrote first makes the narrower one unreachable: the language
+      --  is the same, but the parse is not what was written (`host` should be
+      --  an IPv4address where it is one).  Keep what was written, with
+      --  guards, instead.
+      for P in 1 .. N loop
+         for Q in P + 1 .. N loop
+            if Order (P) > Order (Q) then
+               Need (Order (P));
+               Need (Order (Q));
+               if Includes (Auto (Order (P)), Auto (Order (Q))) then
+                  Ok := False;
+                  Message := To_Unbounded_String
+                    (D (Order (Q)) & " only matches text " & D (Order (P))
+                     & " also matches, so a parser that takes whichever comes "
+                     & "first would never choose it");
+                  Order.Clear;
+                  return;
+               end if;
+            end if;
+         end loop;
+      end loop;
    end Check_Choice;
 
 end HBNF_Lookahead;
