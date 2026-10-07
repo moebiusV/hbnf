@@ -243,6 +243,9 @@ package body HBNF_Grammar is
    --  `--ebnf` (Set_Ebnf): files read as ISO 14977 reads them.
    Ebnf_Mode : Boolean := False;
 
+   --  `--dialect=bnf|ebnf|ybnf`: `|` is the union, as in those notations.
+   Union_Bar_Mode : Boolean := False;
+
    --  The rule to start from instead of the first one (Set_Root), or "".
    Root_Rule : Unbounded_String := Null_Unbounded_String;
 
@@ -295,6 +298,19 @@ package body HBNF_Grammar is
    package Jet_Maps is new Ada.Containers.Indefinite_Hashed_Maps
      (String, Jet_Entry, Ada.Strings.Hash, "=");
    Jets : Jet_Maps.Map;
+
+   --  yacc's %token declarations (see the parser): each name, with the
+   --  spelling the comment under it gives, if any.
+   type Declared_Token is record
+      Name     : Unbounded_String;
+      Spelling : Unbounded_String;
+      Line     : Positive;
+   end record;
+   package Declared_Vectors is new Ada.Containers.Vectors
+     (Positive, Declared_Token);
+   Declared_Tokens : Declared_Vectors.Vector;
+   package String_Lists is new Ada.Containers.Vectors
+     (Positive, Unbounded_String);
 
    --  The sets Alt.Guard names (see Guard_Ranges).
    package Range_Lists is new Ada.Containers.Vectors (Positive, Guard_Range);
@@ -375,6 +391,7 @@ package body HBNF_Grammar is
       Bnf_Spellings.Clear;
       Jets.Clear;
       Guards.Clear;
+      Declared_Tokens.Clear;
       Union_Sites.Clear;
       Greedy_Sites.Clear;
       Standing.Clear;
@@ -630,6 +647,11 @@ package body HBNF_Grammar is
 
       Abnf_Here : constant Boolean := Abnf_Mode or else Dialect_Is ("abnf");
       Ebnf_Here : constant Boolean := Ebnf_Mode or else Dialect_Is ("ebnf");
+
+      --  In BNF, EBNF and YBNF (yacc) a bar is the union, as `/` is in ABNF.
+      Bar_Is_Union : constant Boolean :=
+        Union_Bar_Mode or else Dialect_Is ("bnf") or else Dialect_Is ("ebnf")
+        or else Dialect_Is ("ybnf");
 
       --  A backslash in a string is a backslash, in ABNF and in EBNF.
       Raw_Strings : constant Boolean := Abnf_Here or else Ebnf_Here;
@@ -985,6 +1007,7 @@ package body HBNF_Grammar is
                   --  mean something else.  Say so once per file — silently
                   --  changing a grammar's meaning is the one outcome 7a
                   --  must not produce.
+                  if not Bar_Is_Union then
                   Warn_Once
                     ("yacc-colon:" & To_String (Current_File),
                      (if Current_File = Null_Unbounded_String then ""
@@ -996,13 +1019,17 @@ package body HBNF_Grammar is
                      & "so write the longer alternative first.  Where order "
                      & "should not matter (yacc's `|`, BNF's, EBNF's), write "
                      & "`/`: hbnf finds an order that gives the same language, "
-                     & "or says why none does.");
+                     & "or says why none does.  Or name the notation: the line "
+                     & "`dialect ybnf` reads `|` as the union.");
+                  end if;
                   Emit (T_Eq);  I := I + 1;  Col := Col + 1;
                end if;
             --  `|` separates alternatives, as in BNF, EBNF and yacc, and
             --  means ordered choice.  `/` is ABNF's union (RFCPLAN.md,
             --  decision 1); the reader takes it where the two mean the same.
-            when '|' => Emit (T_Bar);    I := I + 1;  Col := Col + 1;
+            when '|' =>
+               Emit (if Bar_Is_Union then T_Slash else T_Bar);
+               I := I + 1;  Col := Col + 1;
             when '/' =>
                if I < Text'Last and then Text (I + 1) = '*' then
                   Block_Comment ("*/");
@@ -2760,6 +2787,8 @@ package body HBNF_Grammar is
       --  ABNF a rule bare, so a bare word may be either; hbnf says a terminal
       --  is quoted, and only a rule is a bare name.  One written between
       --  brackets is a rule not written yet.
+      Told_Tokens : String_Lists.Vector;   --  declared tokens already said
+
       procedure Check_Undefined (V : Element_Vectors.Vector; In_Rule : String)
       is
       begin
@@ -2785,6 +2814,35 @@ package body HBNF_Grammar is
                         exit;
                      end if;
                   end loop;
+                  if not Sited then
+                     for T of Declared_Tokens loop
+                        if T.Name = E.Name then
+                           Sited := True;
+                           if not (for some X of Told_Tokens => X = E.Name)
+                           then
+                              Told_Tokens.Append (E.Name);
+                           Report
+                             ("in rule `" & In_Rule & "`: `"
+                              & To_String (E.Name) & "` is declared `%token` "
+                              & "(line" & Natural'Image (T.Line) & ") but "
+                              & "nothing defines it" & ASCII.LF
+                              & "  yacc leaves a token to its lexer.  hbnf "
+                              & "reads characters, so a token is a rule: "
+                              & (if T.Spelling /= Null_Unbounded_String then
+                                   "the standard spells it `"
+                                   & To_String (T.Spelling) & "`, so write `"
+                                   & To_String (E.Name) & " = """
+                                   & To_String (T.Spelling) & """`"
+                                 else
+                                   "this one is a class of text, so write `"
+                                   & To_String (E.Name) & " = ...` as a rule "
+                                   & "of characters, for example `NAME = "
+                                   & "ALPHA *( ALPHA / DIGIT / ""_"" )`"));
+                           end if;
+                           exit;
+                        end if;
+                     end loop;
+                  end if;
                   if not Sited then
                      Report ("in rule `" & In_Rule & "`: `" & To_String (E.Name)
                              & "` is not defined as a rule" & ASCII.LF
@@ -2941,11 +2999,17 @@ package body HBNF_Grammar is
             declare
                Old : constant String := To_String (Rules (J).Name);
             begin
-               if Is_Core_Name (Old)
-                 and then Rules (J).Jet_Code = Null_Unbounded_String
-                 and then not Is_Char_Rule (Rules, Old)
-                 and then (for some E of Rules (J).Pattern =>
-                             E.Kind = Name or else E.Kind = Group)
+               --  Exactly a built-in's name, building a structure; or the same
+               --  name in another case (yacc's `WORD` token): the generated
+               --  code makes one name of the two.
+               if Rules (J).Jet_Code = Null_Unbounded_String
+                 and then
+                   ((Is_Core_Name (Old)
+                     and then not Is_Char_Rule (Rules, Old)
+                     and then (for some E of Rules (J).Pattern =>
+                                 E.Kind = Name or else E.Kind = Group))
+                    or else (Old /= To_Lower (Old)
+                             and then Is_Core_Name (To_Lower (Old))))
                then
                   declare
                      Fresh : constant Unbounded_String :=
@@ -3011,6 +3075,18 @@ package body HBNF_Grammar is
       declare
          Used  : constant Rule_Vectors.Vector := Reachable (Rules);
          Lower : Index_Maps.Map;
+
+         --  Is some name in a rule the parser uses defined nowhere?
+         function Undefined_In (V : Element_Vectors.Vector) return Boolean is
+           (for some E of V =>
+              (E.Kind = Name and then Length (E.Name) > 0
+               and then Slice (E.Name, 1, 1) /= "<"
+               and then not By_Name.Contains (To_String (E.Name))
+               and then not Is_Core_Name (To_String (E.Name)))
+              or else (E.Kind = Group and then Undefined_In (E.Items)));
+
+         Any_Undefined : constant Boolean :=
+           (for some R of Used => Undefined_In (R.Pattern));
       begin
          for J in 1 .. Natural (Used.Length) loop
             declare
@@ -3018,16 +3094,22 @@ package body HBNF_Grammar is
                  By_Name (To_String (Used (J).Name));
                Pat     : Element_Vectors.Vector := Rules (At_Rule).Pattern;
             begin
-               Check_Unions
-                 (Pat, At_Rule, Look.Follow (At_Rule),
-                  Is_Char_Rule (Rules, To_String (Used (J).Name)));
-               if not Element_Vectors."=" (Pat, Rules (At_Rule).Pattern) then
-                  declare
-                     R : Rule := Rules (At_Rule);
-                  begin
-                     R.Pattern := Pat;
-                     Rules.Replace_Element (At_Rule, R);
-                  end;
+               --  A name nothing defines matches anything as far as a union
+               --  can tell, so while one is missing the unions are left alone;
+               --  the missing name is what is reported.
+               if not Any_Undefined then
+                  Check_Unions
+                    (Pat, At_Rule, Look.Follow (At_Rule),
+                     Is_Char_Rule (Rules, To_String (Used (J).Name)));
+                  if not Element_Vectors."=" (Pat, Rules (At_Rule).Pattern)
+                  then
+                     declare
+                        R : Rule := Rules (At_Rule);
+                     begin
+                        R.Pattern := Pat;
+                        Rules.Replace_Element (At_Rule, R);
+                     end;
+                  end if;
                end if;
             end;
             --  Only where nothing is skipped between elements: with `ws`
@@ -3452,6 +3534,8 @@ package body HBNF_Grammar is
             Next (P);
          end loop;
          if Cur (P).Kind = T_Code
+           or else (Cur (P).Kind = T_Pct
+                    and then To_String (Cur (P).Text) in "token" | "start" | "")
            or else (Cur (P).Kind = T_Name
                     and then (To_String (Cur (P).Text) = "language"
                               or else To_String (Cur (P).Text) = "prefix"
@@ -3473,6 +3557,101 @@ package body HBNF_Grammar is
                end loop;
                if Cur (P).Kind = T_Code then
                   Head_Code.Append (Cur (P).Text);
+                  Next (P);
+               elsif Cur (P).Kind = T_Pct
+                 and then To_String (Cur (P).Text) = "token"
+               then
+                  --  yacc's `%token NAME ...`: names the parser's lexer is
+                  --  to supply.  hbnf reads characters, so each is a rule;
+                  --  the declaration is remembered so that a name nothing
+                  --  defines can be told how to be.  POSIX writes each
+                  --  token's spelling in a comment under the line
+                  --  (`/* '&&' '||' */`), which is taken for the message.
+                  declare
+                     First_Of_Line : constant Natural :=
+                       Natural (Declared_Tokens.Length) + 1;
+                     Line_No       : constant Positive := Cur (P).Line;
+                  begin
+                     Next (P);
+                     while Cur (P).Kind = T_Name
+                       and then Cur (P).Line = Line_No
+                     loop
+                        Declared_Tokens.Append
+                          (Declared_Token'
+                             (Name     => Cur (P).Text,
+                              Spelling => Null_Unbounded_String,
+                              Line     => Cur (P).Line));
+                        Next (P);
+                     end loop;
+                     if Cur (P).Kind = T_Newline
+                       and then P.Toks (P.Pos + 1).Kind = T_Comment
+                     then
+                        declare
+                           C   : constant String :=
+                             To_String (P.Toks (P.Pos + 1).Text);
+                           N   : Natural := 0;
+                           K   : Natural := C'First;
+                           All_Quoted : Boolean := True;
+                           Words : String_Lists.Vector;
+                        begin
+                           while K <= C'Last loop
+                              if C (K) = ''' then
+                                 declare
+                                    E : Natural := K + 1;
+                                 begin
+                                    while E <= C'Last and then C (E) /= ''' loop
+                                       E := E + 1;
+                                    end loop;
+                                    exit when E > C'Last;
+                                    Words.Append
+                                      (To_Unbounded_String (C (K + 1 .. E - 1)));
+                                    N := N + 1;
+                                    K := E + 1;
+                                 end;
+                              elsif C (K) in ' ' | ASCII.HT then
+                                 K := K + 1;
+                              else
+                                 All_Quoted := False;
+                                 exit;
+                              end if;
+                           end loop;
+                           if All_Quoted
+                             and then N = Natural (Declared_Tokens.Length)
+                                           - First_Of_Line + 1
+                           then
+                              for W in 1 .. N loop
+                                 Declared_Tokens.Reference
+                                   (First_Of_Line + W - 1).Spelling :=
+                                   Words (W);
+                              end loop;
+                              Next (P);
+                              Next (P);
+                           end if;
+                        end;
+                     end if;
+                  end;
+               elsif Cur (P).Kind = T_Pct
+                 and then To_String (Cur (P).Text) = "start"
+               then
+                  --  yacc's `%start NAME`: the rule the grammar starts from.
+                  --  `--root=` still wins.
+                  Next (P);
+                  if Cur (P).Kind /= T_Name then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":"
+                       & Integer'Image (Cur (P).Col)
+                       & ": %start takes the name of the rule to start from";
+                  end if;
+                  if Root_Rule = Null_Unbounded_String then
+                     Root_Rule := Cur (P).Text;
+                  end if;
+                  Next (P);
+               elsif Cur (P).Kind = T_Pct and then Cur (P).Text = Null_Unbounded_String
+                 and then P.Toks (P.Pos + 1).Kind = T_Pct
+                 and then P.Toks (P.Pos + 1).Text = Null_Unbounded_String
+               then
+                  --  yacc's `%%`, which ends the declarations: nothing to do.
+                  Next (P);
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "language"
@@ -4921,6 +5100,21 @@ package body HBNF_Grammar is
    begin
       Ebnf_Mode := On;
    end Set_Ebnf;
+
+   procedure Set_Dialect (Name : String) is
+   begin
+      if Name = "abnf" then
+         Abnf_Mode := True;
+      elsif Name = "ebnf" then
+         Ebnf_Mode := True;
+         Union_Bar_Mode := True;
+      elsif Name in "bnf" | "ybnf" then
+         Union_Bar_Mode := True;
+      elsif Name /= "hbnf" then
+         raise Parse_Error with
+           "--dialect= takes bnf, ebnf, abnf, ybnf or hbnf";
+      end if;
+   end Set_Dialect;
 
    procedure Set_Abnf (On : Boolean) is
    begin

@@ -339,6 +339,9 @@ package HBNF_Grammar is
    --  n, `'x'` and `"x"` are strings without escapes, `? words ?` is a rule
    --  not written yet.  The line `dialect ebnf` does the same for one file.
 
+   procedure Set_Dialect (Name : String);
+   --  `--dialect=NAME`: bnf, ebnf, abnf, ybnf or hbnf, for every file.
+
    procedure Set_Root (Name : String);
 
    --  The daemon's own conf struct, from a top-level `conf struct ntpd_conf`
