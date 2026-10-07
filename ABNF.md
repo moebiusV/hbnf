@@ -171,13 +171,19 @@ only where two dialects spell different things the same way.
 | White space | — | skipped | significant | skipped, except where the file says `dialect abnf` (`whitespace none`) |
 
 YBNF, yacc's grammar notation (and bison's), is a dialect of BNF, not of EBNF: a rule
-is a production, `name : alt \| alt ;`, lists are written by recursion, and it
-adds `%token`, `%start`, `%%` and C actions in braces.  What differs in meaning
-is that yacc's `\|` is unordered (its tables settle a conflict) where hbnf's is
-ordered, and that its actions run as the parser reduces, where hbnf's
-`%action{}` runs once, after the parse.  A file whose assignment is `:` says so
-in a notice that names `/`, which is the unordered one.  RFCPLAN.md's POSIX
-section is the plan for the rest.
+is a production, `name : alt | alt ;`, lists are written by recursion, and it
+adds `%token`, `%start`, `%%` and C actions in braces.  Under `dialect ybnf`
+(and `dialect bnf`, `dialect ebnf`) a bar is the union, as it is in those
+notations, and `/` is the same thing: hbnf finds an order of the alternatives
+in which the first that matches is right, or says why none exists.  Without the
+line, a `:` rule gets a notice that hbnf's `|` is ordered.  `%token NAME ...` is
+read and remembered, `%start NAME` names the rule to start from (`--root=`
+wins) and `%%` is dropped.  yacc leaves its tokens to a lexer; hbnf reads
+characters, so each token is a rule, and a token that nothing defines is
+reported once with how to write it, quoting the spelling the standard gives in
+the comment under the declaration (`DLESS = "<<"`).  What stays different is
+that yacc's actions run as the parser reduces, where hbnf's `%action{}` runs
+once, after the parse.  RFCPLAN.md's POSIX section is the plan for the rest.
 
 ## 4. Same spelling, different meaning
 

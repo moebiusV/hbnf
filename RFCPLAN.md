@@ -935,9 +935,14 @@ should claim that before 10.
      says to write `3x`.  *Done 2026-10-07.*  `a - b` (exception) is not read
      yet.
    - **Open, from this step:**
-     - YBNF (yacc's grammar language: `%token`, `%%`, actions) and the POSIX
-       corpus (`posix-corpus/`, same layout), RFC 822 as a snippet (its `#`
-       lists, `<n>*<m>` counts, prose);
+     - YBNF: `%token`, `%start`, `%%` and `|` as the union are read, and an
+       undefined token is told how to be written (*done 2026-10-07*); yacc's
+       actions are not read.  The POSIX corpus (`posix-corpus/`, same layout)
+       reads the standard's grammar verbatim and gets as far as defining the
+       tokens; what blocks a working `.hbnf` is below.  RFC 822 as a
+       snippet (its `#` lists, `<n>*<m>` counts, prose);
+     - the exception `a - b` (ISO 14977, and what POSIX's reserved words need:
+       `WORD` but not a reserved word, rules 1 and 7a), for character rules;
      - `%where { }` (decision 13): code, not required to be pure;
      - `request-target` (RFC 9112) depends on the method, which a `%where`
        could ask; `path` (RFC 3986) is a documentation rule;
