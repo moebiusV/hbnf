@@ -928,10 +928,13 @@ should claim that before 10.
      (`name = Rust { }`), and a warning, not a silent stub, where a backend has
      none; the four assignment operators are one; messages that say how ABNF,
      BNF, EBNF and hbnf differ.  The dialect table is in ABNF.md.
+   - `--ebnf`, and the directive `ebnf`, read ISO 14977: `n * x` is exactly n,
+     `{ x }` repeats, `,` joins, `;` ends a rule (a line end is white space),
+     `'..'` and `".."` are strings without escapes, `? .. ?` is a rule not
+     written yet.  In the default notation a spaced `3 * x` is an error that
+     says to write `3x`.  *Done 2026-10-07.*  `a - b` (exception) is not read
+     yet.
    - **Open, from this step:**
-     - `--ebnf` (ISO 14977: `n * x` exactly n, `{ x }`, `,`, `;` as the rule
-       end, `'..'` strings, `? .. ?`), and an error on a spaced `3 * x` in the
-       default notation;
      - YBNF (yacc's grammar language: `%token`, `%%`, actions) and the POSIX
        corpus (`posix-corpus/`, same layout), RFC 822 as a snippet (its `#`
        lists, `<n>*<m>` counts, prose);

@@ -158,16 +158,16 @@ only where two dialects spell different things the same way.
 |---|---|---|---|---|
 | Assignment | `::=` (YBNF: `:`) | `=` | `=` | `::=`, `:=`, `:` and `=` are one operator |
 | A rule | `<table reference>` | `table reference` | `table-reference` | all three are the rule `table-reference`; a bare name and `<name>` are the same |
-| A rule described in words | — | `? words ?` | `<words>` | `<words>`: a rule nothing defines, "not written yet", with the rule it probably means |
+| A rule described in words | — | `? words ?` | `<words>` | `<words>`, and under `ebnf` `? words ?`: a rule nothing defines, "not written yet", with the rule it probably means |
 | Alternation | `\|` | `\|` | `/` | `\|` ordered choice; `/` union, in whatever order or first-match-wins; a `/` or `\|` in a BNF or EBNF file is read the same |
-| A terminal | bare | `'x'`, `"x"` | `"x"` (case-insensitive), `%x41` | quoted, or `%x41`, `'x'`; a bare word is a rule, a bare number or symbol gets a message saying to quote it |
+| A terminal | bare | `'x'`, `"x"` | `"x"` (case-insensitive), `%x41` | quoted, or `%x41`; `'x'` is one code point, and under `ebnf` a string like `"x"`; a bare word is a rule, a bare number or symbol gets a message saying to quote it |
 | Optional | — | `[ x ]` | `[ x ]` | `[ x ]` |
-| Repetition | recursion | `{ x }`, `n * x` (exactly n) | `*x`, `n*m x`, `nx` (exactly n) | `*x`, `n*m x`, `nx`; `{ x }` clashes with code blocks and gets a message saying to write `*x`.  **A trap, not yet closed:** EBNF's `3 * x` is hbnf's `3x`, but hbnf reads `3 * x` as ABNF's `3*x`, three or more |
-| Concatenation | juxtaposition | `a , b` | juxtaposition | juxtaposition; `,` gets a message |
-| End of a rule | line | `;` | line | end of the line (a line that goes on is indented); `;` starts a comment, so a `;` at the end of a line is harmless |
+| Repetition | recursion | `{ x }`, `n * x` (exactly n) | `*x`, `n*m x`, `nx` (exactly n) | `*x`, `n*m x`, `nx`; under `ebnf`, `{ x }` is `*( x )` and `n * x` is `nx`; in the default notation a spaced `3 * x` is an error that says to write `3x` (`3*x` is three or more) or to read the file as EBNF |
+| Concatenation | juxtaposition | `a , b` | juxtaposition | juxtaposition; under `ebnf`, `,` joins; elsewhere `,` gets a message saying so |
+| End of a rule | line | `;` | line | end of the line (a line that goes on is indented); `;` starts a comment, so a `;` at the end of a line is harmless; under `ebnf`, `;` ends a rule and a line end is white space |
 | Comments | — | `(* *)` | `;` | `;`, `(* *)` and `/* */` |
 | Exception | — | `a - b` | — | not yet |
-| Strings | — | no escapes | no escapes | C escapes, except where the file says `abnf` |
+| Strings | — | no escapes | no escapes | C escapes, except where the file says `abnf` or `ebnf` (or `--abnf`, `--ebnf`) |
 | White space | — | skipped | significant | skipped, except where the file says `abnf` (`whitespace none`) |
 
 YBNF, yacc's grammar notation (and bison's), is a dialect of BNF, not of EBNF: a rule
