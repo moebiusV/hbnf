@@ -40,7 +40,6 @@ refuse "only when that line is indented" 'r = "a" x
 "b" x
 x = word'
 refuse "a rule.s head is its name alone" 'char[16] ifname = word'
-refuse "is ABNF.s union" 'r = x / y
-x = "a" "b"
-y = 1*( "a" / "b" )'
+#  (A union that needs backtracking is first match wins, and compiles with a
+#  warning: tests/abnf.sh has it.)
 echo "syntax: OK (refusals)"

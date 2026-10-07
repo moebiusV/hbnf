@@ -182,6 +182,29 @@ refuse "names a rule" "a <...> that no rule defines" <<'G'
 doc = <not written yet> "x"
 G
 
+echo "== ISO 14977 EBNF: the \`ebnf\` directive =="
+rm -f "$W/t"; gen <<'G'
+ebnf
+(* a number: three digits, a point, then as many digits as you like *)
+doc = num , "!" ;
+num = 3 * digit
+    , [ '.' ]
+    , { digit } ;
+digit = '0' | '1' ;
+G
+check OK   "011!"     "n * x is exactly n; a rule may run over several lines"
+check OK   "011.11!"  "[ x ] and { x }, joined by commas"
+check OK   "0111!"    "{ x } takes more digits"
+check FAIL "01!"      "fewer than three"
+refuse "EBNF's way of writing exactly 3" "a spaced n * x in the default notation" <<'G'
+digit = "0" | "1"
+doc = 3 * digit
+G
+refuse "not written yet" "a special sequence is a rule not written yet" <<'G'
+ebnf
+doc = ? any character ? , "x" ;
+G
+
 echo "== a repetition ABNF would give back (step 5) =="
 rm -f "$W/t"; gen <<G
 include "$CORE"
