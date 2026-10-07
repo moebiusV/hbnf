@@ -942,7 +942,18 @@ should claim that before 10.
        tokens; what blocks a working `.hbnf` is below.  RFC 822 as a
        snippet (its `#` lists, `<n>*<m>` counts, prose);
      - the exception `a - b` (ISO 14977, and what POSIX's reserved words need:
-       `WORD` but not a reserved word, rules 1 and 7a), for character rules;
+       `WORD` but not a reserved word, rules 1 and 7a): done for operands that
+       are tokens, with a table-driven scanner (a deterministic automaton
+       built from the rule's text, the longest match, in all four backends),
+       so groups, nested repeats and alternatives of words work as operands
+       (*done 2026-10-07*).  **Next**: a rule with no named children is a
+       token, always scanned as text, so "character rule" goes away as a
+       concept (it changes the generated type of rules like
+       `x = 1*( "a" / "b" )`, now a list of empty nodes; check the daemon
+       grammars first); the octet mode of the scanner (edges are numeric, so
+       it skips the UTF-8 decode); and the dialect prefix on every generated
+       identifier (`ybnf_if`), in place of the ad-hoc `atom-rule`/`WORD-rule`
+       renames;
      - `%where { }` (decision 13): code, not required to be pure;
      - `request-target` (RFC 9112) depends on the method, which a `%where`
        could ask; `path` (RFC 3986) is a documentation rule;

@@ -166,7 +166,7 @@ only where two dialects spell different things the same way.
 | Concatenation | juxtaposition | `a , b` | juxtaposition | juxtaposition; under `dialect ebnf`, `,` joins; elsewhere `,` gets a message saying so |
 | End of a rule | line | `;` | line | end of the line (a line that goes on is indented); `;` starts a comment, so a `;` at the end of a line is harmless; under `dialect ebnf`, `;` ends a rule and a line end is white space |
 | Comments | — | `(* *)` | `;` | `;`, `(* *)` and `/* */` |
-| Exception | — | `a - b` | — | not yet |
+| Exception | — | `a - b` | — | `x = a - b`, the whole of a rule: the text `a` matches, unless `b` matches exactly that text (`cmd-name = word - reserved`).  Both are tokens: read as text, longest match, no whitespace skipped inside, and each may be anything made of literals, classes, groups, alternatives and repetitions; a built-in scanner (`word`) is fine as an operand on its own.  See "Tokens" below |
 | Strings | — | no escapes | no escapes | C escapes, except where the file says `dialect abnf` or `dialect ebnf` (or `--abnf`, `--ebnf`) |
 | White space | — | skipped | significant | skipped, except where the file says `dialect abnf` (`whitespace none`) |
 
@@ -196,6 +196,25 @@ once, after the parse.  RFCPLAN.md's POSIX section is the plan for the rest.
 | `*x x` | at least one `x` | never matches: `*x` takes every `x` | rejected by C and Rust | `1*x`, or restructure |
 | A rule referenced twice in one alternative | two occurrences | one field named after the rule | *rejected* with a suggested alias. Previously the second value overwrote the first, in 37 places across the daemon grammars. | an alias rule: `port_hi = port` |
 | Lowercase core names (`int`, `str`, `word`, …) | ordinary rule names | reserved types | — | don't define rules with those names |
+
+### Tokens, and the exception
+
+A token is text.  A rule an exception names (`a` or `b` in `x = a - b`) is read
+as text and scanned as one: hbnf builds a deterministic automaton from the
+literals, classes, groups, alternatives and repetitions it is made of (other
+rules it refers to are read into it), and the generated scanner, in all four
+backends, takes the longest text that ends in an accepting state.  It decides
+nothing by looking ahead and makes no choice, so no grammar can be ambiguous
+or in conflict through it.  `x = a - b` scans `a`, then asks whether `b` matches
+exactly that text, by scanning `b` with the end of the input moved to where `a`
+stopped; if so `x` does not match.  So `word - reserved` rejects `if` and
+accepts `iff`, and the keyword need not be known to the rest of the grammar.
+
+Not every rule can be a token: one that uses a jet or a built-in scanner inside
+itself, refers to itself, has a repetition bound past 32 or needs more than 2000
+states is refused with the reason, never approximated, because a scanner must
+match exactly what the grammar says.  (RFCPLAN.md has the plan to treat every
+rule without named children as a token.)
 
 ## 5. What hbnf adds
 
