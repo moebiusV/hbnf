@@ -228,6 +228,15 @@ package HBNF_Grammar is
    --  overridden root is still the root; `name =/ alternatives` adds to
    --  it.  Text is one file; `include` lines are Parse_File's.  Called on
    --  its own, it finishes the schema as Parse_File does.
+   function Except_Is_Token
+     (Rules : Rule_Vectors.Vector; X : String) return Boolean;
+   --  X is an exception rule (`X = A - B`) whose operands are both text hbnf
+   --  can read exactly and that skips no whitespace inside: a built-in scanner,
+   --  a rule of characters, or a rule made only of literals, classes and such
+   --  rules in a file that skips nothing.  Then X is a token, scanned.  Any
+   --  other exception, with a phrase for an operand, is a phrase rule: A is
+   --  parsed, then B is tried on exactly the text A matched.
+
    procedure Note_Rule_Names (Rules : Rule_Vectors.Vector);
    --  The rules the backends will emit: Prefixed applies to these names and
    --  to no other string (an enum literal made from `"!"` is not a rule).

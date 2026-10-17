@@ -603,6 +603,27 @@ package body HBNF_Ada is
      return Natural
    is (Leaf_Target (Rules, Find (Rules, Ref)));
 
+   --  The record a name stands for when it is an alias of a record, not a
+   --  record itself (`x = item`); 0 otherwise.  Held in a vector or in a list
+   --  entry, which are declared before any record body, it is the record's
+   --  access type, as a record member is.
+   function Alias_Record (Rules : Rule_Vectors.Vector; Ref : String)
+     return Natural is
+      J : constant Natural := Find (Rules, Ref);
+   begin
+      if J = 0 or else Scalar_Ada_Type (Ref) /= ""
+        or else Analyze (Rules, J).Kind /= Scalar
+        or else not Over_Leaf (Rules, J)
+      then
+         return 0;
+      end if;
+      declare
+         L : constant Natural := Leaf_Record (Rules, Ref);
+      begin
+         return (if L /= 0 and then Is_Record (Analyze (Rules, L)) then L else 0);
+      end;
+   end Alias_Record;
+
    --  The rules a record or deferred alias must follow in the combined
    --  record+alias emission: a record follows the deferred aliases its
    --  by-value members name, and a deferred alias (`src = host`) follows
@@ -744,7 +765,8 @@ package body HBNF_Ada is
       --  The vector element type for a list of Ref, or the type of a record's
       --  member: an access to the record (so recursion can be broken), or the
       --  scalar inlined by value.
-      function Elem_Type (Owner : Natural; Ref : String) return String is
+      function Elem_Type (Owner : Natural; Ref : String; Held : Boolean := False)
+        return String is
          S : constant String := Scalar_Ada_Type (Ref);
          J : constant Natural := Find (Rules, Ref);
       begin
@@ -752,6 +774,12 @@ package body HBNF_Ada is
             return S;                           -- a core scalar
          elsif J > 0 and then Is_Record (Infos (J)) then
             return Ada_Ident (Ref) & "_Access"; -- a record: access breaks it
+         elsif Held and then Alias_Record (Rules, Ref) /= 0 then
+            --  An alias of a record (`x = item`) in a list entry is held as
+            --  the record is held: through its access type, which is declared
+            --  before any body, where the alias's subtype is not yet.
+            return Ada_Ident
+              (To_String (Rules (Leaf_Record (Rules, Ref)).Name)) & "_Access";
          elsif Is_Back (Backs, Owner, Ref) then
             --  The field chosen to break a cycle, naming an alias over a
             --  record: the alias's subtype would embed that record by value,
@@ -906,7 +934,7 @@ package body HBNF_Ada is
                                          "Unbounded_String"));
             else
                Append (Buf, Emit_Vector
-                 (Base & "_Vectors", Elem_Type (Idx, To_String (Info.Elem_Name)),
+                 (Base & "_Vectors", Elem_Type (Idx, To_String (Info.Elem_Name), True),
                   Vector_Pkg (To_String (Info.Elem_Name))));
             end if;
          else
@@ -923,7 +951,7 @@ package body HBNF_Ada is
                      Mustache.New_Scalar (Ada_Field (To_String (M.Name))));
                   Mustache.Insert
                     (Row, "type",
-                     Mustache.New_Scalar (Elem_Type (Idx, To_String (M.Name))));
+                     Mustache.New_Scalar (Elem_Type (Idx, To_String (M.Name), True)));
                   Mustache.Append (Items, Row);
                end loop;
                Mustache.Put (V, "name", Base & "_Entry");
@@ -1162,7 +1190,7 @@ package body HBNF_Ada is
                               Append (Res, Emit_Vector
                                 (Ada_Ident (To_String (Rules (I).Name)) & "_" &
                                  Ada_Ident (To_String (M.Name)) & "_Vectors",
-                                 Elem_Type (I, To_String (M.Name)),
+                                 Elem_Type (I, To_String (M.Name), True),
                                  Vector_Pkg (To_String (M.Name))));
                               Append (Res, LF);
                            end if;
@@ -1544,7 +1572,7 @@ package body HBNF_Ada is
                            Append (Buf, LF);
                            Append (Buf, Ind & "   N : constant Natural := "
                              & Scan_Fn (NM)
-                             & " (P.Text.all, P.Pos, P.Text'Last);");
+                             & " (P.Text.all, P.Pos, Limit (P));");
                            Append (Buf, LF);
                            Append (Buf, Ind & "begin");
                            Append (Buf, LF);
@@ -1573,7 +1601,7 @@ package body HBNF_Ada is
                            Append (Buf, LF);
                            Append (Buf, Ind & "   N : constant Natural := Scan_"
                              & Ada_Ident (NM)
-                             & " (P.Text.all, P.Pos, P.Text'Last);");
+                             & " (P.Text.all, P.Pos, Limit (P));");
                            Append (Buf, LF);
                            Append (Buf, Ind & "begin");
                            Append (Buf, LF);
@@ -1593,11 +1621,19 @@ package body HBNF_Ada is
                            NM : constant String := To_String (E.Name);
                            Back : constant Boolean :=
                              Is_Back (Backs, Owner, NM);
+                           --  An alias of a record held in a list entry is
+                           --  allocated as that record; in a record's own field
+                           --  it stays a value of the alias's subtype.
+                           AR : constant Natural :=
+                             (if Alloc_Records and then Owner > 0
+                                and then Analyze (Rules, Owner).Kind = List
+                              then Alias_Record (Rules, NM)
+                              else 0);
                            --  A back-edge member names an alias over a record,
                            --  so it is allocated as that record; a struct
                            --  member is allocated as itself.
                            TN : constant String :=
-                             (if Back
+                             (if Back or else AR /= 0
                               then Ada_Ident
                                 (To_String
                                    (Rules (Leaf_Record (Rules, NM)).Name))
@@ -1609,7 +1645,7 @@ package body HBNF_Ada is
                               Append (Buf, LF);
                            end if;
                            if Alloc_Records
-                             and then (Is_Struct (NM) or else Back)
+                             and then (Is_Struct (NM) or else Back or else AR /= 0)
                            then
                               Append (Buf, Ind & Dst & Ada_Field (NM)
                                 & " := new " & TN & "'(Parse_"
@@ -1750,7 +1786,7 @@ package body HBNF_Ada is
             Append (Buf, "      declare");
             Append (Buf, LF);
             Append (Buf, "         N : constant Natural := " & Fn
-              & " (P.Text.all, P.Pos, P.Text'Last);");
+              & " (P.Text.all, P.Pos, Limit (P));");
             Append (Buf, LF);
             Append (Buf, "      begin");
             Append (Buf, LF);
@@ -1780,10 +1816,10 @@ package body HBNF_Ada is
                else Sl & " = """ & Ada_Escape (S) & """");
          begin
             if Is_Keyword_Lit (S) then
-               return "Scan_Word (P.Text.all, P.Pos, P.Text'Last) = " & NL
+               return "Scan_Word (P.Text.all, P.Pos, Limit (P)) = " & NL
                  & " and then " & Eq;
             end if;
-            return "P.Pos + " & NL & " - 1 <= P.Text'Last and then " & Eq;
+            return "P.Pos + " & NL & " - 1 <= Limit (P) and then " & Eq;
          end Lit_At;
       begin
          if Is_Char_Rule (Rules, NM) then
@@ -1852,7 +1888,7 @@ package body HBNF_Ada is
                      Append (Buf, LF);
                   end if;
                   if not Repeated_Body_Nullable (Rules, E) then
-                     Append (Buf, "            if P.Pos > P.Text'Last then P.Pos := Start; exit; end if;");
+                     Append (Buf, "            if P.Pos > Limit (P) then P.Pos := Start; exit; end if;");
                      Append (Buf, LF);
                   end if;
                   if Is_Core (To_String (Simple)) then
@@ -1862,7 +1898,7 @@ package body HBNF_Ada is
                      Append (Buf, LF);
                      Append (Buf, "               N : constant Natural := "
                        & Scan_Fn (To_String (Simple))
-                       & " (P.Text.all, P.Pos, P.Text'Last);");
+                       & " (P.Text.all, P.Pos, Limit (P));");
                      Append (Buf, LF);
                      Append (Buf, "            begin");
                      Append (Buf, LF);
@@ -1879,6 +1915,13 @@ package body HBNF_Ada is
                   elsif Is_Struct (To_String (Simple)) then
                      Append (Buf, "            R.Append (new "
                        & Ada_Ident (To_String (Simple)) & "_Type'(Parse_"
+                       & Ada_Ident (To_String (Simple)) & " (P)));");
+                  elsif Alias_Record (Rules, To_String (Simple)) /= 0 then
+                     Append (Buf, "            R.Append (new "
+                       & Ada_Ident
+                           (To_String
+                              (Rules (Leaf_Record (Rules, To_String (Simple))).Name))
+                       & "_Type'(Parse_"
                        & Ada_Ident (To_String (Simple)) & " (P)));");
                   else
                      Append (Buf, "            R.Append (Parse_"
@@ -1985,7 +2028,7 @@ package body HBNF_Ada is
          elsif Is_Enum then
             --  Each alternative matches its literal at the position, in order:
             --  a keyword by the `word` scanner, any other literal by its bytes.
-            Append (Buf, "      if P.Pos > P.Text'Last then Fail (P, ""a " & TN & """); end if;");
+            Append (Buf, "      if P.Pos > Limit (P) then Fail (P, ""a " & TN & """); end if;");
             Append (Buf, LF);
             declare
                Lits   : String_Vectors.Vector;
@@ -2051,7 +2094,7 @@ package body HBNF_Ada is
                   Append (Buf, "      declare");
                   Append (Buf, LF);
                   Append (Buf, "         N : constant Natural := " & Scan_Fn (CN)
-                    & " (P.Text.all, P.Pos, P.Text'Last);");
+                    & " (P.Text.all, P.Pos, Limit (P));");
                   Append (Buf, LF);
                   Append (Buf, "      begin");
                   Append (Buf, LF);
@@ -2065,6 +2108,75 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                   Append (Buf, "      end;");
                   Append (Buf, LF);
+               end;
+            elsif HBNF_Grammar.Except_Operand (NM) /= "" then
+               --  `X = A - B` with a phrase on a side: parse A; then try B on
+               --  exactly the text A matched (the input ends where A did, and
+               --  B must end there too).  If it does, X does not match.
+               declare
+                  A : constant String := To_String (P (1).Name);
+                  B : constant String := HBNF_Grammar.Except_Operand (NM);
+
+                  function Chase (Nm : String) return String is
+                     N : Unbounded_String := To_Unbounded_String (Nm);
+                  begin
+                     for Hops in 1 .. 20 loop
+                        declare
+                           J : constant Natural := Find (Rules, To_String (N));
+                        begin
+                           exit when J = 0
+                             or else Natural (Rules (J).Pattern.Length) /= 1
+                             or else Rules (J).Pattern (1).Kind /= Name
+                             or else Rules (J).Pattern (1).Min /= 1
+                             or else Rules (J).Pattern (1).Max /= 1
+                             or else Is_Core (To_String (Rules (J).Pattern (1).Name));
+                           N := Rules (J).Pattern (1).Name;
+                        end;
+                     end loop;
+                     return To_String (N);
+                  end Chase;
+
+                  function Owns (Nm : String) return Boolean is
+                     J : constant Natural := Find (Rules, Chase (Nm));
+                  begin
+                     return J /= 0
+                       and then Analyze (Rules, J).Kind in Struct | List;
+                  end Owns;
+               begin
+                  Append (Buf, "      declare" & LF);
+                  Append (Buf, "         Save : constant Natural := P.Pos;" & LF);
+                  Append (Buf, "         R    : " & Ada_Ident (NM) & "_Type := Parse_"
+                    & Ada_Ident (A) & " (P);" & LF);
+                  Append (Buf, "         Stop : constant Natural := P.Pos;" & LF);
+                  Append (Buf, "         Keep : constant Natural := P.Last;" & LF);
+                  Append (Buf, "         Same : Boolean := False;" & LF);
+                  Append (Buf, "         Tmp  : " & Ada_Ident (B) & "_Type;" & LF);
+                  Append (Buf, "      begin" & LF);
+                  Append (Buf, "         P.Pos := Save;" & LF);
+                  Append (Buf, "         P.Last := Stop;" & LF);
+                  Append (Buf, "         begin" & LF);
+                  Append (Buf, "            Tmp := Parse_" & Ada_Ident (B) & " (P);" & LF);
+                  Append (Buf, "            Same := P.Pos = Stop;" & LF);
+                  if Owns (B) then
+                     Append (Buf, "            Free_" & Ada_Ident (Chase (B))
+                       & " (Tmp);" & LF);
+                  end if;
+                  Append (Buf, "         exception" & LF);
+                  Append (Buf, "            when Parse_Error => null;" & LF);
+                  Append (Buf, "         end;" & LF);
+                  Append (Buf, "         P.Last := Keep;" & LF);
+                  Append (Buf, "         P.Pos := Stop;" & LF);
+                  Append (Buf, "         if Same then" & LF);
+                  if Owns (A) then
+                     Append (Buf, "            Free_" & Ada_Ident (Chase (A))
+                       & " (R);" & LF);
+                  end if;
+                  Append (Buf, "            P.Pos := Save;" & LF);
+                  Append (Buf, "            Fail (P, ""`" & A & "` that is not `" & B
+                    & """);" & LF);
+                  Append (Buf, "         end if;" & LF);
+                  Append (Buf, "         return R;" & LF);
+                  Append (Buf, "      end;" & LF);
                end;
             else
                Append (Buf, "      return Parse_"
@@ -2091,7 +2203,7 @@ package body HBNF_Ada is
                                  Append (Buf, LF);
                                  Append (Buf, "         N : constant Natural := "
                                    & Scan_Fn (CN)
-                                   & " (P.Text.all, P.Pos, P.Text'Last);");
+                                   & " (P.Text.all, P.Pos, Limit (P));");
                                  Append (Buf, LF);
                                  Append (Buf, "      begin");
                                  Append (Buf, LF);
@@ -2373,7 +2485,8 @@ package body HBNF_Ada is
          --  is named: `V.` for the parameter, `E.` for a local copy of a vector
          --  element.
          procedure Free_Member
-           (Idx : Natural; M : Member; Prefix : String; Buf : in out U) is
+           (Idx : Natural; M : Member; Prefix : String; Buf : in out U;
+            Held : Boolean := False) is
             NM  : constant String := To_String (M.Name);
             F   : constant String := Ada_Field (NM);
             J   : constant Natural := Find (Rules, NM);
@@ -2385,6 +2498,8 @@ package body HBNF_Ada is
                   J
                elsif Is_Back (Backs, Idx, NM) then
                   Leaf_Record (Rules, NM)
+               elsif Held and then Alias_Record (Rules, NM) /= 0 then
+                  Leaf_Record (Rules, NM)
                else
                   0);
          begin
@@ -2394,6 +2509,11 @@ package body HBNF_Ada is
                --  record, which is exactly when they were allocated.
                if J > 0 and then Is_Record (Analyze (Rules, J)) then
                   Free_Vector (Buf, Prefix & F, Ada_Ident (NM));
+               elsif Alias_Record (Rules, NM) /= 0 then
+                  Free_Vector
+                    (Buf, Prefix & F,
+                     Ada_Ident
+                       (To_String (Rules (Leaf_Record (Rules, NM)).Name)));
                elsif J > 0 and then Over_Leaf (Rules, J)
                  and then Analyze (Rules, Leaf_Target (Rules, J)).Kind = List
                then
@@ -2469,6 +2589,15 @@ package body HBNF_Ada is
                            then
                               Free_Vector (Stmts, "V",
                                 Ada_Ident (To_String (Info.Elem_Name)));
+                           elsif Alias_Record
+                                   (Rules, To_String (Info.Elem_Name)) /= 0
+                           then
+                              Free_Vector
+                                (Stmts, "V",
+                                 Ada_Ident
+                                   (To_String
+                                      (Rules (Leaf_Record
+                                        (Rules, To_String (Info.Elem_Name))).Name)));
                            elsif E > 0 and then Over_Leaf (Rules, E)
                              and then Analyze
                                (Rules, Leaf_Target (Rules, E)).Kind = List
@@ -2492,7 +2621,7 @@ package body HBNF_Ada is
                            for M of Info.Elem_Members loop
                               Free_Member
                                 (I, (Name => M.Name, Is_List => False),
-                                 "E.", Inner);
+                                 "E.", Inner, Held => True);
                            end loop;
                            if To_String (Inner) /= "" then
                               Append (Stmts, "   for K in V.First_Index .. "
@@ -2890,7 +3019,7 @@ package body HBNF_Ada is
          if Has_No_Case (Rules) then
             Append (Nocase_Proc,
               "   procedure Expect_Word_Nocase (P : in out Parser; Lit : String) is" & LF
-              & "      N : constant Natural := Scan_Word (P.Text.all, P.Pos, P.Text'Last);" & LF
+              & "      N : constant Natural := Scan_Word (P.Text.all, P.Pos, Limit (P));" & LF
               & "   begin" & LF
               & "      if N = Lit'Length" & LF
               & "        and then Ada.Strings.Equal_Case_Insensitive" & LF
@@ -2904,7 +3033,7 @@ package body HBNF_Ada is
               & "   --  A case-insensitive literal that is not a keyword: its characters." & LF
               & "   procedure Expect_Lit_Nocase (P : in out Parser; Lit : String) is" & LF
               & "   begin" & LF
-              & "      if P.Pos + Lit'Length - 1 <= P.Text'Last" & LF
+              & "      if P.Pos + Lit'Length - 1 <= Limit (P)" & LF
               & "        and then Ada.Strings.Equal_Case_Insensitive" & LF
               & "                   (P.Text (P.Pos .. P.Pos + Lit'Length - 1), Lit)" & LF
               & "      then" & LF
@@ -2921,7 +3050,7 @@ package body HBNF_Ada is
             Append (Skip_Body, "      N : Natural;" & LF & "   begin" & LF
               & "      loop" & LF
               & "         N := Scan_" & Ada_Ident (Ws_Name)
-              & " (P.Text.all, P.Pos, P.Text'Last);" & LF
+              & " (P.Text.all, P.Pos, Limit (P));" & LF
               & "         exit when N = 0;" & LF
               & "         P.Pos := P.Pos + N;" & LF
               & "      end loop;" & LF

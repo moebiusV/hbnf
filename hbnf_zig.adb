@@ -1974,6 +1974,71 @@ package body HBNF_Zig is
                Append (Buf, LF);
                Append (Buf, "    return r;");
                Append (Buf, LF);
+            elsif HBNF_Grammar.Except_Operand (NM) /= "" then
+               --  `X = A - B` with a phrase on a side: parse A; then try B on
+               --  exactly the text A matched (the input ends where A did, and
+               --  B must end there too).  If it does, X does not match.
+               declare
+                  A : constant String := To_String (P (1).Name);
+                  B : constant String := HBNF_Grammar.Except_Operand (NM);
+
+                  --  The rule a name stands for, through single-name aliases.
+                  function Chase (Nm : String) return String is
+                     N : Unbounded_String := To_Unbounded_String (Nm);
+                  begin
+                     for Hops in 1 .. 20 loop
+                        declare
+                           J : constant Natural := Find (Rules, To_String (N));
+                        begin
+                           exit when J = 0
+                             or else Natural (Rules (J).Pattern.Length) /= 1
+                             or else Rules (J).Pattern (1).Kind /= Name
+                             or else Rules (J).Pattern (1).Min /= 1
+                             or else Rules (J).Pattern (1).Max /= 1
+                             or else Is_Core (To_String (Rules (J).Pattern (1).Name));
+                           N := Rules (J).Pattern (1).Name;
+                        end;
+                     end loop;
+                     return To_String (N);
+                  end Chase;
+
+                  --  Does a value of this rule own memory to release?
+                  function Owns (Nm : String) return Boolean is
+                     J : constant Natural := Find (Rules, Chase (Nm));
+                  begin
+                     return J /= 0
+                       and then Analyze (Rules, J).Kind in Struct | List;
+                  end Owns;
+               begin
+                  Append (Buf, "    const save = p.pos;" & LF);
+                  Append (Buf, "    " & (if Owns (A) then "var" else "const")
+                    & " r = try parse_" & Zig_Snake (A) & "(p);" & LF);
+                  if Owns (A) then
+                     Append (Buf, "    errdefer deinit_" & Zig_Snake (Chase (A))
+                       & "(&r, p.alloc);" & LF);
+                  end if;
+                  Append (Buf, "    const end = p.pos;" & LF);
+                  Append (Buf, "    const keep = p.*;" & LF);
+                  Append (Buf, "    p.text = p.text[0..end]; p.pos = save;" & LF);
+                  Append (Buf, "    var same = false;" & LF);
+                  if Owns (B) then
+                     Append (Buf, "    if (parse_" & Zig_Snake (B) & "(p)) |bv| {" & LF);
+                     Append (Buf, "        var b = bv;" & LF);
+                     Append (Buf, "        same = p.pos == end;" & LF);
+                     Append (Buf, "        deinit_" & Zig_Snake (Chase (B))
+                       & "(&b, p.alloc);" & LF);
+                  else
+                     Append (Buf, "    if (parse_" & Zig_Snake (B) & "(p)) |_| {" & LF);
+                     Append (Buf, "        same = p.pos == end;" & LF);
+                  end if;
+                  Append (Buf, "    } else |e| {" & LF);
+                  Append (Buf, "        if (e == error.OutOfMemory) { p.* = keep; return e; }" & LF);
+                  Append (Buf, "    }" & LF);
+                  Append (Buf, "    p.* = keep;" & LF);
+                  Append (Buf, "    if (same) { p.pos = save; try p.fail(""`" & A
+                    & "` that is not `" & B & """); }" & LF);
+                  Append (Buf, "    return r;" & LF);
+               end;
             else
                Append (Buf, "    return try parse_" & Zig_Snake (To_String (P (1).Name))
                  & "(p);");

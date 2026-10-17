@@ -838,11 +838,28 @@ package body HBNF_C is
             end if;
 
             if E.Kind = Name then
-               return (Kind        => Scalar,
-                       Inline_Type =>
-                         To_Unbounded_String
-                           (C_Type_Of (Rules, To_String (E.Name))),
-                       others      => <>);
+               declare
+                  T : constant Natural := Find (Rules, To_String (E.Name));
+                  Names_List : constant Boolean :=
+                    T /= 0
+                    and then Rules (T).Jet_Code = Null_Unbounded_String
+                    and then not Is_Char_Rule (Rules, To_String (E.Name))
+                    and then Natural (Rules (T).Pattern.Length) = 1
+                    and then (Rules (T).Pattern (1).Min /= 1
+                              or else Rules (T).Pattern (1).Max /= 1);
+               begin
+                  --  An alias of a list rule stands for the list itself: its
+                  --  head struct, as a field naming the list would hold, not
+                  --  the list's node type.
+                  return (Kind        => Scalar,
+                          Inline_Type =>
+                            To_Unbounded_String
+                              (if Names_List
+                               then "struct " & Pfx & C_Name (To_String (E.Name))
+                                    & "_list"
+                               else C_Type_Of (Rules, To_String (E.Name))),
+                          others      => <>);
+               end;
             elsif E.Kind = Group then
                declare
                   Members : Member_Vectors.Vector;
@@ -1279,11 +1296,26 @@ package body HBNF_C is
 
                --  Single element, no repetition.
                if E.Kind = Name then
-                  return (Kind => Scalar,
-                          Inline_Type =>
-                            To_Unbounded_String
-                              (C_Type_Of (To_String (E.Name))),
-                          others      => <>);
+                  declare
+                     T : constant Natural := Find (To_String (E.Name));
+                     Names_List : constant Boolean :=
+                       T /= 0
+                       and then Rules (T).Jet_Code = Null_Unbounded_String
+                       and then not Is_Char_Rule (Rules, To_String (E.Name))
+                       and then Natural (Rules (T).Pattern.Length) = 1
+                       and then (Rules (T).Pattern (1).Min /= 1
+                                 or else Rules (T).Pattern (1).Max /= 1);
+                  begin
+                     --  An alias of a list rule stands for the list itself.
+                     return (Kind => Scalar,
+                             Inline_Type =>
+                               To_Unbounded_String
+                                 (if Names_List
+                                  then "struct " & Pfx & C_Name (To_String (E.Name))
+                                       & "_list"
+                                  else C_Type_Of (To_String (E.Name))),
+                             others      => <>);
+                  end;
                elsif E.Kind = Group then
                   declare
                      Members : Member_Vectors.Vector;
@@ -4153,6 +4185,65 @@ package body HBNF_C is
                      H ("expr", Scalar_Value (PN, "n")))));
                end;
                Append (Buf, LF);
+            elsif HBNF_Grammar.Except_Operand (NM) /= "" then
+               --  `X = A - B` with a phrase on a side: parse A; then try B on
+               --  exactly the text A matched (the input ends where A did, and B
+               --  must end there too).  If it does, X does not match.
+               declare
+                  A  : constant String := To_String (P (1).Name);
+                  B  : constant String := HBNF_Grammar.Except_Operand (NM);
+                  JB : constant Natural := Find (Rules, B);
+                  Ty : constant String := Out_Type (JB);   --  "T *out"
+                  Decl : constant String := Ty (Ty'First .. Ty'Last - 5);
+
+                  --  The statement that releases a value of rule Name at Addr.
+                  function Free_Of (Name, Addr : String) return String is
+                     T : constant String := Alias_Target (Rules, Name);
+                     J : constant Natural := Find (Rules, T);
+                  begin
+                     if J = 0 then
+                        return "";
+                     end if;
+                     case Analyze (Rules, J).Kind is
+                        when Struct =>
+                           return "free_" & C_Name (T) & "_fields(" & Addr & ");";
+                        when List =>
+                           return "free_" & C_Name (T) & "(" & Addr & ");";
+                        when others =>
+                           return "";
+                     end case;
+                  end Free_Of;
+               begin
+                  Append (Buf, "    size_t save = p->pos;" & LF);
+                  Append (Buf, "    if (!parse_rule_" & C_Name (A)
+                    & "(p, out)) return false;" & LF);
+                  Append (Buf, "    {" & LF);
+                  Append (Buf, "        size_t end = p->pos;" & LF);
+                  Append (Buf, "        " & Decl & " tmp; parser_t keep = *p;"
+                    & " bool ok, same;" & LF);
+                  Append (Buf, "        memset(&tmp, 0, sizeof tmp);" & LF);
+                  Append (Buf, "        p->pos = save; p->len = end;" & LF);
+                  Append (Buf, "        ok = parse_rule_" & C_Name (B)
+                    & "(p, &tmp);" & LF);
+                  Append (Buf, "        same = ok && p->pos == end;" & LF);
+                  if Free_Of (B, "&tmp") /= "" then
+                     Append (Buf, "        if (ok) { " & Free_Of (B, "&tmp")
+                       & " }" & LF);
+                  end if;
+                  Append (Buf, "        *p = keep;" & LF);
+                  Append (Buf, "        if (same) {" & LF);
+                  if Free_Of (A, "out") /= "" then
+                     Append (Buf, "            " & Free_Of (A, "out") & LF);
+                  end if;
+                  Append (Buf, "            p->pos = save;" & LF);
+                  Append (Buf, "            fail(p, ""`" & A
+                    & "` that is not `" & B
+                    & """, 0, p->text + save, 0);" & LF);
+                  Append (Buf, "            return false;" & LF);
+                  Append (Buf, "        }" & LF);
+                  Append (Buf, "    }" & LF);
+                  Append (Buf, "    return true;" & LF);
+               end;
             else
                Append (Buf, Fill ("c_rule_alias_ref",
                  (1 => H ("name", C_Name (To_String (P (1).Name))))));

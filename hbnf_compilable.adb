@@ -860,22 +860,6 @@ package body HBNF_Compilable is
                else
                   Walk (N, P, Natural (P.Length) = 1);
                end if;
-               --  An alias of a list rule would take the list's node type,
-               --  not its head type, in every backend.
-               if Natural (P.Length) = 1 and then P (1).Kind = Name
-                 and then P (1).Min = 1 and then P (1).Max = 1
-               then
-                  declare
-                     T : constant Natural := Find (Rules, To_String (P (1).Name));
-                  begin
-                     if T /= 0 and then Is_List_Rule (Rules (T)) then
-                        raise Parse_Error with
-                          N & ": an alias of the list rule `"
-                          & To_String (P (1).Name) & "` is not supported yet; "
-                          & "define " & N & " as a list of the same element";
-                     end if;
-                  end;
-               end if;
             end if;
          end;
       end loop;

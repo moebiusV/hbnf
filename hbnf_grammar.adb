@@ -313,6 +313,7 @@ package body HBNF_Grammar is
    --  `prefix none` in a file, `--prefix=none` on the command line: the
    --  generated identifiers keep the names of the rules.
    No_Name_Prefix : Boolean := False;
+   Token_Yes, Token_No : Path_Sets.Set;   --  Except_Is_Token, per rule count
    Flag_No_Prefix : Boolean := False;
    Emitted_Rules : Path_Sets.Set;
    File_Dialect : Unbounded_String;
@@ -429,6 +430,8 @@ package body HBNF_Grammar is
       Except_Bases.Clear;
       File_Dialect := Null_Unbounded_String;
       No_Name_Prefix := False;
+      Token_Yes.Clear;
+      Token_No.Clear;
       Pending_Except_B := Null_Unbounded_String;
       Declared_Tokens.Clear;
       Union_Sites.Clear;
@@ -3185,8 +3188,11 @@ package body HBNF_Grammar is
                   By_Name (To_String (Used (J).Name)),
                   Element_Vectors.Empty_Vector);
             end if;
-            --  The operands of an exception are tokens: text, read exactly.
-            if Excepts.Contains (To_String (Used (J).Name)) then
+            --  An exception with a phrase on one side parses that side as a
+            --  rule; a built-in type has no rule to parse.
+            if Excepts.Contains (To_String (Used (J).Name))
+              and then not Except_Is_Token (Rules, To_String (Used (J).Name))
+            then
                declare
                   X : constant String := To_String (Used (J).Name);
                begin
@@ -3195,32 +3201,18 @@ package body HBNF_Grammar is
                         Op : constant String :=
                           (if Side = 1 then Except_Bases.Element (X)
                            else Excepts.Element (X));
-                        D  : HBNF_Lookahead.Dfa_State_Vectors.Vector;
-                        Ok : Boolean := True;
-                        Why : Unbounded_String;
-                        K  : constant Natural := Index_Of (Rules, Op);
                      begin
                         if Is_Core_Name (Op) then
-                           null;
-                        elsif K = 0 then
-                           null;   --  an undefined name has its own message
-                        elsif Is_Dfa_Token (Rules, Op) then
-                           HBNF_Lookahead.Token_Dfa (Rules, Op, D, Ok, Why);
-                        elsif not Is_Char_Rule_Plain (Rules, Op) then
-                           Ok  := False;
-                           Why := To_Unbounded_String
-                             ("it is code, not text hbnf can read");
-                        end if;
-                        if not Ok then
-                           Report ("in rule `" & X & "`: `" & Op
-                                   & "` cannot be one token in `"
+                           Report ("in rule `" & X & "`: `" & Op & "` is a "
+                                   & "built-in type, and `"
                                    & Except_Bases.Element (X) & " - "
-                                   & Excepts.Element (X) & "`: "
-                                   & To_String (Why) & ASCII.LF
-                                   & "  `a - b` is the text `a` matches, "
-                                   & "unless `b` matches exactly that text; "
-                                   & "both are read as text, with no "
-                                   & "whitespace skipped inside");
+                                   & Excepts.Element (X) & "` has a phrase "
+                                   & "(a rule that skips whitespace, or is "
+                                   & "code) on the other side" & ASCII.LF
+                                   & "  In `a - b` that has a phrase on a "
+                                   & "side, both sides are parsed as rules: "
+                                   & "give the built-in a rule of its own, "
+                                   & "`w = " & Op & "`, and write `w`");
                         end if;
                      end;
                   end loop;
@@ -4868,6 +4860,118 @@ package body HBNF_Grammar is
       return Rec (Nm, 20);
    end Is_Char_Rule_Plain;
 
+   --  Does a rule, or any rule it reaches, skip whitespace between elements?
+   function Skips_Whitespace
+     (Rules : Rule_Vectors.Vector; Nm : String) return Boolean is
+      Seen : Path_Sets.Set;
+
+      function Rec (N : String) return Boolean;
+
+      function Rec_Els
+        (Els : Element_Vectors.Vector; Ws : Boolean) return Boolean is
+      begin
+         for E of Els loop
+            case E.Kind is
+               when Name =>
+                  if Rec (To_String (E.Name)) then
+                     return True;
+                  end if;
+               when Group =>
+                  if (Ws and then Natural (E.Items.Length) > 1)
+                    or else Rec_Els (E.Items, Ws)
+                  then
+                     return True;
+                  end if;
+               when others =>
+                  null;
+            end case;
+         end loop;
+         return False;
+      end Rec_Els;
+
+      function Rec (N : String) return Boolean is
+         J : constant Natural := Index_Of (Rules, N);
+      begin
+         if J = 0 or else Is_Core_Name (N) or else Seen.Contains (N) then
+            return False;
+         end if;
+         Seen.Insert (N);
+         declare
+            Ws : constant Boolean :=
+              Rules (J).Whitespace /= Null_Unbounded_String;
+         begin
+            if Ws and then Natural (Rules (J).Pattern.Length) > 1 then
+               return True;
+            end if;
+            return Rec_Els (Rules (J).Pattern, Ws);
+         end;
+      end Rec;
+   begin
+      return Rec (Nm);
+   end Skips_Whitespace;
+
+   --  Is Op text hbnf can scan exactly, as one token?
+   function Operand_Is_Text
+     (Rules : Rule_Vectors.Vector; Op : String) return Boolean is
+      J   : constant Natural := Index_Of (Rules, Op);
+      D   : HBNF_Lookahead.Dfa_State_Vectors.Vector;
+      Ok  : Boolean;
+      Why : Unbounded_String;
+   begin
+      if Is_Core_Name (Op) then
+         return True;
+      end if;
+      if J = 0 or else Rules (J).Jet_Code /= Null_Unbounded_String then
+         return False;
+      end if;
+      if Is_Char_Rule_Plain (Rules, Op) then
+         return True;
+      end if;
+      HBNF_Lookahead.Token_Dfa (Rules, Op, D, Ok, Why);
+      return Ok and then not Skips_Whitespace (Rules, Op);
+   end Operand_Is_Text;
+
+   function Except_Is_Token
+     (Rules : Rule_Vectors.Vector; X : String) return Boolean is
+      Key : constant String :=
+        X & "#" & Natural'Image (Natural (Rules.Length));
+   begin
+      if not Excepts.Contains (X) then
+         return False;
+      end if;
+      if Token_Yes.Contains (Key) then
+         return True;
+      elsif Token_No.Contains (Key) then
+         return False;
+      end if;
+      if Operand_Is_Text (Rules, Except_Bases.Element (X))
+        and then Operand_Is_Text (Rules, Excepts.Element (X))
+      then
+         Token_Yes.Include (Key);
+         return True;
+      end if;
+      Token_No.Include (Key);
+      return False;
+   end Except_Is_Token;
+
+   --  Is Nm an operand of an exception that is a token?
+   function Is_Token_Operand
+     (Rules : Rule_Vectors.Vector; Nm : String) return Boolean is
+   begin
+      for C in Excepts.Iterate loop
+         declare
+            X : constant String := Except_Maps.Key (C);
+         begin
+            if (Except_Maps.Element (C) = Nm or else Except_Bases.Element (X) = Nm)
+              and then Except_Is_Token (Rules, X)
+            then
+               return True;
+            end if;
+         end;
+      end loop;
+      return False;
+   end Is_Token_Operand;
+
    --  An operand of an exception that is not a scanner already is a token
    --  whatever it is made of (groups, nested repetitions, alternatives of
    --  words): its scanner is a deterministic automaton built from its text.
@@ -4875,7 +4979,7 @@ package body HBNF_Grammar is
       return Boolean is
       J : constant Natural := Index_Of (Rules, Nm);
    begin
-      return Is_Except_Operand (Nm)
+      return Is_Token_Operand (Rules, Nm)
         and then not Is_Core_Name (Nm)
         and then J /= 0
         and then Rules (J).Jet_Code = Null_Unbounded_String
@@ -4884,7 +4988,8 @@ package body HBNF_Grammar is
 
    function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean is
-     (Excepts.Contains (Nm) or else Is_Dfa_Token (Rules, Nm)
+     ((Excepts.Contains (Nm) and then Except_Is_Token (Rules, Nm))
+      or else Is_Dfa_Token (Rules, Nm)
       or else Is_Char_Rule_Plain (Rules, Nm));
 
    function Is_Char_Token (Rules : Rule_Vectors.Vector; Nm : String)
@@ -4912,14 +5017,10 @@ package body HBNF_Grammar is
       then
          return True;
       end if;
-      --  The operands of an exception are scanned by the rule that excepts.
-      for C in Excepts.Iterate loop
-         if Except_Maps.Element (C) = Nm
-           or else Except_Bases.Element (Except_Maps.Key (C)) = Nm
-         then
-            return True;
-         end if;
-      end loop;
+      --  The operands of a token exception are scanned by the rule that excepts.
+      if Is_Token_Operand (Rules, Nm) then
+         return True;
+      end if;
       for R of Rules loop
          if not Is_Char_Rule (Rules, To_String (R.Name)) then
             if Refers (R.Pattern) then

@@ -1768,6 +1768,28 @@ package body HBNF_Rust is
                Append (Buf, LF);
                Append (Buf, "    Ok(r)");
                Append (Buf, LF);
+            elsif HBNF_Grammar.Except_Operand (NM) /= "" then
+               --  `X = A - B` with a phrase on a side: parse A; then try B on
+               --  exactly the text A matched (the input ends where A did, and
+               --  B must end there too).  If it does, X does not match.
+               declare
+                  A : constant String := To_String (P (1).Name);
+                  B : constant String := HBNF_Grammar.Except_Operand (NM);
+               begin
+                  Append (Buf, "    let save = p.pos;" & LF);
+                  Append (Buf, "    let r = parse_" & Rust_Snake (A) & "(p)?;" & LF);
+                  Append (Buf, "    let end = p.pos;" & LF);
+                  Append (Buf, "    let full = p.text;" & LF);
+                  Append (Buf, "    let (keep_pos, keep_err) = (p.err_pos, p.err.clone());" & LF);
+                  Append (Buf, "    p.text = &full[..end]; p.pos = save;" & LF);
+                  Append (Buf, "    let same = parse_" & Rust_Snake (B)
+                    & "(p).is_ok() && p.pos == end;" & LF);
+                  Append (Buf, "    p.text = full; p.pos = end;" & LF);
+                  Append (Buf, "    p.err_pos = keep_pos; p.err = keep_err;" & LF);
+                  Append (Buf, "    if same { p.pos = save; return Err(p.fail(""`" & A
+                    & "` that is not `" & B & """)); }" & LF);
+                  Append (Buf, "    Ok(r)" & LF);
+               end;
             else
                Append (Buf, "    parse_" & Rust_Snake (To_String (P (1).Name))
                  & "(p)");

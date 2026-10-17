@@ -4,7 +4,11 @@
    type Parser is record
       Text : Text_Access;
       Pos  : Natural := 1;
+      Last : Natural := Natural'Last;   --  the input is cut here for a trial parse (`a - b`)
    end record;
+
+   function Limit (P : Parser) return Natural is
+     (Natural'Min (P.Last, P.Text'Last));
 
    Spaces : constant String :=
      "                                                                ";
@@ -70,7 +74,7 @@
    --  prefix is correct there, e.g. "-" in "-5", "0x" in "0x1F").
    procedure Expect_Lit (P : in out Parser; Lit : String) is
    begin
-      if P.Pos + Lit'Length - 1 <= P.Text'Last
+      if P.Pos + Lit'Length - 1 <= Limit (P)
         and then P.Text (P.Pos .. P.Pos + Lit'Length - 1) = Lit
       then
          P.Pos := P.Pos + Lit'Length;
@@ -82,7 +86,7 @@
    --  A keyword: the whole bareword at the position must be the literal, so
    --  `in` does not match the front of `input`.
    procedure Expect_Word (P : in out Parser; Lit : String) is
-      N : constant Natural := Scan_Word (P.Text.all, P.Pos, P.Text'Last);
+      N : constant Natural := Scan_Word (P.Text.all, P.Pos, Limit (P));
    begin
       if N = Lit'Length and then P.Text (P.Pos .. P.Pos + N - 1) = Lit then
          P.Pos := P.Pos + N;
