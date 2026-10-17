@@ -953,7 +953,13 @@ should claim that before 10.
        are tokens, with a table-driven scanner (a deterministic automaton
        built from the rule's text, the longest match, in all four backends),
        so groups, nested repeats and alternatives of words work as operands
-       (*done 2026-10-07*).  **Next**: a rule with no named children is a
+       (*done 2026-10-07*).  With a phrase on a side (a rule that skips
+       whitespace, or contains a built-in or `%scan`) it is a *phrase exception*:
+       A is parsed, then B is tried on exactly the text A matched
+       (*done 2026-10-17*, all four backends; tests/schema.sh).  Found on the
+       way and open: in Ada an alias of a record used in a list entry
+       (`x = item`, `1*( x ";" )`) is declared before the record and does not
+       compile, with or without an exception.  **Next**: a rule with no named children is a
        token, always scanned as text, so "character rule" goes away as a
        concept (it changes the generated type of rules like
        `x = 1*( "a" / "b" )`, now a list of empty nodes; check the daemon

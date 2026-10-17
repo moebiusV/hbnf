@@ -166,7 +166,7 @@ only where two dialects spell different things the same way.
 | Concatenation | juxtaposition | `a , b` | juxtaposition | juxtaposition; under `dialect ebnf`, `,` joins; elsewhere `,` gets a message saying so |
 | End of a rule | line | `;` | line | end of the line (a line that goes on is indented); `;` starts a comment, so a `;` at the end of a line is harmless; under `dialect ebnf`, `;` ends a rule and a line end is white space |
 | Comments | — | `(* *)` | `;` | `;`, `(* *)` and `/* */` |
-| Exception | — | `a - b` | — | `x = a - b`, the whole of a rule: the text `a` matches, unless `b` matches exactly that text (`cmd-name = word - reserved`).  Both are tokens: read as text, longest match, no whitespace skipped inside, and each may be anything made of literals, classes, groups, alternatives and repetitions; a built-in scanner (`word`) is fine as an operand on its own.  See "Tokens" below |
+| Exception | — | `a - b` | — | `x = a - b`, the whole of a rule: what `a` matches, unless `b` matches exactly the text `a` matched (`cmd-name = word - reserved`).  Two forms, chosen by what the operands are: a token exception when both are text hbnf can read exactly, and a phrase exception when either is a rule that skips whitespace or is code.  See "Tokens, and the exception" below |
 | Strings | — | no escapes | no escapes | C escapes, except where the file says `dialect abnf` or `dialect ebnf` (or `--abnf`, `--ebnf`) |
 | White space | — | skipped | significant | skipped, except where the file says `dialect abnf` (`whitespace none`) |
 
@@ -218,22 +218,39 @@ no dialect line that opts out; a prefixed name cannot collide with a built-in.
 
 ### Tokens, and the exception
 
-A token is text.  A rule an exception names (`a` or `b` in `x = a - b`) is read
-as text and scanned as one: hbnf builds a deterministic automaton from the
-literals, classes, groups, alternatives and repetitions it is made of (other
-rules it refers to are read into it), and the generated scanner, in all four
-backends, takes the longest text that ends in an accepting state.  It decides
-nothing by looking ahead and makes no choice, so no grammar can be ambiguous
-or in conflict through it.  `x = a - b` scans `a`, then asks whether `b` matches
-exactly that text, by scanning `b` with the end of the input moved to where `a`
-stopped; if so `x` does not match.  So `word - reserved` rejects `if` and
-accepts `iff`, and the keyword need not be known to the rest of the grammar.
+`x = a - b` is what `a` matches, unless `b` matches exactly that text.  It comes
+in two forms, and hbnf picks the form from the operands, so the notation is the
+same.
 
-Not every rule can be a token: one that uses a jet or a built-in scanner inside
-itself, refers to itself, has a repetition bound past 32 or needs more than 2000
-states is refused with the reason, never approximated, because a scanner must
-match exactly what the grammar says.  (RFCPLAN.md has the plan to treat every
-rule without named children as a token.)
+**A token exception** is for operands that are text hbnf can read exactly: a
+built-in scanner (`word`), a rule of characters, or a rule made only of
+literals, classes, groups, repetitions and other such rules, in a file where no
+whitespace is skipped inside it.  Each such operand is read as a token: hbnf
+builds a deterministic automaton from the text, and the generated scanner, in all
+four backends, takes the longest text that ends in an accepting state.  It
+decides nothing by looking ahead and makes no choice, so no grammar can be
+ambiguous or in conflict through it.  `x` scans `a`, then asks whether `b`
+matches exactly that text, by scanning `b` with the end of the input moved to
+where `a` stopped.  So `word - reserved` rejects `if` and accepts `iff`.  An
+operand that cannot be one token (it refers to itself, bounds a repetition past
+32, needs more than 2000 states) is not approximated; the exception is then a
+phrase exception.
+
+**A phrase exception** is for the rest: an operand that is a rule with several
+elements in a file that skips whitespace between them, or one that contains a
+`%scan` or a built-in the automaton cannot see into.  `x` parses `a` with its
+own parser, which builds a tree; then it tries `b` on the same text, with the
+input cut off where `a` ended and `b` required to end there too, and throws the
+trial's tree away.  If `b` matched the whole of it, `x` fails and the position
+and the tree are put back, so the enclosing rule's ordered choice goes on as if
+`x` had not matched.  Whitespace inside the operands is skipped as it is
+everywhere else in the file.  The message says `` `a` that is not `b` ``.  `x`
+has `a`'s type.  A built-in (`word`) on one side of a phrase exception has no
+rule to parse, so hbnf says to give it one: `w = word`.
+
+Neither form is a language difference in the sense of ISO 14977, which would
+also take shorter matches of `a`: this is the committed match, which is what a
+reserved word needs.
 
 ## 5. What hbnf adds
 

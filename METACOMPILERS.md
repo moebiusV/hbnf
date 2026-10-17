@@ -417,3 +417,76 @@ hash (as `bench/` does for the ntpd sources, and for the same reason: the tape i
 not ours to commit), read `syntax.imc` with a small `dialect imp72`, and report
 the classes, the productions, and the ambiguities hbnf finds.  It is the only
 step whose result changes what the next one is.
+
+## IMP72 and Ada, both from ALGOL
+
+Ada is hbnf's implementation language and one of its four backends, and IMP is
+the language of the compiler in `imp72-corpus/`.  Both are ALGOL's descendants
+by different roads: Ada through Pascal, with ALGOL 68's influence on its
+types; IMP through Irons, whose syntax-directed compiler for ALGOL 60 (1961) is
+where his line of work begins.  The IMP72 manual describes the language as "a
+simple higher-level language intended primarily for system programming",
+"roughly at the level of FORTRAN II" in power with "a bit like ALGOL in
+flavor".  Same family, opposite bets.  What follows is read from the manual
+(section numbers are its), and the Ada side is the language as published.
+
+| | IMP72 | Ada |
+|---|---|---|
+| **Aim** | system programming on one machine, the PDP-10, with all its registers and instructions in reach (§1.1) | systems and embedded programming, portable across machines, checked at compile time |
+| **Statements** | none: "no distinction is made between expressions and statements", so `;` is a binary operator whose value is its second operand, and parentheses group (§2.1.2) | statements and expressions are separate; `;` ends a statement |
+| **Reserved words** | none (§1.1, item 4); a word is a keyword where a syntax statement says so | about seventy |
+| **Types** | integer and real only, plus what the programmer does with words; variables need no declaration unless they are arrays (§1.3) | strong, declared, user-defined: records, enumerations, ranges, access types, tagged types, generics |
+| **Scope** | one global scope for a compilation; `LOCAL` renames a variable to a unique name within one subroutine (§2.1.4) | nested blocks, packages, private parts; scope is lexical and checked |
+| **Precedence** | all binary operators equal, evaluated right to left, "as in APL"; relations after those (§2.2) | the conventional levels |
+| **Control** | `A=>B ELSE C`, `A FOR I IN 0,1,N`, `WHILE`, `GO TO`; labels are variables and can be stored into: `T:G0 TO T` writes an instruction into the next word (§2.1.3) | `if`, `case`, three loops, `exit`, `goto`, exceptions |
+| **Calling** | FORTRAN's convention, so IMP and FORTRAN call each other (§2.1.4) | its own, with `in`, `out` and `in out` modes, and `pragma Import` with `Convention => Fortran` and others |
+| **Machine access** | registers `0R`..`15R` are names; "if you write down an expression which can be evaluated with a single instruction, that instruction will almost always be used" (§2.1.3); instructions the compiler lacks are added as syntax | `System.Machine_Code` for inline assembly, `Address` clauses, representation clauses; the compiler is not required to emit any particular instruction |
+| **Bit fields** | `A<B,C>`: B bits, C bits from the right of word A, an expression either side, usable on the left of an assignment; `A<L>`, `A<R>` the half words; `BYTEP` makes a byte pointer that can be stepped (§2.2.6) | a record representation clause: `for R use record F at 0 range 3 .. 7; end record;`, with `Bit_Order` and `Scalar_Storage_Order`; the compiler generates every access |
+| **Extension** | the language is extended by the program: syntax statements add productions with their semantics, mid-file (§2.3) | generics, overloading, user-defined operators, child packages, pragmas; the grammar is fixed |
+| **Special cases** | stated by the programmer as conditional semantics (`A+1` as a register increment) (§2.3.3.2) | left to the optimizer; `pragma Inline` and instantiation are the programmer's levers |
+| **Compile-time check** | little: a mistaken program compiles | the point of the language |
+| **Error handling** | none in the language; syntax errors are repaired by the compiler and compilation goes on (§4.1) | exceptions; the compiler refuses what is wrong |
+
+The two answer one question, how do you get machine-level control without
+writing assembler, in opposite directions.
+
+- **Ada puts the knowledge in the type.**  The layout of a record is declared
+  once, by a representation clause, and every access the compiler writes follows
+  it; a mistake is a compile error.  The cost is a fixed language and a compiler
+  that must be taught each machine.
+- **IMP72 puts the knowledge in the grammar.**  There are almost no types, so
+  the programmer states the field at every access (`A<9,I>`), and when the
+  compiler would do something wasteful the programmer writes a syntax statement
+  that does better.  The cost is that nothing is checked; the gain is that the
+  compiler can be taught anything, by the person using it, without modifying it.
+
+## What this says for hbnf
+
+1. **The bit-field notation is an old, good one, and a design question.**  hbnf's
+   wire layer (step 7b: widths, signedness, endianness, bit-precise syntax, an
+   `OCTET` that is a byte) needs a way to say "B bits at C".  IMP72's `A<B,C>` is
+   that, imperative and per access.  Ada's representation clause is that,
+   declarative and per type.  A grammar is declarative, so Ada's shape is the
+   closer fit: a rule says its layout once, and both directions, reading and
+   writing, follow from it.  What IMP72 adds that Ada does not is that its B and
+   C may be *expressions*: a length field read earlier in the same record can
+   say how wide the next field is, which binary formats do constantly (length
+   prefixed fields, TLV).  The wire layer should allow it, and `%where`-style
+   code is the wrong place for it.
+2. **Right-to-left evaluation of equal precedence is IMP72's, and a trap.**  A
+   grammar that accepts `A*B+C` must say which way it nests, and hbnf's ordered
+   choice with left-recursive loops gives left to right.  A grammar for IMP in
+   hbnf has to reproduce the right-to-left rule, and `syntax.imc` does it by
+   writing `<EXP> ::= <ATOM,A> + <EXP,B>`, the right operand a whole `<EXP>`.
+3. **"No reserved words" is a lexer property, and hbnf has the option already.**
+   An identifier is a keyword only where a rule says so, which is what hbnf's
+   `keywords { }` table opts into and what a grammar without one already does.
+   Ada's reserved words, by contrast, are the reason the generated Ada needs the
+   prefix hbnf now puts on every rule.
+4. **IMP is not a translation target for the Ada backend.**  A flat global
+   memory of 36-bit words, labels that are variables, instruction words stored by
+   the program, and registers named in expressions have no counterpart in Ada's
+   type model.  Translating the IMP72 compiler's own source is best done to C
+   over a small word-model runtime (see the section above), where a word is an
+   integer and a label is a number, and Ada stays what it is for hbnf: the
+   language its compiler is written in and a typed target for generated parsers.

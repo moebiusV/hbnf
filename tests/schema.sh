@@ -151,4 +151,84 @@ suite "keyword rules, default prefix" "$W/kw2/g.hbnf" 2>/dev/null
 (printf 'prefix none\n'; sed '1d' "$W/kw/g.hbnf") > "$W/kw2/h.hbnf"
 suite "keyword rules, prefix none" "$W/kw2/h.hbnf" 2>/dev/null
 
+# The exception with a phrase on a side: item - assign is an item that is not
+# an assignment.  A is parsed; then B is tried on exactly the text A matched.
+mkdir "$W/pe"
+cat > "$W/pe/g.hbnf" <<G
+whitespace ws
+doc = x ";"
+x = item - assign
+item = name [ "=" arg ]
+assign = name "=" arg
+name = word
+arg = word
+ws = 1*wsc
+wsc = %x20 / %x09
+G
+n=0
+for v in 'a;' '  a  ;' 'abc ;' 'a ;'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/pe/a$n.txt"
+done
+n=0
+for v in 'a = b;' 'a=b;' 'a  =   b ;' ';' 'a b;' '= b;'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/pe/r$n.txt"
+done
+ACCEPT=$(ls "$W"/pe/a*.txt)
+REJECT=$(ls "$W"/pe/r*.txt)
+suite "phrase exception" "$W/pe/g.hbnf" 2>/dev/null
+
+# The same inside a list, so a rejected item must leave nothing behind.
+mkdir "$W/pl"
+sed 's/^doc = .*/doc = 1*( x ";" )/' "$W/pe/g.hbnf" > "$W/pl/g.hbnf"
+n=0
+for v in 'a;' 'a;b;c;' 'a ; b ;' 'a;b;'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/pl/a$n.txt"
+done
+n=0
+for v in 'a;b=c;' 'a=b;c;' 'a;b;c=d;' ''; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/pl/r$n.txt"
+done
+ACCEPT=$(ls "$W"/pl/a*.txt)
+REJECT=$(ls "$W"/pl/r*.txt)
+suite "phrase exception in a list" "$W/pl/g.hbnf" 2>/dev/null
+
+# An alias of a record used in a list entry, with no exception.
+mkdir "$W/ar"
+sed 's/^x = item - assign/x = item/; /^assign = /d' "$W/pl/g.hbnf" > "$W/ar/g.hbnf"
+n=0
+for v in 'a;' 'a;b;' 'a = b;' 'a=b;c;'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/ar/a$n.txt"
+done
+n=0
+for v in ';' 'a' 'a;=;' ''; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/ar/r$n.txt"
+done
+ACCEPT=$(ls "$W"/ar/a*.txt)
+REJECT=$(ls "$W"/ar/r*.txt)
+suite "alias of a record in a list" "$W/ar/g.hbnf" 2>/dev/null
+
+# An alias of a list rule: it stands for the list.
+mkdir "$W/al"
+cat > "$W/al/g.hbnf" <<G
+whitespace ws
+doc = x ";"
+x = items
+items = 1*item
+item = name ","
+name = word
+ws = 1*wsc
+wsc = %x20 / %x09
+G
+n=0
+for v in 'a,;' 'a, b, c,;' ' a , b ,  ;'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/al/a$n.txt"
+done
+n=0
+for v in ';' 'a;' 'a,' ',;' ''; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/al/r$n.txt"
+done
+ACCEPT=$(ls "$W"/al/a*.txt)
+REJECT=$(ls "$W"/al/r*.txt)
+suite "alias of a list rule" "$W/al/g.hbnf" 2>/dev/null
+
 exit $rc

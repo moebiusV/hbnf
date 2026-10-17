@@ -241,13 +241,27 @@ check FAIL "if.a"     "if is reserved"
 check FAIL "then.b"   "so is then"
 check FAIL "xy.b"     "a group repeated is a token too"
 check OK   "xyz.b"    "but not a longer word"
-refuse "cannot be one token" "an operand with a built-in scanner inside" <<'G'
+rm -f "$W/t"; gen <<'G'
 whitespace none
 doc = word-ok "."
 word-ok = word-any - phrase
-word-any = 1*lower
+word-any = 1*( lower / "!" )
 lower = %x61-7A
 phrase = word "!"
+G
+check OK   "abc."   "a built-in inside the second operand makes it a phrase exception"
+check FAIL "abc!."  "and it still excepts the text the phrase matches"
+check OK   "a!b."   "but not text it does not match exactly"
+
+echo "== the exception with a phrase on a side =="
+refuse "built-in type" "a built-in on one side of a phrase exception" <<'G'
+whitespace ws
+doc = x ";"
+x = word - assign
+assign = name "=" name
+name = word
+ws = 1*wsc
+wsc = %x20
 G
 
 echo "== YBNF, yacc's grammar language: %token, %start, %%, and | as the union =="
