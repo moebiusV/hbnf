@@ -172,11 +172,13 @@ not reentrant.
 The checksums are libraries, not part of the generator, and a grammar includes
 what it needs from its preamble.  Two layers:
 
-- `lib/hbnf_sum.h`: the general primitives, one header of static functions tested
-  against the published values (`tests/sum.sh`): `hbnf_sha256`, `hbnf_crc32` (as
-  zlib's), `hbnf_crc16_ccitt` (poly 0x1021, start 0xFFFF), `hbnf_adler32`,
-  `hbnf_inet_checksum` (RFC 1071), `hbnf_xor8`, and bech32/bech32m
-  (`hbnf_bech32_polymod`, `hbnf_bech32_verify`).
+- `lib/`: the general primitives, one header for each, static functions with no
+  dependencies, tested against the published values (`tests/sum.sh`):
+  `sha256.h` (`hbnf_sha256`), `crc.h` (`hbnf_crc32`, as zlib's; `hbnf_crc16_ccitt`,
+  poly 0x1021, start 0xFFFF), `adler32.h` (`hbnf_adler32`), `inet_checksum.h`
+  (`hbnf_inet_checksum`, RFC 1071), `xor8.h` (`hbnf_xor8`), and `bech32.h`
+  (`hbnf_bech32_polymod`, `hbnf_bech32_verify`, for bech32 and bech32m).  Each
+  starts with a comment saying what it computes and how to include it.
 - the format's own arithmetic, kept with its corpus: `corpus/bip39/bip39.h` has
   `bip39_checksum` (the first n/4 bits of the SHA-256 of n octets of entropy) and
   `bip39_words`.  A hash is not BIP-39's; the way BIP-39 uses it is.

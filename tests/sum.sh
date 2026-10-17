@@ -1,5 +1,5 @@
 #!/bin/sh
-# lib/hbnf_sum.h against published values: SHA-256, the CRCs, Adler-32, the
+# lib/*.h against published values: SHA-256, the CRCs, Adler-32, the
 # Internet checksum, and bech32/bech32m.
 #   sh tests/sum.sh
 set -u

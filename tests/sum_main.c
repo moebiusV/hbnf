@@ -1,7 +1,12 @@
-/* lib/hbnf_sum.h against published values. */
+/* the headers in lib/ against published values. */
 #include <stdio.h>
 #include <string.h>
-#include "hbnf_sum.h"
+#include "sha256.h"
+#include "crc.h"
+#include "adler32.h"
+#include "inet_checksum.h"
+#include "xor8.h"
+#include "bech32.h"
 
 static int bad;
 
