@@ -299,4 +299,29 @@ ACCEPT=$(ls "$W"/nu/a*.txt)
 REJECT=$(ls "$W"/nu/r*.txt)
 suite "negation, a non-ASCII complement" "$W/nu/g.hbnf" 2>/dev/null
 
+# Tokens everywhere: a rule that is only text, in a file that skips no
+# whitespace, is one token whose value is its text, whatever it is made of.
+mkdir "$W/tk"
+cat > "$W/tk/g.hbnf" <<G
+whitespace none
+include "$(pwd)/grammars/common.hbnf"
+doc = scheme ":" path [ "?" query ]
+scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+path = *( "/" segment )
+segment = *pchar
+pchar = ALPHA / DIGIT / "-" / "." / "_" / "~"
+query = 1*( pchar / "=" / "&" )
+G
+n=0
+for v in 'a:' 'http:/a/b' 'x1:/' 'a+b-c.d:/p/q?k=v&m=1' 'a:?x'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/tk/a$n.txt"
+done
+n=0
+for v in '1a:' 'a' 'a:/b c' 'a:/b?' ':/x'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/tk/r$n.txt"
+done
+ACCEPT=$(ls "$W"/tk/a*.txt)
+REJECT=$(ls "$W"/tk/r*.txt)
+suite "text rules are tokens" "$W/tk/g.hbnf" 2>/dev/null
+
 exit $rc

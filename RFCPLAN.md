@@ -960,12 +960,12 @@ should claim that before 10.
        (*done 2026-10-17*, all four backends; tests/schema.sh).  Found on the
        way and open: in Ada an alias of a record used in a list entry
        (`x = item`, `1*( x ";" )`) is declared before the record and does not
-       compile, with or without an exception.  **Next**: a rule with no named children is a
-       token, always scanned as text, so "character rule" goes away as a
-       concept (it changes the generated type of rules like
-       `x = 1*( "a" / "b" )`, now a list of empty nodes; check the daemon
-       grammars first); the octet mode of the scanner (edges are numeric, so
-       it skips the UTF-8 decode).  The prefix on every generated
+       compile, with or without an exception.  A rule with no named children is a
+       token (*done 2026-10-17*; ABNF.md, "Tokens: a rule that is only text is
+       one string"): scanned as text, its value the text, in all four
+       backends; none of the nine daemon grammars changes.  **Next**: the octet
+       mode of the scanner (edges are numeric, so it skips the UTF-8 decode),
+       and a repetition bound past 32 inside a token.  The prefix on every generated
        identifier (`ybnf_if`, `abnf_host`, and `bnf_` when a file names no
        dialect) is *done 2026-10-17*; `prefix none` opts out (the daemon
        grammars, and the tests whose hand-written programs use the generated

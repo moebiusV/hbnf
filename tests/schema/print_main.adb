@@ -72,7 +72,7 @@ procedure Print_Main is
 
    function Arg_Text (A : Arg_Type) return String is
       Pct : constant String :=
-        (if not A.Arg_1.Is_Empty or else not A.Arg_2.Is_Empty then "%" else "");
+        (if Length (A.Arg_1) > 0 or else Length (A.Arg_2) > 0 then "%" else "");
    begin
       if A.String /= null then
          return Text (A.String.all) & Pct;

@@ -264,6 +264,40 @@ ws = 1*wsc
 wsc = %x20
 G
 
+echo "== tokens everywhere: a rule that is only text is one string =="
+cat > "$W/tk.hbnf" <<G
+whitespace none
+include "$CORE"
+doc = scheme ":" path
+scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+path = *( "/" segment )
+segment = *pchar
+pchar = ALPHA / DIGIT / "-" / "." / "_" / "~"
+G
+if "$CLI" "$W/tk.hbnf" --backend=c > "$W/tk.c" 2> "$W/err.txt" \
+   && grep -q 'typedef const char \* bnf_scheme_t;' "$W/tk.c" \
+   && grep -q 'typedef const char \* bnf_path_t;' "$W/tk.c" \
+   && ! grep -q 'struct bnf_path_list' "$W/tk.c"; then
+	echo "  PASS [scheme and path are strings, not lists of nodes]"
+else
+	echo "  FAIL [scheme and path are strings, not lists of nodes]: $(head -1 "$W/err.txt")"; rc=1
+fi
+#  and a file that skips whitespace keeps the tree: a repetition there is a list
+cat > "$W/tk2.hbnf" <<G
+whitespace ws
+include "$CORE"
+doc = items
+items = 1*item
+item = ALPHA "-" ALPHA
+ws = 1*( %x20 )
+G
+if "$CLI" "$W/tk2.hbnf" --backend=c > "$W/tk2.c" 2> "$W/err.txt" \
+   && grep -q 'struct bnf_items_list' "$W/tk2.c"; then
+	echo "  PASS [a rule that skips whitespace between entries stays a list]"
+else
+	echo "  FAIL [a rule that skips whitespace between entries stays a list]: $(head -1 "$W/err.txt")"; rc=1
+fi
+
 echo "== negation: ~x is one code point not in x =="
 rm -f "$W/t"; gen <<'G'
 whitespace none

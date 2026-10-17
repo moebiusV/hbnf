@@ -216,7 +216,36 @@ front of this one.)  The two renames hbnf used before, `atom` to `atom-rule`
 and `WORD` to `WORD-rule`, remain only under `prefix none` and for a file with
 no dialect line that opts out; a prefixed name cannot collide with a built-in.
 
-### Tokens, and the exception
+### Tokens: a rule that is only text is one string
+
+A rule with no named children has nothing for a tree to say, so hbnf does not
+build one.  A rule is **text** when it is made only of literals, classes,
+groups, alternatives and repetitions, and of other rules that are text, with no
+built-in type (`int`, `word`, ...) and no code inside it, and when its file skips
+no whitespace inside it.  A text rule is one token: hbnf builds a deterministic
+automaton from it, the generated scanner takes the longest text that ends in an
+accepting state, and its value is that text, a string.  `scheme = ALPHA *( ALPHA
+/ DIGIT / "+" / "-" / "." )` and `path = *( "/" segment )` are strings, not lists
+of nodes; `x = 1*( "a" / "b" )` is a string, not a list of empty nodes.  A
+token that can match the empty text succeeds on it.
+
+What is not text keeps its tree, on purpose:
+- an enum (`dir = "in" | "out"`) is an enum, and a lone literal is its string;
+- a rule that names a built-in (`int` is a number, `word` a typed word) has a typed
+  value in it;
+- a rule that refers to an exception (`a - b`) has its own form, below;
+- a rule in a file that skips whitespace, with more than one element or a
+  repetition, skips whitespace *between* them (and between the entries of a
+  repetition), which a token cannot; and a letter-led literal in a grammar with
+  keywords is matched as a word, with its boundary, not as characters;
+- a rule whose automaton would be too large (a repetition bound past 32, or over
+  2000 states) is not approximated and stays a tree.
+
+None of the nine daemon grammars changes: their text-like rules were already
+strings or enums.  In `dialect abnf` and any file that says `whitespace none`,
+every pure-text rule is a token, which is what an RFC's lexical rules are.
+
+### The exception
 
 `x = a - b` is what `a` matches, unless `b` matches exactly that text.  It comes
 in two forms, and hbnf picks the form from the operands, so the notation is the
