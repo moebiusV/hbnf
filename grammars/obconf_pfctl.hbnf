@@ -19,6 +19,7 @@
 ; statement as in parse.y.
 
 language C
+prefix none
 statements
 macros varset
 includes include

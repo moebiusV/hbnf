@@ -15,6 +15,7 @@
 ; option it is about, as parse.y reports it on its lookahead's line.
 
 language C
+prefix none
 conf struct uw_conf
 entry hbnf_parse_config
 

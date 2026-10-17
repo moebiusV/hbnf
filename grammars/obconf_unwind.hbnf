@@ -19,6 +19,7 @@
 ; tree says whether the word was there.
 
 language C
+prefix none
 statements
 macros varset
 includes include

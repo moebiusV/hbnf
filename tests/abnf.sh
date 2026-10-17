@@ -654,6 +654,7 @@ fi
 # by the first branch, which then fails on `)`; the second sets `b` only.
 cat > "$W/stale.hbnf" <<EOG
 language C
+prefix none
 include "$CORE"
 
 t = a ')' | b

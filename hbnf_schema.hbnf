@@ -1,3 +1,4 @@
+prefix none
 ; hbnf_schema.hbnf — the obconf configuration-file grammar: directives and
 ; `{ }` blocks, as an hbnf grammar in the character model (decision 7).
 ;

@@ -310,6 +310,10 @@ package body HBNF_Grammar is
    --  The dialect, for the prefix on generated identifiers: the one a flag
    --  named (kept across files), else the first a file's `dialect` line named.
    Flag_Dialect : Unbounded_String;
+   --  `prefix none` in a file, `--prefix=none` on the command line: the
+   --  generated identifiers keep the names of the rules.
+   No_Name_Prefix : Boolean := False;
+   Flag_No_Prefix : Boolean := False;
    Emitted_Rules : Path_Sets.Set;
    File_Dialect : Unbounded_String;
 
@@ -424,6 +428,7 @@ package body HBNF_Grammar is
       Excepts.Clear;
       Except_Bases.Clear;
       File_Dialect := Null_Unbounded_String;
+      No_Name_Prefix := False;
       Pending_Except_B := Null_Unbounded_String;
       Declared_Tokens.Clear;
       Union_Sites.Clear;
@@ -3900,19 +3905,29 @@ package body HBNF_Grammar is
                then
                   --  `prefix "pf_"`: put in front of every generated type
                   --  and struct tag, keeping them out of the system's names.
+                  --  `prefix none`: generated identifiers keep the rules'
+                  --  names (no `bnf_` or dialect prefix).
                   Next (P);
-                  if Cur (P).Kind /= T_String
-                    or else not Valid_Prefix (To_String (Cur (P).Text))
+                  if Cur (P).Kind = T_Name
+                    and then To_String (Cur (P).Text) = "none"
                   then
-                     raise Parse_Error with
-                       Integer'Image (Cur (P).Line) & ":" &
-                       Integer'Image (Cur (P).Col) &
-                       ": expected a quoted C identifier prefix after `prefix`";
+                     No_Name_Prefix := True;
+                     Next (P);
+                  else
+                     if Cur (P).Kind /= T_String
+                       or else not Valid_Prefix (To_String (Cur (P).Text))
+                     then
+                        raise Parse_Error with
+                          Integer'Image (Cur (P).Line) & ":" &
+                          Integer'Image (Cur (P).Col) &
+                          ": expected a quoted C identifier prefix or `none` "
+                          & "after `prefix`";
+                     end if;
+                     --  --prefix= wins over it (Set_Type_Prefix).
+                     Set_Directive (Type_Prefix_Code, "prefix",
+                                    To_String (Cur (P).Text), Cur (P).Line);
+                     Next (P);
                   end if;
-                  --  --prefix= wins over it (Set_Type_Prefix).
-                  Set_Directive (Type_Prefix_Code, "prefix",
-                                 To_String (Cur (P).Text), Cur (P).Line);
-                  Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "conf"
                then
@@ -5320,9 +5335,11 @@ package body HBNF_Grammar is
    function Prefixed (S : String) return String is
       D : constant Unbounded_String :=
         (if Flag_Dialect /= Null_Unbounded_String then Flag_Dialect
-         else File_Dialect);
+         elsif File_Dialect /= Null_Unbounded_String then File_Dialect
+         else To_Unbounded_String ("bnf"));
    begin
-      if D = Null_Unbounded_String or else Is_Core_Name (S) or else S = "ws"
+      if No_Name_Prefix or else Flag_No_Prefix
+        or else Is_Core_Name (S) or else S = "ws"
         or else not Emitted_Rules.Contains (S)
       then
          return S;
@@ -5337,6 +5354,10 @@ package body HBNF_Grammar is
 
    procedure Set_Type_Prefix (Prefix : String) is
    begin
+      if Prefix = "none" then
+         Flag_No_Prefix := True;
+         return;
+      end if;
       if not Valid_Prefix (Prefix) then
          raise Parse_Error with "--prefix: not a C identifier prefix: " & Prefix;
       end if;

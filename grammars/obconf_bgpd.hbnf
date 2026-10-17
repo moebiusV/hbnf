@@ -15,6 +15,7 @@
 ; resolves to conf_main, not to a bare `rib` followed by an `include`.
 
 language C
+prefix none
 statements
 macros varset
 includes include

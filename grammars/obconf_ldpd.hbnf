@@ -14,6 +14,7 @@
 ; generated lexer skips newlines).
 
 language C
+prefix none
 statements
 macros varset
 includes include

@@ -1,3 +1,4 @@
+prefix none
 ; Left recursion, which hbnf reads as a loop, for tests/leftrec.sh.
 
 language C

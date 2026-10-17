@@ -143,4 +143,12 @@ ACCEPT=$(ls "$W"/kw/a*.txt)
 REJECT=$(ls "$W"/kw/r*.txt)
 suite "keyword rules" "$W/kw/g.hbnf" 2>/dev/null
 
+# With no dialect line the prefix is `bnf_`, so the same grammar needs no
+# special case there either; `prefix none` keeps the rules' own names.
+mkdir "$W/kw2"
+sed '1d' "$W/kw/g.hbnf" > "$W/kw2/g.hbnf"
+suite "keyword rules, default prefix" "$W/kw2/g.hbnf" 2>/dev/null
+(printf 'prefix none\n'; sed '1d' "$W/kw/g.hbnf") > "$W/kw2/h.hbnf"
+suite "keyword rules, prefix none" "$W/kw2/h.hbnf" 2>/dev/null
+
 exit $rc

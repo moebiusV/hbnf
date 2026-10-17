@@ -17,6 +17,7 @@
 ; no hand-written token here, so no jet.
 
 language C
+prefix none
 statements
 macros varset
 ; The words sbin/dhcpleased/parse.y's lookup() reserves (14, OpenBSD -current):

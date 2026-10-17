@@ -16,6 +16,7 @@
 ; (`trusted`) carries no value — its `kind` alone says it is set.
 
 language C
+prefix none
 statements
 ; The words usr.sbin/ntpd/parse.y's lookup() reserves (15, OpenBSD -current):
 ; a literal listed here is a keyword, any other matches a word by its text.

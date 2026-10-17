@@ -17,6 +17,7 @@
 ; which the generic hbnf lexer cannot produce — the ipv6 jet below closes it.
 
 language C
+prefix none
 statements
 macros varset
 includes include

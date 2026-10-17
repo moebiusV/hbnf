@@ -1,3 +1,4 @@
+prefix none
 ; A recursive tree type: every expression language needs this.  All four
 ; backends break the cycle with a pointer (RFCPLAN.md step 9b).  Rust used to
 ; emit code rustc rejected (E0072) and Zig code that failed the moment a size

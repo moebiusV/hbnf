@@ -1,3 +1,4 @@
+prefix none
 ; A toy binding of unwind.conf for tests/stmt.sh: it counts `preference`
 ; and `forwarder` statements into its conf.  It exercises what the daemon
 ; bindings will rely on -- parse_config reading one statement at a time,

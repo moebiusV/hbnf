@@ -17,6 +17,7 @@
 ; the `"port" (int | string)` alternation below, not a hand-written scanner.
 
 language C
+prefix none
 statements
 macros varset
 includes include

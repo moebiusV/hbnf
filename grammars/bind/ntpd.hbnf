@@ -6,6 +6,7 @@
 ; standalone, so every backend and test can still use it.
 
 language C
+prefix none
 conf struct ntpd_conf
 
 {

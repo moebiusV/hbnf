@@ -1,3 +1,4 @@
+prefix none
 ; The same cycle laundered through a list.  This is not a by-value cycle at
 ; all: a field whose rule is a list holds that list's head, two pointers, so
 ; a forward declaration is enough.  The C backend used to declare one of the

@@ -1,3 +1,4 @@
+prefix none
 ; One schema through every backend, for tests/portable.sh: left recursion,
 ; %i literals, repetition bounds, a list of literals, a list of a core type,
 ; and an optional, a repetition and an alternation inside a sequence, which

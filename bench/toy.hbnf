@@ -9,6 +9,7 @@
 ; (word/int/ws), the same as the daemon grammars'.
 
 language C
+prefix none
 include "../grammars/obconf.hbnf"
 
 config     = 1*rule
