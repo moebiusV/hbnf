@@ -1009,7 +1009,7 @@ package body HBNF_Grammar is
                                   | "sensitivity" | "whitespace" | "keywords"
                                   | "statements" | "macros" | "includes"
                                   | "entry" | "prefix" | "wordchars"
-                                  | "units" | "binary"
+                                  | "units"
                      then
                         Emit (T_Newline);
                      end if;
@@ -4741,8 +4741,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "dialect"
                               or else To_String (Cur (P).Text) = "whitespace"
                               or else To_String (Cur (P).Text) = "keywords"
-                              or else To_String (Cur (P).Text) = "units"
-                              or else To_String (Cur (P).Text) = "binary"))
+                              or else To_String (Cur (P).Text) = "units"))
          then
             P.Pos := Mark;
             loop
@@ -5009,14 +5008,6 @@ package body HBNF_Grammar is
                                     To_String (Cur (P).Text), Cur (P).Line);
                      Next (P);
                   end if;
-               elsif Cur (P).Kind = T_Name
-                 and then To_String (Cur (P).Text) = "binary"
-                 and then Ends_Directive (P, 1)
-               then
-                  --  Older grammars said `binary` to mark a file of bit
-                  --  rules.  A rule is a bit rule by what is in it; the line
-                  --  is read and does nothing.
-                  Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "units"
                then

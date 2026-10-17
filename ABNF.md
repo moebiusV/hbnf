@@ -50,7 +50,7 @@ indented line, newlines inside `( )` and `[ ]`, and `<prose-val>`.
 **Extended downward (design):** a schema can describe input below the token:
 - characters, through character-level rules and named character classes;
 - code points, with UTF-8 decoded on input;
-- octets and bits, through `binary` mode and `name:N` bitfields.
+- octets and bits, through `name:N` bit fields.
 
 In that design the lexer is not a stage of its own. Token definitions are
 grammar rules — character-level ABNF or a hand-written jet — and the scanner is
@@ -75,8 +75,8 @@ features are not there yet in the backends (§3).
 
 | Layer | Design (paper, `grammars/README.md`) | Implemented at this tree |
 |---|---|---|
-| Bits | `binary` mode: a field is `name:N` with N in bits, packed big-endian in RFC order, read by generated shift-and-mask code (§4.7) | C and Rust, 2026-10-17, in the one notation (a rule with a bit field is a bit rule; there is no binary mode): `name:N`, `name:16le`, `name:8s`, `name@K:N` (the field must start at bit K), `name:bits(expr)`, constants (`0x0800`, `0b101`), value sets, guarded choices, arrays of records, expressions over earlier fields, and the other direction (a tree to bytes).  Zig and Ada follow.  `WIRE.md` is the reference; `tests/wire.sh` the tests. |
-| Octets | the unit of `binary` mode; `*u8` payloads; `dst:[6]` (§4.7) | C and Rust: `name:[expr]` (a slice of the input; Rust owns a copy), `name:*u8` (the rest), octets that start inside a byte (copied).  `WIRE.md` |
+| Bits | a field is `name:N` with N in bits, packed big-endian in RFC order, read by generated shift-and-mask code (§4.7) | C and Rust, 2026-10-17, in the one notation (a rule with a bit field is a bit rule; there is no binary mode): `name:N`, `name:16le`, `name:8s`, `name@K:N` (the field must start at bit K), `name:bits(expr)`, constants (`0x0800`, `0b101`), value sets, guarded choices, arrays of records, expressions over earlier fields, and the other direction (a tree to bytes).  Zig and Ada follow.  `WIRE.md` is the reference; `tests/wire.sh` the tests. |
+| Octets | the unit between bits and chars; `*u8` payloads; `dst:[6]` (§4.7) | C and Rust: `name:[expr]` (a slice of the input; Rust owns a copy), `name:*u8` (the rest), octets that start inside a byte (copied).  `WIRE.md` |
 | Text from bits | a message written as symbols or words: `units 5 bech32-symbol from "bech32.hbnf"` | C and Rust.  `parse_text` / `emit_text`; the unit's value is the literal's enum number; `units W rule` names a rule of the same grammar.  `WIRE.md` |
 | Enum numbers | `"icmp"@1`, the way C writes `ICMP = 1` | All four backends.  An alternative without a number is the one before plus 1.  Names are declared in value order with an explicit number only where it is not the previous plus 1 (a C `= 17`, a Zig `enum(u8)` that is open when it has no tag for 0, a Rust discriminant, an Ada representation clause).  A union of words keeps the values in the order written, whatever order it is matched in.  `WIRE.md` |
 | Code points | UTF-8 decoded on the way in; the matcher works on code points; a literal can name `"café"` (§3.3, §5.2) | All four backends: yes. Each backend's character-layer scanners decode UTF-8 (`hbnf_decode_utf8` in C, `Decode_Utf8` in Ada, `decode_utf8` in Rust/Zig) and match code points, so `%u20AC` (€) and `%x20-10FFFF` match multi-byte sequences (§2, §5). |

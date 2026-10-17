@@ -1092,8 +1092,8 @@ should claim that before 10.
        historical forms: C `name:N`, BLISS/IMP72 `A<pos,len>`, Ada
        representation clauses, Verilog/VHDL slices, Erlang bit syntax).  It is
        C's spelling with Erlang's strengths, read top to bottom like an RFC's
-       packet diagram.  A file says `binary`; its input is octets and its
-       parser is `parse_bytes`.
+       packet diagram.  A rule that holds a field is a bit rule; its input is
+       bits and its parser is `parse_bits` (`parse_bytes` for whole octets).
 
        | write | meaning |
        |---|---|
@@ -1149,15 +1149,17 @@ should claim that before 10.
          any order with gaps and overlaps; elsewhere `@` is only a check.
 
        **Direction (the user, 2026-10-17): text and binary are freely mixable;
-       there is no `binary` mode.**  What is built so far is a separate path --
-       `hbnf_wire.adb` has its own lexer and parser, a `binary` line picks it, and
-       a file is all bit rules -- and that is a shortcut, not the design.  The
-       design is one notation, one reader, one emitter per backend:
+       there is no `binary` mode.**  What was built first was a separate path --
+       `hbnf_wire.adb` had its own lexer and parser, a `binary` line picked it,
+       and a file was all bit rules -- a shortcut, not the design (stage 1 below
+       removed it, 2026-10-17).  The design is one notation, one reader, one
+       emitter per backend:
 
        1. **One reader.**  The bit forms (`name:N`, `name@K:N`, `0x` and `0b`
           constants, `[expr]`, `?( )`, `*u8`, `%action`/`%emit`) are elements of
-          the main notation; `binary`, `language` and `units` are directives of
-          the main reader.  The wire emitters stay, fed by lowering the unified
+          the main notation; `language` and `units` are directives of the main
+          reader (`units` is a stopgap, to go when stage 2 lets a text rule feed
+          a bit rule).  The wire emitters stay, fed by lowering the unified
           rules.  `units` names an enum rule of the same file, not another file.
        2. **Rules refer across the boundary** (a text rule holding a bit rule and
           the reverse), through one parse state.

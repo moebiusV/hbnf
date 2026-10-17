@@ -1,6 +1,6 @@
 #!/bin/sh
-# Wire grammars (RFCPLAN.md step 7b): a `binary` file read into a C parser over
-# a byte buffer, checked on fixed byte fixtures.
+# Wire grammars (RFCPLAN.md step 7b): rules of bit fields read into a parser over
+# a buffer of bits, in C and Rust, checked on fixed byte fixtures.
 #   HBNF=/path/to/hbnf sh tests/wire.sh      (default ./hbnf)
 set -u
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"

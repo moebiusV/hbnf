@@ -8,7 +8,7 @@ Scope (user directive, 2026-09-26):
 - Character layer (char rules, named classes, `where`, maximal-munch lexer).
 - UTF-8 code points as primitives (decode on input, match on code points).
 - UTF-16 code points as primitives (`\uXXXX` surrogate pairs — what JSON needs).
-- Binary/octet layer (`binary` mode, fixed-width whole-byte fields, `*u8`
+- Binary/octet layer (bit fields, fixed-width whole-byte fields, `*u8`
   payloads) — **defer sub-byte `name:N` bitfield packing** (`version:4`,
   `flags:3`, `ihl:4`).
 - Backend order: **C first** (flagship), then Ada, then Rust/Zig.
@@ -97,7 +97,7 @@ Scope (user directive, 2026-09-26):
 - **I2 — `where`** refinements in the C lexer (UTF-8 code-point decode already
   landed above).
 - **I3 — `json.hbnf`** flagship + round-trip test (`\uXXXX` via `utf16`).
-- **I4 — binary/octet mode** (`binary`, fixed-width whole-byte fields, `*u8`).
+- **I4 — binary/octet layer** (bit fields, fixed-width whole-byte fields, `*u8`).
 - **I5 — Rust/Zig backends** — ~~port the char lexer~~ **DONE** (Ada, Rust, Zig
   all ported).
 
@@ -124,7 +124,7 @@ Scope (user directive, 2026-09-26):
    `%uu` (UTF-16 unit) distinction is deferred — revisit only if a syntax ever
    intermingles the two encodings in one stream.  Code points are stored 32-bit
    (`Natural` = 32-bit already; the scanner is byte-level until I2).
-6. **Binary** — `binary` directive + whole-byte fields + `*u8`; no sub-byte
+6. **Binary** — whole-byte fields + `*u8`; no sub-byte
    bitfields; deferred (I4).
 7. **Char rules are tokens, expanded to DNF** — a char rule's pattern (a
    sequence/alternation of code-point atoms, string literals and Name

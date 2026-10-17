@@ -453,14 +453,11 @@ interpret with a converter, in both cases over one whole slice.
 
 The lexer's unit is a code point because configuration is text.  A binary
 protocol is the same problem one level down: the unit is an **octet**, and a
-"token" is a fixed-width field reader instead of a character class.  A schema
-declares `binary` (octet stream, network byte order); a field is `name:N`, C's
-bitfield spelling with N in **bits**, packed the way a reader of the RFCs
+"token" is a fixed-width field reader instead of a character class.  A field is
+`name:N`, C's bitfield spelling with N in **bits**, packed the way a reader of the RFCs
 expects: left to right as written, first field in the most significant
 bits, big-endian, adjacent sub-byte fields coalescing into octets.
 Read top to bottom, matching the RFC's packet diagram:
-
-    binary
 
     ; Ethernet II (RFC 894) — 6 + 6 + 2 octets
     ethernet   = dst:48 src:48 ethertype:16 payload:*u8
