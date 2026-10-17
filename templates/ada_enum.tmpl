@@ -1,1 +1,2 @@
-   type {{&name}} is ({{#items}}{{#sep}}, {{/sep}}{{&ident}}{{/items}});
+   type {{&name}} is ({{#items}}{{#sep}}, {{/sep}}{{&ident}}{{/items}});{{#rep}}
+   for {{&name}} use ({{#items}}{{#sep}}, {{/sep}}{{&ident}} => {{&value}}{{/items}});{{/rep}}

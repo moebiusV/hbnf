@@ -737,19 +737,35 @@ package body HBNF_Rust is
                   Items : constant Mustache.Value_Access := Mustache.New_List;
                   Row   : Mustache.Value_Access;
                   V     : Mustache.Context := Mustache.View;
+                  --  The values follow the numbers the author gave the
+                  --  alternatives, or their order as written, not the order
+                  --  the parser tries them in (see Enum_Value).
+                  Count : constant Natural := Natural (Info.Literals.Length);
+                  Vals  : constant Value_Array (1 .. Count) :=
+                    [for K in 1 .. Count =>
+                       Enum_Value (To_String (R.Name),
+                                   To_String (Info.Literals (K)))];
+                  Ord   : constant Order_Array := Enum_Order (Vals);
                begin
-                  for I in 1 .. Natural (Info.Literals.Length) loop
+                  for J in 1 .. Count loop
+                     declare
+                        I : constant Positive := Ord (J);
+                     begin
                      Row := Mustache.New_Map;
                      Mustache.Insert
                        (Row, "ident",
                         Mustache.New_Scalar
                           (Base & "_" & To_String (Names (I))));
+                     Mustache.Insert
+                       (Row, "init",
+                        Mustache.New_Scalar (Enum_Init (Vals, Ord, J)));
                      --  `#[default]` goes on the first variant only: the two
                      --  item templates became one `{{#first}}` section.
-                     if I = 1 then
+                     if J = 1 then
                         Mustache.Insert (Row, "first", Mustache.New_Scalar ("1"));
                      end if;
                      Mustache.Append (Items, Row);
+                     end;
                   end loop;
                   Mustache.Put (V, "name", Base);
                   Mustache.Put (V, "items", Items);

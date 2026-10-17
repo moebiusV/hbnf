@@ -207,6 +207,85 @@ package body HBNF_Grammar is
    package Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
      (String, Natural, Ada.Strings.Hash, "=");
 
+   --  Where a literal stood among its rule's alternatives as written, for a
+   --  rule whose alternatives the reader put in another order to match them
+   --  (`/`, longest first).  Key: rule NUL literal.  See Enum_Rank.
+   package Rank_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (String, Natural, Ada.Strings.Hash, "=");
+   Enum_Ranks : Rank_Maps.Map;
+
+   function Enum_Value (Rule_Name, Literal : String) return Integer is
+      C : constant Rank_Maps.Cursor :=
+        Enum_Ranks.Find (Rule_Name & ASCII.NUL & Literal);
+   begin
+      return (if Rank_Maps.Has_Element (C) then Rank_Maps.Element (C) else -1);
+   end Enum_Value;
+
+   function Enum_Order (Values : Value_Array) return Order_Array is
+      Result : Order_Array (Values'Range) :=
+        [for K in Values'Range => K - Values'First + 1];
+   begin
+      if Values'Length = 0 or else Values (Values'First) < 0 then
+         return Result;
+      end if;
+      --  A stable insertion sort by value; the lists are dense and nearly in
+      --  order when they are long.
+      for K in Values'First + 1 .. Values'Last loop
+         declare
+            Item : constant Positive := Result (K);
+            J    : Integer := K - 1;
+         begin
+            while J >= Values'First
+              and then Values (Values'First + Result (J) - 1)
+                       > Values (Values'First + Item - 1)
+            loop
+               Result (J + 1) := Result (J);
+               J := J - 1;
+            end loop;
+            Result (J + 1) := Item;
+         end;
+      end loop;
+      return Result;
+   end Enum_Order;
+
+   function Enum_Init
+     (Values : Value_Array; Order : Order_Array; J : Positive) return String
+   is
+      First : constant Integer := Values'First;
+   begin
+      if Values'Length = 0 or else Values (First) < 0 then
+         return "";
+      end if;
+      declare
+         V    : constant Integer := Values (First + Order (Order'First + J - 1) - 1);
+         Prev : constant Integer :=
+           (if J = 1 then 0
+            else Values (First + Order (Order'First + J - 2) - 1) + 1);
+      begin
+         return (if V = Prev then "" else " =" & Integer'Image (V));
+      end;
+   end Enum_Init;
+
+   function Enum_Sparse (Values : Value_Array; Order : Order_Array)
+     return Boolean is
+   begin
+      for J in 1 .. Values'Length loop
+         if Enum_Init (Values, Order, J) /= "" then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Enum_Sparse;
+
+   function Enum_Max (Values : Value_Array) return Natural is
+      M : Natural := 0;
+   begin
+      for V of Values loop
+         M := Natural'Max (M, Natural'Max (V, 0));
+      end loop;
+      return M;
+   end Enum_Max;
+
    --  Add R to Rules.  A later `=` overrides: a rule already there with
    --  R's name is replaced in its place, so an overridden root is still
    --  the root.
@@ -440,6 +519,7 @@ package body HBNF_Grammar is
       Union_Sites.Clear;
       Greedy_Sites.Clear;
       Standing.Clear;
+      Enum_Ranks.Clear;
    end Reset;
 
    --  ====================================================================
@@ -454,7 +534,7 @@ package body HBNF_Grammar is
    type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Eq_Slash, T_Bar,
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
-                     T_Prose, T_Tilde, T_EOF);
+                     T_Prose, T_Tilde, T_At, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -1023,6 +1103,9 @@ package body HBNF_Grammar is
                   Emit (T_Pct, Text (Start .. I - 1));
                   Col := Col + (I - Start + 1);
                end;
+            when '@' =>
+               --  `"icmp"@1`: the value of an enum's literal.
+               Emit (T_At);  I := I + 1;  Col := Col + 1;
             when '=' =>
                --  `=/` adds alternatives to a rule (RFC 5234 §3.3).
                if I < Text'Last and then Text (I + 1) = '/' then
@@ -1507,9 +1590,21 @@ package body HBNF_Grammar is
                declare
                   Start : constant Positive := I;
                begin
-                  while I <= Text'Last and then Text (I) in '0' .. '9' loop
-                     I := I + 1;
-                  end loop;
+                  if Text (I) = '0' and then I + 2 <= Text'Last
+                    and then Text (I + 1) in 'x' | 'X'
+                    and then Hex_Digit (Text (I + 2)) >= 0
+                  then
+                     --  0x86DD: an enum value (`"ipv6"@0x86DD`).
+                     I := I + 2;
+                     while I <= Text'Last and then Hex_Digit (Text (I)) >= 0
+                     loop
+                        I := I + 1;
+                     end loop;
+                  else
+                     while I <= Text'Last and then Text (I) in '0' .. '9' loop
+                        I := I + 1;
+                     end loop;
+                  end if;
                   Emit (T_Number, Text (Start .. I - 1));
                   Col := Col + (I - Start);
                end;
@@ -1653,7 +1748,7 @@ package body HBNF_Grammar is
                Next (P);
                --  A bare literal takes its file's `sensitivity string`.
                return new Element'(Kind => Literal, Min => 1, Max => 1,
-                                   Lit => Lit,
+                                   Lit => Lit, Has_Value => False, Value => 0,
                                    No_Case => File_No_Case
                                               and then Has_Letter (Lit));
             end;
@@ -1679,7 +1774,8 @@ package body HBNF_Grammar is
                   begin
                      Next (P);
                      return new Element'(Kind => Literal, Min => 1, Max => 1,
-                                         Lit => Lit,
+                                         Lit => Lit, Has_Value => False,
+                                         Value => 0,
                                          No_Case => W = "i" and then Has_Letter (Lit));
                   end;
                end if;
@@ -1979,6 +2075,29 @@ package body HBNF_Grammar is
             end;
          else
             E := Parse_Atom (P);
+         end if;
+         --  `"icmp"@1`: this literal's value as an enum constant.
+         if E.Kind = Literal and then Cur (P).Kind = T_At
+           and then P.Toks (P.Pos + 1).Kind = T_Number
+         then
+            declare
+               T : constant String := To_String (P.Toks (P.Pos + 1).Text);
+               V : Long_Long_Integer;
+            begin
+               V := (if T'Length > 2 and then T (T'First + 1) in 'x' | 'X'
+                     then Long_Long_Integer'Value
+                            ("16#" & T (T'First + 2 .. T'Last) & "#")
+                     else Long_Long_Integer'Value (T));
+               if V > 2_147_483_647 then
+                  raise Parse_Error with
+                    Integer'Image (P.Toks (P.Pos + 1).Line) & ":"
+                    & Integer'Image (P.Toks (P.Pos + 1).Col)
+                    & ": " & T & " does not fit an enum constant (31 bits)";
+               end if;
+               E.Has_Value := True;
+               E.Value := Natural (V);
+               P.Pos := P.Pos + 2;
+            end;
          end if;
          if Has_Prefix then
             E.Min := Min;  E.Max := Max;
@@ -2416,6 +2535,90 @@ package body HBNF_Grammar is
    --    and a range there is refused, since they would drop it.
    --  The checks look only at the rules the parser uses (Reachable), so a
    --  grammar can include an RFC's rules and replace the ones it needs.
+   --  `"foo"@7` in an enum: give every literal of the rule its number, as C
+   --  does (an alternative without one is the one before plus 1, the first is
+   --  0), and refuse a number anywhere that is not an enum.
+   procedure Assign_Enum_Values (Rules : Rule_Vectors.Vector) is
+
+      function Has_Value_Inside (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            if E.Kind = Literal and then E.Has_Value then
+               return True;
+            elsif E.Kind = Group and then Has_Value_Inside (E.Items) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Value_Inside;
+
+      function Plain (E : Element_Access) return Boolean is
+        (E.Kind = Literal and then E.Min = 1 and then E.Max = 1
+         and then not E.No_Case);
+   begin
+      for R of Rules loop
+         declare
+            Name : constant String := To_String (R.Name);
+            Bs   : constant HBNF_Lookahead.Bounds_Vectors.Vector :=
+              HBNF_Lookahead.Branches (R.Pattern);
+            Any  : Boolean := False;
+            V    : Long_Long_Integer := -1;
+            Seen : Key_Sets.Set;
+         begin
+            for E of R.Pattern loop
+               if E.Kind = Literal and then E.Has_Value then
+                  Any := True;
+               end if;
+            end loop;
+            if not Any then
+               for E of R.Pattern loop
+                  if E.Kind = Group and then Has_Value_Inside (E.Items) then
+                     raise Parse_Error with
+                       "rule `" & Name & "`: a number after a literal "
+                       & "(`""foo""@7`) gives an enum value, and only a rule "
+                       & "whose alternatives are all plain literals is an "
+                       & "enum; this one has the number inside a group";
+                  end if;
+               end loop;
+            else
+               for B of Bs loop
+                  if B.First /= B.Last or else not Plain (R.Pattern (B.First))
+                  then
+                     raise Parse_Error with
+                       "rule `" & Name & "`: a number after a literal "
+                       & "(`""foo""@7`) gives an enum value, and only a rule "
+                       & "whose alternatives are all plain literals is an "
+                       & "enum, as `proto = ""icmp""@1 | ""tcp""@6`.  "
+                       & "Here an alternative is something else.";
+                  end if;
+                  declare
+                     E : constant Element_Access := R.Pattern (B.First);
+                  begin
+                     V := (if E.Has_Value then Long_Long_Integer (E.Value)
+                           else V + 1);
+                     if V > 2_147_483_647 then
+                        raise Parse_Error with
+                          "rule `" & Name & "`: the value " & V'Image
+                          & " of `""" & To_String (E.Lit) & """` does not fit "
+                          & "an enum constant (31 bits)";
+                     end if;
+                     if Seen.Contains (V'Image) then
+                        raise Parse_Error with
+                          "rule `" & Name & "`: two literals have the value"
+                          & V'Image & ", so a value could not be written "
+                          & "back as the one that was read; give one of them "
+                          & "another number";
+                     end if;
+                     Seen.Include (V'Image);
+                     Enum_Ranks.Include
+                       (Name & ASCII.NUL & To_String (E.Lit), Natural (V));
+                  end;
+               end loop;
+            end if;
+         end;
+      end loop;
+   end Assign_Enum_Values;
+
    procedure Finish (Rules : in out Rule_Vectors.Vector) is
       use Ada.Characters.Handling;
 
@@ -2593,6 +2796,135 @@ package body HBNF_Grammar is
             end if;
          end loop;
          Fits := Fits and then N = 1;
+
+         --  A union of plain words (a word list: the 2048 of BIP-39) needs no
+         --  search.  Longest first puts every word before the words that begin
+         --  it; that is the same language wherever no word's rest, after a
+         --  shorter word in the set, can begin what follows the choice (then
+         --  ABNF would take the shorter and go on, and the search below says
+         --  what to do).  The general search is quadratic and recursive; this
+         --  is a sort.
+         if Union /= null and then not Fits and then not Char_Rule
+           and then not HBNF_Lookahead.Has_Any (Follow_Here)
+         then
+            declare
+               Bs    : constant HBNF_Lookahead.Bounds_Vectors.Vector :=
+                 HBNF_Lookahead.Branches (V);
+               Words : Key_Sets.Set;
+               Pure  : Boolean := Natural (Bs.Length) > 1;
+
+               function Word (K : Positive) return String is
+                 (To_String (V (Bs (K).First).Lit));
+
+               function In_Follow (Cp : Natural) return Boolean is
+                 (for some R in 1 .. HBNF_Lookahead.Range_Count (Follow_Here)
+                  => Cp in HBNF_Lookahead.Range_Lo (Follow_Here, R)
+                           .. HBNF_Lookahead.Range_Hi (Follow_Here, R));
+
+               --  The code point that starts at S (I), or 16#10FFFF#+1 when
+               --  S (I) is not the start of one.
+               function Cp_At (S : String; I : Positive) return Natural is
+                  B : constant Natural := Character'Pos (S (I));
+               begin
+                  if B < 16#80# then
+                     return B;
+                  elsif B in 16#80# .. 16#BF# then
+                     return 16#110000#;
+                  elsif B in 16#C0# .. 16#DF# and then I + 1 <= S'Last then
+                     return (B - 16#C0#) * 64
+                       + (Character'Pos (S (I + 1)) - 16#80#);
+                  elsif B in 16#E0# .. 16#EF# and then I + 2 <= S'Last then
+                     return ((B - 16#E0#) * 64
+                             + (Character'Pos (S (I + 1)) - 16#80#)) * 64
+                       + (Character'Pos (S (I + 2)) - 16#80#);
+                  elsif B >= 16#F0# and then I + 3 <= S'Last then
+                     return (((B - 16#F0#) * 64
+                              + (Character'Pos (S (I + 1)) - 16#80#)) * 64
+                             + (Character'Pos (S (I + 2)) - 16#80#)) * 64
+                       + (Character'Pos (S (I + 3)) - 16#80#);
+                  end if;
+                  return 16#110000#;
+               end Cp_At;
+            begin
+               for K in 1 .. Natural (Bs.Length) loop
+                  if Bs (K).First /= Bs (K).Last
+                    or else V (Bs (K).First).Kind /= Literal
+                    or else V (Bs (K).First).Min /= 1
+                    or else V (Bs (K).First).Max /= 1
+                    or else V (Bs (K).First).No_Case
+                    or else Words.Contains (Word (K))
+                  then
+                     Pure := False;
+                     exit;
+                  end if;
+                  Words.Include (Word (K));
+               end loop;
+               if Pure then
+                  for K in 1 .. Natural (Bs.Length) loop
+                     declare
+                        W : constant String := Word (K);
+                     begin
+                        for L in W'First .. W'Last - 1 loop
+                           if Words.Contains (W (W'First .. L))
+                             and then Cp_At (W, L + 1) < 16#110000#
+                             and then In_Follow (Cp_At (W, L + 1))
+                           then
+                              Pure := False;
+                              exit;
+                           end if;
+                        end loop;
+                     end;
+                     exit when not Pure;
+                  end loop;
+               end if;
+               if Pure then
+                  declare
+                     Order : Order_Vectors.Vector;
+                     Done  : array (1 .. Natural (Bs.Length)) of Boolean :=
+                       [others => False];
+                     Longest : Natural := 0;
+                  begin
+                     for K in 1 .. Natural (Bs.Length) loop
+                        Longest := Natural'Max (Longest, Word (K)'Length);
+                     end loop;
+                     --  A stable counting sort by length, longest first.
+                     for Len in reverse 0 .. Longest loop
+                        for K in 1 .. Natural (Bs.Length) loop
+                           if Word (K)'Length = Len then
+                              Order.Append (K);
+                              Done (K) := True;
+                           end if;
+                        end loop;
+                     end loop;
+                     if (for some K in 1 .. Natural (Order.Length) =>
+                           Order (K) /= K)
+                     then
+                        declare
+                           Reordered : Element_Vectors.Vector;
+                        begin
+                           for K of Order loop
+                              if not Reordered.Is_Empty then
+                                 Reordered.Append (Union);
+                              end if;
+                              Reordered.Append (V (Bs (K).First));
+                              if not Enum_Ranks.Contains
+                                       (To_String (Rules (Owner).Name)
+                                        & ASCII.NUL & Word (K))
+                              then
+                                 Enum_Ranks.Include
+                                   (To_String (Rules (Owner).Name) & ASCII.NUL
+                                    & Word (K), K - 1);
+                              end if;
+                           end loop;
+                           V := Reordered;
+                        end;
+                     end if;
+                     Fits := True;   --  decided: no search needed
+                  end;
+               end if;
+            end;
+         end if;
+
          if Union /= null and then not Fits and then not Char_Rule then
             declare
                Ok      : Boolean;
@@ -3456,6 +3788,7 @@ package body HBNF_Grammar is
             end;
          end;
       end loop;
+      Assign_Enum_Values (Rules);
       Look := new HBNF_Lookahead.Analysis'(HBNF_Lookahead.Analyze (Rules));
       declare
          Used  : constant Rule_Vectors.Vector := Reachable (Rules);
@@ -3745,6 +4078,7 @@ package body HBNF_Grammar is
                         V.Replace_Element
                           (I, new Element'(Kind => Literal, Min => E.Min,
                                            Max => E.Max,
+                                           Has_Value => False, Value => 0,
                                            Lit => To_Unbounded_String
                                                     (UTF8 (E.Lo)),
                                            No_Case => False));

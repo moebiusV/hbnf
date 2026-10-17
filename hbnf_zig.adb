@@ -805,14 +805,49 @@ package body HBNF_Zig is
                   Items : constant Mustache.Value_Access := Mustache.New_List;
                   Row   : Mustache.Value_Access;
                   V     : Mustache.Context := Mustache.View;
+                  --  The values follow the numbers the author gave the
+                  --  alternatives, or their order as written, not the order
+                  --  the parser tries them in (see Enum_Value).
+                  Count : constant Natural := Natural (Info.Literals.Length);
+                  Vals  : constant Value_Array (1 .. Count) :=
+                    [for K in 1 .. Count =>
+                       Enum_Value (To_String (R.Name),
+                                   To_String (Info.Literals (K)))];
+                  Ord   : constant Order_Array := Enum_Order (Vals);
                begin
-                  for I in 1 .. Natural (Info.Literals.Length) loop
+                  for J in 1 .. Count loop
+                     declare
+                        I : constant Positive := Ord (J);
+                     begin
                      Row := Mustache.New_Map;
                      Mustache.Insert
                        (Row, "item",
                         Mustache.New_Scalar (To_String (Names (I))));
+                     Mustache.Insert
+                       (Row, "init",
+                        Mustache.New_Scalar (Enum_Init (Vals, Ord, J)));
                      Mustache.Append (Items, Row);
+                     end;
                   end loop;
+                  --  A struct is started from zeroes, which needs an enum to
+                  --  have a tag for 0.  One that starts higher (`"icmp"@1`) is
+                  --  open, `_`: 0 is then "none of them", and nothing in the
+                  --  parser switches on an enum.
+                  if Count > 0 and then Vals (Ord (1)) > 0 then
+                     Row := Mustache.New_Map;
+                     Mustache.Insert (Row, "item", Mustache.New_Scalar ("_"));
+                     Mustache.Insert (Row, "init", Mustache.New_Scalar (""));
+                     Mustache.Append (Items, Row);
+                  end if;
+                  --  Zig gives an enum numbers only with a type for them.
+                  Mustache.Put
+                    (V, "backing",
+                     (if not Enum_Sparse (Vals, Ord)
+                         and then not (Count > 0 and then Vals (Ord (1)) > 0)
+                      then ""
+                      elsif Enum_Max (Vals) < 256 then "(u8)"
+                      elsif Enum_Max (Vals) < 65536 then "(u16)"
+                      else "(u32)"));
                   Mustache.Put (V, "name", Base);
                   Mustache.Put (V, "items", Items);
                   Append (Buf, Mustache.Render_File ("zig_enum", V));

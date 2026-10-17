@@ -299,6 +299,23 @@ ACCEPT=$(ls "$W"/nu/a*.txt)
 REJECT=$(ls "$W"/nu/r*.txt)
 suite "negation, a non-ASCII complement" "$W/nu/g.hbnf" 2>/dev/null
 
+# Enum values: `"icmp"@1`, a literal with a number of its own.  The numbers
+# are checked in C by tests/enumval.sh; here all four backends must build the
+# sparse enum and read its names.
+mkdir "$W/ev"
+cp tests/enumval/proto.hbnf "$W/ev/g.hbnf"
+n=0
+for v in 'udp 1' 'icmp 22' 'tcp 3' 'sctp 4' 'other 5' 'ipv6-icmp 6'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/ev/a$n.txt"
+done
+n=0
+for v in 'UDP 1' 'ip 1' 'tcp6 1' '' 'icmp tcp'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/ev/r$n.txt"
+done
+ACCEPT=$(ls "$W"/ev/a*.txt)
+REJECT=$(ls "$W"/ev/r*.txt)
+suite "enum values" "$W/ev/g.hbnf" 2>/dev/null
+
 # Tokens everywhere: a rule that is only text, in a file that skips no
 # whitespace, is one token whose value is its text, whatever it is made of.
 mkdir "$W/tk"

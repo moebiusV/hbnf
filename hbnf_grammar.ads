@@ -82,6 +82,32 @@ package HBNF_Grammar is
    --  and a built-in (`word`, `int`, `u8`), keep their names.  Messages show
    --  the rule as written, never this.
 
+   --  The value of Literal in the enum Rule_Name, or -1 when the enum has
+   --  none of its own and its values are the places of its alternatives, 0
+   --  up, in the order the backend gets them.  It has values when the author
+   --  gave some (`"icmp"@1 | "tcp"@6`, as in C: an alternative without a
+   --  number is the one before plus 1), and when the reader wrote the
+   --  alternatives in another order to match them -- `/` over words puts a
+   --  word after the longer words that begin with it -- since a word list's
+   --  index is the word's place in the list (BIP-39) and not where the parser
+   --  tries it.  A backend declares the enum's names in value order, with
+   --  `= value` where a value is not the one before plus 1.
+   function Enum_Value (Rule_Name, Literal : String) return Integer;
+
+   --  What a backend needs to declare an enum: the values of its literals in
+   --  the order the backend lists them (Values), the order to declare them in
+   --  (Enum_Order: by value, or as they come when the enum has no values of
+   --  its own), and for the J-th declared name the " = value" to write after
+   --  it when the value is not the one before plus 1 (Enum_Init).
+   type Value_Array is array (Positive range <>) of Integer;
+   type Order_Array is array (Positive range <>) of Positive;
+   function Enum_Order (Values : Value_Array) return Order_Array;
+   function Enum_Init
+     (Values : Value_Array; Order : Order_Array; J : Positive) return String;
+   function Enum_Sparse (Values : Value_Array; Order : Order_Array)
+     return Boolean;
+   function Enum_Max (Values : Value_Array) return Natural;
+
    function Except_Base (Name : String) return String;
    --  The A of the exception rule Name, or "".
    function Except_Operand (Name : String) return String;
@@ -128,6 +154,11 @@ package HBNF_Grammar is
          when Literal =>
             Lit : Unbounded_String;      --  keyword to match-and-skip
             No_Case : Boolean := False;  --  %i"...": any case matches
+            Has_Value : Boolean := False;
+            Value : Natural := 0;
+            --  `"foo"@7`: the number this literal has as an enum value, as
+            --  in C.  An alternative without one is the one before it plus 1
+            --  (the first is 0).  See Enum_Value.
          when Name =>
             Name : Unbounded_String;     --  rule/core reference
             Fold : Boolean := False;

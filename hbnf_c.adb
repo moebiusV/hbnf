@@ -1512,7 +1512,8 @@ package body HBNF_C is
               ((if I < Natural (Tags.Length)
                 then "c_enum_item" else "c_enum_item_last"),
                (H ("ident", C_Ident (CN) & "_" & To_String (Names (I))),
-                H ("lit", To_String (Tags (I))))));
+                H ("lit", To_String (Tags (I))),
+                H ("init", ""))));
             Append (Items, LF);
          end loop;
          return Fill ("c_enum",
@@ -1567,15 +1568,29 @@ package body HBNF_C is
                declare
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
                   Items : U;
+                  --  The values follow the numbers the author gave the
+                  --  alternatives, or their order as written, not the order
+                  --  the parser tries them in (see Enum_Value).
+                  Count : constant Natural := Natural (Info.Literals.Length);
+                  Vals  : constant Value_Array (1 .. Count) :=
+                    [for K in 1 .. Count =>
+                       Enum_Value (To_String (R.Name),
+                                   To_String (Info.Literals (K)))];
+                  Ord   : constant Order_Array := Enum_Order (Vals);
                begin
-                  for I in 1 .. Natural (Info.Literals.Length) loop
+                  for J in 1 .. Count loop
+                     declare
+                        I : constant Positive := Ord (J);
+                     begin
                      Append (Items, Fill
-                       ((if I < Natural (Info.Literals.Length)
+                       ((if J < Count
                          then "c_enum_item" else "c_enum_item_last"),
                         (H ("ident",
                            C_Ident (NM) & "_" & To_String (Names (I))),
-                         H ("lit", To_String (Info.Literals (I))))));
+                         H ("lit", To_String (Info.Literals (I))),
+                         H ("init", Enum_Init (Vals, Ord, J)))));
                      Append (Items, LF);
+                     end;
                   end loop;
                   Append (Buf, Fill ("c_enum",
                     (H ("name", C_Type_Name (NM)),

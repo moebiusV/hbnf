@@ -1,0 +1,7 @@
+; An enum with numbers of its own, as in C: `"icmp"@1`.  An alternative
+; without one is the one before plus 1.  The list is sparse, and not in the
+; order its numbers are in.  (The enum is a field of `doc`, with a number
+; after it; a rule made only of text and enums is one string.)
+prefix none
+doc = proto int
+proto = "udp"@17 | "icmp"@1 | "tcp"@6 | "sctp"@0x84 | "other" | "ipv6-icmp"@58
