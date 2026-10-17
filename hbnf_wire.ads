@@ -133,7 +133,16 @@ package HBNF_Wire is
    end record;
    package Unit_Vectors is new Ada.Containers.Vectors (Positive, Unit);
 
+   package Name_Vectors is new Ada.Containers.Vectors
+     (Positive, Unbounded_String);
+
    type Grammar is record
+      Externals : Name_Vectors.Vector;
+      External_Tokens : Name_Vectors.Vector;
+      --  Those of the text rules that are tokens (read by a scanner, with no
+      --  reader of their own, and a string for a value).
+      --  The text rules of the grammar the bit rules may name (a field holding
+      --  a string, or an enum, or a text token); the text emitter makes them.
       Rules  : Rule_Vectors.Vector;
       Prefix : Unbounded_String := To_Unbounded_String ("bnf_");
       Unit_Width : Natural := 0;               --  0: no text form

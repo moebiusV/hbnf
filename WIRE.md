@@ -39,6 +39,37 @@ It reads the five published valid addresses to their version and program, and
 refuses six made to break one rule each.  The checksum is read, not yet checked
 (see the end of this page).
 
+## Text and bit rules together
+
+A grammar may hold both, and a rule of either kind may name one of the other.
+The C backend makes one parser for the lot: the bit rules are read from the text
+parser's own state, at its position (an octet and a bit offset inside it), with
+its error record and its arena, by functions with the same signature as the text
+rules', so a call goes either way:
+
+    prefix none
+    whitespace none
+    msg = "PKT:" frame ";"          ; a text rule naming a bit rule
+    frame = len:8 body:[len]        ; a bit rule
+
+    include "common.hbnf"
+    doc = "REC:" record
+    record = kind:8 label           ; a bit rule naming a text rule
+    label = 1*ALPHA
+
+`parse_text` on `PKT:\x05hello;` gives a `msg` whose `frame` has `len` 5 and a
+`body` of five octets; on `REC:\x07abc`, a `doc` whose `record` has `kind` 7 and
+`label` `abc`.  The text of a text rule is octets read as UTF-8, so it must start
+on an octet: a bit rule that ends inside one (`flag:3 label`) is refused when it
+is read, with `text starts inside an octet`, and so is a text rule that follows
+one.  The tests are `tests/wire/mixed*.hbnf`.
+
+What is not built for it: the first rule must be a text rule (a grammar whose
+first rule is a bit rule is read as bits alone, and says so if it names a text
+rule); there is no writer for a mixed grammar; `%action` and `%emit` on a bit
+rule in one are refused; and only C has it.  A bit rule that holds a text rule by
+value, and a text and a bit field in the *same* rule, are the next step (stage 3).
+
 ## Why these two characters
 
 | char | means | precedent |

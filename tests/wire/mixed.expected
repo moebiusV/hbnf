@@ -1,0 +1,14 @@
+hello: len=5 body=hello
+one: len=1 body=z
+short: error
+expected frame.body: needs 9 octets, 48 bits left, found hello
+  PKT:	hello;
+       ^
+no semicolon: error
+expected `;`, found end of input
+  PKT:hello
+            ^
+no tag: error
+expected `PKT:`, found 
+  hello;
+  ^

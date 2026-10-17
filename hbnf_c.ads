@@ -79,4 +79,11 @@ package HBNF_C is
    --  links, or padding.  Emitted after Emit (needs its types + list macros).
    function Emit_Compare (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
 
+   --  A grammar of text rules and bit rules (RFCPLAN.md step 7b): the types of
+   --  the bit rules, and their readers, which HBNF_Wire.C makes to read the text
+   --  parser's own state.  Emit puts the types before the struct bodies of the
+   --  text rules, and Emit_Parser puts the readers after the forward
+   --  declarations, so a rule of either kind can name one of the other.
+   procedure Set_Hosted (Types, Code : String);
+
 end HBNF_C;

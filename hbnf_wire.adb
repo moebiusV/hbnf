@@ -562,7 +562,11 @@ package body HBNF_Wire is
                declare
                   K : constant Natural := Find (G, To_String (It.Ref));
                begin
-                  if K = 0 then
+                  if K = 0
+                    and then (for some X of G.Externals => X = It.Ref)
+                  then
+                     null;     --  a text rule: read by the text parser
+                  elsif K = 0 then
                      Fail_At (It.all,
                               "`" & To_String (It.Ref) & "` is not a rule "
                               & "in this file; define it, or give the field "

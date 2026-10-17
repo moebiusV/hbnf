@@ -279,6 +279,10 @@ package HBNF_Grammar is
    function Wire_Rules return Rule_Vectors.Vector;
    function Wire_Root return Boolean;
 
+   --  True when a bit rule has this name: a text rule may name one, and the C
+   --  emitter reads it as a rule whose type and reader the wire emitter makes.
+   function Is_Wire_Rule (Name : String) return Boolean;
+
    --  A rule's `%emit{ code }`, "" when it has none.
    function Emit_Code (Rule_Name : String) return String;
 

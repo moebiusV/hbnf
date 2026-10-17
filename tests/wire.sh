@@ -13,14 +13,14 @@ fail=0
 # check NAME: generate tests/wire/NAME.hbnf, build it with tests/wire/NAME_main.c,
 # and compare the program's output with tests/wire/NAME.expected.
 check() {
-	n=$1; libs=${2:-}; need=${3:-}; g=${4:-$n}
+	n=$1; libs=${2:-}; need=${3:-}; g=${4:-$n}; flags=${5:--Wall -Wextra -Werror}
 	if [ -n "$need" ] && ! printf '#include <%s>\n' "$need" | $CC -E - > /dev/null 2>&1; then
 		echo "SKIP $n: no <$need>; its actions call the system's library"; return
 	fi
 	if ! "$CLI" tests/wire/$g.hbnf --backend=c > "$T/$g.c" 2> "$T/$n.err"; then
 		echo "FAIL $n: generation: $(cat "$T/$n.err")"; fail=$((fail+1)); return
 	fi
-	if ! $CC -Wall -Wextra -Werror -I"$T" -Icorpus/bip39 -o "$T/$n" tests/wire/${n}_main.c $libs 2> "$T/$n.cc"; then
+	if ! $CC $flags -I"$T" -Icorpus/bip39 -o "$T/$n" tests/wire/${n}_main.c $libs 2> "$T/$n.cc"; then
 		echo "FAIL $n: cc"; cat "$T/$n.cc"; fail=$((fail+1)); return
 	fi
 	"$T/$n" > "$T/$n.out" 2>&1
@@ -70,6 +70,10 @@ expect_error() {
 check net
 check_rust net
 check net_cbuf "" "" net
+# Text and bit rules in one grammar (the generated text parser is not -Wextra clean)
+check mixed "" "" mixed -w
+check mixed2 "" "" mixed2 -w
+check mixed3 "" "" mixed3 -w
 check segwit
 check mnemonic -lcrypto openssl/sha.h
 

@@ -1,0 +1,10 @@
+; A bit rule that holds a text token: `record` is a byte and then letters.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc = "REC:" record
+
+record = kind:8 label
+
+label = 1*ALPHA

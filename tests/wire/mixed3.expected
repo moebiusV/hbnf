@@ -1,0 +1,4 @@
+error
+expected record.label: text starts inside an octet, found  
+  REC: abc
+      ^

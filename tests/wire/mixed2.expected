@@ -1,0 +1,10 @@
+abc: kind=7 label=abc
+a letter as the kind: kind=97 label=bc
+no label: error
+expected record.label: a label, found end of input
+  REC:
+       ^
+digits: error
+expected record.label: a label, found 123
+  REC:123
+       ^

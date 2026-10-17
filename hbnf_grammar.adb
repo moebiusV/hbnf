@@ -224,6 +224,16 @@ package body HBNF_Grammar is
    Units_R         : Unbounded_String;
    Units_S         : Unbounded_String;
 
+   function Is_Wire_Rule (Name : String) return Boolean is
+   begin
+      for R of Wire_Store loop
+         if To_String (R.Name) = Name then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Wire_Rule;
+
    function Wire_Rules return Rule_Vectors.Vector is (Wire_Store);
    function Wire_Root return Boolean is (Wire_Root_Flag);
    function Units_Width return Natural is (Units_W);
@@ -2911,8 +2921,9 @@ package body HBNF_Grammar is
    --  The checks look only at the rules the parser uses (Reachable), so a
    --  grammar can include an RFC's rules and replace the ones it needs.
    --  The rules that hold bit fields are not the text backends' business.  A
-   --  rule is a bit rule when it holds a Bit_Field or names a bit rule; those
-   --  are set aside here, in the order written, before Finish's text analyses.
+   --  rule is a bit rule when it holds a Bit_Field; those are set aside here, in
+   --  the order written, before Finish's text analyses.  A rule that only names
+   --  a bit rule stays a text rule: its reference is the call across.
    procedure Split_Wire (Rules : in out Rule_Vectors.Vector) is
       Is_Wire : array (1 .. Natural (Rules.Length)) of Boolean :=
         [others => False];
@@ -2924,13 +2935,7 @@ package body HBNF_Grammar is
                when Bit_Field =>
                   return True;
                when Name =>
-                  for J in Is_Wire'Range loop
-                     if Is_Wire (J)
-                       and then Rules (J).Name = E.Name
-                     then
-                        return True;
-                     end if;
-                  end loop;
+                  null;
                when Group =>
                   if Mentions_Wire (E.Items) then
                      return True;
@@ -3649,6 +3654,7 @@ package body HBNF_Grammar is
               and then Slice (E.Name, 1, 1) /= "<"
               and then not By_Name.Contains (To_String (E.Name))
               and then not Is_Core_Name (To_String (E.Name))
+              and then not Is_Wire_Rule (To_String (E.Name))
             then
                declare
                   Sited : Boolean := False;
@@ -4234,7 +4240,8 @@ package body HBNF_Grammar is
               (E.Kind = Name and then Length (E.Name) > 0
                and then Slice (E.Name, 1, 1) /= "<"
                and then not By_Name.Contains (To_String (E.Name))
-               and then not Is_Core_Name (To_String (E.Name)))
+               and then not Is_Core_Name (To_String (E.Name))
+               and then not Is_Wire_Rule (To_String (E.Name)))
               or else (E.Kind = Group and then Undefined_In (E.Items)));
 
          Any_Undefined : constant Boolean :=
@@ -5719,6 +5726,9 @@ package body HBNF_Grammar is
    is
       N    : constant Natural := Natural (Rules.Length);
       Seen : array (1 .. N) of Boolean := [others => False];
+      --  A bit rule is not in Rules, but the text rules it names are needed.
+      Wire_Seen : array (1 .. Natural (Wire_Store.Length)) of Boolean :=
+        [others => False];
 
       procedure Mark (Name : Unbounded_String);
 
@@ -5730,6 +5740,11 @@ package body HBNF_Grammar is
                   Mark (E.Name);
                when Group =>
                   Walk (E.Items);
+               when Bit_Field =>
+                  if E.F_Ref /= Null_Unbounded_String then
+                     Mark (E.F_Ref);
+                  end if;
+                  Walk (E.F_Alts);
                when others =>
                   null;
             end case;
@@ -5738,6 +5753,15 @@ package body HBNF_Grammar is
 
       procedure Mark (Name : Unbounded_String) is
       begin
+         for K in 1 .. Natural (Wire_Store.Length) loop
+            if Wire_Store (K).Name = Name then
+               if not Wire_Seen (K) then
+                  Wire_Seen (K) := True;
+                  Walk (Wire_Store (K).Pattern);
+               end if;
+               return;
+            end if;
+         end loop;
          for I in 1 .. N loop
             if Rules (I).Name = Name then
                if not Seen (I) then
@@ -6260,6 +6284,10 @@ package body HBNF_Grammar is
                return True;
             elsif E.Kind = Group and then Refers (E.Items) then
                return True;
+            elsif E.Kind = Bit_Field
+              and then (To_String (E.F_Ref) = Nm or else Refers (E.F_Alts))
+            then
+               return True;     --  a bit rule names it: it is read by name
             end if;
          end loop;
          return False;
@@ -6268,6 +6296,11 @@ package body HBNF_Grammar is
       if Is_Core_Name (Nm) then
          return True;
       end if;
+      for R of Wire_Store loop
+         if Refers (R.Pattern) then
+            return True;
+         end if;
+      end loop;
       if Natural (Rules.Length) > 0
         and then To_String (Rules (1).Name) = Nm
       then

@@ -210,6 +210,28 @@ begin
          end;
          return;
       end if;
+      --  Text rules that hold bit rules: the C text parser reads the bit rules
+      --  too, from its own state.
+      if not HBNF_Grammar.Wire_Rules.Is_Empty then
+         if To_String (Backend) /= "c" then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "hbnf: a grammar with text rules and bit rules together can "
+               & "be emitted in C so far (" & To_String (Backend)
+               & " follows; RFCPLAN.md step 7b)");
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+            return;
+         end if;
+         declare
+            G : constant HBNF_Wire.Grammar :=
+              HBNF_Wire.Lower.Lower
+                (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path));
+            Types, Code : Unbounded_String;
+         begin
+            HBNF_Wire.C.Emit_Hosted (G, Types, Code);
+            HBNF_C.Set_Hosted (To_String (Types), To_String (Code));
+         end;
+      end if;
    end;
 
    declare

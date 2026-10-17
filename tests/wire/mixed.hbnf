@@ -1,0 +1,9 @@
+; Text and bit rules in one grammar: a text frame around a record of bits.
+; `frame` holds bit fields, `msg` holds text and names it, and the one parser
+; reads both from one position.
+prefix none
+whitespace none
+
+msg = "PKT:" frame ";"
+
+frame = len:8 body:[len]

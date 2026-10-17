@@ -1,0 +1,10 @@
+; A bit rule that ends inside an octet, followed by text: refused when read.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc = "REC:" record
+
+record = flag:3 label
+
+label = 1*ALPHA

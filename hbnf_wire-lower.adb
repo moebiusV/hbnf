@@ -226,6 +226,12 @@ package body HBNF_Wire.Lower is
             end;
          end if;
       end if;
+      for R of Text loop
+         Result.Externals.Append (Ident (R.Name));
+         if GR.Is_Char_Rule (Text, To_String (R.Name)) then
+            Result.External_Tokens.Append (Ident (R.Name));
+         end if;
+      end loop;
       Check (Result, File);
       return Result;
    end Lower;

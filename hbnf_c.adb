@@ -431,6 +431,16 @@ package body HBNF_C is
 
    --  The `_t` typedef name for a rule, with a "_" suffix when it would
    --  collide with a POSIX <sys/types.h> typedef (uid_t, gid_t, ...).
+   --  The bit rules of a grammar that has some (Set_Hosted).
+   Hosted_Types : Unbounded_String;
+   Hosted_Code  : Unbounded_String;
+
+   procedure Set_Hosted (Types, Code : String) is
+   begin
+      Hosted_Types := To_Unbounded_String (Types);
+      Hosted_Code := To_Unbounded_String (Code);
+   end Set_Hosted;
+
    function C_Type_Name (Ref : String) return String is
       T : constant String := C_Name (Ref) & "_t";
    begin
@@ -568,6 +578,9 @@ package body HBNF_C is
    begin
       if S /= "" then
          return S;
+      end if;
+      if J = 0 and then HBNF_Grammar.Is_Wire_Rule (Ref) then
+         return C_Type_Name (Ref);          --  a bit rule: a struct of its own
       end if;
       if J = 0 then
          raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
@@ -1060,6 +1073,9 @@ package body HBNF_C is
       begin
          if S /= "" then
             return S;
+         end if;
+         if J = 0 and then HBNF_Grammar.Is_Wire_Rule (Ref) then
+            return C_Type_Name (Ref);       --  a bit rule: a struct of its own
          end if;
          if J = 0 then
             raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
@@ -2654,6 +2670,9 @@ package body HBNF_C is
       --  itself.  This runs after the leaf sort, which is what keeps the
       --  alias chase inside Back_Edges_C finite.
       Backs := Back_Edges_C (Rules);
+
+      --  The bit rules' own types (a text rule may hold one by value).
+      Append (Res, Hosted_Types);
 
       --  Struct and list bodies, in by-value dependency order.
       while Remaining > 0 loop
@@ -4958,7 +4977,11 @@ package body HBNF_C is
             H ("scanners", To_String (Scanners)),
             H ("word_matcher", To_String (Word_Match)),
             H ("ws_skip", To_String (Ws_Skip)),
-            H ("nocase", To_String (Nocase)))));
+            H ("nocase", To_String (Nocase)),
+            H ("bit_field",
+               (if Hosted_Code = Null_Unbounded_String then ""
+                else "    unsigned bit;   /* where in the octet at pos a bit "
+                     & "rule is: 0 to 7 */" & ASCII.LF)))));
       end;
       Append (Res, LF);
       Append (Res, LF);
@@ -4979,6 +5002,7 @@ package body HBNF_C is
          end;
       end loop;
       Append (Res, LF);
+      Append (Res, Hosted_Code);       --  the readers of the bit rules
 
       for I in 1 .. N loop
          declare

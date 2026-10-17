@@ -12,4 +12,14 @@ package HBNF_Wire.C is
 
    function Emit (G : Grammar) return String;
 
+   --  For a grammar of text rules and bit rules together: the bit rules, read
+   --  from the text parser's own state (its input, its position and bit offset,
+   --  its error record, its arena) by functions with the signature of the text
+   --  rules', so a rule of either kind calls one of the other.  Types is the
+   --  declarations (the octets type, a struct for each bit rule); Code is
+   --  the helpers and the readers, to go after the text parser's own helpers.
+   --  There is no writer in this form yet.
+   procedure Emit_Hosted
+     (G : Grammar; Types, Code : out Unbounded_String);
+
 end HBNF_Wire.C;

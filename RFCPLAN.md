@@ -1195,6 +1195,19 @@ should claim that before 10.
        token's value type follows its alphabet (a number for bits, a byte string
        for octets, a string for code points).
 
+       **Stage 2, built 2026-10-17 (C):** a text rule may name a bit rule and a
+       bit rule a text rule, read by one parser.  The bit rules are emitted
+       "hosted" (HBNF_Wire.C.Emit_Hosted): over the text parser's `text`, `pos`
+       and a new `bit` (the offset inside the octet at `pos`), its `fail` and its
+       arena; the text emitter treats a bit rule's name as a defined rule with a
+       type and a reader of the usual signature.  Text must start on an octet and
+       says so when it does not.  A rule is a bit rule only if it holds a bit
+       field itself; one that names a bit rule is a text rule.  Not yet: the
+       writer, actions and emitters, the other backends, a bit rule holding a text
+       rule by value, and `units` (still the way a phrase and its bits meet; it
+       goes when the numbers of a text rule's words can feed a bit rule).
+       Stage 3 is the same sequence holding both.
+
        **Acceptance tests (the user's, 2026-10-17):** a BIP-39 mnemonic and a
        wallet address, each both parsed and generated.  A mnemonic is words
        whose 11-bit indices concatenate to entropy plus a SHA-256 checksum; a
