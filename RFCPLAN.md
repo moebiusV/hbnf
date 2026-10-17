@@ -161,7 +161,8 @@ silently.
     `CRLF = CR LF`; `ascii.hbnf` holds the named single characters (the C0
     controls, blanks, `DEL`, `DQUOTE`).  `LWSP` waits for repetition
     inside character rules, which `Is_Char_Rule` refuses today.
-11. **Negation is `~`.**  `~rule` matches one code point not in the set
+11. **Negation is `~`.**  *Done 2026-10-17* (tests/schema.sh, in all four
+    backends).  `~rule` matches one code point not in the set
     `rule` matches (a complement); repetition composes, so `*~rule` is
     "until rule" (SNOBOL's `BREAK`).  A hbnf extension — ABNF has no
     negation — and it collapses the explicit `%x` complements the lexer

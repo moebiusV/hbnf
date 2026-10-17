@@ -264,6 +264,40 @@ ws = 1*wsc
 wsc = %x20
 G
 
+echo "== negation: ~x is one code point not in x =="
+rm -f "$W/t"; gen <<'G'
+whitespace none
+doc = ~"a" ~( "b" / "c" ) *~"z" "z"
+G
+check OK   "xdqz"    "not a, not b or c, then anything up to z"
+check OK   "xdz"     "a run of none"
+check FAIL "adqz"    "the first may not be a"
+check FAIL "xbqz"    "the second may not be b"
+check FAIL "xdqq"    "the run must end in z"
+rm -f "$W/t"; gen <<'G'
+whitespace none
+doc = ~~"a" "!"
+G
+check OK   "a!"      "a double negation is the class again"
+check FAIL "b!"      "and nothing else"
+refuse "built-in type" "a negated built-in" <<'G'
+whitespace none
+doc = ~word
+G
+refuse "more than one character" "a negated string of two characters" <<'G'
+whitespace none
+doc = ~"ab"
+G
+refuse "not one character" "a negated sequence" <<'G'
+whitespace none
+doc = ~pair
+pair = "a" "b"
+G
+refuse "matches nothing" "the complement of every character" <<'G'
+whitespace none
+doc = ~%x0-10FFFF
+G
+
 echo "== YBNF, yacc's grammar language: %token, %start, %%, and | as the union =="
 rm -f "$W/t"; gen <<'G'
 dialect ybnf

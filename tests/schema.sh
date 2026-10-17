@@ -231,4 +231,72 @@ ACCEPT=$(ls "$W"/al/a*.txt)
 REJECT=$(ls "$W"/al/r*.txt)
 suite "alias of a list rule" "$W/al/g.hbnf" 2>/dev/null
 
+# Negation: ~x is one code point not in x, and *~x is a run of them.
+mkdir "$W/ng"
+cat > "$W/ng/g.hbnf" <<G
+whitespace none
+include "$(pwd)/grammars/common.hbnf"
+doc = *( line LF )
+line = comment / text
+comment = "#" *~LF
+text = 1*~( LF / "#" )
+G
+n=0
+for v in '' 'a
+' '#c
+' 'a b
+#c
+d
+' 'x y z
+'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/ng/a$n.txt"
+done
+n=0
+for v in 'a' 'a#b
+' '
+'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/ng/r$n.txt"
+done
+ACCEPT=$(ls "$W"/ng/a*.txt)
+REJECT=$(ls "$W"/ng/r*.txt)
+suite "negation, comments" "$W/ng/g.hbnf" 2>/dev/null
+
+mkdir "$W/ns"
+cat > "$W/ns/g.hbnf" <<G
+whitespace none
+include "$(pwd)/grammars/common.hbnf"
+doc = str
+str = DQUOTE *( esc / plain ) DQUOTE
+esc = %x5C %x00-10FFFF
+plain = ~( DQUOTE / %x5C )
+G
+n=0
+for v in '""' '"abc"' '"a\"b"' '"a\\"' '"é"'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/ns/a$n.txt"
+done
+n=0
+for v in '"abc' '"a"b"' '"\"' 'abc' ''; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/ns/r$n.txt"
+done
+ACCEPT=$(ls "$W"/ns/a*.txt)
+REJECT=$(ls "$W"/ns/r*.txt)
+suite "negation, strings" "$W/ns/g.hbnf" 2>/dev/null
+
+mkdir "$W/nu"
+cat > "$W/nu/g.hbnf" <<G
+whitespace none
+doc = *~"é" "é"
+G
+n=0
+for v in 'é' 'abcé' 'aé'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/nu/a$n.txt"
+done
+n=0
+for v in 'abc' '' 'ééx'; do
+	n=$((n + 1)); printf '%s' "$v" > "$W/nu/r$n.txt"
+done
+ACCEPT=$(ls "$W"/nu/a*.txt)
+REJECT=$(ls "$W"/nu/r*.txt)
+suite "negation, a non-ASCII complement" "$W/nu/g.hbnf" 2>/dev/null
+
 exit $rc

@@ -186,7 +186,7 @@ def main(argv):
     out.append("")
     out.append("; Blanks and `#` comments.")
     out.append("ws = 1*( %x20 / %x09 / %x0D / %x0A / comment )")
-    out.append('comment = "#" *( %x00-22 / %x24-10FFFF ) "#"')
+    out.append('comment = "#" *~"#" "#"')
     sys.stdout.write("\n".join(out) + "\n")
     sys.stderr.write("%d statements, %d classes (%d lexical), %d alternatives\n" % (
         len(prods), len(by), len(defined) - len(by), nalt))
