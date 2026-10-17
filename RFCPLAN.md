@@ -210,9 +210,38 @@ silently.
     writes itself for a union that needs backtracking (first match wins, see
     decision 1) is the same hook with generated code.
 
-    This is a separate axis from step 9 and much less certain, so it waits
-    until a grammar actually needs it.  It does not make hbnf ambiguous: the
-    block decides a branch, it does not explore several.
+    It does not make hbnf ambiguous: the block decides a branch, it does not
+    explore several.
+
+    **Settled direction (2026-10-17, the user's): context is data the grammar
+    names, scoped, and the parser threads.**  hbnf was never context-free --
+    ordered choice, jets, exceptions and the wire layer's expressions over
+    earlier fields are already outside it -- and "context-free" described only
+    what BNF alone can decide.  Context is stored by the grammar and consulted
+    by the parser, in a notation a BNF reader is not surprised by:
+
+        context types                              ; a scoped set of names
+        typedef-name = identifier ? types          ; an identifier that is in `types`
+        declaration  = specs declarators ";"  %bind types += declarators.name
+        block        = "{" %scope *statement "}"   ; bindings made inside vanish at "}"
+
+    - **A context is a persistent value.**  `%bind` makes a new version and a
+      backtrack restores the old one, so a speculative bind costs nothing and
+      leaks nothing, and a bind may run *during* the parse, where a later `?`
+      test sees it.  (This is the answer to why `%action` waited for the end of
+      the parse: side effects a backtrack cannot undo.  A persistent value has
+      none to undo.  `%action` stays the post-parse member.)
+    - **Code for what the notation cannot say:** `%bind { }` and `%where { }`
+      in any language, reading and writing the context through a small API.
+    - **Precedents weighed:** Prolog DCG arguments and attribute grammars
+      (inherited attributes: pure, but heavy to write), yacc's lexer hack (a
+      mutable global; unsafe under backtracking), ANTLR's semantic predicates
+      (the author owns the hazard), IMP72's syntax extension (powerful, a much
+      bigger machine).
+    - **Where it lands:** step 6, with the other compiler-compiler interfaces,
+      in C first, tested on `(A) * 0` (a cast when `A` is a typedef name, a
+      product when it is not) before a C subset is tried.  Later work, not
+      started.
 
 ## POSIX BNF
 
