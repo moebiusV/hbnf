@@ -4,16 +4,16 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Interfaces;
 
---  HBNF_Wire: the wire layer (RFCPLAN.md, step 7b).  A file that says `binary`
---  describes octets, not text: a field is `name:N`, N bits, packed the way an
---  RFC's packet diagram reads (first field in the most significant bits,
---  big-endian), and a rule is read by shift-and-mask code.  This unit reads such
---  a file into a small tree and checks it; HBNF_Wire.C (and the other
---  backends' children) turn the tree into a parser over a byte buffer.
+--  HBNF_Wire: the wire layer (RFCPLAN.md step 7b, WIRE.md).  The main reader
+--  (HBNF_Grammar) reads the bit forms as ordinary elements of the notation; a
+--  rule that holds one is a bit rule, and HBNF_Wire.Lower turns the bit rules
+--  into the tree declared here, which Check examines and the emitters
+--  (HBNF_Wire.C, HBNF_Wire.Rust) turn into a parser and a writer over a buffer
+--  of bits.  Nothing here reads a file.
 --
---  The notation is the one RFCPLAN.md settles for 7b:
+--  The forms, as the main reader gives them:
 --
---    name:N  name:16le  name:8s  name:N@K   N bits (little-endian, signed),
+--    name:N  name:16le  name:8s  name@K:N   N bits (little-endian, signed),
 --                                           which must start at bit K
 --    name:[expr]  name:*u8                  octets: a count, or the rest
 --    name:bits(expr)                        a bit count read from a field
@@ -37,9 +37,6 @@ package HBNF_Wire is
    --  The message is a complete, readable diagnostic: where, what is wrong, and
    --  what the author probably meant.
 
-   --  True when Text has a line that says only `binary` (a comment after it
-   --  is allowed): the file is a wire grammar, not a text one.
-   function Is_Binary (Text : String) return Boolean;
 
    ---------------------------------------------------------------------------
    --  Expressions
@@ -157,8 +154,23 @@ package HBNF_Wire is
    --  Zig or Ada) is not it.  A grammar without code goes to any.
    procedure Check_Code_Language (G : Grammar; Backend : String);
 
-   --  Read and check a wire grammar.  Raises Wire_Error.
-   function Parse (Text : String; File : String := "") return Grammar;
+   --  The checks of a wire grammar: that what it names is defined, that an
+   --  expression uses only what is read before it, that a field starts where
+   --  it says, that a record does not hold itself.  Raises Wire_Error.
+   procedure Check (G : in out Grammar; File : String);
+
+   --  `u8`, `i32`, `u16le`: a width spelled as a type.
+   procedure Fixed_Type
+     (S : String; Is_Fixed : out Boolean; Bits : out Natural;
+      Signed, Little : out Boolean);
+
+   --  `s`, `le`, `be`, `sle`, `sbe`: what may follow a width.
+   function Is_Modifier (S : String) return Boolean;
+
+   --  An expression as written in a bit field (`ihl*4 - 20`), read.  Where is
+   --  for the message.  Raises Wire_Error.
+   function Parse_Expression (Text : String; Where : String) return Expr_Access;
+
 
    function Find (G : Grammar; Name : String) return Natural;
 

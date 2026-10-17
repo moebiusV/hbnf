@@ -1,12 +1,15 @@
 # The wire layer: octets, bit fields and enum numbers
 
-A grammar that says `binary` describes bytes, not text.  The same notation that
-reads a configuration file reads an Ethernet frame, and the generated parser
-takes a buffer.  This is `RFCPLAN.md` step 7b.  **Status:** the C backend reads
-and writes it (the generating direction exists too); Rust, Zig and Ada are next.
-Enum numbers (`"icmp"@1`) work in all four backends already.
-
-    binary
+The notation that reads a configuration file reads an Ethernet frame too, and
+the generated parser takes a buffer.  There is no binary mode and no separate
+file type: a field of N bits (`ttl:8`) is an element like a literal or a rule
+name, and a rule that holds one is a **bit rule**.  A file may hold text rules
+and bit rules side by side (a bit rule's `units` are spelled by a text rule of
+the same file or one it includes).  This is `RFCPLAN.md` step 7b.  **Status:**
+the C and Rust backends read and write bit rules (the writing direction is the
+same grammar); Zig and Ada are next.  Enum numbers (`"icmp"@1`) work in all four
+backends already.  What is not built is a text element and a bit field in one
+rule (`"GET " len:16 payload:[len]`); see the end of this page.
 
     ; IPv4 (RFC 791): one 32-bit word to a line.
     ipv4 = version@0:4 ihl:4 tos:8 total_length:16
@@ -23,11 +26,13 @@ examples.  So is `tests/wire/segwit.hbnf`, the data part of a bech32 address
 (BIP-173, BIP-350): 5-bit symbols, a witness program whose octets start inside
 an octet, padding that must be zero, and rules on the program's length:
 
+    include "bech32.hbnf"
+    units 5 bech32-symbol
     segwit = version:5 ?(version <= 16)
              program:[(remaining - 30) / 8]
              ?(len(program) >= 2 && len(program) <= 40)
              ?(version != 0 || len(program) == 20 || len(program) == 32)
-             ?(remaining - 30 < 5) pad:bits(remaining - 30) ?(pad == 0)
+             pad:bits(align) ?(pad == 0)
              checksum:30
 
 It reads the five published valid addresses to their version and program, and
@@ -86,9 +91,11 @@ names that are.
 
 ### Names
 
-Field and rule names are C identifiers.  A hyphen is refused with the underscore
-to write instead (`total-length` reads as a subtraction), and so is a C keyword
-(`int:8`).
+A field or rule name becomes an identifier in the generated code: a hyphen is
+written as an underscore there (`total-length` is `total_length`), as in the text
+backends, and an expression refers to it with the underscore (a hyphen subtracts).
+A name that is a keyword of the language, or one the generated code keeps for
+itself, is refused with a rename to try (`int:8`).
 
 ## The C API
 
@@ -118,14 +125,18 @@ with each of 32 characters; a BIP-39 mnemonic spells 11 with each of 2048 words.
 The text is a decoding of the bits, the way UTF-8 is a decoding of octets, and a
 `units` line says how:
 
-    units 5 bech32-symbol from "bech32.hbnf"
-    units 11 bip39-word from "bip39/english.hbnf" separator bip39-space
+    include "bech32.hbnf"
+    units 5 bech32-symbol
 
-`units W name from "file"` takes the enum rule `name` of a text grammar: each
-literal is the spelling of one unit, and its **number** (its place in the list,
-or `"x"@7`) is the unit's value, W bits wide.  `grammars/bech32.hbnf` is the 32
-symbols; `grammars/bip39/` the ten word lists.  A `separator` is a rule that is
-one literal, written between units (BIP-39's blank, or U+3000 in Japanese).
+    include "bip39/english.hbnf"
+    units 11 bip39-word separator bip39-space
+
+`units W name` takes the enum rule `name` of the grammar (written in the file or
+brought in by `include`): each literal is the spelling of one unit, and its
+**number** (its place in the list, or `"x"@7`) is the unit's value, W bits wide.
+`grammars/bech32.hbnf` is the 32 symbols; `grammars/bip39/` the ten word lists.
+A `separator` is a rule that is one literal, written between units (BIP-39's
+blank, or U+3000 in Japanese).
 
 The C file then has two more functions:
 
@@ -139,8 +150,8 @@ character where it went wrong.  `emit_text` writes the bits and spells them.
 The tests round-trip the five published segwit addresses and ten mnemonics, the
 BIP-39 test vectors among them.
 
-    binary
-    units 11 bip39-word from "bip39/english.hbnf" separator bip39-space
+    include "bip39/english.hbnf"
+    units 11 bip39-word separator bip39-space
     mnemonic = ... (see "Code", below, for the whole of it)
 
 reads `abandon ... about` as 16 octets of zeros and the checksum 3.
@@ -224,7 +235,16 @@ second.
 
 ## What is not built yet
 
-- Rust, Zig and Ada backends for `binary` (C has it).
+- Zig and Ada backends for bit rules (C and Rust have them).  A `language` line
+  in a grammar says which language its code blocks (preamble, epilogue,
+  `%action`, `%emit`) are written in, C unless it says; the Rust backend reads
+  grammars without code until `%action`/`%emit` are done for it.
+- **Text and bit fields in one rule.**  A rule is made of bit fields or of text,
+  and a text rule cannot yet refer to a bit rule or the reverse; a rule that
+  mixes them (`"GET " len:16 payload:[len]`) is refused with a message saying
+  so.  The direction (`RFCPLAN.md`, step 7b): one input position, counted in
+  bits; text elements read UTF-8 octets at it and say so when it is not on an
+  octet; bit fields read from wherever it is.
 - **Units.**  A field's width is in bits and a string is an array of units, but
   a unit is not always a bit: an octet, a code point and a machine word (9-bit
   bytes, 36-bit words) are different things, and the notation should say which.
@@ -232,7 +252,7 @@ second.
   `W` words, and a file may say how big its byte and word are (`byte 9`,
   `word 36`).  `@Off:Len` is then a slice of any array of units, strings
   included: `name@4B:4B` is 4 bytes from byte 4, and `name@4:4` is 4 bits from
-  bit 4.  Without a suffix the unit is the file's own (bits in a `binary` file).
+  bit 4.  Without a suffix the unit is bits for a bit field and code points for a string.
 - **Layout records.**  A record in which every field says where it is
   (`flags@0:3 id@3:13`) is a register layout, read in any order with gaps and
   overlaps.  Where only some do, `@` is the check described above.

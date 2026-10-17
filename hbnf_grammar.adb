@@ -214,6 +214,25 @@ package body HBNF_Grammar is
      (String, Natural, Ada.Strings.Hash, "=");
    Enum_Ranks : Rank_Maps.Map;
 
+   --  Code and declarations of the bit layer (see Split_Wire).
+   package Text_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (String, String, Ada.Strings.Hash, "=");
+   Emit_Table      : Text_Maps.Map;      --  rule -> its %emit code
+   Wire_Store      : Rule_Vectors.Vector;
+   Wire_Root_Flag  : Boolean := False;
+   Units_W         : Natural := 0;
+   Units_R         : Unbounded_String;
+   Units_S         : Unbounded_String;
+
+   function Wire_Rules return Rule_Vectors.Vector is (Wire_Store);
+   function Wire_Root return Boolean is (Wire_Root_Flag);
+   function Units_Width return Natural is (Units_W);
+   function Units_Rule return String is (To_String (Units_R));
+   function Units_Separator return String is (To_String (Units_S));
+
+   function Emit_Code (Rule_Name : String) return String is
+     (if Emit_Table.Contains (Rule_Name) then Emit_Table (Rule_Name) else "");
+
    function Enum_Value (Rule_Name, Literal : String) return Integer is
       C : constant Rank_Maps.Cursor :=
         Enum_Ranks.Find (Rule_Name & ASCII.NUL & Literal);
@@ -520,6 +539,12 @@ package body HBNF_Grammar is
       Greedy_Sites.Clear;
       Standing.Clear;
       Enum_Ranks.Clear;
+      Emit_Table.Clear;
+      Wire_Store.Clear;
+      Wire_Root_Flag := False;
+      Units_W := 0;
+      Units_R := Null_Unbounded_String;
+      Units_S := Null_Unbounded_String;
    end Reset;
 
    --  ====================================================================
@@ -534,7 +559,8 @@ package body HBNF_Grammar is
    type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Eq_Slash, T_Bar,
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
-                     T_Prose, T_Tilde, T_At, T_EOF);
+                     T_Prose, T_Tilde, T_At, T_Colon, T_Octets, T_Count, T_Bits,
+                     T_Guard, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -791,6 +817,82 @@ package body HBNF_Grammar is
                          To_Unbounded_String (S)));
       end Emit;
 
+      --  The index of the bracket that closes the one at From (`(`, `[`),
+      --  0 if none does; quoted strings are skipped.
+      function Matching (From : Positive) return Natural is
+         Depth : Natural := 0;
+         K     : Natural := From;
+      begin
+         while K <= Text'Last loop
+            case Text (K) is
+               when '(' | '[' =>
+                  Depth := Depth + 1;
+               when ')' | ']' =>
+                  Depth := Depth - 1;
+                  if Depth = 0 then
+                     return K;
+                  end if;
+               when '"' =>
+                  K := K + 1;
+                  while K <= Text'Last and then Text (K) /= '"' loop
+                     K := K + 1;
+                  end loop;
+               when others =>
+                  null;
+            end case;
+            K := K + 1;
+         end loop;
+         return 0;
+      end Matching;
+
+      --  The text of a bit field's expression is kept as written, for the wire
+      --  layer's own expression reader: from the bracket at I to its mate.
+      procedure Take_Raw (K : Tok_Kind) is
+         M : constant Natural := Matching (I);
+      begin
+         if M = 0 then
+            raise Parse_Error with
+              Integer'Image (Line) & ":" & Integer'Image (Col)
+              & ": this `" & Text (I) & "` is never closed";
+         end if;
+         Emit (K, Text (I + 1 .. M - 1));
+         for J in I .. M loop
+            if Text (J) = ASCII.LF then
+               Line := Line + 1;
+               Col := 1;
+            else
+               Col := Col + 1;
+            end if;
+         end loop;
+         I := M + 1;
+      end Take_Raw;
+
+      --  A `:` glued to the name (or the number of `name@K`) before it is a
+      --  width.  The `:` after a rule's name in column 1 is the operator.
+      function Glued_Width_Colon return Boolean is
+      begin
+         if Toks.Is_Empty or else I >= Text'Last then
+            return False;
+         end if;
+         if Text (I + 1) in ' ' | ASCII.HT | ASCII.LF | ASCII.CR | '=' | ':'
+         then
+            return False;
+         end if;
+         declare
+            P : constant Token := Toks.Last_Element;
+         begin
+            if P.Line /= Line then
+               return False;
+            elsif P.Kind = T_Name then
+               return P.Col /= 1 and then P.Col + Length (P.Text) = Col;
+            elsif P.Kind = T_Number and then Natural (Toks.Length) >= 2 then
+               return Toks (Toks.Last_Index - 1).Kind = T_At
+                 and then P.Col + Length (P.Text) = Col;
+            end if;
+            return False;
+         end;
+      end Glued_Width_Colon;
+
       function Name_Start (C : Character) return Boolean is
          ((C in 'a' .. 'z') or (C in 'A' .. 'Z') or C = '_');
 
@@ -907,6 +1009,7 @@ package body HBNF_Grammar is
                                   | "sensitivity" | "whitespace" | "keywords"
                                   | "statements" | "macros" | "includes"
                                   | "entry" | "prefix" | "wordchars"
+                                  | "units" | "binary"
                      then
                         Emit (T_Newline);
                      end if;
@@ -1128,6 +1231,33 @@ package body HBNF_Grammar is
                   Emit (T_Eq);  I := I + 3;  Col := Col + 3;
                elsif I < Text'Last and then Text (I + 1) = '=' then
                   Emit (T_Eq);  I := I + 2;  Col := Col + 2;
+               elsif Glued_Width_Colon then
+                  --  `ttl:8`, `data:[len]`, `src:(n)*rec`, `n:bits(w)`: the
+                  --  bit layer.  An expression is kept as the text written.
+                  Emit (T_Colon);  I := I + 1;  Col := Col + 1;
+                  if Text (I) = '[' then
+                     Take_Raw (T_Octets);
+                  elsif Text (I) = '(' then
+                     declare
+                        M : constant Natural := Matching (I);
+                        K : Natural := M + 1;
+                     begin
+                        while M /= 0 and then K <= Text'Last
+                          and then Text (K) in ' ' | ASCII.HT
+                        loop
+                           K := K + 1;
+                        end loop;
+                        if M /= 0 and then K <= Text'Last
+                          and then Text (K) = '*'
+                        then
+                           Take_Raw (T_Count);
+                        end if;
+                     end;
+                  elsif I + 4 <= Text'Last and then Text (I .. I + 4) = "bits("
+                  then
+                     I := I + 4;  Col := Col + 4;
+                     Take_Raw (T_Bits);
+                  end if;
                else
                   --  A bare `:` is yacc's, and yacc's `|` is unordered: its
                   --  tables resolve the choice.  hbnf's `|` is PEG
@@ -1560,7 +1690,13 @@ package body HBNF_Grammar is
                     ": unexpected character ','" & Character_Hint (',');
                end if;
             when '?' =>
-               if Ebnf_Here then
+               if not Ebnf_Here and then I < Text'Last
+                 and then Text (I + 1) = '('
+               then
+                  --  `?(cond)`: a condition on what has been read.
+                  I := I + 1;  Col := Col + 1;
+                  Take_Raw (T_Guard);
+               elsif Ebnf_Here then
                   --  ISO 14977's special sequence `? words ?`: a rule
                   --  described in words, so a rule not written yet.
                   declare
@@ -1594,10 +1730,20 @@ package body HBNF_Grammar is
                     and then Text (I + 1) in 'x' | 'X'
                     and then Hex_Digit (Text (I + 2)) >= 0
                   then
-                     --  0x86DD: an enum value (`"ipv6"@0x86DD`).
+                     --  0x86DD: an enum value (`"ipv6"@0x86DD`), or a constant
+                     --  of the bit layer, as wide as its digits.
                      I := I + 2;
                      while I <= Text'Last and then Hex_Digit (Text (I)) >= 0
                      loop
+                        I := I + 1;
+                     end loop;
+                  elsif Text (I) = '0' and then I + 2 <= Text'Last
+                    and then Text (I + 1) in 'b' | 'B'
+                    and then Text (I + 2) in '0' | '1'
+                  then
+                     --  0b101: a constant of the bit layer, a bit to a digit.
+                     I := I + 2;
+                     while I <= Text'Last and then Text (I) in '0' | '1' loop
                         I := I + 1;
                      end loop;
                   else
@@ -1737,6 +1883,179 @@ package body HBNF_Grammar is
       end loop;
       return N;
    end Letter_Count;
+
+   --  A field of the bit layer, after its name: `ttl:8`, `version@0:4`,
+   --  `options:[ihl*4 - 20]`, `payload:*u8`, `src:addr`, `body:(n)*rec`,
+   --  `payload:( ?(t == 6) tcp | rest:*u8 )`.  The name token was read; the
+   --  caller has seen that a `:` or a `@` is glued to it.
+   function Parse_Field (P : in out Parser; Name_Tok : Token)
+     return Element_Access
+   is
+      F : constant Element_Access :=
+        new Element'(Kind => Bit_Field, Min => 1, Max => 1,
+                     F_Name => Name_Tok.Text, F_Line => Name_Tok.Line,
+                     F_Col => Name_Tok.Col, others => <>);
+
+      procedure Bad (T : Token; Msg : String) is
+      begin
+         raise Parse_Error with
+           Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": " & Msg;
+      end Bad;
+
+      function Is_Plain_Decimal (T : Token) return Boolean is
+        (T.Kind = T_Number
+         and then not (Length (T.Text) > 1
+                       and then Ada.Strings.Unbounded.Element (T.Text, 2) in 'x' | 'X' | 'b' | 'B'));
+   begin
+      if Cur (P).Kind = T_At then
+         Next (P);
+         if not Is_Plain_Decimal (Cur (P)) then
+            Bad (Cur (P), "expected the bit the field starts at after `@` "
+                 & "(`" & To_String (Name_Tok.Text) & "@0:4`)");
+         end if;
+         F.F_At := Integer'Value (To_String (Cur (P).Text));
+         Next (P);
+         if Cur (P).Kind /= T_Colon then
+            Bad (Cur (P), "`" & To_String (Name_Tok.Text) & "@"
+                 & Integer'Image (F.F_At) & "` needs its width: `"
+                 & To_String (Name_Tok.Text) & "@K:W`");
+         end if;
+      end if;
+      Next (P);                                  --  the `:`
+      declare
+         T : constant Token := Cur (P);
+      begin
+         case T.Kind is
+            when T_Number =>
+               if not Is_Plain_Decimal (T) then
+                  Bad (T, "a width is a decimal number of bits; "
+                       & To_String (T.Text) & " is a constant (write it as an "
+                       & "item of its own)");
+               end if;
+               Next (P);
+               if Cur (P).Kind = T_Star then
+                  --  `n*rule`, `n*m rule`
+                  Next (P);
+                  F.F_Min := Natural'Value (To_String (T.Text));
+                  F.F_Max := -1;
+                  if Is_Plain_Decimal (Cur (P)) then
+                     F.F_Max := Integer'Value (To_String (Cur (P).Text));
+                     Next (P);
+                  end if;
+                  if Cur (P).Kind /= T_Name then
+                     Bad (Cur (P), "expected a rule name after `*`");
+                  end if;
+                  F.F_Kind := HBNF_Wire.S_Array;
+                  F.F_Ref := Cur (P).Text;
+                  Next (P);
+                  if To_String (F.F_Ref) = "u8" then
+                     Bad (T, "`*u8` is octets; a count of them is "
+                          & "`name:[count]`");
+                  end if;
+               else
+                  declare
+                     W : constant Long_Long_Integer :=
+                       Long_Long_Integer'Value (To_String (T.Text));
+                  begin
+                     if W = 0 or else W > 64 then
+                        Bad (T, "a field of" & Long_Long_Integer'Image (W)
+                             & " bits: fields are 1 to 64 bits; for more, say "
+                             & "how many octets with `name:["
+                             & Integer'Image (Integer (W) / 8) & "]`");
+                     end if;
+                     F.F_Kind := HBNF_Wire.S_Bits;
+                     F.F_Bits := Natural (W);
+                  end;
+                  if Cur (P).Kind = T_Name
+                    and then Cur (P).Line = T.Line
+                    and then Cur (P).Col = T.Col + Length (T.Text)
+                  then
+                     declare
+                        M : constant String := To_String (Cur (P).Text);
+                     begin
+                        if not HBNF_Wire.Is_Modifier (M) then
+                           Bad (Cur (P), "`" & M & "` after a width: the "
+                                & "modifiers are `s` (signed), `le` and `be` "
+                                & "(byte order, big the default), as in "
+                                & "`ttl:8`, `delta:8s`, `port:16le`");
+                        end if;
+                        F.F_Signed := M (M'First) = 's';
+                        F.F_Little := M'Length >= 2
+                          and then M (M'Last - 1 .. M'Last) = "le";
+                        Next (P);
+                     end;
+                  end if;
+               end if;
+            when T_Octets =>
+               F.F_Kind := HBNF_Wire.S_Octets;
+               F.F_Expr := T.Text;
+               Next (P);
+            when T_Bits =>
+               F.F_Kind := HBNF_Wire.S_Bit_Expr;
+               F.F_Expr := T.Text;
+               Next (P);
+            when T_Star =>
+               Next (P);
+               if Cur (P).Kind /= T_Name then
+                  Bad (Cur (P), "expected a rule name after `*`");
+               end if;
+               F.F_Ref := Cur (P).Text;
+               Next (P);
+               if To_String (F.F_Ref) = "u8" then
+                  F.F_Kind := HBNF_Wire.S_Rest;
+               else
+                  F.F_Kind := HBNF_Wire.S_Array;
+                  F.F_Min := 0;
+                  F.F_Max := -1;
+               end if;
+            when T_Count =>
+               Next (P);
+               if Cur (P).Kind /= T_Star then
+                  Bad (Cur (P), "expected `*` and a rule after the count");
+               end if;
+               Next (P);
+               if Cur (P).Kind /= T_Name then
+                  Bad (Cur (P), "expected a rule name after `*`");
+               end if;
+               F.F_Kind := HBNF_Wire.S_Array;
+               F.F_Expr := T.Text;
+               F.F_Ref := Cur (P).Text;
+               Next (P);
+            when T_LParen =>
+               Next (P);
+               F.F_Kind := HBNF_Wire.S_Choice;
+               F.F_Alts := Parse_Alternation (P);
+               Expect (P, T_RParen, "')'");
+            when T_Name =>
+               declare
+                  Is_Fixed : Boolean;
+                  Bits     : Natural;
+                  Sg, Lt   : Boolean;
+               begin
+                  HBNF_Wire.Fixed_Type (To_String (T.Text), Is_Fixed, Bits, Sg, Lt);
+                  Next (P);
+                  if Is_Fixed then
+                     F.F_Kind := HBNF_Wire.S_Bits;
+                     F.F_Bits := Bits;
+                     F.F_Signed := Sg;
+                     F.F_Little := Lt;
+                  else
+                     F.F_Kind := HBNF_Wire.S_Ref;
+                     F.F_Ref := T.Text;
+                  end if;
+               end;
+            when others =>
+               Bad (T, "expected a width after `:`, found `"
+                    & To_String (T.Text) & "`");
+         end case;
+      end;
+      if Cur (P).Kind = T_At and then Cur (P).Line = Name_Tok.Line then
+         Bad (Cur (P), "the place comes before the width: write `"
+              & To_String (Name_Tok.Text) & "@K:W`, `@` the bit it starts at "
+              & "and `:` how many bits");
+      end if;
+      return F;
+   end Parse_Field;
 
    function Parse_Atom (P : in out Parser) return Element_Access is
    begin
@@ -1933,11 +2252,37 @@ package body HBNF_Grammar is
             end;
          when T_Name =>
             declare
+               T : constant Token := Cur (P);
                N : constant Unbounded_String := Expect_Name (P);
             begin
+               --  `name:8`, `name@4:4`: a field of the bit layer.
+               if Cur (P).Kind in T_Colon | T_At
+                 and then Cur (P).Line = T.Line
+                 and then Cur (P).Col = T.Col + Length (T.Text)
+               then
+                  return Parse_Field (P, T);
+               end if;
                return new Element'
                  (Kind => Name, Min => 1, Max => 1, Name => N,
                   Fold => File_Fold_Names);
+            end;
+         when T_Guard =>
+            --  `?(cond)` (with `"words"` after it for a check that has them):
+            --  a condition on what has been read.
+            declare
+               T   : constant Token := Cur (P);
+               Msg : Unbounded_String;
+            begin
+               Next (P);
+               if Cur (P).Kind = T_String then
+                  Msg := Cur (P).Text;
+                  Next (P);
+               end if;
+               return new Element'
+                 (Kind => Bit_Field, Min => 1, Max => 1,
+                  F_Kind => HBNF_Wire.S_Assert, F_Expr => T.Text,
+                  F_Message => Msg, F_Line => T.Line, F_Col => T.Col,
+                  others => <>);
             end;
          when T_Prose =>
             --  `<...>` in a rule: a reference to the rule it names.  Plain
@@ -2016,6 +2361,33 @@ package body HBNF_Grammar is
       Max        : Integer := 1;
       Has_Prefix : Boolean := False;
    begin
+      --  A constant of the bit layer, as wide as its digits: 0x0800, 0b101.
+      if Cur (P).Kind = T_Number and then Length (Cur (P).Text) > 2
+        and then Ada.Strings.Unbounded.Element (Cur (P).Text, 1) = '0'
+        and then Ada.Strings.Unbounded.Element (Cur (P).Text, 2) in 'x' | 'X' | 'b' | 'B'
+      then
+         declare
+            T      : constant Token := Cur (P);
+            S      : constant String := To_String (T.Text);
+            Hexa   : constant Boolean := S (S'First + 1) in 'x' | 'X';
+            Dgs    : constant String := S (S'First + 2 .. S'Last);
+            Bits   : constant Natural := Dgs'Length * (if Hexa then 4 else 1);
+         begin
+            Next (P);
+            if Bits > 64 then
+               raise Parse_Error with
+                 Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                 & ": a constant of" & Natural'Image (Bits)
+                 & " bits: constants are at most 64 bits";
+            end if;
+            return new Element'
+              (Kind => Bit_Field, Min => 1, Max => 1,
+               F_Kind => HBNF_Wire.S_Const, F_Bits => Bits,
+               F_Value => Interfaces.Unsigned_64'Value
+                            ((if Hexa then "16#" else "2#") & Dgs & "#"),
+               F_Line => T.Line, F_Col => T.Col, others => <>);
+         end;
+      end if;
       --  ABNF prefix repetition:  *elem, 1*elem, n*melem, nelem.
       if Cur (P).Kind = T_Star then
          Min := 0;  Max := -1;  Has_Prefix := True;  Next (P);
@@ -2036,7 +2408,8 @@ package body HBNF_Grammar is
               & "  Backus-Naur form writes a terminal bare, `"
               & To_String (Cur (P).Text) & "`; hbnf writes it in quotes, `"""
               & To_String (Cur (P).Text) & """`.  (A number in front of an "
-              & "element repeats it: `3DIGIT`.)";
+              & "element repeats it: `3DIGIT`.  In a rule of bit fields a "
+              & "constant is as wide as its digits: 0x05, or 0b101.)";
          end if;
          Next (P);
          if Cur (P).Kind = T_Star then
@@ -2121,7 +2494,8 @@ package body HBNF_Grammar is
            T_Newline | T_RParen | T_RBrack | T_Bar | T_Slash | T_Comment
            | T_Code | T_EOF
          or else (P.Toks (K).Kind = T_Pct
-                  and then To_String (P.Toks (K).Text) in "scan" | "action"));
+                  and then To_String (P.Toks (K).Text)
+                           in "scan" | "action" | "emit"));
    begin
       loop
          --  A block *between* elements is lifted into a rule of its own (Lift
@@ -2315,7 +2689,8 @@ package body HBNF_Grammar is
                   when Char_Range   => A.Lo = B.Lo and then A.Hi = B.Hi,
                   when Block   => A.Code = B.Code,
                   when Alt     => True,
-                  when Negation => Same_Elements (A.Operand, B.Operand)));
+                  when Negation => Same_Elements (A.Operand, B.Operand),
+                  when Bit_Field => False));
 
    --  Direct left recursion, `a = a t1 | a t2 | b1 | b2`, becomes the list
    --  `1*( b1 | b2 | t1 | t2 )` with Bases = 2: the first entry is read
@@ -2535,6 +2910,63 @@ package body HBNF_Grammar is
    --    and a range there is refused, since they would drop it.
    --  The checks look only at the rules the parser uses (Reachable), so a
    --  grammar can include an RFC's rules and replace the ones it needs.
+   --  The rules that hold bit fields are not the text backends' business.  A
+   --  rule is a bit rule when it holds a Bit_Field or names a bit rule; those
+   --  are set aside here, in the order written, before Finish's text analyses.
+   procedure Split_Wire (Rules : in out Rule_Vectors.Vector) is
+      Is_Wire : array (1 .. Natural (Rules.Length)) of Boolean :=
+        [others => False];
+
+      function Mentions_Wire (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            case E.Kind is
+               when Bit_Field =>
+                  return True;
+               when Name =>
+                  for J in Is_Wire'Range loop
+                     if Is_Wire (J)
+                       and then Rules (J).Name = E.Name
+                     then
+                        return True;
+                     end if;
+                  end loop;
+               when Group =>
+                  if Mentions_Wire (E.Items) then
+                     return True;
+                  end if;
+               when others =>
+                  null;
+            end case;
+         end loop;
+         return False;
+      end Mentions_Wire;
+
+      Changed : Boolean := True;
+      Text    : Rule_Vectors.Vector;
+   begin
+      while Changed loop
+         Changed := False;
+         for K in Is_Wire'Range loop
+            if not Is_Wire (K) and then Mentions_Wire (Rules (K).Pattern) then
+               Is_Wire (K) := True;
+               Changed := True;
+            end if;
+         end loop;
+      end loop;
+      if Is_Wire'Length > 0 and then Is_Wire (1) then
+         Wire_Root_Flag := True;
+      end if;
+      for K in Is_Wire'Range loop
+         if Is_Wire (K) then
+            Wire_Store.Append (Rules (K));
+         else
+            Text.Append (Rules (K));
+         end if;
+      end loop;
+      Rules := Text;
+   end Split_Wire;
+
    --  `"foo"@7` in an enum: give every literal of the rule its number, as C
    --  does (an alternative without one is the one before plus 1, the first is
    --  0), and refuse a number anywhere that is not an enum.
@@ -3494,6 +3926,8 @@ package body HBNF_Grammar is
                   end;
                when Group =>
                   Add_Branches (Owner, E.Items, Acc, Depth - 1);
+               when Bit_Field =>
+                  null;     --  a rule with bit fields never reaches here (Split_Wire)
                when Negation =>
                   declare
                      Inner : Pair_Vectors.Vector;
@@ -4306,7 +4740,9 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "sensitivity"
                               or else To_String (Cur (P).Text) = "dialect"
                               or else To_String (Cur (P).Text) = "whitespace"
-                              or else To_String (Cur (P).Text) = "keywords"))
+                              or else To_String (Cur (P).Text) = "keywords"
+                              or else To_String (Cur (P).Text) = "units"
+                              or else To_String (Cur (P).Text) = "binary"))
          then
             P.Pos := Mark;
             loop
@@ -4572,6 +5008,43 @@ package body HBNF_Grammar is
                      Set_Directive (Type_Prefix_Code, "prefix",
                                     To_String (Cur (P).Text), Cur (P).Line);
                      Next (P);
+                  end if;
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "binary"
+                 and then Ends_Directive (P, 1)
+               then
+                  --  Older grammars said `binary` to mark a file of bit
+                  --  rules.  A rule is a bit rule by what is in it; the line
+                  --  is read and does nothing.
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "units"
+               then
+                  --  `units 5 bech32-symbol [separator name]`: the message
+                  --  is also written as text, in units of this many bits,
+                  --  each spelled by a literal of the enum rule named.
+                  Next (P);
+                  if Cur (P).Kind /= T_Number then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":"
+                       & Integer'Image (Cur (P).Col)
+                       & ": `units` takes a width in bits, then the enum rule "
+                       & "that spells the units: `units 5 bech32-symbol`";
+                  end if;
+                  Units_W := Natural'Value (To_String (Cur (P).Text));
+                  if Units_W = 0 or else Units_W > 32 then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":"
+                       & Integer'Image (Cur (P).Col)
+                       & ": a unit is 1 to 32 bits";
+                  end if;
+                  Next (P);
+                  Units_R := Expect_Name (P);
+                  if Cur (P).Kind = T_Name
+                    and then To_String (Cur (P).Text) = "separator"
+                  then
+                     Next (P);
+                     Units_S := Expect_Name (P);
                   end if;
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "conf"
@@ -4896,6 +5369,17 @@ package body HBNF_Grammar is
                   --  An action jet: `name = pattern { code }` — the code
                   --  block after the pattern is run in the bind walk, not
                   --  during parsing.  A trailing comment sits after it.
+                  while Cur (P).Kind = T_Pct
+                    and then To_String (Cur (P).Text) = "emit"
+                    and then P.Toks (P.Pos + 1).Kind = T_Code
+                  loop
+                     --  `pattern %emit{ code }`: what the bit layer runs when
+                     --  it writes the record.
+                     Next (P);
+                     Emit_Table.Include (To_String (Name),
+                                         To_String (Cur (P).Text));
+                     Next (P);
+                  end loop;
                   if Cur (P).Kind = T_Pct then
                      --  `pattern %action{ code }`, the explicit spelling.
                      --  A %scan after a pattern is not supported yet.
@@ -4916,6 +5400,15 @@ package body HBNF_Grammar is
                      Action := Cur (P).Text;
                      Next (P);
                   end if;
+                  while Cur (P).Kind = T_Pct
+                    and then To_String (Cur (P).Text) = "emit"
+                    and then P.Toks (P.Pos + 1).Kind = T_Code
+                  loop
+                     Next (P);
+                     Emit_Table.Include (To_String (Name),
+                                         To_String (Cur (P).Text));
+                     Next (P);
+                  end loop;
                   --  A trailing comment sits on the rule's own line, after
                   --  the pattern (Parse_Pattern stops at T_Comment).
                   if Cur (P).Kind = T_Comment then
@@ -4952,6 +5445,7 @@ package body HBNF_Grammar is
          <<Next_Item>>
       end loop;
       if File_Depth = 0 then
+         Split_Wire (Rules);
          Finish (Rules);
       end if;
       return Rules;
@@ -5207,6 +5701,7 @@ package body HBNF_Grammar is
       Result := Override (Local, Included, First_Defined);
       if File_Depth = 1 then
          Apply_Actions (Result);
+         Split_Wire (Result);
          Finish (Result);
       end if;
       File_Depth := File_Depth - 1;
@@ -5503,6 +5998,8 @@ package body HBNF_Grammar is
                         --  A character rule is code points; a `%action{ }` in
                         --  one is not char-level.
                         return False;
+                     when Bit_Field =>
+                        null;     --  a rule with bit fields never reaches here (Split_Wire)
                      when Negation =>
                         null;   --  resolved into a rule of ranges before this runs
                   end case;
@@ -6215,6 +6712,20 @@ package body HBNF_Grammar is
       end if;
       return To_String (D) & "_" & S;
    end Prefixed;
+
+   function Name_Prefix return String is
+      D : constant Unbounded_String :=
+        (if Flag_Dialect /= Null_Unbounded_String then Flag_Dialect
+         elsif File_Dialect /= Null_Unbounded_String then File_Dialect
+         else To_Unbounded_String ("bnf"));
+   begin
+      if No_Name_Prefix or else Flag_No_Prefix then
+         return "";
+      elsif Type_Prefix_Code /= Null_Unbounded_String then
+         return To_String (Type_Prefix_Code);
+      end if;
+      return To_String (D) & "_";
+   end Name_Prefix;
 
    procedure Set_Root (Name : String) is
    begin

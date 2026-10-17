@@ -14,6 +14,7 @@ with HBNF_Rust;
 with HBNF_Zig;
 with HBNF_Ada;
 with HBNF_Wire.C;
+with HBNF_Wire.Lower;
 with HBNF_Wire.Rust;
 
 --  hbnf: read a schema and emit a self-contained parser (declarations +
@@ -180,30 +181,27 @@ begin
    --  once-per-file keys.
    HBNF_Grammar.Reset_Warnings;
 
-   --  A file that says `binary` is a wire grammar (RFCPLAN.md, step 7b): octets
-   --  and bit fields, read by its own reader and emitted by HBNF_Wire.
+   --  A grammar whose first rule holds bit fields (RFCPLAN.md step 7b) goes to
+   --  the wire emitters; the text rules it keeps (the spellings of `units`) are
+   --  read from the same grammar.
    declare
-      Text : Unbounded_String;
-      F    : Ada.Text_IO.File_Type;
+      Parsed : constant HBNF_Grammar.Rule_Vectors.Vector :=
+        HBNF_Grammar.Parse_File (To_String (Schema_Path));
    begin
-      Ada.Text_IO.Open (F, Ada.Text_IO.In_File, To_String (Schema_Path));
-      while not Ada.Text_IO.End_Of_File (F) loop
-         Append (Text, Ada.Text_IO.Get_Line (F));
-         Append (Text, ASCII.LF);
-      end loop;
-      Ada.Text_IO.Close (F);
-      if HBNF_Wire.Is_Binary (To_String (Text)) then
+      if HBNF_Grammar.Wire_Root then
          if To_String (Backend) not in "c" | "rust" then
             Ada.Text_IO.Put_Line
               (Ada.Text_IO.Standard_Error,
-               "hbnf: a binary grammar can be emitted in C and Rust so far (" &
-               To_String (Backend) & " follows; RFCPLAN.md step 7b)");
+               "hbnf: a grammar of bit fields can be emitted in C and Rust "
+               & "so far (" & To_String (Backend)
+               & " follows; RFCPLAN.md step 7b)");
             Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
             return;
          end if;
          declare
             G : constant HBNF_Wire.Grammar :=
-              HBNF_Wire.Parse (To_String (Text), To_String (Schema_Path));
+              HBNF_Wire.Lower.Lower
+                (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path));
             Out_Text : constant String :=
               (if To_String (Backend) = "rust" then HBNF_Wire.Rust.Emit (G)
                else HBNF_Wire.C.Emit (G));

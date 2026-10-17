@@ -495,8 +495,9 @@ dotted-quad, `dst:48` six octets (spelled `dst:[6]` when octets read better).
 The demos leave open length-bounded payloads (`total_length − ihl·4` octets, not
 "the rest"), tag dispatch on a field value (EtherType choosing the payload
 type), and checksums — the three gaps any binary protocol engine must close.
-Binary mode is implemented in the C backend (2026-10-17); `WIRE.md` is the
-reference.  The notation differs from the sketch above in three small ways that
+Bit fields are implemented in the C and Rust backends (2026-10-17), in the one
+notation, with no mode switch: a rule that holds a bit field is a bit rule, and
+`WIRE.md` is the reference.  The notation differs from the sketch above in three small ways that
 the implementation settled: a place is `name@K:N` (`@` is "at", as in Ada's
 `at 0 range 3 .. 7`; the check that a field starts at bit K), a choice is
 `name:( ?(guard) a | b )`, and an octet count is `name:[expr]` over the fields

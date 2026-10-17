@@ -455,6 +455,8 @@ package body HBNF_Rust is
                null;
             when Block =>
                null;  --  lifted to a rule of its own before emission
+            when Bit_Field =>
+               null;     --  a rule with bit fields never reaches here (Split_Wire)
             when Negation =>
                null;   --  resolved into a rule of ranges before this runs
          end case;
@@ -1479,6 +1481,8 @@ package body HBNF_Rust is
                      null;
                   when Block =>
                      null;  --  lifted to a rule of its own before emission
+                  when Bit_Field =>
+                     null;     --  a rule with bit fields never reaches here (Split_Wire)
                   when Negation =>
                      null;   --  resolved into a rule of ranges before this runs
                end case;

@@ -123,12 +123,11 @@ else
 fi
 expect_error offset "says bit 5, but the fields above it end at bit 4"
 expect_error offset_order "the place comes before the width"
-expect_error hyphen "has a hyphen"
 expect_error unknown_field "is not a number read before this point"
 expect_error recursive "contains itself"
 expect_error too_wide "fields are 1 to 64 bits"
 expect_error keyword "is a C keyword"
 expect_error odd_little "little-endian needs a whole number of octets"
-expect_error bare_decimal "a bare decimal number has no width"
+expect_error bare_decimal "a bare number"
 expect_error undefined "is not a rule in this file"
 [ "$fail" -eq 0 ] && echo "wire OK" || { echo "wire: $fail FAIL"; exit 1; }

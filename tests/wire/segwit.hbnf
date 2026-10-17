@@ -1,7 +1,7 @@
-binary
-
-; The data part of a segwit address (BIP-173, BIP-350): 5-bit symbols.
-units 5 bech32-symbol from "../../grammars/bech32.hbnf"
+; The data part of a segwit address (BIP-173, BIP-350): 5-bit symbols, spelled
+; by the characters of bech32's set.
+include "../../grammars/bech32.hbnf"
+units 5 bech32-symbol
 
 ; A witness version, the program in octets -- which start after the version's
 ; 5 bits, in the middle of an octet -- the zero bits that fill the last symbol,

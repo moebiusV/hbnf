@@ -3,6 +3,8 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded;
+with Interfaces;
+with HBNF_Wire;
 
 --  HBNF_Grammar: the schema reader.  A schema is a grammar from which the
 --  emitters (hbnf_c, hbnf_rust, hbnf_zig, hbnf_ada) generate a parser and
@@ -132,7 +134,12 @@ package HBNF_Grammar is
    function Werror return Boolean;
    --  `--werror`: the caller treats Warnings > 0 as a failure.
 
-   type Element_Kind is (Literal, Name, Group, Alt, Char_Range, Block, Negation);
+   type Element_Kind is
+     (Literal, Name, Group, Alt, Char_Range, Block, Negation, Bit_Field);
+   --  Bit_Field = an element of the bit layer (RFCPLAN.md step 7b, WIRE.md): a
+   --  field of N bits, a run of octets, a constant, a check.  It sits in a
+   --  sequence like any other element; a rule that holds one is a bit rule, and
+   --  is set aside by Finish for the wire emitters (Wire_Rules).
    --  Char_Range = a character-level terminal: %xHH (one code point) or
    --  %xHH-HH (a code-point range).  Unlike Literal (a whole token), a Char_Range
    --  matches one code point; it appears only inside a character-level rule.
@@ -167,6 +174,24 @@ package HBNF_Grammar is
             --  the reader rewrites Name to the definition's spelling.
          when Group =>
             Items : Element_Vectors.Vector;   --  flat; Alt splits alternatives
+         when Bit_Field =>
+            F_Kind    : HBNF_Wire.Item_Kind := HBNF_Wire.S_Bits;
+            F_Name    : Unbounded_String;     --  the field; "" for a constant
+            F_Bits    : Natural := 0;
+            F_Value   : Interfaces.Unsigned_64 := 0;
+            F_Signed  : Boolean := False;
+            F_Little  : Boolean := False;
+            F_At      : Integer := -1;        --  `name@K:N`
+            F_Expr    : Unbounded_String;
+            --  The text of the expression that is the octet count, the bit
+            --  count, the repeat count or the condition, as written.
+            F_Ref     : Unbounded_String;     --  the rule of a nested record
+            F_Min     : Natural := 0;         --  repeats of a nested record
+            F_Max     : Integer := -1;
+            F_Alts    : Element_Vectors.Vector;  --  a choice, Alt-separated
+            F_Message : Unbounded_String;     --  `?(cond) "what is wrong"`
+            F_Line    : Natural := 0;
+            F_Col     : Natural := 0;
          when Negation =>
             Operand : Element_Vectors.Vector;
             --  `~x`: one code point not in the set x matches.  x is a class:
@@ -246,6 +271,28 @@ package HBNF_Grammar is
    --  others come from `<name> = Rust { ... }`, `Zig`, `Ada`.
 
    package Rule_Vectors is new Ada.Containers.Vectors (Positive, Rule);
+
+   --  The rules that hold bit fields, set aside by Finish (the text rules go on
+   --  to the analyses and the text backends), in the order written, and whether
+   --  the grammar's first rule is one of them -- then the wire emitters read the
+   --  grammar, not the text backends.
+   function Wire_Rules return Rule_Vectors.Vector;
+   function Wire_Root return Boolean;
+
+   --  A rule's `%emit{ code }`, "" when it has none.
+   function Emit_Code (Rule_Name : String) return String;
+
+   --  `units W name [separator name]`: the message is also written as text, in
+   --  W-bit units, each spelled by a literal of the enum rule `name` (and
+   --  separated by the literal of the rule `separator`).  Width 0: none.
+   function Units_Width return Natural;
+   function Units_Rule return String;
+   function Units_Separator return String;
+
+   --  The prefix of the names the emitters make: "bnf_", the dialect's, the
+   --  `prefix` line's, or "" for `prefix none`.
+   function Name_Prefix return String;
+
 
    --  The base branches and the tail branches of a list rewritten from
    --  left recursion (R.Left_Bases > 0), each a flat vector with Alt

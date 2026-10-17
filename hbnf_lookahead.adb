@@ -200,6 +200,8 @@ package body HBNF_Lookahead is
             --  nullable.  `Lift` has already replaced it by the time the
             --  backends run, so the arm is here for completeness.
             return True;
+         when Bit_Field =>
+            null;     --  a rule with bit fields never reaches here (Split_Wire)
          when Negation =>
             null;   --  resolved into a rule of ranges before this runs
       end case;
@@ -317,6 +319,8 @@ package body HBNF_Lookahead is
             end;
          when Alt | Block =>
             return Empty;
+         when Bit_Field =>
+            null;     --  a rule with bit fields never reaches here (Split_Wire)
          when Negation =>
             null;   --  resolved into a rule of ranges before this runs
       end case;
@@ -688,6 +692,8 @@ package body HBNF_Lookahead is
                return Seq (E.Items, 1, Natural (E.Items.Length), Depth + 1);
             when Alt | Block =>
                return Empty_Frag;
+            when Bit_Field =>
+               null;     --  a rule with bit fields never reaches here (Split_Wire)
             when Negation =>
                null;   --  resolved into a rule of ranges before this runs
          end case;

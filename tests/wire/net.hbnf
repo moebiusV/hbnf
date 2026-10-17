@@ -1,4 +1,3 @@
-binary
 
 ; The link and network layers, from the RFCs' own packet diagrams.  Each field
 ; is name:bits, first field in the most significant bits.

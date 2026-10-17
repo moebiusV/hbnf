@@ -1,8 +1,7 @@
 ; bech32 (BIP-173, BIP-350): the 32 symbols of the data part.  A symbol's value
 ; is its place in this list -- "q" is 0, "l" is 31 -- and that is the 5 bits
-; it stands for.  A wire grammar names it with `units 5 bech32-symbol from
-; "bech32.hbnf"`.
-prefix none
+; it stands for.  A grammar of bit fields names it with `units 5 bech32-symbol`
+; after `include "bech32.hbnf"`.
 bech32-symbol = "q" | "p" | "z" | "r" | "y" | "9" | "x" | "8"
               | "g" | "f" | "2" | "t" | "v" | "d" | "w" | "0"
               | "s" | "3" | "j" | "n" | "5" | "4" | "k" | "h"

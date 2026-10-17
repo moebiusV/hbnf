@@ -114,7 +114,8 @@ package body HBNF_Compilable is
                   when Char_Range   => A.Lo = B.Lo and then A.Hi = B.Hi,
                   when Block   => A.Code = B.Code,
                   when Alt     => True,
-                  when Negation => Same_Seq (A.Operand, B.Operand)));
+                  when Negation => Same_Seq (A.Operand, B.Operand),
+                  when Bit_Field => False));
 
    function Image (V : Element_Vectors.Vector; First, Last : Natural)
      return String is
@@ -133,6 +134,8 @@ package body HBNF_Compilable is
             when Char_Range   => Append (Buf, "%x..");
             when Block   => Append (Buf, "%action{ ... }");
             when Alt     => Append (Buf, "|");
+            when Bit_Field =>
+               null;     --  a rule with bit fields never reaches here (Split_Wire)
             when Negation =>
                null;   --  resolved into a rule of ranges before this runs
          end case;
@@ -233,6 +236,8 @@ package body HBNF_Compilable is
                end if;
             when Literal | Alt | Char_Range | Block =>
                null;
+            when Bit_Field =>
+               null;     --  a rule with bit fields never reaches here (Split_Wire)
             when Negation =>
                null;   --  resolved into a rule of ranges before this runs
          end case;

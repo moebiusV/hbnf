@@ -1,10 +1,9 @@
-binary
-
 { #include "bip39.h" }
 
 ; A BIP-39 mnemonic: words of the English list, 11 bits each, joined by blanks.
 ; The words are the entropy, then a checksum of one bit per 32 bits of it.
-units 11 bip39-word from "../../grammars/bip39/english.hbnf" separator bip39-space
+include "../../grammars/bip39/english.hbnf"
+units 11 bip39-word separator bip39-space
 
 ; BIP-39 allows 12, 15, 18, 21 and 24 words.  Wallets mostly make 12 and 24,
 ; and not all can import the others, so those read with a warning.

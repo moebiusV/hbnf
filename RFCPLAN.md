@@ -1168,6 +1168,30 @@ should claim that before 10.
           wire emitters fold into them.
 
        Everything is bits, octets are runs of bits, text is octets read as UTF-8.
+       **Layers, not octets (the user, 2026-10-17).**  Because each layer is a
+       run of units of the one below, the unit of the middle layer is not
+       fixed at 8 bits: a machine with 9-bit bytes or 18-bit words is the same
+       grammar with another width (`byte 9`, `word 18`).  A char is a code
+       point; its UTF-8 form is a string of octets that maps to it.  And one
+       slice syntax serves every layer: `foo:4` is 4 units and `foo@1:4` is 4
+       units at offset 1, the unit being the layer of `foo` (bits for a bit
+       field, octets for an octet run, chars for a string).  The notation was
+       weighed against COBOL's `foo(2:4)`, BLISS's `foo<p,s>`, Ada's `foo(2..5)`
+       and Python's `foo[1:5]`; `@offset:length` is the nearest to COBOL's and
+       PL/I's offset-and-length and to Ada's `at`, and stays.
+
+       **The user's formulation, 2026-10-17: octets are tokens over bit arrays,
+       and strings are tokens over octets.**  A token is a run of units of the
+       layer below (decision 7: a rule with no named children is a token, scanned
+       by a table), and the lowest alphabet is the bit.  ABNF already has `BIT`
+       and `OCTET` among its core rules, so `ttl = 8BIT` is a bit field and
+       `name:8` is a convenient spelling of it.  Three consequences: a token over
+       units of width W starts on a W boundary (which is why text starts on an
+       octet, a bit field anywhere, and an octet array after a 5-bit field is a
+       copy); the DFA scanner and the union analysis carry over to a bit
+       alphabet, so a value set (`0x0800 | 0x0806`) is a token over bits; and a
+       token's value type follows its alphabet (a number for bits, a byte string
+       for octets, a string for code points).
 
        **Acceptance tests (the user's, 2026-10-17):** a BIP-39 mnemonic and a
        wallet address, each both parsed and generated.  A mnemonic is words
