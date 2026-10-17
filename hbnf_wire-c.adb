@@ -208,6 +208,11 @@ package body HBNF_Wire.C is
             L (0, "struct " & Tag_Of (To_String (R.Name)) & " {");
             Put (Choice_Body (R.Alts, 1));
          end if;
+         if K = 1 then
+            L (1, "/* what the read has to say, besides failing: `warn (...)`. */");
+            L (1, "const char *warnings[8];");
+            L (1, "unsigned nwarnings;");
+         end if;
          L (0, "};");
          L (0, "");
       end Define;
@@ -247,8 +252,13 @@ package body HBNF_Wire.C is
                              & To_String (E.Bin_Op) & " "
                              & Expr_Text (E.Right) & ")");
 
+      --  True while the code for the writer is being made.
+      Emit_Side : Boolean := False;
+
       --  `remaining`: the bits left in the input.  It means something only
       --  while reading; a writer works out the input's size from the tree.
+      --  `align`: the bits to the next unit boundary, from where the reader
+      --  or the writer is.
       function Expr_C (E : Expr_Access; Scope : Binding_Vectors.Vector)
         return String
       is
@@ -259,6 +269,15 @@ package body HBNF_Wire.C is
             when E_Var =>
                if To_String (E.Name) = "remaining" then
                   return "((int64_t)(p->nbits - p->bit))";
+               elsif To_String (E.Name) = "align" then
+                  declare
+                     W : constant String := Img (G.Unit_Width);
+                     B : constant String := (if Emit_Side then "w->bit"
+                                             else "p->bit");
+                  begin
+                     return "((int64_t)((" & W & " - " & B & " % " & W
+                       & ") % " & W & "))";
+                  end;
                end if;
                return "((int64_t)" & Lookup (Scope, To_String (E.Name)) & ")";
             when E_Call =>
@@ -368,8 +387,12 @@ package body HBNF_Wire.C is
                   when S_Assert =>
                      L (Ind, "if (!(" & Expr_C (It.Count, Scope) & ")) {");
                      L (Ind + 1, "bnf_fail (p, p->bit, """ & Where
-                       & """, ""a condition does not hold: "
-                       & Escape (Expr_Text (It.Count)) & """); " & Fail);
+                       & """, """
+                       & (if It.Ref /= Null_Unbounded_String
+                          then Escape (To_String (It.Ref))
+                          else "a condition does not hold: "
+                               & Escape (Expr_Text (It.Count)))
+                       & """); " & Fail);
                      L (Ind, "}");
                   when S_Octets =>
                      L (Ind, "{ int64_t n_ = " & Expr_C (It.Count, Scope) & ";");
@@ -564,8 +587,12 @@ package body HBNF_Wire.C is
                      if not Uses_Remaining (It.Count) then
                         L (Ind, "if (!(" & Expr_C (It.Count, Scope) & ")) {");
                         L (Ind + 1, "bnf_wfail (w, """ & Where
-                          & """, ""a condition does not hold: "
-                          & Escape (Expr_Text (It.Count)) & """); " & Bad);
+                          & """, """
+                          & (if It.Ref /= Null_Unbounded_String
+                             then Escape (To_String (It.Ref))
+                             else "a condition does not hold: "
+                                  & Escape (Expr_Text (It.Count)))
+                          & """); " & Bad);
                         L (Ind, "}");
                      end if;
                   when S_Octets =>
@@ -652,7 +679,7 @@ package body HBNF_Wire.C is
             K := K + 1;
             L (Ind + 1, (if K > 1 then "else " else "") & "if (" & Lv
               & "kind == " & Img (K) & ") {");
-            if A.Guard /= null then
+            if A.Guard /= null and then not Uses_Remaining (A.Guard) then
                L (Ind + 2, "if (!(" & Expr_C (A.Guard, Scope) & ")) {");
                L (Ind + 3, "bnf_wfail (w, """ & Where & """, ""alternative "
                  & Img (K) & " is chosen, but its guard does not hold""); "
@@ -670,6 +697,61 @@ package body HBNF_Wire.C is
          L (Ind + 1, "}");
          L (Ind, "}");
       end Gen_Emit_Alts;
+
+      ------------------------------------------------------------------------
+      --  Actions: after a successful read, on each record, children first
+      ------------------------------------------------------------------------
+
+      function Is_Record (Name : String) return Boolean is
+         K : constant Natural := Find (G, Name);
+      begin
+         return K /= 0 and then not Is_Value_Set (G.Rules (K));
+      end Is_Record;
+
+      Has_Actions : constant Boolean :=
+        (for some R of G.Rules => R.Action /= Null_Unbounded_String);
+
+      procedure Gen_Walk_Alts
+        (Alts : Seq_Vectors.Vector; Lv : String; Ind : Natural);
+
+      procedure Gen_Walk_Seq (S : Sequence; Lv : String; Ind : Natural) is
+      begin
+         for It of S.Items loop
+            declare
+               Lw : constant String := Lv & To_String (It.Name);
+            begin
+               case It.Kind is
+                  when S_Ref =>
+                     if Is_Record (To_String (It.Ref)) then
+                        L (Ind, "walk_" & To_String (It.Ref) & " (&" & Lw & ");");
+                     end if;
+                  when S_Array =>
+                     if Is_Record (To_String (It.Ref)) then
+                        L (Ind, "for (size_t i_ = 0; i_ < " & Lw
+                           & ".n; i_++) walk_" & To_String (It.Ref) & " (&"
+                           & Lw & ".items[i_]);");
+                     end if;
+                  when S_Choice =>
+                     Gen_Walk_Alts (It.Alts, Lw & ".", Ind);
+                  when others =>
+                     null;
+               end case;
+            end;
+         end loop;
+      end Gen_Walk_Seq;
+
+      procedure Gen_Walk_Alts
+        (Alts : Seq_Vectors.Vector; Lv : String; Ind : Natural)
+      is
+         K : Natural := 0;
+      begin
+         for A of Alts loop
+            K := K + 1;
+            L (Ind, "if (" & Lv & "kind == " & Img (K) & ") {");
+            Gen_Walk_Seq (A.all, Lv & "u.a" & Img (K) & ".", Ind + 1);
+            L (Ind, "}");
+         end loop;
+      end Gen_Walk_Alts;
 
       procedure Runtime is
       begin
@@ -903,11 +985,13 @@ package body HBNF_Wire.C is
                L (0, "}");
                L (0, "static bool emit_rule_" & Nm & " (bnf_w *w, const "
                   & Type_Of (Nm) & " *in) {");
+               Emit_Side := True;
                if Natural (R.Alts.Length) = 1 then
                   Gen_Emit_Seq (R.Alts.First_Element.all, "in->", Empty, Nm, 1);
                else
                   Gen_Emit_Alts (R.Alts, "in->", Empty, Nm, 1);
                end if;
+               Emit_Side := False;
                L (1, "return true;");
                L (0, "}");
             end if;
@@ -915,15 +999,65 @@ package body HBNF_Wire.C is
          end;
       end loop;
 
+      if Has_Actions then
+         L (0, "/* ---- actions: C that runs on a record, as n, once the whole read");
+         L (0, "   has succeeded (children first).  HBNF_WARN (""..."") adds a");
+         L (0, "   warning to the result, HBNF_FAIL (""..."") fails the read.  Not");
+         L (0, "   reentrant: the warnings are collected in static storage. ---- */");
+         L (0, "static const char *bnf_act_warn[8];");
+         L (0, "static unsigned bnf_act_nwarn;");
+         L (0, "static const char *bnf_act_failed;");
+         L (0, "#define HBNF_WARN(msg) do { if (bnf_act_nwarn < 8) \");
+         L (0, "    bnf_act_warn[bnf_act_nwarn++] = (msg); } while (0)");
+         L (0, "#define HBNF_FAIL(msg) do { if (!bnf_act_failed) \");
+         L (0, "    bnf_act_failed = (msg); } while (0)");
+         for R of G.Rules loop
+            if not Is_Value_Set (R) then
+               L (0, "static void walk_" & To_String (R.Name) & " ("
+                  & Type_Of (To_String (R.Name)) & " *n);");
+            end if;
+         end loop;
+         L (0, "");
+         for R of G.Rules loop
+            if not Is_Value_Set (R) then
+               declare
+                  Nm : constant String := To_String (R.Name);
+               begin
+                  if R.Action /= Null_Unbounded_String then
+                     L (0, "static void action_" & Nm & " ("
+                        & Type_Of (Nm) & " *n) {");
+                     L (1, "(void)n;");
+                     Put (To_String (R.Action));
+                     L (0, "");
+                     L (0, "}");
+                  end if;
+                  L (0, "static void walk_" & Nm & " (" & Type_Of (Nm)
+                     & " *n) {");
+                  L (1, "(void)n;");
+                  if Natural (R.Alts.Length) = 1 then
+                     Gen_Walk_Seq (R.Alts.First_Element.all, "n->", 1);
+                  else
+                     Gen_Walk_Alts (R.Alts, "n->", 1);
+                  end if;
+                  if R.Action /= Null_Unbounded_String then
+                     L (1, "action_" & Nm & " (n);");
+                  end if;
+                  L (0, "}");
+               end;
+            end if;
+         end loop;
+         L (0, "");
+      end if;
+
       declare
          Rt : constant String := To_String (G.Rules (Root).Name);
       begin
          L (0, "/* Read nbits bits of buf as one " & Rt & ".  On success all of"
             & " them were used and the strings of octets in *out point into buf"
             & " (or, when they start inside a byte, into the arena). */");
-         L (0, "bool parse_bits (const uint8_t *buf, size_t nbits, "
+         L (0, "static bool bnf_read (const uint8_t *buf, size_t nbits, "
             & Type_Of (Rt) & " *out,");
-         L (0, "                 char *err, size_t errsz, size_t *at) {");
+         L (0, "                     char *err, size_t errsz, size_t *fail_bit) {");
          L (1, "bnf_p p;");
          L (1, "memset (&p, 0, sizeof p);");
          L (1, "p.buf = buf;  p.nbits = nbits;  p.len = (nbits + 7) / 8;");
@@ -937,12 +1071,34 @@ package body HBNF_Wire.C is
          L (2, "bnf_fail (&p, p.bit, """ & Rt & """, t);");
          L (2, "goto bad;");
          L (1, "}");
+         if Has_Actions then
+            L (1, "bnf_act_nwarn = 0;  bnf_act_failed = NULL;");
+            L (1, "walk_" & Rt & " (out);");
+            L (1, "if (bnf_act_failed) {");
+            L (2, "p.failed = 0;");
+            L (2, "bnf_fail (&p, p.bit, """ & Rt & """, bnf_act_failed);");
+            L (2, "goto bad;");
+            L (1, "}");
+            L (1, "memcpy (out->warnings, bnf_act_warn, sizeof out->warnings);");
+            L (1, "out->nwarnings = bnf_act_nwarn;");
+         end if;
          L (1, "return true;");
          L (0, "bad:");
-         L (1, "if (at) *at = p.fail_bit / 8;");
-         L (1, "if (err && errsz) snprintf (err, errsz, ""octet %zu: %s"", "
-            & "p.fail_bit / 8, p.msg);");
+         L (1, "if (fail_bit) *fail_bit = p.fail_bit;");
+         L (1, "if (err && errsz) snprintf (err, errsz, ""%s"", p.msg);");
          L (1, "return false;");
+         L (0, "}");
+         L (0, "bool parse_bits (const uint8_t *buf, size_t nbits, "
+            & Type_Of (Rt) & " *out,");
+         L (0, "                 char *err, size_t errsz, size_t *at) {");
+         L (1, "size_t fb = 0;");
+         L (1, "char m[256];");
+         L (1, "bool ok = bnf_read (buf, nbits, out, m, sizeof m, &fb);");
+         L (1, "if (!ok) {");
+         L (2, "if (at) *at = fb / 8;");
+         L (2, "if (err && errsz) snprintf (err, errsz, ""octet %zu: %s"", fb / 8, m);");
+         L (1, "}");
+         L (1, "return ok;");
          L (0, "}");
          L (0, "bool parse_bytes (const uint8_t *buf, size_t len, "
             & Type_Of (Rt) & " *out,");
@@ -988,6 +1144,146 @@ package body HBNF_Wire.C is
          L (1, "return ok;");
          L (0, "}");
       end;
+      if G.Unit_Width > 0 then
+         declare
+            Rt : constant String := To_String (G.Rules (Root).Name);
+            Longest : Natural := 0;
+         begin
+            L (0, "");
+            L (0, "/* ---- the text form ---- */");
+            L (0, "#define BNF_UNIT_BITS " & Img (G.Unit_Width));
+            L (0, "/* The spellings, longest first. */");
+            L (0, "static const struct { const char *s; size_t n; unsigned v; }"
+               & " bnf_units[] = {");
+            for U of G.Units loop
+               Longest := Natural'Max (Longest, Length (U.Spelling));
+            end loop;
+            for Len in reverse 0 .. Longest loop
+               for U of G.Units loop
+                  if Length (U.Spelling) = Len then
+                     L (1, "{ """ & Escape (To_String (U.Spelling)) & """, "
+                        & Img (Len) & ", " & Img (U.Value) & " },");
+                  end if;
+               end loop;
+            end loop;
+            L (0, "};");
+            L (0, "#define BNF_NUNITS (sizeof bnf_units / sizeof bnf_units[0])");
+            L (0, "static const char bnf_sep[] = """
+               & Escape (To_String (G.Unit_Sep)) & """;");
+            L (0, "#define BNF_SEPN (sizeof bnf_sep - 1)");
+         L (0, "/* The text form: the message as units of BNF_UNIT_BITS bits, each spelled by one");
+         L (0, "   of the strings above (a bech32 symbol, a BIP-39 word).  parse_text reads the");
+         L (0, "   spellings, packs their values into bits, and reads those; emit_text writes the");
+         L (0, "   bits and spells them.  A spelling is matched longest first, and where there is");
+         L (0, "   a separator a spelling counts only if it is followed by one or by the end, so");
+         L (0, "   a word is never taken for the start of a longer one. */");
+         L (0, "bool parse_text (const char *text, size_t len, " & Type_Of (Rt) & " *out,");
+         L (0, "                 char *err, size_t errsz, size_t *at) {");
+         L (0, "    size_t cap = len + 1;");
+         L (0, "    size_t nbytes = (cap * BNF_UNIT_BITS + 7) / 8 + 1;");
+         L (0, "    uint8_t *buf = (uint8_t *)bnf_alloc (nbytes);");
+         L (0, "    size_t *start = (size_t *)bnf_alloc ((cap + 1) * sizeof *start);");
+         L (0, "    size_t pos = 0, n = 0, fb = 0;");
+         L (0, "    const size_t sepn = BNF_SEPN;");
+         L (0, "    bnf_w w;");
+         L (0, "    char m[256];");
+         L (0, "    memset (&w, 0, sizeof w);");
+         L (0, "    w.buf = buf;  w.cap = nbytes;");
+         L (0, "    while (pos < len) {");
+         L (0, "        size_t k;");
+         L (0, "        for (k = 0; k < BNF_NUNITS; k++) {");
+         L (0, "            size_t l = bnf_units[k].n;");
+         L (0, "            if (l > len - pos || memcmp (text + pos, bnf_units[k].s, l) != 0)");
+         L (0, "                continue;");
+         L (0, "            if (sepn && pos + l < len");
+         L (0, "                && (sepn > len - pos - l");
+         L (0, "                    || memcmp (text + pos + l, bnf_sep, sepn) != 0))");
+         L (0, "                continue;");
+         L (0, "            break;");
+         L (0, "        }");
+         L (0, "        if (k == BNF_NUNITS) {");
+         L (0, "            if (err && errsz)");
+         L (0, "                snprintf (err, errsz, ""character %zu: not one of the units"", pos);");
+         L (0, "            if (at) *at = pos;");
+         L (0, "            return false;");
+         L (0, "        }");
+         L (0, "        start[n++] = pos;");
+         L (0, "        bnf_wr (&w, BNF_UNIT_BITS, bnf_units[k].v);");
+         L (0, "        pos += bnf_units[k].n;");
+         L (0, "        if (sepn && pos < len) {");
+         L (0, "            pos += sepn;");
+         L (0, "            if (pos == len) {");
+         L (0, "                if (err && errsz)");
+         L (0, "                    snprintf (err, errsz, ""character %zu: the text ends with a separator"", pos);");
+         L (0, "                if (at) *at = pos;");
+         L (0, "                return false;");
+         L (0, "            }");
+         L (0, "        }");
+         L (0, "    }");
+         L (0, "    if (!bnf_read (buf, n * BNF_UNIT_BITS, out, m, sizeof m, &fb)) {");
+         L (0, "        size_t u = fb / BNF_UNIT_BITS;");
+         L (0, "        size_t c = u < n ? start[u] : len;");
+         L (0, "        if (err && errsz)");
+         L (0, "            snprintf (err, errsz, ""unit %zu (character %zu): %s"", u, c, m);");
+         L (0, "        if (at) *at = c;");
+         L (0, "        return false;");
+         L (0, "    }");
+         L (0, "    return true;");
+         L (0, "}");
+         L (0, "");
+         L (0, "/* The message as text.  With buf NULL it only counts; *n is the length (the");
+         L (0, "   NUL is not counted, and is written when there is room). */");
+         L (0, "bool emit_text (const " & Type_Of (Rt) & " *in, char *buf, size_t cap, size_t *n,");
+         L (0, "                char *err, size_t errsz) {");
+         L (0, "    size_t nbits = 0, units, i, o = 0;");
+         L (0, "    uint8_t *tmp;");
+         L (0, "    if (!emit_bits (in, NULL, 0, &nbits, err, errsz)) return false;");
+         L (0, "    if (nbits % BNF_UNIT_BITS) {");
+         L (0, "        if (err && errsz)");
+         L (0, "            snprintf (err, errsz, ""%zu bits is not a whole number of %d-bit units"",");
+         L (0, "                      nbits, BNF_UNIT_BITS);");
+         L (0, "        return false;");
+         L (0, "    }");
+         L (0, "    tmp = (uint8_t *)calloc ((nbits + 7) / 8 + 1, 1);");
+         L (0, "    if (!tmp) { fputs (""hbnf: out of memory\n"", stderr); exit (1); }");
+         L (0, "    if (!emit_bits (in, tmp, (nbits + 7) / 8 + 1, &nbits, err, errsz)) {");
+         L (0, "        free (tmp);");
+         L (0, "        return false;");
+         L (0, "    }");
+         L (0, "    units = nbits / BNF_UNIT_BITS;");
+         L (0, "    for (i = 0; i < units; i++) {");
+         L (0, "        unsigned v = 0;");
+         L (0, "        size_t b, k;");
+         L (0, "        for (b = 0; b < BNF_UNIT_BITS; b++) {");
+         L (0, "            size_t bit = i * BNF_UNIT_BITS + b;");
+         L (0, "            v = (v << 1) | ((tmp[bit >> 3] >> (7 - (bit & 7))) & 1u);");
+         L (0, "        }");
+         L (0, "        for (k = 0; k < BNF_NUNITS; k++)");
+         L (0, "            if (bnf_units[k].v == v) break;");
+         L (0, "        if (k == BNF_NUNITS) {");
+         L (0, "            if (err && errsz)");
+         L (0, "                snprintf (err, errsz, ""unit %zu has the value %u, which no unit spells"", i, v);");
+         L (0, "            free (tmp);");
+         L (0, "            return false;");
+         L (0, "        }");
+         L (0, "        if (i && BNF_SEPN) {");
+         L (0, "            if (buf && o + BNF_SEPN <= cap) memcpy (buf + o, bnf_sep, BNF_SEPN);");
+         L (0, "            o += BNF_SEPN;");
+         L (0, "        }");
+         L (0, "        if (buf && o + bnf_units[k].n <= cap) memcpy (buf + o, bnf_units[k].s, bnf_units[k].n);");
+         L (0, "        o += bnf_units[k].n;");
+         L (0, "    }");
+         L (0, "    free (tmp);");
+         L (0, "    if (n) *n = o;");
+         L (0, "    if (buf && o > cap) {");
+         L (0, "        if (err && errsz) snprintf (err, errsz, ""the buffer is too small"");");
+         L (0, "        return false;");
+         L (0, "    }");
+         L (0, "    if (buf && o < cap) buf[o] = 0;");
+         L (0, "    return true;");
+         L (0, "}");
+         end;
+      end if;
       return To_String (Buf);
    end Emit;
 

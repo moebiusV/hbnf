@@ -10,3 +10,9 @@ PASS refused: a 41-octet program (octet 41: segwit: a condition does not hold: (
 PASS refused: padding that is not zero (octet 21: segwit: a condition does not hold: (pad == 0))
 PASS refused: v0 with a 19-octet program (octet 19: segwit: a condition does not hold: (((version != 0) || (len (program) == 20)) || (len (program) == 32)))
 PASS v1 with a 21-octet program (2 padding bits): version 1, 21 octets
+PASS text 0: version 0, 20 octets, written back
+PASS text 1: version 0, 32 octets, written back
+PASS text 2: version 1, 32 octets, written back
+PASS text 3: version 16, 2 octets, written back
+PASS text 4: version 2, 16 octets, written back
+PASS refused: b is not a bech32 symbol

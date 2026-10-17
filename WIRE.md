@@ -66,7 +66,7 @@ means the same thing: *at this value*.
 | `name:rule` / `rule` | a nested record of that rule (a bare `rule` names the field `rule`) |
 | `name:*rule`, `name:2*4 rule`, `name:(n)*rule` | any number, 2 to 4, exactly `n` records of that rule |
 | `name:( a \| b \| c )` | one of several; the field has a `kind` (1, 2, 3) and the alternative's fields |
-| `?(expr)` | a condition.  At the start of an alternative it is a **guard** (the alternative is taken only if it holds); between fields it is a **check** (the read fails if it does not) |
+| `?(expr)` | a condition.  At the start of an alternative it is a **guard** (the alternative is taken only if it holds); between fields it is a **check** (the read fails if it does not).  `?(expr) "words"` is a check whose failure says those words |
 
 A rule that is a list of constants (`ethertype = 0x0800 | 0x0806 | 0x86DD`) is a
 **value set**.  A field named for it, or of its type, must be one of those
@@ -77,8 +77,10 @@ values: `ethertype:16`.
 `expr` is C's integer arithmetic: `+ - * / % << >> & | ^ ~ !`, comparisons,
 `&&` `||`, parentheses, decimal and `0x` numbers, over the fields read earlier
 in the same record (`options:[ihl*4 - 20]`), `remaining`, the number of bits
-left in the input, and `len (field)`, the number of octets in a field read as
-`name:[n]` or `name:*u8`.  Division by zero is 0, and a shift count is taken mod 64.
+left in the input, `len (field)`, the number of octets in a field read as
+`name:[n]` or `name:*u8`, and `align`, the bits to the next unit boundary
+(`units`, below; a message that ends in a partly filled unit says
+`pad:bits(align)`).  Division by zero is 0, and a shift count is taken mod 64.
 Using a name that is not a number read before that point is refused, with the
 names that are.
 
@@ -108,6 +110,70 @@ describes, a value outside a value set, or an alternative whose guard does not
 hold is an error that names the field, not a silently wrong message.  A width
 that depends on `remaining` cannot be written: a writer does not know the size of
 a message it has not written.
+
+## Text: a message written in units
+
+Bytes are not the only way a message is written.  A bech32 address spells 5 bits
+with each of 32 characters; a BIP-39 mnemonic spells 11 with each of 2048 words.
+The text is a decoding of the bits, the way UTF-8 is a decoding of octets, and a
+`units` line says how:
+
+    units 5 bech32-symbol from "bech32.hbnf"
+    units 11 bip39-word from "bip39/english.hbnf" separator bip39-space
+
+`units W name from "file"` takes the enum rule `name` of a text grammar: each
+literal is the spelling of one unit, and its **number** (its place in the list,
+or `"x"@7`) is the unit's value, W bits wide.  `grammars/bech32.hbnf` is the 32
+symbols; `grammars/bip39/` the ten word lists.  A `separator` is a rule that is
+one literal, written between units (BIP-39's blank, or U+3000 in Japanese).
+
+The C file then has two more functions:
+
+    bool parse_text (const char *text, size_t len, T *out, char *err, size_t errsz, size_t *at);
+    bool emit_text  (const T *in, char *buf, size_t cap, size_t *n, char *err, size_t errsz);
+
+`parse_text` spells out the units (longest spelling first, and with a separator
+only one that is followed by it or by the end, so `act` is never taken for the
+start of `actor`), packs their values into bits, and reads those; `at` is the
+character where it went wrong.  `emit_text` writes the bits and spells them.
+The tests round-trip the five published segwit addresses and ten mnemonics, the
+BIP-39 test vectors among them.
+
+    binary
+    units 11 bip39-word from "bip39/english.hbnf" separator bip39-space
+    mnemonic = ?(remaining % 33 == 0 && remaining / 33 >= 4 && remaining / 33 <= 8)
+                  "a mnemonic has 12, 15, 18, 21 or 24 words"
+               entropy:[remaining / 33 * 4]
+               ?(len(entropy) % 4 == 0)
+               checksum:bits(len(entropy) / 4)
+      %action{
+          if (n->entropy.len != 16 && n->entropy.len != 32)
+              HBNF_WARN("valid BIP-39, but wallets mostly make 12 and 24 words");
+      }
+
+reads `abandon ... about` as 16 octets of zeros and the checksum 3.  The checksum
+is read, not yet checked: that, and computing it when writing, wait for
+checksum functions and derived fields.
+
+## Actions
+
+`%action{ code }` at the end of a rule is C that runs on that rule's record, as
+`n`, **after** the whole read has succeeded, children before parents.  It never
+runs during the read, so an alternative that is tried and given up cannot have
+run it (the same rule `%action` has in a text grammar).  Inside it:
+
+- `n->field` are the typed fields (`n->entropy.len`, `n->payload.kind`).
+- `HBNF_WARN ("text")` adds a warning to the result: `out->warnings[]`, a count
+  in `out->nwarnings`, of the first rule's record.  A warning is about a message
+  that is valid.
+- `HBNF_FAIL ("text")` fails the read, naming the rule.  Use it for what a field
+  must satisfy that an expression cannot say (a checksum, once it can be
+  computed).
+
+An action is the semantic member of the family; `%emit{ }`, the generative
+member, is the one that will fill in a derived field (a checksum, a length)
+when a tree is written, and is not built.  The warnings are collected in
+static storage, so a parser that has actions is not reentrant.
 
 ## Enum numbers
 
@@ -145,8 +211,6 @@ second.
 - **Layout records.**  A record in which every field says where it is
   (`flags@0:3 id@3:13`) is a register layout, read in any order with gaps and
   overlaps.  Where only some do, `@` is the check described above.
-- **A bridge from text to bits**, for a mnemonic (11-bit words) and a bech32
-  address (5-bit symbols): a text rule whose units are numbers, read as a bit
-  string by a wire rule, and written back.
-- **Checksums** (SHA-256 for BIP-39, the BCH polynomial for bech32), and derived
-  length fields in the writer.
+- **Checksums** (SHA-256 for BIP-39, the BCH polynomial for bech32): checking
+  one on reading can be an `%action` that calls `HBNF_FAIL`; computing one when
+  writing, and a length field derived from its payload, need `%emit`.

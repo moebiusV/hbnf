@@ -44,6 +44,7 @@ expect_error() {
 
 check net
 check segwit
+check mnemonic
 
 # bip39: the word lists (RFCPLAN.md step 7b's acceptance test).  Every word of
 # every official list parses to its line number; English also against the

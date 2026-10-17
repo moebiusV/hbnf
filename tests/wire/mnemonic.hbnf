@@ -1,0 +1,19 @@
+binary
+
+; A BIP-39 mnemonic: words of the English list, 11 bits each, joined by blanks.
+; The words are the entropy, then a checksum of one bit per 32 bits of it.
+units 11 bip39-word from "../../grammars/bip39/english.hbnf" separator bip39-space
+
+; BIP-39 allows 12, 15, 18, 21 and 24 words.  Wallets mostly make 12 and 24,
+; and not all can import the others, so those read with a warning.
+mnemonic = ?(remaining % 33 == 0 && remaining / 33 >= 4 && remaining / 33 <= 8)
+              "a mnemonic has 12, 15, 18, 21 or 24 words"
+           entropy:[remaining / 33 * 4]
+           ?(len(entropy) % 4 == 0)
+           checksum:bits(len(entropy) / 4)
+  %action{
+      /* the entropy is 16 octets for 12 words, 32 for 24 */
+      if (n->entropy.len != 16 && n->entropy.len != 32)
+          HBNF_WARN("valid BIP-39, but wallets mostly make 12 and 24 words, "
+                    "and some cannot import any other length");
+  }

@@ -23,6 +23,9 @@ with Interfaces;
 --    ?(expr)                                a condition on what has been read
 --    name:( ?(expr) a | ?(expr) b | c )     a choice, by guard
 --
+--  `align` is the number of bits to the next unit boundary (see `units`),
+--  0 when the file has no units.
+--
 --  An expression is C's integer arithmetic over the fields read before it,
 --  `remaining`, the number of bits left in the input, and `len (field)`, the
 --  number of octets in a field read as `name:[...]` or `name:*u8`.
@@ -108,12 +111,33 @@ package HBNF_Wire is
       Name : Unbounded_String;
       Alts : Seq_Vectors.Vector;
       Line : Natural := 0;
+      Action : Unbounded_String;
+      --  `%action{ code }` at the end of the rule: C that runs on the rule's
+      --  record, as `n`, once the whole read has succeeded (children first).
+      --  It may call HBNF_WARN ("...") and HBNF_FAIL ("...").  It never runs
+      --  during the read, so an alternative that is tried and given up cannot
+      --  have run it.
    end record;
    package Rule_Vectors is new Ada.Containers.Vectors (Positive, Rule);
+
+   --  `units W name from "file" [separator name]`: the message is also
+   --  written as text, in units of W bits each.  A unit's spelling is a
+   --  literal of the enum rule `name` in the text grammar "file", and its value
+   --  is the literal's number (the place in the list, or `"x"@7`): a bech32
+   --  symbol is 5 bits, a BIP-39 word 11.  The text is a decoding of the bits,
+   --  as UTF-8 is.
+   type Unit is record
+      Spelling : Unbounded_String;
+      Value    : Natural := 0;
+   end record;
+   package Unit_Vectors is new Ada.Containers.Vectors (Positive, Unit);
 
    type Grammar is record
       Rules  : Rule_Vectors.Vector;
       Prefix : Unbounded_String := To_Unbounded_String ("bnf_");
+      Unit_Width : Natural := 0;               --  0: no text form
+      Units      : Unit_Vectors.Vector;
+      Unit_Sep   : Unbounded_String;           --  "" for none
    end record;
 
    --  Read and check a wire grammar.  Raises Wire_Error.

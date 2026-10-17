@@ -1,0 +1,23 @@
+PASS 12 words, entropy 16 octets, checksum 3, written back
+PASS 12 words, entropy 16 octets, checksum 8, written back
+PASS 12 words, entropy 16 octets, checksum 4, written back
+PASS 12 words, entropy 16 octets, checksum 5, written back
+PASS 24 words, entropy 32 octets, checksum 102, written back
+PASS 24 words, entropy 32 octets, checksum 175, written back
+PASS 12 words, entropy 16 octets, checksum 7, written back
+PASS 12 words, entropy 16 octets, checksum 1, written back
+PASS 24 words, entropy 32 octets, checksum 162, written back
+PASS 24 words, entropy 32 octets, checksum 105, written back
+PASS 18 words, entropy 24 octets, checksum 39, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 18 words, entropy 24 octets, checksum 25, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 18 words, entropy 24 octets, checksum 60, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 18 words, entropy 24 octets, checksum 17, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 15 words, entropy 20 octets, checksum 27, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 15 words, entropy 20 octets, checksum 19, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 21 words, entropy 28 octets, checksum 29, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 21 words, entropy 28 octets, checksum 25, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS refused: 11 words (unit 0 (character 0): mnemonic: a mnemonic has 12, 15, 18, 21 or 24 words)
+PASS refused: a misspelt word (character 88: not one of the units)
+PASS refused: two blanks (character 8: not one of the units)
+PASS refused: a trailing blank (character 94: the text ends with a separator)
+PASS refused: nothing (unit 0 (character 0): mnemonic: a mnemonic has 12, 15, 18, 21 or 24 words)

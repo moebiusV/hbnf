@@ -1091,7 +1091,11 @@ should claim that before 10.
        `@K` check; `tests/wire.sh` has Ethernet/ARP/IPv4 fixtures and nine
        refusals.  A group is written `name:( ... )` and a bit count
        `name:bits(expr)`.  The other direction (tree to bytes) exists
-       in C.  Not yet: Rust, Zig and Ada, checksums, units, layout records.
+       in C, and so does the text form (`units`: bech32 symbols and BIP-39
+       words as 5- and 11-bit units, `parse_text`/`emit_text`), and `%action{ }` on
+       a wire rule (C; `HBNF_WARN`, `HBNF_FAIL`).  Not yet: Rust,
+       Zig and Ada, checksums and derived fields, byte/word units, layout
+       records.
 
        **Settled later the same day.**  A place is `name@K:N`: `@` before `:`,
        the place before the width (the user's choice over `name:N@K` and over

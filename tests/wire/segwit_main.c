@@ -2,6 +2,7 @@
    The first five are the published valid addresses (the symbols after the
    separator, checksum included); the rest are made to break one rule each.
    Packed by a script that shares nothing with hbnf. */
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include "segwit.c"
@@ -55,6 +56,30 @@ int main(void) {
             else { printf("FAIL accepted: %s\n", vecs[i].name); bad++; }
         }
         free_arena();
+    }
+    {   /* the same addresses as text: the data part after "bc1", read and written back */
+        static const char *text[] = {
+            "qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+            "qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
+            "p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+            "sw50qgdz25j",
+            "zw508d6qejxtdg4y5r3zarvaryvaxxpcs",
+        };
+        for (size_t i = 0; i < sizeof text / sizeof text[0]; i++) {
+            bnf_segwit_t out;  char err[256], back[128];  size_t at, m = 0;
+            if (!parse_text(text[i], strlen(text[i]), &out, err, sizeof err, &at))
+                { printf("FAIL text %zu: %s\n", i, err);  bad++;  continue; }
+            if (!emit_text(&out, back, sizeof back, &m, err, sizeof err))
+                { printf("FAIL text %zu: emit: %s\n", i, err);  bad++; }
+            else if (m != strlen(text[i]) || memcmp(back, text[i], m))
+                { printf("FAIL text %zu: written back as %s\n", i, back);  bad++; }
+            else printf("PASS text %zu: version %d, %zu octets, written back\n", i, (int)out.version, out.program.len);
+            free_arena();
+        }
+        { bnf_segwit_t out;  char err[256];  size_t at;
+          printf("%s\n", parse_text("qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3tb", 39, &out, err, sizeof err, &at)
+                 ? "FAIL b is not a bech32 symbol" : "PASS refused: b is not a bech32 symbol");
+        }
     }
     return bad != 0;
 }

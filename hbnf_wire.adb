@@ -1,6 +1,9 @@
 pragma Ada_2022;
 
 with Ada.Characters.Handling;
+with Ada.Directories;
+with Ada.IO_Exceptions;
+with HBNF_Grammar;
 with Ada.Containers.Vectors;
 with Ada.Strings.Fixed;
 
@@ -60,7 +63,7 @@ package body HBNF_Wire is
    --  Tokens
    ---------------------------------------------------------------------------
 
-   type Tok_Kind is (T_Name, T_Num, T_Str, T_Sym, T_EOF);
+   type Tok_Kind is (T_Name, T_Num, T_Str, T_Sym, T_Code, T_EOF);
 
    type Token is record
       Kind   : Tok_Kind := T_EOF;
@@ -230,6 +233,84 @@ package body HBNF_Wire is
                else
                   Emit (T_Sym, ":", 1);
                end if;
+            elsif C = '%' and then I + 6 <= Text'Last
+              and then Text (I + 1 .. I + 6) = "action"
+            then
+               --  `%action{ code }`: C, to the brace that closes it.
+               declare
+                  Open_Line : constant Positive := Line;
+                  Open_Col  : constant Positive := Col;
+                  K         : Natural := I + 7;
+                  Depth     : Natural := 0;
+                  Start     : Natural;
+               begin
+                  while K <= Text'Last and then Text (K) in ' ' | ASCII.HT
+                  loop
+                     K := K + 1;
+                  end loop;
+                  if K > Text'Last or else Text (K) /= '{' then
+                     raise Wire_Error with
+                       Where & ": `%action` is followed by `{ code }`";
+                  end if;
+                  Start := K + 1;
+                  loop
+                     if K > Text'Last then
+                        raise Wire_Error with
+                          Where & ": the `%action {` is never closed";
+                     end if;
+                     case Text (K) is
+                        when '{' => Depth := Depth + 1;
+                        when '}' =>
+                           Depth := Depth - 1;
+                           exit when Depth = 0;
+                        when '"' | ''' =>
+                           declare
+                              Q : constant Character := Text (K);
+                           begin
+                              K := K + 1;
+                              while K <= Text'Last and then Text (K) /= Q loop
+                                 if Text (K) = '\' then
+                                    K := K + 1;
+                                 end if;
+                                 K := K + 1;
+                              end loop;
+                           end;
+                        when '/' =>
+                           if K < Text'Last and then Text (K + 1) = '/' then
+                              while K <= Text'Last and then Text (K) /= ASCII.LF
+                              loop
+                                 K := K + 1;
+                              end loop;
+                              K := K - 1;
+                           elsif K < Text'Last and then Text (K + 1) = '*' then
+                              K := K + 2;
+                              while K < Text'Last
+                                and then not (Text (K) = '*'
+                                              and then Text (K + 1) = '/')
+                              loop
+                                 K := K + 1;
+                              end loop;
+                              K := K + 1;
+                           end if;
+                        when others => null;
+                     end case;
+                     K := K + 1;
+                  end loop;
+                  Toks.Append (Token'(Kind => T_Code, Line => Open_Line,
+                                      Col => Open_Col,
+                                      Text => To_Unbounded_String
+                                                (Text (Start .. K - 1)),
+                                      others => <>));
+                  for J in I .. K loop
+                     if Text (J) = ASCII.LF then
+                        Line := Line + 1;
+                        Col := 1;
+                     else
+                        Col := Col + 1;
+                     end if;
+                  end loop;
+                  I := K + 1;
+               end;
             elsif (C = '=' and then N = '=')
               or else (C = '!' and then N = '=')
               or else (C = '<' and then N in '=' | '<')
@@ -294,7 +375,8 @@ package body HBNF_Wire is
          when T_Name => "`" & To_String (T.Text) & "`",
          when T_Num  => "`" & To_String (T.Text) & "`",
          when T_Str  => """" & To_String (T.Text) & """",
-         when T_Sym  => "`" & To_String (T.Text) & "`");
+         when T_Sym  => "`" & To_String (T.Text) & "`",
+         when T_Code => "an %action block");
 
    procedure Expect_Sym (P : in out Parser; S : String; Why : String := "") is
    begin
@@ -316,7 +398,7 @@ package body HBNF_Wire is
             S : constant String := To_String (T.Text);
          begin
             return Is_Sym (Peek (P), "=")
-              or else S in "binary" | "prefix" | "entry";
+              or else S in "binary" | "prefix" | "entry" | "units";
          end;
       end if;
       return False;
@@ -734,9 +816,18 @@ package body HBNF_Wire is
                   E : constant Expr_Access := Parse_Expr (P);
                begin
                   Expect_Sym (P, ")", " closing the condition");
-                  Seq.Items.Append
-                    (new Item'(Kind => S_Assert, Count => E, Line => T.Line,
-                               Col => T.Col, others => <>));
+                  declare
+                     Msg : Unbounded_String;
+                  begin
+                     --  `?(cond) "what is wrong"`: the words the error uses.
+                     if Cur (P).Kind = T_Str then
+                        Msg := Cur (P).Text;
+                        Next (P);
+                     end if;
+                     Seq.Items.Append
+                       (new Item'(Kind => S_Assert, Count => E, Ref => Msg,
+                                  Line => T.Line, Col => T.Col, others => <>));
+                  end;
                end;
             elsif Is_Sym (T, "*") or else Is_Sym (T, "[") then
                Fail (P, T, "give a repeated rule or a bracketed group a "
@@ -749,6 +840,9 @@ package body HBNF_Wire is
          when T_Str =>
             Fail (P, T, "a quoted string is text; this file is `binary`. A "
                   & "fixed byte sequence is a constant: 0x474554 is ""GET""");
+         when T_Code =>
+            Fail (P, T, "an `%action{ }` goes at the end of a rule, after "
+                  & "all its alternatives");
          when T_EOF =>
             Fail (P, T, "unexpected end of the file");
       end case;
@@ -761,10 +855,23 @@ package body HBNF_Wire is
       if Is_Sym (Cur (P), "?") then
          Next (P);
          Expect_Sym (P, "(", " after `?`");
-         S.Guard := Parse_Expr (P);
-         Expect_Sym (P, ")", " closing the guard");
+         declare
+            E : constant Expr_Access := Parse_Expr (P);
+         begin
+            Expect_Sym (P, ")", " closing the guard");
+            --  `?(cond) "what is wrong"` at the start is a check with its
+            --  words, not a guard that picks an alternative.
+            if Cur (P).Kind = T_Str then
+               S.Items.Append
+                 (new Item'(Kind => S_Assert, Count => E, Ref => Cur (P).Text,
+                            Line => S.Line, Col => 1, others => <>));
+               Next (P);
+            else
+               S.Guard := E;
+            end if;
+         end;
       end if;
-      while not End_Of_Rule (P)
+      while not End_Of_Rule (P) and then Cur (P).Kind /= T_Code
         and then not Is_Sym (Cur (P), "|") and then not Is_Sym (Cur (P), ")")
       loop
          Parse_Item (P, S);
@@ -867,6 +974,121 @@ package body HBNF_Wire is
    --  Checking
    ---------------------------------------------------------------------------
 
+   --  A rule name of a text grammar, which may have hyphens (`bech32-symbol`),
+   --  read from the tokens: Name { "-" Name }, each glued to the last.
+   function Text_Rule_Name (P : in out Parser; What : String) return String is
+      T : constant Token := Cur (P);
+      R : Unbounded_String;
+      End_Col : Positive;
+   begin
+      if T.Kind /= T_Name then
+         Fail (P, T, "expected " & What & ", found " & Describe (T));
+      end if;
+      R := T.Text;
+      End_Col := T.End_Col;
+      Next (P);
+      while Is_Sym (Cur (P), "-") and then Cur (P).Col = End_Col
+        and then Peek (P).Kind = T_Name and then Peek (P).Col = End_Col + 1
+      loop
+         Next (P);
+         Append (R, "-" & To_String (Cur (P).Text));
+         End_Col := Cur (P).End_Col;
+         Next (P);
+      end loop;
+      return To_String (R);
+   end Text_Rule_Name;
+
+   --  Read the text grammar a `units` line names and take the spellings and
+   --  values from its enum rule (and the separator from another).
+   procedure Load_Units
+     (G : in out Grammar; File, Path, Rule_Name, Sep_Name : String;
+      Line : Positive)
+   is
+      Where : constant String :=
+        (if File = "" then "" else File & ":") & Img (Line) & ": ";
+      Full  : constant String :=
+        (if Path'Length > 0 and then Path (Path'First) = '/' then Path
+         elsif File = "" then Path
+         else Ada.Directories.Containing_Directory (File) & "/" & Path);
+
+      --  The literal text of the rule's alternatives, with their values.
+      procedure Spellings
+        (Rules : HBNF_Grammar.Rule_Vectors.Vector; Name : String;
+         Out_Units : in out Unit_Vectors.Vector)
+      is
+         use HBNF_Grammar;
+         Found : Boolean := False;
+         Place : Natural := 0;
+      begin
+         for R of Rules loop
+            if To_String (R.Name) = Name then
+               Found := True;
+               for E of R.Pattern loop
+                  if E.Kind = Literal then
+                     declare
+                        Lit : constant String := To_String (E.Lit);
+                        V   : constant Integer := Enum_Value (Name, Lit);
+                     begin
+                        Out_Units.Append
+                          (Unit'(Spelling => E.Lit,
+                                 Value => (if V >= 0 then V else Place)));
+                        Place := Place + 1;
+                     end;
+                  elsif E.Kind /= Alt then
+                     raise Wire_Error with
+                       Where & "the rule `" & Name & "` in " & Path
+                       & " is not a list of plain literals, which is what "
+                       & "spells units (`" & Name & " = ""q"" | ""p"" | ...`)";
+                  end if;
+               end loop;
+            end if;
+         end loop;
+         if not Found then
+            raise Wire_Error with
+              Where & "there is no rule `" & Name & "` in " & Path;
+         end if;
+      end Spellings;
+
+      Rules : HBNF_Grammar.Rule_Vectors.Vector;
+   begin
+      begin
+         Rules := HBNF_Grammar.Parse_File (Full);
+      exception
+         when E : HBNF_Grammar.Parse_Error =>
+            raise Wire_Error with
+              Where & "reading " & Path & ": "
+              & HBNF_Grammar.Error_Message (E);
+         when Ada.IO_Exceptions.Name_Error | Ada.IO_Exceptions.Use_Error =>
+            raise Wire_Error with Where & "cannot read " & Full;
+      end;
+      Spellings (Rules, Rule_Name, G.Units);
+      if G.Units.Is_Empty then
+         raise Wire_Error with Where & "the rule `" & Rule_Name & "` has no "
+           & "alternatives";
+      end if;
+      for U of G.Units loop
+         if U.Value >= 2 ** G.Unit_Width then
+            raise Wire_Error with
+              Where & "`" & To_String (U.Spelling) & "` has the value"
+              & Natural'Image (U.Value) & ", which does not fit a unit of"
+              & Natural'Image (G.Unit_Width) & " bits";
+         end if;
+      end loop;
+      if Sep_Name /= "" then
+         declare
+            Seps : Unit_Vectors.Vector;
+         begin
+            Spellings (Rules, Sep_Name, Seps);
+            if Natural (Seps.Length) /= 1 then
+               raise Wire_Error with
+                 Where & "the separator `" & Sep_Name & "` must be one "
+                 & "literal";
+            end if;
+            G.Unit_Sep := Seps.First_Element.Spelling;
+         end;
+      end if;
+   end Load_Units;
+
    function Parse (Text : String; File : String := "") return Grammar is
       P : Parser;
 
@@ -921,7 +1143,14 @@ package body HBNF_Wire is
          case E.Kind is
             when E_Num => null;
             when E_Var =>
-               if To_String (E.Name) /= "remaining"
+               if To_String (E.Name) = "align" and then P.G.Unit_Width = 0 then
+                  raise Wire_Error with
+                    (if File = "" then "" else File & ":") & Img (Line) & ":"
+                    & Img (Col) & ": rule `" & To_String (R.Name) & "`: "
+                    & "`align` is the bits to the next unit boundary, and "
+                    & "this file has no `units` line";
+               elsif To_String (E.Name) /= "remaining"
+                 and then To_String (E.Name) /= "align"
                  and then not Has (Scope, To_String (E.Name))
                then
                   raise Wire_Error with
@@ -1151,6 +1380,53 @@ package body HBNF_Wire is
                         & "`none` after `prefix`");
                end if;
                Next (P);
+            elsif To_String (T.Text) = "units"
+              and then not Is_Sym (Peek (P), "=")
+            then
+               Next (P);
+               if Cur (P).Kind /= T_Num or else Cur (P).Radix /= 10
+                 or else Cur (P).Value = 0 or else Cur (P).Value > 32
+               then
+                  Fail (P, Cur (P), "`units` takes a width in bits (1 to 32), "
+                        & "then the enum rule that spells the units, `from` "
+                        & "a text grammar: `units 5 bech32-symbol from "
+                        & """bech32.hbnf""`");
+               end if;
+               P.G.Unit_Width := Natural (Cur (P).Value);
+               Next (P);
+               declare
+                  Rule_Tok : constant Token := Cur (P);
+                  Rule_Nm  : constant String :=
+                    Text_Rule_Name (P, "the name of the enum rule that "
+                                       & "spells the units");
+                  Sep_Name : Unbounded_String;
+                  Path     : Unbounded_String;
+               begin
+                  if not (Cur (P).Kind = T_Name
+                          and then To_String (Cur (P).Text) = "from")
+                  then
+                     Fail (P, Cur (P), "expected `from ""file.hbnf""` after "
+                           & "the rule name, found " & Describe (Cur (P)));
+                  end if;
+                  Next (P);
+                  if Cur (P).Kind /= T_Str then
+                     Fail (P, Cur (P), "expected the text grammar's file name "
+                           & "in quotes after `from`, found "
+                           & Describe (Cur (P)));
+                  end if;
+                  Path := Cur (P).Text;
+                  Next (P);
+                  if Cur (P).Kind = T_Name
+                    and then To_String (Cur (P).Text) = "separator"
+                  then
+                     Next (P);
+                     Sep_Name := To_Unbounded_String
+                       (Text_Rule_Name (P, "the rule that spells the "
+                                           & "separator after `separator`"));
+                  end if;
+                  Load_Units (P.G, File, To_String (Path), Rule_Nm,
+                              To_String (Sep_Name), Rule_Tok.Line);
+               end;
             elsif To_String (T.Text) = "entry"
               and then not Is_Sym (Peek (P), "=")
             then
@@ -1169,6 +1445,10 @@ package body HBNF_Wire is
                   R.Name := T.Text;
                   R.Line := T.Line;
                   R.Alts := Parse_Alternation (P);
+                  if Cur (P).Kind = T_Code then
+                     R.Action := Cur (P).Text;
+                     Next (P);
+                  end if;
                   if not End_Of_Rule (P) then
                      Fail (P, Cur (P), "unexpected " & Describe (Cur (P))
                            & " in rule `" & To_String (R.Name) & "`");

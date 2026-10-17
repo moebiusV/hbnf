@@ -1,12 +1,14 @@
 binary
 
-; The data part of a segwit address (BIP-173, BIP-350) as the 5-bit symbols it
-; is: a witness version, the program in octets -- which start after the
-; version's 5 bits, in the middle of an octet -- the zero bits that fill the
-; last symbol, and the 6-symbol checksum.
+; The data part of a segwit address (BIP-173, BIP-350): 5-bit symbols.
+units 5 bech32-symbol from "../../grammars/bech32.hbnf"
+
+; A witness version, the program in octets -- which start after the version's
+; 5 bits, in the middle of an octet -- the zero bits that fill the last symbol,
+; and the 6-symbol checksum.
 segwit = version:5 ?(version <= 16)
          program:[(remaining - 30) / 8]
          ?(len(program) >= 2 && len(program) <= 40)
          ?(version != 0 || len(program) == 20 || len(program) == 32)
-         ?(remaining - 30 < 5) pad:bits(remaining - 30) ?(pad == 0)
+         pad:bits(align) ?(pad == 0)
          checksum:30
