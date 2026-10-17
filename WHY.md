@@ -99,6 +99,102 @@ string is re-quoted with the escape set. Comments are preserved and come back
 out in the right places when the source is re-emitted, and printing is
 idempotent.
 
+## How fast, against whom
+
+The comparison is a script, `bench/run.sh` (`bench/README.md` says what it
+needs and what it does not claim), and the tables here are its output, put into
+this file by `bench/update-docs.sh`.  No number in this section is typed by
+hand.  Every tool parses the same toy language, one rule per line (`pass in on
+em0 proto tcp from 192.168.3.7 port 51234 to 192.168.9.1 port 443`), over
+byte-identical input.  Each is written idiomatically in its own notation — a
+lex and yacc pair the way an OpenBSD `parse.y` is, a PEG, a tree-sitter
+grammar, an ANTLR grammar — builds what the parse found, and is checked to have
+found the same rules before it is timed.
+
+<!-- bench:toy -->
+**100,000 rules** (7.68 MB, the same file for every tool):
+
+| tool | input | parse time | rules/s | MB/s | peak RSS |
+|---|---:|---:|---:|---:|---:|
+| hbnf (C backend) | 7.68 MB | 26 ms | 3.8 M rules/s | 293 MB/s | 21 MB |
+| byacc + flex | 7.68 MB | 63 ms | 1.6 M rules/s | 121 MB/s | 23 MB |
+| bison + flex | 7.68 MB | 84 ms | 1.2 M rules/s | 92 MB/s | 23 MB |
+| peg/leg | 7.68 MB | 94 ms | 1.1 M rules/s | 82 MB/s | 30 MB |
+| tree-sitter 0.27.1 | 7.68 MB | 226 ms | 0.4 M rules/s | 34 MB/s | 63 MB |
+| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 35 ms | | | 81 MB |
+| ANTLR 4 (Java), actions, cold JVM | 7.68 MB | 222 ms | 0.5 M rules/s | 35 MB/s | 204 MB |
+| ANTLR 4 (Java), actions, warm JVM | 7.68 MB | 111 ms | 0.9 M rules/s | 69 MB/s | 530 MB |
+| ANTLR 4 (Java), parse tree, cold JVM | 7.68 MB | 246 ms | 0.4 M rules/s | 31 MB/s | 276 MB |
+
+**1,000,000 rules** (76.86 MB, the same file for every tool):
+
+| tool | input | parse time | rules/s | MB/s | peak RSS |
+|---|---:|---:|---:|---:|---:|
+| hbnf (C backend) | 76.86 MB | 266 ms | 3.8 M rules/s | 289 MB/s | 204 MB |
+| byacc + flex | 76.86 MB | 628 ms | 1.6 M rules/s | 122 MB/s | 224 MB |
+| bison + flex | 76.86 MB | 746 ms | 1.3 M rules/s | 103 MB/s | 224 MB |
+| peg/leg | 76.86 MB | 570 ms | 1.8 M rules/s | 135 MB/s | 294 MB |
+| tree-sitter 0.27.1 | 76.86 MB | 2302 ms | 0.4 M rules/s | 33 MB/s | 620 MB |
+| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 355 ms | | | 804 MB |
+| ANTLR 4 (Java), actions, cold JVM | 76.86 MB | 1278 ms | 0.8 M rules/s | 60 MB/s | 1438 MB |
+| ANTLR 4 (Java), actions, warm JVM | 76.86 MB | 1219 ms | 0.8 M rules/s | 63 MB/s | 2725 MB |
+| ANTLR 4 (Java), parse tree, cold JVM | 76.86 MB | 1716 ms | 0.6 M rules/s | 45 MB/s | 2362 MB |
+
+_Measured 2026-10-17 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.69 on the host, hbnf e8830cd; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+<!-- /bench:toy -->
+
+At 100,000 rules hbnf's generated C parser takes <!-- v:hbnf_100000_ms -->26<!-- /v --> ms.  byacc with flex
+takes <!-- v:byacc_100000_ms -->63<!-- /v --> ms (<!-- v:ratio_byacc_100000 -->2.4<!-- /v --> times as long), peg/leg <!-- v:ratio_peg_100000 -->3.6<!-- /v --> times, tree-sitter
+<!-- v:ratio_ts_100000 -->8.7<!-- /v --> times, and ANTLR <!-- v:ratio_antlr_cold_100000 -->8.5<!-- /v --> times in a fresh JVM (<!-- v:ratio_antlr_warm_100000 -->4.3<!-- /v --> times once
+the JVM is warm).  At 1,000,000 rules the ratios hold (byacc <!-- v:ratio_byacc_1000000 -->2.4<!-- /v -->, tree-sitter
+<!-- v:ratio_ts_1000000 -->8.7<!-- /v -->), so every tool's cost is linear and the table is not a small-input
+effect.  Peak memory follows the same order: <!-- v:hbnf_100000_rss_mb -->21<!-- /v --> MB for hbnf, <!-- v:byacc_100000_rss_mb -->23<!-- /v --> MB for
+byacc, <!-- v:ts_100000_rss_mb -->63<!-- /v --> MB for tree-sitter.
+
+Three things this does not say.  The trees differ: hbnf builds typed structs
+whose strings are slices of the input, the yacc and PEG parsers copy each
+string, tree-sitter builds a node per token, and ANTLR's actions-only rows
+build no tree at all.  The toy is the smallest realistic shape; the full pfctl
+grammar, with its 35-way option alternation, takes <!-- v:pfctl_100000_ms -->532<!-- /v --> ms and <!-- v:pfctl_100000_rss_mb -->394<!-- /v --> MB for
+100,000 rules, about <!-- v:pfctl_vs_toy_time -->20<!-- /v --> times the toy per rule, and that is the number to
+set against a production ruleset.  And a machine with other work on it gives
+slower, noisier times; the load average at the start of the run is recorded
+under every table.
+
+### A real parse.y
+
+The toy is written by us for every tool, so it cannot settle whether hbnf
+matches a parser people actually run.  This can: OpenBSD's ntpd `parse.y` at a
+pinned commit, unmodified, built with byacc against stubs for the rest of ntpd,
+against hbnf's binding of the same language (`grammars/bind/ntpd.hbnf`).  Both
+fill ntpd's own `struct ntpd_conf` from the same N-sensor config, and each is
+checked to have built the same sensors.
+
+<!-- bench:ntpd -->
+**100,000 sensors** (one `sensor` line each, the same file for both):
+
+| tool | input | parse time | sensors/s | MB/s | peak RSS |
+|---|---:|---:|---:|---:|---:|
+| OpenBSD ntpd parse.y, byacc | 6.14 MB | 72 ms | 1382 K sensors/s | 85 MB/s | 7.3 MB |
+| hbnf binding (`--conf`) | 6.14 MB | 60 ms | 1663 K sensors/s | 102 MB/s | 7.4 MB |
+
+**1,000,000 sensors** (one `sensor` line each, the same file for both):
+
+| tool | input | parse time | sensors/s | MB/s | peak RSS |
+|---|---:|---:|---:|---:|---:|
+| OpenBSD ntpd parse.y, byacc | 62.39 MB | 724 ms | 1381 K sensors/s | 86 MB/s | 69.0 MB |
+| hbnf binding (`--conf`) | 62.39 MB | 622 ms | 1607 K sensors/s | 100 MB/s | 68.8 MB |
+
+_Measured 2026-10-17 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.69 on the host, hbnf e8830cd; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+<!-- /bench:ntpd -->
+
+The first run of this comparison found a fault in hbnf, not in the harness: a
+statement-at-a-time parse freed and re-allocated a 64 KiB arena chunk for every
+statement, which on musl cost fourteen times the parse (905 ms against 63 ms
+for 100,000 sensors, measured once, before the fix; byacc was 71 ms).  The
+arena now keeps one chunk between statements, and the table above is after the
+fix.  A benchmark against someone else's parser is also a test of your own.
+
 ## hbnf and ANTLR
 
 ANTLR v4 is the right comparison, not yacc: it already removes shift/reduce
@@ -123,25 +219,19 @@ temporary gap: hbnf reads direct left recursion as a loop, and the standard
 elimination algorithm turns indirect into direct before the same loop. The
 permanent differences are parse-time semantic feedback and ambiguity, which
 hbnf refuses on purpose, plus the ecosystem around ANTLR (grammar libraries,
-IDE support, incremental parsing) that hbnf does not aim to replace. hbnf's
-narrowness is where it wins: the config-file shape (jets, `--conf`, id-ref
-output) is something ANTLR does not address.
+IDE support, incremental parsing) that hbnf does not aim to replace. hbnf is
+a meta-compiler: configuration files are where it started, and the config-file
+shape (jets, `--conf`, id-ref output) is something ANTLR does not address, but
+that is where it started and not where it stops.
 
 ## hbnf and tree-sitter
 
 tree-sitter is the other obvious comparison, and the one most likely to be
-proposed as a replacement, so it is worth being exact about. Measured
-2026-10-01: the §6 toy grammar written twice — once in hbnf, once as a
-tree-sitter grammar accepting the same language — generated, compiled `gcc
--O2`, and run over byte-identical input, best of five.
-
-| input | hbnf | tree-sitter 0.27 |
-|---|---|---|
-| 7.68 MB | **48 ms**, 21 MB RSS | 502 ms, 117 MB |
-| 76.9 MB | **489 ms**, 202 MB | 5159 ms, 1155 MB |
-
-Both parses complete and correct (tree-sitter: 100,000 and 1,000,000
-children, no error). About 159 MB/s against about 15 MB/s.
+proposed as a replacement, so it is worth being exact about. Its rows
+are in the table above: the toy language written as a tree-sitter grammar,
+generated with tree-sitter 0.27, compiled `gcc -O2`, and run over the same
+bytes as every other tool.  Both parses are complete and correct (the script
+checks the rule count and a checksum of the ports).
 
 **On the comparison being fair.** tree-sitter has no BNF notation, so the
 two notations cannot be compared; what is compared is the *task* — parse
@@ -152,15 +242,17 @@ typed structs, and tree-sitter's is the larger object. tree-sitter cannot
 turn off the GLR and error-recovery machinery it carries. And the comparison
 above is a *cold* parse, which is not what tree-sitter optimises.
 
-So the cold number alone would be unfair, and the incremental one was
-measured too: after a one-byte edit, re-parsing the 7.68 MB file takes **87
-ms** — still slower than hbnf's 48 ms cold parse. The reason is structural,
-and the honest caveat: a config file is a flat list of N independent rules,
-so an edit forces the root's N-child list to be rebuilt and incrementality
-has almost nothing to prune. For deeply nested source code, which is what
-tree-sitter is for, the win would be large. The conclusion is therefore
-narrow and not a general claim: **for the shape of input hbnf targets, a
-flat list parsed once, tree-sitter's design advantage does not apply.**
+So the cold number alone would be unfair, and the incremental one is in the
+table too: after a one-byte edit, re-parsing the same file takes <!-- v:ts_edit_100000_ms -->35<!-- /v --> ms,
+against <!-- v:hbnf_100000_ms -->26<!-- /v --> ms for hbnf's cold parse.  The reason is structural, and the
+honest caveat: the toy is a flat list of N independent rules, so an edit forces
+the root's N-child list to be rebuilt and incrementality has almost nothing to
+prune.  For deeply nested source code that is edited and re-parsed all day,
+which is what tree-sitter is for, the win would be large.  The conclusion is
+therefore not a general claim about parsers: **where a document is parsed once
+rather than edited and re-parsed — which is what a compiler front end, a
+protocol parser or a configuration loader does — tree-sitter's design
+advantage does not apply.**
 
 Beyond speed, three structural differences. tree-sitter's output is a generic
 CST walked with a cursor and compared by node-type string, where hbnf's

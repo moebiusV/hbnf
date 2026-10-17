@@ -23,9 +23,9 @@ parser this way lets a grammar distinguish `a > b` from a bareword containing
 
 hbnf is evaluated on a synthetic pf-style firewall ruleset — the motivating
 workload, where production rulesets exceed 100,000 rules.  On a five-field
-pf-style schema the generated C parser consumes 100,000 rules (7.7 MB) in
-25 ms (4.0 M rules/s, 305 MB/s, 21 MB peak RSS); the full pfctl grammar
-takes about half a second and 394 MB for 100,000 real rules.  The same grammar notation compresses OpenBSD's
+pf-style schema the generated C parser consumes 100,000 rules (<!-- v:hbnf_100000_mbytes -->7.7<!-- /v --> MB) in
+<!-- v:hbnf_100000_ms -->26<!-- /v --> ms (<!-- v:hbnf_100000_mrules -->3.8<!-- /v --> M rules/s, <!-- v:hbnf_100000_mbs -->293<!-- /v --> MB/s, <!-- v:hbnf_100000_rss_mb -->21<!-- /v --> MB peak RSS); the full pfctl grammar
+takes <!-- v:pfctl_100000_s -->0.5<!-- /v --> s and <!-- v:pfctl_100000_rss_mb -->394<!-- /v --> MB for 100,000 real rules.  The same grammar notation compresses OpenBSD's
 httpd configuration grammar from 2,785 lines of parse.y (63 rules, 79 keyword
 tokens) to under two hundred lines.
 
@@ -232,9 +232,10 @@ parse.y's `error` rule does.  `macros varset` and `includes include` name the
 rules whose statements define a macro and include a file, which gives parse.y's
 `$name` expansion and `include`.  Holding one statement at a time is what
 brings the ntpd binding's memory to byacc's: on a 100,000-sensor config
-(7 MB), peak RSS is 12.6 MB, against 12.4 MB for ntpd's parse.y through byacc
-and 82 MB when the whole file was tokenized and parsed at once.  The parse
-tree is the same daemon struct either way.
+peak RSS is <!-- v:ntpd_hbnf_100000_rss_mb -->7.4<!-- /v --> MB, against <!-- v:ntpd_byacc_100000_rss_mb -->7.3<!-- /v --> MB for ntpd's parse.y through byacc
+(§6 has the times).  An earlier version that tokenized and parsed the whole
+file at once needed 82 MB on a 7 MB config (measured when the design changed;
+not regenerated).  The parse tree is the same daemon struct either way.
 
 ### 3.3 Where the notation departs from ABNF
 
@@ -517,7 +518,7 @@ and removes the reason for the first fix: the token array is gone, so there is
 no token to slice or allocate at all.  The parser reads the text in place, a
 run-level scanner points into it, and a rule materializes only its result — a
 string is a slice, copied to the arena only when it must outlive the text.  §6
-measures this form: the toy ruleset peaks at 21 MB, about 215 bytes per rule,
+measures this form: the toy ruleset peaks at <!-- v:hbnf_100000_rss_mb -->21<!-- /v --> MB, about <!-- v:hbnf_100000_bytes_per_rule -->217<!-- /v --> bytes per rule,
 text included.
 
 ### 5.2 UTF-8 in, UTF-8 out
@@ -570,19 +571,30 @@ the full `grammars/obconf_pfctl.hbnf`.
 443`, 77 bytes each.  The pfctl rules are real pf syntax, `pass in quick on
 em0 inet proto tcp from 10.1.2.3 port 1234 to 10.4.5.6 port 80 keep state`,
 91 bytes each.  Both generators are deterministic and ship with the
-schemas in the evaluation harness (`section6.sh`, `bench/`).  The parsers are
+schemas in the evaluation harness (`bench/run.sh`).  The parsers are
 compiled with GCC at `-O2`.  Each parse runs in its own process, five
 times; the time is the best of the five, wall-clock around the parse call,
 and the memory is `getrusage`'s `ru_maxrss`.  The machine is the author's
 workstation, an AMD Ryzen 5 7600 (six cores, twelve threads).
 
-| schema | N | bytes | time | rules/s | MB/s | peak RSS |
-|---|---:|---:|---:|---:|---:|---:|
-| toy | 100,000 | 7.68 MB | 25 ms | 3.97 M | 305 | 21 MB |
-| toy | 1,000,000 | 76.9 MB | 0.25 s | 3.98 M | 306 | 203 MB |
+<!-- bench:hbnf-toy -->
+**100,000 rules** (7.68 MB):
 
-Throughput is linear in the rule count, at about four million rules and
-300 MB per second, and memory is about 215 bytes per rule, text included.
+| tool | input | parse time | rules/s | MB/s | peak RSS |
+|---|---:|---:|---:|---:|---:|
+| hbnf (C backend) | 7.68 MB | 26 ms | 3.8 M rules/s | 293 MB/s | 21 MB |
+
+**1,000,000 rules** (76.86 MB):
+
+| tool | input | parse time | rules/s | MB/s | peak RSS |
+|---|---:|---:|---:|---:|---:|
+| hbnf (C backend) | 76.86 MB | 266 ms | 3.8 M rules/s | 289 MB/s | 204 MB |
+
+_Measured 2026-10-17 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.69 on the host, hbnf e8830cd; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+<!-- /bench:hbnf-toy -->
+
+Throughput is linear in the rule count, at about <!-- v:hbnf_100000_mrules -->3.8<!-- /v --> million rules and
+<!-- v:hbnf_100000_mbs -->293<!-- /v --> MB per second, and memory is about <!-- v:hbnf_100000_bytes_per_rule -->217<!-- /v --> bytes per rule, text included.
 This is the character-stream parser of §4.1: there is no token array — a
 rule reads the text in place, a literal is a byte compare, and a keyword
 alternation dispatches on the first byte.  Field strings are slices of the
@@ -592,16 +604,20 @@ The toy is a minimal shape, so those numbers understate the real cost.  The
 full grammar, with its 35-way filter-option alternation and its address,
 port and interface parsing, does far more per rule:
 
-| obconf_pfctl.hbnf | N | bytes | time | rules/s | MB/s | peak RSS |
-|---|---:|---:|---:|---:|---:|---:|
-| `parse_file` | 100,000 | 9.18 MB | 0.51 s | 197 K | 18 | 394 MB |
-| `parse_file` | 1,000,000 | 91.9 MB | 5.03 s | 199 K | 18 | 3.85 GB |
+<!-- bench:hbnf-pfctl -->
+| rules | input | parse time | rules/s | MB/s | peak RSS |
+|---:|---:|---:|---:|---:|---:|
+| 100000 | 9.18 MB | 532 ms | 188 K rules/s | 17 MB/s | 394 MB |
+| 1000000 | 91.86 MB | 5.94 s | 168 K rules/s | 15 MB/s | 3.8 GB |
+
+_Measured 2026-10-17 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.69 on the host, hbnf e8830cd; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+<!-- /bench:hbnf-pfctl -->
 
 (`parse_file` is the `--conf` wrapper: the `statements` driver reads the
 file a block at a time and hands each statement to the action jets; the
 toy's `parse_text` reads the whole file into memory first.)  Per rule the
-full grammar is about twenty times slower than the toy and holds nineteen
-times the memory: the tree is about 4 KB per rule.  The cost is the
+full grammar is about <!-- v:pfctl_vs_toy_time -->20<!-- /v --> times slower than the toy and holds <!-- v:pfctl_vs_toy_rss -->19<!-- /v -->
+times the memory: the tree is about <!-- v:pfctl_100000_kb_per_rule -->4.0<!-- /v --> KB per rule.  The cost is the
 grammar's own width — the 35-way filter-option alternation and the address,
 port and interface parsing — and the layout: a list entry embeds the fields
 of every alternative, so the entry is sized for the largest one whichever
@@ -612,8 +628,8 @@ daemon binding does not: with `statements`, each statement's tree is handed
 to the action jets and freed before the next statement is read (§3.2),
 which is how the ntpd binding matches byacc's memory.  pfctl has no binding
 yet.  So for the "load a big firewall ruleset" criterion, the honest number
-today is that a 100,000-rule `pf.conf` parses in about half a second at
-394 MB, and a 1,000,000-rule one in 5 s at 3.85 GB.
+today is that a 100,000-rule `pf.conf` parses in <!-- v:pfctl_100000_s -->0.5<!-- /v --> s at
+<!-- v:pfctl_100000_rss_mb -->394<!-- /v --> MB, and a 1,000,000-rule one in <!-- v:pfctl_1000000_s -->5.9<!-- /v --> s at <!-- v:pfctl_1000000_rss_gb -->3.84<!-- /v --> GB.
 
 **Compactness.**  The same notation compresses a real grammar.  OpenBSD's
 `httpd.conf` is 2,785 lines of parse.y — 63 rules and 79 keyword tokens — most
@@ -658,6 +674,12 @@ remaining increments.
 departs from.  The split is principled (§2.2) but forces the token boundary to
 be a lexer-level decision, which is exactly where the domain hacks accumulate.
 
+Measured on the same toy language, a flex and byacc parser written the way a
+`parse.y` is takes <!-- v:ratio_byacc_100000 -->2.4<!-- /v --> times as long as hbnf's generated parser at 100,000
+rules and <!-- v:ratio_byacc_1000000 -->2.4<!-- /v --> times at 1,000,000; against OpenBSD's own ntpd `parse.y`
+through byacc, the ntpd binding parses a 100,000-sensor config in
+<!-- v:ntpd_hbnf_100000_ms -->60<!-- /v --> ms against <!-- v:ntpd_byacc_100000_ms -->72<!-- /v --> ms (§6).
+
 hbnf deliberately gives up four things yacc has, and each is a trade, not an
 oversight.  *Left recursion* (`list : list item | item`) is how yacc expresses
 repetition; hbnf's recursive-descent emitters cannot descend into it, so a
@@ -689,9 +711,13 @@ choice order.  hbnf is scannerless in the same sense but keeps the lexer as a
 determine what a token is.
 
 **Tree-sitter and pest.**  Both are modern, incremental, error-tolerant parser
-generators.  They are general parsers; hbnf's niche is the narrower and
-higher-volume one of configuration, where self-contained single-file output,
-typed trees, and the `parse_config` shape matter more than incrementality.
+generators.  tree-sitter is built for source code that is edited and re-parsed
+continually; hbnf is a meta-compiler that began with configuration files, where
+a document is parsed once, and there self-contained single-file output, typed
+trees and the `parse_config` shape matter more than incrementality.  On the
+§6 toy language tree-sitter takes <!-- v:ratio_ts_100000 -->8.7<!-- /v --> times as long as hbnf for a cold parse, and
+its incremental re-parse after a one-byte edit still takes <!-- v:ratio_ts_edit_100000 -->1.3<!-- /v --> times
+hbnf's cold parse (WHY.md has the table and the caveats).
 
 **Jets.**  "Jet" is hbnf's term for a hand-written implementation of a formally
 specified operation, kept in agreement with its spec.  Hand-optimizing a hot
@@ -706,8 +732,8 @@ safety property that makes hand-optimizing a hot token acceptable.
 This paper has described hbnf, a parser generator whose schema is an extension of
 ABNF, whose generated lexer is a thin character stream, and whose token
 definitions live in the grammar — as BNF, as hand-written jets, or as
-refinements of either.  The generated parser loads 100,000 toy rules in 25 ms
-and 100,000 real pf rules in about half a second, and the grammar notation
+refinements of either.  The generated parser loads 100,000 toy rules in <!-- v:hbnf_100000_ms -->26<!-- /v --> ms
+and 100,000 real pf rules in <!-- v:pfctl_100000_s -->0.5<!-- /v --> s, and the grammar notation
 compresses a 2,785-line yacc grammar to under two hundred lines.
 
 Near-term work is to finish the implemented surface — jets, keyword tables
