@@ -1,0 +1,11 @@
+# Versions and hashes the benchmark builds against.  KEY=VALUE, read by run.sh.
+# A hash is recorded the first time a file is fetched (2026-10-17) and checked
+# on every build after that.
+ANTLR_URL=https://repo1.maven.org/maven2/org/antlr/antlr4/4.13.2/antlr4-4.13.2-complete.jar
+ANTLR_SHA=eae2dfa119a64327444672aff63e9ec35a20180dc5b8090b7a6ab85125df4d76
+PEG_URL=https://www.piumarta.com/software/peg/peg-0.1.18.tar.gz
+PEG_SHA=20193bdd673fc7487a38937e297fff08aa73751b633a086ac28c3b34890f9084
+TS_VERSION=0.27.1
+# OpenBSD src commit the ntpd files in ntpd/files.txt are taken from (the last
+# commit to usr.sbin/ntpd/parse.y on the GitHub mirror, 2021-10-15).
+NTPD_COMMIT=08f6ba1906d01c4a24fa700d568400f71bcf9611

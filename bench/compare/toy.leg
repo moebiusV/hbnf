@@ -1,0 +1,66 @@
+%{
+/* toy.leg — the toy language as a PEG, for Piumarta's peg/leg 0.1.18.
+ * One rule per yyparse() call, as peg's own examples stream input: its
+ * actions are queued until a parse succeeds, so a single parse of the whole
+ * file would hold every rule's thunks in memory. */
+#include <stdlib.h>
+#include <string.h>
+#include "timing.h"
+
+#define YYSTYPE char *
+
+struct rule {
+	struct rule *next;
+	char *action, *dir, *iface, *proto, *from_addr, *to_addr;
+	long long from_port, to_port;
+};
+static struct rule *head, **tail = &head;
+static long nrules;
+static long long portsum;
+static char *input;
+static size_t inlen, inpos;
+
+#define YY_INPUT(buf, result, max_size) {			\
+	size_t n_ = inlen - inpos;				\
+	if (n_ > (size_t)(max_size)) n_ = (size_t)(max_size);	\
+	memcpy(buf, input + inpos, n_);				\
+	inpos += n_;						\
+	result = (int)n_;					\
+}
+
+static void add(char *a, char *d, char *i, char *p, char *fa, char *fp,
+                char *ta, char *tp) {
+	struct rule *r = calloc(1, sizeof *r);
+	r->action = a; r->dir = d; r->iface = i; r->proto = p;
+	r->from_addr = fa; r->from_port = strtoll(fp, NULL, 10);
+	r->to_addr = ta; r->to_port = strtoll(tp, NULL, 10);
+	*tail = r; tail = &r->next;
+	nrules++;
+	portsum += r->from_port + r->to_port;
+}
+%}
+
+statement = - a:action d:dir 'on' - i:word 'proto' - p:word
+            'from' - fa:word 'port' - fp:number 'to' - ta:word 'port' - tp:number
+            { add(a, d, i, p, fa, fp, ta, tp); }
+action    = < 'pass' > - { $$ = strdup(yytext); }
+          | < 'block' > - { $$ = strdup(yytext); }
+          | < 'match' > - { $$ = strdup(yytext); }
+dir       = < 'in' > - { $$ = strdup(yytext); }
+          | < 'out' > - { $$ = strdup(yytext); }
+word      = < [-A-Za-z0-9_.:/]+ > - { $$ = strdup(yytext); }
+number    = < [0-9]+ > - { $$ = strdup(yytext); }
+-         = [ \t\r\n]*
+
+%%
+
+int main(int argc, char **argv) {
+	double t0, ms;
+	if (argc < 2) return 2;
+	input = bench_read(argv[1], &inlen);
+	t0 = bench_now_ms();
+	while (yyparse())
+		;
+	ms = bench_now_ms() - t0;
+	return bench_report(inpos == inlen, inlen, nrules, portsum, ms);
+}

@@ -825,7 +825,7 @@ should claim that before 10.
        one run (run A, run B, run C, repeat, keep each build's best), and
        `valgrind --tool=callgrind` instruction counts are the noise-free
        metric — deterministic, and they do not care what else the host is
-       doing.  `bench/section6.sh` should grow both: a `CLOCK_PROCESS_CPUTIME_ID`
+       doing.  `bench/run.sh` should grow both: a `CLOCK_PROCESS_CPUTIME_ID`
        option and an interleaved A/B mode.
 
        | build | pfctl 100,000, CPU ms, best of 9, interleaved | vs baseline |
