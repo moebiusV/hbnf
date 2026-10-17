@@ -1,0 +1,66 @@
+CALL ME !RED.!;
+#FILE: TRAED.I10#
+
+SUBR !RED.!(Z) IS (
+  !IL.!, !IC.!, !RSW.! ARE COMMON;
+  !LC.!, !FM.!, !FL.!   ARE  COMMON;
+  B IS 128 LONG;
+ Q_14R AND 777777B;
+          !RSW.!=0=>(!RSW.!_1;!IL.![1]_0;
+         (520B AND 1 LS [Q] RS 24)=0=>!OBIN.!(0,1,!IC.!,!IL.!));
+ TD: T_[Q] RS 24; N_!PADR.!(Q);
+ T NE 0=>(T=5=>(!LC.![!IC.!]=-1=>GO TO TZ;
+                TA: !PIN.!(0) NE 12B=>GO TO TA;
+                !LC.![!IC.!]_0; GO TO TZ);
+          T=4=>(!OBIN.! (Q,1,!IC.!,!IL.!); GO TO TZ);
+          T=6=>(!OBIN.! (!FBLK.!(Q),1,!IC.!,!IL.!); GO TO TZ);
+          T=7=>(!PTR.![!IC.!]_4400000000B OR 777777B
+                        AND !PTR.![!IC.!];
+               !PTE.![!IC.!]_4400000000B OR 777777B
+                        AND !PTE.![!IC.!]);
+          T=8=>(!DEV.!([N],1); GO TO TZ);
+	  NN_[N]; T=11=>(T_2; NN_NN<R>);
+          T>8=>GO TO TV;
+          !FM.![!IC.!]_T; !FL.![!IC.!]_NN; GO TO TZ);
+ F_!FM.![!IC.!];
+ F=7=>([N]_!PIN.!(1); GO TO TZ);
+ (G_!FL.![!IC.!])=0=>G_',';
+ G>128=>(STOPC_G RS 29; G_128)  ELSE  STOPC_0;
+ G_G-1; NEG_0;
+  (!LC.![!IC.!]=>GO TO TR;
+   LB: (XX_!PIN.!(0))=0=>(!LC.![!IC.!]=0=>GO TO LB; GO TO TR);
+   # TAB->SPACE # XX=11B=>XX_R' ';
+   XX=55B=>(F NE 3=>(NEG_-1;XX_40B));
+   (B[J]_XX)=STOPC=>(TR: (G_J-1)<0=>B_G_0;
+                     GO TO LR);
+   B[J]=15B=>(!LC.![!IC.!]=0=>!LC.![!IC.!]_1;
+              GO TO TR)) FOR J TO G;
+ LR: F=3=>(S_010677777777B+N;
+	   G GE 0=>(([N+I]_0) FOR I FROM G/5;
+		    (<+S>_B[J]) FOR J TO G);
+	   STOPC=><+S>_0;
+	   GO TO TZ);
+ S_0;
+G GE 0=>(
+ ((D_B[J]) NE 40B=>((D_D-60B)<0=>D_IER('CHARACTER NOT A DIGIT.');
+                    F=1=>(D>7=>D_IER('ILLEGAL OCTAL DIGIT.');
+                          S_(S LS 3)+D)
+                    ELSE (D>9=>D_IER('ILLEGAL DECIMAL DIGIT.');
+                          S_(S*10)+D))
+                  ) FOR J TO G);
+ [N]_(NEG=>-S ELSE S);
+ TZ: Q_Q+1;GO TO TD;
+ TV: TQ_267700000000B+Q;
+ 0R_!LC.![!IC.!];
+ TQ: GO TO TQ;
+ 0);
+
+
+SUBR !PIN.!() IS (
+  !IC.!<0=>(DATA(051200000000B); RETURN 0R);
+  !PTR.!, !PTE.! ARE COMMON;
+ !PTR.![!IC.!]=!PTE.![!IC.!]=>(!PTR.![!IC.!]_!PTR.![!IC.!]-128;
+                               INPUT(!IC.!+14B,!IL.!)=>!LC.![!IC.!]_-1);
+ILDB(!PTR.![!IC.!])) ;
+!PRN.!()%%
+

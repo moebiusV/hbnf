@@ -1,0 +1,698 @@
+;TITLE FORTIO -- FORTRAN MACHINE LANGUAGE INTERFACE
+;       KEN SHOEMAKE            12-JUL-72
+
+;ENTRY POINT,LDB,DPB,IBP,ILDB,IDPB       ;1
+;ENTRY LOC,CON,SETWRD,LSH,RSH,ROT,CODE   ;2
+;ENTRY CALLI,NOSKIP                      ;3
+;ENTRY SETCOR,SAVREG,RSTREG              ;4
+;ENTRY ARGCNT,ARGREF,SIXBIT,ASCII        ;5 *** MUST FOLLOW THE REST ***
+;ENTRY RAD50,RADX50,ASCI50,SIX50         ;6
+;ENTRY OPEN,INIT,RENAME,ENTER,LOOKUP,RELEA,CLOSE,IN,OUT  ;7
+;ENTRY INPUT,OUTPUT,STATO,STATZ,GETCHA   ;7
+;ENTRY INBUF,OUTBUF,GETSTS,SETSTS,MTAPE,UGETF,USETI,USETO;8
+;ENTRY INCHRW,OUTCHR,INCHRS,OUTSTR,INCHWL,INCHSL,GETLCH  ;9
+;ENTRY SETLCH,RESCAN,CLRBFI,CLRBFO,SKPINC,SKPINL,IONEOU  ;9
+
+TITLE FIO1 -- FORTRAN - MACHINE LANGUAGE INTERFACE
+ENTRY POINT,LDB,DPB,IBP,ILDB,IDPB
+EXTERNAL ARGCNT
+
+POINT:: 0                       ;INTVAR=POINT(SIZE,ADDR(,BIT)), AS IN MACRO
+        JSA     16,ARGCNT       ;GET THE NUMBER OF ARGUMENTS
+        MOVEM   ARGS.#          ;SAVE COUNT
+        HRLZ    @(16)           ;GET SIZE OF BYTES
+        LSH     6               ;MOVE TO PROPER POSITION
+        MOVE    1,ARGS.         ;CHECK THE NUMBER OF ARGS.
+        CAIGE   1,3             ;IS THIRD ARGUMENT THERE ?
+        SKIPA   1,[1]           ;NO, USE THE BIT TO THE LEFT OF BIT 0
+        MOVN    1,@2(16)        ;GET NEGATIVE OF BIT POSITION ...
+        ADDI    1,43            ;ADD 35 FOR NO. OF PROPER BIT POINTER
+        DPB     1,[POINT 6,0,5] ;STUFF IT INTO THE POINTER
+        HRR     1(16)           ;GET ADDRESS OF FIRST WORD INTO POINTER
+        ADD     16,ARGS.        ;WANT TO SKIP ARGUMENTS
+        JRA     16,(16)         ;RETURN WITH POINTER IN REGISTER 0
+
+LDB::   0                       ;INTVAR=LDB(IPTR)
+        LDB     @(16)           ;GET BYTE
+        JRA     16,1(16)        ;RETURN
+
+DPB::   0                       ;INTVAR=DPB(IBYTE,IPTR) -- RETURNS IBYTE
+        MOVE    @(16)           ;GET BYTE
+        DPB     @1(16)          ;PUT BYTE IN WORD
+        JRA     16,2(16)        ;RETURN
+
+IBP::   0                       ;INTVAR=IBP(IPTR)
+        IBP     @(16)           ;INCREMENT POINTER
+        MOVE    @(16)           ;GET POINTER
+        JRA     16,1(16)        ;RETURN
+
+ILDB::  0                       ;INTVAR=ILDB(IPTR)
+        ILDB    @(16)           ;INCREMENT POINTER, GET BYTE
+        JRA     16,1(16)        ;RETURN
+
+IDPB::  0                       ;INTVAR=IDPB(IBYTE,IPTR)
+        MOVE    @(16)           ;GET BYTE
+        IDPB    @1(16)          ;INCREMENT POINTER,PUT BYTE IN WORD
+        JRA     16,2(16)        ;RETURN
+
+        PRGEND                  ;END OF SET
+TITLE FIO2 -- FORTRAN - MACHINE LANGUAGE INTERFACE
+ENTRY LOC,CON,SETWRD,LSH,RSH,ROT,CODE
+
+LOC::   0                       ;INTVAR=LOC(VRBLE)
+        MOVEI   @(16)           ;RETURNS ADDRESS OF ARGUMENT
+        JRA     16,1(16)        ;RETURN WITH RESULT IN REGISTER 0
+
+CON::   0                       ;INTVAR=CON(LOCATION)
+        MOVE    1,@(16)         ;GET LOCATION
+        MOVE    (1)             ;GET CONTENTS OF LOCATION
+        JRA     16,1(16)        ;RETURN WITH CONTENTS IN REGISTER 0
+
+SETWRD::0                       ;INTVAR=SETWRD(VAL,LOCATION) -- RETURNS VAL
+        MOVE    @(16)           ;GET VALUE
+        MOVE    1,@1(16)        ;GET LOCATION
+        MOVEM   (1)             ;STORE VALUE IN LOCATION
+        JRA     16,2(16)        ;RETURN
+
+LSH::   0                       ;INTVAR=LSH(IWORD,IAMT)
+        MOVE    1,@1(16)        ;GET NUMBER OF PLACES TO SHIFT
+        MOVE    @(16)           ;GET WORD TO BE SHIFTED
+        LSH     (1)             ;SHIFT IT
+        JRA     16,2(16)        ;AND RETURN WITH RESULT IN REGISTER 0
+RSH::   0                       ;INTVAR=RSH(IWORD,IAMT)
+        MOVN    1,@1(16)        ;GET NUMBER OF PLACES TO SHIFT
+        JRST    .-5             ;GO TO COMMON PART OF ROUTINES
+
+ROT::   0                       ;INTVAR=ROT(IWORD,IAMT)
+        MOVE    1,@1(16)        ;GET NUMBER OF PLACES TO ROTATE WORD
+        MOVE    @(16)           ;GET WORD TO BE ROTATED
+        ROT     (1)             ;ROTATE IT
+        JRA     16,2(16)        ;AND RETURN RESULT IN REGISTER 0
+
+CODE::  0                       ;INTVAR=CODE(INSTR,ADDRESS)
+        MOVEM   2,SAVZER#       ;SAVE REGISTER 2
+        MOVS    2,@(16)         ;GET INSTRUCTION
+        HRR     2,@1(16)        ;GET ADDRESS
+        MOVE    1,OLDONE#       ;GET PREVIOUS VALUE BACK
+        SETO                    ;-1 FOR SKIP RETURN
+        XCT     2               ;EXECUTE THE INSTRUCTION
+        SETZ                    ;ZERO IF NO SKIP
+        MOVEM   1,OLDONE#       ;SAVE VALUE FOR NEXT TIME
+        MOVE    2,SAVZER#       ;RESTORE REGISTER 2
+        JRA     16,2(16)        ;RETURN
+
+        PRGEND                  ;END OF SET
+TITLE FIO3 -- FORTRAN - MACHINE LANGUAGE INTERFACE
+ENTRY CALLI,NOSKIP
+EXTERNAL ARGCNT,SIXBIT
+
+CALLI:: 0                       ;CMPXVR=CALLI('NAME'/N(,AC/ARG,ARG2))
+        JSA     16,ARGCNT       ;COUNT THE NUMBER OF ARGS.
+        MOVEM   ARGS.#          ;SAVE COUNT
+        MOVE    1,@(16)         ;GET FIRST ARG.
+        HLRZ    1               ;EXAMINE THE FIRST ARG.
+        CAIE    0               ;IF LEFT HALF IS ZERO ...
+        CAIN    -1              ;OR -1 ...
+        JRST    NGIVEN          ;THEN USE N FOR THE CALLI
+        MOVE    (16)            ;ELSE CONVERT NAME TO SIXBIT
+        HRRM    .+2             ;PASS ADDRESS OF NAME
+        JSA     16,SIXBIT       ;TO SIXBIT CONVERTER
+        JUMP    0               ;FILLED IN
+        MOVEI   1,CALLQT-CALLS  ;LENGTH OF CALL TABLE
+        CAME    CALLS(1)        ;SEARCH TABLE OF CALL NAMES
+        SOJGE   1,.-1           ;UNTIL EXHAUSTED (ASSUME CALLI AC,-1)
+NGIVEN: MOVE    [2,,ACSAVE]     ;SAVE REGISTERS
+        BLT     ACSAVE+15       ;2 - 17
+        CAIE    1,56            ;IF 'SEEK' ...
+        CAIN    1,10            ;OR 'WAIT' ...
+        JRST    USE.AC          ;THEN USE THE AC SPECIFIED
+        CAIE    1,12            ;IF 'EXIT' ...
+        CAIN    1,13            ;OR 'UTPCLR' ...
+        JRST    USE.AC          ;THEN USE THE AC SPECIFIED
+VGIVEN: HRLI    1,047000        ;ELSE USE AC 0
+        MOVEM   1,CALLI.        ;STASH 'CALLI 0,N'
+        SETZ                    ;USE 0 IF NO ARG. SPECIFIED
+        MOVE    1,ARGS.         ;CHECK NO. OF ARGS.
+        CAIL    1,2             ;IF ARG. FOR 0 SPECIFIED
+        MOVE    @1(16)          ;THEN GET IT THERE
+        CAIL    1,3             ;IF ARG. FOR 1 SPECIFIED
+        SKIPA   1,@2(16)        ;THEN GET IT THERE
+        SETZ    1,              ;ELSE USE 0
+CALLIT: SETZM   NOSKP.#         ;ASSUME A SKIP RETURN
+CALLI.: CALLI   0,0             ;FILLED IN
+        SETOM   NOSKP.#         ;INDICATE A NO-SKIP (PROBABLY ERROR) RETURN
+        MOVS    17,[2,,ACSAVE]  ;RESTORE REGISTERS 2 ...
+        BLT     17,17           ;THROUGH 17
+        ADD     16,ARGS.        ;SKIP ARGS.
+        JRA     16,(16)         ;AND RETURN WITH RESULTS IN REGISTERS 0 & 1
+USE.AC: HRLI    1,047000        ;SET UP CALLI WITH N
+        SETZ                    ;USE AC 0 IF NONE SPECIFIED
+        MOVE    2,ARGS.         ;CHECK NO. OF ARGS.
+        CAIL    2,2             ;IF ARG. FOR AC SPECIFIED
+        MOVE    @1(16)          ;GET AC NUMBER
+        DPB     [POINT 4,1,12]  ;AND ADD IT TO CALLI
+        MOVEM   1,CALLI.        ;STASH 'CALLI AC,N'
+        SETZ                    ;ZERO REGISTERS 0
+        SETZ    1,              ;AND 1
+        JRST    CALLIT          ;THEN GO TO COMMON CODE
+
+NOSKIP::0                       ;FOR EXTERNAL REFERENCE
+        MOVE    NOSKP.          ;GET LAST NOSKP.
+        JRA     16,1(16)        ;ASSUME CALLED WITH NOSKIP(0)
+
+CALLS:  EXP     'RESET ','DDTIN ','SETDDT','DDTOUT','DEVCHR','DDTGT '
+        EXP     'GETCHR','DDTRL ','WAIT  ','CORE  ','EXIT  ','UTPCLR'
+        EXP     'DATE  ','LOGIN ','APRENB','LOGOUT','SWITCH','REASSI'
+        EXP     'TIMER ','MSTIME','GETPPN','TRPSET','TRPJEN','RUNTIM'
+        EXP     'PJOB  ','SLEEP ','SETPOV','PEEK  ','GETLIN','RUN   '
+        EXP     'SETUWP','REMAP ','GETSEG','GETTAB','SPY   ','SETNAM'
+        EXP     'TMPCOR','DSKCHR','SYSSTR','JOBSTR','STRUUO','SYSPHY'
+        EXP     'FRECHN','DEVTYP','DEVSTS','DEVPPN','SEEK  ','RTTRP '
+        EXP     'LOCK  ','JOBSTS','LOCATE','WHERE ','DEVNAM','CTLJOB'
+        EXP     'GOBSTR','ACTIVA','DEACTI','HPQ   ','HIBER ','WAKE  '
+        EXP     'CHGPPN','SETUUO','DEVGEN','OTHUSR','CHKACC','DEVSIZ'
+        EXP     'DAEMON','JOBPEK','ATTACH','DAEFIN','FRCUUO','DEVLNM'
+        EXP     'PATH. ','METER.','MTCHR.','JBSET.','POKE. ','TRMNO.'
+        EXP     'TRMOP.','RESDV.','UNLOK.'
+CALLQT= .-1
+ACSAVE: BLOCK   16              ;FOR SAVING REGISTERS 2 - 17 (GETSEG)
+
+        PRGEND                  ;END OF SET
+TITLE FIO4 -- FORTRAN - MACHINE LANGUAGE INTERFACE
+ENTRY SETCOR,SAVREG,RSTREG
+EXTERNAL ARGCNT
+
+SETCOR::0                       ;INTVAR=SETCOR(FIRST,LAST(,VALUE))
+        JSA     16,ARGCNT       ;COUNT NUMBER OF ARGS.
+        MOVEM   ARGS.#          ;SAVE COUNT
+        CAIL    3               ;IS 'VALUE' SPECIFIED ?
+        SKIPA   1,@2(16)        ;YES, GET IT IN REGISTER 1
+        SETZ    1,              ;NO, ZERO LOCATIONS
+        MOVE    1               ;GET VALUE IN REGISTER 0 FOR RETURN
+        MOVEM   @(16)           ;SET FIRST LOCATION TO VALUE
+        MOVE    1,(16)          ;GET ADDRESS OF FIRST LOCATION     
+        HRLS    1               ;INTO BOTH HALVES
+        AOJ     1,              ;MAKE BLT WORD 'FIRST,,FIRST+1'
+        BLT     1,@1(16)        ;SET BLOCK TO VALUE
+        ADD     16,ARGS.        ;SKIP ARGS. ON RETURN
+        JRA     16,(16)         ;RETURN WITH 'VALUE' OR 0 IN REGISTER 0
+
+SAVREG::0                       ;INTVAR=SAVREG(ARRAY) -- RETURNS 0
+        MOVEM   16,SAVZER#      ;SAVE REGISTER 16
+        MOVEI   16,@(16)        ;GET ADDRESS OF ARRAY INTO REGISTER 16
+        BLT     16,17(16)       ;SAVE REGISTERS 0-17 IN ARRAY - ARRAY+17
+        MOVE    SAVREG          ;GET THE CORRECT VALUE FOR REGISTER 16
+        MOVEM   16(16)          ;STUFF IT WHERE IT BELONGS IN THE ARRAY
+        SETZ    0               ;RETURN 0 IN REGISTER 0
+        MOVE    16,SAVZER       ;RESTORE REGISTER 16 FOR RETURN
+        JRA     16,1(16)        ;RETURN
+
+RSTREG::0                       ;INTVAR=SAVREG(ARRAY)
+        MOVEM   16,RSTREG       ;SAVE REGISTER 16 FOR RETURN
+        MOVSI   17,@(16)        ;GET ADDRESS OF ARRAY INTO REGISTER 17
+        BLT     17,17           ;GET REGISTERS 0-17 FROM ARRAY - ARRAY+17
+        EXCH    16,RSTREG       ;RESTORE REGISTER 16, AND LOOK TO JRA
+        JRA     16,1(16)        ;RETURN C(ARRAY[0]) AS RESULT
+
+        PRGEND                  ;END OF SET
+TITLE FIO6 -- FORTRAN - MACHINE LANGUAGE INTERFACE
+ENTRY RAD50,RADX50,ASCI50,SIX50
+EXTERNAL ARGCNT,SIXBIT,ASCII
+
+RAD50:: 0                       ;INTVAR=RAD50('ASCIZ'(,BITS))
+        MOVE    (16)            ;FIRST CONVERT 'ASCIZ'
+        HRRM    .+2             ;FROM ASCII TO SIXBIT
+        JSA     16,SIXBIT       ;WITH OUR HANDY SIXBIT ROUTINE
+        JUMP                    ;ADDRESS FILLED IN 2 LOCATIONS BACK
+        JRST    .+3             ;SKIP OVER SIXBIT ENTRY
+RADX50::0                       ;INTVAR=RADX50(SIXBIT(,BITS))
+        MOVE    @(16)           ;GET SIXBIT INTO REGISTER 0
+        MOVEM   2,SAVZER#       ;SAVE CONTENTS OF REGISTER 2
+        MOVEM   2               ;'CAUSE WE'RE PUTTING SIXBIT THERE
+        JSA     16,ARGCNT       ;NOW COUNT THE NUMBER OF ARGS.
+        MOVEM   ARGS.#          ;SAVE COUNT
+        SETZ                    ;ZERO REGISTER 0 FOR RADIX 50 SYMBOL
+RDX50:  SETZ    1,              ;ZERO REGISTER 1 ...
+        LSHC    1,6             ;THEN SHIFT THE NEXT CHARACTER INTO 1
+        JUMPE   1,R50           ;BLANK IS OK
+        CAIGE   1,20            ;IS CHAR ONE OF: ., %, $  ?
+        JRST    SPCIAL          ;COULD BE
+        CAILE   1,32            ;IS CHAR A LETTER ?
+        JRST    LETTER          ;YES, OR ELSE IS GREATER THAN Z
+        SUBI    1,17            ;MUST BE A NUMBER, CONVERT APPROPRIATELY
+R50:    IMULI   50              ;MULTIPLY PREVIOUS JUNK ...
+        ADD     1               ;AND ADD IN NEW CHARACTER
+        JUMPN   2,RDX50         ;GO BACK FOR MORE
+        MOVE    2,SAVZER        ;RESTORE REGISTER 2
+        MOVE    1,ARGS.         ;CHECK THE NUMBER OF ARGS.
+        CAIGE   1,2             ;BITS SPECIFIED ?
+        TRZA    1,17            ;NOPE, ZERO'S GO INTO BITS
+        MOVE    1,@1(16)        ;YES, PUT INTO SYMBOL
+        DPB     1,[POINT 4,0,3] ;BITS GO INTO 0-3 OF WORD
+        ADD     16,ARGS.        ;WANT TO SKIP ARGS.
+        JRA     16,(16)         ;GOOD DEED FOR THE DAY DONE, NOW RETURN
+SPCIAL: CAIE    1,16            ;IS CHAR A . ?
+        CAIN    1,4             ;OR PERHAPS A $ ?
+        JRST    .+2             ;FAR OUT, IT IS !
+        MOVEI   1,5             ;ASSUME IT'S A %
+        ADDI    1,42            ;CONVERT IT PROPERLY
+        JRST    R50             ;NOW GO ADD IT IN
+LETTER: CAIL    1,41            ;BETWEEN SIXBIT 41
+        CAILE   1,72            ;AND SIXBIT 72 ARE LETTERS
+        JRST    .-5             ;OTHERWISE USE %
+        SUBI    1,26            ;CONVERT TO RADIX 50
+        JRST    R50             ;AND ADD IT IN
+
+ASCI50::0                       ;CMPXVR=ASCI50(RADI50,BITS)
+        MOVEI   .+3             ;FOR ADDRESS OF ARGUMENTS
+        PUSH    (16)            ;GET RADX50 SYMBOL ADDRESS
+        PUSH    1(16)           ;GET CODE BITS ADDRESS
+        JSA     16,SIX50        ;NOW CALL RADX50 TO SIXBIT CONVERTER
+        JUMP    0               ;ADDRESS FILLED IN ABOVE
+        JUMP    0               ;DITTO
+        MOVEM   SAVZER#         ;PUT SIXBIT IN ADDRESS
+        JSA     16,ASCII        ;CALL SIXBIT TO ASCII CONVERTER
+        JUMP    SAVZER#         ;ACTUALLY, THE CALLER SHOULD DO THIS
+        JRA     16,2(16)        ;OH WELL, TOO LATE NOW - SO RETURN
+
+SIX50:: 0                       ;INTVAR=SIX50(RADI50,BITS)
+        MOVEM   2,SAVZER#       ;WE NEED TO USE THIS REGISTER
+        MOVEM   3,SAVONE#       ;WE ALSO USE THIS ONE
+        MOVE    @(16)           ;GET THE SYMBOL
+        SETZB   1,3             ;ZERO TO GET CODE BITS AND SIXBIT
+        ROTC    4               ;PUT CODE BITS INTO REGISTER 1
+        MOVEM   1,@1(16)        ;STASH CODE BITS
+        LSH     -4              ;PUT WORD BACK INTO POSITION
+CONV50: IDIVI   50              ;UNPACK CHAR. INTO REGISTER 1
+        SETZ    2,              ;ZERO TO GET CHAR. NO.
+        LSHC    1,-2            ;CHAR. MOD 4
+        ROT     2,2             ;IN PROPER PLACE
+        EXCH    1,2             ;SO FINAL SHIFT WORKS
+        MOVE    2,TAB650(2)     ;GET RIGHT WORD
+        AOJ     1,              ;ADD ONE TO INDEX OF CHAR.
+        IMULI   1,6             ;CALCULATE AMOUNT OF SHIFT
+        ROT     2,(1)           ;ROTATE SIXBIT CHAR. INTO POSITION
+        LSHC    2,-6            ;APPEND CHAR. TO SIXBIT SYMBOL
+        JUMPN   CONV50          ;LOOP FOR MORE OF SYMBOL
+        MOVE    3               ;GET SIXBIT SYMBOL INTO REGISTER 0
+        MOVE    2,SAVZER#       ;RESTORE THIS REGISTER
+        MOVE    3,SAVONE#       ;WE ALSO USED THIS ONE
+        JRA     16,2(16)        ;RETURN
+
+TAB650: BYTE (6) 00,20,21,22    ;BLANK,0-2
+        BYTE (6) 23,24,25,26    ;3-6
+        BYTE (6) 27,30,31,41    ;7-9,A
+        BYTE (6) 42,43,44,45    ;B-E
+        BYTE (6) 46,47,50,51    ;F-I
+        BYTE (6) 52,53,54,55    ;J-M
+        BYTE (6) 56,57,60,61    ;N-Q
+        BYTE (6) 62,63,64,65    ;R-U
+        BYTE (6) 66,67,70,71    ;V-Y
+        BYTE (6) 72,16,04,05    ;Z,.,$,%
+
+        PRGEND                  ;END OF SET
+TITLE FIO7 -- FORTRAN - MACHINE LANGUAGE INTERFACE
+ENTRY OPEN,INIT,RENAME,ENTER,LOOKUP,RELEA,CLOSE,IN,OUT
+ENTRY INPUT,OUTPUT,STATO,STATZ,GETCHA
+EXTERNAL ARGCNT,SIXBIT
+
+DEFINE  PUTCHA(WH),<
+        MOVE    1,@(16)         ;;GET CHANNEL NUMBER
+        DPB     1,[POINT 4,WH,12];;PUT INTO INSTRUCTION>
+
+OPEN::  0                       ;LGVAR=OPEN(CHANNEL,ARRAY3)
+        PUTCHA (INS)            ;PUT CHANNEL NUMBER INTO UUO INSTRUCTION
+        SETZ                    ;ZERO REGISTER 0 FOR NO ERROR RETURN
+INS:    OPEN    @1(16)          ;DO OPEN UUO USING ADDRESS OF 3 WORD BLOCK
+        SETO                    ;RETURN A -1 (.TRUE.) IF ERROR
+        JRA     16,2(16)        ;RETURN
+
+INIT::  0                       ;LGVAR=INIT(CHAN,STATUS(,'LDEV',OBUF,IBUF))
+        JSA     16,ARGCNT       ;GET THE NUMBER OF ARGUMENTS
+        MOVEM   ARGS.#          ;SAVE COUNT
+        PUTCHA (INST)           ;PUT CHANNEL NUMBER INTO OPEN INSTRUCTION
+        MOVE    @1(16)          ;GET STATUS WORD
+        MOVEM   ARGBLK          ;MOVE TO FIRST WORD OF UUO ARGUMENT BLOCK
+        MOVSI   'DSK'           ;IF DEVICE IS NOT SPECIFIED USE 'DSK'
+        MOVEM   ARGBLK+1        ;STORE IN SECOND WORD OF ARG. BLOCK
+        SETZM   ARGBLK+2        ;ZERO BUFFER SPECIFIER IN CASE OMITTED
+        MOVE    1,ARGS.         ;CHECK NUMBER OF ARGS.
+        CAIGE   1,3             ;IS THERE REALLY AN ARGUMENT ?
+        JRST    INST-1          ;NO, ONLY CHAN AND STATUS, USE 'DSK'
+        MOVE    2(16)           ;GET ADDRESS OF ASCII DEVICE NAME
+        HRRM    .+2             ;PASS ON TO SIXBIT CONVERTER
+        JSA     16,SIXBIT       ;GET DEVICE NAME IN SIXBIT
+        JUMP                    ;ADDRESS FILLED IN 2 INSTRUCTIONS BACK
+        MOVEM   ARGBLK+1        ;MOVE SIXBIT NAME TO SECOND WORD OF BLOCK
+        MOVE    1,ARGS.         ;CHECK NUMBER OF ARGS.
+        CAIGE   1,4             ;IS THERE REALLY AN ARGUMENT ?
+        JRST    INST-1          ;NO, OBUF & IBUF WEREN'T SPECIFIED
+        MOVE    3(16)           ;GET OBUF ADDRESS
+        LDB     1,[POINT 7,@,6] ;CHECK CONTENTS OF ADDRESS
+        CAIE    1,"0"           ;IF ARGUMENT WASN'T LITERAL '0' ...
+        HRLM    ARGBLK+2        ;OBUF GOES INTO LEFT HALF-WORD
+        MOVE    1,ARGS.         ;CHECK NUMBER OF ARGS.
+        CAIGE   1,5             ;IS THERE REALLY AN ARGUMENT ?
+        JRST    INST-1          ;NO, IBUF WASN'T SPECIFIED
+        MOVE    4(16)           ;GET IBUF ADDRESS
+        LDB     1,[POINT 7,@,6] ;CHECK CONTENTS OF ADDRESS
+        CAIE    1,"0"           ;IF ARGUMENT WASN'T LITERAL '0' ...
+        HRRM    ARGBLK+2        ;IBUF GOES INTO RIGHT HALF-WORD
+        SETZ                    ;REGISTER 0 IS 0 (.FALSE.) FOR GOOD RETURN
+INST:   OPEN    ARGBLK          ;TRY TO OPEN CHANNEL
+        SETO                    ;ERROR RETURNS -1 (.TRUE.) IN REGISTER 0
+        ADD     16,ARGS.        ;WANT TO SKIP ARGUMENTS
+        JRA     16,(16)         ;RETURN
+ARGBLK: BLOCK   4               ;ARGUMENT BLOCK FOR INIT,LOOKUP,ETC.
+
+RENAME::0                       ;INTVAR=RENAME(CHANNEL,NAME,EXT(,PRJ,PRG))
+        MOVSI   55000           ;INTVAR=RENAME(CHANNEL,ARRAY)
+        MOVEM   SAVINS#         ;SAVE INSTRUCTION
+        JRST    RELUUO          ;GO TO COMMON PORTION
+ENTER:: 0                       ;INTVAR=ENTER(CHANNEL,NAME,EXT(,PRJ,PRG))
+        MOVSI   77000           ;INTVAR=ENTER(CHANNEL,ARRAY)
+        MOVEM   SAVINS#         ;SAVE INSTRUCTION
+        JRST    RELUUO          ;COMMON TO RENAME, ENTER AND LOOKUP UUO'S
+LOOKUP::0                       ;INTVAR=LOOKUP(CHANNEL,NAME,EXT(,PRJ,PRG))
+        MOVSI   76000           ;INTVAR=LOOKUP(CHANNEL,ARRAY)
+        MOVEM   SAVINS#         ;SAVE INSTRUCTION
+RELUUO: JSA     16,ARGCNT       ;GET THE NUMBER OF ARGUMENTS
+        MOVEM   ARGS.#          ;SAVE COUNT
+        MOVE    1(16)           ;GET THE ADDRESS OF THE SECOND ARGUMENT
+        MOVE    1,ARGS.         ;CHECK THE NUMBER OF ARGUMENTS
+        CAIGE   1,3             ;ARE MORE THAN 2 ARGUMENTS SPECIFIED ?
+        JRST    EXECUT          ;NO, CALLED WITH RELINS(CHANNEL,ARRAY)
+        HRRM    NOT6-1          ;YES, CONVERT NAME TO SIXBIT
+        MOVE    @1(16)
+        TLNN 774000
+        JRST NOT6                  ; EXCEPT MAYBE IF IT IS A PPN
+        JSA     16,SIXBIT
+        JUMP                    ;ADDRESS WAS FILLED IN 2 LOCATIONS AGO
+NOT6:   MOVEM   ARGBLK          ;STORE NAME IN 1ST WORD OF SPECS
+        MOVE    2(16)           ;GET THE ADDRESS OF THE EXTENSION
+        HRRM    .+2             ;PASS ADDRESS TO CONVERSION ROUTINE
+        JSA     16,SIXBIT       ;CONVERT TO SIXBIT
+        JUMP                    ;ADDRESS WAS FILLED IN 2 LOCATIONS AGO
+        HLLZM   ARGBLK+1        ;STORE EXTENSION IN 2ND WORD OF SPECS
+        GETPPN                  ;GET HIS PPN IN REGISTER ZERO
+        JFCL                    ;NO DIFFERENCE TO US IF SKIP RETURN
+        MOVE    1,ARGS.         ;CHECK THE NUMBER OF ARGS.
+        CAIGE   1,4             ;PPN SPECIFIED ?
+        JRST    .+5             ;NO, USE HIS PPN
+        HRL     @3(16)          ;GET THE PROJECT NUMBER
+        MOVE    1,ARGS.         ;CHECK THE NUMBER OF ARGS.
+        CAIL    1,5             ;PROGRAMMER NUMBER SPECIFIED ?
+        HRR     @4(16)          ;YES, GET PROGRAMMER NUMBER
+        MOVEM   ARGBLK+3        ;STORE PPN IN 4TH WORD OF SPECS BLOCK
+        SETZM   ARGBLK+2        ;NO INFORMATION HERE
+        MOVEI   ARGBLK
+EXECUT: PUTCHA (SAVINS#)        ;PUT CHANNEL NUMBER INTO INSTRUCTION
+        HRRM    SAVINS#         ;PUT ADDRESS OF ARGUMENTS INTO INSTRUCTION
+        SETZ                    ;SET REGISTER 0 TO .FALSE. FOR GOOD RETURN
+        ADD     16,ARGS.        ;WANT TO SKIP ARGUMENTS
+INSTR:  XCT     SAVINS#         ;CHANNEL AND ADDRESS ARE FILLED IN
+        SKIPA   1,SAVINS        ;ON ERROR RETURN, WE WANT TO DO MORE
+        JRA     16,(16)         ;RETURN
+        MOVE    (1)             ;GET THE 1ST WORD OF THE ARGUMENT BLOCK
+        JUMPE   .+3             ;(0 NAME - MUST HAVE BEEN RENAME)
+        TLNN    -1              ;IS IT A FILE NAME OR A NUMBER ?
+        ADDI    1,2             ;A NUMBER INDICATES EXTENDED LOOKUP
+        HRRZ    1(1)            ;GET ERROR CODE
+        AOJ                     ;ADD 1 TO INSURE NON-ZERO
+        MOVNS                   ;NEGATE TO TURN ON SIGN BIT
+        JRA     16,(16)         ;RETURN WITH ERROR CODE IN REGISTER 0
+
+RELEA:: 0                       ;INTVAR=RELEA(CHANNEL) -- RETURNS 0
+        PUTCHA (<.+1>)          ;PUT CHANNEL NUMBER INTO UUO
+        RELEASE                 ;EXECUTE UUO
+        SETZ                    ;RETURN RESULT OF 0 IN REGISTER 0
+        JRA     16,1(16)        ;RETURN TO CALLING PROGRAM
+
+CLOSE:: 0                       ;INTVAR=CLOSE(CHANNEL(,ARG)) -- RETURNS 0
+        JSA     16,ARGCNT       ;GET THE NUMBER OF ARGUMENTS
+        MOVEM   ARGS.#          ;SAVE COUNT
+        MOVSI   70000           ;GET CLOSE UUO INTO REGISTER 0
+        PUTCHA (0)              ;ADD THE CHANNEL NUMBER
+        MOVE    1,ARGS.         ;CHECK THE NUMBER OF ARGS.
+        CAIL   1,2             ;IS THE 2ND ARGUMENT REALLY SPECIFIED ?
+        HRR     @1(16)          ;YES, ADD NUMBER TO INSTRUCTION
+        XCT                     ;EXECUTE THE CLOSE
+        SETZ                    ;RETURN 0 IN REGISTER 0
+        ADD     16,ARGS.        ;WANT TO SKIP ARGUMENTS
+        JRA     16,(16)         ;RETURN TO CALLING PROGRAM
+
+IN::    0                       ;LGVAR=IN(CHANNEL(,LOC(ADDRESS)))
+        JSA     16,ARGCNT       ;GET THE NUMBER OF ARGUMENTS
+        MOVEM   ARGS.#          ;SAVE COUNT
+        MOVSI   56020           ;USE "IN @" INSTRUCTION
+        JRST    INOUT           ;GO TO COMMON CODE
+OUT::   0                       ;LGVAR=IN(CHANNEL(,LOC(ADDRESS)))
+        JSA     16,ARGCNT       ;GET THE NUMBER OF ARGUMENTS
+        MOVEM   ARGS.#          ;SAVE COUNT
+        MOVSI   57020           ;USE "OUT @" INSTRUCTION
+INOUT:  MOVE    1,ARGS.         ;CHECK THE NO. OF ARGS.
+        CAIGE   1,2             ;ADDRESS SPECIFIED ?
+        TLZ     20              ;NO, ZAP INDIRECT BIT
+        JRST    INOUTP+1        ;GO TO EVEN MORE COMMON CODE
+INPUT:: 0                       ;LGVAR=INPUT(CHANNEL(,ADDRESS))
+        JSA     16,ARGCNT       ;GET THE NUMBER OF ARGUMENTS
+        MOVEM   ARGS.#          ;SAVE COUNT
+        MOVSI   56000           ;USE "IN" INSTRUCTION
+        JRST    INOUTP          ;GO TO COMMON CODE
+OUTPUT::0                       ;LGVAR=OUTPUT(CHANNEL(,ADDRESS))
+        JSA     16,ARGCNT       ;GET THE NUMBER OF ARGUMENTS
+        MOVEM   ARGS.#          ;SAVE COUNT
+        MOVSI   57000           ;USE "OUT" INSTRUCTION
+INOUTP: MOVE    1,ARGS.         ;CHECK THE NUMBER OF ARGS.
+        CAIL    1,2             ;ADDRESS SPECIFIED ?
+        HRR     1(16)           ;YES, ADD TO INSTRUCTION
+        PUTCHA (0)              ;PUT CHANNEL NUMBER INTO INSTRUCTION
+        XCT                     ;PERFORM UUO
+        SKIPA   1,[0]           ;GOOD RETURN RETURNS 0 IN REGISTER 0
+        SETO    1,              ;ERROR RETURN RETURNS -1 (.TRUE.)
+        MOVE    1               ;MOVE -1 OR 0 INTO REGISTER 0
+        ADD     16,ARGS.        ;WANT TO SKIP ARGS.
+        JRA     16,(16)         ;RETURN
+
+STATO:: 0                       ;LGVAR=STATO(CHANNEL,BITS)
+        MOVSI   61000           ;STATO UUO
+        JRST    .+3             ;GO TO COMMON CODE
+STATZ:: 0                       ;LGVAR=STATZ(CHANNEL,BITS)
+        MOVSI   63000           ;STATZ UUO
+        PUTCHA (0)              ;ADD THE CHANNEL NO. TO THE UUO
+        HRR     @1(16)          ;ADD THE BITS TO BE TESTED
+        MOVEM   1               ;PUTCHA USES 1 SO COULDN'T ASSEMBLE THERE
+        SETO    0               ;RETURN .TRUE. (-1) IF SKIPPED
+        XCT     1               ;EXECUTE THE UUO
+        SETZ    0               ;RETURN .FALSE. (0) IF NO SKIP
+        JRA     16,2(16)        ;RETURN WITH RESULT IN REGISTER 0
+
+GETCHA::0                       ;INTVAR=GETCHA(0) - RETURNS -1 IF NONE FREE
+        MOVEI   17              ;START LOOKING WITH CHANNEL 17
+        MOVEM   1               ;CHANNEL TO BE TESTED IN REGISTER 0
+        DEVNAM  1,              ;USE THE DEVICE NAME UUO
+        JRA     16,1(16)        ;CHANNEL NOT INITED, I.E., IT'S A FREE ONE
+        SOJGE   .-3             ;GOOD RETURN, CHANNEL INIT'ED SO CONTINUE
+        JRA     16,1(16)        ;NO FREE CHANNELS, RETURN A -1
+
+        PRGEND                  ;END OF SET
+TITLE FIO8 -- FORTRAN - MACHINE LANGUAGE INTERFACE
+ENTRY INBUF,OUTBUF,GETSTS,SETSTS,MTAPE,UGETF,USETI,USETO
+
+DEFINE  PUTCHA(WH),<
+        MOVE    1,@(16)         ;;GET CHANNEL NUMBER
+        DPB     1,[POINT 4,WH,12];;PUT INTO INSTRUCTION>
+
+INBUF:: 0                       ;INTVAR=INBUF(CHAN,NUMBER) -- RETURNS 0
+        MOVSI   64000           ;PUT INBUF INSTRUCTION IN REGISTER 0
+        JRST    .+3             ;JUMP TO COMMON CODE
+OUTBUF::0                       ;INTVAR=OUTBUF(CHAN,NUMBER) -- RETURNS 0
+        MOVSI   65000           ;PUT OUTBUF INSTRUCTION IN REGISTER 0
+        PUTCHA (0)              ;PUT CHANNEL NUMBER INTO INSTRUCTION
+        HRR     @1(16)          ;PUT NUMBER OF BUFFERS INTO INSTRUCTION
+        XCT                     ;EXECUTE THE INSTRUCTION
+        SETZ                    ;AND RETURN A 0 RESULT IF A FUNCTION CALL
+        JRA     16,2(16)        ;RETURN
+
+GETSTS::0                       ;INTVAR=GETSTS(CHANNEL)
+        PUTCHA (<.+1>)          ;PUT CHANNEL NUMBER INTO UUO
+        GETSTS                  ;GET STATUS WORD IN REGISTER 0
+        JRA     16,1(16)        ;RETURN
+
+SETSTS::0                       ;INTVAR=SETSTS(CHANNEL,STATUS)
+        PUTCHA (<.+3>)          ;PUT CHANNEL NUMBER INTO UUO
+        MOVE    @1(16)          ;GET STATUS WORD INTO REGISTER 0
+        HRRM    .+1             ;ADD IT TO INSTRUCTION
+        SETSTS                  ;SET STATUS WORD
+        JRA     16,2(16)        ;RETURN WITH STATUS WORD IN REGISTER 0
+
+MTAPE:: 0                       ;INTVAR=MTAPE(CHANNEL,N)
+        MOVSI   72000           ;MTAPE UUO
+        PUTCHA (0)              ;ADD THE CHANNEL NO. TO THE UUO
+        HRR     @1(16)          ;ADD THE FUNCTION NUMBER
+        XCT     0               ;EXECUTE MTAPE UUO
+        SETZ    0               ;RETURN 0 IN REGISTER 0
+        JRA     16,2(16)        ;RETURN
+
+UGETF:: 0                       ;INTVAR=UGETF(CHANNEL)
+        PUTCHA (<.+1>)          ;PUT CHANNEL NO. INTO UUO
+        UGETF                   ;GET FREE BLOCK NO. IN REGISTER 0
+        JRA     16,1(16)        ;RETURN
+
+USETI:: 0                       ;INTVAR=USETI(CHANNEL,IBLKNO) -- RETURNS 0
+        MOVSI   74000           ;USETI UUO
+        JRST    .+3             ;GO TO COMMON CODE
+USETO:: 0                       ;INTVAR=USETO(CHANNEL,IBLKNO) -- RETURNS 0
+        MOVSI   75000           ;USETO UUO
+        PUTCHA (0)              ;ADD THE CHANNEL NO. TO UUO
+        HRR     @1(16)          ;ADD BLOCK NUMBER TO INPUT OR OUTPUT NEXT
+        XCT     0               ;EXECUTE THE UUO
+        SETZ    0               ;RETURN 0 IN REGISTER 0
+        JRA     16,2(16)        ;RETURN
+
+        PRGEND                  ;END OF SET
+TITLE FIO9 -- FORTRAN - MACHINE LANGUAGE INTERFACE
+ENTRY INCHRW,OUTCHR,INCHRS,OUTSTR,INCHWL,INCHSL,GETLCH
+ENTRY SETLCH,RESCAN,CLRBFI,CLRBFO,SKPINC,SKPINL,IONEOU
+EXTERNAL ARGCNT
+
+RETURN: MOVEM   SAVZER#         ;RETURNS SKIPPING ARGUMENTS
+        JSA     16,ARGCNT       ;COUNT NUMBER OF ARGUMENTS
+        ADD     16,0            ;SKIP ARGS. ON RETURN
+        MOVE    SAVZER          ;RESTORE REGISTER 0
+        JRA     16,(16)         ;RETURN
+
+INCHRW::0                       ;ICHAR=INCHRW -- RETURNS RESULT OF INCHRW
+        TTCALL  0,              ;GET A CHARACTER FROM TTY
+        JRST    RETURN          ;RETURN WITH RESULT IN REGISTER 0
+
+OUTCHR::0                       ;INTVAR=OUTCHR(ICHAR) -- RETURNS 0
+        TTCALL  1,@(16)         ;OUTPUT CHARACTER
+        SETZ                    ;RETURN 0 IN REGISTER 0
+        JRST    RETURN          ;RETURN
+
+INCHRS::0                       ;LGVAR=INCHRS -- RETURNS -1 IF NO SKIP
+        TTCALL  2,              ;GET CHARACTER IN REGISTER 0
+        SETO                    ;RETURN .TRUE. IF NO CHARACTER INPUTTED
+        JRST    RETURN          ;RETURN
+
+OUTSTR::0                       ;INTVAR=OUTSTR('ASCIZ STRING') -- RETURNS 0
+        TTCALL  3,@(16)         ;TYPE OUT ASCIZ STRING (STOP ON NULL)
+        SETZ                    ;RETURN 0 IN REGISTER 0
+        JRST    RETURN          ;RETURN
+
+INCHWL::0                       ;ICHAR=INCHWL -- RETURNS RESULT OF INCHWL
+        TTCALL  4,              ;GET CHARACTER INTO REGISTER 0
+        JRST    RETURN          ;RETURN
+
+INCHSL::0                       ;LGVAR=INCHSL -- RETURNS -1 IF NO SKIP
+        TTCALL  5,              ;GET NEXT CHARACTER ON LINE
+        SETO                    ;NO MORE LINE, RETURN -1
+        JRST    RETURN          ;RETURN CHARACTER OR .TRUE. IN REGISTER 0
+
+GETLCH::0                       ;INTVAR=GETLCH((LINE))
+        JSA     16,ARGCNT       ;GET THE NUMBER OF ARGS.
+        MOVEM   1               ;SAVE COUNT
+        SETO                    ;IF NO LINE NUMBER USE HIS LINE
+        SOSL    1               ;CHECK THE NUMBER OF ARGS.
+        MOVE    @(16)           ;GET LINE NUMBER IN REGISTER 0
+        TTCALL  6,              ;GET LINE CHARACTERISTICS INTO REGISTER 0
+        ADD     16,1            ;WANT TO SKIP ARGUMENTS
+        JRA     16,1(16)        ;RETURN
+
+SETLCH::0                       ;INTVAR=SETLCH(IWORD) -- RETURNS 0
+        MOVE    @(16)           ;GET WORD INTO REGISTER 0
+        TTCALL  7,              ;SET LINE CHARACTERISTICS FROM REGISTER 0
+        SETZ                    ;RETURN 0 IN REGISTER 0
+        JRST    RETURN          ;RETURN
+
+RESCAN::0                       ;INTVAR=RESCAN(IBIT)
+        HRRZ    1,@(16)         ;IBIT USED AS EFFECTIVE ADDRESS
+        SETO                    ;RETURN -1 IF NO COMMAND IN BUFFER
+        TTCALL  10,(1)          ;TELL MONITOR TO RESCAN INPUT BUFFER
+        SETZ                    ;RETURN 0 IF COMMAND IN BUFFER
+        JRST    RETURN          ;RETURN
+
+CLRBFI::0                       ;INTVAR=CLRBFI -- RETURNS 0
+        TTCALL  11,             ;CLEAR INPUT BUFFER
+        SETZ                    ;RETURN 0 IN REGISTER 0
+        JRST    RETURN          ;RETURN
+
+CLRBFO::0                       ;INTVAR=CLRBFO -- RETURNS 0
+        TTCALL  12,             ;CLEAR OUTPUT BUFFER
+        SETZ                    ;RETURN 0 IN REGISTER 0
+        JRST    RETURN          ;RETURN
+
+SKPINC::0                       ;LGVAR=SKPINC -- RETURNS -1 IF CHAR. TYPED
+        SETO                    ;RETURN -1 IN REGISTER 0 IF NO CHAR.
+        TTCALL  13,             ;HAS A CHARACTER BEEN TYPED ?
+        SETZ                    ;NO, RETURN 0
+        JRST    RETURN          ;RETURN
+
+SKPINL::0                       ;LGVAR=SKPINL -- RETURNS -1 IF LINE TYPED
+        SETO                    ;RETURN -1 IN REGISTER 0 IF NO LINE
+        TTCALL  14,             ;IS A LINE AVAILABLE FOR TTY INPUT ?
+        SETZ                    ;NO, RETURN 0
+        JRST    RETURN          ;RETURN
+
+IONEOU::0                       ;INTVAR=IONEOU(ICHAR) -- RETURNS 0
+        TTCALL  15,@(16)        ;SEND THE CHARACTER IN IMAGE MODE
+        SETZ                    ;RETURN 0 IN REG
+        JRST    RETURN          ;RETURN
+
+        PRGEND                  ;END OF SET
+TITLE FIO5 -- FORTRAN - MACHINE LANGUAGE INTERFACE
+ENTRY ARGCNT,ARGREF,SIXBIT,ASCII        ; *** MUST FOLLOW THE REST ***
+
+ARGCNT::0                       ;INTVAR=ARGCNT(0)
+        HRRZ    1,ARGCNT        ;GET ADDRESS OF 1ST ARG., ZERO COUNT
+COUNT.: LDB     [POINT 9,(1),8] ;LOOK AT OP CODE
+        JUMPE   .+2             ;IF A ZERO THEN IT'S AN IMP ARG.
+        CAIN    320             ;IF A "JUMP" THEN IT'S A FORTRAN ARG.
+        AOBJP   1,COUNT.        ;IF AN ARG., INCREMENT COUNT AND ADDRESS
+        HLRZ    1               ;IF NOT AN ARG., PUT COUNT IN REGISTER 0
+        JRA     16,(16)         ;RETURN
+
+ARGREF::0                       ;INTVAR=ARGREF(N)
+        HRRZ    1,ARGREF        ;GET START OF ARGUMENT LIST
+        ADD     1,@(16)         ;ADD N TO GET POSITION OF DESIRED ARG.
+        MOVE    1-1(1)          ;GET ADDRESS OF ARG. INTO REGISTER 0
+        JRA     16,1(16)        ;RETURN
+
+SIXBIT::0                       ;INTVAR=SIXBIT('ASCIZ.')
+        MOVSI   440700          ;SETUP POINTER TO GET CHARACTERS
+        HRR     (16)
+        MOVEM   PNTR7#
+        MOVE    [POINT 6,0]     ;SETUP POINTER TO STUFF SIXBIT CHARACTERS
+        MOVEM   PNTR6#
+        SETZ                    ;ZERO REGISTER 0 FOR ACCUMULATING SIXBIT
+GETBYT: ILDB    1,PNTR7         ;GET THE NEXT CHARACTER
+        SKIPN   1               ;IF A ZERO QUIT
+        JRA     16,1(16)        ;AND RETURN SIXBIT IN REGISTER 0
+        CAIGE   1,140           ;CONVERT LOWER-CASE CHARACTERS
+        SUBI    1," "           ;CONVERT TO SIXBIT
+        IDPB    1,PNTR6         ;STUFF CHARACTER IN REGISTER 0
+        MOVE    1,PNTR6         ;CHECK FOR SIX CHARACTERS PROCESSED
+        CAME    1,[600,,0]
+        JRST    GETBYT          ;MORE TO GO
+        JRA     16,1(16)        ;SIX CHARACTERS -- DONE
+
+ASCII:: 0                       ;CMPXVR=ASCII(SIXBIT)
+        MOVE    [POINT 7,ASCII.];SETUP POINTER TO RESULT ARRAY
+        MOVEM   PNTR7#
+        MOVE    1,@(16)         ;GET SIXBIT
+        SETZM   ASCII.          ;CLEAR FIRST RESULT WORD
+        SETZM   ASCII.+1        ;CLEAR SECOND RESULT WORD
+        SETZ                    ;ZERO REGISTER 0
+        LSHC    6               ;SHIFT THE NEXT CHARACTER INTO REGISTER 0
+        ADDI    " "             ;CONVERT IT TO ASCII
+        IDPB    PNTR7           ;ADD TO RESULT STRING
+        JUMPN   1,.-4           ;LOOP IF NON-BLANK CHARACTERS LEFT
+        IDPB    1,PNTR7         ;ASSURE NULL CHARACTER AT THE END
+        MOVE    ASCII.          ;GET FIRST WORD INTO REGISTER 0
+        MOVE    1,ASCII.+1      ;GET SECOND WORD INTO REGISTER 1
+        JRA     16,1(16)        ;AND RETURN
+ASCII.: BLOCK   2               ;TEMPORARY STORAGE OF RESULT STRING
+
+        END                     ;END OF FILE
+

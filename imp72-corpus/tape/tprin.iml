@@ -1,0 +1,112 @@
+CALL ME !PRN.!;
+#FILE: TPRIN.I10#
+
+SUBR !PRN.!(Z) IS (
+  !OL.!               IS COMMON;
+  !OC.!, !PSW.!      ARE COMMON;
+  !LC.!,!FM.!,!FL.!  ARE COMMON;
+  !.JBREN!            IS COMMON;
+  B IS 128 LONG;
+ Q_14R AND 777777B;
+ !PSW.!=0=>(!PSW.!_1; !OL.![1]_0; BN_127; !.JBREN!_LOC(REENT);
+            (520B AND 1 LS [Q] RS 24)=0=>!OBIN.!(0,0,!OC.!,!OL.!));
+ TD: T_[Q] RS 24; N_!PADR.!(Q);
+ T NE 0 => (T=5=>(!POUT.!(15B); !POUT.!(12B); !LC.![!OC.!]_0; GO TO TZ);
+            T=4=>(!OBIN.! (Q,0,!OC.!,!OL.!); GO TO TZ);
+            T=6=>(!OBIN.! (!FBLK.!(Q),0,!OC.!,!OL.!); GO TO TZ);
+            T=7=>(!PTR.![!OC.!]_4400000000B OR 777777B
+                        AND !PTR.![!OC.!];
+                  !PTE.![!OC.!]_4400000000B OR 777777B
+                        AND !PTE.![!OC.!]);
+              T=8=>(!DEV.!([N],0); GO TO TZ);
+              T=9=>(TAB: !LC.![!OC.!]+1<[N]=>(
+				!LC.![!OC.!]_!LC.![!OC.!]+1;
+				!POUT.!(40B); GO TO TAB);
+                    GO TO TZ);
+	    T=10=>(FILLER_[N] RS 29; GO TO TZ); REMOTE FILLER: DATA(40B);
+            T>11=>GO TO TV;
+            !FM.![!OC.!]_T; !FL.![!OC.!]_[N]; GO TO TZ);
+ F_!FM.![!OC.!]; G_!FL.![!OC.!]<R>-1;
+ F=3=>(I_-1;S_P_010677777777B+N;
+       TC: I<BN=>(ILDB(P)=>((I_I+1) NE G=>GO TO TC));
+       I GE 0=>((B[J]_ILDB(S)) FOR J FROM I);
+       GO TO TX);
+ F=11=>(#FLOATING POINT OUTPUT - GET NR DECIMAL PLACES #
+	D_!FL.![!OC.!] ARS 18;
+	# SCALE TO RANGE [0.1,1) #
+	ZZ_[N]; ZZ IS REAL;
+	ZZ<0=>ZZ_-ZZ; EXP_0;
+	ZZ=0=>(B_R'0'; I_0; GO TO TX);
+	WHILE ZZ<0.1 DO (EXP_EXP-10; ZZ_ZZ*1.0"10);
+	WHILE ZZ GE 1.0"10 DO (EXP_EXP+10; ZZ_ZZ*1.0"-10);
+	WHILE ZZ GE 1.0 DO (EXP_EXP+1; ZZ_ZZ*0.1);
+	# CHECK FOR FIT IN FIELD #
+	SCI_1;
+	# G NEG MEANS FORCE SCI NOT. #
+	G>0=>G AND 400000B=>(G_-1-((G+1) LS 18) ARS 18;
+			D_D+1; SCI_0);
+	J_(EXP>0=>SCI*EXP ELSE 0);
+	I_J+(D=>D+1 ELSE 0);
+	G GE 0=>I GE G=>(SCI_0;
+		(D_G-6) LE 1=>(D_2;
+			G_-1); I_D+1);
+	D=0=>I_I+1;
+	FLT3: # ROUND #
+	RND IS REAL; RND_0.5;
+	I>1=>(RND_RND*0.1) FOR II FROM I-2;
+	WHILE (ZZ+RND) GE 1.0 DO (RND_RND*0.1);
+	ZZ_ZZ+RND;
+	XP_SCI*EXP;
+	I_-1; [N]<0=>B[127-I_I+1]_R'-';
+	WHILE XP>0 DO(II_ZZ_10.0*ZZ; B[127-I_I+1]_R'0'+II//10; XP_XP-1);
+	D>0=>(B[127-I_I+1]_R'.';
+		((I_I+1) GE G=>G GE 0=>GO TO FLT1;
+		 XP<0=>(B[127-I]_R'0'; XP_XP+1; GO TO LL7);
+		 II_ZZ_10.0*ZZ; B[127-I]_R'0'+II//10;
+		 LL7: 0) FOR J FROM D-1);
+	FLT1: J_0;
+	SCI=0=>(J_-1; XP_(EXP GE 0=>EXP ELSE -EXP);
+		FLT2: B[J_J+1]_R'0'+XP//10;
+		(XP_XP/10)=>GO TO FLT2;
+		EXP<0=>B[J_J+1]_R'-';
+		B[J_J+1]_R'"';
+		J_J+1);
+	(B[J+K]_B[127+K-I]) FOR K TO I;
+	I_I+J;
+	GO TO TX);
+
+ F=7=>(!POUT.!([N]); GO TO TZ);
+ I_0; X_[N];
+ F=2=>(	X<0=>9R_-X ELSE 9R_X;
+	TA: 9R_9R/10; B[I]_10R+60B; 9R=>(I_I+1; GO TO TA);
+       X<0=>(I_I+1; B[I]_55B);
+       GO TO TX);
+ F=1=>(TB: B[I]_(X AND 7)+60B; (X_X RS 3)=>(I_I+1; GO TO TB);
+       TL: I<G=>(I<11=>(I_I+1; B[I]_60B; GO TO TL)));
+
+ TX: (J_G)>I=>T_J  ELSE  T_I;
+ !LC.![!OC.!] _ !LC.![!OC.!] + T + 1;
+ TE: J>I=>(J_J-1; !POUT.!(FILLER); GO TO TE);
+ (!POUT.!(B[J])) FOR J FROM I;
+ TZ: Q_Q+1; GO TO TD;
+ TV: 14R<R>_(Q-1) AND 777777B;
+ RETURN !LC.![!OC.!];
+ REENT: FINI(0);
+0);
+
+
+SUBR !POUT.!(V) IS (
+ !OC.!<0=>(EXECUTE 051040000000B+LOC(V); RETURN 0);
+ !PTR.!, !PTE.! ARE COMMON;
+ IDPB(V,!PTR.![!OC.!]);
+ V=12B=>!OL.!>0=>(IDPB(0,!PTR.![!OC.!]);
+                  !PTR.![!OC.!]_!PTE.![!OC.!]; GO TO TYPIT);
+ !PTR.![!OC.!]=!PTE.![!OC.!]=>(
+      TYPIT: !OL.!>0=>(!TYP.!(!PTR.![!OC.!],!OL.!); X_16)
+               ELSE (OUTPUT(!OC.!+14B,!OL.!); X_128);
+                !PTR.![!OC.!]_!PTR.![!OC.!]-X);
+0);
+
+
+SUBR !TYP.!(P,A) IS ( X_P; IDPB(0,X); OUTSTR([A]))%%
+

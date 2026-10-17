@@ -1,0 +1,246 @@
+TWOSEG;
+#THIS IS FILE FREE, FREE STORAGE MODULE WITH RELOCATABLE ARRAYS.
+
+ FREE(A) RETURNS CONTENTS OF LOCATION A.
+ FREES(A,V) DEPOSITS VALUE V IN LOCATION A.
+ FLEN(A) RETURNS THE CURRENT LENGTH OF THE ARRAY POINTED TO BY A.
+ FNAME(A) RETURNS THE NAME OF THE ARRAY POINTED TO BY A.
+ FADD(A,N,V) DEPOSITS V IN LOCATION A+N, THEN INCREMENTS N BY 1.
+ FALLOT(A,N) SETS TO N THE LENGTH OF THE ARRAY POINTED TO BY A.
+   IF THE VALUE OF A IS >18 BITS, A NEW ARRAY IS ALLOCATED WITH
+   NAME A.  IT RETURNS AN UPDATED POINTER TO THE FIRST WORD OF THE ARRAY.
+   FALLOT(A,0) DELETES THE ARRAY AND RETURNS ITS AREA TO FREE STORAGE.
+ FRELOT(A,AA,N,S) ALLOCATES A RELOCATABLE ARRAY OF LENGTH N NAMED AA.
+   THE POINTER TO THE ARRAY IS RETURNED IN A, AND S IS THE NAME OF A
+   SUBROUTINE WHICH WILL BE CALLED WHENEVER THE ARRAY IS RELOCATED.
+   BEFORE S IS CALLED, THE POINTER A WILL BE UPDATED.
+ FINCSET(A,N) SETS TO N THE INCREMENT TO THE SIZE OF THE ARRAY WHICH
+   FADD REQUESTS WHENEVER IT RUNS OUT OF SPACE.  THIS SUPERSEDES THE
+   NOMINAL INCREMENT, WHICH IS SET BY FINCSET(0,N).
+ FADDEX(A,N) IS CALLED BY FADD TO EXTEND THE ARRAY POINTED TO BY A.
+   THE LENGTH OF A IS SET TO N+INCREMENT.
+ FTRACE(V) SETS TRACE SELECTION BITS TO V.  V NE 0 => PRINT PARAMETERS
+   OF EACH CALL ON FALLOT; V AND 2 => PRINT STORAGE MAP AFTER ANY CALL
+   ON FALLOT WHICH ALTERS THE ORDER OF THE ARRAYS; V AND 4 => PRINT
+   STORAGE MAP AFTER EVERY CALL ON FALLOT.
+ FMAP() PRINTS A MAP OF FREE STORAGE.
+ FSTATS() PRINTS THE LOCATION AND SIZE OF THE FREE STORAGE AREA.
+ FINIT() INITIALIZES THIS MODULE. IT IS CALLED AUTOMATICALLY BY FALLOT.
+ FCLOSE() REPACKS THE RELOCATABLE ARRAYS AND SHRINKS THE SIZE OF CORE
+   ACCORDINGLY. INITIALIZATION IS RESCINDED.  SUBSEQUENT FALLOTS WILL
+   OPEN A NEW FREE STORAGE AREA.
+
+ EACH ACTIVE FREE STORAGE ARRAY POSSESSES A 4-WORD HEADER WHICH HAS
+ THE FORMAT:
+              WORD 1  POINTER BACK,,POINTER FORWARD
+              WORD 2  NAME OF ARRAY
+              WORD 3  INCREMENT FOR FADD,,CURRENT LENGTH
+              WORD 4  LOCATION OF POINTER,,LOCATION OF SUBROUTINE
+                      (IF WORD 4 IS NON-ZERO, ARRAY IS RELOCATABLE)
+
+ THESE HEADERS ARE ENTERRED INTO A DOUBLY-LINKED LIST WHICH EXTENDS FROM
+ THE DUMMY HEADER AT FORG TO THE DUMMY HEADER AT FEND.  #
+
+
+
+FORG IS COMMON,1 LONG;
+8R IS RESERVED,SCRATCH;
+
+
+
+#SUBR FREE(A) IS [FORG+A];
+
+SUBR FREES(A,V) IS [FORG+A]_V;
+
+SUBR FLEN(A) IS [FORG+A-2]<R>;#
+
+SUBR FNAME(A) IS [FORG+A-3];
+
+#SUBR FADD(A,N,V) IS (FLEN(A) LE N => FADDEX(A,N);
+                     FREES(A+N,V); N_N+1);#
+
+SUBR FADDEX(A,N) IS (K_[FORG+A-2]<L>;
+                     K=0 => K_INCNOM;
+                     K LE 0 => K_1;
+                     A_FALLOT(A,N+K));
+
+SUBR FINCSET(A,N) IS (A=0 => INCNOM_N;
+                      A => N GE 0 => [FORG+A-2]<L>_N);
+
+SUBR FTRACE(V) IS TRACE_V;
+
+
+
+SUBR FALLOT(A,N) IS (
+ TRACE OR FLAG'Z'=>(FALN_FALN+1; FTI_FTI-CALLI(27B,0));
+ INIT=0 => FINIT();
+ A RS 18 => (FHEAD IS 4 LONG; X_LOC(FHEAD);
+             [X]_X OR X LS 18; [X+1]_A;
+             V_W_X; LX_0; GO TO FA3);
+ TR_4; X_FORG+A-4;
+ V_[X]<L>; W_[X]<R>; LX_[X+2]<R>;
+ N LE 0 => ([V]<R>_W; [W]<L>_V; GO TO FAX);
+ N+4 LE W-X => (FA1: [X+2]<R>_N;
+                Y_X+4+LX; K_(N-1)-LX;
+                K GE 0 => ([Y+I]_0 FOR I FROM K);
+                GO TO FAX);
+ TR_6;
+ Y_V+4+[V+2]<R>;
+ N+4 LE W-Y => (FA2: 8R_Y+X LS 18;
+                BLT<R>_Y+LX+3;
+                EXECUTE BLT;
+                [V]<R>_Y; [W]<L>_Y;
+                X_Y; GO TO FA1);
+ FA3: TR_6;
+ (Y_FGAP(N+4)) => (FA4: V_[X]<L>; W_[X]<R>;
+                   [V]<R>_W; [W]<L>_V;
+                   V_Y; W_[Y]<R>;
+                   [X]_W OR V LS 18;
+                   Y_V+4+[V+2]<R>;
+                   GO TO FA2);
+ MM_N+4; [X]<R>=FEND => MM_N-LX;
+ FTOP(MM) => (Y_[FEND]<L>; Y=X => GO TO FA1; GO TO FA4);
+ X3SV_[X+3]; [X+3]_-1; XFIX_X;
+ FPACK(); X_XFIX; [X+3]_X3SV;
+ (Y_FGAP(N+4)) => (Y=X => GO TO FA1; GO TO FA4);
+ MM_N+4; [X]<R>=FEND => MM_N-LX;
+ FTOP(MM) => (Y_[FEND]<L>; Y=X => GO TO FA1; GO TO FA4);
+ #ONLY HOPE AT THIS POINT IS THAT ARRAY CAN BE MOVED
+ PIECEMEAL TO LAST POSITION AND ORIGINAL SPACE RECOVERED#
+ FALOTR(X,N); FMAP();
+ ERROR(0,'FREE STORAGE EXHAUSTED. ');
+FAX: N>0 => FFIXER(X);
+ TRACE => FALOTR(X,N);
+ TRACE AND TR => FMAP();
+ TRACE OR FLAG'Z'=>FTI_FTI+CALLI(27B,0);
+ N>0 => X+4-FORG ELSE 0);
+
+SUBR FRELOT(A,AA,N,S) IS (X_FALLOT(AA,N)+FORG-4;
+                         [X+3]_LOC(A) LS 18;
+                         S => [X+3]<R>_LOC(S);
+                         FFIXER(X));
+
+SUBR FFIXER(X) IS ((Y_[X+3])=0 => RETURN 0;
+                   Y=-1 => (XFIX_X; RETURN 0);
+                   [Y<L>]_X+4-FORG;
+                   (Y_Y<R>) => (JSA_Y OR 2667B LS 24; EXECUTE JSA));
+
+
+SUBR FGAP(N) IS (
+ K_FORGN; K0_0; K1_64000;
+ WHILE K NE FEND DO (K2_[K]<R>;
+                     K NE [K2]<L> => (FMAP();
+                                      ERROR(0,'FREE STORAGE UNLINKED. '));
+                     K2 NE FEND => (K3_K2-(K+4+[K+2]<R>);
+                                    N LE K3 => K3<K1 => (K0_K; K1_K3));
+                     K_K2);
+ K0);
+
+SUBR FPACK() IS (
+ I_FORGN;
+ FP0: (J_[I]<R>)=FEND => GO TO FPX;
+      J1_I+4+[I+2]<R>;
+      J1=J => (I_J; GO TO FP0);
+      [J+3] => ([I]<R>_J1; K_[J]<R>; [K]<L>_J1;
+                8R_J1+J LS 18;
+                BLT<R>_J1+3+[J+2]<R>;
+                EXECUTE BLT;
+                FFIXER(J1);
+                I_J1; GO TO FP0);
+      K_[J]<R>; K0_K1_0;
+      WHILE K NE FEND DO ([K+3] => (K2_J1+3+[K+2]<R>;
+                                    K2<J => K2>K1 => (K0_K; K1_K2));
+                          K_[K]<R>);
+      K0=0 => (I_J; GO TO FP0);
+      8R_J1+K0 LS 18;
+      BLT<R>_K1; EXECUTE BLT;
+      [I]<R>_J1; [J]<L>_J1;
+      K1_[J1]<L>; K2_[J1]<R>;
+      [J1]_J OR I LS 18;
+      [K1]<R>_K2; [K2]<L>_K1;
+      FFIXER(J1);
+      I_J1; GO TO FP0;
+ FPX: 0);
+
+
+
+SUBR FALOTR(X,N) IS (NM IS 2 LONG; NM_[X+1]; NN_N;
+                     PRINT STG 0,'FALLOT ',NM,' ',IGR 0,NN,/);
+
+SUBR FMAP() IS (PRINT STG 0,' ARRAY  ORG  LENGTH GAP',/;
+                K_FORGN;
+              FM0: K GE FORGN => K NE FEND => (NM_[K+1]; PRINT STG 6,NM,STG 0;
+                          [K+3] => PRINT ' ' ELSE PRINT '.';
+                          K1_[K]<R>; L_[K+2]<R>;
+                          PRINT ' ',OCT 5,K-FORGN,IGR 5,L,K1-(K+4+L),/;
+                          K_K1; GO TO FM0);
+                FSTATS());
+
+SUBR FSTATS() IS (PRINT STG 0,'FREE STORAGE ',IGR 0,FEND+4-FORG,STG 0,
+                     ' WORDS: ',OCT 0,FORGN,STG 0,' - ',OCT 0,FEND+3,/;
+	FALN=>(PRINT IGR 6,FALN,STG 0,' REALLOTS IN ',IGR 0,
+		FTI,STG 0,' MSEC.',/; FALN_FTI_0));
+
+
+
+!.JBFF!,!.JBREL!,!.JBSA! ARE COMMON;
+
+SUBR FTOP(N) IS (K_[FEND]<L>; V_0;
+                 K_FEND-(K+4+[K+2]<R>);
+                 N LE K => GO TO FTX;
+                 K_1777B OR FEND+3+N-K;
+                 CORE(K) => (!.JBREL!_K; !.JBFF!_K+1;
+                             !.JBSA!<L>_K+1;
+                             K_K-3;
+                             [K]_[FEND]; [K+1]_[K+2]_[K+3]_0;
+                             Y_[K]<L>; [Y]<R>_K; FEND_K;
+                             GO TO FTX);
+                 V_1; FTX: V_V-1);
+
+SUBR FINIT() IS (FORGN_!.JBFF!;
+                 K_1777B OR FORGN+7;
+                 CORE(K) => (!.JBREL!_K; !.JBFF!_K+1;
+                             !.JBSA!<L>_K+1;
+                             FEND_K-3;
+                             [FORGN]_FEND; [FEND]_FORGN LS 18;
+                             [FORGN+1]_'FORGN'; [FORGN+2]_[FORGN+3]_0;
+                             [FEND+1]_[FEND+2]_[FEND+3]_0;
+                             INCNOM_8; BLT_2514B LS 24;
+			     FORG_0;
+                             INIT_1; GO TO FINX);
+                 ERROR(0,'CANNOT GET CORE TO INITIALIZE FREE STORAGE. ');
+                 FINX: 0);
+
+SUBR FCLOSE() IS (FPACK();
+                  X_[FEND]<L>;
+                  Y_X+4+[X+2]<R>;
+                  [Y+I]_[FEND+I] FOR I FROM 3;
+                  [X]<R>_Y; FEND_Y; Y_Y+3;
+                  !.JBREL!_Y; !.JBFF!_Y+1;
+                  !.JBSA!<L>_Y+1;
+                  CORE(1777B OR Y);
+                  INIT_0) %%%
+
+
+
+
+ #THE ENTRY POINTS (SUBROUTINE NAMES) FOR THIS MODULE ARE:  FREE, FREES, FLEN,
+ FNAME, FADD, FADDEX, FINCSET, FTRACE, FALLOT, FRELOT, FFIXER, FGAP, FPACK,
+ FALOTR, FMAP, FSTATS, FTOP, FINIT, FCLOSE.  FORG IS DECLARED GLOBAL.
+  IF THIS MODULE IS USED SEPARATELY FROM THE IMP COMPILER, TWO SUBROUTINE
+ REFERENCES MUST BE RESOLVED: CORE(N), WHICH SETS THE SIZE OF THE LOW SEGMENT
+ TO N, AND ERROR(N,S), WHICH REPORTS AN ERROR DESCRIBED BY THE STRING S AND
+ HALTS IF N=0.#
+
+SUBR CORE(N) IS (VAL_1; 8R_N;
+                 DATA(047400000011B); VAL_0;
+                 VAL);
+
+SUBR ERROR(N,S) IS (OUTSTR('** ERROR - '); OUTSTR(S);
+                    OUTSTR((015B LS 29)+(012B LS 22));
+                    SS IS 7 LONG; SS[I]_S[I] FOR I FROM 5;
+                    PRINT STG 0,'** ERROR - ',SS,/;
+                    N=0 => FINI(0)) %%%
+
+
+

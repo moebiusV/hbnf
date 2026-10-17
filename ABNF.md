@@ -197,19 +197,24 @@ once, after the parse.  RFCPLAN.md's POSIX section is the plan for the rest.
 | A rule referenced twice in one alternative | two occurrences | one field named after the rule | *rejected* with a suggested alias. Previously the second value overwrote the first, in 37 places across the daemon grammars. | an alias rule: `port_hi = port` |
 | Lowercase core names (`int`, `str`, `word`, …) | ordinary rule names | reserved types | — | don't define rules with those names |
 
-### Generated names carry the dialect
+### Generated names carry a prefix
 
-A file that names its dialect (`dialect ybnf`, or `--dialect=`, `--abnf`,
-`--ebnf`) gets every identifier generated from a rule prefixed with it: the
-rule `if` in a YBNF file is `ybnf_if` in the C types and functions and the Rust,
-Zig and Ada names, so no rule is ever a reserved word of the language
-generated and nothing is renamed one name at a time.  The built-ins (`word`,
-`int`, `str`, `u8`, ...) and `ws` keep their names, and so does a file that
-names no dialect, so the generated code of the daemon grammars is unchanged.
-Messages always show the rule as the grammar writes it.  (`prefix "pf_"` and
-`--prefix=` still put their own prefix on the C types.)  The two renames hbnf
-used before, `atom` to `atom-rule` and `WORD` to `WORD-rule`, remain only for a
-file with no dialect line.
+Every identifier hbnf generates from a rule is prefixed, so no rule is ever a
+reserved word of the language generated and nothing is renamed one name at a
+time.  The prefix is the dialect the file names (`dialect ybnf`, `--dialect=`,
+`--abnf`, `--ebnf`), and `bnf_` when it names none: the rule `if` is `ybnf_if`
+in a YBNF file and `bnf_if` in a file with no dialect line, in the C types,
+functions, enum constants and struct fields and in the Rust, Zig and Ada names.
+The built-ins (`word`, `int`, `str`, `u8`, ...) and `ws` keep their names.
+Messages always show the rule as the grammar writes it.
+
+`prefix none` (a line in the file, or `--prefix=none`) turns the prefix off, so
+the generated names are the rules' own; the nine daemon grammars say so, because
+their action code and the programs they link against use the generated names.
+(`prefix "pf_"` and `--prefix=` still put their own prefix on the C types, in
+front of this one.)  The two renames hbnf used before, `atom` to `atom-rule`
+and `WORD` to `WORD-rule`, remain only under `prefix none` and for a file with
+no dialect line that opts out; a prefixed name cannot collide with a built-in.
 
 ### Tokens, and the exception
 

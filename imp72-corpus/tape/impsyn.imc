@@ -1,0 +1,81 @@
+# THIS IS FILE IMPSYN, CONTAINING THE SYNTAX TO BE USED IN
+ COMPILING EACH SUBROUTINE OF THE IMP COMPILER #
+
+ <VBL>  ::= FREE(<A>)         ::="FREE(A+B0CON)"=>"[A+B]" ELSE "[A]";
+ <ATOM> ::= FREES(<A>,<B>)    ::= "FREES(A+C0CON,B)"=>"[A+C]_B" ELSE"[A]_B";
+ <ATOM> ::= FLEN(<A>)         ::= "[A-2]<R>";
+ <ATOM> ::= FADD(<A>,<B>,<C>) ::= "FLEN(A) LE B=>FADDEX(A,B);
+                                   FREES(A+B,C);
+                                   B_B+1; A";
+
+
+ <EXP>  ::= HRL(<VBL,A>,<EXP,B>) ::= ADDOP(506B,A,B);
+ <EXP>  ::= HRR(<VBL,A>,<EXP,B>) ::= ADDOP(542B,A,B);
+
+
+
+# ADDITIONAL SYNTAX FOR DIRECTORY PROPERTIES #
+
+ ALF IS COMMON;
+ DORG,DORG1,DORG2,DPBYPC,DPBYPA,DPBYPI,DPBYPL,DPBYPU ARE COMMON;
+
+ <ATOM> ::= DPROP('NAME',<A>) ::= "ALF+[A+DORG] AND 777777B";
+ #NAME PROPERTY RETURNS A FREE STORAGE POINTER
+ OTHER PROPERTIES RETURN THE ACTUAL VALUE   #
+
+ <ATOM> ::= DPROP('ENTRY',<A>) ::= "[A+DORG1]<L>";
+ <ATOM> ::= DPROP('NODE',<A>)  ::= "[A+DORG1]<R>";
+ <ATOM> ::= DPROP('COM',<A>)   ::= "<A+DPBYPC>";
+ <ATOM> ::= DPROP('ATYPE',<A>) ::= "<A+DPBYPA>";
+ <ATOM> ::= DPROP('SEM',<A>)   ::= "[A+DORG2]<R>";
+ <ATOM> ::= DPROP('ISNM',<A>)  ::= "<A+DPBYPI>";
+ <ATOM> ::= DPROP('LXTY',<A>)  ::= "<A+DPBYPL>";
+ <ATOM> ::= DPROP('USE',<A>)  ::= "<A+DPBYPU>";
+
+ <ATOM> ::= DPROPS('ENTRY',<A>,<B>) ::= "[A+DORG1]<L>_B";
+ <ATOM> ::= DPROPS('NODE',<A>,<B>)  ::= "[A+DORG1]<R>_B";
+ <ATOM> ::= DPROPS('COM',<A>,<B>)   ::= "<A+DPBYPC>_B";
+ <ATOM> ::= DPROPS('ATYPE',<A>,<B>) ::= "<A+DPBYPA>_B";
+ <ATOM> ::= DPROPS('SEM',<A>,<B>)   ::= "[A+DORG2]<R>_B";
+ <ATOM> ::= DPROPS('ISNM',<A>,<B>)  ::= "<A+DPBYPI>_B";
+ <ATOM> ::= DPROPS('LXTY',<A>,<B>)  ::= "<A+DPBYPL>_B";
+ <ATOM> ::= DPROPS('USE',<A>,<B>)  ::= "<A+DPBYPU>_B";
+
+
+
+# SEMANTICS TO SPEED UP GRAPH ACCESS #
+
+ GORG,GORG1,GBYPTY,GBYPNB ARE COMMON;
+
+ <ATOM> ::= SCR(<A>)   ::= "[A+GORG]<R>";
+ <ATOM> ::= ALT(<A>)   ::= "[A+GORG]<L>";
+ <ATOM> ::= GTYPE(<A>) ::= "<A+GBYPTY>";
+ <ATOM> ::= GVAL(<A>)  ::= "[A+GORG1]<R>";
+ <ATOM> ::= GNB(<A>)   ::= "<A+GBYPNB>";
+
+# SEMANTICS TO SPEED UP TREE ACCESS #
+
+ TORG,TSCRBP,TALTBP,TNONBP ARE COMMON;
+ <ATOM> ::= TSCR(<A>) ::= "<A+TSCRBP>";
+ <ATOM> ::= TALT(<A>) ::= "<A+TALTBP>";
+ <ATOM> ::= TNODEN(<A>)::="<A+TNONBP>";
+ <ATOM> ::= STSCR(<A>,<B>) ::= "<A+TSCRBP>_B";
+ <ATOM> ::= STALT(<A>,<B>) ::= "<A+TALTBP>_B";
+ <ATOM> ::= STNODEN(<A>,<B>)::="<A+TNONBP>_B";
+
+
+ <EXP> ::= FORG+<A>::="A";
+ <EXP> ::= <A>+FORG ::= "A";
+
+ <ION> ::= BIT(<M>,<ROW>,<COL>) ::= LOCAL I,J,L1,L2 IN "
+	I,J ARE REGISTER, SCRATCH;
+	I_M+ROW; J_COL;
+	L1: (J_J-36)<0=>GO TO L2;
+	    I_I+M[1]; GO TO L1;
+	L2: [I] AND 1 LROT J";
+
+ <EXP> ::= FLAG <ATOM,A> ::= "(FINAM IS COMMON;
+			       FINAM[5] AND 1 LS (A RS 29)-101B)"%%
+
+
+%%

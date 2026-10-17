@@ -1,0 +1,127 @@
+#LEX: LEXICAL ANALYZER MODULE FOR IMP COMPILER#
+TWOSEG;
+
+BHEAD,FINAM ARE COMMON;
+C IS REGISTER,RESERVED,SCRATCH;
+
+
+SUBR LEXIN() IS (
+ CHAN_OPENIN();
+ CHAN=0 => RETURN -1;
+ LINIT=0=>(LINIT_1;
+	LINE_FALLOT('LEXL',20); LLINE_90;
+	TOKE_FALLOT('LEXT',20); LTOKE_90;
+	PC_QC_BYTEP FREE(LINE)<7,36>;
+	K0_BYTEP FREE(TOKE)<7,36>);
+ FREES(LINE,0);
+ PCT_0);
+
+SUBR LEX(S) IS (
+     C_CSV; K_K0; ITOKE_0;
+ T0: SKIP=0 => NEXTCHAR(); SKIP_0;
+     ISANM=0 => GO TO T2;
+ T1: <+K>_C; NEXTCHAR();
+     ISANM => GO TO T1;
+     SKIP_-1; GO TO LX;
+ T2: C LE 040B=>GO TO T0;
+     C=043B => (T3: NEXTCHAR();
+                C NE 043B => GO TO T3;
+                GO TO T0);
+     C=047B => (T4: <+K>_C; NEXTCHAR();
+                C NE 047B => GO TO T4;
+		NEXTCHAR(); C=047B=>GO TO T4;
+		SKIP_-1;
+                GO TO LX);
+     C=041B => (T5: NEXTCHAR();
+                C NE 041B => (<+K>_C; GO TO T5);
+                GO TO LX);
+     <+K>_C;
+ LX: <+K>_0 FOR I FROM 4;
+     CSV_C;
+     S_DIR(FREE(TOKE)); IC);
+
+SUBR LEXSAV() IS (PC0_PC; IC0_IC; SKIP0_SKIP; CSV0_CSV; ISANM0_ISANM; SKIP_0);
+
+SUBR LEXRES() IS (PC_PC0; IC_IC0; SKIP_SKIP0; CSV_CSV0; ISANM_ISANM0);
+
+SUBR NEXTCHAR() IS (
+ (ITOKE_ITOKE+1) GE LTOKE=>(
+	TOKE_FALLOT(OTOKE_TOKE,(10+LTOKE_LTOKE+50)/5);
+	K_K-OTOKE_OTOKE-TOKE; K0_K0-OTOKE);
+ NEXT: C_<+PC>; IC_IC+1;
+ C=0 => (PC_QC; OPCT_PCT;
+	 ILINE_0;
+         GCHRS: (BHEAD[2]_BHEAD[2]-1) LE 0 => INPUT(CHAN) =>
+                            ERROR(0,'PREMATURE END OF INPUT FILE');
+	 (ILINE_ILINE+1) GE LLINE=>(
+		LINE_FALLOT(OTOKE_LINE,(10+LLINE_LLINE+50)/5);
+		PC_PC-OTOKE_OTOKE-LINE; QC_QC-OTOKE);
+         C_<+BHEAD[1]>;
+	 C NE 12B=>(C=><+PC>_C;
+	         C='(' RS 29 => PCT_PCT+1;
+	         C=')' RS 29 => PCT_PCT-1;
+		GO TO GCHRS);
+         <+PC>_0; PC_QC; IC_TFL_0;
+         PLINE(FREE(LINE),OPCT); C_12B);
+ #ISANM IS MADE NON-ZERO FOR ALPHA-NUMERIC CHARS#
+ ISANM_(1 LS 35) AND ISTAB[C RS 5] LS 37B AND C);
+
+ISTAB: DATA(0,3776000B,377777777000B,377777777000B);
+
+SUBR PLINE1(OL) IS (TFL=0=>(TFL_-1; RC_QC; J_0;
+ WHILE (I_<+RC>) DO (
+	(J_J+1)=OL=>OUTCHR(12B); OUTCHR(I));
+ OUTCHR(12B)));
+
+SUBR PLINE(BF,PCT) IS (
+ FINAM[5] AND 4000B => PRINT IGR 3,PCT,STG 0,' ',BF,/;
+ FINAM[5] AND 100000000B => MSG(BF));
+
+SUBR GETTY(BF) IS (OUTSTR('*');
+                   Q_BYTEP BF<7,36>;
+                   PL: C_INCHWL(0);
+                       C=041B => C_134B;
+                       C GE 040B => <+Q>_C;
+                       C NE 015B => GO TO PL;
+                   INCHWL(0);
+                   <+Q>_045B);
+
+SUBR READCMD(BF,FINAM,FREL,FLST,DEV,RPGM) IS (
+# REL,LST_DEV:FILE.EXT[PJ,PG]/A/B...(AB...)PGM\% #
+ FINAM[I]_0 FOR I FROM 5; DEV_'DSK';
+ FREL_FREL[1]_FLST_FLST[1]_0;
+ KEY IS 8 LONG; K_BYTEP ',_.[/(%'<7,36>;
+ KEY[I]_DIR(<+K> LS 29) FOR I IN 1,1,7;
+ CMA_KEY[1]; LAR_KEY[2];
+ COL_DIR(':'); BSL_DIR('\');
+ LEXSAV(); PC_BYTEP BF<7,36>;
+ L0: LEX(S);
+ L1: (S=KEY[I] => GO TO L2) FOR I IN 7,-1,1;
+ L2: GO TO (K00,K1,K2,K3,K4,K5,K6,K7) I;
+ K00: LEX(S1);
+     S1=BSL => (NM IS 2 LONG; K_GNAME(S); NM_[K];
+                NM[1]_[K+1]; RPGM_SIXBIT(NM); GO TO L0);
+     S1=CMA => (PUTN(FREL,S,1); S_S1; GO TO L1);
+     S1=LAR => (PUTN(FREL,S,1); GO TO L0);
+     S1=COL => (PUTN(DEV,S,0); LEX(S); LEX(S1));
+     PUTN(FINAM,S,1); S_S1; GO TO L1;
+ K1: LEX(S); S=LAR=> GO TO L0;
+     PUTN(FLST,S,1); GO TO L0;
+ K2: GO TO L0;
+ K3: LEX(S); PUTN(FINAM[2],S,0); GO TO L0;
+ K4: LEX(S); PUTO(FINAM[3],S); LEX(S);
+     LEX(S); PUTO(FINAM[4],S); LEX(S); GO TO L0;
+ K5: LEX(S); PUTSW(FINAM[5],S); GO TO L0;
+ K6: LEX(S); PUTSW(FINAM[5],S); LEX(S); GO TO L0;
+ K7: FLST => FINAM[5]_FINAM[5] OR 4000B;
+     FREL=0 => (FREL_FINAM; FREL[1]_FINAM[1]);
+     FLST=0 => (FLST_FINAM; FLST[1]_FINAM[1]);
+     LEXRES());
+
+SUBR PUTN(X,S,N) IS (K_GNAME(S); X[I]_[K+I] FOR I FROM N);
+
+SUBR PUTO(X,S) IS (X_0; K_GNAME(S); K_BYTEP [K]<7,36>;
+                   WHILE I_<+K> DO X_(X LS 3)+I-060B);
+
+SUBR PUTSW(X,S) IS (K_GNAME(S); K_BYTEP [K]<7,36>;
+                    WHILE I_<+K> DO X_X OR 1 LS 37B AND I-101B) %%%

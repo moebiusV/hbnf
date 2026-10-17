@@ -1,0 +1,132 @@
+CALL ME !OBIN.!;
+#FILE: TBIN.I10#
+
+SUBR !OBIN.!(Q,IO,CH,LST) IS (
+  !OL.!, !IL.! ARE COMMON, 2 LONG;
+  !OC.!, !IC.!, !PSW.!, !RSW.! ARE COMMON, 1 LONG;
+  BBF IS  512 LONG;
+  FI  IS   20 LONG;
+  FN  IS    5 LONG;
+  UC  IS    4 LONG;
+ Q=0 => (IO=> FN_'PI' ELSE FN_'PO';
+        (FN[I+1]_0) FOR I TO 3)
+   ELSE (W_[Q]; (FN[I]_[W+I]) FOR I TO 4);
+ (FN AND 377B)=0=>FN[1]_0;
+ (CH_!FCH.!(FN,I)) GE 0=>(E_LOC(BBF)+(CH LS 7); GO TO SLS);
+ I<0=>(IER('ATTEMPT TO OPEN MORE THAN 4 FILES.'); FINI(0));
+ CH_I; I_CH*5; HCH_CH+14B; UC[CH]_1+IO; CH>NC=>NC_CH;
+ (FI[I+J]_FN[J]) FOR J TO 4;
+ INIT(HCH,14,DEV);
+ DEV_'DSK'; DEV[1]_0;
+ E_LOC(BBF)+(CH LS 7); !PTE.![CH]_010700000177B+E;
+ !LC.![CH]_!FL.![CH]_0; !FM.![CH]_1;
+ IO  => (W_LOOKUP(HCH,FN,FN[2],FN[3],FN[4]);
+         W=>(IER('FILE NOT FOUND: '); GO TO ERF);
+         !PTR.![CH]_!PTE.![CH])
+   ELSE (W_ENTER(HCH,FN,FN[2],FN[3],FN[4]);
+         W=>(IER('CANNOT CREATE FILE: ');
+             ERF: OUTSTR(FN); FN[2]=>(OUTSTR('.'); OUTSTR(FN[2]));
+             FN[3]=>(OUTSTR('['); OUTSTR(!OAS.!(FN[3])); OUTSTR(',');
+                     OUTSTR(!OAS.!(FN[4])); OUTSTR(']'));
+             FINI(0));
+         !PTR.![CH]_010677777777B+E);
+ SLS: UC[CH]=3 => LST_E   ELSE   LST_777577777777B+E;
+0);
+
+
+SUBR !DEV.!(D,IO) IS (
+ D='TTY:'=>(IO=>!IC.!_-2 ELSE !OC.!_-1;
+		I_-(IO+1);
+		!LC.![I]_!FL.![I]_0; !FM.![I]_1;
+		RETURN 0);
+ DEV[1]_((376B AND DEV_D)=>D[1] ELSE 0));
+DEV: DATA('DSK',0);
+
+REMOTE (DATA(0,0); !PTR.!: DATA(0,0,0,0);
+	DATA(0,0); !PTE.!: DATA(0,0,0,0);
+	DATA(0,0); !LC.!:  DATA(0,0,0,0);
+	DATA(0,0); !FL.!:  DATA(0,0,0,0);
+	DATA(0,0); !FM.!:  DATA(0,0,0,0));
+!PTR.!, !PTE.!, !LC.!,!FL.!, !FM.! ARE COMMON;
+
+
+SUBR FINI(Z) IS (
+ Z=0=>GO TO ALL; Z=-1=>GO TO ALL;
+ FN_Z; (FN[I]_[[14R+I-1]]) FOR I IN 2,1,4;
+ FN[1]_[[14R]+1];
+ (FN AND 377B)=0=>FN[1]_0;
+ FN[2]='UFD'=>(FN AND 600000000000B)=0=>FN[1]_0;
+ !CLS.!(FN);
+ 0R_0; DATA(267716000004B);
+ ALL: (UC[I]=1 => !PDO.!(I);
+       UC[I]=3 => !TYP.!(!PTR.![I],LOC(BBF)+(I LS 7));
+       UC[I]=>(UC[I]_0; CLOSE(I+14B))) FOR I TO NC;
+ NC_-1; Z=0=>(RELEA(I+14B) FOR I TO NC; CALLI(12B,1));
+ !PSW.!_!RSW.!_0;
+0);
+
+
+SUBR !CLS.!(NM) IS (
+ (I_!FCH.!(NM,M)) GE 0 => (
+     J_I*5; (FI[J+K]_0) FOR K TO 4; NC=I=>NC_NC-1;
+     UC[I]=1 => (SC_!OC.!; SL_!OL.!; !PDO.!(I); !OC.!_SC; !OL.!_SL);
+     UC[I]=3 => !TYP.!(!PTR.![I],LOC(BBF)+(I LS 7));
+     UC[I]_0; CLOSE(I+14B));
+0);
+
+
+SUBR !FCH.!(NM,FC) IS (
+ C_-1;
+ LB: C_C+1;
+ C LE NC => (I_C*5; (FI[I+J] NE NM[J]=>GO TO LB) FOR J TO 4)
+       ELSE (C_-1; (UC[J]=0=>(FC_J; GO TO RTFC)) FOR J TO 3;
+             FC_-1);
+RTFC: C);
+NC: DATA(777777777777B);
+
+
+SUBR !PDO.!(I) IS (
+ E_!PTE.![I]-128;
+ !OL.!_E-011100000000B; !OC.!_I;
+ PAD: !PTR.![!OC.!] NE E=>(!POUT.!(0); GO TO PAD);
+0);
+
+
+#PGM TO DUMMY UP FILE REFERENCES IN NEW IMP#
+SUBR !FBLK.!(Q) IS (
+ BLK IS 5 LONG;
+ BLK_[!PADR.!(Q)]; BLK[1]_0;
+ BLK AND 377B=>BLK AND 774000000000B=>BLK[1]_[1+!PADR.!(Q)];
+ BLK[I+1]_[!PADR.!(Q+I)] FOR I IN 1,1,3;
+ Q_Q+3; I_LOC(BLK);
+LOC(I));
+
+
+SUBR !OAS.!(N) IS (
+ RTV_I_0; P_BYTEP RTV<7,36>; M_N;
+ TA1:FI[I]_(M AND 7)+60B; (I_I+1)<4=>((M_M RS 3)=>GO TO TA1);
+ <+P>_FI[L] FOR L FROM I-1;
+ RTV);
+
+
+SUBR ITYPE(NM) IS (
+ FN_NM; FN[2]_FN[3]_FN[4]_0; FN AND 377B=>FN[1]_NM[1]  ELSE  FN[1]_0;
+ (I_!FCH.!(FN,J)) GE 0=>(UC[I] NE 3=>(IER('ITYPE FILENAME ALREADY IN USE: ');
+                                    OUTSTR(FN));
+                       GO TO RTNI);
+ J<0 => (IER('CHANNEL NOT AVAILABLE FOR TYPING FILE: ');
+         OUTSTR(FN); GO TO RTNI);
+ K_J*5; (FI[K+I]_FN[I]) FOR I TO 4; J>NC=>NC_J;
+ UC[J]_3; !LC.![J]_!FL.![J]_0; !FM.![J]_1; E_LOC(BBF)+(J LS 7);
+ !PTE.![J]_010700000017B+E; !PTR.![J]_440700000000B+E;
+RTNI: 0);
+
+
+SUBR !PADR.!(Q) IS (8R_Q; DATA(201430000000B); 8R);
+
+SUBR IER(MES) IS (
+ OUTCHR(15B); OUTCHR(12B); OUTSTR('?? ERROR IN IMP RUN-TIME I/O:');
+ OUTCHR(15B); OUTCHR(12B); OUTSTR('?? '); OUTSTR(MES);
+0) %%%
+
+

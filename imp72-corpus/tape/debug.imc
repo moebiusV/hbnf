@@ -1,0 +1,192 @@
+TWOSEG;
+
+#THIS IS FILE DEBUG.I10, CONTAINING DIAGNOSTIC PRINT-OUTS FOR THE IMP10
+COMPILER.  IF THE COMPILER IS LOADED WITHOUT THIS FILE, REQUESTS FOR THESE
+PRINTOUTS WILL BE TRAPPED WITH AN ADVISORY ERROR MESSAGE.#
+
+SUBR HELPD(NIL) IS (
+ MSG(' ');
+ MSG('COMPILER DEBUGGING SWITCHES:');
+ MSG('B = ASSEMBLER DEBUGGING PRINTOUT');
+ MSG('D = TYPE THIS LIST OF DEBUGGING SWITCHES');
+ MSG('F = PRINT FREE STORAGE MAP WHENEVER ALTERRED');
+ MSG('G = PRINT GORY DETAILS OF PARSE');
+ MSG('I = PRINT HASH-CODED DIRECTORY');
+ MSG('M = PRINT CODE TREE MATCH DETAILS');
+ MSG('N = PRINT CONNECTIVITY MATRICES WITH GRAPH');
+ MSG('P = PRINT PARSE OUTPUT AND SEMANTICS EXECUTION');
+ MSG('S = PRINT SEMANTICS ARRAYS');
+ MSG('T = PRINT CODE TREE');
+ MSG('X = PRINT SYNTAX GRAPH');
+ MSG('Z = GATHER AND PRINT COMPILATION STATISTICS');
+0);
+
+SUBR TPRIN1(CT,NCT,SBITM,NODEN) IS (
+ # PRINT OUT TREE #
+ TORG1_CT+1;
+ PRINT STG 0,'** CODE GENERATION TREE:',/,'NODE SCR ALT PDN TY NR',/;
+ J_0;
+ L18: J_J+1;
+ J<NCT=>(PRINT IGR 4,J,TSCR(J),TALT(J),[TORG1+J-2],IGR 3,
+	[TORG1+J] RS 33,TNODEN(J),
+	OCT 15,[TORG1+J];
+	      KT_(KVV_[TORG1+J]) RS 33;
+              J_J+2;
+              KT=1=>(PRINT STG 0;
+                    (KVV AND 17600000000B)=0=>((KVV AND 2000000B)=0=>(
+                             PRINT '  [',OCT 0,
+                               KVV AND 777777B,STG 0,']',/; GO TO L18);
+                           PRINT '  <',OCT 0,KVV AND 777777B,STG 0,'>',/;
+                           GO TO L18);
+                     (20000000000B AND KVV)=0=>PRINT ' FLT ';
+                     (40000000000B AND KVV)=0=>PRINT ' IGR ';
+                     (3 AND KVV RS 31)=3=>PRINT '     ';
+                     (10000000000B AND KVV)=>PRINT 'W' ELSE PRINT ' ';
+                     ( 4000000000B AND KVV)=>PRINT 'S' ELSE PRINT ' ';
+                     ( 2000000000B AND KVV)=>PRINT 'V' ELSE PRINT ' ';
+                     ( 1000000000B AND KVV)=>PRINT 'C' ELSE PRINT ' ';
+                     (  400000000B AND KVV)=>PRINT 'R' ELSE PRINT ' ';
+                     (  200000000B AND KVV)=>PRINT 'N' ELSE PRINT ' ';
+                  PRINT '  ',OCT 2,37B AND KVV RS 20,STG 1,' ',
+                           OCT 2,37B AND KVV RS 15,STG 1,' ',OCT 3,
+                           177B AND KVV RS 8,STG 1,' ',OCT 3,377B AND KVV,/;
+                           GO TO L18);
+               KT=3=>(KV_KVV AND 777777B; PRINT STG 1,' ';
+                      PNAME(KV); (1000000B AND KVV)=>(
+                                    KV_FREE(CT+J); J_J+1;
+                                    PRINT OCT 13,KV);
+                      PRINT /; GO TO L18);
+               PRINT STG 2,' ',OCT 5,KVV AND 777777B,/; GO TO L18);
+ PRINT STG 0,'CODE TREE BIT MATRIX:',/,/;
+ J_0;
+ N_36*1+SBITM[2];
+ (PRINT STG 5,' ',IGR 6;
+  (T_J+74)>N=>T_N;
+  (PRINT K) FOR K IN J+4,5,T;
+  PRINT /;
+  (PRINT IGR 3,I,STG 2,' ',IGR 1;
+   (K//5=0=>PRINT STG 1,' ',IGR 1;
+    PRINT 1 AND(BIT(SBITM,I,K) NE 0)) FOR K IN J,1,T;
+   PRINT /) FOR I TO NODEN;
+  PRINT /; J_J+75) UNTIL T=N;
+ 0);
+
+
+SUBR SEMPR1(SEMS,PROSEM,NSEMS,K) IS (
+ PRINT /,STG 0,'*** SEMANTICS ***',/;  NN_0;
+ (J_FREE(SEMS+K);
+  (J RS 30)=0=>(NN=>PRINT /; NN_0; PRINT STG 1,'[',OCT 4,K,STG 1,']  ';
+                (L_J AND 777777B)=>(
+                      PRINT STG 0,' PLIES:',OCT 0,FREE(PROSEM+L);
+		     PRINT STG 0,',#',IGR 0,FREE(PROSEM+L+2);
+                      L_FREE(PROSEM+L+1); LLN_0;
+                      L32: L=>((LLN_LLN+1)>5=>(LLN_1; PRINT /,STG 12,' ');
+                               K1_FREE(PROSEM+L); PRINT STG 0,' <',OCT 0,
+                                K1 RS 18,STG 0,'/',OCT 0;
+                                NN_FREE(PROSEM+L+1);
+                                (NN RS 18)=>PRINT NN RS 18,STG 0,'_',OCT 0;
+                                PRINT (NN AND 777777B),
+                                STG 0,'>'; L_K1 AND 777777B; GO TO L32);
+                      NN_5));
+  (NN_NN+1)=6=>(NN_1; PRINT /,STG 6,' ');
+  PRINT STG 2,' ',OCT 12,J) FOR K IN 1,1,NSEMS-1;
+ PRINT /);
+
+
+SUBR GPRIN1(NPRODS,GA,NS,NG,NODES,BITM,NTGENT,NBITM,NBITN) IS (
+PRINT STG 0,'HERE IS THE GRAPH FOLLOWING ENTRY OF PRODUCTION NR. ', IGR 0,
+ NPRODS,/,STG 8,'INDEX','SCR','ALT','TYPE','NB','NAME','NT#','ENTRY',/;
+(W1_FREE(GA+I); W2_FREE(GA+I+1);
+ PNAME(-1);
+ PRINT IGR 8,I,W1 AND 777777B, W1 RS 18, W2 RS 33,7777B AND W2 RS 18;
+ (W2 RS 33)=3=>(PRINT STG 2,'[',OCT 0,W2 AND 777777B,STG 1,']')
+  ELSE(PRINT STG 4,' ';
+       PNAME(W2 AND 777777B); PRINT IGR 5,DPROP('NODE',W2 AND 777777B),
+             DPROP('ENTRY',W2 AND 777777B)); PRINT /)
+                  FOR I IN 1,NS,NG; PRINT /;
+ N_-1;
+ L5: DSEQ(N); N GE 0 =>(DNAME(N,0) RS 29='#' RS 29 => GO TO L5;
+                        J_DPROP('NODE',N); J=0=>GO TO L5;
+                        PRINT STG 0,'TERMINAL '; PNAME(-1); PNAME(N);
+                        L4: J_FREE(NODES+J); PRINT IGR 4,J AND 777777B;
+                        J_J RS 18; J=>GO TO L4; PRINT /; GO TO L5);
+ FINAM IS COMMON; (FINAM[5] AND 20000B)=0 => GO TO L6;
+ PRINT STG 0,'CONNECTIVITY MATRICES BITM AND NBITM.',/,/;
+ NNO_(2+NG/NS)/2;
+ ((PRINT STG 0,'NODE#',IGR 4,I+I-1,STG 2,' ',IGR 1;
+   (PRINT (BIT(BITM,I,J)=>1 ELSE 0);
+    (5*J/5)=J=>PRINT STG 1,' ',IGR 1) FOR J IN 1,1,NTGENT-1;
+   PRINT STG 5,' ',IGR 1) FOR I IN K,NNO,K+NNO;
+  PRINT /) FOR K IN 1,1,NNO;
+ PRINT /;
+ NNO_NBITN/2;
+ ((PRINT STG 0,'NBIT#',IGR 4,I,STG 2,' ',IGR 1;
+   (PRINT BIT(NBITM,I,J);
+    (5*J/5)=J=>PRINT STG 1,' ',IGR 1) FOR J IN 1,1,NTGENT-1;
+   PRINT STG 5,' ',IGR 1) FOR I IN K,NNO,K+NNO;
+  PRINT /) FOR K IN 1,1,NNO;
+ L6: PRINT /;
+ NPRODS);
+
+
+SUBR PSTAC1(S,N) IS (
+ SS_FREE(S+N);
+ PRINT STG 0,'STACK NODE ',IGR 0,N,STG 0,', TYPE ',OCT 2,77B AND SS;
+ (77B AND SS)=0=>(PRINT STG 0,' [',OCT 0,SS RS 18,STG 0,']'; GO TO PSEX);
+ (T_SS RS 18)=>(PRINT STG 0,', NAME '; PNAME(T));
+ (SS AND 100B)=>PRINT STG 0,', IGR';
+ (SS AND 200B)=>PRINT STG 0,', REAL';
+ PSEX: (T_FREE(S+N+1))=>(PRINT STG 0,', VALUE ',OCT 12,T);
+ PRINT /);
+
+SUBR PARTR1(CNODE,CTYP,CVAL,P,IP,O,CW) IS (
+ PRINT STG 0, '   CURRENT NODE #',
+  IGR 0,CNODE,STG 0,', TYPE ',IGR 0,CTYP,STG 0,', ';
+ CTYP=3=>(PRINT '[',OCT 0,CVAL,STG 1,']')
+     ELSE (PNAME(CVAL));
+ (J_FREE(P+IP) RS 18) => (
+                PRINT STG 0,', OUTPUT: ';
+                P5: J=>(J_FREE(O+J);
+			(K_FREE(J) ARS 18)>0=> PRINT OCT 0,K ELSE PNAME(-K);
+			PRINT STG 0,' '; J_J<R>; GO TO P5));
+ PRINT /;
+ CW>(IP+3) =>((N_FREE(P+K) AND 777777B; J_FREE(P+K) RS 18;
+               PRINT STG 0,'    '; K=CW=>PRINT 'CURRENT ' ELSE PRINT '        ';
+               PRINT 'GOAL: '; PNAME(GVAL(J));  PRINT STG 0,'=NT NR. '
+                  , IGR 0, N,STG 0,' AT NODE #',IGR 0,J;
+               PRINT /) FOR K IN CW,-1,IP+4);
+ 0);
+
+SUBR PCODE1(S,NS) IS (#PRINTS CODE FOR OBJECT S, UP TO NS LINES#
+ CO IS COMMON;
+ (N_NS)=0=>N_15;
+ J_FREE(S+2);
+ J_J RS 18; K_0;
+ L3: J=>(L_FREE(CO+J); LTY_L RS 34;
+         LTY=2=>(J_L AND 777777B; GO TO L3);
+         PRINT STG 5,' ',OCT 4,J,STG 0;
+         LL_FREE(CO+J+1);
+         LTY=3=>(PRINT OCT 18,LL; GO TO L7);
+         LTY=1=>(LTY_177B AND L RS 27; PRINT '  ';
+                 LTY=0=>(PNAME(L AND 777777B); PRINT STG 0,':'; GO TO L8);
+                 PRINT STG 5,SFT[LTY+LTY-2],SFT[LTY+LTY-1],
+                   STG 0,' ',OCT 0,(L AND 777777B); GO TO L8);
+         PRINT '     ';
+         TM_777B AND L RS 24;
+         PRINT OCT 3,TM,STG 0,' ';
+         OPCODE(TM,P,T)=>PRINT P,T;
+         (M_3777B AND L RS 12)=>PRINT 'R',OCT 0,M,STG 0,',';
+         (L RS 33)=>PRINT '@';
+         (M_LL AND 777777B)=>((L AND 4000B)=>(PRINT 'R',OCT 0,M)ELSE PNAME(M));
+         PRINT STG 0;
+         (LL_LL RS 18)=>(M=>PRINT '+'; PRINT OCT 0,LL,STG 0);
+         (M_L AND 3777B)=>PRINT '(R',OCT 0,M,STG 0,')';
+         L7: J_J+1;
+         L8: PRINT /; J_J+1; (K_K+1)<NS=>GO TO L3);
+ 0);
+
+SFT: DATA('SAVE REGS RSTR REGS NO DELETE END NODEL REFERREG ',
+          'RESRV REG OPTMZ REG RLEAS REG SCRAT REG PRTCTREG ') %%%
+
+
+

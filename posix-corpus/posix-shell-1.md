@@ -20,6 +20,9 @@ standard prints it.
   of the section, tags removed, character entities decoded), not retyped.  The
   five-line comment at the top of the file is the only addition.
 
+> **Paused** (2026-10-17): the POSIX port waits until hbnf is feature complete;
+> see `RFCPLAN.md`, "Order".  The file below is as far as it got.
+
 ## What hbnf says to it
 
 With `dialect ybnf` it reads, and says, once for each of the thirty-odd

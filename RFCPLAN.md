@@ -492,6 +492,13 @@ cite them — so a step that moves keeps its number and this list gives the
 running order:
 
 > **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a, 9a, 9b, 9c, 12.
+> **Corpora and ports wait for the features** (decided 2026-10-17).  The POSIX
+> shell grammar (`posix-corpus/`) and the IMP72 sources (`imp72-corpus/`) are
+> paused where they stand: both need things hbnf does not have yet (the
+> exception for phrase rules, `~` negation, a `%where`, bit fields and the wire
+> layer, `%emit`).  They resume when hbnf is feature complete, and the ports of
+> hbnf itself to the remaining backend languages (step 10) come at the very end.
+>
 > **Critical path:** **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
 > any of them and can land in any gap.
@@ -951,10 +958,11 @@ should claim that before 10.
        concept (it changes the generated type of rules like
        `x = 1*( "a" / "b" )`, now a list of empty nodes; check the daemon
        grammars first); the octet mode of the scanner (edges are numeric, so
-       it skips the UTF-8 decode).  The dialect prefix on every generated
-       identifier (`ybnf_if`) is *done 2026-10-07*: it applies to a file that
-       names a dialect, and the `atom-rule`/`WORD-rule` renames remain only
-       for a file with none;
+       it skips the UTF-8 decode).  The prefix on every generated
+       identifier (`ybnf_if`, `abnf_host`, and `bnf_` when a file names no
+       dialect) is *done 2026-10-17*; `prefix none` opts out (the daemon
+       grammars, and the tests whose hand-written programs use the generated
+       names), and the `atom-rule`/`WORD-rule` renames remain only there;
      - `%where { }` (decision 13): code, not required to be pure;
      - `request-target` (RFC 9112) depends on the method, which a `%where`
        could ask; `path` (RFC 3986) is a documentation rule;

@@ -1,0 +1,398 @@
+#THIS IS FILE SYNTAX, SYNTAX FOR IMP COMPILER.#
+
+
+# SYNTAX BOOTSTRAPPED BY MODULE RSYN #
+
+ <NAM> ::= NAM";          # NAM" IS READ AS NAM# ##
+ <SYM> ::= SYM";          # SYM" IS READ AS SYM# ##
+ <SPT> ::= '<' <NAM,A> > ':' ':' =		::= SYNT(A,0);
+ <SPT> ::= <SPT,A> <SYM,B>			::= SYTRM(B);
+ <SPT> ::= <SPT,A> '<' <NAM,B>,<NAM,C> >	::= SYNT(B,C);
+
+ <SMA> ::= <NAM,A> ( )               ::= SEMR(A,0);
+ <SMA> ::= <SPN,A> ( <SPL,B> )       ::= SEMP(0,1);
+ <SPN> ::= <NAM,A>                   ::= SEMR(A,1);
+ <SPL> ::= <SPI,A>;
+ <SPL> ::= <SPL,A> , <SPI,B>;
+ <SPI> ::= <NAM,A>                   ::= SEMP(A,0);
+ <CSM> ::= <SMA,A>                   ::= SEMANTICS();
+ <SMP> ::= <CSM,A>;
+
+ <ST>  ::= <SPT,A>                   ::= SYNTAX(0);
+ <SAU> ::= =                         ::= SYNTAX(1);
+ <ST>  ::= <SPT,A>':' ':'<SAU,C><SMP,B>;
+ <STL> ::= <ST,A>;
+ <STL> ::= <STL,A> ';' <ST,B>        ::= HOOK(A,A,B);
+ <PG>  ::= <STL,A> '%'               ::= ASSEMC(A)%%
+
+
+# SYNTAX FOR EXTENDED SEMANTICS #
+
+ <SPI>    ::= <SMA,A>;
+ <SPI>    ::= <SPI,A> + <SPI,B>                 ::= SEMR(0,11B);
+ <SPT>    ::= <SPT,A> '<' <NAM,B> >             ::= SYNT(ENSTACK(EXP),B);
+ <SPT>    ::= '<'<NAM,A>>':' ':'='<'<NAM,B>> ::=
+			SYNT(ENSTACK(ATOM),B,SYNT(A,0));
+
+ <SSP>    ::= VALUE <NAM,A> OF <NAM,B>          ::= VALU(A,B);
+ <SSP>    ::= PRIORITY <NAM,A> <SMA,B>          ::= SEMBIT(A);
+ <SSP>    ::= PRIORITY <NAM,A> <SSP,B>          ::= SEMBIT(A);
+ <ST>     ::= <SPT,A>':' ':'<SAU,B><SSP,C>       ::= SEMANTICS();
+
+ <SMP>    ::= <SMP,A> ELSE <CSM,C>;
+ <CSM>    ::= CASE (<NLIST,A>) OF <NAM,B>               ::= CASE(B,0);
+ <CSM>    ::= CASE (<NLIST,A>) OF <CASENAM,B> (<SMP,C>) ::= CASE(B,1);
+ <CASENAM>::= <NAM,A>                                   ::= DEFCASE(A);
+
+ <SQUOTE> ::= "                    ::= PRIORITY 1 MAXWELL(SYNTAX(2),SETPRI(2));
+ <QUOSEM> ::= <SQUOTE,A> <STL,B> " ::= PRIORITY 2 MAXEND(A,SETPRI(1));
+ <QUOSEM> ::= <NAM,A> / <QUOSEM,B>                      ::= REPVAL(A,B);
+ <CSM>    ::= <QUOSEM,A> => <SMA,B>                     ::= QUOSEM(A);
+ <CSM>    ::= <QUODEF,A>                                ::= SEMANTICS(A);
+ <CSM>    ::= <QUOSEM,A> => <QUODEF,B>                  ::= QUOSEM(A);
+ <QUODEF> ::= <QUOSEM,A>                                ::= EQUOSE(A,NEWLIST(0));
+ <QUODEF> ::= LOCAL <NLIST,A> IN <QUOSEM,B>             ::= EQUOSE(B);
+
+
+# SYNTAX FOR BASE LANGUAGE #
+
+ <VBL>  ::= <NAM,A> ::= PRIORITY 1 NAME(A);
+ <ION>  ::= <VBL,A>;
+ <ATOM> ::= <ION,A>;
+ <EXP>  ::= <ATOM,A>;
+ <ST>   ::= <EXP,A>;
+ <ION>  ::= (<STL,A>);
+
+ <ST>   ::= GO TO <EXP,A>      ::= DEWOP(254B,0,A);
+ <ST>   ::= <NAM,A> ':' <ST,B> ::= HOOK(B,TAG(A),B);
+
+ <ION>  ::= <NAM,A> ( )     ::= DEWFUN(SUBRCALL(NAME(A)),2,REGOF(A),SUBPR0(1));
+ <ION>  ::= <NAM,A> ( <ELIST,B> ) ::= SUBCALL(A,B);
+
+ <ST>   ::= <NLIST,A> IS  <PLIST,B> ::= DECLARE(A);
+ <ST>   ::= <NLIST,A> ARE <PLIST,B> ::= DECLARE(A);
+ <NLIST>::= <NAM,A>                 ::= NEWLIST(A);
+ <NLIST>::= <NLIST,A> , <NAM,B>     ::= ENLIST(B);
+ <PLIST>::= <PROP,A>;
+ <PLIST>::= <PLIST,A> , <PROP,B>;
+
+ <PROP> ::= <NAM,A>            ::= DECL(0,A);
+ <PROP> ::= <EXP,A> LONG       ::= DECL(1,A);
+ <PROP> ::= COMMON             ::= DECL(2,0);
+ <PROP> ::= REAL               ::= DECL(3,0);
+ <PROP> ::= INTEGER            ::= DECL(4,0);
+ <PROP> ::= REGISTER           ::= DECL(5,0);
+ <PROP> ::= RESERVED           ::= DECL(6,0);
+ <PROP> ::= SCRATCH            ::= DECL(7,0);
+ <PROP> ::= PROTECTED          ::= DECL(8,0);
+ <PROP> ::= AVAILABLE          ::= DECL(9,0);
+ <PROP> ::= RELEASED           ::= DECL(10,0);
+ <PROP> ::= LOCAL              ::= DECL(11,0);
+
+ <SYN> ::= LET ::= PRIORITY 1 MAXWELL(1,SETPRI(4));
+ <SYN> ::= <SYN,A> <NAM,B>=<VBL,C>, ::= PRIORITY 4 MAXWELL(1,
+			LETSYN(MAXEND(A)));
+ <ST>  ::= <SYN,A> <NAM,B>=<VBL,C> ::= PRIORITY 4 LETSYN(MAXEND(A),
+			SETPRI(1));
+
+
+ <ATOM> ::= - <ATOM,A>    ::= "-B0CON"=>CONOP(B,0,0) ELSE
+                               DEWOP(210B,AREG1(1,15B),A);
+ <ATOM> ::= NOT <ATOM,A>  ::= "NOT B0CON"=>CONOP(B,0,6) ELSE
+                               DEWOP(460B,AREG1(1,15B),A);
+
+ <EXP> ::= <ATOM,I>   LS <EXP,J> ::= CASE (242B,514B,554B,5) OF SHIFTS
+        (ADDOP(PAR(0),ADDR(J),I) ELSE
+        "A LS 18" => DEWOP(PAR(1),AREG1(1,15B),A) ELSE
+        "A LS 777777777756B" => DEWOP(PAR(2),AREG1(1,15B),A) ELSE
+        "A0CON LS B0CON"=>CONOP(A,B,PAR(3)));
+
+ <EXP> ::= <ATOM,A>  ALS <EXP,B> ::= CASE (240B,514B,574B,16) OF SHIFTS;
+ <EXP> ::= <ATOM,A> LROT <EXP,B> ::= CASE (241B,204B,204B,17) OF SHIFTS;
+ <EXP> ::= <ATOM,A>   RS <EXP,B> ::= "A LS -B";
+ <EXP> ::= <ATOM,A>  ARS <EXP,B> ::= "A ALS -B";
+ <EXP> ::= <ATOM,A> RROT <EXP,B> ::= "A LROT -B";
+
+ <EXP> ::= <ATOM,Y> * <EXP,Z> ::= CASE (164B,220B,3) OF CAOPS
+         (ADDOP(PAR(1),Y,Z) ELSE
+         "A0IGRCON*B0IGRCON"=>CONOP(A,B,PAR(2)) ELSE
+         "A0FLT*B"   =>ADDOP(PAR(0),A,FLOAT(B)) ELSE
+         "A*B0FLT"   =>ADDOP(PAR(0),FLOAT(A),B) ELSE
+         "A0IGRREG*B0IGR"   =>ADDOP(PAR(1),B,A) ELSE
+         "A*B0CON18" =>ADDOP(PAR(1),B,A));
+
+ <EXP> ::= <ATOM,A> + <EXP,B> ::= CASE (144B,270B,1) OF CAOPS;
+
+ <EXP> ::= <ATOM,X> - <EXP,Y> ::= CASE (154B,274B,2) OF NCAOPS
+         (ADDOP(PAR(1),Y,X) ELSE
+         "A0IGRCON-B0IGRCON"=>CONOP(A,B,PAR(2)) ELSE
+         "A0FLT-B"   =>ADDOP(PAR(0),FLOAT(B),A) ELSE
+         "A-B0FLT"   =>ADDOP(PAR(0),B,FLOAT(A)));
+
+ <EXP> ::= <ATOM,A> / <EXP,B> ::= CASE (174B,230B,4) OF NCAOPS ELSE
+         "A0IGR/B0IGR"=>ADDOP(230B,B,DEWOP(200B,AREG1(1,55B),A));
+
+ <EXP> ::= <A>//<B>::=HOOK(A,A,HOOK(B,B,REG2S(DEWOP(230B,
+	REGOF(DEWOP(200B,AREG1(1,55B),FIX(A))),FIX(B)))));
+
+ <EXP> ::= <ATOM,X> AND <EXP,Y>::=
+         "A AND 000000777777B"=>DEWOP(550B,AREG1(1,15B),A) ELSE
+         "A AND 777777000000B"=>DEWOP(510B,AREG1(1,15B),A) ELSE
+         "A AND NOT 777777B" => DEWOP(510B,AREG1(1,15B),A) ELSE
+    CASE(404B,410B,420B,440B,7) OF LOGIC (
+     "    A0CON AND     B0CON" => CONOP(A,B,PAR(4)) ELSE
+     "NOT A0CON AND     B0CON" => CONOP(CONOP(A,0,6),B,PAR(4)) ELSE
+     "    A0CON AND NOT B0CON" => CONOP(A,CONOP(B,0,6),PAR(4)) ELSE
+     "NOT A0CON AND NOT B0CON" => CONOP(CONOP(A,0,6),CONOP(B,0,6),PAR(4)) ELSE
+             "    A0REG AND     B      " => ADDOP(PAR(0),B,A) ELSE
+             "    A     AND     B0CON18" => ADDOP(PAR(0),B,A) ELSE
+             "    A     AND     B      " => ADDOP(PAR(0),A,B) ELSE
+             "NOT A0REG AND     B      " => ADDOP(PAR(1),B,A) ELSE
+             "NOT A     AND     B0CON18" => ADDOP(PAR(1),B,A) ELSE
+             "NOT A     AND     B      " => ADDOP(PAR(2),A,B) ELSE
+             "    A0REG AND NOT B      " => ADDOP(PAR(2),B,A) ELSE
+             "    A     AND NOT B0CON18" => ADDOP(PAR(2),B,A) ELSE
+             "    A     AND NOT B      " => ADDOP(PAR(1),A,B) ELSE
+             "NOT A0REG AND NOT B      " => ADDOP(PAR(3),B,A) ELSE
+             "NOT A     AND NOT B0CON18" => ADDOP(PAR(3),B,A) ELSE
+             "NOT A     AND NOT B      " => ADDOP(PAR(3),A,B));
+
+ <EXP> ::= <ATOM,A>  OR <EXP,B> ::= CASE(434B,454B,464B,470B,8) OF LOGIC;
+ <EXP> ::= <ATOM,A> XOR <EXP,B> ::= CASE(430B,444B,444B,430B,18) OF LOGIC;
+ <EXP> ::= <ATOM,A> EQV <EXP,B> ::= CASE(444B,430B,430B,444B,19) OF LOGIC;
+
+
+ <EXP>  ::= <VBL,A> _ <EXP,B> ::= "X0FLT_I0IGR"=>STORE(X,FLOAT(I)) ELSE
+                        "I0IGR_X0FLT"=>STORE(I,FIX(X)) ELSE
+                   "I0IGRREG0115_I/J0IGR"=>ADDOP(1230B,J,I) ELSE
+                   "I0IGRVARMEM_I+1"=>DEWOP(350B,AREG1(1,15B),I) ELSE
+                   "I0IGRVARMEM_I-1"=>DEWOP(370B,AREG1(1,15B),I) ELSE
+                        "A0IGRVARMEM_A+B0IGR"=>ADDOP(273B,A,B) ELSE
+                        "A0IGRVARMEM_A*B0IGR"=>ADDOP(223B,A,B) ELSE
+                        "A0VARMEM_A AND B"=>ADDOP(407B,A,B) ELSE
+                        "A0VARMEM_A  OR B"=>ADDOP(437B,A,B) ELSE
+                        "A0VARMEM_A XOR B"=>ADDOP(433B,A,B) ELSE
+                        "A0VARMEM_A AND NOT B"=>ADDOP(413B,A,B) ELSE
+                         STORE(A,B);
+
+ <EXP> ::= <VBL,A> '<'= <EXP,B> ::= STORE(A,B);
+
+ <VBL>  ::= <VBL,A> [<EXP,B>] ::= "V[I+J0CON]"=>"V[J][I]" ELSE
+                                  "V[I-J0CON]"=>"V[-J][I]" ELSE
+                                  "V[I0CON+J]"=>"V[I][J]" ELSE
+                                  "V[I0REG+J0CON]"=>"V[J][I]" ELSE
+                                   SUBSCRIPT(A,B);
+
+ <VBL>  ::= [<EXP,A>]         ::= "[I+J0CON]"=>"[J][I]" ELSE
+                                  "[I-J0CON]"=>"[-J][I]" ELSE
+                                  "[I0CON+J]"=>"[I][J]" ELSE
+                                  "[I0REG+J0CON]"=>"[J][I]" ELSE
+                                   SUBSCRIPT(0,A);
+
+ <ST>   ::= SUBR <SUBP,A> IS <EXP,B> ::= HOOK(A,A,RETURN(B),SUBEND(0));
+ <SUBP> ::= <NAM,A> ( <NLIST,B> )    ::= SUBBEG(A);
+ <SUBP> ::= <NAM,A> ( )              ::= SUBBEG(A,NEWLIST(0));
+ <ST>   ::= RETURN <A>               ::= RETURN(A);
+
+ <ST>   ::= GO TO ( <GOLST,A> ) <B>  ::= LOCAL GO IN "GO TO GO[B]; GO: A";
+ <GOLST>::= <NAM,A>                  ::= "GO TO A";
+ <GOLST>::= <GOLST,A> , <NAM,B>      ::= "A; GO TO B";
+
+ <ELIST>::= <EXP,A>                  ::= NEWLIST(A);
+ <ELIST>::= <ELIST,A>,<B>            ::= ENLIST(B);
+ <ST>   ::= DATA ( <ELIST,A> )       ::= DATAST(A);
+ <ST>   ::= REMOTE <ST,A>            ::= REMOT(A);
+ <ATOM> ::= LOC ( <VBL,A> )          ::= DEWOP(201B,AREG1(1,15B),A);
+
+
+ <RELOP> ::=  =  ::= PRIORITY 1 VALUE 2 OF EQ;
+ <RELOP> ::= '<' ::= PRIORITY 1 VALUE 1 OF EQ;
+ <RELOP> ::=  >  ::= PRIORITY 1 VALUE 7 OF EQ;
+ <RELOP> ::= NE  ::= PRIORITY 1 VALUE 6 OF EQ;
+ <RELOP> ::= LE  ::= PRIORITY 1 VALUE 3 OF EQ;
+ <RELOP> ::= GE  ::= PRIORITY 1 VALUE 5 OF EQ;
+ <RELOP> ::= EQ  ::= PRIORITY 1 VALUE 2 OF EQ;
+ <RELOP> ::= LT  ::= PRIORITY 1 VALUE 1 OF EQ;
+ <RELOP> ::= GT  ::= PRIORITY 1 VALUE 7 OF EQ;
+
+ <ST> ::= <EXP,A> => <ST,B>;
+ <ST> ::= <EXP,A> <RELOP,EQ> <EXP,B>;
+ <ST> ::= <EXP,A> <RELOP,EQ> <EXP,B> => <ST,C> ::=
+
+   EQ/"P0REG=0=>GO TO S0VAR"       =>HOOK(P,P,DEWOP(320B+VAL(STACK(1)),
+                    REGOF(P),S)) ELSE
+   EQ/"(P0IGRREG_P+1)=0=>GO TO S0VAR" =>HOOK(P,P,DEWOP(340B+VAL(STACK(3)),
+                    REGOF(P),S)) ELSE
+   EQ/"(P0IGRREG_P-1)=0=>GO TO S0VAR" =>HOOK(P,P,DEWOP(360B+VAL(STACK(3)),
+                    REGOF(P),S)) ELSE
+   EQ/"P0VARMEMREG=0=>S0WRD"       =>HOOK(P,DEWOP(330B+OJUMPOP(VAL(STACK(1)))
+                    ,AREG1(1,15B),P),FREEZE(S)) ELSE
+   EQ/"(P0IGRVARMEM_P+1)=0=>GO TO S0VAR"    =>HOOK(P,DEWOP(350B+OJUMPOP(VAL(
+                 STACK(3))),AREG1(1,15B),P),FREEZE(DEWOP(254B,0,S))) ELSE
+   EQ/"(P0IGRVARMEM_P-1)=0=>GO TO S0VAR"    =>HOOK(P,DEWOP(370B+OJUMPOP(VAL(
+                 STACK(3))),AREG1(1,15B),P),FREEZE(DEWOP(254B,0,S))) ELSE
+   EQ/"P0VARMEM=0=>GO TO S0VAR"    =>HOOK(P,DEWOP(330B+OJUMPOP(VAL(STACK(1)))
+                    ,AREG1(1,15B),P),FREEZE(DEWOP(254B,0,S))) ELSE
+   EQ/"P0CON=R0CON=>S"             =>CONOP(P,R,1000010B+VAL(STACK(1)),S) ELSE
+   EQ/"P=R0CON18=>S0WRD"           =>HOOK(P,P,HOOK(R,DEWOP(300B+OJUMPOP(VAL(
+                    STACK(1))),REGOF(FETCH(P)),ADDR(R)),FREEZE(S))) ELSE
+   EQ/"P=R0REG=>S0WRD"             =>HOOK(P,R,HOOK(P,DEWOP(310B+OJUMPOP(8+VAL(
+                    STACK(1))),REGOF(R),P),FREEZE(S))) ELSE
+   EQ/"P0VARMEMREG=R=>S0WRD"       =>HOOK(P,P,HOOK(R,DEWOP(310B+OJUMPOP(VAL(
+                    STACK(1))),REGOF(FETCH(P)),R),FREEZE(S))) ELSE
+   EQ/"P=R0CON18=>GO TO S0VAR"     =>HOOK(P,P,HOOK(R,DEWOP(300B+OJUMPOP(VAL(
+                    STACK(1))),REGOF(FETCH(P)),ADDR(R)),
+                    FREEZE(DEWOP(254B,0,S)))) ELSE
+   EQ/"P=R0REG=>GO TO S0VAR"       =>HOOK(P,R,HOOK(P,DEWOP(310B+OJUMPOP(8+VAL(
+                    STACK(1))),REGOF(R),P),FREEZE(DEWOP(254B,0,S)))) ELSE
+   EQ/"P=R=>GO TO S0VAR"           =>HOOK(P,P,HOOK(R,DEWOP(310B+OJUMPOP(VAL(
+                    STACK(1))),REGOF(FETCH(P)),R),FREEZE(DEWOP(254B,0,S)))) ELSE
+   LOCAL IF IN EQ/"NOT(A=B)=>GO TO IF; C; IF: 0";
+
+ <ST> ::= <EXP,A> => <ST,B> ::= "A NE 0=>B" ELSE
+                         "A=>GO TO B"=>"A NE 0=>GO TO B" ELSE
+                         "(A0IGR_A+1)=>GO TO B"=>"(A_A+1) NE 0=>GO TO B" ELSE
+                         "(A0IGR_A-1)=>GO TO B"=>"(A_A-1) NE 0=>GO TO B" ELSE
+                         "NOT (P =  Q)=>GO TO R" => "P NE Q=>GO TO R" ELSE
+                         "NOT (P NE Q)=>GO TO R" => "P =  Q=>GO TO R" ELSE
+                         "NOT (P >  Q)=>GO TO R" => "P LE Q=>GO TO R" ELSE
+                         "NOT (P EQ Q)=>GO TO R" => "P NE Q=>GO TO R" ELSE
+                         "NOT (P LT Q)=>GO TO R" => "P GE Q=>GO TO R" ELSE
+                         "NOT (P GE Q)=>GO TO R" => "P <  Q=>GO TO R" ELSE
+                         "NOT (P <  Q)=>GO TO R" => "P GE Q=>GO TO R" ELSE
+                         "NOT (P LE Q)=>GO TO R" => "P >  Q=>GO TO R" ELSE
+                         "NOT (P GT Q)=>GO TO R" => "P LE Q=>GO TO R";
+
+ <ST> ::= <EXP,A> <RELOP,EQ> <EXP,B> => <ST,C> ELSE <ST,D> ::=
+       EQ/"A0CON=B0CON=>C ELSE D"=>CONOP(A,B,2000010B+VAL(STACK(1)),C,D) ELSE
+       LOCAL ELSE,I IN EQ/"I IS REGISTER,SCRATCH;
+			A=B=>(I_C; GO TO ELSE); I_D; ELSE: I IS
+			PROTECTED; I";
+ <ST> ::= <EXP,A> <RELOP,EQ> <EXP,C> ::= EQ/"A=C => -1 ELSE 0" ELSE
+                           EQ/"P0CON=R0CON"=>CONOP(P,R,8+VAL(STACK(1)));
+ <ST> ::= <EXP,A> => <ST,C> ELSE <ST,D> ::= "A NE 0 => C ELSE D";
+
+
+ <ST> ::= MOVE <B> THROUGH <N> TO <A> ::= ADDOP(251B,SUBSCRIPT(COPY(A),
+	FIX(N)), ADDOP(505B,B,DEWOP(541B,AREG(1,13),A)));
+
+ <ST> ::= <EXP,A> FOR <VBL,B> IN <EXP,C>,<EXP,D>,<EXP,E> ::=
+            LOCAL FOR IN "B_C; FOR: A; B NE E=>(B_B+D; GO TO FOR)" ELSE
+      "A FOR B IN C,D0CON35,E"=>
+            LOCAL FOR IN "B_C; FOR: A; (B_B+D) LE E=>GO TO FOR" ELSE
+      "A FOR B IN C,D0CNG35,E"=>
+            LOCAL FOR IN "B_C; FOR: A; (B_B-(-D)) GE E=>GO TO FOR";
+
+ <ST> ::= <EXP,A> FOR <VBL,B> TO <EXP,C>   ::= "A FOR B IN 0,1,C" ELSE
+	"(A0IGR[I0IGRVAR]_B0IGR[I]) FOR I TO C0IGR"=>
+		"MOVE B THROUGH C TO A";
+
+ <ST> ::= <EXP,A> FOR <VBL,B> FROM <EXP,C> ::= "A FOR B IN C,-1,0" ELSE
+	"(A0IGR[I0IGRVAR]_B0IGR[I]) FOR I FROM C0IGR"=>
+		"MOVE B THROUGH C TO A";
+
+
+ <ST> ::= WHILE <EXP,A> DO <ST,B> ::= LOCAL WH IN "WH: A=>(B; GO TO WH)";
+ <ST> ::= WHILE <EXP,A><RELOP,EQ><EXP,B> DO <ST,C> ::=
+                                      LOCAL WH IN EQ/"WH: A=B=>(C; GO TO WH)";
+
+ <ST> ::= <EXP,A> UNTIL <B><RELOP,EQ><C> ::=
+	LOCAL UT IN EQ/"UT:A; NOT(B=C)=>GO TO UT";
+ <ST> ::= <EXP,A> UNTIL <EXP,B> ::= "A UNTIL B NE 0";
+
+ <COND> ::= (<A> <RELOP,EQ> <B>)
+	::= LOCAL CND IN EQ/"A=B=>GO TO CND[1]; CND:0";
+
+ <COND> ::= (<A> <RELOP,EQ> <B>) OR <COND,C>
+	::= LOCAL OR IN EQ/"A=B=>GO TO OR[1];C;OR:0";
+
+ <COND> ::= (<A> <RELOP,EQ> <B>) AND <COND,C>
+	::= LOCAL AND IN EQ/"NOT(A=B)=>GO TO AND;C;AND:0";
+
+ <ST>   ::= <COND,A> => <ST,B> ::= LOCAL IF IN "A;GO TO IF;B;IF:0";
+
+ <ST>   ::= <COND,A> => <ST,B> ELSE <ST,C>
+	::= LOCAL I,IF,ELSE IN "I IS REGISTER,SCRATCH; A; GO TO IF;
+			I_B; GO TO ELSE;
+			IF: I_C; ELSE: I IS PROTECTED; I";
+
+ <ST>   ::= WHILE <COND,A> DO <ST,B>
+	::= LOCAL IF,WH IN "WH:A;GO TO IF;B;GO TO WH;IF:0";
+
+ <ST>   ::= <EXP,A> UNTIL <COND,B> ::= LOCAL UT IN"UT:A;B;GO TO UT";
+
+ <IO>  ::= PRINT <PITEM,A>    ::= PRINCAL(SUBRCALL(NAME(ENSTACK(!PRN.!))),A);
+ <IO>  ::= READ  <PITEM,A>    ::= PRINCAL(SUBRCALL(NAME(ENSTACK(!RED.!))),A);
+ <IO>  ::= <IO,A> , <PITEM,B> ::= PRINCAL(A,B);
+ <EXP> ::= <IO,A>             ::= DEWFUN(A,2,REGOF(A));
+
+ <PITEM> ::= <EXP,A>                      ::= PRINPAR(0,A);
+ <PITEM> ::= OCT <A>                      ::= PRINPAR(1,A);
+ <PITEM> ::= IGR <A>                      ::= PRINPAR(2,A);
+ <PITEM> ::= STG <A>                      ::= PRINPAR(3,A);
+ <PITEM> ::= FILE <NAM,A>                     ::= PRINPAR(6,NAME(A),0,0,0);
+ <PITEM> ::= FILE <NAM,A>.<B>                 ::= PRINPAR(6,NAME(A),B,0,0);
+ <PITEM> ::= FILE <NAM,A>[<C>,<D>]            ::= PRINPAR(6,NAME(A),0,C,D);
+ <PITEM> ::= FILE <NAM,A>.<B>[<C>,<D>]        ::= PRINPAR(6,NAME(A),B,C,D);
+ <PITEM> ::= /                            ::= PRINPAR(5,ENSTACK(0),0,0);
+<PITEM> ::= DEVICE <A>		  ::= PRINPAR(8,A);
+ <PITEM> ::= IMAGE MODE			  ::= PRINPAR(7,NAME(ENSTACK(0)));
+ <PITEM> ::= TAB <N>			  ::= PRINPAR(9,N);
+ <PITEM> ::= FILL <N>                     ::= PRINPAR(10,N);
+ <PITEM> ::= FLT <A>.<B>                  ::= PRINPAR(11,A,B);
+
+ <VBL> ::= <NAM,A>.<NAM,B> ::= FCON(A,B,0);
+ <VBL> ::= <NAM,A>.<NAM,B>"<ATOM,C> ::= FCON(A,B,C);
+ <ATOM> ::= FIX(<A>) ::= FIX(A);
+ <ATOM> ::= FLT(<A>) ::= FLOAT(A);
+
+ <BYTE>  ::= <VBL,A> '<' <B> , <C> > ::= BYTEP(A,B,C,0);
+ <ATOM>  ::= <ION,A> '<' <B> , <C> > ::= DEWOP(135B,AREG1(1,15B),BYTEP(A,B,C,1))
+			ELSE "A<18,0>"  => DEWOP(550B,AREG1(1,15B),A)
+                          ELSE "A<18,18>" => DEWOP(554B,AREG1(1,15B),A);
+ <EXP>   ::= <BYTE,A> _ <B>          ::= ADDOP(137B,A,B) ELSE
+                          "A<18,0>_B" => ADDOP(542B,A,B) ELSE
+                          "A<18,18>_B"=> ADDOP(506B,A,B);
+ <ATOM>  ::= BYTEP <BYTE,A>;
+ <BYTE>  ::= '<' <EXP,A> >;
+ <ATOM>  ::= '<' <EXP,A> >           ::= DEWOP(135B,AREG1(1,15B),A);
+ <ATOM>  ::= '<' + <VBL,A> >         ::= DEWOP(134B,AREG1(1,15B),A);
+ <EXP>   ::= '<' + <VBL,A> > _ <B>   ::= ADDOP(136B,A,B);
+ <ATOM>  ::= <ION,A> '<' R >         ::= DEWOP(550B,AREG1(1,15B),A);
+ <ATOM>  ::= <ION,A> '<' L >         ::= DEWOP(554B,AREG1(1,15B),A);
+ <EXP>   ::= <VBL,A> '<' R > _ <B>   ::= ADDOP(542B,A,B);
+ <EXP>   ::= <VBL,A> '<' L > _ <B>   ::= ADDOP(506B,A,B);
+
+
+ <ST> ::= EXECUTE <A> ::= DEWOP(256B,0,A);
+
+ <ST> ::= CALL ME <NAM,A> ::= CALLME(A);
+
+ <ST> ::= TWOSEG ::= SWITCH(18);
+
+# A FEW CHARACTER THINGS #
+
+<ATOM> ::= IDPB(<A>,<B>)	::= "<+B>_A";
+<ATOM> ::= ILDB(<A>)		::= "<+A>";
+<ATOM> ::= R<VBL,A> ::=	"R I0CON0729"=>"I RS 29" ELSE
+			"R I0CON1422"=>"I RS 22" ELSE
+			"R I0CON2115"=>"I RS 15" ELSE
+			"R I0CON2808"=>"I RS 8"  ELSE
+			"R I0CON3501"=>"I RS 1"  ELSE
+			ERROR(1,!R REQUIRES TEXT CONSTANT OPERAND.!);
+
+# A FEW SYNTICES FOR DECSYSTEM-10 PROGRAMMING. #
+
+<ION> ::= CALLI(<A>,<B>) ::= "CALLI(A0CON12,B)"=>
+	HOOK(B,B,HOOK(A,DEWOP(47B,REGOF(FETCH(B)),ADDR(A)),
+			DEWOP(476B,REGOF(B),NAME(ENSTACK(CALLI)))))
+	ELSE "CALLI(A,B,0)";
+<ATOM> ::= XWD <A>,<B> ::= ADDOP(504B,A,DEWOP(550B,AREG1(1,13),B));
+<ATOM> ::= IOWD <A>,<B> ::= "XWD (-A),(B-1)"%%
+
+
+
+
+
+
+
