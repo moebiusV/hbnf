@@ -13,6 +13,7 @@ with HBNF_C;
 with HBNF_Rust;
 with HBNF_Zig;
 with HBNF_Ada;
+with HBNF_Wire.C;
 
 --  hbnf: read a schema and emit a self-contained parser (declarations +
 --  lexer + parser) in the chosen backend language.
@@ -178,6 +179,38 @@ begin
    --  once-per-file keys.
    HBNF_Grammar.Reset_Warnings;
 
+   --  A file that says `binary` is a wire grammar (RFCPLAN.md, step 7b): octets
+   --  and bit fields, read by its own reader and emitted by HBNF_Wire.
+   declare
+      Text : Unbounded_String;
+      F    : Ada.Text_IO.File_Type;
+   begin
+      Ada.Text_IO.Open (F, Ada.Text_IO.In_File, To_String (Schema_Path));
+      while not Ada.Text_IO.End_Of_File (F) loop
+         Append (Text, Ada.Text_IO.Get_Line (F));
+         Append (Text, ASCII.LF);
+      end loop;
+      Ada.Text_IO.Close (F);
+      if HBNF_Wire.Is_Binary (To_String (Text)) then
+         if To_String (Backend) /= "c" then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "hbnf: a binary grammar can be emitted in C so far (" &
+               To_String (Backend) & " follows; RFCPLAN.md step 7b)");
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+            return;
+         end if;
+         declare
+            Out_Text : constant String :=
+              HBNF_Wire.C.Emit
+                (HBNF_Wire.Parse (To_String (Text), To_String (Schema_Path)));
+         begin
+            Ada.Text_IO.Put (Out_Text);
+         end;
+         return;
+      end if;
+   end;
+
    declare
       --  The rules the parser uses, with what the backends do not take
       --  inside a sequence given a rule of its own.
@@ -257,6 +290,22 @@ exception
       Ada.Text_IO.Put_Line
         (Ada.Text_IO.Standard_Error,
          "hbnf: " & HBNF_Grammar.Error_Message (E));
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   when Storage_Error =>
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "hbnf: ran out of stack while checking the grammar.  The usual "
+         & "cause is a union (`/`) of very many alternatives that something "
+         & "can follow directly, so that hbnf has to tell them apart by what "
+         & "comes next: a word list repeated with no separator is that, since "
+         & "one word's end can be the start of another.  Put a separator "
+         & "between them, or write the choice with `|` in the order to "
+         & "prefer.");
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   when E : HBNF_Wire.Wire_Error =>
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "hbnf: " & Ada.Exceptions.Exception_Message (E));
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
    when E : Mustache.Template_Error =>
       Ada.Text_IO.Put_Line

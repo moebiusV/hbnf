@@ -1058,6 +1058,68 @@ should claim that before 10.
        and on values.  This needs the shared IR and the typed `%action{}`
        bindings step 6 builds, so it cannot move with 7a.
 
+       **Notation, settled 2026-10-17** (the user chose it from the five
+       historical forms: C `name:N`, BLISS/IMP72 `A<pos,len>`, Ada
+       representation clauses, Verilog/VHDL slices, Erlang bit syntax).  It is
+       C's spelling with Erlang's strengths, read top to bottom like an RFC's
+       packet diagram.  A file says `binary`; its input is octets and its
+       parser is `parse_bytes`.
+
+       | write | meaning |
+       |---|---|
+       | `name:N` | N bits (1-64), first field in the most significant bits, big-endian; adjacent sub-byte fields share octets |
+       | `name:16le`, `name:8s`, `name:16sle` | little-endian (`le`, `be` the default), signed (`s`) |
+       | `name@K:N` | `@` is the place, `:` the width: the field must start at bit K of its record -- an assertion, checked when hbnf can compute it and by the parser when it cannot, so a transcription error against the RFC's bit numbers is caught.  (`@` is "at", as in Ada's `at 0 range 3 .. 7`; it is also an enum literal's number, `"icmp"@1`.) |
+       | `name:[expr]` | `expr` octets, a slice of the input |
+       | `name:*u8` | the rest of the input (or of the region it is in) |
+       | `name:(expr)` | `expr` bits |
+       | `0x0800`, `0b101` | a constant; its width is its digits (0x0800 is 16 bits, 0b101 is 3) |
+       | `name:N` where `name` is also a rule of constants | the field's value must be one of them |
+       | `?(expr)` | a guard: the alternative is taken only when `expr` is non-zero; this is the tag dispatch (an EtherType choosing the payload) |
+
+       An `expr` is C's integer arithmetic (`+ - * / % << >> & | ^ ~ ! == != < <= > >= && ||`,
+       parentheses, decimal and `0x` numbers) over the fields read earlier in
+       the same record: `options:[ihl*4-20]`.  Bit 0 is the most significant,
+       as in an RFC's diagram.  A name with no width is a rule: its record is
+       nested; `|` is ordered choice with the position restored on failure.
+       `:` keeps all its meanings by position: the rule operator is
+       surrounded by blanks, a width is glued to the name that precedes it.
+
+       *Status 2026-10-17.*  Reader (`hbnf_wire.adb`) and C parser
+       (`hbnf_wire-c.adb`) work for fixed and expression-sized fields, octet
+       runs, constants, value sets, guarded choices, arrays of records and the
+       `@K` check; `tests/wire.sh` has Ethernet/ARP/IPv4 fixtures and nine
+       refusals.  A group is written `name:( ... )` and a bit count
+       `name:bits(expr)`.  The other direction (tree to bytes) exists
+       in C.  Not yet: Rust, Zig and Ada, checksums, units, layout records.
+
+       **Settled later the same day.**  A place is `name@K:N`: `@` before `:`,
+       the place before the width (the user's choice over `name:N@K` and over
+       `name@K,N`, which avoids a second `:` but reads less like C and Erlang).
+       The rule operator `:` is the first `:` after a name in column 1, so no
+       spacing has to tell it from a width.  `"literal"@N` numbers an enum
+       literal, C's `NAME = N` without overloading `=`.  Documented in
+       `WIRE.md`.
+
+       **Designed, not built (the user, 2026-10-17):**
+       - `@Off:Len` also slices strings: a string is an array of units.  A unit
+         is a bit, a byte, a code point or a machine word, and the notation
+         must say which, because some machines had 9-bit bytes and 36-bit
+         words.  A number may carry a unit (`b` bits, `B` bytes, `c` code
+         points, `W` words); a file may declare `byte N` and `word N`; without
+         a suffix the unit is the file's own.
+       - A record in which every field has an `@` is a register layout, read in
+         any order with gaps and overlaps; elsewhere `@` is only a check.
+
+       **Acceptance tests (the user's, 2026-10-17):** a BIP-39 mnemonic and a
+       wallet address, each both parsed and generated.  A mnemonic is words
+       whose 11-bit indices concatenate to entropy plus a SHA-256 checksum; a
+       bech32 address (BIP-173) is 5-bit symbols from a 32-character set,
+       regrouped to octets, with a BCH checksum.  Both need a text-to-bits
+       bridge (a word list or a charset whose position is the value), the
+       generating direction and a checksum, so they are the test that the three
+       halves meet.
+
 8. **Compiler-quality diagnostics and error recovery.**  Expected-error
    fixtures, source-span diagnostics, rule traces, and a schema linter
    (nullable repetition, unreachable rules, shadowed ordered choice,

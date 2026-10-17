@@ -1,0 +1,12 @@
+PASS bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4: version 0, 20 octets
+PASS tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5: version 0, 32 octets
+PASS bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5j: version 1, 32 octets
+PASS BC1SW50QGDZ25J: version 16, 2 octets
+PASS bc1zw508d6qejxtdg4y5r3zarvaryvaxxpcs: version 2, 16 octets
+PASS refused: v0 with a 21-octet program (octet 21: segwit: a condition does not hold: (((version != 0) || (len (program) == 20)) || (len (program) == 32)))
+PASS refused: version 17 (octet 0: segwit: a condition does not hold: (version <= 16))
+PASS refused: a 1-octet program (octet 1: segwit: a condition does not hold: ((len (program) >= 2) && (len (program) <= 40)))
+PASS refused: a 41-octet program (octet 41: segwit: a condition does not hold: ((len (program) >= 2) && (len (program) <= 40)))
+PASS refused: padding that is not zero (octet 21: segwit: a condition does not hold: (pad == 0))
+PASS refused: v0 with a 19-octet program (octet 19: segwit: a condition does not hold: (((version != 0) || (len (program) == 20)) || (len (program) == 32)))
+PASS v1 with a 21-octet program (2 padding bits): version 1, 21 octets

@@ -62,6 +62,8 @@ This directory holds two things:
      translated from their `parse.y`;
    - `ABNF.md`: the notation against RFC 5234, feature by feature;
    - `CHARLAYER.md`: character rules, numeric terminals and UTF-8;
+   - `WIRE.md`: octets and bit fields (`ttl:8`, `version@0:4`), enum numbers
+     (`"icmp"@1`), and parsers that also write bytes back;
    - `RFCPLAN.md`: the plan to compile RFC grammars as written;
    - `USENIXSUBMISSION.md`: the design paper, with measurements.
 

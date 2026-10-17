@@ -1,0 +1,18 @@
+ipv4: ethertype=0800 kind=1 ipv4 ihl=6 len=32 ttl=64 proto=1 src=0a000001 dst=0a000002 opts=4 data=4
+  emit: 42 octets, identical
+tcp: ethertype=0800 kind=1 ipv4 ihl=5 len=44 ttl=64 proto=6 src=c0a80001 dst=c0a80002 opts=0 tcp 8080>80 seq=1 syn=1 data=4
+  emit: 58 octets, identical
+udp: ethertype=0800 kind=1 ipv4 ihl=5 len=31 ttl=64 proto=17 src=0a000001 dst=0a000002 opts=0 udp 53>4660 len=11 data=3
+  emit: 45 octets, identical
+arp: ethertype=0806 kind=2 arp oper=1 spa=c0a80001 tpa=c0a80002
+  emit: 42 octets, identical
+ipv6: ethertype=86dd kind=3 ipv6 flow=12345 next=17 hop=64 data=4
+  emit: 58 octets, identical
+unlisted ethertype: error at octet 12: octet 12: ethernet.ethertype: is not one of the values the rule `ethertype` lists
+short: error at octet 6: octet 6: ethernet.src: needs 48 bits, 32 left
+ihl 16: ipv4.ihl: does not fit in 4 bits
+options longer than ihl says: ipv4.options: has a different number of octets than its length says
+arp payload for an ipv4 ethertype: ethernet.payload: alternative 2 is chosen, but its guard does not hold
+ethertype not in the list: ethernet.ethertype: is not one of the values the rule `ethertype` lists
+buffer too small: ethernet: the buffer is too small (needs 58)
+counting only: 58 octets

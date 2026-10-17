@@ -1,0 +1,6 @@
+; One BIP-39 word of the English list: the index test reads each word of each
+; list through this (tests/wire.sh swaps the language in the include line).
+prefix none
+whitespace none
+include "../../grammars/bip39/english.hbnf"
+one = bip39-word

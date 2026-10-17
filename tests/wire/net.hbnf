@@ -1,0 +1,46 @@
+binary
+
+; The link and network layers, from the RFCs' own packet diagrams.  Each field
+; is name:bits, first field in the most significant bits.
+
+; Ethernet II (RFC 894), then the payload its EtherType names.
+ethernet = dst:48 src:48 ethertype:16
+           payload:( ?(ethertype == 0x0800) ip:ipv4
+                   | ?(ethertype == 0x0806) a:arp
+                   | ?(ethertype == 0x86DD) v6:ipv6
+                   | rest:*u8 )
+
+; The EtherType values this file knows.
+ethertype = 0x0800 | 0x0806 | 0x86DD
+
+; ARP (RFC 826), the Ethernet + IPv4 case.
+arp = htype:16 ptype:16 hlen:8 plen:8 oper:16
+      sha:48 spa:32 tha:48 tpa:32
+
+; IPv4 (RFC 791): one 32-bit word to a line.  The header is ihl words, so the
+; options are what is left of it after the fixed twenty octets.
+ipv4 = version@0:4 ihl:4 tos:8 total_length:16
+       identification:16 flags:3 frag_offset:13
+       ttl:8 protocol:8 header_checksum:16
+       src:32
+       dst:32
+       options:[ihl*4 - 20]
+       payload:( ?(protocol == 6) t:tcp | ?(protocol == 17) u:udp | rest:*u8 )
+
+; IPv6 (RFC 8200): the addresses are 128 bits, so they are octets.
+ipv6 = version:4 traffic_class:8 flow_label:20 payload_length:16
+       next_header:8 hop_limit:8
+       src:[16]
+       dst:[16]
+       payload:*u8
+
+; TCP (RFC 9293; the three reserved bits of RFC 793 are six here, and the
+; low three of them are RFC 3168's CWR and ECE and RFC 7560's NS).
+tcp = src_port:16 dst_port:16 seq_num:32 ack_num:32
+      data_offset:4 reserved:6
+      urg:1 ack:1 psh:1 rst:1 syn:1 fin:1
+      window_size:16 checksum:16 urgent_pointer:16
+      options:[data_offset*4 - 20] payload:*u8
+
+; UDP (RFC 768).
+udp = src_port:16 dst_port:16 length:16 checksum:16 payload:*u8

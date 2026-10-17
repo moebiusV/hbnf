@@ -1,0 +1,5 @@
+; A BIP-39 mnemonic: 12 to 24 words of the English list, one blank between.
+prefix none
+whitespace none
+include "../../grammars/bip39/english.hbnf"
+mnemonic = bip39-word 11*23( bip39-space bip39-word )

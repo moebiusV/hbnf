@@ -495,7 +495,15 @@ dotted-quad, `dst:48` six octets (spelled `dst:[6]` when octets read better).
 The demos leave open length-bounded payloads (`total_length − ihl·4` octets, not
 "the rest"), tag dispatch on a field value (EtherType choosing the payload
 type), and checksums — the three gaps any binary protocol engine must close.
-Binary mode is design, not yet implemented.
+Binary mode is implemented in the C backend (2026-10-17); `WIRE.md` is the
+reference.  The notation differs from the sketch above in three small ways that
+the implementation settled: a place is `name@K:N` (`@` is "at", as in Ada's
+`at 0 range 3 .. 7`; the check that a field starts at bit K), a choice is
+`name:( ?(guard) a | b )`, and an octet count is `name:[expr]` over the fields
+read before it (`options:[ihl*4 - 20]`).  The parser is also a writer: the same
+grammar turns a tree back into bytes, and refuses a value that does not fit or a
+length that disagrees with what it describes.  The remaining gaps are those
+named above: payloads bounded by an enclosing length, and checksums.
 
 ## 5. Implementation
 
