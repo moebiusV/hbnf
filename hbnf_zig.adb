@@ -53,6 +53,35 @@ package body HBNF_Zig is
       return "";
    end Scalar_Zig_Type;
 
+   --  A labeled block nothing breaks out of is an error in Zig ("unused block
+   --  label"): a branch whose every element cannot fail, as a token that can
+   --  match the empty text cannot, has no break.  Drop the label then.
+   --  Header is the text that opened the block, at Start in Buf; Brk is the
+   --  statement that would leave it.
+   procedure Drop_Unused_Label
+     (Buf : in out Unbounded_String; Start : Natural;
+      Header, Brk, Replacement : String)
+   is
+      Seg  : constant String :=
+        Slice (Buf, Start + 1 + Header'Length, Length (Buf));
+      Used : Boolean := False;
+   begin
+      for I in Seg'Range loop
+         if I + Brk'Length - 1 <= Seg'Last
+           and then Seg (I .. I + Brk'Length - 1) = Brk
+           and then (I + Brk'Length > Seg'Last
+                     or else Seg (I + Brk'Length) not in
+                       'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_')
+         then
+            Used := True;
+            exit;
+         end if;
+      end loop;
+      if not Used then
+         Replace_Slice (Buf, Start + 1, Start + Header'Length, Replacement);
+      end if;
+   end Drop_Unused_Label;
+
    --  A snake_case identifier from a schema name ('-' -> '_', upper -> lower).
    function Zig_Snake (S : String) return String is
       Buf : U;
@@ -1282,6 +1311,13 @@ package body HBNF_Zig is
    end Emit;
 
    function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
+      --  Can a rule match the empty text?  Then a scan of length 0 is a match,
+      --  not a failure (a lifted `[ x ]` of a token is such a rule).
+      Nullable : constant HBNF_Lookahead.Flags :=
+        HBNF_Lookahead.Nullable_Set (Rules);
+
+      function Can_Be_Empty (Nm : String) return Boolean is
+        (Find (Rules, Nm) > 0 and then Nullable (Find (Rules, Nm)));
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -1582,8 +1618,10 @@ package body HBNF_Zig is
                            NM : constant String := To_String (E.Name);
                         begin
                            Append (Buf, Ind & "{ const n = scan_" & Zig_Snake (NM)
-                             & "(p.text, p.pos, p.text.len); if (n == 0) { "
-                             & Pref & "p.fail(""" & NM & """)" & Cat & "; } "
+                             & "(p.text, p.pos, p.text.len);"
+                             & (if Can_Be_Empty (NM) then " "
+                                else " if (n == 0) { " & Pref & "p.fail("""
+                                     & NM & """)" & Cat & "; } ")
                              & Dst & Zig_Field (NM)
                              & " = p.text[p.pos .. p.pos + n]; p.pos += n; }");
                            Append (Buf, LF);
@@ -1636,6 +1674,7 @@ package body HBNF_Zig is
          N  : constant Natural := Natural (Els.Length);
          St : Natural := 1;
          Br : Natural := 0;
+         Block_Start : Natural := 0;
 
          function Img (X : Natural) return String is
             S : constant String := Natural'Image (X);
@@ -1653,6 +1692,7 @@ package body HBNF_Zig is
                   Append (Buf, Ind & "p.pos = save; " & Reset & "; matched = false;");
                   Append (Buf, LF);
                end if;
+               Block_Start := Length (Buf);
                Append (Buf, Ind & "blk_" & Img (Br) & ": {");
                Append (Buf, LF);
                Emit_Seq (Owner, Els, St, K - 1, Acc, Buf,
@@ -1672,6 +1712,9 @@ package body HBNF_Zig is
                Append (Buf, LF);
                Append (Buf, Ind & "}");
                Append (Buf, LF);
+               Drop_Unused_Label
+                 (Buf, Block_Start, Ind & "blk_" & Img (Br) & ": {",
+                  "break :blk_" & Img (Br), Ind & "{");
                Append (Buf, Ind & "if (matched) return r;");
                Append (Buf, LF);
                St := K + 1;
@@ -1709,10 +1752,14 @@ package body HBNF_Zig is
                  then Jet_Fn (NM) else "scan_" & Zig_Snake (NM))
               & "(p.text, p.pos, p.text.len);");
             Append (Buf, LF);
-            Append (Buf, "    if (n == 0) try p.fail("""
-              & (if R.Jet_Code /= Null_Unbounded_String then "a " else "")
-              & NM & """);");
-            Append (Buf, LF);
+            if R.Jet_Code /= Null_Unbounded_String
+              or else not Can_Be_Empty (NM)
+            then
+               Append (Buf, "    if (n == 0) try p.fail("""
+                 & (if R.Jet_Code /= Null_Unbounded_String then "a " else "")
+                 & NM & """);");
+               Append (Buf, LF);
+            end if;
             Append (Buf, "    const r = p.text[p.pos .. p.pos + n]; p.pos += n;");
             Append (Buf, LF);
             Append (Buf, "    return r;");
@@ -1745,6 +1792,7 @@ package body HBNF_Zig is
                                      Label, Ind : String) is
                   St     : Natural := 1;
                   Branch : Natural := 0;
+                  Block_Start : Natural := 0;
                begin
                   for K in 1 .. Natural (V.Length) + 1 loop
                      if K > Natural (V.Length) or else V (K).Kind = Alt then
@@ -1756,6 +1804,7 @@ package body HBNF_Zig is
                                    else " e = std.mem.zeroes(" & Elem & ");"));
                               Append (Buf, LF);
                            end if;
+                           Block_Start := Length (Buf);
                            Append (Buf, Ind & Label & "blk_" & Img (Branch) & ": {");
                            Append (Buf, LF);
                            Emit_Seq (Idx, V, St, K - 1, "e.", Buf,
@@ -1765,6 +1814,11 @@ package body HBNF_Zig is
                            Append (Buf, LF);
                            Append (Buf, Ind & "}");
                            Append (Buf, LF);
+                           Drop_Unused_Label
+                             (Buf, Block_Start,
+                              Ind & Label & "blk_" & Img (Branch) & ": {",
+                              "break :" & Label & "blk_" & Img (Branch),
+                              Ind & "{");
                         end if;
                         St := K + 1;
                      end if;

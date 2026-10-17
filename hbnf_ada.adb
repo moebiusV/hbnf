@@ -1281,6 +1281,14 @@ package body HBNF_Ada is
 
       N : constant Natural := Natural (Rules.Length);
 
+      --  Can a rule match the empty text?  Then a scan of length 0 is a match,
+      --  not a failure (a lifted `[ x ]` of a token is such a rule).
+      Nullable : constant HBNF_Lookahead.Flags :=
+        HBNF_Lookahead.Nullable_Set (Rules);
+
+      function Can_Be_Empty (Nm : String) return Boolean is
+        (Find (Rules, Nm) > 0 and then Nullable (Find (Rules, Nm)));
+
       --  The same fields Emit declares as access types, so that here they are
       --  allocated through the pointer rather than assigned into a record.
       --  Two independent computations of one graph: Emit and Emit_Parser do
@@ -1607,9 +1615,11 @@ package body HBNF_Ada is
                            Append (Buf, LF);
                            Append (Buf, Ind & "begin");
                            Append (Buf, LF);
-                           Append (Buf, Ind & "   if N = 0 then Fail (P, """
-                             & NM & """); end if;");
-                           Append (Buf, LF);
+                           if not Can_Be_Empty (NM) then
+                              Append (Buf, Ind & "   if N = 0 then Fail (P, """
+                                & NM & """); end if;");
+                              Append (Buf, LF);
+                           end if;
                            Append (Buf, Ind & "   " & Dst & Ada_Field (NM)
                              & " := To_Unbounded_String"
                              & " (P.Text (P.Pos .. P.Pos + N - 1));"
@@ -1794,8 +1804,12 @@ package body HBNF_Ada is
             Append (Buf, LF);
             Append (Buf, "      begin");
             Append (Buf, LF);
-            Append (Buf, "         if N = 0 then Fail (P, """ & Desc & """); end if;");
-            Append (Buf, LF);
+            if R.Jet_Code /= Null_Unbounded_String
+              or else not Can_Be_Empty (NM)
+            then
+               Append (Buf, "         if N = 0 then Fail (P, """ & Desc & """); end if;");
+               Append (Buf, LF);
+            end if;
             Append (Buf, "         R := To_Unbounded_String (P.Text (P.Pos .. P.Pos + N - 1));");
             Append (Buf, LF);
             Append (Buf, "         P.Pos := P.Pos + N;");

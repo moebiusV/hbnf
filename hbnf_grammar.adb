@@ -314,6 +314,7 @@ package body HBNF_Grammar is
    --  generated identifiers keep the names of the rules.
    No_Name_Prefix : Boolean := False;
    Token_Yes, Token_No : Path_Sets.Set;   --  Except_Is_Token, per rule count
+   Text_Yes, Text_No   : Path_Sets.Set;   --  Is_Text_Rule, per rule count
    Flag_No_Prefix : Boolean := False;
    Emitted_Rules : Path_Sets.Set;
    File_Dialect : Unbounded_String;
@@ -432,6 +433,8 @@ package body HBNF_Grammar is
       No_Name_Prefix := False;
       Token_Yes.Clear;
       Token_No.Clear;
+      Text_Yes.Clear;
+      Text_No.Clear;
       Pending_Except_B := Null_Unbounded_String;
       Declared_Tokens.Clear;
       Union_Sites.Clear;
@@ -5189,6 +5192,11 @@ package body HBNF_Grammar is
         (Els : Element_Vectors.Vector; Ws : Boolean) return Boolean is
       begin
          for E of Els loop
+            --  A phrase rule skips whitespace between the entries of a
+            --  repetition as it does between the elements of a sequence.
+            if Ws and then E.Kind /= Alt and then E.Max /= 1 then
+               return True;
+            end if;
             case E.Kind is
                when Name =>
                   if Rec (To_String (E.Name)) then
@@ -5210,7 +5218,13 @@ package body HBNF_Grammar is
       function Rec (N : String) return Boolean is
          J : constant Natural := Index_Of (Rules, N);
       begin
-         if J = 0 or else Is_Core_Name (N) or else Seen.Contains (N) then
+         --  A rule of characters never skips whitespace, whatever its file
+         --  says; its elements are code points of one token.
+         if J = 0 or else Is_Core_Name (N) or else Seen.Contains (N)
+           or else Is_Char_Rule_Plain (Rules, N)
+           --  The whitespace rule is what is skipped; it does not skip.
+           or else (for some R of Rules => To_String (R.Whitespace) = N)
+         then
             return False;
          end if;
          Seen.Insert (N);
@@ -5272,6 +5286,107 @@ package body HBNF_Grammar is
       return False;
    end Except_Is_Token;
 
+   function Is_Text_Rule
+     (Rules : Rule_Vectors.Vector; Nm : String) return Boolean is
+      J : constant Natural := Index_Of (Rules, Nm);
+
+      --  Does the rule, or one it reaches, name a built-in type (a number or a
+      --  word is a typed value, not text), or hold a letter-led literal in a
+      --  grammar that has keywords (it is matched as a word there, with its
+      --  boundary, not as characters)?
+      Seen : Path_Sets.Set;
+
+      function Typed (N : String) return Boolean;
+
+      function Typed_Els (Els : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of Els loop
+            case E.Kind is
+               when Name =>
+                  --  A built-in, or an exception (the automaton would read it
+                  --  as its first operand and lose the exception), is not text.
+                  if Is_Core_Name (To_String (E.Name))
+                    or else Excepts.Contains (To_String (E.Name))
+                    or else Typed (To_String (E.Name))
+                  then
+                     return True;
+                  end if;
+               when Literal =>
+                  declare
+                     L : constant String := To_String (E.Lit);
+                  begin
+                     if Keywords_Apply and then L'Length > 0
+                       and then (L (L'First) in 'a' .. 'z'
+                                 or else L (L'First) in 'A' .. 'Z'
+                                 or else (L (L'First) = '_'
+                                          and then L'Length > 1))
+                     then
+                        return True;
+                     end if;
+                  end;
+               when Group =>
+                  if Typed_Els (E.Items) then
+                     return True;
+                  end if;
+               when others =>
+                  null;
+            end case;
+         end loop;
+         return False;
+      end Typed_Els;
+
+      function Typed (N : String) return Boolean is
+         K : constant Natural := Index_Of (Rules, N);
+      begin
+         if K = 0 or else Seen.Contains (N) then
+            return False;
+         end if;
+         Seen.Insert (N);
+         return Typed_Els (Rules (K).Pattern);
+      end Typed;
+
+      --  An enum (`dir = "in" | "out"`) or a lone literal already has a good
+      --  type: the tag, or the string.
+      function Literal_Only (Els : Element_Vectors.Vector) return Boolean is
+         In_Branch : Natural := 0;
+      begin
+         for E of Els loop
+            if E.Kind = Alt then
+               if In_Branch /= 1 then
+                  return False;
+               end if;
+               In_Branch := 0;
+            elsif E.Kind = Literal and then E.Min = 1 and then E.Max = 1 then
+               In_Branch := In_Branch + 1;
+            else
+               return False;
+            end if;
+         end loop;
+         return In_Branch = 1;
+      end Literal_Only;
+      Key    : constant String := Nm & "#" & Natural'Image (Natural (Rules.Length));
+      Result : Boolean;
+   begin
+      if Text_Yes.Contains (Key) then
+         return True;
+      elsif Text_No.Contains (Key) then
+         return False;
+      end if;
+      Result :=
+        J > 0
+        and then not Is_Core_Name (Nm)
+        and then not Excepts.Contains (Nm)      --  an exception has its own kind
+        and then not Literal_Only (Rules (J).Pattern)
+        and then not Typed (Nm)
+        and then Operand_Is_Text (Rules, Nm);
+      if Result then
+         Text_Yes.Include (Key);
+      else
+         Text_No.Include (Key);
+      end if;
+      return Result;
+   end Is_Text_Rule;
+
    --  Is Nm an operand of an exception that is a token?
    function Is_Token_Operand
      (Rules : Rule_Vectors.Vector; Nm : String) return Boolean is
@@ -5290,14 +5405,15 @@ package body HBNF_Grammar is
       return False;
    end Is_Token_Operand;
 
-   --  An operand of an exception that is not a scanner already is a token
-   --  whatever it is made of (groups, nested repetitions, alternatives of
-   --  words): its scanner is a deterministic automaton built from its text.
+   --  A rule that is only text, or an operand of a token exception, and is not
+   --  a scanner already is a token whatever it is made of (groups, nested
+   --  repetitions, alternatives of words): its scanner is a deterministic
+   --  automaton built from its text, and its value is the text it matched.
    function Is_Dfa_Token (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean is
       J : constant Natural := Index_Of (Rules, Nm);
    begin
-      return Is_Token_Operand (Rules, Nm)
+      return (Is_Token_Operand (Rules, Nm) or else Is_Text_Rule (Rules, Nm))
         and then not Is_Core_Name (Nm)
         and then J /= 0
         and then Rules (J).Jet_Code = Null_Unbounded_String

@@ -4815,7 +4815,9 @@ package body HBNF_C is
          if Ws_Name /= Null_Unbounded_String then
             declare
                DNF   : constant Cp_Branch_Atom_Vectors.Vector :=
-                 Char_DNF (Rules, To_String (Ws_Name));
+                 (if Is_Dfa_Token (Rules, To_String (Ws_Name))
+                  then Cp_Branch_Atom_Vectors.Empty_Vector   --  scanner only
+                  else Char_DNF (Rules, To_String (Ws_Name)));
                Fast  : U;
                Rest  : Boolean := False;
                First : Boolean := True;

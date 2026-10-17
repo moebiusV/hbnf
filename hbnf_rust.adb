@@ -1155,6 +1155,13 @@ package body HBNF_Rust is
    end Emit;
 
    function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
+      --  Can a rule match the empty text?  Then a scan of length 0 is a match,
+      --  not a failure (a lifted `[ x ]` of a token is such a rule).
+      Nullable : constant HBNF_Lookahead.Flags :=
+        HBNF_Lookahead.Nullable_Set (Rules);
+
+      function Can_Be_Empty (Nm : String) return Boolean is
+        (Find (Rules, Nm) > 0 and then Nullable (Find (Rules, Nm)));
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -1428,8 +1435,10 @@ package body HBNF_Rust is
                         begin
                            Append (Buf, Ind & "{ let n = scan_" & Rust_Snake (NM)
                              & "(p.text.as_bytes(), p.pos, p.text.len());"
-                             & " if n == 0 { return Err(p.fail(""" & NM
-                             & """)); } " & Dst & Rust_Field (NM)
+                             & (if Can_Be_Empty (NM) then " "
+                                else " if n == 0 { return Err(p.fail(""" & NM
+                                     & """)); } ")
+                             & Dst & Rust_Field (NM)
                              & " = p.text[p.pos..p.pos + n].to_string();"
                              & " p.pos += n; }");
                            Append (Buf, LF);
@@ -1548,10 +1557,14 @@ package body HBNF_Rust is
                  then Jet_Fn (NM) else "scan_" & Rust_Snake (NM))
               & "(p.text.as_bytes(), p.pos, p.text.len());");
             Append (Buf, LF);
-            Append (Buf, "    if n == 0 { return Err(p.fail("""
-              & (if R.Jet_Code /= Null_Unbounded_String then "a " else "")
-              & NM & """)); }");
-            Append (Buf, LF);
+            if R.Jet_Code /= Null_Unbounded_String
+              or else not Can_Be_Empty (NM)
+            then
+               Append (Buf, "    if n == 0 { return Err(p.fail("""
+                 & (if R.Jet_Code /= Null_Unbounded_String then "a " else "")
+                 & NM & """)); }");
+               Append (Buf, LF);
+            end if;
             Append (Buf, "    let r = p.text[p.pos..p.pos + n].to_string(); p.pos += n;");
             Append (Buf, LF);
             Append (Buf, "    Ok(r)");

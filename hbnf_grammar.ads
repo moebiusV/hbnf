@@ -234,6 +234,14 @@ package HBNF_Grammar is
    --  overridden root is still the root; `name =/ alternatives` adds to
    --  it.  Text is one file; `include` lines are Parse_File's.  Called on
    --  its own, it finishes the schema as Parse_File does.
+   function Is_Text_Rule
+     (Rules : Rule_Vectors.Vector; Nm : String) return Boolean;
+   --  A rule that is only text: literals, classes, groups, alternatives,
+   --  repetitions and other such rules, with no built-in, no code, no cycle,
+   --  and no whitespace skipped between its elements.  It has no named
+   --  children worth keeping, so it is one token: scanned, and its value is
+   --  the text it matched.
+
    function Except_Is_Token
      (Rules : Rule_Vectors.Vector; X : String) return Boolean;
    --  X is an exception rule (`X = A - B`) whose operands are both text hbnf
