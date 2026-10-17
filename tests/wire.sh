@@ -13,11 +13,11 @@ fail=0
 # check NAME: generate tests/wire/NAME.hbnf, build it with tests/wire/NAME_main.c,
 # and compare the program's output with tests/wire/NAME.expected.
 check() {
-	n=$1; libs=${2:-}; need=${3:-}
+	n=$1; libs=${2:-}; need=${3:-}; g=${4:-$n}
 	if [ -n "$need" ] && ! printf '#include <%s>\n' "$need" | $CC -E - > /dev/null 2>&1; then
 		echo "SKIP $n: no <$need>; its actions call the system's library"; return
 	fi
-	if ! "$CLI" tests/wire/$n.hbnf --backend=c > "$T/$n.c" 2> "$T/$n.err"; then
+	if ! "$CLI" tests/wire/$g.hbnf --backend=c > "$T/$g.c" 2> "$T/$n.err"; then
 		echo "FAIL $n: generation: $(cat "$T/$n.err")"; fail=$((fail+1)); return
 	fi
 	if ! $CC -Wall -Wextra -Werror -I"$T" -Icorpus/bip39 -o "$T/$n" tests/wire/${n}_main.c $libs 2> "$T/$n.cc"; then
@@ -28,6 +28,28 @@ check() {
 		echo "PASS $n"
 	else
 		echo "FAIL $n: output differs"; diff "$T/$n.out" tests/wire/$n.expected | head -20
+		fail=$((fail+1))
+	fi
+}
+
+# check_rust NAME [GRAMMAR [EXPECTED]]: the same grammar through the Rust backend,
+# a Rust driver (tests/wire/NAME_main.rs, `mod GRAMMAR;`), the same expected output.
+check_rust() {
+	n=$1; g=${2:-$n}; want=${3:-$n}
+	command -v rustc > /dev/null 2>&1 || { echo "SKIP $n (rust): no rustc"; return; }
+	d=$T/rs_$n; mkdir -p "$d"
+	if ! "$CLI" tests/wire/$g.hbnf --backend=rust > "$d/$g.rs" 2> "$d/err"; then
+		echo "FAIL $n (rust): generation: $(cat "$d/err")"; fail=$((fail+1)); return
+	fi
+	cp tests/wire/${n}_main.rs "$d/main.rs"
+	if ! rustc --edition 2021 -o "$d/main" "$d/main.rs" 2> "$d/rustc"; then
+		echo "FAIL $n (rust): rustc"; head -30 "$d/rustc"; fail=$((fail+1)); return
+	fi
+	"$d/main" > "$d/out" 2>&1
+	if cmp -s "$d/out" tests/wire/$want.expected; then
+		echo "PASS $n (rust)"
+	else
+		echo "FAIL $n (rust): output differs"; diff "$d/out" tests/wire/$want.expected | head -20
 		fail=$((fail+1))
 	fi
 }
@@ -46,6 +68,8 @@ expect_error() {
 }
 
 check net
+check_rust net
+check net_cbuf "" "" net
 check segwit
 check mnemonic -lcrypto openssl/sha.h
 

@@ -1,0 +1,19 @@
+pragma Ada_2022;
+
+--  HBNF_Wire.Rust: a parser over a byte buffer, in Rust, for a wire grammar.
+--
+--  One module: the types (a struct for a rule, an enum for a choice, owned
+--  octets as Vec<u8>), then
+--
+--      pub fn parse_bits  (buf: &[u8], nbits: usize) -> Result<Root, ParseError>
+--      pub fn parse_bytes (buf: &[u8])               -> Result<Root, ParseError>
+--      pub fn emit_bits   (v: &Root) -> Result<(Vec<u8>, usize), String>
+--      pub fn emit_bytes  (v: &Root) -> Result<Vec<u8>, String>
+--
+--  and, for a grammar with `units`, parse_text and emit_text.  The same grammar
+--  the C backend reads, with the same checks and the same messages.
+package HBNF_Wire.Rust is
+
+   function Emit (G : Grammar) return String;
+
+end HBNF_Wire.Rust;

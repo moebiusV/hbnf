@@ -1148,6 +1148,27 @@ should claim that before 10.
        - A record in which every field has an `@` is a register layout, read in
          any order with gaps and overlaps; elsewhere `@` is only a check.
 
+       **Direction (the user, 2026-10-17): text and binary are freely mixable;
+       there is no `binary` mode.**  What is built so far is a separate path --
+       `hbnf_wire.adb` has its own lexer and parser, a `binary` line picks it, and
+       a file is all bit rules -- and that is a shortcut, not the design.  The
+       design is one notation, one reader, one emitter per backend:
+
+       1. **One reader.**  The bit forms (`name:N`, `name@K:N`, `0x` and `0b`
+          constants, `[expr]`, `?( )`, `*u8`, `%action`/`%emit`) are elements of
+          the main notation; `binary`, `language` and `units` are directives of
+          the main reader.  The wire emitters stay, fed by lowering the unified
+          rules.  `units` names an enum rule of the same file, not another file.
+       2. **Rules refer across the boundary** (a text rule holding a bit rule and
+          the reverse), through one parse state.
+       3. **Interleaving inside a sequence** -- `"GET " len:16 payload:[len]
+          "\r\n"`: the input position is an octet and a bit offset; text
+          elements run when the offset is 0 (and say so when it is not), bit
+          elements run anywhere.  This changes the four text backends, and the
+          wire emitters fold into them.
+
+       Everything is bits, octets are runs of bits, text is octets read as UTF-8.
+
        **Acceptance tests (the user's, 2026-10-17):** a BIP-39 mnemonic and a
        wallet address, each both parsed and generated.  A mnemonic is words
        whose 11-bit indices concatenate to entropy plus a SHA-256 checksum; a

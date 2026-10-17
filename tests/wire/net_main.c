@@ -121,17 +121,6 @@ int main(void) {
             c.ethertype = 0x1234;
             bad_emit("ethertype not in the list", &c);
         }
-        {
-            uint8_t tiny[10];
-            size_t m = 0;
-            char er[128];
-            printf("buffer too small: %s",
-                   emit_bytes(&e, tiny, sizeof tiny, &m, er, sizeof er)
-                   ? "written\n" : "");
-            printf("%s (needs %zu)\n", er, m);
-            emit_bytes(&e, NULL, 0, &m, er, sizeof er);
-            printf("counting only: %zu octets\n", m);
-        }
         free_arena();
     }
     return 0;

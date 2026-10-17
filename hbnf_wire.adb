@@ -412,7 +412,8 @@ package body HBNF_Wire is
             S : constant String := To_String (T.Text);
          begin
             return Is_Sym (Peek (P), "=")
-              or else S in "binary" | "prefix" | "entry" | "units";
+              or else S in "binary" | "prefix" | "entry" | "units"
+                          | "language";
          end;
       end if;
       return False;
@@ -923,6 +924,30 @@ package body HBNF_Wire is
       return 0;
    end Find;
 
+   procedure Check_Code_Language (G : Grammar; Backend : String) is
+      Has_Code : Boolean :=
+        G.Preamble /= Null_Unbounded_String
+        or else G.Epilogue /= Null_Unbounded_String;
+   begin
+      for R of G.Rules loop
+         if R.Action /= Null_Unbounded_String
+           or else R.Emit /= Null_Unbounded_String
+         then
+            Has_Code := True;
+         end if;
+      end loop;
+      if Has_Code and then To_String (G.Language) /= Backend then
+         raise Wire_Error with
+           "this grammar has code (a preamble, an epilogue, an %action or an "
+           & "%emit), and it is written in " & To_String (G.Language)
+           & " (the file's `language` line, C if it has none), so it can be "
+           & "emitted in " & To_String (G.Language) & ", not in " & Backend
+           & ".  For " & Backend & ", write the same code in " & Backend
+           & " in a file that says `language " & Backend & "`; a grammar with "
+           & "no code goes to every backend";
+      end if;
+   end Check_Code_Language;
+
    function Is_Value_Set (R : Rule) return Boolean is
       W : Natural := 0;
    begin
@@ -1410,6 +1435,20 @@ package body HBNF_Wire is
                   Fail (P, Cur (P), "expected a quoted identifier prefix or "
                         & "`none` after `prefix`");
                end if;
+               Next (P);
+            elsif To_String (T.Text) = "language"
+              and then not Is_Sym (Peek (P), "=")
+            then
+               Next (P);
+               if Cur (P).Kind /= T_Name
+                 or else To_String (Cur (P).Text) not in "C" | "Rust" | "Zig"
+                                                          | "Ada"
+               then
+                  Fail (P, Cur (P), "`language` is C, Rust, Zig or Ada, "
+                        & "the language this file's code is written in; "
+                        & "found " & Describe (Cur (P)));
+               end if;
+               P.G.Language := Cur (P).Text;
                Next (P);
             elsif To_String (T.Text) = "units"
               and then not Is_Sym (Peek (P), "=")

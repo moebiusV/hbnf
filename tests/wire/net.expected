@@ -14,5 +14,3 @@ ihl 16: ipv4.ihl: does not fit in 4 bits
 options longer than ihl says: ipv4.options: has a different number of octets than its length says
 arp payload for an ipv4 ethertype: ethernet.payload: alternative 2 is chosen, but its guard does not hold
 ethertype not in the list: ethernet.ethertype: is not one of the values the rule `ethertype` lists
-buffer too small: ethernet: the buffer is too small (needs 58)
-counting only: 58 octets

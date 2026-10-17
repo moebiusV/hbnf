@@ -142,12 +142,20 @@ package HBNF_Wire is
       Unit_Width : Natural := 0;               --  0: no text form
       Units      : Unit_Vectors.Vector;
       Unit_Sep   : Unbounded_String;           --  "" for none
+      Language   : Unbounded_String := To_Unbounded_String ("C");
+      --  `language Rust`: the language the file's code (preamble, epilogue,
+      --  %action, %emit) is written in; C unless it says.
       Preamble   : Unbounded_String;
       Epilogue   : Unbounded_String;
       --  `{ code }` blocks between the directives and the rules, and after the
       --  rules: C copied as it stands, for includes and prototypes, and for the
       --  functions the actions call.  hbnf never reads it.
    end record;
+
+   --  A grammar with code in it can be emitted in the language the code is
+   --  written in.  Raises Wire_Error, saying what to do, when Backend (C, Rust,
+   --  Zig or Ada) is not it.  A grammar without code goes to any.
+   procedure Check_Code_Language (G : Grammar; Backend : String);
 
    --  Read and check a wire grammar.  Raises Wire_Error.
    function Parse (Text : String; File : String := "") return Grammar;

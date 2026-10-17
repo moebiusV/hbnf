@@ -900,6 +900,7 @@ package body HBNF_Wire.C is
 
       Root : constant Natural := 1;
    begin
+      Check_Code_Language (G, "C");
       if Is_Value_Set (G.Rules (Root)) then
          raise Wire_Error with
            "the first rule, `" & To_String (G.Rules (Root).Name)
