@@ -7,7 +7,7 @@ the RFCs, so that "paste RFC ABNF and get a parser" is proven, not assumed.
 
 One snippet is one numbered id, `<rfc>-<n>`, and its files sit side by side:
 
-    rfc-corpus/
+    corpus/rfc/
       rfc5234-1.bnf        the RFC's text, as published
       rfc5234-1.hbnf       the form hbnf compiles
       rfc5234-1.md         what changed between the two, and why; the messages
@@ -30,7 +30,7 @@ One snippet is one numbered id, `<rfc>-<n>`, and its files sit side by side:
   `\t`, `\NNN` and `\\` as printf's `%b` reads them; an empty line is the empty
   input).
 
-Other corpora follow the same rule: `posix-corpus/posix-shell-1.y` and
+Other corpora follow the same rule: `corpus/posix/posix-shell-1.y` and
 `posix-shell-1.hbnf` (the yacc BNF as POSIX prints it, and the form hbnf
 compiles), with the same `.md` and `.vectors/`.
 

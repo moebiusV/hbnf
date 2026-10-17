@@ -3,13 +3,13 @@
 The source of the IMP72 compiler, as distributed through the DECUS library: a
 real metacompiler, written in its own language, that bootstraps from a small
 syntax reader (`rsyn.imc`) and a file that defines the language (`syntax.imc`).
-It is test data for hbnf in the way `rfc-corpus/` and `posix-corpus/` are, and
+It is test data for hbnf in the way `corpus/rfc/` and `corpus/posix/` are, and
 the subject of `METACOMPILERS.md`, which compares it with META II, SNOBOL4 and
 hbnf and asks what it would take for hbnf to play the part of its kernel.
 
 ## Layout
 
-    imp72-corpus/
+    corpus/imp72/
       README.md        this file
       SHA256SUMS       the hash of every file in tape/, as taken
       tape/            the files of DECUS 10-198, unchanged
@@ -84,5 +84,5 @@ of the family hbnf reads.  Reading it is the first measurement in
 ambiguities hbnf's union analysis finds, because IMP72's syntax is ambiguous on
 purpose and resolved by rule.  The other modules are the IMP source that a
 translator written with hbnf would have to read; each of them must parse, which
-is the corpus's acceptance test in the way every `rfc-corpus` snippet's vectors
+is the corpus's acceptance test in the way every `corpus/rfc` snippet's vectors
 are.

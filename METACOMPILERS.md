@@ -329,7 +329,7 @@ with emit templates, translating `.imc` to C over a small 36-bit-word runtime
 (half-word fields `<L>`/`<R>`, byte pointers, registers, `COMMON`, `REMOTE`),
 would reproduce the whole IMP72 compiler on a modern machine, emitting PDP-10
 `.REL` files, with no PDP-10 binary needed to build it.  The tape is the test
-corpus (the way `rfc-corpus/` is for ABNF): every `.imc` file must parse, and
+corpus (the way `corpus/rfc/` is for ABNF): every `.imc` file must parse, and
 the translated compiler must compile the compiler's sources.  Validation against
 the original needs the original running, which means a PDP-10 emulator (SIMH)
 and a TOPS-10 or TENEX image from the same archive, and the comparison is of
@@ -421,7 +421,7 @@ step whose result changes what the next one is.
 ## IMP72 and Ada, both from ALGOL
 
 Ada is hbnf's implementation language and one of its four backends, and IMP is
-the language of the compiler in `imp72-corpus/`.  Both are ALGOL's descendants
+the language of the compiler in `corpus/imp72/`.  Both are ALGOL's descendants
 by different roads: Ada through Pascal, with ALGOL 68's influence on its
 types; IMP through Irons, whose syntax-directed compiler for ALGOL 60 (1961) is
 where his line of work begins.  The IMP72 manual describes the language as "a

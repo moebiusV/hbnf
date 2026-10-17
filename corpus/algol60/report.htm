@@ -1,0 +1,2821 @@
+<HTML>
+
+<HEAD>
+<TITLE>Revised Report on the Algorithmic Language Algol 60</TITLE>
+<META NAME="Keywords" CONTENT="Revised Report on the Algorithmic Language Algol 60">
+<META NAME="Abstract" CONTENT="Revised Report on the Algorithmic Language Algol 60">
+<META NAME="Description" CONTENT="Revised Report on the Algorithmic Language Algol 60">
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+
+<STYLE TYPE="text/css">
+body,p,td,ol,ul,li,dd,dt {font-family: Times,TimesRoman,TimesNewRoman,serif; font-size: 12pt;}
+b {font-family: Times,TimesRoman,TimesNewRoman,serif; font-size: 12pt; font-weight: bold;}
+a {text-decoration: none; }
+tt { font-size: 10pt; font-family: Courier,CourierRoman; letter-spacing: 125%; }
+pre { font-size: 10pt; font-family: Courier,CourierRoman; line-height: 16pt; }
+u { text-decoration: underline; font-weight: 600; }
+h1 {font-family: Arial,Helvetica,sans-serif; font-size: 18pt;}
+h2 {font-family: Arial,Helvetica,sans-serif; font-size: 16pt;}
+h3 {font-family: Arial,Helvetica,sans-serif; font-size: 14pt;}
+h4 {font-family: Arial,Helvetica,sans-serif; font-size: 12pt;}
+h5 {font-family: Arial,Helvetica,sans-serif; font-size: 11pt;}
+a.masswerk {font-family: Arial,Helvetica,sans-serif; font-size: 12px; font-weight: bold;}
+</STYLE>
+
+
+<!-- LATEX to HTML by N.Landsteiner -->
+
+<!-- original header info:
+ RRA60.texinfo:                                       oct '90
+
+ Erik Schoenfelder (schoenfr@ibr.cs.tu-bs.de)
+
+
+ This is a copy of the
+
+     ``Revised Report on the Algorithmic Language Algol 60''
+
+ It is typed-in by me, but I am not the author.
+ It's not part of the NASE A60 interpreter - see the following note:
+
+
+ This note is taken from the end of the report:
+
+	Note.  This report is published in Numerische Mathematik, in
+	the Communications of the ACM, and in the Journal of the
+	British Computer Soc.  Reproduction of this report for any
+	purpose is explicitly permitted; reference should be made
+	to this issue of Numerische Mathematik and to the respective
+	issues of the Communications and the Journal of the British
+	Computer Soc. as the source.
+
+	Technical University Delft Delft, Holland W. L. van der
+	Poel, (Chairman of Working Group 2.1 on Algol of the
+	International Federation for Information Processing)
+
+
+ This is a LaTeX-Info Formatted file. Run it ether through ``latex''
+ for printable output or choose ``latex-info-format-buffer'' 
+ with the GNU Emacs for an online formatted info-file.
+-->
+</HEAD>
+
+<BODY BGCOLOR="#f0f0f0" TEXT="#000000" LINK="#002266" VLINK="#002266" ALINK="#0033ff">
+<A NAME="top"></A>
+
+<!-- Top, Introduction, (dir), (dir) -->
+<CENTER>
+<A NAME="RRA60"><H1>Revised Report on the Algorithmic Language Algol 60</H1></A>
+
+
+
+                                 <P>By<BR><BR>
+                                   
+       J.W. Backus, F.L. Bauer, J.Green, C. Katz, J. McCarthy<BR>
+   P. Naur, A.J. Perlis, H. Rutishauser, K. Samuelson, B. Vauquois<BR>
+            J.H. Wegstein, A. van Wijngaarden, M. Woodger<BR><BR>
+                                   
+                             [originally] Edited by<BR><BR>
+                                   
+                              Peter Naur<BR><BR><BR>
+                                   
+                                   
+             Dedicated to the memory of William Turanski<BR>&nbsp;</P>
+
+</CENTER>
+
+<H3>Contents</H3>
+<ul type=square>
+<LI><A HREF="#Summary">Summary</A>
+<LI><A HREF="#Introduction">Introduction</A>
+<LI><A HREF="#Description">Description of the reference language</A>
+<LI><A HREF="#Edition">Note on the edition</A>
+</ul>
+
+&nbsp;<BR>
+<A NAME="Summary"><H3>Summary</H3></A>
+
+
+<P>The report gives a complete defining description of the international
+algorithmic language Algol 60. This is a language suitable for
+expressing a large class of numerical processes in a form sufficiently
+concise for direct automatic translation into the language of
+programmed automatic computers.</P>
+
+<P>The introduction contains an account of the preparatory work leading
+up to the final conference, where the language was defined. In
+addition the notions reference language, publication language, and
+hardware representations are explained.</P>
+
+<P>In the first chapter a survey of the basic constituents and features
+of the language is given, and the formal notation, by which the
+syntactic structure is defined, is explained.</P>
+
+<P>The second chapter lists all the basic symbols, and the syntactic
+units known as identifiers, numbers, and strings are defined. Further
+some important notions such as quantity and value are defined.</P>
+
+<P>The third chapter explains the rules for forming expressions and the
+meaning of these expressions. Three different types of expressions
+exist: arithmetic, Boolean (logical), and designational.</P>
+
+<P>The fourth chapter describes the operational units of the language,
+known as statements. The basic statements are: assignment statements
+(evaluation of a formula), go to statements (explicit break of the
+sequence of execution of statements), dummy statements, and procedure
+statements (call for execution of a closed process, defined by a
+procedure declaration). The formation of more complex structures,
+having statement character, is explained. These include: conditional
+statements, for statements, compound statements, and blocks.</P>
+
+<P>In the fifth chapter the units known as declarations, serving for
+defining permanent properties of the units entering into a process
+described in the language, are defined.</P>
+
+<P>The report ends with two detailed examples of the use of the language
+and an alphabetic index of definitions.</P>
+
+&nbsp;<BR>
+
+<!-- Introduction, Description, Top, Top -->
+
+<A NAME="Introduction"><H2>Introduction</H2></A>
+
+
+
+<A NAME="Background"><H3>Background</H3></A>
+
+
+<P>After the publication (1)(2) of a preliminary report on the
+algorithmic language Algol, as prepares at the conference in Zuerich
+in 1958, much interest in the Algol language developed.</P>
+
+<TABLE>
+<TR>
+<TD VALIGN=top><P>(1)&nbsp;</P></TD><TD VALIGN=top><P>Preliminary report - International Algebraic Language, Comm. 
+    Assoc. Comp. Mach. 1, No. 12 (1958), 8.</P></TD>
+</TR>
+<TR>
+<TD VALIGN=top><P>(2)&nbsp;</P></TD><TD VALIGN=top><P>Report on the Algorithmic Language Algol by the ACM Committee
+    on Programming Languages and the GAMM Committee on Programming,
+    edited by A. J. Perlis and K. Samuelson, Numerische Mathematik
+    Bd. 1, S. 41-60 (1959).</P></TD>
+</TR>
+</TABLE>
+
+<P>As a result of an informal meeting held at Mainz in November 1958, about
+forty interested persons from several European countries held an Algol
+implementation conference in Copenhagen in February 1959.  A ``hardware
+group'' was formed for working cooperatively right down to the level of
+the paper tape code.  This conference also led to the publication by
+Regnecentralen, Copenhagen, of an `Algol Bulletin', edited by Peter
+Naur, which served as a forum for further discussion.  During the June
+1959 ICIP Conference in Paris several meetings, both formal and informal
+ones, were held.  These meetings revealed some misunderstandings as to
+the intent of the group which was primarily responsible for the
+formulation of the language, but at the same time made it clear that
+there exists a wide appreciation of the effort involved.  As a result of
+the discussions it was decided to hold an international meeting in
+January 1959 for improving the Algol language and preparing a final
+report.  At a European Algol Conference in Paris in November 1959 which
+was attended by about fifty people, seven European representatives were
+selected at attend the January 1960 Conference, and they represent the
+following organisations: Association Fran&ccedil;aise de Calcul, British
+Computer Society, Gesellschaft f&uuml;r Angewandte Mathematik und
+Mechanik, and the Nederlands Rekenmachine Genootschap.  The seven
+representatives held a final preparatory meeting at Mainz in December
+1959.</P>
+
+<P>Meanwhile, in the United States, anyone who wished to suggest changes or
+corrections to Algol was requested to send his comments to the
+`Communications of the ACM', where they were published.  These comments
+then became the basis of consideration for changes in the Algol
+language.  Both the SHARE and USE organisations established Algol
+working groups, and both organisations were represented on the ACM
+Committee on Programming Languages.  The ACM Committee met in Washington
+in November 1959 and considered all comments on Algol that had been sent
+to the ACM `Communications'.  Also, seven representatives were selected
+to attend the January 1960 international conference.  The seven
+representatives held a final preparatory meeting in Boston in December
+1959.</P>
+
+
+
+&nbsp;<BR>
+<A NAME="January1960Conference"><H3>January 1960 Conference</H3></A>
+
+
+<P>The thirteen representatives (1), from Denmark, England, France,
+Germany, Holland, Switzerland, and the United States, conferred in
+Paris from January 11 to 16, 1960.</P>
+
+
+<TABLE>
+<TR>
+<TD VALIGN=top><P>(1)&nbsp;</P></TD><TD VALIGN=top><P>William Turanski of the American group was killed by an automobile
+    just prior to the January 1960 Conference.</P></TD>
+</TR>
+</TABLE>
+
+<P>Prior to this meeting a completely new draft report was worked out from
+the preliminary report and the recommendations of the preparatory
+meetings by Peter Naur and the Conference adopted this new form as the
+basis for its report. The Conference then proceeded to work for
+agreement on each item of the report. The present report represents the
+union of the Committee's concepts and the intersection of its agreements.</P>
+
+
+
+&nbsp;<BR>
+<A NAME="April1962Conference"><H3>April 1962 Conference [Edited by M. Woodger]</H3></A>
+
+
+
+<P>A meeting of some of the authors of Algol 60 was held on 2nd - 3rd April
+in Rome, Italy, through the facilities and courtesy of the International
+Computation Centre.  The following were present:</P>
+
+<pre>
+Authors             Advisers            Observer
+
+F. L. Bauer         M. Paul             W. L. van der Poel
+J. Green            R. Franciotti       (Chairman, IFIP TC 2.1
+C. Katz             P. Z. Ingerman      Working Group Algol)
+R. Kogon (representing
+        J.W. Backus)
+P. Naur
+K. Samuelson        G. Seegem&uuml;ller
+J. H. Wegstein      R.E. Utman
+A. van Wijngaarden
+M. Woodger          P. Landin
+</pre>
+
+&nbsp;<BR>
+<P>The purpose of the meeting was to correct known errors in, attempt to
+eliminate apparent ambiguities in, and otherwise clarify the Algol 60
+Report.  Extensions to the language were not considered at the meeting. 
+Various proposals for correction and clarification that were submitted
+by interested parties in response to the Questionnaire in Algol Bulletin
+No. 14 were used as a guide.</P>
+
+<P>This report constitutes a supplement to the Algol 60 Report which should
+resolve a number of difficulties therein.  Not all of the questions
+raised concerning the original report could be resolved.  Rather than
+risk of hastily drawn conclusions on a number of subtle points, which
+might create new ambiguities, the committee decided to report only those
+points which they unanimously felt could be stated in clear and
+unambiguous fashion.</P>
+
+<P>Questions concerned with the following areas left for further consideration by
+Working Group 2.1 of IFIP, in the expectation that current
+work on advanced programming languages will lead to
+better resolution:</P>
+
+<OL>
+
+<LI> Side effects of functions.
+
+<LI> The call by name concept.
+
+<LI> <TT><U>own</U></TT>: static or dynamic.
+
+<LI> For statement: static or dynamic.
+
+<LI> Conflict between specification and declaration.
+
+</OL>
+
+<P>The authors of the Algol 60 Report present at the Rome Conference,
+being aware of the formation of a Working Group on Algol by IFIP,
+accepted that any collective responsibility which they might have
+with respect to the development, specification, and refinement of
+the Algol language will from now on be transferred to that body.</P>
+
+<P>This report has been reviewed by IFIP TC 2 on Programming Languages in August 1962 and
+has been approved by the Council of the International Federation for
+Information Processing.</P>
+
+<P>As with the preliminary Algol report, three different levels of language
+are recognized, namely a Reference Language, a Publication Language, and
+several Hardware Representations.</P>
+
+
+&nbsp;<BR>
+<H5>Reference Language</H5>
+
+<OL>
+
+<LI> It is the working language of the committee.
+
+<LI> It is the defining language.
+
+<LI> The characters are determined by ease of mutual understanding and
+      not by any computer limitations, coders notation, or pure
+      mathematical notation.
+
+<LI> It is the basic reference and guide for compiler builders.
+
+<LI> It is the guide for all hardware representations.
+
+<LI> It is the guide for transliterating from publication language to
+      any locally appropriate hardware representations.
+
+<LI> The main publications of the Algol language itself will use the
+      reference representation.
+</OL>
+
+
+&nbsp;
+<H5>Publication Language</H5>
+
+<OL>
+<LI> The publication language admits variations of the reference
+      language according to usage of printing and handwriting (e.g.
+      subscripts, spaces, exponents, Greek letters).
+
+<LI> It is used for stating and communicating process.
+
+<LI> The characters used may be different in different countries, but
+      univocal correspondence with reference representation must be
+      secured.
+</OL>
+
+&nbsp;
+<H5>Hardware Representations</H5>
+
+<OL>
+<LI> Each of these is a condensation of the reference language enforced
+      by the limited number of characters on the standard input
+      equipment.
+
+<LI> Each one of these uses the character set of a particular computer
+      and is the language accepted by a translator for that computer.
+
+<LI> Each of these must by accompanied by a special set of rules for
+      transliterating from publication or reference language.
+</OL>
+&nbsp;<BR>
+
+<P>For transliteration between the reference language and a language
+suitable for publications, among others, the following rules are
+recommended.</P>
+
+<PRE>
+
+Reference Language              Publication Language
+
+
+Subscript brackets [ ]          Lowering of the line between the
+                                brackets and removal of the brackets.
+
+Exponentiation <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">                Raising the exponent.
+
+Parentheses ()                  Any form of parentheses, brackets,
+                                braces.
+
+Basis of ten <SUB>10</SUB>                  Raising of the ten and of the following
+                                integral number, inserting of the
+                                intended multiplication sign.
+</PRE>
+
+
+
+&nbsp;<BR>
+<!-- Description, Structure, Introduction, Top -->
+
+<A NAME="Description"><H2>Description of the reference language</H2></A>
+
+
+<TABLE>
+<TR>
+<TD><PRE>                    </PRE></TD>
+<TD>
+Was sich &uuml;berhaupt sagen l&auml;&szlig;t, l&auml;&szlig;t sich<BR>
+klar sagen; und wovon man nicht reden<BR>
+kann, dar&uuml;ber mu&szlig; man schweigen.
+</TD>
+</TR>
+<TR>
+<TD></TD>
+<TD ALIGN="right">Ludwig Wittgenstein</TD>
+</TR>
+</TABLE>
+
+
+<ul type=square>
+<LI><A HREF="#1">1. Structure of the language</A>
+<LI><A HREF="#2">2. Basic symbols, identifiers, numbers, and strings</A>
+<LI><A HREF="#3">3. Expressions</A>
+<LI><A HREF="#4">4. Statements</A>
+<LI><A HREF="#5">5. Declarations</A>
+<LI><A HREF="#examples">Examples of procedure declarations</A>
+<LI><A HREF="#index">Alphabetic index of concepts and syntactic units</A>
+<LI><A HREF="#note">Note</A>
+</ul>
+
+&nbsp;<BR>
+<!-- Structure, Basic, Description, Description -->
+
+<A NAME="1"><H3>1. Structure of the language</H3></A>
+
+
+
+<P>As stated in the introduction, the algorithmic language has three
+different kinds of representations -- reference, hardware, and
+publication -- and the development described in the sequel is in terms
+of the language are represented by a given set of symbols -- and it is
+only in the choice of symbols that the other two representations may
+differ. Structure and content must be the same for all
+representations.</P>
+
+<P>The purpose of the algorithmic language is to describe computational
+processes. The basic concept used for the description of calculating
+rules is the well known arithmetic expression containing as constituents
+numbers, variables, and functions. From such expressions are compounded,
+by applying rules of arithmetic composition, self-contained units of the
+language -- explicit formulae -- called assignment statements.</P>
+
+<P>To show the flow of computational processes, certain non-arithmetic
+statements and statement clauses are added which may describe e.g.,
+alternatives, or iterative repetitions of computing statements. Since it
+is necessary for the function of the statements that one statement
+refers to another, statements may be provided with labels. A sequence of
+statements may be enclosed between the statement brackets <TT><U>begin</U></TT>
+and <TT><U>end</U></TT> to form a compound statement.</P>
+
+<P>Statements are supported by declarations which are not themselves
+computing instructions, but inform the translator of the existence and
+certain properties of objects appearing in statements, such as the class
+of numbers taken on as values by a variable, the dimension of an array
+of numbers, or even the set of rules defining a function. A sequence of
+declarations followed by a sequence of statements and enclosed between
+<TT><U>begin</U></TT> and <TT><U>end</U></TT> constitutes a block. Every declaration
+appears in a block in this way and is valid only for that block.</P>
+
+<P>A program is a block or compound statement which is not contained within
+another statement and which makes no use of other statements not
+contained within it.</P>
+
+<P>In the sequel the syntax and semantics of the language will be
+given (1).</P>
+
+<P>
+<TABLE>
+<TR>
+<TD VALIGN=top><P>(1)&nbsp;</TD><TD VALIGN=top><P>Whenever the precision of arithmetic is stated as being in general
+    not specified, or the outcome of a certain process is left undefined
+    or said to be undefined, this is to be interpreted in the sense that
+    a program only fully defines a computational process if the
+    accompanying information specifies the precision assumed, the kind
+    of arithmetic assumed, and the course of action to be taken in all
+    such cases as may occur during the execution of the computation.</TD>
+</TR>
+</TABLE>
+
+&nbsp;<BR>
+<A NAME="1_1"><H4>1.1 Formalism for syntactic description.</H4></A>
+
+
+<P>The syntax will be described with the aid of metalinguistic formulae
+(1).</P>
+<P>
+<TABLE>
+<TR>
+<TD VALIGN=top><P>(1)&nbsp;</TD><TD VALIGN=top><P>Cf. J. W. Backus, The syntax and semantics of the proposed
+    international algebraic language of the Zuerich ACM-GRAMM
+    conference. ICIP Paris, June 1959.</TD>
+</TR>
+</TABLE>
+
+<P>Their interpretation is best explained by an example:</P>
+<pre>
+    &lt;ab&gt; ::= ( | [ | &lt;ab&gt; ( | &lt;ab&gt; &lt;d&gt;
+</pre>
+<P>Sequences of characters enclosed in the bracket <TT>&lt;&gt;</TT> represent
+metalinguistic variables whose values are sequences of symbols. The
+marks <TT>::=</TT> and <TT>|</TT> (the latter with the meaning of <B>or</B>) are
+metalinguistic connectives. Any mark in a formula, which is not a
+variable or a connective, denotes itself (or the class of marks which
+are similar to it). Juxta position of marks and/or variables in a
+formula signifies juxtaposition of the sequences denoted. Thus the
+formula above gives a recursive rule for the formation of values of the
+variable &lt;ab&gt;. It indicates that <TT>&lt;ab&gt;</TT> may have the value <TT>(</TT>
+or <TT>[</TT> or that given some legitimate value of <TT>&lt;ab&gt;</TT>, another may be
+formed by following it with the character <TT>(</TT> or by following it with some
+value of the variable <TT>&lt;d&gt;</TT>. If the values of <TT>&lt;d&gt;</TT> are the
+decimal digits, some values of <TT>&lt;ab&gt;</TT> are:</P>
+
+<pre>
+[(((1(37(
+(12345(
+(((
+[86
+</pre>
+
+<P>In order to facilitate the study, the symbols used for
+distinguishing the metalinguistic variables (i.e. the sequence of
+characters appearing within the brackets <TT>&lt;&gt;</TT> as <TT>ab</TT> in the
+above example) have been chosen to be words describing approximately
+the nature of the corresponding variable. Where words which have
+appeared in this manner are used elsewhere in the text they will refer
+to the corresponding syntactic definition. In addition some formulae
+have been given in more than one place.</P>
+
+<P>Definition:</P>
+<pre>
+&lt;empty&gt; ::=
+</pre>
+<P>(i.e. the null string of symbols).</P>
+
+
+&nbsp;<BR>
+<!-- Basic, Expressions, Structure, Description -->
+
+<A NAME="2"><H3>2. Basic symbols, identifiers, numbers, and strings.</H3></A>
+
+<A NAME="Basic_concepts"><H3>Basic concepts</H3></A>
+
+
+
+<P>The reference language is built up from the following basic symbols:</P>
+<pre>
+&lt;basic symbol&gt; ::= &lt;letter&gt; | &lt;digit&gt; |
+         &lt;logical value&gt; | &lt;delimiter&gt;
+</pre>
+
+
+<A NAME="2_1"><H4>2.1. Letters</H4></A>
+
+
+<pre>
+&lt;letter&gt; ::= a | b | c | d | e | f | g | h | i | j | k | l |
+        m | n | o | p | q | r | s | t | u | v | w | x | y | z | A |
+        B | C | D | E | F | G | H | I | J | K | L | M | N | O | P |
+        Q | R | S | T | U | V | W | X | Y | Z
+</pre>
+
+<P>This alphabet may be arbitrarily restricted, or extended with any other
+distinctive character (i.e. character not coinciding with any digit,
+logical value or delimiter).</P>
+
+<P>Letters do not have individual meaning. They are used for forming
+identifiers and strings (1) (cf. sections <A HREF="#2_4">2.4. Identifiers</A>, <A HREF="#2_6">2.6.
+Strings</A>).</P>
+
+<TABLE>
+<TR>
+<TD VALIGN=top><P>(1)&nbsp;</P></TD><TD VALIGN=top><P>It should be particularly noted that throughout the reference
+    language underlining [here this looks like <TT><U>underlined</U></TT>; 
+    N.L.] is used for defining independent basic symbols (see
+    sections <A HREF="#2_2_2">2.2.2</A> and <A HREF="#2_3">2.3</A>). These are understood to have no relation to
+    the individual letters of which they are composed. Within the
+    present report underlining will be used for no other purposes.</P></TD>
+</TR>
+</TABLE>
+
+&nbsp;<BR>
+
+<A NAME="2_2"><H4>2.2. Digits and logical values</H4></A>
+
+<P><A NAME="2_2_1"><B>2.2.1 Digits.</B></A></P>
+
+<pre>
+&lt;digit&gt; ::= 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 
+</pre>
+
+<P>Digits are used for forming numbers, identifiers, and strings.</P>
+
+
+
+<P><A NAME="2_2_2"><B>2.2.2 Logical values.</B></A></P>
+
+<pre>
+&lt;logical value&gt; ::= <U>true</U> | <U>false</U>
+</pre>
+<P>The logical values have a fixed obvious meaning.</P>
+
+&nbsp;<BR>
+
+
+<A NAME="2_3"><H4>2.3. Delimiters</H4></A>
+
+
+<pre>
+&lt;delimiter&gt; ::= &lt;operator&gt; | &lt;separator&gt; | &lt;bracket&gt; |
+        &lt;declarator&gt; | &lt;specificator&gt;
+
+&lt;operator&gt; ::= &lt;arithmetic operator&gt; | &lt;relational operator&gt; |
+        &lt;logical operator&gt; | &lt;sequential operator&gt;
+
+&lt;arithmetic operator&gt; ::= + | - | <IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1"> | / | &divide; | <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">
+
+&lt;relational operator&gt; ::= &lt; | <IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER"> | = | <IMG SRC="images/ge.gif" WIDTH=9 HEIGHT=9 ALT="NOTLESS"> | &gt; | <IMG SRC="images/ne.gif" WIDTH=9 HEIGHT=9 ALT="NOTEQUAL">
+
+&lt;logical operator&gt; ::= <IMG SRC="images/equiv.gif" WIDTH=8 HEIGHT=9 ALT="EQUIVALENCE"> | <IMG SRC="images/impl.gif" WIDTH=9 HEIGHT=9 ALT="IMPLICATION"> | <IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR"> | <IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND"> | &not;
+
+&lt;sequential operator&gt; ::= <U>goto</U> | <U>if</U> | <U>then</U> |
+        <U>else</U> | <U>for</U> | <U>do</U> (2)
+
+&lt;separator&gt; ::= , | . | <SUB>10</SUB> | : | ; | := | <IMG SRC="images/blank.gif" WIDTH=7 HEIGHT=9 ALT="BLANK"> | <U>step</U> |
+        <U>until</U> | <U>while</U> | <U>comment</U>
+
+&lt;bracket&gt; ::= ( | ) | [ | ] | ` | ' | <U>begin</U> | <U>end</U>
+
+&lt;declarator> ::= <U>own</U> | <U>Boolean</U> | <U>integer</U> |
+        <U>real</U> | <U>array</U> | <U>switch</U> |
+        <U>procedure</U>
+
+&lt;specificator&gt; ::= <U>string</U> | <U>label</U> |
+        <U>value</U>
+</pre>
+<TABLE>
+<TR>
+<TD VALIGN=top><P>(2)&nbsp;</P></TD><TD VALIGN=top><P><TT><U>do</U></TT> is used in for statements. It has no relation to the
+    <I>do</I> of the preliminary report, which is not included in
+    Algol60.</P></TD>
+</TR>
+</TABLE>
+
+<P>Delimiters have a fixed meaning which for the most part is obvious or
+else will be given at the appropriate place in the sequel.</P>
+
+<P>Typographical features such as blank space or change to a new line
+have no significance in the reference language. They, however, be used
+freely for facilitating reading.</P>
+
+<P>For the purpose of including text among the symbols of a program the
+following "comment" conventions hold:</P>
+
+<TABLE BORDER=0 CELLSPACING=0 CELLPADDING=4>
+<TR>
+<TD VALIGN="top">
+The sequence of basic symbols:
+<pre>
+; <U>comment</U> &lt;any sequence not containing ;&gt;;
+<U>begin</U> <U>comment</U> &lt;any sequence not containing ;&gt;;
+<U>end</U> &lt;any sequence not containing <U>end</U> or ; or <U>else</U>&gt;
+</pre>
+</TD>
+<TD>&nbsp;&nbsp;</TD>
+<TD VALIGN="top">
+is equivalent to
+<pre>
+;
+<U>begin</U>
+<U>end</U>
+</pre>
+</TD>
+</TR>
+</TABLE>
+
+
+<P>By equivalence is here meant that any of the three structures shown in
+the left hand column may be replaced, in any occurrence outside of
+strings, by the symbol shown in the same line in the right hand
+column without any effect on the action of the program. It is further
+understood that the comment structure encountered first in the text
+when reading from left to right has precedence in being replaced over
+later structures contained in the sequence.</P>
+
+
+<P>&nbsp;<BR>
+<A NAME="2_4"><H4>2.4. Identifiers</H4></A>
+
+
+
+<P><B>2.4.1. Syntax.</B></P>
+
+<pre>
+&lt;identifier&gt; ::= letter&gt; | &lt;identifier&gt;
+        &lt;letter&gt; | &lt;identifier&gt; &lt;digit&gt;
+</pre>
+
+
+<P><B>2.4.2. Examples.</B></P>
+
+<pre>
+q
+Soup
+V17a
+a34kTMNs
+MARILYN
+</pre>
+
+
+<P><A NAME="2_4_3"><B>2.4.3. Semantics.</B></A> Identifiers have no inherent meaning, but serve for
+the identification of simple variables, arrays, labels, switches, and
+procedures. They may be chosen freely (cf. however section <A HREF="#3_2_4">3.2.4.
+Standard functions</A>).</P>
+
+<P>The same identifiers cannot be used to denote two different quantities
+except when these quantities have disjoint scopes as defined by the
+declarations of the program (cf section <A HREF="#2_7">2.7. Quantities, kinds and
+scopes</A> and section <A HREF="#5">5. Declarations</A>).</P>
+
+
+&nbsp;<BR>
+<A NAME="2_5"><H4>2.5. Numbers</H4></A>
+
+
+
+<P><A NAME="2_5_1"><B>2.5.1 Syntax.</B></A></P>
+<pre>
+&lt;unsigned integer&gt; ::= &lt;digit&gt; | &lt;unsigned integer&gt;
+         &lt;digit&gt;
+
+&lt;integer&gt; ::= &lt;unsigned integer&gt; | + &lt;unsigned integer&gt; |
+        - &lt;unsigned integer&gt;
+
+&lt;decimal fraction&gt; ::= . &lt;unsigned integer&gt;
+
+&lt;exponential part&gt; ::= <SUB>10</SUB> &lt;integer&gt;
+
+&lt;decimal number&gt; ::= &lt;unsigned integer&gt; | &lt;decimal fraction&gt; | 
+        &lt;unsigned integer&gt; &lt;decimal fraction&gt;
+
+&lt;unsigned number&gt; ::= &lt;decimal number&gt; | &lt;exponential part&gt; |
+        &lt;decimal number&gt; &lt;exponential part&gt;
+
+&lt;number&gt; ::= &lt;unsigned number&gt; | + &lt;unsigned number&gt; |
+        - &lt;unsigned number&gt;
+</pre>
+
+<P><A NAME="2_5_2"><B>2.5.2. Examples.</B></A></P>
+
+<pre>
+  0               -200.084                -.083<SUB>10</SUB>-02
+177               + 07.43<SUB>10</SUB>8                -<SUB>10</SUB>7
+   .5384             9.34<SUB>10</SUB>+10               <SUB>10</SUB>-4
+ +0.7300             2<SUB>10</SUB>-4                  +<SUB>10</SUB>+5
+</pre>
+
+<P><A NAME="2_5_3"><B>2.5.3.  Semantics.</B></A>  Decimal numbers have their conventional meaning. 
+The exponent part is scale factor expressed as an integral power of 10.</P>
+
+
+<P><A NAME="2_5_4"><B>2.5.4. Types.</B></A>  Integers are of the type <TT><U>integer</U></TT>. All other
+numbers are of type <TT><U>real</U></TT> (cf. section <A HREF="#5_1">5.1 Type declarations</A>).</P>
+
+
+&nbsp;<BR>
+<A NAME="2_6"><H4>2.6. Strings</H4></A>
+
+
+<P><A NAME="2_6_1"><B>2.6.1. Syntax.</B></A></P>
+<pre>
+&lt;proper string&gt; ::=
+        &lt;any sequence of symbols not containing ` or ' &gt; 
+        | &lt;empty&gt;
+
+&lt;open string&gt; ::= &lt;proper string&gt; `&lt;open string&gt;' |
+        &lt;open string&gt;&lt;open string&gt;
+
+&lt;string&gt; ::= `&lt;open string&gt;'
+</pre>
+
+<P><A NAME="2_6_2"><B>2.6.2. Examples.</B></A></P>
+
+<pre>
+`5k,,-`[[[`<IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND">=/:'Tt''
+`This<IMG SRC="images/blank.gif" WIDTH=7 HEIGHT=9 ALT="BLANK">is<IMG SRC="images/blank.gif" WIDTH=7 HEIGHT=9 ALT="BLANK">a<IMG SRC="images/blank.gif" WIDTH=7 HEIGHT=9 ALT="BLANK">`string''
+</pre>
+
+<P><A NAME="2_6_3"><B>2.6.3.  Semantics.</B></A>  In order to enable the language to handle arbitrary
+sequences of basic symbols the string quotes ` and ' are introduced.
+The symbol <IMG SRC="images/blank.gif" WIDTH=7 HEIGHT=9 ALT="BLANK"> denotes a space. It has no significance outside strings.
+Strings are used as actual parameters of procedures (cf. sections <A HREF="#3_2">3.2.
+Function designators</A> and <A HREF="#4_7">4.7. Procedure Statements</A>).</P>
+
+
+&nbsp;<BR>
+<P><A NAME="2_7"><H4>2.7. Quantities, kinds and scopes</H4></A></P>
+
+
+
+<P>The following kinds of quantities are distinguished: simple variables,
+arrays, labels, switches, and procedures.</P>
+
+<P>The scope of a quantity is the set of statements and expressions in
+which the declaration of the identifier associated with that quantity is
+valid.  For labels see section <A HREF="#4_1_3">4.1.3</A>.</P> 
+
+
+&nbsp;<BR>
+<A NAME="2_8"><H4>2.8. Values and types</H4></A>
+
+
+
+<P>A value is an ordered set of numbers (special case: a single number), an
+ordered set of logical values (special case: a single logical value), or
+a label.</P>
+
+<P>Certain of the syntactic units are said to possess values.  These values
+will in general change during the execution of the program The values of
+expressions and their constituents are defined in section 3.  The value
+of an array identifier is the ordered set of values of the corresponding
+array of subscripted variables (cf.  section <A HREF="#3_1_4_1">3.1.4.1</A>).</P>
+
+<P>The various ``types'' (<TT><U>integer</U></TT>, <TT><U>real</U></TT>, <TT><U>Boolean</U></TT>)
+basically denote properties of values.  The types associated with
+syntactic units refer to the values of these units.</P>
+
+
+&nbsp;<BR>
+<!-- Expressions, Statements, Basic, Description -->
+
+<A NAME="3"><H3>3. Expressions</H3></A>
+
+
+
+<P>In the language the primary constituents of the programs describing
+algorithmic processes are arithmetic, Boolean, and designational
+expressions.  Constituents of the expressions, except for certain
+delimiters, are logical values, numbers, variables, function designators,
+and elementary arithmetic, relational, logical, and sequential
+operators.  Since the syntactic definition of both variables and
+function designators contains expressions, the definition of
+expressions, and their constituents, is necessarily recursive.</P>
+
+<pre>
+&lt;expression&gt; ::= &lt;arithmetic expression&gt; |
+        &lt;Boolean expression&gt; | &lt;designational expression&gt;
+</pre>
+
+&nbsp;<BR>
+<A NAME="3_1"><H4>3.1. Variables</H4></A>
+
+
+<P><A NAME="3_1_1"><B>3.1.1. Syntax</B></A></P>
+<pre>
+&lt;variable identifier&gt; ::= &lt;identifier&gt;
+
+&lt;simple variable&gt; ::= &lt;variable identifier&gt;
+
+&lt;subscript expression&gt; ::= &lt;arithmetic expression&gt;
+
+&lt;subscript list&gt; ::= &lt;subscript expression&gt; |
+        &lt;subscript list&gt; , &lt;subscript expression&gt;
+
+&lt;array identifier&gt; ::= &lt;identifier&gt;
+
+&lt;subscripted value&gt; ::= &lt;array identifier&gt;
+        [ &lt;subscripted list&gt; ]
+
+&lt;variable&gt; ::= &lt;simple variable&gt; | &lt;subscripted variable&gt;
+</pre>
+
+<P><A NAME="3_1_2"><B>3.1.2. Examples</B></A></P>
+
+<pre>
+epsilon
+detA
+a17
+Q[7,2]
+x[sin(n<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">pi/2),Q[3,n,4]]
+</pre>
+
+
+<P><A NAME="3_1_3"><B>3.1.3.  Semantics.</B></A>  A variable is a designation given to a single value. 
+This value may be used in expressions for forming other values and may
+be changed at will by means of assignment statements (section <A HREF="#4_2">4.2</A>).  The
+type of the value of a particular variable is defined in the declaration
+for the variable itself (cf.  section <A HREF="#5_1">5.1.  Type declarations</A>) or for
+the corresponding array identifier (cf. section <A HREF="#5_2">5.2. Array declarations</A>),</P>
+
+<P><A NAME="3_1_4"><B>3.1.4.  Subscripts.</B></A><BR>
+<A NAME="3_1_4_1">3.1.4.1.</A>  Subscripted variables designate values
+which are components of multidimensional arrays (cf.  section <A HREF="#5_2">5.2. 
+Array declarations</A>).  Each arithmetic expression of the subscript list
+occupies one subscript position of the subscripted variable and is
+called a subscript.  The complete list of subscripts is enclosed in the
+subscript brackets [ ].  The array component referred to by a
+subscripted variable is specified by the actual numerical value of its
+subscripts (cf.  section <A HREF="#3_3">3.3.  Arithmetic expressions</A>).</P>
+
+<P><A NAME="3_1_4_2">3.1.4.2.</A>  Each subscript position acts like a variable of type
+<TT><U>integer</U></TT> and the evaluation of the subscript is understood to be
+equivalent to an assignment to this fictitious variable (cf.  <A HREF="#4_2_4">section
+4.2.4</A>).  The value of the subscripted variable is defined only if the
+value of the subscript expression is within the subscript bounds of the
+array (cf.  section <A HREF="#5_2">5.2.  Array declarations</A>).</P>
+
+
+&nbsp;<BR>
+<A NAME="3_2"><H4>3.2. Function designators</H4></A>
+
+
+<P><A NAME="3_2_1"><B>3.2.1. Syntax</B></A></P>
+<pre>
+&lt;procedure identifier&gt; ::= &lt;identifier&gt;
+
+&lt;actual parameter&gt; ::= &lt;string&gt; | &lt;expression&gt; |
+        &lt;array identifier&gt; | &lt;switch identifier&gt; |
+        &lt;procedure identifier&gt;
+
+&lt;letter string&gt; ::= &lt;letter&gt; | &lt;letter string&gt; &lt;letter&gt;
+
+&lt;parameter delimiter&gt; ::= , | ) &lt;letter string&gt; : (
+
+&lt;actual parameter list&gt; ::= &lt;actual parameter&gt; |
+        &lt;actual parameter list&gt; &lt;parameter delimiter&gt;
+        &lt;actual parameter&gt;
+
+&lt;actual parameter part&gt; ::= &lt;empty&gt; |
+        ( &lt;actual parameter list&gt; )
+
+&lt;function designator&gt; ::= &lt;procedure identifier&gt;
+        &lt;actual parameter part&gt;
+</pre>
+
+<P><B>3.2.2. Examples</B><A NAME="3_2_2"></P>
+</A>
+<pre>
+sin(a-b)
+J(v+s,n)
+R
+S(s-5) Temperature: (T) Pressure: (P)
+Compile (`:=') Stack: (Q)
+</pre>
+
+<P><A NAME="3_2_3"><B>3.2.3.  Semantics.</B></A>  Function designators define single numerical or
+logical values which result through the application of given sets of
+rules defined by a procedure declaration (cf.  section <A HREF="#5_4">5.4.  Procedure
+declarations</A>) to fixed sets of actual parameters.  The rules governing
+specification of actual parameters are given in section <A HREF="#4_7">4.7.  Procedure
+statements</A>.  Not every procedure declaration defines the value of a
+function designator.</P>
+
+<P><A NAME="3_2_4"><B>3.2.4.  Standard functions.</B></A>  Certain identifiers should be reserved for
+the standard functions of analysis, which will be expressed as
+procedures.  It is recommended that this reserved list should contain:</P>
+
+<UL>
+
+<LI>[<TT>abs (E)</TT>] for the modulus (absolute value) of the value of the
+        expression E
+
+<LI>[<TT>sign (E)</TT>] for the sign of the value of E (+1 for E&gt;0, 0 for E=0,
+        -1 for E&lt;0)
+
+<LI>[<TT>sqrt (E)</TT>] for the square root of the value of E
+
+<LI>[<TT>sin (E)</TT>] for the sine of the value of E
+
+<LI>[<TT>cos (E)</TT>] for the cosine of the value of E
+
+<LI>[<TT>arctan (E)</TT>] for the principal value of the arctangent of the value
+        of E
+
+<LI>[<TT>ln (E)</TT>] for the natural logarithm of the value of E
+
+<LI>[<TT>exp (E)</TT>] for the exponential function of the value
+        of E (e <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> E)
+</UL>
+
+<P>These functions are all understood to operate indifferently on arguments
+both of type <TT><U>real</U></TT> and <TT><U>integer</U></TT>.  They will all yield values
+of type <TT><U>real</U></TT>, except for <TT>sign (E)</TT> which will have values of type
+<TT><U>integer</U></TT>.  In a particular representation these function may be
+available without explicit declarations (cf.  section <A HREF="#5">5.  Declarations</A>).</P>
+
+<P><A NAME="3_2_5"><B>3.2.5.  Transfer functions.</B></A>  It is understood that transfer functions
+between any pair of quantities and expressions my be defined.  Among the
+standard functions it is recommended that there be one, namely</P>
+
+<pre>
+    entier (E),
+</pre>
+
+<P>which ``transfers'' an expression of real type to one of integer type,
+and assigns to it the value which is the largest integer not greater
+than the value of <TT>E</TT>.</P>
+
+
+&nbsp;<BR>
+<A NAME="3_3"><H4>3.3. Arithmetic expressions</H4></A>
+
+
+<P><A NAME="3_3_1"><B>3.3.1. Syntax</B></A></P>
+<pre>
+&lt;adding operator&gt; ::= + | -
+
+&lt;multiplying operator&gt; ::= <IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1"> | / | &divide;
+
+&lt;primary&gt; ::= &lt;unsigned number&gt; | &lt;variable&gt; |
+        &lt;function designator&gt; | ( &lt;arithmetic expression&gt; )
+
+&lt;factor&gt; ::= &lt;primary&gt; | &lt;factor&gt; |
+        &lt;factor&gt; <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> &lt;primary&gt;
+
+&lt;term&gt; ::= &lt;factor&gt; | &lt;term&gt; &lt;multiplying operator&gt;
+        &lt;factor&gt;
+
+&lt;simple arithmetic expression&gt; ::= &lt;term&gt; | 
+        &lt;adding operator&gt; &lt;term&gt; |
+        &lt;simple arithmetic expression&gt; &lt;adding operator&gt;
+        &lt;term&gt;
+
+&lt;if clause&gt; ::= <U>if</U> &lt;Boolean expression&gt; <U>then</U>
+
+&lt;arithmetic expression&gt; ::= &lt;simple arithmetic expression&gt; |
+        &lt;if clause&gt; &lt;simple arithmetic expression&gt;
+        <U>else</U> &lt;arithmetic expression&gt;
+</pre>
+
+<P><A NAME="3_3_2"><B>3.3.2. Examples.</B></A></P>
+
+<P>Primaries:</P>
+
+<pre>
+7.394<SUB>10</SUB>-8
+sum
+w[i+2,8]
+cos(y+z<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">3)
+(a-3/y+vu<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">8)
+</pre>
+
+<P>Factors:</P>
+
+<pre>
+omega
+sum<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">cos(y+z<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">3)
+7.394<SUB>10</SUB>-8<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">w[i+2,8]<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">(a-3/y+vu<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">8)
+</pre>
+
+<P>Terms:</P>
+
+<pre>
+U
+omega<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">sum<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">cos(y+z<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">3)/7.394<SUB>10</SUB>-8<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">w[i+2,8]<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">(a-3/y+vu<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">8)
+</pre>
+
+Simple arithmetic expressions:
+
+<pre>
+U-Yu+omega<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">sum<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">cos(y+z<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">3)/7.394<SUB>10</SUB>-8<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">w[i+2,8]<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">
+        (a-3/y+vu<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">8)
+</pre>
+
+<P>Arithmetic expressions:</P>
+
+<pre>
+w<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">u-Q(S+Cu)<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">2
+<U>if</U> q&gt;0 <U>then</U> S+3<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">Q/A <U>else</U> 2<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">S+3<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">q
+<U>if</U> a&lt;0 <U>then</U> U+V <U>else</U> <U>if</U> a<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">b&gt;17 <U>then</U> U/V <U>else</U> <U>if</U> k<IMG SRC="images/ne.gif" WIDTH=9 HEIGHT=9 ALT="NOTEQUAL">y <U>then</U>
+        V/U <U>else</U> 0
+a<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">sin(omega<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">t)
+0.57<SUB>10</SUB>12<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">a[N<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">(N-1)/2,0]
+(A<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">arctan(y)+Z)<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">(7+Q)
+<U>if</U> q <U>then</U> n-1 <U>else</U> n
+<U>if</U> a&lt;0 <U>then</U> A/B <U>else</U> <U>if</U> b=0 <U>then</U> B/A <U>else</U> z
+</pre>
+
+&nbsp;<BR>
+<P><A NAME="3_3_3"><B>3.3.3.  Semantics.</B></A>  An arithmetic expression is a rule for computing a
+numerical value.  In case of simple arithmetic expressions this value
+is obtained by executing the indicated arithmetic operations on the
+actual numerical values of the primaries of the expression, as explained
+in detail in section <A HREF="#3_3_4">3.3.4</A> below.  The actual numerical value for a
+primary is obvious in the case of numbers.  For variables it is the
+current value (assigned last in the dynamic sense), and for function
+designators it is the value arising from the computing rules defining
+the procedure (cf.  section <A HREF="#5_4_4">5.4.4.  Values of function designators</A>) when
+applied to the current values of the procedure parameters given in the
+expression.  Finally, for arithmetic expressions enclosed in parentheses
+the value must through a recursive analysis be expressed in terms of the
+values of primaries of the other three kinds.</P>
+
+<P>In the more general arithmetic expression, which include if clauses, one
+out of several simple arithmetic expressions is selected on the basis of
+the actual values of the Boolean expression (cf.  section <A HREF="#3_4">3.4.  Boolean
+expressions</A>).  This selection is made as follows: The Boolean expressions
+of the if clauses are evaluated one by one in the sequence from left to
+right until one having the value <TT><U>true</U></TT> is found.  The value of the
+arithmetic expression is then the value of the first arithmetic
+expression following this Boolean (the largest arithmetic expression
+found in this position is understood).  The construction:</P>
+
+<pre>
+<U>else</U> &lt;simple arithmetic expression&gt;
+</pre>
+
+<P>is equivalent to the construction:</P>
+
+<pre>
+<U>else</U> <U>if</U> <U>true</U> <U>then</U> &lt;simple arithmetic expression&gt;
+</pre>
+
+<P><A NAME="3_3_4"><B>3.3.4.  Operators and types.</B></A>  Apart from the Boolean expressions of if
+clauses, the constituents of simple arithmetic expressions must be of
+types <TT><U>real</U></TT> or <TT><U>integer</U></TT> (cf.  section <A HREF="#5_1">5.1.  Type
+declarations</A>).  The meaning of the basic operators and the types of the
+expressions to which they lead are given by the following rules:</P>
+
+<P><A NAME="3_3_4_1">3.3.4.1.</A>  The operators +, -, and <IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1"> have the conventional meaning
+(addition, subtraction, and multiplication).  The type of the expression
+will by <TT><U>integer</U></TT> if both of the operands are of <TT><U>integer</U></TT>
+type, otherwise <TT><U>real</U></TT>.</P>
+
+<P><A NAME="3_3_4_2">3.3.4.2.</A>  The operations &lt;term&gt; / &lt;factor&gt; and &lt;term&gt;
+&divide; &lt;factor&gt; both denote division, to be understood as a
+multiplication of the term by the reciprocal of the factor with due
+regard to the rules of precedence (cf.  section <A HREF="#3_3_5">3.3.5</A>).  Thus for
+example</P>
+
+<pre>
+a/b<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">7/(p-q)<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">v/s
+</pre>
+
+<P>means</P>
+
+<pre>
+((((a<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">(b<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">-1))<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">7)<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">((p-q)<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">-1))<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">v)<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">(s<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">-1)
+</pre>
+
+<P>The operator / is defined for all four combinations of types <TT><U>real</U></TT>
+and <TT><U>integer</U></TT> and will yield results of <TT><U>real</U></TT> type in any
+case.  The operator &divide; is defined only for two operands of type
+<TT><U>integer</U></TT> and will yield a result of type <TT><U>integer</U></TT>,
+mathematically defined as follows:</P>
+
+<pre>
+a &divide; b = sign(a/b) <IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1"> entier(abs(a/b))
+</pre>
+
+(cf. sections <A HREF="#3_2_4">3.2.4</A> and <A HREF="#3_2_5">3.2.5</A>).
+
+<P><A NAME="3_3_4_3">3.3.4.3.</A>  The operation &lt;factor&gt; <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> &lt;factor&gt;
+denotes exponentiation, where the factor is the base and the primary is
+the exponent.  Thus for example</P>
+
+<pre>
+2 <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> n <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> k means (2<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">n)<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">k
+</pre>
+
+while
+
+<pre>
+2 <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> (n <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> m)  means  2<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">(n<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">m)
+</pre>
+
+
+<P>Writing <TT>i</TT> for a number of <TT><U>integer</U></TT> type, <TT>r</TT> for a number of
+<TT><U>real</U></TT> type, and <TT>a</TT> for a number of either <TT><U>integer</U></TT> or
+<TT><U>real</U></TT> type, the result is given by the following rules:</P>
+
+
+<pre>
+a <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> i
+
+    if i&gt;0:  a<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">a<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">...<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">a (i times), of the same type as a.
+    if i=0:  if a<IMG SRC="images/ne.gif" WIDTH=9 HEIGHT=9 ALT="NOTEQUAL">0:  1, of the same type as a.
+              if a=0:  undefined.
+    if i&lt;0,  if a<IMG SRC="images/ne.gif" WIDTH=9 HEIGHT=9 ALT="NOTEQUAL">0:  1/(a<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">a<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">a<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">...<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">a) (the denominator has
+                        -i factors), of type <U>real</U>.
+              if a=0:  undefined.
+
+a <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> r
+
+    if a&gt;0:  exp(r<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">ln(a)), of type <U>real</U>.
+    if a=0,  if r&gt;0:  0.0, of type <U>real</U>.
+              if r<IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER">0:  undefined.
+    if a&lt;0:  always undefined.
+
+</pre>
+
+
+<P><A NAME="3_3_5"><B>3.3.5.  Precedence of operators.</B></A>  The sequence of operations within one
+expression is generally from left to right, with the following
+additional rules:</P>
+
+<P><A NAME="3_3_5_1">3.3.5.1.</A>  According to the syntax given in section 3.3.1 the following
+rules of precedence hold:</P>
+<pre>
+first:    <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">
+
+second:   <IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1"> / &divide;
+
+third:    + -
+</pre>
+
+<P><A NAME="3_3_5_2">3.3.5.2.</A>  The expression between a left parenthesis and the matching
+right parenthesis is evaluated by itself and this value is used in
+subsequent calculations.  Censequently the desired order of execution of
+operations within an expression can always be arranged by appropriate
+positioning of parenthesis.</P>
+
+<P><A NAME="3_3_6"><B>3.3.6.  Arithmetics of <TT><U>real</U></TT> quantities.</B></A>  Numbers and variables of
+type <TT><U>real</U></TT> must be interpreted in the sense of numerical analysis,
+i.e.  as entities defined inherently with only a finite accuracy.
+Similarly, the possibility of the occurrence of a finite deviation from
+the mathematically defined result in any arithmetic expression is
+explicitly understood.  No exact arithmetic will be specified, however,
+and it is indeed understood that different hardware representations may
+evaluate arithmetic expressions differently.  The control of the
+possible consequences of such differences must be carried out by the
+methods of numerical analysis.  This control must be considered a part
+of the process to be described, and will therefore be expressed in terms
+of the language itself.</P>
+
+
+&nbsp;<BR>
+<A NAME="3_4"><H4>3.4. Boolean expressions</H4></A>
+
+
+<P><A NAME="3_4_1"><B>3.4.1. Syntax.</B></A></P>
+<pre>
+&lt;relational operator&gt; ::= &lt; | <IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER"> | = | <IMG SRC="images/ge.gif" WIDTH=9 HEIGHT=9 ALT="NOTLESS"> | &gt; | <IMG SRC="images/ne.gif" WIDTH=9 HEIGHT=9 ALT="NOTEQUAL">
+
+&lt;relation&gt; ::= &lt;simple arithmetic expression&gt; 
+        &lt;relational operator&gt; &lt;simple arithmetic expression&gt;
+
+&lt;Boolean primary&gt; ::= &lt;logical value&gt; | &lt;variable&gt; |
+        &lt;function designator&gt; | &lt;relation&gt; |
+        ( &lt;Boolean expression&gt; )
+
+&lt;Boolean secondary&gt; ::= &lt;Boolean primary&gt; |
+        &not; &lt;Boolean primary&gt;
+
+&lt;Boolean factor&gt; ::= &lt;Boolean secondary&gt; |
+        &lt;Boolean factor&gt; <IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND"> &lt;Boolean secondary&gt;
+
+&lt;Boolean term&gt; ::= &lt;Boolean factor&gt; |
+        &lt;Boolean term&gt; <IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR"> &lt;Boolean factor&gt;
+
+&lt;implication&gt; ::= &lt;Boolean term&gt; |
+        &lt;implication&gt; <IMG SRC="images/impl.gif" WIDTH=9 HEIGHT=9 ALT="IMPLICATION"> &lt;Boolean term&gt;
+
+&lt;simple Boolean&gt; ::= &lt;implication&gt; | &lt;simple Boolean&gt;
+        <IMG SRC="images/equiv.gif" WIDTH=8 HEIGHT=9 ALT="EQUIVALENCE"> &lt;implication&gt;
+
+&lt;Boolean expression&gt; ::= &lt;simple Boolean&gt; | &lt;if clause&gt;
+        &lt;simple Boolean&gt; <U>else</U> &lt;Boolean expression&gt;
+</pre>
+
+<P><A NAME="3_4_2"><B>3.4.2. Examples.</B></A></P>
+
+<pre>
+x=-2
+Y&gt;V<IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR">z&lt;q
+a+b&gt;-5<IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND">z-d&gt;q<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">2
+p<IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND">q<IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR">x<IMG SRC="images/ne.gif" WIDTH=9 HEIGHT=9 ALT="NOTEQUAL">y 
+g<IMG SRC="images/equiv.gif" WIDTH=8 HEIGHT=9 ALT="EQUIVALENCE">&not;a<IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND">b<IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND">&not;c<IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR">d<IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR">e<IMG SRC="images/impl.gif" WIDTH=9 HEIGHT=9 ALT="IMPLICATION">&not; f
+<U>if</U> k&lt;1 <U>then</U> s&lt;w <U>else</U> h <IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER"> c
+<U>if</U> <U>if</U> <U>if</U> a <U>then</U> b <U>else</U> c <U>then</U> d <U>else</U> f <U>then</U> g <U>else</U> h &lt; k
+</pre>
+
+<P><A NAME="3_4_3"><B>3.4.3.  Semantics.</B></A>  A Boolean expression is a rule for computing a
+logical value.  The principles of evaluation are entirely analogous to
+those given for arithmetic expressions in section <A HREF="#3_3_3">3.3.3</A>.</P>
+
+<P><A NAME="3_4_4"><B>3.4.4.  Types.</B></A>  Variables and function designators entered as Boolean
+primaries must be declared <TT><U>Boolean</U></TT> (cf.  section <A HREF="#5_1">5.1.  Type
+declarations</A> and section <A HREF="#5_4_4">5.4.4.  Value of function designators</A>).</P>
+
+<P><A NAME="3_4_5"><B>3.4.5.  The operators.</B></A>  Relations take on the value <TT><U>true</U></TT> whenever
+the corresponding relation is satisfied for the expressions involved,
+otherwise <TT><U>false</U></TT>.</P>
+
+<P>The meaning of the logical operators &not; (not), <IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND"> (and),
+<IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR"> (or), <IMG SRC="images/impl.gif" WIDTH=9 HEIGHT=9 ALT="IMPLICATION"> (implies), and <IMG SRC="images/equiv.gif" WIDTH=8 HEIGHT=9 ALT="EQUIVALENCE"> (equivalent), is given
+by the following function table.</P>
+
+<TABLE BORDER=1 CELLSPACING=1 CELLPADDING=4>
+<TR>
+<TD VALIGN=top><P><TT>b1<BR>b2</TT></TD>
+<TD VALIGN=top><P><TT><U>false</U><BR><U>false</U></TT></TD>
+<TD VALIGN=top><P><TT><U>false</U><BR><U>true</U></TT></TD>
+<TD VALIGN=top><P><TT><U>true</U><BR><U>false</U></TT></TD>
+<TD VALIGN=top><P><TT><U>true</U><BR><U>true</U></TT></TD>
+</TR>
+<TR>
+<TD VALIGN=top><P><TT>&not; b1<BR>b1 <IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND"> b2  <BR>b1 <IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR"> b2 <BR>b1 <IMG SRC="images/impl.gif" WIDTH=9 HEIGHT=9 ALT="IMPLICATION"> b2<BR>b1 <IMG SRC="images/equiv.gif" WIDTH=8 HEIGHT=9 ALT="EQUIVALENCE"> b2 </TT></TD>
+<TD VALIGN=top><P><TT><U>true</U><BR><U>false</U><BR><U>false</U><BR><U>true</U><BR><U>true</U></TT></TD>
+<TD VALIGN=top><P><TT><U>true</U><BR><U>false</U><BR><U>true</U><BR><U>true</U><BR><U>false</U></TT></TD>
+<TD VALIGN=top><P><TT><U>false</U><BR><U>false</U><BR><U>true</U><BR><U>false</U><BR><U>false</U></TT></TD>
+<TD VALIGN=top><P><TT><U>false</U><BR><U>true</U><BR><U>true</U><BR><U>true</U><BR><U>true</U></TT></TD>
+</TR>
+</TABLE>
+
+&nbsp;<BR>
+<P><A NAME="3_4_6"><B>3.4.6.  Precedence of operators.</B></A>  The sequence of operations within one
+expression is generally from left to right, with the following
+additional rules:</P>
+
+<P><A NAME="3_4_6_1">3.4.6.1.</A>  According to the syntax given in section <A HREF="#3_4_1">3.4.1</A> the following
+rules of precedence hold:</P>
+
+<menu>
+<TABLE>
+<TR>
+<TD VALIGN=top><P>first:&nbsp;</TD><TD VALIGN=top><P>arithmetic expressions according to section <A HREF="#3_3_5">3.3.5</A>.</TD>
+</TR><TR>
+<TD VALIGN=top><P>second:&nbsp;</TD><TD VALIGN=top><P>&lt; <IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER"> = <IMG SRC="images/ge.gif" WIDTH=9 HEIGHT=9 ALT="NOTLESS"> &gt; <IMG SRC="images/ne.gif" WIDTH=9 HEIGHT=9 ALT="NOTEQUAL"></TD>
+</TR><TR>
+<TD VALIGN=top><P>third:&nbsp;</TD><TD VALIGN=top><P>&not;</TD>
+</TR><TR>
+<TD VALIGN=top><P>fourth:&nbsp;</TD><TD VALIGN=top><P><IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND"></TD>
+</TR><TR>
+<TD VALIGN=top><P>fifth:&nbsp;</TD><TD VALIGN=top><P><IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR"></TD>
+</TR><TR>
+<TD VALIGN=top><P>sixth:&nbsp;</TD><TD VALIGN=top><P><IMG SRC="images/impl.gif" WIDTH=9 HEIGHT=9 ALT="IMPLICATION"></TD>
+</TR><TR>
+<TD VALIGN=top><P>seventh:&nbsp;</TD><TD VALIGN=top><P><IMG SRC="images/equiv.gif" WIDTH=8 HEIGHT=9 ALT="EQUIVALENCE"></TD>
+</TABLE>
+</menu>
+
+<P>3.4.6.2.  The use of parentheses will be interpreted in the sense given
+in section <A HREF="#3_3_5_2">3.3.5.2</A>.</P>
+
+
+&nbsp;<BR>
+<A NAME="3_5"><H4>3.5. Designational expressions</H4></A>
+
+
+<P><A NAME="3_5_1"><B>3.5.1. Syntax.</B></A></P>
+<pre>
+&lt;label&gt; ::= &lt;identifier&gt; | &lt;unsigned integer&gt;
+
+&lt;switch identifier&gt; ::= &lt;identifier&gt;
+
+&lt;switch designator&gt; ::= &lt;switch identifier&gt;
+        [&lt;subscript expression&gt;]
+
+&lt;simple designational expression&gt; ::= &lt;label&gt; |
+        &lt;switch designator&gt; | (&lt;designational expression&gt;)
+
+&lt;designational expression&gt; ::= &lt;simple designational expression&gt; |
+        &lt;if clause&gt; &lt;simple designational expression&gt;
+        <U>else</U> &lt;designational expression&gt;
+</pre>
+<P><A NAME="3_5_2"><B>3.5.2. Examples.</B></A>
+
+<pre>
+17
+p9
+Coose[n-1]
+Town [<U>if</U> y&lt;0 <U>then</U> N <U>else</U> N+1]
+<U>if</U> Ab&lt;c <U>then</U> 17 <U>else</U> q[<U>if</U> w <IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER"> 0 <U>then</U> 2 <U>else</U> n]
+</pre>
+
+<P><A NAME="3_5_3"><B>3.5.3.  Semantics.</B></A>  A designational expression is a rule for obtaining a
+label of a statement (cf.  section <A HREF="#4">4.  Statements</A>).  Again the principle
+of the evaluation is entirely analogous to that of arithmetic
+expressions (section 3.3.3).  In the general case the Boolean expression
+of the if clauses will select a simple designational expression.  If
+this is a label the desired result is already found.  A switch
+designator refers to the corresponding switch declaration (cf.
+section <A HREF="#5_3">5.3.  Switch declarations</A>) and by the actual numerical value of
+its subscript expression selects one of the designational expressions
+listed in the switch declaration by counting these from left to right.
+Since the designational expression thus selected may again by a switch
+designator this evaluation is obviously a recursive process.</P>
+
+<P><A NAME="3_5_4"><B>3.5.4.  The subscript expression.</B></A>  The evaluation of the subscript
+expression is analogous to that of subscripted variables (cf.  section
+<A HREF="#3_1_4_2">3.1.4.2</A>).  The value of a switch designator is defined only if the
+subscript expression assumes one of the positive values 1, 2, 3, ..., n,
+where n is the number of entries in the switch list.</P>
+
+<P><A NAME="3_5_5"><B>3.5.5.  Unsigned integers as labels.</B></A>  Unsigned integers used as labels
+have the property that leading zeroes do not affect their meaning, e.g. 
+00127 denotes the same label as 217.</P>
+
+
+&nbsp;<BR>
+<!-- Statements, Declarations, Expressions, Description -->
+
+<A NAME="4"><H3>4. Statements</H3></A>
+
+
+
+<P>The units of operation within the language are called statements.  The
+will normally be executed consecutively as written.  However, this
+sequence of operations may be broken by go to statements, which define
+their successor explicitly, and shortened by conditional statements,
+which may cause certain statements to be skipped.</P>
+
+<P>In order to make it possible to define a specific dynamic succession,
+statements may be provided with labels.</P>
+
+<P>Since sequences of statements may be grouped together into compound
+statements and blocks the definition of statement must necessarily be
+recursive.  Also since declarations, described in section <A HREF="#5">5</A>, enter
+fundamentally into the syntactic structure, the syntactic definition of
+statements must suppose declarations to be already defined.</P>
+
+
+&nbsp;<BR>
+<A NAME="4_1"><H4>4.1. Compound statements and blocks</H4></A>
+
+
+<P><A NAME="4_1_1"><B>4.1.1 Syntax</B></A></P>
+<pre>
+&lt;unlabelled basic statement&gt; ::= &lt;assignment statement&gt; |
+        &lt;go to statement&gt; | &lt;dummy statement&gt; |
+        &lt;procedure statement&gt;
+
+&lt;basic statement&gt; ::= &lt;unlabelled basic statement&gt; |
+        &lt;label&gt;: &lt;basic statement&gt;
+
+&lt;unconditional statement&gt; ::= &lt;basic statement&gt; |
+        &lt;compound statement&gt; | &lt;block&gt;
+
+&lt;statement&gt; ::= &lt;unconditional statement&gt; |
+        &lt;conditional statement&gt; | &lt;for statement&gt;
+
+&lt;compound tail&gt; ::= &lt;statement&gt; <U>end</U> |
+        &lt;statement&gt; ; &lt;compound tail&gt;
+
+&lt;block head&gt; ::= <U>begin</U> &lt;declaration&gt; |
+        &lt;block head&gt; ; &lt;declaration&gt;
+
+&lt;unlabelled block&gt; ::= &lt;block head&gt; ; &lt;compound tail&gt;  [missing in original paper; N.L.]
+
+&lt;unlabelled compound&gt; ::= <U>begin</U> &lt;compound tail&gt;
+
+&lt;compound statement&gt; ::= &lt;unlabelled compound&gt; |
+        &lt;label&gt;: &lt;compound statement&gt;
+
+&lt;block&gt; ::= &lt;unlabelled block&gt; | &lt;label&gt;: &lt;block&gt;
+
+&lt;program&gt; ::= &lt;block&gt; | &lt;compound statement&gt;
+</pre>
+
+<P>This syntax may be illustrated as follows: Denoting arbitrary
+statements, declarations, and labels, by the letters S, D, L,
+respectively, the basic syntactic units take the forms:</P>
+
+<P>Compound statement:</P>
+<pre>
+L:L: ... <U>begin</U> S; S; ... S; S <U>end</U>
+</pre>
+
+Block:
+<pre>
+L:L: ... <U>begin</U> D; D; .. D; S; S; ... S; S <U>end</U>
+</pre>
+
+<P>It should by kept in mind that each of the statements S may again be a
+complete compound statement or a block.</P>
+
+
+<P><A NAME="4_1_2"><B>4.1.2. Examples.</B></A></P>
+
+<P>Basic statements:</P>
+
+<pre>
+a:=p+q
+<U>goto</U> Naples
+Start: Continue: W:=7.993
+</pre>
+
+<P>Compound statements:</P>
+
+<pre>
+<U>begin</U> x:=0; <U>for</U> y:=1 <U>step</U> 1 <U>until</U> n <U>do</U> x:=x+A[y];
+        <U>if</U> x&gt;q <U>then</U> <U>goto</U> STOP <U>else</U> <U>if</U> x&gt;w-2 <U>then</U> <U>goto</U> S;
+        Aw: St: W:=x+bob <U>end</U>
+</pre>
+
+<P>Block:</P>
+
+<pre>
+Q: <U>begin</U> <U>integer</U> i, k; <U>real</U> w;
+    <U>for</U> i:=1 <U>step</U> 1 <U>until</U> m <U>do</U>
+        <U>for</U> k:=i+1 <U>step</U> 1 <U>until</U> m <U>do</U>
+        <U>begin</U> w:=A[i,k];
+            A[i,k]:=A[k,i];
+            A[k,i]:=w <U>end</U> for i and k
+   <U>end</U> block Q
+</pre>
+
+
+<P><A NAME="4_1_3"><B>4.1.3.  Semantics.</B></A>  Every block automatically introduces a new level of
+nomenclature.  This is realized as follows: Any identifier occurring
+within the block my through a suitable declaration (cf.  section <A HREF="#5">5. 
+Declarations</A>) be specified to be local to the block in question.  This
+means (a) that the entity represented by this identifier inside the
+blocks has no existence outside it and (b) that any entity represented
+by this identifier outside the block is completely inaccessible inside
+the block.</P>
+
+<P>Identifiers (except those representing labels) occurring within a block
+and not being declared to this block will be non-local to it, i.e.  will
+represent the same entity inside the block and in the level immediately
+outside it.  A label separated by a colon from a statement, i.e. 
+labelling that statement, behaves as though declared in the head of the
+smallest embracing block, i.e.  the smallest block whose brackets
+<TT><U>begin</U></TT> and <TT><U>end</U></TT> enclose that statement.  In this context a
+procedure body must be considered as if it were enclosed by <TT><U>begin</U></TT>
+and <TT><U>end</U></TT> and treated as a block.</P>
+
+<P>Since a statement of a block may again itself be a block the concepts
+local and non-local to a block must be understood recursively.  Thus an
+identifier, which is non-local to a block A, may or may not be non-local
+to the block B in which A is one statement.</P>
+
+
+&nbsp;<BR>
+<A NAME="4_2"><H4>4.2. Assignment statements</H4></A>
+
+
+<P><A NAME="4_2_1"><B>4.2.1. Syntax.</B></A></P>
+<pre>
+&lt;left part&gt; ::= &lt;variable&gt; := | &lt;procedure identifier&gt; :=
+
+&lt;left part list&gt; ::= &lt;left part&gt; | &lt;left part list&gt; 
+        &lt;left part&gt;
+
+&lt;assignment statement&gt; ::= &lt;left part list&gt;
+        &lt;arithmetic expression&gt; | &lt;left part list&gt;
+        &lt;Boolean expression&gt;
+</pre>
+<P><A NAME="4_2_2"><B>4.2.2. Examples.</B></A></P>
+
+<pre>
+s:=p[0]:=n:=n+1+s
+n:=n+1
+A:=B/C-v-q<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">S
+S[v,k+2]:=3-arctan(s<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">zeta)
+V:=Q&gt;Y<IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND">Z
+</pre>
+
+<P><A NAME="4_2_3"><B>4.2.3.  Semantics.</B></A>  Assignment statements serve for assigning the value
+of an expression to one or several variables or procedure identifiers. 
+Assignment to a procedure identifier may only occur within the body of a
+procedure defining the value of a function designator (cf.  section
+<A HREF="#5_4_4">5.4.4</A>).  The process will in the general case be understood to take
+place in three steps as follows:</P>
+
+<P><A NAME="4_2_3_1">4.2.3.1.</A>  Any subscript expression occurring in the left part variables
+are evaluated in sequence from left to right.</P>
+
+<P><A NAME="4_2_3_2">4.2.3.2.</A> The expression of the statement is evaluated.</P>
+
+<P>4.2.3.3.  The value of the expression is assigned to all the left part
+variables, with any subscript expressions having values as evaluated in
+step <A HREF="#4_2_3_1">4.2.3.1</A>. </P>
+
+<P><A NAME="4_2_4"><B>4.2.4.  Types.</B></A>  The type associated with all variables and procedure
+identifiers of a left part list must be the same.  If the type is
+<TT><U>Boolean</U></TT>, the expression must likewise be <TT><U>Boolean</U></TT>.  If the
+type is <TT><U>real</U></TT> or <TT><U>integer</U></TT>, the expression must be
+arithmetic.  If the type of the arithmetic expression differs from that
+associated with the variables and procedure identifiers, appropriate
+transfer functions are understood to be automatically invoked.  For
+transfer from <TT><U>real</U></TT> to <TT><U>integer</U></TT> type the transfer function
+is understood to yield a result equivalent to</P>
+
+<pre>
+    entier(E+0.5)
+</pre>
+
+<P>where E is the value of the expression.  The type associated with a
+procedure identifier is given by the declarator which appears as the
+first symbol of the corresponding procedure declaration (cf.  section
+<A HREF="#5_4_4">5.4.4</A>).</P>
+
+
+&nbsp;<BR>
+<A NAME="4_3"><H4>4.3. Go to statements</H4></A>
+
+
+<P><A NAME="4_3_1"><B>4.3.1. Syntax</B></A></P>
+<pre>
+&lt;go to statement&gt; ::= <U>goto</U> &lt;designational expression&gt;
+</pre>
+<P><A NAME="4_3_2"><B>4.3.2. Examples.</B></A></P>
+
+<pre>
+<U>goto</U> 8
+<U>goto</U> exit [n+1]
+<U>goto</U> Town [<U>if</U> y&lt;0 <U>then</U> N <U>else</U> N+1]
+<U>goto</U> <U>if</U> Ab&lt;c <U>then</U> 17 <U>else</U> q [<U>if</U> w&lt;0 <U>then</U> 2 <U>else</U> n]
+</pre>
+
+<P><A NAME="4_3_3"><B>4.3.3.  Semantics.</B></A>  A go to statement interrupts the normal sequence of
+operations, defined by the write-up of statements, by defining its
+successor explicitly by the value of a designational expression.  Thus
+the next statement to be executed will be the one having this value as
+its label.</P>
+
+<P><A NAME="4_3_4"><B>4.3.4.  Restriction.</B></A>  Since labels are inherently local, no go to
+statement can lead from outside into a block.  A go to statement may,
+however, lead from outside into a compound statement.</P>
+
+<P><A NAME="4_3_5"><B>4.3.5.  Go to an undefined switch designator.</B></A>  A go to statement is
+equivalent to a dummy statement if the designational expression is a
+switch designator whose value is undefined.</P>
+
+
+<P>&nbsp;<BR>
+<A NAME="4_4"><H4>4.4. Dummy statements</H4></A>
+
+
+<P><A NAME="4_4_1"><B>4.4.1. Syntax</B></A></P>
+<pre>
+&lt;dummy statement&gt; ::= &lt;empty&gt;
+</pre>
+
+<P><A NAME="4_4_2"><B>4.4.2. Examples.</B></A></P>
+
+<pre>
+L:
+<U>begin</U> ....; John: <U>end</U>
+</pre>
+
+<P><A NAME="4_4_3"><B>4.4.3.  Semantics.</B></A>  A dummy statement executes no operation.  It may
+serve to place a label.</P>
+
+
+&nbsp;<BR>
+<A NAME="4_5"><H4>4.5. Conditional statements</H4></A>
+
+
+<P><A NAME="4_5_1"><B>4.5.1. Syntax</B></A></P>
+<pre>
+&lt;if clause&gt; ::= <U>if</U> &lt;Boolean expression&gt; <U>then</U>
+
+&lt;unconditional statement&gt; ::= &lt;basic statement&gt; |
+        &lt;compound statement&gt; | &lt;block&gt;
+
+&lt;if statement&gt; ::= &lt;if clause&gt; &lt;unconditional statement&gt;
+
+&lt;conditional statement&gt; ::= &lt;if statement&gt; |
+        &lt;if statement&gt; <U>else</U> &lt;statement&gt; |
+        &lt;if clause&gt; &lt;for statement&gt; |
+        &lt;label&gt;: &lt;conditional statement&gt;
+</pre>
+
+<P><A NAME="4_5_2"><B>4.5.2. Examples.</B></A></P>
+
+<pre>
+<U>if</U> x&gt;0 <U>then</U> n:=n+1
+<U>if</U> s&gt;u <U>then</U> V: q:=n+m <U>else</U> <U>goto</U> R
+<U>if</U> s&lt;0 <IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR"> P<IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER">Q <U>then</U> AA: <U>begin</U> <U>if</U> q&lt;v <U>then</U> a:=v/s
+        <U>else</U> y:=2<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">a <U>end</U> <U>else</U> <U>if</U> v&gt;s <U>then</U> a:=v-q
+        <U>else</U> <U>if</U> v&gt;s-1 <U>then</U> <U>goto</U> S
+</pre>
+
+<P><A NAME="4_5_3"><B>4.5.3.  Semantics.</B></A>  Conditional statements cause certain statements to
+be executed or skipped depending on the running values of specified
+Boolean expressions. </P>
+
+<P><A NAME="4_5_3_1"><B>4.5.3.1.  If statement.</B></A>  The unconditional statement of an if statement
+will be executed if the Boolean expression of the if clause is true. 
+Otherwise it will be skipped and the operation will be continued with
+the next statement.</P>
+
+<P><A NAME="4_5_3_2"><B>4.5.3.2.  Conditional statement.</B></A>  According to the syntax two different
+forms of conditional statements are possible.  These may be illustrated
+as follows:</P>
+
+<pre>
+<U>if</U> B1 <U>then</U> S1 <U>else</U> <U>if</U> B2 <U>then</U> S2 <U>else</U> S3; S4
+</pre>
+
+<pre>
+<U>if</U> B1 <U>then</U> S1 <U>else</U> <U>if</U> B2 <U>then</U> S2 <U>else</U> <U>if</U> B3 <U>then</U> S3; S4
+</pre>
+
+<P>Here B1 to B3 are Boolean expressions, while S1 to S3 are unconditional
+statements.  S4 is the statement following the complete conditional
+statement.</P>
+
+<P>The execution of a conditional statement may be described as follows:
+The Boolean expression of the if clause are evaluated one after the
+other in sequence from left to right until one yielding the value
+<TT><U>true</U></TT> is found.  Then the unconditional statement following this
+Boolean is executed.  Unless this statement defines its successor
+explicitly the next statement to be executed will be S4, i.e.  the
+statement following the complete complete conditional statement.  Thus
+the effect of the delimiter <TT><U>else</U></TT> may be described by saying that
+it defines the successor of the statement it follows to be the statement
+following the complete conditional statement.</P>
+
+<P>The construction</P>
+
+<pre>
+<U>else</U> &lt;unconditional statement&gt;
+</pre>
+
+<P>is equivalent to</P>
+
+<pre>
+<U>else</U> <U>if</U> <U>true</U> <U>then</U> &lt;unconditional statement&gt;
+</pre>
+
+<P>If none of the Boolean expressions of the if clauses is true, the effect
+of the whole conditional statement will be equivalent to that of a dummy
+statement.</P>
+
+<P>For further explanation the following picture may be useful:</P>
+
+
+<pre>
+               +-----------------+------+
+               ^                 ^      |
+               |                 |      v
+<U>if</U> B1 <U>then</U> S1 <U>else</U> <U>if</U> B2 <U>then</U> S2 <U>else</U> S3; S4
+   |              ^  |               ^
+   v              |  v               |
+   +--------------+  +---------------+
+</pre>
+
+
+<P><A NAME="4_5_4"><B>4.5.4.  Go to into a conditional statement.</B></A>  The effect of a go to
+statement leading into a conditional statement follows directly from the
+above explanation of the effect of <TT><U>else</U></TT>.</P>
+
+
+&nbsp;<BR>
+<A NAME="4_6"><H4>4.6. For statements</H4></A>
+
+
+<P><A NAME="4_6_1"><B>4.6.1. Syntax</B></A></P>
+<pre>
+&lt;for list element&gt; ::= &lt;arithmetic expression&gt; | 
+        &lt;arithmetic expression&gt; <U>step</U> &lt;arithmetic expression&gt;
+        <U>until</U> &lt;arithmetic expression&gt; |
+        &lt;arithmetic expression&gt; <U>while</U> &lt;Boolean expression&gt;
+
+&lt;for list&gt; ::= &lt;for list element&gt; | &lt;for list&gt; ,
+        &lt;for list element&gt;
+
+&lt;for clause&gt; ::= <U>for</U> &lt;variable&gt; := &lt;for list&gt; <U>do</U>
+
+&lt;for statement&gt; ::= &lt;for clause&gt; &lt;statement&gt; |
+        &lt;label&gt;: &lt;for statement&gt;
+</pre>
+
+<P><A NAME="4_6_2"><B>4.6.2. Examples.</B></A></P>
+
+<pre>
+<U>for</U> q:=1 <U>step</U> s <U>until</U> n <U>do</U> A[q]:=B[q]
+<U>for</U> k:=1,V1<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">2 <U>while</U> V1&lt;N <U>do</U>
+<U>for</U> j:=I+G,L,1 <U>step</U> 1 <U>until</U> N, C+D <U>do</U> A[k,j]:=B[k,j]
+</pre>
+
+<P><A NAME="4_6_3"><B>4.6.3.  Semantics.</B></A>  A for clause causes the statement S which it precedes
+to be repeatedly executed zero or more times.  In addition it performs a
+sequence of assignments to its controlled variable.  The process may be
+visualized by means of the following picture:</P>
+
+<pre>
+              +------------------+
+              |                  ^
+              v                  |
+Initialize; test; statement S; advance; successor
+              |                             ^
+              v                             |
+              +-----------------------------+
+</pre>
+
+<P>In this picture the word initialize means: perform the first assignment
+of the for clause.  Advance means: perform the next assignment of the
+for clause.  Test determines if the last assignment has been done.  If
+so, the execution continues with the successor of the for statement.  If
+not, the statement following the for clause is executed.</P>
+
+<P><A NAME="4_6_4"><B>4.6.4.  The for list elements.</B></A>  The for list gives a rule for obtaining
+the values which are consecutively assigned to the controlled variable. 
+This sequence of values is obtained from the for list elements by taking
+these one by one in order in which they are written.  The sequence of
+values generated by each of the three species of for list elements and
+the corresponding execution of the statement S are given by the
+following rules:</P>
+
+<P><A NAME="4_6_4_1"><B>4.6.4.1.  Arithmetic expression.</B></A>  This element gives rise to one value,
+namely the value of the given arithmetic expression as calculated
+immediately before the corresponding execution of the statement S.</P>
+
+<P><A NAME="4_6_4_2"><B>4.6.4.2.  Step-until-element.</B></A>  An element of the form A <TT><U>step</U></TT> B
+<TT><U>until</U></TT> C, where A, B, and C are arithmetic expressions, gives rise
+to an execution which may be described most concisely in terms of
+additional Algol statement as follows:</P>
+
+<pre>
+     V := A
+L1:  <U>if</U> (V-C)<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">sign(B) &gt; 0 <U>then</U> <U>goto</U> ``Element exhausted'';
+     Statement S;
+     V := V+B;
+     <U>goto</U> L1;
+</pre>
+
+<P>where V is the controlled variable of the for clause and `Element
+exhausted' points to the evaluation according to the next element in the
+for list, or if the step-until-element is the last of the list, to the
+next statement in the program.</P>
+
+<P><A NAME="4_6_4_3"><B>4.6.4.3.  While-element.</B></A>  The execution governed by a for list element
+of the form E <TT><U>while</U></TT> F, where E is an arithmetic and F a Boolean
+expression, is most concisely described in terms of additional Algol
+statements as follows:</P>
+
+<pre>
+L3:  V := E
+     <U>if</U> &not; F <U>then</U> <U>goto</U> ``Element exhausted'';
+     Statement S;
+     <U>goto</U> L3;
+</pre>
+
+<P>where the notation is the same as in 4.6.4.2 above.</P>
+
+<P><A NAME="4_6_5"><B>4.6.5.  The value of the controlled variable upon exit.</B></A>  Upon exit out
+of the statement S (supposed to be compound) through a go to statement
+the value of the controlled variable will be the same as it was
+immediately preceding the execution of the go to statement.</P>
+
+<P>If the exit is due to exhaustion of the for list, on the other hand, the
+value of the controlled variable is undefined after the exit.</P>
+
+<P><A NAME="4_6_6"><B>4.6.6.  Go to leading into a for statement.</B></A>  The effect of a go to
+statement, outside a for statement, which refers to a label within the
+for statement, is undefined.</P>
+
+
+&nbsp;<BR>
+<A NAME="4_7"><H4>4.7. Procedure statements</H4></A>
+
+
+<P><A NAME="4_7_1"><B>4.7.1. Syntax</B></A></P>
+<pre>
+&lt;actual parameter&gt; ::= &lt;string&gt; | &lt;expression&gt; |
+        &lt;array identifier&gt; | &lt;switch identifier&gt; |
+        &lt;procedure identifier&gt;
+
+&lt;letter string&gt; ::= &lt;letter&gt; | &lt;letter string&gt; &lt;letter&gt;
+
+&lt;parameter delimiter&gt; ::= , | ) &lt;letter string&gt; : (
+
+&lt;actual parameter list&gt; ::= &lt;actual parameter&gt; |
+        &lt;actual parameter list&gt; &lt;parameter delimiter&gt;
+        &lt;actual parameter&gt;
+
+&lt;actual parameter part&gt; ::= &lt;empty&gt; | ( &lt;actual parameter list&gt; )
+
+&lt;procedure statement&gt; ::= &lt;procedure identifier&gt;
+        &lt;actual parameter part&gt;
+</pre>
+
+<P><A NAME="4_7_2"><B>4.7.2. Examples.</B></A></P>
+
+<pre>
+Spur (A) Order: (7) Result to: (V)
+Transpose (W, v+1)
+Absmax (A, N, M, Yy, I, K)
+Innerproduct (A [t,P,u], B [P], 10, P, Y)
+</pre>
+
+<P>These examples correspond to examples given in section <A HREF="#5_4_2">5.4.2</A>.</P>
+
+<P><A NAME="4_7_3"><B>4.7.3.  Semantics.</B></A>  A procedure statement serves to invoke (call for)
+the execution of a procedure body (cf.  section 5.4.  procedure
+declarations).  Where the procedure body is a statement written in Algol
+the effect of this execution will be equivalent to the effect of
+performing the following operations on the program at the time of
+execution of the procedure statement.</P>
+
+<P><A NAME="4_7_3_1"><B>4.7.3.1.  Value assignment (call by value).</B></A>  All formal parameters
+quoted in the value part of the procedure declaration heading are
+assigned the values (cf.  section <A HREF="#2_8">2.8.  Values and types</A>) of the
+corresponding actual parameters, these assignments being considers as
+being performed explicitly before entering the procedure body.  The
+effect is as though an additional block embracing the procedure body
+were created in which these assignments were made to variables local to
+this fictitious block with types as given in the corresponding
+specifications (cf.  section <A HREF="#5_4_5">5.4.5</A>).  As a consequence, variables called
+by value are to be considered as nonlocal to the body of the procedure,
+but local to the fictitious block (cf.  section <A HREF="#5_4_3">5.4.3</A>).</P>
+
+<P><A NAME="4_7_3_2"><B>4.7.3.2.  Name replacement (call by name).</B></A>  Any formal parameter not
+quoted in the value list is replaced, throughout the procedure body, by
+the corresponding actual parameter, after enclosing this latter in
+parentheses wherever syntactically possible.  Possible conflicts between
+identifiers inserted through this process and other identifiers already
+present within the procedure body will be avoided by suitable systematic
+changes of the formal or local identifiers involved.</P>
+
+<P><A NAME="4_7_3_3"><B>4.7.3.3.  Body replacement and execution.</B></A>  Finally the procedure body,
+modified as above, is inserted in place of the procedure statement and
+executed.  if the procedure is called from a place outside the scope of
+any non-local quantity of the procedure bode the conflicts between the
+identifiers inserted through this process of body replacement and the
+identifiers whose declarations are valid at the place of the procedure
+statement or function designator will be avoided through suitable
+systematic changes of the latter identifiers.</P>
+
+<P><A NAME="4_7_4"><B>4.7.4.  Actual-formal correspondence.</B></A>  The correspondence between the
+actual parameters of the procedure statement and the formal parameters
+of the procedure heading is established as follows: The actual parameter
+list of the procedure statement must have the same number of entries as
+the formal parameter list of the procedure declaration heading.  The
+correspondence is obtained by taking the entries of these two lists in
+the same order.</P>
+
+<P><A NAME="4_7_5"><B>4.7.5.  Restrictions.</B></A>  For a procedure statement to be defined it is
+evidently necessary that the operations on the procedure body defined in
+sections <A HREF="#4_7_3_1">4.7.3.1</A> and <A HREF="#4_7_3_2">4.7.3.2</A> lead to a correct Algol statement.</P>
+
+<P>This imposes the restriction on any procedure statement that the kind
+and type of each actual parameter to be compatible with the kind and
+type of the corresponding formal parameter.  Some important particular
+cases of this general rule are the following:</P>
+
+<P><A NAME="4_7_5_1">4.7.5.1.</A>  If a string is supplied as an actual parameter in a procedure
+statement or function designator, whose defining procedure body is an
+Algol 60 statement (as opposed to non-Algol code, cf.  section <A HREF="#4_7_8">4.7.8</A>),
+then this string can only be used within the procedure body as an actual
+parameter in further procedure calls.  Ultimately it can only be used by
+a procedure body expressed in non-Algol code.</P>
+
+<P><A NAME="4_7_5_2">4.7.5.2.</A>  A formal parameter which occurs as a left part variable in an
+assignment statement within the procedure body and which is not called
+by value can only correspond to an actual parameter which is a variable
+(special case of expression).</P>
+
+<P><A NAME="4_7_5_3">4.7.5.3.</A>  A formal parameter which is used within the procedure body as
+an array identifier can only correspond to an actual parameter which is
+an array identifier of an array of the same dimensions.  In addition if
+the formal parameter is called by value the local array created during
+the call will have the same subscript bounds as the actual array.</P>
+
+<P><A NAME="4_7_5_4">4.7.5.4.</A>  A formal parameter which is called by value cannot in general
+correspond to a switch identifier or a procedure identifier or a string,
+because these latter do not possess values (the exception is the
+procedure identifier of a procedure declaration which has an empty
+formal parameter part (cf.  section <A HREF="#5_4_1">5.4.1</A>) and which defines the value
+of a function designator (cf.  section <A HREF="#5_4_4">5.4.4</A>).  This procedure
+identifier is in itself a complete expression).</P>
+
+<P><A HREF="#4_7_5_5">4.7.5.5.</A>  Any formal parameter may have restrictions on the type of the
+corresponding actual parameter associated with it (these restrictions
+may, or may not, be given through specifications in the procedure
+heading).  In the procedure statement such restrictions must evidently
+be observed.</P>
+
+<P><A NAME="4_7_6"><B>4.7.6.</B></A> Deleted.</P>
+
+<P><A NAME="4_7_7"><B>4.7.7.  Parameter delimiters.</B></A>  All parameter delimiters are understood
+to be equivalent.  No correspondence between the parameter delimiters
+used in a procedure statement and those used in the procedure heading is
+expected beyond their number is the same.  Thus the information conveyed
+by using the elaborate ones is entirely optional.</P>
+
+<P><A NAME="4_7_8"><B>4.7.8.  Procedure body expressed in code.</B></A>  The restrictions imposed on a
+procedure statement calling a procedure having its body expressed in
+non-Algol code evidently can only be derived from the characteristics of
+the code used and the intent of the user and thus fall outside the scope
+of the reference language.</P>
+
+
+&nbsp;<BR>
+<!-- Declarations, Examples, Statements, Description -->
+
+<A NAME="5"><H3>5. Declarations</H3></A>
+
+
+
+<P>Declarations serve to define certain properties of the quantities used
+in the program, and to associate them with identifiers.  A declaration
+of an identifier is valid for one block.  Outside this block the
+particular identifier may be used for other purposes (cf.  section
+<A HREF="#4_3_1">4.1.3</A>).</P>
+
+<P>Dynamically this implies the following: at the time of an entry into a
+block (through the <TT><U>begin</U></TT> since the labels inside are local and
+therefore inaccessible from outside) all identifiers declared for the
+block assume the significance implied by the nature of the declarations
+given.  If these identifiers had already been defined by other
+declarations outside they are for the time being given a new
+significance.  Identifiers which are not declared for the block, on the
+other hand, retain their old meaning.</P>
+
+<P>At the time of an exit from an block (through <TT><U>end</U></TT>, or by a go to
+statement) all identifiers which are declared for the block lose their
+local significance.</P>
+
+<P>A declaration my be marked with the additional declarator <TT><U>own</U></TT>. 
+This has the following effect: upon a reentry into the block, the values
+of own quantities will be unchanged from their values at the last exit,
+while the values of declared variables which are not marked as own are
+undefined.  Apart from labels and formal parameters of procedure
+declarations and with the possible exception of those for standard
+functions (cf.  sections <A HREF="#3_2_4">3.2.4</A> and <A HREF="#3_2_5">3.2.5</A>) all identifiers of a program
+must be declared.  No identifier may be declared more than once in any
+one block head.</P>
+
+<P><B>Syntax.</B></P>
+<pre>
+&lt;declaration&gt; ::= &lt;type declaration&gt; | &lt;array declaration&gt; |
+        &lt;switch declaration&gt; | &lt;procedure declaration&gt;
+</pre>
+
+&nbsp;<BR>
+<A NAME="5_1"><H4>5.1. Type declarations</H4></A>
+
+
+<P><A NAME="5_1_1"><B>5.1.1 Syntax.</B></A></P>
+<pre>
+&lt;type list&gt; ::= &lt;simple variable&gt; | &lt;simple variable&gt; , &lt;type list&gt;
+
+&lt;type&gt; ::= <U>real</U> | <U>integer</U> | <U>Boolean</U>
+
+&lt;local or own type&gt; ::= &lt;type&gt; | <U>own</U> &lt;type&gt;
+
+&lt;type declaration&gt; ::= &lt;local or own type&gt; &lt;type list&gt;
+</pre>
+<P><A NAME="5_1_2"><B>5.1.2. Examples.</B></A></P>
+
+<pre>
+<U>integer</U> p, q, s
+<U>own</U> <U>Boolean</U> Acryl, n
+</pre>
+
+<P><A NAME="5_1_3"><B>5.1.3.  Semantics.</B></A>  Type declarations serve to declare certain
+identifiers to represent simple variables of a given type.  Real
+declared variables may only assume positive or negative values including
+zero.  Integer declared variables may only assume positive and negative
+integral values including zero.  Boolean declared variables may only
+assume the values <TT><U>true</U></TT> and <TT><U>false</U></TT>.</P>
+
+<P>In arithmetic expressions any position which can be occupied by a real
+declared variable may be occupied by an integer declared variable.</P>
+
+<P>For the semantics of <TT><U>own</U></TT>, see the fourth paragraph of section <A HREF="#5">5</A>
+above.</P>
+
+
+&nbsp;<BR>
+<A NAME="5_2"><H4>5.2. Array declarations</H4></A>
+
+
+<P><A NAME="5_2_1"><B>5.2.1 Syntax.</B></A></P>
+<pre>
+&lt;lower bound&gt; ::= &lt;arithmetic expression&gt;
+
+&lt;upper bound&gt; ::= &lt;arithmetic expression&gt;
+
+&lt;bound pair&gt; ::= &lt;lower bound&gt; : &lt;upper bound&gt;
+
+&lt;bound pair list&gt; ::= &lt;bound pair&gt; |
+        &lt;bound pair list&gt; , &lt;bound pair&gt;
+
+&lt;array segment&gt; ::= &lt;array identifier&gt; [ &lt;bound pair list&gt; ] |
+        &lt;array identifier&gt; , &lt;array segment&gt;
+
+&lt;array list&gt; ::= &lt;array segment&gt; | &lt;array list&gt; ,
+        &lt;array segment&gt;
+
+&lt;array declaration&gt; ::= <U>array</U> &lt;array list&gt; |
+        &lt;local or own type&gt; <U>array</U> &lt;array list&gt;
+</pre>
+
+<P><A NAME="5_2_2"><B>5.2.2. Examples.</B></A></P>
+
+<pre>
+<U>array</U> a, b, c [7:n, 2:m], s [-2:10]
+<U>own</U> <U>integer</U> <U>array</U> A [<U>if</U> c&lt;0 <U>then</U> 2 <U>else</U> 1:20]
+<U>real</U> <U>array</U> q [-7:-1]
+</pre>
+
+<P><A NAME="5_2_3"><B>5.2.3.  Semantics.</B></A>  An array declaration declares one or several
+identifiers to represent multidimensional arrays of subscripted
+variables and gives the dimensions of the arrays, the bound of the
+subscripts, and the types of the variables.</P>
+
+<P><A NAME="5_2_3_1"><B>5.2.3.1.  Subscript bounds.</B></A>  The subscript bounds for any array are
+given in the first subscript bracket following the identifier of this
+array in the form of a bound pair list.  Each item of this list gives
+the lower and upper bound of a subscript in the form of two arithmetic
+expressions separated by the delimiter :.  The bound pair list gives the
+bounds of all subscripts taken in order from left to right.</P>
+
+<P><A NAME="5_2_3_2"><B>5.2.3.2.  Dimensions.</B></A>  The dimensions are given as the number of entries
+in the bound pair list.</P>
+
+<P><A NAME="5_2_3_3"><B>5.2.3.3.  Types.</B></A>  All arrays declared in one declaration are of the same
+quoted type.  If no type declarator is given the type <TT><U>real</U></TT> is
+understood.</P>
+
+<P><A NAME="5_2_4_4"><B>5.2.4. Lower upper bound expressions.</B></A></P>
+
+<P><A NAME="5_2_4_1">5.2.4.1.</A>  The expressions will be evaluated in the same way as subscript
+expressions (cf.  section <A HREF="#3_1_4_2">3.1.4.2</A>).</P>
+
+<P><A NAME="5_2_4_2">5.2.4.2.</A>  The expressions can only depend on variables and procedures
+which are non-local to the block for which the array declaration is
+valid.  Consequently in the outermost block of a program only array
+declarations with constant bounds may be declared.</P>
+
+<P><A NAME="5_2_4_3">5.2.4.3.</A>  An array identifier id defined only when the values of all
+upper subscript bounds are not smaller than those of the corresponding
+lower bounds.</P>
+
+<P><A NAME="5_2_4_4">5.2.4.4.</A>  The expressions will by evaluated once at each entrace into
+the block.</P>
+
+<P><A NAME="5_2_5"><B>5.2.5.  The identity of subscripted variables.</B></A>  The identity of a
+subscripted variable is not related to the subscript bounds given in the
+array declaration.  However, even if an array is declared <TT><U>own</U></TT> the
+values of the corresponding subscripted variables will, at any time, be
+defined only for those of these variables which have subscripts within
+the most recently calculated subscript bounds.</P>
+
+
+&nbsp;<BR>
+<A NAME="5_3"><H4>5.3. Switch declarations</H4></A>
+
+
+<P><A NAME="5_3_1"><B>5.3.1 Syntax.</B></A></P>
+<pre>
+&lt;switch list&gt; ::= &lt;designational expression&gt; |
+        &lt;switch list&gt; , &lt;designational expression&gt;
+
+&lt;switch declaration&gt; ::= <U>switch</U> &lt;switch identifier&gt;
+        := &lt;switch list&gt;
+</pre>
+
+<P><A NAME="5_3_2"><B>5.3.2. Examples.</B></A></P>
+
+<pre>
+<U>switch</U> S:=S1,S2,Q[m], <U>if</U> v&gt;-5 <U>then</U> S3 <U>else</U> S4
+<U>switch</U> Q:=p1,w
+</pre>
+
+<P><A NAME="5_3_3"><B>5.3.3.  Semantics.</B></A>  A switch declaration defines the set of values of
+the corresponding switch designators.  These values are given one by one
+as the values of the designational expressions entered in the switch
+list.  With each of these designational expressions there is associated
+a positive integer, 1, 2, ..., obtained by counting the items in the
+list from left to right.  The value of the switch designator
+corresponding to a given value of the subscript expression (cf.  section
+<A HREF="#3_5">3.5.  Designational expressions</A>) is the value of the designational
+expression in the switch list having this given value as its associated
+integer.</P>
+
+<P><A NAME="5_3_4"><B>5.3.4.  Evaluation of expressions in the switch list.</B></A>  An expression in
+the switch list will be evaluated every time the item of the list in
+which the expression occurs is referred to, using the current values of
+all variables involved.</P>
+
+<P><A NAME="5_3_5"><B>5.3.5.  Influence of scopes.</B></A>  If a switch designator occurs outside the
+scope of a quantity entering into a designational expression in the
+switch list, and an evaluation of this switch designator selects this
+designational expression, then the conflicts between the identifiers for
+the quantities in this expression and the identifiers whose declarations
+are valid at the place of the switch designator will be avoided through
+suitable systematic changes of the latter identifiers.</P>
+
+
+&nbsp;<BR>
+<A NAME="5_4"><H4>5.4. Procedure declarations</H4></A>
+
+
+<P><A NAME="5_4_1"><B>5.4.1 Syntax.</B></A></P>
+<pre>
+&lt;formal parameter&gt; ::= &lt;identifier&gt; 
+
+&lt;formal parameter list&gt; ::= &lt;formal parameter&gt; |
+        &lt;formal parameter list&gt; &lt;parameter delimiter&gt;
+        &lt;formal parameter&gt;
+
+&lt;formal parameter part&gt; ::= &lt;empty&gt; | ( &lt;formal parameter list&gt; )
+
+&lt;identifier list&gt; ::= &lt;identifier&gt; |
+        &lt;identifier list&gt; , &lt;identifier&gt;
+
+&lt;value part&gt; ::= <U>value</U> &lt;identifier list&gt; ; |
+        &lt;empty&gt;
+
+&lt;specifier&gt; ::= <U>string</U> | &lt;type&gt; | <U>array</U> |
+        &lt;type&gt; <U>array</U> | <U>label</U> | <U>switch</U> |
+        <U>procedure</U> | &lt;type&gt; <U>procedure</U>
+
+&lt;specification part&gt; ::= &lt;empty&gt; | &lt;specifier&gt; &lt;identifier list&gt; ; |
+        &lt;specification part&gt; &lt;specifier&gt; &lt;identifier list&gt;
+
+&lt;procedure heading&gt; ::= &lt;procedure identifier&gt; &lt;formal parameter part&gt; ;
+        &lt;value part&gt; &lt;specification part&gt;
+
+&lt;procedure body&gt; ::= &lt;statement&gt; | &lt;code&gt;
+
+&lt;procedure declaration&gt; ::= <U>procedure</U> &lt;procedure heading&gt;
+        &lt;procedure body&gt; | &lt;type&gt; <U>procedure</U>
+        &lt;procedure heading&gt; &lt;procedure body&gt;
+</pre>
+
+<P><A NAME="5_4_2"><B>5.4.2. Examples</B></A> (see also the examples at the end of the report).</P>
+
+<pre>
+<U>procedure</U> Spur (a) Order: (n); <U>value</U> n;
+<U>array</U> a; <U>integer</U> n; <U>real</U> s;
+<U>begin</U> <U>integer</U> k;
+s:=0;
+<U>for</U> k:=1 <U>step</U> 1 <U>until</U> n <U>do</U> s:=s+a[k,k]
+<U>end</U>
+
+<U>procedure</U> Transpose (a) Order: (n); <U>value</U> n;
+<U>array</U> a; <U>integer</U> n;
+<U>begin</U> <U>real</U> w; <U>integer</U> i, k;
+<U>for</U> i := 1 <U>step</U> 1 <U>until</U> n <U>do</U>
+    <U>for</U> k := 1+i <U>step</U> 1 <U>until</U> n <U>do</U>
+        <U>begin</U> w:=a[i,k];
+                a[i,k]:=a[k,i];
+                a[k,i]:=w
+        <U>end</U>
+<U>end</U> Transpose
+
+<U>integer</U> <U>procedure</U> Step (u); <U>real</U> u;
+Step:=<U>if</U> 0<IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER">u<IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND">u<IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER">1 <U>then</U> 1 <U>else</U> 0
+
+<U>procedure</U> Absmax (a) Size: (n, m) Result: (y) Subscripts: (i, k);
+<U>comment</U> The absolute greatest element of the matrix a, of size n by m
+is transferred to y, and the subscripts of this element to i and k;
+<U>array</U> a; <U>integer</U> n, m, i, k; <U>real</U> y;
+<U>begin</U> <U>integer</U> p, q;
+y := 0;
+<U>for</U> p:=1 <U>step</U> 1 <U>until</U> n <U>do</U> <U>for</U> q:=1 <U>step</U> 1 <U>until</U> m <U>do</U>
+<U>if</U> abs(a[p,q]])&gt;y <U>then</U> <U>begin</U> y:=abs(a[p,q]);
+    i:=p; k:=q <U>end</U> <U>end</U> Absmax
+
+<U>procedure</U> Innerproduct (a, b) Order: (k, p) Result: (y); <U>value</U> k;
+<U>integer</U> k, p; <U>real</U> y, a, b;
+s:=0;
+<U>for</U> p:=1 <U>step</U> 1 <U>until</U> k <U>do</U> s:=s+a<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">b;
+y:=s
+<U>end</U> Innerproduct
+</pre>
+
+
+<P><A NAME="5_4_3"><B>5.4.3.  Semantics.</B></A>  A procedure declaration serves to define the
+procedure associated with a procedure identifier.  The principal
+constituent of a procedure declaration is a statement or a piece of
+code, the procedure body, which through the use of procedure statements
+and/or function designators may be activated from other parts of the
+block in the head of which the procedure declaration appears. 
+Associated with the body is a heading, which specifies certain
+identifiers occurring within the body to represent formal parameters. 
+Formal parameters in the procedure body will, whenever the procedure is
+activated (cf.  section <A HREF="#3_2">3.2.  Function designators</A> and section <A HREF="#4_7">4.7. 
+Procedure statements</A>) be assigned the values of or replaced by actual
+parameters.  Identifiers in the procedure body which are not formal will
+be either local or non-local to the body depending on whether they are
+declared within the body or not.  Those of them which are non-local to
+the body may well be local to the block in the head of which the
+procedure declaration appears.  The procedure body always acts like a
+block, whether it has the form of one or not.  Consequently the scope of
+any label labelling a statement within the body or the body itself can
+never extended beyond the procedure body.  In addition, if the
+identifier of a formal parameter is declared anew within
+the procedure body (including the case of its use as a label in section
+<A HREF="#4_1_3">4.1.3</A>), it is thereby given a local significance and actual parameters
+which correspond to it are inaccessible throughout the scope of its
+inner local quantity.</P>
+
+<P><A NAME="5_4_4"><B>5.4.4.  Values of function designators.</B></A>  For a procedure declaration to
+define the value of a function designator there must, within the
+procedure declaration body, occur one or more explicit assignment
+statements with the procedure identifier in a left part; at least one of
+these must be executed, and the type associated with the procedure
+identifier must be declared through the appearance of a type declarator
+as the very first symbol of the procedure declaration.  The last value
+so assigned is used to continue the evaluation of the expression in
+which the function designator occurs.  Any occurrence of the procedure
+identifier within the body of the procedure other than in a left part in
+an assignment statement denotes activation of the procedure.</P>
+
+<P><A NAME="5_4_5"><B>5.4.5.  Specifications.</B></A>  In the heading a specification part, giving
+information about the kinds and types of the formal parameters by means
+of an obvious notation, may be included.  In this part no formal
+parameter may occur more than once.  Specification of formal parameters
+called by value (cf.  section <A HREF="#4_7_3_1">4.7.3.1</A>) must be supplied and
+specifications of formal parameters called by name (cf.  section
+<A HREF="#4_7_3_2">4.7.3.2</A>) may be omitted.</P>
+
+<P><A NAME="5_4_6"><B>5.4.6.  Code as procedure body.</B></A>  It is understood that the procedure
+body may be expressed in non-Algol language.  Since it is intended that
+the use of this feature should be entirely a question of hardware
+representation, no further rules concerning this code language can be
+given within the reference language.</P>
+
+
+&nbsp;<BR>
+<!-- Examples, Index ,Index, Description -->
+
+<A NAME="examples"><H3>Examples of procedure declarations</H3></A>
+
+
+<A NAME="Example_1"><H3>Example 1</H3></A>
+
+
+<pre>
+<U>procedure</U> euler (fct,sum,eps,tim); <U>value</U> eps,tim; <U>integer</U> tim;
+<U>real</U> <U>procedure</U> fct; <U>real</U> sum,eps;
+<U>comment</U> euler computes the sum of fct(i) for i from zero up to
+infinity by means of a suitably refined euler transformation. The
+summation is stopped as soon as tim times in succession the absolute
+value of the terms of the transformed series are found to be less than
+eps. Hence, one should provide a function fct with one integer argument,
+an upper bound eps, and an integer tim. The output is the sum sum. euler
+is particularly efficient in the case of a slowly convergent or
+divergent alternating series;
+<U>begin</U> <U>integer</U> i,k,n,t; <U>array</U> m[0:15]; <U>real</U> mn,mp,ds;
+i:=n; t:=0; m[0]:=fct(0); sum:=m[0]/2;
+nextterm: i:=i+1; mn:=fct(i);
+        <U>for</U> k:=0 <U>step</U> 1 <U>until</U> n <U>do</U>
+            <U>begin</U> mp:=(mn+m[k])/2; m[k]:=mn;
+                mn:=mp <U>end</U> means;
+        <U>if</U> (abs(mn)&lt;abs(m[n])) <IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND"> (n&lt;15) <U>then</U>
+            <U>begin</U> ds:=mn/2; n:=n+1; m[n]:=mn <U>end</U> accept
+        <U>else</U> ds:=mn;
+        sum:=sum+ds;
+        <U>if</U> abs(ds)&lt;eps <U>then</U> t:=t+1 <U>else</U> t:=0;
+        <U>if</U> t&lt;tim <U>then</U> <U>goto</U> nextterm
+<U>end</U> euler
+</pre>
+
+
+<A NAME="Example_2_1"><H3>Example 2 (1)</H3></A>
+<TABLE>
+<TR>
+<TD VALIGN=top><P>(1)&nbsp;</P></TD><TD VALIGN=top><P>This RK-program contains some new ideas which are related to ideas
+    of S.  Gill, A process for the step by step integration of
+    differential equations in an automatic computing machine.  Proc. 
+    Camb.  Phil.  Soc.  47 (1951) p.  96, and E.  Fr&ouml;berg, On the
+    solution of ordinary differential equations with digital computing
+    machines, Fysiograf.  S&auml;llsk.  Lund, F&ouml;rhd.  20 Nr.  11
+    (1950) p. 136-152.  It must be clear however that with respect to
+    computing time and round-off errors it may not be optimal, nor has
+    it actually been tested on a computer.</P></TD>
+</TR>
+</TABLE>
+
+<pre>
+<U>procedure</U> RK (x,y,n,FKT,eps,eta,xE,yE,fi); <U>value</U> x,y; <U>integer</U> n;
+<U>Boolean</U> fi; <U>real</U> x,eps,eta,xE; <U>array</U> y,yE; <U>procedure</U> FKT;
+<U>comment</U> RK integrates the system y'k=fk(x,y1,y2,...,yn)(k=1,2,...n)
+of differential equations with the method of Runge-Kutta with automatic
+search for appropriate length of integration step. Parameters are: The
+initial values x and y[k] for x and the unknown functions yk(x). The
+order n of the system. The procedure FKT(x,y,n,z) which represents the
+system to be integrated, i.e. the set of functions fk. The tolerance values eps
+and eta which govern the accuracy of the numerical integration. The end
+of the integration interval xE; The output parameter yE which represents
+the solution x=xE. The Boolean variable fi, which must always be given 
+the value <U>true</U> for an isolated or first entry into RK. If however the functions
+y must be available at several meshpoints x0,x1,...,xn, then the procedure
+must be called repeatedly (with x=xk, xE=x(k+1), for k=0,1,...,n-1)
+and then the later calls may occur with fi=<U>false</U> which saves computing
+time. The input parameters of FKT must be x,y,z,n, the output parameter z
+represents the set of derivatives z[k]=fk(x,y[1],y[2],...,y[n]) for x and
+the actual y's. A procedure comp enters as a non-local identifier;
+
+<U>begin</U>
+    <U>array</U> z,y1,y2,y3[1:n]; <U>real</U> x1,x2,x3,H; <U>Boolean</U> out;
+    <U>integer</U> k,j; <U>own</U> <U>real</U> s,Hs;
+    <U>procedure</U> RK1ST (x,y,h,xe,ye); <U>real</U> x,h,xe; <U>array</U> y,ye;
+        <U>comment</U> RK1ST integrates one single Runge-Kutta step with
+        initial values x, y[k] which yields the output parameters xe=x+h
+        and ye[k], the latter being the solution at xe.  Important: the
+        parameters n, FKT, z enter RK1ST as nonlocal entities;
+        <U>begin</U>
+            <U>array</U> w[1:n], a[1:5]; <U>integer</U> k,j;
+            a[1]:=a[2]:=a[5]:=h/2; a[3]:=a[4]:=h;
+            xe:=x;
+            <U>for</U> k:=1 <U>step</U> 1 <U>until</U> n <U>do</U> ye[k]:=w[k]:=y[k];
+            <U>for</U> j:=1 <U>step</U> 1 <U>until</U> 4 <U>do</U>
+                <U>begin</U>
+                    FKT(xe,w,n,z);
+                    xe:=x+a[j];
+                    <U>for</U> k:=1 <U>step</U> 1 <U>until</U> n <U>do</U>
+                    <U>begin</U>
+                        w[k]:=y[k]+a[j]<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">z[k];
+                        ye[k]:=ye[k]+a[j+1]<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">z[k]/3
+                    <U>end</U> k
+                <U>end</U> j
+        <U>end</U> RK1ST;
+
+Begin of program:
+
+    <U>if</U> fi <U>then</U> <U>begin</U> H:=xE-x; s:=0 <U>end</U> <U>else</U> H:=Hs;
+    out:=<U>false</U>;
+
+AA: <U>if</U> (x+2.01<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">H-xE)&gt;0) <IMG SRC="images/equiv.gif" WIDTH=8 HEIGHT=9 ALT="EQUIVALENCE"> (H&gt;0) <U>then</U>
+    <U>begin</U> Hs:=H; out:=<U>true</U>; H:=(xE-x)/2 <U>end</U> if;
+    RK1ST (x,y,2<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">H,x1,y1);
+
+BB: RK1ST (x,y,H,x2,y2); RK1ST (x2,y2,H,x3,y3);
+    <U>for</U> k:=1 <U>step</U> 1 <U>until</U> n <U>do</U>
+        <U>if</U> comp (y1[k],y3[k],eta)&gt;eps <U>then</U> <U>goto</U> CC;
+    <U>comment</U> comp(a,b,c) is a function designator, the value of
+    which is the absolute value of the difference of the mantissae of a
+    and b, after the exponents of these quantities have been made equal
+    to the largest of the exponents of the originally given parameters
+    a, b, c;
+    x:=x3; <U>if</U> out <U>then</U> <U>goto</U> DD;
+    <U>for</U> k:=1 <U>step</U> 1 <U>until</U> n <U>do</U> y[k]:=y3[k];
+    <U>if</U> s=5 <U>then</U> <U>begin</U> s:=0; H:=2<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">H <U>end</U> if;
+    s:=s+1; <U>goto</U> AA;
+
+CC: H:=0.5<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">X; out:=<U>false</U>; x1:=x2;
+    <U>for</U> k:=1 <U>step</U> 1 <U>until</U> n <U>do</U> y1[k]:=y2[k];
+    <U>goto</U> BB;
+
+DD: <U>for</U> k:=1 <U>step</U> 1 <U>until</U> n <U>do</U> yE[k]:=y3[k]
+<U>end</U> RK
+</pre>
+
+
+<P>&nbsp;</P>
+<HR>
+<P>&nbsp;</P>
+<!-- Index, Note, Declarations, Description -->
+
+<A NAME="index"><H3>Alphabetic index of definitions of concepts and syntactic units</H3></A>
+
+
+<P>All references are given through section numbers.  The references are
+given in three groups:</P>
+
+<UL>
+<LI>[def]  Following the abbreviation ``def'', reference to the
+             syntactic definition (if any) is given. 
+
+<LI>[synt] Following the abbreviation ``synt'', references to the
+             occurrences in metalinguistic formulae are given. 
+             References already quoted in the def-group are not
+             repeated. 
+
+<LI>[text] Following the word ``text'', the references to definitions
+             given in the text are given. 
+
+</UL>
+
+<P>The basic symbols represented by signs other than underlined words
+have been collected at the beginning.  The examples have been ignored in
+compiling the index.</P>
+
+<P>&nbsp;<BR>
+Index: &nbsp; <B><A HREF="#index_A">A</A> &nbsp; <A HREF="#index_B">B</A> &nbsp; <A HREF="#index_C">C</A> &nbsp; <A HREF="#index_D">D</A> &nbsp; <A HREF="#index_E">E</A> &nbsp; <A HREF="#index_F">F</A> &nbsp; <A HREF="#index_G">G</A> &nbsp; <A HREF="#index_H">H</A> &nbsp; <A HREF="#index_I">I</A> &nbsp; <A HREF="#index_J">J</A> &nbsp; <A HREF="#index_K">K</A> &nbsp; <A HREF="#index_L">L</A> &nbsp; <A HREF="#index_M">M</A> &nbsp; <A HREF="#index_N">N</A> &nbsp; <A HREF="#index_O">O</A> &nbsp; <A HREF="#index_P">P</A> &nbsp; <A HREF="#index_Q">Q</A> &nbsp; <A HREF="#index_R">R</A> &nbsp; <A HREF="#index_S">S</A> &nbsp; <A HREF="#index_T">T</A> &nbsp; <A HREF="#index_U">U</A> &nbsp; <A HREF="#index_V">V</A> &nbsp; <A HREF="#index_W">W</A> &nbsp; <A HREF="#index_X">X</A> &nbsp; <A HREF="#index_Y">Y</A> &nbsp; <A HREF="#index_Z">Z</A></B><BR>
+&nbsp;</P>
+
+<H5>Symbols</H5>
+
+<pre>
++ see: plus
+- see: minus
+<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1"> see: multiply
+/ &divide; see: divide
+<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER"> see: exponentiation
+&lt; <IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER"> = <IMG SRC="images/ge.gif" WIDTH=9 HEIGHT=9 ALT="NOTLESS"> &gt; <IMG SRC="images/ne.gif" WIDTH=9 HEIGHT=9 ALT="NOTEQUAL"> see: &lt;relational operator&gt;
+<IMG SRC="images/equiv.gif" WIDTH=8 HEIGHT=9 ALT="EQUIVALENCE"> <IMG SRC="images/impl.gif" WIDTH=9 HEIGHT=9 ALT="IMPLICATION"> <IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR"> <IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND"> &not; see: &lt;logical operator&gt;
+, see: comma
+. see: decimal point
+<SUB>10</SUB> see: ten
+: see: colon
+; see: semicolon
+:= see: colon equal
+<IMG SRC="images/blank.gif" WIDTH=7 HEIGHT=9 ALT="BLANK"> see: space
+( ) see: parentheses
+[ ] see: subscript bracket
+` ' see: string quote
+</pre>
+
+<A NAME="index_A"></A>
+<H4>A</H4>
+<P>
+&lt;actual parameter&gt;, def <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A><BR>
+&lt;actual parameter list&gt;, def <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A><BR>
+&lt;actual parameter part&gt;, def <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A><BR>
+&lt;adding operator&gt;, def <A HREF="#3_3_1">3.3.1</A><BR>
+alphabet, text <A HREF="#2_1">2.1</A><BR>
+arithmetic, text <A HREF="#3_3_6">3.3.6</A><BR>
+&lt;arithmetic expression&gt;, def <A HREF="#3_3_1">3.3.1</A>, synt <A HREF="#3">3</A>, <A HREF="#3_1_1">3.1.1</A>, <A HREF="#3_4_1">3.4.1</A>, <A HREF="#4_2_1">4.2.1</A>,
+        <A HREF="#4_6_1">4.6.1</A>, <A HREF="#5_2_1">5.2.1</A> text <A HREF="#3_3_3">3.3.3</A><BR>
+&lt;arithmetic operator&gt;, def <A HREF="#2_3">2.3</A> text <A HREF="#3_3_4">3.3.4</A><BR>
+<TT><U>array</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_2_1">5.2.1</A>, <A HREF="#5_4_1">5.4.1</A><BR>
+array, text <A HREF="#3_1_4_1">3.1.4.1</A><BR>
+&lt;array declaration&gt;, def <A HREF="#5_2_1">5.2.1</A> synt <A HREF="#5">5</A> text <A HREF="#5_2_3">5.2.3</A><BR>
+&lt;array identifier&gt;, def <A HREF="#3_1_1">3.1.1</A> synt <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A>, <A HREF="#5_2_1">5.2.1</A> text <A HREF="#2_8">2.8</A><BR>
+&lt;array list&gt;, def <A HREF="#5_2_1">5.2.1</A><BR>
+&lt;array segment&gt;, def <A HREF="#5_2_1">5.2.1</A><BR>
+&lt;assignment statement&gt;, def <A HREF="#4_2_1">4.2.1</A> synt <A HREF="#4_1_1">4.1.1</A> text <A HREF="#1">1</A>, <A HREF="#4_2_3">4.2.3</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_B"></A>
+<H4>B</H4>
+<P>
+&lt;basic statement&gt;, def <A HREF="#4_1_1">4.1.1</A> synt <A HREF="#4_5_1">4.5.1</A><BR>
+&lt;basic symbol&gt;, def <A HREF="#2">2</A><BR>
+<TT><U>begin</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#4_1_1">4.1.1</A><BR>
+&lt;block&gt;, def <A HREF="#4_1_1">4.1.1</A> synt <A HREF="#4_5_1">4.5.1</A> text <A HREF="#1">1</A>, <A HREF="#4_1_3">4.1.3</A>, <A HREF="#5">5</A><BR>
+&lt;block head&gt;, def <A HREF="#4_1_1">4.1.1</A><BR>
+<TT><U>Boolean</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_1_1">5.1.1</A> text <A HREF="#5_1_3">5.1.3</A><BR>
+&lt;Boolean expression&gt;, def <A HREF="#3_4_1">3.4.1</A> synt <A HREF="#3">3</A>, <A HREF="#3_3_1">3.3.1</A>, <A HREF="#4_2_1">4.2.1</A>, <A HREF="#4_5_1">4.5.1</A>, <A HREF="#4_6_1">4.6.1</A>
+        text <A HREF="#3_4_3">3.4.3</A><BR>
+&lt;Boolean factor&gt;, def <A HREF="#3_4_1">3.4.1</A><BR>
+&lt;Boolean primary&gt;, def <A HREF="#3_4_1">3.4.1</A><BR>
+&lt;Boolean secondary&gt;, def <A HREF="#3_4_1">3.4.1</A><BR>
+&lt;Boolean term&gt;, def <A HREF="#3_4_1">3.4.1</A><BR>
+&lt;bound pair&gt;, def <A HREF="#5_2_1">5.2.1</A><BR>
+&lt;bound pair list&gt;, def <A HREF="#5_2_1">5.2.1</A><BR>
+&lt;bracket&gt;, def <A HREF="#2_3">2.3</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_C"></A>
+<H4>C</H4>
+<P>
+&lt;code&gt;, synt <A HREF="#5_4_1">5.4.1</A> text <A HREF="#4_7_8">4.7.8</A>, <A HREF="#5_4_6">5.4.6</A><BR>
+colon:, synt <A HREF="#2_3">2.3</A>, <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_1_1">4.1.1</A>, <A HREF="#4_5_1">4.5.1</A>, <A HREF="#4_6_1">4.6.1</A>, <A HREF="#4_7_1">4.7.1</A>, <A HREF="#5_2_1">5.2.1</A><BR>
+colon equal :=, synt <A HREF="#2_3">2.3</A>, <A HREF="#4_2_1">4.2.1</A>, <A HREF="#4_6_1">4.6.1</A>, <A HREF="#5_3_1">5.3.1</A><BR>
+comma , , synt <A HREF="#2_3">2.3</A>, <A HREF="#3_1_1">3.1.1</A>, <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_6_1">4.6.1</A>, <A HREF="#4_7_1">4.7.1</A>, <A HREF="#5_1_1">5.1.1</A>, <A HREF="#5_2_1">5.2.1</A>, <A HREF="#5_3_1">5.3.1</A>, <A HREF="#5_4_1">5.4.1</A><BR>
+<TT><U>comment</U></TT>, synt <A HREF="#2_3">2.3</A><BR>
+comment convention, text <A HREF="#2_3">2.3</A><BR>
+&lt;compound statement&gt;, def <A HREF="#4_1_1">4.1.1</A> synt <A HREF="#4_5_1">4.5.1</A> text <A HREF="#1">1</A><BR>
+&lt;compound tail&gt;, def <A HREF="#4_1_1">4.1.1</A><BR>
+&lt;conditional statement&gt;, def <A HREF="#4_5_1">4.5.1</A> synt <A HREF="#4_1_1">4.1.1</A> text <A HREF="#4_5_3">4.5.3</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_D"></A>
+<H4>D</H4>
+<P>
+&lt;decimal fraction&gt;, def <A HREF="#2_5_1">2.5.1</A><BR>
+&lt;decimal number&gt;, def <A HREF="#2_5_1">2.5.1</A> text <A HREF="#2_5_3">2.5.3</A><BR>
+decimal point . , synt <A HREF="#2_3">2.3</A>, <A HREF="#2_5_3">2.5.3</A><BR>
+&lt;declaration&gt;, def <A HREF="#5">5</A> synt <A HREF="#4_1_1">4.1.1</A> text <A HREF="#1">1</A>, <A HREF="#5">5</A> (complete section)<BR>
+&lt;declarator&gt;, def <A HREF="#2_3">2.3</A><BR>
+&lt;delimiter&gt;, def <A HREF="#2_3">2.3</A> synt <A HREF="#2">2</A>
+&lt;designational expression&gt;, def <A HREF="#3_5_1">3.5.1</A> synt <A HREF="#3">3</A>, <A HREF="#4_3_1">4.3.1</A>, <A HREF="#5_3_1">5.3.1</A> text <A HREF="#3_5_3">3.5.3</A><BR>
+&lt;digit&gt;, def <A HREF="#2_2_1">2.2.1</A> synt <A HREF="#2">2</A>, <A HREF="#2_4_1">2.4.1</A>, <A HREF="#2_5_1">2.5.1</A><BR>
+dimension, text <A HREF="#5_2_3_2">5.2.3.2</A><BR>
+divide / &divide;, synt <A HREF="#2_3">2.3</A>, <A HREF="#3_3_1">3.3.1</A> text <A HREF="#3_3_4_2">3.3.4.2</A><BR>
+&lt;dummy statement&gt;, def <A HREF="#4_4_1">4.4.1</A> synt <A HREF="#4_1_1">4.1.1</A> text <A HREF="#4_4_3">4.4.3</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_E"></A>
+<H4>E</H4>
+<P>
+<TT><U>else</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#3_3_1">3.3.1</A>, <A HREF="#3_4_1">3.4.1</A>, <A HREF="#3_5_1">3.5.1</A>, <A HREF="#4_5_1">4.5.1</A> text <A HREF="#4_4_3">4.4.3</A><BR>
+&lt;empty&gt;, def <A HREF="#1_1">1.1</A> synt <A HREF="#2_6_1">2.6.1</A>, <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_4_1">4.4.1</A>, <A HREF="#4_7_1">4.7.1</A>, <A HREF="#5_4_1">5.4.1</A><BR>
+<TT><U>end</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#4_1_1">4.1.1</A><BR>
+entier, text <A HREF="#3_2_5">3.2.5</A><BR>
+exponentiation <IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">, synt <A HREF="#2_3">2.3</A>, <A HREF="#3_3_1">3.3.1</A> text <A HREF="#3_3_4_3">3.3.4.3</A><BR>
+&lt;expression&gt;, def <A HREF="#3">3</A> synt <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A> text <A HREF="#3">3</A> (complete section)<BR>
+&lt;exponential part&gt;, def <A HREF="#2_5_1">2.5.1</A> text <A HREF="#2_5_3">2.5.3</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_F"></A>
+<H4>F</H4>
+<P>
+&lt;factor&gt;, def <A HREF="#3_3_1">3.3.1</A><BR>
+<TT><U>false</U></TT>, synt <A HREF="#2_2_2">2.2.2</A><BR>
+&lt;for clause&gt;, def <A HREF="#4_6_1">4.6.1</A> text <A HREF="#4_6_3">4.6.3</A><BR>
+&lt;for list&gt;, def <A HREF="#4_6_1">4.6.1</A> text <A HREF="#4_6_4">4.6.4</A><BR>
+&lt;for list element&gt;, def <A HREF="#4_6_1">4.6.1</A> text <A HREF="#4_6_4_1">4.6.4.1</A>, <A HREF="#4_6_4_2">4.6.4.2</A>, <A HREF="#4_6_4_3">4.6.4.3</A><BR>
+&lt;formal parameter&gt;, def <A HREF="#5_4_1">5.4.1</A> text <A HREF="#5_4_3">5.4.3</A><BR>
+&lt;formal parameter list&gt;, def <A HREF="#5_4_1">5.4.1</A><BR>
+&lt;formal parameter part&gt;, def <A HREF="#5_4_1">5.4.1</A><BR>
+&lt;for statement&gt;, def <A HREF="#4_6_1">4.6.1</A> synt <A HREF="#4_1_1">4.1.1</A>, <A HREF="#4_5_1">4.5.1</A> text <A HREF="#4_6">4.6</A> (complete section)<BR>
+&lt;function designator&gt;, def <A HREF="#3_2_1">3.2.1</A> synt <A HREF="#3_3_1">3.3.1</A>, <A HREF="#3_4_1">3.4.1</A> text <A HREF="#3_2_3">3.2.3</A>, <A HREF="#5_4_4">5.4.4</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_G"></A>
+<H4>G</H4>
+<P>
+<TT><U>goto</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#4_3_1">4.3.1</A><BR>
+&lt;go to statement&gt;, def <A HREF="#3_4_1">3.4.1</A> synt <A HREF="#4_1_1">4.1.1</A> text <A HREF="#4_3_3">4.3.3</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_H"></A>
+<A NAME="index_I"></A>
+<H4>I</H4>
+<P>
+&lt;identifier&gt;, def <A HREF="#2_4_1">2.4.1</A> synt <A HREF="#3_1_1">3.1.1</A>, <A HREF="#3_2_1">3.2.1</A>, <A HREF="#3_5_1">3.5.1</A>, <A HREF="#5_4_1">5.4.1</A> text <A HREF="#2_4_3">2.4.3</A><BR>
+&lt;identifier list&gt;, def <A HREF="#5_4_1">5.4.1</A><BR>
+<TT><U>if</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#3_3_1">3.3.1</A>, <A HREF="#4_5_1">4.5.1</A><BR>
+&lt;if clause&gt;, def <A HREF="#3_3_1">3.3.1</A>, <A HREF="#4_5_1">4.5.1</A> synt <A HREF="#3_4_1">3.4.1</A>, <A HREF="#3_5_1">3.5.1</A> text <A HREF="#3_3_3">3.3.3</A>, <A HREF="#4_5_3_2">4.5.3.2</A><BR>
+&lt;if statement&gt;, def <A HREF="#4_5_1">4.5.1</A> text <A HREF="#4_5_3_1">4.5.3.1</A><BR>
+&lt;implication&gt;, def <A HREF="#3_4_1">3.4.1</A><BR>
+<TT><U>integer</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_1_1">5.1.1</A> text <A HREF="#5_1_3">5.1.3</A><BR>
+&lt;integer&gt;, def <A HREF="#2_5_1">2.5.1</A> text <A HREF="#2_5_4">2.5.4</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_J"></A>
+<A NAME="index_K"></A>
+<A NAME="index_L"></A>
+<H4>L</H4>
+<P>
+<TT><U>label</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_4_1">5.4.1</A><BR>
+&lt;label&gt;, def <A HREF="#3_5_1">3.5.1</A> synt <A HREF="#4_1_1">4.1.1</A>, <A HREF="#4_5_1">4.5.1</A>, <A HREF="#4_6_1">4.6.1</A> text <A HREF="#1">1</A>, <A HREF="#4_1_3">4.1.3</A><BR>
+&lt;left part&gt;, def <A HREF="#4_2_1">4.2.1</A><BR>
+&lt;left part list&gt;, def <A HREF="#4_2_1">4.2.1</A><BR>
+&lt;letter&gt;, def <A HREF="#2_1">2.1</A> synt <A HREF="#2">2</A>, <A HREF="#2_4_1">2.4.1</A>, <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A><BR>
+&lt;letter string&gt;, def <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A><BR>
+local, text <A HREF="#4_1_3">4.1.3</A><BR>
+&lt;local or own type&gt;, def <A HREF="#5_1_1">5.1.1</A> synt <A HREF="#5_2_1">5.2.1</A><BR>
+&lt;logical operator&gt;, def <A HREF="#2_3">2.3</A> synt <A HREF="#3_4_1">3.4.1</A> text <A HREF="#3_4_5">3.4.5</A><BR>
+&lt;logical value&gt;, def <A HREF="#2_2_2">2.2.2</A> synt <A HREF="#2">2</A>, <A HREF="#3_4_1">3.4.1</A><BR>
+&lt;lower bound&gt;, def <A HREF="#5_2_1">5.2.1</A> text <A HREF="#5_2_4">5.2.4</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_M"></A>
+<H4>M</H4>
+<P>
+minus -, synt <A HREF="#2_3">2.3</A>, <A HREF="#2_5_1">2.5.1</A>, <A HREF="#3_3_1">3.3.1</A> text <A HREF="#3_3_4_1">3.3.4.1</A><BR>
+multiply <IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">, synt <A HREF="#2_3">2.3</A>, <A HREF="#3_3_1">3.3.1</A> text <A HREF="#3_3_4_1">3.3.4.1</A><BR>
+&lt;multiplying operator&gt;, def <A HREF="#3_3_1">3.3.1</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_N"></A>
+<H4>N</H4>
+<P>
+non-local, text <A HREF="#4_1_3">4.1.3</A><BR>
+&lt;number&gt;, def <A HREF="#2_5_1">2.5.1</A> text <A HREF="#2_5_3">2.5.3</A>, <A HREF="#2_5_4">2.5.4</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_O"></A>
+<H4>O</H4>
+<P>
+&lt;open string&gt;, def <A HREF="#2_6_1">2.6.1</A><BR>
+&lt;operator&gt;, def <A HREF="#2_3">2.3</A><BR>
+<TT><U>own</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_1_1">5.1.1</A> text <A HREF="#5">5</A>, <A HREF="#5_2_5">5.2.5</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_P"></A>
+<H4>P</H4>
+<P>
+&lt;parameter delimiter&gt;, def <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A> synt <A HREF="#5_4_1">5.4.1</A> text <A HREF="#4_7_7">4.7.7</A><BR>
+parentheses (), synt <A HREF="#2_3">2.3</A>, <A HREF="#3_2_1">3.2.1</A>, <A HREF="#3_3_1">3.3.1</A>, <A HREF="#3_4_1">3.4.1</A>, <A HREF="#3_5_1">3.5.1</A>, <A HREF="#4_7_1">4.7.1</A>, <A HREF="#5_4_1">5.4.1</A> text <A HREF="#3_3_5_2">3.3.5.2</A><BR>
+plus +, synt <A HREF="#2_3">2.3</A>, <A HREF="#2_5_1">2.5.1</A>, <A HREF="#3_3_1">3.3.1</A> text <A HREF="#3_3_4_1">3.3.4.1</A><BR>
+&lt;primary&gt;, def <A HREF="#3_3_1">3.3.1</A><BR>
+<TT><U>procedure</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_4_1">5.4.1</A><BR>
+&lt;procedure body&gt;, def <A HREF="#5_4_1">5.4.1</A><BR>
+&lt;procedure declaration&gt;, def <A HREF="#5_4_1">5.4.1</A> synt <A HREF="#5">5</A> text <A HREF="#5_3">5.3</A><BR>
+&lt;procedure heading&gt;, def <A HREF="#5_4_1">5.4.1</A> text <A HREF="#5_4_3">5.4.3</A><BR>
+&lt;procedure identifier&gt;, def <A HREF="#3_2_1">3.2.1</A> synt <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A>, <A HREF="#5_4_1">5.4.1</A> text <A HREF="#4_7_5_4">4.7.5.4</A><BR>
+&lt;procedure statement&gt;, def <A HREF="#4_7_1">4.7.1</A> synt <A HREF="#4_1_1">4.1.1</A> text <A HREF="#4_7_3">4.7.3</A><BR>
+&lt;program&gt;, def <A HREF="#4_1_1">4.1.1</A> text <A HREF="#1">1</A><BR>
+&lt;proper string&gt;, def <A HREF="#2_6_1">2.6.1</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_Q"></A>
+<A NAME="index_R"></A>
+<H4>R</H4>
+<P>
+<TT><U>real</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_1_1">5.1.1</A> text <A HREF="#5_1_3">5.1.3</A><BR>
+&lt;relation&gt;, def <A HREF="#3_4_1">3.4.1</A> text <A HREF="#3_4_5">3.4.5</A><BR>
+&lt;relational operator&gt;, def <A HREF="#2_3">2.3</A>, <A HREF="#3_4_1">3.4.1</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_S"></A>
+<H4>S</H4>
+<P>
+scope, text <A HREF="#2_7">2.7</A><BR>
+semicolon ; , synt <A HREF="#2_3">2.3</A>, <A HREF="#4_1_1">4.1.1</A>, <A HREF="#5_4_1">5.4.1</A><BR>
+&lt;separator&gt;, def <A HREF="#2_3">2.3</A><BR>
+&lt;sequential operator&gt;, def <A HREF="#2_3">2.3</A><BR>
+&lt;simple arithmetic expression&gt;, def <A HREF="#3_3_1">3.3.1</A> text <A HREF="#3_3_3">3.3.3</A><BR>
+&lt;simple Boolean&gt;, def <A HREF="#3_4_1">3.4.1</A><BR>
+&lt;simple designational expression&gt;, def <A HREF="#3_5_1">3.5.1</A><BR>
+&lt;simple variable&gt;, def <A HREF="#3_1_1">3.1.1</A> synt <A HREF="#5_5_1">5.5.1</A> text <A HREF="#2_4_3">2.4.3</A><BR>
+space _, synt <A HREF="#2_3">2.3</A> text <A HREF="#2_3">2.3</A>, <A HREF="#2_6_3">2.6.3</A><BR>
+&lt;specification part&gt;, def <A HREF="#5_4_1">5.4.1</A> text <A HREF="#5_4_5">5.4.5</A><BR>
+&lt;specificator&gt;, def <A HREF="#2_3">2.3</A><BR>
+&lt;specifier&gt;, def <A HREF="#5_4_1">5.4.1</A><BR>
+standard function, text <A HREF="#3_2_4">3.2.4</A>, <A HREF="#3_2_5">3.2.5</A><BR>
+&lt;statement&gt;, def <A HREF="#4_1_1">4.1.1</A> synt <A HREF="#4_5_1">4.5.1</A>, <A HREF="#4_6_1">4.6.1</A>, <A HREF="#5_4_1">5.4.1</A> text <A HREF="#4">4</A> (complete section)<BR>
+statement bracket see <TT><U>begin</U></TT> <TT><U>end</U></TT><BR>
+<TT><U>step</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#4_6_1">4.6.1</A> text <A HREF="#4_6_4_2">4.6.4.2</A><BR>
+<TT><U>string</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_4_1">5.4.1</A><BR>
+&lt;string&gt;, def <A HREF="#2_6_1">2.6.1</A> synt <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A> text <A HREF="#2_6_3">2.6.3</A><BR>
+string quotes `', synt <A HREF="#2_3">2.3</A>, <A HREF="#2_6_1">2.6.1</A> text <A HREF="#2_6_3">2.6.3</A><BR>
+subscript, text <A HREF="#3_1_4_1">3.1.4.1</A><BR>
+subscript bound, text <A HREF="#5_2_3_1">5.2.3.1</A><BR>
+subscript brackets [], synt <A HREF="#2_3">2.3</A>, <A HREF="#3_1_1">3.1.1</A>, <A HREF="#3_5_1">3.5.1</A>, <A HREF="#5_2_1">5.2.1</A><BR>
+&lt;subscripted variable&gt;, def <A HREF="#3_1_1">3.1.1</A> text <A HREF="#3_1_4_1">3.1.4.1</A><BR>
+&lt;subscript expression&gt;, def <A HREF="#3_1_1">3.1.1</A> synt <A HREF="#3_5_1">3.5.1</A><BR>
+&lt;subscript list&gt;, def <A HREF="#3_1_1">3.1.1</A><BR>
+successor, text <A HREF="#4">4</A><BR>
+<TT><U>switch</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_3_1">5.3.1</A>, <A HREF="#5_4_1">5.4.1</A><BR>
+&lt;switch declaration&gt;, def <A HREF="#5_3_1">5.3.1</A> synt <A HREF="#5">5</A> text <A HREF="#5_3_3">5.3.3</A><BR>
+&lt;switch designator&gt;, def <A HREF="#3_5_1">3.5.1</A> text <A HREF="#3_5_3">3.5.3</A><BR>
+&lt;switch identifier&gt;, def <A HREF="#3_5_1">3.5.1</A> synt <A HREF="#3_2_1">3.2.1</A>, <A HREF="#4_7_1">4.7.1</A>, <A HREF="#5_3_1">5.3.1</A><BR>
+&lt;switch list&gt;, def <A HREF="#5_3_1">5.3.1</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_T"></A>
+<H4>T</H4>
+<P>
+&lt;term&gt;, def <A HREF="#3_3_1">3.3.1</A><BR>
+ten &lt;SUB&gt;<A HREF="#10">10</A>&lt;/SUB&gt;, synt <A HREF="#2_3">2.3</A>, <A HREF="#2_5_1">2.5.1</A><BR>
+<TT><U>then</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#3_3_1">3.3.1</A>, <A HREF="#4_5_1">4.5.1</A><BR>
+transfer function, text <A HREF="#3_2_5">3.2.5</A><BR>
+<U>true</U>, synt <A HREF="#2_2_2">2.2.2</A><BR>
+&lt;type&gt;, def <A HREF="#5_1_1">5.1.1</A> synt <A HREF="#5_4_1">5.4.1</A> text <A HREF="#2_8">2.8</A><BR>
+&lt;type declaration&gt;, def <A HREF="#5_1_1">5.1.1</A> synt <A HREF="#5">5</A> text <A HREF="#5_1_3">5.1.3</A><BR>
+&lt;type list&gt;, def <A HREF="#5_1_1">5.1.1</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_U"></A>
+<H4>U</H4>
+<P>
+&lt;unconditional statement&gt;, def <A HREF="#4_1_1">4.1.1</A>, <A HREF="#4_5_1">4.5.1</A><BR>
+&lt;unlabelled basic statement&gt;, def <A HREF="#4_1_1">4.1.1</A><BR>
+&lt;unlabelled block&gt;, def <A HREF="#4_1_1">4.1.1</A><BR>
+&lt;unlabelled compound&gt;, def <A HREF="#4_1_1">4.1.1</A><BR>
+&lt;unsigned integer&gt;, def <A HREF="#2_5_1">2.5.1</A>, <A HREF="#3_5_1">3.5.1</A><BR>
+&lt;unsigned number&gt;, def <A HREF="#2_5_1">2.5.1</A> synt <A HREF="#3_3_1">3.3.1</A><BR>
+<TT><U>until</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#4_6_1">4.6.1</A> text <A HREF="#4_6_4_2">4.6.4.2</A><BR>
+&lt;upper bound&gt;, def <A HREF="#5_2_1">5.2.1</A> text <A HREF="#5_2_4">5.2.4</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_V"></A>
+<H4>V</H4>
+<P>
+<TT><U>value</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#5_4_1">5.4.1</A><BR>
+value, text <A HREF="#2_8">2.8</A>, <A HREF="#3_3_3">3.3.3</A><BR>
+&lt;value part&gt;, def <A HREF="#5_4_1">5.4.1</A> text <A HREF="#4_7_3_1">4.7.3.1</A><BR>
+&lt;variable&gt;, def <A HREF="#3_1_1">3.1.1</A> synt <A HREF="#3_3_1">3.3.1</A>, <A HREF="#3_4_1">3.4.1</A>, <A HREF="#4_2_1">4.2.1</A>, <A HREF="#4_6_1">4.6.1</A> text <A HREF="#3_1_3">3.1.3</A><BR>
+&lt;variable identifier&gt;, def <A HREF="#3_1_1">3.1.1</A><BR>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+<A NAME="index_W"></A>
+<A NAME="index_X"></A>
+<A NAME="index_Y"></A>
+<A NAME="index_Z"></A>
+<H4>W</H4>
+<P>
+<TT><U>while</U></TT>, synt <A HREF="#2_3">2.3</A>, <A HREF="#4_6_1">4.6.1</A> text <A HREF="#4_6_4_3">4.6.4.3</A>
+</P>
+<P>&nbsp;&nbsp;<A HREF="#index">^ index</A></P>
+&nbsp;<BR>
+<HR>
+<!-- Note, Description, Index, Description -->
+
+
+<A NAME="note"></A><P><H3>Note.</H3>
+<P>This report is published in Numerische Mathematik, in the
+Communications of the ACM, and in the Journal of the British Computer
+Soc.  Reproduction of this report for any purpose is explicitly
+permitted; reference should be made to this issue of Numerische
+Mathematik and to the respective issues of the Communications and the
+Journal of the British Computer Soc.  as the source.</P>
+
+<HR>
+
+<P>Technical University Delft<BR>
+Delft, Holland<BR>
+W. L. van der Poel,<BR>
+(Chairman of Working Group 2.1 on Algol of the<BR>
+International Federation for Information Processing)</P>
+
+
+<HR>
+
+<!-- Editors note, Top, Top, Top -->
+<A NAME="Edition"><H3>Note on the edition</H3></A>
+<P>List of symbols and their representation:</P>
+<P>
+<TABLE>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/blank.gif" WIDTH=7 HEIGHT=9 ALT="BLANK">]</TD><TD VALIGN="top" ALIGN="left"> A blank. Printed like a half box.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<SUB>10</SUB>]</TD><TD VALIGN="top" ALIGN="left"> The ten for the exponent in a real-type number. Printed as a small lowered ten.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/power.gif" WIDTH=7 HEIGHT=9 ALT="POWER">]</TD><TD VALIGN="top" ALIGN="left"> The power operator: an uparrow.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/times.gif" WIDTH=7 HEIGHT=9 ALT="TIMES" HSPACE="1">]</TD><TD VALIGN="top" ALIGN="left"> The times sign: a cross like an x.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [&divide;]</TD><TD VALIGN="top" ALIGN="left"> The integer division operator: a - with a dot above and below.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [&lt;]</TD><TD VALIGN="top" ALIGN="left"> Simple: less than.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/le.gif" WIDTH=9 HEIGHT=9 ALT="NOTGREATER">]</TD><TD VALIGN="top" ALIGN="left"> Simple: less or equal.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [=]</TD><TD VALIGN="top" ALIGN="left"> Simple: equal.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/ge.gif" WIDTH=9 HEIGHT=9 ALT="NOTLESS">]</TD><TD VALIGN="top" ALIGN="left"> Simple: greater or equal.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [&gt;]</TD><TD VALIGN="top" ALIGN="left"> Simple: greater than.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/ne.gif" WIDTH=9 HEIGHT=9 ALT="NOTEQUAL">]</TD><TD VALIGN="top" ALIGN="left"> Simple: not equal.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/equiv.gif" WIDTH=8 HEIGHT=9 ALT="EQUIVALENCE">]</TD><TD VALIGN="top" ALIGN="left"> Simple: logical equivalence.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/impl.gif" WIDTH=9 HEIGHT=9 ALT="IMPLICATION">]</TD><TD VALIGN="top" ALIGN="left"> Simple: logical implication.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/or.gif" WIDTH=7 HEIGHT=9 ALT="OR">]</TD><TD VALIGN="top" ALIGN="left"> Simple: logical or.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [<IMG SRC="images/and.gif" WIDTH=7 HEIGHT=9 ALT="AND">]</TD><TD VALIGN="top" ALIGN="left"> Simple: logical and.</TD></TR>
+<TR><TD VALIGN="top" ALIGN="left"> [&not;]</TD><TD VALIGN="top" ALIGN="left"> Simple: logical not.</TD></TR>
+</TABLE>
+<P>&nbsp;</P>
+<P>HTML-translation: N.Landsteiner (<A HREF="&#109;&#97;&#105;&#108;&#116;&#111;&#58;n&#46;landsteiner&#64;masswerk&#46;&#97;&#116;">n&#46;landsteiner&#64;masswerk&#46;&#97;&#116;</A>)&nbsp; 02.1999</P>
+<P>original LaTeX-Info file by Erik Schoenfelder (schoenfr@ibr.cs.tu-bs.de)&nbsp; 10.1990</P>
+<P>ALGOL60 syntax (EBNF) as compiled from this report: <A HREF="syntax.txt" TARGET="_blank">Syntax of Subset ALGOL60</A>.</P>
+
+<P>&nbsp;<BR>Other AGOL 60 related documents to be found on this site:</P>
+<UL TYPE="disc"><LI><A HREF="index.htm">Algol 60 References</A><BR>&nbsp;
+<UL TYPE="disc">
+<LI><A HREF="modified_report.htm">Modified Report on the Algorithmic Language ALGOL 60</A> (1976)<BR>&nbsp;
+<LI><A HREF="algol60-syntaxversions.htm">Algol 60 Versions of Syntax</A> (differences between the Revised Report &amp; the Modified Report)<BR>&nbsp;
+<LI><A HREF="algol60-sample.htm">Algol 60 - Sample Implementation and Examples</A><BR>&nbsp;
+<LI>ALGOL 60 syntax (EBNF) as compiled from the  Revised Report: <A HREF="syntax.txt" TARGET="_blank">Syntax of ALGOL 60</A>.<BR>&nbsp;
+<LI>A step further - SIMULA 67: <A HREF="simula-ebnf.txt" TARGET="_blank">Syntax of SIMULA 67</A>.
+</UL>
+</UL>
+<P>&nbsp;</P>
+
+<HR>
+<P><A HREF="http://www.masswerk.at/" TARGET="_top" CLASS="masswerk">mass:werk - media environments</A></P>
+<P>&nbsp;</P>
+
+</BODY>
+</HTML>

@@ -51,7 +51,7 @@ check mnemonic
 # published vectors.
 for lang in chinese_simplified chinese_traditional czech english french \
             italian japanese korean portuguese spanish; do
-	list=bip39-corpus/wordlists/$lang.txt
+	list=corpus/bip39/wordlists/$lang.txt
 	d=$T/bip39_$lang; mkdir -p "$d"
 	sed "s|bip39/english.hbnf|bip39/$lang.hbnf|" tests/wire/bip39_one.hbnf \
 		> "$d/one.hbnf"

@@ -20,7 +20,7 @@ daemon's `parse.y`.  These are drop-in replacements: their parsers accept and
 reject exactly what parse.y does (byte-identity for ntpd, unwind-identity
 elsewhere).
 
-**RFC corpus** (`rfc-corpus/`).  The BNF fragments of the RFCs, pulled in whole
+**RFC corpus** (`corpus/rfc/`).  The BNF fragments of the RFCs, pulled in whole
 where they compile and in pieces where they do not.  Each fragment keeps:
 
 - the RFC's ABNF verbatim — `<rfc>-<n>.bnf`, with the form hbnf compiles beside it as `<rfc>-<n>.hbnf`, its `.md`, and `.vectors/`;
@@ -495,7 +495,7 @@ running order:
 > **Done:** 0, 1, 2, 3, 3b, 4a–4e, 5, 7a, 9a, 9b, 9c, 12.  **Under way:** 7b (the
 > wire layer, in C; see its entry for what is and is not built).
 > **Corpora and ports wait for the features** (decided 2026-10-17).  The POSIX
-> shell grammar (`posix-corpus/`) and the IMP72 sources (`imp72-corpus/`) are
+> shell grammar (`corpus/posix/`) and the IMP72 sources (`corpus/imp72/`) are
 > paused where they stand: both need things hbnf does not have yet (the
 > exception for phrase rules, `~` negation, a `%where`, bit fields and the wire
 > layer, `%emit`).  They resume when hbnf is feature complete, and the ports of
@@ -909,7 +909,7 @@ should claim that before 10.
        went with it — `expect_kind`, 72 sites before 4c and zero after —
        is the recoverable part.
 5. **`/` between phrases** (decision 1).  *Done 2026-10-06.*  Then:
-   - RFC excerpts as regression tests, in `rfc-corpus/`, one id per snippet
+   - RFC excerpts as regression tests, in `corpus/rfc/`, one id per snippet
      (`rfc5234-1`, `rfc3986-1`, `rfc5322-1`, `rfc9112-1`): `<id>.bnf` the RFC's
      text as published, `<id>.hbnf` the form hbnf compiles, `<id>.md` the
      account, `<id>.vectors/` the inputs; run by `tests/rfc.sh` (the headline
@@ -946,7 +946,7 @@ should claim that before 10.
    - **Open, from this step:**
      - YBNF: `%token`, `%start`, `%%` and `|` as the union are read, and an
        undefined token is told how to be written (*done 2026-10-07*); yacc's
-       actions are not read.  The POSIX corpus (`posix-corpus/`, same layout)
+       actions are not read.  The POSIX corpus (`corpus/posix/`, same layout)
        reads the standard's grammar verbatim and gets as far as defining the
        tokens; what blocks a working `.hbnf` is below.  RFC 822 as a
        snippet (its `#` lists, `<n>*<m>` counts, prose);

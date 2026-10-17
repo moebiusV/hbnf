@@ -212,7 +212,7 @@ them.
 A word list is an enum, and the number of a word is its place in the list.  When
 the author writes words in a union (`"act" / "actor"`) hbnf matches the longer
 word first, and **keeps the values in the order written**: the index of `actor` is
-where the list has it.  That is what BIP-39 needs; `bip39-corpus/` holds the ten
+where the list has it.  That is what BIP-39 needs; `corpus/bip39/` holds the ten
 official 2048-word lists as include files (`include "bip39/english.hbnf"`), and
 `tests/wire.sh` reads every word of every list back to its line number.  A union
 of plain words is a sort, not a search, so a 2048-word list takes a fifth of a

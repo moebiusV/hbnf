@@ -1,5 +1,5 @@
 #!/bin/sh
-# The RFC corpus (rfc-corpus/): each snippet is <id>.bnf, the RFC's text as
+# The RFC corpus (corpus/rfc/): each snippet is <id>.bnf, the RFC's text as
 # published, and <id>.hbnf, the form hbnf compiles (<id>.md says what changed
 # and why).  For every <id>.vectors/<RULE>.accept and .reject, <id>.hbnf is
 # generated with --root=RULE and every input line must parse (.accept) or not
@@ -8,13 +8,13 @@
 # A vector is one line, read with printf's %b: `\r`, `\n`, `\t` and `\NNN` are
 # the characters, `\\` a backslash, and an empty line is the empty input.
 #
-# Every rule runs in C.  The rules listed in rfc-corpus/headline.txt (one `<id>
+# Every rule runs in C.  The rules listed in corpus/rfc/headline.txt (one `<id>
 # <RULE>` per line) run in Ada, Rust and Zig as well.
 #   HBNF=/path/to/hbnf sh tests/rfc.sh      (default ./hbnf)
 #   RFC_ONLY=rfc3986-1 sh tests/rfc.sh      (one snippet)
 #   RFC_QUICK=1 sh tests/rfc.sh             (only the headline rules; what e2e.sh runs)
 #
-# The rules listed in rfc-corpus/<id>.verbatim are also run on the RFC's own
+# The rules listed in corpus/rfc/<id>.verbatim are also run on the RFC's own
 # text, <id>.bnf, with --abnf: it must give the same answers.
 set -u
 cd "$(dirname "$0")/.."
@@ -40,10 +40,10 @@ vectors() {
 	done < "$1"
 }
 
-for hb in rfc-corpus/${RFC_ONLY:-rfc*}.hbnf; do
+for hb in corpus/rfc/${RFC_ONLY:-rfc*}.hbnf; do
 	[ -f "$hb" ] || continue
 	r=$(basename "$hb" .hbnf)
-	vdir=rfc-corpus/$r.vectors
+	vdir=corpus/rfc/$r.vectors
 	for af in "$vdir"/*.accept; do
 		[ -f "$af" ] || continue
 		rule=$(basename "$af" .accept)
@@ -51,7 +51,7 @@ for hb in rfc-corpus/${RFC_ONLY:-rfc*}.hbnf; do
 		ACCEPT=$(vectors "$af" "$W/$r/$rule/a")
 		REJECT=$(vectors "$vdir/$rule.reject" "$W/$r/$rule/r")
 		BACKENDS=c
-		if grep -qx "$r $rule" rfc-corpus/headline.txt 2> /dev/null; then
+		if grep -qx "$r $rule" corpus/rfc/headline.txt 2> /dev/null; then
 			BACKENDS=$ALL
 		elif [ -n "${RFC_QUICK:-}" ]; then
 			continue
@@ -60,11 +60,11 @@ for hb in rfc-corpus/${RFC_ONLY:-rfc*}.hbnf; do
 		#  The RFC's own text, read as RFC 5234 reads it, must give the same
 		#  answers wherever it compiles at all (`<id>.md` says where it does
 		#  not and why).
-		if [ -f "rfc-corpus/$r.verbatim" ] && grep -qx "$rule" "rfc-corpus/$r.verbatim"; then
+		if [ -f "corpus/rfc/$r.verbatim" ] && grep -qx "$rule" "corpus/rfc/$r.verbatim"; then
 			REAL_CLI=$CLI
 			printf '#!/bin/sh\nexec %s "$@" --abnf\n' "$REAL_CLI" > "$W/abnf-cli"
 			chmod +x "$W/abnf-cli"
-			CLI="$W/abnf-cli" suite "$r $rule (verbatim)" "rfc-corpus/$r.bnf" "$rule"
+			CLI="$W/abnf-cli" suite "$r $rule (verbatim)" "corpus/rfc/$r.bnf" "$rule"
 		fi
 	done
 done

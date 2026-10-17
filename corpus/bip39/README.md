@@ -3,9 +3,9 @@
 The ten official word lists of BIP-39, "Mnemonic code for generating
 deterministic keys", unchanged, and the test that hbnf reads each of them with
 every word at its right index.  Test data for the wire layer
-(`RFCPLAN.md`, step 7b), in the way `rfc-corpus/` and `posix-corpus/` are.
+(`RFCPLAN.md`, step 7b), in the way `corpus/rfc/` and `corpus/posix/` are.
 
-    bip39-corpus/
+    corpus/bip39/
       README.md        this file
       SHA256SUMS       the hash of every list, as taken
       wordlists/       english.txt ... spanish.txt, unchanged

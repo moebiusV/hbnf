@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """imp72_to_hbnf.py -- read IMP72's syntax statements as an hbnf grammar.
 
-    python3 tools/imp72_to_hbnf.py imp72-corpus/tape/syntax.imc [more.imc ...] > imp72.hbnf
+    python3 tools/imp72_to_hbnf.py corpus/imp72/tape/syntax.imc [more.imc ...] > imp72.hbnf
 
 IMP72 defines its language in statements of the form
 
