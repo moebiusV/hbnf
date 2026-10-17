@@ -13,11 +13,14 @@ fail=0
 # check NAME: generate tests/wire/NAME.hbnf, build it with tests/wire/NAME_main.c,
 # and compare the program's output with tests/wire/NAME.expected.
 check() {
-	n=$1
+	n=$1; libs=${2:-}; need=${3:-}
+	if [ -n "$need" ] && ! printf '#include <%s>\n' "$need" | $CC -E - > /dev/null 2>&1; then
+		echo "SKIP $n: no <$need>; its actions call the system's library"; return
+	fi
 	if ! "$CLI" tests/wire/$n.hbnf --backend=c > "$T/$n.c" 2> "$T/$n.err"; then
 		echo "FAIL $n: generation: $(cat "$T/$n.err")"; fail=$((fail+1)); return
 	fi
-	if ! $CC -Wall -Wextra -Werror -I"$T" -Ilib -Icorpus/bip39 -o "$T/$n" tests/wire/${n}_main.c 2> "$T/$n.cc"; then
+	if ! $CC -Wall -Wextra -Werror -I"$T" -Icorpus/bip39 -o "$T/$n" tests/wire/${n}_main.c $libs 2> "$T/$n.cc"; then
 		echo "FAIL $n: cc"; cat "$T/$n.cc"; fail=$((fail+1)); return
 	fi
 	"$T/$n" > "$T/$n.out" 2>&1
@@ -44,7 +47,7 @@ expect_error() {
 
 check net
 check segwit
-check mnemonic
+check mnemonic -lcrypto openssl/sha.h
 
 # bip39: the word lists (RFCPLAN.md step 7b's acceptance test).  Every word of
 # every official list parses to its line number; English also against the

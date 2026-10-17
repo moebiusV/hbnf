@@ -1124,9 +1124,9 @@ should claim that before 10.
        in C, and so does the text form (`units`: bech32 symbols and BIP-39
        words as 5- and 11-bit units, `parse_text`/`emit_text`), and `%action{ }` on
        a wire rule (C; `HBNF_WARN`, `HBNF_FAIL`), `%emit{ }` (a computed field,
-       when writing), `{ }` preamble and epilogue, and `lib/*.h`
-       (SHA-256, CRCs, Adler, the Internet checksum, bech32), which BIP-39
-       uses to check and compute its checksum.  Not yet: Rust, Zig and Ada,
+       when writing), `{ }` preamble and epilogue, calls to the system's libraries
+       (zlib, OpenSSL, the bech32 reference), by their own names, with
+       `corpus/bip39/bip39.h` using SHA256 to check and compute its checksum.  Not yet: Rust, Zig and Ada,
        a bech32 address's human-readable part, byte/word units, layout
        records.
 
