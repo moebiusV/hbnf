@@ -455,6 +455,8 @@ package body HBNF_Rust is
                null;
             when Block =>
                null;  --  lifted to a rule of its own before emission
+            when Negation =>
+               null;   --  resolved into a rule of ranges before this runs
          end case;
       end loop;
    end Collect;
@@ -1452,6 +1454,8 @@ package body HBNF_Rust is
                      null;
                   when Block =>
                      null;  --  lifted to a rule of its own before emission
+                  when Negation =>
+                     null;   --  resolved into a rule of ranges before this runs
                end case;
             end;
          end loop;

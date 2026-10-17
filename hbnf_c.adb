@@ -725,6 +725,8 @@ package body HBNF_C is
                null;
             when Block =>
                null;  --  lifted to a rule of its own before emission
+            when Negation =>
+               null;   --  resolved into a rule of ranges before this runs
          end case;
       end loop;
    end Collect;
@@ -1224,6 +1226,8 @@ package body HBNF_C is
                   null;
                when Block =>
                   null;  --  lifted to a rule of its own before emission
+               when Negation =>
+                  null;   --  resolved into a rule of ranges before this runs
             end case;
          end loop;
       end Collect;
@@ -3345,6 +3349,8 @@ package body HBNF_C is
                      null;
                   when Block =>
                      null;  --  lifted to a rule of its own before emission
+                  when Negation =>
+                     null;   --  resolved into a rule of ranges before this runs
                end case;
                At_First := False;
             end;
@@ -3440,6 +3446,8 @@ package body HBNF_C is
                null;
             when Block =>
                null;  --  lifted to a rule of its own before emission
+            when Negation =>
+               null;   --  resolved into a rule of ranges before this runs
          end case;
          return V;
       end First_Elem;
@@ -3633,6 +3641,8 @@ package body HBNF_C is
                      when Alt => null;
                      when Char_Range => null;
                      when Block => null;  --  lifted to a rule before emission
+                     when Negation =>
+                        null;   --  resolved into a rule of ranges before this runs
                   end case;
                end loop;
             end Walk;
@@ -4983,9 +4993,11 @@ package body HBNF_C is
          Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
            & "(&p, out)) goto err;");
          Append (Res, LF);
-         --  The text after the root may be whitespace, if the grammar skips any
-         --  (`whitespace none`, as an RFC's ABNF reads, defines no skip_ws).
-         if Whitespace_Rule_Name (Rules) /= Null_Unbounded_String then
+         --  The text after the root may be whitespace, if the root's file skips
+         --  any (`whitespace none`, as an RFC's ABNF reads, does not: an
+         --  included file's own whitespace is not the root's), as the other
+         --  backends decide it.
+         if Rules (1).Whitespace /= Null_Unbounded_String then
             Append (Res, "    skip_ws(&p);");
             Append (Res, LF);
          end if;

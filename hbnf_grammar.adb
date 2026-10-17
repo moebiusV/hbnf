@@ -451,7 +451,7 @@ package body HBNF_Grammar is
    type Tok_Kind is (T_Name, T_String, T_Number, T_Eq, T_Eq_Slash, T_Bar,
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
-                     T_Prose, T_EOF);
+                     T_Prose, T_Tilde, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -1167,6 +1167,7 @@ package body HBNF_Grammar is
                   Emit (T_Star);   I := I + 1;  Col := Col + 1;
                end if;
             when '-' => Emit (T_Dash);   I := I + 1;  Col := Col + 1;
+            when '~' => Emit (T_Tilde);  I := I + 1;  Col := Col + 1;
             when ''' =>
                if Ebnf_Here then
                   --  ISO 14977: 'abc' is a string, as "abc" is.
@@ -1953,8 +1954,29 @@ package body HBNF_Grammar is
       end if;
 
       declare
-         E  : constant Element_Access := Parse_Atom (P);
+         E : Element_Access;
       begin
+         if Cur (P).Kind = T_Tilde then
+            --  `~x`, or `*~x`: one code point not in the set x matches.
+            declare
+               --  `~~x` is the class x again, written so it reads in order.
+               function Negated return Element_Access is
+                  N : Element_Access;
+               begin
+                  Next (P);
+                  N := new Element'(Kind => Negation, Min => 1, Max => 1,
+                                    Operand => Element_Vectors.Empty_Vector);
+                  N.Operand.Append
+                    (if Cur (P).Kind = T_Tilde then Negated
+                     else Parse_Atom (P));
+                  return N;
+               end Negated;
+            begin
+               E := Negated;
+            end;
+         else
+            E := Parse_Atom (P);
+         end if;
          if Has_Prefix then
             E.Min := Min;  E.Max := Max;
          end if;
@@ -2170,7 +2192,8 @@ package body HBNF_Grammar is
                   when Group   => Same_Elements (A.Items, B.Items),
                   when Char_Range   => A.Lo = B.Lo and then A.Hi = B.Hi,
                   when Block   => A.Code = B.Code,
-                  when Alt     => True));
+                  when Alt     => True,
+                  when Negation => Same_Elements (A.Operand, B.Operand)));
 
    --  Direct left recursion, `a = a t1 | a t2 | b1 | b2`, becomes the list
    --  `1*( b1 | b2 | t1 | t2 )` with Bases = 2: the first entry is read
@@ -2949,6 +2972,299 @@ package body HBNF_Grammar is
             end if;
          end;
       end if;
+
+      --  `~x`: every negation becomes a reference to a rule of the ranges the
+      --  complement of x covers, before anything else looks at the rules.  x
+      --  matches one code point (a class), so its complement is a set of
+      --  ranges, and a rule of ranges is a character rule like any other: the
+      --  scanners, the lookahead and the four backends need no new case.
+      declare
+         type Pair is record
+            Lo, Hi : Natural;
+         end record;
+         package Pair_Vectors is new Ada.Containers.Vectors (Positive, Pair);
+         Max_Cp : constant := 16#10FFFF#;
+         Made   : Rule_Vectors.Vector;
+
+         function Hex (C : Natural) return String is
+            D : constant String := "0123456789ABCDEF";
+         begin
+            if C < 16 then
+               return [D (C + 1)];
+            end if;
+            return Hex (C / 16) & D (C mod 16 + 1);
+         end Hex;
+
+         function Find_Rule (N : String) return Natural is
+         begin
+            for K in 1 .. Natural (Rules.Length) loop
+               if To_String (Rules (K).Name) = N then
+                  return K;
+               end if;
+            end loop;
+            return 0;
+         end Find_Rule;
+
+         --  Does the string hold exactly one UTF-8 code point?
+         function One_Cp (S : String) return Boolean is
+            B : constant Natural :=
+              (if S'Length = 0 then 0 else Character'Pos (S (S'First)));
+         begin
+            return S'Length = 1
+              or else (S'Length = 2 and then B in 16#C0# .. 16#DF#)
+              or else (S'Length = 3 and then B in 16#E0# .. 16#EF#)
+              or else (S'Length = 4 and then B in 16#F0# .. 16#F7#);
+         end One_Cp;
+
+         function Code_Point (S : String) return Natural is
+            function B (K : Natural) return Natural is
+              (Character'Pos (S (S'First + K)));
+         begin
+            if B (0) < 16#80# then
+               return B (0);
+            elsif B (0) < 16#E0# then
+               return (B (0) - 16#C0#) * 64 + B (1) mod 64;
+            elsif B (0) < 16#F0# then
+               return (B (0) - 16#E0#) * 4096 + (B (1) mod 64) * 64
+                      + B (2) mod 64;
+            else
+               return (B (0) - 16#F0#) * 262144 + (B (1) mod 64) * 4096
+                      + (B (2) mod 64) * 64 + B (3) mod 64;
+            end if;
+         end Code_Point;
+
+         procedure Refuse (Owner, Why : String) is
+         begin
+            raise Parse_Error with
+              "in rule `" & Owner & "`: " & Why & ASCII.LF
+              & "  `~x` is one code point that is not in x, and `*~x` a run of "
+              & "them; x is a class: a one-character string, a range, a rule "
+              & "of those, or alternatives of those";
+         end Refuse;
+
+         procedure Add_Cp (Acc : in out Pair_Vectors.Vector; Lo, Hi : Natural) is
+         begin
+            Acc.Append (Pair'(Lo => Lo, Hi => Hi));
+         end Add_Cp;
+
+         procedure Add (Owner : String; E : Element_Access;
+                        Acc : in out Pair_Vectors.Vector; Depth : Natural);
+
+         procedure Add_Branches (Owner : String; Els : Element_Vectors.Vector;
+                                 Acc : in out Pair_Vectors.Vector;
+                                 Depth : Natural) is
+            In_Branch : Natural := 0;
+            Pending   : Element_Access;
+         begin
+            for E of Els loop
+               if E.Kind = Alt then
+                  if In_Branch /= 1 then
+                     Refuse (Owner, "an alternative of the class is not one "
+                             & "character");
+                  end if;
+                  Add (Owner, Pending, Acc, Depth);
+                  In_Branch := 0;
+               else
+                  In_Branch := In_Branch + 1;
+                  Pending := E;
+               end if;
+            end loop;
+            if In_Branch /= 1 then
+               Refuse (Owner, "an alternative of the class is not one "
+                       & "character");
+            end if;
+            Add (Owner, Pending, Acc, Depth);
+         end Add_Branches;
+
+         function Normalized (Acc : Pair_Vectors.Vector)
+           return Pair_Vectors.Vector is
+            Sorted : Pair_Vectors.Vector := Acc;
+            Result : Pair_Vectors.Vector;
+         begin
+            for I in 1 .. Natural (Sorted.Length) loop
+               for J in 1 .. Natural (Sorted.Length) - I loop
+                  if Sorted (J + 1).Lo < Sorted (J).Lo then
+                     declare
+                        T : constant Pair := Sorted (J);
+                     begin
+                        Sorted.Replace_Element (J, Sorted (J + 1));
+                        Sorted.Replace_Element (J + 1, T);
+                     end;
+                  end if;
+               end loop;
+            end loop;
+            for P of Sorted loop
+               if not Result.Is_Empty
+                 and then P.Lo <= Result.Last_Element.Hi + 1
+               then
+                  if P.Hi > Result.Last_Element.Hi then
+                     Result.Replace_Element
+                       (Result.Last_Index,
+                        Pair'(Lo => Result.Last_Element.Lo, Hi => P.Hi));
+                  end if;
+               else
+                  Result.Append (P);
+               end if;
+            end loop;
+            return Result;
+         end Normalized;
+
+         function Complement (Acc : Pair_Vectors.Vector)
+           return Pair_Vectors.Vector is
+            Set    : constant Pair_Vectors.Vector := Normalized (Acc);
+            Result : Pair_Vectors.Vector;
+            Next   : Natural := 0;
+         begin
+            for P of Set loop
+               if P.Lo > Next then
+                  Result.Append (Pair'(Lo => Next, Hi => P.Lo - 1));
+               end if;
+               Next := P.Hi + 1;
+            end loop;
+            if Next <= Max_Cp then
+               Result.Append (Pair'(Lo => Next, Hi => Max_Cp));
+            end if;
+            return Result;
+         end Complement;
+
+         procedure Add (Owner : String; E : Element_Access;
+                        Acc : in out Pair_Vectors.Vector; Depth : Natural) is
+         begin
+            if Depth = 0 then
+               Refuse (Owner, "a class refers to itself");
+            elsif E.Min /= 1 or else E.Max /= 1 then
+               Refuse (Owner, "the class repeats something");
+            end if;
+            case E.Kind is
+               when Char_Range =>
+                  Add_Cp (Acc, E.Lo, E.Hi);
+               when Literal =>
+                  declare
+                     L : constant String := To_String (E.Lit);
+                  begin
+                     if not One_Cp (L) then
+                        Refuse (Owner, "`""" & L & """` is more than one "
+                                & "character");
+                     end if;
+                     declare
+                        C : constant Natural := Code_Point (L);
+                     begin
+                        Add_Cp (Acc, C, C);
+                        if E.No_Case and then C in 65 .. 90 then
+                           Add_Cp (Acc, C + 32, C + 32);
+                        elsif E.No_Case and then C in 97 .. 122 then
+                           Add_Cp (Acc, C - 32, C - 32);
+                        end if;
+                     end;
+                  end;
+               when Group =>
+                  Add_Branches (Owner, E.Items, Acc, Depth - 1);
+               when Negation =>
+                  declare
+                     Inner : Pair_Vectors.Vector;
+                  begin
+                     Add_Branches (Owner, E.Operand, Inner, Depth - 1);
+                     for P of Complement (Inner) loop
+                        Acc.Append (P);
+                     end loop;
+                  end;
+               when Name =>
+                  declare
+                     N : constant String := To_String (E.Name);
+                     J : constant Natural := Find_Rule (N);
+                  begin
+                     if Is_Core_Name (N) then
+                        Refuse (Owner, "`" & N & "` is a built-in type, not "
+                                & "a class of one character");
+                     elsif J = 0 then
+                        Refuse (Owner, "`" & N & "` is not defined");
+                     elsif Rules (J).Jet_Code /= Null_Unbounded_String then
+                        Refuse (Owner, "`" & N & "` is code, and its "
+                                & "characters are not known");
+                     end if;
+                     Add_Branches (Owner, Rules (J).Pattern, Acc, Depth - 1);
+                  end;
+               when others =>
+                  Refuse (Owner, "that is not a class of characters");
+            end case;
+         end Add;
+
+         --  The rule of the complement's ranges, made once per set.
+         function Rule_For (Owner : String; Ranges : Pair_Vectors.Vector)
+           return String is
+            Name : Unbounded_String := To_Unbounded_String ("not-x");
+            Pat  : Element_Vectors.Vector;
+         begin
+            if Ranges.Is_Empty then
+               Refuse (Owner, "the class is every character, so its "
+                       & "complement matches nothing");
+            end if;
+            for K in 1 .. Natural (Ranges.Length) loop
+               if K > 1 then
+                  Append (Name, "_");
+                  Pat.Append (new Element'(Kind => Alt, Min => 1, Max => 1,
+                                           Guard => 0, Union => False));
+               end if;
+               Append (Name, Hex (Ranges (K).Lo));
+               if Ranges (K).Hi /= Ranges (K).Lo then
+                  Append (Name, "-" & Hex (Ranges (K).Hi));
+               end if;
+               Pat.Append (new Element'(Kind => Char_Range, Min => 1, Max => 1,
+                                        Lo => Ranges (K).Lo,
+                                        Hi => Ranges (K).Hi));
+            end loop;
+            if Find_Rule (To_String (Name)) = 0
+              and then not (for some R of Made => R.Name = Name)
+            then
+               Made.Append
+                 (Rule'(Name => Name, Pattern => Pat,
+                        Leading_Comment => Null_Unbounded_String,
+                        Trailing_Comment => Null_Unbounded_String,
+                        Jet_Code => Null_Unbounded_String,
+                        Action_Code => Null_Unbounded_String,
+                        Left_Bases => 0,
+                        Whitespace => Null_Unbounded_String));
+            end if;
+            return To_String (Name);
+         end Rule_For;
+
+         procedure Walk (Owner : String; V : in out Element_Vectors.Vector) is
+         begin
+            for I in 1 .. Natural (V.Length) loop
+               declare
+                  E : constant Element_Access := V (I);
+               begin
+                  if E.Kind = Negation then
+                     declare
+                        Set : Pair_Vectors.Vector;
+                     begin
+                        Add_Branches (Owner, E.Operand, Set, 20);
+                        V.Replace_Element
+                          (I, new Element'
+                                (Kind => Name, Min => E.Min, Max => E.Max,
+                                 Name => To_Unbounded_String
+                                           (Rule_For (Owner, Complement (Set))),
+                                 Fold => False));
+                     end;
+                  elsif E.Kind = Group then
+                     Walk (Owner, E.Items);
+                  end if;
+               end;
+            end loop;
+         end Walk;
+      begin
+         for J in 1 .. Natural (Rules.Length) loop
+            declare
+               Pat : Element_Vectors.Vector := Rules (J).Pattern;
+            begin
+               Walk (To_String (Rules (J).Name), Pat);
+               Rules (J).Pattern := Pat;
+            end;
+         end loop;
+         for R of Made loop
+            Rules.Append (R);
+         end loop;
+      end;
 
       --  Do keywords exist here?  (See Keywords_Apply.)  Said first: whether a
       --  rule is a character rule depends on it.
@@ -4850,6 +5166,8 @@ package body HBNF_Grammar is
                         --  A character rule is code points; a `%action{ }` in
                         --  one is not char-level.
                         return False;
+                     when Negation =>
+                        null;   --  resolved into a rule of ranges before this runs
                   end case;
                end loop;
                return Has_Anchor;

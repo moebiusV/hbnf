@@ -106,7 +106,7 @@ package HBNF_Grammar is
    function Werror return Boolean;
    --  `--werror`: the caller treats Warnings > 0 as a failure.
 
-   type Element_Kind is (Literal, Name, Group, Alt, Char_Range, Block);
+   type Element_Kind is (Literal, Name, Group, Alt, Char_Range, Block, Negation);
    --  Char_Range = a character-level terminal: %xHH (one code point) or
    --  %xHH-HH (a code-point range).  Unlike Literal (a whole token), a Char_Range
    --  matches one code point; it appears only inside a character-level rule.
@@ -136,6 +136,12 @@ package HBNF_Grammar is
             --  the reader rewrites Name to the definition's spelling.
          when Group =>
             Items : Element_Vectors.Vector;   --  flat; Alt splits alternatives
+         when Negation =>
+            Operand : Element_Vectors.Vector;
+            --  `~x`: one code point not in the set x matches.  x is a class:
+            --  a one-code-point literal or range, a rule of those, or a group
+            --  of alternatives of those.  The reader resolves it into a rule
+            --  of the complement's ranges before anything else sees it.
          when Char_Range =>
             Lo : Natural := 0;   --  low code point, inclusive
             Hi : Natural := 0;   --  high code point, inclusive (Lo <= Hi)
