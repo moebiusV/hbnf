@@ -20,4 +20,24 @@ PASS refused: 11 words (unit 0 (character 0): mnemonic: a mnemonic has 12, 15, 1
 PASS refused: a misspelt word (character 88: not one of the units)
 PASS refused: two blanks (character 8: not one of the units)
 PASS refused: a trailing blank (character 94: the text ends with a separator)
+PASS refused: a wrong checksum (all abandon) (unit 12 (character 95): mnemonic: the checksum does not match the words)
+PASS refused: a wrong checksum (all zoo) (unit 12 (character 47): mnemonic: the checksum does not match the words)
 PASS refused: nothing (unit 0 (character 0): mnemonic: a mnemonic has 12, 15, 18, 21 or 24 words)
+PASS generated 12 words from 16 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 24 words from 32 octets of entropy
+PASS generated 24 words from 32 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 24 words from 32 octets of entropy
+PASS generated 24 words from 32 octets of entropy
+PASS generated 18 words from 24 octets of entropy
+PASS generated 18 words from 24 octets of entropy
+PASS generated 18 words from 24 octets of entropy
+PASS generated 18 words from 24 octets of entropy
+PASS generated 15 words from 20 octets of entropy
+PASS generated 15 words from 20 octets of entropy
+PASS generated 21 words from 28 octets of entropy
+PASS generated 21 words from 28 octets of entropy

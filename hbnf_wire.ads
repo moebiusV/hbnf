@@ -111,6 +111,10 @@ package HBNF_Wire is
       Name : Unbounded_String;
       Alts : Seq_Vectors.Vector;
       Line : Natural := 0;
+      Emit : Unbounded_String;
+      --  `%emit{ code }`: C that runs when the record is written, before its
+      --  fields are, on a copy of it as `n`; it fills in what is computed (a
+      --  checksum).  HBNF_EMIT_FAIL ("...") fails the write.
       Action : Unbounded_String;
       --  `%action{ code }` at the end of the rule: C that runs on the rule's
       --  record, as `n`, once the whole read has succeeded (children first).
@@ -138,6 +142,11 @@ package HBNF_Wire is
       Unit_Width : Natural := 0;               --  0: no text form
       Units      : Unit_Vectors.Vector;
       Unit_Sep   : Unbounded_String;           --  "" for none
+      Preamble   : Unbounded_String;
+      Epilogue   : Unbounded_String;
+      --  `{ code }` blocks between the directives and the rules, and after the
+      --  rules: C copied as it stands, for includes and prototypes, and for the
+      --  functions the actions call.  hbnf never reads it.
    end record;
 
    --  Read and check a wire grammar.  Raises Wire_Error.

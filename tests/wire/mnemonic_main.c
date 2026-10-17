@@ -78,13 +78,31 @@ int main(void) {
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandonn",
             "abandon  abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about ",
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon",
+            "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo",
             "" };
-        static const char *why[] = { "11 words", "a misspelt word", "two blanks", "a trailing blank", "nothing" };
+        static const char *why[] = { "11 words", "a misspelt word", "two blanks", "a trailing blank",
+                                     "a wrong checksum (all abandon)", "a wrong checksum (all zoo)", "nothing" };
         for (size_t i = 0; i < sizeof no / sizeof no[0]; i++) {
             if (parse_text(no[i], strlen(no[i]), &out, err, sizeof err, &at))
                 { printf("FAIL accepted: %s\n", why[i]);  bad++; }
             else printf("PASS refused: %s (%s)\n", why[i], err);
             free_arena();
+        }
+    }
+    {   /* writing: only the entropy is set, and %emit works out the checksum */
+        for (size_t i = 0; i < sizeof vecs / sizeof vecs[0]; i++) {
+            bnf_mnemonic_t t;  char back[400], err[256];  size_t m = 0;
+            memset(&t, 0, sizeof t);
+            t.entropy.ptr = vecs[i].entropy;
+            t.entropy.len = vecs[i].n;
+            t.checksum = 0x55;      /* wrong on purpose: it is computed */
+            if (!emit_text(&t, back, sizeof back, &m, err, sizeof err))
+                { printf("FAIL generate %zu: %s\n", i, err);  bad++; }
+            else if (m != strlen(vecs[i].phrase) || memcmp(back, vecs[i].phrase, m))
+                { printf("FAIL generate %zu: %s\n", i, back);  bad++; }
+            else printf("PASS generated %u words from %u octets of entropy\n",
+                        (vecs[i].n * 8 + vecs[i].n * 8 / 32) / 11, vecs[i].n);
         }
     }
     return bad != 0;

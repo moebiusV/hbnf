@@ -17,7 +17,7 @@ check() {
 	if ! "$CLI" tests/wire/$n.hbnf --backend=c > "$T/$n.c" 2> "$T/$n.err"; then
 		echo "FAIL $n: generation: $(cat "$T/$n.err")"; fail=$((fail+1)); return
 	fi
-	if ! $CC -Wall -Wextra -Werror -I"$T" -o "$T/$n" tests/wire/${n}_main.c 2> "$T/$n.cc"; then
+	if ! $CC -Wall -Wextra -Werror -I"$T" -Ilib -o "$T/$n" tests/wire/${n}_main.c 2> "$T/$n.cc"; then
 		echo "FAIL $n: cc"; cat "$T/$n.cc"; fail=$((fail+1)); return
 	fi
 	"$T/$n" > "$T/$n.out" 2>&1

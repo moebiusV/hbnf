@@ -915,6 +915,11 @@ package body HBNF_Wire.C is
       L (0, "#include <stdlib.h>");
       L (0, "#include <string.h>");
       L (0, "");
+      if G.Preamble /= Null_Unbounded_String then
+         L (0, "/* the grammar's preamble */");
+         Put (To_String (G.Preamble));
+         L (0, "");
+      end if;
       L (0, "/* A run of octets: a slice of the input, not a copy. */");
       L (0, "typedef struct { const uint8_t *ptr; size_t len; } " & Pfx
          & "octets_t;");
@@ -936,6 +941,12 @@ package body HBNF_Wire.C is
       end loop;
 
       Runtime;
+      if (for some R of G.Rules => R.Emit /= Null_Unbounded_String) then
+         L (0, "/* In an %emit block: fail the write. */");
+         L (0, "#define HBNF_EMIT_FAIL(msg) do { bnf_wfail (w, ""emit"", (msg)); \");
+         L (0, "    return false; } while (0)");
+         L (0, "");
+      end if;
 
       for R of G.Rules loop
          if Is_Value_Set (R) then
@@ -983,8 +994,22 @@ package body HBNF_Wire.C is
                end if;
                L (1, "return true;");
                L (0, "}");
-               L (0, "static bool emit_rule_" & Nm & " (bnf_w *w, const "
-                  & Type_Of (Nm) & " *in) {");
+               if R.Emit /= Null_Unbounded_String then
+                  --  The fields are written from a copy, which the block may
+                  --  change: the caller's tree is not touched.
+                  L (0, "static bool emit_rule_" & Nm & " (bnf_w *w, const "
+                     & Type_Of (Nm) & " *in_) {");
+                  L (1, Type_Of (Nm) & " copy_ = *in_;");
+                  L (1, Type_Of (Nm) & " *n = &copy_;");
+                  L (1, "const " & Type_Of (Nm) & " *in = n;");
+                  L (1, "{");
+                  Put (To_String (R.Emit));
+                  L (0, "");
+                  L (1, "}");
+               else
+                  L (0, "static bool emit_rule_" & Nm & " (bnf_w *w, const "
+                     & Type_Of (Nm) & " *in) {");
+               end if;
                Emit_Side := True;
                if Natural (R.Alts.Length) = 1 then
                   Gen_Emit_Seq (R.Alts.First_Element.all, "in->", Empty, Nm, 1);
@@ -1283,6 +1308,11 @@ package body HBNF_Wire.C is
          L (0, "    return true;");
          L (0, "}");
          end;
+      end if;
+      if G.Epilogue /= Null_Unbounded_String then
+         L (0, "");
+         L (0, "/* the grammar's epilogue */");
+         Put (To_String (G.Epilogue));
       end if;
       return To_String (Buf);
    end Emit;

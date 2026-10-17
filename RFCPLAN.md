@@ -492,7 +492,8 @@ The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
 
-> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 7a, 9a, 9b, 9c, 12.
+> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 5, 7a, 9a, 9b, 9c, 12.  **Under way:** 7b (the
+> wire layer, in C; see its entry for what is and is not built).
 > **Corpora and ports wait for the features** (decided 2026-10-17).  The POSIX
 > shell grammar (`posix-corpus/`) and the IMP72 sources (`imp72-corpus/`) are
 > paused where they stand: both need things hbnf does not have yet (the
@@ -1093,8 +1094,11 @@ should claim that before 10.
        `name:bits(expr)`.  The other direction (tree to bytes) exists
        in C, and so does the text form (`units`: bech32 symbols and BIP-39
        words as 5- and 11-bit units, `parse_text`/`emit_text`), and `%action{ }` on
-       a wire rule (C; `HBNF_WARN`, `HBNF_FAIL`).  Not yet: Rust,
-       Zig and Ada, checksums and derived fields, byte/word units, layout
+       a wire rule (C; `HBNF_WARN`, `HBNF_FAIL`), `%emit{ }` (a computed field,
+       when writing), `{ }` preamble and epilogue, and `lib/hbnf_sum.h`
+       (SHA-256, CRCs, Adler, the Internet checksum, bech32), which BIP-39
+       uses to check and compute its checksum.  Not yet: Rust, Zig and Ada,
+       a bech32 address's human-readable part, byte/word units, layout
        records.
 
        **Settled later the same day.**  A place is `name@K:N`: `@` before `:`,

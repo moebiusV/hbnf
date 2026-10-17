@@ -63,7 +63,8 @@ package body HBNF_Wire is
    --  Tokens
    ---------------------------------------------------------------------------
 
-   type Tok_Kind is (T_Name, T_Num, T_Str, T_Sym, T_Code, T_EOF);
+   type Tok_Kind is
+     (T_Name, T_Num, T_Str, T_Sym, T_Code, T_Emit, T_Block, T_EOF);
 
    type Token is record
       Kind   : Tok_Kind := T_EOF;
@@ -233,14 +234,23 @@ package body HBNF_Wire is
                else
                   Emit (T_Sym, ":", 1);
                end if;
-            elsif C = '%' and then I + 6 <= Text'Last
-              and then Text (I + 1 .. I + 6) = "action"
+            elsif C = '{'
+              or else (C = '%' and then I + 6 <= Text'Last
+                       and then Text (I + 1 .. I + 6) = "action")
+              or else (C = '%' and then I + 4 <= Text'Last
+                       and then Text (I + 1 .. I + 4) = "emit")
             then
-               --  `%action{ code }`: C, to the brace that closes it.
+               --  `{ code }` (the preamble and the epilogue), `%action{ code }`
+               --  and `%emit{ code }`: C, to the brace that closes it.
                declare
                   Open_Line : constant Positive := Line;
                   Open_Col  : constant Positive := Col;
-                  K         : Natural := I + 7;
+                  Block_Kind : constant Tok_Kind :=
+                    (if C = '{' then T_Block
+                     elsif Text (I + 1) = 'a' then T_Code else T_Emit);
+                  K         : Natural :=
+                    (if C = '{' then I elsif Block_Kind = T_Code then I + 7
+                     else I + 5);
                   Depth     : Natural := 0;
                   Start     : Natural;
                begin
@@ -250,7 +260,9 @@ package body HBNF_Wire is
                   end loop;
                   if K > Text'Last or else Text (K) /= '{' then
                      raise Wire_Error with
-                       Where & ": `%action` is followed by `{ code }`";
+                       Where & ": `%" & (if Block_Kind = T_Code then "action"
+                                         else "emit")
+                       & "` is followed by `{ code }`";
                   end if;
                   Start := K + 1;
                   loop
@@ -296,7 +308,7 @@ package body HBNF_Wire is
                      end case;
                      K := K + 1;
                   end loop;
-                  Toks.Append (Token'(Kind => T_Code, Line => Open_Line,
+                  Toks.Append (Token'(Kind => Block_Kind, Line => Open_Line,
                                       Col => Open_Col,
                                       Text => To_Unbounded_String
                                                 (Text (Start .. K - 1)),
@@ -376,7 +388,9 @@ package body HBNF_Wire is
          when T_Num  => "`" & To_String (T.Text) & "`",
          when T_Str  => """" & To_String (T.Text) & """",
          when T_Sym  => "`" & To_String (T.Text) & "`",
-         when T_Code => "an %action block");
+         when T_Code => "an %action block",
+         when T_Emit => "an %emit block",
+         when T_Block => "a { } block");
 
    procedure Expect_Sym (P : in out Parser; S : String; Why : String := "") is
    begin
@@ -391,7 +405,7 @@ package body HBNF_Wire is
    function End_Of_Rule (P : Parser) return Boolean is
       T : constant Token := Cur (P);
    begin
-      if T.Kind = T_EOF then
+      if T.Kind in T_EOF | T_Block then
          return True;
       elsif T.Col = 1 and then T.Kind = T_Name then
          declare
@@ -840,9 +854,13 @@ package body HBNF_Wire is
          when T_Str =>
             Fail (P, T, "a quoted string is text; this file is `binary`. A "
                   & "fixed byte sequence is a constant: 0x474554 is ""GET""");
-         when T_Code =>
-            Fail (P, T, "an `%action{ }` goes at the end of a rule, after "
-                  & "all its alternatives");
+         when T_Code | T_Emit =>
+            Fail (P, T, "an `%action{ }` or `%emit{ }` goes at the end of a "
+                  & "rule, after all its alternatives");
+         when T_Block =>
+            Fail (P, T, "a `{ }` block of code goes between rules, not inside "
+                  & "one: before the first rule it is the preamble, after the "
+                  & "last the epilogue");
          when T_EOF =>
             Fail (P, T, "unexpected end of the file");
       end case;
@@ -871,7 +889,8 @@ package body HBNF_Wire is
             end if;
          end;
       end if;
-      while not End_Of_Rule (P) and then Cur (P).Kind /= T_Code
+      while not End_Of_Rule (P)
+        and then Cur (P).Kind not in T_Code | T_Emit | T_Block
         and then not Is_Sym (Cur (P), "|") and then not Is_Sym (Cur (P), ")")
       loop
          Parse_Item (P, S);
@@ -1358,12 +1377,24 @@ package body HBNF_Wire is
          declare
             T : constant Token := Cur (P);
          begin
-            if T.Kind /= T_Name or else T.Col /= 1 then
+            if T.Kind = T_Block then
+               --  C between the directives and the rules is the preamble; C
+               --  after a rule is the epilogue.
+               if P.G.Rules.Is_Empty then
+                  Append (P.G.Preamble, To_String (T.Text) & ASCII.LF);
+               else
+                  Append (P.G.Epilogue, To_String (T.Text) & ASCII.LF);
+               end if;
+               Next (P);
+            elsif T.Kind /= T_Name or else T.Col /= 1 then
                Fail (P, T, "expected a rule `name = ...` starting in column 1 "
                      & "(a rule that continues on a later line is indented), "
                      & "found " & Describe (T));
             end if;
-            if To_String (T.Text) = "binary" and then not Is_Sym (Peek (P), "=")
+            if T.Kind = T_Block then
+               null;     --  taken above
+            elsif To_String (T.Text) = "binary"
+              and then not Is_Sym (Peek (P), "=")
             then
                Next (P);
             elsif To_String (T.Text) = "prefix"
@@ -1445,10 +1476,14 @@ package body HBNF_Wire is
                   R.Name := T.Text;
                   R.Line := T.Line;
                   R.Alts := Parse_Alternation (P);
-                  if Cur (P).Kind = T_Code then
-                     R.Action := Cur (P).Text;
+                  while Cur (P).Kind in T_Code | T_Emit loop
+                     if Cur (P).Kind = T_Code then
+                        R.Action := Cur (P).Text;
+                     else
+                        R.Emit := Cur (P).Text;
+                     end if;
                      Next (P);
-                  end if;
+                  end loop;
                   if not End_Of_Rule (P) then
                      Fail (P, Cur (P), "unexpected " & Describe (Cur (P))
                            & " in rule `" & To_String (R.Name) & "`");
