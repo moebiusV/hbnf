@@ -1,0 +1,9 @@
+; The AST and its walker (tests/ast.sh): alternatives that are recorded, a list,
+; a nested list, and a walk that knows how it got to each node.
+prefix none
+
+config = *( entry )
+entry  = "set" name value ";" | "run" name ";" | block
+block  = "{" *( entry ) "}"
+value  = int | str | name
+name   = word

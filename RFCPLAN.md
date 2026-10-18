@@ -1412,7 +1412,20 @@ should claim that before 10.
        lists (`sum = sum "+" n`); then `--writer` on obconf (it has a printer
        to compare with), then the suites' round trip, then mixed grammars.
 
-7d. **The AST and its walkers (the user, 2026-10-18).**  *Not started.*  The tree
+7d. **The AST and its walkers (the user, 2026-10-18).**  *Built in C 2026-10-18:
+    items 1 and 2.*  "When parsing, we should always know how we got to this
+    point -- always": every node whose rule has alternatives records which one
+    it took (`_alt`, an enum `<rule>_alt_t`, named from the alternative's
+    first word-like literal or first rule name, `node_alt_name` gives the
+    name), unconditionally; and `walk_<rule>(node, up, field, fn, ctx)` calls
+    `fn(frame, enter, ctx)` on entering and leaving each node, where the frame
+    chain is the path from the root (rule, field, alternative of each node
+    above); the callback answers WALK_CONTINUE, WALK_SKIP or WALK_STOP.  Only
+    the members of the alternative a node took are walked.  Cost: pfctl's
+    generated C grows by half in source size (the walkers are static and drop
+    out of a build that does not call them) and each alternated node gains one
+    enum.  `tests/ast.sh`.  Not yet: child iteration by name, parent links,
+    spans, a dump function, node equality (items 3-5 below).  The tree
     types the parser builds are the product; a consumer (a writer, a type
     checker, a C++ front end's semantic pass) walks them.  Today there are
     `visit_` (pre-order, read-only), `map_` (bottom-up, may change a node in

@@ -1,0 +1,25 @@
+== all
+config
+config > entry[set].entry
+config > entry[set].entry > value[int].value
+config
+config > entry[run].entry
+config
+config > entry[block].entry
+config > entry[block].entry > block.block
+config > entry[block].entry > block.block > block_1.block_1
+config > entry[block].entry > block.block > block_1.block_1 > entry[set].entry
+config > entry[block].entry > block.block > block_1.block_1 > entry[set].entry > value[str].value
+config > entry[block].entry > block.block > block_1.block_1
+config > entry[block].entry > block.block > block_1.block_1 > entry[set].entry
+config > entry[block].entry > block.block > block_1.block_1 > entry[set].entry > value[name].value
+== blocks skipped
+config
+config > entry[set].entry
+config > entry[set].entry > value[int].value
+config
+config > entry[run].entry
+config
+config > entry[block].entry
+config > entry[block].entry > block.block
+== stop at the second entry: walk returned false
