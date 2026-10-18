@@ -1232,9 +1232,74 @@ should claim that before 10.
           code point, so it is one more set with a variable-width mapping;
           the fixed-width sets are the easy case and come first.
 
-       The directive for the unit width and these decisions go in one step,
-       after `units` is retired; no code for either until the decisions are
-       taken with the user.
+       **Answers (the user, 2026-10-18), and what follows from them:**
+
+       1. **Both.**  `charset NAME` for the file, and a per-literal prefix (like
+          C's `u8"..."` and `L"..."`) or per-rule override for mixed files.
+       2. **Literals: options.**  (a) *Literals are code points* and are
+          transcoded to the file's set at generation time, so `"GET "` in an
+          EBCDIC 1047 file is the units C7 C5 E3 40; a character the set lacks
+          is a generation-time error naming the character and the set.  (b)
+          *Literals are unit values*: only `%xC7.C5.E3.40` is allowed outside
+          Unicode files; explicit, no magic, but an RFC's ABNF cannot be pasted
+          in.  (c) *A prefix names the set per literal*: `ebcdic"GET "`; exact
+          and good for mixed files, verbose for whole ones.  Recommended: (a)
+          as the default with (c) as the override, so a file says its set once
+          and a literal says otherwise only when it differs.
+       3. **Core rules, fleshed out.**  RFC 5234 Appendix B defines ALPHA, DIGIT,
+          SP, CRLF, VCHAR and the rest by numeric values *of US-ASCII*, which
+          are Unicode code points below 128.  So the rule is: `%x41` and the
+          core rules name *characters* (code points), and are transcoded exactly
+          as literals are; in an EBCDIC file ALPHA is the units for A-Z and
+          a-z (C1-C9 D1-D9 E2-E9 81-89 91-99 A2-A9), not the values 41-5A.
+          The raw-unit spelling is the bit-field constant, `0xC1`, which
+          already means a value of that many bits, not a character.  So `%x`
+          is the character form and `0x` the unit form, with no new syntax.
+          `OCTET` and `BIT` are layer names, not characters, and do not change
+          (`OCTET` is a unit of the middle layer, 9 bits in a `byte 9` file);
+          non-ASCII characters in a core-rule position are written as
+          literals or `%x` code points, as now.
+       4. **Link nothing unless it is needed.**  ASCII and UTF-8 need no table
+          and no library.  A one-unit set (at most 9 bits, so 512 entries) is a
+          table generated at hbnf time from the standard mapping file (the
+          unicode.org mappings, glibc's charmaps; attributed, not retyped) and
+          embedded in the parser.  Only a multi-unit set (Shift-JIS, GBK)
+          links `iconv`, and only a grammar that names one pays for it.
+       5. **Unassigned units** are not a decision: a unit with no character in
+          the set read as text fails with a message naming the unit, the set
+          and the position (`unit 0x41 at 17 is not a character of
+          EBCDIC-1047`).  Read as bits or octets (`0x41`, `name:8`), it is
+          just a value, so a binary field inside an EBCDIC file is no
+          problem.
+       6. **Round trip is always possible (the user's requirement).**  The
+          approach: what was read is kept.  A token's value is its code
+          points, and the units it came from stay reachable (they are a slice
+          of the input, as strings already are).  Writing a tree that was
+          parsed and not changed re-emits those units exactly, whatever the
+          set's mapping.  Writing *new* text encodes each code point by the
+          set's inverse; where the mapping is not one-to-one the table says
+          which unit is canonical (the lowest, unless the standard names
+          one).  The examples that make this necessary:
+          - *Two units, one character* (illustrative: a vendor table that maps
+            two control units to the same code point): reading is fine; an
+            unchanged token writes back its own unit, a new one writes the
+            canonical unit.
+          - *Overlong UTF-8* (`C0 80` and `00` both mean U+0000): the standard
+            forbids it, so the reader refuses it with a message rather than
+            keep two spellings of one thing.
+          - *A character the output set lacks* (U+00E9 into SIXBIT, or into
+            EBCDIC 037 variants without it): not recoverable, since no unit
+            spells it; the writer fails with a message naming the character,
+            the token, and the set.  That is a property of the set, not a
+            round-trip failure of anything that was read.
+          So no parse is ever unwritable; only new content that the output set
+          cannot spell is refused.
+       7. **UTF-8 maps to code points, transparently.**  It is the default
+          set; a file that never says `charset` reads and writes UTF-8 with no
+          table; and a char is a code point at the grammar level in every set.
+
+       The unit-width directive (`byte N`, `word N`) and `charset` go in one
+       step after `units` is retired.
 
        **Stage 2, built 2026-10-17 (C):** a text rule may name a bit rule and a
        bit rule a text rule, read by one parser.  The bit rules are emitted
