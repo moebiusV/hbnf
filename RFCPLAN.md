@@ -1354,6 +1354,59 @@ should claim that before 10.
        generating direction and a checksum, so they are the test that the three
        halves meet.
 
+7c. **A writer for text grammars (the user, 2026-10-18: "general writer").**
+    *Designed, not started.*  A parsed tree written back as text, so a mixed
+    grammar can generate (a BIP-39 phrase from its entropy, a request from
+    its fields), a program can edit and re-emit, and step 13a's pretty
+    printer has its engine.  Contract (the user's choice): **canonical
+    first, then lossless.**  `write (tree)` re-parses to the same tree and
+    `write (parse (write (t)))` is the same text (idempotent); later, with
+    spans (step 6b), `--preserve` keeps each node's gaps and comments and
+    reproduces the input byte for byte.  Gate (the user's choice): for every
+    input of every grammar the suites already parse -- parse, write, re-parse,
+    compare trees, write again, compare text.  A grammar whose output does not
+    re-parse is refused for writing with the rule and the text, never emitted
+    as something close.
+
+    **What the tree keeps today, and the gap.**  The tree is a struct of the
+    named children (the union of all alternatives' members), a string for a
+    token, a list node for a repetition.  It does not keep the literals (they
+    are in the grammar), the blanks, whether an alternative was taken when its
+    members are the same as another's (`a = b "x" / b "y"`), or which optional
+    part was present when it has no member of its own.  Only a leading literal
+    tags an alternative (`Leading_Tags`).  So a writer cannot recover every
+    tree; the parser must keep what the grammar does not say.
+
+    **Design.**
+    1. *An opt-in `writer` directive (or `--writer`)* makes the generated
+       parser record, for each alternation, the number of the alternative
+       taken (`_alt`), and for each optional part, whether it was present
+       (`_has_N`) -- only where the tree does not already say.  Without it the
+       parser, the tree and every byte of generated output are unchanged (the
+       byte-identity gate stays).
+    2. *A generated `write_<rule>`* per rule, walking the tree by the same
+       `Rule_Info` the walkers and free functions use (`Emit_Walk`,
+       `Emit_Free`): a literal is written from the grammar, a token from its
+       text, a repetition node by node with its separator, an alternation by
+       its recorded number.  Blanks: `ws` is not remembered, so between two
+       items the writer puts one space where the grammar has a `whitespace`
+       rule and the previous character and the next would otherwise run
+       together, and nothing where `whitespace none`.
+    3. *The check is the gate, built in:* `write_checked` re-parses its own
+       output and compares, so a grammar whose canonical text is not what it
+       reads (a token that glues to the next, a blank that matters) says so
+       in the test and, at run time, refuses.
+    4. *Mixed grammars:* a text rule that holds a bit rule calls
+       `emit_bits_<rule>` (built), and the octets are written as bytes; a
+       bit rule that holds a text rule calls `write_<rule>` at an octet
+       boundary.  Numbered-word text (BIP-39, bech32) writes through the same
+       path: a token's value is its spelling, so the slices of
+       "Retire `units`" below only need the spelling of each number.
+    5. *Order of work:* `_alt`/`_has` recording and `write_` for sequences,
+       literals, tokens, lists and optional parts; alternations; left-recursive
+       lists (`sum = sum "+" n`); then `--writer` on obconf (it has a printer
+       to compare with), then the suites' round trip, then mixed grammars.
+
 8. **Compiler-quality diagnostics and error recovery.**  Expected-error
    fixtures, source-span diagnostics, rule traces, and a schema linter
    (nullable repetition, unreachable rules, shadowed ordered choice,
