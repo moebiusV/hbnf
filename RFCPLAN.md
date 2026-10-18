@@ -1195,6 +1195,47 @@ should claim that before 10.
        token's value type follows its alphabet (a number for bits, a byte string
        for octets, a string for code points).
 
+       **Character sets (the user, 2026-10-18; decisions still to be taken).**
+       The middle layer's width is a file parameter (`byte 6`, `byte 9`,
+       `word 18`: "take the stream N bits at a time"), and the layer above it
+       is chars, so what a unit *means* as a char is a mapping the file must
+       name: ASCII, Latin-1 and the other ISO 8859 and Windows code pages,
+       EBCDIC (IBM's 037, 500, 1047 and others), DEC SIXBIT, CDC display
+       code, FIELDATA, 9-bit ASCII on the 36-bit machines.  A char is still a
+       code point; a character set is a table from unit values to code points
+       (many are partial, with holes), and a token over it is scanned the
+       way a token over octets is.  Taste decisions to take before building:
+
+       1. **Where the name goes.**  A directive for the file
+          (`charset EBCDIC-1047`), a per-rule or per-field override for mixed
+          files (an EBCDIC header over an ASCII payload), or both.
+       2. **Literals.**  `"GET "` is code points; in an EBCDIC file it must
+          become the units that spell them, at generation time, so a literal
+          is written once and means the same thing in every set.  `%d13.10`
+          and `%x` constants stay unit values, not code points.
+       3. **Core rules.**  ALPHA, DIGIT, SP and CRLF are defined over code
+          points, so they follow the file's set; `OCTET` and `BIT` do not.
+       4. **Standard tables, not our own.**  The tables exist (IBM's CDRA, the
+          unicode.org mappings, glibc's `iconv`/gconv tables, ICU's ucm
+          files), so, as with checksums, hbnf takes them by their own names
+          and attributes them instead of retyping them; whether the generated
+          parser links `iconv` or embeds a table is the open point (a
+          self-contained parser argues for a table, generated from the
+          standard mapping file, per set actually used).
+       5. **Holes and errors.**  A unit with no code point is a parse error
+          that says which unit and which set; whether a set may declare a
+          replacement is for later.
+       6. **Output.**  A parser reads a set; a writer writes it; round-trip
+          has to be exact, so a set that maps two units to one code point is
+          refused for writing.
+       7. **Relation to UTF-8.**  UTF-8 is a string of octets that maps to a
+          code point, so it is one more set with a variable-width mapping;
+          the fixed-width sets are the easy case and come first.
+
+       The directive for the unit width and these decisions go in one step,
+       after `units` is retired; no code for either until the decisions are
+       taken with the user.
+
        **Stage 2, built 2026-10-17 (C):** a text rule may name a bit rule and a
        bit rule a text rule, read by one parser.  The bit rules are emitted
        "hosted" (HBNF_Wire.C.Emit_Hosted): over the text parser's `text`, `pos`
