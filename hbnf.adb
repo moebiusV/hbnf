@@ -229,7 +229,10 @@ begin
             Types, Code : Unbounded_String;
          begin
             HBNF_Wire.C.Emit_Hosted (G, Types, Code);
-            HBNF_C.Set_Hosted (To_String (Types), To_String (Code));
+            HBNF_C.Set_Hosted
+              (To_String (Types), To_String (Code),
+               Actions => (for some R of G.Rules =>
+                             R.Action /= Null_Unbounded_String));
          end;
       end if;
    end;

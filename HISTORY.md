@@ -425,7 +425,7 @@ correct because the core parser never changed. Recovery is a wrapper, not a
 replacement.
 
 4. The grammar stays the document. The extended ABNF — `=`, `|`, `/`, `*`,
-`1*`, `n*m`, `[ ]`, the character classes, the `%scan{}` jets, `whitespace ws`
+`1*`, `n*m`, `[ ]`, the character classes, the `%scan{}` scanner actions, `whitespace ws`
 — remains the single source, read by the person and run by the machine. The
 spans and the recovery are added underneath, invisible in the notation.
 

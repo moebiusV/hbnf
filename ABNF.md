@@ -53,13 +53,13 @@ indented line, newlines inside `( )` and `[ ]`, and `<prose-val>`.
 - octets and bits, through `name:N` bit fields.
 
 In that design the lexer is not a stage of its own. Token definitions are
-grammar rules — character-level ABNF or a hand-written jet — and the scanner is
+grammar rules — character-level ABNF or a hand-written scanner action — and the scanner is
 generated from them.
 
 **Extended upward (implemented):**
 - a rule's name is its type, and the tree's shape is read from the rules;
 - typed core rules (`str`, `word`, `int`, `u16`, `flag`, …);
-- jets (scanners written in the target language, inside the schema);
+- scanner actions (scanners written in the target language, inside the schema);
 - schema directives and code blocks;
 - `--conf` and `--idref` output for OpenBSD daemons.
 
@@ -81,7 +81,7 @@ features are not there yet in the backends (§3).
 | Enum numbers | `"icmp"@1`, the way C writes `ICMP = 1` | All four backends.  An alternative without a number is the one before plus 1.  Names are declared in value order with an explicit number only where it is not the previous plus 1 (a C `= 17`, a Zig `enum(u8)` that is open when it has no tag for 0, a Rust discriminant, an Ada representation clause).  A union of words keeps the values in the order written, whatever order it is matched in.  `WIRE.md` |
 | Code points | UTF-8 decoded on the way in; the matcher works on code points; a literal can name `"café"` (§3.3, §5.2) | All four backends: yes. Each backend's character-layer scanners decode UTF-8 (`hbnf_decode_utf8` in C, `Decode_Utf8` in Ada, `decode_utf8` in Rust/Zig) and match code points, so `%u20AC` (€) and `%x20-10FFFF` match multi-byte sequences (§2, §5). |
 | Characters | character-level rules compiled to scanners (`int = ["-"] 1*DIGIT`, `money = 1*DIGIT "." 2DIGIT`); named classes `digit`, `alpha`, `hexdig`; `where` refinements; the lexer generated from these rules, taking the longest match (§4.1–4.3) | Partial. The numeric terminals `%b`/`%d`/`%o`/`%u`/`%x` and ranges parse (into a `Char_Range` element), and every backend compiles character-level rules to scanners that take the longest branch (single-char, multi-char sequence, list elements); named classes come from `grammars/common.hbnf`. `where` is still deferred. |
-| Tokens | jets as the fast path, each with its character-level fallback written above it; `wordchars` | Yes, in all four backends: there is no token array and no fixed lexer.  A phrase rule reads the text at a position and runs the scanner a rule names there; whitespace is the grammar's `ws` rule, skipped between elements; a letter-led literal is matched by the `word` scanner, so it never matches the front of a longer word.  `word`, `int`, `str` and `ws` are grammar rules (`grammars/obconf.hbnf`) or, where the grammar leaves one undefined, a built-in scanner.  A `%scan{}` jet is C code, so only the C backend runs it; the others generate a stub that matches nothing.  `wordchars` widens the word set. |
+| Tokens | scanner actions as the fast path, each with its character-level fallback written above it; `wordchars` | Yes, in all four backends: there is no token array and no fixed lexer.  A phrase rule reads the text at a position and runs the scanner a rule names there; whitespace is the grammar's `ws` rule, skipped between elements; a letter-led literal is matched by the `word` scanner, so it never matches the front of a longer word.  `word`, `int`, `str` and `ws` are grammar rules (`grammars/obconf.hbnf`) or, where the grammar leaves one undefined, a built-in scanner.  A `%scan{}` scanner action is C code, so only the C backend runs it; the others generate a stub that matches nothing.  `wordchars` widens the word set. |
 
 The rest of this document describes the implemented token layer, and marks
 where the design says otherwise.
@@ -133,7 +133,7 @@ shapes compiled into parsers for a different language.
 | `name = %grammar "file"` | ✓ reader | The rule's body is in a file (`~/` is the home directory, any other path is beside the file that names it): a section of a literate grammar kept on its own.  The file holds what follows `=`, not whole rules; whole rules are `include`d. |
 | `%s"…"` (RFC 7405) | ✓ | Means exactly what hbnf's bare `"…"` means |
 | `%i"…"` (RFC 7405) | ✓ in all four backends | Any case matches; a `%i` keyword is interned case-insensitively in C. A word written both `%i` and plain is refused. snmpd's `auth` and `enc` use it, as parse.y's strcasecmp does. |
-| `%scan{ … }`, `%action{ … }` | ✓ | The spelled-out forms of `name = { code }` (a jet) and `pattern { code }` (an action jet) |
+| `%scan{ … }`, `%action{ … }` | ✓ | The spelled-out forms of `name = { code }` (a scanner action) and `pattern { code }` (an action) |
 
 ### 3.4 Core rules (RFC 5234 Appendix B.1)
 
@@ -193,7 +193,7 @@ once, after the parse.  RFCPLAN.md's POSIX section is the plan for the rest.
 |---|---|---|---|---|
 | The unit a rule matches | characters | tokens today (a fixed lexer); characters and below in the design | — | — |
 | `"abc"` | case-insensitive | case-sensitive, like parse.y keywords | `ABC x` is rejected by both engines | `%s"abc"` is the ABNF spelling of hbnf's meaning |
-| `"a b"`, `"!="` | a sequence of characters | exactly one token | never matches | `"a" "b"`; a multi-character operator is a character rule (`NE = '!' '='`) or a jet (pfctl's `ne`/`le`/`ge` still are) |
+| `"a b"`, `"!="` | a sequence of characters | exactly one token | never matches | `"a" "b"`; a multi-character operator is a character rule (`NE = '!' '='`) or a scanner action (pfctl's `ne`/`le`/`ge` still are) |
 | `A / B` | union | hbnf writes `A \| B`: ordered choice, the first alternative that matches is kept, and a later failure does not come back for the next.  `/` is taken where the two agree, which the reader decides by finding an order of the alternatives in which none takes input a later one needed (and writing the choice in that order). | `e = p "c"`, `p = "a" \| "a" "b"` rejects `a b c` in the interpreter; the compiled backends refuse the schema, since `"a" "b"` begins with the whole of `"a"` before it and can never match | longest alternative first |
 | `*x x` | at least one `x` | never matches: `*x` takes every `x` | rejected by C and Rust | `1*x`, or restructure |
 | A rule referenced twice in one alternative | two occurrences | one field named after the rule | *rejected* with a suggested alias. Previously the second value overwrote the first, in 37 places across the daemon grammars. | an alias rule: `port_hi = port` |
@@ -289,7 +289,7 @@ reserved word needs.
 |---|---|---|
 | Typed core rules | `str`, `atom`/`word`, `int`, `bool`, `flag`, `u8…u64`, `i8…i64`; `dec`, `float` | No backend has `dec` or `float`. `atom` rejects numbers. `bool` accepts any word (`maybe` → false). `int` takes `-5` (a `-` before a digit is part of the number). Compiled `u16` accepts `70000`, truncated. `u7` emits `uint7_t`, which doesn't compile. |
 | Tree typing from rule shape | — | Literal alternation → enum; single core type → scalar; `*( x )` → list (a whole rule); sequence → struct; keyword-led alternations get a kind tag; alias rules (`src = host`) name a field with another rule's type. Plus `free_<rule>`, visit/map, `--conf`, `--idref`. |
-| Jets (scanners) | `name = %scan{ code }`, `name = { code }`, or `name = C { code }` (a `<name>` works too), `name = Rust { code }`, `name = Zig { code }`, `name = Ada { code }` | A hand-written scanner: code that sees `s`, `pos` and `len` and returns the length it matched (Ada: its declarations and `begin … end`, since its body is a function's).  Each backend takes its own language's line, so one grammar means the same in all four; the plain forms are C's (or the file's `language`).  A scanner with no code for the backend being generated gets a warning ("the scanner `name` has no Rust code, so here it matches nothing…") naming the line to write, where it used to be a silent stub.  A character rule does the same job in all four backends with nothing written per language. |
+| Scanner actions (scanners) | `name = %scan{ code }`, `name = { code }`, or `name = C { code }` (a `<name>` works too), `name = Rust { code }`, `name = Zig { code }`, `name = Ada { code }` | A hand-written scanner: code that sees `s`, `pos` and `len` and returns the length it matched (Ada: its declarations and `begin … end`, since its body is a function's).  Each backend takes its own language's line, so one grammar means the same in all four; the plain forms are C's (or the file's `language`).  A scanner with no code for the backend being generated gets a warning ("the scanner `name` has no Rust code, so here it matches nothing…") naming the line to write, where it used to be a silent stub.  A character rule does the same job in all four backends with nothing written per language. |
 | Actions | `pattern %action{ code }`, `pattern { code }`, or `action name { code }` | C only. Run bottom-up after a statement parses, with the rule's node as `n`; `bind_error()` reports as parse.y's `yyerror` does. The ntpd and unwind bindings (`grammars/bind/`) are built from them. |
 | Schema directives | `language C\|Rust\|Zig\|Ada`, `wordchars "…"`, `include "file"`, `listops { … }`, `prefix "pf_"`, `conf struct …`, `entry name` | `include` is relative to the including file and goes before the file's first rule; a file is read once however often it is included. A later `=` overrides: a file's own rule overrides an included one, and of two included files the later one's wins. `language` is per file, the language of that file's own code blocks (C when absent), and a backend emits only the blocks in its language. The others describe the one generated parser: any file may set one, and two different values are an error; `keywords` lists merge; code blocks join in include order, included files' first. `prefix` goes in front of every generated C type and struct tag (`--prefix=` overrides it). `listops { head { … } entry { … } … }` names each of the eight list operations and its raw C, with `@name@`/`@elem@`/`@h@`/`@e@`/`@v@` substituted in; the nine daemon grammars set them to OpenBSD's `TAILQ_*` from `<sys/queue.h>`. An operation without an override falls back to hbnf's own head/tail singly-linked list. |
 | Statements, macros, includes | `statements`, `macros <rule>`, `includes <rule>` | C only (the other backends warn and parse the whole file). `statements`: the root must be a list, `*( … )` or parse.y's own `config = | config entry`; the parser reads one statement at a time, one root entry each, as parse.y's `grammar : grammar entry '\n'`. A statement ends at a newline outside braces, quotes and comments; backslash-newline and a next line starting with `{` continue it. A failed statement is reported and the parse goes on. `macros varset`: a statement the rule matches whole defines a macro (first token the name, the tokens after `=` joined by spaces the value), and `$name` at the start of a word, outside quotes and comments, expands to it, glued to what follows; `cmdline_symset("n=v")` defines one the config cannot redefine. `includes include`: a statement the rule matches whole reads the file its last token names, relative to the working directory, as parse.y does. A file (`parse_file`, `parse_config`, an include) is read a block at a time, not whole. |
@@ -346,7 +346,7 @@ orders this work, and adds what an RFC's ABNF needs beyond it.
 | Gap | Proposal | Runtime cost |
 |---|---|---|
 | Whitespace rules | §6, starting with `LF` | +1 token per line |
-| The character layer | done in all four backends (CHARLAYER.md); converting the daemons' jets to character rules retires the C-only jet stubs | same as a hand-written jet |
+| The character layer | done in all four backends (CHARLAYER.md); converting the daemons' scanner actions to character rules retires the C-only scanner action stubs | same as a hand-written scanner action |
 | `/` and `=/` between longer alternatives | union compiled without search (RFCPLAN.md decision 1, step 5) | none |
 
 Checks at generation time for the §4 differences, turning silent mismatches
@@ -359,4 +359,4 @@ into schema errors:
 
 | Where | Says | Code |
 |---|---|---|
-| `USENIXSUBMISSION.md` §4.1–§4.3 | a code-point lexer generated from grammar rules, `where`, longest match | character rules compile to scanners with UTF-8 decode and maximal munch, but a fixed template still forms words, numbers and strings, and `where` is not implemented. Jets are first match, in declaration order. |
+| `USENIXSUBMISSION.md` §4.1–§4.3 | a code-point lexer generated from grammar rules, `where`, longest match | character rules compile to scanners with UTF-8 decode and maximal munch, but a fixed template still forms words, numbers and strings, and `where` is not implemented. Scanner actions are first match, in declaration order. |

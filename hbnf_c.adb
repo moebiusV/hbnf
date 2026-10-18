@@ -435,8 +435,11 @@ package body HBNF_C is
    Hosted_Types : Unbounded_String;
    Hosted_Code  : Unbounded_String;
 
-   procedure Set_Hosted (Types, Code : String) is
+   Hosted_Actions : Boolean := False;
+
+   procedure Set_Hosted (Types, Code : String; Actions : Boolean := False) is
    begin
+      Hosted_Actions := Actions;
       Hosted_Types := To_Unbounded_String (Types);
       Hosted_Code := To_Unbounded_String (Code);
    end Set_Hosted;
@@ -1937,7 +1940,14 @@ package body HBNF_C is
                     & C_Name (Alias_Target (Rules, Name)) & "(" & Ref & ");");
                   Append (Buf, LF);
                when others =>
-                  null;
+                  --  A bit rule's record is a field of its own: its actions
+                  --  (the readers are in the wire emitter's code) run here.
+                  if HBNF_Grammar.Is_Wire_Rule (Alias_Target (Rules, Name)) then
+                     Append (Buf, Ind & "walk_"
+                       & C_Name (Alias_Target (Rules, Name)) & "(&n->" & F
+                       & ");");
+                     Append (Buf, LF);
+                  end if;
             end case;
          end Recurse;
 
@@ -2406,7 +2416,9 @@ package body HBNF_C is
       --  A rule with an action jet gets a bind walk; without one the walk is
       --  dead code, so it is emitted only when some rule has an action.
       Has_Action : constant Boolean :=
-        (for some I in 1 .. N => Rules (I).Action_Code /= Null_Unbounded_String);
+        Hosted_Actions
+        or else (for some I in 1 .. N =>
+                   Rules (I).Action_Code /= Null_Unbounded_String);
    begin
       for I in 1 .. N loop
          Infos.Append (Analyze (I));
@@ -4436,7 +4448,9 @@ package body HBNF_C is
       --  A rule with an action jet gets a bind walk; without one the walk is
       --  dead code, so it is emitted only when some rule has an action.
       Has_Action : constant Boolean :=
-        (for some I in 1 .. N => Rules (I).Action_Code /= Null_Unbounded_String);
+        Hosted_Actions
+        or else (for some I in 1 .. N =>
+                   Rules (I).Action_Code /= Null_Unbounded_String);
 
       --  `statements`: what the driver (templates/statements.c) needs from
       --  the grammar -- the root list's operations, whether an action jet

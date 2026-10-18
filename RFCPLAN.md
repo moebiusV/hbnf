@@ -77,7 +77,7 @@ silently.
    same file or another; the rule keeps its place, so an overridden root is
    still the root.  (As built: in one file, or between two included files,
    the rule keeps its place; a file's own rules come before what it
-   includes, in the order it writes them, since that order is the jets'
+   includes, in the order it writes them, since that order is the scanner actions'
    order.  The root is the top file's first new rule, or, when it has none,
    the root of what it includes.)
 4. **Include once.**  A file is read the first time it is included; later
@@ -111,7 +111,7 @@ silently.
    `1*VCHAR` fails on `/x` because `x` was already made a word.  The
    generated parser will instead read characters: a literal compares bytes
    at the current position, a character rule's scanner runs at the current
-   position, and a jet is called there.
+   position, and a scanner action is called there.
    - The old lexer becomes grammar in a shared include: `word`, `number`,
      quoted strings with escapes, `#` comments and backslash continuation,
      as character rules anyone can read and change.  `wordchars` becomes a grammar rule.
@@ -126,12 +126,12 @@ silently.
      remembering the last token scanned at a position and branching on the
      first byte.  The §6 numbers (57 ms for the 100,000-rule toy, about
      0.5 s for 100,000 pfctl rules) must not get worse.
-8. **Jets, actions and emitters are code — one family of three.**  A
+8. **Scanners, actions and emitters are code — one family of three.**  A
    `%scan{ }`, `%action{ }` or `%emit{ }` block holds the code that runs,
    usually one call to a function the file defines in its epilogue
    (`%scan{ return ipv6_match(s, pos, len); }`), with the function's
    prototype in the preamble.  hbnf never rewrites the code.  Most of the
-   remaining 17 jets become character rules instead, which also makes them
+   remaining 17 scanner actions become character rules instead, which also makes them
    work in Rust, Zig and Ada.
 
    The family has one member per level, and the levels are the compiler's
@@ -154,7 +154,7 @@ silently.
 9. **`<prose-val>`** reads as a rule nobody has written yet: generation
    stops with `file:line:col`, the source line with a caret under the
    `<…>`, and "not written yet:" and the text in the angle brackets.  The
-   author writes the rule or a jet.  A hole left for later is then a
+   author writes the rule or a scanner action.  A hole left for later is then a
    schema error that points at itself, rather than an `XXX` in a comment.
 10. **Core rules.**  `common.hbnf` includes `ascii.hbnf` and holds the RFC 5234
     Appendix B.1 classes (`DIGIT`, `ALPHA`, …, `WSP = SP | HTAB`) and
@@ -215,7 +215,7 @@ silently.
 
     **Settled direction (2026-10-17, the user's): context is data the grammar
     names, scoped, and the parser threads.**  hbnf was never context-free --
-    ordered choice, jets, exceptions and the wire layer's expressions over
+    ordered choice, scanner actions, exceptions and the wire layer's expressions over
     earlier fields are already outside it -- and "context-free" described only
     what BNF alone can decide.  Context is stored by the grammar and consulted
     by the parser, in a notation a BNF reader is not surprised by:
@@ -242,6 +242,35 @@ silently.
       in C first, tested on `(A) * 0` (a cast when `A` is a typedef name, a
       product when it is not) before a C subset is tried.  Later work, not
       started.
+
+14. **Ambiguity: fork only where it occurs, and settle it in a fixed order.**
+    (Decided 2026-10-18, from the study of `hbnf15.txt`, with the user.)
+    Ordered choice stays the fast path: a choice the generator can show is
+    decidable costs what it costs today.  The generator looks for the choices
+    it cannot show are decidable -- alternatives that can match the same
+    prefix and are not told apart by a fixed lookahead, conservatively, since
+    ambiguity of a context-free grammar is undecidable and a false positive
+    costs only a fork -- and gives only those a local fork: both readings are
+    kept for the span of the ambiguity, then one is chosen.  Nothing is
+    annotated by the author, and the points are reported when the parser is
+    generated (to stderr, with the rule, the alternatives and the reason;
+    `--quiet-forks` silences it).  The choice is made in this order:
+
+    1. a `%where` or a context test (`?`) that fails removes its reading;
+    2. IMP72's first rule: **a terminal over an expression** -- a word that
+       appears literally in a pattern beats the same word read as a variable
+       (keywords over identifiers, contextual keywords such as `final`);
+    3. IMP72's second rule: the reading that uses **the fewest distinct rules**;
+    4. where IMP72 picks arbitrarily, hbnf takes **the first alternative in
+       the order the grammar wrote them** -- the same first-match rule as the
+       rest of the notation, so a fork never introduces a new kind of
+       behaviour.
+
+    The memo of a rule's result at a position must be keyed by the context's
+    version, or skipped for a rule that reads context, or a cached typedef
+    decision would leak across scopes.  This replaces "GLR, or trying another
+    alternative after a later failure" under *Not in this plan*.
+    Not started: after step 6's context machinery.
 
 ## POSIX BNF
 
@@ -739,7 +768,7 @@ should claim that before 10.
 4. **The character model** (decision 7) in C, with `whitespace`:
    - the old lexer moved into a shared include;
    - ntpd converted first (it has the byte-identity proof), then the other
-     eight, their jets turned into character rules where they can be;
+     eight, their scanner actions turned into character rules where they can be;
    - §6 measured again.
 
    Dependency order within step 4:
@@ -774,9 +803,9 @@ should claim that before 10.
        **only if the §6 numbers regress**; it never changes what is
        accepted.  They did — see 4f.
 
-   4d. **Convert ntpd first**, then the other eight daemons; jets become
+   4d. **Convert ntpd first**, then the other eight daemons; scanner actions become
        character rules where they can.  *Done* (26366f1 and the 4d merge):
-       the operator, wildcard and AS jets are char rules, and 18 jets remain
+       the operator, wildcard and AS scanner actions are char rules, and 18 scanner actions remain
        across all nine grammars.
 
    4e. **Coalesce ASCII char-rule scans into byte loops.** *Done*
@@ -1568,9 +1597,9 @@ should claim that before 10.
          grammar's `ws` skipped between phrase elements, a letter-led literal
          matched by the `word` scanner so `in` never matches `input`.  `word`,
          `int`, `str` and `ws` are the grammar's own char rules or a built-in
-         scanner.  A `%scan{}` jet is C code, so the other three get a stub
+         scanner.  A `%scan{}` scanner action is C code, so the other three get a stub
          that matches nothing (and the daemons' Ada, Rust and Zig output now
-         shows it: it still compiles, and no longer parses what its jets did).
+         shows it: it still compiles, and no longer parses what its scanner actions did).
        - **`hbnf_schema.hbnf` rewritten** on `grammars/obconf.hbnf`.  `ws`
          excludes the newline, which is how a statement ends at its line
          without C's `statements`.  `tests/schema.sh` runs `tests/accept` and
@@ -1632,7 +1661,7 @@ should claim that before 10.
 11. **A tree-sitter emitter, as an editor backend.**  Not a replacement for
    the C backend and not gated on anything above: it can land between any
    two other steps.  The idea is to generate a `grammar.js` (and a stub
-   `scanner.c` where a jet is needed) from the lifted schema, so one
+   `scanner.c` where a scanner action is needed) from the lifted schema, so one
    grammar gives both the daemon's parser and the editor's highlighting,
    folding and structural selection.  Today a daemon ships a `parse.y` and,
    separately, somebody hand-writes a tree-sitter grammar that drifts from
@@ -1667,8 +1696,8 @@ should claim that before 10.
    - **`n*m` bounds.**  tree-sitter has `repeat` and `repeat1` and nothing
      else; `3*5( x )` has to be unrolled, and the unrolling shows up in the
      CST.
-   - **Jets** become `externals:` plus a `scanner.c`.  The emitter can stub
-     the scanner with the jet's own code where the jet is already C, and
+   - **Scanner actions** become `externals:` plus a `scanner.c`.  The emitter can stub
+     the scanner with the scanner action's own code where the scanner action is already C, and
      must otherwise leave a named hole.
    - **`<prose-val>`** has no analogue: an unwritten rule cannot highlight.
      It emits as an `externals:` hole with the prose as its comment.
@@ -1810,8 +1839,8 @@ should claim that before 10.
      | Zig | `fn parse_mid(p: *P)` with `p` unused | **hard error**, always |
 
      Fixed in `ada_struct.tmpl` (`{{^items}} null;`) and in the Rust and Zig
-     signature/body emission.  A jet rule also has an empty pattern but does
-     read `p`, so the parameter renaming tests *empty pattern and no jet*.
+     signature/body emission.  A scanner action rule also has an empty pattern but does
+     read `p`, so the parameter renaming tests *empty pattern and no scanner action*.
 
      Two more Rust defects came out of the same thread, both pre-existing and
      both visible only once the daemons' Rust was held to `-D warnings`:
@@ -1986,7 +2015,7 @@ should claim that before 10.
      X, the reader must read back to the same grammar.
    - **Where it cannot be faithful it says so.**  Not every grammar
      projects onto every notation: ordered choice has no ABNF spelling,
-     `n*m` has no yacc spelling, a jet has no spelling anywhere.  The
+     `n*m` has no yacc spelling, a scanner action has no spelling anywhere.  The
      printer names the rule and the construct rather than emitting
      something that reads as equivalent and is not — the same rule step 11
      holds for the tree-sitter emitter.
@@ -2124,7 +2153,7 @@ order:
 4. **Emit the token layer only when a grammar tokens.**  A pure
    character-rule grammar still gets `Token_Kind`, `Token`, `Token_Vectors`,
    `Line_Vectors` and `Parse_Tokens`; gate that layer on the grammar using
-   jets/`%scan`, and emit a direct string reader otherwise.
+   scanner actions/`%scan`, and emit a direct string reader otherwise.
 5. **Share the per-rule save/backtrack boilerplate.**  Every `Parse_*`
    repeats save-position / `when Parse_Error => P.Pos := Save`; a single
    helper — or emitting the backtrack only where ordered choice or
@@ -2138,6 +2167,6 @@ cycles.
 ## Not in this plan
 
 - RBNF (RFC 5511's routing BNF).
-- GLR, or trying another alternative after a later failure.
+- Full GLR (decision 14 is the local, detected fork instead).
 - Case-folding non-ASCII rule names.
 - Guessing any setting from an include or from seeing `%x`.

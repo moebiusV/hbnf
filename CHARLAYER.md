@@ -32,7 +32,7 @@ Scope (user directive, 2026-09-26):
   UPPER HEXDIG BIT CHAR CTL VCHAR OCTET WSP`, and `CRLF`.
 - **I1 — C char lexer: DONE.** `Is_Char_Rule` classifies a rule whose pattern
   is an alternation of `Char_Range`; such rules get a `TOK_<name>` token kind,
-  a `scan_<name>` scanner, and a `char_dispatch` the lexer calls after jets.
+  a `scan_<name>` scanner, and a `char_dispatch` the lexer calls after scanner actions.
   The parser matches a char-rule reference with `expect_kind`. Verified
   end-to-end (`LF` lexes/parses; no regression).
 - **I2 (UTF-8) — C char lexer matches code points: DONE.** `hbnf_decode_utf8`
@@ -67,7 +67,7 @@ Scope (user directive, 2026-09-26):
 
 ## Loose ends (next)
 
-1. ~~Dead field~~ **DONE** — char rules behave exactly like jets (scanner +
+1. ~~Dead field~~ **DONE** — char rules behave exactly like scanner actions (scanner +
    `parse_rule` matching the token and capturing the text).
 2. ~~Lists of char rules~~ **DONE** — `1*DIGIT` flows through `parse_rule_<name>`.
    ~~Root/alias edge case~~ **DONE** — `parse_rule_<name>` is correct, and an
@@ -113,9 +113,9 @@ Scope (user directive, 2026-09-26):
 4. **`where`** — `u16 = int where (v <= 65535)`; deferred (I2).  The predicate
    is over the matched *value* `v`, not the text, so `where` sits on the typed
    scalar layer (`u8`..`u64`) above the bits.  It fills the *value-constraint*
-   half of a jet — the reason `ipv4`'s octet (0..255) is hand-written — but
+   half of a scanner action — the reason `ipv4`'s octet (0..255) is hand-written — but
    never the *lexical-shape* half (`ipv6`'s "hex ∩ colon", `community`'s
-   lookahead), which has no char-rule spelling and stays a jet.  The predicate
+   lookahead), which has no char-rule spelling and stays a scanner action.  The predicate
    language must stay a closed, schema-checkable subset (comparisons, ranges,
    `&`/`|`; no calls or side effects) so it emits to all four backends.
 5. **UTF-8 / UTF-16** — code-point primitives; deferred (I2).  Encoding is a
@@ -147,7 +147,7 @@ Scope (user directive, 2026-09-26):
 - `hbnf_c.adb` — token enum, `hbnf_decode_utf8`, `scan_*` + `char_dispatch`,
   `Emit_Seq` char-rule branch, `First_Elem`/`Collect` Char_Range arms.
 - `templates/*_lexer.tmpl` — all four lexer templates (C, Rust, Zig, Ada) call
-  `char_dispatch`/`Char_Dispatch` after jets.
+  `char_dispatch`/`Char_Dispatch` after scanner actions.
 - `hbnf_ada.adb` — full char-lexer port (`Atom_Cond`, `Decode_Utf8`, `Scan_*`,
   `Char_Dispatch`; a char rule is scalar `Unbounded_String`).
 - `hbnf_rust.adb` — full char-lexer port (`Atom_Cond`, `decode_utf8`, `scan_*`,

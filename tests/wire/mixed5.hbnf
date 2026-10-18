@@ -1,0 +1,13 @@
+; An %action on a bit rule that a text rule holds: it runs after the whole read
+; has succeeded, as it does in a grammar of bit rules alone.  HBNF_FAIL fails the
+; parse; HBNF_WARN is collected (hbnf_warning (i)).
+prefix none
+whitespace none
+
+doc = "REC:" rec ";"
+
+rec = kind:8 len:8
+  %action{
+      if (n->kind == 255) HBNF_FAIL ("kind 255 is reserved");
+      if (n->len > 10) HBNF_WARN ("a long record");
+  }

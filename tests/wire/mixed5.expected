@@ -1,0 +1,5 @@
+plain: kind=7 len=3
+long: kind=7 len=32
+  warning: a long record
+reserved: error
+kind 255 is reserved

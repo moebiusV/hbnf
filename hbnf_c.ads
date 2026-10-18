@@ -84,6 +84,6 @@ package HBNF_C is
    --  parser's own state.  Emit puts the types before the struct bodies of the
    --  text rules, and Emit_Parser puts the readers after the forward
    --  declarations, so a rule of either kind can name one of the other.
-   procedure Set_Hosted (Types, Code : String);
+   procedure Set_Hosted (Types, Code : String; Actions : Boolean := False);
 
 end HBNF_C;

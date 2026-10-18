@@ -1043,12 +1043,13 @@ package body HBNF_Wire.C is
             end loop;
          end loop;
       end if;
-      if Hosted and then (Has_Actions or else
-                          (for some R of G.Rules => R.Emit /= Null_Unbounded_String))
+      if Hosted
+        and then (for some R of G.Rules => R.Emit /= Null_Unbounded_String)
       then
          raise Wire_Error with
-           "a %action or %emit on a bit rule in a grammar that also has text "
-           & "rules is not built yet; it is for a grammar of bit rules alone";
+           "an %emit on a bit rule in a grammar that also has text rules is "
+           & "not built yet (it runs when a record is written, and there is "
+           & "no writer for a mixed grammar yet); an %action is built";
       end if;
       if not Hosted and then Is_Value_Set (G.Rules (Root)) then
          raise Wire_Error with
@@ -1091,6 +1092,16 @@ package body HBNF_Wire.C is
       for K in 1 .. Natural (G.Rules.Length) loop
          Define (K);
       end loop;
+      if Hosted and then Has_Actions then
+         --  The text parser's bind walk (declared before these readers) calls
+         --  the walk of each bit rule it holds.
+         for R of G.Rules loop
+            if not Is_Value_Set (R) then
+               L (0, "static void walk_" & To_String (R.Name) & " ("
+                  & Type_Of (To_String (R.Name)) & " *n);");
+            end if;
+         end loop;
+      end if;
       Types_End := Length (Buf);
 
       if Hosted then
@@ -1189,24 +1200,35 @@ package body HBNF_Wire.C is
          end;
       end loop;
 
-      if Has_Actions and then not Hosted then
+      if Has_Actions then
          L (0, "/* ---- actions: C that runs on a record, as n, once the whole read");
          L (0, "   has succeeded (children first).  HBNF_WARN (""..."") adds a");
          L (0, "   warning to the result, HBNF_FAIL (""..."") fails the read.  Not");
          L (0, "   reentrant: the warnings are collected in static storage. ---- */");
          L (0, "static const char *bnf_act_warn[8];");
          L (0, "static unsigned bnf_act_nwarn;");
-         L (0, "static const char *bnf_act_failed;");
          L (0, "#define HBNF_WARN(msg) do { if (bnf_act_nwarn < 8) \");
          L (0, "    bnf_act_warn[bnf_act_nwarn++] = (msg); } while (0)");
-         L (0, "#define HBNF_FAIL(msg) do { if (!bnf_act_failed) \");
-         L (0, "    bnf_act_failed = (msg); } while (0)");
-         for R of G.Rules loop
-            if not Is_Value_Set (R) then
-               L (0, "static void walk_" & To_String (R.Name) & " ("
-                  & Type_Of (To_String (R.Name)) & " *n);");
-            end if;
-         end loop;
+         if Hosted then
+            --  A failure is the text parser's own: the walk carries on and the
+            --  parse fails once it ends, with this as the message.
+            L (0, "#define HBNF_FAIL(msg) bind_error (""%s"", (msg))");
+            L (0, "/* The warnings the actions of the bit rules gave: n of them, i from 0. */");
+            L (0, "__attribute__((unused)) static unsigned hbnf_warnings (void)"
+               & " { return bnf_act_nwarn; }");
+            L (0, "__attribute__((unused)) static const char *hbnf_warning "
+               & "(unsigned i) { return i < bnf_act_nwarn ? bnf_act_warn[i] : 0; }");
+         else
+            L (0, "static const char *bnf_act_failed;");
+            L (0, "#define HBNF_FAIL(msg) do { if (!bnf_act_failed) \");
+            L (0, "    bnf_act_failed = (msg); } while (0)");
+            for R of G.Rules loop
+               if not Is_Value_Set (R) then
+                  L (0, "static void walk_" & To_String (R.Name) & " ("
+                     & Type_Of (To_String (R.Name)) & " *n);");
+               end if;
+            end loop;
+         end if;
          L (0, "");
          for R of G.Rules loop
             if not Is_Value_Set (R) then

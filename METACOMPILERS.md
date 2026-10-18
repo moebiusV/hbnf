@@ -74,7 +74,7 @@ itself advises that conditional assignment be used "whenever possible".
 |---|---|---|---|---|
 | **A rule is** | a recursive subroutine that recognizes and consumes | a production stored in a table; every parse carried until resolved | a pattern value, matched by a backtracking scanner | a rule; a generated recognizer per backend |
 | **Choice** | ordered `/`, no backup, so factor by hand | ambiguity allowed, resolved by three rules | ordered alternation with full backtracking; `FENCE` and `ABORT` cut it | ordered `\|`; `/` is a union hbnf orders (or refuses with a witness); prefix factoring done by the tool |
-| **Tokens** | built-in `.ID` `.NUMBER` `.STRING` | classes `<NAME>`, `<VBL>`, ...; no reserved words | primitives `SPAN` `BREAK` `LEN` `ANY` ... | character-level grammar; `%scan` jets; a rule is a token (automaton) when an exception names it |
+| **Tokens** | built-in `.ID` `.NUMBER` `.STRING` | classes `<NAME>`, `<VBL>`, ...; no reserved words | primitives `SPAN` `BREAK` `LEN` `ANY` ... | character-level grammar; `%scan` scanner actions; a rule is a token (automaton) when an exception names it |
 | **Code, when** | `.OUT` inline, as the parse proceeds | semantics run as productions reduce, held back until context settles which special case applies; `PRIORITY` forces them now | `.` after the match succeeds; `$` and `*f()` during it | `%action` once, after the parse, bottom-up; `%where` (planned) during it, each try; `%emit` (planned) |
 | **Code is written in** | META II's own output language (assembly for its machine) | IMP itself (quoted), or compiler subroutines in IMP | SNOBOL4 itself (`DEFINE`d functions) | any language with a backend: C, Rust, Zig and Ada today, once per backend; there is no rule against assembly |
 | **Output** | assembly for an interpreter | object code through typed objects | none (strings) | a typed tree; round-trip printing; `%emit` planned |
@@ -110,10 +110,11 @@ a semantic action waits until the surrounding context has chosen between special
 cases, and `PRIORITY n` runs it the moment the production is recognized.  Three
 systems, three spellings of "after, or now".
 
-## Names for what hbnf calls a jet
+## Names for hand-written scanner code
 
-There is no single standard term.  What the precedents call hand-written code
-the system calls out to:
+hbnf has one word for code the grammar calls out to: an *action* (`%scan` for a
+scanner, `%action` after the parse, `%where` as a predicate, `%emit` when
+writing).  Other systems name it differently, which is only a reading aid:
 
 | system | term |
 |---|---|
@@ -122,22 +123,11 @@ the system calls out to:
 | IMP72 | *semantic routines* (subroutines of the compiler available to the syntax writer; "as a last resort go into the compiler to add new ones") |
 | SNOBOL4 | *primitive patterns* and *primitive functions*; user-defined functions called from a pattern with `*` |
 | tree-sitter | *external scanner* |
-| Nock and Urbit | *jet*: a native implementation of a function the spec states, kept in agreement with the spec |
 
-hbnf's own definition (in `USENIXSUBMISSION.md`) is the Nock sense, and the repo
-does not say where it took the word.  Two things are being called jets, and the
-precedents separate them:
-
-1. a **primitive**: code with no grammar behind it (META II's `.ID`, SNOBOL4's
-   `SPAN`).  This is a `%scan` for a rule the grammar cannot define.
-2. a **jet** in the Nock sense: code that implements a rule the grammar *also*
-   defines, as an optimization one may drop (hbnf's stated direction: "a jet is
-   an optimisation").
-
-If the distinction is worth the words, call the first a *primitive* and keep
-*jet* for the second.  `%action` already has the established name, *semantic
-action*, and `%where` has a fair one in *predicate* (SNOBOL4's `*f()` used to
-decide a match).
+Two uses are worth telling apart when it matters: code with no grammar behind
+it (META II's `.ID`, SNOBOL4's `SPAN`), and code that implements a rule the
+grammar *also* defines, as an optimization one may drop.  hbnf says which in
+the sentence, not with another term.
 
 ## What hbnf could learn
 
@@ -238,7 +228,7 @@ In order of how much it would change hbnf.
   of "any language" (it has no runtime to lean on, only what `%emit` writes)?  IMP72 chose the object language itself;
   that is the cheapest and the one that keeps a grammar a single file.
 - Should `%scan` for a body-less rule and for a rule that has a body be spelled
-  differently (primitive and jet)?  Today they are one directive.
+  differently (code with no grammar behind it, and code the grammar also defines)?  Today they are one directive.
 - If grammars can define rewrites (lesson 3), the exception `a - b`, `n#m` and the
   rest of hbnf's sugar could be defined in the standard library of the notation
   and not in the Ada reader.  That is an invitation to bootstrap, and a risk to

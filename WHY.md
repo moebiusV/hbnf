@@ -221,7 +221,7 @@ permanent differences are parse-time semantic feedback and ambiguity, which
 hbnf refuses on purpose, plus the ecosystem around ANTLR (grammar libraries,
 IDE support, incremental parsing) that hbnf does not aim to replace. hbnf is
 a meta-compiler: configuration files are where it started, and the config-file
-shape (jets, `--conf`, id-ref output) is something ANTLR does not address, but
+shape (scanner actions, `--conf`, id-ref output) is something ANTLR does not address, but
 that is where it started and not where it stops.
 
 ## hbnf and tree-sitter
@@ -266,7 +266,7 @@ JavaScript, a Rust CLI to build them, and parse tables that run from 94,000
 lines (javascript) to 471,000 (ruby), against 2,466 lines for hbnf's entire
 ntpd parser with no runtime at all.
 
-The deeper point is about jets. tree-sitter's external scanner *is* a jet,
+The deeper point is about scanner actions. tree-sitter's external scanner *is* a scanner action,
 and a richer one — `create`/`destroy`/`scan`/`serialize`/`deserialize`, a
 stateful scanner whose state is snapshotted so an incremental re-parse can
 resume — handed a raw cursor (`lookahead`, `advance`, `mark_end`). It leaned
@@ -276,9 +276,9 @@ and the runtime hardcodes `keyword_capture_token` and a `reserved_words` set
 for what a character grammar would say. In the main grammars, bash ships
 1,217 lines of hand-written C, ruby 1,110, python 437, javascript 364; only
 C and Go escape, being the languages whose tokens are genuinely regular.
-Adopting it would mean writing *more* jets, and stateful ones. hbnf is going
-the other way: 18 jets left and falling as the character layer absorbs them,
-toward a parser with no hand-written scanner, where a jet is an optimisation
+Adopting it would mean writing *more* scanner actions, and stateful ones. hbnf is going
+the other way: 18 scanner actions left and falling as the character layer absorbs them,
+toward a parser with no hand-written scanner, where a scanner action is an optimisation
 one may drop rather than the only way to say what a token is.
 
 Where tree-sitter is better: error recovery, which RFCPLAN step 8 borrows
