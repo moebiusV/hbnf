@@ -665,8 +665,23 @@ package body HBNF_Wire.C is
                      end if;
                      Scope.Append (Binding'(It.Name, To_Unbounded_String (Lw)));
                   when S_Ref =>
-                     L (Ind, "if (!emit_rule_" & To_String (It.Ref) & " (w, &"
-                       & Lw & ")) " & Bad);
+                     if Hosted and then Find (G, To_String (It.Ref)) = 0 then
+                        if (for some X of G.External_Tokens => X = It.Ref) then
+                           --  A text token is the text it matched.
+                           L (Ind, "if (w->bit & 7) { bnf_wfail (w, " & W
+                             & ", ""text starts inside an octet""); " & Bad
+                             & " }");
+                           L (Ind, "if (!bnf_wput (w, (const uint8_t *)" & Lw
+                             & ", strlen (" & Lw & "), " & W & ")) " & Bad);
+                        else
+                           L (Ind, "bnf_wfail (w, " & W & ", ""is a text "
+                             & "rule, which a bit rule cannot write yet""); "
+                             & Bad);
+                        end if;
+                     else
+                        L (Ind, "if (!emit_rule_" & To_String (It.Ref)
+                          & " (w, &" & Lw & ")) " & Bad);
+                     end if;
                   when S_Array =>
                      L (Ind, "{ size_t i_;");
                      if It.Count /= null then
@@ -784,6 +799,53 @@ package body HBNF_Wire.C is
          end loop;
       end Gen_Walk_Alts;
 
+      procedure Runtime_Writer is
+      begin
+         L (0, "");
+         L (0, "/* The other direction: a tree to bytes.  With buf NULL it only"
+            & " counts. */");
+         L (0, "typedef struct {");
+         L (1, "uint8_t *buf;");
+         L (1, "size_t cap;");
+         L (1, "size_t bit;");
+         L (1, "int failed;");
+         L (1, "char msg[256];");
+         L (0, "} bnf_w;");
+         L (0, "static void bnf_wfail (bnf_w *w, const char *where, const char"
+            & " *what) {");
+         L (1, "if (w->failed) return;");
+         L (1, "w->failed = 1;");
+         L (1, "snprintf (w->msg, sizeof w->msg, ""%s: %s"", where, what);");
+         L (0, "}");
+         L (0, "static void bnf_wr (bnf_w *w, unsigned n, uint64_t v) {");
+         L (1, "unsigned put = 0;");
+         L (1, "while (put < n) {");
+         L (2, "size_t byte = w->bit >> 3;");
+         L (2, "unsigned off = (unsigned)(w->bit & 7), take = 8 - off;");
+         L (2, "unsigned chunk;");
+         L (2, "if (take > n - put) take = n - put;");
+         L (2, "chunk = (unsigned)((v >> (n - put - take)) & ((1u << take) - 1));");
+         L (2, "if (w->buf && byte < w->cap) {");
+         L (3, "if (off == 0) w->buf[byte] = 0;");
+         L (3, "w->buf[byte] |= (uint8_t)(chunk << (8 - off - take));");
+         L (2, "}");
+         L (2, "w->bit += take;  put += take;");
+         L (1, "}");
+         L (0, "}");
+         L (0, "static bool bnf_wput (bnf_w *w, const uint8_t *p, size_t n, "
+            & "const char *where) {");
+         L (1, "(void)where;");
+         L (1, "if ((w->bit & 7) == 0) {");
+         L (2, "if (w->buf && w->bit / 8 + n <= w->cap && n) "
+            & "memcpy (w->buf + w->bit / 8, p, n);");
+         L (2, "w->bit += n * 8;");
+         L (1, "} else {");
+         L (2, "for (size_t i = 0; i < n; i++) bnf_wr (w, 8, p[i]);");
+         L (1, "}");
+         L (1, "return true;");
+         L (0, "}");
+      end Runtime_Writer;
+
       procedure Runtime is
       begin
          L (0, "typedef struct {");
@@ -890,49 +952,7 @@ package body HBNF_Wire.C is
             & "octets_t *o, const char *where) {");
          L (1, "return bnf_take (p, (WN(p) - WB(p)) / 8, o, where);");
          L (0, "}");
-         L (0, "");
-         L (0, "/* The other direction: a tree to bytes.  With buf NULL it only"
-            & " counts. */");
-         L (0, "typedef struct {");
-         L (1, "uint8_t *buf;");
-         L (1, "size_t cap;");
-         L (1, "size_t bit;");
-         L (1, "int failed;");
-         L (1, "char msg[256];");
-         L (0, "} bnf_w;");
-         L (0, "static void bnf_wfail (bnf_w *w, const char *where, const char"
-            & " *what) {");
-         L (1, "if (w->failed) return;");
-         L (1, "w->failed = 1;");
-         L (1, "snprintf (w->msg, sizeof w->msg, ""%s: %s"", where, what);");
-         L (0, "}");
-         L (0, "static void bnf_wr (bnf_w *w, unsigned n, uint64_t v) {");
-         L (1, "unsigned put = 0;");
-         L (1, "while (put < n) {");
-         L (2, "size_t byte = w->bit >> 3;");
-         L (2, "unsigned off = (unsigned)(w->bit & 7), take = 8 - off;");
-         L (2, "unsigned chunk;");
-         L (2, "if (take > n - put) take = n - put;");
-         L (2, "chunk = (unsigned)((v >> (n - put - take)) & ((1u << take) - 1));");
-         L (2, "if (w->buf && byte < w->cap) {");
-         L (3, "if (off == 0) w->buf[byte] = 0;");
-         L (3, "w->buf[byte] |= (uint8_t)(chunk << (8 - off - take));");
-         L (2, "}");
-         L (2, "w->bit += take;  put += take;");
-         L (1, "}");
-         L (0, "}");
-         L (0, "static bool bnf_wput (bnf_w *w, const uint8_t *p, size_t n, "
-            & "const char *where) {");
-         L (1, "(void)where;");
-         L (1, "if ((w->bit & 7) == 0) {");
-         L (2, "if (w->buf && w->bit / 8 + n <= w->cap && n) "
-            & "memcpy (w->buf + w->bit / 8, p, n);");
-         L (2, "w->bit += n * 8;");
-         L (1, "} else {");
-         L (2, "for (size_t i = 0; i < n; i++) bnf_wr (w, 8, p[i]);");
-         L (1, "}");
-         L (1, "return true;");
-         L (0, "}");
+         Runtime_Writer;
       end Runtime;
 
       --  The helpers a hosted reader needs, over the text parser's state.
@@ -1022,6 +1042,7 @@ package body HBNF_Wire.C is
             & "octets_t *o, const char *where) {");
          L (1, "return bnf_take (p, (WN(p) - WB(p)) / 8, o, where);");
          L (0, "}");
+         Runtime_Writer;
       end Runtime_Hosted;
 
       Root : constant Natural := 1;
@@ -1042,14 +1063,6 @@ package body HBNF_Wire.C is
                end loop;
             end loop;
          end loop;
-      end if;
-      if Hosted
-        and then (for some R of G.Rules => R.Emit /= Null_Unbounded_String)
-      then
-         raise Wire_Error with
-           "an %emit on a bit rule in a grammar that also has text rules is "
-           & "not built yet (it runs when a record is written, and there is "
-           & "no writer for a mixed grammar yet); an %action is built";
       end if;
       if not Hosted and then Is_Value_Set (G.Rules (Root)) then
          raise Wire_Error with
@@ -1109,9 +1122,7 @@ package body HBNF_Wire.C is
       else
          Runtime;
       end if;
-      if not Hosted
-        and then (for some R of G.Rules => R.Emit /= Null_Unbounded_String)
-      then
+      if (for some R of G.Rules => R.Emit /= Null_Unbounded_String) then
          L (0, "/* In an %emit block: fail the write. */");
          L (0, "#define HBNF_EMIT_FAIL(msg) do { bnf_wfail (w, ""emit"", (msg)); \");
          L (0, "    return false; } while (0)");
@@ -1125,11 +1136,9 @@ package body HBNF_Wire.C is
          else
             L (0, "static bool " & Fn_Of (To_String (R.Name)) & " (bnf_p *p, "
                & Type_Of (To_String (R.Name)) & " *out);");
-            if not Hosted then
-               L (0, "static bool emit_rule_" & To_String (R.Name)
-                  & " (bnf_w *w, const " & Type_Of (To_String (R.Name))
-                  & " *in);");
-            end if;
+            L (0, "static bool emit_rule_" & To_String (R.Name)
+               & " (bnf_w *w, const " & Type_Of (To_String (R.Name))
+               & " *in);");
          end if;
       end loop;
       L (0, "");
@@ -1166,9 +1175,7 @@ package body HBNF_Wire.C is
                end if;
                L (1, "return true;");
                L (0, "}");
-               if Hosted then
-                  null;
-               elsif R.Emit /= Null_Unbounded_String then
+               if R.Emit /= Null_Unbounded_String then
                   --  The fields are written from a copy, which the block may
                   --  change: the caller's tree is not touched.
                   L (0, "static bool emit_rule_" & Nm & " (bnf_w *w, const "
@@ -1184,15 +1191,36 @@ package body HBNF_Wire.C is
                   L (0, "static bool emit_rule_" & Nm & " (bnf_w *w, const "
                      & Type_Of (Nm) & " *in) {");
                end if;
-               if not Hosted then
-                  Emit_Side := True;
-                  if Natural (R.Alts.Length) = 1 then
-                     Gen_Emit_Seq (R.Alts.First_Element.all, "in->", Empty, Nm, 1);
-                  else
-                     Gen_Emit_Alts (R.Alts, "in->", Empty, Nm, 1);
-                  end if;
-                  Emit_Side := False;
+               Emit_Side := True;
+               if Natural (R.Alts.Length) = 1 then
+                  Gen_Emit_Seq (R.Alts.First_Element.all, "in->", Empty, Nm, 1);
+               else
+                  Gen_Emit_Alts (R.Alts, "in->", Empty, Nm, 1);
+               end if;
+               Emit_Side := False;
+               L (1, "return true;");
+               L (0, "}");
+               if Hosted then
+                  --  The writer of a bit rule, for the program to call.
+                  L (0, "bool emit_bits_" & Nm & " (const " & Type_Of (Nm)
+                     & " *in, uint8_t *buf, size_t cap, size_t *nbits,");
+                  L (0, "                  char *err, size_t errsz) {");
+                  L (1, "bnf_w w;");
+                  L (1, "memset (&w, 0, sizeof w);");
+                  L (1, "w.buf = buf;  w.cap = cap;");
+                  L (1, "(void)bnf_wput;");
+                  L (1, "if (!emit_rule_" & Nm & " (&w, in)) goto bad;");
+                  L (1, "if (nbits) *nbits = w.bit;");
+                  L (1, "if (buf && (w.bit + 7) / 8 > cap) {");
+                  L (2, "bnf_wfail (&w, """ & Nm & """, ""the buffer is too "
+                     & "small"");");
+                  L (2, "goto bad;");
+                  L (1, "}");
                   L (1, "return true;");
+                  L (0, "bad:");
+                  L (1, "if (nbits) *nbits = w.bit;");
+                  L (1, "if (err && errsz) snprintf (err, errsz, ""%s"", w.msg);");
+                  L (1, "return false;");
                   L (0, "}");
                end if;
             end if;

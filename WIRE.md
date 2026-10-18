@@ -66,9 +66,13 @@ one.  The tests are `tests/wire/mixed*.hbnf`.
 
 What is not built for it: the first rule must be a text rule (a grammar whose
 first rule is a bit rule is read as bits alone, and says so if it names a text
-rule); there is no writer for a mixed grammar; `%action` and `%emit` on a bit
-rule in one are refused; and only C has it.  A bit rule that holds a text rule by
-value are not built.
+rule); there is no writer for a whole mixed document (the text parser has no
+tree writer), only for each bit rule, `emit_bits_<rule>`, which runs the rule's
+`%emit` and writes a text token it holds but refuses a text rule that is not a
+token; and only C has it.  An `%action` on a bit rule runs after the parse, its
+`HBNF_FAIL` fails the parse, and its `HBNF_WARN` warnings are read with
+`hbnf_warnings ()` and `hbnf_warning (i)`.  A bit rule that holds a text rule by
+value is not built.
 
 A text element and a bit field may stand in the *same* rule
 (`req = "GET " len:8 payload:[len] %d13.10`).  The reader splits the rule into

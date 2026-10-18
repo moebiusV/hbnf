@@ -76,6 +76,7 @@ check mixed2 "" "" mixed2 -w
 check mixed3 "" "" mixed3 -w
 check mixed4 "" "" mixed4 -w
 check mixed5 "" "" mixed5 -w
+check mixed6 "" "" mixed6 -w
 check segwit
 check mnemonic -lcrypto openssl/sha.h
 

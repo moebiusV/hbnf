@@ -1,0 +1,12 @@
+; Writing a bit rule that a text rule holds: emit_bits_frame, with an %emit that
+; fills in the length, and a text token inside the frame.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc = "PKT:" frame ";"
+
+frame = len:8 body:[len] tag
+  %emit{ n->len = (unsigned) n->body.len; }
+
+tag = 1*ALPHA
