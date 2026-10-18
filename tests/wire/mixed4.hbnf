@@ -1,0 +1,7 @@
+; Text and bit fields in one rule: a request with a counted payload.  The reader
+; splits it into runs (`req_1` "GET ", `req_2` len and payload, `req_3` the
+; line end), each read by the one parser.
+prefix none
+whitespace none
+
+req = "GET " len:8 payload:[len] %d13.10

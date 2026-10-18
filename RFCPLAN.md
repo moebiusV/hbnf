@@ -1206,7 +1206,9 @@ should claim that before 10.
        writer, actions and emitters, the other backends, a bit rule holding a text
        rule by value, and `units` (still the way a phrase and its bits meet; it
        goes when the numbers of a text rule's words can feed a bit rule).
-       Stage 3 is the same sequence holding both.
+       Stage 3 (built, C): a rule holding both kinds is split into hidden
+       runs `<rule>_<n>`, one per run of bit fields or text (`tests/wire/mixed4`);
+       a group holding both is refused.
 
        **Acceptance tests (the user's, 2026-10-17):** a BIP-39 mnemonic and a
        wallet address, each both parsed and generated.  A mnemonic is words

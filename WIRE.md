@@ -68,7 +68,14 @@ What is not built for it: the first rule must be a text rule (a grammar whose
 first rule is a bit rule is read as bits alone, and says so if it names a text
 rule); there is no writer for a mixed grammar; `%action` and `%emit` on a bit
 rule in one are refused; and only C has it.  A bit rule that holds a text rule by
-value, and a text and a bit field in the *same* rule, are the next step (stage 3).
+value are not built.
+
+A text element and a bit field may stand in the *same* rule
+(`req = "GET " len:8 payload:[len] %d13.10`).  The reader splits the rule into
+runs, each run of bit fields and each run of text becoming a hidden rule
+`req_1`, `req_2`, `req_3`, and `req` a sequence naming them; the fields are
+reached through them (`out.req_2.len`).  A group that holds both kinds is
+refused, with a message saying to split it.
 
 ## Why these two characters
 

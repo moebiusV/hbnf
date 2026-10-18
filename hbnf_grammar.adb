@@ -2920,6 +2920,187 @@ package body HBNF_Grammar is
    --    and a range there is refused, since they would drop it.
    --  The checks look only at the rules the parser uses (Reachable), so a
    --  grammar can include an RFC's rules and replace the ones it needs.
+   --  A rule that holds text and bit fields in one sequence
+   --  (`req = "GET " len:8 payload:[len] %d13.10`) is read as runs: each run of
+   --  bit fields, and each run of text, becomes a hidden rule `<owner>_<n>` of
+   --  its own, and the owner becomes a sequence naming them, which is the form
+   --  the two kinds already call each other in.  A name that refers to a rule
+   --  belongs to the run before it.
+   procedure Split_Mixed (Rules : in out Rule_Vectors.Vector) is
+      type Run_Kind is (Neutral, Bit, Text);
+
+      function Has_Bit (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            if E.Kind = Bit_Field
+              or else (E.Kind = Group and then Has_Bit (E.Items))
+            then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Bit;
+
+      function Has_Text (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            case E.Kind is
+               when Literal | Char_Range | Negation =>
+                  return True;
+               when Name =>
+                  if Is_Core_Name (To_String (E.Name)) then
+                     return True;
+                  end if;
+               when Group =>
+                  if Has_Text (E.Items) then
+                     return True;
+                  end if;
+               when others =>
+                  null;
+            end case;
+         end loop;
+         return False;
+      end Has_Text;
+
+      function Kind_Of (E : Element_Access; Owner : String) return Run_Kind is
+      begin
+         case E.Kind is
+            when Bit_Field =>
+               return Bit;
+            when Literal | Char_Range | Negation =>
+               return Text;
+            when Name =>
+               return (if Is_Core_Name (To_String (E.Name)) then Text
+                       else Neutral);
+            when Group =>
+               if Has_Bit (E.Items) and then Has_Text (E.Items) then
+                  raise Parse_Error with
+                    "rule `" & Owner & "`: text and bit fields inside one "
+                    & "group are not read together yet; split the group into "
+                    & "rules of text and rules of bit fields";
+               end if;
+               return (if Has_Bit (E.Items) then Bit
+                       elsif Has_Text (E.Items) then Text else Neutral);
+            when others =>
+               return Neutral;
+         end case;
+      end Kind_Of;
+
+      Result : Rule_Vectors.Vector;
+   begin
+      for R of Rules loop
+         if R.Jet_Code /= Null_Unbounded_String
+           or else not (Has_Bit (R.Pattern) and then Has_Text (R.Pattern))
+         then
+            Result.Append (R);
+         else
+            declare
+               Owner       : constant String := To_String (R.Name);
+               P           : constant Element_Vectors.Vector := R.Pattern;
+               Hidden      : Rule_Vectors.Vector;
+               New_Pattern : Element_Vectors.Vector;
+               Count       : Natural := 0;
+
+               --  P (First .. Last) is one alternative.
+               procedure Branch (First, Last : Natural) is
+                  Kinds : array (First .. Last) of Run_Kind :=
+                    [others => Neutral];
+                  Prev  : Run_Kind := Neutral;
+                  Runs  : Natural := 0;
+                  Start : Natural := First;
+               begin
+                  for K in First .. Last loop
+                     Kinds (K) := Kind_Of (P (K), Owner);
+                  end loop;
+                  --  A name follows the run before it; one that opens the
+                  --  alternative takes the kind of the first element that has
+                  --  one.
+                  for K in First .. Last loop
+                     if Kinds (K) = Neutral then
+                        if Prev /= Neutral then
+                           Kinds (K) := Prev;
+                        else
+                           for J in K + 1 .. Last loop
+                              if Kinds (J) /= Neutral then
+                                 Kinds (K) := Kinds (J);
+                                 exit;
+                              end if;
+                           end loop;
+                        end if;
+                     end if;
+                     Prev := Kinds (K);
+                  end loop;
+                  for K in First .. Last loop
+                     if K = First or else Kinds (K) /= Kinds (K - 1) then
+                        Runs := Runs + 1;
+                     end if;
+                  end loop;
+                  if Runs <= 1 then
+                     for K in First .. Last loop
+                        New_Pattern.Append (P (K));
+                     end loop;
+                     return;
+                  end if;
+                  for K in First .. Last + 1 loop
+                     if K = Last + 1 or else (K > First
+                                              and then Kinds (K) /= Kinds (K - 1))
+                     then
+                        Count := Count + 1;
+                        declare
+                           H   : constant Unbounded_String :=
+                             To_Unbounded_String (Owner & "_" & Img (Count));
+                           Run : Element_Vectors.Vector;
+                        begin
+                           for J in Start .. K - 1 loop
+                              Run.Append (P (J));
+                           end loop;
+                           Hidden.Append
+                             (Rule'(Name             => H,
+                                    Pattern          => Run,
+                                    Leading_Comment  => Null_Unbounded_String,
+                                    Trailing_Comment => Null_Unbounded_String,
+                                    Jet_Code         => Null_Unbounded_String,
+                                    Action_Code      => Null_Unbounded_String,
+                                    Left_Bases       => 0,
+                                    Whitespace       => R.Whitespace));
+                           New_Pattern.Append
+                             (new Element'(Kind => Name, Min => 1, Max => 1,
+                                           Name => H, Fold => False));
+                        end;
+                        Start := K;
+                     end if;
+                  end loop;
+               end Branch;
+
+               First : Natural := 1;
+            begin
+               for K in 1 .. Natural (P.Length) + 1 loop
+                  if K > Natural (P.Length) or else P (K).Kind = Alt then
+                     Branch (First, K - 1);
+                     if K <= Natural (P.Length) then
+                        New_Pattern.Append (P (K));
+                     end if;
+                     First := K + 1;
+                  end if;
+               end loop;
+               Result.Append
+                 (Rule'(Name             => R.Name,
+                        Pattern          => New_Pattern,
+                        Leading_Comment  => R.Leading_Comment,
+                        Trailing_Comment => R.Trailing_Comment,
+                        Jet_Code         => R.Jet_Code,
+                        Action_Code      => R.Action_Code,
+                        Left_Bases       => R.Left_Bases,
+                        Whitespace       => R.Whitespace));
+               for H of Hidden loop
+                  Result.Append (H);
+               end loop;
+            end;
+         end if;
+      end loop;
+      Rules := Result;
+   end Split_Mixed;
+
    --  The rules that hold bit fields are not the text backends' business.  A
    --  rule is a bit rule when it holds a Bit_Field; those are set aside here, in
    --  the order written, before Finish's text analyses.  A rule that only names
@@ -5443,6 +5624,7 @@ package body HBNF_Grammar is
          <<Next_Item>>
       end loop;
       if File_Depth = 0 then
+         Split_Mixed (Rules);
          Split_Wire (Rules);
          Finish (Rules);
       end if;
@@ -5699,6 +5881,7 @@ package body HBNF_Grammar is
       Result := Override (Local, Included, First_Defined);
       if File_Depth = 1 then
          Apply_Actions (Result);
+         Split_Mixed (Result);
          Split_Wire (Result);
          Finish (Result);
       end if;
