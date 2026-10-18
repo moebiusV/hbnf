@@ -743,4 +743,15 @@ package body HBNF_Wire is
       end;
    end Check;
 
+   procedure Note_Shift (Rule : String; Bit : Natural) is
+   begin
+      if Shift_Note = Null_Unbounded_String then
+         Shift_Note := To_Unbounded_String
+           ("in `" & Rule & "` text follows fields that end at bit"
+            & Natural'Image (Bit) & " of an octet, so its octets are read "
+            & "shifted.  That is allowed, but it is most often a missing "
+            & "field or padding.");
+      end if;
+   end Note_Shift;
+
 end HBNF_Wire;

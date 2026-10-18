@@ -1134,6 +1134,45 @@ package body HBNF_Wire.C is
       for K in 1 .. Natural (G.Rules.Length) loop
          Define (K);
       end loop;
+      if Hosted then
+         --  Text that follows fields ending inside an octet.
+         for R of G.Rules loop
+            for A of R.Alts loop
+               declare
+                  Off : Integer := 0;       --  bits past an octet; -1 unknown
+               begin
+                  for It of A.Items loop
+                     case It.Kind is
+                        when S_Bits | S_Const =>
+                           if Off >= 0 then
+                              Off := (Off + It.Bits) mod 8;
+                           end if;
+                        when S_Octets | S_Rest | S_Assert =>
+                           null;
+                        when S_Ref =>
+                           if Find (G, To_String (It.Ref)) = 0 then
+                              if Off > 0 then
+                                 Note_Shift (To_String (R.Name), Off);
+                              end if;
+                           else
+                              declare
+                                 F : constant Integer :=
+                                   Fixed_Bits (G, G.Rules
+                                     (Find (G, To_String (It.Ref))).Alts
+                                       .First_Element.all);
+                              begin
+                                 Off := (if Off >= 0 and then F >= 0
+                                         then (Off + F) mod 8 else -1);
+                              end;
+                           end if;
+                        when others =>
+                           Off := -1;
+                     end case;
+                  end loop;
+               end;
+            end loop;
+         end loop;
+      end if;
       if Hosted and then Has_Actions then
          --  The text parser's bind walk (declared before these readers) calls
          --  the walk of each bit rule it holds.

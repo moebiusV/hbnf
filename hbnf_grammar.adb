@@ -3035,6 +3035,27 @@ package body HBNF_Grammar is
                         Runs := Runs + 1;
                      end if;
                   end loop;
+                  --  Fields that end inside an octet, then text.
+                  declare
+                     Off : Integer := 0;
+                  begin
+                     for K in First .. Last loop
+                        if Kinds (K) = Bit then
+                           if P (K).Kind = Bit_Field
+                             and then P (K).F_Kind in HBNF_Wire.S_Bits
+                                                    | HBNF_Wire.S_Const
+                             and then Off >= 0
+                           then
+                              Off := (Off + P (K).F_Bits) mod 8;
+                           elsif P (K).Kind /= Name then
+                              Off := -1;
+                           end if;
+                        elsif Kinds (K) = Text and then Off > 0 then
+                           HBNF_Wire.Note_Shift (Owner, Off);
+                           exit;
+                        end if;
+                     end loop;
+                  end;
                   if Runs <= 1 then
                      for K in First .. Last loop
                         New_Pattern.Append (P (K));

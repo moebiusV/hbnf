@@ -233,6 +233,11 @@ begin
               (To_String (Types), To_String (Code),
                Actions => (for some R of G.Rules =>
                              R.Action /= Null_Unbounded_String));
+            if HBNF_Wire.Shift_Note /= Null_Unbounded_String then
+               Ada.Text_IO.Put_Line
+                 (Ada.Text_IO.Standard_Error,
+                  "hbnf: note: " & To_String (HBNF_Wire.Shift_Note));
+            end if;
          end;
       end if;
    end;

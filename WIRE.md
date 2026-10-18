@@ -62,7 +62,10 @@ rules', so a call goes either way:
 `label` `abc`.  The text of a text rule is octets read as UTF-8, and an octet
 is eight bits from any bit: after a 3-bit field (`flag:3 label`) the text is
 read from bit 3, the generated reader working on a copy of the rest shifted to
-that bit.  The tests are `tests/wire/mixed*.hbnf`.
+that bit.  Because that is most often a missing field or padding, hbnf prints
+one note to standard error when it generates such a parser, naming the first
+rule where text follows fields that end inside an octet; it is only a note.
+The tests are `tests/wire/mixed*.hbnf`.
 
 What is not built for it: the first rule must be a text rule (a grammar whose
 first rule is a bit rule is read as bits alone, and says so if it names a text

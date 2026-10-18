@@ -33,6 +33,12 @@ package HBNF_Wire is
 
    use Ada.Strings.Unbounded;
 
+   --  A mixed grammar whose text starts inside an octet is allowed (an octet is
+   --  eight bits from any bit) and is most often a missing field, so the first
+   --  such place is noted, once, when the parser is generated.
+   Shift_Note : Unbounded_String;
+   procedure Note_Shift (Rule : String; Bit : Natural);
+
    Wire_Error : exception;
    --  The message is a complete, readable diagnostic: where, what is wrong, and
    --  what the author probably meant.
