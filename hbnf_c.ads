@@ -90,4 +90,11 @@ package HBNF_C is
    --  (RFCPLAN.md 7c), and the parser records which alternative it took.
    procedure Set_Writer (On : Boolean);
 
+   --  --ast: record which alternative each node took (`_alt`) and generate
+   --  the tables and the walker (node_walk, node_kids, node_dump, ...).
+   procedure Set_Ast (On : Boolean);
+
+   --  --ast-tools: also node_kids, node_dump, node_equal and dump_<root>.
+   procedure Set_Ast_Tools (On : Boolean);
+
 end HBNF_C;

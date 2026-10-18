@@ -1,0 +1,58 @@
+/* node_walk (n, kind, fn, ctx): fn on entering (enter=1) and leaving a node;
+   it answers WALK_CONTINUE, WALK_SKIP (no descent, no leave call) or WALK_STOP. */
+enum { WALK_CONTINUE, WALK_SKIP, WALK_STOP };
+typedef int (*walk_fn)(const void *node, node_kind_t kind, int enter, void *ctx);
+
+static const hbnf_b_t *hbnf_branch(const void *n, node_kind_t k) {
+    const hbnf_r_t *r = &hbnf_r[k];
+    unsigned a = 0;
+    if (r->alt != 0xFFFF) {
+        a = *(const unsigned short *)((const char *)n + r->alt);
+        if (a) a--;
+    }
+    return &hbnf_b[r->b0 + (a < r->nb ? a : 0)];
+}
+static const void *hbnf_first(const void *p, node_kind_t k) {
+    const hbnf_r_t *r = &hbnf_r[k];
+    return r->first ? r->first(p) : *(const void *const *)p;
+}
+static const void *hbnf_next(const void *e, node_kind_t k) {
+    const hbnf_r_t *r = &hbnf_r[k];
+    return r->next ? r->next(e) : *(const void *const *)((const char *)e + r->link);
+}
+static int node_walk(const void *n, node_kind_t k, walk_fn f, void *ctx) {
+    const hbnf_b_t *b;
+    unsigned i;
+    int s = f(n, k, 1, ctx);
+    if (s == WALK_STOP) return 0;
+    if (s == WALK_SKIP) return 1;
+    b = hbnf_branch(n, k);
+    for (i = 0; i < b->n; i++) {
+        const hbnf_m_t *m = &hbnf_m[b->first + i];
+        const char *p = (const char *)n + m->off;
+        if (m->type == HM_NODE) {
+            if (!node_walk(p, (node_kind_t)m->target, f, ctx)) return 0;
+        } else if (m->type == HM_PTR) {
+            const void *q = *(const void *const *)p;
+            if (q && !node_walk(q, (node_kind_t)m->target, f, ctx)) return 0;
+        } else if (m->type == HM_LIST) {
+            const void *e;
+            for (e = hbnf_first(p, (node_kind_t)m->target); e;
+                 e = hbnf_next(e, (node_kind_t)m->target))
+                if (!node_walk(e, (node_kind_t)m->target, f, ctx)) return 0;
+        }
+    }
+    return f(n, k, 0, ctx) != WALK_STOP;
+}
+
+static const char *node_kind_name(node_kind_t k) { return hbnf_r[k].name; }
+static int node_alt(const void *n, node_kind_t k) {
+    const hbnf_r_t *r = &hbnf_r[k];
+    return r->alt == 0xFFFF ? 0
+         : *(const unsigned short *)((const char *)n + r->alt);
+}
+static const char *node_alt_name(node_kind_t k, int alt) {
+    const hbnf_r_t *r = &hbnf_r[k];
+    return alt >= 1 && (unsigned)alt <= r->nb ? hbnf_b[r->b0 + alt - 1].name : NULL;
+}
+

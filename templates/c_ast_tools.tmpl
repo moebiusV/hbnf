@@ -1,0 +1,155 @@
+/* The members of a node, leaves too: name, type, value; an element of a list
+   has its place in index (else -1). */
+typedef enum { KID_NODE, KID_STR, KID_INT, KID_UINT, KID_BOOL, KID_ENUM } kid_type_t;
+typedef struct {
+    const char *name;
+    kid_type_t type;
+    int index;
+    const void *node;  node_kind_t kind;   /* KID_NODE */
+    const char *str;                       /* KID_STR; KID_ENUM: the literal */
+    long long i;                           /* KID_INT, KID_BOOL, KID_ENUM */
+    unsigned long long u;                  /* KID_UINT */
+} hbnf_kid_t;
+typedef void (*kid_fn)(const hbnf_kid_t *k, void *ctx);
+
+static long long hbnf_rds(const void *p, unsigned size) {
+    switch (size) {
+    case 1: return *(const signed char *)p;
+    case 2: return *(const short *)p;
+    case 4: return *(const int *)p;
+    default: return *(const long long *)p;
+    }
+}
+static unsigned long long hbnf_rdu(const void *p, unsigned size) {
+    switch (size) {
+    case 1: return *(const unsigned char *)p;
+    case 2: return *(const unsigned short *)p;
+    case 4: return *(const unsigned *)p;
+    default: return *(const unsigned long long *)p;
+    }
+}
+static void node_kids(const void *n, node_kind_t k, kid_fn f, void *ctx) {
+    const hbnf_b_t *b = hbnf_branch(n, k);
+    unsigned i;
+    for (i = 0; i < b->n; i++) {
+        const hbnf_m_t *m = &hbnf_m[b->first + i];
+        const char *p = (const char *)n + m->off;
+        hbnf_kid_t d;
+        memset(&d, 0, sizeof d);
+        d.name = m->name;  d.index = -1;
+        switch (m->type) {
+        case HM_NODE:
+            d.type = KID_NODE;  d.node = p;  d.kind = (node_kind_t)m->target;
+            f(&d, ctx);
+            break;
+        case HM_PTR:
+            d.type = KID_NODE;  d.kind = (node_kind_t)m->target;
+            d.node = *(const void *const *)p;
+            if (d.node) f(&d, ctx);
+            break;
+        case HM_LIST: {
+            const void *e;
+            int j = 0;
+            d.type = KID_NODE;  d.kind = (node_kind_t)m->target;
+            for (e = hbnf_first(p, d.kind); e; e = hbnf_next(e, d.kind), j++) {
+                d.node = e;  d.index = j;
+                f(&d, ctx);
+            }
+            break;
+        }
+        case HM_STR:
+            d.type = KID_STR;  d.str = *(const char *const *)p;
+            f(&d, ctx);
+            break;
+        case HM_INT:
+            d.type = KID_INT;  d.i = hbnf_rds(p, m->size);
+            f(&d, ctx);
+            break;
+        case HM_UINT:
+            d.type = KID_UINT;  d.u = hbnf_rdu(p, m->size);
+            f(&d, ctx);
+            break;
+        case HM_BOOL:
+            d.type = KID_BOOL;  d.i = hbnf_rdu(p, m->size) != 0;
+            f(&d, ctx);
+            break;
+        case HM_ENUM: {
+            unsigned j;
+            d.type = KID_ENUM;  d.i = hbnf_rds(p, m->size);
+            for (j = 0; j < hbnf_e[m->target].n; j++)
+                if (hbnf_ev[hbnf_e[m->target].first + j].v == d.i)
+                    d.str = hbnf_ev[hbnf_e[m->target].first + j].name;
+            f(&d, ctx);
+            break;
+        }
+        }
+    }
+}
+
+/* A tree as an S-expression: (rule[alternative] member=value ...), a member
+   that is a list element as member[i]=(...).  node_dump returns the length it
+   needs and writes up to cap - 1 bytes and a NUL, as snprintf does. */
+typedef struct { char *buf; size_t cap, len; } hbnf_dump_t;
+static void hbnf_dput(hbnf_dump_t *d, const char *s, size_t n) {
+    size_t i;
+    for (i = 0; i < n; i++)
+        if (d->buf && d->len + i + 1 < d->cap) d->buf[d->len + i] = s[i];
+    d->len += n;
+}
+static void hbnf_dstr(hbnf_dump_t *d, const char *s) { hbnf_dput(d, s, strlen(s)); }
+static void hbnf_ddump(hbnf_dump_t *d, const void *node, node_kind_t kind);
+static void hbnf_dkid(const hbnf_kid_t *k, void *ctx) {
+    hbnf_dump_t *d = (hbnf_dump_t *)ctx;
+    char t[48];
+    const char *s;
+    hbnf_dput(d, " ", 1);  hbnf_dstr(d, k->name);
+    if (k->index >= 0) { snprintf(t, sizeof t, "[%d]", k->index);  hbnf_dstr(d, t); }
+    hbnf_dput(d, "=", 1);
+    switch (k->type) {
+    case KID_NODE: hbnf_ddump(d, k->node, k->kind); break;
+    case KID_STR:
+        hbnf_dput(d, "\"", 1);
+        for (s = k->str; s && *s; s++) {
+            if (*s == '"' || *s == '\\') hbnf_dput(d, "\\", 1);
+            if (*s == '\n') { hbnf_dput(d, "\\n", 2); continue; }
+            hbnf_dput(d, s, 1);
+        }
+        hbnf_dput(d, "\"", 1);
+        break;
+    case KID_INT: snprintf(t, sizeof t, "%lld", k->i);  hbnf_dstr(d, t); break;
+    case KID_UINT: snprintf(t, sizeof t, "%llu", k->u);  hbnf_dstr(d, t); break;
+    case KID_BOOL: hbnf_dstr(d, k->i ? "true" : "false"); break;
+    case KID_ENUM: hbnf_dstr(d, k->str ? k->str : "?"); break;
+    }
+}
+static void hbnf_ddump(hbnf_dump_t *d, const void *node, node_kind_t kind) {
+    int alt = node_alt(node, kind);
+    const char *an = alt ? node_alt_name(kind, alt) : NULL;
+    hbnf_dput(d, "(", 1);  hbnf_dstr(d, node_kind_name(kind));
+    if (an) { hbnf_dput(d, "[", 1);  hbnf_dstr(d, an);  hbnf_dput(d, "]", 1); }
+    node_kids(node, kind, hbnf_dkid, d);
+    hbnf_dput(d, ")", 1);
+}
+static size_t node_dump(const void *node, node_kind_t kind, char *buf, size_t cap) {
+    hbnf_dump_t d;
+    d.buf = buf;  d.cap = cap;  d.len = 0;
+    hbnf_ddump(&d, node, kind);
+    if (buf && cap) buf[d.len < cap ? d.len : cap - 1] = 0;
+    return d.len;
+}
+/* Two trees are equal when their dumps are: same rules, alternatives, members
+   and values. */
+static int node_equal(const void *a, node_kind_t ka, const void *b, node_kind_t kb) {
+    size_t na, nb;
+    char *x, *y;
+    int same;
+    if (ka != kb) return 0;
+    na = node_dump(a, ka, NULL, 0);  nb = node_dump(b, kb, NULL, 0);
+    if (na != nb) return 0;
+    x = (char *)malloc(na + 1);  y = (char *)malloc(nb + 1);
+    if (!x || !y) { free(x);  free(y);  return 0; }
+    node_dump(a, ka, x, na + 1);  node_dump(b, kb, y, nb + 1);
+    same = memcmp(x, y, na) == 0;
+    free(x);  free(y);
+    return same;
+}

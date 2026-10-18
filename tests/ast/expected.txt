@@ -1,25 +1,33 @@
 == all
 config
-config > entry[set].entry
-config > entry[set].entry > value[int].value
+  entry[set]
+    value[int]
 config
-config > entry[run].entry
+  entry[run]
 config
-config > entry[block].entry
-config > entry[block].entry > block.block
-config > entry[block].entry > block.block > block_1.block_1
-config > entry[block].entry > block.block > block_1.block_1 > entry[set].entry
-config > entry[block].entry > block.block > block_1.block_1 > entry[set].entry > value[str].value
-config > entry[block].entry > block.block > block_1.block_1
-config > entry[block].entry > block.block > block_1.block_1 > entry[set].entry
-config > entry[block].entry > block.block > block_1.block_1 > entry[set].entry > value[name].value
+  entry[block]
+    block
+      block_1
+        entry[set]
+          value[str]
+      block_1
+        entry[set]
+          value[name]
 == blocks skipped
 config
-config > entry[set].entry
-config > entry[set].entry > value[int].value
+  entry[set]
+    value[int]
 config
-config > entry[run].entry
+  entry[run]
 config
-config > entry[block].entry
-config > entry[block].entry > block.block
+  entry[block]
+    block
+== dump
+(config (config entry=(entry[set] name="a" value=(value[int] int_=1))) (config entry=(entry[run] name="b")) (config entry=(entry[block] block=(block block_1[0]=(block_1 entry=(entry[set] name="c" value=(value[str] str="x"))) block_1[1]=(block_1 entry=(entry[set] name="d" value=(value[name] name="e")))))))
+== children of the first entry
+  entry node entry
+== equal
+same text: 1
+other text: 0
+second entries of both: 1
 == stop at the second entry: walk returned false

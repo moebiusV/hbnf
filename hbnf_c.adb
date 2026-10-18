@@ -437,9 +437,10 @@ package body HBNF_C is
 
    Hosted_Actions : Boolean := False;
    Writer_On      : Boolean := False;
-   --  Which alternative a node took is always recorded (`_alt`): a consumer
-   --  can always know how the parse got to a node.
-   Ast_On         : Boolean := True;
+   --  --ast: which alternative a node took is recorded (`_alt`), and the tables
+   --  and walker of Emit_Ast are generated.  Off, the output is as it was.
+   Ast_On         : Boolean := False;
+   Ast_Tools_On   : Boolean := False;
 
    procedure Set_Writer (On : Boolean) is
    begin
@@ -448,6 +449,19 @@ package body HBNF_C is
          Ast_On := True;
       end if;
    end Set_Writer;
+
+   procedure Set_Ast (On : Boolean) is
+   begin
+      Ast_On := On;
+   end Set_Ast;
+
+   procedure Set_Ast_Tools (On : Boolean) is
+   begin
+      Ast_Tools_On := On;
+      if On then
+         Ast_On := True;
+      end if;
+   end Set_Ast_Tools;
 
    procedure Set_Hosted (Types, Code : String; Actions : Boolean := False) is
    begin
@@ -998,19 +1012,22 @@ package body HBNF_C is
       return Res;
    end Alt_Labels;
 
-   --  The constants of <rule>_alt_t for those alternatives: <RULE>_ALT_<LABEL>,
-   --  with a prefix (BASE_ and TAIL_ for a left-recursive list, whose first
-   --  entry and later entries are read by different alternatives).
+   --  The numbers of those alternatives, from Start: what `_alt` holds (the
+   --  names are in the tables, node_alt_name).
    function Alt_Idents
-     (CN : String; Els : Element_Vectors.Vector; Prefix : String := "")
+     (CN : String; Els : Element_Vectors.Vector; Start : Positive := 1)
       return String_Vectors.Vector
    is
-      Labs : constant String_Vectors.Vector := Alt_Labels (Els);
-      Res  : String_Vectors.Vector;
+      pragma Unreferenced (CN);
+      Res : String_Vectors.Vector;
+      N   : constant Natural := Natural (Alt_Labels (Els).Length);
    begin
-      for L of Labs loop
-         Res.Append (To_Unbounded_String
-           (C_Ident (CN) & "_ALT_" & Prefix & C_Ident (To_String (L))));
+      for K in 1 .. N loop
+         declare
+            S : constant String := Natural'Image (Start + K - 1);
+         begin
+            Res.Append (To_Unbounded_String (S (S'First + 1 .. S'Last)));
+         end;
       end loop;
       return Res;
    end Alt_Idents;
@@ -1024,8 +1041,10 @@ package body HBNF_C is
       Res : String_Vectors.Vector;
    begin
       if Is_List and then R.Left_Bases > 0 then
-         Res := Alt_Idents (CN, Base_Branches (R), "BASE_");
-         for X of Alt_Idents (CN, Tail_Branches (R), "TAIL_") loop
+         Res := Alt_Idents (CN, Base_Branches (R));
+         for X of Alt_Idents (CN, Tail_Branches (R),
+                              Natural (Res.Length) + 1)
+         loop
             Res.Append (X);
          end loop;
       elsif Is_List and then Natural (P.Length) = 1
@@ -1041,21 +1060,6 @@ package body HBNF_C is
       return Res;
    end Rule_Alts;
 
-   --  Their declaration: constants from 1 (0 is "none recorded").
-   function Alt_Enum (Pfx_CN : String; Alts : String_Vectors.Vector)
-      return String
-   is
-      T : U;
-   begin
-      Append (T, "typedef enum {" & ASCII.LF);
-      for I in 1 .. Natural (Alts.Length) loop
-         Append (T, "    " & To_String (Alts (I))
-           & (if I = 1 then " = 1" else "")
-           & (if I < Natural (Alts.Length) then "," else "") & ASCII.LF);
-      end loop;
-      Append (T, "} " & Pfx_CN & "_alt_t;" & ASCII.LF);
-      return To_String (T);
-   end Alt_Enum;
 
    --  The fields the C backend must emit indirectly, one per cycle in the
    --  by-value graph, chosen by the one detector in HBNF_Compilable.  Emit
@@ -1760,9 +1764,6 @@ package body HBNF_C is
                if not Info.Tags.Is_Empty then
                   Append (Buf, Kind_Enum (CN, Info.Tags));
                end if;
-               if Ast_On and then not Rule_Alts (R, False).Is_Empty then
-                  Append (Buf, Alt_Enum (Pfx & CN, Rule_Alts (R, False)));
-               end if;
                declare
                   Pre   : U;
                   Items : U;
@@ -1778,7 +1779,7 @@ package body HBNF_C is
                      Append (Pre, LF);
                   end if;
                   if Ast_On and then not Rule_Alts (R, False).Is_Empty then
-                     Append (Pre, "    " & Pfx & CN & "_alt_t _alt;   /* the "
+                     Append (Pre, "    " & "unsigned short _alt;   /* the "
                        & "alternative taken (--ast) */");
                      Append (Pre, LF);
                   end if;
@@ -1804,9 +1805,6 @@ package body HBNF_C is
                if not Info.Tags.Is_Empty then
                   Append (Buf, Kind_Enum (CN, Info.Tags, R.Left_Bases > 0));
                end if;
-               if Ast_On and then not Rule_Alts (R, True).Is_Empty then
-                  Append (Buf, Alt_Enum (Pfx & CN, Rule_Alts (R, True)));
-               end if;
                declare
                   Pre   : U;
                   Items : U;
@@ -1825,7 +1823,7 @@ package body HBNF_C is
                     (1 => H ("entry", L_Entry (Pfx & C_Tag (NM))))));
                   Append (Items, LF);
                   if Ast_On and then not Rule_Alts (R, True).Is_Empty then
-                     Append (Items, "    " & Pfx & CN & "_alt_t _alt;   /* the "
+                     Append (Items, "    " & "unsigned short _alt;   /* the "
                        & "alternative taken (--ast) */");
                      Append (Items, LF);
                   end if;
@@ -2232,14 +2230,26 @@ package body HBNF_C is
       end Emit_Bind;
 
 
-      --  Emit walk_<rule>: a walk of the tree with a callback that is told how
-      --  the walk got to each node (the chain of nodes above it, the field it
-      --  came by, the alternative each took).  The callback is called when a
-      --  node is entered and again when it is left; it answers
-      --  WALK_CONTINUE, WALK_SKIP (do not go into this node; no leave call) or
-      --  WALK_STOP (end the walk).  Only the members of the alternative a node
-      --  took are walked.  Also node_kind_name, node_alt, node_alt_name.
-      procedure Emit_Walk_Cb (Buf : in out U) is
+      --  Emit the AST support (--ast): tables describing the tree, and one
+      --  small shared walker over them.  The tables cost a few bytes a member
+      --  (a row of macros each), the walker a fixed ~2 KB of source, so the
+      --  cost does not grow with a rule of code per rule.  node_walk (enter,
+      --  leave, skip, stop), node_kids (the members of a node, leaves too),
+      --  node_kind_name, node_alt, node_alt_name, node_dump and node_equal
+      --  work on any node of any grammar.
+      procedure Emit_Ast (Buf : in out U) is
+
+         Rows, Branch_Rows, Rule_Rows, Enum_Rows, Enum_Heads : U;
+         N_Mem : Natural := 1;            --  row 0 is a placeholder
+         N_Br, N_Ev, N_En : Natural := 0;
+         Used : U;                       --  the macros the rows use (HN, HS, ...)
+         --  The grammar's own list container (listops): the walker reads its
+         --  lists through two small functions per list rule, not offsets.
+         Own_Lists : constant Boolean :=
+           HBNF_Grammar.List_Override ("first") /= ""
+           or else HBNF_Grammar.List_Override ("next") /= "";
+         Node_Of : array (1 .. N) of Natural := [others => 0];
+         Enum_Of : array (1 .. N) of Natural := [others => 0];
 
          function Ref_Kind (Nm : String) return Class_Kind is
             J : constant Natural := Find (Alias_Target (Rules, Nm));
@@ -2250,7 +2260,12 @@ package body HBNF_C is
             return Infos (J).Kind;
          end Ref_Kind;
 
-         --  The members the elements First .. Last of Els name.
+         function Img (X : Natural) return String is
+            S : constant String := Natural'Image (X);
+         begin
+            return S (S'First + 1 .. S'Last);
+         end Img;
+
          function Members_Of
            (Els : Element_Vectors.Vector; First, Last : Natural)
             return Member_Vectors.Vector
@@ -2267,286 +2282,302 @@ package body HBNF_C is
             return Ms;
          end Members_Of;
 
-         procedure Child (Idx : Natural; Nm : String;
-                          Buf : in out U; Ind : String)
-         is
-            F : constant String := C_Field (Nm);
-            T : constant String := Alias_Target (Rules, Nm);
-            Ref : constant String :=
-              (if Ref_Kind (Nm) = Struct and then Is_Back (Idx, Nm)
-               then "n->" & F else "&n->" & F);
+         --  The row for member Nm of rule Idx, or "" for one the walker has
+         --  nothing to say about.
+         function Row (Idx : Natural; Nm : String) return String is
+            T  : constant String := C_Type_Name (To_String (Rules (Idx).Name));
+            F  : constant String := C_Field (Nm);
+            A  : constant String := Alias_Target (Rules, Nm);
+            J  : constant Natural := Find (A);
+            Pre : constant String := "(" & T & "," & F;
          begin
             case Ref_Kind (Nm) is
-               when Struct | List =>
-                  Append (Buf, Ind & "if (!walk_" & C_Name (T) & " (" & Ref
-                    & ", &here, """ & F & """, f, ctx)) return false;");
-                  Append (Buf, LF);
-               when others =>
-                  null;
+               when Struct =>
+                  return (if Is_Back (Idx, Nm) then "HP" else "HN") & Pre & ","
+                    & Img (Node_Of (J)) & ")";
+               when List =>
+                  return "HL" & Pre & "," & Img (Node_Of (J)) & ")";
+               when Enum =>
+                  return "HE" & Pre & "," & Img (Enum_Of (J)) & ")";
+               when Scalar =>
+                  declare
+                     Ty : constant String :=
+                       (if Scalar_C_Type (Nm) /= "" then Scalar_C_Type (Nm)
+                        elsif Resolve_Type (Nm) /= "" then Resolve_Type (Nm)
+                        elsif J /= 0 and then Infos (J).Kind = Scalar
+                        then To_String (Infos (J).Inline_Type) else "");
+                  begin
+                     if Ty = "const char *" then
+                        return "HS" & Pre & ")";
+                     elsif Ty = "bool" then
+                        return "HB" & Pre & ")";
+                     elsif Ty = "long long" or else (Ty'Length > 3
+                             and then Ty (Ty'First .. Ty'First + 2) = "int")
+                     then
+                        return "HI" & Pre & ")";
+                     elsif Ty'Length > 4
+                       and then Ty (Ty'First .. Ty'First + 3) = "uint"
+                     then
+                        return "HU" & Pre & ")";
+                     end if;
+                     return "";
+                  end;
             end case;
-         end Child;
+         end Row;
 
-         procedure Children (Idx : Natural; Ms : Member_Vectors.Vector;
-                             Buf : in out U; Ind : String) is
+         --  One branch: its members, in the tables.
+         procedure Branch (Idx : Natural; Ms : Member_Vectors.Vector;
+                           Label : String) is
+            First : constant Natural := N_Mem;
          begin
             for M of Ms loop
-               Child (Idx, To_String (M.Name), Buf, Ind);
+               declare
+                  R : constant String := Row (Idx, To_String (M.Name));
+               begin
+                  if R /= "" then
+                     if Index (Used, R (R'First .. R'First + 1)) = 0 then
+                        Append (Used, R (R'First .. R'First + 1) & " ");
+                     end if;
+                     Append (Rows, R & "," & LF);
+                     N_Mem := N_Mem + 1;
+                  end if;
+               end;
             end loop;
-         end Children;
+            Append (Branch_Rows, "{" & Img (First) & "," & Img (N_Mem - First)
+              & ",""" & C_Escape (Label) & """}," & LF);
+            N_Br := N_Br + 1;
+         end Branch;
 
-         --  The children of a flat list of branches: one set, or a switch on
-         --  the alternative the node took.
-         procedure Branch_Children
-           (Idx : Natural; Els : Element_Vectors.Vector;
-            Idents : String_Vectors.Vector; Buf : in out U; Ind : String)
-         is
-            Last  : constant Natural := Natural (Els.Length);
-            St    : Natural := 1;
-            Br    : Natural := 0;
-            Multi : constant Boolean := (for some X of Els => X.Kind = Alt)
-              and then Natural (Idents.Length) = Natural (Alt_Labels (Els).Length);
+         --  The branches of a flat list of elements, one Branch each.
+         procedure Branches (Idx : Natural; Els : Element_Vectors.Vector) is
+            Last   : constant Natural := Natural (Els.Length);
+            Labels : constant String_Vectors.Vector := Alt_Labels (Els);
+            St     : Natural := 1;
+            Br     : Natural := 0;
          begin
-            if not Multi then
-               Children (Idx, Members_Of (Els, 1, Last), Buf, Ind);
-               return;
-            end if;
-            Append (Buf, Ind & "switch (n->_alt) {");
-            Append (Buf, LF);
             for K in 1 .. Last + 1 loop
                if K > Last or else Els (K).Kind = Alt then
                   Br := Br + 1;
-                  Append (Buf, Ind & "case " & To_String (Idents (Br)) & ":");
-                  Append (Buf, LF);
-                  Children (Idx, Members_Of (Els, St, K - 1), Buf,
-                            Ind & "    ");
-                  Append (Buf, Ind & "    break;");
-                  Append (Buf, LF);
+                  Branch (Idx, Members_Of (Els, St, K - 1),
+                          To_String (Labels (Br)));
                   St := K + 1;
                end if;
             end loop;
-            Append (Buf, Ind & "default: break;");
-            Append (Buf, LF);
-            Append (Buf, Ind & "}");
-            Append (Buf, LF);
-         end Branch_Children;
-
-         procedure Define (Idx : Natural; Buf : in out U) is
-            R    : constant Rule := Rules (Idx);
-            CN   : constant String := C_Name (To_String (R.Name));
-            TN   : constant String := C_Type_Name (To_String (R.Name));
-            Info : constant Rule_Info := Infos (Idx);
-            Alts : constant String_Vectors.Vector := Rule_Alts (R, Info.Kind = List);
-            Alt_Expr : constant String :=
-              (if Alts.Is_Empty then "0" else "(int)n->_alt");
-
-            procedure Frame (Ind : String) is
-            begin
-               Append (Buf, Ind & "hbnf_frame_t here;");
-               Append (Buf, LF);
-               Append (Buf, Ind & "here.up = up;  here.node = n;  here.kind = "
-                 & "NODE_" & C_Ident (CN) & ";  here.field = field;  "
-                 & "here.alt = " & Alt_Expr & ";");
-               Append (Buf, LF);
-            end Frame;
-
-            procedure Enter_Leave (Body_Kind : String; Ind : String) is
-            begin
-               Append (Buf, Ind & "r = f (&here, 1, ctx);");
-               Append (Buf, LF);
-               Append (Buf, Ind & "if (r == WALK_STOP) return false;");
-               Append (Buf, LF);
-               Append (Buf, Ind & "if (r == WALK_CONTINUE) {");
-               Append (Buf, LF);
-               if Body_Kind = "struct" then
-                  if Alts.Is_Empty then
-                     Children (Idx, Info.Members, Buf, Ind & "    ");
-                  else
-                     Branch_Children (Idx, R.Pattern, Alts, Buf, Ind & "    ");
-                  end if;
-               end if;
-               null;
-            end Enter_Leave;
-         begin
-            if Info.Kind = Struct then
-               Append (Buf, "static bool walk_" & CN & " (const " & TN
-                 & " *n, const hbnf_frame_t *up, const char *field, "
-                 & "walk_fn f, void *ctx) {");
-               Append (Buf, LF);
-               Append (Buf, "    walk_result_t r;");
-               Append (Buf, LF);
-               Append (Buf, "    if (!n) return true;");
-               Append (Buf, LF);
-               Frame ("    ");
-               Enter_Leave ("struct", "    ");
-               Append (Buf, "        if (f (&here, 0, ctx) == WALK_STOP) "
-                 & "return false;");
-               Append (Buf, LF);
-               Append (Buf, "    }");
-               Append (Buf, LF);
-               Append (Buf, "    return true;");
-               Append (Buf, LF);
-               Append (Buf, "}");
-               Append (Buf, LF);
-            else
-               Append (Buf, "static bool walk_" & CN & " (const struct " & Pfx
-                 & CN & "_list *head, const hbnf_frame_t *up, "
-                 & "const char *field, walk_fn f, void *ctx) {");
-               Append (Buf, LF);
-               Append (Buf, "    const " & TN & " *n;");
-               Append (Buf, LF);
-               Append (Buf, "    walk_result_t r;");
-               Append (Buf, LF);
-               Append (Buf, "    " & L_Foreach ("n", "head") & " {");
-               Append (Buf, LF);
-               Frame ("        ");
-               Append (Buf, "        r = f (&here, 1, ctx);");
-               Append (Buf, LF);
-               Append (Buf, "        if (r == WALK_STOP) return false;");
-               Append (Buf, LF);
-               Append (Buf, "        if (r == WALK_CONTINUE) {");
-               Append (Buf, LF);
-               if R.Left_Bases > 0 then
-                  Append (Buf, "            if (n == " & L_First ("head")
-                    & ") {");
-                  Append (Buf, LF);
-                  Branch_Children (Idx, Base_Branches (R),
-                                   Alt_Idents (CN, Base_Branches (R), "BASE_"),
-                                   Buf, "                ");
-                  Append (Buf, "            } else {");
-                  Append (Buf, LF);
-                  Branch_Children (Idx, Tail_Branches (R),
-                                   Alt_Idents (CN, Tail_Branches (R), "TAIL_"),
-                                   Buf, "                ");
-                  Append (Buf, "            }");
-                  Append (Buf, LF);
-               elsif R.Pattern (1).Kind = Group then
-                  Branch_Children (Idx, R.Pattern (1).Items, Alts, Buf,
-                                   "            ");
-               elsif Info.Elem_Name /= Null_Unbounded_String then
-                  Child (Idx, To_String (Info.Elem_Name), Buf, "            ");
-               end if;
-               Append (Buf, "            if (f (&here, 0, ctx) == WALK_STOP) "
-                 & "return false;");
-               Append (Buf, LF);
-               Append (Buf, "        }");
-               Append (Buf, LF);
-               Append (Buf, "    }");
-               Append (Buf, LF);
-               Append (Buf, "    return true;");
-               Append (Buf, LF);
-               Append (Buf, "}");
-               Append (Buf, LF);
-            end if;
-         end Define;
+         end Branches;
 
       begin
-         Append (Buf, "/* ---- walk (with the path to each node) ---- */");
-         Append (Buf, LF);
-         Append (Buf,
-           "typedef enum { WALK_CONTINUE, WALK_SKIP, WALK_STOP } "
-           & "walk_result_t;" & LF
-           & "/* How the walk got to a node: the node, its rule, the field of"
-           & " the node above it that it came by (NULL at the top), the"
-           & " alternative it took (0: it has none), and the frame above."
-           & " Frames live on the stack for the length of the call. */" & LF
-           & "typedef struct hbnf_frame {" & LF
-           & "    const struct hbnf_frame *up;" & LF
-           & "    const void *node;" & LF
-           & "    node_kind_t kind;" & LF
-           & "    const char *field;" & LF
-           & "    int alt;" & LF
-           & "} hbnf_frame_t;" & LF
-           & "/* Called on entering a node (enter = 1) and on leaving it (0)."
-           & " WALK_SKIP on entering means: do not go into it (no leave call)."
-           & " WALK_STOP ends the walk. */" & LF
-           & "typedef walk_result_t (*walk_fn)(const hbnf_frame_t *at, int enter,"
-           & " void *ctx);" & LF);
-         for I in 1 .. N loop
-            declare
-               CN : constant String := C_Name (To_String (Rules (I).Name));
-               TN : constant String := C_Type_Name (To_String (Rules (I).Name));
-            begin
-               if Infos (I).Kind = Struct then
-                  Append (Buf, "static bool walk_" & CN & " (const " & TN
-                    & " *, const hbnf_frame_t *, const char *, walk_fn, "
-                    & "void *);" & LF);
-               elsif Infos (I).Kind = List then
-                  Append (Buf, "static bool walk_" & CN & " (const struct "
-                    & Pfx & CN & "_list *, const hbnf_frame_t *, const char *,"
-                    & " walk_fn, void *);" & LF);
+         declare
+            Cn : Natural := 0;
+            Ce : Natural := 0;
+         begin
+            for I in 1 .. N loop
+               if Infos (I).Kind in Struct | List then
+                  Node_Of (I) := Cn;
+                  Cn := Cn + 1;
+               elsif Infos (I).Kind = Enum then
+                  Enum_Of (I) := Ce;
+                  Ce := Ce + 1;
                end if;
-            end;
-         end loop;
+            end loop;
+         end;
+         --  Enums: their values and spellings.
          for I in 1 .. N loop
-            if Infos (I).Kind in Struct | List then
-               Define (I, Buf);
-            end if;
-         end loop;
-         --  Names, for tools that do not know the grammar.
-         Append (Buf, "static const char *node_kind_name (node_kind_t kind) {"
-           & LF & "    switch (kind) {" & LF);
-         for I in 1 .. N loop
-            if Infos (I).Kind in Struct | List then
-               Append (Buf, "    case NODE_"
-                 & C_Ident (C_Name (To_String (Rules (I).Name))) & ": return """
-                 & To_String (Rules (I).Name) & """;" & LF);
-            end if;
-         end loop;
-         Append (Buf, "    default: return NULL;" & LF & "    }" & LF & "}" & LF);
-         Append (Buf, "/* The alternative a node took, from 1; 0 if its rule has"
-           & " none. */" & LF
-           & "static int node_alt (const void *node, node_kind_t kind) {" & LF
-           & "    switch (kind) {" & LF);
-         for I in 1 .. N loop
-            if Infos (I).Kind in Struct | List
-              and then not Rule_Alts (Rules (I), Infos (I).Kind = List).Is_Empty
-            then
-               Append (Buf, "    case NODE_"
-                 & C_Ident (C_Name (To_String (Rules (I).Name)))
-                 & ": return (int)((const "
-                 & C_Type_Name (To_String (Rules (I).Name))
-                 & " *)node)->_alt;" & LF);
-            end if;
-         end loop;
-         Append (Buf, "    default: return 0;" & LF & "    }" & LF & "}" & LF);
-         Append (Buf, "static const char *node_alt_name (node_kind_t kind, "
-           & "int alt) {" & LF & "    (void)alt;" & LF
-           & "    switch (kind) {" & LF);
-         for I in 1 .. N loop
-            if Infos (I).Kind in Struct | List
-              and then not Rule_Alts (Rules (I), Infos (I).Kind = List).Is_Empty
-            then
+            if Infos (I).Kind = Enum then
                declare
-                  R    : constant Rule := Rules (I);
-                  CN   : constant String := C_Name (To_String (R.Name));
-                  Ids  : constant String_Vectors.Vector :=
-                    Rule_Alts (R, Infos (I).Kind = List);
-                  Labs : String_Vectors.Vector;
+                  NM    : constant String := To_String (Rules (I).Name);
+                  Names : constant String_Vectors.Vector :=
+                    Enum_Names (Infos (I).Literals);
                begin
-                  if Infos (I).Kind = List and then R.Left_Bases > 0 then
-                     Labs := Alt_Labels (Base_Branches (R));
-                     for X of Alt_Labels (Tail_Branches (R)) loop
-                        Labs.Append (X);
-                     end loop;
-                  elsif Infos (I).Kind = List then
-                     Labs := Alt_Labels (R.Pattern (1).Items);
-                  else
-                     Labs := Alt_Labels (R.Pattern);
-                  end if;
-                  Append (Buf, "    case NODE_" & C_Ident (CN)
-                    & ": switch (alt) {" & LF);
-                  for K in 1 .. Natural (Ids.Length) loop
-                     Append (Buf, "        case " & To_String (Ids (K))
-                       & ": return """ & C_Escape (To_String (Labs (K)))
-                       & """;" & LF);
+                  Append (Enum_Heads, "{" & Img (N_Ev) & ","
+                    & Img (Natural (Infos (I).Literals.Length)) & "}," & LF);
+                  N_En := N_En + 1;
+                  for K in 1 .. Natural (Infos (I).Literals.Length) loop
+                     Append (Enum_Rows, "{(int)" & C_Ident (NM) & "_"
+                       & To_String (Names (K)) & ",""" 
+                       & C_Escape (To_String (Infos (I).Literals (K)))
+                       & """}," & LF);
+                     N_Ev := N_Ev + 1;
                   end loop;
-                  Append (Buf, "        default: return NULL;" & LF
-                    & "        }" & LF);
                end;
             end if;
          end loop;
-         Append (Buf, "    default: return NULL;" & LF & "    }" & LF & "}" & LF);
-      end Emit_Walk_Cb;
+         --  Rules: their branches and members.
+         for I in 1 .. N loop
+            if Infos (I).Kind in Struct | List then
+               declare
+                  R    : constant Rule := Rules (I);
+                  Info : constant Rule_Info := Infos (I);
+                  T    : constant String := C_Type_Name (To_String (R.Name));
+                  Alts : constant String_Vectors.Vector :=
+                    Rule_Alts (R, Info.Kind = List);
+                  B0   : constant Natural := N_Br;
+               begin
+                  if Info.Kind = Struct then
+                     if Alts.Is_Empty then
+                        Branch (I, Info.Members, To_String (R.Name));
+                     else
+                        Branches (I, R.Pattern);
+                     end if;
+                  elsif R.Left_Bases > 0 then
+                     Branches (I, Base_Branches (R));
+                     Branches (I, Tail_Branches (R));
+                  elsif R.Pattern (1).Kind = Group then
+                     if Alts.Is_Empty then
+                        Branch (I, Info.Elem_Members, To_String (R.Name));
+                     else
+                        Branches (I, R.Pattern (1).Items);
+                     end if;
+                  elsif Info.Elem_Name /= Null_Unbounded_String then
+                     declare
+                        One : Member_Vectors.Vector;
+                     begin
+                        One.Append (Member'(Name => Info.Elem_Name,
+                                            Is_List => False));
+                        Branch (I, One, To_String (R.Name));
+                     end;
+                  else
+                     Append (Rows, "HS(" & T & ",value)," & LF);
+                     N_Mem := N_Mem + 1;
+                     Append (Branch_Rows, "{" & Img (N_Mem - 1) & ",1,"""
+                       & C_Escape (To_String (R.Name)) & """}," & LF);
+                     N_Br := N_Br + 1;
+                  end if;
+                  Append (Rule_Rows, "{""" & C_Escape (To_String (R.Name))
+                    & """," & Img (B0) & "," & Img (N_Br - B0) & ","
+                    & (if Alts.Is_Empty then "0xFFFF"
+                       else "offsetof(" & T & ",_alt)") & ","
+                    & (if Info.Kind = List and then not Own_Lists
+                       then "offsetof(" & T & ",_link)" else "0") & ","
+                    & (if Info.Kind = List and then Own_Lists
+                       then "lf_" & C_Name (To_String (R.Name)) & ",ln_"
+                            & C_Name (To_String (R.Name))
+                       else "0,0") & "}," & LF);
+               end;
+            end if;
+         end loop;
+
+         Append (Buf, "/* ---- the tree, described: tables and one walker (--ast) ---- */"
+           & LF
+           & "enum { HM_NODE, HM_PTR, HM_LIST, HM_STR, HM_INT, HM_UINT, HM_BOOL, "
+           & "HM_ENUM };" & LF
+           & "typedef struct { const char *name; unsigned short off; "
+           & "unsigned char type, target, size; } hbnf_m_t;" & LF
+           & "typedef struct { unsigned short first, n; const char *name; } "
+           & "hbnf_b_t;" & LF
+           & "typedef struct { const char *name; unsigned short b0, nb, alt, "
+           & "link; const void *(*first)(const void *); "
+           & "const void *(*next)(const void *); } hbnf_r_t;" & LF
+           & "" );
+         declare
+            procedure Def (Id, Text : String) is
+            begin
+               if Index (Used, Id) /= 0 then
+                  Append (Buf, "#define " & Text & LF);
+               end if;
+            end Def;
+         begin
+            Def ("HN", "HN(T,f,g) {#f, offsetof(T,f), HM_NODE, g, 0}");
+            Def ("HP", "HP(T,f,g) {#f, offsetof(T,f), HM_PTR, g, 0}");
+            Def ("HL", "HL(T,f,g) {#f, offsetof(T,f), HM_LIST, g, 0}");
+            Def ("HS", "HS(T,f) {#f, offsetof(T,f), HM_STR, 0, 0}");
+            Def ("HI", "HI(T,f) {#f, offsetof(T,f), HM_INT, 0, sizeof (((T *)0)->f)}");
+            Def ("HU", "HU(T,f) {#f, offsetof(T,f), HM_UINT, 0, sizeof (((T *)0)->f)}");
+            Def ("HB", "HB(T,f) {#f, offsetof(T,f), HM_BOOL, 0, sizeof (((T *)0)->f)}");
+            Def ("HE", "HE(T,f,g) {#f, offsetof(T,f), HM_ENUM, g, sizeof (((T *)0)->f)}");
+         end;
+         Append (Buf, "static const hbnf_m_t hbnf_m[] = {" & LF
+           & "{0,0,0,0,0}," & LF & To_String (Rows) & "};" & LF);
+         Append (Buf, "static const hbnf_b_t hbnf_b[] = {" & LF
+           & To_String (Branch_Rows) & "};" & LF);
+         if Own_Lists then
+            for I in 1 .. N loop
+               if Infos (I).Kind = List then
+                  declare
+                     CN : constant String := C_Name (To_String (Rules (I).Name));
+                     TN : constant String :=
+                       C_Type_Name (To_String (Rules (I).Name));
+                  begin
+                     Append (Buf, "static const void *lf_" & CN
+                       & " (const void *h) { return " & L_First ("((const struct "
+                       & Pfx & CN & "_list *)h)") & "; }" & LF
+                       & "static const void *ln_" & CN
+                       & " (const void *e) { return " & L_Next ("((const " & TN
+                       & " *)e)") & "; }" & LF);
+                  end;
+               end if;
+            end loop;
+         end if;
+         Append (Buf, "static const hbnf_r_t hbnf_r[] = {" & LF
+           & To_String (Rule_Rows) & "};" & LF);
+         if Ast_Tools_On then
+            Append (Buf, "typedef struct { int v; const char *name; } hbnf_ev_t;"
+              & LF
+              & "typedef struct { unsigned short first, n; } hbnf_e_t;" & LF
+              & "static const hbnf_ev_t hbnf_ev[] = {" & LF
+              & (if N_En = 0 then "{0,0}," & LF else To_String (Enum_Rows))
+              & "};" & LF
+              & "static const hbnf_e_t hbnf_e[] = {" & LF
+              & (if N_En = 0 then "{0,0}," & LF else To_String (Enum_Heads))
+              & "};" & LF);
+         end if;
+         declare
+            All_Ids : constant String := "HNHPHLHSHIHUHBHE";
+         begin
+            for K in 0 .. 7 loop
+               if Index (Used, All_Ids (1 + 2 * K .. 2 + 2 * K)) /= 0 then
+                  Append (Buf, "#undef " & All_Ids (1 + 2 * K .. 2 + 2 * K)
+                    & LF);
+               end if;
+            end loop;
+         end;
+         Append (Buf, Mustache.Get ("c_ast"));
+         Append (Buf, LF);
+         if Ast_Tools_On then
+            Append (Buf, Mustache.Get ("c_ast_tools"));
+            Append (Buf, LF);
+         end if;
+         --  The whole tree: the root rule's walk and dump.
+         declare
+            RN : constant String := C_Name (To_String (Rules (1).Name));
+            RT : constant String := C_Type_Name (To_String (Rules (1).Name));
+         begin
+            if Infos (1).Kind = Struct then
+               Append (Buf, "static int walk_" & RN & " (const " & RT
+                 & " *root, walk_fn f, void *ctx) { return node_walk (root, NODE_"
+                 & C_Ident (RN) & ", f, ctx); }" & LF);
+               if Ast_Tools_On then
+                  Append (Buf, "static size_t dump_" & RN & " (const " & RT
+                    & " *root, char *buf, size_t cap) { return node_dump (root, "
+                    & "NODE_" & C_Ident (RN) & ", buf, cap); }" & LF);
+               end if;
+            elsif Infos (1).Kind = List then
+               Append (Buf, "static int walk_" & RN & " (const struct " & Pfx
+                 & RN & "_list *root, walk_fn f, void *ctx) {" & LF
+                 & "    const " & RT & " *e;" & LF
+                 & "    " & L_Foreach ("e", "root") & LF
+                 & "        if (!node_walk (e, NODE_" & C_Ident (RN)
+                 & ", f, ctx)) return 0;" & LF
+                 & "    return 1;" & LF & "}" & LF);
+               if Ast_Tools_On then
+               Append (Buf, "static size_t dump_" & RN & " (const struct " & Pfx & RN
+                 & "_list *root, char *buf, size_t cap) {" & LF
+                 & "    hbnf_dump_t d;  const " & RT & " *e;" & LF
+                 & "    d.buf = buf;  d.cap = cap;  d.len = 0;" & LF
+                 & "    hbnf_dput (&d, ""("", 1);  hbnf_dstr (&d, """ & RN
+                 & """);" & LF
+                 & "    " & L_Foreach ("e", "root") & " {" & LF
+                 & "        hbnf_dput (&d, "" "", 1);" & LF
+                 & "        hbnf_ddump (&d, e, NODE_" & C_Ident (RN) & ");" & LF
+                 & "    }" & LF
+                 & "    hbnf_dput (&d, "")"", 1);" & LF
+                 & "    if (buf && cap) buf[d.len < cap ? d.len : cap - 1] = 0;"
+                 & LF
+                 & "    return d.len;" & LF
+                 & "}" & LF);
+               end if;
+            end if;
+         end;
+      end Emit_Ast;
 
       --  Emit write_<root>: the tree as text, when the grammar was generated
       --  with --writer.  Canonical, not lossless: literals come from the
@@ -2853,12 +2884,15 @@ package body HBNF_C is
                      Append (Buf, LF);
                      Branches (Idx, Base_Branches (R), "n->", Gap, Buf,
                                "            ",
-                               Alt_Idents (CN, Base_Branches (R), "BASE_"));
+                               Alt_Idents (CN, Base_Branches (R)));
                      Append (Buf, "        } else {");
                      Append (Buf, LF);
                      Branches (Idx, Tail_Branches (R), "n->", Gap, Buf,
                                "            ",
-                               Alt_Idents (CN, Tail_Branches (R), "TAIL_"));
+                               Alt_Idents
+                                 (CN, Tail_Branches (R),
+                                  Natural (Alt_Labels
+                                    (Base_Branches (R)).Length) + 1));
                      Append (Buf, "        }");
                      Append (Buf, LF);
                      Append (Buf, "        first_ = 0;");
@@ -3759,7 +3793,7 @@ package body HBNF_C is
       end if;
 
       if Walkers and then Ast_On then
-         Emit_Walk_Cb (Res);
+         Emit_Ast (Res);
          Append (Res, LF);
       end if;
 
@@ -5116,7 +5150,7 @@ package body HBNF_C is
                      Emit_Alternation
                        (Idx, Base_Branches (R), "nn->", Free, Clears, "have", "",
                         Buf, "            ", Label => "base_", Ws => Ws,
-                        Alts => Alt_Idents (CN, Base_Branches (R), "BASE_"));
+                        Alts => Alt_Idents (CN, Base_Branches (R)));
                      Append (Buf, "            p->pos = save; free(nn); break;");
                      Append (Buf, LF);
                      Append (Buf, "        }");
@@ -5125,7 +5159,9 @@ package body HBNF_C is
                        (Idx, Tail_Branches (R), "nn->", Free, Clears, "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
                         Buf, "        ", Ws => Ws,
-                        Alts => Alt_Idents (CN, Tail_Branches (R), "TAIL_"));
+                        Alts => Alt_Idents
+                          (CN, Tail_Branches (R),
+                           Natural (Alt_Labels (Base_Branches (R)).Length) + 1));
                   end;
                else
                   declare

@@ -1412,25 +1412,28 @@ should claim that before 10.
        lists (`sum = sum "+" n`); then `--writer` on obconf (it has a printer
        to compare with), then the suites' round trip, then mixed grammars.
 
-7d. **The AST and its walkers (the user, 2026-10-18).**  *Built in C 2026-10-18:
-    items 1 and 2.*  "When parsing, we should always know how we got to this
-    point -- always": every node whose rule has alternatives records which one
-    it took (`_alt`, an enum `<rule>_alt_t`, named from the alternative's
-    first word-like literal or first rule name, `node_alt_name` gives the
-    name), unconditionally; and `walk_<rule>(node, up, field, fn, ctx)` calls
-    `fn(frame, enter, ctx)` on entering and leaving each node, where the frame
-    chain is the path from the root (rule, field, alternative of each node
-    above); the callback answers WALK_CONTINUE, WALK_SKIP or WALK_STOP.  Only
-    the members of the alternative a node took are walked.  Cost: pfctl's
-    generated C grows by half in source size (the walkers are static and drop
-    out of a build that does not call them) and each alternated node gains one
-    enum.  `tests/ast.sh`.  Not yet: child iteration by name, parent links,
-    spans, a dump function, node equality (items 3-5 below).  The tree
-    types the parser builds are the product; a consumer (a writer, a type
-    checker, a C++ front end's semantic pass) walks them.  Today there are
-    `visit_` (pre-order, read-only), `map_` (bottom-up, may change a node in
-    place), `node_kind_t` and `free_`.  Open: which more, in what shape --
-    to be decided with the user before building.
+7d. **The AST and its walkers (the user, 2026-10-18).**  *Built in C 2026-10-18.*
+    With `--ast` (default off, so the output of every existing grammar is
+    byte for byte what it was): each node whose rule has alternatives records
+    which one it took (`_alt`, a number from 1), the generated file has tables
+    describing the tree (a row per member, per alternative, per rule) and one
+    small shared walker over them: `node_walk (node, kind, fn, ctx)` calls
+    `fn (node, kind, enter, ctx)` on entering and leaving each node and the
+    callback answers WALK_CONTINUE, WALK_SKIP or WALK_STOP; only the members of
+    the alternative a node took are walked.  `node_kind_name`, `node_alt` and
+    `node_alt_name` name what a node is.  `--ast-tools` adds `node_kids` (the
+    members of a node, leaves too), `node_dump` (an S-expression) and
+    `node_equal`.  A grammar's own list container (listops) is read through two
+    small functions per list rule.  The user's two constraints (2026-10-18):
+    "how did we get here" is for error messages, not for a tree that has
+    parsed, so no path is kept or passed; and a walker should add no more than
+    about 2 KB, "very few things are deeply nested".  Measured: ntpd, the
+    smallest daemon grammar, grows by 2.2 KB compiled with `--ast` (1.2 KB of
+    code, 1 KB of tables); pfctl, with 126 node rules, 357 members and about
+    700 alternatives, by 12 KB of code and 18 KB of tables, most of it the
+    recording of alternatives.  `tests/ast.sh`.  Not yet: spans and parent links
+    (opt-in, with step 6b), an optional label on an alternative (LBNF style),
+    and the parser's own path in error messages ("in statement > block > arg").
 
 8. **Compiler-quality diagnostics and error recovery.**  Expected-error
    fixtures, source-span diagnostics, rule traces, and a schema linter
