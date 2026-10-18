@@ -1356,7 +1356,11 @@ should claim that before 10.
        halves meet.
 
 7c. **A writer for text grammars (the user, 2026-10-18: "general writer").**
-    *Designed, not started.*  A parsed tree written back as text, so a mixed
+    *C, first slice built 2026-10-18 (`--writer`, `tests/writer.sh`): every sample
+    config of obconf and the seven daemon grammars parses, writes, re-parses to
+    the same tree and writes the same text.  The user's framing: this is a
+    demonstration that a consumer can make arbitrary output from the tree; the
+    general product is an AST with useful walker functions (7d below).*  A parsed tree written back as text, so a mixed
     grammar can generate (a BIP-39 phrase from its entropy, a request from
     its fields), a program can edit and re-emit, and step 13a's pretty
     printer has its engine.  Contract (the user's choice): **canonical
@@ -1407,6 +1411,13 @@ should claim that before 10.
        literals, tokens, lists and optional parts; alternations; left-recursive
        lists (`sum = sum "+" n`); then `--writer` on obconf (it has a printer
        to compare with), then the suites' round trip, then mixed grammars.
+
+7d. **The AST and its walkers (the user, 2026-10-18).**  *Not started.*  The tree
+    types the parser builds are the product; a consumer (a writer, a type
+    checker, a C++ front end's semantic pass) walks them.  Today there are
+    `visit_` (pre-order, read-only), `map_` (bottom-up, may change a node in
+    place), `node_kind_t` and `free_`.  Open: which more, in what shape --
+    to be decided with the user before building.
 
 8. **Compiler-quality diagnostics and error recovery.**  Expected-error
    fixtures, source-span diagnostics, rule traces, and a schema linter

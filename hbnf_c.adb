@@ -436,6 +436,12 @@ package body HBNF_C is
    Hosted_Code  : Unbounded_String;
 
    Hosted_Actions : Boolean := False;
+   Writer_On      : Boolean := False;
+
+   procedure Set_Writer (On : Boolean) is
+   begin
+      Writer_On := On;
+   end Set_Writer;
 
    procedure Set_Hosted (Types, Code : String; Actions : Boolean := False) is
    begin
@@ -1638,6 +1644,13 @@ package body HBNF_C is
                        (1 => H ("kind", Pfx & CN & "_kind_t"))));
                      Append (Pre, LF);
                   end if;
+                  if Writer_On and then Natural (R.Pattern.Length) > 1
+                    and then (for some X of R.Pattern => X.Kind = Alt)
+                  then
+                     Append (Pre, "    unsigned char _alt;   /* the "
+                       & "alternative taken, from 1 (--writer) */");
+                     Append (Pre, LF);
+                  end if;
                   for M of Info.Members loop
                      Append (Items,
                        Field_Decl (To_String (M.Name), M.Is_List));
@@ -1677,6 +1690,13 @@ package body HBNF_C is
                   Append (Items, Fill ("c_entry",
                     (1 => H ("entry", L_Entry (Pfx & C_Tag (NM))))));
                   Append (Items, LF);
+                  if Writer_On and then (R.Left_Bases > 0
+                                         or else R.Pattern (1).Kind = Group)
+                  then
+                     Append (Items, "    unsigned char _alt;   /* the "
+                       & "alternative taken, from 1 (--writer) */");
+                     Append (Items, LF);
+                  end if;
                   if Info.Elem_Members.Is_Empty then
                      if Info.Elem_Name /= Null_Unbounded_String then
                         Append (Items,
@@ -2078,6 +2098,544 @@ package body HBNF_C is
             end if;
          end loop;
       end Emit_Bind;
+
+      --  Emit write_<root>: the tree as text, when the grammar was generated
+      --  with --writer.  Canonical, not lossless: literals come from the
+      --  grammar, tokens from their text, and a blank goes between two items
+      --  only where they would run together (hbnf_wgap).  A rule's alternative
+      --  is the one the parser recorded in `_alt`.  What it cannot write it
+      --  says at run time, at the node (hbnf_wbad), so a shape that is not
+      --  built yet is never written as something close.
+      procedure Emit_Writer (Buf : in out U) is
+
+         function Ref_Kind (Nm : String) return Class_Kind is
+            J : constant Natural := Find (Alias_Target (Rules, Nm));
+         begin
+            if J = 0 then
+               return Scalar;
+            end if;
+            return Infos (J).Kind;
+         end Ref_Kind;
+
+         --  A rule whose value came from the core `str` (so it is quoted
+         --  again when written).
+         function Has_Str (Nm : String; Depth : Natural := 0) return Boolean is
+            J : constant Natural := Find (Nm);
+         begin
+            if Nm = "str" then
+               return True;
+            end if;
+            if J = 0 or else Depth > 8 then
+               return False;
+            end if;
+            for E of Rules (J).Pattern loop
+               if E.Kind = HBNF_Grammar.Name
+                 and then Has_Str (To_String (E.Name), Depth + 1)
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has_Str;
+
+         function Img (X : Natural) return String is
+            S : constant String := Natural'Image (X);
+         begin
+            return S (S'First + 1 .. S'Last);
+         end Img;
+
+         function Bad (Why : String) return String is
+           ("hbnf_wbad (w, """ & C_Escape (Why) & """);");
+
+         --  The scanners the writer calls to see whether two items would
+         --  read back as they were written (hbnf_wsep); declared ahead.
+         Scans : String_Vectors.Vector;
+
+         function Scan_Of (Fn : String) return String is
+         begin
+            if not Scans.Contains (To_Unbounded_String (Fn)) then
+               Scans.Append (To_Unbounded_String (Fn));
+            end if;
+            return Fn;
+         end Scan_Of;
+
+         --  The scanner a core type reads with: the rule the grammar defines
+         --  for it, or the built-in.
+         function Core_Scan (Nm : String) return String is
+            Core : constant String :=
+              (if Nm = "str" then "str"
+               elsif Nm = "int" then "int"
+               elsif Scalar_C_Type (Nm) (Scalar_C_Type (Nm)'First) in 'u' | 'i'
+                 and then Scalar_C_Type (Nm) /= "int" then "int"
+               else "word");
+            J : constant Natural := Find (Core);
+         begin
+            if J /= 0 and then Rules (J).Jet_Code /= Null_Unbounded_String then
+               return Scan_Of ("jet_" & Core);
+            end if;
+            return Scan_Of ("scan_" & Core);
+         end Core_Scan;
+
+         --  The C statement writing the scalar Expr that the rule or core
+         --  type Nm yields.
+         function Leaf (Nm, Expr, Gap : String) return String is
+            Core : constant String := Scalar_C_Type (Nm);
+            Ty   : U;
+            Scan : U := To_Unbounded_String ("NULL");
+         begin
+            if Core /= "" then
+               Ty := To_Unbounded_String (Core);
+               Scan := To_Unbounded_String (Core_Scan (Nm));
+            else
+               declare
+                  T : U := To_Unbounded_String (Alias_Target (Rules, Nm));
+                  J : Natural := Find (To_String (T));
+                  R : constant String := Resolve_Type (Nm);
+               begin
+                  if J = 0 or else Infos (J).Kind /= Scalar then
+                     return Bad ("`" & Nm & "` is not a value the writer "
+                                 & "knows how to write");
+                  end if;
+                  --  An alias of an alias of a token reads with the token's
+                  --  scanner and has its type.
+                  for Hop in 1 .. 8 loop
+                     exit when Natural (Rules (J).Pattern.Length) /= 1
+                       or else Rules (J).Pattern (1).Kind /= HBNF_Grammar.Name
+                       or else Rules (J).Jet_Code /= Null_Unbounded_String
+                       or else Is_Char_Rule (Rules, To_String (T))
+                       or else Find (To_String (Rules (J).Pattern (1).Name)) = 0
+                       or else Scalar_C_Type
+                                 (To_String (Rules (J).Pattern (1).Name)) /= "";
+                     T := Rules (J).Pattern (1).Name;
+                     J := Find (To_String (T));
+                  end loop;
+                  Ty := (if R /= "" then To_Unbounded_String (R)
+                         elsif Infos (J).Kind = Scalar then Infos (J).Inline_Type
+                         else To_Unbounded_String (""));
+                  if Has_Str (Nm) then
+                     Scan := To_Unbounded_String (Core_Scan ("str"));
+                  elsif Is_Char_Rule (Rules, To_String (T)) then
+                     Scan := To_Unbounded_String
+                       (Scan_Of ((if Rules (J).Jet_Code /= Null_Unbounded_String
+                                  then "jet_" else "scan_")
+                                 & C_Name (To_String (T))));
+                  end if;
+               end;
+            end if;
+            declare
+               T  : constant String := To_String (Ty);
+               Sc : constant String := To_String (Scan);
+            begin
+               if T = "const char *" then
+                  return (if Has_Str (Nm) then "hbnf_wstr" else "hbnf_wtok")
+                    & " (w, " & Gap & ", " & Expr & ", " & Sc & ");";
+               elsif T = "long long" or else (T'Length > 3
+                       and then T (T'First .. T'First + 2) = "int")
+               then
+                  return "hbnf_wnum (w, " & Gap & ", (long long)(" & Expr
+                    & "), " & Sc & ");";
+               elsif T = "bool" then
+                  return "hbnf_wtok (w, " & Gap & ", (" & Expr
+                    & ") ? ""yes"" : ""no"", " & Core_Scan ("word") & ");";
+               elsif T'Length > 4 and then T (T'First .. T'First + 3) = "uint"
+               then
+                  return "hbnf_wunum (w, " & Gap & ", (unsigned long long)("
+                    & Expr & "), " & Sc & ");";
+               end if;
+               return Bad ("`" & Nm & "` has the type " & T
+                           & ", which the writer cannot write");
+            end;
+         end Leaf;
+
+         --  Write one element or run of elements, through accessor Acc.
+         procedure Elements
+           (Idx : Natural; Els : Element_Vectors.Vector; First, Last : Natural;
+            Acc, Gap : String; Buf : in out U; Ind : String)
+         is
+         begin
+            for K in First .. Last loop
+               declare
+                  E : constant Element_Access := Els (K);
+               begin
+                  case E.Kind is
+                     when Literal =>
+                        Append (Buf, Ind & "hbnf_wlit (w, " & Gap & ", """
+                          & C_Escape (To_String (E.Lit)) & """, "
+                          & Img (To_String (E.Lit)'Length) & ");");
+                        Append (Buf, LF);
+                     when HBNF_Grammar.Name =>
+                        declare
+                           Nm : constant String := To_String (E.Name);
+                           F  : constant String := C_Field (Nm);
+                           T  : constant String := Alias_Target (Rules, Nm);
+                           J  : constant Natural := Find (T);
+                        begin
+                           if E.Min /= 1 or else E.Max /= 1 then
+                              Append (Buf, Ind & Bad ("a repeated name inside "
+                                & "a sequence"));
+                           elsif Scalar_C_Type (Nm) /= "" or else J = 0 then
+                              Append (Buf, Ind & Leaf (Nm, Acc & F, Gap));
+                           else
+                              case Infos (J).Kind is
+                                 when Struct =>
+                                    Append (Buf, Ind & "wr_" & C_Name (T)
+                                      & " (w, "
+                                      & (if Is_Back (Idx, Nm) then "" else "&")
+                                      & Acc & F & ");");
+                                 when List =>
+                                    Append (Buf, Ind & "wr_" & C_Name (T)
+                                      & " (w, &" & Acc & F & ");");
+                                 when Enum =>
+                                    Append (Buf, Ind & "wr_" & C_Name (T)
+                                      & " (w, " & Acc & F & ");");
+                                 when Scalar =>
+                                    Append (Buf, Ind & Leaf (Nm, Acc & F, Gap));
+                              end case;
+                           end if;
+                           Append (Buf, LF);
+                        end;
+                     when Group =>
+                        if (for some X of E.Items => X.Kind = Alt) then
+                           Append (Buf, Ind & Bad ("an alternation inside a "
+                             & "group"));
+                           Append (Buf, LF);
+                        else
+                           Elements (Idx, E.Items, 1, Natural (E.Items.Length),
+                                     Acc, Gap, Buf, Ind);
+                        end if;
+                     when others =>
+                        Append (Buf, Ind & Bad ("an element the writer does "
+                          & "not know"));
+                        Append (Buf, LF);
+                  end case;
+               end;
+            end loop;
+         end Elements;
+
+         --  The branches of a flat list of elements with Alt separators:
+         --  `switch (Acc_alt)` over them, or the elements when there is one.
+         procedure Branches
+           (Idx : Natural; Els : Element_Vectors.Vector;
+            Acc, Gap : String; Buf : in out U; Ind : String)
+         is
+            Last : constant Natural := Natural (Els.Length);
+            St   : Natural := 1;
+            Br   : Natural := 0;
+            Multi : constant Boolean := (for some X of Els => X.Kind = Alt);
+         begin
+            if not Multi then
+               Elements (Idx, Els, 1, Last, Acc, Gap, Buf, Ind);
+               return;
+            end if;
+            Append (Buf, Ind & "switch (" & Acc & "_alt) {");
+            Append (Buf, LF);
+            for K in 1 .. Last + 1 loop
+               if K > Last or else Els (K).Kind = Alt then
+                  Br := Br + 1;
+                  Append (Buf, Ind & "case " & Img (Br) & ":");
+                  Append (Buf, LF);
+                  Elements (Idx, Els, St, K - 1, Acc, Gap, Buf, Ind & "    ");
+                  Append (Buf, Ind & "    break;");
+                  Append (Buf, LF);
+                  St := K + 1;
+               end if;
+            end loop;
+            Append (Buf, Ind & "default: " & Bad ("no alternative was "
+              & "recorded (generate with --writer)"));
+            Append (Buf, LF);
+            Append (Buf, Ind & "}");
+            Append (Buf, LF);
+         end Branches;
+
+         procedure Define (Idx : Natural; Buf : in out U) is
+            R    : constant Rule := Rules (Idx);
+            NM   : constant String := To_String (R.Name);
+            CN   : constant String := C_Name (NM);
+            TN   : constant String := C_Type_Name (NM);
+            Info : constant Rule_Info := Infos (Idx);
+            Gap  : constant String :=
+              (if R.Whitespace /= Null_Unbounded_String then "1" else "0");
+         begin
+            case Info.Kind is
+               when Struct =>
+                  Append (Buf, "static void wr_" & CN & " (hbnf_w *w, const "
+                    & TN & " *n) {");
+                  Append (Buf, LF);
+                  Append (Buf, "    (void)n;");
+                  Append (Buf, LF);
+                  Append (Buf, "    hbnf_wopen (w, """ & NM & """);");
+                  Append (Buf, LF);
+                  if Natural (R.Pattern.Length) = 1
+                    and then R.Pattern (1).Kind = Group
+                  then
+                     Branches (Idx, R.Pattern (1).Items, "n->", Gap, Buf,
+                               "    ");
+                  else
+                     Branches (Idx, R.Pattern, "n->", Gap, Buf, "    ");
+                  end if;
+                  Append (Buf, "    hbnf_wclose (w);");
+                  Append (Buf, LF);
+                  Append (Buf, "}");
+                  Append (Buf, LF);
+               when List =>
+                  Append (Buf, "static void wr_" & CN & " (hbnf_w *w, const "
+                    & "struct " & Pfx & CN & "_list *head) {");
+                  Append (Buf, LF);
+                  Append (Buf, "    const " & TN & " *n;");
+                  Append (Buf, LF);
+                  Append (Buf, "    hbnf_wopen (w, """ & NM & """);");
+                  Append (Buf, LF);
+                  if R.Left_Bases > 0 then
+                     Append (Buf, "    int first_ = 1;");
+                     Append (Buf, LF);
+                  end if;
+                  Append (Buf, "    " & L_Foreach ("n", "head") & " {");
+                  Append (Buf, LF);
+                  if R.Left_Bases > 0 then
+                     --  The first node is a base, each later one a tail.
+                     Append (Buf, "        if (first_) {");
+                     Append (Buf, LF);
+                     Branches (Idx, Base_Branches (R), "n->", Gap, Buf,
+                               "            ");
+                     Append (Buf, "        } else {");
+                     Append (Buf, LF);
+                     Branches (Idx, Tail_Branches (R), "n->", Gap, Buf,
+                               "            ");
+                     Append (Buf, "        }");
+                     Append (Buf, LF);
+                     Append (Buf, "        first_ = 0;");
+                     Append (Buf, LF);
+                  elsif R.Pattern (1).Kind = Group then
+                     Branches (Idx, R.Pattern (1).Items, "n->", Gap, Buf,
+                               "        ");
+                  elsif Info.Elem_Name /= Null_Unbounded_String then
+                     declare
+                        One : Element_Vectors.Vector;
+                        E   : constant Element_Access :=
+                          new HBNF_Grammar.Element'(R.Pattern (1).all);
+                     begin
+                        E.Min := 1;
+                        E.Max := 1;
+                        One.Append (E);
+                        Elements (Idx, One, 1, 1, "n->", Gap, Buf, "        ");
+                     end;
+                  else
+                     Append (Buf, "        hbnf_wtok (w, " & Gap
+                       & ", n->value, NULL);");
+                     Append (Buf, LF);
+                  end if;
+                  if Idx = 1 and then HBNF_Grammar.Statements then
+                     --  A statement ends at a newline.
+                     Append (Buf, "        hbnf_wlit (w, 0, ""\n"", 1);");
+                     Append (Buf, LF);
+                  end if;
+                  Append (Buf, "    }");
+                  Append (Buf, LF);
+                  Append (Buf, "    hbnf_wclose (w);");
+                  Append (Buf, LF);
+                  Append (Buf, "}");
+                  Append (Buf, LF);
+               when Enum =>
+                  declare
+                     Names : constant String_Vectors.Vector :=
+                       Enum_Names (Info.Literals);
+                  begin
+                     Append (Buf, "static void wr_" & CN & " (hbnf_w *w, "
+                       & TN & " v) {");
+                     Append (Buf, LF);
+                     Append (Buf, "    switch (v) {");
+                     Append (Buf, LF);
+                     for I in 1 .. Natural (Info.Literals.Length) loop
+                        Append (Buf, "    case " & C_Ident (NM) & "_"
+                          & To_String (Names (I)) & ": hbnf_wlit (w, " & Gap
+                          & ", """ & C_Escape (To_String (Info.Literals (I)))
+                          & """, "
+                          & Img (To_String (Info.Literals (I))'Length)
+                          & "); break;");
+                        Append (Buf, LF);
+                     end loop;
+                     Append (Buf, "    default: break;");
+                     Append (Buf, LF);
+                     Append (Buf, "    }");
+                     Append (Buf, LF);
+                     Append (Buf, "}");
+                     Append (Buf, LF);
+                  end;
+               when Scalar =>
+                  null;
+            end case;
+         end Define;
+
+      begin
+         Append (Buf, "/* ---- write (the tree as text, canonical) ---- */");
+         Append (Buf, LF);
+         Append (Buf, "#include <stdio.h>" & LF & "#include <ctype.h>" & LF
+           & "#include <string.h>");
+         Append (Buf, LF);
+         Append (Buf,
+           "typedef size_t (*hbnf_wscan_fn) (const char *, size_t, size_t);" & LF
+           & "typedef struct { char *buf; size_t cap, len; int last; "
+           & "const char *bad; int trace;" & LF
+           & "    char *ptxt; size_t plen, pcap; hbnf_wscan_fn pscan; } hbnf_w;"
+           & LF
+           & "static const char *hbnf_write_error;" & LF
+           & "/* Set to 1 to write the tree's shape too: (rule ...) around each"
+           & " node.  The tests compare it. */" & LF
+           & "static int hbnf_write_trace;" & LF
+           & "static void hbnf_wbad (hbnf_w *w, const char *why) "
+           & "{ if (!w->bad) w->bad = why; }" & LF
+           & "static void hbnf_wput (hbnf_w *w, const char *s, size_t n) {" & LF
+           & "    size_t i;" & LF
+           & "    for (i = 0; i < n; i++)" & LF
+           & "        if (w->buf && w->len + i + 1 < w->cap) "
+           & "w->buf[w->len + i] = s[i];" & LF
+           & "    w->len += n;" & LF
+           & "    if (n) w->last = (unsigned char)s[n - 1];" & LF
+           & "}" & LF
+           & "static void hbnf_wopen (hbnf_w *w, const char *n) "
+           & "{ if (w->trace) { hbnf_wput (w, ""("", 1); hbnf_wput (w, n, "
+           & "strlen (n)); hbnf_wput (w, "" "", 1); } }" & LF
+           & "static void hbnf_wclose (hbnf_w *w) "
+           & "{ if (w->trace) hbnf_wput (w, "")"", 1); }" & LF
+           & "static int hbnf_wdelim (int c) "
+           & "{ return c && strchr (""()[],;"", c) != NULL; }" & LF
+           & "/* Would the item just written, with sep and s after it, still end"
+           & " where it did when the grammar's own scanner reads it? */" & LF
+           & "static int hbnf_wfits (hbnf_w *w, const char *sep, const char *s)"
+           & " {" & LF
+           & "    size_t b = strlen (sep), c = strlen (s);" & LF
+           & "    char *t = (char *)malloc (w->plen + b + c + 1);" & LF
+           & "    int ok;" & LF
+           & "    if (!t) return 0;" & LF
+           & "    memcpy (t, w->ptxt, w->plen);  memcpy (t + w->plen, sep, b);" & LF
+           & "    memcpy (t + w->plen + b, s, c);  t[w->plen + b + c] = 0;" & LF
+           & "    ok = w->pscan (t, 0, w->plen + b + c) == w->plen;" & LF
+           & "    free (t);" & LF
+           & "    return ok;" & LF
+           & "}" & LF
+           & "/* What goes between the last item and s: nothing, a blank or a"
+           & " newline, the first that keeps the last item from reading on"
+           & " into s. */" & LF
+           & "static void hbnf_wsep (hbnf_w *w, int gap, const char *s) {" & LF
+           & "    int a = w->last, b = (unsigned char)s[0];" & LF
+           & "    const char *pref = """";" & LF
+           & "    if (!w->len || !b) return;" & LF
+           & "    if (gap && a > ' ' && b > ' ' && !hbnf_wdelim (a)" & LF
+           & "        && !hbnf_wdelim (b)) pref = "" "";" & LF
+           & "    if (w->pscan && a > ' ') {" & LF
+           & "        const char *c[3];  int i;" & LF
+           & "        c[0] = pref;  c[1] = "" "";  c[2] = ""\n"";" & LF
+           & "        for (i = 0; i < (gap ? 3 : 1); i++)" & LF
+           & "            if (hbnf_wfits (w, c[i], s)) {" & LF
+           & "                hbnf_wput (w, c[i], strlen (c[i]));" & LF
+           & "                return;" & LF
+           & "            }" & LF
+           & "        hbnf_wbad (w, ""two items cannot be written apart: the"
+           & " first would read on into the second"");" & LF
+           & "        return;" & LF
+           & "    }" & LF
+           & "    hbnf_wput (w, pref, strlen (pref));" & LF
+           & "}" & LF
+           & "static void hbnf_wtext (hbnf_w *w, int gap, const char *s, "
+           & "size_t n, hbnf_wscan_fn scan) {" & LF
+           & "    hbnf_wsep (w, gap, s);" & LF
+           & "    hbnf_wput (w, s, n);" & LF
+           & "    w->pscan = scan;" & LF
+           & "    if (scan) {" & LF
+           & "        if (n + 1 > w->pcap) {" & LF
+           & "            w->pcap = n + 64;" & LF
+           & "            w->ptxt = (char *)realloc (w->ptxt, w->pcap);" & LF
+           & "            if (!w->ptxt) { w->pscan = NULL; return; }" & LF
+           & "        }" & LF
+           & "        memcpy (w->ptxt, s, n);  w->plen = n;" & LF
+           & "    }" & LF
+           & "}" & LF
+           & "static void hbnf_wlit (hbnf_w *w, int gap, const char *s, "
+           & "size_t n) { hbnf_wtext (w, gap, s, n, NULL); }" & LF
+           & "static void hbnf_wtok (hbnf_w *w, int gap, const char *s, "
+           & "hbnf_wscan_fn scan) { if (!s) s = """"; "
+           & "hbnf_wtext (w, gap, s, strlen (s), scan); }" & LF
+           & "static void hbnf_wstr (hbnf_w *w, int gap, const char *s, "
+           & "hbnf_wscan_fn scan) {" & LF
+           & "    size_t n = 2, k = 0;  const char *q;  char *t;" & LF
+           & "    for (q = s; q && *q; q++) n += (*q == '""' || *q == '\\') "
+           & "? 2 : 1;" & LF
+           & "    t = (char *)malloc (n + 1);" & LF
+           & "    if (!t) { hbnf_wbad (w, ""out of memory""); return; }" & LF
+           & "    t[k++] = '""';" & LF
+           & "    for (q = s; q && *q; q++) {" & LF
+           & "        if (*q == '""' || *q == '\\') t[k++] = '\\';" & LF
+           & "        t[k++] = *q;" & LF
+           & "    }" & LF
+           & "    t[k++] = '""';  t[k] = 0;" & LF
+           & "    hbnf_wtext (w, gap, t, k, scan);" & LF
+           & "    free (t);" & LF
+           & "}" & LF
+           & "static void hbnf_wnum (hbnf_w *w, int gap, long long v, "
+           & "hbnf_wscan_fn scan) { char t[32]; snprintf (t, sizeof t, ""%lld"","
+           & " v); hbnf_wtok (w, gap, t, scan); }" & LF
+           & "static void hbnf_wunum (hbnf_w *w, int gap, unsigned long long v,"
+           & " hbnf_wscan_fn scan) { char t[32]; snprintf (t, sizeof t, "
+           & """%llu"", v); hbnf_wtok (w, gap, t, scan); }" & LF);
+         for I in 1 .. N loop
+            case Infos (I).Kind is
+               when Struct =>
+                  Append (Buf, "static void wr_"
+                    & C_Name (To_String (Rules (I).Name)) & " (hbnf_w *w, "
+                    & "const " & C_Type_Name (To_String (Rules (I).Name))
+                    & " *n);" & LF);
+               when List =>
+                  Append (Buf, "static void wr_"
+                    & C_Name (To_String (Rules (I).Name)) & " (hbnf_w *w, "
+                    & "const struct " & Pfx
+                    & C_Name (To_String (Rules (I).Name))
+                    & "_list *head);" & LF);
+               when Enum =>
+                  Append (Buf, "static void wr_"
+                    & C_Name (To_String (Rules (I).Name)) & " (hbnf_w *w, "
+                    & C_Type_Name (To_String (Rules (I).Name)) & " v);" & LF);
+               when Scalar =>
+                  null;
+            end case;
+         end loop;
+         declare
+            Defs : U;
+         begin
+            for I in 1 .. N loop
+               Define (I, Defs);
+            end loop;
+            for Fn of Scans loop
+               Append (Buf, "static size_t " & To_String (Fn)
+                 & " (const char *, size_t, size_t);" & LF);
+            end loop;
+            Append (Buf, Defs);
+         end;
+         declare
+            Root : constant String := Root_Type (Rules);
+            RN   : constant String := C_Name (To_String (Rules (1).Name));
+         begin
+            if Infos (1).Kind in Struct | List then
+               Append (Buf,
+                 "/* The tree as text: its length, with the text in buf up to"
+                 & " cap - 1 bytes and a NUL (as snprintf), or (size_t)-1 and"
+                 & " hbnf_write_error when a node cannot be written. */" & LF
+                 & "static size_t write_" & RN & " (const " & Root
+                 & " *root, char *buf, size_t cap) {" & LF
+                 & "    hbnf_w w;" & LF
+                 & "    memset (&w, 0, sizeof w);" & LF
+                 & "    w.buf = buf;  w.cap = cap;  w.trace = hbnf_write_trace;"
+                 & LF
+                 & "    wr_" & RN & " (&w, root);" & LF
+                 & "    free (w.ptxt);" & LF
+                 & "    if (buf && cap) buf[w.len < cap ? w.len : cap - 1] = 0;"
+                 & LF
+                 & "    hbnf_write_error = w.bad;" & LF
+                 & "    return w.bad ? (size_t)-1 : w.len;" & LF
+                 & "}" & LF);
+            end if;
+         end;
+      end Emit_Writer;
+
 
       --  Emit free_<rule>: drop a parsed tree, freeing every string and list
       --  node the parser allocated (the SIGHUP reload path).  A struct frees
@@ -2739,6 +3297,11 @@ package body HBNF_C is
 
       if Has_Action then
          Emit_Bind (Res);
+         Append (Res, LF);
+      end if;
+
+      if Writer_On then
+         Emit_Writer (Res);
          Append (Res, LF);
       end if;
 
@@ -3642,7 +4205,7 @@ package body HBNF_C is
          Els : Element_Vectors.Vector; Acc, Free, Clears, Ok : String;
          Kind_Prefix : String := "";
          Buf : in out U; Ind : String := "    "; Label : String := "";
-         Ws   : Boolean := False) is
+         Ws   : Boolean := False; Rec_Alt : Boolean := False) is
          N    : constant Natural := Natural (Els.Length);
          Flat : String_Vectors.Vector;
          Offs : Natural_Vectors.Vector;
@@ -3873,6 +4436,10 @@ package body HBNF_C is
                   Emit_Seq (Owner, Els, LSt, K - 1, Acc, Buf,
                             "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind,
                             Ws, Lead_Ws => not Hoist);
+                  if Rec_Alt and then Writer_On then
+                     Append (Buf, Ind & Acc & "_alt = " & Img (LBr) & ";");
+                     Append (Buf, LF);
+                  end if;
                   if Kind_Prefix /= "" and then LSt <= K - 1
                     and then Els (LSt).Kind = Literal
                   then
@@ -4083,7 +4650,8 @@ package body HBNF_C is
                      Append (Buf, LF);
                      Emit_Alternation
                        (Idx, Base_Branches (R), "nn->", Free, Clears, "have", "",
-                        Buf, "            ", Label => "base_", Ws => Ws);
+                        Buf, "            ", Label => "base_", Ws => Ws,
+                        Rec_Alt => True);
                      Append (Buf, "            p->pos = save; free(nn); break;");
                      Append (Buf, LF);
                      Append (Buf, "        }");
@@ -4091,7 +4659,7 @@ package body HBNF_C is
                      Emit_Alternation
                        (Idx, Tail_Branches (R), "nn->", Free, Clears, "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
-                        Buf, "        ", Ws => Ws);
+                        Buf, "        ", Ws => Ws, Rec_Alt => True);
                   end;
                else
                   declare
@@ -4103,7 +4671,7 @@ package body HBNF_C is
                         "free_" & CN & "_fields(nn)", Num_Clears (Nums),
                         "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
-                        Buf, "        ", Ws => Ws);
+                        Buf, "        ", Ws => Ws, Rec_Alt => True);
                   end;
                end if;
                Append (Buf, "        p->pos = save; free(nn); break;");
@@ -4392,7 +4960,7 @@ package body HBNF_C is
                                  "free_" & CN & "_fields(&r)", Num_Clears (Nums),
                                  "ok",
                                  (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
-                                 Buf, Ws => Ws);
+                                 Buf, Ws => Ws, Rec_Alt => True);
                --  The last branch failed: free what it built (a list it
                --  had filled before a later token failed), as each
                --  earlier branch's failure does.

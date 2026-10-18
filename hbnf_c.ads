@@ -86,4 +86,8 @@ package HBNF_C is
    --  declarations, so a rule of either kind can name one of the other.
    procedure Set_Hosted (Types, Code : String; Actions : Boolean := False);
 
+   --  --writer: the generated code also has write_<root>, the tree as text
+   --  (RFCPLAN.md 7c), and the parser records which alternative it took.
+   procedure Set_Writer (On : Boolean);
+
 end HBNF_C;

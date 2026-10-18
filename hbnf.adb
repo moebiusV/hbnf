@@ -113,7 +113,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -140,6 +140,8 @@ begin
             HBNF_Grammar.Set_Abnf (True);
          elsif A = "--ebnf" then
             HBNF_Grammar.Set_Ebnf (True);
+         elsif A = "--writer" then
+            HBNF_C.Set_Writer (True);
          elsif A = "--idref" then
             Idref := True;
          elsif A = "--compare" then
