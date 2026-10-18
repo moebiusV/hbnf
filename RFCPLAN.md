@@ -1217,9 +1217,10 @@ should claim that before 10.
        by a table), and the lowest alphabet is the bit.  ABNF already has `BIT`
        and `OCTET` among its core rules, so `ttl = 8BIT` is a bit field and
        `name:8` is a convenient spelling of it.  Three consequences: a token over
-       units of width W starts on a W boundary (which is why text starts on an
-       octet, a bit field anywhere, and an octet array after a 5-bit field is a
-       copy); the DFA scanner and the union analysis carry over to a bit
+       units of width W may start at any bit (an octet is eight bits from
+       wherever you are, so text after a 5-bit field is read shifted -- an
+       alignment rule was added in stage 2 by mistake and removed 2026-10-18);
+       the DFA scanner and the union analysis carry over to a bit
        alphabet, so a value set (`0x0800 | 0x0806`) is a token over bits; and a
        token's value type follows its alphabet (a number for bits, a byte string
        for octets, a string for code points).
@@ -1398,8 +1399,8 @@ should claim that before 10.
        in the test and, at run time, refuses.
     4. *Mixed grammars:* a text rule that holds a bit rule calls
        `emit_bits_<rule>` (built), and the octets are written as bytes; a
-       bit rule that holds a text rule calls `write_<rule>` at an octet
-       boundary.  Numbered-word text (BIP-39, bech32) writes through the same
+       bit rule that holds a text rule calls `write_<rule>` at whatever
+       bit it is, the octets written shifted.  Numbered-word text (BIP-39, bech32) writes through the same
        path: a token's value is its spelling, so the slices of
        "Retire `units`" below only need the spelling of each number.
     5. *Order of work:* `_alt`/`_has` recording and `write_` for sequences,

@@ -1,10 +1,11 @@
-; A bit rule that ends inside an octet, followed by text: refused when read.
+; Text that starts inside an octet: octets are eight bits from any bit, so a
+; text rule after a 3-bit field reads the letters shifted by three bits.
 prefix none
 whitespace none
 include "../../grammars/common.hbnf"
 
 doc = "REC:" record
 
-record = flag:3 label
+record = flag:3 label pad:5 ?(pad == 0)
 
 label = 1*ALPHA

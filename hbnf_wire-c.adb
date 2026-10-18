@@ -429,26 +429,31 @@ package body HBNF_Wire.C is
                      L (Ind, "}");
                      Scope.Append (Binding'(It.Name, To_Unbounded_String (Lw)));
                   when S_Ref =>
-                     if Hosted and then Find (G, To_String (It.Ref)) = 0 then
-                        --  A text rule reads whole octets, from where it is.
-                        L (Ind, "if (p->bit) { bnf_fail (p, WB(p), " & W
-                          & ", ""text starts inside an octet""); " & Fail
-                          & " }");
-                     end if;
                      if Hosted and then Find (G, To_String (It.Ref)) = 0
                        and then (for some X of G.External_Tokens =>
                                    X = It.Ref)
                      then
                         --  A text token has a scanner, not a reader: its
-                        --  value is the text it matched.
-                        L (Ind, "{ size_t n_ = scan_" & To_String (It.Ref)
+                        --  value is the text it matched.  Its octets are
+                        --  read from wherever the position is, bit by bit if
+                        --  that is inside an octet (bnf_enter).
+                        L (Ind, "{ bnf_save s_ = bnf_enter (p);");
+                        L (Ind + 1, "size_t n_ = scan_" & To_String (It.Ref)
                           & "(p->text, p->pos, p->len);");
+                        L (Ind + 1, "if (n_) { " & Lw
+                          & " = hbnf_str_append (p->text + p->pos, n_);"
+                          & "  p->pos += n_; }");
+                        L (Ind + 1, "bnf_leave (p, s_, n_ != 0);");
                         L (Ind + 1, "if (!n_) { bnf_fail (p, WB(p), " & W
                           & ", ""a " & To_String (It.Ref) & """); "
                           & Fail & " }");
-                        L (Ind + 1, Lw & " = hbnf_str_append (p->text + p->pos,"
-                          & " n_);  p->pos += n_;");
                         L (Ind, "}");
+                     elsif Hosted and then Find (G, To_String (It.Ref)) = 0
+                     then
+                        L (Ind, "{ bnf_save s_ = bnf_enter (p);  bool ok_ = "
+                          & Fn_Of (To_String (It.Ref)) & " (p, &" & Lw & ");");
+                        L (Ind + 1, "bnf_leave (p, s_, ok_);");
+                        L (Ind + 1, "if (!ok_) { " & Fail & " } }");
                      else
                         L (Ind, "if (!" & Fn_Of (To_String (It.Ref)) & " (p, &"
                           & Lw & ")) { " & Fail & " }");
@@ -668,9 +673,6 @@ package body HBNF_Wire.C is
                      if Hosted and then Find (G, To_String (It.Ref)) = 0 then
                         if (for some X of G.External_Tokens => X = It.Ref) then
                            --  A text token is the text it matched.
-                           L (Ind, "if (w->bit & 7) { bnf_wfail (w, " & W
-                             & ", ""text starts inside an octet""); " & Bad
-                             & " }");
                            L (Ind, "if (!bnf_wput (w, (const uint8_t *)" & Lw
                              & ", strlen (" & Lw & "), " & W & ")) " & Bad);
                         else
@@ -1041,6 +1043,33 @@ package body HBNF_Wire.C is
          L (0, "static bool bnf_take_rest (bnf_p *p, " & Pfx
             & "octets_t *o, const char *where) {");
          L (1, "return bnf_take (p, (WN(p) - WB(p)) / 8, o, where);");
+         L (0, "}");
+         L (0, "/* Text is octets, and an octet is eight bits from any bit: a text");
+         L (0, "   rule read where the position is inside an octet (after a 5-bit");
+         L (0, "   field) reads a copy of the rest shifted to that bit.  bnf_enter");
+         L (0, "   makes p read it, bnf_leave puts p back and, if the read worked,");
+         L (0, "   moves the position on by the octets it used. */");
+         L (0, "typedef struct { const char *text; size_t pos, len; unsigned bit; }"
+            & " bnf_save;");
+         L (0, "static bnf_save bnf_enter (bnf_p *p) {");
+         L (1, "bnf_save s;");
+         L (1, "s.text = p->text;  s.pos = p->pos;  s.len = p->len;  s.bit = p->bit;");
+         L (1, "if (p->bit) {");
+         L (2, "size_t m = ((p->len - p->pos) * 8 - p->bit) / 8, i;");
+         L (2, "uint8_t *c = (uint8_t *)bnf_alloc (m + 1);");
+         L (2, "const uint8_t *t = (const uint8_t *)p->text + p->pos;");
+         L (2, "for (i = 0; i < m; i++)");
+         L (3, "c[i] = (uint8_t)((t[i] << p->bit) | (t[i + 1] >> (8 - p->bit)));");
+         L (2, "p->text = (const char *)c;  p->pos = 0;  p->len = m;  p->bit = 0;");
+         L (1, "}");
+         L (1, "return s;");
+         L (0, "}");
+         L (0, "static void bnf_leave (bnf_p *p, bnf_save s, bool ok) {");
+         L (1, "if (s.bit) {");
+         L (2, "size_t used = p->pos;");
+         L (2, "p->text = s.text;  p->len = s.len;  p->pos = s.pos;  p->bit = s.bit;");
+         L (2, "if (ok) WSET (p, s.pos * 8 + s.bit + used * 8);");
+         L (1, "}");
          L (0, "}");
          Runtime_Writer;
       end Runtime_Hosted;

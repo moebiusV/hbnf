@@ -1,4 +1,2 @@
-error
-expected record.label: text starts inside an octet, found  
-  REC: abc
-      ^
+abc: flag=5 label=abc pad=0
+Z: flag=0 label=Z pad=0

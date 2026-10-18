@@ -59,10 +59,10 @@ rules', so a call goes either way:
 
 `parse_text` on `PKT:\x05hello;` gives a `msg` whose `frame` has `len` 5 and a
 `body` of five octets; on `REC:\x07abc`, a `doc` whose `record` has `kind` 7 and
-`label` `abc`.  The text of a text rule is octets read as UTF-8, so it must start
-on an octet: a bit rule that ends inside one (`flag:3 label`) is refused when it
-is read, with `text starts inside an octet`, and so is a text rule that follows
-one.  The tests are `tests/wire/mixed*.hbnf`.
+`label` `abc`.  The text of a text rule is octets read as UTF-8, and an octet
+is eight bits from any bit: after a 3-bit field (`flag:3 label`) the text is
+read from bit 3, the generated reader working on a copy of the rest shifted to
+that bit.  The tests are `tests/wire/mixed*.hbnf`.
 
 What is not built for it: the first rule must be a text rule (a grammar whose
 first rule is a bit rule is read as bits alone, and says so if it names a text
