@@ -42,8 +42,9 @@ the file's head and as warnings: context tests and bindings, actions, scanners w
 scanner, and `--ts-scanner=FILE` writes it (the `externals` in the `grammar.js` and a `scanner.c`
 for `src/`): a back-reference (`x %as tag` ... `%same tag`: the scanner holds the captured text in
 its state and accepts only the same text again, as Mustache's closing tag needs; the tagged name
-must be a token the C backend scans as an automaton, and the tags held are limited to the 1,024
-octets of state tree-sitter saves), and a lookahead `!x` / `&x` of literals and such tokens (a
+must be a token the C backend scans as an automaton, and at most 512 tags can be open at once, because tree-sitter saves 1,024 octets of scanner
+state and each open tag takes two; the texts are kept in a table the scanner owns, so a saved state
+is only good with the parser whose scanner made it), and a lookahead `!x` / `&x` of literals and such tokens (a
 zero-width token that looks at the text, and takes a literal that follows it into the test).
 Where several lookaheads could hold at once, the first that does is taken.  Ordered choice has no form in tree-sitter: `--ts-ordered`
 gives each alternative a `prec.dynamic` (the first the most), and `--ts-conflicts=a,b;c,d`

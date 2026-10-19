@@ -39,7 +39,9 @@ package HBNF_Tree_Sitter is
    --  `src/` next to the generated parser) so the closing text must repeat the
    --  opening one, as in hbnf.  The scanner keeps the tags in its state, which
    --  tree-sitter saves and restores for every fork and every re-parse; that state
-   --  is 1,024 octets at most, and a tag that does not fit is refused.  Without
+   --  is 1,024 octets at most, so up to 512 tags can be open at once (the texts
+   --  are kept in a table the scanner owns, two octets of state for each), and
+   --  one more is refused.  Without
    --  Scanner the second is any text of the same kind, and the file says so.
    --  Only a tagged name whose rule is a token the generator can scan as an
    --  automaton is done this way.
