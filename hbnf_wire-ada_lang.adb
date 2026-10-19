@@ -1858,7 +1858,7 @@ package body HBNF_Wire.Ada_Lang is
                begin
                   Append (Last_Spec, "   --  The bits of one " & Nm
                           & ", written (its %emit first)." & ASCII.LF
-                          & Sp & ";" & ASCII.LF);
+                          & Sp & ";" & ASCII.LF & ASCII.LF);
                   L (1, Sp & " is");
                   L (2, "Bnf_W : Writer;");
                   L (1, "begin");

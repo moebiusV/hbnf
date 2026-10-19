@@ -16,4 +16,11 @@ package HBNF_Wire.Rust is
 
    function Emit (G : Grammar) return String;
 
+   --  For a grammar of text rules and bit rules together: the bit rules, read
+   --  from the text parser's own input and position (HBNF_Rust.Set_Hosted).
+   --  Types is the declarations, Code the readers, the writers
+   --  (`emit_bits_<rule>`) and, for each bit rule, the parse_<rule> a text rule
+   --  calls.
+   procedure Emit_Hosted (G : Grammar; Types, Code : out Unbounded_String);
+
 end HBNF_Wire.Rust;

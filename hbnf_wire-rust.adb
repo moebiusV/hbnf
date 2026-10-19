@@ -1,6 +1,7 @@
 pragma Ada_2022;
 
 with Ada.Characters.Handling;
+with HBNF_Rust;
 with Ada.Containers.Vectors;
 
 package body HBNF_Wire.Rust is
@@ -93,6 +94,32 @@ package body HBNF_Wire.Rust is
       return To_String (R);
    end Escape;
 
+   Hosted_Mode : Boolean := False;       --  Emit_Hosted is running
+   Last_Types  : Unbounded_String;       --  the types of the last hosted Emit
+
+   --  The reader's and the writer's types are P and W; in a hosted file the
+   --  text parser has a P, so they are WP and WW there.
+   function Rename (S : String) return String is
+      R : Unbounded_String;
+      I : Natural := S'First;
+
+      function Word_Char (C : Character) return Boolean is
+        (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+   begin
+      while I <= S'Last loop
+         if (S (I) = 'P' or else S (I) = 'W')
+           and then (I = S'First or else not Word_Char (S (I - 1)))
+           and then (I = S'Last or else not Word_Char (S (I + 1)))
+         then
+            Append (R, "W" & S (I));
+         else
+            Append (R, S (I));
+         end if;
+         I := I + 1;
+      end loop;
+      return To_String (R);
+   end Rename;
+
    function Emit (G : Grammar) return String is
       Buf  : Unbounded_String;
       Defs : Unbounded_String;     --  the types of choices, as they are met
@@ -130,7 +157,9 @@ package body HBNF_Wire.Rust is
             (if P'Length > 0 and then P (P'Last) = '_'
              then Camel (P (P'First .. P'Last - 1)) else Camel (P)));
 
-      function Type_Of (R : String) return String is (Pfx & Camel (R));
+      function Type_Of (R : String) return String is
+        (if Hosted_Mode and then Find (G, R) = 0 then HBNF_Rust.Type_Name (R)
+         else Pfx & Camel (R));
       function Parse_Fn_Of (R : String) return String is ("parse_rule_" & R);
       function Emit_Fn_Of (R : String) return String is ("emit_rule_" & R);
       function In_Of (R : String) return String is ("in_value_set_" & R);
@@ -207,6 +236,24 @@ package body HBNF_Wire.Rust is
          D (0, "pub enum " & Name & " {");
          Append (Defs, Variants);
          D (0, "}");
+         if Hosted_Mode then
+            --  a text rule that holds it starts from `Default`
+            declare
+               First_Fields : Unbounded_String;
+            begin
+               for It of Alts.First_Element.Items loop
+                  if Named (It.all) then
+                     Append (First_Fields, To_String (It.Name)
+                             & ": Default::default(), ");
+                  end if;
+               end loop;
+               D (0, "impl Default for " & Name & " {");
+               D (1, "fn default() -> Self {");
+               D (2, Name & "::A1 { " & To_String (First_Fields) & "}");
+               D (1, "}");
+               D (0, "}");
+            end;
+         end if;
          D (0, "");
       end Define_Choice;
 
@@ -396,8 +443,53 @@ package body HBNF_Wire.Rust is
                      L (Ind, "};");
                   when S_Ref =>
                      if not It.Bitsof then   --  the words are already the bits
-                        L (Ind, "let " & N & ": " & Type_Of (To_String (It.Ref))
-                          & " = " & Parse_Fn_Of (To_String (It.Ref)) & "(p_)?;");
+                        declare
+                           R : constant String := To_String (It.Ref);
+                        begin
+                           if Hosted_Mode and then Find (G, R) = 0 then
+                              if (for some X of G.External_Tokens =>
+                                    To_String (X) = R)
+                              then
+                                 --  a character rule of the text: its scanner
+                                 --  reads it here, from the octet the bits have
+                                 --  reached
+                                 L (Ind, "let " & N & ": " & Type_Of (R) & " = {");
+                                 L (Ind + 1, "let shifted_;");
+                                 L (Ind + 1, "let (b_, start_): (&[u8], usize) = if p_.bit % 8 == 0 {");
+                                 L (Ind + 2, "(p_.buf, p_.bit / 8)");
+                                 L (Ind + 1, "} else {");
+                                 L (Ind + 2, "shifted_ = bnf_shifted(p_);");
+                                 L (Ind + 2, "(&shifted_[..], 0)");
+                                 L (Ind + 1, "};");
+                                 L (Ind + 1, "let n_ = " & HBNF_Rust.Scan_Fn (R) & "(b_, start_, b_.len());");
+                                 L (Ind + 1, "if n_ == 0 { p_.fail(p_.bit, " & W & ", ""a " & R & """); return None; }");
+                                 L (Ind + 1, "p_.bit += n_ * 8;");
+                                 L (Ind + 1, "bnf_lossy(&b_[start_..start_ + n_])");
+                                 L (Ind, "};");
+                              else
+                                 --  a rule with structure: the text parser reads
+                                 --  it, on a shifted copy if the octets start
+                                 --  inside a byte
+                                 L (Ind, "let " & N & ": " & Type_Of (R) & " = {");
+                                 L (Ind + 1, "let shifted_;");
+                                 L (Ind + 1, "let (b_, start_): (&[u8], usize) = if p_.bit % 8 == 0 {");
+                                 L (Ind + 2, "(p_.buf, p_.bit / 8)");
+                                 L (Ind + 1, "} else {");
+                                 L (Ind + 2, "shifted_ = bnf_shifted(p_);");
+                                 L (Ind + 2, "(&shifted_[..], 0)");
+                                 L (Ind + 1, "};");
+                                 L (Ind + 1, "let mut tp_ = TextP { text: Txt(b_), pos: start_, bit: 0, err_pos: 0, err: None };");
+                                 L (Ind + 1, "match " & HBNF_Rust.Parse_Fn (R) & "(&mut tp_) {");
+                                 L (Ind + 2, "Ok(v_) => { p_.bit += (tp_.pos - start_) * 8; v_ }");
+                                 L (Ind + 2, "Err(_) => { p_.fail(p_.bit, " & W & ", ""a " & R & """); return None; }");
+                                 L (Ind + 1, "}");
+                                 L (Ind, "};");
+                              end if;
+                           else
+                              L (Ind, "let " & N & ": " & Type_Of (R)
+                                & " = " & Parse_Fn_Of (R) & "(p_)?;");
+                           end if;
+                        end;
                      end if;
                   when S_Array =>
                      declare
@@ -593,8 +685,23 @@ package body HBNF_Wire.Rust is
                      end if;
                   when S_Ref =>
                      if not It.Bitsof then
-                        L (Ind, "if !" & Emit_Fn_Of (To_String (It.Ref))
-                          & "(w_, " & N & ") { return false; }");
+                        if Hosted_Mode and then Find (G, To_String (It.Ref)) = 0
+                        then
+                           if (for some X of G.External_Tokens =>
+                                 To_String (X) = To_String (It.Ref))
+                           then
+                              --  a text token held by the record: its octets
+                              L (Ind, "w_.put(" & N & ".as_bytes());");
+                           else
+                              L (Ind, "w_.fail(" & W & ", ""is a text rule with "
+                                 & "structure, which Rust writes only as a "
+                                 & "token; the C backend writes any""); "
+                                 & "return false;");
+                           end if;
+                        else
+                           L (Ind, "if !" & Emit_Fn_Of (To_String (It.Ref))
+                             & "(w_, " & N & ") { return false; }");
+                        end if;
                      end if;
                   when S_Array =>
                      if It.Count /= null then
@@ -746,17 +853,38 @@ package body HBNF_Wire.Rust is
       Emit_Fn  : constant String := Emit_Fn_Of (Rt);
    begin
       Check_Code_Language (G, "Rust");
-      if Is_Value_Set (G.Rules (Root)) then
+      if not Hosted_Mode and then Is_Value_Set (G.Rules (Root)) then
          raise Wire_Error with
            "the first rule, `" & Rt & "`, is a list of constants; the "
            & "parser reads the first rule, which should be the whole message";
       end if;
-      Words := Words_Item (G, "Rust");
+      if Hosted_Mode then
+         if Has_Actions then
+            raise Wire_Error with
+              "an %action in a grammar of text rules and bit rules is read by "
+              & "C so far (Rust reads %emit there, but not %action)";
+         end if;
+         for R of G.Rules loop
+            for A of R.Alts loop
+               for It of A.Items loop
+                  if It.Kind = S_Ref and then It.Bitsof then
+                     raise Wire_Error with
+                       "name:bitsof(" & To_String (It.Ref) & ") in a grammar "
+                       & "of text rules and bit rules is read by C so far";
+                  end if;
+               end loop;
+            end loop;
+         end loop;
+      else
+         Words := Words_Item (G, "Rust");
+      end if;
 
-         L (0, "// generated by hbnf (binary) -- do not edit");
-         L (0, "#![allow(dead_code, unused_variables, unused_mut, unused_parens, unused_assignments,");
-         L (0, "         unreachable_code, non_snake_case, non_camel_case_types, non_upper_case_globals,");
-         L (0, "         unused_macros)]");
+         if not Hosted_Mode then
+            L (0, "// generated by hbnf (binary) -- do not edit");
+            L (0, "#![allow(dead_code, unused_variables, unused_mut, unused_parens, unused_assignments,");
+            L (0, "         unreachable_code, non_snake_case, non_camel_case_types, non_upper_case_globals,");
+            L (0, "         unused_macros)]");
+         end if;
          if G.Preamble /= Null_Unbounded_String then
             L (0, "");
             L (0, "// the grammar's preamble");
@@ -779,13 +907,15 @@ package body HBNF_Wire.Rust is
             L (0, "}");
          end if;
          L (0, "");
-         L (0, "/// Where a read went wrong: the octet, and why.");
-         L (0, "#[derive(Debug, Clone, PartialEq)]");
-         L (0, "pub struct ParseError {");
-         L (0, "    pub at: usize,");
-         L (0, "    pub message: String,");
-         L (0, "}");
-         L (0, "");
+         if not Hosted_Mode then
+            L (0, "/// Where a read went wrong: the octet, and why.");
+            L (0, "#[derive(Debug, Clone, PartialEq)]");
+            L (0, "pub struct ParseError {");
+            L (0, "    pub at: usize,");
+            L (0, "    pub message: String,");
+            L (0, "}");
+            L (0, "");
+         end if;
          L (0, "struct P<'a> {");
          L (0, "    buf: &'a [u8],");
          L (0, "    nbits: usize,");
@@ -909,6 +1039,18 @@ package body HBNF_Wire.Rust is
          L (0, "    if unit == 0 { 0 } else { ((unit - bit % unit) % unit) as i64 }");
          L (0, "}");
          L (0, "const BNF_UNIT: usize = " & (if Words = null then "0" else Img (Words.Width)) & ";");
+         if Hosted_Mode then
+            L (0, "fn bnf_lossy(b: &[u8]) -> String {");
+            L (0, "    String::from_utf8_lossy(b).into_owned()");
+            L (0, "}");
+            L (0, "// The octets from the current bit on, as octets: a copy shifted to start on one.");
+            L (0, "fn bnf_shifted(p_: &P) -> Vec<u8> {");
+            L (0, "    let off = (p_.bit % 8) as u32;");
+            L (0, "    let base = p_.bit / 8;");
+            L (0, "    let m = (p_.nbits - p_.bit) / 8;");
+            L (0, "    (0..m).map(|k| (p_.buf[base + k] << off) | (p_.buf[base + k + 1] >> (8 - off))).collect()");
+            L (0, "}");
+         end if;
          L (0, "fn bnf_swap(v: u64, nbytes: u32) -> u64 {");
          L (0, "    let mut r: u64 = 0;");
          L (0, "    let mut v = v;");
@@ -949,7 +1091,9 @@ package body HBNF_Wire.Rust is
                                    & ASCII.LF);
                         end if;
                      end loop;
-                     D (0, "#[derive(Debug, Clone, PartialEq)]");
+                     D (0, (if Hosted_Mode
+                            then "#[derive(Debug, Clone, PartialEq, Default)]"
+                            else "#[derive(Debug, Clone, PartialEq)]"));
                      D (0, "pub struct " & Nm & " {");
                      Append (Defs, Fields);
                      D (0, "}");
@@ -962,7 +1106,11 @@ package body HBNF_Wire.Rust is
          end if;
       end loop;
       L (0, "");
-      Put (To_String (Defs));
+      if Hosted_Mode then
+         Last_Types := Defs;
+      else
+         Put (To_String (Defs));
+      end if;
 
       --  Value sets.
       for R of G.Rules loop
@@ -1113,7 +1261,26 @@ package body HBNF_Wire.Rust is
          L (0, "");
       end if;
 
-      if Words = null then
+      if Hosted_Mode then
+         for R of G.Rules loop
+            if not Is_Value_Set (R) then
+               declare
+                  Nm : constant String := To_String (R.Name);
+               begin
+                  L (0, "");
+                  L (0, "/// The bits of one " & Nm & ", written (its %emit first).");
+                  L (0, "pub fn emit_bits_" & Nm & "(v: &" & Type_Of (Nm)
+                     & ") -> Result<(Vec<u8>, usize), String> {");
+                  L (0, "    let mut w_ = W { buf: Vec::new(), bit: 0, failed: false, msg: String::new() };");
+                  L (0, "    if !" & Emit_Fn_Of (Nm) & "(&mut w_, v) {");
+                  L (0, "        return Err(w_.msg);");
+                  L (0, "    }");
+                  L (0, "    Ok((w_.buf, w_.bit))");
+                  L (0, "}");
+               end;
+            end if;
+         end loop;
+      elsif Words = null then
          L (0, "");
          L (0, "fn read(buf: &[u8], nbits: usize) -> Result<" & Root_T & ", (usize, String)> {");
          L (0, "    let mut p_ = P { buf, nbits, bit: 0, fail_bit: 0, failed: false, msg: String::new() };");
@@ -1338,7 +1505,81 @@ package body HBNF_Wire.Rust is
          L (0, "");
       end if;
 
+      if Hosted_Mode then
+         declare
+            Text : Unbounded_String := To_Unbounded_String (Rename (To_String (Buf)));
+         begin
+            --  the text as bytes, the types the text parser needs of it, and
+            --  what it calls: a bit rule read as a text rule is
+            Append (Text, ASCII.LF
+              & "// The text, as bytes: a bit rule reads any octet, and a text rule sees" & ASCII.LF
+              & "// the octets it reads as text." & ASCII.LF
+              & "#[derive(Clone, Copy)]" & ASCII.LF
+              & "struct Txt<'a>(&'a [u8]);" & ASCII.LF
+              & "impl<'a> Txt<'a> {" & ASCII.LF
+              & "    fn as_bytes(&self) -> &'a [u8] { self.0 }" & ASCII.LF
+              & "    fn len(&self) -> usize { self.0.len() }" & ASCII.LF
+              & "    fn cut(self, end: usize) -> Txt<'a> { Txt(&self.0[..end]) }" & ASCII.LF
+              & "}" & ASCII.LF
+              & "impl<'a> std::ops::Index<std::ops::Range<usize>> for Txt<'a> {" & ASCII.LF
+              & "    type Output = str;" & ASCII.LF
+              & "    fn index(&self, r: std::ops::Range<usize>) -> &str { unsafe { std::str::from_utf8_unchecked(&self.0[r]) } }" & ASCII.LF
+              & "}" & ASCII.LF
+              & "impl<'a> std::ops::Index<std::ops::RangeFrom<usize>> for Txt<'a> {" & ASCII.LF
+              & "    type Output = str;" & ASCII.LF
+              & "    fn index(&self, r: std::ops::RangeFrom<usize>) -> &str { unsafe { std::str::from_utf8_unchecked(&self.0[r]) } }" & ASCII.LF
+              & "}" & ASCII.LF
+              & "impl<'a> std::ops::Index<std::ops::RangeTo<usize>> for Txt<'a> {" & ASCII.LF
+              & "    type Output = str;" & ASCII.LF
+              & "    fn index(&self, r: std::ops::RangeTo<usize>) -> &str { unsafe { std::str::from_utf8_unchecked(&self.0[r]) } }" & ASCII.LF
+              & "}" & ASCII.LF
+              & "type TextP<'a> = P<'a>;" & ASCII.LF
+              & "fn bnf_first_char(b: &[u8]) -> String {" & ASCII.LF
+              & "    let n = match b[0] { 0..=0x7f => 1, 0xc0..=0xdf => 2, 0xe0..=0xef => 3, 0xf0..=0xf7 => 4, _ => 1 };" & ASCII.LF
+              & "    String::from_utf8_lossy(&b[..n.min(b.len())]).chars().next().unwrap_or('\u{FFFD}').to_string()" & ASCII.LF
+              & "}" & ASCII.LF);
+            for R of G.Rules loop
+               if not Is_Value_Set (R) then
+                  declare
+                     Nm : constant String := To_String (R.Name);
+                     T  : constant String := Type_Of (Nm);
+                  begin
+                     Append (Text, ASCII.LF & "fn " & HBNF_Rust.Parse_Fn (Nm)
+                       & "(p: &mut P) -> Result<" & T & ", ParseError> {" & ASCII.LF);
+                     Append (Text, "    let mut w = WP { buf: p.text.as_bytes(), nbits: p.text.len() * 8, "
+                       & "bit: p.pos * 8 + p.bit, fail_bit: 0, failed: false, msg: String::new() };"
+                       & ASCII.LF);
+                     Append (Text, "    match " & Parse_Fn_Of (Nm) & "(&mut w) {" & ASCII.LF
+                       & "        Some(v) => {" & ASCII.LF
+                       & "            p.pos = w.bit / 8;" & ASCII.LF
+                       & "            p.bit = w.bit % 8;" & ASCII.LF
+                       & "            Ok(v)" & ASCII.LF & "        }" & ASCII.LF
+                       & "        None => {" & ASCII.LF
+                       & "            p.pos = w.fail_bit / 8;" & ASCII.LF
+                       & "            let m = w.msg.clone();" & ASCII.LF
+                       & "            Err(p.fail(&m))" & ASCII.LF & "        }" & ASCII.LF
+                       & "    }" & ASCII.LF & "}" & ASCII.LF);
+                  end;
+               end if;
+            end loop;
+            return To_String (Text);
+         end;
+      end if;
       return To_String (Buf);
    end Emit;
+
+   procedure Emit_Hosted (G : Grammar; Types, Code : out Unbounded_String) is
+   begin
+      Hosted_Mode := True;
+      begin
+         Code := To_Unbounded_String (Emit (G));
+      exception
+         when others =>
+            Hosted_Mode := False;
+            raise;
+      end;
+      Hosted_Mode := False;
+      Types := Last_Types;
+   end Emit_Hosted;
 
 end HBNF_Wire.Rust;

@@ -2,7 +2,7 @@
 #[derive(Debug, Clone)] pub struct ParseError { pub line: usize, pub col: usize, pub msg: String }
 fn is_word_char(c: u8) -> bool { c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c == b'.' }
 // The parser reads the text itself: a byte position in it, no token array.
-struct P<'a> { text: &'a str, pos: usize, err_pos: usize, err: Option<ParseError> }
+struct P<'a> { text: {{&text_type}}, pos: usize, {{&bit_field}}err_pos: usize, err: Option<ParseError> }
 impl<'a> P<'a> {
     fn fail(&mut self, expected: &str) -> ParseError {
         if self.err.is_none() || self.pos > self.err_pos {
@@ -25,10 +25,10 @@ impl<'a> P<'a> {
                 while i < b.len() && is_word_char(b[i]) { i += 1; }
                 self.text[self.pos..i].to_string()
             } else {
-                self.text[self.pos..].chars().next().unwrap().to_string()
+                {{&first_char}}
             };
             let pad = " ".repeat(col - 1);
-            let msg = format!("expected {}, found {}\n  {}\n  {}^", expected, found, &self.text[start..stop], pad);
+            let msg = format!("expected {}, found {}\n  {}\n  {}^", expected, found, {{&line_text}}, pad);
             self.err = Some(ParseError { line, col, msg });
         }
         self.err.clone().unwrap()

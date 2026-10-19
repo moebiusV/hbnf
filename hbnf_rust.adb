@@ -286,6 +286,23 @@ package body HBNF_Rust is
       return 0;
    end Find;
 
+   Hosted_Types : U;
+   Hosted_Code  : U;
+   Is_Hosted    : Boolean := False;
+
+   procedure Set_Hosted (Types, Code : String) is
+   begin
+      Hosted_Types := To_Unbounded_String (Types);
+      Hosted_Code  := To_Unbounded_String (Code);
+      Is_Hosted := True;
+   end Set_Hosted;
+
+   function Type_Name (Rule : String) return String is (Rust_Type (Rule));
+   function Parse_Fn (Rule : String) return String is
+     ("parse_" & Rust_Snake (Rule));
+   function Scan_Fn (Rule : String) return String is
+     ("scan_" & Rust_Snake (Rule));
+
    --  The Rust type a rule reference denotes: a core scalar inlines; any
    --  other reference resolves to the referenced rule's own type name.
    function Rust_Type_Of (Rules : Rule_Vectors.Vector; Ref : String)
@@ -295,7 +312,7 @@ package body HBNF_Rust is
       if S /= "" then
          return S;
       end if;
-      if Find (Rules, Ref) = 0 then
+      if Find (Rules, Ref) = 0 and then not HBNF_Grammar.Is_Wire_Rule (Ref) then
          raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
            & (if HBNF_Grammar.Spelled (Ref) /= Ref then ", which no `::=` defines" else "");
       end if;
@@ -1168,6 +1185,7 @@ package body HBNF_Rust is
 
       Emit_Walk (Res);
       Append (Res, LF);
+      Append (Res, Hosted_Types);
 
       return To_String (Res);
    end Emit;
@@ -1818,7 +1836,9 @@ package body HBNF_Rust is
                   Append (Buf, "    let end = p.pos;" & LF);
                   Append (Buf, "    let full = p.text;" & LF);
                   Append (Buf, "    let (keep_pos, keep_err) = (p.err_pos, p.err.clone());" & LF);
-                  Append (Buf, "    p.text = &full[..end]; p.pos = save;" & LF);
+                  Append (Buf, (if Is_Hosted
+                                then "    p.text = full.cut(end); p.pos = save;"
+                                else "    p.text = &full[..end]; p.pos = save;") & LF);
                   Append (Buf, "    let same = parse_" & Rust_Snake (B)
                     & "(p).is_ok() && p.pos == end;" & LF);
                   Append (Buf, "    p.text = full; p.pos = end;" & LF);
@@ -2042,6 +2062,15 @@ package body HBNF_Rust is
          begin
             Mustache.Put (V, "nocase", To_String (Nocase));
             Mustache.Put (V, "skip_ws", To_String (Skip_Ws));
+            Mustache.Put (V, "text_type", (if Is_Hosted then "Txt<'a>" else "&'a str"));
+            Mustache.Put (V, "bit_field",
+              (if Is_Hosted then "bit: usize, " else ""));
+            Mustache.Put (V, "first_char",
+              (if Is_Hosted then "bnf_first_char(&b[self.pos..])"
+               else "self.text[self.pos..].chars().next().unwrap().to_string()"));
+            Mustache.Put (V, "line_text",
+              (if Is_Hosted then "bnf_lossy(&b[start..stop])"
+               else "&self.text[start..stop]"));
             Append (Res, Mustache.Render_File ("rust_parser", V));
          end;
       end;
@@ -2381,6 +2410,9 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
          V : Mustache.Context := Mustache.View;
       begin
          Mustache.Put (V, "root_type", Root_T);
+         Mustache.Put (V, "text_param", (if Is_Hosted then "&[u8]" else "&str"));
+         Mustache.Put (V, "text_init", (if Is_Hosted then ": Txt(text)" else ""));
+         Mustache.Put (V, "bit_init", (if Is_Hosted then "bit: 0, " else ""));
          Mustache.Put (V, "root_fn",
            "parse_" & Rust_Snake (To_String (R.Name)));
          --  The root skips whitespace around itself if its file does.
@@ -2396,9 +2428,9 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
       Lexer  : constant String := Parse_Text_Src;
    begin
       if Epilogue ("Rust") = "" then
-         return Lexer;
+         return Lexer & To_String (Hosted_Code);
       else
-         return Lexer & LF & Epilogue ("Rust");
+         return Lexer & To_String (Hosted_Code) & LF & Epilogue ("Rust");
       end if;
    end Emit_Lexer;
 

@@ -119,6 +119,11 @@ check net
 check_rust net
 check_rust segwit
 check_rust mnemonic mnemonic_rust mnemonic_ports crypto
+check_rust mixed
+check_rust mixed2
+check_rust mixed3
+check_rust mixed4 mixed4 mixed4_zig
+check_rust mixed6 mixed6_rust mixed6
 check_zig net
 check_zig segwit
 check_zig mnemonic mnemonic_zig mnemonic_ports
