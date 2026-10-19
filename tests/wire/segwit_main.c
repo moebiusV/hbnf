@@ -1,4 +1,6 @@
-/* BIP-173 and BIP-350 segwit data parts, as 5-bit symbols packed into bits.
+/* BIP-173 and BIP-350 segwit data parts.  The vectors are 5-bit symbols packed
+   into bits; they are spelled as the text of bech32's characters, which is what
+   `bitsof` reads, and the addresses are also written back.
    The first five are the published valid addresses (the symbols after the
    separator, checksum included); the rest are made to break one rule each.
    Packed by a script that shares nothing with hbnf. */
@@ -40,11 +42,33 @@ static void hex(const uint8_t *p, size_t n, char *out) {
     out[2 * n] = 0;
 }
 
+/* nbits of bytes, 5 at a time, as bech32 characters */
+static void symbols(const uint8_t *b, unsigned nbits, char *out) {
+    static const char set[] = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+    unsigned i, k, n = nbits / 5;
+    for (i = 0; i < n; i++) {
+        unsigned v = 0;
+        for (k = 0; k < 5; k++) {
+            unsigned bit = i * 5 + k;
+            v = (v << 1) | ((b[bit >> 3] >> (7 - (bit & 7))) & 1u);
+        }
+        out[i] = set[v];
+    }
+    out[n] = 0;
+}
+
+static void first_line(char *s) {
+    char *nl = strchr(s, '\n');
+    if (nl) *nl = 0;
+}
+
 int main(void) {
     int bad = 0;
     for (size_t i = 0; i < sizeof vecs / sizeof vecs[0]; i++) {
-        bnf_segwit_t out;  char err[256];  size_t at;
-        int ok = parse_bits(vecs[i].bytes, vecs[i].nbits, &out, err, sizeof err, &at);
+        doc_t out;  char err[256], text[128];  size_t line, col;
+        int ok;
+        symbols(vecs[i].bytes, vecs[i].nbits, text);
+        ok = parse_text(text, &out, err, sizeof err, &line, &col);
         if (vecs[i].valid) {
             char h[128];
             if (ok) hex(out.program.ptr, out.program.len, h);
@@ -52,12 +76,11 @@ int main(void) {
                 printf("PASS %s: version %d, %zu octets\n", vecs[i].name, (int)out.version, out.program.len);
             else { printf("FAIL %s: %s\n", vecs[i].name, ok ? "read as something else" : err); bad++; }
         } else {
-            if (!ok) printf("PASS refused: %s (%s)\n", vecs[i].name, err);
+            if (!ok) { first_line(err); printf("PASS refused: %s (%s)\n", vecs[i].name, err); }
             else { printf("FAIL accepted: %s\n", vecs[i].name); bad++; }
         }
-        free_arena();
     }
-    {   /* the same addresses as text: the data part after "bc1", read and written back */
+    {   /* the data parts of real addresses, read and written back as text */
         static const char *text[] = {
             "qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
             "qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
@@ -66,18 +89,18 @@ int main(void) {
             "zw508d6qejxtdg4y5r3zarvaryvaxxpcs",
         };
         for (size_t i = 0; i < sizeof text / sizeof text[0]; i++) {
-            bnf_segwit_t out;  char err[256], back[128];  size_t at, m = 0;
-            if (!parse_text(text[i], strlen(text[i]), &out, err, sizeof err, &at))
+            doc_t out;  char err[256], back[128];  size_t line, col, m = 0;
+            if (!parse_text(text[i], &out, err, sizeof err, &line, &col))
                 { printf("FAIL text %zu: %s\n", i, err);  bad++;  continue; }
-            if (!emit_text(&out, back, sizeof back, &m, err, sizeof err))
+            if (!emit_bits_segwit(&out, (uint8_t *)back, sizeof back, &m, err, sizeof err))
                 { printf("FAIL text %zu: emit: %s\n", i, err);  bad++; }
-            else if (m != strlen(text[i]) || memcmp(back, text[i], m))
-                { printf("FAIL text %zu: written back as %s\n", i, back);  bad++; }
-            else printf("PASS text %zu: version %d, %zu octets, written back\n", i, (int)out.version, out.program.len);
-            free_arena();
+            else if (m / 8 != strlen(text[i]) || memcmp(back, text[i], m / 8))
+                { printf("FAIL text %zu: written back as %.*s\n", i, (int)(m / 8), back);  bad++; }
+            else printf("PASS text %zu: version %d, %zu octets, written back\n", i,
+                        (int)out.version, out.program.len);
         }
-        { bnf_segwit_t out;  char err[256];  size_t at;
-          printf("%s\n", parse_text("qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3tb", 39, &out, err, sizeof err, &at)
+        { doc_t out;  char err[256];  size_t line, col;
+          printf("%s\n", parse_text("qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3tb", &out, err, sizeof err, &line, &col)
                  ? "FAIL b is not a bech32 symbol" : "PASS refused: b is not a bech32 symbol");
         }
     }

@@ -1158,8 +1158,9 @@ should claim that before 10.
        `@K` check; `tests/wire.sh` has Ethernet/ARP/IPv4 fixtures and nine
        refusals.  A group is written `name:( ... )` and a bit count
        `name:bits(expr)`.  The other direction (tree to bytes) exists
-       in C, and so does the text form (`units`: bech32 symbols and BIP-39
-       words as 5- and 11-bit units, `parse_text`/`emit_text`), and `%action{ }` on
+       in C, and so does the text form (`name:bitsof(rule)`: bech32 symbols and
+       BIP-39 words as 5- and 11-bit words of a text rule, read and written
+       through the text parser), and `%action{ }` on
        a wire rule (C; `HBNF_WARN`, `HBNF_FAIL`), `%emit{ }` (a computed field,
        when writing), `{ }` preamble and epilogue, calls to the system's libraries
        (zlib, OpenSSL, the bech32 reference), by their own names, with
@@ -1194,10 +1195,10 @@ should claim that before 10.
 
        1. **One reader.**  The bit forms (`name:N`, `name@K:N`, `0x` and `0b`
           constants, `[expr]`, `?( )`, `*u8`, `%action`/`%emit`) are elements of
-          the main notation; `language` and `units` are directives of the main
-          reader (`units` is a stopgap, to go when stage 2 lets a text rule feed
-          a bit rule).  The wire emitters stay, fed by lowering the unified
-          rules.  `units` names an enum rule of the same file, not another file.
+          the main notation; `language` is a directive of the main reader.  The
+          wire emitters stay, fed by lowering the unified rules.  (`units`, a
+          directive that spelled a message as words, was a stopgap and is gone:
+          2026-10-18, replaced by `name:bitsof(rule)`, below.)
        2. **Rules refer across the boundary** (a text rule holding a bit rule and
           the reverse), through one parse state.
        3. **Interleaving inside a sequence** -- `"GET " len:16 payload:[len]
@@ -1337,7 +1338,7 @@ should claim that before 10.
           table; and a char is a code point at the grammar level in every set.
 
        The unit-width directive (`byte N`, `word N`) and `charset` go in one
-       step after `units` is retired.
+       step, now that `units` is retired.
 
        **Stage 2, built 2026-10-17 (C):** a text rule may name a bit rule and a
        bit rule a text rule, read by one parser.  The bit rules are emitted
@@ -1348,8 +1349,25 @@ should claim that before 10.
        says so when it does not.  A rule is a bit rule only if it holds a bit
        field itself; one that names a bit rule is a text rule.  Not yet: the
        writer, actions and emitters, the other backends, a bit rule holding a text
-       rule by value, and `units` (still the way a phrase and its bits meet; it
-       goes when the numbers of a text rule's words can feed a bit rule).
+       rule by value.
+
+       **`units` retired, 2026-10-18 (C).**  `name:bitsof(rule)` in a bit rule:
+       the text rule is read as text, the **numbers** of the words in it (the enum
+       rule it holds, found by the reader: `bip39-word`, `bech32-symbol`) are the
+       bits the rest of the rule reads, W bits each (what the largest number
+       needs), with `remaining` and `align` over them; the rule must use them all.
+       Writing writes the fields as bits and spells them as words, joined by what
+       the text rule puts between two.  It is the "slices of a text of numbered
+       words" of this entry in sequential form: the rest of the rule reads the
+       words' bits in order, where `foo@Off:Len` would address them by place.  The
+       sequential form is what writing can invert (the word count follows from
+       the fields); explicit slices would need the count solved for, and stay
+       designed.  BIP-39 (eighteen phrases read, refused and generated) and the
+       segwit data part run on it (`tests/wire/mnemonic`, `segwit`); a parse also
+       needs the text rule as an alias root to run the actions (`doc = mnemonic`).
+       Limits: C only (Rust refuses `bitsof` and `align`); the phrase's own tree
+       is not kept; a `bitsof` is at the top of its rule, not in a choice, and not
+       inside another.
        Stage 3 (built, C): a rule holding both kinds is split into hidden
        runs `<rule>_<n>`, one per run of bit fields or text (`tests/wire/mixed4`);
        a group holding both is refused.
@@ -1413,8 +1431,8 @@ should claim that before 10.
        `emit_bits_<rule>` (built), and the octets are written as bytes; a
        bit rule that holds a text rule calls `write_<rule>` at whatever
        bit it is, the octets written shifted.  Numbered-word text (BIP-39, bech32) writes through the same
-       path: a token's value is its spelling, so the slices of
-       "Retire `units`" below only need the spelling of each number.
+       path: a token's value is its spelling, so `bitsof` (built) needs only the
+       spelling of each number.
     5. *Order of work:* `_alt`/`_has` recording and `write_` for sequences,
        literals, tokens, lists and optional parts; alternations; left-recursive
        lists (`sum = sum "+" n`); then `--writer` on obconf (it has a printer

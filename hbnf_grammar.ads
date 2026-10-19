@@ -186,6 +186,9 @@ package HBNF_Grammar is
             --  The text of the expression that is the octet count, the bit
             --  count, the repeat count or the condition, as written.
             F_Ref     : Unbounded_String;     --  the rule of a nested record
+            F_Bitsof  : Boolean := False;
+            --  `name:bitsof(rule)`: rule is a text rule; its numbered tokens
+            --  are the bits the rest of this rule reads.
             F_Min     : Natural := 0;         --  repeats of a nested record
             F_Max     : Integer := -1;
             F_Alts    : Element_Vectors.Vector;  --  a choice, Alt-separated
@@ -285,13 +288,6 @@ package HBNF_Grammar is
 
    --  A rule's `%emit{ code }`, "" when it has none.
    function Emit_Code (Rule_Name : String) return String;
-
-   --  `units W name [separator name]`: the message is also written as text, in
-   --  W-bit units, each spelled by a literal of the enum rule `name` (and
-   --  separated by the literal of the rule `separator`).  Width 0: none.
-   function Units_Width return Natural;
-   function Units_Rule return String;
-   function Units_Separator return String;
 
    --  The prefix of the names the emitters make: "bnf_", the dialect's, the
    --  `prefix` line's, or "" for `prefix none`.

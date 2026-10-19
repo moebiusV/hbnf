@@ -23,8 +23,8 @@ with Interfaces;
 --    ?(expr)                                a condition on what has been read
 --    name:( ?(expr) a | ?(expr) b | c )     a choice, by guard
 --
---  `align` is the number of bits to the next unit boundary (see `units`),
---  0 when the file has no units.
+--  `align` is the number of bits to the next word boundary of a
+--  `name:bitsof(rule)` field (see Item.Bitsof); a rule with none cannot use it.
 --
 --  An expression is C's integer arithmetic over the fields read before it,
 --  `remaining`, the number of bits left in the input, and `len (field)`, the
@@ -80,6 +80,15 @@ package HBNF_Wire is
       S_Choice,     --  one of Alts
       S_Assert);    --  `?(expr)` between fields: the read fails unless it holds
 
+   --  The numbered words of a text rule, for `name:bitsof(rule)`: each unit's
+   --  spelling and its value (its place in the list, or `"x"@7`).  The text
+   --  is a decoding of the bits, as UTF-8 is.
+   type Unit is record
+      Spelling : Unbounded_String;
+      Value    : Natural := 0;
+   end record;
+   package Unit_Vectors is new Ada.Containers.Vectors (Positive, Unit);
+
    type Item;
    type Item_Access is access Item;
    package Item_Vectors is new Ada.Containers.Vectors (Positive, Item_Access);
@@ -108,6 +117,19 @@ package HBNF_Wire is
       Alts   : Seq_Vectors.Vector;      --  S_Choice
       Line   : Natural := 0;
       Col    : Natural := 0;
+      Bitsof : Boolean := False;
+      --  `name:bitsof(Ref)`, Ref a text rule: it is read as text, its numbered
+      --  words (Word_Rule, Width bits each, spelled by Words) are the bits the
+      --  rest of the sequence reads, and written back as the words joined by
+      --  Sep.  Tmp_Type and Tmp_Free: the C type of Ref's value, and the
+      --  statement that frees one (the text parser builds it with calloc).
+      Width     : Natural := 0;
+      Words     : Unit_Vectors.Vector;
+      Word_Rule : Unbounded_String;
+      Sep       : Unbounded_String;
+      Tmp_Type  : Unbounded_String;
+      Tmp_Free  : Unbounded_String;
+      Ord       : Natural := 0;       --  the emitter's number for a Bitsof
    end record;
 
    type Rule is record
@@ -127,18 +149,6 @@ package HBNF_Wire is
    end record;
    package Rule_Vectors is new Ada.Containers.Vectors (Positive, Rule);
 
-   --  `units W name from "file" [separator name]`: the message is also
-   --  written as text, in units of W bits each.  A unit's spelling is a
-   --  literal of the enum rule `name` in the text grammar "file", and its value
-   --  is the literal's number (the place in the list, or `"x"@7`): a bech32
-   --  symbol is 5 bits, a BIP-39 word 11.  The text is a decoding of the bits,
-   --  as UTF-8 is.
-   type Unit is record
-      Spelling : Unbounded_String;
-      Value    : Natural := 0;
-   end record;
-   package Unit_Vectors is new Ada.Containers.Vectors (Positive, Unit);
-
    package Name_Vectors is new Ada.Containers.Vectors
      (Positive, Unbounded_String);
 
@@ -151,9 +161,6 @@ package HBNF_Wire is
       --  a string, or an enum, or a text token); the text emitter makes them.
       Rules  : Rule_Vectors.Vector;
       Prefix : Unbounded_String := To_Unbounded_String ("bnf_");
-      Unit_Width : Natural := 0;               --  0: no text form
-      Units      : Unit_Vectors.Vector;
-      Unit_Sep   : Unbounded_String;           --  "" for none
       Language   : Unbounded_String := To_Unbounded_String ("C");
       --  `language Rust`: the language the file's code (preamble, epilogue,
       --  %action, %emit) is written in; C unless it says.

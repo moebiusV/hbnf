@@ -50,29 +50,29 @@ static const struct vec vecs[] = {
 int main(void) {
     int bad = 0;
     for (size_t i = 0; i < sizeof vecs / sizeof vecs[0]; i++) {
-        bnf_mnemonic_t out;  char err[256];  size_t at;
+        doc_t out;  char err[256];  size_t line, col;
         char back[400];  size_t m = 0;
         unsigned words = (vecs[i].n * 8 + vecs[i].n * 8 / 32) / 11;
         unsigned want_warn = vecs[i].n != 16 && vecs[i].n != 32;
-        if (!parse_text(vecs[i].phrase, strlen(vecs[i].phrase), &out, err, sizeof err, &at)) {
+        if (!parse_text(vecs[i].phrase, &out, err, sizeof err, &line, &col)) {
             printf("FAIL %u words: %s\n", words, err);  bad++;  continue;
         }
-        if (out.entropy.len != vecs[i].n || memcmp(out.entropy.ptr, vecs[i].entropy, vecs[i].n)
+        if (out.entropy.len != vecs[i].n
+            || memcmp(out.entropy.ptr, vecs[i].entropy, vecs[i].n)
             || (unsigned)out.checksum != vecs[i].cs) {
             printf("FAIL %u words: entropy or checksum differs\n", words);  bad++;
-        } else if (out.nwarnings != want_warn) {
-            printf("FAIL %u words: %u warning(s)\n", words, out.nwarnings);  bad++;
-        } else if (!emit_text(&out, back, sizeof back, &m, err, sizeof err)) {
+        } else if (hbnf_warnings() != want_warn) {
+            printf("FAIL %u words: %u warning(s)\n", words, hbnf_warnings());  bad++;
+        } else if (!emit_bits_mnemonic(&out, (uint8_t *)back, sizeof back, &m, err, sizeof err)) {
             printf("FAIL %u words: emit: %s\n", words, err);  bad++;
-        } else if (m != strlen(vecs[i].phrase) || memcmp(back, vecs[i].phrase, m)) {
-            printf("FAIL %u words: written back as %s\n", words, back);  bad++;
+        } else if (m / 8 != strlen(vecs[i].phrase) || memcmp(back, vecs[i].phrase, m / 8)) {
+            printf("FAIL %u words: written back as %.*s\n", words, (int)(m / 8), back);  bad++;
         } else
             printf("PASS %u words, entropy %u octets, checksum %u%s%s, written back\n",
-                   words, vecs[i].n, vecs[i].cs, out.nwarnings ? ", warning: " : "",
-                   out.nwarnings ? out.warnings[0] : "");
-        free_arena();
+                   words, vecs[i].n, vecs[i].cs, hbnf_warnings() ? ", warning: " : "",
+                   hbnf_warnings() ? hbnf_warning(0) : "");
     }
-    {   bnf_mnemonic_t out;  char err[256];  size_t at;
+    {   doc_t out;  char err[256];  size_t line, col;
         static const char *no[] = {
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon",
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandonn",
@@ -84,23 +84,26 @@ int main(void) {
         static const char *why[] = { "11 words", "a misspelt word", "two blanks", "a trailing blank",
                                      "a wrong checksum (all abandon)", "a wrong checksum (all zoo)", "nothing" };
         for (size_t i = 0; i < sizeof no / sizeof no[0]; i++) {
-            if (parse_text(no[i], strlen(no[i]), &out, err, sizeof err, &at))
+            if (parse_text(no[i], &out, err, sizeof err, &line, &col))
                 { printf("FAIL accepted: %s\n", why[i]);  bad++; }
-            else printf("PASS refused: %s (%s)\n", why[i], err);
-            free_arena();
-        }
+            else {
+                char *nl = strchr(err, '\n');
+                if (nl) *nl = 0;
+                printf("PASS refused: %s (%s)\n", why[i], err);
+            }
+            }
     }
     {   /* writing: only the entropy is set, and %emit works out the checksum */
         for (size_t i = 0; i < sizeof vecs / sizeof vecs[0]; i++) {
-            bnf_mnemonic_t t;  char back[400], err[256];  size_t m = 0;
+            mnemonic_t t;  char back[400], err[256];  size_t m = 0;
             memset(&t, 0, sizeof t);
             t.entropy.ptr = vecs[i].entropy;
             t.entropy.len = vecs[i].n;
             t.checksum = 0x55;      /* wrong on purpose: it is computed */
-            if (!emit_text(&t, back, sizeof back, &m, err, sizeof err))
+            if (!emit_bits_mnemonic(&t, (uint8_t *)back, sizeof back, &m, err, sizeof err))
                 { printf("FAIL generate %zu: %s\n", i, err);  bad++; }
-            else if (m != strlen(vecs[i].phrase) || memcmp(back, vecs[i].phrase, m))
-                { printf("FAIL generate %zu: %s\n", i, back);  bad++; }
+            else if (m / 8 != strlen(vecs[i].phrase) || memcmp(back, vecs[i].phrase, m / 8))
+                { printf("FAIL generate %zu: %.*s\n", i, (int)(m / 8), back);  bad++; }
             else printf("PASS generated %u words from %u octets of entropy\n",
                         (vecs[i].n * 8 + vecs[i].n * 8 / 32) / 11, vecs[i].n);
         }

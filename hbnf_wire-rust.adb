@@ -245,14 +245,9 @@ package body HBNF_Wire.Rust is
                if To_String (E.Name) = "remaining" then
                   return "((p_.nbits - p_.bit) as i64)";
                elsif To_String (E.Name) = "align" then
-                  declare
-                     W : constant String := Img (G.Unit_Width);
-                     B : constant String := (if Emit_Side then "w_.bit"
-                                             else "p_.bit");
-                  begin
-                     return "((" & W & " - " & B & " % " & W & ") % " & W
-                       & ") as i64";
-                  end;
+                  raise Wire_Error with
+                    "`align` belongs to `name:bitsof(rule)`, which the C "
+                    & "backend has and Rust does not yet";
                end if;
                return "(" & To_String (E.Name) & " as i64)";
             when E_Call =>
@@ -985,113 +980,6 @@ package body HBNF_Wire.Rust is
          L (0, "    Ok(b)");
          L (0, "}");
 
-      if G.Unit_Width > 0 then
-         L (0, "");
-         L (0, "const UNIT_BITS: u32 = " & Img (G.Unit_Width) & ";");
-         L (0, "const SEP: &str = """ & Escape (To_String (G.Unit_Sep)) & """;");
-         L (0, "// The spellings, longest first.");
-         L (0, "static UNITS: &[(&str, u32)] = &[");
-         declare
-            Longest : Natural := 0;
-         begin
-            for U of G.Units loop
-               Longest := Natural'Max (Longest, Length (U.Spelling));
-            end loop;
-            for Len in reverse 0 .. Longest loop
-               for U of G.Units loop
-                  if Length (U.Spelling) = Len then
-                     L (1, "(""" & Escape (To_String (U.Spelling)) & """, "
-                        & Img (U.Value) & "),");
-                  end if;
-               end loop;
-            end loop;
-         end;
-         L (0, "];");
-         L (0, "");
-         L (0, "// ---- the text form: the message as units of UNIT_BITS bits, each spelled by");
-         L (0, "// one of the strings above (a bech32 symbol, a BIP-39 word).  A spelling is");
-         L (0, "// matched longest first, and where there is a separator it counts only if it is");
-         L (0, "// followed by one or by the end, so a word is never taken for the start of a");
-         L (0, "// longer one.");
-         L (0, "pub fn parse_text(text: &str) -> Result<" & Root_T & ", ParseError> {");
-         L (0, "    let t = text.as_bytes();");
-         L (0, "    let mut w_ = W { buf: Vec::new(), bit: 0, failed: false, msg: String::new() };");
-         L (0, "    let mut start: Vec<usize> = Vec::new();");
-         L (0, "    let mut pos = 0usize;");
-         L (0, "    while pos < t.len() {");
-         L (0, "        let mut found: Option<(usize, u32)> = None;");
-         L (0, "        for &(s, v) in UNITS {");
-         L (0, "            let sb = s.as_bytes();");
-         L (0, "            if !t[pos..].starts_with(sb) {");
-         L (0, "                continue;");
-         L (0, "            }");
-         L (0, "            if !SEP.is_empty()");
-         L (0, "                && pos + sb.len() < t.len()");
-         L (0, "                && !t[pos + sb.len()..].starts_with(SEP.as_bytes())");
-         L (0, "            {");
-         L (0, "                continue;");
-         L (0, "            }");
-         L (0, "            found = Some((sb.len(), v));");
-         L (0, "            break;");
-         L (0, "        }");
-         L (0, "        let (l, v) = match found {");
-         L (0, "            Some(x) => x,");
-         L (0, "            None => {");
-         L (0, "                return Err(ParseError {");
-         L (0, "                    at: pos,");
-         L (0, "                    message: format!(""character {}: not one of the units"", pos),");
-         L (0, "                })");
-         L (0, "            }");
-         L (0, "        };");
-         L (0, "        start.push(pos);");
-         L (0, "        w_.wr(UNIT_BITS, v as u64);");
-         L (0, "        pos += l;");
-         L (0, "        if !SEP.is_empty() && pos < t.len() {");
-         L (0, "            pos += SEP.len();");
-         L (0, "            if pos == t.len() {");
-         L (0, "                return Err(ParseError {");
-         L (0, "                    at: pos,");
-         L (0, "                    message: format!(""character {}: the text ends with a separator"", pos),");
-         L (0, "                });");
-         L (0, "            }");
-         L (0, "        }");
-         L (0, "    }");
-         L (0, "    match read(&w_.buf, start.len() * UNIT_BITS as usize) {");
-         L (0, "        Ok(v) => Ok(v),");
-         L (0, "        Err((fb, m)) => {");
-         L (0, "            let u = fb / UNIT_BITS as usize;");
-         L (0, "            let c = if u < start.len() { start[u] } else { t.len() };");
-         L (0, "            Err(ParseError { at: c, message: format!(""unit {} (character {}): {}"", u, c, m) })");
-         L (0, "        }");
-         L (0, "    }");
-         L (0, "}");
-         L (0, "");
-         L (0, "/// The message as text.");
-         L (0, "pub fn emit_text(v: &" & Root_T & ") -> Result<String, String> {");
-         L (0, "    let (b, nbits) = emit_bits(v)?;");
-         L (0, "    let ub = UNIT_BITS as usize;");
-         L (0, "    if nbits % ub != 0 {");
-         L (0, "        return Err(format!(""{} bits is not a whole number of {}-bit units"", nbits, UNIT_BITS));");
-         L (0, "    }");
-         L (0, "    let mut out = String::new();");
-         L (0, "    for i in 0..nbits / ub {");
-         L (0, "        let mut x: u32 = 0;");
-         L (0, "        for k in 0..ub {");
-         L (0, "            let bit = i * ub + k;");
-         L (0, "            x = (x << 1) | ((b[bit >> 3] >> (7 - (bit & 7))) & 1) as u32;");
-         L (0, "        }");
-         L (0, "        let s = match UNITS.iter().find(|(_, val)| *val == x) {");
-         L (0, "            Some((s, _)) => *s,");
-         L (0, "            None => return Err(format!(""unit {} has the value {}, which no unit spells"", i, x)),");
-         L (0, "        };");
-         L (0, "        if i > 0 {");
-         L (0, "            out.push_str(SEP);");
-         L (0, "        }");
-         L (0, "        out.push_str(s);");
-         L (0, "    }");
-         L (0, "    Ok(out)");
-         L (0, "}");
-      end if;
       return To_String (Buf);
    end Emit;
 

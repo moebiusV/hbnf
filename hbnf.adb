@@ -190,7 +190,7 @@ begin
    HBNF_Grammar.Reset_Warnings;
 
    --  A grammar whose first rule holds bit fields (RFCPLAN.md step 7b) goes to
-   --  the wire emitters; the text rules it keeps (the spellings of `units`) are
+   --  the wire emitters; the text rules it keeps (those `bitsof` names) are
    --  read from the same grammar.
    declare
       Parsed : constant HBNF_Grammar.Rule_Vectors.Vector :=

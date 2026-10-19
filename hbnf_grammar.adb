@@ -220,9 +220,6 @@ package body HBNF_Grammar is
    Emit_Table      : Text_Maps.Map;      --  rule -> its %emit code
    Wire_Store      : Rule_Vectors.Vector;
    Wire_Root_Flag  : Boolean := False;
-   Units_W         : Natural := 0;
-   Units_R         : Unbounded_String;
-   Units_S         : Unbounded_String;
 
    function Is_Wire_Rule (Name : String) return Boolean is
    begin
@@ -236,9 +233,6 @@ package body HBNF_Grammar is
 
    function Wire_Rules return Rule_Vectors.Vector is (Wire_Store);
    function Wire_Root return Boolean is (Wire_Root_Flag);
-   function Units_Width return Natural is (Units_W);
-   function Units_Rule return String is (To_String (Units_R));
-   function Units_Separator return String is (To_String (Units_S));
 
    function Emit_Code (Rule_Name : String) return String is
      (if Emit_Table.Contains (Rule_Name) then Emit_Table (Rule_Name) else "");
@@ -552,9 +546,6 @@ package body HBNF_Grammar is
       Emit_Table.Clear;
       Wire_Store.Clear;
       Wire_Root_Flag := False;
-      Units_W := 0;
-      Units_R := Null_Unbounded_String;
-      Units_S := Null_Unbounded_String;
    end Reset;
 
    --  ====================================================================
@@ -1019,7 +1010,6 @@ package body HBNF_Grammar is
                                   | "sensitivity" | "whitespace" | "keywords"
                                   | "statements" | "macros" | "includes"
                                   | "entry" | "prefix" | "wordchars"
-                                  | "units"
                      then
                         Emit (T_Newline);
                      end if;
@@ -2044,7 +2034,20 @@ package body HBNF_Grammar is
                begin
                   HBNF_Wire.Fixed_Type (To_String (T.Text), Is_Fixed, Bits, Sg, Lt);
                   Next (P);
-                  if Is_Fixed then
+                  if To_String (T.Text) = "bitsof"
+                    and then Cur (P).Kind = T_LParen
+                  then
+                     --  `name:bitsof(rule)`
+                     Next (P);
+                     if Cur (P).Kind /= T_Name then
+                        Bad (Cur (P), "expected a text rule after `bitsof(`");
+                     end if;
+                     F.F_Kind := HBNF_Wire.S_Ref;
+                     F.F_Ref := Cur (P).Text;
+                     F.F_Bitsof := True;
+                     Next (P);
+                     Expect (P, T_RParen, "')'");
+                  elsif Is_Fixed then
                      F.F_Kind := HBNF_Wire.S_Bits;
                      F.F_Bits := Bits;
                      F.F_Signed := Sg;
@@ -4949,8 +4952,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "sensitivity"
                               or else To_String (Cur (P).Text) = "dialect"
                               or else To_String (Cur (P).Text) = "whitespace"
-                              or else To_String (Cur (P).Text) = "keywords"
-                              or else To_String (Cur (P).Text) = "units"))
+                              or else To_String (Cur (P).Text) = "keywords"))
          then
             P.Pos := Mark;
             loop
@@ -5216,35 +5218,6 @@ package body HBNF_Grammar is
                      Set_Directive (Type_Prefix_Code, "prefix",
                                     To_String (Cur (P).Text), Cur (P).Line);
                      Next (P);
-                  end if;
-               elsif Cur (P).Kind = T_Name
-                 and then To_String (Cur (P).Text) = "units"
-               then
-                  --  `units 5 bech32-symbol [separator name]`: the message
-                  --  is also written as text, in units of this many bits,
-                  --  each spelled by a literal of the enum rule named.
-                  Next (P);
-                  if Cur (P).Kind /= T_Number then
-                     raise Parse_Error with
-                       Integer'Image (Cur (P).Line) & ":"
-                       & Integer'Image (Cur (P).Col)
-                       & ": `units` takes a width in bits, then the enum rule "
-                       & "that spells the units: `units 5 bech32-symbol`";
-                  end if;
-                  Units_W := Natural'Value (To_String (Cur (P).Text));
-                  if Units_W = 0 or else Units_W > 32 then
-                     raise Parse_Error with
-                       Integer'Image (Cur (P).Line) & ":"
-                       & Integer'Image (Cur (P).Col)
-                       & ": a unit is 1 to 32 bits";
-                  end if;
-                  Next (P);
-                  Units_R := Expect_Name (P);
-                  if Cur (P).Kind = T_Name
-                    and then To_String (Cur (P).Text) = "separator"
-                  then
-                     Next (P);
-                     Units_S := Expect_Name (P);
                   end if;
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "conf"

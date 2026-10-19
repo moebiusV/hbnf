@@ -4,8 +4,8 @@ The notation that reads a configuration file reads an Ethernet frame too, and
 the generated parser takes a buffer.  There is no binary mode and no separate
 file type: a field of N bits (`ttl:8`) is an element like a literal or a rule
 name, and a rule that holds one is a **bit rule**.  A file may hold text rules
-and bit rules side by side (a bit rule's `units` are spelled by a text rule of
-the same file or one it includes).  This is `RFCPLAN.md` step 7b.  **Status:**
+and bit rules side by side (a bit rule can read the numbered words of a text
+rule as its bits: `bitsof`, below).  This is `RFCPLAN.md` step 7b.  **Status:**
 the C and Rust backends read and write bit rules (the writing direction is the
 same grammar); Zig and Ada are next.  Enum numbers (`"icmp"@1`) work in all four
 backends already.  What is not built is a text element and a bit field in one
@@ -27,8 +27,10 @@ examples.  So is `tests/wire/segwit.hbnf`, the data part of a bech32 address
 an octet, padding that must be zero, and rules on the program's length:
 
     include "bech32.hbnf"
-    units 5 bech32-symbol
-    segwit = version:5 ?(version <= 16)
+    doc = segwit
+    data = 1*bech32-symbol
+    segwit = words:bitsof(data)
+             version:5 ?(version <= 16)
              program:[(remaining - 30) / 8]
              ?(len(program) >= 2 && len(program) <= 40)
              ?(version != 0 || len(program) == 20 || len(program) == 32)
@@ -129,7 +131,7 @@ values: `ethertype:16`.
 in the same record (`options:[ihl*4 - 20]`), `remaining`, the number of bits
 left in the input, `len (field)`, the number of octets in a field read as
 `name:[n]` or `name:*u8`, and `align`, the bits to the next unit boundary
-(`units`, below; a message that ends in a partly filled unit says
+(`bitsof`, below; a message that ends in a partly filled unit says
 `pad:bits(align)`).  Division by zero is 0, and a shift count is taken mod 64.
 Using a name that is not a number read before that point is refused, with the
 names that are.
@@ -163,43 +165,44 @@ hold is an error that names the field, not a silently wrong message.  A width
 that depends on `remaining` cannot be written: a writer does not know the size of
 a message it has not written.
 
-## Text: a message written in units
+## Text: a message written in words, `bitsof`
 
 Bytes are not the only way a message is written.  A bech32 address spells 5 bits
 with each of 32 characters; a BIP-39 mnemonic spells 11 with each of 2048 words.
-The text is a decoding of the bits, the way UTF-8 is a decoding of octets, and a
-`units` line says how:
+The text is a decoding of the bits, the way UTF-8 is a decoding of octets.  A bit
+rule says so with a field:
 
-    include "bech32.hbnf"
-    units 5 bech32-symbol
+    include "bip39/english.hbnf"        ; bip39-word, bip39-space: numbered literals
+    doc      = mnemonic
+    phrase   = bip39-word *( bip39-space bip39-word )
+    mnemonic = words:bitsof(phrase)
+               ?(remaining % 33 == 0 && ...)
+               entropy:[remaining / 33 * 4]
+               checksum:bits(len(entropy) / 4)
 
-    include "bip39/english.hbnf"
-    units 11 bip39-word separator bip39-space
+`words:bitsof(phrase)` reads the text rule `phrase` as text, takes the **number**
+of each word in it (its place in the list, or `"x"@7`) as W bits, W being what
+the largest number needs (11 for 2048 words, 5 for 32 symbols), and the **rest of
+the rule reads those bits**, as it would the bits of a buffer: `remaining` is the
+bits that are left, `align` the bits to the next word boundary.  When the rule
+ends every bit must have been used, and the input goes on after the text.
+Writing runs the other way: the fields are written as bits, then spelled as the
+words, joined by whatever the text rule puts between two (the blank of
+`bip39-space`).  `grammars/bech32.hbnf` is the 32 symbols; `grammars/bip39/` the
+ten word lists.
 
-`units W name` takes the enum rule `name` of the grammar (written in the file or
-brought in by `include`): each literal is the spelling of one unit, and its
-**number** (its place in the list, or `"x"@7`) is the unit's value, W bits wide.
-`grammars/bech32.hbnf` is the 32 symbols; `grammars/bip39/` the ten word lists.
-A `separator` is a rule that is one literal, written between units (BIP-39's
-blank, or U+3000 in Japanese).
+The text rule is the grammar of the text, so a misspelt word, two blanks or a
+trailing blank are refused by it, with its messages; an error in the bits says
+where in the words (`(at unit 12)`).  The generated parser is the text parser:
 
-The C file then has two more functions:
+    bool parse_text (const char *text, T *out, char *err, size_t errlen, size_t *line, size_t *col);
+    bool emit_bits_mnemonic (const mnemonic_t *in, uint8_t *buf, size_t cap, size_t *nbits, char *err, size_t errsz);
 
-    bool parse_text (const char *text, size_t len, T *out, char *err, size_t errsz, size_t *at);
-    bool emit_text  (const T *in, char *buf, size_t cap, size_t *n, char *err, size_t errsz);
-
-`parse_text` spells out the units (longest spelling first, and with a separator
-only one that is followed by it or by the end, so `act` is never taken for the
-start of `actor`), packs their values into bits, and reads those; `at` is the
-character where it went wrong.  `emit_text` writes the bits and spells them.
-The tests round-trip the five published segwit addresses and ten mnemonics, the
-BIP-39 test vectors among them.
-
-    include "bip39/english.hbnf"
-    units 11 bip39-word separator bip39-space
-    mnemonic = ... (see "Code", below, for the whole of it)
-
-reads `abandon ... about` as 16 octets of zeros and the checksum 3.
+the second writes the **text**, as octets (`*nbits / 8` of them).  The tests
+round-trip the five published segwit addresses and eighteen mnemonics (the
+BIP-39 test vectors among them), and generate each mnemonic from its entropy
+alone, the checksum worked out by `%emit`.  The phrase's own tree is not kept
+(its words are the bits); the C backend has this, Rust and the others follow.
 
 ## Code: actions, emitters, and the library they call
 

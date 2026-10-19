@@ -511,12 +511,15 @@ package body HBNF_Wire is
          case E.Kind is
             when E_Num => null;
             when E_Var =>
-               if To_String (E.Name) = "align" and then G.Unit_Width = 0 then
+               if To_String (E.Name) = "align"
+                 and then not (for some A of R.Alts =>
+                                 (for some X of A.Items => X.Bitsof))
+               then
                   raise Wire_Error with
                     (if File = "" then "" else File & ":") & Img (Line) & ":"
                     & Img (Col) & ": rule `" & To_String (R.Name) & "`: "
-                    & "`align` is the bits to the next unit boundary, and "
-                    & "this file has no `units` line";
+                    & "`align` is the bits to the next unit boundary of a "
+                    & "`name:bitsof(rule)` field, and this rule has none";
                elsif To_String (E.Name) /= "remaining"
                  and then To_String (E.Name) /= "align"
                  and then not Has (Scope, To_String (E.Name))

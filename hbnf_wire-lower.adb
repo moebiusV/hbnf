@@ -1,5 +1,7 @@
 pragma Ada_2022;
 
+with HBNF_C;
+
 package body HBNF_Wire.Lower is
 
    package GR renames HBNF_Grammar;
@@ -34,6 +36,11 @@ package body HBNF_Wire.Lower is
       procedure Lower_Alts
         (V : GR.Element_Vectors.Vector; Alts : out Seq_Vectors.Vector;
          Rule_Name : String);
+
+      procedure Fill_Words (It : Item_Access; Pos : String);
+
+      function Find_Wire (N : String) return Boolean is
+        (for some R of Wire => To_String (R.Name) = N);
 
       procedure Refuse (E : GR.Element; Rule_Name : String; What : String) is
       begin
@@ -78,6 +85,15 @@ package body HBNF_Wire.Lower is
                      when others =>
                         null;
                   end case;
+                  if E.F_Bitsof then
+                     It.Bitsof := True;
+                     if Find_Wire (To_String (E.F_Ref)) then
+                        Refuse (E.all, Rule_Name,
+                                "`bitsof(" & To_String (E.F_Ref) & ")` names "
+                                & "a bit rule; it takes a text rule");
+                     end if;
+                     Fill_Words (It, Pos);
+                  end if;
                   --  `?(cond)` at the head of an alternative picks it; with
                   --  words after it, or further on, it is a check.
                   if E.F_Kind = S_Assert
@@ -171,7 +187,7 @@ package body HBNF_Wire.Lower is
                      end;
                   elsif E.Kind /= GR.Alt then
                      raise Wire_Error with
-                       "`units` names the rule `" & Name & "`, which is not "
+                       "`bitsof` needs the rule `" & Name & "`, which is not "
                        & "a list of plain literals (`" & Name
                        & " = ""q"" | ""p"" | ...`)";
                   end if;
@@ -180,10 +196,169 @@ package body HBNF_Wire.Lower is
          end loop;
          if not Found then
             raise Wire_Error with
-              "`units` names the rule `" & Name & "`, which this grammar "
+              "`bitsof` needs the rule `" & Name & "`, which this grammar "
               & "does not define; write it, or `include` the file that does";
          end if;
       end Spellings;
+
+      --  `name:bitsof(rule)`: find the one rule of numbered words in the text
+      --  rule (an enum whose literals are numbered), how wide a number is, how
+      --  the words are spelled, and what stands between two words.
+      procedure Fill_Words (It : Item_Access; Pos : String) is
+         use type GR.Element_Kind;
+         Name    : constant String := To_String (It.Ref);
+         Raw     : Unbounded_String := It.Ref;
+         Visited : Name_Vectors.Vector;
+         Word    : Unbounded_String;
+
+         function Index_Of (N : String) return Natural is
+         begin
+            for I in 1 .. Natural (Text.Length) loop
+               if To_String (Text (I).Name) = N
+                 or else To_String (Ident (Text (I).Name)) = N
+               then
+                  return I;
+               end if;
+            end loop;
+            return 0;
+         end Index_Of;
+
+         function Plain_Enum (R : GR.Rule) return Boolean is
+            Lits : Natural := 0;
+         begin
+            for E of R.Pattern loop
+               if E.Kind = GR.Literal then
+                  Lits := Lits + 1;
+               elsif E.Kind /= GR.Alt then
+                  return False;
+               end if;
+            end loop;
+            return Lits > 1;
+         end Plain_Enum;
+
+         procedure Visit (N : String);
+
+         procedure Visit_Els (Els : GR.Element_Vectors.Vector) is
+         begin
+            for E of Els loop
+               if E.Kind = GR.Name then
+                  Visit (To_String (E.Name));
+               elsif E.Kind = GR.Group then
+                  Visit_Els (E.Items);
+               end if;
+            end loop;
+         end Visit_Els;
+
+         procedure Visit (N : String) is
+            J : constant Natural := Index_Of (N);
+         begin
+            if J = 0 or else Visited.Contains (To_Unbounded_String (N)) then
+               return;
+            end if;
+            Visited.Append (To_Unbounded_String (N));
+            if Plain_Enum (Text (J)) then
+               if Word = Null_Unbounded_String then
+                  Word := To_Unbounded_String (N);
+               elsif To_String (Word) /= N then
+                  raise Wire_Error with
+                    Pos & ": `bitsof(" & Name & ")`: `" & To_String (Word)
+                    & "` and `" & N & "` are both rules of words; the bits "
+                    & "come from one, so name one of them as the unit";
+               end if;
+            else
+               Visit_Els (Text (J).Pattern);
+            end if;
+         end Visit;
+
+         --  The literal text a rule or literal stands for, if it is just one.
+         function Literal_Of (E : GR.Element_Access) return String is
+         begin
+            if E.Kind = GR.Literal then
+               return To_String (E.Lit);
+            elsif E.Kind = GR.Name then
+               declare
+                  J : constant Natural := Index_Of (To_String (E.Name));
+               begin
+                  if J /= 0 and then Natural (Text (J).Pattern.Length) = 1
+                    and then Text (J).Pattern (1).Kind = GR.Literal
+                  then
+                     return To_String (Text (J).Pattern (1).Lit);
+                  end if;
+               end;
+            end if;
+            return "";
+         end Literal_Of;
+
+         Sep_Found : Boolean := False;
+
+         procedure Find_Sep (Els : GR.Element_Vectors.Vector) is
+         begin
+            for I in 1 .. Natural (Els.Length) loop
+               exit when Sep_Found;
+               if Els (I).Kind = GR.Group then
+                  Find_Sep (Els (I).Items);
+               elsif Els (I).Kind = GR.Name and then I > 1
+                 and then To_String (Els (I).Name) = To_String (Word)
+               then
+                  declare
+                     S : Unbounded_String;
+                     J : Natural := I - 1;
+                  begin
+                     while J >= 1 and then Literal_Of (Els (J)) /= "" loop
+                        S := To_Unbounded_String (Literal_Of (Els (J)))
+                             & S;
+                        J := J - 1;
+                     end loop;
+                     if S /= Null_Unbounded_String then
+                        It.Sep := S;
+                        Sep_Found := True;
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end Find_Sep;
+      begin
+         if Index_Of (Name) = 0 then
+            raise Wire_Error with
+              Pos & ": `bitsof(" & Name & ")`: the grammar has no text rule "
+              & "of that name; write it, or `include` the file that does";
+         end if;
+         Raw := Text (Index_Of (Name)).Name;
+         Visit (Name);
+         if Word = Null_Unbounded_String then
+            raise Wire_Error with
+              Pos & ": `bitsof(" & Name & ")`: `" & Name & "` holds no rule "
+              & "of numbered words (a rule such as `word = ""abandon"" | "
+              & """ability"" | ...`, whose literals are numbered by their "
+              & "place or by `""x""@7`)";
+         end if;
+         It.Word_Rule := Word;
+         Spellings (To_String (Word), It.Words);
+         declare
+            Max : Natural := 0;
+         begin
+            for U of It.Words loop
+               Max := Natural'Max (Max, U.Value);
+            end loop;
+            It.Width := 1;
+            while Max >= 2 ** It.Width loop
+               It.Width := It.Width + 1;
+            end loop;
+         end;
+         for Rn of Visited loop
+            declare
+               J : constant Natural := Index_Of (To_String (Rn));
+            begin
+               if J /= 0 then
+                  Find_Sep (Text (J).Pattern);
+               end if;
+            end;
+         end loop;
+         It.Tmp_Type := To_Unbounded_String
+           (HBNF_C.Value_Type (Text, To_String (Raw)));
+         It.Tmp_Free := To_Unbounded_String
+           (HBNF_C.Value_Free (Text, To_String (Raw)));
+      end Fill_Words;
    begin
       for R of Wire loop
          declare
@@ -201,31 +376,6 @@ package body HBNF_Wire.Lower is
       Result.Language := To_Unbounded_String (GR.Language);
       Result.Preamble := To_Unbounded_String (GR.Preamble (GR.Language));
       Result.Epilogue := To_Unbounded_String (GR.Epilogue (GR.Language));
-      if GR.Units_Width > 0 then
-         Result.Unit_Width := GR.Units_Width;
-         Spellings (GR.Units_Rule, Result.Units);
-         for U of Result.Units loop
-            if U.Value >= 2 ** Result.Unit_Width then
-               raise Wire_Error with
-                 "`" & To_String (U.Spelling) & "` has the value"
-                 & Natural'Image (U.Value) & ", which does not fit a unit of"
-                 & Natural'Image (Result.Unit_Width) & " bits";
-            end if;
-         end loop;
-         if GR.Units_Separator /= "" then
-            declare
-               Seps : Unit_Vectors.Vector;
-            begin
-               Spellings (GR.Units_Separator, Seps);
-               if Natural (Seps.Length) /= 1 then
-                  raise Wire_Error with
-                    "the separator `" & GR.Units_Separator
-                    & "` must be one literal";
-               end if;
-               Result.Unit_Sep := Seps.First_Element.Spelling;
-            end;
-         end if;
-      end if;
       for R of Text loop
          Result.Externals.Append (Ident (R.Name));
          if GR.Is_Char_Rule (Text, To_String (R.Name)) then

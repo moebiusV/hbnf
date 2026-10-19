@@ -77,8 +77,8 @@ check mixed3 "" "" mixed3 -w
 check mixed4 "" "" mixed4 -w
 check mixed5 "" "" mixed5 -w
 check mixed6 "" "" mixed6 -w
-check segwit
-check mnemonic -lcrypto openssl/sha.h
+check segwit "" "" segwit -w
+check mnemonic -lcrypto openssl/sha.h mnemonic -w
 
 # bip39: the word lists (RFCPLAN.md step 7b's acceptance test).  Every word of
 # every official list parses to its line number; English also against the

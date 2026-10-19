@@ -3,6 +3,7 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Mustache;
+with HBNF_Wire;
 with HBNF_Compilable;
 with HBNF_Lookahead;
 
@@ -954,6 +955,34 @@ package body HBNF_C is
          end if;
       end;
    end Analyze;
+
+   function Value_Type
+     (Rules : Rule_Vectors.Vector; Name : String) return String
+   is
+      J : constant Natural := Find (Rules, Name);
+   begin
+      if J = 0 then
+         return "";
+      elsif Analyze (Rules, J).Kind = List then
+         return "struct " & Pfx & C_Name (Name) & "_list";
+      end if;
+      return C_Type_Name (Name);
+   end Value_Type;
+
+   function Value_Free
+     (Rules : Rule_Vectors.Vector; Name : String) return String
+   is
+      J : constant Natural := Find (Rules, Name);
+   begin
+      if J = 0 then
+         return "";
+      end if;
+      case Analyze (Rules, J).Kind is
+         when Struct => return "free_" & C_Name (Name) & "_fields(@);";
+         when List   => return "free_" & C_Name (Name) & "(@);";
+         when others => return "";
+      end case;
+   end Value_Free;
 
    --  The names of the alternatives of a flat list of elements (Alt
    --  separators): a branch's first word-like literal, else its first rule
@@ -3653,6 +3682,23 @@ package body HBNF_C is
          Append (Res, LF);
       end if;
 
+      --  The bit rules' record types, declared ahead, so a text rule may be
+      --  an alias of one (`doc = segwit`).
+      if Hosted_Code /= Null_Unbounded_String then
+         for R of HBNF_Grammar.Wire_Rules loop
+            if not (for all E of R.Pattern =>
+                      E.Kind = HBNF_Grammar.Alt
+                      or else (E.Kind = HBNF_Grammar.Bit_Field
+                               and then HBNF_Wire."=" (E.F_Kind, HBNF_Wire.S_Const)))
+            then
+               Append (Res, "typedef struct " & Pfx
+                 & C_Tag (To_String (R.Name)) & " "
+                 & C_Type_Name (To_String (R.Name)) & ";");
+               Append (Res, LF);
+            end if;
+         end loop;
+      end if;
+
       --  Forward-declare every struct and list node type; a list rule also
       --  gets its list head type.
       for I in 1 .. N loop
@@ -5532,6 +5578,17 @@ package body HBNF_C is
         or else (for some I in 1 .. N =>
                    Rules (I).Action_Code /= Null_Unbounded_String);
 
+      --  The root is `doc = rule`, an alias of a bit rule: its actions run
+      --  from the entry point, as the bind walk would.
+      Wire_Alias_Root : constant String :=
+        (if Hosted_Actions and then Natural (Rules (1).Pattern.Length) = 1
+           and then Rules (1).Pattern (1).Kind = Name
+           and then Rules (1).Pattern (1).Min = 1
+           and then Rules (1).Pattern (1).Max = 1
+           and then HBNF_Grammar.Is_Wire_Rule
+                      (To_String (Rules (1).Pattern (1).Name))
+         then C_Name (To_String (Rules (1).Pattern (1).Name)) else "");
+
       --  `statements`: what the driver (templates/statements.c) needs from
       --  the grammar -- the root list's operations, whether an action jet
       --  has already reported a failed bind, and the `macros` and
@@ -6075,7 +6132,15 @@ package body HBNF_C is
             H ("bit_field",
                (if Hosted_Code = Null_Unbounded_String then ""
                 else "    unsigned bit;   /* where in the octet at pos a bit "
-                     & "rule is: 0 to 7 */" & ASCII.LF)),
+                     & "rule is: 0 to 7 */" & ASCII.LF
+                     & "    size_t lim;     /* bits to read when a bit rule "
+                     & "reads the words of a text (bitsof), else 0 */"
+                     & ASCII.LF
+                     & "    unsigned unit;  /* the width of one word, then */"
+                     & ASCII.LF
+                     & "    struct { const char *text; size_t pos, len, lim, "
+                     & "start; unsigned bit, unit; int active; } sv;"
+                     & ASCII.LF)),
             H ("path_field",
                (if Paths_On
                 then "    unsigned depth, err_depth;   /* the rules being read, "
@@ -6232,11 +6297,16 @@ package body HBNF_C is
               & "(out);");
             Append (Res, LF);
          end if;
-         if Analyze (Rules, 1).Kind in Struct | List and then Has_Action then
+         if (Analyze (Rules, 1).Kind in Struct | List
+             or else Wire_Alias_Root /= "") and then Has_Action
+         then
             Append (Res, "    bind_errors = 0; bind_line = 0; bind_err_line = 0;"
-              & " bind_err_msg[0] = '\0';");
+              & " bind_err_msg[0] = '\0';"
+              & (if Hosted_Actions then " bnf_act_nwarn = 0;" else ""));
             Append (Res, LF);
-            Append (Res, "    bind_" & C_Name (To_String (Rules (1).Name))
+            Append (Res, (if Wire_Alias_Root /= ""
+                          then "    walk_" & Wire_Alias_Root
+                          else "    bind_" & C_Name (To_String (Rules (1).Name)))
               & "(out);");
             Append (Res, LF);
             Append (Res, "    if (bind_errors) {");

@@ -10,8 +10,8 @@ pragma Ada_2022;
 --      pub fn emit_bits   (v: &Root) -> Result<(Vec<u8>, usize), String>
 --      pub fn emit_bytes  (v: &Root) -> Result<Vec<u8>, String>
 --
---  and, for a grammar with `units`, parse_text and emit_text.  The same grammar
---  the C backend reads, with the same checks and the same messages.
+--  The same grammar the C backend reads, with the same checks and the same
+--  messages (but not `name:bitsof(rule)`, which only C has so far).
 package HBNF_Wire.Rust is
 
    function Emit (G : Grammar) return String;

@@ -2,12 +2,19 @@
 
 ; A BIP-39 mnemonic: words of the English list, 11 bits each, joined by blanks.
 ; The words are the entropy, then a checksum of one bit per 32 bits of it.
+; `phrase` is read as text; `bitsof` makes its numbered words the bits that the
+; rest of `mnemonic` reads (and, writing, spells the bits back as the words).
+prefix none
+whitespace none
 include "../../grammars/bip39/english.hbnf"
-units 11 bip39-word separator bip39-space
+
+doc = mnemonic
+phrase = bip39-word *( bip39-space bip39-word )
 
 ; BIP-39 allows 12, 15, 18, 21 and 24 words.  Wallets mostly make 12 and 24,
 ; and not all can import the others, so those read with a warning.
-mnemonic = ?(remaining % 33 == 0 && remaining / 33 >= 4 && remaining / 33 <= 8)
+mnemonic = words:bitsof(phrase)
+           ?(remaining % 33 == 0 && remaining / 33 >= 4 && remaining / 33 <= 8)
               "a mnemonic has 12, 15, 18, 21 or 24 words"
            entropy:[remaining / 33 * 4]
            ?(len(entropy) % 4 == 0)
