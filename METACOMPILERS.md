@@ -129,6 +129,60 @@ it (META II's `.ID`, SNOBOL4's `SPAN`), and code that implements a rule the
 grammar *also* defines, as an optimization one may drop.  hbnf says which in
 the sentence, not with another term.
 
+## W-grammars (van Wijngaarden), and what they add that is not planned
+
+A two-level grammar (the ALGOL 68 Revised Report is written in one).  Level
+one is *metarules* that define *metanotions* (`MODE :: int ; real ; ref to MODE`
+...), each a set of strings.  Level two is *hyperrules* whose names contain
+metanotions: `MODE list : MODE, comma symbol, MODE list`.  Every consistent
+substitution of a metanotion by one of its strings gives an ordinary rule, so a
+hyperrule stands for a (usually infinite) family, and `where MODE1 is MODE2`
+makes two spots in one rule agree.  With unrestricted metanotions this is
+Turing complete, so parsing is undecidable in general; the Report uses it for
+what a context-free grammar cannot say (identifiers declared before use, types
+agreeing) and leaves the parsing to the reader.  What descended from it and was
+made practical: Koster's *affix grammars* and *extended affix grammars*
+(finite-domain parameters, the CDL compiler-description language), Prolog DCGs
+(arguments on nonterminals), attribute grammars, Fischer's *macro grammars*.
+
+hbnf already has the other answers to "context": decision 13 (named persistent
+context, `?`, `%bind`, `%scope`, `%where`), the wire layer's expressions over
+earlier fields (`len(field)`, `?(cond)`), and decision 14 (detected forks).  What
+W-grammars give beyond those, kept to the decidable subset:
+
+1. **Parameterised rules over a finite set, expanded when the parser is
+   generated.**  `list(X) = X *( "," X )`; `binary(N) = binary(N+1) *( op(N)
+   binary(N+1) )` for the 17 precedence levels of C++, with the operators per
+   level in a table; a parameter ranging over an enum (`value(int)`,
+   `value(string)`).  The family is finite, so it expands into ordinary rules:
+   no runtime cost, no new parser, no undecidability.  Today a repeated shape
+   is written out each time (or lifted into hidden rules by hand).  The C++
+   standard's own grammar leans on this (`-list`, `-opt`, the declarator
+   families).  This is LBNF's indexed categories and Menhir's parameterised
+   nonterminals under another name, and it is the one idea here that is both
+   useful and cheap.  *Not planned; proposed.*
+2. **Consistent substitution as a back-reference: this text must repeat that
+   earlier text.**  `where TAG is TAG` is XML's `<a> ... </a>`, a here-document's
+   terminator (`<<EOF ... EOF`, which the paused POSIX shell corpus needs), C++
+   raw strings `R"delim( ... )delim"`, Rust `r#"..."#`, Lua long brackets
+   `[==[ ... ]==]`, Markdown fences.  hbnf cannot say any of them declaratively
+   today; decision 13 would do them with a `%bind` and a `%where` in code.  The
+   wire layer already names earlier fields and tests them (`?(len(f) == n)`);
+   the same for text (`d:delim ... ?(text == d)`, or a back-reference spelled
+   like a rule name) is the declarative form, and is what regexes call a
+   back-reference.  *Partly planned (wire); not for text.*
+3. **Domains checked at generation time.**  An affix grammar's parameters have
+   declared finite domains, so a use that cannot match is an error when the
+   grammar is read, not a failed parse.  If hbnf takes (1), it should check
+   the arguments the same way, with the helpful errors it already promises.
+
+What not to take: unrestricted metanotions and open-ended hyperrule families
+(undecidable; the Report itself needs a human to parse); the notation (hyperrule
+names with spaces and consistent substitution across a whole rule is a reading
+puzzle, against hbnf's "not surprising to a BNF user" bar); symbol-spelling
+rules (`letter a symbol`).  Affix/inherited attributes as the answer to context
+were weighed in decision 13 and stay a second choice to persistent context.
+
 ## What hbnf could learn
 
 In order of how much it would change hbnf.
