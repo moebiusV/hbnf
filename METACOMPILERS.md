@@ -138,9 +138,12 @@ metanotions: `MODE list : MODE, comma symbol, MODE list`.  Every consistent
 substitution of a metanotion by one of its strings gives an ordinary rule, so a
 hyperrule stands for a (usually infinite) family, and `where MODE1 is MODE2`
 makes two spots in one rule agree.  With unrestricted metanotions this is
-Turing complete, so parsing is undecidable in general; the Report uses it for
-what a context-free grammar cannot say (identifiers declared before use, types
-agreeing) and leaves the parsing to the reader.  What descended from it and was
+Turing complete, so parsing *may* be undecidable, but in practice it is not:
+the Report's grammar is a real, finite working description, and parsers and
+checkers for it and for other W-grammars have been written, because a grammar
+written to be read is not an adversarial one.  The Report uses it for what a
+context-free grammar cannot say (identifiers declared before use, types
+agreeing).  What descended from it and was
 made practical: Koster's *affix grammars* and *extended affix grammars*
 (finite-domain parameters, the CDL compiler-description language), Prolog DCGs
 (arguments on nonterminals), attribute grammars, Fischer's *macro grammars*.
@@ -189,11 +192,16 @@ grammars that use it pay.  It does mean a memoized result must be keyed by the
 captured text or not memoized (the same hazard as decision 13's context).
 (3) is generation time only.  Because each expands into an ordinary grammar,
 the first-match rule, the union analysis and the detected forks of decision 14
-run unchanged.  Full W-grammars cannot be done without losing efficiency (the
-parse is undecidable); this subset can.
+run unchanged.  Full W-grammars are undecidable only in the worst case, not in
+the grammars people write, so how far past this subset hbnf can go without
+losing efficiency is a question for the ALGOL 68 step (parsing the Report's own
+W-grammar), not something to rule out here; the subset above is decidable by
+construction and costs nothing, which is why it comes first.
 
-What not to take: unrestricted metanotions and open-ended hyperrule families
-(undecidable; the Report itself needs a human to parse); the notation (hyperrule
+What not to take yet: unrestricted metanotions and open-ended hyperrule families
+(they can fail to terminate in the worst case, and the Report's own grammar was
+written to be read by a human, not run; whether the practical ones can be run is
+the ALGOL 68 experiment); the notation (hyperrule
 names with spaces and consistent substitution across a whole rule is a reading
 puzzle, against hbnf's "not surprising to a BNF user" bar); symbol-spelling
 rules (`letter a symbol`).  Affix/inherited attributes as the answer to context
