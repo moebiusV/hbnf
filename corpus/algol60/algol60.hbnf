@@ -23,7 +23,7 @@ program = *( label ":" !"=" ) block
 
 ; ---- statements ----------------------------------------------------------
 block = "'BEGIN'" *( declaration ";" ) statement *( ";" statement ) "'END'" end-junk
-end-junk = *( ~( ";" / "'" ) )
+end-junk = *( !( "'END'" / "'ELSE'" ) ~";" )
 
 statement = label ":" !"=" statement
           | if-clause ( for-statement | unconditional-statement [ "'ELSE'" statement ] )
@@ -39,7 +39,7 @@ unconditional-statement = label ":" !"=" unconditional-statement
                         |                                      ; the dummy statement
 
 if-clause     = "'IF'" expression "'THEN'"
-for-statement = "'FOR'" variable ":=" for-element *( "," for-element ) "'DO'" statement
+for-statement = *( label ":" !"=" ) "'FOR'" variable ":=" for-element *( "," for-element ) "'DO'" statement
 for-element   = expression [ "'STEP'" expression "'UNTIL'" expression
                            | "'WHILE'" expression ]
 label = identifier / 1*DIGIT

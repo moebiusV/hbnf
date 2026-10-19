@@ -34,8 +34,8 @@ The corpus is where discoverability is proven: a fragment is "done" when its
 messages alone tell the author how to fix what hbnf could not accept
 silently.
 
-**Planned, after C++ (the user, 2026-10-18): ALGOL 68.**  When C++ parses, ALGOL 68
-follows, written in an hbnf that has gained what the W-grammar does (the user,
+**Planned, before C++ (the user, 2026-10-18, reordered the same day: "do algol68
+before c++"): ALGOL 68.**  ALGOL 68 comes first, written in an hbnf that has gained what the W-grammar does (the user,
 2026-10-18: "we won't do ALGOL 68 in precisely the W-grammar, we'll do it in the
 hbnf that is updated to do what a W-grammar does"): parameterised rules for the
 Report's NOTION families, a back-reference for consistent substitution, `where`

@@ -70,8 +70,9 @@ of `syntax.txt`; that file is here to compare it against.
 
 | | the Report's BNF (`syntax.txt`) | `algol60.hbnf` |
 |---|---|---|
-| rules / productions | 108 | 35 |
-| size | 8.7 KB | 5.1 KB, with its comments |
+| rules / productions | 108 | 38 |
+| code lines (no blanks or comments) | 117 | 65 |
+| characters, without comments | 8,724 | 3,361 |
 
 What hbnf let it say once instead of many times:
 
@@ -108,3 +109,27 @@ Reading it also found and fixed two bugs in the generator that only a recursive
 grammar of this size reaches (a pass that took exponential time through
 `primary = ... "(" expression ")"`, and the wrong pointer for a field that breaks a
 cycle).
+
+## Checked against the Report
+
+`sh tests/algol60-diff.sh` compares the grammar with the Report's own BNF, read by an
+Earley recognizer (`tests/algol60/reference.py`) that shares nothing with hbnf:
+
+1. random sentences of the Report (up to 400 tokens) must all be accepted, and
+2. random mutations of them (a token deleted, doubled, swapped, inserted, replaced)
+   must get the same answer from both, except that hbnf may accept more.
+
+The first run found a real bug (`IF b THEN L: FOR ...` was refused: a labelled `FOR`
+directly after `THEN`) that eleven hand-written programs had missed, and a second
+in the text after `END` (the Report skips any symbols there up to `;`, `END` or
+`ELSE`; the first version stopped at the first keyword).  It also found three slips
+in `syntax.txt` itself (a `;` missing from `<specification part>`, `letter>`, and a
+stray `<factor>` alternative); the reference corrects them and `syntax.txt` is left
+as downloaded.  After the fixes: 12,000 sentences accepted, 12,000 mutations,
+11,976 the same answer, 24 accepted by hbnf only.  Every one of the 24 is expression
+typing (`NOT 7`, `+ TRUE`, `TRUE < TRUE`, an arithmetic operand of `OR`,
+a Boolean subscript), the difference chosen on purpose above: the grammar reads
+one expression, and a later checking pass would apply the types.  One more
+agreement with the Report: blanks are insignificant, so `i b` is the identifier `ib`
+(section 2.3); the reference reads tokens and the mutations skip those.
+
