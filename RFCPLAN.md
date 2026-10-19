@@ -1,3 +1,4 @@
+<!-- {% raw %} -->
 # One notation for daemon configs and RFC grammars — the plan (working note)
 
 Agreed 2026-09-28.  The goal: paste RFC 5234-family ABNF and get a
@@ -2360,3 +2361,5 @@ cycles.
 - Full GLR (decision 14 is the local, detected fork instead).
 - Case-folding non-ASCII rule names.
 - Guessing any setting from an include or from seeing `%x`.
+
+<!-- {% endraw %} -->
