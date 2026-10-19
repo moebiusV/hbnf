@@ -72,6 +72,7 @@ package body HBNF_Grammar is
    --  `statements`, `macros <rule>`, `includes <rule>`: how the C parser
    --  reads a config (see the spec).
    Statements_On   : Boolean := False;
+   Context_Words   : Word_Vectors.Vector;
    Macros_Name     : Unbounded_String := Null_Unbounded_String;
    Includes_Name   : Unbounded_String := Null_Unbounded_String;
 
@@ -541,6 +542,7 @@ package body HBNF_Grammar is
       List_Next_Code := Null_Unbounded_String;
       List_Relink_Code := Null_Unbounded_String;
       Statements_On := False;
+      Context_Words.Clear;
       Macros_Name := Null_Unbounded_String;
       Includes_Name := Null_Unbounded_String;
       Keyword_Words.Clear;
@@ -1033,6 +1035,7 @@ package body HBNF_Grammar is
                                   "dialect" | "include" | "language"
                                   | "sensitivity" | "whitespace" | "keywords"
                                   | "statements" | "macros" | "includes"
+                                  | "context"
                                   | "entry" | "prefix" | "wordchars"
                      then
                         Emit (T_Newline);
@@ -1229,6 +1232,67 @@ package body HBNF_Grammar is
                   end loop;
                   Emit (T_Pct, Text (Start .. I - 1));
                   Col := Col + (I - Start + 1);
+                  --  `%bind types += declarators.name`: the context, then the
+                  --  path of the field to add.  (`%bind { code }` is code.)
+                  if Text (Start .. I - 1) = "bind" then
+                     declare
+                        J : Natural := I;
+                        function Word_Char (C : Character; Dot : Boolean)
+                          return Boolean is
+                          (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-'
+                           or else (Dot and then C = '.'));
+                        procedure Skip is
+                        begin
+                           while J <= Text'Last
+                             and then Text (J) in ' ' | ASCII.HT
+                           loop
+                              J := J + 1;
+                           end loop;
+                        end Skip;
+                        Ctx_First, Ctx_Last, Path_First, Path_Last : Natural;
+                     begin
+                        Skip;
+                        if J <= Text'Last and then Word_Char (Text (J), False)
+                        then
+                           Ctx_First := J;
+                           while J <= Text'Last
+                             and then Word_Char (Text (J), False)
+                           loop
+                              J := J + 1;
+                           end loop;
+                           Ctx_Last := J - 1;
+                           Skip;
+                           if J + 1 > Text'Last
+                             or else Text (J .. J + 1) /= "+="
+                           then
+                              raise Parse_Error with
+                                Integer'Image (Line) & ":" & Integer'Image (Col)
+                                & ": `%bind` adds a field to a context: "
+                                & "`%bind types += declarators.name`";
+                           end if;
+                           J := J + 2;
+                           Skip;
+                           Path_First := J;
+                           while J <= Text'Last
+                             and then Word_Char (Text (J), True)
+                           loop
+                              J := J + 1;
+                           end loop;
+                           Path_Last := J - 1;
+                           if Path_Last < Path_First then
+                              raise Parse_Error with
+                                Integer'Image (Line) & ":" & Integer'Image (Col)
+                                & ": `%bind " & Text (Ctx_First .. Ctx_Last)
+                                & " +=` needs the field to add: "
+                                & "`%bind types += declarators.name`";
+                           end if;
+                           Emit (T_Name, Text (Ctx_First .. Ctx_Last));
+                           Emit (T_Name, Text (Path_First .. Path_Last));
+                           Col := Col + (J - I);
+                           I := J;
+                        end if;
+                     end;
+                  end if;
                end;
             when '@' =>
                --  `"icmp"@1`: the value of an enum's literal.
@@ -1741,6 +1805,17 @@ package body HBNF_Grammar is
                      Emit (T_Prose, Text (Start .. I - 1), At_Col);
                      I := I + 1;  Col := Col + 1;
                   end;
+               elsif I < Text'Last
+                 and then Text (I + 1) in ' ' | ASCII.HT
+                 and then (for some K in I + 1 .. Text'Last =>
+                             (for all J in I + 1 .. K - 1 =>
+                                Text (J) in ' ' | ASCII.HT)
+                             and then Text (K) in 'a' .. 'z' | 'A' .. 'Z')
+               then
+                  --  `identifier ? types`: the text just matched is in a
+                  --  context (RFCPLAN.md decision 13).
+                  Emit (T_Pct, "test");
+                  I := I + 1;  Col := Col + 1;
                else
                   raise Parse_Error with
                     Integer'Image (Line) & ":" & Integer'Image (Col) &
@@ -2519,6 +2594,74 @@ package body HBNF_Grammar is
       end;
    end Parse_Element;
 
+   --  One of the context operations (RFCPLAN.md decision 13): `? types`,
+   --  `%bind types += field.path` or `%bind { code }`, `%scope`,
+   --  `%where { code }`.  They stay in the sequence where they are written.
+   function Parse_Context_Op (P : in out Parser) return Element_Access is
+      T : constant Token := Cur (P);
+      W : constant String := To_String (T.Text);
+
+      function Where return String is
+        (Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": ");
+
+      procedure Declared (Name : Token) is
+      begin
+         if not (for some C of Context_Words => C = Name.Text) then
+            raise Parse_Error with
+              Integer'Image (Name.Line) & ":" & Integer'Image (Name.Col)
+              & ": `" & To_String (Name.Text) & "` is not a context; declare "
+              & "it first with `context " & To_String (Name.Text) & "`";
+         end if;
+      end Declared;
+
+      E : constant Element_Access :=
+        new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Scope,
+                     Ctx => <>, Path => <>, Id => 0, Code => <>);
+   begin
+      Next (P);
+      if W = "scope" then
+         E.Op := B_Scope;
+      elsif W = "test" then
+         if Cur (P).Kind /= T_Name then
+            raise Parse_Error with
+              Where & "`?` takes the context to ask: `identifier ? types`";
+         end if;
+         Declared (Cur (P));
+         E.Op := B_Test;
+         E.Ctx := Cur (P).Text;
+         Next (P);
+      elsif W = "where" then
+         if Cur (P).Kind /= T_Code then
+            raise Parse_Error with
+              Where & "`%where` takes code that decides: "
+              & "`%where { return ok (text, len); }`";
+         end if;
+         E.Op := B_Where;
+         E.Code := Cur (P).Text;
+         Next (P);
+      else
+         if Cur (P).Kind = T_Code then
+            E.Op := B_Bind_Code;
+            E.Code := Cur (P).Text;
+            Next (P);
+         elsif Cur (P).Kind = T_Name
+           and then P.Toks (P.Pos + 1).Kind = T_Name
+         then
+            Declared (Cur (P));
+            E.Op := B_Bind;
+            E.Ctx := Cur (P).Text;
+            Next (P);
+            E.Path := Cur (P).Text;
+            Next (P);
+         else
+            raise Parse_Error with
+              Where & "`%bind` adds a field to a context: "
+              & "`%bind types += declarators.name`, or code: `%bind { ... }`";
+         end if;
+      end if;
+      return E;
+   end Parse_Context_Op;
+
    --  Parse a sequence of elements up to any structural token.  The caller
    --  inspects what stopped it.
    function Parse_Pattern (P : in out Parser) return Element_Vectors.Vector is
@@ -2547,13 +2690,19 @@ package body HBNF_Grammar is
          then
             Element_Vectors.Append
               (V, new Element'(Kind => Block, Min => 1, Max => 1,
+                               Op => B_Action, Ctx => <>, Path => <>, Id => 0,
                                Code => P.Toks (P.Pos + 1).Text));
             P.Pos := P.Pos + 2;
+         elsif Cur (P).Kind = T_Pct
+           and then To_String (Cur (P).Text) in "test" | "bind" | "scope" | "where"
+         then
+            Element_Vectors.Append (V, Parse_Context_Op (P));
          elsif Cur (P).Kind = T_Code
            and then not Ends_Pattern (P.Pos + 1)
          then
             Element_Vectors.Append
               (V, new Element'(Kind => Block, Min => 1, Max => 1,
+                               Op => B_Action, Ctx => <>, Path => <>, Id => 0,
                                Code => Cur (P).Text));
             Next (P);
          else
@@ -5005,6 +5154,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "conf"
                               or else To_String (Cur (P).Text) = "listops"
                               or else To_String (Cur (P).Text) = "statements"
+                              or else To_String (Cur (P).Text) = "context"
                               or else To_String (Cur (P).Text) = "macros"
                               or else To_String (Cur (P).Text) = "entry"
                               or else To_String (Cur (P).Text) = "includes"
@@ -5368,6 +5518,26 @@ package body HBNF_Grammar is
                   Add_Keywords (To_String (Cur (P).Text), Cur (P).Line,
                                 Own_Words);
                   Next (P);
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "context"
+               then
+                  --  `context types templates`: names of contexts.
+                  declare
+                     At_Line : constant Positive := Cur (P).Line;
+                  begin
+                     Next (P);
+                     if Cur (P).Kind /= T_Name or else Cur (P).Line /= At_Line
+                     then
+                        raise Parse_Error with
+                          Integer'Image (At_Line) & ": `context` takes the "
+                          & "names of the contexts: `context types`";
+                     end if;
+                     while Cur (P).Kind = T_Name and then Cur (P).Line = At_Line
+                     loop
+                        Context_Words.Append (Cur (P).Text);
+                        Next (P);
+                     end loop;
+                  end;
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "statements"
                  and then Ends_Directive (P, 1)
@@ -6563,6 +6733,7 @@ package body HBNF_Grammar is
       --  An element the backends take inside a sequence as it is.
       function Simple (E : Element_Access) return Boolean is
         (E.Kind = Alt
+         or else (E.Kind = Block and then E.Op /= B_Action)
          or else (E.Min = 1 and then E.Max = 1
                   and then (E.Kind in Literal | Name | Char_Range
                             or else (E.Kind = Group
@@ -6580,7 +6751,7 @@ package body HBNF_Grammar is
          Out_V : Element_Vectors.Vector;
       begin
          for E of V loop
-            if E.Kind = Block then
+            if E.Kind = Block and then E.Op = B_Action then
                --  A block between elements: a rule of its own that matches
                --  nothing and runs the code.  `expr = term "+" %action{ … }
                --  term` then runs the action at its own point in the tree,
@@ -6867,6 +7038,10 @@ package body HBNF_Grammar is
       else To_String (Entry_Code));
 
    function Statements return Boolean is (Statements_On);
+
+   function Context_Count return Natural is (Natural (Context_Words.Length));
+   function Context_Name (K : Positive) return String is
+     (To_String (Context_Words (K)));
 
    function Macros_Rule return String is (To_String (Macros_Name));
 

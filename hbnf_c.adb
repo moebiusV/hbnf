@@ -616,6 +616,83 @@ package body HBNF_C is
    --  The scanner a rule runs: its jet, or a char-rule scanner.  The whitespace
    --  rule is one or the other, never a core scalar, so Scalar_Scan_Fn (which
    --  maps any non-core name onto `word`) would be wrong for it.
+   --  Contexts (RFCPLAN.md decision 13): true when the grammar declares one.
+   function Ctx_On return Boolean is (HBNF_Grammar.Context_Count > 0);
+   Ctx_Seq : Natural := 0;       --  numbers the names the emitters make up
+
+   --  The C spelling of a context's name, for CTX_<name>: hyphens are
+   --  underscores.
+   function C_Ident_Lower (S : String) return String is
+      R : String := S;
+   begin
+      for C of R loop
+         if C = '-' then
+            C := '_';
+         end if;
+      end loop;
+      return R;
+   end C_Ident_Lower;
+
+   function Ctx_Img (X : Natural) return String is
+      S : constant String := Natural'Image (X);
+   begin
+      return S (S'First + 1 .. S'Last);
+   end Ctx_Img;
+
+   --  What a grammar with contexts needs ahead of its rules: the context
+   --  numbers, the set itself (templates/c_context.tmpl), and a function for
+   --  each `%where { }` and `%bind { }` it holds, numbered as they are met.
+   function Context_Runtime (Rules : Rule_Vectors.Vector) return String is
+      R  : U;
+      Id : Natural := 0;
+
+      procedure Walk (Owner : Natural; V : Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            if E.Kind = Block and then E.Op in B_Where | B_Bind_Code then
+               Id := Id + 1;
+               E.Id := Id;
+               declare
+                  T : constant String :=
+                    C_Type_Name (To_String (Rules (Owner).Name));
+                  N : constant String := Ctx_Img (Id);
+               begin
+                  if E.Op = B_Where then
+                     Append (R, "static bool where_" & N & " (parser_t *p, "
+                       & "const char *text, size_t len, " & T & " *n) {"
+                       & ASCII.LF
+                       & "    (void)p; (void)text; (void)len; (void)n;"
+                       & ASCII.LF);
+                  else
+                     Append (R, "static void bindc_" & N & " (parser_t *p, "
+                       & "const char *text, size_t len, " & T & " *n) {"
+                       & ASCII.LF
+                       & "    (void)p; (void)text; (void)len; (void)n;"
+                       & ASCII.LF);
+                  end if;
+                  Append (R, To_String (E.Code) & ASCII.LF & "}" & ASCII.LF);
+               end;
+            elsif E.Kind = Group then
+               Walk (Owner, E.Items);
+            end if;
+         end loop;
+      end Walk;
+
+      Head : U;
+   begin
+      Append (Head, "enum {");
+      for K in 1 .. HBNF_Grammar.Context_Count loop
+         Append (Head, " CTX_" & C_Ident_Lower (HBNF_Grammar.Context_Name (K))
+           & ",");
+      end loop;
+      Append (Head, " HBNF_NCTX };" & ASCII.LF);
+      for I in 1 .. Natural (Rules.Length) loop
+         Walk (I, Rules (I).Pattern);
+      end loop;
+      return To_String (Head) & Mustache.Get ("c_context") & ASCII.LF
+        & To_String (R);
+   end Context_Runtime;
+
    --  The C statement that records where a node starts: after the blanks
    --  before it, which the first element of the node would skip.
    function Span_Start (Ws : Boolean; Acc, Save : String) return String is
@@ -3419,30 +3496,40 @@ package body HBNF_C is
          --  True when the rule's value holds a list head somewhere inside it
          --  (itself, or a by-value struct member, transitively): only those
          --  paths need walking.
-         function Holds_List (Name : String; Depth : Natural := 0)
-           return Boolean is
-            J : constant Natural := Find (Alias_Target (Rules, Name));
+         --  Does a rule hold a list, itself or through the structs it holds?
+         --  Each rule is looked at once, so a grammar that refers back to
+         --  itself (an expression through its parentheses) costs a walk of
+         --  the graph, not a walk of every path through it.
+         function Holds_List (Name : String) return Boolean is
+            Seen : array (1 .. N) of Boolean := [others => False];
+
+            function Visit (Nm : String) return Boolean is
+               J : constant Natural := Find (Alias_Target (Rules, Nm));
+            begin
+               if J = 0 or else Seen (J) then
+                  return False;
+               end if;
+               Seen (J) := True;
+               case Infos (J).Kind is
+                  when List =>
+                     return True;
+                  when Struct =>
+                     declare
+                        Info : constant Rule_Info := Infos (J);
+                     begin
+                        for M of Info.Members loop
+                           if Visit (To_String (M.Name)) then
+                              return True;
+                           end if;
+                        end loop;
+                     end;
+                     return False;
+                  when others =>
+                     return False;
+               end case;
+            end Visit;
          begin
-            if J = 0 or else Depth > 32 then
-               return False;
-            end if;
-            case Infos (J).Kind is
-               when List =>
-                  return True;
-               when Struct =>
-                  declare
-                     Info : constant Rule_Info := Infos (J);
-                  begin
-                     for M of Info.Members loop
-                        if Holds_List (To_String (M.Name), Depth + 1) then
-                           return True;
-                        end if;
-                     end loop;
-                  end;
-                  return False;
-               when others =>
-                  return False;
-            end case;
+            return Visit (Name);
          end Holds_List;
 
          function Elem_Holds_List (Info : Rule_Info) return Boolean is
@@ -4508,11 +4595,63 @@ package body HBNF_C is
                Append (Buf, LF);
             end if;
          end Ws_Skip;
+
+         --  The context operations in this segment: where it starts (for
+         --  `%where` and `%bind { }`, which see the text matched so far),
+         --  the scopes it opens, and the element a `? ctx` follows.
+         Sid  : constant String := Ctx_Img (Ctx_Seq + 1);
+         Seg  : constant String := "sg" & Sid & "_";
+         Scopes : String_Vectors.Vector;
+         Needs_Seg : constant Boolean :=
+           (for some K in First .. Last =>
+              Els (K).Kind = Block
+              and then Els (K).Op in B_Where | B_Bind_Code);
+
+         --  `Acc` is `r.` or `nn->`; the node as a pointer.
+         function Node_Ptr return String is
+           (if Acc'Length >= 2 and then Acc (Acc'Last) = '.'
+            then "&" & Acc (Acc'First .. Acc'Last - 1)
+            else Acc (Acc'First .. Acc'Last - 2));
+
+         --  A field path `declarators.name` as members of the node.
+         function Path_C (Path : String) return String is
+            R : U := To_Unbounded_String (Acc);
+            B : Natural := Path'First;
+         begin
+            for K in Path'Range loop
+               if Path (K) = '.' then
+                  Append (R, C_Field (Path (B .. K - 1)) & ".");
+                  B := K + 1;
+               end if;
+            end loop;
+            Append (R, C_Field (Path (B .. Path'Last)));
+            return To_String (R);
+         end Path_C;
+
+         --  The statements that find where the text matched since Var starts,
+         --  after the blanks, as `st_`, with the end in `k_`.
+         function Span_Of (Var : String) return String is
+           ("size_t k_ = p->pos, st_ = " & Var & "; "
+            & (if Ws then "p->pos = " & Var & "; skip_ws(p); st_ = p->pos; "
+                          & "p->pos = k_; " else ""));
       begin
+         Ctx_Seq := Ctx_Seq + 1;
+         if Needs_Seg then
+            Append (Buf, Ind & "size_t " & Seg & ";  " & Seg & " = p->pos;");
+            Append (Buf, LF);
+         end if;
          for K in First .. Last loop
             declare
                E : constant Element_Access := Els (K);
             begin
+               --  A `? ctx` after this element asks about its text.
+               if K < Last and then Els (K + 1).Kind = Block
+                 and then Els (K + 1).Op = B_Test
+               then
+                  Append (Buf, Ind & "size_t es" & Sid & "_" & Ctx_Img (K)
+                    & ";  es" & Sid & "_" & Ctx_Img (K) & " = p->pos;");
+                  Append (Buf, LF);
+               end if;
                case E.Kind is
                   when Literal =>
                      declare
@@ -4581,7 +4720,55 @@ package body HBNF_C is
                   when Char_Range =>
                      null;
                   when Block =>
-                     null;  --  lifted to a rule of its own before emission
+                     case E.Op is
+                        when B_Action =>
+                           null;  --  lifted to a rule of its own before emission
+                        when B_Test =>
+                           Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
+                             & Ctx_Img (K - 1)));
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  if (!hbnf_ctx_has (CTX_"
+                             & C_Ident_Lower (To_String (E.Ctx))
+                             & ", p->text + st_, k_ - st_)) {");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      p->pos = st_; fail(p, ""a name "
+                             & "in `" & To_String (E.Ctx)
+                             & "`"", 0, p->text + st_, 0); p->pos = k_; "
+                             & Fail & " } }");
+                           Append (Buf, LF);
+                        when B_Bind =>
+                           Append (Buf, Ind & "{ const char *v_ = "
+                             & Path_C (To_String (E.Path)) & "; if (v_) "
+                             & "hbnf_ctx_add (CTX_"
+                             & C_Ident_Lower (To_String (E.Ctx))
+                             & ", v_, strlen (v_)); }");
+                           Append (Buf, LF);
+                        when B_Bind_Code =>
+                           Append (Buf, Ind & "{ " & Span_Of (Seg)
+                             & "bindc_" & Ctx_Img (E.Id)
+                             & " (p, p->text + st_, k_ - st_, " & Node_Ptr
+                             & "); }");
+                           Append (Buf, LF);
+                        when B_Scope =>
+                           Scopes.Append (To_Unbounded_String
+                             ("sc" & Sid & "_" & Ctx_Img (K)));
+                           Append (Buf, Ind & "hbnf_mark_t sc" & Sid & "_"
+                             & Ctx_Img (K) & ";  sc" & Sid & "_" & Ctx_Img (K)
+                             & " = hbnf_mark();");
+                           Append (Buf, LF);
+                        when B_Where =>
+                           Append (Buf, Ind & "{ " & Span_Of (Seg));
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  if (!where_" & Ctx_Img (E.Id)
+                             & " (p, p->text + st_, k_ - st_, " & Node_Ptr
+                             & ")) {");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      p->pos = st_; fail(p, ""a "
+                             & "valid " & To_String (Rules (Owner).Name)
+                             & """, 0, p->text + st_, 0); p->pos = k_; "
+                             & Fail & " } }");
+                           Append (Buf, LF);
+                     end case;
                   when Bit_Field =>
                      null;     --  a rule with bit fields never reaches here (Split_Wire)
                   when Negation =>
@@ -4589,6 +4776,11 @@ package body HBNF_C is
                end case;
                At_First := False;
             end;
+         end loop;
+         --  What a `%scope` bound ends with the segment.
+         for I in reverse 1 .. Natural (Scopes.Length) loop
+            Append (Buf, Ind & "hbnf_reset (&" & To_String (Scopes (I)) & ");");
+            Append (Buf, LF);
          end loop;
       end Emit_Seq;
 
@@ -4910,6 +5102,7 @@ package body HBNF_C is
             --  skip_ws is a pure function of the position, so this is the
             --  same language, one call instead of one per branch.
             Hoist : constant Boolean := Ws and then Has_Alt (Els);
+            Cx    : U;       --  the name of this alternation's context mark
 
             --  The first byte of a leading keyword literal: the dispatch key
             --  in the character model, reimplementing the token array's
@@ -4988,6 +5181,13 @@ package body HBNF_C is
               and then not (for some E of Els =>
                               E.Kind = Alt and then E.Guard /= 0);
          begin
+            if Ctx_On then
+               Ctx_Seq := Ctx_Seq + 1;
+               Cx := To_Unbounded_String ("hm" & Ctx_Img (Ctx_Seq) & "_");
+               Append (Buf, Ind & "hbnf_mark_t " & To_String (Cx) & ";  "
+                 & To_String (Cx) & " = hbnf_mark();");
+               Append (Buf, LF);
+            end if;
             if Hoist then
                Append (Buf, Ind & "skip_ws(p);");
                Append (Buf, LF);
@@ -5027,6 +5227,11 @@ package body HBNF_C is
                if K > N or else Els (K).Kind = Alt then
                   LBr := LBr + 1;
                   if LBr > 1 then
+                     if Ctx_On then
+                        Append (Buf, Ind & "hbnf_reset (&" & To_String (Cx)
+                          & ");");
+                        Append (Buf, LF);
+                     end if;
                      Append (Buf, Ind & "p->pos = save; " & Free);
                      --  Free releases what the failed branch set, and the fields
                      --  are then zeroed so a later branch (or the caller, on a
@@ -5230,6 +5435,10 @@ package body HBNF_C is
                Append (Buf, "        if (!nn) hbnf_oom();");
                Append (Buf, LF);
                Append (Buf, "        size_t save = p->pos;");
+               if Ctx_On then
+                  Append (Buf, LF);
+                  Append (Buf, "        hbnf_mark_t lm_;  lm_ = hbnf_mark();");
+               end if;
                if Spans_On then
                   Append (Buf, LF);
                   Append (Buf, "        " & Span_Start (Ws, "nn->", "save"));
@@ -5278,7 +5487,9 @@ package body HBNF_C is
                        (Idx, Base_Branches (R), "nn->", Free, Clears, "have", "",
                         Buf, "            ", Label => "base_", Ws => Ws,
                         Alts => Alt_Idents (CN, Base_Branches (R)));
-                     Append (Buf, "            p->pos = save; free(nn); break;");
+                     Append (Buf, "            "
+                       & (if Ctx_On then "hbnf_reset (&lm_); " else "")
+                       & "p->pos = save; free(nn); break;");
                      Append (Buf, LF);
                      Append (Buf, "        }");
                      Append (Buf, LF);
@@ -5304,7 +5515,9 @@ package body HBNF_C is
                         Alts => Rule_Alts (R, True));
                   end;
                end if;
-               Append (Buf, "        p->pos = save; free(nn); break;");
+               Append (Buf, "        "
+                 & (if Ctx_On then "hbnf_reset (&lm_); " else "")
+                 & "p->pos = save; free(nn); break;");
                Append (Buf, LF);
                Append (Buf, "have:");
                Append (Buf, LF);
@@ -6268,6 +6481,9 @@ package body HBNF_C is
       end loop;
       Append (Res, LF);
       Append (Res, Hosted_Code);       --  the readers of the bit rules
+      if Ctx_On then
+         Append (Res, Context_Runtime (Rules));
+      end if;
 
       for I in 1 .. N loop
          declare
@@ -6275,26 +6491,41 @@ package body HBNF_C is
             NM : constant String := To_String (R.Name);
          begin
             if Needs_Parse_Fn (Rules, NM) then
-               if Paths_On then
-                  Append (Res, "static bool parse_body_" & C_Name (NM)
-                    & "(parser_t *p, " & Out_Type (I) & ");" & LF
-                    & "static bool parse_rule_" & C_Name (NM)
-                    & "(parser_t *p, " & Out_Type (I) & ") {" & LF
-                    & "    bool ok_;" & LF
-                    & "    if (p->depth < 24) p->stk[p->depth] = "
-                    & Natural'Image (I) & ";" & LF
-                    & "    p->depth++;" & LF
-                    & "    ok_ = parse_body_" & C_Name (NM) & "(p, out);" & LF
-                    & "    p->depth--;" & LF
-                    & "    return ok_;" & LF & "}" & LF
-                    & "static bool parse_body_" & C_Name (NM)
-                    & "(parser_t *p, " & Out_Type (I) & ") {" & LF);
-               else
-                  Append (Res, Fill ("c_rule_head",
-                    (H ("name", C_Name (NM)),
-                     H ("type", Out_Type (I)))));
-                  Append (Res, LF);
-               end if;
+               declare
+                  --  A rule that can bind puts the contexts back when it
+                  --  fails (a token is a scanner and binds nothing).
+                  Wrap_Ctx : constant Boolean :=
+                    Ctx_On and then not Is_Char_Rule (Rules, NM)
+                    and then R.Jet_Code = Null_Unbounded_String;
+               begin
+                  if Paths_On or else Wrap_Ctx then
+                     Append (Res, "static bool parse_body_" & C_Name (NM)
+                       & "(parser_t *p, " & Out_Type (I) & ");" & LF
+                       & "static bool parse_rule_" & C_Name (NM)
+                       & "(parser_t *p, " & Out_Type (I) & ") {" & LF
+                       & "    bool ok_;" & LF
+                       & (if Wrap_Ctx
+                          then "    hbnf_mark_t m_;  m_ = hbnf_mark();" & LF
+                          else "")
+                       & (if Paths_On
+                          then "    if (p->depth < 24) p->stk[p->depth] = "
+                               & Natural'Image (I) & ";" & LF
+                               & "    p->depth++;" & LF
+                          else "")
+                       & "    ok_ = parse_body_" & C_Name (NM) & "(p, out);" & LF
+                       & (if Paths_On then "    p->depth--;" & LF else "")
+                       & (if Wrap_Ctx
+                          then "    if (!ok_) hbnf_reset (&m_);" & LF else "")
+                       & "    return ok_;" & LF & "}" & LF
+                       & "static bool parse_body_" & C_Name (NM)
+                       & "(parser_t *p, " & Out_Type (I) & ") {" & LF);
+                  else
+                     Append (Res, Fill ("c_rule_head",
+                       (H ("name", C_Name (NM)),
+                        H ("type", Out_Type (I)))));
+                     Append (Res, LF);
+                  end if;
+               end;
                Emit_Rule_Parser (I, Res);
                Append (Res, "}");
                Append (Res, LF);
@@ -6363,7 +6594,8 @@ package body HBNF_C is
          Append (Res, "                  char *err, size_t errlen,"
            & " size_t *err_line, size_t *err_col) {");
          Append (Res, LF);
-         Append (Res, "    parser_t p = { text, strlen(text), 0, (size_t)-1,"
+         Append (Res, (if Ctx_On then "    hbnf_ctx_clear();" & LF else "")
+           & "    parser_t p = { text, strlen(text), 0, (size_t)-1,"
            & " 0, 0, NULL, NULL, 0, 0 };");
          Append (Res, LF);
          Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))

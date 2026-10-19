@@ -1,0 +1,28 @@
+; Context (RFCPLAN.md decision 13): C's `(A) * 0` is a cast of `*0` when A is a
+; typedef name and a product when A is a variable, and the parser has to
+; remember which.  `types` is the set of names a typedef has made so far.
+prefix none
+context types
+
+program   = *statement
+statement = typedef-decl | var-decl | block | expr-stmt
+
+; a typedef adds its name to `types`; a variable does not
+typedef-decl = "typedef" "int" name %bind types += name ";"
+var-decl     = "int" name %bind types += name "!"   ; binds, then fails: undone
+             | "int" name ";"
+
+; names added inside the braces are gone after them
+block = "{" %scope *statement "}"
+
+expr-stmt = expr ";"
+expr      = cast %label cast
+          | product %label product
+          | primary %label primary
+cast      = "(" tname ")" unary          ; the name in parens must be a type
+tname     = name ? types
+product   = primary "*" primary
+unary     = "*" primary | primary
+primary      = number | name | "(" expr ")"
+name      = word
+number    = int

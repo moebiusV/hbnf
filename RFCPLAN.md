@@ -248,8 +248,27 @@ corpora (`corpus/`).
       bigger machine).
     - **Where it lands:** step 6, with the other compiler-compiler interfaces,
       in C first, tested on `(A) * 0` (a cast when `A` is a typedef name, a
-      product when it is not) before a C subset is tried.  Later work, not
-      started.
+      product when it is not) before a C subset is tried.
+
+    **Built 2026-10-18 (C), in the first spelling, local to the rule that uses
+    it** (the user: "keep things local ... but clean and easy to read"):
+    `context types templates` declares contexts; `identifier ? types` fails the
+    alternative unless the text just matched is in `types`; `%bind types +=
+    declarators.name` adds a field's text when that point of the rule is
+    reached (or `%bind { code }`); `%scope` makes what is bound after it vanish
+    when the rule's alternative ends; `%where { code }` is a test with the
+    matched text as `text, len`.  Code reads and writes a context with
+    `HBNF_IN (ctx, s, n)` and `HBNF_ADD (ctx, s, n)`.  A context is a stack of
+    names with a hash index, so a lookup is a hash and putting it back to a
+    mark is a pop; every branch of an alternation, every iteration of a
+    repetition and every rule that can fail takes a mark and returns to it when
+    it gives up, so what a wrong guess bound is gone with the guess.  Only a
+    grammar that declares a context pays for any of it.  `tests/context.sh`
+    runs the six cases (cast, product, undeclared, inside a block, after the
+    block, a guess that bound and gave up).  C only; the other backends refuse
+    `context` with a message.  `%where` and `%bind { }` are in the file's
+    language (C).  Not yet: negation (`? !types`), a value stored with a name,
+    contexts across the statements of a `statements` parser.
 
 14. **Ambiguity: fork only where it occurs, and settle it in a fixed order.**
     (Decided 2026-10-18, from the study of `hbnf15.txt`, with the user.)

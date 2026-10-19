@@ -159,6 +159,17 @@ package HBNF_Grammar is
    function Label_Of (E : Element_Access) return String;
    procedure Set_Label (E : Element_Access; Name : String);
 
+   --  What a Block is: an `%action{ }` between elements (lifted into a rule
+   --  of its own), or one of the context operations (RFCPLAN.md decision 13)
+   --  that stay where they are written.
+   type Block_Op is
+     (B_Action,      --  %action{ code }
+      B_Test,        --  `? types`: the text just matched is in a context
+      B_Bind,        --  %bind types += field.path
+      B_Bind_Code,   --  %bind { code }
+      B_Scope,       --  %scope: what is bound after it ends with the rule
+      B_Where);      --  %where { code }: a test the alternative must pass
+
    type Element (Kind : Element_Kind := Literal) is record
       Min : Natural := 1;   --  minimum occurrences (repetition)
       Max : Integer := 1;   --  -1 = unbounded
@@ -220,6 +231,10 @@ package HBNF_Grammar is
             --  accepts it where both mean the same: between alternatives
             --  that each match exactly one code point.
          when Block =>
+            Op   : Block_Op := B_Action;
+            Ctx  : Unbounded_String := Null_Unbounded_String;  --  the context
+            Path : Unbounded_String := Null_Unbounded_String;  --  %bind's value
+            Id   : Natural := 0;                  --  the emitter's number
             Code : Unbounded_String := Null_Unbounded_String;
             --  A `%action{ }` met *between* a rule's elements rather than at
             --  its end.  The reader leaves it here; `Lift` turns it into a
@@ -497,6 +512,13 @@ package HBNF_Grammar is
    --  a syntax error is reported and the parse goes on with the next
    --  statement, and only one statement's tokens are held at a time.
    function Statements return Boolean;
+
+   --  `context types templates`: named sets of names the parser keeps while it
+   --  reads (RFCPLAN.md decision 13).  `? types` asks, `%bind types += path`
+   --  adds, `%scope` ends what is added after it with its rule, and a backtrack
+   --  puts a context back as it was.
+   function Context_Count return Natural;
+   function Context_Name (K : Positive) return String;
 
    --  `macros varset`: a statement the named rule matches whole defines a
    --  macro, as parse.y's varset: its first token is the name, the tokens

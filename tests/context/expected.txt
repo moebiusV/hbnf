@@ -1,0 +1,6 @@
+(A)*0, A a typedef                 cast 
+(B)*0, B a variable                product 
+(C)*0, C not declared              product 
+T typedef inside a block, used in  cast 
+... and after it (T is gone)       product 
+a guess that bound and gave up     product 
