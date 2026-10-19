@@ -442,6 +442,12 @@ clearest case is Mustache, whose closing tag must repeat the opening one (`{{#a}
 hbnf says it with `%as` and `%same`, and the Tree-sitter grammar it writes accepts `{{#a}}x{{/b}}`,
 because a Tree-sitter grammar cannot make a token repeat another; 106 of 2,000 mutated templates
 were accepted by Tree-sitter alone, and 103 of those 106 have a closing tag naming another section.
+Tree-sitter's one place for state is the external scanner, a C file with state of its own that
+Tree-sitter saves and restores for every fork, and the backend uses it (`--ts-scanner=FILE`): the
+scanner holds the name the opening tag captured and accepts the closing tag only if it is the same
+text. With it the 106 disagreements are gone (0 of 2,000). What the scanner cannot do is see the
+parse, only the characters, so a context test that depends on what the parser has reduced (whether
+`T` was declared a type) still has no equivalent, and nor does the lookahead `!x`, which is next.
 
 The thread through all of it: Backus and Naur gave a generative notation,
 Johnson mechanized the LR subset of it, Crocker loosened the notation for

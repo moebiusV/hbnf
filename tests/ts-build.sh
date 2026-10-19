@@ -9,11 +9,12 @@ CLI=${HBNF:-./hbnf}
 GRAMMAR=$1
 OUT=$2
 export PATH="$TS_NODE_DIR:$PATH"
-mkdir -p "$OUT"
+mkdir -p "$OUT/src"
+rm -f "$OUT/src/scanner.c"
 conf=""
 n=0
 while :; do
-	"$CLI" "$GRAMMAR" --backend=tree-sitter --ts-ordered ${conf:+--ts-conflicts="$conf"} \
+	"$CLI" "$GRAMMAR" --backend=tree-sitter --ts-ordered --ts-scanner="$OUT/src/scanner.c" ${conf:+--ts-conflicts="$conf"} \
 	    > "$OUT/grammar.js" 2> "$OUT/err" || { echo "ts-build: hbnf failed: $(head -c 300 "$OUT/err")" >&2; exit 1; }
 	( cd "$OUT" && "$TS_CLI" generate ) > "$OUT/gen" 2>&1 && break
 	pair=$(sed -n 's/.*Add a conflict for these rules: *//p' "$OUT/gen" | head -1 | sed 's/`//g; s/ //g')

@@ -38,7 +38,11 @@ is defined by what it matches that is not empty and named with `optional`; a rul
 only a choice among other tokens (`label = identifier / digits`) stays a choice of rules, so
 the parser, not the lexer, decides.  What tree-sitter cannot say is left out and listed in
 the file's head and as warnings: lookahead `!x` and `&x`, context tests and bindings,
-actions, scanners written in C.  Ordered choice has no form in tree-sitter: `--ts-ordered`
+actions, scanners written in C.  A back-reference (`x %as tag` ... `%same tag`) is the
+exception: with `--ts-scanner=FILE` the backend writes the `externals` and a `scanner.c` that
+holds the captured text in its state and accepts only the same text again (Mustache's closing
+tag; the tagged name must be a token the C backend scans as an automaton, and the tags held are
+limited to the 1,024 octets of state tree-sitter saves).  Ordered choice has no form in tree-sitter: `--ts-ordered`
 gives each alternative a `prec.dynamic` (the first the most), and `--ts-conflicts=a,b;c,d`
 declares the groups of rules tree-sitter may fork between, which `tree-sitter generate`
 names one at a time (`tests/ts-build.sh` loops until it succeeds).  Checked with the real

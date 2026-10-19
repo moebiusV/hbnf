@@ -51,6 +51,7 @@ procedure Hbnf is
    Forks        : Boolean := False;
    Ts_Conflicts : Unbounded_String;
    Ts_Ordered   : Boolean := False;
+   Ts_Scanner   : Unbounded_String;
    Quiet        : Boolean := False;
    Prefix       : Unbounded_String;
 
@@ -118,7 +119,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -154,6 +155,8 @@ begin
               ((if A'Length > 15 and then A (15) = '=' then A (16 .. A'Last) else ""));
          elsif A = "--ts-ordered" then
             Ts_Ordered := True;
+         elsif A'Length >= 13 and then A (1 .. 13) = "--ts-scanner=" then
+            Ts_Scanner := To_Unbounded_String (A (14 .. A'Last));
          elsif A = "--forks" then
             Forks := True;
          elsif A = "--quiet-forks" then
@@ -366,7 +369,19 @@ begin
       end if;
       if B = "tree-sitter" then
          Put (HBNF_Tree_Sitter.Emit
-                (Raw, Language, To_String (Ts_Conflicts), Ts_Ordered));
+                (Raw, Language, To_String (Ts_Conflicts), Ts_Ordered,
+                 Scanner => Ts_Scanner /= Null_Unbounded_String));
+         if Ts_Scanner /= Null_Unbounded_String
+           and then HBNF_Tree_Sitter.Scanner_Source'Length > 0
+         then
+            declare
+               F : Ada.Text_IO.File_Type;
+            begin
+               Ada.Text_IO.Create (F, Ada.Text_IO.Out_File, To_String (Ts_Scanner));
+               Ada.Text_IO.Put (F, HBNF_Tree_Sitter.Scanner_Source);
+               Ada.Text_IO.Close (F);
+            end;
+         end if;
       elsif B = "c" then
          if Conf then
             Put_Line ("===== conf.h =====");

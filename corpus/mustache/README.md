@@ -34,11 +34,15 @@ Not done: `{{=<% %>=}}` is read as a tag but does not change the delimiters.
 
 In Tree-sitter (`sh tests/treesitter.sh corpus/mustache/mustache.hbnf corpus/mustache/tests/good
 corpus/mustache/tests/bad`) the grammar generates with one declared conflict and parses all 25
-good templates, and it is where its limit shows: Tree-sitter cannot make a closing tag repeat
-the opening one, so the backend writes the closing name as any name, and the five mismatched
-bad cases (`{{#a}}x{{/b}}`) parse.  On 2,000 mutations, hbnf and Tree-sitter agree on
-1,894; the other 106 are templates only Tree-sitter accepts, and 103 of them have a closing tag that
-names another section (the other three have a name with a stray character in it).
+good templates and shows an error on all 13 bad ones.  A Tree-sitter grammar cannot make a
+closing tag repeat the opening one, so the backend writes `%as` and `%same` with an external
+scanner (`--ts-scanner=FILE`, the `scanner.c` that goes in `src/`): the scanner keeps each captured
+name in its state, which Tree-sitter saves for every fork, and accepts the closing name only if it
+is the same text.  Without the scanner the closing name is any name, and the five mismatched bad
+cases (`{{#a}}x{{/b}}`) parse; on 2,000 mutations that left 106 templates only Tree-sitter accepted.
+With it, hbnf and Tree-sitter give the same answer on all 2,000 (1,339 accepted by both, 661
+refused by both; `TSD_GRAMMAR=corpus/mustache/mustache.hbnf TSD_ORACLE=tests/mustache/oracle.py
+TSD_EXT=mustache sh tests/treesitter-diff.sh 2000 2`).
 
 Running it found three faults in hbnf, now fixed: a lookahead inside a rule that is only text
 was silently dropped when the rule was compiled to its automaton; a rule used only in a
