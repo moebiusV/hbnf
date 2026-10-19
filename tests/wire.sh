@@ -54,6 +54,28 @@ check_rust() {
 	fi
 }
 
+# check_zig NAME [GRAMMAR [EXPECTED]]: the same grammar through the Zig backend,
+# a Zig driver (tests/wire/NAME_main.zig, `@import("GRAMMAR.zig")`), the same expected output.
+check_zig() {
+	n=$1; g=${2:-$n}; want=${3:-$n}
+	command -v zig > /dev/null 2>&1 || { echo "SKIP $n (zig): no zig"; return; }
+	d=$T/zg_$n; mkdir -p "$d"
+	if ! "$CLI" tests/wire/$g.hbnf --backend=zig > "$d/$g.zig" 2> "$d/err"; then
+		echo "FAIL $n (zig): generation: $(cat "$d/err")"; fail=$((fail+1)); return
+	fi
+	cp tests/wire/${n}_main.zig "$d/main.zig"
+	if ! (cd "$d" && zig build-exe main.zig -femit-bin=main > zig.out 2>&1); then
+		echo "FAIL $n (zig): zig"; head -30 "$d/zig.out"; fail=$((fail+1)); return
+	fi
+	"$d/main" > "$d/out" 2>&1
+	if cmp -s "$d/out" tests/wire/$want.expected; then
+		echo "PASS $n (zig)"
+	else
+		echo "FAIL $n (zig): output differs"; diff "$d/out" tests/wire/$want.expected | head -20
+		fail=$((fail+1))
+	fi
+}
+
 # expect_error NAME TEXT: the grammar is refused with a message containing TEXT.
 expect_error() {
 	n=$1; want=$2
@@ -69,6 +91,7 @@ expect_error() {
 
 check net
 check_rust net
+check_zig net
 check net_cbuf "" "" net
 # Text and bit rules in one grammar (the generated text parser is not -Wextra clean)
 check mixed "" "" mixed -w

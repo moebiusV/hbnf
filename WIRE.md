@@ -6,8 +6,8 @@ file type: a field of N bits (`ttl:8`) is an element like a literal or a rule
 name, and a rule that holds one is a **bit rule**.  A file may hold text rules
 and bit rules side by side (a bit rule can read the numbered words of a text
 rule as its bits: `bitsof`, below).  This is `RFCPLAN.md` step 7b.  **Status:**
-the C and Rust backends read and write bit rules (the writing direction is the
-same grammar); Zig and Ada are next.  Enum numbers (`"icmp"@1`) work in all four
+the C, Rust and Zig backends read and write bit rules (the writing direction is the
+same grammar); Ada is next.  Enum numbers (`"icmp"@1`) work in all four
 backends already.  What is not built is a text element and a bit field in one
 rule (`"GET " len:16 payload:[len]`); see the end of this page.
 
@@ -285,16 +285,11 @@ second.
 
 ## What is not built yet
 
-- Zig and Ada backends for bit rules (C and Rust have them).  A `language` line
+- An Ada backend for bit rules (C, Rust and Zig have them; Zig returns `error{Parse}` with the
+  octet and message through a pointer, and takes an allocator, best an arena).  A `language` line
   in a grammar says which language its code blocks (preamble, epilogue,
   `%action`, `%emit`) are written in, C unless it says; the Rust backend reads
   grammars without code until `%action`/`%emit` are done for it.
-- **Text and bit fields in one rule.**  A rule is made of bit fields or of text,
-  and a text rule cannot yet refer to a bit rule or the reverse; a rule that
-  mixes them (`"GET " len:16 payload:[len]`) is refused with a message saying
-  so.  The direction (`RFCPLAN.md`, step 7b): one input position, counted in
-  bits; text elements read UTF-8 octets at it and say so when it is not on an
-  octet; bit fields read from wherever it is.
 - **Units.**  A field's width is in bits and a string is an array of units, but
   a unit is not always a bit: an octet, a code point and a machine word (9-bit
   bytes, 36-bit words) are different things, and the notation should say which.
