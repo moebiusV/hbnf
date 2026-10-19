@@ -176,6 +176,22 @@ W-grammars give beyond those, kept to the decidable subset:
    grammar is read, not a failed parse.  If hbnf takes (1), it should check
    the arguments the same way, with the helpful errors it already promises.
 
+**Efficiency.**  The three above cost nothing the grammar does not already pay.
+(1) is expansion before the parser is generated: the parser it produces is the
+one you would have written by hand, with no runtime parameter passing; the cost
+is generator time and parser size, bounded by sharing identical instances and
+building only the ones used (17 precedence levels are 17 rules, as by hand).
+(2) is a slice of the input (a pointer and a length, no copy) kept in the parse
+state and compared with `memcmp` where it is repeated; a backtrack restores it
+with the position, and only a token that holds a back-reference leaves the
+table-driven scanner for a short loop, as a scanner action would, so only
+grammars that use it pay.  It does mean a memoized result must be keyed by the
+captured text or not memoized (the same hazard as decision 13's context).
+(3) is generation time only.  Because each expands into an ordinary grammar,
+the first-match rule, the union analysis and the detected forks of decision 14
+run unchanged.  Full W-grammars cannot be done without losing efficiency (the
+parse is undecidable); this subset can.
+
 What not to take: unrestricted metanotions and open-ended hyperrule families
 (undecidable; the Report itself needs a human to parse); the notation (hyperrule
 names with spaces and consistent substitution across a whole rule is a reading
