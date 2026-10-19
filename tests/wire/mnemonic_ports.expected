@@ -1,0 +1,43 @@
+PASS 12 words, entropy 16 octets, checksum 3, written back
+PASS 12 words, entropy 16 octets, checksum 8, written back
+PASS 12 words, entropy 16 octets, checksum 4, written back
+PASS 12 words, entropy 16 octets, checksum 5, written back
+PASS 24 words, entropy 32 octets, checksum 102, written back
+PASS 24 words, entropy 32 octets, checksum 175, written back
+PASS 12 words, entropy 16 octets, checksum 7, written back
+PASS 12 words, entropy 16 octets, checksum 1, written back
+PASS 24 words, entropy 32 octets, checksum 162, written back
+PASS 24 words, entropy 32 octets, checksum 105, written back
+PASS 18 words, entropy 24 octets, checksum 39, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 18 words, entropy 24 octets, checksum 25, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 18 words, entropy 24 octets, checksum 60, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 18 words, entropy 24 octets, checksum 17, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 15 words, entropy 20 octets, checksum 27, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 15 words, entropy 20 octets, checksum 19, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 21 words, entropy 28 octets, checksum 29, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS 21 words, entropy 28 octets, checksum 25, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
+PASS refused: 11 words (expected mnemonic: a mnemonic has 12, 15, 18, 21 or 24 words (at unit 1), found abandon abandon abandon )
+PASS refused: a misspelt word (expected ` `, found n)
+PASS refused: two blanks (expected a bip39-word, found  abandon abandon abandon)
+PASS refused: a trailing blank (expected a bip39-word, found end of input)
+PASS refused: a wrong checksum (all abandon) (the checksum does not match the words)
+PASS refused: a wrong checksum (all zoo) (the checksum does not match the words)
+PASS refused: nothing (expected a bip39-word, found end of input)
+PASS generated 12 words from 16 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 24 words from 32 octets of entropy
+PASS generated 24 words from 32 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 12 words from 16 octets of entropy
+PASS generated 24 words from 32 octets of entropy
+PASS generated 24 words from 32 octets of entropy
+PASS generated 18 words from 24 octets of entropy
+PASS generated 18 words from 24 octets of entropy
+PASS generated 18 words from 24 octets of entropy
+PASS generated 18 words from 24 octets of entropy
+PASS generated 15 words from 20 octets of entropy
+PASS generated 15 words from 20 octets of entropy
+PASS generated 21 words from 28 octets of entropy
+PASS generated 21 words from 28 octets of entropy

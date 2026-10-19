@@ -35,14 +35,17 @@ check() {
 # check_rust NAME [GRAMMAR [EXPECTED]]: the same grammar through the Rust backend,
 # a Rust driver (tests/wire/NAME_main.rs, `mod GRAMMAR;`), the same expected output.
 check_rust() {
-	n=$1; g=${2:-$n}; want=${3:-$n}
+	n=$1; g=${2:-$n}; want=${3:-$n}; link=${4:-}
 	command -v rustc > /dev/null 2>&1 || { echo "SKIP $n (rust): no rustc"; return; }
+	if [ -n "$link" ] && [ -z "$(ls /usr/lib*/lib$link.so* /lib*/lib$link.so* /usr/lib/*/lib$link.so* 2>/dev/null | head -1)" ]; then
+		echo "SKIP $n (rust): no lib$link; its code calls the system's library"; return
+	fi
 	d=$T/rs_$n; mkdir -p "$d"
 	if ! "$CLI" tests/wire/$g.hbnf --backend=rust > "$d/$g.rs" 2> "$d/err"; then
 		echo "FAIL $n (rust): generation: $(cat "$d/err")"; fail=$((fail+1)); return
 	fi
 	cp tests/wire/${n}_main.rs "$d/main.rs"
-	if ! rustc --edition 2021 -o "$d/main" "$d/main.rs" 2> "$d/rustc"; then
+	if ! rustc --edition 2021 ${link:+-C link-arg=-l:$(basename $(ls /usr/lib*/lib$link.so* /lib*/lib$link.so* /usr/lib/*/lib$link.so* 2>/dev/null | head -1))} -o "$d/main" "$d/main.rs" 2> "$d/rustc"; then
 		echo "FAIL $n (rust): rustc"; head -30 "$d/rustc"; fail=$((fail+1)); return
 	fi
 	"$d/main" > "$d/out" 2>&1
@@ -115,10 +118,13 @@ expect_error() {
 check net
 check_rust net
 check_rust segwit
+check_rust mnemonic mnemonic_rust mnemonic_ports crypto
 check_zig net
 check_zig segwit
+check_zig mnemonic mnemonic_zig mnemonic_ports
 check_ada net
 check_ada segwit segwit segwit Segwit
+check_ada mnemonic mnemonic_ada mnemonic_ports Mnemonic
 check net_cbuf "" "" net
 # Text and bit rules in one grammar (the generated text parser is not -Wextra clean)
 check mixed "" "" mixed -w

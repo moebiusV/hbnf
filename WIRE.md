@@ -210,8 +210,7 @@ text rule that is just the words joined by one separator (`1*word`, or `word *( 
 give `parse_text` and `emit_text` (`Parse_Text` and `Emit_Text` in Ada) with the same messages as C,
 including `(at unit N)`; anything else (a `bitsof` further in, any other text rule) is refused with
 a message saying the C backend reads it.  The tests are `segwit` in `tests/wire.sh`, one driver
-each, with the same expected output as C.  The BIP-39 mnemonic needs `%action` and `%emit`, which
-only C has so far.
+each, with the same expected output as C, and the BIP-39 mnemonic (see Code, below).
 
 ## Code: actions, emitters, and the library they call
 
@@ -230,6 +229,25 @@ A wire grammar holds C in three places, none of which hbnf reads or rewrites:
 - `%emit{ code }` runs when the record is **written**, before its fields are, on a
   copy of it as `n`: it fills in what is computed (a checksum), and the caller's
   tree is not touched.  `HBNF_EMIT_FAIL ("text")` fails the write.
+
+Rust, Zig and Ada have both, written in their own language: the grammar says
+`language Rust` (or `Zig`, `Ada`), and a grammar in another language is refused with a
+message saying so.  The code is the same four places, and the names are the language's:
+
+| | C | Rust | Zig | Ada |
+|---|---|---|---|---|
+| the record in an `%action` | `n->f` | `n.f` (`&T`) | `n.f` (`*const T`) | `N.F` |
+| warn | `HBNF_WARN ("..")` | `hbnf_warn!("..")` | `h.warn("..")` | `Hbnf_Warn (H, "..")` |
+| fail the read | `HBNF_FAIL ("..")` | `hbnf_fail!("..")` | `return h.fail("..")` | `Hbnf_Fail (H, "..")` |
+| the copy in an `%emit` | `n->f = ..` | `n.f = ..` | `n.f = ..` | `N.F := ..` |
+| fail the write | `HBNF_EMIT_FAIL ("..")` | `hbnf_emit_fail!("..")` | `return w_.emit_fail("..")` | `Hbnf_Emit_Fail ("..")` |
+| the warnings | `out->warnings` | `hbnf_warnings()` | `hbnf_warnings()` | `Warning_Count`, `Warning (I)` |
+
+The preamble is at the top of the file (Ada: the context clauses of the body, `with ...;`) and the
+epilogue after the rules (Ada: before the readers, because Ada declares before it uses).  Their
+tests are `mnemonic_rust.hbnf`, `mnemonic_zig.hbnf` and `mnemonic_ada.hbnf`: BIP-39 with OpenSSL's
+SHA-256 in Rust (linked as `libcrypto`), Zig's `std.crypto` and GNAT's `GNAT.SHA256`, all with the
+same output (`mnemonic_ports.expected`).
 
 The action is the semantic member of the family and the emitter the generative
 one.  Warnings are collected in static storage, so a parser that has actions is
@@ -292,8 +310,8 @@ second.
 
 ## What is not built yet
 
-- `%action`, `%emit`, a `bitsof` anywhere but first, any text rule but words, and mixing text with
-  bit rules in Rust, Zig and Ada (only C has them).
+- A `bitsof` anywhere but first, any text rule but words, and mixing text with bit rules in Rust,
+  Zig and Ada (only C has them).
   Zig returns `error{Parse}` with the octet and message through a pointer and takes an allocator,
   best an arena.  Ada writes the specification and body in one file (`gnatchop` splits it), with
   `Ada.Containers.Vectors` for octets and entries and a record with a variant part for a choice

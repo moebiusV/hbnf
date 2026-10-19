@@ -1,0 +1,57 @@
+language Ada
+{
+with GNAT.SHA256;
+}
+
+; A BIP-39 mnemonic: words of the English list, 11 bits each, joined by blanks.
+; The words are the entropy, then a checksum of one bit per 32 bits of it.
+; `phrase` is read as text; `bitsof` makes its numbered words the bits that the
+; rest of `mnemonic` reads (and, writing, spells the bits back as the words).
+prefix none
+whitespace none
+include "../../grammars/bip39/english.hbnf"
+
+doc = mnemonic
+phrase = bip39-word *( bip39-space bip39-word )
+
+; BIP-39 allows 12, 15, 18, 21 and 24 words.  Wallets mostly make 12 and 24,
+; and not all can import the others, so those read with a warning.
+mnemonic = words:bitsof(phrase)
+           ?(remaining % 33 == 0 && remaining / 33 >= 4 && remaining / 33 <= 8)
+              "a mnemonic has 12, 15, 18, 21 or 24 words"
+           entropy:[remaining / 33 * 4]
+           ?(len(entropy) % 4 == 0)
+           checksum:bits(len(entropy) / 4)
+  %action{
+      --  the checksum is the first bits of the SHA-256 of the entropy
+      if Bip39_Checksum (N.Entropy) /= N.Checksum then
+         Hbnf_Fail (H, "the checksum does not match the words");
+      end if;
+      --  the entropy is 16 octets for 12 words, 32 for 24
+      if N.Entropy.Length /= 16 and then N.Entropy.Length /= 32 then
+         Hbnf_Warn (H, "valid BIP-39, but wallets mostly make 12 and 24 words, "
+                    & "and some cannot import any other length");
+      end if;
+  }
+  %emit{
+      --  writing a mnemonic from its entropy: the checksum is worked out
+      N.Checksum := Bip39_Checksum (N.Entropy);
+  }
+
+{
+   --  BIP-39's checksum: the first n/4 bits of the SHA-256 of n octets of
+   --  entropy, with GNAT's own SHA-256.
+   function Bip39_Checksum (E : Octets) return Unsigned_64 is
+      S : String (1 .. Natural (E.Length));
+      D : GNAT.SHA256.Message_Digest;
+      function Hex (C : Character) return Unsigned_64 is
+        (if C in '0' .. '9' then Unsigned_64 (Character'Pos (C) - 48)
+         else Unsigned_64 (Character'Pos (C) - 87));
+   begin
+      for K in S'Range loop
+         S (K) := Character'Val (E.Element (K - 1));
+      end loop;
+      D := GNAT.SHA256.Digest (S);
+      return Shift_Right (Hex (D (1)) * 16 + Hex (D (2)), 8 - Natural (E.Length) / 4);
+   end Bip39_Checksum;
+}

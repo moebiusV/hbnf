@@ -212,6 +212,17 @@ package HBNF_Wire is
    --  change, when it is anywhere else (C reads it anywhere).
    function Words_Item (G : Grammar; Backend : String) return Item_Access;
 
+   --  The rules whose `%action` has to run when a record is read: those that
+   --  have one, and those that hold (by name, array or choice) one that has.
+   function Walk_Set (G : Grammar) return Name_Vectors.Vector;
+
+   function In_Walk (Set : Name_Vectors.Vector; Name : String) return Boolean;
+
+   --  Does this item (a rule, an array of rules, a choice of them) lead to an
+   --  action?
+   function Item_Walks (Set : Name_Vectors.Vector; It : Item) return Boolean;
+   function Seq_Walks (Set : Name_Vectors.Vector; S : Sequence) return Boolean;
+
    --  A rule whose every alternative is one constant of the same width: a
    --  value set, which a field may be constrained by (`ethertype:16`).
    function Is_Value_Set (R : Rule) return Boolean;

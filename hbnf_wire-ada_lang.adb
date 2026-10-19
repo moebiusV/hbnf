@@ -1144,6 +1144,77 @@ package body HBNF_Wire.Ada_Lang is
          L (Ind, "end case;");
       end Gen_Emit_Match;
 
+      Has_Actions : constant Boolean :=
+        (for some R of G.Rules => R.Action /= Null_Unbounded_String);
+      Walks : constant Name_Vectors.Vector := Walk_Set (G);
+
+      --  The walk that runs the actions once a record has been read, children
+      --  first.  Base is the record (or the variant record) whose components
+      --  Alts names; Comps and First say what the components of the
+      --  alternative are called.
+      procedure Gen_Walk_Seq
+        (S : Sequence; Owner : String; Base : String;
+         Comps : Name_Vectors.Vector; First : Natural; Alt : Boolean;
+         Ind : Natural)
+      is
+         Next : Natural := First;
+      begin
+         for It of S.Items loop
+            declare
+               N : constant String := To_String (It.Name);
+               U : constant String := Img (Next_Id);
+               C : constant String :=
+                 (if not Named (It.all) then ""
+                  elsif Alt then To_String (Comps (Next)) else Comp (N));
+            begin
+               if Named (It.all) then
+                  Next := Next + 1;
+               end if;
+               if Item_Walks (Walks, It.all) then
+                  case It.Kind is
+                     when S_Ref =>
+                        L (Ind, "Walk_" & Ada_Case (To_String (It.Ref)) & " ("
+                           & Base & "." & C & ", H);");
+                     when S_Array =>
+                        L (Ind, "for E" & U & " of " & Base & "." & C & " loop");
+                        L (Ind + 1, "Walk_" & Ada_Case (To_String (It.Ref))
+                           & " (E" & U & ", H);");
+                        L (Ind, "end loop;");
+                     when S_Choice =>
+                        declare
+                           E  : constant String := Owner & "_" & Ada_Case (N);
+                           Cs : constant Name_Vectors.Vector :=
+                             Alt_Comps (It.Alts);
+                           K  : Natural := 0;
+                           Off : Natural := 1;
+                        begin
+                           L (Ind, "case " & Base & "." & C & ".Alt is");
+                           for A of It.Alts loop
+                              K := K + 1;
+                              if Seq_Walks (Walks, A.all) then
+                                 L (Ind + 1, "when " & Img (K) & " =>");
+                                 Gen_Walk_Seq (A.all, E & "_A" & Img (K),
+                                               Base & "." & C, Cs, Off, True,
+                                               Ind + 2);
+                              end if;
+                              for X of A.Items loop
+                                 if Named (X.all) then
+                                    Off := Off + 1;
+                                 end if;
+                              end loop;
+                           end loop;
+                           L (Ind + 1, "when others =>");
+                           L (Ind + 2, "null;");
+                           L (Ind, "end case;");
+                        end;
+                     when others =>
+                        null;
+                  end case;
+               end if;
+            end;
+         end loop;
+      end Gen_Walk_Seq;
+
       Root   : constant Natural := 1;
       Rt     : constant String := To_String (G.Rules (Root).Name);
       Root_T : constant String := Rule_Type (G.Rules (Root));
@@ -1177,11 +1248,31 @@ package body HBNF_Wire.Ada_Lang is
                   Append (Decls, "   procedure " & Emit_Fn_Of (Nm)
                     & " (Bnf_W : in out Writer; Bnf_V : " & Rule_Type (R)
                     & ");" & ASCII.LF);
+                  if R.Emit /= Null_Unbounded_String then
+                     Append (Decls, "   procedure " & Emit_Fn_Of (Nm)
+                       & "_Body (Bnf_W : in out Writer; Bnf_V : "
+                       & Rule_Type (R) & ");" & ASCII.LF);
+                  end if;
+                  if Has_Actions and then In_Walk (Walks, To_String (R.Name))
+                  then
+                     if R.Action /= Null_Unbounded_String then
+                        Append (Decls, "   procedure Action_" & Ada_Case (Nm)
+                          & " (N : " & Rule_Type (R)
+                          & "; H : in out Hooks);" & ASCII.LF);
+                     end if;
+                     Append (Decls, "   procedure Walk_" & Ada_Case (Nm)
+                       & " (N : " & Rule_Type (R)
+                       & "; H : in out Hooks);" & ASCII.LF);
+                  end if;
                end;
             end if;
          end loop;
          Cur := Bod'Unrestricted_Access;
-         Append (Bod, "with Ada.Unchecked_Conversion;" & ASCII.LF & ASCII.LF);
+         Append (Bod, "with Ada.Unchecked_Conversion;" & ASCII.LF);
+         if G.Preamble /= Null_Unbounded_String then
+            Append (Bod, To_String (G.Preamble) & ASCII.LF);
+         end if;
+         Append (Bod, ASCII.LF);
          Append (Bod, "package body " & Pkg & " is" & ASCII.LF & ASCII.LF);
          L (1, "use Interfaces;");
          L (1, "use type Ada.Containers.Count_Type;");
@@ -1375,8 +1466,42 @@ package body HBNF_Wire.Ada_Lang is
                end;
             end if;
          end loop;
+         if Has_Actions then
+            L (1, "package Warn_Vectors is new Ada.Containers.Vectors (Natural, Unbounded_String);");
+            L (1, "");
+            L (1, "--  What an %action sees: Hbnf_Warn adds a warning, Hbnf_Fail fails the read.");
+            L (1, "type Hooks is record");
+            L (2, "Warnings : Warn_Vectors.Vector;");
+            L (2, "Msg      : Unbounded_String;");
+            L (1, "end record;");
+            L (1, "Bnf_Action_Fail : exception;");
+            L (1, "Bnf_Warns : Warn_Vectors.Vector;   --  the last successful read's warnings");
+            L (1, "");
+            L (1, "procedure Hbnf_Warn (H : in out Hooks; M : String) is");
+            L (1, "begin");
+            L (2, "H.Warnings.Append (To_Unbounded_String (M));");
+            L (1, "end Hbnf_Warn;");
+            L (1, "");
+            L (1, "procedure Hbnf_Fail (H : in out Hooks; M : String) is");
+            L (1, "begin");
+            L (2, "if Length (H.Msg) = 0 then");
+            L (3, "H.Msg := To_Unbounded_String (M);");
+            L (2, "end if;");
+            L (2, "raise Bnf_Action_Fail;");
+            L (1, "end Hbnf_Fail;");
+            L (1, "");
+            L (1, "function Warning_Count return Natural is (Natural (Bnf_Warns.Length));");
+            L (1, "function Warning (I : Positive) return String is");
+            L (2, "(To_String (Bnf_Warns.Element (I - 1)));");
+            L (1, "");
+         end if;
          Append (Bod, To_String (Decls));
          L (1, "");
+         if G.Epilogue /= Null_Unbounded_String then
+            L (1, "--  the grammar's epilogue");
+            Append (Bod, To_String (G.Epilogue) & ASCII.LF);
+            L (1, "");
+         end if;
       end;
 
       --  The readers and the writers.
@@ -1429,6 +1554,7 @@ package body HBNF_Wire.Ada_Lang is
                Pop (M);
                --  writer
                L (1, "procedure " & Emit_Fn_Of (Nm)
+                  & (if R.Emit /= Null_Unbounded_String then "_Body" else "")
                   & " (Bnf_W : in out Writer; Bnf_V : " & T & ") is");
                Emit_Side := True;
                if Natural (R.Alts.Length) = 1 then
@@ -1444,13 +1570,105 @@ package body HBNF_Wire.Ada_Lang is
                   L (1, "begin");
                   Gen_Emit_Match (R.Alts, "Bnf_V", Base, Nm, 2);
                end if;
-               L (1, "end " & Emit_Fn_Of (Nm) & ";");
+               L (1, "end " & Emit_Fn_Of (Nm)
+                  & (if R.Emit /= Null_Unbounded_String then "_Body" else "")
+                  & ";");
                L (1, "");
+               if R.Emit /= Null_Unbounded_String then
+                  --  %emit runs on a copy of the record, before its fields are
+                  --  written
+                  L (1, "procedure " & Emit_Fn_Of (Nm)
+                     & " (Bnf_W : in out Writer; Bnf_V : " & T & ") is");
+                  L (2, "N : " & T & " := Bnf_V;");
+                  L (2, "procedure Hbnf_Emit_Fail (M : String) is");
+                  L (2, "begin");
+                  L (3, "Efail (Bnf_W, ""emit"", M);");
+                  L (2, "end Hbnf_Emit_Fail;");
+                  L (1, "begin");
+                  Append (Bod, To_String (R.Emit) & ASCII.LF);
+                  L (2, Emit_Fn_Of (Nm) & "_Body (Bnf_W, N);");
+                  L (1, "end " & Emit_Fn_Of (Nm) & ";");
+                  L (1, "");
+               end if;
                Emit_Side := False;
                Pop (M);
             end;
          end if;
       end loop;
+
+      if Has_Actions then
+         for R of G.Rules loop
+            if not Is_Value_Set (R) and then In_Walk (Walks, To_String (R.Name))
+            then
+               declare
+                  Nm   : constant String := To_String (R.Name);
+                  T    : constant String := Rule_Type (R);
+                  Base : constant String := Pfx & Ada_Case (Nm);
+               begin
+                  if R.Action /= Null_Unbounded_String then
+                     L (1, "procedure Action_" & Ada_Case (Nm) & " (N : " & T
+                        & "; H : in out Hooks) is");
+                     L (1, "begin");
+                     Append (Bod, To_String (R.Action) & ASCII.LF);
+                     L (1, "end Action_" & Ada_Case (Nm) & ";");
+                     L (1, "");
+                  end if;
+                  L (1, "procedure Walk_" & Ada_Case (Nm) & " (N : " & T
+                     & "; H : in out Hooks) is");
+                  L (1, "begin");
+                  if Natural (R.Alts.Length) = 1 then
+                     Gen_Walk_Seq (R.Alts.First_Element.all, Base, "N",
+                                   Name_Vectors.Empty_Vector, 1, False, 2);
+                  else
+                     declare
+                        Cs  : constant Name_Vectors.Vector := Alt_Comps (R.Alts);
+                        K   : Natural := 0;
+                        Off : Natural := 1;
+                     begin
+                        L (2, "case N.Alt is");
+                        for A of R.Alts loop
+                           K := K + 1;
+                           if Seq_Walks (Walks, A.all) then
+                              L (3, "when " & Img (K) & " =>");
+                              Gen_Walk_Seq (A.all, Base & "_A" & Img (K), "N",
+                                            Cs, Off, True, 4);
+                           end if;
+                           for X of A.Items loop
+                              if Named (X.all) then
+                                 Off := Off + 1;
+                              end if;
+                           end loop;
+                        end loop;
+                        L (3, "when others =>");
+                        L (4, "null;");
+                        L (2, "end case;");
+                     end;
+                  end if;
+                  if R.Action /= Null_Unbounded_String then
+                     L (2, "Action_" & Ada_Case (Nm) & " (N, H);");
+                  end if;
+                  L (2, "null;");
+                  L (1, "end Walk_" & Ada_Case (Nm) & ";");
+                  L (1, "");
+               end;
+            end if;
+         end loop;
+         L (1, "--  Run the actions on a record that has been read; the warnings are kept.");
+         L (1, "procedure Bnf_Check (V : " & Root_T & "; Msg : out Unbounded_String;");
+         L (3, "Ok : out Boolean) is");
+         L (2, "H : Hooks;");
+         L (1, "begin");
+         L (2, "Msg := Null_Unbounded_String;");
+         L (2, "Walk_" & Ada_Case (Rt) & " (V, H);");
+         L (2, "Bnf_Warns := H.Warnings;");
+         L (2, "Ok := True;");
+         L (1, "exception");
+         L (2, "when Bnf_Action_Fail =>");
+         L (3, "Msg := H.Msg;");
+         L (3, "Ok := False;");
+         L (1, "end Bnf_Check;");
+         L (1, "");
+      end if;
 
       if Words = null then
       --  The entry points.
@@ -1478,6 +1696,20 @@ package body HBNF_Wire.Ada_Lang is
       L (6, "& "": "" & To_String (Bnf_P.Msg)));");
       L (3, "return;");
       L (2, "end if;");
+      if Has_Actions then
+         L (2, "declare");
+         L (3, "Msg  : Unbounded_String;");
+         L (3, "Good : Boolean;");
+         L (2, "begin");
+         L (3, "Bnf_Check (Result, Msg, Good);");
+         L (3, "if not Good then");
+         L (4, "Err := (At_Octet => Bnf_P.Bit / 8,");
+         L (6, "Message => To_Unbounded_String (""octet "" & Img (Bnf_P.Bit / 8)");
+         L (7, "& "": " & Escape (Rt) & ": "" & To_String (Msg)));");
+         L (4, "return;");
+         L (3, "end if;");
+         L (2, "end;");
+      end if;
       L (2, "Ok := True;");
       L (1, "exception");
       L (2, "when Bnf_Fail =>");
@@ -1670,6 +1902,18 @@ package body HBNF_Wire.Ada_Lang is
          L (5, "end;");
          L (5, "raise Bnf_Fail;");
          L (4, "end if;");
+         if Has_Actions then
+            L (4, "declare");
+            L (5, "Msg  : Unbounded_String;");
+            L (5, "Good : Boolean;");
+            L (4, "begin");
+            L (5, "Bnf_Check (Result, Msg, Good);");
+            L (5, "if not Good then");
+            L (6, "Err := (At_Octet => 0, Message => Msg);");
+            L (6, "return;");
+            L (5, "end if;");
+            L (4, "end;");
+         end if;
          L (4, "Ok := True;");
          L (3, "exception");
          L (4, "when Bnf_Fail =>");
@@ -1780,6 +2024,11 @@ package body HBNF_Wire.Ada_Lang is
       SL (1, "--  " & Img (Words.Width) & ", each spelled, with the separator between.");
       SL (1, "procedure Emit_Text (V : " & Root_T & "; Text : out Unbounded_String;");
       SL (3, "Ok : out Boolean; Message : out Unbounded_String);");
+      end if;
+      if Has_Actions then
+         SL (1, "--  The warnings the %actions gave on the last successful read.");
+         SL (1, "function Warning_Count return Natural;");
+         SL (1, "function Warning (I : Positive) return String;");
       end if;
       SL (0, "");
       SL (0, "end " & Pkg & ";");

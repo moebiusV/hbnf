@@ -410,6 +410,43 @@ package body HBNF_Wire is
       return Found;
    end Words_Item;
 
+   function In_Walk (Set : Name_Vectors.Vector; Name : String) return Boolean is
+     (for some X of Set => To_String (X) = Name);
+
+   function Seq_Walks (Set : Name_Vectors.Vector; S : Sequence) return Boolean is
+     (for some It of S.Items => Item_Walks (Set, It.all));
+
+   function Item_Walks (Set : Name_Vectors.Vector; It : Item) return Boolean is
+   begin
+      case It.Kind is
+         when S_Ref | S_Array =>
+            return not It.Bitsof and then In_Walk (Set, To_String (It.Ref));
+         when S_Choice =>
+            return (for some A of It.Alts => Seq_Walks (Set, A.all));
+         when others =>
+            return False;
+      end case;
+   end Item_Walks;
+
+   function Walk_Set (G : Grammar) return Name_Vectors.Vector is
+      Set     : Name_Vectors.Vector;
+      Changed : Boolean := True;
+   begin
+      while Changed loop
+         Changed := False;
+         for R of G.Rules loop
+            if not In_Walk (Set, To_String (R.Name))
+              and then (R.Action /= Null_Unbounded_String
+                        or else (for some A of R.Alts => Seq_Walks (Set, A.all)))
+            then
+               Set.Append (R.Name);
+               Changed := True;
+            end if;
+         end loop;
+      end loop;
+      return Set;
+   end Walk_Set;
+
    function Rooted (G : Grammar; Name : String) return Grammar is
       J : constant Natural := Find (G, Name);
       R : Grammar := G;
