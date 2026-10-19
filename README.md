@@ -67,6 +67,48 @@ This directory holds two things:
    - `RFCPLAN.md`: the plan to compile RFC grammars as written;
    - `USENIXSUBMISSION.md`: the design paper, with measurements.
 
+## All the documents
+
+Every markdown file in the repository, so none is lost.
+
+**The design and its plan**
+- [`WHY.md`](WHY.md): the grammar and its design choices, for an RFC reader.
+- [`RFCPLAN.md`](RFCPLAN.md): the plan, its decisions and its status, step by step.
+- [`ABNF.md`](ABNF.md): the notation against RFC 5234, feature by feature.
+- [`CHARLAYER.md`](CHARLAYER.md): character rules, numeric terminals and UTF-8.
+- [`WIRE.md`](WIRE.md): octets and bit fields, enum numbers, text and bit rules
+  together, and parsers that also write bytes back.
+- [`COMPILER-COMPILER.md`](COMPILER-COMPILER.md): what hbnf is as a compiler-compiler.
+- [`METACOMPILERS.md`](METACOMPILERS.md): hbnf beside META II, IMP72, SNOBOL4 and
+  W-grammars.
+- [`IDREF.md`](IDREF.md): the id-ref serializer output of the C backend.
+- [`USENIXSUBMISSION.md`](USENIXSUBMISSION.md): the design paper, with measurements.
+- [`HISTORY.md`](HISTORY.md): a short history of the parser generator.
+- [`STYLE.md`](STYLE.md): the Ada style the sources follow.
+
+**Grammars, bindings and tests**
+- [`grammars/README.md`](grammars/README.md): the notation and the nine daemon grammars.
+- [`bindings/README.md`](bindings/README.md): the FFI bindings.
+- [`tests/bytetest/README.md`](tests/bytetest/README.md): the byte-identity harness
+  against OpenBSD's `parse.y`.
+
+**Corpora** ([`corpus/README.md`](corpus/README.md) is the index)
+- [`corpus/rfc/README.md`](corpus/rfc/README.md): RFC grammar snippets and vectors:
+  [RFC 3986](corpus/rfc/rfc3986-1.md), [RFC 5234](corpus/rfc/rfc5234-1.md),
+  [RFC 5322](corpus/rfc/rfc5322-1.md), [RFC 9112](corpus/rfc/rfc9112-1.md).
+- [`corpus/posix/posix-shell-1.md`](corpus/posix/posix-shell-1.md): the POSIX shell grammar.
+- [`corpus/algol60/README.md`](corpus/algol60/README.md): the ALGOL 60 report and its BNF.
+- [`corpus/imp72/README.md`](corpus/imp72/README.md): the IMP72 compiler's sources.
+- [`corpus/bip39/README.md`](corpus/bip39/README.md): the ten BIP-39 word lists.
+- [`corpus/bech32/README.md`](corpus/bech32/README.md): bech32 and bech32m.
+
+**Measurements** ([`bench/README.md`](bench/README.md) says how they are made)
+- [environment](bench/results/env.md), [headline](bench/results/headline.md),
+  [toy grammar](bench/results/toy.md), [hbnf on the toy](bench/results/hbnf-toy.md),
+  [hbnf on pfctl](bench/results/hbnf-pfctl.md), [ntpd](bench/results/ntpd.md),
+  [yacc](bench/results/yacc.md), [ANTLR and PEG](bench/results/antlr-peg.md),
+  [tree-sitter](bench/results/treesitter.md).
+
 ## Performance
 
 hbnf's generated C parser against the tools it is usually compared with, on one
