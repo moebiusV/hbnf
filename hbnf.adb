@@ -224,7 +224,19 @@ begin
       end if;
       HBNF_C.Set_Forks (Forks, Quiet);
       HBNF_Compilable.Allow_Shadowing (Forks);
-      if HBNF_Grammar.Context_Count > 0 and then To_String (Backend) /= "c" then
+      if HBNF_Grammar.Uses_Backref
+        and then To_String (Backend) not in "c" | "tree-sitter"
+      then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "hbnf: a grammar with `%as` / `%same` can be emitted in C so far ("
+            & To_String (Backend) & " follows; RFCPLAN.md, W-grammars)");
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+      if HBNF_Grammar.Context_Count > 0
+        and then To_String (Backend) not in "c" | "tree-sitter"
+      then
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error,
             "hbnf: a grammar with `context` can be emitted in C so far ("

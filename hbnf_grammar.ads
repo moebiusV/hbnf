@@ -170,7 +170,13 @@ package HBNF_Grammar is
       B_Scope,       --  %scope: what is bound after it ends with the rule
       B_Where,       --  %where { code }: a test the alternative must pass
       B_Not,         --  !x: x does not match here; nothing is consumed
-      B_And);        --  &x: x matches here; nothing is consumed
+      B_And,         --  &x: x matches here; nothing is consumed
+      B_As,          --  x %as tag: the text x matched is kept, as `tag`
+      B_Same);       --  %same tag: the text kept as `tag` again, here
+
+   --  True once a grammar has read `%as` or `%same`: a back-reference, which the
+   --  C backend alone emits so far.
+   function Uses_Backref return Boolean;
 
    type Element (Kind : Element_Kind := Literal) is record
       Min : Natural := 1;   --  minimum occurrences (repetition)

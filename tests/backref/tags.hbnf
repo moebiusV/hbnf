@@ -1,0 +1,12 @@
+; A back-reference (RFCPLAN.md, W-grammars): `%same tag` is the text `%as tag` kept.
+; A tag closes with the name it opened with, however deep, however often it
+; repeats; `<a><b></a></b>` is not a document.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc      = *node
+node     = element / text
+element  = "<" name %as tag ">" *node "</" %same tag ">"
+name     = ALPHA *( ALPHA / DIGIT )
+text     = 1*~"<"

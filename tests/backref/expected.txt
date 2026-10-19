@@ -1,0 +1,12 @@
+<a></a>                    accepted
+<a>text</a>                accepted
+<a><b></b></a>             accepted
+<a><a></a></a>             accepted
+<a></a><b></b>             accepted
+x<a>y<b>z</b>w</a>v        accepted
+<a></b>                    expected the same text again, `tag`, found b
+<a><b></a></b>             expected the same text again, `tag`, found a
+<ab></a>                   expected the same text again, `tag`, found a
+<a></ab>                   expected `>`, found b
+<a>                        expected `</`, found end of input
+</a>                       expected name, found /

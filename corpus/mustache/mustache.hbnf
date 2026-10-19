@@ -1,0 +1,45 @@
+; Mustache templates (https://mustache.github.io/mustache.5.html), the syntax of the
+; template and nothing of how it is rendered.
+;
+; A closing tag has to say the name the opening one did: {{#items}} ... {{/items}}.
+; That is not context-free, and it is what `%as` and `%same` are for: `name %as tag`
+; keeps the text the name matched, and `%same tag` is that text again, in this rule
+; and no other, so nesting and backtracking cannot mix two sections up.
+;
+; The sigil (# ^ / ! > &) follows the {{ at once, as in mustache.js: {{ /a}} is a
+; variable called /a.  Not done: {{=<% %>=}} is read as a tag but does not change
+; the delimiters.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+template = *part
+part     = section | inverted | note | partial | delimiters | unescaped | variable
+         | text | lone-brace
+
+section  = "{{" "#" blank name %as tag blank "}}" template "{{" "/" blank %same tag blank "}}"
+inverted = "{{" "^" blank name %as tag blank "}}" template "{{" "/" blank %same tag blank "}}"
+
+note       = "{{" "!" body "}}"
+partial    = "{{" ">" blank first body "}}"
+delimiters = "{{=" *~"=" "=}}"
+unescaped  = "{{{" blank name blank "}}}" | "{{" "&" blank first body "}}"
+
+; A variable is anything up to the }}, but not nothing, and not a tag of another kind:
+; its first character after the {{ is not a sigil (a blank first lets it be one, as in
+; mustache.js: {{ /a}} is a variable called /a).
+variable   = "{{" ( plain / 1*blank-char first ) body "}}"
+plain      = ~( SP / HTAB / CR / LF / "}" / "#" / "^" / "/" / "!" / ">" / "&" / "=" ) / "}" ~"}"
+
+; the pieces of a tag; a } inside one is text unless another } follows it
+first        = ~( SP / HTAB / CR / LF / "}" ) / "}" ~"}"
+name         = nonblank *( 1*blank-char nonblank )
+nonblank     = 1*~( SP / HTAB / CR / LF / "}" )
+blank-char   = SP / HTAB / CR / LF
+blank        = *blank-char
+body         = *( ~"}" / "}" ~"}" )
+
+; everything else; a { is text unless another { follows it, and a { at the very end is text
+text       = 1*( ~"{" / "{" ~"{" )
+lone-brace = "{" !any
+any        = %x00-10FFFF

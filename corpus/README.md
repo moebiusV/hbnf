@@ -11,6 +11,7 @@ README that says what is in it and what state it is in.
 | `imp72/` | the IMP72 compiler's sources (DECUS 10-198) | paused |
 | `algol60/` | the Revised Report on ALGOL 60, its BNF, and a grammar in hbnf | in use (`tests/algol60.sh`) |
 | `json/` | RFC 8259 in hbnf, checked against Python's `json` on 80,000 texts | in use (`tests/json-diff.sh`) |
+| `mustache/` | Mustache templates, with a closing tag that repeats the opening one; checked against chevron on 12,000 texts | in use (`tests/mustache-diff.sh`) |
 | `algol68/` | the Revised Report's W-grammar (planned, before C++) | not started |
 | `bip39/` | the ten official BIP-39 word lists | in use (`tests/wire.sh`) |
 

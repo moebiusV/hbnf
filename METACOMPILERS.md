@@ -173,7 +173,7 @@ W-grammars give beyond those, kept to the decidable subset:
    wire layer already names earlier fields and tests them (`?(len(f) == n)`);
    the same for text (`d:delim ... ?(text == d)`, or a back-reference spelled
    like a rule name) is the declarative form, and is what regexes call a
-   back-reference.  *Partly planned (wire); not for text.*
+   back-reference.  *Built for text in C (2026-10-19): `x %as tag` ... `%same tag`, local to a sequence (ABNF.md; `tests/backref.sh`, `corpus/mustache`).  Planned for the wire layer.*
 3. **Domains checked at generation time.**  An affix grammar's parameters have
    declared finite domains, so a use that cannot match is an error when the
    grammar is read, not a failed parse.  If hbnf takes (1), it should check

@@ -2661,6 +2661,9 @@ package body HBNF_Grammar is
    --  One of the context operations (RFCPLAN.md decision 13): `? types`,
    --  `%bind types += field.path` or `%bind { code }`, `%scope`,
    --  `%where { code }`.  They stay in the sequence where they are written.
+   Backref_Seen : Boolean := False;
+   function Uses_Backref return Boolean is (Backref_Seen);
+
    function Parse_Context_Op (P : in out Parser) return Element_Access is
       T : constant Token := Cur (P);
       W : constant String := To_String (T.Text);
@@ -2706,6 +2709,17 @@ package body HBNF_Grammar is
                end if;
             end loop;
          end;
+      elsif W = "as" or else W = "same" then
+         --  `x %as tag` keeps the text x matched; `%same tag` is that text
+         --  again.  The tag is local to the sequence they stand in.
+         if Cur (P).Kind /= T_Name then
+            raise Parse_Error with
+              Where & "`%" & W & "` takes a tag: `name %as tag` ... `%same tag`";
+         end if;
+         E.Op := (if W = "as" then B_As else B_Same);
+         E.Ctx := Cur (P).Text;
+         Backref_Seen := True;
+         Next (P);
       elsif W = "scope" then
          E.Op := B_Scope;
       elsif W = "test" then
@@ -2784,6 +2798,7 @@ package body HBNF_Grammar is
          elsif Cur (P).Kind = T_Pct
            and then To_String (Cur (P).Text)
                     in "test" | "bind" | "scope" | "where" | "not" | "and"
+                       | "as" | "same"
          then
             Element_Vectors.Append (V, Parse_Context_Op (P));
          elsif Cur (P).Kind = T_Code
@@ -6236,6 +6251,8 @@ package body HBNF_Grammar is
                   Mark (E.Name);
                when Group =>
                   Walk (E.Items);
+               when Block =>
+                  Walk (E.Look);       --  a lookahead (!x, &x) scans these
                when Bit_Field =>
                   if E.F_Ref /= Null_Unbounded_String then
                      Mark (E.F_Ref);
@@ -6670,6 +6687,11 @@ package body HBNF_Grammar is
                   if Typed_Els (E.Items) then
                      return True;
                   end if;
+               when Block =>
+                  --  A lookahead or a test is not text: the automaton built
+                  --  from the rule would drop it, and the rule would match
+                  --  what it was written not to.
+                  return True;
                when others =>
                   null;
             end case;
@@ -6784,6 +6806,8 @@ package body HBNF_Grammar is
               and then (To_String (E.F_Ref) = Nm or else Refers (E.F_Alts))
             then
                return True;     --  a bit rule names it: it is read by name
+            elsif E.Kind = Block and then Refers (E.Look) then
+               return True;     --  a lookahead (!x, &x) scans it
             end if;
          end loop;
          return False;

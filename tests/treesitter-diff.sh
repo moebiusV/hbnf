@@ -46,8 +46,8 @@ int main(int argc, char **argv) {
 }
 EOC
 cc -std=gnu11 -D_GNU_SOURCE -O1 -w -o "$W/a60" "$W/m.c" || { echo "treesitter-diff: FAIL (compile)"; exit 1; }
-python3 -I "$ORACLE" gen "$N" "$SEED" "$W/g" || exit 1
-python3 -I "$ORACLE" mut "$N" "$SEED" "$W/m" || exit 1
+"${PYTHON:-python3}" -I "$ORACLE" gen "$N" "$SEED" "$W/g" || exit 1
+"${PYTHON:-python3}" -I "$ORACLE" mut "$N" "$SEED" "$W/m" || exit 1
 export PATH="$TS_NODE_DIR:$PATH"
 for d in g m; do
 	ls "$W/$d"/*.$EXT > "$W/$d.paths"

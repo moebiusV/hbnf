@@ -218,9 +218,11 @@ W-grammars, has the argument; `RFCPLAN.md` has the decisions):
   written by hand. No runtime cost, no new parsing algorithm, no undecidability. Domains are
   checked when the grammar is read, so a use that can never match is an error with a message.
   *Not built yet.*
-- *Consistent substitution* becomes a back-reference: a slice of the input kept in the parse
-  state and compared where it repeats. A backtrack restores it with the position, and only a
-  token that uses one pays. *Not built yet.*
+- *Consistent substitution* becomes a back-reference: `name %as tag` keeps the text a name
+  matched and `%same tag` is that text again, in the same sequence. It is a slice of the input
+  (two integers in the generated function, no copy), so a backtrack restores it with the
+  position and nesting cannot mix two of them up. Mustache's closing tag, XML's, a here-document's
+  terminator are the same rule. *Built, in C (`tests/backref.sh`, `corpus/mustache`).*
 - *What a finite domain cannot hold*, the names declared so far, is a **context** (decision 13: a
   persistent set, `? types`, `%bind`, `%scope`, `%where`), kept local to the rule it affects.
   *Built, in C.*
@@ -433,9 +435,13 @@ There is a Tree-sitter backend (`--backend=tree-sitter`), and what it shows is t
 difference from the other side. A hbnf grammar becomes a `grammar.js` mechanically, ALGOL 60 and
 JSON parse the same texts in Tree-sitter as in hbnf (JSON: 2,000 documents and 2,000 mutations, no
 difference; ALGOL 60: every one of 500 sentences of the Report), but ordered choice has to be
-turned into `conflicts` and `prec.dynamic` (four conflicts for ALGOL 60), and a lookahead or a
-context test cannot be turned into anything: it is left out, and the nine mutants out of 500
-that only Tree-sitter accepted were all the lookahead that was left out.
+turned into `conflicts` and `prec.dynamic` (four conflicts for ALGOL 60), and a lookahead, a
+context test or a back-reference cannot be turned into anything: it is left out, and the nine
+mutants out of 500 that only Tree-sitter accepted were all the lookahead that was left out. The
+clearest case is Mustache, whose closing tag must repeat the opening one (`{{#a}} ... {{/a}}`):
+hbnf says it with `%as` and `%same`, and the Tree-sitter grammar it writes accepts `{{#a}}x{{/b}}`,
+because a Tree-sitter grammar cannot make a token repeat another; 106 of 2,000 mutated templates
+were accepted by Tree-sitter alone, and 103 of those 106 have a closing tag naming another section.
 
 The thread through all of it: Backus and Naur gave a generative notation,
 Johnson mechanized the LR subset of it, Crocker loosened the notation for

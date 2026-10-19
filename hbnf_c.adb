@@ -2925,6 +2925,10 @@ package body HBNF_C is
            (Idx : Natural; Els : Element_Vectors.Vector; First, Last : Natural;
             Acc, Gap : String; Buf : in out U; Ind : String)
          is
+            --  `x %as tag`: how the token x is written, for the `%same tag`
+            --  that writes it again.
+            Tags  : String_Vectors.Vector;
+            Again : String_Vectors.Vector;
          begin
             for K in First .. Last loop
                declare
@@ -2977,7 +2981,26 @@ package body HBNF_C is
                                      Acc, Gap, Buf, Ind);
                         end if;
                      when HBNF_Grammar.Block =>
-                        null;   --  a test or a binding: it writes nothing
+                        --  a test or a binding writes nothing; a `%same` writes
+                        --  the token its `%as` kept, again
+                        if E.Op = B_As and then K > First
+                          and then Els (K - 1).Kind = HBNF_Grammar.Name
+                        then
+                           declare
+                              Nm : constant String := To_String (Els (K - 1).Name);
+                           begin
+                              Tags.Append (E.Ctx);
+                              Again.Append (To_Unbounded_String
+                                (Leaf (Nm, Acc & C_Field (Nm), Gap)));
+                           end;
+                        elsif E.Op = B_Same then
+                           for T in 1 .. Natural (Tags.Length) loop
+                              if Tags (T) = E.Ctx then
+                                 Append (Buf, Ind & To_String (Again (T)));
+                                 Append (Buf, LF);
+                              end if;
+                           end loop;
+                        end if;
                      when others =>
                         Append (Buf, Ind & Bad ("an element the writer does "
                           & "not know"));
@@ -3387,8 +3410,13 @@ package body HBNF_C is
          begin
             case Ref_Kind (Name) is
                when Struct | List =>
+                  --  A list that is the root is freed by its nodes alone here:
+                  --  the public free_ of it releases the arena too, and the
+                  --  backtracking reset calls this in the middle of a parse.
                   Append (Buf, Ind & "free_" & T
                     & (if Back then "_fields(n->" & F & ");"
+                       elsif Ref_Kind (Name) = List and then Find (T) = 1
+                       then "_nodes(&n->" & F & ");"
                        else "(&n->" & F & ");"));
                   Append (Buf, LF);
                   --  The pointee is released with the arena, not here, so the
@@ -3449,8 +3477,8 @@ package body HBNF_C is
                Append (Buf, "    free_" & CN & "_fields(n);");
                Append (Buf, LF);
             else
-               Append (Buf, "static void free_" & CN & "(struct " & Pfx & CN
-                 & "_list *head) {");
+               Append (Buf, "static void free_" & CN & (if Idx = 1 then "_nodes" else "")
+                 & "(struct " & Pfx & CN & "_list *head) {");
                Append (Buf, LF);
                Append (Buf, "    " & TN & " *n = " & L_First ("head") & ", *next;");
                Append (Buf, LF);
@@ -3469,12 +3497,23 @@ package body HBNF_C is
                Append (Buf, "    " & L_Init ("head"));
                Append (Buf, LF);
             end if;
-            if Idx = 1 then
+            if Idx = 1 and then Info.Kind = Struct then
                Append (Buf, "    free_arena();");
                Append (Buf, LF);
             end if;
             Append (Buf, "}");
             Append (Buf, LF);
+            if Idx = 1 and then Info.Kind = List then
+               Append (Buf, "static void free_" & CN & "(struct " & Pfx & CN
+                 & "_list *head) {");
+               Append (Buf, LF);
+               Append (Buf, "    free_" & CN & "_nodes(head);");
+               Append (Buf, LF);
+               Append (Buf, "    free_arena();");
+               Append (Buf, LF);
+               Append (Buf, "}");
+               Append (Buf, LF);
+            end if;
          end Free_Def;
 
       begin
@@ -3491,6 +3530,11 @@ package body HBNF_C is
                     & " *n);");
                   Append (Buf, LF);
                   if Infos (I).Kind = List then
+                     if I = 1 then
+                        Append (Buf, "static void free_" & CN & "_nodes(struct "
+                          & Pfx & CN & "_list *head);");
+                        Append (Buf, LF);
+                     end if;
                      Append (Buf, "static void free_" & CN & "(struct " & Pfx & CN
                        & "_list *head);");
                   else
@@ -4783,6 +4827,11 @@ package body HBNF_C is
 
       Fork_Seq : Natural := 0;       --  numbers the retry blocks
 
+      --  The rules that can match nothing: a character rule among them (an
+      --  alias of an optional token, `blank_2 = blank`) succeeds on nothing.
+      Null_Flags : constant HBNF_Lookahead.Flags :=
+        HBNF_Lookahead.Nullable_Set (Rules);
+
       function Is_Forked (Idx : Natural) return Boolean is
          I, J : Natural;
       begin
@@ -4854,6 +4903,15 @@ package body HBNF_C is
                           & "p->pos = k_; " else ""));
       begin
          Ctx_Seq := Ctx_Seq + 1;
+         for K in First .. Last loop
+            if Els (K).Kind = Block and then Els (K).Op = B_As then
+               Append (Buf, Ind & "size_t cp_"
+                 & C_Ident_Lower (To_String (Els (K).Ctx)) & "_" & Sid
+                 & " = 0, cl_" & C_Ident_Lower (To_String (Els (K).Ctx)) & "_"
+                 & Sid & " = 0;");
+               Append (Buf, LF);
+            end if;
+         end loop;
          if Needs_Seg then
             Append (Buf, Ind & "size_t " & Seg & ";  " & Seg & " = p->pos;");
             Append (Buf, LF);
@@ -4865,7 +4923,7 @@ package body HBNF_C is
             begin
                --  A `? ctx` after this element asks about its text.
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op = B_Test
+                 and then Els (K + 1).Op in B_Test | B_As
                then
                   Append (Buf, Ind & "size_t es" & Sid & "_" & Ctx_Img (K)
                     & ";  es" & Sid & "_" & Ctx_Img (K) & " = p->pos;");
@@ -4947,7 +5005,9 @@ package body HBNF_C is
                                                     Struct | List
                                        then
                                           Append (Frees, Ind & "    free_"
-                                            & C_Name (T) & "(&" & Acc
+                                            & C_Name (T)
+                                            & (if J = 1 and then Analyze (Rules, J).Kind = List
+                                               then "_nodes" else "") & "(&" & Acc
                                             & C_Field (FN) & ");  memset(&"
                                             & Acc & C_Field (FN) & ", 0, "
                                             & "sizeof " & Acc & C_Field (FN)
@@ -5185,6 +5245,30 @@ package body HBNF_C is
                            Append (Buf, Ind & "hbnf_mark_t sc" & Sid & "_"
                              & Ctx_Img (K) & ";  sc" & Sid & "_" & Ctx_Img (K)
                              & " = hbnf_mark();");
+                           Append (Buf, LF);
+                        when B_As =>
+                           --  keep where the text of the element before began
+                           --  and how long it is
+                           Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
+                             & Ctx_Img (K - 1)) & "cp_"
+                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
+                             & " = st_;  cl_"
+                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
+                             & " = k_ - st_; }");
+                           Append (Buf, LF);
+                        when B_Same =>
+                           Ws_Skip;
+                           Append (Buf, Ind & "if (p->pos + cl_"
+                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
+                             & " > p->len || memcmp (p->text + p->pos, p->text + cp_"
+                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
+                             & ", cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_"
+                             & Sid & ")) { fail(p, ""the same text again, `"
+                             & To_String (E.Ctx) & "`"", 0, p->text + p->pos, 0); "
+                             & Fail & " }");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "p->pos += cl_"
+                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid & ";");
                            Append (Buf, LF);
                         when B_Where =>
                            Append (Buf, Ind & "{ " & Span_Of (Seg));
@@ -5837,7 +5921,8 @@ package body HBNF_C is
             --  is a single `*X`: a run that may be empty (`*LF`) matches the
             --  empty string, and the phrase rule that named it goes on.
             Append (Buf, Fill
-              ((if Natural (P.Length) = 1 and then P (1).Min = 0
+              ((if (Natural (P.Length) = 1 and then P (1).Min = 0)
+                   or else Null_Flags (Idx)
                 then "c_rule_scan_opt" else "c_rule_jet"),
                (H ("scan", "scan_" & C_Name (NM)),
                 H ("desc", NM))));
@@ -7139,6 +7224,9 @@ package body HBNF_C is
          Append (Res, "    return true;");
          Append (Res, LF);
          Append (Res, "err:");
+         Append (Res, LF);
+         Append (Res, "    if (p.err_pos != (size_t)-1)"
+           & " line_col(&p, p.err_pos, &p.err_line, &p.err_col);");
          Append (Res, LF);
          --  Found at the end of the input: say what ends there (a statement,
          --  with `statements`; else the input).

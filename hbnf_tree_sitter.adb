@@ -767,10 +767,19 @@ package body HBNF_Tree_Sitter is
          end if;
       end Repeated;
 
+      --  `x %as tag` ... `%same tag`: tree-sitter cannot make a text repeat, so the
+      --  `%same` is written as another x, and any text will do.
+      Tag_Elems : Element_Vectors.Vector;
+      Tag_Names : Name_Vectors.Vector;
+
       procedure Note_Dropped (E : Element_Access) is
       begin
          if E.Op in B_Not | B_And then
             Note ("a lookahead (!x, &x) is left out: tree-sitter has none");
+         elsif E.Op in B_As | B_Same then
+            Note ("a back-reference (%as, %same: a closing tag that repeats"
+              & " the opening one) is approximated: the second is any text of"
+              & " the same kind, tree-sitter cannot make it repeat the first");
          elsif E.Op /= B_Action then
             Note ("a context test or binding (?, %bind, %scope, %where)"
               & " is left out: tree-sitter has none");
@@ -820,6 +829,13 @@ package body HBNF_Tree_Sitter is
                                 (E.all with delta Min => 1, Max => 1), 0).Text) & "/");
             when Block =>
                Note_Dropped (E);
+               if E.Op = B_Same then
+                  for K in reverse 1 .. Natural (Tag_Names.Length) loop
+                     if Tag_Names (K) = E.Ctx then
+                        return Base_Full (Tag_Elems (K));
+                     end if;
+                  end loop;
+               end if;
                return null;
             when Bit_Field =>
                raise Parse_Error with
@@ -885,6 +901,10 @@ package body HBNF_Tree_Sitter is
          Parts : Node_Vectors.Vector;
       begin
          for K in St .. En loop
+            if V (K).Kind = Block and then V (K).Op = B_As and then K > St then
+               Tag_Elems.Append (V (K - 1));
+               Tag_Names.Append (V (K).Ctx);
+            end if;
             declare
                N : constant Node_Access := Ph_Elem (V (K));
             begin
@@ -1029,6 +1049,20 @@ package body HBNF_Tree_Sitter is
       end Want;
 
       Body_Text : U;                 --  the rules, built before the header
+      Root_Loops : Boolean := False; --  the start rule can be empty and is also used inside
+
+      function Names_Root (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            if (E.Kind = Name and then not Rules.Is_Empty
+                and then E.Name = Rules (1).Name)
+              or else (E.Kind = Group and then Names_Root (E.Items))
+            then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Names_Root;
    begin
       for R of Rules loop
          if R.Whitespace /= Null_Unbounded_String then
@@ -1058,6 +1092,23 @@ package body HBNF_Tree_Sitter is
          end loop;
       end;
 
+      if not Rules.Is_Empty and then Pnull (1) then
+         for J in 1 .. Natural (Rules.Length) loop
+            if Wanted (J) and then not Is_Char_Rule (Rules, To_String (Rules (J).Name))
+              and then Names_Root (Rules (J).Pattern)
+            then
+               Root_Loops := True;
+            end if;
+         end loop;
+      end if;
+      if Root_Loops then
+         --  tree-sitter lets only the start rule be empty, and not if it is used
+         --  inside: a start rule of its own, and the root defined by what it
+         --  matches that is not empty
+         Append (Body_Text, "    source_file: $ => optional($."
+           & Js_Name (To_String (Rules (1).Name)) & ")," & LF);
+      end if;
+
       for J in 1 .. Natural (Rules.Length) loop
          declare
             R : constant Rule := Rules (J);
@@ -1085,7 +1136,7 @@ package body HBNF_Tree_Sitter is
                           (Call1 ("repeat", Ph_Alts (Tail_Branches (R))));
                         Node := Call ("seq", Parts);
                      end;
-                  elsif Pnull (J) and then J /= 1 then
+                  elsif Pnull (J) and then (J /= 1 or else Root_Loops) then
                      Node := Ne_Alts (R.Pattern);
                      if Node = null then
                         Node := Call ("blank", Node_Vectors.Empty_Vector);

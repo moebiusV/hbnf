@@ -53,7 +53,8 @@ static void fail(parser_t *p, const char *expected, int is_lit,
         }
     }
     p->err_found_len = found_len; p->err_is_lit = is_lit;
-    line_col(p, p->pos, &p->err_line, &p->err_col);
+    /* the line and column are worked out once, if the parse fails: counting
+       the lines up to every deeper failure made a long input quadratic */
 }
 
 /* A punctuation- or digit-led literal: compare bytes at pos (a prefix is
