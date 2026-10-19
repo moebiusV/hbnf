@@ -23,4 +23,14 @@ package HBNF_Wire.Ada_Lang is
 
    function Emit (G : Grammar; Package_Name : String) return String;
 
+   --  For a grammar of text rules and bit rules together: the bit rules, read
+   --  from the text parser's own state (HBNF_Ada.Set_Hosted).  Types goes in the
+   --  package of the types, Spec in the spec of the Parser child, Withs before
+   --  its body, and Code (the readers, the writers, and for each bit rule the
+   --  Parse_<rule> a text rule calls) in the body after the forward
+   --  declarations.
+   procedure Emit_Hosted
+     (G : Grammar; Package_Name : String;
+      Types, Spec, Withs, Code : out Unbounded_String);
+
 end HBNF_Wire.Ada_Lang;

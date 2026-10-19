@@ -1,0 +1,14 @@
+; A bit rule of a mixed grammar, written: %emit fills in len.  The code is Ada.
+language Ada
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc = "PKT:" frame ";"
+
+frame = len:8 body:[len] tag
+  %emit{
+      N.Len := Unsigned_8 (N.Body_F.Length);
+  }
+
+tag = 1*ALPHA

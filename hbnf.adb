@@ -308,6 +308,22 @@ begin
             HBNF_Zig.Set_Hosted (To_String (Types), To_String (Code));
          end;
       elsif not HBNF_Grammar.Wire_Rules.Is_Empty
+        and then To_String (Backend) = "ada"
+        and then not Alias_Root
+      then
+         declare
+            G : constant HBNF_Wire.Grammar :=
+              HBNF_Wire.Lower.Lower
+                (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path));
+            Types, Spec, Withs, Code : Unbounded_String;
+         begin
+            HBNF_Wire.Ada_Lang.Emit_Hosted
+              (G, To_String (Package_Name), Types, Spec, Withs, Code);
+            HBNF_Ada.Set_Hosted
+              (To_String (Types), To_String (Spec), To_String (Withs),
+               To_String (Code));
+         end;
+      elsif not HBNF_Grammar.Wire_Rules.Is_Empty
         and then To_String (Backend) in "rust" | "zig" | "ada"
       then
          --  The one text form these backends read: a first rule that only
@@ -354,7 +370,7 @@ begin
          end;
       end if;
       if not HBNF_Grammar.Wire_Rules.Is_Empty
-        and then To_String (Backend) /= "zig"
+        and then To_String (Backend) not in "zig" | "ada"
       then
          if To_String (Backend) /= "c" then
             Ada.Text_IO.Put_Line

@@ -11,6 +11,19 @@ package HBNF_Ada is
    function Emit
      (Rules : HBNF_Grammar.Rule_Vectors.Vector; Package_Name : String) return String;
 
+   --  A grammar with bit rules (HBNF_Wire.Ada_Lang.Emit_Hosted): Types are added
+   --  to the types, Spec to the specification of the Parser child, Withs before
+   --  its body and Code to the body, after the forward declarations of the
+   --  rules.  The parser then has a bit offset in its octet, and a text rule
+   --  calls a bit rule as it calls a text rule, Parse_<rule> (P).
+   procedure Set_Hosted (Types, Spec, Withs, Code : String);
+
+   --  The names the text backend gives a rule's type, its parser and its scanner.
+   function Ident (Rule : String) return String;
+   function Type_Name (Rule : String) return String;
+   function Parse_Fn (Rule : String) return String;
+   function Scan_Fn (Rule : String) return String;
+
    --  Emit the parser half: a self-contained recursive-descent parser (a
    --  token type plus one `Parse_<rule>` function per rule) that consumes a
    --  token array and populates the records `Emit` declares.  When Conf is

@@ -1,6 +1,7 @@
 pragma Ada_2022;
 
 with Ada.Characters.Handling;
+with HBNF_Ada;
 with Ada.Containers.Vectors;
 
 package body HBNF_Wire.Ada_Lang is
@@ -162,6 +163,34 @@ package body HBNF_Wire.Ada_Lang is
       return "(" & To_String (R) & ")";
    end Ada_Str;
 
+   Hosted_Mode  : Boolean := False;      --  Emit_Hosted is running
+   Last_Types   : Unbounded_String;      --  the types of the last hosted Emit
+   Last_Spec    : Unbounded_String;      --  what the Parser spec gets
+   Last_Withs   : Unbounded_String;
+
+   --  The reader's type is Parser; the text parser's is too, in a hosted file.
+   function Rename (S : String) return String is
+      R : Unbounded_String;
+      I : Natural := S'First;
+
+      function Word_Char (C : Character) return Boolean is
+        (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+   begin
+      while I <= S'Last loop
+         if I + 5 <= S'Last and then S (I .. I + 5) = "Parser"
+           and then (I = S'First or else not Word_Char (S (I - 1)))
+           and then (I + 6 > S'Last or else not Word_Char (S (I + 6)))
+         then
+            Append (R, "Wire_Parser");
+            I := I + 6;
+         else
+            Append (R, S (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return To_String (R);
+   end Rename;
+
    function Emit (G : Grammar; Package_Name : String) return String is
       Spec : Unbounded_String;     --  the package specification
       Bod  : Unbounded_String;     --  the body
@@ -197,9 +226,10 @@ package body HBNF_Wire.Ada_Lang is
              else Ada_Case (P) & "_"));
 
       function Type_Of (R : String) return String is
-        (Pfx & Ada_Case (R) & "_T");
+        (if Hosted_Mode and then Find (G, R) = 0 then HBNF_Ada.Type_Name (R)
+         else Pfx & Ada_Case (R) & "_T");
       function Parse_Fn_Of (R : String) return String is
-        ("Parse_" & Ada_Case (R));
+        ((if Hosted_Mode then "Read_" else "Parse_") & Ada_Case (R));
       function Emit_Fn_Of (R : String) return String is
         ("Emit_" & Ada_Case (R));
       function In_Of (R : String) return String is
@@ -470,6 +500,13 @@ package body HBNF_Wire.Ada_Lang is
                SL (1, "");
             else
                Define_Choice (Base, R.Alts);
+            end if;
+            if Hosted_Mode then
+               --  what a text rule calls the rule's type
+               SL (1, "subtype " & HBNF_Ada.Type_Name (Name) & " is "
+                   & (if Natural (R.Alts.Length) = 1 then Nm else Base & "_T")
+                   & ";");
+               SL (1, "");
             end if;
             if Used_As_Array (Name) then
                SL (1, "package " & Vec_Of (Name)
@@ -771,11 +808,74 @@ package body HBNF_Wire.Ada_Lang is
                      if not It.Bitsof then   --  the words are already the bits
                         declare
                            Fid : constant String := Def_Field (N);
+                           R   : constant String := To_String (It.Ref);
                         begin
-                           D ("      " & Fid & " : "
-                              & Type_Of (To_String (It.Ref)) & ";");
-                           L (Ind, Fid & " := " & Parse_Fn_Of (To_String (It.Ref))
-                             & " (Bnf_P);");
+                           D ("      " & Fid & " : " & Type_Of (R) & ";");
+                           if Hosted_Mode and then Find (G, R) = 0 then
+                              if (for some X of G.External_Tokens =>
+                                    To_String (X) = R)
+                              then
+                                 --  a character rule of the text: its scanner
+                                 --  reads it here, from the octet the bits have
+                                 --  reached
+                                 L (Ind, "declare");
+                                 L (Ind + 1, "Bnf_N" & U & " : Natural;");
+                                 L (Ind, "begin");
+                                 L (Ind + 1, "if Bnf_P.Bit mod 8 = 0 then");
+                                 L (Ind + 2, "Bnf_N" & U & " := " & HBNF_Ada.Scan_Fn (R)
+                                    & " (Bnf_P.Buf.all, Bnf_P.Bit / 8 + 1, Bnf_P.Buf'Last);");
+                                 L (Ind + 2, "if Bnf_N" & U & " = 0 then");
+                                 L (Ind + 3, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 2, "end if;");
+                                 L (Ind + 2, Fid & " := To_Unbounded_String (Bnf_P.Buf (Bnf_P.Bit / 8 + 1 .. Bnf_P.Bit / 8 + Bnf_N" & U & "));");
+                                 L (Ind + 1, "else");
+                                 L (Ind + 2, "declare");
+                                 L (Ind + 3, "C : constant String := Bnf_Shifted (Bnf_P);");
+                                 L (Ind + 2, "begin");
+                                 L (Ind + 3, "Bnf_N" & U & " := " & HBNF_Ada.Scan_Fn (R) & " (C, 1, C'Last);");
+                                 L (Ind + 3, "if Bnf_N" & U & " = 0 then");
+                                 L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 3, "end if;");
+                                 L (Ind + 3, Fid & " := To_Unbounded_String (C (1 .. Bnf_N" & U & "));");
+                                 L (Ind + 2, "end;");
+                                 L (Ind + 1, "end if;");
+                                 L (Ind + 1, "Bnf_P.Bit := Bnf_P.Bit + Bnf_N" & U & " * 8;");
+                                 L (Ind, "end;");
+                              else
+                                 --  a text rule with structure: the text parser
+                                 --  reads it, on a shifted copy if the octets
+                                 --  start inside a byte
+                                 L (Ind, "declare");
+                                 L (Ind + 1, "Bnf_Start" & U & " : constant Natural := Bnf_P.Bit / 8 + 1;");
+                                 L (Ind, "begin");
+                                 L (Ind + 1, "if Bnf_P.Bit mod 8 = 0 then");
+                                 L (Ind + 2, "declare");
+                                 L (Ind + 3, "Tp : Parser := (Text => Bnf_P.Buf, Pos => Bnf_Start" & U & ", Last => Natural'Last, Bit => 0);");
+                                 L (Ind + 2, "begin");
+                                 L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
+                                 L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - Bnf_Start" & U & ") * 8;");
+                                 L (Ind + 2, "exception");
+                                 L (Ind + 3, "when Parse_Error =>");
+                                 L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 2, "end;");
+                                 L (Ind + 1, "else");
+                                 L (Ind + 2, "declare");
+                                 L (Ind + 3, "C  : aliased constant String := Bnf_Shifted (Bnf_P);");
+                                 L (Ind + 3, "Tp : Parser := (Text => C'Unchecked_Access, Pos => 1, Last => Natural'Last, Bit => 0);");
+                                 L (Ind + 2, "begin");
+                                 L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
+                                 L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - 1) * 8;");
+                                 L (Ind + 2, "exception");
+                                 L (Ind + 3, "when Parse_Error =>");
+                                 L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 2, "end;");
+                                 L (Ind + 1, "end if;");
+                                 L (Ind, "end;");
+                              end if;
+                           else
+                              L (Ind, Fid & " := " & Parse_Fn_Of (R)
+                                 & " (Bnf_P);");
+                           end if;
                         end;
                      end if;
                   when S_Array =>
@@ -1044,8 +1144,22 @@ package body HBNF_Wire.Ada_Lang is
                      end if;
                   when S_Ref =>
                      if not It.Bitsof then
-                        L (Ind, Emit_Fn_Of (To_String (It.Ref)) & " (Bnf_W, "
-                          & Fid & ");");
+                        if Hosted_Mode and then Find (G, To_String (It.Ref)) = 0
+                        then
+                           if (for some X of G.External_Tokens =>
+                                 To_String (X) = To_String (It.Ref))
+                           then
+                              --  a text token held by the record: its octets
+                              L (Ind, "Put (Bnf_W, To_String (" & Fid & "));");
+                           else
+                              L (Ind, "Efail (Bnf_W, " & W & ", ""is a text rule "
+                                 & "with structure, which Ada writes only as a "
+                                 & "token; the C backend writes any"");");
+                           end if;
+                        else
+                           L (Ind, Emit_Fn_Of (To_String (It.Ref)) & " (Bnf_W, "
+                             & Fid & ");");
+                        end if;
                      end if;
                   when S_Array =>
                      if It.Count /= null then
@@ -1221,8 +1335,27 @@ package body HBNF_Wire.Ada_Lang is
       Pkg    : constant String := Package_Name;
    begin
       Check_Code_Language (G, "Ada");
-      Words := Words_Item (G, "Ada");
-      if Is_Value_Set (G.Rules (Root)) then
+      if Hosted_Mode then
+         if Has_Actions then
+            raise Wire_Error with
+              "an %action in a grammar of text rules and bit rules is read by "
+              & "C so far (Ada reads %emit there, but not %action)";
+         end if;
+         for R of G.Rules loop
+            for A of R.Alts loop
+               for It of A.Items loop
+                  if It.Kind = S_Ref and then It.Bitsof then
+                     raise Wire_Error with
+                       "name:bitsof(" & To_String (It.Ref) & ") in a grammar "
+                       & "of text rules and bit rules is read by C so far";
+                  end if;
+               end loop;
+            end loop;
+         end loop;
+      else
+         Words := Words_Item (G, "Ada");
+      end if;
+      if not Hosted_Mode and then Is_Value_Set (G.Rules (Root)) then
          raise Wire_Error with
            "the first rule, `" & Rt & "`, is a list of constants; the "
            & "parser reads the first rule, which should be the whole message";
@@ -1232,6 +1365,13 @@ package body HBNF_Wire.Ada_Lang is
       for R of G.Rules loop
          Declare_Rule (To_String (R.Name));
       end loop;
+      if Hosted_Mode then
+         Last_Types := To_Unbounded_String
+           ("   package Octet_Vectors is new Ada.Containers.Vectors (Natural, Unsigned_8);"
+            & ASCII.LF & "   subtype Octets is Octet_Vectors.Vector;" & ASCII.LF
+            & ASCII.LF) & Spec;
+         Spec := Null_Unbounded_String;
+      end if;
 
       --  Subprogram declarations for the body, the readers and the writers.
       declare
@@ -1268,12 +1408,14 @@ package body HBNF_Wire.Ada_Lang is
             end if;
          end loop;
          Cur := Bod'Unrestricted_Access;
-         Append (Bod, "with Ada.Unchecked_Conversion;" & ASCII.LF);
-         if G.Preamble /= Null_Unbounded_String then
-            Append (Bod, To_String (G.Preamble) & ASCII.LF);
+         if not Hosted_Mode then
+            Append (Bod, "with Ada.Unchecked_Conversion;" & ASCII.LF);
+            if G.Preamble /= Null_Unbounded_String then
+               Append (Bod, To_String (G.Preamble) & ASCII.LF);
+            end if;
+            Append (Bod, ASCII.LF);
+            Append (Bod, "package body " & Pkg & " is" & ASCII.LF & ASCII.LF);
          end if;
-         Append (Bod, ASCII.LF);
-         Append (Bod, "package body " & Pkg & " is" & ASCII.LF & ASCII.LF);
          L (1, "use Interfaces;");
          L (1, "use type Ada.Containers.Count_Type;");
          L (1, "");
@@ -1281,7 +1423,11 @@ package body HBNF_Wire.Ada_Lang is
          L (1, "Bnf_Emit_Fail : exception;   --  a write failed; the message is in the writer");
          L (1, "");
          L (1, "type Parser is record");
-         L (2, "Buf      : access constant Byte_Array;");
+         if Hosted_Mode then
+            L (2, "Buf      : Text_Access;");
+         else
+            L (2, "Buf      : access constant Byte_Array;");
+         end if;
          L (2, "Nbits    : Natural := 0;");
          L (2, "Bit      : Natural := 0;");
          L (2, "Fail_Bit : Natural := 0;");
@@ -1344,7 +1490,11 @@ package body HBNF_Wire.Ada_Lang is
          L (5, "Tk := N - Got;");
          L (4, "end if;");
          L (4, "X := Shift_Left (X, Tk)");
-         L (5, "or (Shift_Right (Unsigned_64 (Bnf_P.Buf (Bnf_P.Buf'First + Byte)), 8 - Off - Tk)");
+         L (5, "or (Shift_Right (Unsigned_64 ("
+            & (if Hosted_Mode
+               then "Character'Pos (Bnf_P.Buf (Bnf_P.Buf'First + Byte))"
+               else "Bnf_P.Buf (Bnf_P.Buf'First + Byte)")
+            & "), 8 - Off - Tk)");
          L (6, "and (Shift_Left (Unsigned_64'(1), Tk) - 1));");
          L (4, "Bnf_P.Bit := Bnf_P.Bit + Tk;");
          L (4, "Got := Got + Tk;");
@@ -1397,6 +1547,30 @@ package body HBNF_Wire.Ada_Lang is
          L (2, "end loop;");
          L (1, "end Wr;");
          L (1, "");
+         if Hosted_Mode then
+            L (1, "procedure Put (Bnf_W : in out Writer; S : String) is");
+            L (1, "begin");
+            L (2, "for C of S loop");
+            L (3, "Wr (Bnf_W, 8, Unsigned_64 (Character'Pos (C)));");
+            L (2, "end loop;");
+            L (1, "end Put;");
+            L (1, "");
+            L (1, "--  The octets from the current bit on, as octets: a copy shifted to start on one.");
+            L (1, "function Bnf_Shifted (Bnf_P : Parser) return String is");
+            L (2, "Off  : constant Natural := Bnf_P.Bit mod 8;");
+            L (2, "Base : constant Natural := Bnf_P.Bit / 8 + 1;");
+            L (2, "M    : constant Natural := (Bnf_P.Nbits - Bnf_P.Bit) / 8;");
+            L (2, "R    : String (1 .. M);");
+            L (1, "begin");
+            L (2, "for K in 1 .. M loop");
+            L (3, "R (K) := Character'Val (Natural (");
+            L (4, "Shift_Left (Unsigned_8 (Character'Pos (Bnf_P.Buf (Base + K - 1))), Off)");
+            L (4, "or Shift_Right (Unsigned_8 (Character'Pos (Bnf_P.Buf (Base + K))), 8 - Off)));");
+            L (2, "end loop;");
+            L (2, "return R;");
+            L (1, "end Bnf_Shifted;");
+            L (1, "");
+         end if;
          L (1, "procedure Put (Bnf_W : in out Writer; P : Octets) is");
          L (1, "begin");
          L (2, "for B of P loop");
@@ -1670,7 +1844,41 @@ package body HBNF_Wire.Ada_Lang is
          L (1, "");
       end if;
 
-      if Words = null then
+      if Hosted_Mode then
+         for R of G.Rules loop
+            if not Is_Value_Set (R) then
+               declare
+                  Nm : constant String := To_String (R.Name);
+                  Id : constant String := HBNF_Ada.Ident (Nm);
+                  Sp : constant String :=
+                    "   procedure Emit_Bits_" & Id & " (V : "
+                    & HBNF_Ada.Type_Name (Nm) & "; Bytes : out Octets;"
+                    & ASCII.LF & "      Nbits : out Natural; Ok : out Boolean;"
+                    & ASCII.LF & "      Message : out Unbounded_String)";
+               begin
+                  Append (Last_Spec, "   --  The bits of one " & Nm
+                          & ", written (its %emit first)." & ASCII.LF
+                          & Sp & ";" & ASCII.LF);
+                  L (1, Sp & " is");
+                  L (2, "Bnf_W : Writer;");
+                  L (1, "begin");
+                  L (2, "Ok := False;");
+                  L (2, "Nbits := 0;");
+                  L (2, "Bytes := Octet_Vectors.Empty_Vector;");
+                  L (2, "Message := Null_Unbounded_String;");
+                  L (2, Emit_Fn_Of (Nm) & " (Bnf_W, V);");
+                  L (2, "Bytes := Bnf_W.Buf;");
+                  L (2, "Nbits := Bnf_W.Bit;");
+                  L (2, "Ok := True;");
+                  L (1, "exception");
+                  L (2, "when Bnf_Emit_Fail =>");
+                  L (3, "Message := Bnf_W.Msg;");
+                  L (1, "end Emit_Bits_" & Id & ";");
+                  L (1, "");
+               end;
+            end if;
+         end loop;
+      elsif Words = null then
       --  The entry points.
       L (1, "procedure Parse_Bits (Buf : Byte_Array; Nbits : Natural;");
       L (3, "Result : out " & Root_T & "; Ok : out Boolean;");
@@ -1976,6 +2184,45 @@ package body HBNF_Wire.Ada_Lang is
          L (1, "");
       end;
       end if;
+      if Hosted_Mode then
+         declare
+            Text : Unbounded_String := To_Unbounded_String (Rename (To_String (Bod)));
+         begin
+            Last_Withs := To_Unbounded_String
+              ("with Ada.Containers.Vectors;" & ASCII.LF
+               & "with Ada.Unchecked_Conversion;" & ASCII.LF);
+            if G.Preamble /= Null_Unbounded_String then
+               Append (Last_Withs, To_String (G.Preamble) & ASCII.LF);
+            end if;
+            --  what the text parser calls: a bit rule read as a text rule is
+            for R of G.Rules loop
+               if not Is_Value_Set (R) then
+                  declare
+                     Nm : constant String := To_String (R.Name);
+                     T  : constant String := HBNF_Ada.Type_Name (Nm);
+                  begin
+                     Append (Text, ASCII.LF & "   function " & HBNF_Ada.Parse_Fn (Nm)
+                       & " (P : in out Parser) return " & T & " is" & ASCII.LF);
+                     Append (Text, "      W : Wire_Parser :=" & ASCII.LF
+                       & "        (Buf => P.Text, Nbits => P.Text'Length * 8,"
+                       & ASCII.LF & "         Bit => (P.Pos - 1) * 8 + P.Bit, others => <>);"
+                       & ASCII.LF & "      R : " & T & ";" & ASCII.LF);
+                     Append (Text, "   begin" & ASCII.LF & "      begin" & ASCII.LF
+                       & "         R := " & Parse_Fn_Of (Nm) & " (W);" & ASCII.LF
+                       & "      exception" & ASCII.LF & "         when Bnf_Fail =>"
+                       & ASCII.LF & "            P.Pos := W.Fail_Bit / 8 + 1;"
+                       & ASCII.LF & "            Fail (P, To_String (W.Msg));"
+                       & ASCII.LF & "      end;" & ASCII.LF
+                       & "      P.Pos := W.Bit / 8 + 1;" & ASCII.LF
+                       & "      P.Bit := W.Bit mod 8;" & ASCII.LF
+                       & "      return R;" & ASCII.LF & "   end "
+                       & HBNF_Ada.Parse_Fn (Nm) & ";" & ASCII.LF);
+                  end;
+               end if;
+            end loop;
+            return To_String (Text);
+         end;
+      end if;
       Append (Bod, "end " & Pkg & ";" & ASCII.LF);
 
       --  The specification.
@@ -2035,5 +2282,24 @@ package body HBNF_Wire.Ada_Lang is
 
       return To_String (Spec) & ASCII.LF & To_String (Bod);
    end Emit;
+
+   procedure Emit_Hosted
+     (G : Grammar; Package_Name : String;
+      Types, Spec, Withs, Code : out Unbounded_String) is
+   begin
+      Hosted_Mode := True;
+      Last_Spec := Null_Unbounded_String;
+      begin
+         Code := To_Unbounded_String (Emit (G, Package_Name));
+      exception
+         when others =>
+            Hosted_Mode := False;
+            raise;
+      end;
+      Hosted_Mode := False;
+      Types := Last_Types;
+      Spec := Last_Spec;
+      Withs := Last_Withs;
+   end Emit_Hosted;
 
 end HBNF_Wire.Ada_Lang;

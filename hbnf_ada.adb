@@ -252,6 +252,29 @@ package body HBNF_Ada is
       return 0;
    end Find;
 
+   Hosted_Types : U;
+   Hosted_Spec  : U;
+   Hosted_Withs : U;
+   Hosted_Code  : U;
+   Is_Hosted    : Boolean := False;
+
+   procedure Set_Hosted (Types, Spec, Withs, Code : String) is
+   begin
+      Hosted_Types := To_Unbounded_String (Types);
+      Hosted_Spec  := To_Unbounded_String (Spec);
+      Hosted_Withs := To_Unbounded_String (Withs);
+      Hosted_Code  := To_Unbounded_String (Code);
+      Is_Hosted := True;
+   end Set_Hosted;
+
+   function Ident (Rule : String) return String is (Ada_Ident (Rule));
+   function Type_Name (Rule : String) return String is
+     (Ada_Ident (Rule) & "_Type");
+   function Parse_Fn (Rule : String) return String is
+     ("Parse_" & Ada_Ident (Rule));
+   function Scan_Fn (Rule : String) return String is
+     ("Scan_" & Ada_Ident (Rule));
+
    --  The Ada type a rule reference denotes: a core scalar inlines; any
    --  other reference resolves to the referenced rule's own type name.
    function Ada_Type_Of (Rules : Rule_Vectors.Vector; Ref : String)
@@ -261,7 +284,7 @@ package body HBNF_Ada is
       if S /= "" then
          return S;
       end if;
-      if Find (Rules, Ref) = 0 then
+      if Find (Rules, Ref) = 0 and then not HBNF_Grammar.Is_Wire_Rule (Ref) then
          raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
            & (if HBNF_Grammar.Spelled (Ref) /= Ref then ", which no `::=` defines" else "");
       end if;
@@ -1092,6 +1115,10 @@ package body HBNF_Ada is
             end;
          end loop;
       end;
+
+      --  The bit rules' types: they hold the scalars above, and the records
+      --  below hold them.
+      Append (Res, Hosted_Types);
 
       --  Incomplete declarations for every record type, then an access type
       --  for each, so records may refer to one another through access.
@@ -2719,6 +2746,7 @@ package body HBNF_Ada is
          Mustache.Put (V, "ret", Ret_Type (1));
          Mustache.Put (V, "conf", Conf_Decl);
          Mustache.Put (V, "frees", To_String (Free_Decls));
+         Mustache.Put (V, "hosted_spec", To_String (Hosted_Spec));
          Append (Spec, Mustache.Render_File ("ada_parser_spec", V));
          Append (Spec, LF);
       end;
@@ -2738,6 +2766,7 @@ package body HBNF_Ada is
          Mustache.Put (V, "nocase_with", Nocase_With);
          Mustache.Put (V, "conf_with", Conf_With);
          Mustache.Put (V, "free_with", "with Ada.Unchecked_Deallocation;" & LF);
+         Mustache.Put (V, "hosted_with", To_String (Hosted_Withs));
          Append (Bdy, Mustache.Render_File ("ada_parser_body", V));
       end;
 
@@ -3117,6 +3146,10 @@ package body HBNF_Ada is
          Mustache.Put (V, "nocase_proc", To_String (Nocase_Proc));
          Mustache.Put (V, "skip_ws", To_String (Skip_Body));
          Mustache.Put (V, "keyword_fn", To_String (Kw_Fn));
+         Mustache.Put (V, "parser_bit",
+           (if Is_Hosted
+            then "      Bit  : Natural := 0;   --  bits of the octet at Pos a bit rule has read" & LF
+            else ""));
          Append (Bdy, Mustache.Render_File ("ada_parser_prims", V));
       end;
       Append (Bdy, LF);
@@ -3141,6 +3174,7 @@ package body HBNF_Ada is
          end;
       end loop;
       Append (Bdy, LF);
+      Append (Bdy, Hosted_Code);
 
       for I in 1 .. N loop
          declare
@@ -3169,6 +3203,7 @@ package body HBNF_Ada is
          V : Mustache.Context := Mustache.View;
       begin
          Mustache.Put (V, "root_type", Ret_Type (1));
+         Mustache.Put (V, "bit_init", (if Is_Hosted then ", Bit => 0" else ""));
          Mustache.Put (V, "root_fn",
            "Parse_" & Ada_Ident (To_String (Rules (1).Name)));
          --  The root skips whitespace around itself if its file does.

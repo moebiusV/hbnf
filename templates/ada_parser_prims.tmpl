@@ -5,7 +5,7 @@
       Text : Text_Access;
       Pos  : Natural := 1;
       Last : Natural := Natural'Last;   --  the input is cut here for a trial parse (`a - b`)
-   end record;
+{{&parser_bit}}   end record;
 
    function Limit (P : Parser) return Natural is
      (Natural'Min (P.Last, P.Text'Last));

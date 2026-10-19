@@ -9,7 +9,7 @@
       end Rebase;
 
       T : aliased constant String := Rebase (Text);
-      P : Parser := (Text => T'Unchecked_Access, Pos => 1, Last => Natural'Last);
+      P : Parser := (Text => T'Unchecked_Access, Pos => 1, Last => Natural'Last{{&bit_init}});
       R : {{&root_type}};
    begin
 {{&lead_ws}}      R := {{&root_fn}} (P);
