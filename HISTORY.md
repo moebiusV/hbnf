@@ -232,26 +232,10 @@ The ALGOL 68 grammar will be written in this hbnf and not in the Report's litera
 (the user's decision, 2026-10-18). ALGOL 60 came first as the proving ground, and it has been
 checked against the Report's own BNF with an independent recognizer.
 
-**What it saves.** Measured on the grammars in `corpus/`, comparing the published BNF or ABNF
-with the hbnf, comments and blank lines left out of both:
-
-| language | notation | rules | code lines | symbols | characters |
-|---|---|---:|---:|---:|---:|
-| ALGOL 60 | the Report's BNF | 108 | 116 | 1,246 | 8,063 |
-| | hbnf | 47 | 72 | 510 | 3,470 |
-| | saved | 56% | 38% | 59% | 57% |
-| JSON | RFC 8259 ABNF | 30 | 45 | 193 | 949 |
-| | hbnf | 14 | 14 | 129 | 556 |
-| | saved | 53% | 69% | 33% | 41% |
-
-(A "symbol" is a whitespace-separated word of the grammar text; the count of LLM tokens
-depends on the tokenizer and has not been measured, but it follows the characters.) The
-saving comes from what the notation says once instead of many times: a comma list is
-`x *( "," x )` where the Report writes a list rule for each of nine lists; a block is a compound
-statement with declarations in front, not six rules; the three expression grammars that exist
-only to carry a type are one, since a checking pass applies the types; the lexical productions
-share the RFC core rules. The ALGOL 68 saving has not been measured: it is the point of the
-pilot, a chapter of the Report's W-grammar counted before and after.
+**What it saves.** The numbers are in *Measured* below: the grammar text of ALGOL 60 and JSON is
+about half the size of the Report's BNF and the RFC's ABNF, and the OpenBSD daemons' `parse.y`
+files lose their lexers and C actions. The ALGOL 68 saving has not been measured: it is the point
+of the pilot, a chapter of the Report's W-grammar counted before and after.
 
 ## The machine: Yacc
 
@@ -551,6 +535,87 @@ that bridge — a text a person can read, a machine can run, an intention carrie
 whole. HBNF was not written for AI. That is what will make it useful to AI.
 
 *Sources:* the [hbnf repository](https://github.com/moebiusV/hbnf), and [RFC 5234](https://www.rfc-editor.org/rfc/rfc5234) for the ABNF it compiles.
+
+## Measured: what hbnf saves and what it costs
+
+Every number here is produced by a script in the repository, from the files in `corpus/` and
+`grammars/`, and can be rerun. For a grammar the comparison is the published notation against the
+hbnf, comments and blank lines left out of both. A *symbol* is a whitespace-separated word of the
+grammar text, which is what a reader (or a language model) pays for; the count of LLM tokens depends
+on the tokenizer and has not been measured, but it follows the characters.
+
+**BNF and ABNF rewritten in hbnf: fewer rules, fewer lines, fewer symbols.** Where a grammar is
+rewritten rather than pasted, the rewrite says each thing once: a comma list is `x *( "," x )`, a
+block is a compound statement with declarations in front, the three expression grammars that exist
+to carry a type are one (a checking pass applies the types), a punctuation mark is the quoted
+character, the lexical rules share the RFC core rules.
+
+| language | published notation | rules | lines | symbols | characters |
+|---|---|---:|---:|---:|---:|
+| ALGOL 60 | the Report's BNF | 108 | 116 | 1,246 | 8,063 |
+| | hbnf (`corpus/algol60`) | 47 | 72 | 510 | 3,470 |
+| | **saved** | **56%** | **38%** | **59%** | **57%** |
+| JSON | RFC 8259's ABNF | 30 | 45 | 193 | 949 |
+| | hbnf (`corpus/json`) | 14 | 14 | 129 | 556 |
+| | **saved** | **53%** | **69%** | **33%** | **41%** |
+
+The RFC grammars in `corpus/rfc` are not in the table on purpose: they are pasted verbatim, with one
+line added, to show that RFC text compiles unchanged, so they save nothing and are not meant to.
+
+**OpenBSD's `parse.y`, translated.** The nine daemons' grammars in `grammars/obconf_*.hbnf` are
+faithful translations of the real `parse.y` files (OpenBSD `master`, fetched 2026-10-19), and here
+the answer is less flattering, so it is worth saying plainly. Compared as notation alone, with the C
+actions cut out of the yacc rules (so the yacc side is the grammar and nothing else):
+
+| daemon | yacc rules | hbnf rules | yacc lines | hbnf lines | yacc symbols | hbnf symbols |
+|---|---:|---:|---:|---:|---:|---:|
+| ntpd | 20 | 11 | 44 | 18 | 127 | 119 |
+| ldpd | 41 | 35 | 105 | 104 | 330 | 475 |
+| snmpd | 43 | 41 | 112 | 113 | 351 | 514 |
+| unwind | 22 | 21 | 50 | 62 | 154 | 351 |
+| dhcpleased | 9 | 9 | 23 | 18 | 88 | 107 |
+| httpd | 63 | 74 | 186 | 176 | 619 | 733 |
+| relayd | 84 | 90 | 264 | 309 | 839 | 1,369 |
+| bgpd | 121 | 148 | 406 | 481 | 1,340 | 2,239 |
+| pfctl | 148 | 175 | 432 | 474 | 1,407 | 2,174 |
+| **nine daemons** | **551** | **604** | **1,622** | **1,755** | **5,255** | **8,081** |
+
+As a notation the hbnf is about the same size as yacc's, a little larger on the big ones (a quoted
+`"listen"` is longer than the token name `LISTEN`, and each option list spells out the keyword that
+tags it), and smaller on ntpd, where it is 45% fewer rules and 59% fewer lines. The saving is
+everywhere else in the file. A `parse.y` also carries a hand-written lexer, the keyword table, the
+include-file stack and the C that builds the daemon's structures; hbnf's reader, `statements` mode
+and typed tree replace the first three, and the actions are attached separately. Counting the whole
+file, comments and blank lines left out:
+
+| daemon | `parse.y` lines | `parse.y` words | hbnf grammar + bound actions, lines | words |
+|---|---:|---:|---:|---:|
+| ntpd | 735 | 2,171 | 28 + 335 = 363 | 148 + 1,110 = 1,258 |
+| unwind | 832 | 2,404 | 74 + 268 = 342 | 391 + 779 = 1,170 |
+| **saved** | | | **51% and 59%** | **42% and 51%** |
+
+Only ntpd and unwind have their actions bound so far (`grammars/bind/`), so those are the two rows
+that can be compared whole; for the other seven, hbnf parses and builds the tree and the daemon's
+own actions are not yet attached.
+
+**Speed and memory.** The repository's benchmark (`bench/results/`) puts the generated C parser at
+26 ms and 21 MB on the 7.7 MB toy-language file where byacc plus flex takes 63 ms and 23 MB, bison 84 ms,
+Tree-sitter 226 ms and 63 MB, and ANTLR 4 111 to 222 ms and 204 to 530 MB; at a million rules, 266 ms
+against Tree-sitter's 2,302 ms. On a real format, a 39 MB JSON document of 250,000 records, parsed
+into the typed tree and nothing else (best of three, one machine):
+
+| parser | time | peak memory |
+|---|---:|---:|
+| hbnf (C, built on Alpine/musl) | 423 ms | 237 MB |
+| Python `json.load` (C accelerated) | 391 ms | 179 MB |
+| Tree-sitter 0.27 | 1,992 ms | 779 MB |
+
+That is Tree-sitter at 4.7 times hbnf's time and 3.3 times its memory, and hbnf within 8% of Python's
+hand-tuned C parser while building a tree typed by the grammar. Running this found a real fault, now
+fixed: the generated parser worked out the line and column of every failure that went deeper than the
+last, which is a pass over the text each time, so a long input with any backtracking took quadratic
+time; the first attempt at this file ran for minutes. The position is now worked out once, if the parse
+fails.
 
 ## Appendix — Incremental Parsing without Giving Up the Grammar
 
