@@ -1,0 +1,18 @@
+; The tokens of JSON (RFC 8259 sections 6 and 7): a number and a string.  No blank
+; is allowed inside either, so this file skips none (`whitespace none`), and every
+; rule of it that is only text is one token, a string, scanned by an automaton.
+; Letters in an escape are written by code (%x62), as in the RFC.  (`int` would be hbnf's own
+; built-in number, so the integer part is called `integer`.)
+whitespace none
+prefix none
+include "../../grammars/common.hbnf"
+
+string    = DQUOTE *char DQUOTE
+char      = unescaped / %x5C escape
+unescaped = %x20-21 / %x23-5B / %x5D-10FFFF
+escape    = %x22 / %x5C / %x2F / %x62 / %x66 / %x6E / %x72 / %x74 / %x75 4HEXDIG
+
+number    = [ "-" ] integer [ frac ] [ exp ]
+integer   = "0" / %x31-39 *DIGIT
+frac      = "." 1*DIGIT
+exp       = ( %x65 / %x45 ) [ "+" / "-" ] 1*DIGIT

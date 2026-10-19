@@ -1,8 +1,9 @@
 #!/bin/sh
-# ALGOL 60 in tree-sitter against hbnf: the grammar.js hbnf writes for
-# corpus/algol60/algol60.hbnf, built into a parser by the real tree-sitter, and the
+# A grammar in tree-sitter against hbnf (ALGOL 60 by default; TSD_GRAMMAR, TSD_ORACLE
+# and TSD_EXT choose another, e.g. corpus/json/json.hbnf with tests/json/oracle.py and
+# json): the grammar.js hbnf writes, built into a parser by the real tree-sitter, and the
 # parser hbnf makes, are asked about the same texts: random sentences of the Report
-# and random mutations of them (tests/algol60/reference.py).  Every sentence must
+# and random mutations of them (the oracle makes both).  Every sentence must
 # parse in tree-sitter; where a mutation is accepted by one and not the other is
 # counted.  Needs TS_CLI and TS_NODE_DIR as tests/treesitter.sh does.
 #   HBNF=... TS_NODE_DIR=... TS_CLI=... sh tests/treesitter-diff.sh [N [SEED]]
@@ -17,7 +18,9 @@ fi
 W=${DIFF_DIR:-$(mktemp -d)}
 [ -n "${DIFF_DIR:-}" ] || trap 'rm -rf "$W"' EXIT
 mkdir -p "$W"
-G=corpus/algol60/algol60.hbnf
+G=${TSD_GRAMMAR:-corpus/algol60/algol60.hbnf}
+ORACLE=${TSD_ORACLE:-tests/algol60/reference.py}
+EXT=${TSD_EXT:-a60}
 conf=$(sh tests/ts-build.sh "$G" "$W/ts") || { echo "treesitter-diff: FAIL (build)"; exit 1; }
 "$CLI" "$G" --backend=c > "$W/a.c" 2> "$W/err" || { echo "treesitter-diff: FAIL (hbnf)"; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/a.c")
@@ -26,7 +29,7 @@ cat >> "$W/m.c" <<EOC
 int main(int argc, char **argv) {
     int i;
     for (i = 1; i < argc; i++) {
-        FILE *f = fopen(argv[i], "r");
+        FILE *f = fopen(argv[i], "rb");
         char *buf, err[512];
         long len;
         size_t line, col;
@@ -43,11 +46,11 @@ int main(int argc, char **argv) {
 }
 EOC
 cc -std=gnu11 -D_GNU_SOURCE -O1 -w -o "$W/a60" "$W/m.c" || { echo "treesitter-diff: FAIL (compile)"; exit 1; }
-python3 -I tests/algol60/reference.py gen "$N" "$SEED" "$W/g" || exit 1
-python3 -I tests/algol60/reference.py mut "$N" "$SEED" "$W/m" || exit 1
+python3 -I "$ORACLE" gen "$N" "$SEED" "$W/g" || exit 1
+python3 -I "$ORACLE" mut "$N" "$SEED" "$W/m" || exit 1
 export PATH="$TS_NODE_DIR:$PATH"
 for d in g m; do
-	ls "$W/$d"/*.a60 > "$W/$d.paths"
+	ls "$W/$d"/*.$EXT > "$W/$d.paths"
 	xargs "$W/a60" < "$W/$d.paths" > "$W/$d.hbnf"
 	( cd "$W/ts" && "$TS_CLI" parse -q --paths "$W/$d.paths" 2>/dev/null ) | cut -f1 | sort > "$W/$d.tsfail"
 done

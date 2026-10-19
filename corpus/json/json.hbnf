@@ -1,0 +1,18 @@
+; JSON (RFC 8259) in hbnf.
+;
+; RFC 8259's grammar is 30 ABNF rules; this is the same language in 14: the structure
+; here (a value, an object of members, an array of values, white space between), and
+; the two tokens, a string and a number, in json-tokens.hbnf, where no blank is allowed
+; inside one.  The RFC's rule for each punctuation mark (begin-array, end-object,
+; name-separator ...) is the quoted character.
+prefix none
+include "json-tokens.hbnf"
+
+json = value
+
+value  = object | array | string | number | "true" | "false" | "null"
+object = "{" [ member *( "," member ) ] "}"
+member = string ":" value
+array  = "[" [ value *( "," value ) ] "]"
+
+ws = *( SP / HTAB / LF / CR )

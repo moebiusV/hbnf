@@ -99,6 +99,7 @@ Every markdown file in the repository, so none is lost.
 - [`corpus/posix/posix-shell-1.md`](corpus/posix/posix-shell-1.md): the POSIX shell grammar.
 - [`corpus/algol60/README.md`](corpus/algol60/README.md): the ALGOL 60 report and its BNF.
 - [`corpus/imp72/README.md`](corpus/imp72/README.md): the IMP72 compiler's sources.
+- [`corpus/json/README.md`](corpus/json/README.md): JSON in 14 rules, checked against Python's `json`.
 - [`corpus/bip39/README.md`](corpus/bip39/README.md): the ten BIP-39 word lists.
 - [`corpus/bech32/README.md`](corpus/bech32/README.md): bech32 and bech32m.
 

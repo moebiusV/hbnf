@@ -1,0 +1,7 @@
+{
+  "name": "hbnf",
+  "tags": ["parser", "generator"],
+  "version": 1.5,
+  "stable": false,
+  "next": null
+}

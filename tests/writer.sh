@@ -31,6 +31,7 @@ round() {
 }
 
 round obconf grammars/obconf_roundtrip.hbnf tests/accept/*.conf
+round json corpus/json/json.hbnf corpus/json/tests/good/*.json corpus/json/tests/bad/*.json
 for d in tests/daemons/*/; do
 	g=$(basename "$d")
 	round "$g" "grammars/obconf_$g.hbnf" "$d"*.conf

@@ -3320,8 +3320,15 @@ package body HBNF_C is
          declare
             Root : constant String := Root_Type (Rules);
             RN   : constant String := C_Name (To_String (Rules (1).Name));
+            --  A root that is only another rule (`json = value`) is written by that rule.
+            Tgt  : constant String :=
+              Alias_Target (Rules, To_String (Rules (1).Name));
+            TJ   : constant Natural := Find (Tgt);
+            WN   : constant String := (if TJ /= 0 then C_Name (Tgt) else RN);
          begin
-            if Infos (1).Kind in Struct | List then
+            if Infos (1).Kind in Struct | List
+              or else (TJ /= 0 and then Infos (TJ).Kind in Struct | List)
+            then
                Append (Buf,
                  "/* The tree as text: its length, with the text in buf up to"
                  & " cap - 1 bytes and a NUL (as snprintf), or (size_t)-1 and"
@@ -3332,7 +3339,7 @@ package body HBNF_C is
                  & "    memset (&w, 0, sizeof w);" & LF
                  & "    w.buf = buf;  w.cap = cap;  w.trace = hbnf_write_trace;"
                  & LF
-                 & "    wr_" & RN & " (&w, root);" & LF
+                 & "    wr_" & WN & " (&w, root);" & LF
                  & "    free (w.ptxt);" & LF
                  & "    if (buf && cap) buf[w.len < cap ? w.len : cap - 1] = 0;"
                  & LF
