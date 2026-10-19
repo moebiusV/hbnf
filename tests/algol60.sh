@@ -9,7 +9,7 @@ export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 CLI=${HBNF:-./hbnf}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
-"$CLI" corpus/algol60/algol60.hbnf --backend=c > "$W/a.c" 2> "$W/err" \
+"$CLI" corpus/algol60/algol60.hbnf --backend=c ${HBNF_FLAGS:-} > "$W/a.c" 2> "$W/err" \
     || { echo "algol60: FAIL (generate: $(head -c 400 "$W/err"))"; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/a.c")
 cp "$W/a.c" "$W/m.c"

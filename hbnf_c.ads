@@ -112,6 +112,10 @@ package HBNF_C is
    --  node_span and node_where.  --parents: every node has _up and _upk, set by
    --  node_link (and link_<root> for a list root); node_parent reads them.
    procedure Set_Spans (On : Boolean);
+   --  --forks: a rule whose alternatives can start alike is retried with the
+   --  next alternative when something later in the same sequence fails
+   --  (RFCPLAN.md decision 14).  Quiet: the forks are not listed on stderr.
+   procedure Set_Forks (On : Boolean; Quiet : Boolean := False);
    procedure Set_Parents (On : Boolean);
 
 end HBNF_C;

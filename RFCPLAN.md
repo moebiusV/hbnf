@@ -316,7 +316,16 @@ parameterised rules.
     version, or skipped for a rule that reads context, or a cached typedef
     decision would leak across scopes.  This replaces "GLR, or trying another
     alternative after a later failure" under *Not in this plan*.
-    Not started: after step 6's context machinery.
+    Built, in its local form (2026-10-18, C, `--forks`; `tests/forks.sh`): the
+    generator lists the rules whose alternatives can start alike (leading
+    literals, a prefix counts, a token meets a word), and a call of such a rule
+    that is followed by more of its sequence is wrapped in a retry: when the
+    rest fails, the fields from there on are freed, the position and the context
+    mark restored, and the rule is entered again at its next alternative.  The
+    tie-break order above is not built: the first alternative that lets the
+    sequence finish wins, which is IMP72's third rule alone.  Not built either:
+    a retry across a rule's end (the caller of the caller), forks with `%where`
+    or `?` after the fork, and the other backends.
 
 ## POSIX BNF
 

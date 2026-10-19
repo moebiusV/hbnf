@@ -2,6 +2,7 @@ pragma Ada_2022;
 
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Ada.Text_IO;
 with Mustache;
 with HBNF_Wire;
 with HBNF_Compilable;
@@ -449,6 +450,15 @@ package body HBNF_C is
    --  --parents: and which node holds it (_up, _upk, set by node_link).
    Spans_On       : Boolean := False;
    Parents_On     : Boolean := False;
+
+   Forks_On       : Boolean := False;
+   Quiet_Forks    : Boolean := False;
+
+   procedure Set_Forks (On : Boolean; Quiet : Boolean := False) is
+   begin
+      Forks_On := On;
+      Quiet_Forks := Quiet;
+   end Set_Forks;
 
    procedure Set_Spans (On : Boolean) is
    begin
@@ -4584,6 +4594,176 @@ package body HBNF_C is
          return C_Type_Name (To_String (R.Name)) & " *out";
       end Out_Type;
 
+      --  ---- Local forks (RFCPLAN.md decision 14), --forks only ----
+      --
+      --  A rule is forked when two of its alternatives can start alike, so
+      --  the first to match may not be the one a later element needs.  What
+      --  an alternative can start with is a list of texts: a literal's own,
+      --  `?` for a token (a character rule or a core rule), `*` for anything
+      --  not known.
+
+      function Lead_Of (Els : Element_Vectors.Vector; St, En : Natural;
+                        Depth : Natural) return String_Vectors.Vector;
+
+      --  The leads of every alternative of Els, together.
+      function Leads (Els : Element_Vectors.Vector; Depth : Natural)
+        return String_Vectors.Vector
+      is
+         R  : String_Vectors.Vector;
+         St : Natural := 1;
+      begin
+         for K in 1 .. Natural (Els.Length) + 1 loop
+            if K > Natural (Els.Length) or else Els (K).Kind = Alt then
+               for X of Lead_Of (Els, St, K - 1, Depth) loop
+                  R.Append (X);
+               end loop;
+               St := K + 1;
+            end if;
+         end loop;
+         return R;
+      end Leads;
+
+      function Lead_Of (Els : Element_Vectors.Vector; St, En : Natural;
+                        Depth : Natural) return String_Vectors.Vector
+      is
+         R : String_Vectors.Vector;
+      begin
+         if St > En or else Depth > 6 or else Els (St).Min = 0 then
+            R.Append (To_Unbounded_String ("*"));
+            return R;
+         end if;
+         declare
+            E : constant Element_Access := Els (St);
+         begin
+            case E.Kind is
+               when Literal =>
+                  R.Append (E.Lit);
+               when Name =>
+                  declare
+                     NM : constant String := To_String (E.Name);
+                     J  : constant Natural :=
+                       (if Is_Core (NM) then 0 else Find (NM));
+                  begin
+                     if Is_Core (NM)
+                       or else (J /= 0 and then Is_Char_Rule (Rules, NM))
+                     then
+                        R.Append (To_Unbounded_String ("?"));
+                     elsif J = 0 then
+                        R.Append (To_Unbounded_String ("*"));
+                     else
+                        return Leads (Rules (J).Pattern, Depth + 1);
+                     end if;
+                  end;
+               when Group =>
+                  return Leads (E.Items, Depth + 1);
+               when others =>
+                  R.Append (To_Unbounded_String ("*"));
+            end case;
+         end;
+         return R;
+      end Lead_Of;
+
+      function Starts_Alike (A, B : String_Vectors.Vector) return Boolean is
+         function Word_Led (S : String) return Boolean is
+           (S'Length > 0 and then S (S'First) in
+              'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+      begin
+         for X of A loop
+            for Y of B loop
+               declare
+                  XS : constant String := To_String (X);
+                  YS : constant String := To_String (Y);
+               begin
+                  if XS = "*" or else YS = "*" then
+                     return True;
+                  elsif XS = "?" and then YS = "?" then
+                     return True;
+                  elsif XS = "?" then
+                     if Word_Led (YS) then
+                        return True;
+                     end if;
+                  elsif YS = "?" then
+                     if Word_Led (XS) then
+                        return True;
+                     end if;
+                  elsif XS'Length <= YS'Length
+                    and then YS (YS'First .. YS'First + XS'Length - 1) = XS
+                  then
+                     return True;
+                  elsif YS'Length <= XS'Length
+                    and then XS (XS'First .. XS'First + YS'Length - 1) = YS
+                  then
+                     return True;
+                  end if;
+               end;
+            end loop;
+         end loop;
+         return False;
+      end Starts_Alike;
+
+      --  The rule is read as a struct alternation (the Has_Alt case of
+      --  Emit_Rule_Parser), the only shape a fork can resume.
+      function Fork_Capable (Idx : Natural) return Boolean is
+         R : constant Rule := Rules (Idx);
+         P : constant Element_Vectors.Vector := R.Pattern;
+      begin
+         if R.Jet_Code /= Null_Unbounded_String
+           or else Is_Char_Rule (Rules, To_String (R.Name))
+           or else not Has_Alt (P)
+         then
+            return False;
+         end if;
+         if Natural (P.Length) = 1
+           and then (P (1).Min /= 1 or else P (1).Max /= 1)
+         then
+            return False;                               --  a list
+         end if;
+         return not Is_Pure_Literal_Alt (P)
+           and then Scalar_Union_Type (P) = ""
+           and then not (Natural (P.Length) = 1
+                         and then P (1).Kind in Name | Literal);
+      end Fork_Capable;
+
+      --  Alternatives I < J of the rule that can start alike (0, 0: none).
+      procedure Fork_Pair (Idx : Natural; I, J : out Natural) is
+         P  : constant Element_Vectors.Vector := Rules (Idx).Pattern;
+         Ls : array (1 .. Natural (P.Length) + 1) of String_Vectors.Vector;
+         N  : Natural := 0;
+         St : Natural := 1;
+      begin
+         I := 0;  J := 0;
+         if not Fork_Capable (Idx) then
+            return;
+         end if;
+         for K in 1 .. Natural (P.Length) + 1 loop
+            if K > Natural (P.Length) or else P (K).Kind = Alt then
+               N := N + 1;
+               Ls (N) := Lead_Of (P, St, K - 1, 0);
+               St := K + 1;
+            end if;
+         end loop;
+         for A in 1 .. N - 1 loop
+            for B in A + 1 .. N loop
+               if Starts_Alike (Ls (A), Ls (B)) then
+                  I := A;  J := B;
+                  return;
+               end if;
+            end loop;
+         end loop;
+      end Fork_Pair;
+
+      Fork_Seq : Natural := 0;       --  numbers the retry blocks
+
+      function Is_Forked (Idx : Natural) return Boolean is
+         I, J : Natural;
+      begin
+         if not Forks_On or else Idx = 0 then
+            return False;
+         end if;
+         Fork_Pair (Idx, I, J);
+         return I /= 0;
+      end Is_Forked;
+
       --  Emit matching + building for segment Els(First..Last), writing fields
       --  through the accessor Acc ("r." or "nn->").  On failure emits the
       --  `Fail` statement ("goto ..." or "p->pos = save; return false;").
@@ -4596,6 +4776,7 @@ package body HBNF_C is
          --  at this position (Emit_Linear hoists it out of an alternation,
          --  where every branch would otherwise re-skip the same run).
          At_First : Boolean := True;
+         Stop     : Boolean := False;    --  a retry block took the rest
          procedure Ws_Skip is
          begin
             if Ws and then (Lead_Ws or else not At_First) then
@@ -4649,6 +4830,7 @@ package body HBNF_C is
             Append (Buf, LF);
          end if;
          for K in First .. Last loop
+            exit when Stop;
             declare
                E : constant Element_Access := Els (K);
             begin
@@ -4701,8 +4883,94 @@ package body HBNF_C is
                      else
                         declare
                            NM : constant String := To_String (E.Name);
+
+                           --  Decision 14: a forked rule followed by more of
+                           --  this sequence is tried again, with its next
+                           --  alternative, when the rest fails.
+                           Forked : constant Boolean :=
+                             Forks_On and then K < Last
+                             and then not Is_Back (Owner, NM)
+                             and then Is_Forked (Find (Alias_Target (Rules, NM)))
+                             and then (for all X in K + 1 .. Last =>
+                                         Els (X).Kind /= Block);
+                           Fid : constant String := Ctx_Img (Fork_Seq + 1);
+                           Frees : U;
+
+                           procedure Collect (V : Element_Vectors.Vector;
+                                              F, L : Natural) is
+                           begin
+                              for X in F .. L loop
+                                 if V (X).Kind = Group then
+                                    Collect (V (X).Items, 1,
+                                             Natural (V (X).Items.Length));
+                                 elsif V (X).Kind = Name
+                                   and then not Is_Core (To_String (V (X).Name))
+                                 then
+                                    declare
+                                       FN : constant String :=
+                                         To_String (V (X).Name);
+                                       T  : constant String :=
+                                         Alias_Target (Rules, FN);
+                                       J  : constant Natural := Find (T);
+                                    begin
+                                       if J /= 0 and then not Is_Back (Owner, FN)
+                                         and then Analyze (Rules, J).Kind in
+                                                    Struct | List
+                                       then
+                                          Append (Frees, Ind & "    free_"
+                                            & C_Name (T) & "(&" & Acc
+                                            & C_Field (FN) & ");  memset(&"
+                                            & Acc & C_Field (FN) & ", 0, "
+                                            & "sizeof " & Acc & C_Field (FN)
+                                            & ");" & LF);
+                                       end if;
+                                    end;
+                                 end if;
+                              end loop;
+                           end Collect;
                         begin
                            Ws_Skip;
+                           if Forked then
+                              Fork_Seq := Fork_Seq + 1;
+                              Collect (Els, K, Last);
+                              Append (Buf, Ind & "{ size_t fk" & Fid
+                                & " = 0, fu" & Fid & " = 0, fsv" & Fid
+                                & " = p->pos;"
+                                & (if Ctx_On
+                                   then "  hbnf_mark_t fm" & Fid
+                                        & " = hbnf_mark();" else ""));
+                              Append (Buf, LF);
+                              Append (Buf, "fork" & Fid & ":" & LF);
+                              Append (Buf, Ind & "  p->pos = fsv" & Fid
+                                & ";  hbnf_fork_start = fk" & Fid & ";");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  if (!parse_rule_" & C_Name (NM)
+                                & "(p, &" & Acc & C_Field (NM) & ")) { "
+                                & Fail & " }");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  fu" & Fid
+                                & " = hbnf_fork_used;");
+                              Append (Buf, LF);
+                              Emit_Seq (Owner, Els, K + 1, Last, Acc, Buf,
+                                        "goto fkf" & Fid & ";", Ind & "  ", Ws);
+                              Append (Buf, Ind & "  goto fkd" & Fid & ";");
+                              Append (Buf, LF);
+                              Append (Buf, "fkf" & Fid & ":" & LF);
+                              Append (Buf, Ind & "  free_" & C_Name (Alias_Target (Rules, NM))
+                                & "(&" & Acc & C_Field (NM) & ");  memset(&"
+                                & Acc & C_Field (NM) & ", 0, sizeof " & Acc
+                                & C_Field (NM) & ");" & LF);
+                              Append (Buf, Frees);
+                              if Ctx_On then
+                                 Append (Buf, Ind & "  hbnf_reset (&fm" & Fid
+                                   & ");" & LF);
+                              end if;
+                              Append (Buf, Ind & "  fk" & Fid & " = fu" & Fid
+                                & ";  goto fork" & Fid & ";" & LF);
+                              Append (Buf, "fkd" & Fid & ": ;" & LF);
+                              Append (Buf, Ind & "}" & LF);
+                              Stop := True;
+                           else
                            --  A back-edge field is a pointer: allocate the
                            --  node from the arena, then parse into it.  The
                            --  callee takes a pointer already, so unlike the
@@ -4718,6 +4986,7 @@ package body HBNF_C is
                                H ("field", C_Field (NM)),
                                H ("fail", Fail))));
                            Append (Buf, LF);
+                           end if;
                         end;
                      end if;
                   when Group =>
@@ -5150,7 +5419,8 @@ package body HBNF_C is
          Kind_Prefix : String := "";
          Buf : in out U; Ind : String := "    "; Label : String := "";
          Ws   : Boolean := False;
-         Alts : String_Vectors.Vector := String_Vectors.Empty_Vector) is
+         Alts : String_Vectors.Vector := String_Vectors.Empty_Vector;
+         Fork : Boolean := False) is
          N    : constant Natural := Natural (Els.Length);
          Flat : String_Vectors.Vector;
          Offs : Natural_Vectors.Vector;
@@ -5309,7 +5579,7 @@ package body HBNF_C is
 
             --  A guarded choice is a plain chain: each branch's guard is
             --  checked where it succeeds.
-            Disp : constant Boolean := Has_Byte_Dispatch
+            Disp : constant Boolean := Has_Byte_Dispatch and then not Fork
               and then not (for some E of Els =>
                               E.Kind = Alt and then E.Guard /= 0);
          begin
@@ -5325,6 +5595,31 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, Ind & "save = p->pos;");
                Append (Buf, LF);
+            end if;
+
+            if Fork then
+               --  A retry (decision 14): the caller says how many
+               --  alternatives to skip, as the ones it already tried.
+               declare
+                  NB : Natural := 1;
+               begin
+                  for E of Els loop
+                     if E.Kind = Alt then
+                        NB := NB + 1;
+                     end if;
+                  end loop;
+                  Append (Buf, Ind & "{ size_t fs_ = hbnf_fork_start;  "
+                    & "hbnf_fork_start = 0;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "  switch (fs_) { case 0: break;");
+                  for B in 1 .. NB - 1 loop
+                     Append (Buf, " case " & Img (B) & ": goto " & Label
+                       & "alt_fail_" & Img (B) & ";");
+                  end loop;
+                  Append (Buf, " default: goto " & Label & "alt_fail_"
+                    & Img (NB) & "; } }");
+                  Append (Buf, LF);
+               end;
             end if;
 
             if Disp then
@@ -5419,6 +5714,10 @@ package body HBNF_C is
                        & " bool g_ok = guard_" & Img (Els (K).Guard)
                        & "(p); p->pos = g_sv; if (!g_ok) goto " & Label
                        & "alt_fail_" & Img (LBr) & "; }");
+                     Append (Buf, LF);
+                  end if;
+                  if Fork then
+                     Append (Buf, Ind & "hbnf_fork_used = " & Img (LBr) & ";");
                      Append (Buf, LF);
                   end if;
                   Append (Buf, Ind & "goto " & Ok & ";");
@@ -5944,7 +6243,8 @@ package body HBNF_C is
                                  "ok",
                                  (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
                                  Buf, Ws => Ws,
-                                 Alts => Rule_Alts (R, False));
+                                 Alts => Rule_Alts (R, False),
+                                 Fork => Is_Forked (Idx));
                --  The last branch failed: free what it built (a list it
                --  had filled before a later token failed), as each
                --  earlier branch's failure does.
@@ -6615,6 +6915,36 @@ package body HBNF_C is
       Append (Res, Hosted_Code);       --  the readers of the bit rules
       if Ctx_On then
          Append (Res, Context_Runtime (Rules));
+      end if;
+      if Forks_On then
+         --  The retry state: which alternative of a forked rule to start
+         --  at, and which one matched (decision 14).  Listed once each.
+         declare
+            Any : Boolean := False;
+         begin
+            for I in 1 .. N loop
+               declare
+                  A, B : Natural;
+               begin
+                  Fork_Pair (I, A, B);
+                  if A /= 0 then
+                     Any := True;
+                     if not Quiet_Forks then
+                        Ada.Text_IO.Put_Line
+                          (Ada.Text_IO.Standard_Error,
+                           "hbnf: fork: rule " & To_String (Rules (I).Name)
+                           & ": alternatives" & Natural'Image (A) & " and"
+                           & Natural'Image (B) & " can start alike; a later"
+                           & " failure retries the next one");
+                     end if;
+                  end if;
+               end;
+            end loop;
+            if Any then
+               Append (Res, "static _Thread_local size_t hbnf_fork_start, "
+                 & "hbnf_fork_used;" & LF & LF);
+            end if;
+         end;
       end if;
 
       for I in 1 .. N loop

@@ -19,7 +19,7 @@ N=${1:-800}; SEED=${2:-1}
 W=${DIFF_DIR:-$(mktemp -d)}
 [ -n "${DIFF_DIR:-}" ] || trap 'rm -rf "$W"' EXIT
 mkdir -p "$W"
-"$CLI" corpus/algol60/algol60.hbnf --backend=c > "$W/a.c" 2> "$W/err" \
+"$CLI" corpus/algol60/algol60.hbnf --backend=c ${HBNF_FLAGS:-} > "$W/a.c" 2> "$W/err" \
     || { echo "algol60-diff: FAIL (generate: $(head -c 300 "$W/err"))"; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/a.c")
 cp "$W/a.c" "$W/m.c"

@@ -152,6 +152,30 @@ package body HBNF_Compilable is
    --  earlier one matches first (`"keypair" name | "keypair" name "key" k`
    --  never reads the key).  Reject it rather than parse less than the
    --  grammar says.
+   Shadow_Ok : Boolean := False;
+
+   procedure Allow_Shadowing (On : Boolean) is
+   begin
+      Shadow_Ok := On;
+   end Allow_Shadowing;
+
+   --  A choice among literals alone is read as a set of words, with no way
+   --  back; the longer one goes first even with --forks.
+   function Only_Literals (V : Element_Vectors.Vector) return Boolean is
+      Prev : Boolean := False;       --  the previous element is a literal
+   begin
+      for E of V loop
+         if E.Kind = Alt then
+            Prev := False;
+         elsif E.Kind /= Literal or else Prev then
+            return False;            --  not a literal, or two in a row
+         else
+            Prev := True;
+         end if;
+      end loop;
+      return True;
+   end Only_Literals;
+
    procedure Check_Shadowing (Rule_Name : String; V : Element_Vectors.Vector)
    is
       type Span is record
@@ -187,6 +211,7 @@ package body HBNF_Compilable is
                   LJ : constant Natural := Br (J).Last - Br (J).First + 1;
                begin
                   if LI > 0 and then LI < LJ
+                    and then not (Shadow_Ok and then not Only_Literals (V))
                     and then (for all X in 0 .. LI - 1 =>
                                 Same (V (Br (I).First + X),
                                       V (Br (J).First + X)))

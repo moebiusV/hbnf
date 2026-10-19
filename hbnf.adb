@@ -47,6 +47,8 @@ procedure Hbnf is
    Conf         : Boolean := False;
    Idref        : Boolean := False;
    Compare      : Boolean := False;
+   Forks        : Boolean := False;
+   Quiet        : Boolean := False;
    Prefix       : Unbounded_String;
 
    --  The directory the .tmpl templates load from: --templates=DIR, else the
@@ -113,7 +115,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -144,6 +146,10 @@ begin
             HBNF_C.Set_Spans (True);
          elsif A = "--parents" then
             HBNF_C.Set_Parents (True);
+         elsif A = "--forks" then
+            Forks := True;
+         elsif A = "--quiet-forks" then
+            Quiet := True;
          elsif A = "--paths" then
             HBNF_C.Set_Paths (True);
          elsif A = "--ast-tools" then
@@ -200,6 +206,16 @@ begin
       Parsed : constant HBNF_Grammar.Rule_Vectors.Vector :=
         HBNF_Grammar.Parse_File (To_String (Schema_Path));
    begin
+      if Forks and then To_String (Backend) /= "c" then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "hbnf: --forks is C only so far (" & To_String (Backend)
+            & " follows; RFCPLAN.md decision 14)");
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+      HBNF_C.Set_Forks (Forks, Quiet);
+      HBNF_Compilable.Allow_Shadowing (Forks);
       if HBNF_Grammar.Context_Count > 0 and then To_String (Backend) /= "c" then
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error,

@@ -1,0 +1,15 @@
+; Local forks (RFCPLAN.md decision 14): with --forks a rule whose alternatives can
+; start alike is tried again, with its next alternative, when something later in the
+; same sequence fails.  Without it the first alternative that matches is kept.
+prefix none
+include "../../grammars/common.hbnf"
+
+line  = "a" first ";"                      %label one
+      | "b" op ";"                          %label relop   ; "<" before "<="
+      | "c" first first ";"                 %label two
+      | "d" outer "!"                       %label nested
+first = "x"                                 %label short
+      | "x" "y"                             %label long
+op    = "<"
+      | "<" "="
+outer = first "z"

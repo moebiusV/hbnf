@@ -15,6 +15,10 @@ with HBNF_Grammar;
 --  enforced by the C backend only, so the other backends get a warning.
 package HBNF_Compilable is
 
+   --  --forks: an alternative the one before it shadows is not an error; a later
+   --  failure retries it (RFCPLAN.md decision 14).
+   procedure Allow_Shadowing (On : Boolean);
+
    procedure Check
      (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
       Backend : String);
