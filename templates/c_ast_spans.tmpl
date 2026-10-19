@@ -1,0 +1,16 @@
+/* Where a node is in the text: the byte offsets of its start and end (--spans). */
+static int node_span(const void *n, node_kind_t k, size_t *start, size_t *end) {
+    const hbnf_r_t *r = &hbnf_r[k];
+    if (r->span == 0xFFFF) return 0;
+    *start = *(const size_t *)((const char *)n + r->span);
+    *end = *(const size_t *)((const char *)n + r->span + sizeof (size_t));
+    return 1;
+}
+/* The line and the column, both from 1, of a byte offset of text. */
+static void node_where(const char *text, size_t pos, size_t *line, size_t *col) {
+    size_t l = 1, c = 1, i;
+    for (i = 0; i < pos && text[i]; i++) {
+        if (text[i] == '\n') { l++; c = 1; } else c++;
+    }
+    *line = l;  *col = c;
+}

@@ -154,6 +154,11 @@ package HBNF_Grammar is
    package Element_Vectors is new
      Ada.Containers.Vectors (Positive, Element_Access);
 
+   --  `%label name` at the end of an alternative names it.  The name is kept
+   --  against the alternative's first element; "" when there is none.
+   function Label_Of (E : Element_Access) return String;
+   procedure Set_Label (E : Element_Access; Name : String);
+
    type Element (Kind : Element_Kind := Literal) is record
       Min : Natural := 1;   --  minimum occurrences (repetition)
       Max : Integer := 1;   --  -1 = unbounded

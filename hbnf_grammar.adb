@@ -6,11 +6,35 @@ with HBNF_Lookahead;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Indefinite_Ordered_Maps;
+with Ada.Containers.Ordered_Maps;
+with System.Storage_Elements;
 with Ada.Strings.Hash;
 with Ada.Text_IO;
 with GNAT.OS_Lib;
 
 package body HBNF_Grammar is
+
+   --  Labels of alternatives, by the address of the element they sit on.
+   package Label_Maps is new Ada.Containers.Ordered_Maps
+     (Key_Type => System.Storage_Elements.Integer_Address,
+      Element_Type => Unbounded_String,
+      "<" => System.Storage_Elements."<");
+   Label_Table : Label_Maps.Map;
+
+   function Key (E : Element_Access) return System.Storage_Elements.Integer_Address
+   is (System.Storage_Elements.To_Integer (E.all'Address));
+
+   function Label_Of (E : Element_Access) return String is
+      C : constant Label_Maps.Cursor := Label_Table.Find (Key (E));
+   begin
+      return (if Label_Maps.Has_Element (C)
+              then To_String (Label_Maps.Element (C)) else "");
+   end Label_Of;
+
+   procedure Set_Label (E : Element_Access; Name : String) is
+   begin
+      Label_Table.Include (Key (E), To_Unbounded_String (Name));
+   end Set_Label;
 
    --  Schema-level metadata gathered by Parse.  A directive is one of two
    --  kinds (RFCPLAN.md decision 5):
@@ -2508,7 +2532,7 @@ package body HBNF_Grammar is
            | T_Code | T_EOF
          or else (P.Toks (K).Kind = T_Pct
                   and then To_String (P.Toks (K).Text)
-                           in "scan" | "action" | "emit"));
+                           in "scan" | "action" | "emit" | "label"));
    begin
       loop
          --  A block *between* elements is lifted into a rule of its own (Lift
@@ -2553,8 +2577,37 @@ package body HBNF_Grammar is
    function Parse_Alternation (P : in out Parser)
      return Element_Vectors.Vector is
       V : Element_Vectors.Vector;
+
+      --  One alternative, and its `%label name` if it has one.
+      function Branch return Element_Vectors.Vector is
+         B : constant Element_Vectors.Vector := Parse_Pattern (P);
+      begin
+         if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "label"
+         then
+            declare
+               T : constant Token := Cur (P);
+            begin
+               Next (P);
+               if Cur (P).Kind /= T_Name then
+                  raise Parse_Error with
+                    Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                    & ": `%label` takes a name for the alternative: "
+                    & "`... %label assign`";
+               end if;
+               if B.Is_Empty then
+                  raise Parse_Error with
+                    Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                    & ": `%label " & To_String (Cur (P).Text)
+                    & "` labels an alternative, and this one is empty";
+               end if;
+               Set_Label (B.First_Element, To_String (Cur (P).Text));
+               Next (P);
+            end;
+         end if;
+         return B;
+      end Branch;
    begin
-      Append_All (V, Parse_Pattern (P));
+      Append_All (V, Branch);
       loop
          --  A newline before `|` is a continuation, not the end of the rule:
          --  allow a multi-line alternation (`x = a` newline `/ b`).  Peek
@@ -2580,7 +2633,7 @@ package body HBNF_Grammar is
             Next (P);
             Element_Vectors.Append (V, A);
          end;
-         Append_All (V, Parse_Pattern (P));
+         Append_All (V, Branch);
       end loop;
       return V;
    end Parse_Alternation;
@@ -2770,6 +2823,12 @@ package body HBNF_Grammar is
                   raise Parse_Error with
                     Here & "the alternative `" & To_String (Name)
                     & "` is the rule itself, and adds nothing";
+               end if;
+               --  The alternative keeps its label when its first word goes.
+               if Label_Of (Pattern (St)) /= ""
+                 and then Label_Of (Pattern (St + 1)) = ""
+               then
+                  Set_Label (Pattern (St + 1), Label_Of (Pattern (St)));
                end if;
                Add (Tail_V, N_Tail, St + 1, K - 1);
             else

@@ -108,4 +108,10 @@ package HBNF_C is
    --  --paths: an error message says which rules the parser was in.
    procedure Set_Paths (On : Boolean);
 
+   --  --spans: every node has _pos and _end, its place in the text; with --ast,
+   --  node_span and node_where.  --parents: every node has _up and _upk, set by
+   --  node_link (and link_<root> for a list root); node_parent reads them.
+   procedure Set_Spans (On : Boolean);
+   procedure Set_Parents (On : Boolean);
+
 end HBNF_C;

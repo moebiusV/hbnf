@@ -445,6 +445,23 @@ package body HBNF_C is
    --  --paths: the parser keeps the stack of rules it is in, and an error says
    --  which they were (in statement > block > arg).
    Paths_On       : Boolean := False;
+   --  --spans: every node records where it is in the text (_pos, _end);
+   --  --parents: and which node holds it (_up, _upk, set by node_link).
+   Spans_On       : Boolean := False;
+   Parents_On     : Boolean := False;
+
+   procedure Set_Spans (On : Boolean) is
+   begin
+      Spans_On := On;
+   end Set_Spans;
+
+   procedure Set_Parents (On : Boolean) is
+   begin
+      Parents_On := On;
+      if On then
+         Ast_On := True;
+      end if;
+   end Set_Parents;
 
    procedure Set_Paths (On : Boolean) is
    begin
@@ -599,6 +616,14 @@ package body HBNF_C is
    --  The scanner a rule runs: its jet, or a char-rule scanner.  The whitespace
    --  rule is one or the other, never a core scalar, so Scalar_Scan_Fn (which
    --  maps any non-core name onto `word`) would be wrong for it.
+   --  The C statement that records where a node starts: after the blanks
+   --  before it, which the first element of the node would skip.
+   function Span_Start (Ws : Boolean; Acc, Save : String) return String is
+     (if Ws
+      then "{ size_t k_ = p->pos; p->pos = " & Save & "; skip_ws(p); " & Acc
+           & "_pos = p->pos; p->pos = k_; }"
+      else Acc & "_pos = " & Save & ";");
+
    function Rule_Scanner (Rules : Rule_Vectors.Vector; Name : String)
       return String
    is
@@ -1012,7 +1037,12 @@ package body HBNF_C is
             declare
                Lab : U := Null_Unbounded_String;
             begin
+               if St <= K - 1 and then HBNF_Grammar.Label_Of (Els (St)) /= ""
+               then
+                  Lab := To_Unbounded_String (HBNF_Grammar.Label_Of (Els (St)));
+               end if;
                for J in St .. K - 1 loop
+                  exit when Lab /= Null_Unbounded_String;
                   if Els (J).Kind = Literal then
                      declare
                         L  : constant String := To_String (Els (J).Lit);
@@ -1820,6 +1850,15 @@ package body HBNF_C is
                        & "alternative taken (--ast) */");
                      Append (Pre, LF);
                   end if;
+                  if Spans_On then
+                     Append (Pre, "    size_t _pos, _end;   /* where in the text"
+                       & " (--spans) */" & LF);
+                  end if;
+                  if Parents_On then
+                     Append (Pre, "    const void *_up;   /* the node that "
+                       & "holds this one (--parents; node_link) */" & LF
+                       & "    unsigned short _upk;   /* and its rule */" & LF);
+                  end if;
                   for M of Info.Members loop
                      Append (Items,
                        Field_Decl (To_String (M.Name), M.Is_List));
@@ -1863,6 +1902,15 @@ package body HBNF_C is
                      Append (Items, "    " & "unsigned short _alt;   /* the "
                        & "alternative taken (--ast) */");
                      Append (Items, LF);
+                  end if;
+                  if Spans_On then
+                     Append (Items, "    size_t _pos, _end;   /* where in the "
+                       & "text (--spans) */" & LF);
+                  end if;
+                  if Parents_On then
+                     Append (Items, "    const void *_up;   /* the node that "
+                       & "holds this one (--parents; node_link) */" & LF
+                       & "    unsigned short _upk;   /* and its rule */" & LF);
                   end if;
                   if Info.Elem_Members.Is_Empty then
                      if Info.Elem_Name /= Null_Unbounded_String then
@@ -2488,7 +2536,11 @@ package body HBNF_C is
                     & (if Info.Kind = List and then Own_Lists
                        then "lf_" & C_Name (To_String (R.Name)) & ",ln_"
                             & C_Name (To_String (R.Name))
-                       else "0,0") & "}," & LF);
+                       else "0,0") & ","
+                    & (if Spans_On then "offsetof(" & T & ",_pos)"
+                       else "0xFFFF") & ","
+                    & (if Parents_On then "offsetof(" & T & ",_up),offsetof("
+                         & T & ",_upk)" else "0xFFFF,0") & "}," & LF);
                end;
             end if;
          end loop;
@@ -2503,7 +2555,8 @@ package body HBNF_C is
            & "hbnf_b_t;" & LF
            & "typedef struct { const char *name; unsigned short b0, nb, alt, "
            & "link; const void *(*first)(const void *); "
-           & "const void *(*next)(const void *); } hbnf_r_t;" & LF
+           & "const void *(*next)(const void *); "
+           & "unsigned short span, up, upk; } hbnf_r_t;" & LF
            & "" );
          declare
             procedure Def (Id, Text : String) is
@@ -2569,6 +2622,14 @@ package body HBNF_C is
          end;
          Append (Buf, Mustache.Get ("c_ast"));
          Append (Buf, LF);
+         if Spans_On then
+            Append (Buf, Mustache.Get ("c_ast_spans"));
+            Append (Buf, LF);
+         end if;
+         if Parents_On then
+            Append (Buf, Mustache.Get ("c_ast_parents"));
+            Append (Buf, LF);
+         end if;
          if Ast_Tools_On then
             Append (Buf, Mustache.Get ("c_ast_tools"));
             Append (Buf, LF);
@@ -2595,6 +2656,14 @@ package body HBNF_C is
                  & "        if (!node_walk (e, NODE_" & C_Ident (RN)
                  & ", f, ctx)) return 0;" & LF
                  & "    return 1;" & LF & "}" & LF);
+               if Parents_On then
+                  Append (Buf, "static void link_" & RN & " (const struct "
+                    & Pfx & RN & "_list *root) {" & LF
+                    & "    const " & RT & " *e;" & LF
+                    & "    " & L_Foreach ("e", "root") & LF
+                    & "        node_link (e, NODE_" & C_Ident (RN) & ");" & LF
+                    & "}" & LF);
+               end if;
                if Ast_Tools_On then
                Append (Buf, "static size_t dump_" & RN & " (const struct " & Pfx & RN
                  & "_list *root, char *buf, size_t cap) {" & LF
@@ -5161,6 +5230,10 @@ package body HBNF_C is
                Append (Buf, "        if (!nn) hbnf_oom();");
                Append (Buf, LF);
                Append (Buf, "        size_t save = p->pos;");
+               if Spans_On then
+                  Append (Buf, LF);
+                  Append (Buf, "        " & Span_Start (Ws, "nn->", "save"));
+               end if;
                Append (Buf, LF);
                --  Only the two template paths below need the skip here; the
                --  Emit_Alternation paths lead with it themselves (Emit_Seq)
@@ -5235,6 +5308,10 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "have:");
                Append (Buf, LF);
+               if Spans_On then
+                  Append (Buf, "        nn->_end = p->pos;");
+                  Append (Buf, LF);
+               end if;
                Emit_Number_Converts (Nums, "nn->", True, Buf, "        ");
                if R.Action_Code /= Null_Unbounded_String then
                   Append (Buf, Fill ("c_rule_line",
@@ -5512,6 +5589,10 @@ package body HBNF_C is
                Append (Buf, "    " & C_Type_Name (NM)
                  & " r; memset(&r, 0, sizeof r);");
                Append (Buf, LF);
+               if Spans_On then
+                  Append (Buf, "    " & Span_Start (Ws, "r.", "save"));
+                  Append (Buf, LF);
+               end if;
                Emit_Number_Deferrals (Nums, Buf, "    ");
                Emit_Alternation (Idx, P, "r.",
                                  "free_" & CN & "_fields(&r)", Num_Clears (Nums),
@@ -5527,6 +5608,10 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "ok:");
                Append (Buf, LF);
+               if Spans_On then
+                  Append (Buf, "    r._end = p->pos;");
+                  Append (Buf, LF);
+               end if;
                Emit_Number_Converts (Nums, "r.", True, Buf, "    ");
                if R.Action_Code /= Null_Unbounded_String then
                   Append (Buf, Fill ("c_rule_line",
@@ -5547,6 +5632,10 @@ package body HBNF_C is
                Append (Buf, "    " & C_Type_Name (NM)
                  & " r; memset(&r, 0, sizeof r);");
                Append (Buf, LF);
+               if Spans_On and then Analyze (Rules, Idx).Kind = Struct then
+                  Append (Buf, "    " & Span_Start (Ws, "r.", "save"));
+                  Append (Buf, LF);
+               end if;
                Emit_Number_Deferrals (Nums, Buf, "    ");
                --  On failure, free what the sequence built so far (its
                --  lists): the caller only restores the position.  The
@@ -5558,6 +5647,10 @@ package body HBNF_C is
                           else "")
                          & "p->pos = save; return false;",
                          Ws => Ws);
+               if Spans_On and then Analyze (Rules, Idx).Kind = Struct then
+                  Append (Buf, "    r._end = p->pos;");
+                  Append (Buf, LF);
+               end if;
                Emit_Number_Converts (Nums, "r.", False, Buf, "    ");
                if R.Action_Code /= Null_Unbounded_String then
                   Append (Buf, Fill ("c_rule_line",

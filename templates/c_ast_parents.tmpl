@@ -1,0 +1,34 @@
+/* node_link (root, kind) sets every node's _up to the node that holds it and _upk
+   to that node's rule (--parents); the root's _up is NULL.  node_parent reads
+   them. */
+static void hbnf_link(const void *n, node_kind_t k, const void *up, node_kind_t uk) {
+    const hbnf_r_t *r = &hbnf_r[k];
+    const hbnf_b_t *b = hbnf_branch(n, k);
+    unsigned i;
+    if (r->up != 0xFFFF) {
+        *(const void **)((char *)n + r->up) = up;
+        *(unsigned short *)((char *)n + r->upk) = (unsigned short)uk;
+    }
+    for (i = 0; i < b->n; i++) {
+        const hbnf_m_t *m = &hbnf_m[b->first + i];
+        const char *p = (const char *)n + m->off;
+        if (m->type == HM_NODE) {
+            hbnf_link(p, (node_kind_t)m->target, n, k);
+        } else if (m->type == HM_PTR) {
+            const void *q = *(const void *const *)p;
+            if (q) hbnf_link(q, (node_kind_t)m->target, n, k);
+        } else if (m->type == HM_LIST) {
+            const void *e;
+            for (e = hbnf_first(p, (node_kind_t)m->target); e;
+                 e = hbnf_next(e, (node_kind_t)m->target))
+                hbnf_link(e, (node_kind_t)m->target, n, k);
+        }
+    }
+}
+static void node_link(const void *root, node_kind_t k) { hbnf_link(root, k, NULL, (node_kind_t)0); }
+static const void *node_parent(const void *n, node_kind_t k, node_kind_t *pk) {
+    const hbnf_r_t *r = &hbnf_r[k];
+    if (r->up == 0xFFFF) return NULL;
+    if (pk) *pk = (node_kind_t)*(const unsigned short *)((const char *)n + r->upk);
+    return *(const void *const *)((const char *)n + r->up);
+}

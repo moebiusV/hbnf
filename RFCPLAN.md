@@ -1457,9 +1457,18 @@ should claim that before 10.
     smallest daemon grammar, grows by 2.2 KB compiled with `--ast` (1.2 KB of
     code, 1 KB of tables); pfctl, with 126 node rules, 357 members and about
     700 alternatives, by 12 KB of code and 18 KB of tables, most of it the
-    recording of alternatives.  `tests/ast.sh`.  Not yet: spans and parent links
-    (opt-in, with step 6b), an optional label on an alternative (LBNF style),
-    and the parser's own path in error messages ("in statement > block > arg").
+    recording of alternatives.  `tests/ast.sh`.  Also built (2026-10-18, C):
+    **`--spans`**: every node has `_pos` and `_end`, byte offsets of where it
+    is in the text (after the blanks before it, up to the end of its last
+    element), `node_span (node, kind, &start, &end)` and `node_where (text,
+    pos, &line, &col)`; **`--parents`**: `_up` and `_upk` (the node that holds
+    it and its rule), set by `node_link` (`link_<root>` for a list root) and
+    read by `node_parent`; and **`%label name`** at the end of an alternative
+    (LBNF's constructor, as a suffix, in the notation's own style), which
+    `node_alt_name` returns instead of the derived name (`entry[assign]`,
+    not `entry[set]`).  Both flags are opt-in; `tests/spans.sh`.  Not yet: the
+    writer in Rust, Zig and Ada; spans in a `statements` parser (offsets are
+    within the statement).
 
 7e. **Error paths (the user, 2026-10-18).**  *Built in C: `--paths`.*  An error
     message says which rules the parser was reading when it got as far as it did:
