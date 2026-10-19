@@ -76,6 +76,29 @@ check_zig() {
 	fi
 }
 
+# check_ada NAME [GRAMMAR [EXPECTED]]: the same grammar through the Ada backend, which
+# writes the package specification and body in one file (gnatchop splits it), and an
+# Ada driver (tests/wire/NAME_main.adb, `with GRAMMAR_PACKAGE`), the same expected output.
+check_ada() {
+	n=$1; g=${2:-$n}; want=${3:-$n}; pkg=${4:-Net}
+	command -v gnatmake > /dev/null 2>&1 || { echo "SKIP $n (ada): no gnatmake"; return; }
+	d=$T/ad_$n; mkdir -p "$d"
+	if ! "$CLI" tests/wire/$g.hbnf --backend=ada --package=$pkg > "$d/all.ada" 2> "$d/err"; then
+		echo "FAIL $n (ada): generation: $(cat "$d/err")"; fail=$((fail+1)); return
+	fi
+	cp tests/wire/${n}_main.adb "$d/"
+	if ! (cd "$d" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -gnat2022 ${n}_main.adb -o main > gnat.out 2>&1); then
+		echo "FAIL $n (ada): gnat"; head -30 "$d/gnat.out"; fail=$((fail+1)); return
+	fi
+	"$d/main" > "$d/out" 2>&1
+	if cmp -s "$d/out" tests/wire/$want.expected; then
+		echo "PASS $n (ada)"
+	else
+		echo "FAIL $n (ada): output differs"; diff "$d/out" tests/wire/$want.expected | head -20
+		fail=$((fail+1))
+	fi
+}
+
 # expect_error NAME TEXT: the grammar is refused with a message containing TEXT.
 expect_error() {
 	n=$1; want=$2
@@ -92,6 +115,7 @@ expect_error() {
 check net
 check_rust net
 check_zig net
+check_ada net
 check net_cbuf "" "" net
 # Text and bit rules in one grammar (the generated text parser is not -Wextra clean)
 check mixed "" "" mixed -w

@@ -18,6 +18,7 @@ with HBNF_Wire.C;
 with HBNF_Wire.Lower;
 with HBNF_Wire.Rust;
 with HBNF_Wire.Zig;
+with HBNF_Wire.Ada_Lang;
 
 --  hbnf: read a schema and emit a self-contained parser (declarations +
 --  lexer + parser) in the chosen backend language.
@@ -249,10 +250,10 @@ begin
          return;
       end if;
       if HBNF_Grammar.Wire_Root then
-         if To_String (Backend) not in "c" | "rust" | "zig" then
+         if To_String (Backend) not in "c" | "rust" | "zig" | "ada" then
             Ada.Text_IO.Put_Line
               (Ada.Text_IO.Standard_Error,
-               "hbnf: a grammar of bit fields can be emitted in C, Rust and Zig "
+               "hbnf: a grammar of bit fields can be emitted in C, Rust, Zig and Ada "
                & "so far (" & To_String (Backend)
                & " follows; RFCPLAN.md step 7b)");
             Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
@@ -265,6 +266,8 @@ begin
             Out_Text : constant String :=
               (if To_String (Backend) = "rust" then HBNF_Wire.Rust.Emit (G)
                elsif To_String (Backend) = "zig" then HBNF_Wire.Zig.Emit (G)
+               elsif To_String (Backend) = "ada" then
+                  HBNF_Wire.Ada_Lang.Emit (G, To_String (Package_Name))
                else HBNF_Wire.C.Emit (G));
          begin
             Ada.Text_IO.Put (Out_Text);

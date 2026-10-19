@@ -6,8 +6,8 @@ file type: a field of N bits (`ttl:8`) is an element like a literal or a rule
 name, and a rule that holds one is a **bit rule**.  A file may hold text rules
 and bit rules side by side (a bit rule can read the numbered words of a text
 rule as its bits: `bitsof`, below).  This is `RFCPLAN.md` step 7b.  **Status:**
-the C, Rust and Zig backends read and write bit rules (the writing direction is the
-same grammar); Ada is next.  Enum numbers (`"icmp"@1`) work in all four
+the C, Rust, Zig and Ada backends read and write bit rules (the writing direction is the
+same grammar).  Enum numbers (`"icmp"@1`) work in all four
 backends already.  What is not built is a text element and a bit field in one
 rule (`"GET " len:16 payload:[len]`); see the end of this page.
 
@@ -285,8 +285,11 @@ second.
 
 ## What is not built yet
 
-- An Ada backend for bit rules (C, Rust and Zig have them; Zig returns `error{Parse}` with the
-  octet and message through a pointer, and takes an allocator, best an arena).  A `language` line
+- `bitsof`, `%action`, `%emit` and mixing text with bit rules in Rust, Zig and Ada (only C has them).
+  Zig returns `error{Parse}` with the octet and message through a pointer and takes an allocator,
+  best an arena.  Ada writes the specification and body in one file (`gnatchop` splits it), with
+  `Ada.Containers.Vectors` for octets and entries and a record with a variant part for a choice
+  (`--package=NAME`).  A `language` line
   in a grammar says which language its code blocks (preamble, epilogue,
   `%action`, `%emit`) are written in, C unless it says; the Rust backend reads
   grammars without code until `%action`/`%emit` are done for it.
