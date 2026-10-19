@@ -6914,6 +6914,11 @@ package body HBNF_Grammar is
                   Out_V.Append
                     (new Element'(Kind => Name, Min => 1, Max => 1,
                                   Name => H, Fold => False));
+                  --  An alternative that starts with the lifted element keeps
+                  --  its %label (the label sits on its first element).
+                  if Label_Of (E) /= "" then
+                     Set_Label (Out_V.Last_Element, Label_Of (E));
+                  end if;
                end;
             end if;
          end loop;
@@ -7028,6 +7033,9 @@ package body HBNF_Grammar is
                            V.Replace_Element
                              (K, new Element'(Kind => Name, Min => 1, Max => 1,
                                               Name => H, Fold => False));
+                           if Label_Of (Orig (K)) /= "" then
+                              Set_Label (V (K), Label_Of (Orig (K)));
+                           end if;
                         end;
                      end if;
                   end;
@@ -7039,6 +7047,9 @@ package body HBNF_Grammar is
                   begin
                      Walk (G.Items);
                      V.Replace_Element (K, G);
+                     if Label_Of (Orig (K)) /= "" then
+                        Set_Label (G, Label_Of (Orig (K)));
+                     end if;
                   end;
                end if;
             end loop;

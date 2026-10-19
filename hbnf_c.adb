@@ -3171,8 +3171,9 @@ package body HBNF_C is
            & "static int hbnf_write_trace;" & LF
            & "/* A pretty-printer's say (corpus/algol60/pp.c): called with ev 0 and "
            & "the text before each token or literal is written (it returns what "
-           & "goes before it, NULL for the writer's own spacing), and with ev 1 "
-           & "and 2 on entering and leaving a node, with its rule's name. */" & LF
+           & "goes before it, NULL for the writer's own spacing), then with ev 3 "
+           & "(it returns the text to write instead, NULL: as it is), and with "
+           & "ev 1 and 2 on entering and leaving a node, with its rule's name. */" & LF
            & "typedef const char *(*hbnf_wlayout_fn) (void *ctx, int ev, "
            & "const char *s);" & LF
            & "static hbnf_wlayout_fn hbnf_write_layout;" & LF
@@ -3241,6 +3242,10 @@ package body HBNF_C is
            & " ? hbnf_write_layout (hbnf_write_layout_ctx, 0, s) : NULL;" & LF
            & "    if (sep) hbnf_wput (w, sep, strlen (sep));" & LF
            & "    else hbnf_wsep (w, gap, s);" & LF
+           & "    if (n && hbnf_write_layout) {" & LF
+           & "        const char *r = hbnf_write_layout (hbnf_write_layout_ctx, 3, s);" & LF
+           & "        if (r) { s = r; n = strlen (r); }" & LF
+           & "    }" & LF
            & "    hbnf_wput (w, s, n);" & LF
            & "    w->pscan = scan;" & LF
            & "    if (scan) {" & LF

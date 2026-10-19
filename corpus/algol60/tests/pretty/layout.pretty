@@ -12,7 +12,7 @@
         t := x;
         x := y;
         y := t
-    'END';
+    'END' the swap procedure ends here;
     i := 0;
     j := -i + 2 * (i - 1);
     'FOR' i := 1 'STEP' 1 'UNTIL' 10 'DO' a[i, 0] := i;
@@ -25,6 +25,10 @@
     'ELSE' 'BEGIN'
         i := j
     'END';
+    m := 0;
+    'IF' i < j 'THEN' m := i
+    'ELSE' 'IF' j < n 'THEN' m := j
+    'ELSE' m := n;
     'COMMENT' last comment ;
     done:
-'END'
+'END' the end of the program

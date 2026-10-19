@@ -141,20 +141,42 @@ numbers.
 `pp.c` prints an ALGOL 60 program laid out, comments kept, and is the demonstration
 that a consumer of the parser can make arbitrary output from the tree:
 
-    hbnf corpus/algol60/algol60.hbnf --backend=c --writer > a60.c
+    hbnf corpus/algol60/algol60.hbnf --backend=c --writer --ast > a60.c
     cc -include a60.c -o pp corpus/algol60/pp.c
-    ./pp program.a60 > pretty.a60          # ./pp -c program.a60: print it twice over, as a test
+    ./pp [--functional] [--clang] program.a60 > pretty.a60     # -c: print it twice over, as a test
 
 The parser reads the program into a tree, in which each `'COMMENT' ... ;` after `BEGIN`
 or after a `;` is a node (`remark`, so a program is no longer allowed one anywhere
 else; section 2.3 allows those two places), and the generated writer prints it back,
-token by token.  `pp.c` is only the layout policy, 60 lines: a function that is
-given each token or literal just before it is written (and the name of each rule
-entered and left) and answers what goes before it, a newline and an indent, a
-blank or nothing.  The grammar is not repeated in it.  `sh tests/algol60-pp.sh`
-prints every good program, reads the result and prints it again (the same text),
-and compares `tests/pretty/layout.a60` with `layout.pretty`.
+token by token.  `pp.c` supplies a function that is given each token or literal just
+before it is written (and the name of each rule entered and left) and answers what goes
+before it, and what is written in its place.  The grammar is not repeated in it.
+`sh tests/algol60-pp.sh` prints every good program plain and `--functional`, reads
+the result and prints it again (the same text), and compares `tests/pretty/layout.a60`
+in the three styles with `layout.pretty`, `layout.functional` and `layout.clang`.
 
-Not kept: the text after `END` that the Report treats as a comment (glued on after
-`'END'`, blanks lost), and the line breaks inside a comment's text (kept as written).
+- **plain**: one statement to a line, `BEGIN` and `END` on lines of their own, the
+  comments where they were.
+- **`--functional`**: the style of the [Ada functional guidelines](https://moebiusv.github.io/ada-style-guidelines.html)
+  as far as ALGOL 60 goes, by rewriting the tree before it is written, in ways that keep
+  the meaning:
+  rule 3, `IF c THEN x := a ELSE x := b` is `x := IF c THEN a ELSE b` (a simple variable
+  on the left; a chain of `ELSE IF`s is one expression); rule 2/20, `BEGIN s END` with
+  nothing but `s` in it is `s` (not when `s` is labelled, empty or conditional, so no
+  `ELSE` changes hands and no label changes scope); one declaration per variable.  Not
+  done, because ALGOL 60's call by name makes them change the meaning or because it has
+  no construct for them: `VALUE` for parameters that are only read (Jensen's device
+  needs the name), loops turned into recursion, constants (rule 1), `declare`
+  expressions.
+- **`--clang`**: braces for `BEGIN`/`END`, `=` for `:=`, `==` for `=`, `!=`, `&&`, `||`,
+  `!`, `true`/`false`, `if (c)`, `c ? a : b` for a conditional expression,
+  `for (i = 1 step 1 until n)`, the type words in lower case, `/* comments */`, a `;`
+  before `}` and `else`.  It looks like C and is not C.
 
+Comments are all kept: the `'COMMENT' ... ;` ones are tree nodes, and so is the text after
+`END` (up to the next `;`, `END` or `ELSE`, which section 2.3 also treats as a comment),
+as it was written, trimmed of the white space at its ends; `--clang` writes both as
+`/* ... */`.  The line breaks inside a comment's text are kept as written.
+A label in a `%label` that starts with a repeated or optional element (`[ "'OWN'" ] ...`)
+used to be lost when the reader lifted that element into a rule of its own; it is kept
+now.

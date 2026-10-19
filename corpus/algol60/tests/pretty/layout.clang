@@ -1,0 +1,34 @@
+/* a program that is laid out badly, with comments to keep */
+{
+    /* first comment, after BEGIN */
+    integer i, j;
+    real array a[1:10, 0:n + 1];
+    boolean ok;
+    /* a comment between declarations and statements */
+    procedure swap(x, y);
+    integer x, y;
+    {
+        integer t;
+        t = x;
+        x = y;
+        y = t;
+    } /* the swap procedure ends here */
+    i = 0;
+    j = -i + 2 * (i - 1);
+    for (i = 1 step 1 until 10) a[i, 0] = i;
+    if (i < j) ok = true;
+    else ok = false;
+    if (ok) {
+        swap(i, j);
+        out: goto done;
+    }
+    else {
+        i = j;
+    }
+    m = 0;
+    if (i < j) m = i;
+    else if (j < n) m = j;
+    else m = n;
+    /* last comment */
+    done:;
+} /* the end of the program */

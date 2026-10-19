@@ -3,10 +3,12 @@
 'INTEGER' i,j; 'REAL' 'ARRAY' a[1:10,0:n+1];
 'BOOLEAN' ok;
 'COMMENT' a comment between declarations and statements ;
-'PROCEDURE' swap(x,y); 'INTEGER' x,y; 'BEGIN' 'INTEGER' t; t:=x; x:=y; y:=t 'END';
+'PROCEDURE' swap(x,y); 'INTEGER' x,y; 'BEGIN' 'INTEGER' t; t:=x; x:=y; y:=t 'END' the swap procedure ends here;
 i:=0; j:=-i+2*(i-1);
 'FOR' i:=1 'STEP' 1 'UNTIL' 10 'DO' a[i,0]:=i;
 'IF' i<j 'THEN' ok:='TRUE' 'ELSE' ok:='FALSE';
 'IF' ok 'THEN' 'BEGIN' swap(i,j); out: 'GOTO' done 'END' 'ELSE' 'BEGIN' i:=j 'END';
+m := 0;
+'IF' i<j 'THEN' m := i 'ELSE' 'IF' j<n 'THEN' m := j 'ELSE' m := n;
 'COMMENT' last comment ;
-done: 'END'
+done: 'END' the end of the program   

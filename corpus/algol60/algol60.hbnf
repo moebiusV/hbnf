@@ -23,20 +23,23 @@ program = *remark *( label ":" !"=" ) block
 
 ; ---- statements ----------------------------------------------------------
 block = "'BEGIN'" *remark *( declaration ";" *remark ) statement *( ";" *remark statement ) "'END'" end-junk
-end-junk = *( !( "'END'" / "'ELSE'" ) ~";" )
+end-junk   = *junk-piece
+junk-piece = junk-run | junk-quote
+junk-run   = 1*~( ";" / "'" )                          ; the text, blanks and all, as one token
+junk-quote = !( "'END'" / "'ELSE'" ) "'"               ; a word symbol in it that is not END or ELSE
 
-statement = label ":" !"=" statement
-          | if-clause ( for-statement | unconditional-statement [ "'ELSE'" statement ] )
-          | for-statement
-          | unconditional-statement
+statement = label ":" !"=" statement                                    %label labelled
+          | if-clause ( for-statement | unconditional-statement [ "'ELSE'" statement ] ) %label conditional
+          | for-statement                                               %label for
+          | unconditional-statement                                     %label plain
 
 ; a then-branch is an unconditional statement, which settles the dangling else
-unconditional-statement = label ":" !"=" unconditional-statement
-                        | block
-                        | 1*( variable ":=" ) expression       ; a := b := c
-                        | "'GOTO'" designational-expression
-                        | identifier [ actual-parameters ]    ; a procedure call
-                        |                                      ; the dummy statement
+unconditional-statement = label ":" !"=" unconditional-statement          %label labelled
+                        | block                                          %label block
+                        | 1*( variable ":=" ) expression                 %label assign   ; a := b := c
+                        | "'GOTO'" designational-expression              %label goto
+                        | identifier [ actual-parameters ]               %label call     ; a procedure call
+                        |                                      ; the dummy statement (an empty alternative takes no label)
 
 if-clause     = "'IF'" expression "'THEN'"
 for-statement = *( label ":" !"=" ) "'FOR'" variable ":=" for-element *( "," for-element ) "'DO'" statement
@@ -49,8 +52,8 @@ label = identifier / digits
 ; relations, + -, * / DIV, POWER.  The Report gives the then-part of a
 ; conditional expression as a simple expression, so no unparenthesised IF
 ; inside it.
-expression  = if-clause equivalence "'ELSE'" expression
-            | equivalence
+expression  = if-clause equivalence "'ELSE'" expression                      %label conditional
+            | equivalence                                                     %label plain
 equivalence = implication *( "'EQUIV'" implication )
 implication = disjunction *( "'IMPL'" disjunction )
 disjunction = conjunction *( "'OR'" conjunction )
@@ -83,12 +86,12 @@ designator = identifier "[" expression "]"
            | label
 
 ; ---- declarations --------------------------------------------------------
-declaration = [ "'OWN'" ] [ type ] "'ARRAY'" array-segment *( "," array-segment )
-            | "'SWITCH'" identifier ":=" designational-expression *( "," designational-expression )
+declaration = [ "'OWN'" ] [ type ] "'ARRAY'" array-segment *( "," array-segment )  %label array
+            | "'SWITCH'" identifier ":=" designational-expression *( "," designational-expression ) %label switch
             | [ type ] "'PROCEDURE'" identifier [ formals ] ";"
                 [ "'VALUE'" identifiers ";" ]
-                *( specifier identifiers ";" ) statement
-            | [ "'OWN'" ] type identifiers
+                *( specifier identifiers ";" ) statement                  %label procedure
+            | [ "'OWN'" ] type identifiers                                  %label variables
 
 type      = "'REAL'" / "'INTEGER'" / "'BOOLEAN'"
 specifier = "'STRING'" / "'LABEL'" / "'SWITCH'"
