@@ -130,6 +130,12 @@ package HBNF_Wire is
       Tmp_Type  : Unbounded_String;
       Tmp_Free  : Unbounded_String;
       Ord       : Natural := 0;       --  the emitter's number for a Bitsof
+      Shape_Ok  : Boolean := True;
+      --  The text rule is the words alone, joined by Sep (`1*word`, or
+      --  `word *( sep word )`), which is all the backends but C read; Shape_Why
+      --  says what it is instead.  Words_Empty: no word at all is allowed.
+      Shape_Why   : Unbounded_String;
+      Words_Empty : Boolean := False;
    end record;
 
    type Rule is record
@@ -195,6 +201,16 @@ package HBNF_Wire is
 
 
    function Find (G : Grammar; Name : String) return Natural;
+
+   --  The same grammar with the rule Name first, which is the one a parser
+   --  reads.  Raises Wire_Error if there is no such rule.
+   function Rooted (G : Grammar; Name : String) return Grammar;
+
+   --  The `name:bitsof(rule)` field a backend other than C reads, if the
+   --  grammar has one: it must be the first field of the first rule, and its text
+   --  rule just words joined by a separator.  Raises Wire_Error, saying what to
+   --  change, when it is anywhere else (C reads it anywhere).
+   function Words_Item (G : Grammar; Backend : String) return Item_Access;
 
    --  A rule whose every alternative is one constant of the same width: a
    --  value set, which a field may be constrained by (`ethertype:16`).

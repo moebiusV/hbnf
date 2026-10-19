@@ -276,6 +276,52 @@ begin
       end if;
       --  Text rules that hold bit rules: the C text parser reads the bit rules
       --  too, from its own state.
+      if not HBNF_Grammar.Wire_Rules.Is_Empty
+        and then To_String (Backend) in "rust" | "zig" | "ada"
+      then
+         --  The one text form these backends read: a first rule that only
+         --  names a bit rule (`doc = segwit`), whose words `bitsof` reads.
+         declare
+            Root : constant HBNF_Grammar.Rule := Parsed.First_Element;
+            Ok   : Boolean := Natural (Root.Pattern.Length) = 1;
+         begin
+            if Ok then
+               declare
+                  use type HBNF_Grammar.Element_Kind;
+                  E : constant HBNF_Grammar.Element_Access := Root.Pattern (1);
+               begin
+                  Ok := E.Kind = HBNF_Grammar.Name and then E.Min = 1
+                    and then E.Max = 1
+                    and then (for some W of HBNF_Grammar.Wire_Rules =>
+                                To_String (W.Name) = To_String (E.Name));
+               end;
+            end if;
+            if not Ok then
+               Ada.Text_IO.Put_Line
+                 (Ada.Text_IO.Standard_Error,
+                  "hbnf: a grammar with text rules and bit rules together can "
+                  & "be emitted in C so far; " & To_String (Backend) & " reads "
+                  & "a first rule that only names a bit rule (`doc = segwit`), "
+                  & "with the text read by `bitsof` (RFCPLAN.md step 7b)");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+               return;
+            end if;
+            declare
+               G : constant HBNF_Wire.Grammar :=
+                 HBNF_Wire.Rooted
+                   (HBNF_Wire.Lower.Lower
+                      (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path)),
+                    [for C of To_String (Root.Pattern (1).Name) =>
+                      (if C = '-' then '_' else C)]);
+            begin
+               Ada.Text_IO.Put
+                 (if To_String (Backend) = "rust" then HBNF_Wire.Rust.Emit (G)
+                  elsif To_String (Backend) = "zig" then HBNF_Wire.Zig.Emit (G)
+                  else HBNF_Wire.Ada_Lang.Emit (G, To_String (Package_Name)));
+            end;
+            return;
+         end;
+      end if;
       if not HBNF_Grammar.Wire_Rules.Is_Empty then
          if To_String (Backend) /= "c" then
             Ada.Text_IO.Put_Line

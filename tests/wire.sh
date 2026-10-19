@@ -114,8 +114,11 @@ expect_error() {
 
 check net
 check_rust net
+check_rust segwit
 check_zig net
+check_zig segwit
 check_ada net
+check_ada segwit segwit segwit Segwit
 check net_cbuf "" "" net
 # Text and bit rules in one grammar (the generated text parser is not -Wextra clean)
 check mixed "" "" mixed -w

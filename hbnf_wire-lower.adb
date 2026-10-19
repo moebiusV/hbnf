@@ -354,6 +354,60 @@ package body HBNF_Wire.Lower is
                end if;
             end;
          end loop;
+         --  Is the text rule just the words, joined by one separator?
+         declare
+            Cur : Natural := Index_Of (Name);
+            Hops : Natural := 0;
+            Wd  : constant String := To_String (Word);
+
+            procedure Not_Words (Why : String) is
+            begin
+               It.Shape_Ok := False;
+               It.Shape_Why := To_Unbounded_String (Why);
+            end Not_Words;
+         begin
+            --  an alias of an alias of the rule
+            while Cur /= 0 and then Hops < 8
+              and then Natural (Text (Cur).Pattern.Length) = 1
+              and then Text (Cur).Pattern (1).Kind = GR.Name
+              and then Text (Cur).Pattern (1).Min = 1
+              and then Text (Cur).Pattern (1).Max = 1
+              and then To_String (Text (Cur).Pattern (1).Name) /= Wd
+            loop
+               Cur := Index_Of (To_String (Text (Cur).Pattern (1).Name));
+               Hops := Hops + 1;
+            end loop;
+            if Cur = 0 then
+               Not_Words ("it names a rule that is not there");
+            else
+               declare
+                  P : constant GR.Element_Vectors.Vector := Text (Cur).Pattern;
+               begin
+                  if Natural (P.Length) = 1 and then P (1).Kind = GR.Name
+                    and then To_String (P (1).Name) = Wd
+                    and then (P (1).Max = -1 or else P (1).Max > 1
+                              or else (P (1).Min = 1 and then P (1).Max = 1))
+                  then
+                     It.Words_Empty := P (1).Min = 0;
+                     It.Sep := Null_Unbounded_String;
+                  elsif Natural (P.Length) = 2 and then P (1).Kind = GR.Name
+                    and then To_String (P (1).Name) = Wd
+                    and then P (1).Min = 1 and then P (1).Max = 1
+                    and then P (2).Kind = GR.Group and then P (2).Min = 0
+                    and then P (2).Max = -1
+                    and then not P (2).Items.Is_Empty
+                    and then P (2).Items.Last_Element.Kind = GR.Name
+                    and then To_String (P (2).Items.Last_Element.Name) = Wd
+                  then
+                     null;                       --  word *( sep word )
+                  else
+                     Not_Words ("it is more than words joined by a separator "
+                                & "(`" & Wd & " *( sep " & Wd & " )` or `1*"
+                                & Wd & "`)");
+                  end if;
+               end;
+            end if;
+         end;
          It.Tmp_Type := To_Unbounded_String
            (HBNF_C.Value_Type (Text, To_String (Raw)));
          It.Tmp_Free := To_Unbounded_String

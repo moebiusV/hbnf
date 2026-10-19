@@ -205,7 +205,7 @@ package body HBNF_Wire.Zig is
       procedure Define_Choice (Name : String; Alts : Seq_Vectors.Vector);
 
       function Named (It : Item) return Boolean is
-        (It.Kind not in S_Const | S_Assert);
+        (It.Kind not in S_Const | S_Assert and then not It.Bitsof);
 
       function Field_Type (It : Item; Owner : String) return String is
       begin
@@ -278,6 +278,9 @@ package body HBNF_Wire.Zig is
                              & To_String (E.Bin_Op) & " "
                              & Expr_Text (E.Right) & ")");
 
+      Emit_Side : Boolean := False;   --  writing, not reading: no parser, `align` is the writer's
+      Words     : Item_Access;
+
       function Expr_Z (E : Expr_Access) return String is
       begin
          case E.Kind is
@@ -287,9 +290,8 @@ package body HBNF_Wire.Zig is
                if To_String (E.Name) = "remaining" then
                   return "@as(i64, @intCast(p_.nbits - p_.bit))";
                elsif To_String (E.Name) = "align" then
-                  raise Wire_Error with
-                    "`align` belongs to `name:bitsof(rule)`, which the C "
-                    & "backend has and Zig does not yet";
+                  return "bnf_align(" & (if Emit_Side then "w_.bit" else "p_.bit")
+                    & ", BNF_UNIT)";
                end if;
                return "bnf_i(" & Lookup (To_String (E.Name)) & ")";
             when E_Call =>
@@ -507,14 +509,16 @@ package body HBNF_Wire.Zig is
                         L (Ind, "};");
                      end;
                   when S_Ref =>
-                     declare
-                        Id : constant String := Def_Field (N);
-                     begin
-                        L (Ind, "const " & Id & ": "
-                          & Type_Of (To_String (It.Ref)) & " = "
-                          & Parse_Fn_Of (To_String (It.Ref)) & "(p_) orelse "
-                          & Fail & ";");
-                     end;
+                     if not It.Bitsof then   --  the words are already the bits
+                        declare
+                           Id : constant String := Def_Field (N);
+                        begin
+                           L (Ind, "const " & Id & ": "
+                             & Type_Of (To_String (It.Ref)) & " = "
+                             & Parse_Fn_Of (To_String (It.Ref)) & "(p_) orelse "
+                             & Fail & ";");
+                        end;
+                     end if;
                   when S_Array =>
                      declare
                         R   : constant String := To_String (It.Ref);
@@ -748,8 +752,10 @@ package body HBNF_Wire.Zig is
                         L (Ind, "}");
                      end if;
                   when S_Ref =>
-                     L (Ind, "if (!" & Emit_Fn_Of (To_String (It.Ref))
-                       & "(w_, " & Id & ")) return false;");
+                     if not It.Bitsof then
+                        L (Ind, "if (!" & Emit_Fn_Of (To_String (It.Ref))
+                          & "(w_, " & Id & ")) return false;");
+                     end if;
                   when S_Array =>
                      if It.Count /= null then
                         L (Ind, "if (@as(i64, @intCast(" & Id & ".len)) != "
@@ -839,6 +845,7 @@ package body HBNF_Wire.Zig is
       Emit_Fn  : constant String := Emit_Fn_Of (Rt);
    begin
       Check_Code_Language (G, "Zig");
+      Words := Words_Item (G, "Zig");
       if Is_Value_Set (G.Rules (Root)) then
          raise Wire_Error with
            "the first rule, `" & Rt & "`, is a list of constants; the "
@@ -977,6 +984,12 @@ package body HBNF_Wire.Zig is
       L (0, "    if (@typeInfo(T).int.signedness == .signed) return @as(i64, x);");
       L (0, "    return @bitCast(@as(u64, x));");
       L (0, "}");
+      L (0, "// the bits to the next boundary of a word; 0 when the grammar has no words");
+      L (0, "fn bnf_align(bit: usize, unit: usize) i64 {");
+      L (0, "    if (unit == 0) return 0;");
+      L (0, "    return @intCast((unit - bit % unit) % unit);");
+      L (0, "}");
+      L (0, "const BNF_UNIT: usize = " & (if Words = null then "0" else Img (Words.Width)) & ";");
       L (0, "fn bnf_swap(v: u64, nbytes: u32) u64 {");
       L (0, "    var r: u64 = 0;");
       L (0, "    var x = v;");
@@ -1087,6 +1100,7 @@ package body HBNF_Wire.Zig is
                L (0, "");
                Pop (M);
                L (0, "fn " & Emit_Fn_Of (Nm) & "(w_: *W, v_: " & T & ") bool {");
+               Emit_Side := True;
                L (1, "_ = &w_;");
                L (1, "_ = &v_;");
                if Natural (R.Alts.Length) = 1 then
@@ -1096,6 +1110,7 @@ package body HBNF_Wire.Zig is
                   Gen_Emit_Match (R.Alts, "v_", T, Nm, 1);
                end if;
                Pop (M);
+               Emit_Side := False;
                L (1, "return true;");
                L (0, "}");
                L (0, "");
@@ -1103,6 +1118,7 @@ package body HBNF_Wire.Zig is
          end if;
       end loop;
 
+      if Words = null then
       L (0, "");
       L (0, "fn read(alloc: std.mem.Allocator, buf: []const u8, nbits: usize, err: *ParseError) error{Parse}!" & Root_T & " {");
       L (0, "    var p_ = P{ .buf = buf, .nbits = nbits, .alloc = alloc };");
@@ -1155,6 +1171,176 @@ package body HBNF_Wire.Zig is
       L (0, "    }");
       L (0, "    return e.bytes;");
       L (0, "}");
+
+      else
+      declare
+         Wd : constant String := Img (Words.Width);
+         Tab : Unbounded_String;
+         Order : Unit_Vectors.Vector := Words.Words;
+      begin
+         for I in 1 .. Natural (Order.Length) loop
+            for J in I + 1 .. Natural (Order.Length) loop
+               if Length (Order (J).Spelling) > Length (Order (I).Spelling) then
+                  declare
+                     T : constant Unit := Order (I);
+                  begin
+                     Order (I) := Order (J);
+                     Order (J) := T;
+                  end;
+               end if;
+            end loop;
+         end loop;
+         for U of Order loop
+            Append (Tab, "    .{ .s = """ & Escape (To_String (U.Spelling))
+                    & """, .v = " & Img (U.Value) & " },");
+            Append (Tab, ASCII.LF);
+         end loop;
+         L (0, "");
+         L (0, "const BNF_WIDTH: usize = " & Wd & ";");
+         L (0, "const BNF_SEP = """ & Escape (To_String (Words.Sep)) & """;");
+         L (0, "const BnfWord = struct { s: []const u8, v: u64 };");
+         L (0, "// the spellings of the words and their numbers, a longer one before a shorter");
+         L (0, "// one it starts with");
+         L (0, "const BNF_WORDS = [_]BnfWord{");
+         Put (To_String (Tab));
+         L (0, "};");
+         L (0, "");
+         L (0, "// up to 24 characters of the text from `from`");
+         L (0, "fn bnf_found(text: []const u8, from: usize) []const u8 {");
+         L (0, "    if (from >= text.len) return ""end of input"";");
+         L (0, "    var end = from;");
+         L (0, "    var chars: usize = 0;");
+         L (0, "    while (end < text.len) : (end += 1) {");
+         L (0, "        if (text[end] & 0xC0 != 0x80) {");
+         L (0, "            if (chars == 24) break;");
+         L (0, "            chars += 1;");
+         L (0, "        }");
+         L (0, "    }");
+         L (0, "    return text[from..end];");
+         L (0, "}");
+         L (0, "");
+         L (0, "const BnfBits = struct { buf: []u8, nbits: usize };");
+         L (0, "");
+         L (0, "// The text as the bits of its words: BNF_WIDTH bits each, the first word first.");
+         L (0, "fn bnf_words(alloc: std.mem.Allocator, text: []const u8, err: *ParseError) error{Parse}!BnfBits {");
+         L (0, "    var vals: std.ArrayList(u64) = .empty;");
+         L (0, "    var pos: usize = 0;");
+         if Words.Words_Empty then
+            L (0, "    if (text.len == 0) return BnfBits{ .buf = &.{}, .nbits = 0 };");
+         end if;
+         L (0, "    while (true) {");
+         L (0, "        const rest = text[pos..];");
+         L (0, "        var hit_n: usize = 0;");
+         L (0, "        var hit_v: u64 = 0;");
+         L (0, "        var hit = false;");
+         L (0, "        for (BNF_WORDS) |w| {");
+         L (0, "            if (std.mem.startsWith(u8, rest, w.s) and (!hit or w.s.len > hit_n)) {");
+         L (0, "                hit = true;");
+         L (0, "                hit_n = w.s.len;");
+         L (0, "                hit_v = w.v;");
+         L (0, "            }");
+         L (0, "        }");
+         L (0, "        if (!hit) {");
+         L (0, "            err.at = pos;");
+         L (0, "            err.message = std.fmt.allocPrint(alloc, ""expected a " & Escape (To_String (Words.Word_Rule)) & ", found {s}"", .{bnf_found(text, pos)}) catch ""out of memory"";");
+         L (0, "            return error.Parse;");
+         L (0, "        }");
+         L (0, "        vals.append(alloc, hit_v) catch {");
+         L (0, "            err.message = ""out of memory"";");
+         L (0, "            return error.Parse;");
+         L (0, "        };");
+         L (0, "        pos += hit_n;");
+         L (0, "        if (pos >= text.len) break;");
+         L (0, "        if (BNF_SEP.len > 0) {");
+         L (0, "            if (!std.mem.startsWith(u8, text[pos..], BNF_SEP)) {");
+         L (0, "                err.at = pos;");
+         L (0, "                err.message = std.fmt.allocPrint(alloc, ""expected `{s}`, found {s}"", .{ BNF_SEP, bnf_found(text, pos) }) catch ""out of memory"";");
+         L (0, "                return error.Parse;");
+         L (0, "            }");
+         L (0, "            pos += BNF_SEP.len;");
+         L (0, "        }");
+         L (0, "    }");
+         L (0, "    const nbits = vals.items.len * BNF_WIDTH;");
+         L (0, "    const buf = alloc.alloc(u8, (nbits + 7) / 8) catch {");
+         L (0, "        err.message = ""out of memory"";");
+         L (0, "        return error.Parse;");
+         L (0, "    };");
+         L (0, "    @memset(buf, 0);");
+         L (0, "    for (vals.items, 0..) |v, k| {");
+         L (0, "        for (0..BNF_WIDTH) |i| {");
+         L (0, "            const b = k * BNF_WIDTH + i;");
+         L (0, "            if ((v >> @intCast(BNF_WIDTH - 1 - i)) & 1 == 1) buf[b >> 3] |= @as(u8, 0x80) >> @intCast(b & 7);");
+         L (0, "        }");
+         L (0, "    }");
+         L (0, "    return BnfBits{ .buf = buf, .nbits = nbits };");
+         L (0, "}");
+         L (0, "");
+         L (0, "fn bnf_at_unit(alloc: std.mem.Allocator, text: []const u8, m: []const u8, fail_bit: usize, err: *ParseError) void {");
+         L (0, "    err.at = 0;");
+         L (0, "    err.message = std.fmt.allocPrint(alloc, ""expected {s} (at unit {d}), found {s}"", .{ m, fail_bit / BNF_WIDTH + 1, bnf_found(text, 0) }) catch m;");
+         L (0, "}");
+         L (0, "");
+         L (0, "/// Read the words of text as the bits of one " & Rt & ".  A mistake in the words");
+         L (0, "/// says which; one in the bits says at which word (`(at unit N)`).");
+         L (0, "pub fn parse_text(alloc: std.mem.Allocator, text: []const u8, err: *ParseError) error{Parse}!" & Root_T & " {");
+         L (0, "    const w = try bnf_words(alloc, text, err);");
+         L (0, "    var p_ = P{ .buf = w.buf, .nbits = w.nbits, .alloc = alloc };");
+         L (0, "    const v = " & Parse_Fn & "(&p_) orelse {");
+         L (0, "        bnf_at_unit(alloc, text, p_.msg, p_.fail_bit, err);");
+         L (0, "        return error.Parse;");
+         L (0, "    };");
+         L (0, "    if (p_.bit != w.nbits) {");
+         L (0, "        const m = std.fmt.allocPrint(alloc, ""the words: {d} bit(s) left over"", .{w.nbits - p_.bit}) catch ""the words: bits left over"";");
+         L (0, "        bnf_at_unit(alloc, text, m, p_.bit, err);");
+         L (0, "        return error.Parse;");
+         L (0, "    }");
+         L (0, "    return v;");
+         L (0, "}");
+         L (0, "");
+         L (0, "/// Write v as the text of its words: the bits, BNF_WIDTH to a word, each spelled,");
+         L (0, "/// with the separator between.");
+         L (0, "pub fn emit_text(alloc: std.mem.Allocator, v: " & Root_T & ", msg: *[]const u8) error{Emit}![]u8 {");
+         L (0, "    var w_ = W{ .alloc = alloc };");
+         L (0, "    if (!" & Emit_Fn & "(&w_, v) or w_.failed) {");
+         L (0, "        msg.* = w_.msg;");
+         L (0, "        return error.Emit;");
+         L (0, "    }");
+         L (0, "    if (w_.bit % BNF_WIDTH != 0) {");
+         L (0, "        msg.* = std.fmt.allocPrint(alloc, ""the words: {d} bits is not a whole number of {d}-bit units"", .{ w_.bit, BNF_WIDTH }) catch ""the words: not a whole number of units"";");
+         L (0, "        return error.Emit;");
+         L (0, "    }");
+         L (0, "    var out: std.ArrayList(u8) = .empty;");
+         L (0, "    var k: usize = 0;");
+         L (0, "    while (k < w_.bit / BNF_WIDTH) : (k += 1) {");
+         L (0, "        var x: u64 = 0;");
+         L (0, "        for (0..BNF_WIDTH) |i| {");
+         L (0, "            const b = k * BNF_WIDTH + i;");
+         L (0, "            x = (x << 1) | ((w_.buf.items[b >> 3] >> @intCast(7 - (b & 7))) & 1);");
+         L (0, "        }");
+         L (0, "        var spelled: ?[]const u8 = null;");
+         L (0, "        for (BNF_WORDS) |w| {");
+         L (0, "            if (w.v == x) {");
+         L (0, "                spelled = w.s;");
+         L (0, "                break;");
+         L (0, "            }");
+         L (0, "        }");
+         L (0, "        const s = spelled orelse {");
+         L (0, "            msg.* = std.fmt.allocPrint(alloc, ""the words: unit {d} has the value {d}, which no word spells"", .{ k, x }) catch ""the words: a unit no word spells"";");
+         L (0, "            return error.Emit;");
+         L (0, "        };");
+         L (0, "        if (k > 0) out.appendSlice(alloc, BNF_SEP) catch {");
+         L (0, "            msg.* = ""out of memory"";");
+         L (0, "            return error.Emit;");
+         L (0, "        };");
+         L (0, "        out.appendSlice(alloc, s) catch {");
+         L (0, "            msg.* = ""out of memory"";");
+         L (0, "            return error.Emit;");
+         L (0, "        };");
+         L (0, "    }");
+         L (0, "    return out.items;");
+         L (0, "}");
+      end;
+      end if;
 
       return To_String (Buf);
    end Emit;

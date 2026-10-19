@@ -366,6 +366,67 @@ package body HBNF_Wire is
       return 0;
    end Find;
 
+   function Words_Item (G : Grammar; Backend : String) return Item_Access is
+      Found : Item_Access := null;
+
+      procedure Scan (Alts : Seq_Vectors.Vector; First_Rule : Boolean) is
+      begin
+         for A of Alts loop
+            for I in 1 .. Natural (A.Items.Length) loop
+               declare
+                  It : constant Item_Access := A.Items (I);
+               begin
+                  if It.Kind = S_Choice then
+                     Scan (It.Alts, False);
+                  elsif It.Bitsof then
+                     if not (First_Rule and then I = 1
+                             and then Natural (Alts.Length) = 1)
+                     then
+                        raise Wire_Error with
+                          Img (It.Line) & ":" & Img (It.Col)
+                          & ": `" & To_String (It.Name) & ":bitsof("
+                          & To_String (It.Ref) & ")`: " & Backend & " reads a "
+                          & "bitsof as the first field of the first rule (the "
+                          & "message is the words); the C backend reads it "
+                          & "anywhere";
+                     elsif not It.Shape_Ok then
+                        raise Wire_Error with
+                          Img (It.Line) & ":" & Img (It.Col)
+                          & ": `bitsof(" & To_String (It.Ref) & ")`: "
+                          & Backend & " reads text that is words joined by one "
+                          & "separator, and " & To_String (It.Shape_Why)
+                          & "; the C backend reads any text rule";
+                     end if;
+                     Found := It;
+                  end if;
+               end;
+            end loop;
+         end loop;
+      end Scan;
+   begin
+      for K in 1 .. Natural (G.Rules.Length) loop
+         Scan (G.Rules (K).Alts, K = 1);
+      end loop;
+      return Found;
+   end Words_Item;
+
+   function Rooted (G : Grammar; Name : String) return Grammar is
+      J : constant Natural := Find (G, Name);
+      R : Grammar := G;
+   begin
+      if J = 0 then
+         raise Wire_Error with "no bit rule is called `" & Name & "`";
+      end if;
+      R.Rules.Clear;
+      R.Rules.Append (G.Rules (J));
+      for K in 1 .. Natural (G.Rules.Length) loop
+         if K /= J then
+            R.Rules.Append (G.Rules (K));
+         end if;
+      end loop;
+      return R;
+   end Rooted;
+
    procedure Check_Code_Language (G : Grammar; Backend : String) is
       Has_Code : Boolean :=
         G.Preamble /= Null_Unbounded_String

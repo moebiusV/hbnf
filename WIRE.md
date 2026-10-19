@@ -204,7 +204,14 @@ the second writes the **text**, as octets (`*nbits / 8` of them).  The tests
 round-trip the five published segwit addresses and eighteen mnemonics (the
 BIP-39 test vectors among them), and generate each mnemonic from its entropy
 alone, the checksum worked out by `%emit`.  The phrase's own tree is not kept
-(its words are the bits); the C backend has this, Rust and the others follow.
+(its words are the bits).  Rust, Zig and Ada read `bitsof` too, in the form the segwit grammar has:
+a first rule that only names the bit rule (`doc = segwit`), whose first field is the `bitsof`, and a
+text rule that is just the words joined by one separator (`1*word`, or `word *( sep word )`).  They
+give `parse_text` and `emit_text` (`Parse_Text` and `Emit_Text` in Ada) with the same messages as C,
+including `(at unit N)`; anything else (a `bitsof` further in, any other text rule) is refused with
+a message saying the C backend reads it.  The tests are `segwit` in `tests/wire.sh`, one driver
+each, with the same expected output as C.  The BIP-39 mnemonic needs `%action` and `%emit`, which
+only C has so far.
 
 ## Code: actions, emitters, and the library they call
 
@@ -285,7 +292,8 @@ second.
 
 ## What is not built yet
 
-- `bitsof`, `%action`, `%emit` and mixing text with bit rules in Rust, Zig and Ada (only C has them).
+- `%action`, `%emit`, a `bitsof` anywhere but first, any text rule but words, and mixing text with
+  bit rules in Rust, Zig and Ada (only C has them).
   Zig returns `error{Parse}` with the octet and message through a pointer and takes an allocator,
   best an arena.  Ada writes the specification and body in one file (`gnatchop` splits it), with
   `Ada.Containers.Vectors` for octets and entries and a record with a variant part for a choice
