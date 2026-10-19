@@ -558,9 +558,9 @@ character, the lexical rules share the RFC core rules.
 
 | language | published notation | rules | lines | symbols | characters |
 |---|---|---:|---:|---:|---:|
-| ALGOL 60 | the Report's BNF | 108 | 116 | 1,246 | 8,063 |
-| | hbnf (`corpus/algol60`) | 47 | 72 | 510 | 3,470 |
-| | **saved** | **56%** | **38%** | **59%** | **57%** |
+| ALGOL 60 | the Report's BNF | 108 | 116 | 1,246 | 8,064 |
+| | hbnf (`corpus/algol60`) | 47 | 72 | 528 | 3,604 |
+| | **saved** | **56%** | **38%** | **58%** | **55%** |
 | JSON | RFC 8259's ABNF | 30 | 45 | 193 | 949 |
 | | hbnf (`corpus/json`) | 14 | 14 | 129 | 556 |
 | | **saved** | **53%** | **69%** | **33%** | **41%** |
