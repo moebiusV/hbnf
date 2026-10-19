@@ -4757,6 +4757,130 @@ package body HBNF_C is
                              & " (p, p->text + st_, k_ - st_, " & Node_Ptr
                              & "); }");
                            Append (Buf, LF);
+                        when B_Not | B_And =>
+                           --  A test that consumes nothing: run x on a copy
+                           --  of the parser, then go on from the copy's
+                           --  start (a failure inside it leaves no trace).
+                           declare
+                              Desc : U;
+                              Br   : Natural := 0;
+                              First_El : Boolean;
+                           begin
+                              Append (Buf, Ind & "{ parser_t sv_ = *p;  int hit_ = 0;"
+                                & "  size_t h_;");
+                              Append (Buf, LF);
+                              if Ws then
+                                 Append (Buf, Ind & "  skip_ws(p);");
+                                 Append (Buf, LF);
+                              end if;
+                              Append (Buf, Ind & "  h_ = p->pos;");
+                              Append (Buf, LF);
+                              First_El := True;
+                              Br := 1;
+                              declare
+                                 Opened : Boolean := False;
+
+                                 procedure Open_Branch is
+                                 begin
+                                    Append (Buf, Ind & "  if (!hit_) { int ok_ = 1; "
+                                      & "size_t n_ = 0;  p->pos = h_;");
+                                    Append (Buf, LF);
+                                    Opened := True;
+                                    First_El := True;
+                                 end Open_Branch;
+
+                                 procedure Close_Branch is
+                                 begin
+                                    if Opened then
+                                       Append (Buf, Ind & "    (void)n_;  if (ok_) "
+                                         & "hit_ = 1; }");
+                                       Append (Buf, LF);
+                                       Opened := False;
+                                    end if;
+                                 end Close_Branch;
+                              begin
+                                 for X of E.Look loop
+                                    if X.Kind = Alt then
+                                       Close_Branch;
+                                       Append (Desc, " or ");
+                                       Br := Br + 1;
+                                    else
+                                       if not Opened then
+                                          Open_Branch;
+                                       end if;
+                                       if not First_El and then Ws then
+                                          Append (Buf, Ind & "    if (ok_) skip_ws(p);");
+                                          Append (Buf, LF);
+                                       end if;
+                                       First_El := False;
+                                       if X.Kind = Literal then
+                                          declare
+                                             Lit : constant String :=
+                                               To_String (X.Lit);
+                                             Fn  : constant String :=
+                                               (if X.No_Case
+                                                  and then Is_Keyword_Lit (Lit)
+                                                then "expect_word_nocase"
+                                                elsif X.No_Case
+                                                then "expect_lit_nocase"
+                                                elsif Is_Keyword_Lit (Lit)
+                                                then "expect_word"
+                                                else "expect_lit");
+                                          begin
+                                             Append (Desc, "`" & Lit & "`");
+                                             Append (Buf, Ind & "    if (ok_) ok_ = "
+                                               & Fn & "(p, """ & C_Escape (Lit)
+                                               & """, " & Img (Lit'Length) & ");");
+                                          end;
+                                       else
+                                          declare
+                                             NM : constant String :=
+                                               To_String (X.Name);
+                                             Scan : constant String :=
+                                               (if Is_Core (NM)
+                                                then Scalar_Scan_Fn (Rules, NM)
+                                                elsif Is_Char_Rule (Rules, NM)
+                                                then Rule_Scanner (Rules, NM)
+                                                else "");
+                                          begin
+                                             if Scan = "" then
+                                                raise Parse_Error with
+                                                  "a lookahead (`!` or `&`) "
+                                                  & "looks at a literal or a "
+                                                  & "token, and `" & NM
+                                                  & "` is a phrase rule; make "
+                                                  & "it a token (write it with "
+                                                  & "characters only) or look "
+                                                  & "for a literal";
+                                             end if;
+                                             Append (Desc, NM);
+                                             Append (Buf, Ind & "    if (ok_) { n_ = "
+                                               & Scan & "(p->text, p->pos, "
+                                               & "p->len); if (n_) p->pos += n_; "
+                                               & "else ok_ = 0; }");
+                                          end;
+                                       end if;
+                                       Append (Buf, LF);
+                                    end if;
+                                 end loop;
+                                 Close_Branch;
+                              end;
+                              Append (Buf, Ind & "  *p = sv_;");
+                              Append (Buf, LF);
+                              if E.Op = B_Not then
+                                 Append (Buf, Ind & "  if (hit_) { fail(p, "
+                                   & """something other than "
+                                   & C_Escape (To_String (Desc))
+                                   & """, 0, p->text + p->pos, 0); " & Fail
+                                   & " } }");
+                              else
+                                 Append (Buf, Ind & "  if (!hit_) { fail(p, """
+                                   & C_Escape (To_String (Desc))
+                                   & """, 1, p->text + p->pos, 0); " & Fail
+                                   & " } }");
+                              end if;
+                              Append (Buf, LF);
+                           end;
                         when B_Scope =>
                            Scopes.Append (To_Unbounded_String
                              ("sc" & Sid & "_" & Ctx_Img (K)));

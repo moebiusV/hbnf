@@ -168,7 +168,9 @@ package HBNF_Grammar is
       B_Bind,        --  %bind types += field.path
       B_Bind_Code,   --  %bind { code }
       B_Scope,       --  %scope: what is bound after it ends with the rule
-      B_Where);      --  %where { code }: a test the alternative must pass
+      B_Where,       --  %where { code }: a test the alternative must pass
+      B_Not,         --  !x: x does not match here; nothing is consumed
+      B_And);        --  &x: x matches here; nothing is consumed
 
    type Element (Kind : Element_Kind := Literal) is record
       Min : Natural := 1;   --  minimum occurrences (repetition)
@@ -235,6 +237,7 @@ package HBNF_Grammar is
             Ctx  : Unbounded_String := Null_Unbounded_String;  --  the context
             Path : Unbounded_String := Null_Unbounded_String;  --  %bind's value
             Id   : Natural := 0;                  --  the emitter's number
+            Look : Element_Vectors.Vector;        --  what !x and &x look at
             Code : Unbounded_String := Null_Unbounded_String;
             --  A `%action{ }` met *between* a rule's elements rather than at
             --  its end.  The reader leaves it here; `Lift` turns it into a

@@ -43,10 +43,16 @@ as the context and `%where` machinery of decision 13, and a checking pass over
 the AST for modes and coercion.  `METACOMPILERS.md` ("W-grammars") says what
 each is.  **ALGOL 60 first** (done 2026-10-18: `corpus/algol60/algol60.hbnf`,
 `tests/algol60.sh`).  What ALGOL 60 taught, to carry into the W-grammar work:
-a "not followed by" test (`":" !"="`) and trying the next alternative after a
-later failure (decision 14) would let the Report's BNF be used as it is written
-(its arithmetic/Boolean split, its `:` and `:=`) instead of rearranged; and two
-generator bugs on recursive grammars were found and fixed.
+a "not followed by" test and trying the next alternative after a later failure
+(decision 14) would let the Report's BNF be used as it is written (its
+arithmetic/Boolean split, its `:` and `:=`) instead of rearranged; and two
+generator bugs on recursive grammars were found and fixed.  **The test is built
+(2026-10-18, C): `!x` and `&x`**, so the grammar says `label ":" !"="` and the
+assignment no longer has to be tried first; x is a literal, a token or
+alternatives of those (`!( "=" / ":" )`), is read like any element after the
+blanks, and leaves no trace if it fails (it runs on a copy of the parser);
+`tests/lookahead.sh`.  Still to come: the retry after a later failure, then
+parameterised rules.
 
 ## Decisions
 
@@ -182,7 +188,7 @@ generator bugs on recursive grammars were found and fixed.
     negation — and it collapses the explicit `%x` complements the lexer
     rules would otherwise spell out: `comment = "#" *~LF`,
     `string = DQUOTE *( "\\" %x00-10FFFF | ~(DQUOTE | "\\") ) DQUOTE`.
-12. **Comma lists are `#`.**  `#` is `*` with an implicit comma separator:
+12. **Comma lists are `#`.**  *Built 2026-10-18 (`tests/commalist.sh`).*  `#` is `*` with an implicit comma separator:
     `n#m element` is comma-separated repetition, `#element` is `1#element`.
     It is sugar for `element *("," element)` — the same list the daemon
     grammars write left-recursive — so it inherits parse.y's semantics: no
@@ -245,6 +251,13 @@ generator bugs on recursive grammars were found and fixed.
       test sees it.  (This is the answer to why `%action` waited for the end of
       the parse: side effects a backtrack cannot undo.  A persistent value has
       none to undo.  `%action` stays the post-parse member.)
+    - **A definition is a label** (the user, 2026-10-18: "`foo: mv r0,r1` is like
+      `foo := lambda mv r0,r1`").  A label, a procedure, a typedef and a macro
+      are one thing: a name bound to what follows it.  So the context is not
+      only a set of names: an entry may carry a value (the node, or the place in
+      the text), a use looks the name up, and a use before the definition (a
+      forward `GOTO`) is a lookup that the AST walker does after the parse, where
+      every definition is known.  Not built: a value stored with a name.
     - **Code for what the notation cannot say:** `%bind { }` and `%where { }`
       in any language, reading and writing the context through a small API.
     - **Precedents weighed:** Prolog DCG arguments and attribute grammars

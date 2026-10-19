@@ -1,0 +1,9 @@
+a: b;                  labelled 
+a := b;                assigned 
+a;                     bare 
+a : b; c := d; e;      labelled assigned bare 
+a : = b;               refused: expected something other than `=`, found  
+a := := b;             refused: expected a string, found :
+a, b;                  pair 
+a :, b;                refused: expected a string, found ,
+a =, b;                refused: expected `:`, found =

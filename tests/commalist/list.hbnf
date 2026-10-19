@@ -1,0 +1,16 @@
+; Comma lists (RFCPLAN.md decision 12): `#x` is  x *("," x),  `n#m x` at least
+; n and at most m of them, and `0#x` may be empty.
+prefix none
+include "../../grammars/common.hbnf"
+
+line  = "one" one ";"
+      | "any" any ";"
+      | "two" two ";"
+      | "three" three ";"
+      | "pair" pair ";"
+one   = 1#item
+any   = 0#item
+two   = 2#item
+three = 2#3 item
+pair  = 1#( item ":" item )
+item  = 1*ALPHA

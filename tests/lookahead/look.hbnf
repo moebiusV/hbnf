@@ -1,0 +1,13 @@
+; Lookahead (RFCPLAN.md, ALGOL 60 notes): !x says x does not match here, &x says
+; it does, and neither consumes anything.
+;   - a label's colon is a colon that does not start a :=  (ALGOL 60)
+;   - a name that is followed by a ; (the ; stays to be read)
+prefix none
+
+program = *statement
+statement = label ":" !"=" name ";"      %label labelled
+          | name ":=" name ";"           %label assigned
+          | name &";" ";"                %label bare
+          | name !( "=" / ":" ) "," name ";" %label pair
+label = word
+name  = word

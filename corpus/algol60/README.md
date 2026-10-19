@@ -64,37 +64,47 @@ transcription and has not been compared with the report here.
 
 ## Status: in use (`tests/algol60.sh`)
 
-`algol60.hbnf` is the Report's grammar in hbnf (written 2026-10-18 from
-`syntax.txt`, with its transcription slips put right against the printed report),
-and `tests/good/*.a60`, `tests/bad/*.a60` are programs the parser must accept and
-refuse (Knuth's man-or-boy test among them).  `sh tests/algol60.sh` generates the
-parser and runs them.  It uses the apostrophe stropping `'BEGIN'` of `syntax.txt`.
+`algol60.hbnf` is the language of the Report in hbnf, and it is meant to be read
+as an example of how short and clear a grammar can be.  It is not a transliteration
+of `syntax.txt`; that file is here to compare it against.
 
-What reading it taught, in the order it happened:
+| | the Report's BNF (`syntax.txt`) | `algol60.hbnf` |
+|---|---|---|
+| rules / productions | 108 | 35 |
+| size | 8.7 KB | 5.1 KB, with its comments |
 
-- **Two generator bugs**, found by a real recursive grammar and fixed: the pass that
-  decides which fields need their list heads repointed took exponential time on a
-  grammar that refers back to itself through parentheses (`expr = primary "*"
-  primary | primary`, `primary = ... "(" expr ")"`), and the repointing of a
-  field that breaks a cycle passed the wrong kind of pointer.
-- **One expression, not three.**  The Report writes arithmetic, Boolean and
-  designational expressions as separate grammars, and `<assignment statement>`
-  as two alternatives that differ only in which one follows.  Ordered choice,
-  having matched the first, does not come back, so the Boolean case never parses.
-  The grammar here has one expression of precedence levels (the types are for a
-  checking pass) and a designational expression only after `GOTO` and in a switch.
-- **A colon is not a `:=`.**  The Report's `:=` is one symbol; a label's colon is a
-  colon that does not start one.  Written with the literal `":"`, a label matched
-  the first character of `:=`, and because a statement may be empty `i := 1` read as
-  the label `i` on an empty statement, and was never tried as an assignment.  The
-  grammar puts the assignment first.  A "not followed by" test (`":" !"="`) would
-  say it directly, and trying the next alternative after a later failure
-  (RFCPLAN.md decision 14) would find it unaided; both are on the list for the
-  W-grammar work.
-- **Comments** are white space (`ws`), and the text after `END` is skipped to the
-  next `;` or word symbol, as in section 2.3.
+What hbnf let it say once instead of many times:
 
-Not covered: `<code>` bodies, `^` and `E` spellings other than those in the file
-header, and the standard procedures (`outreal` is just a name here).  The grammar
+- **Lists** are `x *( "," x )`: the Report has a rule for each of the
+  type list, array list, bound pair list, subscript list, identifier list, for
+  list, switch list, actual and formal parameter lists.
+- **A block is a compound statement with declarations in front**, so one rule,
+  `"'BEGIN'" *( declaration ";" ) statement *( ";" statement ) "'END'"`, replaces
+  the Report's block, block head, unlabelled block, compound statement,
+  unlabelled compound and compound tail.
+- **One expression.**  The Report writes arithmetic, Boolean and designational
+  expressions as three grammars, and an assignment as two alternatives that differ
+  only in which expression follows.  Which type a name has is for a checking pass
+  (an AST walker), not for the parser, so there is one expression, with the
+  Report's precedence levels, and a designational expression only where a `GOTO`
+  or a switch takes one.
+- **A label's colon is a colon that does not start a `:=`**: `label ":" !"="`.  The
+  Report's `:=` is one symbol; the test (`!x`, lookahead) says so directly.
+- **The characters** (`<letter>`, `<digit>`, identifier, number, string) use the RFC
+  core rules and four short lines; `'COMMENT'` text is white space (`ws`), and the
+  text after `'END'` up to a `;` or a word symbol is skipped (section 2.3).
+- **No reserved words.**  The Report's word symbols are the quoted `'BEGIN'`,
+  `'END'`, ... of `syntax.txt`'s stropping, so an identifier can be any word.
+
+Programs in `tests/good` must be accepted and those in `tests/bad` refused (Knuth's
+man-or-boy test is among the good ones; a nested `IF` in a `THEN` branch, a
+declaration after a statement and an unbalanced parenthesis among the bad).
+`sh tests/algol60.sh` generates the parser and runs them.  Not covered: `<code>`
+bodies and the standard procedures (`outreal` is just a name here).  The grammar
 is a parser, not a checker: an undeclared name, a Boolean where a number is
-needed and a label that is never defined are all accepted.
+needed and a label never defined are all accepted.
+
+Reading it also found and fixed two bugs in the generator that only a recursive
+grammar of this size reaches (a pass that took exponential time through
+`primary = ... "(" expression ")"`, and the wrong pointer for a field that breaks a
+cycle).

@@ -587,7 +587,7 @@ package body HBNF_Grammar is
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
                      T_Prose, T_Tilde, T_At, T_Colon, T_Octets, T_Count, T_Bits,
-                     T_Guard, T_EOF);
+                     T_Guard, T_Hash, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -1472,6 +1472,15 @@ package body HBNF_Grammar is
                end if;
             when '-' => Emit (T_Dash);   I := I + 1;  Col := Col + 1;
             when '~' => Emit (T_Tilde);  I := I + 1;  Col := Col + 1;
+            when '#' =>
+               --  `n#m x`: x, comma, x ... (decision 12).
+               Emit (T_Hash);  I := I + 1;  Col := Col + 1;
+            when '!' =>
+               --  `!x`: x must not match here (nothing is consumed).
+               Emit (T_Pct, "not");  I := I + 1;  Col := Col + 1;
+            when '&' =>
+               --  `&x`: x must match here (nothing is consumed).
+               Emit (T_Pct, "and");  I := I + 1;  Col := Col + 1;
             when ''' =>
                if Ebnf_Here then
                   --  ISO 14977: 'abc' is a string, as "abc" is.
@@ -2500,6 +2509,61 @@ package body HBNF_Grammar is
                F_Line => T.Line, F_Col => T.Col, others => <>);
          end;
       end if;
+      --  A comma list, `#x`, `n#x`, `n#m x`: x and then, each after a comma,
+      --  more of it, in all at least n and at most m (decision 12).  It is
+      --  `x *("," x)`, and a list that may be empty is `[ x *("," x) ]`.
+      if Cur (P).Kind = T_Hash
+        or else (Cur (P).Kind = T_Number
+                 and then P.Toks (P.Pos + 1).Kind = T_Hash)
+      then
+         declare
+            At_T  : constant Token := Cur (P);
+            N     : Natural := 1;
+            M     : Integer := -1;
+            One   : Element_Access;
+            Tail  : Element_Access;
+            Outer : Element_Access;
+         begin
+            if Cur (P).Kind = T_Number then
+               N := Natural'Value (To_String (Cur (P).Text));
+               Next (P);
+            end if;
+            Next (P);                                   --  the #
+            if Cur (P).Kind = T_Number
+              and then P.Toks (P.Pos + 1).Kind in
+                         T_Name | T_String | T_LParen | T_LBrack | T_Pct
+                         | T_Char | T_Prose | T_Tilde
+            then
+               M := Integer'Value (To_String (Cur (P).Text));
+               Next (P);
+            end if;
+            if M >= 0 and then M < N then
+               raise Parse_Error with
+                 Integer'Image (At_T.Line) & ":" & Integer'Image (At_T.Col)
+                 & ": a list of at least" & Natural'Image (N) & " and at most"
+                 & Integer'Image (M) & " elements";
+            end if;
+            One := Parse_Atom (P);
+            if M = 1 then
+               One.Min := N;  One.Max := 1;
+               return One;
+            end if;
+            Tail := new Element'(Kind => Group, Min => (if N > 1 then N - 1 else 0),
+                                 Max => (if M < 0 then -1 else M - 1),
+                                 Items => Element_Vectors.Empty_Vector);
+            Tail.Items.Append
+              (new Element'(Kind => Literal, Min => 1, Max => 1,
+                            Lit => To_Unbounded_String (","), No_Case => False,
+                            Has_Value => False, Value => 0));
+            Tail.Items.Append (new Element'(One.all));
+            Outer := new Element'(Kind => Group, Min => (if N = 0 then 0 else 1),
+                                  Max => 1,
+                                  Items => Element_Vectors.Empty_Vector);
+            Outer.Items.Append (One);
+            Outer.Items.Append (Tail);
+            return Outer;
+         end;
+      end if;
       --  ABNF prefix repetition:  *elem, 1*elem, n*melem, nelem.
       if Cur (P).Kind = T_Star then
          Min := 0;  Max := -1;  Has_Prefix := True;  Next (P);
@@ -2616,10 +2680,33 @@ package body HBNF_Grammar is
 
       E : constant Element_Access :=
         new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Scope,
-                     Ctx => <>, Path => <>, Id => 0, Code => <>);
+                     Ctx => <>, Path => <>, Id => 0, Look => <>, Code => <>);
    begin
       Next (P);
-      if W = "scope" then
+      if W = "not" or else W = "and" then
+         --  `!x`, `&x`: x is a literal, a token, or a group of those.
+         declare
+            A : constant Element_Access := Parse_Atom (P);
+         begin
+            E.Op := (if W = "not" then B_Not else B_And);
+            if A.Kind = Group then
+               E.Look := A.Items;
+            else
+               E.Look.Append (A);
+            end if;
+            for X of E.Look loop
+               if not (X.Kind in Literal | Name | Alt)
+                 or else (X.Kind in Literal | Name
+                          and then (X.Min /= 1 or else X.Max /= 1))
+               then
+                  raise Parse_Error with
+                    Where & "`" & (if W = "not" then "!" else "&")
+                    & "` looks at a literal, a token or alternatives of "
+                    & "those: `!"":""`, `&("";"" / ""}"")`";
+               end if;
+            end loop;
+         end;
+      elsif W = "scope" then
          E.Op := B_Scope;
       elsif W = "test" then
          if Cur (P).Kind /= T_Name then
@@ -2691,10 +2778,12 @@ package body HBNF_Grammar is
             Element_Vectors.Append
               (V, new Element'(Kind => Block, Min => 1, Max => 1,
                                Op => B_Action, Ctx => <>, Path => <>, Id => 0,
+                               Look => <>,
                                Code => P.Toks (P.Pos + 1).Text));
             P.Pos := P.Pos + 2;
          elsif Cur (P).Kind = T_Pct
-           and then To_String (Cur (P).Text) in "test" | "bind" | "scope" | "where"
+           and then To_String (Cur (P).Text)
+                    in "test" | "bind" | "scope" | "where" | "not" | "and"
          then
             Element_Vectors.Append (V, Parse_Context_Op (P));
          elsif Cur (P).Kind = T_Code
@@ -2703,6 +2792,7 @@ package body HBNF_Grammar is
             Element_Vectors.Append
               (V, new Element'(Kind => Block, Min => 1, Max => 1,
                                Op => B_Action, Ctx => <>, Path => <>, Id => 0,
+                               Look => <>,
                                Code => Cur (P).Text));
             Next (P);
          else
@@ -6975,10 +7065,17 @@ package body HBNF_Grammar is
       for J in 1 .. Natural (Rules.Length) loop
          Lift_Rule (J);
       end loop;
-      --  After lifting, so the elements a lifted rule holds are seen too.
-      for J in 1 .. Natural (Rules.Length) loop
-         Split_Repeats (J);
-      end loop;
+      --  After lifting, and over the rules it made as well as the ones it
+      --  was given, so the elements a lifted rule holds are seen too (the
+      --  second `expression` of  1#( expression ":" expression )  is in one).
+      declare
+         J : Natural := 1;
+      begin
+         while J <= Natural (Result.Length) loop
+            Split_Repeats (J);
+            J := J + 1;
+         end loop;
+      end;
       return Result;
    end Lift;
 
