@@ -15,7 +15,7 @@ typedef struct {
     const char *err_expected, *err_found;
     size_t err_found_len;
     int err_is_lit;
-{{&bit_field}}} parser_t;
+{{&bit_field}}{{&path_field}}} parser_t;
 
 /* The line the text being parsed starts on: 1 for a whole file, a statement's
    first line when a config is read one statement at a time. */
@@ -35,7 +35,7 @@ static void fail(parser_t *p, const char *expected, int is_lit,
     if (p->err_pos != (size_t)-1 && p->pos <= p->err_pos) return;  /* a deeper failure already recorded */
     p->err_pos = p->pos;
     p->err_expected = expected; p->err_found = found;
-    if (found_len == 0 && p->pos < p->len) {
+{{&path_fail}}    if (found_len == 0 && p->pos < p->len) {
         /* a token-sized span at pos, so the error names what was found */
         char c = p->text[p->pos];
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')

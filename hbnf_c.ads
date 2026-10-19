@@ -97,4 +97,7 @@ package HBNF_C is
    --  --ast-tools: also node_kids, node_dump, node_equal and dump_<root>.
    procedure Set_Ast_Tools (On : Boolean);
 
+   --  --paths: an error message says which rules the parser was in.
+   procedure Set_Paths (On : Boolean);
+
 end HBNF_C;

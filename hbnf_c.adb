@@ -441,6 +441,14 @@ package body HBNF_C is
    --  and walker of Emit_Ast are generated.  Off, the output is as it was.
    Ast_On         : Boolean := False;
    Ast_Tools_On   : Boolean := False;
+   --  --paths: the parser keeps the stack of rules it is in, and an error says
+   --  which they were (in statement > block > arg).
+   Paths_On       : Boolean := False;
+
+   procedure Set_Paths (On : Boolean) is
+   begin
+      Paths_On := On;
+   end Set_Paths;
 
    procedure Set_Writer (On : Boolean) is
    begin
@@ -6067,7 +6075,20 @@ package body HBNF_C is
             H ("bit_field",
                (if Hosted_Code = Null_Unbounded_String then ""
                 else "    unsigned bit;   /* where in the octet at pos a bit "
-                     & "rule is: 0 to 7 */" & ASCII.LF)))));
+                     & "rule is: 0 to 7 */" & ASCII.LF)),
+            H ("path_field",
+               (if Paths_On
+                then "    unsigned depth, err_depth;   /* the rules being read, "
+                     & "and when the farthest error was seen (--paths) */"
+                     & ASCII.LF
+                     & "    unsigned short stk[24], err_stk[24];" & ASCII.LF
+                else "")),
+            H ("path_fail",
+               (if Paths_On
+                then "    { unsigned i_, n_ = p->depth < 24 ? p->depth : 24;"
+                     & " for (i_ = 0; i_ < n_; i_++) p->err_stk[i_] = "
+                     & "p->stk[i_]; p->err_depth = n_; }" & ASCII.LF
+                else "")))));
       end;
       Append (Res, LF);
       Append (Res, LF);
@@ -6096,10 +6117,26 @@ package body HBNF_C is
             NM : constant String := To_String (R.Name);
          begin
             if Needs_Parse_Fn (Rules, NM) then
-               Append (Res, Fill ("c_rule_head",
-                 (H ("name", C_Name (NM)),
-                  H ("type", Out_Type (I)))));
-               Append (Res, LF);
+               if Paths_On then
+                  Append (Res, "static bool parse_body_" & C_Name (NM)
+                    & "(parser_t *p, " & Out_Type (I) & ");" & LF
+                    & "static bool parse_rule_" & C_Name (NM)
+                    & "(parser_t *p, " & Out_Type (I) & ") {" & LF
+                    & "    bool ok_;" & LF
+                    & "    if (p->depth < 24) p->stk[p->depth] = "
+                    & Natural'Image (I) & ";" & LF
+                    & "    p->depth++;" & LF
+                    & "    ok_ = parse_body_" & C_Name (NM) & "(p, out);" & LF
+                    & "    p->depth--;" & LF
+                    & "    return ok_;" & LF & "}" & LF
+                    & "static bool parse_body_" & C_Name (NM)
+                    & "(parser_t *p, " & Out_Type (I) & ") {" & LF);
+               else
+                  Append (Res, Fill ("c_rule_head",
+                    (H ("name", C_Name (NM)),
+                     H ("type", Out_Type (I)))));
+                  Append (Res, LF);
+               end if;
                Emit_Rule_Parser (I, Res);
                Append (Res, "}");
                Append (Res, LF);
@@ -6107,6 +6144,50 @@ package body HBNF_C is
             end if;
          end;
       end loop;
+
+      if Paths_On then
+         Append (Res, "/* The rules a path names, by number (a rule the reader"
+           & " made up for a group or an option is left out). */" & LF
+           & "static const char *const hbnf_rn[] = { NULL," & LF);
+         for I in 1 .. N loop
+            declare
+               NM   : constant String := To_String (Rules (I).Name);
+               Cut  : Natural := 0;
+               Hidden : Boolean := False;
+            begin
+               for K in reverse NM'Range loop
+                  if NM (K) = '_' then
+                     Cut := K;
+                     exit;
+                  end if;
+               end loop;
+               if Cut > NM'First and then Cut < NM'Last
+                 and then (for all C of NM (Cut + 1 .. NM'Last) =>
+                             C in '0' .. '9')
+                 and then Find (Rules, NM (NM'First .. Cut - 1)) /= 0
+               then
+                  Hidden := True;
+               end if;
+               Append (Res, (if Hidden or else not Needs_Parse_Fn (Rules, NM)
+                             then "NULL" else """" & NM & """") & "," & LF);
+            end;
+         end loop;
+         Append (Res, "};" & LF
+           & "static void hbnf_path_str(const parser_t *p, char *buf, "
+           & "size_t n) {" & LF
+           & "    size_t o = 0;  unsigned i;" & LF
+           & "    buf[0] = 0;" & LF
+           & "    for (i = 0; i < p->err_depth; i++) {" & LF
+           & "        const char *s = hbnf_rn[p->err_stk[i]];" & LF
+           & "        size_t l;" & LF
+           & "        if (!s) continue;" & LF
+           & "        l = strlen(s);" & LF
+           & "        if (o + l + 4 >= n) break;" & LF
+           & "        if (o) { memcpy(buf + o, "" > "", 3);  o += 3; }" & LF
+           & "        memcpy(buf + o, s, l);  o += l;  buf[o] = 0;" & LF
+           & "    }" & LF
+           & "}" & LF & LF);
+      end if;
 
       --  The entry point: parse the root rule, then reject trailing input.
       --  With `statements` the statement driver calls this per statement as
@@ -6188,6 +6269,14 @@ package body HBNF_C is
          Append (Res, LF);
          Append (Res, "      char want[160];");
          Append (Res, LF);
+         if Paths_On then
+            Append (Res, "      char inb[300];  inb[0] = 0;");
+            Append (Res, LF);
+            Append (Res, "      { char pth[256];  hbnf_path_str(&p, pth, "
+              & "sizeof pth);  if (pth[0]) snprintf(inb, sizeof inb, "
+              & """ (in %s)"", pth); }");
+            Append (Res, LF);
+         end if;
          Append (Res, "      if (p.err_is_lit) snprintf(want, sizeof want, ""`%s`"","
            & " p.err_expected ? p.err_expected : """");");
          Append (Res, LF);
@@ -6223,13 +6312,23 @@ package body HBNF_C is
          Append (Res, LF);
          Append (Res, "          memset(pad, ' ', w); pad[w] = '\0';");
          Append (Res, LF);
-         Append (Res, "          snprintf(err, errlen,"
-           & " ""expected %s, found %.*s\n  %.*s\n  %s^"", want, (int)fl, f, (int)ll, l, pad);");
+         if Paths_On then
+            Append (Res, "          snprintf(err, errlen,"
+              & " ""expected %s, found %.*s%s\n  %.*s\n  %s^"", want, (int)fl, f, inb, (int)ll, l, pad);");
+         else
+            Append (Res, "          snprintf(err, errlen,"
+              & " ""expected %s, found %.*s\n  %.*s\n  %s^"", want, (int)fl, f, (int)ll, l, pad);");
+         end if;
          Append (Res, LF);
          Append (Res, "      } else {");
          Append (Res, LF);
-         Append (Res, "          snprintf(err, errlen, ""expected %s, found %.*s"","
-           & " want, (int)fl, f);");
+         if Paths_On then
+            Append (Res, "          snprintf(err, errlen, ""expected %s, found %.*s%s"","
+              & " want, (int)fl, f, inb);");
+         else
+            Append (Res, "          snprintf(err, errlen, ""expected %s, found %.*s"","
+              & " want, (int)fl, f);");
+         end if;
          Append (Res, LF);
          Append (Res, "      }");
          Append (Res, LF);

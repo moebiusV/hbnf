@@ -1,0 +1,21 @@
+ok: set a 1; run b;
+set a ;
+expected a number, found ; (in config > entry > value)
+  set a ;
+        ^
+run ;
+expected a string, found ; (in config > entry > name)
+  run ;
+      ^
+set a 1; { run b; { set c ; } }
+expected a number, found ; (in config > entry > block > entry > block > entry > value)
+  set a 1; { run b; { set c ; } }
+                            ^
+{ run b;
+expected `}`, found end of input (in config > entry > block)
+  { run b;
+          ^
+go a;
+expected `set`, found go (in config > entry)
+  go a;
+  ^

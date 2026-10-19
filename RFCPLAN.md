@@ -34,6 +34,14 @@ The corpus is where discoverability is proven: a fragment is "done" when its
 messages alone tell the author how to fix what hbnf could not accept
 silently.
 
+**Planned, after C++ (the user, 2026-10-18): ALGOL 68.**  When C++ parses, ALGOL 68
+follows, and what is parsed is the *W-grammar* itself: the Revised Report's
+two-level grammar (`METACOMPILERS.md`, "W-grammars"), read as text, so that hbnf
+reads a hyperrule family, expands the finite part (parameterised rules, consistent
+substitution) and reports the rest.  It is the test of the parameterised-rule and
+back-reference proposals there, and sits beside the paused ALGOL 60 and IMP72
+corpora (`corpus/`).
+
 ## Decisions
 
 1. **Two alternation operators, two meanings.**
@@ -1434,6 +1442,17 @@ should claim that before 10.
     recording of alternatives.  `tests/ast.sh`.  Not yet: spans and parent links
     (opt-in, with step 6b), an optional label on an alternative (LBNF style),
     and the parser's own path in error messages ("in statement > block > arg").
+
+7e. **Error paths (the user, 2026-10-18).**  *Built in C: `--paths`.*  An error
+    message says which rules the parser was reading when it got as far as it did:
+    `expected a number, found ; (in config > entry > block > entry > value)`.
+    The path is for errors only; a tree that has parsed keeps none.  The parser
+    keeps a small stack (24 deep, a rule number each) and copies it when it records
+    the farthest failure; each rule's parser is wrapped to push and pop.  A rule the
+    reader made up for a group or an option is left out of the path.  Opt-in so far
+    (`tests/paths.sh`): without it the output is byte for byte what it was.  To
+    measure before it is made the default: the wrapper costs a call and two stores
+    per rule read, and about 12% of source on pfctl.
 
 8. **Compiler-quality diagnostics and error recovery.**  Expected-error
    fixtures, source-span diagnostics, rule traces, and a schema linter
