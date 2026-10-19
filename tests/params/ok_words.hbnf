@@ -1,0 +1,9 @@
+; A parameter over a list of words, and a use that names a rule.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc = value("int") ";" value("string")
+value(K in "int" | "string") = typed(K) 
+typed("int") = 1*DIGIT
+typed("string") = DQUOTE *~DQUOTE DQUOTE

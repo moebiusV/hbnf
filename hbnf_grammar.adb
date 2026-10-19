@@ -1870,6 +1870,50 @@ package body HBNF_Grammar is
                      while I <= Text'Last and then Name_Char (Text (I)) loop
                         I := I + 1;
                      end loop;
+                     --  `name(args)` with the parenthesis against the name is a
+                     --  parameterised rule's head or a use of one: the whole
+                     --  call is one name, read by Expand_Params.
+                     if I <= Text'Last and then Text (I) = '('
+                       and then Text (Start .. I - 1) not in "bitsof" | "bits"
+                       and then not (not Toks.Is_Empty
+                                     and then Toks.Last_Element.Kind = T_Colon)
+                     then
+                        declare
+                           Depth : Natural := 0;
+                           In_Q  : Boolean := False;
+                        begin
+                           while I <= Text'Last loop
+                              if Text (I) = ASCII.LF then
+                                 raise Parse_Error with
+                                   Integer'Image (Line) & ":" & Integer'Image (Col)
+                                   & ": `" & Text (Start .. I - 1) & "`: the "
+                                   & "arguments of a parameterised rule end with "
+                                   & "`)` on the same line";
+                              end if;
+                              if Text (I) = '"' then
+                                 In_Q := not In_Q;
+                              elsif not In_Q then
+                                 if Text (I) = '(' then
+                                    Depth := Depth + 1;
+                                 elsif Text (I) = ')' then
+                                    Depth := Depth - 1;
+                                    if Depth = 0 then
+                                       I := I + 1;
+                                       exit;
+                                    end if;
+                                 end if;
+                              end if;
+                              I := I + 1;
+                           end loop;
+                           if Depth /= 0 then
+                              raise Parse_Error with
+                                Integer'Image (Line) & ":" & Integer'Image (Col)
+                                & ": `" & Text (Start .. Text'Last)
+                                & "`: the arguments of a parameterised rule "
+                                & "end with `)`";
+                           end if;
+                        end;
+                     end if;
                      Emit (T_Name, Text (Start .. I - 1));
                      Col := Col + (I - Start);
                   end;
@@ -3236,6 +3280,836 @@ package body HBNF_Grammar is
    --    and a range there is refused, since they would drop it.
    --  The checks look only at the rules the parser uses (Reachable), so a
    --  grammar can include an RFC's rules and replace the ones it needs.
+   --  Parameterised rules (RFCPLAN.md; METACOMPILERS.md, "W-grammars").  A rule
+   --  head with its parameters against the name,
+   --
+   --      list(X) = X *( "," X )
+   --      binary(N in 1..17) = binary(N+1) *( op(N) binary(N+1) )
+   --      binary(17) = unary
+   --      op(1) = "||"      op(2) = "&&"
+   --
+   --  is a template; a use `list(expr)`, `binary(1)` is a name that stands for the
+   --  rule made from the template by putting the arguments in.  Every distinct
+   --  use becomes an ordinary rule when the grammar is read, so a backend never
+   --  sees a parameter.  A parameter that is a number ranges over a domain
+   --  (`N in 1..17`, or `K in "int" | "string"`), a use outside it is an error
+   --  here and not a failed parse, and of the clauses of a name the one that
+   --  gives constants for the arguments wins over the general one.  What a
+   --  chain of uses may not do is grow: an instance that needs a bigger instance of
+   --  itself has no end, and is refused with the chain.
+   procedure Expand_Params (Rules : in out Rule_Vectors.Vector) is
+      use Ada.Characters.Handling;
+
+      subtype U is Unbounded_String;
+
+      type Value_Kind is (V_Int, V_Lit, V_Name);
+      type Value is record
+         Kind : Value_Kind := V_Name;
+         Int  : Long_Long_Integer := 0;
+         Text : U;
+      end record;
+      package Value_Vectors is new Ada.Containers.Vectors (Positive, Value);
+
+      type Domain_Kind is (D_None, D_Range, D_Set);
+      package Text_Vectors is new Ada.Containers.Vectors (Positive, U);
+
+      type Param is record
+         Name   : U;
+         Domain : Domain_Kind := D_None;
+         Lo, Hi : Long_Long_Integer := 0;
+         Words  : Text_Vectors.Vector;
+         Is_Const : Boolean := False;         --  a clause for one value
+         Const    : Value;
+         Text     : U;                        --  as written, for messages
+      end record;
+      package Param_Vectors is new Ada.Containers.Vectors (Positive, Param);
+
+      type Template is record
+         Base   : U;
+         Params : Param_Vectors.Vector;
+         R      : Rule;
+         Head   : U;                          --  as written
+      end record;
+      package Template_Vectors is new Ada.Containers.Vectors (Positive, Template);
+
+      type Binding is record
+         Name : U;
+         Val  : Value;
+      end record;
+      package Binding_Vectors is new Ada.Containers.Vectors (Positive, Binding);
+
+      Templates : Template_Vectors.Vector;
+      Ordinary  : Rule_Vectors.Vector;
+      Instances : Rule_Vectors.Vector;          --  the rules the uses make
+      Made      : Index_Maps.Map;               --  instance name -> made
+      Limit     : constant := 20_000;
+
+      --  The chain of instances being made, for the message of a loop.
+      type Frame is record
+         Base : U;
+         Name : U;
+         Size : Natural;
+      end record;
+      package Frame_Vectors is new Ada.Containers.Vectors (Positive, Frame);
+      Stack : Frame_Vectors.Vector;
+
+      function Img (N : Long_Long_Integer) return String is
+         T : constant String := Long_Long_Integer'Image (N);
+      begin
+         return (if T (T'First) = ' ' then T (T'First + 1 .. T'Last) else T);
+      end Img;
+
+      procedure Fail (Msg : String) is
+      begin
+         raise Parse_Error with Msg;
+      end Fail;
+
+      function Trim (S : String) return String is
+         F : Natural := S'First;
+         L : Natural := S'Last;
+      begin
+         while F <= L and then S (F) in ' ' | ASCII.HT loop
+            F := F + 1;
+         end loop;
+         while L >= F and then S (L) in ' ' | ASCII.HT loop
+            L := L - 1;
+         end loop;
+         return S (F .. L);
+      end Trim;
+
+      function Is_Call (S : String) return Boolean is
+        (for some C of S => C = '(');
+
+      --  The text before the first `(`, and the text between the outer ones.
+      function Base_Of (S : String) return String is
+      begin
+         for I in S'Range loop
+            if S (I) = '(' then
+               return S (S'First .. I - 1);
+            end if;
+         end loop;
+         return S;
+      end Base_Of;
+
+      function Args_Of (S : String) return String is
+         F : Natural := 0;
+      begin
+         for I in S'Range loop
+            if S (I) = '(' then
+               F := I;
+               exit;
+            end if;
+         end loop;
+         if F = 0 or else S (S'Last) /= ')' then
+            return "";
+         end if;
+         return S (F + 1 .. S'Last - 1);
+      end Args_Of;
+
+      --  Split on commas that are not inside parentheses or a string.
+      function Split (S : String) return Text_Vectors.Vector is
+         R     : Text_Vectors.Vector;
+         Start : Natural := S'First;
+         Depth : Natural := 0;
+         In_Q  : Boolean := False;
+      begin
+         if Trim (S) = "" then
+            return R;
+         end if;
+         for I in S'Range loop
+            if S (I) = '"' then
+               In_Q := not In_Q;
+            elsif not In_Q then
+               if S (I) = '(' then
+                  Depth := Depth + 1;
+               elsif S (I) = ')' then
+                  Depth := Depth - 1;
+               elsif S (I) = ',' and then Depth = 0 then
+                  R.Append (To_Unbounded_String (Trim (S (Start .. I - 1))));
+                  Start := I + 1;
+               end if;
+            end if;
+         end loop;
+         R.Append (To_Unbounded_String (Trim (S (Start .. S'Last))));
+         return R;
+      end Split;
+
+      function Slug (S : String) return String is
+         R : U;
+      begin
+         for C of S loop
+            if C in 'a' .. 'z' | '0' .. '9' then
+               Append (R, C);
+            elsif C in 'A' .. 'Z' then
+               Append (R, To_Lower (C));
+            elsif C in '-' | '_' then
+               Append (R, '_');
+            else
+               Append (R, "x" & Img (Long_Long_Integer (Character'Pos (C))));
+            end if;
+         end loop;
+         return To_String (R);
+      end Slug;
+
+      function Text_Of (V : Value) return String is
+        (case V.Kind is
+            when V_Int  => Img (V.Int),
+            when V_Lit  => """" & To_String (V.Text) & """",
+            when V_Name => To_String (V.Text));
+
+      function Part_Of (V : Value) return String is
+        (case V.Kind is
+            when V_Int  => (if V.Int < 0 then "m" & Img (-V.Int) else Img (V.Int)),
+            when V_Lit  => Slug (To_String (V.Text)),
+            when V_Name => To_String (V.Text));
+
+      function Instance_Name (Base : String; Vals : Value_Vectors.Vector)
+        return String
+      is
+         R : U := To_Unbounded_String (Base);
+      begin
+         for V of Vals loop
+            Append (R, "-" & Part_Of (V));
+         end loop;
+         return To_String (R);
+      end Instance_Name;
+
+      --  As the author writes the use: binary(4), list(item, pair).
+      function Call_Text (Base : String; Vals : Value_Vectors.Vector) return String is
+         R : U := To_Unbounded_String (Base & "(");
+         First : Boolean := True;
+      begin
+         for V of Vals loop
+            if not First then
+               Append (R, ", ");
+            end if;
+            First := False;
+            Append (R, Text_Of (V));
+         end loop;
+         return To_String (R) & ")";
+      end Call_Text;
+
+      function Size_Of (Vals : Value_Vectors.Vector) return Natural is
+         N : Natural := 0;
+      begin
+         for V of Vals loop
+            if V.Kind /= V_Int then
+               N := N + Length (V.Text);
+            end if;
+         end loop;
+         return N;
+      end Size_Of;
+
+      ---------------------------------------------------------------------
+      --  Heads
+      ---------------------------------------------------------------------
+
+      function Parse_Param (Text : String; Head : String) return Param is
+         P : Param;
+         T : constant String := Trim (Text);
+      begin
+         P.Text := To_Unbounded_String (T);
+         if T = "" then
+            Fail ("`" & Head & "`: an empty parameter");
+         elsif T (T'First) = '"' then
+            P.Is_Const := True;
+            P.Const := (V_Lit, 0, To_Unbounded_String (T (T'First + 1 .. T'Last - 1)));
+         elsif T (T'First) in '0' .. '9' or else T (T'First) = '-' then
+            P.Is_Const := True;
+            begin
+               P.Const := (V_Int, Long_Long_Integer'Value (T), Null_Unbounded_String);
+            exception
+               when Constraint_Error =>
+                  Fail ("`" & Head & "`: `" & T & "` is not a number");
+            end;
+         else
+            declare
+               Sp : Natural := 0;
+            begin
+               for I in T'Range loop
+                  if T (I) in ' ' | ASCII.HT then
+                     Sp := I;
+                     exit;
+                  end if;
+               end loop;
+               if Sp = 0 then
+                  P.Name := To_Unbounded_String (T);
+               else
+                  P.Name := To_Unbounded_String (T (T'First .. Sp - 1));
+                  declare
+                     Rest : constant String := Trim (T (Sp + 1 .. T'Last));
+                  begin
+                     if Rest'Length < 3 or else Rest (Rest'First .. Rest'First + 1) /= "in"
+                     then
+                        Fail ("`" & Head & "`: after the parameter `"
+                              & To_String (P.Name) & "` write `in` and its domain, "
+                              & "`" & To_String (P.Name) & " in 1..17` or `"
+                              & To_String (P.Name) & " in ""a"" | ""b""`");
+                     end if;
+                     declare
+                        D : constant String := Trim (Rest (Rest'First + 2 .. Rest'Last));
+                        Dots : Natural := 0;
+                     begin
+                        for I in D'First .. D'Last - 1 loop
+                           if D (I .. I + 1) = ".." then
+                              Dots := I;
+                              exit;
+                           end if;
+                        end loop;
+                        if Dots > 0 then
+                           P.Domain := D_Range;
+                           begin
+                              P.Lo := Long_Long_Integer'Value (Trim (D (D'First .. Dots - 1)));
+                              P.Hi := Long_Long_Integer'Value (Trim (D (Dots + 2 .. D'Last)));
+                           exception
+                              when Constraint_Error =>
+                                 Fail ("`" & Head & "`: the domain of `"
+                                       & To_String (P.Name) & "` is two whole "
+                                       & "numbers, `1..17`");
+                           end;
+                           if P.Lo > P.Hi then
+                              Fail ("`" & Head & "`: the domain `" & D
+                                    & "` is empty");
+                           end if;
+                        else
+                           P.Domain := D_Set;
+                           declare
+                              Start : Natural := D'First;
+                              procedure Word (S : String) is
+                                 W : constant String := Trim (S);
+                              begin
+                                 if W'Length < 2 or else W (W'First) /= '"' then
+                                    Fail ("`" & Head & "`: the domain of `"
+                                          & To_String (P.Name) & "` is numbers "
+                                          & "`1..17` or words `""a"" | ""b""`");
+                                 end if;
+                                 P.Words.Append (To_Unbounded_String
+                                   (W (W'First + 1 .. W'Last - 1)));
+                              end Word;
+                           begin
+                              for I in D'Range loop
+                                 if D (I) in '|' | '/' then
+                                    Word (D (Start .. I - 1));
+                                    Start := I + 1;
+                                 end if;
+                              end loop;
+                              Word (D (Start .. D'Last));
+                           end;
+                        end if;
+                     end;
+                  end;
+               end if;
+            end;
+         end if;
+         return P;
+      end Parse_Param;
+
+      ---------------------------------------------------------------------
+      --  Values
+      ---------------------------------------------------------------------
+
+      function Lookup
+        (B : Binding_Vectors.Vector; Name : String; Found : out Boolean)
+         return Value
+      is
+      begin
+         for X of B loop
+            if To_String (X.Name) = Name then
+               Found := True;
+               return X.Val;
+            end if;
+         end loop;
+         Found := False;
+         return (V_Name, 0, To_Unbounded_String (Name));
+      end Lookup;
+
+      procedure Make_Instance
+        (Base : String; Vals : Value_Vectors.Vector; Name : out U;
+         Via : String);
+
+      --  An argument: a number (+ and - over numbers, parentheses), a quoted word,
+      --  a rule name, or a use of a parameterised rule.
+      function Eval
+        (Text : String; B : Binding_Vectors.Vector; Where : String) return Value
+      is
+         S : constant String := Trim (Text);
+         Pos : Natural := S'First;
+
+         procedure Skip is
+         begin
+            while Pos <= S'Last and then S (Pos) in ' ' | ASCII.HT loop
+               Pos := Pos + 1;
+            end loop;
+         end Skip;
+
+         function Expr return Value;
+
+         function Term return Value is
+            R : Value;
+         begin
+            Skip;
+            if Pos > S'Last then
+               Fail (Where & ": the argument `" & S & "` ends too soon");
+            elsif S (Pos) = '(' then
+               Pos := Pos + 1;
+               R := Expr;
+               Skip;
+               if Pos > S'Last or else S (Pos) /= ')' then
+                  Fail (Where & ": the argument `" & S & "` has a `(` "
+                        & "with no `)`");
+               end if;
+               Pos := Pos + 1;
+               return R;
+            elsif S (Pos) = '"' then
+               declare
+                  F : constant Natural := Pos + 1;
+               begin
+                  Pos := F;
+                  while Pos <= S'Last and then S (Pos) /= '"' loop
+                     Pos := Pos + 1;
+                  end loop;
+                  if Pos > S'Last then
+                     Fail (Where & ": the word in `" & S & "` has no closing `""`");
+                  end if;
+                  Pos := Pos + 1;
+                  return (V_Lit, 0, To_Unbounded_String (S (F .. Pos - 2)));
+               end;
+            elsif S (Pos) in '0' .. '9' then
+               declare
+                  F : constant Natural := Pos;
+               begin
+                  while Pos <= S'Last and then S (Pos) in '0' .. '9' loop
+                     Pos := Pos + 1;
+                  end loop;
+                  return (V_Int, Long_Long_Integer'Value (S (F .. Pos - 1)),
+                          Null_Unbounded_String);
+               end;
+            elsif S (Pos) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+               declare
+                  F : constant Natural := Pos;
+                  Found : Boolean;
+               begin
+                  while Pos <= S'Last
+                    and then (S (Pos) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9'
+                              | '_' | '-' | '.')
+                  loop
+                     Pos := Pos + 1;
+                  end loop;
+                  if Pos <= S'Last and then S (Pos) = '(' then
+                     --  a use of a parameterised rule inside the argument
+                     declare
+                        Depth : Natural := 0;
+                        Start : constant Natural := F;
+                     begin
+                        while Pos <= S'Last loop
+                           if S (Pos) = '(' then
+                              Depth := Depth + 1;
+                           elsif S (Pos) = ')' then
+                              Depth := Depth - 1;
+                              if Depth = 0 then
+                                 Pos := Pos + 1;
+                                 exit;
+                              end if;
+                           end if;
+                           Pos := Pos + 1;
+                        end loop;
+                        declare
+                           Call : constant String := S (Start .. Pos - 1);
+                           Args : constant Text_Vectors.Vector := Split (Args_Of (Call));
+                           Vals : Value_Vectors.Vector;
+                           Nm   : U;
+                        begin
+                           for A of Args loop
+                              Vals.Append (Eval (To_String (A), B, Where));
+                           end loop;
+                           Make_Instance (Base_Of (Call), Vals, Nm, Where);
+                           return (V_Name, 0, Nm);
+                        end;
+                     end;
+                  end if;
+                  declare
+                     V : constant Value := Lookup (B, S (F .. Pos - 1), Found);
+                  begin
+                     return V;
+                  end;
+               end;
+            else
+               Fail (Where & ": `" & S (Pos .. S'Last) & "` is not an argument "
+                     & "(a number, a quoted word, or a rule)");
+               return (V_Name, 0, Null_Unbounded_String);
+            end if;
+         end Term;
+
+         function Expr return Value is
+            L : Value := Term;
+         begin
+            loop
+               Skip;
+               exit when Pos > S'Last or else S (Pos) not in '+' | '-';
+               declare
+                  Op : constant Character := S (Pos);
+                  R  : Value;
+               begin
+                  Pos := Pos + 1;
+                  R := Term;
+                  if L.Kind /= V_Int or else R.Kind /= V_Int then
+                     Fail (Where & ": `" & S & "`: `" & Op & "` is between "
+                           & "numbers, and `" & Text_Of (L) & "` or `"
+                           & Text_Of (R) & "` is not one");
+                  end if;
+                  L.Int := (if Op = '+' then L.Int + R.Int else L.Int - R.Int);
+               end;
+            end loop;
+            return L;
+         end Expr;
+
+         V : constant Value := Expr;
+      begin
+         Skip;
+         if Pos <= S'Last then
+            Fail (Where & ": `" & S (Pos .. S'Last) & "` follows the "
+                  & "argument `" & S (S'First .. Pos - 1) & "` and is not "
+                  & "part of it");
+         end if;
+         return V;
+      end Eval;
+
+      ---------------------------------------------------------------------
+      --  Elements: copy, with the parameters put in and the uses made
+      ---------------------------------------------------------------------
+
+      function Subst
+        (V : Element_Vectors.Vector; B : Binding_Vectors.Vector;
+         In_Rule : String) return Element_Vectors.Vector;
+
+      function Subst_One
+        (E : Element_Access; B : Binding_Vectors.Vector; In_Rule : String)
+         return Element_Access
+      is
+      begin
+         case E.Kind is
+            when Name =>
+               declare
+                  T : constant String := To_String (E.Name);
+                  Found : Boolean;
+               begin
+                  if Is_Call (T) then
+                     declare
+                        Args : constant Text_Vectors.Vector := Split (Args_Of (T));
+                        Vals : Value_Vectors.Vector;
+                        Nm   : U;
+                        X    : constant Element_Access := new Element'(E.all);
+                     begin
+                        for A of Args loop
+                           Vals.Append (Eval (To_String (A), B, "rule `" & In_Rule & "`, `" & T & "`"));
+                        end loop;
+                        Make_Instance (Base_Of (T), Vals, Nm, "rule `" & In_Rule & "`, `" & T & "`");
+                        X.Name := Nm;
+                        return X;
+                     end;
+                  end if;
+                  declare
+                     V : constant Value := Lookup (B, T, Found);
+                  begin
+                     if not Found then
+                        return new Element'(E.all);
+                     end if;
+                     case V.Kind is
+                        when V_Name =>
+                           declare
+                              X : constant Element_Access := new Element'(E.all);
+                           begin
+                              X.Name := V.Text;
+                              return X;
+                           end;
+                        when V_Lit =>
+                           return new Element'
+                             (Kind => Literal, Min => E.Min, Max => E.Max,
+                              Lit => V.Text, No_Case => False,
+                              Has_Value => False, Value => 0);
+                        when V_Int =>
+                           Fail ("rule `" & In_Rule & "`: `" & T & "` is the "
+                                 & "number " & Img (V.Int) & ", and a number "
+                                 & "can be an argument (`op(" & T & ")`) but "
+                                 & "not stand where a rule is");
+                     end case;
+                  end;
+               end;
+            when Group =>
+               declare
+                  X : constant Element_Access := new Element'(E.all);
+               begin
+                  X.Items := Subst (E.Items, B, In_Rule);
+                  return X;
+               end;
+            when Negation =>
+               declare
+                  X : constant Element_Access := new Element'(E.all);
+               begin
+                  X.Operand := Subst (E.Operand, B, In_Rule);
+                  return X;
+               end;
+            when Block =>
+               declare
+                  X : constant Element_Access := new Element'(E.all);
+               begin
+                  X.Look := Subst (E.Look, B, In_Rule);
+                  return X;
+               end;
+            when others =>
+               return new Element'(E.all);
+         end case;
+         return null;
+      end Subst_One;
+
+      function Subst
+        (V : Element_Vectors.Vector; B : Binding_Vectors.Vector;
+         In_Rule : String) return Element_Vectors.Vector
+      is
+         R : Element_Vectors.Vector;
+      begin
+         for E of V loop
+            R.Append (Subst_One (E, B, In_Rule));
+         end loop;
+         return R;
+      end Subst;
+
+      ---------------------------------------------------------------------
+      --  Instances
+      ---------------------------------------------------------------------
+
+      function Domain_Text (P : Param) return String is
+        (case P.Domain is
+            when D_None  => "any",
+            when D_Range => Img (P.Lo) & " .. " & Img (P.Hi),
+            when D_Set   => "one of the words listed");
+
+      function Chain return String is
+         R : U;
+      begin
+         for F of Stack loop
+            Append (R, "`" & To_String (F.Name) & "` -> ");
+         end loop;
+         return To_String (R);
+      end Chain;
+
+      procedure Make_Instance
+        (Base : String; Vals : Value_Vectors.Vector; Name : out U;
+         Via : String)
+      is
+         Best      : Natural := 0;
+         Best_Rank : Integer := -1;
+         Arity     : Natural := 0;
+         Any       : Boolean := False;
+         Why       : U;
+         N         : constant String := Instance_Name (Base, Vals);
+         C         : constant String := Call_Text (Base, Vals);
+      begin
+         Name := To_Unbounded_String (N);
+         for I in 1 .. Natural (Templates.Length) loop
+            declare
+               T : constant Template := Templates (I);
+            begin
+               if To_String (T.Base) = Base then
+                  Any := True;
+                  Arity := Natural (T.Params.Length);
+                  if Natural (T.Params.Length) /= Natural (Vals.Length) then
+                     Fail (Via & ": `" & Base & "` takes "
+                           & Img (Long_Long_Integer (T.Params.Length))
+                           & " argument(s), `" & To_String (T.Head) & "`; this "
+                           & "gives " & Img (Long_Long_Integer (Vals.Length))
+                           & ": " & C);
+                  end if;
+               end if;
+            end;
+         end loop;
+         if not Any then
+            Fail (Via & ": no parameterised rule `" & Base & "` is "
+                  & "defined; write `" & Base & "(X) = ...`");
+         end if;
+         if Made.Contains (N) then
+            return;
+         end if;
+         --  the clause that matches, and of those the one with most constants
+         for I in 1 .. Natural (Templates.Length) loop
+            declare
+               T  : constant Template := Templates (I);
+               Ok : Boolean := To_String (T.Base) = Base;
+               Rank : Integer := 0;
+            begin
+               if Ok then
+                  for K in 1 .. Arity loop
+                     declare
+                        P : constant Param := T.Params (K);
+                        V : constant Value := Vals (K);
+                     begin
+                        if P.Is_Const then
+                           if V.Kind /= P.Const.Kind or else V.Int /= P.Const.Int
+                             or else V.Text /= P.Const.Text
+                           then
+                              Ok := False;
+                           else
+                              Rank := Rank + 1;
+                           end if;
+                        elsif P.Domain = D_Range then
+                           if V.Kind /= V_Int then
+                              Ok := False;
+                              Why := To_Unbounded_String
+                                ("`" & Text_Of (V) & "` is not a number, and "
+                                 & To_String (P.Name) & " in `"
+                                 & To_String (T.Head) & "` is one");
+                           elsif V.Int < P.Lo or else V.Int > P.Hi then
+                              Ok := False;
+                              Why := To_Unbounded_String
+                                (Img (V.Int) & " is outside the domain of "
+                                 & To_String (P.Name) & " in `"
+                                 & To_String (T.Head) & "` (" & Domain_Text (P)
+                                 & ")");
+                           end if;
+                        elsif P.Domain = D_Set then
+                           if V.Kind /= V_Lit
+                             or else not (for some W of P.Words => W = V.Text)
+                           then
+                              Ok := False;
+                              Why := To_Unbounded_String
+                                ("`" & Text_Of (V) & "` is not one of the words "
+                                 & To_String (P.Name) & " in `"
+                                 & To_String (T.Head) & "` allows");
+                           end if;
+                        end if;
+                     end;
+                  end loop;
+                  if Ok and then Rank > Best_Rank then
+                     Best := I;
+                     Best_Rank := Rank;
+                  end if;
+               end if;
+            end;
+         end loop;
+         if Best = 0 then
+            Fail (Via & ": `" & C & "`: "
+                  & (if Why /= Null_Unbounded_String then To_String (Why)
+                     else "no clause of `" & Base & "` has these arguments")
+                  & ".  " & Chain
+                  & "A use of a parameterised rule must be in the domain of its "
+                  & "parameters (or have a clause of its own for the value "
+                  & "that is outside, one that does not use the next one)");
+         end if;
+         --  a chain of uses of the same rule must not grow
+         for F of Stack loop
+            if To_String (F.Base) = Base and then Size_Of (Vals) > F.Size then
+               Fail (Via & ": `" & To_String (F.Name) & "` needs `" & C
+                     & "`, which is `" & Base & "` with a bigger argument, and "
+                     & "that needs a bigger one again: there is no finite set "
+                     & "of instances.  " & Chain & "`" & C & "` ...  A "
+                     & "parameterised rule may use itself only with an "
+                     & "argument that comes from a finite set (a number in a "
+                     & "domain, a word from a list, or the same rule)");
+            end if;
+         end loop;
+         if Natural (Made.Length) >= Limit then
+            Fail (Via & ": more than" & Integer'Image (Limit) & " instances "
+                  & "of parameterised rules are needed; " & Chain & "`" & C & "`");
+         end if;
+         --  put the arguments in, and make the rule
+         declare
+            T : constant Template := Templates (Best);
+            B : Binding_Vectors.Vector;
+            R : Rule := T.R;
+         begin
+            for K in 1 .. Arity loop
+               if not T.Params (K).Is_Const then
+                  B.Append (Binding'(Name => T.Params (K).Name, Val => Vals (K)));
+               end if;
+            end loop;
+            Made.Insert (N, 1);
+            Stack.Append (Frame'(Base => To_Unbounded_String (Base),
+                                 Name => To_Unbounded_String (N),
+                                 Size => Size_Of (Vals)));
+            R.Name := To_Unbounded_String (N);
+            R.Pattern := Subst (T.R.Pattern, B, N);
+            Instances.Append (R);
+            Stack.Delete_Last;
+         end;
+      end Make_Instance;
+
+   begin
+      --  the templates, and the rules that are not
+      for R of Rules loop
+         if Is_Call (To_String (R.Name)) then
+            declare
+               H     : constant String := To_String (R.Name);
+               T     : Template;
+            begin
+               T.Base := To_Unbounded_String (Base_Of (H));
+               T.Head := To_Unbounded_String (H);
+               T.R := R;
+               for A of Split (Args_Of (H)) loop
+                  T.Params.Append (Parse_Param (To_String (A), H));
+               end loop;
+               if T.Params.Is_Empty then
+                  Fail ("`" & H & "`: a parameterised rule has at least one "
+                        & "parameter");
+               end if;
+               --  the same names for the same place in every clause
+               for Other of Templates loop
+                  if Other.Base = T.Base
+                    and then Natural (Other.Params.Length) /= Natural (T.Params.Length)
+                  then
+                     Fail ("`" & H & "` and `" & To_String (Other.Head)
+                           & "` take different numbers of arguments");
+                  end if;
+               end loop;
+               Templates.Append (T);
+            end;
+         else
+            Ordinary.Append (R);
+         end if;
+      end loop;
+      if Templates.Is_Empty then
+         --  a use with nothing to expand is still a mistake worth naming
+         for R of Rules loop
+            declare
+               procedure Look (V : Element_Vectors.Vector) is
+               begin
+                  for E of V loop
+                     if E.Kind = Name and then Is_Call (To_String (E.Name)) then
+                        Fail ("rule `" & To_String (R.Name) & "`: `"
+                              & To_String (E.Name) & "`: no parameterised rule `"
+                              & Base_Of (To_String (E.Name)) & "` is defined; write `"
+                              & Base_Of (To_String (E.Name)) & "(X) = ...`");
+                     elsif E.Kind = Group then
+                        Look (E.Items);
+                     end if;
+                  end loop;
+               end Look;
+            begin
+               Look (R.Pattern);
+            end;
+         end loop;
+         return;
+      end if;
+      --  the uses in the rules that are not templates
+      declare
+         Plain : constant Rule_Vectors.Vector := Ordinary;
+         Empty : Binding_Vectors.Vector;
+      begin
+         Ordinary.Clear;
+         for R of Plain loop
+            declare
+               X : Rule := R;
+            begin
+               X.Pattern := Subst (R.Pattern, Empty, To_String (R.Name));
+               Ordinary.Append (X);
+            end;
+         end loop;
+      end;
+      for R of Instances loop
+         Ordinary.Append (R);
+      end loop;
+      Rules := Ordinary;
+   end Expand_Params;
+
    --  A rule that holds text and bit fields in one sequence
    --  (`req = "GET " len:8 payload:[len] %d13.10`) is read as runs: each run of
    --  bit fields, and each run of text, becomes a hidden rule `<owner>_<n>` of
@@ -5952,6 +6826,7 @@ package body HBNF_Grammar is
          <<Next_Item>>
       end loop;
       if File_Depth = 0 then
+         Expand_Params (Rules);
          Split_Mixed (Rules);
          Split_Wire (Rules);
          Finish (Rules);
@@ -6209,6 +7084,7 @@ package body HBNF_Grammar is
       Result := Override (Local, Included, First_Defined);
       if File_Depth = 1 then
          Apply_Actions (Result);
+         Expand_Params (Result);
          Split_Mixed (Result);
          Split_Wire (Result);
          Finish (Result);

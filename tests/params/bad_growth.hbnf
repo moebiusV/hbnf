@@ -1,0 +1,8 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc = f(item)
+f(X) = X f(g(X))
+g(Y) = Y "!"
+item = 1*DIGIT

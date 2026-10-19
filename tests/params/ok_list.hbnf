@@ -1,0 +1,9 @@
+; A comma list, written once: list(X) is X *( "," X ), for each X it is used with.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc = "[" list(item) "]" "{" list(pair) "}"
+list(X) = X *( "," X )
+item = 1*DIGIT
+pair = 1*ALPHA "=" item

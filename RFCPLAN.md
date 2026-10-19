@@ -39,7 +39,8 @@ silently.
 before c++"): ALGOL 68.**  ALGOL 68 comes first, written in an hbnf that has gained what the W-grammar does (the user,
 2026-10-18: "we won't do ALGOL 68 in precisely the W-grammar, we'll do it in the
 hbnf that is updated to do what a W-grammar does"): parameterised rules for the
-Report's NOTION families, a back-reference for consistent substitution, `where`
+Report's NOTION families (**built 2026-10-19**: `list(X)`, number parameters over a domain,
+clauses for single values, domain and growth checks, every backend; `tests/params.sh`), a back-reference for consistent substitution, `where`
 as the context and `%where` machinery of decision 13, and a checking pass over
 the AST for modes and coercion.  `METACOMPILERS.md` ("W-grammars") says what
 each is.  **ALGOL 60 first** (done 2026-10-18: `corpus/algol60/algol60.hbnf`,

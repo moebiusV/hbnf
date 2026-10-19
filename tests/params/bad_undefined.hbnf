@@ -1,0 +1,6 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc = nothing(x)
+x = "x"

@@ -1,0 +1,13 @@
+; The levels of an expression grammar, as a family: binary(N) for 1 .. 4, the
+; operators of each level in a table of clauses, and the last level's own clause.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+expr = binary(1)
+binary(N in 1..4) = binary(N+1) *( op(N) binary(N+1) )
+binary(4) = unary
+op(1) = "||"
+op(2) = "&&"
+op(3) = "+" / "-"
+unary = 1*DIGIT

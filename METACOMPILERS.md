@@ -163,7 +163,7 @@ W-grammars give beyond those, kept to the decidable subset:
    standard's own grammar leans on this (`-list`, `-opt`, the declarator
    families).  This is LBNF's indexed categories and Menhir's parameterised
    nonterminals under another name, and it is the one idea here that is both
-   useful and cheap.  *Not planned; proposed.*
+   useful and cheap.  *Built 2026-10-19 (every backend, since the uses are expanded into ordinary rules when the grammar is read): `list(X)`, number parameters over a domain, clauses for single values, a growth check; `tests/params.sh`.*
 2. **Consistent substitution as a back-reference: this text must repeat that
    earlier text.**  `where TAG is TAG` is XML's `<a> ... </a>`, a here-document's
    terminator (`<<EOF ... EOF`, which the paused POSIX shell corpus needs), C++
@@ -178,6 +178,9 @@ W-grammars give beyond those, kept to the decidable subset:
    declared finite domains, so a use that cannot match is an error when the
    grammar is read, not a failed parse.  If hbnf takes (1), it should check
    the arguments the same way, with the helpful errors it already promises.
+   *Built with (1): a number outside its domain, a word not in its list, the wrong number of
+   arguments, a rule that is not parameterised, and a chain that needs ever bigger instances of
+   itself are errors when the grammar is read, each naming the chain of uses.*
 
 **Efficiency.**  The three above cost nothing the grammar does not already pay.
 (1) is expansion before the parser is generated: the parser it produces is the

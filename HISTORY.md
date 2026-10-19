@@ -217,7 +217,7 @@ W-grammars, has the argument; `RFCPLAN.md` has the decisions):
   hyperrule becomes the ordinary rules it stands for, and the parser is the one you would have
   written by hand. No runtime cost, no new parsing algorithm, no undecidability. Domains are
   checked when the grammar is read, so a use that can never match is an error with a message.
-  *Not built yet.*
+  *Built (`tests/params.sh`): see "Why a two-level grammar can fail to end" below.*
 - *Consistent substitution* becomes a back-reference: `name %as tag` keeps the text a name
   matched and `%same tag` is that text again, in the same sequence. It is a slice of the input
   (two integers in the generated function, no copy), so a backtrack restores it with the
@@ -233,6 +233,87 @@ W-grammars, has the argument; `RFCPLAN.md` has the decisions):
 The ALGOL 68 grammar will be written in this hbnf and not in the Report's literal two levels
 (the user's decision, 2026-10-18). ALGOL 60 came first as the proving ground, and it has been
 checked against the Report's own BNF with an independent recognizer.
+
+
+### Why a two-level grammar can fail to end, and why it almost never does
+
+A metanotion is a set of strings defined by a context-free grammar of its own, and a hyperrule
+name contains metanotions, so a hyperrule is a template for every rule you get by putting a
+string in each. Reading a sentence means choosing those strings. Whether a choice exists is
+where the trouble is, because the strings are written into rule *names*, not into the text being
+read, and nothing about the finite input bounds them.
+
+The smallest example:
+
+    A :: x ; A x.             (A is any run of x's: an infinite set)
+    A word : A x word.        (a hyperrule: "A word" is "A x word")
+
+Instantiate `A` with `x` and the rule is `x word : x x word`; with `xx`, `xx word : xxx word`.
+Every instance is a rule whose only right-hand side is another instance with a longer name, and no
+terminal is consumed on the way. A recogniser asked whether the input holds an `x word` is sent to
+`xx word`, then to `xxx word`, and so on, though the input is a few characters long. It is left
+recursion, with the difference that every step is a different rule, so there is no repeated state to
+catch. In general, consistent substitution lets a grammar copy a string and compare it with another,
+and that is enough to encode a Turing machine or Post's correspondence problem. Whether a given
+sentence is derivable is undecidable, so no recogniser halts on every grammar and every input.
+
+**Can the cycle be detected?** Often, yes, and tracking which hyperrule is being instantiated is the
+way. There are three cases and they differ.
+- *The same instance again.* Remembering the instances already made ends it exactly. When every
+  parameter ranges over a finite set the number of instances is finite, so every chain either
+  repeats an instance or stops (the pigeonhole principle), and the check is complete.
+- *The same hyperrule with a strictly bigger argument*, as above. A static check follows the chain of
+  instances, sees each argument larger than the last with nothing consumed between, and reports it.
+  This is the termination analysis of term-rewriting systems and Prolog programs, and it is sound but
+  not complete: a rule whose argument shrinks for a while and then grows, or grows only after a detour
+  through other rules, can slip through. No fixed check catches every non-terminating grammar and
+  accepts every terminating one; that is the halting problem.
+- *The same instance at the same input position, while parsing.* Remembering the pair (instance,
+  position) detects it exactly, as it does left recursion in a packrat parser.
+
+**Does laziness help?** Partly, and it is how the practical parsers cope. Instantiate a metanotion
+only when the parser needs it at the current position, memoise by (instance, position), and the
+work is bounded by the input: when the input can no longer match, nothing more is made. The infinite
+family `ref to ref to ... int` is in principle unbounded but any program uses finitely many of its
+members. What laziness does not do is stop the cycle above, because there the demand comes from the
+rule itself and no input has been matched for it to run out of. The same remedy applies as for left
+recursion: require progress, and refuse the rule that makes none.
+
+**What hbnf does.**
+- Parameters range over a *finite* set (a number in `1..17`, one of a list of words, or a rule
+  name), so the family is finite and is expanded into ordinary rules when the grammar is read: the
+  parser is the one you would have written by hand, with no runtime cost and no new algorithm.
+- The *domain is checked then*: a use outside it (`binary(18)` when `N` is `1..17`) is an error that
+  names the chain of instances that led to it, not a parse that fails on some input.
+- A chain that re-enters a hyperrule with a *bigger argument* is refused at once, with the chain,
+  instead of running to a limit (there is a limit as well, at 20,000 instances).
+- Where the family is open, as Algol 68's modes are, the plan is the lazy, input-driven instantiation
+  above, with a no-progress check; it needs support in the parser and is the Algol 68 step's work.
+- Consistent substitution is the back-reference (`%as`, `%same`), and what a finite domain cannot
+  hold, the names declared so far, is the context of decision 13. Neither needs the infinite family.
+
+**Why real grammars rarely meet it.** A grammar that is written to be read, which the Report's is and
+every grammar a programmer writes is, has metanotions that stand for the finite things a language has:
+the modes a program uses, the kinds of operand, the precedence levels. Its recursion consumes input at
+each step, as any grammar's must if a parser is to run. The non-terminating hyperrule is a construction
+made on purpose, to show that the formalism is as strong as a Turing machine; none of the working
+descriptions or implementations (Koster's affix grammars and the CDL compiler description language, the
+Prolog definite clause grammars, the attribute grammars) needed more than the bounded part. Restricting
+parameters to finite domains, as hbnf does, makes the question decidable by construction and costs the
+grammars people write nothing.
+
+**Is it a typeclass?** Much of it is, and the comparison is the quickest way to explain the rules to a
+programmer. A parameterised rule is a function from arguments to a rule, chosen by pattern: an instance
+declaration in Haskell is a function from types to dictionaries, chosen by pattern, and the most
+specific wins (`binary(17) = unary` beside the general `binary(N in 1..17)` is overlapping instances).
+Expanding every use before the parser runs is monomorphisation, as C++ templates and Rust generics do,
+and it costs nothing at run time (Haskell's dictionary passing does). A domain is a closed set of
+instances. And the termination trouble is the same trouble: instance resolution in Haskell can chase
+its own tail (`instance C [[a]] => C [a]`), and GHC refuses it unless `UndecidableInstances` is on,
+because its conservative check, the Paterson conditions (the constraint must be structurally smaller
+than the head), is a sufficient condition for finite resolution that rejects some programs that would
+in fact end. hbnf's growth check is the same trade. Where it differs is that nothing here is typed: a
+parameter is a rule name, a word or a number, not a type, and there is no inference.
 
 **What it saves.** The numbers are in *Measured* below: the grammar text of ALGOL 60 and JSON is
 about half the size of the Report's BNF and the RFC's ABNF, and the OpenBSD daemons' `parse.y`
