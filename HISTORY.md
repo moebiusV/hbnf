@@ -569,36 +569,42 @@ The RFC grammars in `corpus/rfc` are not in the table on purpose: they are paste
 line added, to show that RFC text compiles unchanged, so they save nothing and are not meant to.
 
 **OpenBSD's `parse.y`, translated.** The nine daemons' grammars in `grammars/obconf_*.hbnf` are
-faithful translations of the real `parse.y` files (OpenBSD `master`, fetched 2026-10-19), and here
-the answer is less flattering, so it is worth saying plainly. Compared as notation alone, with the C
-actions cut out of the yacc rules (so the yacc side is the grammar and nothing else):
+faithful translations of the real `parse.y` files (OpenBSD `master`, pinned in `bench/pins.txt`), and
+here the answer is less flattering than a whole-file count suggests, so it is worth saying plainly.
+A `parse.y` is four things: a prologue (includes, declarations, the token list), the grammar rules, the
+C code in braces inside those rules that builds the daemon's structures, and a hand-written lexer with
+its keyword table and helpers after the second `%%`. `bench/parsey.py` splits each file that way and
+counts lines, comments and blank lines left out:
 
-| daemon | yacc rules | hbnf rules | yacc lines | hbnf lines | yacc symbols | hbnf symbols |
-|---|---:|---:|---:|---:|---:|---:|
-| ntpd | 20 | 11 | 44 | 18 | 127 | 119 |
-| ldpd | 41 | 35 | 105 | 104 | 330 | 475 |
-| snmpd | 43 | 41 | 112 | 113 | 351 | 514 |
-| unwind | 22 | 21 | 50 | 62 | 154 | 351 |
-| dhcpleased | 9 | 9 | 23 | 18 | 88 | 107 |
-| httpd | 63 | 74 | 186 | 176 | 619 | 733 |
-| relayd | 84 | 90 | 264 | 309 | 839 | 1,369 |
-| bgpd | 121 | 148 | 406 | 481 | 1,340 | 2,239 |
-| pfctl | 148 | 175 | 432 | 474 | 1,407 | 2,174 |
-| **nine daemons** | **551** | **604** | **1,622** | **1,755** | **5,255** | **8,081** |
+<!-- bench:parsey -->
+| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | hbnf grammar |
+|---|---:|---:|---:|---:|---:|
+| bgpd | 5,540 | 2,530 | 2,494 | 516 | 501 |
+| dhcpleased | 733 | 542 | 159 | 32 | 22 |
+| httpd | 2,490 | 1,185 | 1,057 | 248 | 185 |
+| ldpd | 1,498 | 868 | 484 | 146 | 114 |
+| ntpd | 731 | 377 | 292 | 62 | 22 |
+| pfctl | 5,885 | 2,524 | 2,777 | 584 | 492 |
+| relayd | 3,426 | 1,266 | 1,814 | 346 | 323 |
+| snmpd | 1,867 | 900 | 813 | 154 | 121 |
+| unwind | 831 | 593 | 166 | 72 | 67 |
+| shared `obconf.hbnf` | | | | | 30 |
+| **nine daemons** | **23,001** | **10,785** | **10,056** | **2,160** | **1,877** |
 
-As a notation the hbnf is about the same size as yacc's, a little larger on the big ones (a quoted
-`"listen"` is longer than the token name `LISTEN`, and each option list spells out the keyword that
-tags it), and smaller on ntpd, where it is 45% fewer rules and 59% fewer lines. The saving is
-everywhere else in the file. A `parse.y` also carries a hand-written lexer, the keyword table, the
-include-file stack and the C that builds the daemon's structures; hbnf's reader, `statements` mode
-and typed tree replace the first three, and the actions are attached separately. Counting the whole
-file, comments and blank lines left out:
+Only the rule notation is directly comparable with the hbnf grammar; the
+lexer is replaced by hbnf's reader, and the actions only where they are bound:
 
-| daemon | `parse.y` lines | `parse.y` words | hbnf grammar + bound actions, lines | words |
-|---|---:|---:|---:|---:|
-| ntpd | 735 | 2,171 | 28 + 335 = 363 | 148 + 1,110 = 1,258 |
-| unwind | 832 | 2,404 | 74 + 268 = 342 | 391 + 779 = 1,170 |
-| **saved** | | | **51% and 59%** | **42% and 51%** |
+| daemon | `parse.y` total | hbnf grammar + bound actions | saved |
+|---|---:|---:|---:|
+| ntpd | 731 | 22 + 331 = 353 | **52%** |
+| unwind | 831 | 67 + 264 = 331 | **60%** |
+<!-- /bench:parsey -->
+
+As a notation the hbnf grammar is about the size of yacc's rules (a quoted `"listen"` is longer than
+the token name `LISTEN`, and each option list spells out the keyword that tags it). The saving is in the
+other 90%: hbnf's reader, `statements` mode and typed tree replace the lexer, keyword table and
+include-file stack, which is about 47% of a `parse.y`, and the actions, another 44%, are replaced only
+where they are bound.
 
 Only ntpd and unwind have their actions bound so far (`grammars/bind/`), so those are the two rows
 that can be compared whole; for the other seven, hbnf parses and builds the tree and the daemon's

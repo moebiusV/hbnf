@@ -9,3 +9,6 @@ TS_VERSION=0.27.1
 # OpenBSD src commit the ntpd files in ntpd/files.txt are taken from (the last
 # commit to usr.sbin/ntpd/parse.y on the GitHub mirror, 2021-10-15).
 NTPD_COMMIT=08f6ba1906d01c4a24fa700d568400f71bcf9611
+# OpenBSD src commit the nine parse.y files of parsey.py are taken from (master on
+# the GitHub mirror, 2026-10-19); their hashes are in bench/parsey.sha256.
+PARSEY_COMMIT=77f6ee04c2b5278bb3f33e90c320c471ba58e90d

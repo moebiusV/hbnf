@@ -637,30 +637,47 @@ yet.  So for the "load a big firewall ruleset" criterion, the honest number
 today is that a 100,000-rule `pf.conf` parses in <!-- v:pfctl_100000_s -->0.5<!-- /v --> s at
 <!-- v:pfctl_100000_rss_mb -->394<!-- /v --> MB, and a 1,000,000-rule one in <!-- v:pfctl_1000000_s -->5.9<!-- /v --> s at <!-- v:pfctl_1000000_rss_gb -->3.84<!-- /v --> GB.
 
-**Compactness.**  The same notation compresses a real grammar.  OpenBSD's
-`httpd.conf` is 2,785 lines of parse.y — 63 rules and 79 keyword tokens — most
-of it action code and keyword-table plumbing.  The hbnf schema for the same
-language is under two hundred lines; the shape survives (blocks, server options,
-TLS, fastcgi, logging, MIME types) and the `{ ... }` actions are gone because
-they were, for config, bookkeeping the binder does automatically.
+**Compactness.**  OpenBSD's `httpd.conf` is 2,490 lines of parse.y once comments are
+left out: 63 rules and 79 keyword tokens, of which 248 lines are the rule notation, 1,057
+the C actions and 1,185 the lexer, keyword table and helpers.  The hbnf grammar for the
+same language is 185 lines; the shape survives (blocks, server options, TLS, fastcgi,
+logging, MIME types).  What it does not contain is the actions: the typed tree and the
+binder take their place for configuration, but only where the binding is written.
 
-Across the nine daemon grammars with schemas, the win is aggregate, not
-anecdotal: 25,794 lines of hand-written `parse.y` — lexer, grammar, and action
-code together — collapse to 2,255 lines of schema, a 91% reduction, and the
-ratio holds on every daemon at a factor of roughly ten to twenty:
+Across the nine daemons the saving depends on what is counted, and the table says
+which.  A `parse.y` is a prologue, the grammar rules, the C code inside those rules
+that builds the daemon's structures (the actions), and a hand-written lexer with its
+keyword table after the second `%%`.  The rule notation alone is about the size of the
+hbnf grammar (2,160 lines of yacc rules, 1,877 of hbnf including the shared lexical
+file); hbnf's reader replaces the lexer and keyword table (about 47% of the lines in
+a `parse.y`), and replaces the actions only where they are bound, which is so far
+ntpd and unwind.  Where it is, the whole file shrinks by 52% and 60%.  For the other
+seven the grammar parses and builds a typed tree, and the daemon's own struct-building
+code is not yet attached.
 
-| daemon | parse.y (lines) | hbnf (lines) |
-|---|---:|---:|
-| bgpd | 6,146 | 544 |
-| dhcpleased | 863 | 53 |
-| httpd | 2,785 | 193 |
-| ldpd | 1,739 | 154 |
-| ntpd | 841 | 82 |
-| pfctl | 6,546 | 569 |
-| relayd | 3,800 | 382 |
-| snmpd | 2,099 | 173 |
-| unwind | 975 | 105 |
-| **total** | **25,794** | **2,255** |
+<!-- bench:parsey -->
+| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | hbnf grammar |
+|---|---:|---:|---:|---:|---:|
+| bgpd | 5,540 | 2,530 | 2,494 | 516 | 501 |
+| dhcpleased | 733 | 542 | 159 | 32 | 22 |
+| httpd | 2,490 | 1,185 | 1,057 | 248 | 185 |
+| ldpd | 1,498 | 868 | 484 | 146 | 114 |
+| ntpd | 731 | 377 | 292 | 62 | 22 |
+| pfctl | 5,885 | 2,524 | 2,777 | 584 | 492 |
+| relayd | 3,426 | 1,266 | 1,814 | 346 | 323 |
+| snmpd | 1,867 | 900 | 813 | 154 | 121 |
+| unwind | 831 | 593 | 166 | 72 | 67 |
+| shared `obconf.hbnf` | | | | | 30 |
+| **nine daemons** | **23,001** | **10,785** | **10,056** | **2,160** | **1,877** |
+
+Only the rule notation is directly comparable with the hbnf grammar; the
+lexer is replaced by hbnf's reader, and the actions only where they are bound:
+
+| daemon | `parse.y` total | hbnf grammar + bound actions | saved |
+|---|---:|---:|---:|
+| ntpd | 731 | 22 + 331 = 353 | **52%** |
+| unwind | 831 | 67 + 264 = 331 | **60%** |
+<!-- /bench:parsey -->
 
 **Status.**  Implemented in the C backend: inline scanner actions (§4.3–4.4), the
 `language` declaration, the preamble/epilogue blocks, the id-ref serializer
