@@ -62,22 +62,39 @@ referred to where the rule is named differently; the editor of the HTML marks
 `<unlabelled block>` "missing in original paper".  `syntax.txt` is a separate
 transcription and has not been compared with the report here.
 
-## Status: paused
+## Status: in use (`tests/algol60.sh`)
 
-Saved on 2026-10-17 so the sources are in the repository.  Nothing has been run
-through hbnf yet.  The order is the same as for the other corpora: they resume when
-hbnf is feature complete (`RFCPLAN.md`, "Order").  What reading it needs:
+`algol60.hbnf` is the Report's grammar in hbnf (written 2026-10-18 from
+`syntax.txt`, with its transcription slips put right against the printed report),
+and `tests/good/*.a60`, `tests/bad/*.a60` are programs the parser must accept and
+refuse (Knuth's man-or-boy test among them).  `sh tests/algol60.sh` generates the
+parser and runs them.  It uses the apostrophe stropping `'BEGIN'` of `syntax.txt`.
 
-- `dialect bnf` reads the `<name> ::= a | b` form directly.
-- **Stropping.**  The report's keywords are underlined or bold, a typographic
-  distinction a text file cannot have.  `syntax.txt` quotes them; a test program
-  would use the same.  The grammar has no reserved words in the sense hbnf's
-  keyword rules mean, because `'BEGIN'` is a symbol, not an identifier.
-- **`comment`.**  The report's rules for comments (a comment is text up to the next
-  `;`, and `end` is followed by any text up to `end`, `else` or `;`) are a lexical
-  matter written as productions.
-- The dangling `else` is settled by the structure of the grammar (an `if` statement
-  may not be the statement after `then`), so it should need nothing beyond ordered
-  choice; to be checked when it is run.
-- **Test programs.**  The report's own examples of procedure declarations
-  (Euler, Innerproduct and the rest), and Knuth's "man or boy" program.
+What reading it taught, in the order it happened:
+
+- **Two generator bugs**, found by a real recursive grammar and fixed: the pass that
+  decides which fields need their list heads repointed took exponential time on a
+  grammar that refers back to itself through parentheses (`expr = primary "*"
+  primary | primary`, `primary = ... "(" expr ")"`), and the repointing of a
+  field that breaks a cycle passed the wrong kind of pointer.
+- **One expression, not three.**  The Report writes arithmetic, Boolean and
+  designational expressions as separate grammars, and `<assignment statement>`
+  as two alternatives that differ only in which one follows.  Ordered choice,
+  having matched the first, does not come back, so the Boolean case never parses.
+  The grammar here has one expression of precedence levels (the types are for a
+  checking pass) and a designational expression only after `GOTO` and in a switch.
+- **A colon is not a `:=`.**  The Report's `:=` is one symbol; a label's colon is a
+  colon that does not start one.  Written with the literal `":"`, a label matched
+  the first character of `:=`, and because a statement may be empty `i := 1` read as
+  the label `i` on an empty statement, and was never tried as an assignment.  The
+  grammar puts the assignment first.  A "not followed by" test (`":" !"="`) would
+  say it directly, and trying the next alternative after a later failure
+  (RFCPLAN.md decision 14) would find it unaided; both are on the list for the
+  W-grammar work.
+- **Comments** are white space (`ws`), and the text after `END` is skipped to the
+  next `;` or word symbol, as in section 2.3.
+
+Not covered: `<code>` bodies, `^` and `E` spellings other than those in the file
+header, and the standard procedures (`outreal` is just a name here).  The grammar
+is a parser, not a checker: an undeclared name, a Boolean where a number is
+needed and a label that is never defined are all accepted.

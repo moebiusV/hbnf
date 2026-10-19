@@ -9,7 +9,7 @@ README that says what is in it and what state it is in.
 | `rfc/` | grammar snippets lifted from RFCs, with vectors that must and must not parse | in use (`tests/rfc.sh`) |
 | `posix/` | the POSIX shell grammar | paused |
 | `imp72/` | the IMP72 compiler's sources (DECUS 10-198) | paused |
-| `algol60/` | the Revised Report on ALGOL 60 and its BNF | paused, saved |
+| `algol60/` | the Revised Report on ALGOL 60, its BNF, and a grammar in hbnf | in use (`tests/algol60.sh`) |
 | `algol68/` | the Revised Report's W-grammar (planned, after C++) | not started |
 | `bip39/` | the ten official BIP-39 word lists | in use (`tests/wire.sh`) |
 

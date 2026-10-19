@@ -1,0 +1,1 @@
+'BEGIN' 'INTEGER' i; 'IF' i = 1 i := 2 'END'

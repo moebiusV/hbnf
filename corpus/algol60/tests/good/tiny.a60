@@ -1,0 +1,6 @@
+'BEGIN'
+   'INTEGER' i, n; 'REAL' s;
+   n := 10; s := 0;
+   'FOR' i := 1 'STEP' 1 'UNTIL' n 'DO' s := s + i * i;
+   'IF' s > 100 'THEN' n := 0 'ELSE' n := 1
+'END'

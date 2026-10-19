@@ -3546,11 +3546,19 @@ package body HBNF_C is
             return False;
          end Elem_Holds_List;
 
-         procedure Field (Name : String; Buf : in out U) is
+         procedure Field (Idx : Positive; Name : String; Buf : in out U) is
          begin
             if Ref_Kind (Name) in Struct | List and then Holds_List (Name) then
-               Append (Buf, "    relink_" & C_Name (Alias_Target (Rules, Name))
-                 & "(&n->" & C_Field (Name) & ");");
+               if Ref_Kind (Name) = Struct and then Is_Back (Idx, Name) then
+                  --  A field that breaks a cycle is a pointer, and not always
+                  --  set: the alternative that holds it may not have matched.
+                  Append (Buf, "    if (n->" & C_Field (Name) & ") relink_"
+                    & C_Name (Alias_Target (Rules, Name)) & "(n->"
+                    & C_Field (Name) & ");");
+               else
+                  Append (Buf, "    relink_" & C_Name (Alias_Target (Rules, Name))
+                    & "(&n->" & C_Field (Name) & ");");
+               end if;
                Append (Buf, LF);
             end if;
          end Field;
@@ -3613,15 +3621,15 @@ package body HBNF_C is
                      Append (Buf, LF);
                      if Info.Kind = Struct then
                         for M of Info.Members loop
-                           Field (To_String (M.Name), Buf);
+                           Field (I, To_String (M.Name), Buf);
                         end loop;
                      elsif Info.Elem_Members.Is_Empty then
                         if Info.Elem_Name /= Null_Unbounded_String then
-                           Field (To_String (Info.Elem_Name), Buf);
+                           Field (I, To_String (Info.Elem_Name), Buf);
                         end if;
                      else
                         for M of Info.Elem_Members loop
-                           Field (To_String (M.Name), Buf);
+                           Field (I, To_String (M.Name), Buf);
                         end loop;
                      end if;
                      Append (Buf, "}");

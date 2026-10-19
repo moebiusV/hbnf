@@ -1,0 +1,16 @@
+'COMMENT' Knuth's man or boy test (1964), the Report's own features at their
+          most awkward: call by name, a recursive real procedure that changes
+          its parameter k, and a function that assigns to its own name ;
+'BEGIN'
+   'REAL' 'PROCEDURE' A (k, x1, x2, x3, x4, x5);
+   'VALUE' k; 'INTEGER' k;
+   'REAL' x1, x2, x3, x4, x5;
+   'BEGIN'
+      'REAL' 'PROCEDURE' B;
+      'BEGIN' k := k - 1;
+         B := A := A (k, B, x1, x2, x3, x4)
+      'END' B;
+      'IF' k <= 0 'THEN' A := x4 + x5 'ELSE' B
+   'END' A;
+   outreal (1, A (10, 1, -1, -1, 1, 0))
+'END'

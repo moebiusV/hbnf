@@ -1,0 +1,3 @@
+'BEGIN' 'INTEGER' i;
+   'IF' i = 1 'THEN' 'IF' i = 2 'THEN' i := 3 'ELSE' i := 4
+'END'

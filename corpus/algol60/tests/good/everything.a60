@@ -1,0 +1,50 @@
+'BEGIN'
+   'COMMENT' declarations of every kind ;
+   'INTEGER' i, j, k;
+   'REAL' x, y, eps;
+   'BOOLEAN' ok, done;
+   'OWN' 'INTEGER' calls;
+   'ARRAY' a, b [1 : 10, 0 : 3];
+   'INTEGER' 'ARRAY' counts [0 : 99];
+   'OWN' 'REAL' 'ARRAY' table [-5 : 5];
+   'SWITCH' dispatch := first, second, 'IF' ok 'THEN' third 'ELSE' first;
+
+   'PROCEDURE' swap (u, v); 'REAL' u, v;
+   'BEGIN' 'REAL' t; t := u; u := v; v := t 'END';
+
+   'INTEGER' 'PROCEDURE' gcd (m, n); 'VALUE' m, n; 'INTEGER' m, n;
+   gcd := 'IF' n = 0 'THEN' m 'ELSE' gcd (n, m - m 'DIV' n * n);
+
+   'REAL' 'PROCEDURE' sum (lo, hi, term); 'VALUE' lo, hi; 'INTEGER' lo, hi;
+      'REAL' term;
+   'BEGIN' 'REAL' s; s := 0;
+      'FOR' lo := lo 'STEP' 1 'UNTIL' hi 'DO' s := s + term;
+      sum := s
+   'END';
+
+   'PROCEDURE' report (text, value); 'STRING' text; 'REAL' value;
+   'BEGIN' 'END';
+
+   i := j := k := 0;
+   x := 1.5E-3 + 2.0 - .25 * 4 / 3 'POWER' 2;
+   y := - x + (+x);
+   ok := x < y 'AND' 'NOT' (i = j) 'OR' x >= 1 'IMPL' done 'EQUIV' 'TRUE';
+   a [i, j] := b [i + 1, j - 1] * 2;
+   swap (x, y); swap (a [1, 1], b [2, 2]);
+   report ("sum of squares", sum (1, 10, i * i));
+   'IF' ok 'THEN' x := 1 'ELSE' 'IF' done 'THEN' x := 2 'ELSE' x := 3;
+   'FOR' i := 1, 2, 3, 10 'STEP' -2 'UNTIL' 0, x 'WHILE' x > 1 'DO'
+   'BEGIN'
+      'IF' i = 3 'THEN' 'GOTO' skip;
+      calls := calls + 1;
+   skip:
+   'END';
+   'GOTO' dispatch [2];
+first: x := 1; 'GOTO' finish;
+second: x := 2;
+third: x := 3;
+finish: ;
+   'BEGIN' 'INTEGER' inner; inner := 1;
+      'BEGIN' 'REAL' innermost; innermost := inner 'END'
+   'END'
+'END'

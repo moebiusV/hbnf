@@ -35,12 +35,18 @@ messages alone tell the author how to fix what hbnf could not accept
 silently.
 
 **Planned, after C++ (the user, 2026-10-18): ALGOL 68.**  When C++ parses, ALGOL 68
-follows, and what is parsed is the *W-grammar* itself: the Revised Report's
-two-level grammar (`METACOMPILERS.md`, "W-grammars"), read as text, so that hbnf
-reads a hyperrule family, expands the finite part (parameterised rules, consistent
-substitution) and reports the rest.  It is the test of the parameterised-rule and
-back-reference proposals there, and sits beside the paused ALGOL 60 and IMP72
-corpora (`corpus/`).
+follows, written in an hbnf that has gained what the W-grammar does (the user,
+2026-10-18: "we won't do ALGOL 68 in precisely the W-grammar, we'll do it in the
+hbnf that is updated to do what a W-grammar does"): parameterised rules for the
+Report's NOTION families, a back-reference for consistent substitution, `where`
+as the context and `%where` machinery of decision 13, and a checking pass over
+the AST for modes and coercion.  `METACOMPILERS.md` ("W-grammars") says what
+each is.  **ALGOL 60 first** (done 2026-10-18: `corpus/algol60/algol60.hbnf`,
+`tests/algol60.sh`).  What ALGOL 60 taught, to carry into the W-grammar work:
+a "not followed by" test (`":" !"="`) and trying the next alternative after a
+later failure (decision 14) would let the Report's BNF be used as it is written
+(its arithmetic/Boolean split, its `:` and `:=`) instead of rearranged; and two
+generator bugs on recursive grammars were found and fixed.
 
 ## Decisions
 

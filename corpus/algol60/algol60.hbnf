@@ -1,0 +1,165 @@
+; ALGOL 60 (Revised Report, Naur ed., 1963), in hbnf.
+;
+; The grammar of the Report's section 2-5 productions (the BNF in syntax.txt, with
+; the transcription's slips put right against the printed report), arranged for
+; ordered choice: where the Report writes the same shape twice for two types of
+; expression (<arithmetic expression>, <Boolean expression>) there is one
+; expression here, since which type a name has is for a later pass, and the
+; Report's left-recursive lists are loops.  Nothing here is a reserved word: the
+; Report's word symbols are the quoted words 'BEGIN', 'END', ... (syntax.txt's
+; stropping), so an identifier can be anything that begins with a letter.
+;
+; Differences from the Report, each a thing the plain text form cannot say:
+;   - the multiplication, division, power and relational signs have ASCII
+;     spellings: * / 'DIV' 'POWER' (or ^), < 'NOTGREATER' = 'NOTLESS' > 'NOTEQUAL'
+;     with their word forms 'LESS' 'EQUAL' 'GREATER' as well;
+;   - a string is "..." with no quote inside it;
+;   - the ten of an exponent is the letter E: 1.5E-3.  A bare exponent part
+;     (the Report's  10 5 , meaning 100000) is left out: E5 is an identifier;
+;   - 'COMMENT' text up to the next ; is white space wherever it stands, and
+;     the text after 'END' up to a ; or a word symbol is skipped, as in 2.3;
+;   - <code> bodies (machine code) are not read.
+prefix none
+
+program = label ":" program
+        | block
+        | compound-statement
+
+; ---- white space and comments --------------------------------------------
+ws = *( " " / %x09 / %x0A / %x0D / comment )
+comment = "'COMMENT'" *( ~";" ) ";"
+
+; ---- statements ----------------------------------------------------------
+; An assignment is tried before a label: the Report's := is one symbol, and a
+; label's colon is a colon that is not the start of one.  Here a label's ":" would
+; match the first character of ":=", and a statement may be empty, so  i := 1
+; read as the label i and an empty statement, and ordered choice, having found a
+; match, does not come back.  (A "not followed by" test would say it directly.)
+statement = assignment-statement
+          | label ":" statement
+          | conditional-statement
+          | for-statement
+          | unconditional-statement
+
+unconditional-statement = assignment-statement
+                        | label ":" unconditional-statement
+                        | block
+                        | compound-statement
+                        | basic-statement
+
+block              = block-head ";" compound-tail
+block-head         = "'BEGIN'" declaration *( ";" declaration )
+compound-statement = "'BEGIN'" compound-tail
+compound-tail      = statement *( ";" statement ) "'END'" end-junk
+end-junk           = *( ~( ";" / "'" ) )
+
+basic-statement = assignment-statement
+                | go-to-statement
+                | procedure-statement
+                |                                    ; the dummy statement
+
+assignment-statement = 1*left-part expression
+left-part            = variable ":="
+go-to-statement      = "'GOTO'" designational-expression
+procedure-statement  = identifier [ actual-parameter-part ]
+
+; a then-branch is an unconditional statement, which settles the dangling else
+conditional-statement = if-clause unconditional-statement [ "'ELSE'" statement ]
+                      | if-clause for-statement
+if-clause             = "'IF'" expression "'THEN'"
+
+for-statement = for-clause statement
+for-clause    = "'FOR'" variable ":=" for-list "'DO'"
+for-list      = for-list-element *( "," for-list-element )
+for-list-element = expression "'STEP'" expression "'UNTIL'" expression
+                 | expression "'WHILE'" expression
+                 | expression
+
+label = identifier / unsigned-integer
+
+; ---- expressions ---------------------------------------------------------
+; arithmetic, Boolean and designational expressions are one grammar of
+; precedence; the Report's levels are, loosest first, EQUIV IMPL OR AND NOT, the
+; relations, + -, * / DIV, and POWER.
+expression        = if-clause simple-expression "'ELSE'" expression
+                  | simple-expression
+simple-expression = implication *( "'EQUIV'" implication )
+implication       = boolean-term *( "'IMPL'" boolean-term )
+boolean-term      = boolean-factor *( "'OR'" boolean-factor )
+boolean-factor    = boolean-secondary *( "'AND'" boolean-secondary )
+boolean-secondary = [ "'NOT'" ] relation
+relation          = arithmetic [ relational-operator arithmetic ]
+arithmetic        = [ adding-operator ] term *( adding-operator term )
+term              = factor *( multiplying-operator factor )
+factor            = primary *( power-operator primary )
+
+primary = unsigned-number
+        | logical-value
+        | "(" expression ")"
+        | identifier "[" subscript-list "]"
+        | identifier actual-parameter-part
+        | identifier
+
+adding-operator      = "+" / "-"
+multiplying-operator = "*" / "/" / "'DIV'" / %xF7
+power-operator       = "'POWER'" / "^"
+relational-operator  = "<=" / ">=" / "<>" / "<" / ">" / "="
+                     / "'NOTGREATER'" / "'NOTLESS'" / "'NOTEQUAL'"
+                     / "'LESS'" / "'GREATER'" / "'EQUAL'"
+logical-value        = "'TRUE'" / "'FALSE'"
+
+subscript-list = expression *( "," expression )
+variable       = identifier [ "[" subscript-list "]" ]
+
+actual-parameter-part = "(" actual-parameter *( parameter-delimiter actual-parameter ) ")"
+parameter-delimiter   = "," / ")" letter-string ":" "("
+actual-parameter      = string / expression
+letter-string         = 1*letter
+
+designational-expression = if-clause simple-designational "'ELSE'" designational-expression
+                         | simple-designational
+simple-designational     = identifier "[" expression "]"
+                         | "(" designational-expression ")"
+                         | label
+
+; ---- declarations --------------------------------------------------------
+declaration = array-declaration
+            | switch-declaration
+            | procedure-declaration
+            | type-declaration
+
+type-declaration = [ "'OWN'" ] type identifier *( "," identifier )
+type             = "'REAL'" / "'INTEGER'" / "'BOOLEAN'"
+
+array-declaration = [ "'OWN'" ] [ type ] "'ARRAY'" array-segment *( "," array-segment )
+array-segment     = identifier *( "," identifier ) "[" bound-pair *( "," bound-pair ) "]"
+bound-pair        = expression ":" expression
+
+switch-declaration = "'SWITCH'" identifier ":=" designational-expression
+                     *( "," designational-expression )
+
+procedure-declaration = [ type ] "'PROCEDURE'" procedure-heading procedure-body
+procedure-heading     = identifier [ formal-parameter-part ] ";"
+                        [ value-part ] [ specification-part ]
+formal-parameter-part = "(" identifier *( parameter-delimiter identifier ) ")"
+value-part            = "'VALUE'" identifier-list ";"
+specification-part    = 1*( specifier identifier-list ";" )
+specifier             = "'STRING'"
+                      | [ type ] "'ARRAY'"
+                      | [ type ] "'PROCEDURE'"
+                      | "'LABEL'"
+                      | "'SWITCH'"
+                      | type
+identifier-list       = identifier *( "," identifier )
+procedure-body        = statement
+
+; ---- the characters ------------------------------------------------------
+identifier       = letter *( letter / digit )
+letter           = %x41-5A / %x61-7A
+digit            = %x30-39
+unsigned-integer = 1*digit
+unsigned-number  = decimal-number [ exponent-part ]
+decimal-number   = unsigned-integer [ "." unsigned-integer ]
+                 / "." unsigned-integer
+exponent-part    = "E" [ "+" / "-" ] unsigned-integer
+string           = %x22 *( ~%x22 ) %x22

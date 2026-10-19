@@ -1,0 +1,1 @@
+'BEGIN' 'INTEGER' i; i := 1; 'REAL' x; x := 2 'END'
