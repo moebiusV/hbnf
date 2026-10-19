@@ -1485,6 +1485,14 @@ should claim that before 10.
        lists (`sum = sum "+" n`); then `--writer` on obconf (it has a printer
        to compare with), then the suites' round trip, then mixed grammars.
 
+    **A layout hook (2026-10-19, built).**  The generated writer calls an optional
+    `hbnf_write_layout (ctx, ev, s)`: with ev 0 and the text before each token or
+    literal it writes, and it answers what goes before it (NULL: the writer's own
+    blank); with ev 1 and 2 on entering and leaving each node, with the rule's name.
+    A pretty-printer is then a policy of about 60 lines over the grammar
+    (`corpus/algol60/pp.c`, `tests/algol60-pp.sh`), not a second copy of it.  The
+    writer also writes nothing for a test or binding (`!x`, `&x`, `?`, `%bind`).
+
 7d. **The AST and its walkers (the user, 2026-10-18).**  *Built in C 2026-10-18.*
     With `--ast` (default off, so the output of every existing grammar is
     byte for byte what it was): each node whose rule has alternatives records

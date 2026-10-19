@@ -129,7 +129,32 @@ as downloaded.  After the fixes: 12,000 sentences accepted, 12,000 mutations,
 11,976 the same answer, 24 accepted by hbnf only.  Every one of the 24 is expression
 typing (`NOT 7`, `+ TRUE`, `TRUE < TRUE`, an arithmetic operand of `OR`,
 a Boolean subscript), the difference chosen on purpose above: the grammar reads
-one expression, and a later checking pass would apply the types.  One more
-agreement with the Report: blanks are insignificant, so `i b` is the identifier `ib`
-(section 2.3); the reference reads tokens and the mutations skip those.
+one expression, and a later checking pass would apply the types.  One deliberate
+difference remains: names, numbers and strings are tokens, so a blank ends a name.
+The Report (2.3) gives blanks no significance, so `i b` would be the name `ib`; no
+program written today relies on that, and the printer below needs a name to be one
+token.  The reference reads tokens too, and its mutations skip adjacent names and
+numbers.
+
+## The pretty-printer
+
+`pp.c` prints an ALGOL 60 program laid out, comments kept, and is the demonstration
+that a consumer of the parser can make arbitrary output from the tree:
+
+    hbnf corpus/algol60/algol60.hbnf --backend=c --writer > a60.c
+    cc -include a60.c -o pp corpus/algol60/pp.c
+    ./pp program.a60 > pretty.a60          # ./pp -c program.a60: print it twice over, as a test
+
+The parser reads the program into a tree, in which each `'COMMENT' ... ;` after `BEGIN`
+or after a `;` is a node (`remark`, so a program is no longer allowed one anywhere
+else; section 2.3 allows those two places), and the generated writer prints it back,
+token by token.  `pp.c` is only the layout policy, 60 lines: a function that is
+given each token or literal just before it is written (and the name of each rule
+entered and left) and answers what goes before it, a newline and an indent, a
+blank or nothing.  The grammar is not repeated in it.  `sh tests/algol60-pp.sh`
+prints every good program, reads the result and prints it again (the same text),
+and compares `tests/pretty/layout.a60` with `layout.pretty`.
+
+Not kept: the text after `END` that the Report treats as a comment (glued on after
+`'END'`, blanks lost), and the line breaks inside a comment's text (kept as written).
 

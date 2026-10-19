@@ -2976,6 +2976,8 @@ package body HBNF_C is
                            Elements (Idx, E.Items, 1, Natural (E.Items.Length),
                                      Acc, Gap, Buf, Ind);
                         end if;
+                     when HBNF_Grammar.Block =>
+                        null;   --  a test or a binding: it writes nothing
                      when others =>
                         Append (Buf, Ind & Bad ("an element the writer does "
                           & "not know"));
@@ -3053,7 +3055,7 @@ package body HBNF_C is
                      Branches (Idx, R.Pattern, "n->", Gap, Buf, "    ",
                                Rule_Alts (R, False));
                   end if;
-                  Append (Buf, "    hbnf_wclose (w);");
+                  Append (Buf, "    hbnf_wclose (w, """ & NM & """);");
                   Append (Buf, LF);
                   Append (Buf, "}");
                   Append (Buf, LF);
@@ -3116,7 +3118,7 @@ package body HBNF_C is
                   end if;
                   Append (Buf, "    }");
                   Append (Buf, LF);
-                  Append (Buf, "    hbnf_wclose (w);");
+                  Append (Buf, "    hbnf_wclose (w, """ & NM & """);");
                   Append (Buf, LF);
                   Append (Buf, "}");
                   Append (Buf, LF);
@@ -3167,6 +3169,14 @@ package body HBNF_C is
            & "/* Set to 1 to write the tree's shape too: (rule ...) around each"
            & " node.  The tests compare it. */" & LF
            & "static int hbnf_write_trace;" & LF
+           & "/* A pretty-printer's say (corpus/algol60/pp.c): called with ev 0 and "
+           & "the text before each token or literal is written (it returns what "
+           & "goes before it, NULL for the writer's own spacing), and with ev 1 "
+           & "and 2 on entering and leaving a node, with its rule's name. */" & LF
+           & "typedef const char *(*hbnf_wlayout_fn) (void *ctx, int ev, "
+           & "const char *s);" & LF
+           & "static hbnf_wlayout_fn hbnf_write_layout;" & LF
+           & "static void *hbnf_write_layout_ctx;" & LF
            & "static void hbnf_wbad (hbnf_w *w, const char *why) "
            & "{ if (!w->bad) w->bad = why; }" & LF
            & "static void hbnf_wput (hbnf_w *w, const char *s, size_t n) {" & LF
@@ -3177,11 +3187,15 @@ package body HBNF_C is
            & "    w->len += n;" & LF
            & "    if (n) w->last = (unsigned char)s[n - 1];" & LF
            & "}" & LF
-           & "static void hbnf_wopen (hbnf_w *w, const char *n) "
-           & "{ if (w->trace) { hbnf_wput (w, ""("", 1); hbnf_wput (w, n, "
-           & "strlen (n)); hbnf_wput (w, "" "", 1); } }" & LF
-           & "static void hbnf_wclose (hbnf_w *w) "
-           & "{ if (w->trace) hbnf_wput (w, "")"", 1); }" & LF
+           & "static void hbnf_wopen (hbnf_w *w, const char *n) {" & LF
+           & "    if (hbnf_write_layout) hbnf_write_layout (hbnf_write_layout_ctx, 1, n);" & LF
+           & "    if (w->trace) { hbnf_wput (w, ""("", 1); hbnf_wput (w, n, "
+           & "strlen (n)); hbnf_wput (w, "" "", 1); }" & LF
+           & "}" & LF
+           & "static void hbnf_wclose (hbnf_w *w, const char *n) {" & LF
+           & "    if (hbnf_write_layout) hbnf_write_layout (hbnf_write_layout_ctx, 2, n);" & LF
+           & "    if (w->trace) hbnf_wput (w, "")"", 1);" & LF
+           & "}" & LF
            & "static int hbnf_wdelim (int c) "
            & "{ return c && strchr (""()[],;"", c) != NULL; }" & LF
            & "/* Would the item just written, with sep and s after it, still end"
@@ -3223,7 +3237,10 @@ package body HBNF_C is
            & "}" & LF
            & "static void hbnf_wtext (hbnf_w *w, int gap, const char *s, "
            & "size_t n, hbnf_wscan_fn scan) {" & LF
-           & "    hbnf_wsep (w, gap, s);" & LF
+           & "    const char *sep = n && hbnf_write_layout"
+           & " ? hbnf_write_layout (hbnf_write_layout_ctx, 0, s) : NULL;" & LF
+           & "    if (sep) hbnf_wput (w, sep, strlen (sep));" & LF
+           & "    else hbnf_wsep (w, gap, s);" & LF
            & "    hbnf_wput (w, s, n);" & LF
            & "    w->pscan = scan;" & LF
            & "    if (scan) {" & LF

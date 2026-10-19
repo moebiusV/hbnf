@@ -13,16 +13,16 @@
 ; stropping syntax.txt uses, so nothing is reserved: an identifier is any word.
 ; The multiplication, division, power and relational signs have ASCII spellings
 ; (* / 'DIV' 'POWER' ^ < <= = >= > <>) as well as the Report's word forms.
-; 'COMMENT' text up to the next ; is white space wherever it stands, the text
-; after 'END' up to a ; or a word symbol is skipped (section 2.3), and a string
+; 'COMMENT' text up to the next ; is a comment after BEGIN and after ; (section 2.3),
+; the text after 'END' up to the next ; END or ELSE is skipped (the same), and a string
 ; is "..." with no quote inside.  Machine-code bodies (<code>) are not read.
 prefix none
 include "../../grammars/common.hbnf"
 
-program = *( label ":" !"=" ) block
+program = *remark *( label ":" !"=" ) block
 
 ; ---- statements ----------------------------------------------------------
-block = "'BEGIN'" *( declaration ";" ) statement *( ";" statement ) "'END'" end-junk
+block = "'BEGIN'" *remark *( declaration ";" *remark ) statement *( ";" *remark statement ) "'END'" end-junk
 end-junk = *( !( "'END'" / "'ELSE'" ) ~";" )
 
 statement = label ":" !"=" statement
@@ -42,7 +42,7 @@ if-clause     = "'IF'" expression "'THEN'"
 for-statement = *( label ":" !"=" ) "'FOR'" variable ":=" for-element *( "," for-element ) "'DO'" statement
 for-element   = expression [ "'STEP'" expression "'UNTIL'" expression
                            | "'WHILE'" expression ]
-label = identifier / 1*DIGIT
+label = identifier / digits
 
 ; ---- expressions ---------------------------------------------------------
 ; one grammar of precedence, loosest first: EQUIV IMPL OR AND NOT, the
@@ -100,8 +100,18 @@ expressions   = expression *( "," expression )
 formals = "(" identifier *( "," identifier | ")" 1*ALPHA ":" "(" identifier ) ")"
 
 ; ---- the characters ------------------------------------------------------
-identifier = ALPHA *( ALPHA / DIGIT )
-number     = ( 1*DIGIT [ "." 1*DIGIT ] / "." 1*DIGIT ) [ "E" [ "+" / "-" ] 1*DIGIT ]
-string     = DQUOTE *( ~DQUOTE ) DQUOTE
+identifier = ALPHA *alnum
+alnum      = ALPHA / DIGIT
+number     = mantissa exponent / mantissa
+mantissa   = digits "." digits / digits / "." digits
+exponent   = "E" "+" digits / "E" "-" digits / "E" digits
+digits     = 1*DIGIT
+string     = DQUOTE *~DQUOTE DQUOTE
 
-ws = *( SP / HTAB / CR / LF / "'COMMENT'" *( ~";" ) ";" )
+ws = *( SP / HTAB / CR / LF )
+
+; Section 2.3: after BEGIN and after ; the text 'COMMENT' ... up to the next ; is the
+; same as nothing.  It is a node here, so a program that reads the tree (the pretty-
+; printer, tests/algol60/pp.c) can keep it.
+remark       = "'COMMENT'" remark-text ";"
+remark-text = *~";"
