@@ -13,11 +13,11 @@ fail=0
 # check NAME: generate tests/wire/NAME.hbnf, build it with tests/wire/NAME_main.c,
 # and compare the program's output with tests/wire/NAME.expected.
 check() {
-	n=$1; libs=${2:-}; need=${3:-}; g=${4:-$n}; flags=${5:--Wall -Wextra -Werror}
+	n=$1; libs=${2:-}; need=${3:-}; g=${4:-$n}; flags=${5:--Wall -Wextra -Werror}; gen=${6:-}
 	if [ -n "$need" ] && ! printf '#include <%s>\n' "$need" | $CC -E - > /dev/null 2>&1; then
 		echo "SKIP $n: no <$need>; its actions call the system's library"; return
 	fi
-	if ! "$CLI" tests/wire/$g.hbnf --backend=c > "$T/$g.c" 2> "$T/$n.err"; then
+	if ! "$CLI" tests/wire/$g.hbnf --backend=c $gen > "$T/$g.c" 2> "$T/$n.err"; then
 		echo "FAIL $n: generation: $(cat "$T/$n.err")"; fail=$((fail+1)); return
 	fi
 	if ! $CC $flags -I"$T" -Icorpus/bip39 -o "$T/$n" tests/wire/${n}_main.c $libs 2> "$T/$n.cc"; then
@@ -75,6 +75,7 @@ check mixed "" "" mixed -w
 check mixed2 "" "" mixed2 -w
 check mixed3 "" "" mixed3 -w
 check mixed4 "" "" mixed4 -w
+check mixed7 "" "" mixed -w --writer
 check mixed5 "" "" mixed5 -w
 check mixed6 "" "" mixed6 -w
 check segwit "" "" segwit -w

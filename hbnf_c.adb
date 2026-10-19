@@ -2950,6 +2950,38 @@ package body HBNF_C is
                            if E.Min /= 1 or else E.Max /= 1 then
                               Append (Buf, Ind & Bad ("a repeated name inside "
                                 & "a sequence"));
+                           elsif J = 0 and then Scalar_C_Type (Nm) = ""
+                             and then HBNF_Grammar.Is_Wire_Rule (Nm)
+                           then
+                              --  A bit rule: its octets, written by its own
+                              --  writer (which runs its %emit), go into the
+                              --  text as they are.
+                              Append (Buf, Ind & "{ static char e_[256]; "
+                                & "size_t nb_; uint8_t *b_;");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  bool emit_bits_"
+                                & C_Name (Nm) & " (const "
+                                & C_Type_Name (Nm) & " *, uint8_t *, size_t, "
+                                & "size_t *, char *, size_t);");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  if (!emit_bits_"
+                                & C_Name (Nm) & " (&" & Acc & F
+                                & ", NULL, 0, &nb_, e_, sizeof e_)) "
+                                & "hbnf_wbad (w, e_);");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  else if (nb_ % 8) hbnf_wbad "
+                                & "(w, ""`" & Nm & "` does not end on an "
+                                & "octet, so it cannot be written as text"");");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  else if ((b_ = (uint8_t *)"
+                                & "malloc (nb_ / 8 + 1)) == NULL) "
+                                & "hbnf_wbad (w, ""out of memory"");");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  else { if (!emit_bits_"
+                                & C_Name (Nm) & " (&" & Acc & F
+                                & ", b_, nb_ / 8, &nb_, e_, sizeof e_)) "
+                                & "hbnf_wbad (w, e_); else hbnf_wput (w, "
+                                & "(const char *)b_, nb_ / 8); free (b_); } }");
                            elsif Scalar_C_Type (Nm) /= "" or else J = 0 then
                               Append (Buf, Ind & Leaf (Nm, Acc & F, Gap));
                            else
