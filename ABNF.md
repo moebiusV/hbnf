@@ -37,12 +37,15 @@ file's `ws` rule becomes `extras`; a rule that can match nothing, which tree-sit
 is defined by what it matches that is not empty and named with `optional`; a rule that is
 only a choice among other tokens (`label = identifier / digits`) stays a choice of rules, so
 the parser, not the lexer, decides.  What tree-sitter cannot say is left out and listed in
-the file's head and as warnings: lookahead `!x` and `&x`, context tests and bindings,
-actions, scanners written in C.  A back-reference (`x %as tag` ... `%same tag`) is the
-exception: with `--ts-scanner=FILE` the backend writes the `externals` and a `scanner.c` that
-holds the captured text in its state and accepts only the same text again (Mustache's closing
-tag; the tagged name must be a token the C backend scans as an automaton, and the tags held are
-limited to the 1,024 octets of state tree-sitter saves).  Ordered choice has no form in tree-sitter: `--ts-ordered`
+the file's head and as warnings: context tests and bindings, actions, scanners written in C
+(unless `--ts-scanner=FILE` is given, see below).  Two things have a form with an external
+scanner, and `--ts-scanner=FILE` writes it (the `externals` in the `grammar.js` and a `scanner.c`
+for `src/`): a back-reference (`x %as tag` ... `%same tag`: the scanner holds the captured text in
+its state and accepts only the same text again, as Mustache's closing tag needs; the tagged name
+must be a token the C backend scans as an automaton, and the tags held are limited to the 1,024
+octets of state tree-sitter saves), and a lookahead `!x` / `&x` of literals and such tokens (a
+zero-width token that looks at the text, and takes a literal that follows it into the test).
+Where several lookaheads could hold at once, the first that does is taken.  Ordered choice has no form in tree-sitter: `--ts-ordered`
 gives each alternative a `prec.dynamic` (the first the most), and `--ts-conflicts=a,b;c,d`
 declares the groups of rules tree-sitter may fork between, which `tree-sitter generate`
 names one at a time (`tests/ts-build.sh` loops until it succeeds).  Checked with the real

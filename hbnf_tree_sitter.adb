@@ -266,14 +266,36 @@ package body HBNF_Tree_Sitter is
 
    Scanner_Text : Unbounded_String;
 
+   --  A lookahead the scanner does: `!x` or `&x`, with x alternatives that are
+   --  each one literal or one token.
+   type Look_Info is record
+      Neg    : Boolean;
+      Elem   : Element_Access;
+      Follow : Element_Access;     --  a literal that must follow, or null
+   end record;
+   package Look_Vectors is new Ada.Containers.Vectors (Positive, Look_Info);
+
    function Scanner_Source return String is (To_String (Scanner_Text));
+
+   function Num (N : Natural) return String is
+      T : constant String := Natural'Image (N);
+   begin
+      return T (T'First + 1 .. T'Last);
+   end Num;
+
+   function Hex2 (N : Natural) return String is
+      Digs : constant String := "0123456789abcdef";
+   begin
+      return [Digs (N / 16 + 1), Digs (N mod 16 + 1)];
+   end Hex2;
 
    --  The external scanner for the `%as` / `%same` pairs: for each tag, an
    --  automaton (the token's own, as the C backend scans it) that captures the
    --  text, and a comparison that must find the same text again.
    function Scanner_C
      (Rules : HBNF_Grammar.Rule_Vectors.Vector;
-      Tags, Tokens : Name_Vectors.Vector; Language : String) return String
+      Tags, Tokens : Name_Vectors.Vector; Looks : Look_Vectors.Vector;
+      Ws : String; Language : String) return String
    is
       Out_Text : U;
       Fn : constant String := "tree_sitter_" & Language & "_external_scanner_";
@@ -302,6 +324,9 @@ package body HBNF_Tree_Sitter is
       Append (Out_Text, "enum { ");
       for K in 0 .. Natural (Tags.Length) - 1 loop
          Append (Out_Text, "AS_" & Img (K) & ", SAME_" & Img (K) & ", ");
+      end loop;
+      for K in 0 .. Natural (Looks.Length) - 1 loop
+         Append (Out_Text, "LOOK_" & Img (K) & ", ");
       end loop;
       Ln ("ERROR_SENTINEL };   // the order of `externals` in grammar.js");
       Ln ("");
@@ -409,6 +434,169 @@ package body HBNF_Tree_Sitter is
             Ln ("");
          end;
       end loop;
+      --  The lookaheads.  Each is a zero-width token: the white space the grammar
+      --  skips is skipped, the token is marked as ending there, and the branches
+      --  are run side by side over the text that follows.
+      if not Looks.Is_Empty then
+         Ln ("// A branch of a lookahead: a literal (compared as UTF-8, a fold to lower case for %i)");
+         Ln ("// or a token's automaton.");
+         Ln ("typedef struct { const unsigned char *lit; unsigned n; bool fold;");
+         Ln ("                 const uint32_t *lo, *hi; const uint16_t *to, *first;");
+         Ln ("                 const unsigned char *acc;");
+         Ln ("                 unsigned at, st; bool dead, hit; } Branch;");
+         Ln ("");
+         Ln ("// The text at the lookahead, run through the branches; true if one matches.");
+         Ln ("// A literal that has to come next (the last branch, when follow is set) is part of the");
+         Ln ("// test, because tree-sitter cannot take the token back if what follows does not fit.");
+         Ln ("static bool look(TSLexer *lx, Branch *b, unsigned nb, bool follow, bool neg) {");
+         Ln ("    bool hit = false;");
+         Ln ("    unsigned i;");
+         Ln ("    for (i = 0; i < nb; i++) { b[i].at = 0; b[i].st = 0; b[i].dead = false; b[i].hit = false; }");
+         Ln ("    for (;;) {");
+         Ln ("        unsigned char o[4];");
+         Ln ("        unsigned m = 0, live = 0;");
+         Ln ("        uint32_t c = 0;");
+         Ln ("        bool more = !lx->eof(lx);");
+         Ln ("        if (more) { c = (uint32_t)lx->lookahead; m = utf8(c, o); }");
+         Ln ("        for (i = 0; i < nb; i++) {");
+         Ln ("            Branch *x = &b[i];");
+         Ln ("            if (x->dead) continue;");
+         Ln ("            if (x->lit) {");
+         Ln ("                unsigned j;");
+         Ln ("                if (x->at == x->n) { x->hit = true; x->dead = true; continue; }");
+         Ln ("                if (!more || x->at + m > x->n) { x->dead = true; continue; }");
+         Ln ("                for (j = 0; j < m; j++) {");
+         Ln ("                    unsigned char a = o[j], z = x->lit[x->at + j];");
+         Ln ("                    if (x->fold) { if (a >= 'A' && a <= 'Z') a += 32; if (z >= 'A' && z <= 'Z') z += 32; }");
+         Ln ("                    if (a != z) break;");
+         Ln ("                }");
+         Ln ("                if (j < m) { x->dead = true; continue; }");
+         Ln ("                x->at += m;");
+         Ln ("                if (x->at == x->n) { x->hit = true; x->dead = true; continue; }");
+         Ln ("            } else {");
+         Ln ("                unsigned k;");
+         Ln ("                if (x->at && x->acc[x->st]) { x->hit = true; x->dead = true; continue; }");
+         Ln ("                if (!more) { x->dead = true; continue; }");
+         Ln ("                for (k = x->first[x->st]; k < x->first[x->st + 1]; k++)");
+         Ln ("                    if (c >= x->lo[k] && c <= x->hi[k]) break;");
+         Ln ("                if (k == x->first[x->st + 1]) { x->dead = true; continue; }");
+         Ln ("                x->st = x->to[k];");
+         Ln ("                x->at++;");
+         Ln ("            }");
+         Ln ("            live++;");
+         Ln ("        }");
+         Ln ("        if (!live || !more) break;");
+         Ln ("        lx->advance(lx, false);");
+         Ln ("    }");
+         Ln ("    for (i = 0; i < (follow ? nb - 1 : nb); i++) {");
+         Ln ("        Branch *x = &b[i];");
+         Ln ("        if (x->hit || (!x->lit && x->at && x->acc[x->st])) hit = true;");
+         Ln ("    }");
+         Ln ("    return (neg ? !hit : hit) && (!follow || b[nb - 1].hit);");
+         Ln ("}");
+         Ln ("");
+         if Ws /= "" then
+            declare
+               D   : HBNF_Lookahead.Dfa_State_Vectors.Vector;
+               Ok  : Boolean;
+               Why : U;
+               Lo, Hi, To, First, Acc : U;
+            begin
+               HBNF_Lookahead.Token_Dfa (Rules, Ws, D, Ok, Why);
+               HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
+               Ln ("// The white space the grammar skips between elements (`" & Ws & "`).");
+               Ln ("static void skip_ws(TSLexer *lx) {");
+               Ln ("    static const uint32_t lo[] = {" & To_String (Lo) & "};");
+               Ln ("    static const uint32_t hi[] = {" & To_String (Hi) & "};");
+               Ln ("    static const uint16_t to[] = {" & To_String (To) & "};");
+               Ln ("    static const uint16_t first[] = {" & To_String (First) & "};");
+               Ln ("    unsigned st = 0;");
+               Ln ("    while (!lx->eof(lx)) {");
+               Ln ("        uint32_t c = (uint32_t)lx->lookahead;");
+               Ln ("        unsigned k;");
+               Ln ("        for (k = first[st]; k < first[st + 1]; k++)");
+               Ln ("            if (c >= lo[k] && c <= hi[k]) break;");
+               Ln ("        if (k == first[st + 1]) break;");
+               Ln ("        st = to[k];");
+               Ln ("        lx->advance(lx, true);");
+               Ln ("    }");
+               Ln ("}");
+               Ln ("");
+            end;
+         else
+            Ln ("static void skip_ws(TSLexer *lx) { (void)lx; }");
+            Ln ("");
+         end if;
+         for K in 1 .. Natural (Looks.Length) loop
+            declare
+               L : constant Look_Info := Looks (K);
+               N : Natural := 0;
+               Defs : U;
+               Init : U;
+               B : Natural := 0;
+
+               procedure Add (X : Element_Access) is
+               begin
+                  B := B + 1;
+                  if X.Kind = Literal then
+                     declare
+                        Lit : constant String := To_String (X.Lit);
+                        Esc : U;
+                     begin
+                        for C of Lit loop
+                           Append (Esc, "\x" & Hex2 (Character'Pos (C)));
+                        end loop;
+                        Append (Defs, "    static const unsigned char l" & Img (B - 1)
+                          & "[] = """ & To_String (Esc) & """;" & LF);
+                        Append (Init, "    b[" & Img (B - 1) & "] = (Branch){ .lit = l"
+                          & Img (B - 1) & ", .n = " & Img (Lit'Length) & ", .fold = "
+                          & (if X.No_Case then "true" else "false") & " };" & LF);
+                     end;
+                  else
+                     declare
+                        D   : HBNF_Lookahead.Dfa_State_Vectors.Vector;
+                        Ok  : Boolean;
+                        Why : U;
+                        Lo, Hi, To, First, Acc : U;
+                        T : constant String := Img (B - 1);
+                     begin
+                        HBNF_Lookahead.Token_Dfa (Rules, To_String (X.Name), D, Ok, Why);
+                        HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
+                        Append (Defs, "    static const uint32_t lo" & T & "[] = {" & To_String (Lo) & "};" & LF);
+                        Append (Defs, "    static const uint32_t hi" & T & "[] = {" & To_String (Hi) & "};" & LF);
+                        Append (Defs, "    static const uint16_t to" & T & "[] = {" & To_String (To) & "};" & LF);
+                        Append (Defs, "    static const uint16_t first" & T & "[] = {" & To_String (First) & "};" & LF);
+                        Append (Defs, "    static const unsigned char acc" & T & "[] = {" & To_String (Acc) & "};" & LF);
+                        Append (Init, "    b[" & T & "] = (Branch){ .lo = lo" & T & ", .hi = hi" & T
+                          & ", .to = to" & T & ", .first = first" & T & ", .acc = acc" & T & " };" & LF);
+                     end;
+                  end if;
+               end Add;
+            begin
+               for X of L.Elem.Look loop
+                  if X.Kind /= Alt then
+                     Add (X);
+                  end if;
+               end loop;
+               if L.Follow /= null then
+                  Add (L.Follow);
+               end if;
+               N := B;
+               Ln ("// " & (if L.Neg then "!" else "&") & " lookahead " & Img (K - 1));
+               Ln ("static bool look_" & Img (K - 1) & "(TSLexer *lx) {");
+               Append (Out_Text, To_String (Defs));
+               Ln ("    Branch b[" & Img (N) & "];");
+               Append (Out_Text, To_String (Init));
+               Ln ("    skip_ws(lx);");
+               Ln ("    lx->mark_end(lx);");
+               Ln ("    return look(lx, b, " & Img (N) & ", "
+                  & (if L.Follow /= null then "true" else "false") & ", "
+                  & (if L.Neg then "true" else "false") & ");");
+               Ln ("}");
+               Ln ("");
+            end;
+         end loop;
+      end if;
       Ln ("bool " & Fn & "scan(void *p, TSLexer *lx, const bool *valid) {");
       Ln ("    Scanner *s = p;");
       Ln ("    // not while tree-sitter is recovering from an error: it asks for every token");
@@ -422,6 +610,13 @@ package body HBNF_Tree_Sitter is
          Ln ("    if (valid[SAME_" & Img (K) & "]) {");
          Ln ("        if (!same(s, lx, " & Img (K) & ")) return false;");
          Ln ("        lx->result_symbol = SAME_" & Img (K) & ";");
+         Ln ("        return true;");
+         Ln ("    }");
+      end loop;
+      for K in 0 .. Natural (Looks.Length) - 1 loop
+         Ln ("    if (valid[LOOK_" & Img (K) & "]) {");
+         Ln ("        if (!look_" & Img (K) & "(lx)) return false;");
+         Ln ("        lx->result_symbol = LOOK_" & Img (K) & ";");
          Ln ("        return true;");
          Ln ("    }");
       end loop;
@@ -945,6 +1140,79 @@ package body HBNF_Tree_Sitter is
       Sc_Tags   : Name_Vectors.Vector;
       Sc_Tokens : Name_Vectors.Vector;
 
+      Sc_Looks : Look_Vectors.Vector;
+
+      --  Can the scanner do the lookahead E?  Each branch is one literal, or one
+      --  token the automaton scans; and the white space, if there is any, scans.
+      function Look_Ok (E : Element_Access) return Boolean is
+         Prev_Atom : Boolean := False;
+      begin
+         if not Scanner then
+            return False;
+         end if;
+         if Ws_Rule /= Null_Unbounded_String
+           and then not Is_Dfa_Token (Rules, To_String (Ws_Rule))
+         then
+            return False;
+         end if;
+         for X of E.Look loop
+            if X.Kind = Alt then
+               Prev_Atom := False;
+            elsif Prev_Atom then
+               return False;                 --  a sequence, not alternatives
+            else
+               Prev_Atom := True;
+               if X.Kind = Name
+                 and then (Find (To_String (X.Name)) = 0
+                           or else not Is_Dfa_Token (Rules, To_String (X.Name)))
+               then
+                  return False;
+               end if;
+            end if;
+         end loop;
+         return True;
+      end Look_Ok;
+
+      --  The literal the sequence goes on with after the lookahead being made, if
+      --  it is a single one (Ph_Seq sets it).
+      Cur_Follow : Element_Access := null;
+
+      --  What a lookahead tests, as text: two with the same text are one token,
+      --  so every place that wants it gets the same one.
+      function Look_Key (E, Follow : Element_Access) return String is
+         R : U;
+      begin
+         Append (R, (if E.Op = B_Not then "!" else "&"));
+         for X of E.Look loop
+            case X.Kind is
+               when Alt     => Append (R, "|");
+               when Literal => Append (R, "L" & (if X.No_Case then "i" else "c")
+                                         & To_String (X.Lit));
+               when Name    => Append (R, "N" & To_String (X.Name));
+               when others  => Append (R, "?");
+            end case;
+            Append (R, ASCII.NUL);
+         end loop;
+         if Follow /= null then
+            Append (R, "F" & To_String (Follow.Lit));
+         end if;
+         return To_String (R);
+      end Look_Key;
+
+      function Look_Id (E : Element_Access) return Natural is
+      begin
+         for K in 1 .. Natural (Sc_Looks.Length) loop
+            if Look_Key (Sc_Looks (K).Elem, Sc_Looks (K).Follow)
+               = Look_Key (E, Cur_Follow)
+            then
+               return K;
+            end if;
+         end loop;
+         Sc_Looks.Append
+           (Look_Info'(Neg => E.Op = B_Not, Elem => E, Follow => Cur_Follow));
+         return Natural (Sc_Looks.Length);
+      end Look_Id;
+
       function Sc_Find (Tag : String) return Natural is
       begin
          for K in 1 .. Natural (Sc_Tags.Length) loop
@@ -1029,6 +1297,9 @@ package body HBNF_Tree_Sitter is
                     (Re_Elem (new HBNF_Grammar.Element'
                                 (E.all with delta Min => 1, Max => 1), 0).Text) & "/");
             when Block =>
+               if E.Op in B_Not | B_And and then Look_Ok (E) then
+                  return Atom ("$._look_" & Num (Look_Id (E) - 1));
+               end if;
                Note_Dropped (E);
                if E.Op = B_Same and then Sc_Find (To_String (E.Ctx)) /= 0 then
                   return Atom ("$._same_" & Js_Name (To_String (E.Ctx)));
@@ -1121,9 +1392,16 @@ package body HBNF_Tree_Sitter is
                            & ", $." & Js_Name (To_String (V (K - 1).Name)) & ")"));
                end if;
             end if;
+            Cur_Follow :=
+              (if V (K).Kind = Block and then V (K).Op in B_Not | B_And
+                 and then K < En and then V (K + 1).Kind = Literal
+                 and then V (K + 1).Min = 1 and then V (K + 1).Max = 1
+                 and then Length (V (K + 1).Lit) > 0
+               then V (K + 1) else null);
             declare
                N : constant Node_Access := Ph_Elem (V (K));
             begin
+               Cur_Follow := null;
                if N /= null then
                   Parts.Append (N);
                end if;
@@ -1440,14 +1718,19 @@ package body HBNF_Tree_Sitter is
          Append (Output, "  ]," & LF & LF);
       end if;
       Scanner_Text := Null_Unbounded_String;
-      if not Sc_Tags.Is_Empty then
+      if not Sc_Tags.Is_Empty or else not Sc_Looks.Is_Empty then
          Append (Output, "  externals: $ => [" & LF);
          for T of Sc_Tags loop
             Append (Output, "    $._as_" & Js_Name (To_String (T)) & ", $._same_"
               & Js_Name (To_String (T)) & "," & LF);
          end loop;
+         for K in 0 .. Natural (Sc_Looks.Length) - 1 loop
+            Append (Output, "    $._look_" & Num (K) & "," & LF);
+         end loop;
          Append (Output, "    $._error_sentinel," & LF & "  ]," & LF & LF);
-         Scanner_Text := To_Unbounded_String (Scanner_C (Rules, Sc_Tags, Sc_Tokens, Language));
+         Scanner_Text := To_Unbounded_String
+           (Scanner_C (Rules, Sc_Tags, Sc_Tokens, Sc_Looks,
+                       To_String (Ws_Rule), Language));
       end if;
       Append (Output, "  rules: {" & LF & To_String (Body_Text)
         & "  }" & LF & "});" & LF);

@@ -445,9 +445,13 @@ were accepted by Tree-sitter alone, and 103 of those 106 have a closing tag nami
 Tree-sitter's one place for state is the external scanner, a C file with state of its own that
 Tree-sitter saves and restores for every fork, and the backend uses it (`--ts-scanner=FILE`): the
 scanner holds the name the opening tag captured and accepts the closing tag only if it is the same
-text. With it the 106 disagreements are gone (0 of 2,000). What the scanner cannot do is see the
-parse, only the characters, so a context test that depends on what the parser has reduced (whether
-`T` was declared a type) still has no equivalent, and nor does the lookahead `!x`, which is next.
+text. With it the 106 disagreements are gone (0 of 2,000). The same scanner does the lookahead
+`!x` and `&x` (a zero-width token that looks at the text, skipping the white space the grammar skips,
+and takes the literal that follows it into the test, because Tree-sitter cannot take a token back):
+the nine ALGOL 60 mutants only Tree-sitter accepted are gone too, and 3,000 sentences and 3,000
+mutations of the Report agree exactly. What the scanner cannot do is see the parse, only the
+characters, so a context test that depends on what the parser has reduced (whether `T` was declared
+a type) still has no equivalent.
 
 The thread through all of it: Backus and Naur gave a generative notation,
 Johnson mechanized the LR subset of it, Crocker loosened the notation for
