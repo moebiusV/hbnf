@@ -148,6 +148,111 @@ the idea. What was missing was a reliable way to do it.
 
 *Sources:* [McCarthy, "Recursive Functions of Symbolic Expressions and Their Computation by Machine" (1960)](https://doi.org/10.1145/367177.367199) · [Sitaker, "A metacircular Lisp interpreter in a low-level language" (kragen-hacks, September 2007)](http://lists.canonical.org/pipermail/kragen-hacks/2007-September/000464.html) · [Reynolds, "Definitional Interpreters Revisited", *Higher-Order and Symbolic Computation* 11, 355–361 (1998)](http://www.brics.dk/~hosc/local/HOSC-11-4-pp355-361.pdf) · [Irons, "A Syntax-Directed Compiler for ALGOL 60" (1961)](https://doi.org/10.1145/366062.366083) · [Brooker, MacCallum, Morris & Rohl, "The Compiler Compiler" (1963)](https://curation.cs.manchester.ac.uk/atlas/docs/ccPaperDL.pdf) · [Schorre, "META II: A Syntax-Oriented Compiler Writing Language", *Proc. ACM SYMSAM* (1964)](https://dl.acm.org/doi/10.1145/800257.808896) ([scan](https://ibm-1401.info/Meta-II-schorre.pdf)) · McClure, TMG (1965).
 
+## Irons, IMP and the two-level grammar
+
+Two ideas run through the early years and they pull in opposite directions: make the
+grammar *run*, and make the grammar *say more*.
+
+**Make it run.** Irons's 1961 compiler (E. T. Irons, "A Syntax Directed Compiler for ALGOL 60",
+*Communications of the ACM* 4(1), January 1961) drove the parse straight off Naur's BNF.
+ALGOL 60's syntax allowed more than one parse for some programs, and Irons's answer was to
+add mechanisms that reject the ones that are semantically wrong (Knuth's account of the
+history of attribute grammars says as much). The grammar and the rule for
+choosing between its parses were one tool from the start. IMP (Irons; the dates
+differ by source, from the late 1960s into the 1970s) took the next step: the grammar is the
+extension mechanism. A program adds *syntax statements* to the language it is being compiled
+in, `<EXP> ::= ABS ( <A> ) ::= "A<0=>-A ELSE A"`, and the parser, which "allows ambiguity in
+the syntax", settles it by rule (the 1973 Yale *IMP72 Reference Manual*, section 2.3.4): a
+terminal beats an identifier, then the reading that uses the fewest different syntax rules,
+then an arbitrary choice. No reserved words, one grammar for the language and for what a
+program adds to it. `METACOMPILERS.md` has the comparison with META II and SNOBOL4.
+
+**Make it say more.** BNF cannot say that a name must be declared before it is used, or that
+the two sides of an assignment have the same type. Adriaan van Wijngaarden's answer, for the
+ALGOL 68 Report, was a grammar of grammars: a first level of *metarules* defining sets of
+strings (`MODE :: int ; real ; ref to MODE`), and a second of *hyperrules* whose names
+contain them (`MODE list : MODE, comma symbol, MODE list`), so that every consistent
+substitution of a metanotion gives an ordinary rule and one hyperrule stands for a family,
+usually an infinite one. With unrestricted metanotions the formalism is Turing complete.
+
+**What stopped it.** By the accounts in Lindsey's *A History of ALGOL 68* and Koster's
+*The Making of ALGOL 68*, the first thing was the Report itself: from the beginning,
+prominent members of the working group complained that two-level grammars were too complicated
+to understand, and the 1968 Report was called unreadable (the 1973 Revised Report is a
+much more readable grammar, and admits in a famous sentence that its method may be difficult
+for the uninitiated reader). The second was that the formalism was too strong to be used:
+in its full generality it cannot be the input of a parser generator, so the groups that built
+compilers rewrote the grammar by hand into a context-free one and checked the rest in the
+compiler, and the Report stopped being the specification anyone actually ran. The third was
+the language: large, orthogonal, with coercions and modes that made it slow to implement while
+Pascal and C were simple enough to compile in one pass on a small machine. The grammar did not
+kill ALGOL 68 alone, and the historians say that "too big" and "unreadable" are oversimplified;
+but a grammar nobody could read and no tool could run is a poor basis for a language that has to
+spread. (This paragraph is a summary of those two histories and Wikipedia's article on van
+Wijngaarden grammars, not of the Report; check them before quoting it.)
+
+*Sources:* [Irons, "A Syntax Directed Compiler for ALGOL 60", CACM 4(1), 1961](https://doi.org/10.1145/366862.366872);
+[Knuth, "The genesis of attribute grammars"](https://www.cs.tufts.edu/~nr/cs257/archive/don-knuth/history-of-attribute-grammars.pdf);
+[Lindsey, "A history of ALGOL 68"](https://algol68-lang.org/docs/lindsey-history-of-algol68.pdf);
+[Koster, "The making of ALGOL 68"](https://algol68-lang.org/docs/koster-making-of-algol68.pdf);
+[Van Wijngaarden grammar (Wikipedia)](https://en.wikipedia.org/wiki/Van_Wijngaarden_grammar);
+Bilofsky, *IMP72 Reference Manual*, Yale, 1973 (see `METACOMPILERS.md`).
+
+**What hbnf takes from the line.**
+- From Irons: the grammar and the choice rule are one document. IMP72's three-step tie-break is
+  decision 14's order (a failing test removes a reading, a terminal beats an expression, the
+  fewest rules wins, and where IMP72 says "arbitrary" hbnf says "the first written"). And an
+  extensible, ambiguous grammar is fine if the ambiguity is *detected and reported* rather than
+  silently resolved.
+- From van Wijngaarden: the idea that one rule can stand for a family (`list(X) = X *( "," X )`),
+  and that two places in a rule can be made to agree (the closing tag equals the opening tag, the
+  here-document terminator, a raw string's delimiter).
+- From both histories, what not to copy: a notation that only its author can read, and a power
+  nobody can bound.
+
+**How hbnf makes the two-level grammar work for real.** By keeping the part that is decidable
+and cheap, and handing the rest to tools that already exist (`METACOMPILERS.md`, section on
+W-grammars, has the argument; `RFCPLAN.md` has the decisions):
+- *Parameterised rules over a finite set* are expanded when the parser is generated, so a
+  hyperrule becomes the ordinary rules it stands for, and the parser is the one you would have
+  written by hand. No runtime cost, no new parsing algorithm, no undecidability. Domains are
+  checked when the grammar is read, so a use that can never match is an error with a message.
+  *Not built yet.*
+- *Consistent substitution* becomes a back-reference: a slice of the input kept in the parse
+  state and compared where it repeats. A backtrack restores it with the position, and only a
+  token that uses one pays. *Not built yet.*
+- *What a finite domain cannot hold*, the names declared so far, is a **context** (decision 13: a
+  persistent set, `? types`, `%bind`, `%scope`, `%where`), kept local to the rule it affects.
+  *Built, in C.*
+- *Ambiguity* is handled by local forks (decision 14, `--forks`) and by a lookahead test
+  (`!x`, `&x`). *Built, in C, in their local form.*
+- *Types and modes* are checked by a pass over the tree, not by the grammar. A parser that has
+  to be a type checker is why the Report could not be run.
+The ALGOL 68 grammar will be written in this hbnf and not in the Report's literal two levels
+(the user's decision, 2026-10-18). ALGOL 60 came first as the proving ground, and it has been
+checked against the Report's own BNF with an independent recognizer.
+
+**What it saves.** Measured on the grammars in `corpus/`, comparing the published BNF or ABNF
+with the hbnf, comments and blank lines left out of both:
+
+| language | notation | rules | code lines | symbols | characters |
+|---|---|---:|---:|---:|---:|
+| ALGOL 60 | the Report's BNF | 108 | 116 | 1,246 | 8,063 |
+| | hbnf | 47 | 72 | 510 | 3,470 |
+| | saved | 56% | 38% | 59% | 57% |
+| JSON | RFC 8259 ABNF | 30 | 45 | 193 | 949 |
+| | hbnf | 14 | 14 | 129 | 556 |
+| | saved | 53% | 69% | 33% | 41% |
+
+(A "symbol" is a whitespace-separated word of the grammar text; the count of LLM tokens
+depends on the tokenizer and has not been measured, but it follows the characters.) The
+saving comes from what the notation says once instead of many times: a comma list is
+`x *( "," x )` where the Report writes a list rule for each of nine lists; a block is a compound
+statement with declarations in front, not six rules; the three expression grammars that exist
+only to carry a type are one, since a checking pass applies the types; the lexical productions
+share the RFC core rules. The ALGOL 68 saving has not been measured: it is the point of the
+pilot, a chapter of the Report's W-grammar counted before and after.
+
 ## The machine: Yacc
 
 Yacc did not invent the compiler compiler; it found the algorithm that made one
@@ -303,6 +408,50 @@ is gone; Tree-sitter is now the usual answer whenever a tool needs a real
 syntax tree for a language it does not itself compile.
 
 *Sources:* [Brunsfeld, "Tree-sitter: A New Parsing System for Programming Tools" (2018)](https://www.thestrangeloop.com/2018/treesitter---a-new-parsing-system-for-programming-tools.html).
+
+**What Tree-sitter does about context, and what that costs.** A parser generator has three
+places to put context-sensitivity, and Tree-sitter uses all of them in its own way. (1) *The
+lexer is told what the parser expects.* It lexes by parse state: only the tokens that are valid
+in the current LR state can match, so `<` can be an operator in one state and a bracket in
+another, and a keyword is a keyword only where one can occur. (2) *The parse forks.* Where the
+LR table has a conflict (`a * b;` as a declaration or as a multiplication, `T(x)`, `a < b > c`)
+it splits the stack and runs the readings in parallel on the same input; the ones that die are
+dropped, and of those that survive the one with the higher `prec.dynamic` and the lower
+error cost wins. The author names the conflicts (`conflicts`) and the precedences. (3) *A hand-written
+scanner in C*, with state it serializes, for what no regular lexer can do: indentation, heredocs,
+raw strings, nested template literals.
+
+The limitation is what none of the three has: **a symbol table.** Tree-sitter cannot know that
+`T` was declared a type three screens earlier, so it decides `T * x;` by precedence and by which
+reading survives, not by what the program declared, and where the two readings are both valid
+it picks by a number the grammar author chose. That is why Tree-sitter's C and C++ trees are
+sometimes wrong where it matters (a typedef name taken for a variable), and why a tool that
+needs the right answer must run its own semantic pass over the tree afterwards. It is also
+the price of what Tree-sitter is for: incremental re-parsing and a tree for text that is
+half-written, where a wrong guess is cheap and an error is not allowed.
+
+The other cost is the machinery. In the repository's benchmark (`bench/results/treesitter.md`)
+on one toy language at 100,000 rules, Tree-sitter parses the 7.7 MB file in 226 ms with 63 MB
+of memory, against hbnf's C parser at 26 ms and 21 MB; at a million rules, 2,302 ms and 620 MB
+against 266 ms and 204 MB. That is about nine times the time and three times the memory, on a
+grammar with no ambiguity in it, so the forking itself is not in the number: it is the price of
+the tables, the tree it builds for editing, and the generality of the lexer.
+
+hbnf's forks (decision 14) are a smaller thing than GLR and should not be confused with it. They
+are depth-first: try one alternative to the end of the enclosing sequence and, if something later
+in that sequence fails, back up and try the next, with no stack of stacks and no reach past the end
+of a rule. Where Tree-sitter keeps both readings alive and decides at the end, hbnf's contexts
+decide *at the choice*: a `? types` test on an alternative removes the reading that the declared
+names rule out before anything is parsed under it. That is the part of C++ Tree-sitter cannot do,
+and the part of C++ that forks are not needed for.
+
+There is a Tree-sitter backend (`--backend=tree-sitter`), and what it shows is the same
+difference from the other side. A hbnf grammar becomes a `grammar.js` mechanically, ALGOL 60 and
+JSON parse the same texts in Tree-sitter as in hbnf (JSON: 2,000 documents and 2,000 mutations, no
+difference; ALGOL 60: every one of 500 sentences of the Report), but ordered choice has to be
+turned into `conflicts` and `prec.dynamic` (four conflicts for ALGOL 60), and a lookahead or a
+context test cannot be turned into anything: it is left out, and the nine mutants out of 500
+that only Tree-sitter accepted were all the lookahead that was left out.
 
 The thread through all of it: Backus and Naur gave a generative notation,
 Johnson mechanized the LR subset of it, Crocker loosened the notation for

@@ -70,9 +70,10 @@ of `syntax.txt`; that file is here to compare it against.
 
 | | the Report's BNF (`syntax.txt`) | `algol60.hbnf` |
 |---|---|---|
-| rules / productions | 108 | 38 |
-| code lines (no blanks or comments) | 117 | 65 |
-| characters, without comments | 8,724 | 3,361 |
+| rules / productions | 108 | 47 |
+| code lines (no blanks or comments) | 116 | 72 |
+| symbols (words of the grammar text) | 1,246 | 510 |
+| characters, without comments | 8,063 | 3,470 |
 
 What hbnf let it say once instead of many times:
 
