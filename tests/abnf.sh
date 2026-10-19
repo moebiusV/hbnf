@@ -138,6 +138,7 @@ check FAIL "a"   "not a digit"
 echo "== <name> rules, as Backus and Naur write them: one rule, whatever the operator =="
 for op in "::=" ":=" ":" "="; do
 	rm -f "$W/t"; gen <<G 2>/dev/null
+dialect bnf
 <number> $op <digit> <digit>
 <digit> $op "0" | "1"
 G
@@ -173,6 +174,7 @@ doc = x
 x = %grammar "/no/such/file.hbnf"
 G
 refuse "a bare number" "a terminal written bare, as BNF writes it" <<'G'
+dialect bnf
 <digit> ::= 0 | 1
 G
 refuse "writes it in quotes" "a bare name that no rule defines" <<'G'
@@ -531,6 +533,7 @@ echo "== copy-paste syntax: the other notations' operators (step 7a) =="
 # written.  Each spelling has to produce the same parser.
 for op in "=" "::=" ":=" ":"; do
 	rm -f "$W/t"; gen <<G
+dialect bnf
 include "$CORE"
 doc  $op sum
 sum  $op num "+" num

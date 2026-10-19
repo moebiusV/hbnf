@@ -204,7 +204,7 @@ Bilofsky, *IMP72 Reference Manual*, Yale, 1973 (see `METACOMPILERS.md`).
   fewest rules wins, and where IMP72 says "arbitrary" hbnf says "the first written"). And an
   extensible, ambiguous grammar is fine if the ambiguity is *detected and reported* rather than
   silently resolved.
-- From van Wijngaarden: the idea that one rule can stand for a family (`list(X) = X *( "," X )`),
+- From van Wijngaarden: the idea that one rule can stand for a family (`list(X) := X *( "," X )`),
   and that two places in a rule can be made to agree (the closing tag equals the opening tag, the
   here-document terminator, a raw string's delimiter).
 - From both histories, what not to copy: a notation that only its author can read, and a power
@@ -279,6 +279,15 @@ members. What laziness does not do is stop the cycle above, because there the de
 rule itself and no input has been matched for it to run out of. The same remedy applies as for left
 recursion: require progress, and refuse the rule that makes none.
 
+**How hbnf spells them.** As the Report does, with the operators told apart: `=` defines a rule,
+`:=` a rule with parameters (a hyperrule, the Report's `:`) and `::=` a domain (a metarule, the
+Report's `::`), so `level ::= 1..17` and `binary(N in level) := binary(N+1) *( op(N) binary(N+1) )`
+read as the Report's two levels do. A metarule is a plain context-free production, over the strings
+that go into names instead of the sentences of the language, and here it is a finite set of numbers or
+words (a domain that names itself would be the infinite family, and is refused). A file in BNF, where
+`::=` or `:=` defines an ordinary rule, names its notation with `dialect bnf`; in hbnf's own notation
+a BNF rule read as a metarule is refused with the line to add.
+
 **What hbnf does.**
 - Parameters range over a *finite* set (a number in `1..17`, one of a list of words, or a rule
   name), so the family is finite and is expanded into ordinary rules when the grammar is read: the
@@ -305,7 +314,7 @@ grammars people write nothing.
 **Is it a typeclass?** Much of it is, and the comparison is the quickest way to explain the rules to a
 programmer. A parameterised rule is a function from arguments to a rule, chosen by pattern: an instance
 declaration in Haskell is a function from types to dictionaries, chosen by pattern, and the most
-specific wins (`binary(17) = unary` beside the general `binary(N in 1..17)` is overlapping instances).
+specific wins (`binary(17) := unary` beside the general `binary(N in 1..17)` is overlapping instances).
 Expanding every use before the parser runs is monomorphisation, as C++ templates and Rust generics do,
 and it costs nothing at run time (Haskell's dictionary passing does). A domain is a closed set of
 instances. And the termination trouble is the same trouble: instance resolution in Haskell can chase

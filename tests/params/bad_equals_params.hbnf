@@ -1,0 +1,7 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+expr = list(item)
+list(X) = X *( "," X )
+item = 1*DIGIT

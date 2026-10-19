@@ -1,0 +1,5 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+expr := 1*DIGIT

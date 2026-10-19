@@ -1,0 +1,7 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+mode ::= "int" | mode
+expr = f("int")
+f(M in mode) := DIGIT

@@ -154,7 +154,7 @@ earlier fields (`len(field)`, `?(cond)`), and decision 14 (detected forks).  Wha
 W-grammars give beyond those, kept to the decidable subset:
 
 1. **Parameterised rules over a finite set, expanded when the parser is
-   generated.**  `list(X) = X *( "," X )`; `binary(N) = binary(N+1) *( op(N)
+   generated.**  `list(X) := X *( "," X )`; `binary(N) := binary(N+1) *( op(N)
    binary(N+1) )` for the 17 precedence levels of C++, with the operators per
    level in a table; a parameter ranging over an enum (`value(int)`,
    `value(string)`).  The family is finite, so it expands into ordinary rules:
@@ -178,6 +178,8 @@ W-grammars give beyond those, kept to the decidable subset:
    declared finite domains, so a use that cannot match is an error when the
    grammar is read, not a failed parse.  If hbnf takes (1), it should check
    the arguments the same way, with the helpful errors it already promises.
+   *Named domains (the metarule, `::=`; a hyperrule is `:=`, an ordinary rule `=`) are built too: a finite set of
+   numbers or words, joined from other domains, never one that names itself.*
    *Built with (1): a number outside its domain, a word not in its list, the wrong number of
    arguments, a rule that is not parameterised, and a chain that needs ever bigger instances of
    itself are errors when the grammar is read, each naming the chain of uses.*

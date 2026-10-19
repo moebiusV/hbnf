@@ -1,0 +1,22 @@
+; Named domains: `::=` defines the set of values a parameter ranges over (a
+; metarule), `:=` a rule with parameters (a hyperrule), `=` an ordinary rule.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+level ::= 1..4
+kind  ::= "int" | "string"
+low   ::= 1..2 | 4        ; a domain can be several pieces
+any   ::= low | 3         ; and can use another domain
+
+expr = binary(1) ";" value("int") ";" value("string") ";" pick(3)
+binary(N in level) := binary(N+1) *( op(N) binary(N+1) )
+binary(4) := unary
+op(1) := "||"
+op(2) := "&&"
+op(3) := "+" / "-"
+unary = 1*DIGIT
+value(K in kind) := typed(K)
+typed("int") := 1*DIGIT
+typed("string") := DQUOTE *~DQUOTE DQUOTE
+pick(M in any) := "pick" DIGIT

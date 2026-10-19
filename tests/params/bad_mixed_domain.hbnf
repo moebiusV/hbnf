@@ -1,0 +1,7 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+mix ::= 1..3 | "a"
+expr = f(1)
+f(M in mix) := DIGIT

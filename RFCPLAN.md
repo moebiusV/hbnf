@@ -563,8 +563,12 @@ A grammar is compiler-compiler ready when:
     backends agree with the interpreter on acceptance and values.
 
 **RFC copy-paste is a design goal.**  An RFC's ABNF should compile almost
-verbatim.  Spelling variants (`::=`, `:=` for `=`) are accepted silently —
-silence makes cut-and-paste easier — and where hbnf needs something different,
+verbatim.  An RFC's ABNF uses `=`, which hbnf reads.  A grammar in another notation
+(`::=` in BNF, `:` in yacc) names it with `dialect bnf` or `ybnf`, and then every
+spelling defines a rule; in hbnf's own notation `::=` and `:=` are the metarule and
+the hyperrule (`level ::= 1..17`, `binary(N in level) := ...`), as the ALGOL 68
+Report's `::` and `:`, and a BNF rule read as one is refused with the line to add.
+Where hbnf needs something different,
 the error names the RFC form and says how hbnf spells it, so a pasted RFC is
 corrected by the messages, not by reading the manual.
 

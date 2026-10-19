@@ -1,0 +1,4 @@
+; In BNF `::=` and `:=` define ordinary rules; `dialect bnf` says the file is BNF.
+dialect bnf
+<number> ::= <digit> <digit>
+<digit> ::= "0" | "1"

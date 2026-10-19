@@ -3,6 +3,6 @@ whitespace none
 include "../../grammars/common.hbnf"
 
 doc = list(a, b)
-list(X) = X *( "," X )
+list(X) := X *( "," X )
 a = "a"
 b = "b"

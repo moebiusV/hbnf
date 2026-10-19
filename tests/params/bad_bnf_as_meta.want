@@ -1,0 +1,1 @@
+For BNF, where `::=` defines a rule, begin the file with the line `dialect bnf`

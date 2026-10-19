@@ -1,0 +1,3 @@
+prefix none
+<number> ::= <digit> <digit>
+<digit> ::= "0" | "1"

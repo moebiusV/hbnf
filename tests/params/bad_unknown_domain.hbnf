@@ -1,0 +1,6 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+expr = f(1)
+f(N in nothere) := DIGIT

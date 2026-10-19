@@ -232,6 +232,14 @@ package body HBNF_Grammar is
    package Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
      (String, Natural, Ada.Strings.Hash, "=");
 
+   --  The named domains of a file: `level ::= 1..17`.  The body is
+   --  kept as written (comments out); Expand_Params reads it where a parameter
+   --  says `N in level`.
+   package Domain_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (String, String, Ada.Strings.Hash, "=");
+   Domain_Bodies : Domain_Maps.Map;
+   Domains_Used  : Index_Maps.Map;        --  the domains a parameter names
+
    --  Where a literal stood among its rule's alternatives as written, for a
    --  rule whose alternatives the reader put in another order to match them
    --  (`/`, longest first).  Key: rule NUL literal.  See Enum_Rank.
@@ -528,6 +536,8 @@ package body HBNF_Grammar is
    procedure Reset is
    begin
       Schema_Language := To_Unbounded_String ("C");
+      Domain_Bodies.Clear;
+      Domains_Used.Clear;
       Preamble_Pieces.Clear;
       Epilogue_Pieces.Clear;
       Type_Prefix_Code := Null_Unbounded_String;
@@ -587,7 +597,7 @@ package body HBNF_Grammar is
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
                      T_Prose, T_Tilde, T_At, T_Colon, T_Octets, T_Count, T_Bits,
-                     T_Guard, T_Hash, T_EOF);
+                     T_Guard, T_Hash, T_Meta, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -833,6 +843,12 @@ package body HBNF_Grammar is
 
       --  A backslash in a string is a backslash, in ABNF and in EBNF.
       Raw_Strings : constant Boolean := Abnf_Here or else Ebnf_Here;
+
+      --  In hbnf `=` defines a rule, `:=` a rule with parameters (a hyperrule)
+      --  and `::=` a domain (a metarule), as in the ALGOL 68 Report's `:` and
+      --  `::`.  A file that names another notation (`dialect bnf`, `ybnf`,
+      --  `ebnf`, `abnf`) reads every operator as the one that defines a rule.
+      Legacy_Ops : constant Boolean := Bar_Is_Union or else Raw_Strings;
 
       --  First_Col is the token's first column, for a token Emit sees
       --  only once it has been read past (a quoted string); 0 means Col.
@@ -1302,7 +1318,8 @@ package body HBNF_Grammar is
                if I < Text'Last and then Text (I + 1) = '/' then
                   Emit (T_Eq_Slash);  I := I + 2;  Col := Col + 2;
                else
-                  Emit (T_Eq);  I := I + 1;  Col := Col + 1;
+                  Emit (T_Eq, (if Legacy_Ops then "" else "="));
+                  I := I + 1;  Col := Col + 1;
                end if;
             when ':' =>
                --  The other notations' assignment operators, so a grammar
@@ -1313,12 +1330,55 @@ package body HBNF_Grammar is
                --  When wire widths land (step 7b) a width is a `:` glued to
                --  a name and followed by a digit; nothing here may consume
                --  that, so the `:` cases stay as narrow as they are.
-               if I + 1 < Text'Last and then Text (I + 1) = ':'
+               if not Legacy_Ops and then I + 2 <= Text'Last
+                 and then Text (I .. I + 2) = "::="
+                 and then not Toks.Is_Empty
+                 and then Toks.Last_Element.Kind = T_Name
+                 and then Toks.Last_Element.Col = 1
+               then
+                  --  A metarule (`level ::= 1..17`): it defines a domain, a set
+                  --  of values, and its body is kept as written, through the
+                  --  lines that continue it.
+                  declare
+                     J    : Positive := I + 3;
+                     Raw  : Unbounded_String;
+                     In_Q : Boolean := False;
+                  begin
+                     loop
+                        while J <= Text'Last and then Text (J) /= ASCII.LF loop
+                           if Text (J) = '"' then
+                              In_Q := not In_Q;
+                              Append (Raw, '"');
+                           elsif Text (J) = ';' and then not In_Q then
+                              while J <= Text'Last and then Text (J) /= ASCII.LF loop
+                                 J := J + 1;
+                              end loop;
+                              exit;
+                           else
+                              Append (Raw, Text (J));
+                           end if;
+                           J := J + 1;
+                        end loop;
+                        exit when J >= Text'Last;
+                        if Text (J + 1) in ' ' | ASCII.HT | '|' | '/' then
+                           Append (Raw, ' ');
+                           J := J + 1;
+                           Line := Line + 1;
+                           Col := 1;
+                        else
+                           exit;
+                        end if;
+                     end loop;
+                     Emit (T_Meta, To_String (Raw));
+                     I := J;
+                  end;
+               elsif I + 1 < Text'Last and then Text (I + 1) = ':'
                  and then Text (I + 2) = '='
                then
                   Emit (T_Eq);  I := I + 3;  Col := Col + 3;
                elsif I < Text'Last and then Text (I + 1) = '=' then
-                  Emit (T_Eq);  I := I + 2;  Col := Col + 2;
+                  Emit (T_Eq, (if Legacy_Ops then "" else ":="));
+                  I := I + 2;  Col := Col + 2;
                elsif Glued_Width_Colon then
                   --  `ttl:8`, `data:[len]`, `src:(n)*rec`, `n:bits(w)`: the
                   --  bit layer.  An expression is kept as the text written.
@@ -3312,12 +3372,16 @@ package body HBNF_Grammar is
 
       type Domain_Kind is (D_None, D_Range, D_Set);
       package Text_Vectors is new Ada.Containers.Vectors (Positive, U);
+      type Interval is record
+         Lo, Hi : Long_Long_Integer;
+      end record;
+      package Interval_Vectors is new Ada.Containers.Vectors (Positive, Interval);
 
       type Param is record
          Name   : U;
          Domain : Domain_Kind := D_None;
-         Lo, Hi : Long_Long_Integer := 0;
-         Words  : Text_Vectors.Vector;
+         Spans  : Interval_Vectors.Vector;     --  D_Range: the numbers
+         Words  : Text_Vectors.Vector;         --  D_Set: the words
          Is_Const : Boolean := False;         --  a clause for one value
          Const    : Value;
          Text     : U;                        --  as written, for messages
@@ -3504,6 +3568,93 @@ package body HBNF_Grammar is
       --  Heads
       ---------------------------------------------------------------------
 
+      function In_Spans (P : Param; V : Long_Long_Integer) return Boolean is
+        (for some S of P.Spans => V >= S.Lo and then V <= S.Hi);
+
+      --  The domain of a parameter: numbers (`1..17`, `4`), words (`"int"`), or
+      --  the name of a domain defined with `::=`, joined by `|`.
+      procedure Read_Domain
+        (D : String; P : in out Param; Head : String; Depth : Natural)
+      is
+         Start : Natural := D'First;
+         In_Q  : Boolean := False;
+
+         procedure Item (S : String) is
+            W : constant String := Trim (S);
+         begin
+            if W = "" then
+               Fail ("`" & Head & "`: the domain `" & D & "` has an empty "
+                     & "alternative");
+            elsif W (W'First) = '"' then
+               if W'Length < 2 or else W (W'Last) /= '"' then
+                  Fail ("`" & Head & "`: the word " & W & " has no closing `""`");
+               end if;
+               if P.Domain = D_Range then
+                  Fail ("`" & Head & "`: the domain `" & D & "` mixes numbers "
+                        & "and words");
+               end if;
+               P.Domain := D_Set;
+               P.Words.Append (To_Unbounded_String (W (W'First + 1 .. W'Last - 1)));
+            elsif W (W'First) in '0' .. '9' or else W (W'First) = '-' then
+               declare
+                  Dots : Natural := 0;
+                  Lo, Hi : Long_Long_Integer;
+               begin
+                  for I in W'First .. W'Last - 1 loop
+                     if W (I .. I + 1) = ".." then
+                        Dots := I;
+                        exit;
+                     end if;
+                  end loop;
+                  if Dots > 0 then
+                     Lo := Long_Long_Integer'Value (Trim (W (W'First .. Dots - 1)));
+                     Hi := Long_Long_Integer'Value (Trim (W (Dots + 2 .. W'Last)));
+                  else
+                     Lo := Long_Long_Integer'Value (W);
+                     Hi := Lo;
+                  end if;
+                  if Lo > Hi then
+                     Fail ("`" & Head & "`: the range `" & W & "` is empty");
+                  end if;
+                  if P.Domain = D_Set then
+                     Fail ("`" & Head & "`: the domain `" & D & "` mixes "
+                           & "numbers and words");
+                  end if;
+                  P.Domain := D_Range;
+                  P.Spans.Append (Interval'(Lo, Hi));
+               exception
+                  when Constraint_Error =>
+                     Fail ("`" & Head & "`: `" & W & "` is not a whole "
+                           & "number or a range of them, `1..17`");
+               end;
+            else
+               --  a domain by name
+               if not Domain_Bodies.Contains (W) then
+                  Fail ("`" & Head & "`: `" & W & "` is not a domain; define "
+                        & "it with `" & W & " ::= 1..17`, or write the "
+                        & "numbers `1..17` or the words `""a"" | ""b""` here");
+               end if;
+               if Depth >= 8 then
+                  Fail ("`" & Head & "`: the domain `" & W & "` names itself, "
+                        & "which would be an infinite set; hbnf expands only "
+                        & "finite domains");
+               end if;
+               Domains_Used.Include (W, 1);
+               Read_Domain (Domain_Bodies.Element (W), P, Head, Depth + 1);
+            end if;
+         end Item;
+      begin
+         for I in D'Range loop
+            if D (I) = '"' then
+               In_Q := not In_Q;
+            elsif not In_Q and then D (I) in '|' | '/' then
+               Item (D (Start .. I - 1));
+               Start := I + 1;
+            end if;
+         end loop;
+         Item (D (Start .. D'Last));
+      end Read_Domain;
+
       function Parse_Param (Text : String; Head : String) return Param is
          P : Param;
          T : constant String := Trim (Text);
@@ -3546,57 +3697,8 @@ package body HBNF_Grammar is
                               & "`" & To_String (P.Name) & " in 1..17` or `"
                               & To_String (P.Name) & " in ""a"" | ""b""`");
                      end if;
-                     declare
-                        D : constant String := Trim (Rest (Rest'First + 2 .. Rest'Last));
-                        Dots : Natural := 0;
-                     begin
-                        for I in D'First .. D'Last - 1 loop
-                           if D (I .. I + 1) = ".." then
-                              Dots := I;
-                              exit;
-                           end if;
-                        end loop;
-                        if Dots > 0 then
-                           P.Domain := D_Range;
-                           begin
-                              P.Lo := Long_Long_Integer'Value (Trim (D (D'First .. Dots - 1)));
-                              P.Hi := Long_Long_Integer'Value (Trim (D (Dots + 2 .. D'Last)));
-                           exception
-                              when Constraint_Error =>
-                                 Fail ("`" & Head & "`: the domain of `"
-                                       & To_String (P.Name) & "` is two whole "
-                                       & "numbers, `1..17`");
-                           end;
-                           if P.Lo > P.Hi then
-                              Fail ("`" & Head & "`: the domain `" & D
-                                    & "` is empty");
-                           end if;
-                        else
-                           P.Domain := D_Set;
-                           declare
-                              Start : Natural := D'First;
-                              procedure Word (S : String) is
-                                 W : constant String := Trim (S);
-                              begin
-                                 if W'Length < 2 or else W (W'First) /= '"' then
-                                    Fail ("`" & Head & "`: the domain of `"
-                                          & To_String (P.Name) & "` is numbers "
-                                          & "`1..17` or words `""a"" | ""b""`");
-                                 end if;
-                                 P.Words.Append (To_Unbounded_String
-                                   (W (W'First + 1 .. W'Last - 1)));
-                              end Word;
-                           begin
-                              for I in D'Range loop
-                                 if D (I) in '|' | '/' then
-                                    Word (D (Start .. I - 1));
-                                    Start := I + 1;
-                                 end if;
-                              end loop;
-                              Word (D (Start .. D'Last));
-                           end;
-                        end if;
-                     end;
+                     Read_Domain (Trim (Rest (Rest'First + 2 .. Rest'Last)), P,
+                                  Head, 0);
                   end;
                end if;
             end;
@@ -3879,10 +3981,24 @@ package body HBNF_Grammar is
       ---------------------------------------------------------------------
 
       function Domain_Text (P : Param) return String is
-        (case P.Domain is
-            when D_None  => "any",
-            when D_Range => Img (P.Lo) & " .. " & Img (P.Hi),
-            when D_Set   => "one of the words listed");
+         R : U;
+      begin
+         case P.Domain is
+            when D_None =>
+               return "any";
+            when D_Set =>
+               return "one of the words listed";
+            when D_Range =>
+               for S of P.Spans loop
+                  if Length (R) > 0 then
+                     Append (R, ", ");
+                  end if;
+                  Append (R, Img (S.Lo) & (if S.Hi = S.Lo then ""
+                                           else " .. " & Img (S.Hi)));
+               end loop;
+               return To_String (R);
+         end case;
+      end Domain_Text;
 
       function Chain return String is
          R : U;
@@ -3958,7 +4074,7 @@ package body HBNF_Grammar is
                                 ("`" & Text_Of (V) & "` is not a number, and "
                                  & To_String (P.Name) & " in `"
                                  & To_String (T.Head) & "` is one");
-                           elsif V.Int < P.Lo or else V.Int > P.Hi then
+                           elsif not In_Spans (P, V.Int) then
                               Ok := False;
                               Why := To_Unbounded_String
                                 (Img (V.Int) & " is outside the domain of "
@@ -4066,6 +4182,27 @@ package body HBNF_Grammar is
             Ordinary.Append (R);
          end if;
       end loop;
+      declare
+         C : Domain_Maps.Cursor := Domain_Bodies.First;
+      begin
+         --  A domain nothing names is most likely a BNF rule in a file that does
+         --  not say it is BNF.
+         while Domain_Maps.Has_Element (C) loop
+            declare
+               N : constant String := Domain_Maps.Key (C);
+            begin
+               if not Domains_Used.Contains (N) then
+                  Warn_Once ("domain:" & N, "",
+                             "`" & N & " ::= " & Domain_Maps.Element (C)
+                             & "` defines a domain, which no parameter uses "
+                             & "(in hbnf `::=` is a metarule, `=` a rule).  If "
+                             & "this was BNF, begin the file with the line "
+                             & "`dialect bnf`");
+               end if;
+            end;
+            Domain_Maps.Next (C);
+         end loop;
+      end;
       if Templates.Is_Empty then
          --  a use with nothing to expand is still a mistake worth naming
          for R of Rules loop
@@ -6267,6 +6404,68 @@ package body HBNF_Grammar is
                   Lang_Line := Cur (P).Line;
                   Next (P);
                elsif Cur (P).Kind = T_Name
+                 and then P.Toks (P.Pos + 1).Kind = T_Meta
+               then
+                  declare
+                     N : constant String := To_String (Cur (P).Text);
+                  begin
+                     if Domain_Bodies.Contains (N) then
+                        raise Parse_Error with
+                          Integer'Image (Cur (P).Line) & ": 1: the domain `" & N
+                          & "` is defined twice";
+                     end if;
+                     --  What follows `::=` is numbers, words and other domains
+                     --  joined by `|`; anything else is a rule written for a
+                     --  notation that uses `::=` as `=` does.
+                     declare
+                        B   : constant String := To_String (P.Toks (P.Pos + 1).Text);
+                        Pos : Natural := B'First;
+                        Ok  : Boolean := True;
+                        In_Q : Boolean := False;
+                        Item_Start : Boolean := True;
+                     begin
+                        while Pos <= B'Last loop
+                           declare
+                              C : constant Character := B (Pos);
+                           begin
+                              if C = '"' then
+                                 In_Q := not In_Q;
+                              elsif not In_Q then
+                                 if C in '|' | '/' then
+                                    Item_Start := True;
+                                 elsif C in ' ' | ASCII.HT then
+                                    null;
+                                 else
+                                    if Item_Start
+                                      and then C not in '0' .. '9' | '-' | '"'
+                                        | 'a' .. 'z' | 'A' .. 'Z' | '_'
+                                    then
+                                       Ok := False;
+                                    elsif C in '<' | '>' | '(' | ')' | '[' | ']'
+                                      | '*' | '%' | '{' | '}' | '~' | '!' | '&'
+                                    then
+                                       Ok := False;
+                                    end if;
+                                    Item_Start := False;
+                                 end if;
+                              end if;
+                           end;
+                           Pos := Pos + 1;
+                        end loop;
+                        if not Ok or else In_Q then
+                           raise Parse_Error with
+                             Integer'Image (Cur (P).Line) & ": 1: `" & N
+                             & " ::=` defines a domain in hbnf (numbers, "
+                             & "words, other domains), and this is not one.  "
+                             & "For BNF, where `::=` defines a rule, begin "
+                             & "the file with the line `dialect bnf`";
+                        end if;
+                     end;
+                     Domain_Bodies.Insert (N, To_String (P.Toks (P.Pos + 1).Text));
+                  end;
+                  Next (P);
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "dialect"
                then
                   --  `dialect bnf | ebnf | abnf | ybnf | hbnf`: the notation
@@ -6672,6 +6871,25 @@ package body HBNF_Grammar is
             then
                First_Defined := Name;
             end if;
+            declare
+               Op : constant String := To_String (P.Toks (P.Pos + 1).Text);
+               Hd : constant String := To_String (Name);
+            begin
+               if Op = "=" and then (for some C of Hd => C = '(') then
+                  raise Parse_Error with
+                    Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                    & ": `" & Hd & "` has parameters, and a rule with "
+                    & "parameters is defined with `:=`, as the ALGOL 68 Report "
+                    & "writes a hyperrule: `" & Hd & " := ...`";
+               elsif Op = ":=" and then not (for some C of Hd => C = '(') then
+                  raise Parse_Error with
+                    Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                    & ": `:=` defines a rule with parameters (a hyperrule), "
+                    & "and `" & Hd & "` has none; write `" & Hd & " = ...`.  "
+                    & "To read BNF, where `:=` or `::=` defines an ordinary "
+                    & "rule, begin the file with the line `dialect bnf`";
+               end if;
+            end;
             Next (P);
             Next (P);   --  the '='
 
