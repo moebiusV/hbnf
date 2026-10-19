@@ -218,6 +218,24 @@ begin
    declare
       Parsed : constant HBNF_Grammar.Rule_Vectors.Vector :=
         HBNF_Grammar.Parse_File (To_String (Schema_Path));
+
+      --  A first text rule that only names a bit rule (`doc = segwit`).
+      function Alias_Root return Boolean is
+         use type HBNF_Grammar.Element_Kind;
+      begin
+         if Parsed.Is_Empty or else Natural (Parsed.First_Element.Pattern.Length) /= 1
+         then
+            return False;
+         end if;
+         declare
+            E : constant HBNF_Grammar.Element_Access :=
+              Parsed.First_Element.Pattern (1);
+         begin
+            return E.Kind = HBNF_Grammar.Name and then E.Min = 1 and then E.Max = 1
+              and then (for some W of HBNF_Grammar.Wire_Rules =>
+                          To_String (W.Name) = To_String (E.Name));
+         end;
+      end Alias_Root;
    begin
       if Forks and then To_String (Backend) /= "c" then
          Ada.Text_IO.Put_Line
@@ -277,6 +295,19 @@ begin
       --  Text rules that hold bit rules: the C text parser reads the bit rules
       --  too, from its own state.
       if not HBNF_Grammar.Wire_Rules.Is_Empty
+        and then To_String (Backend) = "zig"
+        and then not Alias_Root
+      then
+         declare
+            G : constant HBNF_Wire.Grammar :=
+              HBNF_Wire.Lower.Lower
+                (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path));
+            Types, Code : Unbounded_String;
+         begin
+            HBNF_Wire.Zig.Emit_Hosted (G, Types, Code);
+            HBNF_Zig.Set_Hosted (To_String (Types), To_String (Code));
+         end;
+      elsif not HBNF_Grammar.Wire_Rules.Is_Empty
         and then To_String (Backend) in "rust" | "zig" | "ada"
       then
          --  The one text form these backends read: a first rule that only
@@ -322,7 +353,9 @@ begin
             return;
          end;
       end if;
-      if not HBNF_Grammar.Wire_Rules.Is_Empty then
+      if not HBNF_Grammar.Wire_Rules.Is_Empty
+        and then To_String (Backend) /= "zig"
+      then
          if To_String (Backend) /= "c" then
             Ada.Text_IO.Put_Line
               (Ada.Text_IO.Standard_Error,

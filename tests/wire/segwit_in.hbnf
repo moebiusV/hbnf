@@ -1,0 +1,16 @@
+; A segwit address's data part inside text: `bitsof` in a grammar of text rules and
+; bit rules together.  The words are bech32's symbols; the text around them is plain.
+prefix none
+whitespace none
+include "../../grammars/bech32.hbnf"
+
+doc = "addr:" segwit ";"
+data = 1*bech32-symbol
+
+segwit = words:bitsof(data)
+         version:5 ?(version <= 16)
+         program:[(remaining - 30) / 8]
+         ?(len(program) >= 2 && len(program) <= 40)
+         ?(version != 0 || len(program) == 20 || len(program) == 32)
+         pad:bits(align) ?(pad == 0)
+         checksum:30

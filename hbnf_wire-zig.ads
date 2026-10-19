@@ -19,4 +19,12 @@ package HBNF_Wire.Zig is
 
    function Emit (G : Grammar) return String;
 
+   --  For a grammar of text rules and bit rules together: the bit rules, read
+   --  from the text parser's own state (HBNF_Zig.Set_Hosted).  Types is the
+   --  declarations (a struct for each bit rule), Code the readers, the writers
+   --  (`emit_bits_<rule>`) and, for each bit rule, the parse_<rule> a text rule
+   --  calls.  A character rule a bit rule names is read by its scanner; a
+   --  text rule with structure there is C's alone.
+   procedure Emit_Hosted (G : Grammar; Types, Code : out Unbounded_String);
+
 end HBNF_Wire.Zig;

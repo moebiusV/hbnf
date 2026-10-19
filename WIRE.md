@@ -69,6 +69,13 @@ one note to standard error when it generates such a parser, naming the first
 rule where text follows fields that end inside an octet; it is only a note.
 The tests are `tests/wire/mixed*.hbnf`.
 
+Zig reads these too (text rules and bit rules in one grammar, a text and a bit field in one
+rule, `bitsof` anywhere in a rule over any text rule, and `%emit` and `emit_bits_<rule>` for
+the bit rules), in the same hosted way: the bit rules are read from the text parser's own input
+and position, and a bit rule that names a text rule with structure has the text parser read it
+(`bnf_sub`).  Not yet in Zig for these grammars: `%action`, and a writer for the whole document.
+Their tests are `mixed`, `mixed2`, `mixed3`, `mixed4`, `mixed6` and `segwit_in`.
+
 What is not built for it: the first rule must be a text rule (a grammar whose
 first rule is a bit rule is read as bits alone, and says so if it names a text
 rule); `--writer` writes a whole mixed document: `write_<root>` writes the text

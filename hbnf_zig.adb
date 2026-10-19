@@ -309,6 +309,23 @@ package body HBNF_Zig is
       return 0;
    end Find;
 
+   Hosted_Types : U;
+   Hosted_Code  : U;
+   Is_Hosted    : Boolean := False;
+
+   procedure Set_Hosted (Types, Code : String) is
+   begin
+      Hosted_Types := To_Unbounded_String (Types);
+      Hosted_Code  := To_Unbounded_String (Code);
+      Is_Hosted := True;
+   end Set_Hosted;
+
+   function Scan_Fn (Rule : String) return String is
+     ("scan_" & Zig_Snake (Rule));
+
+   function Parse_Fn (Rule : String) return String is
+     ("parse_" & Zig_Snake (Rule));
+
    --  The Zig type a rule reference denotes: a core scalar inlines; any
    --  other reference resolves to the referenced rule's own type name.
    function Zig_Type_Of (Rules : Rule_Vectors.Vector; Ref : String)
@@ -318,7 +335,7 @@ package body HBNF_Zig is
       if S /= "" then
          return S;
       end if;
-      if Find (Rules, Ref) = 0 then
+      if Find (Rules, Ref) = 0 and then not HBNF_Grammar.Is_Wire_Rule (Ref) then
          raise Parse_Error with "undefined rule: " & HBNF_Grammar.Spelled (Ref)
            & (if HBNF_Grammar.Spelled (Ref) /= Ref then ", which no `::=` defines" else "");
       end if;
@@ -1343,6 +1360,7 @@ package body HBNF_Zig is
 
       Emit_Walk (Res);
       Append (Res, LF);
+      Append (Res, Hosted_Types);
 
       return To_String (Res);
    end Emit;
@@ -2299,6 +2317,10 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "    err_pos: usize = 0,");
       Append (Res, LF);
+      if Is_Hosted then
+         Append (Res, "    bit: u3 = 0,   // bits of the octet at pos already read by a bit rule");
+         Append (Res, LF);
+      end if;
       Append (Res, LF);
       if not Backs.Is_Empty then
          --  A back edge's subtree lives behind a pointer: move the parsed
@@ -2815,6 +2837,7 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
 
       end;
 
+      Append (Res, Hosted_Code);
       return To_String (Res);
    end Emit_Parser;
 

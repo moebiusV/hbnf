@@ -122,6 +122,12 @@ check_rust mnemonic mnemonic_rust mnemonic_ports crypto
 check_zig net
 check_zig segwit
 check_zig mnemonic mnemonic_zig mnemonic_ports
+check_zig mixed
+check_zig mixed2
+check_zig mixed3
+check_zig mixed4 mixed4 mixed4_zig
+check_zig mixed6 mixed6_zig mixed6
+check_zig segwit_in segwit_in segwit_in
 check_ada net
 check_ada segwit segwit segwit Segwit
 check_ada mnemonic mnemonic_ada mnemonic_ports Mnemonic
