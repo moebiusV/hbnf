@@ -1485,6 +1485,14 @@ should claim that before 10.
        lists (`sum = sum "+" n`); then `--writer` on obconf (it has a printer
        to compare with), then the suites' round trip, then mixed grammars.
 
+    **A tree-sitter backend (the user, 2026-10-19, built).**  `--backend=tree-sitter` writes a
+`grammar.js` (ABNF.md, *Backends*).  Prior art: BNFC has one (`Backend/TreeSitter.hs`, from
+LBNF); kebnf converts KeBNF to tree-sitter; no ABNF or PEG tool does.  The difference to
+mind is the one decision 14 is about: tree-sitter forks the LR stack at every conflict and
+keeps both readings until one dies, choosing by `prec.dynamic` and error cost, with no
+symbol table, so an ordered choice maps onto it only approximately (`--ts-ordered`) and a
+lookahead or a context test not at all.
+
     **A layout hook (2026-10-19, built).**  The generated writer calls an optional
     `hbnf_write_layout (ctx, ev, s)`: with ev 0 and the text before each token or
     literal it writes, and it answers what goes before it (NULL: the writer's own

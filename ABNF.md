@@ -29,6 +29,24 @@ not yet implemented, the rest of the compiled targets: **D**, **Fortran**,
 beyond those, the garbage-collected languages **Go**, **Java**, **JavaScript**,
 **C#**, **F#**, **Julia**, **Common Lisp** and **newLISP**.
 
+A fifth output is not a language but a grammar for another tool: **`--backend=tree-sitter`**
+writes the `grammar.js` the [tree-sitter](https://tree-sitter.github.io/) generator reads.
+A phrase rule becomes `seq`/`choice`/`repeat`/`optional`; a character rule (a token in
+hbnf) becomes one regular expression (a choice among single code points is one class); the
+file's `ws` rule becomes `extras`; a rule that can match nothing, which tree-sitter refuses,
+is defined by what it matches that is not empty and named with `optional`; a rule that is
+only a choice among other tokens (`label = identifier / digits`) stays a choice of rules, so
+the parser, not the lexer, decides.  What tree-sitter cannot say is left out and listed in
+the file's head and as warnings: lookahead `!x` and `&x`, context tests and bindings,
+actions, scanners written in C.  Ordered choice has no form in tree-sitter: `--ts-ordered`
+gives each alternative a `prec.dynamic` (the first the most), and `--ts-conflicts=a,b;c,d`
+declares the groups of rules tree-sitter may fork between, which `tree-sitter generate`
+names one at a time (`tests/ts-build.sh` loops until it succeeds).  Checked with the real
+generator: ALGOL 60 needs 4 conflicts, parses every program of `tests/algol60` and 500 of
+500 random sentences of the Report (`tests/treesitter.sh`, `tests/treesitter-diff.sh`; they
+need a tree-sitter binary and a node, and skip without them).  Most of `grammars/` and
+`corpus/rfc` generate too.
+
 The C backend is pinned to **C99** (OpenBSD-kernel compatible) and always emits
 code that C++ can consume directly — valid C++11 onward, no modification and no
 shim — so a C++ codebase can use a generated parser as-is.  Should C++ support

@@ -9,6 +9,7 @@ with Ada.Text_IO;
 with Mustache;
 with HBNF_Grammar;
 with HBNF_Compilable;
+with HBNF_Tree_Sitter;
 with HBNF_C;
 with HBNF_Rust;
 with HBNF_Zig;
@@ -48,6 +49,8 @@ procedure Hbnf is
    Idref        : Boolean := False;
    Compare      : Boolean := False;
    Forks        : Boolean := False;
+   Ts_Conflicts : Unbounded_String;
+   Ts_Ordered   : Boolean := False;
    Quiet        : Boolean := False;
    Prefix       : Unbounded_String;
 
@@ -115,7 +118,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -146,6 +149,11 @@ begin
             HBNF_C.Set_Spans (True);
          elsif A = "--parents" then
             HBNF_C.Set_Parents (True);
+         elsif A'Length >= 14 and then A (1 .. 14) = "--ts-conflicts" then
+            Ts_Conflicts := To_Unbounded_String
+              ((if A'Length > 15 and then A (15) = '=' then A (16 .. A'Last) else ""));
+         elsif A = "--ts-ordered" then
+            Ts_Ordered := True;
          elsif A = "--forks" then
             Forks := True;
          elsif A = "--quiet-forks" then
@@ -286,7 +294,46 @@ begin
           (HBNF_Grammar.Reachable
              (HBNF_Grammar.Parse_File (To_String (Schema_Path))));
       B     : constant String := To_String (Backend);
+      --  tree-sitter reads the grammar as written (a group is a group), not
+      --  with the groups lifted into rules of their own.
+      Raw   : constant HBNF_Grammar.Rule_Vectors.Vector :=
+        (if B = "tree-sitter"
+         then HBNF_Grammar.Reachable
+                (HBNF_Grammar.Parse_File (To_String (Schema_Path)))
+         else Rules);
       Output : Unbounded_String;
+
+      --  The grammar's name for tree-sitter: --package=, else the file's.
+      function Language return String is
+         P : constant String := To_String (Schema_Path);
+         First : Natural := P'First;
+         Last  : Natural := P'Last;
+      begin
+         if Package_Name /= To_Unbounded_String ("Schema") then
+            return To_String (Package_Name);
+         end if;
+         for K in P'Range loop
+            if P (K) = '/' then
+               First := K + 1;
+            end if;
+         end loop;
+         for K in reverse First .. P'Last loop
+            if P (K) = '.' then
+               Last := K - 1;
+               exit;
+            end if;
+         end loop;
+         declare
+            R : String := P (First .. Last);
+         begin
+            for C of R loop
+               if C not in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' then
+                  C := '_';
+               end if;
+            end loop;
+            return R;
+         end;
+      end Language;
 
       procedure Put (S : String) is
       begin
@@ -302,8 +349,13 @@ begin
          HBNF_Grammar.Set_Type_Prefix (To_String (Prefix));
       end if;
       HBNF_Grammar.Note_Rule_Names (Rules);
-      HBNF_Compilable.Check (Rules, B);
-      if B = "c" then
+      if B /= "tree-sitter" then
+         HBNF_Compilable.Check (Rules, B);
+      end if;
+      if B = "tree-sitter" then
+         Put (HBNF_Tree_Sitter.Emit
+                (Raw, Language, To_String (Ts_Conflicts), Ts_Ordered));
+      elsif B = "c" then
          if Conf then
             Put_Line ("===== conf.h =====");
             Put (HBNF_C.Emit_Conf_Header (Rules));
