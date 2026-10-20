@@ -124,6 +124,7 @@ check_rust mixed2
 check_rust mixed3
 check_rust mixed4 mixed4 mixed4_zig
 check_rust mixed6 mixed6_rust mixed6
+check_rust segwit_in segwit_in segwit_in
 check_zig net
 check_zig segwit
 check_zig mnemonic mnemonic_zig mnemonic_ports
@@ -141,6 +142,7 @@ check_ada mixed2 mixed2 mixed2_ada Mixed2
 check_ada mixed3 mixed3 mixed3_ada Mixed3
 check_ada mixed4 mixed4 mixed4_ada Mixed4
 check_ada mixed6 mixed6_ada mixed6 Mixed6
+check_ada segwit_in segwit_in segwit_in_ada Segwit_In
 check net_cbuf "" "" net
 # Text and bit rules in one grammar (the generated text parser is not -Wextra clean)
 check mixed "" "" mixed -w

@@ -281,6 +281,20 @@ package body HBNF_Wire.Rust is
                              & To_String (E.Bin_Op) & " "
                              & Expr_Text (E.Right) & ")");
 
+      --  The table of the numbered words of a `bitsof` item, by where it is.
+      function Table_Of (It : Item) return String is
+        ("BNF_WORDS_" & Img (It.Line) & "_" & Img (It.Col));
+      function Sep_Of (It : Item) return String is
+        ("BNF_SEP_" & Img (It.Line) & "_" & Img (It.Col));
+
+      function Seq_Has_Bitsof (S : Sequence) return Boolean is
+        (for some It of S.Items =>
+           It.Bitsof or else (It.Kind = S_Choice
+                              and then (for some A of It.Alts =>
+                                          Seq_Has_Bitsof (A.all))));
+      function Rule_Has_Bitsof (R : Rule) return Boolean is
+        (for some A of R.Alts => Seq_Has_Bitsof (A.all));
+
       Emit_Side : Boolean := False;
 
       function Expr_R (E : Expr_Access) return String is
@@ -293,7 +307,9 @@ package body HBNF_Wire.Rust is
                   return "((p_.nbits - p_.bit) as i64)";
                elsif To_String (E.Name) = "align" then
                   return "bnf_align(" & (if Emit_Side then "w_.bit" else "p_.bit")
-                    & ", BNF_UNIT)";
+                    & ", " & (if Hosted_Mode
+                               then (if Emit_Side then "w_.unit" else "p_.unit")
+                               else "BNF_UNIT") & ")";
                end if;
                return "(" & To_String (E.Name) & " as i64)";
             when E_Call =>
@@ -365,6 +381,52 @@ package body HBNF_Wire.Rust is
       procedure Gen_Choice
         (Alts : Seq_Vectors.Vector; Enum : String; Where : String;
          Ind : Natural);
+
+      --  A text rule read where the bits are, into `let N`; with Span, the
+      --  value is (value, the octets it used).
+      procedure Gen_Text_Ref (Ind : Natural; N, R, W : String; Span : Boolean) is
+         Ty : constant String :=
+           (if Span then "(" & Type_Of (R) & ", Vec<u8>)" else Type_Of (R));
+      begin
+                  if (for some X of G.External_Tokens =>
+                                    To_String (X) = R)
+                              then
+                                 --  a character rule of the text: its scanner
+                                 --  reads it here, from the octet the bits have
+                                 --  reached
+                                 L (Ind, "let " & N & ": " & Ty & " = {");
+                                 L (Ind + 1, "let shifted_;");
+                                 L (Ind + 1, "let (b_, start_): (&[u8], usize) = if p_.bit % 8 == 0 {");
+                                 L (Ind + 2, "(&p_.buf[..], p_.bit / 8)");
+                                 L (Ind + 1, "} else {");
+                                 L (Ind + 2, "shifted_ = bnf_shifted(p_);");
+                                 L (Ind + 2, "(&shifted_[..], 0)");
+                                 L (Ind + 1, "};");
+                                 L (Ind + 1, "let n_ = " & HBNF_Rust.Scan_Fn (R) & "(b_, start_, b_.len());");
+                                 L (Ind + 1, "if n_ == 0 { p_.fail(p_.bit, " & W & ", ""a " & R & """); return None; }");
+                                 L (Ind + 1, "p_.bit += n_ * 8;");
+                                 L (Ind + 1, (if Span then "(bnf_lossy(&b_[start_..start_ + n_]), b_[start_..start_ + n_].to_vec())" else "bnf_lossy(&b_[start_..start_ + n_])"));
+                                 L (Ind, "};");
+                              else
+                                 --  a rule with structure: the text parser reads
+                                 --  it, on a shifted copy if the octets start
+                                 --  inside a byte
+                                 L (Ind, "let " & N & ": " & Ty & " = {");
+                                 L (Ind + 1, "let shifted_;");
+                                 L (Ind + 1, "let (b_, start_): (&[u8], usize) = if p_.bit % 8 == 0 {");
+                                 L (Ind + 2, "(&p_.buf[..], p_.bit / 8)");
+                                 L (Ind + 1, "} else {");
+                                 L (Ind + 2, "shifted_ = bnf_shifted(p_);");
+                                 L (Ind + 2, "(&shifted_[..], 0)");
+                                 L (Ind + 1, "};");
+                                 L (Ind + 1, "let mut tp_ = TextP { text: Txt(b_), pos: start_, bit: 0, err_pos: 0, err: None };");
+                                 L (Ind + 1, "match " & HBNF_Rust.Parse_Fn (R) & "(&mut tp_) {");
+                                 L (Ind + 2, "Ok(v_) => { p_.bit += (tp_.pos - start_) * 8; " & (if Span then "(v_, b_[start_..tp_.pos].to_vec())" else "v_") & " }");
+                                 L (Ind + 2, "Err(_) => { p_.fail(p_.bit, " & W & ", ""a " & R & """); return None; }");
+                                 L (Ind + 1, "}");
+                                 L (Ind, "};");
+                              end if;
+      end Gen_Text_Ref;
 
       procedure Gen_Seq (S : Sequence; Where : String; Owner : String;
                          Ind : Natural)
@@ -447,49 +509,22 @@ package body HBNF_Wire.Rust is
                            R : constant String := To_String (It.Ref);
                         begin
                            if Hosted_Mode and then Find (G, R) = 0 then
-                              if (for some X of G.External_Tokens =>
-                                    To_String (X) = R)
-                              then
-                                 --  a character rule of the text: its scanner
-                                 --  reads it here, from the octet the bits have
-                                 --  reached
-                                 L (Ind, "let " & N & ": " & Type_Of (R) & " = {");
-                                 L (Ind + 1, "let shifted_;");
-                                 L (Ind + 1, "let (b_, start_): (&[u8], usize) = if p_.bit % 8 == 0 {");
-                                 L (Ind + 2, "(p_.buf, p_.bit / 8)");
-                                 L (Ind + 1, "} else {");
-                                 L (Ind + 2, "shifted_ = bnf_shifted(p_);");
-                                 L (Ind + 2, "(&shifted_[..], 0)");
-                                 L (Ind + 1, "};");
-                                 L (Ind + 1, "let n_ = " & HBNF_Rust.Scan_Fn (R) & "(b_, start_, b_.len());");
-                                 L (Ind + 1, "if n_ == 0 { p_.fail(p_.bit, " & W & ", ""a " & R & """); return None; }");
-                                 L (Ind + 1, "p_.bit += n_ * 8;");
-                                 L (Ind + 1, "bnf_lossy(&b_[start_..start_ + n_])");
-                                 L (Ind, "};");
-                              else
-                                 --  a rule with structure: the text parser reads
-                                 --  it, on a shifted copy if the octets start
-                                 --  inside a byte
-                                 L (Ind, "let " & N & ": " & Type_Of (R) & " = {");
-                                 L (Ind + 1, "let shifted_;");
-                                 L (Ind + 1, "let (b_, start_): (&[u8], usize) = if p_.bit % 8 == 0 {");
-                                 L (Ind + 2, "(p_.buf, p_.bit / 8)");
-                                 L (Ind + 1, "} else {");
-                                 L (Ind + 2, "shifted_ = bnf_shifted(p_);");
-                                 L (Ind + 2, "(&shifted_[..], 0)");
-                                 L (Ind + 1, "};");
-                                 L (Ind + 1, "let mut tp_ = TextP { text: Txt(b_), pos: start_, bit: 0, err_pos: 0, err: None };");
-                                 L (Ind + 1, "match " & HBNF_Rust.Parse_Fn (R) & "(&mut tp_) {");
-                                 L (Ind + 2, "Ok(v_) => { p_.bit += (tp_.pos - start_) * 8; v_ }");
-                                 L (Ind + 2, "Err(_) => { p_.fail(p_.bit, " & W & ", ""a " & R & """); return None; }");
-                                 L (Ind + 1, "}");
-                                 L (Ind, "};");
-                              end if;
+                              Gen_Text_Ref (Ind, N, R, W, False);
                            else
                               L (Ind, "let " & N & ": " & Type_Of (R)
                                 & " = " & Parse_Fn_Of (R) & "(p_)?;");
                            end if;
                         end;
+                     elsif Hosted_Mode then
+                        --  the text rule is read, its numbered words become the
+                        --  bits the rest of the rule reads (the rule's wrapper
+                        --  puts the input back)
+                        L (Ind, "if p_.sv_active { p_.fail(p_.bit, " & W
+                           & ", ""a bitsof inside a bitsof""); return None; }");
+                        L (Ind, "let bstart_ = p_.bit / 8;");
+                        Gen_Text_Ref (Ind, "tx_" & Img (It.Line) & "_" & Img (It.Col), To_String (It.Ref), W, True);
+                        L (Ind, "p_.words_begin(&tx_" & Img (It.Line) & "_" & Img (It.Col) & ".1, " & Img (It.Width)
+                           & ", &" & Table_Of (It.all) & ", bstart_);");
                      end if;
                   when S_Array =>
                      declare
@@ -684,7 +719,11 @@ package body HBNF_Wire.Rust is
                         L (Ind, "}");
                      end if;
                   when S_Ref =>
-                     if not It.Bitsof then
+                     if It.Bitsof and then Hosted_Mode then
+                        --  what the rest of the sequence writes is bits that are
+                        --  spelled as words once it ends
+                        L (Ind, "w_.words_begin(" & Img (It.Width) & ");");
+                     elsif not It.Bitsof then
                         if Hosted_Mode and then Find (G, To_String (It.Ref)) = 0
                         then
                            if (for some X of G.External_Tokens =>
@@ -730,6 +769,12 @@ package body HBNF_Wire.Rust is
                                      Where & "." & N, Ind);
                end case;
             end;
+         end loop;
+         for It of S.Items loop
+            if It.Bitsof and then Hosted_Mode then
+               L (Ind, "if !w_.words_end(&" & Table_Of (It.all) & ", "
+                  & Sep_Of (It.all) & ") { return false; }");
+            end if;
          end loop;
       end Gen_Emit_Seq;
 
@@ -864,17 +909,6 @@ package body HBNF_Wire.Rust is
               "an %action in a grammar of text rules and bit rules is read by "
               & "C so far (Rust reads %emit there, but not %action)";
          end if;
-         for R of G.Rules loop
-            for A of R.Alts loop
-               for It of A.Items loop
-                  if It.Kind = S_Ref and then It.Bitsof then
-                     raise Wire_Error with
-                       "name:bitsof(" & To_String (It.Ref) & ") in a grammar "
-                       & "of text rules and bit rules is read by C so far";
-                  end if;
-               end loop;
-            end loop;
-         end loop;
       else
          Words := Words_Item (G, "Rust");
       end if;
@@ -917,17 +951,42 @@ package body HBNF_Wire.Rust is
             L (0, "");
          end if;
          L (0, "struct P<'a> {");
-         L (0, "    buf: &'a [u8],");
+         if Hosted_Mode then
+            L (0, "    buf: std::borrow::Cow<'a, [u8]>,");
+         else
+            L (0, "    buf: &'a [u8],");
+         end if;
          L (0, "    nbits: usize,");
          L (0, "    bit: usize,");
          L (0, "    fail_bit: usize,");
          L (0, "    failed: bool,");
          L (0, "    msg: String,");
+         if Hosted_Mode then
+            L (0, "    // the bits of a text read as words (name:bitsof(rule)): where the input is");
+            L (0, "    // kept while the words are read, and how wide a word is");
+            L (0, "    unit: usize,");
+            L (0, "    sv_active: bool,");
+            L (0, "    sv_buf: std::borrow::Cow<'a, [u8]>,");
+            L (0, "    sv_bit: usize,");
+            L (0, "    sv_nbits: usize,");
+            L (0, "    sv_unit: usize,");
+            L (0, "    sv_start: usize,");
+         end if;
          L (0, "}");
          L (0, "");
          L (0, "impl<'a> P<'a> {");
          L (0, "    // Keep the deepest failure, the first told.");
          L (0, "    fn fail(&mut self, bit: usize, wh: &str, what: &str) {");
+         if Hosted_Mode then
+            L (0, "        let mut bit = bit;");
+            L (0, "        let mut how = what.to_string();");
+            L (0, "        if self.sv_active {");
+            L (0, "            // reading the bits of a text: say which word, and where the text was");
+            L (0, "            how = format!(""{} (at unit {})"", what, bit / (if self.unit != 0 { self.unit } else { 1 }) + 1);");
+            L (0, "            bit = self.sv_start * 8;");
+            L (0, "        }");
+            L (0, "        let what = &how[..];");
+         end if;
          L (0, "        if self.failed && bit <= self.fail_bit {");
          L (0, "            return;");
          L (0, "        }");
@@ -985,6 +1044,71 @@ package body HBNF_Wire.Rust is
          L (0, "        let n = (self.nbits - self.bit) / 8;");
          L (0, "        self.take(n, wh)");
          L (0, "    }");
+         if Hosted_Mode then
+            L (0, "");
+            L (0, "    // `name:bitsof(rule)`: the numbered words of the text the rule just read, as");
+            L (0, "    // bits, width to a word; the rest of the rule reads them.  A word is looked for");
+            L (0, "    // at each place (the longest that fits); what is between two is skipped.");
+            L (0, "    fn words_begin(&mut self, text: &[u8], width: usize, tab: &[BnfWord], start: usize) {");
+            L (0, "        let mut vals: Vec<u64> = Vec::new();");
+            L (0, "        let mut pos = 0;");
+            L (0, "        while pos < text.len() {");
+            L (0, "            let mut hit_n = 0;");
+            L (0, "            let mut hit_v = 0;");
+            L (0, "            for w in tab {");
+            L (0, "                if w.s.len() > hit_n && text[pos..].starts_with(w.s.as_bytes()) {");
+            L (0, "                    hit_n = w.s.len();");
+            L (0, "                    hit_v = w.v;");
+            L (0, "                }");
+            L (0, "            }");
+            L (0, "            if hit_n > 0 {");
+            L (0, "                vals.push(hit_v);");
+            L (0, "                pos += hit_n;");
+            L (0, "            } else {");
+            L (0, "                pos += 1;");
+            L (0, "            }");
+            L (0, "        }");
+            L (0, "        let nbits = vals.len() * width;");
+            L (0, "        let mut buf = vec![0u8; (nbits + 7) / 8 + 1];");
+            L (0, "        for (k, v) in vals.iter().enumerate() {");
+            L (0, "            for i in 0..width {");
+            L (0, "                let b = k * width + i;");
+            L (0, "                if (v >> (width - 1 - i)) & 1 == 1 {");
+            L (0, "                    buf[b >> 3] |= 0x80u8 >> (b & 7);");
+            L (0, "                }");
+            L (0, "            }");
+            L (0, "        }");
+            L (0, "        self.sv_buf = std::mem::replace(&mut self.buf, std::borrow::Cow::Owned(buf));");
+            L (0, "        self.sv_bit = self.bit;");
+            L (0, "        self.sv_nbits = self.nbits;");
+            L (0, "        self.sv_unit = self.unit;");
+            L (0, "        self.sv_start = start;");
+            L (0, "        self.sv_active = true;");
+            L (0, "        self.nbits = nbits;");
+            L (0, "        self.bit = 0;");
+            L (0, "        self.unit = width;");
+            L (0, "    }");
+            L (0, "");
+            L (0, "    // The end of a rule that read bits from words: all of them must have been used,");
+            L (0, "    // and the text is the input again.");
+            L (0, "    fn words_end(&mut self, ok: bool) -> bool {");
+            L (0, "        if !self.sv_active {");
+            L (0, "            return ok;");
+            L (0, "        }");
+            L (0, "        let mut good = ok;");
+            L (0, "        if ok && self.bit != self.nbits {");
+            L (0, "            let t = format!(""{} bit(s) left over"", self.nbits - self.bit);");
+            L (0, "            self.fail(self.bit, ""the words"", &t);");
+            L (0, "            good = false;");
+            L (0, "        }");
+            L (0, "        self.buf = std::mem::replace(&mut self.sv_buf, std::borrow::Cow::Borrowed(&[]));");
+            L (0, "        self.nbits = self.sv_nbits;");
+            L (0, "        self.bit = self.sv_bit;");
+            L (0, "        self.unit = self.sv_unit;");
+            L (0, "        self.sv_active = false;");
+            L (0, "        good");
+            L (0, "    }");
+         end if;
          L (0, "}");
          L (0, "");
          L (0, "struct W {");
@@ -992,6 +1116,12 @@ package body HBNF_Wire.Rust is
          L (0, "    bit: usize,");
          L (0, "    failed: bool,");
          L (0, "    msg: String,");
+         if Hosted_Mode then
+            L (0, "    // the bits of words (name:bitsof(rule)) being written: the output so far");
+            L (0, "    unit: usize,");
+            L (0, "    sv_buf: Vec<u8>,");
+            L (0, "    sv_bit: usize,");
+         end if;
          L (0, "}");
          L (0, "");
          L (0, "impl W {");
@@ -1022,6 +1152,53 @@ package body HBNF_Wire.Rust is
          L (0, "        }");
          L (0, "    }");
          L (0, "");
+         if Hosted_Mode then
+            L (0, "    // From here the bits written are a word's each, spelled by words_end.");
+            L (0, "    fn words_begin(&mut self, width: usize) {");
+            L (0, "        self.sv_buf = std::mem::take(&mut self.buf);");
+            L (0, "        self.sv_bit = self.bit;");
+            L (0, "        self.bit = 0;");
+            L (0, "        self.unit = width;");
+            L (0, "    }");
+            L (0, "");
+            L (0, "    // The bits written since words_begin, as the words that spell them, with sep");
+            L (0, "    // between two, written to what was the output.");
+            L (0, "    fn words_end(&mut self, tab: &[BnfWord], sep: &str) -> bool {");
+            L (0, "        let total = self.bit;");
+            L (0, "        let width = self.unit;");
+            L (0, "        let bits = std::mem::take(&mut self.buf);");
+            L (0, "        self.buf = std::mem::take(&mut self.sv_buf);");
+            L (0, "        self.bit = self.sv_bit;");
+            L (0, "        self.unit = 0;");
+            L (0, "        if width == 0 || total % width != 0 {");
+            L (0, "            let t = format!(""{} bits is not a whole number of {}-bit units"", total, width);");
+            L (0, "            self.fail(""the words"", &t);");
+            L (0, "            return false;");
+            L (0, "        }");
+            L (0, "        for i in 0..total / width {");
+            L (0, "            let mut v: u64 = 0;");
+            L (0, "            for b in 0..width {");
+            L (0, "                let bit = i * width + b;");
+            L (0, "                v = (v << 1) | ((bits[bit >> 3] >> (7 - (bit & 7))) & 1) as u64;");
+            L (0, "            }");
+            L (0, "            match tab.iter().find(|w| w.v == v) {");
+            L (0, "                Some(w) => {");
+            L (0, "                    if i > 0 && !sep.is_empty() {");
+            L (0, "                        self.put(sep.as_bytes());");
+            L (0, "                    }");
+            L (0, "                    self.put(w.s.as_bytes());");
+            L (0, "                }");
+            L (0, "                None => {");
+            L (0, "                    let t = format!(""unit {} has the value {}, which no word spells"", i, v);");
+            L (0, "                    self.fail(""the words"", &t);");
+            L (0, "                    return false;");
+            L (0, "                }");
+            L (0, "            }");
+            L (0, "        }");
+            L (0, "        true");
+            L (0, "    }");
+            L (0, "");
+         end if;
          L (0, "    fn put(&mut self, p: &[u8]) {");
          L (0, "        if self.bit & 7 == 0 {");
          L (0, "            self.buf.extend_from_slice(p);");
@@ -1038,7 +1215,11 @@ package body HBNF_Wire.Rust is
          L (0, "fn bnf_align(bit: usize, unit: usize) -> i64 {");
          L (0, "    if unit == 0 { 0 } else { ((unit - bit % unit) % unit) as i64 }");
          L (0, "}");
-         L (0, "const BNF_UNIT: usize = " & (if Words = null then "0" else Img (Words.Width)) & ";");
+         if Hosted_Mode then
+            L (0, "struct BnfWord { s: &'static str, v: u64 }");
+         else
+            L (0, "const BNF_UNIT: usize = " & (if Words = null then "0" else Img (Words.Width)) & ";");
+         end if;
          if Hosted_Mode then
             L (0, "fn bnf_lossy(b: &[u8]) -> String {");
             L (0, "    String::from_utf8_lossy(b).into_owned()");
@@ -1134,15 +1315,47 @@ package body HBNF_Wire.Rust is
          end if;
       end loop;
 
+      --  The numbered words of each `bitsof`, and what stands between two.
+      if Hosted_Mode then
+         declare
+            procedure Tables (Alts : Seq_Vectors.Vector) is
+            begin
+               for A of Alts loop
+                  for It of A.Items loop
+                     if It.Bitsof then
+                        L (0, "const " & Table_Of (It.all) & ": [BnfWord; "
+                           & Img (Natural (It.Words.Length)) & "] = [");
+                        for U of It.Words loop
+                           L (1, "BnfWord { s: """ & Escape (To_String (U.Spelling))
+                              & """, v: " & Img (U.Value) & " },");
+                        end loop;
+                        L (0, "];");
+                        L (0, "const " & Sep_Of (It.all) & ": &str = """
+                           & Escape (To_String (It.Sep)) & """;");
+                        L (0, "");
+                     elsif It.Kind = S_Choice then
+                        Tables (It.Alts);
+                     end if;
+                  end loop;
+               end loop;
+            end Tables;
+         begin
+            for R of G.Rules loop
+               Tables (R.Alts);
+            end loop;
+         end;
+      end if;
+
       --  The readers and the writers.
       for R of G.Rules loop
          if not Is_Value_Set (R) then
             declare
                Nm : constant String := To_String (R.Name);
                T  : constant String := Type_Of (Nm);
+               Wrap : constant Boolean := Hosted_Mode and then Rule_Has_Bitsof (R);
             begin
-               L (0, "fn " & Parse_Fn_Of (Nm) & "(p_: &mut P) -> Option<"
-                  & T & "> {");
+               L (0, "fn " & Parse_Fn_Of (Nm) & (if Wrap then "_body" else "")
+                  & "(p_: &mut P) -> Option<" & T & "> {");
                Emit_Side := False;
                if Natural (R.Alts.Length) = 1 then
                   Gen_Seq (R.Alts.First_Element.all, Nm, T, 1);
@@ -1156,6 +1369,14 @@ package body HBNF_Wire.Rust is
                end if;
                L (0, "}");
                L (0, "");
+               if Wrap then
+                  L (0, "fn " & Parse_Fn_Of (Nm) & "(p_: &mut P) -> Option<" & T & "> {");
+                  L (1, "let r = " & Parse_Fn_Of (Nm) & "_body(p_);");
+                  L (1, "if !p_.words_end(r.is_some()) { return None; }");
+                  L (1, "r");
+                  L (0, "}");
+                  L (0, "");
+               end if;
                L (0, "fn " & Emit_Fn_Of (Nm) & "(w_: &mut W, v_: &" & T
                   & ") -> bool {");
                Emit_Side := True;
@@ -1271,7 +1492,7 @@ package body HBNF_Wire.Rust is
                   L (0, "/// The bits of one " & Nm & ", written (its %emit first).");
                   L (0, "pub fn emit_bits_" & Nm & "(v: &" & Type_Of (Nm)
                      & ") -> Result<(Vec<u8>, usize), String> {");
-                  L (0, "    let mut w_ = W { buf: Vec::new(), bit: 0, failed: false, msg: String::new() };");
+                  L (0, "    let mut w_ = W { buf: Vec::new(), bit: 0, failed: false, msg: String::new(), unit: 0, sv_buf: Vec::new(), sv_bit: 0 };");
                   L (0, "    if !" & Emit_Fn_Of (Nm) & "(&mut w_, v) {");
                   L (0, "        return Err(w_.msg);");
                   L (0, "    }");
@@ -1546,8 +1767,10 @@ package body HBNF_Wire.Rust is
                   begin
                      Append (Text, ASCII.LF & "fn " & HBNF_Rust.Parse_Fn (Nm)
                        & "(p: &mut P) -> Result<" & T & ", ParseError> {" & ASCII.LF);
-                     Append (Text, "    let mut w = WP { buf: p.text.as_bytes(), nbits: p.text.len() * 8, "
-                       & "bit: p.pos * 8 + p.bit, fail_bit: 0, failed: false, msg: String::new() };"
+                     Append (Text, "    let mut w = WP { buf: std::borrow::Cow::Borrowed(p.text.as_bytes()), nbits: p.text.len() * 8, "
+                       & "bit: p.pos * 8 + p.bit, fail_bit: 0, failed: false, msg: String::new(), "
+                       & "unit: 0, sv_active: false, sv_buf: std::borrow::Cow::Borrowed(&[]), "
+                       & "sv_bit: 0, sv_nbits: 0, sv_unit: 0, sv_start: 0 };"
                        & ASCII.LF);
                      Append (Text, "    match " & Parse_Fn_Of (Nm) & "(&mut w) {" & ASCII.LF
                        & "        Some(v) => {" & ASCII.LF

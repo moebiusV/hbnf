@@ -73,11 +73,11 @@ Zig reads these too, and so do Ada and Rust (text rules and bit rules in one gra
 a bit field in one rule, and `%emit` and `emit_bits_<rule>` for the bit rules; Zig also has
 `bitsof` anywhere in a rule over any text rule), in the same hosted way: the bit rules are read from the text parser's own input
 and position, and a bit rule that names a text rule with structure has the text parser read it
-(`bnf_sub`).  Not yet for these grammars outside C: `%action`, a writer for the whole document, and
-(in Ada and Rust) `bitsof` beyond the first-rule form.  In Rust the text parser is over bytes
+(`bnf_sub`).  Not yet for these grammars outside C: `%action` and a writer for the whole document.  `bitsof`
+anywhere in a rule, over any text rule, works in Zig, Ada and Rust.  In Rust the text parser is over bytes
 (`parse_text(&[u8])`), so a bit rule can hold any octet; in Ada the Parser child's spec gets
-`Emit_Bits_<Rule>`.  Their tests are `mixed`, `mixed2`, `mixed3`, `mixed4`, `mixed6` (and `segwit_in`
-in Zig), in `tests/wire.sh` for each of the three.
+`Emit_Bits_<Rule>`.  Their tests are `mixed`, `mixed2`, `mixed3`, `mixed4`, `mixed6` and `segwit_in`,
+in `tests/wire.sh` for each of the three.
 
 What is not built for it: the first rule must be a text rule (a grammar whose
 first rule is a bit rule is read as bits alone, and says so if it names a text
@@ -218,8 +218,8 @@ alone, the checksum worked out by `%emit`.  The phrase's own tree is not kept
 a first rule that only names the bit rule (`doc = segwit`), whose first field is the `bitsof`, and a
 text rule that is just the words joined by one separator (`1*word`, or `word *( sep word )`).  They
 give `parse_text` and `emit_text` (`Parse_Text` and `Emit_Text` in Ada) with the same messages as C,
-including `(at unit N)`; anything else (a `bitsof` further in, any other text rule) is refused with
-a message saying the C backend reads it.  The tests are `segwit` in `tests/wire.sh`, one driver
+including `(at unit N)`.  In a grammar that mixes text rules and bit rules (above), `bitsof` can
+stand anywhere in a bit rule, over any text rule (`segwit_in` is the test).  The tests are `segwit` in `tests/wire.sh`, one driver
 each, with the same expected output as C, and the BIP-39 mnemonic (see Code, below).
 
 ## Code: actions, emitters, and the library they call
@@ -320,8 +320,7 @@ second.
 
 ## What is not built yet
 
-- A `bitsof` anywhere but first, any text rule but words, and mixing text with bit rules in Rust,
-  Zig and Ada (only C has them).
+- `%action`, and a writer for the whole document, in mixed grammars outside C.
   Zig returns `error{Parse}` with the octet and message through a pointer and takes an allocator,
   best an arena.  Ada writes the specification and body in one file (`gnatchop` splits it), with
   `Ada.Containers.Vectors` for octets and entries and a record with a variant part for a choice

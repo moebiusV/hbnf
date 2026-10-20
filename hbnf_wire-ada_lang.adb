@@ -177,7 +177,10 @@ package body HBNF_Wire.Ada_Lang is
         (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
    begin
       while I <= S'Last loop
-         if I + 5 <= S'Last and then S (I .. I + 5) = "Parser"
+         if I + 14 <= S'Last and then S (I .. I + 14) = "Bnf_Text_Parser" then
+            Append (R, "Parser");   --  the text parser's
+            I := I + 15;
+         elsif I + 5 <= S'Last and then S (I .. I + 5) = "Parser"
            and then (I = S'First or else not Word_Char (S (I - 1)))
            and then (I + 6 > S'Last or else not Word_Char (S (I + 6)))
          then
@@ -559,6 +562,10 @@ package body HBNF_Wire.Ada_Lang is
                if To_String (E.Name) = "remaining" then
                   return "Integer_64 (Bnf_P.Nbits - Bnf_P.Bit)";
                elsif To_String (E.Name) = "align" then
+                  if Hosted_Mode then
+                     return (if Emit_Side then "Bnf_Align (Bnf_W.Bit, Bnf_W.Unit)"
+                             else "Bnf_Align (Bnf_P.Bit, Bnf_P.Unit)");
+                  end if;
                   return "Bnf_Align (" & (if Emit_Side then "Bnf_W.Bit" else "Bnf_P.Bit")
                     & ")";
                end if;
@@ -670,6 +677,101 @@ package body HBNF_Wire.Ada_Lang is
       procedure Gen_Choice
         (Alts : Seq_Vectors.Vector; Enum : String; Target : String;
          Where : String; Ind : Natural);
+
+      function Table_Of (It : Item) return String is
+        ("Bnf_Tab_" & Img (It.Line) & "_" & Img (It.Col));
+      function Sep_Of (It : Item) return String is
+        ("Bnf_Sep_" & Img (It.Line) & "_" & Img (It.Col));
+
+      function Seq_Has_Bitsof (S : Sequence) return Boolean;
+      function Seq_Has_Bitsof (S : Sequence) return Boolean is
+        (for some It of S.Items =>
+           It.Bitsof or else (It.Kind = S_Choice
+                              and then (for some A of It.Alts =>
+                                          Seq_Has_Bitsof (A.all))));
+      function Rule_Has_Bitsof (R : Rule) return Boolean is
+        (for some A of R.Alts => Seq_Has_Bitsof (A.all));
+
+      --  A text rule read where the bits are, into Fid (an Unbounded_String for a
+      --  token, the rule's type otherwise); Span, if given, is an
+      --  Unbounded_String that gets the text it used.
+      procedure Gen_Text_Ref
+        (Ind : Natural; R, W, U, Fid, Span : String)
+      is
+      begin
+                              if (for some X of G.External_Tokens =>
+                                    To_String (X) = R)
+                              then
+                                 --  a character rule of the text: its scanner
+                                 --  reads it here, from the octet the bits have
+                                 --  reached
+                                 L (Ind, "declare");
+                                 L (Ind + 1, "Bnf_N" & U & " : Natural;");
+                                 L (Ind, "begin");
+                                 L (Ind + 1, "if Bnf_P.Bit mod 8 = 0 then");
+                                 L (Ind + 2, "Bnf_N" & U & " := " & HBNF_Ada.Scan_Fn (R)
+                                    & " (Bnf_P.Buf.all, Bnf_P.Bit / 8 + 1, Bnf_P.Buf'Last);");
+                                 L (Ind + 2, "if Bnf_N" & U & " = 0 then");
+                                 L (Ind + 3, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 2, "end if;");
+                                 L (Ind + 2, Fid & " := To_Unbounded_String (Bnf_P.Buf (Bnf_P.Bit / 8 + 1 .. Bnf_P.Bit / 8 + Bnf_N" & U & "));");
+                                 if Span /= "" and then Span /= Fid then
+                                    L (Ind + 2, Span & " := " & Fid & ";");
+                                 end if;
+                                 L (Ind + 1, "else");
+                                 L (Ind + 2, "declare");
+                                 L (Ind + 3, "C : constant String := Bnf_Shifted (Bnf_P);");
+                                 L (Ind + 2, "begin");
+                                 L (Ind + 3, "Bnf_N" & U & " := " & HBNF_Ada.Scan_Fn (R) & " (C, 1, C'Last);");
+                                 L (Ind + 3, "if Bnf_N" & U & " = 0 then");
+                                 L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 3, "end if;");
+                                 L (Ind + 3, Fid & " := To_Unbounded_String (C (1 .. Bnf_N" & U & "));");
+                                 if Span /= "" and then Span /= Fid then
+                                    L (Ind + 3, Span & " := " & Fid & ";");
+                                 end if;
+                                 L (Ind + 2, "end;");
+                                 L (Ind + 1, "end if;");
+                                 L (Ind + 1, "Bnf_P.Bit := Bnf_P.Bit + Bnf_N" & U & " * 8;");
+                                 L (Ind, "end;");
+                              else
+                                 --  a text rule with structure: the text parser
+                                 --  reads it, on a shifted copy if the octets
+                                 --  start inside a byte
+                                 L (Ind, "declare");
+                                 L (Ind + 1, "Bnf_Start" & U & " : constant Natural := Bnf_P.Bit / 8 + 1;");
+                                 L (Ind, "begin");
+                                 L (Ind + 1, "if Bnf_P.Bit mod 8 = 0 then");
+                                 L (Ind + 2, "declare");
+                                 L (Ind + 3, "Tp : Bnf_Text_Parser := (Text => Bnf_P.Buf, Pos => Bnf_Start" & U & ", Last => Natural'Last, Bit => 0);");
+                                 L (Ind + 2, "begin");
+                                 L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
+                                 L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - Bnf_Start" & U & ") * 8;");
+                                 if Span /= "" then
+                                    L (Ind + 3, Span & " := To_Unbounded_String (Bnf_P.Buf (Bnf_Start" & U & " .. Tp.Pos - 1));");
+                                 end if;
+                                 L (Ind + 2, "exception");
+                                 L (Ind + 3, "when Parse_Error =>");
+                                 L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 2, "end;");
+                                 L (Ind + 1, "else");
+                                 L (Ind + 2, "declare");
+                                 L (Ind + 3, "C  : aliased constant String := Bnf_Shifted (Bnf_P);");
+                                 L (Ind + 3, "Tp : Bnf_Text_Parser := (Text => C'Unchecked_Access, Pos => 1, Last => Natural'Last, Bit => 0);");
+                                 L (Ind + 2, "begin");
+                                 L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
+                                 L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - 1) * 8;");
+                                 if Span /= "" then
+                                    L (Ind + 3, Span & " := To_Unbounded_String (C (1 .. Tp.Pos - 1));");
+                                 end if;
+                                 L (Ind + 2, "exception");
+                                 L (Ind + 3, "when Parse_Error =>");
+                                 L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 2, "end;");
+                                 L (Ind + 1, "end if;");
+                                 L (Ind, "end;");
+                              end if;
+      end Gen_Text_Ref;
 
       --  The locals a sequence reads into (Decls) and the statements (Stmts);
       --  Ind is the indentation of the statements.
@@ -805,73 +907,40 @@ package body HBNF_Wire.Ada_Lang is
                         L (Ind, "end;");
                      end;
                   when S_Ref =>
-                     if not It.Bitsof then   --  the words are already the bits
+                     if It.Bitsof and then Hosted_Mode then
+                        --  the text rule is read, its numbered words become the
+                        --  bits the rest of the rule reads (the rule's wrapper
+                        --  puts the input back)
+                        declare
+                           R : constant String := To_String (It.Ref);
+                           Tokn : constant Boolean :=
+                             (for some X of G.External_Tokens => To_String (X) = R);
+                        begin
+                           L (Ind, "declare");
+                           L (Ind + 1, "Bnf_Start" & U & " : constant Natural := Bnf_P.Bit / 8;");
+                           L (Ind + 1, "Bnf_T" & U & " : Unbounded_String;");
+                           if not Tokn then
+                              L (Ind + 1, "Bnf_V" & U & " : " & HBNF_Ada.Type_Name (R) & ";");
+                           end if;
+                           L (Ind, "begin");
+                           L (Ind + 1, "if Bnf_P.Sv_Active then");
+                           L (Ind + 2, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a bitsof inside a bitsof"");");
+                           L (Ind + 1, "end if;");
+                           Gen_Text_Ref (Ind + 1, R, W, U,
+                                         (if Tokn then "Bnf_T" & U else "Bnf_V" & U),
+                                         "Bnf_T" & U);
+                           L (Ind + 1, "Bnf_Words_Begin (Bnf_P, To_String (Bnf_T" & U & "), "
+                              & Img (It.Width) & ", " & Table_Of (It.all) & ", Bnf_Start" & U & ");");
+                           L (Ind, "end;");
+                        end;
+                     elsif not It.Bitsof then   --  the words are already the bits
                         declare
                            Fid : constant String := Def_Field (N);
                            R   : constant String := To_String (It.Ref);
                         begin
                            D ("      " & Fid & " : " & Type_Of (R) & ";");
                            if Hosted_Mode and then Find (G, R) = 0 then
-                              if (for some X of G.External_Tokens =>
-                                    To_String (X) = R)
-                              then
-                                 --  a character rule of the text: its scanner
-                                 --  reads it here, from the octet the bits have
-                                 --  reached
-                                 L (Ind, "declare");
-                                 L (Ind + 1, "Bnf_N" & U & " : Natural;");
-                                 L (Ind, "begin");
-                                 L (Ind + 1, "if Bnf_P.Bit mod 8 = 0 then");
-                                 L (Ind + 2, "Bnf_N" & U & " := " & HBNF_Ada.Scan_Fn (R)
-                                    & " (Bnf_P.Buf.all, Bnf_P.Bit / 8 + 1, Bnf_P.Buf'Last);");
-                                 L (Ind + 2, "if Bnf_N" & U & " = 0 then");
-                                 L (Ind + 3, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
-                                 L (Ind + 2, "end if;");
-                                 L (Ind + 2, Fid & " := To_Unbounded_String (Bnf_P.Buf (Bnf_P.Bit / 8 + 1 .. Bnf_P.Bit / 8 + Bnf_N" & U & "));");
-                                 L (Ind + 1, "else");
-                                 L (Ind + 2, "declare");
-                                 L (Ind + 3, "C : constant String := Bnf_Shifted (Bnf_P);");
-                                 L (Ind + 2, "begin");
-                                 L (Ind + 3, "Bnf_N" & U & " := " & HBNF_Ada.Scan_Fn (R) & " (C, 1, C'Last);");
-                                 L (Ind + 3, "if Bnf_N" & U & " = 0 then");
-                                 L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
-                                 L (Ind + 3, "end if;");
-                                 L (Ind + 3, Fid & " := To_Unbounded_String (C (1 .. Bnf_N" & U & "));");
-                                 L (Ind + 2, "end;");
-                                 L (Ind + 1, "end if;");
-                                 L (Ind + 1, "Bnf_P.Bit := Bnf_P.Bit + Bnf_N" & U & " * 8;");
-                                 L (Ind, "end;");
-                              else
-                                 --  a text rule with structure: the text parser
-                                 --  reads it, on a shifted copy if the octets
-                                 --  start inside a byte
-                                 L (Ind, "declare");
-                                 L (Ind + 1, "Bnf_Start" & U & " : constant Natural := Bnf_P.Bit / 8 + 1;");
-                                 L (Ind, "begin");
-                                 L (Ind + 1, "if Bnf_P.Bit mod 8 = 0 then");
-                                 L (Ind + 2, "declare");
-                                 L (Ind + 3, "Tp : Parser := (Text => Bnf_P.Buf, Pos => Bnf_Start" & U & ", Last => Natural'Last, Bit => 0);");
-                                 L (Ind + 2, "begin");
-                                 L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
-                                 L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - Bnf_Start" & U & ") * 8;");
-                                 L (Ind + 2, "exception");
-                                 L (Ind + 3, "when Parse_Error =>");
-                                 L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
-                                 L (Ind + 2, "end;");
-                                 L (Ind + 1, "else");
-                                 L (Ind + 2, "declare");
-                                 L (Ind + 3, "C  : aliased constant String := Bnf_Shifted (Bnf_P);");
-                                 L (Ind + 3, "Tp : Parser := (Text => C'Unchecked_Access, Pos => 1, Last => Natural'Last, Bit => 0);");
-                                 L (Ind + 2, "begin");
-                                 L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
-                                 L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - 1) * 8;");
-                                 L (Ind + 2, "exception");
-                                 L (Ind + 3, "when Parse_Error =>");
-                                 L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
-                                 L (Ind + 2, "end;");
-                                 L (Ind + 1, "end if;");
-                                 L (Ind, "end;");
-                              end if;
+                              Gen_Text_Ref (Ind, R, W, U, Fid, "");
                            else
                               L (Ind, Fid & " := " & Parse_Fn_Of (R)
                                  & " (Bnf_P);");
@@ -1143,7 +1212,11 @@ package body HBNF_Wire.Ada_Lang is
                         L (Ind, "end;");
                      end if;
                   when S_Ref =>
-                     if not It.Bitsof then
+                     if It.Bitsof and then Hosted_Mode then
+                        --  what the rest of the sequence writes is bits that are
+                        --  spelled as words once it ends
+                        L (Ind, "Bnf_Words_Begin (Bnf_W, " & Img (It.Width) & ");");
+                     elsif not It.Bitsof then
                         if Hosted_Mode and then Find (G, To_String (It.Ref)) = 0
                         then
                            if (for some X of G.External_Tokens =>
@@ -1194,6 +1267,12 @@ package body HBNF_Wire.Ada_Lang is
          if Needs_St (S) then
             L (Ind, "end;");
          end if;
+         for It of S.Items loop
+            if It.Bitsof and then Hosted_Mode then
+               L (Ind, "Bnf_Words_End (Bnf_W, " & Table_Of (It.all) & ", "
+                  & Sep_Of (It.all) & ");");
+            end if;
+         end loop;
          --  an empty sequence is no statement
          L (Ind, "null;");
       end Gen_Emit_Seq;
@@ -1341,17 +1420,6 @@ package body HBNF_Wire.Ada_Lang is
               "an %action in a grammar of text rules and bit rules is read by "
               & "C so far (Ada reads %emit there, but not %action)";
          end if;
-         for R of G.Rules loop
-            for A of R.Alts loop
-               for It of A.Items loop
-                  if It.Kind = S_Ref and then It.Bitsof then
-                     raise Wire_Error with
-                       "name:bitsof(" & To_String (It.Ref) & ") in a grammar "
-                       & "of text rules and bit rules is read by C so far";
-                  end if;
-               end loop;
-            end loop;
-         end loop;
       else
          Words := Words_Item (G, "Ada");
       end if;
@@ -1422,6 +1490,11 @@ package body HBNF_Wire.Ada_Lang is
          L (1, "Bnf_Fail      : exception;   --  a read failed; the message is in the parser");
          L (1, "Bnf_Emit_Fail : exception;   --  a write failed; the message is in the writer");
          L (1, "");
+         if Hosted_Mode then
+            L (1, "type String_Access is access String;");
+            L (1, "procedure Bnf_Free is new Ada.Unchecked_Deallocation (String, String_Access);");
+            L (1, "");
+         end if;
          L (1, "type Parser is record");
          if Hosted_Mode then
             L (2, "Buf      : Text_Access;");
@@ -1433,6 +1506,18 @@ package body HBNF_Wire.Ada_Lang is
          L (2, "Fail_Bit : Natural := 0;");
          L (2, "Failed   : Boolean := False;");
          L (2, "Msg      : Unbounded_String;");
+         if Hosted_Mode then
+            L (2, "--  the bits of a text read as words (name:bitsof(rule)): where the input");
+            L (2, "--  is kept while the words are read, and how wide a word is");
+            L (2, "Unit      : Natural := 0;");
+            L (2, "Sv_Active : Boolean := False;");
+            L (2, "Sv_Buf    : Text_Access;");
+            L (2, "Sv_Bit    : Natural := 0;");
+            L (2, "Sv_Nbits  : Natural := 0;");
+            L (2, "Sv_Unit   : Natural := 0;");
+            L (2, "Sv_Start  : Natural := 0;");
+            L (2, "Own       : String_Access;");
+         end if;
          L (1, "end record;");
          L (1, "");
          L (1, "type Writer is record");
@@ -1440,6 +1525,12 @@ package body HBNF_Wire.Ada_Lang is
          L (2, "Bit    : Natural := 0;");
          L (2, "Failed : Boolean := False;");
          L (2, "Msg    : Unbounded_String;");
+         if Hosted_Mode then
+            L (2, "Unit      : Natural := 0;");
+            L (2, "Sv_Active : Boolean := False;");
+            L (2, "Sv_Buf    : Octets;");
+            L (2, "Sv_Bit    : Natural := 0;");
+         end if;
          L (1, "end record;");
          L (1, "");
          L (1, "function To_U64 is new Ada.Unchecked_Conversion (Integer_64, Unsigned_64);");
@@ -1452,15 +1543,35 @@ package body HBNF_Wire.Ada_Lang is
          L (1, "end Img;");
          L (1, "");
          L (1, "--  Keep the deepest failure, the first told.");
-         L (1, "procedure Fail (Bnf_P : in out Parser; Bit : Natural; Wh, What : String) is");
-         L (1, "begin");
-         L (2, "if not (Bnf_P.Failed and then Bit <= Bnf_P.Fail_Bit) then");
-         L (3, "Bnf_P.Failed := True;");
-         L (3, "Bnf_P.Fail_Bit := Bit;");
-         L (3, "Bnf_P.Msg := To_Unbounded_String (Wh & "": "" & What);");
-         L (2, "end if;");
-         L (2, "raise Bnf_Fail;");
-         L (1, "end Fail;");
+         if Hosted_Mode then
+            L (1, "procedure Fail (Bnf_P : in out Parser; Bit_In : Natural; Wh, What : String) is");
+            L (2, "Bit : Natural := Bit_In;");
+            L (2, "How : Unbounded_String := To_Unbounded_String (What);");
+            L (1, "begin");
+            L (2, "if Bnf_P.Sv_Active then");
+            L (3, "--  reading the bits of a text: say which word, and where the text was");
+            L (3, "How := To_Unbounded_String (What & "" (at unit "" & Img (Bit_In /");
+            L (5, "(if Bnf_P.Unit /= 0 then Bnf_P.Unit else 1) + 1) & "")"");");
+            L (3, "Bit := Bnf_P.Sv_Start * 8;");
+            L (2, "end if;");
+            L (2, "if not (Bnf_P.Failed and then Bit <= Bnf_P.Fail_Bit) then");
+            L (3, "Bnf_P.Failed := True;");
+            L (3, "Bnf_P.Fail_Bit := Bit;");
+            L (3, "Bnf_P.Msg := To_Unbounded_String (Wh & "": "") & How;");
+            L (2, "end if;");
+            L (2, "raise Bnf_Fail;");
+            L (1, "end Fail;");
+         else
+            L (1, "procedure Fail (Bnf_P : in out Parser; Bit : Natural; Wh, What : String) is");
+            L (1, "begin");
+            L (2, "if not (Bnf_P.Failed and then Bit <= Bnf_P.Fail_Bit) then");
+            L (3, "Bnf_P.Failed := True;");
+            L (3, "Bnf_P.Fail_Bit := Bit;");
+            L (3, "Bnf_P.Msg := To_Unbounded_String (Wh & "": "" & What);");
+            L (2, "end if;");
+            L (2, "raise Bnf_Fail;");
+            L (1, "end Fail;");
+         end if;
          L (1, "");
          L (1, "procedure Efail (Bnf_W : in out Writer; Wh, What : String) is");
          L (1, "begin");
@@ -1579,10 +1690,169 @@ package body HBNF_Wire.Ada_Lang is
          L (1, "end Put;");
          L (1, "");
          L (1, "--  the bits to the next boundary of a word; 0 when the grammar has no words");
-         L (1, "Bnf_Unit : constant Natural := "
-            & (if Words = null then "0" else Img (Words.Width)) & ";");
-         L (1, "function Bnf_Align (Bit : Natural) return Integer_64 is");
-         L (2, "(if Bnf_Unit = 0 then 0 else Integer_64 ((Bnf_Unit - Bit mod Bnf_Unit) mod Bnf_Unit));");
+         if Hosted_Mode then
+            L (1, "function Bnf_Align (Bit, Unit : Natural) return Integer_64 is");
+            L (2, "(if Unit = 0 then 0 else Integer_64 ((Unit - Bit mod Unit) mod Unit));");
+            L (1, "");
+            L (1, "type Bnf_Entry is record");
+            L (2, "S : access constant String;");
+            L (2, "V : Unsigned_64;");
+            L (1, "end record;");
+            L (1, "type Bnf_Table is array (Positive range <>) of Bnf_Entry;");
+            L (1, "package Val_Vectors is new Ada.Containers.Vectors (Natural, Unsigned_64);");
+            L (1, "");
+            L (1, "--  `name:bitsof(rule)`: the numbered words of the text the rule just read, as");
+            L (1, "--  bits, Width to a word; the rest of the rule reads them.  A word is looked for");
+            L (1, "--  at each place (the longest that fits); what is between two is skipped.");
+            L (1, "procedure Bnf_Words_Begin");
+            L (2, "(Bnf_P : in out Parser; Text : String; Width : Positive; Tab : Bnf_Table;");
+            L (2, " Start : Natural)");
+            L (1, "is");
+            L (2, "Vals : Val_Vectors.Vector;");
+            L (2, "Pos  : Natural := Text'First;");
+            L (1, "begin");
+            L (2, "while Pos <= Text'Last loop");
+            L (3, "declare");
+            L (4, "Best   : Natural := 0;");
+            L (4, "Best_V : Unsigned_64 := 0;");
+            L (3, "begin");
+            L (4, "for E of Tab loop");
+            L (5, "if E.S'Length > Best and then E.S'Length <= Text'Last - Pos + 1");
+            L (6, "and then Text (Pos .. Pos + E.S'Length - 1) = E.S.all");
+            L (5, "then");
+            L (6, "Best := E.S'Length;");
+            L (6, "Best_V := E.V;");
+            L (5, "end if;");
+            L (4, "end loop;");
+            L (4, "if Best > 0 then");
+            L (5, "Vals.Append (Best_V);");
+            L (5, "Pos := Pos + Best;");
+            L (4, "else");
+            L (5, "Pos := Pos + 1;");
+            L (4, "end if;");
+            L (3, "end;");
+            L (2, "end loop;");
+            L (2, "declare");
+            L (3, "Nbits  : constant Natural := Natural (Vals.Length) * Width;");
+            L (3, "Packed : constant String_Access :=");
+            L (4, "new String'(1 .. (Nbits + 7) / 8 + 1 => Character'Val (0));");
+            L (2, "begin");
+            L (3, "for K in 0 .. Natural (Vals.Length) - 1 loop");
+            L (4, "for I in 0 .. Width - 1 loop");
+            L (5, "declare");
+            L (6, "Bit : constant Natural := K * Width + I;");
+            L (5, "begin");
+            L (6, "if (Shift_Right (Vals.Element (K), Width - 1 - I) and 1) = 1 then");
+            L (7, "Packed (Bit / 8 + 1) := Character'Val");
+            L (8, "(Natural (Unsigned_8 (Character'Pos (Packed (Bit / 8 + 1))) or Shift_Right (Unsigned_8'(16#80#), Bit mod 8)));");
+            L (6, "end if;");
+            L (5, "end;");
+            L (4, "end loop;");
+            L (3, "end loop;");
+            L (3, "Bnf_P.Sv_Buf := Bnf_P.Buf;");
+            L (3, "Bnf_P.Sv_Bit := Bnf_P.Bit;");
+            L (3, "Bnf_P.Sv_Nbits := Bnf_P.Nbits;");
+            L (3, "Bnf_P.Sv_Unit := Bnf_P.Unit;");
+            L (3, "Bnf_P.Sv_Start := Start;");
+            L (3, "Bnf_P.Sv_Active := True;");
+            L (3, "Bnf_P.Own := Packed;");
+            L (3, "Bnf_P.Buf := Text_Access (Packed);");
+            L (3, "Bnf_P.Nbits := Nbits;");
+            L (3, "Bnf_P.Bit := 0;");
+            L (3, "Bnf_P.Unit := Width;");
+            L (2, "end;");
+            L (1, "end Bnf_Words_Begin;");
+            L (1, "");
+            L (1, "--  The end of a rule that read bits from words: all of them must have been used,");
+            L (1, "--  and the text is the input again.");
+            L (1, "procedure Bnf_Words_End (Bnf_P : in out Parser; Check : Boolean) is");
+            L (2, "Bad : Boolean := False;");
+            L (1, "begin");
+            L (2, "if not Bnf_P.Sv_Active then");
+            L (3, "return;");
+            L (2, "end if;");
+            L (2, "if Check and then Bnf_P.Bit /= Bnf_P.Nbits then");
+            L (3, "begin");
+            L (4, "Fail (Bnf_P, Bnf_P.Bit, ""the words"",");
+            L (6, "Img (Bnf_P.Nbits - Bnf_P.Bit) & "" bit(s) left over"");");
+            L (3, "exception");
+            L (4, "when Bnf_Fail => Bad := True;");
+            L (3, "end;");
+            L (2, "end if;");
+            L (2, "Bnf_Free (Bnf_P.Own);");
+            L (2, "Bnf_P.Buf := Bnf_P.Sv_Buf;");
+            L (2, "Bnf_P.Nbits := Bnf_P.Sv_Nbits;");
+            L (2, "Bnf_P.Bit := Bnf_P.Sv_Bit;");
+            L (2, "Bnf_P.Unit := Bnf_P.Sv_Unit;");
+            L (2, "Bnf_P.Sv_Active := False;");
+            L (2, "if Bad then");
+            L (3, "raise Bnf_Fail;");
+            L (2, "end if;");
+            L (1, "end Bnf_Words_End;");
+            L (1, "");
+            L (1, "--  From here the bits written are a word's each, spelled by Bnf_Words_End.");
+            L (1, "procedure Bnf_Words_Begin (Bnf_W : in out Writer; Width : Positive) is");
+            L (1, "begin");
+            L (2, "Bnf_W.Sv_Buf := Bnf_W.Buf;");
+            L (2, "Bnf_W.Sv_Bit := Bnf_W.Bit;");
+            L (2, "Bnf_W.Buf := Octet_Vectors.Empty_Vector;");
+            L (2, "Bnf_W.Bit := 0;");
+            L (2, "Bnf_W.Unit := Width;");
+            L (2, "Bnf_W.Sv_Active := True;");
+            L (1, "end Bnf_Words_Begin;");
+            L (1, "");
+            L (1, "--  The bits written since, as the words that spell them, with Sep between two,");
+            L (1, "--  written to what was the output.");
+            L (1, "procedure Bnf_Words_End (Bnf_W : in out Writer; Tab : Bnf_Table; Sep : String) is");
+            L (2, "Total : constant Natural := Bnf_W.Bit;");
+            L (2, "Width : constant Natural := Bnf_W.Unit;");
+            L (2, "Bits  : constant Octets := Bnf_W.Buf;");
+            L (1, "begin");
+            L (2, "Bnf_W.Buf := Bnf_W.Sv_Buf;");
+            L (2, "Bnf_W.Bit := Bnf_W.Sv_Bit;");
+            L (2, "Bnf_W.Unit := 0;");
+            L (2, "Bnf_W.Sv_Active := False;");
+            L (2, "if Width = 0 or else Total mod Width /= 0 then");
+            L (3, "Efail (Bnf_W, ""the words"", Img (Total) & "" bits is not a whole number of """);
+            L (5, "& Img (Width) & ""-bit units"");");
+            L (2, "end if;");
+            L (2, "for K in 0 .. Total / Width - 1 loop");
+            L (3, "declare");
+            L (4, "V     : Unsigned_64 := 0;");
+            L (4, "Spelt : Boolean := False;");
+            L (3, "begin");
+            L (4, "for I in 0 .. Width - 1 loop");
+            L (5, "declare");
+            L (6, "Bit : constant Natural := K * Width + I;");
+            L (5, "begin");
+            L (6, "V := Shift_Left (V, 1)");
+            L (7, "or Unsigned_64 (Shift_Right (Bits.Element (Bit / 8), 7 - Bit mod 8) and 1);");
+            L (5, "end;");
+            L (4, "end loop;");
+            L (4, "for E of Tab loop");
+            L (5, "if E.V = V then");
+            L (6, "if K > 0 and then Sep'Length > 0 then");
+            L (7, "Put (Bnf_W, Sep);");
+            L (6, "end if;");
+            L (6, "Put (Bnf_W, E.S.all);");
+            L (6, "Spelt := True;");
+            L (6, "exit;");
+            L (5, "end if;");
+            L (4, "end loop;");
+            L (4, "if not Spelt then");
+            L (5, "Efail (Bnf_W, ""the words"", ""unit "" & Img (K) & "" has the value """);
+            L (7, "& Img (Natural (V)) & "", which no word spells"");");
+            L (4, "end if;");
+            L (3, "end;");
+            L (2, "end loop;");
+            L (1, "end Bnf_Words_End;");
+            L (1, "");
+         else
+            L (1, "Bnf_Unit : constant Natural := "
+               & (if Words = null then "0" else Img (Words.Width)) & ";");
+            L (1, "function Bnf_Align (Bit : Natural) return Integer_64 is");
+            L (2, "(if Bnf_Unit = 0 then 0 else Integer_64 ((Bnf_Unit - Bit mod Bnf_Unit) mod Bnf_Unit));");
+         end if;
          L (1, "function Bnf_I (X : Unsigned_8) return Integer_64 is (To_I64 (Unsigned_64 (X)));");
          L (1, "function Bnf_I (X : Unsigned_16) return Integer_64 is (To_I64 (Unsigned_64 (X)));");
          L (1, "function Bnf_I (X : Unsigned_32) return Integer_64 is (To_I64 (Unsigned_64 (X)));");
@@ -1678,6 +1948,49 @@ package body HBNF_Wire.Ada_Lang is
          end if;
       end;
 
+      --  The numbered words of each `bitsof`, and what stands between two.
+      if Hosted_Mode then
+         declare
+            procedure Tables (Alts : Seq_Vectors.Vector) is
+            begin
+               for A of Alts loop
+                  for It of A.Items loop
+                     if It.Bitsof then
+                        declare
+                           Tab : constant String := Table_Of (It.all);
+                           N   : Natural := 0;
+                        begin
+                           for U of It.Words loop
+                              N := N + 1;
+                              L (1, Tab & "_S" & Img (N) & " : aliased constant String := "
+                                 & Ada_Str (To_String (U.Spelling)) & ";");
+                           end loop;
+                           L (1, Tab & " : constant Bnf_Table :=");
+                           N := 0;
+                           for U of It.Words loop
+                              N := N + 1;
+                              L (2, (if N = 1 then "(" else " ") & Img (N) & " => ("
+                                 & Tab & "_S" & Img (N) & "'Access, " & Img (U.Value) & ")"
+                                 & (if N = Natural (It.Words.Length) then ");" else ","));
+                           end loop;
+                           L (1, Sep_Of (It.all) & " : constant String := "
+                              & Ada_Str (To_String (It.Sep)) & ";");
+                           L (1, "");
+                        end;
+                     elsif It.Kind = S_Choice then
+                        Tables (It.Alts);
+                     end if;
+                  end loop;
+               end loop;
+            end Tables;
+         begin
+            Cur := Bod'Unrestricted_Access;
+            for R of G.Rules loop
+               Tables (R.Alts);
+            end loop;
+         end;
+      end if;
+
       --  The readers and the writers.
       for R of G.Rules loop
          if not Is_Value_Set (R) then
@@ -1686,6 +1999,8 @@ package body HBNF_Wire.Ada_Lang is
                T  : constant String := Rule_Type (R);
                M  : constant Natural := Mark;
                Base : constant String := Pfx & Ada_Case (Nm);
+               Wrap : constant Boolean := Hosted_Mode and then Rule_Has_Bitsof (R);
+               Fn   : constant String := Parse_Fn_Of (Nm) & (if Wrap then "_Body" else "");
             begin
                --  reader
                declare
@@ -1703,28 +2018,45 @@ package body HBNF_Wire.Ada_Lang is
                                      Name_Vectors.Empty_Vector, First, 0);
                      begin
                         Cur := Bod'Unrestricted_Access;
-                        L (1, "function " & Parse_Fn_Of (Nm)
+                        L (1, "function " & Fn
                            & " (Bnf_P : in out Parser) return " & T & " is");
                         Append (Bod, To_String (Decls));
                         L (1, "begin");
                         Append (Bod, To_String (Stmts));
                         L (2, "return (" & Agg & ");");
-                        L (1, "end " & Parse_Fn_Of (Nm) & ";");
+                        L (1, "end " & Fn & ";");
                      end;
                   else
                      Cur := Stmts'Unrestricted_Access;
                      Gen_Choice (R.Alts, Base, "Bnf_R", Nm, 2);
                      Cur := Bod'Unrestricted_Access;
-                     L (1, "function " & Parse_Fn_Of (Nm)
+                     L (1, "function " & Fn
                         & " (Bnf_P : in out Parser) return " & T & " is");
                      L (2, "Bnf_R : " & T & ";");
                      L (1, "begin");
                      Append (Bod, To_String (Stmts));
                      L (2, "return Bnf_R;");
-                     L (1, "end " & Parse_Fn_Of (Nm) & ";");
+                     L (1, "end " & Fn & ";");
                   end if;
                   L (1, "");
                end;
+               if Wrap then
+                  L (1, "function " & Parse_Fn_Of (Nm)
+                     & " (Bnf_P : in out Parser) return " & T & " is");
+                  L (1, "begin");
+                  L (2, "declare");
+                  L (3, "R : constant " & T & " := " & Fn & " (Bnf_P);");
+                  L (2, "begin");
+                  L (3, "Bnf_Words_End (Bnf_P, True);");
+                  L (3, "return R;");
+                  L (2, "end;");
+                  L (1, "exception");
+                  L (2, "when Bnf_Fail =>");
+                  L (3, "Bnf_Words_End (Bnf_P, False);");
+                  L (3, "raise;");
+                  L (1, "end " & Parse_Fn_Of (Nm) & ";");
+                  L (1, "");
+               end if;
                Pop (M);
                --  writer
                L (1, "procedure " & Emit_Fn_Of (Nm)
