@@ -23,6 +23,11 @@ package HBNF_Rust is
    --  --ast: also emit the walker and the dump (node_walk, node_dump, ...).
    procedure Set_Ast (On : Boolean);
 
+   --  --spans and --parents: also where each node is in the text (node_span,
+   --  node_where) and which node holds it (Parents, link_<root>).
+   procedure Set_Spans (On : Boolean);
+   procedure Set_Parents (On : Boolean);
+
    procedure Set_Hosted (Types, Code : String; Walks : String := "");
    --  Walks: the bit rules that have a walk_<rule> (they hold an %action),
    --  space-separated; the text parser runs them after the whole text is read.

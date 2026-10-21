@@ -281,13 +281,16 @@ list
 (The `list` nodes are the list's elements; each holds an `item`.  `item_1` is the optional
 `[ "from" shop ]`.)
 
-More, in C only so far (`tutorial/generic.c`):
+More, as flags:
 
 | flag | adds |
 |---|---|
-| `--spans` | `node_span` (where a node is in the text, in bytes), `node_where` (byte to line and column) |
-| `--parents` | `node_parent` |
-| `--writer` | `write_<root>`: the tree as text again (a subset in Zig, Rust and Ada, [WIRE.md](WIRE.md)) |
+| `--spans` | `node_span` (where a node is in the text: byte offsets, the blanks before it left out), `node_where` (byte to line and column), in C, Zig, Rust and Ada |
+| `--parents` | which node holds each node: `node_parent` in C; `link_<root>` builds a `Parents` and `parent (node)` reads it in Zig, Rust and Ada |
+| `--writer` | `write_<root>`: the tree as text again, in C (a subset in Zig, Rust and Ada, [WIRE.md](WIRE.md)) |
+
+`tests/spans.sh` checks that all four print the same places and parents for one tree.  In C
+(`tutorial/generic.c`):
 
 ```c
 int depth = 0;

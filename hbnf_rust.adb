@@ -289,6 +289,8 @@ package body HBNF_Rust is
 
    Writer_On    : Boolean := False;   --  --writer: write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
+   Spans_On     : Boolean := False;   --  --spans: where each node is in the text
+   Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
    Hosted_Code  : U;
    Hosted_Walks : U;                --  the bit rules with a walk_<rule>, space-separated
@@ -304,6 +306,16 @@ package body HBNF_Rust is
    begin
       Ast_On := On;
    end Set_Ast;
+
+   procedure Set_Parents (On : Boolean) is
+   begin
+      Parents_On := On;
+   end Set_Parents;
+
+   procedure Set_Spans (On : Boolean) is
+   begin
+      Spans_On := On;
+   end Set_Spans;
 
    procedure Set_Hosted (Types, Code : String; Walks : String := "") is
    begin
@@ -750,6 +762,12 @@ package body HBNF_Rust is
       and then R.Pattern (1).Kind = Group
       and then (for some X of R.Pattern (1).Items => X.Kind = Alt));
 
+   --  With --spans a struct and a list entry record where they are in the text
+   --  (`_pos`, `_end`, byte offsets; the blanks before a node are not in it).
+   function Has_Span (Info : Rule_Info) return Boolean is
+     (Spans_On and then (Info.Kind = Struct
+                         or else (Info.Kind = List and then not Info.Elem_Members.Is_Empty)));
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
@@ -857,6 +875,14 @@ package body HBNF_Rust is
                      Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
                      Mustache.Append (Items, Row);
                   end if;
+                  if Has_Span (Info) then
+                     for F in 1 .. 2 loop
+                        Row := Mustache.New_Map;
+                        Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "_pos" else "_end"));
+                        Mustache.Insert (Row, "type", Mustache.New_Scalar ("usize"));
+                        Mustache.Append (Items, Row);
+                     end loop;
+                  end if;
                   Mustache.Put (V, "name", Base);
                   Mustache.Put (V, "items", Items);
                   Append (Buf, Mustache.Render_File ("rust_struct", V));
@@ -923,6 +949,14 @@ package body HBNF_Rust is
                   Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
                   Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
                   Mustache.Append (Items, Row);
+               end if;
+               if Has_Span (Info) then
+                  for F in 1 .. 2 loop
+                     Row := Mustache.New_Map;
+                     Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "_pos" else "_end"));
+                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("usize"));
+                     Mustache.Append (Items, Row);
+                  end loop;
                end if;
                Mustache.Put (V, "name", Base);
                Mustache.Put (V, "items", Items);
@@ -1061,6 +1095,10 @@ package body HBNF_Rust is
             Has_Alt_Field : constant Boolean :=
               Struct_Alt (Rules (Owner), Infos (Owner))
               or else Entry_Alt (Rules (Owner), Infos (Owner));
+            Extra : constant String :=
+              (if Has_Alt_Field then "_alt" else "")
+              & (if Has_Span (Infos (Owner))
+                 then (if Has_Alt_Field then ", " else "") & "_pos, _end" else "");
          begin
             for M of Members loop
                if Recurses (To_String (M.Name))
@@ -1102,8 +1140,8 @@ package body HBNF_Rust is
                      First := False;
                   end loop;
                end;
-               if Has_Alt_Field then
-                  Append (Buf, (if Members.Is_Empty then "" else ", ") & "_alt");
+               if Extra /= "" then
+                  Append (Buf, (if Members.Is_Empty then "" else ", ") & Extra);
                end if;
                Append (Buf, " } = n;");
                Append (Buf, LF);
@@ -1124,8 +1162,8 @@ package body HBNF_Rust is
                      First := False;
                   end loop;
                end;
-               if Has_Alt_Field then
-                  Append (Buf, (if Members.Is_Empty then "" else ", ") & "_alt");
+               if Extra /= "" then
+                  Append (Buf, (if Members.Is_Empty then "" else ", ") & Extra);
                end if;
                Append (Buf, " };");
                Append (Buf, LF);
@@ -2098,6 +2136,69 @@ package body HBNF_Rust is
          P (1, "s");
          P (0, "}");
          P (0, "");
+         if Spans_On then
+            P (0, "/// Where a node is in the text: its first and last byte + 1 (the blanks before it are not in it).");
+            P (0, "pub fn node_span(n: Node) -> Option<(usize, usize)> {");
+            P (1, "match n {");
+            for I in 1 .. N loop
+               if Walked_Kind (I) then
+                  declare
+                     Info : constant Rule_Info := Infos (I);
+                     L    : constant Natural :=
+                       (if Info.Kind = List and then Info.Elem_Members.Is_Empty
+                             and then Info.Elem_Name /= Null_Unbounded_String
+                        then Leaf (To_String (Info.Elem_Name)) else 0);
+                  begin
+                     if Has_Span (Info) or else (L > 0 and then Has_Span (Infos (L))) then
+                        P (2, "Node::" & Variant (I) & "(x) => Some((x._pos, x._end)),");
+                     end if;
+                  end;
+               end if;
+            end loop;
+            P (2, "#[allow(unreachable_patterns)] _ => None,");
+            P (1, "}");
+            P (0, "}");
+            P (0, "");
+            P (0, "/// The line and the column, both from 1, of a byte offset of text.");
+            P (0, "pub fn node_where(text: &str, pos: usize) -> (usize, usize) {");
+            P (1, "let (mut l, mut c) = (1usize, 1usize);");
+            P (1, "for (i, ch) in text.bytes().enumerate() {");
+            P (2, "if i >= pos { break; }");
+            P (2, "if ch == b'\n' { l += 1; c = 1; } else { c += 1; }");
+            P (1, "}");
+            P (1, "(l, c)");
+            P (0, "}");
+            P (0, "");
+         end if;
+         if Parents_On then
+            P (0, "fn node_addr(n: Node) -> usize {");
+            P (1, "match n {");
+            for I in 1 .. N loop
+               if Walked_Kind (I) then
+                  P (2, "Node::" & Variant (I) & "(x) => x as *const _ as usize,");
+               end if;
+            end loop;
+            P (1, "}");
+            P (0, "}");
+            P (0, "");
+            P (0, "/// Which node holds each node (--parents): built by `link_<root>`, read by `parent`.");
+            P (0, "pub struct Parents<'a> { map: std::collections::HashMap<(usize, &'static str), Node<'a>> }");
+            P (0, "impl<'a> Parents<'a> {");
+            P (1, "/// The node that holds n, or None for a root.");
+            P (1, "pub fn parent(&self, n: Node) -> Option<Node<'a>> {");
+            P (2, "self.map.get(&(node_addr(n), node_kind_name(n))).copied()");
+            P (1, "}");
+            P (0, "}");
+            P (0, "fn link_into<'a>(map: &mut std::collections::HashMap<(usize, &'static str), Node<'a>>, n: Node<'a>) {");
+            P (1, "for k in node_kids(n) {");
+            P (2, "if let Val::Node(c) = k.value {");
+            P (3, "map.insert((node_addr(c), node_kind_name(c)), n);");
+            P (3, "link_into(map, c);");
+            P (2, "}");
+            P (1, "}");
+            P (0, "}");
+            P (0, "");
+         end if;
          --  the whole tree
          declare
             R  : constant Rule := Rules (1);
@@ -2109,12 +2210,27 @@ package body HBNF_Rust is
                   & "(root), w) }");
                P (0, "pub fn dump_" & RN & "(root: &" & Rust_Type (To_String (R.Name))
                   & ") -> String { node_dump(Node::" & Variant (1) & "(root)) }");
+               if Parents_On then
+                  P (0, "pub fn link_" & RN & "(root: &" & Rust_Type (To_String (R.Name))
+                     & ") -> Parents<'_> {");
+                  P (1, "let mut map = std::collections::HashMap::new();");
+                  P (1, "link_into(&mut map, Node::" & Variant (1) & "(root));");
+                  P (1, "Parents { map }");
+                  P (0, "}");
+               end if;
             elsif Infos (1).Kind = List then
                P (0, "pub fn walk_" & RN & "(root: &[" & Elem_Type (1)
                   & "], w: &mut impl Walker) -> bool {");
                P (1, "for e in root { if !node_walk(Node::" & Variant (1) & "(e), w) { return false; } }");
                P (1, "true");
                P (0, "}");
+               if Parents_On then
+                  P (0, "pub fn link_" & RN & "(root: &[" & Elem_Type (1) & "]) -> Parents<'_> {");
+                  P (1, "let mut map = std::collections::HashMap::new();");
+                  P (1, "for e in root { link_into(&mut map, Node::" & Variant (1) & "(e)); }");
+                  P (1, "Parents { map }");
+                  P (0, "}");
+               end if;
                P (0, "pub fn dump_" & RN & "(root: &[" & Elem_Type (1) & "]) -> String {");
                P (1, "let mut s = String::from(""(" & To_String (R.Name) & """);");
                P (1, "for e in root { s.push(' '); dump_into(&mut s, Node::" & Variant (1) & "(e)); }");
@@ -2694,6 +2810,16 @@ package body HBNF_Rust is
                   Append (Buf, LF);
                   Append (Buf, "        }");
                   Append (Buf, LF);
+                  if Has_Span (Analyze (Rules, Idx)) and then not Lit_Only (E.Items) then
+                     if R.Whitespace /= Null_Unbounded_String then
+                        Append (Buf, "        { let k = p.pos; p.pos = save; p.skip_ws(); e._pos = p.pos; p.pos = k; }");
+                     else
+                        Append (Buf, "        e._pos = save;");
+                     end if;
+                     Append (Buf, LF);
+                     Append (Buf, "        e._end = p.pos;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "        r.push(e);");
                   Append (Buf, LF);
                   if Repeated_Body_Nullable (Rules, E) then
@@ -3084,9 +3210,19 @@ package body HBNF_Rust is
                        & "(p: &mut P) -> Result<" & Ret_Type (I)
                        & ", ParseError> {" & LF
                        & "    p.enter(" & Img (I) & ");" & LF
+                       & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
+                          then "    let save = p.pos;" & LF else "")
                        & "    let r = parse_body_" & Rust_Snake (NM) & "(p);" & LF
                        & "    p.ex.depth -= 1;" & LF
-                       & "    r" & LF & "}" & LF & LF);
+                       & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
+                          then "    r.map(|mut v| {" & LF
+                            & (if Rules (I).Whitespace /= Null_Unbounded_String
+                               then "        let k = p.pos; p.pos = save; p.skip_ws(); v._pos = p.pos; p.pos = k;" & LF
+                               else "        v._pos = save;" & LF)
+                            & "        v._end = p.pos;" & LF
+                            & "        v" & LF & "    })" & LF
+                          else "    r" & LF)
+                       & "}" & LF & LF);
                      Append (Res, "fn parse_body_" & Rust_Snake (NM)
                        & "(p: &mut P) -> Result<" & Ret_Type (I)
                        & ", ParseError> {");

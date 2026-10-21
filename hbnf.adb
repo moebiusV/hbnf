@@ -150,8 +150,14 @@ begin
             HBNF_Grammar.Set_Ebnf (True);
          elsif A = "--spans" then
             HBNF_C.Set_Spans (True);
+            HBNF_Rust.Set_Spans (True);
+            HBNF_Zig.Set_Spans (True);
+            HBNF_Ada.Set_Spans (True);
          elsif A = "--parents" then
             HBNF_C.Set_Parents (True);
+            HBNF_Rust.Set_Parents (True);
+            HBNF_Zig.Set_Parents (True);
+            HBNF_Ada.Set_Parents (True);
          elsif A'Length >= 14 and then A (1 .. 14) = "--ts-conflicts" then
             Ts_Conflicts := To_Unbounded_String
               ((if A'Length > 15 and then A (15) = '=' then A (16 .. A'Last) else ""));

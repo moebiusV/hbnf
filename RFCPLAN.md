@@ -1542,8 +1542,10 @@ lookahead or a context test not at all.
     record or list element), `node_walk` (enter, leave, skip, stop), `node_kids`, `node_kind_name`,
     `node_alt`, `node_alt_name`, `node_dump` and `node_equal`, written as plain typed code per grammar
     rather than C's tables, and the dump is character for character what C writes (a rule with
-    alternatives records `_alt` / `Alt_No`, as `--writer` does).  Not yet there: spans, parents, labels
-    (`%label` is in the dump's alternative names already).
+    alternatives records `_alt` / `Alt_No`, as `--writer` does).  Spans and parents too (`--spans`, `--parents`: `_pos`/`_end` fields set by a wrapper round each
+    rule's parser, `node_span`, `node_where`, and a `Parents` map built by `link_<root>` because a
+    Rust or Ada tree cannot point at its parent), `tests/spans.sh`.  `%label` is in the dump's
+    alternative names already.
 
 7e. **Error paths (the user, 2026-10-18).**  *Built in C: `--paths`.*  An error
     message says which rules the parser was reading when it got as far as it did:

@@ -22,6 +22,11 @@ package HBNF_Ada is
    --  --ast: also emit the walker and the dump (Node_Walk, Node_Dump, ...).
    procedure Set_Ast (On : Boolean);
 
+   --  --spans and --parents: also where each node is in the text (Node_Span,
+   --  Node_Where) and which node holds it (Parents, Link_<Root>).
+   procedure Set_Spans (On : Boolean);
+   procedure Set_Parents (On : Boolean);
+
    procedure Set_Hosted (Types, Spec, Withs, Code : String; Walks : String := "");
    --  Walks: "rule=Walk_Proc" for each bit rule that holds an %action, space-separated;
    --  the text parser runs them after the whole text is read.

@@ -312,6 +312,8 @@ package body HBNF_Zig is
 
    Writer_On    : Boolean := False;   --  --writer: write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
+   Spans_On     : Boolean := False;   --  --spans: where each node is in the text
+   Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
    Hosted_Walks : U;                --  the bit rules with a walk_<rule>, space-separated
    Hosted_Acts  : Boolean := False; --  some %action to run after the text is read
@@ -327,6 +329,16 @@ package body HBNF_Zig is
    begin
       Ast_On := On;
    end Set_Ast;
+
+   procedure Set_Spans (On : Boolean) is
+   begin
+      Spans_On := On;
+   end Set_Spans;
+
+   procedure Set_Parents (On : Boolean) is
+   begin
+      Parents_On := On;
+   end Set_Parents;
 
    procedure Set_Hosted (Types, Code : String; Walks : String := "") is
    begin
@@ -771,6 +783,12 @@ package body HBNF_Zig is
       and then R.Pattern (1).Kind = Group
       and then (for some X of R.Pattern (1).Items => X.Kind = Alt));
 
+   --  With --spans a struct and a list entry record where they are in the text
+   --  (`_pos`, `_end`, byte offsets; the blanks before a node are not in it).
+   function Has_Span (Info : Rule_Info) return Boolean is
+     (Spans_On and then (Info.Kind = Struct
+                         or else (Info.Kind = List and then not Info.Elem_Members.Is_Empty)));
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
@@ -933,6 +951,14 @@ package body HBNF_Zig is
                      Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
                      Mustache.Append (Items, Row);
                   end if;
+                  if Has_Span (Info) then
+                     for F in 1 .. 2 loop
+                        Row := Mustache.New_Map;
+                        Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "_pos" else "_end"));
+                        Mustache.Insert (Row, "type", Mustache.New_Scalar ("usize"));
+                        Mustache.Append (Items, Row);
+                     end loop;
+                  end if;
                   Mustache.Put (V, "name", Base);
                   Mustache.Put (V, "items", Items);
                   Append (Buf, Mustache.Render_File ("zig_struct", V));
@@ -994,6 +1020,14 @@ package body HBNF_Zig is
                   Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
                   Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
                   Mustache.Append (Items, Row);
+               end if;
+               if Has_Span (Info) then
+                  for F in 1 .. 2 loop
+                     Row := Mustache.New_Map;
+                     Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "_pos" else "_end"));
+                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("usize"));
+                     Mustache.Append (Items, Row);
+                  end loop;
                end if;
                Mustache.Put (V, "name", Base);
                Mustache.Put (V, "items", Items);
@@ -1860,6 +1894,7 @@ package body HBNF_Zig is
       procedure Emit_Ast (Buf : in out U) is
 
          Used : Boolean := False;   --  the node being written uses its payload `x`
+         Some_Without : Boolean := False;   --  some node kind has no span
 
          procedure P (Ind : Natural; S : String) is
          begin
@@ -2223,6 +2258,91 @@ package body HBNF_Zig is
          P (1, "return std.mem.eql(u8, try node_dump(a, al), try node_dump(b, al));");
          P (0, "}");
          P (0, "");
+         if Spans_On then
+            Some_Without := False;
+            for I in 1 .. N loop
+               if Walked_Kind (I) then
+                  declare
+                     Info : constant Rule_Info := Infos (I);
+                     L    : constant Natural :=
+                       (if Info.Kind = List and then Info.Elem_Members.Is_Empty
+                             and then Info.Elem_Name /= Null_Unbounded_String
+                        then Leaf (To_String (Info.Elem_Name)) else 0);
+                  begin
+                     if not (Has_Span (Info) or else (L > 0 and then Has_Span (Infos (L)))) then
+                        Some_Without := True;
+                     end if;
+                  end;
+               end if;
+            end loop;
+            P (0, "/// Where a node is in the text: its first byte and its last + 1 (the blanks before it are not in it).");
+            P (0, "pub fn node_span(n: Node) ?[2]usize {");
+            P (1, "return switch (n) {");
+            for I in 1 .. N loop
+               if Walked_Kind (I) then
+                  declare
+                     Info : constant Rule_Info := Infos (I);
+                     L    : constant Natural :=
+                       (if Info.Kind = List and then Info.Elem_Members.Is_Empty
+                             and then Info.Elem_Name /= Null_Unbounded_String
+                        then Leaf (To_String (Info.Elem_Name)) else 0);
+                  begin
+                     if Has_Span (Info) or else (L > 0 and then Has_Span (Infos (L))) then
+                        P (2, "." & Variant (I) & " => |x| .{ x._pos, x._end },");
+                     end if;
+                  end;
+               end if;
+            end loop;
+            if Some_Without then
+               P (2, "else => null,");
+            end if;
+            P (1, "};");
+            P (0, "}");
+            P (0, "");
+            P (0, "/// The line and the column, both from 1, of a byte offset of text.");
+            P (0, "pub fn node_where(text: []const u8, pos: usize) [2]usize {");
+            P (1, "var l: usize = 1;");
+            P (1, "var c: usize = 1;");
+            P (1, "for (text, 0..) |ch, i| {");
+            P (2, "if (i >= pos) break;");
+            P (2, "if (ch == '\n') { l += 1; c = 1; } else c += 1;");
+            P (1, "}");
+            P (1, "return .{ l, c };");
+            P (0, "}");
+            P (0, "");
+         end if;
+         if Parents_On then
+            P (0, "fn node_addr(n: Node) usize {");
+            P (1, "return switch (n) {");
+            P (2, "inline else => |x| @intFromPtr(x),");
+            P (1, "};");
+            P (0, "}");
+            P (0, "");
+            P (0, "/// Which node holds each node (--parents): built by `link_<root>`, read by `parent`.");
+            P (0, "pub const Parents = struct {");
+            P (1, "const Key = struct { addr: usize, kind: usize };");
+            P (1, "map: std.AutoHashMapUnmanaged(Key, Node) = .empty,");
+            P (1, "fn key(n: Node) Key { return .{ .addr = node_addr(n), .kind = @intFromEnum(std.meta.activeTag(n)) }; }");
+            P (1, "/// The node that holds n, or null for a root.");
+            P (1, "pub fn parent(self: *const Parents, n: Node) ?Node { return self.map.get(key(n)); }");
+            P (0, "};");
+            P (0, "");
+            P (0, "fn link_into(m: *Parents, al: std.mem.Allocator, n: Node) !void {");
+            P (1, "var kids: std.ArrayList(Kid) = .empty;");
+            P (1, "defer kids.deinit(al);");
+            P (1, "try node_kids(n, &kids, al);");
+            P (1, "for (kids.items) |k| {");
+            P (2, "switch (k.value) {");
+            P (3, ".node => |c| {");
+            P (4, "try m.map.put(al, Parents.key(c), n);");
+            P (4, "try link_into(m, al, c);");
+            P (3, "},");
+            P (3, "else => {},");
+            P (2, "}");
+            P (1, "}");
+            P (0, "}");
+            P (0, "");
+         end if;
          declare
             R  : constant Rule := Rules (1);
             RN : constant String := Zig_Snake (To_String (R.Name));
@@ -2234,12 +2354,27 @@ package body HBNF_Zig is
                P (0, "pub fn dump_" & RN & "(root: *const " & Zig_Type (To_String (R.Name))
                   & ", al: std.mem.Allocator) ![]u8 { return node_dump(.{ ." & Variant (1)
                   & " = root }, al); }");
+               if Parents_On then
+                  P (0, "pub fn link_" & RN & "(root: *const " & Zig_Type (To_String (R.Name))
+                     & ", al: std.mem.Allocator) !Parents {");
+                  P (1, "var m = Parents{};");
+                  P (1, "try link_into(&m, al, .{ ." & Variant (1) & " = root });");
+                  P (1, "return m;");
+                  P (0, "}");
+               end if;
             elsif Infos (1).Kind = List then
                P (0, "pub fn walk_" & RN & "(root: []" & Elem_Type (1)
                   & ", w: anytype, al: std.mem.Allocator) !bool {");
                P (1, "for (root) |*e| { if (!try node_walk(.{ ." & Variant (1) & " = e }, w, al)) return false; }");
                P (1, "return true;");
                P (0, "}");
+               if Parents_On then
+                  P (0, "pub fn link_" & RN & "(root: []" & Elem_Type (1) & ", al: std.mem.Allocator) !Parents {");
+                  P (1, "var m = Parents{};");
+                  P (1, "for (root) |*e| try link_into(&m, al, .{ ." & Variant (1) & " = e });");
+                  P (1, "return m;");
+                  P (0, "}");
+               end if;
                P (0, "pub fn dump_" & RN & "(root: []" & Elem_Type (1) & ", al: std.mem.Allocator) ![]u8 {");
                P (1, "var out: std.ArrayList(u8) = .empty;");
                P (1, "try out.appendSlice(al, ""(" & To_String (R.Name) & """);");
@@ -2956,6 +3091,16 @@ package body HBNF_Zig is
                   Append (Buf, LF);
                   Append (Buf, "        }");
                   Append (Buf, LF);
+                  if Has_Span (Analyze (Rules, Idx)) and then not No_Fields then
+                     if R.Whitespace /= Null_Unbounded_String then
+                        Append (Buf, "        { const k = p.pos; p.pos = save; p.skip_ws(); e._pos = p.pos; p.pos = k; }");
+                     else
+                        Append (Buf, "        e._pos = save;");
+                     end if;
+                     Append (Buf, LF);
+                     Append (Buf, "        e._end = p.pos;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "        try list.append(p.alloc, e);");
                   Append (Buf, LF);
                   if Repeated_Body_Nullable (Rules, E) then
@@ -3587,7 +3732,25 @@ package body HBNF_Zig is
                        and then Rules (I).Jet_Code = Null_Unbounded_String
                      then "_" else "p");
                begin
-                  Append (Res, "fn parse_" & Zig_Snake (NM)
+                  if Param = "p" and then Analyze (Rules, I).Kind = Struct
+                    and then Has_Span (Analyze (Rules, I))
+                  then
+                     --  the node says where it is: from the first thing in it to the end
+                     Append (Res, "fn parse_" & Zig_Snake (NM)
+                       & "(p: *P) ParseError!" & Ret_Type (I) & " {" & LF
+                       & "    const save = p.pos;" & LF
+                       & "    var r = try parse_body_" & Zig_Snake (NM) & "(p);" & LF
+                       & (if Rules (I).Whitespace /= Null_Unbounded_String
+                          then "    { const k = p.pos; p.pos = save; p.skip_ws(); r._pos = p.pos; p.pos = k; }" & LF
+                          else "    r._pos = save;" & LF)
+                       & "    r._end = p.pos;" & LF
+                       & "    return r;" & LF & "}" & LF & LF);
+                  end if;
+                  Append (Res, "fn "
+                    & (if Param = "p" and then Analyze (Rules, I).Kind = Struct
+                          and then Has_Span (Analyze (Rules, I))
+                       then "parse_body_" else "parse_")
+                    & Zig_Snake (NM)
                     & "(" & Param & ": *P) ParseError!" & Ret_Type (I) & " {");
                   Append (Res, LF);
                   if Param = "p" then

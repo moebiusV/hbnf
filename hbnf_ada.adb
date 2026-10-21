@@ -255,6 +255,8 @@ package body HBNF_Ada is
 
    Writer_On    : Boolean := False;   --  --writer: Write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
+   Spans_On     : Boolean := False;   --  --spans: where each node is in the text
+   Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
    Hosted_Spec  : U;
    Hosted_Withs : U;
@@ -272,6 +274,16 @@ package body HBNF_Ada is
    begin
       Ast_On := On;
    end Set_Ast;
+
+   procedure Set_Spans (On : Boolean) is
+   begin
+      Spans_On := On;
+   end Set_Spans;
+
+   procedure Set_Parents (On : Boolean) is
+   begin
+      Parents_On := On;
+   end Set_Parents;
 
    procedure Set_Hosted (Types, Spec, Withs, Code : String; Walks : String := "") is
    begin
@@ -590,6 +602,13 @@ package body HBNF_Ada is
    --  (`Alt_No`, from 1): a record whose pattern has a top-level alternation,
    --  and a list entry that is a group with one.  The writer needs it; the C
    --  tree has the same.
+   --  With --spans a record and a list entry say where they are in the text
+   --  (`Span_Start`, `Span_End`: byte offsets from 0; the blanks before a node
+   --  are not in it).
+   function Has_Span (Info : Rule_Info) return Boolean is
+     (Spans_On and then (Info.Kind = Struct
+                         or else (Info.Kind = List and then not Info.Elem_Members.Is_Empty)));
+
    function Struct_Alt (R : Rule; Info : Rule_Info) return Boolean is
      ((Writer_On or else Ast_On) and then Info.Kind = Struct
       and then Natural (R.Pattern.Length) > 1
@@ -987,6 +1006,14 @@ package body HBNF_Ada is
                      Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
                      Mustache.Append (Items, Row);
                   end if;
+                  if Has_Span (Info) then
+                     for F in 1 .. 2 loop
+                        Row := Mustache.New_Map;
+                        Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "Span_Start" else "Span_End"));
+                        Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
+                        Mustache.Append (Items, Row);
+                     end loop;
+                  end if;
                   Mustache.Put (V, "name", TN);
                   Mustache.Put (V, "items", Items);
                   Append (Buf, Mustache.Render_File ("ada_struct", V));
@@ -1048,6 +1075,14 @@ package body HBNF_Ada is
                   Mustache.Insert (Row, "field", Mustache.New_Scalar ("Alt_No"));
                   Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
                   Mustache.Append (Items, Row);
+               end if;
+               if Has_Span (Info) then
+                  for F in 1 .. 2 loop
+                     Row := Mustache.New_Map;
+                     Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "Span_Start" else "Span_End"));
+                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
+                     Mustache.Append (Items, Row);
+                  end loop;
                end if;
                Mustache.Put (V, "name", Base & "_Entry");
                Mustache.Put (V, "items", Items);
@@ -2129,6 +2164,17 @@ package body HBNF_Ada is
                   end;
                   Append (Buf, "            exit when not Matched;");
                   Append (Buf, LF);
+                  if Has_Span (Analyze (Rules, Idx)) then
+                     if R.Whitespace /= Null_Unbounded_String then
+                        Append (Buf, "            declare K : constant Natural := P.Pos; begin"
+                          & " P.Pos := Save; Skip_Ws (P); E.Span_Start := P.Pos - 1; P.Pos := K; end;");
+                     else
+                        Append (Buf, "            E.Span_Start := Save - 1;");
+                     end if;
+                     Append (Buf, LF);
+                     Append (Buf, "            E.Span_End := P.Pos - 1;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "            R.Append (E);");
                   Append (Buf, LF);
                   if Repeated_Body_Nullable (Rules, E) then
@@ -3244,6 +3290,46 @@ package body HBNF_Ada is
                    & "; W : in out Walker'Class) return Boolean;");
                PS (1, "function Dump_" & CN & " (Root : " & Ret_Type (1) & ") return String;");
             end;
+            if Spans_On then
+               PS (1, "--  Where a node is in the text: its first byte and its last + 1 (offsets from 0;");
+               PS (1, "--  the blanks before it are not in it).  Known is False for a node with no span.");
+               PS (1, "type Span is record");
+               PS (2, "Known : Boolean := False;");
+               PS (2, "First : Natural := 0;");
+               PS (2, "Last  : Natural := 0;");
+               PS (1, "end record;");
+               PS (1, "function Node_Span (N : Node) return Span;");
+               PS (1, "type Place is record");
+               PS (2, "Line : Positive;");
+               PS (2, "Col  : Positive;");
+               PS (1, "end record;");
+               PS (1, "--  The line and the column, both from 1, of a byte offset (from 0) of Text.");
+               PS (1, "function Node_Where (Text : String; Pos : Natural) return Place;");
+            end if;
+            if Parents_On then
+               PS (1, "--  Which node holds each node (--parents): built by Link_<Root>, read by Parent.");
+               PS (1, "type Parent_Key is record");
+               PS (2, "Addr : System.Storage_Elements.Integer_Address;");
+               PS (2, "Kind : Node_Kind;");
+               PS (1, "end record;");
+               PS (1, "use type System.Storage_Elements.Integer_Address;");
+               PS (1, "function ""<"" (A, B : Parent_Key) return Boolean is");
+               PS (2, "(A.Addr < B.Addr or else (A.Addr = B.Addr and then A.Kind < B.Kind));");
+               PS (1, "package Parent_Maps is new Ada.Containers.Ordered_Maps (Parent_Key, Node);");
+               PS (1, "type Parents is record");
+               PS (2, "Map : Parent_Maps.Map;");
+               PS (1, "end record;");
+               PS (1, "type Maybe_Node (Found : Boolean := False) is record");
+               PS (2, "case Found is");
+               PS (3, "when True  => N : Node;");
+               PS (3, "when False => null;");
+               PS (2, "end case;");
+               PS (1, "end record;");
+               PS (1, "--  The node that holds N; not Found for a root.");
+               PS (1, "function Parent (Ps : Parents; N : Node) return Maybe_Node;");
+               PS (1, "function Link_" & Ada_Ident (To_String (Rules (1).Name))
+                   & " (Root : " & Ret_Type (1) & ") return Parents;");
+            end if;
             PS (0, "");
 
             --  the body
@@ -3414,6 +3500,108 @@ package body HBNF_Ada is
             P (1, "function Node_Equal (A, B : Node) return Boolean is");
             P (2, "(Node_Dump (A) = Node_Dump (B));");
             P (1, "");
+            if Spans_On then
+               P (1, "function Node_Span (N : Node) return Span is");
+               P (1, "begin");
+               P (2, "case N.Kind is");
+               for I in 1 .. N loop
+                  if Walked_Kind (I) then
+                     declare
+                        Info : constant Rule_Info := Analyze (Rules, I);
+                        L    : Natural := 0;
+                     begin
+                        if Info.Kind = List and then Info.Elem_Members.Is_Empty
+                          and then Info.Elem_Name /= Null_Unbounded_String
+                        then
+                           declare
+                              EN : constant String := To_String (Info.Elem_Name);
+                              E  : constant Natural := Find (Rules, EN);
+                           begin
+                              L := (if E > 0 and then Is_Record (Analyze (Rules, E)) then E
+                                    elsif Alias_Record (Rules, EN) /= 0 then Leaf_Record (Rules, EN)
+                                    else 0);
+                           end;
+                        end if;
+                        if Has_Span (Info) or else (L > 0 and then Has_Span (Analyze (Rules, L))) then
+                           P (3, "when " & V (I) & "_Kind =>");
+                           P (4, "return (Known => True, First => N.Ref_" & V (I)
+                              & ".Span_Start, Last => N.Ref_" & V (I) & ".Span_End);");
+                        end if;
+                     end;
+                  end if;
+               end loop;
+               P (3, "when others => return (Known => False, First => 0, Last => 0);");
+               P (2, "end case;");
+               P (1, "end Node_Span;");
+               P (1, "");
+               P (1, "function Node_Where (Text : String; Pos : Natural) return Place is");
+               P (2, "L : Positive := 1;");
+               P (2, "C : Positive := 1;");
+               P (1, "begin");
+               P (2, "for I in 0 .. Pos - 1 loop");
+               P (3, "exit when Text'First + I > Text'Last;");
+               P (3, "if Text (Text'First + I) = ASCII.LF then");
+               P (4, "L := L + 1;");
+               P (4, "C := 1;");
+               P (3, "else");
+               P (4, "C := C + 1;");
+               P (3, "end if;");
+               P (2, "end loop;");
+               P (2, "return (Line => L, Col => C);");
+               P (1, "end Node_Where;");
+               P (1, "");
+            end if;
+            if Parents_On then
+               P (1, "function Key_Of (N : Node) return Parent_Key is");
+               P (1, "begin");
+               P (2, "case N.Kind is");
+               for I in 1 .. N loop
+                  if Walked_Kind (I) then
+                     P (3, "when " & V (I) & "_Kind =>");
+                     P (4, "return (System.Storage_Elements.To_Integer (N.Ref_" & V (I)
+                        & ".all'Address), N.Kind);");
+                  end if;
+               end loop;
+               P (2, "end case;");
+               P (1, "end Key_Of;");
+               P (1, "");
+               P (1, "function Parent (Ps : Parents; N : Node) return Maybe_Node is");
+               P (2, "C : constant Parent_Maps.Cursor := Ps.Map.Find (Key_Of (N));");
+               P (1, "begin");
+               P (2, "if Parent_Maps.Has_Element (C) then");
+               P (3, "return (Found => True, N => Parent_Maps.Element (C));");
+               P (2, "end if;");
+               P (2, "return (Found => False);");
+               P (1, "end Parent;");
+               P (1, "");
+               P (1, "procedure Link_Into (M : in out Parent_Maps.Map; N : Node) is");
+               P (1, "begin");
+               P (2, "for K of Node_Kids (N) loop");
+               P (3, "if K.Value.Kind = Node_Val then");
+               P (4, "M.Include (Key_Of (K.Value.N), N);");
+               P (4, "Link_Into (M, K.Value.N);");
+               P (3, "end if;");
+               P (2, "end loop;");
+               P (1, "end Link_Into;");
+               P (1, "");
+               declare
+                  CN : constant String := Ada_Ident (To_String (Rules (1).Name));
+               begin
+                  P (1, "function Link_" & CN & " (Root : " & Ret_Type (1) & ") return Parents is");
+                  P (2, "Ps : Parents;");
+                  P (1, "begin");
+                  if Is_Record (Analyze (Rules, 1)) then
+                     P (2, "Link_Into (Ps.Map, " & Node_Of (1, V (1) & "_Ref'(Root'Unrestricted_Access)") & ");");
+                  else
+                     P (2, "for I in Root.First_Index .. Root.Last_Index loop");
+                     P (3, "Link_Into (Ps.Map, " & Elem_Node (1, "Root", "I") & ");");
+                     P (2, "end loop;");
+                  end if;
+                  P (2, "return Ps;");
+                  P (1, "end Link_" & CN & ";");
+                  P (1, "");
+               end;
+            end if;
             declare
                R  : constant Rule := Rules (1);
                CN : constant String := Ada_Ident (To_String (R.Name));
@@ -3479,7 +3667,12 @@ package body HBNF_Ada is
          Mustache.Put (V, "hosted_spec", To_String (Hosted_Spec));
          Mustache.Put (V, "spec_withs",
            (if Length (Ast_Body) > 0
-            then "with Ada.Containers.Vectors;" & LF & "with Interfaces;" & LF else ""));
+            then "with Ada.Containers.Vectors;" & LF & "with Interfaces;" & LF
+                 & (if Parents_On
+                    then "with Ada.Containers.Ordered_Maps;" & LF
+                         & "with System.Storage_Elements;" & LF
+                    else "")
+            else ""));
          Append (Spec, Mustache.Render_File ("ada_parser_spec", V));
          Append (Spec, LF);
       end;
@@ -3499,7 +3692,10 @@ package body HBNF_Ada is
          Mustache.Put (V, "nocase_with", Nocase_With);
          Mustache.Put (V, "conf_with", Conf_With);
          Mustache.Put (V, "free_with", "with Ada.Unchecked_Deallocation;" & LF);
-         Mustache.Put (V, "hosted_with", To_String (Hosted_Withs));
+         Mustache.Put (V, "hosted_with",
+           To_String (Hosted_Withs)
+           & (if Parents_On and then Length (Ast_Body) > 0
+              then "with System.Storage_Elements;" & LF else ""));
          Append (Bdy, Mustache.Render_File ("ada_parser_body", V));
       end;
 
@@ -3936,10 +4132,20 @@ package body HBNF_Ada is
                  & "   begin" & LF
                  & "      Enter (P, " & Img (I) & ");" & LF
                  & "      declare" & LF
-                 & "         R : constant " & Ret_Type (I) & " := Body_Of_"
+                 & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
+                    then "         Save : constant Natural := P.Pos;" & LF
+                         & "         R : " & Ret_Type (I) & " := Body_Of_"
+                    else "         R : constant " & Ret_Type (I) & " := Body_Of_")
                  & Ada_Ident (NM) & " (P);" & LF
                  & "      begin" & LF
                  & "         P.Depth := P.Depth - 1;" & LF
+                 & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
+                    then (if Rules (I).Whitespace /= Null_Unbounded_String
+                          then "         declare K : constant Natural := P.Pos; begin P.Pos := Save;"
+                               & " Skip_Ws (P); R.Span_Start := P.Pos - 1; P.Pos := K; end;" & LF
+                          else "         R.Span_Start := Save - 1;" & LF)
+                         & "         R.Span_End := P.Pos - 1;" & LF
+                    else "")
                  & "         return R;" & LF
                  & "      end;" & LF
                  & "   exception" & LF
