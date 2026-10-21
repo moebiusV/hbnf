@@ -309,11 +309,17 @@ package body HBNF_Zig is
       return 0;
    end Find;
 
+   Writer_On    : Boolean := False;   --  --writer: write_<root>
    Hosted_Types : U;
    Hosted_Walks : U;                --  the bit rules with a walk_<rule>, space-separated
    Hosted_Acts  : Boolean := False; --  some %action to run after the text is read
    Hosted_Code  : U;
    Is_Hosted    : Boolean := False;
+
+   procedure Set_Writer (On : Boolean) is
+   begin
+      Writer_On := On;
+   end Set_Writer;
 
    procedure Set_Hosted (Types, Code : String; Walks : String := "") is
    begin
@@ -1396,6 +1402,390 @@ package body HBNF_Zig is
          end if;
       end Emit_Walk;
 
+      --  write_<root>: the tree as text, when the grammar was generated with
+      --  --writer.  Canonical, not lossless: literals come from the grammar,
+      --  tokens from their text, and a blank goes between two items only where
+      --  they would run together.  A bit rule in the text is written by its own
+      --  emit_bits_<rule> (which runs its %emit), its octets going in as they
+      --  are.  What it cannot write it says at run time, at the node, so a
+      --  shape that is not built yet is never written as something close:
+      --  alternatives are not recorded in this tree, so a rule that has them
+      --  is not written.
+      procedure Emit_Writer (Buf : in out U) is
+
+         function Img (X : Natural) return String is
+            S : constant String := Natural'Image (X);
+         begin
+            return S (S'First + 1 .. S'Last);
+         end Img;
+
+         procedure P (Ind : Natural; S : String) is
+         begin
+            Append (Buf, [1 .. 4 * Ind => ' ']);
+            Append (Buf, S);
+            Append (Buf, LF);
+         end P;
+
+         function Bad (Why : String) return String is
+           ("w.badw(""" & Zig_Escape (Why) & """);");
+
+         --  The scanner that reads a token of this rule, "null" if none is
+         --  known (the fit of two items is then not checked).
+         --  The built-in scanners exist for a core rule the grammar leaves
+         --  to them (or, for `word`, does not name at all).
+         function Core_Ok (Core : String) return Boolean is
+            J : constant Natural := Find (Rules, Core);
+         begin
+            return (J > 0 and then Rules (J).Jet_Code /= Null_Unbounded_String)
+              or else (Core = "word" and then J = 0);
+         end Core_Ok;
+
+         function Scan_Of (Nm : String; Depth : Natural := 0) return String is
+            J : constant Natural := Find (Rules, Nm);
+         begin
+            if Nm = "str" then
+               return (if Core_Ok ("str") then "scan_str" else "null");
+            elsif Nm = "int" or else (Scalar_Zig_Type (Nm) /= ""
+                                      and then Nm /= "word" and then Nm /= "atom"
+                                      and then Nm /= "bool" and then Nm /= "flag")
+            then
+               return (if Core_Ok ("int") then "scan_int" else "null");
+            elsif Nm = "word" or else Nm = "atom" or else Nm = "bool"
+              or else Nm = "flag"
+            then
+               return (if Core_Ok ("word") then "scan_word" else "null");
+            end if;
+            if J = 0 or else Depth > 8 then
+               return "null";
+            end if;
+            if Is_Char_Rule (Rules, Nm) then
+               return "scan_" & Zig_Snake (Nm);
+            end if;
+            if Rules (J).Jet_Code /= Null_Unbounded_String then
+               return "jet_" & Zig_Snake (Nm);
+            end if;
+            if Natural (Rules (J).Pattern.Length) = 1
+              and then Rules (J).Pattern (1).Kind = Name
+              and then Rules (J).Pattern (1).Min = 1
+              and then Rules (J).Pattern (1).Max = 1
+            then
+               return Scan_Of (To_String (Rules (J).Pattern (1).Name), Depth + 1);
+            end if;
+            return "null";
+         end Scan_Of;
+
+         --  A rule whose value came from the core `str` (quoted again).
+         function Has_Str (Nm : String; Depth : Natural := 0) return Boolean is
+            J : constant Natural := Find (Rules, Nm);
+         begin
+            if Nm = "str" then
+               return True;
+            end if;
+            if J = 0 or else Depth > 8 then
+               return False;
+            end if;
+            for E of Rules (J).Pattern loop
+               if E.Kind = Name and then Has_Str (To_String (E.Name), Depth + 1)
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has_Str;
+
+         --  The text of a rule that is only literals.
+         function Lit_Text (J : Natural) return String is
+            R : U;
+         begin
+            for X of Rules (J).Pattern loop
+               Append (R, X.Lit);
+            end loop;
+            return To_String (R);
+         end Lit_Text;
+
+         --  Write the value Expr (an lvalue) of a name.
+         procedure Value (Idx : Natural; Nm, Expr, Gap : String; Back : Boolean;
+                          Ind : Natural) is
+            J : constant Natural := Find (Rules, Nm);
+            T : constant String :=
+              (if Is_Char_Rule (Rules, Nm) then "[]const u8" else Resolve_Type (Rules, Nm));
+         begin
+            if J = 0 and then Scalar_Zig_Type (Nm) = ""
+              and then HBNF_Grammar.Is_Wire_Rule (Nm)
+            then
+               P (Ind, "{");
+               P (Ind + 1, "var m_: []const u8 = """";");
+               P (Ind + 1, "if (emit_bits_" & Nm & "(w.alloc, " & Expr
+                  & ", &m_)) |e_| {");
+               P (Ind + 2, "if (e_.nbits % 8 != 0) w.badw(""`" & Nm
+                  & "` does not end on an octet, so it cannot be written as text"")");
+               P (Ind + 2, "else w.put(e_.bytes[0 .. e_.nbits / 8]);");
+               P (Ind + 1, "} else |_| w.badw(m_);");
+               P (Ind, "}");
+            elsif J > 0 and then Infos (J).Kind = Scalar
+              and then not Rules (J).Pattern.Is_Empty
+              and then (for all X of Rules (J).Pattern =>
+                          X.Kind = Literal and then X.Min = 1 and then X.Max = 1)
+            then
+               --  a rule that is one literal: the literal is its value
+               P (Ind, "w.lit(" & Gap & ", """
+                  & Zig_Escape (Lit_Text (J)) & """);");
+            elsif J > 0 and then Infos (J).Kind = Struct then
+               P (Ind, "wr_" & Zig_Snake (Nm) & "(w, "
+                  & (if Back then Expr else "&" & Expr) & ");");
+            elsif J > 0 and then Infos (J).Kind = List then
+               P (Ind, "wr_" & Zig_Snake (Nm) & "(w, &" & Expr & ");");
+            elsif J > 0 and then Infos (J).Kind = Enum then
+               P (Ind, "wr_" & Zig_Snake (Nm) & "(w, " & Expr & ");");
+            elsif T = "[]const u8" then
+               P (Ind, "w." & (if Has_Str (Nm) then "str" else "tok") & "("
+                  & Gap & ", " & Expr & ", " & Scan_Of (Nm) & ");");
+            elsif T = "bool" then
+               P (Ind, "w.tok(" & Gap & ", if (" & Expr & ") ""yes"" else ""no"", " & Scan_Of ("word") & ");");
+            elsif T'Length > 1 and then T (T'First) in 'i' | 'u' then
+               P (Ind, "w.num(" & Gap & ", " & Expr & ", " & Scan_Of ("int") & ");");
+            else
+               P (Ind, Bad ("`" & Nm & "` is not a value the writer knows how to write"));
+            end if;
+         end Value;
+
+         --  The elements of a sequence, through accessor Acc.
+         procedure Elements
+           (Idx : Natural; Els : Element_Vectors.Vector; Acc, Gap : String;
+            Ind : Natural) is
+         begin
+            if (for some X of Els => X.Kind = Alt) then
+               P (Ind, Bad ("alternatives are not recorded in a Zig tree, so a rule that has them is not written yet"));
+               return;
+            end if;
+            for E of Els loop
+               case E.Kind is
+                  when Literal =>
+                     P (Ind, "w.lit(" & Gap & ", """ & Zig_Escape (To_String (E.Lit)) & """);");
+                  when Name =>
+                     declare
+                        Nm : constant String := To_String (E.Name);
+                        F  : constant String := Acc & Zig_Field (Nm);
+                        Bk : constant Boolean :=
+                          Back_Target (Backs, Idx, Nm) > 0;
+                     begin
+                        if E.Min /= 1 or else E.Max /= 1 then
+                           P (Ind, "for (" & F & ") |*e_| {");
+                           Value (Idx, Nm, "e_.*", Gap, False, Ind + 1);
+                           P (Ind, "}");
+                        elsif Bk then
+                           P (Ind, "if (" & F & ") |c_| {");
+                           Value (Idx, Nm, "c_", Gap, True, Ind + 1);
+                           P (Ind, "}");
+                        else
+                           Value (Idx, Nm, F, Gap, False, Ind);
+                        end if;
+                     end;
+                  when Group =>
+                     if E.Min /= 1 or else E.Max /= 1 then
+                        P (Ind, Bad ("a repeated group inside a sequence"));
+                     else
+                        Elements (Idx, E.Items, Acc, Gap, Ind);
+                     end if;
+                  when others =>
+                     P (Ind, Bad ("an element the writer does not know"));
+               end case;
+            end loop;
+         end Elements;
+
+         function Ref_Name (Idx : Natural) return String is
+           (Zig_Snake (To_String (Rules (Idx).Name)));
+      begin
+         P (0, "// ---- write (the tree as text, canonical) ----");
+         P (0, "const BnfW = struct {");
+         P (1, "alloc: std.mem.Allocator,");
+         P (1, "buf: std.ArrayList(u8) = .empty,");
+         P (1, "last: u8 = 0,");
+         P (1, "bad: ?[]const u8 = null,");
+         P (1, "pscan: ?*const fn ([]const u8, usize, usize) usize = null,");
+         P (1, "ptxt: std.ArrayList(u8) = .empty,");
+         P (0, "");
+         P (1, "fn badw(self: *BnfW, why: []const u8) void {");
+         P (2, "if (self.bad == null) self.bad = why;");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn put(self: *BnfW, s: []const u8) void {");
+         P (2, "self.buf.appendSlice(self.alloc, s) catch {");
+         P (3, "self.badw(""out of memory"");");
+         P (3, "return;");
+         P (2, "};");
+         P (2, "if (s.len > 0) self.last = s[s.len - 1];");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn delim(c: u8) bool {");
+         P (2, "return c != 0 and std.mem.indexOfScalar(u8, ""()[],;"", c) != null;");
+         P (1, "}");
+         P (0, "");
+         P (1, "// Would the item just written, with sep and s after it, still end where it");
+         P (1, "// did when the grammar's own scanner reads it?");
+         P (1, "fn fits(self: *BnfW, mid: []const u8, s: []const u8) bool {");
+         P (2, "var t: std.ArrayList(u8) = .empty;");
+         P (2, "defer t.deinit(self.alloc);");
+         P (2, "t.appendSlice(self.alloc, self.ptxt.items) catch return false;");
+         P (2, "t.appendSlice(self.alloc, mid) catch return false;");
+         P (2, "t.appendSlice(self.alloc, s) catch return false;");
+         P (2, "return self.pscan.?(t.items, 0, t.items.len) == self.ptxt.items.len;");
+         P (1, "}");
+         P (0, "");
+         P (1, "// What goes between the last item and s: nothing, a blank or a newline, the");
+         P (1, "// first that keeps the last item from reading on into s.");
+         P (1, "fn between(self: *BnfW, gap: bool, s: []const u8) void {");
+         P (2, "if (self.buf.items.len == 0 or s.len == 0) return;");
+         P (2, "const a = self.last;");
+         P (2, "const b = s[0];");
+         P (2, "const pref: []const u8 = if (gap and a > ' ' and b > ' ' and !delim(a) and !delim(b)) "" "" else """";");
+         P (2, "if (self.pscan != null and a > ' ') {");
+         P (3, "const c = [_][]const u8{ pref, "" "", ""\n"" };");
+         P (3, "const n: usize = if (gap) 3 else 1;");
+         P (3, "for (c[0..n]) |x| {");
+         P (4, "if (self.fits(x, s)) {");
+         P (5, "self.put(x);");
+         P (5, "return;");
+         P (4, "}");
+         P (3, "}");
+         P (3, "self.badw(""two items cannot be written apart: the first would read on into the second"");");
+         P (3, "return;");
+         P (2, "}");
+         P (2, "self.put(pref);");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn text(self: *BnfW, gap: bool, s: []const u8, scan: ?*const fn ([]const u8, usize, usize) usize) void {");
+         P (2, "self.between(gap, s);");
+         P (2, "self.put(s);");
+         P (2, "self.pscan = scan;");
+         P (2, "if (scan != null) {");
+         P (3, "self.ptxt.clearRetainingCapacity();");
+         P (3, "self.ptxt.appendSlice(self.alloc, s) catch {");
+         P (4, "self.pscan = null;");
+         P (3, "};");
+         P (2, "}");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn lit(self: *BnfW, gap: bool, s: []const u8) void {");
+         P (2, "self.text(gap, s, null);");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn tok(self: *BnfW, gap: bool, s: []const u8, scan: ?*const fn ([]const u8, usize, usize) usize) void {");
+         P (2, "self.text(gap, s, scan);");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn str(self: *BnfW, gap: bool, s: []const u8, scan: ?*const fn ([]const u8, usize, usize) usize) void {");
+         P (2, "var t: std.ArrayList(u8) = .empty;");
+         P (2, "defer t.deinit(self.alloc);");
+         P (2, "t.append(self.alloc, '""') catch return self.badw(""out of memory"");");
+         P (2, "for (s) |c| {");
+         P (3, "if (c == '""' or c == '\\') t.append(self.alloc, '\\') catch return self.badw(""out of memory"");");
+         P (3, "t.append(self.alloc, c) catch return self.badw(""out of memory"");");
+         P (2, "}");
+         P (2, "t.append(self.alloc, '""') catch return self.badw(""out of memory"");");
+         P (2, "self.text(gap, t.items, scan);");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn num(self: *BnfW, gap: bool, v: anytype, scan: ?*const fn ([]const u8, usize, usize) usize) void {");
+         P (2, "var t: [32]u8 = undefined;");
+         P (2, "const s = std.fmt.bufPrint(&t, ""{d}"", .{v}) catch return self.badw(""a number too long to write"");");
+         P (2, "self.text(gap, s, scan);");
+         P (1, "}");
+         P (0, "};");
+         P (0, "");
+         for I in 1 .. N loop
+            declare
+               R    : constant Rule := Rules (I);
+               NM   : constant String := To_String (R.Name);
+               Info : constant Rule_Info := Infos (I);
+               Gap  : constant String :=
+                 (if R.Whitespace /= Null_Unbounded_String then "true" else "false");
+               Fn   : constant String := Ref_Name (I);
+            begin
+               case Info.Kind is
+                  when Struct =>
+                     P (0, "fn wr_" & Fn & "(w: *BnfW, n: *const "
+                        & Zig_Type (NM) & ") void {");
+                     P (1, "_ = &n;");
+                     if Natural (R.Pattern.Length) = 1
+                       and then R.Pattern (1).Kind = Group
+                     then
+                        Elements (I, R.Pattern (1).Items, "n.", Gap, 1);
+                     else
+                        Elements (I, R.Pattern, "n.", Gap, 1);
+                     end if;
+                     P (0, "}");
+                     P (0, "");
+                  when List =>
+                     P (0, "fn wr_" & Fn & "(w: *BnfW, n: *const " & Zig_Type (NM)
+                        & ") void {");
+                     P (1, "_ = &n;");
+                     if R.Left_Bases > 0 then
+                        P (1, Bad ("a left-recursive list is not written yet"));
+                     elsif R.Pattern (1).Kind = Group then
+                        P (1, "for (n.*) |*e_| {");
+                        Elements (I, R.Pattern (1).Items, "e_.", Gap, 2);
+                        P (1, "}");
+                     elsif Info.Elem_Name /= Null_Unbounded_String then
+                        P (1, "for (n.*) |*e_| {");
+                        Value (I, To_String (Info.Elem_Name), "e_.*", Gap, False, 2);
+                        P (1, "}");
+                     else
+                        P (1, "for (n.*) |e_| w.tok(" & Gap & ", e_, null);");
+                     end if;
+                     P (0, "}");
+                     P (0, "");
+                  when Enum =>
+                     declare
+                        Names : constant String_Vectors.Vector :=
+                          Enum_Names (Info.Literals);
+                     begin
+                        P (0, "fn wr_" & Fn & "(w: *BnfW, v: " & Zig_Type (NM) & ") void {");
+                        P (1, "switch (v) {");
+                        for K in 1 .. Natural (Info.Literals.Length) loop
+                           P (2, "." & To_String (Names (K)) & " => w.lit(" & Gap & ", """
+                              & Zig_Escape (To_String (Info.Literals (K))) & """),");
+                        end loop;
+                        P (2, "else => {},");
+                        P (1, "}");
+                        P (0, "}");
+                        P (0, "");
+                     end;
+                  when Scalar =>
+                     null;
+               end case;
+            end;
+         end loop;
+         if Infos (1).Kind in Struct | List then
+            declare
+               R      : constant Rule := Rules (1);
+               Root_T : constant String :=
+                 (if Infos (1).Kind = Struct then Zig_Type (To_String (R.Name))
+                  elsif Natural (R.Pattern.Length) = 1
+                    and then R.Pattern (1).Kind = Name
+                    and then (R.Pattern (1).Min /= 1 or else R.Pattern (1).Max /= 1)
+                  then
+                     "[]" & (if Scalar_Zig_Type (To_String (R.Pattern (1).Name)) /= ""
+                             then Scalar_Zig_Type (To_String (R.Pattern (1).Name))
+                             else Zig_Type (To_String (R.Pattern (1).Name)))
+                  else Zig_Type (To_String (R.Name)));
+            begin
+               P (0, "/// The tree as text, or error.Write and why in msg when a node cannot be written.");
+               P (0, "pub fn write_" & Ref_Name (1) & "(alloc: std.mem.Allocator, root: *const "
+                  & Root_T & ", msg: *[]const u8) error{Write}![]u8 {");
+               P (1, "var w = BnfW{ .alloc = alloc };");
+               P (1, "wr_" & Ref_Name (1) & "(&w, root);");
+               P (1, "if (w.bad) |b| {");
+               P (2, "msg.* = b;");
+               P (2, "return error.Write;");
+               P (1, "}");
+               P (1, "return w.buf.items;");
+               P (0, "}");
+               P (0, "");
+            end;
+         end if;
+      end Emit_Writer;
+
       Emitted   : array (1 .. N) of Boolean := [others => False];
       Remaining : Natural := 0;
       Res       : U;
@@ -1466,6 +1856,9 @@ package body HBNF_Zig is
       Emit_Walk (Res);
       Append (Res, LF);
       Append (Res, Hosted_Types);
+      if Writer_On then
+         Emit_Writer (Res);
+      end if;
 
       return To_String (Res);
    end Emit;

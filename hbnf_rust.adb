@@ -286,11 +286,17 @@ package body HBNF_Rust is
       return 0;
    end Find;
 
+   Writer_On    : Boolean := False;   --  --writer: write_<root>
    Hosted_Types : U;
    Hosted_Code  : U;
    Hosted_Walks : U;                --  the bit rules with a walk_<rule>, space-separated
    Hosted_Acts  : Boolean := False; --  some %action to run after the text is read
    Is_Hosted    : Boolean := False;
+
+   procedure Set_Writer (On : Boolean) is
+   begin
+      Writer_On := On;
+   end Set_Writer;
 
    procedure Set_Hosted (Types, Code : String; Walks : String := "") is
    begin
@@ -1308,6 +1314,368 @@ package body HBNF_Rust is
          end if;
       end Emit_Walk;
 
+      --  write_<root>: the tree as text, when the grammar was generated with
+      --  --writer.  Canonical, not lossless: literals come from the grammar,
+      --  tokens from their text, and a blank goes between two items only where
+      --  they would run together.  A bit rule in the text is written by its own
+      --  emit_bits_<rule> (which runs its %emit), its octets going in as they
+      --  are.  What it cannot write it says at run time, at the node, so a
+      --  shape that is not built yet is never written as something close:
+      --  alternatives are not recorded in this tree, so a rule that has them
+      --  is not written.
+      procedure Emit_Writer (Buf : in out U) is
+
+         procedure P (Ind : Natural; S : String) is
+         begin
+            Append (Buf, [1 .. 4 * Ind => ' ']);
+            Append (Buf, S);
+            Append (Buf, LF);
+         end P;
+
+         function Bad (Why : String) return String is
+           ("w.badw(""" & Rust_Escape (Why) & """);");
+
+         --  The scanner that reads a token of this rule, "None" if none is
+         --  known (the fit of two items is then not checked).
+         --  The built-in scanners exist for a core rule the grammar leaves
+         --  to them (or, for `word`, does not name at all).
+         function Core_Ok (Core : String) return Boolean is
+            J : constant Natural := Find (Rules, Core);
+         begin
+            return (J > 0 and then Rules (J).Jet_Code /= Null_Unbounded_String)
+              or else (Core = "word" and then J = 0);
+         end Core_Ok;
+
+         function Scan_Of (Nm : String; Depth : Natural := 0) return String is
+            J : constant Natural := Find (Rules, Nm);
+         begin
+            if Nm = "str" then
+               return (if Core_Ok ("str") then "Some(scan_str)" else "None");
+            elsif Nm = "int" or else (Scalar_Rust_Type (Nm) /= ""
+                                      and then Nm /= "word" and then Nm /= "atom"
+                                      and then Nm /= "bool" and then Nm /= "flag")
+            then
+               return (if Core_Ok ("int") then "Some(scan_int)" else "None");
+            elsif Nm = "word" or else Nm = "atom" or else Nm = "bool"
+              or else Nm = "flag"
+            then
+               return (if Core_Ok ("word") then "Some(scan_word)" else "None");
+            end if;
+            if J = 0 or else Depth > 8 then
+               return "None";
+            end if;
+            if Is_Char_Rule (Rules, Nm) then
+               return "Some(scan_" & Rust_Snake (Nm) & ")";
+            end if;
+            if Rules (J).Jet_Code /= Null_Unbounded_String then
+               return "Some(jet_" & Rust_Snake (Nm) & ")";
+            end if;
+            if Natural (Rules (J).Pattern.Length) = 1
+              and then Rules (J).Pattern (1).Kind = Name
+              and then Rules (J).Pattern (1).Min = 1
+              and then Rules (J).Pattern (1).Max = 1
+            then
+               return Scan_Of (To_String (Rules (J).Pattern (1).Name), Depth + 1);
+            end if;
+            return "None";
+         end Scan_Of;
+
+         --  A rule whose value came from the core `str` (quoted again).
+         function Has_Str (Nm : String; Depth : Natural := 0) return Boolean is
+            J : constant Natural := Find (Rules, Nm);
+         begin
+            if Nm = "str" then
+               return True;
+            end if;
+            if J = 0 or else Depth > 8 then
+               return False;
+            end if;
+            for E of Rules (J).Pattern loop
+               if E.Kind = Name and then Has_Str (To_String (E.Name), Depth + 1)
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has_Str;
+
+         --  The text of a rule that is only literals.
+         function Lit_Text (J : Natural) return String is
+            R : U;
+         begin
+            for X of Rules (J).Pattern loop
+               Append (R, X.Lit);
+            end loop;
+            return To_String (R);
+         end Lit_Text;
+
+         --  Write the value Expr (a place) of a name.
+         procedure Value (Nm, Expr, Gap : String; Ind : Natural) is
+            J : constant Natural := Find (Rules, Nm);
+            T : constant String :=
+              (if Is_Char_Rule (Rules, Nm) then "String" else Resolve_Type (Rules, Nm));
+         begin
+            if J = 0 and then Scalar_Rust_Type (Nm) = ""
+              and then HBNF_Grammar.Is_Wire_Rule (Nm)
+            then
+               P (Ind, "match emit_bits_" & Nm & "(&" & Expr & ") {");
+               P (Ind + 1, "Ok((b_, nb_)) => {");
+               P (Ind + 2, "if nb_ % 8 != 0 { w.badw(""`" & Nm
+                  & "` does not end on an octet, so it cannot be written as text""); }");
+               P (Ind + 2, "else { w.put(&b_[..nb_ / 8]); }");
+               P (Ind + 1, "}");
+               P (Ind + 1, "Err(m_) => w.badw(&m_),");
+               P (Ind, "}");
+            elsif J > 0 and then Infos (J).Kind = Scalar
+              and then not Rules (J).Pattern.Is_Empty
+              and then (for all X of Rules (J).Pattern =>
+                          X.Kind = Literal and then X.Min = 1 and then X.Max = 1)
+            then
+               --  a rule that is one literal: the literal is its value
+               P (Ind, "w.lit(" & Gap & ", b"""
+                  & Rust_Escape (Lit_Text (J)) & """);");
+            elsif J > 0 and then Infos (J).Kind in Struct | List | Enum then
+               P (Ind, "wr_" & Rust_Snake (Nm) & "(w, &" & Expr & ");");
+            elsif T = "String" then
+               P (Ind, "w." & (if Has_Str (Nm) then "str" else "tok") & "("
+                  & Gap & ", " & Expr & ".as_bytes(), " & Scan_Of (Nm) & ");");
+            elsif T = "bool" then
+               P (Ind, "w.tok(" & Gap & ", if " & Expr
+                  & " { b""yes"" } else { b""no"" }, " & Scan_Of ("word") & ");");
+            elsif T'Length > 1 and then T (T'First) in 'i' | 'u' then
+               P (Ind, "w.tok(" & Gap & ", format!(""{}"", " & Expr
+                  & ").as_bytes(), " & Scan_Of ("int") & ");");
+            else
+               P (Ind, Bad ("`" & Nm & "` is not a value the writer knows how to write"));
+            end if;
+         end Value;
+
+         --  The elements of a sequence, through accessor Acc.
+         procedure Elements
+           (Idx : Natural; Els : Element_Vectors.Vector; Acc, Gap : String;
+            Ind : Natural) is
+         begin
+            if (for some X of Els => X.Kind = Alt) then
+               P (Ind, Bad ("alternatives are not recorded in a Rust tree, so a rule that has them is not written yet"));
+               return;
+            end if;
+            for E of Els loop
+               case E.Kind is
+                  when Literal =>
+                     P (Ind, "w.lit(" & Gap & ", b""" & Rust_Escape (To_String (E.Lit)) & """);");
+                  when Name =>
+                     declare
+                        Nm : constant String := To_String (E.Name);
+                        F  : constant String := Acc & Rust_Field (Nm);
+                     begin
+                        if E.Min /= 1 or else E.Max /= 1 then
+                           P (Ind, "for e_ in &" & F & " {");
+                           Value (Nm, "(*e_)", Gap, Ind + 1);
+                           P (Ind, "}");
+                        elsif Is_Back (Backs, Idx, Nm) then
+                           P (Ind, "if let Some(c_) = &" & F & " {");
+                           Value (Nm, "(*c_)", Gap, Ind + 1);
+                           P (Ind, "}");
+                        else
+                           Value (Nm, F, Gap, Ind);
+                        end if;
+                     end;
+                  when Group =>
+                     if E.Min /= 1 or else E.Max /= 1 then
+                        P (Ind, Bad ("a repeated group inside a sequence"));
+                     else
+                        Elements (Idx, E.Items, Acc, Gap, Ind);
+                     end if;
+                  when others =>
+                     P (Ind, Bad ("an element the writer does not know"));
+               end case;
+            end loop;
+         end Elements;
+
+         function Ref_Name (Idx : Natural) return String is
+           (Rust_Snake (To_String (Rules (Idx).Name)));
+      begin
+         P (0, "// ---- write (the tree as text, canonical) ----");
+         P (0, "type BnfScan = fn(&[u8], usize, usize) -> usize;");
+         P (0, "struct BnfW {");
+         P (1, "buf: Vec<u8>,");
+         P (1, "last: u8,");
+         P (1, "bad: Option<String>,");
+         P (1, "pscan: Option<BnfScan>,");
+         P (1, "ptxt: Vec<u8>,");
+         P (0, "}");
+         P (0, "");
+         P (0, "impl BnfW {");
+         P (1, "fn badw(&mut self, why: &str) {");
+         P (2, "if self.bad.is_none() { self.bad = Some(why.to_string()); }");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn put(&mut self, s: &[u8]) {");
+         P (2, "self.buf.extend_from_slice(s);");
+         P (2, "if let Some(c) = s.last() { self.last = *c; }");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn delim(c: u8) -> bool {");
+         P (2, "c != 0 && b""()[],;"".contains(&c)");
+         P (1, "}");
+         P (0, "");
+         P (1, "// Would the item just written, with mid and s after it, still end where it");
+         P (1, "// did when the grammar's own scanner reads it?");
+         P (1, "fn fits(&self, mid: &[u8], s: &[u8]) -> bool {");
+         P (2, "let mut t = self.ptxt.clone();");
+         P (2, "t.extend_from_slice(mid);");
+         P (2, "t.extend_from_slice(s);");
+         P (2, "(self.pscan.unwrap())(&t, 0, t.len()) == self.ptxt.len()");
+         P (1, "}");
+         P (0, "");
+         P (1, "// What goes between the last item and s: nothing, a blank or a newline, the");
+         P (1, "// first that keeps the last item from reading on into s.");
+         P (1, "fn between(&mut self, gap: bool, s: &[u8]) {");
+         P (2, "if self.buf.is_empty() || s.is_empty() { return; }");
+         P (2, "let a = self.last;");
+         P (2, "let b = s[0];");
+         P (2, "let pref: &[u8] = if gap && a > b' ' && b > b' ' && !Self::delim(a) && !Self::delim(b) { b"" "" } else { b"""" };");
+         P (2, "if self.pscan.is_some() && a > b' ' {");
+         P (3, "let c: [&[u8]; 3] = [pref, b"" "", b""\n""];");
+         P (3, "let n = if gap { 3 } else { 1 };");
+         P (3, "for x in &c[..n] {");
+         P (4, "if self.fits(x, s) {");
+         P (5, "self.put(x);");
+         P (5, "return;");
+         P (4, "}");
+         P (3, "}");
+         P (3, "self.badw(""two items cannot be written apart: the first would read on into the second"");");
+         P (3, "return;");
+         P (2, "}");
+         P (2, "self.put(pref);");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn text(&mut self, gap: bool, s: &[u8], scan: Option<BnfScan>) {");
+         P (2, "self.between(gap, s);");
+         P (2, "self.put(s);");
+         P (2, "self.pscan = scan;");
+         P (2, "if scan.is_some() {");
+         P (3, "self.ptxt.clear();");
+         P (3, "self.ptxt.extend_from_slice(s);");
+         P (2, "}");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn lit(&mut self, gap: bool, s: &[u8]) {");
+         P (2, "self.text(gap, s, None);");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn tok(&mut self, gap: bool, s: &[u8], scan: Option<BnfScan>) {");
+         P (2, "self.text(gap, s, scan);");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn str(&mut self, gap: bool, s: &[u8], scan: Option<BnfScan>) {");
+         P (2, "let mut t: Vec<u8> = vec![b'""'];");
+         P (2, "for &c in s {");
+         P (3, "if c == b'""' || c == b'\\' { t.push(b'\\'); }");
+         P (3, "t.push(c);");
+         P (2, "}");
+         P (2, "t.push(b'""');");
+         P (2, "self.text(gap, &t, scan);");
+         P (1, "}");
+         P (0, "}");
+         P (0, "");
+         for I in 1 .. N loop
+            declare
+               R    : constant Rule := Rules (I);
+               NM   : constant String := To_String (R.Name);
+               Info : constant Rule_Info := Infos (I);
+               Gap  : constant String :=
+                 (if R.Whitespace /= Null_Unbounded_String then "true" else "false");
+               Fn   : constant String := Ref_Name (I);
+            begin
+               case Info.Kind is
+                  when Struct =>
+                     P (0, "fn wr_" & Fn & "(w: &mut BnfW, n: &" & Rust_Type (NM) & ") {");
+                     P (1, "let _ = &n;");
+                     if Natural (R.Pattern.Length) = 1
+                       and then R.Pattern (1).Kind = Group
+                     then
+                        Elements (I, R.Pattern (1).Items, "n.", Gap, 1);
+                     else
+                        Elements (I, R.Pattern, "n.", Gap, 1);
+                     end if;
+                     P (0, "}");
+                     P (0, "");
+                  when List =>
+                     P (0, "fn wr_" & Fn & "(w: &mut BnfW, n: &Vec<"
+                        & (if R.Pattern (1).Kind = Group then Rust_Type (NM) & "Entry"
+                           elsif Info.Elem_Name /= Null_Unbounded_String
+                           then (if Scalar_Rust_Type (To_String (Info.Elem_Name)) /= ""
+                                 then Scalar_Rust_Type (To_String (Info.Elem_Name))
+                                 else Rust_Type (To_String (Info.Elem_Name)))
+                           else "String") & ">) {");
+                     P (1, "let _ = &n;");
+                     if R.Left_Bases > 0 then
+                        P (1, Bad ("a left-recursive list is not written yet"));
+                     elsif R.Pattern (1).Kind = Group then
+                        P (1, "for e_ in n {");
+                        Elements (I, R.Pattern (1).Items, "e_.", Gap, 2);
+                        P (1, "}");
+                     elsif Info.Elem_Name /= Null_Unbounded_String then
+                        P (1, "for e_ in n {");
+                        Value (To_String (Info.Elem_Name), "(*e_)", Gap, 2);
+                        P (1, "}");
+                     else
+                        P (1, "for e_ in n { w.tok(" & Gap & ", e_.as_bytes(), None); }");
+                     end if;
+                     P (0, "}");
+                     P (0, "");
+                  when Enum =>
+                     declare
+                        Names : constant String_Vectors.Vector :=
+                          Enum_Names (Info.Literals);
+                     begin
+                        P (0, "fn wr_" & Fn & "(w: &mut BnfW, v: &" & Rust_Type (NM) & ") {");
+                        P (1, "match v {");
+                        for K in 1 .. Natural (Info.Literals.Length) loop
+                           P (2, Rust_Type (NM) & "::" & Rust_Type (NM) & "_"
+                              & To_String (Names (K)) & " => w.lit(" & Gap & ", b"""
+                              & Rust_Escape (To_String (Info.Literals (K))) & """),");
+                        end loop;
+                        P (2, "#[allow(unreachable_patterns)] _ => {}");
+                        P (1, "}");
+                        P (0, "}");
+                        P (0, "");
+                     end;
+                  when Scalar =>
+                     null;
+               end case;
+            end;
+         end loop;
+         if Infos (1).Kind in Struct | List then
+            declare
+               R      : constant Rule := Rules (1);
+               Root_T : constant String :=
+                 (if Infos (1).Kind = Struct then Rust_Type (To_String (R.Name))
+                  elsif Natural (R.Pattern.Length) = 1
+                    and then R.Pattern (1).Kind = Name
+                    and then (R.Pattern (1).Min /= 1 or else R.Pattern (1).Max /= 1)
+                  then
+                     "Vec<" & (if Scalar_Rust_Type (To_String (R.Pattern (1).Name)) /= ""
+                               then Scalar_Rust_Type (To_String (R.Pattern (1).Name))
+                               else Rust_Type (To_String (R.Pattern (1).Name))) & ">"
+                  else "Vec<" & Rust_Type (To_String (R.Name)) & "Entry>");
+            begin
+               P (0, "/// The tree as text, or why a node cannot be written.");
+               P (0, "pub fn write_" & Ref_Name (1) & "(root: &" & Root_T
+                  & ") -> Result<Vec<u8>, String> {");
+               P (1, "let mut w = BnfW { buf: Vec::new(), last: 0, bad: None, pscan: None, ptxt: Vec::new() };");
+               P (1, "wr_" & Ref_Name (1) & "(&mut w, root);");
+               P (1, "match w.bad {");
+               P (2, "Some(b) => Err(b),");
+               P (2, "None => Ok(w.buf),");
+               P (1, "}");
+               P (0, "}");
+               P (0, "");
+            end;
+         end if;
+      end Emit_Writer;
+
       Res : U;
    begin
       for I in 1 .. N loop
@@ -1335,6 +1703,9 @@ package body HBNF_Rust is
       Emit_Walk (Res);
       Append (Res, LF);
       Append (Res, Hosted_Types);
+      if Writer_On then
+         Emit_Writer (Res);
+      end if;
 
       return To_String (Res);
    end Emit;

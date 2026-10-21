@@ -9,6 +9,7 @@ CC=${CC:-gcc}
 T=$(mktemp -d) || exit 1
 trap 'rm -rf "$T"' EXIT
 fail=0
+GEN_FLAGS=
 
 # check NAME: generate tests/wire/NAME.hbnf, build it with tests/wire/NAME_main.c,
 # and compare the program's output with tests/wire/NAME.expected.
@@ -41,7 +42,7 @@ check_rust() {
 		echo "SKIP $n (rust): no lib$link; its code calls the system's library"; return
 	fi
 	d=$T/rs_$n; mkdir -p "$d"
-	if ! "$CLI" tests/wire/$g.hbnf --backend=rust > "$d/$g.rs" 2> "$d/err"; then
+	if ! "$CLI" tests/wire/$g.hbnf --backend=rust $GEN_FLAGS > "$d/$g.rs" 2> "$d/err"; then
 		echo "FAIL $n (rust): generation: $(cat "$d/err")"; fail=$((fail+1)); return
 	fi
 	cp tests/wire/${n}_main.rs "$d/main.rs"
@@ -63,7 +64,7 @@ check_zig() {
 	n=$1; g=${2:-$n}; want=${3:-$n}
 	command -v zig > /dev/null 2>&1 || { echo "SKIP $n (zig): no zig"; return; }
 	d=$T/zg_$n; mkdir -p "$d"
-	if ! "$CLI" tests/wire/$g.hbnf --backend=zig > "$d/$g.zig" 2> "$d/err"; then
+	if ! "$CLI" tests/wire/$g.hbnf --backend=zig $GEN_FLAGS > "$d/$g.zig" 2> "$d/err"; then
 		echo "FAIL $n (zig): generation: $(cat "$d/err")"; fail=$((fail+1)); return
 	fi
 	cp tests/wire/${n}_main.zig "$d/main.zig"
@@ -86,7 +87,7 @@ check_ada() {
 	n=$1; g=${2:-$n}; want=${3:-$n}; pkg=${4:-Net}
 	command -v gnatmake > /dev/null 2>&1 || { echo "SKIP $n (ada): no gnatmake"; return; }
 	d=$T/ad_$n; mkdir -p "$d"
-	if ! "$CLI" tests/wire/$g.hbnf --backend=ada --package=$pkg > "$d/all.ada" 2> "$d/err"; then
+	if ! "$CLI" tests/wire/$g.hbnf --backend=ada --package=$pkg $GEN_FLAGS > "$d/all.ada" 2> "$d/err"; then
 		echo "FAIL $n (ada): generation: $(cat "$d/err")"; fail=$((fail+1)); return
 	fi
 	cp tests/wire/${n}_main.adb "$d/"
@@ -125,6 +126,9 @@ check_rust mixed3
 check_rust mixed4 mixed4 mixed4_zig
 check_rust mixed6 mixed6_rust mixed6
 check_rust mixed5 mixed5_rust mixed5
+GEN_FLAGS=--writer
+check_rust mixed7 mixed mixed7
+GEN_FLAGS=
 check_rust segwit_in segwit_in segwit_in
 check_zig net
 check_zig segwit
@@ -135,6 +139,9 @@ check_zig mixed3
 check_zig mixed4 mixed4 mixed4_zig
 check_zig mixed6 mixed6_zig mixed6
 check_zig mixed5 mixed5_zig mixed5
+GEN_FLAGS=--writer
+check_zig mixed7 mixed mixed7
+GEN_FLAGS=
 check_zig segwit_in segwit_in segwit_in
 check_ada net
 check_ada segwit segwit segwit Segwit
@@ -145,6 +152,9 @@ check_ada mixed3 mixed3 mixed3_ada Mixed3
 check_ada mixed4 mixed4 mixed4_ada Mixed4
 check_ada mixed6 mixed6_ada mixed6 Mixed6
 check_ada mixed5 mixed5_ada mixed5 Mixed5
+GEN_FLAGS=--writer
+check_ada mixed7 mixed mixed7 Mixed
+GEN_FLAGS=
 check_ada segwit_in segwit_in segwit_in_ada Segwit_In
 check net_cbuf "" "" net
 # Text and bit rules in one grammar (the generated text parser is not -Wextra clean)

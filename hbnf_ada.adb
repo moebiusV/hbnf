@@ -252,6 +252,7 @@ package body HBNF_Ada is
       return 0;
    end Find;
 
+   Writer_On    : Boolean := False;   --  --writer: Write_<root>
    Hosted_Types : U;
    Hosted_Spec  : U;
    Hosted_Withs : U;
@@ -259,6 +260,11 @@ package body HBNF_Ada is
    Hosted_Walks : U;                --  " rule=Walk_Proc", for each bit rule that has one
    Hosted_Acts  : Boolean := False; --  some %action to run after the text is read
    Is_Hosted    : Boolean := False;
+
+   procedure Set_Writer (On : Boolean) is
+   begin
+      Writer_On := On;
+   end Set_Writer;
 
    procedure Set_Hosted (Types, Spec, Withs, Code : String; Walks : String := "") is
    begin
@@ -2907,6 +2913,17 @@ package body HBNF_Ada is
          end;
       end if;
 
+      if Writer_On and then (Is_Record (Analyze (Rules, 1))
+                             or else Analyze (Rules, 1).Kind = List)
+      then
+         Append (Free_Decls, "   --  The tree as text, canonical; Ok is False, and Message says why, when a"
+                 & LF & "   --  node cannot be written." & LF
+                 & "   procedure Write_" & Ada_Ident (To_String (Rules (1).Name))
+                 & " (V : " & Ret_Type (1) & ";" & LF
+                 & "      Text : out Unbounded_String; Ok : out Boolean;" & LF
+                 & "      Message : out Unbounded_String);" & LF & LF);
+      end if;
+
       --  Package specification: the exception and Parse_Text (and Parse_Config).
       declare
          Conf_Decl : constant String :=
@@ -3374,6 +3391,447 @@ package body HBNF_Ada is
             end if;
          end;
       end loop;
+
+      --  Write_<root>: the tree as text, when the grammar was generated with
+      --  --writer.  Canonical, not lossless: literals come from the grammar,
+      --  tokens from their text, and a blank goes between two items only where
+      --  they would run together.  A bit rule in the text is written by its own
+      --  Emit_Bits_<rule> (which runs its %emit), its octets going in as they
+      --  are.  What it cannot write it says at run time, at the node, so a
+      --  shape that is not built yet is never written as something close:
+      --  alternatives are not recorded in this tree, so a rule that has them
+      --  is not written.
+      if Writer_On and then (Is_Record (Analyze (Rules, 1))
+                             or else Analyze (Rules, 1).Kind = List)
+      then
+         declare
+            WB : U renames Bdy;
+
+            procedure P (Ind : Natural; S : String) is
+            begin
+               Append (WB, [1 .. 3 * Ind => ' ']);
+               Append (WB, S);
+               Append (WB, LF);
+            end P;
+
+            function Q (S : String) return String is ("""" & Ada_Escape (S) & """");
+
+            function Bad (Why : String) return String is
+              ("Badw (W, " & Q (Why) & ");");
+
+            function Core_Ok (Core : String) return Boolean is
+               J : constant Natural := Find (Rules, Core);
+            begin
+               return (J > 0 and then Rules (J).Jet_Code /= Null_Unbounded_String)
+                 or else (Core = "word" and then J = 0);
+            end Core_Ok;
+
+            --  The scanner that reads a token of this rule, "null" if none.
+            function Scan_Of (Nm : String; Depth : Natural := 0) return String is
+               J : constant Natural := Find (Rules, Nm);
+            begin
+               if Nm = "str" then
+                  return (if Core_Ok ("str") then "Scan_Str'Access" else "null");
+               elsif Nm = "int" or else (Scalar_Ada_Type (Nm) /= ""
+                                         and then Nm /= "word" and then Nm /= "atom"
+                                         and then Nm /= "bool" and then Nm /= "flag")
+               then
+                  return (if Core_Ok ("int") then "Scan_Int'Access" else "null");
+               elsif Nm = "word" or else Nm = "atom" or else Nm = "bool"
+                 or else Nm = "flag"
+               then
+                  return (if Core_Ok ("word") then "Scan_Word'Access" else "null");
+               end if;
+               if J = 0 or else Depth > 8 then
+                  return "null";
+               end if;
+               if Is_Char_Rule (Rules, Nm) then
+                  return "Scan_" & Ada_Ident (Nm) & "'Access";
+               end if;
+               if Natural (Rules (J).Pattern.Length) = 1
+                 and then Rules (J).Pattern (1).Kind = Name
+                 and then Rules (J).Pattern (1).Min = 1
+                 and then Rules (J).Pattern (1).Max = 1
+               then
+                  return Scan_Of (To_String (Rules (J).Pattern (1).Name), Depth + 1);
+               end if;
+               return "null";
+            end Scan_Of;
+
+            --  A rule whose value came from the core `str` (quoted again).
+            function Has_Str (Nm : String; Depth : Natural := 0) return Boolean is
+               J : constant Natural := Find (Rules, Nm);
+            begin
+               if Nm = "str" then
+                  return True;
+               end if;
+               if J = 0 or else Depth > 8 then
+                  return False;
+               end if;
+               for E of Rules (J).Pattern loop
+                  if E.Kind = Name and then Has_Str (To_String (E.Name), Depth + 1)
+                  then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end Has_Str;
+
+         --  The text of a rule that is only literals.
+         function Lit_Text (J : Natural) return String is
+            R : U;
+         begin
+            for X of Rules (J).Pattern loop
+               Append (R, X.Lit);
+            end loop;
+            return To_String (R);
+         end Lit_Text;
+
+            --  Write a scalar, enum or bit rule value, or a record held by
+            --  value, the object Expr.
+            procedure Leaf_Value (Nm, Expr, Gap : String; Ind : Natural) is
+               J : constant Natural := Find (Rules, Nm);
+               T : constant String :=
+                 (if Is_Char_Rule (Rules, Nm) then "Unbounded_String" else Resolve_Type (Rules, Nm));
+            begin
+               if J = 0 and then Scalar_Ada_Type (Nm) = ""
+                 and then HBNF_Grammar.Is_Wire_Rule (Nm)
+               then
+                  P (Ind, "declare");
+                  P (Ind + 1, "Bq  : Octets;");
+                  P (Ind + 1, "Nbq : Natural;");
+                  P (Ind + 1, "Okq : Boolean;");
+                  P (Ind + 1, "Mq  : Unbounded_String;");
+                  P (Ind, "begin");
+                  P (Ind + 1, "Emit_Bits_" & Ada_Ident (Nm) & " (" & Expr
+                     & ", Bq, Nbq, Okq, Mq);");
+                  P (Ind + 1, "if not Okq then");
+                  P (Ind + 2, "Badw (W, To_String (Mq));");
+                  P (Ind + 1, "elsif Nbq mod 8 /= 0 then");
+                  P (Ind + 2, Bad ("`" & Nm & "` does not end on an octet, so it cannot be written as text"));
+                  P (Ind + 1, "else");
+                  P (Ind + 2, "for K in 0 .. Nbq / 8 - 1 loop");
+                  P (Ind + 3, "Wput (W, (1 => Character'Val (Bq.Element (K))));");
+                  P (Ind + 2, "end loop;");
+                  P (Ind + 1, "end if;");
+                  P (Ind, "end;");
+               elsif J > 0 and then Analyze (Rules, J).Kind = Scalar
+                 and then not Rules (J).Pattern.Is_Empty
+              and then (for all X of Rules (J).Pattern =>
+                          X.Kind = Literal and then X.Min = 1 and then X.Max = 1)
+               then
+                  --  a rule that is one literal: the literal is its value
+                  P (Ind, "Wlit (W, " & Gap & ", "
+                     & Q (Lit_Text (J)) & ");");
+               elsif J > 0 and then Analyze (Rules, J).Kind in Struct | List | Enum then
+                  P (Ind, "Wr_" & Ada_Ident (Nm) & " (W, " & Expr & ");");
+               elsif J > 0 and then Analyze (Rules, J).Kind = Scalar
+                 and then Over_Leaf (Rules, J)
+               then
+                  P (Ind, "Wr_"
+                     & Ada_Ident (To_String (Rules (Leaf_Record (Rules, Nm)).Name))
+                     & " (W, " & Expr & ");");
+               elsif T = "Unbounded_String" then
+                  P (Ind, "W" & (if Has_Str (Nm) then "str" else "tok") & " (W, "
+                     & Gap & ", To_String (" & Expr & "), " & Scan_Of (Nm) & ");");
+               elsif T = "Boolean" then
+                  P (Ind, "Wtok (W, " & Gap & ", (if " & Expr
+                     & " then ""yes"" else ""no""), " & Scan_Of ("word") & ");");
+               elsif T = "Unsigned_64" then
+                  P (Ind, "Wtok (W, " & Gap & ", Trim_Img (Unsigned_64'Image ("
+                     & Expr & ")), " & Scan_Of ("int") & ");");
+               elsif T /= "" then
+                  P (Ind, "Wtok (W, " & Gap & ", Trim_Img (Long_Long_Integer'Image (Long_Long_Integer ("
+                     & Expr & "))), " & Scan_Of ("int") & ");");
+               else
+                  P (Ind, Bad ("`" & Nm & "` is not a value the writer knows how to write"));
+               end if;
+            end Leaf_Value;
+
+            --  One member of a record, or a repeated name of a sequence.
+            procedure Member
+              (Idx : Natural; Nm : String; Is_List : Boolean; Prefix, Gap : String;
+               Ind : Natural; Held : Boolean)
+            is
+               F   : constant String := Prefix & Ada_Field (Nm);
+               J   : constant Natural := Find (Rules, Nm);
+               Rec : constant Natural :=
+                 (if J > 0 and then Is_Record (Analyze (Rules, J)) then J
+                  elsif Is_Back (Backs, Idx, Nm) then Leaf_Record (Rules, Nm)
+                  elsif Held and then Alias_Record (Rules, Nm) /= 0
+                  then Leaf_Record (Rules, Nm)
+                  else 0);
+            begin
+               if Is_List then
+                  P (Ind, "for Ex of " & F & " loop");
+                  if J > 0 and then Is_Record (Analyze (Rules, J)) then
+                     P (Ind + 1, "if Ex /= null then Wr_" & Ada_Ident (Nm) & " (W, Ex.all); end if;");
+                  elsif Alias_Record (Rules, Nm) /= 0 then
+                     P (Ind + 1, "if Ex /= null then Wr_"
+                        & Ada_Ident (To_String (Rules (Leaf_Record (Rules, Nm)).Name))
+                        & " (W, Ex.all); end if;");
+                  elsif J > 0 and then Over_Leaf (Rules, J)
+                    and then Analyze (Rules, Leaf_Target (Rules, J)).Kind = List
+                  then
+                     P (Ind + 1, "Wr_"
+                        & Ada_Ident (To_String (Rules (Leaf_Target (Rules, J)).Name))
+                        & " (W, Ex);");
+                  else
+                     Leaf_Value (Nm, "Ex", Gap, Ind + 1);
+                  end if;
+                  P (Ind, "end loop;");
+               elsif Rec > 0 then
+                  P (Ind, "if " & F & " /= null then Wr_"
+                     & Ada_Ident (To_String (Rules (Rec).Name)) & " (W, " & F
+                     & ".all); end if;");
+               else
+                  Leaf_Value (Nm, F, Gap, Ind);
+               end if;
+            end Member;
+
+            --  The elements of a sequence, through accessor Prefix.
+            procedure Elements
+              (Idx : Natural; Els : Element_Vectors.Vector; Prefix, Gap : String;
+               Ind : Natural; Held : Boolean) is
+            begin
+               if (for some X of Els => X.Kind = Alt) then
+                  P (Ind, Bad ("alternatives are not recorded in an Ada tree, so a rule that has them is not written yet"));
+                  return;
+               end if;
+               for E of Els loop
+                  case E.Kind is
+                     when Literal =>
+                        P (Ind, "Wlit (W, " & Gap & ", " & Q (To_String (E.Lit)) & ");");
+                     when Name =>
+                        Member (Idx, To_String (E.Name),
+                                E.Min /= 1 or else E.Max /= 1, Prefix, Gap, Ind, Held);
+                     when Group =>
+                        if E.Min /= 1 or else E.Max /= 1 then
+                           P (Ind, Bad ("a repeated group inside a sequence"));
+                        else
+                           Elements (Idx, E.Items, Prefix, Gap, Ind, Held);
+                        end if;
+                     when others =>
+                        P (Ind, Bad ("an element the writer does not know"));
+                  end case;
+               end loop;
+            end Elements;
+
+            function List_Elem_Type (Info : Rule_Info; CN : String) return String is
+              (if not Info.Elem_Members.Is_Empty then CN & "_Type" else CN & "_Type");
+         begin
+            P (1, "--  ---- write (the tree as text, canonical) ----");
+            P (1, "type Scan_Access is access function (S : String; Pos, Len : Natural) return Natural;");
+            P (1, "type Wr_State is record");
+            P (2, "Buf   : Unbounded_String;");
+            P (2, "Last  : Character := Character'Val (0);");
+            P (2, "Bad   : Unbounded_String;");
+            P (2, "Pscan : Scan_Access := null;");
+            P (2, "Ptxt  : Unbounded_String;");
+            P (1, "end record;");
+            P (1, "");
+            P (1, "procedure Badw (W : in out Wr_State; Why : String) is");
+            P (1, "begin");
+            P (2, "if Length (W.Bad) = 0 then");
+            P (3, "W.Bad := To_Unbounded_String (Why);");
+            P (2, "end if;");
+            P (1, "end Badw;");
+            P (1, "");
+            P (1, "procedure Wput (W : in out Wr_State; S : String) is");
+            P (1, "begin");
+            P (2, "if S'Length > 0 then");
+            P (3, "Append (W.Buf, S);");
+            P (3, "W.Last := S (S'Last);");
+            P (2, "end if;");
+            P (1, "end Wput;");
+            P (1, "");
+            P (1, "function Wdelim (C : Character) return Boolean is");
+            P (2, "(C in '(' | ')' | '[' | ']' | ',' | ';');");
+            P (1, "");
+            P (1, "function Trim_Img (S : String) return String is");
+            P (2, "(if S'Length > 0 and then S (S'First) = ' ' then S (S'First + 1 .. S'Last) else S);");
+            P (1, "");
+            P (1, "--  Would the item just written, with Mid and S after it, still end where it");
+            P (1, "--  did when the grammar's own scanner reads it?");
+            P (1, "function Wfits (W : Wr_State; Mid, S : String) return Boolean is");
+            P (2, "T : constant String := To_String (W.Ptxt) & Mid & S;");
+            P (1, "begin");
+            P (2, "return W.Pscan (T, 1, T'Last) = Length (W.Ptxt);");
+            P (1, "end Wfits;");
+            P (1, "");
+            P (1, "--  What goes between the last item and S: nothing, a blank or a newline, the");
+            P (1, "--  first that keeps the last item from reading on into S.");
+            P (1, "procedure Wbetween (W : in out Wr_State; Gap : Boolean; S : String) is");
+            P (2, "A : constant Character := W.Last;");
+            P (1, "begin");
+            P (2, "if Length (W.Buf) = 0 or else S'Length = 0 then");
+            P (3, "return;");
+            P (2, "end if;");
+            P (2, "declare");
+            P (3, "B    : constant Character := S (S'First);");
+            P (3, "Pref : constant String :=");
+            P (4, "(if Gap and then A > ' ' and then B > ' ' and then not Wdelim (A)");
+            P (4, "   and then not Wdelim (B) then "" "" else """");");
+            P (2, "begin");
+            P (3, "if W.Pscan /= null and then A > ' ' then");
+            P (4, "if Wfits (W, Pref, S) then");
+            P (5, "Wput (W, Pref);");
+            P (4, "elsif Gap and then Wfits (W, "" "", S) then");
+            P (5, "Wput (W, "" "");");
+            P (4, "elsif Gap and then Wfits (W, (1 => ASCII.LF), S) then");
+            P (5, "Wput (W, (1 => ASCII.LF));");
+            P (4, "else");
+            P (5, "Badw (W, ""two items cannot be written apart: the first would read on into the second"");");
+            P (4, "end if;");
+            P (3, "else");
+            P (4, "Wput (W, Pref);");
+            P (3, "end if;");
+            P (2, "end;");
+            P (1, "end Wbetween;");
+            P (1, "");
+            P (1, "procedure Wtext (W : in out Wr_State; Gap : Boolean; S : String; Scan : Scan_Access) is");
+            P (1, "begin");
+            P (2, "Wbetween (W, Gap, S);");
+            P (2, "Wput (W, S);");
+            P (2, "W.Pscan := Scan;");
+            P (2, "if Scan /= null then");
+            P (3, "W.Ptxt := To_Unbounded_String (S);");
+            P (2, "end if;");
+            P (1, "end Wtext;");
+            P (1, "");
+            P (1, "procedure Wlit (W : in out Wr_State; Gap : Boolean; S : String) is");
+            P (1, "begin");
+            P (2, "Wtext (W, Gap, S, null);");
+            P (1, "end Wlit;");
+            P (1, "");
+            P (1, "procedure Wtok (W : in out Wr_State; Gap : Boolean; S : String; Scan : Scan_Access) is");
+            P (1, "begin");
+            P (2, "Wtext (W, Gap, S, Scan);");
+            P (1, "end Wtok;");
+            P (1, "");
+            P (1, "procedure Wstr (W : in out Wr_State; Gap : Boolean; S : String; Scan : Scan_Access) is");
+            P (2, "T : Unbounded_String := To_Unbounded_String ("""""""");");
+            P (1, "begin");
+            P (2, "for C of S loop");
+            P (3, "if C = '""' or else C = '\' then");
+            P (4, "Append (T, '\');");
+            P (3, "end if;");
+            P (3, "Append (T, C);");
+            P (2, "end loop;");
+            P (2, "Append (T, '""');");
+            P (2, "Wtext (W, Gap, To_String (T), Scan);");
+            P (1, "end Wstr;");
+            P (1, "");
+            for I in 1 .. N loop
+               declare
+                  Info : constant Rule_Info := Analyze (Rules, I);
+                  CN   : constant String := Ada_Ident (To_String (Rules (I).Name));
+               begin
+                  if Is_Record (Info) or else Info.Kind in List | Enum then
+                     P (1, "procedure Wr_" & CN & " (W : in out Wr_State; N : "
+                        & CN & "_Type);");
+                  end if;
+               end;
+            end loop;
+            P (1, "");
+            for I in 1 .. N loop
+               declare
+                  R    : constant Rule := Rules (I);
+                  Info : constant Rule_Info := Analyze (Rules, I);
+                  CN   : constant String := Ada_Ident (To_String (R.Name));
+                  Gap  : constant String :=
+                    (if R.Whitespace /= Null_Unbounded_String then "True" else "False");
+               begin
+                  if Is_Record (Info) then
+                     P (1, "procedure Wr_" & CN & " (W : in out Wr_State; N : "
+                        & CN & "_Type) is");
+                     P (1, "begin");
+                     if Natural (R.Pattern.Length) = 1 and then R.Pattern (1).Kind = Group then
+                        Elements (I, R.Pattern (1).Items, "N.", Gap, 2, False);
+                     else
+                        Elements (I, R.Pattern, "N.", Gap, 2, False);
+                     end if;
+                     P (2, "null;");
+                     P (1, "end Wr_" & CN & ";");
+                     P (1, "");
+                  elsif Info.Kind = List then
+                     P (1, "procedure Wr_" & CN & " (W : in out Wr_State; N : "
+                        & CN & "_Type) is");
+                     P (1, "begin");
+                     if R.Left_Bases > 0 then
+                        P (2, Bad ("a left-recursive list is not written yet"));
+                     elsif R.Pattern (1).Kind = Group then
+                        P (2, "for Ex of N loop");
+                        Elements (I, R.Pattern (1).Items, "Ex.", Gap, 3, True);
+                        P (3, "null;");
+                        P (2, "end loop;");
+                     elsif Info.Elem_Name /= Null_Unbounded_String then
+                        declare
+                           EN : constant String := To_String (Info.Elem_Name);
+                           E  : constant Natural := Find (Rules, EN);
+                        begin
+                           P (2, "for Ex of N loop");
+                           if E > 0 and then Is_Record (Analyze (Rules, E)) then
+                              P (3, "if Ex /= null then Wr_" & Ada_Ident (EN) & " (W, Ex.all); end if;");
+                           elsif Alias_Record (Rules, EN) /= 0 then
+                              P (3, "if Ex /= null then Wr_"
+                                 & Ada_Ident (To_String (Rules (Leaf_Record (Rules, EN)).Name))
+                                 & " (W, Ex.all); end if;");
+                           elsif E > 0 and then Over_Leaf (Rules, E)
+                             and then Analyze (Rules, Leaf_Target (Rules, E)).Kind = List
+                           then
+                              P (3, "Wr_"
+                                 & Ada_Ident (To_String (Rules (Leaf_Target (Rules, E)).Name))
+                                 & " (W, Ex);");
+                           else
+                              Leaf_Value (EN, "Ex", Gap, 3);
+                           end if;
+                           P (2, "end loop;");
+                        end;
+                     else
+                        P (2, "for Ex of N loop Wtok (W, " & Gap & ", To_String (Ex), null); end loop;");
+                     end if;
+                     P (2, "null;");
+                     P (1, "end Wr_" & CN & ";");
+                     P (1, "");
+                  elsif Info.Kind = Enum then
+                     declare
+                        Names : constant String_Vectors.Vector :=
+                          Enum_Names (Info.Literals);
+                     begin
+                        P (1, "procedure Wr_" & CN & " (W : in out Wr_State; N : "
+                           & CN & "_Type) is");
+                        P (1, "begin");
+                        P (2, "case N is");
+                        for K in 1 .. Natural (Info.Literals.Length) loop
+                           P (3, "when " & CN & "_" & To_String (Names (K))
+                              & " => Wlit (W, " & Gap & ", "
+                              & Q (To_String (Info.Literals (K))) & ");");
+                        end loop;
+                        P (2, "end case;");
+                        P (1, "end Wr_" & CN & ";");
+                        P (1, "");
+                     end;
+                  end if;
+               end;
+            end loop;
+            declare
+               CN : constant String := Ada_Ident (To_String (Rules (1).Name));
+            begin
+               P (1, "procedure Write_" & CN & " (V : " & Ret_Type (1)
+                  & "; Text : out Unbounded_String; Ok : out Boolean;");
+               P (3, "Message : out Unbounded_String) is");
+               P (2, "W : Wr_State;");
+               P (1, "begin");
+               P (2, "Wr_" & CN & " (W, V);");
+               P (2, "Text := W.Buf;");
+               P (2, "Ok := Length (W.Bad) = 0;");
+               P (2, "Message := W.Bad;");
+               P (1, "end Write_" & CN & ";");
+               P (1, "");
+            end;
+         end;
+      end if;
 
       --  Parse_Text: the whole text through the root rule.
       declare

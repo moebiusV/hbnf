@@ -171,6 +171,9 @@ begin
             HBNF_C.Set_Ast (True);
          elsif A = "--writer" then
             HBNF_C.Set_Writer (True);
+            HBNF_Zig.Set_Writer (True);
+            HBNF_Rust.Set_Writer (True);
+            HBNF_Ada.Set_Writer (True);
          elsif A = "--idref" then
             Idref := True;
          elsif A = "--compare" then

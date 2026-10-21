@@ -17,6 +17,9 @@ package HBNF_Rust is
    --  `&[u8]`): a bit rule reads any octet, and the text rules see it as text
    --  where they read.  A text rule calls a bit rule as it calls a text rule,
    --  parse_<rule> (p).
+   --  --writer: also emit write_<root>, the tree written back as text.
+   procedure Set_Writer (On : Boolean);
+
    procedure Set_Hosted (Types, Code : String; Walks : String := "");
    --  Walks: the bit rules that have a walk_<rule> (they hold an %action),
    --  space-separated; the text parser runs them after the whole text is read.
