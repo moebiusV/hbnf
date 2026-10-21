@@ -1,0 +1,9 @@
+; Alternatives in a mixed grammar, written back: the tree records which one was read.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc   = "A:" rec ";" | "B:" name ";" | "L:" items ";"
+items = 1*( "x" rec | "y" name "," )
+rec   = kind:8 len:8
+name  = 1*ALPHA

@@ -322,7 +322,7 @@ second.
 
 ## What is not built yet
 
-- `--writer` for Zig, Ada and Rust writes a whole document of text rules and bit rules (`write_<root>`, `Write_<Root>`), but only rules without alternatives (a tree there does not record which alternative was read, so such a rule says at run time that it is not written yet), lists that are not left-recursive, and no `%same`.
+- `--writer` for Zig, Ada and Rust writes a whole document of text rules and bit rules (`write_<root>`, `Write_<Root>`). A rule with alternatives (and a list entry that is a group with them) records the one it took, as C does, and the writer follows it (`mixed8`). Not written yet: an alternation inside a group, left-recursive lists, and `%same`; each says so at run time, at the node.
   Zig returns `error{Parse}` with the octet and message through a pointer and takes an allocator,
   best an arena.  Ada writes the specification and body in one file (`gnatchop` splits it), with
   `Ada.Containers.Vectors` for octets and entries and a record with a variant part for a choice

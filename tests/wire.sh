@@ -128,6 +128,7 @@ check_rust mixed6 mixed6_rust mixed6
 check_rust mixed5 mixed5_rust mixed5
 GEN_FLAGS=--writer
 check_rust mixed7 mixed mixed7
+check_rust mixed8
 GEN_FLAGS=
 check_rust segwit_in segwit_in segwit_in
 check_zig net
@@ -141,6 +142,7 @@ check_zig mixed6 mixed6_zig mixed6
 check_zig mixed5 mixed5_zig mixed5
 GEN_FLAGS=--writer
 check_zig mixed7 mixed mixed7
+check_zig mixed8
 GEN_FLAGS=
 check_zig segwit_in segwit_in segwit_in
 check_ada net
@@ -154,6 +156,7 @@ check_ada mixed6 mixed6_ada mixed6 Mixed6
 check_ada mixed5 mixed5_ada mixed5 Mixed5
 GEN_FLAGS=--writer
 check_ada mixed7 mixed mixed7 Mixed
+check_ada mixed8 mixed8 mixed8 Mixed8
 GEN_FLAGS=
 check_ada segwit_in segwit_in segwit_in_ada Segwit_In
 check net_cbuf "" "" net
@@ -163,6 +166,7 @@ check mixed2 "" "" mixed2 -w
 check mixed3 "" "" mixed3 -w
 check mixed4 "" "" mixed4 -w
 check mixed7 "" "" mixed -w --writer
+check mixed8 "" "" mixed8 -w --writer
 check mixed5 "" "" mixed5 -w
 check mixed6 "" "" mixed6 -w
 check segwit "" "" segwit -w

@@ -1,0 +1,3 @@
+write 0: ok 5 bytes, same as read: yes
+write 1: ok 6 bytes, same as read: yes
+write 2: ok 14 bytes, same as read: yes

@@ -726,6 +726,23 @@ package body HBNF_Rust is
       return 0;
    end Back_Target;
 
+   --  With --writer, a rule with alternatives records the one it took
+   --  (`_alt`, from 1): a struct whose pattern has a top-level alternation, and
+   --  a list entry that is a group with one.  The writer needs it; the C tree
+   --  has the same.
+   function Struct_Alt (R : Rule; Info : Rule_Info) return Boolean is
+     (Writer_On and then Info.Kind = Struct
+      and then Natural (R.Pattern.Length) > 1
+      and then (for some X of R.Pattern => X.Kind = Alt));
+
+   function Entry_Alt (R : Rule; Info : Rule_Info) return Boolean is
+     (Writer_On and then Info.Kind = List
+      and then not Info.Elem_Members.Is_Empty
+      and then R.Left_Bases = 0
+      and then Natural (R.Pattern.Length) = 1
+      and then R.Pattern (1).Kind = Group
+      and then (for some X of R.Pattern (1).Items => X.Kind = Alt));
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
@@ -827,6 +844,12 @@ package body HBNF_Rust is
                            else Rust_Type_Of (Rules, To_String (M.Name))));
                      Mustache.Append (Items, Row);
                   end loop;
+                  if Struct_Alt (R, Info) then
+                     Row := Mustache.New_Map;
+                     Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
+                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
+                     Mustache.Append (Items, Row);
+                  end if;
                   Mustache.Put (V, "name", Base);
                   Mustache.Put (V, "items", Items);
                   Append (Buf, Mustache.Render_File ("rust_struct", V));
@@ -888,6 +911,12 @@ package body HBNF_Rust is
                      Mustache.New_Scalar (Rust_Type_Of (Rules, To_String (M.Name))));
                   Mustache.Append (Items, Row);
                end loop;
+               if Entry_Alt (Rules (Idx), Info) then
+                  Row := Mustache.New_Map;
+                  Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
+                  Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
+                  Mustache.Append (Items, Row);
+               end if;
                Mustache.Put (V, "name", Base);
                Mustache.Put (V, "items", Items);
                Append (Buf, Mustache.Render_File ("rust_list_entry", V));
@@ -1022,6 +1051,9 @@ package body HBNF_Rust is
                               Members : Member_Vectors.Vector;
                               Buf : in out U) is
             Has_Child : Boolean := False;
+            Has_Alt_Field : constant Boolean :=
+              Struct_Alt (Rules (Owner), Infos (Owner))
+              or else Entry_Alt (Rules (Owner), Infos (Owner));
          begin
             for M of Members loop
                if Recurses (To_String (M.Name))
@@ -1063,6 +1095,9 @@ package body HBNF_Rust is
                      First := False;
                   end loop;
                end;
+               if Has_Alt_Field then
+                  Append (Buf, (if Members.Is_Empty then "" else ", ") & "_alt");
+               end if;
                Append (Buf, " } = n;");
                Append (Buf, LF);
                for M of Members loop
@@ -1082,6 +1117,9 @@ package body HBNF_Rust is
                      First := False;
                   end loop;
                end;
+               if Has_Alt_Field then
+                  Append (Buf, (if Members.Is_Empty then "" else ", ") & "_alt");
+               end if;
                Append (Buf, " };");
                Append (Buf, LF);
                Append (Buf, "    f.fold_" & Fn & "(n)");
@@ -1453,10 +1491,39 @@ package body HBNF_Rust is
          --  The elements of a sequence, through accessor Acc.
          procedure Elements
            (Idx : Natural; Els : Element_Vectors.Vector; Acc, Gap : String;
-            Ind : Natural) is
+            Ind : Natural; Alt_Ok : Boolean := False) is
          begin
             if (for some X of Els => X.Kind = Alt) then
-               P (Ind, Bad ("alternatives are not recorded in a Rust tree, so a rule that has them is not written yet"));
+               if not Alt_Ok then
+                  P (Ind, Bad ("an alternation inside a group is not recorded in a Rust tree, so it is not written yet"));
+                  return;
+               end if;
+               --  one branch per alternative, chosen by the one the parser took
+               declare
+                  St : Natural := 1;
+                  Br : Natural := 0;
+                  Nn : constant Natural := Natural (Els.Length);
+               begin
+                  P (Ind, "match " & Acc & "_alt {");
+                  for K in 1 .. Nn + 1 loop
+                     if K > Nn or else Els (K).Kind = Alt then
+                        Br := Br + 1;
+                        declare
+                           Sub : Element_Vectors.Vector;
+                        begin
+                           for J in St .. K - 1 loop
+                              Sub.Append (Els (J));
+                           end loop;
+                           P (Ind + 1, Img (Br) & " => {");
+                           Elements (Idx, Sub, Acc, Gap, Ind + 2);
+                           P (Ind + 1, "}");
+                        end;
+                        St := K + 1;
+                     end if;
+                  end loop;
+                  P (Ind + 1, "_ => { " & Bad ("no alternative was recorded (generate with --writer)") & " }");
+                  P (Ind, "}");
+               end;
                return;
             end if;
             for E of Els loop
@@ -1597,7 +1664,7 @@ package body HBNF_Rust is
                      then
                         Elements (I, R.Pattern (1).Items, "n.", Gap, 1);
                      else
-                        Elements (I, R.Pattern, "n.", Gap, 1);
+                        Elements (I, R.Pattern, "n.", Gap, 1, Struct_Alt (R, Info));
                      end if;
                      P (0, "}");
                      P (0, "");
@@ -1614,7 +1681,8 @@ package body HBNF_Rust is
                         P (1, Bad ("a left-recursive list is not written yet"));
                      elsif R.Pattern (1).Kind = Group then
                         P (1, "for e_ in n {");
-                        Elements (I, R.Pattern (1).Items, "e_.", Gap, 2);
+                        Elements (I, R.Pattern (1).Items, "e_.", Gap, 2,
+                                  Entry_Alt (R, Info));
                         P (1, "}");
                      elsif Info.Elem_Name /= Null_Unbounded_String then
                         P (1, "for e_ in n {");
@@ -2068,6 +2136,13 @@ package body HBNF_Rust is
                        & "can follow here"")); } }");
                      Append (Buf, LF);
                   end;
+               end if;
+               if Writer_On
+                 and then ((Acc = "r." and then Struct_Alt (Rules (Owner), Analyze (Rules, Owner)))
+                           or else (Acc = "e." and then Entry_Alt (Rules (Owner), Analyze (Rules, Owner))))
+               then
+                  Append (Buf, Ind & "    " & Acc & "_alt = " & Img (Br) & ";");
+                  Append (Buf, LF);
                end if;
                Append (Buf, Ind & "    Ok(())");
                Append (Buf, LF);

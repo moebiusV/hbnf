@@ -747,6 +747,23 @@ package body HBNF_Zig is
                       Owner : Natural) return Boolean is
      (for some E of Backs => E.Owner = Owner);
 
+   --  With --writer, a rule with alternatives records the one it took
+   --  (`_alt`, from 1): a struct whose pattern has a top-level alternation, and
+   --  a list entry that is a group with one.  The writer needs it; the C tree
+   --  has the same.
+   function Struct_Alt (R : Rule; Info : Rule_Info) return Boolean is
+     (Writer_On and then Info.Kind = Struct
+      and then Natural (R.Pattern.Length) > 1
+      and then (for some X of R.Pattern => X.Kind = Alt));
+
+   function Entry_Alt (R : Rule; Info : Rule_Info) return Boolean is
+     (Writer_On and then Info.Kind = List
+      and then not Info.Elem_Members.Is_Empty
+      and then R.Left_Bases = 0
+      and then Natural (R.Pattern.Length) = 1
+      and then R.Pattern (1).Kind = Group
+      and then (for some X of R.Pattern (1).Items => X.Kind = Alt));
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
@@ -903,6 +920,12 @@ package body HBNF_Zig is
                            else Zig_Type_Of (Rules, To_String (M.Name))));
                      Mustache.Append (Items, Row);
                   end loop;
+                  if Struct_Alt (R, Info) then
+                     Row := Mustache.New_Map;
+                     Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
+                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
+                     Mustache.Append (Items, Row);
+                  end if;
                   Mustache.Put (V, "name", Base);
                   Mustache.Put (V, "items", Items);
                   Append (Buf, Mustache.Render_File ("zig_struct", V));
@@ -959,6 +982,12 @@ package body HBNF_Zig is
                      Mustache.New_Scalar (Zig_Type_Of (Rules, To_String (M.Name))));
                   Mustache.Append (Items, Row);
                end loop;
+               if Entry_Alt (R, Info) then
+                  Row := Mustache.New_Map;
+                  Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
+                  Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
+                  Mustache.Append (Items, Row);
+               end if;
                Mustache.Put (V, "name", Base);
                Mustache.Put (V, "items", Items);
                Append (Buf, Mustache.Render_File ("zig_list_entry", V));
@@ -1516,10 +1545,10 @@ package body HBNF_Zig is
                P (Ind, "{");
                P (Ind + 1, "var m_: []const u8 = """";");
                P (Ind + 1, "if (emit_bits_" & Nm & "(w.alloc, " & Expr
-                  & ", &m_)) |e_| {");
-               P (Ind + 2, "if (e_.nbits % 8 != 0) w.badw(""`" & Nm
+                  & ", &m_)) |eb_| {");
+               P (Ind + 2, "if (eb_.nbits % 8 != 0) w.badw(""`" & Nm
                   & "` does not end on an octet, so it cannot be written as text"")");
-               P (Ind + 2, "else w.put(e_.bytes[0 .. e_.nbits / 8]);");
+               P (Ind + 2, "else w.put(eb_.bytes[0 .. eb_.nbits / 8]);");
                P (Ind + 1, "} else |_| w.badw(m_);");
                P (Ind, "}");
             elsif J > 0 and then Infos (J).Kind = Scalar
@@ -1552,10 +1581,39 @@ package body HBNF_Zig is
          --  The elements of a sequence, through accessor Acc.
          procedure Elements
            (Idx : Natural; Els : Element_Vectors.Vector; Acc, Gap : String;
-            Ind : Natural) is
+            Ind : Natural; Alt_Ok : Boolean := False) is
          begin
             if (for some X of Els => X.Kind = Alt) then
-               P (Ind, Bad ("alternatives are not recorded in a Zig tree, so a rule that has them is not written yet"));
+               if not Alt_Ok then
+                  P (Ind, Bad ("an alternation inside a group is not recorded in a Zig tree, so it is not written yet"));
+                  return;
+               end if;
+               --  one branch per alternative, chosen by the one the parser took
+               declare
+                  St : Natural := 1;
+                  Br : Natural := 0;
+                  Nn : constant Natural := Natural (Els.Length);
+               begin
+                  P (Ind, "switch (" & Acc & "_alt) {");
+                  for K in 1 .. Nn + 1 loop
+                     if K > Nn or else Els (K).Kind = Alt then
+                        Br := Br + 1;
+                        declare
+                           Sub : Element_Vectors.Vector;
+                        begin
+                           for J in St .. K - 1 loop
+                              Sub.Append (Els (J));
+                           end loop;
+                           P (Ind + 1, Img (Br) & " => {");
+                           Elements (Idx, Sub, Acc, Gap, Ind + 2);
+                           P (Ind + 1, "},");
+                        end;
+                        St := K + 1;
+                     end if;
+                  end loop;
+                  P (Ind + 1, "else => { " & Bad ("no alternative was recorded (generate with --writer)") & " },");
+                  P (Ind, "}");
+               end;
                return;
             end if;
             for E of Els loop
@@ -1712,7 +1770,7 @@ package body HBNF_Zig is
                      then
                         Elements (I, R.Pattern (1).Items, "n.", Gap, 1);
                      else
-                        Elements (I, R.Pattern, "n.", Gap, 1);
+                        Elements (I, R.Pattern, "n.", Gap, 1, Struct_Alt (R, Info));
                      end if;
                      P (0, "}");
                      P (0, "");
@@ -1724,7 +1782,8 @@ package body HBNF_Zig is
                         P (1, Bad ("a left-recursive list is not written yet"));
                      elsif R.Pattern (1).Kind = Group then
                         P (1, "for (n.*) |*e_| {");
-                        Elements (I, R.Pattern (1).Items, "e_.", Gap, 2);
+                        Elements (I, R.Pattern (1).Items, "e_.", Gap, 2,
+                                  Entry_Alt (R, Info));
                         P (1, "}");
                      elsif Info.Elem_Name /= Null_Unbounded_String then
                         P (1, "for (n.*) |*e_| {");
@@ -2263,6 +2322,10 @@ package body HBNF_Zig is
                     & "(); p.pos = sv; if (!g) break :blk_" & Img (Br) & "; }");
                   Append (Buf, LF);
                end if;
+               if Writer_On and then Natural (Rules (Owner).Pattern.Length) > 1 then
+                  Append (Buf, Ind & "    r._alt = " & Img (Br) & ";");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, Ind & "    matched = true;");
                Append (Buf, LF);
                Append (Buf, Ind & "}");
@@ -2365,6 +2428,12 @@ package body HBNF_Zig is
                            Emit_Seq (Idx, V, St, K - 1, "e.", Buf,
                                      "break :" & Label & "blk_" & Img (Branch),
                                      Ind & "    ");
+                           if Entry_Alt (R, Analyze (Rules, Idx)) and then Label = ""
+                             and then R.Left_Bases = 0
+                           then
+                              Append (Buf, Ind & "    e._alt = " & Img (Branch) & ";");
+                              Append (Buf, LF);
+                           end if;
                            Append (Buf, Ind & "    break :blk_alt;");
                            Append (Buf, LF);
                            Append (Buf, Ind & "}");

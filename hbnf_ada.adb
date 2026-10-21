@@ -579,6 +579,23 @@ package body HBNF_Ada is
    function Is_Record (Info : Rule_Info) return Boolean is
      (Info.Kind = Struct);
 
+   --  With --writer, a rule with alternatives records the one it took
+   --  (`Alt_No`, from 1): a record whose pattern has a top-level alternation,
+   --  and a list entry that is a group with one.  The writer needs it; the C
+   --  tree has the same.
+   function Struct_Alt (R : Rule; Info : Rule_Info) return Boolean is
+     (Writer_On and then Info.Kind = Struct
+      and then Natural (R.Pattern.Length) > 1
+      and then (for some X of R.Pattern => X.Kind = Alt));
+
+   function Entry_Alt (R : Rule; Info : Rule_Info) return Boolean is
+     (Writer_On and then Info.Kind = List
+      and then not Info.Elem_Members.Is_Empty
+      and then R.Left_Bases = 0
+      and then Natural (R.Pattern.Length) = 1
+      and then R.Pattern (1).Kind = Group
+      and then (for some X of R.Pattern (1).Items => X.Kind = Alt));
+
    --  The rule an alias chain ends at: Over_Leaf is then "the target is a
    --  record or a list".  A chosen back edge always resolves to a record
    --  (a list rule contributes no outgoing edges, so it cannot be on a
@@ -957,6 +974,12 @@ package body HBNF_Ada is
                            else Elem_Type (Idx, To_String (M.Name))));
                      Mustache.Append (Items, Row);
                   end loop;
+                  if Struct_Alt (R, Info) then
+                     Row := Mustache.New_Map;
+                     Mustache.Insert (Row, "field", Mustache.New_Scalar ("Alt_No"));
+                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
+                     Mustache.Append (Items, Row);
+                  end if;
                   Mustache.Put (V, "name", TN);
                   Mustache.Put (V, "items", Items);
                   Append (Buf, Mustache.Render_File ("ada_struct", V));
@@ -1013,6 +1036,12 @@ package body HBNF_Ada is
                      Mustache.New_Scalar (Elem_Type (Idx, To_String (M.Name), True)));
                   Mustache.Append (Items, Row);
                end loop;
+               if Entry_Alt (R, Info) then
+                  Row := Mustache.New_Map;
+                  Mustache.Insert (Row, "field", Mustache.New_Scalar ("Alt_No"));
+                  Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
+                  Mustache.Append (Items, Row);
+               end if;
                Mustache.Put (V, "name", Base & "_Entry");
                Mustache.Put (V, "items", Items);
                Append (Buf, Mustache.Render_File ("ada_struct", V));
@@ -1809,6 +1838,10 @@ package body HBNF_Ada is
                      Append (Buf, LF);
                   end;
                end if;
+               if Struct_Alt (Rules (Owner), Analyze (Rules, Owner)) then
+                  Append (Buf, Ind & "   R.Alt_No := " & Img (Br) & ";");
+                  Append (Buf, LF);
+               end if;
                Append (Buf, Ind & "   return R;");
                Append (Buf, LF);
                Append (Buf, Ind & "exception");
@@ -2068,6 +2101,10 @@ package body HBNF_Ada is
                               Append (Buf, LF);
                               Emit_Seq (Idx, E.Items, St, K - 1, "El.",
                                         Buf, "                  ", True);
+                              if Entry_Alt (R, Analyze (Rules, Idx)) then
+                                 Append (Buf, "                  El.Alt_No := " & Img (Br) & ";");
+                                 Append (Buf, LF);
+                              end if;
                               Append (Buf, "                  E := El; Matched := True;");
                               Append (Buf, LF);
                               Append (Buf, "               exception");
@@ -3592,10 +3629,40 @@ package body HBNF_Ada is
             --  The elements of a sequence, through accessor Prefix.
             procedure Elements
               (Idx : Natural; Els : Element_Vectors.Vector; Prefix, Gap : String;
-               Ind : Natural; Held : Boolean) is
+               Ind : Natural; Held : Boolean; Alt_Ok : Boolean := False) is
             begin
                if (for some X of Els => X.Kind = Alt) then
-                  P (Ind, Bad ("alternatives are not recorded in an Ada tree, so a rule that has them is not written yet"));
+                  if not Alt_Ok then
+                     P (Ind, Bad ("an alternation inside a group is not recorded in an Ada tree, so it is not written yet"));
+                     return;
+                  end if;
+                  --  one branch per alternative, chosen by the one the parser took
+                  declare
+                     St : Natural := 1;
+                     Br : Natural := 0;
+                     Nn : constant Natural := Natural (Els.Length);
+                  begin
+                     P (Ind, "case " & Prefix & "Alt_No is");
+                     for K in 1 .. Nn + 1 loop
+                        if K > Nn or else Els (K).Kind = Alt then
+                           Br := Br + 1;
+                           declare
+                              Sub : Element_Vectors.Vector;
+                           begin
+                              for J in St .. K - 1 loop
+                                 Sub.Append (Els (J));
+                              end loop;
+                              P (Ind + 1, "when " & Img (Br) & " =>");
+                              Elements (Idx, Sub, Prefix, Gap, Ind + 2, Held);
+                              P (Ind + 2, "null;");
+                           end;
+                           St := K + 1;
+                        end if;
+                     end loop;
+                     P (Ind + 1, "when others =>");
+                     P (Ind + 2, Bad ("no alternative was recorded (generate with --writer)"));
+                     P (Ind, "end case;");
+                  end;
                   return;
                end if;
                for E of Els loop
@@ -3749,7 +3816,8 @@ package body HBNF_Ada is
                      if Natural (R.Pattern.Length) = 1 and then R.Pattern (1).Kind = Group then
                         Elements (I, R.Pattern (1).Items, "N.", Gap, 2, False);
                      else
-                        Elements (I, R.Pattern, "N.", Gap, 2, False);
+                        Elements (I, R.Pattern, "N.", Gap, 2, False,
+                                  Struct_Alt (R, Info));
                      end if;
                      P (2, "null;");
                      P (1, "end Wr_" & CN & ";");
@@ -3762,7 +3830,8 @@ package body HBNF_Ada is
                         P (2, Bad ("a left-recursive list is not written yet"));
                      elsif R.Pattern (1).Kind = Group then
                         P (2, "for Ex of N loop");
-                        Elements (I, R.Pattern (1).Items, "Ex.", Gap, 3, True);
+                        Elements (I, R.Pattern (1).Items, "Ex.", Gap, 3, True,
+                                  Entry_Alt (R, Info));
                         P (3, "null;");
                         P (2, "end loop;");
                      elsif Info.Elem_Name /= Null_Unbounded_String then
