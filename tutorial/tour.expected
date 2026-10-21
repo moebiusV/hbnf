@@ -1,0 +1,15 @@
+== walk
+list
+  item
+    qty 2
+    name apples
+  item
+    qty 1
+    name milk
+    from
+      shop corner-shop
+== dump
+(list (item (qty 2) (name "apples")) (item (qty 1) (name "milk") (from (shop "corner-shop"))))
+== print
+buy 2 apples;
+buy 1 milk from corner-shop;

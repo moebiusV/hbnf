@@ -177,9 +177,61 @@ The same shape comes out of the same grammar in all four languages:
 | release | arena / `free_<rule>` | `deinit_<rule>` | drop | `Free_<Rule>` |
 | error | text, line, column | text, line, column | `ParseError { line, col, msg }` | `Parse_Error` |
 
-The messages are the same in all four (section 6).
+The messages are the same in all four (section 7).
 
-## 5. Tools that work on any tree (C)
+## 5. Your own walker, dump and pretty-printer
+
+Nothing about a tree needs a library.  A walker is a function per rule that visits the
+fields in the order the grammar has them; a dump is the same recursion that writes an
+S-expression; a pretty-printer is the same recursion that writes the text the grammar
+reads, in one layout.  `tutorial/tour.c`, `tour.zig`, `tour.rs` and `tour.adb` are all three, in
+each language, over a deliberately messy input (`buy  2   apples ;` and a line broken in the
+middle).  In C:
+
+```c
+static void my_walk_item(const item_t *item, int depth) {
+    printf("%*sitem\n", depth * 2, "");
+    printf("%*sqty %lld\n", (depth + 1) * 2, "", item->qty);
+    printf("%*sname %s\n", (depth + 1) * 2, "", item->name);
+    for (const item_1_t *from = item->item_1.head; from; from = from->_link) {
+        printf("%*sfrom\n", (depth + 1) * 2, "");
+        my_walk_shop(from->shop, depth + 2);
+    }
+}
+
+static void my_print_list(const struct list_list *list) {      /* the pretty-printer */
+    for (const list_t *n = list->head; n; n = n->_link) {
+        printf("buy %lld %s", n->item.qty, n->item.name);
+        if (n->item.item_1.head)
+            printf(" from %s", n->item.item_1.head->shop);
+        printf(";\n");
+    }
+}
+```
+
+and all four print
+
+```
+== walk
+list
+  item
+    qty 2
+    name apples
+  item
+    qty 1
+    name milk
+    from
+      shop corner-shop
+== dump
+(list (item (qty 2) (name "apples")) (item (qty 1) (name "milk") (from (shop "corner-shop"))))
+== print
+buy 2 apples;
+buy 1 milk from corner-shop;
+```
+
+The next section is the same thing done once for every grammar.
+
+## 6. Tools that work on any tree (C)
 
 In C, `--ast` adds a few tables and one small walker that knows nothing of your grammar, so
 you can write code once and use it on a tree of any grammar:
@@ -218,7 +270,7 @@ tree holds, and a blank only where two things would otherwise run together.  Zig
 Ada have a writer for a subset (`--writer`, [WIRE.md](WIRE.md)); the walker, dump, spans
 and parents are C only so far.
 
-## 6. Errors
+## 7. Errors
 
 An error says where, what could have stood there, and what did, and points:
 
@@ -262,7 +314,7 @@ where it began:
   ^
 ```
 
-## 7. Where next
+## 8. Where next
 
 * The notation, every operator and directive: [ABNF.md](ABNF.md).
 * Text and bits in one grammar (a protocol with a header and a payload): [WIRE.md](WIRE.md).
