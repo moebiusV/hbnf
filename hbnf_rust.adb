@@ -2430,14 +2430,14 @@ package body HBNF_Rust is
                   Append (Buf, "    let r = parse_" & Rust_Snake (A) & "(p)?;" & LF);
                   Append (Buf, "    let end = p.pos;" & LF);
                   Append (Buf, "    let full = p.text;" & LF);
-                  Append (Buf, "    let (keep_pos, keep_err) = (p.err_pos, p.err.clone());" & LF);
+                  Append (Buf, "    let (keep_pos, keep_err) = (p.err_pos, (p.err.clone(), p.ex.clone()));" & LF);
                   Append (Buf, (if Is_Hosted
                                 then "    p.text = full.cut(end); p.pos = save;"
                                 else "    p.text = &full[..end]; p.pos = save;") & LF);
                   Append (Buf, "    let same = parse_" & Rust_Snake (B)
                     & "(p).is_ok() && p.pos == end;" & LF);
                   Append (Buf, "    p.text = full; p.pos = end;" & LF);
-                  Append (Buf, "    p.err_pos = keep_pos; p.err = keep_err;" & LF);
+                  Append (Buf, "    p.err_pos = keep_pos; p.err = keep_err.0; { let d = p.ex.depth; p.ex = keep_err.1; p.ex.depth = d; }" & LF);
                   Append (Buf, "    if same { p.pos = save; return Err(p.fail(""`" & A
                     & "` that is not `" & B & """)); }" & LF);
                   Append (Buf, "    Ok(r)" & LF);
@@ -2694,9 +2694,23 @@ package body HBNF_Rust is
                        and then Rules (I).Jet_Code = Null_Unbounded_String
                      then "_p" else "p");
                begin
-                  Append (Res, "fn parse_" & Rust_Snake (NM)
-                    & "(" & Param & ": &mut P) -> Result<" & Ret_Type (I)
-                    & ", ParseError> {");
+                  if Param = "p" then
+                     --  the rule is on the stack of rules being read while its body runs
+                     Append (Res, "fn parse_" & Rust_Snake (NM)
+                       & "(p: &mut P) -> Result<" & Ret_Type (I)
+                       & ", ParseError> {" & LF
+                       & "    p.enter(" & Img (I) & ");" & LF
+                       & "    let r = parse_body_" & Rust_Snake (NM) & "(p);" & LF
+                       & "    p.ex.depth -= 1;" & LF
+                       & "    r" & LF & "}" & LF & LF);
+                     Append (Res, "fn parse_body_" & Rust_Snake (NM)
+                       & "(p: &mut P) -> Result<" & Ret_Type (I)
+                       & ", ParseError> {");
+                  else
+                     Append (Res, "fn parse_" & Rust_Snake (NM)
+                       & "(" & Param & ": &mut P) -> Result<" & Ret_Type (I)
+                       & ", ParseError> {");
+                  end if;
                   Append (Res, LF);
                   Emit_Rule_Parser (I, Res);
                   Append (Res, "}");
@@ -2706,6 +2720,32 @@ package body HBNF_Rust is
             end if;
          end;
       end loop;
+
+      --  The rules an error names, by number (a rule the reader made up for a
+      --  group or an option is left out).
+      Append (Res, "const RN: [&str; " & Img (N + 1) & "] = [""""," & LF);
+      for I in 1 .. N loop
+         declare
+            NM     : constant String := To_String (Rules (I).Name);
+            Cut    : Natural := 0;
+            Hidden : Boolean := False;
+         begin
+            for K in reverse NM'Range loop
+               if NM (K) = '_' then
+                  Cut := K;
+                  exit;
+               end if;
+            end loop;
+            if Cut > NM'First and then Cut < NM'Last
+              and then (for all C of NM (Cut + 1 .. NM'Last) => C in '0' .. '9')
+              and then Find (Rules, NM (NM'First .. Cut - 1)) /= 0
+            then
+               Hidden := True;
+            end if;
+            Append (Res, (if Hidden then """""" else """" & NM & """") & "," & LF);
+         end;
+      end loop;
+      Append (Res, "];" & LF & LF);
 
       --  The scanners.  A core rule the grammar does not define (`word`,
       --  `int`, `str`, `ws`) is a built-in: hand-written Rust, the same scan

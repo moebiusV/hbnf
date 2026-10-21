@@ -7201,9 +7201,9 @@ package body HBNF_C is
            & "        for (ls = sp; ls > 0 && p->text[ls - 1] != '\n'; ls--) ;" & LF
            & "        for (le = sp; le < p->len && p->text[le] != '\n'; le++) ;" & LF
            & "        snprintf(err + el, errlen - el," & LF
-           & "                 at_end ? ""\n  the %s that begins on line %zu is not finished:\n  %.*s\n  %*s^""" & LF
-           & "                        : ""\n  inside the %s that begins on line %zu:\n  %.*s\n  %*s^""," & LF
-           & "                 s, l, (int)(le - ls), p->text + ls, (int)(sp - ls), """");" & LF
+           & "                 at_end ? ""\n  %zu:%zu:%zu: the %s that begins here is not finished:\n  %.*s\n  %*s^""" & LF
+           & "                        : ""\n  %zu:%zu:%zu: inside the %s that begins here:\n  %.*s\n  %*s^""," & LF
+           & "                 l, c, sp, s, (int)(le - ls), p->text + ls, (int)(sp - ls), """");" & LF
            & "        return;" & LF
            & "    }" & LF
            & "}" & LF & LF);
@@ -7339,10 +7339,10 @@ package body HBNF_C is
          Append (Res, LF);
          if Paths_On then
             Append (Res, "          snprintf(err, errlen,"
-              & " ""expected %s, found %.*s%s\n  %.*s\n  %s^"", want, (int)fl, f, inb, (int)ll, l, pad);");
+              & " ""%zu:%zu:%zu: expected %s, found %.*s%s\n  %.*s\n  %s^"", p.err_line, p.err_col, p.err_pos, want, (int)fl, f, inb, (int)ll, l, pad);");
          else
             Append (Res, "          snprintf(err, errlen,"
-              & " ""expected %s, found %.*s\n  %.*s\n  %s^"", want, (int)fl, f, (int)ll, l, pad);");
+              & " ""%zu:%zu:%zu: expected %s, found %.*s\n  %.*s\n  %s^"", p.err_line, p.err_col, p.err_pos, want, (int)fl, f, (int)ll, l, pad);");
          end if;
          Append (Res, LF);
          Append (Res, "          hbnf_open_note(&p, err, errlen, at_end);");

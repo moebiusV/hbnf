@@ -25,6 +25,7 @@ check() {
 		echo "FAIL $n: cc"; cat "$T/$n.cc"; fail=$((fail+1)); return
 	fi
 	"$T/$n" > "$T/$n.out" 2>&1
+	[ -z "${WIRE_UPDATE:-}" ] || cp "$T/$n.out" tests/wire/$n.expected
 	if cmp -s "$T/$n.out" tests/wire/$n.expected; then
 		echo "PASS $n"
 	else
@@ -50,6 +51,7 @@ check_rust() {
 		echo "FAIL $n (rust): rustc"; head -30 "$d/rustc"; fail=$((fail+1)); return
 	fi
 	"$d/main" > "$d/out" 2>&1
+	[ -z "${WIRE_UPDATE:-}" ] || cp "$d/out" tests/wire/$want.expected
 	if cmp -s "$d/out" tests/wire/$want.expected; then
 		echo "PASS $n (rust)"
 	else
@@ -72,6 +74,7 @@ check_zig() {
 		echo "FAIL $n (zig): zig"; head -30 "$d/zig.out"; fail=$((fail+1)); return
 	fi
 	"$d/main" > "$d/out" 2>&1
+	[ -z "${WIRE_UPDATE:-}" ] || cp "$d/out" tests/wire/$want.expected
 	if cmp -s "$d/out" tests/wire/$want.expected; then
 		echo "PASS $n (zig)"
 	else
@@ -95,6 +98,7 @@ check_ada() {
 		echo "FAIL $n (ada): gnat"; head -30 "$d/gnat.out"; fail=$((fail+1)); return
 	fi
 	"$d/main" > "$d/out" 2>&1
+	[ -z "${WIRE_UPDATE:-}" ] || cp "$d/out" tests/wire/$want.expected
 	if cmp -s "$d/out" tests/wire/$want.expected; then
 		echo "PASS $n (ada)"
 	else

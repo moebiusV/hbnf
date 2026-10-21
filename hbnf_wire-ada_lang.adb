@@ -745,7 +745,7 @@ package body HBNF_Wire.Ada_Lang is
                                  L (Ind, "begin");
                                  L (Ind + 1, "if Bnf_P.Bit mod 8 = 0 then");
                                  L (Ind + 2, "declare");
-                                 L (Ind + 3, "Tp : Bnf_Text_Parser := (Text => Bnf_P.Buf, Pos => Bnf_Start" & U & ", Last => Natural'Last, Bit => 0);");
+                                 L (Ind + 3, "Tp : Bnf_Text_Parser := (Text => Bnf_P.Buf, Pos => Bnf_Start" & U & ", Last => Natural'Last, Bit => 0, others => <>);");
                                  L (Ind + 2, "begin");
                                  L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
                                  L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - Bnf_Start" & U & ") * 8;");
@@ -759,7 +759,7 @@ package body HBNF_Wire.Ada_Lang is
                                  L (Ind + 1, "else");
                                  L (Ind + 2, "declare");
                                  L (Ind + 3, "C  : aliased constant String := Bnf_Shifted (Bnf_P);");
-                                 L (Ind + 3, "Tp : Bnf_Text_Parser := (Text => C'Unchecked_Access, Pos => 1, Last => Natural'Last, Bit => 0);");
+                                 L (Ind + 3, "Tp : Bnf_Text_Parser := (Text => C'Unchecked_Access, Pos => 1, Last => Natural'Last, Bit => 0, others => <>);");
                                  L (Ind + 2, "begin");
                                  L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
                                  L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - 1) * 8;");
@@ -2461,7 +2461,7 @@ package body HBNF_Wire.Ada_Lang is
          L (3, "exception");
          L (4, "when Bnf_Fail =>");
          L (5, "Err := (At_Octet => 0,");
-         L (7, "Message => To_Unbounded_String (""expected "" & To_String (Bnf_P.Msg)");
+         L (7, "Message => To_Unbounded_String (""1:1:0: expected "" & To_String (Bnf_P.Msg)");
          L (9, "& "" (at unit "" & Img (Bnf_P.Fail_Bit / Bnf_Width + 1)");
          L (9, "& ""), found "" & Found (Text, Text'First)));");
          L (3, "end;");

@@ -1,0 +1,7 @@
+; Blocks inside blocks: an error says what could have stood there, and a block left open
+; says where it began.
+prefix none
+
+prog  = block
+block = "begin" *stmt "end"
+stmt  = "x" ";" | block

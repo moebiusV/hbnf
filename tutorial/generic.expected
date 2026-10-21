@@ -1,0 +1,8 @@
+list  bytes 0-13
+  item  bytes 0-13
+list  bytes 14-42
+  item  bytes 14-42
+    item_1  bytes 25-41
+(list (list item=(item qty=2 name="apples")) (list item=(item qty=1 name="milk" item_1[0]=(item_1 shop="corner-shop"))))
+the second item starts at line 2, column 1
+written: buy 2 apples;buy 1 milk from corner-shop;

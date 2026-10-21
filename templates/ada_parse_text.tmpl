@@ -9,12 +9,17 @@
       end Rebase;
 
       T : aliased constant String := Rebase (Text);
-      P : Parser := (Text => T'Unchecked_Access, Pos => 1, Last => Natural'Last{{&bit_init}});
+      P : Parser := (Text => T'Unchecked_Access, Pos => 1, Last => Natural'Last{{&bit_init}}, others => <>);
       R : {{&root_type}};
    begin
-{{&reset}}{{&lead_ws}}      R := {{&root_fn}} (P);
-{{&trail_ws}}      if P.Pos <= T'Last then
-         Fail (P, "end of config");
-      end if;
+{{&reset}}      begin
+{{&lead_ws}}         R := {{&root_fn}} (P);
+{{&trail_ws}}         if P.Pos <= T'Last then
+            Fail (P, "end of config");
+         end if;
+      exception
+         when Parse_Error =>
+            raise Parse_Error with Render (P);
+      end;
 {{&actions}}      return R;
    end Parse_Text;

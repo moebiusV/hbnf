@@ -132,7 +132,7 @@ procedure Hbnf_Emit_Check is
       Check ("Zig parser fn", Has (Zig_Parser, "parse_server"));
       Check ("Zig parser err", Has (Zig_Parser, "ParseError"));
       Check ("Zig parser expect", Has (Zig_Parser, "expect_lit"));
-      Check ("Zig parser caret", Has (Zig_Parser, "{s}^"));
+      Check ("Zig parser caret", Has (Zig_Parser, "self.emit(""^"")"));
    end Check_Server;
 
    procedure Check_Hbnf (Path : String) is

@@ -1,11 +1,36 @@
    type Text_Access is access constant String;
 
+   type Alt_List is array (1 .. 16) of Unbounded_String;
+   type Rule_Stack is array (1 .. 24) of Natural;
+
    --  The parser reads the text itself: a position in it, no token array.
    type Parser is record
       Text : Text_Access;
       Pos  : Natural := 1;
       Last : Natural := Natural'Last;   --  the input is cut here for a trial parse (`a - b`)
-{{&parser_bit}}   end record;
+{{&parser_bit}}      --  The farthest failure (Err_Pos, 0 while there is none): what could have stood
+      --  there, each told once, and the rules being read then and where each began.
+      Err_Pos    : Natural := 0;
+      Alt_N      : Natural := 0;
+      Alts       : Alt_List;
+      More       : Boolean := False;
+      Depth      : Natural := 0;
+      Stk        : Rule_Stack := (others => 0);
+      Stkpos     : Rule_Stack := (others => 0);
+      Err_Depth  : Natural := 0;
+      Err_Stk    : Rule_Stack := (others => 0);
+      Err_Stkpos : Rule_Stack := (others => 0);
+   end record;
+
+   --  A rule is being read from here (and not any more, when it returns).
+   procedure Enter (P : in out Parser; Rule : Positive) is
+   begin
+      if P.Depth < 24 then
+         P.Stk (P.Depth + 1) := Rule;
+         P.Stkpos (P.Depth + 1) := P.Pos;
+      end if;
+      P.Depth := P.Depth + 1;
+   end Enter;
 
    function Limit (P : Parser) return Natural is
      (Natural'Min (P.Last, P.Text'Last));
@@ -15,59 +40,57 @@
 
    --  What stands at the position, for an error message: the bareword that
    --  starts there, else the one character, else the end of the text.
-   function Found (P : Parser) return String is
+   function Found (P : Parser; At_Pos : Natural) return String is
       Last : constant Natural := P.Text'Last;
-      I    : Natural := P.Pos;
+      I    : Natural := At_Pos;
 
       function Word_Char (C : Character) return Boolean is
         (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.');
    begin
-      if P.Pos > Last then
+      if At_Pos > Last then
          return "end of input";
       end if;
       if Word_Char (P.Text (I)) then
          while I <= Last and then Word_Char (P.Text (I)) loop
             I := I + 1;
          end loop;
-         return P.Text (P.Pos .. I - 1);
+         return P.Text (At_Pos .. I - 1);
       end if;
-      return P.Text (P.Pos .. P.Pos);
+      return P.Text (At_Pos .. At_Pos);
    end Found;
 
-   procedure Fail (P : Parser; Expected : String) is
-      Line  : Natural := 1;
-      Col   : Natural := 1;
-      Start : Natural := 1;
-      Msg   : Unbounded_String;
-      Last  : constant Natural := P.Text'Last;
+   --  Keep the farthest failure, and at the same place what else could have stood
+   --  there; the message is made of them when the whole parse has failed (Render).
+   procedure Fail (P : in out Parser; Expected : String) is
    begin
-      for I in 1 .. Natural'Min (P.Pos, Last + 1) - 1 loop
-         if P.Text (I) = ASCII.LF then
-            Line := Line + 1;
-            Col := 1;
-            Start := I + 1;
-         else
-            Col := Col + 1;
-         end if;
-      end loop;
-      Append (Msg, "line" & Natural'Image (Line) & ": expected " & Expected
-        & ", found " & Found (P));
-      declare
-         Stop : Natural := Start;
-      begin
-         while Stop <= Last and then P.Text (Stop) /= ASCII.LF loop
-            Stop := Stop + 1;
-         end loop;
+      if P.Err_Pos = 0 or else P.Pos > P.Err_Pos then
+         P.Err_Pos := P.Pos;
+         P.Alt_N := 1;
+         P.Alts (1) := To_Unbounded_String (Expected);
+         P.More := False;
+         P.Err_Depth := Natural'Min (P.Depth, 24);
+         P.Err_Stk := P.Stk;
+         P.Err_Stkpos := P.Stkpos;
+      elsif P.Pos = P.Err_Pos then
          declare
-            W   : constant Natural := Col - 1;
-            Pad : constant String :=
-              (if W <= Spaces'Length then Spaces (1 .. W) else Spaces);
+            Seen : Boolean := False;
          begin
-            Append (Msg, ASCII.LF & "  " & P.Text (Start .. Stop - 1)
-              & ASCII.LF & "  " & Pad & "^");
+            for I in 1 .. P.Alt_N loop
+               if To_String (P.Alts (I)) = Expected then
+                  Seen := True;
+               end if;
+            end loop;
+            if not Seen then
+               if P.Alt_N < 16 then
+                  P.Alt_N := P.Alt_N + 1;
+                  P.Alts (P.Alt_N) := To_Unbounded_String (Expected);
+               else
+                  P.More := True;
+               end if;
+            end if;
          end;
-      end;
-      raise Parse_Error with To_String (Msg);
+      end if;
+      raise Parse_Error with "expected " & Expected;
    end Fail;
 
    --  A punctuation- or digit-led literal: compare bytes at the position (a

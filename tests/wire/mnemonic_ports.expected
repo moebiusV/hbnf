@@ -16,7 +16,7 @@ PASS 15 words, entropy 20 octets, checksum 27, warning: valid BIP-39, but wallet
 PASS 15 words, entropy 20 octets, checksum 19, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
 PASS 21 words, entropy 28 octets, checksum 29, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
 PASS 21 words, entropy 28 octets, checksum 25, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
-PASS refused: 11 words (expected mnemonic: a mnemonic has 12, 15, 18, 21 or 24 words (at unit 1), found abandon abandon abandon )
+PASS refused: 11 words (1:1:0: expected mnemonic: a mnemonic has 12, 15, 18, 21 or 24 words (at unit 1), found abandon abandon abandon )
 PASS refused: a misspelt word (expected ` `, found n)
 PASS refused: two blanks (expected a bip39-word, found  abandon abandon abandon)
 PASS refused: a trailing blank (expected a bip39-word, found end of input)

@@ -3,12 +3,12 @@ PASS tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5: version 0, 32
 PASS bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5j: version 1, 32 octets
 PASS BC1SW50QGDZ25J: version 16, 2 octets
 PASS bc1zw508d6qejxtdg4y5r3zarvaryvaxxpcs: version 2, 16 octets
-PASS refused: v0 with a 21-octet program (line 1: expected segwit: a condition does not hold: (((version != 0) || (len (program) == 20)) || (len (program) == 32)) (at unit 35), found qqqqsyqcyq5rqwzqfpg9scrgwpugpzysnzsqqqqqq)
-PASS refused: version 17 (line 1: expected segwit: a condition does not hold: (version <= 16) (at unit 2), found 3qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq)
-PASS refused: a 1-octet program (line 1: expected segwit: a condition does not hold: ((len (program) >= 2) && (len (program) <= 40)) (at unit 3), found pqyqqqqqq)
-PASS refused: a 41-octet program (line 1: expected segwit: a condition does not hold: ((len (program) >= 2) && (len (program) <= 40)) (at unit 67), found pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq)
-PASS refused: padding that is not zero (line 1: expected segwit: a condition does not hold: (pad == 0) (at unit 36), found pqypqxpq9qcrsszg2pvxq6rs0zqg3yyc5z4qqqqqq)
-PASS refused: v0 with a 19-octet program (line 1: expected segwit: a condition does not hold: (((version != 0) || (len (program) == 20)) || (len (program) == 32)) (at unit 32), found qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq)
+PASS refused: v0 with a 21-octet program (1:6:5: expected segwit: a condition does not hold: (((version != 0) || (len (program) == 20)) || (len (program) == 32)) (at unit 35), found qqqqsyqcyq5rqwzqfpg9scrgwpugpzysnzsqqqqqq)
+PASS refused: version 17 (1:6:5: expected segwit: a condition does not hold: (version <= 16) (at unit 2), found 3qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq)
+PASS refused: a 1-octet program (1:6:5: expected segwit: a condition does not hold: ((len (program) >= 2) && (len (program) <= 40)) (at unit 3), found pqyqqqqqq)
+PASS refused: a 41-octet program (1:6:5: expected segwit: a condition does not hold: ((len (program) >= 2) && (len (program) <= 40)) (at unit 67), found pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq)
+PASS refused: padding that is not zero (1:6:5: expected segwit: a condition does not hold: (pad == 0) (at unit 36), found pqypqxpq9qcrsszg2pvxq6rs0zqg3yyc5z4qqqqqq)
+PASS refused: v0 with a 19-octet program (1:6:5: expected segwit: a condition does not hold: (((version != 0) || (len (program) == 20)) || (len (program) == 32)) (at unit 32), found qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq)
 PASS v1 with a 21-octet program (2 padding bits): version 1, 21 octets
 PASS text 0: version 0, 20 octets, written back
 PASS text 1: version 0, 32 octets, written back

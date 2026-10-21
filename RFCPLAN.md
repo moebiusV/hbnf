@@ -1556,8 +1556,11 @@ lookahead or a context test not at all.
    and a failure in something that took more than a couple of lines (at the end of the input, one
    line; else three) also says where the innermost enclosing rule began, with its line: the
    `'BEGIN'` with no `'END'`.  The rule stack with start positions is kept always (it was
-   `--paths` only); `--paths` still adds the `(in a > b)` path.  Not yet: the same in Rust, Zig and
-   Ada, and an end point for a construct that closed too early.
+   `--paths` only); `--paths` still adds the `(in a > b)` path.  Built in all four backends
+   (2026-10-22), and every message now begins `LINE:COLUMN:OFFSET:` (offset in bytes from 0; in a
+   `statements` parser, from the statement's start), which `sed`, `tail -c` and editors take as it is;
+   a conf reader prints `file:LINE:COLUMN:OFFSET: ...`.  Not yet: an end point for a construct that
+   closed too early.
 
 8. **Compiler-quality diagnostics and error recovery.**  Expected-error
    fixtures, source-span diagnostics, rule traces, and a schema linter

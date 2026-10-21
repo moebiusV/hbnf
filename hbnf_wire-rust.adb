@@ -419,7 +419,7 @@ package body HBNF_Wire.Rust is
                                  L (Ind + 2, "shifted_ = bnf_shifted(p_);");
                                  L (Ind + 2, "(&shifted_[..], 0)");
                                  L (Ind + 1, "};");
-                                 L (Ind + 1, "let mut tp_ = TextP { text: Txt(b_), pos: start_, bit: 0, err_pos: 0, err: None };");
+                                 L (Ind + 1, "let mut tp_ = TextP { text: Txt(b_), pos: start_, bit: 0, err_pos: 0, err: None, ex: ErrEx::default() };");
                                  L (Ind + 1, "match " & HBNF_Rust.Parse_Fn (R) & "(&mut tp_) {");
                                  L (Ind + 2, "Ok(v_) => { p_.bit += (tp_.pos - start_) * 8; " & (if Span then "(v_, b_[start_..tp_.pos].to_vec())" else "v_") & " }");
                                  L (Ind + 2, "Err(_) => { p_.fail(p_.bit, " & W & ", ""a " & R & """); return None; }");
@@ -1656,7 +1656,7 @@ package body HBNF_Wire.Rust is
          L (0, "    let mut p_ = P { buf: &buf, nbits, bit: 0, fail_bit: 0, failed: false, msg: String::new() };");
          L (0, "    let at_unit = |p_: &P, m: &str| ParseError {");
          L (0, "        at: 0,");
-         L (0, "        message: format!(""expected {} (at unit {}), found {}"", m, p_.fail_bit / BNF_WIDTH + 1, bnf_found(text, 0)),");
+         L (0, "        message: format!(""1:1:0: expected {} (at unit {}), found {}"", m, p_.fail_bit / BNF_WIDTH + 1, bnf_found(text, 0)),");
          L (0, "    };");
          L (0, "    match " & Parse_Fn & "(&mut p_) {");
          L (0, "        None => Err(at_unit(&p_, &p_.msg)),");

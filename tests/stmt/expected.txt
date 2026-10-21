@@ -1,5 +1,5 @@
 top.conf:
-  sub.inc:2: expected one of `include`, `*`, a string, `preference`, `forwarder`, `block`, `force`, a statement, found bogus
+  sub.inc:2: 2:1:0: expected one of `include`, `*`, a string, `preference`, `forwarder`, `block`, `force`, a statement, found bogus
   bogus line here
   ^
   sub.inc:3: macro 'nothere' not defined
@@ -11,7 +11,7 @@ ok.conf:
 -Dpref=DoT: 0
 -Dfw=198.51.100.1: 0
 top.conf:
-  sub.inc:2: expected one of `include`, `*`, a string, `preference`, `forwarder`, `block`, `force`, a statement, found bogus
+  sub.inc:2: 2:1:0: expected one of `include`, `*`, a string, `preference`, `forwarder`, `block`, `force`, a statement, found bogus
   bogus line here
   ^
   sub.inc:3: macro 'nothere' not defined

@@ -16,13 +16,13 @@ PASS 15 words, entropy 20 octets, checksum 27, warning: valid BIP-39, but wallet
 PASS 15 words, entropy 20 octets, checksum 19, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
 PASS 21 words, entropy 28 octets, checksum 29, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
 PASS 21 words, entropy 28 octets, checksum 25, warning: valid BIP-39, but wallets mostly make 12 and 24 words, and some cannot import any other length, written back
-PASS refused: 11 words (expected mnemonic: a mnemonic has 12, 15, 18, 21 or 24 words (at unit 1), found abandon abandon abandon )
-PASS refused: a misspelt word (expected ` `, found n)
-PASS refused: two blanks (expected `abstract` or `accident` or `acoustic` or `announce` or `artefact` or `attitude` or `bachelor` or `broccoli` or `business` or `category` or `champion` or `cinn, found  )
-PASS refused: a trailing blank (expected a bip39_word, found end of input)
+PASS refused: 11 words (1:1:0: expected mnemonic: a mnemonic has 12, 15, 18, 21 or 24 words (at unit 1), found abandon abandon abandon )
+PASS refused: a misspelt word (1:96:95: expected one of ` `, end of config, found n)
+PASS refused: two blanks (1:9:8: expected `abstract` or `accident` or `acoustic` or `announce` or `artefact` or `attitude` or `bachelor` or `broccoli` or `business` or `category` or `champion` or `cinnamon` or `congress` or `consider` or `convince` or `cupboard` or `daughter` or `)
+PASS refused: a trailing blank (1:95:94: expected a bip39_word, found end of input)
 PASS refused: a wrong checksum (all abandon) (the checksum does not match the words)
 PASS refused: a wrong checksum (all zoo) (the checksum does not match the words)
-PASS refused: nothing (expected a bip39_word, found end of input)
+PASS refused: nothing (1:1:0: expected a bip39_word, found end of input)
 PASS generated 12 words from 16 octets of entropy
 PASS generated 12 words from 16 octets of entropy
 PASS generated 12 words from 16 octets of entropy

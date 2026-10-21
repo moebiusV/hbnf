@@ -1,15 +1,15 @@
 == tests/errors/no-end.a60
-expected `'END'`, found end of input
+13:1:162: expected `'END'`, found end of input
   
   ^
-  the block that begins on line 1 is not finished:
+  1:1:0: the block that begins here is not finished:
   'BEGIN'
   ^
 == tests/errors/paren.a60
-expected one of `'POWER'` or `^`, `'DIV'` or `*` or `/`, `+` or `-`, `'NOTGREATER'` or `'NOTEQUAL'` or `'NOTLESS'` or `'GREATER'` or `'EQUAL'` or `'LESS'` or `<=` or `>=` or `<>` or `<` or `>` or `=`, `'AND'`, `'OR'`, `'IMPL'`, `'EQUIV'`, `)`, found ;
+3:14:36: expected one of `'POWER'` or `^`, `'DIV'` or `*` or `/`, `+` or `-`, `'NOTGREATER'` or `'NOTEQUAL'` or `'NOTLESS'` or `'GREATER'` or `'EQUAL'` or `'LESS'` or `<=` or `>=` or `<>` or `<` or `>` or `=`, `'AND'`, `'OR'`, `'IMPL'`, `'EQUIV'`, `)`, found ;
     i := (1 + 2;
                ^
 == tests/errors/json-comma.json
-expected one of `{`, `[`, string, number, `true`, `false`, `null`, found ,
+1:13:12: expected one of `{`, `[`, string, number, `true`, `false`, `null`, found ,
   {"a": [1, 2,, 3]}
               ^

@@ -1,0 +1,11 @@
+== open.blk
+8:1:44: expected `end`, found end of input
+  
+  ^
+  1:1:0: the block that begins here is not finished:
+  begin
+  ^
+== stray.blk
+3:3:13: expected one of `x`, `begin`, a stmt, `end`, found y
+    y;
+    ^

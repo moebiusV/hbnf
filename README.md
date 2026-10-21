@@ -71,6 +71,9 @@ This directory holds two things:
 
 Every markdown file in the repository, so none is lost.
 
+**Start here**
+- [`TUTORIAL.md`](TUTORIAL.md): start here: a six-line grammar to a typed tree you can use, in C, Zig, Rust and Ada, and the error messages.
+
 **The design and its plan**
 - [`WHY.md`](WHY.md): the grammar and its design choices, for an RFC reader.
 - [`RFCPLAN.md`](RFCPLAN.md): the plan, its decisions and its status, step by step.

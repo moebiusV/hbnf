@@ -2,9 +2,9 @@ a x;           accepted
 a x y;         accepted
 b <=;          accepted
 b <;           accepted
-b <>;          expected one of `;`, `=`, found >
+b <>;          1:4:3: expected one of `;`, `=`, found >
 c x x y;       accepted
 c x y x;       accepted
 d x y z!       accepted
 d x z!         accepted
-a x z;         expected one of `;`, `y`, found z
+a x z;         1:5:4: expected one of `;`, `y`, found z

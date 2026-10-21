@@ -4,9 +4,9 @@
 <a><a></a></a>             accepted
 <a></a><b></b>             accepted
 x<a>y<b>z</b>w</a>v        accepted
-<a></b>                    expected the same text again, `tag`, found b
-<a><b></a></b>             expected the same text again, `tag`, found a
-<ab></a>                   expected the same text again, `tag`, found a
-<a></ab>                   expected `>`, found b
-<a>                        expected `</`, found end of input
-</a>                       expected name, found /
+<a></b>                    1:6:5: expected the same text again, `tag`, found b
+<a><b></a></b>             1:9:8: expected the same text again, `tag`, found a
+<ab></a>                   1:7:6: expected the same text again, `tag`, found a
+<a></ab>                   1:7:6: expected `>`, found b
+<a>                        1:4:3: expected `</`, found end of input
+</a>                       1:2:1: expected name, found /

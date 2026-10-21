@@ -2866,6 +2866,41 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "// The parser reads the text itself: a byte position in it, no token array.");
       Append (Res, LF);
+      Append (Res, "// The farthest failure: what could have stood there (each told once), the");
+      Append (Res, LF);
+      Append (Res, "// message made of them, and the rules being read, to say where an unfinished");
+      Append (Res, LF);
+      Append (Res, "// construct began.");
+      Append (Res, LF);
+      Append (Res, "const ErrState = struct {");
+      Append (Res, LF);
+      Append (Res, "    line: usize = 0,");
+      Append (Res, LF);
+      Append (Res, "    col: usize = 0,");
+      Append (Res, LF);
+      Append (Res, "    buf: [512]u8 = undefined,");
+      Append (Res, LF);
+      Append (Res, "    len: usize = 0,");
+      Append (Res, LF);
+      Append (Res, "    pos: usize = 0,");
+      Append (Res, LF);
+      Append (Res, "    alt_n: usize = 0,");
+      Append (Res, LF);
+      Append (Res, "    alt_exp: [16][]const u8 = undefined,");
+      Append (Res, LF);
+      Append (Res, "    alt_more: bool = false,");
+      Append (Res, LF);
+      Append (Res, "    text: []const u8 = """",");
+      Append (Res, LF);
+      Append (Res, "    depth: usize = 0,");
+      Append (Res, LF);
+      Append (Res, "    stk: [24]u16 = undefined,");
+      Append (Res, LF);
+      Append (Res, "    stkpos: [24]usize = undefined,");
+      Append (Res, LF);
+      Append (Res, "};");
+      Append (Res, LF);
+      Append (Res, LF);
       Append (Res, "const P = struct {");
       Append (Res, LF);
       Append (Res, "    text: []const u8,");
@@ -2874,15 +2909,13 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "    pos: usize = 0,");
       Append (Res, LF);
-      Append (Res, "    err_line: usize = 0,");
+      Append (Res, "    e: ErrState = .{},   // the farthest failure, as the message");
       Append (Res, LF);
-      Append (Res, "    err_col: usize = 0,");
+      Append (Res, "    depth: usize = 0,   // the rules being read, and where each began");
       Append (Res, LF);
-      Append (Res, "    err: [512]u8 = undefined,");
+      Append (Res, "    stk: [24]u16 = undefined,");
       Append (Res, LF);
-      Append (Res, "    err_len: usize = 0,");
-      Append (Res, LF);
-      Append (Res, "    err_pos: usize = 0,");
+      Append (Res, "    stkpos: [24]usize = undefined,");
       Append (Res, LF);
       if Is_Hosted then
          Append (Res, "    bit: u3 = 0,   // bits of the octet at pos already read by a bit rule");
@@ -2911,38 +2944,111 @@ package body HBNF_Zig is
             Append (Res, LF);
          end Put;
       begin
+         Put ("    fn emit(self: *P, s: []const u8) void {");
+         Put ("        const n = @min(s.len, self.e.buf.len - 1 - self.e.len);");
+         Put ("        @memcpy(self.e.buf[self.e.len..][0..n], s[0..n]);");
+         Put ("        self.e.len += n;");
+         Put ("    }");
+         Put ("");
          Put ("    fn set_err(self: *P, expected: []const u8) void {");
-         Put ("        if (self.err_len != 0 and self.pos <= self.err_pos) return;");
-         Put ("        self.err_pos = self.pos;");
-         Put ("        // The line and column of the position, and the text of its line.");
-         Put ("        const end = if (self.pos < self.text.len) self.pos else self.text.len;");
+         Put ("        if (self.e.len != 0 and self.pos < self.e.pos) return;");
+         Put ("        if (self.e.len != 0 and self.pos == self.e.pos) {");
+         Put ("            // the same place: another thing that could have stood here");
+         Put ("            for (self.e.alt_exp[0..self.e.alt_n]) |x| {");
+         Put ("                if (std.mem.eql(u8, x, expected)) return;");
+         Put ("            }");
+         Put ("            if (self.e.alt_n < 16) {");
+         Put ("                self.e.alt_exp[self.e.alt_n] = expected;");
+         Put ("                self.e.alt_n += 1;");
+         Put ("            } else self.e.alt_more = true;");
+         Put ("            self.render();");
+         Put ("            return;");
+         Put ("        }");
+         Put ("        self.e.pos = self.pos;");
+         Put ("        self.e.alt_n = 1;");
+         Put ("        self.e.alt_exp[0] = expected;");
+         Put ("        self.e.alt_more = false;");
+         Put ("        self.e.text = self.text;");
+         Put ("        self.e.depth = @min(self.depth, 24);");
+         Put ("        @memcpy(self.e.stk[0..self.e.depth], self.stk[0..self.e.depth]);");
+         Put ("        @memcpy(self.e.stkpos[0..self.e.depth], self.stkpos[0..self.e.depth]);");
+         Put ("        self.render();");
+         Put ("    }");
+         Put ("");
+         Put ("    // The message: what was expected, what was found, the line and where in it;");
+         Put ("    // and, for a failure far from where the rule it is in began, that rule's line.");
+         Put ("    fn render(self: *P) void {");
+         Put ("        const t = self.e.text;");
+         Put ("        const at = self.e.pos;");
+         Put ("        const end = if (at < t.len) at else t.len;");
          Put ("        var line: usize = 1;");
          Put ("        var start: usize = 0;");
          Put ("        var i: usize = 0;");
          Put ("        while (i < end) : (i += 1) {");
-         Put ("            if (self.text[i] == '\n') { line += 1; start = i + 1; }");
+         Put ("            if (t[i] == '\n') { line += 1; start = i + 1; }");
          Put ("        }");
          Put ("        const col = end - start + 1;");
          Put ("        var stop = start;");
-         Put ("        while (stop < self.text.len and self.text[stop] != '\n') stop += 1;");
-         Put ("        self.err_line = line;");
-         Put ("        self.err_col = col;");
+         Put ("        while (stop < t.len and t[stop] != '\n') stop += 1;");
+         Put ("        self.e.line = line;");
+         Put ("        self.e.col = col;");
          Put ("        // What stands there: the bareword that starts at the position,");
          Put ("        // else the one character, else the end of the text.");
-         Put ("        var fend = self.pos;");
-         Put ("        const found = if (self.pos >= self.text.len) ""end of input"" else blk: {");
-         Put ("            if (is_word_char(self.text[self.pos])) {");
-         Put ("                while (fend < self.text.len and is_word_char(self.text[fend])) fend += 1;");
+         Put ("        var fend = at;");
+         Put ("        const at_end = at >= t.len;");
+         Put ("        const found = if (at_end) ""end of input"" else blk: {");
+         Put ("            if (is_word_char(t[at])) {");
+         Put ("                while (fend < t.len and is_word_char(t[fend])) fend += 1;");
          Put ("            } else {");
          Put ("                fend += 1;");
-         Put ("                while (fend < self.text.len and (self.text[fend] & 0xC0) == 0x80) fend += 1;");
+         Put ("                while (fend < t.len and (t[fend] & 0xC0) == 0x80) fend += 1;");
          Put ("            }");
-         Put ("            break :blk self.text[self.pos..fend];");
+         Put ("            break :blk t[at..fend];");
          Put ("        };");
          Put ("        const w = if (col - 1 > SPACES.len) SPACES.len else col - 1;");
-         Put ("        const msg = std.fmt.bufPrint(self.err[0..], ""expected {s}, found {s}\n  {s}\n  {s}^"", .{ expected, found, self.text[start..stop], SPACES[0..w] });");
-         Put ("        const m = msg catch { self.err_len = self.err.len; return; };");
-         Put ("        self.err_len = m.len;");
+         Put ("        self.e.len = 0;");
+         Put ("        var pb: [72]u8 = undefined;");
+         Put ("        self.emit(std.fmt.bufPrint(&pb, ""{d}:{d}:{d}: "", .{ line, col, at }) catch """");");
+         Put ("        self.emit(""expected "");");
+         Put ("        if (self.e.alt_n > 1) self.emit(""one of "");");
+         Put ("        for (self.e.alt_exp[0..self.e.alt_n], 0..) |x, k| {");
+         Put ("            if (k > 0) self.emit("", "");");
+         Put ("            self.emit(x);");
+         Put ("        }");
+         Put ("        if (self.e.alt_more) self.emit("", ..."");");
+         Put ("        self.emit("", found "");");
+         Put ("        self.emit(found);");
+         Put ("        self.emit(""\n  "");");
+         Put ("        self.emit(t[start..stop]);");
+         Put ("        self.emit(""\n  "");");
+         Put ("        self.emit(SPACES[0..w]);");
+         Put ("        self.emit(""^"");");
+         Put ("        var k: usize = self.e.depth;");
+         Put ("        while (k > 0) {");
+         Put ("            k -= 1;");
+         Put ("            const nm = RN[self.e.stk[k]];");
+         Put ("            if (nm.len == 0) continue;");
+         Put ("            var sp = self.e.stkpos[k];");
+         Put ("            while (sp < t.len and (t[sp] == ' ' or t[sp] == '\t' or t[sp] == '\n' or t[sp] == '\r')) sp += 1;");
+         Put ("            var l: usize = 1;");
+         Put ("            var ls: usize = 0;");
+         Put ("            for (t[0..sp], 0..) |c, j| {");
+         Put ("                if (c == '\n') { l += 1; ls = j + 1; }");
+         Put ("            }");
+         Put ("            if (l + (if (at_end) @as(usize, 1) else 3) > line) continue;");
+         Put ("            var le = sp;");
+         Put ("            while (le < t.len and t[le] != '\n') le += 1;");
+         Put ("            self.emit(""\n  "");");
+         Put ("            self.emit(std.fmt.bufPrint(&pb, ""{d}:{d}:{d}: "", .{ l, sp - ls + 1, sp }) catch """");");
+         Put ("            self.emit(if (at_end) ""the "" else ""inside the "");");
+         Put ("            self.emit(nm);");
+         Put ("            self.emit(if (at_end) "" that begins here is not finished:\n  "" else "" that begins here:\n  "");");
+         Put ("            self.emit(t[ls..le]);");
+         Put ("            self.emit(""\n  "");");
+         Put ("            self.emit(SPACES[0..@min(sp - ls, SPACES.len)]);");
+         Put ("            self.emit(""^"");");
+         Put ("            break;");
+         Put ("        }");
          Put ("    }");
          Put ("");
          Put ("    fn fail(self: *P, expected: []const u8) ParseError!void {");
@@ -3033,13 +3139,13 @@ package body HBNF_Zig is
       end;
       Append (Res, "    fn err_out(self: *P, out: *[512]u8, line: *usize, col: *usize) ParseError {");
       Append (Res, LF);
-      Append (Res, "        @memcpy(out[0..self.err_len], self.err[0..self.err_len]);");
+      Append (Res, "        @memcpy(out[0..self.e.len], self.e.buf[0..self.e.len]);");
       Append (Res, LF);
-      Append (Res, "        out[self.err_len] = 0;");
+      Append (Res, "        out[self.e.len] = 0;");
       Append (Res, LF);
-      Append (Res, "        line.* = self.err_line;");
+      Append (Res, "        line.* = self.e.line;");
       Append (Res, LF);
-      Append (Res, "        col.* = self.err_col;");
+      Append (Res, "        col.* = self.e.col;");
       Append (Res, LF);
       Append (Res, "        return error.Invalid;");
       Append (Res, LF);
@@ -3073,6 +3179,15 @@ package body HBNF_Zig is
                   Append (Res, "fn parse_" & Zig_Snake (NM)
                     & "(" & Param & ": *P) ParseError!" & Ret_Type (I) & " {");
                   Append (Res, LF);
+                  if Param = "p" then
+                     Append (Res, "    if (p.depth < 24) { p.stk[p.depth] = " & Img (I)
+                       & "; p.stkpos[p.depth] = p.pos; }");
+                     Append (Res, LF);
+                     Append (Res, "    p.depth += 1;");
+                     Append (Res, LF);
+                     Append (Res, "    defer p.depth -= 1;");
+                     Append (Res, LF);
+                  end if;
                   Emit_Rule_Parser (I, Res);
                   Append (Res, "}");
                   Append (Res, LF);
@@ -3081,6 +3196,32 @@ package body HBNF_Zig is
             end if;
          end;
       end loop;
+
+      --  The rules an error names, by number (a rule the reader made up for a
+      --  group or an option is left out).
+      Append (Res, "const RN = [_][]const u8{ """"," & LF);
+      for I in 1 .. N loop
+         declare
+            NM     : constant String := To_String (Rules (I).Name);
+            Cut    : Natural := 0;
+            Hidden : Boolean := False;
+         begin
+            for K in reverse NM'Range loop
+               if NM (K) = '_' then
+                  Cut := K;
+                  exit;
+               end if;
+            end loop;
+            if Cut > NM'First and then Cut < NM'Last
+              and then (for all C of NM (Cut + 1 .. NM'Last) => C in '0' .. '9')
+              and then Find (Rules, NM (NM'First .. Cut - 1)) /= 0
+            then
+               Hidden := True;
+            end if;
+            Append (Res, (if Hidden then """""" else """" & NM & """") & "," & LF);
+         end;
+      end loop;
+      Append (Res, "};" & LF & LF);
 
       --  The scanners.  A core rule the grammar does not define (`word`,
       --  `int`, `str`, `ws`) is a built-in: hand-written Zig, the same scan

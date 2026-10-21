@@ -3415,19 +3415,166 @@ package body HBNF_Ada is
                     and then (Is_Core_Name (NM)
                               or else not Is_Char_Token (Rules, NM)))
             then
-               Append (Bdy, "   function Parse_" & Ada_Ident (NM)
+               Append (Bdy, "   function Body_Of_" & Ada_Ident (NM)
                  & " (P : in out Parser) return " & Ret_Type (I) & " is");
                Append (Bdy, LF);
                Emit_Rule_Decl (I, Bdy);
                Append (Bdy, "   begin");
                Append (Bdy, LF);
                Emit_Rule_Parser (I, Bdy);
-               Append (Bdy, "   end Parse_" & Ada_Ident (NM) & ";");
+               Append (Bdy, "   end Body_Of_" & Ada_Ident (NM) & ";");
                Append (Bdy, LF);
                Append (Bdy, LF);
+               --  the rule is on the stack of rules being read while its body runs
+               Append (Bdy, "   function Parse_" & Ada_Ident (NM)
+                 & " (P : in out Parser) return " & Ret_Type (I) & " is" & LF
+                 & "   begin" & LF
+                 & "      Enter (P, " & Img (I) & ");" & LF
+                 & "      declare" & LF
+                 & "         R : constant " & Ret_Type (I) & " := Body_Of_"
+                 & Ada_Ident (NM) & " (P);" & LF
+                 & "      begin" & LF
+                 & "         P.Depth := P.Depth - 1;" & LF
+                 & "         return R;" & LF
+                 & "      end;" & LF
+                 & "   exception" & LF
+                 & "      when Parse_Error =>" & LF
+                 & "         P.Depth := P.Depth - 1;" & LF
+                 & "         raise;" & LF
+                 & "   end Parse_" & Ada_Ident (NM) & ";" & LF & LF);
             end if;
          end;
       end loop;
+
+      --  The rules an error names, by number (a rule the reader made up for a
+      --  group or an option is left out), and the message of the farthest failure:
+      --  what could have stood there, and, for a failure far from where the
+      --  rule it is in began, that rule's line.
+      declare
+         procedure RL (S : String) is
+         begin
+            Append (Bdy, "   " & S);
+            Append (Bdy, LF);
+         end RL;
+      begin
+         RL ("function Rule_Name (I : Natural) return String is");
+         RL ("  (case I is");
+         for I in 1 .. N loop
+            declare
+               NM     : constant String := To_String (Rules (I).Name);
+               Cut    : Natural := 0;
+               Hidden : Boolean := False;
+            begin
+               for K in reverse NM'Range loop
+                  if NM (K) = '_' then
+                     Cut := K;
+                     exit;
+                  end if;
+               end loop;
+               if Cut > NM'First and then Cut < NM'Last
+                 and then (for all C of NM (Cut + 1 .. NM'Last) => C in '0' .. '9')
+                 and then Find (Rules, NM (NM'First .. Cut - 1)) /= 0
+               then
+                  Hidden := True;
+               end if;
+               RL ("     when " & Img (I) & " => "
+                   & (if Hidden then """""" else """" & Ada_Escape (NM) & """") & ",");
+            end;
+         end loop;
+         RL ("     when others => """");");
+         RL ("");
+         RL ("function Render (P : Parser) return String is");
+         RL ("   At_Pos : constant Natural := P.Err_Pos;");
+         RL ("   Last   : constant Natural := P.Text'Last;");
+         RL ("   At_End : constant Boolean := At_Pos > Last;");
+         RL ("   Line   : Natural := 1;");
+         RL ("   Col    : Natural := 1;");
+         RL ("   Start  : Natural := 1;");
+         RL ("   Msg    : Unbounded_String;");
+         RL ("");
+         RL ("   function Img (N : Natural) return String is");
+         RL ("      S : constant String := Natural'Image (N);");
+         RL ("   begin");
+         RL ("      return S (S'First + 1 .. S'Last);");
+         RL ("   end Img;");
+         RL ("begin");
+         RL ("   for I in 1 .. Natural'Min (At_Pos, Last + 1) - 1 loop");
+         RL ("      if P.Text (I) = ASCII.LF then");
+         RL ("         Line := Line + 1;");
+         RL ("         Col := 1;");
+         RL ("         Start := I + 1;");
+         RL ("      else");
+         RL ("         Col := Col + 1;");
+         RL ("      end if;");
+         RL ("   end loop;");
+         RL ("   Append (Msg, Img (Line) & "":"" & Img (Col) & "":"" & Img (At_Pos - 1) & "": expected "");");
+         RL ("   if P.Alt_N > 1 then");
+         RL ("      Append (Msg, ""one of "");");
+         RL ("   end if;");
+         RL ("   for I in 1 .. P.Alt_N loop");
+         RL ("      if I > 1 then");
+         RL ("         Append (Msg, "", "");");
+         RL ("      end if;");
+         RL ("      Append (Msg, P.Alts (I));");
+         RL ("   end loop;");
+         RL ("   if P.More then");
+         RL ("      Append (Msg, "", ..."");");
+         RL ("   end if;");
+         RL ("   Append (Msg, "", found "" & Found (P, At_Pos));");
+         RL ("   declare");
+         RL ("      Stop : Natural := Start;");
+         RL ("   begin");
+         RL ("      while Stop <= Last and then P.Text (Stop) /= ASCII.LF loop");
+         RL ("         Stop := Stop + 1;");
+         RL ("      end loop;");
+         RL ("      declare");
+         RL ("         W   : constant Natural := Col - 1;");
+         RL ("         Pad : constant String :=");
+         RL ("           (if W <= Spaces'Length then Spaces (1 .. W) else Spaces);");
+         RL ("      begin");
+         RL ("         Append (Msg, ASCII.LF & ""  "" & P.Text (Start .. Stop - 1)");
+         RL ("           & ASCII.LF & ""  "" & Pad & ""^"");");
+         RL ("      end;");
+         RL ("   end;");
+         RL ("   for K in reverse 1 .. P.Err_Depth loop");
+         RL ("      declare");
+         RL ("         Nm : constant String := Rule_Name (P.Err_Stk (K));");
+         RL ("         Sp : Natural := P.Err_Stkpos (K);");
+         RL ("         L  : Natural := 1;");
+         RL ("         Ls : Natural := 1;");
+         RL ("         Le : Natural;");
+         RL ("      begin");
+         RL ("         if Nm'Length > 0 then");
+         RL ("            while Sp <= Last and then P.Text (Sp) in ' ' | ASCII.HT | ASCII.LF | ASCII.CR loop");
+         RL ("               Sp := Sp + 1;");
+         RL ("            end loop;");
+         RL ("            for I in 1 .. Natural'Min (Sp, Last + 1) - 1 loop");
+         RL ("               if P.Text (I) = ASCII.LF then");
+         RL ("                  L := L + 1;");
+         RL ("                  Ls := I + 1;");
+         RL ("               end if;");
+         RL ("            end loop;");
+         RL ("            if L + (if At_End then 1 else 3) <= Line then");
+         RL ("               Le := Ls;");
+         RL ("               while Le <= Last and then P.Text (Le) /= ASCII.LF loop");
+         RL ("                  Le := Le + 1;");
+         RL ("               end loop;");
+         RL ("               Append (Msg, ASCII.LF & ""  "" & Img (L) & "":"" & Img (Sp - Ls + 1)");
+         RL ("                 & "":"" & Img (Sp - 1) & "": """);
+         RL ("                 & (if At_End then ""the "" else ""inside the "") & Nm");
+         RL ("                 & "" that begins here"" & (if At_End then "" is not finished:"" else "":"")");
+         RL ("                 & ASCII.LF & ""  "" & P.Text (Ls .. Le - 1) & ASCII.LF & ""  """);
+         RL ("                 & (if Sp - Ls <= Spaces'Length then Spaces (1 .. Sp - Ls) else Spaces)");
+         RL ("                 & ""^"");");
+         RL ("               exit;");
+         RL ("            end if;");
+         RL ("         end if;");
+         RL ("      end;");
+         RL ("   end loop;");
+         RL ("   return To_String (Msg);");
+         RL ("end Render;");
+         RL ("");
+      end;
 
       --  Write_<root>: the tree as text, when the grammar was generated with
       --  --writer.  Canonical, not lossless: literals come from the grammar,

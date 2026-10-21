@@ -1,21 +1,21 @@
 ok: set a 1; run b;
 set a ;
-expected one of a number, a string, found ; (in config > entry > value)
+1:7:6: expected one of a number, a string, found ; (in config > entry > value)
   set a ;
         ^
 run ;
-expected a string, found ; (in config > entry > name)
+1:5:4: expected a string, found ; (in config > entry > name)
   run ;
       ^
 set a 1; { run b; { set c ; } }
-expected one of a number, a string, found ; (in config > entry > block > entry > block > entry > value)
+1:27:26: expected one of a number, a string, found ; (in config > entry > block > entry > block > entry > value)
   set a 1; { run b; { set c ; } }
                             ^
 { run b;
-expected `}`, found end of input (in config > entry > block)
+1:9:8: expected `}`, found end of input (in config > entry > block)
   { run b;
           ^
 go a;
-expected one of `set`, `run`, `{`, end of config, found go (in config > entry)
+1:1:0: expected one of `set`, `run`, `{`, end of config, found go (in config > entry)
   go a;
   ^

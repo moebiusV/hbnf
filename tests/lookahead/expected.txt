@@ -2,8 +2,8 @@ a: b;                  labelled
 a := b;                assigned 
 a;                     bare 
 a : b; c := d; e;      labelled assigned bare 
-a : = b;               refused: expected something other than `=`, found  
-a := := b;             refused: expected a string, found :
+a : = b;               refused: 1:4:3: expected something other than `=`, found  
+a := := b;             refused: 1:6:5: expected a string, found :
 a, b;                  pair 
-a :, b;                refused: expected a string, found ,
-a =, b;                refused: expected one of `:`, `:=`, found =
+a :, b;                refused: 1:4:3: expected a string, found ,
+a =, b;                refused: 1:3:2: expected one of `:`, `:=`, found =

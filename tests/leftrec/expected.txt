@@ -5,15 +5,15 @@ good.conf: 6 entries
   calc 1 + 2 - 4 + 8 = 7
   calc 7 = 7
   words one two three
-lead-comma.bad:1: expected a string, found ,
+lead-comma.bad:1: 1:7:6: expected a string, found ,
   hosts , a;
         ^
-lead-op.bad:1: expected a number, found +
+lead-op.bad:1: 1:6:5: expected a number, found +
   calc + 1;
        ^
-no-comma.bad:1: expected one of `,`, `;`, found b
+no-comma.bad:1: 1:9:8: expected one of `,`, `;`, found b
   hosts a b;
           ^
-no-words.bad:1: expected a string, found ;
+no-words.bad:1: 1:7:6: expected a string, found ;
   words ;
         ^

@@ -1,0 +1,10 @@
+; A shopping list: the whole tutorial grammar.
+;
+;   buy 2 apples;
+;   buy 1 milk from corner-shop;
+prefix none
+list = 1*item
+item = "buy" qty name [ "from" shop ] ";"
+qty  = int
+name = word
+shop = word

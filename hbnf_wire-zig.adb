@@ -1334,11 +1334,7 @@ package body HBNF_Wire.Zig is
          L (0, "    }");
          L (0, "    // what the text parser noted while it succeeded (a list looking for one more) is not");
          L (0, "    // an error of the whole read");
-         L (0, "    const save_err = tp.err;");
-         L (0, "    const save_len = tp.err_len;");
-         L (0, "    const save_epos = tp.err_pos;");
-         L (0, "    const save_line = tp.err_line;");
-         L (0, "    const save_col = tp.err_col;");
+         L (0, "    const save_e = tp.e;");
          L (0, "    tp.text = text;");
          L (0, "    tp.pos = start;");
          L (0, "    const v = parse(tp) catch {");
@@ -1350,11 +1346,7 @@ package body HBNF_Wire.Zig is
          L (0, "    const end = tp.pos;");
          L (0, "    tp.text = save_text;");
          L (0, "    tp.pos = save_pos;");
-         L (0, "    tp.err = save_err;");
-         L (0, "    tp.err_len = save_len;");
-         L (0, "    tp.err_pos = save_epos;");
-         L (0, "    tp.err_line = save_line;");
-         L (0, "    tp.err_col = save_col;");
+         L (0, "    tp.e = save_e;");
          L (0, "    p_.bit += (end - start) * 8;");
          L (0, "    return .{ .v = v, .span = text[start..end] };");
          L (0, "}");
@@ -1861,7 +1853,7 @@ package body HBNF_Wire.Zig is
          L (0, "");
          L (0, "fn bnf_at_unit(alloc: std.mem.Allocator, text: []const u8, m: []const u8, fail_bit: usize, err: *ParseError) void {");
          L (0, "    err.at = 0;");
-         L (0, "    err.message = std.fmt.allocPrint(alloc, ""expected {s} (at unit {d}), found {s}"", .{ m, fail_bit / BNF_WIDTH + 1, bnf_found(text, 0) }) catch m;");
+         L (0, "    err.message = std.fmt.allocPrint(alloc, ""1:1:0: expected {s} (at unit {d}), found {s}"", .{ m, fail_bit / BNF_WIDTH + 1, bnf_found(text, 0) }) catch m;");
          L (0, "}");
          L (0, "");
          L (0, "/// Read the words of text as the bits of one " & Rt & ".  A mistake in the words");

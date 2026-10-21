@@ -28,21 +28,17 @@ procedure Portable_Main is
    function Img (N : Long_Long_Integer) return String is
      (Ada.Strings.Fixed.Trim (Long_Long_Integer'Image (N), Ada.Strings.Left));
 
-   --  The error message begins "line N: "; print just N.
+   --  The error message begins "line:column:offset: "; print just the line.
    function Line_Of (Msg : String) return String is
-      I : Natural := Msg'First + 5;   --  past "line "
+      J : Natural := Msg'First;
    begin
-      if Msg'Length < 6 or else Msg (Msg'First .. Msg'First + 4) /= "line " then
+      while J <= Msg'Last and then Msg (J) in '0' .. '9' loop
+         J := J + 1;
+      end loop;
+      if J = Msg'First or else J > Msg'Last or else Msg (J) /= ':' then
          return "?";
       end if;
-      declare
-         J : Natural := I;
-      begin
-         while J <= Msg'Last and then Msg (J) in '0' .. '9' loop
-            J := J + 1;
-         end loop;
-         return Msg (I .. J - 1);
-      end;
+      return Msg (Msg'First .. J - 1);
    end Line_Of;
 begin
    for A in 1 .. Ada.Command_Line.Argument_Count loop

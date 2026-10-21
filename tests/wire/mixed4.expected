@@ -1,14 +1,14 @@
 hello: len=5 payload=hello
 one: len=1 payload=z
 short: error
-expected req_2.payload: needs 9 octets, 56 bits left, found hello
+1:6:5: expected req_2.payload: needs 9 octets, 56 bits left, found hello
   GET 	hello
        ^
 no line end: error
-expected req_3, found end of input
+1:11:10: expected req_3, found end of input
   GET hello
             ^
 no verb: error
-expected `GET `, found P
+1:1:0: expected `GET `, found P
   PUT hello
   ^
