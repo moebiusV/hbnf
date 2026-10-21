@@ -174,6 +174,8 @@ The same shape comes out of the same grammar in all four languages:
 | a rule that is `a / b` of literals | `enum` | `enum` | `enum` | enumeration |
 | visit, parent before children | `visit_<rule>` | `visit_<rule>` | `visit_<rule>` (`Visitor`) | none yet |
 | rebuild, children first | `map_<rule>` | `fold_<rule>` | `fold_<rule>` (`Folder`) | none yet |
+| walk any tree, `--ast` | `walk_<root>` | `walk_<root>` | `walk_<root>` | `Walk_<Root>` |
+| dump any tree, `--ast` | `dump_<root>` | `dump_<root>` | `dump_<root>` | `Dump_<Root>` |
 | release | arena / `free_<rule>` | `deinit_<rule>` | drop | `Free_<Rule>` |
 | error | text, line, column | text, line, column | `ParseError { line, col, msg }` | `Parse_Error` |
 
@@ -229,27 +231,67 @@ buy 2 apples;
 buy 1 milk from corner-shop;
 ```
 
-The next section is the same thing done once for every grammar.
+The next section is the same thing done once for every grammar, by the generator.
 
-## 6. Tools that work on any tree (C)
+## 6. Tools that work on any tree
 
-In C, `--ast` adds a few tables and one small walker that knows nothing of your grammar, so
-you can write code once and use it on a tree of any grammar:
+`--ast` makes a walker that knows nothing of your grammar, so the code you write for it works on
+a tree of any grammar.  The tree is walked as **nodes**: every struct, and every element of a
+list, is a node with a kind (the rule's name), the alternative it took if the rule has
+alternatives, and its members (`node_kids`).  Four things come with it, in C, Zig, Rust and Ada:
+
+| | C | Zig | Rust | Ada |
+|---|---|---|---|---|
+| walk: enter and leave every node; skip a subtree; stop | `walk_<root> (&tree, fn, ctx)` | `walk_<root> (tree, &walker, alloc)` | `walk_<root> (&tree, &mut walker)` | `Walk_<Root> (Tree, Walker)` |
+| what a node is | `node_kind_name`, `node_alt`, `node_alt_name` | the same | the same | `Node_Kind_Name`, `Node_Alt`, `Node_Alt_Name` |
+| its members | `node_kids` | `node_kids` | `node_kids` | `Node_Kids` |
+| dump as an S-expression | `dump_<root>` (`--ast-tools`) | `dump_<root>` | `dump_<root>` | `Dump_<Root>` |
+| equal when the dumps are | `node_equal` | `node_equal` | `node_equal` | `Node_Equal` |
+
+The dump is the same text in all four languages: `tests/ast.sh` checks the Rust, Zig and Ada
+dumps against the C one, character for character.  `tutorial/tools.c`, `tools.zig`, `tools.rs` and
+`tools.adb` are the same program; in Rust it is
+
+```rust
+struct Show { depth: usize }
+impl Walker for Show {
+    fn enter(&mut self, n: Node) -> Walk {
+        println!("{}{}", "  ".repeat(self.depth), node_kind_name(n));
+        self.depth += 1;
+        Walk::Continue                    // or Walk::Skip (not the children), Walk::Stop
+    }
+    fn leave(&mut self, _n: Node) -> Walk { self.depth -= 1; Walk::Continue }
+}
+
+walk_list(&list, &mut Show { depth: 0 });
+println!("{}", dump_list(&list));
+```
+
+and all four print
+
+```
+list
+  item
+list
+  item
+    item_1
+(list (list item=(item qty=2 name="apples")) (list item=(item qty=1 name="milk" item_1[0]=(item_1 shop="corner-shop"))))
+```
+
+(The `list` nodes are the list's elements; each holds an `item`.  `item_1` is the optional
+`[ "from" shop ]`.)
+
+More, in C only so far (`tutorial/generic.c`):
 
 | flag | adds |
 |---|---|
-| `--ast` | `walk_<root>` (`node_walk`): enter and leave every node, and answer `WALK_CONTINUE`, `WALK_SKIP` or `WALK_STOP`; `node_kind_name`, `node_alt`, `node_alt_name` say what a node is and which alternative it took |
-| `--ast-tools` | `node_kids` (the members of a node), `dump_<root>` (an S-expression), `node_equal` |
 | `--spans` | `node_span` (where a node is in the text, in bytes), `node_where` (byte to line and column) |
 | `--parents` | `node_parent` |
-| `--writer` | `write_<root>`: the tree as text again |
-
-`tutorial/generic.c` uses four of them, on the same list:
+| `--writer` | `write_<root>`: the tree as text again (a subset in Zig, Rust and Ada, [WIRE.md](WIRE.md)) |
 
 ```c
 int depth = 0;
 walk_list(&list, show, &depth);               /* show() prints kind and bytes */
-dump_list(&list, buf, n + 1);                 /* an S-expression */
 node_where(text, list.head->_link->_pos, &line, &col);
 write_list(&list, out, sizeof out);           /* the tree, as text */
 ```
@@ -260,15 +302,13 @@ list  bytes 0-13
 list  bytes 14-42
   item  bytes 14-42
     item_1  bytes 25-41
-(list (list item=(item qty=2 name="apples")) (list item=(item qty=1 name="milk" item_1[0]=(item_1 shop="corner-shop"))))
 the second item starts at line 2, column 1
 written: buy 2 apples;buy 1 milk from corner-shop;
 ```
 
 The writer is canonical, not pretty: it writes the literals the grammar has, the tokens the
-tree holds, and a blank only where two things would otherwise run together.  Zig, Rust and
-Ada have a writer for a subset (`--writer`, [WIRE.md](WIRE.md)); the walker, dump, spans
-and parents are C only so far.
+tree holds, and a blank only where two things would otherwise run together.  A layout you like
+is a pretty-printer of your own (section 5).
 
 ## 7. Errors
 

@@ -19,6 +19,9 @@ package HBNF_Ada is
    --  --writer: also emit Write_<root>, the tree written back as text.
    procedure Set_Writer (On : Boolean);
 
+   --  --ast: also emit the walker and the dump (Node_Walk, Node_Dump, ...).
+   procedure Set_Ast (On : Boolean);
+
    procedure Set_Hosted (Types, Spec, Withs, Code : String; Walks : String := "");
    --  Walks: "rule=Walk_Proc" for each bit rule that holds an %action, space-separated;
    --  the text parser runs them after the whole text is read.

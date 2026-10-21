@@ -1,0 +1,6 @@
+list
+  item
+list
+  item
+    item_1
+(list (list item=(item qty=2 name="apples")) (list item=(item qty=1 name="milk" item_1[0]=(item_1 shop="corner-shop"))))

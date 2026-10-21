@@ -41,4 +41,16 @@ if command -v zig > /dev/null 2>&1; then
 	cmp -s "$W/gotz.txt" "$W/want3.txt" || { echo "ast: FAIL (zig)"; diff "$W/gotz.txt" "$W/want3.txt" | head; exit 1; }
 	grep -q "^same text: true" "$W/zig.txt" && grep -q "^other text: false" "$W/zig.txt" || { echo "ast: FAIL (zig equal)"; exit 1; }
 fi
-echo "ast: OK (the walk, a skip, a stop; the same walk and dump in Rust and Zig)"
+if command -v gnatmake > /dev/null 2>&1; then
+	mkdir -p "$W/ad"
+	"$CLI" tests/ast/ast.hbnf --backend=ada --package=Ast --ast > "$W/ad/all.ada" || { echo "ast: FAIL (ada generate)"; exit 1; }
+	cp tests/ast/dump_main.adb "$W/ad/"
+	(cd "$W/ad" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -gnat2022 dump_main.adb -o m > gnat.txt 2>&1) \
+	  || { echo "ast: FAIL (ada compile)"; head -5 "$W/ad/gnat.txt"; exit 1; }
+	"$W/ad/m" > "$W/ad/out.txt" 2>&1
+	sed -n '1,/^(config/p' tests/ast/expected.txt > "$W/want3.txt"
+	sed '/^== equal/,$d' "$W/ad/out.txt" > "$W/ad/got3.txt"
+	cmp -s "$W/ad/got3.txt" "$W/want3.txt" || { echo "ast: FAIL (ada)"; diff "$W/ad/got3.txt" "$W/want3.txt" | head; exit 1; }
+	grep -q "^same text: TRUE" "$W/ad/out.txt" && grep -q "^other text: FALSE" "$W/ad/out.txt" || { echo "ast: FAIL (ada equal)"; exit 1; }
+fi
+echo "ast: OK (the walk, a skip, a stop; the same walk and dump in Rust, Zig and Ada)"

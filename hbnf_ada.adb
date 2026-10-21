@@ -4,6 +4,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Mustache;
+with HBNF_C;
 with HBNF_Compilable;
 with HBNF_Lookahead;
 
@@ -253,6 +254,7 @@ package body HBNF_Ada is
    end Find;
 
    Writer_On    : Boolean := False;   --  --writer: Write_<root>
+   Ast_On       : Boolean := False;   --  --ast: the walker and the dump
    Hosted_Types : U;
    Hosted_Spec  : U;
    Hosted_Withs : U;
@@ -265,6 +267,11 @@ package body HBNF_Ada is
    begin
       Writer_On := On;
    end Set_Writer;
+
+   procedure Set_Ast (On : Boolean) is
+   begin
+      Ast_On := On;
+   end Set_Ast;
 
    procedure Set_Hosted (Types, Spec, Withs, Code : String; Walks : String := "") is
    begin
@@ -584,12 +591,12 @@ package body HBNF_Ada is
    --  and a list entry that is a group with one.  The writer needs it; the C
    --  tree has the same.
    function Struct_Alt (R : Rule; Info : Rule_Info) return Boolean is
-     (Writer_On and then Info.Kind = Struct
+     ((Writer_On or else Ast_On) and then Info.Kind = Struct
       and then Natural (R.Pattern.Length) > 1
       and then (for some X of R.Pattern => X.Kind = Alt));
 
    function Entry_Alt (R : Rule; Info : Rule_Info) return Boolean is
-     (Writer_On and then Info.Kind = List
+     ((Writer_On or else Ast_On) and then Info.Kind = List
       and then not Info.Elem_Members.Is_Empty
       and then R.Left_Bases = 0
       and then Natural (R.Pattern.Length) = 1
@@ -2478,6 +2485,7 @@ package body HBNF_Ada is
       --  bodies (for the child body), filled once before either is rendered.
       Free_Decls : U;
       Free_Body  : U;
+      Ast_Body   : U;     --  the walker and the dump (--ast)
       Act_Decls  : U;     --  the %actions of the bit rules, run after the read
       Act_Body   : U;
 
@@ -2950,6 +2958,500 @@ package body HBNF_Ada is
          end;
       end if;
 
+      --  The tree as nodes (--ast): `Node` is any record or list element of the
+      --  tree, `Node_Walk` visits them (enter, leave, skip, stop), `Node_Kids`
+      --  lists a node's members, and `Node_Dump` writes the S-expression C's
+      --  node_dump writes, so a tree dumps the same in every language.  Plain
+      --  Ada over the types above; the walker knows nothing of the grammar.
+      if Ast_On and then (Is_Record (Analyze (Rules, 1))
+                          or else Analyze (Rules, 1).Kind = List)
+      then
+         declare
+            WB : U renames Ast_Body;
+            SP : U renames Free_Decls;
+
+            procedure P (Ind : Natural; S : String) is
+            begin
+               Append (WB, [1 .. 3 * Ind => ' ']);
+               Append (WB, S);
+               Append (WB, LF);
+            end P;
+
+            procedure PS (Ind : Natural; S : String) is
+            begin
+               Append (SP, [1 .. 3 * Ind => ' ']);
+               Append (SP, S);
+               Append (SP, LF);
+            end PS;
+
+            function Q (S : String) return String is ("""" & Ada_Escape (S) & """");
+
+            function Walked_Kind (I : Natural) return Boolean is
+              (Is_Record (Analyze (Rules, I)) or else Analyze (Rules, I).Kind = List);
+
+            function V (I : Natural) return String is
+              (Ada_Ident (To_String (Rules (I).Name)));
+
+            --  The type a node of rule I points at.
+            function Elem_Type (I : Natural) return String is
+               Info : constant Rule_Info := Analyze (Rules, I);
+            begin
+               if Is_Record (Info) then
+                  return V (I) & "_Type";
+               elsif not Info.Elem_Members.Is_Empty then
+                  return V (I) & "_Entry";
+               elsif Info.Elem_Name /= Null_Unbounded_String then
+                  declare
+                     EN : constant String := To_String (Info.Elem_Name);
+                     E  : constant Natural := Find (Rules, EN);
+                  begin
+                     if E > 0 and then Is_Record (Analyze (Rules, E)) then
+                        return Ada_Ident (EN) & "_Type";
+                     elsif Alias_Record (Rules, EN) /= 0 then
+                        return Ada_Ident
+                          (To_String (Rules (Leaf_Record (Rules, EN)).Name)) & "_Type";
+                     end if;
+                     return Ada_Type_Of (Rules, EN);
+                  end;
+               end if;
+               return "Unbounded_String";
+            end Elem_Type;
+
+            --  Whether the elements of list rule I sit in the vector through
+            --  an access (a record) rather than by value.
+            function Elem_Is_Access (I : Natural) return Boolean is
+               Info : constant Rule_Info := Analyze (Rules, I);
+            begin
+               if Info.Kind /= List or else not Info.Elem_Members.Is_Empty
+                 or else Info.Elem_Name = Null_Unbounded_String
+               then
+                  return False;
+               end if;
+               declare
+                  EN : constant String := To_String (Info.Elem_Name);
+                  E  : constant Natural := Find (Rules, EN);
+               begin
+                  return (E > 0 and then Is_Record (Analyze (Rules, E)))
+                    or else Alias_Record (Rules, EN) /= 0;
+               end;
+            end Elem_Is_Access;
+
+            function Node_Of (I : Natural; Ref : String) return String is
+              ("(Kind => " & V (I) & "_Kind, Ref_" & V (I) & " => " & Ref & ")");
+
+            --  A node of list rule L from the element Idx of the vector Vec.
+            function Elem_Node (L : Natural; Vec, Idx : String) return String is
+              (if Elem_Is_Access (L)
+               then Node_Of (L, V (L) & "_Ref (" & Vec & ".Element (" & Idx & "))")
+               else Node_Of (L, V (L) & "_Ref'(" & Vec & ".Constant_Reference ("
+                                & Idx & ").Element.all'Unchecked_Access)"));
+
+            procedure Push (Ind : Natural; Name, Index, Value : String) is
+            begin
+               P (Ind, "K.Append (Kid'(Name => To_Unbounded_String (" & Q (Name)
+                  & "), Index => " & Index & ", Value => " & Value & "));");
+            end Push;
+
+            procedure Kid
+              (Idx : Natural; Nm : String; Is_List : Boolean; Prefix : String;
+               Held : Boolean; Ind : Natural)
+            is
+               F   : constant String := Prefix & Ada_Field (Nm);
+               Lbl : constant String := HBNF_C.Member_Label (Nm);
+               J   : constant Natural := Find (Rules, Nm);
+               T   : constant String :=
+                 (if Is_Char_Rule (Rules, Nm) then "Unbounded_String"
+                  else Resolve_Type (Rules, Nm));
+               Rec : constant Natural :=
+                 (if J > 0 and then Is_Record (Analyze (Rules, J)) then J
+                  elsif Is_Back (Backs, Idx, Nm) then Leaf_Record (Rules, Nm)
+                  elsif Held and then Alias_Record (Rules, Nm) /= 0
+                  then Leaf_Record (Rules, Nm)
+                  else 0);
+            begin
+               if Is_List then
+                  if Rec > 0 or else (J > 0 and then Alias_Record (Rules, Nm) /= 0) then
+                     declare
+                        R : constant Natural :=
+                          (if Rec > 0 then Rec else Leaf_Record (Rules, Nm));
+                     begin
+                        P (Ind, "for I in " & F & ".First_Index .. " & F & ".Last_Index loop");
+                        Push (Ind + 1, Lbl, "I - " & F & ".First_Index",
+                              "(Kind => Node_Val, N => "
+                              & Node_Of (R, V (R) & "_Ref (" & F & ".Element (I))") & ")");
+                        P (Ind, "end loop;");
+                     end;
+                  elsif T = "Unbounded_String" then
+                     P (Ind, "for I in " & F & ".First_Index .. " & F & ".Last_Index loop");
+                     Push (Ind + 1, Lbl, "I - " & F & ".First_Index",
+                           "(Kind => Str_Val, S => " & F & ".Element (I))");
+                     P (Ind, "end loop;");
+                  end if;
+               elsif Rec > 0 then
+                  P (Ind, "if " & F & " /= null then");
+                  Push (Ind + 1, Lbl, "-1", "(Kind => Node_Val, N => "
+                        & Node_Of (Rec, V (Rec) & "_Ref (" & F & ")") & ")");
+                  P (Ind, "end if;");
+               elsif J > 0 and then Analyze (Rules, J).Kind = List then
+                  P (Ind, "for I in " & F & ".First_Index .. " & F & ".Last_Index loop");
+                  Push (Ind + 1, Lbl, "I - " & F & ".First_Index",
+                        "(Kind => Node_Val, N => " & Elem_Node (J, F, "I") & ")");
+                  P (Ind, "end loop;");
+               elsif J > 0 and then Analyze (Rules, J).Kind = Enum then
+                  declare
+                     Names : constant String_Vectors.Vector :=
+                       Enum_Names (Analyze (Rules, J).Literals);
+                  begin
+                     P (Ind, "case " & F & " is");
+                     for Ln in 1 .. Natural (Analyze (Rules, J).Literals.Length) loop
+                        P (Ind + 1, "when " & Ada_Ident (Nm) & "_" & To_String (Names (Ln)) & " =>");
+                        Push (Ind + 2, Lbl, "-1", "(Kind => Enum_Val, E => To_Unbounded_String ("
+                              & Q (To_String (Analyze (Rules, J).Literals (Ln))) & "))");
+                     end loop;
+                     P (Ind, "end case;");
+                  end;
+               elsif T = "Unbounded_String" then
+                  Push (Ind, Lbl, "-1", "(Kind => Str_Val, S => " & F & ")");
+               elsif T = "Boolean" then
+                  Push (Ind, Lbl, "-1", "(Kind => Bool_Val, B => " & F & ")");
+               elsif T'Length > 8 and then T (T'First .. T'First + 7) = "Unsigned" then
+                  Push (Ind, Lbl, "-1", "(Kind => UInt_Val, U => Interfaces.Unsigned_64 (" & F & "))");
+               elsif T = "Long_Long_Integer" or else
+                 (T'Length > 7 and then T (T'First .. T'First + 6) = "Integer")
+               then
+                  Push (Ind, Lbl, "-1", "(Kind => Int_Val, I => Long_Long_Integer (" & F & "))");
+               end if;
+            end Kid;
+
+            procedure Members
+              (Idx : Natural; Alts_Of : Element_Vectors.Vector; Has_Alts : Boolean;
+               All_Members : Member_Vectors.Vector; Bare : Boolean; Ind : Natural)
+            is
+            begin
+               if not Has_Alts then
+                  for M of All_Members loop
+                     Kid (Idx, To_String (M.Name), M.Is_List and then not Bare, "X.", Bare, Ind);
+                  end loop;
+                  return;
+               end if;
+               P (Ind, "case X.Alt_No is");
+               declare
+                  St : Natural := 1;
+                  Br : Natural := 0;
+                  Nn : constant Natural := Natural (Alts_Of.Length);
+               begin
+                  for Kk in 1 .. Nn + 1 loop
+                     if Kk > Nn or else Alts_Of (Kk).Kind = Alt then
+                        Br := Br + 1;
+                        declare
+                           Sub  : Element_Vectors.Vector;
+                           Ms   : Member_Vectors.Vector;
+                           Lits : String_Vectors.Vector;
+                           Hasa : Boolean := False;
+                        begin
+                           for Jj in St .. Kk - 1 loop
+                              Sub.Append (Alts_Of (Jj));
+                           end loop;
+                           Collect (Sub, Ms, Lits, Hasa);
+                           P (Ind + 1, "when " & Img (Br) & " =>");
+                           for M of Ms loop
+                              Kid (Idx, To_String (M.Name), M.Is_List and then not Bare,
+                                   "X.", Bare, Ind + 2);
+                           end loop;
+                           P (Ind + 2, "null;");
+                        end;
+                        St := Kk + 1;
+                     end if;
+                  end loop;
+               end;
+               P (Ind + 1, "when others => null;");
+               P (Ind, "end case;");
+            end Members;
+
+            function Has_Alts (I : Natural) return Boolean is
+              (Struct_Alt (Rules (I), Analyze (Rules, I))
+               or else Entry_Alt (Rules (I), Analyze (Rules, I)));
+
+            function Alt_Els (I : Natural) return Element_Vectors.Vector is
+              (if Analyze (Rules, I).Kind = Struct then Rules (I).Pattern
+               else Rules (I).Pattern (1).Items);
+         begin
+            --  the specification
+            PS (1, "--  The tree as nodes (--ast): any record or list element, walked, listed and dumped.");
+            declare
+               Kinds : Unbounded_String;
+            begin
+               for I in 1 .. N loop
+                  if Walked_Kind (I) then
+                     Append (Kinds, (if Length (Kinds) > 0 then ", " else "") & V (I) & "_Kind");
+                  end if;
+               end loop;
+               PS (1, "type Node_Kind is (" & To_String (Kinds) & ");");
+            end;
+            for I in 1 .. N loop
+               if Walked_Kind (I) then
+                  PS (1, "type " & V (I) & "_Ref is access constant " & Elem_Type (I) & ";");
+               end if;
+            end loop;
+            PS (1, "type Node (Kind : Node_Kind := " & V (1) & "_Kind) is record");
+            PS (2, "case Kind is");
+            for I in 1 .. N loop
+               if Walked_Kind (I) then
+                  PS (3, "when " & V (I) & "_Kind => Ref_" & V (I) & " : " & V (I) & "_Ref;");
+               end if;
+            end loop;
+            PS (2, "end case;");
+            PS (1, "end record;");
+            PS (1, "type Val_Kind is (Node_Val, Str_Val, Int_Val, UInt_Val, Bool_Val, Enum_Val);");
+            PS (1, "type Val (Kind : Val_Kind := Str_Val) is record");
+            PS (2, "case Kind is");
+            PS (3, "when Node_Val => N : Node;");
+            PS (3, "when Str_Val  => S : Unbounded_String;");
+            PS (3, "when Int_Val  => I : Long_Long_Integer;");
+            PS (3, "when UInt_Val => U : Interfaces.Unsigned_64;");
+            PS (3, "when Bool_Val => B : Boolean;");
+            PS (3, "when Enum_Val => E : Unbounded_String;");
+            PS (2, "end case;");
+            PS (1, "end record;");
+            PS (1, "--  A member of a node: its name, its place if it is a list element (-1 if not), what it holds.");
+            PS (1, "type Kid is record");
+            PS (2, "Name  : Unbounded_String;");
+            PS (2, "Index : Integer := -1;");
+            PS (2, "Value : Val;");
+            PS (1, "end record;");
+            PS (1, "package Kid_Vectors is new Ada.Containers.Vectors (Positive, Kid);");
+            PS (1, "type Walk_Action is (Continue, Skip, Stop);");
+            PS (1, "--  Override Enter and Leave; Enter answers Continue, Skip (no descent, no Leave) or Stop.");
+            PS (1, "type Walker is abstract tagged limited null record;");
+            PS (1, "function Enter (W : in out Walker; N : Node) return Walk_Action is (Continue);");
+            PS (1, "function Leave (W : in out Walker; N : Node) return Walk_Action is (Continue);");
+            PS (1, "function Node_Kind_Name (N : Node) return String;");
+            PS (1, "--  Which alternative a node took, from 1; 0 for a node whose rule has none recorded.");
+            PS (1, "function Node_Alt (N : Node) return Natural;");
+            PS (1, "function Node_Alt_Name (N : Node; Alt : Natural) return String;");
+            PS (1, "function Node_Kids (N : Node) return Kid_Vectors.Vector;");
+            PS (1, "--  False if the walk was stopped.");
+            PS (1, "function Node_Walk (N : Node; W : in out Walker'Class) return Boolean;");
+            PS (1, "--  The S-expression of a node: (kind[alternative] member=value ...).");
+            PS (1, "function Node_Dump (N : Node) return String;");
+            PS (1, "--  Two nodes are equal when their dumps are.");
+            PS (1, "function Node_Equal (A, B : Node) return Boolean;");
+            declare
+               R  : constant Rule := Rules (1);
+               CN : constant String := Ada_Ident (To_String (R.Name));
+            begin
+               PS (1, "function Walk_" & CN & " (Root : " & Ret_Type (1)
+                   & "; W : in out Walker'Class) return Boolean;");
+               PS (1, "function Dump_" & CN & " (Root : " & Ret_Type (1) & ") return String;");
+            end;
+            PS (0, "");
+
+            --  the body
+            P (1, "--  ---- the tree as nodes (--ast) ----");
+            P (1, "function Node_Kind_Name (N : Node) return String is");
+            P (2, "(case N.Kind is");
+            declare
+               First : Boolean := True;
+            begin
+               for I in 1 .. N loop
+                  if Walked_Kind (I) then
+                     P (3, (if First then "" else "") & "when " & V (I) & "_Kind => "
+                        & Q (To_String (Rules (I).Name)) & ",");
+                     First := False;
+                  end if;
+               end loop;
+            end;
+            P (3, "when others => """");");
+            P (1, "");
+            P (1, "function Node_Alt (N : Node) return Natural is");
+            P (1, "begin");
+            P (2, "case N.Kind is");
+            for I in 1 .. N loop
+               if Walked_Kind (I) and then Has_Alts (I) then
+                  P (3, "when " & V (I) & "_Kind => return N.Ref_" & V (I) & ".Alt_No;");
+               end if;
+            end loop;
+            P (3, "when others => return 0;");
+            P (2, "end case;");
+            P (1, "end Node_Alt;");
+            P (1, "");
+            P (1, "function Node_Alt_Name (N : Node; Alt : Natural) return String is");
+            P (1, "begin");
+            P (2, "case N.Kind is");
+            for I in 1 .. N loop
+               if Walked_Kind (I) and then Has_Alts (I) then
+                  P (3, "when " & V (I) & "_Kind =>");
+                  P (4, "case Alt is");
+                  declare
+                     Els : constant Element_Vectors.Vector := Alt_Els (I);
+                     Nb  : Natural := 1;
+                  begin
+                     for X of Els loop
+                        if X.Kind = Alt then
+                           Nb := Nb + 1;
+                        end if;
+                     end loop;
+                     for B in 1 .. Nb loop
+                        P (5, "when " & Img (B) & " => return " & Q (HBNF_C.Alt_Label (Els, B)) & ";");
+                     end loop;
+                  end;
+                  P (5, "when others => return """";");
+                  P (4, "end case;");
+               end if;
+            end loop;
+            P (3, "when others => return """";");
+            P (2, "end case;");
+            P (1, "end Node_Alt_Name;");
+            P (1, "");
+            P (1, "function Node_Kids (N : Node) return Kid_Vectors.Vector is");
+            P (2, "K : Kid_Vectors.Vector;");
+            P (1, "begin");
+            P (2, "case N.Kind is");
+            for I in 1 .. N loop
+               if Walked_Kind (I) then
+                  declare
+                     Info : constant Rule_Info := Analyze (Rules, I);
+                  begin
+                     P (3, "when " & V (I) & "_Kind =>");
+                     P (4, "declare");
+                     P (5, "X : constant " & V (I) & "_Ref := N.Ref_" & V (I) & ";");
+                     P (4, "begin");
+                     if Is_Record (Info) then
+                        Members (I, Alt_Els (I), Has_Alts (I), Info.Members, False, 5);
+                     elsif not Info.Elem_Members.Is_Empty then
+                        Members (I, Alt_Els (I), Has_Alts (I), Info.Elem_Members, True, 5);
+                     elsif Info.Elem_Name /= Null_Unbounded_String then
+                        declare
+                           EN : constant String := To_String (Info.Elem_Name);
+                           E  : constant Natural := Find (Rules, EN);
+                           Lf : constant Natural :=
+                             (if E > 0 and then Is_Record (Analyze (Rules, E)) then E
+                              elsif Alias_Record (Rules, EN) /= 0 then Leaf_Record (Rules, EN)
+                              else 0);
+                        begin
+                           if Lf > 0 then
+                              Push (5, HBNF_C.Member_Label (EN), "-1",
+                                    "(Kind => Node_Val, N => " & Node_Of (Lf, V (Lf) & "_Ref (X)") & ")");
+                           elsif Resolve_Type (Rules, EN) = "Unbounded_String" then
+                              Push (5, HBNF_C.Member_Label (EN), "-1", "(Kind => Str_Val, S => X.all)");
+                           end if;
+                        end;
+                     else
+                        Push (5, "value", "-1", "(Kind => Str_Val, S => X.all)");
+                     end if;
+                     P (5, "null;");
+                     P (4, "end;");
+                  end;
+               end if;
+            end loop;
+            P (2, "end case;");
+            P (2, "return K;");
+            P (1, "end Node_Kids;");
+            P (1, "");
+            P (1, "function Node_Walk (N : Node; W : in out Walker'Class) return Boolean is");
+            P (2, "A : constant Walk_Action := Enter (W, N);");
+            P (1, "begin");
+            P (2, "if A = Stop then");
+            P (3, "return False;");
+            P (2, "elsif A = Skip then");
+            P (3, "return True;");
+            P (2, "end if;");
+            P (2, "for K of Node_Kids (N) loop");
+            P (3, "if K.Value.Kind = Node_Val and then not Node_Walk (K.Value.N, W) then");
+            P (4, "return False;");
+            P (3, "end if;");
+            P (2, "end loop;");
+            P (2, "return Leave (W, N) /= Stop;");
+            P (1, "end Node_Walk;");
+            P (1, "");
+            P (1, "procedure Dump_Into (S : in out Unbounded_String; N : Node) is");
+            P (2, "A : constant Natural := Node_Alt (N);");
+            P (2, "function Img (X : Long_Long_Integer) return String is");
+            P (3, "(if X < 0 then Long_Long_Integer'Image (X)");
+            P (3, " else Long_Long_Integer'Image (X) (2 .. Long_Long_Integer'Image (X)'Last));");
+            P (1, "begin");
+            P (2, "Append (S, ""("" & Node_Kind_Name (N));");
+            P (2, "if A /= 0 then");
+            P (3, "Append (S, ""["" & Node_Alt_Name (N, A) & ""]"");");
+            P (2, "end if;");
+            P (2, "for K of Node_Kids (N) loop");
+            P (3, "Append (S, "" "" & To_String (K.Name));");
+            P (3, "if K.Index >= 0 then");
+            P (4, "Append (S, ""["" & Img (Long_Long_Integer (K.Index)) & ""]"");");
+            P (3, "end if;");
+            P (3, "Append (S, ""="");");
+            P (3, "case K.Value.Kind is");
+            P (4, "when Node_Val => Dump_Into (S, K.Value.N);");
+            P (4, "when Str_Val =>");
+            P (5, "Append (S, '""');");
+            P (5, "for C of To_String (K.Value.S) loop");
+            P (6, "if C = '""' or else C = '\' then");
+            P (7, "Append (S, '\');");
+            P (6, "end if;");
+            P (6, "if C = ASCII.LF then");
+            P (7, "Append (S, ""\n"");");
+            P (6, "else");
+            P (7, "Append (S, C);");
+            P (6, "end if;");
+            P (5, "end loop;");
+            P (5, "Append (S, '""');");
+            P (4, "when Int_Val  => Append (S, Img (K.Value.I));");
+            P (4, "when UInt_Val => Append (S, Img (Long_Long_Integer (K.Value.U)));");
+            P (4, "when Bool_Val => Append (S, (if K.Value.B then ""true"" else ""false""));");
+            P (4, "when Enum_Val => Append (S, K.Value.E);");
+            P (3, "end case;");
+            P (2, "end loop;");
+            P (2, "Append (S, "")"");");
+            P (1, "end Dump_Into;");
+            P (1, "");
+            P (1, "function Node_Dump (N : Node) return String is");
+            P (2, "S : Unbounded_String;");
+            P (1, "begin");
+            P (2, "Dump_Into (S, N);");
+            P (2, "return To_String (S);");
+            P (1, "end Node_Dump;");
+            P (1, "");
+            P (1, "function Node_Equal (A, B : Node) return Boolean is");
+            P (2, "(Node_Dump (A) = Node_Dump (B));");
+            P (1, "");
+            declare
+               R  : constant Rule := Rules (1);
+               CN : constant String := Ada_Ident (To_String (R.Name));
+            begin
+               P (1, "function Walk_" & CN & " (Root : " & Ret_Type (1)
+                  & "; W : in out Walker'Class) return Boolean is");
+               P (1, "begin");
+               if Is_Record (Analyze (Rules, 1)) then
+                  P (2, "return Node_Walk (" & Node_Of (1, V (1) & "_Ref'(Root'Unrestricted_Access)") & ", W);");
+               else
+                  P (2, "for I in Root.First_Index .. Root.Last_Index loop");
+                  P (3, "if not Node_Walk (" & Elem_Node (1, "Root", "I") & ", W) then");
+                  P (4, "return False;");
+                  P (3, "end if;");
+                  P (2, "end loop;");
+                  P (2, "return True;");
+               end if;
+               P (1, "end Walk_" & CN & ";");
+               P (1, "");
+               P (1, "function Dump_" & CN & " (Root : " & Ret_Type (1) & ") return String is");
+               if Is_Record (Analyze (Rules, 1)) then
+                  P (1, "begin");
+                  P (2, "return Node_Dump (" & Node_Of (1, V (1) & "_Ref'(Root'Unrestricted_Access)") & ");");
+               else
+                  P (2, "S : Unbounded_String := To_Unbounded_String (""(" & To_String (R.Name) & """);");
+                  P (1, "begin");
+                  P (2, "for I in Root.First_Index .. Root.Last_Index loop");
+                  P (3, "Append (S, "" "");");
+                  P (3, "Dump_Into (S, " & Elem_Node (1, "Root", "I") & ");");
+                  P (2, "end loop;");
+                  P (2, "return To_String (S) & "")"";");
+               end if;
+               P (1, "end Dump_" & CN & ";");
+               P (1, "");
+            end;
+         end;
+      end if;
+
       if Writer_On and then (Is_Record (Analyze (Rules, 1))
                              or else Analyze (Rules, 1).Kind = List)
       then
@@ -2975,6 +3477,9 @@ package body HBNF_Ada is
          Mustache.Put (V, "conf", Conf_Decl);
          Mustache.Put (V, "frees", To_String (Free_Decls));
          Mustache.Put (V, "hosted_spec", To_String (Hosted_Spec));
+         Mustache.Put (V, "spec_withs",
+           (if Length (Ast_Body) > 0
+            then "with Ada.Containers.Vectors;" & LF & "with Interfaces;" & LF else ""));
          Append (Spec, Mustache.Render_File ("ada_parser_spec", V));
          Append (Spec, LF);
       end;
@@ -3445,6 +3950,8 @@ package body HBNF_Ada is
             end if;
          end;
       end loop;
+
+      Append (Bdy, To_String (Ast_Body));
 
       --  The rules an error names, by number (a rule the reader made up for a
       --  group or an option is left out), and the message of the farthest failure:

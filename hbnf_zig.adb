@@ -2071,7 +2071,7 @@ package body HBNF_Zig is
          P (1, "};");
          P (0, "}");
          P (0, "");
-         P (0, "pub fn node_alt_name(n: Node, alt: usize) []const u8 {");
+         P (0, "pub fn node_alt_name(n: Node, " & (if (for some I in 1 .. N => Walked_Kind (I) and then Has_Alts (I)) then "alt" else "_") & ": usize) []const u8 {");
          P (1, "switch (n) {");
          for I in 1 .. N loop
             if Walked_Kind (I) and then Has_Alts (I) then
