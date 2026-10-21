@@ -1,0 +1,4 @@
+language C
+prefix none
+doc = n int
+n = "dec"@40 | "hex"@0x1F | "bin"@0b101 | "oct"@0o10 | "next"

@@ -702,6 +702,33 @@ package body HBNF_Grammar is
       end if;
    end Hex_Digit;
 
+   --  The value of a number as the lexer reads it, whatever its form: decimal, `0x` hex, `0b` binary, `0o` octal.
+   --  Every place that takes a number (an enum value, a bit position, a width, a repeat count) goes through this one
+   --  function, so no spelling works in one place and not another.
+   function Number_Value (S : String) return Long_Long_Integer is
+      Base  : Long_Long_Integer := 10;
+      First : Positive := S'First;
+      V     : Long_Long_Integer := 0;
+      D     : Integer;
+   begin
+      if S'Length > 2 and then S (S'First) = '0' then
+         case S (S'First + 1) is
+            when 'x' | 'X' => Base := 16;  First := S'First + 2;
+            when 'b' | 'B' => Base := 2;   First := S'First + 2;
+            when 'o' | 'O' => Base := 8;   First := S'First + 2;
+            when others    => null;
+         end case;
+      end if;
+      for I in First .. S'Last loop
+         D := Hex_Digit (S (I));
+         if D < 0 or else Long_Long_Integer (D) >= Base then
+            raise Constraint_Error with "bad digit in the number " & S;
+         end if;
+         V := V * Base + Long_Long_Integer (D);
+      end loop;
+      return V;
+   end Number_Value;
+
    --  The rule a `<...>` names: its words joined with `-`, so `<table
    --  reference>` is `table-reference` and `<pchar>` is `pchar`.  Text that is
    --  not a name (`<host, see [URI], Section 3.2.2>`) keeps its characters as
@@ -1906,6 +1933,15 @@ package body HBNF_Grammar is
                         I := I + 1;
                      end loop;
                   elsif Text (I) = '0' and then I + 2 <= Text'Last
+                    and then Text (I + 1) in 'o' | 'O'
+                    and then Text (I + 2) in '0' .. '7'
+                  then
+                     --  0o17: octal, three bits to a digit in the bit layer.
+                     I := I + 2;
+                     while I <= Text'Last and then Text (I) in '0' .. '7' loop
+                        I := I + 1;
+                     end loop;
+                  elsif Text (I) = '0' and then I + 2 <= Text'Last
                     and then Text (I + 1) in 'b' | 'B'
                     and then Text (I + 2) in '0' | '1'
                   then
@@ -2114,10 +2150,9 @@ package body HBNF_Grammar is
            Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": " & Msg;
       end Bad;
 
+      --  A number is a number, in whatever form it is written (Number_Value).
       function Is_Plain_Decimal (T : Token) return Boolean is
-        (T.Kind = T_Number
-         and then not (Length (T.Text) > 1
-                       and then Ada.Strings.Unbounded.Element (T.Text, 2) in 'x' | 'X' | 'b' | 'B'));
+        (T.Kind = T_Number);
    begin
       if Cur (P).Kind = T_At then
          Next (P);
@@ -2125,7 +2160,7 @@ package body HBNF_Grammar is
             Bad (Cur (P), "expected the bit the field starts at after `@` "
                  & "(`" & To_String (Name_Tok.Text) & "@0:4`)");
          end if;
-         F.F_At := Integer'Value (To_String (Cur (P).Text));
+         F.F_At := Integer (Number_Value (To_String (Cur (P).Text)));
          Next (P);
          if Cur (P).Kind /= T_Colon then
             Bad (Cur (P), "`" & To_String (Name_Tok.Text) & "@"
@@ -2148,10 +2183,10 @@ package body HBNF_Grammar is
                if Cur (P).Kind = T_Star then
                   --  `n*rule`, `n*m rule`
                   Next (P);
-                  F.F_Min := Natural'Value (To_String (T.Text));
+                  F.F_Min := Natural (Number_Value (To_String (T.Text)));
                   F.F_Max := -1;
                   if Is_Plain_Decimal (Cur (P)) then
-                     F.F_Max := Integer'Value (To_String (Cur (P).Text));
+                     F.F_Max := Integer (Number_Value (To_String (Cur (P).Text)));
                      Next (P);
                   end if;
                   if Cur (P).Kind /= T_Name then
@@ -2167,7 +2202,7 @@ package body HBNF_Grammar is
                else
                   declare
                      W : constant Long_Long_Integer :=
-                       Long_Long_Integer'Value (To_String (T.Text));
+                       Number_Value (To_String (T.Text));
                   begin
                      if W = 0 or else W > 64 then
                         Bad (T, "a field of" & Long_Long_Integer'Image (W)
@@ -2589,14 +2624,15 @@ package body HBNF_Grammar is
       --  A constant of the bit layer, as wide as its digits: 0x0800, 0b101.
       if Cur (P).Kind = T_Number and then Length (Cur (P).Text) > 2
         and then Ada.Strings.Unbounded.Element (Cur (P).Text, 1) = '0'
-        and then Ada.Strings.Unbounded.Element (Cur (P).Text, 2) in 'x' | 'X' | 'b' | 'B'
+        and then Ada.Strings.Unbounded.Element (Cur (P).Text, 2) in 'x' | 'X' | 'b' | 'B' | 'o' | 'O'
       then
          declare
             T      : constant Token := Cur (P);
             S      : constant String := To_String (T.Text);
             Hexa   : constant Boolean := S (S'First + 1) in 'x' | 'X';
+            Octal  : constant Boolean := S (S'First + 1) in 'o' | 'O';
             Dgs    : constant String := S (S'First + 2 .. S'Last);
-            Bits   : constant Natural := Dgs'Length * (if Hexa then 4 else 1);
+            Bits   : constant Natural := Dgs'Length * (if Hexa then 4 elsif Octal then 3 else 1);
          begin
             Next (P);
             if Bits > 64 then
@@ -2609,7 +2645,7 @@ package body HBNF_Grammar is
               (Kind => Bit_Field, Min => 1, Max => 1,
                F_Kind => HBNF_Wire.S_Const, F_Bits => Bits,
                F_Value => Interfaces.Unsigned_64'Value
-                            ((if Hexa then "16#" else "2#") & Dgs & "#"),
+                            ((if Hexa then "16#" elsif Octal then "8#" else "2#") & Dgs & "#"),
                F_Line => T.Line, F_Col => T.Col, others => <>);
          end;
       end if;
@@ -2629,7 +2665,7 @@ package body HBNF_Grammar is
             Outer : Element_Access;
          begin
             if Cur (P).Kind = T_Number then
-               N := Natural'Value (To_String (Cur (P).Text));
+               N := Natural (Number_Value (To_String (Cur (P).Text)));
                Next (P);
             end if;
             Next (P);                                   --  the #
@@ -2638,7 +2674,7 @@ package body HBNF_Grammar is
                          T_Name | T_String | T_LParen | T_LBrack | T_Pct
                          | T_Char | T_Prose | T_Tilde
             then
-               M := Integer'Value (To_String (Cur (P).Text));
+               M := Integer (Number_Value (To_String (Cur (P).Text)));
                Next (P);
             end if;
             if M >= 0 and then M < N then
@@ -2673,10 +2709,10 @@ package body HBNF_Grammar is
          Min := 0;  Max := -1;  Has_Prefix := True;  Next (P);
          --  `*m`: at most m (`*2DIGIT`).
          if Cur (P).Kind = T_Number then
-            Max := Integer'Value (To_String (Cur (P).Text));  Next (P);
+            Max := Integer (Number_Value (To_String (Cur (P).Text)));  Next (P);
          end if;
       elsif Cur (P).Kind = T_Number then
-         Min := Natural'Value (To_String (Cur (P).Text));
+         Min := Natural (Number_Value (To_String (Cur (P).Text)));
          --  A number with nothing to repeat is a bare terminal, as Backus-Naur
          --  form writes `0`; hbnf writes it in quotes.
          if P.Toks (P.Pos + 1).Kind in T_Bar | T_Slash | T_Newline | T_EOF
@@ -2695,7 +2731,7 @@ package body HBNF_Grammar is
          if Cur (P).Kind = T_Star then
             Next (P);
             if Cur (P).Kind = T_Number then
-               Max := Integer'Value (To_String (Cur (P).Text));  Next (P);
+               Max := Integer (Number_Value (To_String (Cur (P).Text)));  Next (P);
             else
                Max := -1;
             end if;
@@ -2737,10 +2773,7 @@ package body HBNF_Grammar is
                T : constant String := To_String (P.Toks (P.Pos + 1).Text);
                V : Long_Long_Integer;
             begin
-               V := (if T'Length > 2 and then T (T'First + 1) in 'x' | 'X'
-                     then Long_Long_Integer'Value
-                            ("16#" & T (T'First + 2 .. T'Last) & "#")
-                     else Long_Long_Integer'Value (T));
+               V := Number_Value (T);
                if V > 2_147_483_647 then
                   raise Parse_Error with
                     Integer'Image (P.Toks (P.Pos + 1).Line) & ":"

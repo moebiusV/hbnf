@@ -138,6 +138,10 @@ A rule that is a list of constants (`ethertype = 0x0800 | 0x0806 | 0x86DD`) is a
 **value set**.  A field named for it, or of its type, must be one of those
 values: `ethertype:16`.
 
+**Numbers.** Wherever a number is taken (an enum value `"x"@N`, the bit a field starts at, a width, a repeat count, a constant) it may be written
+in decimal, `0x` hex, `0b` binary or `0o` octal: a number is a number. A constant's width is its digits (4 bits to a hex digit, 3 to an octal
+digit, 1 to a binary digit); a decimal number has none. `tests/numbers.sh` checks every spelling at every place.
+
 ### Expressions
 
 `expr` is C's integer arithmetic: `+ - * / % << >> & | ^ ~ !`, comparisons,

@@ -1,0 +1,3 @@
+prefix none
+; a number is a number: widths, positions and constants in decimal, hex, binary and octal
+rec = hi:0b100 lo@0o4:0x4 0xF0 oct:0o3 pad:5
