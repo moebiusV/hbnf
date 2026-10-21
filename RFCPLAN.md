@@ -1550,6 +1550,15 @@ lookahead or a context test not at all.
     measure before it is made the default: the wrapper costs a call and two stores
     per rule read, and about 12% of source on pfctl.
 
+   **Error messages that name every way on (2026-10-21, C; `tests/errors.sh`).**  An error used to
+   name only the first thing tried at the farthest place (`expected `{`, found ,` for a missing
+   value).  It now names every one of them there (`expected one of `{`, `[`, string, number, ...`),
+   and a failure in something that took more than a couple of lines (at the end of the input, one
+   line; else three) also says where the innermost enclosing rule began, with its line: the
+   `'BEGIN'` with no `'END'`.  The rule stack with start positions is kept always (it was
+   `--paths` only); `--paths` still adds the `(in a > b)` path.  Not yet: the same in Rust, Zig and
+   Ada, and an end point for a construct that closed too early.
+
 8. **Compiler-quality diagnostics and error recovery.**  Expected-error
    fixtures, source-span diagnostics, rule traces, and a schema linter
    (nullable repetition, unreachable rules, shadowed ordered choice,

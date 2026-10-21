@@ -6,4 +6,4 @@ a : = b;               refused: expected something other than `=`, found
 a := := b;             refused: expected a string, found :
 a, b;                  pair 
 a :, b;                refused: expected a string, found ,
-a =, b;                refused: expected `:`, found =
+a =, b;                refused: expected one of `:`, `:=`, found =

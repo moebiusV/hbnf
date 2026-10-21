@@ -7026,18 +7026,17 @@ package body HBNF_C is
                      & "start; unsigned bit, unit; int active; } sv;"
                      & ASCII.LF)),
             H ("path_field",
-               (if Paths_On
-                then "    unsigned depth, err_depth;   /* the rules being read, "
-                     & "and when the farthest error was seen (--paths) */"
-                     & ASCII.LF
-                     & "    unsigned short stk[24], err_stk[24];" & ASCII.LF
-                else "")),
+               "    unsigned depth, err_depth;   /* the rules being read, "
+               & "and when the farthest error was seen */"
+               & ASCII.LF
+               & "    unsigned short stk[24], err_stk[24];" & ASCII.LF
+               & "    size_t stkpos[24], err_stkpos[24];   /* where each began */"
+               & ASCII.LF),
             H ("path_fail",
-               (if Paths_On
-                then "    { unsigned i_, n_ = p->depth < 24 ? p->depth : 24;"
-                     & " for (i_ = 0; i_ < n_; i_++) p->err_stk[i_] = "
-                     & "p->stk[i_]; p->err_depth = n_; }" & ASCII.LF
-                else "")))));
+               "    { unsigned i_, n_ = p->depth < 24 ? p->depth : 24;"
+               & " for (i_ = 0; i_ < n_; i_++) { p->err_stk[i_] = "
+               & "p->stk[i_]; p->err_stkpos[i_] = p->stkpos[i_]; }"
+               & " p->err_depth = n_; }" & ASCII.LF))));
       end;
       Append (Res, LF);
       Append (Res, LF);
@@ -7106,7 +7105,7 @@ package body HBNF_C is
                     Ctx_On and then not Is_Char_Rule (Rules, NM)
                     and then R.Jet_Code = Null_Unbounded_String;
                begin
-                  if Paths_On or else Wrap_Ctx then
+                  if Wrap_Ctx or else True then
                      Append (Res, "static bool parse_body_" & C_Name (NM)
                        & "(parser_t *p, " & Out_Type (I) & ");" & LF
                        & "static bool parse_rule_" & C_Name (NM)
@@ -7115,13 +7114,12 @@ package body HBNF_C is
                        & (if Wrap_Ctx
                           then "    hbnf_mark_t m_;  m_ = hbnf_mark();" & LF
                           else "")
-                       & (if Paths_On
-                          then "    if (p->depth < 24) p->stk[p->depth] = "
-                               & Natural'Image (I) & ";" & LF
-                               & "    p->depth++;" & LF
-                          else "")
+                       & "    if (p->depth < 24) { p->stk[p->depth] = "
+                       & Natural'Image (I) & "; p->stkpos[p->depth] = p->pos; }"
+                       & LF
+                       & "    p->depth++;" & LF
                        & "    ok_ = parse_body_" & C_Name (NM) & "(p, out);" & LF
-                       & (if Paths_On then "    p->depth--;" & LF else "")
+                       & "    p->depth--;" & LF
                        & (if Wrap_Ctx
                           then "    if (!ok_) hbnf_reset (&m_);" & LF else "")
                        & "    return ok_;" & LF & "}" & LF
@@ -7142,7 +7140,7 @@ package body HBNF_C is
          end;
       end loop;
 
-      if Paths_On then
+      if True then
          Append (Res, "/* The rules a path names, by number (a rule the reader"
            & " made up for a group or an option is left out). */" & LF
            & "static const char *const hbnf_rn[] = { NULL," & LF);
@@ -7170,6 +7168,7 @@ package body HBNF_C is
             end;
          end loop;
          Append (Res, "};" & LF
+           & "__attribute__((unused))" & LF
            & "static void hbnf_path_str(const parser_t *p, char *buf, "
            & "size_t n) {" & LF
            & "    size_t o = 0;  unsigned i;" & LF
@@ -7182,6 +7181,30 @@ package body HBNF_C is
            & "        if (o + l + 4 >= n) break;" & LF
            & "        if (o) { memcpy(buf + o, "" > "", 3);  o += 3; }" & LF
            & "        memcpy(buf + o, s, l);  o += l;  buf[o] = 0;" & LF
+           & "    }" & LF
+           & "}" & LF & LF
+           & "/* An error in something that takes more than a line: where the"
+           & " innermost" & LF
+           & "   enclosing rule that began on an earlier line began, with its"
+           & " line. */" & LF
+           & "static void hbnf_open_note(parser_t *p, char *err, "
+           & "size_t errlen, int at_end) {" & LF
+           & "    unsigned i;  size_t el = strlen(err);" & LF
+           & "    for (i = p->err_depth; i-- > 0; ) {" & LF
+           & "        const char *s = hbnf_rn[p->err_stk[i]];" & LF
+           & "        size_t sp = p->err_stkpos[i], l, c, ls, le;" & LF
+           & "        if (!s) continue;" & LF
+           & "        while (sp < p->len && (p->text[sp] == ' ' || p->text[sp] "
+           & "== '\t' || p->text[sp] == '\n' || p->text[sp] == '\r')) sp++;" & LF
+           & "        line_col(p, sp, &l, &c);" & LF
+           & "        if (l + (at_end ? 1 : 3) > p->err_line) continue;" & LF
+           & "        for (ls = sp; ls > 0 && p->text[ls - 1] != '\n'; ls--) ;" & LF
+           & "        for (le = sp; le < p->len && p->text[le] != '\n'; le++) ;" & LF
+           & "        snprintf(err + el, errlen - el," & LF
+           & "                 at_end ? ""\n  the %s that begins on line %zu is not finished:\n  %.*s\n  %*s^""" & LF
+           & "                        : ""\n  inside the %s that begins on line %zu:\n  %.*s\n  %*s^""," & LF
+           & "                 s, l, (int)(le - ls), p->text + ls, (int)(sp - ls), """");" & LF
+           & "        return;" & LF
            & "    }" & LF
            & "}" & LF & LF);
       end if;
@@ -7273,7 +7296,7 @@ package body HBNF_C is
          Append (Res, LF);
          Append (Res, "      size_t fl = at_end ? strlen(f) : p.err_found_len;");
          Append (Res, LF);
-         Append (Res, "      char want[160];");
+         Append (Res, "      char want[640];");
          Append (Res, LF);
          if Paths_On then
             Append (Res, "      char inb[300];  inb[0] = 0;");
@@ -7283,11 +7306,7 @@ package body HBNF_C is
               & """ (in %s)"", pth); }");
             Append (Res, LF);
          end if;
-         Append (Res, "      if (p.err_is_lit) snprintf(want, sizeof want, ""`%s`"","
-           & " p.err_expected ? p.err_expected : """");");
-         Append (Res, LF);
-         Append (Res, "      else snprintf(want, sizeof want, ""%s"","
-           & " p.err_expected ? p.err_expected : """");");
+         Append (Res, "      want_text(&p, want, sizeof want);");
          Append (Res, LF);
          Append (Res, "      if (p.text && p.err_line >= hbnf_line_base) {");
          Append (Res, LF);
@@ -7325,6 +7344,8 @@ package body HBNF_C is
             Append (Res, "          snprintf(err, errlen,"
               & " ""expected %s, found %.*s\n  %.*s\n  %s^"", want, (int)fl, f, (int)ll, l, pad);");
          end if;
+         Append (Res, LF);
+         Append (Res, "          hbnf_open_note(&p, err, errlen, at_end);");
          Append (Res, LF);
          Append (Res, "      } else {");
          Append (Res, LF);

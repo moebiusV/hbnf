@@ -1,0 +1,12 @@
+'BEGIN'
+  'INTEGER' i;
+  'FOR' i := 1 'STEP' 1 'UNTIL' 10 'DO'
+  'BEGIN'
+    i := i + 1;
+    'IF' i > 5 'THEN'
+    'BEGIN'
+      i := 0
+    'END'
+
+  i := 2
+'END'

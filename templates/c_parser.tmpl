@@ -15,7 +15,11 @@ typedef struct {
     const char *err_expected, *err_found;
     size_t err_found_len;
     int err_is_lit;
-{{&bit_field}}{{&path_field}}} parser_t;
+{{&bit_field}}{{&path_field}}    /* what else could have stood at err_pos: the failures there, each told once */
+    const char *alt_exp[16];
+    unsigned char alt_lit[16];
+    int alt_n, alt_more;
+} parser_t;
 
 /* The line the text being parsed starts on: 1 for a whole file, a statement's
    first line when a config is read one statement at a time. */
@@ -32,8 +36,22 @@ static void line_col(parser_t *p, size_t pos, size_t *line, size_t *col) {
 
 static void fail(parser_t *p, const char *expected, int is_lit,
                  const char *found, size_t found_len) {
-    if (p->err_pos != (size_t)-1 && p->pos <= p->err_pos) return;  /* a deeper failure already recorded */
+    if (p->err_pos != (size_t)-1 && p->pos < p->err_pos) return;  /* a deeper failure already recorded */
+    if (p->err_pos != (size_t)-1 && p->pos == p->err_pos) {
+        /* the same place: another thing that could have stood here */
+        for (int i = 0; i < p->alt_n; i++)
+            if (p->alt_exp[i] == expected
+                || (expected && p->alt_exp[i] && !strcmp(p->alt_exp[i], expected)))
+                return;
+        if (p->alt_n < 16) {
+            p->alt_exp[p->alt_n] = expected;
+            p->alt_lit[p->alt_n++] = (unsigned char)is_lit;
+        } else p->alt_more = 1;
+        return;
+    }
     p->err_pos = p->pos;
+    p->alt_n = 1; p->alt_more = 0;
+    p->alt_exp[0] = expected; p->alt_lit[0] = (unsigned char)is_lit;
     p->err_expected = expected; p->err_found = found;
 {{&path_fail}}    if (found_len == 0 && p->pos < p->len) {
         /* a token-sized span at pos, so the error names what was found */
@@ -55,6 +73,22 @@ static void fail(parser_t *p, const char *expected, int is_lit,
     p->err_found_len = found_len; p->err_is_lit = is_lit;
     /* the line and column are worked out once, if the parse fails: counting
        the lines up to every deeper failure made a long input quadratic */
+}
+
+/* What was expected at the deepest failure: the one thing, or "one of" all
+   the things that could have stood there. */
+static void want_text(const parser_t *p, char *want, size_t cap) {
+    size_t n = 0;
+    if (p->alt_n <= 1) {
+        snprintf(want, cap, p->err_is_lit ? "`%s`" : "%s",
+                 p->err_expected ? p->err_expected : "");
+        return;
+    }
+    n = (size_t)snprintf(want, cap, "one of ");
+    for (int i = 0; i < p->alt_n && n < cap; i++)
+        n += (size_t)snprintf(want + n, cap - n, p->alt_lit[i] ? "%s`%s`" : "%s%s",
+                              i ? ", " : "", p->alt_exp[i] ? p->alt_exp[i] : "");
+    if (p->alt_more && n < cap) snprintf(want + n, cap - n, ", ...");
 }
 
 /* A punctuation- or digit-led literal: compare bytes at pos (a prefix is

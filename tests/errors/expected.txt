@@ -1,0 +1,15 @@
+== tests/errors/no-end.a60
+expected `'END'`, found end of input
+  
+  ^
+  the block that begins on line 1 is not finished:
+  'BEGIN'
+  ^
+== tests/errors/paren.a60
+expected one of `'POWER'` or `^`, `'DIV'` or `*` or `/`, `+` or `-`, `'NOTGREATER'` or `'NOTEQUAL'` or `'NOTLESS'` or `'GREATER'` or `'EQUAL'` or `'LESS'` or `<=` or `>=` or `<>` or `<` or `>` or `=`, `'AND'`, `'OR'`, `'IMPL'`, `'EQUIV'`, `)`, found ;
+    i := (1 + 2;
+               ^
+== tests/errors/json-comma.json
+expected one of `{`, `[`, string, number, `true`, `false`, `null`, found ,
+  {"a": [1, 2,, 3]}
+              ^
