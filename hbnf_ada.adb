@@ -598,6 +598,40 @@ package body HBNF_Ada is
    function Is_Record (Info : Rule_Info) return Boolean is
      (Info.Kind = Struct);
 
+
+   --  The Rust/Zig/Ada type a value of rule N is written as: a core scalar, a token, a
+   --  rule that is one name (chased), or a choice of names that all come to the same type;
+   --  "" if it is none of these.
+   function Value_Type
+     (Rules : Rule_Vectors.Vector; N : String; Depth : Natural := 0) return String
+   is
+      C : constant String := Scalar_Ada_Type (N);
+   begin
+      if C /= "" then
+         return C;
+      elsif Is_Char_Rule (Rules, N) then
+         return "Unbounded_String";
+      elsif Depth > 8 then
+         return "";
+      end if;
+      declare
+         J : constant Natural := Find (Rules, N);
+      begin
+         if J = 0 then
+            return "";
+         elsif Rules (J).Jet_Code /= Null_Unbounded_String then
+            return "Unbounded_String";
+         elsif Natural (Rules (J).Pattern.Length) = 1
+           and then Rules (J).Pattern (1).Kind = Name
+           and then Rules (J).Pattern (1).Min = 1
+           and then Rules (J).Pattern (1).Max = 1
+         then
+            return Value_Type (Rules, To_String (Rules (J).Pattern (1).Name), Depth + 1);
+         end if;
+         return Scalar_Union_Type (Rules, Rules (J).Pattern);
+      end;
+   end Value_Type;
+
    --  With --writer, a rule with alternatives records the one it took
    --  (`Alt_No`, from 1): a record whose pattern has a top-level alternation,
    --  and a list entry that is a group with one.  The writer needs it; the C
@@ -609,6 +643,18 @@ package body HBNF_Ada is
      (Spans_On and then (Info.Kind = Struct
                          or else (Info.Kind = List and then not Info.Elem_Members.Is_Empty)));
 
+   --  How many alternatives a flat list of elements with Alt separators has.
+   function Alt_Labels_Count (Els : Element_Vectors.Vector) return Natural is
+      N : Natural := 1;
+   begin
+      for X of Els loop
+         if X.Kind = Alt then
+            N := N + 1;
+         end if;
+      end loop;
+      return N;
+   end Alt_Labels_Count;
+
    function Struct_Alt (R : Rule; Info : Rule_Info) return Boolean is
      ((Writer_On or else Ast_On) and then Info.Kind = Struct
       and then Natural (R.Pattern.Length) > 1
@@ -617,7 +663,6 @@ package body HBNF_Ada is
    function Entry_Alt (R : Rule; Info : Rule_Info) return Boolean is
      ((Writer_On or else Ast_On) and then Info.Kind = List
       and then not Info.Elem_Members.Is_Empty
-      and then R.Left_Bases = 0
       and then Natural (R.Pattern.Length) = 1
       and then R.Pattern (1).Kind = Group
       and then (for some X of R.Pattern (1).Items => X.Kind = Alt));
@@ -3010,7 +3055,8 @@ package body HBNF_Ada is
       --  node_dump writes, so a tree dumps the same in every language.  Plain
       --  Ada over the types above; the walker knows nothing of the grammar.
       if Ast_On and then (Is_Record (Analyze (Rules, 1))
-                          or else Analyze (Rules, 1).Kind = List)
+                          or else Analyze (Rules, 1).Kind = List
+                          or else Over_Leaf (Rules, 1))
       then
          declare
             WB : U renames Ast_Body;
@@ -3082,6 +3128,11 @@ package body HBNF_Ada is
                end;
             end Elem_Is_Access;
 
+            --  The rule the root is walked as: itself, or what it is an alias of.
+            Rt : constant Natural :=
+              (if Is_Record (Analyze (Rules, 1)) or else Analyze (Rules, 1).Kind = List
+               then 1 else Leaf_Target (Rules, 1));
+
             function Node_Of (I : Natural; Ref : String) return String is
               ("(Kind => " & V (I) & "_Kind, Ref_" & V (I) & " => " & Ref & ")");
 
@@ -3106,8 +3157,7 @@ package body HBNF_Ada is
                Lbl : constant String := HBNF_C.Member_Label (Nm);
                J   : constant Natural := Find (Rules, Nm);
                T   : constant String :=
-                 (if Is_Char_Rule (Rules, Nm) then "Unbounded_String"
-                  else Resolve_Type (Rules, Nm));
+                 Value_Type (Rules, Nm);
                Rec : constant Natural :=
                  (if J > 0 and then Is_Record (Analyze (Rules, J)) then J
                   elsif Is_Back (Backs, Idx, Nm) then Leaf_Record (Rules, Nm)
@@ -3138,12 +3188,12 @@ package body HBNF_Ada is
                   Push (Ind + 1, Lbl, "-1", "(Kind => Node_Val, N => "
                         & Node_Of (Rec, V (Rec) & "_Ref (" & F & ")") & ")");
                   P (Ind, "end if;");
-               elsif J > 0 and then Analyze (Rules, J).Kind = List then
+               elsif J > 0 and then Analyze (Rules, J).Kind = List and then Scalar_Ada_Type (Nm) = "" then
                   P (Ind, "for I in " & F & ".First_Index .. " & F & ".Last_Index loop");
                   Push (Ind + 1, Lbl, "I - " & F & ".First_Index",
                         "(Kind => Node_Val, N => " & Elem_Node (J, F, "I") & ")");
                   P (Ind, "end loop;");
-               elsif J > 0 and then Analyze (Rules, J).Kind = Enum then
+               elsif J > 0 and then Analyze (Rules, J).Kind = Enum and then Scalar_Ada_Type (Nm) = "" then
                   declare
                      Names : constant String_Vectors.Vector :=
                        Enum_Names (Analyze (Rules, J).Literals);
@@ -3216,7 +3266,8 @@ package body HBNF_Ada is
 
             function Has_Alts (I : Natural) return Boolean is
               (Struct_Alt (Rules (I), Analyze (Rules, I))
-               or else Entry_Alt (Rules (I), Analyze (Rules, I)));
+               or else (Entry_Alt (Rules (I), Analyze (Rules, I))
+                        and then Rules (I).Left_Bases = 0));
 
             function Alt_Els (I : Natural) return Element_Vectors.Vector is
               (if Analyze (Rules, I).Kind = Struct then Rules (I).Pattern
@@ -3239,7 +3290,7 @@ package body HBNF_Ada is
                   PS (1, "type " & V (I) & "_Ref is access constant " & Elem_Type (I) & ";");
                end if;
             end loop;
-            PS (1, "type Node (Kind : Node_Kind := " & V (1) & "_Kind) is record");
+            PS (1, "type Node (Kind : Node_Kind := " & V (Rt) & "_Kind) is record");
             PS (2, "case Kind is");
             for I in 1 .. N loop
                if Walked_Kind (I) then
@@ -3590,11 +3641,11 @@ package body HBNF_Ada is
                   P (1, "function Link_" & CN & " (Root : " & Ret_Type (1) & ") return Parents is");
                   P (2, "Ps : Parents;");
                   P (1, "begin");
-                  if Is_Record (Analyze (Rules, 1)) then
-                     P (2, "Link_Into (Ps.Map, " & Node_Of (1, V (1) & "_Ref'(Root'Unrestricted_Access)") & ");");
+                  if Is_Record (Analyze (Rules, Rt)) then
+                     P (2, "Link_Into (Ps.Map, " & Node_Of (Rt, V (Rt) & "_Ref'(Root'Unrestricted_Access)") & ");");
                   else
                      P (2, "for I in Root.First_Index .. Root.Last_Index loop");
-                     P (3, "Link_Into (Ps.Map, " & Elem_Node (1, "Root", "I") & ");");
+                     P (3, "Link_Into (Ps.Map, " & Elem_Node (Rt, "Root", "I") & ");");
                      P (2, "end loop;");
                   end if;
                   P (2, "return Ps;");
@@ -3609,11 +3660,11 @@ package body HBNF_Ada is
                P (1, "function Walk_" & CN & " (Root : " & Ret_Type (1)
                   & "; W : in out Walker'Class) return Boolean is");
                P (1, "begin");
-               if Is_Record (Analyze (Rules, 1)) then
-                  P (2, "return Node_Walk (" & Node_Of (1, V (1) & "_Ref'(Root'Unrestricted_Access)") & ", W);");
+               if Is_Record (Analyze (Rules, Rt)) then
+                  P (2, "return Node_Walk (" & Node_Of (Rt, V (Rt) & "_Ref'(Root'Unrestricted_Access)") & ", W);");
                else
                   P (2, "for I in Root.First_Index .. Root.Last_Index loop");
-                  P (3, "if not Node_Walk (" & Elem_Node (1, "Root", "I") & ", W) then");
+                  P (3, "if not Node_Walk (" & Elem_Node (Rt, "Root", "I") & ", W) then");
                   P (4, "return False;");
                   P (3, "end if;");
                   P (2, "end loop;");
@@ -3622,15 +3673,15 @@ package body HBNF_Ada is
                P (1, "end Walk_" & CN & ";");
                P (1, "");
                P (1, "function Dump_" & CN & " (Root : " & Ret_Type (1) & ") return String is");
-               if Is_Record (Analyze (Rules, 1)) then
+               if Is_Record (Analyze (Rules, Rt)) then
                   P (1, "begin");
-                  P (2, "return Node_Dump (" & Node_Of (1, V (1) & "_Ref'(Root'Unrestricted_Access)") & ");");
+                  P (2, "return Node_Dump (" & Node_Of (Rt, V (Rt) & "_Ref'(Root'Unrestricted_Access)") & ");");
                else
                   P (2, "S : Unbounded_String := To_Unbounded_String (""(" & To_String (R.Name) & """);");
                   P (1, "begin");
                   P (2, "for I in Root.First_Index .. Root.Last_Index loop");
                   P (3, "Append (S, "" "");");
-                  P (3, "Dump_Into (S, " & Elem_Node (1, "Root", "I") & ");");
+                  P (3, "Dump_Into (S, " & Elem_Node (Rt, "Root", "I") & ");");
                   P (2, "end loop;");
                   P (2, "return To_String (S) & "")"";");
                end if;
@@ -3641,7 +3692,8 @@ package body HBNF_Ada is
       end if;
 
       if Writer_On and then (Is_Record (Analyze (Rules, 1))
-                             or else Analyze (Rules, 1).Kind = List)
+                             or else Analyze (Rules, 1).Kind = List
+                             or else Over_Leaf (Rules, 1))
       then
          Append (Free_Decls, "   --  The tree as text, canonical; Ok is False, and Message says why, when a"
                  & LF & "   --  node cannot be written." & LF
@@ -4299,7 +4351,8 @@ package body HBNF_Ada is
       --  alternatives are not recorded in this tree, so a rule that has them
       --  is not written.
       if Writer_On and then (Is_Record (Analyze (Rules, 1))
-                             or else Analyze (Rules, 1).Kind = List)
+                             or else Analyze (Rules, 1).Kind = List
+                             or else Over_Leaf (Rules, 1))
       then
          declare
             WB : U renames Bdy;
@@ -4389,9 +4442,9 @@ package body HBNF_Ada is
             procedure Leaf_Value (Nm, Expr, Gap : String; Ind : Natural) is
                J : constant Natural := Find (Rules, Nm);
                T : constant String :=
-                 (if Is_Char_Rule (Rules, Nm) then "Unbounded_String" else Resolve_Type (Rules, Nm));
+                 Value_Type (Rules, Nm);
             begin
-               if J = 0 and then Scalar_Ada_Type (Nm) = ""
+               if J = 0
                  and then HBNF_Grammar.Is_Wire_Rule (Nm)
                then
                   P (Ind, "declare");
@@ -4420,7 +4473,7 @@ package body HBNF_Ada is
                   --  a rule that is one literal: the literal is its value
                   P (Ind, "Wlit (W, " & Gap & ", "
                      & Q (Lit_Text (J)) & ");");
-               elsif J > 0 and then Analyze (Rules, J).Kind in Struct | List | Enum then
+               elsif J > 0 and then Analyze (Rules, J).Kind in Struct | List | Enum and then Scalar_Ada_Type (Nm) = "" then
                   P (Ind, "Wr_" & Ada_Ident (Nm) & " (W, " & Expr & ");");
                elsif J > 0 and then Analyze (Rules, J).Kind = Scalar
                  and then Over_Leaf (Rules, J)
@@ -4489,7 +4542,8 @@ package body HBNF_Ada is
             --  The elements of a sequence, through accessor Prefix.
             procedure Elements
               (Idx : Natural; Els : Element_Vectors.Vector; Prefix, Gap : String;
-               Ind : Natural; Held : Boolean; Alt_Ok : Boolean := False) is
+               Ind : Natural; Held : Boolean; Alt_Ok : Boolean := False;
+               Alt_Off : Natural := 0) is
             begin
                if (for some X of Els => X.Kind = Alt) then
                   if not Alt_Ok then
@@ -4512,7 +4566,7 @@ package body HBNF_Ada is
                               for J in St .. K - 1 loop
                                  Sub.Append (Els (J));
                               end loop;
-                              P (Ind + 1, "when " & Img (Br) & " =>");
+                              P (Ind + 1, "when " & Img (Br + Alt_Off) & " =>");
                               Elements (Idx, Sub, Prefix, Gap, Ind + 2, Held);
                               P (Ind + 2, "null;");
                            end;
@@ -4686,41 +4740,66 @@ package body HBNF_Ada is
                      P (1, "procedure Wr_" & CN & " (W : in out Wr_State; N : "
                         & CN & "_Type) is");
                      P (1, "begin");
-                     if R.Left_Bases > 0 then
-                        P (2, Bad ("a left-recursive list is not written yet"));
-                     elsif R.Pattern (1).Kind = Group then
-                        P (2, "for Ex of N loop");
-                        Elements (I, R.Pattern (1).Items, "Ex.", Gap, 3, True,
-                                  Entry_Alt (R, Info));
-                        P (3, "null;");
-                        P (2, "end loop;");
-                     elsif Info.Elem_Name /= Null_Unbounded_String then
-                        declare
-                           EN : constant String := To_String (Info.Elem_Name);
-                           E  : constant Natural := Find (Rules, EN);
-                        begin
+                     declare
+                        Nl : constant String :=
+                          (if I = 1 and then HBNF_Grammar.Statements
+                           then "Wlit (W, False, (1 => ASCII.LF));" else "null;");
+                     begin
+                        if Info.Elem_Members.Is_Empty and then Info.Elem_Name = Null_Unbounded_String then
+                           --  repeated literals: each element is the text it matched
                            P (2, "for Ex of N loop");
-                           if E > 0 and then Is_Record (Analyze (Rules, E)) then
-                              P (3, "if Ex /= null then Wr_" & Ada_Ident (EN) & " (W, Ex.all); end if;");
-                           elsif Alias_Record (Rules, EN) /= 0 then
-                              P (3, "if Ex /= null then Wr_"
-                                 & Ada_Ident (To_String (Rules (Leaf_Record (Rules, EN)).Name))
-                                 & " (W, Ex.all); end if;");
-                           elsif E > 0 and then Over_Leaf (Rules, E)
-                             and then Analyze (Rules, Leaf_Target (Rules, E)).Kind = List
-                           then
-                              P (3, "Wr_"
-                                 & Ada_Ident (To_String (Rules (Leaf_Target (Rules, E)).Name))
-                                 & " (W, Ex);");
-                           else
-                              Leaf_Value (EN, "Ex", Gap, 3);
-                           end if;
+                           P (3, "Wlit (W, " & Gap & ", To_String (Ex));");
+                           P (3, Nl);
                            P (2, "end loop;");
-                        end;
-                     else
-                        P (2, "for Ex of N loop Wtok (W, " & Gap & ", To_String (Ex), null); end loop;");
-                     end if;
-                     P (2, "null;");
+                        elsif not Info.Elem_Members.Is_Empty and then R.Left_Bases > 0 then
+                           P (2, "declare");
+                           P (3, "First : Boolean := True;");
+                           P (2, "begin");
+                           P (3, "for Ex of N loop");
+                           P (4, "if First then");
+                           Elements (I, Base_Branches (R), "Ex.", Gap, 5, True, True, 0);
+                           P (5, "null;");
+                           P (4, "else");
+                           Elements (I, Tail_Branches (R), "Ex.", Gap, 5, True, True,
+                                     Alt_Labels_Count (Base_Branches (R)));
+                           P (5, "null;");
+                           P (4, "end if;");
+                           P (4, "First := False;");
+                           P (4, Nl);
+                           P (3, "end loop;");
+                           P (2, "end;");
+                        elsif not Info.Elem_Members.Is_Empty then
+                           P (2, "for Ex of N loop");
+                           Elements (I, R.Pattern (1).Items, "Ex.", Gap, 3, True,
+                                     Entry_Alt (R, Info));
+                           P (3, Nl);
+                           P (2, "end loop;");
+                        else
+                           declare
+                              EN : constant String := To_String (Info.Elem_Name);
+                              E  : constant Natural := Find (Rules, EN);
+                           begin
+                              P (2, "for Ex of N loop");
+                              if E > 0 and then Is_Record (Analyze (Rules, E)) then
+                                 P (3, "if Ex /= null then Wr_" & Ada_Ident (EN) & " (W, Ex.all); end if;");
+                              elsif Alias_Record (Rules, EN) /= 0 then
+                                 P (3, "if Ex /= null then Wr_"
+                                    & Ada_Ident (To_String (Rules (Leaf_Record (Rules, EN)).Name))
+                                    & " (W, Ex.all); end if;");
+                              elsif E > 0 and then Over_Leaf (Rules, E)
+                                and then Analyze (Rules, Leaf_Target (Rules, E)).Kind = List
+                              then
+                                 P (3, "Wr_"
+                                    & Ada_Ident (To_String (Rules (Leaf_Target (Rules, E)).Name))
+                                    & " (W, Ex);");
+                              else
+                                 Leaf_Value (EN, "Ex", Gap, 3);
+                              end if;
+                              P (3, Nl);
+                              P (2, "end loop;");
+                           end;
+                        end if;
+                     end;
                      P (1, "end Wr_" & CN & ";");
                      P (1, "");
                   elsif Info.Kind = Enum then
@@ -4752,7 +4831,11 @@ package body HBNF_Ada is
                P (3, "Message : out Unbounded_String) is");
                P (2, "W : Wr_State;");
                P (1, "begin");
-               P (2, "Wr_" & CN & " (W, V);");
+               P (2, "Wr_" & (if Over_Leaf (Rules, 1)
+                              and then not Is_Record (Analyze (Rules, 1))
+                              and then Analyze (Rules, 1).Kind /= List
+                              then Ada_Ident (To_String (Rules (Leaf_Target (Rules, 1)).Name))
+                              else CN) & " (W, V);");
                P (2, "Text := W.Buf;");
                P (2, "Ok := Length (W.Bad) = 0;");
                P (2, "Message := W.Bad;");

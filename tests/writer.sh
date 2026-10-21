@@ -38,4 +38,77 @@ for d in tests/daemons/*/; do
 	round "$g" "grammars/obconf_$g.hbnf" "$d"*.conf
 done
 
+
+# The same gate in Rust, Zig and Ada (--writer --ast): every file the language's parser reads is
+# written and read back to the same tree (the dump), and the second write is the first.  A grammar
+# with a scanner written in C (a `jet`) or with %as/%same is parsed by C alone so far, so some files
+# are not parsed here ("skipped").  tests/writer/rt_main.{rs,zig,adb} are the drivers.
+cap() { printf '%s' "$1" | awk '{ print toupper(substr($0,1,1)) substr($0,2) }'; }
+
+rt_rust() {
+	command -v rustc > /dev/null 2>&1 || return 0
+	n=$1; g=$2; shift 2
+	d=$W/rs_$n; mkdir -p "$d"
+	if ! "$CLI" "$g" --backend=rust --writer --ast > "$d/$n.rs" 2> "$d/err"; then
+		echo "FAIL $n (rust): generation: $(tail -2 "$d/err")"; fail=$((fail+1)); return
+	fi
+	root=$(sed -n 's/^pub fn write_\([A-Za-z0-9_]*\)(.*/\1/p' "$d/$n.rs" | head -1)
+	sed "s/MODULE/$n/g; s/ROOT/$root/g" tests/writer/rt_main.rs > "$d/m.rs"
+	if ! (cd "$d" && rustc --edition 2021 -A warnings -o m m.rs > cc.txt 2>&1); then
+		echo "FAIL $n (rust): rustc"; head -8 "$d/cc.txt"; fail=$((fail+1)); return
+	fi
+	out=$("$d/m" "$@" 2>&1) || { echo "FAIL $n (rust)"; echo "$out" | cut -c1-300 | head -20; fail=$((fail+1)); return; }
+	echo "PASS $n (rust): $(echo "$out" | grep -c ': ok') files round-tripped, $(echo "$out" | grep -c SKIP) not parsed"
+}
+
+rt_zig() {
+	command -v zig > /dev/null 2>&1 || return 0
+	n=$1; g=$2; shift 2
+	d=$W/zg_$n; mkdir -p "$d"
+	if ! "$CLI" "$g" --backend=zig --writer --ast > "$d/$n.zig" 2> "$d/err"; then
+		echo "FAIL $n (zig): generation: $(tail -2 "$d/err")"; fail=$((fail+1)); return
+	fi
+	root=$(sed -n 's/^pub fn write_\([A-Za-z0-9_]*\)(.*/\1/p' "$d/$n.zig" | head -1)
+	: > "$d/files.txt"; i=0
+	for f in "$@"; do
+		i=$((i+1)); cp "$f" "$d/f$i.dat"
+		printf '    .{ .name = "%s", .data = @embedFile("f%d.dat") },\n' "$f" "$i" >> "$d/files.txt"
+	done
+	sed "s/MODULE/$n.zig/g; s/ROOT/$root/g" tests/writer/rt_main.zig \
+	  | awk -v f="$d/files.txt" '$0 == "FILES" { while ((getline l < f) > 0) print l; next } { print }' > "$d/m.zig"
+	if ! (cd "$d" && zig build-exe m.zig -femit-bin=m > cc.txt 2>&1); then
+		echo "FAIL $n (zig): zig"; head -8 "$d/cc.txt"; fail=$((fail+1)); return
+	fi
+	out=$("$d/m" 2>&1) || { echo "FAIL $n (zig)"; echo "$out" | cut -c1-300 | head -20; fail=$((fail+1)); return; }
+	echo "PASS $n (zig): $(echo "$out" | grep -c ': ok') files round-tripped, $(echo "$out" | grep -c SKIP) not parsed"
+}
+
+rt_ada() {
+	command -v gnatmake > /dev/null 2>&1 || return 0
+	n=$1; g=$2; shift 2
+	d=$W/ad_$n; mkdir -p "$d"; pk=$(cap "$n")
+	if ! "$CLI" "$g" --backend=ada --package="$pk" --writer --ast > "$d/all.ada" 2> "$d/err"; then
+		echo "FAIL $n (ada): generation: $(tail -2 "$d/err")"; fail=$((fail+1)); return
+	fi
+	root=$(sed -n 's/^   procedure Write_\([A-Za-z0-9_]*\) (V.*/\1/p' "$d/all.ada" | head -1)
+	sed "s/MODULE/$pk/g; s/ROOT/$root/g" tests/writer/rt_main.adb > "$d/rt_main.adb"
+	if ! (cd "$d" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -gnat2022 rt_main.adb -o m > cc.txt 2>&1); then
+		echo "FAIL $n (ada): gnat"; grep -v warning "$d/cc.txt" | head -8; fail=$((fail+1)); return
+	fi
+	out=$("$d/m" "$@" 2>&1) || { echo "FAIL $n (ada)"; echo "$out" | cut -c1-300 | head -20; fail=$((fail+1)); return; }
+	echo "PASS $n (ada): $(echo "$out" | grep -c ': ok') files round-tripped, $(echo "$out" | grep -c SKIP) not parsed"
+}
+
+others() { rt_rust "$@"; rt_zig "$@"; rt_ada "$@"; }
+
+others json corpus/json/json.hbnf corpus/json/tests/good/*.json corpus/json/tests/bad/*.json
+others obconf grammars/obconf_roundtrip.hbnf tests/accept/*.conf
+# (not in Ada: the report's rule names have two underscores in a row, which Ada does not allow)
+rt_rust algol60 corpus/algol60/algol60.hbnf corpus/algol60/tests/good/*.a60
+rt_zig algol60 corpus/algol60/algol60.hbnf corpus/algol60/tests/good/*.a60
+for d in tests/daemons/*/; do
+	g=$(basename "$d")
+	others "$g" "grammars/obconf_$g.hbnf" "$d"*.conf
+done
+
 [ "$fail" -eq 0 ] && echo "writer OK" || { echo "writer: $fail FAIL"; exit 1; }

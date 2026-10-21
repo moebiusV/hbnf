@@ -287,7 +287,7 @@ More, as flags:
 |---|---|
 | `--spans` | `node_span` (where a node is in the text: byte offsets, the blanks before it left out), `node_where` (byte to line and column), in C, Zig, Rust and Ada |
 | `--parents` | which node holds each node: `node_parent` in C; `link_<root>` builds a `Parents` and `parent (node)` reads it in Zig, Rust and Ada |
-| `--writer` | `write_<root>`: the tree as text again, in C (a subset in Zig, Rust and Ada, [WIRE.md](WIRE.md)) |
+| `--writer` | `write_<root>`: the tree as text again, in C, Zig, Rust and Ada |
 
 `tests/spans.sh` checks that all four print the same places and parents for one tree.  In C
 (`tutorial/generic.c`):

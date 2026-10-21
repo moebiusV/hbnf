@@ -766,6 +766,40 @@ package body HBNF_Zig is
                       Owner : Natural) return Boolean is
      (for some E of Backs => E.Owner = Owner);
 
+
+   --  The Rust/Zig/Ada type a value of rule N is written as: a core scalar, a token, a
+   --  rule that is one name (chased), or a choice of names that all come to the same type;
+   --  "" if it is none of these.
+   function Value_Type
+     (Rules : Rule_Vectors.Vector; N : String; Depth : Natural := 0) return String
+   is
+      C : constant String := Scalar_Zig_Type (N);
+   begin
+      if C /= "" then
+         return C;
+      elsif Is_Char_Rule (Rules, N) then
+         return "[]const u8";
+      elsif Depth > 8 then
+         return "";
+      end if;
+      declare
+         J : constant Natural := Find (Rules, N);
+      begin
+         if J = 0 then
+            return "";
+         elsif Rules (J).Jet_Code /= Null_Unbounded_String then
+            return "[]const u8";
+         elsif Natural (Rules (J).Pattern.Length) = 1
+           and then Rules (J).Pattern (1).Kind = Name
+           and then Rules (J).Pattern (1).Min = 1
+           and then Rules (J).Pattern (1).Max = 1
+         then
+            return Value_Type (Rules, To_String (Rules (J).Pattern (1).Name), Depth + 1);
+         end if;
+         return Scalar_Union_Type (Rules, Rules (J).Pattern);
+      end;
+   end Value_Type;
+
    --  With --writer, a rule with alternatives records the one it took
    --  (`_alt`, from 1): a struct whose pattern has a top-level alternation, and
    --  a list entry that is a group with one.  The writer needs it; the C tree
@@ -778,7 +812,6 @@ package body HBNF_Zig is
    function Entry_Alt (R : Rule; Info : Rule_Info) return Boolean is
      ((Writer_On or else Ast_On) and then Info.Kind = List
       and then not Info.Elem_Members.Is_Empty
-      and then R.Left_Bases = 0
       and then Natural (R.Pattern.Length) = 1
       and then R.Pattern (1).Kind = Group
       and then (for some X of R.Pattern (1).Items => X.Kind = Alt));
@@ -788,6 +821,31 @@ package body HBNF_Zig is
    function Has_Span (Info : Rule_Info) return Boolean is
      (Spans_On and then (Info.Kind = Struct
                          or else (Info.Kind = List and then not Info.Elem_Members.Is_Empty)));
+
+   --  Whether the enum of rule J is open (`_`): it starts above 0, so a value
+   --  can be none of its names, and a switch on it needs an `else`.
+   function Enum_Open (Rules : Rule_Vectors.Vector; J : Natural) return Boolean is
+      Info  : constant Rule_Info := Analyze (Rules, J);
+      Count : constant Natural := Natural (Info.Literals.Length);
+      Vals  : constant Value_Array (1 .. Count) :=
+        [for K in 1 .. Count =>
+           Enum_Value (To_String (Rules (J).Name), To_String (Info.Literals (K)))];
+      Ord   : constant Order_Array := Enum_Order (Vals);
+   begin
+      return Count > 0 and then Vals (Ord (1)) > 0;
+   end Enum_Open;
+
+   --  How many alternatives a flat list of elements with Alt separators has.
+   function Alt_Labels_Count (Els : Element_Vectors.Vector) return Natural is
+      N : Natural := 1;
+   begin
+      for X of Els loop
+         if X.Kind = Alt then
+            N := N + 1;
+         end if;
+      end loop;
+      return N;
+   end Alt_Labels_Count;
 
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
@@ -1496,6 +1554,31 @@ package body HBNF_Zig is
             Append (Buf, LF);
          end P;
 
+         --  The struct or list a reference ends at, chasing scalar aliases.
+         function Alias_Leaf (Ref : String) return Natural is
+            J    : Natural := Find (Rules, Ref);
+            Hops : Natural := 0;
+         begin
+            while J > 0 and then Hops < 20 and then Infos (J).Kind = Scalar loop
+               Hops := Hops + 1;
+               declare
+                  Pt : constant Element_Vectors.Vector := Rules (J).Pattern;
+               begin
+                  if Natural (Pt.Length) = 1 and then Pt (1).Kind = Name
+                    and then Pt (1).Min = 1 and then Pt (1).Max = 1
+                  then
+                     J := Find (Rules, To_String (Pt (1).Name));
+                  else
+                     J := 0;
+                  end if;
+               end;
+            end loop;
+            if J > 0 and then Hops < 20 and then Infos (J).Kind in Struct | List then
+               return J;
+            end if;
+            return 0;
+         end Alias_Leaf;
+
          function Bad (Why : String) return String is
            ("w.badw(""" & Zig_Escape (Why) & """);");
 
@@ -1578,7 +1661,7 @@ package body HBNF_Zig is
                           Ind : Natural) is
             J : constant Natural := Find (Rules, Nm);
             T : constant String :=
-              (if Is_Char_Rule (Rules, Nm) then "[]const u8" else Resolve_Type (Rules, Nm));
+              Value_Type (Rules, Nm);
          begin
             if J = 0 and then Scalar_Zig_Type (Nm) = ""
               and then HBNF_Grammar.Is_Wire_Rule (Nm)
@@ -1600,12 +1683,18 @@ package body HBNF_Zig is
                --  a rule that is one literal: the literal is its value
                P (Ind, "w.lit(" & Gap & ", """
                   & Zig_Escape (Lit_Text (J)) & """);");
-            elsif J > 0 and then Infos (J).Kind = Struct then
+            elsif Alias_Leaf (Nm) > 0 and then Infos (J).Kind = Scalar
+              and then Scalar_Zig_Type (Nm) = ""
+            then
+               --  a rule that is only another (`hostfrom = hostatom`): that rule writes it
+               P (Ind, "wr_" & Zig_Snake (To_String (Rules (Alias_Leaf (Nm)).Name))
+                  & "(w, " & (if Infos (Alias_Leaf (Nm)).Kind = Struct then "&" else "&") & Expr & ");");
+            elsif J > 0 and then Infos (J).Kind = Struct and then Scalar_Zig_Type (Nm) = "" then
                P (Ind, "wr_" & Zig_Snake (Nm) & "(w, "
                   & (if Back then Expr else "&" & Expr) & ");");
-            elsif J > 0 and then Infos (J).Kind = List then
+            elsif J > 0 and then Infos (J).Kind = List and then Scalar_Zig_Type (Nm) = "" then
                P (Ind, "wr_" & Zig_Snake (Nm) & "(w, &" & Expr & ");");
-            elsif J > 0 and then Infos (J).Kind = Enum then
+            elsif J > 0 and then Infos (J).Kind = Enum and then Scalar_Zig_Type (Nm) = "" then
                P (Ind, "wr_" & Zig_Snake (Nm) & "(w, " & Expr & ");");
             elsif T = "[]const u8" then
                P (Ind, "w." & (if Has_Str (Nm) then "str" else "tok") & "("
@@ -1622,7 +1711,7 @@ package body HBNF_Zig is
          --  The elements of a sequence, through accessor Acc.
          procedure Elements
            (Idx : Natural; Els : Element_Vectors.Vector; Acc, Gap : String;
-            Ind : Natural; Alt_Ok : Boolean := False) is
+            Ind : Natural; Alt_Ok : Boolean := False; Alt_Off : Natural := 0) is
          begin
             if (for some X of Els => X.Kind = Alt) then
                if not Alt_Ok then
@@ -1645,7 +1734,7 @@ package body HBNF_Zig is
                            for J in St .. K - 1 loop
                               Sub.Append (Els (J));
                            end loop;
-                           P (Ind + 1, Img (Br) & " => {");
+                           P (Ind + 1, Img (Br + Alt_Off) & " => {");
                            Elements (Idx, Sub, Acc, Gap, Ind + 2);
                            P (Ind + 1, "},");
                         end;
@@ -1691,6 +1780,7 @@ package body HBNF_Zig is
                end case;
             end loop;
          end Elements;
+
 
          function Ref_Name (Idx : Natural) return String is
            (Zig_Snake (To_String (Rules (Idx).Name)));
@@ -1819,20 +1909,44 @@ package body HBNF_Zig is
                      P (0, "fn wr_" & Fn & "(w: *BnfW, n: *const " & Zig_Type (NM)
                         & ") void {");
                      P (1, "_ = &n;");
-                     if R.Left_Bases > 0 then
-                        P (1, Bad ("a left-recursive list is not written yet"));
-                     elsif R.Pattern (1).Kind = Group then
-                        P (1, "for (n.*) |*e_| {");
-                        Elements (I, R.Pattern (1).Items, "e_.", Gap, 2,
-                                  Entry_Alt (R, Info));
-                        P (1, "}");
-                     elsif Info.Elem_Name /= Null_Unbounded_String then
-                        P (1, "for (n.*) |*e_| {");
-                        Value (I, To_String (Info.Elem_Name), "e_.*", Gap, False, 2);
-                        P (1, "}");
-                     else
-                        P (1, "for (n.*) |e_| w.tok(" & Gap & ", e_, null);");
-                     end if;
+                     declare
+                        Nl : constant String :=
+                          (if I = 1 and then HBNF_Grammar.Statements
+                           then " w.lit(false, ""\n"");" else "");
+                     begin
+                        if Info.Elem_Members.Is_Empty and then Info.Elem_Name = Null_Unbounded_String then
+                           --  repeated literals: each element is the text it matched
+                           P (1, "for (n.*) |e_| {");
+                           P (2, "w.lit(" & Gap & ", e_);" & Nl);
+                           P (1, "}");
+                        elsif not Info.Elem_Members.Is_Empty and then R.Left_Bases > 0 then
+                           P (1, "for (n.*, 0..) |*e_, i_| {");
+                           P (2, "if (i_ == 0) {");
+                           Elements (I, Base_Branches (R), "e_.", Gap, 3, True, 0);
+                           P (2, "} else {");
+                           Elements (I, Tail_Branches (R), "e_.", Gap, 3, True,
+                                     Alt_Labels_Count (Base_Branches (R)));
+                           P (2, "}");
+                           if Nl /= "" then
+                              P (2, Nl);
+                           end if;
+                           P (1, "}");
+                        elsif not Info.Elem_Members.Is_Empty then
+                           P (1, "for (n.*) |*e_| {");
+                           Elements (I, R.Pattern (1).Items, "e_.", Gap, 2, Entry_Alt (R, Info));
+                           if Nl /= "" then
+                              P (2, Nl);
+                           end if;
+                           P (1, "}");
+                        else
+                           P (1, "for (n.*) |*e_| {");
+                           Value (I, To_String (Info.Elem_Name), "e_.*", Gap, False, 2);
+                           if Nl /= "" then
+                              P (2, Nl);
+                           end if;
+                           P (1, "}");
+                        end if;
+                     end;
                      P (0, "}");
                      P (0, "");
                   when Enum =>
@@ -1846,7 +1960,9 @@ package body HBNF_Zig is
                            P (2, "." & To_String (Names (K)) & " => w.lit(" & Gap & ", """
                               & Zig_Escape (To_String (Info.Literals (K))) & """),");
                         end loop;
-                        P (2, "else => {},");
+                        if Enum_Open (Rules, I) then
+                           P (2, "else => {},");
+                        end if;
                         P (1, "}");
                         P (0, "}");
                         P (0, "");
@@ -1875,6 +1991,24 @@ package body HBNF_Zig is
                   & Root_T & ", msg: *[]const u8) error{Write}![]u8 {");
                P (1, "var w = BnfW{ .alloc = alloc };");
                P (1, "wr_" & Ref_Name (1) & "(&w, root);");
+               P (1, "if (w.bad) |b| {");
+               P (2, "msg.* = b;");
+               P (2, "return error.Write;");
+               P (1, "}");
+               P (1, "return w.buf.items;");
+               P (0, "}");
+               P (0, "");
+            end;
+         elsif Alias_Leaf (To_String (Rules (1).Name)) > 0 then
+            --  a root that is only another rule (`json = value`) is written by that rule
+            declare
+               T : constant Natural := Alias_Leaf (To_String (Rules (1).Name));
+            begin
+               P (0, "/// The tree as text, or error.Write and why in msg when a node cannot be written.");
+               P (0, "pub fn write_" & Ref_Name (1) & "(alloc: std.mem.Allocator, root: *const "
+                  & Zig_Type (To_String (Rules (1).Name)) & ", msg: *[]const u8) error{Write}![]u8 {");
+               P (1, "var w = BnfW{ .alloc = alloc };");
+               P (1, "wr_" & Ref_Name (T) & "(&w, root);");
                P (1, "if (w.bad) |b| {");
                P (2, "msg.* = b;");
                P (2, "return error.Write;");
@@ -1953,7 +2087,7 @@ package body HBNF_Zig is
             Lbl : constant String := Q (HBNF_C.Member_Label (Nm));
             J   : constant Natural := Find (Rules, Nm);
             T   : constant String :=
-              (if Is_Char_Rule (Rules, Nm) then "[]const u8" else Resolve_Type (Rules, Nm));
+              Value_Type (Rules, Nm);
 
             procedure Push (Index, Val : String) is
             begin
@@ -1967,7 +2101,7 @@ package body HBNF_Zig is
                P (Ind, "if (" & Expr & ") |c| {");
                Push ("null", ".{ .node = .{ ." & Variant (Back_Target (Backs, Idx, Nm)) & " = c } }");
                P (Ind, "}");
-            elsif L > 0 and then Infos (L).Kind = Struct then
+            elsif L > 0 and then Infos (L).Kind = Struct and then Scalar_Zig_Type (Nm) = "" then
                if Is_List then
                   P (Ind, "for (" & Expr & ", 0..) |*e, i| {");
                   Push ("i", ".{ .node = .{ ." & Variant (L) & " = e } }");
@@ -1976,11 +2110,11 @@ package body HBNF_Zig is
                else
                   Push ("null", ".{ .node = .{ ." & Variant (L) & " = &" & Expr & " } }");
                end if;
-            elsif L > 0 and then Infos (L).Kind = List then
+            elsif L > 0 and then Infos (L).Kind = List and then Scalar_Zig_Type (Nm) = "" then
                P (Ind, "for (" & Expr & ", 0..) |*e, i| {");
                Push ("i", ".{ .node = .{ ." & Variant (L) & " = e } }");
                P (Ind, "}");
-            elsif J > 0 and then Infos (J).Kind = Enum then
+            elsif J > 0 and then Infos (J).Kind = Enum and then Scalar_Zig_Type (Nm) = "" then
                declare
                   Names : constant String_Vectors.Vector :=
                     Enum_Names (Infos (J).Literals);
@@ -1991,7 +2125,9 @@ package body HBNF_Zig is
                      P (Ind + 2, "." & To_String (Names (K)) & " => "
                         & Q (To_String (Infos (J).Literals (K))) & ",");
                   end loop;
-                  P (Ind + 2, "else => ""?"",");
+                  if Enum_Open (Rules, J) then
+                     P (Ind + 2, "else => ""?"",");
+                  end if;
                   P (Ind + 1, "};");
                   Push ("null", ".{ .enum_ = s }");
                   P (Ind, "}");
@@ -2061,7 +2197,8 @@ package body HBNF_Zig is
          end Members;
 
          function Has_Alts (I : Natural) return Boolean is
-           (Struct_Alt (Rules (I), Infos (I)) or else Entry_Alt (Rules (I), Infos (I)));
+           (Struct_Alt (Rules (I), Infos (I))
+            or else (Entry_Alt (Rules (I), Infos (I)) and then Rules (I).Left_Bases = 0));
 
          function Alt_Els (I : Natural) return Element_Vectors.Vector is
            (if Infos (I).Kind = Struct then Rules (I).Pattern
@@ -2362,6 +2499,13 @@ package body HBNF_Zig is
                   P (1, "return m;");
                   P (0, "}");
                end if;
+            elsif Leaf (To_String (R.Name)) > 0 and then Infos (Leaf (To_String (R.Name))).Kind = Struct then
+               P (0, "pub fn walk_" & RN & "(root: *const " & Zig_Type (To_String (R.Name))
+                  & ", w: anytype, al: std.mem.Allocator) !bool { return node_walk(.{ ."
+                  & Variant (Leaf (To_String (R.Name))) & " = root }, w, al); }");
+               P (0, "pub fn dump_" & RN & "(root: *const " & Zig_Type (To_String (R.Name))
+                  & ", al: std.mem.Allocator) ![]u8 { return node_dump(.{ ."
+                  & Variant (Leaf (To_String (R.Name))) & " = root }, al); }");
             elsif Infos (1).Kind = List then
                P (0, "pub fn walk_" & RN & "(root: []" & Elem_Type (1)
                   & ", w: anytype, al: std.mem.Allocator) !bool {");
@@ -2953,7 +3097,7 @@ package body HBNF_Zig is
                --  fails breaks out of its own block, and the next starts
                --  from save.
                procedure Alt_Blocks (V : Element_Vectors.Vector;
-                                     Label, Ind : String) is
+                                     Label, Ind : String; Alt_Off : Natural := 0) is
                   St     : Natural := 1;
                   Branch : Natural := 0;
                   Block_Start : Natural := 0;
@@ -2974,10 +3118,8 @@ package body HBNF_Zig is
                            Emit_Seq (Idx, V, St, K - 1, "e.", Buf,
                                      "break :" & Label & "blk_" & Img (Branch),
                                      Ind & "    ");
-                           if Entry_Alt (R, Analyze (Rules, Idx)) and then Label = ""
-                             and then R.Left_Bases = 0
-                           then
-                              Append (Buf, Ind & "    e._alt = " & Img (Branch) & ";");
+                           if Entry_Alt (R, Analyze (Rules, Idx)) then
+                              Append (Buf, Ind & "    e._alt = " & Img (Branch + Alt_Off) & ";");
                               Append (Buf, LF);
                            end if;
                            Append (Buf, Ind & "    break :blk_alt;");
@@ -3083,7 +3225,8 @@ package body HBNF_Zig is
                      Append (Buf, LF);
                      Append (Buf, "            }");
                      Append (Buf, LF);
-                     Alt_Blocks (Tail_Branches (R), "", "            ");
+                     Alt_Blocks (Tail_Branches (R), "", "            ",
+                                 Alt_Labels_Count (Base_Branches (R)));
                   else
                      Alt_Blocks (E.Items, "", "            ");
                   end if;

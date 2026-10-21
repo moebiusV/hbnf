@@ -1535,9 +1535,11 @@ lookahead or a context test not at all.
     read by `node_parent`; and **`%label name`** at the end of an alternative
     (LBNF's constructor, as a suffix, in the notation's own style), which
     `node_alt_name` returns instead of the derived name (`entry[assign]`,
-    not `entry[set]`).  Both flags are opt-in; `tests/spans.sh`.  Not yet: the
-    writer in Rust, Zig and Ada; spans in a `statements` parser (offsets are
-    within the statement).
+    not `entry[set]`).  Both flags are opt-in; `tests/spans.sh`.  Not yet: spans in a
+    `statements` parser (offsets are within the statement).  The writer is in Rust, Zig and Ada too
+    (2026-10-22): `tests/writer.sh` round-trips the same corpora in all four (json, obconf, the daemon
+    grammars, ALGOL 60 in Rust and Zig), each file written and read back to the same dump; what the
+    other three cannot read is a grammar with a scanner written in C (a `jet`) or `%as`/`%same`.
     **2026-10-22: `--ast` in Rust, Zig and Ada** (`tests/ast.sh`, `tutorial/tools.*`): `Node` (a
     record or list element), `node_walk` (enter, leave, skip, stop), `node_kids`, `node_kind_name`,
     `node_alt`, `node_alt_name`, `node_dump` and `node_equal`, written as plain typed code per grammar

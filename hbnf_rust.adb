@@ -745,6 +745,40 @@ package body HBNF_Rust is
       return 0;
    end Back_Target;
 
+
+   --  The Rust/Zig/Ada type a value of rule N is written as: a core scalar, a token, a
+   --  rule that is one name (chased), or a choice of names that all come to the same type;
+   --  "" if it is none of these.
+   function Value_Type
+     (Rules : Rule_Vectors.Vector; N : String; Depth : Natural := 0) return String
+   is
+      C : constant String := Scalar_Rust_Type (N);
+   begin
+      if C /= "" then
+         return C;
+      elsif Is_Char_Rule (Rules, N) then
+         return "String";
+      elsif Depth > 8 then
+         return "";
+      end if;
+      declare
+         J : constant Natural := Find (Rules, N);
+      begin
+         if J = 0 then
+            return "";
+         elsif Rules (J).Jet_Code /= Null_Unbounded_String then
+            return "String";
+         elsif Natural (Rules (J).Pattern.Length) = 1
+           and then Rules (J).Pattern (1).Kind = Name
+           and then Rules (J).Pattern (1).Min = 1
+           and then Rules (J).Pattern (1).Max = 1
+         then
+            return Value_Type (Rules, To_String (Rules (J).Pattern (1).Name), Depth + 1);
+         end if;
+         return Scalar_Union_Type (Rules, Rules (J).Pattern);
+      end;
+   end Value_Type;
+
    --  With --writer, a rule with alternatives records the one it took
    --  (`_alt`, from 1): a struct whose pattern has a top-level alternation, and
    --  a list entry that is a group with one.  The writer needs it; the C tree
@@ -757,7 +791,6 @@ package body HBNF_Rust is
    function Entry_Alt (R : Rule; Info : Rule_Info) return Boolean is
      ((Writer_On or else Ast_On) and then Info.Kind = List
       and then not Info.Elem_Members.Is_Empty
-      and then R.Left_Bases = 0
       and then Natural (R.Pattern.Length) = 1
       and then R.Pattern (1).Kind = Group
       and then (for some X of R.Pattern (1).Items => X.Kind = Alt));
@@ -767,6 +800,18 @@ package body HBNF_Rust is
    function Has_Span (Info : Rule_Info) return Boolean is
      (Spans_On and then (Info.Kind = Struct
                          or else (Info.Kind = List and then not Info.Elem_Members.Is_Empty)));
+
+   --  How many alternatives a flat list of elements with Alt separators has.
+   function Alt_Labels_Count (Els : Element_Vectors.Vector) return Natural is
+      N : Natural := 1;
+   begin
+      for X of Els loop
+         if X.Kind = Alt then
+            N := N + 1;
+         end if;
+      end loop;
+      return N;
+   end Alt_Labels_Count;
 
    function Emit (Rules : Rule_Vectors.Vector) return String is
 
@@ -1415,8 +1460,44 @@ package body HBNF_Rust is
             Append (Buf, LF);
          end P;
 
+         --  The struct or list a reference ends at, chasing scalar aliases.
+         function Alias_Leaf (Ref : String) return Natural is
+            J    : Natural := Find (Rules, Ref);
+            Hops : Natural := 0;
+         begin
+            while J > 0 and then Hops < 20 and then Infos (J).Kind = Scalar loop
+               Hops := Hops + 1;
+               declare
+                  Pt : constant Element_Vectors.Vector := Rules (J).Pattern;
+               begin
+                  if Natural (Pt.Length) = 1 and then Pt (1).Kind = Name
+                    and then Pt (1).Min = 1 and then Pt (1).Max = 1
+                  then
+                     J := Find (Rules, To_String (Pt (1).Name));
+                  else
+                     J := 0;
+                  end if;
+               end;
+            end loop;
+            if J > 0 and then Hops < 20 and then Infos (J).Kind in Struct | List then
+               return J;
+            end if;
+            return 0;
+         end Alias_Leaf;
+
          function Bad (Why : String) return String is
            ("w.badw(""" & Rust_Escape (Why) & """);");
+
+         function Elem_Type (I : Natural) return String is
+            Info : constant Rule_Info := Infos (I);
+         begin
+            if not Info.Elem_Members.Is_Empty then
+               return Rust_Type (To_String (Rules (I).Name)) & "Entry";
+            elsif Info.Elem_Name /= Null_Unbounded_String then
+               return Rust_Type_Of (Rules, To_String (Info.Elem_Name));
+            end if;
+            return "String";
+         end Elem_Type;
 
          --  The scanner that reads a token of this rule, "None" if none is
          --  known (the fit of two items is then not checked).
@@ -1496,7 +1577,7 @@ package body HBNF_Rust is
          procedure Value (Nm, Expr, Gap : String; Ind : Natural) is
             J : constant Natural := Find (Rules, Nm);
             T : constant String :=
-              (if Is_Char_Rule (Rules, Nm) then "String" else Resolve_Type (Rules, Nm));
+              Value_Type (Rules, Nm);
          begin
             if J = 0 and then Scalar_Rust_Type (Nm) = ""
               and then HBNF_Grammar.Is_Wire_Rule (Nm)
@@ -1517,8 +1598,11 @@ package body HBNF_Rust is
                --  a rule that is one literal: the literal is its value
                P (Ind, "w.lit(" & Gap & ", b"""
                   & Rust_Escape (Lit_Text (J)) & """);");
-            elsif J > 0 and then Infos (J).Kind in Struct | List | Enum then
+            elsif J > 0 and then Infos (J).Kind in Struct | List | Enum and then Scalar_Rust_Type (Nm) = "" then
                P (Ind, "wr_" & Rust_Snake (Nm) & "(w, &" & Expr & ");");
+            elsif Alias_Leaf (Nm) > 0 and then Scalar_Rust_Type (Nm) = "" then
+               --  a rule that is only another (`hostfrom = hostatom`): that rule writes it
+               P (Ind, "wr_" & Rust_Snake (To_String (Rules (Alias_Leaf (Nm)).Name)) & "(w, &" & Expr & ");");
             elsif T = "String" then
                P (Ind, "w." & (if Has_Str (Nm) then "str" else "tok") & "("
                   & Gap & ", " & Expr & ".as_bytes(), " & Scan_Of (Nm) & ");");
@@ -1536,7 +1620,7 @@ package body HBNF_Rust is
          --  The elements of a sequence, through accessor Acc.
          procedure Elements
            (Idx : Natural; Els : Element_Vectors.Vector; Acc, Gap : String;
-            Ind : Natural; Alt_Ok : Boolean := False) is
+            Ind : Natural; Alt_Ok : Boolean := False; Alt_Off : Natural := 0) is
          begin
             if (for some X of Els => X.Kind = Alt) then
                if not Alt_Ok then
@@ -1559,7 +1643,7 @@ package body HBNF_Rust is
                            for J in St .. K - 1 loop
                               Sub.Append (Els (J));
                            end loop;
-                           P (Ind + 1, Img (Br) & " => {");
+                           P (Ind + 1, Img (Br + Alt_Off) & " => {");
                            Elements (Idx, Sub, Acc, Gap, Ind + 2);
                            P (Ind + 1, "}");
                         end;
@@ -1603,6 +1687,7 @@ package body HBNF_Rust is
                end case;
             end loop;
          end Elements;
+
 
          function Ref_Name (Idx : Natural) return String is
            (Rust_Snake (To_String (Rules (Idx).Name)));
@@ -1714,28 +1799,44 @@ package body HBNF_Rust is
                      P (0, "}");
                      P (0, "");
                   when List =>
-                     P (0, "fn wr_" & Fn & "(w: &mut BnfW, n: &Vec<"
-                        & (if R.Pattern (1).Kind = Group then Rust_Type (NM) & "Entry"
-                           elsif Info.Elem_Name /= Null_Unbounded_String
-                           then (if Scalar_Rust_Type (To_String (Info.Elem_Name)) /= ""
-                                 then Scalar_Rust_Type (To_String (Info.Elem_Name))
-                                 else Rust_Type (To_String (Info.Elem_Name)))
-                           else "String") & ">) {");
+                     P (0, "fn wr_" & Fn & "(w: &mut BnfW, n: &Vec<" & Elem_Type (I) & ">) {");
                      P (1, "let _ = &n;");
-                     if R.Left_Bases > 0 then
-                        P (1, Bad ("a left-recursive list is not written yet"));
-                     elsif R.Pattern (1).Kind = Group then
-                        P (1, "for e_ in n {");
-                        Elements (I, R.Pattern (1).Items, "e_.", Gap, 2,
-                                  Entry_Alt (R, Info));
-                        P (1, "}");
-                     elsif Info.Elem_Name /= Null_Unbounded_String then
-                        P (1, "for e_ in n {");
-                        Value (To_String (Info.Elem_Name), "(*e_)", Gap, 2);
-                        P (1, "}");
-                     else
-                        P (1, "for e_ in n { w.tok(" & Gap & ", e_.as_bytes(), None); }");
-                     end if;
+                     declare
+                        Nl : constant String :=
+                          (if I = 1 and then HBNF_Grammar.Statements
+                           then " w.lit(false, b""\n"");" else "");
+                     begin
+                        if Info.Elem_Members.Is_Empty and then Info.Elem_Name = Null_Unbounded_String then
+                           --  repeated literals: each element is the text it matched
+                           P (1, "for e_ in n { w.lit(" & Gap & ", e_.as_bytes());" & Nl & " }");
+                        elsif not Info.Elem_Members.Is_Empty and then R.Left_Bases > 0 then
+                           P (1, "for (i_, e_) in n.iter().enumerate() {");
+                           P (2, "if i_ == 0 {");
+                           Elements (I, Base_Branches (R), "e_.", Gap, 3, True, 0);
+                           P (2, "} else {");
+                           Elements (I, Tail_Branches (R), "e_.", Gap, 3, True,
+                                     Alt_Labels_Count (Base_Branches (R)));
+                           P (2, "}");
+                           if Nl /= "" then
+                              P (2, Nl);
+                           end if;
+                           P (1, "}");
+                        elsif not Info.Elem_Members.Is_Empty then
+                           P (1, "for e_ in n {");
+                           Elements (I, R.Pattern (1).Items, "e_.", Gap, 2, Entry_Alt (R, Info));
+                           if Nl /= "" then
+                              P (2, Nl);
+                           end if;
+                           P (1, "}");
+                        else
+                           P (1, "for e_ in n {");
+                           Value (To_String (Info.Elem_Name), "(*e_)", Gap, 2);
+                           if Nl /= "" then
+                              P (2, Nl);
+                           end if;
+                           P (1, "}");
+                        end if;
+                     end;
                      P (0, "}");
                      P (0, "");
                   when Enum =>
@@ -1779,6 +1880,23 @@ package body HBNF_Rust is
                   & ") -> Result<Vec<u8>, String> {");
                P (1, "let mut w = BnfW { buf: Vec::new(), last: 0, bad: None, pscan: None, ptxt: Vec::new() };");
                P (1, "wr_" & Ref_Name (1) & "(&mut w, root);");
+               P (1, "match w.bad {");
+               P (2, "Some(b) => Err(b),");
+               P (2, "None => Ok(w.buf),");
+               P (1, "}");
+               P (0, "}");
+               P (0, "");
+            end;
+         elsif Alias_Leaf (To_String (Rules (1).Name)) > 0 then
+            --  a root that is only another rule (`json = value`) is written by that rule
+            declare
+               T : constant Natural := Alias_Leaf (To_String (Rules (1).Name));
+            begin
+               P (0, "/// The tree as text, or why a node cannot be written.");
+               P (0, "pub fn write_" & Ref_Name (1) & "(root: &" & Rust_Type (To_String (Rules (1).Name))
+                  & ") -> Result<Vec<u8>, String> {");
+               P (1, "let mut w = BnfW { buf: Vec::new(), last: 0, bad: None, pscan: None, ptxt: Vec::new() };");
+               P (1, "wr_" & Ref_Name (T) & "(&mut w, root);");
                P (1, "match w.bad {");
                P (2, "Some(b) => Err(b),");
                P (2, "None => Ok(w.buf),");
@@ -1857,7 +1975,7 @@ package body HBNF_Rust is
             Lbl : constant String := Q (HBNF_C.Member_Label (Nm));
             J   : constant Natural := Find (Rules, Nm);
             T   : constant String :=
-              (if Is_Char_Rule (Rules, Nm) then "String" else Resolve_Type (Rules, Nm));
+              Value_Type (Rules, Nm);
 
             procedure Push (Index, Val : String) is
             begin
@@ -1869,7 +1987,7 @@ package body HBNF_Rust is
                P (Ind, "if let Some(c) = &" & Expr & " {");
                Push ("None", "Val::Node(Node::" & Variant (Back_Target (Backs, Idx, Nm)) & "(c))");
                P (Ind, "}");
-            elsif L > 0 and then Infos (L).Kind = Struct then
+            elsif L > 0 and then Infos (L).Kind = Struct and then Scalar_Rust_Type (Nm) = "" then
                if Is_List then
                   P (Ind, "for (i, e) in " & Expr & ".iter().enumerate() {");
                   Push ("Some(i)", "Val::Node(Node::" & Variant (L) & "(e))");
@@ -1877,11 +1995,11 @@ package body HBNF_Rust is
                else
                   Push ("None", "Val::Node(Node::" & Variant (L) & "(&" & Expr & "))");
                end if;
-            elsif L > 0 and then Infos (L).Kind = List then
+            elsif L > 0 and then Infos (L).Kind = List and then Scalar_Rust_Type (Nm) = "" then
                P (Ind, "for (i, e) in " & Expr & ".iter().enumerate() {");
                Push ("Some(i)", "Val::Node(Node::" & Variant (L) & "(e))");
                P (Ind, "}");
-            elsif J > 0 and then Infos (J).Kind = Enum then
+            elsif J > 0 and then Infos (J).Kind = Enum and then Scalar_Rust_Type (Nm) = "" then
                declare
                   Names : constant String_Vectors.Vector :=
                     Enum_Names (Infos (J).Literals);
@@ -1964,7 +2082,8 @@ package body HBNF_Rust is
          end Members;
 
          function Has_Alts (I : Natural) return Boolean is
-           (Struct_Alt (Rules (I), Infos (I)) or else Entry_Alt (Rules (I), Infos (I)));
+           (Struct_Alt (Rules (I), Infos (I))
+            or else (Entry_Alt (Rules (I), Infos (I)) and then Rules (I).Left_Bases = 0));
 
          function Alt_Els (I : Natural) return Element_Vectors.Vector is
            (if Infos (I).Kind = Struct then Rules (I).Pattern
@@ -2218,6 +2337,12 @@ package body HBNF_Rust is
                   P (1, "Parents { map }");
                   P (0, "}");
                end if;
+            elsif Leaf (To_String (R.Name)) > 0 and then Infos (Leaf (To_String (R.Name))).Kind = Struct then
+               P (0, "pub fn walk_" & RN & "(root: &" & Rust_Type (To_String (R.Name))
+                  & ", w: &mut impl Walker) -> bool { node_walk(Node::" & Variant (Leaf (To_String (R.Name)))
+                  & "(root), w) }");
+               P (0, "pub fn dump_" & RN & "(root: &" & Rust_Type (To_String (R.Name))
+                  & ") -> String { node_dump(Node::" & Variant (Leaf (To_String (R.Name))) & "(root)) }");
             elsif Infos (1).Kind = List then
                P (0, "pub fn walk_" & RN & "(root: &[" & Elem_Type (1)
                   & "], w: &mut impl Walker) -> bool {");
@@ -2605,7 +2730,7 @@ package body HBNF_Rust is
       procedure Emit_Alternation
         (Owner : Natural;
          Els : Element_Vectors.Vector; Acc, Reset : String;
-         Buf : in out U; Ind : String := "    ") is
+         Buf : in out U; Ind : String := "    "; Alt_Off : Natural := 0) is
          N  : constant Natural := Natural (Els.Length);
          St : Natural := 1;
          Br : Natural := 0;
@@ -2641,7 +2766,7 @@ package body HBNF_Rust is
                  and then ((Acc = "r." and then Struct_Alt (Rules (Owner), Analyze (Rules, Owner)))
                            or else (Acc = "e." and then Entry_Alt (Rules (Owner), Analyze (Rules, Owner))))
                then
-                  Append (Buf, Ind & "    " & Acc & "_alt = " & Img (Br) & ";");
+                  Append (Buf, Ind & "    " & Acc & "_alt = " & Img (Br + Alt_Off) & ";");
                   Append (Buf, LF);
                end if;
                Append (Buf, Ind & "    Ok(())");
@@ -2799,7 +2924,8 @@ package body HBNF_Rust is
                      Emit_Alternation (Idx, Tail_Branches (R), "e.",
                                        (if Lit_Only (E.Items) then ""
                                         else "e = " & RT & "Entry::default()"), Buf,
-                                       "            ");
+                                       "            ",
+                                       Natural (Alt_Labels_Count (Base_Branches (R))));
                   else
                      Emit_Alternation (Idx, E.Items, "e.",
                                        (if Lit_Only (E.Items) then ""
