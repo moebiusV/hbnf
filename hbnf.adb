@@ -302,10 +302,13 @@ begin
             G : constant HBNF_Wire.Grammar :=
               HBNF_Wire.Lower.Lower
                 (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path));
-            Types, Code : Unbounded_String;
+            Types, Code, Walks : Unbounded_String;
          begin
+            for N of HBNF_Wire.Walk_Set (G) loop
+               Append (Walks, (if Length (Walks) > 0 then " " else "") & To_String (N));
+            end loop;
             HBNF_Wire.Zig.Emit_Hosted (G, Types, Code);
-            HBNF_Zig.Set_Hosted (To_String (Types), To_String (Code));
+            HBNF_Zig.Set_Hosted (To_String (Types), To_String (Code), To_String (Walks));
          end;
       elsif not HBNF_Grammar.Wire_Rules.Is_Empty
         and then To_String (Backend) = "ada"
@@ -315,13 +318,18 @@ begin
             G : constant HBNF_Wire.Grammar :=
               HBNF_Wire.Lower.Lower
                 (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path));
-            Types, Spec, Withs, Code : Unbounded_String;
+            Types, Spec, Withs, Code, Walks : Unbounded_String;
          begin
+            for N of HBNF_Wire.Walk_Set (G) loop
+               Append (Walks, (if Length (Walks) > 0 then " " else "")
+                       & To_String (N) & "="
+                       & HBNF_Wire.Ada_Lang.Walk_Proc (To_String (N)));
+            end loop;
             HBNF_Wire.Ada_Lang.Emit_Hosted
               (G, To_String (Package_Name), Types, Spec, Withs, Code);
             HBNF_Ada.Set_Hosted
               (To_String (Types), To_String (Spec), To_String (Withs),
-               To_String (Code));
+               To_String (Code), To_String (Walks));
          end;
       elsif not HBNF_Grammar.Wire_Rules.Is_Empty
         and then To_String (Backend) = "rust"
@@ -331,10 +339,13 @@ begin
             G : constant HBNF_Wire.Grammar :=
               HBNF_Wire.Lower.Lower
                 (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path));
-            Types, Code : Unbounded_String;
+            Types, Code, Walks : Unbounded_String;
          begin
+            for N of HBNF_Wire.Walk_Set (G) loop
+               Append (Walks, (if Length (Walks) > 0 then " " else "") & To_String (N));
+            end loop;
             HBNF_Wire.Rust.Emit_Hosted (G, Types, Code);
-            HBNF_Rust.Set_Hosted (To_String (Types), To_String (Code));
+            HBNF_Rust.Set_Hosted (To_String (Types), To_String (Code), To_String (Walks));
          end;
       elsif not HBNF_Grammar.Wire_Rules.Is_Empty
         and then To_String (Backend) in "rust" | "zig" | "ada"

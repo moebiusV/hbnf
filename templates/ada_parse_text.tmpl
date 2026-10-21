@@ -12,9 +12,9 @@
       P : Parser := (Text => T'Unchecked_Access, Pos => 1, Last => Natural'Last{{&bit_init}});
       R : {{&root_type}};
    begin
-{{&lead_ws}}      R := {{&root_fn}} (P);
+{{&reset}}{{&lead_ws}}      R := {{&root_fn}} (P);
 {{&trail_ws}}      if P.Pos <= T'Last then
          Fail (P, "end of config");
       end if;
-      return R;
+{{&actions}}      return R;
    end Parse_Text;

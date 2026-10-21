@@ -1008,13 +1008,7 @@ package body HBNF_Wire.Zig is
       Emit_Fn  : constant String := Emit_Fn_Of (Rt);
    begin
       Check_Code_Language (G, "Zig");
-      if Hosted_Mode then
-         if Has_Actions then
-            raise Wire_Error with
-              "an %action in a grammar of text rules and bit rules is read by "
-              & "C so far (Zig reads %emit there, but not %action)";
-         end if;
-      else
+      if not Hosted_Mode then
          Words := Words_Item (G, "Zig");
       end if;
       if not Hosted_Mode and then Is_Value_Set (G.Rules (Root)) then

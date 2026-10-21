@@ -1,0 +1,18 @@
+; An %action on a bit rule that a text rule holds: it runs after the whole read
+; has succeeded, as it does in a grammar of bit rules alone.  Hbnf_Fail fails the
+; parse; Hbnf_Warn is collected (Warning (I)).  The code is Ada.
+language Ada
+prefix none
+whitespace none
+
+doc = "REC:" rec ";"
+
+rec = kind:8 len:8
+  %action{
+      if N.Kind = 255 then
+         Hbnf_Fail (H, "kind 255 is reserved");
+      end if;
+      if N.Len > 10 then
+         Hbnf_Warn (H, "a long record");
+      end if;
+  }

@@ -23,6 +23,9 @@ package HBNF_Wire.Ada_Lang is
 
    function Emit (G : Grammar; Package_Name : String) return String;
 
+   --  The name of the procedure that runs the %actions under a bit rule.
+   function Walk_Proc (Rule : String) return String;
+
    --  For a grammar of text rules and bit rules together: the bit rules, read
    --  from the text parser's own state (HBNF_Ada.Set_Hosted).  Types goes in the
    --  package of the types, Spec in the spec of the Parser child, Withs before

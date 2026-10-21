@@ -16,7 +16,9 @@ package HBNF_Ada is
    --  its body and Code to the body, after the forward declarations of the
    --  rules.  The parser then has a bit offset in its octet, and a text rule
    --  calls a bit rule as it calls a text rule, Parse_<rule> (P).
-   procedure Set_Hosted (Types, Spec, Withs, Code : String);
+   procedure Set_Hosted (Types, Spec, Withs, Code : String; Walks : String := "");
+   --  Walks: "rule=Walk_Proc" for each bit rule that holds an %action, space-separated;
+   --  the text parser runs them after the whole text is read.
 
    --  The names the text backend gives a rule's type, its parser and its scanner.
    function Ident (Rule : String) return String;

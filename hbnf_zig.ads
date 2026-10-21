@@ -15,7 +15,9 @@ package HBNF_Zig is
    --  of the bit rules, are added to the types, and Code, their readers and
    --  writers, to the parser, which then has a bit offset in its octet.  The
    --  text rules call a bit rule as they call a text rule, parse_<rule> (p).
-   procedure Set_Hosted (Types, Code : String);
+   procedure Set_Hosted (Types, Code : String; Walks : String := "");
+   --  Walks: the bit rules that have a walk_<rule> (they hold an %action),
+   --  space-separated; the text parser runs them after the whole text is read.
 
    --  The name of the scanner a character rule is compiled to (scan_<rule>),
    --  which a bit rule that names the rule calls.

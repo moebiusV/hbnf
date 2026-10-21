@@ -310,11 +310,15 @@ package body HBNF_Zig is
    end Find;
 
    Hosted_Types : U;
+   Hosted_Walks : U;                --  the bit rules with a walk_<rule>, space-separated
+   Hosted_Acts  : Boolean := False; --  some %action to run after the text is read
    Hosted_Code  : U;
    Is_Hosted    : Boolean := False;
 
-   procedure Set_Hosted (Types, Code : String) is
+   procedure Set_Hosted (Types, Code : String; Walks : String := "") is
    begin
+      Hosted_Walks := To_Unbounded_String (" " & Walks & " ");
+      Hosted_Acts  := Walks /= "";
       Hosted_Types := To_Unbounded_String (Types);
       Hosted_Code  := To_Unbounded_String (Code);
       Is_Hosted := True;
@@ -1289,6 +1293,107 @@ package body HBNF_Zig is
          end loop;
 
          Emit_Deinit (Buf);
+
+         --  The %actions of the bit rules a text rule holds, run after the whole
+         --  text has been read: bnf_act_<rule> walks a node, children first, and
+         --  calls the walk_<bit rule> of each bit rule it holds.
+         if Is_Hosted and then Hosted_Acts then
+            declare
+               function Walked (Name : String) return Boolean is
+                 (Find (Rules, Name) = 0
+                  and then Index (Hosted_Walks, " " & Name & " ") > 0);
+
+               procedure Act_Stmt
+                 (Name : String; Is_List : Boolean; Back : Natural;
+                  Expr : String; Buf : in out U; Ind : String)
+               is
+                  L : constant Natural := Leaf (Name);
+
+                  procedure Elems (E : String; Idx : Natural) is
+                     Info : constant Rule_Info := Infos (Idx);
+                  begin
+                     if not Info.Elem_Members.Is_Empty then
+                        Append (Buf, Ind & "for (" & E & ") |*e| try bnf_act_"
+                          & Zig_Snake (To_String (Rules (Idx).Name))
+                          & "_entry(e, h);" & LF);
+                     elsif Info.Elem_Name /= Null_Unbounded_String then
+                        declare
+                           EN : constant String := To_String (Info.Elem_Name);
+                           EL : constant Natural := Leaf (EN);
+                        begin
+                           if Walked (EN) then
+                              Append (Buf, Ind & "for (" & E & ") |*e| try walk_"
+                                & EN & "(e, h);" & LF);
+                           elsif EL > 0 and then Infos (EL).Kind = Struct then
+                              Append (Buf, Ind & "for (" & E & ") |*e| try bnf_act_"
+                                & Zig_Snake (To_String (Rules (EL).Name))
+                                & "(e, h);" & LF);
+                           end if;
+                        end;
+                     end if;
+                  end Elems;
+               begin
+                  if Back > 0 then
+                     Append (Buf, Ind & "if (" & Expr & ") |c| try bnf_act_"
+                       & Zig_Snake (To_String (Rules (Back).Name)) & "(c, h);" & LF);
+                  elsif Walked (Name) then
+                     if Is_List then
+                        Append (Buf, Ind & "for (" & Expr & ") |*e| try walk_"
+                          & Name & "(e, h);" & LF);
+                     else
+                        Append (Buf, Ind & "try walk_" & Name & "(&" & Expr
+                          & ", h);" & LF);
+                     end if;
+                  elsif L > 0 and then Infos (L).Kind = Struct then
+                     if Is_List then
+                        Append (Buf, Ind & "for (" & Expr & ") |*e| try bnf_act_"
+                          & Zig_Snake (To_String (Rules (L).Name)) & "(e, h);" & LF);
+                     else
+                        Append (Buf, Ind & "try bnf_act_"
+                          & Zig_Snake (To_String (Rules (L).Name)) & "(&" & Expr
+                          & ", h);" & LF);
+                     end if;
+                  elsif L > 0 and then Infos (L).Kind = List then
+                     Elems (Expr, L);
+                  end if;
+               end Act_Stmt;
+
+               procedure Act_Node
+                 (Owner : Natural; Type_Name, Fn : String; Rep : Boolean;
+                  Members : Member_Vectors.Vector; Buf : in out U) is
+               begin
+                  Append (Buf, "fn bnf_act_" & Fn & "(n: *const " & Type_Name
+                    & ", h: *Hooks) error{HbnfFail}!void {" & LF);
+                  Append (Buf, "    _ = &n;" & LF & "    _ = &h;" & LF);
+                  for M of Members loop
+                     Act_Stmt (To_String (M.Name), Rep and then M.Is_List,
+                               Back_Target (Backs, Owner, To_String (M.Name)),
+                               "n." & Zig_Field (To_String (M.Name)), Buf, "    ");
+                  end loop;
+                  Append (Buf, "}" & LF & LF);
+               end Act_Node;
+            begin
+               Append (Buf, "// ---- the %actions of the bit rules, after the read ----" & LF);
+               for I in 1 .. N loop
+                  case Infos (I).Kind is
+                     when Struct =>
+                        Act_Node (I, Node_Type (I), Node_Fn (I), True,
+                                  Node_Members (I), Buf);
+                     when List =>
+                        if not Infos (I).Elem_Members.Is_Empty then
+                           Act_Node (I, Node_Type (I), Node_Fn (I), False,
+                                     Node_Members (I), Buf);
+                        end if;
+                     when others =>
+                        null;
+                  end case;
+               end loop;
+               Append (Buf, "fn bnf_act_root(n: anytype, h: *Hooks) error{HbnfFail}!void {" & LF);
+               Append (Buf, "    _ = &n;" & LF & "    _ = &h;" & LF);
+               Act_Stmt (To_String (Rules (1).Name), False, 0, "n.*", Buf, "    ");
+               Append (Buf, "}" & LF & LF);
+            end;
+         end if;
       end Emit_Walk;
 
       Emitted   : array (1 .. N) of Boolean := [others => False];
@@ -2861,7 +2966,23 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
          V : Mustache.Context := Mustache.View;
       begin
          Mustache.Put (V, "root_type", Root_T);
-         Mustache.Put (V, "root_fn",
+         Mustache.Put (V, "reset",
+           (if Is_Hosted and then Hosted_Acts
+            then "    bnf_warning_list = &.{};" & LF else ""));
+         Mustache.Put (V, "actions",
+           (if Is_Hosted and then Hosted_Acts then
+              "    var h_ = Hooks{ .alloc = alloc };" & LF
+              & "    bnf_act_root(&out, &h_) catch {" & LF
+              & "        const n = @min(h_.msg.len, err.len - 1);" & LF
+              & "        @memcpy(err[0..n], h_.msg[0..n]);" & LF
+              & "        err[n] = 0;" & LF
+              & "        err_line.* = 0;" & LF
+              & "        err_col.* = 0;" & LF
+              & "        return error.Invalid;" & LF
+              & "    };" & LF
+              & "    bnf_warning_list = h_.warnings.items;" & LF
+            else ""));
+        Mustache.Put (V, "root_fn",
            "parse_" & Zig_Snake (To_String (R.Name)));
          --  The root skips whitespace around itself if its file does.
          Mustache.Put (V, "lead_ws",

@@ -903,13 +903,7 @@ package body HBNF_Wire.Rust is
            "the first rule, `" & Rt & "`, is a list of constants; the "
            & "parser reads the first rule, which should be the whole message";
       end if;
-      if Hosted_Mode then
-         if Has_Actions then
-            raise Wire_Error with
-              "an %action in a grammar of text rules and bit rules is read by "
-              & "C so far (Rust reads %emit there, but not %action)";
-         end if;
-      else
+      if not Hosted_Mode then
          Words := Words_Item (G, "Rust");
       end if;
 

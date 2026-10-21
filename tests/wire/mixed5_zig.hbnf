@@ -1,0 +1,14 @@
+; An %action on a bit rule that a text rule holds: it runs after the whole read
+; has succeeded, as it does in a grammar of bit rules alone.  h.fail fails the
+; parse; h.warn is collected (hbnf_warnings ()).  The code is Zig.
+language Zig
+prefix none
+whitespace none
+
+doc = "REC:" rec ";"
+
+rec = kind:8 len:8
+  %action{
+      if (n.kind == 255) return h.fail("kind 255 is reserved");
+      if (n.len > 10) h.warn("a long record");
+  }

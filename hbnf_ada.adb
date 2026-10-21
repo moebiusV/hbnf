@@ -256,10 +256,14 @@ package body HBNF_Ada is
    Hosted_Spec  : U;
    Hosted_Withs : U;
    Hosted_Code  : U;
+   Hosted_Walks : U;                --  " rule=Walk_Proc", for each bit rule that has one
+   Hosted_Acts  : Boolean := False; --  some %action to run after the text is read
    Is_Hosted    : Boolean := False;
 
-   procedure Set_Hosted (Types, Spec, Withs, Code : String) is
+   procedure Set_Hosted (Types, Spec, Withs, Code : String; Walks : String := "") is
    begin
+      Hosted_Walks := To_Unbounded_String (" " & Walks & " ");
+      Hosted_Acts  := Walks /= "";
       Hosted_Types := To_Unbounded_String (Types);
       Hosted_Spec  := To_Unbounded_String (Spec);
       Hosted_Withs := To_Unbounded_String (Withs);
@@ -2431,6 +2435,8 @@ package body HBNF_Ada is
       --  bodies (for the child body), filled once before either is rendered.
       Free_Decls : U;
       Free_Body  : U;
+      Act_Decls  : U;     --  the %actions of the bit rules, run after the read
+      Act_Body   : U;
 
       --  Emit the greedy loop for a repetition: match one full branch of the
       --  DNF (the longest one) as many times as Max allows (0 = unbounded),
@@ -2732,6 +2738,174 @@ package body HBNF_Ada is
             end;
          end loop;
       end;
+
+      --  The %actions of the bit rules a text rule holds, run after the whole
+      --  text has been read: Act_<rule> walks a record, children first, and
+      --  calls the Walk_<bit rule> of each bit rule it holds.
+      if Is_Hosted and then Hosted_Acts then
+         declare
+            --  The walk procedure of a bit rule, "" if it has none.
+            function Walk_Of (Name : String) return String is
+               Key : constant String := " " & Name & "=";
+               Found : constant Natural := Index (Hosted_Walks, Key);
+            begin
+               if Find (Rules, Name) /= 0 or else Found = 0 then
+                  return "";
+               end if;
+               declare
+                  S : constant String := To_String (Hosted_Walks);
+                  E : Natural := Found + Key'Length;
+               begin
+                  while E <= S'Last and then S (E) /= ' ' loop
+                     E := E + 1;
+                  end loop;
+                  return S (Found + Key'Length .. E - 1);
+               end;
+            end Walk_Of;
+
+            procedure Act_Vector (Buf : in out U; Vec, Elem : String) is
+            begin
+               Append (Buf, "   for E of " & Vec & " loop" & LF);
+               Append (Buf, "      if E /= null then Act_" & Elem & " (E.all, H); end if;" & LF);
+               Append (Buf, "   end loop;" & LF);
+            end Act_Vector;
+
+            procedure Act_List_Vector (Buf : in out U; Vec, Elem : String) is
+            begin
+               Append (Buf, "   for E of " & Vec & " loop" & LF);
+               Append (Buf, "      Act_" & Elem & " (E, H);" & LF);
+               Append (Buf, "   end loop;" & LF);
+            end Act_List_Vector;
+
+            procedure Act_Member
+              (Idx : Natural; M : Member; Prefix : String; Buf : in out U;
+               Held : Boolean := False)
+            is
+               NM  : constant String := To_String (M.Name);
+               F   : constant String := Ada_Field (NM);
+               J   : constant Natural := Find (Rules, NM);
+               W   : constant String := Walk_Of (NM);
+               Rec : constant Natural :=
+                 (if J > 0 and then Is_Record (Analyze (Rules, J)) then
+                     J
+                  elsif Is_Back (Backs, Idx, NM) then
+                     Leaf_Record (Rules, NM)
+                  elsif Held and then Alias_Record (Rules, NM) /= 0 then
+                     Leaf_Record (Rules, NM)
+                  else
+                     0);
+            begin
+               if W /= "" then
+                  if M.Is_List then
+                     Append (Buf, "   for E of " & Prefix & F & " loop" & LF);
+                     Append (Buf, "      " & W & " (E, H);" & LF);
+                     Append (Buf, "   end loop;" & LF);
+                  else
+                     Append (Buf, "   " & W & " (" & Prefix & F & ", H);" & LF);
+                  end if;
+               elsif M.Is_List then
+                  if J > 0 and then Is_Record (Analyze (Rules, J)) then
+                     Act_Vector (Buf, Prefix & F, Ada_Ident (NM));
+                  elsif Alias_Record (Rules, NM) /= 0 then
+                     Act_Vector
+                       (Buf, Prefix & F,
+                        Ada_Ident
+                          (To_String (Rules (Leaf_Record (Rules, NM)).Name)));
+                  elsif J > 0 and then Over_Leaf (Rules, J)
+                    and then Analyze (Rules, Leaf_Target (Rules, J)).Kind = List
+                  then
+                     Act_List_Vector
+                       (Buf, Prefix & F,
+                        Ada_Ident (To_String (Rules (Leaf_Target (Rules, J)).Name)));
+                  end if;
+               elsif Rec > 0 then
+                  Append (Buf, "   if " & Prefix & F & " /= null then" & LF);
+                  Append (Buf, "      Act_" & Ada_Ident (To_String (Rules (Rec).Name))
+                          & " (" & Prefix & F & ".all, H);" & LF);
+                  Append (Buf, "   end if;" & LF);
+               elsif J > 0 and then Analyze (Rules, J).Kind = List then
+                  Append (Buf, "   Act_" & Ada_Ident (NM) & " (" & Prefix & F
+                          & ", H);" & LF);
+               elsif J > 0 and then Analyze (Rules, J).Kind = Scalar
+                 and then Over_Leaf (Rules, J)
+               then
+                  Append (Buf, "   Act_"
+                          & Ada_Ident
+                              (To_String (Rules (Leaf_Record (Rules, NM)).Name))
+                          & " (" & Prefix & F & ", H);" & LF);
+               end if;
+            end Act_Member;
+         begin
+            for I in 1 .. N loop
+               declare
+                  Info : constant Rule_Info := Analyze (Rules, I);
+                  CN   : constant String := Ada_Ident (To_String (Rules (I).Name));
+                  Stmts : U;
+               begin
+                  if Is_Record (Info) or else Info.Kind = List then
+                     if Is_Record (Info) then
+                        for M of Info.Members loop
+                           Act_Member (I, M, "V.", Stmts);
+                        end loop;
+                     elsif Info.Elem_Members.Is_Empty
+                       and then Info.Elem_Name /= Null_Unbounded_String
+                     then
+                        declare
+                           EN : constant String := To_String (Info.Elem_Name);
+                           E  : constant Natural := Find (Rules, EN);
+                           W  : constant String := Walk_Of (EN);
+                        begin
+                           if W /= "" then
+                              Append (Stmts, "   for E of V loop" & LF
+                                      & "      " & W & " (E, H);" & LF
+                                      & "   end loop;" & LF);
+                           elsif E > 0 and then Is_Record (Analyze (Rules, E)) then
+                              Act_Vector (Stmts, "V", Ada_Ident (EN));
+                           elsif Alias_Record (Rules, EN) /= 0 then
+                              Act_Vector
+                                (Stmts, "V",
+                                 Ada_Ident
+                                   (To_String (Rules (Leaf_Record (Rules, EN)).Name)));
+                           elsif E > 0 and then Over_Leaf (Rules, E)
+                             and then Analyze (Rules, Leaf_Target (Rules, E)).Kind = List
+                           then
+                              Act_List_Vector
+                                (Stmts, "V",
+                                 Ada_Ident
+                                   (To_String (Rules (Leaf_Target (Rules, E)).Name)));
+                           end if;
+                        end;
+                     elsif not Info.Elem_Members.Is_Empty then
+                        declare
+                           Inner : U;
+                        begin
+                           for M of Info.Elem_Members loop
+                              Act_Member
+                                (I, (Name => M.Name, Is_List => False),
+                                 "E.", Inner, Held => True);
+                           end loop;
+                           if To_String (Inner) /= "" then
+                              Append (Stmts, "   for E of V loop" & LF
+                                      & To_String (Inner) & "   end loop;" & LF);
+                           end if;
+                        end;
+                     end if;
+                     Append (Act_Decls, "   procedure Act_" & CN & " (V : " & CN
+                             & "_Type; H : in out Hooks);" & LF);
+                     Append (Act_Body, "   procedure Act_" & CN & " (V : " & CN
+                             & "_Type; H : in out Hooks) is" & LF);
+                     if To_String (Stmts) = "" then
+                        Append (Act_Body, "      pragma Unreferenced (V, H);" & LF
+                                & "   begin" & LF & "      null;" & LF);
+                     else
+                        Append (Act_Body, "   begin" & LF & To_String (Stmts));
+                     end if;
+                     Append (Act_Body, "   end Act_" & CN & ";" & LF & LF);
+                  end if;
+               end;
+            end loop;
+         end;
+      end if;
 
       --  Package specification: the exception and Parse_Text (and Parse_Config).
       declare
@@ -3175,6 +3349,9 @@ package body HBNF_Ada is
       end loop;
       Append (Bdy, LF);
       Append (Bdy, Hosted_Code);
+      if Length (Act_Decls) > 0 then
+         Append (Bdy, To_String (Act_Decls) & LF & To_String (Act_Body));
+      end if;
 
       for I in 1 .. N loop
          declare
@@ -3204,6 +3381,24 @@ package body HBNF_Ada is
       begin
          Mustache.Put (V, "root_type", Ret_Type (1));
          Mustache.Put (V, "bit_init", (if Is_Hosted then ", Bit => 0" else ""));
+         Mustache.Put (V, "reset",
+           (if Is_Hosted and then Hosted_Acts
+            then "      Bnf_Warns.Clear;" & LF else ""));
+         Mustache.Put (V, "actions",
+           (if Is_Hosted and then Hosted_Acts
+              and then (Is_Record (Analyze (Rules, 1))
+                        or else Analyze (Rules, 1).Kind = List)
+            then
+              "      declare" & LF
+              & "         H : Hooks;" & LF
+              & "      begin" & LF
+              & "         Act_" & Ada_Ident (To_String (Rules (1).Name)) & " (R, H);" & LF
+              & "         Bnf_Warns := H.Warnings;" & LF
+              & "      exception" & LF
+              & "         when Bnf_Action_Fail =>" & LF
+              & "            raise Parse_Error with To_String (H.Msg);" & LF
+              & "      end;" & LF
+            else ""));
          Mustache.Put (V, "root_fn",
            "Parse_" & Ada_Ident (To_String (Rules (1).Name)));
          --  The root skips whitespace around itself if its file does.

@@ -194,6 +194,8 @@ package body HBNF_Wire.Ada_Lang is
       return To_String (R);
    end Rename;
 
+   function Walk_Proc (Rule : String) return String is ("Walk_" & Ada_Case (Rule));
+
    function Emit (G : Grammar; Package_Name : String) return String is
       Spec : Unbounded_String;     --  the package specification
       Bod  : Unbounded_String;     --  the body
@@ -1415,11 +1417,7 @@ package body HBNF_Wire.Ada_Lang is
    begin
       Check_Code_Language (G, "Ada");
       if Hosted_Mode then
-         if Has_Actions then
-            raise Wire_Error with
-              "an %action in a grammar of text rules and bit rules is read by "
-              & "C so far (Ada reads %emit there, but not %action)";
-         end if;
+         null;
       else
          Words := Words_Item (G, "Ada");
       end if;
@@ -2176,6 +2174,11 @@ package body HBNF_Wire.Ada_Lang is
          L (1, "");
       end if;
 
+      if Hosted_Mode and then Has_Actions then
+         Append (Last_Spec, "   --  The warnings the %actions gave on the last successful read."
+                 & ASCII.LF & "   function Warning_Count return Natural;" & ASCII.LF
+                 & "   function Warning (I : Positive) return String;" & ASCII.LF & ASCII.LF);
+      end if;
       if Hosted_Mode then
          for R of G.Rules loop
             if not Is_Value_Set (R) then

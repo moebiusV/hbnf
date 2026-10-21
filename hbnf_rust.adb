@@ -288,10 +288,14 @@ package body HBNF_Rust is
 
    Hosted_Types : U;
    Hosted_Code  : U;
+   Hosted_Walks : U;                --  the bit rules with a walk_<rule>, space-separated
+   Hosted_Acts  : Boolean := False; --  some %action to run after the text is read
    Is_Hosted    : Boolean := False;
 
-   procedure Set_Hosted (Types, Code : String) is
+   procedure Set_Hosted (Types, Code : String; Walks : String := "") is
    begin
+      Hosted_Walks := To_Unbounded_String (" " & Walks & " ");
+      Hosted_Acts  := Walks /= "";
       Hosted_Types := To_Unbounded_String (Types);
       Hosted_Code  := To_Unbounded_String (Code);
       Is_Hosted := True;
@@ -1157,6 +1161,151 @@ package body HBNF_Rust is
                Append (Buf, LF);
             end if;
          end loop;
+
+         --  The %actions of the bit rules a text rule holds, run after the whole
+         --  text has been read: bnf_act_<rule> walks a node, children first, and
+         --  calls the walk_<bit rule> of each bit rule it holds.
+         if Is_Hosted and then Hosted_Acts then
+            declare
+               function Walked (Name : String) return Boolean is
+                 (Find (Rules, Name) = 0
+                  and then Index (Hosted_Walks, " " & Name & " ") > 0);
+
+               --  The struct or list a reference ends at, chasing scalar aliases.
+               function Leaf (Ref : String) return Natural is
+                  J    : Natural := Find (Rules, Ref);
+                  Hops : Natural := 0;
+               begin
+                  while J > 0 and then Hops < 20 and then Infos (J).Kind = Scalar
+                  loop
+                     Hops := Hops + 1;
+                     declare
+                        P : constant Element_Vectors.Vector := Rules (J).Pattern;
+                     begin
+                        if Natural (P.Length) = 1 and then P (1).Kind = Name
+                          and then P (1).Min = 1 and then P (1).Max = 1
+                        then
+                           J := Find (Rules, To_String (P (1).Name));
+                        else
+                           J := 0;
+                        end if;
+                     end;
+                  end loop;
+                  if J > 0 and then Hops < 20
+                    and then (Infos (J).Kind = Struct or else Infos (J).Kind = List)
+                  then
+                     return J;
+                  end if;
+                  return 0;
+               end Leaf;
+
+               procedure Act_Stmt
+                 (Name : String; Is_List : Boolean; Back : Natural;
+                  Expr : String; Buf : in out U; Ind : String)
+               is
+                  L : constant Natural := Leaf (Name);
+
+                  procedure Elems (E : String; Idx : Natural) is
+                     Info : constant Rule_Info := Infos (Idx);
+                  begin
+                     if not Info.Elem_Members.Is_Empty then
+                        Append (Buf, Ind & "for e in &" & E & " { bnf_act_"
+                          & Rust_Snake (To_String (Rules (Idx).Name))
+                          & "_entry(e, h)?; }" & LF);
+                     elsif Info.Elem_Name /= Null_Unbounded_String then
+                        declare
+                           EN : constant String := To_String (Info.Elem_Name);
+                           EL : constant Natural := Leaf (EN);
+                        begin
+                           if Walked (EN) then
+                              Append (Buf, Ind & "for e in &" & E & " { walk_"
+                                & EN & "(e, h)?; }" & LF);
+                           elsif EL > 0 and then Infos (EL).Kind = Struct then
+                              Append (Buf, Ind & "for e in &" & E & " { bnf_act_"
+                                & Rust_Snake (To_String (Rules (EL).Name))
+                                & "(e, h)?; }" & LF);
+                           end if;
+                        end;
+                     end if;
+                  end Elems;
+               begin
+                  if Back > 0 then
+                     Append (Buf, Ind & "if let Some(c) = &" & Expr & " { bnf_act_"
+                       & Rust_Snake (To_String (Rules (Back).Name)) & "(c, h)?; }" & LF);
+                  elsif Walked (Name) then
+                     if Is_List then
+                        Append (Buf, Ind & "for e in &" & Expr & " { walk_"
+                          & Name & "(e, h)?; }" & LF);
+                     else
+                        Append (Buf, Ind & "walk_" & Name & "(&" & Expr
+                          & ", h)?;" & LF);
+                     end if;
+                  elsif L > 0 and then Infos (L).Kind = Struct then
+                     if Is_List then
+                        Append (Buf, Ind & "for e in &" & Expr & " { bnf_act_"
+                          & Rust_Snake (To_String (Rules (L).Name)) & "(e, h)?; }" & LF);
+                     else
+                        Append (Buf, Ind & "bnf_act_"
+                          & Rust_Snake (To_String (Rules (L).Name)) & "(&" & Expr
+                          & ", h)?;" & LF);
+                     end if;
+                  elsif L > 0 and then Infos (L).Kind = List then
+                     Elems (Expr, L);
+                  end if;
+               end Act_Stmt;
+
+               procedure Act_Node
+                 (Owner : Natural; Type_Name, Fn : String; Rep : Boolean;
+                  Members : Member_Vectors.Vector; Buf : in out U) is
+               begin
+                  Append (Buf, "fn bnf_act_" & Fn & "(n: &" & Type_Name
+                    & ", h: &mut Hooks) -> Result<(), String> {" & LF);
+                  for M of Members loop
+                     Act_Stmt (To_String (M.Name), Rep and then M.Is_List,
+                               Back_Target (Backs, Owner, To_String (M.Name)),
+                               "n." & Rust_Field (To_String (M.Name)), Buf, "    ");
+                  end loop;
+                  Append (Buf, "    Ok(())" & LF & "}" & LF & LF);
+               end Act_Node;
+            begin
+               Append (Buf, "// ---- the %actions of the bit rules, after the read ----" & LF);
+               for I in 1 .. N loop
+                  case Infos (I).Kind is
+                     when Struct =>
+                        Act_Node (I, Node_Type (I), Node_Fn (I), True,
+                                  Node_Members (I), Buf);
+                     when List =>
+                        if not Infos (I).Elem_Members.Is_Empty then
+                           Act_Node (I, Node_Type (I), Node_Fn (I), False,
+                                     Node_Members (I), Buf);
+                        end if;
+                     when others =>
+                        null;
+                  end case;
+               end loop;
+               declare
+                  R : constant HBNF_Grammar.Rule := Rules (1);
+                  P : constant HBNF_Grammar.Element_Vectors.Vector := R.Pattern;
+                  Root_T : constant String :=
+                    (if Is_Char_Rule (Rules, To_String (R.Name))
+                     then Rust_Type (To_String (R.Name))
+                     elsif Natural (P.Length) = 1
+                       and then (P (1).Min /= 1 or else P (1).Max /= 1)
+                     then
+                        (if P (1).Kind = HBNF_Grammar.Name then
+                           "Vec<" & (if Scalar_Rust_Type (To_String (P (1).Name)) /= "" then
+                                       Scalar_Rust_Type (To_String (P (1).Name))
+                                     else Rust_Type (To_String (P (1).Name))) & ">"
+                         else "Vec<" & Rust_Type (To_String (R.Name)) & "Entry>")
+                     else Rust_Type (To_String (R.Name)));
+               begin
+                  Append (Buf, "fn bnf_act_root(n: &" & Root_T
+                    & ", h: &mut Hooks) -> Result<(), String> {" & LF);
+                  Act_Stmt (To_String (R.Name), False, 0, "(*n)", Buf, "    ");
+                  Append (Buf, "    Ok(())" & LF & "}" & LF & LF);
+               end;
+            end;
+         end if;
       end Emit_Walk;
 
       Res : U;
@@ -2413,6 +2562,16 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
          Mustache.Put (V, "text_param", (if Is_Hosted then "&[u8]" else "&str"));
          Mustache.Put (V, "text_init", (if Is_Hosted then ": Txt(text)" else ""));
          Mustache.Put (V, "bit_init", (if Is_Hosted then "bit: 0, " else ""));
+         Mustache.Put (V, "reset",
+           (if Is_Hosted and then Hosted_Acts
+            then "    BNF_WARNINGS.with(|w| w.borrow_mut().clear());" & LF else ""));
+         Mustache.Put (V, "actions",
+           (if Is_Hosted and then Hosted_Acts then
+              "    let mut h_ = Hooks { warnings: Vec::new() };" & LF
+              & "    let r_ = bnf_act_root(&out, &mut h_);" & LF
+              & "    BNF_WARNINGS.with(|w| *w.borrow_mut() = h_.warnings);" & LF
+              & "    if let Err(m) = r_ { return Err(ParseError { line: 0, col: 0, msg: m }); }" & LF
+            else ""));
          Mustache.Put (V, "root_fn",
            "parse_" & Rust_Snake (To_String (R.Name)));
          --  The root skips whitespace around itself if its file does.

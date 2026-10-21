@@ -1,0 +1,14 @@
+; An %action on a bit rule that a text rule holds: it runs after the whole read
+; has succeeded, as it does in a grammar of bit rules alone.  hbnf_fail! fails the
+; parse; hbnf_warn! is collected (hbnf_warnings ()).  The code is Rust.
+language Rust
+prefix none
+whitespace none
+
+doc = "REC:" rec ";"
+
+rec = kind:8 len:8
+  %action{
+      if n.kind == 255 { hbnf_fail!("kind 255 is reserved"); }
+      if n.len > 10 { hbnf_warn!("a long record"); }
+  }

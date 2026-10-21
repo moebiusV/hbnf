@@ -73,7 +73,9 @@ Zig reads these too, and so do Ada and Rust (text rules and bit rules in one gra
 a bit field in one rule, and `%emit` and `emit_bits_<rule>` for the bit rules; Zig also has
 `bitsof` anywhere in a rule over any text rule), in the same hosted way: the bit rules are read from the text parser's own input
 and position, and a bit rule that names a text rule with structure has the text parser read it
-(`bnf_sub`).  Not yet for these grammars outside C: `%action` and a writer for the whole document.  `bitsof`
+(`bnf_sub`).  `%action` works in them too: after the whole text has been read, a walk over the tree (children first)
+runs the action of each bit rule it holds, as C does; `mixed5` is the test, one grammar per language.
+Not yet for these grammars outside C: a writer for the whole document.  `bitsof`
 anywhere in a rule, over any text rule, works in Zig, Ada and Rust.  In Rust the text parser is over bytes
 (`parse_text(&[u8])`), so a bit rule can hold any octet; in Ada the Parser child's spec gets
 `Emit_Bits_<Rule>`.  Their tests are `mixed`, `mixed2`, `mixed3`, `mixed4`, `mixed6` and `segwit_in`,
@@ -320,7 +322,7 @@ second.
 
 ## What is not built yet
 
-- `%action`, and a writer for the whole document, in mixed grammars outside C.
+- A writer for the whole document, in mixed grammars outside C.
   Zig returns `error{Parse}` with the octet and message through a pointer and takes an allocator,
   best an arena.  Ada writes the specification and body in one file (`gnatchop` splits it), with
   `Ada.Containers.Vectors` for octets and entries and a record with a variant part for a choice
