@@ -111,4 +111,33 @@ for d in tests/daemons/*/; do
 	others "$g" "grammars/obconf_$g.hbnf" "$d"*.conf
 done
 
+# A pretty-printer's say in how the tree is written (Layout): tests/writer/layout_main.* write
+# tutorial/shopping.hbnf's tree with a newline before every "buy" but the first, "from" in capitals,
+# and a log of the rules entered; the output must be tests/writer/layout.expected.
+layout() {
+	G=tutorial/shopping.hbnf
+	if command -v rustc > /dev/null 2>&1; then
+		d=$W/lay_rs; mkdir -p "$d"
+		"$CLI" $G --backend=rust --writer > "$d/shopping.rs" && cp tests/writer/layout_main.rs "$d/m.rs" \
+		  && (cd "$d" && rustc --edition 2021 -A warnings -o m m.rs > cc.txt 2>&1) && "$d/m" > "$d/out" 2>&1 \
+		  && cmp -s "$d/out" tests/writer/layout.expected && echo "PASS layout (rust)" \
+		  || { echo "FAIL layout (rust)"; head -5 "$d/cc.txt" 2>/dev/null; fail=$((fail+1)); }
+	fi
+	if command -v zig > /dev/null 2>&1; then
+		d=$W/lay_zg; mkdir -p "$d"
+		"$CLI" $G --backend=zig --writer > "$d/shopping.zig" && cp tests/writer/layout_main.zig "$d/m.zig" \
+		  && (cd "$d" && zig build-exe m.zig -femit-bin=m > cc.txt 2>&1) && "$d/m" > "$d/out" 2>&1 \
+		  && cmp -s "$d/out" tests/writer/layout.expected && echo "PASS layout (zig)" \
+		  || { echo "FAIL layout (zig)"; head -5 "$d/cc.txt" 2>/dev/null; fail=$((fail+1)); }
+	fi
+	if command -v gnatmake > /dev/null 2>&1; then
+		d=$W/lay_ad; mkdir -p "$d"
+		"$CLI" $G --backend=ada --package=Shopping --writer > "$d/all.ada" && cp tests/writer/layout_main.adb "$d/" \
+		  && (cd "$d" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -gnat2022 layout_main.adb -o m > cc.txt 2>&1) \
+		  && "$d/m" > "$d/out" 2>&1 && cmp -s "$d/out" tests/writer/layout.expected && echo "PASS layout (ada)" \
+		  || { echo "FAIL layout (ada)"; grep -v warning "$d/cc.txt" 2>/dev/null | head -5; fail=$((fail+1)); }
+	fi
+}
+layout
+
 [ "$fail" -eq 0 ] && echo "writer OK" || { echo "writer: $fail FAIL"; exit 1; }

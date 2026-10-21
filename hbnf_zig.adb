@@ -1786,13 +1786,34 @@ package body HBNF_Zig is
            (Zig_Snake (To_String (Rules (Idx).Name)));
       begin
          P (0, "// ---- write (the tree as text, canonical) ----");
+         P (0, "/// A pretty-printer's say in how the tree is written.  `before` is asked before each token or");
+         P (0, "/// literal and returns what goes before it (null: the writer's own spacing); `replace` may");
+         P (0, "/// give other text for it; `enter` and `leave` are called on entering and leaving each node,");
+         P (0, "/// with its rule's name.  Each gets `ctx` first.");
+         P (0, "pub const Layout = struct {");
+         P (1, "ctx: ?*anyopaque = null,");
+         P (1, "before: ?*const fn (?*anyopaque, []const u8) ?[]const u8 = null,");
+         P (1, "replace: ?*const fn (?*anyopaque, []const u8) ?[]const u8 = null,");
+         P (1, "enter: ?*const fn (?*anyopaque, []const u8) void = null,");
+         P (1, "leave: ?*const fn (?*anyopaque, []const u8) void = null,");
+         P (0, "};");
+         P (0, "");
          P (0, "const BnfW = struct {");
          P (1, "alloc: std.mem.Allocator,");
+         P (1, "lay: Layout = .{},");
          P (1, "buf: std.ArrayList(u8) = .empty,");
          P (1, "last: u8 = 0,");
          P (1, "bad: ?[]const u8 = null,");
          P (1, "pscan: ?*const fn ([]const u8, usize, usize) usize = null,");
          P (1, "ptxt: std.ArrayList(u8) = .empty,");
+         P (0, "");
+         P (1, "fn enter(self: *BnfW, rule: []const u8) void {");
+         P (2, "if (self.lay.enter) |f| f(self.lay.ctx, rule);");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn leave(self: *BnfW, rule: []const u8) void {");
+         P (2, "if (self.lay.leave) |f| f(self.lay.ctx, rule);");
+         P (1, "}");
          P (0, "");
          P (1, "fn badw(self: *BnfW, why: []const u8) void {");
          P (2, "if (self.bad == null) self.bad = why;");
@@ -1844,12 +1865,17 @@ package body HBNF_Zig is
          P (1, "}");
          P (0, "");
          P (1, "fn text(self: *BnfW, gap: bool, s: []const u8, scan: ?*const fn ([]const u8, usize, usize) usize) void {");
-         P (2, "self.between(gap, s);");
-         P (2, "self.put(s);");
+         P (2, "const sep: ?[]const u8 = if (s.len > 0 and self.lay.before != null) self.lay.before.?(self.lay.ctx, s) else null;");
+         P (2, "if (sep) |x| self.put(x) else self.between(gap, s);");
+         P (2, "var out = s;");
+         P (2, "if (s.len > 0 and self.lay.replace != null) {");
+         P (3, "if (self.lay.replace.?(self.lay.ctx, s)) |r| out = r;");
+         P (2, "}");
+         P (2, "self.put(out);");
          P (2, "self.pscan = scan;");
          P (2, "if (scan != null) {");
          P (3, "self.ptxt.clearRetainingCapacity();");
-         P (3, "self.ptxt.appendSlice(self.alloc, s) catch {");
+         P (3, "self.ptxt.appendSlice(self.alloc, out) catch {");
          P (4, "self.pscan = null;");
          P (3, "};");
          P (2, "}");
@@ -1896,6 +1922,8 @@ package body HBNF_Zig is
                      P (0, "fn wr_" & Fn & "(w: *BnfW, n: *const "
                         & Zig_Type (NM) & ") void {");
                      P (1, "_ = &n;");
+                     P (1, "w.enter(" & """" & Zig_Escape (NM) & """" & ");");
+                     P (1, "defer w.leave(" & """" & Zig_Escape (NM) & """" & ");");
                      if Natural (R.Pattern.Length) = 1
                        and then R.Pattern (1).Kind = Group
                      then
@@ -1909,6 +1937,8 @@ package body HBNF_Zig is
                      P (0, "fn wr_" & Fn & "(w: *BnfW, n: *const " & Zig_Type (NM)
                         & ") void {");
                      P (1, "_ = &n;");
+                     P (1, "w.enter(" & """" & Zig_Escape (NM) & """" & ");");
+                     P (1, "defer w.leave(" & """" & Zig_Escape (NM) & """" & ");");
                      declare
                         Nl : constant String :=
                           (if I = 1 and then HBNF_Grammar.Statements
@@ -1989,7 +2019,13 @@ package body HBNF_Zig is
                P (0, "/// The tree as text, or error.Write and why in msg when a node cannot be written.");
                P (0, "pub fn write_" & Ref_Name (1) & "(alloc: std.mem.Allocator, root: *const "
                   & Root_T & ", msg: *[]const u8) error{Write}![]u8 {");
-               P (1, "var w = BnfW{ .alloc = alloc };");
+               P (1, "return write_" & Ref_Name (1) & "_with(alloc, root, .{}, msg);");
+               P (0, "}");
+               P (0, "");
+               P (0, "/// The same, with a pretty-printer's say (Layout).");
+               P (0, "pub fn write_" & Ref_Name (1) & "_with(alloc: std.mem.Allocator, root: *const "
+                  & Root_T & ", lay: Layout, msg: *[]const u8) error{Write}![]u8 {");
+               P (1, "var w = BnfW{ .alloc = alloc, .lay = lay };");
                P (1, "wr_" & Ref_Name (1) & "(&w, root);");
                P (1, "if (w.bad) |b| {");
                P (2, "msg.* = b;");
@@ -2007,7 +2043,13 @@ package body HBNF_Zig is
                P (0, "/// The tree as text, or error.Write and why in msg when a node cannot be written.");
                P (0, "pub fn write_" & Ref_Name (1) & "(alloc: std.mem.Allocator, root: *const "
                   & Zig_Type (To_String (Rules (1).Name)) & ", msg: *[]const u8) error{Write}![]u8 {");
-               P (1, "var w = BnfW{ .alloc = alloc };");
+               P (1, "return write_" & Ref_Name (1) & "_with(alloc, root, .{}, msg);");
+               P (0, "}");
+               P (0, "");
+               P (0, "/// The same, with a pretty-printer's say (Layout).");
+               P (0, "pub fn write_" & Ref_Name (1) & "_with(alloc: std.mem.Allocator, root: *const "
+                  & Zig_Type (To_String (Rules (1).Name)) & ", lay: Layout, msg: *[]const u8) error{Write}![]u8 {");
+               P (1, "var w = BnfW{ .alloc = alloc, .lay = lay };");
                P (1, "wr_" & Ref_Name (T) & "(&w, root);");
                P (1, "if (w.bad) |b| {");
                P (2, "msg.* = b;");

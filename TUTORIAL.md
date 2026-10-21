@@ -309,7 +309,7 @@ the second item starts at line 2, column 1
 written: buy 2 apples;buy 1 milk from corner-shop;
 ```
 
-The writer is canonical, not pretty: it writes the literals the grammar has, the tokens the
+The writer is canonical, not pretty (a `Layout` you give it can change that: it is asked before each token what goes before it, may give other text for it, and is told on entering and leaving each node, in C, Zig, Rust and Ada; `tests/writer/layout_main.*`): it writes the literals the grammar has, the tokens the
 tree holds, and a blank only where two things would otherwise run together.  A layout you like
 is a pretty-printer of your own (section 5).
 

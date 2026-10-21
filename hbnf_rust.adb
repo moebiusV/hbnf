@@ -1694,15 +1694,35 @@ package body HBNF_Rust is
       begin
          P (0, "// ---- write (the tree as text, canonical) ----");
          P (0, "type BnfScan = fn(&[u8], usize, usize) -> usize;");
-         P (0, "struct BnfW {");
+         P (0, "/// A pretty-printer's say in how the tree is written.  `before` is asked before each");
+         P (0, "/// token or literal and returns what goes before it (None: the writer's own spacing);");
+         P (0, "/// `replace` may give other text for it; `enter` and `leave` are called on entering and");
+         P (0, "/// leaving each node, with its rule's name.");
+         P (0, "pub trait Layout {");
+         P (1, "fn before(&mut self, _s: &str) -> Option<String> { None }");
+         P (1, "fn replace(&mut self, _s: &str) -> Option<String> { None }");
+         P (1, "fn enter(&mut self, _rule: &str) {}");
+         P (1, "fn leave(&mut self, _rule: &str) {}");
+         P (0, "}");
+         P (0, "");
+         P (0, "struct BnfW<'a> {");
          P (1, "buf: Vec<u8>,");
          P (1, "last: u8,");
          P (1, "bad: Option<String>,");
          P (1, "pscan: Option<BnfScan>,");
          P (1, "ptxt: Vec<u8>,");
+         P (1, "lay: Option<&'a mut dyn Layout>,");
          P (0, "}");
          P (0, "");
-         P (0, "impl BnfW {");
+         P (0, "impl<'a> BnfW<'a> {");
+         P (1, "fn enter(&mut self, rule: &str) {");
+         P (2, "if let Some(l) = self.lay.as_mut() { l.enter(rule); }");
+         P (1, "}");
+         P (0, "");
+         P (1, "fn leave(&mut self, rule: &str) {");
+         P (2, "if let Some(l) = self.lay.as_mut() { l.leave(rule); }");
+         P (1, "}");
+         P (0, "");
          P (1, "fn badw(&mut self, why: &str) {");
          P (2, "if self.bad.is_none() { self.bad = Some(why.to_string()); }");
          P (1, "}");
@@ -1748,12 +1768,21 @@ package body HBNF_Rust is
          P (1, "}");
          P (0, "");
          P (1, "fn text(&mut self, gap: bool, s: &[u8], scan: Option<BnfScan>) {");
-         P (2, "self.between(gap, s);");
-         P (2, "self.put(s);");
+         P (2, "let st = String::from_utf8_lossy(s).into_owned();");
+         P (2, "let sep = if s.is_empty() { None } else { self.lay.as_mut().and_then(|l| l.before(&st)) };");
+         P (2, "match sep {");
+         P (3, "Some(x) => self.put(x.as_bytes()),");
+         P (3, "None => self.between(gap, s),");
+         P (2, "}");
+         P (2, "let mut out: Vec<u8> = s.to_vec();");
+         P (2, "if !s.is_empty() {");
+         P (3, "if let Some(r) = self.lay.as_mut().and_then(|l| l.replace(&st)) { out = r.into_bytes(); }");
+         P (2, "}");
+         P (2, "self.put(&out);");
          P (2, "self.pscan = scan;");
          P (2, "if scan.is_some() {");
          P (3, "self.ptxt.clear();");
-         P (3, "self.ptxt.extend_from_slice(s);");
+         P (3, "self.ptxt.extend_from_slice(&out);");
          P (2, "}");
          P (1, "}");
          P (0, "");
@@ -1787,8 +1816,9 @@ package body HBNF_Rust is
             begin
                case Info.Kind is
                   when Struct =>
-                     P (0, "fn wr_" & Fn & "(w: &mut BnfW, n: &" & Rust_Type (NM) & ") {");
+                     P (0, "fn wr_" & Fn & "(w: &mut BnfW<'_>, n: &" & Rust_Type (NM) & ") {");
                      P (1, "let _ = &n;");
+                     P (1, "w.enter(" & """" & Rust_Escape (NM) & """" & ");");
                      if Natural (R.Pattern.Length) = 1
                        and then R.Pattern (1).Kind = Group
                      then
@@ -1796,11 +1826,13 @@ package body HBNF_Rust is
                      else
                         Elements (I, R.Pattern, "n.", Gap, 1, Struct_Alt (R, Info));
                      end if;
+                     P (1, "w.leave(" & """" & Rust_Escape (NM) & """" & ");");
                      P (0, "}");
                      P (0, "");
                   when List =>
-                     P (0, "fn wr_" & Fn & "(w: &mut BnfW, n: &Vec<" & Elem_Type (I) & ">) {");
+                     P (0, "fn wr_" & Fn & "(w: &mut BnfW<'_>, n: &Vec<" & Elem_Type (I) & ">) {");
                      P (1, "let _ = &n;");
+                     P (1, "w.enter(" & """" & Rust_Escape (NM) & """" & ");");
                      declare
                         Nl : constant String :=
                           (if I = 1 and then HBNF_Grammar.Statements
@@ -1837,6 +1869,7 @@ package body HBNF_Rust is
                            P (1, "}");
                         end if;
                      end;
+                     P (1, "w.leave(" & """" & Rust_Escape (NM) & """" & ");");
                      P (0, "}");
                      P (0, "");
                   when Enum =>
@@ -1844,7 +1877,7 @@ package body HBNF_Rust is
                         Names : constant String_Vectors.Vector :=
                           Enum_Names (Info.Literals);
                      begin
-                        P (0, "fn wr_" & Fn & "(w: &mut BnfW, v: &" & Rust_Type (NM) & ") {");
+                        P (0, "fn wr_" & Fn & "(w: &mut BnfW<'_>, v: &" & Rust_Type (NM) & ") {");
                         P (1, "match v {");
                         for K in 1 .. Natural (Info.Literals.Length) loop
                            P (2, Rust_Type (NM) & "::" & Rust_Type (NM) & "_"
@@ -1878,7 +1911,13 @@ package body HBNF_Rust is
                P (0, "/// The tree as text, or why a node cannot be written.");
                P (0, "pub fn write_" & Ref_Name (1) & "(root: &" & Root_T
                   & ") -> Result<Vec<u8>, String> {");
-               P (1, "let mut w = BnfW { buf: Vec::new(), last: 0, bad: None, pscan: None, ptxt: Vec::new() };");
+               P (1, "write_" & Ref_Name (1) & "_with(root, None)");
+               P (0, "}");
+               P (0, "");
+               P (0, "/// The same, with a pretty-printer's say (Layout).");
+               P (0, "pub fn write_" & Ref_Name (1) & "_with(root: &" & Root_T
+                  & ", lay: Option<&mut dyn Layout>) -> Result<Vec<u8>, String> {");
+               P (1, "let mut w = BnfW { buf: Vec::new(), last: 0, bad: None, pscan: None, ptxt: Vec::new(), lay };");
                P (1, "wr_" & Ref_Name (1) & "(&mut w, root);");
                P (1, "match w.bad {");
                P (2, "Some(b) => Err(b),");
@@ -1895,7 +1934,13 @@ package body HBNF_Rust is
                P (0, "/// The tree as text, or why a node cannot be written.");
                P (0, "pub fn write_" & Ref_Name (1) & "(root: &" & Rust_Type (To_String (Rules (1).Name))
                   & ") -> Result<Vec<u8>, String> {");
-               P (1, "let mut w = BnfW { buf: Vec::new(), last: 0, bad: None, pscan: None, ptxt: Vec::new() };");
+               P (1, "write_" & Ref_Name (1) & "_with(root, None)");
+               P (0, "}");
+               P (0, "");
+               P (0, "/// The same, with a pretty-printer's say (Layout).");
+               P (0, "pub fn write_" & Ref_Name (1) & "_with(root: &" & Rust_Type (To_String (Rules (1).Name))
+                  & ", lay: Option<&mut dyn Layout>) -> Result<Vec<u8>, String> {");
+               P (1, "let mut w = BnfW { buf: Vec::new(), last: 0, bad: None, pscan: None, ptxt: Vec::new(), lay };");
                P (1, "wr_" & Ref_Name (T) & "(&mut w, root);");
                P (1, "match w.bad {");
                P (2, "Some(b) => Err(b),");

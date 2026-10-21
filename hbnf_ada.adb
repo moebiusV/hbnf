@@ -3700,6 +3700,25 @@ package body HBNF_Ada is
                  & "   procedure Write_" & Ada_Ident (To_String (Rules (1).Name))
                  & " (V : " & Ret_Type (1) & ";" & LF
                  & "      Text : out Unbounded_String; Ok : out Boolean;" & LF
+                 & "      Message : out Unbounded_String);" & LF & LF
+                 & "   --  A pretty-printer's say in how the tree is written: Before is asked before each" & LF
+                 & "   --  token or literal and returns what goes before it (not Found: the writer's own" & LF
+                 & "   --  spacing); Replace may give other text for it; On_Enter and On_Leave are called on" & LF
+                 & "   --  entering and leaving each node, with its rule's name." & LF
+                 & "   type Layout is tagged limited null record;" & LF
+                 & "   type Opt_Text (Found : Boolean := False) is record" & LF
+                 & "      case Found is" & LF
+                 & "         when True  => Text : Unbounded_String;" & LF
+                 & "         when False => null;" & LF
+                 & "      end case;" & LF
+                 & "   end record;" & LF
+                 & "   function Before (L : in out Layout; S : String) return Opt_Text is (Found => False);" & LF
+                 & "   function Replace (L : in out Layout; S : String) return Opt_Text is (Found => False);" & LF
+                 & "   procedure On_Enter (L : in out Layout; Rule : String) is null;" & LF
+                 & "   procedure On_Leave (L : in out Layout; Rule : String) is null;" & LF
+                 & "   procedure Write_" & Ada_Ident (To_String (Rules (1).Name))
+                 & "_With (V : " & Ret_Type (1) & ";" & LF
+                 & "      Lay : in out Layout'Class; Text : out Unbounded_String; Ok : out Boolean;" & LF
                  & "      Message : out Unbounded_String);" & LF & LF);
       end if;
 
@@ -4609,6 +4628,7 @@ package body HBNF_Ada is
             P (2, "Bad   : Unbounded_String;");
             P (2, "Pscan : Scan_Access := null;");
             P (2, "Ptxt  : Unbounded_String;");
+            P (2, "Lay   : access Layout'Class := null;");
             P (1, "end record;");
             P (1, "");
             P (1, "procedure Badw (W : in out Wr_State; Why : String) is");
@@ -4670,13 +4690,45 @@ package body HBNF_Ada is
             P (2, "end;");
             P (1, "end Wbetween;");
             P (1, "");
-            P (1, "procedure Wtext (W : in out Wr_State; Gap : Boolean; S : String; Scan : Scan_Access) is");
+            P (1, "procedure Wenter (W : in out Wr_State; Rule : String) is");
             P (1, "begin");
-            P (2, "Wbetween (W, Gap, S);");
-            P (2, "Wput (W, S);");
+            P (2, "if W.Lay /= null then");
+            P (3, "On_Enter (W.Lay.all, Rule);");
+            P (2, "end if;");
+            P (1, "end Wenter;");
+            P (1, "");
+            P (1, "procedure Wleave (W : in out Wr_State; Rule : String) is");
+            P (1, "begin");
+            P (2, "if W.Lay /= null then");
+            P (3, "On_Leave (W.Lay.all, Rule);");
+            P (2, "end if;");
+            P (1, "end Wleave;");
+            P (1, "");
+            P (1, "procedure Wtext (W : in out Wr_State; Gap : Boolean; S : String; Scan : Scan_Access) is");
+            P (2, "Sep   : Opt_Text;");
+            P (2, "Out_T : Unbounded_String := To_Unbounded_String (S);");
+            P (1, "begin");
+            P (2, "if S'Length > 0 and then W.Lay /= null then");
+            P (3, "Sep := Before (W.Lay.all, S);");
+            P (2, "end if;");
+            P (2, "if Sep.Found then");
+            P (3, "Wput (W, To_String (Sep.Text));");
+            P (2, "else");
+            P (3, "Wbetween (W, Gap, S);");
+            P (2, "end if;");
+            P (2, "if S'Length > 0 and then W.Lay /= null then");
+            P (3, "declare");
+            P (4, "R : constant Opt_Text := Replace (W.Lay.all, S);");
+            P (3, "begin");
+            P (4, "if R.Found then");
+            P (5, "Out_T := R.Text;");
+            P (4, "end if;");
+            P (3, "end;");
+            P (2, "end if;");
+            P (2, "Wput (W, To_String (Out_T));");
             P (2, "W.Pscan := Scan;");
             P (2, "if Scan /= null then");
-            P (3, "W.Ptxt := To_Unbounded_String (S);");
+            P (3, "W.Ptxt := Out_T;");
             P (2, "end if;");
             P (1, "end Wtext;");
             P (1, "");
@@ -4727,19 +4779,21 @@ package body HBNF_Ada is
                      P (1, "procedure Wr_" & CN & " (W : in out Wr_State; N : "
                         & CN & "_Type) is");
                      P (1, "begin");
+                     P (2, "Wenter (W, " & Q (To_String (R.Name)) & ");");
                      if Natural (R.Pattern.Length) = 1 and then R.Pattern (1).Kind = Group then
                         Elements (I, R.Pattern (1).Items, "N.", Gap, 2, False);
                      else
                         Elements (I, R.Pattern, "N.", Gap, 2, False,
                                   Struct_Alt (R, Info));
                      end if;
-                     P (2, "null;");
+                     P (2, "Wleave (W, " & Q (To_String (R.Name)) & ");");
                      P (1, "end Wr_" & CN & ";");
                      P (1, "");
                   elsif Info.Kind = List then
                      P (1, "procedure Wr_" & CN & " (W : in out Wr_State; N : "
                         & CN & "_Type) is");
                      P (1, "begin");
+                     P (2, "Wenter (W, " & Q (To_String (R.Name)) & ");");
                      declare
                         Nl : constant String :=
                           (if I = 1 and then HBNF_Grammar.Statements
@@ -4800,6 +4854,7 @@ package body HBNF_Ada is
                            end;
                         end if;
                      end;
+                     P (2, "Wleave (W, " & Q (To_String (R.Name)) & ");");
                      P (1, "end Wr_" & CN & ";");
                      P (1, "");
                   elsif Info.Kind = Enum then
@@ -4829,8 +4884,18 @@ package body HBNF_Ada is
                P (1, "procedure Write_" & CN & " (V : " & Ret_Type (1)
                   & "; Text : out Unbounded_String; Ok : out Boolean;");
                P (3, "Message : out Unbounded_String) is");
+               P (2, "Lay : Layout;");
+               P (1, "begin");
+               P (2, "Write_" & CN & "_With (V, Lay, Text, Ok, Message);");
+               P (1, "end Write_" & CN & ";");
+               P (1, "");
+               P (1, "procedure Write_" & CN & "_With (V : " & Ret_Type (1)
+                  & ";");
+               P (3, "Lay : in out Layout'Class; Text : out Unbounded_String; Ok : out Boolean;");
+               P (3, "Message : out Unbounded_String) is");
                P (2, "W : Wr_State;");
                P (1, "begin");
+               P (2, "W.Lay := Lay'Unrestricted_Access;");
                P (2, "Wr_" & (if Over_Leaf (Rules, 1)
                               and then not Is_Record (Analyze (Rules, 1))
                               and then Analyze (Rules, 1).Kind /= List
@@ -4839,7 +4904,7 @@ package body HBNF_Ada is
                P (2, "Text := W.Buf;");
                P (2, "Ok := Length (W.Bad) = 0;");
                P (2, "Message := W.Bad;");
-               P (1, "end Write_" & CN & ";");
+               P (1, "end Write_" & CN & "_With;");
                P (1, "");
             end;
          end;
