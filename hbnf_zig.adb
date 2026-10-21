@@ -3,6 +3,7 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Mustache;
+with HBNF_C;
 with HBNF_Compilable;
 with HBNF_Lookahead;
 
@@ -310,6 +311,7 @@ package body HBNF_Zig is
    end Find;
 
    Writer_On    : Boolean := False;   --  --writer: write_<root>
+   Ast_On       : Boolean := False;   --  --ast: the walker and the dump
    Hosted_Types : U;
    Hosted_Walks : U;                --  the bit rules with a walk_<rule>, space-separated
    Hosted_Acts  : Boolean := False; --  some %action to run after the text is read
@@ -320,6 +322,11 @@ package body HBNF_Zig is
    begin
       Writer_On := On;
    end Set_Writer;
+
+   procedure Set_Ast (On : Boolean) is
+   begin
+      Ast_On := On;
+   end Set_Ast;
 
    procedure Set_Hosted (Types, Code : String; Walks : String := "") is
    begin
@@ -752,12 +759,12 @@ package body HBNF_Zig is
    --  a list entry that is a group with one.  The writer needs it; the C tree
    --  has the same.
    function Struct_Alt (R : Rule; Info : Rule_Info) return Boolean is
-     (Writer_On and then Info.Kind = Struct
+     ((Writer_On or else Ast_On) and then Info.Kind = Struct
       and then Natural (R.Pattern.Length) > 1
       and then (for some X of R.Pattern => X.Kind = Alt));
 
    function Entry_Alt (R : Rule; Info : Rule_Info) return Boolean is
-     (Writer_On and then Info.Kind = List
+     ((Writer_On or else Ast_On) and then Info.Kind = List
       and then not Info.Elem_Members.Is_Empty
       and then R.Left_Bases = 0
       and then Natural (R.Pattern.Length) = 1
@@ -1845,6 +1852,405 @@ package body HBNF_Zig is
          end if;
       end Emit_Writer;
 
+      --  The tree as nodes (--ast): `Node` is any struct or list element of the
+      --  tree, `node_walk` visits them (enter, leave, skip, stop), `node_kids`
+      --  lists a node's members, and `node_dump` writes the S-expression C's
+      --  node_dump writes, so a tree dumps the same in every language.  Plain
+      --  Zig over the types above; the walker knows nothing of the grammar.
+      procedure Emit_Ast (Buf : in out U) is
+
+         Used : Boolean := False;   --  the node being written uses its payload `x`
+
+         procedure P (Ind : Natural; S : String) is
+         begin
+            Append (Buf, [1 .. 4 * Ind => ' ']);
+            Append (Buf, S);
+            Append (Buf, LF);
+         end P;
+
+         function Q (S : String) return String is ("""" & Zig_Escape (S) & """");
+
+         function Walked_Kind (I : Natural) return Boolean is
+           (Infos (I).Kind in Struct | List);
+
+         function Elem_Type (I : Natural) return String is
+            Info : constant Rule_Info := Infos (I);
+         begin
+            if not Info.Elem_Members.Is_Empty then
+               return Zig_Type (To_String (Rules (I).Name)) & "Entry";
+            elsif Info.Elem_Name /= Null_Unbounded_String then
+               return Zig_Type_Of (Rules, To_String (Info.Elem_Name));
+            end if;
+            return "[]const u8";
+         end Elem_Type;
+
+         function Leaf (Ref : String) return Natural is
+            J    : Natural := Find (Rules, Ref);
+            Hops : Natural := 0;
+         begin
+            while J > 0 and then Hops < 20 and then Infos (J).Kind = Scalar loop
+               Hops := Hops + 1;
+               declare
+                  Pt : constant Element_Vectors.Vector := Rules (J).Pattern;
+               begin
+                  if Natural (Pt.Length) = 1 and then Pt (1).Kind = Name
+                    and then Pt (1).Min = 1 and then Pt (1).Max = 1
+                  then
+                     J := Find (Rules, To_String (Pt (1).Name));
+                  else
+                     J := 0;
+                  end if;
+               end;
+            end loop;
+            if J > 0 and then Hops < 20 and then Infos (J).Kind in Struct | List then
+               return J;
+            end if;
+            return 0;
+         end Leaf;
+
+         function Variant (I : Natural) return String is
+           (Zig_Field (To_String (Rules (I).Name)));
+
+         procedure Kid (Idx : Natural; Nm : String; Is_List : Boolean;
+                        Expr : String; Ind : Natural)
+         is
+            L   : constant Natural := Leaf (Nm);
+            Lbl : constant String := Q (HBNF_C.Member_Label (Nm));
+            J   : constant Natural := Find (Rules, Nm);
+            T   : constant String :=
+              (if Is_Char_Rule (Rules, Nm) then "[]const u8" else Resolve_Type (Rules, Nm));
+
+            procedure Push (Index, Val : String) is
+            begin
+               Used := True;
+               P (Ind, "try v.append(al, .{ .name = " & Lbl & ", .index = " & Index
+                  & ", .value = " & Val & " });");
+            end Push;
+         begin
+            if Back_Target (Backs, Idx, Nm) > 0 then
+               Used := True;
+               P (Ind, "if (" & Expr & ") |c| {");
+               Push ("null", ".{ .node = .{ ." & Variant (Back_Target (Backs, Idx, Nm)) & " = c } }");
+               P (Ind, "}");
+            elsif L > 0 and then Infos (L).Kind = Struct then
+               if Is_List then
+                  P (Ind, "for (" & Expr & ", 0..) |*e, i| {");
+                  Push ("i", ".{ .node = .{ ." & Variant (L) & " = e } }");
+                  P (Ind, "}");
+                  Used := True;
+               else
+                  Push ("null", ".{ .node = .{ ." & Variant (L) & " = &" & Expr & " } }");
+               end if;
+            elsif L > 0 and then Infos (L).Kind = List then
+               P (Ind, "for (" & Expr & ", 0..) |*e, i| {");
+               Push ("i", ".{ .node = .{ ." & Variant (L) & " = e } }");
+               P (Ind, "}");
+            elsif J > 0 and then Infos (J).Kind = Enum then
+               declare
+                  Names : constant String_Vectors.Vector :=
+                    Enum_Names (Infos (J).Literals);
+               begin
+                  P (Ind, "{");
+                  P (Ind + 1, "const s: []const u8 = switch (" & Expr & ") {");
+                  for K in 1 .. Natural (Infos (J).Literals.Length) loop
+                     P (Ind + 2, "." & To_String (Names (K)) & " => "
+                        & Q (To_String (Infos (J).Literals (K))) & ",");
+                  end loop;
+                  P (Ind + 2, "else => ""?"",");
+                  P (Ind + 1, "};");
+                  Push ("null", ".{ .enum_ = s }");
+                  P (Ind, "}");
+               end;
+            elsif T = "[]const u8" then
+               if Is_List then
+                  P (Ind, "for (" & Expr & ", 0..) |e, i| {");
+                  Push ("i", ".{ .str = e }");
+                  P (Ind, "}");
+               else
+                  Push ("null", ".{ .str = " & Expr & " }");
+               end if;
+            elsif T = "bool" then
+               Push ("null", ".{ .bool_ = " & Expr & " }");
+            elsif T'Length > 1 and then T (T'First) = 'i' then
+               Push ("null", ".{ .int = @as(i64, @intCast(" & Expr & ")) }");
+            elsif T'Length > 1 and then T (T'First) = 'u' then
+               Push ("null", ".{ .uint = @as(u64, @intCast(" & Expr & ")) }");
+            end if;
+         end Kid;
+
+         procedure Members
+           (Idx : Natural; Alts_Of : Element_Vectors.Vector; Has_Alts : Boolean;
+            All_Members : Member_Vectors.Vector; Bare : Boolean; Ind : Natural)
+         is
+         begin
+            if not Has_Alts then
+               for M of All_Members loop
+                  Kid (Idx, To_String (M.Name), M.Is_List and then not Bare,
+                       "x." & Zig_Field (To_String (M.Name)), Ind);
+               end loop;
+               return;
+            end if;
+            Used := True;
+            P (Ind, "switch (x._alt) {");
+            declare
+               St : Natural := 1;
+               Br : Natural := 0;
+               Nn : constant Natural := Natural (Alts_Of.Length);
+            begin
+               for K in 1 .. Nn + 1 loop
+                  if K > Nn or else Alts_Of (K).Kind = Alt then
+                     Br := Br + 1;
+                     declare
+                        Sub  : Element_Vectors.Vector;
+                        Ms   : Member_Vectors.Vector;
+                        Lits : String_Vectors.Vector;
+                        Hasa : Boolean := False;
+                     begin
+                        for J in St .. K - 1 loop
+                           Sub.Append (Alts_Of (J));
+                        end loop;
+                        Collect (Sub, Ms, Lits, Hasa);
+                        P (Ind + 1, Img (Br) & " => {");
+                        for M of Ms loop
+                           Kid (Idx, To_String (M.Name), M.Is_List and then not Bare,
+                                "x." & Zig_Field (To_String (M.Name)), Ind + 2);
+                        end loop;
+                        P (Ind + 1, "},");
+                     end;
+                     St := K + 1;
+                  end if;
+               end loop;
+            end;
+            P (Ind + 1, "else => {},");
+            P (Ind, "}");
+         end Members;
+
+         function Has_Alts (I : Natural) return Boolean is
+           (Struct_Alt (Rules (I), Infos (I)) or else Entry_Alt (Rules (I), Infos (I)));
+
+         function Alt_Els (I : Natural) return Element_Vectors.Vector is
+           (if Infos (I).Kind = Struct then Rules (I).Pattern
+            else Rules (I).Pattern (1).Items);
+
+      begin
+         P (0, "// ---- the tree as nodes: walk and dump (--ast) ----");
+         P (0, "pub const Node = union(enum) {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) then
+               P (1, Variant (I) & ": *const " & (if Infos (I).Kind = Struct
+                                                    then Zig_Type (To_String (Rules (I).Name))
+                                                    else Elem_Type (I)) & ",");
+            end if;
+         end loop;
+         P (0, "};");
+         P (0, "");
+         P (0, "pub const Val = union(enum) { node: Node, str: []const u8, int: i64, uint: u64, bool_: bool, enum_: []const u8 };");
+         P (0, "/// A member of a node: its name, the place in a list if it is an element, and what it holds.");
+         P (0, "pub const Kid = struct { name: []const u8, index: ?usize, value: Val };");
+         P (0, "pub const Walk = enum { cont, skip, stop };");
+         P (0, "");
+         P (0, "pub fn node_kind_name(n: Node) []const u8 {");
+         P (1, "return switch (n) {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) then
+               P (2, "." & Variant (I) & " => " & Q (To_String (Rules (I).Name)) & ",");
+            end if;
+         end loop;
+         P (1, "};");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// Which alternative a node took, from 1; 0 for a node whose rule has none recorded.");
+         P (0, "pub fn node_alt(n: Node) usize {");
+         P (1, "return switch (n) {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) and then Has_Alts (I) then
+               P (2, "." & Variant (I) & " => |x| x._alt,");
+            end if;
+         end loop;
+         P (2, "else => 0,");
+         P (1, "};");
+         P (0, "}");
+         P (0, "");
+         P (0, "pub fn node_alt_name(n: Node, alt: usize) []const u8 {");
+         P (1, "switch (n) {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) and then Has_Alts (I) then
+               P (2, "." & Variant (I) & " => return switch (alt) {");
+               declare
+                  Els : constant Element_Vectors.Vector := Alt_Els (I);
+                  Nb  : Natural := 1;
+               begin
+                  for X of Els loop
+                     if X.Kind = Alt then
+                        Nb := Nb + 1;
+                     end if;
+                  end loop;
+                  for B in 1 .. Nb loop
+                     P (3, Img (B) & " => " & Q (HBNF_C.Alt_Label (Els, B)) & ",");
+                  end loop;
+               end;
+               P (3, "else => """",");
+               P (2, "},");
+            end if;
+         end loop;
+         P (2, "else => return """",");
+         P (1, "}");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// The members of a node, in the order the grammar has them (those of the alternative it took).");
+         P (0, "pub fn node_kids(n: Node, v: *std.ArrayList(Kid), al: std.mem.Allocator) !void {");
+         P (1, "switch (n) {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) then
+               declare
+                  Info : constant Rule_Info := Infos (I);
+               begin
+                  Used := False;
+                  P (2, "." & Variant (I) & " => |x| {");
+                  declare
+                     Body_At : constant Natural := Length (Buf);
+                  begin
+                     if Info.Kind = Struct then
+                        Members (I, Alt_Els (I), Has_Alts (I), Info.Members, False, 3);
+                     elsif not Info.Elem_Members.Is_Empty then
+                        Members (I, Alt_Els (I), Has_Alts (I), Info.Elem_Members, True, 3);
+                     elsif Info.Elem_Name /= Null_Unbounded_String then
+                        declare
+                           EN : constant String := To_String (Info.Elem_Name);
+                           L  : constant Natural := Leaf (EN);
+                        begin
+                           if L > 0 and then Infos (L).Kind = Struct then
+                              Used := True;
+                              P (3, "try v.append(al, .{ .name = " & Q (HBNF_C.Member_Label (EN))
+                                 & ", .index = null, .value = .{ .node = .{ ." & Variant (L) & " = x } } });");
+                           elsif Resolve_Type (Rules, EN) = "[]const u8" then
+                              Used := True;
+                              P (3, "try v.append(al, .{ .name = " & Q (HBNF_C.Member_Label (EN))
+                                 & ", .index = null, .value = .{ .str = x.* } });");
+                           end if;
+                        end;
+                     else
+                        Used := True;
+                        P (3, "try v.append(al, .{ .name = ""value"", .index = null, .value = .{ .str = x.* } });");
+                     end if;
+                     if not Used then
+                        --  nothing used x: say so, since Zig rejects an unused capture
+                        declare
+                           Cur : constant String := To_String (Buf);
+                        begin
+                           Buf := To_Unbounded_String
+                             (Cur (Cur'First .. Cur'First + Body_At - 1)
+                              & "            _ = x;" & LF
+                              & Cur (Cur'First + Body_At .. Cur'Last));
+                        end;
+                     end if;
+                  end;
+                  P (2, "},");
+               end;
+            end if;
+         end loop;
+         P (1, "}");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// Enter and leave every node under n; enter answers .cont, .skip (no descent, no leave) or .stop.");
+         P (0, "/// w has `fn enter(w, n: Node) Walk` and `fn leave(w, n: Node) Walk`.  False if the walk was stopped.");
+         P (0, "pub fn node_walk(n: Node, w: anytype, al: std.mem.Allocator) !bool {");
+         P (1, "switch (w.enter(n)) {");
+         P (2, ".stop => return false,");
+         P (2, ".skip => return true,");
+         P (2, ".cont => {},");
+         P (1, "}");
+         P (1, "var kids: std.ArrayList(Kid) = .empty;");
+         P (1, "defer kids.deinit(al);");
+         P (1, "try node_kids(n, &kids, al);");
+         P (1, "for (kids.items) |k| {");
+         P (2, "switch (k.value) {");
+         P (3, ".node => |c| if (!try node_walk(c, w, al)) return false,");
+         P (3, "else => {},");
+         P (2, "}");
+         P (1, "}");
+         P (1, "return w.leave(n) != .stop;");
+         P (0, "}");
+         P (0, "");
+         P (0, "fn dump_into(out: *std.ArrayList(u8), al: std.mem.Allocator, n: Node) !void {");
+         P (1, "try out.append(al, '(');");
+         P (1, "try out.appendSlice(al, node_kind_name(n));");
+         P (1, "const a = node_alt(n);");
+         P (1, "if (a != 0) {");
+         P (2, "try out.append(al, '[');");
+         P (2, "try out.appendSlice(al, node_alt_name(n, a));");
+         P (2, "try out.append(al, ']');");
+         P (1, "}");
+         P (1, "var kids: std.ArrayList(Kid) = .empty;");
+         P (1, "defer kids.deinit(al);");
+         P (1, "try node_kids(n, &kids, al);");
+         P (1, "for (kids.items) |k| {");
+         P (2, "try out.append(al, ' ');");
+         P (2, "try out.appendSlice(al, k.name);");
+         P (2, "if (k.index) |i| {");
+         P (3, "var nb: [24]u8 = undefined;");
+         P (3, "try out.appendSlice(al, try std.fmt.bufPrint(&nb, ""[{d}]"", .{i}));");
+         P (2, "}");
+         P (2, "try out.append(al, '=');");
+         P (2, "switch (k.value) {");
+         P (3, ".node => |c| try dump_into(out, al, c),");
+         P (3, ".str => |t| {");
+         P (4, "try out.append(al, '""');");
+         P (4, "for (t) |c| {");
+         P (5, "if (c == '""' or c == '\\') try out.append(al, '\\');");
+         P (5, "if (c == '\n') try out.appendSlice(al, ""\\n"") else try out.append(al, c);");
+         P (4, "}");
+         P (4, "try out.append(al, '""');");
+         P (3, "},");
+         P (3, ".int => |i| { var nb: [24]u8 = undefined; try out.appendSlice(al, try std.fmt.bufPrint(&nb, ""{d}"", .{i})); },");
+         P (3, ".uint => |u| { var nb: [24]u8 = undefined; try out.appendSlice(al, try std.fmt.bufPrint(&nb, ""{d}"", .{u})); },");
+         P (3, ".bool_ => |b| try out.appendSlice(al, if (b) ""true"" else ""false""),");
+         P (3, ".enum_ => |e| try out.appendSlice(al, e),");
+         P (2, "}");
+         P (1, "}");
+         P (1, "try out.append(al, ')');");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// The S-expression of a node: (kind[alternative] member=value ...).");
+         P (0, "pub fn node_dump(n: Node, al: std.mem.Allocator) ![]u8 {");
+         P (1, "var out: std.ArrayList(u8) = .empty;");
+         P (1, "try dump_into(&out, al, n);");
+         P (1, "return out.items;");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// Two nodes are equal when their dumps are: same rules, alternatives, members and values.");
+         P (0, "pub fn node_equal(a: Node, b: Node, al: std.mem.Allocator) !bool {");
+         P (1, "return std.mem.eql(u8, try node_dump(a, al), try node_dump(b, al));");
+         P (0, "}");
+         P (0, "");
+         declare
+            R  : constant Rule := Rules (1);
+            RN : constant String := Zig_Snake (To_String (R.Name));
+         begin
+            if Infos (1).Kind = Struct then
+               P (0, "pub fn walk_" & RN & "(root: *const " & Zig_Type (To_String (R.Name))
+                  & ", w: anytype, al: std.mem.Allocator) !bool { return node_walk(.{ ." & Variant (1)
+                  & " = root }, w, al); }");
+               P (0, "pub fn dump_" & RN & "(root: *const " & Zig_Type (To_String (R.Name))
+                  & ", al: std.mem.Allocator) ![]u8 { return node_dump(.{ ." & Variant (1)
+                  & " = root }, al); }");
+            elsif Infos (1).Kind = List then
+               P (0, "pub fn walk_" & RN & "(root: []" & Elem_Type (1)
+                  & ", w: anytype, al: std.mem.Allocator) !bool {");
+               P (1, "for (root) |*e| { if (!try node_walk(.{ ." & Variant (1) & " = e }, w, al)) return false; }");
+               P (1, "return true;");
+               P (0, "}");
+               P (0, "pub fn dump_" & RN & "(root: []" & Elem_Type (1) & ", al: std.mem.Allocator) ![]u8 {");
+               P (1, "var out: std.ArrayList(u8) = .empty;");
+               P (1, "try out.appendSlice(al, ""(" & To_String (R.Name) & """);");
+               P (1, "for (root) |*e| { try out.append(al, ' '); try dump_into(&out, al, .{ ." & Variant (1) & " = e }); }");
+               P (1, "try out.append(al, ')');");
+               P (1, "return out.items;");
+               P (0, "}");
+            end if;
+         end;
+      end Emit_Ast;
+
       Emitted   : array (1 .. N) of Boolean := [others => False];
       Remaining : Natural := 0;
       Res       : U;
@@ -1917,6 +2323,9 @@ package body HBNF_Zig is
       Append (Res, Hosted_Types);
       if Writer_On then
          Emit_Writer (Res);
+      end if;
+      if Ast_On then
+         Emit_Ast (Res);
       end if;
 
       return To_String (Res);
@@ -2322,7 +2731,9 @@ package body HBNF_Zig is
                     & "(); p.pos = sv; if (!g) break :blk_" & Img (Br) & "; }");
                   Append (Buf, LF);
                end if;
-               if Writer_On and then Natural (Rules (Owner).Pattern.Length) > 1 then
+               if (Writer_On or else Ast_On)
+                 and then Natural (Rules (Owner).Pattern.Length) > 1
+               then
                   Append (Buf, Ind & "    r._alt = " & Img (Br) & ";");
                   Append (Buf, LF);
                end if;

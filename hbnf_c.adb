@@ -1166,6 +1166,13 @@ package body HBNF_C is
       return Res;
    end Alt_Labels;
 
+   function Member_Label (Name : String) return String is (C_Field (Name));
+
+   function Alt_Label
+     (Els : HBNF_Grammar.Element_Vectors.Vector; Branch : Positive)
+      return String is
+     (To_String (Alt_Labels (Els) (Branch)));
+
    --  The numbers of those alternatives, from Start: what `_alt` holds (the
    --  names are in the tables, node_alt_name).
    function Alt_Idents

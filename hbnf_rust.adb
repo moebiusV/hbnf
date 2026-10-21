@@ -3,6 +3,7 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Mustache;
+with HBNF_C;
 with HBNF_Compilable;
 with HBNF_Lookahead;
 
@@ -287,6 +288,7 @@ package body HBNF_Rust is
    end Find;
 
    Writer_On    : Boolean := False;   --  --writer: write_<root>
+   Ast_On       : Boolean := False;   --  --ast: the walker and the dump
    Hosted_Types : U;
    Hosted_Code  : U;
    Hosted_Walks : U;                --  the bit rules with a walk_<rule>, space-separated
@@ -297,6 +299,11 @@ package body HBNF_Rust is
    begin
       Writer_On := On;
    end Set_Writer;
+
+   procedure Set_Ast (On : Boolean) is
+   begin
+      Ast_On := On;
+   end Set_Ast;
 
    procedure Set_Hosted (Types, Code : String; Walks : String := "") is
    begin
@@ -731,12 +738,12 @@ package body HBNF_Rust is
    --  a list entry that is a group with one.  The writer needs it; the C tree
    --  has the same.
    function Struct_Alt (R : Rule; Info : Rule_Info) return Boolean is
-     (Writer_On and then Info.Kind = Struct
+     ((Writer_On or else Ast_On) and then Info.Kind = Struct
       and then Natural (R.Pattern.Length) > 1
       and then (for some X of R.Pattern => X.Kind = Alt));
 
    function Entry_Alt (R : Rule; Info : Rule_Info) return Boolean is
-     (Writer_On and then Info.Kind = List
+     ((Writer_On or else Ast_On) and then Info.Kind = List
       and then not Info.Elem_Members.Is_Empty
       and then R.Left_Bases = 0
       and then Natural (R.Pattern.Length) = 1
@@ -1744,6 +1751,380 @@ package body HBNF_Rust is
          end if;
       end Emit_Writer;
 
+      --  The tree as nodes (--ast): `Node` is any struct or list element of the
+      --  tree, `node_walk` visits them (enter, leave, skip, stop), `node_kids`
+      --  lists a node's members, and `node_dump` writes the S-expression C's
+      --  node_dump writes, so a tree dumps the same in every language.  Plain
+      --  Rust over the types above; the walker knows nothing of the grammar.
+      procedure Emit_Ast (Buf : in out U) is
+
+         procedure P (Ind : Natural; S : String) is
+         begin
+            Append (Buf, [1 .. 4 * Ind => ' ']);
+            Append (Buf, S);
+            Append (Buf, LF);
+         end P;
+
+         function Q (S : String) return String is ("""" & Rust_Escape (S) & """");
+
+         function Walked_Kind (I : Natural) return Boolean is
+           (Infos (I).Kind in Struct | List);
+
+         --  The Rust type of one element of list rule I.
+         function Elem_Type (I : Natural) return String is
+            Info : constant Rule_Info := Infos (I);
+         begin
+            if not Info.Elem_Members.Is_Empty then
+               return Rust_Type (To_String (Rules (I).Name)) & "Entry";
+            elsif Info.Elem_Name /= Null_Unbounded_String then
+               return Rust_Type_Of (Rules, To_String (Info.Elem_Name));
+            end if;
+            return "String";
+         end Elem_Type;
+
+         --  The struct or list a reference ends at, chasing scalar aliases.
+         function Leaf (Ref : String) return Natural is
+            J    : Natural := Find (Rules, Ref);
+            Hops : Natural := 0;
+         begin
+            while J > 0 and then Hops < 20 and then Infos (J).Kind = Scalar loop
+               Hops := Hops + 1;
+               declare
+                  Pt : constant Element_Vectors.Vector := Rules (J).Pattern;
+               begin
+                  if Natural (Pt.Length) = 1 and then Pt (1).Kind = Name
+                    and then Pt (1).Min = 1 and then Pt (1).Max = 1
+                  then
+                     J := Find (Rules, To_String (Pt (1).Name));
+                  else
+                     J := 0;
+                  end if;
+               end;
+            end loop;
+            if J > 0 and then Hops < 20 and then Infos (J).Kind in Struct | List then
+               return J;
+            end if;
+            return 0;
+         end Leaf;
+
+         function Variant (I : Natural) return String is
+           (Rust_Type (To_String (Rules (I).Name)));
+
+         --  Push the kid for member Nm, whose field is Expr; Base_Index is
+         --  the first of its elements when it is a repeated reference.
+         procedure Kid (Idx : Natural; Nm : String; Is_List : Boolean;
+                        Expr : String; Ind : Natural)
+         is
+            L   : constant Natural := Leaf (Nm);
+            Lbl : constant String := Q (HBNF_C.Member_Label (Nm));
+            J   : constant Natural := Find (Rules, Nm);
+            T   : constant String :=
+              (if Is_Char_Rule (Rules, Nm) then "String" else Resolve_Type (Rules, Nm));
+
+            procedure Push (Index, Val : String) is
+            begin
+               P (Ind, "v.push(Kid { name: " & Lbl & ", index: " & Index
+                  & ", value: " & Val & " });");
+            end Push;
+         begin
+            if Back_Target (Backs, Idx, Nm) > 0 then
+               P (Ind, "if let Some(c) = &" & Expr & " {");
+               Push ("None", "Val::Node(Node::" & Variant (Back_Target (Backs, Idx, Nm)) & "(c))");
+               P (Ind, "}");
+            elsif L > 0 and then Infos (L).Kind = Struct then
+               if Is_List then
+                  P (Ind, "for (i, e) in " & Expr & ".iter().enumerate() {");
+                  Push ("Some(i)", "Val::Node(Node::" & Variant (L) & "(e))");
+                  P (Ind, "}");
+               else
+                  Push ("None", "Val::Node(Node::" & Variant (L) & "(&" & Expr & "))");
+               end if;
+            elsif L > 0 and then Infos (L).Kind = List then
+               P (Ind, "for (i, e) in " & Expr & ".iter().enumerate() {");
+               Push ("Some(i)", "Val::Node(Node::" & Variant (L) & "(e))");
+               P (Ind, "}");
+            elsif J > 0 and then Infos (J).Kind = Enum then
+               declare
+                  Names : constant String_Vectors.Vector :=
+                    Enum_Names (Infos (J).Literals);
+                  RT    : constant String := Rust_Type (Nm);
+               begin
+                  P (Ind, "{");
+                  P (Ind + 1, "let s = match " & Expr & " {");
+                  for K in 1 .. Natural (Infos (J).Literals.Length) loop
+                     P (Ind + 2, RT & "::" & RT & "_" & To_String (Names (K))
+                        & " => " & Q (To_String (Infos (J).Literals (K))) & ",");
+                  end loop;
+                  P (Ind + 2, "#[allow(unreachable_patterns)] _ => ""?"",");
+                  P (Ind + 1, "};");
+                  Push ("None", "Val::Enum(s)");
+                  P (Ind, "}");
+               end;
+            elsif T = "String" then
+               if Is_List then
+                  P (Ind, "for (i, e) in " & Expr & ".iter().enumerate() {");
+                  Push ("Some(i)", "Val::Str(e)");
+                  P (Ind, "}");
+               else
+                  Push ("None", "Val::Str(&" & Expr & ")");
+               end if;
+            elsif T = "bool" then
+               Push ("None", "Val::Bool(" & Expr & ")");
+            elsif T'Length > 1 and then T (T'First) = 'i' then
+               Push ("None", "Val::Int(" & Expr & " as i64)");
+            elsif T'Length > 1 and then T (T'First) = 'u' then
+               Push ("None", "Val::UInt(" & Expr & " as u64)");
+            end if;
+         end Kid;
+
+         --  The members of a node, all of them or those of the alternative it
+         --  took.
+         procedure Members
+           (Idx : Natural; Alts_Of : Element_Vectors.Vector; Has_Alts : Boolean;
+            All_Members : Member_Vectors.Vector; Bare : Boolean; Ind : Natural)
+         is
+         begin
+            if not Has_Alts then
+               for M of All_Members loop
+                  Kid (Idx, To_String (M.Name), M.Is_List and then not Bare,
+                       "x." & Rust_Field (To_String (M.Name)), Ind);
+               end loop;
+               return;
+            end if;
+            P (Ind, "match x._alt {");
+            declare
+               St : Natural := 1;
+               Br : Natural := 0;
+               Nn : constant Natural := Natural (Alts_Of.Length);
+            begin
+               for K in 1 .. Nn + 1 loop
+                  if K > Nn or else Alts_Of (K).Kind = Alt then
+                     Br := Br + 1;
+                     declare
+                        Sub  : Element_Vectors.Vector;
+                        Ms   : Member_Vectors.Vector;
+                        Lits : String_Vectors.Vector;
+                        Hasa : Boolean := False;
+                     begin
+                        for J in St .. K - 1 loop
+                           Sub.Append (Alts_Of (J));
+                        end loop;
+                        Collect (Sub, Ms, Lits, Hasa);
+                        P (Ind + 1, Img (Br) & " => {");
+                        for M of Ms loop
+                           Kid (Idx, To_String (M.Name), M.Is_List and then not Bare,
+                                "x." & Rust_Field (To_String (M.Name)), Ind + 2);
+                        end loop;
+                        P (Ind + 1, "}");
+                     end;
+                     St := K + 1;
+                  end if;
+               end loop;
+            end;
+            P (Ind + 1, "_ => {}");
+            P (Ind, "}");
+         end Members;
+
+         function Has_Alts (I : Natural) return Boolean is
+           (Struct_Alt (Rules (I), Infos (I)) or else Entry_Alt (Rules (I), Infos (I)));
+
+         function Alt_Els (I : Natural) return Element_Vectors.Vector is
+           (if Infos (I).Kind = Struct then Rules (I).Pattern
+            else Rules (I).Pattern (1).Items);
+
+      begin
+         P (0, "// ---- the tree as nodes: walk and dump (--ast) ----");
+         P (0, "#[derive(Clone, Copy)]");
+         P (0, "pub enum Node<'a> {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) then
+               P (1, Variant (I) & "(&'a " & (if Infos (I).Kind = Struct
+                                                 then Rust_Type (To_String (Rules (I).Name))
+                                                 else Elem_Type (I)) & "),");
+            end if;
+         end loop;
+         P (0, "}");
+         P (0, "");
+         P (0, "pub enum Val<'a> { Node(Node<'a>), Str(&'a str), Int(i64), UInt(u64), Bool(bool), Enum(&'static str) }");
+         P (0, "/// A member of a node: its name, the place in a list if it is an element, and what it holds.");
+         P (0, "pub struct Kid<'a> { pub name: &'static str, pub index: Option<usize>, pub value: Val<'a> }");
+         P (0, "pub enum Walk { Continue, Skip, Stop }");
+         P (0, "");
+         P (0, "pub fn node_kind_name(n: Node) -> &'static str {");
+         P (1, "match n {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) then
+               P (2, "Node::" & Variant (I) & "(_) => " & Q (To_String (Rules (I).Name)) & ",");
+            end if;
+         end loop;
+         P (1, "}");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// Which alternative a node took, from 1; 0 for a node whose rule has none recorded.");
+         P (0, "pub fn node_alt(n: Node) -> usize {");
+         P (1, "match n {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) and then Has_Alts (I) then
+               P (2, "Node::" & Variant (I) & "(x) => x._alt as usize,");
+            end if;
+         end loop;
+         P (2, "#[allow(unreachable_patterns)] _ => 0,");
+         P (1, "}");
+         P (0, "}");
+         P (0, "");
+         P (0, "pub fn node_alt_name(n: Node, alt: usize) -> &'static str {");
+         P (1, "match n {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) and then Has_Alts (I) then
+               P (2, "Node::" & Variant (I) & "(_) => match alt {");
+               declare
+                  Els : constant Element_Vectors.Vector := Alt_Els (I);
+                  Nb  : Natural := 1;
+               begin
+                  for X of Els loop
+                     if X.Kind = Alt then
+                        Nb := Nb + 1;
+                     end if;
+                  end loop;
+                  for B in 1 .. Nb loop
+                     P (3, Img (B) & " => " & Q (HBNF_C.Alt_Label (Els, B)) & ",");
+                  end loop;
+               end;
+               P (3, "_ => """",");
+               P (2, "},");
+            end if;
+         end loop;
+         P (2, "#[allow(unreachable_patterns)] _ => """",");
+         P (1, "}");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// The members of a node, in the order the grammar has them (those of the alternative it took).");
+         P (0, "pub fn node_kids<'a>(n: Node<'a>) -> Vec<Kid<'a>> {");
+         P (1, "let mut v: Vec<Kid<'a>> = Vec::new();");
+         P (1, "match n {");
+         for I in 1 .. N loop
+            if Walked_Kind (I) then
+               declare
+                  Info : constant Rule_Info := Infos (I);
+               begin
+                  P (2, "Node::" & Variant (I) & "(x) => {");
+                  if Info.Kind = Struct then
+                     Members (I, Alt_Els (I), Has_Alts (I), Info.Members, False, 3);
+                  elsif not Info.Elem_Members.Is_Empty then
+                     Members (I, Alt_Els (I), Has_Alts (I), Info.Elem_Members, True, 3);
+                  elsif Info.Elem_Name /= Null_Unbounded_String then
+                     declare
+                        EN : constant String := To_String (Info.Elem_Name);
+                        L  : constant Natural := Leaf (EN);
+                     begin
+                        if L > 0 and then Infos (L).Kind = Struct then
+                           P (3, "v.push(Kid { name: " & Q (HBNF_C.Member_Label (EN))
+                              & ", index: None, value: Val::Node(Node::" & Variant (L) & "(x)) });");
+                        elsif Resolve_Type (Rules, EN) = "String" then
+                           P (3, "v.push(Kid { name: " & Q (HBNF_C.Member_Label (EN))
+                              & ", index: None, value: Val::Str(x) });");
+                        else
+                           P (3, "let _ = x;");
+                        end if;
+                     end;
+                  else
+                     P (3, "v.push(Kid { name: ""value"", index: None, value: Val::Str(x) });");
+                  end if;
+                  P (2, "}");
+               end;
+            end if;
+         end loop;
+         P (1, "}");
+         P (1, "v");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// Enter and leave every node under n; enter answers Continue, Skip (no descent, no leave) or Stop.");
+         P (0, "pub trait Walker {");
+         P (1, "fn enter(&mut self, _n: Node) -> Walk { Walk::Continue }");
+         P (1, "fn leave(&mut self, _n: Node) -> Walk { Walk::Continue }");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// False if the walk was stopped.");
+         P (0, "pub fn node_walk(n: Node, w: &mut impl Walker) -> bool {");
+         P (1, "match w.enter(n) {");
+         P (2, "Walk::Stop => return false,");
+         P (2, "Walk::Skip => return true,");
+         P (2, "Walk::Continue => {}");
+         P (1, "}");
+         P (1, "for k in node_kids(n) {");
+         P (2, "if let Val::Node(c) = k.value {");
+         P (3, "if !node_walk(c, w) { return false; }");
+         P (2, "}");
+         P (1, "}");
+         P (1, "!matches!(w.leave(n), Walk::Stop)");
+         P (0, "}");
+         P (0, "");
+         P (0, "fn dump_into(s: &mut String, n: Node) {");
+         P (1, "s.push('(');");
+         P (1, "s.push_str(node_kind_name(n));");
+         P (1, "let a = node_alt(n);");
+         P (1, "if a != 0 { s.push('['); s.push_str(node_alt_name(n, a)); s.push(']'); }");
+         P (1, "for k in node_kids(n) {");
+         P (2, "s.push(' ');");
+         P (2, "s.push_str(k.name);");
+         P (2, "if let Some(i) = k.index { s.push_str(&format!(""[{}]"", i)); }");
+         P (2, "s.push('=');");
+         P (2, "match k.value {");
+         P (3, "Val::Node(c) => dump_into(s, c),");
+         P (3, "Val::Str(t) => {");
+         P (4, "s.push('""');");
+         P (4, "for c in t.chars() {");
+         P (5, "if c == '""' || c == '\\' { s.push('\\'); }");
+         P (5, "if c == '\n' { s.push_str(""\\n""); } else { s.push(c); }");
+         P (4, "}");
+         P (4, "s.push('""');");
+         P (3, "}");
+         P (3, "Val::Int(i) => s.push_str(&i.to_string()),");
+         P (3, "Val::UInt(u) => s.push_str(&u.to_string()),");
+         P (3, "Val::Bool(b) => s.push_str(if b { ""true"" } else { ""false"" }),");
+         P (3, "Val::Enum(e) => s.push_str(e),");
+         P (2, "}");
+         P (1, "}");
+         P (1, "s.push(')');");
+         P (0, "}");
+         P (0, "");
+         P (0, "/// Two nodes are equal when their dumps are: same rules, alternatives, members and values.");
+         P (0, "pub fn node_equal(a: Node, b: Node) -> bool { node_dump(a) == node_dump(b) }");
+         P (0, "");
+         P (0, "/// The S-expression of a node: (kind[alternative] member=value ...).");
+         P (0, "pub fn node_dump(n: Node) -> String {");
+         P (1, "let mut s = String::new();");
+         P (1, "dump_into(&mut s, n);");
+         P (1, "s");
+         P (0, "}");
+         P (0, "");
+         --  the whole tree
+         declare
+            R  : constant Rule := Rules (1);
+            RN : constant String := Rust_Snake (To_String (R.Name));
+         begin
+            if Infos (1).Kind = Struct then
+               P (0, "pub fn walk_" & RN & "(root: &" & Rust_Type (To_String (R.Name))
+                  & ", w: &mut impl Walker) -> bool { node_walk(Node::" & Variant (1)
+                  & "(root), w) }");
+               P (0, "pub fn dump_" & RN & "(root: &" & Rust_Type (To_String (R.Name))
+                  & ") -> String { node_dump(Node::" & Variant (1) & "(root)) }");
+            elsif Infos (1).Kind = List then
+               P (0, "pub fn walk_" & RN & "(root: &[" & Elem_Type (1)
+                  & "], w: &mut impl Walker) -> bool {");
+               P (1, "for e in root { if !node_walk(Node::" & Variant (1) & "(e), w) { return false; } }");
+               P (1, "true");
+               P (0, "}");
+               P (0, "pub fn dump_" & RN & "(root: &[" & Elem_Type (1) & "]) -> String {");
+               P (1, "let mut s = String::from(""(" & To_String (R.Name) & """);");
+               P (1, "for e in root { s.push(' '); dump_into(&mut s, Node::" & Variant (1) & "(e)); }");
+               P (1, "s.push(')');");
+               P (1, "s");
+               P (0, "}");
+            end if;
+         end;
+      end Emit_Ast;
+
       Res : U;
    begin
       for I in 1 .. N loop
@@ -1773,6 +2154,9 @@ package body HBNF_Rust is
       Append (Res, Hosted_Types);
       if Writer_On then
          Emit_Writer (Res);
+      end if;
+      if Ast_On then
+         Emit_Ast (Res);
       end if;
 
       return To_String (Res);
@@ -2137,7 +2521,7 @@ package body HBNF_Rust is
                      Append (Buf, LF);
                   end;
                end if;
-               if Writer_On
+               if (Writer_On or else Ast_On)
                  and then ((Acc = "r." and then Struct_Alt (Rules (Owner), Analyze (Rules, Owner)))
                            or else (Acc = "e." and then Entry_Alt (Rules (Owner), Analyze (Rules, Owner))))
                then
