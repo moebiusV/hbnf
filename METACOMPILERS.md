@@ -1,5 +1,10 @@
 # hbnf beside META II, IMP72 and SNOBOL4
 
+> **2026-10-22:** hbnf will not read or bootstrap the IMP72 compiler (the user: IMP72 "is its
+> own thing and will get its own compiler"), so the sections below that ask whether hbnf
+> could be its kernel are history, not a plan.  What hbnf took from IMP72's manual stands.
+> The ALGOL 68 experiments they mention are far in the future.
+
 hbnf is a meta-compiler: a program that takes a description of a language and
 produces the thing that processes it.  Configuration files were where it
 started, not where it stops.  Three older systems made the same bet from

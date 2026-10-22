@@ -35,8 +35,9 @@ The corpus is where discoverability is proven: a fragment is "done" when its
 messages alone tell the author how to fix what hbnf could not accept
 silently.
 
-**Planned, before C++ (the user, 2026-10-18, reordered the same day: "do algol68
-before c++"): ALGOL 68.**  ALGOL 68 comes first, written in an hbnf that has gained what the W-grammar does (the user,
+**ALGOL 68, and C++ after it: far in the future (the user, 2026-10-22: "defer c++ and
+algol68 to far in the future").**  They were next in the running order (the user, 2026-10-18: "do algol68
+before c++"), and nothing else waits on them now.  ALGOL 68 is to be written in an hbnf that has gained what the W-grammar does (the user,
 2026-10-18: "we won't do ALGOL 68 in precisely the W-grammar, we'll do it in the
 hbnf that is updated to do what a W-grammar does"): parameterised rules for the
 Report's NOTION families (**built 2026-10-19**: `list(X)`, number parameters over a domain,
@@ -614,11 +615,15 @@ running order:
 > **Done:** 0, 1, 2, 3, 3b, 4a–4e, 5, 7a, 9a, 9b, 9c, 12.  **Under way:** 7b (the
 > wire layer, in C; see its entry for what is and is not built).
 > **Corpora and ports wait for the features** (decided 2026-10-17).  The POSIX
-> shell grammar (`corpus/posix/`) and the IMP72 sources (`corpus/imp72/`) are
-> paused where they stand: both need things hbnf does not have yet (the
-> exception for phrase rules, `~` negation, a `%where`, bit fields and the wire
-> layer, `%emit`).  They resume when hbnf is feature complete, and the ports of
-> hbnf itself to the remaining backend languages (step 10) come at the very end.
+> shell grammar (`corpus/posix/`) is paused where it stands: it needs things hbnf
+> does not have yet (the exception for phrase rules, `~` negation, a `%where`).
+> It resumes when hbnf is feature complete, and the ports of hbnf itself to the
+> remaining backend languages (step 10) come at the very end.  **The IMP72
+> sources (`corpus/imp72/`) are cancelled** (the user, 2026-10-22: IMP72 "is its own
+> thing and will get its own compiler"); hbnf does not read the IMP72 compiler's
+> sources or bootstrap it.  The comparison with IMP72 in `METACOMPILERS.md` stays
+> as history, and what hbnf took from its manual (the choice rule, `A<pos,len>`)
+> stays.  **ALGOL 68 and C++ are far in the future** (the same day).
 >
 > **Critical path:** **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
@@ -1539,7 +1544,10 @@ lookahead or a context test not at all.
     `statements` parser (offsets are within the statement).  The writer is in Rust, Zig and Ada too
     (2026-10-22): `tests/writer.sh` round-trips the same corpora in all four (json, obconf, the daemon
     grammars, ALGOL 60 in Rust and Zig), each file written and read back to the same dump; what the
-    other three cannot read is a grammar with a scanner written in C (a `jet`) or `%as`/`%same`.
+    other three cannot read is a grammar with a scanner written in C (a `jet`).  Back-references
+    (`%as`/`%same`) and the lookaheads `!x` / `&x` are parsed in Rust, Zig and Ada too (2026-10-22;
+    until then they were silently dropped, which made ALGOL 60 and Mustache parse wrongly there):
+    Mustache round-trips in all four, ALGOL 60 in Rust and Zig.
     **2026-10-22: `--ast` in Rust, Zig and Ada** (`tests/ast.sh`, `tutorial/tools.*`): `Node` (a
     record or list element), `node_walk` (enter, leave, skip, stop), `node_kids`, `node_kind_name`,
     `node_alt`, `node_alt_name`, `node_dump` and `node_equal`, written as plain typed code per grammar
