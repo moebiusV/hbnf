@@ -260,7 +260,7 @@ begin
       HBNF_C.Set_Forks (Forks, Quiet);
       HBNF_Compilable.Allow_Shadowing (Forks);
       if HBNF_Grammar.Uses_Backref
-        and then To_String (Backend) not in "c" | "tree-sitter"
+        and then To_String (Backend) not in "c" | "tree-sitter" | "rust" | "zig" | "ada"
       then
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error,

@@ -289,6 +289,7 @@ package body HBNF_Rust is
 
    Writer_On    : Boolean := False;   --  --writer: write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
+   Bref_Seq     : Natural := 0;       --  numbers the sequences that have %as / %same
    Spans_On     : Boolean := False;   --  --spans: where each node is in the text
    Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
@@ -326,9 +327,14 @@ package body HBNF_Rust is
       Is_Hosted := True;
    end Set_Hosted;
 
+   --  The name of the function that parses a rule.  A rule called `text` would be
+   --  the public parse_text.
+   function Rule_Fn (Snake : String) return String is
+     (if Snake = "text" then "parse_rule_text" else "parse_" & Snake);
+
    function Type_Name (Rule : String) return String is (Rust_Type (Rule));
    function Parse_Fn (Rule : String) return String is
-     ("parse_" & Rust_Snake (Rule));
+     (Rule_Fn (Rust_Snake (Rule)));
    function Scan_Fn (Rule : String) return String is
      ("scan_" & Rust_Snake (Rule));
 
@@ -1621,6 +1627,9 @@ package body HBNF_Rust is
          procedure Elements
            (Idx : Natural; Els : Element_Vectors.Vector; Acc, Gap : String;
             Ind : Natural; Alt_Ok : Boolean := False; Alt_Off : Natural := 0) is
+            --  `x %as tag`: how x is written, for the `%same tag` that writes it again
+            Tag_Name, Tag_Nm, Tag_Ex : String_Vectors.Vector;
+            Last_Nm, Last_Ex : Unbounded_String;
          begin
             if (for some X of Els => X.Kind = Alt) then
                if not Alt_Ok then
@@ -1674,8 +1683,22 @@ package body HBNF_Rust is
                            P (Ind, "}");
                         else
                            Value (Nm, F, Gap, Ind);
+                           Last_Nm := To_Unbounded_String (Nm);
+                           Last_Ex := To_Unbounded_String (F);
                         end if;
                      end;
+                  when Block =>
+                     if E.Op = B_As and then Last_Nm /= Null_Unbounded_String then
+                        Tag_Name.Append (E.Ctx);
+                        Tag_Nm.Append (Last_Nm);
+                        Tag_Ex.Append (Last_Ex);
+                     elsif E.Op = B_Same then
+                        for T in 1 .. Natural (Tag_Name.Length) loop
+                           if Tag_Name (T) = E.Ctx then
+                              Value (To_String (Tag_Nm (T)), To_String (Tag_Ex (T)), Gap, Ind);
+                           end if;
+                        end loop;
+                     end if;
                   when Group =>
                      if E.Min /= 1 or else E.Max /= 1 then
                         P (Ind, Bad ("a repeated group inside a sequence"));
@@ -2683,11 +2706,31 @@ package body HBNF_Rust is
          --  (`whitespace none` says it does not).
          Skips : constant Boolean :=
            Rules (Owner).Whitespace /= Null_Unbounded_String;
+         --  `x %as tag` keeps where the text x matched is and how long; `%same tag`
+         --  is that text again.  The pair is local to this sequence.
+         Sid : constant String := Img (Bref_Seq + 1);
+         function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
+           (Pfx & "_" & Rust_Snake (To_String (Tag)) & "_" & Sid);
       begin
+         Bref_Seq := Bref_Seq + 1;
+         for K in First .. Last loop
+            if Els (K).Kind = Block and then Els (K).Op = B_As then
+               Append (Buf, Ind & "let mut " & Tag_Var ("cp", Els (K).Ctx) & " = 0usize;");
+               Append (Buf, LF);
+               Append (Buf, Ind & "let mut " & Tag_Var ("cl", Els (K).Ctx) & " = 0usize;");
+               Append (Buf, LF);
+            end if;
+         end loop;
          for K in First .. Last loop
             declare
                E : constant Element_Access := Els (K);
             begin
+               if K < Last and then Els (K + 1).Kind = Block
+                 and then Els (K + 1).Op = B_As
+               then
+                  Append (Buf, Ind & "let es_" & Sid & "_" & Img (K) & " = p.pos;");
+                  Append (Buf, LF);
+               end if;
                --  A phrase rule skips whitespace before each element.
                if Skips and then (E.Kind = Literal or else E.Kind = Name) then
                   Append (Buf, Ind & "p.skip_ws();");
@@ -2756,7 +2799,114 @@ package body HBNF_Rust is
                   when Char_Range =>
                      null;
                   when Block =>
-                     null;  --  lifted to a rule of its own before emission
+                     if E.Op = B_As then
+                        --  where the text of the element before began, after the blanks
+                        Append (Buf, Ind & "{ let k_ = p.pos; "
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                               & "; p.skip_ws(); " else "")
+                          & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "; p.pos = k_; " & Tag_Var ("cp", E.Ctx) & " = st_; "
+                          & Tag_Var ("cl", E.Ctx) & " = k_ - st_; }");
+                        Append (Buf, LF);
+                     elsif E.Op in B_Not | B_And then
+                        --  !x / &x: x is tried at this place and nothing is consumed
+                        declare
+                           Desc  : Unbounded_String;
+                           First : Boolean := True;
+                           Open  : Boolean := False;
+                           procedure Close is
+                           begin
+                              if Open then
+                                 Append (Buf, Ind & "    if ok_ { hit_ = true; }");
+                                 Append (Buf, LF);
+                                 Append (Buf, Ind & "}");
+                                 Append (Buf, LF);
+                                 Open := False;
+                              end if;
+                           end Close;
+                        begin
+                           Append (Buf, Ind & "{ let sv_ = (p.pos, p.err_pos, p.err.clone(), p.ex.clone()); let mut hit_ = false;");
+                           Append (Buf, LF);
+                           for X of E.Look loop
+                              if X.Kind = Alt then
+                                 Close;
+                                 Append (Desc, " or ");
+                              else
+                                 if not Open then
+                                    Append (Buf, Ind & "  if !hit_ { let mut ok_ = true; p.pos = sv_.0;");
+                                    Append (Buf, LF);
+                                    Open := True;
+                                    First := True;
+                                 end if;
+                                 if not First and then Skips then
+                                    Append (Buf, Ind & "    if ok_ { p.skip_ws(); }");
+                                    Append (Buf, LF);
+                                 end if;
+                                 First := False;
+                                 if X.Kind = Literal then
+                                    declare
+                                       Lit : constant String := To_String (X.Lit);
+                                    begin
+                                       Append (Desc, "`" & Lit & "`");
+                                       Append (Buf, Ind & "    if ok_ { ok_ = "
+                                         & (if X.No_Case and then Is_Keyword_Lit (Lit)
+                                            then "p.expect_word_nocase"
+                                            elsif X.No_Case then "p.expect_lit_nocase"
+                                            elsif Is_Keyword_Lit (Lit) then "p.expect_word"
+                                            else "p.expect_lit")
+                                         & "(""" & Rust_Escape (Lit) & """).is_ok(); }");
+                                    end;
+                                 else
+                                    declare
+                                       NM : constant String := To_String (X.Name);
+                                       Scan : constant String :=
+                                         (if Is_Core (NM) then Scan_Call (NM)
+                                          elsif Is_Char_Rule (Rules, NM)
+                                          then "scan_" & Rust_Snake (NM)
+                                               & "(p.text.as_bytes(), p.pos, p.text.len())"
+                                          else "");
+                                    begin
+                                       if Scan = "" then
+                                          raise Parse_Error with
+                                            "a lookahead (`!` or `&`) looks at a literal or a "
+                                            & "token, and `" & NM & "` is a phrase rule; make it "
+                                            & "a token (write it with characters only) or look "
+                                            & "for a literal";
+                                       end if;
+                                       Append (Desc, NM);
+                                       Append (Buf, Ind & "    if ok_ { let n_ = " & Scan
+                                         & "; if n_ > 0 { p.pos += n_; } else { ok_ = false; } }");
+                                    end;
+                                 end if;
+                                 Append (Buf, LF);
+                              end if;
+                           end loop;
+                           Close;
+                           Append (Buf, Ind & "  p.pos = sv_.0; p.err_pos = sv_.1; p.err = sv_.2; { let d_ = p.ex.depth; p.ex = sv_.3; p.ex.depth = d_; }");
+                           Append (Buf, LF);
+                           if E.Op = B_Not then
+                              Append (Buf, Ind & "  if hit_ { return Err(p.fail(""something other than "
+                                & Rust_Escape (To_String (Desc)) & """)); } }");
+                           else
+                              Append (Buf, Ind & "  if !hit_ { return Err(p.fail("""
+                                & Rust_Escape (To_String (Desc)) & """)); } }");
+                           end if;
+                           Append (Buf, LF);
+                        end;
+                     elsif E.Op = B_Same then
+                        if Skips then
+                           Append (Buf, Ind & "p.skip_ws();");
+                           Append (Buf, LF);
+                        end if;
+                        Append (Buf, Ind & "{ let b_ = p.text.as_bytes(); let (cp_, cl_) = ("
+                          & Tag_Var ("cp", E.Ctx) & ", " & Tag_Var ("cl", E.Ctx) & ");");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "  if p.pos + cl_ > b_.len() || b_[p.pos..p.pos + cl_] != b_[cp_..cp_ + cl_] { return Err(p.fail(""the same text again, `"
+                          & Rust_Escape (To_String (E.Ctx)) & "`"")); }");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "  p.pos += cl_; }");
+                        Append (Buf, LF);
+                     end if;
                   when Bit_Field =>
                      null;     --  a rule with bit fields never reaches here (Split_Wire)
                   when Negation =>
@@ -2926,7 +3076,7 @@ package body HBNF_Rust is
                        & "); p.pos += n;");
                      Append (Buf, LF);
                   else
-                     Append (Buf, "        match parse_" & Rust_Snake (To_String (E.Name))
+                     Append (Buf, "        match " & Rule_Fn (Rust_Snake (To_String (E.Name)))
                        & "(p) { Ok(v) => r.push(v), Err(_) => { p.pos = save; break; } }");
                      Append (Buf, LF);
                   end if;
@@ -3108,14 +3258,14 @@ package body HBNF_Rust is
                   B : constant String := HBNF_Grammar.Except_Operand (NM);
                begin
                   Append (Buf, "    let save = p.pos;" & LF);
-                  Append (Buf, "    let r = parse_" & Rust_Snake (A) & "(p)?;" & LF);
+                  Append (Buf, "    let r = " & Rule_Fn (Rust_Snake (A)) & "(p)?;" & LF);
                   Append (Buf, "    let end = p.pos;" & LF);
                   Append (Buf, "    let full = p.text;" & LF);
                   Append (Buf, "    let (keep_pos, keep_err) = (p.err_pos, (p.err.clone(), p.ex.clone()));" & LF);
                   Append (Buf, (if Is_Hosted
                                 then "    p.text = full.cut(end); p.pos = save;"
                                 else "    p.text = &full[..end]; p.pos = save;") & LF);
-                  Append (Buf, "    let same = parse_" & Rust_Snake (B)
+                  Append (Buf, "    let same = " & Rule_Fn (Rust_Snake (B))
                     & "(p).is_ok() && p.pos == end;" & LF);
                   Append (Buf, "    p.text = full; p.pos = end;" & LF);
                   Append (Buf, "    p.err_pos = keep_pos; p.err = keep_err.0; { let d = p.ex.depth; p.ex = keep_err.1; p.ex.depth = d; }" & LF);
@@ -3124,7 +3274,7 @@ package body HBNF_Rust is
                   Append (Buf, "    Ok(r)" & LF);
                end;
             else
-               Append (Buf, "    parse_" & Rust_Snake (To_String (P (1).Name))
+               Append (Buf, "    " & Rule_Fn (Rust_Snake (To_String (P (1).Name)))
                  & "(p)");
                Append (Buf, LF);
             end if;
@@ -3377,7 +3527,7 @@ package body HBNF_Rust is
                begin
                   if Param = "p" then
                      --  the rule is on the stack of rules being read while its body runs
-                     Append (Res, "fn parse_" & Rust_Snake (NM)
+                     Append (Res, "fn " & Rule_Fn (Rust_Snake (NM))
                        & "(p: &mut P) -> Result<" & Ret_Type (I)
                        & ", ParseError> {" & LF
                        & "    p.enter(" & Img (I) & ");" & LF
@@ -3398,7 +3548,7 @@ package body HBNF_Rust is
                        & "(p: &mut P) -> Result<" & Ret_Type (I)
                        & ", ParseError> {");
                   else
-                     Append (Res, "fn parse_" & Rust_Snake (NM)
+                     Append (Res, "fn " & Rule_Fn (Rust_Snake (NM))
                        & "(" & Param & ": &mut P) -> Result<" & Ret_Type (I)
                        & ", ParseError> {");
                   end if;
@@ -3750,7 +3900,7 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
               & "    if let Err(m) = r_ { return Err(ParseError { line: 0, col: 0, msg: m }); }" & LF
             else ""));
          Mustache.Put (V, "root_fn",
-           "parse_" & Rust_Snake (To_String (R.Name)));
+           Rule_Fn (Rust_Snake (To_String (R.Name))));
          --  The root skips whitespace around itself if its file does.
          Mustache.Put (V, "lead_ws",
            (if R.Whitespace /= Null_Unbounded_String

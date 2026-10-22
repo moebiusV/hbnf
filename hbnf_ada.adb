@@ -255,6 +255,7 @@ package body HBNF_Ada is
 
    Writer_On    : Boolean := False;   --  --writer: Write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
+   Bref_Seq     : Natural := 0;       --  numbers the sequences that have %as / %same
    Spans_On     : Boolean := False;   --  --spans: where each node is in the text
    Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
@@ -1721,11 +1722,42 @@ package body HBNF_Ada is
          --  (`whitespace none` says it does not).
          Skips : constant Boolean :=
            Rules (Owner).Whitespace /= Null_Unbounded_String;
+         --  `x %as tag` keeps where the text x matched is and how long; `%same tag`
+         --  is that text again.  The pair is local to this sequence.
+         Sid : constant String := Img (Bref_Seq + 1);
+         Wrapped : constant Boolean :=
+           (for some K in First .. Last =>
+              Els (K).Kind = Block and then Els (K).Op = B_As);
+         function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
+           (Pfx & "_" & Ada_Ident (To_String (Tag)) & "_" & Sid);
       begin
+         Bref_Seq := Bref_Seq + 1;
+         if Wrapped then
+            Append (Buf, Ind & "declare");
+            Append (Buf, LF);
+            for K in First .. Last loop
+               if Els (K).Kind = Block and then Els (K).Op = B_As then
+                  Append (Buf, Ind & "   " & Tag_Var ("Cp", Els (K).Ctx) & " : Natural := 1;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "   " & Tag_Var ("Cl", Els (K).Ctx) & " : Natural := 0;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "   Es_" & Sid & "_" & Img (K - 1) & " : Natural := 1;");
+                  Append (Buf, LF);
+               end if;
+            end loop;
+            Append (Buf, Ind & "begin");
+            Append (Buf, LF);
+         end if;
          for K in First .. Last loop
             declare
                E : constant Element_Access := Els (K);
             begin
+               if K < Last and then Els (K + 1).Kind = Block
+                 and then Els (K + 1).Op = B_As
+               then
+                  Append (Buf, Ind & "Es_" & Sid & "_" & Img (K) & " := P.Pos;");
+                  Append (Buf, LF);
+               end if;
                case E.Kind is
                   when Literal =>
                      declare
@@ -1854,7 +1886,130 @@ package body HBNF_Ada is
                   when Char_Range =>
                      null;
                   when Block =>
-                     null;  --  lifted to a rule of its own before emission
+                     if E.Op = B_As then
+                        --  where the text of the element before began, after the blanks
+                        Append (Buf, Ind & "declare Kq : constant Natural := P.Pos; begin"
+                          & (if Skips then " P.Pos := Es_" & Sid & "_" & Img (K - 1)
+                               & "; Skip_Ws (P);" else "")
+                          & " " & Tag_Var ("Cp", E.Ctx) & " := "
+                          & (if Skips then "P.Pos" else "Es_" & Sid & "_" & Img (K - 1))
+                          & "; " & Tag_Var ("Cl", E.Ctx) & " := Kq - "
+                          & Tag_Var ("Cp", E.Ctx) & "; P.Pos := Kq; end;");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Same then
+                        if Skips then
+                           Append (Buf, Ind & "Skip_Ws (P);");
+                           Append (Buf, LF);
+                        end if;
+                        Append (Buf, Ind & "if P.Pos + " & Tag_Var ("Cl", E.Ctx)
+                          & " - 1 > Limit (P) or else P.Text (P.Pos .. P.Pos + "
+                          & Tag_Var ("Cl", E.Ctx) & " - 1) /= P.Text (" & Tag_Var ("Cp", E.Ctx)
+                          & " .. " & Tag_Var ("Cp", E.Ctx) & " + " & Tag_Var ("Cl", E.Ctx)
+                          & " - 1) then Fail (P, ""the same text again, `"
+                          & Ada_Escape (To_String (E.Ctx)) & "`""); end if;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "P.Pos := P.Pos + " & Tag_Var ("Cl", E.Ctx) & ";");
+                        Append (Buf, LF);
+                     elsif E.Op in B_Not | B_And then
+                        --  !x / &x: x is tried at this place and nothing is consumed
+                        declare
+                           Desc     : Unbounded_String;
+                           First_El : Boolean := True;
+                           Open     : Boolean := False;
+                           procedure Close is
+                           begin
+                              if Open then
+                                 Append (Buf, Ind & "      if Ok then Hit := True; end if;");
+                                 Append (Buf, LF);
+                                 Append (Buf, Ind & "   end if;");
+                                 Append (Buf, LF);
+                                 Open := False;
+                              end if;
+                           end Close;
+                        begin
+                           Append (Buf, Ind & "declare");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   Sv  : constant Parser := P;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   Hit : Boolean := False;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   Ok  : Boolean;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "begin");
+                           Append (Buf, LF);
+                           for X of E.Look loop
+                              if X.Kind = Alt then
+                                 Close;
+                                 Append (Desc, " or ");
+                              else
+                                 if not Open then
+                                    Append (Buf, Ind & "   if not Hit then");
+                                    Append (Buf, LF);
+                                    Append (Buf, Ind & "      Ok := True;  P.Pos := Sv.Pos;");
+                                    Append (Buf, LF);
+                                    Open := True;
+                                    First_El := True;
+                                 end if;
+                                 if not First_El and then Skips then
+                                    Append (Buf, Ind & "      if Ok then Skip_Ws (P); end if;");
+                                    Append (Buf, LF);
+                                 end if;
+                                 First_El := False;
+                                 if X.Kind = Literal then
+                                    declare
+                                       Lit : constant String := To_String (X.Lit);
+                                    begin
+                                       Append (Desc, "`" & Lit & "`");
+                                       Append (Buf, Ind & "      if Ok then begin "
+                                         & (if X.No_Case and then Is_Keyword_Lit (Lit)
+                                            then "Expect_Word_Nocase"
+                                            elsif X.No_Case then "Expect_Lit_Nocase"
+                                            elsif Is_Keyword_Lit (Lit) then "Expect_Word"
+                                            else "Expect_Lit")
+                                         & " (P, """ & Ada_Escape (Lit) & """); exception"
+                                         & " when Parse_Error => Ok := False; end; end if;");
+                                    end;
+                                 else
+                                    declare
+                                       NM : constant String := To_String (X.Name);
+                                       Scan : constant String :=
+                                         (if Is_Core (NM) then Scan_Fn (NM)
+                                          elsif Is_Char_Rule (Rules, NM)
+                                          then "Scan_" & Ada_Ident (NM)
+                                          else "");
+                                    begin
+                                       if Scan = "" then
+                                          raise Parse_Error with
+                                            "a lookahead (`!` or `&`) looks at a literal or a "
+                                            & "token, and `" & NM & "` is a phrase rule; make it "
+                                            & "a token (write it with characters only) or look "
+                                            & "for a literal";
+                                       end if;
+                                       Append (Desc, NM);
+                                       Append (Buf, Ind & "      if Ok then declare N : constant Natural := "
+                                         & Scan & " (P.Text.all, P.Pos, Limit (P)); begin"
+                                         & " if N > 0 then P.Pos := P.Pos + N; else Ok := False; end if;"
+                                         & " end; end if;");
+                                    end;
+                                 end if;
+                                 Append (Buf, LF);
+                              end if;
+                           end loop;
+                           Close;
+                           Append (Buf, Ind & "   P := Sv;");
+                           Append (Buf, LF);
+                           if E.Op = B_Not then
+                              Append (Buf, Ind & "   if Hit then Fail (P, ""something other than "
+                                & Ada_Escape (To_String (Desc)) & """); end if;");
+                           else
+                              Append (Buf, Ind & "   if not Hit then Fail (P, """
+                                & Ada_Escape (To_String (Desc)) & """); end if;");
+                           end if;
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "end;");
+                           Append (Buf, LF);
+                        end;
+                     end if;
                   when Bit_Field =>
                      null;     --  a rule with bit fields never reaches here (Split_Wire)
                   when Negation =>
@@ -1862,6 +2017,10 @@ package body HBNF_Ada is
                end case;
             end;
          end loop;
+         if Wrapped then
+            Append (Buf, Ind & "end;");
+            Append (Buf, LF);
+         end if;
       end Emit_Seq;
 
       --  Emit a backtracking alternation over the Alt-separated branches in
@@ -4563,6 +4722,10 @@ package body HBNF_Ada is
               (Idx : Natural; Els : Element_Vectors.Vector; Prefix, Gap : String;
                Ind : Natural; Held : Boolean; Alt_Ok : Boolean := False;
                Alt_Off : Natural := 0) is
+               --  `x %as tag`: how x is written, for the `%same tag` that writes it again
+               Tag_Name, Tag_Nm : String_Vectors.Vector;
+               Last_Nm : Unbounded_String;
+               Last_List : Boolean := False;
             begin
                if (for some X of Els => X.Kind = Alt) then
                   if not Alt_Ok then
@@ -4605,6 +4768,19 @@ package body HBNF_Ada is
                      when Name =>
                         Member (Idx, To_String (E.Name),
                                 E.Min /= 1 or else E.Max /= 1, Prefix, Gap, Ind, Held);
+                        Last_Nm := E.Name;
+                        Last_List := E.Min /= 1 or else E.Max /= 1;
+                     when Block =>
+                        if E.Op = B_As and then Last_Nm /= Null_Unbounded_String then
+                           Tag_Name.Append (E.Ctx);
+                           Tag_Nm.Append (Last_Nm);
+                        elsif E.Op = B_Same then
+                           for T in 1 .. Natural (Tag_Name.Length) loop
+                              if Tag_Name (T) = E.Ctx then
+                                 Member (Idx, To_String (Tag_Nm (T)), False, Prefix, Gap, Ind, Held);
+                              end if;
+                           end loop;
+                        end if;
                      when Group =>
                         if E.Min /= 1 or else E.Max /= 1 then
                            P (Ind, Bad ("a repeated group inside a sequence"));

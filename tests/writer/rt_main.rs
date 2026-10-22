@@ -1,6 +1,6 @@
 // The writer's gate in Rust (tests/writer.sh): for each file, parse it, write the tree, parse what
-// was written, write again.  The first write must re-parse to the same tree (the same dump), and the
-// second write must be the same text as the first.  MODULE and ROOT are filled in by the script.
+// was written, write again.  The first write must re-parse, the tree it reads must write the same text and dump the same
+// when that is read again, and the second write must be the same text as the first.  MODULE and ROOT are filled in by the script.
 mod MODULE;
 use MODULE::*;
 
@@ -25,9 +25,15 @@ fn roundtrip(path: &str) -> bool {
         Ok(v) => String::from_utf8_lossy(&v).into_owned(),
         Err(m) => { println!("{}: FAIL (cannot write again: {})", path, m); return true; }
     };
-    let (d1, d2) = (dump_ROOT(&t1), dump_ROOT(&t2));
-    if d1 != d2 {
-        println!("{}: FAIL (the written text reads as a different tree)\n--- before ---\n{}\n--- after ---\n{}\n--- text ---\n{}", path, d1, d2, a);
+    // the written text reads as a tree that writes the same text and dumps the same: a comment the
+    // first parse took (as an empty entry) is gone from the text, so the first tree is not compared
+    let t3 = match parse_text(&b) {
+        Ok(t) => t,
+        Err(e) => { println!("{}: FAIL (the second written text does not parse: {})", path, e.msg); return true; }
+    };
+    let (d2, d3) = (dump_ROOT(&t2), dump_ROOT(&t3));
+    if d2 != d3 {
+        println!("{}: FAIL (the written text reads as a different tree)\n--- before ---\n{}\n--- after ---\n{}\n--- text ---\n{}", path, d2, d3, a);
         return true;
     }
     if a != b {

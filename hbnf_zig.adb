@@ -312,6 +312,7 @@ package body HBNF_Zig is
 
    Writer_On    : Boolean := False;   --  --writer: write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
+   Bref_Seq     : Natural := 0;       --  numbers the sequences that have %as / %same
    Spans_On     : Boolean := False;   --  --spans: where each node is in the text
    Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
@@ -349,11 +350,16 @@ package body HBNF_Zig is
       Is_Hosted := True;
    end Set_Hosted;
 
+   --  The name of the function that parses a rule.  A rule called `text` would be
+   --  the public parse_text.
+   function Rule_Fn (Snake : String) return String is
+     (if Snake = "text" then "parse_rule_text" else "parse_" & Snake);
+
    function Scan_Fn (Rule : String) return String is
      ("scan_" & Zig_Snake (Rule));
 
    function Parse_Fn (Rule : String) return String is
-     ("parse_" & Zig_Snake (Rule));
+     (Rule_Fn (Zig_Snake (Rule)));
 
    --  The Zig type a rule reference denotes: a core scalar inlines; any
    --  other reference resolves to the referenced rule's own type name.
@@ -1712,6 +1718,9 @@ package body HBNF_Zig is
          procedure Elements
            (Idx : Natural; Els : Element_Vectors.Vector; Acc, Gap : String;
             Ind : Natural; Alt_Ok : Boolean := False; Alt_Off : Natural := 0) is
+            --  `x %as tag`: how x is written, for the `%same tag` that writes it again
+            Tag_Name, Tag_Nm, Tag_Ex : String_Vectors.Vector;
+            Last_Nm, Last_Ex : Unbounded_String;
          begin
             if (for some X of Els => X.Kind = Alt) then
                if not Alt_Ok then
@@ -1767,8 +1776,23 @@ package body HBNF_Zig is
                            P (Ind, "}");
                         else
                            Value (Idx, Nm, F, Gap, False, Ind);
+                           Last_Nm := To_Unbounded_String (Nm);
+                           Last_Ex := To_Unbounded_String (F);
                         end if;
                      end;
+                  when Block =>
+                     if E.Op = B_As and then Last_Nm /= Null_Unbounded_String then
+                        Tag_Name.Append (E.Ctx);
+                        Tag_Nm.Append (Last_Nm);
+                        Tag_Ex.Append (Last_Ex);
+                     elsif E.Op = B_Same then
+                        for T in 1 .. Natural (Tag_Name.Length) loop
+                           if Tag_Name (T) = E.Ctx then
+                              Value (Idx, To_String (Tag_Nm (T)), To_String (Tag_Ex (T)),
+                                     Gap, False, Ind);
+                           end if;
+                        end loop;
+                     end if;
                   when Group =>
                      if E.Min /= 1 or else E.Max /= 1 then
                         P (Ind, Bad ("a repeated group inside a sequence"));
@@ -2913,11 +2937,34 @@ package body HBNF_Zig is
            Rules (Owner).Whitespace /= Null_Unbounded_String;
          Pref : constant String := (if Fail = "" then "try " else "");
          Cat  : constant String := (if Fail = "" then "" else " catch " & Fail);
+         --  `x %as tag` keeps where the text x matched is and how long; `%same tag`
+         --  is that text again.  The pair is local to this sequence.
+         Sid : constant String := Img (Bref_Seq + 1);
+         function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
+           (Pfx & "_" & Zig_Snake (To_String (Tag)) & "_" & Sid);
       begin
+         Bref_Seq := Bref_Seq + 1;
+         for K in First .. Last loop
+            if Els (K).Kind = Block and then Els (K).Op = B_As then
+               Append (Buf, Ind & "var " & Tag_Var ("cp", Els (K).Ctx) & ": usize = 0;");
+               Append (Buf, LF);
+               Append (Buf, Ind & "var " & Tag_Var ("cl", Els (K).Ctx) & ": usize = 0;");
+               Append (Buf, LF);
+               Append (Buf, Ind & "_ = &" & Tag_Var ("cp", Els (K).Ctx) & ";  _ = &"
+                 & Tag_Var ("cl", Els (K).Ctx) & ";");
+               Append (Buf, LF);
+            end if;
+         end loop;
          for K in First .. Last loop
             declare
                E : constant Element_Access := Els (K);
             begin
+               if K < Last and then Els (K + 1).Kind = Block
+                 and then Els (K + 1).Op = B_As
+               then
+                  Append (Buf, Ind & "const es_" & Sid & "_" & Img (K) & " = p.pos;");
+                  Append (Buf, LF);
+               end if;
                --  A phrase rule skips whitespace before each element.
                if Skips and then (E.Kind = Literal or else E.Kind = Name) then
                   Append (Buf, Ind & "p.skip_ws();");
@@ -2977,7 +3024,7 @@ package body HBNF_Zig is
                           & Zig_Field (To_String (E.Name)) & " = "
                           & Pref & "p.box("
                           & Zig_Type_Of (To_String (E.Name)) & ", "
-                          & Pref & "parse_" & Zig_Snake (To_String (E.Name))
+                          & Pref & Rule_Fn (Zig_Snake (To_String (E.Name)))
                           & "(p)" & Cat & ")" & Cat & ";");
                         Append (Buf, LF);
                      else
@@ -2995,7 +3042,115 @@ package body HBNF_Zig is
                   when Char_Range =>
                      null;
                   when Block =>
-                     null;  --  lifted to a rule of its own before emission
+                     if E.Op = B_As then
+                        --  where the text of the element before began, after the blanks
+                        Append (Buf, Ind & "{ const k_ = p.pos; "
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                               & "; p.skip_ws(); " else "")
+                          & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "; p.pos = k_; " & Tag_Var ("cp", E.Ctx) & " = st_; "
+                          & Tag_Var ("cl", E.Ctx) & " = k_ - st_; }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Same then
+                        if Skips then
+                           Append (Buf, Ind & "p.skip_ws();");
+                           Append (Buf, LF);
+                        end if;
+                        Append (Buf, Ind & "if (p.pos + " & Tag_Var ("cl", E.Ctx)
+                          & " > p.text.len or !std.mem.eql(u8, p.text[p.pos .. p.pos + "
+                          & Tag_Var ("cl", E.Ctx) & "], p.text[" & Tag_Var ("cp", E.Ctx) & " .. "
+                          & Tag_Var ("cp", E.Ctx) & " + " & Tag_Var ("cl", E.Ctx) & "])) { "
+                          & Pref & "p.fail(""the same text again, `" & Zig_Escape (To_String (E.Ctx))
+                          & "`"")" & Cat & "; }");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "p.pos += " & Tag_Var ("cl", E.Ctx) & ";");
+                        Append (Buf, LF);
+                     elsif E.Op in B_Not | B_And then
+                        --  !x / &x: x is tried at this place and nothing is consumed
+                        declare
+                           Desc  : Unbounded_String;
+                           First_El : Boolean := True;
+                           Open  : Boolean := False;
+                           procedure Close is
+                           begin
+                              if Open then
+                                 Append (Buf, Ind & "    if (ok_) hit_ = true;");
+                                 Append (Buf, LF);
+                                 Append (Buf, Ind & "}");
+                                 Append (Buf, LF);
+                                 Open := False;
+                              end if;
+                           end Close;
+                        begin
+                           Append (Buf, Ind & "{ const sv_ = p.*; var hit_ = false;");
+                           Append (Buf, LF);
+                           for X of E.Look loop
+                              if X.Kind = Alt then
+                                 Close;
+                                 Append (Desc, " or ");
+                              else
+                                 if not Open then
+                                    Append (Buf, Ind & "  if (!hit_) { var ok_ = true; p.pos = sv_.pos;");
+                                    Append (Buf, LF);
+                                    Open := True;
+                                    First_El := True;
+                                 end if;
+                                 if not First_El and then Skips then
+                                    Append (Buf, Ind & "    if (ok_) p.skip_ws();");
+                                    Append (Buf, LF);
+                                 end if;
+                                 First_El := False;
+                                 if X.Kind = Literal then
+                                    declare
+                                       Lit : constant String := To_String (X.Lit);
+                                    begin
+                                       Append (Desc, "`" & Lit & "`");
+                                       Append (Buf, Ind & "    if (ok_) "
+                                         & (if X.No_Case and then Is_Keyword_Lit (Lit)
+                                            then "p.expect_word_nocase"
+                                            elsif X.No_Case then "p.expect_lit_nocase"
+                                            elsif Is_Keyword_Lit (Lit) then "p.expect_word"
+                                            else "p.expect_lit")
+                                         & "(""" & Zig_Escape (Lit) & """, ""`" & Zig_Escape (Lit)
+                                         & "`"") catch { ok_ = false; };");
+                                    end;
+                                 else
+                                    declare
+                                       NM : constant String := To_String (X.Name);
+                                       Scan : constant String :=
+                                         (if Is_Core (NM) then Scan_Call (NM)
+                                          elsif Is_Char_Rule (Rules, NM)
+                                          then "scan_" & Zig_Snake (NM) & "(p.text, p.pos, p.text.len)"
+                                          else "");
+                                    begin
+                                       if Scan = "" then
+                                          raise Parse_Error with
+                                            "a lookahead (`!` or `&`) looks at a literal or a "
+                                            & "token, and `" & NM & "` is a phrase rule; make it "
+                                            & "a token (write it with characters only) or look "
+                                            & "for a literal";
+                                       end if;
+                                       Append (Desc, NM);
+                                       Append (Buf, Ind & "    if (ok_) { const n_ = " & Scan
+                                         & "; if (n_ > 0) { p.pos += n_; } else { ok_ = false; } }");
+                                    end;
+                                 end if;
+                                 Append (Buf, LF);
+                              end if;
+                           end loop;
+                           Close;
+                           Append (Buf, Ind & "  p.* = sv_;");
+                           Append (Buf, LF);
+                           if E.Op = B_Not then
+                              Append (Buf, Ind & "  if (hit_) { " & Pref & "p.fail(""something other than "
+                                & Zig_Escape (To_String (Desc)) & """)" & Cat & "; } }");
+                           else
+                              Append (Buf, Ind & "  if (!hit_) { " & Pref & "p.fail("""
+                                & Zig_Escape (To_String (Desc)) & """)" & Cat & "; } }");
+                           end if;
+                           Append (Buf, LF);
+                        end;
+                     end if;
                   when Bit_Field =>
                      null;     --  a rule with bit fields never reaches here (Split_Wire)
                   when Negation =>
@@ -3435,7 +3590,7 @@ package body HBNF_Zig is
                begin
                   Append (Buf, "    const save = p.pos;" & LF);
                   Append (Buf, "    " & (if Owns (A) then "var" else "const")
-                    & " r = try parse_" & Zig_Snake (A) & "(p);" & LF);
+                    & " r = try " & Rule_Fn (Zig_Snake (A)) & "(p);" & LF);
                   if Owns (A) then
                      Append (Buf, "    errdefer deinit_" & Zig_Snake (Chase (A))
                        & "(&r, p.alloc);" & LF);
@@ -3445,13 +3600,13 @@ package body HBNF_Zig is
                   Append (Buf, "    p.text = p.text[0..end]; p.pos = save;" & LF);
                   Append (Buf, "    var same = false;" & LF);
                   if Owns (B) then
-                     Append (Buf, "    if (parse_" & Zig_Snake (B) & "(p)) |bv| {" & LF);
+                     Append (Buf, "    if (" & Rule_Fn (Zig_Snake (B)) & "(p)) |bv| {" & LF);
                      Append (Buf, "        var b = bv;" & LF);
                      Append (Buf, "        same = p.pos == end;" & LF);
                      Append (Buf, "        deinit_" & Zig_Snake (Chase (B))
                        & "(&b, p.alloc);" & LF);
                   else
-                     Append (Buf, "    if (parse_" & Zig_Snake (B) & "(p)) |_| {" & LF);
+                     Append (Buf, "    if (" & Rule_Fn (Zig_Snake (B)) & "(p)) |_| {" & LF);
                      Append (Buf, "        same = p.pos == end;" & LF);
                   end if;
                   Append (Buf, "    } else |e| {" & LF);
@@ -3463,7 +3618,7 @@ package body HBNF_Zig is
                   Append (Buf, "    return r;" & LF);
                end;
             else
-               Append (Buf, "    return try parse_" & Zig_Snake (To_String (P (1).Name))
+               Append (Buf, "    return try " & Rule_Fn (Zig_Snake (To_String (P (1).Name)))
                  & "(p);");
                Append (Buf, LF);
             end if;
@@ -3487,7 +3642,7 @@ package body HBNF_Zig is
                                 & "; p.pos += n; return r; } }");
                               Append (Buf, LF);
                            elsif E.Kind = Name then
-                              Append (Buf, "    if (parse_" & Zig_Snake (To_String (E.Name))
+                              Append (Buf, "    if (" & Rule_Fn (Zig_Snake (To_String (E.Name)))
                                 & "(p)) |r| { return r; } else |_| {}");
                               Append (Buf, LF);
                            end if;
@@ -3921,7 +4076,7 @@ package body HBNF_Zig is
                     and then Has_Span (Analyze (Rules, I))
                   then
                      --  the node says where it is: from the first thing in it to the end
-                     Append (Res, "fn parse_" & Zig_Snake (NM)
+                     Append (Res, "fn " & Rule_Fn (Zig_Snake (NM))
                        & "(p: *P) ParseError!" & Ret_Type (I) & " {" & LF
                        & "    const save = p.pos;" & LF
                        & "    var r = try parse_body_" & Zig_Snake (NM) & "(p);" & LF
@@ -3934,8 +4089,8 @@ package body HBNF_Zig is
                   Append (Res, "fn "
                     & (if Param = "p" and then Analyze (Rules, I).Kind = Struct
                           and then Has_Span (Analyze (Rules, I))
-                       then "parse_body_" else "parse_")
-                    & Zig_Snake (NM)
+                       then "parse_body_" & Zig_Snake (NM)
+                       else Rule_Fn (Zig_Snake (NM)))
                     & "(" & Param & ": *P) ParseError!" & Ret_Type (I) & " {");
                   Append (Res, LF);
                   if Param = "p" then
@@ -4345,7 +4500,7 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
               & "    bnf_warning_list = h_.warnings.items;" & LF
             else ""));
         Mustache.Put (V, "root_fn",
-           "parse_" & Zig_Snake (To_String (R.Name)));
+           Rule_Fn (Zig_Snake (To_String (R.Name))));
          --  The root skips whitespace around itself if its file does.
          Mustache.Put (V, "lead_ws",
            (if R.Whitespace /= Null_Unbounded_String

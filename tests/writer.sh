@@ -41,7 +41,7 @@ done
 
 # The same gate in Rust, Zig and Ada (--writer --ast): every file the language's parser reads is
 # written and read back to the same tree (the dump), and the second write is the first.  A grammar
-# with a scanner written in C (a `jet`) or with %as/%same is parsed by C alone so far, so some files
+# with a scanner written in C (a `jet`) is parsed by C alone so far, so some files
 # are not parsed here ("skipped").  tests/writer/rt_main.{rs,zig,adb} are the drivers.
 cap() { printf '%s' "$1" | awk '{ print toupper(substr($0,1,1)) substr($0,2) }'; }
 
@@ -102,6 +102,7 @@ rt_ada() {
 others() { rt_rust "$@"; rt_zig "$@"; rt_ada "$@"; }
 
 others json corpus/json/json.hbnf corpus/json/tests/good/*.json corpus/json/tests/bad/*.json
+others mustache corpus/mustache/mustache.hbnf corpus/mustache/tests/good/*.mustache corpus/mustache/tests/bad/*.mustache
 others obconf grammars/obconf_roundtrip.hbnf tests/accept/*.conf
 # (not in Ada: the report's rule names have two underscores in a row, which Ada does not allow)
 rt_rust algol60 corpus/algol60/algol60.hbnf corpus/algol60/tests/good/*.a60

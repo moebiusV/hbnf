@@ -39,4 +39,26 @@ int main(void) {
 EOC
 cc -std=gnu11 -D_GNU_SOURCE -w -o "$W/w" "$W/w.c" 2> "$W/cc2" || { echo "backref: FAIL (compile writer)"; head -5 "$W/cc2"; exit 1; }
 "$W/w" || { echo "backref: FAIL (writer)"; exit 1; }
-echo "backref: OK (a closing tag repeats the opening one; the writer repeats it too)"
+
+# The same in Rust, Zig and Ada: the lines C printed (tests/backref/main.{rs,zig,adb}).
+G=tests/backref/tags.hbnf
+if command -v rustc > /dev/null 2>&1; then
+	d=$W/rs; mkdir -p "$d"
+	"$CLI" $G --backend=rust > "$d/tags.rs" && cp tests/backref/main.rs "$d/m.rs" \
+	  && (cd "$d" && rustc --edition 2021 -A warnings -o m m.rs > cc.txt 2>&1) && "$d/m" > "$d/out" 2>&1 \
+	  && cmp -s "$d/out" tests/backref/expected.txt || { echo "backref: FAIL (rust)"; head -5 "$d/cc.txt" 2>/dev/null; diff "$d/out" tests/backref/expected.txt | head -5; exit 1; }
+fi
+if command -v zig > /dev/null 2>&1; then
+	d=$W/zg; mkdir -p "$d"
+	"$CLI" $G --backend=zig > "$d/tags.zig" && cp tests/backref/main.zig "$d/m.zig" \
+	  && (cd "$d" && zig build-exe m.zig -femit-bin=m > cc.txt 2>&1) && "$d/m" > "$d/out" 2>&1 \
+	  && cmp -s "$d/out" tests/backref/expected.txt || { echo "backref: FAIL (zig)"; head -5 "$d/cc.txt" 2>/dev/null; diff "$d/out" tests/backref/expected.txt | head -5; exit 1; }
+fi
+if command -v gnatmake > /dev/null 2>&1; then
+	d=$W/ad; mkdir -p "$d"
+	"$CLI" $G --backend=ada --package=Tags > "$d/all.ada" && cp tests/backref/main.adb "$d/" \
+	  && (cd "$d" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -gnat2022 main.adb -o m > cc.txt 2>&1) \
+	  && "$d/m" > "$d/out" 2>&1 && cmp -s "$d/out" tests/backref/expected.txt \
+	  || { echo "backref: FAIL (ada)"; grep -v warning "$d/cc.txt" 2>/dev/null | head -5; diff "$d/out" tests/backref/expected.txt | head -5; exit 1; }
+fi
+echo "backref: OK (a closing tag repeats the opening one; the writer repeats it too; Rust, Zig and Ada parse it)"
