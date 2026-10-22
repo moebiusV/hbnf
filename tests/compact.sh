@@ -1,5 +1,5 @@
 #!/bin/sh
-# --compact (C): a struct that gathers several rules' fields holds each as an arena pointer, so a
+# Compact nodes (the default; --no-compact turns them off) (C): a struct that gathers several rules' fields holds each as an arena pointer, so a
 # node costs the one alternative taken.  The tree must be the same tree: every C round trip of
 # tests/writer.sh (parse, write, re-parse, write) must pass with it, and the pfctl grammar must
 # hold a 100,000-rule file in at most half the memory of the default layout.
@@ -10,10 +10,10 @@ export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 CLI=${HBNF:-./hbnf}
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
-out=$(HBNF_C_FLAGS=--compact sh tests/writer.sh 2>&1) || { echo "compact: FAIL"; echo "$out" | head -20; exit 1; }
+out=$(HBNF_C_FLAGS=--no-compact sh tests/writer.sh 2>&1) || { echo "compact: FAIL (--no-compact)"; echo "$out" | head -20; exit 1; }
 
 for v in plain compact; do
-	flag=""; [ $v = compact ] && flag=--compact
+	flag=--compact; [ $v = plain ] && flag=--no-compact
 	"$CLI" grammars/obconf_pfctl.hbnf --backend=c --conf $flag > "$W/$v.txt" || { echo "compact: FAIL (generate $v)"; exit 1; }
 	awk -v d="$W/$v" '/^===== conf.h =====$/{f="h"; next} /^===== conf.c =====$/{f="c"; next}
 	     f=="h"{print > d"_conf.h"} f=="c"{print > d"_conf.c"}' "$W/$v.txt"

@@ -220,25 +220,54 @@ the yacc side also that the source ports add up.
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
-| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 462 ms | 217 K rules/s | 20 MB/s | 172.8 MB |
-| hbnf pfctl grammar (`--conf`, typed tree) | 9.18 MB | 448 ms | 223 K rules/s | 21 MB/s | 457.0 MB |
-| hbnf pfctl grammar (`--conf --compact`) | 9.18 MB | 281 ms | 356 K rules/s | 33 MB/s | 144.2 MB |
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 480 ms | 208 K rules/s | 19 MB/s | 172.9 MB |
+| hbnf pfctl grammar (`--conf --no-compact`, typed tree) | 9.18 MB | 458 ms | 218 K rules/s | 20 MB/s | 456.9 MB |
+| hbnf pfctl grammar (`--conf`, compact nodes, the default) | 9.18 MB | 288 ms | 347 K rules/s | 32 MB/s | 144.2 MB |
 
 **1,000,000 filter rules** (one `pass in quick ... keep state` line each, the same file for both):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
-| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 4.60 s | 217 K rules/s | 20 MB/s | 1723.4 MB |
-| hbnf pfctl grammar (`--conf`, typed tree) | 91.86 MB | 4.47 s | 224 K rules/s | 21 MB/s | 4565.7 MB |
-| hbnf pfctl grammar (`--conf --compact`) | 91.86 MB | 2.80 s | 357 K rules/s | 33 MB/s | 1438.3 MB |
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 4.68 s | 214 K rules/s | 20 MB/s | 1723.4 MB |
+| hbnf pfctl grammar (`--conf --no-compact`, typed tree) | 91.86 MB | 4.60 s | 217 K rules/s | 20 MB/s | 4565.7 MB |
+| hbnf pfctl grammar (`--conf`, compact nodes, the default) | 91.86 MB | 2.85 s | 351 K rules/s | 32 MB/s | 1438.2 MB |
 
-_Measured 2026-10-22 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 4.44 on the host, hbnf 3cedc66; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-22 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 4.90 on the host, hbnf b27ed85; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:pfctl_yacc -->
+
+### Compact nodes on the rest of the corpus
+
+The same change measured on the repository's own corpora, one generator and one grammar, the
+old layout (`--no-compact`) against the new default, each corpus's good files parsed many
+times over with every tree kept (about 30 MB of input per row):
+
+<!-- bench:corpus -->
+| corpus | input | parsed | time, old layout | time, compact | speed-up | memory, old | memory, compact | saved |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| json | 26 files x 20000 | 13.0 MB | 576 ms | 595 ms | 0.97x | 308 MB | 302 MB | 1.02x |
+| mustache | 25 files x 20000 | 7.4 MB | 307 ms | 193 ms | 1.59x | 215 MB | 130 MB | 1.66x |
+| algol60 | 5 files x 12615 | 30.0 MB | 3991 ms | 3689 ms | 1.08x | 975 MB | 662 MB | 1.47x |
+| bgpd | 4 files x 20000 | 19.7 MB | 1342 ms | 1271 ms | 1.06x | 398 MB | 286 MB | 1.39x |
+| httpd | 1 files x 20000 | 15.9 MB | 704 ms | 812 ms | 0.87x | 221 MB | 110 MB | 2.01x |
+| ntpd | 1 files x 20000 | 6.9 MB | 99 ms | 99 ms | 1.00x | 36 MB | 36 MB | 1.01x |
+| pfctl | 7 files x 12717 | 30.0 MB | 1913 ms | 1388 ms | 1.38x | 1441 MB | 383 MB | 3.76x |
+| relayd | 2 files x 20000 | 15.2 MB | 338 ms | 323 ms | 1.05x | 76 MB | 57 MB | 1.33x |
+| snmpd | 2 files x 20000 | 10.9 MB | 215 ms | 202 ms | 1.06x | 73 MB | 61 MB | 1.19x |
+| unwind | 1 files x 20000 | 4.7 MB | 69 ms | 70 ms | 1.00x | 18 MB | 18 MB | 1.00x |
+
+_Measured 2026-10-22 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 6.65 on the host, hbnf b27ed85; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+<!-- /bench:corpus -->
+
+Memory falls or stays the same everywhere; pfctl, with its many-alternative statements, falls
+3.8 times, httpd and Mustache about half.  Speed is mixed, not better across the board: ALGOL
+60, pfctl, Mustache and bgpd are 6-60% faster, ntpd, unwind and JSON are unchanged, and
+**httpd is 14% slower** (reproduced over five runs; I have not found why).  A grammar whose
+choices are few gains nothing, because there is nothing to compact.
 
 Read it as it is: **with the default layout hbnf's C parser is level with byacc's on this
 grammar (inside the noise), not ahead of it, and it uses about 2.6 times the memory** (a typed
 tree of every rule against a 1.4 KB `struct pf_rule` per rule).  The toy-language lead (3.8 M
-rules/s against 1.6 M) does not carry over to a grammar this size.  With `--compact` it is 1.6
+rules/s against 1.6 M) does not carry over to a grammar this size.  With compact nodes (now the default) it is 1.6
 times faster than byacc and uses 0.83 of its memory.
 
 Profiling the first run (gprof, 200,000 rules) found two causes.  **Ordered choice re-parsed**
@@ -251,16 +280,16 @@ against the old grammar and by the daemon, round-trip and compare tests) took th
 all of its alternatives together** (a generator fault): a struct that gathers the fields of a
 choice has one field per alternative, so a pfctl statement was a 2,208-byte node and each
 `keep state` option a 1,712-byte one, of which one alternative was in use, and every parse
-step cleared and copied them.  `--compact` holds each such field as a pointer, allocated from
+step cleared and copied them.  Compact nodes hold each such field as a pointer, allocated from
 the arena only when that alternative is taken (and given back when the attempt fails); it
 uses the pointer fields that already break a by-value cycle, so the writer, walkers and
 free code needed no change.  That took the parse from 0.78 s to 0.50 s and the memory from
-845 MB to 275 MB per 200,000 rules.  `--compact` is C only so far and not the default (the
-generated types change: `r.pfrule.action` becomes `r.pfrule->action`); `tests/compact.sh`
-checks that every C round trip passes with it and that pfctl needs less than half the memory.
+845 MB to 275 MB per 200,000 rules.  Compact nodes are the default in C (`--no-compact` gives the old layout; the generated
+types differ: `r.pfrule.action` is `r.pfrule->action`); `tests/compact.sh` checks that every C
+round trip passes both ways and that pfctl needs less than half the memory.
 What the profile still shows per rule: about 78 failed alternatives and 105 whitespace skips.
 "As efficient as yacc" now holds for the toy, ntpd and pfctl on speed, and for pfctl on memory
-with `--compact`.
+with compact nodes.
 
 The first run of this comparison found a fault in hbnf, not in the harness: a
 statement-at-a-time parse freed and re-allocated a 64 KiB arena chunk for every

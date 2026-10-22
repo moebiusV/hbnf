@@ -14,7 +14,8 @@ int main(int argc, char **argv) {
         printf("%zu: %s\n", line, err);
         return 2;
     }
-    for (x = TAILQ_FIRST(&a); x && x->rule.varset.string; x = TAILQ_NEXT(x, _link))
+    /* skip the leading macro definitions (a rule that holds a varset); --compact holds it by pointer */
+    for (x = TAILQ_FIRST(&a); x && x->rule.varset && x->rule.varset->string; x = TAILQ_NEXT(x, _link))
         ;
     for (y = TAILQ_FIRST(&b); x && y; x = TAILQ_NEXT(x, _link), y = TAILQ_NEXT(y, _link), k++)
         if (!compare_rule(&x->rule, &y->rule)) {

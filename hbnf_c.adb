@@ -452,7 +452,7 @@ package body HBNF_C is
    Parents_On     : Boolean := False;
 
    Forks_On       : Boolean := False;
-   Compact_On     : Boolean := False;
+   Compact_On     : Boolean := True;
 
    procedure Set_Compact (On : Boolean) is
    begin
@@ -8379,6 +8379,20 @@ Append (Res, "static size_t scan_" & C_Name (NM)
       N     : constant Natural := Natural (Rules.Length);
       Infos : Info_Vectors.Vector;
 
+      --  The fields held by pointer (a cycle's, and --compact's): compared
+      --  through the pointer, equal when both are absent.
+      Backs : constant Edge_Vectors.Vector := Back_Edges_C (Rules);
+
+      function Is_Back (Owner : Natural; Member : String) return Boolean is
+      begin
+         for E of Backs loop
+            if E.Owner = Owner and then To_String (E.Member) = Member then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Is_Back;
+
       function Ref_Kind (Name : String) return Class_Kind is
          J : constant Natural := Find (Rules, Alias_Target (Rules, Name));
       begin
@@ -8401,17 +8415,27 @@ Append (Res, "static size_t scan_" & C_Name (NM)
       end Is_String;
 
       --  Compare one member field of two nodes named A and B.
-      procedure Cmp_Field (Name : String; A, B : String;
+      procedure Cmp_Field (Owner : Natural; Name : String; A, B : String;
                            Buf : in out U; Ind : String) is
          F : constant String := C_Field (Name);
       begin
          case Ref_Kind (Name) is
             when Struct | List =>
+               if Ref_Kind (Name) = Struct and then Is_Back (Owner, Name) then
+                  Append (Buf, Ind & "if ((" & A & "->" & F & " == NULL) != ("
+                    & B & "->" & F & " == NULL)) return false;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "if (" & A & "->" & F & " && !compare_"
+                    & C_Name (Alias_Target (Rules, Name)) & "(" & A & "->" & F
+                    & ", " & B & "->" & F & ")) return false;");
+                  Append (Buf, LF);
+               else
                Append (Buf, Ind & "if (!compare_"
                  & C_Name (Alias_Target (Rules, Name))
                  & "(&" & A & "->" & F & ", &" & B & "->" & F
                  & ")) return false;");
                Append (Buf, LF);
+               end if;
             when Enum | Scalar =>
                --  A scalar that resolves to `const char *` is a string
                --  (strcmp, NULL handled); anything else (numbers, bools,
@@ -8433,16 +8457,16 @@ Append (Res, "static size_t scan_" & C_Name (NM)
 
       --  The element fields of a list node: a single named element, or the
       --  members of a grouped element.
-      procedure Cmp_Elem (Info : Rule_Info; A, B : String;
+      procedure Cmp_Elem (Owner : Natural; Info : Rule_Info; A, B : String;
                           Buf : in out U; Ind : String) is
       begin
          if Info.Elem_Members.Is_Empty then
             if Info.Elem_Name /= Null_Unbounded_String then
-               Cmp_Field (To_String (Info.Elem_Name), A, B, Buf, Ind);
+               Cmp_Field (Owner, To_String (Info.Elem_Name), A, B, Buf, Ind);
             end if;
          else
             for M of Info.Elem_Members loop
-               Cmp_Field (To_String (M.Name), A, B, Buf, Ind);
+               Cmp_Field (Owner, To_String (M.Name), A, B, Buf, Ind);
             end loop;
          end if;
       end Cmp_Elem;
@@ -8461,10 +8485,10 @@ Append (Res, "static size_t scan_" & C_Name (NM)
          end if;
          if Info.Kind = Struct then
             for M of Info.Members loop
-               Cmp_Field (To_String (M.Name), "a", "b", Buf, "    ");
+               Cmp_Field (Idx, To_String (M.Name), "a", "b", Buf, "    ");
             end loop;
          else
-            Cmp_Elem (Info, "a", "b", Buf, "    ");
+            Cmp_Elem (Idx, Info, "a", "b", Buf, "    ");
          end if;
          Append (Buf, "    return true;");
          Append (Buf, LF);

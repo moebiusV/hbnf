@@ -128,7 +128,7 @@ package HBNF_C is
    --  (RFCPLAN.md decision 14).  Quiet: the forks are not listed on stderr.
    procedure Set_Forks (On : Boolean; Quiet : Boolean := False);
    procedure Set_Parents (On : Boolean);
-   --  --compact: a struct that gathers several rules' fields (a choice of
+   --  Compact (the default; --no-compact turns it off): a struct that gathers several rules' fields (a choice of
    --  statements, of options) holds each as a pointer, allocated from the arena
    --  when that alternative is the one taken, so the node costs the one
    --  alternative and not all of them.  Uses the pointer fields that break a

@@ -34,7 +34,7 @@ done < "$here/pfctl/files.txt"
 export PFCTL_SRC=$cache
 sh "$here/pfctl/build-parsey.sh" "$W/y" > "$W/y.err" 2>&1 || skip "parse.y build failed: $(grep -m1 -E 'error|undefined' "$W/y.err" | cut -c1-100)"
 for v in plain compact; do
-	flag=""; [ $v = compact ] && flag=--compact
+	flag=""; [ $v = plain ] && flag=--no-compact
 	"$HBNF" /w/grammars/obconf_pfctl.hbnf --backend=c --conf $flag > "$W/$v.txt" 2> "$W/h.err" || skip "hbnf generate failed"
 	mkdir -p "$W/$v.d"
 	awk '/^===== conf.h =====$/{f="h"; next} /^===== conf.c =====$/{f="c"; next}
@@ -65,8 +65,8 @@ pf_row() {   # pf_row LABEL BINARY N KEY CHECKSUM
 		printf '**%s filter rules** (one `pass in quick ... keep state` line each, the same file for both):\n\n' "$(echo "$n" | sed ':a;s/\B[0-9]\{3\}\>/,&/;ta')"
 		head_row
 		pf_row "OpenBSD pfctl parse.y, byacc (fills struct pf_rule)" "$W/y/parsey" "$n" byacc sum
-		pf_row "hbnf pfctl grammar (\`--conf\`, typed tree)" "$W/hbnfp-plain" "$n" hbnf nosum
-		pf_row "hbnf pfctl grammar (\`--conf --compact\`)" "$W/hbnfp-compact" "$n" hbnfcompact nosum
+		pf_row "hbnf pfctl grammar (\`--conf --no-compact\`, typed tree)" "$W/hbnfp-plain" "$n" hbnf nosum
+		pf_row "hbnf pfctl grammar (\`--conf\`, compact nodes, the default)" "$W/hbnfp-compact" "$n" hbnfcompact nosum
 		printf '\n'
 	done
 	[ -f "$RESULTS/env.md" ] && printf '_%s_\n' "$(cat "$RESULTS/env.md")"
