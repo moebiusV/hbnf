@@ -32,6 +32,7 @@ is `getrusage`'s peak resident set.  C is compiled `gcc -O2`.
 | `peg` | the toy as a PEG with Piumarta's peg/leg | `compare/toy.leg` |
 | `treesitter` | the toy as a tree-sitter grammar: a cold parse, and a re-parse after a one-byte edit with the old tree | `compare/grammar.js`, `drv/ts_toy.c` |
 | `antlr` | the toy as an ANTLR 4 grammar, Java target: actions only (cold JVM, warm JVM) and the default parse tree | `compare/Toy.g4`, `compare/java/ToyMain.java` |
+| `pfctl` | OpenBSD's `sbin/pfctl/parse.y` (6,546 lines) at a pinned commit, unmodified, through byacc, against hbnf's `grammars/obconf_pfctl.hbnf`; byacc fills `struct pf_rule`, hbnf builds a tree | `pfctl/` |
 | `ntpd` | a real `parse.y`: OpenBSD's `usr.sbin/ntpd/parse.y` at a pinned commit, unmodified, through byacc, against hbnf's binding (`grammars/bind/ntpd.hbnf`), both filling ntpd's own `struct ntpd_conf` | `ntpd/` |
 
 The toy is `toy.hbnf`: `pass in on em0 proto tcp from 192.168.3.7 port 51234 to

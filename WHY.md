@@ -204,6 +204,44 @@ checked to have built the same sensors.
 _Measured 2026-10-17 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.69 on the host, hbnf e8830cd; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:ntpd -->
 
+### A large parse.y: pfctl
+
+ntpd's grammar is small.  pfctl's `parse.y` is the largest of the nine (6,546 lines), so the
+same comparison on it: OpenBSD's `sbin/pfctl/parse.y` at a pinned commit, unmodified, through
+byacc, against hbnf's translation of the grammar (`grammars/obconf_pfctl.hbnf`), on a file of
+filter rules.  The two do not do the same work: `parse.y` runs its actions and fills a
+`struct pf_rule` per rule (handed to a stub of `pfctl_add_rule` that copies and lists it, as
+pfctl's does; address and interface lookups are stubs, in `bench/pfctl/stubs.c`); hbnf builds
+and keeps a typed tree and runs no semantic code.  Both are checked to have found N rules, and
+the yacc side also that the source ports add up.
+
+<!-- bench:pfctl_yacc -->
+**100,000 filter rules** (one `pass in quick ... keep state` line each, the same file for both):
+
+| tool | input | parse time | rules/s | MB/s | peak RSS |
+|---|---|---:|---:|---:|---:|
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 480 ms | 208 K rules/s | 19 MB/s | 173.0 MB |
+| hbnf pfctl grammar (`--conf`, typed tree) | 9.18 MB | 568 ms | 176 K rules/s | 16 MB/s | 394.2 MB |
+
+**1,000,000 filter rules** (one `pass in quick ... keep state` line each, the same file for both):
+
+| tool | input | parse time | rules/s | MB/s | peak RSS |
+|---|---|---:|---:|---:|---:|
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 4.88 s | 205 K rules/s | 19 MB/s | 1723.5 MB |
+| hbnf pfctl grammar (`--conf`, typed tree) | 91.86 MB | 5.70 s | 175 K rules/s | 16 MB/s | 3937.7 MB |
+
+_Measured 2026-10-22 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 6.48 on the host, hbnf 0d2aa64; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+<!-- /bench:pfctl_yacc -->
+
+Read it as it is: **on this grammar hbnf's C parser is not faster than byacc's, and it uses
+more than twice the memory.**  It is about 15% slower and keeps 2.3 times the memory (a typed
+tree of every rule against a 1.4 KB `struct pf_rule` per rule).  The toy-language lead
+(3.8 M rules/s against 1.6 M) does not carry over to a grammar this size.  I have not profiled
+why; the candidates are the order of the alternatives in the filter rule (ordered choice tries
+them in turn where an LALR table jumps) and the size of each node.  So "as efficient or better
+than yacc" holds for the toy and for ntpd, and **does not hold for pfctl**; finding out why is
+the next performance work.
+
 The first run of this comparison found a fault in hbnf, not in the harness: a
 statement-at-a-time parse freed and re-allocated a 64 KiB arena chunk for every
 statement, which on musl cost fourteen times the parse (905 ms against 63 ms

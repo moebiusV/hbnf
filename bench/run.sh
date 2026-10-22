@@ -1,7 +1,7 @@
 #!/bin/sh
 # run.sh — the performance comparison, from one command.
 #
-#   sh bench/run.sh [--quick] [--only=hbnf,yacc,peg,treesitter,antlr,ntpd]
+#   sh bench/run.sh [--quick] [--only=hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl]
 #
 # Writes bench/results/<name>.md, one markdown table each, and env.md.  Nothing
 # else produces a figure: bench/update-docs.sh copies these files into the
@@ -16,7 +16,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 
 QUICK=0
-ONLY=hbnf,yacc,peg,treesitter,antlr,ntpd
+ONLY=hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl
 for a in "$@"; do
 	case $a in
 	--quick) QUICK=1 ;;
@@ -64,7 +64,7 @@ for n in $N_LIST; do "$here/gen.sh" toy "$n" > "$IN/toy-$n.txt"; done
 
 # A full run starts from nothing, so a row from an earlier run cannot leak into
 # a table; --only keeps the other stages' rows.
-[ "$ONLY" = hbnf,yacc,peg,treesitter,antlr,ntpd ] && rm -rf "$RESULTS/rows" "$RESULTS/vals" "$RESULTS/values.txt"
+[ "$ONLY" = hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl ] && rm -rf "$RESULTS/rows" "$RESULTS/vals" "$RESULTS/values.txt"
 sh "$here/env.sh" > "$RESULTS/env.md"
 
 for s in $(echo "$ONLY" | tr , " " | tr " " "\n" | grep -v "^$"); do
