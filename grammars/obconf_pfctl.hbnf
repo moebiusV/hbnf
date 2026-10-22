@@ -96,15 +96,14 @@ port        = int | string
 ;   overwritten `port`.
 loport      = port
 hiport      = port
-portval     = loport ":" hiport
-            | loport ":" "*"
-            | loport
+portend     = ":" hiport
+            | ":" "*"
+portval     = loport [ portend ]
 
 loportval   = portval
 hiportval   = portval
-portitem    = loportval portbin hiportval
+portitem    = loportval [ portbin hiportval ]
             | unaryop loportval
-            | loportval
 
 portlist    = portlist ',' portitem | portlist portitem | portitem
 
@@ -118,8 +117,7 @@ portbin     = "<" ">" | xrange
 ; ---------------------------------------------------------------- hosts
 ; a host atom: an address, "address:port", ":port", or a bareword
 ; (interface name / hostname).  host — address [ ":" port ] / ":" port / word
-hostatom    = address ":" port
-            | address
+hostatom    = address [ ":" port ]
             | ":" port
             | ifmod
             | word
@@ -140,14 +138,15 @@ hostfrom    = hostatom                           ; range low end / bare host
 hostto      = hostatom                           ; range high end
 intnum      = int                                ; a bare numeric host/prefix
 pfx         = int                                ; prefix length after "/"
+hostrest    = "-" hostto
+            | "/" pfx
+            |                                    ; a bare host
 host        = "route" string
-            | hostfrom "-" hostto
-            | hostfrom "/" pfx
+            | hostfrom hostrest
             | intnum "/" pfx
             | dynaddr "/" pfx
             | dynaddr
             | "<" string ">"
-            | hostfrom
 
 xhost       = "no-route"
             | "!" "no-route"
@@ -174,12 +173,8 @@ oslist      = oslist ',' string | oslist string | string
 
 ; from os to, with from / os / to each optional (plus the "all" shorthand)
 fromto      = "all"
-            | from os to
-            | from os
-            | from to
-            | from
-            | os to
-            | os
+            | from [ os ] [ to ]
+            | os [ to ]
             | to
 
 dir         = "in" | "out"

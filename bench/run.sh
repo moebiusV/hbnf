@@ -71,5 +71,17 @@ for s in $(echo "$ONLY" | tr , " " | tr " " "\n" | grep -v "^$"); do
 	echo "== $s =="
 	sh "$here/stage-$s.sh" || echo "stage $s: FAILED"
 done
-sh "$here/assemble.sh"
+# assemble.sh rebuilds every table from the rows on disk, so it runs only when every stage
+# that leaves rows has just run; after --only=some it would overwrite the other tables with
+# whatever rows the checkout happens to hold (it did: a one-stage run replaced the toy
+# table's hbnf row).  A stage that writes its own table (ntpd, pfctl) needs no assembling.
+full=1
+for s in hbnf yacc peg treesitter antlr; do
+	case ,$ONLY, in *,$s,*) ;; *) full=0 ;; esac
+done
+if [ "$full" = 1 ]; then
+	sh "$here/assemble.sh"
+else
+	echo "partial run: tables of the stages not run are left as they were (assemble skipped)"
+fi
 echo "results in $RESULTS"

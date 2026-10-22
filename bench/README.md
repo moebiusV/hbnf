@@ -6,7 +6,7 @@ compared with, and writes the tables that `WHY.md`, `README.md` and
 
     sh bench/run.sh                  # the whole comparison (minutes; memory-hungry at 1,000,000 rules)
     sh bench/run.sh --quick          # 100,000 rules only, best of three
-    sh bench/run.sh --only=yacc,ntpd # some stages
+    sh bench/run.sh --only=yacc,ntpd # some stages (tables of the others are left alone)
     sh bench/update-docs.sh          # put bench/results/*.md into the documents
     sh bench/update-docs.sh --check  # fail if a document differs from the results
 
