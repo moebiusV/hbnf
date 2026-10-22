@@ -220,37 +220,47 @@ the yacc side also that the source ports add up.
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
-| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 467 ms | 214 K rules/s | 20 MB/s | 173.0 MB |
-| hbnf pfctl grammar (`--conf`, typed tree) | 9.18 MB | 451 ms | 222 K rules/s | 20 MB/s | 457.0 MB |
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 462 ms | 217 K rules/s | 20 MB/s | 172.8 MB |
+| hbnf pfctl grammar (`--conf`, typed tree) | 9.18 MB | 448 ms | 223 K rules/s | 21 MB/s | 457.0 MB |
+| hbnf pfctl grammar (`--conf --compact`) | 9.18 MB | 281 ms | 356 K rules/s | 33 MB/s | 144.2 MB |
 
 **1,000,000 filter rules** (one `pass in quick ... keep state` line each, the same file for both):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
-| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 4.64 s | 216 K rules/s | 20 MB/s | 1723.4 MB |
-| hbnf pfctl grammar (`--conf`, typed tree) | 91.86 MB | 4.62 s | 217 K rules/s | 20 MB/s | 4565.7 MB |
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 4.60 s | 217 K rules/s | 20 MB/s | 1723.4 MB |
+| hbnf pfctl grammar (`--conf`, typed tree) | 91.86 MB | 4.47 s | 224 K rules/s | 21 MB/s | 4565.7 MB |
+| hbnf pfctl grammar (`--conf --compact`) | 91.86 MB | 2.80 s | 357 K rules/s | 33 MB/s | 1438.3 MB |
 
-_Measured 2026-10-22 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 4.45 on the host, hbnf a1fec7f; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-22 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 4.44 on the host, hbnf 3cedc66; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:pfctl_yacc -->
 
-Read it as it is: **on this grammar hbnf's C parser is level with byacc's (the difference is
-inside the noise), not ahead of it, and it uses about 2.6 times the memory** (a typed tree of
-every rule against a 1.4 KB `struct pf_rule` per rule).  The toy-language lead (3.8 M rules/s
-against 1.6 M) does not carry over to a grammar this size.
+Read it as it is: **with the default layout hbnf's C parser is level with byacc's on this
+grammar (inside the noise), not ahead of it, and it uses about 2.6 times the memory** (a typed
+tree of every rule against a 1.4 KB `struct pf_rule` per rule).  The toy-language lead (3.8 M
+rules/s against 1.6 M) does not carry over to a grammar this size.  With `--compact` it is 1.6
+times faster than byacc and uses 0.83 of its memory.
 
-Profiling the first run (gprof, 200,000 rules) found why, and it was the grammar, not the
-generator: ordered choice re-parses.  `fromto = from os to | from os | from to | from` parsed
-`from` three times; `host = hostfrom "-" hostto | hostfrom "/" pfx | ... | hostfrom` and
-`hostatom = address ":" port | address` parsed each address six times; `portval` and `portitem`
-parsed each port six times.  Factoring them (`from [ os ] [ to ]`, `hostfrom hostrest`,
-`address [ ":" port ]`, `loportval [ portbin hiportval ]`; the language is the same, checked on
-211 hand-written rules against the old grammar, and by the daemon, round-trip and compare
-tests) took the standalone parse from 1.06 s to 0.78 s per 200,000 rules (27%) and the
-benchmark from 15% behind to level.  The table above is after the change.  What the profile still
-shows per rule: about 78 failed alternatives, 105 whitespace skips, and 36 `free_hostatom`
-calls (cleanup of alternatives that were tried and failed), so more is available, and the
-optional fields cost memory (the tree grew by about 9%).  "As efficient as yacc" now holds for
-the toy, ntpd and pfctl on speed; on memory it does not hold for pfctl.
+Profiling the first run (gprof, 200,000 rules) found two causes.  **Ordered choice re-parsed**
+(a grammar fault): `fromto = from os to | from os | from to | from` parsed `from` three times;
+`host` and `hostatom` parsed each address six times; `portval` and `portitem` each port six
+times.  Factoring them (`from [ os ] [ to ]`, `hostfrom hostrest`, `address [ ":" port ]`,
+`loportval [ portbin hiportval ]`; the language is the same, checked on 211 hand-written rules
+against the old grammar and by the daemon, round-trip and compare tests) took the parse from
+1.06 s to 0.78 s per 200,000 rules, from 15% behind byacc to level.  **Every node was as big as
+all of its alternatives together** (a generator fault): a struct that gathers the fields of a
+choice has one field per alternative, so a pfctl statement was a 2,208-byte node and each
+`keep state` option a 1,712-byte one, of which one alternative was in use, and every parse
+step cleared and copied them.  `--compact` holds each such field as a pointer, allocated from
+the arena only when that alternative is taken (and given back when the attempt fails); it
+uses the pointer fields that already break a by-value cycle, so the writer, walkers and
+free code needed no change.  That took the parse from 0.78 s to 0.50 s and the memory from
+845 MB to 275 MB per 200,000 rules.  `--compact` is C only so far and not the default (the
+generated types change: `r.pfrule.action` becomes `r.pfrule->action`); `tests/compact.sh`
+checks that every C round trip passes with it and that pfctl needs less than half the memory.
+What the profile still shows per rule: about 78 failed alternatives and 105 whitespace skips.
+"As efficient as yacc" now holds for the toy, ntpd and pfctl on speed, and for pfctl on memory
+with `--compact`.
 
 The first run of this comparison found a fault in hbnf, not in the harness: a
 statement-at-a-time parse freed and re-allocated a 64 KiB arena chunk for every

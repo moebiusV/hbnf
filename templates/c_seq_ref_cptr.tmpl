@@ -1,0 +1,1 @@
+{{&ind}}{ hbnf_chunk *am_ = hbnf_arena; size_t au_ = am_ ? am_->used : 0; {{&acc}}{{&field}} = hbnf_alloc(sizeof *{{&acc}}{{&field}}); if (!parse_rule_{{&name}}(p, {{&acc}}{{&field}})) { {{&acc}}{{&field}} = NULL; if (am_ && hbnf_arena == am_) am_->used = au_; {{&fail}} } }

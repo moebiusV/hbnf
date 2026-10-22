@@ -51,6 +51,7 @@ procedure Hbnf is
    Idref        : Boolean := False;
    Compare      : Boolean := False;
    Forks        : Boolean := False;
+   Compact      : Boolean := False;
    Ts_Conflicts : Unbounded_String;
    Ts_Ordered   : Boolean := False;
    Ts_Scanner   : Unbounded_String;
@@ -121,7 +122,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--compact] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -167,6 +168,8 @@ begin
             Ts_Scanner := To_Unbounded_String (A (14 .. A'Last));
          elsif A = "--forks" then
             Forks := True;
+         elsif A = "--compact" then
+            Compact := True;
          elsif A = "--quiet-forks" then
             Quiet := True;
          elsif A = "--paths" then
@@ -257,6 +260,15 @@ begin
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
       end if;
+      if Compact and then To_String (Backend) /= "c" then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "hbnf: --compact is C only so far (" & To_String (Backend)
+            & " would need its own pointer fields)");
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+      HBNF_C.Set_Compact (Compact);
       HBNF_C.Set_Forks (Forks, Quiet);
       HBNF_Compilable.Allow_Shadowing (Forks);
       if HBNF_Grammar.Uses_Backref

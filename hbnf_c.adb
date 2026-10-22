@@ -452,6 +452,12 @@ package body HBNF_C is
    Parents_On     : Boolean := False;
 
    Forks_On       : Boolean := False;
+   Compact_On     : Boolean := False;
+
+   procedure Set_Compact (On : Boolean) is
+   begin
+      Compact_On := On;
+   end Set_Compact;
    Quiet_Forks    : Boolean := False;
 
    procedure Set_Forks (On : Boolean; Quiet : Boolean := False) is
@@ -1313,7 +1319,51 @@ package body HBNF_C is
          end;
       end loop;
 
-      return Back_Edges (N, E);
+      declare
+         R : Edge_Vectors.Vector := Back_Edges (N, E);
+      begin
+         --  --compact: every struct-valued field of a struct that has more than
+         --  one is held by pointer too (they are the alternatives of a choice
+         --  whose fields were gathered into one struct).
+         if Compact_On then
+            for I in 1 .. N loop
+               if Infos (I).Kind = Struct then
+                  declare
+                     Info : constant Rule_Info := Infos (I);
+                     Cnt  : Natural := 0;
+                  begin
+                     for M of Info.Members loop
+                        if not M.Is_List and then Resolve (M.Name) > 0 then
+                           Cnt := Cnt + 1;
+                        end if;
+                     end loop;
+                     if Cnt > 1 then
+                        for M of Info.Members loop
+                           if not M.Is_List and then Resolve (M.Name) > 0 then
+                              declare
+                                 Have : Boolean := False;
+                              begin
+                                 for X of R loop
+                                    if X.Owner = I and then X.Member = M.Name then
+                                       Have := True;
+                                    end if;
+                                 end loop;
+                                 if not Have then
+                                    R.Append
+                                      (By_Value_Edge'
+                                         (Owner => I, Member => M.Name,
+                                          Target => Resolve (M.Name)));
+                                 end if;
+                              end;
+                           end if;
+                        end loop;
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end if;
+         return R;
+      end;
    end Back_Edges_C;
 
    --  The rule a field really holds: an alias (`src = host`), followed
@@ -5107,7 +5157,9 @@ package body HBNF_C is
                            --  template rather than a hole.
                            Append (Buf, Fill
                              ((if Is_Back (Owner, NM)
-                               then "c_seq_ref_ptr" else "c_seq_ref"),
+                               then (if Compact_On then "c_seq_ref_cptr"
+                                     else "c_seq_ref_ptr")
+                               else "c_seq_ref"),
                               (H ("ind", Ind),
                                H ("name", C_Name (NM)),
                                H ("acc", Acc),

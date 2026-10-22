@@ -13,7 +13,7 @@ fail=0
 # round NAME GRAMMAR INPUT...
 round() {
 	n=$1; g=$2; shift 2
-	if ! "$CLI" "$g" --backend=c --writer > "$W/$n.c" 2> "$W/$n.err"; then
+	if ! "$CLI" "$g" --backend=c --writer ${HBNF_C_FLAGS:-} > "$W/$n.c" 2> "$W/$n.err"; then
 		echo "FAIL $n: generation: $(tail -2 "$W/$n.err")"; fail=$((fail+1)); return
 	fi
 	outt=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/$n.c")
@@ -38,6 +38,8 @@ for d in tests/daemons/*/; do
 	round "$g" "grammars/obconf_$g.hbnf" "$d"*.conf
 done
 
+
+[ -n "${HBNF_C_FLAGS:-}" ] && { [ "$fail" = 0 ] && echo "writer (C, ${HBNF_C_FLAGS}) OK"; exit "$fail"; }
 
 # The same gate in Rust, Zig and Ada (--writer --ast): every file the language's parser reads is
 # written and read back to the same tree (the dump), and the second write is the first.  A grammar
