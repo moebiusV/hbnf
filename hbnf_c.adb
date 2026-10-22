@@ -1322,24 +1322,63 @@ package body HBNF_C is
       declare
          R : Edge_Vectors.Vector := Back_Edges (N, E);
       begin
-         --  --compact: every struct-valued field of a struct that has more than
-         --  one is held by pointer too (they are the alternatives of a choice
-         --  whose fields were gathered into one struct).
+         --  Compact nodes: a struct-valued field that only some of a choice's
+         --  alternatives hold (the rule is `a | b | c`, a few of them naming
+         --  this field) is held by pointer, so a node costs the alternative
+         --  taken.  A field every alternative has, or a rule that is one
+         --  sequence, is always there, and stays by value.
          if Compact_On then
             for I in 1 .. N loop
                if Infos (I).Kind = Struct then
                   declare
                      Info : constant Rule_Info := Infos (I);
-                     Cnt  : Natural := 0;
-                  begin
-                     for M of Info.Members loop
-                        if not M.Is_List and then Resolve (M.Name) > 0 then
+                     P    : constant Element_Vectors.Vector := Rules (I).Pattern;
+                     Alts : Natural := 1;
+
+                     function Mentions (Els : Element_Vectors.Vector; Nm : String)
+                       return Boolean is
+                     begin
+                        for E of Els loop
+                           if E.Kind = Name and then To_String (E.Name) = Nm then
+                              return True;
+                           elsif E.Kind = Group and then Mentions (E.Items, Nm) then
+                              return True;
+                           end if;
+                        end loop;
+                        return False;
+                     end Mentions;
+
+                     --  In how many of the top-level alternatives is Nm named?
+                     function Held_In (Nm : String) return Natural is
+                        Cnt  : Natural := 0;
+                        Cur  : Element_Vectors.Vector;
+                     begin
+                        for E of P loop
+                           if E.Kind = Alt then
+                              if Mentions (Cur, Nm) then
+                                 Cnt := Cnt + 1;
+                              end if;
+                              Cur.Clear;
+                           else
+                              Cur.Append (E);
+                           end if;
+                        end loop;
+                        if Mentions (Cur, Nm) then
                            Cnt := Cnt + 1;
                         end if;
+                        return Cnt;
+                     end Held_In;
+                  begin
+                     for E of P loop
+                        if E.Kind = Alt then
+                           Alts := Alts + 1;
+                        end if;
                      end loop;
-                     if Cnt > 1 then
+                     if Alts > 1 then
                         for M of Info.Members loop
-                           if not M.Is_List and then Resolve (M.Name) > 0 then
+                           if not M.Is_List and then Resolve (M.Name) > 0
+                             and then Held_In (To_String (M.Name)) < Alts
+                           then
                               declare
                                  Have : Boolean := False;
                               begin

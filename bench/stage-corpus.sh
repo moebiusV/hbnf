@@ -27,8 +27,15 @@ row() {   # row NAME GRAMMAR FILE...
 	bytes=0; nf=0
 	for f in $good; do bytes=$((bytes + $(wc -c < "$f"))); nf=$((nf + 1)); done
 	reps=$((30000000 / (bytes > 0 ? bytes : 1))); [ $reps -lt 1 ] && reps=1; [ $reps -gt 20000 ] && reps=20000
-	o=$(best_of "$RUNS" "$W/$name-old" $reps $good) || { printf '| %s | | run failed (old) | | | |\n' "$name"; return; }
-	n=$(best_of "$RUNS" "$W/$name-new" $reps $good) || { printf '| %s | | run failed (new) | | | |\n' "$name"; return; }
+	# the two layouts alternate, best of 9 each, so a busy host hits both alike
+	o=""; n=""; i=0
+	while [ $i -lt 9 ]; do
+		a=$(best_of 1 "$W/$name-old" $reps $good) || { printf '| %s | | run failed (old) | | | |\n' "$name"; return; }
+		b=$(best_of 1 "$W/$name-new" $reps $good) || { printf '| %s | | run failed (new) | | | |\n' "$name"; return; }
+		if [ -z "$o" ] || awk -v x="${a%% *}" -v y="${o%% *}" 'BEGIN{exit !(x<y)}'; then o=$a; fi
+		if [ -z "$n" ] || awk -v x="${b%% *}" -v y="${n%% *}" 'BEGIN{exit !(x<y)}'; then n=$b; fi
+		i=$((i + 1))
+	done
 	set -- $o; oms=$1; orss=$2
 	set -- $n; nms=$1; nrss=$2
 	mkdir -p "$RESULTS/vals"
