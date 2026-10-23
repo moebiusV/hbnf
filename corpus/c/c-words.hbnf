@@ -17,7 +17,7 @@ keyword    = "auto" | "break" | "case" | "char" | "const" | "continue" | "defaul
            | "register" | "restrict" | "return" | "short" | "signed" | "sizeof" | "static" | "struct"
            | "switch" | "typedef" | "union" | "unsigned" | "void" | "volatile" | "while" | "_Alignas"
            | "_Alignof" | "_Atomic" | "_Bool" | "_Complex" | "_Generic" | "_Imaginary" | "_Noreturn"
-           | "_Static_assert" | "_Thread_local" | "__builtin_va_list"
+           | "_Static_assert" | "_Thread_local" | "__builtin_va_list" | "__int128_t" | "__uint128_t" | "_Float16" | "__bf16" | "_Float32" | "_Float64" | "_Float128" | "_Float32x" | "_Float64x" | "_Decimal32" | "_Decimal64" | "_Decimal128" | "__float128"
 identifier = word - keyword
 
 ; ---- constants (6.4.4) ----
@@ -31,13 +31,16 @@ eee        = %x65 | %x45
 pee        = %x70 | %x50
 eff        = %x66 | %x46
 sign       = %x2B | %x2D
-int-suffix = you | ell
+imag       = %x69 | %x49 | %x6A | %x4A
+int-suffix = you | ell | imag
 digits     = 1*DIGIT
 hexd       = DIGIT | %x41-46 | %x61-66
 hexdigits  = 1*hexd
 bin-digit  = %x30 | %x31
 integer-constant = ( %x30 ex hexdigits | %x30 bee 1*bin-digit | digits ) *int-suffix
-floating-constant = ( dec-float | hex-float ) [ eff | ell ]
+floating-constant = ( dec-float | hex-float ) *fsuffix
+fdigit     = DIGIT | ex
+fsuffix    = eff *fdigit | ell | imag
 dec-float  = digits %x2E *DIGIT [ exponent ] | %x2E digits [ exponent ] | digits exponent
 exponent   = eee [ sign ] digits
 hex-float  = %x30 ex hex-mantissa pee [ sign ] digits
@@ -143,6 +146,12 @@ ws = C {
         }
         if (c == 47 && i + 1 < len && s[i + 1] == 47) { while (i < len && s[i] != 10) i++; continue; }
         if (c == 35) { while (i < len && s[i] != 10) i++; continue; }   /* #pragma, # line: what the preprocessor leaves */
+        if (c == 91 && i + 1 < len && s[i + 1] == 91) {   /* [[ attribute ]] */
+            size_t j = i + 2;
+            while (j + 1 < len && !(s[j] == 93 && s[j + 1] == 93)) j++;
+            if (j + 1 >= len) break;
+            i = j + 2; continue;
+        }
         if (c == 95) {
             size_t j = i, k, m, d = 0;
             while (j < len && (s[j] == 95 || (s[j] >= 48 && s[j] <= 57) || (s[j] >= 65 && s[j] <= 90) || (s[j] >= 97 && s[j] <= 122))) j++;
@@ -179,6 +188,12 @@ ws = Rust {
         }
         if c == 47 && i + 1 < len && s[i + 1] == 47 { while i < len && s[i] != 10 { i += 1; } continue; }
         if c == 35 { while i < len && s[i] != 10 { i += 1; } continue; }
+        if c == 91 && i + 1 < len && s[i + 1] == 91 {
+            let mut j = i + 2;
+            while j + 1 < len && !(s[j] == 93 && s[j + 1] == 93) { j += 1; }
+            if j + 1 >= len { break; }
+            i = j + 2; continue;
+        }
         if c == 95 {
             let mut j = i;
             while j < len && (s[j] == 95 || s[j].is_ascii_alphanumeric()) { j += 1; }
@@ -219,6 +234,13 @@ ws = Zig {
         }
         if (c == 47 and i + 1 < len and s[i + 1] == 47) { while (i < len and s[i] != 10) i += 1; continue; }
         if (c == 35) { while (i < len and s[i] != 10) i += 1; continue; }
+        if (c == 91 and i + 1 < len and s[i + 1] == 91) {
+            var j: usize = i + 2;
+            while (j + 1 < len and !(s[j] == 93 and s[j + 1] == 93)) j += 1;
+            if (j + 1 >= len) break;
+            i = j + 2;
+            continue;
+        }
         if (c == 95) {
             var j: usize = i;
             while (j < len and (s[j] == 95 or std.ascii.isAlphanumeric(s[j]))) j += 1;
@@ -289,6 +311,12 @@ ws = Ada {
                while I <= Len and then Character'Pos (S (I)) /= 10 loop I := I + 1; end loop;
             elsif C = 35 then
                while I <= Len and then Character'Pos (S (I)) /= 10 loop I := I + 1; end loop;
+            elsif C = 91 and then I < Len and then Character'Pos (S (I + 1)) = 91 then
+               J := I + 2;
+               while J < Len and then not (Character'Pos (S (J)) = 93 and then Character'Pos (S (J + 1)) = 93) loop
+                  J := J + 1;
+               end loop;
+               if J >= Len then Done := True; else I := J + 2; end if;
             elsif C = 95 then
                J := Word_End (I);
                if S (I .. J - 1) = "__extension__" then

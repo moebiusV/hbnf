@@ -10,11 +10,19 @@ produces: hbnf has no preprocessor, so the tools below use gcc's (`gcc -E -P`).
 - **`tests/c.sh`**: 57 small files, 38 that `gcc -fsyntax-only` accepts and 19 it refuses with a syntax
   error, all agreed on.  C backend only: the grammar uses the typedef context (`context types`,
   `%bind`, `%scope`, `?` and `?!`), which Rust, Zig and Ada do not have yet.
-- **`scripts/c-scan.sh DIR...`**: the same over any directory of sources.  On the 426 translation
-  units (43 MB of preprocessed C, with musl's headers) of the SIMH simulators that gcc accepts, the
-  grammar accepts all 426.  On 204 mutations of them (a character, a line or a stray token removed or
-  added), it and gcc agree on every one whose gcc error is a syntax error (139 of 204; the rest are
-  type errors, which a grammar does not check).
+- **`scripts/c-corpus.sh`** fetches the C corpora the pcc size work used (lua, zlib, lz4, cJSON, chibicc,
+  c-testsuite, mbedtls, BearSSL, the SQLite amalgamation and gcc's c-torture execute tests), preprocesses
+  every file with `gcc -E`, keeps the ones `gcc -fsyntax-only` accepts, and runs the generated parser.  On
+  the day it was run: **2,481 translation units (90 MB), the grammar accepts 2,478**.  The three it refuses
+  are a string literal with bytes that are not UTF-8, `register void *p asm ("rbx")` and a decimal-float
+  constant (`0.DD`).  By corpus: bearssl 317, c-testsuite 220, lua 40, mbedtls 177, zlib 37, lz4 48, cJSON
+  35, chibicc 18, sqlite 1, c-torture 1,588.  (The original pcc work used 900 files that pcc, clang and
+  gcc all compiled; those lists are not on this machine, so this is the same projects, regenerated, and
+  all the files gcc accepts.)
+- **`scripts/c-scan.sh DIR...`**: the same over any directory of sources.  587 units of the prebsd checkouts
+  and pcc's own sources (60 MB) and 426 of SIMH (43 MB) are also all accepted.  On 204 mutations of the SIMH
+  units (a character, a line or a stray token removed or added), the grammar and gcc agree on every one whose
+  gcc error is a syntax error (139 of 204; the rest are type errors, which a grammar does not check).
 - Speed, unoptimised: 15 MB of preprocessed C in 2.3 s, building the whole typed tree, against 1.6 s for
   `gcc -fsyntax-only` (which also does semantic analysis).  The profile says where it goes: a typedef
   name is looked for 28 million times in 40 files, because every statement tries a declaration first,
