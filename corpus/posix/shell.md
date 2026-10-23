@@ -32,9 +32,14 @@ them:
    reader now calls the token `NAME-token`, `In-token`, and says so, instead of refusing.
 3. **Reserved words by position** (rules 1 and 7a): `cmd_name = WORD - reserved`, the exception.  A
    word is reserved only when it is exactly the word, so `iffy` and `if/x` are words.
-4. **Ordered choice.**  yacc's tables look ahead to choose between `compound_command` and
-   `compound_command redirect_list`; hbnf takes the first that matches, so the longer is written first
-   (`command`, `function_body`, `compound_list`, `else_part`, `case_item_ns`).
+4. **Ordered choice, and not reading twice.**  yacc's tables look ahead to choose between
+   `compound_command` and `compound_command redirect_list`; hbnf takes the first that matches, and an
+   alternative that is the front of another reads the same text again when it is not taken.  With
+   commands inside words and compound commands inside compound commands that is exponential: a
+   script with a dozen back-quotes took fourteen seconds.  So each such choice is the shorter form with an
+   optional rest (`compound_command [ redirect_list ]`, `If ... [ else_part ] Fi`, `cmd_prefix [ cmd_rest ]`,
+   and the case items with a shared `case_body`), which reads the same language.  The tree has an optional
+   field where the standard has two alternatives.  All 581 scripts now take a quarter of a second.
 5. **`;` and `;;`, `&` and `&&`** are different tokens; a lone `;` is `SEMI`, `";" !";"` in a rule
    that skips nothing, so `; ;;` is a separator then a `;;`.
 6. **Here-documents** (rule 3).  The body comes after the line, so `NEWLINE` is a scanner that looks
@@ -50,7 +55,10 @@ attempt at it freed the arena the parse was still using.  A root used as a field
 ## Not done
 
 - **Alias substitution** (rule 10) rewrites the input before the parser sees it, and is out of scope.
-- **Back-quotes** are matched, not parsed: a syntax error inside `` `...` `` is not found.
+- **Back-quotes** are matched, not parsed: a syntax error inside `` `...` `` is not found.  Parsing them is
+  possible, but inside back-quotes a bare back-quote closes, and `WORD` is the same rule inside and outside,
+  so the closing one is read as the start of a nested word and the parse blows up; it needs the
+  context machinery (a flag the rule can ask) or a way to cut the input at the closing quote.
 - **A line that begins inside a multi-line quotation** does not see a here-document on it.
 - **Bytes that are not UTF-8** are not accepted (`~LF` matches code points).
 - dash accepts a function body that is not a compound command (`f () g () { :; }`); POSIX does not,

@@ -15,23 +15,30 @@ cmdsub-close = ")"
 cmd_name = WORD - reserved
 reserved = If | Then | Else | Elif | Fi | Do | Done | Case | Esac | While | Until | For | Lbrace | Rbrace | Bang
 
-; ---- ordered choice takes the first alternative that matches, so where one alternative is the
-; front of another the longer is written first (yacc's tables decide by looking ahead) ----
+; ---- ordered choice takes the first alternative that matches, and an alternative that is the front of
+; another reads the same text again when it is not taken: with commands inside words ($( ), back-quotes)
+; and compound commands inside compound commands that is exponential.  So each choice between a
+; shorter and a longer form is written as the shorter with an optional rest ("x [ y ]", which is
+; "x y | x" without reading x twice), in the order the standard's alternatives give the same
+; language.  The tree has an optional field where the standard has two alternatives. ----
+program          = linebreak [ complete_commands linebreak ]
+complete_command = list [ separator_op ]
 command          = function_definition
-                 | compound_command redirect_list
-                 | compound_command
+                 | compound_command [ redirect_list ]
                  | simple_command
-function_body    = compound_command redirect_list
-                 | compound_command
-compound_list    = linebreak term separator
-                 | linebreak term
-else_part        = Elif compound_list Then compound_list else_part
-                 | Elif compound_list Then compound_list
+function_body    = compound_command [ redirect_list ]
+compound_list    = linebreak term [ separator ]
+if_clause        = If compound_list Then compound_list [ else_part ] Fi
+else_part        = Elif compound_list Then compound_list [ else_part ]
                  | Else compound_list
-case_item_ns     = pattern ')' compound_list
-                 | pattern ')' linebreak
-                 | '(' pattern ')' compound_list
-                 | '(' pattern ')' linebreak
+case_clause      = Case WORD linebreak In linebreak [ case_list ] [ case_item_ns ] Esac
+case_item        = [ '(' ] pattern ')' case_body DSEMI linebreak
+case_item_ns     = [ '(' ] pattern ')' case_body
+case_body        = compound_list
+                 | linebreak
+simple_command   = cmd_prefix [ cmd_rest ]
+                 | cmd_name [ cmd_suffix ]
+cmd_rest         = cmd_word [ cmd_suffix ]
 pipeline         = Bang pipe_sequence
                  | pipe_sequence
 
