@@ -26,6 +26,10 @@ package HBNF_Zig is
    procedure Set_Spans (On : Boolean);
    procedure Set_Parents (On : Boolean);
 
+   --  Compact nodes (the default): a field only some of a choice's alternatives hold is held
+   --  behind a pointer, allocated when that alternative is taken.
+   procedure Set_Compact (On : Boolean);
+
    procedure Set_Hosted (Types, Code : String; Walks : String := "");
    --  Walks: the bit rules that have a walk_<rule> (they hold an %action),
    --  space-separated; the text parser runs them after the whole text is read.

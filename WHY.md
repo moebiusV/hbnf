@@ -132,38 +132,38 @@ found the same rules before it is timed.
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| hbnf (C backend) | 7.68 MB | 24 ms | 4.2 M rules/s | 326 MB/s | 21 MB |
-| byacc + flex | 7.68 MB | 61 ms | 1.6 M rules/s | 126 MB/s | 23 MB |
-| bison + flex | 7.68 MB | 62 ms | 1.6 M rules/s | 125 MB/s | 23 MB |
-| peg/leg | 7.68 MB | 56 ms | 1.8 M rules/s | 137 MB/s | 30 MB |
-| tree-sitter 0.27.1 | 7.68 MB | 365 ms | 0.3 M rules/s | 21 MB/s | 63 MB |
-| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 35 ms | | | 81 MB |
-| ANTLR 4 (Java), actions, cold JVM | 7.68 MB | 219 ms | 0.5 M rules/s | 35 MB/s | 201 MB |
-| ANTLR 4 (Java), actions, warm JVM | 7.68 MB | 115 ms | 0.9 M rules/s | 67 MB/s | 534 MB |
-| ANTLR 4 (Java), parse tree, cold JVM | 7.68 MB | 281 ms | 0.4 M rules/s | 27 MB/s | 273 MB |
+| hbnf (C backend) | 7.68 MB | 24 ms | 4.1 M rules/s | 318 MB/s | 21 MB |
+| byacc + flex | 7.68 MB | 62 ms | 1.6 M rules/s | 124 MB/s | 23 MB |
+| bison + flex | 7.68 MB | 79 ms | 1.3 M rules/s | 97 MB/s | 23 MB |
+| peg/leg | 7.68 MB | 57 ms | 1.8 M rules/s | 135 MB/s | 30 MB |
+| tree-sitter 0.27.1 | 7.68 MB | 224 ms | 0.4 M rules/s | 34 MB/s | 63 MB |
+| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 34 ms | | | 81 MB |
+| ANTLR 4 (Java), actions, cold JVM | 7.68 MB | 252 ms | 0.4 M rules/s | 31 MB/s | 207 MB |
+| ANTLR 4 (Java), actions, warm JVM | 7.68 MB | 125 ms | 0.8 M rules/s | 61 MB/s | 545 MB |
+| ANTLR 4 (Java), parse tree, cold JVM | 7.68 MB | 309 ms | 0.3 M rules/s | 25 MB/s | 278 MB |
 
 **1,000,000 rules** (76.86 MB, the same file for every tool):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| hbnf (C backend) | 76.86 MB | 230 ms | 4.3 M rules/s | 334 MB/s | 203 MB |
-| byacc + flex | 76.86 MB | 614 ms | 1.6 M rules/s | 125 MB/s | 224 MB |
-| bison + flex | 76.86 MB | 615 ms | 1.6 M rules/s | 125 MB/s | 224 MB |
-| peg/leg | 76.86 MB | 563 ms | 1.8 M rules/s | 137 MB/s | 294 MB |
+| hbnf (C backend) | 76.86 MB | 258 ms | 3.9 M rules/s | 297 MB/s | 203 MB |
+| byacc + flex | 76.86 MB | 625 ms | 1.6 M rules/s | 123 MB/s | 224 MB |
+| bison + flex | 76.86 MB | 666 ms | 1.5 M rules/s | 115 MB/s | 224 MB |
+| peg/leg | 76.86 MB | 570 ms | 1.8 M rules/s | 135 MB/s | 294 MB |
 | tree-sitter 0.27.1 | 76.86 MB | 2271 ms | 0.4 M rules/s | 34 MB/s | 620 MB |
-| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 353 ms | | | 804 MB |
-| ANTLR 4 (Java), actions, cold JVM | 76.86 MB | 1262 ms | 0.8 M rules/s | 61 MB/s | 1433 MB |
-| ANTLR 4 (Java), actions, warm JVM | 76.86 MB | 1134 ms | 0.9 M rules/s | 68 MB/s | 3101 MB |
-| ANTLR 4 (Java), parse tree, cold JVM | 76.86 MB | 1703 ms | 0.6 M rules/s | 45 MB/s | 2523 MB |
+| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 369 ms | | | 804 MB |
+| ANTLR 4 (Java), actions, cold JVM | 76.86 MB | 1586 ms | 0.6 M rules/s | 48 MB/s | 1434 MB |
+| ANTLR 4 (Java), actions, warm JVM | 76.86 MB | 1186 ms | 0.8 M rules/s | 65 MB/s | 3049 MB |
+| ANTLR 4 (Java), parse tree, cold JVM | 76.86 MB | 1813 ms | 0.6 M rules/s | 42 MB/s | 2359 MB |
 
-_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 5.81 on the host, hbnf 23fc853; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:toy -->
 
 At 100,000 rules hbnf's generated C parser takes <!-- v:hbnf_100000_ms -->24<!-- /v --> ms.  byacc with flex
-takes <!-- v:byacc_100000_ms -->61<!-- /v --> ms (<!-- v:ratio_byacc_100000 -->2.5<!-- /v --> times as long), peg/leg <!-- v:ratio_peg_100000 -->2.3<!-- /v --> times, tree-sitter
-<!-- v:ratio_ts_100000 -->15<!-- /v --> times, and ANTLR <!-- v:ratio_antlr_cold_100000 -->9.1<!-- /v --> times in a fresh JVM (<!-- v:ratio_antlr_warm_100000 -->4.8<!-- /v --> times once
-the JVM is warm).  At 1,000,000 rules the ratios hold (byacc <!-- v:ratio_byacc_1000000 -->2.7<!-- /v -->, tree-sitter
-<!-- v:ratio_ts_1000000 -->9.9<!-- /v -->), so every tool's cost is linear and the table is not a small-input
+takes <!-- v:byacc_100000_ms -->62<!-- /v --> ms (<!-- v:ratio_byacc_100000 -->2.6<!-- /v --> times as long), peg/leg <!-- v:ratio_peg_100000 -->2.4<!-- /v --> times, tree-sitter
+<!-- v:ratio_ts_100000 -->9.3<!-- /v --> times, and ANTLR <!-- v:ratio_antlr_cold_100000 -->10<!-- /v --> times in a fresh JVM (<!-- v:ratio_antlr_warm_100000 -->5.2<!-- /v --> times once
+the JVM is warm).  At 1,000,000 rules the ratios hold (byacc <!-- v:ratio_byacc_1000000 -->2.4<!-- /v -->, tree-sitter
+<!-- v:ratio_ts_1000000 -->8.8<!-- /v -->), so every tool's cost is linear and the table is not a small-input
 effect.  Peak memory follows the same order: <!-- v:hbnf_100000_rss_mb -->21<!-- /v --> MB for hbnf, <!-- v:byacc_100000_rss_mb -->23<!-- /v --> MB for
 byacc, <!-- v:ts_100000_rss_mb -->63<!-- /v --> MB for tree-sitter.
 
@@ -171,8 +171,8 @@ Three things this does not say.  The trees differ: hbnf builds typed structs
 whose strings are slices of the input, the yacc and PEG parsers copy each
 string, tree-sitter builds a node per token, and ANTLR's actions-only rows
 build no tree at all.  The toy is the smallest realistic shape; the full pfctl
-grammar, with its 35-way option alternation, takes <!-- v:pfctl_100000_ms -->283<!-- /v --> ms and <!-- v:pfctl_100000_rss_mb -->133<!-- /v --> MB for
-100,000 rules, about <!-- v:pfctl_vs_toy_time -->12<!-- /v --> times the toy per rule, and that is the number to
+grammar, with its 35-way option alternation, takes <!-- v:pfctl_100000_ms -->304<!-- /v --> ms and <!-- v:pfctl_100000_rss_mb -->133<!-- /v --> MB for
+100,000 rules, about <!-- v:pfctl_vs_toy_time -->13<!-- /v --> times the toy per rule, and that is the number to
 set against a production ruleset.  And a machine with other work on it gives
 slower, noisier times; the load average at the start of the run is recorded
 under every table.
@@ -191,17 +191,17 @@ checked to have built the same sensors.
 
 | tool | input | parse time | sensors/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| OpenBSD ntpd parse.y, byacc | 6.14 MB | 73 ms | 1378 K sensors/s | 85 MB/s | 7.2 MB |
-| hbnf binding (`--conf`) | 6.14 MB | 65 ms | 1534 K sensors/s | 94 MB/s | 7.3 MB |
+| OpenBSD ntpd parse.y, byacc | 6.14 MB | 85 ms | 1177 K sensors/s | 72 MB/s | 7.3 MB |
+| hbnf binding (`--conf`) | 6.14 MB | 67 ms | 1498 K sensors/s | 92 MB/s | 7.3 MB |
 
 **1,000,000 sensors** (one `sensor` line each, the same file for both):
 
 | tool | input | parse time | sensors/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| OpenBSD ntpd parse.y, byacc | 62.39 MB | 738 ms | 1355 K sensors/s | 85 MB/s | 68.8 MB |
-| hbnf binding (`--conf`) | 62.39 MB | 644 ms | 1553 K sensors/s | 97 MB/s | 68.9 MB |
+| OpenBSD ntpd parse.y, byacc | 62.39 MB | 745 ms | 1343 K sensors/s | 84 MB/s | 68.9 MB |
+| hbnf binding (`--conf`) | 62.39 MB | 673 ms | 1487 K sensors/s | 93 MB/s | 68.8 MB |
 
-_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 5.81 on the host, hbnf 23fc853; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:ntpd -->
 
 ### A large parse.y: pfctl
@@ -220,19 +220,19 @@ the yacc side also that the source ports add up.
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
-| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 480 ms | 209 K rules/s | 19 MB/s | 172.9 MB |
-| hbnf pfctl grammar (`--conf --no-compact`, typed tree) | 9.18 MB | 453 ms | 221 K rules/s | 20 MB/s | 457.1 MB |
-| hbnf pfctl grammar (`--conf`, compact nodes, the default) | 9.18 MB | 280 ms | 357 K rules/s | 33 MB/s | 132.6 MB |
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 479 ms | 209 K rules/s | 19 MB/s | 172.9 MB |
+| hbnf pfctl grammar (`--conf --no-compact`, typed tree) | 9.18 MB | 456 ms | 219 K rules/s | 20 MB/s | 457.1 MB |
+| hbnf pfctl grammar (`--conf`, compact nodes, the default) | 9.18 MB | 282 ms | 355 K rules/s | 33 MB/s | 132.5 MB |
 
 **1,000,000 filter rules** (one `pass in quick ... keep state` line each, the same file for both):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
-| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 4.71 s | 212 K rules/s | 19 MB/s | 1723.4 MB |
-| hbnf pfctl grammar (`--conf --no-compact`, typed tree) | 91.86 MB | 4.50 s | 222 K rules/s | 20 MB/s | 4565.4 MB |
-| hbnf pfctl grammar (`--conf`, compact nodes, the default) | 91.86 MB | 2.79 s | 359 K rules/s | 33 MB/s | 1322.2 MB |
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 4.84 s | 207 K rules/s | 19 MB/s | 1723.5 MB |
+| hbnf pfctl grammar (`--conf --no-compact`, typed tree) | 91.86 MB | 5.40 s | 185 K rules/s | 17 MB/s | 4565.7 MB |
+| hbnf pfctl grammar (`--conf`, compact nodes, the default) | 91.86 MB | 3.01 s | 332 K rules/s | 30 MB/s | 1322.0 MB |
 
-_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 5.81 on the host, hbnf 23fc853; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:pfctl_yacc -->
 
 ### Compact nodes on the rest of the corpus
@@ -244,18 +244,18 @@ times over with every tree kept (about 30 MB of input per row):
 <!-- bench:corpus -->
 | corpus | input | parsed | time, old layout | time, compact | speed-up | memory, old | memory, compact | saved |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| json | 26 files x 20000 | 13.0 MB | 552 ms | 543 ms | 1.02x | 308 MB | 302 MB | 1.02x |
-| mustache | 25 files x 20000 | 7.4 MB | 294 ms | 172 ms | 1.71x | 215 MB | 130 MB | 1.66x |
-| algol60 | 5 files x 12615 | 30.0 MB | 3919 ms | 3582 ms | 1.09x | 975 MB | 666 MB | 1.46x |
-| bgpd | 4 files x 20000 | 19.7 MB | 943 ms | 857 ms | 1.10x | 398 MB | 277 MB | 1.44x |
-| httpd | 1 files x 20000 | 15.9 MB | 566 ms | 540 ms | 1.05x | 221 MB | 110 MB | 2.00x |
-| ntpd | 1 files x 20000 | 6.9 MB | 95 ms | 96 ms | 1.00x | 36 MB | 36 MB | 1.00x |
-| pfctl | 7 files x 12717 | 30.0 MB | 1746 ms | 1123 ms | 1.55x | 1441 MB | 339 MB | 4.25x |
-| relayd | 2 files x 20000 | 15.2 MB | 307 ms | 288 ms | 1.06x | 76 MB | 58 MB | 1.32x |
-| snmpd | 2 files x 20000 | 10.9 MB | 207 ms | 192 ms | 1.08x | 73 MB | 57 MB | 1.28x |
-| unwind | 1 files x 20000 | 4.7 MB | 69 ms | 70 ms | 0.99x | 18 MB | 16 MB | 1.13x |
+| json | 26 files x 20000 | 13.0 MB | 563 ms | 554 ms | 1.02x | 309 MB | 302 MB | 1.02x |
+| mustache | 25 files x 20000 | 7.4 MB | 293 ms | 172 ms | 1.70x | 215 MB | 130 MB | 1.66x |
+| algol60 | 5 files x 12615 | 30.0 MB | 3976 ms | 3684 ms | 1.08x | 975 MB | 666 MB | 1.46x |
+| bgpd | 4 files x 20000 | 19.7 MB | 972 ms | 885 ms | 1.10x | 398 MB | 277 MB | 1.44x |
+| httpd | 1 files x 20000 | 15.9 MB | 898 ms | 842 ms | 1.07x | 221 MB | 110 MB | 2.00x |
+| ntpd | 1 files x 20000 | 6.9 MB | 150 ms | 151 ms | 0.99x | 36 MB | 36 MB | 1.00x |
+| pfctl | 7 files x 12717 | 30.0 MB | 2623 ms | 1748 ms | 1.50x | 1441 MB | 339 MB | 4.25x |
+| relayd | 2 files x 20000 | 15.2 MB | 443 ms | 427 ms | 1.04x | 76 MB | 58 MB | 1.32x |
+| snmpd | 2 files x 20000 | 10.9 MB | 215 ms | 203 ms | 1.06x | 73 MB | 57 MB | 1.28x |
+| unwind | 1 files x 20000 | 4.7 MB | 72 ms | 72 ms | 1.00x | 18 MB | 16 MB | 1.14x |
 
-_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 5.81 on the host, hbnf 23fc853; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:corpus -->
 
 Memory falls or stays the same everywhere; pfctl, with its many-alternative statements, falls
@@ -293,18 +293,62 @@ daemons' scanners written in C are not read by it):
 <!-- bench:corpus_rust -->
 | corpus | input | parsed | time before | time, lazy errors | time now (compact) | faster | memory, old layout | memory, compact |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| json | 26 files x 4622 | 3.0 MB | 2315 ms | 349 ms | 360 ms | 6.4x | 388 MB | 334 MB |
-| mustache | 25 files x 8108 | 3.0 MB | 1402 ms | 412 ms | 287 ms | 4.9x | 552 MB | 244 MB |
-| algol60 | 5 files x 1261 | 3.0 MB | 8529 ms | 489 ms | 441 ms | 19.4x | 196 MB | 142 MB |
-| httpd | 1 files x 3778 | 3.0 MB | 4574 ms | 364 ms | 249 ms | 18.4x | 140 MB | 28 MB |
-| relayd | 2 files x 3957 | 3.0 MB | 1347 ms | 183 ms | 146 ms | 9.2x | 108 MB | 44 MB |
-| snmpd | 2 files x 5514 | 3.0 MB | 1216 ms | 154 ms | 144 ms | 8.5x | 39 MB | 28 MB |
+| json | 26 files x 4622 | 3.0 MB | 3714 ms | 551 ms | 558 ms | 6.7x | 388 MB | 334 MB |
+| mustache | 25 files x 8108 | 3.0 MB | 2203 ms | 623 ms | 444 ms | 5.0x | 552 MB | 244 MB |
+| algol60 | 5 files x 1261 | 3.0 MB | 13825 ms | 744 ms | 650 ms | 21.3x | 196 MB | 142 MB |
+| httpd | 1 files x 3778 | 3.0 MB | 7325 ms | 615 ms | 426 ms | 17.2x | 140 MB | 28 MB |
+| relayd | 2 files x 3957 | 3.0 MB | 1481 ms | 282 ms | 242 ms | 6.1x | 108 MB | 44 MB |
+| snmpd | 2 files x 5514 | 3.0 MB | 1457 ms | 163 ms | 155 ms | 9.4x | 39 MB | 29 MB |
 
-_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 4.15 on the host, hbnf a42b9b6; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:corpus_rust -->
 
-The old Rust times (1.2 to 8.5 seconds for 3 MB) were not a Rust problem but this one.  Zig and
-Ada have the same per-failure message building and the same merged structs; they follow.
+The old Rust times (1.2 to 8.5 seconds for 3 MB) were not a Rust problem but this one.
+
+### And for Zig and Ada
+
+Zig had the same fault: every failure built the message, a pass over the text for the line, so a
+parse cost more the further into the file it was.  It now notes the failure and builds the
+message in `err_out`, when the parse fails, and holds the same fields as `?*T` (compact nodes).
+"Time before" is the generator as it was, built from `bench/pre/` by the stage; "lazy errors" is
+today's with `--no-compact`.  The time is the process's CPU time:
+
+<!-- bench:corpus_zig -->
+| corpus | input | parsed | time before | time, lazy errors | time now (compact) | faster | memory, old layout | memory, compact |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| json | 26 files x 3000 | 1.9 MB | 470 ms | 85 ms | 98 ms | 4.8x | 40 MB | 40 MB |
+| mustache | 25 files x 3000 | 1.1 MB | 71 ms | 29 ms | 20 ms | 3.5x | 42 MB | 21 MB |
+| algol60 | 5 files x 1000 | 2.4 MB | 7230 ms | 98 ms | 85 ms | 85.0x | 73 MB | 53 MB |
+| httpd | 1 files x 2000 | 1.6 MB | 1685 ms | 137 ms | 137 ms | 12.3x | 70 MB | 16 MB |
+| relayd | 2 files x 2000 | 1.5 MB | 338 ms | 63 ms | 63 ms | 5.4x | 21 MB | 9 MB |
+
+_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+<!-- /bench:corpus_zig -->
+
+Almost all of it is the errors again (up to 85 times on ALGOL 60, whose files are longest);
+compact nodes cut the memory (httpd 70 to 16 MB) and make Mustache and httpd faster.
+
+**Ada is different, and the fix did not help it.**  Ada's record fields for other records were
+already access values, so there is no merged struct to compact, and its failures were already
+noted and rendered once.  What I changed there (no string built to compare a failed keyword,
+no exception message built per failure) makes no measurable difference:
+
+<!-- bench:corpus_ada -->
+| corpus | input | parsed | time, parser template before | time now | faster | memory |
+|---|---|---:|---:|---:|---:|---:|
+| json | 26 files x 300 | 0.2 MB | 1038 ms | 1062 ms | 0.98x | 20 MB |
+| mustache | 25 files x 300 | 0.1 MB | 939 ms | 942 ms | 1.00x | 9 MB |
+| httpd | 1 files x 200 | 0.2 MB | 1842 ms | 2029 ms | 0.91x | 7 MB |
+
+_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+<!-- /bench:corpus_ada -->
+
+The Ada parser is 100 to 500 times slower per byte than the Zig one on the same grammar and files.  A
+profile (callgrind) puts three quarters of its instructions in exception unwinding
+(`__gnat_personality_v0`, `_Unwind_Find_FDE`): it backtracks by raising `Parse_Error` and
+catching it in each alternative, and a raise costs microseconds in GNAT.  The cure is to
+return a status from the parse functions instead of raising, which changes every function the
+Ada backend writes; it is not done.
 
 Read it as it is: **with the default layout hbnf's C parser is level with byacc's on this
 grammar (inside the noise), not ahead of it, and it uses about 2.6 times the memory** (a typed
@@ -389,7 +433,7 @@ turn off the GLR and error-recovery machinery it carries. And the comparison
 above is a *cold* parse, which is not what tree-sitter optimises.
 
 So the cold number alone would be unfair, and the incremental one is in the
-table too: after a one-byte edit, re-parsing the same file takes <!-- v:ts_edit_100000_ms -->35<!-- /v --> ms,
+table too: after a one-byte edit, re-parsing the same file takes <!-- v:ts_edit_100000_ms -->34<!-- /v --> ms,
 against <!-- v:hbnf_100000_ms -->24<!-- /v --> ms for hbnf's cold parse.  The reason is structural, and the
 honest caveat: the toy is a flat list of N independent rules, so an edit forces
 the root's N-child list to be rebuilt and incrementality has almost nothing to

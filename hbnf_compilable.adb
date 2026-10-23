@@ -1049,4 +1049,43 @@ package body HBNF_Compilable is
       return Result;
    end Back_Edges;
 
+   function Partly_Held
+     (Pattern : HBNF_Grammar.Element_Vectors.Vector; Nm : String)
+      return Boolean
+   is
+      use HBNF_Grammar;
+
+      function Mentions (Els : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of Els loop
+            if E.Kind = Name and then Ada.Strings.Unbounded.To_String (E.Name) = Nm then
+               return True;
+            elsif E.Kind = Group and then Mentions (E.Items) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Mentions;
+
+      Alts : Natural := 1;
+      Held : Natural := 0;
+      Cur  : Element_Vectors.Vector;
+   begin
+      for E of Pattern loop
+         if E.Kind = Alt then
+            Alts := Alts + 1;
+            if Mentions (Cur) then
+               Held := Held + 1;
+            end if;
+            Cur.Clear;
+         else
+            Cur.Append (E);
+         end if;
+      end loop;
+      if Mentions (Cur) then
+         Held := Held + 1;
+      end if;
+      return Alts > 1 and then Held < Alts;
+   end Partly_Held;
+
 end HBNF_Compilable;

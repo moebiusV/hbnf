@@ -654,6 +654,13 @@ package body HBNF_Zig is
    function Is_By_Value (Info : Rule_Info) return Boolean is
      (Info.Kind = Struct);
 
+   Compact_On : Boolean := True;
+
+   procedure Set_Compact (On : Boolean) is
+   begin
+      Compact_On := On;
+   end Set_Compact;
+
    --  The by-value edges of the tree-type graph, for the one cycle detector
    --  in HBNF_Compilable; the edges it picks to make indirect come back.
    function Back_Edges_Zig (Rules : Rule_Vectors.Vector)
@@ -750,7 +757,36 @@ package body HBNF_Zig is
       for I in 1 .. N loop
          Infos.Append (Analyze (Rules, I));
       end loop;
-      return HBNF_Compilable.Back_Edges (N, By_Value_Edges);
+      declare
+         E_All : constant HBNF_Compilable.Edge_Vectors.Vector := By_Value_Edges;
+         R : HBNF_Compilable.Edge_Vectors.Vector :=
+           HBNF_Compilable.Back_Edges (N, E_All);
+      begin
+         --  Compact nodes: a struct-valued field that only some of a choice's
+         --  alternatives hold is held behind a pointer too (as in C and Rust).
+         if Compact_On then
+            for X of E_All loop
+               if X.Member /= Null_Unbounded_String
+                 and then HBNF_Compilable.Partly_Held
+                            (Rules (X.Owner).Pattern, To_String (X.Member))
+               then
+                  declare
+                     Have : Boolean := False;
+                  begin
+                     for Y of R loop
+                        if Y.Owner = X.Owner and then Y.Member = X.Member then
+                           Have := True;
+                        end if;
+                     end loop;
+                     if not Have then
+                        R.Append (X);
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end if;
+         return R;
+      end;
    end Back_Edges_Zig;
 
    --  The rule a back edge points at, or 0 when (Owner, Member) is not one.
@@ -1694,7 +1730,7 @@ package body HBNF_Zig is
             then
                --  a rule that is only another (`hostfrom = hostatom`): that rule writes it
                P (Ind, "wr_" & Zig_Snake (To_String (Rules (Alias_Leaf (Nm)).Name))
-                  & "(w, " & (if Infos (Alias_Leaf (Nm)).Kind = Struct then "&" else "&") & Expr & ");");
+                  & "(w, " & (if Back then Expr else "&" & Expr) & ");");
             elsif J > 0 and then Infos (J).Kind = Struct and then Scalar_Zig_Type (Nm) = "" then
                P (Ind, "wr_" & Zig_Snake (Nm) & "(w, "
                   & (if Back then Expr else "&" & Expr) & ");");
@@ -3778,6 +3814,8 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "    len: usize = 0,");
       Append (Res, LF);
+      Append (Res, "    has: bool = false,   // a failure is noted; its message is made by err_out");
+      Append (Res, LF);
       Append (Res, "    pos: usize = 0,");
       Append (Res, LF);
       Append (Res, "    alt_n: usize = 0,");
@@ -3847,9 +3885,13 @@ package body HBNF_Zig is
          Put ("    }");
          Put ("");
          Put ("    fn set_err(self: *P, expected: []const u8) void {");
-         Put ("        if (self.e.len != 0 and self.pos < self.e.pos) return;");
-         Put ("        if (self.e.len != 0 and self.pos == self.e.pos) {");
-         Put ("            // the same place: another thing that could have stood here");
+         Put ("        // Only noted here: the message (a pass over the text for the line) is made once,");
+         Put ("        // by err_out, if the parse fails.  Making it at every failure was quadratic.");
+         Put ("        if (self.e.has and self.pos < self.e.pos) return;");
+         Put ("        if (self.e.has and self.pos == self.e.pos) {");
+         Put ("            // the same place: another thing that could have stood here; a full list");
+         Put ("            // that has said and-more cannot change");
+         Put ("            if (self.e.alt_n >= 16 and self.e.alt_more) return;");
          Put ("            for (self.e.alt_exp[0..self.e.alt_n]) |x| {");
          Put ("                if (std.mem.eql(u8, x, expected)) return;");
          Put ("            }");
@@ -3857,7 +3899,6 @@ package body HBNF_Zig is
          Put ("                self.e.alt_exp[self.e.alt_n] = expected;");
          Put ("                self.e.alt_n += 1;");
          Put ("            } else self.e.alt_more = true;");
-         Put ("            self.render();");
          Put ("            return;");
          Put ("        }");
          Put ("        self.e.pos = self.pos;");
@@ -3868,7 +3909,7 @@ package body HBNF_Zig is
          Put ("        self.e.depth = @min(self.depth, 24);");
          Put ("        @memcpy(self.e.stk[0..self.e.depth], self.stk[0..self.e.depth]);");
          Put ("        @memcpy(self.e.stkpos[0..self.e.depth], self.stkpos[0..self.e.depth]);");
-         Put ("        self.render();");
+         Put ("        self.e.has = true;");
          Put ("    }");
          Put ("");
          Put ("    // The message: what was expected, what was found, the line and where in it;");
@@ -4034,6 +4075,8 @@ package body HBNF_Zig is
          Put ("");
       end;
       Append (Res, "    fn err_out(self: *P, out: *[512]u8, line: *usize, col: *usize) ParseError {");
+      Append (Res, LF);
+      Append (Res, "        if (self.e.has) self.render();");
       Append (Res, LF);
       Append (Res, "        @memcpy(out[0..self.e.len], self.e.buf[0..self.e.len]);");
       Append (Res, LF);

@@ -1332,71 +1332,29 @@ package body HBNF_C is
                if Infos (I).Kind = Struct then
                   declare
                      Info : constant Rule_Info := Infos (I);
-                     P    : constant Element_Vectors.Vector := Rules (I).Pattern;
-                     Alts : Natural := 1;
-
-                     function Mentions (Els : Element_Vectors.Vector; Nm : String)
-                       return Boolean is
-                     begin
-                        for E of Els loop
-                           if E.Kind = Name and then To_String (E.Name) = Nm then
-                              return True;
-                           elsif E.Kind = Group and then Mentions (E.Items, Nm) then
-                              return True;
-                           end if;
-                        end loop;
-                        return False;
-                     end Mentions;
-
-                     --  In how many of the top-level alternatives is Nm named?
-                     function Held_In (Nm : String) return Natural is
-                        Cnt  : Natural := 0;
-                        Cur  : Element_Vectors.Vector;
-                     begin
-                        for E of P loop
-                           if E.Kind = Alt then
-                              if Mentions (Cur, Nm) then
-                                 Cnt := Cnt + 1;
-                              end if;
-                              Cur.Clear;
-                           else
-                              Cur.Append (E);
-                           end if;
-                        end loop;
-                        if Mentions (Cur, Nm) then
-                           Cnt := Cnt + 1;
-                        end if;
-                        return Cnt;
-                     end Held_In;
                   begin
-                     for E of P loop
-                        if E.Kind = Alt then
-                           Alts := Alts + 1;
+                     for M of Info.Members loop
+                        if not M.Is_List and then Resolve (M.Name) > 0
+                          and then HBNF_Compilable.Partly_Held
+                                     (Rules (I).Pattern, To_String (M.Name))
+                        then
+                           declare
+                              Have : Boolean := False;
+                           begin
+                              for X of R loop
+                                 if X.Owner = I and then X.Member = M.Name then
+                                    Have := True;
+                                 end if;
+                              end loop;
+                              if not Have then
+                                 R.Append
+                                   (By_Value_Edge'
+                                      (Owner => I, Member => M.Name,
+                                       Target => Resolve (M.Name)));
+                              end if;
+                           end;
                         end if;
                      end loop;
-                     if Alts > 1 then
-                        for M of Info.Members loop
-                           if not M.Is_List and then Resolve (M.Name) > 0
-                             and then Held_In (To_String (M.Name)) < Alts
-                           then
-                              declare
-                                 Have : Boolean := False;
-                              begin
-                                 for X of R loop
-                                    if X.Owner = I and then X.Member = M.Name then
-                                       Have := True;
-                                    end if;
-                                 end loop;
-                                 if not Have then
-                                    R.Append
-                                      (By_Value_Edge'
-                                         (Owner => I, Member => M.Name,
-                                          Target => Resolve (M.Name)));
-                                 end if;
-                              end;
-                           end if;
-                        end loop;
-                     end if;
                   end;
                end if;
             end loop;

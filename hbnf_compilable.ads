@@ -117,4 +117,14 @@ package HBNF_Compilable is
    --  Raises Parse_Error when a cycle has no field edge to break -- an
    --  all-alias cycle (`a = b`, `b = a`) has nothing to point at.
 
+   --  Compact nodes (every backend): True when a rule's pattern is a choice
+   --  (top-level alternatives) and the field named Nm is held by some of the
+   --  alternatives but not all of them.  Such a field is there only when its
+   --  alternative was taken, so a backend may hold it behind a pointer; a
+   --  field every alternative has, or a rule that is one sequence, is always
+   --  there and stays by value.
+   function Partly_Held
+     (Pattern : HBNF_Grammar.Element_Vectors.Vector; Nm : String)
+      return Boolean;
+
 end HBNF_Compilable;

@@ -73,10 +73,11 @@
          P.Err_Stkpos := P.Stkpos;
       elsif P.Pos = P.Err_Pos then
          declare
-            Seen : Boolean := False;
+            Seen : Boolean := P.Alt_N >= 16 and then P.More;   --  a full list that has said "and more" cannot change
          begin
             for I in 1 .. P.Alt_N loop
-               if To_String (P.Alts (I)) = Expected then
+               exit when Seen;
+               if P.Alts (I) = Expected then   --  no string is made to compare
                   Seen := True;
                end if;
             end loop;
@@ -90,7 +91,7 @@
             end if;
          end;
       end if;
-      raise Parse_Error with "expected " & Expected;
+      raise Parse_Error;   --  the message is made by Render if the parse fails; none is built per failure
    end Fail;
 
    --  A punctuation- or digit-led literal: compare bytes at the position (a
