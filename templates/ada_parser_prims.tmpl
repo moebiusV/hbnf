@@ -8,6 +8,7 @@
       Text : Text_Access;
       Pos  : Natural := 1;
       Last : Natural := Natural'Last;   --  the input is cut here for a trial parse (`a - b`)
+      Failed : Boolean := False;        --  a parse that failed returns at once, up to whoever tries the next way
 {{&parser_bit}}      --  The farthest failure (Err_Pos, 0 while there is none): what could have stood
       --  there, each told once, and the rules being read then and where each began.
       Err_Pos    : Natural := 0;
@@ -91,7 +92,7 @@
             end if;
          end;
       end if;
-      raise Parse_Error;   --  the message is made by Render if the parse fails; none is built per failure
+      P.Failed := True;   --  not raised: GNAT unwinds in microseconds, and a parse fails more often than it succeeds
    end Fail;
 
    --  A punctuation- or digit-led literal: compare bytes at the position (a

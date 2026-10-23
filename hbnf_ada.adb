@@ -1713,6 +1713,15 @@ package body HBNF_Ada is
       function Ret_Type (Idx : Natural) return String is
         (Ada_Ident (To_String (Rules (Idx).Name)) & "_Type");
 
+      --  What a parse function does when something it called failed: a failure is a flag on the
+      --  parser (P.Failed), not an exception, and every call that can fail is followed by this.
+      --  The default is to give up the rule, returning what it has (the caller looks at the flag);
+      --  inside a way of trying (an alternative, a repeated entry) it is a jump to the place that
+      --  tries the next, so FA is changed there and put back.
+      FA     : Unbounded_String := To_Unbounded_String ("return R;");
+      Lbl_No : Natural := 0;
+      function Chk return String is ("if P.Failed then " & To_String (FA) & " end if;");
+
       procedure Emit_Seq
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural;
@@ -1773,7 +1782,7 @@ package body HBNF_Ada is
                              elsif E.No_Case then "Expect_Lit_Nocase"
                              elsif Is_Keyword_Lit (Lit) then "Expect_Word"
                              else "Expect_Lit")
-                          & " (P, """ & Ada_Escape (Lit) & """);");
+                          & " (P, """ & Ada_Escape (Lit) & """); " & Chk);
                         Append (Buf, LF);
                      end;
                   when Name =>
@@ -1797,7 +1806,7 @@ package body HBNF_Ada is
                            Append (Buf, LF);
                            Append (Buf, Ind & "   if N = 0" & Scalar_Reject (NM)
                              & " then Fail (P, """ & Core_Desc (NM)
-                             & """); end if;");
+                             & """); " & To_String (FA) & " end if;");
                            Append (Buf, LF);
                            Append (Buf, Ind & "   " & Dst
                              & Ada_Field (NM) & " := " & Scalar_Value (NM)
@@ -1826,7 +1835,7 @@ package body HBNF_Ada is
                            Append (Buf, LF);
                            if not Can_Be_Empty (NM) then
                               Append (Buf, Ind & "   if N = 0 then Fail (P, """
-                                & NM & """); end if;");
+                                & NM & """); " & To_String (FA) & " end if;");
                               Append (Buf, LF);
                            end if;
                            Append (Buf, Ind & "   " & Dst & Ada_Field (NM)
@@ -1868,12 +1877,13 @@ package body HBNF_Ada is
                            if Alloc_Records
                              and then (Is_Struct (NM) or else Back or else AR /= 0)
                            then
-                              Append (Buf, Ind & Dst & Ada_Field (NM)
-                                & " := new " & TN & "'(Parse_"
-                                & Ada_Ident (NM) & " (P));");
+                              --  parsed into a value first, so a failed rule allocates nothing
+                              Append (Buf, Ind & "declare V : " & Ada_Ident (NM) & "_Type := Parse_"
+                                & Ada_Ident (NM) & " (P); begin " & Chk & " "
+                                & Dst & Ada_Field (NM) & " := new " & TN & "'(V); end;");
                            else
                               Append (Buf, Ind & Dst & Ada_Field (NM)
-                                & " := Parse_" & Ada_Ident (NM) & " (P);");
+                                & " := Parse_" & Ada_Ident (NM) & " (P); " & Chk);
                            end if;
                            Append (Buf, LF);
                         end;
@@ -1906,7 +1916,7 @@ package body HBNF_Ada is
                           & Tag_Var ("Cl", E.Ctx) & " - 1) /= P.Text (" & Tag_Var ("Cp", E.Ctx)
                           & " .. " & Tag_Var ("Cp", E.Ctx) & " + " & Tag_Var ("Cl", E.Ctx)
                           & " - 1) then Fail (P, ""the same text again, `"
-                          & Ada_Escape (To_String (E.Ctx)) & "`""); end if;");
+                          & Ada_Escape (To_String (E.Ctx)) & "`""); " & To_String (FA) & " end if;");
                         Append (Buf, LF);
                         Append (Buf, Ind & "P.Pos := P.Pos + " & Tag_Var ("Cl", E.Ctx) & ";");
                         Append (Buf, LF);
@@ -1960,14 +1970,14 @@ package body HBNF_Ada is
                                        Lit : constant String := To_String (X.Lit);
                                     begin
                                        Append (Desc, "`" & Lit & "`");
-                                       Append (Buf, Ind & "      if Ok then begin "
+                                       Append (Buf, Ind & "      if Ok then "
                                          & (if X.No_Case and then Is_Keyword_Lit (Lit)
                                             then "Expect_Word_Nocase"
                                             elsif X.No_Case then "Expect_Lit_Nocase"
                                             elsif Is_Keyword_Lit (Lit) then "Expect_Word"
                                             else "Expect_Lit")
-                                         & " (P, """ & Ada_Escape (Lit) & """); exception"
-                                         & " when Parse_Error => Ok := False; end; end if;");
+                                         & " (P, """ & Ada_Escape (Lit) & """);"
+                                         & " if P.Failed then P.Failed := False; Ok := False; end if; end if;");
                                     end;
                                  else
                                     declare
@@ -2000,10 +2010,10 @@ package body HBNF_Ada is
                            Append (Buf, LF);
                            if E.Op = B_Not then
                               Append (Buf, Ind & "   if Hit then Fail (P, ""something other than "
-                                & Ada_Escape (To_String (Desc)) & """); end if;");
+                                & Ada_Escape (To_String (Desc)) & """); " & To_String (FA) & " end if;");
                            else
                               Append (Buf, Ind & "   if not Hit then Fail (P, """
-                                & Ada_Escape (To_String (Desc)) & """); end if;");
+                                & Ada_Escape (To_String (Desc)) & """); " & To_String (FA) & " end if;");
                            end if;
                            Append (Buf, LF);
                            Append (Buf, Ind & "end;");
@@ -2037,14 +2047,15 @@ package body HBNF_Ada is
          N  : constant Natural := Natural (Els.Length);
          St : Natural := 1;
          Br : Natural := 0;
+         Lbl, Old_FA : Unbounded_String;
       begin
          for K in 1 .. N + 1 loop
             if K > N or else Els (K).Kind = Alt then
                Br := Br + 1;
-               if Br > 1 then
-                  Append (Buf, Ind & "P.Pos := Save;");
-                  Append (Buf, LF);
-               end if;
+               Lbl_No := Lbl_No + 1;
+               Lbl := To_Unbounded_String ("Alt_Fail_" & Img (Lbl_No));
+               Old_FA := FA;
+               FA := To_Unbounded_String ("goto " & To_String (Lbl) & ";");
                Append (Buf, Ind & "declare");
                Append (Buf, LF);
                Append (Buf, Ind & "   R : " & TN & ";");
@@ -2078,7 +2089,7 @@ package body HBNF_Ada is
                      Append (Buf, Ind & "      P.Pos := Sv;");
                      Append (Buf, LF);
                      Append (Buf, Ind & "      if not Ok then Fail (P, ""what can "
-                       & "follow here""); end if;");
+                       & "follow here""); " & To_String (FA) & " end if;");
                      Append (Buf, LF);
                      Append (Buf, Ind & "   end;");
                      Append (Buf, LF);
@@ -2090,12 +2101,14 @@ package body HBNF_Ada is
                end if;
                Append (Buf, Ind & "   return R;");
                Append (Buf, LF);
-               Append (Buf, Ind & "exception");
-               Append (Buf, LF);
-               Append (Buf, Ind & "   when Parse_Error => null;");
+               Append (Buf, Ind & "   <<" & To_String (Lbl) & ">> null;");
                Append (Buf, LF);
                Append (Buf, Ind & "end;");
                Append (Buf, LF);
+               --  reached only when the branch failed: the next one starts where this began
+               Append (Buf, Ind & "P.Failed := False; P.Pos := Save;");
+               Append (Buf, LF);
+               FA := Old_FA;
                St := K + 1;
             end if;
          end loop;
@@ -2133,6 +2146,7 @@ package body HBNF_Ada is
            and then (P (1).Min /= 1 or else P (1).Max /= 1);
          Is_Enum : constant Boolean := not Is_List and then Is_Pure_Literal_Alt (P);
          SU : constant String := (if not Is_List then Scalar_Union_Type (Rules, P) else "");
+         Old_FA : Unbounded_String;
 
          --  The lines that run a scanner at the position and, when it matched,
          --  yield the text: a char rule, or a jet (a built-in scanner or the
@@ -2149,7 +2163,7 @@ package body HBNF_Ada is
             if R.Jet_Code /= Null_Unbounded_String
               or else not Can_Be_Empty (NM)
             then
-               Append (Buf, "         if N = 0 then Fail (P, """ & Desc & """); end if;");
+               Append (Buf, "         if N = 0 then Fail (P, """ & Desc & """); return R; end if;");
                Append (Buf, LF);
             end if;
             Append (Buf, "         R := To_Unbounded_String (P.Text (P.Pos .. P.Pos + N - 1));");
@@ -2182,6 +2196,7 @@ package body HBNF_Ada is
             return "P.Pos + " & NL & " - 1 <= Limit (P) and then " & Eq;
          end Lit_At;
       begin
+         FA := To_Unbounded_String ("return R;");
          if Is_Char_Rule (Rules, NM) then
             --  A char rule is a scanner: run it here and capture the text.
             Emit_Scan_Text ("Scan_" & Ada_Ident (NM), NM);
@@ -2273,19 +2288,24 @@ package body HBNF_Ada is
                      Append (Buf, LF);
                      Append (Buf, "            end;");
                   elsif Is_Struct (To_String (Simple)) then
-                     Append (Buf, "            R.Append (new "
-                       & Ada_Ident (To_String (Simple)) & "_Type'(Parse_"
-                       & Ada_Ident (To_String (Simple)) & " (P)));");
+                     Append (Buf, "            declare V : " & Ada_Ident (To_String (Simple))
+                       & "_Type := Parse_" & Ada_Ident (To_String (Simple)) & " (P); begin"
+                       & " if P.Failed then P.Failed := False; P.Pos := Start; exit; end if;"
+                       & " R.Append (new " & Ada_Ident (To_String (Simple)) & "_Type'(V)); end;");
                   elsif Alias_Record (Rules, To_String (Simple)) /= 0 then
-                     Append (Buf, "            R.Append (new "
+                     Append (Buf, "            declare V : " & Ada_Ident (To_String (Simple))
+                       & "_Type := Parse_" & Ada_Ident (To_String (Simple)) & " (P); begin"
+                       & " if P.Failed then P.Failed := False; P.Pos := Start; exit; end if;"
+                       & " R.Append (new "
                        & Ada_Ident
                            (To_String
                               (Rules (Leaf_Record (Rules, To_String (Simple))).Name))
-                       & "_Type'(Parse_"
-                       & Ada_Ident (To_String (Simple)) & " (P)));");
+                       & "_Type'(V)); end;");
                   else
-                     Append (Buf, "            R.Append (Parse_"
-                       & Ada_Ident (To_String (Simple)) & " (P));");
+                     Append (Buf, "            declare V : " & Elem & " := Parse_"
+                       & Ada_Ident (To_String (Simple)) & " (P); begin"
+                       & " if P.Failed then P.Failed := False; P.Pos := Start; exit; end if;"
+                       & " R.Append (V); end;");
                   end if;
                   Append (Buf, LF);
                   --  What is repeated can match nothing: an iteration that
@@ -2294,10 +2314,6 @@ package body HBNF_Ada is
                      Append (Buf, "            exit when P.Pos = Start;");
                      Append (Buf, LF);
                   end if;
-                  Append (Buf, "         exception");
-                  Append (Buf, LF);
-                  Append (Buf, "            when Parse_Error => P.Pos := Start; exit;");
-                  Append (Buf, LF);
                   Append (Buf, "         end;");
                   Append (Buf, LF);
                   Append (Buf, "      end loop;");
@@ -2345,19 +2361,23 @@ package body HBNF_Ada is
                               Append (Buf, LF);
                               Append (Buf, "               begin");
                               Append (Buf, LF);
+                              Lbl_No := Lbl_No + 1;
+                              Old_FA := FA;
+                              FA := To_Unbounded_String ("goto Ent_Fail_" & Img (Lbl_No) & ";");
                               Emit_Seq (Idx, E.Items, St, K - 1, "El.",
                                         Buf, "                  ", True);
+                              FA := Old_FA;
                               if Entry_Alt (R, Analyze (Rules, Idx)) then
                                  Append (Buf, "                  El.Alt_No := " & Img (Br) & ";");
                                  Append (Buf, LF);
                               end if;
                               Append (Buf, "                  E := El; Matched := True;");
                               Append (Buf, LF);
-                              Append (Buf, "               exception");
-                              Append (Buf, LF);
-                              Append (Buf, "                  when Parse_Error => P.Pos := Save;");
+                              Append (Buf, "                  <<Ent_Fail_" & Img (Lbl_No) & ">> null;");
                               Append (Buf, LF);
                               Append (Buf, "               end;");
+                              Append (Buf, LF);
+                              Append (Buf, "               if P.Failed then P.Failed := False; P.Pos := Save; end if;");
                               Append (Buf, LF);
                               Append (Buf, "            end if;");
                               Append (Buf, LF);
@@ -2392,7 +2412,7 @@ package body HBNF_Ada is
                end if;
                if E.Min > 0 then
                   Append (Buf, "         if Natural (R.Length) < " & Img (E.Min)
-                    & " then P.Pos := Start; Fail (P, ""a " & NM & """); end if;");
+                    & " then P.Pos := Start; Fail (P, ""a " & NM & """); return R; end if;");
                   Append (Buf, LF);
                   Append (Buf, "      end;");
                   Append (Buf, LF);
@@ -2403,7 +2423,7 @@ package body HBNF_Ada is
          elsif Is_Enum then
             --  Each alternative matches its literal at the position, in order:
             --  a keyword by the `word` scanner, any other literal by its bytes.
-            Append (Buf, "      if P.Pos > Limit (P) then Fail (P, ""a " & TN & """); end if;");
+            Append (Buf, "      if P.Pos > Limit (P) then Fail (P, ""a " & TN & """); return R; end if;");
             Append (Buf, LF);
             declare
                Lits   : String_Vectors.Vector;
@@ -2474,7 +2494,7 @@ package body HBNF_Ada is
                   Append (Buf, "      begin");
                   Append (Buf, LF);
                   Append (Buf, "         if N = 0" & Scalar_Reject (CN)
-                    & " then Fail (P, """ & Core_Desc (CN) & """); end if;");
+                    & " then Fail (P, """ & Core_Desc (CN) & """); return R; end if;");
                   Append (Buf, LF);
                   Append (Buf, "         R := " & Scalar_Value (CN)
                     & "; P.Pos := P.Pos + N;");
@@ -2527,18 +2547,19 @@ package body HBNF_Ada is
                   Append (Buf, "         Same : Boolean := False;" & LF);
                   Append (Buf, "         Tmp  : " & Ada_Ident (B) & "_Type;" & LF);
                   Append (Buf, "      begin" & LF);
+                  Append (Buf, "         if P.Failed then return R; end if;" & LF);
                   Append (Buf, "         P.Pos := Save;" & LF);
                   Append (Buf, "         P.Last := Stop;" & LF);
-                  Append (Buf, "         begin" & LF);
-                  Append (Buf, "            Tmp := Parse_" & Ada_Ident (B) & " (P);" & LF);
+                  Append (Buf, "         Tmp := Parse_" & Ada_Ident (B) & " (P);" & LF);
+                  Append (Buf, "         if P.Failed then" & LF);
+                  Append (Buf, "            P.Failed := False;" & LF);
+                  Append (Buf, "         else" & LF);
                   Append (Buf, "            Same := P.Pos = Stop;" & LF);
                   if Owns (B) then
                      Append (Buf, "            Free_" & Ada_Ident (Chase (B))
                        & " (Tmp);" & LF);
                   end if;
-                  Append (Buf, "         exception" & LF);
-                  Append (Buf, "            when Parse_Error => null;" & LF);
-                  Append (Buf, "         end;" & LF);
+                  Append (Buf, "         end if;" & LF);
                   Append (Buf, "         P.Last := Keep;" & LF);
                   Append (Buf, "         P.Pos := Stop;" & LF);
                   Append (Buf, "         if Same then" & LF);
@@ -2594,17 +2615,11 @@ package body HBNF_Ada is
                                  Append (Buf, LF);
                               end;
                            elsif E.Kind = Name then
-                              Append (Buf, "      begin");
+                              Append (Buf, "      R := Parse_" & Ada_Ident (To_String (E.Name)) & " (P);");
                               Append (Buf, LF);
-                              Append (Buf, "         R := Parse_" & Ada_Ident (To_String (E.Name)) & " (P);");
+                              Append (Buf, "      if not P.Failed then return R; end if;");
                               Append (Buf, LF);
-                              Append (Buf, "         return R;");
-                              Append (Buf, LF);
-                              Append (Buf, "      exception");
-                              Append (Buf, LF);
-                              Append (Buf, "         when Parse_Error => null;");
-                              Append (Buf, LF);
-                              Append (Buf, "      end;");
+                              Append (Buf, "      P.Failed := False;");
                               Append (Buf, LF);
                            end if;
                         end;
@@ -4378,10 +4393,6 @@ package body HBNF_Ada is
                     else "")
                  & "         return R;" & LF
                  & "      end;" & LF
-                 & "   exception" & LF
-                 & "      when Parse_Error =>" & LF
-                 & "         P.Depth := P.Depth - 1;" & LF
-                 & "         raise;" & LF
                  & "   end Parse_" & Ada_Ident (NM) & ";" & LF & LF);
             end if;
          end;

@@ -748,13 +748,14 @@ package body HBNF_Wire.Ada_Lang is
                                  L (Ind + 3, "Tp : Bnf_Text_Parser := (Text => Bnf_P.Buf, Pos => Bnf_Start" & U & ", Last => Natural'Last, Bit => 0, others => <>);");
                                  L (Ind + 2, "begin");
                                  L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
-                                 L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - Bnf_Start" & U & ") * 8;");
-                                 if Span /= "" then
-                                    L (Ind + 3, Span & " := To_Unbounded_String (Bnf_P.Buf (Bnf_Start" & U & " .. Tp.Pos - 1));");
-                                 end if;
-                                 L (Ind + 2, "exception");
-                                 L (Ind + 3, "when Parse_Error =>");
+                                 L (Ind + 3, "if Tp.Failed then");
                                  L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 3, "else");
+                                 L (Ind + 4, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - Bnf_Start" & U & ") * 8;");
+                                 if Span /= "" then
+                                    L (Ind + 4, Span & " := To_Unbounded_String (Bnf_P.Buf (Bnf_Start" & U & " .. Tp.Pos - 1));");
+                                 end if;
+                                 L (Ind + 3, "end if;");
                                  L (Ind + 2, "end;");
                                  L (Ind + 1, "else");
                                  L (Ind + 2, "declare");
@@ -762,13 +763,14 @@ package body HBNF_Wire.Ada_Lang is
                                  L (Ind + 3, "Tp : Bnf_Text_Parser := (Text => C'Unchecked_Access, Pos => 1, Last => Natural'Last, Bit => 0, others => <>);");
                                  L (Ind + 2, "begin");
                                  L (Ind + 3, Fid & " := " & HBNF_Ada.Parse_Fn (R) & " (Tp);");
-                                 L (Ind + 3, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - 1) * 8;");
-                                 if Span /= "" then
-                                    L (Ind + 3, Span & " := To_Unbounded_String (C (1 .. Tp.Pos - 1));");
-                                 end if;
-                                 L (Ind + 2, "exception");
-                                 L (Ind + 3, "when Parse_Error =>");
+                                 L (Ind + 3, "if Tp.Failed then");
                                  L (Ind + 4, "Fail (Bnf_P, Bnf_P.Bit, " & W & ", ""a " & R & """);");
+                                 L (Ind + 3, "else");
+                                 L (Ind + 4, "Bnf_P.Bit := Bnf_P.Bit + (Tp.Pos - 1) * 8;");
+                                 if Span /= "" then
+                                    L (Ind + 4, Span & " := To_Unbounded_String (C (1 .. Tp.Pos - 1));");
+                                 end if;
+                                 L (Ind + 3, "end if;");
                                  L (Ind + 2, "end;");
                                  L (Ind + 1, "end if;");
                                  L (Ind, "end;");

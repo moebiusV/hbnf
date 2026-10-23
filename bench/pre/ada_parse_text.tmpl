@@ -1,0 +1,25 @@
+   function Parse_Text (Text : String) return {{&root_type}} is
+      --  A 1-based copy: positions are indexes into it, wherever the
+      --  caller's string starts.
+      function Rebase (S : String) return String is
+         R : String (1 .. S'Length);
+      begin
+         R := S;
+         return R;
+      end Rebase;
+
+      T : aliased constant String := Rebase (Text);
+      P : Parser := (Text => T'Unchecked_Access, Pos => 1, Last => Natural'Last{{&bit_init}}, others => <>);
+      R : {{&root_type}};
+   begin
+{{&reset}}      begin
+{{&lead_ws}}         R := {{&root_fn}} (P);
+{{&trail_ws}}         if P.Pos <= T'Last then
+            Fail (P, "end of config");
+         end if;
+      exception
+         when Parse_Error =>
+            raise Parse_Error with Render (P);
+      end;
+{{&actions}}      return R;
+   end Parse_Text;

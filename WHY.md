@@ -316,39 +316,43 @@ today's with `--no-compact`.  The time is the process's CPU time:
 <!-- bench:corpus_zig -->
 | corpus | input | parsed | time before | time, lazy errors | time now (compact) | faster | memory, old layout | memory, compact |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| json | 26 files x 3000 | 1.9 MB | 470 ms | 85 ms | 98 ms | 4.8x | 40 MB | 40 MB |
-| mustache | 25 files x 3000 | 1.1 MB | 71 ms | 29 ms | 20 ms | 3.5x | 42 MB | 21 MB |
-| algol60 | 5 files x 1000 | 2.4 MB | 7230 ms | 98 ms | 85 ms | 85.0x | 73 MB | 53 MB |
-| httpd | 1 files x 2000 | 1.6 MB | 1685 ms | 137 ms | 137 ms | 12.3x | 70 MB | 16 MB |
-| relayd | 2 files x 2000 | 1.5 MB | 338 ms | 63 ms | 63 ms | 5.4x | 21 MB | 9 MB |
+| json | 26 files x 3000 | 1.9 MB | 304 ms | 57 ms | 62 ms | 4.9x | 40 MB | 40 MB |
+| mustache | 25 files x 3000 | 1.1 MB | 69 ms | 28 ms | 19 ms | 3.7x | 42 MB | 21 MB |
+| algol60 | 5 files x 1000 | 2.4 MB | 6528 ms | 110 ms | 98 ms | 66.9x | 72 MB | 51 MB |
+| httpd | 1 files x 2000 | 1.6 MB | 1141 ms | 99 ms | 82 ms | 13.9x | 70 MB | 15 MB |
+| relayd | 2 files x 2000 | 1.5 MB | 285 ms | 43 ms | 38 ms | 7.5x | 21 MB | 9 MB |
 
-_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.56 on the host, hbnf 2def6a4; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:corpus_zig -->
 
 Almost all of it is the errors again (up to 85 times on ALGOL 60, whose files are longest);
 compact nodes cut the memory (httpd 70 to 16 MB) and make Mustache and httpd faster.
 
-**Ada is different, and the fix did not help it.**  Ada's record fields for other records were
-already access values, so there is no merged struct to compact, and its failures were already
-noted and rendered once.  What I changed there (no string built to compare a failed keyword,
-no exception message built per failure) makes no measurable difference:
+**Ada was different: its cost was exceptions, not messages.**  Ada's record fields for other records
+were already access values, so there is no merged struct to compact, and its failures were already
+noted and rendered once; trimming the strings built per failure made no measurable difference.  A
+callgrind profile put three quarters of its instructions in exception unwinding
+(`__gnat_personality_v0`, `_Unwind_Find_FDE`): it backtracked by raising `Parse_Error` and catching
+it in each alternative, and a GNAT raise costs microseconds.  The generated parser now keeps a
+failure as a flag on the parser (`P.Failed`): every call that can fail is followed by a check that
+returns up to whoever tries the next way, alternatives jump to the next branch with a `goto`, and
+`Parse_Text` raises `Parse_Error` once, with the message, if the parse failed.  The public
+interface is unchanged.  "Time before" is the generator as it was (built from `bench/pre/`):
 
 <!-- bench:corpus_ada -->
-| corpus | input | parsed | time, parser template before | time now | faster | memory |
+| corpus | input | parsed | time before (exceptions) | time now | faster | memory |
 |---|---|---:|---:|---:|---:|---:|
-| json | 26 files x 300 | 0.2 MB | 1038 ms | 1062 ms | 0.98x | 20 MB |
-| mustache | 25 files x 300 | 0.1 MB | 939 ms | 942 ms | 1.00x | 9 MB |
-| httpd | 1 files x 200 | 0.2 MB | 1842 ms | 2029 ms | 0.91x | 7 MB |
+| json | 26 files x 300 | 0.2 MB | 1696 ms | 103 ms | 16.40x | 20 MB |
+| mustache | 25 files x 300 | 0.1 MB | 728 ms | 27 ms | 27.29x | 9 MB |
+| httpd | 1 files x 200 | 0.2 MB | 1411 ms | 33 ms | 42.68x | 7 MB |
+| relayd | 2 files x 200 | 0.2 MB | 383 ms | 18 ms | 21.74x | 6 MB |
 
-_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.56 on the host, hbnf 2def6a4; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 <!-- /bench:corpus_ada -->
 
-The Ada parser is 100 to 500 times slower per byte than the Zig one on the same grammar and files.  A
-profile (callgrind) puts three quarters of its instructions in exception unwinding
-(`__gnat_personality_v0`, `_Unwind_Find_FDE`): it backtracks by raising `Parse_Error` and
-catching it in each alternative, and a raise costs microseconds in GNAT.  The cure is to
-return a status from the parse functions instead of raising, which changes every function the
-Ada backend writes; it is not done.
+It is still about ten times slower per byte than Zig on the same files (it builds
+`Unbounded_String`s and vectors of accessed records, and runs `Skip_Ws` between every pair of
+elements), but no longer hundreds of times.
 
 Read it as it is: **with the default layout hbnf's C parser is level with byacc's on this
 grammar (inside the noise), not ahead of it, and it uses about 2.6 times the memory** (a typed

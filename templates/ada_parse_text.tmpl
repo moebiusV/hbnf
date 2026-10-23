@@ -14,12 +14,13 @@
    begin
 {{&reset}}      begin
 {{&lead_ws}}         R := {{&root_fn}} (P);
+         if P.Failed then
+            raise Parse_Error with Render (P);
+         end if;
 {{&trail_ws}}         if P.Pos <= T'Last then
             Fail (P, "end of config");
-         end if;
-      exception
-         when Parse_Error =>
             raise Parse_Error with Render (P);
+         end if;
       end;
 {{&actions}}      return R;
    end Parse_Text;
