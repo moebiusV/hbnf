@@ -165,6 +165,7 @@ package HBNF_Grammar is
    type Block_Op is
      (B_Action,      --  %action{ code }
       B_Test,        --  `? types`: the text just matched is in a context
+      B_Not_Test,    --  `?! types`: the text just matched is not in a context
       B_Bind,        --  %bind types += field.path
       B_Bind_Code,   --  %bind { code }
       B_Scope,       --  %scope: what is bound after it ends with the rule

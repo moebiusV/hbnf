@@ -1912,6 +1912,12 @@ package body HBNF_Grammar is
                   --  context (RFCPLAN.md decision 13).
                   Emit (T_Pct, "test");
                   I := I + 1;  Col := Col + 1;
+               elsif I + 2 <= Text'Last and then Text (I + 1) = '!'
+                 and then Text (I + 2) in ' ' | ASCII.HT
+               then
+                  --  `identifier ?! types`: the text just matched is not in it.
+                  Emit (T_Pct, "nottest");
+                  I := I + 2;  Col := Col + 2;
                else
                   raise Parse_Error with
                     Integer'Image (Line) & ":" & Integer'Image (Col) &
@@ -2859,13 +2865,13 @@ package body HBNF_Grammar is
          Next (P);
       elsif W = "scope" then
          E.Op := B_Scope;
-      elsif W = "test" then
+      elsif W = "test" or else W = "nottest" then
          if Cur (P).Kind /= T_Name then
             raise Parse_Error with
               Where & "`?` takes the context to ask: `identifier ? types`";
          end if;
          Declared (Cur (P));
-         E.Op := B_Test;
+         E.Op := (if W = "test" then B_Test else B_Not_Test);
          E.Ctx := Cur (P).Text;
          Next (P);
       elsif W = "where" then
@@ -2934,7 +2940,7 @@ package body HBNF_Grammar is
             P.Pos := P.Pos + 2;
          elsif Cur (P).Kind = T_Pct
            and then To_String (Cur (P).Text)
-                    in "test" | "bind" | "scope" | "where" | "not" | "and"
+                    in "test" | "nottest" | "bind" | "scope" | "where" | "not" | "and"
                        | "as" | "same"
          then
             Element_Vectors.Append (V, Parse_Context_Op (P));

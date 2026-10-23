@@ -407,6 +407,12 @@ package body HBNF_Compilable is
             end;
          elsif E.Kind = Literal then
             Result := Case_Variants (To_String (E.Lit), E.No_Case);
+         elsif E.Kind /= Name then
+            raise Parse_Error with
+              "a character rule repeats something that is not one character, a literal or a "
+              & "rule: a repetition or a group with its own repetition inside it cannot be "
+              & "compiled to a scanner.  Write it as a scanner action in the language of the "
+              & "backend (`name = C { ... }`), or as a rule that repeats a single branch";
          else
             declare
                Idx : constant Natural := Find (Rules, To_String (E.Name));

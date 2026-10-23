@@ -5014,7 +5014,7 @@ package body HBNF_C is
             begin
                --  A `? ctx` after this element asks about its text.
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_Test | B_As
+                 and then Els (K + 1).Op in B_Test | B_Not_Test | B_As
                then
                   Append (Buf, Ind & "size_t es" & Sid & "_" & Ctx_Img (K)
                     & ";  es" & Sid & "_" & Ctx_Img (K) & " = p->pos;");
@@ -5182,16 +5182,17 @@ package body HBNF_C is
                      case E.Op is
                         when B_Action =>
                            null;  --  lifted to a rule of its own before emission
-                        when B_Test =>
+                        when B_Test | B_Not_Test =>
                            Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
                              & Ctx_Img (K - 1)));
                            Append (Buf, LF);
-                           Append (Buf, Ind & "  if (!hbnf_ctx_has (CTX_"
+                           Append (Buf, Ind & "  if (" & (if E.Op = B_Test then "!" else "")
+                             & "hbnf_ctx_has (CTX_"
                              & C_Ident_Lower (To_String (E.Ctx))
                              & ", p->text + st_, k_ - st_)) {");
                            Append (Buf, LF);
                            Append (Buf, Ind & "      p->pos = st_; fail(p, ""a name "
-                             & "in `" & To_String (E.Ctx)
+                             & (if E.Op = B_Test then "in `" else "not in `") & To_String (E.Ctx)
                              & "`"", 0, p->text + st_, 0); p->pos = k_; "
                              & Fail & " } }");
                            Append (Buf, LF);
