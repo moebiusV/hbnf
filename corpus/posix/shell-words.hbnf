@@ -30,8 +30,8 @@ AMP       = "&" !"&"
 ; here-document is read lexically, by looking back at the line this line feed ends for each `<<`
 ; or `<<-` (outside quotes, comments and $(( )) ) and its delimiter word, and then taking the
 ; lines after it up to the delimiter, in order.  Nothing is remembered between calls.  It is a
-; scanner in C; the other backends get the plain line feed until they have their own.
-NEWLINE   = {
+; scanner, written once for each backend.
+NEWLINE   = C {
     size_t ls = pos, i, p, nd = 0;
     char dl[8][96];
     size_t dn[8];
@@ -90,6 +90,274 @@ NEWLINE   = {
     }
     return p - pos;
 }
+NEWLINE   = Rust {
+    if pos >= len || s[pos] != b'\n' { return 0; }
+    let mut ls = pos;
+    while ls > 0 && s[ls - 1] != b'\n' { ls -= 1; }
+    let mut i = ls;
+    let mut dl: Vec<Vec<u8>> = Vec::new();
+    let mut strip: Vec<bool> = Vec::new();
+    while i < pos && dl.len() < 8 {
+        let c = s[i];
+        if c == b'\\' { i += 2; continue; }
+        if c == b'\'' { i += 1; while i < pos && s[i] != b'\'' { i += 1; } i += 1; continue; }
+        if c == b'"' {
+            i += 1;
+            while i < pos && s[i] != b'"' { if s[i] == b'\\' { i += 1; } i += 1; }
+            i += 1; continue;
+        }
+        if c == b'`' {
+            i += 1;
+            while i < pos && s[i] != b'`' { if s[i] == b'\\' { i += 1; } i += 1; }
+            i += 1; continue;
+        }
+        if c == b'#' && (i == ls || matches!(s[i - 1], b' ' | b'\t' | b';' | b'&' | b'|' | b'(')) { break; }
+        if c == b'$' && i + 2 < pos && s[i + 1] == b'(' && s[i + 2] == b'(' {
+            let mut d = 0usize;
+            i += 2;
+            while i < pos {
+                if s[i] == b'(' { d += 1; }
+                else if s[i] == b')' { d -= 1; if d == 0 { i += 1; break; } }
+                i += 1;
+            }
+            continue;
+        }
+        if c == b'<' && i + 1 < pos && s[i + 1] == b'<' && !(i + 2 < pos && s[i + 2] == b'<') {
+            let mut w: Vec<u8> = Vec::new();
+            let mut st = false;
+            i += 2;
+            if i < pos && s[i] == b'-' { st = true; i += 1; }
+            while i < pos && (s[i] == b' ' || s[i] == b'\t') { i += 1; }
+            while i < pos && !matches!(s[i], b' ' | b'\t' | b';' | b'&' | b'|' | b'(' | b')' | b'<' | b'>') {
+                if s[i] == b'\\' { i += 1; if i < pos && w.len() < 95 { w.push(s[i]); } i += 1; }
+                else if s[i] == b'\'' || s[i] == b'"' {
+                    let q = s[i]; i += 1;
+                    while i < pos && s[i] != q { if w.len() < 95 { w.push(s[i]); } i += 1; }
+                    i += 1;
+                } else { if w.len() < 95 { w.push(s[i]); } i += 1; }
+            }
+            dl.push(w); strip.push(st);
+            continue;
+        }
+        i += 1;
+    }
+    let mut p = pos + 1;
+    for k in 0..dl.len() {
+        while p < len {
+            let mut e = p;
+            while e < len && s[e] != b'\n' { e += 1; }
+            let mut a = p;
+            if strip[k] { while a < e && s[a] == b'\t' { a += 1; } }
+            let hit = s[a..e] == dl[k][..];
+            p = if e < len { e + 1 } else { e };
+            if hit { break; }
+        }
+    }
+    p - pos
+}
+NEWLINE   = Zig {
+    if (pos >= len or s[pos] != '\n') return 0;
+    var ls: usize = pos;
+    while (ls > 0 and s[ls - 1] != '\n') ls -= 1;
+    var i: usize = ls;
+    var dl: [8][96]u8 = undefined;
+    var dn: [8]usize = undefined;
+    var strip: [8]bool = undefined;
+    var nd: usize = 0;
+    while (i < pos and nd < 8) {
+        const c = s[i];
+        if (c == '\\') { i += 2; continue; }
+        if (c == '\'') { i += 1; while (i < pos and s[i] != '\'') i += 1; i += 1; continue; }
+        if (c == '"') {
+            i += 1;
+            while (i < pos and s[i] != '"') { if (s[i] == '\\') i += 1; i += 1; }
+            i += 1; continue;
+        }
+        if (c == '`') {
+            i += 1;
+            while (i < pos and s[i] != '`') { if (s[i] == '\\') i += 1; i += 1; }
+            i += 1; continue;
+        }
+        if (c == '#' and (i == ls or s[i - 1] == ' ' or s[i - 1] == '\t' or s[i - 1] == ';' or s[i - 1] == '&' or s[i - 1] == '|' or s[i - 1] == '(')) break;
+        if (c == '$' and i + 2 < pos and s[i + 1] == '(' and s[i + 2] == '(') {
+            var d: usize = 0;
+            i += 2;
+            while (i < pos) {
+                if (s[i] == '(') {
+                    d += 1;
+                } else if (s[i] == ')') {
+                    d -= 1;
+                    if (d == 0) { i += 1; break; }
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if (c == '<' and i + 1 < pos and s[i + 1] == '<' and !(i + 2 < pos and s[i + 2] == '<')) {
+            var k: usize = 0;
+            var st = false;
+            i += 2;
+            if (i < pos and s[i] == '-') { st = true; i += 1; }
+            while (i < pos and (s[i] == ' ' or s[i] == '\t')) i += 1;
+            while (i < pos and s[i] != ' ' and s[i] != '\t' and s[i] != ';' and s[i] != '&' and s[i] != '|' and s[i] != '(' and s[i] != ')' and s[i] != '<' and s[i] != '>') {
+                if (s[i] == '\\') {
+                    i += 1;
+                    if (i < pos and k < 95) { dl[nd][k] = s[i]; k += 1; }
+                    i += 1;
+                } else if (s[i] == '\'' or s[i] == '"') {
+                    const q = s[i];
+                    i += 1;
+                    while (i < pos and s[i] != q) { if (k < 95) { dl[nd][k] = s[i]; k += 1; } i += 1; }
+                    i += 1;
+                } else {
+                    if (k < 95) { dl[nd][k] = s[i]; k += 1; }
+                    i += 1;
+                }
+            }
+            dn[nd] = k; strip[nd] = st; nd += 1;
+            continue;
+        }
+        i += 1;
+    }
+    var p: usize = pos + 1;
+    var k: usize = 0;
+    while (k < nd) : (k += 1) {
+        while (p < len) {
+            var e: usize = p;
+            while (e < len and s[e] != '\n') e += 1;
+            var a: usize = p;
+            if (strip[k]) { while (a < e and s[a] == '\t') a += 1; }
+            const hit = (e - a == dn[k]) and std.mem.eql(u8, s[a..e], dl[k][0..dn[k]]);
+            p = if (e < len) e + 1 else e;
+            if (hit) break;
+        }
+    }
+    return p - pos;
+}
+NEWLINE   = Ada {
+      type Del is record
+         Txt   : String (1 .. 96);
+         N     : Natural := 0;
+         Strip : Boolean := False;
+      end record;
+      type Dels is array (1 .. 8) of Del;
+      D   : Dels;
+      Nd  : Natural := 0;
+      Ls  : Natural := Pos;
+      I   : Natural;
+      P   : Natural;
+      E   : Natural;
+      A   : Natural;
+      Hit : Boolean;
+   begin
+      if Pos > Len or else S (Pos) /= ASCII.LF then
+         return 0;
+      end if;
+      while Ls > 1 and then S (Ls - 1) /= ASCII.LF loop
+         Ls := Ls - 1;
+      end loop;
+      I := Ls;
+      while I < Pos and then Nd < 8 loop
+         declare
+            C : constant Character := S (I);
+         begin
+            if C = '\' then
+               I := I + 2;
+            elsif C = ''' then
+               I := I + 1;
+               while I < Pos and then S (I) /= ''' loop I := I + 1; end loop;
+               I := I + 1;
+            elsif C = '"' then
+               I := I + 1;
+               while I < Pos and then S (I) /= '"' loop
+                  if S (I) = '\' then I := I + 1; end if;
+                  I := I + 1;
+               end loop;
+               I := I + 1;
+            elsif C = '`' then
+               I := I + 1;
+               while I < Pos and then S (I) /= '`' loop
+                  if S (I) = '\' then I := I + 1; end if;
+                  I := I + 1;
+               end loop;
+               I := I + 1;
+            elsif C = '#' and then (I = Ls or else S (I - 1) in ' ' | ASCII.HT | ';' | '&' | '|' | '(') then
+               exit;
+            elsif C = '$' and then I + 2 < Pos and then S (I + 1) = '(' and then S (I + 2) = '(' then
+               declare
+                  Dp : Natural := 0;
+               begin
+                  I := I + 2;
+                  while I < Pos loop
+                     if S (I) = '(' then
+                        Dp := Dp + 1;
+                     elsif S (I) = ')' then
+                        Dp := Dp - 1;
+                        if Dp = 0 then I := I + 1; exit; end if;
+                     end if;
+                     I := I + 1;
+                  end loop;
+               end;
+            elsif C = '<' and then I + 1 < Pos and then S (I + 1) = '<'
+              and then not (I + 2 < Pos and then S (I + 2) = '<')
+            then
+               Nd := Nd + 1;
+               D (Nd).N := 0;
+               D (Nd).Strip := False;
+               I := I + 2;
+               if I < Pos and then S (I) = '-' then D (Nd).Strip := True; I := I + 1; end if;
+               while I < Pos and then (S (I) = ' ' or else S (I) = ASCII.HT) loop I := I + 1; end loop;
+               while I < Pos and then S (I) not in ' ' | ASCII.HT | ';' | '&' | '|' | '(' | ')' | '<' | '>' loop
+                  if S (I) = '\' then
+                     I := I + 1;
+                     if I < Pos and then D (Nd).N < 95 then
+                        D (Nd).N := D (Nd).N + 1;
+                        D (Nd).Txt (D (Nd).N) := S (I);
+                     end if;
+                     I := I + 1;
+                  elsif S (I) = ''' or else S (I) = '"' then
+                     declare
+                        Q : constant Character := S (I);
+                     begin
+                        I := I + 1;
+                        while I < Pos and then S (I) /= Q loop
+                           if D (Nd).N < 95 then
+                              D (Nd).N := D (Nd).N + 1;
+                              D (Nd).Txt (D (Nd).N) := S (I);
+                           end if;
+                           I := I + 1;
+                        end loop;
+                        I := I + 1;
+                     end;
+                  else
+                     if D (Nd).N < 95 then
+                        D (Nd).N := D (Nd).N + 1;
+                        D (Nd).Txt (D (Nd).N) := S (I);
+                     end if;
+                     I := I + 1;
+                  end if;
+               end loop;
+            else
+               I := I + 1;
+            end if;
+         end;
+      end loop;
+      P := Pos + 1;
+      for K in 1 .. Nd loop
+         while P <= Len loop
+            E := P;
+            while E <= Len and then S (E) /= ASCII.LF loop E := E + 1; end loop;
+            A := P;
+            if D (K).Strip then
+               while A < E and then S (A) = ASCII.HT loop A := A + 1; end loop;
+            end if;
+            Hit := E - A = D (K).N and then S (A .. E - 1) = D (K).Txt (1 .. D (K).N);
+            P := (if E <= Len then E + 1 else E);
+            exit when Hit;
+         end loop;
+      end loop;
+      return P - Pos;
+}
 
 ; ---- the reserved words: a word that is exactly this, and not the front of a longer word ----
 ; (`if/x` and `iffy` are words; `if;` and `if ` are the reserved word)
@@ -127,6 +395,64 @@ dq-part    = escape | backquote | arith | cmdsub | braced | bare-dollar | ~( DQU
 bare-dollar    = "$" !( "(" | "{" )
 backquote = "`" *( BS ( LF | ~LF ) | ~( "`" | BS ) ) "`"
 braced    = "${" *( single-quoted | double-quoted | escape | backquote | arith | cmdsub | braced | bare-dollar | ~( "}" | SQUOTE | DQUOTE | BS | "`" | "$" ) ) "}"
-arith     = "$((" *( "(" arith-inner ")" | ~( "(" | ")" ) ) "))"
-arith-inner = *( "(" arith-inner ")" | ~( "(" | ")" ) )
+arith     = "$((" [ arith-body ] "))"
+; the text of $(( ... )) up to the "))" that closes it: parentheses inside must balance
+arith-body = C {
+    size_t i = pos, d = 0;
+    while (i < len) {
+        if (s[i] == '(') d++;
+        else if (s[i] == ')') {
+            if (d == 0) return (i + 1 < len && s[i + 1] == ')') ? i - pos : 0;
+            d--;
+        }
+        i++;
+    }
+    return 0;
+}
+arith-body = Rust {
+    let mut i = pos;
+    let mut d = 0usize;
+    while i < len {
+        if s[i] == b'(' { d += 1; }
+        else if s[i] == b')' {
+            if d == 0 { return if i + 1 < len && s[i + 1] == b')' { i - pos } else { 0 }; }
+            d -= 1;
+        }
+        i += 1;
+    }
+    0
+}
+arith-body = Zig {
+    var i: usize = pos;
+    var d: usize = 0;
+    while (i < len) : (i += 1) {
+        if (s[i] == '(') {
+            d += 1;
+        } else if (s[i] == ')') {
+            if (d == 0) return if (i + 1 < len and s[i + 1] == ')') i - pos else 0;
+            d -= 1;
+        }
+    }
+    return 0;
+}
+arith-body = Ada {
+      I : Natural := Pos;
+      D : Natural := 0;
+   begin
+      while I <= Len loop
+         if S (I) = '(' then
+            D := D + 1;
+         elsif S (I) = ')' then
+            if D = 0 then
+               if I < Len and then S (I + 1) = ')' then
+                  return I - Pos;
+               end if;
+               return 0;
+            end if;
+            D := D - 1;
+         end if;
+         I := I + 1;
+      end loop;
+      return 0;
+}
 cmdsub    = "$(" cmdsub-body

@@ -35,4 +35,47 @@ for kind in good bad; do
 		fi
 	done
 done
-[ $fail = 0 ] && echo "posix: OK ($n files: the good accepted, the bad refused)" || { echo "posix: $fail FAIL"; exit 1; }
+# The same files through the Rust, Zig and Ada parsers (the here-document scanner is written once for each).
+verdicts() {   # verdicts BACKEND OUTPUT-FILE: every good file accepted, every bad one refused
+	b=$1; out=$2; bad=0
+	for kind in good bad; do
+		for f in $D/tests/$kind/*.sh; do
+			line=$(grep -F " $f" "$out" | head -1 | cut -d' ' -f1)
+			want=ok; [ $kind = bad ] && want=bad
+			if [ "$line" != "$want" ]; then echo "FAIL ($b) $f: $kind file, the parser says '$line'"; bad=$((bad + 1)); fi
+		done
+	done
+	fail=$((fail + bad))
+}
+FILES="$D/tests/good/*.sh $D/tests/bad/*.sh"
+if command -v rustc > /dev/null 2>&1; then
+	d=$W/rs; mkdir -p "$d"
+	"$CLI" $D/shell.y --backend=rust > "$d/shell.rs" 2> /dev/null || { echo "FAIL (rust generate)"; fail=$((fail + 1)); }
+	sed "s/MODULE/shell/g" $D/check.rs > "$d/m.rs"
+	if (cd "$d" && rustc --edition 2021 -A warnings -o m m.rs > cc.txt 2>&1); then
+		"$d/m" $FILES > "$d/out" 2>&1; verdicts rust "$d/out"
+	else echo "FAIL (rust compile)"; head -5 "$d/cc.txt"; fail=$((fail + 1)); fi
+fi
+if command -v zig > /dev/null 2>&1; then
+	d=$W/zg; mkdir -p "$d"
+	"$CLI" $D/shell.y --backend=zig > "$d/shell.zig" 2> /dev/null || { echo "FAIL (zig generate)"; fail=$((fail + 1)); }
+	: > "$d/files.txt"; i=0
+	for f in $FILES; do
+		i=$((i + 1)); cp "$f" "$d/f$i.dat"
+		printf '    .{ .name = "%s", .data = @embedFile("f%d.dat") },\n' "$f" "$i" >> "$d/files.txt"
+	done
+	sed "s/MODULE/shell.zig/g" $D/check.zig | awk -v f="$d/files.txt" '$0 == "FILES" { while ((getline l < f) > 0) print l; next } { print }' > "$d/m.zig"
+	if (cd "$d" && zig build-exe m.zig -femit-bin=m > cc.txt 2>&1); then
+		"$d/m" > "$d/out" 2>&1; verdicts zig "$d/out"
+	else echo "FAIL (zig compile)"; head -5 "$d/cc.txt"; fail=$((fail + 1)); fi
+fi
+if command -v gnatmake > /dev/null 2>&1; then
+	d=$W/ad; mkdir -p "$d"
+	"$CLI" $D/shell.y --backend=ada --package=Shell > "$d/all.ada" 2> /dev/null || { echo "FAIL (ada generate)"; fail=$((fail + 1)); }
+	root=$(grep -o "return [A-Za-z0-9_]*_Type" "$d/all.ada" | head -1 | sed 's/return \(.*\)_Type/\1/')
+	sed "s/MODULE/Shell/g; s/ROOT/$root/g" $D/check.adb > "$d/check.adb"
+	if (cd "$d" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -gnat2022 -gnatws check.adb -o m > cc.txt 2>&1); then
+		"$d/m" $FILES > "$d/out" 2>&1; verdicts ada "$d/out"
+	else echo "FAIL (ada compile)"; grep -m5 error "$d/cc.txt"; fail=$((fail + 1)); fi
+fi
+[ $fail = 0 ] && echo "posix: OK ($n files: the good accepted, the bad refused; C, and Rust, Zig, Ada where installed)" || { echo "posix: $fail FAIL"; exit 1; }

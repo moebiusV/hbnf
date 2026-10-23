@@ -18,8 +18,8 @@ generated C parser accepts it.
   `/usr/bin`, ...), 580 are accepted, as `dash -n` accepts them.  Of 1,692 mutations of them (a
   character, a line or a stray `fi` `;;` `)` quote removed or added) the grammar and `dash -n`
   agree on all but three.  `scripts/posix-scan.sh` repeats this on any machine.
-- `tests/posix.sh` runs a small hand-written corpus, 31 good scripts and 25 bad ones, and checks
-  that dash gives the same verdicts.
+- `tests/posix.sh` runs a small hand-written corpus, 31 good scripts and 25 bad ones, through the C, Rust,
+  Zig and Ada parsers, and checks that dash gives the same verdicts.
 
 ## What it took
 
@@ -39,8 +39,9 @@ them:
    that skips nothing, so `; ;;` is a separator then a `;;`.
 6. **Here-documents** (rule 3).  The body comes after the line, so `NEWLINE` is a scanner that looks
    back at the line it ends for each `<<` and `<<-` outside quotes, comments and `$(( ))` and takes the
-   lines after it up to each delimiter, in order.  It is C code, so only the C backend reads here-documents;
-   the others do not have the scanner yet.
+   lines after it up to each delimiter, in order.  It is a scanner written once for each of the four
+   backends, so all four read here-documents (`tests/posix.sh` runs the 56 files through each).  The same
+   goes for the balanced parentheses of `$(( ))`.
 
 A bug the grammar found: `$( program )` uses the root rule inside another rule, and freeing a failed
 attempt at it freed the arena the parse was still using.  A root used as a field is now freed by its
@@ -52,6 +53,5 @@ attempt at it freed the arena the parse was still using.  A root used as a field
 - **Back-quotes** are matched, not parsed: a syntax error inside `` `...` `` is not found.
 - **A line that begins inside a multi-line quotation** does not see a here-document on it.
 - **Bytes that are not UTF-8** are not accepted (`~LF` matches code points).
-- **Rust, Zig and Ada** do not read here-documents yet (their `NEWLINE` has no scanner).
 - dash accepts a function body that is not a compound command (`f () g () { :; }`); POSIX does not,
   and the grammar follows POSIX.

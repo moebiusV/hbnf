@@ -623,8 +623,8 @@ running order:
 > mutations of them (`corpus/posix/shell.md`, `tests/posix.sh`, `scripts/posix-scan.sh`).  What
 > it found in hbnf: names that differ only in case (`name`, `NAME`) now get a `-token` suffix
 > under a case-sensitive dialect, and a root rule used inside another rule freed the arena
-> mid-parse.  Not done: aliases, back-quote contents, here-documents outside C, bytes that
-> are not UTF-8.  The ports of hbnf itself to the remaining backend
+> mid-parse.  All four backends read it (the scanners for here-documents and `$(( ))` are written
+> once for each).  Not done: aliases, back-quote contents, bytes that are not UTF-8.  The ports of hbnf itself to the remaining backend
 > languages (step 10) come at the very end.  **The IMP72
 > sources (`corpus/imp72/`) are cancelled** (the user, 2026-10-22: IMP72 "is its own
 > thing and will get its own compiler"); hbnf does not read the IMP72 compiler's
