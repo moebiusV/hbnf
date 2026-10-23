@@ -38,10 +38,14 @@ static void fail(parser_t *p, const char *expected, int is_lit,
                  const char *found, size_t found_len) {
     if (p->err_pos != (size_t)-1 && p->pos < p->err_pos) return;  /* a deeper failure already recorded */
     if (p->err_pos != (size_t)-1 && p->pos == p->err_pos) {
-        /* the same place: another thing that could have stood here */
+        /* the same place: another thing that could have stood here.  A full list that has
+           already said "and more" cannot change, so a keyword-heavy choice (a block of
+           forty options) stops costing sixteen string compares per failed alternative. */
+        if (p->alt_n >= 16 && p->alt_more) return;
         for (int i = 0; i < p->alt_n; i++)
             if (p->alt_exp[i] == expected
-                || (expected && p->alt_exp[i] && !strcmp(p->alt_exp[i], expected)))
+                || (expected && p->alt_exp[i] && p->alt_exp[i][0] == expected[0]
+                    && !strcmp(p->alt_exp[i], expected)))
                 return;
         if (p->alt_n < 16) {
             p->alt_exp[p->alt_n] = expected;
