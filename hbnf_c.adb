@@ -6246,8 +6246,7 @@ package body HBNF_C is
                               Append (Buf, (if Branch = 0 then "    if ("
                                             else "    else if ("));
                               if Fn /= "" then
-                                 Append (Buf, Fn
-                                   & "(p->text, p->pos, p->len) == "
+                                 Append (Buf, "HBNF_WORD_AT(p, " & Fn & ") == "
                                    & Img (NL) & " && ");
                               else
                                  Append (Buf, "p->pos + " & Img (NL)
@@ -6933,8 +6932,8 @@ package body HBNF_C is
             Append (Word_Match, "__attribute__((unused))" & LF);
             Append (Word_Match, "static bool expect_word(parser_t *p,"
               & " const char *lit, size_t lit_len) {" & LF);
-            Append (Word_Match, "    size_t n = " & Word_Scanner (Rules)
-              & "(p->text, p->pos, p->len);" & LF);
+            Append (Word_Match, "    size_t n = HBNF_WORD_AT(p, " & Word_Scanner (Rules)
+              & ");" & LF);
             Append (Word_Match, "    if (n == lit_len && memcmp(p->text + p->pos,"
               & " lit, lit_len) == 0) { p->pos += n; return true; }" & LF);
             Append (Word_Match, "    fail(p, lit, 1, p->text + p->pos,"
@@ -7015,8 +7014,8 @@ package body HBNF_C is
             Append (Nocase, "__attribute__((unused))" & LF);
             Append (Nocase, "static bool expect_word_nocase(parser_t *p,"
               & " const char *lit, size_t lit_len) {" & LF);
-            Append (Nocase, "    size_t n = " & Word_Scanner (Rules)
-              & "(p->text, p->pos, p->len);" & LF);
+            Append (Nocase, "    size_t n = HBNF_WORD_AT(p, " & Word_Scanner (Rules)
+              & ");" & LF);
             Append (Nocase, "    if (n == lit_len && strncasecmp(p->text + p->pos,"
               & " lit, lit_len) == 0) { p->pos += n; return true; }" & LF);
             Append (Nocase, "    fail(p, lit, 1, p->text + p->pos,"

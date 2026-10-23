@@ -19,7 +19,14 @@ typedef struct {
     const char *alt_exp[16];
     unsigned char alt_lit[16];
     int alt_n, alt_more;
+    size_t wc_pos, wc_len, wc_n;   /* the word read at wc_pos (the text cut at wc_len) is wc_n - 1 long; 0 = none */
 } parser_t;
+
+/* A keyword is matched against the word at the position, and a choice among keywords asks at
+   the same position many times: the word is scanned once and remembered. */
+static size_t hbnf_wc(parser_t *p, size_t n) { p->wc_pos = p->pos; p->wc_len = p->len; p->wc_n = n + 1; return n; }
+#define HBNF_WORD_AT(p, scan) ((p)->wc_n && (p)->wc_pos == (p)->pos && (p)->wc_len == (p)->len \
+                               ? (p)->wc_n - 1 : hbnf_wc((p), scan((p)->text, (p)->pos, (p)->len)))
 
 /* The line the text being parsed starts on: 1 for a whole file, a statement's
    first line when a config is read one statement at a time. */
