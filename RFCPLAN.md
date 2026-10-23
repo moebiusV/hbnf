@@ -614,11 +614,12 @@ running order:
 
 > **Done:** 0, 1, 2, 3, 3b, 4a–4e, 5, 7a, 9a, 9b, 9c, 12.  **Under way:** 7b (the
 > wire layer, in C; see its entry for what is and is not built).
-> **Corpora and ports wait for the features** (decided 2026-10-17).  The POSIX
-> shell grammar (`corpus/posix/`) is paused where it stands: it needs things hbnf
-> does not have yet (the exception for phrase rules, `~` negation, a `%where`).
-> It resumes when hbnf is feature complete, and the ports of hbnf itself to the
-> remaining backend languages (step 10) come at the very end.  **The IMP72
+> **The POSIX shell grammar (`corpus/posix/`) is part of the core corpus, not
+> paused** (the user, 2026-10-23, correcting this note).  It needs three things hbnf does
+> not have yet (the exception for phrase rules, `~` negation, a `%where`), and those are
+> the reason to build them: it is the real-language test of "as capable as yacc"
+> beside the OpenBSD daemons.  The ports of hbnf itself to the remaining backend
+> languages (step 10) come at the very end.  **The IMP72
 > sources (`corpus/imp72/`) are cancelled** (the user, 2026-10-22: IMP72 "is its own
 > thing and will get its own compiler"); hbnf does not read the IMP72 compiler's
 > sources or bootstrap it.  The comparison with IMP72 in `METACOMPILERS.md` stays

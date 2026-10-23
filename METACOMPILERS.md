@@ -171,7 +171,7 @@ W-grammars give beyond those, kept to the decidable subset:
    useful and cheap.  *Built 2026-10-19 (every backend, since the uses are expanded into ordinary rules when the grammar is read): `list(X)`, number parameters over a domain, clauses for single values, a growth check; `tests/params.sh`.*
 2. **Consistent substitution as a back-reference: this text must repeat that
    earlier text.**  `where TAG is TAG` is XML's `<a> ... </a>`, a here-document's
-   terminator (`<<EOF ... EOF`, which the paused POSIX shell corpus needs), C++
+   terminator (`<<EOF ... EOF`, which the POSIX shell corpus needs), C++
    raw strings `R"delim( ... )delim"`, Rust `r#"..."#`, Lua long brackets
    `[==[ ... ]==]`, Markdown fences.  hbnf cannot say any of them declaratively
    today; decision 13 would do them with a `%bind` and a `%where` in code.  The
