@@ -8,23 +8,41 @@ struct ErrEx { alts: Vec<String>, more: bool, depth: usize, stk: [u16; 24], stkp
 // The parser reads the text itself: a byte position in it, no token array.
 struct P<'a> { text: {{&text_type}}, pos: usize, {{&bit_field}}err_pos: usize, err: Option<ParseError>, ex: ErrEx }
 impl<'a> P<'a> {
-    fn fail(&mut self, expected: &str) -> ParseError {
+    // A failure is only noted here (what was expected, at the farthest place yet); the message is
+    // worked out once, by take_err, if the parse fails.  Working it out at every failure, as this
+    // once did, counted the lines up to the place and built the text each time: ordered choice
+    // fails far more often than a parse does, and the cost was quadratic in the input.
+    fn fail(&mut self, expected: &str) -> ParseError { self.note(expected, false) }
+    // The same for a literal, which is shown in quotes; no string is made unless it is new.
+    fn note(&mut self, expected: &str, lit: bool) -> ParseError {
         if self.err.is_some() && self.pos == self.err_pos {
-            // the same place: another thing that could have stood here
-            if !self.ex.alts.iter().any(|a| a == expected) {
-                if self.ex.alts.len() < 16 { self.ex.alts.push(expected.to_string()); } else { self.ex.more = true; }
-                self.render();
+            // the same place: another thing that could have stood here.  A full list that has
+            // already said "and more" cannot change.
+            if !(self.ex.alts.len() >= 16 && self.ex.more)
+                && !self.ex.alts.iter().any(|a| if lit {
+                    a.len() == expected.len() + 2 && a.as_bytes()[0] == b'`' && &a[1..a.len() - 1] == expected
+                } else { a == expected })
+            {
+                if self.ex.alts.len() < 16 {
+                    self.ex.alts.push(if lit { format!("`{}`", expected) } else { expected.to_string() });
+                } else { self.ex.more = true; }
             }
         } else if self.err.is_none() || self.pos > self.err_pos {
             self.err_pos = self.pos;
-            self.ex.alts = vec![expected.to_string()];
+            self.ex.alts.clear();
+            self.ex.alts.push(if lit { format!("`{}`", expected) } else { expected.to_string() });
             self.ex.more = false;
             self.ex.edepth = self.ex.depth.min(24);
             self.ex.estk = self.ex.stk;
             self.ex.estkpos = self.ex.stkpos;
-            self.render();
+            self.err = Some(ParseError { line: 0, col: 0, msg: String::new() });
         }
-        self.err.clone().unwrap()
+        ParseError { line: 0, col: 0, msg: String::new() }
+    }
+    // The error of a parse that failed: the message of the farthest failure.
+    fn take_err(&mut self) -> ParseError {
+        if self.err.is_some() { self.render(); }
+        self.err.take().unwrap_or(ParseError { line: 0, col: 0, msg: String::new() })
     }
     // A rule is being read from here (and not any more, when it returns).
     fn enter(&mut self, rule: u16) {
@@ -91,14 +109,14 @@ impl<'a> P<'a> {
             self.pos += lit.len();
             return Ok(());
         }
-        Err(self.fail(&format!("`{}`", lit)))
+        Err(self.note(lit, true))
     }
     // A keyword: the whole bareword at the position must be the literal, so
     // `in` does not match the front of `input`.
     fn expect_word(&mut self, lit: &str) -> Result<(), ParseError> {
         let n = scan_word(self.text.as_bytes(), self.pos, self.text.len());
         if n == lit.len() && &self.text[self.pos..self.pos + n] == lit { self.pos += n; return Ok(()); }
-        Err(self.fail(&format!("`{}`", lit)))
+        Err(self.note(lit, true))
     }
 {{&nocase}}    // Skip what the grammar calls whitespace, one match at a time.
     fn skip_ws(&mut self) {

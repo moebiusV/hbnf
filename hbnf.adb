@@ -263,7 +263,8 @@ begin
          return;
       end if;
       --  Compact nodes are the C layout; the other backends ignore the flag.
-      HBNF_C.Set_Compact (Compact and then not Forks);   --  the fork retry wraps a by-value call
+      HBNF_C.Set_Compact (Compact and then not Forks);
+      HBNF_Rust.Set_Compact (Compact);   --  the fork retry wraps a by-value call
       HBNF_C.Set_Forks (Forks, Quiet);
       HBNF_Compilable.Allow_Shadowing (Forks);
       if HBNF_Grammar.Uses_Backref

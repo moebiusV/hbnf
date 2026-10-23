@@ -28,6 +28,12 @@ package HBNF_Rust is
    procedure Set_Spans (On : Boolean);
    procedure Set_Parents (On : Boolean);
 
+   --  Compact nodes (the default; --no-compact turns it off): a struct-valued
+   --  field that only some of a choice's alternatives hold is `Option<Box<T>>`,
+   --  boxed when that alternative is the one taken, so a node costs the
+   --  alternative and not every alternative's fields.
+   procedure Set_Compact (On : Boolean);
+
    procedure Set_Hosted (Types, Code : String; Walks : String := "");
    --  Walks: the bit rules that have a walk_<rule> (they hold an %action),
    --  space-separated; the text parser runs them after the whole text is read.

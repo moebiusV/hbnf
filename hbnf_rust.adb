@@ -308,6 +308,13 @@ package body HBNF_Rust is
       Ast_On := On;
    end Set_Ast;
 
+   Compact_On : Boolean := True;
+
+   procedure Set_Compact (On : Boolean) is
+   begin
+      Compact_On := On;
+   end Set_Compact;
+
    procedure Set_Parents (On : Boolean) is
    begin
       Parents_On := On;
@@ -722,7 +729,87 @@ package body HBNF_Rust is
       for I in 1 .. N loop
          Infos.Append (Analyze (Rules, I));
       end loop;
-      return HBNF_Compilable.Back_Edges (N, By_Value_Edges);
+      declare
+         R : HBNF_Compilable.Edge_Vectors.Vector :=
+           HBNF_Compilable.Back_Edges (N, By_Value_Edges);
+      begin
+         --  Compact nodes: a struct-valued field that only some of a choice's
+         --  alternatives hold is boxed too (as in the C backend).
+         if Compact_On then
+            for I in 1 .. N loop
+               if Infos (I).Kind = Struct then
+                  declare
+                     Info : constant Rule_Info := Infos (I);
+                     P    : constant Element_Vectors.Vector := Rules (I).Pattern;
+                     Alts : Natural := 1;
+
+                     function Mentions (Els : Element_Vectors.Vector; Nm : String)
+                       return Boolean is
+                     begin
+                        for E of Els loop
+                           if E.Kind = Name and then To_String (E.Name) = Nm then
+                              return True;
+                           elsif E.Kind = Group and then Mentions (E.Items, Nm) then
+                              return True;
+                           end if;
+                        end loop;
+                        return False;
+                     end Mentions;
+
+                     function Held_In (Nm : String) return Natural is
+                        Cnt : Natural := 0;
+                        Cur : Element_Vectors.Vector;
+                     begin
+                        for E of P loop
+                           if E.Kind = Alt then
+                              if Mentions (Cur, Nm) then
+                                 Cnt := Cnt + 1;
+                              end if;
+                              Cur.Clear;
+                           else
+                              Cur.Append (E);
+                           end if;
+                        end loop;
+                        if Mentions (Cur, Nm) then
+                           Cnt := Cnt + 1;
+                        end if;
+                        return Cnt;
+                     end Held_In;
+                  begin
+                     for E of P loop
+                        if E.Kind = Alt then
+                           Alts := Alts + 1;
+                        end if;
+                     end loop;
+                     if Alts > 1 then
+                        for M of Info.Members loop
+                           if not M.Is_List and then Resolve (M.Name) > 0
+                             and then Held_In (To_String (M.Name)) < Alts
+                           then
+                              declare
+                                 Have : Boolean := False;
+                              begin
+                                 for X of R loop
+                                    if X.Owner = I and then X.Member = M.Name then
+                                       Have := True;
+                                    end if;
+                                 end loop;
+                                 if not Have then
+                                    R.Append
+                                      (HBNF_Compilable.By_Value_Edge'
+                                         (Owner => I, Member => M.Name,
+                                          Target => Resolve (M.Name)));
+                                 end if;
+                              end;
+                           end if;
+                        end loop;
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end if;
+         return R;
+      end;
    end Back_Edges_Rust;
 
    --  True when (Owner, Member) is a back edge: that field is emitted
@@ -3452,7 +3539,7 @@ package body HBNF_Rust is
             Append (Nocase,
               "        if n == lit.len() && self.text[self.pos..self.pos + n].eq_ignore_ascii_case(lit) { self.pos += n; return Ok(()); }");
             Append (Nocase, LF);
-            Append (Nocase, "        Err(self.fail(&format!(""`{}`"", lit)))");
+            Append (Nocase, "        Err(self.note(lit, true))");
             Append (Nocase, LF);
             Append (Nocase, "    }");
             Append (Nocase, LF);
@@ -3468,7 +3555,7 @@ package body HBNF_Rust is
             Append (Nocase, LF);
             Append (Nocase, "        }");
             Append (Nocase, LF);
-            Append (Nocase, "        Err(self.fail(&format!(""`{}`"", lit)))");
+            Append (Nocase, "        Err(self.note(lit, true))");
             Append (Nocase, LF);
             Append (Nocase, "    }");
             Append (Nocase, LF);
