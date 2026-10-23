@@ -3503,6 +3503,11 @@ package body HBNF_C is
                     & (if Back then "_fields(n->" & F & ");"
                        elsif Ref_Kind (Name) = List and then Find (T) = 1
                        then "_nodes(&n->" & F & ");"
+                       --  a struct that is the root, used inside another rule (the shell's
+                       --  `$( program )`): its public free_ would release the arena in the
+                       --  middle of a parse
+                       elsif Ref_Kind (Name) = Struct and then Find (T) = 1
+                       then "_fields(&n->" & F & ");"
                        else "(&n->" & F & ");"));
                   Append (Buf, LF);
                   --  The pointee is released with the arena, not here, so the

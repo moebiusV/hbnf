@@ -5759,6 +5759,76 @@ package body HBNF_Grammar is
          end loop;
       end;
 
+      --  A notation whose names are case-sensitive (yacc's: `name` the rule, `NAME` the token)
+      --  may use two names that differ only in case; here they would be one name, and so
+      --  would the identifiers of the generated code.  The reader gives the one with more
+      --  capitals (the token) another name, `NAME-token`, here and everywhere it is used,
+      --  and says so.
+      if Flag_Dialect /= Null_Unbounded_String
+        or else File_Dialect /= Null_Unbounded_String
+      then
+         declare
+            procedure Rename_In
+              (V : Element_Vectors.Vector; Old : String; Fresh : Unbounded_String)
+            is
+            begin
+               for E of V loop
+                  if E.Kind = Name and then To_String (E.Name) = Old then
+                     E.Name := Fresh;
+                  elsif E.Kind = Group then
+                     Rename_In (E.Items, Old, Fresh);
+                  end if;
+               end loop;
+            end Rename_In;
+
+            function Capitals (S : String) return Natural is
+               N : Natural := 0;
+            begin
+               for C of S loop
+                  if C in 'A' .. 'Z' then
+                     N := N + 1;
+                  end if;
+               end loop;
+               return N;
+            end Capitals;
+         begin
+            for J in 1 .. Natural (Rules.Length) loop
+               for K in 1 .. Natural (Rules.Length) loop
+                  declare
+                     A : constant String := To_String (Rules (J).Name);
+                     B : constant String := To_String (Rules (K).Name);
+                  begin
+                     if J /= K and then A /= B
+                       and then To_Lower (A) = To_Lower (B)
+                       and then Capitals (A) > Capitals (B)
+                     then
+                        declare
+                           Fresh : constant Unbounded_String :=
+                             To_Unbounded_String (A & "-token");
+                           R : Rule := Rules (J);
+                        begin
+                           for X in 1 .. Natural (Rules.Length) loop
+                              Rename_In (Rules (X).Pattern, A, Fresh);
+                           end loop;
+                           R.Name := Fresh;
+                           Rules.Replace_Element (J, R);
+                           if not Bnf_Spellings.Contains (To_String (Fresh)) then
+                              Bnf_Spellings.Insert (To_String (Fresh), A);
+                           end if;
+                           Warn_Once
+                             ("case-name:" & A, "",
+                              "`" & A & "` and `" & B & "` differ only in case, and "
+                              & "hbnf's names ignore case, so here `" & A
+                              & "` is called `" & To_String (Fresh) & "` (in the tree "
+                              & "too) wherever the grammar refers to it");
+                        end;
+                     end if;
+                  end;
+               end loop;
+            end loop;
+         end;
+      end if;
+
       for J in 1 .. Natural (Rules.Length) loop
          declare
             K : constant String := To_Lower (To_String (Rules (J).Name));

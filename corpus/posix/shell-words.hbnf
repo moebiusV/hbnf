@@ -1,0 +1,132 @@
+; The POSIX shell's tokens (XCU 2.3 Token Recognition), as rules of characters: no token
+; array, no lexer steering the parser.  Nothing in this file skips white space; the grammar
+; (shell.hbnf, with the standard's rules in posix-shell-1.y) does that between tokens.
+;
+; Not done: here-documents (the body of `<<` comes after the line), alias substitution
+; (rule 10), and the contents of `...` back-quotes are not parsed as commands.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+BS      = %x5C
+SQUOTE  = %x27
+
+; ---- the operators of more than one character ----
+AND_IF    = "&&"
+OR_IF     = "||"
+DSEMI     = ";;"
+DLESS     = "<<"
+DGREAT    = ">>"
+LESSAND   = "<&"
+GREATAND  = ">&"
+LESSGREAT = "<>"
+DLESSDASH = "<<-"
+CLOBBER   = ">|"
+; a lone ; or & (not the front of ;; or &&); checked here, where nothing is skipped, so `; ;;` is a ; and a ;;
+SEMI      = ";" !";"
+AMP       = "&" !"&"
+
+; NEWLINE is the line feed and, after it, the bodies of the here-documents the line began.  A
+; here-document is read lexically, by looking back at the line this line feed ends for each `<<`
+; or `<<-` (outside quotes, comments and $(( )) ) and its delimiter word, and then taking the
+; lines after it up to the delimiter, in order.  Nothing is remembered between calls.  It is a
+; scanner in C; the other backends get the plain line feed until they have their own.
+NEWLINE   = {
+    size_t ls = pos, i, p, nd = 0;
+    char dl[8][96];
+    size_t dn[8];
+    int strip[8];
+    if (pos >= len || s[pos] != '\n') return 0;
+    while (ls > 0 && s[ls - 1] != '\n') ls--;
+    i = ls;
+    while (i < pos && nd < 8) {
+        char c = s[i];
+        if (c == '\\') { i += 2; continue; }
+        if (c == '\'') { i++; while (i < pos && s[i] != '\'') i++; i++; continue; }
+        if (c == '"') {
+            i++;
+            while (i < pos && s[i] != '"') { if (s[i] == '\\') i++; i++; }
+            i++; continue;
+        }
+        if (c == '`') { i++; while (i < pos && s[i] != '`') { if (s[i] == '\\') i++; i++; } i++; continue; }
+        if (c == '#' && (i == ls || s[i - 1] == ' ' || s[i - 1] == '\t' || s[i - 1] == ';'
+                         || s[i - 1] == '&' || s[i - 1] == '|' || s[i - 1] == '(')) break;
+        if (c == '$' && i + 2 < pos && s[i + 1] == '(' && s[i + 2] == '(') {
+            size_t d = 0;
+            i += 2;
+            while (i < pos) { if (s[i] == '(') d++; else if (s[i] == ')') { if (--d == 0) { i++; break; } } i++; }
+            continue;
+        }
+        if (c == '<' && i + 1 < pos && s[i + 1] == '<' && !(i + 2 < pos && s[i + 2] == '<')) {
+            size_t k = 0;
+            int st = 0;
+            i += 2;
+            if (i < pos && s[i] == '-') { st = 1; i++; }
+            while (i < pos && (s[i] == ' ' || s[i] == '\t')) i++;
+            while (i < pos && s[i] != ' ' && s[i] != '\t' && s[i] != ';' && s[i] != '&'
+                   && s[i] != '|' && s[i] != '(' && s[i] != ')' && s[i] != '<' && s[i] != '>') {
+                if (s[i] == '\\') { i++; if (i < pos && k < 95) dl[nd][k++] = s[i]; i++; }
+                else if (s[i] == '\'' || s[i] == '"') {
+                    char q = s[i++];
+                    while (i < pos && s[i] != q) { if (k < 95) dl[nd][k++] = s[i]; i++; }
+                    i++;
+                } else { if (k < 95) dl[nd][k++] = s[i]; i++; }
+            }
+            dn[nd] = k; strip[nd] = st; nd++;
+            continue;
+        }
+        i++;
+    }
+    p = pos + 1;
+    for (i = 0; i < nd; i++) {
+        while (p < len) {
+            size_t e = p, a;
+            while (e < len && s[e] != '\n') e++;
+            a = p;
+            if (strip[i]) while (a < e && s[a] == '\t') a++;
+            if (e - a == dn[i] && memcmp(s + a, dl[i], dn[i]) == 0) { p = e < len ? e + 1 : e; break; }
+            p = e < len ? e + 1 : e;
+        }
+    }
+    return p - pos;
+}
+
+; ---- the reserved words: a word that is exactly this, and not the front of a longer word ----
+; (`if/x` and `iffy` are words; `if;` and `if ` are the reserved word)
+metachar  = SP | HTAB | LF | "|" | "&" | ";" | "(" | ")" | "<" | ">"
+wordchar  = ~metachar
+If        = "if" !wordchar
+Then      = "then" !wordchar
+Else      = "else" !wordchar
+Elif      = "elif" !wordchar
+Fi        = "fi" !wordchar
+Do        = "do" !wordchar
+Done      = "done" !wordchar
+Case      = "case" !wordchar
+Esac      = "esac" !wordchar
+While     = "while" !wordchar
+Until     = "until" !wordchar
+For       = "for" !wordchar
+Lbrace    = "{" !wordchar
+Rbrace    = "}" !wordchar
+Bang      = "!" !wordchar
+In        = "in" !wordchar
+
+; ---- names, words and what they hold ----
+NAME      = ( ALPHA | "_" ) *( ALPHA | DIGIT | "_" )
+IO_NUMBER = 1*DIGIT &( "<" | ">" )
+ASSIGNMENT_WORD = NAME "=" *wordpart
+WORD      = 1*wordpart
+
+wordpart  = single-quoted | double-quoted | escape | backquote | arith | cmdsub | braced | bare-dollar | plain
+plain     = ~( metachar | SQUOTE | DQUOTE | BS | "`" | "$" )
+escape    = BS ( LF | ~LF )
+single-quoted = SQUOTE *~SQUOTE SQUOTE
+double-quoted    = DQUOTE *dq-part DQUOTE
+dq-part    = escape | backquote | arith | cmdsub | braced | bare-dollar | ~( DQUOTE | BS | "`" | "$" )
+bare-dollar    = "$" !( "(" | "{" )
+backquote = "`" *( BS ( LF | ~LF ) | ~( "`" | BS ) ) "`"
+braced    = "${" *( single-quoted | double-quoted | escape | backquote | arith | cmdsub | braced | bare-dollar | ~( "}" | SQUOTE | DQUOTE | BS | "`" | "$" ) ) "}"
+arith     = "$((" *( "(" arith-inner ")" | ~( "(" | ")" ) ) "))"
+arith-inner = *( "(" arith-inner ")" | ~( "(" | ")" ) )
+cmdsub    = "$(" cmdsub-body

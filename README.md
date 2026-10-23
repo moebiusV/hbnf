@@ -99,7 +99,7 @@ Every markdown file in the repository, so none is lost.
 - [`corpus/rfc/README.md`](corpus/rfc/README.md): RFC grammar snippets and vectors:
   [RFC 3986](corpus/rfc/rfc3986-1.md), [RFC 5234](corpus/rfc/rfc5234-1.md),
   [RFC 5322](corpus/rfc/rfc5322-1.md), [RFC 9112](corpus/rfc/rfc9112-1.md).
-- [`corpus/posix/posix-shell-1.md`](corpus/posix/posix-shell-1.md): the POSIX shell grammar.
+- [`corpus/posix/shell.md`](corpus/posix/shell.md): the POSIX shell grammar, read as the standard prints it, checked against dash on every script on the machine.
 - [`corpus/algol60/README.md`](corpus/algol60/README.md): the ALGOL 60 report and its BNF.
 - [`corpus/imp72/README.md`](corpus/imp72/README.md): the IMP72 compiler's sources (cancelled as a target: IMP72 will get its own compiler).
 - [`corpus/mustache/README.md`](corpus/mustache/README.md): Mustache templates, with the back-reference that makes a closing tag repeat its opening one.

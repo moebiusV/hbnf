@@ -1,0 +1,3 @@
+cat <<'EOF'
+$x
+EOF

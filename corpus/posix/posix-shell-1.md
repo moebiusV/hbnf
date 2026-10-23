@@ -20,8 +20,9 @@ standard prints it.
   of the section, tags removed, character entities decoded), not retyped.  The
   five-line comment at the top of the file is the only addition.
 
-> **Paused** (2026-10-17): the POSIX port waits until hbnf is feature complete;
-> see `RFCPLAN.md`, "Order".  The file below is as far as it got.
+> The port is done as far as `shell.md` says: this file is included unchanged by `shell.y`, with
+> the definitions and the ordering `shell-words.hbnf` and `shell-fixes.hbnf` add.  What follows was
+> written before that, and is kept as the record of what the messages said.
 
 ## What hbnf says to it
 

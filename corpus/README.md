@@ -7,7 +7,7 @@ README that says what is in it and what state it is in.
 | directory | what | state |
 |---|---|---|
 | `rfc/` | grammar snippets lifted from RFCs, with vectors that must and must not parse | in use (`tests/rfc.sh`) |
-| `posix/` | the POSIX shell grammar (POSIX.1 §2.10) | core corpus; the next to be made to parse (needs the phrase-rule exception, `~` negation and `%where`) |
+| `posix/` | the POSIX shell grammar (POSIX.1 §2.10), the standard's own text plus tokens and ordering | in use (`tests/posix.sh`; `scripts/posix-scan.sh` against dash) |
 | `imp72/` | the IMP72 compiler's sources (DECUS 10-198) | cancelled: IMP72 gets its own compiler; the files stay as the subject of `METACOMPILERS.md` |
 | `algol60/` | the Revised Report on ALGOL 60, its BNF, and a grammar in hbnf | in use (`tests/algol60.sh`) |
 | `json/` | RFC 8259 in hbnf, checked against Python's `json` on 80,000 texts | in use (`tests/json-diff.sh`) |

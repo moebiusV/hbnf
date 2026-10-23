@@ -1,0 +1,42 @@
+; What yacc's tables and lexer feedback settle for the standard's grammar, written out for a
+; parser that takes the first alternative that matches (hbnf's `|`): where one alternative is the
+; front of another the longer is written first, and a reserved word is not a command name.
+; These rules replace the standard's own of the same names.
+
+ws = SP | HTAB | BS LF | "#" *~LF
+
+; the inside of $( ... ): a program, then the closing parenthesis (a rule of its own, so
+; white space before it is skipped)
+cmdsub-body = program cmdsub-close
+cmdsub-close = ")"
+
+; Rule 1 (and 7a): a reserved word is not a command name.  (`in` is reserved only after
+; `for name` and `case word`, so it is not on this list.)
+cmd_name = WORD - reserved
+reserved = If | Then | Else | Elif | Fi | Do | Done | Case | Esac | While | Until | For | Lbrace | Rbrace | Bang
+
+; ---- ordered choice takes the first alternative that matches, so where one alternative is the
+; front of another the longer is written first (yacc's tables decide by looking ahead) ----
+command          = function_definition
+                 | compound_command redirect_list
+                 | compound_command
+                 | simple_command
+function_body    = compound_command redirect_list
+                 | compound_command
+compound_list    = linebreak term separator
+                 | linebreak term
+else_part        = Elif compound_list Then compound_list else_part
+                 | Elif compound_list Then compound_list
+                 | Else compound_list
+case_item_ns     = pattern ')' compound_list
+                 | pattern ')' linebreak
+                 | '(' pattern ')' compound_list
+                 | '(' pattern ')' linebreak
+pipeline         = Bang pipe_sequence
+                 | pipe_sequence
+
+; `;;` and `&&` are tokens of their own (DSEMI, AND_IF); a lone `;` or `&` is the separator
+separator_op     = AMP
+                 | SEMI
+sequential_sep   = SEMI linebreak
+                 | newline_list

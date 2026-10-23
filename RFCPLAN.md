@@ -615,10 +615,16 @@ running order:
 > **Done:** 0, 1, 2, 3, 3b, 4a–4e, 5, 7a, 9a, 9b, 9c, 12.  **Under way:** 7b (the
 > wire layer, in C; see its entry for what is and is not built).
 > **The POSIX shell grammar (`corpus/posix/`) is part of the core corpus, not
-> paused** (the user, 2026-10-23, correcting this note).  It needs three things hbnf does
-> not have yet (the exception for phrase rules, `~` negation, a `%where`), and those are
-> the reason to build them: it is the real-language test of "as capable as yacc"
-> beside the OpenBSD daemons.  The ports of hbnf itself to the remaining backend
+> paused** (the user, 2026-10-23, correcting this note), and it **reads** (2026-10-23): the
+> standard's 2.10.2 grammar included unchanged, with the tokens as rules of characters, the
+> exception for reserved words, the longer alternative first where yacc's tables looked
+> ahead, and a scanner for here-documents.  580 of 581 shell scripts on the machine are
+> accepted as `dash -n` accepts them, and the grammar and dash agree on all but three of 1,692
+> mutations of them (`corpus/posix/shell.md`, `tests/posix.sh`, `scripts/posix-scan.sh`).  What
+> it found in hbnf: names that differ only in case (`name`, `NAME`) now get a `-token` suffix
+> under a case-sensitive dialect, and a root rule used inside another rule freed the arena
+> mid-parse.  Not done: aliases, back-quote contents, here-documents outside C, bytes that
+> are not UTF-8.  The ports of hbnf itself to the remaining backend
 > languages (step 10) come at the very end.  **The IMP72
 > sources (`corpus/imp72/`) are cancelled** (the user, 2026-10-22: IMP72 "is its own
 > thing and will get its own compiler"); hbnf does not read the IMP72 compiler's
