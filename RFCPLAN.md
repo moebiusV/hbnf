@@ -591,7 +591,7 @@ HyperBNF ships four grammars as fundamentals that can be dropped in and used at 
 YAML's indentation is syntax: the spec's productions take the indentation `n` as a parameter
 (`s-indent(n)`, `l+block-sequence(n)`).  A parameter whose domain has no end, `k in 0..`, is a
 number the parser works out as it reads (frames of numbers, `%spaces`, `%col`, `x %num`; ABNF.md),
-so the grammar is the size of the spec's and nests as deep as the text does.  The first version made
+so the grammar is the size of the spec's and has no limit on depth (the C parsers' `HBNF_MAX_DEPTH` is the stack's).  The first version made
 a rule of every column, which grew the grammar and the parser with the cap and took minutes to
 generate.  `corpus/yaml/` is built: all 308 valid cases of the YAML test suite and 89 of the 94
 invalid ones, all four backends; what is left is listed in `corpus/yaml/suite-gaps.txt`.

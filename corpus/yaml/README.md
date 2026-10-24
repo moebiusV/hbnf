@@ -11,12 +11,15 @@ it likes.  A parameter written `k in 0..` is a number the parser works out as it
 `bmap(K)`, `child(M)` and the rest are written once and the parser and the grammar stay the same
 size at any depth.  `%spaces k` is exactly k spaces, `%col j` names the column the parser is at,
 and `x %num j` the number x matched (the digit of `|2`).  A nested block is a nested call; a
-document of 2,500 levels parses in 10 ms.  (ABNF.md, "Parameterised rule".)
+document of 2,500 levels parses in 10 ms when the C parser is built with `-DHBNF_MAX_DEPTH=100000` and
+the stack is large: the C parsers stop at `HBNF_MAX_DEPTH` rules open at once (4096 by default, about 585
+levels of YAML, because the parser recurses and a document of 50,000 `[` would otherwise overflow the stack).
+(ABNF.md, "Parameterised rule".)
 
 This replaced a first version in which every column was a rule of its own, which made the grammar
 and the generated parser grow with the deepest column allowed: 4,000 lines of C for each of 128
 columns, and a generator that took minutes.  The same grammar now generates in about two seconds
-and 14,800 lines of C, with no limit on depth.
+and 14,800 lines of C, and the grammar has no limit on depth (the stack has).
 
 Each backend keeps the frames of numbers in a stack that grows with the nesting; a use of a rule
 with such parameters is a push, the call and a pop.
