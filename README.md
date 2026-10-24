@@ -1,11 +1,14 @@
 # HyperBNF
 
 > **Status, 24 October 2026.**  JSON, TOML and YAML are built and tested in all four backends
-> (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML); YAML's
-> indentation is a number the parser works out, so it nests as deep as the text does and the
-> grammar is the size of the spec's.  The C11 grammar parses 2,478 of 2,481 gcc-accepted files from
-> ten real corpora.  Next: one syntax for hyperrules over finite and unbounded domains, mixed in a
-> rule; the C preprocessor; the back half of a small C compiler.
+> (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML).  A
+> hyperrule whose parameters are numbers is now one rule that keeps them in a frame (`k in 0..`,
+> `%spaces`, `%col`, `x %num`) or a copy for each value, whichever is cheaper (`--expand-params`,
+> `--run-params`); that is how YAML's indentation nests as deep as the text does with a grammar
+> the size of the spec's, and how the generator reads it in under a second.  The C11 grammar parses
+> 2,478 of 2,481 gcc-accepted files from ten real corpora.  Next: C as a family of grammars, one per
+> standard (K&R, C89, C99, C11, C17, C23) with a GNU layer, each checked against
+> `gcc -std=cNN -pedantic-errors`; the C preprocessor; the back half of a small C compiler.
 
 **HyperBNF** is a grammar language, and `hbnf` is the program that reads it: a parser generator
 (a compiler compiler) that emits a parser and its typed tree in C, Rust, Zig or Ada.  The name is an
