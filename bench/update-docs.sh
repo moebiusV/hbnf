@@ -72,6 +72,7 @@ for doc in WHY.md README.md USENIXSUBMISSION.md HISTORY.md; do
 			}
 			close(path)
 			print
+			print ""           # a table must follow a blank line to render on the site
 			while ((getline line < path) > 0) {
 				if (line ~ /skipped:/ && !allow) {
 					print "update-docs: `" name "` has a skipped row: " line > "/dev/stderr"
@@ -83,7 +84,7 @@ for doc in WHY.md README.md USENIXSUBMISSION.md HISTORY.md; do
 			inblock = 1
 			next
 		}
-		/^<!-- \/bench:[A-Za-z0-9_-]+ -->$/ { inblock = 0; print; next }
+		/^<!-- \/bench:[A-Za-z0-9_-]+ -->$/ { inblock = 0; print ""; print; next }
 		!inblock { print inline($0) }
 		END { exit bad }
 	' "$f" > "$new" || { rm -f "$new"; status=1; continue; }

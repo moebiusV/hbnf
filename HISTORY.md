@@ -677,6 +677,7 @@ its keyword table and helpers after the second `%%`. `bench/parsey.py` splits ea
 counts lines, comments and blank lines left out:
 
 <!-- bench:parsey -->
+
 | daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | HyperBNF grammar |
 |---|---:|---:|---:|---:|---:|
 | bgpd | 5,540 | 2,530 | 2,494 | 516 | 501 |
@@ -698,6 +699,7 @@ lexer is replaced by hbnf's reader, and the actions only where they are bound:
 |---|---:|---:|---:|
 | ntpd | 731 | 22 + 331 = 353 | **52%** |
 | unwind | 831 | 67 + 264 = 331 | **60%** |
+
 <!-- /bench:parsey -->
 
 As a notation the HyperBNF grammar is about the size of yacc's rules (a quoted `"listen"` is longer than

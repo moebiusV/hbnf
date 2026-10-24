@@ -50,7 +50,7 @@ row() {
 	set -- $pub; pr=$1 pl=$2 ps=$3 pc=$4
 	set -- $ours; hr=$1 hl=$2 hs=$3 hc=$4
 	printf '| %s | %s | %d | %d | %d | %d |\n' "$name" "$LABEL_PUB" "$pr" "$pl" "$ps" "$pc"
-	printf '| | hbnf (`%s`) | %d | %d | %d | %d |\n' "$DIR" "$hr" "$hl" "$hs" "$hc"
+	printf '| | HyperBNF (`%s`) | %d | %d | %d | %d |\n' "$DIR" "$hr" "$hl" "$hs" "$hc"
 	printf '| | **saved** | %s | %s | %s | %s |\n' \
 		"$(saved "$pr" "$hr")" "$(saved "$pl" "$hl")" "$(saved "$ps" "$hs")" "$(saved "$pc" "$hc")"
 }

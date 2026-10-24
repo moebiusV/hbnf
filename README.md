@@ -140,14 +140,16 @@ comments, blank lines and hbnf's directive lines left out of both
 here because it has no published grammar to compare with.
 
 <!-- bench:notation -->
+
 | language | notation | rules | lines | symbols | characters |
 |---|---|---:|---:|---:|---:|
 | ALGOL 60 | the Report's BNF | 108 | 116 | 1246 | 8064 |
-| | hbnf (`corpus/algol60`) | 47 | 72 | 528 | 3604 |
+| | HyperBNF (`corpus/algol60`) | 47 | 72 | 528 | 3604 |
 | | **saved** | **56%** | **38%** | **58%** | **55%** |
 | JSON | RFC 8259's ABNF | 30 | 45 | 193 | 949 |
-| | hbnf (`corpus/json`) | 14 | 14 | 129 | 556 |
+| | HyperBNF (`corpus/json`) | 14 | 14 | 129 | 556 |
 | | **saved** | **53%** | **69%** | **33%** | **41%** |
+
 <!-- /bench:notation -->
 
 ## Performance
@@ -159,6 +161,7 @@ figure is the output of `bench/run.sh`, put here by `bench/update-docs.sh`;
 ntpd, and what the numbers do and do not say.
 
 <!-- bench:headline -->
+
 **100,000 rules** (7.68 MB, the same file for every tool):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
@@ -182,6 +185,7 @@ ntpd, and what the numbers do and do not say.
 | ANTLR 4 (Java), actions, warm JVM | 76.86 MB | 1186 ms | 0.8 M rules/s | 65 MB/s | 3049 MB |
 
 _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+
 <!-- /bench:headline -->
 
 ## Naming

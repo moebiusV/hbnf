@@ -105,14 +105,16 @@ comments, blank lines and hbnf's directive lines left out of both
 here because it has no published grammar to compare with.
 
 <!-- bench:notation -->
+
 | language | notation | rules | lines | symbols | characters |
 |---|---|---:|---:|---:|---:|
 | ALGOL 60 | the Report's BNF | 108 | 116 | 1246 | 8064 |
-| | hbnf (`corpus/algol60`) | 47 | 72 | 528 | 3604 |
+| | HyperBNF (`corpus/algol60`) | 47 | 72 | 528 | 3604 |
 | | **saved** | **56%** | **38%** | **58%** | **55%** |
 | JSON | RFC 8259's ABNF | 30 | 45 | 193 | 949 |
-| | hbnf (`corpus/json`) | 14 | 14 | 129 | 556 |
+| | HyperBNF (`corpus/json`) | 14 | 14 | 129 | 556 |
 | | **saved** | **53%** | **69%** | **33%** | **41%** |
+
 <!-- /bench:notation -->
 
 ## How fast, against whom
@@ -128,6 +130,7 @@ grammar, an ANTLR grammar — builds what the parse found, and is checked to hav
 found the same rules before it is timed.
 
 <!-- bench:toy -->
+
 **100,000 rules** (7.68 MB, the same file for every tool):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
@@ -157,6 +160,7 @@ found the same rules before it is timed.
 | ANTLR 4 (Java), parse tree, cold JVM | 76.86 MB | 1813 ms | 0.6 M rules/s | 42 MB/s | 2359 MB |
 
 _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+
 <!-- /bench:toy -->
 
 At 100,000 rules hbnf's generated C parser takes <!-- v:hbnf_100000_ms -->24<!-- /v --> ms.  byacc with flex
@@ -187,6 +191,7 @@ fill ntpd's own `struct ntpd_conf` from the same N-sensor config, and each is
 checked to have built the same sensors.
 
 <!-- bench:ntpd -->
+
 **100,000 sensors** (one `sensor` line each, the same file for both):
 
 | tool | input | parse time | sensors/s | MB/s | peak RSS |
@@ -202,6 +207,7 @@ checked to have built the same sensors.
 | hbnf binding (`--conf`) | 62.39 MB | 673 ms | 1487 K sensors/s | 93 MB/s | 68.8 MB |
 
 _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+
 <!-- /bench:ntpd -->
 
 ### A large parse.y: pfctl
@@ -216,6 +222,7 @@ and keeps a typed tree and runs no semantic code.  Both are checked to have foun
 the yacc side also that the source ports add up.
 
 <!-- bench:pfctl_yacc -->
+
 **100,000 filter rules** (one `pass in quick ... keep state` line each, the same file for both):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
@@ -233,6 +240,7 @@ the yacc side also that the source ports add up.
 | hbnf pfctl grammar (`--conf`, compact nodes, the default) | 91.86 MB | 3.01 s | 332 K rules/s | 30 MB/s | 1322.0 MB |
 
 _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+
 <!-- /bench:pfctl_yacc -->
 
 ### Compact nodes on the rest of the corpus
@@ -242,6 +250,7 @@ old layout (`--no-compact`) against the new default, each corpus's good files pa
 times over with every tree kept (about 30 MB of input per row):
 
 <!-- bench:corpus -->
+
 | corpus | input | parsed | time, old layout | time, compact | speed-up | memory, old | memory, compact | saved |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | json | 26 files x 20000 | 13.0 MB | 563 ms | 554 ms | 1.02x | 309 MB | 302 MB | 1.02x |
@@ -256,6 +265,7 @@ times over with every tree kept (about 30 MB of input per row):
 | unwind | 1 files x 20000 | 4.7 MB | 72 ms | 72 ms | 1.00x | 18 MB | 16 MB | 1.14x |
 
 _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+
 <!-- /bench:corpus -->
 
 Memory falls or stays the same everywhere; pfctl, with its many-alternative statements, falls
@@ -291,6 +301,7 @@ was, with only the errors fixed, and as it is now, on the files the Rust parser 
 daemons' scanners written in C are not read by it):
 
 <!-- bench:corpus_rust -->
+
 | corpus | input | parsed | time before | time, lazy errors | time now (compact) | faster | memory, old layout | memory, compact |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | json | 26 files x 4622 | 3.0 MB | 3714 ms | 551 ms | 558 ms | 6.7x | 388 MB | 334 MB |
@@ -301,6 +312,7 @@ daemons' scanners written in C are not read by it):
 | snmpd | 2 files x 5514 | 3.0 MB | 1457 ms | 163 ms | 155 ms | 9.4x | 39 MB | 29 MB |
 
 _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.08 on the host, hbnf cd94a16; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+
 <!-- /bench:corpus_rust -->
 
 The old Rust times (1.2 to 8.5 seconds for 3 MB) were not a Rust problem but this one.
@@ -314,6 +326,7 @@ message in `err_out`, when the parse fails, and holds the same fields as `?*T` (
 today's with `--no-compact`.  The time is the process's CPU time:
 
 <!-- bench:corpus_zig -->
+
 | corpus | input | parsed | time before | time, lazy errors | time now (compact) | faster | memory, old layout | memory, compact |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | json | 26 files x 3000 | 1.9 MB | 304 ms | 57 ms | 62 ms | 4.9x | 40 MB | 40 MB |
@@ -323,6 +336,7 @@ today's with `--no-compact`.  The time is the process's CPU time:
 | relayd | 2 files x 2000 | 1.5 MB | 285 ms | 43 ms | 38 ms | 7.5x | 21 MB | 9 MB |
 
 _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.56 on the host, hbnf 2def6a4; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+
 <!-- /bench:corpus_zig -->
 
 Almost all of it is the errors again (up to 85 times on ALGOL 60, whose files are longest);
@@ -340,6 +354,7 @@ returns up to whoever tries the next way, alternatives jump to the next branch w
 interface is unchanged.  "Time before" is the generator as it was (built from `bench/pre/`):
 
 <!-- bench:corpus_ada -->
+
 | corpus | input | parsed | time before (exceptions) | time now | faster | memory |
 |---|---|---:|---:|---:|---:|---:|
 | json | 26 files x 300 | 0.2 MB | 1696 ms | 103 ms | 16.40x | 20 MB |
@@ -348,6 +363,7 @@ interface is unchanged.  "Time before" is the generator as it was (built from `b
 | relayd | 2 files x 200 | 0.2 MB | 383 ms | 18 ms | 21.74x | 6 MB |
 
 _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.56 on the host, hbnf 2def6a4; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+
 <!-- /bench:corpus_ada -->
 
 It is still about ten times slower per byte than Zig on the same files (it builds
