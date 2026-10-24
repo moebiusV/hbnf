@@ -228,28 +228,80 @@ native parsers; where one is faster, the table says so.
 
 | tool | parse time | MB/s | peak RSS |
 |---|---:|---:|---:|
-| hbnf (C backend), typed tree | 13 ms | 151 MB/s | 15 MB |
+| hbnf (C backend), typed tree | 10 ms | 197 MB/s | 16 MB |
 | Python 3.14.8 json | 16 ms | 122 MB/s | 19 MB |
-| Node 24.18.1 JSON.parse | 8.5 ms | 235 MB/s | 51 MB |
+| Node 24.18.1 JSON.parse | 8.6 ms | 232 MB/s | 51 MB |
 
 **TOML 1.0** (1.99 MB, the same file for every tool):
 
 | tool | parse time | MB/s | peak RSS |
 |---|---:|---:|---:|
-| hbnf (C backend), typed tree | 30 ms | 65 MB/s | 24 MB |
-| Python tomllib | 278 ms | 7 MB/s | 23 MB |
+| hbnf (C backend), typed tree | 21 ms | 95 MB/s | 26 MB |
+| Python tomllib | 287 ms | 7 MB/s | 23 MB |
 
 **YAML 1.2** (1.99 MB, the same file for every tool):
 
 | tool | parse time | MB/s | peak RSS |
 |---|---:|---:|---:|
-| hbnf (C backend), typed tree | 148 ms | 13 MB/s | 119 MB |
-| PyYAML 6.0.3 on libyaml (C) | 698 ms | 3 MB/s | 114 MB |
-| PyYAML, pure Python | 3.44 s | 1 MB/s | 162 MB |
+| hbnf (C backend), typed tree | 59 ms | 33 MB/s | 62 MB |
+| PyYAML 6.0.3 on libyaml (C) | 697 ms | 3 MB/s | 114 MB |
+| PyYAML, pure Python | 3.40 s | 1 MB/s | 162 MB |
 
-_Measured 2026-10-24 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.84 on the host, hbnf 4694beb; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-24 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.85 on the host, hbnf 44f0853; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
 
 <!-- /bench:formats -->
+
+### Against the popular native libraries
+
+The same three documents against the widely used C, C++ and Rust libraries for each format,
+built from one source with the same flags against musl (Alpine) and glibc (Debian).  The
+libraries were picked by GitHub stars and package downloads, limited to what both
+distributions package or ships as a single file.  What each builds differs: the C++ and Rust
+libraries produce their own value types, simdjson is its DOM API, and hbnf builds the typed
+tree its grammar describes.  The numbers are `bench/libs.sh`.
+
+<!-- bench:libs -->
+
+**JSON** (2 MB, the same file for every tool; parse time, best of 5):
+
+| tool | musl | glibc | peak RSS (glibc) |
+|---|---:|---:|---:|
+| simdjson (DOM) | 1.9 ms | 1.9 ms | 14 MB |
+| RapidJSON | 5.4 ms | 4.9 ms | 9 MB |
+| hbnf (C backend), typed tree | 10 ms | 8.8 ms | 15 MB |
+| cJSON | 13 ms | 11 ms | 17 MB |
+| serde_json (Rust) 1.0.154 | 22 ms | 15 ms | 20 MB |
+| Jansson | 34 ms | 30 ms | 20 MB |
+
+**TOML 1.0** (2 MB, the same file for every tool; parse time, best of 5):
+
+| tool | musl | glibc | peak RSS (glibc) |
+|---|---:|---:|---:|
+| hbnf (C backend), typed tree | 21 ms | 19 ms | 24 MB |
+| tomlc17 | 46 ms | 37 ms | 17 MB |
+| toml++ | 49 ms | 44 ms | 26 MB |
+| toml (Rust) 0.9.12+spec-1.1.0 | 65 ms | 52 ms | 58 MB |
+| toml11 | 1372 ms | 659 ms | 94 MB |
+
+**YAML 1.2** (2 MB, the same file for every tool; parse time, best of 5):
+
+| tool | musl | glibc | peak RSS (glibc) |
+|---|---:|---:|---:|
+| rapidyaml | 15 ms | 15 ms | 27 MB |
+| libyaml | 57 ms | 37 ms | 40 MB |
+| hbnf (C backend), typed tree | 59 ms | 56 ms | 58 MB |
+| libfyaml | 90 ms | 68 ms | 84 MB |
+| yaml-cpp | 406 ms | 284 ms | 110 MB |
+
+_2026-10-24; musl: musl libc (x86_64), gcc (Alpine 15.2.0) 15.2.0; glibc: 2.41, gcc (Debian 14.2.0-19) 14.2.0; `-O2`, same sources and flags; hbnf 44f0853.  simdjson is its DOM API; the C++ and Rust libraries build their own value types._
+
+<!-- /bench:libs -->
+
+On TOML the generated parser is the fastest of the five.  On JSON it is behind the SIMD
+parser simdjson and RapidJSON and ahead of cJSON, serde_json and Jansson.  On YAML it is
+behind rapidyaml and libyaml, which build generic node trees, and ahead of libfyaml and
+yaml-cpp.
+
 
 ## Naming
 
