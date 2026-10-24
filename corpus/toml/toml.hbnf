@@ -1,0 +1,15 @@
+; TOML 1.0 in HyperBNF.  The strings, numbers, dates and bare keys are in toml-tokens.hbnf.
+prefix none
+include "toml-tokens.hbnf"
+
+toml   = [ expr ] *( newline [ expr ] )
+expr   = keyval / table
+keyval = key "=" value
+key    = simple *( "." simple )
+simple = quoted-key / bare-key
+table  = "[[" key "]]" / "[" key "]"
+value  = string / boolean / date-time / real / integer / array / inline
+array  = "[" *newline [ value *newline *( "," *newline value *newline ) [ "," *newline ] ] "]"
+inline = "{" [ keyval *( "," keyval ) ] "}"
+
+ws = *( SP / HTAB / comment )

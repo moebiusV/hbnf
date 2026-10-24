@@ -18,9 +18,11 @@ The design is for anyone who is comfortable reading the RFCs. HyperBNF makes BNF
 natural and readable the way the RFCs do: a grammar reads like the notation
 RFCs have used for decades, not like a yacc file with embedded C actions.
 
-HyperBNF ships with the basic formats ready to use: JSON, TOML, YAML and obconf, the configuration
-grammar the daemons share.  Drop one in and you have a parser; the grammar is short, readable
-HyperBNF, so changing it to fit your own needs means editing a few lines, not learning a generator. *(TOML and YAML will land shortly.)*
+HyperBNF ships with the basic formats ready to use: JSON, TOML, YAML and obconf, one grammar
+written in it for the OpenBSD configuration style that httpd, relayd, ntpd and the other daemons
+share.  Drop one in and you have a parser; the grammar is short, readable HyperBNF, so changing it to
+fit your own needs means editing a few lines, not learning a generator. *(TOML and YAML will land
+shortly.)*
 
 It is powerful enough to parse context-sensitive languages such as ALGOL 68 and C++ without breaking
 a sweat: parameterised rules, back-references and context sets carry what a yacc grammar leaves to
@@ -55,9 +57,9 @@ The name is the initials of the four developers it is named for: Daniel
 hand-written `parse.y` was cloned verbatim from daemon to daemon. The last
 three initials spell **BNF** (Backus–Naur Form), so the name also reads as
 "Hartmeier's BNF". It also reads as **HyperBNF**, which is what the notation
-has grown into: the dialects of BNF, read as one.  It is not obconf: the wish
-to implement obconf (OpenBSD configuration style) is what inspired it, and
-obconf is one grammar written in it.
+has grown into: the dialects of BNF, read as one.  The wish to implement obconf
+(the OpenBSD configuration style) inspired it, and obconf is now one grammar
+written in it, beside JSON, TOML and YAML.
 
 ## Two things
 

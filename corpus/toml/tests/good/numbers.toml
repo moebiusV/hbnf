@@ -1,0 +1,7 @@
+a = +1_000
+b = 0xDEAD_beef
+c = 0o755
+d = 0b1010
+e = -3.14e+10
+f = inf
+g = -nan

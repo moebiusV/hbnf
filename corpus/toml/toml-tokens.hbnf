@@ -1,0 +1,50 @@
+; The tokens of TOML 1.0: strings, numbers, dates and bare keys.  No blank is allowed inside
+; one, so this file skips none (`whitespace none`).  The four strings are two shapes, one line
+; (`line`) and many (`lines`), each given its quote and its characters.
+whitespace none
+prefix none
+include "../../grammars/common.hbnf"
+
+dq  = DQUOTE
+sq  = "'"
+non-ascii = %x80-D7FF / %xE000-10FFFF
+newline   = LF / CRLF
+
+string  = lines(dq, basic-char, mlb-extra) / lines(sq, literal-char, mll-extra) / quoted-key
+quoted-key = line(dq, basic-char) / line(sq, literal-char)
+line(Q, C)      := Q *C Q
+lines(Q, C, X)  := Q Q Q [ newline ] *( C / newline / X ) *( 1*2Q 1*( C / newline / X ) ) [ 1*2Q ] Q Q Q
+
+basic-char    = %x09 / %x20-21 / %x23-5B / %x5D-7E / non-ascii / %x5C escape
+escape        = %x22 / %x5C / "b" / "f" / "n" / "r" / "t" / "u" scalar4
+              / "U" ( "0000" scalar4 / "000" nonzero 4HEXDIG / "0010" 4HEXDIG )
+scalar4       = ( DIGIT / %x41-43 / %x45-46 / %x61-63 / %x65-66 ) 3HEXDIG / ( "D" / "d" ) %x30-37 2HEXDIG   ; not a surrogate
+nonzero       = %x31-39 / %x41-46 / %x61-66
+mlb-extra     = %x5C *WSP newline *( WSP / newline )   ; a line-ending backslash
+literal-char  = %x09 / %x20-26 / %x28-7E / non-ascii
+mll-extra     = %x0D                                   ; never: a CR needs its LF
+bare-key      = 1*( ALNUM / "-" / "_" )
+comment       = "#" *( %x09 / %x20-7E / non-ascii )
+
+boolean   = "true" / "false"
+OCT       = %x30-37
+sign      = "+" / "-"
+digits(D) := D *( D / "_" D )
+integer   = "0x" digits(HEXDIG) / "0o" digits(OCT) / "0b" digits(BIT)
+          / [ sign ] ( DIGIT / %x31-39 *( DIGIT / "_" DIGIT ) )
+real     = [ sign ] ( "inf" / "nan" )
+          / integer-part ( exp / "." digits(DIGIT) [ exp ] )
+integer-part = [ sign ] ( DIGIT / %x31-39 *( DIGIT / "_" DIGIT ) )
+exp       = ( "e" / "E" ) [ sign ] digits(DIGIT)
+
+date-time = full-date [ ( "T" / "t" / SP ) partial-time [ offset ] ] / partial-time
+full-date = ( leap-year "-02-29" / 4DIGIT "-" ( ( "04" / "06" / "09" / "11" ) "-" ( "30" / day ) / "02" "-" ( "0" %x31-39 / "1" DIGIT / "2" %x30-38 ) / month "-" ( "3" ( "0" / "1" ) / day ) ) )
+leap-year = by4 "00" / 2DIGIT tail4
+by4       = ( "0" / "2" / "4" / "6" / "8" ) ( "0" / "4" / "8" ) / ( "1" / "3" / "5" / "7" / "9" ) ( "2" / "6" )   ; 00 .. 96
+tail4     = "0" ( "4" / "8" ) / ( "2" / "4" / "6" / "8" ) ( "0" / "4" / "8" ) / ( "1" / "3" / "5" / "7" / "9" ) ( "2" / "6" )   ; 04 .. 96
+day       = "0" %x31-39 / %x31-32 DIGIT
+month     = "0" ( "1" / "3" / "5" / "7" / "8" ) / "1" ( "0" / "2" )
+partial-time = hour ":" minute ":" ( minute / "60" ) [ "." 1*DIGIT ]
+hour      = %x30-31 DIGIT / "2" %x30-33
+minute    = %x30-35 DIGIT
+offset    = "Z" / "z" / sign hour ":" minute

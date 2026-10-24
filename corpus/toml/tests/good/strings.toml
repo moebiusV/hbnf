@@ -1,0 +1,8 @@
+a = "x\ty\u00e9"
+b = 'raw\n'
+c = """
+line1
+line2 \
+  more"""
+d = '''
+x'''

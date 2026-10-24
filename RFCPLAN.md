@@ -576,8 +576,7 @@ corrected by the messages, not by reading the manual.
 ## Shipped grammars
 
 HyperBNF ships four grammars as fundamentals that can be dropped in and used at once: **JSON**
-(RFC 8259, built, `corpus/json/`), **TOML**, **YAML** and **obconf** (the shared daemon
-configuration grammar, built, `grammars/obconf.hbnf`).  TOML and YAML are in the plan and not
+(RFC 8259, built, `corpus/json/`), **TOML**, **YAML** and **obconf** (one grammar written in HyperBNF, for the OpenBSD configuration style of httpd, relayd, ntpd and the rest; built, `grammars/obconf.hbnf`).  TOML and YAML are in the plan and not
 yet written.  Each one gets the treatment JSON has:
 
 - a grammar in HyperBNF, as small as the language allows, and parsers generated from it in all
