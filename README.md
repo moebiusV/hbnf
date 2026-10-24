@@ -1,5 +1,14 @@
 # HyperBNF
 
+> **Status, 23 October 2026.**  Working on a C compiler written in HyperBNF.  The C11 grammar parses
+> 2,478 of the 2,481 gcc-accepted files from ten real corpora (lua, zlib, mbedtls, chibicc, c-torture and
+> others) in the C, Rust and Zig backends, using context sets for typedef names; the Ada port of that
+> machinery is unfinished.  The POSIX shell is now also written natively in HyperBNF, 41 lines against the
+> yacc text's 111, and agrees with dash.  Next: Ada typedef contexts; parser speed (lazy error tracking,
+> arena nodes, timings against gcc and clang); a HyperBNF grammar for the C preprocessor, where macros work
+> like hyper-rules; compact translations of the RFC and ALGOL grammars with line counts; then the back half
+> of the compiler (checking, lowering, assembly output) and a docs pass for the HyperBNF naming.
+
 **HyperBNF** is a grammar language, and `hbnf` is the program that reads it: a parser generator
 (a compiler compiler) that emits a parser and its typed tree in C, Rust, Zig or Ada.  The name is an
 homage to the W-grammar and its hyper-rules: a rule may take parameters, and each use becomes an
