@@ -329,6 +329,74 @@ about half the size of the Report's BNF and the RFC's ABNF, and the OpenBSD daem
 files lose their lexers and C actions. The ALGOL 68 saving has not been measured: it is the point
 of the pilot, a chapter of the Report's W-grammar counted before and after.
 
+## Parameters on rules: affix grammars, CDL and Prolog
+
+The two-level grammar was not the only answer to "BNF cannot say it". Two others, from the
+same decade as the Report and the one after, gave a nonterminal *parameters* and made the
+parser run them. They are the closest relatives of HyperBNF's hyperrules, and the differences
+are the design.
+
+**Affix grammars and CDL.** Cornelis Koster, who was one of the ALGOL 68 editors, took the
+Report's idea and made it implementable: a nonterminal carries *affixes*, and each affix has a
+*domain* declared up front, a finite set of values or a structure built from them. A rule is a
+predicate over its affixes. It succeeds, perhaps computing values on the way out, or it fails,
+and the same notation describes the syntax, the checks (a name declared before it is used,
+two operands of one type) and the translation. CDL, the Compiler Description Language, was the
+working form: Koster's group wrote compilers in it, and it went through several versions
+(CDL2, CDL3). The domain declaration is what made it practical. A parameter
+that ranges over a declared set can be checked when the grammar is read, and the machine
+never meets the infinite family that the Report's metanotions allowed. Watt and Meijer's
+extended affix grammars, and AGFL (affix grammars over a finite lattice) for natural language,
+kept the same shape.
+
+**Prolog and the definite clause grammar.** Colmerauer's metamorphosis grammars (1975) and
+Pereira and Warren's definite clause grammars (1980) put the same idea inside Prolog. A
+nonterminal is a predicate with arguments, `expr(Type, Env)`, and the grammar is a logic
+program: the arguments are terms of any shape, unification passes values in both directions,
+and the parser is whatever Prolog's search does with it, depth-first with backtracking. That is
+the most general of the three, and it needs a Prolog to run. It also inherits Prolog's costs:
+a left-recursive rule does not end, backtracking can be exponential, a call outside the values
+the author meant is a failure at run time and not an error, and a parse that fails says only
+that it failed.
+
+**Domains are the point.** All three answers separate by one choice: what a parameter may
+range over. The Report allowed a metanotion to be any context-free language, so a hyperrule
+could be an infinite family and a parse could be undecidable. Prolog allows any term, so the
+program can compute anything. CDL declared finite domains, and a grammar that stays inside
+them is checkable and terminates. Of the three, only the last gave a compiler writer a grammar
+that was also a guarantee.
+
+**What HyperBNF does differently, and why.**
+- *Domains are finite, or a counter.* A parameter is a number in a range, one of a list of
+  words, or a rule name, as in CDL, and a use outside the domain is an error that names the
+  chain of instances that led to it. The open domain `k in 0..` is a number the parser works
+  out as it reads, for indentation and the lengths of a counted field. It is a counter and
+  nothing else: no structure, no unification. That is what keeps every grammar decidable, and
+  it is enough for the languages that needed more than BNF, YAML's block structure among them.
+- *Values go in, and the tree comes out.* An affix in CDL can be synthesised: the grammar
+  computes. A HyperBNF parameter only restricts what parses. What a program wants from the
+  input is the typed tree the rule shapes describe, and the program computes from that. The
+  grammar stays a document that an RFC reader can follow, and the same file means the same
+  thing to every backend. Names declared so far, the one thing a finite domain cannot hold,
+  are the named context (`%bind`, `%scope`), a table beside the grammar and not a term in it.
+- *Choice is ordered, so nothing backtracks without being asked.* Prolog tries every way
+  until one works; HyperBNF takes the first alternative that matches, as PEG does, and refuses
+  a shadowed alternative when the grammar is read. There is no shift/reduce conflict to
+  resolve and no exponential search to meet. Left recursion is read as a loop.
+- *The family is expanded before the parser exists.* A small table of instances becomes
+  ordinary rules at generation time and costs nothing at run time; a large or open one is
+  compiled as a guard on a stored number. Either way the output is the parser one would have
+  written by hand, in C, Rust, Zig or Ada, with no engine to link. A DCG needs Prolog, and CDL
+  needed its compiler.
+- *One notation.* The parameter is written on a rule in the ABNF that RFCs already use,
+  `rule(N in 1..17)`, beside BNF, EBNF and yacc's dialect, not in a separate formalism that
+  has to be learned first.
+
+*Sources:* Koster, "Using the CDL compiler-compiler", in Bauer and Eickel (eds.), *Compiler
+Construction: An Advanced Course*, Lecture Notes in Computer Science 21 (Springer, 1974) ·
+Colmerauer, "Metamorphosis grammars" (1975) · [Pereira and Warren, "Definite clause grammars for
+language analysis", *Artificial Intelligence* 13 (1980)](https://doi.org/10.1016/0004-3702(80)90003-X).
+
 ## The machine: Yacc
 
 Yacc did not invent the compiler compiler; it found the algorithm that made one
