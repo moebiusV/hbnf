@@ -1,8 +1,8 @@
-# C11 in hbnf
+# C11 in HyperBNF
 
 `c11.hbnf` is the grammar of ISO/IEC 9899:2011 Annex A with the standard's rule names, plus the GNU
 forms system headers use; `c-words.hbnf` has the tokens as rules of characters.  It is the first piece
-of a small C compiler written in hbnf (parse, check, lower, write), and it parses what a C preprocessor
+of a small C compiler written in HyperBNF (parse, check, lower, write), and it parses what a C preprocessor
 produces: hbnf has no preprocessor, so the tools below use gcc's (`gcc -E -P`).
 
 ## Checked against gcc

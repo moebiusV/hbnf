@@ -1,4 +1,4 @@
-# JSON (RFC 8259) in hbnf
+# JSON (RFC 8259) in HyperBNF
 
 `json.hbnf` (the structure) and `json-tokens.hbnf` (a string and a number, where no blank
 is allowed inside one) are the whole of JSON in 14 rules, against the RFC's 30 ABNF rules:

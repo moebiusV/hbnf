@@ -56,16 +56,16 @@ around it, and the plan has the step.
 | `|` commits to the first alternative that matches, so overlapping alternatives lose input (`host`: `IPv4address` is also a `reg-name`; `FWS`; `local-part`/`domain`) | **open**, by design where the union needs backtracking, which the generated parsers do not do.  Each is repaired by hand in the fixed-up file, and tested.  (`dec-octet` is no longer one: a character rule takes the longest alternative; `IPv6address`'s and `ls32`'s `/` are the RFC's) |
 | A repetition read greedily where ABNF would give one back (`IPv6address`: `[ *1( h16 ":" ) h16 ] "::" ...` refused `1::2` with no message) | **fixed**: `*n( A S ) A` is rewritten `A *n( S A )`, the same strings with nothing to give back; where hbnf cannot, it says "matched greedily, unlike ABNF's" and how to write it.  Checked only where nothing is skipped between elements (`whitespace none`) |
 | `/` between one-character strings (`BIT = "0" / "1"`, `HEXDIG`, `tchar`, `atext`) was refused though each is one code point | **fixed** |
-| A string literal in `"..."` has C escapes in hbnf and none in ABNF: `"\"` ran on to the next quote and reported `unexpected character '\'` hundreds of columns away | **fixed**: the message names the line and the cause |
+| A string literal in `"..."` has C escapes in HyperBNF and none in ABNF: `"\"` ran on to the next quote and reported `unexpected character '\'` hundreds of columns away | **fixed**: the message names the line and the cause |
 | A rule named `atom` or `word` (RFC 5322 defines both, as structures) was read as hbnf's built-in scalar of that name, and the generated code disagreed with itself in three backends | **fixed**: a generation-time error that says to rename the rule |
-| Case-insensitive letters: `"A"` in ABNF is `a` or `A`; in hbnf only with `sensitivity string %i`, and a case-insensitive literal was matched as a whole word, so `HEXDIG` refused the `a` in `abcd` | **fixed**: a literal with letters is both cases inside a character rule (up to four letters), and bytes in a grammar with no words |
+| Case-insensitive letters: `"A"` in ABNF is `a` or `A`; in HyperBNF only with `sensitivity string %i`, and a case-insensitive literal was matched as a whole word, so `HEXDIG` refused the `a` in `abcd` | **fixed**: a literal with letters is both cases inside a character rule (up to four letters), and bytes in a grammar with no words |
 | Every letter-led literal was a keyword, matched as a whole word.  In ABNF `"v"` is the character, and `v1.fe80` is not the word `v` | **fixed**: a literal is a keyword only in a grammar that has words (`word`/`atom`, or a `keywords` block) |
 | `whitespace`: a phrase rule skipped blank space before every element, so `method SP request-target` never matched its `SP`; there was no way to turn it off, and with none, C's `parse_text` called a `skip_ws` it had not defined | **fixed**: `whitespace none`, and the C bug |
 | A literal with no letters was marked case-insensitive by `sensitivity string %i` (`"1"`), which made `dec-octet` not a character rule | **fixed** |
 | Generating one rule of a collected ABNF (`host` out of RFC 3986) meant moving it to the top of the file | **fixed**: `--root=RULE` |
 | `<...>` for a rule defined elsewhere (`uri-host = <host, see [URI]...>`) was a "prose-val" refused with a bare "not written yet"; `0<pchar>` was refused the same way | **fixed**: `<...>` always names a rule, so `<pchar>` is `pchar` and `0<pchar>` compiles as written; one nothing defines is "not written yet", with the rule it probably means and what to write |
 | A later definition replaces an earlier one, so RFC 9110's prose `port` would replace RFC 3986's real one | works as designed; noted in `rfc9112/README.md` |
-| `OCTET = %x00-FF` is a byte in ABNF and a code point up to U+00FF in hbnf, which reads UTF-8 | **open**, the `binary` layer (step 5) |
+| `OCTET = %x00-FF` is a byte in ABNF and a code point up to U+00FF in HyperBNF, which reads UTF-8 | **open**, the `binary` layer (step 5) |
 | Rust: a repetition with a maximum of zero (`0pchar`) emitted a comparison rustc rejects | **fixed** |
 
 ## What a message says
@@ -77,7 +77,7 @@ There are two kinds, and each says more than "no":
   (`uri-host = <host, see [URI]>` is `uri-host = host`
   and an `include`).
 - **The ABNF is fine, and hbnf does it differently**: the message says what the
-  notation means in ABNF, what it means in hbnf, and how to write it in hbnf
+  notation means in ABNF, what it means in HyperBNF, and how to write it in HyperBNF
   (a union that needs backtracking; a greedy repetition; a rule named `atom`;
   `"\"` in a string).
 

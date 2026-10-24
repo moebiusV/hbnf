@@ -1,4 +1,4 @@
-# The POSIX shell command language in hbnf
+# The POSIX shell command language in HyperBNF
 
 `shell.y` reads shell scripts with the grammar of POSIX.1-2017 section 2.10.2, the one in
 `posix-shell-1.y` as the standard prints it and **included unchanged**, plus three small files:

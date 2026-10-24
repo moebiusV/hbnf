@@ -1,4 +1,4 @@
-# Mustache templates in hbnf
+# Mustache templates in HyperBNF
 
 `mustache.hbnf` is the syntax of a [Mustache](https://mustache.github.io/mustache.5.html)
 template: text, `{{name}}`, `{{{name}}}`, `{{&name}}`, `{{! comment }}`, `{{> partial}}`,
@@ -44,7 +44,7 @@ With it, hbnf and Tree-sitter give the same answer on all 2,000 (1,339 accepted 
 refused by both; `TSD_GRAMMAR=corpus/mustache/mustache.hbnf TSD_ORACLE=tests/mustache/oracle.py
 TSD_EXT=mustache sh tests/treesitter-diff.sh 2000 2`).
 
-Running it found three faults in hbnf, now fixed: a lookahead inside a rule that is only text
+Running it found three faults in HyperBNF, now fixed: a lookahead inside a rule that is only text
 was silently dropped when the rule was compiled to its automaton; a rule used only in a
 lookahead was left out of the generated parser; and an alias of an optional token
 (`blank_2 = blank`) failed on nothing, where `blank` succeeds on it.

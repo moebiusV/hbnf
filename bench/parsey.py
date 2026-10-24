@@ -132,7 +132,7 @@ def main():
         rows.append((name, lines(pro) + lines(epi), lines(actions), lines(notation),
                      hbnf_lines("grammars/obconf_%s.hbnf" % name)))
     shared = hbnf_lines("grammars/obconf.hbnf")
-    print("| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | hbnf grammar |")
+    print("| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | HyperBNF grammar |")
     print("|---|---:|---:|---:|---:|---:|")
     tot = [0, 0, 0, 0]
     for name, other, act, nota, h in rows:
@@ -145,10 +145,10 @@ def main():
         format(sum(tot[:3]), ","), format(tot[0], ","), format(tot[1], ","),
         format(tot[2], ","), format(tot[3] + shared, ",")))
     print()
-    print("Only the rule notation is directly comparable with the hbnf grammar; the")
+    print("Only the rule notation is directly comparable with the HyperBNF grammar; the")
     print("lexer is replaced by hbnf's reader, and the actions only where they are bound:")
     print()
-    print("| daemon | `parse.y` total | hbnf grammar + bound actions | saved |")
+    print("| daemon | `parse.y` total | HyperBNF grammar + bound actions | saved |")
     print("|---|---:|---:|---:|")
     for name in ("ntpd", "unwind"):
         r = [x for x in rows if x[0] == name][0]

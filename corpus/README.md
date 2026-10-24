@@ -10,8 +10,8 @@ README that says what is in it and what state it is in.
 | `posix/` | the POSIX shell grammar (POSIX.1 §2.10), the standard's own text plus tokens and ordering | in use (`tests/posix.sh`; `scripts/posix-scan.sh` against dash) |
 | `c/` | C11 (ISO 9899:2011 Annex A) with the GNU forms headers use, the start of a small C compiler | in use (`tests/c.sh`; `scripts/c-scan.sh` against gcc) |
 | `imp72/` | the IMP72 compiler's sources (DECUS 10-198) | cancelled: IMP72 gets its own compiler; the files stay as the subject of `METACOMPILERS.md` |
-| `algol60/` | the Revised Report on ALGOL 60, its BNF, and a grammar in hbnf | in use (`tests/algol60.sh`) |
-| `json/` | RFC 8259 in hbnf, checked against Python's `json` on 80,000 texts | in use (`tests/json-diff.sh`) |
+| `algol60/` | the Revised Report on ALGOL 60, its BNF, and a grammar in HyperBNF | in use (`tests/algol60.sh`) |
+| `json/` | RFC 8259 in HyperBNF, checked against Python's `json` on 80,000 texts | in use (`tests/json-diff.sh`) |
 | `mustache/` | Mustache templates, with a closing tag that repeats the opening one; checked against chevron on 12,000 texts | in use (`tests/mustache-diff.sh`) |
 | `algol68/` | the Revised Report's W-grammar | far in the future (so is C++) |
 | `bip39/` | the ten official BIP-39 word lists | in use (`tests/wire.sh`) |

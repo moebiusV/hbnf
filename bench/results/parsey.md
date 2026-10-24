@@ -1,4 +1,4 @@
-| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | hbnf grammar |
+| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | HyperBNF grammar |
 |---|---:|---:|---:|---:|---:|
 | bgpd | 5,540 | 2,530 | 2,494 | 516 | 501 |
 | dhcpleased | 733 | 542 | 159 | 32 | 22 |
@@ -12,10 +12,10 @@
 | shared `obconf.hbnf` | | | | | 30 |
 | **nine daemons** | **23,001** | **10,785** | **10,056** | **2,160** | **1,877** |
 
-Only the rule notation is directly comparable with the hbnf grammar; the
+Only the rule notation is directly comparable with the HyperBNF grammar; the
 lexer is replaced by hbnf's reader, and the actions only where they are bound:
 
-| daemon | `parse.y` total | hbnf grammar + bound actions | saved |
+| daemon | `parse.y` total | HyperBNF grammar + bound actions | saved |
 |---|---:|---:|---:|
 | ntpd | 731 | 22 + 331 = 353 | **52%** |
 | unwind | 831 | 67 + 264 = 331 | **60%** |

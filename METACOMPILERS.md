@@ -1,14 +1,14 @@
-# hbnf beside META II, IMP72 and SNOBOL4
+# HyperBNF beside META II, IMP72 and SNOBOL4
 
 > **2026-10-22:** hbnf will not read or bootstrap the IMP72 compiler (the user: IMP72 "is its
 > own thing and will get its own compiler"), so the sections below that ask whether hbnf
 > could be its kernel are history, not a plan.  What hbnf took from IMP72's manual stands.
 > The ALGOL 68 experiments they mention are far in the future.
 
-hbnf is a meta-compiler: a program that takes a description of a language and
+HyperBNF is a meta-compiler: a program that takes a description of a language and
 produces the thing that processes it.  Configuration files were where it
 started, not where it stops.  Three older systems made the same bet from
-different directions, and each is a precedent for something in hbnf's
+different directions, and each is a precedent for something in HyperBNF's
 `%scan{ }`, `%action{ }`, planned `%where{ }` and `%emit{ }`.  This reads them
 against hbnf, from the primary sources, and ends with what hbnf could take.
 
@@ -85,7 +85,7 @@ itself advises that conditional assignment be used "whenever possible".
 | **Output** | assembly for an interpreter | object code through typed objects | none (strings) | a typed tree; round-trip printing; `%emit` planned |
 | **Fresh names** | `*1`, `*2` per run of an equation | `LOCAL R IN "..."`: a unique name per use | n/a | none yet |
 | **Grammar grows** | edit the compiler's own source | syntax statements inside the program | patterns built at run time | `include`, `dialect`, `%grammar "file"` |
-| **Self-hosting** | yes | yes | no | not yet (`hbnf_schema.hbnf` is a grammar for config files, not for hbnf's own notation) |
+| **Self-hosting** | yes | yes | no | not yet (`hbnf_schema.hbnf` is a grammar for config files, not for HyperBNF's own notation) |
 
 ## Your hunch about `%scan` and `%action`: yes, and the names are precedent
 
@@ -217,7 +217,7 @@ puzzle, against hbnf's "not surprising to a BNF user" bar); symbol-spelling
 rules (`letter a symbol`).  Affix/inherited attributes as the answer to context
 were weighed in decision 13 and stay a second choice to persistent context.
 
-## What hbnf could learn
+## What HyperBNF could learn
 
 In order of how much it would change hbnf.
 
@@ -289,8 +289,8 @@ In order of how much it would change hbnf.
    backtracks and deepest lookahead per rule.
 
 7. **Self-hosting as the test.**  META II compiles itself and IMP72 compiles
-   itself; both define their own syntax in their own notation.  hbnf's notation
-   is read by Ada code.  A grammar of hbnf's notation, in hbnf, whose generated
+   itself; both define their own syntax in their own notation.  HyperBNF's notation
+   is read by Ada code.  A grammar of HyperBNF's notation, in HyperBNF, whose generated
    parser reads the grammars hbnf is built from, would be the strongest
    conformance test the project could have, and it is what makes a system a
    meta-compiler in the original sense.
@@ -322,7 +322,7 @@ In order of how much it would change hbnf.
   and not in the Ada reader.  That is an invitation to bootstrap, and a risk to
   error messages, which currently speak the sugar's own language.
 
-## Could hbnf be the minimal compiler IMP72 grew from?
+## Could HyperBNF be the minimal compiler IMP72 grew from?
 
 The question is whether hbnf could play the part of IMP72's bootstrap kernel and
 grow into the full compiler from the DECUS material.  The tape and the manual
@@ -377,7 +377,7 @@ tape's `imp.low` and `imp.shr` are that running compiler, as a PDP-10 binary.
 So a true bootstrap from nothing has to supply, outside the tape, what the first
 IMP compiler was.
 
-### What hbnf has, and what it would take
+### What HyperBNF has, and what it would take
 
 | IMP72 piece | what it does | hbnf today |
 |---|---|---|
@@ -391,8 +391,8 @@ IMP compiler was.
 Three routes, from cheapest.
 
 **1. Read the language as data.**  Add a reader for the kernel's notation and
-load `syntax.imc` as an hbnf grammar, semantic parts kept as text.  Nothing in
-hbnf's design rules this out, it is small, and it answers the question that
+load `syntax.imc` as a HyperBNF grammar, semantic parts kept as text.  Nothing in
+HyperBNF's design rules this out, it is small, and it answers the question that
 decides everything else: how ambiguous is IMP72's syntax?  IMP72 leans on
 ambiguity on purpose (no reserved words; `ABS(<A>)` both a defined construct and
 a call), and resolves it with three rules (§2.3.4).  hbnf's union checker reports
@@ -538,7 +538,7 @@ writing assembler, in opposite directions.
   that does better.  The cost is that nothing is checked; the gain is that the
   compiler can be taught anything, by the person using it, without modifying it.
 
-## What this says for hbnf
+## What this says for HyperBNF
 
 1. **The bit-field notation is an old, good one, and a design question.**  hbnf's
    wire layer (step 7b: widths, signedness, endianness, bit-precise syntax, an

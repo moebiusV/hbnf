@@ -1,4 +1,4 @@
-# HBNF: Return of the Metacompiler
+# HyperBNF: Return of the Metacompiler
 
 *A short history of the parser generator.*
 
@@ -285,7 +285,7 @@ Report's `::`), so `level ::= 1..17` and `binary(N in level) := binary(N+1) *( o
 read as the Report's two levels do. A metarule is a plain context-free production, over the strings
 that go into names instead of the sentences of the language, and here it is a finite set of numbers or
 words (a domain that names itself would be the infinite family, and is refused). A file in BNF, where
-`::=` or `:=` defines an ordinary rule, names its notation with `dialect bnf`; in hbnf's own notation
+`::=` or `:=` defines an ordinary rule, names its notation with `dialect bnf`; in HyperBNF's own notation
 a BNF rule read as a metarule is refused with the line to add.
 
 **What hbnf does.**
@@ -522,8 +522,8 @@ names rule out before anything is parsed under it. That is the part of C++ Tree-
 and the part of C++ that forks are not needed for.
 
 There is a Tree-sitter backend (`--backend=tree-sitter`), and what it shows is the same
-difference from the other side. A hbnf grammar becomes a `grammar.js` mechanically, ALGOL 60 and
-JSON parse the same texts in Tree-sitter as in hbnf (JSON: 2,000 documents and 2,000 mutations, no
+difference from the other side. A HyperBNF grammar becomes a `grammar.js` mechanically, ALGOL 60 and
+JSON parse the same texts in Tree-sitter as in HyperBNF (JSON: 2,000 documents and 2,000 mutations, no
 difference; ALGOL 60: every one of 500 sentences of the Report), but ordered choice has to be
 turned into `conflicts` and `prec.dynamic` (four conflicts for ALGOL 60), and a lookahead, a
 context test or a back-reference cannot be turned into anything: it is left out, and the nine
@@ -553,9 +553,9 @@ finished.
 It is a pendulum between the two readers, each swing trading one reader's ease
 for the other's.
 
-## HBNF
+## HyperBNF
 
-HBNF starts from where that thread left off and picks a side. Its bet is that
+HyperBNF starts from where that thread left off and picks a side. Its bet is that
 the notation worth compiling is the one the RFCs already use — ABNF — and that
 a grammar should be documentation first and a parser second. The same file that
 explains a language to a reader compiles to a parser and a typed tree in C,
@@ -576,7 +576,7 @@ regex. Direct left recursion is read as a loop, not rejected. Ordered choice
 keeps conflicts impossible, and a shadowed alternative is refused at schema time
 with a diagnostic rather than failing at runtime. The tree is typed from the
 shape of the rule — enum, scalar, list, struct — with no visitor to write. And
-HBNF makes round-tripping easy: comments are first-class tokens, not
+HyperBNF makes round-tripping easy: comments are first-class tokens, not
 whitespace, and a value written `0xFF` comes back as `0xFF`, not 255, so a
 grammar that wants it — obconf does — hands the file back unchanged, and
 pretty-printing and debug printouts become simple and pleasant. A parse failure
@@ -602,18 +602,18 @@ branch by looking arbitrarily far ahead.
 
 **Where it will not.** Two things are off the table, and they are the same
 thing. Incremental, error-recovering parsing is Tree-sitter's entire reason for
-existing, and it requires a generalized-LR engine with a stack of stacks. HBNF's
+existing, and it requires a generalized-LR engine with a stack of stacks. HyperBNF's
 design is ordered choice plus maximal munch, the opposite trade; adding GLR
-would mean discarding the design. And HBNF will not handle genuinely ambiguous
+would mean discarding the design. And HyperBNF will not handle genuinely ambiguous
 grammars, because that is not a missing feature to add later — it is the thing
 the design refuses on purpose. ALL(*) and GLR exist for the languages that need
-them. HBNF exists for the ones that do not, and for the person who wants the
+them. HyperBNF exists for the ones that do not, and for the person who wants the
 grammar and the parser to be the same document.
 
 Judged on that single aim — one document that serves both the person and the
 machine — the others all pick a side. BNF and ABNF are for people; Yacc and
 Tree-sitter are for machines; ANTLR and PEG generate code but drop the writer's
-comments and exact spellings. HBNF tries to be both at once, and the round trip
+comments and exact spellings. HyperBNF tries to be both at once, and the round trip
 a grammar can build is the proof: the text a person reads is what the machine
 runs, and the machine hands it back unchanged. The writer's intention arrives
 whole, and no earlier tool managed that.
@@ -638,11 +638,11 @@ the more useful end.
 
 An intelligence that must read what people wrote and act on it needs exactly
 that bridge — a text a person can read, a machine can run, an intention carried
-whole. HBNF was not written for AI. That is what will make it useful to AI.
+whole. HyperBNF was not written for AI. That is what will make it useful to AI.
 
 *Sources:* the [hbnf repository](https://github.com/moebiusV/hbnf), and [RFC 5234](https://www.rfc-editor.org/rfc/rfc5234) for the ABNF it compiles.
 
-## Measured: what hbnf saves and what it costs
+## Measured: what HyperBNF saves and what it costs
 
 Every number here is produced by a script in the repository, from the files in `corpus/` and
 `grammars/`, and can be rerun. For a grammar the comparison is the published notation against the
@@ -650,7 +650,7 @@ hbnf, comments and blank lines left out of both. A *symbol* is a whitespace-sepa
 grammar text, which is what a reader (or a language model) pays for; the count of LLM tokens depends
 on the tokenizer and has not been measured, but it follows the characters.
 
-**BNF and ABNF rewritten in hbnf: fewer rules, fewer lines, fewer symbols.** Where a grammar is
+**BNF and ABNF rewritten in HyperBNF: fewer rules, fewer lines, fewer symbols.** Where a grammar is
 rewritten rather than pasted, the rewrite says each thing once: a comma list is `x *( "," x )`, a
 block is a compound statement with declarations in front, the three expression grammars that exist
 to carry a type are one (a checking pass applies the types), a punctuation mark is the quoted
@@ -677,7 +677,7 @@ its keyword table and helpers after the second `%%`. `bench/parsey.py` splits ea
 counts lines, comments and blank lines left out:
 
 <!-- bench:parsey -->
-| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | hbnf grammar |
+| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | HyperBNF grammar |
 |---|---:|---:|---:|---:|---:|
 | bgpd | 5,540 | 2,530 | 2,494 | 516 | 501 |
 | dhcpleased | 733 | 542 | 159 | 32 | 22 |
@@ -691,16 +691,16 @@ counts lines, comments and blank lines left out:
 | shared `obconf.hbnf` | | | | | 30 |
 | **nine daemons** | **23,001** | **10,785** | **10,056** | **2,160** | **1,877** |
 
-Only the rule notation is directly comparable with the hbnf grammar; the
+Only the rule notation is directly comparable with the HyperBNF grammar; the
 lexer is replaced by hbnf's reader, and the actions only where they are bound:
 
-| daemon | `parse.y` total | hbnf grammar + bound actions | saved |
+| daemon | `parse.y` total | HyperBNF grammar + bound actions | saved |
 |---|---:|---:|---:|
 | ntpd | 731 | 22 + 331 = 353 | **52%** |
 | unwind | 831 | 67 + 264 = 331 | **60%** |
 <!-- /bench:parsey -->
 
-As a notation the hbnf grammar is about the size of yacc's rules (a quoted `"listen"` is longer than
+As a notation the HyperBNF grammar is about the size of yacc's rules (a quoted `"listen"` is longer than
 the token name `LISTEN`, and each option list spells out the keyword that tags it). The saving is in the
 other 90%: hbnf's reader, `statements` mode and typed tree replace the lexer, keyword table and
 include-file stack, which is about 47% of a `parse.y`, and the actions, another 44%, are replaced only
@@ -737,7 +737,7 @@ subtree it does not touch, and a broken file still yields a tree with ERROR and
 MISSING nodes instead of nothing.
 
 2. Tree-sitter needs generalized LR for this because it must preserve ambiguity
-across an edit. HBNF has no ambiguity to preserve, because it refuses it up
+across an edit. HyperBNF has no ambiguity to preserve, because it refuses it up
 front. A deterministic parser has exactly one result at a position, so an edit
 invalidates only the nodes whose span it touches; the rest is reused as-is, and
 re-parsing the touched range is guaranteed to match what a full parse would
@@ -758,7 +758,7 @@ spans and the recovery are added underneath, invisible in the notation.
 5. One thing is worth taking back, lost when ABNF dropped it: the angle
 brackets. Naur's 1960 report wrote `<expression>` for a non-terminal and the
 terminal bare, and Knuth kept the convention in *The Art of Computer
-Programming* and WEB. ABNF threw the brackets away to fit ASCII. HBNF already
+Programming* and WEB. ABNF threw the brackets away to fit ASCII. HyperBNF already
 reads `=` and `::=`, `|` and `/`, side by side, so reading `<name>` as sugar for
 `name` is the same move, and it is the one a literate grammar wants — the
 bracket marks the thing being defined for the reader, and the parser ignores

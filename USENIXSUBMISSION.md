@@ -1,4 +1,4 @@
-# hbnf: Compact, Fast Configuration Parsers from Extended ABNF
+# HyperBNF: Compact, Fast Configuration Parsers from Extended ABNF
 
 *System design paper (draft).  Target: USENIX ATC / LISA.*
 
@@ -164,7 +164,7 @@ without the hand-written lexer and without the token-level straitjacket.
 
 ### 3.1 Schema = grammar + types
 
-An hbnf schema is an ABNF grammar in which a rule's *name* carries its type.
+A HyperBNF schema is an ABNF grammar in which a rule's *name* carries its type.
 Consider a minimal server config:
 
 ```
@@ -639,7 +639,7 @@ today is that a 100,000-rule `pf.conf` parses in <!-- v:pfctl_100000_s -->0.3<!-
 
 **Compactness.**  OpenBSD's `httpd.conf` is 2,490 lines of parse.y once comments are
 left out: 63 rules and 79 keyword tokens, of which 248 lines are the rule notation, 1,057
-the C actions and 1,185 the lexer, keyword table and helpers.  The hbnf grammar for the
+the C actions and 1,185 the lexer, keyword table and helpers.  The HyperBNF grammar for the
 same language is 185 lines; the shape survives (blocks, server options, TLS, fastcgi,
 logging, MIME types).  What it does not contain is the actions: the typed tree and the
 binder take their place for configuration, but only where the binding is written.
@@ -656,7 +656,7 @@ seven the grammar parses and builds a typed tree, and the daemon's own struct-bu
 code is not yet attached.
 
 <!-- bench:parsey -->
-| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | hbnf grammar |
+| daemon | `parse.y` total | lexer, keywords, C | actions | rule notation | HyperBNF grammar |
 |---|---:|---:|---:|---:|---:|
 | bgpd | 5,540 | 2,530 | 2,494 | 516 | 501 |
 | dhcpleased | 733 | 542 | 159 | 32 | 22 |
@@ -670,10 +670,10 @@ code is not yet attached.
 | shared `obconf.hbnf` | | | | | 30 |
 | **nine daemons** | **23,001** | **10,785** | **10,056** | **2,160** | **1,877** |
 
-Only the rule notation is directly comparable with the hbnf grammar; the
+Only the rule notation is directly comparable with the HyperBNF grammar; the
 lexer is replaced by hbnf's reader, and the actions only where they are bound:
 
-| daemon | `parse.y` total | hbnf grammar + bound actions | saved |
+| daemon | `parse.y` total | HyperBNF grammar + bound actions | saved |
 |---|---:|---:|---:|
 | ntpd | 731 | 22 + 331 = 353 | **52%** |
 | unwind | 831 | 67 + 264 = 331 | **60%** |
@@ -735,7 +735,7 @@ determine what a token is.
 
 **Tree-sitter and pest.**  Both are modern, incremental, error-tolerant parser
 generators.  tree-sitter is built for source code that is edited and re-parsed
-continually; hbnf is a meta-compiler that began with configuration files, where
+continually; HyperBNF is a meta-compiler that began with configuration files, where
 a document is parsed once, and there self-contained single-file output, typed
 trees and the `parse_config` shape matter more than incrementality.  On the
 §6 toy language tree-sitter takes <!-- v:ratio_ts_100000 -->9.3<!-- /v --> times as long as hbnf for a cold parse, and

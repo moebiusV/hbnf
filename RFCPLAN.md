@@ -508,7 +508,7 @@ and the grammar is simply incomplete.  `%token` is therefore a **paste
 artifact and nothing more**: the reader accepts it so a POSIX or yacc
 grammar pastes unchanged, registers the name as declared-but-undefined so
 the error can name it by kind (operator, reserved word, lexical class), and
-requires it from nobody.  A grammar written in hbnf never writes one.  That
+requires it from nobody.  A grammar written in HyperBNF never writes one.  That
 is what the POSIX BNF section above specifies, and the reasoning is this.
 
 ## Compiler-compiler completion criteria
@@ -566,7 +566,7 @@ A grammar is compiler-compiler ready when:
 **RFC copy-paste is a design goal.**  An RFC's ABNF should compile almost
 verbatim.  An RFC's ABNF uses `=`, which hbnf reads.  A grammar in another notation
 (`::=` in BNF, `:` in yacc) names it with `dialect bnf` or `ybnf`, and then every
-spelling defines a rule; in hbnf's own notation `::=` and `:=` are the metarule and
+spelling defines a rule; in HyperBNF's own notation `::=` and `:=` are the metarule and
 the hyperrule (`level ::= 1..17`, `binary(N in level) := ...`), as the ALGOL 68
 Report's `::` and `:`, and a BNF rule read as one is refused with the line to add.
 Where hbnf needs something different,
@@ -621,7 +621,7 @@ running order:
 > ahead, and a scanner for here-documents.  580 of 581 shell scripts on the machine are
 > accepted as `dash -n` accepts them, and the grammar and dash agree on all but three of 1,692
 > mutations of them (`corpus/posix/shell.md`, `tests/posix.sh`, `scripts/posix-scan.sh`).  What
-> it found in hbnf: names that differ only in case (`name`, `NAME`) now get a `-token` suffix
+> it found in HyperBNF: names that differ only in case (`name`, `NAME`) now get a `-token` suffix
 > under a case-sensitive dialect, and a root rule used inside another rule freed the arena
 > mid-parse.  All four backends read it (the scanners for here-documents and `$(( ))` are written
 > once for each).  Not done: aliases, back-quote contents, bytes that are not UTF-8.  The ports of hbnf itself to the remaining backend
@@ -1046,7 +1046,7 @@ should claim that before 10.
      account, `<id>.vectors/` the inputs; run by `tests/rfc.sh` (the headline
      rules in `tests/e2e.sh`).  *Done 2026-10-06.*  The policy that came out of
      it: an RFC snippet either compiles as written or hbnf says why not and
-     how to write it in hbnf, and where the ABNF is wrong it says why and what
+     how to write it in HyperBNF, and where the ABNF is wrong it says why and what
      was probably meant.  Now the `.bnf` itself compiles under `--abnf`, so the
      `.hbnf` is the same text plus the line `dialect abnf` (RFC 5234, 3986 and 5322
      as written; RFC 9112 needs `uri-host = host` and its prose `port` left
@@ -1790,7 +1790,7 @@ lookahead or a context test not at all.
          built-ins (`atom`, `dec`, `percent`; obconf has `word`, and there
          is no `atom` rule anywhere) and the mutual recursion.  9b fixes
          the second; this fixes the first.  Its header still says "as an
-         hbnf grammar **over the token stream**", which is the model
+         HyperBNF grammar **over the token stream**", which is the model
          decision 7 removed.
        - **Do not lose what the retired tests prove.**  `hbnf_check` is a
          conformance driver whose "accept" requires round-tripping: parse,
@@ -2267,7 +2267,7 @@ lookahead or a context test not at all.
 
    **What stands in the way.**  13a makes hbnf self-*describing*, which is
    weaker than self-*compiling* — `hbnf.hbnf` through hbnf yields a parser
-   for hbnf schemas, not hbnf.  What is missing is the part that chooses
+   for HyperBNF schemas, not hbnf.  What is missing is the part that chooses
    *how a rule is emitted*: `Analyze`, `Rule_Info`, and the
    Scalar/Enum/Struct/List classification, which decide which template a
    rule shape gets.  Those are Ada, and until they are expressible in the

@@ -68,7 +68,7 @@ Work on this corpus stopped on 2026-10-17, by decision, until hbnf is feature
 complete (see `RFCPLAN.md`, "Order"; bit fields and the wire layer are step 7b).
 What exists: the tape's files with their hashes, this note, and
 `tools/imp72_to_hbnf.py`, which reads the syntax statements of `syntax.imc` and
-`impsyn.imc` and writes an hbnf grammar of them.  A first run of that grammar
+`impsyn.imc` and writes a HyperBNF grammar of them.  A first run of that grammar
 through hbnf stopped on things hbnf does not have yet (`~` negation for the
 comment rule, decision 11; an alias of a list rule) and, before that, reported a
 dozen unions whose alternatives it cannot tell apart, which is the ambiguity the

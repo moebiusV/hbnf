@@ -48,7 +48,7 @@ The name is the initials of the four developers it is named for: Daniel
 **N**orby (ospfd, 2004), and Reyk **F**loeter (hoststated, 2007), whose
 hand-written `parse.y` was cloned verbatim from daemon to daemon. The last
 three initials spell **BNF** (Backus–Naur Form), so the name also reads as
-"Hartmeier's BNF". It also reads as **Hyper BNF**, which is what the notation
+"Hartmeier's BNF". It also reads as **HyperBNF**, which is what the notation
 has grown into: the dialects of BNF, read as one.  It is not obconf: the wish
 to implement obconf (OpenBSD configuration style) is what inspired it, and
 obconf is one grammar written in it.
@@ -61,7 +61,7 @@ This directory holds two things:
    checks and the four emitters (C, Rust, Zig, Ada).  Everything `hbnf` does is
    in it, and `hbnf`, the command line, is a thin wrapper over it: argument
    parsing, finding the templates, and printing what the library returns.
-2. **The parser generator**, `hbnf`: read a schema in hbnf's ABNF-like
+2. **The parser generator**, `hbnf`: read a schema in HyperBNF's ABNF-like
    notation and generate a parser and its typed tree in C, Rust, Zig or Ada.
 
        hbnf grammars/obconf_ntpd.hbnf --backend=c|rust|zig|ada
@@ -92,7 +92,7 @@ Every markdown file in the repository, so none is lost.
 - [`CHARLAYER.md`](CHARLAYER.md): character rules, numeric terminals and UTF-8.
 - [`WIRE.md`](WIRE.md): octets and bit fields, enum numbers, text and bit rules
   together, and parsers that also write bytes back.
-- [`COMPILER-COMPILER.md`](COMPILER-COMPILER.md): what hbnf is as a compiler-compiler.
+- [`COMPILER-COMPILER.md`](COMPILER-COMPILER.md): what HyperBNF is as a compiler-compiler.
 - [`METACOMPILERS.md`](METACOMPILERS.md): hbnf beside META II, IMP72, SNOBOL4 and
   W-grammars.
 - [`IDREF.md`](IDREF.md): the id-ref serializer output of the C backend.
@@ -125,7 +125,7 @@ Every markdown file in the repository, so none is lost.
   [yacc](bench/results/yacc.md), [ANTLR and PEG](bench/results/antlr-peg.md),
   [tree-sitter](bench/results/treesitter.md).
 
-**How much grammar.**  The same language in the published notation and in hbnf, with
+**How much grammar.**  The same language in the published notation and in HyperBNF, with
 comments, blank lines and hbnf's directive lines left out of both
 (`bench/notation.sh`).  A symbol is a whitespace-separated word.  Mustache is not
 here because it has no published grammar to compare with.
@@ -180,7 +180,7 @@ _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.0
 - **hbnf**: the parser generator and compiler compiler. Reads a grammar, emits
   a parser in C, Rust, Zig or Ada. Also the command line, the Alire name, and
   the project file (`hbnf.gpr`).
-- **obconf**: a configuration language, implemented as a grammar in hbnf, for
+- **obconf**: a configuration language, implemented as a grammar in HyperBNF, for
   OpenBSD config files — keyword arguments, `{ }` blocks, `#` comments.
 - **libhbnf**: the static Ada library (`libhbnf.a`, project `libhbnf.gpr`)
   that the `hbnf` command line wraps.  A C reference implementation, if there
@@ -190,7 +190,7 @@ _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.0
 
 ## Credits
 
-Four initials cannot hold the whole lineage: HBNF is *named for* Hartmeier,
+Four initials cannot hold the whole lineage: HyperBNF is *named for* Hartmeier,
 Brauer, Norby and Floeter, not credited to them alone. The obconf grammar
 descends from the hand-written `parse.y` config parsers of the OpenBSD
 daemons, each of which carries forward a copyright block naming everyone who

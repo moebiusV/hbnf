@@ -1,6 +1,6 @@
 # The grammar, and why
 
-For the reader who already reads the RFCs, hbnf's grammar is meant to be
+For the reader who already reads the RFCs, HyperBNF's grammar is meant to be
 obvious: it looks like the BNF the RFCs wrote, and where it differs, the
 difference is a choice with a reason.
 
@@ -72,7 +72,7 @@ hbnf adds all three, because a grammar that only recognizes input cannot build
 a tree or drive a program. See `COMPILER-COMPILER.md` for those, and `ABNF.md`
 for which `/` forms are implemented and which are still planned.
 
-## Where hbnf lands
+## Where HyperBNF lands
 
 hbnf picks a side on each point above. It is recursive descent with ordered
 choice, so there is no LR state machine and no shift/reduce conflict to debug.
@@ -99,7 +99,7 @@ string is re-quoted with the escape set. Comments are preserved and come back
 out in the right places when the source is re-emitted, and printing is
 idempotent.
 
-**How much grammar.**  The same language in the published notation and in hbnf, with
+**How much grammar.**  The same language in the published notation and in HyperBNF, with
 comments, blank lines and hbnf's directive lines left out of both
 (`bench/notation.sh`).  A symbol is a whitespace-separated word.  Mustache is not
 here because it has no published grammar to compare with.
@@ -382,14 +382,14 @@ What the profile still shows per rule: about 78 failed alternatives and 105 whit
 "As efficient as yacc" now holds for the toy, ntpd and pfctl on speed, and for pfctl on memory
 with compact nodes.
 
-The first run of this comparison found a fault in hbnf, not in the harness: a
+The first run of this comparison found a fault in HyperBNF, not in the harness: a
 statement-at-a-time parse freed and re-allocated a 64 KiB arena chunk for every
 statement, which on musl cost fourteen times the parse (905 ms against 63 ms
 for 100,000 sensors, measured once, before the fix; byacc was 71 ms).  The
 arena now keeps one chunk between statements, and the table above is after the
 fix.  A benchmark against someone else's parser is also a test of your own.
 
-## hbnf and ANTLR
+## HyperBNF and ANTLR
 
 ANTLR v4 is the right comparison, not yacc: it already removes shift/reduce
 conflicts, handles left recursion, and reports readable errors. The two part
@@ -398,7 +398,7 @@ ways on what they optimize for.
 hbnf emits a self-contained single file with no runtime library, where ANTLR
 needs its runtime in the target language. hbnf gives a typed tree out of the
 box, where ANTLR gives a generic parse tree and you write a visitor or listener
-to build your own. hbnf's notation is ABNF, so an RFC grammar compiles almost
+to build your own. HyperBNF's notation is ABNF, so an RFC grammar compiles almost
 verbatim, and comments are first-class tokens a grammar can keep and
 round-trip; ANTLR's grammar is its own syntax, and its parse tree drops
 comments. hbnf's maximal-munch lexer plus
@@ -418,7 +418,7 @@ a meta-compiler: configuration files are where it started, and the config-file
 shape (scanner actions, `--conf`, id-ref output) is something ANTLR does not address, but
 that is where it started and not where it stops.
 
-## hbnf and tree-sitter
+## HyperBNF and tree-sitter
 
 tree-sitter is the other obvious comparison, and the one most likely to be
 proposed as a replacement, so it is worth being exact about. Its rows

@@ -1,6 +1,6 @@
-# HBNF compiler-compiler notes
+# HyperBNF compiler-compiler notes
 
-HBNF is not yacc with a prettier surface syntax.  Its useful combination is:
+HyperBNF is not yacc with a prettier surface syntax.  Its useful combination is:
 
 - EBNF/CFG-style productions for human-readable grammar structure;
 - PEG-style ordered choice and recursive descent;
@@ -27,7 +27,7 @@ corrected by the messages, not by reading the manual.
 
 Do not add `yylval`, `$1`, `$$`, global `yyparse`, LR conflict declarations, or
 GLR merely for compatibility.  They solve problems caused by yacc's LR
-implementation rather than problems HBNF currently has.
+implementation rather than problems HyperBNF currently has.
 
 ## Invariant
 

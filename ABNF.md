@@ -1,6 +1,6 @@
-# hbnf and ABNF
+# HyperBNF and ABNF
 
-hbnf (named for Hartmeier, Brauer, Norby and Floeter, and read as Hyper BNF)
+hbnf (named for Hartmeier, Brauer, Norby and Floeter, and read as HyperBNF)
 is not ABNF. It borrows ABNF's rule notation (RFC 5234, and RFC 7405's
 case-sensitive strings) and builds a different language on it. It extends the
 notation downward, below characters to code points, octets and bits, and
@@ -223,7 +223,7 @@ once, after the parse.  RFCPLAN.md's POSIX section is the plan for the rest.
 
 ## 4. Same spelling, different meaning
 
-| Construct | ABNF | hbnf | Observed | Writing it in hbnf |
+| Construct | ABNF | hbnf | Observed | Writing it in HyperBNF |
 |---|---|---|---|---|
 | The unit a rule matches | characters | tokens today (a fixed lexer); characters and below in the design | — | — |
 | `"abc"` | case-insensitive | case-sensitive, like parse.y keywords | `ABC x` is rejected by both engines | `%s"abc"` is the ABNF spelling of hbnf's meaning |
@@ -317,7 +317,7 @@ Neither form is a language difference in the sense of ISO 14977, which would
 also take shorter matches of `a`: this is the committed match, which is what a
 reserved word needs.
 
-## 5. What hbnf adds
+## 5. What HyperBNF adds
 
 | Extension | Syntax | Status and caveats |
 |---|---|---|
