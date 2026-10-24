@@ -1909,6 +1909,109 @@ package body HBNF_Lookahead is
       return To_String (R);
    end Made_Of;
 
+   --  Merge the states that read alike: the subset construction keeps apart
+   --  the states reached through different alternatives of a class (`[ -!]`,
+   --  `[#-[]` and `[]-~]` each lead to a state of their own, all of which
+   --  accept the same text afterwards), and a scanner whose body is a run of
+   --  such states cannot skip the run in one loop.  Moore's refinement: states
+   --  start in two classes, accepting or not, and are split while two of one
+   --  class have an edge on the same code points to different classes.  The
+   --  start state stays the first.
+   procedure Minimize (D : in out Dfa_State_Vectors.Vector) is
+      N   : constant Natural := Natural (D.Length);
+      Cls : array (1 .. N) of Positive := [others => 1];
+      Count : Natural := 0;
+
+      function Signature (I : Positive) return String is
+         R    : Unbounded_String;
+         Prev : Natural := 0;     --  the class of the last edge, and where it ended
+         Hi   : Natural := 0;
+         Lo   : Natural := 0;
+         Open : Boolean := False;
+
+         procedure Flush is
+         begin
+            if Open then
+               Append (R, Natural'Image (Lo) & "-" & Natural'Image (Hi) & ">" & Natural'Image (Prev) & ";");
+            end if;
+         end Flush;
+      begin
+         Append (R, Natural'Image (Cls (I)) & (if D (I).Accepting then "A" else "N"));
+         for E of D (I).Edges loop
+            if Open and then Cls (E.To) = Prev and then Hi + 1 = E.Lo then
+               Hi := E.Hi;
+            else
+               Flush;
+               Lo := E.Lo; Hi := E.Hi; Prev := Cls (E.To); Open := True;
+            end if;
+         end loop;
+         Flush;
+         return To_String (R);
+      end Signature;
+   begin
+      if N < 2 then
+         return;
+      end if;
+      for I in 1 .. N loop
+         Cls (I) := (if D (I).Accepting then 2 else 1);
+      end loop;
+      loop
+         declare
+            Seen : Index_Maps.Map;
+            Next : array (1 .. N) of Positive;
+            K    : Natural := 0;
+         begin
+            for I in 1 .. N loop
+               declare
+                  Sig : constant String := Signature (I);
+                  C   : constant Index_Maps.Cursor := Seen.Find (Sig);
+               begin
+                  if Index_Maps.Has_Element (C) then
+                     Next (I) := Index_Maps.Element (C);
+                  else
+                     K := K + 1;
+                     Seen.Insert (Sig, K);
+                     Next (I) := K;
+                  end if;
+               end;
+            end loop;
+            exit when K = Count;
+            Count := K;
+            for I in 1 .. N loop
+               Cls (I) := Next (I);
+            end loop;
+         end;
+      end loop;
+      if Count = N then
+         return;
+      end if;
+      declare
+         M    : Dfa_State_Vectors.Vector;
+         Done : array (1 .. Count) of Boolean := [others => False];
+      begin
+         for C in 1 .. Count loop
+            M.Append (Dfa_State'(others => <>));
+         end loop;
+         for I in 1 .. N loop
+            if not Done (Cls (I)) then
+               Done (Cls (I)) := True;
+               M (Cls (I)).Accepting := D (I).Accepting;
+               for E of D (I).Edges loop
+                  if not M (Cls (I)).Edges.Is_Empty
+                    and then M (Cls (I)).Edges.Last_Element.To = Cls (E.To)
+                    and then M (Cls (I)).Edges.Last_Element.Hi + 1 = E.Lo
+                  then
+                     M (Cls (I)).Edges.Reference (M (Cls (I)).Edges.Last_Index).Hi := E.Hi;
+                  else
+                     M (Cls (I)).Edges.Append (Dfa_Edge'(E.Lo, E.Hi, Cls (E.To)));
+                  end if;
+               end loop;
+            end if;
+         end loop;
+         D := M;
+      end;
+   end Minimize;
+
    procedure Token_Dfa
      (Rules : Rule_Vectors.Vector; Nm : String;
       D     : out Dfa_State_Vectors.Vector;
@@ -1929,6 +2032,9 @@ package body HBNF_Lookahead is
          return;
       end if;
       Token_Dfa_Raw (Rules, Nm, D, Ok, Why);
+      if Ok then
+         Minimize (D);
+      end if;
       Dfa_Answers.Include (Key, (D => D, Ok => Ok, Why => Why));
    end Token_Dfa;
 

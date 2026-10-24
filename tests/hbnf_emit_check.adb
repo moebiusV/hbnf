@@ -98,7 +98,7 @@ procedure Hbnf_Emit_Check is
       Check ("C comment", Has (C_Text, "/* host name"));
 
       Check ("C parser fn", Has (Parser_Text, "parse_rule_server"));
-      Check ("C parser link", Has (Parser_Text, "calloc"));
+      Check ("C parser link", Has (Parser_Text, "hbnf_alloc(sizeof"));
       Check ("C parser expect", Has (Parser_Text, "expect_lit"));
       Check ("C parser err", Has (Parser_Text, "err_line"));
       Check ("C parser caret", Has (Parser_Text, "memset(pad"));

@@ -3690,8 +3690,6 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "        free_" & CN & "_fields(n);");
                Append (Buf, LF);
-               Append (Buf, "        free(n);");
-               Append (Buf, LF);
                Append (Buf, "        n = next;");
                Append (Buf, LF);
                Append (Buf, "    }");
@@ -6290,7 +6288,7 @@ package body HBNF_C is
                end;
                Append (Buf, LF);
                Append (Buf, "        " & C_Type_Name (NM) & " *nn ="
-                 & " (" & C_Type_Name (NM) & " *)calloc(1, sizeof(*nn));");
+                 & " (" & C_Type_Name (NM) & " *)hbnf_alloc(sizeof(*nn));");
                Append (Buf, LF);
                Append (Buf, "        if (!nn) hbnf_oom();");
                Append (Buf, LF);
@@ -6351,7 +6349,7 @@ package body HBNF_C is
                         Alts => Alt_Idents (CN, Base_Branches (R)));
                      Append (Buf, "            "
                        & (if Ctx_On and then Rule_Binds (Idx) then "hbnf_reset (&lm_); " else "")
-                       & "p->pos = save; free(nn); break;");
+                       & "p->pos = save; break;");
                      Append (Buf, LF);
                      Append (Buf, "        }");
                      Append (Buf, LF);
@@ -6379,7 +6377,7 @@ package body HBNF_C is
                end if;
                Append (Buf, "        "
                  & (if Ctx_On and then Rule_Binds (Idx) then "hbnf_reset (&lm_); " else "")
-                 & "p->pos = save; free(nn); break;");
+                 & "p->pos = save; break;");
                Append (Buf, LF);
                Append (Buf, "have:");
                Append (Buf, LF);
@@ -6415,7 +6413,7 @@ package body HBNF_C is
                      Append (Buf, "    if (count < " & Img (E.Min) & ") { "
                        & C_Type_Name (NM) & " *dn = " & L_First ("&head")
                        & ", *dx; while (dn) { dx = " & L_Next ("dn")
-                       & "; free_" & CN & "_fields(dn); free(dn); dn = dx; }"
+                       & "; free_" & CN & "_fields(dn); dn = dx; }"
                        & " p->pos = start; return false; }");
                   else
                      Append (Buf, "    if (count < " & Img (E.Min) & ") { free_"
@@ -6871,7 +6869,6 @@ package body HBNF_C is
          Line ("    while (n) {");
          Line ("        next = " & L_Next ("n") & ";");
          Line ("        free_" & RC & "_fields(n);");
-         Line ("        free(n);");
          Line ("        n = next;");
          Line ("    }");
          Line ("    " & L_Init ("h"));
@@ -8614,7 +8611,7 @@ Append (Res, "static size_t scan_" & C_Name (NM)
             Append (Buf, LF);
             Append (Buf, "    for (uint32_t _i = 0; _i < _n; _i++) {");
             Append (Buf, LF);
-            Append (Buf, "        " & TN & " *nn = (" & TN & " *)calloc(1, sizeof *nn);");
+            Append (Buf, "        " & TN & " *nn = (" & TN & " *)hbnf_alloc(sizeof *nn);");
             Append (Buf, LF);
             Append (Buf, "        if (!nn) hbnf_oom();");
             Append (Buf, LF);
