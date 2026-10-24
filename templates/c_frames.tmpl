@@ -5,18 +5,20 @@
 static long *hbnf_fs;
 static size_t hbnf_fsp, hbnf_fcap, hbnf_fb;
 #define HF(i) (hbnf_fs[hbnf_fb + (i)])
-static size_t hbnf_fpush(size_t n) {
+static void hbnf_fgrow(size_t need) {
+    hbnf_fcap = hbnf_fcap ? hbnf_fcap * 2 : 256;
+    while (hbnf_fcap < need) hbnf_fcap *= 2;
+    hbnf_fs = (long *)realloc(hbnf_fs, hbnf_fcap * sizeof *hbnf_fs);
+    if (!hbnf_fs) hbnf_oom();
+}
+/* Inline, so the size is a constant at each call and the clearing is a store or two. */
+static inline __attribute__((always_inline)) size_t hbnf_fpush(size_t n) {
     size_t ob = hbnf_fb, i;
     hbnf_fb = hbnf_fsp;
     hbnf_fsp += n;
-    if (hbnf_fsp > hbnf_fcap) {
-        hbnf_fcap = hbnf_fcap ? hbnf_fcap * 2 : 256;
-        while (hbnf_fcap < hbnf_fsp) hbnf_fcap *= 2;
-        hbnf_fs = (long *)realloc(hbnf_fs, hbnf_fcap * sizeof *hbnf_fs);
-        if (!hbnf_fs) hbnf_oom();
-    }
+    if (__builtin_expect(hbnf_fsp > hbnf_fcap, 0)) hbnf_fgrow(hbnf_fsp);
     for (i = 0; i < n; i++) hbnf_fs[hbnf_fb + i] = 0;
     return ob;
 }
-static void hbnf_fpop(size_t ob) { hbnf_fsp = hbnf_fb; hbnf_fb = ob; }
+static inline void hbnf_fpop(size_t ob) { hbnf_fsp = hbnf_fb; hbnf_fb = ob; }
 
