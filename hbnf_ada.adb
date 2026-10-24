@@ -305,6 +305,78 @@ package body HBNF_Ada is
    function Scan_Fn (Rule : String) return String is
      ("Scan_" & Ada_Ident (Rule));
 
+   --  A number expression of a rule with a frame (`k + 1`) as Ada: the names are
+   --  slots of the frame, which is the top of Frames from Fb.
+   function Frame_Expr (Owner, Text : String) return String is
+      R : Unbounded_String;
+      I : Natural := Text'First;
+   begin
+      while I <= Text'Last loop
+         if Text (I) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+            declare
+               J : Natural := I;
+            begin
+               while J <= Text'Last
+                 and then Text (J) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_'
+               loop
+                  J := J + 1;
+               end loop;
+               Append (R, "Frames.Element (Fb +"
+                 & Natural'Image (Natural'Max (0, HBNF_Grammar.Slot_Of (Owner, Text (I .. J - 1))))
+                 & ")");
+               I := J;
+            end;
+         else
+            Append (R, Text (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return To_String (R);
+   end Frame_Expr;
+
+   --  The Ada call that parses a reference to a rule: the rule's function, or
+   --  for a rule with parameters that are numbers its Call_ function, which
+   --  makes the frame from the arguments, worked out in the frame the reference
+   --  stands in.
+   function Rule_Call (Owner, Nm, Text : String) return String is
+      Callee : constant HBNF_Grammar.Frame_Info := HBNF_Grammar.Frame_Of (Nm);
+      Args   : Unbounded_String;
+      Start  : Natural := Text'First;
+      Depth  : Natural := 0;
+   begin
+      if Length (Callee.Slots) = 0 or else Callee.Shares then
+         return "Parse_" & Ada_Ident (Nm) & " (P)";
+      end if;
+      for I in Text'Range loop
+         if Text (I) = '(' then
+            Depth := Depth + 1;
+         elsif Text (I) = ')' then
+            Depth := Depth - 1;
+         elsif Text (I) = ',' and then Depth = 0 then
+            Append (Args, ", " & Frame_Expr (Owner, Text (Start .. I - 1)));
+            Start := I + 1;
+         end if;
+      end loop;
+      if Text'Length > 0 then
+         Append (Args, ", " & Frame_Expr (Owner, Text (Start .. Text'Last)));
+      end if;
+      return "Call_" & Ada_Ident (Nm) & " (P" & To_String (Args) & ")";
+   end Rule_Call;
+
+   function Rule_Call (Owner : String; E : Element_Access) return String is
+     (Rule_Call (Owner, To_String (E.Name), To_String (E.Args)));
+
+   --  The same for a reference that is the name of a rule Nm, written as the
+   --  element E (a name, or the group a list repeats).
+   function Rule_Call (Owner, Nm : String; E : Element_Access) return String is
+     (Rule_Call
+        (Owner, Nm,
+         (if E.Kind = Name then To_String (E.Args)
+          elsif E.Kind = Group and then Natural (E.Items.Length) = 1
+            and then E.Items (1).Kind = Name
+          then To_String (E.Items (1).Args)
+          else "")));
+
    --  The Ada type a rule reference denotes: a core scalar inlines; any
    --  other reference resolves to the referenced rule's own type name.
    function Ada_Type_Of (Rules : Rule_Vectors.Vector; Ref : String)
@@ -1744,7 +1816,7 @@ package body HBNF_Ada is
          Sid : constant String := Img (Bref_Seq + 1);
          Wrapped : constant Boolean :=
            (for some K in First .. Last =>
-              Els (K).Kind = Block and then Els (K).Op = B_As);
+              Els (K).Kind = Block and then Els (K).Op in B_As | B_Num);
          function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
            (Pfx & "_" & Ada_Ident (To_String (Tag)) & "_" & Sid);
       begin
@@ -1760,6 +1832,9 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                   Append (Buf, Ind & "   Es_" & Sid & "_" & Img (K - 1) & " : Natural := 1;");
                   Append (Buf, LF);
+               elsif Els (K).Kind = Block and then Els (K).Op = B_Num then
+                  Append (Buf, Ind & "   Es_" & Sid & "_" & Img (K - 1) & " : Natural := 1;");
+                  Append (Buf, LF);
                end if;
             end loop;
             Append (Buf, Ind & "begin");
@@ -1770,7 +1845,7 @@ package body HBNF_Ada is
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op = B_As
+                 and then Els (K + 1).Op in B_As | B_Num
                then
                   Append (Buf, Ind & "Es_" & Sid & "_" & Img (K) & " := P.Pos;");
                   Append (Buf, LF);
@@ -1886,12 +1961,12 @@ package body HBNF_Ada is
                              and then (Is_Struct (NM) or else Back or else AR /= 0)
                            then
                               --  parsed into a value first, so a failed rule allocates nothing
-                              Append (Buf, Ind & "declare V : " & Ada_Ident (NM) & "_Type := Parse_"
-                                & Ada_Ident (NM) & " (P); begin " & Chk & " "
+                              Append (Buf, Ind & "declare V : " & Ada_Ident (NM) & "_Type := "
+                                & Rule_Call (To_String (Rules (Owner).Name), E) & "; begin " & Chk & " "
                                 & Dst & Ada_Field (NM) & " := new " & TN & "'(V); end;");
                            else
                               Append (Buf, Ind & Dst & Ada_Field (NM)
-                                & " := Parse_" & Ada_Ident (NM) & " (P); " & Chk);
+                                & " := " & Rule_Call (To_String (Rules (Owner).Name), E) & "; " & Chk);
                            end if;
                            Append (Buf, LF);
                         end;
@@ -1927,6 +2002,37 @@ package body HBNF_Ada is
                           & Ada_Escape (To_String (E.Ctx)) & "`""); " & To_String (FA) & " end if;");
                         Append (Buf, LF);
                         Append (Buf, Ind & "P.Pos := P.Pos + " & Tag_Var ("Cl", E.Ctx) & ";");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Spaces then
+                        --  exactly that many spaces
+                        Append (Buf, Ind & "declare Nn : constant Long_Long_Integer := "
+                          & Frame_Expr (To_String (Rules (Owner).Name), To_String (E.Ctx))
+                          & "; Ii : Long_Long_Integer := 0; begin"
+                          & " while Ii < Nn and then P.Pos + Natural (Ii) <= Limit (P)"
+                          & " and then P.Text (P.Pos + Natural (Ii)) = ' ' loop Ii := Ii + 1; end loop;"
+                          & " if Ii /= Nn then Fail (P, ""the indentation""); " & To_String (FA)
+                          & " end if; P.Pos := P.Pos + Natural (Nn); end;");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Col then
+                        --  the column: the code points since the line began
+                        Append (Buf, Ind & "declare Qq : Natural := P.Pos; Cc : Long_Long_Integer := 0; begin"
+                          & " while Qq > P.Text'First and then P.Text (Qq - 1) /= ASCII.LF"
+                          & " and then P.Text (Qq - 1) /= ASCII.CR loop Qq := Qq - 1;"
+                          & " if Character'Pos (P.Text (Qq)) / 64 /= 2 then Cc := Cc + 1; end if; end loop;"
+                          & " Frames.Replace_Element (Fb +"
+                          & Natural'Image (Natural'Max (0, HBNF_Grammar.Slot_Of
+                              (To_String (Rules (Owner).Name), To_String (E.Ctx))))
+                          & ", Cc); end;");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Num then
+                        --  the number the element before matched
+                        Append (Buf, Ind & "declare Vv : Long_Long_Integer := 0; begin"
+                          & " for Qq in Es_" & Sid & "_" & Img (K - 1) & " .. P.Pos - 1 loop"
+                          & " Vv := Vv * 10 + Long_Long_Integer (Character'Pos (P.Text (Qq)) - 48); end loop;"
+                          & " Frames.Replace_Element (Fb +"
+                          & Natural'Image (Natural'Max (0, HBNF_Grammar.Slot_Of
+                              (To_String (Rules (Owner).Name), To_String (E.Ctx))))
+                          & ", Vv); end;");
                         Append (Buf, LF);
                      elsif E.Op in B_Not | B_And then
                         --  !x / &x: x is tried at this place and nothing is consumed
@@ -2297,12 +2403,12 @@ package body HBNF_Ada is
                      Append (Buf, "            end;");
                   elsif Is_Struct (To_String (Simple)) then
                      Append (Buf, "            declare V : " & Ada_Ident (To_String (Simple))
-                       & "_Type := Parse_" & Ada_Ident (To_String (Simple)) & " (P); begin"
+                       & "_Type := " & Rule_Call (To_String (R.Name), To_String (Simple), E) & "; begin"
                        & " if P.Failed then P.Failed := False; P.Pos := Start; exit; end if;"
                        & " R.Append (new " & Ada_Ident (To_String (Simple)) & "_Type'(V)); end;");
                   elsif Alias_Record (Rules, To_String (Simple)) /= 0 then
                      Append (Buf, "            declare V : " & Ada_Ident (To_String (Simple))
-                       & "_Type := Parse_" & Ada_Ident (To_String (Simple)) & " (P); begin"
+                       & "_Type := " & Rule_Call (To_String (R.Name), To_String (Simple), E) & "; begin"
                        & " if P.Failed then P.Failed := False; P.Pos := Start; exit; end if;"
                        & " R.Append (new "
                        & Ada_Ident
@@ -2310,8 +2416,8 @@ package body HBNF_Ada is
                               (Rules (Leaf_Record (Rules, To_String (Simple))).Name))
                        & "_Type'(V)); end;");
                   else
-                     Append (Buf, "            declare V : " & Elem & " := Parse_"
-                       & Ada_Ident (To_String (Simple)) & " (P); begin"
+                     Append (Buf, "            declare V : " & Elem & " := "
+                       & Rule_Call (To_String (R.Name), To_String (Simple), E) & "; begin"
                        & " if P.Failed then P.Failed := False; P.Pos := Start; exit; end if;"
                        & " R.Append (V); end;");
                   end if;
@@ -2583,8 +2689,8 @@ package body HBNF_Ada is
                   Append (Buf, "      end;" & LF);
                end;
             else
-               Append (Buf, "      return Parse_"
-                 & Ada_Ident (To_String (P (1).Name)) & " (P);");
+               Append (Buf, "      return "
+                 & Rule_Call (To_String (R.Name), P (1)) & ";");
                Append (Buf, LF);
             end if;
          elsif SU /= "" then
@@ -4328,6 +4434,28 @@ package body HBNF_Ada is
          Mustache.Put (V, "nocase_proc", To_String (Nocase_Proc));
          Mustache.Put (V, "skip_ws", To_String (Skip_Body));
          Mustache.Put (V, "keyword_fn", To_String (Kw_Fn));
+         Mustache.Put (V, "frame_code",
+           (if HBNF_Grammar.Uses_Frames
+            then LF
+              & "   --  frames: the numbers of a rule with parameters worked out while parsing" & LF
+              & "   package Frame_Vectors is new Ada.Containers.Vectors (Natural, Long_Long_Integer);" & LF
+              & "   Frames : Frame_Vectors.Vector;" & LF
+              & "   Fb     : Natural := 0;" & LF
+              & "   function Push_Frame (N : Positive) return Natural is" & LF
+              & "      Ob : constant Natural := Fb;" & LF
+              & "   begin" & LF
+              & "      Fb := Natural (Frames.Length);" & LF
+              & "      for I in 1 .. N loop" & LF
+              & "         Frames.Append (0);" & LF
+              & "      end loop;" & LF
+              & "      return Ob;" & LF
+              & "   end Push_Frame;" & LF
+              & "   procedure Pop_Frame (Ob : Natural) is" & LF
+              & "   begin" & LF
+              & "      Frames.Set_Length (Ada.Containers.Count_Type (Fb));" & LF
+              & "      Fb := Ob;" & LF
+              & "   end Pop_Frame;" & LF
+            else ""));
          Mustache.Put (V, "parser_bit",
            (if Is_Hosted
             then "      Bit  : Natural := 0;   --  bits of the octet at Pos a bit rule has read" & LF
@@ -4352,6 +4480,46 @@ package body HBNF_Ada is
                Append (Bdy, "   function Parse_" & Ada_Ident (NM)
                  & " (P : in out Parser) return " & Ret_Type (I) & ";");
                Append (Bdy, LF);
+            end if;
+         end;
+      end loop;
+      --  A rule with parameters that are numbers is called through a function that
+      --  makes its frame from the arguments, and ends it.
+      for I in 1 .. N loop
+         declare
+            NM : constant String := To_String (Rules (I).Name);
+            F  : constant HBNF_Grammar.Frame_Info := HBNF_Grammar.Frame_Of (NM);
+         begin
+            if Length (F.Slots) > 0 and then not F.Shares then
+               declare
+                  Slots : Natural := 1;
+                  Decl  : Unbounded_String;
+                  Sets  : Unbounded_String;
+               begin
+                  for C of To_String (F.Slots) loop
+                     if C = ' ' then
+                        Slots := Slots + 1;
+                     end if;
+                  end loop;
+                  for A in 0 .. F.Arity - 1 loop
+                     Append (Decl, "; A" & Img (A) & " : Long_Long_Integer");
+                     Append (Sets, "      Frames.Replace_Element (Fb +" & Natural'Image (A)
+                             & ", A" & Img (A) & ");" & LF);
+                  end loop;
+                  Append (Bdy, "   function Call_" & Ada_Ident (NM)
+                    & " (P : in out Parser" & To_String (Decl) & ") return "
+                    & Ret_Type (I) & " is" & LF
+                    & "      Ob : constant Natural := Push_Frame (" & Img (Slots) & ");" & LF
+                    & "   begin" & LF
+                    & To_String (Sets)
+                    & "      declare" & LF
+                    & "         R : constant " & Ret_Type (I) & " := Parse_" & Ada_Ident (NM) & " (P);" & LF
+                    & "      begin" & LF
+                    & "         Pop_Frame (Ob);" & LF
+                    & "         return R;" & LF
+                    & "      end;" & LF
+                    & "   end Call_" & Ada_Ident (NM) & ";" & LF & LF);
+               end;
             end if;
          end;
       end loop;
@@ -5113,7 +5281,9 @@ package body HBNF_Ada is
          Mustache.Put (V, "bit_init", (if Is_Hosted then ", Bit => 0" else ""));
          Mustache.Put (V, "reset",
            (if Is_Hosted and then Hosted_Acts
-            then "      Bnf_Warns.Clear;" & LF else ""));
+            then "      Bnf_Warns.Clear;" & LF else "")
+           & (if HBNF_Grammar.Uses_Frames
+              then "      Frames.Clear; Fb := 0;" & LF else ""));
          Mustache.Put (V, "actions",
            (if Is_Hosted and then Hosted_Acts
               and then (Is_Record (Analyze (Rules, 1))

@@ -34,7 +34,7 @@ pc(C in "block" | "flow") := ~( nonns | flow-ind | ":" )
 pc("block") := ~( nonns | ":" )
 pcx(C in "block" | "flow") := ~( nonns | flow-ind | ":" | "#" )
 pcx("block") := ~( nonns | ":" | "#" )
-plain1(C in "block" | "flow") := first(C) *( pc(C) | ":" &safe(C) | 1*WSP ( pcx(C) | ":" &safe(C) ) )
+plainline(C in "block" | "flow") := first(C) *( pc(C) | ":" &safe(C) | 1*WSP ( pcx(C) | ":" &safe(C) ) )
 ptail(C in "block" | "flow") := *( pc(C) | ":" &safe(C) | 1*WSP ( pcx(C) | ":" &safe(C) ) )
 pcont(C in "block" | "flow") := ( pcx(C) | ":" &safe(C) ) ptail(C)
 
@@ -42,8 +42,8 @@ pcont(C in "block" | "flow") := ( pcx(C) | ":" &safe(C) ) ptail(C)
 esc      = "0" | "a" | "b" | "t" | HTAB | "n" | "v" | "f" | "r" | "e" | SP | DQUOTE | "/" | %x5C | "N" | "_" | "L" | "P" | "x" 2HEXDIG | "u" 4HEXDIG | "U" 8HEXDIG
 dqc      = SP | HTAB | ~( nonns | DQUOTE | %x5C ) | %x5C esc
 sqc      = SP | HTAB | ~( nonns | "'" ) | "''"
-dq1      = DQUOTE *dqc DQUOTE
-sq1      = "'" *sqc "'"
+dqline      = DQUOTE *dqc DQUOTE
+sqline      = "'" *sqc "'"
 
 dword    = 1*ns
 dres     = "YAML" | "TAG"

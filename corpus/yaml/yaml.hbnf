@@ -14,7 +14,7 @@ include "yaml-tokens.hbnf"
 brk(M in 0..) := *WSP nl *( *WSP nl ) !marker %spaces M *WSP
 dq(M in 0..) := DQUOTE *dqc *( [ %x5C ] brk(M) *dqc ) DQUOTE
 sq(M in 0..) := "'" *sqc *( brk(M) *sqc ) "'"
-pml(M in 0..) := plain1("block") *( brk(M) pcont("block") )
+pml(M in 0..) := plainline("block") *( brk(M) pcont("block") )
 
 ; ---- block scalars: the text lines are indented K or more, K being the first line's, or M - 1
 ; plus the digit of the header
@@ -26,7 +26,7 @@ bscalar(M in 0..) := ( "|" | ">" ) ( bsfix(M) | [ chomp ] trail bsauto(M) )
 ; ---- flow collections
 fbrk(M in 0..) := nl *( *WSP nl ) !marker %spaces M *WSP
 fgap(M in 0..) := *( 1*( WSP | fbrk(M) ) [ "#" *nb ] )
-fplain(M in 0..) := plain1("flow") *( brk(M) pcont("flow") )
+fplain(M in 0..) := plainline("flow") *( brk(M) pcont("flow") )
 fval(M in 0..) := fseq(M) | fmap(M) | dq(M) | sq(M) | alias | fplain(M)
 fvaln(M in 0..) := fseq(M) | fmap(M) | dq(M) | sq(M) | fplain(M)
 fnode(M in 0..) := props [ 1*( WSP | fbrk(M) ) fvaln(M) ] | fval(M)
@@ -58,7 +58,7 @@ body(K in 0.., M in 0..) := bmap(K) | bseq(K) | inl(M) | HTAB *WSP inl(M)
 body0(K in 0.., M in 0..) := bmap(K) | bseq(K) | val(M) | HTAB *WSP val(M)
 
 sep      = &WSP | &nl | !any
-ikey(K in 0..) := props 1*WSP ( dq1 | sq1 | fseq(0 - 1) | fmap(0 - 1) | plain1("block") ) | alias | dq1 | sq1 | fseq(0 - 1) | fmap(0 - 1) | plain1("block") | props &( WSP | ":" ) | ""
+ikey(K in 0..) := props 1*WSP ( dqline | sqline | fseq(0 - 1) | fmap(0 - 1) | plainline("block") ) | alias | dqline | sqline | fseq(0 - 1) | fmap(0 - 1) | plainline("block") | props &( WSP | ":" ) | ""
 bmap(K in 0..) := mapent(K) *( nl gap %spaces K !marker mapent(K) )
 mapent(K in 0..) := "?" eval(K) [ nl gap %spaces K ":" eval(K) ] | ikey(K) *WSP ":" mval(K)
 mval(K in 0..) := sep ( 1*WSP inl(K + 1) trail | trail mnest(K) )

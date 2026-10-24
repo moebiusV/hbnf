@@ -18,9 +18,12 @@ and the generated parser grow with the deepest column allowed: 4,000 lines of C 
 columns, and a generator that took minutes.  The same grammar now generates in about two seconds
 and 14,800 lines of C, with no limit on depth.
 
+Each backend keeps the frames of numbers in a stack that grows with the nesting; a use of a rule
+with such parameters is a push, the call and a pop.
+
 ## Checked
 
-- **The YAML test suite** (`sh tests/yaml-suite.sh`, branch `data-2022-01-17`): all 308 valid
+- **The YAML test suite** (`sh tests/yaml-suite.sh`, branch `data-2022-01-17`, run through the C parser): all 308 valid
   cases are accepted, and 89 of the 94 invalid ones are refused.  The five that are not are listed
   in `suite-gaps.txt` with why; the run fails if one of them changes.
 - **PyYAML** (`sh tests/yaml-diff.sh [N [SEED]]`): random data written by PyYAML in its block and
@@ -36,5 +39,5 @@ and 14,800 lines of C, with no limit on depth.
   indented (suite cases 5LLU, S98Z, W9L4), and a line of a tab alone after its header (Y79Y/000).
 - A tag shorthand `!handle!x` used where its `%TAG` is not in force (QLJ7): that is a statement
   about the meaning of the document, as a duplicate TOML key is.
-- Only the C backend emits it: a grammar with numbers worked out while parsing is refused by the
-  others with a message saying so.
+- C, Rust, Zig and Ada emit it; Tree-sitter has no form for numbers worked out while parsing and
+  `--writer`, `--ast`, `--idref` and `--forks` do not know them, and each says so.

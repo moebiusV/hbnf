@@ -352,6 +352,87 @@ package body HBNF_Rust is
    function Rule_Fn (Snake : String) return String is
      (if Snake = "text" then "parse_rule_text" else "parse_" & Snake);
 
+   --  A number expression of a rule with a frame (`k + 1`) as Rust: the names
+   --  are slots of the frame, which is the top of p.fs from p.fb.
+   function Frame_Expr (Owner, Text : String) return String is
+      R : Unbounded_String;
+      I : Natural := Text'First;
+   begin
+      while I <= Text'Last loop
+         if Text (I) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+            declare
+               J : Natural := I;
+            begin
+               while J <= Text'Last
+                 and then Text (J) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_'
+               loop
+                  J := J + 1;
+               end loop;
+               Append (R, "p.fs[p.fb + "
+                 & Img (Natural'Max (0, HBNF_Grammar.Slot_Of (Owner, Text (I .. J - 1))))
+                 & "]");
+               I := J;
+            end;
+         else
+            Append (R, Text (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return To_String (R);
+   end Frame_Expr;
+
+   --  The Rust expression that parses a reference to a rule (Call is the call of
+   --  the rule's function, a Result).  A rule with parameters that are numbers
+   --  runs in a frame the reference makes from its arguments, worked out in the
+   --  frame it stands in.
+   function Rule_Call
+     (Owner : String; E : Element_Access; Call : String) return String
+   is
+      Callee : constant HBNF_Grammar.Frame_Info :=
+        HBNF_Grammar.Frame_Of (To_String (E.Name));
+      Args   : Unbounded_String;
+      Set    : Unbounded_String;
+      N      : Natural := 0;
+      Text   : constant String := To_String (E.Args);
+      Start  : Natural := Text'First;
+      Depth  : Natural := 0;
+
+      procedure One (A : String) is
+      begin
+         Append (Args, "let a" & Img (N) & "_: i64 = " & Frame_Expr (Owner, A) & "; ");
+         Append (Set, " p.fs[p.fb + " & Img (N) & "] = a" & Img (N) & "_;");
+         N := N + 1;
+      end One;
+   begin
+      if Length (Callee.Slots) = 0 or else Callee.Shares then
+         return Call;
+      end if;
+      for I in Text'Range loop
+         if Text (I) = '(' then
+            Depth := Depth + 1;
+         elsif Text (I) = ')' then
+            Depth := Depth - 1;
+         elsif Text (I) = ',' and then Depth = 0 then
+            One (Text (Start .. I - 1));
+            Start := I + 1;
+         end if;
+      end loop;
+      if Text'Length > 0 then
+         One (Text (Start .. Text'Last));
+      end if;
+      declare
+         Slots : Natural := 1;
+      begin
+         for C of To_String (Callee.Slots) loop
+            if C = ' ' then
+               Slots := Slots + 1;
+            end if;
+         end loop;
+         return "{ " & To_String (Args) & "let ob_ = p.fpush(" & Img (Slots) & ");"
+           & To_String (Set) & " let r_ = " & Call & "; p.fpop(ob_); r_ }";
+      end;
+   end Rule_Call;
+
    function Type_Name (Rule : String) return String is (Rust_Type (Rule));
    function Parse_Fn (Rule : String) return String is
      (Rule_Fn (Rust_Snake (Rule)));
@@ -2791,7 +2872,7 @@ package body HBNF_Rust is
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test
+                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test | B_Num
                then
                   Append (Buf, Ind & "let es_" & Sid & "_" & Img (K) & " = p.pos;");
                   Append (Buf, LF);
@@ -2847,13 +2928,17 @@ package body HBNF_Rust is
                         end;
                      elsif Is_Back (Backs, Owner, To_String (E.Name)) then
                         Append (Buf, Ind & Dst
-                          & Rust_Field (To_String (E.Name)) & " = Some(Box::new(parse_"
-                          & Rust_Snake (To_String (E.Name)) & "(p)?));");
+                          & Rust_Field (To_String (E.Name)) & " = Some(Box::new("
+                          & Rule_Call (To_String (Rules (Owner).Name), E,
+                                       "parse_" & Rust_Snake (To_String (E.Name)) & "(p)")
+                          & "?));");
                         Append (Buf, LF);
                      else
                         Append (Buf, Ind & Dst
-                          & Rust_Field (To_String (E.Name)) & " = parse_"
-                          & Rust_Snake (To_String (E.Name)) & "(p)?;");
+                          & Rust_Field (To_String (E.Name)) & " = "
+                          & Rule_Call (To_String (Rules (Owner).Name), E,
+                                       "parse_" & Rust_Snake (To_String (E.Name)) & "(p)")
+                          & "?;");
                         Append (Buf, LF);
                      end if;
                   when Group =>
@@ -2872,6 +2957,32 @@ package body HBNF_Rust is
                           & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
                           & "; p.pos = k_; " & Tag_Var ("cp", E.Ctx) & " = st_; "
                           & Tag_Var ("cl", E.Ctx) & " = k_ - st_; }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Spaces then
+                        --  exactly that many spaces
+                        Append (Buf, Ind & "{ let n_: i64 = "
+                          & Frame_Expr (To_String (Rules (Owner).Name), To_String (E.Ctx))
+                          & "; let b_ = p.text.as_bytes(); let mut i_: i64 = 0;"
+                          & " while i_ < n_ && p.pos + (i_ as usize) < b_.len() && b_[p.pos + i_ as usize] == b' ' { i_ += 1; }"
+                          & " if i_ != n_ { return Err(p.fail(""the indentation"")); } p.pos += n_ as usize; }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Col then
+                        --  the column: the code points since the line began
+                        Append (Buf, Ind & "{ let b_ = p.text.as_bytes(); let mut q_ = p.pos; let mut c_: i64 = 0;"
+                          & " while q_ > 0 && b_[q_ - 1] != b'\n' && b_[q_ - 1] != b'\r' { q_ -= 1; if (b_[q_] & 0xC0) != 0x80 { c_ += 1; } }"
+                          & " p.fs[p.fb + "
+                          & Img (Natural'Max (0, HBNF_Grammar.Slot_Of
+                              (To_String (Rules (Owner).Name), To_String (E.Ctx))))
+                          & "] = c_; }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Num then
+                        --  the number the element before matched
+                        Append (Buf, Ind & "{ let b_ = p.text.as_bytes(); let mut v_: i64 = 0;"
+                          & " for q_ in es_" & Sid & "_" & Img (K - 1) & "..p.pos { v_ = v_ * 10 + (b_[q_] - b'0') as i64; }"
+                          & " p.fs[p.fb + "
+                          & Img (Natural'Max (0, HBNF_Grammar.Slot_Of
+                              (To_String (Rules (Owner).Name), To_String (E.Ctx))))
+                          & "] = v_; }");
                         Append (Buf, LF);
                      elsif E.Op in B_Test | B_Not_Test then
                         --  `x ? types` / `x ?! types`: the text x matched is (not) in the context
@@ -3191,8 +3302,10 @@ package body HBNF_Rust is
                        & "); p.pos += n;");
                      Append (Buf, LF);
                   else
-                     Append (Buf, "        match " & Rule_Fn (Rust_Snake (To_String (E.Name)))
-                       & "(p) { Ok(v) => r.push(v), Err(_) => { p.pos = save; break; } }");
+                     Append (Buf, "        match "
+                       & Rule_Call (To_String (R.Name), E,
+                                    Rule_Fn (Rust_Snake (To_String (E.Name))) & "(p)")
+                       & " { Ok(v) => r.push(v), Err(_) => { p.pos = save; break; } }");
                      Append (Buf, LF);
                   end if;
                   --  What is repeated can match nothing: an iteration that
@@ -3389,8 +3502,9 @@ package body HBNF_Rust is
                   Append (Buf, "    Ok(r)" & LF);
                end;
             else
-               Append (Buf, "    " & Rule_Fn (Rust_Snake (To_String (P (1).Name)))
-                 & "(p)");
+               Append (Buf, "    "
+                 & Rule_Call (To_String (R.Name), P (1),
+                              Rule_Fn (Rust_Snake (To_String (P (1).Name))) & "(p)"));
                Append (Buf, LF);
             end if;
          elsif SU /= "" then
@@ -3607,7 +3721,8 @@ package body HBNF_Rust is
             Mustache.Put (V, "bit_field",
               (if Is_Hosted then "bit: usize, " else ""));
             Mustache.Put (V, "ctx_field",
-              (if Ctx_On then ", cx: [Cx; NCTX]" else ""));
+              (if Ctx_On then ", cx: [Cx; NCTX]" else "")
+              & (if HBNF_Grammar.Uses_Frames then ", fs: Vec<i64>, fb: usize" else ""));
             Mustache.Put (V, "first_char",
               (if Is_Hosted then "bnf_first_char(&b[self.pos..])"
                else "self.text[self.pos..].chars().next().unwrap().to_string()"));
@@ -3653,6 +3768,18 @@ package body HBNF_Rust is
                  & "    }" & LF
                  & "}" & LF & LF);
             end;
+         end if;
+         if HBNF_Grammar.Uses_Frames then
+            Append (Res, LF & "// ---- frames: the numbers of a rule with parameters worked out while parsing ----" & LF
+              & "impl<'a> P<'a> {" & LF
+              & "    fn fpush(&mut self, n: usize) -> usize {" & LF
+              & "        let ob = self.fb;" & LF
+              & "        self.fb = self.fs.len();" & LF
+              & "        self.fs.resize(self.fb + n, 0);" & LF
+              & "        ob" & LF
+              & "    }" & LF
+              & "    fn fpop(&mut self, ob: usize) { self.fs.truncate(self.fb); self.fb = ob; }" & LF
+              & "}" & LF & LF);
          end if;
       end;
       Append (Res, LF);
@@ -4000,25 +4127,41 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                      begin
                         for B of DNF loop
                            Br := Br + 1;
-                           Append (Res, "    'br" & Img (Br) & ": {");
-                           Append (Res, LF);
-                           Append (Res, "        let mut off = 0usize;");
-                           Append (Res, LF);
-                           for A of B loop
-                              case A.Kind is
-                                 when Single =>
-                                    Append (Res, "        let (n, c) = decode_utf8(s, pos + off, len);"
-                                      & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi)
-                                      & " { break 'br" & Img (Br) & "; } off += n;");
-                                    Append (Res, LF);
-                                 when Repeat =>
-                                    Emit_Repeat (A, "        ", "break 'br" & Img (Br));
-                              end case;
-                           end loop;
-                           Append (Res, "        if off > best { best = off; }");
-                           Append (Res, LF);
-                           Append (Res, "    }");
-                           Append (Res, LF);
+                           --  The branch is a labelled block that its failures
+                           --  leave; one that cannot fail (`*x`) has no label, which
+                           --  Rust would say is unused.
+                           declare
+                              Mark : constant Natural := Length (Res);
+                              Branch_Text : Unbounded_String;
+                           begin
+                              Append (Res, "        let mut off = 0usize;");
+                              Append (Res, LF);
+                              for A of B loop
+                                 case A.Kind is
+                                    when Single =>
+                                       Append (Res, "        let (n, c) = decode_utf8(s, pos + off, len);"
+                                         & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi)
+                                         & " { break 'br" & Img (Br) & "; } off += n;");
+                                       Append (Res, LF);
+                                    when Repeat =>
+                                       Emit_Repeat (A, "        ", "break 'br" & Img (Br));
+                                 end case;
+                              end loop;
+                              Append (Res, "        if off > best { best = off; }");
+                              Append (Res, LF);
+                              Branch_Text := To_Unbounded_String (Slice (Res, Mark + 1, Length (Res)));
+                              Delete (Res, Mark + 1, Length (Res));
+                              Append (Res, "    "
+                                & (if Index (Branch_Text, "break 'br" & Img (Br) & ";") > 0
+                                     or else Index (Branch_Text, "break 'br" & Img (Br) & " ") > 0
+                                     or else Index (Branch_Text, "break 'br" & Img (Br) & "}") > 0
+                                   then "'br" & Img (Br) & ": " else "")
+                                & "{");
+                              Append (Res, LF);
+                              Append (Res, Branch_Text);
+                              Append (Res, "    }");
+                              Append (Res, LF);
+                           end;
                         end loop;
                      end;
                      Append (Res, "    best");
@@ -4060,7 +4203,8 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
          Mustache.Put (V, "text_param", (if Is_Hosted then "&[u8]" else "&str"));
          Mustache.Put (V, "text_init", (if Is_Hosted then ": Txt(text)" else ""));
          Mustache.Put (V, "bit_init", (if Is_Hosted then "bit: 0, " else ""));
-         Mustache.Put (V, "ctx_init", (if Ctx_On then ", cx: Default::default()" else ""));
+         Mustache.Put (V, "ctx_init", (if Ctx_On then ", cx: Default::default()" else "")
+                       & (if HBNF_Grammar.Uses_Frames then ", fs: Vec::new(), fb: 0" else ""));
          Mustache.Put (V, "reset",
            (if Is_Hosted and then Hosted_Acts
             then "    BNF_WARNINGS.with(|w| w.borrow_mut().clear());" & LF else ""));

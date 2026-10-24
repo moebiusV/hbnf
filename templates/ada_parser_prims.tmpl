@@ -34,7 +34,7 @@
    end Enter;
 
    function Limit (P : Parser) return Natural is
-     (Natural'Min (P.Last, P.Text'Last));
+     (Natural'Min (P.Last, P.Text'Last));{{&frame_code}}
 
    Spaces : constant String :=
      "                                                                ";

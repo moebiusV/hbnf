@@ -1,5 +1,6 @@
 pragma Ada_2022;
 
+with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -587,10 +588,44 @@ package body HBNF_C is
 
    package Info_Vectors is new Ada.Containers.Vectors (Positive, Rule_Info);
 
+   --  A rule by name, through a tree of the names that is made again when the
+   --  number of rules changes (see Index_Of in hbnf_grammar.adb).
+   package Name_Idx_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, Natural);
+   Name_Idx     : Name_Idx_Maps.Map;
+   Name_Idx_Len : Natural := 0;
+
    function Find (Rules : Rule_Vectors.Vector; Name : String) return Natural is
+      N : constant Natural := Natural (Rules.Length);
    begin
-      for I in 1 .. Natural (Rules.Length) loop
+      if N /= Name_Idx_Len then
+         Name_Idx.Clear;
+         for I in 1 .. N loop
+            declare
+               Nm : constant String := To_String (Rules (I).Name);
+            begin
+               if not Name_Idx.Contains (Nm) then
+                  Name_Idx.Insert (Nm, I);
+               end if;
+            end;
+         end loop;
+         Name_Idx_Len := N;
+      end if;
+      declare
+         C : constant Name_Idx_Maps.Cursor := Name_Idx.Find (Name);
+      begin
+         if Name_Idx_Maps.Has_Element (C) then
+            declare
+               J : constant Natural := Name_Idx_Maps.Element (C);
+            begin
+               if J <= N and then To_String (Rules (J).Name) = Name then
+                  return J;
+               end if;
+            end;
+         end if;
+      end;
+      for I in 1 .. N loop
          if To_String (Rules (I).Name) = Name then
+            Name_Idx_Len := 0;
             return I;
          end if;
       end loop;
@@ -1490,15 +1525,7 @@ package body HBNF_C is
 
       N : constant Natural := Natural (Rules.Length);
 
-      function Find (Name : String) return Natural is
-      begin
-         for I in 1 .. N loop
-            if To_String (Rules (I).Name) = Name then
-               return I;
-            end if;
-         end loop;
-         return 0;
-      end Find;
+      function Find (Name : String) return Natural is (Find (Rules, Name));
 
       function C_Type_Of (Ref : String) return String is
          S : constant String := Scalar_C_Type (Ref);
@@ -4463,15 +4490,7 @@ package body HBNF_C is
 
       N : constant Natural := Natural (Rules.Length);
 
-      function Find (Name : String) return Natural is
-      begin
-         for I in 1 .. N loop
-            if To_String (Rules (I).Name) = Name then
-               return I;
-            end if;
-         end loop;
-         return 0;
-      end Find;
+      function Find (Name : String) return Natural is (Find (Rules, Name));
 
       function Is_Core (Name : String) return Boolean is
         (Scalar_C_Type (Name) /= "");

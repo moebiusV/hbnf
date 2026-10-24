@@ -576,7 +576,191 @@ corrected by the messages, not by reading the manual.
 ## Shipped grammars
 
 HyperBNF ships four grammars as fundamentals that can be dropped in and used at once: **JSON**
-(RFC 8259, built, `corpus/json/`), **TOML** (built, `corpus/toml/`), **YAML** and **obconf** (the config file format OpenBSD uses by default for new projects; built, `grammars/obconf.hbnf`).  YAML is in the plan.  Each one gets the treatment JSON has:
+(RFC 8259, built, `corpus/json/`), **TOML** (built, `corpus/toml/`), **YAML** (built, `corpus/yaml/`) and **obconf** (the config file format OpenBSD uses by default for new projects; built, `grammars/obconf.hbnf`).  Each one gets the treatment JSON has:
+
+- a grammar in HyperBNF, as small as the language allows, and parsers generated from it in all
+  four backends (C, Rust, Zig, Ada);
+- a test suite in `tests/`, run in every backend: the language's own conformance suite where one
+  exists (toml-test for TOML, the YAML test suite for YAML), plus mutations of valid documents;
+- a differential check against a reference parser (Python's `json` for JSON, `tomllib` for TOML,
+  a YAML library for YAML), on a large generated and mutated set, as `tests/json-diff.sh` does;
+- the grammar's size in rules, alternatives, symbols and lines, from `scripts/grammar-size.py`,
+  against the specification's own grammar;
+- a README under `corpus/` that says what the grammar accepts, what it refuses and why.
+
+YAML's indentation is syntax: the spec's productions take the indentation `n` as a parameter
+(`s-indent(n)`, `l+block-sequence(n)`).  A parameter whose domain has no end, `k in 0..`, is a
+number the parser works out as it reads (frames of numbers, `%spaces`, `%col`, `x %num`; ABNF.md),
+so the grammar is the size of the spec's and nests as deep as the text does.  The first version made
+a rule of every column, which grew the grammar and the parser with the cap and took minutes to
+generate.  `corpus/yaml/` is built: all 308 valid cases of the YAML test suite and 89 of the 94
+invalid ones, all four backends; what is left is listed in `corpus/yaml/suite-gaps.txt`.
+
+## Ordering and token tables
+
+Researched 2026-10-02, because the question deserves an answer and not a
+restatement of decision 7: *why did we go against token tables, shouldn't
+`foo = "bar"` go into one, and why is `%token` needed at all?*
+
+Three answers, and the first thing to separate is the two different things
+"token table" can mean.  A **keyword table** interns the fixed literals a
+grammar names and gives each an id.  A **token array** cuts the whole input
+into tokens before any rule runs.  hbnf kept the first and dropped the
+second, and the confusion between them is doing real damage to this plan.
+
+**1. `foo = "bar"` already goes into a token table.**  `Is_Keyword_Lit`
+in the C backend: a literal led by a letter or `_` is a keyword, and when a
+grammar has no `keywords { }` table **every** such literal is one.  So
+`"bar"` is already interned, already in the generated `kwid_t` enum, and
+already looked up by `kw_lookup`.  The user's instinct is the
+implementation; nothing needs adding.
+
+The `keywords { }` directive only ever *narrows* that default, and it
+exists for exactly one reason: parse.y's `lookup()` reserves a word
+**everywhere in the file**, so a word in the table does not match `STRING`
+anywhere.  Byte-identity with parse.y therefore requires hbnf to reserve
+the same set, no more and no less — which a default of "every letter-led
+literal" does not give, because the daemon grammars name literals parse.y
+does not reserve.  The POSIX shell grammar shows the other edge of the same
+tool: `if` is reserved only in command position, so a table that reserves
+everywhere is the wrong instrument there and the rules must spell `if` as
+an alternative instead.
+
+**2. What was dropped was the token array, and the reason was correctness,
+not speed.**  Decision 7 has it: the pre-cut array imposed a tokenization
+the grammar never asked for.  `"x" "y"` accepted `x y` and rejected `xy` —
+the exact opposite of ABNF, where concatenation is adjacency — and
+`1*VCHAR` failed on `/x`, because the lexer had already decided `x` was a
+word.  For RFC 5234 that is not a performance trade, it is the wrong
+language.  The array also put the lexer outside the notation: `wordchars`
+was a directive, so a grammar could not say what a word is.  Now it is a
+rule (`wordchars = ALPHA | DIGIT | "_" | "-" | "."`) that any grammar
+overrides, which is what let pfctl add `$`, `@` and `%` and ntpd not.
+
+So "we went against ordering and token tables" is not what happened.  The
+keyword table is still there.  What the array also carried, and what
+genuinely went with it, is the subject of the third answer.
+
+**3. The id dispatch is what we lost, and it is recoverable without the
+array.**  Measured in the generated pfctl parser: `expect_kind` — the
+token-era jump that read a token's interned id and branched on it —
+appears **72 times** before 4c and **zero times** after.  `kw_lookup`
+survives at three sites, all of them negative ("this word is reserved, so
+it is not a `word`").  Nothing dispatches on an id any more.  A wide
+alternation instead calls `expect_word` per branch, which re-scans the word
+and `memcmp`s it, and `cc89c9e` recovered part of the loss by switching on
+the first byte — which separates **7 of pfctl's 35** `filteropt` branches,
+because the rest share a leading letter.
+
+That is most of the 1.61x instruction-count gap (190.3M against 306.6M at
+5,000 rules): 73 `scan_word` calls and 191 `skip_ws` calls per rule, for a
+rule holding 14 words.  Decision 7 predicted exactly this and promised two
+remedies — "remembering the last token scanned at a position and branching
+on the first byte."  The first byte landed; the remembering did not.
+
+**So the benefit the question asks about is real, and here is the shape it
+takes.**  Not a token array: a position-keyed scan, which is the same
+economy without the wrong language.
+
+- **Scan once per position** (4c's deferred memoization).  Prototyped
+  2026-10-02 in the generated C: a (position -> scan length) table for the
+  word scanner with a generation stamp, 306.6M -> 258.7M instructions and
+  1.28x -> 1.12x against the token array.  This is "remembering the last
+  token scanned at a position", and it is the half of decision 7 still owed.
+- **Dispatch on the id, not the first byte.**  Scan the word once at the
+  branch position, `kw_lookup` it, and `switch` on the `kwid_t` — the
+  token-era `expect_kind` jump, restored over characters.  Correctness
+  condition: a case for keyword K may jump to branch N only if no branch
+  before N can begin with K, which is a FIRST-set computation hbnf already
+  needs for its FIRST/FOLLOW-disjoint compilation.  Branches led by a rule
+  rather than a literal stay in the linear chain.
+- **Measure it on an input that exercises it.**  A hand-built kwid dispatch
+  over `filteropt` measured 307.1M, very slightly *worse* — because
+  `bench/gen.sh` emits one rule shape whose only filter option is
+  `keep state`, and `keep` is one of the 7 that first-byte dispatch already
+  separates.  The gate is being held against an input narrower than the
+  thing it measures.  `gen.sh` needs a mode that cycles the filter options
+  before any of this is worth doing.
+
+**4. `%token` is not needed at all, and hbnf should never require it.**  In
+yacc, `%token NAME` declares a terminal whose *spelling lives in the lexer*,
+in C, outside the grammar; the declaration is the only thing tying the
+parser to a symbol it cannot see.  hbnf has no outside lexer — the lexer is
+grammar — so a `%token` carries no information: either the name has a
+definition in the file, and the declaration is redundant, or it has none,
+and the grammar is simply incomplete.  `%token` is therefore a **paste
+artifact and nothing more**: the reader accepts it so a POSIX or yacc
+grammar pastes unchanged, registers the name as declared-but-undefined so
+the error can name it by kind (operator, reserved word, lexical class), and
+requires it from nobody.  A grammar written in HyperBNF never writes one.  That
+is what the POSIX BNF section above specifies, and the reasoning is this.
+
+## Compiler-compiler completion criteria
+
+The end state is deliberately broader than "an ABNF parser generator": one
+human-readable grammar describes syntax, lexical boundaries, wire
+representation and semantic construction, so the author never maintains a
+separate lex spec, yacc semantic-value protocol, AST schema and serializer.
+`%scan{}` and `%action{}` stay the escape hatches for target-language code;
+the remaining work adds the *interfaces around* them — not yacc's global
+state (`yylval`, `yyparse`, `$1`/`$$`), LR tables, or GLR.
+
+A grammar is compiler-compiler ready when:
+
+1. **Source locations are first-class.**  Every node and semantic value keeps
+   a source span; diagnostics name file, line/column and the span, not just
+   the current token.
+2. **Semantic values are typed and named.**  `%action{}` sees named children,
+   not positional `$1`/`$2`; impossible assignments are rejected at generation
+   time where the target language allows it.
+3. **Parser state is reentrant.**  Input position, diagnostics, scanner state
+   and semantic state ride in an explicit context; no global parser state.
+4. **Scanner modes are first-class.**  `%scan{}` gets a flex-style
+   start-condition mechanism with push/pop, for strings, interpolation,
+   heredocs and other lexical sublanguages; a small state machine, not a
+   second grammar language.
+5. **Input sources are abstracted.**  Memory buffer, file stream or
+   caller-provided source, with contiguous memory as the fast path.
+6. **Error recovery is explicit and opt-in.**  Fail-fast stays the default; a
+   grammar may declare synchronization points, and recovery never runs
+   `%action{}` side effects speculatively.
+7. **Wire values are semantic values.**  Width, signedness, endianness, exact
+   byte sequences and range constraints are explicit; `u8`/`u16` mean the same
+   in the interpreter and every backend.
+8. **One semantic model.**  The emitters agree on ordered choice,
+   repetition, left recursion, characters and wire values; a backend
+   limitation is a generation-time error, never a silent divergence.  This
+   criterion used to read "the interpreter and all emitters agree", which
+   was the wrong shape of promise: a second implementation cannot be made
+   to agree, only kept in step, and it was not — it stayed on the token
+   model through all of step 4 (step 9c retires it).  **One model means one
+   implementation**, and the gate for that is that no second one exists.
+9. **Progress is an invariant.**  Every unbounded repetition and rewritten
+   left-recursive tail consumes input or terminates.
+10. **The representation is inspectable.**  A shared semantic IR beneath the
+    templates, rendered by the Mustache-style `{{ }}` renderer in
+    `templates.adb` (a recursive Scalar/List/Map context), so a compiler can
+    inspect rules, locations, semantic values and wire values before
+    emission.  *The renderer is written; nothing calls it yet, and the
+    templates are still `${name}` and `@PLACEHOLDER@* — see step 3b.
+11. **Round-trip and byte-identity gates are mandatory.**  Text grammars keep
+    their source/value distinctions; wire grammars have byte fixtures; the
+    backends agree with the interpreter on acceptance and values.
+
+**RFC copy-paste is a design goal.**  An RFC's ABNF should compile almost
+verbatim.  An RFC's ABNF uses `=`, which hbnf reads.  A grammar in another notation
+(`::=` in BNF, `:` in yacc) names it with `dialect bnf` or `ybnf`, and then every
+spelling defines a rule; in HyperBNF's own notation `::=` and `:=` are the metarule and
+the hyperrule (`level ::= 1..17`, `binary(N in level) := ...`), as the ALGOL 68
+Report's `::` and `:`, and a BNF rule read as one is refused with the line to add.
+Where hbnf needs something different,
+the error names the RFC form and says how hbnf spells it, so a pasted RFC is
+corrected by the messages, not by reading the manual.
+
+## Shipped grammars
+
+HyperBNF ships four grammars as fundamentals that can be dropped in and used at once: **JSON**
+(RFC 8259, built, `corpus/json/`), **TOML** (built, `corpus/toml/`), **YAML** (built, `corpus/yaml/`) and **obconf** (the config file format OpenBSD uses by default for new projects; built, `grammars/obconf.hbnf`).  Each one gets the treatment JSON has:
 
 - a grammar in HyperBNF, as small as the language allows, and parsers generated from it in all
   four backends (C, Rust, Zig, Ada);

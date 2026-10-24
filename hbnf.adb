@@ -1,5 +1,6 @@
 pragma Ada_2022;
 
+with Ada.Calendar;
 with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Environment_Variables;
@@ -42,6 +43,22 @@ with HBNF_Wire.Ada_Lang;
 procedure Hbnf is
 
    use Ada.Strings.Unbounded;
+
+   Started      : constant Ada.Calendar.Time := Ada.Calendar.Clock;
+   Timing       : constant Boolean :=
+     Ada.Environment_Variables.Exists ("HBNF_TIMING");
+   --  HBNF_TIMING=1: say on standard error how long each stage took.
+   procedure Lap (What : String) is
+      use type Ada.Calendar.Time;
+   begin
+      if Timing then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "hbnf: " & What & " at"
+            & Integer'Image (Integer (Float (Ada.Calendar.Clock - Started) * 1000.0))
+            & " ms");
+      end if;
+   end Lap;
 
    Backend      : Unbounded_String := To_Unbounded_String ("c");
    Package_Name : Unbounded_String := To_Unbounded_String ("Schema");
@@ -292,14 +309,14 @@ begin
          return;
       end if;
       if HBNF_Grammar.Uses_Frames
-        and then (To_String (Backend) /= "c" or else Tree_Tools or else Idref
-                  or else Forks or else Compare)
+        and then (To_String (Backend) not in "c" | "rust" | "zig" | "ada" or else Tree_Tools
+                  or else Idref or else Forks or else Compare)
       then
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error,
             "hbnf: a grammar with parameters that are numbers worked out while "
-            & "parsing (`k in 0..`, `%spaces`, `%col`) can be emitted in C "
-            & "so far, without --writer, --ast, --idref, --forks or --compare ("
+            & "parsing (`k in 0..`, `%spaces`, `%col`) can be emitted in C, Rust, Zig "
+            & "and Ada so far, without --writer, --ast, --idref, --forks or --compare ("
             & To_String (Backend) & " follows; RFCPLAN.md, W-grammars)");
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
@@ -550,9 +567,13 @@ begin
             Put_Line ("===== conf.c =====");
             Put (HBNF_C.Emit_Conf_Source (Rules));
          else
+            Lap ("grammar read");
             Put (HBNF_C.Emit (Rules, Idref));
+            Lap ("types written");
             Put (HBNF_C.Emit_Parser (Rules));
+            Lap ("parser written");
             Put (HBNF_C.Emit_Lexer (Rules));
+            Lap ("lexer written");
             if Idref then
                Put (HBNF_C.Emit_Serializer (Rules));
                Put (HBNF_C.Emit_Rebuild (Rules));

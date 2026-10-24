@@ -1,13 +1,11 @@
 # HyperBNF
 
-> **Status, 23 October 2026.**  Working on a C compiler written in HyperBNF.  The C11 grammar parses
-> 2,478 of the 2,481 gcc-accepted files from ten real corpora (lua, zlib, mbedtls, chibicc, c-torture and
-> others) in the C, Rust and Zig backends, using context sets for typedef names; the Ada port of that
-> machinery is unfinished.  The POSIX shell is now also written natively in HyperBNF, 41 lines against the
-> yacc text's 111, and agrees with dash.  Next: Ada typedef contexts; parser speed (lazy error tracking,
-> arena nodes, timings against gcc and clang); a HyperBNF grammar for the C preprocessor, where macros work
-> like hyper-rules; compact translations of the RFC and ALGOL grammars with line counts; then the back half
-> of the compiler (checking, lowering, assembly output) and a docs pass for the HyperBNF naming.
+> **Status, 24 October 2026.**  JSON, TOML and YAML are built and tested in all four backends
+> (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML); YAML's
+> indentation is a number the parser works out, so it nests as deep as the text does and the
+> grammar is the size of the spec's.  The C11 grammar parses 2,478 of 2,481 gcc-accepted files from
+> ten real corpora.  Next: one syntax for hyperrules over finite and unbounded domains, mixed in a
+> rule; the C preprocessor; the back half of a small C compiler.
 
 **HyperBNF** is a grammar language, and `hbnf` is the program that reads it: a parser generator
 (a compiler compiler) that emits a parser and its typed tree in C, Rust, Zig or Ada.  The name is an
@@ -19,9 +17,8 @@ natural and readable the way the RFCs do: a grammar reads like the notation
 RFCs have used for decades, not like a yacc file with embedded C actions.
 
 HyperBNF ships with the basic formats ready to use: JSON, TOML, YAML and obconf, the config file
-format that OpenBSD uses by default for new projects.  Drop one in and you have a parser; the grammar is short, readable HyperBNF, so changing it to
-fit your own needs means editing a few lines, not learning a generator. *(TOML and YAML will land
-shortly.)*
+format that OpenBSD uses by default for new projects.  Drop one in and you have a parser; the grammar is short, readable
+HyperBNF, so changing it to fit your own needs means editing a few lines, not learning a generator.
 
 It is powerful enough to parse context-sensitive languages such as ALGOL 68 and C++ without breaking
 a sweat: parameterised rules, back-references and context sets carry what a yacc grammar leaves to
@@ -123,7 +120,7 @@ Every markdown file in the repository, so none is lost.
 - [`corpus/mustache/README.md`](corpus/mustache/README.md): Mustache templates, with the back-reference that makes a closing tag repeat its opening one.
 - [`corpus/json/README.md`](corpus/json/README.md): JSON in 14 rules, checked against Python's `json`.
 - [`corpus/toml/README.md`](corpus/toml/README.md): TOML 1.0 in 46 rules against the ABNF's 124, all 208 valid toml-test files accepted, checked against Python's `tomllib`.
-- YAML is planned beside them ([`RFCPLAN.md`](RFCPLAN.md), Shipped grammars).
+- [`corpus/yaml/README.md`](corpus/yaml/README.md): YAML 1.2, indentation as a number the parser works out, all 308 valid and 89 of 94 invalid cases of the YAML test suite, checked against PyYAML.
 - [`corpus/bip39/README.md`](corpus/bip39/README.md): the ten BIP-39 word lists.
 - [`corpus/bech32/README.md`](corpus/bech32/README.md): bech32 and bech32m.
 

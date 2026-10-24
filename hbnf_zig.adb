@@ -356,6 +356,87 @@ package body HBNF_Zig is
    function Rule_Fn (Snake : String) return String is
      (if Snake = "text" then "parse_rule_text" else "parse_" & Snake);
 
+   --  A number expression of a rule with a frame (`k + 1`) as Zig: the names are
+   --  slots of the frame, which is the top of p.fs from p.fb.
+   function Frame_Expr (Owner, Text : String) return String is
+      R : Unbounded_String;
+      I : Natural := Text'First;
+   begin
+      while I <= Text'Last loop
+         if Text (I) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+            declare
+               J : Natural := I;
+            begin
+               while J <= Text'Last
+                 and then Text (J) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_'
+               loop
+                  J := J + 1;
+               end loop;
+               Append (R, "p.fs.items[p.fb + "
+                 & Img (Natural'Max (0, HBNF_Grammar.Slot_Of (Owner, Text (I .. J - 1))))
+                 & "]");
+               I := J;
+            end;
+         else
+            Append (R, Text (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return To_String (R);
+   end Frame_Expr;
+
+   --  The Zig expression that parses a reference to a rule (Call is the call of
+   --  the rule's function, an error union).  A rule with parameters that are
+   --  numbers runs in a frame the reference makes from its arguments, worked out
+   --  in the frame it stands in.
+   function Rule_Call
+     (Owner : String; E : Element_Access; Call : String) return String
+   is
+      Callee : constant HBNF_Grammar.Frame_Info :=
+        HBNF_Grammar.Frame_Of (To_String (E.Name));
+      Args   : Unbounded_String;
+      Set    : Unbounded_String;
+      N      : Natural := 0;
+      Text   : constant String := To_String (E.Args);
+      Start  : Natural := Text'First;
+      Depth  : Natural := 0;
+
+      procedure One (A : String) is
+      begin
+         Append (Args, "const a" & Img (N) & "_: i64 = " & Frame_Expr (Owner, A) & "; ");
+         Append (Set, " p.fs.items[p.fb + " & Img (N) & "] = a" & Img (N) & "_;");
+         N := N + 1;
+      end One;
+   begin
+      if Length (Callee.Slots) = 0 or else Callee.Shares then
+         return Call;
+      end if;
+      for I in Text'Range loop
+         if Text (I) = '(' then
+            Depth := Depth + 1;
+         elsif Text (I) = ')' then
+            Depth := Depth - 1;
+         elsif Text (I) = ',' and then Depth = 0 then
+            One (Text (Start .. I - 1));
+            Start := I + 1;
+         end if;
+      end loop;
+      if Text'Length > 0 then
+         One (Text (Start .. Text'Last));
+      end if;
+      declare
+         Slots : Natural := 1;
+      begin
+         for C of To_String (Callee.Slots) loop
+            if C = ' ' then
+               Slots := Slots + 1;
+            end if;
+         end loop;
+         return "(blk: { " & To_String (Args) & "const ob_ = try p.fpush(" & Img (Slots) & ");"
+           & To_String (Set) & " const r_ = " & Call & "; p.fpop(ob_); break :blk r_; })";
+      end;
+   end Rule_Call;
+
    function Scan_Fn (Rule : String) return String is
      ("scan_" & Zig_Snake (Rule));
 
@@ -3011,7 +3092,7 @@ package body HBNF_Zig is
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test
+                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test | B_Num
                then
                   Append (Buf, Ind & "const es_" & Sid & "_" & Img (K) & " = p.pos;");
                   Append (Buf, LF);
@@ -3075,14 +3156,16 @@ package body HBNF_Zig is
                           & Zig_Field (To_String (E.Name)) & " = "
                           & Pref & "p.box("
                           & Zig_Type_Of (To_String (E.Name)) & ", "
-                          & Pref & Rule_Fn (Zig_Snake (To_String (E.Name)))
-                          & "(p)" & Cat & ")" & Cat & ";");
+                          & Pref & Rule_Call (To_String (Rules (Owner).Name), E,
+                                              Rule_Fn (Zig_Snake (To_String (E.Name))) & "(p)")
+                          & Cat & ")" & Cat & ";");
                         Append (Buf, LF);
                      else
                         Append (Buf, Ind & Dst
                           & Zig_Field (To_String (E.Name)) & " = "
-                          & Pref & "parse_"
-                          & Zig_Snake (To_String (E.Name)) & "(p)" & Cat & ";");
+                          & Pref & Rule_Call (To_String (Rules (Owner).Name), E,
+                                              "parse_" & Zig_Snake (To_String (E.Name)) & "(p)")
+                          & Cat & ";");
                         Append (Buf, LF);
                      end if;
                   when Group =>
@@ -3115,6 +3198,33 @@ package body HBNF_Zig is
                           & "`"")" & Cat & "; }");
                         Append (Buf, LF);
                         Append (Buf, Ind & "p.pos += " & Tag_Var ("cl", E.Ctx) & ";");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Spaces then
+                        --  exactly that many spaces
+                        Append (Buf, Ind & "{ const n_: i64 = "
+                          & Frame_Expr (To_String (Rules (Owner).Name), To_String (E.Ctx))
+                          & "; var i_: i64 = 0;"
+                          & " while (i_ < n_ and p.pos + @as(usize, @intCast(i_)) < p.text.len and p.text[p.pos + @as(usize, @intCast(i_))] == ' ') i_ += 1;"
+                          & " if (i_ != n_) { " & Pref & "p.fail(""the indentation"")" & Cat
+                          & "; } p.pos += @as(usize, @intCast(n_)); }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Col then
+                        --  the column: the code points since the line began
+                        Append (Buf, Ind & "{ var q_ = p.pos; var c_: i64 = 0;"
+                          & " while (q_ > 0 and p.text[q_ - 1] != '\n' and p.text[q_ - 1] != '\r') { q_ -= 1; if ((p.text[q_] & 0xC0) != 0x80) c_ += 1; }"
+                          & " p.fs.items[p.fb + "
+                          & Img (Natural'Max (0, HBNF_Grammar.Slot_Of
+                              (To_String (Rules (Owner).Name), To_String (E.Ctx))))
+                          & "] = c_; }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Num then
+                        --  the number the element before matched
+                        Append (Buf, Ind & "{ var v_: i64 = 0;"
+                          & " for (p.text[es_" & Sid & "_" & Img (K - 1) & " .. p.pos]) |ch_| { v_ = v_ * 10 + @as(i64, ch_ - '0'); }"
+                          & " p.fs.items[p.fb + "
+                          & Img (Natural'Max (0, HBNF_Grammar.Slot_Of
+                              (To_String (Rules (Owner).Name), To_String (E.Ctx))))
+                          & "] = v_; }");
                         Append (Buf, LF);
                      elsif E.Op in B_Test | B_Not_Test then
                         --  `x ? types` / `x ?! types`: the text x matched is (not) in the context
@@ -3480,8 +3590,10 @@ package body HBNF_Zig is
                      Append (Buf, "        p.pos += n;");
                      Append (Buf, LF);
                   else
-                     Append (Buf, "        const v = parse_"
-                       & Zig_Snake (To_String (E.Name)) & "(p) catch |err| switch (err) {");
+                     Append (Buf, "        const v = "
+                       & Rule_Call (To_String (R.Name), E,
+                                    "parse_" & Zig_Snake (To_String (E.Name)) & "(p)")
+                       & " catch |err| switch (err) {");
                      Append (Buf, LF);
                      Append (Buf, "            error.OutOfMemory => return err,");
                      Append (Buf, LF);
@@ -3733,8 +3845,10 @@ package body HBNF_Zig is
                   Append (Buf, "    return r;" & LF);
                end;
             else
-               Append (Buf, "    return try " & Rule_Fn (Zig_Snake (To_String (P (1).Name)))
-                 & "(p);");
+               Append (Buf, "    return try "
+                 & Rule_Call (To_String (R.Name), P (1),
+                              Rule_Fn (Zig_Snake (To_String (P (1).Name))) & "(p)")
+                 & ";");
                Append (Buf, LF);
             end if;
          elsif SU /= "" then
@@ -3951,11 +4065,31 @@ package body HBNF_Zig is
          Append (Res, "    cx: [NCTX]Cx = [_]Cx{.{}} ** NCTX,   // the contexts");
          Append (Res, LF);
       end if;
+      if HBNF_Grammar.Uses_Frames then
+         Append (Res, "    fs: std.ArrayList(i64) = .empty,   // the frames of numbers");
+         Append (Res, LF);
+         Append (Res, "    fb: usize = 0,");
+         Append (Res, LF);
+      end if;
       if Is_Hosted then
          Append (Res, "    bit: u3 = 0,   // bits of the octet at pos already read by a bit rule");
          Append (Res, LF);
       end if;
       Append (Res, LF);
+      if HBNF_Grammar.Uses_Frames then
+         --  A reference to a rule with parameters that are numbers makes a frame
+         --  of them (fpush) and ends it (fpop).
+         Append (Res, "    fn fpush(self: *P, n: usize) ParseError!usize {" & LF
+           & "        const ob = self.fb;" & LF
+           & "        self.fb = self.fs.items.len;" & LF
+           & "        try self.fs.appendNTimes(self.alloc, 0, n);" & LF
+           & "        return ob;" & LF
+           & "    }" & LF & LF
+           & "    fn fpop(self: *P, ob: usize) void {" & LF
+           & "        self.fs.shrinkRetainingCapacity(self.fb);" & LF
+           & "        self.fb = ob;" & LF
+           & "    }" & LF & LF);
+      end if;
       if not Backs.Is_Empty then
          --  A back edge's subtree lives behind a pointer: move the parsed
          --  value onto the heap.
@@ -4605,35 +4739,51 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
                      begin
                         for B of DNF loop
                            Br := Br + 1;
-                           Append (Res, "    br" & Img (Br) & ": {");
-                           Append (Res, LF);
-                           Append (Res, "        var off: usize = 0;");
-                           Append (Res, LF);
-                           for A of B loop
-                              case A.Kind is
-                                 when Single =>
-                                    Append (Res, "        {");
-                                    Append (Res, LF);
-                                    Append (Res, "            var c: u32 = 0;");
-                                    Append (Res, LF);
-                                    Append (Res, "            const n = decode_utf8(s, pos + off, len, &c);");
-                                    Append (Res, LF);
-                                    Append (Res, "            if (n == 0 or !"
-                                      & Range_Cond (A.Lo, A.Hi) & ") break :br"
-                                      & Img (Br) & ";");
-                                    Append (Res, LF);
-                                    Append (Res, "            off += n;");
-                                    Append (Res, LF);
-                                    Append (Res, "        }");
-                                    Append (Res, LF);
-                                 when Repeat =>
-                                    Emit_Repeat (A, "        ", "break :br" & Img (Br));
-                              end case;
-                           end loop;
-                           Append (Res, "        if (off > best) best = off;");
-                           Append (Res, LF);
-                           Append (Res, "    }");
-                           Append (Res, LF);
+                           --  The branch is a labelled block that its failures
+                           --  leave; one that cannot fail (`*x`) has no label, which
+                           --  Zig would say is unused.
+                           declare
+                              Mark : constant Natural := Length (Res);
+                              Branch_Text : Unbounded_String;
+                           begin
+                              Append (Res, "        var off: usize = 0;");
+                              Append (Res, LF);
+                              for A of B loop
+                                 case A.Kind is
+                                    when Single =>
+                                       Append (Res, "        {");
+                                       Append (Res, LF);
+                                       Append (Res, "            var c: u32 = 0;");
+                                       Append (Res, LF);
+                                       Append (Res, "            const n = decode_utf8(s, pos + off, len, &c);");
+                                       Append (Res, LF);
+                                       Append (Res, "            if (n == 0 or !"
+                                         & Range_Cond (A.Lo, A.Hi) & ") break :br"
+                                         & Img (Br) & ";");
+                                       Append (Res, LF);
+                                       Append (Res, "            off += n;");
+                                       Append (Res, LF);
+                                       Append (Res, "        }");
+                                       Append (Res, LF);
+                                    when Repeat =>
+                                       Emit_Repeat (A, "        ", "break :br" & Img (Br));
+                                 end case;
+                              end loop;
+                              Append (Res, "        if (off > best) best = off;");
+                              Append (Res, LF);
+                              Branch_Text := To_Unbounded_String (Slice (Res, Mark + 1, Length (Res)));
+                              Delete (Res, Mark + 1, Length (Res));
+                              Append (Res, "    "
+                                & (if Index (Branch_Text, "break :br" & Img (Br) & ";") > 0
+                                     or else Index (Branch_Text, "break :br" & Img (Br) & " ") > 0
+                                     or else Index (Branch_Text, "break :br" & Img (Br) & "}") > 0
+                                   then "br" & Img (Br) & ": " else "")
+                                & "{");
+                              Append (Res, LF);
+                              Append (Res, Branch_Text);
+                              Append (Res, "    }");
+                              Append (Res, LF);
+                           end;
                         end loop;
                      end;
                      Append (Res, "    return best;");

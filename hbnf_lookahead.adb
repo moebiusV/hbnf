@@ -1,6 +1,9 @@
 pragma Ada_2022;
 
 with Ada.Containers.Indefinite_Ordered_Maps;
+with Ada.Environment_Variables;
+with Ada.Text_IO;
+with Ada.Containers.Ordered_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Ordered_Sets;
 with Ada.Strings.Hash;
@@ -929,58 +932,240 @@ package body HBNF_Lookahead is
       return To_String (R);
    end Key;
 
+   --  Walking an automaton on sorted lists of states: what each state reaches
+   --  without reading anything is worked out once, and the states a list of
+   --  edges lead to are the union of those lists.
+   package Clo_Vectors is new Ada.Containers.Vectors
+     (Positive, Int_Vectors.Vector, Int_Vectors."=");
+   package Nat_Vectors is new Ada.Containers.Vectors (Positive, Natural);
+   package Int_Sorting is new Int_Vectors.Generic_Sorting;
+
+   type Walker (A : access constant Automaton) is record
+      Clo   : Clo_Vectors.Vector;
+      Done  : Nat_Vectors.Vector;   --  1 once the state's closure is in Clo
+      Stamp : Nat_Vectors.Vector;
+      Gen   : Natural := 0;
+   end record;
+
+   --  The tables, empty: a state's closure is worked out when it is first asked for.
+   procedure Init (W : in out Walker) is
+      N : constant Natural := Natural (W.A.States.Length);
+   begin
+      W.Stamp.Clear;
+      W.Clo.Clear;
+      W.Done.Clear;
+      for X in 1 .. N loop
+         W.Stamp.Append (0);
+         W.Clo.Append (Int_Vectors.Empty_Vector);
+         W.Done.Append (0);
+      end loop;
+   end Init;
+
+   --  What the state X reaches without reading anything, itself included.
+   procedure Need_Clo (W : in out Walker; X : Positive) is
+      Todo : Int_Vectors.Vector;
+      R    : Int_Vectors.Vector;
+   begin
+      if W.Done (X) /= 0 then
+         return;
+      end if;
+      W.Done.Replace_Element (X, 1);
+      if not W.A.Live (X) then
+         return;
+      end if;
+      --  The stamps of this walk are numbers above the ones Reach uses.
+      W.Gen := W.Gen + 1;
+      W.Stamp.Replace_Element (X, W.Gen);
+      R.Append (X);
+      Todo.Append (X);
+      while not Todo.Is_Empty loop
+         declare
+            Y : constant Positive := Todo.Last_Element;
+         begin
+            Todo.Delete_Last;
+            for T of W.A.States (Y).Eps loop
+               if W.A.Live (T) and then W.Stamp (T) /= W.Gen then
+                  W.Stamp.Replace_Element (T, W.Gen);
+                  R.Append (T);
+                  Todo.Append (T);
+               end if;
+            end loop;
+         end;
+      end loop;
+      Int_Sorting.Sort (R);
+      W.Clo.Replace_Element (X, R);
+   end Need_Clo;
+
+   type Edge_Ev is record
+      Lo, Hi : Natural;
+      To     : Positive;
+   end record;
+   package Ev_Lists is new Ada.Containers.Vectors (Positive, Edge_Ev);
+   function Ev_Before (A, B : Edge_Ev) return Boolean is (A.Lo < B.Lo);
+   package Ev_Sorting is new Ev_Lists.Generic_Sorting (Ev_Before);
+
+   --  The edges out of the states of S that lead somewhere that can finish,
+   --  by the code point they start at.
+   function Edges_Of (W : Walker; S : Int_Vectors.Vector) return Ev_Lists.Vector
+   is
+      R : Ev_Lists.Vector;
+   begin
+      for X of S loop
+         for E of W.A.States (X).Edges loop
+            if W.A.Live (E.To) then
+               R.Append (Edge_Ev'(E.Lo, E.Hi, E.To));
+            end if;
+         end loop;
+      end loop;
+      Ev_Sorting.Sort (R);
+      return R;
+   end Edges_Of;
+
+   --  Where the edges Active lead, closed.
+   function Reach (W : in out Walker; Active : Ev_Lists.Vector)
+     return Int_Vectors.Vector
+   is
+      R : Int_Vectors.Vector;
+   begin
+      for V of Active loop
+         Need_Clo (W, V.To);
+      end loop;
+      W.Gen := W.Gen + 1;
+      for V of Active loop
+         for Y of W.Clo (V.To) loop
+            if W.Stamp (Y) /= W.Gen then
+               W.Stamp.Replace_Element (Y, W.Gen);
+               R.Append (Y);
+            end if;
+         end loop;
+      end loop;
+      Int_Sorting.Sort (R);
+      return R;
+   end Reach;
+
+   --  Move the edges that cover the code point Lo into Active, and the ones that
+   --  ended out of it; True when that changed it.
+   procedure Advance
+     (Evs : Ev_Lists.Vector; Nx : in out Positive; Active : in out Ev_Lists.Vector;
+      Lo : Natural; Changed : out Boolean)
+   is
+      Kept : Ev_Lists.Vector;
+   begin
+      Changed := False;
+      while Nx <= Natural (Evs.Length) and then Evs (Nx).Lo <= Lo loop
+         Active.Append (Evs (Nx));
+         Nx := Nx + 1;
+         Changed := True;
+      end loop;
+      for V of Active loop
+         if V.Hi >= Lo then
+            Kept.Append (V);
+         end if;
+      end loop;
+      if Natural (Kept.Length) /= Natural (Active.Length) then
+         Changed := True;
+      end if;
+      Active := Kept;
+   end Advance;
+
+   function To_List (S : State_Sets.Set) return Int_Vectors.Vector is
+      R : Int_Vectors.Vector;
+   begin
+      for X of S loop
+         R.Append (X);
+      end loop;
+      return R;
+   end To_List;
+
+   function Has (S : Int_Vectors.Vector; X : Positive) return Boolean is
+     (for some Y of S => Y = X);
+
+   function List_Before (A, B : Int_Vectors.Vector) return Boolean is
+   begin
+      for I in 1 .. Natural'Min (Natural (A.Length), Natural (B.Length)) loop
+         if A (I) /= B (I) then
+            return A (I) < B (I);
+         end if;
+      end loop;
+      return Natural (A.Length) < Natural (B.Length);
+   end List_Before;
+
+   --  Two lists of states, the places two automata have got to in the same text.
+   type Pair is record
+      S, B : Int_Vectors.Vector;
+   end record;
+   function Pair_Before (X, Y : Pair) return Boolean is
+     (if Int_Vectors."=" (X.S, Y.S) then List_Before (X.B, Y.B)
+      else List_Before (X.S, Y.S));
+   package Pair_Sets is new Ada.Containers.Ordered_Sets (Pair, Pair_Before);
+
+   function To_Set (V : Int_Vectors.Vector) return State_Sets.Set is
+      R : State_Sets.Set;
+   begin
+      for X of V loop
+         R.Include (X);
+      end loop;
+      return R;
+   end To_Set;
+
+   --  What the start state reaches without reading anything.
+   function Start_Of (W : in out Walker; Start : Positive) return Int_Vectors.Vector is
+   begin
+      Need_Clo (W, Start);
+      return W.Clo (Start);
+   end Start_Of;
+
    --  Does Big match all the text Small does?
    function Includes_From
-     (Big, Small : Automaton; Big_From, From : State_Sets.Set) return Boolean
+     (Big, Small : Automaton; Big_From, From : State_Sets.Set;
+      Limit : Natural := Max_Nodes) return Boolean
    is
-      type Pair is record
-         S, B : State_Sets.Set;
-      end record;
       package Pair_Vectors is new Ada.Containers.Vectors (Positive, Pair);
 
+      WS : Walker (Small'Unrestricted_Access);
+      WB : Walker (Big'Unrestricted_Access);
+
       Todo : Pair_Vectors.Vector;
-      Seen : Key_Sets.Set;
+      Seen : Pair_Sets.Set;
       Next : Positive := 1;
 
-      procedure Add (S, B : State_Sets.Set) is
-         K : constant String := Key (S) & "|" & Key (B);
+      procedure Add (S, B : Int_Vectors.Vector) is
+         P : constant Pair := (S => S, B => B);
       begin
-         if not Seen.Contains (K) then
-            Seen.Insert (K);
-            Todo.Append (Pair'(S => S, B => B));
+         if not Seen.Contains (P) then
+            Seen.Insert (P);
+            Todo.Append (P);
          end if;
       end Add;
    begin
-      Add (From, Big_From);
+      Init (WS);
+      Init (WB);
+      Add (To_List (From), To_List (Big_From));
       while Next <= Natural (Todo.Length) loop
-         if Natural (Todo.Length) > Max_Nodes then
+         if Natural (Todo.Length) > Limit then
             return False;
          end if;
          declare
             N      : constant Pair := Todo (Next);
             Bounds : Cp_Sets.Set;
+            Es     : constant Ev_Lists.Vector := Edges_Of (WS, N.S);
+            Eb     : constant Ev_Lists.Vector := Edges_Of (WB, N.B);
+            Ns     : Positive := 1;
+            Nb     : Positive := 1;
+            As, Ab : Ev_Lists.Vector;
+            Ts, Tb : Int_Vectors.Vector;
          begin
             Next := Next + 1;
-            if N.S.Contains (Small.Final)
-              and then not N.B.Contains (Big.Final)
-            then
+            if Has (N.S, Small.Final) and then not Has (N.B, Big.Final) then
                return False;
             end if;
-            for X of N.S loop
-               for E of Small.States (X).Edges loop
-                  if Small.Live (E.To) then
-                     Bounds.Include (E.Lo);
-                     Bounds.Include (E.Hi + 1);
-                  end if;
-               end loop;
+            for E of Es loop
+               Bounds.Include (E.Lo);
+               Bounds.Include (E.Hi + 1);
             end loop;
-            for X of N.B loop
-               for E of Big.States (X).Edges loop
-                  if Big.Live (E.To) then
-                     Bounds.Include (E.Lo);
-                     Bounds.Include (E.Hi + 1);
-                  end if;
-               end loop;
+            for E of Eb loop
+               Bounds.Include (E.Lo);
+               Bounds.Include (E.Hi + 1);
             end loop;
             declare
                C : Cp_Sets.Cursor := Bounds.First;
@@ -989,16 +1174,21 @@ package body HBNF_Lookahead is
                   declare
                      Lo : constant Natural := Cp_Sets.Element (C);
                      NC : constant Cp_Sets.Cursor := Cp_Sets.Next (C);
+                     Cs, Cb : Boolean;
                   begin
                      exit when not Cp_Sets.Has_Element (NC);
                      C := NC;
-                     declare
-                        TS : constant State_Sets.Set := Step (Small, N.S, Lo);
-                     begin
-                        if not TS.Is_Empty then
-                           Add (TS, Step (Big, N.B, Lo));
-                        end if;
-                     end;
+                     Advance (Es, Ns, As, Lo, Cs);
+                     Advance (Eb, Nb, Ab, Lo, Cb);
+                     if Cs then
+                        Ts := Reach (WS, As);
+                     end if;
+                     if Cb then
+                        Tb := Reach (WB, Ab);
+                     end if;
+                     if not Ts.Is_Empty then
+                        Add (Ts, Tb);
+                     end if;
                   end;
                end loop;
             end;
@@ -1007,12 +1197,15 @@ package body HBNF_Lookahead is
       return True;
    end Includes_From;
 
-   function Includes (Big, Small : Automaton) return Boolean is
+   function Includes
+     (Big, Small : Automaton; Limit : Natural := Max_Nodes) return Boolean
+   is
       S0, B0 : State_Sets.Set;
    begin
       S0.Insert (Small.Start);
       B0.Insert (Big.Start);
-      return Includes_From (Big, Small, Closure (Big, B0), Closure (Small, S0));
+      return Includes_From
+        (Big, Small, Closure (Big, B0), Closure (Small, S0), Limit);
    end Includes;
 
    --  Search the text both automata read for a place where an alternative
@@ -1035,7 +1228,7 @@ package body HBNF_Lookahead is
       Whole  : access constant Automaton := null)
    is
       type Node is record
-         SA, SB : State_Sets.Set;
+         SA, SB : Int_Vectors.Vector;
          Parent : Natural;
          Cp     : Natural;
          Depth  : Natural;
@@ -1043,8 +1236,10 @@ package body HBNF_Lookahead is
       package Node_Vectors is new Ada.Containers.Vectors (Positive, Node);
 
       Nodes : Node_Vectors.Vector;
-      Seen  : Key_Sets.Set;
+      Seen  : Pair_Sets.Set;
       Next  : Positive := 1;
+      WA    : Walker (EA'Unrestricted_Access);
+      WB    : Walker (EB'Unrestricted_Access);
 
       --  Greedy: where the repetitions and the rest start, and whether the
       --  rest can match nothing.
@@ -1076,8 +1271,8 @@ package body HBNF_Lookahead is
          return To_String (R);
       end Text;
 
-      procedure Add (SA, SB : State_Sets.Set; Parent, Cp, Depth : Natural) is
-         K : constant String := Key (SA) & "|" & Key (SB);
+      procedure Add (SA, SB : Int_Vectors.Vector; Parent, Cp, Depth : Natural) is
+         K : constant Pair := (S => SA, B => SB);
       begin
          if not Seen.Contains (K) then
             Seen.Insert (K);
@@ -1089,6 +1284,8 @@ package body HBNF_Lookahead is
    begin
       Found := False;
       Witness := Null_Unbounded_String;
+      Init (WA);
+      Init (WB);
       if Greedy then
          declare
             W0 : State_Sets.Set;
@@ -1098,14 +1295,7 @@ package body HBNF_Lookahead is
             Whole_Empty_Ok := Whole_Start.Contains (Whole.Final);
          end;
       end if;
-      declare
-         Only_A : State_Sets.Set;
-         Only_B : State_Sets.Set;
-      begin
-         Only_A.Insert (EA.Start);
-         Only_B.Insert (EB.Start);
-         Add (Closure (EA, Only_A), Closure (EB, Only_B), 0, 0, 0);
-      end;
+      Add (Start_Of (WA, EA.Start), Start_Of (WB, EB.Start), 0, 0, 0);
       while Next <= Natural (Nodes.Length) loop
          if Natural (Nodes.Length) > Max_Nodes then
             Found := True;
@@ -1116,35 +1306,32 @@ package body HBNF_Lookahead is
             N       : constant Node := Nodes (Next);
             Here    : constant Positive := Next;
             Bounds  : Cp_Sets.Set;
-            A_Done  : constant Boolean := N.SA.Contains (EA.Final);
-            B_Done  : constant Boolean := N.SB.Contains (EB.Final);
+            A_Done  : constant Boolean := Has (N.SA, EA.Final);
+            B_Done  : constant Boolean := Has (N.SB, EB.Final);
+            Ea_Evs  : constant Ev_Lists.Vector := Edges_Of (WA, N.SA);
+            Eb_Evs  : constant Ev_Lists.Vector := Edges_Of (WB, N.SB);
+            Na, Nb  : Positive := 1;
+            Aa, Ab  : Ev_Lists.Vector;
+            Xa, Xb  : Int_Vectors.Vector;
          begin
             Next := Next + 1;
             --  R can end right where a repetition ends: greedy takes it, and
             --  nothing is left for R unless R can match nothing.
             if Greedy and then N.Depth > 0 and then A_Done
-              and then N.SB.Contains (EB.Final)
+              and then Has (N.SB, EB.Final)
               and then not Whole_Empty_Ok
             then
                Found := True;
                Witness := To_Unbounded_String (Text (Here));
                return;
             end if;
-            for X of N.SA loop
-               for E of EA.States (X).Edges loop
-                  if EA.Live (E.To) then
-                     Bounds.Include (E.Lo);
-                     Bounds.Include (E.Hi + 1);
-                  end if;
-               end loop;
+            for E of Ea_Evs loop
+               Bounds.Include (E.Lo);
+               Bounds.Include (E.Hi + 1);
             end loop;
-            for X of N.SB loop
-               for E of EB.States (X).Edges loop
-                  if EB.Live (E.To) then
-                     Bounds.Include (E.Lo);
-                     Bounds.Include (E.Hi + 1);
-                  end if;
-               end loop;
+            for E of Eb_Evs loop
+               Bounds.Include (E.Lo);
+               Bounds.Include (E.Hi + 1);
             end loop;
             declare
                C : Cp_Sets.Cursor := Bounds.First;
@@ -1158,8 +1345,19 @@ package body HBNF_Lookahead is
                      C := NC;
                      declare
                         Hi : constant Natural := Cp_Sets.Element (NC) - 1;
-                        TA : constant State_Sets.Set := Step (EA, N.SA, Lo);
-                        TB : constant State_Sets.Set := Step (EB, N.SB, Lo);
+                        Ca, Cb : Boolean;
+                     begin
+                        Advance (Ea_Evs, Na, Aa, Lo, Ca);
+                        Advance (Eb_Evs, Nb, Ab, Lo, Cb);
+                        if Ca then
+                           Xa := Reach (WA, Aa);
+                        end if;
+                        if Cb then
+                           Xb := Reach (WB, Ab);
+                        end if;
+                     declare
+                        TA : Int_Vectors.Vector renames Xa;
+                        TB : Int_Vectors.Vector renames Xb;
                      begin
                         --  A repetition that could go on does (greedy), so
                         --  what R still needs starts with a code point the
@@ -1171,7 +1369,8 @@ package body HBNF_Lookahead is
                           and then TA.Is_Empty and then not TB.Is_Empty
                           and then not Includes_From
                                          (Whole.all, EB,
-                                          Step (Whole.all, Whole_Start, Lo), TB)
+                                          Step (Whole.all, Whole_Start, Lo),
+                                          To_Set (TB))
                         then
                            Found := True;
                            Witness := To_Unbounded_String
@@ -1199,6 +1398,7 @@ package body HBNF_Lookahead is
                         if not TA.Is_Empty and then not TB.Is_Empty then
                            Add (TA, TB, Here, Lo, N.Depth + 1);
                         end if;
+                     end;
                      end;
                   end;
                end loop;
@@ -1313,8 +1513,10 @@ package body HBNF_Lookahead is
                Need (I);
                Need (J);
                declare
-                  I_In_J : constant Boolean := Includes (Auto (J), Auto (I));
-                  J_In_I : constant Boolean := Includes (Auto (I), Auto (J));
+                  --  Only the wording of the message depends on these, so they
+                  --  are not looked for as long as the check that matters.
+                  I_In_J : constant Boolean := Includes (Auto (J), Auto (I), 40);
+                  J_In_I : constant Boolean := Includes (Auto (I), Auto (J), 40);
                begin
                   if I_In_J and then J_In_I then
                      Message := To_Unbounded_String
@@ -1422,16 +1624,22 @@ package body HBNF_Lookahead is
         (Positive, Int_Vectors.Vector, Int_Vectors."=");
       package Cp_Sets2 is new Ada.Containers.Ordered_Sets (Natural);
       Seen : Set_Vectors.Vector;   --  the NFA state set (sorted) of each DFA state
-      Seen_Index : Index_Maps.Map; --  and the other way: a set's key -> its number
+      Trace_Nfa : Natural := 0;
 
-      function Set_Key (S : Int_Vectors.Vector) return String is
-         R : Unbounded_String;
+      --  Sorted lists of states, in order, so the DFA states already made can be
+      --  found in a tree.
+      function Before (A, B : Int_Vectors.Vector) return Boolean is
       begin
-         for X of S loop
-            Append (R, Positive'Image (X));
+         for I in 1 .. Natural'Min (Natural (A.Length), Natural (B.Length)) loop
+            if A (I) /= B (I) then
+               return A (I) < B (I);
+            end if;
          end loop;
-         return To_String (R);
-      end Set_Key;
+         return Natural (A.Length) < Natural (B.Length);
+      end Before;
+      package Set_Maps is new Ada.Containers.Ordered_Maps
+        (Int_Vectors.Vector, Positive, Before);
+      Seen_Index : Set_Maps.Map;   --  and the other way: a set -> its number
    begin
       D.Clear;
       Why := Null_Unbounded_String;
@@ -1449,6 +1657,7 @@ package body HBNF_Lookahead is
          N     : constant Natural := Natural (A.States.Length);
          Next  : Positive := 1;
       begin
+         Trace_Nfa := N;
          if Approximated then
             Why := Why_Approximated;
             return;
@@ -1500,23 +1709,6 @@ package body HBNF_Lookahead is
                Clo (X) := R;
             end Work_Out;
 
-            --  The set reached by reading C from the states of S.
-            function Step_Set (S : Int_Vectors.Vector; C : Natural)
-              return Int_Vectors.Vector
-            is
-               R : Int_Vectors.Vector;
-            begin
-               Gen := Gen + 1;
-               for X of S loop
-                  for E of A.States (X).Edges loop
-                     if E.Lo <= C and then C <= E.Hi and then A.Live (E.To) then
-                        Add_Closure (E.To, R);
-                     end if;
-                  end loop;
-               end loop;
-               Sorting.Sort (R);
-               return R;
-            end Step_Set;
 
             Start : Int_Vectors.Vector;
          begin
@@ -1525,7 +1717,7 @@ package body HBNF_Lookahead is
             end loop;
             Start := Clo (A.Start);
             Seen.Append (Start);
-            Seen_Index.Insert (Set_Key (Start), 1);
+            Seen_Index.Insert (Start, 1);
             D.Append (Dfa_State'(others => <>));
             while Next <= Natural (Seen.Length) loop
                declare
@@ -1543,8 +1735,29 @@ package body HBNF_Lookahead is
                      end loop;
                   end loop;
                   declare
-                     Lo : Natural;
+                     type Ev is record
+                        Lo, Hi : Natural;
+                        To     : Positive;
+                     end record;
+                     package Ev_Vectors is new Ada.Containers.Vectors (Positive, Ev);
+                     function Ev_Before (A, B : Ev) return Boolean is (A.Lo < B.Lo);
+                     package Ev_Sorting is new Ev_Vectors.Generic_Sorting (Ev_Before);
+                     Evs    : Ev_Vectors.Vector;     --  every edge out of the state, by Lo
+                     Active : Ev_Vectors.Vector;     --  the ones that cover the code point
+                     Nx     : Positive := 1;
+                     Lo     : Natural;
+                     Moved  : Boolean;
+                     Last_T : Int_Vectors.Vector;
+                     Last_Id : Natural := 0;
                   begin
+                     for X of Cur loop
+                        for E of A.States (X).Edges loop
+                           if A.Live (E.To) then
+                              Evs.Append (Ev'(E.Lo, E.Hi, E.To));
+                           end if;
+                        end loop;
+                     end loop;
+                     Ev_Sorting.Sort (Evs);
                      for C in Bounds.Iterate loop
                         Lo := Cp_Sets2.Element (C);
                         declare
@@ -1552,33 +1765,67 @@ package body HBNF_Lookahead is
                              (if not Cp_Sets2.Has_Element (Cp_Sets2.Next (C))
                               then Max_Code_Point
                               else Cp_Sets2.Element (Cp_Sets2.Next (C)) - 1);
-                           T  : constant Int_Vectors.Vector := Step_Set (Cur, Lo);
+                           T  : Int_Vectors.Vector;
                            Id : Natural := 0;
                         begin
-                           if not T.Is_Empty then
-                              declare
-                                 TK : constant String := Set_Key (T);
-                                 KC : constant Index_Maps.Cursor :=
-                                   Seen_Index.Find (TK);
-                              begin
-                                 if Index_Maps.Has_Element (KC) then
-                                    Id := Index_Maps.Element (KC);
+                           --  the edges that start here join, the ones that ended leave
+                           Moved := False;
+                           while Nx <= Natural (Evs.Length) and then Evs (Nx).Lo <= Lo loop
+                              Active.Append (Evs (Nx));
+                              Nx := Nx + 1;
+                              Moved := True;
+                           end loop;
+                           declare
+                              Kept : Ev_Vectors.Vector;
+                           begin
+                              for V of Active loop
+                                 if V.Hi >= Lo then
+                                    Kept.Append (V);
                                  end if;
-                                 if Id = 0 then
-                                    if Natural (Seen.Length) >= Max_States then
-                                       Why := To_Unbounded_String
-                                         ("it needs more than"
-                                          & Integer'Image (Max_States)
-                                          & " states as one token");
-                                       D.Clear;
-                                       return;
+                              end loop;
+                              if Natural (Kept.Length) /= Natural (Active.Length) then
+                                 Moved := True;
+                              end if;
+                              Active := Kept;
+                           end;
+                           if Moved then
+                              --  the code points from here on are read by other edges
+                              --  than the last ones were: work out where they lead
+                              Gen := Gen + 1;
+                              Last_T.Clear;
+                              for V of Active loop
+                                 Add_Closure (V.To, Last_T);
+                              end loop;
+                              Sorting.Sort (Last_T);
+                              Last_Id := 0;
+                              if not Last_T.Is_Empty then
+                                 declare
+                                    KC : constant Set_Maps.Cursor := Seen_Index.Find (Last_T);
+                                 begin
+                                    if Set_Maps.Has_Element (KC) then
+                                       Last_Id := Set_Maps.Element (KC);
                                     end if;
-                                    Seen.Append (T);
-                                    D.Append (Dfa_State'(others => <>));
-                                    Id := Natural (Seen.Length);
-                                    Seen_Index.Insert (TK, Id);
+                                 end;
+                              end if;
+                           end if;
+                           T := Last_T;
+                           Id := Last_Id;
+                           if not T.Is_Empty then
+                              if Id = 0 then
+                                 if Natural (Seen.Length) >= Max_States then
+                                    Why := To_Unbounded_String
+                                      ("it needs more than"
+                                       & Integer'Image (Max_States)
+                                       & " states as one token");
+                                    D.Clear;
+                                    return;
                                  end if;
-                              end;
+                                 Seen.Append (T);
+                                 D.Append (Dfa_State'(others => <>));
+                                 Id := Natural (Seen.Length);
+                                 Seen_Index.Insert (T, Id);
+                                 Last_Id := Id;
+                              end if;
                               --  Join a neighbour that goes to the same state.
                               if not Edges.Is_Empty
                                 and then Edges.Last_Element.To = Id
@@ -1598,6 +1845,12 @@ package body HBNF_Lookahead is
             end loop;
          end;
       end;
+      if Ada.Environment_Variables.Exists ("HBNF_TIMING") then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "hbnf: token " & Nm & ": nfa" & Natural'Image (Trace_Nfa)
+            & ", dfa" & Natural'Image (Natural (D.Length)));
+      end if;
       Ok := True;
    end Token_Dfa_Raw;
 
@@ -1613,13 +1866,48 @@ package body HBNF_Lookahead is
    package Dfa_Answer_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, Dfa_Answer);
    Dfa_Answers : Dfa_Answer_Maps.Map;
 
+   --  The rules a rule is made of, with their sizes: what the scanner of the rule
+   --  depends on.  Rules added elsewhere in the grammar (the ones `Lift` makes)
+   --  do not change it, so they do not make the scanner be built again.
+   function Made_Of (Rules : Rule_Vectors.Vector; Nm : String) return String is
+      Seen : Key_Sets.Set;
+      R    : Unbounded_String;
+
+      procedure Visit (N : String);
+
+      procedure Walk (V : Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            if E.Kind = Name then
+               Visit (To_String (E.Name));
+            elsif E.Kind = Group then
+               Walk (E.Items);
+            end if;
+         end loop;
+      end Walk;
+
+      procedure Visit (N : String) is
+         J : constant Natural := Find (Rules, N);
+      begin
+         if J = 0 or else Seen.Contains (N) then
+            return;
+         end if;
+         Seen.Insert (N);
+         Append (R, N & ":" & Natural'Image (Natural (Rules (J).Pattern.Length)) & ";");
+         Walk (Rules (J).Pattern);
+      end Visit;
+   begin
+      Visit (Nm);
+      return To_String (R);
+   end Made_Of;
+
    procedure Token_Dfa
      (Rules : Rule_Vectors.Vector; Nm : String;
       D     : out Dfa_State_Vectors.Vector;
       Ok    : out Boolean;
       Why   : out Ada.Strings.Unbounded.Unbounded_String)
    is
-      Key : constant String := Nm & "#" & Natural'Image (Natural (Rules.Length));
+      Key : constant String := Nm & "#" & Made_Of (Rules, Nm);
       C   : constant Dfa_Answer_Maps.Cursor := Dfa_Answers.Find (Key);
    begin
       if Dfa_Answer_Maps.Has_Element (C) then
