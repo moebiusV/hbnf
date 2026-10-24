@@ -10,7 +10,7 @@ include "json-tokens.hbnf"
 
 json = value
 
-value  = object | array | string | number | "true" | "false" | "null"
+value  = object | array | string | number | literal-true | literal-false | literal-null
 object = "{" [ member *( "," member ) ] "}"
 member = string ":" value
 array  = "[" [ value *( "," value ) ] "]"

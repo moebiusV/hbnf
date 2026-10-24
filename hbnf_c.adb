@@ -7378,6 +7378,10 @@ package body HBNF_C is
                        & (if Wrap_Ctx
                           then "    hbnf_mark_t m_;  m_ = hbnf_mark();" & LF
                           else "")
+                       & "    if (p->depth >= HBNF_MAX_DEPTH) {"
+                       & " fail (p, ""shallower nesting"", 0,"
+                       & " p->text + p->pos, p->pos < p->len ? 1 : 0);"
+                       & " return false; }" & LF
                        & "    if (p->depth < 24) { p->stk[p->depth] = "
                        & Natural'Image (I) & "; p->stkpos[p->depth] = p->pos; }"
                        & LF

@@ -16,3 +16,9 @@ number    = [ "-" ] integer [ frac ] [ exp ]
 integer   = "0" / %x31-39 *DIGIT
 frac      = "." 1*DIGIT
 exp       = ( %x65 / %x45 ) [ "+" / "-" ] 1*DIGIT
+
+; The three literals are tokens of their own, so the tree says which one was read
+; (a quoted "true" in json.hbnf would leave no field and all three would look alike).
+literal-true  = "true"
+literal-false = "false"
+literal-null  = "null"

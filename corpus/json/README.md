@@ -34,6 +34,15 @@ difference between hbnf and Tree-sitter on 2,000 documents and 2,000 mutations.
 
 The writer round-trips every good case (`tests/writer.sh`).
 
+`true`, `false` and `null` are rules of their own (`literal-true`, `literal-false`, `literal-null`)
+rather than quoted text in `value`, because a quoted literal leaves no field in the tree and the three
+would look alike: the tree of a `value` has the field of the one that was read set, and the others nil.
+
+The C parser stops at `HBNF_MAX_DEPTH` rules nested at once (4096 by default, about 1,365 levels of
+JSON; override with `-DHBNF_MAX_DEPTH=n`) and reports "shallower nesting" as an error.  Without the limit
+a document of 50,000 `[` ran the stack out and the parser died of a segmentation fault, which a program
+reading JSON off a network cannot afford.
+
 Not done: decoding `\uXXXX` (and surrogate pairs) into code points is the UTF-16 step of
 `CHARLAYER.md`, which is not built; the parser reads a `\u` followed by four hex digits as
 the text it is, which is all RFC 8259's grammar asks.

@@ -7,6 +7,12 @@
 {{&keywords}}
 {{&scanners}}
 
+/* Rules entered at once.  Deeper input is refused with an error rather than
+   recursed into until the stack runs out; override with -DHBNF_MAX_DEPTH=n. */
+#ifndef HBNF_MAX_DEPTH
+#define HBNF_MAX_DEPTH 4096
+#endif
+
 typedef struct {
     const char *text;
     size_t len, pos;
