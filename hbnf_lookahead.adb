@@ -422,6 +422,14 @@ package body HBNF_Lookahead is
       return Cp_Set is
      (El_First (Rules, A.Nullable, A.First, E));
 
+   procedure Branch_First
+     (A : Analysis; Rules : Rule_Vectors.Vector;
+      V : Element_Vectors.Vector; B : Bounds;
+      Set : out Cp_Set; Is_Null : out Boolean) is
+   begin
+      Seq_First (Rules, A.Nullable, A.First, V, B.First, B.Last, Set, Is_Null);
+   end Branch_First;
+
    function Analyze (Rules : Rule_Vectors.Vector) return Analysis is
       N       : constant Natural := Natural (Rules.Length);
       R       : Analysis (N);

@@ -96,6 +96,12 @@ package HBNF_Lookahead is
       return Cp_Set;
    --  What an element can begin with.
 
+   procedure Branch_First
+     (A : Analysis; Rules : Rule_Vectors.Vector;
+      V : Element_Vectors.Vector; B : Bounds;
+      Set : out Cp_Set; Is_Null : out Boolean);
+   --  What the branch B of V can begin with, and whether it can match nothing.
+
    package Order_Vectors is new Ada.Containers.Vectors (Positive, Positive);
 
    procedure Check_Choice

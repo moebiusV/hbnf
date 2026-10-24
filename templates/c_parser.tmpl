@@ -26,6 +26,7 @@ typedef struct {
     unsigned char alt_lit[16];
     int alt_n, alt_more;
     size_t wc_pos, wc_len, wc_n;   /* the word read at wc_pos (the text cut at wc_len) is wc_n - 1 long; 0 = none */
+    int quiet;   /* 1: the first pass of a parse, which records no failures and switches on the next byte */
 } parser_t;
 
 /* A keyword is matched against the word at the position, and a choice among keywords asks at
@@ -49,6 +50,7 @@ static void line_col(parser_t *p, size_t pos, size_t *line, size_t *col) {
 
 static void fail(parser_t *p, const char *expected, int is_lit,
                  const char *found, size_t found_len) {
+    if (p->quiet) return;
     if (p->err_pos != (size_t)-1 && p->pos < p->err_pos) return;  /* a deeper failure already recorded */
     if (p->err_pos != (size_t)-1 && p->pos == p->err_pos) {
         /* the same place: another thing that could have stood here.  A full list that has
@@ -110,7 +112,7 @@ static void want_text(const parser_t *p, char *want, size_t cap) {
 
 /* A punctuation- or digit-led literal: compare bytes at pos (a prefix is
    correct there, e.g. "-" in "-5", "0x" in "0x1F"). */
-static bool expect_lit(parser_t *p, const char *lit, size_t lit_len) {
+static inline __attribute__((always_inline)) bool expect_lit(parser_t *p, const char *lit, size_t lit_len) {
     if (p->pos + lit_len <= p->len
         && memcmp(p->text + p->pos, lit, lit_len) == 0) {
         p->pos += lit_len; return true;

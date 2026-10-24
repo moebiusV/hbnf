@@ -4060,9 +4060,19 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "static const char *hbnf_str_append(const char *s, size_t n) {");
       Append (Res, LF);
-      Append (Res, "    char *p = (char *)hbnf_alloc(n + 1);");
+      Append (Res, "    /* the bytes are written over at once: no need to clear them first */");
+      Append (Res, LF);
+      Append (Res, "    size_t m = (n + 1 + 7u) & ~(size_t)7u;");
+      Append (Res, LF);
+      Append (Res, "    char *p;");
+      Append (Res, LF);
+      Append (Res, "    if (!hbnf_arena || hbnf_arena->used + m > hbnf_arena->cap) p = (char *)hbnf_alloc(n + 1);");
+      Append (Res, LF);
+      Append (Res, "    else { p = hbnf_arena->data + hbnf_arena->used; hbnf_arena->used += m; }");
       Append (Res, LF);
       Append (Res, "    if (n) memcpy(p, s, n);");
+      Append (Res, LF);
+      Append (Res, "    p[n] = 0;");
       Append (Res, LF);
       Append (Res, "    return p;");
       Append (Res, LF);
@@ -4491,6 +4501,9 @@ package body HBNF_C is
    function Emit_Parser (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
+
+      --  What each rule can begin with, for the first-byte switch of an alternation.
+      La : constant HBNF_Lookahead.Analysis := HBNF_Lookahead.Analyze (Rules);
 
       function Find (Name : String) return Natural is (Find (Rules, Name));
 
@@ -5907,83 +5920,116 @@ package body HBNF_C is
             Hoist : constant Boolean := Ws and then Has_Alt (Els);
             Cx    : U;       --  the name of this alternation's context mark
 
-            --  The first byte of a leading keyword literal: the dispatch key
-            --  in the character model, reimplementing the token array's
-            --  keyword-id jump on the first byte instead of the interned id.
-            function First_Byte (K : U) return Natural is
-               S : constant String := To_String (K);
-            begin
-               return Character'Pos (S (S'First));
-            end First_Byte;
+            --  Where to start on a byte.  Each branch can begin with some bytes (what
+            --  the analysis says its first code points are; a branch that can match
+            --  nothing, or one that reads what an earlier element kept, can begin
+            --  with any).  A byte goes to the first branch that can begin with it;
+            --  the branches before that one cannot match, so they are not tried.
+            --  Branch 1 is where the chain begins anyway.
+            Bs   : constant HBNF_Lookahead.Bounds_Vectors.Vector :=
+              HBNF_Lookahead.Branches (Els);
+            NBr  : constant Natural := Natural (Bs.Length);
+            Dsp  : array (0 .. 255) of Natural := [others => 0];
+            Entry_Used : array (1 .. Natural'Max (1, NBr)) of Boolean :=
+              [others => False];
+            Plan_Ok : Boolean := False;
 
-            --  True when byte B leads branch Br and no other branch, so the
-            --  switch can jump straight to Br on B.  (Punctuation -- Other_Tok
-            --  -- and unknown leading elements fall through to the chain.)
-            function Byte_Unique_To (B : Natural; Br : Positive)
-               return Boolean is
-               Has : Boolean := False;
+            procedure Plan is
+               function Reads_Kept (F, L : Natural) return Boolean is
+                 (for some K in F .. L =>
+                    Els (K).Kind = Block
+                    and then Els (K).Op in B_Same | B_Spaces);
+               Used : Boolean := False;
             begin
-               --  The branch itself must lead with a keyword of first byte B
-               --  (so a byte no branch leads with never dispatches to it).
-               for I in Offs (Br) .. Offs (Br + 1) - 1 loop
-                  if Flat (I) /= Other_Tok
-                    and then First_Byte (Flat (I)) = B
-                  then
-                     Has := True;
-                  end if;
-               end loop;
-               if not Has then
-                  return False;
+               if NBr < 3 then
+                  return;
                end if;
-               for X in 1 .. Natural (Offs.Length) - 1 loop
-                  if X /= Br then
-                     for I in Offs (X) .. Offs (X + 1) - 1 loop
-                        if Flat (I) /= Other_Tok
-                          and then First_Byte (Flat (I)) = B
-                        then
-                           return False;
+               for K in 1 .. NBr loop
+                  declare
+                     Set  : HBNF_Lookahead.Cp_Set;
+                     Null_Branch : Boolean;
+                     Any_Byte : Boolean;
+                     Wide : Boolean := False;
+                  begin
+                     HBNF_Lookahead.Branch_First (La, Rules, Els, Bs (K), Set, Null_Branch);
+                     Any_Byte := Null_Branch or else HBNF_Lookahead.Has_Any (Set)
+                       or else Reads_Kept (Bs (K).First, Bs (K).Last);
+                     for R in 1 .. HBNF_Lookahead.Range_Count (Set) loop
+                        if HBNF_Lookahead.Range_Hi (Set, R) >= 128 then
+                           Wide := True;
                         end if;
                      end loop;
+                     for B in 0 .. 255 loop
+                        if Dsp (B) = 0 then
+                           declare
+                              Can : Boolean := Any_Byte or else (B >= 128 and then Wide);
+                           begin
+                              if not Can and then B < 128 then
+                                 for R in 1 .. HBNF_Lookahead.Range_Count (Set) loop
+                                    if B >= HBNF_Lookahead.Range_Lo (Set, R)
+                                      and then B <= HBNF_Lookahead.Range_Hi (Set, R)
+                                    then
+                                       Can := True;
+                                    end if;
+                                 end loop;
+                              end if;
+                              if Can then
+                                 Dsp (B) := K;
+                              end if;
+                           end;
+                        end if;
+                     end loop;
+                  end;
+               end loop;
+               for B in 0 .. 255 loop
+                  if Dsp (B) > 1 then
+                     Used := True;
+                     Entry_Used (Dsp (B)) := True;
                   end if;
                end loop;
-               return True;
-            end Byte_Unique_To;
-
-            --  True when branch X leads with a keyword whose first byte no
-            --  other branch leads with, so the switch can jump straight to X.
-            function Has_Unique_Byte (X : Positive) return Boolean is
-            begin
-               for I in Offs (X) .. Offs (X + 1) - 1 loop
-                  if Flat (I) /= Other_Tok
-                    and then Byte_Unique_To (First_Byte (Flat (I)), X)
-                  then
-                     return True;
-                  end if;
-               end loop;
-               return False;
-            end Has_Unique_Byte;
-
-            --  Some branch after the first has such a keyword, so a
-            --  first-byte switch pays for itself.
-            function Has_Byte_Dispatch return Boolean is
-            begin
-               if Natural (Offs.Length) < 3 then
-                  return False;
-               end if;
-               for X in 2 .. Natural (Offs.Length) - 1 loop
-                  if Has_Unique_Byte (X) then
-                     return True;
-                  end if;
-               end loop;
-               return False;
-            end Has_Byte_Dispatch;
+               Plan_Ok := Used;
+            end Plan;
 
             --  A guarded choice is a plain chain: each branch's guard is
             --  checked where it succeeds.
-            Disp : constant Boolean := Has_Byte_Dispatch and then not Fork
-              and then not (for some E of Els =>
-                              E.Kind = Alt and then E.Guard /= 0);
+            Disp : Boolean := False;
+
+            --  What a failed branch leaves is put back: the position, what it set, the
+            --  contexts it bound.
+            procedure Emit_Reset is
+            begin
+               if Ctx_On and then Rule_Binds (Owner) then
+                  Append (Buf, Ind & "hbnf_reset (&" & To_String (Cx) & ");");
+                  Append (Buf, LF);
+               end if;
+               Append (Buf, Ind & "p->pos = save; " & Free);
+               --  Free releases what the failed branch set, and the fields
+               --  are then zeroed so a later branch (or the caller, on a
+               --  branch that matched) never sees them, and a later
+               --  Free never releases them twice.  It is the failed
+               --  branch's fields that are dirty, not the next one's.
+               declare
+                  Fs : constant String_Vectors.Vector :=
+                    Written_Fields (Els, PSt, PEn,
+                      Kind_Prefix /= "" and then PSt <= PEn
+                        and then Els (PSt).Kind = Literal);
+               begin
+                  for F of Fs loop
+                     Append (Buf, "; memset(&" & Acc & To_String (F)
+                       & ", 0, sizeof " & Acc & To_String (F) & ")");
+                  end loop;
+               end;
+               Append (Buf, Clears);
+               Append (Buf, ";");
+               Append (Buf, LF);
+            end Emit_Reset;
          begin
+            if not Fork and then not (for some E of Els =>
+                                        E.Kind = Alt and then E.Guard /= 0)
+            then
+               Plan;
+            end if;
+            Disp := Plan_Ok;
             if Ctx_On and then Rule_Binds (Owner) then
                Ctx_Seq := Ctx_Seq + 1;
                Cx := To_Unbounded_String ("hm" & Ctx_Img (Ctx_Seq) & "_");
@@ -6024,26 +6070,31 @@ package body HBNF_C is
             end if;
 
             if Disp then
-               --  Jump straight to a branch whose leading keyword starts with
-               --  a byte no other branch starts with.  A shared byte, a
-               --  punctuation-led branch, or the end of input falls through
-               --  to the linear chain, which is always correct.
-               Append (Buf, Ind & "if (p->pos < p->len) {");
+               --  Jump straight to the first branch that can begin with the next byte.
+               --  Only while the parse is quiet (the first pass of parse_text): a parse
+               --  that fails is read again with the failures recorded and every branch
+               --  tried in turn, so the error says everything that could have stood.
+               Append (Buf, Ind & "if (p->quiet && p->pos < p->len) {");
                Append (Buf, LF);
                Append (Buf, Ind & "    switch ((unsigned char)p->text[p->pos]) {");
                Append (Buf, LF);
-               for X in 2 .. Natural (Offs.Length) - 1 loop
-                  if Has_Unique_Byte (X) then
+               for X in 2 .. NBr loop
+                  declare
+                     Any : Boolean := False;
+                  begin
                      for B in 0 .. 255 loop
-                        if Byte_Unique_To (B, X) then
+                        if Dsp (B) = X then
                            Append (Buf, Ind & "    case " & Img (B) & ":");
                            Append (Buf, LF);
+                           Any := True;
                         end if;
                      end loop;
-                     Append (Buf, Ind & "        goto " & Label
-                       & "alt_entry_" & Img (X) & ";");
-                     Append (Buf, LF);
-                  end if;
+                     if Any then
+                        Append (Buf, Ind & "        goto "
+                          & Label & "alt_entry_" & Img (X) & ";");
+                        Append (Buf, LF);
+                     end if;
+                  end;
                end loop;
                Append (Buf, Ind & "    }");
                Append (Buf, LF);
@@ -6055,35 +6106,11 @@ package body HBNF_C is
                if K > N or else Els (K).Kind = Alt then
                   LBr := LBr + 1;
                   if LBr > 1 then
-                     if Ctx_On and then Rule_Binds (Owner) then
-                        Append (Buf, Ind & "hbnf_reset (&" & To_String (Cx)
-                          & ");");
-                        Append (Buf, LF);
-                     end if;
-                     Append (Buf, Ind & "p->pos = save; " & Free);
-                     --  Free releases what the failed branch set, and the fields
-                     --  are then zeroed so a later branch (or the caller, on a
-                     --  branch that matched) never sees them, and a later
-                     --  Free never releases them twice.  It is the failed
-                     --  branch's fields that are dirty, not the next one's.
-                     declare
-                        Fs : constant String_Vectors.Vector :=
-                          Written_Fields (Els, PSt, PEn,
-                            Kind_Prefix /= "" and then PSt <= PEn
-                              and then Els (PSt).Kind = Literal);
-                     begin
-                        for F of Fs loop
-                           Append (Buf, "; memset(&" & Acc & To_String (F)
-                             & ", 0, sizeof " & Acc & To_String (F) & ")");
-                        end loop;
-                     end;
-                     Append (Buf, Clears);
-                     Append (Buf, ";");
-                     Append (Buf, LF);
-                     if Disp and then Has_Unique_Byte (LBr) then
+                     Emit_Reset;
+                     if Disp and then Entry_Used (LBr) then
                         --  The dispatch target: after the reset, so a branch
                         --  reached by the switch starts with a clean struct.
-                        Append (Buf, Label & "alt_entry_" & Img (LBr) & ":");
+                        Append (Buf, Label & "alt_entry_" & Img (LBr) & ": ;");
                         Append (Buf, LF);
                      end if;
                   end if;
@@ -7175,15 +7202,76 @@ package body HBNF_C is
                      Rest := True;
                   end if;
                end loop;
-               Append (Ws_Skip, "__attribute__((unused))" & LF);
-               Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
-               if First then
+               if First and then Is_Dfa_Token (Rules, To_String (Ws_Name)) then
+                  --  The scanner is an automaton: the bytes its first state reads
+                  --  are the only ones whitespace can begin with, and a byte that
+                  --  is not one of them (the common case, between two tokens)
+                  --  needs no call, and no function: the test is inline.
+                  declare
+                     D   : HBNF_Lookahead.Dfa_State_Vectors.Vector;
+                     Ok  : Boolean;
+                     Why : Unbounded_String;
+                     Row : array (0 .. 127) of Boolean := [others => False];
+                     Wide : Boolean := False;
+                     Tab  : Unbounded_String;
+                  begin
+                     HBNF_Lookahead.Token_Dfa (Rules, To_String (Ws_Name), D, Ok, Why);
+                     if Ok and then not D.Is_Empty then
+                        for E of D (1).Edges loop
+                           for C in E.Lo .. Natural'Min (E.Hi, 127) loop
+                              Row (C) := True;
+                           end loop;
+                           if E.Hi >= 128 then
+                              Wide := True;
+                           end if;
+                        end loop;
+                        for C in Row'Range loop
+                           Append (Tab, (if Row (C) then "1," else "0,"));
+                        end loop;
+                        Append (Ws_Skip, "static const unsigned char ws_starts[128] = {"
+                          & To_String (Tab) & "};" & LF);
+                        Append (Ws_Skip, "__attribute__((unused))" & LF);
+                        Append (Ws_Skip, "static void skip_ws_slow(parser_t *p) {" & LF);
+                        Append (Ws_Skip, "    for (;;) {" & LF);
+                        Append (Ws_Skip, "        unsigned char b; size_t n;" & LF);
+                        Append (Ws_Skip, "        if (p->pos >= p->len) return;" & LF);
+                        Append (Ws_Skip, "        b = (unsigned char)p->text[p->pos];" & LF);
+                        Append (Ws_Skip, "        if (b < 128 ? !ws_starts[b] : "
+                          & (if Wide then "0" else "1") & ") return;" & LF);
+                        Append (Ws_Skip, "        n = " & Rule_Scanner (Rules, To_String (Ws_Name))
+                          & "(p->text, p->pos, p->len);" & LF);
+                        Append (Ws_Skip, "        if (n == 0) return;" & LF);
+                        Append (Ws_Skip, "        p->pos += n;" & LF);
+                        Append (Ws_Skip, "    }" & LF);
+                        Append (Ws_Skip, "}" & LF);
+                        Append (Ws_Skip, "__attribute__((unused))" & LF);
+                        Append (Ws_Skip, "static inline void skip_ws(parser_t *p) {" & LF);
+                        Append (Ws_Skip, "    unsigned char b;" & LF);
+                        Append (Ws_Skip, "    if (p->pos >= p->len) return;" & LF);
+                        Append (Ws_Skip, "    b = (unsigned char)p->text[p->pos];" & LF);
+                        Append (Ws_Skip, "    if (b < 128 ? !ws_starts[b] : "
+                          & (if Wide then "0" else "1") & ") return;" & LF);
+                        Append (Ws_Skip, "    skip_ws_slow(p);" & LF);
+                     else
+                        Append (Ws_Skip, "__attribute__((unused))" & LF);
+                        Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
+                        Append (Ws_Skip, "    size_t n;" & LF);
+                        Append (Ws_Skip, "    while ((n = "
+                          & Rule_Scanner (Rules, To_String (Ws_Name))
+                          & "(p->text, p->pos, p->len)) > 0) p->pos += n;" & LF);
+                     end if;
+                  end;
+               elsif First then
                   --  No single-code-point alternative: the scanner alone.
+                  Append (Ws_Skip, "__attribute__((unused))" & LF);
+                  Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
                   Append (Ws_Skip, "    size_t n;" & LF);
                   Append (Ws_Skip, "    while ((n = "
                     & Rule_Scanner (Rules, To_String (Ws_Name))
                     & "(p->text, p->pos, p->len)) > 0) p->pos += n;" & LF);
                else
+                  Append (Ws_Skip, "__attribute__((unused))" & LF);
+                  Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
                   Append (Ws_Skip, "    for (;;) {" & LF);
                   Append (Ws_Skip, "        while (p->pos < p->len) {" & LF);
                   Append (Ws_Skip, "            unsigned char b = "
@@ -7503,10 +7591,12 @@ package body HBNF_C is
            & (if HBNF_Grammar.Uses_Frames
               then "    hbnf_fsp = 0; hbnf_fb = 0;" & LF else "")
            & "    parser_t p = { text, strlen(text), 0, (size_t)-1,"
-           & " 0, 0, NULL, NULL, 0, 0 };");
+           & " 0, 0, NULL, NULL, 0, 0 };" & LF
+           & "    p.quiet = 1;   /* the first pass records no failures; one that fails is read again */" & LF
+           & "start_:");
          Append (Res, LF);
          Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
-           & "(&p, out)) goto err;");
+           & "(&p, out)) goto fail_;");
          Append (Res, LF);
          --  The text after the root may be whitespace, if the root's file skips
          --  any (`whitespace none`, as an RFC's ABNF reads, does not: an
@@ -7522,7 +7612,7 @@ package body HBNF_C is
            & (if HBNF_Grammar.Statements
               then "p.pos == 0 ? ""a statement"" : ""end of statement"""
               else """end of config""")
-           & ", 0, p.text + p.pos, 1); goto err; }");
+           & ", 0, p.text + p.pos, 1); goto fail_; }");
          Append (Res, LF);
          if Analyze (Rules, 1).Kind in Struct | List and then Has_Relink then
             Append (Res, "    relink_" & C_Name (To_String (Rules (1).Name))
@@ -7554,7 +7644,16 @@ package body HBNF_C is
          end if;
          Append (Res, "    return true;");
          Append (Res, LF);
-         Append (Res, "err:");
+         Append (Res, "fail_:" & LF
+           & "    if (p.quiet) {" & LF
+           & (if Ctx_On then "        hbnf_ctx_clear();" & LF else "")
+           & (if HBNF_Grammar.Uses_Frames
+              then "        hbnf_fsp = 0; hbnf_fb = 0;" & LF else "")
+           & "        p = (parser_t){ text, strlen(text), 0, (size_t)-1, 0, 0, NULL, NULL, 0, 0 };" & LF
+           & "        goto start_;" & LF
+           & "    }" & LF
+           & "    goto err;" & LF
+           & "err:");
          Append (Res, LF);
          Append (Res, "    if (p.err_pos != (size_t)-1)"
            & " line_col(&p, p.err_pos, &p.err_line, &p.err_col);");
@@ -7743,11 +7842,39 @@ declare
    Ok  : Boolean;
    Why : Unbounded_String;
    Lo, Hi, To, First, Acc : Unbounded_String;
+   Ascii_Dfa : Boolean := False;
 begin
    HBNF_Lookahead.Token_Dfa (Rules, NM, D, Ok, Why);
    HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
    Append (Res, "static size_t scan_" & C_Name (NM)
      & "(const char *s, size_t pos, size_t len) {" & LF);
+   --  The ASCII bytes go through a table of their own (a state and a byte give the next
+   --  state, 255 for none), without decoding or looking through the ranges; the rest of
+   --  the code points through the ranges.
+   declare
+      Ascii_Ok : constant Boolean := Natural (D.Length) in 1 .. 255;
+      At_Table : Unbounded_String;
+   begin
+      if Ascii_Ok then
+         for St in 1 .. Natural (D.Length) loop
+            declare
+               Row : array (0 .. 127) of Natural := [others => 255];
+            begin
+               for E of D (St).Edges loop
+                  for C in E.Lo .. Natural'Min (E.Hi, 127) loop
+                     Row (C) := E.To - 1;
+                  end loop;
+               end loop;
+               for C in Row'Range loop
+                  Append (At_Table, Natural'Image (Row (C)) (2 .. Natural'Image (Row (C))'Last) & ",");
+               end loop;
+               Append (At_Table, LF);
+            end;
+         end loop;
+         Append (Res, "    static const unsigned char at[] = {" & LF & To_String (At_Table) & "};" & LF);
+      end if;
+      Ascii_Dfa := Ascii_Ok;
+   end;
    Append (Res, "    static const uint32_t lo[] = {" & To_String (Lo) & "};" & LF);
    Append (Res, "    static const uint32_t hi[] = {" & To_String (Hi) & "};" & LF);
    Append (Res, "    static const uint16_t to[] = {" & To_String (To) & "};" & LF);
@@ -7758,6 +7885,19 @@ begin
    Append (Res, "        uint32_t c; size_t n; unsigned k;" & LF);
    Append (Res, "        if (acc[st]) best = i - pos;" & LF);
    Append (Res, "        if (i >= len) break;" & LF);
+   if Ascii_Dfa then
+      Append (Res, "        c = (unsigned char)s[i];" & LF);
+      Append (Res, "        if (c < 128) {" & LF);
+      Append (Res, "            unsigned t = at[st * 128 + c];" & LF);
+      Append (Res, "            if (t == 255) break;" & LF);
+      Append (Res, "            i++;" & LF);
+      Append (Res, "            if (t == st) {" & LF);
+      Append (Res, "                while (i < len && (c = (unsigned char)s[i]) < 128 && at[st * 128 + c] == st) i++;" & LF);
+      Append (Res, "                continue;" & LF);
+      Append (Res, "            }" & LF);
+      Append (Res, "            st = t; continue;" & LF);
+      Append (Res, "        }" & LF);
+   end if;
    Append (Res, "        n = hbnf_decode_utf8(s, i, len, &c);" & LF);
    Append (Res, "        if (!n) break;" & LF);
    Append (Res, "        for (k = first[st]; k < first[st + 1]; k++)" & LF);
