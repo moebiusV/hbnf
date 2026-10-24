@@ -1,0 +1,3 @@
+whitespace none
+doc = line
+line = "a" *( "b" | ":" &"c" )

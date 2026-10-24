@@ -7146,6 +7146,85 @@ package body HBNF_Grammar is
          Fail (To_String (Problems));
       end if;
 
+
+      --  A rule that is only text except for a lookahead is read a character at a time:
+      --  the lookahead keeps it from being one token, so the parser makes a tree node
+      --  for each piece instead of scanning the whole run.  Say so where the author
+      --  can still change it.
+      declare
+         function Has_Block (Els : Element_Vectors.Vector) return Boolean is
+         begin
+            for E of Els loop
+               if (E.Kind = Block and then not E.Look.Is_Empty)
+                 or else (E.Kind = Group and then Has_Block (E.Items))
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has_Block;
+
+         --  Only a rule that repeats text costs a node per piece.
+         function Repeats (Els : Element_Vectors.Vector) return Boolean is
+         begin
+            for E of Els loop
+               if E.Kind in Name | Literal | Char_Range | Group
+                 and then (E.Min /= 1 or else E.Max /= 1)
+               then
+                  return True;
+               end if;
+               if E.Kind = Group and then Repeats (E.Items) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Repeats;
+
+         function Text_Shaped (Els : Element_Vectors.Vector) return Boolean is
+         begin
+            for E of Els loop
+               case E.Kind is
+                  when Literal | Char_Range | Alt =>
+                     null;
+                  when Block =>
+                     if E.Look.Is_Empty then
+                        return False;     --  a test or %spaces, not text
+                     end if;
+                  when Group =>
+                     if not Text_Shaped (E.Items) then
+                        return False;
+                     end if;
+                  when Name =>
+                     if E.Args /= Null_Unbounded_String
+                       or else not (Is_Core_Name (To_String (E.Name))
+                                    or else Is_Char_Rule (Rules, To_String (E.Name)))
+                     then
+                        return False;
+                     end if;
+                  when others =>
+                     return False;
+               end case;
+            end loop;
+            return True;
+         end Text_Shaped;
+      begin
+         for R of Rules loop
+            if R.Jet_Code = Null_Unbounded_String
+              and then R.Whitespace = Null_Unbounded_String
+              and then Has_Block (R.Pattern)
+              and then Repeats (R.Pattern)
+              and then Text_Shaped (R.Pattern)
+              and then not Is_Char_Rule (Rules, To_String (R.Name))
+            then
+               Warn_Once ("text-lookahead:" & To_String (R.Name), "",
+                          "`" & To_String (R.Name) & "` is only text, but its lookahead "
+                          & "(`&` or `!`) keeps it from being one token, so it is read a "
+                          & "character at a time and builds a tree node for each.  "
+                          & "Write the character it looks at as part of the rule "
+                          & "(`"":"" safe` for `"":"" &safe`) to make it a token");
+            end if;
+         end loop;
+      end;
    end Finish;
 
    --  `name =/ alternatives` (RFC 5234 §3.3): add alternatives to the
