@@ -42,6 +42,8 @@ pcont(C in "block" | "flow") := ( pcx(C) | ":" safe(C) ) ptail(C)
 esc      = "0" | "a" | "b" | "t" | HTAB | "n" | "v" | "f" | "r" | "e" | SP | DQUOTE | "/" | %x5C | "N" | "_" | "L" | "P" | "x" 2HEXDIG | "u" 4HEXDIG | "U" 8HEXDIG
 dqc      = SP | HTAB | ~( nonns | DQUOTE | %x5C ) | %x5C esc
 sqc      = SP | HTAB | ~( nonns | "'" ) | "''"
+dqs        = 1*dqc
+sqs        = 1*sqc
 dqline      = DQUOTE *dqc DQUOTE
 sqline      = "'" *sqc "'"
 

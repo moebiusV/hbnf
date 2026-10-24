@@ -12,8 +12,8 @@ include "yaml-tokens.hbnf"
 
 ; ---- line breaks inside a node: the next line is indented M or more
 brk(M in 0..) := *WSP nl *( *WSP nl ) !marker %spaces M *WSP
-dq(M in 0..) := DQUOTE *dqc *( [ %x5C ] brk(M) *dqc ) DQUOTE
-sq(M in 0..) := "'" *sqc *( brk(M) *sqc ) "'"
+dq(M in 0..) := DQUOTE [ dqs ] *( [ %x5C ] brk(M) [ dqs ] ) DQUOTE
+sq(M in 0..) := "'" [ sqs ] *( brk(M) [ sqs ] ) "'"
 pml(M in 0..) := plainline("block") *( brk(M) pcont("block") )
 
 ; ---- block scalars: the text lines are indented K or more, K being the first line's, or M - 1
