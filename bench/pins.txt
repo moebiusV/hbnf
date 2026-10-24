@@ -12,3 +12,10 @@ NTPD_COMMIT=08f6ba1906d01c4a24fa700d568400f71bcf9611
 # OpenBSD src commit the nine parse.y files of parsey.py are taken from (master on
 # the GitHub mirror, 2026-10-19); their hashes are in bench/parsey.sha256.
 PARSEY_COMMIT=77f6ee04c2b5278bb3f33e90c320c471ba58e90d
+# Single-file libraries of the library comparison (stage libs), fetched into bench/cache/libs:
+# rapidyaml's single header, and tomlc17 (cktan/tomlc17, TOML 1.0) at one commit.
+RYML_URL=https://github.com/biojppm/rapidyaml/releases/download/v0.16.0/rapidyaml.v0.16.0.singlehdr.hpp
+RYML_SHA=0d0b8076174cf62f034406b03529fda542ebc9a17506d3bd6d949aedc4bfa6ab
+TOMLC17_COMMIT=4987cf895df61f702d19e3481f34b032ab29ed3a
+TOMLC17_C_SHA=7476923b6c9b8f0858b82b63ed6107f57448882983390e70c31327f7d3e2a362
+TOMLC17_H_SHA=29c0909092f4b23c7edce705167064f4a90548db5334b4aa2cd95d7ad801adb9

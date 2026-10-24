@@ -1,0 +1,11 @@
+[package]
+name = "libs-rust"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+serde_json = "1"
+toml = "0.9"
+
+[profile.release]
+opt-level = 2

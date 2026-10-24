@@ -1,0 +1,6 @@
+# Library comparison, glibc side: Debian with the same libraries.
+FROM debian:stable-slim
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    build-essential cargo ca-certificates libcjson-dev libjansson-dev libsimdjson-dev rapidjson-dev \
+    libtomlplusplus-dev libtoml11-dev libyaml-dev libyaml-cpp-dev libfyaml-dev \
+    && rm -rf /var/lib/apt/lists/*
