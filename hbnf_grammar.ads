@@ -176,7 +176,8 @@ package HBNF_Grammar is
       B_Same,        --  %same tag: the text kept as `tag` again, here
       B_Spaces,      --  %spaces n: exactly n spaces (n a number expression)
       B_Col,         --  %col j: j is the column the parser is at
-      B_Num);        --  x %num j: j is the decimal number x matched
+      B_Num,         --  x %num j: j is the decimal number x matched
+      B_Guard);      --  the clause of a rule with numeric parameters applies: a test on the frame
 
    --  True once a grammar has read `%as` or `%same`: a back-reference, which the
    --  C backend alone emits so far.
@@ -198,6 +199,23 @@ package HBNF_Grammar is
    --  The position of Var among the frame's slots (0 is the first), or -1.
    function Slot_Of (Rule_Name, Var : String) return Integer;
    function Uses_Frames return Boolean;
+
+   --  A rule whose parameters are all numbers is made in a copy for each value of
+   --  them (Expand), or run in a frame of them (Run).  Auto, the default, expands a
+   --  small table (a few values, with a clause for particular ones) and runs the
+   --  rest: a call that does little is cheaper without the frame, and one that
+   --  scans is cheaper with it.  `--expand-params` and `--run-params` choose.
+   type Params_Mode is (Auto, Expand, Run);
+   procedure Set_Params_Mode (Mode : Params_Mode);
+
+   --  A B_Guard's test, written as a tree:  (and a b ..)  (or a b ..)  (not a)
+   --  (eq a b)  (ge a b)  (le a b), the numbers written out and `$k` the k-th
+   --  number of the frame.  Render writes it in a language: Slot gives `$k`, and the
+   --  operators are the language's.
+   type Slot_Fn is access function (K : Natural) return String;
+   function Render_Guard
+     (Text : String; Slot : Slot_Fn;
+      And_Op, Or_Op, Not_Op, Eq_Op, Ge_Op, Le_Op : String) return String;
 
    type Element (Kind : Element_Kind := Literal) is record
       Min : Natural := 1;   --  minimum occurrences (repetition)

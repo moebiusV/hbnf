@@ -2886,7 +2886,6 @@ package body HBNF_Grammar is
    package Frame_Maps is new Ada.Containers.Indefinite_Ordered_Maps
      (String, Frame_Info);
    Frame_Table : Frame_Maps.Map;
-   Frame_Heads : Path_Sets.Set;     --  the heads that made them, as written
 
    function Uses_Frames return Boolean is
      (Frames_Seen or else not Frame_Table.Is_Empty);
@@ -2902,6 +2901,114 @@ package body HBNF_Grammar is
    begin
       Frame_Table.Include (Rule_Name, F);
    end Set_Frame;
+
+   Params_Mode_Now : Params_Mode := Auto;
+   procedure Set_Params_Mode (Mode : Params_Mode) is
+   begin
+      Params_Mode_Now := Mode;
+   end Set_Params_Mode;
+
+   function Render_Guard
+     (Text : String; Slot : Slot_Fn;
+      And_Op, Or_Op, Not_Op, Eq_Op, Ge_Op, Le_Op : String) return String
+   is
+      Pos : Natural := Text'First;
+
+      procedure Skip is
+      begin
+         while Pos <= Text'Last and then Text (Pos) = ' ' loop
+            Pos := Pos + 1;
+         end loop;
+      end Skip;
+
+      function Term return String is
+      begin
+         Skip;
+         if Text (Pos) = '$' then
+            declare
+               Start : constant Positive := Pos + 1;
+            begin
+               Pos := Start;
+               while Pos <= Text'Last and then Text (Pos) in '0' .. '9' loop
+                  Pos := Pos + 1;
+               end loop;
+               return Slot (Natural'Value (Text (Start .. Pos - 1)));
+            end;
+         elsif Text (Pos) = '(' then
+            declare
+               Start : constant Positive := Pos + 1;
+               Op    : Unbounded_String;
+               Parts : Unbounded_String;
+               Count : Natural := 0;
+            begin
+               Pos := Start;
+               while Text (Pos) /= ' ' loop
+                  Pos := Pos + 1;
+               end loop;
+               Op := To_Unbounded_String (Text (Start .. Pos - 1));
+               loop
+                  Skip;
+                  exit when Text (Pos) = ')';
+                  declare
+                     T : constant String := Term;
+                  begin
+                     if Count > 0 then
+                        Append (Parts, ASCII.NUL);
+                     end if;
+                     Append (Parts, T);
+                     Count := Count + 1;
+                  end;
+               end loop;
+               Pos := Pos + 1;
+               declare
+                  P : constant String := To_String (Parts);
+                  Items : array (1 .. Count) of Unbounded_String;
+                  K, B : Natural := 1;
+                  Joiner : constant String :=
+                    (if To_String (Op) = "and" then " " & And_Op & " "
+                     elsif To_String (Op) = "or" then " " & Or_Op & " "
+                     elsif To_String (Op) = "eq" then " " & Eq_Op & " "
+                     elsif To_String (Op) = "ge" then " " & Ge_Op & " "
+                     elsif To_String (Op) = "le" then " " & Le_Op & " "
+                     else "");
+                  R : Unbounded_String;
+               begin
+                  for I in P'Range loop
+                     if P (I) = ASCII.NUL then
+                        Items (K) := To_Unbounded_String (P (B .. I - 1));
+                        K := K + 1;
+                        B := I + 1;
+                     end if;
+                  end loop;
+                  if Count > 0 then
+                     Items (K) := To_Unbounded_String (P (B .. P'Last));
+                  end if;
+                  if To_String (Op) = "not" then
+                     return "(" & Not_Op & To_String (Items (1)) & ")";
+                  end if;
+                  for I in 1 .. Count loop
+                     if I > 1 then
+                        Append (R, Joiner);
+                     end if;
+                     Append (R, Items (I));
+                  end loop;
+                  return "(" & To_String (R) & ")";
+               end;
+            end;
+         else
+            declare
+               Start : constant Positive := Pos;
+            begin
+               while Pos <= Text'Last and then Text (Pos) not in ' ' | ')' loop
+                  Pos := Pos + 1;
+               end loop;
+               return Text (Start .. Pos - 1);
+            end;
+         end if;
+      end Term;
+   begin
+      return Term;
+   end Render_Guard;
 
    function Slot_Of (Rule_Name, Var : String) return Integer is
       S     : constant String := To_String (Frame_Of (Rule_Name).Slots);
@@ -3532,6 +3639,9 @@ package body HBNF_Grammar is
       use Ada.Characters.Handling;
 
       subtype U is Unbounded_String;
+      package Key_Name_Sets is new Ada.Containers.Indefinite_Ordered_Sets (String);
+      package Natural_Vectors is new Ada.Containers.Vectors (Positive, Natural);
+      type Long_Long_Integer_Array is array (Positive range <>) of Long_Long_Integer;
 
       type Value_Kind is (V_Int, V_Lit, V_Name);
       type Value is record
@@ -4063,6 +4173,10 @@ package body HBNF_Grammar is
         (V : Element_Vectors.Vector; B : Binding_Vectors.Vector;
          In_Rule : String) return Element_Vectors.Vector;
 
+      function Number_Use_Ok
+        (Base : String; Vals : Long_Long_Integer_Array) return Boolean;
+      function Number_Names_Of (Base : String) return String;
+
       --  An argument of a rule whose parameters are numbers worked out while
       --  parsing, with the names of this rule's own (compile-time) parameters
       --  replaced by their numbers.
@@ -4133,6 +4247,33 @@ package body HBNF_Grammar is
                            end if;
                            Append (Text, Bound_Text (To_String (A), B));
                         end loop;
+                        --  numbers written out are checked against the clauses now
+                        declare
+                           Lits : Long_Long_Integer_Array (1 .. Natural (Args.Length));
+                           All_Lit : Boolean := True;
+                           K : Natural := 0;
+                        begin
+                           for A of Args loop
+                              K := K + 1;
+                              declare
+                                 W : constant String := Trim (Bound_Text (To_String (A), B));
+                              begin
+                                 if W'Length > 0
+                                   and then (for all C of W => C in '0' .. '9')
+                                 then
+                                    Lits (K) := Long_Long_Integer'Value (W);
+                                 else
+                                    All_Lit := False;
+                                 end if;
+                              end;
+                           end loop;
+                           if All_Lit and then not Number_Use_Ok (Base, Lits) then
+                              Fail ("rule `" & In_Rule & "`, `" & T & "`: "
+                                    & Img (Lits (1)) & " is outside the domain of "
+                                    & Number_Names_Of (Base) & " in `" & Base
+                                    & "`; no clause of it takes these numbers");
+                           end if;
+                        end;
                         X.Name := To_Unbounded_String (Base);
                         X.Args := Text;
                         return X;
@@ -4391,6 +4532,393 @@ package body HBNF_Grammar is
          end;
       end Make_Instance;
 
+      --  The values each rule made by Make_Number_Rule takes: for each clause, what
+      --  each of its parameters must be (a constant, or spans; no spans for a
+      --  parameter with no end), so a use with numbers written out is checked as
+      --  the grammar is read.
+      type Number_Test is record
+         Is_Const : Boolean := False;
+         Const    : Long_Long_Integer := 0;
+         Open     : Boolean := True;        --  anything
+         Spans    : Interval_Vectors.Vector;
+      end record;
+      package Test_Vectors is new Ada.Containers.Vectors (Positive, Number_Test);
+      package Clause_Vectors is new Ada.Containers.Vectors
+        (Positive, Test_Vectors.Vector, Test_Vectors."=");
+      package Clause_Maps is new Ada.Containers.Indefinite_Ordered_Maps
+        (String, Clause_Vectors.Vector, "<", Clause_Vectors."=");
+      Number_Clauses : Clause_Maps.Map;
+      package Name_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, String);
+      Number_Names : Name_Maps.Map;      --  the slots of each, as written
+
+      --  What a clause with one number parameter takes, and what it calls: kept
+      --  until every such rule is known, then each call is checked against the
+      --  clauses of what it calls.
+      type Pending is record
+         Param : U;
+         Eff   : Interval_Vectors.Vector;     --  the numbers the clause is chosen for
+         Text  : Element_Vectors.Vector;
+         Base  : U;
+      end record;
+      package Pending_Vectors is new Ada.Containers.Vectors (Positive, Pending);
+      Pendings : Pending_Vectors.Vector;
+
+      function Test_Holds (T : Number_Test; V : Long_Long_Integer) return Boolean is
+        (T.Open
+         or else (if T.Is_Const then V = T.Const
+                  else (for some S of T.Spans => V >= S.Lo and then V <= S.Hi)));
+
+      procedure Make_Number_Rule
+        (Base : String; Clauses : Template_Vectors.Vector)
+      is
+         A     : constant Natural := Natural (Clauses.First_Element.Params.Length);
+         Names : array (1 .. A) of U;
+         Order : Natural_Vectors.Vector;
+         Rule0 : constant Rule := Clauses.First_Element.R;
+         Pat   : Element_Vectors.Vector;
+         Seen_Incs : Text_Vectors.Vector;
+         Infos : Clause_Vectors.Vector;
+         Slots : U;
+         Rank  : array (1 .. Natural (Clauses.Length)) of Natural := [others => 0];
+         Reached_All : Boolean := False;
+
+         function Inc (T : Template) return String is
+            Parts : Text_Vectors.Vector;
+            R     : U;
+         begin
+            for K in 1 .. A loop
+               declare
+                  P : constant Param := T.Params (K);
+                  Sl : constant String := "$" & Img (Long_Long_Integer (K - 1));
+               begin
+                  if P.Is_Const then
+                     Parts.Append (To_Unbounded_String
+                       ("(eq " & Sl & " " & Img (P.Const.Int) & ")"));
+                  elsif P.Runtime then
+                     null;     --  an open end: the number is not checked
+                  else
+                     declare
+                        Any : U;
+                        N   : Natural := 0;
+                     begin
+                        for Sp of P.Spans loop
+                           N := N + 1;
+                           Append (Any, (if N > 1 then " " else "")
+                             & (if Sp.Hi = Long_Long_Integer'Last
+                                then "(ge " & Sl & " " & Img (Sp.Lo) & ")"
+                                else "(and (ge " & Sl & " " & Img (Sp.Lo)
+                                     & ") (le " & Sl & " " & Img (Sp.Hi) & "))"));
+                        end loop;
+                        Parts.Append (To_Unbounded_String
+                          (if N = 1 then To_String (Any) else "(or " & To_String (Any) & ")"));
+                     end;
+                  end if;
+               end;
+            end loop;
+            if Parts.Is_Empty then
+               return "";
+            elsif Natural (Parts.Length) = 1 then
+               return To_String (Parts.First_Element);
+            end if;
+            for X of Parts loop
+               Append (R, " " & To_String (X));
+            end loop;
+            return "(and" & To_String (R) & ")";
+         end Inc;
+
+         function Info_Of (T : Template) return Test_Vectors.Vector is
+            V : Test_Vectors.Vector;
+         begin
+            for P of T.Params loop
+               declare
+                  X : Number_Test;
+               begin
+                  if P.Is_Const then
+                     X := (Is_Const => True, Const => P.Const.Int, Open => False, Spans => <>);
+                  elsif P.Runtime then
+                     X := (Is_Const => False, Const => 0, Open => True, Spans => <>);
+                  else
+                     X := (Is_Const => False, Const => 0, Open => False, Spans => P.Spans);
+                  end if;
+                  V.Append (X);
+               end;
+            end loop;
+            return V;
+         end Info_Of;
+      begin
+         --  the same name for the same place in every general clause
+         for K in 1 .. A loop
+            for T of Clauses loop
+               if not T.Params (K).Is_Const then
+                  if Names (K) = Null_Unbounded_String then
+                     Names (K) := T.Params (K).Name;
+                  elsif Names (K) /= T.Params (K).Name then
+                     Fail ("`" & To_String (T.Head) & "`: the clauses of `" & Base
+                           & "` name the parameter `" & To_String (Names (K))
+                           & "` and `" & To_String (T.Params (K).Name)
+                           & "`; give it one name");
+                  end if;
+               end if;
+            end loop;
+            if Names (K) = Null_Unbounded_String then
+               Names (K) := To_Unbounded_String ("p" & Img (Long_Long_Integer (K)));
+            end if;
+            if K > 1 then
+               Append (Slots, " ");
+            end if;
+            Append (Slots, Names (K));
+         end loop;
+         --  the clause with the most constants first; of equal ones, the first written
+         for I in 1 .. Natural (Clauses.Length) loop
+            for P of Clauses (I).Params loop
+               if P.Is_Const then
+                  Rank (I) := Rank (I) + 1;
+               end if;
+            end loop;
+         end loop;
+         for R_Level in reverse 0 .. A loop
+            for I in 1 .. Natural (Clauses.Length) loop
+               if Rank (I) = R_Level then
+                  Order.Append (I);
+               end if;
+            end loop;
+         end loop;
+         for Idx of Order loop
+            declare
+               T    : constant Template := Clauses (Idx);
+               Mine : constant String := Inc (T);
+               Not_Earlier : U;
+               Guard : U;
+            begin
+               if not Reached_All then
+                  --  not what a clause before it takes
+                  for E of Seen_Incs loop
+                     Append (Not_Earlier, " " & To_String (E));
+                  end loop;
+                  if Length (Not_Earlier) > 0 then
+                     Guard := To_Unbounded_String
+                       (if Mine = ""
+                        then "(not (or" & To_String (Not_Earlier) & "))"
+                        else "(and " & Mine & " (not (or" & To_String (Not_Earlier) & ")))");
+                  else
+                     Guard := To_Unbounded_String (Mine);
+                  end if;
+                  if Mine = "" then
+                     Reached_All := True;   --  takes everything the rest would
+                  else
+                     Seen_Incs.Append (To_Unbounded_String (Mine));
+                  end if;
+                  Infos.Append (Info_Of (T));
+                  if not Pat.Is_Empty then
+                     Pat.Append (new Element'(Kind => Alt, Min => 1, Max => 1,
+                                              Guard => 0, Union => False));
+                  end if;
+                  if Guard = Null_Unbounded_String then
+                     for E of T.R.Pattern loop
+                        Pat.Append (E);
+                     end loop;
+                  else
+                     Pat.Append (new Element'(Kind => Block, Min => 1, Max => 1,
+                                              Op => B_Guard, Ctx => Guard,
+                                              Path => <>, Id => 0, Look => <>,
+                                              Code => <>));
+                     Pat.Append (new Element'(Kind => Group, Min => 1, Max => 1,
+                                              Items => T.R.Pattern));
+                  end if;
+               end if;
+            end;
+         end loop;
+         declare
+            X : Rule := Rule0;
+         begin
+            X.Name := To_Unbounded_String (Base);
+            X.Pattern := Pat;
+            Ordinary.Append (X);
+         end;
+         Frame_Table.Include
+           (Base, (Slots => Slots, Arity => A, Shares => False));
+         Number_Clauses.Include (Base, Infos);
+         Number_Names.Include (Base, To_String (Slots));
+         --  with one parameter: the numbers each clause is chosen for
+         if A = 1 then
+            declare
+               Taken : Interval_Vectors.Vector;     --  by clauses before it
+            begin
+               for Idx of Order loop
+                  declare
+                     T    : constant Template := Clauses (Idx);
+                     P    : constant Param := T.Params (1);
+                     Eff  : Interval_Vectors.Vector;
+                  begin
+                     if P.Is_Const then
+                        Taken.Append (Interval'(P.Const.Int, P.Const.Int));
+                        Eff.Append (Interval'(P.Const.Int, P.Const.Int));
+                     elsif not P.Runtime then
+                        for Sp of P.Spans loop
+                           --  the span without the points before-hand clauses took
+                           declare
+                              Cur : Interval_Vectors.Vector;
+                           begin
+                              Cur.Append (Sp);
+                              for Tk of Taken loop
+                                 declare
+                                    Next : Interval_Vectors.Vector;
+                                 begin
+                                    for C of Cur loop
+                                       if Tk.Hi < C.Lo or else Tk.Lo > C.Hi then
+                                          Next.Append (C);
+                                       else
+                                          if Tk.Lo > C.Lo then
+                                             Next.Append (Interval'(C.Lo, Tk.Lo - 1));
+                                          end if;
+                                          if Tk.Hi < C.Hi then
+                                             Next.Append (Interval'(Tk.Hi + 1, C.Hi));
+                                          end if;
+                                       end if;
+                                    end loop;
+                                    Cur := Next;
+                                 end;
+                              end loop;
+                              for C of Cur loop
+                                 Eff.Append (C);
+                              end loop;
+                           end;
+                        end loop;
+                        for Sp of P.Spans loop
+                           Taken.Append (Sp);
+                        end loop;
+                     end if;
+                     if not P.Runtime then
+                        Pendings.Append
+                          (Pending'(Param => P.Name, Eff => Eff,
+                                    Text => T.R.Pattern,
+                                    Base => To_Unbounded_String (Base)));
+                     end if;
+                  end;
+               end loop;
+            end;
+         end if;
+      end Make_Number_Rule;
+
+      function Number_Names_Of (Base : String) return String is
+        (if Number_Names.Contains (Base) then Number_Names.Element (Base) else "");
+
+      --  Is a use of Base with these numbers written out in some clause?
+      function Number_Use_Ok
+        (Base : String; Vals : Long_Long_Integer_Array) return Boolean is
+      begin
+         if not Number_Clauses.Contains (Base) then
+            return True;
+         end if;
+         for Cl of Number_Clauses.Element (Base) loop
+            if (for all K in Vals'Range => Test_Holds (Cl (K), Vals (K))) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Number_Use_Ok;
+      --  Does every number a clause can pass on lie in the clauses of the rule it
+      --  calls?  Of a use like `binary(n + 1)` in a clause chosen for n in 1 .. 3.
+      procedure Check_Number_Calls is
+         procedure Walk (Pn : Pending; V : Element_Vectors.Vector) is
+         begin
+            for E of V loop
+               if E.Kind = Group then
+                  Walk (Pn, E.Items);
+               elsif E.Kind = Name and then Is_Call (To_String (E.Name)) then
+                  declare
+                     T    : constant String := To_String (E.Name);
+                     Callee : constant String := Base_Of (T);
+                     Arg  : constant String := Trim (Args_Of (T));
+                     Param : constant String := To_String (Pn.Param);
+                     Delta_V : Long_Long_Integer := 0;
+                     Lit   : Boolean := False;
+                     Ok    : Boolean := True;
+                     P     : Natural := Arg'First;
+                  begin
+                     if Number_Clauses.Contains (Callee)
+                       and then Natural (Number_Clauses.Element (Callee).First_Element.Length) = 1
+                       and then Natural (Split (Args_Of (T)).Length) = 1
+                     then
+                        --  the argument: a number, the parameter, or the parameter
+                        --  plus or minus a number
+                        if Arg'Length > 0 and then (for all C of Arg => C in '0' .. '9') then
+                           Lit := True;
+                           Delta_V := Long_Long_Integer'Value (Arg);
+                        elsif Arg'Length >= Param'Length
+                          and then Arg (Arg'First .. Arg'First + Param'Length - 1) = Param
+                        then
+                           P := Arg'First + Param'Length;
+                           while P <= Arg'Last and then Arg (P) = ' ' loop
+                              P := P + 1;
+                           end loop;
+                           if P > Arg'Last then
+                              Delta_V := 0;
+                           elsif Arg (P) in '+' | '-' then
+                              declare
+                                 Sign : constant Long_Long_Integer :=
+                                   (if Arg (P) = '+' then 1 else -1);
+                                 Q : Natural := P + 1;
+                              begin
+                                 while Q <= Arg'Last and then Arg (Q) = ' ' loop
+                                    Q := Q + 1;
+                                 end loop;
+                                 if Q <= Arg'Last and then (for all C of Arg (Q .. Arg'Last) => C in '0' .. '9') then
+                                    Delta_V := Sign * Long_Long_Integer'Value (Arg (Q .. Arg'Last));
+                                 else
+                                    Ok := False;       --  another form: not looked at
+                                 end if;
+                              end;
+                           else
+                              Ok := False;
+                           end if;
+                        else
+                           Ok := False;
+                        end if;
+                        if Ok then
+                           declare
+                              Callee_Clauses : constant Clause_Vectors.Vector :=
+                                Number_Clauses.Element (Callee);
+                              Open_Callee : constant Boolean :=
+                                (for some Cl of Callee_Clauses => Cl.First_Element.Open);
+                              Ranges : constant Interval_Vectors.Vector :=
+                                (if Lit then Interval_Vectors.To_Vector (Interval'(Delta_V, Delta_V), 1)
+                                 else Pn.Eff);
+                           begin
+                              if not Open_Callee then
+                                 for R of Ranges loop
+                                    for V0 in R.Lo .. Long_Long_Integer'Min (R.Hi, R.Lo + 100_000) loop
+                                       declare
+                                          X : constant Long_Long_Integer :=
+                                            (if Lit then V0 else V0 + Delta_V);
+                                       begin
+                                          if not (for some Cl of Callee_Clauses =>
+                                                    Test_Holds (Cl.First_Element, X))
+                                          then
+                                             Fail ("rule `" & To_String (Pn.Base) & "`, `" & T
+                                                   & "`: " & Img (X) & " is outside the domain of "
+                                                   & Number_Names.Element (Callee)
+                                                   & " in `" & Callee & "`, and a clause that "
+                                                   & "calls it with that number is chosen for "
+                                                   & Param);
+                                          end if;
+                                       end;
+                                       exit when Lit;
+                                    end loop;
+                                 end loop;
+                              end if;
+                           end;
+                        end if;
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end Walk;
+      begin
+         for Pn of Pendings loop
+            Walk (Pn, Pn.Text);
+         end loop;
+      end Check_Number_Calls;
    begin
       --  the templates, and the rules that are not
       for R of Rules loop
@@ -4409,45 +4937,6 @@ package body HBNF_Grammar is
                   Fail ("`" & H & "`: a parameterised rule has at least one "
                         & "parameter");
                end if;
-               if (for some P of T.Params => P.Runtime) then
-                  --  `block(k in 0..)`: one rule, run with a frame of numbers.
-                  declare
-                     Slots : U;
-                     Base  : constant String := Base_Of (H);
-                  begin
-                     if not (for all P of T.Params =>
-                               P.Runtime and then not P.Is_Const)
-                     then
-                        Fail ("`" & H & "`: a rule whose parameters are "
-                              & "numbers worked out while parsing (`k in 0..`) "
-                              & "has no other kind of parameter");
-                     end if;
-                     if Frame_Table.Contains (Base)
-                       and then not Frame_Heads.Contains (H)
-                     then
-                        Fail ("`" & H & "`: a rule whose parameters are numbers "
-                              & "worked out while parsing is written once, "
-                              & "not as clauses");
-                     end if;
-                     Frame_Heads.Include (H);
-                     for P of T.Params loop
-                        if Length (Slots) > 0 then
-                           Append (Slots, " ");
-                        end if;
-                        Append (Slots, P.Name);
-                     end loop;
-                     Frame_Table.Include
-                       (Base, (Slots => Slots, Arity => Natural (T.Params.Length),
-                               Shares => False));
-                     declare
-                        X : Rule := R;
-                     begin
-                        X.Name := To_Unbounded_String (Base);
-                        Ordinary.Append (X);
-                     end;
-                  end;
-                  goto Next_Rule;
-               end if;
                --  the same names for the same place in every clause
                for Other of Templates loop
                   if Other.Base = T.Base
@@ -4462,8 +4951,99 @@ package body HBNF_Grammar is
          else
             Ordinary.Append (R);
          end if;
-         <<Next_Rule>> null;
       end loop;
+      --  A rule whose parameters are all numbers is one rule, run in a frame of
+      --  them, however many values the parameters take; its clauses are
+      --  alternatives that each begin with a test of the numbers.
+      declare
+         Kept : Template_Vectors.Vector;
+         Done : Key_Name_Sets.Set;
+
+         function Is_Number_Param (P : Param) return Boolean is
+           ((P.Is_Const and then P.Const.Kind = V_Int)
+            or else (not P.Is_Const and then P.Domain = D_Range));
+      begin
+         for T0 of Templates loop
+            declare
+               Base : constant String := To_String (T0.Base);
+               Mine : Template_Vectors.Vector;
+               Eligible : Boolean := True;
+            begin
+               if Done.Contains (Base) then
+                  null;
+               else
+                  Done.Insert (Base);
+                  for T of Templates loop
+                     if T.Base = T0.Base then
+                        Mine.Append (T);
+                        if not (for all P of T.Params => Is_Number_Param (P)) then
+                           Eligible := False;
+                        end if;
+                     end if;
+                  end loop;
+                  if (for some T of Mine => (for some P of T.Params => P.Runtime))
+                    and then not Eligible
+                  then
+                     Fail ("`" & To_String (T0.Head) & "`: a parameter that is a "
+                           & "number worked out while parsing (`k in 0..`) goes "
+                           & "with numbers; the other parameters of `" & Base
+                           & "` are not");
+                  end if;
+                  declare
+                     Open : constant Boolean :=
+                       (for some T of Mine => (for some P of T.Params => P.Runtime));
+                     --  a table: a few values, and a clause for particular ones
+                     Small_Table : Boolean := False;
+                  begin
+                     if Eligible and then not Open then
+                        declare
+                           Has_Const : constant Boolean :=
+                             (for some T of Mine => (for some P of T.Params => P.Is_Const));
+                           Size : Long_Long_Integer := 1;
+                        begin
+                           for T of Mine loop
+                              declare
+                                 This : Long_Long_Integer := 1;
+                              begin
+                                 for P of T.Params loop
+                                    if not P.Is_Const then
+                                       declare
+                                          Span_Total : Long_Long_Integer := 0;
+                                       begin
+                                          for Sp of P.Spans loop
+                                             Span_Total := Span_Total + (Sp.Hi - Sp.Lo + 1);
+                                          end loop;
+                                          This := This * Long_Long_Integer'Max (1, Span_Total);
+                                       end;
+                                    end if;
+                                 end loop;
+                                 Size := Long_Long_Integer'Max (Size, This);
+                              end;
+                           end loop;
+                           Small_Table := Has_Const and then Size <= 16;
+                        end;
+                     end if;
+                     if not Eligible
+                       or else (Params_Mode_Now = Expand)
+                       or else (Params_Mode_Now = Auto and then Small_Table)
+                     then
+                        if Open then
+                           Fail ("`" & To_String (T0.Head) & "`: `k in 0..` cannot be "
+                                 & "expanded into a rule for each value");
+                        end if;
+                        for T of Mine loop
+                           Kept.Append (T);
+                        end loop;
+                     else
+                        Make_Number_Rule (Base, Mine);
+                     end if;
+                  end;
+               end if;
+            end;
+         end loop;
+         Templates := Kept;
+         Check_Number_Calls;
+      end;
       declare
          C : Domain_Maps.Cursor := Domain_Bodies.First;
       begin

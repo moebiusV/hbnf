@@ -11,7 +11,7 @@ it likes.  A parameter written `k in 0..` is a number the parser works out as it
 `bmap(K)`, `child(M)` and the rest are written once and the parser and the grammar stay the same
 size at any depth.  `%spaces k` is exactly k spaces, `%col j` names the column the parser is at,
 and `x %num j` the number x matched (the digit of `|2`).  A nested block is a nested call; a
-document of 2,500 levels parses in 10 ms.  (ABNF.md, "Numbers worked out while parsing".)
+document of 2,500 levels parses in 10 ms.  (ABNF.md, "Parameterised rule".)
 
 This replaced a first version in which every column was a rule of its own, which made the grammar
 and the generated parser grow with the deepest column allowed: 4,000 lines of C for each of 128

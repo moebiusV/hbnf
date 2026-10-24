@@ -1,0 +1,14 @@
+prefix none
+include "../../grammars/common.hbnf"
+
+expr   = binary(1)
+binary(N in 1..6) := binary(N+1) *( op(N) binary(N+1) )
+binary(7) := unary
+op(1) := "||"
+op(2) := "&&"
+op(3) := "==" | "!="
+op(4) := "<=" | ">=" | "<" | ">"
+op(5) := "+" | "-"
+op(6) := "*" | "/"
+unary  = [ "-" | "!" ] ( num | "(" expr ")" )
+num    = 1*DIGIT

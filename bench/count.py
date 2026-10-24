@@ -47,6 +47,14 @@ def yacc(paths):
     body = drop_blocks(body)
     return body, r'^[A-Za-z_][\w.]*[ \t]*:'
 
+def specbnf(paths):
+    """The productions of the YAML specification: `[#] name(n,c) ::= ...`, with the comments
+    (`# ...`) and the production numbers' marker `[#]` left out."""
+    t = ''.join(open(p, errors='replace').read() + '\n' for p in paths)
+    t = re.sub(r'(?m)^\[#\] ', '', t)
+    t = re.sub(r'(?m)[ \t]*#.*$', '', t)
+    return t, r'^[A-Za-z][\w-]*(\([^)]*\))?[ \t]*::='
+
 def hbnf(paths):
     t = ''.join(open(p, errors='replace').read() + '\n' for p in paths)
     t = drop_blocks(t, line_comment=';')
@@ -54,7 +62,7 @@ def hbnf(paths):
     return t, r'^[A-Za-z][\w-]*(\([^)]*\))?[ \t]*(:=|::=|=/?|:)'
 
 kind, paths = sys.argv[1], sys.argv[2:]
-text, rule = {'yacc': yacc, 'hbnf-code': hbnf}[kind](paths)
+text, rule = {'yacc': yacc, 'hbnf-code': hbnf, 'specbnf': specbnf}[kind](paths)
 rules = lines = syms = chars = 0
 for l in text.split('\n'):
     l = l.rstrip()

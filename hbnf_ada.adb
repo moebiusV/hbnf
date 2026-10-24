@@ -305,6 +305,9 @@ package body HBNF_Ada is
    function Scan_Fn (Rule : String) return String is
      ("Scan_" & Ada_Ident (Rule));
 
+   function Guard_Slot (K : Natural) return String is
+     ("Frames.Element (Fb +" & Natural'Image (K) & ")");
+
    --  A number expression of a rule with a frame (`k + 1`) as Ada: the names are
    --  slots of the frame, which is the top of Frames from Fb.
    function Frame_Expr (Owner, Text : String) return String is
@@ -2002,6 +2005,13 @@ package body HBNF_Ada is
                           & Ada_Escape (To_String (E.Ctx)) & "`""); " & To_String (FA) & " end if;");
                         Append (Buf, LF);
                         Append (Buf, Ind & "P.Pos := P.Pos + " & Tag_Var ("Cl", E.Ctx) & ";");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Guard then
+                        --  the clause of a rule with numeric parameters applies
+                        Append (Buf, Ind & "if not " & HBNF_Grammar.Render_Guard
+                          (To_String (E.Ctx), Guard_Slot'Access,
+                           "and then", "or else", "not ", "=", ">=", "<=")
+                          & " then Fail (P, ""a number the rule takes""); " & To_String (FA) & " end if;");
                         Append (Buf, LF);
                      elsif E.Op = B_Spaces then
                         --  exactly that many spaces

@@ -607,8 +607,35 @@ package body HBNF_Compilable is
       Left     : array (1 .. N) of Edge_Array :=
         [others => [others => False]];
 
+      --  A reference with arguments (`binary(n + 1)`) comes back to the same rule
+      --  with other numbers, which is not left recursion; one that hands on its own
+      --  numbers (`f(n) = f(n) x`) is.
       function Rule_Of (E : Element_Access) return Natural is
-        (if E.Kind = Name then Find (Rules, To_String (E.Name)) else 0);
+        (if E.Kind /= Name then 0
+         else Find (Rules, To_String (E.Name)));
+
+      function Hands_On (Owner : Natural; E : Element_Access) return Boolean is
+         F : constant HBNF_Grammar.Frame_Info :=
+           HBNF_Grammar.Frame_Of (To_String (Rules (Owner).Name));
+         Names : Unbounded_String;
+         Count : Natural := 0;
+         Slots : constant String := To_String (F.Slots);
+         B     : Positive := Slots'First;
+      begin
+         if Length (E.Args) = 0 then
+            return True;                   --  no arguments: the same as always
+         end if;
+         for I in Slots'First .. Slots'Last + 1 loop
+            if I > Slots'Last or else Slots (I) = ' ' then
+               if Count < F.Arity and then I > B then
+                  Append (Names, (if Count > 0 then ", " else "") & Slots (B .. I - 1));
+                  Count := Count + 1;
+               end if;
+               B := I + 1;
+            end if;
+         end loop;
+         return To_String (E.Args) = To_String (Names);
+      end Hands_On;
 
       function El_Nullable (E : Element_Access) return Boolean is
         (El_Nullable (Rules, Nullable, E));
@@ -632,7 +659,7 @@ package body HBNF_Compilable is
             if E.Kind = Alt then
                Skip := False;
             elsif not Skip then
-               if Rule_Of (E) /= 0 then
+               if Rule_Of (E) /= 0 and then Hands_On (From, E) then
                   Left (From) (Rule_Of (E)) := True;
                elsif E.Kind = Group then
                   Mark (From, E.Items);

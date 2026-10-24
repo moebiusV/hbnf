@@ -19,3 +19,6 @@
 | | HyperBNF (`corpus/c/c11.hbnf`) | 86 | 116 | 1060 | 8441 |
 | | **saved** | **50%** | **87%** | **45%** | **55%** |
 | | HyperBNF with its token rules (`corpus/c/c-words.hbnf` too) | 130 | 165 | 1445 | 10501 |
+| YAML 1.2 | the YAML 1.2.2 spec's productions | 201 | 861 | 1350 | 13273 |
+| | HyperBNF (`corpus/yaml`) | 95 | 102 | 1370 | 6008 |
+| | **saved** | **53%** | **88%** | **0%** | **55%** |

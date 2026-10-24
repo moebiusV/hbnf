@@ -139,7 +139,7 @@ here because it has no published grammar to compare with.
 For C the published grammars are yacc's, counted by their rules alone (the C actions, the
 declarations and the lexer are left out, which favours yacc), and HyperBNF's side is `c11.hbnf`,
 which also covers C11 and the GNU forms real code uses, against PCC's, 32V's and GCC 4.0.4's
-older dialects.  The last row adds the 41 token rules that do the lexer's work.  HyperBNF puts
+older dialects.  The last C row adds the 41 token rules that do the lexer's work.  For YAML the published side is the specification's own productions.  HyperBNF puts
 alternatives on one line, so it takes far fewer lines than any of them; its rules and symbols
 are about PCC's, fewer than GCC's, and more than 32V's.
 
@@ -166,6 +166,9 @@ are about PCC's, fewer than GCC's, and more than 32V's.
 | | HyperBNF (`corpus/c/c11.hbnf`) | 86 | 116 | 1060 | 8441 |
 | | **saved** | **50%** | **87%** | **45%** | **55%** |
 | | HyperBNF with its token rules (`corpus/c/c-words.hbnf` too) | 130 | 165 | 1445 | 10501 |
+| YAML 1.2 | the YAML 1.2.2 spec's productions | 201 | 861 | 1350 | 13273 |
+| | HyperBNF (`corpus/yaml`) | 95 | 102 | 1370 | 6008 |
+| | **saved** | **53%** | **88%** | **0%** | **55%** |
 
 <!-- /bench:notation -->
 

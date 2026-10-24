@@ -79,3 +79,5 @@ LABEL_PUB="GCC 4.0.4's c-parse.in (C part)"
 row "" "$(python3 -I "$here/count.py" yacc corpus/c/originals/gcc-4.0.4-c-parse.in)" "$CG"
 set -- $CL
 printf '| | HyperBNF with its token rules (`corpus/c/c-words.hbnf` too) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
+LABEL_PUB="the YAML 1.2.2 spec's productions"; DIR=corpus/yaml
+row "YAML 1.2" "$(python3 -I "$here/count.py" specbnf corpus/yaml/originals/yaml-1.2.2-productions.bnf)" "$(python3 -I "$here/count.py" hbnf-code corpus/yaml/yaml.hbnf corpus/yaml/yaml-tokens.hbnf)"

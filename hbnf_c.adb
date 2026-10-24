@@ -744,6 +744,8 @@ package body HBNF_C is
         & To_String (R);
    end Context_Runtime;
 
+   function Guard_Slot (K : Natural) return String is ("HF(" & Ctx_Img (K) & ")");
+
    --  A number expression of a rule with a frame (`k + 1`) as C: the names are
    --  the frame's slots of that rule.
    function Frame_Expr (Owner, Text : String) return String is
@@ -5519,6 +5521,14 @@ package body HBNF_C is
                            Append (Buf, LF);
                            Append (Buf, Ind & "p->pos += cl_"
                              & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid & ";");
+                           Append (Buf, LF);
+                        when B_Guard =>
+                           --  the clause of a rule with numeric parameters applies
+                           Append (Buf, Ind & "if (!" & HBNF_Grammar.Render_Guard
+                             (To_String (E.Ctx), Guard_Slot'Access,
+                              "&&", "||", "!", "==", ">=", "<=")
+                             & ") { fail(p, ""a number the rule takes"", 0, p->text + p->pos, 0); "
+                             & Fail & " }");
                            Append (Buf, LF);
                         when B_Spaces =>
                            --  exactly that many spaces

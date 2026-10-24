@@ -352,6 +352,8 @@ package body HBNF_Rust is
    function Rule_Fn (Snake : String) return String is
      (if Snake = "text" then "parse_rule_text" else "parse_" & Snake);
 
+   function Guard_Slot (K : Natural) return String is ("p.fs[p.fb + " & Img (K) & "]");
+
    --  A number expression of a rule with a frame (`k + 1`) as Rust: the names
    --  are slots of the frame, which is the top of p.fs from p.fb.
    function Frame_Expr (Owner, Text : String) return String is
@@ -2957,6 +2959,13 @@ package body HBNF_Rust is
                           & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
                           & "; p.pos = k_; " & Tag_Var ("cp", E.Ctx) & " = st_; "
                           & Tag_Var ("cl", E.Ctx) & " = k_ - st_; }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Guard then
+                        --  the clause of a rule with numeric parameters applies
+                        Append (Buf, Ind & "if !" & HBNF_Grammar.Render_Guard
+                          (To_String (E.Ctx), Guard_Slot'Access,
+                           "&&", "||", "!", "==", ">=", "<=")
+                          & " { return Err(p.fail(""a number the rule takes"")); }");
                         Append (Buf, LF);
                      elsif E.Op = B_Spaces then
                         --  exactly that many spaces

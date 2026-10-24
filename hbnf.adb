@@ -184,6 +184,10 @@ begin
             Ts_Ordered := True;
          elsif A'Length >= 13 and then A (1 .. 13) = "--ts-scanner=" then
             Ts_Scanner := To_Unbounded_String (A (14 .. A'Last));
+         elsif A = "--expand-params" then
+            HBNF_Grammar.Set_Params_Mode (HBNF_Grammar.Expand);
+         elsif A = "--run-params" then
+            HBNF_Grammar.Set_Params_Mode (HBNF_Grammar.Run);
          elsif A = "--forks" then
             Forks := True;
          elsif A = "--compact" then
