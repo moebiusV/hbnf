@@ -4,8 +4,8 @@
 | | HyperBNF (`corpus/algol60`) | 47 | 72 | 528 | 3604 |
 | | **saved** | **56%** | **38%** | **58%** | **55%** |
 | JSON | RFC 8259's ABNF | 30 | 45 | 193 | 949 |
-| | HyperBNF (`corpus/json`) | 14 | 14 | 129 | 556 |
-| | **saved** | **53%** | **69%** | **33%** | **41%** |
+| | HyperBNF (`corpus/json`) | 17 | 17 | 138 | 641 |
+| | **saved** | **43%** | **62%** | **28%** | **32%** |
 | TOML 1.0 | TOML's ABNF (toml.abnf) | 124 | 126 | 666 | 4646 |
 | | HyperBNF (`corpus/toml`) | 46 | 49 | 599 | 2599 |
 | | **saved** | **63%** | **61%** | **10%** | **44%** |
@@ -20,5 +20,5 @@
 | | **saved** | **50%** | **87%** | **45%** | **55%** |
 | | HyperBNF with its token rules (`corpus/c/c-words.hbnf` too) | 130 | 165 | 1445 | 10501 |
 | YAML 1.2 | the YAML 1.2.2 spec's productions | 201 | 861 | 1350 | 13273 |
-| | HyperBNF (`corpus/yaml`) | 95 | 102 | 1370 | 6008 |
-| | **saved** | **53%** | **88%** | **0%** | **55%** |
+| | HyperBNF (`corpus/yaml`) | 94 | 104 | 1387 | 6057 |
+| | **saved** | **53%** | **88%** | **-2%** | **54%** |
