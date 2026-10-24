@@ -6,7 +6,7 @@
 #
 # Comments and blank lines are left out of both; so are hbnf's directive lines
 # (prefix, whitespace, include ...), which are not rules.  A rule is a line that
-# starts a definition (`name ::=`, `name =`); a symbol is a whitespace-separated
+# starts a definition (`name ::=`, `name =`, `name(X) :=`); a symbol is a whitespace-separated
 # word, which is what a reader (or a language model) pays for.
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
@@ -38,13 +38,16 @@ count() {
 		n = split(w, tok, /[ \t]+/); sym += n
 		chars += length(w)
 		if (kind == "bnf" && line ~ /::=/) rules++
-		if (kind != "bnf" && line ~ /^[A-Za-z][A-Za-z0-9_-]*[ \t]*(=\/?|:)[ \t]*/ && line !~ /^[ \t]/) rules++
+		if (kind != "bnf" && line ~ /^[A-Za-z][A-Za-z0-9_-]*(\([^)]*\))?[ \t]*(:=|=\/?|:)[ \t]*/ && line !~ /^[ \t]/) rules++
 	}
 	END { printf "%d %d %d %d\n", rules, lines, sym, chars }'
 }
 
 saved() { awk -v a="$1" -v b="$2" 'BEGIN { printf "**%d%%**", (a - b) * 100 / a + 0.5 }'; }
 
+# The yacc grammars are counted by count.py: the rules between the %%, without the C
+# actions, the lexer or the declarations; HyperBNF's C is counted with its token rules
+# (the lexer) and without the scanners written beside them.
 row() {
 	name=$1; pub=$2; ours=$3
 	set -- $pub; pr=$1 pl=$2 ps=$3 pc=$4
@@ -61,3 +64,18 @@ LABEL_PUB="the Report's BNF"; DIR=corpus/algol60
 row "ALGOL 60" "$(count bnf corpus/algol60/syntax.txt)" "$(count hbnf corpus/algol60/algol60.hbnf)"
 LABEL_PUB="RFC 8259's ABNF"; DIR=corpus/json
 row "JSON" "$(count abnf corpus/json/rfc8259.abnf)" "$(count hbnf corpus/json/json.hbnf corpus/json/json-tokens.hbnf)"
+LABEL_PUB="TOML's ABNF (toml.abnf)"; DIR=corpus/toml
+row "TOML 1.0" "$(count abnf corpus/toml/toml.abnf)" "$(count hbnf corpus/toml/toml.hbnf corpus/toml/toml-tokens.hbnf)"
+# C: the grammar alone against each yacc grammar's rules, then the same with the token rules
+# (the lexer's job, which the yacc counts leave out) added to HyperBNF's side.
+CG="$(python3 -I "$here/count.py" hbnf-code corpus/c/c11.hbnf)"
+CL="$(python3 -I "$here/count.py" hbnf-code corpus/c/c11.hbnf corpus/c/c-words.hbnf)"
+DIR=corpus/c/c11.hbnf
+LABEL_PUB="PCC's cgram.y (NetBSD trunk)"
+row "C" "$(python3 -I "$here/count.py" yacc corpus/c/originals/pcc-cgram.y)" "$CG"
+LABEL_PUB="32V's cgram.y (mip)"
+row "" "$(python3 -I "$here/count.py" yacc corpus/c/originals/v32-cgram.y)" "$CG"
+LABEL_PUB="GCC 4.0.4's c-parse.in (C part)"
+row "" "$(python3 -I "$here/count.py" yacc corpus/c/originals/gcc-4.0.4-c-parse.in)" "$CG"
+set -- $CL
+printf '| | HyperBNF with its token rules (`corpus/c/c-words.hbnf` too) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
