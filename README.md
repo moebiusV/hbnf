@@ -115,6 +115,7 @@ Every markdown file in the repository, so none is lost.
 - [`corpus/imp72/README.md`](corpus/imp72/README.md): the IMP72 compiler's sources (cancelled as a target: IMP72 will get its own compiler).
 - [`corpus/mustache/README.md`](corpus/mustache/README.md): Mustache templates, with the back-reference that makes a closing tag repeat its opening one.
 - [`corpus/json/README.md`](corpus/json/README.md): JSON in 14 rules, checked against Python's `json`.
+- TOML and YAML grammars are planned beside JSON and obconf as the grammars HyperBNF ships ready to use ([`RFCPLAN.md`](RFCPLAN.md), Shipped grammars); each is to be tested in all four backends against its conformance suite and a reference parser.
 - [`corpus/bip39/README.md`](corpus/bip39/README.md): the ten BIP-39 word lists.
 - [`corpus/bech32/README.md`](corpus/bech32/README.md): bech32 and bech32m.
 

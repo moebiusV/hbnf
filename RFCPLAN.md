@@ -573,6 +573,27 @@ Where hbnf needs something different,
 the error names the RFC form and says how hbnf spells it, so a pasted RFC is
 corrected by the messages, not by reading the manual.
 
+## Shipped grammars
+
+HyperBNF ships four grammars as fundamentals that can be dropped in and used at once: **JSON**
+(RFC 8259, built, `corpus/json/`), **TOML**, **YAML** and **obconf** (the shared daemon
+configuration grammar, built, `grammars/obconf.hbnf`).  TOML and YAML are in the plan and not
+yet written.  Each one gets the treatment JSON has:
+
+- a grammar in HyperBNF, as small as the language allows, and parsers generated from it in all
+  four backends (C, Rust, Zig, Ada);
+- a test suite in `tests/`, run in every backend: the language's own conformance suite where one
+  exists (toml-test for TOML, the YAML test suite for YAML), plus mutations of valid documents;
+- a differential check against a reference parser (Python's `json` for JSON, `tomllib` for TOML,
+  a YAML library for YAML), on a large generated and mutated set, as `tests/json-diff.sh` does;
+- the grammar's size in rules, alternatives, symbols and lines, from `scripts/grammar-size.py`,
+  against the specification's own grammar;
+- a README under `corpus/` that says what the grammar accepts, what it refuses and why.
+
+YAML is the hard one: indentation is syntax, so it needs the context machinery (a block's
+indentation as a context set) and may need the layout scanner the language-specific `ws` hooks
+give C.  TOML is plain by comparison (dotted keys, tables, and its date-time forms).
+
 ## Order
 
 Each step leaves the nine daemon grammars, e2e, byteident (ntpd) and
