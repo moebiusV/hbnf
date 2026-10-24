@@ -22,7 +22,7 @@ RFCs have used for decades, not like a yacc file with embedded C actions.
 
 HyperBNF ships with the basic formats ready to use: JSON, TOML, YAML and obconf, the configuration
 grammar the daemons share.  Drop one in and you have a parser; the grammar is short, readable
-HyperBNF, so changing it to fit your own needs means editing a few lines, not learning a generator.
+HyperBNF, so changing it to fit your own needs means editing a few lines, not learning a generator. *(TOML and YAML will land shortly.)*
 
 It is powerful enough to parse context-sensitive languages such as ALGOL 68 and C++ without breaking
 a sweat: parameterised rules, back-references and context sets carry what a yacc grammar leaves to
