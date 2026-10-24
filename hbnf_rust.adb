@@ -1,5 +1,6 @@
 pragma Ada_2022;
 
+with Ada.Characters.Handling;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Mustache;
@@ -309,6 +310,18 @@ package body HBNF_Rust is
    end Set_Ast;
 
    Compact_On : Boolean := True;
+
+   --  Contexts (RFCPLAN.md decision 13): named sets of names the parser keeps while it
+   --  reads, which a `%bind` adds to, a `?` asks, and a failed branch, rule or `%scope`
+   --  puts back to what they were.
+   function Ctx_On return Boolean is (HBNF_Grammar.Context_Count > 0);
+
+   --  The grammar wrote this scanner in Rust (`ws = Rust { ... }`): a core scanner
+   --  (`word`, `int`, `str`, `ws`) with such a body runs it instead of the built-in one.
+   function Has_Rust_Body (Nm : String) return Boolean is
+     (HBNF_Grammar.Jet_Body (Nm, HBNF_Grammar.Rust_Target) /= "");
+   function Ctx_Const (Name : String) return String is
+     ("CTX_" & Ada.Characters.Handling.To_Upper (Rust_Snake (Name)));
 
    procedure Set_Compact (On : Boolean) is
    begin
@@ -2744,10 +2757,16 @@ package body HBNF_Rust is
          end if;
       end Range_Cond;
 
+      --  Contexts (RFCPLAN.md decision 13): named sets of names the parser keeps while it
+      --  reads, which a `%bind` adds to, a `?` asks, and a failed branch, rule or `%scope`
+      --  puts back to what they were.
+      Scope_Seq : Natural := 0;
+
       procedure Emit_Seq
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural;
          Dst  : String; Buf : in out U; Ind : String := "    ") is
+         Scopes : String_Vectors.Vector;
          --  Whether this rule's file skips whitespace between elements
          --  (`whitespace none` says it does not).
          Skips : constant Boolean :=
@@ -2772,7 +2791,7 @@ package body HBNF_Rust is
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op = B_As
+                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test
                then
                   Append (Buf, Ind & "let es_" & Sid & "_" & Img (K) & " = p.pos;");
                   Append (Buf, LF);
@@ -2853,6 +2872,46 @@ package body HBNF_Rust is
                           & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
                           & "; p.pos = k_; " & Tag_Var ("cp", E.Ctx) & " = st_; "
                           & Tag_Var ("cl", E.Ctx) & " = k_ - st_; }");
+                        Append (Buf, LF);
+                     elsif E.Op in B_Test | B_Not_Test then
+                        --  `x ? types` / `x ?! types`: the text x matched is (not) in the context
+                        Append (Buf, Ind & "{ let k_ = p.pos; "
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                               & "; p.skip_ws(); " else "")
+                          & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "; p.pos = k_;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "  if " & (if E.Op = B_Test then "!" else "")
+                          & "p.cx_has(" & Ctx_Const (To_String (E.Ctx)) & ", &p.text[st_..k_]) {");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "    p.pos = st_; let e_ = p.fail(""a name "
+                          & (if E.Op = B_Test then "in `" else "not in `") & To_String (E.Ctx)
+                          & "`""); p.pos = k_; return Err(e_); } }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Bind then
+                        declare
+                           Path : constant String := To_String (E.Path);
+                           R    : Unbounded_String := To_Unbounded_String (Dst);
+                           B    : Natural := Path'First;
+                        begin
+                           for Q in Path'Range loop
+                              if Path (Q) = '.' then
+                                 Append (R, Rust_Field (Path (B .. Q - 1)) & ".");
+                                 B := Q + 1;
+                              end if;
+                           end loop;
+                           Append (R, Rust_Field (Path (B .. Path'Last)));
+                           Append (Buf, Ind & "{ let v_ = " & To_String (R) & ".clone()"
+                             & "; p.cx_add(" & Ctx_Const (To_String (E.Ctx)) & ", &v_); }");
+                           Append (Buf, LF);
+                        end;
+                     elsif E.Op = B_Scope then
+                        Scope_Seq := Scope_Seq + 1;
+                        Scopes.Append (To_Unbounded_String ("sc_" & Img (Scope_Seq)));
+                        Append (Buf, Ind & "let sc_" & Img (Scope_Seq) & " = p.cx_mark();");
+                        Append (Buf, LF);
+                     elsif E.Op in B_Where | B_Bind_Code then
+                        Append (Buf, Ind & "compile_error!(""a `%where` or `%bind { }` is code, and this grammar has none for Rust"");");
                         Append (Buf, LF);
                      elsif E.Op in B_Not | B_And then
                         --  !x / &x: x is tried at this place and nothing is consumed
@@ -2960,6 +3019,11 @@ package body HBNF_Rust is
                end case;
             end;
          end loop;
+         --  what a `%scope` bound ends with the segment
+         for Q in reverse 1 .. Natural (Scopes.Length) loop
+            Append (Buf, Ind & "p.cx_reset(&" & To_String (Scopes (Q)) & ");");
+            Append (Buf, LF);
+         end loop;
       end Emit_Seq;
 
       --  Emit a backtracking alternation over the Alt-separated branches in
@@ -2976,11 +3040,16 @@ package body HBNF_Rust is
          St : Natural := 1;
          Br : Natural := 0;
       begin
+         if Ctx_On then
+            Append (Buf, Ind & "let cm_ = p.cx_mark();");
+            Append (Buf, LF);
+         end if;
          for K in 1 .. N + 1 loop
             if K > N or else Els (K).Kind = Alt then
                Br := Br + 1;
                if Br > 1 then
                   Append (Buf, Ind & "p.pos = save;"
+                    & (if Ctx_On then " p.cx_reset(&cm_);" else "")
                     & (if Reset = "" then "" else " " & Reset & ";"));
                   Append (Buf, LF);
                end if;
@@ -3158,7 +3227,7 @@ package body HBNF_Rust is
                                        (if Lit_Only (E.Items) then ""
                                         else "e = " & RT & "Entry::default()"), Buf,
                                        "                ");
-                     Append (Buf, "                p.pos = save; break 'list;");
+                     Append (Buf, "                p.pos = save;" & (if Ctx_On then " p.cx_reset(&cm_);" else "") & " break 'list;");
                      Append (Buf, LF);
                      Append (Buf, "            }");
                      Append (Buf, LF);
@@ -3173,7 +3242,7 @@ package body HBNF_Rust is
                                         else "e = " & RT & "Entry::default()"), Buf,
                                        "            ");
                   end if;
-                  Append (Buf, "            p.pos = save; break 'list;");
+                  Append (Buf, "            p.pos = save;" & (if Ctx_On then " p.cx_reset(&cm_);" else "") & " break 'list;");
                   Append (Buf, LF);
                   Append (Buf, "        }");
                   Append (Buf, LF);
@@ -3537,6 +3606,8 @@ package body HBNF_Rust is
             Mustache.Put (V, "text_type", (if Is_Hosted then "Txt<'a>" else "&'a str"));
             Mustache.Put (V, "bit_field",
               (if Is_Hosted then "bit: usize, " else ""));
+            Mustache.Put (V, "ctx_field",
+              (if Ctx_On then ", cx: [Cx; NCTX]" else ""));
             Mustache.Put (V, "first_char",
               (if Is_Hosted then "bnf_first_char(&b[self.pos..])"
                else "self.text[self.pos..].chars().next().unwrap().to_string()"));
@@ -3545,6 +3616,44 @@ package body HBNF_Rust is
                else "&self.text[start..stop]"));
             Append (Res, Mustache.Render_File ("rust_parser", V));
          end;
+         if Ctx_On then
+            declare
+               K : constant Natural := HBNF_Grammar.Context_Count;
+            begin
+               Append (Res, LF & "// ---- contexts: named sets of names the parser keeps while it reads ----" & LF
+                 & "const NCTX: usize = " & Img (K) & ";" & LF);
+               for Q in 1 .. K loop
+                  Append (Res, "const " & Ctx_Const (HBNF_Grammar.Context_Name (Q))
+                    & ": usize = " & Img (Q - 1) & ";" & LF);
+               end loop;
+               Append (Res,
+                 "#[derive(Default)]" & LF
+                 & "struct Cx { map: std::collections::HashMap<String, u32>, log: Vec<String> }" & LF
+                 & "impl<'a> P<'a> {" & LF
+                 & "    fn cx_mark(&self) -> [usize; NCTX] {" & LF
+                 & "        let mut m = [0usize; NCTX];" & LF
+                 & "        for c in 0..NCTX { m[c] = self.cx[c].log.len(); }" & LF
+                 & "        m" & LF
+                 & "    }" & LF
+                 & "    // put every context back to the mark: a branch or rule that gave up leaves nothing bound" & LF
+                 & "    fn cx_reset(&mut self, m: &[usize; NCTX]) {" & LF
+                 & "        for c in 0..NCTX {" & LF
+                 & "            while self.cx[c].log.len() > m[c] {" & LF
+                 & "                let s = self.cx[c].log.pop().unwrap();" & LF
+                 & "                if let Some(n) = self.cx[c].map.get_mut(&s) { *n -= 1; }" & LF
+                 & "            }" & LF
+                 & "        }" & LF
+                 & "    }" & LF
+                 & "    fn cx_add(&mut self, c: usize, s: &str) {" & LF
+                 & "        self.cx[c].log.push(s.to_string());" & LF
+                 & "        *self.cx[c].map.entry(s.to_string()).or_insert(0) += 1;" & LF
+                 & "    }" & LF
+                 & "    fn cx_has(&self, c: usize, s: &str) -> bool {" & LF
+                 & "        self.cx[c].map.get(s).map_or(false, |n| *n > 0)" & LF
+                 & "    }" & LF
+                 & "}" & LF & LF);
+            end;
+         end if;
       end;
       Append (Res, LF);
       Append (Res, LF);
@@ -3577,10 +3686,12 @@ package body HBNF_Rust is
                        & "(p: &mut P) -> Result<" & Ret_Type (I)
                        & ", ParseError> {" & LF
                        & "    p.enter(" & Img (I) & ");" & LF
+                       & (if Ctx_On then "    let cm = p.cx_mark();" & LF else "")
                        & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
                           then "    let save = p.pos;" & LF else "")
                        & "    let r = parse_body_" & Rust_Snake (NM) & "(p);" & LF
                        & "    p.ex.depth -= 1;" & LF
+                       & (if Ctx_On then "    if r.is_err() { p.cx_reset(&cm); }" & LF else "")
                        & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
                           then "    r.map(|mut v| {" & LF
                             & (if Rules (I).Whitespace /= Null_Unbounded_String
@@ -3651,7 +3762,11 @@ package body HBNF_Rust is
             return J > 0 and then Rules (J).Jet_Code /= Null_Unbounded_String;
          end Is_Jet;
       begin
-         if Is_Jet ("word") or else Find (Rules, "word") = 0 then
+         if Is_Jet ("word") and then Has_Rust_Body ("word") then
+            --  the grammar gives Rust code for `word`: the scanner is that code
+            Put ("fn scan_word(s: &[u8], pos: usize, len: usize) -> usize { jet_word(s, pos, len) }");
+            Put ("");
+         elsif Is_Jet ("word") or else Find (Rules, "word") = 0 then
             Put ("fn scan_word(s: &[u8], pos: usize, len: usize) -> usize {");
             Put ("    let mut i = pos;");
             Put ("    if i >= len || !(s[i].is_ascii_alphabetic() || s[i] == b'_' || s[i] == b'-') { return 0; }");
@@ -3661,7 +3776,10 @@ package body HBNF_Rust is
             Put ("}");
             Put ("");
          end if;
-         if Is_Jet ("int") then
+         if Is_Jet ("int") and then Has_Rust_Body ("int") then
+            Put ("fn scan_int(s: &[u8], pos: usize, len: usize) -> usize { jet_int(s, pos, len) }");
+            Put ("");
+         elsif Is_Jet ("int") then
             Put ("fn scan_int(s: &[u8], pos: usize, len: usize) -> usize {");
             Put ("    let mut i = pos;");
             Put ("    if i + 1 < len && s[i] == b'-' && s[i + 1].is_ascii_digit() { i += 1; }");
@@ -3671,7 +3789,10 @@ package body HBNF_Rust is
             Put ("}");
             Put ("");
          end if;
-         if Is_Jet ("str") then
+         if Is_Jet ("str") and then Has_Rust_Body ("str") then
+            Put ("fn scan_str(s: &[u8], pos: usize, len: usize) -> usize { jet_str(s, pos, len) }");
+            Put ("");
+         elsif Is_Jet ("str") then
             Put ("fn scan_str(s: &[u8], pos: usize, len: usize) -> usize {");
             Put ("    if pos >= len || s[pos] != b'""' { return 0; }");
             Put ("    let mut i = pos + 1;");
@@ -3684,7 +3805,10 @@ package body HBNF_Rust is
             Put ("}");
             Put ("");
          end if;
-         if Is_Jet ("ws") then
+         if Is_Jet ("ws") and then Has_Rust_Body ("ws") then
+            Put ("fn scan_ws(s: &[u8], pos: usize, len: usize) -> usize { jet_ws(s, pos, len) }");
+            Put ("");
+         elsif Is_Jet ("ws") then
             Put ("fn scan_ws(s: &[u8], pos: usize, len: usize) -> usize {");
             Put ("    if pos < len && matches!(s[pos], b' ' | b'\t' | b'\r' | b'\n') { 1 } else { 0 }");
             Put ("}");
@@ -3692,7 +3816,8 @@ package body HBNF_Rust is
          end if;
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String
-              and then not Is_Builtin_Jet (To_String (Rules (I).Name))
+              and then (not Is_Builtin_Jet (To_String (Rules (I).Name))
+                        or else Has_Rust_Body (To_String (Rules (I).Name)))
             then
                declare
                   NM   : constant String := To_String (Rules (I).Name);
@@ -3935,6 +4060,7 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
          Mustache.Put (V, "text_param", (if Is_Hosted then "&[u8]" else "&str"));
          Mustache.Put (V, "text_init", (if Is_Hosted then ": Txt(text)" else ""));
          Mustache.Put (V, "bit_init", (if Is_Hosted then "bit: 0, " else ""));
+         Mustache.Put (V, "ctx_init", (if Ctx_On then ", cx: Default::default()" else ""));
          Mustache.Put (V, "reset",
            (if Is_Hosted and then Hosted_Acts
             then "    BNF_WARNINGS.with(|w| w.borrow_mut().clear());" & LF else ""));

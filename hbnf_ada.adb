@@ -915,6 +915,14 @@ package body HBNF_Ada is
             --  record body, so this can be referenced where the body is.
             return Ada_Ident
               (To_String (Rules (Leaf_Record (Rules, Ref)).Name)) & "_Access";
+         elsif J > 0 and then Infos (J).Kind = Scalar
+           and then Leaf_Target (Rules, J) /= 0
+           and then Leaf_Target (Rules, J) /= J
+           and then Infos (Leaf_Target (Rules, J)).Kind = List
+         then
+            --  An alias of a list (`cmd-word = WORD`, a repetition): its subtype is declared
+            --  after the entries that hold it, so name the list's own type
+            return Ada_Ident (To_String (Rules (Leaf_Target (Rules, J)).Name)) & "_Type";
          else
             return Ada_Type_Of (Rules, Ref);    -- a scalar/enum/list rule
          end if;

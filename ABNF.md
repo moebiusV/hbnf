@@ -184,8 +184,8 @@ of them again (a later `=` overrides).
 
 ## Dialects: one notation
 
-BNF, EBNF, ABNF, YBNF (the grammar language of yacc and bison) and HBNF
-(Hyper BNF, this notation) are dialects of one notation, and hbnf reads the
+BNF, EBNF, ABNF and YBNF (the grammar language of yacc and bison) are dialects that HyperBNF
+(this notation, the language `hbnf` is named for) reads alongside its own spelling, and `hbnf` reads the
 superset: a spelling any of them uses is accepted wherever it cannot be taken
 for something else, and a line `dialect NAME` (or `--dialect=NAME` for a run) is needed
 only where two dialects spell different things the same way.

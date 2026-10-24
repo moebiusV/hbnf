@@ -2,8 +2,8 @@
 # The C11 grammar (corpus/c/c11.hbnf), C backend: the generated parser must accept every file in
 # corpus/c/tests/good and refuse every file in corpus/c/tests/bad, and where gcc is installed it
 # must agree (gcc -fsyntax-only is the reference).  scripts/c-scan.sh runs the same comparison over
-# any directory of C sources, preprocessed.  The grammar uses the typedef context, which only the C
-# backend has so far.
+# any directory of C sources, preprocessed.  The grammar uses the typedef context, which the C, Rust and
+# Zig backends have (Ada follows); the same files go through the Rust and Zig parsers where installed.
 #   HBNF=/path/to/hbnf sh tests/c.sh      (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
@@ -35,4 +35,36 @@ for kind in good bad; do
 		fi
 	done
 done
-[ $fail = 0 ] && echo "c: OK ($n files: the good accepted, the bad refused)" || { echo "c: $fail FAIL"; exit 1; }
+verdicts() {   # verdicts BACKEND OUTPUT-FILE: every good file accepted, every bad one refused
+	b=$1; out=$2
+	for kind in good bad; do
+		for f in $D/tests/$kind/*.c; do
+			line=$(grep -F " $f" "$out" | head -1 | cut -d' ' -f1)
+			want=ok; [ $kind = bad ] && want=bad
+			if [ "$line" != "$want" ]; then echo "FAIL ($b) $f: $kind file, the parser says '$line'"; fail=$((fail + 1)); fi
+		done
+	done
+}
+FILES="$D/tests/good/*.c $D/tests/bad/*.c"
+if command -v rustc > /dev/null 2>&1; then
+	d=$W/rs; mkdir -p "$d"
+	"$CLI" $D/c11.hbnf --backend=rust > "$d/c11.rs" 2> /dev/null || { echo "FAIL (rust generate)"; fail=$((fail + 1)); }
+	sed "s/MODULE/c11/g" $D/check.rs > "$d/m.rs"
+	if (cd "$d" && rustc --edition 2021 -A warnings -o m m.rs > cc.txt 2>&1); then
+		"$d/m" $FILES > "$d/out" 2>&1; verdicts rust "$d/out"
+	else echo "FAIL (rust compile)"; head -5 "$d/cc.txt"; fail=$((fail + 1)); fi
+fi
+if command -v zig > /dev/null 2>&1; then
+	d=$W/zg; mkdir -p "$d"
+	"$CLI" $D/c11.hbnf --backend=zig > "$d/c11.zig" 2> /dev/null || { echo "FAIL (zig generate)"; fail=$((fail + 1)); }
+	: > "$d/files.txt"; i=0
+	for f in $FILES; do
+		i=$((i + 1)); cp "$f" "$d/f$i.dat"
+		printf '    .{ .name = "%s", .data = @embedFile("f%d.dat") },\n' "$f" "$i" >> "$d/files.txt"
+	done
+	sed "s/MODULE/c11.zig/g" $D/check.zig | awk -v f="$d/files.txt" '$0 == "FILES" { while ((getline l < f) > 0) print l; next } { print }' > "$d/m.zig"
+	if (cd "$d" && zig build-exe m.zig -femit-bin=m > cc.txt 2>&1); then
+		"$d/m" > "$d/out" 2>&1; verdicts zig "$d/out"
+	else echo "FAIL (zig compile)"; head -5 "$d/cc.txt"; fail=$((fail + 1)); fi
+fi
+[ $fail = 0 ] && echo "c: OK ($n files: the good accepted, the bad refused; C, and Rust and Zig where installed)" || { echo "c: $fail FAIL"; exit 1; }

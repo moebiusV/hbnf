@@ -1,5 +1,5 @@
 pub fn parse_text(text: {{&text_param}}) -> Result<{{&root_type}}, ParseError> {
-    let mut p = P { text{{&text_init}}, pos: 0, {{&bit_init}}err_pos: 0, err: None, ex: ErrEx::default() };
+    let mut p = P { text{{&text_init}}, pos: 0, {{&bit_init}}err_pos: 0, err: None, ex: ErrEx::default(){{&ctx_init}} };
 {{&reset}}{{&lead_ws}}    let out = match {{&root_fn}}(&mut p) { Ok(o) => o, Err(_) => return Err(p.take_err()) };
 {{&trail_ws}}    if p.pos < p.text.len() { p.fail("end of config"); return Err(p.take_err()); }
 {{&actions}}    Ok(out)

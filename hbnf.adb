@@ -279,7 +279,7 @@ begin
          return;
       end if;
       if HBNF_Grammar.Context_Count > 0
-        and then To_String (Backend) not in "c" | "tree-sitter"
+        and then To_String (Backend) not in "c" | "rust" | "zig" | "tree-sitter"
       then
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error,

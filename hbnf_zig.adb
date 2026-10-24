@@ -1,5 +1,6 @@
 pragma Ada_2022;
 
+with Ada.Characters.Handling;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Mustache;
@@ -655,6 +656,19 @@ package body HBNF_Zig is
      (Info.Kind = Struct);
 
    Compact_On : Boolean := True;
+
+   --  Contexts (RFCPLAN.md decision 13): named sets of names the parser keeps while it
+   --  reads, which a `%bind` adds to, a `?` asks, and a failed branch, rule or `%scope`
+   --  puts back to what they were.
+   function Ctx_On return Boolean is (HBNF_Grammar.Context_Count > 0);
+
+   --  The grammar wrote this scanner in Zig (`ws = Zig { ... }`): a core scanner
+   --  (`word`, `int`, `str`, `ws`) with such a body runs it instead of the built-in one.
+   function Has_Zig_Body (Nm : String) return Boolean is
+     (HBNF_Grammar.Jet_Body (Nm, HBNF_Grammar.Zig_Target) /= "");
+   function Ctx_Const (Name : String) return String is
+     ("CTX_" & Ada.Characters.Handling.To_Upper (Zig_Snake (Name)));
+   Cx_Seq : Natural := 0;   --  a name for each mark, since a Zig scope may not shadow
 
    procedure Set_Compact (On : Boolean) is
    begin
@@ -2973,6 +2987,7 @@ package body HBNF_Zig is
            Rules (Owner).Whitespace /= Null_Unbounded_String;
          Pref : constant String := (if Fail = "" then "try " else "");
          Cat  : constant String := (if Fail = "" then "" else " catch " & Fail);
+         Scopes : String_Vectors.Vector;
          --  `x %as tag` keeps where the text x matched is and how long; `%same tag`
          --  is that text again.  The pair is local to this sequence.
          Sid : constant String := Img (Bref_Seq + 1);
@@ -2996,7 +3011,7 @@ package body HBNF_Zig is
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op = B_As
+                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test
                then
                   Append (Buf, Ind & "const es_" & Sid & "_" & Img (K) & " = p.pos;");
                   Append (Buf, LF);
@@ -3101,6 +3116,44 @@ package body HBNF_Zig is
                         Append (Buf, LF);
                         Append (Buf, Ind & "p.pos += " & Tag_Var ("cl", E.Ctx) & ";");
                         Append (Buf, LF);
+                     elsif E.Op in B_Test | B_Not_Test then
+                        --  `x ? types` / `x ?! types`: the text x matched is (not) in the context
+                        Append (Buf, Ind & "{ const k_ = p.pos; "
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                               & "; p.skip_ws(); " else "")
+                          & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "; p.pos = k_;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "  if (" & (if E.Op = B_Test then "!" else "")
+                          & "p.cx_has(" & Ctx_Const (To_String (E.Ctx)) & ", p.text[st_..k_])) { p.pos = st_; "
+                          & Pref & "p.fail(""a name " & (if E.Op = B_Test then "in `" else "not in `")
+                          & To_String (E.Ctx) & "`"")" & Cat & "; } }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Bind then
+                        declare
+                           Path : constant String := To_String (E.Path);
+                           R    : Unbounded_String := To_Unbounded_String (Dst);
+                           B    : Natural := Path'First;
+                        begin
+                           for Q in Path'Range loop
+                              if Path (Q) = '.' then
+                                 Append (R, Zig_Field (Path (B .. Q - 1)) & ".");
+                                 B := Q + 1;
+                              end if;
+                           end loop;
+                           Append (R, Zig_Field (Path (B .. Path'Last)));
+                           Append (Buf, Ind & Pref & "p.cx_add(" & Ctx_Const (To_String (E.Ctx)) & ", "
+                             & To_String (R) & ")" & Cat & ";");
+                           Append (Buf, LF);
+                        end;
+                     elsif E.Op = B_Scope then
+                        Cx_Seq := Cx_Seq + 1;
+                        Scopes.Append (To_Unbounded_String ("sc_" & Img (Cx_Seq)));
+                        Append (Buf, Ind & "const sc_" & Img (Cx_Seq) & " = p.cx_mark();");
+                        Append (Buf, LF);
+                     elsif E.Op in B_Where | B_Bind_Code then
+                        Append (Buf, Ind & "@compileError(""a `%where` or `%bind { }` is code, and this grammar has none for Zig"");");
+                        Append (Buf, LF);
                      elsif E.Op in B_Not | B_And then
                         --  !x / &x: x is tried at this place and nothing is consumed
                         declare
@@ -3194,6 +3247,11 @@ package body HBNF_Zig is
                end case;
             end;
          end loop;
+         --  what a `%scope` bound ends with the segment
+         for Q in reverse 1 .. Natural (Scopes.Length) loop
+            Append (Buf, Ind & "p.cx_reset(&" & To_String (Scopes (Q)) & ");");
+            Append (Buf, LF);
+         end loop;
       end Emit_Seq;
 
       --  Emit a backtracking alternation over the Alt-separated branches in
@@ -3210,6 +3268,7 @@ package body HBNF_Zig is
          St : Natural := 1;
          Br : Natural := 0;
          Block_Start : Natural := 0;
+         Cm_U : Unbounded_String;
 
          function Img (X : Natural) return String is
             S : constant String := Natural'Image (X);
@@ -3220,11 +3279,18 @@ package body HBNF_Zig is
             return S;
          end Img;
       begin
+         Cx_Seq := Cx_Seq + 1;
+         Cm_U := To_Unbounded_String ("cm_" & Img (Cx_Seq));
+         if Ctx_On then
+            Append (Buf, Ind & "const " & To_String (Cm_U) & " = p.cx_mark();");
+            Append (Buf, LF);
+         end if;
          for K in 1 .. N + 1 loop
             if K > N or else Els (K).Kind = Alt then
                Br := Br + 1;
                if Br > 1 then
-                  Append (Buf, Ind & "p.pos = save; " & Reset & "; matched = false;");
+                  Append (Buf, Ind & "p.pos = save; " & Reset & "; matched = false;"
+                    & (if Ctx_On then " p.cx_reset(&" & To_String (Cm_U) & ");" else ""));
                   Append (Buf, LF);
                end if;
                Block_Start := Length (Buf);
@@ -3329,6 +3395,8 @@ package body HBNF_Zig is
                --  matches breaks out of blk_alt with e filled in; one that
                --  fails breaks out of its own block, and the next starts
                --  from save.
+               Lm : Unbounded_String;
+
                procedure Alt_Blocks (V : Element_Vectors.Vector;
                                      Label, Ind : String; Alt_Off : Natural := 0) is
                   St     : Natural := 1;
@@ -3341,6 +3409,7 @@ package body HBNF_Zig is
                            Branch := Branch + 1;
                            if Branch > 1 then
                               Append (Buf, Ind & "p.pos = save;"
+                                & (if Ctx_On then " p.cx_reset(&" & To_String (Lm) & ");" else "")
                                 & (if No_Fields then ""
                                    else " e = std.mem.zeroes(" & Elem & ");"));
                               Append (Buf, LF);
@@ -3442,6 +3511,12 @@ package body HBNF_Zig is
                   end if;
                   Append (Buf, "        const save = p.pos;");
                   Append (Buf, LF);
+                  if Ctx_On then
+                     Cx_Seq := Cx_Seq + 1;
+                     Lm := To_Unbounded_String ("lm_" & Img (Cx_Seq));
+                     Append (Buf, "        const " & To_String (Lm) & " = p.cx_mark();");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, (if No_Fields
                                 then "        const e: []const u8 = """";"
                                 else "        var e = std.mem.zeroes(" & Elem & ");"));
@@ -3454,7 +3529,9 @@ package body HBNF_Zig is
                      Append (Buf, "            if (list.items.len == 0) {");
                      Append (Buf, LF);
                      Alt_Blocks (Base_Branches (R), "base_", "                ");
-                     Append (Buf, "                p.pos = save; break :list;");
+                     Append (Buf, "                p.pos = save;"
+                       & (if Ctx_On then " p.cx_reset(&" & To_String (Lm) & ");" else "")
+                       & " break :list;");
                      Append (Buf, LF);
                      Append (Buf, "            }");
                      Append (Buf, LF);
@@ -3463,7 +3540,9 @@ package body HBNF_Zig is
                   else
                      Alt_Blocks (E.Items, "", "            ");
                   end if;
-                  Append (Buf, "            p.pos = save; break :list;");
+                  Append (Buf, "            p.pos = save;"
+                    & (if Ctx_On then " p.cx_reset(&" & To_String (Lm) & ");" else "")
+                    & " break :list;");
                   Append (Buf, LF);
                   Append (Buf, "        }");
                   Append (Buf, LF);
@@ -3835,6 +3914,23 @@ package body HBNF_Zig is
       Append (Res, "};");
       Append (Res, LF);
       Append (Res, LF);
+      if Ctx_On then
+         declare
+            K : constant Natural := HBNF_Grammar.Context_Count;
+         begin
+            Append (Res, "// ---- contexts: named sets of names the parser keeps while it reads ----" & LF
+              & "const NCTX = " & Img (K) & ";" & LF);
+            for Q in 1 .. K loop
+               Append (Res, "const " & Ctx_Const (HBNF_Grammar.Context_Name (Q))
+                 & ": usize = " & Img (Q - 1) & ";" & LF);
+            end loop;
+            Append (Res,
+              "const Cx = struct {" & LF
+              & "    map: std.StringHashMapUnmanaged(u32) = .empty," & LF
+              & "    log: std.ArrayList([]const u8) = .empty," & LF
+              & "};" & LF & LF);
+         end;
+      end if;
       Append (Res, "const P = struct {");
       Append (Res, LF);
       Append (Res, "    text: []const u8,");
@@ -3851,6 +3947,10 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "    stkpos: [24]usize = undefined,");
       Append (Res, LF);
+      if Ctx_On then
+         Append (Res, "    cx: [NCTX]Cx = [_]Cx{.{}} ** NCTX,   // the contexts");
+         Append (Res, LF);
+      end if;
       if Is_Hosted then
          Append (Res, "    bit: u3 = 0,   // bits of the octet at pos already read by a bit rule");
          Append (Res, LF);
@@ -3878,6 +3978,34 @@ package body HBNF_Zig is
             Append (Res, LF);
          end Put;
       begin
+         if Ctx_On then
+            Put ("    fn cx_mark(self: *P) [NCTX]usize {");
+            Put ("        var m: [NCTX]usize = undefined;");
+            Put ("        for (0..NCTX) |c| m[c] = self.cx[c].log.items.len;");
+            Put ("        return m;");
+            Put ("    }");
+            Put ("");
+            Put ("    // put every context back to the mark: a branch or rule that gave up leaves nothing bound");
+            Put ("    fn cx_reset(self: *P, m: *const [NCTX]usize) void {");
+            Put ("        for (0..NCTX) |c| {");
+            Put ("            while (self.cx[c].log.items.len > m[c]) {");
+            Put ("                const name = self.cx[c].log.pop().?;");
+            Put ("                if (self.cx[c].map.getPtr(name)) |n| n.* -= 1;");
+            Put ("            }");
+            Put ("        }");
+            Put ("    }");
+            Put ("");
+            Put ("    fn cx_add(self: *P, c: usize, name: []const u8) ParseError!void {");
+            Put ("        try self.cx[c].log.append(self.alloc, name);");
+            Put ("        const g = try self.cx[c].map.getOrPut(self.alloc, name);");
+            Put ("        if (g.found_existing) g.value_ptr.* += 1 else g.value_ptr.* = 1;");
+            Put ("    }");
+            Put ("");
+            Put ("    fn cx_has(self: *P, c: usize, name: []const u8) bool {");
+            Put ("        return if (self.cx[c].map.get(name)) |n| n > 0 else false;");
+            Put ("    }");
+            Put ("");
+         end if;
          Put ("    fn emit(self: *P, s: []const u8) void {");
          Put ("        const n = @min(s.len, self.e.buf.len - 1 - self.e.len);");
          Put ("        @memcpy(self.e.buf[self.e.len..][0..n], s[0..n]);");
@@ -4144,6 +4272,12 @@ package body HBNF_Zig is
                      Append (Res, LF);
                      Append (Res, "    defer p.depth -= 1;");
                      Append (Res, LF);
+                     if Ctx_On then
+                        Append (Res, "    const cm = p.cx_mark();");
+                        Append (Res, LF);
+                        Append (Res, "    errdefer p.cx_reset(&cm);");
+                        Append (Res, LF);
+                     end if;
                   end if;
                   Emit_Rule_Parser (I, Res);
                   Append (Res, "}");
@@ -4197,7 +4331,10 @@ package body HBNF_Zig is
             return J > 0 and then Rules (J).Jet_Code /= Null_Unbounded_String;
          end Is_Jet;
       begin
-         if Is_Jet ("word") or else Find (Rules, "word") = 0 then
+         if Is_Jet ("word") and then Has_Zig_Body ("word") then
+            Put ("fn scan_word(s: []const u8, pos: usize, len: usize) usize { return jet_word(s, pos, len); }");
+            Put ("");
+         elsif Is_Jet ("word") or else Find (Rules, "word") = 0 then
             Put ("fn scan_word(s: []const u8, pos: usize, len: usize) usize {");
             Put ("    var i = pos;");
             Put ("    if (i >= len or !(std.ascii.isAlphabetic(s[i]) or s[i] == '_' or s[i] == '-')) return 0;");
@@ -4207,7 +4344,10 @@ package body HBNF_Zig is
             Put ("}");
             Put ("");
          end if;
-         if Is_Jet ("int") then
+         if Is_Jet ("int") and then Has_Zig_Body ("int") then
+            Put ("fn scan_int(s: []const u8, pos: usize, len: usize) usize { return jet_int(s, pos, len); }");
+            Put ("");
+         elsif Is_Jet ("int") then
             Put ("fn scan_int(s: []const u8, pos: usize, len: usize) usize {");
             Put ("    var i = pos;");
             Put ("    if (i + 1 < len and s[i] == '-' and std.ascii.isDigit(s[i + 1])) i += 1;");
@@ -4217,7 +4357,10 @@ package body HBNF_Zig is
             Put ("}");
             Put ("");
          end if;
-         if Is_Jet ("str") then
+         if Is_Jet ("str") and then Has_Zig_Body ("str") then
+            Put ("fn scan_str(s: []const u8, pos: usize, len: usize) usize { return jet_str(s, pos, len); }");
+            Put ("");
+         elsif Is_Jet ("str") then
             Put ("fn scan_str(s: []const u8, pos: usize, len: usize) usize {");
             Put ("    if (pos >= len or s[pos] != '""') return 0;");
             Put ("    var i = pos + 1;");
@@ -4230,7 +4373,10 @@ package body HBNF_Zig is
             Put ("}");
             Put ("");
          end if;
-         if Is_Jet ("ws") then
+         if Is_Jet ("ws") and then Has_Zig_Body ("ws") then
+            Put ("fn scan_ws(s: []const u8, pos: usize, len: usize) usize { return jet_ws(s, pos, len); }");
+            Put ("");
+         elsif Is_Jet ("ws") then
             Put ("fn scan_ws(s: []const u8, pos: usize, len: usize) usize {");
             Put ("    if (pos < len and (s[pos] == ' ' or s[pos] == '\t' or s[pos] == '\r' or s[pos] == '\n')) return 1;");
             Put ("    return 0;");
@@ -4239,7 +4385,8 @@ package body HBNF_Zig is
          end if;
          for I in 1 .. N loop
             if Rules (I).Jet_Code /= Null_Unbounded_String
-              and then not Is_Builtin_Jet (To_String (Rules (I).Name))
+              and then (not Is_Builtin_Jet (To_String (Rules (I).Name))
+                        or else Has_Zig_Body (To_String (Rules (I).Name)))
             then
                declare
                   NM   : constant String := To_String (Rules (I).Name);

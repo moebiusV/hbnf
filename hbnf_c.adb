@@ -4400,6 +4400,55 @@ package body HBNF_C is
       --  not share state, and Back_Edges is a pure function of the rules.
       Backs : constant Edge_Vectors.Vector := Back_Edges_C (Rules);
 
+      --  The rules that can add to a context, directly (`%bind`, `%scope`) or by naming a rule that
+      --  can.  Only these need to put the contexts back when they give up; a rule that cannot bind
+      --  and calls nothing that can has nothing to put back, and an expression parser that asks the
+      --  question at every level would otherwise pay for it on every call.
+      Binds : array (1 .. Natural (Rules.Length)) of Boolean := [others => False];
+
+      function Pat_Binds (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            if E.Kind = Block and then E.Op in B_Bind | B_Bind_Code | B_Scope then
+               return True;
+            elsif E.Kind = Name then
+               declare
+                  J : constant Natural := Find (To_String (E.Name));
+               begin
+                  if J > 0 and then Binds (J) then
+                     return True;
+                  end if;
+               end;
+            elsif E.Kind = Group and then Pat_Binds (E.Items) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Pat_Binds;
+
+      Binds_Ready : Boolean := False;
+
+      function Rule_Binds (I : Natural) return Boolean is
+      begin
+         if not Binds_Ready then
+            Binds_Ready := True;
+            declare
+               Changed : Boolean := True;
+            begin
+               while Changed loop
+                  Changed := False;
+                  for K in Binds'Range loop
+                     if not Binds (K) and then Pat_Binds (Rules (K).Pattern) then
+                        Binds (K) := True;
+                        Changed := True;
+                     end if;
+                  end loop;
+               end loop;
+            end;
+         end if;
+         return I in Binds'Range and then Binds (I);
+      end Rule_Binds;
+
       function Is_Back (Owner : Natural; Member : String) return Boolean is
       begin
          for E of Backs loop
@@ -5790,7 +5839,7 @@ package body HBNF_C is
               and then not (for some E of Els =>
                               E.Kind = Alt and then E.Guard /= 0);
          begin
-            if Ctx_On then
+            if Ctx_On and then Rule_Binds (Owner) then
                Ctx_Seq := Ctx_Seq + 1;
                Cx := To_Unbounded_String ("hm" & Ctx_Img (Ctx_Seq) & "_");
                Append (Buf, Ind & "hbnf_mark_t " & To_String (Cx) & ";  "
@@ -5861,7 +5910,7 @@ package body HBNF_C is
                if K > N or else Els (K).Kind = Alt then
                   LBr := LBr + 1;
                   if LBr > 1 then
-                     if Ctx_On then
+                     if Ctx_On and then Rule_Binds (Owner) then
                         Append (Buf, Ind & "hbnf_reset (&" & To_String (Cx)
                           & ");");
                         Append (Buf, LF);
@@ -6074,7 +6123,7 @@ package body HBNF_C is
                Append (Buf, "        if (!nn) hbnf_oom();");
                Append (Buf, LF);
                Append (Buf, "        size_t save = p->pos;");
-               if Ctx_On then
+               if Ctx_On and then Rule_Binds (Idx) then
                   Append (Buf, LF);
                   Append (Buf, "        hbnf_mark_t lm_;  lm_ = hbnf_mark();");
                end if;
@@ -6127,7 +6176,7 @@ package body HBNF_C is
                         Buf, "            ", Label => "base_", Ws => Ws,
                         Alts => Alt_Idents (CN, Base_Branches (R)));
                      Append (Buf, "            "
-                       & (if Ctx_On then "hbnf_reset (&lm_); " else "")
+                       & (if Ctx_On and then Rule_Binds (Idx) then "hbnf_reset (&lm_); " else "")
                        & "p->pos = save; free(nn); break;");
                      Append (Buf, LF);
                      Append (Buf, "        }");
@@ -6155,7 +6204,7 @@ package body HBNF_C is
                   end;
                end if;
                Append (Buf, "        "
-                 & (if Ctx_On then "hbnf_reset (&lm_); " else "")
+                 & (if Ctx_On and then Rule_Binds (Idx) then "hbnf_reset (&lm_); " else "")
                  & "p->pos = save; free(nn); break;");
                Append (Buf, LF);
                Append (Buf, "have:");
@@ -7164,7 +7213,8 @@ package body HBNF_C is
                   --  fails (a token is a scanner and binds nothing).
                   Wrap_Ctx : constant Boolean :=
                     Ctx_On and then not Is_Char_Rule (Rules, NM)
-                    and then R.Jet_Code = Null_Unbounded_String;
+                    and then R.Jet_Code = Null_Unbounded_String
+                    and then Rule_Binds (I);
                begin
                   if Wrap_Ctx or else True then
                      Append (Res, "static bool parse_body_" & C_Name (NM)

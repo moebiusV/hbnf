@@ -6,7 +6,7 @@ fn is_word_char(c: u8) -> bool { c.is_ascii_alphanumeric() || c == b'_' || c == 
 #[derive(Default, Clone)]
 struct ErrEx { alts: Vec<String>, more: bool, depth: usize, stk: [u16; 24], stkpos: [usize; 24], edepth: usize, estk: [u16; 24], estkpos: [usize; 24] }
 // The parser reads the text itself: a byte position in it, no token array.
-struct P<'a> { text: {{&text_type}}, pos: usize, {{&bit_field}}err_pos: usize, err: Option<ParseError>, ex: ErrEx }
+struct P<'a> { text: {{&text_type}}, pos: usize, {{&bit_field}}err_pos: usize, err: Option<ParseError>, ex: ErrEx{{&ctx_field}} }
 impl<'a> P<'a> {
     // A failure is only noted here (what was expected, at the farthest place yet); the message is
     // worked out once, by take_err, if the parse fails.  Working it out at every failure, as this

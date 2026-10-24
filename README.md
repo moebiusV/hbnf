@@ -1,11 +1,13 @@
-# hbnf
+# HyperBNF
 
-`hbnf` is a parser generator (a compiler compiler). It reads a grammar in a
-notation that is a superset of BNF, EBNF, ABNF and yacc's grammar language
-(called YBNF here), and emits a parser and its typed tree in C, Rust, Zig or
-Ada.
+**HyperBNF** is a grammar language, and `hbnf` is the program that reads it: a parser generator
+(a compiler compiler) that emits a parser and its typed tree in C, Rust, Zig or Ada.  The name is an
+homage to the W-grammar and its hyper-rules: a rule may take parameters, and each use becomes an
+ordinary rule before any backend sees it.  HyperBNF is a superset of BNF, EBNF and ABNF, and `hbnf`
+also reads yacc's own grammar language, YBNF, as a dialect (it says how to translate what yacc leaves
+to its lexer and its tables).  A grammar written in YBNF is somebody else's notation; HyperBNF is ours.
 
-The design is for anyone who is comfortable reading the RFCs. HBNF makes BNF
+The design is for anyone who is comfortable reading the RFCs. HyperBNF makes BNF
 natural and readable the way the RFCs do: a grammar reads like the notation
 RFCs have used for decades, not like a yacc file with embedded C actions.
 

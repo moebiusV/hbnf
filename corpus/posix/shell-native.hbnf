@@ -1,0 +1,54 @@
+; The POSIX shell command language (POSIX.1-2017 2.10.2), written for hbnf instead of translated
+; rule for rule from the standard's yacc text (shell.y does that).  The standard's left-recursive list
+; rules become one parameterised rule, optional parts are [ ], repetitions are 1*( ) and *( ), and the
+; tokens (shell-words.hbnf) are rules of characters.  See shell.md for the counts.
+prefix none
+include "shell-words.hbnf"
+%start program
+
+ws = SP | HTAB | BS LF | "#" *~LF
+
+; $( program ): the closing parenthesis is a rule of its own so that white space before it is skipped
+cmdsub-body    = program cmdsub-close
+cmdsub-close   = ")"
+
+; X separated by S: the standard writes this as two left-recursive rules every time
+seq(X, S) := X *( S X )
+
+program        = linebreak [ complete-command *( newline-list complete-command ) linebreak ]
+complete-command = list [ separator-op ]
+list           = seq(and-or, separator-op)
+and-or         = pipeline *( ( AND_IF | OR_IF ) linebreak pipeline )
+pipeline       = [ Bang ] pipe-sequence
+pipe-sequence  = seq(command, pipe)
+pipe           = "|" linebreak
+command        = function-definition | compound-command [ redirect-list ] | simple-command
+compound-command = brace-group | subshell | for-clause | case-clause | if-clause | loop-clause
+subshell       = "(" compound-list ")"
+compound-list  = linebreak term [ separator ]
+term           = seq(and-or, separator)
+for-clause     = For NAME ( linebreak In [ 1*WORD ] sequential-sep | [ sequential-sep ] ) do-group
+case-clause    = Case WORD linebreak In linebreak *case-item [ case-pattern ] Esac
+case-item      = case-pattern DSEMI linebreak
+case-pattern   = [ "(" ] WORD *( "|" WORD ) ")" ( compound-list | linebreak )
+if-clause      = If compound-list Then compound-list [ else-part ] Fi
+else-part      = Elif compound-list Then compound-list [ else-part ] | Else compound-list
+loop-clause    = ( While | Until ) compound-list do-group
+function-definition = NAME "(" ")" linebreak compound-command [ redirect-list ]
+brace-group    = Lbrace compound-list Rbrace
+do-group       = Do compound-list Done
+simple-command = cmd-prefix [ cmd-word [ cmd-suffix ] ] | cmd-name [ cmd-suffix ]
+cmd-prefix     = 1*( io-redirect | ASSIGNMENT_WORD )
+cmd-suffix     = 1*( io-redirect | WORD )
+cmd-name       = WORD - reserved
+cmd-word       = WORD
+reserved       = If | Then | Else | Elif | Fi | Do | Done | Case | Esac | While | Until | For | Lbrace | Rbrace | Bang
+redirect-list  = 1*io-redirect
+io-redirect    = [ IO_NUMBER ] ( io-file | io-here )
+io-file        = ( LESSAND | LESSGREAT | GREATAND | DGREAT | CLOBBER | "<" | ">" ) WORD
+io-here        = ( DLESSDASH | DLESS ) WORD
+newline-list   = 1*NEWLINE
+linebreak      = *NEWLINE
+separator-op   = AMP | SEMI
+separator      = separator-op linebreak | newline-list
+sequential-sep = SEMI linebreak | newline-list
