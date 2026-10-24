@@ -70,6 +70,8 @@ procedure Hbnf is
    Compare      : Boolean := False;
    Forks        : Boolean := False;
    Compact      : Boolean := True;
+   Views        : Boolean := False;   --  --views given
+   No_Views     : Boolean := False;   --  --no-views given
    Ts_Conflicts : Unbounded_String;
    Ts_Ordered   : Boolean := False;
    Ts_Scanner   : Unbounded_String;
@@ -140,7 +142,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -159,6 +161,7 @@ begin
             Package_Name := To_Unbounded_String (A (11 .. A'Last));
          elsif A = "--conf" then
             Conf := True;
+            HBNF_C.Set_Choice (False);
          elsif A'Length >= 7 and then A (1 .. 7) = "--root=" then
             HBNF_Grammar.Set_Root (A (8 .. A'Last));
          elsif A'Length >= 10 and then A (1 .. 10) = "--dialect=" then
@@ -190,10 +193,15 @@ begin
             HBNF_Grammar.Set_Params_Mode (HBNF_Grammar.Run);
          elsif A = "--forks" then
             Forks := True;
+            HBNF_C.Set_Choice (False);
          elsif A = "--compact" then
             Compact := True;
          elsif A = "--no-compact" then
             Compact := False;
+         elsif A = "--views" then
+            Views := True;
+         elsif A = "--no-views" then
+            No_Views := True;
          elsif A = "--quiet-forks" then
             Quiet := True;
          elsif A = "--paths" then
@@ -214,8 +222,10 @@ begin
             HBNF_Ada.Set_Writer (True);
          elsif A = "--idref" then
             Idref := True;
+            HBNF_C.Set_Choice (False);
          elsif A = "--compare" then
             Compare := True;
+            HBNF_C.Set_Choice (False);
          elsif A = "--werror" then
             HBNF_Grammar.Set_Werror (True);
          elsif A'Length >= 9 and then A (1 .. 9) = "--prefix=" then
@@ -325,6 +335,28 @@ begin
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
       end if;
+      --  A string in the C tree is a slice of the input, unless the tool that reads the tree
+      --  needs it copied (--conf frees the text before returning; the writer, AST, id-ref,
+      --  fork and compare tools read the strings as C strings).  --views asks for the slices
+      --  and says so if they cannot be; --no-views asks for the copies.
+      declare
+         Cannot : constant Boolean :=
+           To_String (Backend) /= "c" or else Tree_Tools or else Idref or else Forks
+           or else Compare or else Conf or else HBNF_Grammar.Statements
+           or else not HBNF_Grammar.Wire_Rules.Is_Empty
+           or else HBNF_Grammar.Context_Count > 0
+           or else HBNF_C.Needs_Copies;
+      begin
+         if Views and then Cannot then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "hbnf: --views (strings that are slices of the input) is for the C backend, "
+               & "without --conf, --writer, --ast, --ast-tools, --idref, --forks or --compare, and for grammars without bit fields or `context`, so far");
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+            return;
+         end if;
+         HBNF_C.Set_Views (not Cannot and then not No_Views);
+      end;
       if HBNF_Grammar.Wire_Root then
          if To_String (Backend) not in "c" | "rust" | "zig" | "ada" then
             Ada.Text_IO.Put_Line

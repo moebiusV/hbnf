@@ -217,8 +217,8 @@ _Measured 2026-10-24 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.8
 The three formats HyperBNF ships, through the C backend, against the libraries usually used
 for them, on one generated document each (a list of records with strings, numbers, booleans,
 lists and a nested table).  The numbers are `bench/run.sh --only=formats`.  What is built differs:
-the generated parser builds the typed tree its grammar describes, with each string copied into
-an arena; the libraries build the host language's own objects, which is what a program then
+the generated parser builds the typed tree its grammar describes, with each string a slice of
+the input (a pointer and a length, copied only when an escape has to be undone); the libraries build the host language's own objects, which is what a program then
 holds.  Python's `json` is a C extension and `JSON.parse` is V8's hand-tuned C++, so these are
 native parsers; where one is faster, the table says so.
 

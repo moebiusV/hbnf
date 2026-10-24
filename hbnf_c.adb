@@ -2,6 +2,7 @@ pragma Ada_2022;
 
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Containers.Vectors;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Mustache;
@@ -67,10 +68,17 @@ package body HBNF_C is
    package Natural_Vectors is new Ada.Containers.Vectors (Positive, Natural);
 
    --  The C type for a built-in core rule, or "" if not a core scalar.
+   Views_On : Boolean := False;
+
+   procedure Set_Views (On : Boolean) is
+   begin
+      Views_On := On;
+   end Set_Views;
+
    function Scalar_C_Type (Name : String) return String is
    begin
       if Name = "str" or else Name = "atom" or else Name = "word" then
-         return "const char *";
+         return (if Views_On then "hbnf_str" else "const char *");
       elsif Name = "int" then
          return "long long";
       elsif Name = "bool" or else Name = "flag" then
@@ -459,6 +467,16 @@ package body HBNF_C is
    begin
       Compact_On := On;
    end Set_Compact;
+
+   function Needs_Copies return Boolean is (Ast_On or else Ast_Tools_On or else Writer_On);
+
+   --  Off for the tools that read a choice's fields as a struct (see Is_Choice).
+   Choice_Off : Boolean := False;
+
+   procedure Set_Choice (On : Boolean) is
+   begin
+      Choice_Off := not On;
+   end Set_Choice;
    Quiet_Forks    : Boolean := False;
 
    procedure Set_Forks (On : Boolean; Quiet : Boolean := False) is
@@ -1346,6 +1364,39 @@ package body HBNF_C is
       return Res;
    end Rule_Alts;
 
+   --  A rule that is only a choice among other rules, `value = object / array / string`, holds
+   --  exactly one of them: its node is the number of the alternative taken (`_alt`, from 1) and
+   --  a union of the alternatives, not a field for each with all but one empty.  Left out where
+   --  something else reads the fields as a struct (the id-ref, writer, AST, spans, parents and
+   --  compare tools, the fork detector, `--conf`).
+   function Is_Choice (R : Rule) return Boolean is
+      P : constant Element_Vectors.Vector := R.Pattern;
+      N : constant Natural := Natural (P.Length);
+   begin
+      if Choice_Off or else Ast_On or else Spans_On or else Parents_On or else Forks_On
+        or else R.Action_Code /= Null_Unbounded_String
+        or else R.Left_Bases > 0
+        or else N < 3 or else N mod 2 = 0
+      then
+         return False;
+      end if;
+      for I in 1 .. N loop
+         if I mod 2 = 1 then
+            if P (I).Kind /= Name or else P (I).Min /= 1 or else P (I).Max /= 1 then
+               return False;
+            end if;
+            for J in 1 .. I - 2 loop
+               if J mod 2 = 1 and then P (J).Name = P (I).Name then
+                  return False;      --  the same rule twice would be one field
+               end if;
+            end loop;
+         elsif P (I).Kind /= Alt then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Is_Choice;
+
 
    --  The fields the C backend must emit indirectly, one per cycle in the
    --  by-value graph, chosen by the one detector in HBNF_Compilable.  Emit
@@ -2043,7 +2094,8 @@ package body HBNF_C is
          case Info.Kind is
             when Scalar =>
                Append (Buf, Fill ("c_scalar",
-                 (H ("type", To_String (Info.Inline_Type)),
+                 (H ("type", (if Views_On and then To_String (Info.Inline_Type) = "const char *"
+                              then "hbnf_str" else To_String (Info.Inline_Type))),
                   H ("name", C_Type_Name (NM)))));
                Append (Buf, LF);
             when Enum =>
@@ -2111,11 +2163,19 @@ package body HBNF_C is
                        & "holds this one (--parents; node_link) */" & LF
                        & "    unsigned short _upk;   /* and its rule */" & LF);
                   end if;
+                  if Is_Choice (R) then
+                     Append (Pre, "    unsigned short _alt;   /* the alternative taken, from 1: the"
+                       & " member of the union that is set */" & LF);
+                     Append (Items, "    union {" & LF);
+                  end if;
                   for M of Info.Members loop
                      Append (Items,
                        Field_Decl (To_String (M.Name), M.Is_List));
                      Append (Items, LF);
                   end loop;
+                  if Is_Choice (R) then
+                     Append (Items, "    };" & LF);
+                  end if;
                   if R.Action_Code /= Null_Unbounded_String then
                      Append (Post, Mustache.Get ("c_line"));
                      Append (Post, LF);
@@ -2268,9 +2328,24 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
+               if Is_Choice (Rules (Idx)) then
+                  Append (Buf, "    switch (n->_alt) {" & LF);
+                  declare
+                     K : Natural := 0;
+                  begin
+                     for M of Info.Members loop
+                        K := K + 1;
+                        Append (Buf, "    case " & Img (K) & ":" & LF);
+                        Recurse (Idx, To_String (M.Name), "visit", Buf, "        ");
+                        Append (Buf, "        break;" & LF);
+                     end loop;
+                  end;
+                  Append (Buf, "    default: break;" & LF & "    }" & LF);
+               else
                for M of Info.Members loop
                   Recurse (Idx, To_String (M.Name), "visit", Buf, "    ");
                end loop;
+               end if;
             else
                Append (Buf, "static void visit_" & CN & "(const struct " & Pfx & CN
                  & "_list *head, visit_fn f, void *ctx) {");
@@ -2300,9 +2375,24 @@ package body HBNF_C is
                Append (Buf, LF);
                Append (Buf, "    if (!n) return;");
                Append (Buf, LF);
+               if Is_Choice (Rules (Idx)) then
+                  Append (Buf, "    switch (n->_alt) {" & LF);
+                  declare
+                     K : Natural := 0;
+                  begin
+                     for M of Info.Members loop
+                        K := K + 1;
+                        Append (Buf, "    case " & Img (K) & ":" & LF);
+                        Recurse (Idx, To_String (M.Name), "map", Buf, "        ");
+                        Append (Buf, "        break;" & LF);
+                     end loop;
+                  end;
+                  Append (Buf, "    default: break;" & LF & "    }" & LF);
+               else
                for M of Info.Members loop
                   Recurse (Idx, To_String (M.Name), "map", Buf, "    ");
                end loop;
+               end if;
                Append (Buf, "    f(n, NODE_" & C_Ident (CN) & ", ctx);");
                Append (Buf, LF);
             else
@@ -3647,7 +3737,20 @@ package body HBNF_C is
             Append (Buf, LF);
             Append (Buf, "    if (!n) return;");
             Append (Buf, LF);
-            if Info.Kind = Struct then
+            if Info.Kind = Struct and then Is_Choice (Rules (Idx)) then
+               Append (Buf, "    switch (n->_alt) {" & LF);
+               declare
+                  K : Natural := 0;
+               begin
+                  for M of Info.Members loop
+                     K := K + 1;
+                     Append (Buf, "    case " & Img (K) & ":" & LF);
+                     Free_Field (Idx, To_String (M.Name), Buf, "        ");
+                     Append (Buf, "        break;" & LF);
+                  end loop;
+               end;
+               Append (Buf, "    default: break;" & LF & "    }" & LF);
+            elsif Info.Kind = Struct then
                for M of Info.Members loop
                   Free_Field (Idx, To_String (M.Name), Buf, "    ");
                end loop;
@@ -3902,7 +4005,20 @@ package body HBNF_C is
                      Append (Buf, LF);
                      Append (Buf, "    (void)n;");
                      Append (Buf, LF);
-                     if Info.Kind = Struct then
+                     if Info.Kind = Struct and then Is_Choice (Rules (I)) then
+                        Append (Buf, "    switch (n->_alt) {" & LF);
+                        declare
+                           K : Natural := 0;
+                        begin
+                           for M of Info.Members loop
+                              K := K + 1;
+                              Append (Buf, "    case " & Img (K) & ":" & LF);
+                              Field (I, To_String (M.Name), Buf);
+                              Append (Buf, "        break;" & LF);
+                           end loop;
+                        end;
+                        Append (Buf, "    default: break;" & LF & "    }" & LF);
+                     elsif Info.Kind = Struct then
                         for M of Info.Members loop
                            Field (I, To_String (M.Name), Buf);
                         end loop;
@@ -3976,6 +4092,18 @@ package body HBNF_C is
       Append (Res, "#include <string.h>");
       Append (Res, LF);
       Append (Res, LF);
+      if Views_On then
+         Append (Res, "/* A string in the tree: a pointer and a length into the input, packed in 8 bytes so a");
+         Append (Res, LF);
+         Append (Res, "   field costs what a pointer does.  The tree borrows the text, which must outlive it.");
+         Append (Res, LF);
+         Append (Res, "   hbnf_sp(v) is the text and hbnf_sn(v) its length; a string of 65535 bytes or more is");
+         Append (Res, LF);
+         Append (Res, "   copied, NUL-terminated, and has the length 0xFFFF in the word. */");
+         Append (Res, LF);
+         Append (Res, "typedef uint64_t hbnf_str;   /* the address in the low 48 bits, the length in the high 16 */");
+         Append (Res, LF);
+      end if;
       Append (Res, "/* Out of memory in a small allocation (an arena chunk, the string");
       Append (Res, LF);
       Append (Res, "   scratch, a node): stop, as parse.y's lexer does with err(1, ...).  The");
@@ -4104,6 +4232,35 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
+      if Views_On then
+         Append (Res, "static inline const char *hbnf_sp(hbnf_str v) { return (const char *)(uintptr_t)(v & 0xFFFFFFFFFFFFull); }" & LF
+           & "static inline size_t hbnf_sn(hbnf_str v) { size_t n = (size_t)(v >> 48); return n == 0xFFFF ? strlen(hbnf_sp(v)) : n; }" & LF
+           & "static inline hbnf_str hbnf_mkstr(const char *s, size_t n) {" & LF
+           & "    if (n >= 0xFFFF) { s = hbnf_str_append(s, n); n = 0xFFFF; }" & LF
+           & "    return (hbnf_str)(uintptr_t)s | ((hbnf_str)n << 48);" & LF
+           & "}" & LF);
+         Append (Res, "/* A quoted string s[0..n) as a view of its content: the text itself unless a" & LF
+           & "   backslash has to be undone, the one case that is copied. */" & LF
+           & "__attribute__((unused))" & LF
+           & "static hbnf_str hbnf_str_value_v(const char *s, size_t n) {" & LF
+           & "    size_t i, m;" & LF
+           & "    const char *r;" & LF
+           & "    for (i = 1; i + 1 < n; i++) if (s[i] == '\\') break;" & LF
+           & "    if (i + 1 >= n) return hbnf_mkstr(s + 1, n >= 2 ? n - 2 : 0);" & LF
+           & "    hbnf_scratch_len = 0;" & LF
+           & "    for (i = 1; i + 1 < n; i++) {" & LF
+           & "        if (s[i] == '\\') {" & LF
+           & "            i++;" & LF
+           & "            if (s[i] == '\n') continue;   /* backslash-newline: dropped */" & LF
+           & "        }" & LF
+           & "        hbnf_str_put(s[i]);" & LF
+           & "    }" & LF
+           & "    m = hbnf_scratch_len;" & LF
+           & "    r = hbnf_str_append(hbnf_scratch, m);" & LF
+           & "    hbnf_scratch_len = 0;" & LF
+           & "    return hbnf_mkstr(r, m);" & LF
+           & "}" & LF);
+      end if;
       Append (Res, "static void free_arena(void) {");
       Append (Res, LF);
       Append (Res, "    while (hbnf_arena) {");
@@ -4389,9 +4546,11 @@ package body HBNF_C is
    begin
       if Name = "str" then
          --  Unquote + unescape the matched quoted string.
-         return "hbnf_str_value(p->text + p->pos, " & N & ")";
+         return (if Views_On then "hbnf_str_value_v(p->text + p->pos, " & N & ")"
+                 else "hbnf_str_value(p->text + p->pos, " & N & ")");
       elsif Name = "atom" or else Name = "word" then
-         return "hbnf_str_append(p->text + p->pos, " & N & ")";
+         return (if Views_On then "hbnf_mkstr(p->text + p->pos, " & N & ")"
+                 else "hbnf_str_append(p->text + p->pos, " & N & ")");
       elsif Name = "int" then
          return "atoll(p->text + p->pos)";
       elsif Name = "bool" or else Name = "flag" then
@@ -4416,7 +4575,8 @@ package body HBNF_C is
             end if;
          end;
       end if;
-      return "hbnf_str_append(p->text + p->pos, " & N & ")";
+      return (if Views_On then "hbnf_mkstr(p->text + p->pos, " & N & ")"
+              else "hbnf_str_append(p->text + p->pos, " & N & ")");
    end Scalar_Value;
 
    --  True for the numeric core scalars (int / uN / iN), whose strtol/atoll
@@ -6115,7 +6275,9 @@ package body HBNF_C is
                   Emit_Seq (Owner, Els, LSt, K - 1, Acc, Buf,
                             "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind,
                             Ws, Lead_Ws => not Hoist);
-                  if Ast_On and then Natural (Alts.Length) >= LBr then
+                  if (Ast_On or else (Owner > 0 and then Is_Choice (Rules (Owner))))
+                    and then Natural (Alts.Length) >= LBr
+                  then
                      Append (Buf, Ind & Acc & "_alt = "
                        & To_String (Alts (LBr)) & ";");
                      Append (Buf, LF);
@@ -6224,7 +6386,8 @@ package body HBNF_C is
             --  A jet: run its hand-written scanner and yield the matched text.
             Append (Buf, Fill ("c_rule_jet",
               (H ("scan", "jet_" & C_Name (NM)),
-               H ("val", "hbnf_str_append(p->text + p->pos, n)"),
+               H ("val", (if Views_On then "hbnf_mkstr(p->text + p->pos, n)"
+                          else "hbnf_str_append(p->text + p->pos, n)")),
                H ("desc", "a " & NM))));
             Append (Buf, LF);
             return;
@@ -6241,7 +6404,8 @@ package body HBNF_C is
                (H ("scan", "scan_" & C_Name (NM)),
                 --  A hidden rule is matched and keeps nothing: its value is the
                 --  empty string, which costs no allocation.
-                H ("val", (if Is_Hidden (NM) then """"""
+                H ("val", (if Is_Hidden (NM) then (if Views_On then "(hbnf_str)0" else """""")
+                           elsif Views_On then "hbnf_mkstr(p->text + p->pos, n)"
                            else "hbnf_str_append(p->text + p->pos, n)")),
                 H ("desc", NM))));
             Append (Buf, LF);
@@ -6653,8 +6817,9 @@ package body HBNF_C is
                Append (Buf, "    if (!" & Fn & "(p, """ & C_Escape (L)
                  & """, " & Img (L'Length) & ")) return false;");
                Append (Buf, LF);
-               Append (Buf, "    *out = hbnf_str_append(p->text + start, "
-                 & Img (L'Length) & ");");
+               Append (Buf, "    *out = "
+                 & (if Views_On then "hbnf_mkstr(p->text + start, " & Img (L'Length) & ");"
+                    else "hbnf_str_append(p->text + start, " & Img (L'Length) & ");"));
                Append (Buf, LF);
                Append (Buf, "    return true;");
                Append (Buf, LF);
@@ -7845,6 +8010,7 @@ declare
    Why : Unbounded_String;
    Lo, Hi, To, First, Acc : Unbounded_String;
    Ascii_Dfa : Boolean := False;
+   Run_Code  : Unbounded_String;
 begin
    HBNF_Lookahead.Token_Dfa (Rules, NM, D, Ok, Why);
    HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
@@ -7874,6 +8040,79 @@ begin
             end;
          end loop;
          Append (Res, "    static const unsigned char at[] = {" & LF & To_String (At_Table) & "};" & LF);
+         --  A state that loops on itself over most ASCII bytes is left 16 bytes at a time
+         --  (SSE2, where the compiler has it): the bytes that end the run are a few ranges,
+         --  each tested with a subtract and a compare.  What is left, and the byte that
+         --  ended the run, is read by the loop after it.
+         declare
+            Shown : Natural := 0;
+         begin
+            for St in 1 .. Natural (D.Length) loop
+               declare
+                  Loops : array (0 .. 255) of Boolean := [others => False];
+                  Count : Natural := 0;
+                  Tests : Unbounded_String;
+                  Temps : Unbounded_String;
+                  Ranges : Natural := 0;
+                  C : Natural := 0;
+               begin
+                  for E of D (St).Edges loop
+                     if E.To = St then
+                        for B in E.Lo .. Natural'Min (E.Hi, 127) loop
+                           Loops (B) := True;
+                           Count := Count + 1;
+                        end loop;
+                     end if;
+                  end loop;
+                  if Count >= 20 and then Shown < 3 then
+                     while C <= 255 loop
+                        if not Loops (C) then
+                           declare
+                              Lo : constant Natural := C;
+                           begin
+                              while C <= 255 and then not Loops (C) loop
+                                 C := C + 1;
+                              end loop;
+                              Ranges := Ranges + 1;
+                              declare
+                                 Hi : constant Natural := C - 1;
+                                 function N (X : Natural) return String is
+                                   (Ada.Strings.Fixed.Trim (Natural'Image (X), Ada.Strings.Left));
+                                 T : constant String :=
+                                   (if Lo = Hi
+                                    then "_mm_cmpeq_epi8(v, _mm_set1_epi8((char)" & N (Lo) & "))"
+                                    else "(x" & N (Ranges) & " = _mm_sub_epi8(v, _mm_set1_epi8((char)" & N (Lo)
+                                         & ")), _mm_cmpeq_epi8(_mm_min_epu8(x" & N (Ranges)
+                                         & ", _mm_set1_epi8((char)" & N (Hi - Lo) & ")), x" & N (Ranges) & "))");
+                              begin
+                                 if Lo /= Hi then
+                                    Append (Temps, ", x" & N (Ranges));
+                                 end if;
+                                 Append (Tests, (if Ranges = 1 then "" else " | ") & T);
+                              end;
+                           end;
+                        else
+                           C := C + 1;
+                        end if;
+                     end loop;
+                     if Ranges <= 5 then
+                        Shown := Shown + 1;
+                        Append (Run_Code,
+                          "#if defined(__SSE2__)" & LF
+                          & "                if (st == " & Ada.Strings.Fixed.Trim (Natural'Image (St - 1), Ada.Strings.Left)
+                          & ") for (; i + 16 <= len; i += 16) {" & LF
+                          & "                    __m128i v = _mm_loadu_si128((const __m128i *)(s + i))"
+                          & To_String (Temps) & ";" & LF
+                          & "                    unsigned mk = (unsigned)_mm_movemask_epi8("
+                          & To_String (Tests) & ");" & LF
+                          & "                    if (mk) { i += (size_t)__builtin_ctz(mk); break; }" & LF
+                          & "                }" & LF
+                          & "#endif" & LF);
+                     end if;
+                  end if;
+               end;
+            end loop;
+         end;
       end if;
       Ascii_Dfa := Ascii_Ok;
    end;
@@ -7894,6 +8133,7 @@ begin
       Append (Res, "            if (t == 255) break;" & LF);
       Append (Res, "            i++;" & LF);
       Append (Res, "            if (t == st) {" & LF);
+      Append (Res, To_String (Run_Code));
       Append (Res, "                while (i < len && (c = (unsigned char)s[i]) < 128 && at[st * 128 + c] == st) i++;" & LF);
       Append (Res, "                continue;" & LF);
       Append (Res, "            }" & LF);

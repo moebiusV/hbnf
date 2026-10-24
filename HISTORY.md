@@ -643,7 +643,8 @@ reader already expects. Character-level rules compile to scanners — `int = 1*D
 regex. Direct left recursion is read as a loop, not rejected. Ordered choice
 keeps conflicts impossible, and a shadowed alternative is refused at schema time
 with a diagnostic rather than failing at runtime. The tree is typed from the
-shape of the rule — enum, scalar, list, struct — with no visitor to write. And
+shape of the rule — enum, scalar, list, struct, and for a choice among rules a
+union with the number of the alternative taken (`_alt`) — with no visitor to write. And
 HyperBNF makes round-tripping easy: comments are first-class tokens, not
 whitespace, and a value written `0xFF` comes back as `0xFF`, not 255, so a
 grammar that wants it — obconf does — hands the file back unchanged, and
@@ -662,8 +663,8 @@ already spells them, and keep the design honest about what is underneath.
 
 **Where it could do better.** It has no incremental parse; an edit means parsing
 the file again. It has no error recovery; bad input fails instead of producing a
-broken tree. Non-keyword-led alternations get no kind discriminant in the C tree,
-so a consumer must infer which branch matched. The `--conf` drop-in for parse.y
+broken tree. An alternation that mixes keywords with rules gets no kind discriminant in
+the C tree, so a consumer must infer which branch matched. The `--conf` drop-in for parse.y
 replacement is C-only; the other backends warn and parse the whole file. And the
 grammar must be LL(1)-ish under maximal munch — it will not decide an ambiguous
 branch by looking arbitrarily far ahead.

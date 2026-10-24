@@ -1,0 +1,34 @@
+# The comparison environment on glibc: Debian with the tools hbnf is measured against.  Built
+# beside the Alpine one (tag hbnf-bench-glibc); build args come from pins.txt (see run.sh).
+# The Ada mustache library the generator needs is two files, taken from the toolchain image.
+FROM debian:stable-slim
+ARG ANTLR_URL
+ARG ANTLR_SHA
+ARG PEG_URL
+ARG PEG_SHA
+ARG TS_VERSION
+ARG ZIG_URL
+ARG ZIG_SHA
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    build-essential gnat bison flex byacc make nodejs openjdk-21-jdk-headless python3 python3-yaml \
+    cargo rustc clang libclang-dev curl wget ca-certificates xz-utils git \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=ada-toolchain:edge-full /usr/include/mustache /usr/include/mustache
+RUN wget -q "$ANTLR_URL" -O /opt/antlr.jar \
+ && echo "$ANTLR_SHA  /opt/antlr.jar" | sha256sum -c -
+RUN wget -q "$PEG_URL" -O /tmp/peg.tgz \
+ && echo "$PEG_SHA  /tmp/peg.tgz" | sha256sum -c - \
+ && tar xzf /tmp/peg.tgz -C /tmp && make -C /tmp/peg-* >/dev/null \
+ && install /tmp/peg-*/peg /tmp/peg-*/leg /usr/local/bin
+RUN wget -q "$ZIG_URL" -O /tmp/zig.tar.xz \
+ && echo "$ZIG_SHA  /tmp/zig.tar.xz" | sha256sum -c - \
+ && mkdir -p /opt/zig && tar xJf /tmp/zig.tar.xz -C /opt/zig --strip-components=1 \
+ && ln -s /opt/zig/zig /usr/local/bin/zig && zig version
+# tree-sitter-cli builds its JavaScript engine's bindings with bindgen.
+ENV LIBCLANG_PATH=/usr/lib/llvm-19/lib
+RUN cargo install tree-sitter-cli --version "=$TS_VERSION" --locked \
+ && mkdir -p /opt/tree-sitter \
+ && cp -r /root/.cargo/registry/src/*/tree-sitter-$TS_VERSION/src /opt/tree-sitter/src \
+ && cp -r /root/.cargo/registry/src/*/tree-sitter-$TS_VERSION/include /opt/tree-sitter/include \
+ && cp /root/.cargo/bin/tree-sitter /usr/local/bin/

@@ -1,4 +1,0 @@
-# Library comparison, musl side: the bench image plus the libraries.
-FROM hbnf-bench
-RUN apk add --no-cache g++ cjson-dev jansson-dev simdjson-dev rapidjson-dev \
-    tomlplusplus-dev toml11 yaml-dev yaml-cpp-dev libfyaml-dev

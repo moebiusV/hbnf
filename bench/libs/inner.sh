@@ -55,3 +55,10 @@ if (cd /o/rust && CARGO_TARGET_DIR=/o/rust-target cargo build -q --release 2> /o
 	best json "serde_json (Rust)" /o/doc.json /o/rust-target/release/libs-rust serde_json
 	best toml "toml (Rust)" /o/doc.toml /o/rust-target/release/libs-rust toml
 else printf 'json\tserde_json (Rust)\t0\t0\tbuild failed: %s\n' "$(grep -m1 error /o/cargo.txt | head -c 80)"; fi
+
+# the parsers of the scripting languages, as their programs use them
+best json "Python json" /o/doc.json python3 /w/bench/formats/time_py.py json
+best json "Node JSON.parse" /o/doc.json node /w/bench/formats/time_node.js
+best toml "Python tomllib" /o/doc.toml python3 /w/bench/formats/time_py.py tomllib
+best yaml "PyYAML on libyaml (C)" /o/doc.yaml python3 /w/bench/formats/time_py.py yaml-c
+best yaml "js-yaml (Node)" /o/doc.yaml node /w/bench/libs/time_jsyaml.js

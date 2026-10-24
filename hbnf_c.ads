@@ -135,4 +135,17 @@ package HBNF_C is
    --  by-value cycle, so every part of the generated code already handles them.
    procedure Set_Compact (On : Boolean);
 
+   --  Views (--views): a token's value is a pointer and a length into the input, with no
+   --  copy (a quoted string with an escape in it is the one copy).  The tree borrows the text,
+   --  so the text must outlive it.
+   procedure Set_Views (On : Boolean);
+
+   --  True when a tool asked for (--ast, --ast-tools, --writer, --parents) reads the strings of
+   --  the tree as C strings, so they cannot be slices.
+   function Needs_Copies return Boolean;
+
+   --  Off, a rule that is a choice of other rules keeps a field for each, as it did; on (the
+   --  default), it is a union with the number of the alternative taken (`_alt`).
+   procedure Set_Choice (On : Boolean);
+
 end HBNF_C;

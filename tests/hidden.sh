@@ -12,10 +12,10 @@ fail=0
 for f in decl directive hyper; do
 	"$CLI" tests/hidden/$f.hbnf --backend=c > "$W/$f.c" 2> "$W/$f.err" \
 		|| { echo "hidden: FAIL ($f: $(head -c 200 "$W/$f.err"))"; fail=1; continue; }
-	# the hidden token's value is the empty string: no copy of its text
-	grep -q '\*out = ""; p->pos += n;' "$W/$f.c" \
+	# the hidden token's value is empty (the empty string, or a view of nothing): no copy of its text
+	grep -Eq '\*out = (""|\(hbnf_str\)0); p->pos \+= n;' "$W/$f.c" \
 		|| { echo "hidden: FAIL ($f: the hidden token still copies its text)"; fail=1; }
-	grep -c '\*out = ""; p->pos += n;' "$W/$f.c" | grep -q '^1$' \
+	grep -Ec '\*out = (""|\(hbnf_str\)0); p->pos \+= n;' "$W/$f.c" | grep -q '^1$' \
 		|| { echo "hidden: FAIL ($f: more than one rule is hidden)"; fail=1; }
 done
 "$CLI" tests/hidden/phrase.hbnf --backend=c 2>&1 > /dev/null | grep -q 'builds structure' \
