@@ -4,8 +4,9 @@
 > (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML).  A
 > hyperrule whose parameters are numbers is now one rule that keeps them in a frame (`k in 0..`,
 > `%spaces`, `%col`, `x %num`) or a copy for each value, whichever is cheaper (`--expand-params`,
-> `--run-params`); that is how YAML's indentation has no depth limit in the grammar (the C parser's `HBNF_MAX_DEPTH`, 4096 rules open at once by default, is the stack's) with a grammar
-> the size of the spec's, and how the generator reads it in under a second.  The C11 grammar parses
+> `--run-params`).  That is how YAML's indentation has no depth limit in the grammar, which is the
+> size of the spec's and which the generator reads in under a second.  (The C parsers stop at
+> `HBNF_MAX_DEPTH` rules open at once, 4096 by default, to keep the stack safe.)  The C11 grammar parses
 > 2,478 of 2,481 gcc-accepted files from ten real corpora.  Next: C as a family of grammars, one per
 > standard (K&R, C89, C99, C11, C17, C23) with a GNU layer, each checked against
 > `gcc -std=cNN -pedantic-errors`; the C preprocessor; the back half of a small C compiler.
