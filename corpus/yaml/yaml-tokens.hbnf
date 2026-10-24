@@ -4,7 +4,7 @@ whitespace none
 prefix none
 include "../../grammars/common.hbnf"
 
-nl       = CRLF | LF | CR
+hidden nl = CRLF | LF | CR
 any      = %x00-10FFFF
 WSP      = SP | HTAB
 nonns    = %x00-20 | %x7F-84 | %x86-9F | %xD800-DFFF | %xFEFF | %xFFFE-FFFF
@@ -14,8 +14,8 @@ flow-ind = %x2C | %x5B | %x5D | %x7B | %x7D
 indicator = "-" | "?" | ":" | "," | "[" | "]" | "{" | "}" | "#" | "&" | "*" | "!" | "|" | ">" | "'" | DQUOTE | "%" | "@" | "`"
 marker   = ( "---" | "..." ) ( WSP | nl )
 
-trail    = 1*WSP "#" *nb | *WSP                  ; the rest of a line
-gap      = *( *WSP [ "#" *nb ] nl )              ; blank and comment lines
+hidden trail = 1*WSP "#" *nb | *WSP                  ; the rest of a line
+hidden gap = *( *WSP [ "#" *nb ] nl )              ; blank and comment lines
 
 ; ---- the properties of a node
 uri      = ALNUM | "#" | ";" | "/" | "?" | ":" | "@" | "&" | "=" | "+" | "$" | "_" | "." | "~" | "*" | "'" | "(" | ")" | "-" | "%" HEXDIG HEXDIG

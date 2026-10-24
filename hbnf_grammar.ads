@@ -473,6 +473,11 @@ package HBNF_Grammar is
    --  one full DNF branch per iteration (multi-code-point included).  A %i
    --  literal or a group is not char-level (Char_DNF raises for the shapes it
    --  cannot yet scan).
+   function Is_Hidden (Nm : String) return Boolean;
+   --  True for a rule declared `hidden` (`hidden nl = ...`, or the line
+   --  `hidden nl gap`), and for each instance of a hyperrule that is: the rule
+   --  is matched and keeps nothing in the tree (its value is the empty string).
+
    function Is_Dfa_Token (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean;
    --  An operand of an exception (`A - B`) whose scanner is an automaton

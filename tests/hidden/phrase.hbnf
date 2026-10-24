@@ -1,0 +1,3 @@
+whitespace none
+doc = pair
+hidden pair = "a" *( "b" | ":" &"c" )

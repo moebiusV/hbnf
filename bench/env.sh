@@ -8,5 +8,5 @@ tools="$tools, peg/leg $(leg -V 2>&1 | head -1 | sed 's/.*version //')"
 tools="$tools, tree-sitter $(tree-sitter --version 2>&1 | head -1 | awk '{print $2}')"
 tools="$tools, ANTLR 4.13.2 on $(java -version 2>&1 | head -1 | sed 's/openjdk version //; s/\"//g')"
 rev=${HOST_REV:-unknown}
-printf 'Measured %s on %s (%s threads), load %s on the host, hbnf %s; %s; best of %s runs, one process per run, `gcc -O2`.\n' \
+printf 'Measured %s on %s (%s threads), load %s on the host, hbnf %s; %s; best of up to %s runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`.\n' \
 	"$(date +%F)" "$cpu" "${HOST_CPUS:-$cores}" "${HOST_LOAD:-?}" "$rev" "$tools" "${RUNS:-5}"

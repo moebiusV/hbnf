@@ -3,6 +3,7 @@
 # the actions-only parse cold (first parse in a fresh JVM) and warm (fourth in
 # the same JVM), and the default parse tree.
 . "$here/lib.sh"
+BUDGET=5   # six measurements of this tool: about 30 s
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 rm -f "$RESULTS"/rows/*/5[0-9]-*.md
 cp "$here/compare/Toy.g4" "$here/compare/java/ToyMain.java" "$W/"

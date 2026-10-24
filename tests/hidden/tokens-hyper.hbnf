@@ -1,0 +1,3 @@
+whitespace none
+hidden pad(C in "a" | "b") := C *"-"
+letters = 1*%x61-7A

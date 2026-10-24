@@ -135,6 +135,14 @@ package body HBNF_Grammar is
 
    Warn_Count : Natural := 0;
    Warn_Keys  : Key_Sets.Set;
+
+   --  The rules declared `hidden`: by the name they were written with (a
+   --  hyperrule's family) and by the name of each instance made from one.
+   Hidden_Bases : Key_Sets.Set;
+   Hidden_Rules : Key_Sets.Set;
+
+   function Is_Hidden (Nm : String) return Boolean is
+     (Hidden_Rules.Contains (Nm) or else Hidden_Bases.Contains (Nm));
    Werror_On  : Boolean := False;
 
    procedure Warn (Where, Text : String) is
@@ -161,6 +169,8 @@ package body HBNF_Grammar is
    begin
       Warn_Count := 0;
       Warn_Keys.Clear;
+      Hidden_Bases.Clear;
+      Hidden_Rules.Clear;
    end Reset_Warnings;
 
    procedure Set_Werror (On : Boolean) is
@@ -1120,6 +1130,16 @@ package body HBNF_Grammar is
                                   | "context"
                                   | "entry" | "prefix" | "wordchars"
                      then
+                        Emit (T_Newline);
+                     elsif K >= 1 and then Natural (Toks.Length) >= K
+                       and then Toks (K).Line = Line
+                       and then Toks (K).Kind = T_Name
+                       and then To_String (Toks (K).Text) = "hidden"
+                       and then not (for some J in K .. Natural (Toks.Length) =>
+                                       Toks (J).Kind in T_Eq | T_Eq_Slash)
+                     then
+                        --  `hidden nl gap`: a directive line.  `hidden nl = ...`
+                        --  is a rule and goes on to its end.
                         Emit (T_Newline);
                      end if;
                   end;
@@ -4405,6 +4425,9 @@ package body HBNF_Grammar is
          C         : constant String := Call_Text (Base, Vals);
       begin
          Name := To_Unbounded_String (N);
+         if Hidden_Bases.Contains (Base) then
+            Hidden_Rules.Include (N);
+         end if;
          for I in 1 .. Natural (Templates.Length) loop
             declare
                T : constant Template := Templates (I);
@@ -7147,6 +7170,36 @@ package body HBNF_Grammar is
       end if;
 
 
+      --  A hidden rule is matched and keeps nothing; that is a text rule's way of
+      --  being read, so a rule that builds structure cannot be one.
+      for R of Rules loop
+         if Is_Hidden (To_String (R.Name)) then
+            if R.Name = Rules (1).Name then
+               raise Parse_Error with
+                 "`" & To_String (R.Name) & "` is hidden, and it is the rule the "
+                 & "grammar starts from: the tree would be empty";
+            elsif R.Jet_Code = Null_Unbounded_String
+              and then not Is_Char_Rule (Rules, To_String (R.Name))
+            then
+               raise Parse_Error with
+                 "`" & To_String (R.Name) & "` is hidden, but it builds structure, "
+                 & "and only a rule that is just text can keep nothing.  Hide the "
+                 & "text rules it is made of, or leave `hidden` off it";
+            end if;
+         end if;
+      end loop;
+      for N of Hidden_Bases loop
+         if Index_Of (Rules, N) = 0
+           and then not (for some R of Rules =>
+                           (To_String (R.Name)'Length > N'Length
+                            and then To_String (R.Name)
+                                       (1 .. N'Length + 1) = N & "_"))
+         then
+            Warn_Once ("hidden:" & N, "",
+                       "`hidden " & N & "` names no rule in this grammar");
+         end if;
+      end loop;
+
       --  A rule that is only text except for a lookahead is read a character at a time:
       --  the lookahead keeps it from being one token, so the parser makes a tree node
       --  for each piece instead of scanning the whole run.  Say so where the author
@@ -7383,7 +7436,12 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "sensitivity"
                               or else To_String (Cur (P).Text) = "dialect"
                               or else To_String (Cur (P).Text) = "whitespace"
-                              or else To_String (Cur (P).Text) = "keywords"))
+                              or else To_String (Cur (P).Text) = "keywords"
+                              or else (To_String (Cur (P).Text) = "hidden"
+                                       and then P.Pos + 2 <= Natural (P.Toks.Length)
+                                       and then P.Toks (P.Pos + 1).Kind = T_Name
+                                       and then P.Toks (P.Pos + 2).Kind
+                                                  not in T_Eq | T_Eq_Slash)))
          then
             P.Pos := Mark;
             loop
@@ -7664,6 +7722,29 @@ package body HBNF_Grammar is
                      Next (P);
                   end;
                elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "hidden"
+                 and then P.Pos + 1 <= Natural (P.Toks.Length)
+                 and then P.Toks (P.Pos + 1).Kind = T_Name
+                 and then not (P.Pos + 2 <= Natural (P.Toks.Length)
+                               and then P.Toks (P.Pos + 2).Kind in T_Eq | T_Eq_Slash)
+               then
+                  --  `hidden nl gap sep`: these rules are matched and keep nothing
+                  --  in the tree.  Each is hidden, with every instance of it if it
+                  --  is a hyperrule.
+                  Next (P);
+                  while Cur (P).Kind = T_Name loop
+                     declare
+                        Hd : constant String := To_String (Cur (P).Text);
+                        Stop : Natural := Hd'First;
+                     begin
+                        while Stop <= Hd'Last and then Hd (Stop) /= '(' loop
+                           Stop := Stop + 1;
+                        end loop;
+                        Hidden_Bases.Include (Hd (Hd'First .. Stop - 1));
+                     end;
+                     Next (P);
+                  end loop;
+               elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "whitespace"
                  and then Ends_Directive (P, 2)
                then
@@ -7938,6 +8019,25 @@ package body HBNF_Grammar is
             --  binding's %action now converts the value into the daemon's
             --  type), or a line of elements that is not a rule (a rule
             --  goes on to an indented line, or one that starts with `|`).
+            --  `hidden nl = ...`: the rule keeps nothing in the tree (see the
+            --  `hidden` directive).
+            if Cur (P).Kind = T_Name and then To_String (Cur (P).Text) = "hidden"
+              and then P.Pos + 2 <= Natural (P.Toks.Length)
+              and then P.Toks (P.Pos + 1).Kind = T_Name
+              and then P.Toks (P.Pos + 2).Kind in T_Eq | T_Eq_Slash
+            then
+               declare
+                  Hd   : constant String := To_String (P.Toks (P.Pos + 1).Text);
+                  Stop : Natural := Hd'First;
+               begin
+                  while Stop <= Hd'Last and then Hd (Stop) /= '(' loop
+                     Stop := Stop + 1;
+                  end loop;
+                  Hidden_Bases.Include (Hd (Hd'First .. Stop - 1));
+               end;
+               Next (P);
+            end if;
+
             if Cur (P).Kind /= T_Name
               or else P.Toks (P.Pos + 1).Kind not in T_Eq | T_Eq_Slash
             then

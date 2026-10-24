@@ -2,6 +2,7 @@
 # stage-treesitter.sh — the toy as a tree-sitter grammar (compare/grammar.js):
 # a cold parse, and a re-parse after a one-byte edit with the old tree.
 . "$here/lib.sh"
+BUDGET=7   # four measurements of this tool: about 30 s
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 rm -f "$RESULTS"/rows/*/4[0-9]-*.md
 cp "$here/compare/grammar.js" "$W/"

@@ -6224,6 +6224,7 @@ package body HBNF_C is
             --  A jet: run its hand-written scanner and yield the matched text.
             Append (Buf, Fill ("c_rule_jet",
               (H ("scan", "jet_" & C_Name (NM)),
+               H ("val", "hbnf_str_append(p->text + p->pos, n)"),
                H ("desc", "a " & NM))));
             Append (Buf, LF);
             return;
@@ -6238,6 +6239,10 @@ package body HBNF_C is
                    or else Null_Flags (Idx)
                 then "c_rule_scan_opt" else "c_rule_jet"),
                (H ("scan", "scan_" & C_Name (NM)),
+                --  A hidden rule is matched and keeps nothing: its value is the
+                --  empty string, which costs no allocation.
+                H ("val", (if Is_Hidden (NM) then """"""
+                           else "hbnf_str_append(p->text + p->pos, n)")),
                 H ("desc", NM))));
             Append (Buf, LF);
             return;

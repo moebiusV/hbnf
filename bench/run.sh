@@ -66,10 +66,13 @@ for n in $N_LIST; do "$here/gen.sh" toy "$n" > "$IN/toy-$n.txt"; done
 # a table; --only keeps the other stages' rows.
 [ "$ONLY" = hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl,corpus,rustcorpus,zigada,formats ] && rm -rf "$RESULTS/rows" "$RESULTS/vals" "$RESULTS/values.txt"
 sh "$here/env.sh" > "$RESULTS/env.md"
+rm -f "$RESULTS/stage-times.txt"
 
 for s in $(echo "$ONLY" | tr , " " | tr " " "\n" | grep -v "^$"); do
 	echo "== $s =="
+	t0=$(date +%s)
 	sh "$here/stage-$s.sh" || echo "stage $s: FAILED"
+	echo "stage $s: $(( $(date +%s) - t0 )) s" | tee -a "$RESULTS/stage-times.txt"
 done
 # assemble.sh rebuilds every table from the rows on disk, so it runs only when every stage
 # that leaves rows has just run; after --only=some it would overwrite the other tables with

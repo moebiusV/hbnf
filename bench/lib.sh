@@ -1,13 +1,26 @@
 # lib.sh — shared by the stages.  Source it; it needs $here (the bench dir),
 # $RESULTS, $N_LIST and $RUNS from run.sh.
 
-# best_of N CMD...: run CMD N times; print "ms rss count sum" of the fastest.
+# Time budget.  A measurement stops taking more runs once BUDGET seconds (default 10, set by the
+# stage as 30 s divided by the measurements it makes of one tool) have passed, after at least
+# two; so a parser that takes seconds to run is measured twice, and one that takes
+# milliseconds N times.
+BUDGET=${BUDGET:-10}
+
+# over_budget START: true once BUDGET seconds have passed since START (date +%s).
+over_budget() {
+	[ $(( $(date +%s) - $1 )) -ge "$BUDGET" ]
+}
+
+# best_of N CMD...: run CMD up to N times; print "ms rss count sum" of the fastest.
 # Every run must print "ok BYTES COUNT SUM MS RSS"; anything else fails.
 best_of() {
 	n=$1; shift
 	best=""
 	i=0
+	t0=$(date +%s)
 	while [ "$i" -lt "$n" ]; do
+		[ "$i" -ge 2 ] && over_budget "$t0" && break
 		out=$("$@" 2> /dev/null | tail -1) || { echo "FAIL: $*" >&2; return 1; }
 		line=$(printf '%s\n' "$out" | awk '$1 == "ok" { print $5, $6, $3, $4 }')
 		[ -n "$line" ] || { echo "FAIL (no ok line): $* -> $out" >&2; return 1; }
@@ -66,7 +79,9 @@ best_of_simple() {
 	n=$1; shift
 	best_ms=""; best_rss=""
 	i=0
+	t0=$(date +%s)
 	while [ "$i" -lt "$n" ]; do
+		[ "$i" -ge 2 ] && over_budget "$t0" && break
 		out=$("$@" 2> /dev/null | tail -1) || { echo "FAIL: $*" >&2; return 1; }
 		ms=$(printf '%s\n' "$out" | awk '{print $(NF-1)}')
 		rss=$(printf '%s\n' "$out" | awk '{print $NF}')

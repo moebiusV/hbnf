@@ -1,0 +1,2 @@
+include "tokens-hyper.hbnf"
+doc = letters pad("a") letters
