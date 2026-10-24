@@ -576,8 +576,7 @@ corrected by the messages, not by reading the manual.
 ## Shipped grammars
 
 HyperBNF ships four grammars as fundamentals that can be dropped in and used at once: **JSON**
-(RFC 8259, built, `corpus/json/`), **TOML**, **YAML** and **obconf** (one grammar written in HyperBNF, for the OpenBSD configuration style of httpd, relayd, ntpd and the rest; built, `grammars/obconf.hbnf`).  TOML and YAML are in the plan and not
-yet written.  Each one gets the treatment JSON has:
+(RFC 8259, built, `corpus/json/`), **TOML** (built, `corpus/toml/`), **YAML** and **obconf** (the config file format OpenBSD uses by default for new projects; built, `grammars/obconf.hbnf`).  YAML is in the plan.  Each one gets the treatment JSON has:
 
 - a grammar in HyperBNF, as small as the language allows, and parsers generated from it in all
   four backends (C, Rust, Zig, Ada);
@@ -589,9 +588,12 @@ yet written.  Each one gets the treatment JSON has:
   against the specification's own grammar;
 - a README under `corpus/` that says what the grammar accepts, what it refuses and why.
 
-YAML is the hard one: indentation is syntax, so it needs the context machinery (a block's
-indentation as a context set) and may need the layout scanner the language-specific `ws` hooks
-give C.  TOML is plain by comparison (dotted keys, tables, and its date-time forms).
+YAML's indentation is syntax: the spec's productions take the indentation `n` as a parameter
+(`s-indent(n)`, `l+block-sequence(n)`), which is the hyperrule form, and a block's own indentation
+is chosen by its first line.  Hyperrules take a number from a finite domain and add to it
+(`N+1`), and a block can be indented without bound, so YAML needs a number parameter that is
+supplied while parsing, with subtraction and comparison (`n+m`, `m > 0`).  That is the work to
+do before the grammar.  TOML needed none of it.
 
 ## Order
 

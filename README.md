@@ -18,9 +18,8 @@ The design is for anyone who is comfortable reading the RFCs. HyperBNF makes BNF
 natural and readable the way the RFCs do: a grammar reads like the notation
 RFCs have used for decades, not like a yacc file with embedded C actions.
 
-HyperBNF ships with the basic formats ready to use: JSON, TOML, YAML and obconf, one grammar
-written in it for the OpenBSD configuration style that httpd, relayd, ntpd and the other daemons
-share.  Drop one in and you have a parser; the grammar is short, readable HyperBNF, so changing it to
+HyperBNF ships with the basic formats ready to use: JSON, TOML, YAML and obconf, the config file
+format that OpenBSD uses by default for new projects.  Drop one in and you have a parser; the grammar is short, readable HyperBNF, so changing it to
 fit your own needs means editing a few lines, not learning a generator. *(TOML and YAML will land
 shortly.)*
 
@@ -123,7 +122,8 @@ Every markdown file in the repository, so none is lost.
 - [`corpus/imp72/README.md`](corpus/imp72/README.md): the IMP72 compiler's sources (cancelled as a target: IMP72 will get its own compiler).
 - [`corpus/mustache/README.md`](corpus/mustache/README.md): Mustache templates, with the back-reference that makes a closing tag repeat its opening one.
 - [`corpus/json/README.md`](corpus/json/README.md): JSON in 14 rules, checked against Python's `json`.
-- TOML and YAML grammars are planned beside JSON and obconf as the grammars HyperBNF ships ready to use ([`RFCPLAN.md`](RFCPLAN.md), Shipped grammars); each is to be tested in all four backends against its conformance suite and a reference parser.
+- [`corpus/toml/README.md`](corpus/toml/README.md): TOML 1.0 in 46 rules against the ABNF's 124, all 208 valid toml-test files accepted, checked against Python's `tomllib`.
+- YAML is planned beside them ([`RFCPLAN.md`](RFCPLAN.md), Shipped grammars).
 - [`corpus/bip39/README.md`](corpus/bip39/README.md): the ten BIP-39 word lists.
 - [`corpus/bech32/README.md`](corpus/bech32/README.md): bech32 and bech32m.
 
