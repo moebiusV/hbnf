@@ -5,7 +5,7 @@
 # numbers, booleans, lists and a nested table.
 #
 # What each side builds is not the same, and the table says so: hbnf builds the typed tree its
-# grammar describes (strings are slices of the input); the libraries build the host language's own
+# grammar describes (each string is copied into an arena); the libraries build the host language's own
 # objects (Python dicts and lists, JavaScript values), which is more work and what a program wants
 # to hold.  So this is "the parser and its tree" against "the library as it is".
 . "$here/lib.sh"
