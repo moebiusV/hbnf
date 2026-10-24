@@ -211,6 +211,18 @@ _Measured 2026-10-23 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 8.0
 
 <!-- /bench:headline -->
 
+### JSON, TOML and YAML
+
+The three formats HyperBNF ships, through the C backend, against the libraries usually used
+for them, on one generated document each (a list of records with strings, numbers, booleans,
+lists and a nested table).  The numbers are `bench/run.sh --only=formats`.  What is built differs:
+the generated parser builds the typed tree its grammar describes, with strings as slices of the
+input; the libraries build the host language's own objects, which is more work and is what
+a program then holds.  Where a hand-optimised C library or V8 is faster, the table says so.
+
+<!-- bench:formats -->
+<!-- /bench:formats -->
+
 ## Naming
 
 - **hbnf**: the parser generator and compiler compiler. Reads a grammar, emits
