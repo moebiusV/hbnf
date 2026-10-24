@@ -5,6 +5,7 @@ with Ada.Environment_Variables;
 with HBNF_Lookahead;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
+with Ada.Containers.Indefinite_Ordered_Sets;
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Containers.Ordered_Maps;
 with System.Storage_Elements;
@@ -454,11 +455,49 @@ package body HBNF_Grammar is
    Emitted_Rules : Path_Sets.Set;
    File_Dialect : Unbounded_String;
 
+   --  A rule by name.  A grammar with parameterised rules has thousands, and the
+   --  checks ask for them hundreds of thousands of times, so the names are kept
+   --  in a table that is made again when the number of rules is not the one it
+   --  was made for.  A hit is checked against the rule it names, and a miss
+   --  falls back to looking through the rules, so a table that is out of date
+   --  costs time and never gives a wrong answer.
+   package Name_Index_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, Natural);
+   Name_Index     : Name_Index_Maps.Map;
+   Name_Index_Len : Natural := 0;
+
    function Index_Of (Rules : Rule_Vectors.Vector; Name : String)
       return Natural is
+      N : constant Natural := Natural (Rules.Length);
    begin
-      for I in 1 .. Natural (Rules.Length) loop
+      if N /= Name_Index_Len then
+         Name_Index.Clear;
+         for I in 1 .. N loop
+            declare
+               Nm : constant String := To_String (Rules (I).Name);
+            begin
+               if not Name_Index.Contains (Nm) then
+                  Name_Index.Insert (Nm, I);
+               end if;
+            end;
+         end loop;
+         Name_Index_Len := N;
+      end if;
+      declare
+         C : constant Name_Index_Maps.Cursor := Name_Index.Find (Name);
+      begin
+         if Name_Index_Maps.Has_Element (C) then
+            declare
+               J : constant Natural := Name_Index_Maps.Element (C);
+            begin
+               if J <= N and then To_String (Rules (J).Name) = Name then
+                  return J;
+               end if;
+            end;
+         end if;
+      end;
+      for I in 1 .. N loop
          if To_String (Rules (I).Name) = Name then
+            Name_Index_Len := 0;       --  the table is out of date
             return I;
          end if;
       end loop;
@@ -1275,6 +1314,40 @@ package body HBNF_Grammar is
                   end loop;
                   Emit (T_Pct, Text (Start .. I - 1));
                   Col := Col + (I - Start + 1);
+                  --  `%spaces(k + 1)`: the number is an expression in
+                  --  parentheses, one name for the parser (`%spaces k` is a name).
+                  if Text (Start .. I - 1) in "spaces" | "col" | "num"
+                    and then I <= Text'Last and then Text (I) = '('
+                  then
+                     declare
+                        Depth : Natural := 0;
+                        J     : Positive := I;
+                     begin
+                        while J <= Text'Last loop
+                           if Text (J) = ASCII.LF then
+                              raise Parse_Error with
+                                Integer'Image (Line) & ":" & Integer'Image (Col)
+                                & ": `%" & Text (Start .. I - 1) & "(`: the "
+                                & "expression ends with `)` on the same line";
+                           elsif Text (J) = '(' then
+                              Depth := Depth + 1;
+                           elsif Text (J) = ')' then
+                              Depth := Depth - 1;
+                              exit when Depth = 0;
+                           end if;
+                           J := J + 1;
+                        end loop;
+                        if J > Text'Last then
+                           raise Parse_Error with
+                             Integer'Image (Line) & ":" & Integer'Image (Col)
+                             & ": `%" & Text (Start .. I - 1) & "(`: the "
+                             & "expression ends with `)`";
+                        end if;
+                        Emit (T_Name, Text (I + 1 .. J - 1));
+                        Col := Col + (J + 1 - I);
+                        I := J + 1;
+                     end;
+                  end if;
                   --  `%bind types += declarators.name`: the context, then the
                   --  path of the field to add.  (`%bind { code }` is code.)
                   if Text (Start .. I - 1) = "bind" then
@@ -2530,7 +2603,7 @@ package body HBNF_Grammar is
                end if;
                return new Element'
                  (Kind => Name, Min => 1, Max => 1, Name => N,
-                  Fold => File_Fold_Names);
+                  Fold => File_Fold_Names, Args => Null_Unbounded_String);
             end;
          when T_Guard =>
             --  `?(cond)` (with `"words"` after it for a check that has them):
@@ -2567,7 +2640,7 @@ package body HBNF_Grammar is
                   declare
                      E : constant Element_Access := new Element'
                        (Kind => Name, Min => 1, Max => 1,
-                        Name => To_Unbounded_String (Id), Fold => False);
+                        Name => To_Unbounded_String (Id), Fold => False, Args => Null_Unbounded_String);
                   begin
                      Prose_Sites.Append
                        (Here (T.Line, T.Col, To_String (T.Text), E));
@@ -2582,7 +2655,7 @@ package body HBNF_Grammar is
                  (Kind => Name, Min => 1, Max => 1,
                   Name => To_Unbounded_String
                             ("<" & Img (Natural (Prose_Sites.Length)) & ">"),
-                  Fold => False);
+                  Fold => False, Args => Null_Unbounded_String);
             end;
          when T_LParen =>
             Next (P);
@@ -2807,6 +2880,48 @@ package body HBNF_Grammar is
    Backref_Seen : Boolean := False;
    function Uses_Backref return Boolean is (Backref_Seen);
 
+   --  The frames of rules with parameters that are numbers worked out while
+   --  parsing, by rule name.
+   Frames_Seen : Boolean := False;
+   package Frame_Maps is new Ada.Containers.Indefinite_Ordered_Maps
+     (String, Frame_Info);
+   Frame_Table : Frame_Maps.Map;
+   Frame_Heads : Path_Sets.Set;     --  the heads that made them, as written
+
+   function Uses_Frames return Boolean is
+     (Frames_Seen or else not Frame_Table.Is_Empty);
+
+   function Frame_Of (Rule_Name : String) return Frame_Info is
+      C : constant Frame_Maps.Cursor := Frame_Table.Find (Rule_Name);
+   begin
+      return (if Frame_Maps.Has_Element (C) then Frame_Maps.Element (C)
+              else (others => <>));
+   end Frame_Of;
+
+   procedure Set_Frame (Rule_Name : String; F : Frame_Info) is
+   begin
+      Frame_Table.Include (Rule_Name, F);
+   end Set_Frame;
+
+   function Slot_Of (Rule_Name, Var : String) return Integer is
+      S     : constant String := To_String (Frame_Of (Rule_Name).Slots);
+      Start : Positive := S'First;
+      N     : Integer := 0;
+   begin
+      for I in S'First .. S'Last + 1 loop
+         if I > S'Last or else S (I) = ' ' then
+            if I > Start and then S (Start .. I - 1) = Var then
+               return N;
+            end if;
+            if I > Start then
+               N := N + 1;
+            end if;
+            Start := I + 1;
+         end if;
+      end loop;
+      return -1;
+   end Slot_Of;
+
    function Parse_Context_Op (P : in out Parser) return Element_Access is
       T : constant Token := Cur (P);
       W : constant String := To_String (T.Text);
@@ -2862,6 +2977,23 @@ package body HBNF_Grammar is
          E.Op := (if W = "as" then B_As else B_Same);
          E.Ctx := Cur (P).Text;
          Backref_Seen := True;
+         Next (P);
+      elsif W = "spaces" or else W = "col" or else W = "num" then
+         --  `%spaces n`, `%spaces(k + 1)`: exactly that many spaces.
+         --  `%col j`: j is the column the parser is at.
+         --  `x %num j`: j is the decimal number the element before it matched.
+         --  The numbers are the frame of the rule they stand in (a rule with a
+         --  parameter `k in 0..`).
+         if Cur (P).Kind not in T_Name | T_Number then
+            raise Parse_Error with
+              Where & "`%" & W & "` takes "
+              & (if W = "spaces" then "a number: `%spaces k` or `%spaces(k + 1)`"
+                 else "a name for the number: `%" & W & " j`");
+         end if;
+         E.Op := (if W = "spaces" then B_Spaces
+                  elsif W = "col" then B_Col else B_Num);
+         E.Ctx := Cur (P).Text;
+         Frames_Seen := True;
          Next (P);
       elsif W = "scope" then
          E.Op := B_Scope;
@@ -2941,7 +3073,7 @@ package body HBNF_Grammar is
          elsif Cur (P).Kind = T_Pct
            and then To_String (Cur (P).Text)
                     in "test" | "nottest" | "bind" | "scope" | "where" | "not" | "and"
-                       | "as" | "same"
+                       | "as" | "same" | "spaces" | "col" | "num"
          then
             Element_Vectors.Append (V, Parse_Context_Op (P));
          elsif Cur (P).Kind = T_Code
@@ -3089,7 +3221,7 @@ package body HBNF_Grammar is
             Pending_Except_B := P.Toks (P.Pos + 2).Text;
             V.Append
               (new Element'(Kind => Name, Min => 1, Max => 1,
-                            Name => Cur (P).Text, Fold => File_Fold_Names));
+                            Name => Cur (P).Text, Fold => File_Fold_Names, Args => Null_Unbounded_String));
             Next (P);
             Next (P);
             Next (P);
@@ -3421,6 +3553,7 @@ package body HBNF_Grammar is
          Domain : Domain_Kind := D_None;
          Spans  : Interval_Vectors.Vector;     --  D_Range: the numbers
          Words  : Text_Vectors.Vector;         --  D_Set: the words
+         Runtime  : Boolean := False;         --  `k in 0..`: a number worked out while parsing
          Is_Const : Boolean := False;         --  a clause for one value
          Const    : Value;
          Text     : U;                        --  as written, for messages
@@ -3645,7 +3778,14 @@ package body HBNF_Grammar is
                         exit;
                      end if;
                   end loop;
-                  if Dots > 0 then
+                  if Dots > 0 and then Trim (W (Dots + 2 .. W'Last)) = "" then
+                     --  `0..`: any number from 0 up, which no list of rules
+                     --  can stand for: the parameter is a number the parser
+                     --  works out as it reads.
+                     Lo := Long_Long_Integer'Value (Trim (W (W'First .. Dots - 1)));
+                     Hi := Long_Long_Integer'Last;
+                     P.Runtime := True;
+                  elsif Dots > 0 then
                      Lo := Long_Long_Integer'Value (Trim (W (W'First .. Dots - 1)));
                      Hi := Long_Long_Integer'Value (Trim (W (Dots + 2 .. W'Last)));
                   else
@@ -3923,6 +4063,43 @@ package body HBNF_Grammar is
         (V : Element_Vectors.Vector; B : Binding_Vectors.Vector;
          In_Rule : String) return Element_Vectors.Vector;
 
+      --  An argument of a rule whose parameters are numbers worked out while
+      --  parsing, with the names of this rule's own (compile-time) parameters
+      --  replaced by their numbers.
+      function Bound_Text (S : String; B : Binding_Vectors.Vector) return String is
+         R : U;
+         I : Natural := S'First;
+      begin
+         while I <= S'Last loop
+            if S (I) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+               declare
+                  J     : Natural := I;
+                  Found : Boolean;
+               begin
+                  while J <= S'Last
+                    and then S (J) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_'
+                  loop
+                     J := J + 1;
+                  end loop;
+                  declare
+                     V : constant Value := Lookup (B, S (I .. J - 1), Found);
+                  begin
+                     if Found and then V.Kind = V_Int then
+                        Append (R, Img (V.Int));
+                     else
+                        Append (R, S (I .. J - 1));
+                     end if;
+                  end;
+                  I := J;
+               end;
+            else
+               Append (R, S (I));
+               I := I + 1;
+            end if;
+         end loop;
+         return To_String (R);
+      end Bound_Text;
+
       function Subst_One
         (E : Element_Access; B : Binding_Vectors.Vector; In_Rule : String)
          return Element_Access
@@ -3934,7 +4111,33 @@ package body HBNF_Grammar is
                   T : constant String := To_String (E.Name);
                   Found : Boolean;
                begin
-                  if Is_Call (T) then
+                  if Is_Call (T) and then Frame_Table.Contains (Base_Of (T)) then
+                     --  A rule whose parameters are numbers worked out while
+                     --  parsing: it is not made in as many copies as there are
+                     --  values; the use keeps its arguments for the parser.
+                     declare
+                        Base : constant String := Base_Of (T);
+                        Args : constant Text_Vectors.Vector := Split (Args_Of (T));
+                        X    : constant Element_Access := new Element'(E.all);
+                        Text : U;
+                     begin
+                        if Natural (Args.Length) /= Frame_Of (Base).Arity then
+                           Fail ("rule `" & In_Rule & "`: `" & T & "`: `" & Base
+                                 & "` takes " & Img (Long_Long_Integer (Frame_Of (Base).Arity))
+                                 & " argument(s), this gives "
+                                 & Img (Long_Long_Integer (Args.Length)));
+                        end if;
+                        for A of Args loop
+                           if Length (Text) > 0 then
+                              Append (Text, ", ");
+                           end if;
+                           Append (Text, Bound_Text (To_String (A), B));
+                        end loop;
+                        X.Name := To_Unbounded_String (Base);
+                        X.Args := Text;
+                        return X;
+                     end;
+                  elsif Is_Call (T) then
                      declare
                         Args : constant Text_Vectors.Vector := Split (Args_Of (T));
                         Vals : Value_Vectors.Vector;
@@ -4206,6 +4409,45 @@ package body HBNF_Grammar is
                   Fail ("`" & H & "`: a parameterised rule has at least one "
                         & "parameter");
                end if;
+               if (for some P of T.Params => P.Runtime) then
+                  --  `block(k in 0..)`: one rule, run with a frame of numbers.
+                  declare
+                     Slots : U;
+                     Base  : constant String := Base_Of (H);
+                  begin
+                     if not (for all P of T.Params =>
+                               P.Runtime and then not P.Is_Const)
+                     then
+                        Fail ("`" & H & "`: a rule whose parameters are "
+                              & "numbers worked out while parsing (`k in 0..`) "
+                              & "has no other kind of parameter");
+                     end if;
+                     if Frame_Table.Contains (Base)
+                       and then not Frame_Heads.Contains (H)
+                     then
+                        Fail ("`" & H & "`: a rule whose parameters are numbers "
+                              & "worked out while parsing is written once, "
+                              & "not as clauses");
+                     end if;
+                     Frame_Heads.Include (H);
+                     for P of T.Params loop
+                        if Length (Slots) > 0 then
+                           Append (Slots, " ");
+                        end if;
+                        Append (Slots, P.Name);
+                     end loop;
+                     Frame_Table.Include
+                       (Base, (Slots => Slots, Arity => Natural (T.Params.Length),
+                               Shares => False));
+                     declare
+                        X : Rule := R;
+                     begin
+                        X.Name := To_Unbounded_String (Base);
+                        Ordinary.Append (X);
+                     end;
+                  end;
+                  goto Next_Rule;
+               end if;
                --  the same names for the same place in every clause
                for Other of Templates loop
                   if Other.Base = T.Base
@@ -4220,6 +4462,7 @@ package body HBNF_Grammar is
          else
             Ordinary.Append (R);
          end if;
+         <<Next_Rule>> null;
       end loop;
       declare
          C : Domain_Maps.Cursor := Domain_Bodies.First;
@@ -4242,7 +4485,7 @@ package body HBNF_Grammar is
             Domain_Maps.Next (C);
          end loop;
       end;
-      if Templates.Is_Empty then
+      if Templates.Is_Empty and then Frame_Table.Is_Empty then
          --  a use with nothing to expand is still a mistake worth naming
          for R of Rules loop
             declare
@@ -4284,6 +4527,101 @@ package body HBNF_Grammar is
          Ordinary.Append (R);
       end loop;
       Rules := Ordinary;
+      --  The names `%col` and `%num` set join the numbers of the frame of the
+      --  rule they stand in.
+      for R of Rules loop
+         declare
+            F : Frame_Info := Frame_Of (To_String (R.Name));
+
+            procedure Collect (V : Element_Vectors.Vector) is
+            begin
+               for E of V loop
+                  if E.Kind = Block and then E.Op in B_Col | B_Num then
+                     if Slot_Of (To_String (R.Name), To_String (E.Ctx)) < 0 then
+                        if Length (F.Slots) > 0 then
+                           Append (F.Slots, " ");
+                        end if;
+                        Append (F.Slots, E.Ctx);
+                        Set_Frame (To_String (R.Name), F);
+                     end if;
+                  elsif E.Kind = Group then
+                     Collect (E.Items);
+                  end if;
+               end loop;
+            end Collect;
+         begin
+            if Length (F.Slots) > 0 and then not F.Shares then
+               Collect (R.Pattern);
+            end if;
+         end;
+      end loop;
+      --  Every number a rule uses is one of its frame, and every use of a rule
+      --  with a frame gives it its arguments.
+      for R of Rules loop
+         declare
+            Owner : constant String := To_String (R.Name);
+
+            --  Do the names in Expr all belong to the frame?
+            procedure Names_In (Expr, Where : String) is
+               I : Natural := Expr'First;
+            begin
+               while I <= Expr'Last loop
+                  if Expr (I) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+                     declare
+                        J : Natural := I;
+                     begin
+                        while J <= Expr'Last
+                          and then Expr (J) in 'a' .. 'z' | 'A' .. 'Z'
+                                              | '0' .. '9' | '_'
+                        loop
+                           J := J + 1;
+                        end loop;
+                        if Slot_Of (Owner, Expr (I .. J - 1)) < 0 then
+                           Fail ("rule `" & Owner & "`, " & Where & ": `"
+                                 & Expr (I .. J - 1) & "` is not a number of "
+                                 & "this rule: its parameters are ("
+                                 & (if Length (Frame_Of (Owner).Slots) = 0
+                                    then "none"
+                                    else To_String (Frame_Of (Owner).Slots))
+                                 & "), and `%col j` and `x %num j` add more");
+                        end if;
+                        I := J;
+                     end;
+                  else
+                     I := I + 1;
+                  end if;
+               end loop;
+            end Names_In;
+
+            procedure Walk (V : Element_Vectors.Vector) is
+            begin
+               for E of V loop
+                  if E.Kind = Name then
+                     declare
+                        C : constant Frame_Info := Frame_Of (To_String (E.Name));
+                     begin
+                        if Length (C.Slots) > 0 and then not C.Shares then
+                           if Length (E.Args) = 0 then
+                              Fail ("rule `" & Owner & "`: `" & To_String (E.Name)
+                                    & "` has parameters that are numbers; use it "
+                                    & "with its arguments, `" & To_String (E.Name)
+                                    & "(...)`");
+                           end if;
+                           Names_In (To_String (E.Args),
+                                     "`" & To_String (E.Name) & "(" & To_String (E.Args) & ")`");
+                        end if;
+                     end;
+                  elsif E.Kind = Block and then E.Op = B_Spaces then
+                     Names_In (To_String (E.Ctx), "`%spaces`");
+                  elsif E.Kind = Group then
+                     Walk (E.Items);
+                  end if;
+               end loop;
+            end Walk;
+         begin
+            Walk (R.Pattern);
+         end;
+      end loop;
    end Expand_Params;
 
    --  A rule that holds text and bit fields in one sequence
@@ -4452,7 +4790,7 @@ package body HBNF_Grammar is
                                     Whitespace       => R.Whitespace));
                            New_Pattern.Append
                              (new Element'(Kind => Name, Min => 1, Max => 1,
-                                           Name => H, Fold => False));
+                                           Name => H, Fold => False, Args => Null_Unbounded_String));
                         end;
                         Start := K;
                      end if;
@@ -5587,7 +5925,7 @@ package body HBNF_Grammar is
                                 (Kind => Name, Min => E.Min, Max => E.Max,
                                  Name => To_Unbounded_String
                                            (Rule_For (Owner, Complement (Set))),
-                                 Fold => False));
+                                 Fold => False, Args => Null_Unbounded_String));
                      end;
                   elsif E.Kind = Group then
                      Walk (Owner, E.Items);
@@ -6197,7 +6535,7 @@ package body HBNF_Grammar is
                              (I, new Element'(Kind => Name, Min => E.Min,
                                               Max => E.Max,
                                               Name => To_Unbounded_String (Fresh),
-                                              Fold => False));
+                                              Fold => False, Args => Null_Unbounded_String));
                         end;
                      end if;
                   elsif E.Kind = Group then
@@ -7636,17 +7974,42 @@ package body HBNF_Grammar is
       return False;
    end Is_Except_Operand;
 
+   package Name_Sets is new Ada.Containers.Indefinite_Ordered_Sets (String);
+   Plain_Yes, Plain_No : Name_Sets.Set;   --  Is_Char_Rule_Plain, per rule count
+
    function Is_Char_Rule_Plain (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean is
+      Key : constant String := Nm & "#" & Natural'Image (Natural (Rules.Length));
+      --  Rec of a name at a depth, kept for the call: a rule reached by many
+      --  paths (a grammar whose rules refer to the ones below by several
+      --  names) is looked at once, not once per path.
+      Memo_Yes, Memo_No : Name_Sets.Set;
+
+      function Rec_Raw (N : String; Depth : Natural) return Boolean;
+
       function Rec (N : String; Depth : Natural) return Boolean is
-         J : Natural := 0;
+         K : constant String := N & "#" & Natural'Image (Depth);
       begin
-         for I in 1 .. Natural (Rules.Length) loop
-            if To_String (Rules (I).Name) = N then
-               J := I;
-               exit;
+         if Memo_Yes.Contains (K) then
+            return True;
+         elsif Memo_No.Contains (K) then
+            return False;
+         end if;
+         declare
+            Result : constant Boolean := Rec_Raw (N, Depth);
+         begin
+            if Result then
+               Memo_Yes.Include (K);
+            else
+               Memo_No.Include (K);
             end if;
-         end loop;
+            return Result;
+         end;
+      end Rec;
+
+      function Rec_Raw (N : String; Depth : Natural) return Boolean is
+         J : constant Natural := Index_Of (Rules, N);
+      begin
          if J = 0 or else Depth = 0 then
             return False;
          end if;
@@ -7738,9 +8101,23 @@ package body HBNF_Grammar is
                return Has_Anchor;
             end;
          end;
-      end Rec;
+      end Rec_Raw;
    begin
-      return Rec (Nm, 20);
+      if Plain_Yes.Contains (Key) then
+         return True;
+      elsif Plain_No.Contains (Key) then
+         return False;
+      end if;
+      declare
+         Result : constant Boolean := Rec (Nm, 20);
+      begin
+         if Result then
+            Plain_Yes.Include (Key);
+         else
+            Plain_No.Include (Key);
+         end if;
+         return Result;
+      end;
    end Is_Char_Rule_Plain;
 
    --  Does a rule, or any rule it reaches, skip whitespace between elements?
@@ -7867,8 +8244,12 @@ package body HBNF_Grammar is
                when Name =>
                   --  A built-in, or an exception (the automaton would read it
                   --  as its first operand and lose the exception), is not text.
+                  --  A rule run in a frame of numbers (or a reference with
+                  --  arguments) is not text either: it reads the numbers.
                   if Is_Core_Name (To_String (E.Name))
                     or else Excepts.Contains (To_String (E.Name))
+                    or else Length (E.Args) > 0
+                    or else Length (Frame_Of (To_String (E.Name)).Slots) > 0
                     or else Typed (To_String (E.Name))
                   then
                      return True;
@@ -7943,6 +8324,7 @@ package body HBNF_Grammar is
         J > 0
         and then not Is_Core_Name (Nm)
         and then not Excepts.Contains (Nm)      --  an exception has its own kind
+        and then Length (Frame_Of (Nm).Slots) = 0
         and then not Literal_Only (Rules (J).Pattern)
         and then not Typed (Nm)
         and then Operand_Is_Text (Rules, Nm);
@@ -8095,7 +8477,7 @@ package body HBNF_Grammar is
                            Whitespace       => Ws));
                   Out_V.Append
                     (new Element'(Kind => Name, Min => 1, Max => 1,
-                                  Name => H, Fold => False));
+                                  Name => H, Fold => False, Args => Null_Unbounded_String));
                end;
             elsif Simple (E) and then E.Kind /= Group then
                Out_V.Append (E);
@@ -8120,6 +8502,13 @@ package body HBNF_Grammar is
                      exit when not Names.Contains (To_String (H));
                   end loop;
                   Names.Include (To_String (H));
+                  --  A rule lifted from a rule that has a frame runs in it.
+                  if Length (Frame_Of (Owner).Slots) > 0 then
+                     Set_Frame (To_String (H),
+                                (Slots  => Frame_Of (Owner).Slots,
+                                 Arity  => Frame_Of (Owner).Arity,
+                                 Shares => True));
+                  end if;
                   if E.Kind = Group and then E.Min = 1 and then E.Max = 1 then
                      --  `( a | b )`: a rule of the alternation.
                      P := E.Items;
@@ -8140,7 +8529,7 @@ package body HBNF_Grammar is
                   Lift_Rule (Natural (Result.Length));
                   Out_V.Append
                     (new Element'(Kind => Name, Min => 1, Max => 1,
-                                  Name => H, Fold => False));
+                                  Name => H, Fold => False, Args => Null_Unbounded_String));
                   --  An alternative that starts with the lifted element keeps
                   --  its %label (the label sits on its first element).
                   if Label_Of (E) /= "" then
@@ -8244,10 +8633,16 @@ package body HBNF_Grammar is
                               Suffix := Suffix + 1;
                            end loop;
                            Names.Include (To_String (H));
+                           if Length (Frame_Of (To_String (R.Name)).Slots) > 0 then
+                              Set_Frame (To_String (H),
+                                         (Slots  => Frame_Of (To_String (R.Name)).Slots,
+                                          Arity  => Frame_Of (To_String (R.Name)).Arity,
+                                          Shares => True));
+                           end if;
                            P.Append
                              (new Element'(Kind => Name, Min => 1, Max => 1,
                                            Name => Orig (K).Name,
-                                           Fold => False));
+                                           Fold => False, Args => Orig (K).Args));
                            Result.Append
                              (Rule'(Name             => H,
                                     Pattern          => P,
@@ -8259,7 +8654,7 @@ package body HBNF_Grammar is
                                     Whitespace       => R.Whitespace));
                            V.Replace_Element
                              (K, new Element'(Kind => Name, Min => 1, Max => 1,
-                                              Name => H, Fold => False));
+                                              Name => H, Fold => False, Args => Null_Unbounded_String));
                            if Label_Of (Orig (K)) /= "" then
                               Set_Label (V (K), Label_Of (Orig (K)));
                            end if;

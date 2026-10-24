@@ -49,6 +49,7 @@ procedure Hbnf is
    Template_Dir : Unbounded_String;
    Conf         : Boolean := False;
    Idref        : Boolean := False;
+   Tree_Tools   : Boolean := False;   --  --writer or --ast: they walk the tree
    Compare      : Boolean := False;
    Forks        : Boolean := False;
    Compact      : Boolean := True;
@@ -179,11 +180,13 @@ begin
          elsif A = "--ast-tools" then
             HBNF_C.Set_Ast_Tools (True);
          elsif A = "--ast" then
+            Tree_Tools := True;
             HBNF_C.Set_Ast (True);
             HBNF_Rust.Set_Ast (True);
             HBNF_Zig.Set_Ast (True);
             HBNF_Ada.Set_Ast (True);
          elsif A = "--writer" then
+            Tree_Tools := True;
             HBNF_C.Set_Writer (True);
             HBNF_Zig.Set_Writer (True);
             HBNF_Rust.Set_Writer (True);
@@ -285,6 +288,19 @@ begin
            (Ada.Text_IO.Standard_Error,
             "hbnf: a grammar with `context` can be emitted in C so far ("
             & To_String (Backend) & " follows; RFCPLAN.md decision 13)");
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+      if HBNF_Grammar.Uses_Frames
+        and then (To_String (Backend) /= "c" or else Tree_Tools or else Idref
+                  or else Forks or else Compare)
+      then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "hbnf: a grammar with parameters that are numbers worked out while "
+            & "parsing (`k in 0..`, `%spaces`, `%col`) can be emitted in C "
+            & "so far, without --writer, --ast, --idref, --forks or --compare ("
+            & To_String (Backend) & " follows; RFCPLAN.md, W-grammars)");
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
       end if;

@@ -1,0 +1,87 @@
+; YAML 1.2 in HyperBNF.
+;
+; Indentation is syntax in YAML, and the spec's productions take it as a parameter, `n`.  So
+; do these.  A parameter written `k in 0..` is a number the parser works out as it reads, any
+; number, so the text nests as deep as it likes and the grammar is the same size: a block is a
+; nested block.  K is the column of a block's entries, M the smallest column of what is inside
+; it.  `%spaces k` is exactly k spaces, `%col j` names the column the parser is at, and
+; `x %num j` the number x matched.  The characters are in yaml-tokens.hbnf.
+whitespace none
+prefix none
+include "yaml-tokens.hbnf"
+
+; ---- line breaks inside a node: the next line is indented M or more
+brk(M in 0..) := *WSP nl *( *WSP nl ) !marker %spaces M *WSP
+dq(M in 0..) := DQUOTE *dqc *( [ %x5C ] brk(M) *dqc ) DQUOTE
+sq(M in 0..) := "'" *sqc *( brk(M) *sqc ) "'"
+pml(M in 0..) := plain1("block") *( brk(M) pcont("block") )
+
+; ---- block scalars: the text lines are indented K or more, K being the first line's, or M - 1
+; plus the digit of the header
+bstext(K in 0..) := 1*nb *( nl *( *SP nl ) !marker %spaces K *nb )
+bsauto(M in 0..) := nl *( *SP nl ) %spaces M *SP %col K bstext(K) | ""
+bsfix(M in 0..) := ( digit19 %num D [ chomp ] | chomp digit19 %num D ) trail ( nl *( *SP nl ) %spaces(M + D - 1) bstext(M + D - 1) | "" )
+bscalar(M in 0..) := ( "|" | ">" ) ( bsfix(M) | [ chomp ] trail bsauto(M) )
+
+; ---- flow collections
+fbrk(M in 0..) := nl *( *WSP nl ) !marker %spaces M *WSP
+fgap(M in 0..) := *( 1*( WSP | fbrk(M) ) [ "#" *nb ] )
+fplain(M in 0..) := plain1("flow") *( brk(M) pcont("flow") )
+fval(M in 0..) := fseq(M) | fmap(M) | dq(M) | sq(M) | alias | fplain(M)
+fvaln(M in 0..) := fseq(M) | fmap(M) | dq(M) | sq(M) | fplain(M)
+fnode(M in 0..) := props [ 1*( WSP | fbrk(M) ) fvaln(M) ] | fval(M)
+fkeyj(M in 0..) := [ props 1*( WSP | fbrk(M) ) ] ( dq(M) | sq(M) | fseq(M) | fmap(M) )
+fkeyp(M in 0..) := [ props 1*( WSP | fbrk(M) ) ] fplain(M) | alias | props
+fitem(M in 0..) := fkeyj(M) *WSP ":" fgap(M) [ fnode(M) ]
+                 | fkeyp(M) *WSP ":" &( WSP | nl | flow-ind ) fgap(M) [ fnode(M) ]
+                 | fempty(M)
+                 | fnode(M)
+fmitem(M in 0..) := fkeyj(M) fgap(M) ":" fgap(M) [ fnode(M) ]
+                  | fkeyp(M) fgap(M) ":" &( WSP | nl | flow-ind ) fgap(M) [ fnode(M) ]
+                  | fempty(M)
+                  | fnode(M)
+fempty(M in 0..) := ":" &( WSP | nl | flow-ind ) fgap(M) [ fnode(M) ]
+                  | "?" &( WSP | nl ) fgap(M) [ fnode(M) fgap(M) ] [ ":" fgap(M) [ fnode(M) ] ]
+fseq(M in 0..) := "[" fgap(M) [ fitem(M) fgap(M) *( "," fgap(M) fitem(M) fgap(M) ) [ "," fgap(M) ] ] "]"
+fmap(M in 0..) := "{" fgap(M) [ fmitem(M) fgap(M) *( "," fgap(M) fmitem(M) fgap(M) ) [ "," fgap(M) ] ] "}"
+
+; ---- block nodes.  A block at column K has entries that start at column K.
+val(M in 0..) := valn(M) | alias
+valn(M in 0..) := pml(M) | dq(M) | sq(M) | fseq(M) | fmap(M) | bscalar(M)
+ptl(M in 0..) := 1*WSP valn(M) | trail ( nl gap ( child0(M) | %spaces(M - 1) bseq(M - 1) ) | "" )
+ptlt(M in 0..) := 1*WSP valn(M) | trail ( nl gap ( child0(M) | %spaces(M - 1) bseq(M - 1) | %spaces M *SP anchor ptl(M) ) | "" )
+ptla(M in 0..) := 1*WSP valn(M) | trail ( nl gap ( child0(M) | %spaces(M - 1) bseq(M - 1) | %spaces M *SP tag ptl(M) ) | "" )
+inl(M in 0..) := props2 ptl(M) | tag ptlt(M) | anchor ptla(M) | val(M)
+child(M in 0..) := %spaces M *SP %col K body(K, M)
+child0(M in 0..) := %spaces M *SP %col K body0(K, M)
+body(K in 0.., M in 0..) := bmap(K) | bseq(K) | inl(M) | HTAB *WSP inl(M)
+body0(K in 0.., M in 0..) := bmap(K) | bseq(K) | val(M) | HTAB *WSP val(M)
+
+sep      = &WSP | &nl | !any
+ikey(K in 0..) := props 1*WSP ( dq1 | sq1 | fseq(0 - 1) | fmap(0 - 1) | plain1("block") ) | alias | dq1 | sq1 | fseq(0 - 1) | fmap(0 - 1) | plain1("block") | props &( WSP | ":" ) | ""
+bmap(K in 0..) := mapent(K) *( nl gap %spaces K !marker mapent(K) )
+mapent(K in 0..) := "?" eval(K) [ nl gap %spaces K ":" eval(K) ] | ikey(K) *WSP ":" mval(K)
+mval(K in 0..) := sep ( 1*WSP inl(K + 1) trail | trail mnest(K) )
+mnest(K in 0..) := nl gap ( child(K + 1) | %spaces K bseq(K) ) | ""
+bseq(K in 0..) := "-" sval(K) *( nl gap %spaces K "-" sval(K) )
+sval(K in 0..) := sep ( 1*SP %col Q cbody(Q) | 1*WSP inl(K + 1) trail | trail snest(K) )
+eval(K in 0..) := sep ( 1*SP %col Q cbody(Q) | 1*WSP inl(K + 1) trail | trail mnest(K) )
+snest(K in 0..) := nl gap child(K + 1) | ""
+cbody(Q in 0..) := bmap(Q) | bseq(Q)
+
+; ---- documents
+top(M in 0..) := *SP %col K body(K, M)
+BOM      = %xFEFF
+thandle  = "!" | "!!" | "!" 1*( ALNUM | "-" ) "!"
+tagdir   = "%" "TAG" 1*WSP thandle 1*WSP 1*( uri | flow-ind | "!" ) trail nl gap
+yamldir  = "%" "YAML" 1*WSP 1*DIGIT "." 1*DIGIT trail nl gap
+otherdir = "%" dname *nb nl gap
+dirs     = &"%" *( tagdir | otherdir ) ( yamldir *( tagdir | otherdir ) | "" )
+yaml     = [ BOM ] gap [ dends | bare | dirdoc ] *explicit
+bare     = !marker top(0) dtail
+dirdoc   = dirs "---" dcontent dtail
+explicit = "---" dcontent dtail
+dcontent = 1*WSP inl(0) | trail ( nl gap top(0) | "" )
+dend     = "..." trail ( nl gap | !any )
+dends    = 1*dend [ bare | dirdoc ]
+dtail    = trail ( nl gap [ dends ] [ trail !any ] | !any )

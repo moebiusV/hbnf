@@ -709,6 +709,88 @@ package body HBNF_C is
         & To_String (R);
    end Context_Runtime;
 
+   --  A number expression of a rule with a frame (`k + 1`) as C: the names are
+   --  the frame's slots of that rule.
+   function Frame_Expr (Owner, Text : String) return String is
+      R : U;
+      I : Natural := Text'First;
+   begin
+      while I <= Text'Last loop
+         if Text (I) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+            declare
+               J : Natural := I;
+            begin
+               while J <= Text'Last
+                 and then Text (J) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_'
+               loop
+                  J := J + 1;
+               end loop;
+               Append (R, "HF(" & Ctx_Img (Natural'Max (0, HBNF_Grammar.Slot_Of (Owner, Text (I .. J - 1))))
+                       & ")");
+               I := J;
+            end;
+         else
+            Append (R, Text (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return "(" & To_String (R) & ")";
+   end Frame_Expr;
+
+   --  The C expression that parses a reference to a rule, Call being the call
+   --  of the rule's function.  A rule with parameters that are numbers runs in
+   --  a frame the reference makes from its arguments, worked out in the frame
+   --  it stands in.
+   function Rule_Call
+     (Owner : String; E : Element_Access; Call : String) return String
+   is
+      Callee : constant HBNF_Grammar.Frame_Info :=
+        HBNF_Grammar.Frame_Of (To_String (E.Name));
+      Args   : U;
+      Set    : U;
+      N      : Natural := 0;
+      Text   : constant String := To_String (E.Args);
+      Start  : Natural := Text'First;
+      Depth  : Natural := 0;
+
+      procedure One (A : String) is
+      begin
+         Append (Args, "long a" & Ctx_Img (N) & "_ = "
+                 & Frame_Expr (Owner, A) & "; ");
+         Append (Set, " HF(" & Ctx_Img (N) & ") = a" & Ctx_Img (N) & "_;");
+         N := N + 1;
+      end One;
+   begin
+      if Length (Callee.Slots) = 0 or else Callee.Shares then
+         return Call;
+      end if;
+      for I in Text'Range loop
+         if Text (I) = '(' then
+            Depth := Depth + 1;
+         elsif Text (I) = ')' then
+            Depth := Depth - 1;
+         elsif Text (I) = ',' and then Depth = 0 then
+            One (Text (Start .. I - 1));
+            Start := I + 1;
+         end if;
+      end loop;
+      if Text'Length > 0 then
+         One (Text (Start .. Text'Last));
+      end if;
+      declare
+         Slots : Natural := 1;
+      begin
+         for C of To_String (Callee.Slots) loop
+            if C = ' ' then
+               Slots := Slots + 1;
+            end if;
+         end loop;
+         return "({ " & To_String (Args) & "size_t ob_ = hbnf_fpush ("
+           & Ctx_Img (Slots) & ");" & To_String (Set) & " bool r_ = " & Call
+           & "; hbnf_fpop (ob_); r_; })";
+      end;
+   end Rule_Call;
+
    --  The C statement that records where a node starts: after the blanks
    --  before it, which the first element of the node would skip.
    function Span_Start (Ws : Boolean; Acc, Save : String) return String is
@@ -5063,7 +5145,7 @@ package body HBNF_C is
             begin
                --  A `? ctx` after this element asks about its text.
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_Test | B_Not_Test | B_As
+                 and then Els (K + 1).Op in B_Test | B_Not_Test | B_As | B_Num
                then
                   Append (Buf, Ind & "size_t es" & Sid & "_" & Ctx_Img (K)
                     & ";  es" & Sid & "_" & Ctx_Img (K) & " = p->pos;");
@@ -5212,7 +5294,13 @@ package body HBNF_C is
                                      else "c_seq_ref_ptr")
                                else "c_seq_ref"),
                               (H ("ind", Ind),
-                               H ("name", C_Name (NM)),
+                               H ("call", Rule_Call
+                                 (To_String (Rules (Owner).Name), E,
+                                  "parse_rule_" & C_Name (NM)
+                                  & (if Is_Back (Owner, NM)
+                                     then (if Compact_On then "(p, &t_)"
+                                           else "(p, " & Acc & C_Field (NM) & ")")
+                                     else "(p, &" & Acc & C_Field (NM) & ")"))),
                                H ("acc", Acc),
                                H ("field", C_Field (NM)),
                                H ("fail", Fail))));
@@ -5412,6 +5500,34 @@ package body HBNF_C is
                            Append (Buf, LF);
                            Append (Buf, Ind & "p->pos += cl_"
                              & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid & ";");
+                           Append (Buf, LF);
+                        when B_Spaces =>
+                           --  exactly that many spaces
+                           Append (Buf, Ind & "{ long n_ = "
+                             & Frame_Expr (To_String (Rules (Owner).Name),
+                                           To_String (E.Ctx))
+                             & "; long i_ = 0; while (i_ < n_ && p->pos + (size_t)i_ < p->len"
+                             & " && p->text[p->pos + (size_t)i_] == ' ') i_++;"
+                             & " if (i_ != n_) { fail(p, ""the indentation"", 0, p->text + p->pos, 0); "
+                             & Fail & " } p->pos += (size_t)n_; }");
+                           Append (Buf, LF);
+                        when B_Col =>
+                           --  the column: the code points since the line began
+                           Append (Buf, Ind & "{ size_t b_ = p->pos; long c_ = 0; "
+                             & "while (b_ > 0 && p->text[b_ - 1] != '\n' && p->text[b_ - 1] != '\r') "
+                             & "{ b_--; if ((p->text[b_] & 0xC0) != 0x80) c_++; } HF("
+                             & Ctx_Img (Natural'Max (0, HBNF_Grammar.Slot_Of
+                                 (To_String (Rules (Owner).Name), To_String (E.Ctx))))
+                             & ") = c_; }");
+                           Append (Buf, LF);
+                        when B_Num =>
+                           --  the number the element before matched
+                           Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
+                             & Ctx_Img (K - 1)) & "long v_ = 0; size_t q_; "
+                             & "for (q_ = st_; q_ < k_; q_++) v_ = v_ * 10 + (p->text[q_] - '0'); HF("
+                             & Ctx_Img (Natural'Max (0, HBNF_Grammar.Slot_Of
+                                 (To_String (Rules (Owner).Name), To_String (E.Ctx))))
+                             & ") = v_; }");
                            Append (Buf, LF);
                         when B_Where =>
                            Append (Buf, Ind & "{ " & Span_Of (Seg));
@@ -6157,8 +6273,10 @@ package body HBNF_C is
                   Append (Buf, LF);
                elsif E.Kind = Name then
                   Append (Buf, Fill ("c_rule_list_name",
-                    (H ("name", C_Name (To_String (E.Name))),
-                     H ("field", C_Field (To_String (E.Name))))));
+                    (1 => H ("call", Rule_Call
+                       (To_String (R.Name), E,
+                        "parse_rule_" & C_Name (To_String (E.Name))
+                        & "(p, &nn->" & C_Field (To_String (E.Name)) & ")")))));
                   Append (Buf, LF);
                elsif R.Left_Bases > 0 then
                   --  Left recursion, as a loop: the first entry is a base,
@@ -6414,7 +6532,10 @@ package body HBNF_C is
                end;
             else
                Append (Buf, Fill ("c_rule_alias_ref",
-                 (1 => H ("name", C_Name (To_String (P (1).Name))))));
+                 (1 => H ("call", Rule_Call
+                    (To_String (R.Name), P (1),
+                     "parse_rule_" & C_Name (To_String (P (1).Name))
+                     & "(p, out)")))));
                Append (Buf, LF);
             end if;
          elsif SU /= "" then
@@ -7171,6 +7292,9 @@ package body HBNF_C is
       if Ctx_On then
          Append (Res, Context_Runtime (Rules));
       end if;
+      if HBNF_Grammar.Uses_Frames then
+         Append (Res, Mustache.Get ("c_frames"));
+      end if;
       if Forks_On then
          --  The retry state: which alternative of a forked rule to start
          --  at, and which one matched (decision 14).  Listed once each.
@@ -7323,6 +7447,12 @@ package body HBNF_C is
       --  The entry point: parse the root rule, then reject trailing input.
       --  With `statements` the statement driver calls this per statement as
       --  hbnf_parse; otherwise it is the public parse_text.
+      if HBNF_Grammar.Frame_Of (To_String (Rules (1).Name)).Arity > 0 then
+         raise HBNF_Grammar.Parse_Error with
+           "`" & To_String (Rules (1).Name) & "` has parameters that are "
+           & "numbers, so a parse cannot start with it; start with a rule "
+           & "that gives them (`--root=` another rule)";
+      end if;
       declare
          Entry_Nm : constant String :=
            (if HBNF_Grammar.Statements then "hbnf_parse" else "parse_text");
@@ -7337,6 +7467,8 @@ package body HBNF_C is
            & " size_t *err_line, size_t *err_col) {");
          Append (Res, LF);
          Append (Res, (if Ctx_On then "    hbnf_ctx_clear();" & LF else "")
+           & (if HBNF_Grammar.Uses_Frames
+              then "    hbnf_fsp = 0; hbnf_fb = 0;" & LF else "")
            & "    parser_t p = { text, strlen(text), 0, (size_t)-1,"
            & " 0, 0, NULL, NULL, 0, 0 };");
          Append (Res, LF);

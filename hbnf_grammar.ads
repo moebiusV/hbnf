@@ -173,11 +173,31 @@ package HBNF_Grammar is
       B_Not,         --  !x: x does not match here; nothing is consumed
       B_And,         --  &x: x matches here; nothing is consumed
       B_As,          --  x %as tag: the text x matched is kept, as `tag`
-      B_Same);       --  %same tag: the text kept as `tag` again, here
+      B_Same,        --  %same tag: the text kept as `tag` again, here
+      B_Spaces,      --  %spaces n: exactly n spaces (n a number expression)
+      B_Col,         --  %col j: j is the column the parser is at
+      B_Num);        --  x %num j: j is the decimal number x matched
 
    --  True once a grammar has read `%as` or `%same`: a back-reference, which the
    --  C backend alone emits so far.
    function Uses_Backref return Boolean;
+
+   --  Rules with parameters that are numbers worked out while parsing (an
+   --  indentation: `block(K in 0..)`).  Such a rule runs in a frame of numbers,
+   --  the parameters first and then the names `%col` and `%num` set, and the
+   --  rules `Lift` makes from its groups share that frame.
+   type Frame_Info is record
+      Slots  : Unbounded_String := Null_Unbounded_String;
+      --  The names of the frame's numbers, separated by a space; "" for a rule
+      --  with no frame.
+      Arity  : Natural := 0;       --  how many of them are parameters
+      Shares : Boolean := False;   --  a lifted rule: runs in its owner's frame
+   end record;
+   function Frame_Of (Rule_Name : String) return Frame_Info;
+   procedure Set_Frame (Rule_Name : String; F : Frame_Info);
+   --  The position of Var among the frame's slots (0 is the first), or -1.
+   function Slot_Of (Rule_Name, Var : String) return Integer;
+   function Uses_Frames return Boolean;
 
    type Element (Kind : Element_Kind := Literal) is record
       Min : Natural := 1;   --  minimum occurrences (repetition)
@@ -194,6 +214,10 @@ package HBNF_Grammar is
          when Name =>
             Name : Unbounded_String;     --  rule/core reference
             Fold : Boolean := False;
+            Args : Unbounded_String := Null_Unbounded_String;
+            --  The arguments of a use of a rule whose parameters are numbers
+            --  worked out while parsing (`bmap(K + 1)`): the text between the
+            --  parentheses, as written.  "" for any other reference.
             --  Written in a file with `sensitivity rule-name %i`: the
             --  reference finds a rule whatever the case of its name, and
             --  the reader rewrites Name to the definition's spelling.

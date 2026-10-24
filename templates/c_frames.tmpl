@@ -1,0 +1,22 @@
+/* ---- frames: the numbers of a rule with parameters worked out while parsing ----
+   A reference to such a rule makes a frame from its arguments (hbnf_fpush), the rule
+   and the rules lifted from its groups read it with HF, and the reference ends it
+   (hbnf_fpop).  The frames are a stack that grows as deep as the text nests. */
+static long *hbnf_fs;
+static size_t hbnf_fsp, hbnf_fcap, hbnf_fb;
+#define HF(i) (hbnf_fs[hbnf_fb + (i)])
+static size_t hbnf_fpush(size_t n) {
+    size_t ob = hbnf_fb, i;
+    hbnf_fb = hbnf_fsp;
+    hbnf_fsp += n;
+    if (hbnf_fsp > hbnf_fcap) {
+        hbnf_fcap = hbnf_fcap ? hbnf_fcap * 2 : 256;
+        while (hbnf_fcap < hbnf_fsp) hbnf_fcap *= 2;
+        hbnf_fs = (long *)realloc(hbnf_fs, hbnf_fcap * sizeof *hbnf_fs);
+        if (!hbnf_fs) hbnf_oom();
+    }
+    for (i = 0; i < n; i++) hbnf_fs[hbnf_fb + i] = 0;
+    return ob;
+}
+static void hbnf_fpop(size_t ob) { hbnf_fsp = hbnf_fb; hbnf_fb = ob; }
+

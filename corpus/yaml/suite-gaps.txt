@@ -1,0 +1,11 @@
+# The cases of the YAML test suite (id, as tests/yaml-suite.sh finds it) on which the grammar
+# and the suite differ.  All of them are texts the suite refuses and the grammar accepts.
+# 5LLU, S98Z, W9L4: a blank line before the first text line of a block scalar has more spaces than
+#   that line is indented.
+# Y79Y/000: a line of a tab alone after a block scalar's header.
+# QLJ7: a tag handle used in a document that the %TAG directive of an earlier document defined.
+5LLU
+QLJ7
+S98Z
+W9L4
+Y79Y/000

@@ -1,0 +1,4 @@
+a: "x\ty\u00e9"
+b: 'it''s'
+c: "two
+  lines"

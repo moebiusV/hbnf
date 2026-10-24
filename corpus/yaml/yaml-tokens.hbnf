@@ -1,0 +1,52 @@
+; The characters of YAML 1.2: the pieces in which no blank may be skipped, and which are the
+; same wherever they stand.  The structure, which depends on the indentation, is in yaml.hbnf.
+whitespace none
+prefix none
+include "../../grammars/common.hbnf"
+
+nl       = CRLF | LF | CR
+any      = %x00-10FFFF
+WSP      = SP | HTAB
+nonns    = %x00-20 | %x7F-84 | %x86-9F | %xD800-DFFF | %xFEFF | %xFFFE-FFFF
+ns       = ~nonns
+nb       = HTAB | %x20-7E | %x85 | %xA0-D7FF | %xE000-FEFE | %xFF00-FFFD | %x10000-10FFFF
+flow-ind = %x2C | %x5B | %x5D | %x7B | %x7D
+indicator = "-" | "?" | ":" | "," | "[" | "]" | "{" | "}" | "#" | "&" | "*" | "!" | "|" | ">" | "'" | DQUOTE | "%" | "@" | "`"
+marker   = ( "---" | "..." ) ( WSP | nl )
+
+trail    = 1*WSP "#" *nb | *WSP                  ; the rest of a line
+gap      = *( *WSP [ "#" *nb ] nl )              ; blank and comment lines
+
+; ---- the properties of a node
+uri      = ALNUM | "#" | ";" | "/" | "?" | ":" | "@" | "&" | "=" | "+" | "$" | "_" | "." | "~" | "*" | "'" | "(" | ")" | "-" | "%" HEXDIG HEXDIG
+tag      = "!<" 1*( uri | flow-ind | "!" ) ">" | "!" *( uri | "!" )
+aname    = 1*~( nonns | flow-ind )
+anchor   = "&" aname
+alias    = "*" aname
+props    = tag [ 1*WSP anchor ] | anchor [ 1*WSP tag ]
+props2   = tag 1*WSP anchor | anchor 1*WSP tag
+
+; ---- plain scalars; C is "block" or "flow"
+safe(C in "block" | "flow") := ~( nonns | flow-ind )
+safe("block") := ns
+first(C in "block" | "flow") := ~( nonns | indicator ) | ( "?" | ":" | "-" ) &safe(C)
+pc(C in "block" | "flow") := ~( nonns | flow-ind | ":" )
+pc("block") := ~( nonns | ":" )
+pcx(C in "block" | "flow") := ~( nonns | flow-ind | ":" | "#" )
+pcx("block") := ~( nonns | ":" | "#" )
+plain1(C in "block" | "flow") := first(C) *( pc(C) | ":" &safe(C) | 1*WSP ( pcx(C) | ":" &safe(C) ) )
+ptail(C in "block" | "flow") := *( pc(C) | ":" &safe(C) | 1*WSP ( pcx(C) | ":" &safe(C) ) )
+pcont(C in "block" | "flow") := ( pcx(C) | ":" &safe(C) ) ptail(C)
+
+; ---- quoted scalars
+esc      = "0" | "a" | "b" | "t" | HTAB | "n" | "v" | "f" | "r" | "e" | SP | DQUOTE | "/" | %x5C | "N" | "_" | "L" | "P" | "x" 2HEXDIG | "u" 4HEXDIG | "U" 8HEXDIG
+dqc      = SP | HTAB | ~( nonns | DQUOTE | %x5C ) | %x5C esc
+sqc      = SP | HTAB | ~( nonns | "'" ) | "''"
+dq1      = DQUOTE *dqc DQUOTE
+sq1      = "'" *sqc "'"
+
+dword    = 1*ns
+dres     = "YAML" | "TAG"
+dname    = dword - dres
+chomp    = "+" | "-"
+digit19  = %x31-39

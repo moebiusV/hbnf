@@ -1,5 +1,6 @@
 pragma Ada_2022;
 
+with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Ordered_Sets;
 with Ada.Strings.Hash;
@@ -151,10 +152,44 @@ package body HBNF_Lookahead is
    --  Rules and sequences
    --  ---------------------------------------------------------------------
 
+   --  A rule by name; the names are kept in a table made again when the number
+   --  of rules is not the one it was made for (see Index_Of in hbnf_grammar.adb).
+   package Index_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, Natural);
+   Index     : Index_Maps.Map;
+   Index_Len : Natural := 0;
+
    function Find (Rules : Rule_Vectors.Vector; Name : String) return Natural is
+      N : constant Natural := Natural (Rules.Length);
    begin
-      for I in 1 .. Natural (Rules.Length) loop
+      if N /= Index_Len then
+         Index.Clear;
+         for I in 1 .. N loop
+            declare
+               Nm : constant String := To_String (Rules (I).Name);
+            begin
+               if not Index.Contains (Nm) then
+                  Index.Insert (Nm, I);
+               end if;
+            end;
+         end loop;
+         Index_Len := N;
+      end if;
+      declare
+         C : constant Index_Maps.Cursor := Index.Find (Name);
+      begin
+         if Index_Maps.Has_Element (C) then
+            declare
+               J : constant Natural := Index_Maps.Element (C);
+            begin
+               if J <= N and then To_String (Rules (J).Name) = Name then
+                  return J;
+               end if;
+            end;
+         end if;
+      end;
+      for I in 1 .. N loop
          if To_String (Rules (I).Name) = Name then
+            Index_Len := 0;
             return I;
          end if;
       end loop;
@@ -1374,7 +1409,7 @@ package body HBNF_Lookahead is
       end loop;
    end Check_Choice;
 
-   procedure Token_Dfa
+   procedure Token_Dfa_Raw
      (Rules : Rule_Vectors.Vector; Nm : String;
       D     : out Dfa_State_Vectors.Vector;
       Ok    : out Boolean;
@@ -1382,10 +1417,21 @@ package body HBNF_Lookahead is
    is
       J : constant Natural := Find (Rules, Nm);
 
+      package Sorting is new Int_Vectors.Generic_Sorting;
       package Set_Vectors is new Ada.Containers.Vectors
-        (Positive, State_Sets.Set, State_Sets."=");
+        (Positive, Int_Vectors.Vector, Int_Vectors."=");
       package Cp_Sets2 is new Ada.Containers.Ordered_Sets (Natural);
-      Seen : Set_Vectors.Vector;   --  the NFA state set of each DFA state
+      Seen : Set_Vectors.Vector;   --  the NFA state set (sorted) of each DFA state
+      Seen_Index : Index_Maps.Map; --  and the other way: a set's key -> its number
+
+      function Set_Key (S : Int_Vectors.Vector) return String is
+         R : Unbounded_String;
+      begin
+         for X of S loop
+            Append (R, Positive'Image (X));
+         end loop;
+         return To_String (R);
+      end Set_Key;
    begin
       D.Clear;
       Why := Null_Unbounded_String;
@@ -1400,84 +1446,196 @@ package body HBNF_Lookahead is
          A : constant Automaton :=
            Build (Rules, J, Rules (J).Pattern, 1,
                   Natural (Rules (J).Pattern.Length));
-         Start : State_Sets.Set;
+         N     : constant Natural := Natural (A.States.Length);
          Next  : Positive := 1;
       begin
          if Approximated then
             Why := Why_Approximated;
             return;
          end if;
-         Start.Insert (A.Start);
-         Seen.Append (Closure (A, Start));
-         D.Append (Dfa_State'(others => <>));
-         while Next <= Natural (Seen.Length) loop
-            declare
-               Cur    : constant State_Sets.Set := Seen (Next);
-               Bounds : Cp_Sets2.Set;
-               Edges  : Dfa_Edge_Vectors.Vector;
+         declare
+            --  What each state reaches without reading anything, worked out
+            --  once, so that a step is a union of lists and not a walk.
+            Clo   : array (1 .. N) of Int_Vectors.Vector;
+            Stamp : array (1 .. N) of Natural := [others => 0];
+            Gen   : Natural := 0;
+
+            procedure Add_Closure (X : Positive; Into : in out Int_Vectors.Vector)
+            is
             begin
-               D (Next).Accepting := Cur.Contains (A.Final);
-               for X of Cur loop
+               for Y of Clo (X) loop
+                  if Stamp (Y) /= Gen then
+                     Stamp (Y) := Gen;
+                     Into.Append (Y);
+                  end if;
+               end loop;
+            end Add_Closure;
+
+            --  The live states reachable from X without reading anything.
+            procedure Work_Out (X : Positive) is
+               Todo : Int_Vectors.Vector;
+               R    : Int_Vectors.Vector;
+            begin
+               Gen := Gen + 1;
+               if A.Live (X) then
+                  Stamp (X) := Gen;
+                  R.Append (X);
+                  Todo.Append (X);
+               end if;
+               while not Todo.Is_Empty loop
+                  declare
+                     Y : constant Positive := Todo.Last_Element;
+                  begin
+                     Todo.Delete_Last;
+                     for T of A.States (Y).Eps loop
+                        if A.Live (T) and then Stamp (T) /= Gen then
+                           Stamp (T) := Gen;
+                           R.Append (T);
+                           Todo.Append (T);
+                        end if;
+                     end loop;
+                  end;
+               end loop;
+               Sorting.Sort (R);
+               Clo (X) := R;
+            end Work_Out;
+
+            --  The set reached by reading C from the states of S.
+            function Step_Set (S : Int_Vectors.Vector; C : Natural)
+              return Int_Vectors.Vector
+            is
+               R : Int_Vectors.Vector;
+            begin
+               Gen := Gen + 1;
+               for X of S loop
                   for E of A.States (X).Edges loop
-                     Bounds.Include (E.Lo);
-                     if E.Hi < Max_Code_Point then
-                        Bounds.Include (E.Hi + 1);
+                     if E.Lo <= C and then C <= E.Hi and then A.Live (E.To) then
+                        Add_Closure (E.To, R);
                      end if;
                   end loop;
                end loop;
+               Sorting.Sort (R);
+               return R;
+            end Step_Set;
+
+            Start : Int_Vectors.Vector;
+         begin
+            for X in 1 .. N loop
+               Work_Out (X);
+            end loop;
+            Start := Clo (A.Start);
+            Seen.Append (Start);
+            Seen_Index.Insert (Set_Key (Start), 1);
+            D.Append (Dfa_State'(others => <>));
+            while Next <= Natural (Seen.Length) loop
                declare
-                  Lo : Natural;
+                  Cur    : constant Int_Vectors.Vector := Seen (Next);
+                  Bounds : Cp_Sets2.Set;
+                  Edges  : Dfa_Edge_Vectors.Vector;
                begin
-                  for C in Bounds.Iterate loop
-                     Lo := Cp_Sets2.Element (C);
-                     declare
-                        Hi : constant Natural :=
-                          (if not Cp_Sets2.Has_Element (Cp_Sets2.Next (C))
-                           then Max_Code_Point
-                           else Cp_Sets2.Element (Cp_Sets2.Next (C)) - 1);
-                        T  : constant State_Sets.Set := Step (A, Cur, Lo);
-                        Id : Natural := 0;
-                     begin
-                        if not T.Is_Empty then
-                           for K in 1 .. Natural (Seen.Length) loop
-                              if State_Sets."=" (Seen (K), T) then
-                                 Id := K;
-                                 exit;
-                              end if;
-                           end loop;
-                           if Id = 0 then
-                              if Natural (Seen.Length) >= Max_States then
-                                 Why := To_Unbounded_String
-                                   ("it needs more than"
-                                    & Integer'Image (Max_States)
-                                    & " states as one token");
-                                 D.Clear;
-                                 return;
-                              end if;
-                              Seen.Append (T);
-                              D.Append (Dfa_State'(others => <>));
-                              Id := Natural (Seen.Length);
-                           end if;
-                           --  Join a neighbour that goes to the same state.
-                           if not Edges.Is_Empty
-                             and then Edges.Last_Element.To = Id
-                             and then Edges.Last_Element.Hi + 1 = Lo
-                           then
-                              Edges.Reference (Edges.Last_Index).Hi := Hi;
-                           else
-                              Edges.Append (Dfa_Edge'(Lo, Hi, Id));
-                           end if;
+                  D (Next).Accepting := (for some X of Cur => X = A.Final);
+                  for X of Cur loop
+                     for E of A.States (X).Edges loop
+                        Bounds.Include (E.Lo);
+                        if E.Hi < Max_Code_Point then
+                           Bounds.Include (E.Hi + 1);
                         end if;
-                     end;
+                     end loop;
                   end loop;
+                  declare
+                     Lo : Natural;
+                  begin
+                     for C in Bounds.Iterate loop
+                        Lo := Cp_Sets2.Element (C);
+                        declare
+                           Hi : constant Natural :=
+                             (if not Cp_Sets2.Has_Element (Cp_Sets2.Next (C))
+                              then Max_Code_Point
+                              else Cp_Sets2.Element (Cp_Sets2.Next (C)) - 1);
+                           T  : constant Int_Vectors.Vector := Step_Set (Cur, Lo);
+                           Id : Natural := 0;
+                        begin
+                           if not T.Is_Empty then
+                              declare
+                                 TK : constant String := Set_Key (T);
+                                 KC : constant Index_Maps.Cursor :=
+                                   Seen_Index.Find (TK);
+                              begin
+                                 if Index_Maps.Has_Element (KC) then
+                                    Id := Index_Maps.Element (KC);
+                                 end if;
+                                 if Id = 0 then
+                                    if Natural (Seen.Length) >= Max_States then
+                                       Why := To_Unbounded_String
+                                         ("it needs more than"
+                                          & Integer'Image (Max_States)
+                                          & " states as one token");
+                                       D.Clear;
+                                       return;
+                                    end if;
+                                    Seen.Append (T);
+                                    D.Append (Dfa_State'(others => <>));
+                                    Id := Natural (Seen.Length);
+                                    Seen_Index.Insert (TK, Id);
+                                 end if;
+                              end;
+                              --  Join a neighbour that goes to the same state.
+                              if not Edges.Is_Empty
+                                and then Edges.Last_Element.To = Id
+                                and then Edges.Last_Element.Hi + 1 = Lo
+                              then
+                                 Edges.Reference (Edges.Last_Index).Hi := Hi;
+                              else
+                                 Edges.Append (Dfa_Edge'(Lo, Hi, Id));
+                              end if;
+                           end if;
+                        end;
+                     end loop;
+                  end;
+                  D (Next).Edges := Edges;
+                  Next := Next + 1;
                end;
-               D (Next).Edges := Edges;
-               Next := Next + 1;
-            end;
-         end loop;
+            end loop;
+         end;
       end;
       Ok := True;
+   end Token_Dfa_Raw;
+
+   --  The scanner of a rule is asked for by many checks and again by the code
+   --  generator, and building it is the costly part of reading a grammar of
+   --  thousands of rules; so the answer is kept for as long as the number of
+   --  rules is the one it was made for.
+   type Dfa_Answer is record
+      D   : Dfa_State_Vectors.Vector;
+      Ok  : Boolean;
+      Why : Unbounded_String;
+   end record;
+   package Dfa_Answer_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, Dfa_Answer);
+   Dfa_Answers : Dfa_Answer_Maps.Map;
+
+   procedure Token_Dfa
+     (Rules : Rule_Vectors.Vector; Nm : String;
+      D     : out Dfa_State_Vectors.Vector;
+      Ok    : out Boolean;
+      Why   : out Ada.Strings.Unbounded.Unbounded_String)
+   is
+      Key : constant String := Nm & "#" & Natural'Image (Natural (Rules.Length));
+      C   : constant Dfa_Answer_Maps.Cursor := Dfa_Answers.Find (Key);
+   begin
+      if Dfa_Answer_Maps.Has_Element (C) then
+         declare
+            A : constant Dfa_Answer := Dfa_Answer_Maps.Element (C);
+         begin
+            D := A.D;
+            Ok := A.Ok;
+            Why := A.Why;
+         end;
+         return;
+      end if;
+      Token_Dfa_Raw (Rules, Nm, D, Ok, Why);
+      Dfa_Answers.Include (Key, (D => D, Ok => Ok, Why => Why));
    end Token_Dfa;
+
 
    procedure Dfa_Tables
      (D : Dfa_State_Vectors.Vector;
