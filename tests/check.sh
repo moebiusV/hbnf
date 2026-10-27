@@ -247,7 +247,7 @@ for s in $WANT_S; do
 				# the CPU time says more than the wall time when it was recorded; short suites are noise
 				if (pc != "" && pc + 0 > 0 && c + 0 > 0) { r = c / pc; kind = "cpu" } else { r = w / pw; kind = "wall" }
 				base = (kind == "cpu" ? pc : pw)
-				if (base < 3) exit
+				if (base < 10) exit
 				if (r <= 0.8) printf "   %.1fx FASTER than last time (%s %s -> %s s)", 1 / r, kind, base, (kind == "cpu" ? c : w)
 				else if (r >= 1.2) printf "   %.1fx SLOWER than last time (%s %s -> %s s)", r, kind, base, (kind == "cpu" ? c : w)
 			}' "$R/check.tsv")
