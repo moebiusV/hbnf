@@ -1,0 +1,20 @@
+struct s { int a; char b; };
+struct s2 { int a; char b };
+struct t { struct s *next; int (*fn)(); char name[8]; unsigned f : 3; int : 2; };
+union u { int i; float f; };
+enum e { A, B = 3, C, };
+typedef struct s S;
+typedef int *ip, arr[4];
+S v;
+ip p;
+arr q;
+unsigned x;
+long float lf;
+unsigned long ul;
+short int si;
+register int r;
+extern int e1;
+static char c;
+auto int au;
+fortran int fi();
+f() { S l; struct s m; enum e k; k = B; return l.a + m.a + sizeof(S) + sizeof(struct s); }

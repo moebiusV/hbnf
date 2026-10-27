@@ -1,0 +1,54 @@
+; The tokens of the C that UNIX/32V's compiler reads (usr/src/cmd/mip/scan.c) as rules of characters.
+; Nothing here skips white space; c79.hbnf, which includes this file, does that between tokens.
+; Keywords are the literals of the grammar, matched whole by `word` (letters, digits and _), which
+; is why this file defines `word`: the built-in one also takes - and ., and `return-1` is `return`
+; and `-1`.  There is no `void`, `const`, `volatile` or `signed` in this C; they are names.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+BS     = %x5C
+SQUOTE = %x27
+
+idstart    = ALPHA | "_"
+idchar     = ALPHA | DIGIT | "_"
+word       = idstart *idchar
+keyword    = "asm" | "auto" | "break" | "case" | "char" | "continue" | "default" | "do" | "double"
+           | "else" | "enum" | "extern" | "float" | "for" | "fortran" | "goto" | "if" | "int" | "long"
+           | "register" | "return" | "short" | "sizeof" | "static" | "struct" | "switch" | "typedef"
+           | "union" | "unsigned" | "while"
+identifier = word - keyword
+
+; ---- constants ----
+; (the letters inside a token are written as code points: a letter-led literal is a whole word)
+; A constant that begins with 0 is octal and its digits are not checked, so `08` is a constant.
+constant   = floating-constant | integer-constant | character-constant
+ex         = %x78 | %x58
+ell        = %x6C | %x4C
+eee        = %x65 | %x45
+sign       = %x2B | %x2D
+hexd       = DIGIT | %x41-46 | %x61-66
+digits     = 1*DIGIT
+integer-constant = ( %x30 ex 1*hexd | digits ) [ ell ]
+floating-constant = digits %x2E *DIGIT [ exponent ] | %x2E digits [ exponent ] | digits exponent
+exponent   = eee [ sign ] digits
+char-body  = ~( SQUOTE | BS | LF ) | BS ( LF | ~LF )
+character-constant = SQUOTE 1*char-body SQUOTE
+str-body   = ~( DQUOTE | BS | LF ) | BS ( LF | ~LF )
+string-literal = DQUOTE *str-body DQUOTE
+
+; ---- the operators the lexer joins ----
+; `=+` and its kind are the old assignments (ASOP); `+=` and its kind are two tokens in the
+; lexer, joined by the grammar, and here they are written together.  A lone `=` is not `==`.
+old-assign = "=" ( "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>" )
+op-assign  = ( "*" | "/" | "%" | "+" | "-" | "<<" | ">>" | "&" | "|" | "^" ) "="
+
+; ---- white space ----
+; Blanks, comments (the bracketed kind only), the lines the preprocessor leaves (`# 12 "file.c"`), and
+; `asm ( "text" )` (its letters are code points, as a keyword would be a whole word), which the lexer reads and hands the assembler, so the parser never sees it.
+blank      = SP | HTAB | LF | CR | %x08 | %x0C
+comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
+pp-line    = "#" *~LF
+asm-char   = ~( DQUOTE | LF )
+asm-text   = %x61 %x73 %x6D *blank "(" *blank DQUOTE *asm-char DQUOTE *blank ")"
+ws         = 1*( blank | comment | pp-line | asm-text )

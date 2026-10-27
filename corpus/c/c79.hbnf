@@ -1,0 +1,106 @@
+; The C of 1979, UNIX/32V's, as its compiler reads it: usr/src/cmd/mip/cgram.y for the grammar and
+; scan.c for the words.  The rules are cgram.y's, in the same order of ideas.  There are no
+; prototypes (a function's parameters are bare names, declared after the parenthesis), no `void`,
+; `const`, `volatile` or `signed`, and an initializer may leave out its `=` (`int n 500;`).
+; A typedef name is an identifier the `types` context holds, which a typedef declarator adds and a
+; block takes away; where the lexer would have called it a name, `vars` says so.
+prefix none
+include "c79-words.hbnf"
+context types
+context vars
+%start translation-unit
+
+
+; ---- external definitions ----
+translation-unit     = *external-definition
+external-definition  = typedef-declaration
+                     | ( attributes | "" ) %scope definition-rest
+definition-rest      = ";"
+                     | declarator ( function-body | [ initializer ] *( "," init-declarator ) ";" )
+function-body        = *declaration compound-statement
+
+; ---- declarations ----
+declaration          = typedef-declaration | attributes [ init-declarator-list ] ";"
+init-declarator-list = init-declarator *( "," init-declarator )
+init-declarator      = declarator [ initializer ]
+typedef-declaration  = "typedef" [ type ] typedef-declarator *( "," typedef-declarator ) ";"
+                     | type "typedef" typedef-declarator *( "," typedef-declarator ) ";"
+
+; one storage class, one type, in either order, or either alone
+attributes           = class type | type class | class | type
+class                = "extern" | "static" | "auto" | "register" | "fortran"
+type                 = 1*3 basic-type | typedef-name | struct-specifier | enum-specifier
+basic-type           = "char" | "short" | "int" | "long" | "float" | "double" | "unsigned"
+; A typedef name is a token of its own, so it is not a variable, unless a declaration in an
+; inner scope has made the name a variable.
+known-type           = identifier ? types
+typedef-name         = known-type ?! vars
+variable-name        = identifier ?! types | identifier ? vars
+
+struct-specifier     = ( "struct" | "union" ) ( identifier [ "{" struct-body "}" ] | "{" struct-body "}" )
+struct-body          = member-declaration *( ";" member-declaration ) [ ";" ]
+member-declaration   = %scope type [ member-declarator *( "," member-declarator ) ]
+member-declarator    = declarator [ ":" constant-expression ] | ":" constant-expression
+enum-specifier       = "enum" ( identifier [ "{" enumerator-list [ "," ] "}" ] | "{" enumerator-list [ "," ] "}" )
+enumerator-list      = enumerator *( "," enumerator )
+enumerator           = identifier [ "=" constant-expression ]
+
+declarator           = "*" declarator | direct-declarator
+direct-declarator    = ( identifier %bind vars += identifier | "(" declarator ")" ) *declarator-suffix
+declarator-suffix    = "[" [ constant-expression ] "]" | "(" [ parameter-name *( "," parameter-name ) ] ")"
+; a parameter is a name in the function, even where a typedef has the same name
+parameter-name       = identifier %bind vars += identifier
+; the same with the name it declares added to `types`
+typedef-declarator   = "*" typedef-declarator | direct-typedef-declarator
+direct-typedef-declarator = ( identifier %bind types += identifier | "(" typedef-declarator ")" ) *declarator-suffix
+type-name            = type [ abstract-declarator ]
+abstract-declarator  = "*" [ abstract-declarator ] | direct-abstract-declarator
+direct-abstract-declarator = ( "(" [ abstract-declarator ] ")" | abstract-suffix ) *abstract-suffix
+abstract-suffix      = "[" [ constant-expression ] "]" | "(" ")"
+
+; an initializer, with its `=` or without it
+initializer          = [ "=" !"=" ] ( "{" init-list [ "," ] "}" | assignment-expression )
+init-list            = element *( "," element )
+element              = "{" init-list [ "," ] "}" | assignment-expression
+
+; ---- statements ----
+statement            = labeled-statement | compound-statement | selection-statement
+                     | iteration-statement | jump-statement | expression-statement
+labeled-statement    = identifier ":" statement
+                     | "case" expression ":" statement
+                     | "default" ":" statement
+; the declarations come first
+compound-statement   = "{" %scope *declaration *statement "}"
+expression-statement = [ expression ] ";"
+selection-statement  = "if" "(" expression ")" statement [ "else" statement ]
+                     | "switch" "(" expression ")" statement
+iteration-statement  = "while" "(" expression ")" statement
+                     | "do" statement "while" "(" expression ")" ";"
+                     | "for" "(" [ expression ] ";" [ expression ] ";" [ expression ] ")" statement
+jump-statement       = "goto" identifier ";" | "continue" ";" | "break" ";" | "return" [ expression ] ";"
+
+; ---- expressions ----
+; (no unary plus, and a string does not join the one next to it)
+primary-expression   = constant | string-literal | "(" expression ")" | variable-name
+postfix-expression   = primary-expression *postfix-suffix
+postfix-suffix       = "[" expression "]" | "(" [ argument-list ] ")" | "." identifier | "->" identifier | "++" | "--"
+argument-list        = assignment-expression *( "," assignment-expression )
+unary-expression     = ( "++" | "--" | "*" | "&" | "-" | "!" | "~" ) unary-expression
+                     | "sizeof" ( "(" type-name ")" | unary-expression )
+                     | "(" type-name ")" unary-expression
+                     | postfix-expression
+multiplicative-expression = unary-expression *( ( "*" | "/" | "%" ) unary-expression )
+additive-expression  = multiplicative-expression *( ( "+" | "-" ) multiplicative-expression )
+shift-expression     = additive-expression *( ( "<<" | ">>" ) additive-expression )
+relational-expression = shift-expression *( ( "<=" | ">=" | "<" | ">" ) shift-expression )
+equality-expression  = relational-expression *( ( "==" | "!=" ) relational-expression )
+and-expression       = equality-expression *( "&" equality-expression )
+exclusive-or-expression = and-expression *( "^" and-expression )
+inclusive-or-expression = exclusive-or-expression *( "|" exclusive-or-expression )
+logical-and-expression = inclusive-or-expression *( "&&" inclusive-or-expression )
+logical-or-expression = logical-and-expression *( "||" logical-and-expression )
+conditional-expression = logical-or-expression [ "?" expression ":" conditional-expression ]
+assignment-expression = conditional-expression [ assignment-operator assignment-expression ]
+assignment-operator  = old-assign | op-assign | "=" !"="
+expression           = assignment-expression *( "," assignment-expression )
+constant-expression  = conditional-expression
