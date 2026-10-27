@@ -771,7 +771,7 @@ and to bring the full pfctl grammar's cost per rule (§6) toward the toy's:
 fewer failing literal probes, and a tree that does not embed every
 alternative's fields.
 
-Two research directions follow from the design.
+Three research directions follow from the design.
 
 **A grammar library, with includes and overrides.**  The nine OpenBSD schemas
 already repeat the same boilerplate — `string = str | word`, `yesno =
@@ -812,6 +812,20 @@ compiler-compiler without reintroducing the semantic-action layer that would
 re-tie a grammar to one backend.  Reclaiming the remaining yacc facilities —
 left recursion (via an Earley or GLR kernel) and operator-precedence
 declarations — is a further step in the same direction.
+
+**Models as readers.**  A grammar has two readers, a person and a machine, and a language model
+is now a third kind of reader whose cost is counted in tokens.  The premise is that what lessens
+a person's mental load lessens a model's token usage: the same ABNF grammar of JSON is
+<!-- v:tokens_json_o200k_saved -->35<!-- /v -->% fewer tokens in HyperBNF with OpenAI's o200k_base tokenizer and
+<!-- v:tokens_json_qwen_saved -->36<!-- /v -->% fewer with Qwen2.5's, and the YAML 1.2 productions
+<!-- v:tokens_yaml_o200k_saved -->46<!-- /v -->% and <!-- v:tokens_yaml_qwen_saved -->45<!-- /v -->% fewer (`bench/tokens.sh`; the saving in tokens
+is not the saving in characters, larger for some languages and smaller for others).
+The second half of the case is reliability: constrained decoding, in which the decoder lets a model
+choose only among the tokens that keep the output valid under a grammar, took a tool-call schema
+from 92% to 100% accuracy in one production serving stack (Donkervliet and Li, Ubicloud, 2026).
+A decoder consumes a grammar, and the schema of this paper is a grammar, so one file could give a
+program its parser and a decoder its grammar; the emitter is planned and not built.  The
+argument is in `HISTORY.md`.
 
 ## References
 

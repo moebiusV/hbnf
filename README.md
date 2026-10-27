@@ -20,6 +20,12 @@ The design is for anyone who is comfortable reading the RFCs. HyperBNF makes BNF
 natural and readable the way the RFCs do: a grammar reads like the notation
 RFCs have used for decades, not like a yacc file with embedded C actions.
 
+It is also a tool for making language models more effective, on one premise: what lessens a
+person's mental load lessens a model's token usage.  A grammar short enough for a person to hold in
+mind is short enough for a model to read and write cheaply, and the same file gives a program its
+parser.  `HISTORY.md` makes the case, `WHY.md` counts the tokens, and step 14 of `RFCPLAN.md` plans
+the emitter that would hand the same grammar to a model's decoder.
+
 HyperBNF ships with the basic formats ready to use: JSON, TOML, YAML and obconf, the config file
 format that OpenBSD uses by default for new projects.  Drop one in and you have a parser; the grammar is short, readable
 HyperBNF, so changing it to fit your own needs means editing a few lines, not learning a generator.

@@ -836,10 +836,11 @@ running order:
 > thing and will get its own compiler"); hbnf does not read the IMP72 compiler's
 > sources or bootstrap it.  The comparison with IMP72 in `METACOMPILERS.md` stays
 > as history, and what hbnf took from its manual (the choice rule, `A<pos,len>`)
-> stays.  **ALGOL 68 and C++ are far in the future** (the same day).
+> stays.  **ALGOL 68 and C++ are far in the future** (the same day).  **Not started:** 14, grammars for
+> constrained decoding (added 2026-10-27).
 >
 > **Critical path:** **5** → **6**
-> → **7b** → **8** → **4f** → **10** → **13**.  **11** is not gated on
+> → **7b** → **8** → **4f** → **10** → **13**.  **11** and **14** are not gated on
 > any of them and can land in any gap.
 
 Six things decide that order, and each one is a dependency rather than a
@@ -2564,6 +2565,78 @@ lookahead or a context test not at all.
    where the design errors show up.  `expr = term '+' term` is the
    evidence: it was found by asking what META II could do that hbnf
    cannot, not by any test.
+
+14. **Grammars for constrained decoding.**  *Added 2026-10-27; not started.*  Like
+   step 11, an emitter that is not gated on anything above and can land
+   between any two other steps.  A language model that has to write text a
+   program will parse (a tool call, a configuration, a protocol message) is
+   more reliable when the decoder lets it choose only among the tokens that
+   keep the output valid.  Ubicloud measured the difference on Kimi K2.6 in
+   vLLM: the expected tool-call schema 92% of the time without constrained
+   decoding, 100% of the time with it, on the K2VV ToolCall benchmark, at
+   "negligible performance overhead"
+   (<https://www.ubicloud.com/blog/fixing-tool-call-accuracy-in-vllm>, 20
+   October 2026).  What a decoder consumes is a grammar: llama.cpp reads
+   GBNF, and XGrammar, which vLLM uses, reads an EBNF that follows GBNF
+   "with many extensions, such as repetition ranges and macros".  The
+   emitter writes both from the lifted schema, so one HyperBNF file gives
+   the program its parser and the decoder its grammar, and the program
+   reads exactly what the model was allowed to write.  Today the parser
+   and the decoder's grammar are written separately and drift, the
+   argument of step 11 again.
+
+   The mapping is mostly mechanical, because both formats are the same
+   shapes under other names:
+
+   | hbnf | GBNF / XGrammar EBNF |
+   |---|---|
+   | a rule `name = ...` | `name ::= ...` |
+   | the first rule, or `--root` | `root` (the name both require) |
+   | concatenation | juxtaposition |
+   | `\|` | `\|`: see the catch below |
+   | `[ x ]` | `x?` |
+   | `*( x )` / `1*( x )` | `x*` / `x+` |
+   | `n*m( x )` | `x{n,m}` |
+   | a literal | a double-quoted literal |
+   | `%x41-5A`, a class | `[A-Z]`, and `[^...]` for a negation |
+   | a code point `%x1F600` | `\U0001F600` |
+   | `;` comment | `#` comment |
+   | an instance of a hyperrule | an ordinary rule: the family is already expanded |
+
+   **What does not map, stated plainly rather than papered over.**
+   - **A decoder's alternation is not `|`.**  hbnf's `|` is ordered choice: the first
+     branch that matches wins.  A decoder reads a context-free grammar, where every
+     branch is open.  Every string the parser accepts the decoder accepts, but the
+     decoder can allow a string the parser refuses, where a branch shadows a later
+     one.  hbnf already refuses a shadowed alternative when it reads the grammar, so
+     the common case is the same language; the emitter names each rule where the two
+     can differ.
+   - **Lookahead (`&`, `!`).**  Neither format documents a lookahead.  The emitter
+     refuses a grammar that uses one, naming the rule, unless the lookahead is
+     rewritten as the character it looks at (the rewrite YAML's plain scalars use).
+   - **Numbers worked out while parsing** (`k in 0..`, `%spaces`, `%col`) and the
+     named `context`: not context-free, so a decoder cannot express them.  Refused,
+     with the rule named.  A table of numbers that `--expand-params` can expand is
+     context-free and is emitted.
+   - **Names.**  GBNF wants dashed lowercase words; XGrammar allows letters, digits,
+     `_`, `-` and `.`.  The emitter renames, and keeps a table from the new names to
+     the old.
+   - **`whitespace ws`** is skipped by the parser between a phrase rule's elements.
+     The decoder has no such rule, so the emitter writes the skip into the grammar.
+   - **Keywords** are matched as whole words by maximal munch.  Without a lookahead
+     the decoder cannot say "not followed by a word character", so a keyword that
+     another token can begin with is a hole the emitter names.
+   - **Case-insensitive literals** (`%i`) become a class for each letter.
+   - **Typed fields, `--conf`, actions, bit fields and `hidden`** are out of scope:
+     they shape the tree, and the decoder constrains text.
+
+   **Gate:** the grammars of `corpus/json` and `corpus/toml` emit, and each emitted
+   grammar compiles in the decoders' own readers where they are installed (llama.cpp's
+   grammar parser, XGrammar's `Grammar.from_ebnf`), accepts the corpus's good files, and
+   refuses the bad files the parser refuses unless the emitter has named the rule where
+   the two differ.  Where no decoder is installed the gate compares the emitted text with
+   a golden file.  Whether the constraint raises a model's accuracy on a task is a
+   measurement of the model and the decoder, not of the emitter, and is not claimed here.
 
 **Code-size optimization, deferred like 4f.**  The generated parser for a
 small wire grammar (the IRC message) is ~1,000 lines against ~280

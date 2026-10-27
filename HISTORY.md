@@ -705,19 +705,112 @@ machine as readily as it joins one person to another. Chomsky was nasty, and
 Chomsky was wrong. Bringing people and machines together through language is
 the more useful end.
 
+The sciences of the mind are following. The scientific consensus is shifting: Chomsky's
+idea of an innate, rigid "grammar engine" in our DNA is losing ground to probabilistic neural
+prediction. But while an LLM is a flat next-token predictor, the human brain is a structural
+predictor — calculating what comes next while simultaneously keeping track of the overall meaning
+and mental map of the conversation. The recent work behind this comes from Cornell University,
+the Hebrew University of Jerusalem and New York University. At the Hebrew University, Ariel
+Goldstein and colleagues recorded the brain during a podcast and found its processing steps follow
+the layers of GPT-2 and Llama 2, with phonemes and morphemes explaining the activity less well
+than the models' contextual representations. At Cornell, Yngwie Nielsen and Morten Christiansen
+ran four priming experiments with 497 participants and found that what speakers know is not
+explained by constituents as traditionally construed: the commonest three- and four-word
+sequences, such as "can I have a", are often not constituents, yet they seem to be part of what
+speakers know. Reports of the study take care over what it shows, something missing from the
+account and not that the account is wrong, and note that generative theory has changed a great deal
+since 1957. At New York University, David Poeppel's group found the brain's word predictions
+shaped by the grammatical grouping of words into phrases, a sensitivity language models do not
+show: the brain predicts like a model, and it predicts with structure. A grammar is that structure
+written down, a description of the language as its speakers have it, which is the side Mozeson
+was on.
+
 An intelligence that must read what people wrote and act on it needs exactly
 that bridge — a text a person can read, a machine can run, an intention carried
 whole. HyperBNF was not written for AI. That is what will make it useful to AI.
 
-*Sources:* the [hbnf repository](https://github.com/moebiusV/hbnf), and [RFC 5234](https://www.rfc-editor.org/rfc/rfc5234) for the ABNF it compiles.
+*Sources:* the [hbnf repository](https://github.com/moebiusV/hbnf), and [RFC 5234](https://www.rfc-editor.org/rfc/rfc5234) for the ABNF it compiles. For the studies of the brain: Goldstein et al., "Temporal structure of natural language processing in the human brain corresponds to layered hierarchy of large language models", *Nature Communications* (2025; [reported January 2026](https://www.sciencedaily.com/releases/2026/01/260120000308.htm)) · Nielsen and Christiansen, "Evidence for the representation of non-hierarchical structures in language", *Nature Human Behaviour* (online 21 January 2026) · Zou, Ding and Poeppel, "Constituent-constrained word prediction during language comprehension", *Nature Neuroscience* (2026; [doi:10.1038/s41593-026-02272-6](https://doi.org/10.1038/s41593-026-02272-6)).
+
+## Leverage: a notation for people is a notation for models
+
+HyperBNF is built on one premise: what lessens a person's mental load lessens a language model's
+token usage. It is an application of leverage. A small text, read once, does the work of many
+lines, and the reader, whether a person or a model, pays for what it has to read and write.
+
+The lever is the grammar. A person who reads the description of JSON as a few rules holds the
+whole language in mind; a person who reads it as hundreds of lines of hand-written parser does not.
+A model is in the same position and is charged for it by the token: it reads what the grammar says
+and writes what it changes, and every symbol of either costs. *Measured*, below, counts that cost
+in symbols, characters and the tokens of two public tokenizers, for the published grammar of each
+language against the same language in HyperBNF.
+
+Reliability is the other half, and the engine around a model decides it as much as the model does.
+In October 2026 Jesse Donkervliet and Junhao Li of Ubicloud reported that Kimi K2.6 served by vLLM
+0.28 gave "the expected tool call schema only 92% of the time". They had carried their own fork of
+vLLM to reach 100% tool-call schema accuracy, then switched to the constrained decoding that vLLM
+added upstream in v0.25, and found their score "dropped back to 91%": vLLM "changed its default
+behavior for requests that do not explicitly turn constrained decoding on". Enabling it and re-running
+the K2VV ToolCall benchmark gave 100% across all the served model versions, and "this runtime
+enforcement adds negligible performance overhead". Their conclusion: "When using LLMs, the quality
+you observe isn't based on the model alone. The inference engine also plays an important role."
+
+Constrained decoding is a grammar at work. At each step the engine lets the model choose only among
+the tokens that keep the output valid, so a schema stops being something the model usually follows
+and becomes something it cannot leave. What the engine consumes is a grammar: vLLM builds it with
+structural tags from the XGrammar library. A model predicts one token at a time; the grammar
+supplies, from outside, the structure a flat predictor lacks.
+
+HyperBNF is a notation for that grammar which already compiles to parsers in four languages. One
+file can then give the program its parser and the decoder its grammar, so that the program reads
+exactly what the model was allowed to write and the two cannot drift apart, unlike a daemon's
+`parse.y` and an editor's tree-sitter grammar, which are written twice and drift. The emitter for decoders is planned (`RFCPLAN.md`, step 14)
+and not built, and nothing measured in this document shows a gain in a model's accuracy from
+HyperBNF itself.
+
+*Sources:* Donkervliet and Li, ["Fixing Tool-Call Accuracy in vLLM"](https://www.ubicloud.com/blog/fixing-tool-call-accuracy-in-vllm), Ubicloud, 20 October 2026.
 
 ## Measured: what HyperBNF saves and what it costs
 
 Every number here is produced by a script in the repository, from the files in `corpus/` and
 `grammars/`, and can be rerun. For a grammar the comparison is the published notation against the
 hbnf, comments and blank lines left out of both. A *symbol* is a whitespace-separated word of the
-grammar text, which is what a reader (or a language model) pays for; the count of LLM tokens depends
-on the tokenizer and has not been measured, but it follows the characters.
+grammar text, which is what a reader (or a language model) pays for. Tokens are counted with two
+public tokenizers, so the table follows the model's own unit of cost and not only the characters; the
+count with Claude's tokenizer was not measured, because it is not public.
+
+<!-- bench:tokens -->
+
+| language | notation | characters | o200k_base tokens | Qwen2.5 tokens |
+|---|---|---:|---:|---:|
+| ALGOL 60 | the Report's BNF | 8064 | 2290 | 2269 |
+| | HyperBNF | 3604 | 890 | 870 |
+| | **saved** | **55%** | **61%** | **62%** |
+| JSON | RFC 8259's ABNF | 949 | 379 | 407 |
+| | HyperBNF | 641 | 247 | 260 |
+| | **saved** | **32%** | **35%** | **36%** |
+| TOML 1.0 | TOML's ABNF | 4646 | 1564 | 1625 |
+| | HyperBNF | 2599 | 1130 | 1193 |
+| | **saved** | **44%** | **28%** | **27%** |
+| C | PCC's cgram.y | 6505 | 2295 | 2248 |
+| | HyperBNF | 8441 | 2046 | 2024 |
+| | **saved** | **-29%** | **11%** | **10%** |
+|  | 32V's cgram.y | 3755 | 1593 | 1566 |
+| | HyperBNF | 8441 | 2046 | 2024 |
+| | **saved** | **-124%** | **-27%** | **-28%** |
+|  | GCC 4.0.4's c-parse.in | 18966 | 6050 | 5918 |
+| | HyperBNF | 8441 | 2046 | 2024 |
+| | **saved** | **55%** | **66%** | **66%** |
+| | HyperBNF with its token rules | 10501 | 2830 | 2845 |
+| YAML 1.2 | the spec's productions | 13273 | 4927 | 4912 |
+| | HyperBNF | 6057 | 2642 | 2690 |
+| | **saved** | **54%** | **46%** | **45%** |
+
+_The text is the grammar as `notation.sh` counts it.  o200k_base is OpenAI's tokenizer (tiktoken 0.14.0) and Qwen2.5's is an open-weights model's (tokenizers 0.23.3); Claude's tokenizer is not public, so its count was not measured._
+
+<!-- /bench:tokens -->
+
+The two are not the same measure, and the table shows it: a saving in characters is not a saving of
+the same size in tokens, larger for some languages and smaller for others.
 
 **BNF and ABNF rewritten in HyperBNF: fewer rules, fewer lines, fewer symbols.** Where a grammar is
 rewritten rather than pasted, the rewrite says each thing once: a comma list is `x *( "," x )`, a
@@ -980,7 +1073,8 @@ backtracking for what finite lookahead cannot decide.
 **Isaac Mozeson (1989).** Isaac Elchanan Mozeson (b. 1951), an Orthodox Jewish linguist. *The
 Word* (1989), his Edenics dictionary, traces words across languages to a single
 source; he saw language as the thing that brings people together. Chomsky
-dismissed him. The descriptive method came around to his side anyway.
+dismissed him. The descriptive method came around to his side anyway, and the
+studies of the brain are coming around to it too.
 
 **Jeff Fox (1996).** Jeffrey Arthur Fox (1949–2011), of UltraTechnology. A
 Forth programmer and a close personal friend of Chuck Moore, the language's
