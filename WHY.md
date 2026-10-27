@@ -117,16 +117,17 @@ here because it has no published grammar to compare with.
 | TOML 1.0 | TOML's ABNF (toml.abnf) | 124 | 126 | 666 | 4646 |
 | | HyperBNF (`corpus/toml`) | 46 | 49 | 599 | 2599 |
 | | **saved** | **63%** | **61%** | **10%** | **44%** |
-| C | PCC's cgram.y (NetBSD trunk) | 84 | 368 | 1029 | 6505 |
-| | HyperBNF (`corpus/c/c11.hbnf`) | 86 | 116 | 1060 | 8441 |
-| | **saved** | **-1%** | **68%** | **-2%** | **-29%** |
-|  | 32V's cgram.y (mip) | 55 | 386 | 813 | 3755 |
-| | HyperBNF (`corpus/c/c11.hbnf`) | 86 | 116 | 1060 | 8441 |
-| | **saved** | **-55%** | **70%** | **-29%** | **-124%** |
-|  | GCC 4.0.4's c-parse.in (C part) | 172 | 892 | 1930 | 18966 |
-| | HyperBNF (`corpus/c/c11.hbnf`) | 86 | 116 | 1060 | 8441 |
-| | **saved** | **50%** | **87%** | **45%** | **55%** |
-| | HyperBNF with its token rules (`corpus/c/c-words.hbnf` too) | 130 | 165 | 1445 | 10501 |
+| C | 32V's cgram.y (mip), 1979 | 55 | 386 | 813 | 3755 |
+| | HyperBNF (`corpus/c/c79.hbnf`) | 62 | 74 | 674 | 5155 |
+| | **saved** | **-12%** | **81%** | **17%** | **-36%** |
+| | HyperBNF with its token rules (`corpus/c/c79-words.hbnf` too) | 91 | 106 | 988 | 6649 |
+|  | PCC's cgram.y (NetBSD trunk), C99 | 84 | 368 | 1029 | 6505 |
+| | HyperBNF (`corpus/c/c99.hbnf`) | 74 | 90 | 759 | 6171 |
+| | **saved** | **12%** | **76%** | **26%** | **5%** |
+|  | GCC 4.0.4's c-parse.in (C part), C99 | 172 | 892 | 1930 | 18966 |
+| | HyperBNF (`corpus/c/c99.hbnf`) | 74 | 90 | 759 | 6171 |
+| | **saved** | **57%** | **90%** | **61%** | **67%** |
+| | HyperBNF with its token rules (`corpus/c/c99-words.hbnf` too) | 110 | 130 | 1102 | 7923 |
 | YAML 1.2 | the YAML 1.2.2 spec's productions | 201 | 861 | 1350 | 13273 |
 | | HyperBNF (`corpus/yaml`) | 94 | 104 | 1387 | 6057 |
 | | **saved** | **53%** | **88%** | **-2%** | **54%** |
@@ -151,16 +152,17 @@ is a grammar a model is charged less for.  The same text counted with two public
 | TOML 1.0 | TOML's ABNF | 4646 | 1564 | 1625 |
 | | HyperBNF | 2599 | 1130 | 1193 |
 | | **saved** | **44%** | **28%** | **27%** |
-| C | PCC's cgram.y | 6505 | 2295 | 2248 |
-| | HyperBNF | 8441 | 2046 | 2024 |
-| | **saved** | **-29%** | **11%** | **10%** |
-|  | 32V's cgram.y | 3755 | 1593 | 1566 |
-| | HyperBNF | 8441 | 2046 | 2024 |
-| | **saved** | **-124%** | **-27%** | **-28%** |
-|  | GCC 4.0.4's c-parse.in | 18966 | 6050 | 5918 |
-| | HyperBNF | 8441 | 2046 | 2024 |
-| | **saved** | **55%** | **66%** | **66%** |
-| | HyperBNF with its token rules | 10501 | 2830 | 2845 |
+| C | 32V's cgram.y, 1979 | 3755 | 1593 | 1566 |
+| | HyperBNF | 5155 | 1187 | 1157 |
+| | **saved** | **-36%** | **25%** | **26%** |
+| | HyperBNF with its token rules | 6649 | 1754 | 1735 |
+|  | PCC's cgram.y, C99 | 6505 | 2295 | 2248 |
+| | HyperBNF | 6171 | 1444 | 1411 |
+| | **saved** | **5%** | **37%** | **37%** |
+|  | GCC 4.0.4's c-parse.in, C99 | 18966 | 6050 | 5918 |
+| | HyperBNF | 6171 | 1444 | 1411 |
+| | **saved** | **67%** | **76%** | **76%** |
+| | HyperBNF with its token rules | 7923 | 2129 | 2113 |
 | YAML 1.2 | the spec's productions | 13273 | 4927 | 4912 |
 | | HyperBNF | 6057 | 2642 | 2690 |
 | | **saved** | **54%** | **46%** | **45%** |

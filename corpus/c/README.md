@@ -1,3 +1,18 @@
+# C in HyperBNF
+
+One grammar for each dialect of C that has a yacc grammar to be measured against, each a layer on the
+last and each checked with the compiler of its own time:
+
+| grammar | dialect | checked against |
+|---|---|---|
+| `c79.hbnf`, `c79-words.hbnf` | the C of UNIX/32V (1979), as `usr/src/cmd/mip/cgram.y` and `scan.c` read it: no prototypes, `void` or `const`; `=+`; an initializer without its `=` | `tests/c79.sh` (22 small files) and `scripts/c79-scan.sh`: the 32V source tree itself, **901 files preprocessed with the 32V headers, all accepted** (26 more need headers its build generates) |
+| `c89.hbnf`, `c89-words.hbnf` | ISO C90, strictly | `tests/c89.sh` (25 files) against `gcc -std=c89 -pedantic-errors` |
+| `c99.hbnf`, `c99-words.hbnf` | ISO C99, strictly (no GNU forms) | `tests/c99.sh` (23 files) against `gcc -std=c99 -pedantic-errors`, and `GRAMMAR=c99 STD=c99 scripts/c-scan.sh`: **1,549 of the 1,580 units gcc accepts**; the 31 refused are GNU spellings and one string of bytes that are not UTF-8 |
+| `c11.hbnf`, `c-words.hbnf` | C11 and the GNU forms system headers use | below |
+
+The notation comparison (`bench/notation.sh`) sets 32V's `cgram.y` against `c79`, and PCC's and GCC 4.0.4's
+against `c99`.  C11, C17 and C23 are not in it: no yacc grammar of theirs exists to measure.
+
 # C11 in HyperBNF
 
 `c11.hbnf` is the grammar of ISO/IEC 9899:2011 Annex A with the standard's rule names, plus the GNU

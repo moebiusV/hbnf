@@ -791,16 +791,17 @@ count with Claude's tokenizer was not measured, because it is not public.
 | TOML 1.0 | TOML's ABNF | 4646 | 1564 | 1625 |
 | | HyperBNF | 2599 | 1130 | 1193 |
 | | **saved** | **44%** | **28%** | **27%** |
-| C | PCC's cgram.y | 6505 | 2295 | 2248 |
-| | HyperBNF | 8441 | 2046 | 2024 |
-| | **saved** | **-29%** | **11%** | **10%** |
-|  | 32V's cgram.y | 3755 | 1593 | 1566 |
-| | HyperBNF | 8441 | 2046 | 2024 |
-| | **saved** | **-124%** | **-27%** | **-28%** |
-|  | GCC 4.0.4's c-parse.in | 18966 | 6050 | 5918 |
-| | HyperBNF | 8441 | 2046 | 2024 |
-| | **saved** | **55%** | **66%** | **66%** |
-| | HyperBNF with its token rules | 10501 | 2830 | 2845 |
+| C | 32V's cgram.y, 1979 | 3755 | 1593 | 1566 |
+| | HyperBNF | 5155 | 1187 | 1157 |
+| | **saved** | **-36%** | **25%** | **26%** |
+| | HyperBNF with its token rules | 6649 | 1754 | 1735 |
+|  | PCC's cgram.y, C99 | 6505 | 2295 | 2248 |
+| | HyperBNF | 6171 | 1444 | 1411 |
+| | **saved** | **5%** | **37%** | **37%** |
+|  | GCC 4.0.4's c-parse.in, C99 | 18966 | 6050 | 5918 |
+| | HyperBNF | 6171 | 1444 | 1411 |
+| | **saved** | **67%** | **76%** | **76%** |
+| | HyperBNF with its token rules | 7923 | 2129 | 2113 |
 | YAML 1.2 | the spec's productions | 13273 | 4927 | 4912 |
 | | HyperBNF | 6057 | 2642 | 2690 |
 | | **saved** | **54%** | **46%** | **45%** |
