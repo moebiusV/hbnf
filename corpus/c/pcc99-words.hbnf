@@ -1,7 +1,7 @@
 ; The tokens of the C that PCC's compiler reads (cc/ccom/scan.c and cgram.y of the NetBSD trunk) as
 ; rules of characters: C99's (ISO/IEC 9899:1999 6.4), the keywords of the C11 forms its grammar has,
 ; and the double-underscore spellings of keywords its GNU subset uses.  Nothing here skips white
-; space; pcc.hbnf, which includes this file, does that between tokens.  Keywords are the literals
+; space; pcc99.hbnf, which includes this file, does that between tokens.  Keywords are the literals
 ; of the grammar, matched whole by `word` (letters, digits and _), which is why this file defines
 ; `word`: the built-in one also takes - and ., and `return-1` is `return` and `-1`.
 prefix none

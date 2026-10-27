@@ -67,14 +67,14 @@ row "JSON" "$(count abnf corpus/json/rfc8259.abnf)" "$(count hbnf corpus/json/js
 LABEL_PUB="TOML's ABNF (toml.abnf)"; DIR=corpus/toml
 row "TOML 1.0" "$(count abnf corpus/toml/toml.abnf)" "$(count hbnf corpus/toml/toml.hbnf corpus/toml/toml-tokens.hbnf)"
 # C: each yacc grammar against the HyperBNF grammar of the C it reads: UNIX/32V's (1979) against c79,
-# PCC's against pcc (C99, the C11 forms its grammar has, and its subset of the GNU extensions), and
+# PCC's against pcc99 (C99, the C11 forms its grammar has, and its subset of the GNU extensions), and
 # GCC 4.0.4's against gnu99 (C99 and the GNU extensions its grammar reads).  The grammar alone is counted
 # against the yacc grammar's rules, then the same with the token rules (the lexer's job, which the yacc
 # counts leave out) added to HyperBNF's side.
 G79="$(python3 -I "$here/count.py" hbnf-code corpus/c/c79.hbnf)"
 L79="$(python3 -I "$here/count.py" hbnf-code corpus/c/c79.hbnf corpus/c/c79-words.hbnf)"
-GPC="$(python3 -I "$here/count.py" hbnf-code corpus/c/pcc.hbnf)"
-LPC="$(python3 -I "$here/count.py" hbnf-code corpus/c/pcc.hbnf corpus/c/pcc-words.hbnf)"
+GPC="$(python3 -I "$here/count.py" hbnf-code corpus/c/pcc99.hbnf)"
+LPC="$(python3 -I "$here/count.py" hbnf-code corpus/c/pcc99.hbnf corpus/c/pcc99-words.hbnf)"
 GGN="$(python3 -I "$here/count.py" hbnf-code corpus/c/gnu99.hbnf)"
 LGN="$(python3 -I "$here/count.py" hbnf-code corpus/c/gnu99.hbnf corpus/c/gnu99-words.hbnf)"
 DIR=corpus/c/c79.hbnf
@@ -82,11 +82,11 @@ LABEL_PUB="32V's cgram.y (mip), 1979"
 row "C" "$(python3 -I "$here/count.py" yacc corpus/c/originals/v32-cgram.y)" "$G79"
 set -- $L79
 printf '| | HyperBNF with its token rules (`corpus/c/c79-words.hbnf` too) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
-DIR=corpus/c/pcc.hbnf
+DIR=corpus/c/pcc99.hbnf
 LABEL_PUB="PCC's cgram.y (NetBSD trunk)"
 row "" "$(python3 -I "$here/count.py" yacc corpus/c/originals/pcc-cgram.y)" "$GPC"
 set -- $LPC
-printf '| | HyperBNF with its token rules (`corpus/c/pcc-words.hbnf` too) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
+printf '| | HyperBNF with its token rules (`corpus/c/pcc99-words.hbnf` too) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
 DIR=corpus/c/gnu99.hbnf
 LABEL_PUB="GCC 4.0.4's c-parse.in (C part)"
 row "" "$(python3 -I "$here/count.py" yacc corpus/c/originals/gcc-4.0.4-c-parse.in)" "$GGN"

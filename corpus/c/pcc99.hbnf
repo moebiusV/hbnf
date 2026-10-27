@@ -10,7 +10,7 @@
 ; A typedef name is an identifier the `types` context holds, which a typedef declarator adds and a
 ; block scope takes away.  The type specifiers are not checked for which go together.
 prefix none
-include "pcc-words.hbnf"
+include "pcc99-words.hbnf"
 context types
 context vars
 %start translation-unit

@@ -7,7 +7,7 @@
 > rule that is only text can be kept out of the tree (`hidden`); JSON, TOML and YAML are measured
 > against the libraries people use for them, on glibc.  C is a family of grammars, each checked against
 > its own era's yacc grammar and compiler: `c79` (UNIX/32V's C, run over the 32V source tree itself),
-> `c89`, `c99`, `pcc` (what PCC's `cgram.y` reads), `gnu99` (what GCC 4.0.4's reads) and `c11`.
+> `c89`, `c99`, `pcc99` (what PCC's `cgram.y` reads), `gnu99` (what GCC 4.0.4's reads) and `c11`.
 > Next: C17 and C23 for the C family, the C preprocessor, error recovery, and the benchmark of the four
 > backends against each other (the numbers here are the C backend's).
 
@@ -150,7 +150,7 @@ For C the published grammars are yacc's, counted by their rules alone (the C act
 declarations and the lexer are left out, which favours yacc, and so are the `%left` precedence
 declarations, which spare a yacc grammar the ladder of expression rules HyperBNF writes out), and each
 is set against the HyperBNF grammar of the C it reads: UNIX/32V's (1979) against `c79.hbnf`; PCC's
-against `pcc.hbnf`, which is C99, the C11 forms PCC's grammar has, and its subset of the GNU
+against `pcc99.hbnf`, which is C99, the C11 forms PCC's grammar has, and its subset of the GNU
 extensions; and GCC 4.0.4's against `gnu99.hbnf`, C99 and the GNU extensions its grammar reads.  Each C
 grammar is counted alone, and then with the token rules that do the lexer's work.  For YAML the
 published side is the specification's own productions.  HyperBNF puts alternatives on one line, so it
@@ -175,9 +175,9 @@ rules, symbols and characters; against GCC's, which carries more, fewer of each.
 | | **saved** | **-12%** | **81%** | **17%** | **-36%** |
 | | HyperBNF with its token rules (`corpus/c/c79-words.hbnf` too) | 91 | 106 | 988 | 6649 |
 |  | PCC's cgram.y (NetBSD trunk) | 84 | 368 | 1029 | 6505 |
-| | HyperBNF (`corpus/c/pcc.hbnf`) | 94 | 121 | 1087 | 8628 |
+| | HyperBNF (`corpus/c/pcc99.hbnf`) | 94 | 121 | 1087 | 8628 |
 | | **saved** | **-11%** | **67%** | **-5%** | **-32%** |
-| | HyperBNF with its token rules (`corpus/c/pcc-words.hbnf` too) | 133 | 169 | 1542 | 11033 |
+| | HyperBNF with its token rules (`corpus/c/pcc99-words.hbnf` too) | 133 | 169 | 1542 | 11033 |
 |  | GCC 4.0.4's c-parse.in (C part) | 172 | 892 | 1930 | 18966 |
 | | HyperBNF (`corpus/c/gnu99.hbnf`) | 93 | 133 | 1124 | 8992 |
 | | **saved** | **46%** | **85%** | **42%** | **53%** |

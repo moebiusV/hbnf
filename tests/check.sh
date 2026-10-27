@@ -36,7 +36,7 @@ mkdir -p "$R/logs"
 # tests where there is one.
 SUITES="wire abnf syntax schema rfc enumval leftrec daemons writer ast spans tutorial errors forks
 lookahead paths stmt recursive context params commalist compare algol60 numbers backref compact
-posix hidden views textwarn c c79 c89 c99 gnu99 pcc pcc99 toml yaml params-modes
+posix hidden views textwarn c c79 c89 c99 gnu99 pcc99 toml yaml params-modes
 e2e json-diff toml-diff yaml-suite yaml-diff"
 ARGS_json_diff=3000; ARGS_toml_diff=3000; ARGS_yaml_diff=1000
 BACKENDS_ALL="c ada rust zig"
@@ -153,7 +153,12 @@ if command -v flock > /dev/null 2>&1; then
 	flock -n 9 || { echo "check.sh: another check is running; results and timings need one at a time" >&2; exit 3; }
 fi
 
-rev=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)
+rev=$(git -c safe.directory='*' rev-parse --short HEAD 2> /dev/null || true)
+if [ -z "$rev" ] && [ -f .git/HEAD ]; then   # no git here (a container): read the files
+	ref=$(sed -n 's/^ref: //p' .git/HEAD)
+	rev=$(cut -c1-7 < ".git/${ref:-HEAD}" 2> /dev/null || true)
+fi
+rev=${rev:-unknown}
 gen=$(basename "$HBNF")
 when() { date +%Y-%m-%dT%H:%M:%S; }
 emit() { # SUITE ITEM STATUS SECONDS
@@ -175,7 +180,7 @@ for s in $WANT_S; do
 		same=$((same + 1)); continue
 	fi
 	t0=$(date +%s)
-	timeout 3000 sh "tests/$s.sh" $args > "$log" 2>&1
+	timeout 3000 sh "tests/$s.sh" $args > "$log" 2>&1 9>&-
 	rc=$?
 	secs=$(( $(date +%s) - t0 ))
 	# a backend's own lines, "suite: Rust OK (...)" or "suite: Rust FAIL (...)"

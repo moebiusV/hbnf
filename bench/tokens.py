@@ -81,8 +81,8 @@ def text_of(reader, kind, paths):
 
 C79_G = ["corpus/c/c79.hbnf"]
 C79_L = ["corpus/c/c79.hbnf", "corpus/c/c79-words.hbnf"]
-PCC_G = ["corpus/c/pcc.hbnf"]
-PCC_L = ["corpus/c/pcc.hbnf", "corpus/c/pcc-words.hbnf"]
+PCC_G = ["corpus/c/pcc99.hbnf"]
+PCC_L = ["corpus/c/pcc99.hbnf", "corpus/c/pcc99-words.hbnf"]
 GNU_G = ["corpus/c/gnu99.hbnf"]
 GNU_L = ["corpus/c/gnu99.hbnf", "corpus/c/gnu99-words.hbnf"]
 # language, notation label, reader, kind, files
