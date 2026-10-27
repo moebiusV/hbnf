@@ -575,28 +575,32 @@ package body HBNF_Rust is
                   Is_List : constant Boolean :=
                     E.Min /= 1 or else E.Max /= 1;
                begin
-                  if Seen_Here (E.Name) then
-                     raise Parse_Error with
-                       "rule """ & To_String (E.Name)
-                       & """ is referenced twice in one alternative;"
-                       & " split it into alias rules (e.g. `a = "
-                       & To_String (E.Name) & "; b = " & To_String (E.Name)
-                       & ";`) so each gets its own field";
-                  end if;
-                  Seen.Append (E.Name);
-                  if Contains (Members, E.Name) then
-                     if Is_List then
-                        for K in 1 .. Natural (Members.Length) loop
-                           if Members (K).Name = E.Name then
-                              Members.Replace_Element
-                                (K,
-                                 Member'(Name => E.Name, Is_List => True));
-                           end if;
-                        end loop;
-                     end if;
+                  if Is_Hidden (To_String (E.Name)) then
+                     null;   --  matched, and kept nowhere
                   else
-                     Members.Append
-                       (Member'(Name => E.Name, Is_List => Is_List));
+                     if Seen_Here (E.Name) then
+                        raise Parse_Error with
+                          "rule """ & To_String (E.Name)
+                          & """ is referenced twice in one alternative;"
+                          & " split it into alias rules (e.g. `a = "
+                          & To_String (E.Name) & "; b = " & To_String (E.Name)
+                          & ";`) so each gets its own field";
+                     end if;
+                     Seen.Append (E.Name);
+                     if Contains (Members, E.Name) then
+                        if Is_List then
+                           for K in 1 .. Natural (Members.Length) loop
+                              if Members (K).Name = E.Name then
+                                 Members.Replace_Element
+                                   (K,
+                                    Member'(Name => E.Name, Is_List => True));
+                              end if;
+                           end loop;
+                        end if;
+                     else
+                        Members.Append
+                          (Member'(Name => E.Name, Is_List => Is_List));
+                     end if;
                   end if;
                end;
             when Literal =>
@@ -2801,7 +2805,7 @@ package body HBNF_Rust is
       --  no field, so each is a String, as the list's type says.
       function Lit_Only (V : Element_Vectors.Vector) return Boolean is
         (for all X of V =>
-           X.Kind /= HBNF_Grammar.Name
+           (X.Kind /= HBNF_Grammar.Name or else Is_Hidden (To_String (X.Name)))
            and then (X.Kind /= HBNF_Grammar.Group or else Lit_Only (X.Items)));
 
       function Ret_Type (Idx : Natural) return String is
@@ -2910,6 +2914,26 @@ package body HBNF_Rust is
                              & " { return Err(p.fail(""" & Core_Desc (NM)
                              & """)); } " & Dst & Rust_Field (NM) & " = "
                              & Scalar_Value (NM) & "; p.pos += n; }");
+                           Append (Buf, LF);
+                        end;
+                     elsif Is_Hidden (To_String (E.Name)) then
+                        --  Matched, and kept nowhere: the tree has no field for it.
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           if Is_Char_Rule (Rules, NM) then
+                              Append (Buf, Ind & "{ let n = scan_" & Rust_Snake (NM)
+                                & "(p.text.as_bytes(), p.pos, p.text.len());"
+                                & (if Can_Be_Empty (NM) then " "
+                                   else " if n == 0 { return Err(p.fail(""" & NM
+                                        & """)); } ")
+                                & "p.pos += n; }");
+                           else
+                              Append (Buf, Ind & "let _ = "
+                                & Rule_Call (To_String (Rules (Owner).Name), E,
+                                             "parse_" & Rust_Snake (NM) & "(p)")
+                                & "?;");
+                           end if;
                            Append (Buf, LF);
                         end;
                      elsif Is_Char_Rule (Rules, To_String (E.Name)) then

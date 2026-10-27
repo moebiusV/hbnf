@@ -515,28 +515,32 @@ package body HBNF_Ada is
                   Is_List : constant Boolean :=
                     E.Min /= 1 or else E.Max /= 1;
                begin
-                  if Seen_Here (E.Name) then
-                     raise Parse_Error with
-                       "rule """ & To_String (E.Name)
-                       & """ is referenced twice in one alternative;"
-                       & " split it into alias rules (e.g. `a = "
-                       & To_String (E.Name) & "; b = " & To_String (E.Name)
-                       & ";`) so each gets its own field";
-                  end if;
-                  Seen.Append (E.Name);
-                  if Contains (Members, E.Name) then
-                     if Is_List then
-                        for K in 1 .. Natural (Members.Length) loop
-                           if Members (K).Name = E.Name then
-                              Members.Replace_Element
-                                (K,
-                                 Member'(Name => E.Name, Is_List => True));
-                           end if;
-                        end loop;
-                     end if;
+                  if Is_Hidden (To_String (E.Name)) then
+                     null;   --  matched, and kept nowhere
                   else
-                     Members.Append
-                       (Member'(Name => E.Name, Is_List => Is_List));
+                     if Seen_Here (E.Name) then
+                        raise Parse_Error with
+                          "rule """ & To_String (E.Name)
+                          & """ is referenced twice in one alternative;"
+                          & " split it into alias rules (e.g. `a = "
+                          & To_String (E.Name) & "; b = " & To_String (E.Name)
+                          & ";`) so each gets its own field";
+                     end if;
+                     Seen.Append (E.Name);
+                     if Contains (Members, E.Name) then
+                        if Is_List then
+                           for K in 1 .. Natural (Members.Length) loop
+                              if Members (K).Name = E.Name then
+                                 Members.Replace_Element
+                                   (K,
+                                    Member'(Name => E.Name, Is_List => True));
+                              end if;
+                           end loop;
+                        end if;
+                     else
+                        Members.Append
+                          (Member'(Name => E.Name, Is_List => Is_List));
+                     end if;
                   end if;
                end;
             when Literal =>
@@ -1901,6 +1905,29 @@ package body HBNF_Ada is
                            Append (Buf, Ind & "end;");
                            Append (Buf, LF);
                         end;
+                     elsif Is_Hidden (To_String (E.Name)) then
+                        --  Matched, and kept nowhere: the tree has no field for it.
+                        declare
+                           NM : constant String := To_String (E.Name);
+                        begin
+                           if Skips then
+                              Append (Buf, Ind & "Skip_Ws (P);");
+                              Append (Buf, LF);
+                           end if;
+                           if Is_Char_Rule (Rules, NM) then
+                              Append (Buf, Ind & "declare N : constant Natural := Scan_"
+                                & Ada_Ident (NM) & " (P.Text.all, P.Pos, Limit (P)); begin"
+                                & (if Can_Be_Empty (NM) then ""
+                                   else " if N = 0 then Fail (P, """ & NM & """); "
+                                        & To_String (FA) & " end if;")
+                                & " P.Pos := P.Pos + N; end;");
+                           else
+                              Append (Buf, Ind & "declare V : " & Ada_Ident (NM) & "_Type := "
+                                & Rule_Call (To_String (Rules (Owner).Name), E) & "; begin "
+                                & Chk & " end;");
+                           end if;
+                           Append (Buf, LF);
+                        end;
                      elsif Is_Char_Rule (Rules, To_String (E.Name)) then
                         --  A char-rule reference runs its scanner here and
                         --  yields the matched text, as a core `str` would.
@@ -2346,7 +2373,7 @@ package body HBNF_Ada is
                --  its entries are strings, as the type declaration says.
                function Has_Name (V : Element_Vectors.Vector) return Boolean is
                  (for some X of V =>
-                    X.Kind = HBNF_Grammar.Name
+                    (X.Kind = HBNF_Grammar.Name and then not Is_Hidden (To_String (X.Name)))
                     or else (X.Kind = HBNF_Grammar.Group
                              and then Has_Name (X.Items)));
                Elem : constant String :=

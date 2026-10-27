@@ -9275,6 +9275,14 @@ package body HBNF_Grammar is
                      --  `[ x ]`, `*x`, `1*( a b )`: a rule that is the
                      --  optional or the list, as a rule of its own is.
                      P.Append (E);
+                     --  What repeats or is optional is as hidden as what it repeats.
+                     if (E.Kind = Name and then Is_Hidden (To_String (E.Name)))
+                       or else (E.Kind = Group and then Natural (E.Items.Length) = 1
+                                and then E.Items (1).Kind = Name
+                                and then Is_Hidden (To_String (E.Items (1).Name)))
+                     then
+                        Hidden_Rules.Include (To_String (H));
+                     end if;
                   end if;
                   Result.Append
                     (Rule'(Name             => H,

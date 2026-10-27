@@ -996,28 +996,32 @@ package body HBNF_C is
                   Is_List : constant Boolean :=
                     E.Min /= 1 or else E.Max /= 1;
                begin
-                  if Seen_Here (E.Name) then
-                     raise Parse_Error with
-                       "rule """ & To_String (E.Name)
-                       & """ is referenced twice in one alternative;"
-                       & " split it into alias rules (e.g. `a = "
-                       & To_String (E.Name) & "; b = " & To_String (E.Name)
-                       & ";`) so each gets its own field";
-                  end if;
-                  Seen.Append (E.Name);
-                  if Contains (Members, E.Name) then
-                     if Is_List then
-                        for K in 1 .. Natural (Members.Length) loop
-                           if Members (K).Name = E.Name then
-                              Members.Replace_Element
-                                (K,
-                                 Member'(Name => E.Name, Is_List => True));
-                           end if;
-                        end loop;
-                     end if;
+                  if Is_Hidden (To_String (E.Name)) then
+                     null;   --  matched, and kept nowhere
                   else
-                     Members.Append
-                       (Member'(Name => E.Name, Is_List => Is_List));
+                     if Seen_Here (E.Name) then
+                        raise Parse_Error with
+                          "rule """ & To_String (E.Name)
+                          & """ is referenced twice in one alternative;"
+                          & " split it into alias rules (e.g. `a = "
+                          & To_String (E.Name) & "; b = " & To_String (E.Name)
+                          & ";`) so each gets its own field";
+                     end if;
+                     Seen.Append (E.Name);
+                     if Contains (Members, E.Name) then
+                        if Is_List then
+                           for K in 1 .. Natural (Members.Length) loop
+                              if Members (K).Name = E.Name then
+                                 Members.Replace_Element
+                                   (K,
+                                    Member'(Name => E.Name, Is_List => True));
+                              end if;
+                           end loop;
+                        end if;
+                     else
+                        Members.Append
+                          (Member'(Name => E.Name, Is_List => Is_List));
+                     end if;
                   end if;
                end;
             when Literal =>
@@ -1722,28 +1726,32 @@ package body HBNF_C is
                      Is_List : constant Boolean :=
                        E.Min /= 1 or else E.Max /= 1;
                   begin
-                     if Seen_Here (E.Name) then
-                        raise Parse_Error with
-                          "rule """ & To_String (E.Name)
-                          & """ is referenced twice in one alternative;"
-                          & " split it into alias rules (e.g. `a = "
-                          & To_String (E.Name) & "; b = " & To_String (E.Name)
-                          & ";`) so each gets its own field";
-                     end if;
-                     Seen.Append (E.Name);
-                     if Contains (Members, E.Name) then
-                        if Is_List then
-                           for K in 1 .. Natural (Members.Length) loop
-                              if Members (K).Name = E.Name then
-                                 Members.Replace_Element
-                                   (K,
-                                    Member'(Name => E.Name, Is_List => True));
-                              end if;
-                           end loop;
-                        end if;
+                     if Is_Hidden (To_String (E.Name)) then
+                        null;   --  matched, and kept nowhere
                      else
-                        Members.Append
-                          (Member'(Name => E.Name, Is_List => Is_List));
+                        if Seen_Here (E.Name) then
+                           raise Parse_Error with
+                             "rule """ & To_String (E.Name)
+                             & """ is referenced twice in one alternative;"
+                             & " split it into alias rules (e.g. `a = "
+                             & To_String (E.Name) & "; b = " & To_String (E.Name)
+                             & ";`) so each gets its own field";
+                        end if;
+                        Seen.Append (E.Name);
+                        if Contains (Members, E.Name) then
+                           if Is_List then
+                              for K in 1 .. Natural (Members.Length) loop
+                                 if Members (K).Name = E.Name then
+                                    Members.Replace_Element
+                                      (K,
+                                       Member'(Name => E.Name, Is_List => True));
+                                 end if;
+                              end loop;
+                           end if;
+                        else
+                           Members.Append
+                             (Member'(Name => E.Name, Is_List => Is_List));
+                        end if;
                      end if;
                   end;
                when Literal =>
@@ -5433,7 +5441,19 @@ package body HBNF_C is
                            end Collect;
                         begin
                            Ws_Skip;
-                           if Forked then
+                           if Is_Hidden (NM) then
+                              --  Matched into a scratch value: the tree has no field for it.
+                              declare
+                                 T : constant String := Out_Type (Find (NM));
+                              begin
+                              Append (Buf, Ind & "{ " & T (T'First .. T'Last - 5) & " h_; memset(&h_, 0, sizeof h_); "
+                                & "if (!" & Rule_Call
+                                    (To_String (Rules (Owner).Name), E,
+                                     "parse_rule_" & C_Name (NM) & "(p, &h_)")
+                                & ") { " & Fail & " } }");
+                              Append (Buf, LF);
+                              end;
+                           elsif Forked then
                               Fork_Seq := Fork_Seq + 1;
                               Collect (Els, K, Last);
                               Append (Buf, Ind & "{ size_t fk" & Fid
@@ -6040,7 +6060,7 @@ package body HBNF_C is
                         declare
                            NM : constant String := To_String (Els2 (K).Name);
                         begin
-                           if not Is_Number (NM) then
+                           if not Is_Number (NM) and then not Is_Hidden (NM) then
                               Add (C_Field (NM));
                            end if;
                         end;

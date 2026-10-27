@@ -1,0 +1,3 @@
+whitespace none
+hidden dash = 1*"-"
+letters = 1*%x61-7A
