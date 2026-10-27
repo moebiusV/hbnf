@@ -149,11 +149,13 @@ here because it has no published grammar to compare with.
 For C the published grammars are yacc's, counted by their rules alone (the C actions, the
 declarations and the lexer are left out, which favours yacc), and each is set against the HyperBNF
 grammar of the dialect it reads: UNIX/32V's (1979) against `c79.hbnf`, and PCC's and GCC 4.0.4's, both
-C99, against `c99.hbnf`.  Each C grammar is counted alone, and then with the token rules that do the
-lexer's work.  For YAML the published side is the specification's own productions.  HyperBNF puts
-alternatives on one line, so it takes far fewer lines than any of them.  Its rules are a few more than
-32V's and fewer than PCC's and GCC's; its characters are fewer than theirs, except 32V's, whose
-one-word token names are shorter than a quoted keyword.
+C99 with the GNU extensions, against `gnu99.hbnf`, which reads the extensions GCC's grammar does
+(attributes, `asm`, `typeof`, statement expressions, local labels, case ranges and the rest).  Each C
+grammar is counted alone, and then with the token rules that do the lexer's work.  For YAML the
+published side is the specification's own productions.  HyperBNF puts alternatives on one line, so it
+takes far fewer lines than any of them.  Its rules are a few more than 32V's and PCC's and fewer than
+GCC's; its characters are more than 32V's and PCC's, whose one-word token names are shorter than a
+quoted keyword, and fewer than GCC's.
 
 <!-- bench:notation -->
 
@@ -172,13 +174,13 @@ one-word token names are shorter than a quoted keyword.
 | | HyperBNF (`corpus/c/c79.hbnf`) | 62 | 74 | 674 | 5155 |
 | | **saved** | **-12%** | **81%** | **17%** | **-36%** |
 | | HyperBNF with its token rules (`corpus/c/c79-words.hbnf` too) | 91 | 106 | 988 | 6649 |
-|  | PCC's cgram.y (NetBSD trunk), C99 | 84 | 368 | 1029 | 6505 |
-| | HyperBNF (`corpus/c/c99.hbnf`) | 74 | 90 | 759 | 6171 |
-| | **saved** | **12%** | **76%** | **26%** | **5%** |
-|  | GCC 4.0.4's c-parse.in (C part), C99 | 172 | 892 | 1930 | 18966 |
-| | HyperBNF (`corpus/c/c99.hbnf`) | 74 | 90 | 759 | 6171 |
-| | **saved** | **57%** | **90%** | **61%** | **67%** |
-| | HyperBNF with its token rules (`corpus/c/c99-words.hbnf` too) | 110 | 130 | 1102 | 7923 |
+|  | PCC's cgram.y (NetBSD trunk), GNU C99 | 84 | 368 | 1029 | 6505 |
+| | HyperBNF (`corpus/c/gnu99.hbnf`) | 93 | 133 | 1124 | 8992 |
+| | **saved** | **-10%** | **64%** | **-8%** | **-37%** |
+|  | GCC 4.0.4's c-parse.in (C part), GNU C99 | 172 | 892 | 1930 | 18966 |
+| | HyperBNF (`corpus/c/gnu99.hbnf`) | 93 | 133 | 1124 | 8992 |
+| | **saved** | **46%** | **85%** | **42%** | **53%** |
+| | HyperBNF with its token rules (`corpus/c/gnu99-words.hbnf` too) | 132 | 182 | 1583 | 11454 |
 | YAML 1.2 | the YAML 1.2.2 spec's productions | 201 | 861 | 1350 | 13273 |
 | | HyperBNF (`corpus/yaml`) | 94 | 104 | 1387 | 6057 |
 | | **saved** | **53%** | **88%** | **-2%** | **54%** |
