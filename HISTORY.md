@@ -795,10 +795,11 @@ count with Claude's tokenizer was not measured, because it is not public.
 | | HyperBNF | 5155 | 1187 | 1157 |
 | | **saved** | **-36%** | **25%** | **26%** |
 | | HyperBNF with its token rules | 6649 | 1754 | 1735 |
-|  | PCC's cgram.y, GNU C99 | 6505 | 2295 | 2248 |
-| | HyperBNF | 8992 | 2149 | 2109 |
-| | **saved** | **-37%** | **6%** | **6%** |
-|  | GCC 4.0.4's c-parse.in, GNU C99 | 18966 | 6050 | 5918 |
+|  | PCC's cgram.y | 6505 | 2295 | 2248 |
+| | HyperBNF | 8628 | 2084 | 2043 |
+| | **saved** | **-32%** | **9%** | **9%** |
+| | HyperBNF with its token rules | 11033 | 2991 | 2969 |
+|  | GCC 4.0.4's c-parse.in | 18966 | 6050 | 5918 |
 | | HyperBNF | 8992 | 2149 | 2109 |
 | | **saved** | **53%** | **64%** | **64%** |
 | | HyperBNF with its token rules | 11454 | 3070 | 3049 |

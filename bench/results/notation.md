@@ -13,10 +13,11 @@
 | | HyperBNF (`corpus/c/c79.hbnf`) | 62 | 74 | 674 | 5155 |
 | | **saved** | **-12%** | **81%** | **17%** | **-36%** |
 | | HyperBNF with its token rules (`corpus/c/c79-words.hbnf` too) | 91 | 106 | 988 | 6649 |
-|  | PCC's cgram.y (NetBSD trunk), GNU C99 | 84 | 368 | 1029 | 6505 |
-| | HyperBNF (`corpus/c/gnu99.hbnf`) | 93 | 133 | 1124 | 8992 |
-| | **saved** | **-10%** | **64%** | **-8%** | **-37%** |
-|  | GCC 4.0.4's c-parse.in (C part), GNU C99 | 172 | 892 | 1930 | 18966 |
+|  | PCC's cgram.y (NetBSD trunk) | 84 | 368 | 1029 | 6505 |
+| | HyperBNF (`corpus/c/pcc.hbnf`) | 94 | 121 | 1087 | 8628 |
+| | **saved** | **-11%** | **67%** | **-5%** | **-32%** |
+| | HyperBNF with its token rules (`corpus/c/pcc-words.hbnf` too) | 133 | 169 | 1542 | 11033 |
+|  | GCC 4.0.4's c-parse.in (C part) | 172 | 892 | 1930 | 18966 |
 | | HyperBNF (`corpus/c/gnu99.hbnf`) | 93 | 133 | 1124 | 8992 |
 | | **saved** | **46%** | **85%** | **42%** | **53%** |
 | | HyperBNF with its token rules (`corpus/c/gnu99-words.hbnf` too) | 132 | 182 | 1583 | 11454 |

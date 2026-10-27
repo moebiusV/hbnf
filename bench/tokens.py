@@ -81,8 +81,10 @@ def text_of(reader, kind, paths):
 
 C79_G = ["corpus/c/c79.hbnf"]
 C79_L = ["corpus/c/c79.hbnf", "corpus/c/c79-words.hbnf"]
-C99_G = ["corpus/c/gnu99.hbnf"]
-C99_L = ["corpus/c/gnu99.hbnf", "corpus/c/gnu99-words.hbnf"]
+PCC_G = ["corpus/c/pcc.hbnf"]
+PCC_L = ["corpus/c/pcc.hbnf", "corpus/c/pcc-words.hbnf"]
+GNU_G = ["corpus/c/gnu99.hbnf"]
+GNU_L = ["corpus/c/gnu99.hbnf", "corpus/c/gnu99-words.hbnf"]
 # language, notation label, reader, kind, files
 ROWS = [
     ("ALGOL 60", "the Report's BNF", "awk", "bnf", ["corpus/algol60/syntax.txt"]),
@@ -94,11 +96,12 @@ ROWS = [
     ("C", "32V's cgram.y, 1979", "py", "yacc", ["corpus/c/originals/v32-cgram.y"]),
     ("", "HyperBNF", "py", "hbnf-code", C79_G),
     ("", "HyperBNF with its token rules", "py", "hbnf-code", C79_L),
-    ("", "PCC's cgram.y, GNU C99", "py", "yacc", ["corpus/c/originals/pcc-cgram.y"]),
-    ("", "HyperBNF", "py", "hbnf-code", C99_G),
-    ("", "GCC 4.0.4's c-parse.in, GNU C99", "py", "yacc", ["corpus/c/originals/gcc-4.0.4-c-parse.in"]),
-    ("", "HyperBNF", "py", "hbnf-code", C99_G),
-    ("", "HyperBNF with its token rules", "py", "hbnf-code", C99_L),
+    ("", "PCC's cgram.y", "py", "yacc", ["corpus/c/originals/pcc-cgram.y"]),
+    ("", "HyperBNF", "py", "hbnf-code", PCC_G),
+    ("", "HyperBNF with its token rules", "py", "hbnf-code", PCC_L),
+    ("", "GCC 4.0.4's c-parse.in", "py", "yacc", ["corpus/c/originals/gcc-4.0.4-c-parse.in"]),
+    ("", "HyperBNF", "py", "hbnf-code", GNU_G),
+    ("", "HyperBNF with its token rules", "py", "hbnf-code", GNU_L),
     ("YAML 1.2", "the spec's productions", "py", "specbnf", ["corpus/yaml/originals/yaml-1.2.2-productions.bnf"]),
     ("", "HyperBNF", "py", "hbnf-code", ["corpus/yaml/yaml.hbnf", "corpus/yaml/yaml-tokens.hbnf"]),
 ]
