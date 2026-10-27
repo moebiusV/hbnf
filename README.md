@@ -253,55 +253,62 @@ _Measured 2026-10-24 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.8
 
 ### Against the popular native libraries
 
-The same three documents against the widely used C, C++ and Rust libraries for each format,
-built from one source with the same flags against musl (Alpine) and glibc (Debian).  The
-libraries were picked by GitHub stars and package downloads, limited to what both
-distributions package or ships as a single file.  What each builds differs: the C++ and Rust
-libraries produce their own value types, simdjson is its DOM API, and hbnf builds the typed
-tree its grammar describes.  The numbers are `bench/libs.sh`.
+The same three documents against the parsers people use for each format: the popular C, C++ and
+Rust libraries, built from one source with the same flags, and the parsers that Python and Node
+programs call.  All of it runs on glibc (Debian).  The libraries were picked by GitHub stars and
+package downloads, limited to what Debian packages or ships as a single file.  What each builds
+differs: the C++ and Rust libraries, Python, Node and the YAML parsers produce their own value
+types, simdjson is its DOM API, and hbnf builds the typed tree its grammar describes.  Peak RSS is
+the whole process, input included, and the last column shows it as a multiple of the input.  The
+numbers are `bench/libs.sh`.
 
 <!-- bench:libs -->
 
-**JSON** (2 MB, the same file for every tool; parse time, best of 5):
+**JSON** (2.00 MB, the same file for every tool; best of up to 5 runs):
 
-| tool | musl | glibc | peak RSS (glibc) |
-|---|---:|---:|---:|
-| simdjson (DOM) | 1.9 ms | 1.9 ms | 14 MB |
-| RapidJSON | 5.4 ms | 4.9 ms | 9 MB |
-| hbnf (C backend), typed tree | 10 ms | 8.8 ms | 15 MB |
-| cJSON | 13 ms | 11 ms | 17 MB |
-| serde_json (Rust) 1.0.154 | 22 ms | 15 ms | 20 MB |
-| Jansson | 34 ms | 30 ms | 20 MB |
+| tool | parse time | MB/s | peak RSS | RSS over the input |
+|---|---:|---:|---:|---:|
+| simdjson (DOM) | 2.3 ms | 873 MB/s | 12 MB | 5.7x |
+| RapidJSON | 4.8 ms | 417 MB/s | 9 MB | 3.9x |
+| hbnf (C backend), typed tree | 5.9 ms | 341 MB/s | 8 MB | 3.3x |
+| Node JSON.parse | 8.2 ms | 244 MB/s | 55 MB | 28.0x |
+| cJSON | 12 ms | 173 MB/s | 17 MB | 8.2x |
+| Python json | 12 ms | 165 MB/s | 20 MB | 9.8x |
+| serde_json (Rust) 1.0.154 | 15 ms | 136 MB/s | 20 MB | 9.9x |
+| Jansson | 30 ms | 67 MB/s | 20 MB | 9.7x |
 
-**TOML 1.0** (2 MB, the same file for every tool; parse time, best of 5):
+**TOML 1.0** (1.99 MB, the same file for every tool; best of up to 5 runs):
 
-| tool | musl | glibc | peak RSS (glibc) |
-|---|---:|---:|---:|
-| hbnf (C backend), typed tree | 21 ms | 19 ms | 24 MB |
-| tomlc17 | 46 ms | 37 ms | 17 MB |
-| toml++ | 49 ms | 44 ms | 26 MB |
-| toml (Rust) 0.9.12+spec-1.1.0 | 65 ms | 52 ms | 58 MB |
-| toml11 | 1372 ms | 659 ms | 94 MB |
+| tool | parse time | MB/s | peak RSS | RSS over the input |
+|---|---:|---:|---:|---:|
+| hbnf (C backend), typed tree | 14 ms | 146 MB/s | 17 MB | 8.0x |
+| tomlc17 | 38 ms | 52 MB/s | 17 MB | 8.4x |
+| toml++ | 45 ms | 44 MB/s | 26 MB | 13.2x |
+| toml (Rust) 0.9.12+spec-1.1.0 | 60 ms | 33 MB/s | 57 MB | 29.5x |
+| Python tomllib | 254 ms | 8 MB/s | 26 MB | 13.0x |
+| toml11 | 663 ms | 3 MB/s | 94 MB | 48.9x |
 
-**YAML 1.2** (2 MB, the same file for every tool; parse time, best of 5):
+**YAML 1.2** (1.99 MB, the same file for every tool; best of up to 5 runs):
 
-| tool | musl | glibc | peak RSS (glibc) |
-|---|---:|---:|---:|
-| rapidyaml | 15 ms | 15 ms | 27 MB |
-| libyaml | 57 ms | 37 ms | 40 MB |
-| hbnf (C backend), typed tree | 59 ms | 56 ms | 58 MB |
-| libfyaml | 90 ms | 68 ms | 84 MB |
-| yaml-cpp | 406 ms | 284 ms | 110 MB |
+| tool | parse time | MB/s | peak RSS | RSS over the input |
+|---|---:|---:|---:|---:|
+| rapidyaml | 20 ms | 99 MB/s | 25 MB | 12.5x |
+| libyaml | 41 ms | 49 MB/s | 39 MB | 19.7x |
+| hbnf (C backend), typed tree | 42 ms | 47 MB/s | 46 MB | 23.4x |
+| libfyaml | 68 ms | 29 MB/s | 84 MB | 43.6x |
+| js-yaml (Node) | 80 ms | 25 MB/s | 80 MB | 41.5x |
+| yaml-cpp | 312 ms | 6 MB/s | 110 MB | 57.3x |
+| PyYAML on libyaml (C) | 717 ms | 3 MB/s | 117 MB | 61.0x |
 
-_2026-10-24; musl: musl libc (x86_64), gcc (Alpine 15.2.0) 15.2.0; glibc: 2.41, gcc (Debian 14.2.0-19) 14.2.0; `-O2`, same sources and flags; hbnf 44f0853.  simdjson is its DOM API; the C++ and Rust libraries build their own value types._
+_2026-10-24; glibc 2.41, gcc (Debian 14.2.0-19) 14.2.0, node 20.19.2, Python 3.13.5; `-O2`, the same sources and flags for every native library; hbnf e1f0895.  simdjson is its DOM API; the C++ and Rust libraries, Python, Node and the YAML parsers build their own value types, and hbnf builds the typed tree its grammar describes._
 
 <!-- /bench:libs -->
 
-On TOML the generated parser is the fastest of the five.  On JSON it is behind the SIMD
-parser simdjson and RapidJSON and ahead of cJSON, serde_json and Jansson.  On YAML it is
-behind rapidyaml and libyaml, which build generic node trees, and ahead of libfyaml and
-yaml-cpp.
-
+On TOML the generated parser is the fastest of the six.  On JSON it is behind the SIMD parser
+simdjson and RapidJSON, ahead of Node's `JSON.parse`, cJSON, Python's `json`, serde_json and
+Jansson, and it holds the tree in less memory than any of them.  On YAML it is level with libyaml
+and behind rapidyaml, which build generic node trees, and ahead of libfyaml, js-yaml, yaml-cpp and
+PyYAML.
 
 ## Naming
 
