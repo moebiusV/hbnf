@@ -5547,8 +5547,12 @@ package body HBNF_C is
                               Br   : Natural := 0;
                               First_El : Boolean;
                            begin
-                              Append (Buf, Ind & "{ parser_t sv_ = *p;  int hit_ = 0;"
+                              --  The first pass keeps no failures, so only the position needs
+                              --  putting back; the second keeps them and puts all of the parser back.
+                              Append (Buf, Ind & "{ parser_t sv_;  size_t sp_ = p->pos;  int hit_ = 0;"
                                 & "  size_t h_;");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  if (!p->quiet) sv_ = *p; else sv_.pos = 0;");
                               Append (Buf, LF);
                               if Ws then
                                  Append (Buf, Ind & "  skip_ws(p);");
@@ -5646,7 +5650,7 @@ package body HBNF_C is
                                  end loop;
                                  Close_Branch;
                               end;
-                              Append (Buf, Ind & "  *p = sv_;");
+                              Append (Buf, Ind & "  if (p->quiet) p->pos = sp_; else *p = sv_;");
                               Append (Buf, LF);
                               if E.Op = B_Not then
                                  Append (Buf, Ind & "  if (hit_) { fail(p, "
@@ -7380,6 +7384,7 @@ package body HBNF_C is
                      Why : Unbounded_String;
                      Row : array (0 .. 127) of Boolean := [others => False];
                      Wide : Boolean := False;
+                     Plain_Ws : Boolean := False;
                      Tab  : Unbounded_String;
                   begin
                      HBNF_Lookahead.Token_Dfa (Rules, To_String (Ws_Name), D, Ok, Why);
@@ -7392,6 +7397,59 @@ package body HBNF_C is
                               Wide := True;
                            end if;
                         end loop;
+                        --  White space that is a run of single bytes (blanks and newlines): the first
+                        --  state goes to one that accepts and loops on the same bytes and nothing else.
+                        --  Then skipping it is a loop over a table of bytes, with no call.
+                        declare
+                           One   : constant Boolean :=
+                             not Wide and then Natural (D.Length) = 1 and then D (1).Accepting
+                             and then (for all E of D (1).Edges => E.To = 1);
+                           Plain : Boolean :=
+                             One or else
+                             (not Wide and then Natural (D.Length) = 2
+                              and then not D (1).Accepting and then D (2).Accepting);
+                           Same  : array (0 .. 127) of Boolean := [others => False];
+                        begin
+                           if Plain and then not One then
+                              for E of D (1).Edges loop
+                                 if E.To /= 2 then
+                                    Plain := False;
+                                 end if;
+                              end loop;
+                              for E of D (2).Edges loop
+                                 if E.To /= 2 or else E.Hi >= 128 then
+                                    Plain := False;
+                                 else
+                                    for C in E.Lo .. E.Hi loop
+                                       Same (C) := True;
+                                    end loop;
+                                 end if;
+                              end loop;
+                              for C in Row'Range loop
+                                 if Row (C) /= Same (C) then
+                                    Plain := False;
+                                 end if;
+                              end loop;
+                           end if;
+                           if Plain then
+                              declare
+                                 Run : Unbounded_String;
+                              begin
+                                 for C in 0 .. 255 loop
+                                    Append (Run, (if C <= 127 and then Row (C) then "1," else "0,"));
+                                 end loop;
+                                 Append (Ws_Skip, "static const unsigned char ws_run[256] = {" & To_String (Run) & "};" & LF);
+                                 Append (Ws_Skip, "__attribute__((unused))" & LF);
+                                 Append (Ws_Skip, "static inline void skip_ws(parser_t *p) {" & LF);
+                                 Append (Ws_Skip, "    const unsigned char *t = (const unsigned char *)p->text;" & LF);
+                                 Append (Ws_Skip, "    size_t i = p->pos;" & LF);
+                                 Append (Ws_Skip, "    while (ws_run[t[i]]) i++;" & LF);
+                                 Append (Ws_Skip, "    p->pos = i > p->len ? p->len : i;" & LF);
+                                 Plain_Ws := True;
+                              end;
+                           end if;
+                        end;
+                        if not Plain_Ws then
                         for C in Row'Range loop
                            Append (Tab, (if Row (C) then "1," else "0,"));
                         end loop;
@@ -7419,6 +7477,7 @@ package body HBNF_C is
                         Append (Ws_Skip, "    if (b < 128 ? !ws_starts[b] : "
                           & (if Wide then "0" else "1") & ") return;" & LF);
                         Append (Ws_Skip, "    skip_ws_slow(p);" & LF);
+                        end if;
                      else
                         Append (Ws_Skip, "__attribute__((unused))" & LF);
                         Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
@@ -7633,11 +7692,16 @@ package body HBNF_C is
                        & (if Wrap_Ctx
                           then "    hbnf_mark_t m_;  m_ = hbnf_mark();" & LF
                           else "")
+                       --  A token cannot nest, and the path of rules is only read when a parse
+                       --  has failed and is read again, so the first pass goes straight to it.
+                       & (if Is_Char_Rule (Rules, NM) or else R.Jet_Code /= Null_Unbounded_String
+                          then "    if (p->quiet) return parse_body_" & C_Name (NM) & "(p, out);" & LF
+                          else "")
                        & "    if (p->depth >= HBNF_MAX_DEPTH) {"
                        & " fail (p, ""shallower nesting"", 0,"
                        & " p->text + p->pos, p->pos < p->len ? 1 : 0);"
                        & " return false; }" & LF
-                       & "    if (p->depth < 24) { p->stk[p->depth] = "
+                       & "    if (!p->quiet && p->depth < 24) { p->stk[p->depth] = "
                        & Natural'Image (I) & "; p->stkpos[p->depth] = p->pos; }"
                        & LF
                        & "    p->depth++;" & LF
@@ -8040,10 +8104,12 @@ begin
             end;
          end loop;
          Append (Res, "    static const unsigned char at[] = {" & LF & To_String (At_Table) & "};" & LF);
-         --  A state that loops on itself over most ASCII bytes is left 16 bytes at a time
-         --  (SSE2, where the compiler has it): the bytes that end the run are a few ranges,
-         --  each tested with a subtract and a compare.  What is left, and the byte that
-         --  ended the run, is read by the loop after it.
+         --  A state that loops on itself over ASCII bytes (the body of a string, a run of digits) is
+         --  left by one table lookup a byte: the table says which bytes keep the state, and the
+         --  text ends in a NUL (parse_text reads to its end), which keeps nothing, so no bound is
+         --  tested in the loop; a scan that stops short of the NUL is clamped after it.  A long run
+         --  is left 16 bytes at a time first (SSE2, where the compiler has it): the bytes that
+         --  end the run are a few ranges, each tested with a subtract and a compare.
          declare
             Shown : Natural := 0;
          begin
@@ -8055,6 +8121,10 @@ begin
                   Temps : Unbounded_String;
                   Ranges : Natural := 0;
                   C : Natural := 0;
+                  Tab : Unbounded_String;
+                  function N (X : Natural) return String is
+                    (Ada.Strings.Fixed.Trim (Natural'Image (X), Ada.Strings.Left));
+                  Name : constant String := N (St - 1);
                begin
                   for E of D (St).Edges loop
                      if E.To = St then
@@ -8064,51 +8134,62 @@ begin
                         end loop;
                      end if;
                   end loop;
-                  if Count >= 20 and then Shown < 3 then
-                     while C <= 255 loop
-                        if not Loops (C) then
-                           declare
-                              Lo : constant Natural := C;
-                           begin
-                              while C <= 255 and then not Loops (C) loop
-                                 C := C + 1;
-                              end loop;
-                              Ranges := Ranges + 1;
-                              declare
-                                 Hi : constant Natural := C - 1;
-                                 function N (X : Natural) return String is
-                                   (Ada.Strings.Fixed.Trim (Natural'Image (X), Ada.Strings.Left));
-                                 T : constant String :=
-                                   (if Lo = Hi
-                                    then "_mm_cmpeq_epi8(v, _mm_set1_epi8((char)" & N (Lo) & "))"
-                                    else "(x" & N (Ranges) & " = _mm_sub_epi8(v, _mm_set1_epi8((char)" & N (Lo)
-                                         & ")), _mm_cmpeq_epi8(_mm_min_epu8(x" & N (Ranges)
-                                         & ", _mm_set1_epi8((char)" & N (Hi - Lo) & ")), x" & N (Ranges) & "))");
-                              begin
-                                 if Lo /= Hi then
-                                    Append (Temps, ", x" & N (Ranges));
-                                 end if;
-                                 Append (Tests, (if Ranges = 1 then "" else " | ") & T);
-                              end;
-                           end;
-                        else
-                           C := C + 1;
-                        end if;
+                  if Count >= 8 and then Loops (0) = False and then Shown < 4 then
+                     Shown := Shown + 1;
+                     for B in 0 .. 255 loop
+                        Append (Tab, (if Loops (B) then "1," else "0,"));
                      end loop;
-                     if Ranges <= 5 then
-                        Shown := Shown + 1;
+                     Append (Res, "    static const unsigned char run" & Name & "[256] = {"
+                       & To_String (Tab) & "};" & LF);
+                     if Count >= 20 then
+                        while C <= 255 loop
+                           if not Loops (C) then
+                              declare
+                                 Lo : constant Natural := C;
+                              begin
+                                 while C <= 255 and then not Loops (C) loop
+                                    C := C + 1;
+                                 end loop;
+                                 Ranges := Ranges + 1;
+                                 declare
+                                    Hi : constant Natural := C - 1;
+                                    T : constant String :=
+                                      (if Lo = Hi
+                                       then "_mm_cmpeq_epi8(v, _mm_set1_epi8((char)" & N (Lo) & "))"
+                                       else "(x" & N (Ranges) & " = _mm_sub_epi8(v, _mm_set1_epi8((char)" & N (Lo)
+                                            & ")), _mm_cmpeq_epi8(_mm_min_epu8(x" & N (Ranges)
+                                            & ", _mm_set1_epi8((char)" & N (Hi - Lo) & ")), x" & N (Ranges) & "))");
+                                 begin
+                                    if Lo /= Hi then
+                                       Append (Temps, ", x" & N (Ranges));
+                                    end if;
+                                    Append (Tests, (if Ranges = 1 then "" else " | ") & T);
+                                 end;
+                              end;
+                           else
+                              C := C + 1;
+                           end if;
+                        end loop;
+                     end if;
+                     Append (Run_Code, "                if (st == " & Name & ") {" & LF);
+                     if Count >= 20 and then Ranges <= 5 then
                         Append (Run_Code,
                           "#if defined(__SSE2__)" & LF
-                          & "                if (st == " & Ada.Strings.Fixed.Trim (Natural'Image (St - 1), Ada.Strings.Left)
-                          & ") for (; i + 16 <= len; i += 16) {" & LF
-                          & "                    __m128i v = _mm_loadu_si128((const __m128i *)(s + i))"
+                          & "                    { size_t e_ = i + 16; while (i < e_ && run" & Name & "[(unsigned char)s[i]]) i++;" & LF
+                          & "                    if (i == e_ && i + 32 <= len) for (; i + 32 <= len; i += 16) {" & LF
+                          & "                        __m128i v = _mm_loadu_si128((const __m128i *)(s + i))"
                           & To_String (Temps) & ";" & LF
-                          & "                    unsigned mk = (unsigned)_mm_movemask_epi8("
+                          & "                        unsigned mk = (unsigned)_mm_movemask_epi8("
                           & To_String (Tests) & ");" & LF
-                          & "                    if (mk) { i += (size_t)__builtin_ctz(mk); break; }" & LF
-                          & "                }" & LF
+                          & "                        if (mk) { i += (size_t)__builtin_ctz(mk); break; }" & LF
+                          & "                    } }" & LF
                           & "#endif" & LF);
                      end if;
+                     Append (Run_Code,
+                       "                    while (run" & Name & "[(unsigned char)s[i]]) i++;" & LF
+                       & "                    if (i > len) i = len;" & LF
+                       & "                    continue;" & LF
+                       & "                }" & LF);
                   end if;
                end;
             end loop;

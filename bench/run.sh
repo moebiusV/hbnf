@@ -41,6 +41,10 @@ if [ "${BENCH_IN_CONTAINER:-}" != 1 ]; then
 	fi
 	# The generator is built in the image from the repository's sources, so it runs on the libc it is
 	# measured with; a build is kept in bench/cache under the hash of the sources.
+	# The measuring runs on one physical core (both of its threads, so nothing else shares it):
+	# BENCH_CPUS, default core 4.  Other users' jobs may still run there unless the core is
+	# reserved (isolcpus, or `cset shield`); the load average is recorded below.
+	BENCH_CPUS=${BENCH_CPUS:-4,10}
 	hb=${HBNF:-}
 	if [ -z "$hb" ]; then
 		sum=$(cat "$root"/*.ads "$root"/*.adb | sha256sum | cut -c1-12)
@@ -55,7 +59,7 @@ if [ "${BENCH_IN_CONTAINER:-}" != 1 ]; then
 	[ -x "$hb" ] || { echo "run.sh: no generator at $hb (set HBNF=)" >&2; exit 1; }
 	load=$(cut -d' ' -f1 /proc/loadavg)
 	rev=$(cd "$root" && git rev-parse --short HEAD 2> /dev/null || echo unknown)
-	exec docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+	exec docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp --cpuset-cpus="$BENCH_CPUS" \
 		-v "$root:/w" -w /w \
 		-v "$(dirname "$hb"):/hbnf-bin:ro" \
 		-e BENCH_IN_CONTAINER=1 -e HBNF=/hbnf-bin/$(basename "$hb") \
