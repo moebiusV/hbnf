@@ -1,14 +1,17 @@
 #!/bin/sh
 # run.sh — the performance comparison, from one command.
 #
-#   sh bench/run.sh [--quick] [--only=hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl,corpus,rustcorpus,zigada,formats]
+#   sh bench/run.sh [--quick] [--only=hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl,corpus,rustcorpus,zigada]
+#
+# The default run measures the C parsers.  The Rust, Zig and Ada stages (rustcorpus, zigada) are run
+# by naming them; they are for the benchmark of the four backends, later.
 #
 # Writes bench/results/<name>.md, one markdown table each, and env.md.  Nothing
 # else produces a figure: bench/update-docs.sh copies these files into the
-# documents.  Outside the container this builds the `hbnf-bench` image (a
-# derived image; the toolchain image is not changed) and runs itself inside.
+# documents.  Outside the container this builds the `hbnf-bench-glibc` image (Debian, from
+# Dockerfile.glibc) and runs itself inside; everything is measured on glibc.
 #
-#   HBNF=/path/to/hbnf   the generator to measure (default: ./hbnf)
+#   HBNF=/path/to/hbnf   the generator to measure (default: built in the image from the sources)
 #
 # --quick: 100,000 rules only, best of three.
 set -u
@@ -16,7 +19,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 
 QUICK=0
-ONLY=hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl,corpus,rustcorpus,zigada,formats
+ONLY=hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl,corpus
 for a in "$@"; do
 	case $a in
 	--quick) QUICK=1 ;;
@@ -27,13 +30,28 @@ done
 
 if [ "${BENCH_IN_CONTAINER:-}" != 1 ]; then
 	. "$here/pins.txt"
-	if ! docker image inspect hbnf-bench > /dev/null 2>&1; then
-		docker build -t hbnf-bench -f "$here/Dockerfile" \
+	IMAGE=hbnf-bench-glibc
+	if ! docker image inspect $IMAGE > /dev/null 2>&1; then
+		docker build -t $IMAGE -f "$here/Dockerfile.glibc" \
 			--build-arg ANTLR_URL="$ANTLR_URL" --build-arg ANTLR_SHA="$ANTLR_SHA" \
 			--build-arg PEG_URL="$PEG_URL" --build-arg PEG_SHA="$PEG_SHA" \
-			--build-arg TS_VERSION="$TS_VERSION" "$here" || exit 1
+			--build-arg TS_VERSION="$TS_VERSION" --build-arg ZIG_URL="$ZIG_URL" --build-arg ZIG_SHA="$ZIG_SHA" \
+			--build-arg RUSTUP_URL="$RUSTUP_URL" --build-arg RUSTUP_SHA="$RUSTUP_SHA" --build-arg RUST_VERSION="$RUST_VERSION" \
+			"$here" || exit 1
 	fi
-	hb=${HBNF:-$root/hbnf}
+	# The generator is built in the image from the repository's sources, so it runs on the libc it is
+	# measured with; a build is kept in bench/cache under the hash of the sources.
+	hb=${HBNF:-}
+	if [ -z "$hb" ]; then
+		sum=$(cat "$root"/*.ads "$root"/*.adb | sha256sum | cut -c1-12)
+		hb=$here/cache/hbnf-glibc-$sum
+		if [ ! -x "$hb" ]; then
+			mkdir -p "$here/cache"
+			docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$root:/w:ro" -v "$here/cache:/out" $IMAGE sh -c \
+				"mkdir -p /tmp/b && cp /w/*.ad[sb] /tmp/b/ && cd /tmp/b && gnatmake -q -gnat2022 -gnatws -I. -I/usr/include/mustache hbnf.adb -o /out/hbnf-glibc-$sum" \
+				|| { echo "run.sh: could not build the generator in $IMAGE" >&2; exit 1; }
+		fi
+	fi
 	[ -x "$hb" ] || { echo "run.sh: no generator at $hb (set HBNF=)" >&2; exit 1; }
 	load=$(cut -d' ' -f1 /proc/loadavg)
 	rev=$(cd "$root" && git rev-parse --short HEAD 2> /dev/null || echo unknown)
@@ -42,7 +60,7 @@ if [ "${BENCH_IN_CONTAINER:-}" != 1 ]; then
 		-v "$(dirname "$hb"):/hbnf-bin:ro" \
 		-e BENCH_IN_CONTAINER=1 -e HBNF=/hbnf-bin/$(basename "$hb") \
 		-e HOST_LOAD="$load" -e HOST_REV="$rev" -e HOST_CPUS="$(nproc)" \
-		hbnf-bench sh /w/bench/run.sh "$@"
+		$IMAGE sh /w/bench/run.sh "$@"
 fi
 
 # ---- inside the container -------------------------------------------------
@@ -64,7 +82,7 @@ for n in $N_LIST; do "$here/gen.sh" toy "$n" > "$IN/toy-$n.txt"; done
 
 # A full run starts from nothing, so a row from an earlier run cannot leak into
 # a table; --only keeps the other stages' rows.
-[ "$ONLY" = hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl,corpus,rustcorpus,zigada,formats ] && rm -rf "$RESULTS/rows" "$RESULTS/vals" "$RESULTS/values.txt"
+[ "$ONLY" = hbnf,yacc,peg,treesitter,antlr,ntpd,pfctl,corpus ] && rm -rf "$RESULTS/rows" "$RESULTS/vals" "$RESULTS/values.txt"
 sh "$here/env.sh" > "$RESULTS/env.md"
 rm -f "$RESULTS/stage-times.txt"
 

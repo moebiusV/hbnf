@@ -9,10 +9,13 @@ ARG PEG_SHA
 ARG TS_VERSION
 ARG ZIG_URL
 ARG ZIG_SHA
+ARG RUSTUP_URL
+ARG RUSTUP_SHA
+ARG RUST_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     build-essential gnat bison flex byacc make nodejs openjdk-21-jdk-headless python3 python3-yaml \
-    cargo rustc clang libclang-dev curl wget ca-certificates xz-utils git \
+    clang libclang-dev curl wget ca-certificates xz-utils git \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=ada-toolchain:edge-full /usr/include/mustache /usr/include/mustache
 RUN wget -q "$ANTLR_URL" -O /opt/antlr.jar \
@@ -25,10 +28,17 @@ RUN wget -q "$ZIG_URL" -O /tmp/zig.tar.xz \
  && echo "$ZIG_SHA  /tmp/zig.tar.xz" | sha256sum -c - \
  && mkdir -p /opt/zig && tar xJf /tmp/zig.tar.xz -C /opt/zig --strip-components=1 \
  && ln -s /opt/zig/zig /usr/local/bin/zig && zig version
+# Rust: Debian's is older than tree-sitter-cli needs, so the toolchain is rustup's, at the version the
+# Alpine image had, installed where any user can read it.
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
+RUN wget -q "$RUSTUP_URL" -O /tmp/rustup-init \
+ && echo "$RUSTUP_SHA  /tmp/rustup-init" | sha256sum -c - \
+ && chmod +x /tmp/rustup-init && /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain "$RUST_VERSION" \
+ && rustc --version
 # tree-sitter-cli builds its JavaScript engine's bindings with bindgen.
 ENV LIBCLANG_PATH=/usr/lib/llvm-19/lib
 RUN cargo install tree-sitter-cli --version "=$TS_VERSION" --locked \
  && mkdir -p /opt/tree-sitter \
- && cp -r /root/.cargo/registry/src/*/tree-sitter-$TS_VERSION/src /opt/tree-sitter/src \
- && cp -r /root/.cargo/registry/src/*/tree-sitter-$TS_VERSION/include /opt/tree-sitter/include \
- && cp /root/.cargo/bin/tree-sitter /usr/local/bin/
+ && cp -r /opt/cargo/registry/src/*/tree-sitter-$TS_VERSION/src /opt/tree-sitter/src \
+ && cp -r /opt/cargo/registry/src/*/tree-sitter-$TS_VERSION/include /opt/tree-sitter/include \
+ && cp /opt/cargo/bin/tree-sitter /usr/local/bin/ && chmod -R a+rX /opt/rustup /opt/cargo /opt/tree-sitter

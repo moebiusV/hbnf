@@ -5,6 +5,8 @@ with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Environment_Variables;
 with Ada.Exceptions;
+with Ada.Strings.Fixed;
+with Ada.Strings.Maps;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Mustache;
@@ -472,8 +474,9 @@ begin
                  HBNF_Wire.Rooted
                    (HBNF_Wire.Lower.Lower
                       (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path)),
-                    [for C of To_String (Root.Pattern (1).Name) =>
-                      (if C = '-' then '_' else C)]);
+                    Ada.Strings.Fixed.Translate
+                      (To_String (Root.Pattern (1).Name),
+                       Ada.Strings.Maps.To_Mapping ("-", "_")));
             begin
                Ada.Text_IO.Put
                  (if To_String (Backend) = "rust" then HBNF_Wire.Rust.Emit (G)

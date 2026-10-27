@@ -8,7 +8,7 @@
 # downloads as the author judged them, limited to what Debian packages or is a single file
 # pinned in pins.txt (rapidyaml, tomlc17); and the parsers the scripting languages ship or
 # their programs use (Python's json, tomllib and PyYAML, Node's JSON.parse and js-yaml).  The
-# documents are those of stage-formats.sh.
+# documents are made by bench/formats/gen.py: a list of records with strings, numbers, booleans, lists and a nested table.
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"

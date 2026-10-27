@@ -10,10 +10,12 @@ compared with, and writes the tables that `WHY.md`, `README.md` and
     sh bench/update-docs.sh          # put bench/results/*.md into the documents
     sh bench/update-docs.sh --check  # fail if a document differs from the results
 
-`HBNF=/path/to/hbnf sh bench/run.sh` measures that generator (default `./hbnf`).
-Docker is the only requirement: `run.sh` builds an image called `hbnf-bench`
-from `bench/Dockerfile` (the Ada toolchain image plus the comparison tools) if
-it is absent, and runs itself inside it as you.
+`HBNF=/path/to/hbnf sh bench/run.sh` measures that generator (default: one built in the image).
+Docker is the only requirement: `run.sh` builds an image called `hbnf-bench-glibc` from
+`bench/Dockerfile.glibc` (Debian, with the comparison tools; Rust from rustup, because tree-sitter needs a
+newer one than Debian has) if it is absent, builds the generator inside it from the repository's sources,
+and runs itself inside as you.  Everything is measured on glibc.  The default run measures the C parsers;
+the Rust, Zig and Ada stages (`--only=rustcorpus,zigada`) are for the benchmark of the four backends.
 
 ## What is measured
 

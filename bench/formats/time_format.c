@@ -2,7 +2,7 @@
  *
  * Built by concatenating the generated parser ahead of this file, with -DOUT_T=<the root's
  * type>.  The file is read first; the clock is around the parse alone.  One parse per process;
- * stage-formats.sh runs it several times and keeps the best.  Prints "ok BYTES MS RSS_KIB".
+ * libs.sh runs it several times and keeps the best.  Prints "ok BYTES MS RSS_KIB".
  */
 #include <stdio.h>
 #include <stdlib.h>
