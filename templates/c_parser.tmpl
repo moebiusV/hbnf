@@ -30,6 +30,7 @@ typedef struct {
     int alt_n, alt_more;
     size_t wc_pos, wc_len, wc_n;   /* the word read at wc_pos (the text cut at wc_len) is wc_n - 1 long; 0 = none */
     int quiet;   /* 1: the first pass of a parse, which records no failures and switches on the next byte */
+    const char *stack_lim;   /* the first pass stops recursing when the stack reaches this */
 } parser_t;
 
 /* A keyword is matched against the word at the position, and a choice among keywords asks at
@@ -96,6 +97,18 @@ static void fail(parser_t *p, const char *expected, int is_lit,
     /* the line and column are worked out once, if the parse fails: counting
        the lines up to every deeper failure made a long input quadratic */
 }
+/* The stack pointer, to see how much is left: the first pass counts no depth. */
+#if defined(__x86_64__)
+#define HBNF_SP(v) __asm__ ("mov %%rsp, %0" : "=r"(v))
+#elif defined(__aarch64__)
+#define HBNF_SP(v) __asm__ ("mov %0, sp" : "=r"(v))
+#else
+#define HBNF_SP(v) ((v) = (const char *)__builtin_frame_address(0))
+#endif
+#define HBNF_STACK_GUARD(p) do { const char *sp_; HBNF_SP(sp_); if (sp_ < (p)->stack_lim) return false; } while (0)
+
+/* The first pass keeps no failures, so it does not even call fail (or work out what to tell it). */
+#define fail(P, ...) ((P)->quiet ? (void)0 : (fail)((P), __VA_ARGS__))
 
 /* What was expected at the deepest failure: the one thing, or "one of" all
    the things that could have stood there. */

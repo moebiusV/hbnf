@@ -3831,35 +3831,49 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "   across chunks. */");
       Append (Res, LF);
-      Append (Res, "static void *hbnf_alloc(size_t n) {");
+      Append (Res, "static void *hbnf_alloc_slow(size_t n) {");
+      Append (Res, LF);
+      Append (Res, "    size_t cap = n > (size_t)HBNF_ARENA_CHUNK ? n : (size_t)HBNF_ARENA_CHUNK;");
+      Append (Res, LF);
+      Append (Res, "    hbnf_chunk *c = cap == (size_t)HBNF_ARENA_CHUNK && hbnf_spare");
+      Append (Res, LF);
+      Append (Res, "        ? hbnf_spare : (hbnf_chunk *)malloc(sizeof *c + cap);");
+      Append (Res, LF);
+      Append (Res, "    if (!c) hbnf_oom();");
+      Append (Res, LF);
+      Append (Res, "    if (c == hbnf_spare) hbnf_spare = NULL;");
+      Append (Res, LF);
+      Append (Res, "    memset(c->data, 0, cap);   /* a chunk is cleared once, as it is taken: no clearing per allocation */");
+      Append (Res, LF);
+      Append (Res, "    c->next = hbnf_arena; c->used = 0; c->cap = cap;");
+      Append (Res, LF);
+      Append (Res, "    hbnf_arena = c;");
+      Append (Res, LF);
+      Append (Res, "    void *p = c->data;");
+      Append (Res, LF);
+      Append (Res, "    c->used = n;");
+      Append (Res, LF);
+      Append (Res, "    return p;");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, "static inline void *hbnf_alloc(size_t n) {");
       Append (Res, LF);
       Append (Res, "    n = (n + 7u) & ~(size_t)7u;");
       Append (Res, LF);
-      Append (Res, "    if (!hbnf_arena || hbnf_arena->used + n > hbnf_arena->cap) {");
+      Append (Res, "    hbnf_chunk *c = hbnf_arena;");
       Append (Res, LF);
-      Append (Res, "        size_t cap = n > (size_t)HBNF_ARENA_CHUNK ? n : (size_t)HBNF_ARENA_CHUNK;");
+      Append (Res, "    if (__builtin_expect(c && c->used + n <= c->cap, 1)) {");
       Append (Res, LF);
-      Append (Res, "        hbnf_chunk *c = cap == (size_t)HBNF_ARENA_CHUNK && hbnf_spare");
+      Append (Res, "        void *p = c->data + c->used;");
       Append (Res, LF);
-      Append (Res, "            ? hbnf_spare : (hbnf_chunk *)malloc(sizeof *c + cap);");
+      Append (Res, "        c->used += n;");
       Append (Res, LF);
-      Append (Res, "        if (!c) hbnf_oom();");
-      Append (Res, LF);
-      Append (Res, "        if (c == hbnf_spare) hbnf_spare = NULL;");
-      Append (Res, LF);
-      Append (Res, "        c->next = hbnf_arena; c->used = 0; c->cap = cap;");
-      Append (Res, LF);
-      Append (Res, "        hbnf_arena = c;");
+      Append (Res, "        return p;");
       Append (Res, LF);
       Append (Res, "    }");
       Append (Res, LF);
-      Append (Res, "    void *p = hbnf_arena->data + hbnf_arena->used;");
-      Append (Res, LF);
-      Append (Res, "    hbnf_arena->used += n;");
-      Append (Res, LF);
-      Append (Res, "    memset(p, 0, n);");
-      Append (Res, LF);
-      Append (Res, "    return p;");
+      Append (Res, "    return hbnf_alloc_slow(n);");
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
@@ -4342,6 +4356,9 @@ package body HBNF_C is
    function Emit_Parser (Rules : Rule_Vectors.Vector) return String is
 
       N : constant Natural := Natural (Rules.Length);
+
+      --  The rules a cycle of references goes back to (see where it is worked out).
+      Cycle_Target : array (1 .. N) of Boolean := [others => False];
 
       --  What each rule can begin with, for the first-byte switch of an alternation.
       La : constant HBNF_Lookahead.Analysis := HBNF_Lookahead.Analyze (Rules);
@@ -7296,6 +7313,18 @@ package body HBNF_C is
                  (H ("name", C_Name (NM)),
                   H ("type", Out_Type (I)))));
                Append (Res, LF);
+               --  The first pass keeps no path of rules and counts no depth, so a call goes
+               --  straight to the body; the second pass, which reads them, goes through the
+               --  rule.  (A rule that puts the contexts back keeps its wrapper.)
+               if not (Ctx_On and then not Is_Char_Rule (Rules, NM)
+                       and then Rules (I).Jet_Code = Null_Unbounded_String
+                       and then Rule_Binds (I))
+               then
+                  Append (Res, "static bool parse_body_" & C_Name (NM)
+                    & "(parser_t *p, " & Out_Type (I) & ");" & LF
+                    & "#define parse_rule_" & C_Name (NM) & "(p_, o_) ((p_)->quiet ? parse_body_"
+                    & C_Name (NM) & "((p_), (o_)) : (parse_rule_" & C_Name (NM) & ")((p_), (o_)))" & LF);
+               end if;
             end if;
          end;
       end loop;
@@ -7338,6 +7367,56 @@ package body HBNF_C is
          end;
       end if;
 
+      declare
+         --  The rules a cycle of references goes back to (the target of a back edge of a
+         --  depth-first walk): every cycle has one.  Only they can recurse without end, so
+         --  only their bodies ask whether the stack is nearly used up.
+         Color : array (1 .. N) of Natural := [others => 0];
+
+         procedure Visit (I : Positive);
+
+         procedure Refs (Els : Element_Vectors.Vector) is
+         begin
+            for E of Els loop
+               case E.Kind is
+                  when Name =>
+                     if not Is_Core (To_String (E.Name)) then
+                        declare
+                           J : constant Natural := Find (To_String (E.Name));
+                        begin
+                           if J /= 0 then
+                              if Color (J) = 1 then
+                                 Cycle_Target (J) := True;
+                              elsif Color (J) = 0 then
+                                 Visit (J);
+                              end if;
+                           end if;
+                        end;
+                     end if;
+                  when Group =>
+                     Refs (E.Items);
+                  when Block =>
+                     Refs (E.Look);
+                  when others =>
+                     null;
+               end case;
+            end loop;
+         end Refs;
+
+         procedure Visit (I : Positive) is
+         begin
+            Color (I) := 1;
+            Refs (Rules (I).Pattern);
+            Color (I) := 2;
+         end Visit;
+      begin
+         for I in 1 .. N loop
+            if Color (I) = 0 then
+               Visit (I);
+            end if;
+         end loop;
+      end;
+
       for I in 1 .. N loop
          declare
             R  : constant Rule := Rules (I);
@@ -7355,8 +7434,8 @@ package body HBNF_C is
                   if Wrap_Ctx or else True then
                      Append (Res, "static bool parse_body_" & C_Name (NM)
                        & "(parser_t *p, " & Out_Type (I) & ");" & LF
-                       & "static bool parse_rule_" & C_Name (NM)
-                       & "(parser_t *p, " & Out_Type (I) & ") {" & LF
+                       & "static bool (parse_rule_" & C_Name (NM)
+                       & ")(parser_t *p, " & Out_Type (I) & ") {" & LF
                        & "    bool ok_;" & LF
                        & (if Wrap_Ctx
                           then "    hbnf_mark_t m_;  m_ = hbnf_mark();" & LF
@@ -7380,7 +7459,8 @@ package body HBNF_C is
                           then "    if (!ok_) hbnf_reset (&m_);" & LF else "")
                        & "    return ok_;" & LF & "}" & LF
                        & "static bool parse_body_" & C_Name (NM)
-                       & "(parser_t *p, " & Out_Type (I) & ") {" & LF);
+                       & "(parser_t *p, " & Out_Type (I) & ") {" & LF
+                       & (if Cycle_Target (I) then "    if (p->quiet) HBNF_STACK_GUARD(p);" & LF else ""));
                   else
                      Append (Res, Fill ("c_rule_head",
                        (H ("name", C_Name (NM)),
@@ -7493,6 +7573,7 @@ package body HBNF_C is
            & "    parser_t p = { text, strlen(text), 0, (size_t)-1,"
            & " 0, 0, NULL, NULL, 0, 0 };" & LF
            & "    p.quiet = 1;   /* the first pass records no failures; one that fails is read again */" & LF
+           & "    p.stack_lim = (const char *)__builtin_frame_address(0) - (size_t)HBNF_MAX_DEPTH * 256;" & LF
            & "start_:");
          Append (Res, LF);
          Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
@@ -7747,6 +7828,154 @@ declare
 begin
    HBNF_Lookahead.Token_Dfa (Rules, NM, D, Ok, Why);
    HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
+   if Ok and then Natural (D.Length) in 1 .. 48 then
+      --  A small machine is written out: a label for each state, and the byte tested against the
+      --  ranges that leave it.  No tables are read, and no state is carried in a variable.
+      declare
+         function N (X : Natural) return String is
+           (Ada.Strings.Fixed.Trim (Natural'Image (X), Ada.Strings.Left));
+         Wide : Boolean := False;
+      begin
+         for St in 1 .. Natural (D.Length) loop
+            for E of D (St).Edges loop
+               if E.Hi >= 128 then
+                  Wide := True;
+               end if;
+            end loop;
+         end loop;
+         Append (Res, "static size_t scan_" & C_Name (NM)
+           & "(const char *s, size_t pos, size_t len) {" & LF
+           & "    size_t i = pos, best = 0;" & LF
+           & (if Wide then "    uint32_t c; size_t n;" & LF else "    unsigned c;" & LF));
+         --  the runs: a state that loops on itself over ASCII bytes
+         for St in 1 .. Natural (D.Length) loop
+            declare
+               Loops : array (0 .. 255) of Boolean := [others => False];
+               Count : Natural := 0;
+               Tab   : Unbounded_String;
+            begin
+               for E of D (St).Edges loop
+                  if E.To = St then
+                     for B in E.Lo .. Natural'Min (E.Hi, 127) loop
+                        Loops (B) := True;
+                        Count := Count + 1;
+                     end loop;
+                  end if;
+               end loop;
+               if Count >= 8 and then not Loops (0) then
+                  for B in 0 .. 255 loop
+                     Append (Tab, (if Loops (B) then "1," else "0,"));
+                  end loop;
+                  Append (Res, "    static const unsigned char run" & N (St - 1) & "[256] = {"
+                    & To_String (Tab) & "};" & LF);
+               end if;
+            end;
+         end loop;
+         for St in 1 .. Natural (D.Length) loop
+            declare
+               Loops : array (0 .. 255) of Boolean := [others => False];
+               Count : Natural := 0;
+               Tests : Unbounded_String;
+               Temps : Unbounded_String;
+               Ranges : Natural := 0;
+               C : Natural := 0;
+               Run : Boolean;
+            begin
+               for E of D (St).Edges loop
+                  if E.To = St then
+                     for B in E.Lo .. Natural'Min (E.Hi, 127) loop
+                        Loops (B) := True;
+                        Count := Count + 1;
+                     end loop;
+                  end if;
+               end loop;
+               Run := Count >= 8 and then not Loops (0);
+               --  a label only where an edge leads to the state (the start state often has none)
+               if (for some S2 in 1 .. Natural (D.Length) =>
+                     (for some E of D (S2).Edges => E.To = St))
+               then
+                  Append (Res, "S" & N (St - 1) & ":" & LF);
+               end if;
+               if D (St).Accepting and then not Run then
+                  Append (Res, "    best = i - pos;" & LF);
+               end if;
+               if Run then
+                  if Count >= 20 then
+                     while C <= 255 loop
+                        if not Loops (C) then
+                           declare
+                              Lo_B : constant Natural := C;
+                           begin
+                              while C <= 255 and then not Loops (C) loop
+                                 C := C + 1;
+                              end loop;
+                              Ranges := Ranges + 1;
+                              declare
+                                 Hi_B : constant Natural := C - 1;
+                                 T : constant String :=
+                                   (if Lo_B = Hi_B
+                                    then "_mm_cmpeq_epi8(v, _mm_set1_epi8((char)" & N (Lo_B) & "))"
+                                    else "(x" & N (Ranges) & " = _mm_sub_epi8(v, _mm_set1_epi8((char)" & N (Lo_B)
+                                         & ")), _mm_cmpeq_epi8(_mm_min_epu8(x" & N (Ranges)
+                                         & ", _mm_set1_epi8((char)" & N (Hi_B - Lo_B) & ")), x" & N (Ranges) & "))");
+                              begin
+                                 if Lo_B /= Hi_B then
+                                    Append (Temps, ", x" & N (Ranges));
+                                 end if;
+                                 Append (Tests, (if Ranges = 1 then "" else " | ") & T);
+                              end;
+                           end;
+                        else
+                           C := C + 1;
+                        end if;
+                     end loop;
+                     if Ranges <= 5 then
+                        Append (Res,
+                          "#if defined(__SSE2__)" & LF
+                          & "    for (; i + 16 <= len; i += 16) {" & LF
+                          & "        __m128i v = _mm_loadu_si128((const __m128i *)(s + i))" & To_String (Temps) & ";" & LF
+                          & "        unsigned mk = (unsigned)_mm_movemask_epi8(" & To_String (Tests) & ");" & LF
+                          & "        if (mk) { i += (size_t)__builtin_ctz(mk); break; }" & LF
+                          & "    }" & LF
+                          & "#endif" & LF);
+                     end if;
+                  end if;
+                  Append (Res, "    while (run" & N (St - 1) & "[(unsigned char)s[i]]) i++;" & LF
+                    & "    if (i > len) i = len;" & LF);
+                  if D (St).Accepting then
+                     Append (Res, "    best = i - pos;" & LF);
+                  end if;
+               end if;
+               Append (Res, "    if (i >= len) return best;" & LF);
+               Append (Res, "    c = (unsigned char)s[i];" & LF);
+               Append (Res, "    if (c < 128) {" & LF);
+               for E of D (St).Edges loop
+                  if E.Lo <= 127 and then not (E.To = St and then Run) then
+                     Append (Res, "        if (c "
+                       & (if E.Lo = Natural'Min (E.Hi, 127)
+                          then "== " & N (E.Lo)
+                          else ">= " & N (E.Lo) & " && c <= " & N (Natural'Min (E.Hi, 127)))
+                       & ") { i++; goto S" & N (E.To - 1) & "; }" & LF);
+                  end if;
+               end loop;
+               Append (Res, "        return best;" & LF & "    }" & LF);
+               if Wide then
+                  Append (Res, "    n = hbnf_decode_utf8(s, i, len, &c);" & LF
+                    & "    if (!n) return best;" & LF);
+                  for E of D (St).Edges loop
+                     if E.Hi >= 128 then
+                        Append (Res, "    if (c >= " & N (E.Lo) & "u && c <= " & N (E.Hi) & "u) { i += n; goto S"
+                          & N (E.To - 1) & "; }" & LF);
+                     end if;
+                  end loop;
+               end if;
+               Append (Res, "    return best;" & LF);
+            end;
+         end loop;
+         Append (Res, "}" & LF & LF);
+      end;
+   else
+   HBNF_Lookahead.Dfa_Tables (D, Lo, Hi, To, First, Acc);
    Append (Res, "static size_t scan_" & C_Name (NM)
      & "(const char *s, size_t pos, size_t len) {" & LF);
    --  The ASCII bytes go through a table of their own (a state and a byte give the next
@@ -7842,16 +8071,18 @@ begin
                      end if;
                      Append (Run_Code, "                if (st == " & Name & ") {" & LF);
                      if Count >= 20 and then Ranges <= 5 then
+                        --  16 bytes at a time from the start: a short run (the usual one) is
+                        --  one load, a few compares and a mask, and the byte that ends it is
+                        --  then found by count.  The scalar loop after it reads the tail.
                         Append (Run_Code,
                           "#if defined(__SSE2__)" & LF
-                          & "                    { size_t e_ = i + 16; while (i < e_ && run" & Name & "[(unsigned char)s[i]]) i++;" & LF
-                          & "                    if (i == e_ && i + 32 <= len) for (; i + 32 <= len; i += 16) {" & LF
+                          & "                    for (; i + 16 <= len; i += 16) {" & LF
                           & "                        __m128i v = _mm_loadu_si128((const __m128i *)(s + i))"
                           & To_String (Temps) & ";" & LF
                           & "                        unsigned mk = (unsigned)_mm_movemask_epi8("
                           & To_String (Tests) & ");" & LF
                           & "                        if (mk) { i += (size_t)__builtin_ctz(mk); break; }" & LF
-                          & "                    } }" & LF
+                          & "                    }" & LF
                           & "#endif" & LF);
                      end if;
                      Append (Run_Code,
@@ -7898,6 +8129,7 @@ begin
    Append (Res, "        st = to[k]; i += n;" & LF);
    Append (Res, "    }" & LF);
    Append (Res, "    return best;" & LF & "}" & LF & LF);
+   end if;
 end;
 else
 Append (Res, "static size_t scan_" & C_Name (NM)
