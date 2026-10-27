@@ -277,8 +277,8 @@ segment = *pchar
 pchar = ALPHA / DIGIT / "-" / "." / "_" / "~"
 G
 if "$CLI" "$W/tk.hbnf" --backend=c > "$W/tk.c" 2> "$W/err.txt" \
-   && grep -q 'typedef const char \* bnf_scheme_t;' "$W/tk.c" \
-   && grep -q 'typedef const char \* bnf_path_t;' "$W/tk.c" \
+   && grep -Eq 'typedef (const char \*|hbnf_str) bnf_scheme_t;' "$W/tk.c" \
+   && grep -Eq 'typedef (const char \*|hbnf_str) bnf_path_t;' "$W/tk.c" \
    && ! grep -q 'struct bnf_path_list' "$W/tk.c"; then
 	echo "  PASS [scheme and path are strings, not lists of nodes]"
 else
