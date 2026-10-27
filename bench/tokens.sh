@@ -40,3 +40,4 @@ if [ -f "$here/results/values.txt" ]; then
 	mv "$here/results/values.txt.new" "$here/results/values.txt"
 fi
 cat "$here/results/tokens.md"
+sh "$here/update-docs.sh"

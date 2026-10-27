@@ -181,6 +181,14 @@ The same shape comes out of the same grammar in all four languages:
 
 The messages are the same in all four (section 7).
 
+A rule that is only text can be left out of the tree.  `hidden` before a definition
+(`hidden nl = CRLF | LF | CR`), or a line `hidden nl` naming a rule defined elsewhere, makes the
+rule matched and kept nowhere: the struct, record or tuple of the rule that uses it has no field
+for it, in any of the four backends, and the text costs no copy.  A use that repeats or is
+optional (`*nl`, `[ nl ]`) is hidden as well.  Line ends, indentation and comments are the usual
+cases.  A rule that builds structure cannot be hidden, and neither can the rule the grammar starts
+from, since its tree would be empty; `hbnf` says so and names the rule.
+
 ## 5. Your own walker, dump and pretty-printer
 
 Nothing about a tree needs a library.  A walker is a function per rule that visits the

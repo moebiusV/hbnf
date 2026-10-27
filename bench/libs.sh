@@ -48,3 +48,4 @@ docker run --rm hbnf-libs-glibc sh -c 'gcc --version | head -1; ldd --version | 
 
 python3 "$here/libs/table.py" "$W" "$root" "$here/libs/rust/Cargo.lock" "$RUNS" > "$here/results/libs.md"
 cat "$here/results/libs.md"
+sh "$here/update-docs.sh"

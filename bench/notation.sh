@@ -2,7 +2,7 @@
 # notation.sh — how much notation a grammar takes: the published grammar of a
 # language against the same language in hbnf.
 #
-#   sh bench/notation.sh > bench/results/notation.md
+#   sh bench/notation.sh           (writes bench/results/notation.md, then updates the documents)
 #
 # Comments and blank lines are left out of both; so are hbnf's directive lines
 # (prefix, whitespace, include ...), which are not rules.  A rule is a line that
@@ -10,6 +10,7 @@
 # word, which is what a reader (or a language model) pays for.
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
+exec 3>&1 > "$here/results/notation.md.new"
 cd "$root" || exit 1
 
 # count KIND FILE...: "rules lines symbols characters"
@@ -94,3 +95,7 @@ set -- $LGN
 printf '| | HyperBNF with its token rules (`corpus/c/gnu99-words.hbnf` too) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
 LABEL_PUB="the YAML 1.2.2 spec's productions"; DIR=corpus/yaml
 row "YAML 1.2" "$(python3 -I "$here/count.py" specbnf corpus/yaml/originals/yaml-1.2.2-productions.bnf)" "$(python3 -I "$here/count.py" hbnf-code corpus/yaml/yaml.hbnf corpus/yaml/yaml-tokens.hbnf)"
+exec 1>&3
+mv "$here/results/notation.md.new" "$here/results/notation.md"
+cat "$here/results/notation.md"
+sh "$here/update-docs.sh"

@@ -59,12 +59,16 @@ if [ "${BENCH_IN_CONTAINER:-}" != 1 ]; then
 	[ -x "$hb" ] || { echo "run.sh: no generator at $hb (set HBNF=)" >&2; exit 1; }
 	load=$(cut -d' ' -f1 /proc/loadavg)
 	rev=$(cd "$root" && git rev-parse --short HEAD 2> /dev/null || echo unknown)
-	exec docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp --cpuset-cpus="$BENCH_CPUS" \
+	docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp --cpuset-cpus="$BENCH_CPUS" \
 		-v "$root:/w" -w /w \
 		-v "$(dirname "$hb"):/hbnf-bin:ro" \
 		-e BENCH_IN_CONTAINER=1 -e HBNF=/hbnf-bin/$(basename "$hb") \
 		-e HOST_LOAD="$load" -e HOST_REV="$rev" -e HOST_CPUS="$(nproc)" \
 		$IMAGE sh /w/bench/run.sh "$@"
+	rc=$?
+	# whatever the run measured goes into the documents, so a rebench leaves them current
+	[ $rc = 0 ] && { sh "$here/update-docs.sh" || rc=$?; }
+	exit $rc
 fi
 
 # ---- inside the container -------------------------------------------------
