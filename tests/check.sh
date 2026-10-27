@@ -10,6 +10,7 @@
 #   sh tests/check.sh yaml rust zig                      the yaml suite, in two backends
 #   sh tests/check.sh --failed                           the suites that failed in the last run
 #   sh tests/check.sh --list                             the suites, and the backends
+#   sh tests/check.sh --history [suite...]               the recent timings, and the last against the one before
 #   sh tests/check.sh --status                           which suites are fresh, stale, or never run
 #   sh tests/check.sh --force yaml                       run it even if nothing it depends on changed
 #
@@ -19,6 +20,12 @@
 # core, and the backends it runs).  A suite whose fingerprint is unchanged is shown as "same" with
 # the time it last passed; --force runs it anyway, --status only lists which are fresh and which
 # are stale.
+#
+# Every result also records how long the suite took: wall seconds, CPU seconds (the suite and
+# everything it ran), and the load average when it started.  One run is already an indication of
+# a slowdown or a speedup, before the benches measure it properly; --history shows the recent
+# timings of each suite and how the last compares with the one before.  A load above the number
+# of idle cores makes the wall time unreliable, and the CPU time less so.
 #
 # A word is a suite if a suite has that name, and a backend (c ada rust zig) otherwise; the
 # backends restrict the suites that take them (schema, rfc, toml, yaml, params) and the lines
@@ -48,12 +55,13 @@ if [ "${1:-}" = --list ]; then
 fi
 
 # the words: suites and backends
-WANT_S=""; WANT_B=""; FAILED=0; FORCE=0; STATUS=0
+WANT_S=""; WANT_B=""; FAILED=0; FORCE=0; STATUS=0; HISTORY=0
 for w in "$@"; do
 	case $w in
 	--failed) FAILED=1 ;;
 	--force|-f) FORCE=1 ;;
 	--status) STATUS=1 ;;
+	--history) HISTORY=1 ;;
 	*) if [ -f "tests/$w.sh" ] && [ "$w" != suite ]; then WANT_S="$WANT_S $w"
 	   else case " $BACKENDS_ALL " in *" $w "*) WANT_B="$WANT_B $w" ;;
 	        *) echo "check.sh: '$w' is neither a suite nor a backend (--list shows them)" >&2; exit 2 ;; esac
@@ -63,6 +71,34 @@ done
 if [ $FAILED = 1 ]; then
 	[ -f "$R/last-failed" ] || { echo "check.sh: no failed run recorded"; exit 0; }
 	WANT_S="$WANT_S $(cat "$R/last-failed")"
+fi
+if [ $HISTORY = 1 ]; then
+	[ -f "$R/check.tsv" ] || { echo "no timings recorded yet"; exit 0; }
+	# columns: when rev gen arch libc suite item status wall [cpu load]
+	awk -F'\t' -v want="$WANT_S" '
+	BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) sel[w[i]] = 1 }
+	$7 == "(all)" && $8 == "ok" && $9 + 0 > 0 && (n == 0 || ($6 in sel)) {
+		k = $6 " " $4 " " $5; c = cnt[k]++; wall[k, c] = $9; cpu[k, c] = ($10 == "" ? "-" : $10); rev[k, c] = $2
+		if (!(k in seen)) { seen[k] = 1; order[++m] = k }
+	}
+	END {
+		printf "%-14s %-14s %5s  %-28s %s\n", "suite", "arch libc", "runs", "wall s (oldest ... latest)", "latest vs previous"
+		for (j = 1; j <= m; j++) {
+			k = order[j]; c = cnt[k]; from = (c > 6 ? c - 6 : 0); line = ""
+			for (i = from; i < c; i++) line = line (line == "" ? "" : " ") wall[k, i]
+			delta = "-"
+			if (c >= 2 && wall[k, c - 2] > 0) {
+				d = 100 * (wall[k, c - 1] - wall[k, c - 2]) / wall[k, c - 2]
+				delta = sprintf("%+.0f%% wall", d)
+				if (d <= -20) flag = "  <- FASTER"; else if (d >= 20) flag = "  <- SLOWER"; else flag = ""
+				if (cpu[k, c - 1] != "-" && cpu[k, c - 2] != "-" && cpu[k, c - 2] > 0)
+					delta = delta sprintf(", %+.0f%% cpu", 100 * (cpu[k, c - 1] - cpu[k, c - 2]) / cpu[k, c - 2])
+			}
+			split(k, parts, " ")
+			printf "%-14s %-14s %5d  %-28s %s%s\n", parts[1], parts[2] " " parts[3], c, line, delta, flag; flag = ""
+		}
+	}' "$R/check.tsv"
+	exit 0
 fi
 [ -n "$WANT_S" ] || for s in $SUITES; do [ -f "tests/$s.sh" ] && WANT_S="$WANT_S $s"; done
 [ -n "$WANT_B" ] && BK=$WANT_B || BK=$BACKENDS_ALL
@@ -116,13 +152,13 @@ suite_backends() {
 	*) echo $b ;;
 	esac
 }
-core_src() { ls hbnf.adb hbnf_grammar.ad[sb] hbnf_lookahead.ad[sb] hbnf_compilable.ad[sb] hbnf_wire.ad[sb] hbnf_wire-lower.ad[sb] hbnf_c.ads 2> /dev/null; }
+core_src() { ls hbnf.adb hbnf_grammar.ad[sb] hbnf_lookahead.ad[sb] hbnf_compilable.ad[sb] hbnf_wire.ad[sb] hbnf_wire-lower.ad[sb] hbnf_shape.ad[sb] hbnf_c.ads 2> /dev/null; }
 backend_src() {
 	case $1 in
 	c) ls hbnf_c.adb hbnf_wire-c.ad[sb] templates/c_* templates/conf_* 2> /dev/null ;;
-	rust) ls hbnf_rust.ad[sb] hbnf_wire-rust.ad[sb] templates/rust_* hbnf_c.adb 2> /dev/null ;;
-	zig) ls hbnf_zig.ad[sb] hbnf_wire-zig.ad[sb] templates/zig_* hbnf_c.adb 2> /dev/null ;;
-	ada) ls hbnf_ada.ad[sb] hbnf_wire-ada_lang.ad[sb] templates/ada_* hbnf_c.adb 2> /dev/null ;;
+	rust) ls hbnf_rust.ad[sb] hbnf_wire-rust.ad[sb] templates/rust_* 2> /dev/null ;;
+	zig) ls hbnf_zig.ad[sb] hbnf_wire-zig.ad[sb] templates/zig_* 2> /dev/null ;;
+	ada) ls hbnf_ada.ad[sb] hbnf_wire-ada_lang.ad[sb] templates/ada_* 2> /dev/null ;;
 	esac
 }
 fingerprint() { # SUITE
@@ -161,10 +197,16 @@ fi
 rev=${rev:-unknown}
 gen=$(basename "$HBNF")
 when() { date +%Y-%m-%dT%H:%M:%S; }
-emit() { # SUITE ITEM STATUS SECONDS
-	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(when)" "$rev" "$gen" "$arch" "$libc" "$1" "$2" "$3" "$4" >> "$R/check.tsv"
-	printf '%-5s %-14s %-10s %5ss   [%s %s]\n' "$3" "$1" "$2" "$4" "$arch" "$libc"
+emit() { # SUITE ITEM STATUS WALL-SECONDS [CPU-SECONDS LOAD]
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(when)" "$rev" "$gen" "$arch" "$libc" "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" >> "$R/check.tsv"
+	if [ -n "${5:-}" ]; then
+		printf '%-5s %-14s %-10s %5ss wall %6ss cpu   load %-5s [%s %s]\n' "$3" "$1" "$2" "$4" "$5" "$6" "$arch" "$libc"
+	else
+		printf '%-5s %-14s %-10s %5ss   [%s %s]\n' "$3" "$1" "$2" "$4" "$arch" "$libc"
+	fi
 }
+# CPU ticks used so far by the children this shell has waited for (the suites and what they ran)
+cpu_ticks() { awk '{ print $16 + $17 }' /proc/$$/stat 2> /dev/null || echo 0; }
 
 pass=0; fail=0; same=0; : > "$R/last-failed.new"
 for s in $WANT_S; do
@@ -179,10 +221,12 @@ for s in $WANT_S; do
 		printf '%-5s %-14s %-10s        (nothing it depends on changed since %s)\n' same "$s" "(all)" "$(sed -n 1p "$st")"
 		same=$((same + 1)); continue
 	fi
-	t0=$(date +%s)
+	load=$(cut -d' ' -f1 /proc/loadavg 2> /dev/null || echo "-")
+	t0=$(date +%s); k0=$(cpu_ticks)
 	timeout 3000 sh "tests/$s.sh" $args > "$log" 2>&1 9>&-
 	rc=$?
 	secs=$(( $(date +%s) - t0 ))
+	cpu=$(awk -v a="$k0" -v b="$(cpu_ticks)" 'BEGIN { printf "%.1f", (b - a) / 100 }')
 	# a backend's own lines, "suite: Rust OK (...)" or "suite: Rust FAIL (...)"
 	items=$(sed -n 's/^[a-z0-9 -]*: \(C\|Ada\|Rust\|Zig\|Tree-sitter\)[ ]*\(OK\|FAIL\).*/\1 \2/p' "$log" | sort -u)
 	if [ -n "$items" ]; then
@@ -193,7 +237,23 @@ for s in $WANT_S; do
 		done
 	fi
 	if [ $rc = 0 ]; then printf '%s\n%s\n' "$(when)" "$fp" > "$(stamp_name "$s")"; st=ok; pass=$((pass + 1)); else st=FAIL; fail=$((fail + 1)); echo "$s" >> "$R/last-failed.new"; fi
-	emit "$s" "(all)" "$st" "$secs"
+	# against the last time this suite passed on this machine: a change of 20% or more is said aloud
+	note=""
+	if [ $rc = 0 ] && [ -f "$R/check.tsv" ]; then
+		note=$(awk -F'\t' -v s="$s" -v a="$arch" -v l="$libc" -v w="$secs" -v c="$cpu" '
+			$6 == s && $7 == "(all)" && $8 == "ok" && $4 == a && $5 == l && $9 + 0 > 0 { pw = $9; pc = $10 }
+			END {
+				if (pw == "" ) exit
+				# the CPU time says more than the wall time when it was recorded; short suites are noise
+				if (pc != "" && pc + 0 > 0 && c + 0 > 0) { r = c / pc; kind = "cpu" } else { r = w / pw; kind = "wall" }
+				base = (kind == "cpu" ? pc : pw)
+				if (base < 3) exit
+				if (r <= 0.8) printf "   %.1fx FASTER than last time (%s %s -> %s s)", 1 / r, kind, base, (kind == "cpu" ? c : w)
+				else if (r >= 1.2) printf "   %.1fx SLOWER than last time (%s %s -> %s s)", r, kind, base, (kind == "cpu" ? c : w)
+			}' "$R/check.tsv")
+	fi
+	emit "$s" "(all)" "$st" "$secs" "$cpu" "$load"
+	[ -z "$note" ] || echo "$note"
 	[ $rc = 0 ] || { grep -E "FAIL|error|^[-+][^-+]" "$log" | head -4 | sed 's/^/        /'; echo "        (log: $log)"; }
 done
 mv "$R/last-failed.new" "$R/last-failed"

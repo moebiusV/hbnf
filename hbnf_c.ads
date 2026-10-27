@@ -9,17 +9,6 @@ with HBNF_Grammar;
 --  comments are carried through as C comments above each declaration.
 package HBNF_C is
 
-   --  The name --ast gives the Branch-th alternative of a flat list of
-   --  elements with Alt separators (what node_alt_name returns); the other
-   --  backends use it so a dump reads the same in every language.
-   --  The name a member has in a dump (its C field name), so a dump reads the
-   --  same in every language.
-   function Member_Label (Name : String) return String;
-
-   function Alt_Label
-     (Els : HBNF_Grammar.Element_Vectors.Vector; Branch : Positive)
-      return String;
-
    --  Emit the C declarations.  When Idref is true, every struct and list
    --  node gains leading `objid_t id, parent;` fields (and the `objid_t`
    --  typedef) so the tree can be flattened by Emit_Serializer and rebuilt

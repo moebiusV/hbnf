@@ -25,7 +25,8 @@ check() {   # check BACKEND OUTPUT
 	fi
 }
 
-"$CLI" $T/portable.hbnf --backend=c > "$W/p.c" || exit 1
+# the driver prints strings as char arrays; views have their own test (tests/views.sh)
+"$CLI" $T/portable.hbnf --backend=c --no-views > "$W/p.c" || exit 1
 cat "$W/p.c" $T/main.c > "$W/m.c"
 if cc -std=gnu11 -D_GNU_SOURCE -Wall -Wno-unused-function -Werror -Itests/bsdinc "$W/m.c" -o "$W/c" 2> "$W/cc.txt"; then
 	(cd $T && "$W/c" $FILES) > "$W/c.txt"; check C "$W/c.txt"

@@ -3,6 +3,7 @@
 # parser (declarations + lexer + parser) in each language, compile and run it.
 # Run inside the ada-toolchain:edge-full container (gcc-gnat, g++, rust, zig).
 set -u
+rc=0   # any suite below that fails makes this one fail
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 HERE=$(pwd)
@@ -45,20 +46,25 @@ for b in /tmp/hbnf /tmp/gen_all; do
 	}
 done
 
+# the drivers use unprefixed names: one copy of the schema says so for every leg
+(echo "prefix none"; cat tests/server.hbnf) > /tmp/server-np.hbnf
+
 echo "== C =="
-/tmp/hbnf tests/server.hbnf --backend=c > /tmp/server.c
+/tmp/hbnf /tmp/server-np.hbnf --backend=c --no-views > /tmp/server.c
 cp tests/c_main.c /tmp/
-( cd /tmp && gcc -std=gnu11 -D_GNU_SOURCE -I"$HERE/tests/bsdinc" c_main.c -o c_test 2>&1 | head -20 && ./c_test )
+( cd /tmp && gcc -std=gnu11 -D_GNU_SOURCE -I"$HERE/tests/bsdinc" c_main.c -o c_test 2> c_test.err \
+    && ./c_test ) || { head -20 /tmp/c_test.err; echo "e2e: the C smoke test failed"; rc=1; }
 
 echo "== C conf (OpenBSD conf.h/conf.c shape) =="
-/tmp/hbnf tests/server.hbnf --backend=c --conf > /tmp/conf-out.txt
+/tmp/hbnf /tmp/server-np.hbnf --backend=c --conf > /tmp/conf-out.txt
 cp tests/conf_main.c /tmp/
 ( cd /tmp
   awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} f==1{print > "conf.h"} f==2{print > "conf.c"}' conf-out.txt
   printf '"example.com"\non wg0 port 443\n"/var/www"\n"www"\nyes\n' > valid.conf
   printf '"example.com"\non wg0 port oops\n"/var/www"\n"www"\nyes\n' > bad.conf
-  gcc -std=gnu11 -D_GNU_SOURCE -I"$HERE/tests/bsdinc" conf.c conf_main.c -o conf_test 2>&1 | head -20 && ./conf_test
-)
+  gcc -std=gnu11 -D_GNU_SOURCE -I"$HERE/tests/bsdinc" conf.c conf_main.c -o conf_test > cc.out 2>&1 \
+    && ./conf_test || { head -20 cc.out; false; }
+) || { echo "e2e: the C conf test failed"; rc=1; }
 
 echo "== FFI (C shared lib + ctypes/Fiddle) =="
 ( cd /tmp
@@ -82,96 +88,105 @@ if command -v g++ >/dev/null 2>&1; then
     ( cd /tmp
       cp "$HERE/tests/cpp_conf_main.cpp" .
       cc -c -I"$HERE/tests/bsdinc" conf.c -o conf.o
-      g++ -std=c++17 cpp_conf_main.cpp conf.o -o cpp_conf_test 2>&1 | head -20
-      ./cpp_conf_test )
+      g++ -std=c++17 cpp_conf_main.cpp conf.o -o cpp_conf_test > cc.out 2>&1 \
+        && ./cpp_conf_test || { head -20 cc.out; false; } ) || { echo "e2e: the C++ test failed"; rc=1; }
 else
     echo "  (g++ not installed -- skipping)"
 fi
 
 echo "== Rust =="
 if command -v rustc >/dev/null 2>&1; then
-    /tmp/hbnf tests/server.hbnf --backend=rust > /tmp/server.rs
+    /tmp/hbnf /tmp/server-np.hbnf --backend=rust > /tmp/server.rs
     cp tests/rust_main.rs /tmp/
-    ( cd /tmp && rustc rust_main.rs -o rust_test 2>&1 | head -20 && ./rust_test )
+    ( cd /tmp && rustc rust_main.rs -o rust_test > cc.out 2>&1 \
+        && ./rust_test || { head -20 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
 else
     echo "  (rustc not installed -- skipping)"
 fi
 
 echo "== Rust conf =="
 if command -v rustc >/dev/null 2>&1; then
-    /tmp/hbnf tests/server.hbnf --backend=rust --conf > /tmp/server.rs
+    /tmp/hbnf /tmp/server-np.hbnf --backend=rust --conf > /tmp/server.rs
     cp tests/rust_conf_main.rs /tmp/rust_conf_main.rs
-    ( cd /tmp && rustc rust_conf_main.rs -o rust_conf_test 2>&1 | head -20 && ./rust_conf_test )
+    ( cd /tmp && rustc rust_conf_main.rs -o rust_conf_test > cc.out 2>&1 \
+        && ./rust_conf_test || { head -20 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
 else
     echo "  (rustc not installed -- skipping)"
 fi
 
 echo "== Zig =="
 if command -v zig >/dev/null 2>&1; then
-    /tmp/hbnf tests/server.hbnf --backend=zig > /tmp/server.zig
+    /tmp/hbnf /tmp/server-np.hbnf --backend=zig > /tmp/server.zig
     cp tests/zig_main.zig /tmp/
-    ( cd /tmp && zig build-exe zig_main.zig -femit-bin=zig_test 2>&1 | head -30 && ./zig_test )
+    ( cd /tmp && zig build-exe zig_main.zig -femit-bin=zig_test > cc.out 2>&1 \
+        && ./zig_test || { head -30 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
 else
     echo "  (zig not installed -- skipping)"
 fi
 
 echo "== Zig conf =="
 if command -v zig >/dev/null 2>&1; then
-    /tmp/hbnf tests/server.hbnf --backend=zig --conf > /tmp/server.zig
+    /tmp/hbnf /tmp/server-np.hbnf --backend=zig --conf > /tmp/server.zig
     cp tests/zig_conf_main.zig /tmp/zig_conf_main.zig
-    ( cd /tmp && zig build-exe zig_conf_main.zig -femit-bin=zig_conf_test 2>&1 | head -30 && ./zig_conf_test )
+    ( cd /tmp && zig build-exe zig_conf_main.zig -femit-bin=zig_conf_test > cc.out 2>&1 \
+        && ./zig_conf_test || { head -30 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
 else
     echo "  (zig not installed -- skipping)"
 fi
 
 echo "== Ada =="
-/tmp/gen_all tests/server.hbnf
+/tmp/gen_all /tmp/server-np.hbnf
 cp tests/ada_main.adb /tmp/
 cp server_schema.ads server_schema-parser.ads server_schema-parser.adb /tmp/
-( cd /tmp && gnatmake -q -gnat2022 ada_main.adb -o ada_test 2>&1 | head -30 && ./ada_test )
+( cd /tmp && gnatmake -q -gnat2022 ada_main.adb -o ada_test > cc.out 2>&1 \
+        && ./ada_test || { head -30 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
 
 echo "== Ada conf =="
-/tmp/gen_all tests/server.hbnf --conf
+/tmp/gen_all /tmp/server-np.hbnf --conf
 cp tests/ada_conf_main.adb /tmp/
 cp server_schema.ads server_schema-parser.ads server_schema-parser.adb /tmp/
 ( cd /tmp && rm -f server_schema*.ali server_schema*.o ada_conf_main.ali ada_conf_main.o \
-    && gnatmake -q -gnat2022 ada_conf_main.adb -o ada_conf_test 2>&1 | head -30 && ./ada_conf_test )
+    && gnatmake -q -gnat2022 ada_conf_main.adb -o ada_conf_test > cc.out 2>&1 \
+        && ./ada_conf_test || { head -30 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
 
 echo "== daemon grammars (tests/daemons) =="
-HBNF=/tmp/hbnf sh tests/daemons.sh
+HBNF=/tmp/hbnf sh tests/daemons.sh || rc=1
 
 echo "== statements, macros, include (tests/stmt) =="
-HBNF=/tmp/hbnf sh tests/stmt.sh
+HBNF=/tmp/hbnf sh tests/stmt.sh || rc=1
 
 echo "== macros against hand expansion (tests/compare) =="
-HBNF=/tmp/hbnf sh tests/compare.sh
+HBNF=/tmp/hbnf sh tests/compare.sh || rc=1
 
 echo "== notation beyond ABNF (tests/syntax) =="
-HBNF=/tmp/hbnf sh tests/syntax.sh
+HBNF=/tmp/hbnf sh tests/syntax.sh || rc=1
 
 echo "== left recursion, read as a loop (tests/leftrec) =="
-HBNF=/tmp/hbnf sh tests/leftrec.sh
+HBNF=/tmp/hbnf sh tests/leftrec.sh || rc=1
 
 echo "== one schema through every backend (tests/portable) =="
-HBNF=/tmp/hbnf sh tests/portable.sh
+HBNF=/tmp/hbnf sh tests/portable.sh || rc=1
 
 echo "== a recursive tree type, compiled and run (tests/recursive) =="
-HBNF=/tmp/hbnf sh tests/recursive.sh
+HBNF=/tmp/hbnf sh tests/recursive.sh || rc=1
 
 echo "== the obconf configuration-file grammar, against tests/accept and tests/reject =="
-HBNF=/tmp/hbnf sh tests/schema.sh
+HBNF=/tmp/hbnf sh tests/schema.sh || rc=1
 
 echo "== the RFC corpus: corpus/rfc/, RFC 5234, 3986, 5322, 9112 (tests/rfc.sh, headline rules) =="
-RFC_QUICK=1 HBNF=/tmp/hbnf sh tests/rfc.sh
+RFC_QUICK=1 HBNF=/tmp/hbnf sh tests/rfc.sh || rc=1
 
 echo "== character rules and UTF-8 (tests/utf8-test.sh) =="
-HBNF=/tmp/hbnf sh tests/utf8-test.sh
+HBNF=/tmp/hbnf sh tests/utf8-test.sh || rc=1
 
 echo "== RFC 5234 forms (tests/abnf.sh) =="
-HBNF=/tmp/hbnf sh tests/abnf.sh
+HBNF=/tmp/hbnf sh tests/abnf.sh || rc=1
 
 echo "== the reader and emitters (tests/hbnf_emit_check.adb) =="
 gnatmake -q $A tests/hbnf_emit_check.adb -o /tmp/hbnf_emit_check \
-    && /tmp/hbnf_emit_check tests/server.hbnf hbnf_schema.hbnf | grep -v '^ok:'
+    && { /tmp/hbnf_emit_check tests/server.hbnf hbnf_schema.hbnf > /tmp/emit.out 2>&1; st=$?
+      grep -v '^ok:' /tmp/emit.out
+      [ $st = 0 ] || { echo "e2e: the emit check failed"; rc=1; }; }
 
 rm -f server.c server.rs server.zig server_schema.ads server_schema-parser.ads server_schema-parser.adb
+exit $rc

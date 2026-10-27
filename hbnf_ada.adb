@@ -4,7 +4,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Mustache;
-with HBNF_C;
+with HBNF_Shape;
 with HBNF_Compilable;
 with HBNF_Lookahead;
 
@@ -13,13 +13,12 @@ package body HBNF_Ada is
    use Ada.Strings.Unbounded;
    use HBNF_Grammar;
    use HBNF_Compilable;
+   use HBNF_Shape;
 
    subtype U is Unbounded_String;
 
    LF : constant Character := ASCII.LF;
 
-   package String_Vectors is new Ada.Containers.Vectors (Positive, U);
-   package Natural_Vectors is new Ada.Containers.Vectors (Positive, Natural);
 
    --  The Ada type for a built-in core rule, or "" if not a core scalar.
    function Scalar_Ada_Type (Name : String) return String is
@@ -117,42 +116,6 @@ package body HBNF_Ada is
       end loop;
       return To_String (Buf);
    end Ada_Escape;
-
-   --  True when every `|`-alternative is exactly one Literal — the shape an
-   --  enum can hold.  A multi-token alternative (`"a" "b" | "c" "d"`), one that
-   --  names another rule, or a single literal (no `|`) is not an enum.
-   function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
-      N       : constant Natural := Natural (Els.Length);
-      St      : Natural := 1;
-      Has_Alt : Boolean := False;
-   begin
-      for K in 1 .. N + 1 loop
-         if K > N then
-            --  final alternative [St..N] must be exactly one literal
-            if N /= St or else Els (St).Kind /= Literal then
-               return False;
-            end if;
-         elsif Els (K).Kind = Alt then
-            --  alternative [St..K-1] must be exactly one literal
-            if K - 1 /= St or else Els (St).Kind /= Literal then
-               return False;
-            end if;
-            St := K + 1;
-            Has_Alt := True;
-         end if;
-      end loop;
-      return Has_Alt;
-   end Is_Pure_Literal_Alt;
-
-   --  Natural'Image with the leading blank stripped ("1", not " 1").
-   function Img (N : Natural) return String is
-      S : constant String := Natural'Image (N);
-   begin
-      if S'Length > 0 and then S (S'First) = ' ' then
-         return S (S'First + 1 .. S'Last);
-      end if;
-      return S;
-   end Img;
 
    --  Unique enumerator names for a literal list.  Each literal is mapped
    --  through Ada_Ident and then any non-alphanumeric folded to '_', so
@@ -473,94 +436,6 @@ package body HBNF_Ada is
 
    --  A struct member: the referenced name, and whether it is a list
    --  (appeared with a repetition prefix) rather than a single value.
-   type Member is record
-      Name    : U;
-      Is_List : Boolean;
-   end record;
-   package Member_Vectors is new Ada.Containers.Vectors (Positive, Member);
-   function Contains (V : Member_Vectors.Vector; S : U) return Boolean is
-   begin
-      for X of V loop
-         if X.Name = S then
-            return True;
-         end if;
-      end loop;
-      return False;
-   end Contains;
-
-   --  Walk a pattern, collecting referenced rule names (deduped, in order)
-   --  as Members (Is_List marks a repeated reference), the literal strings,
-   --  and whether any '|' alternation appears.
-   procedure Collect
-     (Els     : Element_Vectors.Vector;
-      Members : in out Member_Vectors.Vector;
-      Lits    : in out String_Vectors.Vector;
-      Has_Alt : in out Boolean) is
-      Seen : String_Vectors.Vector;
-
-      function Seen_Here (S : U) return Boolean is
-      begin
-         for X of Seen loop
-            if X = S then
-               return True;
-            end if;
-         end loop;
-         return False;
-      end Seen_Here;
-   begin
-      for E of Els loop
-         case E.Kind is
-            when Name =>
-               declare
-                  Is_List : constant Boolean :=
-                    E.Min /= 1 or else E.Max /= 1;
-               begin
-                  if Is_Hidden (To_String (E.Name)) then
-                     null;   --  matched, and kept nowhere
-                  else
-                     if Seen_Here (E.Name) then
-                        raise Parse_Error with
-                          "rule """ & To_String (E.Name)
-                          & """ is referenced twice in one alternative;"
-                          & " split it into alias rules (e.g. `a = "
-                          & To_String (E.Name) & "; b = " & To_String (E.Name)
-                          & ";`) so each gets its own field";
-                     end if;
-                     Seen.Append (E.Name);
-                     if Contains (Members, E.Name) then
-                        if Is_List then
-                           for K in 1 .. Natural (Members.Length) loop
-                              if Members (K).Name = E.Name then
-                                 Members.Replace_Element
-                                   (K,
-                                    Member'(Name => E.Name, Is_List => True));
-                              end if;
-                           end loop;
-                        end if;
-                     else
-                        Members.Append
-                          (Member'(Name => E.Name, Is_List => Is_List));
-                     end if;
-                  end if;
-               end;
-            when Literal =>
-               Lits.Append (E.Lit);
-            when Alt =>
-               Has_Alt := True;
-               Seen.Clear;
-            when Group =>
-               Collect (E.Items, Members, Lits, Has_Alt);
-            when Char_Range =>
-               null;
-            when Block =>
-               null;  --  lifted to a rule of its own before emission
-            when Bit_Field =>
-               null;     --  a rule with bit fields never reaches here (Split_Wire)
-            when Negation =>
-               null;   --  resolved into a rule of ranges before this runs
-         end case;
-      end loop;
-   end Collect;
 
    type Class_Kind is (Enum, Scalar, List, Struct);
    type Rule_Info (Kind : Class_Kind := Scalar) is record
@@ -1572,29 +1447,6 @@ package body HBNF_Ada is
          end loop;
          return False;
       end Has_Alt;
-
-      --  True when every `|`-alternative is exactly one Literal — the shape
-      --  an enum can hold.
-      function Is_Pure_Literal_Alt (Els : Element_Vectors.Vector) return Boolean is
-         N       : constant Natural := Natural (Els.Length);
-         St      : Natural := 1;
-         Has_Alt : Boolean := False;
-      begin
-         for K in 1 .. N + 1 loop
-            if K > N then
-               if N /= St or else Els (St).Kind /= Literal then
-                  return False;
-               end if;
-            elsif Els (K).Kind = Alt then
-               if K - 1 /= St or else Els (St).Kind /= Literal then
-                  return False;
-               end if;
-               St := K + 1;
-               Has_Alt := True;
-            end if;
-         end loop;
-         return Has_Alt;
-      end Is_Pure_Literal_Alt;
 
       --  True when a rule is a record (struct): its parse yields a _Type whose
       --  full declaration may come after its use, so a list of it stores an
@@ -3479,7 +3331,7 @@ package body HBNF_Ada is
                Held : Boolean; Ind : Natural)
             is
                F   : constant String := Prefix & Ada_Field (Nm);
-               Lbl : constant String := HBNF_C.Member_Label (Nm);
+               Lbl : constant String := Member_Label (Nm);
                J   : constant Natural := Find (Rules, Nm);
                T   : constant String :=
                  Value_Type (Rules, Nm);
@@ -3754,7 +3606,7 @@ package body HBNF_Ada is
                         end if;
                      end loop;
                      for B in 1 .. Nb loop
-                        P (5, "when " & Img (B) & " => return " & Q (HBNF_C.Alt_Label (Els, B)) & ";");
+                        P (5, "when " & Img (B) & " => return " & Q (Alt_Label (Els, B)) & ";");
                      end loop;
                   end;
                   P (5, "when others => return """";");
@@ -3792,10 +3644,10 @@ package body HBNF_Ada is
                               else 0);
                         begin
                            if Lf > 0 then
-                              Push (5, HBNF_C.Member_Label (EN), "-1",
+                              Push (5, Member_Label (EN), "-1",
                                     "(Kind => Node_Val, N => " & Node_Of (Lf, V (Lf) & "_Ref (X)") & ")");
                            elsif Resolve_Type (Rules, EN) = "Unbounded_String" then
-                              Push (5, HBNF_C.Member_Label (EN), "-1", "(Kind => Str_Val, S => X.all)");
+                              Push (5, Member_Label (EN), "-1", "(Kind => Str_Val, S => X.all)");
                            end if;
                         end;
                      else
