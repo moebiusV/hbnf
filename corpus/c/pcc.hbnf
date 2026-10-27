@@ -1,0 +1,156 @@
+; The C that PCC's compiler reads: cc/ccom/cgram.y of the NetBSD trunk.  That is C99; the forms of
+; C11 its grammar has (`_Alignas`, `_Alignof`, `_Atomic`, `_Generic`, `_Noreturn`, `_Static_assert`,
+; `_Thread_local`); and a subset of the GNU extensions: `__attribute__`, `asm` (at file scope, as a
+; label on a declarator, and as a statement with operands), `typeof`, statement expressions,
+; `&&label` and `goto *expr`, case ranges, `?:` without its middle, `__builtin_offsetof`, the older
+; designator `field:`, an empty `{}` and a struct without members, stray `;`, and a type as an
+; argument of a call (what `va_arg` is written with).  It has no `__extension__`, `__label__`,
+; `__real__` or `__imag__`, no nested functions, and no label before a `}`.  Where it differs from
+; gnu99.hbnf, which reads what GCC's grammar does, the difference is the point of the file.
+; A typedef name is an identifier the `types` context holds, which a typedef declarator adds and a
+; block scope takes away.  The type specifiers are not checked for which go together.
+prefix none
+include "pcc-words.hbnf"
+context types
+context vars
+%start translation-unit
+
+
+; ---- external definitions ----
+translation-unit     = *external-declaration
+external-declaration = ";"
+                     | asm-keyword [ type-qualifier ] "(" asm-body ")" ";"
+                     | typedef-declaration
+                     | static-assert-declaration
+                     | ( declaration-specifiers | "" ) %scope external-rest
+external-rest        = ";"
+                     | declarator ( function-body | declarator-tail )
+declarator-tail      = [ asm-label ] *attribute [ "=" initializer ] *( "," *attribute init-declarator ) ";"
+function-body        = [ declaration-list ] compound-statement
+declaration-list     = 1*declaration
+
+; ---- declarations ----
+declaration          = typedef-declaration
+                     | static-assert-declaration
+                     | declaration-specifiers [ init-declarator-list ] ";"
+init-declarator-list = init-declarator *( "," *attribute init-declarator )
+init-declarator      = declarator [ asm-label ] *attribute [ "=" initializer ]
+asm-label            = asm-keyword "(" 1*string-literal ")"
+asm-keyword          = "asm" | "__asm" | "__asm__"
+typedef-declaration  = "typedef" declaration-specifiers typedef-declarator *attribute *( "," typedef-declarator *attribute ) ";"
+static-assert-declaration = "_Static_assert" "(" constant-expression "," 1*string-literal ")" ";"
+
+; the specifiers: a type, with the storage classes, qualifiers, function specifiers and attributes
+; around it; a typedef name only if it is the only type; and none, which is `int`
+declaration-specifiers = *non-type-specifier ( 1*( basic-type *non-type-specifier ) | typedef-name *non-type-specifier )
+                       | 1*non-type-specifier
+non-type-specifier   = storage-class-specifier | type-qualifier | function-specifier | alignment-specifier | attribute
+storage-class-specifier = "extern" | "static" | "auto" | "register" | "_Thread_local" | "__thread"
+function-specifier   = "inline" | "__inline" | "__inline__" | "_Noreturn"
+alignment-specifier  = "_Alignas" "(" ( type-name | constant-expression ) ")"
+type-qualifier       = "const" | "__const" | "__const__" | "restrict" | "__restrict" | "__restrict__"
+                     | "volatile" | "__volatile" | "__volatile__" | "_Atomic" !"("
+basic-type           = "void" | "char" | "short" | "int" | "long" | "float" | "double"
+                     | "signed" | "__signed" | "__signed__" | "unsigned"
+                     | "_Bool" | "_Complex" | "__complex" | "__complex__" | "_Imaginary" | "__builtin_va_list"
+                     | typeof-specifier | atomic-type-specifier | struct-or-union-specifier | enum-specifier
+atomic-type-specifier = "_Atomic" "(" type-name ")"
+typeof-specifier     = ( "typeof" | "__typeof" | "__typeof__" ) "(" ( type-name | expression ) ")"
+known-type           = identifier ? types
+typedef-name         = known-type ?! vars
+variable-name        = identifier ?! types | identifier ? vars
+
+; ---- attributes ----
+attribute            = ( "__attribute__" | "__attribute" ) "(" "(" [ attribute-item *( "," attribute-item ) ] ")" ")"
+attribute-item       = [ any-word [ "(" [ argument-list ] ")" ] ]
+
+struct-or-union-specifier = struct-or-union *attribute ( identifier [ "{" [ struct-declaration-list ] "}" ] | "{" [ struct-declaration-list ] "}" )
+struct-or-union      = "struct" | "union"
+struct-declaration-list = 1*struct-declaration
+struct-declaration   = static-assert-declaration
+                     | %scope specifier-qualifier-list [ struct-declarator-list ] 1*( ";" )
+specifier-qualifier-list = *qualifier-or-alignment ( 1*( basic-type *qualifier-or-alignment ) | typedef-name *qualifier-or-alignment )
+qualifier-or-alignment = type-qualifier | alignment-specifier | attribute
+struct-declarator-list = struct-declarator *( "," struct-declarator )
+struct-declarator    = declarator *attribute [ ":" constant-expression *attribute ] | ":" constant-expression
+enum-specifier       = "enum" ( identifier [ "{" enumerator-list [ "," ] "}" ] | "{" enumerator-list [ "," ] "}" )
+enumerator-list      = enumerator *( "," enumerator )
+enumerator           = identifier [ "=" constant-expression ]
+
+declarator           = [ pointer ] direct-declarator
+direct-declarator    = ( identifier %bind vars += identifier | "(" *attribute declarator ")" ) *declarator-suffix
+declarator-suffix    = "[" *( "static" | type-qualifier ) [ assignment-expression | "*" ] "]"
+                     | "(" [ parameter-type-list | identifier-list ] ")"
+; the same with the name it declares added to `types`
+typedef-declarator   = [ pointer ] direct-typedef-declarator
+direct-typedef-declarator = ( identifier %bind types += identifier | "(" *attribute typedef-declarator ")" ) *declarator-suffix
+pointer              = 1*( "*" *( type-qualifier | attribute ) )
+parameter-type-list  = parameter-declaration *( "," parameter-declaration ) [ "," "..." ]
+parameter-declaration = declaration-specifiers [ declarator *attribute | abstract-declarator ]
+identifier-list      = identifier *( "," identifier )
+type-name            = specifier-qualifier-list [ abstract-declarator ]
+abstract-declarator  = pointer [ direct-abstract-declarator ] | direct-abstract-declarator
+direct-abstract-declarator = ( "(" abstract-declarator ")" | declarator-suffix *attribute ) *( declarator-suffix *attribute )
+
+initializer          = "{" [ initializer-list [ "," ] ] "}" | assignment-expression
+initializer-list     = [ designation ] initializer *( "," [ designation ] initializer )
+designation          = 1*designator "=" | identifier ":" | "[" constant-expression "..." constant-expression "]" "="
+designator           = "[" constant-expression "]" | "." identifier
+
+; ---- statements ----
+statement            = 1*label unlabeled-statement | unlabeled-statement
+unlabeled-statement  = compound-statement | selection-statement | iteration-statement
+                     | jump-statement | asm-statement | expression-statement
+label                = identifier ":" *attribute
+                     | "case" constant-expression [ "..." constant-expression ] ":"
+                     | "default" ":"
+compound-statement   = "{" %scope *block-item "}"
+block-item           = declaration | statement
+expression-statement = [ expression ] ";"
+selection-statement  = "if" "(" expression ")" statement [ "else" statement ]
+                     | "switch" "(" expression ")" statement
+iteration-statement  = "while" "(" expression ")" statement
+                     | "do" statement "while" "(" expression ")" ";"
+                     | "for" "(" %scope ( declaration | [ expression ] ";" ) [ expression ] ";" [ expression ] ")" statement
+jump-statement       = "goto" ( identifier | "*" expression ) ";" | "continue" ";" | "break" ";" | "return" [ expression ] ";"
+asm-statement        = asm-keyword [ type-qualifier ] "(" asm-body ")" ";"
+asm-body             = 1*string-literal [ ":" [ asm-operands ] [ ":" [ asm-operands ] [ ":" asm-clobbers ] ] ]
+asm-operands         = asm-operand *( "," asm-operand )
+asm-operand          = 1*string-literal "(" expression ")"
+asm-clobbers         = 1*string-literal *( "," 1*string-literal )
+
+; ---- expressions ----
+primary-expression   = constant | 1*string-literal | generic-selection | offsetof-call
+                     | "(" compound-statement ")" | "(" expression ")" | variable-name
+offsetof-call        = "__builtin_offsetof" "(" type-name "," unary-expression ")"
+generic-selection    = "_Generic" "(" assignment-expression "," generic-association *( "," generic-association ) ")"
+generic-association  = ( type-name | "default" ) ":" assignment-expression
+postfix-expression   = ( "(" type-name ")" "{" [ initializer-list [ "," ] ] "}" | primary-expression ) *postfix-suffix
+postfix-suffix       = "[" expression "]" | "(" [ argument-list ] ")" | "." identifier
+                     | "->" identifier | "++" | "--"
+; a type may stand as an argument: what `va_arg` and the like are written with
+argument-list        = argument *( "," argument )
+argument             = assignment-expression | type-name
+unary-expression     = "++" unary-expression | "--" unary-expression
+                     | unary-operator cast-expression
+                     | "sizeof" ( "(" type-name ")" | unary-expression )
+                     | ( "_Alignof" | "__alignof" | "__alignof__" ) "(" type-name ")"
+                     | "&&" identifier
+                     | postfix-expression
+unary-operator       = "&" | "*" | "+" | "-" | "~" | "!"
+cast-expression      = "(" type-name ")" cast-expression | unary-expression
+multiplicative-expression = cast-expression *( ( "*" | "/" | "%" ) cast-expression )
+additive-expression  = multiplicative-expression *( ( "+" | "-" ) multiplicative-expression )
+shift-expression     = additive-expression *( ( "<<" | ">>" ) additive-expression )
+relational-expression = shift-expression *( ( "<=" | ">=" | "<" | ">" ) shift-expression )
+equality-expression  = relational-expression *( ( "==" | "!=" ) relational-expression )
+and-expression       = equality-expression *( "&" equality-expression )
+exclusive-or-expression = and-expression *( "^" and-expression )
+inclusive-or-expression = exclusive-or-expression *( "|" exclusive-or-expression )
+logical-and-expression = inclusive-or-expression *( "&&" inclusive-or-expression )
+logical-or-expression = logical-and-expression *( "||" logical-and-expression )
+conditional-expression = logical-or-expression [ "?" [ expression ] ":" conditional-expression ]
+assignment-expression = conditional-expression [ assignment-operator assignment-expression ]
+assignment-operator  = "<<=" | ">>=" | "*=" | "/=" | "%=" | "+=" | "-=" | "&=" | "^=" | "|=" | "=" !"="
+expression           = assignment-expression *( "," assignment-expression )
+constant-expression  = conditional-expression
