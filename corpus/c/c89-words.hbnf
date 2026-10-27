@@ -1,0 +1,52 @@
+; The tokens of C90 (ISO/IEC 9899:1990 3.1) as rules of characters.  Nothing here skips white
+; space; c89.hbnf, which includes this file, does that between tokens.  Keywords are the literals
+; of the grammar, matched whole by `word` (letters, digits and _), which is why this file defines
+; `word`: the built-in one also takes - and ., and `return-1` is `return` and `-1`.
+; The thirty-two keywords of C90 are the only words reserved: `inline`, `restrict`, `_Bool` and
+; the rest are identifiers here, as they were before C99.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+BS     = %x5C
+SQUOTE = %x27
+
+idstart    = ALPHA | "_"
+idchar     = ALPHA | DIGIT | "_"
+word       = idstart *idchar
+keyword    = "auto" | "break" | "case" | "char" | "const" | "continue" | "default" | "do" | "double"
+           | "else" | "enum" | "extern" | "float" | "for" | "goto" | "if" | "int" | "long"
+           | "register" | "return" | "short" | "signed" | "sizeof" | "static" | "struct"
+           | "switch" | "typedef" | "union" | "unsigned" | "void" | "volatile" | "while"
+identifier = word - keyword
+
+; ---- constants (3.1.3) ----
+; (the letters inside a token are written as code points: a letter-led literal is a whole word)
+constant   = floating-constant | integer-constant | character-constant
+ex         = %x78 | %x58
+you        = %x75 | %x55
+ell        = %x6C | %x4C
+eee        = %x65 | %x45
+eff        = %x66 | %x46
+sign       = %x2B | %x2D
+digits     = 1*DIGIT
+octd       = %x30-37
+hexd       = DIGIT | %x41-46 | %x61-66
+int-suffix = you [ ell ] | ell [ you ]
+integer-constant = ( %x31-39 *DIGIT | %x30 ex 1*hexd | %x30 *octd ) [ int-suffix ]
+floating-constant = ( dec-float | digits exponent ) [ eff | ell ]
+dec-float  = digits %x2E *DIGIT [ exponent ] | %x2E digits [ exponent ]
+exponent   = eee [ sign ] digits
+char-body  = ~( SQUOTE | BS | LF ) | BS ~LF
+character-constant = [ %x4C ] SQUOTE 1*char-body SQUOTE
+
+; ---- string literals (3.1.4) ----
+str-body   = ~( DQUOTE | BS | LF ) | BS ( LF | ~LF )
+string-literal = [ %x4C ] DQUOTE *str-body DQUOTE
+
+; White space between tokens: blanks, comments (3.1.9; `//` is not one in C90), and the lines a
+; preprocessor leaves in its output (`# 12 "file.c"`, `#pragma`), since hbnf has no preprocessor.
+blank      = SP | HTAB | LF | CR | %x0B | %x0C
+comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
+pp-line    = "#" *~LF
+ws         = 1*( blank | comment | pp-line )
