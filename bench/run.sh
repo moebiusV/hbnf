@@ -41,10 +41,10 @@ if [ "${BENCH_IN_CONTAINER:-}" != 1 ]; then
 	fi
 	# The generator is built in the image from the repository's sources, so it runs on the libc it is
 	# measured with; a build is kept in bench/cache under the hash of the sources.
-	# The measuring runs on one physical core (both of its threads, so nothing else shares it):
-	# BENCH_CPUS, default core 4.  Other users' jobs may still run there unless the core is
+	# The measuring runs on one logical cpu, the one the machine's other jobs leave alone:
+	# BENCH_CPUS, default logical cpu 5.  Other users' jobs may still run there unless the core is
 	# reserved (isolcpus, or `cset shield`); the load average is recorded below.
-	BENCH_CPUS=${BENCH_CPUS:-4,10}
+	BENCH_CPUS=${BENCH_CPUS:-5}
 	hb=${HBNF:-}
 	if [ -z "$hb" ]; then
 		sum=$(cat "$root"/*.ads "$root"/*.adb | sha256sum | cut -c1-12)

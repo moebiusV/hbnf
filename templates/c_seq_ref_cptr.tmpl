@@ -1,1 +1,1 @@
-{{&ind}}{ __typeof__(*{{&acc}}{{&field}}) t_; if (!{{&call}}) { {{&fail}} } {{&acc}}{{&field}} = hbnf_alloc(sizeof t_); *{{&acc}}{{&field}} = t_; }
+{{&ind}}{ __typeof__(*{{&acc}}{{&field}}) t_; memset(&t_, 0, sizeof t_); if (!{{&call}}) { {{&fail}} } {{&acc}}{{&field}} = hbnf_alloc(sizeof t_); *{{&acc}}{{&field}} = t_; }

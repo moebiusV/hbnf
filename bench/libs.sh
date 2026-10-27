@@ -41,7 +41,7 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e HBNF_TEMPLATES=/w/tem
 docker build -q -t hbnf-libs-glibc -f "$here/libs/Dockerfile.glibc" "$here/libs" > /dev/null
 mkdir -p "$W/glibc"; chmod 777 "$W/glibc"
 cp "$W"/doc.* "$W"/json.c "$W"/toml.c "$W"/yaml.c "$W/glibc/"
-docker run --rm --cpuset-cpus="${BENCH_CPUS:-4,10}" --user "$(id -u):$(id -g)" -e RUNS="$RUNS" -v "$root:/w:ro" -v "$W/glibc:/o" \
+docker run --rm --cpuset-cpus="${BENCH_CPUS:-5}" --user "$(id -u):$(id -g)" -e RUNS="$RUNS" -v "$root:/w:ro" -v "$W/glibc:/o" \
 	hbnf-libs-glibc sh /w/bench/libs/inner.sh > "$W/glibc.tsv"
 docker run --rm hbnf-libs-glibc sh -c 'gcc --version | head -1; ldd --version | head -1; node --version; python3 --version; cargo --version' > "$W/glibc.ver" || true
 [ -f "$here/libs/rust/Cargo.lock" ] || cp "$W/glibc/rust/Cargo.lock" "$here/libs/rust/Cargo.lock"

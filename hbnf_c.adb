@@ -5107,7 +5107,28 @@ package body HBNF_C is
                            end Collect;
                         begin
                            Ws_Skip;
-                           if Is_Hidden (NM) then
+                           if Is_Hidden (NM) and then Is_Char_Rule (Rules, NM)
+                             and then Find (NM) /= 0
+                             and then Rules (Find (NM)).Jet_Code = Null_Unbounded_String
+                             and then E.Args = Null_Unbounded_String
+                           then
+                              --  A hidden token is run by its scanner, here: no call, no value.
+                              declare
+                                 J   : constant Natural := Find (NM);
+                                 Opt : constant Boolean :=
+                                   (Natural (Rules (J).Pattern.Length) = 1
+                                    and then Rules (J).Pattern (1).Min = 0)
+                                   or else Null_Flags (J);
+                              begin
+                                 Append (Buf, Ind & "{ size_t n_ = " & Rule_Scanner (Rules, NM)
+                                   & "(p->text, p->pos, p->len);"
+                                   & (if Opt then ""
+                                      else " if (!n_) { fail(p, """ & NM & """, 0, p->text + p->pos, 0); "
+                                           & Fail & " }")
+                                   & " p->pos += n_; }");
+                                 Append (Buf, LF);
+                              end;
+                           elsif Is_Hidden (NM) then
                               --  Matched into a scratch value: the tree has no field for it.
                               declare
                                  T : constant String := Out_Type (Find (NM));
@@ -6521,9 +6542,10 @@ package body HBNF_C is
             begin
                Append (Buf, "    size_t save = p->pos;");
                Append (Buf, LF);
-               Append (Buf, "    " & C_Type_Name (NM)
-                 & " r; memset(&r, 0, sizeof r);");
-               Append (Buf, LF);
+               --  The rule fills its caller's output directly: callers hand over a cleared
+               --  value, and a rule that fails clears what it wrote.  No local copy, no
+               --  clearing of it, no copying it out.
+               Append (Buf, LF & "#define r (*out)" & LF);
                if Spans_On then
                   Append (Buf, "    " & Span_Start (Ws, "r.", "save"));
                   Append (Buf, LF);
@@ -6540,7 +6562,7 @@ package body HBNF_C is
                --  had filled before a later token failed), as each
                --  earlier branch's failure does.
                Append (Buf, "    p->pos = save; free_" & CN
-                 & "_fields(&r); return false;");
+                 & "_fields(&r); memset(&r, 0, sizeof r); return false;");
                Append (Buf, LF);
                Append (Buf, "ok:");
                Append (Buf, LF);
@@ -6555,7 +6577,7 @@ package body HBNF_C is
                      H ("acc", "r."))));
                   Append (Buf, LF);
                end if;
-               Append (Buf, "    *out = r; return true;");
+               Append (Buf, "    return true;");
                Append (Buf, LF);
             end;
          else
@@ -6565,9 +6587,10 @@ package body HBNF_C is
             begin
                Append (Buf, "    size_t save = p->pos;");
                Append (Buf, LF);
-               Append (Buf, "    " & C_Type_Name (NM)
-                 & " r; memset(&r, 0, sizeof r);");
-               Append (Buf, LF);
+               --  The rule fills its caller's output directly: callers hand over a cleared
+               --  value, and a rule that fails clears what it wrote.  No local copy, no
+               --  clearing of it, no copying it out.
+               Append (Buf, LF & "#define r (*out)" & LF);
                if Spans_On and then Analyze (Rules, Idx).Kind = Struct then
                   Append (Buf, "    " & Span_Start (Ws, "r.", "save"));
                   Append (Buf, LF);
@@ -6581,7 +6604,7 @@ package body HBNF_C is
                          (if Analyze (Rules, Idx).Kind = Struct
                           then "free_" & CN & "_fields(&r); "
                           else "")
-                         & "p->pos = save; return false;",
+                         & "memset(&r, 0, sizeof r); p->pos = save; return false;",
                          Ws => Ws);
                if Spans_On and then Analyze (Rules, Idx).Kind = Struct then
                   Append (Buf, "    r._end = p->pos;");
@@ -6594,7 +6617,7 @@ package body HBNF_C is
                      H ("acc", "r."))));
                   Append (Buf, LF);
                end if;
-               Append (Buf, "    *out = r; return true;");
+               Append (Buf, "    return true;");
                Append (Buf, LF);
             end;
          end if;
@@ -7458,7 +7481,8 @@ package body HBNF_C is
                        & (if Wrap_Ctx
                           then "    if (!ok_) hbnf_reset (&m_);" & LF else "")
                        & "    return ok_;" & LF & "}" & LF
-                       & "static bool parse_body_" & C_Name (NM)
+                       & (if Cycle_Target (I) then "static bool" else "static inline bool")
+                       & " parse_body_" & C_Name (NM)
                        & "(parser_t *p, " & Out_Type (I) & ") {" & LF
                        & (if Cycle_Target (I) then "    if (p->quiet) HBNF_STACK_GUARD(p);" & LF else ""));
                   else
@@ -7471,6 +7495,7 @@ package body HBNF_C is
                Emit_Rule_Parser (I, Res);
                Append (Res, "}");
                Append (Res, LF);
+               Append (Res, "#undef r" & LF);
                Append (Res, LF);
             end if;
          end;
@@ -7572,6 +7597,7 @@ package body HBNF_C is
               then "    hbnf_fsp = 0; hbnf_fb = 0;" & LF else "")
            & "    parser_t p = { text, strlen(text), 0, (size_t)-1,"
            & " 0, 0, NULL, NULL, 0, 0 };" & LF
+           & "    memset(out, 0, sizeof *out);   /* the rules fill it directly and expect it clear */" & LF
            & "    p.quiet = 1;   /* the first pass records no failures; one that fails is read again */" & LF
            & "    p.stack_lim = (const char *)__builtin_frame_address(0) - (size_t)HBNF_MAX_DEPTH * 256;" & LF
            & "start_:");
