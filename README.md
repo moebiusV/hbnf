@@ -1,15 +1,15 @@
 # HyperBNF
 
-> **Status, 24 October 2026.**  JSON, TOML and YAML are built and tested in all four backends
-> (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML).  A
-> hyperrule whose parameters are numbers is now one rule that keeps them in a frame (`k in 0..`,
-> `%spaces`, `%col`, `x %num`) or a copy for each value, whichever is cheaper (`--expand-params`,
-> `--run-params`).  That is how YAML's indentation has no depth limit in the grammar, which is the
-> size of the spec's and which the generator reads in under a second.  (The C parsers stop at
-> `HBNF_MAX_DEPTH` rules open at once, 4096 by default, to keep the stack safe.)  The C11 grammar parses
-> 2,478 of 2,481 gcc-accepted files from ten real corpora.  Next: C as a family of grammars, one per
-> standard (K&R, C89, C99, C11, C17, C23) with a GNU layer, each checked against
-> `gcc -std=cNN -pedantic-errors`; the C preprocessor; the back half of a small C compiler.
+> **Status, 27 October 2026.**  JSON, TOML and YAML are built and tested in all four backends
+> (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML).  The C
+> parsers build a choice as a union with the alternative taken (`_alt`) and a string as a slice of the
+> input (`hbnf_sp`, `hbnf_sn`; `--no-views` keeps copies), scan runs of a token 16 bytes at a time, and a
+> rule that is only text can be kept out of the tree (`hidden`); JSON, TOML and YAML are measured
+> against the libraries people use for them, on glibc.  C is a family of grammars, each checked against
+> its own era's yacc grammar and compiler: `c79` (UNIX/32V's C, run over the 32V source tree itself),
+> `c89`, `c99`, `pcc` (what PCC's `cgram.y` reads), `gnu99` (what GCC 4.0.4's reads) and `c11`.
+> Next: C17 and C23 for the C family, the C preprocessor, error recovery, and the benchmark of the four
+> backends against each other (the numbers here are the C backend's).
 
 **HyperBNF** is a grammar language, and `hbnf` is the program that reads it: a parser generator
 (a compiler compiler) that emits a parser and its typed tree in C, Rust, Zig or Ada.  The name is an
@@ -202,68 +202,29 @@ ntpd, and what the numbers do and do not say.
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| hbnf (C backend) | 7.68 MB | 24 ms | 4.2 M rules/s | 325 MB/s | 21 MB |
-| byacc + flex | 7.68 MB | 61 ms | 1.6 M rules/s | 125 MB/s | 23 MB |
-| bison + flex | 7.68 MB | 61 ms | 1.6 M rules/s | 126 MB/s | 23 MB |
-| tree-sitter 0.27.1 | 7.68 MB | 221 ms | 0.5 M rules/s | 35 MB/s | 63 MB |
-| ANTLR 4 (Java), actions, cold JVM | 7.68 MB | 207 ms | 0.5 M rules/s | 37 MB/s | 197 MB |
-| ANTLR 4 (Java), actions, warm JVM | 7.68 MB | 110 ms | 0.9 M rules/s | 70 MB/s | 530 MB |
+| hbnf (C backend) | 7.68 MB | 18 ms | 5.5 M rules/s | 425 MB/s | 15 MB |
+| byacc + flex | 7.68 MB | 56 ms | 1.8 M rules/s | 138 MB/s | 29 MB |
+| bison + flex | 7.68 MB | 58 ms | 1.7 M rules/s | 133 MB/s | 29 MB |
+| tree-sitter 0.27.1 | 7.68 MB | 222 ms | 0.4 M rules/s | 35 MB/s | 58 MB |
+| ANTLR 4 (Java), actions, cold JVM | 7.68 MB | 257 ms | 0.4 M rules/s | 30 MB/s | 223 MB |
+| ANTLR 4 (Java), actions, warm JVM | 7.68 MB | 103 ms | 1.0 M rules/s | 75 MB/s | 606 MB |
 
 **1,000,000 rules** (76.86 MB, the same file for every tool):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| hbnf (C backend) | 76.86 MB | 236 ms | 4.2 M rules/s | 325 MB/s | 204 MB |
-| byacc + flex | 76.86 MB | 612 ms | 1.6 M rules/s | 126 MB/s | 224 MB |
-| bison + flex | 76.86 MB | 619 ms | 1.6 M rules/s | 124 MB/s | 224 MB |
-| tree-sitter 0.27.1 | 76.86 MB | 2176 ms | 0.5 M rules/s | 35 MB/s | 620 MB |
-| ANTLR 4 (Java), actions, cold JVM | 76.86 MB | 1302 ms | 0.8 M rules/s | 59 MB/s | 1426 MB |
-| ANTLR 4 (Java), actions, warm JVM | 76.86 MB | 1125 ms | 0.9 M rules/s | 68 MB/s | 3027 MB |
+| hbnf (C backend) | 76.86 MB | 184 ms | 5.4 M rules/s | 419 MB/s | 136 MB |
+| byacc + flex | 76.86 MB | 564 ms | 1.8 M rules/s | 136 MB/s | 273 MB |
+| bison + flex | 76.86 MB | 558 ms | 1.8 M rules/s | 138 MB/s | 273 MB |
+| tree-sitter 0.27.1 | 76.86 MB | 2303 ms | 0.4 M rules/s | 33 MB/s | 564 MB |
+| ANTLR 4 (Java), actions, cold JVM | 76.86 MB | 1196 ms | 0.8 M rules/s | 64 MB/s | 1446 MB |
+| ANTLR 4 (Java), actions, warm JVM | 76.86 MB | 1163 ms | 0.9 M rules/s | 66 MB/s | 2844 MB |
 
-_Measured 2026-10-24 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.84 on the host, hbnf 4694beb; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
+_Measured 2026-10-27 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 6.11 on the host, hbnf 56e8c78; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
 
 <!-- /bench:headline -->
 
-### JSON, TOML and YAML
-
-The three formats HyperBNF ships, through the C backend, against the libraries usually used
-for them, on one generated document each (a list of records with strings, numbers, booleans,
-lists and a nested table).  The numbers are `bench/run.sh --only=formats`.  What is built differs:
-the generated parser builds the typed tree its grammar describes, with each string a slice of
-the input (a pointer and a length, copied only when an escape has to be undone); the libraries build the host language's own objects, which is what a program then
-holds.  Python's `json` is a C extension and `JSON.parse` is V8's hand-tuned C++, so these are
-native parsers; where one is faster, the table says so.
-
-<!-- bench:formats -->
-
-**JSON** (2.00 MB, the same file for every tool):
-
-| tool | parse time | MB/s | peak RSS |
-|---|---:|---:|---:|
-| hbnf (C backend), typed tree | 10 ms | 197 MB/s | 16 MB |
-| Python 3.14.8 json | 16 ms | 122 MB/s | 19 MB |
-| Node 24.18.1 JSON.parse | 8.6 ms | 232 MB/s | 51 MB |
-
-**TOML 1.0** (1.99 MB, the same file for every tool):
-
-| tool | parse time | MB/s | peak RSS |
-|---|---:|---:|---:|
-| hbnf (C backend), typed tree | 21 ms | 95 MB/s | 26 MB |
-| Python tomllib | 287 ms | 7 MB/s | 23 MB |
-
-**YAML 1.2** (1.99 MB, the same file for every tool):
-
-| tool | parse time | MB/s | peak RSS |
-|---|---:|---:|---:|
-| hbnf (C backend), typed tree | 59 ms | 33 MB/s | 62 MB |
-| PyYAML 6.0.3 on libyaml (C) | 697 ms | 3 MB/s | 114 MB |
-| PyYAML, pure Python | 3.40 s | 1 MB/s | 162 MB |
-
-_Measured 2026-10-24 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.85 on the host, hbnf 44f0853; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, `gcc -O2`._
-
-<!-- /bench:formats -->
-
-### Against the popular native libraries
+### JSON, TOML and YAML against the parsers people use
 
 The same three documents against the parsers people use for each format: the popular C, C++ and
 Rust libraries, built from one source with the same flags, and the parsers that Python and Node

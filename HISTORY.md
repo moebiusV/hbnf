@@ -876,24 +876,16 @@ Only ntpd and unwind have their actions bound so far (`grammars/bind/`), so thos
 that can be compared whole; for the other seven, hbnf parses and builds the tree and the daemon's
 own actions are not yet attached.
 
-**Speed and memory.** The repository's benchmark (`bench/results/`) puts the generated C parser at
-26 ms and 21 MB on the 7.7 MB toy-language file where byacc plus flex takes 63 ms and 23 MB, bison 84 ms,
-Tree-sitter 226 ms and 63 MB, and ANTLR 4 111 to 222 ms and 204 to 530 MB; at a million rules, 266 ms
-against Tree-sitter's 2,302 ms. On a real format, a 39 MB JSON document of 250,000 records, parsed
-into the typed tree and nothing else (best of three, one machine):
-
-| parser | time | peak memory |
-|---|---:|---:|
-| hbnf (C, built on Alpine/musl) | 423 ms | 237 MB |
-| Python `json.load` (C accelerated) | 391 ms | 179 MB |
-| Tree-sitter 0.27 | 1,992 ms | 779 MB |
-
-That is Tree-sitter at 4.7 times hbnf's time and 3.3 times its memory, and hbnf within 8% of Python's
-hand-tuned C parser while building a tree typed by the grammar. Running this found a real fault, now
-fixed: the generated parser worked out the line and column of every failure that went deeper than the
-last, which is a pass over the text each time, so a long input with any backtracking took quadratic
-time; the first attempt at this file ran for minutes. The position is now worked out once, if the parse
-fails.
+**Speed and memory.** The repository's benchmark (`bench/results/`, on glibc) puts the generated C
+parser at <!-- v:hbnf_100000_ms -->18<!-- /v --> ms and <!-- v:hbnf_100000_rss_mb -->15<!-- /v --> MB on the 7.7 MB toy-language file, where byacc plus flex takes
+<!-- v:byacc_100000_ms -->56<!-- /v --> ms and <!-- v:byacc_100000_rss_mb -->29<!-- /v --> MB, bison <!-- v:bison_100000_ms -->58<!-- /v --> ms, peg/leg <!-- v:peg_100000_ms -->44<!-- /v --> ms, Tree-sitter <!-- v:ts_100000_ms -->222<!-- /v --> ms and
+<!-- v:ts_100000_rss_mb -->58<!-- /v --> MB, and ANTLR 4 <!-- v:antlr_warm_100000_ms -->103<!-- /v --> to <!-- v:antlr_cold_100000_ms -->257<!-- /v --> ms and <!-- v:antlr_cold_100000_rss_mb -->223<!-- /v --> to <!-- v:antlr_warm_100000_rss_mb -->606<!-- /v --> MB; at a million rules,
+<!-- v:hbnf_1000000_ms -->184<!-- /v --> ms against Tree-sitter's <!-- v:ts_1000000_ms -->2303<!-- /v --> ms.  On real formats, JSON, TOML and YAML against the
+libraries people use for them, the README has the tables.  Measuring a large JSON document found a
+real fault, now fixed: the generated parser worked out the line and column of every failure that went
+deeper than the last, which is a pass over the text each time, so a long input with any backtracking
+took quadratic time; the first attempt at a 39 MB file ran for minutes.  The position is now worked
+out once, if the parse fails.
 
 ## Appendix — Incremental Parsing without Giving Up the Grammar
 

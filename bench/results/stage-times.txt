@@ -1,0 +1,6 @@
+stage hbnf: 14 s
+stage yacc: 8 s
+stage peg: 3 s
+stage treesitter: 23 s
+stage antlr: 30 s
+stage ntpd: 8 s
