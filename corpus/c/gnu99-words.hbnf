@@ -1,0 +1,70 @@
+; The tokens of GNU C99 as rules of characters: C99's (ISO/IEC 9899:1999 6.4), plus what GCC 4.0.4's
+; lexer reads beyond them (gcc/c-lex.c, c-common.c): the double-underscore spellings of keywords,
+; `$` in identifiers, `i` and `j` after a number.  Nothing here skips white space; gnu99.hbnf,
+; which includes this file, does that between tokens.  Keywords are the literals of the grammar,
+; matched whole by `word` (letters, digits and _), which is why this file defines `word`: the
+; built-in one also takes - and ., and `return-1` is `return` and `-1`.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+BS     = %x5C
+SQUOTE = %x27
+
+; ---- identifiers ----
+; (the letters inside a token are written as code points: a letter-led literal is a whole word)
+idstart    = ALPHA | "_" | "$"
+idchar     = ALPHA | DIGIT | "_" | "$"
+word       = idstart *idchar
+any-word   = idstart *idchar   ; a name or a keyword: what an attribute may be called
+keyword    = "auto" | "break" | "case" | "char" | "const" | "continue" | "default" | "do" | "double"
+           | "else" | "enum" | "extern" | "float" | "for" | "goto" | "if" | "inline" | "int" | "long"
+           | "register" | "restrict" | "return" | "short" | "signed" | "sizeof" | "static" | "struct"
+           | "switch" | "typedef" | "union" | "unsigned" | "void" | "volatile" | "while"
+           | "_Bool" | "_Complex" | "_Imaginary"
+           | "asm" | "typeof" | "__alignof" | "__alignof__" | "__asm" | "__asm__" | "__attribute"
+           | "__attribute__" | "__builtin_choose_expr" | "__builtin_offsetof" | "__builtin_types_compatible_p"
+           | "__builtin_va_arg" | "__builtin_va_list" | "__complex" | "__complex__" | "__const" | "__const__"
+           | "__extension__" | "__imag" | "__imag__" | "__inline" | "__inline__" | "__label__" | "__real"
+           | "__real__" | "__restrict" | "__restrict__" | "__signed" | "__signed__" | "__thread" | "__typeof"
+           | "__typeof__" | "__volatile" | "__volatile__"
+identifier = word - keyword
+
+; ---- constants ----
+constant   = floating-constant | integer-constant | character-constant
+ex         = %x78 | %x58
+you        = %x75 | %x55
+ell        = %x6C | %x4C
+eee        = %x65 | %x45
+pee        = %x70 | %x50
+eff        = %x66 | %x46
+imag       = %x69 | %x49 | %x6A | %x4A
+sign       = %x2B | %x2D
+digits     = 1*DIGIT
+octd       = %x30-37
+hexd       = DIGIT | %x41-46 | %x61-66
+hexdigits  = 1*hexd
+long-suffix = %x6C %x6C | %x4C %x4C | ell
+int-suffix = you [ long-suffix ] [ imag ] | long-suffix [ you ] [ imag ] | imag [ you ] [ long-suffix ]
+integer-constant = ( %x31-39 *DIGIT | %x30 ex hexdigits | %x30 *octd ) [ int-suffix ]
+floating-constant = ( dec-float | hex-float ) [ fsuffix ]
+fsuffix    = eff | ell | imag [ eff | ell ] | ( eff | ell ) imag
+dec-float  = digits %x2E *DIGIT [ exponent ] | %x2E digits [ exponent ] | digits exponent
+exponent   = eee [ sign ] digits
+hex-float  = %x30 ex hex-mantissa pee [ sign ] digits
+hex-mantissa = hexdigits %x2E *hexd | hexdigits | %x2E hexdigits
+char-body  = ~( SQUOTE | BS | LF ) | BS ~LF
+character-constant = [ %x4C ] SQUOTE 1*char-body SQUOTE
+
+; ---- string literals ----
+str-body   = ~( DQUOTE | BS | LF ) | BS ( LF | ~LF )
+string-literal = [ %x4C ] DQUOTE *str-body DQUOTE
+
+; White space between tokens: blanks, both kinds of comment, and the lines a preprocessor leaves in
+; its output (`# 12 "file.c"`, `#pragma`), since hbnf has no preprocessor.  Attributes and asm are
+; in the grammar, not here.
+blank      = SP | HTAB | LF | CR | %x0B | %x0C
+comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
+line-comment = "//" *~LF
+pp-line    = "#" *~LF
+ws         = 1*( blank | comment | line-comment | pp-line )
