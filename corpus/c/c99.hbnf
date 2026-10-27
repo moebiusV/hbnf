@@ -1,0 +1,123 @@
+; C99 (ISO/IEC 9899:1999), the grammar of Annex A as hbnf.  The rule names are the standard's.
+; Where the standard has two alternatives and one is the front of the other, the shorter has an
+; optional rest (`assignment-expression = conditional-expression [ assignment-operator ... ]`):
+; ordered choice reads the front again otherwise, and with expressions inside expressions that is
+; exponential.  A typedef name is an identifier the `types` context holds (6.2.1, the "typedef
+; problem"), which a typedef declarator adds, and a block scope takes away.
+; Strictly C99: the GNU extensions the yacc grammars of GCC and PCC carry (statement expressions,
+; `typeof`, `asm`, `__attribute__`, case ranges) are not here.  Like those grammars it does not
+; check which type specifiers go together (`int float`): that is a constraint of 6.7.2, not of the
+; syntax.
+prefix none
+include "c99-words.hbnf"
+context types
+context vars
+%start translation-unit
+
+
+; ---- 6.9 external definitions ----
+translation-unit     = *external-declaration
+external-declaration = typedef-declaration
+                     | declaration-specifiers %scope external-rest
+external-rest        = ";"
+                     | declarator ( function-body | [ "=" initializer ] *( "," init-declarator ) ";" )
+function-body        = [ declaration-list ] compound-statement
+declaration-list     = 1*declaration
+
+; ---- 6.7 declarations ----
+declaration          = typedef-declaration
+                     | declaration-specifiers [ init-declarator-list ] ";"
+init-declarator-list = init-declarator *( "," init-declarator )
+init-declarator      = declarator [ "=" initializer ]
+typedef-declaration  = "typedef" declaration-specifiers typedef-declarator *( "," typedef-declarator ) ";"
+
+; the specifiers: at least one type, a typedef name only if it is the only one (`unsigned T` is
+; a type and a declarator), and the storage classes, qualifiers and `inline` around
+declaration-specifiers = *non-type-specifier ( 1*( basic-type *non-type-specifier ) | typedef-name *non-type-specifier )
+non-type-specifier   = storage-class-specifier | type-qualifier | function-specifier
+storage-class-specifier = "extern" | "static" | "auto" | "register"
+function-specifier   = "inline"
+type-qualifier       = "const" | "restrict" | "volatile"
+basic-type           = "void" | "char" | "short" | "int" | "long" | "float" | "double" | "signed"
+                     | "unsigned" | "_Bool" | "_Complex" | "_Imaginary"
+                     | struct-or-union-specifier | enum-specifier
+; A typedef name is a token of its own (6.4.1), so it is not a variable, unless a declaration in
+; an inner scope has made the name a variable (`typedef struct instr instr; ... instr *instr`).
+known-type           = identifier ? types
+typedef-name         = known-type ?! vars
+variable-name        = identifier ?! types | identifier ? vars
+
+struct-or-union-specifier = struct-or-union ( identifier [ "{" struct-declaration-list "}" ] | "{" struct-declaration-list "}" )
+struct-or-union      = "struct" | "union"
+struct-declaration-list = 1*struct-declaration
+struct-declaration   = %scope specifier-qualifier-list struct-declarator-list ";"
+specifier-qualifier-list = *type-qualifier ( 1*( basic-type *type-qualifier ) | typedef-name *type-qualifier )
+struct-declarator-list = struct-declarator *( "," struct-declarator )
+struct-declarator    = declarator [ ":" constant-expression ] | ":" constant-expression
+enum-specifier       = "enum" ( identifier [ "{" enumerator-list [ "," ] "}" ] | "{" enumerator-list [ "," ] "}" )
+enumerator-list      = enumerator *( "," enumerator )
+enumerator           = identifier [ "=" constant-expression ]
+
+declarator           = [ pointer ] direct-declarator
+direct-declarator    = ( identifier %bind vars += identifier | "(" declarator ")" ) *declarator-suffix
+declarator-suffix    = "[" *( "static" | type-qualifier ) [ assignment-expression | "*" ] "]"
+                     | "(" [ parameter-type-list | identifier-list ] ")"
+; the same with the name it declares added to `types`
+typedef-declarator   = [ pointer ] direct-typedef-declarator
+direct-typedef-declarator = ( identifier %bind types += identifier | "(" typedef-declarator ")" ) *declarator-suffix
+pointer              = 1*( "*" *type-qualifier )
+parameter-type-list  = parameter-declaration *( "," parameter-declaration ) [ "," "..." ]
+parameter-declaration = declaration-specifiers [ declarator | abstract-declarator ]
+identifier-list      = identifier *( "," identifier )
+type-name            = specifier-qualifier-list [ abstract-declarator ]
+abstract-declarator  = pointer [ direct-abstract-declarator ] | direct-abstract-declarator
+direct-abstract-declarator = ( "(" abstract-declarator ")" | declarator-suffix ) *declarator-suffix
+
+initializer          = "{" initializer-list [ "," ] "}" | assignment-expression
+initializer-list     = [ designation ] initializer *( "," [ designation ] initializer )
+designation          = 1*designator "="
+designator           = "[" constant-expression "]" | "." identifier
+
+; ---- 6.8 statements ----
+statement            = labeled-statement | compound-statement | selection-statement
+                     | iteration-statement | jump-statement | expression-statement
+labeled-statement    = identifier ":" statement
+                     | "case" constant-expression ":" statement
+                     | "default" ":" statement
+compound-statement   = "{" %scope *block-item "}"
+block-item           = declaration | statement
+expression-statement = [ expression ] ";"
+selection-statement  = "if" "(" expression ")" statement [ "else" statement ]
+                     | "switch" "(" expression ")" statement
+iteration-statement  = "while" "(" expression ")" statement
+                     | "do" statement "while" "(" expression ")" ";"
+                     | "for" "(" %scope ( declaration | [ expression ] ";" ) [ expression ] ";" [ expression ] ")" statement
+jump-statement       = "goto" identifier ";" | "continue" ";" | "break" ";" | "return" [ expression ] ";"
+
+; ---- 6.5 expressions ----
+primary-expression   = constant | 1*string-literal | "(" expression ")" | variable-name
+postfix-expression   = ( "(" type-name ")" "{" initializer-list [ "," ] "}" | primary-expression ) *postfix-suffix
+postfix-suffix       = "[" expression "]" | "(" [ argument-expression-list ] ")" | "." identifier
+                     | "->" identifier | "++" | "--"
+argument-expression-list = assignment-expression *( "," assignment-expression )
+unary-expression     = "++" unary-expression | "--" unary-expression
+                     | unary-operator cast-expression
+                     | "sizeof" ( "(" type-name ")" | unary-expression )
+                     | postfix-expression
+unary-operator       = "&" | "*" | "+" | "-" | "~" | "!"
+cast-expression      = "(" type-name ")" cast-expression | unary-expression
+multiplicative-expression = cast-expression *( ( "*" | "/" | "%" ) cast-expression )
+additive-expression  = multiplicative-expression *( ( "+" | "-" ) multiplicative-expression )
+shift-expression     = additive-expression *( ( "<<" | ">>" ) additive-expression )
+relational-expression = shift-expression *( ( "<=" | ">=" | "<" | ">" ) shift-expression )
+equality-expression  = relational-expression *( ( "==" | "!=" ) relational-expression )
+and-expression       = equality-expression *( "&" equality-expression )
+exclusive-or-expression = and-expression *( "^" and-expression )
+inclusive-or-expression = exclusive-or-expression *( "|" exclusive-or-expression )
+logical-and-expression = inclusive-or-expression *( "&&" inclusive-or-expression )
+logical-or-expression = logical-and-expression *( "||" logical-and-expression )
+conditional-expression = logical-or-expression [ "?" expression ":" conditional-expression ]
+assignment-expression = conditional-expression [ assignment-operator assignment-expression ]
+assignment-operator  = "<<=" | ">>=" | "*=" | "/=" | "%=" | "+=" | "-=" | "&=" | "^=" | "|=" | "=" !"="
+expression           = assignment-expression *( "," assignment-expression )
+constant-expression  = conditional-expression

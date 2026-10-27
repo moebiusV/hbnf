@@ -1,0 +1,59 @@
+; The tokens of C99 (ISO/IEC 9899:1999 6.4) as rules of characters.  Nothing here skips white
+; space; c99.hbnf, which includes this file, does that between tokens.  Keywords are the literals
+; of the grammar, matched whole by `word` (letters, digits and _), which is why this file defines
+; `word`: the built-in one also takes - and ., and `return-1` is `return` and `-1`.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+BS     = %x5C
+SQUOTE = %x27
+
+; ---- identifiers (6.4.2) ----
+; (the letters inside a token are written as code points: a letter-led literal is a whole word)
+; (universal character names in an identifier, 6.4.2.1, are not read yet)
+idstart    = ALPHA | "_"
+idchar     = ALPHA | DIGIT | "_"
+word       = idstart *idchar
+keyword    = "auto" | "break" | "case" | "char" | "const" | "continue" | "default" | "do" | "double"
+           | "else" | "enum" | "extern" | "float" | "for" | "goto" | "if" | "inline" | "int" | "long"
+           | "register" | "restrict" | "return" | "short" | "signed" | "sizeof" | "static" | "struct"
+           | "switch" | "typedef" | "union" | "unsigned" | "void" | "volatile" | "while"
+           | "_Bool" | "_Complex" | "_Imaginary"
+identifier = word - keyword
+
+; ---- constants (6.4.4) ----
+constant   = floating-constant | integer-constant | character-constant
+ex         = %x78 | %x58
+you        = %x75 | %x55
+ell        = %x6C | %x4C
+eee        = %x65 | %x45
+pee        = %x70 | %x50
+eff        = %x66 | %x46
+sign       = %x2B | %x2D
+digits     = 1*DIGIT
+octd       = %x30-37
+hexd       = DIGIT | %x41-46 | %x61-66
+hexdigits  = 1*hexd
+long-suffix = %x6C %x6C | %x4C %x4C | ell
+int-suffix = you [ long-suffix ] | long-suffix [ you ]
+integer-constant = ( %x31-39 *DIGIT | %x30 ex hexdigits | %x30 *octd ) [ int-suffix ]
+floating-constant = ( dec-float | hex-float ) [ eff | ell ]
+dec-float  = digits %x2E *DIGIT [ exponent ] | %x2E digits [ exponent ] | digits exponent
+exponent   = eee [ sign ] digits
+hex-float  = %x30 ex hex-mantissa pee [ sign ] digits
+hex-mantissa = hexdigits %x2E *hexd | hexdigits | %x2E hexdigits
+char-body  = ~( SQUOTE | BS | LF ) | BS ~LF
+character-constant = [ %x4C ] SQUOTE 1*char-body SQUOTE
+
+; ---- string literals (6.4.5) ----
+str-body   = ~( DQUOTE | BS | LF ) | BS ( LF | ~LF )
+string-literal = [ %x4C ] DQUOTE *str-body DQUOTE
+
+; White space between tokens: blanks, both kinds of comment (6.4.9), and the lines a preprocessor
+; leaves in its output (`# 12 "file.c"`, `#pragma`), since hbnf has no preprocessor.
+blank      = SP | HTAB | LF | CR | %x0B | %x0C
+comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
+line-comment = "//" *~LF
+pp-line    = "#" *~LF
+ws         = 1*( blank | comment | line-comment | pp-line )
