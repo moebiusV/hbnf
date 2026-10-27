@@ -61,17 +61,23 @@ def hbnf(paths):
     t = re.sub(r'(?m)^\s*(prefix|whitespace|include|language|sensitivity|root|dialect|context|%start)\b.*$', '', t)
     return t, r'^[A-Za-z][\w-]*(\([^)]*\))?[ \t]*(:=|::=|=/?|:)'
 
-kind, paths = sys.argv[1], sys.argv[2:]
-text, rule = {'yacc': yacc, 'hbnf-code': hbnf, 'specbnf': specbnf}[kind](paths)
-rules = lines = syms = chars = 0
-for l in text.split('\n'):
-    l = l.rstrip()
-    if not l.strip():
-        continue
-    w = l.strip()
-    lines += 1
-    syms += len(w.split())
-    chars += len(w)
-    if re.match(rule, l):
-        rules += 1
-print(rules, lines, syms, chars)
+def counted_lines(kind, paths):
+    """The lines that are counted, each stripped of its blanks, and the pattern a rule starts with."""
+    text, rule = {'yacc': yacc, 'hbnf-code': hbnf, 'specbnf': specbnf}[kind](paths)
+    out = []
+    for l in text.split('\n'):
+        l = l.rstrip()
+        if l.strip():
+            out.append((l.strip(), bool(re.match(rule, l))))
+    return out
+
+if __name__ == '__main__':
+    kind, paths = sys.argv[1], sys.argv[2:]
+    rules = lines = syms = chars = 0
+    for w, is_rule in counted_lines(kind, paths):
+        lines += 1
+        syms += len(w.split())
+        chars += len(w)
+        if is_rule:
+            rules += 1
+    print(rules, lines, syms, chars)

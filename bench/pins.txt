@@ -22,3 +22,11 @@ TOMLC17_H_SHA=29c0909092f4b23c7edce705167064f4a90548db5334b4aa2cd95d7ad801adb9
 # Zig, for the glibc image (the version the Alpine image carried), recorded 2026-10-24.
 ZIG_URL=https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
 ZIG_SHA=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+# The tokenizers of the token count (bench/tokens.sh), recorded 2026-10-27: OpenAI's o200k_base, and
+# the tokenizer.json of Qwen2.5 at one revision; and the packages that read them.
+TOK_O200K_URL=https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken
+TOK_O200K_SHA=446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d
+TOK_QWEN_URL=https://huggingface.co/Qwen/Qwen2.5-0.5B/resolve/060db6499f32faf8b98477b0a26969ef7d8b9987/tokenizer.json
+TOK_QWEN_SHA=c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539
+TOK_TIKTOKEN=0.14.0
+TOK_TOKENIZERS=0.23.3

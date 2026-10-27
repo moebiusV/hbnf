@@ -35,6 +35,13 @@ is `getrusage`'s peak resident set.  C is compiled `gcc -O2`.
 | `pfctl` | OpenBSD's `sbin/pfctl/parse.y` (6,546 lines) at a pinned commit, unmodified, through byacc, against hbnf's `grammars/obconf_pfctl.hbnf`; byacc fills `struct pf_rule`, hbnf builds a tree | `pfctl/` |
 | `ntpd` | a real `parse.y`: OpenBSD's `usr.sbin/ntpd/parse.y` at a pinned commit, unmodified, through byacc, against hbnf's binding (`grammars/bind/ntpd.hbnf`), both filling ntpd's own `struct ntpd_conf` | `ntpd/` |
 
+Two measurements stand outside `run.sh`, because they need no container and take seconds:
+`sh bench/notation.sh` counts the rules, lines, symbols and characters of a published grammar
+against the same language in HyperBNF, and `sh bench/tokens.sh` counts the same text in the
+tokens of two public tokenizers (OpenAI's o200k_base and Qwen2.5's; Claude's is not public).  The
+second checks that it counts the text the first counts, and fetches the tokenizers once, by the
+sha256 in `pins.txt`, into `bench/cache`.
+
 The toy is `toy.hbnf`: `pass in on em0 proto tcp from 192.168.3.7 port 51234 to
 192.168.9.1 port 443`, one rule per line, the shape of a pf rule.  Inputs come
 from `gen.sh` and are deterministic.
