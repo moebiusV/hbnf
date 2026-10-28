@@ -47,7 +47,7 @@ mkdir -p "$R/logs"
 # tests where there is one.
 SUITES="wire abnf syntax schema rfc enumval leftrec daemons writer ast spans tutorial errors forks
 lookahead paths stmt recursive context params commalist compare algol60 numbers backref compact
-posix hidden views textwarn c c79 c89 c99 gnu99 pcc99 toml yaml params-modes
+posix hidden emit views textwarn c c79 c89 c99 gnu99 pcc99 toml yaml params-modes
 e2e json-diff toml-diff yaml-suite yaml-diff"
 ARGS_json_diff=3000; ARGS_toml_diff=3000; ARGS_yaml_diff=1000
 BACKENDS_ALL="c ada rust zig"

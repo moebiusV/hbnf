@@ -164,6 +164,7 @@ package HBNF_Grammar is
    --  that stay where they are written.
    type Block_Op is
      (B_Action,      --  %action{ code }
+      B_Emit,        --  %emit{ code }: runs where its place in the sequence is reached (step 15)
       B_Test,        --  `? types`: the text just matched is in a context
       B_Not_Test,    --  `?! types`: the text just matched is not in a context
       B_Bind,        --  %bind types += field.path
@@ -474,6 +475,10 @@ package HBNF_Grammar is
    --  literal or a group is not char-level (Char_DNF raises for the shapes it
    --  cannot yet scan).
    function Is_Hidden (Nm : String) return Boolean;
+
+   --  The C type of the value a rule has, from `name :: type = ...` (RFCPLAN.md step 15); ""
+   --  for a rule without one.  The rule's parameters, if the name has them, are left off.
+   function Value_Type (Rule_Name : String) return String;
    --  True for a rule declared `hidden` (`hidden nl = ...`, or the line
    --  `hidden nl gap`), and for each instance of a hyperrule that is: the rule
    --  is matched and keeps nothing in the tree (its value is the empty string).

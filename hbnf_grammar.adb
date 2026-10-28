@@ -140,7 +140,23 @@ package body HBNF_Grammar is
    --  The rules declared `hidden`: by the name they were written with (a
    --  hyperrule's family) and by the name of each instance made from one.
    Hidden_Bases : Key_Sets.Set;
+
+   --  The C type of the value a rule has (`name :: type = ...`, RFCPLAN.md step 15), by rule name
+   --  with its parameters left off.
+   package Value_Type_Maps is new
+     Ada.Containers.Indefinite_Hashed_Maps (String, String, Ada.Strings.Hash, "=");
+   Value_Types : Value_Type_Maps.Map;
    Hidden_Rules : Key_Sets.Set;
+
+   function Value_Type (Rule_Name : String) return String is
+      Base : Natural := Rule_Name'First;
+   begin
+      while Base <= Rule_Name'Last and then Rule_Name (Base) /= '(' loop
+         Base := Base + 1;
+      end loop;
+      return (if Value_Types.Contains (Rule_Name (Rule_Name'First .. Base - 1))
+              then Value_Types.Element (Rule_Name (Rule_Name'First .. Base - 1)) else "");
+   end Value_Type;
 
    function Is_Hidden (Nm : String) return Boolean is
      (Hidden_Rules.Contains (Nm) or else Hidden_Bases.Contains (Nm));
@@ -171,6 +187,7 @@ package body HBNF_Grammar is
       Warn_Count := 0;
       Warn_Keys.Clear;
       Hidden_Bases.Clear;
+      Value_Types.Clear;
       Hidden_Rules.Clear;
    end Reset_Warnings;
 
@@ -1491,6 +1508,13 @@ package body HBNF_Grammar is
                      Emit (T_Meta, To_String (Raw));
                      I := J;
                   end;
+               elsif not Legacy_Ops and then I + 2 <= Text'Last
+                 and then Text (I + 1) = ':'
+                 and then Text (I + 2) in ' ' | ASCII.HT
+               then
+                  --  `name :: type = ...`: the type of the value a rule has (RFCPLAN.md
+                  --  step 15).  A word of its own, `::`, which the rule head reads.
+                  Emit (T_Name, "::");  I := I + 2;  Col := Col + 2;
                elsif I + 1 < Text'Last and then Text (I + 1) = ':'
                  and then Text (I + 2) = '='
                then
@@ -3193,6 +3217,17 @@ package body HBNF_Grammar is
             Element_Vectors.Append
               (V, new Element'(Kind => Block, Min => 1, Max => 1,
                                Op => B_Action, Ctx => <>, Path => <>, Id => 0,
+                               Look => <>,
+                               Code => P.Toks (P.Pos + 1).Text));
+            P.Pos := P.Pos + 2;
+         elsif Cur (P).Kind = T_Pct
+           and then To_String (Cur (P).Text) = "emit"
+           and then P.Toks (P.Pos + 1).Kind = T_Code
+           and then not Ends_Pattern (P.Pos + 2)
+         then
+            Element_Vectors.Append
+              (V, new Element'(Kind => Block, Min => 1, Max => 1,
+                               Op => B_Emit, Ctx => <>, Path => <>, Id => 0,
                                Look => <>,
                                Code => P.Toks (P.Pos + 1).Text));
             P.Pos := P.Pos + 2;
@@ -7171,6 +7206,28 @@ package body HBNF_Grammar is
 
       --  A hidden rule is matched and keeps nothing; that is a text rule's way of
       --  being read, so a rule that builds structure cannot be one.
+      --  `%emit` in a rule is read, but nothing generates code for it yet.
+      declare
+         function Has_Emit (Els : Element_Vectors.Vector) return Boolean is
+         begin
+            for E of Els loop
+               if (E.Kind = Block and then E.Op = B_Emit)
+                 or else (E.Kind = Group and then Has_Emit (E.Items))
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has_Emit;
+      begin
+         for R of Rules loop
+            if Has_Emit (R.Pattern) then
+               raise Parse_Error with
+                 "rule `" & To_String (R.Name) & "` has an %emit, which no backend generates yet";
+            end if;
+         end loop;
+      end;
+
       for R of Rules loop
          if Is_Hidden (To_String (R.Name)) then
             if R.Name = Rules (1).Name then
@@ -8010,6 +8067,49 @@ package body HBNF_Grammar is
                Next (P);
             end if;
 
+            --  `name :: type = ...`: the rule has a value of that C type.  The type is the words
+            --  and `*`s up to the `=`, or one `{ }` block; it is taken out of the token stream
+            --  here, so the rest of the head reads as `name =`.
+            if Cur (P).Kind = T_Name
+              and then P.Pos + 2 <= Natural (P.Toks.Length)
+              and then P.Toks (P.Pos + 1).Kind = T_Name
+              and then To_String (P.Toks (P.Pos + 1).Text) = "::"
+            then
+               declare
+                  Nm   : constant String := To_String (Cur (P).Text);
+                  Stop : Natural := Nm'First;
+                  K    : Positive := P.Pos + 2;
+                  Ty   : Unbounded_String;
+               begin
+                  while Stop <= Nm'Last and then Nm (Stop) /= '(' loop
+                     Stop := Stop + 1;
+                  end loop;
+                  while P.Toks (K).Kind not in T_Eq | T_Eq_Slash | T_Newline | T_EOF loop
+                     case P.Toks (K).Kind is
+                        when T_Name | T_Code =>
+                           if Ty /= Null_Unbounded_String then
+                              Append (Ty, " ");
+                           end if;
+                           Append (Ty, P.Toks (K).Text);
+                        when T_Star =>
+                           Append (Ty, "*");
+                        when others =>
+                           raise Parse_Error with
+                             Integer'Image (P.Toks (K).Line) & ":" & Integer'Image (P.Toks (K).Col)
+                             & ": expected the C type of the value after `::`";
+                     end case;
+                     K := K + 1;
+                  end loop;
+                  if Ty = Null_Unbounded_String or else P.Toks (K).Kind not in T_Eq | T_Eq_Slash then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                       & ": expected `name :: type =`, the type then the `=`";
+                  end if;
+                  Value_Types.Include (Nm (Nm'First .. Stop - 1), To_String (Ty));
+                  P.Toks.Delete (P.Pos + 1, Ada.Containers.Count_Type (K - (P.Pos + 1)));
+               end;
+            end if;
+
             if Cur (P).Kind /= T_Name
               or else P.Toks (P.Pos + 1).Kind not in T_Eq | T_Eq_Slash
             then
@@ -8153,8 +8253,16 @@ package body HBNF_Grammar is
                      --  `pattern %emit{ code }`: what the bit layer runs when
                      --  it writes the record.
                      Next (P);
-                     Emit_Table.Include (To_String (Name),
-                                         To_String (Cur (P).Text));
+                     if (for some E of Pattern => E.Kind = Bit_Field) then
+                        Emit_Table.Include (To_String (Name),
+                                            To_String (Cur (P).Text));
+                     else
+                        Pattern.Append
+                          (new Element'(Kind => Block, Min => 1, Max => 1,
+                                        Op => B_Emit, Ctx => <>, Path => <>, Id => 0,
+                                        Look => <>,
+                                        Code => Cur (P).Text));
+                     end if;
                      Next (P);
                   end loop;
                   if Cur (P).Kind = T_Pct then
@@ -8182,8 +8290,16 @@ package body HBNF_Grammar is
                     and then P.Toks (P.Pos + 1).Kind = T_Code
                   loop
                      Next (P);
-                     Emit_Table.Include (To_String (Name),
-                                         To_String (Cur (P).Text));
+                     if (for some E of Pattern => E.Kind = Bit_Field) then
+                        Emit_Table.Include (To_String (Name),
+                                            To_String (Cur (P).Text));
+                     else
+                        Pattern.Append
+                          (new Element'(Kind => Block, Min => 1, Max => 1,
+                                        Op => B_Emit, Ctx => <>, Path => <>, Id => 0,
+                                        Look => <>,
+                                        Code => Cur (P).Text));
+                     end if;
                      Next (P);
                   end loop;
                   --  A trailing comment sits on the rule's own line, after

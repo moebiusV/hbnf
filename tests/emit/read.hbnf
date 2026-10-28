@@ -1,0 +1,4 @@
+; %emit between elements and at the end of a rule (RFCPLAN.md step 15)
+prefix none
+object :: uint32_t = "{" %emit{ $$ = tape_open(OBJECT); } [ member *( "," member ) ] "}" %emit{ tape_close($$); }
+member :: uint32_t = word ":" int %emit{ tape_pair(word, int); }

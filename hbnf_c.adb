@@ -5284,6 +5284,8 @@ package body HBNF_C is
                      null;
                   when Block =>
                      case E.Op is
+                        when B_Emit =>
+                           null;  --  refused before emission until it is generated
                         when B_Action =>
                            null;  --  lifted to a rule of its own before emission
                         when B_Test | B_Not_Test =>

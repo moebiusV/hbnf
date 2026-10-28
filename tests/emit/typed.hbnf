@@ -1,0 +1,5 @@
+; rules with a value: the type after `::` (RFCPLAN.md step 15)
+prefix none
+doc :: uint32_t = name "=" count(1)
+name :: struct ntp_peer * = word
+count(M in 0..) :: unsigned long := int
