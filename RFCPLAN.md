@@ -2676,6 +2676,50 @@ corpus, e2e and byte-identity gates hold throughout; each is
 regression-tested by a generated-line-count figure, the way 4f is by
 cycles.
 
+15. **Values at recognition: `%emit{ }` with `$$`.**  *Decided 2026-10-28 with the user; not
+    started.*  A parser can build the structure its author wants as it reads, as yacc's
+    actions do, instead of a tree that a later walk converts.  The daemon bindings put their
+    parse into the daemon's own structs and trees (`TAILQ`, `RB`), and JSON and YAML into the
+    flat layouts the fastest parsers use (a tape of words; an array of fixed-size nodes with
+    views into the input).  A hand-written flat-tape JSON parser took 1.61 ms on the 2 MB file
+    against 2.70 ms for the same code writing a typed tree, and 3.7 for the generated parser.
+
+    *Notation.*  `%emit{ code }` is the third member of the family (decision 8) and sits where
+    `%action{ }` sits, at the end of a rule or between elements.  A rule with a value says so
+    after its name with `::`, as Haskell does: `object :: uint32_t = ...`, and with
+    parameters after them: `member(M in 0..) :: uint32_t := ...`.  The type is the words and
+    `*`s up to the `=`, so `peer :: struct ntp_peer * = ...` needs no quoting; one `{ }` block
+    holds anything stranger, as raw C is held everywhere in the notation.  `::` followed by
+    `=` stays the domain definition (`level ::= 1..17`) and `:=` the hyperrule; a `::` with a
+    space after it is the type marker.  The
+    head stays one name; nothing in the hyperrule or the ALGOL 68 plan needs a multi-word
+    head.  In the code, `$$` is the rule's value, set when the code sets it and kept for the
+    emits that follow it in the rule, and each element is a C variable named after its rule:
+    a token is a view (`str`), a rule with a value is that value.
+
+    *Timing.*  The code runs when its place in the sequence is reached.  Inside the body of
+    `*( ... )` it runs once for each iteration, which is how a list becomes inserts into the
+    author's own container.  Nothing is stored for a rule that has a value: no struct, no
+    list nodes.
+
+    *Everything combines with everything.*  A rule's result is its struct when it has no emit,
+    its value when it has one with a type, and nothing when it has an emit and no type.  A tree
+    parent stores a child's value as a field; a stream parent reads a tree child as a variable.
+    No kind of rule is barred from any position.
+
+    *Refusal, the one restriction, and why.*  An emit cannot be taken back, so it is safe only
+    if nothing above it can retry past it.  A grammar is refused, naming the rule and the
+    overlapping alternatives, when an emit has an ancestor that can: an alternation whose
+    alternatives can start alike (the fork analysis of decision 14), an option or repetition
+    whose first set overlaps what can follow it, or a lookahead (`!x`, `&x`) that contains the
+    emit.  The analysis uses the lookahead sets the generator already keeps.  It applies up the
+    whole chain of ancestors, whatever kind of rule they are.
+
+    *Order of work.*  The reader (the type after the name; `%emit` blocks in every position);
+    the refusal analysis, with its tests; the C backend; JSON as the first grammar, checked
+    against the current parser's results and measured against it; then YAML, and the daemon
+    bindings, whose `action` blocks become emits.
+
 ## Not in this plan
 
 - RBNF (RFC 5511's routing BNF).
