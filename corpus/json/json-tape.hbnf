@@ -1,0 +1,56 @@
+; JSON (RFC 8259) read into a flat tape of 64-bit words, with no tree: the same language as
+; json.hbnf, with an %emit where the tree would have made a node.  An object or an array is
+; opened where its bracket is read and closed where its bracket ends, a value is one tag and its
+; text; `$$` of the object or array is where it begins on the tape, kept for the closing emit.
+prefix none
+{
+#include <stdint.h>
+#include <stdlib.h>
+
+/* the tape: a tag, then for a string, number or literal the offset and length of its text, for an
+   object or array the tape position after it (so a reader can skip it) and the number of members */
+enum { T_OBJ = 1, T_ARR, T_STR, T_NUM, T_TRUE, T_FALSE, T_NULL, T_KEY };
+static uint64_t *tape;
+static size_t tape_n, tape_cap;
+static const char *tape_text;
+
+static inline void tape_put (uint64_t a, uint64_t b)
+{
+    if (tape_n + 2 > tape_cap) {
+        tape_cap = tape_cap ? tape_cap * 2 : 1 << 16;
+        tape = realloc (tape, tape_cap * sizeof *tape);
+        if (!tape) abort ();
+    }
+    tape[tape_n++] = a;
+    tape[tape_n++] = b;
+}
+static inline uint64_t tape_open (uint64_t tag)
+{
+    uint64_t at = tape_n;
+    tape_put (tag, 0);
+    return at;
+}
+static inline void tape_close (uint64_t at)
+{
+    tape[at + 1] = tape_n;
+}
+static inline void tape_text_of (uint64_t tag, const char *s, size_t n)
+{
+    tape_put (tag, (uint64_t) (s - tape_text) << 24 | n);
+}
+}
+
+include "json-tokens.hbnf"
+
+json  :: int = value
+value :: int = object | array
+             | string %emit{ tape_text_of (T_STR, hbnf_sp (string), hbnf_sn (string)); }
+             | number %emit{ tape_text_of (T_NUM, hbnf_sp (number), hbnf_sn (number)); }
+             | literal-true  %emit{ tape_put (T_TRUE, 0); }
+             | literal-false %emit{ tape_put (T_FALSE, 0); }
+             | literal-null  %emit{ tape_put (T_NULL, 0); }
+object :: uint64_t = "{" %emit{ $$ = tape_open (T_OBJ); } [ member *( "," member ) ] "}" %emit{ tape_close ($$); }
+member :: int = string %emit{ tape_text_of (T_KEY, hbnf_sp (string), hbnf_sn (string)); } ":" value
+array  :: uint64_t = "[" %emit{ $$ = tape_open (T_ARR); } [ value *( "," value ) ] "]" %emit{ tape_close ($$); }
+
+ws = *( SP / HTAB / LF / CR )

@@ -12,6 +12,16 @@ automaton, with no tree) only in a file that skips no white space; `json-tokens.
 `whitespace none`, and `json.hbnf` skips the blanks between the rest.  (A rule called
 `int` would be hbnf's own number, so the integer part is `integer`.)
 
+## Onto a tape, with no tree
+
+`json-tape.hbnf` is the same language with an `%emit{ }` where the tree would have made a node:
+an object or an array is opened where its bracket is read, a string, number or literal is a tag
+and the place of its text, and the closing bracket links the opener to the position after it.
+The parser makes no struct and no list node, only a flat array of 64-bit words, which is the
+layout a hand-written reader would choose.  `sh tests/emit.sh` generates it, compiles it and checks
+that the tape holds as many values of each kind as Python's `json` finds in every good document
+of `tests/good` and that every document of `tests/bad` is refused.
+
 ## Checked against Python's `json`
 
 JSON is exactly defined, so there is no reason for any difference, and the check allows

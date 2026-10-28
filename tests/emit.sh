@@ -48,6 +48,14 @@ if [ -x "$W/run" ]; then
 [t,x] error 1:4
 CASES
 fi
+# JSON read onto a tape: the same counts of each kind as Python finds, in every good document, and
+# every bad one refused
+"$CLI" corpus/json/json-tape.hbnf --backend=c > "$W/jt.c" 2> "$W/jt.err" \
+	|| { echo "emit: FAIL (json-tape: $(head -c 200 "$W/jt.err"))"; fail=1; }
+cat tests/emit/json-tape.c >> "$W/jt.c"
+${CC:-cc} -O1 -std=gnu11 -w -o "$W/jt" "$W/jt.c" 2> "$W/cc.err" \
+	&& python3 tests/emit/json-tape.py corpus/json/tests "$W/jt" \
+	|| { echo "emit: FAIL (json-tape: $(head -c 300 "$W/cc.err"))"; fail=1; }
 # each way an emit can be taken back is refused, naming the rule
 refused() {   # refused FILE RULE TEXT
 	"$CLI" tests/emit/$1.hbnf --backend=c 2>&1 > /dev/null | grep -q "rule \`$2\`: .*$3" \
