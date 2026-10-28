@@ -13,7 +13,7 @@ use FFI::Platypus 2.00;
 my $ffi = FFI::Platypus->new(api => 2);
 $ffi->lib("$FindBin::Bin/libhbnfconf.so");
 
-# Records mirror conf.h.  `listen` is embedded by value in `server`, so it is
+# Records mirror the generated file.  `listen` is embedded by value in `server`, so it is
 # inlined into the server record's members.
 $ffi->type('record(redirects_list)' => 'struct redirects_list' => [
     head => 'opaque',            # struct redirects* @ 0

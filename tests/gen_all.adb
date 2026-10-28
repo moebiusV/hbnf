@@ -42,13 +42,11 @@ procedure Gen_All is
    Rules : constant HBNF_Grammar.Rule_Vectors.Vector :=
      HBNF_Grammar.Parse (Read_File (Ada.Command_Line.Argument (1)));
 
-   Conf : constant Boolean := Ada.Command_Line.Argument_Count >= 2
-     and then Ada.Command_Line.Argument (2) = "--conf";
 begin
    Mustache.Load ("templates");
    declare
       Ada_Parser : constant String :=
-        HBNF_Ada.Emit_Parser (Rules, "Server_Schema", Conf);
+        HBNF_Ada.Emit_Parser (Rules, "Server_Schema");
       Split      : constant Natural :=
         Ada.Strings.Fixed.Index (Ada_Parser, "with Interfaces;");
    begin

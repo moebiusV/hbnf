@@ -46,7 +46,7 @@ package HBNF_Rust is
    --  Emit the parser half: a recursive-descent parser (a token type plus one
    --  `parse_<rule>()` function per rule) that consumes a token slice and
    --  builds the types `Emit` declares.  On failure it records the deepest
-   --  `fail` into the ParseError; the conf wrapper reports it via config_error.
+   --  `fail` into the ParseError; the caller reports it.
    function Emit_Parser
      (Rules : HBNF_Grammar.Rule_Vectors.Vector)
       return String;
@@ -55,10 +55,5 @@ package HBNF_Rust is
    --  token slice `Emit_Parser` consumes (skipping whitespace and `#` comments),
    --  plus a `parse_text` convenience that lexes, splits lines and parses.
    function Emit_Lexer (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
-
-   --  Emit the OpenBSD conf.h/conf.c-shape wrapper: a `parse_config(path)` that
-   --  reads a file and populates a config, plus the overridable `config_error`
-   --  handler (default prints + exit(1)).  Appended after Emit_Lexer.
-   function Emit_Conf (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
 
 end HBNF_Rust;

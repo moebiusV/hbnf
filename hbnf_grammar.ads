@@ -547,20 +547,6 @@ package HBNF_Grammar is
 
    procedure Set_Root (Name : String);
 
-   --  The daemon's own conf struct, from a top-level `conf struct ntpd_conf`
-   --  directive; "" when absent.  When set, the C `--conf` wrapper emits
-   --  parse_config(filename, <conf>) — it fills the caller's conf instead of
-   --  allocating an AST-shaped one — so the action jets' `conf` global is the
-   --  daemon's real tree, not hbnf's parse tree.
-   function Conf_Type return String;
-
-   --  `entry hbnf_parse_config`: the name of the function the `conf`
-   --  wrapper defines, "parse_config" when absent.  A daemon whose
-   --  parse.y declares parse_config differently (unwind's returns a new
-   --  struct uw_conf *) names the generated one otherwise, and its
-   --  binding's epilogue defines the daemon's parse_config around it.
-   function Entry_Name return String;
-
    --  `statements`: the root rule is a list whose entries are statements,
    --  and the C parser reads the config one statement at a time, as
    --  parse.y's yyparse does.  A statement ends at a newline outside `{ }`

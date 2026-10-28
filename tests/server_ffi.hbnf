@@ -1,0 +1,69 @@
+; tests/server.hbnf with the entry points a program in another language would call (the FFI
+; bindings in bindings/ drive them through ctypes, Fiddle and the like).  The grammar's own
+; prologue and epilogue write them: nothing here is generated for the purpose, and the layout
+; of the tree is the plain C one, so the bindings read the structs directly.
+;   hbnf tests/server_ffi.hbnf --backend=c --no-views > server.c
+;   cc -shared -fPIC -Iruntime server.c runtime/hbnf_conf.c -o libhbnfconf.so
+prefix none
+{
+#include <stdio.h>
+#include <stdlib.h>
+#include "hbnf_conf.h"
+}
+
+include "server.hbnf"
+
+{
+/* The tree of the last file parsed.  Its strings are copies (--no-views), so a binding reads
+   them as C strings. */
+server_t *conf = NULL;
+
+/* Drop the tree and its arena. */
+void free_conf(void) {
+    if (conf) {
+        free_server(conf);
+        free(conf);
+        conf = NULL;
+    }
+}
+
+/* Parse the file into conf: 0, or -1 after the message went to conf_error (which prints it,
+   unless the caller has set its own).  The previous tree is dropped first. */
+int parse_config(const char *filename) {
+    FILE *f;
+    char *buf;
+    long len;
+    char err[512];
+    size_t line = 0, col = 0;
+
+    conf_file = filename;
+    if (!(f = fopen(filename, "rb"))) {
+        conf_error(0, "cannot open file");
+        return -1;
+    }
+    fseek(f, 0, SEEK_END);
+    len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (!(buf = (char *)malloc((size_t)len + 1)) || fread(buf, 1, (size_t)len, f) != (size_t)len) {
+        fclose(f);
+        free(buf);
+        conf_error(0, "cannot read file");
+        return -1;
+    }
+    buf[len] = '\0';
+    fclose(f);
+    free_conf();
+    if (!(conf = (server_t *)calloc(1, sizeof *conf)))
+        hbnf_oom();
+    if (!parse_text(buf, conf, err, sizeof err, &line, &col)) {
+        free(buf);
+        free_conf();
+        conf_error(line, err);
+        return -1;
+    }
+    free(buf);
+    return 0;
+}
+
+server_t *conf_ptr(void) { return conf; }
+}

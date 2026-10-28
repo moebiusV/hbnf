@@ -1206,7 +1206,7 @@ package body HBNF_C is
    --  exactly one of them: its node is the number of the alternative taken (`_alt`, from 1) and
    --  a union of the alternatives, not a field for each with all but one empty.  Left out where
    --  something else reads the fields as a struct (the id-ref, writer, AST, spans, parents and
-   --  compare tools, the fork detector, `--conf`).
+   --  compare tools, the fork detector).
    function Is_Choice (R : Rule) return Boolean is
       P : constant Element_Vectors.Vector := R.Pattern;
       N : constant Natural := Natural (P.Length);
@@ -1251,7 +1251,7 @@ package body HBNF_C is
       --  target, and only a struct is embedded by value, so anything else
       --  yields 0.  Bounded like Alias_Target: an all-alias cycle is refused
       --  by Emit's leaf sort before Emit gets here, but Emit_Parser can meet
-      --  one directly on the --conf path, and this must not spin.
+      --  one directly, and this must not spin.
       function Resolve (N : U) return Natural is
          J : Natural := Find (Rules, To_String (N));
       begin
@@ -2352,7 +2352,7 @@ package body HBNF_C is
            "   as a parse.y action calls yyerror: the walk carries on, and the" & LF &
            "   parse fails once it ends.  The message is tagged with the line the" & LF &
            "   action's node starts on.  bind_report, when set, sees every error" & LF &
-           "   (the --conf wrapper points it at conf_error); otherwise the first" & LF &
+           "   (a config grammar's epilogue points it at conf_error); otherwise the first" & LF &
            "   becomes the parse error. */" & LF &
            "#include <stdarg.h>" & LF &
            "#include <stdio.h>" & LF &
@@ -8314,10 +8314,7 @@ Append (Res, "static size_t scan_" & C_Name (NM)
       return To_String (Res);
    end Emit_Parser;
 
-   function Emit_Lexer
-     (Rules      : Rule_Vectors.Vector;
-      Text_Entry : Boolean := True) return String
-   is
+   function Emit_Lexer (Rules : Rule_Vectors.Vector) return String is
       Root_T : constant String := Root_Type (Rules);
       Res    : U;
 
@@ -8333,9 +8330,7 @@ Append (Res, "static size_t scan_" & C_Name (NM)
          Add ("c_statements");
          Add (if HBNF_Grammar.Macros_Rule /= "" then "c_macros"
               else "c_no_macros");
-         if Text_Entry then
-            Add ("c_stmt_text");
-         end if;
+         Add ("c_stmt_text");
       end if;
       if Epilogue ("C") /= "" then
          Append (Res, LF);
@@ -8343,130 +8338,6 @@ Append (Res, "static size_t scan_" & C_Name (NM)
       end if;
       return To_String (Res);
    end Emit_Lexer;
-
-   --  conf.h: the declarations plus the global `conf`, the error callback and
-   --  the parse_config prototype.
-   function Emit_Conf_Header (Rules : Rule_Vectors.Vector) return String is
-      Root_T : constant String := Root_Type (Rules);
-      Conf_T : constant String := HBNF_Grammar.Conf_Type;
-      Tail   : constant String :=
-        (if Conf_T /= "" then
-            Fill ("conf_h_typed",
-                  (H ("conf_type", Conf_T),
-                   H ("entry", HBNF_Grammar.Entry_Name),
-                   H ("root_type", Root_T)))
-         else
-            Fill ("conf_h", (1 => H ("root_type", Root_T))));
-
-      --  `struct X` / `union X` can be declared ahead of the prototype, so
-      --  the header stands alone; a typedef name comes from the daemon's
-      --  own header, included before this one.
-      function Forward return String is
-        ((if (Conf_T'Length > 7
-              and then Conf_T (Conf_T'First .. Conf_T'First + 6) = "struct ")
-           or else (Conf_T'Length > 6
-                    and then Conf_T (Conf_T'First .. Conf_T'First + 5)
-                             = "union ")
-          then Conf_T & ";" & LF & LF
-          else ""));
-
-      --  `macros`: -D name=value, as the daemons' cmdline_symset.
-      Symset : constant String :=
-        (if HBNF_Grammar.Macros_Rule /= "" then
-            LF & LF & "/* -D name=value: a macro the config cannot redefine; -1"
-            & " without `=`. */" & LF & "int cmdline_symset(char *s);" & LF
-         else "");
-   begin
-      if Conf_T /= "" then
-         --  A daemon binding: the daemon's own header declares its conf
-         --  struct and parse_config, and nothing but conf.c includes this
-         --  one, so it carries declarations only; the code is in conf.c.
-         return
-           "#ifndef CONF_H" & LF &
-           "#define CONF_H" & LF & LF &
-           "#include <stddef.h>" & LF & LF &
-           Forward &
-           Tail &
-           Symset &
-           LF &
-           "#endif" & LF;
-      end if;
-      return
-        "#ifndef CONF_H" & LF &
-        "#define CONF_H" & LF & LF &
-        Emit (Rules) &
-        LF &
-        Tail &
-        Symset &
-        LF &
-        "#endif" & LF;
-   end Emit_Conf_Header;
-
-   --  conf.c: the lexer + parser plus the global `conf` and parse_config
-   --  (slurp the file, populate conf, report errors through the callback).
-   function Emit_Conf_Source (Rules : Rule_Vectors.Vector) return String is
-      Root_T : constant String := Root_Type (Rules);
-      Root_C : constant String := C_Name (To_String (Rules (1).Name));
-      Conf_T : constant String := HBNF_Grammar.Conf_Type;
-   begin
-      if Conf_T /= "" then
-         --  Typed wrapper: the daemon owns `conf`; parse_config fills it via
-         --  the action jets, so there is no parser-owned conf to free.  The
-         --  declarations (and the grammar's preamble, which includes the
-         --  daemon's header) come first, then conf.h; parse_config is the
-         --  one external function the daemon links against, so the parser's
-         --  own entry points are made static.
-         --  With `statements`, parse_config reads the file through the
-         --  statement driver and drops each statement once bound, so there
-         --  is no parse_text.
-         declare
-            --  The parser entry is hbnf_parse with `statements` (the driver
-            --  calls it per statement), else parse_text; either way it is
-            --  internal to conf.c.
-            Entry_Nm : constant String :=
-              (if HBNF_Grammar.Statements then "hbnf_parse" else "parse_text");
-            Parser : constant String :=
-              Replace
-                (Emit_Parser (Rules),
-                 LF & "bool " & Entry_Nm & "(",
-                 LF & "static bool " & Entry_Nm & "(");
-         begin
-            return
-              "/* generated by hbnf -- do not edit */" & LF & LF &
-              Emit (Rules, Walkers => False) &
-              LF &
-              "#include ""conf.h""" & LF & LF &
-              Parser &
-              Emit_Lexer (Rules,
-                          Text_Entry => not HBNF_Grammar.Statements) &
-              LF &
-              Fill ((if HBNF_Grammar.Statements
-                     then "conf_tail_c_typed_stmt"
-                     else "conf_tail_c_typed"),
-                    (H ("entry", HBNF_Grammar.Entry_Name),
-                     H ("conf_type", Conf_T),
-                     H ("root_type", Root_T),
-                     H ("root_c", Root_C)));
-         end;
-      end if;
-
-      return
-        "/* generated by hbnf -- do not edit */" & LF & LF &
-        "#include ""conf.h""" & LF & LF &
-        Emit_Parser (Rules) &
-        Emit_Lexer (Rules) &
-        LF &
-        Fill ((if HBNF_Grammar.Statements then "conf_tail_c_stmt"
-               else "conf_tail_c"), (1 => H ("root_type", Root_T))) &
-        LF &
-        "/* Drop the current config tree (the SIGHUP reload path). */" & LF &
-        "void free_conf(void) {" & LF &
-        "    if (!conf) return;" & LF &
-        "    free_" & Root_C & "(conf);" & LF &
-        "    free(conf);" & LF &
-        "    conf = NULL;" & LF &
-        "}";
-   end Emit_Conf_Source;
 
    --  =====================================================================
    --  Emit_Serializer: a pre-order walk of the tree Emit declares that

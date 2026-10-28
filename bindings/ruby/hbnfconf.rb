@@ -11,7 +11,7 @@ module HbnfConf
   CConfPtr = Fiddle::Function.new(HANDLE["conf_ptr"],
                                   [], Fiddle::TYPE_VOIDP)
 
-  # conf_ptr() returns a `server_t *`.  Layout (see conf.h):
+  # conf_ptr() returns a `server_t *`.  Layout (see the generated file):
   #   name (char* @ 0), listen{ iface (char* @ 8), port (uint16 @ 16) }, ...
   def self.parse_config(path)
     return nil unless CParseConfig.call(path) == 0

@@ -1415,8 +1415,8 @@ package body HBNF_Ada is
    end Emit;
 
    function Emit_Parser
-     (Rules : HBNF_Grammar.Rule_Vectors.Vector; Package_Name : String;
-      Conf  : Boolean := False) return String
+     (Rules : HBNF_Grammar.Rule_Vectors.Vector; Package_Name : String)
+      return String
    is
 
       N : constant Natural := Natural (Rules.Length);
@@ -3899,18 +3899,12 @@ package body HBNF_Ada is
                  & "      Message : out Unbounded_String);" & LF & LF);
       end if;
 
-      --  Package specification: the exception and Parse_Text (and Parse_Config).
+      --  Package specification: the exception and Parse_Text.
       declare
-         Conf_Decl : constant String :=
-           (if Conf
-            then "   function Parse_Config (Filename : String) return "
-                 & Ret_Type (1) & ";" & LF & LF
-            else "");
          V : Mustache.Context := Mustache.View;
       begin
          Mustache.Put (V, "pkg", Package_Name);
          Mustache.Put (V, "ret", Ret_Type (1));
-         Mustache.Put (V, "conf", Conf_Decl);
          Mustache.Put (V, "frees", To_String (Free_Decls));
          Mustache.Put (V, "hosted_spec", To_String (Hosted_Spec));
          Mustache.Put (V, "spec_withs",
@@ -3932,13 +3926,10 @@ package body HBNF_Ada is
            (if Has_No_Case (Rules)
             then "with Ada.Strings.Equal_Case_Insensitive;" & LF
             else "");
-         Conf_With : constant String :=
-           (if Conf then "with Ada.Text_IO;" & LF else "");
          V : Mustache.Context := Mustache.View;
       begin
          Mustache.Put (V, "pkg", Package_Name);
          Mustache.Put (V, "nocase_with", Nocase_With);
-         Mustache.Put (V, "conf_with", Conf_With);
          Mustache.Put (V, "free_with", "with Ada.Unchecked_Deallocation;" & LF);
          Mustache.Put (V, "hosted_with",
            To_String (Hosted_Withs)
@@ -5201,15 +5192,6 @@ package body HBNF_Ada is
       end;
       Append (Bdy, LF);
       Append (Bdy, LF);
-      if Conf then
-         declare
-            V : Mustache.Context := Mustache.View;
-         begin
-            Mustache.Put (V, "root_type", Ret_Type (1));
-            Append (Bdy, Mustache.Render_File ("conf_ada", V));
-         end;
-         Append (Bdy, LF);
-      end if;
       if Epilogue ("Ada") /= "" then
          Append (Bdy, Epilogue ("Ada"));
          Append (Bdy, LF);

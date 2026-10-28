@@ -4142,10 +4142,4 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
       end if;
    end Emit_Lexer;
 
-   function Emit_Conf (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
-      Root_T : constant String := Rust_Type (To_String (Rules (1).Name));
-   begin
-      return Render_Root ("conf_rust", Root_T);
-   end Emit_Conf;
-
 end HBNF_Rust;

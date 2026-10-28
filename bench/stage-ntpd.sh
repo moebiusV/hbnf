@@ -65,7 +65,7 @@ ntpd_row() {   # ntpd_row LABEL BINARY N KEY
 		printf '**%s sensors** (one `sensor` line each, the same file for both):\n\n' "$(echo "$n" | sed ':a;s/\B[0-9]\{3\}\>/,&/;ta')"
 		table_head_ntpd
 		ntpd_row "OpenBSD ntpd parse.y, byacc" "$W/y/parsey" "$n" byacc
-		ntpd_row "hbnf binding (\`--conf\`)" "$W/h/hbnfd" "$n" hbnf
+		ntpd_row "hbnf binding" "$W/h/hbnfd" "$n" hbnf
 		printf '\n'
 	done
 	[ -f "$RESULTS/env.md" ] && printf '_%s_\n' "$(cat "$RESULTS/env.md")"

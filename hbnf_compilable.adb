@@ -806,26 +806,6 @@ package body HBNF_Compilable is
          end if;
       end loop;
 
-      --  `conf struct X` hands parse_config the daemon's own struct, which
-      --  only action jets fill: without one the parse would succeed and
-      --  leave the daemon's conf empty.
-      if Conf_Type /= ""
-        and then not (for some R of Rules =>
-                        R.Action_Code /= Null_Unbounded_String)
-      then
-         raise Parse_Error with
-           "`conf " & Conf_Type & "` is filled by action jets, and no rule "
-           & "has one (add `action <rule> { ... }`)";
-      end if;
-
-      --  `entry` renames the function the conf wrapper defines, which
-      --  exists only with `conf`.
-      if Entry_Name /= "parse_config" and then Conf_Type = "" then
-         raise Parse_Error with
-           "`entry " & Entry_Name & "` names the function the `conf` "
-           & "wrapper defines; add `conf struct <daemon conf>`";
-      end if;
-
       --  A listops block overrides hbnf's built-in list operation by
       --  operation.  The seven structural operations form one list, so a
       --  partial block (mixing overridden and built-in operations) would

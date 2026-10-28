@@ -59,8 +59,6 @@ package body HBNF_Grammar is
    Epilogue_Pieces : Piece_Vectors.Vector;
 
    Type_Prefix_Code : Unbounded_String := Null_Unbounded_String;
-   Conf_Type_Code  : Unbounded_String := Null_Unbounded_String;
-   Entry_Code      : Unbounded_String := Null_Unbounded_String;
    List_Head_Code    : Unbounded_String := Null_Unbounded_String;
    List_Entry_Code   : Unbounded_String := Null_Unbounded_String;
    List_Init_Code    : Unbounded_String := Null_Unbounded_String;
@@ -73,6 +71,9 @@ package body HBNF_Grammar is
    --  `statements`, `macros <rule>`, `includes <rule>`: how the C parser
    --  reads a config (see the spec).
    Statements_On   : Boolean := False;
+   --  The line of the last `include` in the file being read; a code block after it, before any
+   --  rule, belongs to the end of the file (the included rules come first), not the start.
+   Epilogue_After_Line : Natural := 0;
    Context_Words   : Word_Vectors.Vector;
    Macros_Name     : Unbounded_String := Null_Unbounded_String;
    Includes_Name   : Unbounded_String := Null_Unbounded_String;
@@ -590,8 +591,6 @@ package body HBNF_Grammar is
       Preamble_Pieces.Clear;
       Epilogue_Pieces.Clear;
       Type_Prefix_Code := Null_Unbounded_String;
-      Conf_Type_Code := Null_Unbounded_String;
-      Entry_Code := Null_Unbounded_String;
       List_Head_Code := Null_Unbounded_String;
       List_Entry_Code := Null_Unbounded_String;
       List_Init_Code := Null_Unbounded_String;
@@ -1128,7 +1127,7 @@ package body HBNF_Grammar is
                                   | "sensitivity" | "whitespace" | "keywords"
                                   | "statements" | "macros" | "includes"
                                   | "context"
-                                  | "entry" | "prefix" | "wordchars"
+                                  | "prefix" | "wordchars"
                      then
                         Emit (T_Newline);
                      elsif K >= 1 and then Natural (Toks.Length) >= K
@@ -7382,6 +7381,7 @@ package body HBNF_Grammar is
       File_Lang : Unbounded_String := To_Unbounded_String ("C");
       Lang_Line : Natural := 0;
       Head_Code : Word_Vectors.Vector;
+      Late_Code : Word_Vectors.Vector;   --  after the file's last `include`: its epilogue
       Own_Words : Word_Vectors.Vector;
       --  The lines that set this file's `sensitivity`, per axis (0: none).
       Names_Line   : Natural := 0;
@@ -7426,12 +7426,10 @@ package body HBNF_Grammar is
            or else (Cur (P).Kind = T_Name
                     and then (To_String (Cur (P).Text) = "language"
                               or else To_String (Cur (P).Text) = "prefix"
-                              or else To_String (Cur (P).Text) = "conf"
                               or else To_String (Cur (P).Text) = "listops"
                               or else To_String (Cur (P).Text) = "statements"
                               or else To_String (Cur (P).Text) = "context"
                               or else To_String (Cur (P).Text) = "macros"
-                              or else To_String (Cur (P).Text) = "entry"
                               or else To_String (Cur (P).Text) = "includes"
                               or else To_String (Cur (P).Text) = "sensitivity"
                               or else To_String (Cur (P).Text) = "dialect"
@@ -7449,7 +7447,11 @@ package body HBNF_Grammar is
                   Next (P);
                end loop;
                if Cur (P).Kind = T_Code then
-                  Head_Code.Append (Cur (P).Text);
+                  if Epilogue_After_Line > 0 and then Cur (P).Line > Epilogue_After_Line then
+                     Late_Code.Append (Cur (P).Text);
+                  else
+                     Head_Code.Append (Cur (P).Text);
+                  end if;
                   Next (P);
                elsif Cur (P).Kind = T_Pct
                  and then To_String (Cur (P).Text) = "token"
@@ -7794,34 +7796,6 @@ package body HBNF_Grammar is
                      Next (P);
                   end if;
                elsif Cur (P).Kind = T_Name
-                 and then To_String (Cur (P).Text) = "conf"
-               then
-                  --  `conf struct ntpd_conf`: the daemon's own conf struct
-                  --  the C --conf wrapper fills (instead of an AST-shaped
-                  --  one).  The type is the bare C spelling, joined with
-                  --  single spaces (`struct ntpd_conf`).
-                  Next (P);
-                  declare
-                     Buf : Unbounded_String := Null_Unbounded_String;
-                     At_Line : constant Positive := Cur (P).Line;
-                  begin
-                     while Cur (P).Kind = T_Name loop
-                        if Buf /= Null_Unbounded_String then
-                           Append (Buf, " ");
-                        end if;
-                        Append (Buf, Cur (P).Text);
-                        Next (P);
-                     end loop;
-                     if Buf = Null_Unbounded_String then
-                        raise Parse_Error with
-                          Integer'Image (Cur (P).Line) & ":" &
-                          Integer'Image (Cur (P).Col) &
-                          ": expected a C struct type after `conf`";
-                     end if;
-                     Set_Directive (Conf_Type_Code, "conf", To_String (Buf),
-                                    At_Line);
-                  end;
-               elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "listops"
                then
                   --  `listops { head { … } entry { … } … }`: the raw C for
@@ -7913,8 +7887,7 @@ package body HBNF_Grammar is
                   Next (P);
                elsif Cur (P).Kind = T_Name
                  and then (To_String (Cur (P).Text) = "macros"
-                           or else To_String (Cur (P).Text) = "includes"
-                           or else To_String (Cur (P).Text) = "entry")
+                           or else To_String (Cur (P).Text) = "includes")
                  and then Ends_Directive (P, 2)
                then
                   --  `macros varset` / `includes include`: the rule whose
@@ -7928,15 +7901,11 @@ package body HBNF_Grammar is
                           Integer'Image (Cur (P).Line) & ":" &
                           Integer'Image (Cur (P).Col) &
                           ": expected "
-                          & (if D = "entry" then "a C function name"
-                             else "a rule name")
+                          & "a rule name"
                           & " after `" & D & "`";
                      end if;
                      if D = "macros" then
                         Set_Directive (Macros_Name, D,
-                                       To_String (Cur (P).Text), Cur (P).Line);
-                     elsif D = "entry" then
-                        Set_Directive (Entry_Code, D,
                                        To_String (Cur (P).Text), Cur (P).Line);
                      else
                         Set_Directive (Includes_Name, D,
@@ -7955,6 +7924,9 @@ package body HBNF_Grammar is
       Schema_Language := File_Lang;
       for C of Head_Code loop
          Preamble_Pieces.Append (Code_Piece'(Lang => File_Lang, Code => C));
+      end loop;
+      for C of Late_Code loop
+         Epilogue_Pieces.Append (Code_Piece'(Lang => File_Lang, Code => C));
       end loop;
 
       loop
@@ -8491,6 +8463,10 @@ package body HBNF_Grammar is
       Expand (Read_File (Path), Dir_Of (Path), Included, Inc_Index, Incs,
               Out_Text);
       Current_File := To_Unbounded_String (Path);
+      Epilogue_After_Line := 0;
+      for I of Incs loop
+         Epilogue_After_Line := Natural'Max (Epilogue_After_Line, I.Line);
+      end loop;
       Local := Parse (To_String (Out_Text));
       --  An include goes before the file's rules, so that "a later `=`
       --  overrides" holds: the file's own rules come after what it
@@ -9527,12 +9503,6 @@ package body HBNF_Grammar is
    end List_Override;
 
    function Type_Prefix return String is (To_String (Type_Prefix_Code));
-
-   function Conf_Type return String is (To_String (Conf_Type_Code));
-
-   function Entry_Name return String is
-     (if Entry_Code = Null_Unbounded_String then "parse_config"
-      else To_String (Entry_Code));
 
    function Statements return Boolean is (Statements_On);
 

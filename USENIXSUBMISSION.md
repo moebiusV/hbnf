@@ -63,8 +63,10 @@ notation with the speed of a hand-written lexer.
 Contributions:
 
 1. An extension of ABNF into a parser-generator schema language (typed named
-   subrules, repetition, alternation, multi-line rules, an OpenBSD-style
-   `parse_config` entry point and point-of-error handler).
+   subrules, repetition, alternation, multi-line rules, and prologue and
+   epilogue code blocks from which a grammar writes an OpenBSD-style
+   `parse_config` entry point around a shipped driver, with a point-of-error
+   handler).
 2. A design that moves lexing into the parser: token definitions are BNF over
    code points, with hand-written scanner functions ("scanner actions") as a
    speed-equivalence escape hatch, cross-checked against the BNF.
@@ -203,11 +205,13 @@ The generator emits a *self-contained* parser: forward declarations of every
 type, the type definitions in dependency order, the `parse_<rule>` functions,
 and the lexer — one compilable file per backend.
 
-### 3.2 The conf wrapper and the point-of-error handler
+### 3.2 The config entry point and the point-of-error handler
 
-For the OpenBSD use case, hbnf also emits a `parse_config(filename)` entry that
-matches the shape of a daemon's existing config loader: it reads the file and
-produces a global root, with an overridable error handler.  The handler is
+For the OpenBSD use case, a grammar writes a `parse_config(filename)` entry in
+its epilogue, around the driver in `runtime/hbnf_conf.h`, that matches the
+shape of a daemon's existing config loader: it reads the file a statement at a
+time and hands each to the grammar's actions, with an overridable error
+handler.  The handler is
 invoked at the point of error with the message and a caret rendering of the
 exact position — line, column, and the offending token underlined:
 
@@ -557,8 +561,8 @@ declarations, `parse_<rule>` functions, and the lexer.  The emitted lexer is a
 template parameterized by the schema's token definitions, not a fixed body.
 
 The C backend is the reference and the one used for the FFI story: a shared
-library `libhbnfconf` exposes `parse_config`, `conf_ptr`, and the error
-handler, and thin bindings wrap it for Python (ctypes), Ruby (Fiddle), Perl
+library `libhbnfconf` (built from `tests/server_ffi.hbnf`, whose epilogue
+defines them) exposes `parse_config`, `conf_ptr`, and the error handler, and thin bindings wrap it for Python (ctypes), Ruby (Fiddle), Perl
 (FFI::Platypus), and newLISP (`import`).  Dynamic languages use the C backend
 rather than a native reimplementation, which keeps the fast path single and the
 bindings trivial.
@@ -623,7 +627,7 @@ _Measured 2026-10-27 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 6.1
 
 <!-- /bench:hbnf-pfctl -->
 
-(`parse_file` is the `--conf` wrapper: the `statements` driver reads the
+(`parse_file` is the `statements` driver: it reads the
 file a block at a time and hands each statement to the action; the
 toy's `parse_text` reads the whole file into memory first.)  Per rule the
 full grammar is about <!-- v:pfctl_vs_toy_time -->9<!-- /v --> times slower than the toy and holds <!-- v:pfctl_vs_toy_rss -->10<!-- /v -->

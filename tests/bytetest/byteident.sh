@@ -4,7 +4,7 @@
 # does with them.
 #
 #   ntpd_yy   = bison's parser from parse.y  + the daemon's config.c
-#   ntpd_hbnf = hbnf's parser (conf.c)        + the same config.c
+#   ntpd_hbnf = hbnf's parser (parse.c)       + the same config.c
 #
 # For every byteident/cases/*.conf, both must agree on:
 #   - the exit status (accept or reject);
@@ -50,23 +50,20 @@ else
 		sh -c 'apk add --no-cache bison >/dev/null 2>&1 && bison -d -o /out/parse_y.c parse.y'
 fi
 
-echo "== hbnf: grammars/bind/ntpd.hbnf -> conf.c =="
+echo "== hbnf: grammars/bind/ntpd.hbnf -> parse.c =="
 cli="${HBNF:-$repo/hbnf}"
 if [ -x "$cli" ]; then
-	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates) \
-		> "$scratch/conf-out.txt"
+	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --templates=templates) \
+		> "$scratch/parse.c"
 else
 	docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
 		sh -lc 'gprbuild -q -P hbnf.gpr >/dev/null 2>&1
-		        ./hbnf grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates' \
-		> "$scratch/conf-out.txt"
+		        ./hbnf grammars/bind/ntpd.hbnf --backend=c --templates=templates' \
+		> "$scratch/parse.c"
 fi
-awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
-     f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \
-	"$scratch/conf-out.txt"
 
 echo "== the generated parser, built as ntpd's sources are =="
-sh "$here/strict-cc.sh" "$root" "$ntpd" "$scratch/conf.c"
+sh "$here/strict-cc.sh" "$root" "$ntpd" "$scratch/parse.c"
 
 echo "== compiling (shared: config.c, log.c, shims, dump, harness) =="
 for f in config log; do
@@ -77,14 +74,15 @@ gcc -w -std=gnu11 -c $inc "$here/byteident/dump_ntpd_conf.c" -o "$scratch/dump.o
 gcc -w -std=gnu11 -c $inc "$here/byteident/harness.c" -o "$scratch/harness.o"
 gcc -w -std=gnu11 -c $inc "$here/byteident/getaddrinfo_wrap.c" -o "$scratch/gaiwrap.o"
 gcc -w -std=gnu11 -c $inc "$scratch/parse_y.c" -o "$scratch/parse_y.o"
-gcc -w -std=gnu11 -c $inc "$scratch/conf.c" -o "$scratch/conf.o"
+gcc -w -std=gnu11 -c $inc -I "$repo/runtime" "$scratch/parse.c" -o "$scratch/parse.o"
+gcc -w -std=gnu11 -c -I "$repo/runtime" "$repo/runtime/hbnf_conf.c" -o "$scratch/hbnf_conf.o"
 
 echo "== linking =="
 wrap="-Wl,--wrap=getaddrinfo -Wl,--wrap=inet_pton"
 common="$scratch/config.o $scratch/log.o $scratch/shims.o \
         $scratch/dump.o $scratch/harness.o $scratch/gaiwrap.o"
 gcc -o "$scratch/ntpd_yy" "$scratch/parse_y.o" $common -lm $wrap
-gcc -o "$scratch/ntpd_hbnf" "$scratch/conf.o" $common -lm $wrap
+gcc -o "$scratch/ntpd_hbnf" "$scratch/parse.o" "$scratch/hbnf_conf.o" $common -lm $wrap
 
 echo "== comparing =="
 fail=0; n=0

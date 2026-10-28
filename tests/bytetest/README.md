@@ -120,8 +120,8 @@ parser-internal `node_*` helpers), so the grammar targets `pf_rule` in
     ./byteident.sh      # OBSD defaults to <repo>/.work/obsd79
 
 It builds **two** parsers against the same daemon `config.c` — `ntpd_yy`
-(bison's `parse.y`) and `ntpd_hbnf` (the `conf.c` generated from
-`grammars/bind/ntpd.hbnf`) — and runs both on every `byteident/cases/*.conf`.
+(bison's `parse.y`) and `ntpd_hbnf` (the parser generated from
+`grammars/bind/ntpd.hbnf`, with `runtime/hbnf_conf.c`) — and runs both on every `byteident/cases/*.conf`.
 For each case they must agree on:
 
 - **accept or reject** (the exit status);
@@ -140,7 +140,7 @@ number, an empty file, each semantic error parse.y reports, two errors in
 one file, and syntax errors, alone and mixed with a semantic one
 (`syntax-several.conf`).  Add a case by dropping a `.conf` file in.
 
-Before comparing, `strict-cc.sh` builds the generated `conf.c` the way
+Before comparing, `strict-cc.sh` builds the generated parser the way
 ntpd's own sources are built: the `-W` flags from ntpd's Makefile (`-Wall
 -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wshadow
 -Wpointer-arith -Wcast-qual -Wsign-compare`), plus the errors gcc 14 and
@@ -179,9 +179,8 @@ parse.y; the generated parser never exits on its own.
 
 It compiles all twelve `usr.sbin/ntpd/*.c` files as-is against OpenBSD's own
 headers (the `-nostdinc` recipe above), links `libutil`'s imsg, and drops in
-the generated `conf.h`/`conf.c` (the `--conf` wrapper — `parse_config` now
-takes `struct ntpd_conf *`, which the binding's `conf struct ntpd_conf`
-directive asks for). A few small shims make this possible on Linux:
+the generated parser and `runtime/hbnf_conf.c` (`parse_config` takes
+`struct ntpd_conf *`, as the binding's epilogue defines it). A few small shims make this possible on Linux:
 
 - `bsdinc/fcntl.h` + `bsdinc/syslog.h` — OpenBSD generates these userland
   headers during its build; they just forward to `sys/sys/fcntl.h` and

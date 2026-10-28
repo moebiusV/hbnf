@@ -159,7 +159,7 @@ suite_backends() {
 core_src() { ls hbnf.adb hbnf_grammar.ad[sb] hbnf_lookahead.ad[sb] hbnf_compilable.ad[sb] hbnf_wire.ad[sb] hbnf_wire-lower.ad[sb] hbnf_shape.ad[sb] hbnf_c.ads 2> /dev/null; }
 backend_src() {
 	case $1 in
-	c) ls hbnf_c.adb hbnf_wire-c.ad[sb] templates/c_* templates/conf_* 2> /dev/null ;;
+	c) ls hbnf_c.adb hbnf_wire-c.ad[sb] templates/c_* 2> /dev/null ;;
 	rust) ls hbnf_rust.ad[sb] hbnf_wire-rust.ad[sb] templates/rust_* 2> /dev/null ;;
 	zig) ls hbnf_zig.ad[sb] hbnf_wire-zig.ad[sb] templates/zig_* 2> /dev/null ;;
 	ada) ls hbnf_ada.ad[sb] hbnf_wire-ada_lang.ad[sb] templates/ada_* 2> /dev/null ;;

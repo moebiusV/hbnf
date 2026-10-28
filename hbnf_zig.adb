@@ -4765,10 +4765,4 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
       end if;
    end Emit_Lexer;
 
-   function Emit_Conf (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
-      Root_T : constant String := Zig_Type (To_String (Rules (1).Name));
-   begin
-      return Render_Root ("conf_zig", Root_T);
-   end Emit_Conf;
-
 end HBNF_Zig;

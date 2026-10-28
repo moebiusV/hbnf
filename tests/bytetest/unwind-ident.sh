@@ -3,7 +3,7 @@
 # files and compare what each does with them.
 #
 #   unwind_yy   = bison's parser from sbin/unwind/parse.y
-#   unwind_hbnf = hbnf's (grammars/bind/unwind.hbnf, --conf)
+#   unwind_hbnf = hbnf's (grammars/bind/unwind.hbnf)
 #
 # Both get the same main (unwind-ident/harness.c: parse_config and a dump
 # of every field of the struct uw_conf it returns), unwind's log.c, and the
@@ -53,23 +53,20 @@ else
 		sh -c 'apk add --no-cache bison >/dev/null 2>&1 && bison -d -o /out/parse_y.c parse.y'
 fi
 
-echo "== hbnf: grammars/bind/unwind.hbnf -> conf.c =="
+echo "== hbnf: grammars/bind/unwind.hbnf -> parse.c =="
 cli="${HBNF:-$repo/hbnf}"
 if [ -x "$cli" ]; then
-	(cd "$repo" && "$cli" grammars/bind/unwind.hbnf --backend=c --conf --templates=templates) \
-		> "$scratch/conf-out.txt"
+	(cd "$repo" && "$cli" grammars/bind/unwind.hbnf --backend=c --templates=templates) \
+		> "$scratch/parse.c"
 else
 	docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
 		sh -lc 'gprbuild -q -P hbnf.gpr >/dev/null 2>&1
-		        ./hbnf grammars/bind/unwind.hbnf --backend=c --conf --templates=templates' \
-		> "$scratch/conf-out.txt"
+		        ./hbnf grammars/bind/unwind.hbnf --backend=c --templates=templates' \
+		> "$scratch/parse.c"
 fi
-awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
-     f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \
-	"$scratch/conf-out.txt"
 
 echo "== the generated parser, built as unwind's sources are =="
-sh "$here/strict-cc.sh" "$root" "$unwind" "$scratch/conf.c"
+sh "$here/strict-cc.sh" "$root" "$unwind" "$scratch/parse.c"
 
 echo "== compiling =="
 gcc -w -std=gnu11 -c $inc "$unwind/log.c" -o "$scratch/log.o"
@@ -81,13 +78,14 @@ gcc -w -std=gnu11 -c $inc "$here/byteident/getaddrinfo_wrap.c" -o "$scratch/gaiw
 # nothing does, and an implicit bsearch() truncated lookup()'s pointer.
 gcc -w -std=gnu11 -c $inc -include stdlib.h -include string.h \
 	"$scratch/parse_y.c" -o "$scratch/parse_y.o"
-gcc -w -std=gnu11 -c $inc -I "$scratch" "$scratch/conf.c" -o "$scratch/conf.o"
+gcc -w -std=gnu11 -c $inc -I "$scratch" -I "$repo/runtime" "$scratch/parse.c" -o "$scratch/parse.o"
+gcc -w -std=gnu11 -c -I "$repo/runtime" "$repo/runtime/hbnf_conf.c" -o "$scratch/hbnf_conf.o"
 
 echo "== linking =="
 wrap="-Wl,--wrap=getaddrinfo -Wl,--wrap=inet_pton"
 common="$scratch/log.o $scratch/harness.o $scratch/shims.o $scratch/gaiwrap.o"
 gcc -o "$scratch/unwind_yy" "$scratch/parse_y.o" $common $wrap
-gcc -o "$scratch/unwind_hbnf" "$scratch/conf.o" $common $wrap
+gcc -o "$scratch/unwind_hbnf" "$scratch/parse.o" "$scratch/hbnf_conf.o" $common $wrap
 
 echo "== comparing =="
 fail=0; n=0

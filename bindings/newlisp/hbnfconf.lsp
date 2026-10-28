@@ -3,7 +3,7 @@
 ;;   (load "hbnfconf.lsp")
 ;;   (hbnfconf:parse "valid.conf")
 ;;
-;; Layout of the returned server_t (see conf.h): name is a char* at offset 0,
+;; Layout of the returned server_t (see the generated file): name is a char* at offset 0,
 ;; listen.iface a char* at offset 8, listen.port a uint16 at offset 16.
 (context 'hbnfconf)
 

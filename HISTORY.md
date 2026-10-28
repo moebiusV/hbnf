@@ -664,8 +664,8 @@ already spells them, and keep the design honest about what is underneath.
 **Where it could do better.** It has no incremental parse; an edit means parsing
 the file again. It has no error recovery; bad input fails instead of producing a
 broken tree. An alternation that mixes keywords with rules gets no kind discriminant in
-the C tree, so a consumer must infer which branch matched. The `--conf` drop-in for parse.y
-replacement is C-only; the other backends warn and parse the whole file. And the
+the C tree, so a consumer must infer which branch matched. The drop-in for parse.y
+(a `parse_config` the grammar writes in its epilogue around the statement driver) is C-only; the other backends warn and parse the whole file. And the
 grammar must be LL(1)-ish under maximal munch — it will not decide an ambiguous
 branch by looking arbitrarily far ahead.
 

@@ -2143,7 +2143,7 @@ lookahead or a context test not at all.
      It emits as an `externals:` hole with the prose as its comment.
    - **`sensitivity`/`%i`** has no analogue either; a case-insensitive
      literal becomes a regex, which changes the token boundaries.
-   - **Typed fields, `--conf`, actions and bindings are out of scope.**  An
+   - **Typed fields, actions and bindings are out of scope.**  An
      editor backend produces a CST of named nodes; it does not produce the
      daemon's structs, and nothing in it is byte-identity tested against a
      `parse.y`.
@@ -2627,7 +2627,7 @@ lookahead or a context test not at all.
      the decoder cannot say "not followed by a word character", so a keyword that
      another token can begin with is a hole the emitter names.
    - **Case-insensitive literals** (`%i`) become a class for each letter.
-   - **Typed fields, `--conf`, actions, bit fields and `hidden`** are out of scope:
+   - **Typed fields, actions, bit fields and `hidden`** are out of scope:
      they shape the tree, and the decoder constrains text.
 
    **Gate:** the grammars of `corpus/json` and `corpus/toml` emit, and each emitted

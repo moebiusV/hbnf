@@ -256,14 +256,14 @@ checked to have built the same sensors.
 | tool | input | parse time | sensors/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
 | OpenBSD ntpd parse.y, byacc | 6.14 MB | 61 ms | 1630 K sensors/s | 100 MB/s | 9.1 MB |
-| hbnf binding (`--conf`) | 6.14 MB | 60 ms | 1655 K sensors/s | 102 MB/s | 9.2 MB |
+| hbnf binding | 6.14 MB | 60 ms | 1655 K sensors/s | 102 MB/s | 9.2 MB |
 
 **1,000,000 sensors** (one `sensor` line each, the same file for both):
 
 | tool | input | parse time | sensors/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
 | OpenBSD ntpd parse.y, byacc | 62.39 MB | 616 ms | 1623 K sensors/s | 101 MB/s | 77.8 MB |
-| hbnf binding (`--conf`) | 62.39 MB | 395 ms | 2532 K sensors/s | 158 MB/s | 77.8 MB |
+| hbnf binding | 62.39 MB | 395 ms | 2532 K sensors/s | 158 MB/s | 77.8 MB |
 
 _Measured 2026-10-27 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 6.11 on the host, hbnf 56e8c78; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
 
@@ -287,16 +287,16 @@ the yacc side also that the source ports add up.
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
 | OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 1.16 s | 87 K rules/s | 8 MB/s | 150.0 MB |
-| hbnf pfctl grammar (`--conf --no-compact`, typed tree) | 9.18 MB | 312 ms | 320 K rules/s | 29 MB/s | 448.4 MB |
-| hbnf pfctl grammar (`--conf`, compact nodes, the default) | 9.18 MB | 163 ms | 612 K rules/s | 56 MB/s | 148.2 MB |
+| hbnf pfctl grammar (`--no-compact`, typed tree) | 9.18 MB | 312 ms | 320 K rules/s | 29 MB/s | 448.4 MB |
+| hbnf pfctl grammar (compact nodes, the default) | 9.18 MB | 163 ms | 612 K rules/s | 56 MB/s | 148.2 MB |
 
 **1,000,000 filter rules** (one `pass in quick ... keep state` line each, the same file for both):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
 | OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 11.65 s | 86 K rules/s | 8 MB/s | 1481.9 MB |
-| hbnf pfctl grammar (`--conf --no-compact`, typed tree) | 91.86 MB | 3.09 s | 324 K rules/s | 30 MB/s | 4468.3 MB |
-| hbnf pfctl grammar (`--conf`, compact nodes, the default) | 91.86 MB | 1.60 s | 625 K rules/s | 57 MB/s | 1468.2 MB |
+| hbnf pfctl grammar (`--no-compact`, typed tree) | 91.86 MB | 3.09 s | 324 K rules/s | 30 MB/s | 4468.3 MB |
+| hbnf pfctl grammar (compact nodes, the default) | 91.86 MB | 1.60 s | 625 K rules/s | 57 MB/s | 1468.2 MB |
 
 _Measured 2026-10-27 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 7.32 on the host, hbnf 56e8c78; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
 
@@ -491,7 +491,7 @@ permanent differences are parse-time semantic feedback and ambiguity, which
 hbnf refuses on purpose, plus the ecosystem around ANTLR (grammar libraries,
 IDE support, incremental parsing) that hbnf does not aim to replace. hbnf is
 a meta-compiler: configuration files are where it started, and the config-file
-shape (scanner actions, `--conf`, id-ref output) is something ANTLR does not address, but
+shape (scanner actions, a parse.y-shaped `parse_config`, id-ref output) is something ANTLR does not address, but
 that is where it started and not where it stops.
 
 ## HyperBNF and tree-sitter

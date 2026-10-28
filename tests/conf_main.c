@@ -1,6 +1,6 @@
-#include <stdio.h>
+/* tests/e2e.sh: appended to the parser generated from tests/server_ffi.hbnf, so the types and
+   parse_config, conf and conf_error are all in scope. */
 #include <string.h>
-#include "conf.h"
 
 /* Non-exiting error handler: capture the caret message, let parse_config
    return -1 instead of exit(1). */

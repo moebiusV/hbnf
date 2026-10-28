@@ -161,15 +161,13 @@ are the grammars).
 
 A grammar here is only the language: it compiles on its own, in every
 backend.  `bind/<daemon>.hbnf` turns one into a drop-in for the daemon's
-`parse.y`: it includes the grammar, declares the daemon's conf struct
-(`conf struct ntpd_conf`), adds the daemon's headers to the preamble, and
-attaches parse.y's tree actions with `action <rule> { … }`.  When the
-daemon's `parse_config` has another signature (unwind's returns a new
-`struct uw_conf *`), `entry hbnf_parse_config` renames the generated
-function and the binding's epilogue defines `parse_config` around it.
-Generate the daemon's `conf.h`/`conf.c` from the binding:
+`parse.y`: it includes the grammar, adds the daemon's headers and `runtime/hbnf_conf.h` to the
+preamble, attaches parse.y's tree actions with `action <rule> { … }`, and defines the daemon's
+`parse_config` in its epilogue around the driver in `runtime/hbnf_conf.h` (so a signature like
+unwind's, which returns a new `struct uw_conf *`, is just the function the epilogue writes).
+Generate the daemon's parser from the binding and link `runtime/hbnf_conf.c` with it:
 
-    hbnf grammars/bind/ntpd.hbnf --backend=c --conf
+    hbnf grammars/bind/ntpd.hbnf --backend=c > parse.c    # link runtime/hbnf_conf.c
 
 | daemon | binding |
 |---|---|

@@ -2,7 +2,7 @@
 # ntpd -n proof: build the real OpenBSD ntpd with hbnf's generated parser in
 # place of parse.y, then run `ntpd -n` (configtest) against it.
 #
-#   parse.y   ->  grammars/bind/ntpd.hbnf  (hbnf --conf emits conf.h/conf.c)
+#   parse.y   ->  grammars/bind/ntpd.hbnf  (the grammar writes parse_config in its epilogue)
 #   the rest of ntpd is compiled as-is from the OpenBSD source tree, against
 #   OpenBSD's own headers under -nostdinc (see README.md for the recipe).
 #   ntpd-shims.c bridges the OpenBSD libc/syscall names glibc spells
@@ -35,20 +35,17 @@ trap 'rm -rf "$scratch"' EXIT
 echo "== generating the parser (hbnf) =="
 cli="${HBNF:-$repo/hbnf}"
 if [ -x "$cli" ]; then
-	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates) \
-		> "$scratch/conf-out.txt"
+	(cd "$repo" && "$cli" grammars/bind/ntpd.hbnf --backend=c --templates=templates) \
+		> "$scratch/parse.c"
 else
 	docker run --rm -v "$repo":/work -w /work ada-toolchain:edge-full \
 		sh -lc 'gprbuild -q -P hbnf.gpr >/dev/null 2>&1
-		        ./hbnf grammars/bind/ntpd.hbnf --backend=c --conf --templates=templates' \
-		> "$scratch/conf-out.txt"
+		        ./hbnf grammars/bind/ntpd.hbnf --backend=c --templates=templates' \
+		> "$scratch/parse.c"
 fi
-awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} \
-     f==1{print > "'"$scratch"'/conf.h"} f==2{print > "'"$scratch"'/conf.c"}' \
-	"$scratch/conf-out.txt"
 
 echo "== the generated parser, built as ntpd's sources are =="
-sh "$here/strict-cc.sh" "$root" "$ntpd" "$scratch/conf.c"
+sh "$here/strict-cc.sh" "$root" "$ntpd" "$scratch/parse.c"
 
 echo "== compiling ntpd + imsg + the generated parser + shims =="
 for f in log config constraint util ntp ntp_msg server client sensors \
@@ -59,7 +56,8 @@ for f in imsg imsg-buffer; do
 	gcc -w -std=gnu11 -c $inc -I "$root/lib/libutil" "$root/lib/libutil/$f.c" \
 		-o "$scratch/$f.o"
 done
-gcc -w -std=gnu11 -c $inc "$scratch/conf.c" -o "$scratch/conf.o"
+gcc -w -std=gnu11 -c $inc -I "$repo/runtime" "$scratch/parse.c" -o "$scratch/parse.o"
+gcc -w -std=gnu11 -c -I "$repo/runtime" "$repo/runtime/hbnf_conf.c" -o "$scratch/hbnf_conf.o"
 gcc -w -std=gnu11 -c $inc "$here/ntpd-shims.c" -o "$scratch/shims.o"
 # glibc fills sockaddrs in its own layout (no sin_len, AF_INET6 = 10); the
 # wrappers rewrite them into OpenBSD's, as byteident.sh does, so host() and
@@ -70,16 +68,16 @@ gcc -w -std=gnu11 -c $inc "$here/byteident/getaddrinfo_wrap.c" \
 echo "== what the rest of ntpd needs from its parser =="
 # Link everything but the parser: what is left undefined is what parse.y
 # gives the rest of the daemon, so the generated parser must define it.
-need=$(gcc -o /dev/null $(ls "$scratch"/*.o | grep -v '/conf\.o$') -lm \
+need=$(gcc -o /dev/null $(ls "$scratch"/*.o | grep -v '/parse\.o$\|/hbnf_conf\.o$') -lm \
 	-Wl,--wrap=getaddrinfo -Wl,--wrap=inet_pton 2>&1 \
 	| sed -n "s/.*undefined reference to \`\([^']*\)'.*/\1/p" | sort -u)
 [ -n "$need" ] || { echo "ntpd-proof: nothing left undefined without the parser?" >&2; exit 1; }
 miss=0
 for sym in $need; do
-	if nm -g --defined-only "$scratch/conf.o" | grep -q " $sym\$"; then
-		echo "  $sym: defined by the generated parser"
+	if nm -g --defined-only "$scratch/parse.o" "$scratch/hbnf_conf.o" | grep -q " $sym\$"; then
+		echo "  $sym: defined by the generated parser or its runtime"
 	else
-		echo "  $sym: MISSING from the generated parser"; miss=1
+		echo "  $sym: MISSING from the generated parser and its runtime"; miss=1
 	fi
 done
 [ "$miss" = 0 ] || exit 1

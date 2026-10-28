@@ -29,7 +29,7 @@ is `getrusage`'s peak resident set.  C is compiled `gcc -O2`.
 
 | stage | what | files |
 |---|---|---|
-| `hbnf` | the toy language through hbnf's C backend (`parse_text`), and pfctl's whole grammar through `--conf` (`parse_file`) | `toy.hbnf`, `drv/hbnf_toy.c`, `time_conf.c` |
+| `hbnf` | the toy language through hbnf's C backend (`parse_text`), and pfctl's whole grammar through `parse_file` | `toy.hbnf`, `drv/hbnf_toy.c`, `time_conf.c` |
 | `yacc` | the toy as flex + byacc and flex + bison, written the way a `parse.y` is (strdup'd strings, one malloc'd node per rule) | `compare/toy.l`, `compare/toy.y` |
 | `peg` | the toy as a PEG with Piumarta's peg/leg | `compare/toy.leg` |
 | `treesitter` | the toy as a tree-sitter grammar: a cold parse, and a re-parse after a one-byte edit with the old tree | `compare/grammar.js`, `drv/ts_toy.c` |

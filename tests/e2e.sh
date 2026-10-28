@@ -55,20 +55,20 @@ cp tests/c_main.c /tmp/
 ( cd /tmp && gcc -std=gnu11 -D_GNU_SOURCE -I"$HERE/tests/bsdinc" c_main.c -o c_test 2> c_test.err \
     && ./c_test ) || { head -20 /tmp/c_test.err; echo "e2e: the C smoke test failed"; rc=1; }
 
-echo "== C conf (OpenBSD conf.h/conf.c shape) =="
-/tmp/hbnf /tmp/server-np.hbnf --backend=c --conf > /tmp/conf-out.txt
-cp tests/conf_main.c /tmp/
+echo "== C: entry points the grammar's epilogue writes (tests/server_ffi.hbnf) =="
+/tmp/hbnf tests/server_ffi.hbnf --backend=c --no-views > /tmp/server_ffi.c
+cat /tmp/server_ffi.c tests/conf_main.c > /tmp/conf_test.c
 ( cd /tmp
-  awk '/^===== conf\.h =====$/{f=1;next} /^===== conf\.c =====$/{f=2;next} f==1{print > "conf.h"} f==2{print > "conf.c"}' conf-out.txt
   printf '"example.com"\non wg0 port 443\n"/var/www"\n"www"\nyes\n' > valid.conf
   printf '"example.com"\non wg0 port oops\n"/var/www"\n"www"\nyes\n' > bad.conf
-  gcc -std=gnu11 -D_GNU_SOURCE -I"$HERE/tests/bsdinc" conf.c conf_main.c -o conf_test > cc.out 2>&1 \
+  gcc -std=gnu11 -D_GNU_SOURCE -I"$HERE/runtime" -I"$HERE/tests/bsdinc" conf_test.c "$HERE/runtime/hbnf_conf.c" \
+    -o conf_test > cc.out 2>&1 \
     && ./conf_test || { head -20 cc.out; false; }
-) || { echo "e2e: the C conf test failed"; rc=1; }
+) || { echo "e2e: the C entry-point test failed"; rc=1; }
 
 echo "== FFI (C shared lib + ctypes/Fiddle) =="
 ( cd /tmp
-  cc -shared -fPIC -I"$HERE/tests/bsdinc" conf.c -o libhbnfconf.so 2>&1 | head -10
+  cc -shared -fPIC -I"$HERE/runtime" -I"$HERE/tests/bsdinc" server_ffi.c "$HERE/runtime/hbnf_conf.c" -o libhbnfconf.so 2>&1 | head -10
   if command -v python3 >/dev/null 2>&1; then
     cp "$HERE/bindings/python/hbnfconf.py" .
     echo "  python:"; LD_LIBRARY_PATH=. python3 hbnfconf.py valid.conf 2>&1 | head -20
@@ -83,33 +83,12 @@ echo "== FFI (C shared lib + ctypes/Fiddle) =="
   fi
 )
 
-echo "== C++ (extern \"C\" header) =="
-if command -v g++ >/dev/null 2>&1; then
-    ( cd /tmp
-      cp "$HERE/tests/cpp_conf_main.cpp" .
-      cc -c -I"$HERE/tests/bsdinc" conf.c -o conf.o
-      g++ -std=c++17 cpp_conf_main.cpp conf.o -o cpp_conf_test > cc.out 2>&1 \
-        && ./cpp_conf_test || { head -20 cc.out; false; } ) || { echo "e2e: the C++ test failed"; rc=1; }
-else
-    echo "  (g++ not installed -- skipping)"
-fi
-
 echo "== Rust =="
 if command -v rustc >/dev/null 2>&1; then
     /tmp/hbnf /tmp/server-np.hbnf --backend=rust > /tmp/server.rs
     cp tests/rust_main.rs /tmp/
     ( cd /tmp && rustc rust_main.rs -o rust_test > cc.out 2>&1 \
         && ./rust_test || { head -20 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
-else
-    echo "  (rustc not installed -- skipping)"
-fi
-
-echo "== Rust conf =="
-if command -v rustc >/dev/null 2>&1; then
-    /tmp/hbnf /tmp/server-np.hbnf --backend=rust --conf > /tmp/server.rs
-    cp tests/rust_conf_main.rs /tmp/rust_conf_main.rs
-    ( cd /tmp && rustc rust_conf_main.rs -o rust_conf_test > cc.out 2>&1 \
-        && ./rust_conf_test || { head -20 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
 else
     echo "  (rustc not installed -- skipping)"
 fi
@@ -124,30 +103,12 @@ else
     echo "  (zig not installed -- skipping)"
 fi
 
-echo "== Zig conf =="
-if command -v zig >/dev/null 2>&1; then
-    /tmp/hbnf /tmp/server-np.hbnf --backend=zig --conf > /tmp/server.zig
-    cp tests/zig_conf_main.zig /tmp/zig_conf_main.zig
-    ( cd /tmp && zig build-exe zig_conf_main.zig -femit-bin=zig_conf_test > cc.out 2>&1 \
-        && ./zig_conf_test || { head -30 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
-else
-    echo "  (zig not installed -- skipping)"
-fi
-
 echo "== Ada =="
 /tmp/gen_all /tmp/server-np.hbnf
 cp tests/ada_main.adb /tmp/
 cp server_schema.ads server_schema-parser.ads server_schema-parser.adb /tmp/
 ( cd /tmp && gnatmake -q -gnat2022 ada_main.adb -o ada_test > cc.out 2>&1 \
         && ./ada_test || { head -30 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
-
-echo "== Ada conf =="
-/tmp/gen_all /tmp/server-np.hbnf --conf
-cp tests/ada_conf_main.adb /tmp/
-cp server_schema.ads server_schema-parser.ads server_schema-parser.adb /tmp/
-( cd /tmp && rm -f server_schema*.ali server_schema*.o ada_conf_main.ali ada_conf_main.o \
-    && gnatmake -q -gnat2022 ada_conf_main.adb -o ada_conf_test > cc.out 2>&1 \
-        && ./ada_conf_test || { head -30 cc.out; false; } ) || { echo "e2e: a leg failed (see above)"; rc=1; }
 
 echo "== daemon grammars (tests/daemons) =="
 HBNF=/tmp/hbnf sh tests/daemons.sh || rc=1

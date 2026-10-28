@@ -26,13 +26,10 @@ with HBNF_Wire.Ada_Lang;
 --  hbnf: read a schema and emit a self-contained parser (declarations +
 --  lexer + parser) in the chosen backend language.
 --
---    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--root=RULE] [--abnf] [--conf] [--idref] [--compare]
+--    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--root=RULE] [--abnf] [--idref] [--compare]
 --
 --  c/rust/zig print one compilable file to stdout; ada prints the parent
 --  package spec, then the child package spec+body (split them apart yourself).
---  --conf adds the OpenBSD parse_config(filename) entry: for C it prints the
---  conf.h/conf.c pair (delimited by "===== conf.h =====" and "===== conf.c ====="
---  markers); for rust/zig/ada it appends the conf wrapper to the single file.
 --  --abnf reads every file as RFC 5234 reads ABNF: nothing is skipped between
 --  a rule's elements and a string is case-insensitive, so an RFC's text
 --  compiles as pasted.
@@ -66,7 +63,6 @@ procedure Hbnf is
    Package_Name : Unbounded_String := To_Unbounded_String ("Schema");
    Schema_Path  : Unbounded_String;
    Template_Dir : Unbounded_String;
-   Conf         : Boolean := False;
    Idref        : Boolean := False;
    Tree_Tools   : Boolean := False;   --  --writer or --ast: they walk the tree
    Compare      : Boolean := False;
@@ -144,7 +140,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--conf] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
    end Usage;
 
 begin
@@ -161,9 +157,6 @@ begin
             Backend := To_Unbounded_String (A (11 .. A'Last));
          elsif A'Length >= 10 and then A (1 .. 10) = "--package=" then
             Package_Name := To_Unbounded_String (A (11 .. A'Last));
-         elsif A = "--conf" then
-            Conf := True;
-            HBNF_C.Set_Choice (False);
          elsif A'Length >= 7 and then A (1 .. 7) = "--root=" then
             HBNF_Grammar.Set_Root (A (8 .. A'Last));
          elsif A'Length >= 10 and then A (1 .. 10) = "--dialect=" then
@@ -338,13 +331,13 @@ begin
          return;
       end if;
       --  A string in the C tree is a slice of the input, unless the tool that reads the tree
-      --  needs it copied (--conf frees the text before returning; the writer, AST, id-ref,
+      --  needs it copied (the writer, AST, id-ref,
       --  fork and compare tools read the strings as C strings).  --views asks for the slices
       --  and says so if they cannot be; --no-views asks for the copies.
       declare
          Cannot : constant Boolean :=
            To_String (Backend) /= "c" or else Tree_Tools or else Idref or else Forks
-           or else Compare or else Conf or else HBNF_Grammar.Statements
+           or else Compare or else HBNF_Grammar.Statements
            or else not HBNF_Grammar.Wire_Rules.Is_Empty
            or else HBNF_Grammar.Context_Count > 0
            or else HBNF_C.Needs_Copies;
@@ -353,7 +346,7 @@ begin
             Ada.Text_IO.Put_Line
               (Ada.Text_IO.Standard_Error,
                "hbnf: --views (strings that are slices of the input) is for the C backend, "
-               & "without --conf, --writer, --ast, --ast-tools, --idref, --forks or --compare, and for grammars without bit fields or `context`, so far");
+               & "without --writer, --ast, --ast-tools, --idref, --forks or --compare, and for grammars without bit fields or `context`, so far");
             Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
             return;
          end if;
@@ -600,47 +593,32 @@ begin
             end;
          end if;
       elsif B = "c" then
-         if Conf then
-            Put_Line ("===== conf.h =====");
-            Put (HBNF_C.Emit_Conf_Header (Rules));
-            Put_Line ("===== conf.c =====");
-            Put (HBNF_C.Emit_Conf_Source (Rules));
-         else
-            Lap ("grammar read");
-            Put (HBNF_C.Emit (Rules, Idref));
-            Lap ("types written");
-            Put (HBNF_C.Emit_Parser (Rules));
-            Lap ("parser written");
-            Put (HBNF_C.Emit_Lexer (Rules));
-            Lap ("lexer written");
-            if Idref then
-               Put (HBNF_C.Emit_Serializer (Rules));
-               Put (HBNF_C.Emit_Rebuild (Rules));
-            end if;
-            if Compare then
-               Put (HBNF_C.Emit_Compare (Rules));
-            end if;
+         Lap ("grammar read");
+         Put (HBNF_C.Emit (Rules, Idref));
+         Lap ("types written");
+         Put (HBNF_C.Emit_Parser (Rules));
+         Lap ("parser written");
+         Put (HBNF_C.Emit_Lexer (Rules));
+         Lap ("lexer written");
+         if Idref then
+            Put (HBNF_C.Emit_Serializer (Rules));
+            Put (HBNF_C.Emit_Rebuild (Rules));
+         end if;
+         if Compare then
+            Put (HBNF_C.Emit_Compare (Rules));
          end if;
       elsif B = "rust" then
          Put (HBNF_Rust.Emit (Rules));
          Put (HBNF_Rust.Emit_Parser (Rules));
          Put (HBNF_Rust.Emit_Lexer (Rules));
-         if Conf then
-            Put ([1 => ASCII.LF]);
-            Put (HBNF_Rust.Emit_Conf (Rules));
-         end if;
       elsif B = "zig" then
          Put (HBNF_Zig.Emit (Rules));
          Put (HBNF_Zig.Emit_Parser (Rules));
          Put (HBNF_Zig.Emit_Lexer (Rules));
-         if Conf then
-            Put ([1 => ASCII.LF]);
-            Put (HBNF_Zig.Emit_Conf (Rules));
-         end if;
       elsif B = "ada" then
          Put (HBNF_Ada.Emit (Rules, To_String (Package_Name)));
          Put
-           (HBNF_Ada.Emit_Parser (Rules, To_String (Package_Name), Conf));
+           (HBNF_Ada.Emit_Parser (Rules, To_String (Package_Name)));
       else
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error, "unknown backend: " & B);

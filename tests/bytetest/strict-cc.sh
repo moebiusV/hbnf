@@ -18,7 +18,7 @@ strict="-Werror=implicit-function-declaration -Werror=incompatible-pointer-types
 	-Werror=int-conversion -Werror=return-type"
 # The daemon's directory first, as its Makefile's -I${.CURDIR}: its
 # "log.h" is not libevent's.
-inc="-I $dir -I $here/bsdinc -I $root/include -I $root/lib/libc/include \
+inc="-I $dir -I $here/../../runtime -I $here/bsdinc -I $root/include -I $root/lib/libc/include \
 	-I $root/sys -I $root/sys/arch/amd64/include \
 	-I $root/lib/libevent -I $root/lib/libutil -I $root/lib/libtls"
 rc=0

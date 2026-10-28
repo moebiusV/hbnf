@@ -13,8 +13,8 @@ package HBNF_C is
    --  node gains leading `objid_t id, parent;` fields (and the `objid_t`
    --  typedef) so the tree can be flattened by Emit_Serializer and rebuilt
    --  by Emit_Rebuild for a privsep (imsg) consumer.  Walkers emits the
-   --  visit_/map_ helpers, the tree API for callers; a daemon binding's
-   --  conf.c has no caller for them, so it leaves them out.
+   --  visit_/map_ helpers, the tree API for callers; a program that never
+   --  walks the tree can leave them out.
    function Emit
      (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
       Idref   : Boolean := False;
@@ -39,7 +39,7 @@ package HBNF_C is
    --  token type plus one `parse_rule_<rule>()` function per rule) that
    --  consumes a token stream and allocates/populates the structs `Emit`
    --  declares.  On failure it records the deepest `fail` into the err
-   --  buffer; the conf wrapper calls the `conf_error` handler with it.
+   --  buffer; a config grammar's epilogue hands it to the `conf_error` handler.
    function Emit_Parser
      (Rules : HBNF_Grammar.Rule_Vectors.Vector)
       return String;
@@ -50,26 +50,9 @@ package HBNF_C is
    --  convenience that lexes and parses in one call.  With `statements` the
    --  driver that reads a config one statement at a time comes too (and
    --  `macros`' expansion), with parse_file, which reads a file a block at
-   --  a time; Text_Entry False leaves out parse_text and parse_file, for
-   --  the typed wrapper, which calls the driver itself.
+   --  a time.
    function Emit_Lexer
-     (Rules      : HBNF_Grammar.Rule_Vectors.Vector;
-      Text_Entry : Boolean := True) return String;
-
-   --  Emit the OpenBSD-daemon shape: a conf.h/conf.c pair.  The header is the
-   --  declarations plus a global `conf` root, an overridable `conf_error`
-   --  callback (default: print the caret message and exit(1)) and the
-   --  parse_config(filename) prototype.  The source is the lexer + parser +
-   --  parse_config, which slurps the file, populates `conf`, and reports
-   --  errors through the callback.
-   --
-   --  With `conf struct X` (a daemon binding) the pair is a drop-in for the
-   --  daemon's parse.y instead: conf.h only declares parse_config(filename,
-   --  X *), conf_error and conf_file, and conf.c holds everything else,
-   --  with parse_config the only other external function (lex, parse_text
-   --  and parse_tokens are static, and the tree walkers are left out).
-   function Emit_Conf_Header (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
-   function Emit_Conf_Source (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
+     (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
 
    --  Emit the deep-compare walk: one `compare_<rule>` per struct/list plus a
    --  `compare_tree(a, b)` entry, for byte-identity checking.  Two trees are
