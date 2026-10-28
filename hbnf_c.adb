@@ -6199,7 +6199,11 @@ package body HBNF_C is
          RN  : constant String := To_String (R.Name);
          Ws  : constant Boolean := R.Whitespace /= Null_Unbounded_String;
          Lbl : Natural := 0;
+         --  True while the position is known to be past the blanks already, so the next token
+         --  need not skip them again (after a dispatch, which skipped before choosing).
+         Skip_Done : Boolean := False;
          Seen : String_Vectors.Vector;
+         Look : constant HBNF_Lookahead.Analysis := HBNF_Lookahead.Analyze (Rules);
 
          procedure Unsupported (What : String) is
          begin
@@ -6230,6 +6234,35 @@ package body HBNF_C is
             return To_String (Res);
          end Code_Of;
 
+         --  Does an `%emit` of this rule name Id, as a word of its own?
+         function Mentioned (Id : String) return Boolean is
+            function In_Code (V : Element_Vectors.Vector) return Boolean is
+            begin
+               for E of V loop
+                  if E.Kind = Block and then E.Op = B_Emit then
+                     declare
+                        T : constant String := To_String (E.Code);
+                     begin
+                        for K in T'First .. T'Last - Id'Length + 1 loop
+                           if T (K .. K + Id'Length - 1) = Id
+                             and then (K = T'First or else not (T (K - 1) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_'))
+                             and then (K + Id'Length > T'Last
+                                       or else not (T (K + Id'Length) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_'))
+                           then
+                              return True;
+                           end if;
+                        end loop;
+                     end;
+                  elsif E.Kind = Group and then In_Code (E.Items) then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end In_Code;
+         begin
+            return In_Code (R.Pattern);
+         end Mentioned;
+
          procedure Locals (V : Element_Vectors.Vector) is
          begin
             for E of V loop
@@ -6241,8 +6274,13 @@ package body HBNF_C is
                   begin
                      if not Seen.Contains (E.Name) then
                         Seen.Append (E.Name);
-                        Append (Buf, "    " & C_Type_Of (Rules, N) & " " & C_Field (N)
-                          & ";  memset(&" & C_Field (N) & ", 0, sizeof " & C_Field (N) & ");" & LF);
+                        --  A variable the emit code names starts at zero, so an alternative that
+                        --  did not run leaves it empty; one it never names is only a place for
+                        --  the call to put its value.
+                        Append (Buf, "    " & C_Type_Of (Rules, N) & " " & C_Field (N) & ";"
+                          & (if Mentioned (C_Field (N))
+                             then "  memset(&" & C_Field (N) & ", 0, sizeof " & C_Field (N) & ");"
+                             else "") & LF);
                      end if;
                   end;
                end if;
@@ -6251,13 +6289,23 @@ package body HBNF_C is
 
          procedure Gen (V : Element_Vectors.Vector; F, L : Natural; Fail, Ind : String);
 
+         --  The context operations (`%spaces`, `%col`, `%num`, lookahead, guards) are the
+         --  sequence code's: it writes them for one element, the locals standing for the fields.
+         procedure Element_Seq (E : Element_Access; Fail, Ind : String) is
+         begin
+            Emit_Seq (Idx, Element_Vectors.To_Vector (E, 1), 1, 1, "", Buf, Fail, Ind, Ws,
+                      Lead_Ws => not Skip_Done);
+            Skip_Done := False;
+         end Element_Seq;
+
          --  One occurrence of E.
          procedure One (E : Element_Access; Fail, Ind : String) is
             procedure Skip is
             begin
-               if Ws then
+               if Ws and then not Skip_Done then
                   Append (Buf, Ind & "skip_ws(p);" & LF);
                end if;
+               Skip_Done := False;
             end Skip;
          begin
             case E.Kind is
@@ -6295,7 +6343,8 @@ package body HBNF_C is
                   Gen (E.Items, 1, Natural (E.Items.Length), Fail, Ind);
                when Char_Range =>
                   if E.Hi > 127 then
-                     Unsupported ("a character above U+007F");
+                     Element_Seq (E, Fail, Ind);
+                     return;
                   end if;
                   Skip;
                   Append (Buf, Ind & "if (p->pos >= p->len || (unsigned char)p->text[p->pos] < "
@@ -6303,13 +6352,14 @@ package body HBNF_C is
                     & Img (Natural (E.Hi)) & ") { fail(p, ""a character in the range"", 0, "
                     & "p->text + p->pos, 0); " & Fail & " } p->pos++;" & LF);
                when Block =>
-                  if E.Op /= B_Emit then
-                     Unsupported ("a " & Block_Op'Image (E.Op) & " block");
+                  if E.Op = B_Emit then
+                     Append (Buf, Ind & "if (p->quiet) {" & LF & Ind & "    "
+                       & Code_Of (To_String (E.Code)) & LF & Ind & "}" & LF);
+                  else
+                     Element_Seq (E, Fail, Ind);
                   end if;
-                  Append (Buf, Ind & "if (p->quiet) {" & LF & Ind & "    "
-                    & Code_Of (To_String (E.Code)) & LF & Ind & "}" & LF);
                when others =>
-                  Unsupported ("this element");
+                  Element_Seq (E, Fail, Ind);
             end case;
          end One;
 
@@ -6321,6 +6371,7 @@ package body HBNF_C is
                One (E, Fail, Ind);
                return;
             end if;
+            Skip_Done := False;
             declare
                Id : constant String := Fresh;
             begin
@@ -6339,6 +6390,7 @@ package body HBNF_C is
                end if;
                Append (Buf, Ind & "}" & LF);
             end;
+            Skip_Done := False;
          end Elem;
 
          --  V (F .. L): alternatives are tried in order; one that fails gives back its input.
@@ -6360,24 +6412,90 @@ package body HBNF_C is
                Id : constant String := Fresh;
                St : Natural := F;
                N  : Natural := 0;
+               Bs : constant HBNF_Lookahead.Bounds_Vectors.Vector := HBNF_Lookahead.Branches (V);
+               Sets : array (1 .. Natural (Bs.Length)) of HBNF_Lookahead.Cp_Set;
+
+               --  The alternatives begin with different ASCII characters, none can be empty: the
+               --  first character says which one, and the quiet pass goes straight to it.  (The
+               --  pass that reads a failure again tries them in order, to record what each wanted.)
+               function Dispatchable return Boolean is
+                  use HBNF_Lookahead;
+                  Null_Branch : Boolean;
+               begin
+                  if Natural (Bs.Length) /= Alts or else F /= 1 or else L /= Natural (V.Length) then
+                     return False;
+                  end if;
+                  for K in Sets'Range loop
+                     Branch_First (Look, Rules, V, Bs (K), Sets (K), Null_Branch);
+                     if Null_Branch or else Is_Empty (Sets (K)) or else Has_Any (Sets (K))
+                       or else Has_Eoi (Sets (K))
+                       or else Range_Hi (Sets (K), Range_Count (Sets (K))) > 127
+                     then
+                        return False;
+                     end if;
+                  end loop;
+                  for K in Sets'Range loop
+                     for J in K + 1 .. Sets'Last loop
+                        if not Is_Empty (Meet (Sets (K), Sets (J))) then
+                           return False;
+                        end if;
+                     end loop;
+                  end loop;
+                  return True;
+               end Dispatchable;
+
+               Dispatch : constant Boolean := Dispatchable;
             begin
                Append (Buf, Ind & "{ size_t as" & Id & " = p->pos;" & LF);
+               if Dispatch then
+                  if Ws and then not Skip_Done then
+                     Append (Buf, Ind & "  skip_ws(p);  as" & Id & " = p->pos;" & LF);
+                  end if;
+                  Append (Buf, Ind & "  if (p->quiet) {" & LF);
+                  Append (Buf, Ind & "    switch (p->pos < p->len ? (unsigned char)p->text[p->pos] : 256) {" & LF);
+                  for K in Sets'Range loop
+                     for Q in 1 .. HBNF_Lookahead.Range_Count (Sets (K)) loop
+                        for Ch in HBNF_Lookahead.Range_Lo (Sets (K), Q) .. HBNF_Lookahead.Range_Hi (Sets (K), Q) loop
+                           Append (Buf, Ind & "    case " & Img (Ch) & ": goto br" & Id & "_" & Img (K) & ";" & LF);
+                        end loop;
+                     end loop;
+                  end loop;
+                  Append (Buf, Ind & "    default: p->pos = as" & Id & "; " & Fail & LF
+                    & Ind & "    }" & LF & Ind & "  }" & LF);
+               end if;
                for K in F .. L + 1 loop
                   if K > L or else V (K).Kind = Alt then
                      N := N + 1;
                      declare
                         Last : constant Boolean := K > L;
-                        Next : constant String := "goto alt" & Id & "_" & Img (N) & ";";
+                        Next : constant String :=
+                          (if Dispatch
+                           then "goto bf" & Id & "_" & Img (N) & ";"
+                           else "goto alt" & Id & "_" & Img (N) & ";");
                      begin
-                        Append (Buf, Ind & "  {" & LF);
-                        for X in St .. K - 1 loop
-                           Elem (V (X), (if Last then Fail else Next), Ind & "    ");
-                        end loop;
-                        if not Last then
-                           Append (Buf, Ind & "    goto done" & Id & ";" & LF);
+                        if Dispatch then
+                           Append (Buf, Ind & "  br" & Id & "_" & Img (N) & ": ;" & LF);
                         end if;
+                        Append (Buf, Ind & "  {" & LF);
+                        Skip_Done := Dispatch;
+                        for X in St .. K - 1 loop
+                           Elem (V (X), (if Last and then not Dispatch then Fail else Next),
+                                 Ind & "    ");
+                        end loop;
+                        Skip_Done := False;
+                        Append (Buf, Ind & "    goto done" & Id & ";" & LF);
                         Append (Buf, Ind & "  }" & LF);
-                        if not Last then
+                        if Dispatch then
+                           --  a quiet pass that fails in a branch fails the choice; the pass that
+                           --  reads a failure again goes on to the next alternative
+                           Append (Buf, Ind & "  bf" & Id & "_" & Img (N) & ": if (p->quiet) { p->pos = as"
+                             & Id & "; " & Fail & " }" & LF);
+                           if not Last then
+                              Append (Buf, Ind & "  p->pos = as" & Id & ";" & LF);
+                           else
+                              Append (Buf, Ind & "  p->pos = as" & Id & "; " & Fail & LF);
+                           end if;
+                        elsif not Last then
                            Append (Buf, Ind & "  alt" & Id & "_" & Img (N) & ": p->pos = as"
                              & Id & ";" & LF);
                         end if;
@@ -7470,7 +7588,8 @@ package body HBNF_C is
                                  Append (Ws_Skip, "static inline void skip_ws(parser_t *p) {" & LF);
                                  Append (Ws_Skip, "    const unsigned char *t = (const unsigned char *)p->text;" & LF);
                                  Append (Ws_Skip, "    size_t i = p->pos;" & LF);
-                                 Append (Ws_Skip, "    while (ws_run[t[i]]) i++;" & LF);
+                                 Append (Ws_Skip, "    if (!ws_run[t[i]]) return;" & LF);
+                                 Append (Ws_Skip, "    do i++; while (ws_run[t[i]]);" & LF);
                                  Append (Ws_Skip, "    p->pos = i > p->len ? p->len : i;" & LF);
                                  Plain_Ws := True;
                               end;
@@ -8243,6 +8362,10 @@ begin
                then
                   Append (Res, "S" & N (St - 1) & ":" & LF);
                end if;
+               if D (St).Accepting and then D (St).Edges.Is_Empty then
+                  --  a state that accepts and leads nowhere ends the match: no byte to read
+                  Append (Res, "    return i - pos;" & LF);
+               else
                if D (St).Accepting and then not Run then
                   Append (Res, "    best = i - pos;" & LF);
                end if;
@@ -8317,6 +8440,7 @@ begin
                   end loop;
                end if;
                Append (Res, "    return best;" & LF);
+               end if;
             end;
          end loop;
          Append (Res, "}" & LF & LF);
