@@ -1016,11 +1016,42 @@ package body HBNF_C is
      (if R.Left_Bases > 0 then Leading_Tags (Tail_Branches (R))
       else Leading_Tags (R.Pattern (1).Items));
 
+   --  A rule with an `%emit` in its own pattern, or a `name :: type =` head, is run for its
+   --  emits and yields the declared value (RFCPLAN.md step 15).  The type is the author's; a rule
+   --  with emits and no type yields nothing, which is a char nobody reads.
+   function Holds_Emit (V : Element_Vectors.Vector) return Boolean is
+   begin
+      for E of V loop
+         if (E.Kind = Block and then E.Op = B_Emit)
+           or else (E.Kind = Group and then Holds_Emit (E.Items))
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Holds_Emit;
+
+   function Emit_Value_Type (R : Rule) return String is
+      T : constant String := HBNF_Grammar.Value_Type (To_String (R.Name));
+   begin
+      if T /= "" then
+         return T;
+      elsif Holds_Emit (R.Pattern) then
+         return "char";
+      end if;
+      return "";
+   end Emit_Value_Type;
+
    function Analyze (Rules : Rule_Vectors.Vector; Idx : Natural)
       return Rule_Info is
       R : constant Rule := Rules (Idx);
       P : constant Element_Vectors.Vector := R.Pattern;
    begin
+      if Emit_Value_Type (R) /= "" then
+         return (Kind        => Scalar,
+                 Inline_Type => To_Unbounded_String (Emit_Value_Type (R)),
+                 others      => <>);
+      end if;
       if R.Jet_Code /= Null_Unbounded_String then
          return (Kind        => Scalar,
                  Inline_Type => To_Unbounded_String ("const char *"),
@@ -1539,6 +1570,12 @@ package body HBNF_C is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if Emit_Value_Type (R) /= "" then
+            return (Kind        => Scalar,
+                    Inline_Type => To_Unbounded_String (Emit_Value_Type (R)),
+                    others      => <>);
+         end if;
+
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet reads its own token kind and yields the matched text.
             return (Kind        => Scalar,
@@ -6152,6 +6189,213 @@ package body HBNF_C is
          return To_String (S);
       end Num_Clears;
 
+      --  A rule with an `%emit` or a `name :: type =` head (RFCPLAN.md step 15).  It is a function
+      --  that runs its pattern as written and fills `*out` with its value: no struct, no list
+      --  nodes.  Each element is a local named after its rule; an `%emit{ }` is the author's code
+      --  at its place, `$$` the rule's value.  A rule runs once on the way to a result (the quiet
+      --  first pass) and the emits only there, so the pass that reads a failure again runs none.
+      procedure Emit_Valued (Idx : Natural; Buf : in out U) is
+         R   : constant Rule := Rules (Idx);
+         RN  : constant String := To_String (R.Name);
+         Ws  : constant Boolean := R.Whitespace /= Null_Unbounded_String;
+         Lbl : Natural := 0;
+         Seen : String_Vectors.Vector;
+
+         procedure Unsupported (What : String) is
+         begin
+            raise Parse_Error with "rule `" & RN & "` runs an %emit, and " & What
+              & " is not generated in such a rule yet";
+         end Unsupported;
+
+         function Fresh return String is
+         begin
+            Lbl := Lbl + 1;
+            return Img (Lbl);
+         end Fresh;
+
+         --  `$$` is the value the rule is making.
+         function Code_Of (Text : String) return String is
+            Res : U;
+            K   : Natural := Text'First;
+         begin
+            while K <= Text'Last loop
+               if K < Text'Last and then Text (K) = '$' and then Text (K + 1) = '$' then
+                  Append (Res, "(*out)");
+                  K := K + 2;
+               else
+                  Append (Res, Text (K));
+                  K := K + 1;
+               end if;
+            end loop;
+            return To_String (Res);
+         end Code_Of;
+
+         procedure Locals (V : Element_Vectors.Vector) is
+         begin
+            for E of V loop
+               if E.Kind = Group then
+                  Locals (E.Items);
+               elsif E.Kind = Name then
+                  declare
+                     N : constant String := To_String (E.Name);
+                  begin
+                     if not Seen.Contains (E.Name) then
+                        Seen.Append (E.Name);
+                        Append (Buf, "    " & C_Type_Of (Rules, N) & " " & C_Field (N)
+                          & ";  memset(&" & C_Field (N) & ", 0, sizeof " & C_Field (N) & ");" & LF);
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end Locals;
+
+         procedure Gen (V : Element_Vectors.Vector; F, L : Natural; Fail, Ind : String);
+
+         --  One occurrence of E.
+         procedure One (E : Element_Access; Fail, Ind : String) is
+            procedure Skip is
+            begin
+               if Ws then
+                  Append (Buf, Ind & "skip_ws(p);" & LF);
+               end if;
+            end Skip;
+         begin
+            case E.Kind is
+               when Literal =>
+                  declare
+                     Lit : constant String := To_String (E.Lit);
+                     Fn  : constant String :=
+                       (if E.No_Case and then Is_Keyword_Lit (Lit) then "expect_word_nocase"
+                        elsif E.No_Case then "expect_lit_nocase"
+                        elsif Is_Keyword_Lit (Lit) then "expect_word"
+                        else "expect_lit");
+                  begin
+                     Skip;
+                     Append (Buf, Ind & "if (!" & Fn & "(p, """ & C_Escape (Lit) & """, "
+                       & Img (Lit'Length) & ")) { " & Fail & " }" & LF);
+                  end;
+               when Name =>
+                  declare
+                     N : constant String := To_String (E.Name);
+                  begin
+                     Skip;
+                     if Is_Core (N) then
+                        Append (Buf, Ind & "{ size_t n = " & Scalar_Scan_Fn (Rules, N)
+                          & "(p->text, p->pos, p->len); if (!n" & Scalar_Reject (N, "n")
+                          & ") { fail(p, """ & Core_Desc (N) & """, 0, p->text + p->pos, 0); "
+                          & Fail & " } " & C_Field (N) & " = " & Scalar_Value (N, "n")
+                          & "; p->pos += n; }" & LF);
+                     else
+                        Append (Buf, Ind & "if (!" & Rule_Call (RN, E,
+                          "parse_rule_" & C_Name (N) & "(p, &" & C_Field (N) & ")")
+                          & ") { " & Fail & " }" & LF);
+                     end if;
+                  end;
+               when Group =>
+                  Gen (E.Items, 1, Natural (E.Items.Length), Fail, Ind);
+               when Char_Range =>
+                  if E.Hi > 127 then
+                     Unsupported ("a character above U+007F");
+                  end if;
+                  Skip;
+                  Append (Buf, Ind & "if (p->pos >= p->len || (unsigned char)p->text[p->pos] < "
+                    & Img (Natural (E.Lo)) & " || (unsigned char)p->text[p->pos] > "
+                    & Img (Natural (E.Hi)) & ") { fail(p, ""a character in the range"", 0, "
+                    & "p->text + p->pos, 0); " & Fail & " } p->pos++;" & LF);
+               when Block =>
+                  if E.Op /= B_Emit then
+                     Unsupported ("a " & Block_Op'Image (E.Op) & " block");
+                  end if;
+                  Append (Buf, Ind & "if (p->quiet) {" & LF & Ind & "    "
+                    & Code_Of (To_String (E.Code)) & LF & Ind & "}" & LF);
+               when others =>
+                  Unsupported ("this element");
+            end case;
+         end One;
+
+         --  E as often as its bounds say; one that stops short is not an error until the
+         --  count is.  A part that fails gives back what it took, and the loop ends.
+         procedure Elem (E : Element_Access; Fail, Ind : String) is
+         begin
+            if E.Min = 1 and then E.Max = 1 then
+               One (E, Fail, Ind);
+               return;
+            end if;
+            declare
+               Id : constant String := Fresh;
+            begin
+               Append (Buf, Ind & "{ size_t cnt" & Id & " = 0;" & LF
+                 & Ind & "  for (;;) {" & LF
+                 & Ind & "    size_t sv" & Id & " = p->pos;" & LF);
+               if E.Max >= 0 then
+                  Append (Buf, Ind & "    if (cnt" & Id & " >= " & Img (Natural (E.Max)) & ") break;" & LF);
+               end if;
+               One (E, "{ p->pos = sv" & Id & "; break; }", Ind & "    ");
+               Append (Buf, Ind & "    cnt" & Id & "++;" & LF
+                 & Ind & "    if (p->pos == sv" & Id & ") break;" & LF
+                 & Ind & "  }" & LF);
+               if E.Min > 0 then
+                  Append (Buf, Ind & "  if (cnt" & Id & " < " & Img (E.Min) & ") { " & Fail & " }" & LF);
+               end if;
+               Append (Buf, Ind & "}" & LF);
+            end;
+         end Elem;
+
+         --  V (F .. L): alternatives are tried in order; one that fails gives back its input.
+         procedure Gen (V : Element_Vectors.Vector; F, L : Natural; Fail, Ind : String) is
+            Alts : Natural := 1;
+         begin
+            for K in F .. L loop
+               if V (K).Kind = Alt then
+                  Alts := Alts + 1;
+               end if;
+            end loop;
+            if Alts = 1 then
+               for K in F .. L loop
+                  Elem (V (K), Fail, Ind);
+               end loop;
+               return;
+            end if;
+            declare
+               Id : constant String := Fresh;
+               St : Natural := F;
+               N  : Natural := 0;
+            begin
+               Append (Buf, Ind & "{ size_t as" & Id & " = p->pos;" & LF);
+               for K in F .. L + 1 loop
+                  if K > L or else V (K).Kind = Alt then
+                     N := N + 1;
+                     declare
+                        Last : constant Boolean := K > L;
+                        Next : constant String := "goto alt" & Id & "_" & Img (N) & ";";
+                     begin
+                        Append (Buf, Ind & "  {" & LF);
+                        for X in St .. K - 1 loop
+                           Elem (V (X), (if Last then Fail else Next), Ind & "    ");
+                        end loop;
+                        if not Last then
+                           Append (Buf, Ind & "    goto done" & Id & ";" & LF);
+                        end if;
+                        Append (Buf, Ind & "  }" & LF);
+                        if not Last then
+                           Append (Buf, Ind & "  alt" & Id & "_" & Img (N) & ": p->pos = as"
+                             & Id & ";" & LF);
+                        end if;
+                     end;
+                     St := K + 1;
+                  end if;
+               end loop;
+               Append (Buf, Ind & "  done" & Id & ": ;" & LF & Ind & "}" & LF);
+            end;
+         end Gen;
+      begin
+         Append (Buf, "    size_t start_ = p->pos;" & LF);
+         Locals (R.Pattern);
+         Gen (R.Pattern, 1, Natural (R.Pattern.Length),
+              "p->pos = start_; return false;", "    ");
+         Append (Buf, "    return true;" & LF);
+      end Emit_Valued;
+
       procedure Emit_Rule_Parser (Idx : Natural; Buf : in out U) is
          R  : constant Rule := Rules (Idx);
          P  : constant Element_Vectors.Vector := R.Pattern;
@@ -6163,6 +6407,10 @@ package body HBNF_C is
          SU : constant String := (if not Is_List then Scalar_Union_Type (P) else "");
          Ws : constant Boolean := R.Whitespace /= Null_Unbounded_String;
       begin
+         if Emit_Value_Type (R) /= "" then
+            Emit_Valued (Idx, Buf);
+            return;
+         end if;
          if R.Jet_Code /= Null_Unbounded_String then
             --  A jet: run its hand-written scanner and yield the matched text.
             Append (Buf, Fill ("c_rule_jet",

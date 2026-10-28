@@ -1,0 +1,6 @@
+; %emit runs where it is reached, `$$` is the rule's value, an element is a variable:
+; a list's value is the number of `t` in it, nested lists included
+prefix none
+whitespace none
+list :: int = "[" %emit{ $$ = 0; } [ item %emit{ $$ += item; } *( "," item %emit{ $$ += item; } ) ] "]"
+item :: int = "t" %emit{ $$ = 1; } | "f" %emit{ $$ = 0; } | list %emit{ $$ = list; }

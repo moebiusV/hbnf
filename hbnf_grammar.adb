@@ -9280,6 +9280,25 @@ package body HBNF_Grammar is
       return False;
    end Is_Char_Token;
 
+   --  A rule with an `%emit` of its own, or a declared value, is generated as a function that
+   --  runs its pattern as written (RFCPLAN.md step 15): no list nodes for its repetitions, no
+   --  rule made up for a group, so an emit runs where it is written and sees the whole rule.
+   function Runs_Emits (R : Rule) return Boolean is
+      function Holds (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            if (E.Kind = Block and then E.Op = B_Emit)
+              or else (E.Kind = Group and then Holds (E.Items))
+            then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Holds;
+   begin
+      return Value_Type (To_String (R.Name)) /= "" or else Holds (R.Pattern);
+   end Runs_Emits;
+
    function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector is
       Result : Rule_Vectors.Vector := Rules;
       Names  : Path_Sets.Set;
@@ -9408,7 +9427,9 @@ package body HBNF_Grammar is
          R : Rule := Result (J);
          N : Natural := 0;
       begin
-         if R.Jet_Code /= Null_Unbounded_String or else R.Pattern.Is_Empty then
+         if R.Jet_Code /= Null_Unbounded_String or else R.Pattern.Is_Empty
+           or else Runs_Emits (R)
+         then
             return;
          end if;
          --  A char rule is a scanner (compiled by Char_DNF), not lifted: its
@@ -9568,7 +9589,9 @@ package body HBNF_Grammar is
          J : Natural := 1;
       begin
          while J <= Natural (Result.Length) loop
-            Split_Repeats (J);
+            if not Runs_Emits (Result (J)) then
+               Split_Repeats (J);
+            end if;
             J := J + 1;
          end loop;
       end;

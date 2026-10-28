@@ -479,6 +479,10 @@ package HBNF_Grammar is
    --  The C type of the value a rule has, from `name :: type = ...` (RFCPLAN.md step 15); ""
    --  for a rule without one.  The rule's parameters, if the name has them, are left off.
    function Value_Type (Rule_Name : String) return String;
+
+   --  A rule with an `%emit` of its own or a declared value: the C backend generates it as a
+   --  function that runs its pattern as written, and Lift leaves it alone.
+   function Runs_Emits (R : Rule) return Boolean;
    --  True for a rule declared `hidden` (`hidden nl = ...`, or the line
    --  `hidden nl gap`), and for each instance of a hyperrule that is: the rule
    --  is matched and keeps nothing in the tree (its value is the empty string).

@@ -909,15 +909,16 @@ package body HBNF_Compilable is
             Walk (I, Rules (I).Pattern, A.Follow (I));
          end if;
       end loop;
-      --  every emit is safe; no backend generates one yet
-      for I in 1 .. N loop
-         if Has_Direct (Rules (I).Pattern) then
-            raise Parse_Error with
-              "rule `" & To_String (Rules (I).Name) & "` has an %emit, which "
-              & (if Backend = "c" then "the C backend does not generate yet"
-                 else "only the C backend will generate");
-         end if;
-      end loop;
+      --  every emit is safe; only the C backend generates one
+      if Backend /= "c" then
+         for I in 1 .. N loop
+            if Has_Direct (Rules (I).Pattern) then
+               raise Parse_Error with
+                 "rule `" & To_String (Rules (I).Name) & "` has an %emit, which only the C "
+                 & "backend generates";
+            end if;
+         end loop;
+      end if;
    end Check_Emits;
 
    procedure Check
@@ -1082,7 +1083,8 @@ package body HBNF_Compilable is
          begin
             --  A char rule is a scanner, validated by the DNF builder below;
             --  these sequence-shape rejections are for phrase rules.
-            if not Is_Char_Rule (Rules, N) then
+            --  A rule that runs emits is generated as written, whatever its shape.
+            if not Is_Char_Rule (Rules, N) and then not HBNF_Grammar.Runs_Emits (R) then
                if R.Left_Bases > 0 then
                   --  A base and a tail are never tried at the same place, so
                   --  neither can shadow the other.
