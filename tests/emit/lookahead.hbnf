@@ -1,0 +1,4 @@
+; an %emit inside a lookahead would run on a copy of the parser
+prefix none
+whitespace none
+top = &( "a" %emit{ one(); } ) "a"

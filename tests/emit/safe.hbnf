@@ -1,0 +1,7 @@
+; every choice that holds an %emit is told apart by the next code point, so it is safe
+prefix none
+whitespace none
+top :: uint32_t = "{" %emit{ $$ = open(); } [ pair *( "," pair ) ] "}" %emit{ close($$); }
+pair :: uint32_t = key ":" val %emit{ put(key, val); }
+key = %x61-7A
+val = "t" %emit{ yes(); } | "f" %emit{ no(); } | top

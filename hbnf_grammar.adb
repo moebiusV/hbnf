@@ -3202,6 +3202,17 @@ package body HBNF_Grammar is
          or else (P.Toks (K).Kind = T_Pct
                   and then To_String (P.Toks (K).Text)
                            in "scan" | "action" | "emit" | "label"));
+      --  True when what follows the block at K, past line ends, closes the alternative: the
+      --  next alternative (`|`, `/`), the end of a group or an option.  An `%emit` before one
+      --  of these belongs to its alternative; the end of the rule is read by the rule.
+      function Emit_Ends_Alternative (K : Positive) return Boolean is
+         J : Positive := K;
+      begin
+         while P.Toks (J).Kind in T_Newline | T_Comment loop
+            J := J + 1;
+         end loop;
+         return P.Toks (J).Kind in T_Bar | T_Slash | T_RParen | T_RBrack;
+      end Emit_Ends_Alternative;
    begin
       loop
          --  A block *between* elements is lifted into a rule of its own (Lift
@@ -3223,7 +3234,7 @@ package body HBNF_Grammar is
          elsif Cur (P).Kind = T_Pct
            and then To_String (Cur (P).Text) = "emit"
            and then P.Toks (P.Pos + 1).Kind = T_Code
-           and then not Ends_Pattern (P.Pos + 2)
+           and then (not Ends_Pattern (P.Pos + 2) or else Emit_Ends_Alternative (P.Pos + 2))
          then
             Element_Vectors.Append
               (V, new Element'(Kind => Block, Min => 1, Max => 1,
@@ -5706,6 +5717,20 @@ package body HBNF_Grammar is
       procedure Rewrite_Separated (V : in out Element_Vectors.Vector) is
          Bs : constant HBNF_Lookahead.Bounds_Vectors.Vector :=
            HBNF_Lookahead.Branches (V);
+
+         --  An `%emit` runs where it is written, so a repeated part that holds one is left as
+         --  written; the overlap is then reported, and the author writes the shared part first.
+         function Holds_Emit (Items : Element_Vectors.Vector) return Boolean is
+         begin
+            for E of Items loop
+               if (E.Kind = Block and then E.Op = B_Emit)
+                 or else (E.Kind = Group and then Holds_Emit (E.Items))
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Holds_Emit;
       begin
          for B of Bs loop
             for P in B.First .. B.Last loop
@@ -5716,6 +5741,7 @@ package body HBNF_Grammar is
                  and then V (P).Min /= V (P).Max
                  and then Natural (V (P).Items.Length) >= 2
                  and then not (for some E of V (P).Items => E.Kind = Alt)
+                 and then not Holds_Emit (V (P).Items)
                  and then V (P).Items (1).Min = 1 and then V (P).Items (1).Max = 1
                  and then V (P + 1).Min = 1 and then V (P + 1).Max = 1
                  and then Same_Element (V (P).Items (1), V (P + 1))
@@ -7206,28 +7232,6 @@ package body HBNF_Grammar is
 
       --  A hidden rule is matched and keeps nothing; that is a text rule's way of
       --  being read, so a rule that builds structure cannot be one.
-      --  `%emit` in a rule is read, but nothing generates code for it yet.
-      declare
-         function Has_Emit (Els : Element_Vectors.Vector) return Boolean is
-         begin
-            for E of Els loop
-               if (E.Kind = Block and then E.Op = B_Emit)
-                 or else (E.Kind = Group and then Has_Emit (E.Items))
-               then
-                  return True;
-               end if;
-            end loop;
-            return False;
-         end Has_Emit;
-      begin
-         for R of Rules loop
-            if Has_Emit (R.Pattern) then
-               raise Parse_Error with
-                 "rule `" & To_String (R.Name) & "` has an %emit, which no backend generates yet";
-            end if;
-         end loop;
-      end;
-
       for R of Rules loop
          if Is_Hidden (To_String (R.Name)) then
             if R.Name = Rules (1).Name then

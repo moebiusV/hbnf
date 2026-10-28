@@ -1,0 +1,4 @@
+; two alternatives of a choice that holds an %emit can both begin with "a"
+prefix none
+whitespace none
+top = "a" %emit{ one(); } "b" | "a" "c"

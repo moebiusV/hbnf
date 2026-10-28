@@ -1,0 +1,4 @@
+; an option that holds an %emit can begin like what follows it
+prefix none
+whitespace none
+top = [ "a" %emit{ one(); } "b" ] "a"

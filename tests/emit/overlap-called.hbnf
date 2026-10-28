@@ -1,0 +1,6 @@
+; the choice holds the emit through a rule it calls
+prefix none
+whitespace none
+top = one | two
+one = "a" %emit{ one(); }
+two = "a" "b"

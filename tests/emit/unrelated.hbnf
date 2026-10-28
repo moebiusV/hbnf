@@ -1,0 +1,5 @@
+; a choice with no emit, above or below, is left alone however it overlaps
+prefix none
+whitespace none
+top = pair "z" %emit{ done(); }
+pair = "x" | "xy"

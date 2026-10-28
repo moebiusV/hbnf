@@ -738,6 +738,188 @@ package body HBNF_Compilable is
       Append (S, Item);
    end Append_Comma;
 
+   --  An `%emit` runs where its place in the sequence is reached and cannot be taken back
+   --  (RFCPLAN.md step 15).  The generated parser takes an alternation's first alternative that
+   --  matches and, when an alternative fails part way, goes on to the next; an option or a
+   --  repetition that fails part way is dropped and what follows is tried at the start.  So an
+   --  emit is safe only if nothing above it can retry past it.  Every choice that holds an emit,
+   --  directly or through a rule it uses, must be told apart by the next code point: its
+   --  alternatives' first sets must not meet, and a repeated part's first set must not meet
+   --  what can follow it.  An emit under a lookahead (`!x`, `&x`) is refused: the lookahead
+   --  runs on a copy of the parser and its effects would be dropped.  A scanner action or
+   --  built-in the generator cannot see into is taken to begin with anything, which refuses.
+   procedure Check_Emits (Rules : Rule_Vectors.Vector; Backend : String) is
+      use HBNF_Lookahead;
+      N     : constant Natural := Natural (Rules.Length);
+      Bears : array (1 .. N) of Boolean := [others => False];
+
+      function Has_Direct (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            if E.Kind = Block and then E.Op = B_Emit then
+               return True;
+            elsif E.Kind = Group and then Has_Direct (E.Items) then
+               return True;
+            elsif E.Kind = Block and then Has_Direct (E.Look) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Direct;
+
+      --  Does this hold an emit, here or in a rule it uses?
+      function Bearing (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            case E.Kind is
+               when Block =>
+                  if E.Op = B_Emit or else Bearing (E.Look) then
+                     return True;
+                  end if;
+               when Group =>
+                  if Bearing (E.Items) then
+                     return True;
+                  end if;
+               when Name =>
+                  declare
+                     J : constant Natural := Find (Rules, To_String (E.Name));
+                  begin
+                     if J /= 0 and then Bears (J) then
+                        return True;
+                     end if;
+                  end;
+               when others =>
+                  null;
+            end case;
+         end loop;
+         return False;
+      end Bearing;
+
+      function Bearing_El (E : Element_Access) return Boolean is
+        (Bearing (Element_Vectors.To_Vector (E, 1)));
+
+      A : constant Analysis := Analyze (Rules);
+
+      procedure Refuse (R : Natural; Why : String) is
+      begin
+         raise Parse_Error with
+           "rule `" & To_String (Rules (R).Name) & "`: " & Why
+           & ".  An %emit cannot be taken back, so nothing above it may retry past it";
+      end Refuse;
+
+      procedure Walk (R : Natural; V : Element_Vectors.Vector; FB : Cp_Set) is
+         Bs : constant Bounds_Vectors.Vector := Branches (V);
+         type Firsts is array (1 .. Natural (Bs.Length)) of Cp_Set;
+         F : Firsts := [others => Empty];
+      begin
+         --  an alternation that holds an emit: its alternatives told apart by the next code point
+         if Natural (Bs.Length) > 1 and then Bearing (V) then
+            for K in 1 .. Natural (Bs.Length) loop
+               declare
+                  Set  : Cp_Set;
+                  Null_Branch : Boolean;
+               begin
+                  Branch_First (A, Rules, V, Bs (K), Set, Null_Branch);
+                  F (K) := (if Null_Branch then Set or FB else Set);
+               end;
+            end loop;
+            for K in 1 .. Natural (Bs.Length) loop
+               for L in K + 1 .. Natural (Bs.Length) loop
+                  declare
+                     M : constant Cp_Set := Meet (F (K), F (L));
+                  begin
+                     if not Is_Empty (M) then
+                        Refuse (R, "alternatives" & Natural'Image (K) & " and" & Natural'Image (L)
+                                & " of a choice that holds an %emit can both begin with "
+                                & (if Has_Any (M) then "text the generator cannot see into"
+                                   else Image (M)));
+                     end if;
+                  end;
+               end loop;
+            end loop;
+         end if;
+         for B of Bs loop
+            for P in B.First .. B.Last loop
+               declare
+                  E : constant Element_Access := V (P);
+               begin
+                  if E.Kind = Block and then E.Op in B_Not | B_And and then Bearing (E.Look) then
+                     Refuse (R, "an %emit inside a lookahead");
+                  end if;
+                  if E.Kind = Group then
+                     Walk (R, E.Items, Follow_After (A, Rules, V, B, P, FB));
+                  end if;
+                  --  an option or a repetition that holds an emit: it must be left by the next
+                  --  code point too, not by trying what follows at the start
+                  if E.Kind in Name | Group | Literal
+                    and then (E.Max < 0 or else E.Max > E.Min)
+                    and then Bearing_El (E)
+                  then
+                     declare
+                        Once : Element_Vectors.Vector := V;
+                        C    : constant Element_Access := new HBNF_Grammar.Element'(E.all);
+                     begin
+                        C.Min := 1;
+                        C.Max := 1;
+                        Once.Replace_Element (P, C);
+                        declare
+                           M : constant Cp_Set :=
+                             Meet (First_Of (A, Rules, E),
+                                   Follow_After (A, Rules, Once, B, P, FB));
+                        begin
+                           if not Is_Empty (M) then
+                              Refuse (R, "a repeated or optional part that holds an %emit can "
+                                      & "begin like what may follow it, with "
+                                      & (if Has_Any (M) then "text the generator cannot see into"
+                                         else Image (M)));
+                           end if;
+                        end;
+                     end;
+                  end if;
+               end;
+            end loop;
+         end loop;
+      end Walk;
+
+      Any_Emit : Boolean := False;
+   begin
+      for I in 1 .. N loop
+         Bears (I) := Has_Direct (Rules (I).Pattern);
+         Any_Emit := Any_Emit or else Bears (I);
+      end loop;
+      if not Any_Emit then
+         return;
+      end if;
+      --  a rule bears an emit when it uses a rule that does
+      declare
+         Changed : Boolean := True;
+      begin
+         while Changed loop
+            Changed := False;
+            for I in 1 .. N loop
+               if not Bears (I) and then Bearing (Rules (I).Pattern) then
+                  Bears (I) := True;
+                  Changed := True;
+               end if;
+            end loop;
+         end loop;
+      end;
+      for I in 1 .. N loop
+         if Bears (I) then
+            Walk (I, Rules (I).Pattern, A.Follow (I));
+         end if;
+      end loop;
+      --  every emit is safe; no backend generates one yet
+      for I in 1 .. N loop
+         if Has_Direct (Rules (I).Pattern) then
+            raise Parse_Error with
+              "rule `" & To_String (Rules (I).Name) & "` has an %emit, which "
+              & (if Backend = "c" then "the C backend does not generate yet"
+                 else "only the C backend will generate");
+         end if;
+      end loop;
+   end Check_Emits;
+
    procedure Check
      (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
       Backend : String) is
@@ -746,6 +928,7 @@ package body HBNF_Compilable is
          raise Parse_Error with "the schema defines no rules";
       end if;
       Shadowed := 0;
+      Check_Emits (Rules, Backend);
 
       --  A scanner written for other backends only matches nothing in this
       --  one, and the grammar parses differently here than where it was

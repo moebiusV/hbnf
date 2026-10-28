@@ -2715,6 +2715,17 @@ cycles.
     emit.  The analysis uses the lookahead sets the generator already keeps.  It applies up the
     whole chain of ancestors, whatever kind of rule they are.
 
+    *What the analysis does today.*  It runs in `HBNF_Compilable.Check` on the rules as the
+    backends see them.  For every alternation that holds an emit, directly or through a rule it
+    uses, the alternatives' first sets must not meet (an empty alternative counts as what may
+    follow); for every option or repetition that holds one, its first set must not meet what may
+    follow it, computed with the repetition turned off; an emit under a lookahead is refused,
+    though the reader already allows only literals there.  A built-in (`word`, `int`, `str`), a
+    jet or a scanner action is taken to begin with anything, so a choice that starts with one
+    and holds an emit is refused until the first sets of the built-ins are taught to the
+    analysis.  The reader's rewrite of `*n( A S ) A` into `A *n( S A )` is skipped for a repeated
+    part that holds an emit, because it would move the emit; the overlap is then reported.
+
     *Order of work.*  The reader (the type after the name; `%emit` blocks in every position);
     the refusal analysis, with its tests; the C backend; JSON as the first grammar, checked
     against the current parser's results and measured against it; then YAML, and the daemon
