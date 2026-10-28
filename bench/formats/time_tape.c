@@ -29,6 +29,7 @@ int main(int argc, char **argv) {
     buf[len] = 0; fclose(f);
     tape_text = buf;
     clock_gettime(CLOCK_MONOTONIC, &t0);
+    tape_reserve((size_t)len);       /* the room for the tape is part of the cost */
     ok = parse_text(buf, &out, err, sizeof err, &line, &col);
     clock_gettime(CLOCK_MONOTONIC, &t1);
     ms = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) / 1e6;

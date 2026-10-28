@@ -6,6 +6,7 @@ prefix none
 {
 #include <stdint.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 
 /* the tape: a tag, then for a string, number or literal the offset and length of its text, for an
    object or array the tape position after it (so a reader can skip it) and the number of members */
@@ -14,13 +15,36 @@ static uint64_t *tape;
 static size_t tape_n, tape_cap;
 static const char *tape_text;
 
+/* A tape that outgrows its room doubles; this is the way out of the fast path, not the usual one. */
+static __attribute__((noinline)) void tape_grow (void)
+{
+    size_t cap = tape_cap ? tape_cap * 2 : 1 << 16;
+    uint64_t *t = realloc (tape, cap * sizeof *tape);
+    if (!t) abort ();
+    tape = t;
+    tape_cap = cap;
+}
+
+/* Room for a document of this many bytes, before the parse: a quarter word a byte is more than
+   the usual document needs.  The room starts on a 2 MiB boundary and asks for huge pages, so
+   filling it costs a few page faults, not one for every 4 KiB. */
+static void tape_reserve (size_t input_bytes)
+{
+    const size_t huge = (size_t) 2 << 20;
+    size_t bytes = ((input_bytes / 4 + 64) * sizeof *tape + huge - 1) & ~(huge - 1);
+    void *m = aligned_alloc (huge, bytes);
+    if (!m) return;
+#ifdef MADV_HUGEPAGE
+    madvise (m, bytes, MADV_HUGEPAGE);
+#endif
+    free (tape);
+    tape = m;
+    tape_cap = bytes / sizeof *tape;
+}
+
 static inline void tape_put (uint64_t a, uint64_t b)
 {
-    if (tape_n + 2 > tape_cap) {
-        tape_cap = tape_cap ? tape_cap * 2 : 1 << 16;
-        tape = realloc (tape, tape_cap * sizeof *tape);
-        if (!tape) abort ();
-    }
+    if (__builtin_expect (tape_n + 2 > tape_cap, 0)) tape_grow ();
     tape[tape_n++] = a;
     tape[tape_n++] = b;
 }
