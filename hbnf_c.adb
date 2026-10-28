@@ -743,6 +743,74 @@ package body HBNF_C is
       if Length (Callee.Slots) = 0 or else Callee.Shares then
          return Call;
       end if;
+      --  The callee is given the caller's own numbers, in the same places, and keeps nothing of
+      --  its own in a frame (a rule only reads its parameters): it runs in the caller's frame,
+      --  and no new one is made for it.
+      declare
+         Caller : constant HBNF_Grammar.Frame_Info := HBNF_Grammar.Frame_Of (Owner);
+
+         function Names (S : String) return String_Vectors.Vector is
+            V     : String_Vectors.Vector;
+            First : Natural := S'First;
+         begin
+            if S'Length = 0 then
+               return V;
+            end if;
+            for K in S'Range loop
+               if S (K) = ' ' then
+                  V.Append (To_Unbounded_String (S (First .. K - 1)));
+                  First := K + 1;
+               end if;
+            end loop;
+            V.Append (To_Unbounded_String (S (First .. S'Last)));
+            return V;
+         end Names;
+
+         function Trim_Both (S : String) return String is
+            F : Natural := S'First;
+            L : Natural := S'Last;
+         begin
+            while F <= L and then S (F) = ' ' loop
+               F := F + 1;
+            end loop;
+            while L >= F and then S (L) = ' ' loop
+               L := L - 1;
+            end loop;
+            return S (F .. L);
+         end Trim_Both;
+
+         Mine   : constant String_Vectors.Vector := Names (To_String (Caller.Slots));
+         Theirs : constant String_Vectors.Vector := Names (To_String (Callee.Slots));
+         Given  : String_Vectors.Vector;
+      begin
+         if Callee.Arity > 0 and then Natural (Theirs.Length) = Callee.Arity
+           and then Natural (Mine.Length) >= Callee.Arity
+         then
+            declare
+               D : Natural := 0;
+               F : Natural := Text'First;
+            begin
+               for K in Text'Range loop
+                  if Text (K) = '(' then
+                     D := D + 1;
+                  elsif Text (K) = ')' then
+                     D := D - 1;
+                  elsif Text (K) = ',' and then D = 0 then
+                     Given.Append (To_Unbounded_String (Trim_Both (Text (F .. K - 1))));
+                     F := K + 1;
+                  end if;
+               end loop;
+               if Text'Length > 0 then
+                  Given.Append (To_Unbounded_String (Trim_Both (Text (F .. Text'Last))));
+               end if;
+            end;
+            if Natural (Given.Length) = Callee.Arity
+              and then (for all K in 1 .. Callee.Arity => Given (K) = Mine (K))
+            then
+               return Call;
+            end if;
+         end if;
+      end;
       for I in Text'Range loop
          if Text (I) = '(' then
             Depth := Depth + 1;
