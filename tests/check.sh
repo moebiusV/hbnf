@@ -14,6 +14,10 @@
 #   sh tests/check.sh --status                           which suites are fresh, stale, or never run
 #   sh tests/check.sh --force yaml                       run it even if nothing it depends on changed
 #
+# A suite that takes a backend list (schema, rfc, toml, yaml, params) is run one backend at a time,
+# and each backend has its stamp: a rerun does only the backends that have not passed with the
+# present inputs, and a change to one backend's generator touches only its slices.
+#
 # Like make, a suite is rerun only when something it depends on has changed since it last passed:
 # its own script and the helpers it sources, the files it names under corpus/, grammars/ and
 # tests/ (a grammar with the files it includes), and the part of the generator it exercises (the
@@ -161,14 +165,20 @@ backend_src() {
 	ada) ls hbnf_ada.ad[sb] hbnf_wire-ada_lang.ad[sb] templates/ada_* 2> /dev/null ;;
 	esac
 }
-fingerprint() { # SUITE
-	files=$(suite_files "$1" | sort -u)
+fingerprint() { # SUITE [BACKEND...]: of the suite as it runs, or of just those backends
+	fs=$1; shift
+	[ $# -gt 0 ] || set -- $(suite_backends "$fs")
+	files=$(suite_files "$fs" | sort -u)
 	hb=""; for f in $files; do case $f in *.hbnf) hb="$hb $f" ;; esac; done
-	gen="$(core_src) $(for b in $(suite_backends "$1"); do backend_src "$b"; done)"
+	gen="$(core_src) $(for b in "$@"; do backend_src "$b"; done)"
 	printf '%s %s %s %s\n' "$(hashfiles $files $(closure $hb))" "$(hashfiles $(echo $gen | tr ' ' '\n' | sort -u))" \
-		"$(suite_backends "$1" | tr ' ' ,)" "${YAML_TEST_SUITE:-}"
+		"$(echo "$@" | tr ' ' ,)" "${YAML_TEST_SUITE:-}"
 }
-stamp_name() { echo "$S/$1@$(suite_backends "$1" | tr ' ' ,)"; }
+stamp_for() { echo "$S/$1@$(echo $2 | tr ' ' ,)"; }   # SUITE "BACKENDS"
+stamp_name() { stamp_for "$1" "$(suite_backends "$1")"; }
+fresh() { # STAMP FINGERPRINT: the suite (or slice) passed with these inputs
+	[ -f "$1" ] && [ "$(sed -n 2p "$1")" = "$2" ]
+}
 
 if [ $STATUS = 1 ]; then
 	for s in $WANT_S; do
@@ -222,24 +232,61 @@ for s in $WANT_S; do
 		same=$((same + 1)); continue
 	fi
 	load=$(cut -d' ' -f1 /proc/loadavg 2> /dev/null || echo "-")
+	# A suite that takes a backend list runs one slice for each backend, each with its own stamp:
+	# a rerun repeats only the slices that have not passed with the present inputs.
+	blist=$(suite_backends "$s")
+	slices=0
+	if grep -q "${name}_BACKENDS" "tests/$s.sh" && [ "$(echo $blist | wc -w)" -gt 1 ] && [ -z "$WANT_B" ]; then slices=1; fi
 	t0=$(date +%s); k0=$(cpu_ticks)
-	timeout 3000 sh "tests/$s.sh" $args > "$log" 2>&1 9>&-
-	rc=$?
-	secs=$(( $(date +%s) - t0 ))
-	cpu=$(awk -v a="$k0" -v b="$(cpu_ticks)" 'BEGIN { printf "%.1f", (b - a) / 100 }')
-	# a backend's own lines, "suite: Rust OK (...)" or "suite: Rust FAIL (...)"
-	items=$(sed -n 's/^[a-z0-9 -]*: \(C\|Ada\|Rust\|Zig\|Tree-sitter\)[ ]*\(OK\|FAIL\).*/\1 \2/p' "$log" | sort -u)
-	if [ -n "$items" ]; then
-		echo "$items" | while read -r b st; do
-			bl=$(echo "$b" | tr 'A-Z' 'a-z')
-			case " $BK " in *" $bl "*) ;; *) continue ;; esac
-			emit "$s" "$bl" "$([ "$st" = OK ] && echo ok || echo FAIL)" "-"
+	if [ $slices = 1 ]; then
+		: > "$log"; rc=0; skipped=0
+		for b in $blist; do
+			fpb=$(fingerprint "$s" "$b"); stb=$(stamp_for "$s" "$b")
+			if [ $FORCE = 0 ] && fresh "$stb" "$fpb"; then
+				printf '%-5s %-14s %-10s        (nothing it depends on changed since %s)\n' same "$s" "$b" "$(sed -n 1p "$stb")"
+				skipped=$((skipped + 1)); continue
+			fi
+			bt0=$(date +%s); bk0=$(cpu_ticks)
+			env "${name}_BACKENDS=$b" timeout 3000 sh "tests/$s.sh" $args > "$log.slice" 2>&1 9>&-
+			brc=$?
+			cat "$log.slice" >> "$log"
+			bsecs=$(( $(date +%s) - bt0 ))
+			bcpu=$(awk -v a="$bk0" -v b="$(cpu_ticks)" 'BEGIN { printf "%.1f", (b - a) / 100 }')
+			if [ $brc = 0 ]; then
+				printf '%s\n%s\n' "$(when)" "$fpb" > "$stb"
+				emit "$s" "$b" ok "$bsecs" "$bcpu" "$load"
+			else
+				emit "$s" "$b" FAIL "$bsecs" "$bcpu" "$load"; rc=1
+			fi
 		done
+		rm -f "$log.slice"
+		secs=$(( $(date +%s) - t0 ))
+		cpu=$(awk -v a="$k0" -v b="$(cpu_ticks)" 'BEGIN { printf "%.1f", (b - a) / 100 }')
+		[ $skipped -gt 0 ] && ran_all=0 || ran_all=1
+		if [ $skipped -eq $(echo $blist | wc -w) ]; then
+			# every slice was fresh: the suite is, though its own stamp was not
+			printf '%s\n%s\n' "$(when)" "$fp" > "$(stamp_name "$s")"; same=$((same + 1)); continue
+		fi
+	else
+		ran_all=1
+		timeout 3000 sh "tests/$s.sh" $args > "$log" 2>&1 9>&-
+		rc=$?
+		secs=$(( $(date +%s) - t0 ))
+		cpu=$(awk -v a="$k0" -v b="$(cpu_ticks)" 'BEGIN { printf "%.1f", (b - a) / 100 }')
+		# a backend's own lines, "suite: Rust OK (...)" or "suite: Rust FAIL (...)"
+		items=$(sed -n 's/^[a-z0-9 -]*: \(C\|Ada\|Rust\|Zig\|Tree-sitter\)[ ]*\(OK\|FAIL\).*/\1 \2/p' "$log" | sort -u)
+		if [ -n "$items" ]; then
+			echo "$items" | while read -r b st; do
+				bl=$(echo "$b" | tr 'A-Z' 'a-z')
+				case " $BK " in *" $bl "*) ;; *) continue ;; esac
+				emit "$s" "$bl" "$([ "$st" = OK ] && echo ok || echo FAIL)" "-"
+			done
+		fi
 	fi
 	if [ $rc = 0 ]; then printf '%s\n%s\n' "$(when)" "$fp" > "$(stamp_name "$s")"; st=ok; pass=$((pass + 1)); else st=FAIL; fail=$((fail + 1)); echo "$s" >> "$R/last-failed.new"; fi
 	# against the last time this suite passed on this machine: a change of 20% or more is said aloud
 	note=""
-	if [ $rc = 0 ] && [ -f "$R/check.tsv" ]; then
+	if [ $rc = 0 ] && [ "${ran_all:-1}" = 1 ] && [ -f "$R/check.tsv" ]; then
 		note=$(awk -F'\t' -v s="$s" -v a="$arch" -v l="$libc" -v w="$secs" -v c="$cpu" '
 			$6 == s && $7 == "(all)" && $8 == "ok" && $4 == a && $5 == l && $9 + 0 > 0 { pw = $9; pc = $10 }
 			END {
@@ -252,7 +299,8 @@ for s in $WANT_S; do
 				else if (r >= 1.2) printf "   %.1fx SLOWER than last time (%s %s -> %s s)", r, kind, base, (kind == "cpu" ? c : w)
 			}' "$R/check.tsv")
 	fi
-	emit "$s" "(all)" "$st" "$secs" "$cpu" "$load"
+	# a run that skipped some backends has no timing of the whole suite to compare
+	if [ "${ran_all:-1}" = 1 ]; then emit "$s" "(all)" "$st" "$secs" "$cpu" "$load"; else emit "$s" "(all)" "$st" "-"; fi
 	[ -z "$note" ] || echo "$note"
 	[ $rc = 0 ] || { grep -E "FAIL|error|^[-+][^-+]" "$log" | head -4 | sed 's/^/        /'; echo "        (log: $log)"; }
 done
