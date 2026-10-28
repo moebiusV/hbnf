@@ -1,16 +1,16 @@
 ; ntpd.conf bound to ntpd(8)'s own `struct ntpd_conf`: the grammar in
 ; ../obconf_ntpd.hbnf plus parse.y's tree actions as action jets.  The generated
-; parse_config(filename, struct ntpd_conf *) is a drop-in for parse.y's:
-;   hbnf_cli grammars/bind/ntpd.hbnf --backend=c --conf
-; It compiles only against ntpd's headers (ntpd.h); the grammar itself stays
-; standalone, so every backend and test can still use it.
+; parse_config(filename, struct ntpd_conf *) is a drop-in for parse.y's, written in the
+; epilogue below around the driver in runtime/hbnf_conf.h:
+;   hbnf grammars/bind/ntpd.hbnf --backend=c > parse.c     (link runtime/hbnf_conf.c)
+; It compiles only against ntpd's headers (ntpd.h); the rules stay standalone, so every
+; backend and test can still use the grammar.
 
 language C
 prefix none
-conf struct ntpd_conf
-
 {
 #include "ntpd.h"
+#include "hbnf_conf.h"
 
 /* parse.y's parser-internal state: the `query from` address (copied into each
    later server peer) and the constraint pool sequence number. */
@@ -347,12 +347,20 @@ action entry {
 
 ; parse.y's parse_config() resets the conf's list heads before the bind walk
 ; runs (the action jets TAILQ_INSERT into them, so they must be initialised).
-; The C --conf wrapper calls conf_init() after setting `conf = xconf`.
 {
+#define HBNF_CONF_RUN
+#include "hbnf_conf.h"
+
 static void conf_init(void) {
     TAILQ_INIT(&conf->listen_addrs);
     TAILQ_INIT(&conf->ntp_peers);
     TAILQ_INIT(&conf->ntp_conf_sensors);
     TAILQ_INIT(&conf->constraints);
+}
+
+int parse_config(const char *filename, struct ntpd_conf *xconf) {
+    conf = xconf;
+    conf_init();
+    return hbnf_conf_run(filename);
 }
 }

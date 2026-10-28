@@ -1,11 +1,10 @@
 ; unwind.conf bound to unwind(8)'s own `struct uw_conf`: the grammar in
 ; ../obconf_unwind.hbnf plus parse.y's actions as action jets.
-;   hbnf_cli grammars/bind/unwind.hbnf --backend=c --conf
-; parse.y's parse_config(char *filename) returns a new struct uw_conf *, not
-; the int hbnf's conf wrapper returns, so the generated function is named
-; hbnf_parse_config (`entry`) and the epilogue defines parse_config around
-; it, as parse.y's is: the default preference, a missing default file, and
-; NULL after an error.  It compiles only against unwind's headers.
+;   hbnf grammars/bind/unwind.hbnf --backend=c > parse.c     (link runtime/hbnf_conf.c)
+; parse.y's parse_config(char *filename) returns a new struct uw_conf *, so the
+; epilogue defines it around hbnf_parse_config, which runs the driver of
+; runtime/hbnf_conf.h: the default preference, a missing default file, and NULL
+; after an error.  It compiles only against unwind's headers.
 ;
 ; parse.y runs an action as it reduces each option; its YYERROR then skips
 ; the rest of the line.  Here the options' actions run in order after the
@@ -16,9 +15,6 @@
 
 language C
 prefix none
-conf struct uw_conf
-entry hbnf_parse_config
-
 {
 #include <sys/param.h>
 #include <sys/socket.h>
@@ -34,6 +30,7 @@ entry hbnf_parse_config
 
 #include "log.h"
 #include "unwind.h"
+#include "hbnf_conf.h"
 
 /* parse.y's own: the tree being built, and its two helpers. */
 static struct uw_conf *conf;
@@ -276,6 +273,15 @@ uw_pref(const struct prefopt_s *p)
 	}
 	conf->res_pref.types[conf->res_pref.len++] = t;
 	conf->enabled_resolvers[t] = 1;
+}
+
+#define HBNF_CONF_RUN
+#include "hbnf_conf.h"
+
+static int hbnf_parse_config(const char *path, struct uw_conf *xconf) {
+	conf = xconf;
+	conf_init();
+	return hbnf_conf_run(path);
 }
 
 struct uw_conf *

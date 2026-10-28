@@ -6,13 +6,14 @@ prefix none
 ; action running only on the alternative the statement matched.
 
 language C
-conf struct count_conf
 
 {
 #include <stdio.h>
+#include "hbnf_conf.h"
 struct count_conf { int prefs; int forwarders; };
 extern struct count_conf *conf;
 struct count_conf *conf;
+int parse_config(const char *filename, struct count_conf *xconf);
 }
 
 include "../../grammars/obconf_unwind.hbnf"
@@ -21,5 +22,14 @@ action preference { (void)n; conf->prefs++; }
 action forwarder { (void)n; conf->forwarders++; }
 
 {
+#define HBNF_CONF_RUN
+#include "hbnf_conf.h"
+
 static void conf_init(void) { conf->prefs = conf->forwarders = 0; }
+
+int parse_config(const char *filename, struct count_conf *xconf) {
+    conf = xconf;
+    conf_init();
+    return hbnf_conf_run(filename);
+}
 }

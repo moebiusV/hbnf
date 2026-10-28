@@ -2209,16 +2209,16 @@ package body HBNF_C is
                   TN : constant String := C_Type_Name (To_String (Rules (I).Name));
                begin
                   if Infos (I).Kind = List then
-                     Append (Buf, "static void visit_" & CN & "(const struct " & Pfx & CN
+                     Append (Buf, "static void __attribute__((unused)) visit_" & CN & "(const struct " & Pfx & CN
                        & "_list *, visit_fn f, void *ctx);");
                      Append (Buf, LF);
-                     Append (Buf, "static void map_" & CN & "(struct " & Pfx & CN
+                     Append (Buf, "static void __attribute__((unused)) map_" & CN & "(struct " & Pfx & CN
                        & "_list *, map_fn f, void *ctx);");
                   else
-                     Append (Buf, "static void visit_" & CN & "(const "
+                     Append (Buf, "static void __attribute__((unused)) visit_" & CN & "(const "
                        & TN & " *, visit_fn f, void *ctx);");
                      Append (Buf, LF);
-                     Append (Buf, "static void map_" & CN & "("
+                     Append (Buf, "static void __attribute__((unused)) map_" & CN & "("
                        & TN & " *, map_fn f, void *ctx);");
                   end if;
                   Append (Buf, LF);
@@ -7654,6 +7654,9 @@ package body HBNF_C is
          Root_Decl : constant String :=
            Root_Out (Root_Out'First .. Root_Out'Last - 4);
       begin
+         --  declared first, so a build that asks for a prototype of every function is quiet
+         Append (Res, "bool " & Entry_Nm & "(const char *text, " & Root_Decl & "*out,"
+           & " char *err, size_t errlen, size_t *err_line, size_t *err_col);" & LF);
          Append (Res, "bool " & Entry_Nm & "(const char *text, "
            & Root_Decl & "*out,");
          Append (Res, LF);

@@ -126,7 +126,7 @@ closure() {
 }
 # the files named in a suite script, expanded; a directory is every file under it
 suite_files() {
-	for w in $(grep -oE '(corpus|grammars|tests|bench/formats)/[A-Za-z0-9_./*-]+' "tests/$1.sh" | sort -u); do
+	for w in $(grep -oE '(corpus|grammars|tests|runtime|bench/formats)/[A-Za-z0-9_./*-]+' "tests/$1.sh" | sort -u); do
 		case $w in tests/results*) continue ;; esac
 		for g in $w; do
 			if [ -d "$g" ]; then

@@ -18,7 +18,7 @@ head_row() { printf '| tool | input | parse time | rules/s | MB/s | peak RSS |\n
 skip() {
 	{ head_row
 	  printf '| OpenBSD pfctl parse.y + byacc | | skipped: %s | | | |\n' "$1"
-	  printf '| hbnf pfctl grammar (`--conf`) | | skipped: %s | | | |\n' "$1"
+	  printf '| hbnf pfctl grammar | | skipped: %s | | | |\n' "$1"
 	} > "$out"
 	exit 0
 }
@@ -35,11 +35,9 @@ export PFCTL_SRC=$cache
 sh "$here/pfctl/build-parsey.sh" "$W/y" > "$W/y.err" 2>&1 || skip "parse.y build failed: $(grep -m1 -E 'error|undefined' "$W/y.err" | cut -c1-100)"
 for v in plain compact; do
 	flag=""; [ $v = plain ] && flag=--no-compact
-	"$HBNF" /w/grammars/obconf_pfctl.hbnf --backend=c --conf $flag > "$W/$v.txt" 2> "$W/h.err" || skip "hbnf generate failed"
+	"$HBNF" /w/grammars/obconf_pfctl.hbnf --backend=c $flag > "$W/$v.c" 2> "$W/h.err" || skip "hbnf generate failed"
 	mkdir -p "$W/$v.d"
-	awk '/^===== conf.h =====$/{f="h"; next} /^===== conf.c =====$/{f="c"; next}
-	     f=="h"{print > "'"$W/$v.d"'/conf.h"} f=="c"{print > "'"$W/$v.d"'/conf.c"}' "$W/$v.txt"
-	cat "$W/$v.d/conf.c" "$here/pfctl/time_hbnf.c" > "$W/$v.d/h.c"
+	cat "$W/$v.c" "$here/pfctl/time_hbnf.c" > "$W/$v.d/h.c"
 	gcc -O2 -std=gnu11 -I"$W/$v.d" -I/w/tests/bsdinc "$W/$v.d/h.c" -o "$W/hbnfp-$v" 2> "$W/h.err" \
 		|| skip "hbnf parser build failed: $(grep -m1 error "$W/h.err" | cut -c1-100)"
 done
@@ -65,8 +63,8 @@ pf_row() {   # pf_row LABEL BINARY N KEY CHECKSUM
 		printf '**%s filter rules** (one `pass in quick ... keep state` line each, the same file for both):\n\n' "$(echo "$n" | sed ':a;s/\B[0-9]\{3\}\>/,&/;ta')"
 		head_row
 		pf_row "OpenBSD pfctl parse.y, byacc (fills struct pf_rule)" "$W/y/parsey" "$n" byacc sum
-		pf_row "hbnf pfctl grammar (\`--conf --no-compact\`, typed tree)" "$W/hbnfp-plain" "$n" hbnf nosum
-		pf_row "hbnf pfctl grammar (\`--conf\`, compact nodes, the default)" "$W/hbnfp-compact" "$n" hbnfcompact nosum
+		pf_row "hbnf pfctl grammar (\`--no-compact\`, typed tree)" "$W/hbnfp-plain" "$n" hbnf nosum
+		pf_row "hbnf pfctl grammar (compact nodes, the default)" "$W/hbnfp-compact" "$n" hbnfcompact nosum
 		printf '\n'
 	done
 	[ -f "$RESULTS/env.md" ] && printf '_%s_\n' "$(cat "$RESULTS/env.md")"

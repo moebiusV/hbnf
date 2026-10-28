@@ -2,9 +2,11 @@
    config to parse_config; prints what the actions counted. */
 #include <stdio.h>
 #include <string.h>
-#include "conf.h"
+#include "hbnf_conf.h"
 
 struct count_conf { int prefs; int forwarders; };
+int parse_config(const char *filename, struct count_conf *xconf);
+int cmdline_symset(char *s);
 
 /* Every error, in order with the counts (stdout). */
 static void report(size_t line, const char *msg) {

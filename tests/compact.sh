@@ -14,11 +14,9 @@ out=$(HBNF_C_FLAGS=--no-compact sh tests/writer.sh 2>&1) || { echo "compact: FAI
 
 for v in plain compact; do
 	flag=--compact; [ $v = plain ] && flag=--no-compact
-	"$CLI" grammars/obconf_pfctl.hbnf --backend=c --conf $flag > "$W/$v.txt" || { echo "compact: FAIL (generate $v)"; exit 1; }
-	awk -v d="$W/$v" '/^===== conf.h =====$/{f="h"; next} /^===== conf.c =====$/{f="c"; next}
-	     f=="h"{print > d"_conf.h"} f=="c"{print > d"_conf.c"}' "$W/$v.txt"
-	mkdir -p "$W/$v.d"; cp "$W/${v}_conf.h" "$W/$v.d/conf.h"
-	cat "$W/${v}_conf.c" bench/pfctl/time_hbnf.c > "$W/$v.d/m.c"
+	"$CLI" grammars/obconf_pfctl.hbnf --backend=c $flag > "$W/$v.c" || { echo "compact: FAIL (generate $v)"; exit 1; }
+	mkdir -p "$W/$v.d"
+	cat "$W/$v.c" bench/pfctl/time_hbnf.c > "$W/$v.d/m.c"
 	cc -O1 -std=gnu11 -w -I"$W/$v.d" -Itests/bsdinc "$W/$v.d/m.c" -o "$W/$v" || { echo "compact: FAIL (cc $v)"; exit 1; }
 done
 sh bench/gen.sh pfctl 20000 > "$W/in.txt"
