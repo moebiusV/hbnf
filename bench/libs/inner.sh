@@ -37,6 +37,11 @@ for n in json toml yaml; do
 	$CC -std=gnu11 -D_GNU_SOURCE "-DOUT_T=$t" /o/$n-m.c -o /o/bin-hbnf-$n 2> /dev/null
 	best $n "hbnf (C backend), typed tree" /o/doc.$n /o/bin-hbnf-$n
 done
+# JSON again, read onto a flat tape by %emit with no tree (corpus/json/json-tape.hbnf)
+t=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' /o/json-tape.c)
+cat /o/json-tape.c /w/bench/formats/time_tape.c > /o/json-tape-m.c
+$CC -std=gnu11 -D_GNU_SOURCE "-DOUT_T=$t" /o/json-tape-m.c -o /o/bin-hbnf-json-tape 2> /dev/null
+best json "hbnf (C backend), %emit tape" /o/doc.json /o/bin-hbnf-json-tape
 
 try json cJSON      /o/doc.json cjson.c -lcjson
 try json Jansson    /o/doc.json jansson.c -ljansson

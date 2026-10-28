@@ -42,4 +42,5 @@ rev = subprocess.check_output(["git", "-C", root, "rev-parse", "--short", "HEAD"
 print(f"_{datetime.date.today()}; glibc {ver[1].split()[-1]}, {ver[0].strip()}, node {ver[2].strip().lstrip('v')}, "
       f"{ver[3].strip()}; `-O2`, the same sources and flags for every native library; hbnf {rev}.  "
       "simdjson is its DOM API; the C++ and Rust libraries, Python, Node and the YAML parsers build "
-      "their own value types, and hbnf builds the typed tree its grammar describes._")
+      "their own value types, and hbnf builds the typed tree its grammar describes, except in the row "
+      "that says `%emit tape`: that grammar writes a flat tape of 64-bit words and builds no tree._")
