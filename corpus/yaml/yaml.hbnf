@@ -11,7 +11,7 @@ prefix none
 include "yaml-tokens.hbnf"
 
 ; ---- line breaks inside a node: the next line is indented M or more
-brk(M in 0..) := *WSP nl *( *WSP nl ) !marker %spaces M *WSP
+brk(M in 0..) := lines !marker %spaces M *WSP
 dq(M in 0..) := DQUOTE [ dqs ] *( [ %x5C ] brk(M) [ dqs ] ) DQUOTE
 sq(M in 0..) := "'" [ sqs ] *( brk(M) [ sqs ] ) "'"
 pml(M in 0..) := plainline("block") *( brk(M) pcont("block") )
@@ -24,7 +24,7 @@ bsfix(M in 0..) := ( digit19 %num D [ chomp ] | chomp digit19 %num D ) trail ( n
 bscalar(M in 0..) := ( "|" | ">" ) ( bsfix(M) | [ chomp ] trail bsauto(M) )
 
 ; ---- flow collections
-fbrk(M in 0..) := nl *( *WSP nl ) !marker %spaces M *WSP
+fbrk(M in 0..) := flines !marker %spaces M *WSP
 fgap(M in 0..) := *( 1*( WSP | fbrk(M) ) [ "#" *nb ] )
 fplain(M in 0..) := plainline("flow") *( brk(M) pcont("flow") )
 fval(M in 0..) := fseq(M) | fmap(M) | dq(M) | sq(M) | alias | fplain(M)
