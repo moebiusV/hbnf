@@ -1,0 +1,6 @@
+; the first alternative begins "[[" and runs its emit after it; the second begins "[" and then a
+; key, and a key does not begin with a bracket, so the second cannot read what the first read
+prefix none
+whitespace none
+top = "[[" %emit{ array_table(); } key "]]" / "[" %emit{ table(); } key "]"
+key = 1*%x61-7A

@@ -1,0 +1,12 @@
+; the same grammar without the directive: a retry past an emit is refused
+prefix none
+whitespace none
+{
+static int stack[64], depth;
+static void push (int v) { stack[depth++] = v; }
+}
+
+top :: int = ab | ac | ad
+ab  :: int = "a" %emit{ push (1); } "b" %emit{ push (2); }
+ac  :: int = "a" %emit{ push (3); } "c" %emit{ push (4); }
+ad  :: int = "a" %emit{ push (5); } "d" %emit{ push (6); }

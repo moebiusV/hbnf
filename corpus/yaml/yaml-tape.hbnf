@@ -1,0 +1,116 @@
+; YAML 1.2 read into a flat tape of 64-bit words, with no tree: the same language as yaml.hbnf,
+; with an %emit where the tree would have made a node.  The tape is runtime/hbnf_tape.h's.
+;
+; A document, a block or flow mapping and a block or flow sequence are opened where they begin
+; and closed where they end (`$$` is where one begins on the tape).  A mapping holds its keys and
+; values one after the other; a node a key or value lacks is T_NULL, so they stay paired.  A scalar,
+; an alias, an anchor and a tag are one tag and their text, the text as it stands in the input (a
+; reader folds the lines of a plain or quoted scalar and takes the indicator and the indent off a
+; block scalar); an anchor and a tag come just before the node they belong to.
+;
+; YAML is read by trying one form and, when it does not fit, the next: a key that is a plain scalar
+; is a `key: value` entry only when the colon follows, and a block collection is one only once its
+; second line is seen.  A form that is given up has run emits, and `rollback { tape_n }` says what
+; they changed: the generated parser puts the tape back to where it was, one store.
+prefix none
+{
+enum { T_DOC = 1, T_MAP, T_SEQ, T_PLAIN, T_DQ, T_SQ, T_BLOCK, T_ALIAS, T_ANCHOR, T_TAG, T_NULL };
+/* which tags hold a link to the position after them, and which a text (see hbnf_tape.h) */
+#define TAPE_IS_OPENER(t) ((t) == T_DOC || (t) == T_MAP || (t) == T_SEQ)
+#define TAPE_IS_TEXT(t) ((t) >= T_PLAIN && (t) <= T_TAG && (t) != T_NULL)
+#include "hbnf_tape.h"
+#define EMIT_NULL tape_put (TAPE_TAG (T_NULL))
+}
+rollback { tape_n }
+whitespace none
+include "yaml-tokens.hbnf"
+
+; the node properties are emitted as they are read
+props   :: int = tag %emit{ tape_text_of (T_TAG, p->pos, hbnf_sn (tag)); } [ 1*WSP anchor %emit{ tape_text_of (T_ANCHOR, p->pos, hbnf_sn (anchor)); } ]
+               | anchor %emit{ tape_text_of (T_ANCHOR, p->pos, hbnf_sn (anchor)); } [ 1*WSP tag %emit{ tape_text_of (T_TAG, p->pos, hbnf_sn (tag)); } ]
+props2  :: int = tag %emit{ tape_text_of (T_TAG, p->pos, hbnf_sn (tag)); } 1*WSP anchor %emit{ tape_text_of (T_ANCHOR, p->pos, hbnf_sn (anchor)); }
+               | anchor %emit{ tape_text_of (T_ANCHOR, p->pos, hbnf_sn (anchor)); } 1*WSP tag %emit{ tape_text_of (T_TAG, p->pos, hbnf_sn (tag)); }
+
+; ---- line breaks inside a node: the next line is indented M or more
+brk(M in 0..) :: int := lines !marker %spaces M *WSP
+dq(M in 0..) :: uint64_t := %emit{ $$ = p->pos; } DQUOTE [ dqs ] *( [ %x5C ] brk(M) [ dqs ] ) DQUOTE %emit{ tape_text_of (T_DQ, p->pos, p->pos - $$); }
+sq(M in 0..) :: uint64_t := %emit{ $$ = p->pos; } "'" [ sqs ] *( brk(M) [ sqs ] ) "'" %emit{ tape_text_of (T_SQ, p->pos, p->pos - $$); }
+pml(M in 0..) :: uint64_t := %emit{ $$ = p->pos; } plainline("block") *( brk(M) pcont("block") ) %emit{ tape_text_of (T_PLAIN, p->pos, p->pos - $$); }
+
+; ---- block scalars: the text lines are indented K or more, K being the first line's, or M - 1
+; plus the digit of the header
+bstext(K in 0..) :: int := 1*nb *( nl *( *SP nl ) !marker %spaces K *nb )
+bsauto(M in 0..) :: int := nl *( *SP nl ) %spaces M *SP %col K bstext(K) | ""
+bsfix(M in 0..) :: int := ( digit19 %num D [ chomp ] | chomp digit19 %num D ) trail ( nl *( *SP nl ) %spaces(M + D - 1) bstext(M + D - 1) | "" )
+bscalar(M in 0..) :: uint64_t := %emit{ $$ = p->pos; } ( "|" | ">" ) ( bsfix(M) | [ chomp ] trail bsauto(M) ) %emit{ tape_text_of (T_BLOCK, p->pos, p->pos - $$); }
+
+; ---- flow collections
+fbrk(M in 0..) :: int := flines !marker %spaces M *WSP
+fgap(M in 0..) :: int := *( 1*( WSP | fbrk(M) ) [ "#" *nb ] )
+fplain(M in 0..) :: uint64_t := %emit{ $$ = p->pos; } plainline("flow") *( brk(M) pcont("flow") ) %emit{ tape_text_of (T_PLAIN, p->pos, p->pos - $$); }
+fval(M in 0..) :: int := fseq(M) | fmap(M) | dq(M) | sq(M) | alias %emit{ tape_text_of (T_ALIAS, p->pos, hbnf_sn (alias)); } | fplain(M)
+fvaln(M in 0..) :: int := fseq(M) | fmap(M) | dq(M) | sq(M) | fplain(M)
+fnode(M in 0..) :: int := props ( 1*( WSP | fbrk(M) ) fvaln(M) | "" %emit{ EMIT_NULL; } ) | fval(M)
+fkeyj(M in 0..) :: int := [ props 1*WSP ] ( dq(M) | sq(M) | fseq(M) | fmap(M) )
+fkeyp(M in 0..) :: int := [ props 1*WSP ] fplain(M) | alias %emit{ tape_text_of (T_ALIAS, p->pos, hbnf_sn (alias)); } | props "" %emit{ EMIT_NULL; }
+fpair(M in 0..) :: int := ( fnode(M) | "" %emit{ EMIT_NULL; } )
+fitem(M in 0..) :: uint64_t := %emit{ $$ = tape_open (T_MAP); } fkeyj(M) *WSP ":" fgap(M) fpair(M) %emit{ tape_close ($$); }
+                             | %emit{ $$ = tape_open (T_MAP); } fkeyp(M) *WSP ":" &( WSP | nl | flow-ind ) fgap(M) fpair(M) %emit{ tape_close ($$); }
+                             | %emit{ $$ = tape_open (T_MAP); } fempty(M) %emit{ tape_close ($$); }
+                             | fnode(M)
+fmitem(M in 0..) :: int := fkeyj(M) fgap(M) ":" fgap(M) fpair(M)
+                         | fkeyp(M) fgap(M) ":" &( WSP | nl | flow-ind ) fgap(M) fpair(M)
+                         | fempty(M)
+                         | fnode(M) "" %emit{ EMIT_NULL; }
+fempty(M in 0..) :: int := ":" %emit{ EMIT_NULL; } &( WSP | nl | flow-ind ) fgap(M) fpair(M)
+                         | "?" &( WSP | nl ) fgap(M) ( fnode(M) fgap(M) | "" %emit{ EMIT_NULL; } ) ( ":" fgap(M) fpair(M) | "" %emit{ EMIT_NULL; } )
+fseq(M in 0..) :: uint64_t := "[" %emit{ $$ = tape_open (T_SEQ); } fgap(M) [ fitem(M) fgap(M) *( "," fgap(M) fitem(M) fgap(M) ) [ "," fgap(M) ] ] "]" %emit{ tape_close ($$); }
+fmap(M in 0..) :: uint64_t := "{" %emit{ $$ = tape_open (T_MAP); } fgap(M) [ fmitem(M) fgap(M) *( "," fgap(M) fmitem(M) fgap(M) ) [ "," fgap(M) ] ] "}" %emit{ tape_close ($$); }
+
+; ---- block nodes.  A block at column K has entries that start at column K.
+val(M in 0..) :: int := valn(M) | alias %emit{ tape_text_of (T_ALIAS, p->pos, hbnf_sn (alias)); }
+valn(M in 0..) :: int := pml(M) | dq(M) | sq(M) | fseq(M) | fmap(M) | bscalar(M)
+ptl(M in 0..) :: int := 1*WSP valn(M) | trail ( nl gap ( child0(M) | %spaces(M - 1) bseq(M - 1) ) | "" %emit{ EMIT_NULL; } )
+ptlt(M in 0..) :: int := 1*WSP valn(M) | trail ( nl gap ( child0(M) | %spaces(M - 1) bseq(M - 1) | %spaces M *SP anchor %emit{ tape_text_of (T_ANCHOR, p->pos, hbnf_sn (anchor)); } ptl(M) ) | "" %emit{ EMIT_NULL; } )
+ptla(M in 0..) :: int := 1*WSP valn(M) | trail ( nl gap ( child0(M) | %spaces(M - 1) bseq(M - 1) | %spaces M *SP tag %emit{ tape_text_of (T_TAG, p->pos, hbnf_sn (tag)); } ptl(M) ) | "" %emit{ EMIT_NULL; } )
+inl(M in 0..) :: int := props2 ptl(M) | tag %emit{ tape_text_of (T_TAG, p->pos, hbnf_sn (tag)); } ptlt(M) | anchor %emit{ tape_text_of (T_ANCHOR, p->pos, hbnf_sn (anchor)); } ptla(M) | val(M)
+child(M in 0..) :: int := %spaces M *SP %col K body(K, M)
+child0(M in 0..) :: int := %spaces M *SP %col K body0(K, M)
+body(K in 0.., M in 0..) :: int := bmap(K) | bseq(K) | inl(M) | HTAB *WSP inl(M)
+body0(K in 0.., M in 0..) :: int := bmap(K) | bseq(K) | val(M) | HTAB *WSP val(M)
+
+sep      = &WSP | &nl | !any
+ikey(K in 0..) :: int := props 1*WSP ( dqline %emit{ tape_text_of (T_DQ, p->pos, hbnf_sn (dqline)); } | sqline %emit{ tape_text_of (T_SQ, p->pos, hbnf_sn (sqline)); } | fseq(0 - 1) | fmap(0 - 1) | plainline("block") %emit{ tape_text_of (T_PLAIN, p->pos, hbnf_sn (plainline_block)); } )
+                       | alias %emit{ tape_text_of (T_ALIAS, p->pos, hbnf_sn (alias)); }
+                       | dqline %emit{ tape_text_of (T_DQ, p->pos, hbnf_sn (dqline)); }
+                       | sqline %emit{ tape_text_of (T_SQ, p->pos, hbnf_sn (sqline)); }
+                       | fseq(0 - 1) | fmap(0 - 1)
+                       | plainline("block") %emit{ tape_text_of (T_PLAIN, p->pos, hbnf_sn (plainline_block)); }
+                       | props &( WSP | ":" ) %emit{ EMIT_NULL; }
+                       | "" %emit{ EMIT_NULL; }
+bmap(K in 0..) :: uint64_t := %emit{ $$ = tape_open (T_MAP); } mapent(K) *( nl gap %spaces K !marker mapent(K) ) %emit{ tape_close ($$); }
+mapent(K in 0..) :: int := "?" eval(K) ( nl gap %spaces K ":" eval(K) | "" %emit{ EMIT_NULL; } ) | ikey(K) *WSP ":" mval(K)
+mval(K in 0..) :: int := sep ( 1*WSP inl(K + 1) trail | trail mnest(K) )
+mnest(K in 0..) :: int := nl gap ( child(K + 1) | %spaces K bseq(K) ) | "" %emit{ EMIT_NULL; }
+bseq(K in 0..) :: uint64_t := %emit{ $$ = tape_open (T_SEQ); } "-" sval(K) *( nl gap %spaces K "-" sval(K) ) %emit{ tape_close ($$); }
+sval(K in 0..) :: int := sep ( 1*SP %col Q cbody(Q) | 1*WSP inl(K + 1) trail | trail snest(K) )
+eval(K in 0..) :: int := sep ( 1*SP %col Q cbody(Q) | 1*WSP inl(K + 1) trail | trail mnest(K) )
+snest(K in 0..) :: int := nl gap child(K + 1) | "" %emit{ EMIT_NULL; }
+cbody(Q in 0..) :: int := bmap(Q) | bseq(Q)
+
+; ---- documents
+top(M in 0..) :: int := *SP %col K body(K, M)
+BOM      = %xFEFF
+thandle  = "!" | "!!" | "!" 1*( ALNUM | "-" ) "!"
+tagdir   = "%" "TAG" 1*WSP thandle 1*WSP 1*( uri | flow-ind | "!" ) trail nl gap
+yamldir  = "%" "YAML" 1*WSP 1*DIGIT "." 1*DIGIT trail nl gap
+otherdir = "%" dname *nb nl gap
+dirs     = &"%" *( tagdir | otherdir ) ( yamldir *( tagdir | otherdir ) | "" )
+yaml     :: int = [ BOM ] gap [ dends | bare | dirdoc ] *explicit
+bare     :: uint64_t = !marker %emit{ $$ = tape_open (T_DOC); } top(0) %emit{ tape_close ($$); } dtail
+dirdoc   :: uint64_t = dirs "---" %emit{ $$ = tape_open (T_DOC); } dcontent %emit{ tape_close ($$); } dtail
+explicit :: uint64_t = "---" %emit{ $$ = tape_open (T_DOC); } dcontent %emit{ tape_close ($$); } dtail
+dcontent :: int = 1*WSP inl(0) | trail ( nl gap !marker top(0) | "" %emit{ EMIT_NULL; } )
+dend     = "..." trail ( nl gap | !any )
+dends    :: int = 1*dend [ bare | dirdoc ]
+dtail    :: int = trail ( nl gap [ dends ] [ trail !any ] | !any )

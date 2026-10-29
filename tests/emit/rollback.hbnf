@@ -1,0 +1,14 @@
+; `rollback { depth }` says the emits change `depth`, so a retry puts it back: every alternative
+; below begins "a" and pushes before it can fail, and only the one that succeeds leaves its pushes
+prefix none
+whitespace none
+{
+static int stack[64], depth;
+static void push (int v) { stack[depth++] = v; }
+}
+rollback { depth }
+
+top :: int = ab | ac | ad
+ab  :: int = "a" %emit{ push (1); } "b" %emit{ push (2); }
+ac  :: int = "a" %emit{ push (3); } "c" %emit{ push (4); }
+ad  :: int = "a" %emit{ push (5); } "d" %emit{ push (6); }

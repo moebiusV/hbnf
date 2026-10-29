@@ -738,6 +738,54 @@ package body HBNF_Compilable is
       Append (S, Item);
    end Append_Comma;
 
+   function Leads_With_Emit
+     (Rules : HBNF_Grammar.Rule_Vectors.Vector;
+      V     : HBNF_Grammar.Element_Vectors.Vector) return Boolean
+   is
+      function Walk (V : Element_Vectors.Vector; Depth : Natural) return Boolean is
+         At_Start : Boolean := True;
+      begin
+         if Depth > 16 then
+            return True;                 --  a cycle of rules that begin alike: assume the worst
+         end if;
+         for K in V.First_Index .. V.Last_Index loop
+            if V (K).Kind = Alt then
+               At_Start := True;
+            elsif At_Start then
+               declare
+                  E : constant Element_Access := V (K);
+               begin
+                  case E.Kind is
+                     when Block =>
+                        if E.Op = B_Emit then
+                           return True;
+                        end if;               --  any other block reads nothing: look on
+                     when Name =>
+                        declare
+                           J : constant Natural := Find (Rules, To_String (E.Name));
+                        begin
+                           if J /= 0 and then Walk (Rules (J).Pattern, Depth + 1) then
+                              return True;
+                           end if;
+                        end;
+                        if E.Min >= 1 then At_Start := False; end if;
+                     when Group =>
+                        if Walk (E.Items, Depth + 1) then
+                           return True;
+                        end if;
+                        if E.Min >= 1 then At_Start := False; end if;
+                     when others =>
+                        if E.Min >= 1 then At_Start := False; end if;
+                  end case;
+               end;
+            end if;
+         end loop;
+         return False;
+      end Walk;
+   begin
+      return Walk (V, 0);
+   end Leads_With_Emit;
+
    --  An `%emit` runs where its place in the sequence is reached and cannot be taken back
    --  (RFCPLAN.md step 15).  The generated parser takes an alternation's first alternative that
    --  matches and, when an alternative fails part way, goes on to the next; an option or a
@@ -807,13 +855,157 @@ package body HBNF_Compilable is
            & ".  An %emit cannot be taken back, so nothing above it may retry past it";
       end Refuse;
 
-      procedure Walk (R : Natural; V : Element_Vectors.Vector; FB : Cp_Set) is
+      --  A part can fail after its emit has run when something required follows the first emit
+      --  in it, or inside the rule or group that holds the emit.  One that ends in its emit
+      --  cannot: it has succeeded by then, and what the choice around it tries next cannot
+      --  run the emit a second time (`date-time %emit{ ... } / integer %emit{ ... }`).
+      FAE : array (1 .. N) of Boolean := [others => False];
+
+      function Can_Fail (E : Element_Access) return Boolean is
+        (E.Min >= 1 and then E.Kind /= Alt and then not (E.Kind = Block and then E.Op = B_Emit));
+
+      function Branch_Fae (V : Element_Vectors.Vector; B : Bounds) return Boolean;
+
+      function El_Fae (E : Element_Access) return Boolean is
+      begin
+         case E.Kind is
+            when Name =>
+               declare
+                  J : constant Natural := Find (Rules, To_String (E.Name));
+               begin
+                  return J /= 0 and then FAE (J);
+               end;
+            when Group =>
+               for Br of Branches (E.Items) loop
+                  if Branch_Fae (E.Items, Br) then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            when others =>
+               return False;
+         end case;
+      end El_Fae;
+
+      function Branch_Fae (V : Element_Vectors.Vector; B : Bounds) return Boolean is
+         K : Natural := 0;
+      begin
+         for P in B.First .. B.Last loop
+            if (V (P).Kind = Block and then V (P).Op = B_Emit) or else Bearing_El (V (P)) then
+               K := P;
+               exit;
+            end if;
+         end loop;
+         if K = 0 then
+            return False;
+         end if;
+         if V (K).Kind /= Block and then El_Fae (V (K)) then
+            return True;
+         end if;
+         for P in K + 1 .. B.Last loop
+            if Can_Fail (V (P)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Branch_Fae;
+
+      --  The literals an alternative begins with, one after another: all it must match before
+      --  anything else is read (`"[["`).  Next is where the elements after them begin.
+      procedure Lead_Literals
+        (V : Element_Vectors.Vector; B : Bounds; Text : out Unbounded_String; Next : out Natural) is
+      begin
+         Text := Null_Unbounded_String;
+         Next := B.First;
+         while Next <= B.Last and then V (Next).Kind = Literal
+           and then V (Next).Min = 1 and then V (Next).Max = 1 and then not V (Next).No_Case
+         loop
+            Append (Text, V (Next).Lit);
+            Next := Next + 1;
+         end loop;
+      end Lead_Literals;
+
+      --  An alternative K that has begun with its literals P cannot be followed by a later
+      --  alternative L that reads the same text: either L's literals differ from P, or they are a
+      --  proper start of P and what L reads next cannot be the byte of P that is left.  (`"[["`
+      --  and `"[" key`: a key does not begin with a bracket.)  Anything less certain is not
+      --  disjoint.
+      function Lit_Disjoint
+        (V : Element_Vectors.Vector; BK, BL : Bounds; FB : Cp_Set) return Boolean
+      is
+         P, Q    : Unbounded_String;
+         NK, NL  : Natural;
+      begin
+         Lead_Literals (V, BK, P, NK);
+         Lead_Literals (V, BL, Q, NL);
+         if Length (P) = 0 or else Length (Q) = 0 then
+            return False;
+         end if;
+         declare
+            PS : constant String := To_String (P);
+            QS : constant String := To_String (Q);
+            M  : constant Natural := Natural'Min (PS'Length, QS'Length);
+         begin
+            for I in 1 .. M loop
+               if PS (PS'First + I - 1) /= QS (QS'First + I - 1) then
+                  return True;
+               end if;
+            end loop;
+            if QS'Length >= PS'Length then
+               return False;
+            end if;
+            declare
+               Left : constant Character := PS (PS'First + QS'Length);
+               Set  : Cp_Set := FB;
+               Null_Rest : Boolean := True;
+            begin
+               if Character'Pos (Left) > 127 then
+                  return False;
+               end if;
+               if NL <= BL.Last then
+                  Branch_First (A, Rules, V, (First => NL, Last => BL.Last), Set, Null_Rest);
+                  if Null_Rest then
+                     Set := Set or FB;
+                  end if;
+               end if;
+               if Has_Any (Set) then
+                  return False;
+               end if;
+               for I in 1 .. Range_Count (Set) loop
+                  if Character'Pos (Left) in Range_Lo (Set, I) .. Range_Hi (Set, I) then
+                     return False;
+                  end if;
+               end loop;
+               return True;
+            end;
+         end;
+      end Lit_Disjoint;
+
+      --  E as if it were not optional or repeated: can what it holds be empty?
+      function Required (E : Element_Access) return Element_Access is
+         C : constant Element_Access := new HBNF_Grammar.Element'(E.all);
+      begin
+         C.Min := 1;
+         C.Max := 1;
+         return C;
+      end Required;
+
+      --  The next byte can say whether a part is there: it is not empty, not end of input, not
+      --  text the generator cannot see into, and all of it is ASCII.
+      function Testable (S : Cp_Set) return Boolean is
+        (not Is_Empty (S) and then not Has_Any (S) and then not Has_Eoi (S)
+         and then Range_Hi (S, Range_Count (S)) <= 127);
+
+      --  Rolled: the grammar says what its emits change (`rollback { }`) and the rule runs its
+      --  own emits, so the generated code puts that back at every retry and nothing is refused
+      --  for a retry; an emit under a lookahead still is.
+      procedure Walk (R : Natural; V : Element_Vectors.Vector; FB : Cp_Set; Rolled : Boolean := False) is
          Bs : constant Bounds_Vectors.Vector := Branches (V);
          type Firsts is array (1 .. Natural (Bs.Length)) of Cp_Set;
          F : Firsts := [others => Empty];
       begin
          --  an alternation that holds an emit: its alternatives told apart by the next code point
-         if Natural (Bs.Length) > 1 and then Bearing (V) then
+         if not Rolled and then Natural (Bs.Length) > 1 and then Bearing (V) then
             for K in 1 .. Natural (Bs.Length) loop
                declare
                   Set  : Cp_Set;
@@ -828,7 +1020,9 @@ package body HBNF_Compilable is
                   declare
                      M : constant Cp_Set := Meet (F (K), F (L));
                   begin
-                     if not Is_Empty (M) then
+                     if Branch_Fae (V, Bs (K)) and then not Is_Empty (M)
+                       and then not Lit_Disjoint (V, Bs (K), Bs (L), FB)
+                     then
                         Refuse (R, "alternatives" & Natural'Image (K) & " and" & Natural'Image (L)
                                 & " of a choice that holds an %emit can both begin with "
                                 & (if Has_Any (M) then "text the generator cannot see into"
@@ -838,22 +1032,66 @@ package body HBNF_Compilable is
                end loop;
             end loop;
          end if;
+         --  an alternative whose first effect is an emit runs it before it has looked at anything,
+         --  so the alternatives must be told apart by the next byte, which the first pass tests
+         if not Rolled and then Natural (Bs.Length) > 1 and then Leads_With_Emit (Rules, V) then
+            for K in 1 .. Natural (Bs.Length) loop
+               declare
+                  Set  : Cp_Set;
+                  Null_Branch : Boolean;
+               begin
+                  Branch_First (A, Rules, V, Bs (K), Set, Null_Branch);
+                  if Null_Branch or else not Testable (Set) then
+                     Refuse (R, "an alternative of a choice begins with an %emit, and the choice "
+                             & "cannot be told apart by the next byte");
+                  end if;
+                  for L in K + 1 .. Natural (Bs.Length) loop
+                     declare
+                        Other : Cp_Set;
+                        Null_Other : Boolean;
+                     begin
+                        Branch_First (A, Rules, V, Bs (L), Other, Null_Other);
+                        if not Is_Empty (Meet (Set, Other)) then
+                           Refuse (R, "alternatives" & Natural'Image (K) & " and" & Natural'Image (L)
+                                   & " of a choice that begins with an %emit can both begin with "
+                                   & Image (Meet (Set, Other)));
+                        end if;
+                     end;
+                  end loop;
+               end;
+            end loop;
+         end if;
          for B of Bs loop
             for P in B.First .. B.Last loop
                declare
                   E : constant Element_Access := V (P);
                begin
+                  --  a part that may be absent and begins with an emit is entered only when the
+                  --  next byte can start it
+                  if not Rolled and then (E.Max < 0 or else E.Max > E.Min) and then E.Min = 0
+                    and then E.Kind in Name | Group
+                    and then Leads_With_Emit (Rules, Element_Vectors.To_Vector (E, 1))
+                    and then (not Testable (First_Of (A, Rules, E))
+                              or else El_Nullable (Rules, A.Nullable, Required (E)))
+                  then
+                     Refuse (R, "a part that may be absent begins with an %emit, and the next byte "
+                             & "cannot tell whether it is there (it can begin with "
+                             & (if Has_Any (First_Of (A, Rules, E)) then "text the generator cannot see into"
+                                else Image (First_Of (A, Rules, E)))
+                             & (if El_Nullable (Rules, A.Nullable, Required (E)) then ", and it can be empty" else "")
+                             & ")");
+                  end if;
                   if E.Kind = Block and then E.Op in B_Not | B_And and then Bearing (E.Look) then
                      Refuse (R, "an %emit inside a lookahead");
                   end if;
                   if E.Kind = Group then
-                     Walk (R, E.Items, Follow_After (A, Rules, V, B, P, FB));
+                     Walk (R, E.Items, Follow_After (A, Rules, V, B, P, FB), Rolled);
                   end if;
                   --  an option or a repetition that holds an emit: it must be left by the next
                   --  code point too, not by trying what follows at the start
-                  if E.Kind in Name | Group | Literal
+                  if not Rolled and then E.Kind in Name | Group | Literal
                     and then (E.Max < 0 or else E.Max > E.Min)
-                    and then Bearing_El (E)
+                    and then Bearing_El (E) and then El_Fae (E)
                   then
                      declare
                         Once : Element_Vectors.Vector := V;
@@ -904,9 +1142,28 @@ package body HBNF_Compilable is
             end loop;
          end loop;
       end;
+      declare
+         Changed : Boolean := True;
+      begin
+         while Changed loop
+            Changed := False;
+            for I in 1 .. N loop
+               if Bears (I) and then not FAE (I) then
+                  for Br of Branches (Rules (I).Pattern) loop
+                     if Branch_Fae (Rules (I).Pattern, Br) then
+                        FAE (I) := True;
+                        Changed := True;
+                        exit;
+                     end if;
+                  end loop;
+               end if;
+            end loop;
+         end loop;
+      end;
       for I in 1 .. N loop
          if Bears (I) then
-            Walk (I, Rules (I).Pattern, A.Follow (I));
+            Walk (I, Rules (I).Pattern, A.Follow (I),
+                  Rolled => HBNF_Grammar.Rollback_State /= "" and then HBNF_Grammar.Runs_Emits (Rules (I)));
          end if;
       end loop;
       --  every emit is safe; only the C backend generates one

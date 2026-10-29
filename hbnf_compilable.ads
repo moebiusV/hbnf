@@ -24,6 +24,13 @@ package HBNF_Compilable is
       Backend : String);
    --  Raises HBNF_Grammar.Parse_Error naming the first offending rule.
 
+   --  Does some alternative of V run an `%emit` before it has read or tested anything: the emit
+   --  is its first effect, directly or through the first thing it names?  Such a part, if it may
+   --  be absent, must not be tried blindly (RFCPLAN.md step 15).
+   function Leads_With_Emit
+     (Rules : HBNF_Grammar.Rule_Vectors.Vector;
+      V     : HBNF_Grammar.Element_Vectors.Vector) return Boolean;
+
    --  A code-point range: one code point of a char rule's match.
    type Cp_Range is record
       Lo, Hi : Natural;

@@ -4,6 +4,22 @@
 and multi-line scalars) and `yaml-tokens.hbnf` (the characters: line breaks, plain, quoted and
 anchor/tag/alias text, where no blank is skipped) are the whole syntax of YAML 1.2.
 
+## Onto a tape, with no tree
+
+`yaml-tape.hbnf` is the same language with an `%emit{ }` where the tree would have made a node, on the
+tape of `runtime/hbnf_tape.h`: a document, a mapping and a sequence are opened where they begin and
+closed where they end, a scalar, an alias, an anchor and a tag are one tag and their text, and a node
+a mapping entry lacks is an explicit null entry, so keys and values stay paired.  YAML is read by
+trying a form and, when it does not fit, the next one, so the grammar says `rollback { tape_n }`: the
+generated parser puts the tape back, one store, whenever a form that has written to it is given up.
+
+`sh tests/emit.sh` checks it twice against the YAML test suite: the same cases accepted and refused as
+for `yaml.hbnf`, and, for every valid case, the tape read back as events (documents, mappings,
+sequences, scalars, aliases) has the suite's `test.event`.  Three cases of the suite are listed in
+`tape-gaps.txt`; the structure they get is the grammar's, the typed parser's as well, and the acceptance
+tests could not see it.  Writing the tape found and fixed one more: a document that began with `---`
+on the line after another `---` was read as a plain scalar of the first.
+
 ## Indentation is a number, not a copy of the rules
 
 YAML's productions take the indentation `n` as a parameter, and a document may nest as deep as

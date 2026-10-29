@@ -1,6 +1,6 @@
-; the choice holds the emit through a rule it calls
+; the choice holds the emit through a rule it calls, and the emit is followed by a "b" that can fail
 prefix none
 whitespace none
 top = one | two
-one = "a" %emit{ one(); }
-two = "a" "b"
+one = "a" %emit{ one(); } "b"
+two = "a" "c"

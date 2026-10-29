@@ -1,0 +1,7 @@
+# Cases of the YAML test suite that corpus/yaml/yaml-tape.hbnf accepts (as yaml.hbnf does) but whose
+# events the tape does not have: the grammar reads them as a different structure.  The tape test fails
+# when a case listed here now agrees, so the list stays true.  The structure is the grammar's, the
+# typed parser's too; the acceptance tests do not see it.
+FH7J	a tag on an empty sequence item, then a mapping: the "- " lines after it are read as a sequence of its own
+PW8X	the same with anchors
+UKK6/01	"::" is one plain scalar to the greedy plain-scalar rule, not the key ":" with an empty value

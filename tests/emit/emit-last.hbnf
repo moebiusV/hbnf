@@ -1,0 +1,7 @@
+; each alternative ends in its emit, so once it has run nothing in it can fail and the alternatives
+; after it cannot run it a second time: they may begin alike
+prefix none
+whitespace none
+top = word-a %emit{ one(); } / word-ab %emit{ two(); }
+word-a  = "a"
+word-ab = "a" "b"

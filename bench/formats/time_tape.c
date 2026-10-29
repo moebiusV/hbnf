@@ -1,4 +1,4 @@
-/* time_tape.c -- time parse_text of the JSON parser that writes a tape (corpus/json/json-tape.hbnf).
+/* time_tape.c -- time parse_text of a parser that writes a tape (corpus/json/json-tape.hbnf, corpus/toml/toml-tape.hbnf).
  *
  * Built like time_format.c: the generated parser ahead of this file, -DOUT_T=<the root's type>.
  * The file is read first; the clock is around the parse alone, one parse per process.  The tape
@@ -36,9 +36,9 @@ int main(int argc, char **argv) {
     if (ok && tape_n == 0) { strcpy(err, "the tape is empty"); ok = 0; }
     for (i = 0; ok && i < tape_n; i++) {
         uint64_t w = tape[i], t = w >> 56;
-        if ((t == T_OBJ || t == T_ARR) && ((w & ((1ull << 40) - 1)) <= i || (w & ((1ull << 40) - 1)) > tape_n)) {
+        if (TAPE_IS_OPENER(t) && ((w & ((1ull << 40) - 1)) <= i || (w & ((1ull << 40) - 1)) > tape_n)) {
             strcpy(err, "a link leaves the tape"); ok = 0;
-        } else if ((t == T_STR || t == T_KEY || t == T_NUM) && ((w >> 40) & 0xFFFF) == TAPE_LONG) {
+        } else if (TAPE_IS_TEXT(t) && ((w >> 40) & 0xFFFF) == TAPE_LONG) {
             i++;                       /* the length of a long text is in the word after */
         }
     }

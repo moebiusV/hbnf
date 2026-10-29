@@ -37,11 +37,13 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e HBNF_TEMPLATES=/w/tem
 		n=${spec%%:*}; r=${spec##*:}
 		/hbnf-bin/'"$(basename "$hb")"' /w/corpus/$n/$n.hbnf --backend=c --root=$r > /o/$n.c
 	done
-	/hbnf-bin/'"$(basename "$hb")"' /w/corpus/json/json-tape.hbnf --backend=c --root=json > /o/json-tape.c'
+	/hbnf-bin/'"$(basename "$hb")"' /w/corpus/json/json-tape.hbnf --backend=c --root=json > /o/json-tape.c
+	/hbnf-bin/'"$(basename "$hb")"' /w/corpus/toml/toml-tape.hbnf --backend=c --root=toml > /o/toml-tape.c
+	/hbnf-bin/'"$(basename "$hb")"' /w/corpus/yaml/yaml-tape.hbnf --backend=c --root=yaml > /o/yaml-tape.c'
 
 docker build -q -t hbnf-libs-glibc -f "$here/libs/Dockerfile.glibc" "$here/libs" > /dev/null
 mkdir -p "$W/glibc"; chmod 777 "$W/glibc"
-cp "$W"/doc.* "$W"/json.c "$W"/json-tape.c "$W"/toml.c "$W"/yaml.c "$W/glibc/"
+cp "$W"/doc.* "$W"/json.c "$W"/json-tape.c "$W"/toml-tape.c "$W"/yaml-tape.c "$W"/toml.c "$W"/yaml.c "$W/glibc/"
 docker run --rm --cpuset-cpus="${BENCH_CPUS:-5}" --user "$(id -u):$(id -g)" -e RUNS="$RUNS" -v "$root:/w:ro" -v "$W/glibc:/o" \
 	hbnf-libs-glibc sh /w/bench/libs/inner.sh > "$W/glibc.tsv"
 docker run --rm hbnf-libs-glibc sh -c 'gcc --version | head -1; ldd --version | head -1; node --version; python3 --version; cargo --version' > "$W/glibc.ver" || true

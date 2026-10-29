@@ -1,0 +1,6 @@
+; as prefix-lits.hbnf, but what follows the second alternative's "[" can be a bracket, so it can
+; read the text the first one read
+prefix none
+whitespace none
+top = "[[" %emit{ array_table(); } "x" "]]" / "[" %emit{ table(); } item "]"
+item = "[" / "z"

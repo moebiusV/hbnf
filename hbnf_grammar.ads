@@ -480,6 +480,10 @@ package HBNF_Grammar is
    --  for a rule without one.  The rule's parameters, if the name has them, are left off.
    function Value_Type (Rule_Name : String) return String;
 
+   --  `rollback { a, b }`: the C lvalues that a grammar's `%emit` blocks change and that a retry
+   --  puts back; "" when the grammar does not say, and a retry past an emit is then refused.
+   function Rollback_State return String;
+
    --  A rule with an `%emit` of its own or a declared value: the C backend generates it as a
    --  function that runs its pattern as written, and Lift leaves it alone.
    function Runs_Emits (R : Rule) return Boolean;

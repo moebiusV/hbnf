@@ -70,9 +70,15 @@ row "JSON" "$(count abnf corpus/json/rfc8259.abnf)" "$(count hbnf corpus/json/js
 set -- $(python3 -I "$here/count.py" hbnf-code corpus/json/json-tape.hbnf corpus/json/json-tokens.hbnf)
 printf '| | HyperBNF with `%%emit`, onto a tape (`corpus/json/json-tape.hbnf`) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
 set -- $(python3 -I "$here/count.py" hbnf-all corpus/json/json-tape.hbnf corpus/json/json-tokens.hbnf)
-printf '| | the same with the C it carries (the tape, the emits) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
+printf '| | the same with the C it carries (the tags, the emits) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
+set -- $(python3 -I "$here/count.py" hbnf-all runtime/hbnf_tape.h)
+printf '| | the tape both tape grammars share (`runtime/hbnf_tape.h`) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
 LABEL_PUB="TOML's ABNF (toml.abnf)"; DIR=corpus/toml
 row "TOML 1.0" "$(count abnf corpus/toml/toml.abnf)" "$(count hbnf corpus/toml/toml.hbnf corpus/toml/toml-tokens.hbnf)"
+set -- $(python3 -I "$here/count.py" hbnf-code corpus/toml/toml-tape.hbnf corpus/toml/toml-tokens.hbnf)
+printf '| | HyperBNF with `%%emit`, onto a tape (`corpus/toml/toml-tape.hbnf`) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
+set -- $(python3 -I "$here/count.py" hbnf-all corpus/toml/toml-tape.hbnf corpus/toml/toml-tokens.hbnf)
+printf '| | the same with the C it carries (the tags, the emits) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
 # C: each yacc grammar against the HyperBNF grammar of the C it reads: UNIX/32V's (1979) against c79,
 # PCC's against pcc99 (C99, the C11 forms its grammar has, and its subset of the GNU extensions), and
 # GCC 4.0.4's against gnu99 (C99 and the GNU extensions its grammar reads).  The grammar alone is counted
@@ -101,6 +107,10 @@ set -- $LGN
 printf '| | HyperBNF with its token rules (`corpus/c/gnu99-words.hbnf` too) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
 LABEL_PUB="the YAML 1.2.2 spec's productions"; DIR=corpus/yaml
 row "YAML 1.2" "$(python3 -I "$here/count.py" specbnf corpus/yaml/originals/yaml-1.2.2-productions.bnf)" "$(python3 -I "$here/count.py" hbnf-code corpus/yaml/yaml.hbnf corpus/yaml/yaml-tokens.hbnf)"
+set -- $(python3 -I "$here/count.py" hbnf-code corpus/yaml/yaml-tape.hbnf corpus/yaml/yaml-tokens.hbnf)
+printf '| | HyperBNF with `%%emit`, onto a tape (`corpus/yaml/yaml-tape.hbnf`) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
+set -- $(python3 -I "$here/count.py" hbnf-all corpus/yaml/yaml-tape.hbnf corpus/yaml/yaml-tokens.hbnf)
+printf '| | the same with the C it carries (the tags, the emits) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
 exec 1>&3
 mv "$here/results/notation.md.new" "$here/results/notation.md"
 cat "$here/results/notation.md"

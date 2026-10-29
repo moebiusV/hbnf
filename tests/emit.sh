@@ -19,7 +19,7 @@ for f in no-type no-eq; do
 		|| { echo "emit: FAIL ($f: not refused with the form it wants)"; fail=1; }
 done
 # a grammar whose choices are all told apart gets past the analysis and is generated
-for f in read safe unrelated; do
+for f in read safe unrelated emit-last prefix-lits; do
 	"$CLI" tests/emit/$f.hbnf --backend=c > "$W/$f.c" 2> "$W/$f.err" \
 		|| { echo "emit: FAIL ($f: $(head -c 200 "$W/$f.err"))"; fail=1; }
 done
@@ -53,9 +53,52 @@ fi
 "$CLI" corpus/json/json-tape.hbnf --backend=c > "$W/jt.c" 2> "$W/jt.err" \
 	|| { echo "emit: FAIL (json-tape: $(head -c 200 "$W/jt.err"))"; fail=1; }
 cat tests/emit/json-tape.c >> "$W/jt.c"
-${CC:-cc} -O1 -std=gnu11 -w -o "$W/jt" "$W/jt.c" 2> "$W/cc.err" \
+${CC:-cc} -O1 -std=gnu11 -w -Iruntime -o "$W/jt" "$W/jt.c" 2> "$W/cc.err" \
 	&& python3 tests/emit/json-tape.py corpus/json/tests "$W/jt" \
 	|| { echo "emit: FAIL (json-tape: $(head -c 300 "$W/cc.err"))"; fail=1; }
+# TOML read onto a tape: the same language as toml.hbnf (asked of tomllib about random documents and
+# mutations of them), and the same strings, integers, floats, booleans and dates as tomllib finds in
+# every good document of the corpus
+TOML_GRAMMAR=corpus/toml/toml-tape.hbnf HBNF="$CLI" sh tests/toml-diff.sh 300 1 > "$W/tdiff.out" 2>&1 \
+	|| { echo "emit: FAIL (toml-tape: toml-diff: $(tail -3 "$W/tdiff.out" | head -c 300))"; fail=1; }
+"$CLI" corpus/toml/toml-tape.hbnf --backend=c > "$W/tt.c" 2> "$W/tt.err" \
+	|| { echo "emit: FAIL (toml-tape: $(head -c 200 "$W/tt.err"))"; fail=1; }
+cat tests/emit/toml-tape.c >> "$W/tt.c"
+${CC:-cc} -O1 -std=gnu11 -w -Iruntime -o "$W/tt" "$W/tt.c" 2> "$W/cc.err" \
+	&& python3 tests/emit/toml-tape.py corpus/toml/tests "$W/tt" \
+	|| { echo "emit: FAIL (toml-tape: $(head -c 300 "$W/cc.err"))"; fail=1; }
+# YAML read onto a tape: the same language as yaml.hbnf (the YAML test suite, valid and invalid cases) and
+# the same structure (the tape read back as events has the suite's test.event for every case but
+# those in corpus/yaml/tape-gaps.txt)
+Y=${YAML_TEST_SUITE:-bench/cache/yaml-test-suite}
+if [ -d "$Y" ]; then
+	YAML_GRAMMAR=corpus/yaml/yaml-tape.hbnf YAML_TEST_SUITE="$Y" HBNF="$CLI" sh tests/yaml-suite.sh > "$W/ysuite.out" 2>&1 \
+		|| { echo "emit: FAIL (yaml-tape: yaml-suite: $(tail -3 "$W/ysuite.out" | head -c 300))"; fail=1; }
+	"$CLI" corpus/yaml/yaml-tape.hbnf --backend=c --root=yaml > "$W/yt.c" 2> "$W/yt.err" \
+		|| { echo "emit: FAIL (yaml-tape: $(head -c 200 "$W/yt.err"))"; fail=1; }
+	cat tests/emit/yaml-tape.c >> "$W/yt.c"
+	${CC:-cc} -O1 -std=gnu11 -w -D_GNU_SOURCE -Iruntime -o "$W/yt" "$W/yt.c" 2> "$W/cc.err" \
+		&& python3 tests/emit/yaml-tape.py "$Y" "$W/yt" corpus/yaml/suite-gaps.txt corpus/yaml/tape-gaps.txt > "$W/yt.out" \
+		|| { echo "emit: FAIL (yaml-tape: $(tail -4 "$W/yt.out" "$W/cc.err" 2>/dev/null | head -c 400))"; fail=1; }
+fi
+# rollback { depth }: a retry puts back what the emits changed, so only the alternative that
+# succeeds leaves its pushes; without the directive the same grammar is refused
+"$CLI" tests/emit/rollback.hbnf --backend=c > "$W/rb.c" 2> "$W/rb.err" \
+	|| { echo "emit: FAIL (rollback: $(head -c 200 "$W/rb.err"))"; fail=1; }
+cat tests/emit/rollback.c >> "$W/rb.c"
+${CC:-cc} -std=gnu11 -w -o "$W/rb" "$W/rb.c" 2> "$W/cc.err" \
+	|| { echo "emit: FAIL (rollback: does not compile: $(head -c 300 "$W/cc.err"))"; fail=1; }
+if [ -x "$W/rb" ]; then
+	while read -r input want; do
+		got=$("$W/rb" "$input")
+		[ "$got" = "$want" ] || { echo "emit: FAIL (rollback $input: got '$got', wanted '$want')"; fail=1; }
+	done <<'CASES'
+ab 1 2
+ac 3 4
+ad 5 6
+ax error
+CASES
+fi
 # each way an emit can be taken back is refused, naming the rule
 refused() {   # refused FILE RULE TEXT
 	"$CLI" tests/emit/$1.hbnf --backend=c 2>&1 > /dev/null | grep -q "rule \`$2\`: .*$3" \
@@ -63,6 +106,8 @@ refused() {   # refused FILE RULE TEXT
 }
 refused overlap-choice top 'can both begin with'
 refused overlap-option top 'repeated or optional part'
+refused prefix-lits-bad top 'can both begin with'
+refused rollback-none top 'can both begin with'
 # a repetition that can begin like what follows it is refused by the reader already, emit or none
 "$CLI" tests/emit/overlap-repeat.hbnf --backend=c 2>&1 > /dev/null | grep -q 'matched greedily' \
 	|| { echo "emit: FAIL (overlap-repeat: not refused)"; fail=1; }

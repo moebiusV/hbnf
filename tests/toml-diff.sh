@@ -7,6 +7,7 @@
 # those are counted apart, because a grammar of the syntax cannot see them.  The folders
 # corpus/toml/tests/{good,bad} are checked too.
 #   HBNF=/path/to/hbnf sh tests/toml-diff.sh [N [SEED]]
+#   TOML_GRAMMAR=corpus/toml/toml-tape.hbnf asks it of another grammar for the same language
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
@@ -15,7 +16,7 @@ N=${1:-3000}; SEED=${2:-1}
 W=${DIFF_DIR:-$(mktemp -d)}
 [ -n "${DIFF_DIR:-}" ] || trap 'rm -rf "$W"' EXIT
 mkdir -p "$W"
-"$CLI" corpus/toml/toml.hbnf --backend=c > "$W/j.c" 2> "$W/err" \
+"$CLI" "${TOML_GRAMMAR:-corpus/toml/toml.hbnf}" --backend=c > "$W/j.c" 2> "$W/err" \
     || { echo "toml-diff: FAIL (generate: $(head -c 300 "$W/err"))"; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/j.c")
 cp "$W/j.c" "$W/m.c"
@@ -39,7 +40,7 @@ int main(int argc, char **argv) {
     return 0;
 }
 EOC
-cc -std=gnu11 -D_GNU_SOURCE -O1 -w -o "$W/j" "$W/m.c" 2> "$W/cc" \
+cc -std=gnu11 -D_GNU_SOURCE -O1 -w -Iruntime -o "$W/j" "$W/m.c" 2> "$W/cc" \
     || { echo "toml-diff: FAIL (compile)"; head -5 "$W/cc"; exit 1; }
 python3 -I tests/toml/oracle.py gen "$N" "$SEED" "$W/g" || exit 1
 python3 -I tests/toml/oracle.py mut "$N" "$SEED" "$W/m" || exit 1

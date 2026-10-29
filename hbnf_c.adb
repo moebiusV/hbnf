@@ -1031,6 +1031,40 @@ package body HBNF_C is
       return False;
    end Holds_Emit;
 
+   --  The C lvalues of `rollback { a, b }`, split at the commas that are not inside brackets.
+   function Rollback_Items return String_Vectors.Vector is
+      T     : constant String := HBNF_Grammar.Rollback_State;
+      Res   : String_Vectors.Vector;
+      Depth : Natural := 0;
+      From  : Natural := T'First;
+
+      procedure Add (A, B : Natural) is
+         X : Natural := A;
+         Y : Natural := B;
+      begin
+         while X <= Y and then T (X) in ' ' | ASCII.LF | ASCII.HT loop X := X + 1; end loop;
+         while Y >= X and then T (Y) in ' ' | ASCII.LF | ASCII.HT loop Y := Y - 1; end loop;
+         if X <= Y then
+            Res.Append (To_Unbounded_String (T (X .. Y)));
+         end if;
+      end Add;
+   begin
+      for K in T'Range loop
+         case T (K) is
+            when '(' | '[' | '{' => Depth := Depth + 1;
+            when ')' | ']' | '}' => Depth := Depth - 1;
+            when ',' =>
+               if Depth = 0 then
+                  Add (From, K - 1);
+                  From := K + 1;
+               end if;
+            when others => null;
+         end case;
+      end loop;
+      Add (From, T'Last);
+      return Res;
+   end Rollback_Items;
+
    function Emit_Value_Type (R : Rule) return String is
       T : constant String := HBNF_Grammar.Value_Type (To_String (R.Name));
    begin
@@ -4925,6 +4959,10 @@ package body HBNF_C is
          R : constant Rule := Rules (Idx);
          P : constant Element_Vectors.Vector := R.Pattern;
       begin
+         if Emit_Value_Type (R) /= "" then
+            --  a rule with a value yields it, whatever shape its pattern has
+            return C_Type_Name (To_String (R.Name)) & " *out";
+         end if;
          if Is_Char_Rule (Rules, To_String (R.Name)) then
             return C_Type_Name (To_String (R.Name)) & " *out";
          end if;
@@ -6275,6 +6313,30 @@ package body HBNF_C is
          RN  : constant String := To_String (R.Name);
          Ws  : constant Boolean := R.Whitespace /= Null_Unbounded_String;
          Lbl : Natural := 0;
+         --  What the emits change, put back when a part that has run some of them is given up
+         --  (`rollback { }`): a mark is the value, and putting it back is one store each.
+         Rb : constant String_Vectors.Vector :=
+           (if Quiet then Rollback_Items else String_Vectors.Empty_Vector);
+
+         function Save (Tag : String) return String is
+            R : U;
+         begin
+            for K in 1 .. Natural (Rb.Length) loop
+               Append (R, "__typeof__(" & To_String (Rb (K)) & ") rb" & Tag & "_" & Img (K) & " = "
+                 & To_String (Rb (K)) & "; ");
+            end loop;
+            return To_String (R);
+         end Save;
+
+         function Restore (Tag : String) return String is
+            R : U;
+         begin
+            for K in 1 .. Natural (Rb.Length) loop
+               Append (R, To_String (Rb (K)) & " = rb" & Tag & "_" & Img (K) & "; ");
+            end loop;
+            return To_String (R);
+         end Restore;
+
          --  True while the position is known to be past the blanks already, so the next token
          --  need not skip them again (after a dispatch, which skipped before choosing).
          Skip_Done : Boolean := False;
@@ -6309,6 +6371,15 @@ package body HBNF_C is
             end loop;
             return To_String (Res);
          end Code_Of;
+
+         --  A tree rule fills a struct it takes to be clear (its failure path frees the fields), so
+         --  the local for one starts at zero; a token, an enum or a value is only written.
+         function Needs_Clear (N : String) return Boolean is
+            J : constant Natural := Find (N);
+         begin
+            return J /= 0 and then not Is_Core (N)
+              and then Analyze (Rules, J).Kind not in Scalar | Enum;
+         end Needs_Clear;
 
          --  Does an `%emit` of this rule name Id, as a word of its own?
          function Mentioned (Id : String) return Boolean is
@@ -6354,7 +6425,7 @@ package body HBNF_C is
                         --  did not run leaves it empty; one it never names is only a place for
                         --  the call to put its value.
                         Append (Buf, "    " & C_Type_Of (Rules, N) & " " & C_Field (N) & ";"
-                          & (if Mentioned (C_Field (N))
+                          & (if Mentioned (C_Field (N)) or else Needs_Clear (N)
                              then "  memset(&" & C_Field (N) & ", 0, sizeof " & C_Field (N) & ");"
                              else "") & LF);
                      end if;
@@ -6448,6 +6519,24 @@ package body HBNF_C is
 
          --  E as often as its bounds say; one that stops short is not an error until the
          --  count is.  A part that fails gives back what it took, and the loop ends.
+         --  The next byte says whether E is there: what it begins with is known exactly, is all
+         --  ASCII, and E cannot be empty.  (A part whose first byte is not known is entered and,
+         --  if it turns out not to be there, its emits are rolled back.)
+         function Guardable (E : Element_Access) return Boolean is
+            use HBNF_Lookahead;
+            Req : constant Element_Access := new HBNF_Grammar.Element'(E.all);
+         begin
+            Req.Min := 1;
+            Req.Max := 1;
+            declare
+               S : constant Cp_Set := First_Of (Look, Rules, E);
+            begin
+               return not Is_Empty (S) and then not Has_Any (S) and then not Has_Eoi (S)
+                 and then Range_Hi (S, Range_Count (S)) <= 127
+                 and then not El_Nullable (Rules, Look.Nullable, Req);
+            end;
+         end Guardable;
+
          procedure Elem (E : Element_Access; Fail, Ind : String) is
          begin
             if E.Min = 1 and then E.Max = 1 then
@@ -6460,11 +6549,43 @@ package body HBNF_C is
             begin
                Append (Buf, Ind & "{ size_t cnt" & Id & " = 0;" & LF
                  & Ind & "  for (;;) {" & LF
-                 & Ind & "    size_t sv" & Id & " = p->pos;" & LF);
+                 & Ind & "    size_t sv" & Id & " = p->pos;  " & Save ("l" & Id) & LF);
                if E.Max >= 0 then
                   Append (Buf, Ind & "    if (cnt" & Id & " >= " & Img (Natural (E.Max)) & ") break;" & LF);
                end if;
-               One (E, "{ p->pos = sv" & Id & "; break; }", Ind & "    ");
+               --  A part that begins with an emit is entered only when the next byte can start
+               --  it (the analysis has seen to it that the byte can say): the emit is the first
+               --  thing it does, so it must not run on a part that is not there.
+               if Quiet and then E.Kind in Name | Group
+                 and then HBNF_Compilable.Leads_With_Emit (Rules, Element_Vectors.To_Vector (E, 1))
+                 and then Guardable (E)
+               then
+                  declare
+                     Set : constant HBNF_Lookahead.Cp_Set := HBNF_Lookahead.First_Of (Look, Rules, E);
+                     Tab : U;
+                  begin
+                     for C in 0 .. 255 loop
+                        declare
+                           In_Set : Boolean := False;
+                        begin
+                           for Q in 1 .. HBNF_Lookahead.Range_Count (Set) loop
+                              if C in HBNF_Lookahead.Range_Lo (Set, Q) .. HBNF_Lookahead.Range_Hi (Set, Q) then
+                                 In_Set := True;
+                              end if;
+                           end loop;
+                           Append (Tab, (if In_Set and then C <= 127 then "1," else "0,"));
+                        end;
+                     end loop;
+                     if Ws then
+                        Append (Buf, Ind & "    skip_ws(p);" & LF);
+                     end if;
+                     Append (Buf, Ind & "    { static const unsigned char gt_" & Id & "[256] = {" & To_String (Tab)
+                       & "}; if (p->pos >= p->len || !gt_" & Id & "[(unsigned char)p->text[p->pos]]) { p->pos = sv"
+                       & Id & "; break; } }" & LF);
+                     Skip_Done := True;
+                  end;
+               end if;
+               One (E, "{ p->pos = sv" & Id & "; " & Restore ("l" & Id) & "break; }", Ind & "    ");
                Append (Buf, Ind & "    cnt" & Id & "++;" & LF
                  & Ind & "    if (p->pos == sv" & Id & ") break;" & LF
                  & Ind & "  }" & LF);
@@ -6476,6 +6597,28 @@ package body HBNF_C is
             Skip_Done := False;
          end Elem;
 
+         --  Elements St .. En of V in order.  An element that a `? ctx`, `%as` or `%num` follows is
+         --  taken with it by the sequence code, which notes where the element began.
+         procedure Seq_Range (V : Element_Vectors.Vector; St, En : Natural; Fail, Ind : String) is
+            K : Natural := St;
+         begin
+            while K <= En loop
+               if K < En and then V (K + 1).Kind = Block
+                 and then V (K + 1).Op in B_Test | B_Not_Test | B_As | B_Num
+               then
+                  if V (K).Min /= 1 or else V (K).Max /= 1 then
+                     Unsupported ("a repeated element that a context test or number follows");
+                  end if;
+                  Emit_Seq (Idx, V, K, K + 1, "", Buf, Fail, Ind, Ws, Lead_Ws => not Skip_Done);
+                  Skip_Done := False;
+                  K := K + 2;
+               else
+                  Elem (V (K), Fail, Ind);
+                  K := K + 1;
+               end if;
+            end loop;
+         end Seq_Range;
+
          --  V (F .. L): alternatives are tried in order; one that fails gives back its input.
          procedure Gen (V : Element_Vectors.Vector; F, L : Natural; Fail, Ind : String) is
             Alts : Natural := 1;
@@ -6486,9 +6629,7 @@ package body HBNF_C is
                end if;
             end loop;
             if Alts = 1 then
-               for K in F .. L loop
-                  Elem (V (K), Fail, Ind);
-               end loop;
+               Seq_Range (V, F, L, Fail, Ind);
                return;
             end if;
             declare
@@ -6529,7 +6670,7 @@ package body HBNF_C is
 
                Dispatch : constant Boolean := Quiet and then Dispatchable;
             begin
-               Append (Buf, Ind & "{ size_t as" & Id & " = p->pos;" & LF);
+               Append (Buf, Ind & "{ size_t as" & Id & " = p->pos;  " & Save ("a" & Id) & LF);
                if Dispatch then
                   if Ws and then not Skip_Done then
                      Append (Buf, Ind & "  skip_ws(p);" & LF);
@@ -6556,16 +6697,14 @@ package body HBNF_C is
                         end if;
                         Append (Buf, Ind & "  {" & LF);
                         Skip_Done := Dispatch;
-                        for X in St .. K - 1 loop
-                           Elem (V (X), (if Last or else Dispatch then Fail else Next),
-                                 Ind & "    ");
-                        end loop;
+                        Seq_Range (V, St, K - 1, (if Last or else Dispatch then Fail else Next),
+                                   Ind & "    ");
                         Skip_Done := False;
                         Append (Buf, Ind & "    goto done" & Id & ";" & LF);
                         Append (Buf, Ind & "  }" & LF);
                         if not Last and then not Dispatch then
                            Append (Buf, Ind & "  alt" & Id & "_" & Img (N) & ": p->pos = as"
-                             & Id & ";" & LF);
+                             & Id & "; " & Restore ("a" & Id) & LF);
                         end if;
                      end;
                      St := K + 1;

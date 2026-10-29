@@ -6,6 +6,18 @@ the whole syntax of TOML 1.0.  The four string forms are two hyperrules, `line(Q
 `lines(Q, C, X)`, each given its quote and its characters; the three based integers share
 `digits(D)`.
 
+## Onto a tape, with no tree
+
+`toml-tape.hbnf` is the same language with an `%emit{ }` where the tree would have made a node, and
+the tape of `runtime/hbnf_tape.h` that JSON's does: a table, a key with its value, an array and an
+inline table are opened where they begin and closed where they end, and a key part or a value is one
+tag and its text.  `sh tests/emit.sh` generates it, asks it the questions `tests/toml-diff.sh` asks
+the typed parser (`TOML_GRAMMAR=corpus/toml/toml-tape.hbnf`: the same answers as `tomllib` on random
+documents and mutations of them), and checks that the tape holds as many strings, integers, floats,
+booleans and dates as `tomllib` finds in every good document of `tests/good`.  The array's trailing
+comma is `&"]"` after the comma, and the two table-header brackets are two alternatives that begin
+`"[["` and `"["` and a key, so that nothing that has begun is given up and begun again.
+
 ## Size
 
 Measured with `scripts/grammar-size.py`, comments and blank lines left out:

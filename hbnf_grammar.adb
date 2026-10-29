@@ -47,6 +47,9 @@ package body HBNF_Grammar is
    --  top-level one (its includes are read before it).
    Schema_Language : Unbounded_String := To_Unbounded_String ("C");
 
+   --  The state `%emit` changes, which a retry puts back (`rollback { tape_n }`).
+   Rollback_Text : Unbounded_String;
+
    --  The `{ ... }` code blocks before the rules (preamble) and after them
    --  (epilogue), each with the language of the file it came from, in
    --  include order.
@@ -603,6 +606,7 @@ package body HBNF_Grammar is
    procedure Reset is
    begin
       Schema_Language := To_Unbounded_String ("C");
+      Rollback_Text := Null_Unbounded_String;
       Domain_Bodies.Clear;
       Domains_Used.Clear;
       Preamble_Pieces.Clear;
@@ -1143,7 +1147,7 @@ package body HBNF_Grammar is
                                   "dialect" | "include" | "language"
                                   | "sensitivity" | "whitespace" | "keywords"
                                   | "statements" | "macros" | "includes"
-                                  | "context"
+                                  | "context" | "rollback"
                                   | "prefix" | "wordchars"
                      then
                         Emit (T_Newline);
@@ -7488,6 +7492,7 @@ package body HBNF_Grammar is
                     and then (To_String (Cur (P).Text) = "language"
                               or else To_String (Cur (P).Text) = "prefix"
                               or else To_String (Cur (P).Text) = "listops"
+                              or else To_String (Cur (P).Text) = "rollback"
                               or else To_String (Cur (P).Text) = "statements"
                               or else To_String (Cur (P).Text) = "context"
                               or else To_String (Cur (P).Text) = "macros"
@@ -7856,6 +7861,25 @@ package body HBNF_Grammar is
                                     To_String (Cur (P).Text), Cur (P).Line);
                      Next (P);
                   end if;
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "rollback"
+               then
+                  --  `rollback { tape_n }`: the state the grammar's `%emit` blocks change, as C
+                  --  lvalues separated by commas.  An emit is undone by putting these back to
+                  --  what they were, so a part that is tried and given up costs one store each,
+                  --  as dropping what is on a Forth stack does.
+                  Next (P);
+                  if Cur (P).Kind /= T_Code then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                       & ": expected a code block after `rollback`, the state that an "
+                       & "%emit changes: `rollback { tape_n }`";
+                  end if;
+                  if Length (Rollback_Text) > 0 then
+                     Append (Rollback_Text, ",");
+                  end if;
+                  Append (Rollback_Text, Cur (P).Text);
+                  Next (P);
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "listops"
                then
@@ -9599,6 +9623,8 @@ package body HBNF_Grammar is
    end Lift;
 
    function Language return String is (To_String (Schema_Language));
+
+   function Rollback_State return String is (To_String (Rollback_Text));
 
    --  The pieces in language Lang, joined with a newline.
    function Joined (Pieces : Piece_Vectors.Vector; Lang : String)

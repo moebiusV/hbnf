@@ -1,0 +1,40 @@
+; TOML 1.0 read into a flat tape of 64-bit words, with no tree: the same language as toml.hbnf,
+; with an %emit where the tree would have made a node.  A table, a key with its value, an array
+; and an inline table are opened where they begin and closed where they end (`$$` is where one
+; begins on the tape, kept for the closing emit); a key part and a value are one tag and their
+; text.  The tape is runtime/hbnf_tape.h's.
+;
+; Two things are written differently from toml.hbnf, for the same language.  A table header's
+; two brackets are one alternative that begins `"[["` and one that begins `"["` and a key; and an
+; array's trailing comma is `&"]"` after the comma, so that an element that has begun is never
+; given up for the comma that ends the array.
+prefix none
+{
+enum { T_TABLE = 1, T_ATABLE, T_KEYVAL, T_ARR, T_INL, T_STR, T_INT, T_FLOAT, T_TRUE, T_FALSE, T_DATE, T_KEY };
+/* which tags hold a link to the position after them, and which a text (see hbnf_tape.h) */
+#define TAPE_IS_OPENER(t) ((t) == T_TABLE || (t) == T_ATABLE || (t) == T_KEYVAL || (t) == T_ARR || (t) == T_INL)
+#define TAPE_IS_TEXT(t) ((t) == T_STR || (t) == T_INT || (t) == T_FLOAT || (t) == T_DATE || (t) == T_KEY)
+#include "hbnf_tape.h"
+}
+
+include "toml-tokens.hbnf"
+
+toml   :: int = [ expr ] *( newline [ expr ] )
+expr   :: int = keyval / table
+keyval :: uint64_t = %emit{ $$ = tape_open (T_KEYVAL); } key "=" value %emit{ tape_close ($$); }
+key    :: int = simple *( "." simple )
+simple :: int = quoted-key %emit{ tape_text_of (T_KEY, p->pos, hbnf_sn (quoted_key)); }
+              / bare-key %emit{ tape_text_of (T_KEY, p->pos, hbnf_sn (bare_key)); }
+table  :: uint64_t = "[[" %emit{ $$ = tape_open (T_ATABLE); } key "]]" %emit{ tape_close ($$); }
+                   / "[" %emit{ $$ = tape_open (T_TABLE); } key "]" %emit{ tape_close ($$); }
+value  :: int = string %emit{ tape_text_of (T_STR, p->pos, hbnf_sn (string)); }
+              / boolean %emit{ tape_put (TAPE_TAG (boolean == BOOLEAN_TRUE ? T_TRUE : T_FALSE)); }
+              / date-time %emit{ tape_text_of (T_DATE, p->pos, hbnf_sn (date_time)); }
+              / real %emit{ tape_text_of (T_FLOAT, p->pos, hbnf_sn (real)); }
+              / integer %emit{ tape_text_of (T_INT, p->pos, hbnf_sn (integer)); }
+              / array / inline
+array  :: uint64_t = "[" %emit{ $$ = tape_open (T_ARR); } *newline
+                     [ value *newline *( "," *newline ( value *newline / &"]" ) ) ] "]" %emit{ tape_close ($$); }
+inline :: uint64_t = "{" %emit{ $$ = tape_open (T_INL); } [ keyval *( "," keyval ) ] "}" %emit{ tape_close ($$); }
+
+ws = *( SP / HTAB / comment )
