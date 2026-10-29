@@ -15,17 +15,17 @@
 | | HyperBNF with `%emit`, onto a tape (`corpus/toml/toml-tape.hbnf`) | 45 | 57 | 635 | 2775 |
 | | the same with the C it carries (the tags, the emits) | 45 | 63 | 807 | 3890 |
 | C | 32V's cgram.y (mip), 1979 | 55 | 386 | 813 | 3755 |
-| | HyperBNF (`corpus/c/c79.hbnf`) | 47 | 78 | 612 | 4406 |
-| | **saved** | **15%** | **80%** | **25%** | **-16%** |
-| | HyperBNF with its token rules (`corpus/c/c79-words.hbnf` too) | 76 | 110 | 926 | 5900 |
+| | HyperBNF (`corpus/c/c79.hbnf`) | 51 | 75 | 624 | 4574 |
+| | **saved** | **7%** | **81%** | **23%** | **-21%** |
+| | HyperBNF with its token rules (`corpus/c/c79-words.hbnf` too) | 80 | 107 | 938 | 6068 |
 |  | PCC's cgram.y (NetBSD trunk) | 84 | 368 | 1029 | 6505 |
-| | HyperBNF (`corpus/c/pcc99.hbnf`) | 76 | 115 | 1025 | 7813 |
-| | **saved** | **10%** | **69%** | **0%** | **-19%** |
-| | HyperBNF with its token rules (`corpus/c/pcc99-words.hbnf` too) | 115 | 163 | 1480 | 10218 |
+| | HyperBNF (`corpus/c/pcc99.hbnf`) | 79 | 109 | 1034 | 7943 |
+| | **saved** | **6%** | **70%** | **0%** | **-21%** |
+| | HyperBNF with its token rules (`corpus/c/pcc99-words.hbnf` too) | 118 | 157 | 1489 | 10348 |
 |  | GCC 4.0.4's c-parse.in (C part) | 172 | 892 | 1930 | 18966 |
-| | HyperBNF (`corpus/c/gnu99.hbnf`) | 77 | 126 | 1071 | 8284 |
-| | **saved** | **55%** | **86%** | **45%** | **56%** |
-| | HyperBNF with its token rules (`corpus/c/gnu99-words.hbnf` too) | 116 | 175 | 1530 | 10746 |
+| | HyperBNF (`corpus/c/gnu99.hbnf`) | 80 | 120 | 1080 | 8414 |
+| | **saved** | **53%** | **87%** | **44%** | **56%** |
+| | HyperBNF with its token rules (`corpus/c/gnu99-words.hbnf` too) | 119 | 169 | 1539 | 10876 |
 | YAML 1.2 | the YAML 1.2.2 spec's productions | 201 | 861 | 1350 | 13273 |
 | | HyperBNF (`corpus/yaml`) | 94 | 109 | 1423 | 6251 |
 | | **saved** | **53%** | **87%** | **-4%** | **53%** |

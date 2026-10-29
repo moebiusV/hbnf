@@ -61,20 +61,17 @@ init-list            = element *( "," element )
 element              = "{" init-list [ "," ] "}" | assignment-expression
 
 ; ---- statements ----
-statement            = identifier ":" statement
+statement            = labeled-statement | compound-statement | selection-statement
+                     | iteration-statement | jump-statement | [ expression ] ";"
+labeled-statement    = identifier ":" statement
                      | "case" expression ":" statement
                      | "default" ":" statement
-                     | compound-statement
-                     | "if" "(" expression ")" statement [ "else" statement ]
+selection-statement  = "if" "(" expression ")" statement [ "else" statement ]
                      | "switch" "(" expression ")" statement
-                     | "while" "(" expression ")" statement
+iteration-statement  = "while" "(" expression ")" statement
                      | "do" statement "while" "(" expression ")" ";"
                      | "for" "(" [ expression ] ";" [ expression ] ";" [ expression ] ")" statement
-                     | "goto" identifier ";"
-                     | "continue" ";"
-                     | "break" ";"
-                     | "return" [ expression ] ";"
-                     | [ expression ] ";"
+jump-statement       = "goto" identifier ";" | "continue" ";" | "break" ";" | "return" [ expression ] ";"
 ; the declarations come first
 compound-statement   = "{" %scope *declaration *statement "}"
 ; ---- expressions ----

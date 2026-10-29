@@ -97,20 +97,14 @@ designator           = array-designator | "." identifier
 array-designator     = "[" constant-expression [ "..." constant-expression ] "]"
 
 ; ---- statements ----
-statement            = *label
-                       ( compound-statement
-                       | "if" "(" expression ")" statement [ "else" statement ]
-                       | "switch" "(" expression ")" statement
-                       | "while" "(" expression ")" statement
-                       | "do" statement "while" "(" expression ")" ";"
-                       | "for" "(" %scope ( declaration | [ expression ] ";" ) [ expression ] ";" [ expression ] ")" statement
-                       | "goto" ( identifier | "*" expression ) ";"
-                       | "continue" ";"
-                       | "break" ";"
-                       | "return" [ expression ] ";"
-                       | asm-statement
-                       | [ expression ] ";"
-                       )
+statement            = *label ( compound-statement | selection-statement | iteration-statement
+                                | jump-statement | asm-statement | [ expression ] ";" )
+selection-statement  = "if" "(" expression ")" statement [ "else" statement ]
+                     | "switch" "(" expression ")" statement
+iteration-statement  = "while" "(" expression ")" statement
+                     | "do" statement "while" "(" expression ")" ";"
+                     | "for" "(" %scope ( declaration | [ expression ] ";" ) [ expression ] ";" [ expression ] ")" statement
+jump-statement       = "goto" ( identifier | "*" expression ) ";" | "continue" ";" | "break" ";" | "return" [ expression ] ";"
 label                = identifier ":" *attribute
                      | "case" constant-expression [ "..." constant-expression ] ":"
                      | "default" ":"
