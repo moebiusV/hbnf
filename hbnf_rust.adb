@@ -3124,7 +3124,7 @@ package body HBNF_Rust is
          function Assigns (Els : Element_Vectors.Vector) return Boolean is
          begin
             for E of Els loop
-               if E.Kind = Name then
+               if E.Kind = Name and then not Is_Hidden (To_String (E.Name)) then
                   return True;
                elsif E.Kind = Group and then Assigns (E.Items) then
                   return True;

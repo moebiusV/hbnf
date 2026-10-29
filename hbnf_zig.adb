@@ -2727,7 +2727,7 @@ package body HBNF_Zig is
       function Has_Name (Els : Element_Vectors.Vector) return Boolean is
       begin
          for E of Els loop
-            if E.Kind = Name then
+            if E.Kind = Name and then not Is_Hidden (To_String (E.Name)) then
                return True;
             elsif E.Kind = Group and then Has_Name (E.Items) then
                return True;

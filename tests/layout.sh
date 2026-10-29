@@ -26,6 +26,19 @@ if [ -x "$W/j" ]; then
 		|| { echo "layout: FAIL (json counts: $(head -c 300 "$W/counts.out"))"; fail=1; }
 fi
 
+# YAML: the exact tape of a small document (the `flat` rules write no node, the blanks and quotes are hidden,
+# a scalar over several lines is one entry), as the hand-written tape has it
+"$CLI" corpus/yaml/yaml.hbnf --backend=c --root=yaml --layout=tape > "$W/y.c" 2> "$W/y.err" \
+	|| { echo "layout: FAIL (yaml: $(head -c 300 "$W/y.err"))"; fail=1; }
+cat "$W/y.c" tests/layout/dump.c > "$W/ym.c"
+${CC:-cc} -O1 -std=gnu11 -w -D_GNU_SOURCE -Iruntime -DOUT_T=yaml_t -o "$W/yd" "$W/ym.c" 2> "$W/cc.err" \
+	|| { echo "layout: FAIL (yaml does not compile: $(head -c 300 "$W/cc.err"))"; fail=1; }
+if [ -x "$W/yd" ]; then
+	"$W/yd" tests/layout/small.yaml > "$W/small-yaml.out"
+	cmp -s "$W/small-yaml.out" tests/layout/small-yaml.expected \
+		|| { echo "layout: FAIL (the tape of small.yaml is not the expected one)"; diff "$W/small-yaml.out" tests/layout/small-yaml.expected | head -6; fail=1; }
+fi
+
 HBNF_FLAGS=--layout=tape HBNF="$CLI" sh tests/toml-diff.sh 300 1 > "$W/toml.out" 2>&1 \
 	|| { echo "layout: FAIL (toml: $(tail -2 "$W/toml.out" | head -c 300))"; fail=1; }
 Y=${YAML_TEST_SUITE:-bench/cache/yaml-test-suite}

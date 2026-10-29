@@ -2822,6 +2822,23 @@ cycles.
     same objects, arrays, members, strings, numbers and literals as Python finds; TOML against
     `tomllib` and YAML against the test suite, with the plain grammars and `--layout=tape`.
 
+    *Closing the gap to the hand-written tape.*  The first derived YAML tape wrote 1,048,705 words for the
+    2 MB document where the hand-written one writes 218,639 (JSON: 306,786 against 214,287; TOML 513,113
+    against 323,340), found by counting the entries of each kind.  Three changes, none of them emit
+    code: (1) a rule that can only ever hold one node of its own, found by going round the grammar until
+    nothing changes, writes no node, its child stands for it (a rule that holds nothing written and
+    matches no literal text, a gap or a lookahead, writes nothing); (2) a rule whose written parts are all
+    text tokens, with no blank skipped between its elements, is one entry with the text of the whole
+    match (YAML's plain scalar over several lines); (3) two hints in the grammar, `hidden` (existing:
+    `SP WSP DQUOTE` in `yaml-tokens.hbnf`, `newline` in `toml-tokens.hbnf`; which also take those
+    fields out of the tree) and `flat`, for rules that keep their children and write no node
+    (`flat ikey mapent mval inl ... ` in `yaml.hbnf`; the tree ignores it).  With them the derived YAML tape
+    is 220,053 words, the hand-written one's size within 1%, and the same structure for a small document
+    (`tests/layout/small-yaml.expected`); TOML's is 418,227 (it keeps the dotted key as a node) and JSON's
+    unchanged (a node for each member).  Cold, interleaved on cpu 5: JSON 2.12 ms the tree, 1.79 the
+    hand-written tape, 1.96 the derived; TOML 6.91, 5.00, 5.03; YAML 16.4, 11.5, 11.4 (a slow phase of the
+    machine; the order is what holds).
+
     *Measured*, the 2 MB documents, cold, interleaved on cpu 5, in a noisier phase than the
     figures above (read the three together): JSON, the typed tree 2.58 ms, the hand-written tape
     2.15, the derived tape 2.39; TOML 9.07, 7.05 and 7.26; YAML 18.4, 10.6 and 13.9.  The derived tape

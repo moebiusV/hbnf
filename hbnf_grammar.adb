@@ -148,6 +148,9 @@ package body HBNF_Grammar is
    --  hyperrule's family) and by the name of each instance made from one.
    Hidden_Bases : Key_Sets.Set;
 
+   --  The rules declared `flat`: under `layout tape` they keep their children and write no node.
+   Flat_Bases : Key_Sets.Set;
+
    --  The C type of the value a rule has (`name :: type = ...`, RFCPLAN.md step 15), by rule name
    --  with its parameters left off.
    package Value_Type_Maps is new
@@ -194,6 +197,7 @@ package body HBNF_Grammar is
       Warn_Count := 0;
       Warn_Keys.Clear;
       Hidden_Bases.Clear;
+      Flat_Bases.Clear;
       Value_Types.Clear;
       Hidden_Rules.Clear;
    end Reset_Warnings;
@@ -1154,7 +1158,7 @@ package body HBNF_Grammar is
                                   "dialect" | "include" | "language"
                                   | "sensitivity" | "whitespace" | "keywords"
                                   | "statements" | "macros" | "includes"
-                                  | "context" | "rollback" | "layout" | "layout_ops"
+                                  | "context" | "rollback" | "layout" | "layout_ops" | "flat"
                                   | "prefix" | "wordchars"
                      then
                         Emit (T_Newline);
@@ -7501,6 +7505,7 @@ package body HBNF_Grammar is
                               or else To_String (Cur (P).Text) = "rollback"
                               or else To_String (Cur (P).Text) = "layout"
                               or else To_String (Cur (P).Text) = "layout_ops"
+                              or else To_String (Cur (P).Text) = "flat"
                               or else To_String (Cur (P).Text) = "statements"
                               or else To_String (Cur (P).Text) = "context"
                               or else To_String (Cur (P).Text) = "macros"
@@ -7797,6 +7802,26 @@ package body HBNF_Grammar is
                      end;
                      Next (P);
                   end;
+               elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "flat"
+                 and then P.Pos + 1 <= Natural (P.Toks.Length)
+                 and then P.Toks (P.Pos + 1).Kind = T_Name
+               then
+                  --  `flat ikey mapent`: under `layout tape` these rules keep their children and
+                  --  write no node of their own.  The tree is as it was.
+                  Next (P);
+                  while Cur (P).Kind = T_Name loop
+                     declare
+                        Fl : constant String := To_String (Cur (P).Text);
+                        Stop : Natural := Fl'First;
+                     begin
+                        while Stop <= Fl'Last and then Fl (Stop) /= '(' loop
+                           Stop := Stop + 1;
+                        end loop;
+                        Flat_Bases.Include (Fl (Fl'First .. Stop - 1));
+                     end;
+                     Next (P);
+                  end loop;
                elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "hidden"
                  and then P.Pos + 1 <= Natural (P.Toks.Length)
@@ -9357,12 +9382,13 @@ package body HBNF_Grammar is
    function Tape_Layout (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector is
       Result : Rule_Vectors.Vector := Rules;
       N      : constant Natural := Natural (Rules.Length);
-      type Role is (Nothing, Token, Enum, Num, Opener, Pass);
+      type Role is (Nothing, Token, Enum, Num, Opener, Span, Pass);
       Roles  : array (1 .. N) of Role := [others => Nothing];
       Tags   : array (1 .. N) of Natural := [others => 0];
       Tag_Count : Natural := 0;
       Decls  : Unbounded_String;
       Used   : array (1 .. N) of Boolean := [others => False];
+      Info   : array (1 .. N) of Boolean := [others => False];   --  the rule writes something
 
       function Img (X : Natural) return String is
         (Natural'Image (X) (Natural'Image (X)'First + 1 .. Natural'Image (X)'Last));
@@ -9531,16 +9557,170 @@ package body HBNF_Grammar is
                Roles (J) := (if Is_Hidden (Nm) then Nothing else Token);   --  `kw = "true"`: its text
             elsif Branch_Count (R.Pattern) >= 2 and then Every_Branch_Is (R.Pattern, Literal) then
                Roles (J) := Enum;
-            elsif Every_Branch_Is (R.Pattern, Name) then
-               Roles (J) := Pass;
             else
-               Roles (J) := Opener;
-            end if;
-            if Roles (J) in Token | Enum | Num | Opener then
-               Tag_Count := Tag_Count + 1;
-               Tags (J) := Tag_Count;
+               Roles (J) := Pass;       --  until the fixpoint below says it holds more than one thing
             end if;
          end;
+      end loop;
+
+      --  A rule that can only ever hold one node of its own (a choice of other rules, a rule that is
+      --  one other thing between punctuation) writes none: its child stands for it.  A rule that
+      --  holds several, or a repeated one, or none that writes anything, is a node.  What a rule
+      --  holds depends on what the rules it names write, and those on theirs, so this is found by
+      --  going round until nothing changes: a rule only ever goes from writing nothing to a node.
+      declare
+         Changed : Boolean := True;
+
+         --  How many nodes the most that a branch of V can hold: 0, 1, or 2 for two or more or any
+         --  number (a repeated part).
+         function Count (V : Element_Vectors.Vector) return Natural is
+            Best, Here : Natural := 0;
+
+            function Of_Element (E : Element_Access) return Natural is
+               C : Natural := 0;
+            begin
+               case E.Kind is
+                  when Name =>
+                     declare
+                        J : constant Natural := Find_Rule (To_String (E.Name));
+                     begin
+                        if J /= 0 and then Info (J) then C := 1; end if;
+                     end;
+                  when Group =>
+                     C := Count (E.Items);
+                  when others =>
+                     C := 0;
+               end case;
+               if C > 0 and then (E.Max < 0 or else E.Max > 1) then
+                  C := 2;
+               end if;
+               return C;
+            end Of_Element;
+         begin
+            for E of V loop
+               if E.Kind = Alt then
+                  Best := Natural'Max (Best, Here);
+                  Here := 0;
+               else
+                  Here := Natural'Min (2, Here + Of_Element (E));
+               end if;
+            end loop;
+            return Natural'Max (Best, Here);
+         end Count;
+
+         --  Does the pattern consume text of its own, a literal: what a rule matches that nothing
+         --  else shows?  A rule of hidden and zero-width parts (a gap, a lookahead) has none.
+         function Has_Literal (V : Element_Vectors.Vector) return Boolean is
+         begin
+            for E of V loop
+               if E.Kind = Literal or else (E.Kind = Group and then Has_Literal (E.Items)) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has_Literal;
+      begin
+         for J in 1 .. N loop
+            Info (J) := Roles (J) in Token | Enum | Num;
+         end loop;
+         while Changed loop
+            Changed := False;
+            for J in 1 .. N loop
+               if Roles (J) = Pass then
+                  declare
+                     C : constant Natural := Count (Rules (J).Pattern);
+                  begin
+                     if C >= 2 then
+                        Roles (J) := Opener;
+                        Info (J) := True;
+                        Changed := True;
+                     elsif C = 1 and then not Info (J) then
+                        Info (J) := True;
+                        Changed := True;
+                     end if;
+                  end;
+               end if;
+            end loop;
+            if not Changed then
+               --  what still holds nothing that is written is a node of its own if it matched text
+               --  (a literal), so that it is seen; with none, there is nothing to see
+               for J in 1 .. N loop
+                  if Roles (J) = Pass and then not Info (J) and then Has_Literal (Rules (J).Pattern) then
+                     Roles (J) := Opener;
+                     Info (J) := True;
+                     Changed := True;
+                  end if;
+               end loop;
+            end if;
+         end loop;
+      end;
+      --  A rule whose parts that are written are all text, and between whose elements nothing is
+      --  skipped, is one entry with the text of the whole match, as a hand-written tape has one for a
+      --  scalar that runs over several lines: not a node with a text in it for each line.
+      declare
+         Changed : Boolean := True;
+
+         function Text_Only (V : Element_Vectors.Vector; Found : in out Boolean) return Boolean is
+         begin
+            for E of V loop
+               if E.Kind = Name then
+                  declare
+                     J : constant Natural := Find_Rule (To_String (E.Name));
+                  begin
+                     if J /= 0 then
+                        if Roles (J) = Token then
+                           Found := True;
+                        elsif Info (J) then        --  a text rule inside would write its text twice
+                           return False;     --  a value, a number, a node, or a rule standing for one
+                        end if;
+                     end if;
+                  end;
+               elsif E.Kind = Group then
+                  if not Text_Only (E.Items, Found) then
+                     return False;
+                  end if;
+               end if;
+            end loop;
+            return True;
+         end Text_Only;
+      begin
+         while Changed loop
+            Changed := False;
+            for J in 1 .. N loop
+               if Roles (J) = Opener and then Rules (J).Whitespace = Null_Unbounded_String then
+                  declare
+                     Found : Boolean := False;
+                  begin
+                     if Text_Only (Rules (J).Pattern, Found) and then Found then
+                        Roles (J) := Span;
+                        Changed := True;
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end loop;
+      end;
+      --  a rule the grammar declares `flat` writes no node of its own, whatever it holds
+      for J in 1 .. N loop
+         if Roles (J) in Opener | Span then
+            declare
+               Nm : constant String := To_String (Rules (J).Name);
+               Stop : Natural := Nm'First;
+            begin
+               while Stop <= Nm'Last and then Nm (Stop) /= '(' loop
+                  Stop := Stop + 1;
+               end loop;
+               if Flat_Bases.Contains (Nm (Nm'First .. Stop - 1)) then
+                  Roles (J) := Pass;
+               end if;
+            end;
+         end if;
+      end loop;
+      for J in 1 .. N loop
+         if Roles (J) in Token | Enum | Num | Opener | Span then
+            Tag_Count := Tag_Count + 1;
+            Tags (J) := Tag_Count;
+         end if;
       end loop;
       if Tag_Count > 255 then
          raise Parse_Error with
@@ -9553,7 +9733,7 @@ package body HBNF_Grammar is
             Append (Names_Tab, ", """ & To_String (Rules (J).Name) & """");
             if Roles (J) = Opener then
                Append (Openers, (if Length (Openers) = 0 then "" else " || ") & "(t) == " & Tag_Of (J));
-            elsif Roles (J) = Token then
+            elsif Roles (J) in Token | Span then
                Append (Texts, (if Length (Texts) = 0 then "" else " || ") & "(t) == " & Tag_Of (J));
             end if;
          end if;
@@ -9564,11 +9744,24 @@ package body HBNF_Grammar is
             Nm : constant String := To_String (R.Name);
             Base : Natural := Nm'First;
          begin
-            if Roles (J) in Opener | Pass then
+            if Roles (J) in Opener | Span | Pass then
                while Base <= Nm'Last and then Nm (Base) /= '(' loop
                   Base := Base + 1;
                end loop;
-               if Roles (J) = Opener then
+               if Roles (J) = Span then
+                  --  one entry with the text of the whole match
+                  Value_Types.Include (Nm (Nm'First .. Base - 1), "uint64_t");
+                  declare
+                     Inner : constant Element_Access :=
+                       new Element'(Kind => Group, Min => 1, Max => 1, Items => R.Pattern);
+                     P : Element_Vectors.Vector;
+                  begin
+                     P.Append (Emit ("$$ = p->pos;"));
+                     P.Append (Inner);
+                     P.Append (Emit ("tape_text_of (" & Tag_Of (J) & ", p->pos, p->pos - $$);"));
+                     R.Pattern := P;
+                  end;
+               elsif Roles (J) = Opener then
                   Value_Types.Include (Nm (Nm'First .. Base - 1), "uint64_t");
                   declare
                      Body_Items : constant Element_Vectors.Vector := Rewrite (R.Pattern);

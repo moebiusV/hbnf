@@ -8,7 +8,7 @@ include "../../grammars/common.hbnf"
 dq  = DQUOTE
 sq  = "'"
 non-ascii = %x80-D7FF / %xE000-10FFFF
-newline   = LF / CRLF
+hidden newline = LF / CRLF
 
 string  = lines(dq, basic-char, mlb-extra) / lines(sq, literal-char, mll-extra) / quoted-key
 quoted-key = line(dq, basic-char) / line(sq, literal-char)

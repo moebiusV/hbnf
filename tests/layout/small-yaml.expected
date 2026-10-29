@@ -1,0 +1,14 @@
+tape
+yaml
+bare
+bmap
+plainline-block a
+pml 1
+plainline-block b
+bseq
+pml x
+dq "y z"
+plainline-block c
+fmap
+fplain d
+fplain e

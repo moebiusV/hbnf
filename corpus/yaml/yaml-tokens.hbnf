@@ -3,6 +3,7 @@
 whitespace none
 prefix none
 include "../../grammars/common.hbnf"
+hidden SP WSP DQUOTE    ; blanks and the quote marks round a quoted scalar: matched, and kept by nothing
 
 hidden nl = CRLF | LF | CR
 any      = %x00-10FFFF

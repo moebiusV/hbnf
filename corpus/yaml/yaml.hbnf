@@ -9,6 +9,8 @@
 whitespace none
 prefix none
 include "yaml-tokens.hbnf"
+flat ikey mapent mval inl ptl ptlt ptla child child0 body body0 val valn   ; under `layout tape`: the node they hold stands for them
+flat fgap fnode fval fvaln fkeyj fkeyp fmitem fempty
 
 ; ---- line breaks inside a node: the next line is indented M or more
 brk(M in 0..) := lines !marker %spaces M *WSP

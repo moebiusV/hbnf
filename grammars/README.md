@@ -75,6 +75,11 @@ language C
   holds fields is opened and closed, a token or enum is one entry, and a choice or an alias adds no
   node (`runtime/hbnf_tape.h`; C backend; compile with `-Iruntime`).  `layout tree` is the default.
   `rollback { a, b }` names state that `%emit` blocks change, put back when a form is given up.
+  Under `layout tape` a rule that can only hold one node of its own (a choice, an alias, one thing
+  between punctuation) writes none, a rule of text parts is one entry with the text of the whole match
+  (where no blank is skipped between its elements), and `hidden` and `flat` shape the rest: `hidden`
+  names rules matched and kept by nothing (blanks, quote marks), `flat` names rules that keep their
+  children and write no node (`flat ikey mapent inl` in `corpus/yaml/yaml.hbnf`).  The tree ignores `flat`.
 
 - **Jets** — a rule whose body is hand-written scanner code instead of a
   token sequence:
