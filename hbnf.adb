@@ -63,6 +63,7 @@ procedure Hbnf is
    Package_Name : Unbounded_String := To_Unbounded_String ("Schema");
    Schema_Path  : Unbounded_String;
    Template_Dir : Unbounded_String;
+   Layouts_Dir  : Unbounded_String;
    Idref        : Boolean := False;
    Tree_Tools   : Boolean := False;   --  --writer or --ast: they walk the tree
    Compare      : Boolean := False;
@@ -137,10 +138,36 @@ procedure Hbnf is
       return "";
    end Template_Directory;
 
+   --  The directory of the layouts (layouts/NAME/layout.hbnf): --layouts=DIR, else $HBNF_LAYOUTS, else
+   --  `layouts` beside the template directory (a source tree), else inside it (an installed data directory).
+   function Layouts_Directory (Templates : String) return String is
+      use type Ada.Directories.File_Kind;
+      function Is_Dir (Path : String) return Boolean is
+        (Ada.Directories.Exists (Path)
+         and then Ada.Directories.Kind (Path) = Ada.Directories.Directory);
+   begin
+      if Layouts_Dir /= Null_Unbounded_String then
+         return To_String (Layouts_Dir);
+      elsif Ada.Environment_Variables.Exists ("HBNF_LAYOUTS") then
+         return Ada.Environment_Variables.Value ("HBNF_LAYOUTS");
+      end if;
+      declare
+         Parent : constant String :=
+           Ada.Directories.Containing_Directory (Ada.Directories.Full_Name (Templates));
+      begin
+         if Is_Dir (Parent & "/layouts") then
+            return Parent & "/layouts";
+         end if;
+      end;
+      return Templates & "/layouts";
+   exception
+      when others => return Templates & "/layouts";
+   end Layouts_Directory;
+
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--layout=tree|tape] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--layout=ast|tape|NAME] [--templates=DIR]");
    end Usage;
 
 begin
@@ -229,6 +256,8 @@ begin
             Prefix := To_Unbounded_String (A (10 .. A'Last));
          elsif A'Length >= 12 and then A (1 .. 12) = "--templates=" then
             Template_Dir := To_Unbounded_String (A (13 .. A'Last));
+         elsif A'Length >= 11 and then A (1 .. 11) = "--layouts=" then
+            Layouts_Dir := To_Unbounded_String (A (12 .. A'Last));
          elsif A (A'First) /= '-' then
             Schema_Path := To_Unbounded_String (A);
          end if;
@@ -251,6 +280,7 @@ begin
          return;
       end if;
       Mustache.Load (Dir);
+      HBNF_Grammar.Set_Layout_Dir (Layouts_Directory (Dir));
    end;
 
    --  One schema per run, so the warning count starts clean.  A process that

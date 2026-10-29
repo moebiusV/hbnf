@@ -112,8 +112,8 @@ parameterised rules.
      `sensitivity` and `whitespace` (below) when they land.
    - *Whole parser*: those that describe the one generated parser:
      `statements`, `macros`, `includes`, `keywords`, `conf`, `entry`,
-     `prefix`, `layout_ops`, `wordchars`.  Any file may set one (`tailq.hbnf`
-     exists to set `layout_ops` for all nine daemons); two files that set one
+     `prefix`, `layout_ops`, `wordchars`.  Any file may set one (`layout tailq`
+     sets `layout_ops` for all nine daemons); two files that set one
      differently are an error.  `keywords` lists from several files merge.
      Code blocks (the `{ … }` preamble and epilogue) are joined in include
      order.
@@ -842,7 +842,7 @@ running order:
 > sources or bootstrap it.  The comparison with IMP72 in `METACOMPILERS.md` stays
 > as history, and what hbnf took from its manual (the choice rule, `A<pos,len>`)
 > stays.  **ALGOL 68 and C++ are far in the future** (the same day).  **Not started:** 14, grammars for
-> constrained decoding (added 2026-10-27), 16, the C grammar through LLVM ORC and lld (added 2026-10-28), and 17, layouts: tree, tape, tailq and rb from one grammar (added 2026-10-29).
+> constrained decoding (added 2026-10-27), 16, the C grammar through LLVM ORC and lld (added 2026-10-28), and 17, layouts: ast, tape, tailq and rb from one grammar (added 2026-10-29).  **Built 2026-10-29:** 18, context parameters (an operators table was tried and set aside).
 >
 > **Critical path:** **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** and **14** are not gated on
@@ -2787,7 +2787,7 @@ cycles.
 
 17. **Layouts: one grammar, several data structures.**  *Added 2026-10-29 with the user; the tape
     layout is built (`layout tape`, `--layout=tape`); `tailq` and `rb` are not.*  A grammar says which data structure its parser builds, and the rest follows from the
-    grammar: `layout tree` (today's, the default), `layout tape`, and options on a list rule for the
+    grammar: `layout ast` (today's, the default), `layout tape`, and options on a list rule for the
     containers a program already has, `tailq` (`sys/queue.h`) and `rb` (`sys/tree.h`, keyed on a
     field).  The three tape grammars (`json-tape.hbnf`, `toml-tape.hbnf`, `yaml-tape.hbnf`) were
     written by hand, and the hand-written `%emit` blocks in them are what a layout would write.
@@ -2851,8 +2851,10 @@ cycles.
     *Operations, and rollback with them.*  A layout is a set of operations, and rollback is one of
     them: each layout says in its own terms how to take a mark and how to put back to it.  The
     `layout_ops { head { } entry { } ... }` block (it was `listops`, and every grammar that had one
-    now says `layout_ops`; `grammars/tailq.hbnf` is the daemons') is the list-shaped part of this,
-    and `layout tailq` is those same operations built in.  The operations a layout needs beyond them
+    now says `layout_ops`; `layouts/tailq/layout.hbnf` is the daemons') is the list-shaped part of this,
+    and `layout tailq` reads that file.  A layout is a directory, `layouts/NAME/`, holding `layout.hbnf` (the operations,
+    the prologue that includes the layout's header, the epilogue) and the C of the layout (`hbnf_NAME.h`) with its test; the
+    directory is found by `--layouts=DIR`, `$HBNF_LAYOUTS`, else beside the template directory.  The operations a layout needs beyond them
     (`mark`, `reset`, and for a layout that holds entries back, `commit`) are added beside them when
     a layout needs them.  A grammar that names no layout but a state to put back (`rollback { tape_n }`,
     step 15) is the shortest layout there is: its mark is the value of each lvalue and its reset assigns
@@ -2865,9 +2867,21 @@ cycles.
     has succeeded, or keeps an undo log.  Which, is decided when it is built.
 
     *Order.*  After the Haskell comparison (the rig is `bench/haskell.sh`), the tape layout first, since
-    its references exist; then `tailq` (built, as `layout tailq`: the tree whose lists are the daemons' `TAILQ`s); then `rb`.  C
+    its references exist; then `tailq` (built, as `layouts/tailq`: the tree whose lists are the daemons' `TAILQ`s); then `rb`.  C
     backend only.  Gate: the tape derived from `json.hbnf`, `toml.hbnf` and `yaml.hbnf` is measured
     against the three hand-written ones, and the obconf daemons' byte-identity tests pass unchanged.
+
+18. **Context parameters; operator tables tried.**  *Decided with the user 2026-10-29.*  A hyperrule
+    parameter may range over contexts (`declarator(C in "vars" | "types")`, with `%bind C += identifier` in the
+    body), which is the W-grammar's metarule over a finite set of names doing the work of a duplicated rule:
+    `corpus/c` has one declarator rule where it had a pair (`tests/params/ok_context.hbnf`, `bad_context.hbnf`).
+    The win is two rules a grammar.  *Set aside:* a table of binary-operator levels (`expression = operators
+    cast-expression { left "," ... }`), read as the ladder it stands for.  The six C grammars passed their suites
+    with it and `pcc99` fell from 8,628 to 7,484 characters (the figure against PCC's yacc, 6,505), but it saved
+    about a fifteenth of the characters, needed a construct and a label on each level, and read worse than the
+    ladder; the user judged it unfit.  What is left between the C grammars and yacc's is the length of the rule
+    names (55% of the characters of `pcc99.hbnf`), the keyword spellings (33 of its literals are GNU `__`
+    forms), and the typedef context, which yacc does in its scanner and the count leaves out.
 
 ## Not in this plan
 

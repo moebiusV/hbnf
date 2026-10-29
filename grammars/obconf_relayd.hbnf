@@ -41,7 +41,7 @@ keywords {
     state sticky-address strip style table tag tagged tcp tickets timeout
     tls to transparent ttl url v1 v2 value websockets with
 }
-include "tailq.hbnf"
+layout tailq
 include "obconf.hbnf"
 
 whitespace ws

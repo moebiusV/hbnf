@@ -24,7 +24,7 @@ external-declaration = ";"
                      | static-assert-declaration
                      | ( declaration-specifiers | "" ) %scope external-rest
 external-rest        = ";"
-                     | declarator ( function-body | declarator-tail )
+                     | declarator("vars") ( function-body | declarator-tail )
 declarator-tail      = [ asm-label ] *attribute [ "=" initializer ] *( "," *attribute init-declarator ) ";"
 function-body        = [ declaration-list ] compound-statement
 declaration-list     = 1*declaration
@@ -34,10 +34,10 @@ declaration          = typedef-declaration
                      | static-assert-declaration
                      | declaration-specifiers [ init-declarator-list ] ";"
 init-declarator-list = init-declarator *( "," *attribute init-declarator )
-init-declarator      = declarator [ asm-label ] *attribute [ "=" initializer ]
+init-declarator      = declarator("vars") [ asm-label ] *attribute [ "=" initializer ]
 asm-label            = asm-keyword "(" 1*string-literal ")"
 asm-keyword          = "asm" | "__asm" | "__asm__"
-typedef-declaration  = "typedef" declaration-specifiers typedef-declarator *attribute *( "," typedef-declarator *attribute ) ";"
+typedef-declaration  = "typedef" declaration-specifiers declarator("types") *attribute *( "," declarator("types") *attribute ) ";"
 static-assert-declaration = "_Static_assert" "(" constant-expression "," 1*string-literal ")" ";"
 
 ; the specifiers: a type, with the storage classes, qualifiers, function specifiers and attributes
@@ -72,21 +72,19 @@ struct-declaration   = static-assert-declaration
 specifier-qualifier-list = *qualifier-or-alignment ( 1*( basic-type *qualifier-or-alignment ) | typedef-name *qualifier-or-alignment )
 qualifier-or-alignment = type-qualifier | alignment-specifier | attribute
 struct-declarator-list = struct-declarator *( "," struct-declarator )
-struct-declarator    = declarator *attribute [ ":" constant-expression *attribute ] | ":" constant-expression
+struct-declarator    = declarator("vars") *attribute [ ":" constant-expression *attribute ] | ":" constant-expression
 enum-specifier       = "enum" ( identifier [ "{" enumerator-list [ "," ] "}" ] | "{" enumerator-list [ "," ] "}" )
 enumerator-list      = enumerator *( "," enumerator )
 enumerator           = identifier [ "=" constant-expression ]
 
-declarator           = [ pointer ] direct-declarator
-direct-declarator    = ( identifier %bind vars += identifier | "(" *attribute declarator ")" ) *declarator-suffix
+; a declarator binds the name it declares into the context given: `vars`, or `types` for a typedef
+declarator(C in "vars" | "types") := [ pointer ] direct-declarator(C)
+direct-declarator(C in "vars" | "types") := ( identifier %bind C += identifier | "(" *attribute declarator(C) ")" ) *declarator-suffix
 declarator-suffix    = "[" *( "static" | type-qualifier ) [ assignment-expression | "*" ] "]"
                      | "(" [ parameter-type-list | identifier-list ] ")"
-; the same with the name it declares added to `types`
-typedef-declarator   = [ pointer ] direct-typedef-declarator
-direct-typedef-declarator = ( identifier %bind types += identifier | "(" *attribute typedef-declarator ")" ) *declarator-suffix
 pointer              = 1*( "*" *( type-qualifier | attribute ) )
 parameter-type-list  = parameter-declaration *( "," parameter-declaration ) [ "," "..." ]
-parameter-declaration = declaration-specifiers [ declarator *attribute | abstract-declarator ]
+parameter-declaration = declaration-specifiers [ declarator("vars") *attribute | abstract-declarator ]
 identifier-list      = identifier *( "," identifier )
 type-name            = specifier-qualifier-list [ abstract-declarator ]
 abstract-declarator  = pointer [ direct-abstract-declarator ] | direct-abstract-declarator

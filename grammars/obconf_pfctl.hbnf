@@ -43,7 +43,7 @@ keywords {
     sticky-address syncookies synproxy table tag tagged timeout to tos ttl
     urpf-failed user weight
 }
-include "tailq.hbnf"
+layout tailq
 include "obconf.hbnf"
 
 whitespace ws

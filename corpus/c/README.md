@@ -58,8 +58,9 @@ produces: hbnf has no preprocessor, so the tools below use gcc's (`gcc -E -P`).
   `external-declaration` and the specifiers.  The tree has an optional field where the standard has an
   alternative.
 - **The expression levels are the standard's nested rules**, seventeen of them.  Nothing was wrong with
-  that for correctness; what it costs is in the speed above, and the `operators { }` sugar discussed in
-  `RFCPLAN.md` is the way to measure whether it is worth removing.
+  that for correctness; what it costs is in the speed above.  A table of levels was tried (`%left` lines
+  in the manner of yacc) and set aside: it saved about a fifteenth of the characters and needed a
+  construct of its own.
 - **White space is one scanner** (`ws`), written once for each backend: blanks, comments, `#pragma` and
   `# line` (what the preprocessor leaves), and the GNU forms read as white space (`__attribute__((..))`,
   `__asm__("name")`, `__extension__`).

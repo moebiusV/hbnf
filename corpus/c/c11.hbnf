@@ -18,7 +18,7 @@ external-declaration = ";"
                      | static-assert-declaration
                      | declaration-specifiers %scope external-rest
 external-rest        = ";"
-                     | declarator ( function-body | [ "=" initializer ] *( "," init-declarator ) ";" )
+                     | declarator("vars") ( function-body | [ "=" initializer ] *( "," init-declarator ) ";" )
 function-body        = [ declaration-list ] compound-statement
 declaration-list     = 1*declaration
 
@@ -27,8 +27,8 @@ declaration          = typedef-declaration
                      | static-assert-declaration
                      | declaration-specifiers [ init-declarator-list ] ";"
 init-declarator-list = init-declarator *( "," init-declarator )
-init-declarator      = declarator [ "=" initializer ]
-typedef-declaration  = "typedef" declaration-specifiers typedef-declarator *( "," typedef-declarator ) ";"
+init-declarator      = declarator("vars") [ "=" initializer ]
+typedef-declaration  = "typedef" declaration-specifiers declarator("types") *( "," declarator("types") ) ";"
 static-assert-declaration = "_Static_assert" "(" constant-expression "," 1*string-literal ")" ";"
 
 ; the specifiers: at least one type, a typedef name only if it is the only one (`unsigned T` is
@@ -61,21 +61,19 @@ struct-declaration   = static-assert-declaration
 specifier-qualifier-list = *qualifier-or-alignment ( 1*( basic-type *qualifier-or-alignment ) | typedef-name *qualifier-or-alignment )
 qualifier-or-alignment = type-qualifier | alignment-specifier
 struct-declarator-list = struct-declarator *( "," struct-declarator )
-struct-declarator    = declarator [ ":" constant-expression ] | ":" constant-expression
+struct-declarator    = declarator("vars") [ ":" constant-expression ] | ":" constant-expression
 enum-specifier       = "enum" ( identifier [ "{" enumerator-list [ "," ] "}" ] | "{" enumerator-list [ "," ] "}" )
 enumerator-list      = enumerator *( "," enumerator )
 enumerator           = identifier [ "=" constant-expression ]
 
-declarator           = [ pointer ] direct-declarator
-direct-declarator    = ( identifier %bind vars += identifier | "(" declarator ")" ) *declarator-suffix
+; a declarator binds the name it declares into the context given: `vars`, or `types` for a typedef
+declarator(C in "vars" | "types") := [ pointer ] direct-declarator(C)
+direct-declarator(C in "vars" | "types") := ( identifier %bind C += identifier | "(" declarator(C) ")" ) *declarator-suffix
 declarator-suffix    = "[" *( "static" | type-qualifier ) [ assignment-expression | "*" ] "]"
                      | "(" [ parameter-type-list | identifier-list ] ")"
-; the same with the name it declares added to `types`
-typedef-declarator   = [ pointer ] direct-typedef-declarator
-direct-typedef-declarator = ( identifier %bind types += identifier | "(" typedef-declarator ")" ) *declarator-suffix
 pointer              = 1*( "*" *type-qualifier )
 parameter-type-list  = "..." | parameter-declaration *( "," parameter-declaration ) [ "," "..." ]
-parameter-declaration = declaration-specifiers [ declarator | abstract-declarator ]
+parameter-declaration = declaration-specifiers [ declarator("vars") | abstract-declarator ]
 identifier-list      = identifier *( "," identifier )
 type-name            = specifier-qualifier-list [ abstract-declarator ]
 abstract-declarator  = pointer [ direct-abstract-declarator ] | direct-abstract-declarator
@@ -99,7 +97,7 @@ block-item           = label-declaration | block-declaration | statement
 ; a declaration, or (GNU) a function defined inside a function: the specifiers and the declarator
 ; are read once, as at file scope
 block-declaration    = typedef-declaration | static-assert-declaration | declaration-specifiers block-rest
-block-rest           = ";" | declarator ( compound-statement | [ "=" initializer ] *( "," init-declarator ) ";" )
+block-rest           = ";" | declarator("vars") ( compound-statement | [ "=" initializer ] *( "," init-declarator ) ";" )
 label-declaration    = "__label__" identifier *( "," identifier ) ";"
 expression-statement = [ expression ] ";"
 selection-statement  = "if" "(" expression ")" statement [ "else" statement ]

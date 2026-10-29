@@ -10,6 +10,7 @@ with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Containers.Ordered_Maps;
 with System.Storage_Elements;
 with Ada.Strings.Hash;
+with Ada.Directories;
 with Ada.Text_IO;
 with GNAT.OS_Lib;
 
@@ -50,9 +51,13 @@ package body HBNF_Grammar is
    --  The state `%emit` changes, which a retry puts back (`rollback { tape_n }`).
    Rollback_Text : Unbounded_String;
 
-   --  `layout tree|tape` (or --layout=): the data structure the parser builds.
-   Layout_Text  : Unbounded_String := To_Unbounded_String ("tree");
+   --  `layout ast|tape|NAME` (or --layout=): the data structure the parser builds.  A NAME other than
+   --  tree and tape is a directory layouts/NAME of the layouts directory (layout.hbnf), which a grammar fragment reads
+   --  as an include: its prologue, its layout_ops, its epilogue.
+   Layout_Text  : Unbounded_String := To_Unbounded_String ("ast");
    Layout_Given : Boolean := False;
+   Layout_Dir   : Unbounded_String;
+   In_Layout    : Natural := 0;     --  while a layout file (or what it includes) is being read
 
    --  The `{ ... }` code blocks before the rules (preamble) and after them
    --  (epilogue), each with the language of the file it came from, in
@@ -230,6 +235,7 @@ package body HBNF_Grammar is
       Value : Unbounded_String;
       File  : Unbounded_String;
       Line  : Positive := 1;
+      Weak  : Boolean := False;   --  set by a layout file: another file, or the grammar, may change it
    end record;
    package Setting_Maps is new Ada.Containers.Indefinite_Ordered_Maps
      (String, Setting);
@@ -250,7 +256,18 @@ package body HBNF_Grammar is
          declare
             Was : constant Setting := Setting_Maps.Element (C);
          begin
-            if To_String (Was.Value) /= Value then
+            if To_String (Was.Value) /= Value and then Was.Weak and then In_Layout = 0 then
+               --  the grammar changes what a layout set: the layout is specialised
+               Settings.Replace
+                 (Name, Setting'(Value => To_Unbounded_String (Value), File => Current_File,
+                                 Line => Line, Weak => False));
+            elsif To_String (Was.Value) /= Value and then not Was.Weak and then In_Layout > 0 then
+               return;        --  a layout does not undo what the grammar said
+            elsif To_String (Was.Value) /= Value and then Was.Weak then
+               Settings.Replace      --  a layout over a layout: the later one
+                 (Name, Setting'(Value => To_Unbounded_String (Value), File => Current_File,
+                                 Line => Line, Weak => True));
+            elsif To_String (Was.Value) /= Value then
                raise Parse_Error with
                  Integer'Image (Line) & ": `" & Name & "` is set here to `"
                  & Value & "` and at " & Where (Was.File, Was.Line)
@@ -262,7 +279,8 @@ package body HBNF_Grammar is
          Settings.Insert
            (Name, Setting'(Value => To_Unbounded_String (Value),
                            File  => Current_File,
-                           Line  => Line));
+                           Line  => Line,
+                           Weak  => In_Layout > 0));
       end if;
       Target := To_Unbounded_String (Value);
    end Set_Directive;
@@ -279,6 +297,10 @@ package body HBNF_Grammar is
      (String, String, Ada.Strings.Hash, "=");
    Domain_Bodies : Domain_Maps.Map;
    Domains_Used  : Index_Maps.Map;        --  the domains a parameter names
+   --  A context named where none is declared (`%bind C += x`, `x ? C`), with where it was first
+   --  named: it is a rule parameter, until the expansion of the hyperrules says it is not.
+   package Pending_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, String);
+   Ctx_Pending   : Pending_Maps.Map;
 
    --  Where a literal stood among its rule's alternatives as written, for a
    --  rule whose alternatives the reader put in another order to match them
@@ -616,7 +638,7 @@ package body HBNF_Grammar is
       Schema_Language := To_Unbounded_String ("C");
       Rollback_Text := Null_Unbounded_String;
       if not Layout_Given then
-         Layout_Text := To_Unbounded_String ("tree");
+         Layout_Text := To_Unbounded_String ("ast");
       end if;
       Domain_Bodies.Clear;
       Domains_Used.Clear;
@@ -633,6 +655,7 @@ package body HBNF_Grammar is
       List_Relink_Code := Null_Unbounded_String;
       Statements_On := False;
       Context_Words.Clear;
+      Ctx_Pending.Clear;
       Macros_Name := Null_Unbounded_String;
       Includes_Name := Null_Unbounded_String;
       Keyword_Words.Clear;
@@ -3096,11 +3119,13 @@ package body HBNF_Grammar is
 
       procedure Declared (Name : Token) is
       begin
-         if not (for some C of Context_Words => C = Name.Text) then
-            raise Parse_Error with
-              Integer'Image (Name.Line) & ":" & Integer'Image (Name.Col)
-              & ": `" & To_String (Name.Text) & "` is not a context; declare "
-              & "it first with `context " & To_String (Name.Text) & "`";
+         if not (for some C of Context_Words => C = Name.Text)
+           and then not Ctx_Pending.Contains (To_String (Name.Text))
+         then
+            --  not yet an error: a parameter of a hyperrule may stand here
+            Ctx_Pending.Insert
+              (To_String (Name.Text),
+               Integer'Image (Name.Line) & ":" & Integer'Image (Name.Col));
          end if;
       end Declared;
 
@@ -4419,6 +4444,21 @@ package body HBNF_Grammar is
                   X : constant Element_Access := new Element'(E.all);
                begin
                   X.Look := Subst (E.Look, B, In_Rule);
+                  if E.Op in B_Bind | B_Test | B_Not_Test then
+                     --  a context named by a parameter: the value is its name
+                     declare
+                        Found : Boolean;
+                        V     : constant Value := Lookup (B, To_String (E.Ctx), Found);
+                     begin
+                        if Found then
+                           if V.Kind = V_Int then
+                              Fail ("rule `" & In_Rule & "`: `" & To_String (E.Ctx)
+                                    & "` is a number, and a context is a name");
+                           end if;
+                           X.Ctx := V.Text;
+                        end if;
+                     end;
+                  end if;
                   return X;
                end;
             when others =>
@@ -5286,6 +5326,40 @@ package body HBNF_Grammar is
          end;
       end loop;
    end Expand_Params;
+
+   --  After the hyperrules are expanded, every context a rule names is one that was declared; one that is
+   --  not was neither a context nor a parameter.
+   procedure Check_Contexts (Rules : Rule_Vectors.Vector) is
+      procedure Look (V : Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            case E.Kind is
+               when Group => Look (E.Items);
+               when Negation => Look (E.Operand);
+               when Block =>
+                  Look (E.Look);
+                  if E.Op in B_Bind | B_Test | B_Not_Test
+                    and then not (for some C of Context_Words => C = E.Ctx)
+                  then
+                     raise Parse_Error with
+                       (if Ctx_Pending.Contains (To_String (E.Ctx))
+                        then Ctx_Pending.Element (To_String (E.Ctx))
+                        else Ctx_Pending.First_Element)
+                       & ": `" & To_String (E.Ctx) & "` is not a context; declare "
+                       & "it first with `context " & To_String (E.Ctx) & "`";
+                  end if;
+               when others => null;
+            end case;
+         end loop;
+      end Look;
+   begin
+      if Ctx_Pending.Is_Empty then
+         return;
+      end if;
+      for R of Rules loop
+         Look (R.Pattern);
+      end loop;
+   end Check_Contexts;
 
    --  A rule that holds text and bit fields in one sequence
    --  (`req = "GET " len:8 payload:[len] %d13.10`) is read as runs: each run of
@@ -7898,14 +7972,13 @@ package body HBNF_Grammar is
                  and then To_String (Cur (P).Text) = "layout"
                then
                   --  `layout tape`: the parser writes a flat tape, not the tree (RFCPLAN.md step 17);
-                  --  `layout tree` is what it does without.  --layout= wins over the directive.
+                  --  `layout ast` is what it does without.  --layout= wins over the directive.
                   Next (P);
-                  if Cur (P).Kind /= T_Name
-                    or else To_String (Cur (P).Text) not in "tree" | "tape" | "tailq"
-                  then
+                  if Cur (P).Kind /= T_Name then
                      raise Parse_Error with
                        Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
-                       & ": expected `tree`, `tape` or `tailq` after `layout`";
+                       & ": expected the name of a layout after `layout`: `ast`, `tape`, or a "
+                       & "directory layouts/NAME (layout.hbnf)";
                   end if;
                   if not Layout_Given then
                      Layout_Text := Cur (P).Text;
@@ -8416,12 +8489,20 @@ package body HBNF_Grammar is
       end loop;
       if File_Depth = 0 then
          Expand_Params (Rules);
+         Check_Contexts (Rules);
          Split_Mixed (Rules);
          Split_Wire (Rules);
          Finish (Rules);
       end if;
       return Rules;
    end Parse;
+
+   function Is_File_Layout (Name : String) return Boolean is (Name not in "ast" | "tape" | "");
+
+   procedure Set_Layout_Dir (Dir : String) is
+   begin
+      Layout_Dir := To_Unbounded_String (Dir);
+   end Set_Layout_Dir;
 
    function Parse_File (Path : String) return Rule_Vectors.Vector is
 
@@ -8507,6 +8588,45 @@ package body HBNF_Grammar is
       function Resolved (P : String) return String is
         (GNAT.OS_Lib.Normalize_Pathname (P, Resolve_Links => True));
 
+      --  The file of a layout, read as an include would be (once), its settings weak so that a later
+      --  file, or the grammar's own, may change them.
+      procedure Include_Layout (Name : String; Acc : in out Rule_Vectors.Vector;
+                                Acc_Index : in out Index_Maps.Map) is
+         Path : constant String := To_String (Layout_Dir) & "/" & Name & "/layout.hbnf";
+      begin
+         if To_String (Layout_Dir) = "" or else not Ada.Directories.Exists (Path) then
+            raise Parse_Error with
+              "layout `" & Name & "`: no file " & Name & "/layout.hbnf in the layouts directory"
+              & (if To_String (Layout_Dir) = "" then "" else " (" & To_String (Layout_Dir) & ")")
+              & "; the layouts are ast, tape, and those files";
+         end if;
+         if not Seen_Files.Contains (Resolved (Path)) then
+            In_Layout := In_Layout + 1;
+            for R of Parse_File (Path) loop
+               Define (Acc, Acc_Index, R);
+            end loop;
+            In_Layout := In_Layout - 1;
+         end if;
+      end Include_Layout;
+
+      --  `layout NAME` on a line, for a NAME that is a file: the name, else "".
+      function Layout_Target (Line : String) return String is
+         I : Natural := Line'First;
+      begin
+         while I <= Line'Last and then Line (I) in ' ' | ASCII.HT loop I := I + 1; end loop;
+         if I + 6 > Line'Last or else Line (I .. I + 6) /= "layout " then
+            return "";
+         end if;
+         I := I + 7;
+         while I <= Line'Last and then Line (I) in ' ' | ASCII.HT loop I := I + 1; end loop;
+         declare
+            S : constant Natural := I;
+         begin
+            while I <= Line'Last and then Line (I) not in ' ' | ASCII.HT | ';' loop I := I + 1; end loop;
+            return (if Is_File_Layout (Line (S .. I - 1)) then Line (S .. I - 1) else "");
+         end;
+      end Layout_Target;
+
       --  An `include` line: the file it names and the line it is on.
       type Include_Line is record
          Target : Unbounded_String;
@@ -8539,8 +8659,14 @@ package body HBNF_Grammar is
                declare
                   Line   : constant String := Text (Start .. Stop - 1);
                   Target : constant Unbounded_String := Include_Target (Line);
+                  Lay    : constant String := Layout_Target (Line);
                begin
-                  if Target /= Null_Unbounded_String then
+                  if Lay /= "" then
+                     --  a `layout NAME` line reads the layout's file, and stays, to be read as a directive
+                     Include_Layout (Lay, Acc, Acc_Index);
+                     Append (Kept, Line);
+                     Append (Kept, ASCII.LF);
+                  elsif Target /= Null_Unbounded_String then
                      Incs.Append (Include_Line'(Target, Line_No));
                      declare
                         Sub_Path : constant String :=
@@ -8653,6 +8779,10 @@ package body HBNF_Grammar is
       end if;
       File_Depth := File_Depth + 1;
       Seen_Files.Include (Resolved (Path));
+      --  --layout=NAME, for a file layout, is read before the grammar is
+      if File_Depth = 1 and then Layout_Given and then Is_File_Layout (To_String (Layout_Text)) then
+         Include_Layout (To_String (Layout_Text), Included, Inc_Index);
+      end if;
       Expand (Read_File (Path), Dir_Of (Path), Included, Inc_Index, Incs,
               Out_Text);
       Current_File := To_Unbounded_String (Path);
@@ -8678,6 +8808,7 @@ package body HBNF_Grammar is
       if File_Depth = 1 then
          Apply_Actions (Result);
          Expand_Params (Result);
+         Check_Contexts (Result);
          Split_Mixed (Result);
          Split_Wire (Result);
          Finish (Result);
@@ -9796,32 +9927,12 @@ package body HBNF_Grammar is
       return Result;
    end Tape_Layout;
 
-   --  `layout tailq` (RFCPLAN.md step 17): the tree, with its lists the daemons' own <sys/queue.h> TAILQs.
-   --  It is the operations of grammars/tailq.hbnf, which a daemon's grammar has included for this: the
-   --  same eight, so a grammar may say either, and the header the macros come from.
-   procedure Tailq_Layout is
-   begin
-      Set_List_Override ("head", " TAILQ_HEAD(@name@, @elem@) ", 1);
-      Set_List_Override ("entry", " TAILQ_ENTRY(@elem@) _link ", 1);
-      Set_List_Override ("init", " TAILQ_INIT(@h@); ", 1);
-      Set_List_Override ("append", " TAILQ_INSERT_TAIL(@h@, @e@, _link); ", 1);
-      Set_List_Override ("foreach", " TAILQ_FOREACH(@v@, @h@, _link) ", 1);
-      Set_List_Override ("first", " TAILQ_FIRST(@h@) ", 1);
-      Set_List_Override ("next", " TAILQ_NEXT(@e@, _link) ", 1);
-      Set_List_Override ("relink", " if (TAILQ_EMPTY(@h@)) TAILQ_INIT(@h@); else TAILQ_FIRST(@h@)->_link.tqe_prev = &TAILQ_FIRST(@h@); ", 1);
-      Preamble_Pieces.Append
-        (Code_Piece'(Lang => To_Unbounded_String ("C"),
-                     Code => To_Unbounded_String (ASCII.LF & "#include <sys/queue.h>" & ASCII.LF)));
-   end Tailq_Layout;
-
-   --  The rules the layout asks for: the tape rewrites them, tailq sets the list operations, the tree
-   --  (the default) leaves them.
+   --  The rules the layout asks for: the tape rewrites them; any other layout is a file (its operations,
+   --  its prologue and epilogue, read when the grammar was), and the tree is what they leave.
    function Layout_Rules (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector is
    begin
       if To_String (Layout_Text) = "tape" then
          return Tape_Layout (Rules);
-      elsif To_String (Layout_Text) = "tailq" then
-         Tailq_Layout;
       end if;
       return Rules;
    end Layout_Rules;
@@ -10131,8 +10242,8 @@ package body HBNF_Grammar is
 
    procedure Set_Layout (Mode : String) is
    begin
-      if Mode not in "tree" | "tape" | "tailq" then
-         raise Parse_Error with "--layout= takes tree, tape or tailq, not `" & Mode & "`";
+      if Mode = "" then
+         raise Parse_Error with "--layout= takes the name of a layout: ast, tape, or a directory of the layouts directory";
       end if;
       Layout_Text := To_Unbounded_String (Mode);
       Layout_Given := True;

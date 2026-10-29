@@ -30,7 +30,7 @@ keywords {
     targeted-neighbor tcp transport-address transport-preference type vpls
     yes
 }
-include "tailq.hbnf"
+layout tailq
 include "obconf.hbnf"
 
 whitespace ws

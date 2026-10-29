@@ -484,9 +484,11 @@ package HBNF_Grammar is
    --  puts back; "" when the grammar does not say, and a retry past an emit is then refused.
    function Rollback_State return String;
 
-   --  `layout tree|tape` or --layout=: the data structure the parser builds; tape rewrites the rules
-   --  to write a flat tape (RFCPLAN.md step 17), in Lift.
+   --  `layout ast|tape|NAME` or --layout=: the data structure the parser builds; tape rewrites the rules
+   --  to write a flat tape (RFCPLAN.md step 17), in Lift; any other name is layouts/NAME/layout.hbnf, read as an include (its prologue, layout_ops and epilogue).
    procedure Set_Layout (Mode : String);
+   --  Where the layout files are (layouts/NAME/layout.hbnf).
+   procedure Set_Layout_Dir (Dir : String);
    function Layout return String;
 
    --  A rule with an `%emit` of its own or a declared value: the C backend generates it as a

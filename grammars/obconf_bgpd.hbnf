@@ -41,7 +41,7 @@ keywords {
     staletime static tcp to tos transit-as transparent-as ttl-security
     unicast via vpn weight
 }
-include "tailq.hbnf"
+layout tailq
 include "obconf.hbnf"
 
 whitespace ws

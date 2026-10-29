@@ -20,7 +20,7 @@ translation-unit     = *external-declaration
 external-declaration = typedef-declaration
                      | declaration-specifiers %scope external-rest
 external-rest        = ";"
-                     | declarator ( function-body | [ "=" initializer ] *( "," init-declarator ) ";" )
+                     | declarator("vars") ( function-body | [ "=" initializer ] *( "," init-declarator ) ";" )
 function-body        = [ declaration-list ] compound-statement
 declaration-list     = 1*declaration
 
@@ -28,8 +28,8 @@ declaration-list     = 1*declaration
 declaration          = typedef-declaration
                      | declaration-specifiers [ init-declarator-list ] ";"
 init-declarator-list = init-declarator *( "," init-declarator )
-init-declarator      = declarator [ "=" initializer ]
-typedef-declaration  = "typedef" declaration-specifiers typedef-declarator *( "," typedef-declarator ) ";"
+init-declarator      = declarator("vars") [ "=" initializer ]
+typedef-declaration  = "typedef" declaration-specifiers declarator("types") *( "," declarator("types") ) ";"
 
 ; the specifiers: at least one type, a typedef name only if it is the only one (`unsigned T` is
 ; a type and a declarator), and the storage classes, qualifiers and `inline` around
@@ -53,21 +53,19 @@ struct-declaration-list = 1*struct-declaration
 struct-declaration   = %scope specifier-qualifier-list struct-declarator-list ";"
 specifier-qualifier-list = *type-qualifier ( 1*( basic-type *type-qualifier ) | typedef-name *type-qualifier )
 struct-declarator-list = struct-declarator *( "," struct-declarator )
-struct-declarator    = declarator [ ":" constant-expression ] | ":" constant-expression
+struct-declarator    = declarator("vars") [ ":" constant-expression ] | ":" constant-expression
 enum-specifier       = "enum" ( identifier [ "{" enumerator-list [ "," ] "}" ] | "{" enumerator-list [ "," ] "}" )
 enumerator-list      = enumerator *( "," enumerator )
 enumerator           = identifier [ "=" constant-expression ]
 
-declarator           = [ pointer ] direct-declarator
-direct-declarator    = ( identifier %bind vars += identifier | "(" declarator ")" ) *declarator-suffix
+; a declarator binds the name it declares into the context given: `vars`, or `types` for a typedef
+declarator(C in "vars" | "types") := [ pointer ] direct-declarator(C)
+direct-declarator(C in "vars" | "types") := ( identifier %bind C += identifier | "(" declarator(C) ")" ) *declarator-suffix
 declarator-suffix    = "[" *( "static" | type-qualifier ) [ assignment-expression | "*" ] "]"
                      | "(" [ parameter-type-list | identifier-list ] ")"
-; the same with the name it declares added to `types`
-typedef-declarator   = [ pointer ] direct-typedef-declarator
-direct-typedef-declarator = ( identifier %bind types += identifier | "(" typedef-declarator ")" ) *declarator-suffix
 pointer              = 1*( "*" *type-qualifier )
 parameter-type-list  = parameter-declaration *( "," parameter-declaration ) [ "," "..." ]
-parameter-declaration = declaration-specifiers [ declarator | abstract-declarator ]
+parameter-declaration = declaration-specifiers [ declarator("vars") | abstract-declarator ]
 identifier-list      = identifier *( "," identifier )
 type-name            = specifier-qualifier-list [ abstract-declarator ]
 abstract-declarator  = pointer [ direct-abstract-declarator ] | direct-abstract-declarator

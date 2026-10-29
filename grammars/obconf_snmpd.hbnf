@@ -31,7 +31,7 @@ keywords {
     read-write receiver seclevel services snmpv1 snmpv2c snmpv3
     source-address string system tcp text trap udp user write
 }
-include "tailq.hbnf"
+layout tailq
 include "obconf.hbnf"
 
 whitespace ws

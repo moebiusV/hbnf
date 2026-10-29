@@ -51,18 +51,24 @@ fi
 printf 'layout tape\nprefix none\nwhitespace none\ntop = "(" *( top ) ")"\n' > "$W/d.hbnf"
 "$CLI" "$W/d.hbnf" --backend=c 2> "$W/d.err" | grep -q 'tape_open' \
 	|| { echo "layout: FAIL (the layout directive does not make a tape)"; fail=1; }
-"$CLI" "$W/d.hbnf" --backend=c --layout=tree 2> "$W/d.err" | grep -q 'tape_open' \
-	&& { echo "layout: FAIL (--layout=tree does not win over the directive)"; fail=1; }
-"$CLI" corpus/json/json.hbnf --backend=c --layout=heap 2>&1 >/dev/null | grep -q 'takes tree, tape or tailq' \
-	|| { echo "layout: FAIL (--layout=heap is not refused with the choices)"; fail=1; }
-# layout tailq is the operations of grammars/tailq.hbnf built in: the same parser as including that file,
-# and one that compiles against <sys/queue.h> (tests/bsdinc stands in where the libc has none)
-"$CLI" tests/layout/tailq-inc.hbnf --backend=c > "$W/ti.c" 2> "$W/ti.err" \
-	&& "$CLI" tests/layout/tailq-layout.hbnf --backend=c > "$W/tl.c" 2> "$W/tl.err" \
-	|| { echo "layout: FAIL (tailq: $(head -c 300 "$W/ti.err" "$W/tl.err"))"; fail=1; }
-cmp -s "$W/ti.c" "$W/tl.c" || { echo "layout: FAIL (layout tailq is not the parser that including tailq.hbnf makes)"; fail=1; }
+"$CLI" "$W/d.hbnf" --backend=c --layout=ast 2> "$W/d.err" | grep -q 'tape_open' \
+	&& { echo "layout: FAIL (--layout=ast does not win over the directive)"; fail=1; }
+# layout tailq is a directory of layouts/ (layouts/tailq/layout.hbnf): its operations and its prologue.
+# The directive and the flag make the same parser, it makes TAILQ lists and compiles against <sys/queue.h>
+# (tests/bsdinc stands in where the libc has none), and a grammar's own layout_ops specialises it
+"$CLI" tests/layout/tailq.hbnf --backend=c > "$W/tl.c" 2> "$W/tl.err" \
+	&& "$CLI" tests/layout/tailq-plain.hbnf --backend=c --layout=tailq > "$W/tf.c" 2> "$W/tf.err" \
+	|| { echo "layout: FAIL (tailq: $(head -c 300 "$W/tl.err" "$W/tf.err"))"; fail=1; }
+cmp -s "$W/tl.c" "$W/tf.c" || { echo "layout: FAIL (layout tailq and --layout=tailq make different parsers)"; fail=1; }
 grep -q 'TAILQ_INSERT_TAIL' "$W/tl.c" || { echo "layout: FAIL (layout tailq does not make TAILQ lists)"; fail=1; }
 ${CC:-cc} -std=gnu11 -w -Itests/bsdinc -c -o "$W/tl.o" "$W/tl.c" 2> "$W/cc.err" \
 	|| { echo "layout: FAIL (tailq does not compile: $(head -c 300 "$W/cc.err"))"; fail=1; }
+"$CLI" tests/layout/tailq-special.hbnf --backend=c > "$W/ts.c" 2> "$W/ts.err" \
+	|| { echo "layout: FAIL (tailq special: $(head -c 300 "$W/ts.err"))"; fail=1; }
+grep -q 'MYINIT' "$W/ts.c" && ! grep -q 'TAILQ_INIT(&head)' "$W/ts.c" && grep -q 'TAILQ_INSERT_TAIL' "$W/ts.c" \
+	|| { echo "layout: FAIL (a grammar's layout_ops does not specialise layout tailq)"; fail=1; }
+printf 'prefix none\nlayout nonesuch\ntop = "a"\n' > "$W/n.hbnf"
+"$CLI" "$W/n.hbnf" --backend=c 2>&1 >/dev/null | grep -q 'no file nonesuch/layout.hbnf' \
+	|| { echo "layout: FAIL (an unknown layout is not refused with the file it wanted)"; fail=1; }
 [ $fail = 0 ] && echo "layout: OK (a tape from the plain grammars of JSON, TOML and YAML; tailq)"
 exit $fail

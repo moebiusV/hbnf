@@ -24,7 +24,7 @@ keywords {
     constraint constraints correction from listen on query refid rtable
     sensor server servers stratum trusted weight
 }
-include "tailq.hbnf"
+layout tailq
 include "obconf.hbnf"
 
 whitespace ws

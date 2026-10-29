@@ -73,7 +73,7 @@ language C
 - **Layout** — `layout tape` (or `--layout=tape`) makes the parser write a flat tape of words
   instead of building the tree, from the grammar as it is, with no `%emit` in it: a rule that
   holds fields is opened and closed, a token or enum is one entry, and a choice or an alias adds no
-  node (`runtime/hbnf_tape.h`; C backend; compile with `-Iruntime`).  `layout tree` is the default.
+  node (`runtime/hbnf_tape.h`; C backend; compile with `-Iruntime`).  `layout ast` is the default.
   `rollback { a, b }` names state that `%emit` blocks change, put back when a form is given up.
   Under `layout tape` a rule that can only hold one node of its own (a choice, an alias, one thing
   between punctuation) writes none, a rule of text parts is one entry with the text of the whole match
@@ -166,16 +166,15 @@ round.
 Each grammar round-trips through the `hbnf` generator (`hbnf`): it
 emits a self-contained C parser that compiles and parses a sample config.
 
-`common.hbnf`, `obconf.hbnf`, `tailq.hbnf` and `ascii.hbnf` are
+`common.hbnf`, `obconf.hbnf` and `ascii.hbnf` are
 include-only, not daemon grammars: each is pulled in with `include "…"`.
 `common.hbnf` holds the RFC 5234 character classes and core rules (`DIGIT`,
 `ALPHA`, `HEXDIG`, `WSP`, `CRLF`, …), and includes `ascii.hbnf` for the
 named ASCII characters (the C0 controls, `DEL`, the blanks, and `DQUOTE`); `obconf.hbnf`
 holds the rules the daemons share (`string`, `address`, …), which a daemon
-grammar may override; `tailq.hbnf` carries the shared `layout_ops { }` block and
-the `#include <sys/queue.h>` it needs, and defines no rules.  Any script that
-globs `grammars/*.hbnf` must skip the four of them (the nine daemons above
-are the grammars).
+grammar may override.  Any script that globs `grammars/*.hbnf` must skip the
+three of them (the nine daemons above are the grammars).  The daemons' lists are
+the `layout tailq` of `layouts/tailq/`.
 
 ## Bindings (`bind/`)
 

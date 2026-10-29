@@ -33,7 +33,7 @@ keywords {
     return rewrite root sack server socket strip
     style subdomains syslog tcp ticket timeout tls type types with
 }
-include "tailq.hbnf"
+layout tailq
 include "obconf.hbnf"
 
 whitespace ws

@@ -1,0 +1,7 @@
+; layout tailq, with the grammar's own init: the layout is specialised
+prefix none
+layout tailq
+layout_ops {
+  init { MYINIT(@h@); }
+}
+top = "(" *( word ) ")"

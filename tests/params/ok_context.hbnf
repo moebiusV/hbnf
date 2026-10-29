@@ -1,0 +1,11 @@
+; A parameter that names a context: one declarator rule binds into `types` or into `vars`, as
+; the use says.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+context types
+context vars
+
+top = "typedef " decl("types") ";" "var " decl("vars") ";"
+decl(C in "types" | "vars") := name %bind C += name
+name = 1*ALPHA

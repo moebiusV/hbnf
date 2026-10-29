@@ -1,0 +1,3 @@
+; the same grammar with no layout line: --layout=tailq says it
+prefix none
+top = "(" *( word ) ")"

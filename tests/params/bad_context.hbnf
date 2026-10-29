@@ -1,0 +1,9 @@
+; A parameter that names a context takes only the names of contexts that were declared
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+context types
+
+top = decl("types") decl("vars")
+decl(C in "types" | "vars") := name %bind C += name
+name = 1*ALPHA

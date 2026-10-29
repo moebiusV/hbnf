@@ -1,4 +1,0 @@
-; a list of words in parentheses, with the daemons' TAILQ from grammars/tailq.hbnf included
-prefix none
-include "../../grammars/tailq.hbnf"
-top = "(" *( word ) ")"
