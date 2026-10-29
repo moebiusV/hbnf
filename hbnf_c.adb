@@ -273,18 +273,45 @@ package body HBNF_C is
         & "    skip_ws_run(p);" & LF;
    end Scanner_Skip;
 
+   --  True when any layout_ops operation is overridden: the grammar supplies its
+   --  own list container, not hbnf's built-in slist.
+   function Has_Listops return Boolean is
+   begin
+      return HBNF_Grammar.List_Override ("head") /= ""
+        or else HBNF_Grammar.List_Override ("entry") /= ""
+        or else HBNF_Grammar.List_Override ("init") /= ""
+        or else HBNF_Grammar.List_Override ("append") /= ""
+        or else HBNF_Grammar.List_Override ("foreach") /= ""
+        or else HBNF_Grammar.List_Override ("first") /= ""
+        or else HBNF_Grammar.List_Override ("next") /= "";
+   end Has_Listops;
+
+   --  hbnf's own list stores only its head: the parser builds a list with a tail it keeps on the side,
+   --  so a node holding a list pays one pointer for it, not two, and nothing points at the head, so the
+   --  tree needs no walk after the parse to repoint tails.  The root rule's list, if it is one, keeps a
+   --  tail: the `statements` driver appends to it after the parse.  A grammar's own container (layout_ops)
+   --  is its own.
+   Root_Name : Unbounded_String;
+   function Note_Root (Rules : Rule_Vectors.Vector) return Boolean is
+   begin
+      Root_Name := (if Rules.Is_Empty then Null_Unbounded_String else Rules (1).Name);
+      return True;
+   end Note_Root;
+   function Keeps_Tail (Rule : String) return Boolean is
+     (Has_Listops or else Rule = "" or else Rule = To_String (Root_Name));
+
    --  The head tag and the element tag of the list a rule is (see L_Head's callers), for the operations
    --  that name them: with the `rb` layout RB_INSERT (name, head, elm) wants the tree's name.
    function List_Name_Of (Rule : String) return String;
    function List_Elem_Of (Rule : String) return String;
 
-   function L_Head (Name, Elem : String) return String is
+   function L_Head (Name, Elem : String; Rule : String := "") return String is
       O : constant String := HBNF_Grammar.List_Override ("head");
    begin
       if O /= "" then
          return Subst (O, Name, Elem, "", "", "");
       end if;
-      return "struct " & Name & " { struct " & Elem & " *head, **tail; }";
+      return "struct " & Name & " { struct " & Elem & " *head" & (if Keeps_Tail (Rule) then ", **tail" else "") & "; }";
    end L_Head;
 
    function L_Entry (Elem : String) return String is
@@ -301,6 +328,9 @@ package body HBNF_C is
    begin
       if O /= "" then
          return Subst (O, List_Name_Of (Rule), List_Elem_Of (Rule), H, "", "");
+      end if;
+      if not Keeps_Tail (Rule) then
+         return "(" & H & ")->head = NULL;";
       end if;
       return "(" & H & ")->head = NULL; (" & H & ")->tail = &(" & H
         & ")->head;";
@@ -353,30 +383,18 @@ package body HBNF_C is
       if O /= "" then
          return Subst (O, List_Name_Of (Rule), List_Elem_Of (Rule), H, "", "");
       end if;
+      if not Keeps_Tail (Rule) then
+         return "(void)0;";
+      end if;
       return "if (!(" & H & ")->head) (" & H & ")->tail = &(" & H
         & ")->head;";
    end L_Relink;
 
-   --  True when any layout_ops operation is overridden: the grammar supplies its
-   --  own list container, not hbnf's built-in slist.
-   function Has_Listops return Boolean is
-   begin
-      return HBNF_Grammar.List_Override ("head") /= ""
-        or else HBNF_Grammar.List_Override ("entry") /= ""
-        or else HBNF_Grammar.List_Override ("init") /= ""
-        or else HBNF_Grammar.List_Override ("append") /= ""
-        or else HBNF_Grammar.List_Override ("foreach") /= ""
-        or else HBNF_Grammar.List_Override ("first") /= ""
-        or else HBNF_Grammar.List_Override ("next") /= "";
-   end Has_Listops;
-
-   --  A relink walk is emitted for hbnf's built-in slist and for a layout_ops
-   --  block that supplies its own relink.  A layout_ops block without a relink
-   --  gets no walk: the built-in slist relink does not fit a custom container.
+   --  A relink walk is emitted for a layout_ops block that supplies its own relink.  hbnf's own list
+   --  has none: it stores no pointer into its head.
    function Has_Relink return Boolean is
    begin
-      return HBNF_Grammar.List_Override ("relink") /= ""
-        or else not Has_Listops;
+      return HBNF_Grammar.List_Override ("relink") /= "";
    end Has_Relink;
 
    --  Unique enumerator suffixes for a literal list.  C_Ident is case-
@@ -1540,6 +1558,7 @@ package body HBNF_C is
       Walkers : Boolean := True)
       return String is
 
+      Noted : constant Boolean := Note_Root (Rules);
       N : constant Natural := Natural (Rules.Length);
 
       function Find (Name : String) return Natural is (Find (Rules, Name));
@@ -4305,7 +4324,8 @@ package body HBNF_C is
             if Infos (I).Kind = List then
                Append (Res, L_Head
                  (Pfx & C_Name (To_String (Rules (I).Name)) & "_list",
-                  Pfx & C_Tag (To_String (Rules (I).Name))) & ";");
+                  Pfx & C_Tag (To_String (Rules (I).Name)),
+                  Rule => To_String (Rules (I).Name)) & ";");
                Append (Res, LF);
             end if;
             Remaining := Remaining + 1;
@@ -4650,6 +4670,7 @@ package body HBNF_C is
    end Numeric_Fields;
 
    function Emit_Parser (Rules : Rule_Vectors.Vector) return String is
+      Noted : constant Boolean := Note_Root (Rules);
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -6893,7 +6914,12 @@ package body HBNF_C is
             begin
                Append (Buf, "    struct " & Pfx & C_Name (NM) & "_list head;");
                Append (Buf, LF);
-               Append (Buf, "    " & L_Init ("&head", Rule => NM));
+               if Keeps_Tail (NM) then
+                  Append (Buf, "    " & L_Init ("&head", Rule => NM));
+               else
+                  --  the list is built with a tail of its own, and stored with its head alone
+                  Append (Buf, "    struct " & Pfx & C_Tag (NM) & " *bh_ = NULL, **bt_ = &bh_;");
+               end if;
                Append (Buf, LF);
                --  Repetition bounds: only a bounded rule pays for the count.
                if Bounded then
@@ -7027,7 +7053,11 @@ package body HBNF_C is
                      H ("acc", "nn->"))));
                   Append (Buf, LF);
                end if;
-               Append (Buf, "        " & L_Append ("&head", "nn", Rule => NM));
+               if Keeps_Tail (NM) then
+                  Append (Buf, "        " & L_Append ("&head", "nn", Rule => NM));
+               else
+                  Append (Buf, "        *bt_ = nn; bt_ = &(nn)->_link;");
+               end if;
                Append (Buf, LF);
                if Bounded then
                   Append (Buf, "        count++;");
@@ -7051,12 +7081,20 @@ package body HBNF_C is
                        & "; free_" & CN & "_fields(dn); dn = dx; }"
                        & " p->pos = start; return false; }");
                   else
-                     Append (Buf, "    if (count < " & Img (E.Min) & ") { free_"
-                       & CN & "(&head); p->pos = start; return false; }");
+                     Append (Buf, "    if (count < " & Img (E.Min) & ") { "
+                       & (if Keeps_Tail (NM) then "" else "head.head = bh_; ")
+                       & "free_" & CN & "(&head); p->pos = start; return false; }");
                   end if;
                   Append (Buf, LF);
                end if;
-               Append (Buf, "    *out = head; return true;");
+               if Keeps_Tail (NM) then
+                  --  the head is copied out, and an empty list's tail pointed into the copy's frame
+                  Append (Buf, "    *out = head; "
+                    & (if Has_Listops then "" else L_Relink ("out", Rule => NM) & " ")
+                    & "return true;");
+               else
+                  Append (Buf, "    head.head = bh_; *out = head; return true;");
+               end if;
                Append (Buf, LF);
             end;
          elsif Is_Enum then
@@ -9297,6 +9335,7 @@ Append (Res, "static size_t scan_" & C_Name (NM)
    --  object through an abstract `emit` callback.  Cross-references are ids,
    --  never pointers, so the output can cross a process boundary.
    function Emit_Serializer (Rules : Rule_Vectors.Vector) return String is
+      Noted : constant Boolean := Note_Root (Rules);
       N     : constant Natural := Natural (Rules.Length);
       Infos : Info_Vectors.Vector;
 
@@ -9606,6 +9645,7 @@ Append (Res, "static size_t scan_" & C_Name (NM)
    --  its strings bump-allocated in the arena so the root's free_ releases
    --  them.  Parent ids are carried but not needed: pre-order is enough.
    function Emit_Rebuild (Rules : Rule_Vectors.Vector) return String is
+      Noted : constant Boolean := Note_Root (Rules);
       N     : constant Natural := Natural (Rules.Length);
       Infos : Info_Vectors.Vector;
 
@@ -9754,7 +9794,12 @@ Append (Res, "static size_t scan_" & C_Name (NM)
             Append (Buf, LF);
             Append (Buf, "    memcpy(&_n, _d, sizeof _n);");
             Append (Buf, LF);
-            Append (Buf, "    " & L_Init ("head", Rule => To_String (Rules (Idx).Name)));
+            if Keeps_Tail (To_String (Rules (Idx).Name)) then
+               Append (Buf, "    " & L_Init ("head", Rule => To_String (Rules (Idx).Name)));
+            else
+               Append (Buf, "    struct " & Pfx & C_Tag (To_String (Rules (Idx).Name))
+                 & " **bt_ = &head->head;  head->head = NULL;");
+            end if;
             Append (Buf, LF);
             Append (Buf, "    for (uint32_t _i = 0; _i < _n; _i++) {");
             Append (Buf, LF);
@@ -9764,7 +9809,11 @@ Append (Res, "static size_t scan_" & C_Name (NM)
             Append (Buf, LF);
             Append (Buf, "        decode_" & CN & "(rd, nn);");
             Append (Buf, LF);
-            Append (Buf, "        " & L_Append ("head", "nn", Rule => To_String (Rules (Idx).Name)));
+            if Keeps_Tail (To_String (Rules (Idx).Name)) then
+               Append (Buf, "        " & L_Append ("head", "nn", Rule => To_String (Rules (Idx).Name)));
+            else
+               Append (Buf, "        *bt_ = nn; bt_ = &(nn)->_link;");
+            end if;
             Append (Buf, LF);
             Append (Buf, "    }");
             Append (Buf, LF);
@@ -9877,6 +9926,7 @@ Append (Res, "static size_t scan_" & C_Name (NM)
    --  same input parsed by two different parsers yields trees that compare
    --  equal regardless of allocation order.
    function Emit_Compare (Rules : Rule_Vectors.Vector) return String is
+      Noted : constant Boolean := Note_Root (Rules);
       N     : constant Natural := Natural (Rules.Length);
       Infos : Info_Vectors.Vector;
 
