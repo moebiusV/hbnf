@@ -55,7 +55,7 @@ printf 'layout tape\nprefix none\nwhitespace none\ntop = "(" *( top ) ")"\n' > "
 	&& { echo "layout: FAIL (--layout=ast does not win over the directive)"; fail=1; }
 # layout tailq is a directory of layouts/ (layouts/tailq/layout.hbnf): its operations and its prologue.
 # The directive and the flag make the same parser, it makes TAILQ lists and compiles against <sys/queue.h>
-# (tests/bsdinc stands in where the libc has none), and a grammar's own layout_ops specialises it
+# (tests/bsdinc has OpenBSD's own header, where the libc has none), and a grammar's own layout_ops specialises it
 "$CLI" tests/layout/tailq.hbnf --backend=c > "$W/tl.c" 2> "$W/tl.err" \
 	&& "$CLI" tests/layout/tailq-plain.hbnf --backend=c --layout=tailq > "$W/tf.c" 2> "$W/tf.err" \
 	|| { echo "layout: FAIL (tailq: $(head -c 300 "$W/tl.err" "$W/tf.err"))"; fail=1; }
