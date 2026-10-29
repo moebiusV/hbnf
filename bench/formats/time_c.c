@@ -3,7 +3,8 @@
  * Built by concatenating the generated parser ahead of this file, with -DOUT_T=<the root's type>.
  * Every file is read first; the clock is around the parses alone.  Prints
  * "MS BYTES REFUSED RSS_KIB": the milliseconds for all the files, their bytes, how many the
- * parser refused, and the peak memory.  */
+ * parser refused, and the peak memory.  Built with -DTAPE for a parser that writes a tape
+ * (--layout=tape, -I runtime): the tape is made room for once and starts again for each file.  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,11 +36,17 @@ int main(int argc, char **argv) {
         if (!text[i]) return 2;
         total += n;
     }
+#ifdef TAPE
+    { size_t most = 0; for (i = 1; i < argc; i++) { size_t m = strlen(text[i]); if (m > most) most = m; } tape_reserve(most); }
+#endif
     clock_gettime(CLOCK_MONOTONIC, &t0);
     for (i = 1; i < argc; i++) {
         char err[1024];
         size_t line, col;
         OUT_T tree;
+#ifdef TAPE
+        tape_n = 0;
+#endif
         if (!parse_text(text[i], &tree, err, sizeof err, &line, &col)) refused++;
     }
     clock_gettime(CLOCK_MONOTONIC, &t1);

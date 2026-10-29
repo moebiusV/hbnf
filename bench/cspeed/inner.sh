@@ -19,15 +19,20 @@ done
 t=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' c11.c)
 cat c11.c /w/bench/formats/time_c.c > c11-m.c
 gcc -O2 -w -std=gnu11 -D_GNU_SOURCE "-DOUT_T=$t" c11-m.c -o bin-c11 || { echo "build failed"; exit 1; }
+t=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' c11-tape.c)
+cat c11-tape.c /w/bench/formats/time_c.c > c11-tape-m.c
+gcc -O2 -w -std=gnu11 -D_GNU_SOURCE -DTAPE -I/w/runtime "-DOUT_T=$t" c11-tape-m.c -o bin-c11-tape || { echo "tape build failed"; exit 1; }
 echo "files $(wc -l < list)"
-best=; for i in $(seq "$RUNS"); do
-	r=$(./bin-c11 $(cat list))
-	ms=${r%% *}
-	if [ -z "$best" ] || [ "$(echo "$ms $best" | awk '{print ($1 < $2)}')" = 1 ]; then best=$ms; line=$r; fi
-done
-echo "hbnf $line"
 big=$(ls -S $(cat list) | head -1)
-echo "big $(stat -c %s "$big") $(./bin-c11 "$big" | awk '{print $4}')"   # bytes and peak KiB of the largest unit alone
+for b in c11 c11-tape; do   # the typed tree, then the tape (--layout=tape)
+	best=; for i in $(seq "$RUNS"); do
+		r=$(./bin-$b $(cat list))
+		ms=${r%% *}
+		if [ -z "$best" ] || [ "$(echo "$ms $best" | awk '{print ($1 < $2)}')" = 1 ]; then best=$ms; line=$r; fi
+	done
+	echo "$b $line"
+	echo "big-$b $(stat -c %s "$big") $(./bin-$b "$big" | awk '{print $4}')"   # bytes and peak KiB of the largest unit alone
+done
 python3 - <<'PY'
 import subprocess,time
 files=open('list').read().split()
