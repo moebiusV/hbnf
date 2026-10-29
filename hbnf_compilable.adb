@@ -1247,7 +1247,7 @@ package body HBNF_Compilable is
          end if;
       end loop;
 
-      --  A listops block overrides hbnf's built-in list operation by
+      --  A layout_ops block overrides hbnf's built-in list operation by
       --  operation.  The seven structural operations form one list, so a
       --  partial block (mixing overridden and built-in operations) would
       --  generate a list whose parts do not fit together.  Require all seven
@@ -1273,7 +1273,7 @@ package body HBNF_Compilable is
               and then Missing /= Null_Unbounded_String
             then
                raise Parse_Error with
-                 "listops: gives " & To_String (Given) & " but not "
+                 "layout_ops: gives " & To_String (Given) & " but not "
                  & To_String (Missing)
                  & "; give all of head, entry, init, append, foreach, first, "
                  & "next (relink is optional)";

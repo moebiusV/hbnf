@@ -16,7 +16,7 @@ N=${1:-3000}; SEED=${2:-1}
 W=${DIFF_DIR:-$(mktemp -d)}
 [ -n "${DIFF_DIR:-}" ] || trap 'rm -rf "$W"' EXIT
 mkdir -p "$W"
-"$CLI" "${TOML_GRAMMAR:-corpus/toml/toml.hbnf}" --backend=c > "$W/j.c" 2> "$W/err" \
+"$CLI" "${TOML_GRAMMAR:-corpus/toml/toml.hbnf}" --backend=c ${HBNF_FLAGS:-} > "$W/j.c" 2> "$W/err" \
     || { echo "toml-diff: FAIL (generate: $(head -c 300 "$W/err"))"; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/j.c")
 cp "$W/j.c" "$W/m.c"

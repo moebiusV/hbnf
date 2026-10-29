@@ -14,7 +14,7 @@ N=${1:-1000}; SEED=${2:-1}
 W=${DIFF_DIR:-$(mktemp -d)}
 [ -n "${DIFF_DIR:-}" ] || trap 'rm -rf "$W"' EXIT
 mkdir -p "$W"
-"$CLI" "${YAML_GRAMMAR:-corpus/yaml/yaml.hbnf}" --backend=c --root=yaml > "$W/y.c" 2> "$W/err" \
+"$CLI" "${YAML_GRAMMAR:-corpus/yaml/yaml.hbnf}" --backend=c --root=yaml ${HBNF_FLAGS:-} > "$W/y.c" 2> "$W/err" \
     || { echo "yaml-diff: FAIL (generate: $(head -c 300 "$W/err"))"; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/y.c")
 cp "$W/y.c" "$W/m.c"

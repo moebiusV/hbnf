@@ -263,7 +263,7 @@ On TOML the generated parser is the fastest by a wide margin.  On JSON the parse
 typed-tree parser is ahead of everything else; on YAML both are ahead of rapidyaml, libyaml, libfyaml,
 js-yaml, yaml-cpp and PyYAML, which build generic node trees.  The rows that say `%emit tape` build a
 flat array of words and no tree (`runtime/hbnf_tape.h`); the others build the typed tree the grammar
-describes.
+describes.  `--layout=tape` makes any grammar's parser write such a tape, with no `%emit` in the grammar.
 
 ### Against Haskell's Alex and Happy
 

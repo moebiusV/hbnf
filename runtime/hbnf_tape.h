@@ -29,13 +29,13 @@ static __attribute__((noinline, unused)) void tape_grow (void)
     tape_cap = cap;
 }
 
-/* Room for a document of this many bytes, before the parse: an eighth of a word a byte is more
+/* Room for a document of this many bytes, before the parse: a quarter word a byte is more
    than the usual document needs.  The room starts on a 2 MiB boundary and asks for huge pages, so
    filling it costs a few page faults, not one for every 4 KiB. */
 __attribute__((unused)) static void tape_reserve (size_t input_bytes)
 {
     const size_t huge = (size_t) 2 << 20;
-    size_t bytes = ((input_bytes / 8 + 64) * sizeof *tape + huge - 1) & ~(huge - 1);
+    size_t bytes = ((input_bytes / 4 + 64) * sizeof *tape + huge - 1) & ~(huge - 1);
     void *m = aligned_alloc (huge, bytes);
     if (!m) return;
 #ifdef MADV_HUGEPAGE

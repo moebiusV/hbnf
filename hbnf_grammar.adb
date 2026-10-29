@@ -50,6 +50,10 @@ package body HBNF_Grammar is
    --  The state `%emit` changes, which a retry puts back (`rollback { tape_n }`).
    Rollback_Text : Unbounded_String;
 
+   --  `layout tree|tape` (or --layout=): the data structure the parser builds.
+   Layout_Text  : Unbounded_String := To_Unbounded_String ("tree");
+   Layout_Given : Boolean := False;
+
    --  The `{ ... }` code blocks before the rules (preamble) and after them
    --  (epilogue), each with the language of the file it came from, in
    --  include order.
@@ -216,7 +220,7 @@ package body HBNF_Grammar is
      (String, Ada.Strings.Hash, "=");
    Seen_Files : Path_Sets.Set;
 
-   --  Each whole-parser directive set so far (`listops init` for one list
+   --  Each whole-parser directive set so far (`layout_ops init` for one list
    --  operation), with its value and where it was set.
    type Setting is record
       Value : Unbounded_String;
@@ -607,6 +611,9 @@ package body HBNF_Grammar is
    begin
       Schema_Language := To_Unbounded_String ("C");
       Rollback_Text := Null_Unbounded_String;
+      if not Layout_Given then
+         Layout_Text := To_Unbounded_String ("tree");
+      end if;
       Domain_Bodies.Clear;
       Domains_Used.Clear;
       Preamble_Pieces.Clear;
@@ -1147,7 +1154,7 @@ package body HBNF_Grammar is
                                   "dialect" | "include" | "language"
                                   | "sensitivity" | "whitespace" | "keywords"
                                   | "statements" | "macros" | "includes"
-                                  | "context" | "rollback"
+                                  | "context" | "rollback" | "layout" | "layout_ops"
                                   | "prefix" | "wordchars"
                      then
                         Emit (T_Newline);
@@ -2166,7 +2173,7 @@ package body HBNF_Grammar is
    --  "append", "foreach", "first", "next", "relink").
    procedure Set_List_Override (Op : String; Code : String; Line : Positive)
    is
-      N : constant String := "listops " & Op;
+      N : constant String := "layout_ops " & Op;
    begin
       if Op = "head" then
          Set_Directive (List_Head_Code, N, Code, Line);
@@ -2185,7 +2192,7 @@ package body HBNF_Grammar is
       elsif Op = "relink" then
          Set_Directive (List_Relink_Code, N, Code, Line);
       else
-         raise Parse_Error with "listops: unknown operation `" & Op & "`";
+         raise Parse_Error with "layout_ops: unknown operation `" & Op & "`";
       end if;
    end Set_List_Override;
 
@@ -7491,8 +7498,9 @@ package body HBNF_Grammar is
            or else (Cur (P).Kind = T_Name
                     and then (To_String (Cur (P).Text) = "language"
                               or else To_String (Cur (P).Text) = "prefix"
-                              or else To_String (Cur (P).Text) = "listops"
                               or else To_String (Cur (P).Text) = "rollback"
+                              or else To_String (Cur (P).Text) = "layout"
+                              or else To_String (Cur (P).Text) = "layout_ops"
                               or else To_String (Cur (P).Text) = "statements"
                               or else To_String (Cur (P).Text) = "context"
                               or else To_String (Cur (P).Text) = "macros"
@@ -7862,6 +7870,23 @@ package body HBNF_Grammar is
                      Next (P);
                   end if;
                elsif Cur (P).Kind = T_Name
+                 and then To_String (Cur (P).Text) = "layout"
+               then
+                  --  `layout tape`: the parser writes a flat tape, not the tree (RFCPLAN.md step 17);
+                  --  `layout tree` is what it does without.  --layout= wins over the directive.
+                  Next (P);
+                  if Cur (P).Kind /= T_Name
+                    or else To_String (Cur (P).Text) not in "tree" | "tape" | "tailq"
+                  then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                       & ": expected `tree`, `tape` or `tailq` after `layout`";
+                  end if;
+                  if not Layout_Given then
+                     Layout_Text := Cur (P).Text;
+                  end if;
+                  Next (P);
+               elsif Cur (P).Kind = T_Name
                  and then To_String (Cur (P).Text) = "rollback"
                then
                   --  `rollback { tape_n }`: the state the grammar's `%emit` blocks change, as C
@@ -7881,17 +7906,16 @@ package body HBNF_Grammar is
                   Append (Rollback_Text, Cur (P).Text);
                   Next (P);
                elsif Cur (P).Kind = T_Name
-                 and then To_String (Cur (P).Text) = "listops"
+                 and then To_String (Cur (P).Text) = "layout_ops"
                then
-                  --  `listops { head { … } entry { … } … }`: the raw C for
-                  --  each list operation.  The block is re-lexed to read the
+                  --  `layout_ops { head { … } entry { … } … }`: the raw C for each list operation.  The block is re-lexed to read the
                   --  `op { … }` pairs; each op is optional.
                   Next (P);
                   if Cur (P).Kind /= T_Code then
                      raise Parse_Error with
                        Integer'Image (Cur (P).Line) & ":" &
                        Integer'Image (Cur (P).Col) &
-                       ": expected a code block after `listops`";
+                       ": expected a code block after `layout_ops`";
                   end if;
                   declare
                      Tks : constant Token_Vectors.Vector :=
@@ -7908,7 +7932,7 @@ package body HBNF_Grammar is
                           or else Tks (J).Kind = T_EOF;
                         if Tks (J).Kind /= T_Name then
                            raise Parse_Error with
-                             "listops: expected an operation name (head, "
+                             "layout_ops: expected an operation name (head, "
                              & "entry, init, append, foreach, first, next, "
                              & "relink)";
                         end if;
@@ -7920,7 +7944,7 @@ package body HBNF_Grammar is
                              or else Tks (J).Kind /= T_Code
                            then
                               raise Parse_Error with
-                                "listops: expected a code block after `"
+                                "layout_ops: expected a code block after `"
                                 & Op & "`";
                            end if;
                            Set_List_Override
@@ -9323,8 +9347,294 @@ package body HBNF_Grammar is
       return Value_Type (To_String (R.Name)) /= "" or else Holds (R.Pattern);
    end Runs_Emits;
 
-   function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector is
+   --  `layout tape` (RFCPLAN.md step 17): the rules are rewritten to the ones the author would write
+   --  with %emit to have the parser write a flat tape, as the tape grammars of corpus/ do by hand.
+   --  A rule that holds fields is opened where it begins and closed where it ends; a token is one
+   --  entry with its text; an enum is one entry with its value; a literal, a hidden rule, a
+   --  choice of other rules and a rule that is one other rule write nothing of their own, so a
+   --  choice or an alias adds no node.  Every phrase rule yields a value (it is a function and builds
+   --  no struct), and the tape is put back to where it was when a form is given up (`rollback`).
+   function Tape_Layout (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector is
       Result : Rule_Vectors.Vector := Rules;
+      N      : constant Natural := Natural (Rules.Length);
+      type Role is (Nothing, Token, Enum, Num, Opener, Pass);
+      Roles  : array (1 .. N) of Role := [others => Nothing];
+      Tags   : array (1 .. N) of Natural := [others => 0];
+      Tag_Count : Natural := 0;
+      Decls  : Unbounded_String;
+      Used   : array (1 .. N) of Boolean := [others => False];
+
+      function Img (X : Natural) return String is
+        (Natural'Image (X) (Natural'Image (X)'First + 1 .. Natural'Image (X)'Last));
+
+      --  u8 .. u64 and i8 .. i64, the fixed-width numbers
+      function Is_Core_Name (Nm : String) return Boolean is
+        (Nm'Length >= 2 and then Nm (Nm'First) in 'u' | 'i'
+         and then (for all C of Nm (Nm'First + 1 .. Nm'Last) => C in '0' .. '9'));
+
+      function Find_Rule (Nm : String) return Natural is
+      begin
+         for I in 1 .. N loop
+            if To_String (Rules (I).Name) = Nm then
+               return I;
+            end if;
+         end loop;
+         return 0;
+      end Find_Rule;
+
+      function C_Id (Nm : String) return String is
+         R : String := Nm;
+      begin
+         for I in R'Range loop
+            if R (I) not in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' then
+               R (I) := '_';
+            end if;
+         end loop;
+         return R;
+      end C_Id;
+
+      --  The branches of a pattern: how many, and whether each is one element of the kind asked.
+      function Every_Branch_Is (V : Element_Vectors.Vector; K : Element_Kind) return Boolean is
+         Count : Natural := 0;
+         Ok    : Boolean := True;
+      begin
+         for E of V loop
+            if E.Kind = Alt then
+               if Count /= 1 then Ok := False; end if;
+               Count := 0;
+            else
+               Count := Count + 1;
+               if E.Kind /= K or else E.Min /= 1 or else E.Max /= 1 then Ok := False; end if;
+            end if;
+         end loop;
+         return Ok and then Count = 1;
+      end Every_Branch_Is;
+
+      function Branch_Count (V : Element_Vectors.Vector) return Natural is
+         C : Natural := 1;
+      begin
+         for E of V loop
+            if E.Kind = Alt then C := C + 1; end if;
+         end loop;
+         return C;
+      end Branch_Count;
+
+      function Emit (Code : String) return Element_Access is
+        (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Emit, Ctx => <>, Path => <>,
+                      Id => 0, Look => <>, Code => To_Unbounded_String (Code)));
+
+      function Tag_Of (J : Natural) return String is ("T_" & C_Id (To_String (Rules (J).Name)));
+
+      procedure Mark_Used (V : Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            if E.Kind = Name then
+               declare
+                  J : constant Natural := Find_Rule (To_String (E.Name));
+               begin
+                  if J /= 0 then
+                     Used (J) := True;
+                  end if;
+               end;
+            elsif E.Kind = Group then
+               Mark_Used (E.Items);
+            end if;
+         end loop;
+      end Mark_Used;
+
+      function Rewrite (V : Element_Vectors.Vector) return Element_Vectors.Vector is
+         Out_V : Element_Vectors.Vector;
+      begin
+         for E of V loop
+            case E.Kind is
+               when Name =>
+                  declare
+                     J : constant Natural := Find_Rule (To_String (E.Name));
+                     R : constant Role := (if J = 0 then Nothing else Roles (J));
+                  begin
+                     if R in Token | Enum | Num then
+                        declare
+                           Code : constant String :=
+                             (if R = Token
+                              then "tape_text_of (" & Tag_Of (J) & ", p->pos, hbnf_sn ($@));"
+                              elsif R = Num
+                              then "tape_put (TAPE_TAG (" & Tag_Of (J) & ") | ((uint64_t) $@ & 0xFFFFFFFFFFull));"
+                              else "tape_put (TAPE_TAG (" & Tag_Of (J) & ") | (uint64_t) $@);");
+                        begin
+                           if E.Min = 1 and then E.Max = 1 then
+                              Out_V.Append (E);
+                              Out_V.Append (Emit (Code));
+                           else
+                              --  a repeated name: the entry belongs to each repetition
+                              declare
+                                 Once : constant Element_Access := new Element'(E.all);
+                                 Items : Element_Vectors.Vector;
+                              begin
+                                 Once.Min := 1;
+                                 Once.Max := 1;
+                                 Items.Append (Once);
+                                 Items.Append (Emit (Code));
+                                 Out_V.Append (new Element'(Kind => Group, Min => E.Min, Max => E.Max,
+                                                            Items => Items));
+                              end;
+                           end if;
+                        end;
+                     else
+                        Out_V.Append (E);
+                     end if;
+                  end;
+               when Group =>
+                  declare
+                     C : constant Element_Access := new Element'(E.all);
+                  begin
+                     C.Items := Rewrite (E.Items);
+                     Out_V.Append (C);
+                  end;
+               when others =>
+                  Out_V.Append (E);
+            end case;
+         end loop;
+         return Out_V;
+      end Rewrite;
+
+      Openers, Texts : Unbounded_String;
+      Names_Tab      : Unbounded_String;
+   begin
+      for I in 1 .. N loop
+         Mark_Used (Rules (I).Pattern);
+      end loop;
+      Used (1) := True;
+      for J in 1 .. N loop
+         declare
+            R  : Rule renames Rules (J);
+            Nm : constant String := To_String (R.Name);
+         begin
+            if R.Left_Bases > 0 then
+               raise Parse_Error with
+                 "rule `" & Nm & "`: `layout tape` does not take a left-recursive rule yet";
+            elsif Is_Wire_Rule (Nm)
+              or else (R.Pattern.Is_Empty and then R.Jet_Code = Null_Unbounded_String)
+            then
+               Roles (J) := Nothing;
+            elsif Nm = "word" then
+               Roles (J) := (if Used (J) then Token else Nothing);        --  a bareword: its text
+            elsif Nm = "int" then
+               Roles (J) := (if Used (J) then Num else Nothing);          --  its value, 40 bits
+            elsif Nm in "str" | "atom" | "bool" | "flag" or else Is_Core_Name (Nm) then
+               Roles (J) := Nothing;      --  not recorded yet (a `str` is unquoted: its offset is not the text's)
+            elsif R.Jet_Code /= Null_Unbounded_String or else Is_Char_Rule (Rules, Nm) then
+               --  a token the grammar's phrases name; the rest of the character rules are the
+               --  pieces of those, inside their scanners
+               Roles (J) := (if Is_Hidden (Nm) or else not Is_Char_Token (Rules, Nm)
+                             then Nothing else Token);
+            elsif Branch_Count (R.Pattern) = 1 and then Every_Branch_Is (R.Pattern, Literal) then
+               Roles (J) := (if Is_Hidden (Nm) then Nothing else Token);   --  `kw = "true"`: its text
+            elsif Branch_Count (R.Pattern) >= 2 and then Every_Branch_Is (R.Pattern, Literal) then
+               Roles (J) := Enum;
+            elsif Every_Branch_Is (R.Pattern, Name) then
+               Roles (J) := Pass;
+            else
+               Roles (J) := Opener;
+            end if;
+            if Roles (J) in Token | Enum | Num | Opener then
+               Tag_Count := Tag_Count + 1;
+               Tags (J) := Tag_Count;
+            end if;
+         end;
+      end loop;
+      if Tag_Count > 255 then
+         raise Parse_Error with
+           "`layout tape` has " & Img (Tag_Count) & " kinds of node; a tape tag is one byte, 255 at most";
+      end if;
+      for J in 1 .. N loop
+         if Tags (J) > 0 then
+            Append (Decls, (if Length (Decls) = 0 then "enum { " else ", ")
+                    & Tag_Of (J) & (if Tags (J) = 1 then " = 1" else ""));
+            Append (Names_Tab, ", """ & To_String (Rules (J).Name) & """");
+            if Roles (J) = Opener then
+               Append (Openers, (if Length (Openers) = 0 then "" else " || ") & "(t) == " & Tag_Of (J));
+            elsif Roles (J) = Token then
+               Append (Texts, (if Length (Texts) = 0 then "" else " || ") & "(t) == " & Tag_Of (J));
+            end if;
+         end if;
+      end loop;
+      for J in 1 .. N loop
+         declare
+            R : Rule := Rules (J);
+            Nm : constant String := To_String (R.Name);
+            Base : Natural := Nm'First;
+         begin
+            if Roles (J) in Opener | Pass then
+               while Base <= Nm'Last and then Nm (Base) /= '(' loop
+                  Base := Base + 1;
+               end loop;
+               if Roles (J) = Opener then
+                  Value_Types.Include (Nm (Nm'First .. Base - 1), "uint64_t");
+                  declare
+                     Body_Items : constant Element_Vectors.Vector := Rewrite (R.Pattern);
+                     Inner : constant Element_Access :=
+                       new Element'(Kind => Group, Min => 1, Max => 1, Items => Body_Items);
+                     P : Element_Vectors.Vector;
+                  begin
+                     P.Append (Emit ("$$ = tape_open (" & Tag_Of (J) & ");"));
+                     P.Append (Inner);
+                     P.Append (Emit ("tape_close ($$);"));
+                     R.Pattern := P;
+                  end;
+               else
+                  Value_Types.Include (Nm (Nm'First .. Base - 1), "int");
+                  R.Pattern := Rewrite (R.Pattern);
+               end if;
+               Result.Replace_Element (J, R);
+            end if;
+         end;
+      end loop;
+      Preamble_Pieces.Append
+        (Code_Piece'(Lang => To_Unbounded_String ("C"),
+                     Code => To_Unbounded_String
+                       (To_String (Decls) & " };" & ASCII.LF
+                        & "#define TAPE_IS_OPENER(t) (" & (if Length (Openers) = 0 then "0" else To_String (Openers)) & ")" & ASCII.LF
+                        & "#define TAPE_IS_TEXT(t) (" & (if Length (Texts) = 0 then "0" else To_String (Texts)) & ")" & ASCII.LF
+                        & "static const char *const tape_tag_names[] = { """"" & To_String (Names_Tab) & " };" & ASCII.LF
+                        & "#include ""hbnf_tape.h""" & ASCII.LF)));
+      if Length (Rollback_Text) = 0 then
+         Rollback_Text := To_Unbounded_String ("tape_n");
+      end if;
+      return Result;
+   end Tape_Layout;
+
+   --  `layout tailq` (RFCPLAN.md step 17): the tree, with its lists the daemons' own <sys/queue.h> TAILQs.
+   --  It is the operations of grammars/tailq.hbnf, which a daemon's grammar has included for this: the
+   --  same eight, so a grammar may say either, and the header the macros come from.
+   procedure Tailq_Layout is
+   begin
+      Set_List_Override ("head", " TAILQ_HEAD(@name@, @elem@) ", 1);
+      Set_List_Override ("entry", " TAILQ_ENTRY(@elem@) _link ", 1);
+      Set_List_Override ("init", " TAILQ_INIT(@h@); ", 1);
+      Set_List_Override ("append", " TAILQ_INSERT_TAIL(@h@, @e@, _link); ", 1);
+      Set_List_Override ("foreach", " TAILQ_FOREACH(@v@, @h@, _link) ", 1);
+      Set_List_Override ("first", " TAILQ_FIRST(@h@) ", 1);
+      Set_List_Override ("next", " TAILQ_NEXT(@e@, _link) ", 1);
+      Set_List_Override ("relink", " if (TAILQ_EMPTY(@h@)) TAILQ_INIT(@h@); else TAILQ_FIRST(@h@)->_link.tqe_prev = &TAILQ_FIRST(@h@); ", 1);
+      Preamble_Pieces.Append
+        (Code_Piece'(Lang => To_Unbounded_String ("C"),
+                     Code => To_Unbounded_String (ASCII.LF & "#include <sys/queue.h>" & ASCII.LF)));
+   end Tailq_Layout;
+
+   --  The rules the layout asks for: the tape rewrites them, tailq sets the list operations, the tree
+   --  (the default) leaves them.
+   function Layout_Rules (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector is
+   begin
+      if To_String (Layout_Text) = "tape" then
+         return Tape_Layout (Rules);
+      elsif To_String (Layout_Text) = "tailq" then
+         Tailq_Layout;
+      end if;
+      return Rules;
+   end Layout_Rules;
+
+   function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector is
+      Result : Rule_Vectors.Vector := Layout_Rules (Rules);
       Names  : Path_Sets.Set;
 
       --  An element the backends take inside a sequence as it is.
@@ -9625,6 +9935,17 @@ package body HBNF_Grammar is
    function Language return String is (To_String (Schema_Language));
 
    function Rollback_State return String is (To_String (Rollback_Text));
+
+   procedure Set_Layout (Mode : String) is
+   begin
+      if Mode not in "tree" | "tape" | "tailq" then
+         raise Parse_Error with "--layout= takes tree, tape or tailq, not `" & Mode & "`";
+      end if;
+      Layout_Text := To_Unbounded_String (Mode);
+      Layout_Given := True;
+   end Set_Layout;
+
+   function Layout return String is (To_String (Layout_Text));
 
    --  The pieces in language Lang, joined with a newline.
    function Joined (Pieces : Piece_Vectors.Vector; Lang : String)

@@ -18,7 +18,7 @@ if [ ! -d "$S" ]; then
 fi
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
-"$CLI" "${YAML_GRAMMAR:-corpus/yaml/yaml.hbnf}" --backend=c --root=yaml > "$W/y.c" 2> "$W/err" \
+"$CLI" "${YAML_GRAMMAR:-corpus/yaml/yaml.hbnf}" --backend=c --root=yaml ${HBNF_FLAGS:-} > "$W/y.c" 2> "$W/err" \
     || { echo "yaml-suite: FAIL (generate: $(head -c 300 "$W/err"))"; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/y.c")
 cp "$W/y.c" "$W/m.c"

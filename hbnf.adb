@@ -140,7 +140,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--layout=tree|tape] [--templates=DIR]");
    end Usage;
 
 begin
@@ -223,6 +223,8 @@ begin
             HBNF_C.Set_Choice (False);
          elsif A = "--werror" then
             HBNF_Grammar.Set_Werror (True);
+         elsif A'Length >= 9 and then A (1 .. 9) = "--layout=" then
+            HBNF_Grammar.Set_Layout (A (10 .. A'Last));
          elsif A'Length >= 9 and then A (1 .. 9) = "--prefix=" then
             Prefix := To_Unbounded_String (A (10 .. A'Last));
          elsif A'Length >= 12 and then A (1 .. 12) = "--templates=" then

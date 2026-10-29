@@ -112,8 +112,8 @@ parameterised rules.
      `sensitivity` and `whitespace` (below) when they land.
    - *Whole parser*: those that describe the one generated parser:
      `statements`, `macros`, `includes`, `keywords`, `conf`, `entry`,
-     `prefix`, `listops`, `wordchars`.  Any file may set one (`tailq.hbnf`
-     exists to set `listops` for all nine daemons); two files that set one
+     `prefix`, `layout_ops`, `wordchars`.  Any file may set one (`tailq.hbnf`
+     exists to set `layout_ops` for all nine daemons); two files that set one
      differently are an error.  `keywords` lists from several files merge.
      Code blocks (the `{ … }` preamble and epilogue) are joined in include
      order.
@@ -1742,7 +1742,7 @@ lookahead or a context test not at all.
     the alternative a node took are walked.  `node_kind_name`, `node_alt` and
     `node_alt_name` name what a node is.  `--ast-tools` adds `node_kids` (the
     members of a node, leaves too), `node_dump` (an S-expression) and
-    `node_equal`.  A grammar's own list container (listops) is read through two
+    `node_equal`.  A grammar's own list container (layout_ops) is read through two
     small functions per list rule.  The user's two constraints (2026-10-18):
     "how did we get here" is for error messages, not for a tree that has
     parsed, so no path is kept or passed; and a walker should add no more than
@@ -2785,8 +2785,8 @@ cycles.
     corpus.  This step adds no notation.  IMP72 itself stays out of hbnf (decision of
     2026-10-22); only the C compiler is described here.
 
-17. **Layouts: one grammar, several data structures.**  *Added 2026-10-29 with the user; not
-    started.*  A grammar says which data structure its parser builds, and the rest follows from the
+17. **Layouts: one grammar, several data structures.**  *Added 2026-10-29 with the user; the tape
+    layout is built (`layout tape`, `--layout=tape`); `tailq` and `rb` are not.*  A grammar says which data structure its parser builds, and the rest follows from the
     grammar: `layout tree` (today's, the default), `layout tape`, and options on a list rule for the
     containers a program already has, `tailq` (`sys/queue.h`) and `rb` (`sys/tree.h`, keyed on a
     field).  The three tape grammars (`json-tape.hbnf`, `toml-tape.hbnf`, `yaml-tape.hbnf`) were
@@ -2798,7 +2798,7 @@ cycles.
     fields, a text entry for each token, and nothing for a literal, a hidden rule, a pure choice or a
     list wrapper (the children just follow): the tree, laid flat, with rule numbers or `%label`s as
     tags.  `tailq` and `rb` give a list rule a container in the daemon's own struct, so the obconf
-    bindings need neither `listops` (which cannot say a key) nor the intermediate tree and the action
+    bindings need neither `layout_ops` (which cannot say a key) nor the intermediate tree and the action
     that copies it.
 
     *What stays `%emit`.*  What the tree never had: a different meaning (`true` and `false` as tags,
@@ -2806,12 +2806,38 @@ cycles.
     around a flow pair), a computed value.  The hand-written tape grammars stay as the references the
     derived tape is measured against, on the three formats, before it is made the default for C.
 
+    *What the tape layout does, built.*  `layout tape` in a grammar, or `--layout=tape`, rewrites the
+    rules in `HBNF_Grammar.Tape_Layout`, at the start of `Lift` (so the language checks have seen the
+    grammar as written).  Every phrase rule becomes a function that yields a value and builds no struct.
+    A rule that holds fields is opened where it begins and closed where it ends, with its rule as the
+    tag; a token (a character rule a phrase names, a rule that is one literal, `word`) is one entry
+    with its text; an enum rule is one entry with its value; `int` is one entry with its value (40
+    bits); a literal, a hidden rule, a rule that is a choice of other rules or one other rule write
+    nothing, so a choice or an alias adds no node.  The tags are an enum and a name table in the
+    generated prologue, `rollback { tape_n }` is implied, and the tape is `runtime/hbnf_tape.h`'s
+    (the generated C includes it, so it is compiled with `-Iruntime`).  Not yet: `str`, `bool`,
+    `flag` and the fixed-width numbers (nothing is written for them), a left-recursive rule
+    (refused), more than 255 kinds of node (refused), a Rust, Zig or Ada backend.
+    `tests/layout.sh` checks it: the exact tape of a small document; for every good JSON file the
+    same objects, arrays, members, strings, numbers and literals as Python finds; TOML against
+    `tomllib` and YAML against the test suite, with the plain grammars and `--layout=tape`.
+
+    *Measured*, the 2 MB documents, cold, interleaved on cpu 5, in a noisier phase than the
+    figures above (read the three together): JSON, the typed tree 2.58 ms, the hand-written tape
+    2.15, the derived tape 2.39; TOML 9.07, 7.05 and 7.26; YAML 18.4, 10.6 and 13.9.  The derived tape
+    needed no `%emit` and is within 10% of the hand-written one on JSON, within 3% on TOML, and
+    30% behind on YAML, which writes more nodes (12.9 MB against 5.6; an opener for every rule
+    that holds fields where the hand-written tape has one for each mapping and sequence).  The
+    reserve of `tape_reserve` is a quarter word a byte for this reason: the first, an eighth, made
+    the derived JSON tape overflow its room and grow, which cost a third of its time.
+
     *Operations, and rollback with them.*  A layout is a set of operations, and rollback is one of
     them: each layout says in its own terms how to take a mark and how to put back to it.  The
-    `listops { head { } entry { } ... }` of the daemon bindings (`grammars/tailq.hbnf`) is the list-shaped
-    part of this and becomes `layout_ops { }`, with the operations the layouts need added beside
-    them (`mark`, `reset`, and for a layout that holds entries back, `commit`); `listops` stays readable
-    as the older spelling.  A grammar that names no layout but a state to put back (`rollback { tape_n }`,
+    `layout_ops { head { } entry { } ... }` block (it was `listops`, and every grammar that had one
+    now says `layout_ops`; `grammars/tailq.hbnf` is the daemons') is the list-shaped part of this,
+    and `layout tailq` is those same operations built in.  The operations a layout needs beyond them
+    (`mark`, `reset`, and for a layout that holds entries back, `commit`) are added beside them when
+    a layout needs them.  A grammar that names no layout but a state to put back (`rollback { tape_n }`,
     step 15) is the shortest layout there is: its mark is the value of each lvalue and its reset assigns
     it again.  The built-in layouts supply theirs, and a grammar may define its own.
 
@@ -2822,7 +2848,7 @@ cycles.
     has succeeded, or keeps an undo log.  Which, is decided when it is built.
 
     *Order.*  After the Haskell comparison (the rig is `bench/haskell.sh`), the tape layout first, since
-    its references exist; then `tailq`, which the bindings have today as `listops`; then `rb`.  C
+    its references exist; then `tailq` (built, as `layout tailq`: the tree whose lists are the daemons' `TAILQ`s); then `rb`.  C
     backend only.  Gate: the tape derived from `json.hbnf`, `toml.hbnf` and `yaml.hbnf` is measured
     against the three hand-written ones, and the obconf daemons' byte-identity tests pass unchanged.
 

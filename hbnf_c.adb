@@ -301,7 +301,7 @@ package body HBNF_C is
         & ")->head;";
    end L_Relink;
 
-   --  True when any listops operation is overridden: the grammar supplies its
+   --  True when any layout_ops operation is overridden: the grammar supplies its
    --  own list container, not hbnf's built-in slist.
    function Has_Listops return Boolean is
    begin
@@ -314,8 +314,8 @@ package body HBNF_C is
         or else HBNF_Grammar.List_Override ("next") /= "";
    end Has_Listops;
 
-   --  A relink walk is emitted for hbnf's built-in slist and for a listops
-   --  block that supplies its own relink.  A listops block without a relink
+   --  A relink walk is emitted for hbnf's built-in slist and for a layout_ops
+   --  block that supplies its own relink.  A layout_ops block without a relink
    --  gets no walk: the built-in slist relink does not fit a custom container.
    function Has_Relink return Boolean is
    begin
@@ -2492,7 +2492,7 @@ package body HBNF_C is
          N_Mem : Natural := 1;            --  row 0 is a placeholder
          N_Br, N_Ev, N_En : Natural := 0;
          Used : U;                       --  the macros the rows use (HN, HS, ...)
-         --  The grammar's own list container (listops): the walker reads its
+         --  The grammar's own list container (layout_ops): the walker reads its
          --  lists through two small functions per list rule, not offsets.
          Own_Lists : constant Boolean :=
            HBNF_Grammar.List_Override ("first") /= ""
@@ -6313,6 +6313,8 @@ package body HBNF_C is
          RN  : constant String := To_String (R.Name);
          Ws  : constant Boolean := R.Whitespace /= Null_Unbounded_String;
          Lbl : Natural := 0;
+         --  The local of the name element generated last, which `$@` stands for
+         Last_Name : U;
          --  What the emits change, put back when a part that has run some of them is given up
          --  (`rollback { }`): a mark is the value, and putting it back is one store each.
          Rb : constant String_Vectors.Vector :=
@@ -6355,13 +6357,20 @@ package body HBNF_C is
             return Img (Lbl);
          end Fresh;
 
-         --  `$$` is the value the rule is making.
+         --  `$$` is the value the rule is making; `$@` the value of the element just before the
+         --  emit, whatever the local is called (a layout writes emits that need it).
          function Code_Of (Text : String) return String is
             Res : U;
             K   : Natural := Text'First;
          begin
             while K <= Text'Last loop
-               if K < Text'Last and then Text (K) = '$' and then Text (K + 1) = '$' then
+               if K < Text'Last and then Text (K) = '$' and then Text (K + 1) = '@' then
+                  if Last_Name = Null_Unbounded_String then
+                     Unsupported ("`$@`, which needs a name just before the emit");
+                  end if;
+                  Append (Res, Last_Name);
+                  K := K + 2;
+               elsif K < Text'Last and then Text (K) = '$' and then Text (K + 1) = '$' then
                   Append (Res, "(*out)");
                   K := K + 2;
                else
@@ -6474,6 +6483,7 @@ package body HBNF_C is
                      N : constant String := To_String (E.Name);
                   begin
                      Skip;
+                     Last_Name := To_Unbounded_String (C_Field (N));
                      if Is_Core (N) then
                         Append (Buf, Ind & "{ size_t n = " & Scalar_Scan_Fn (Rules, N)
                           & "(p->text, p->pos, p->len); if (!n" & Scalar_Reject (N, "n")

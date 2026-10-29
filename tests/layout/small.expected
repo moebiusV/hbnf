@@ -1,0 +1,11 @@
+tape
+object
+member
+string "a"
+array
+number 1
+string "x"
+literal-true true
+member
+string "b"
+literal-null null

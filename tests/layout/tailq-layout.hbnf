@@ -1,0 +1,4 @@
+; a list of words in parentheses, with the daemons' TAILQ from `layout tailq`
+prefix none
+layout tailq
+top = "(" *( word ) ")"

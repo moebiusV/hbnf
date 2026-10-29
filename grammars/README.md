@@ -70,6 +70,12 @@ language C
   only, and a grammar is refused, naming the rule, when something above an emit can retry past
   it.  `corpus/json/json-tape.hbnf` reads JSON onto a flat tape this way.  C backend only.
 
+- **Layout** — `layout tape` (or `--layout=tape`) makes the parser write a flat tape of words
+  instead of building the tree, from the grammar as it is, with no `%emit` in it: a rule that
+  holds fields is opened and closed, a token or enum is one entry, and a choice or an alias adds no
+  node (`runtime/hbnf_tape.h`; C backend; compile with `-Iruntime`).  `layout tree` is the default.
+  `rollback { a, b }` names state that `%emit` blocks change, put back when a form is given up.
+
 - **Jets** — a rule whose body is hand-written scanner code instead of a
   token sequence:
 
@@ -161,7 +167,7 @@ include-only, not daemon grammars: each is pulled in with `include "…"`.
 `ALPHA`, `HEXDIG`, `WSP`, `CRLF`, …), and includes `ascii.hbnf` for the
 named ASCII characters (the C0 controls, `DEL`, the blanks, and `DQUOTE`); `obconf.hbnf`
 holds the rules the daemons share (`string`, `address`, …), which a daemon
-grammar may override; `tailq.hbnf` carries the shared `listops { }` block and
+grammar may override; `tailq.hbnf` carries the shared `layout_ops { }` block and
 the `#include <sys/queue.h>` it needs, and defines no rules.  Any script that
 globs `grammars/*.hbnf` must skip the four of them (the nine daemons above
 are the grammars).
