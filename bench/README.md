@@ -42,7 +42,10 @@ Two measurements stand outside `run.sh`, because they need no container and take
 against the same language in HyperBNF, and `sh bench/tokens.sh` counts the same text in the
 tokens of two public tokenizers (OpenAI's o200k_base and Qwen2.5's; Claude's is not public).  The
 second checks that it counts the text the first counts, and fetches the tokenizers once, by the
-sha256 in `pins.txt`, into `bench/cache`.
+sha256 in `pins.txt`, into `bench/cache`.  `sh bench/cspeed.sh` times the generated C parser
+against `gcc -fsyntax-only` on the same preprocessed C (Lua, zlib and the SQLite amalgamation, pinned in
+`pins.txt`), pinned to one cpu like the others; `sh bench/libs.sh` is the library comparison for JSON,
+TOML and YAML.
 
 The toy is `toy.hbnf`: `pass in on em0 proto tcp from 192.168.3.7 port 51234 to
 192.168.9.1 port 443`, one rule per line, the shape of a pf rule.  Inputs come

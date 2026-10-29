@@ -7,7 +7,7 @@
 #       <!-- bench:NAME -->
 #       ...
 #       <!-- /bench:NAME -->
-# in WHY.md, README.md, USENIXSUBMISSION.md and HISTORY.md is replaced by
+# in WHY.md, README.md, USENIXSUBMISSION.md, HISTORY.md and corpus/c/README.md is replaced by
 # bench/results/NAME.md.  Text outside a block is never touched, so the prose
 # stays hand-written and the figures stay generated.
 #
@@ -29,7 +29,7 @@ for a in "$@"; do
 done
 
 status=0
-for doc in WHY.md README.md USENIXSUBMISSION.md HISTORY.md; do
+for doc in WHY.md README.md USENIXSUBMISSION.md HISTORY.md corpus/c/README.md; do
 	f=$root/$doc
 	[ -f "$f" ] || continue
 	grep -q '<!-- bench:' "$f" || continue

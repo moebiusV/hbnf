@@ -40,10 +40,25 @@ produces: hbnf has no preprocessor, so the tools below use gcc's (`gcc -E -P`).
   and pcc's own sources (60 MB) and 426 of SIMH (43 MB) are also all accepted.  On 204 mutations of the SIMH
   units (a character, a line or a stray token removed or added), the grammar and gcc agree on every one whose
   gcc error is a syntax error (139 of 204; the rest are type errors, which a grammar does not check).
-- Speed, unoptimised: 15 MB of preprocessed C in 2.3 s, building the whole typed tree, against 1.6 s for
-  `gcc -fsyntax-only` (which also does semantic analysis).  The profile says where it goes: a typedef
-  name is looked for 28 million times in 40 files, because every statement tries a declaration first,
-  and each try scans the same word again.
+
+Speed is measured by `bench/cspeed.sh`: the generated parser (the typed tree) and `gcc -fsyntax-only` read
+the same preprocessed files.
+
+<!-- bench:cspeed -->
+
+**47 translation units, 5.0 MB of preprocessed C** (Lua 5.4.7, zlib 1.3.1, the SQLite 3.45.1 amalgamation; best of 5 runs):
+
+| tool | time | MB/s | peak memory, the largest unit alone |
+|---|---:|---:|---:|
+| hbnf (C backend), the C11 grammar, typed tree | 0.38 s | 13.1 MB/s | 352 MB (2.5 MB of C) |
+| `gcc -fsyntax-only` | 0.43 s | 11.6 MB/s | |
+
+_2026-10-29; gcc (Debian 14.2.0-19) 14.2.0;ldd (Debian GLIBC 2.41-12+deb13u4) 2.41; `-O2`; hbnf 96ac67b.  `gcc -fsyntax-only` also checks types and starts once for each file; the parser reads the whole tree into memory._
+
+<!-- /bench:cspeed -->
+
+The profile puts the time in matching keywords and skipping white space; looking a typedef name up is a
+small part of it, and giving up a branch costs one comparison when it bound nothing.
 
 ## How it is written
 
