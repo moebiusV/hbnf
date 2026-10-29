@@ -13,6 +13,7 @@
 #   sh tests/check.sh --history [suite...]               the recent timings, and the last against the one before
 #   sh tests/check.sh --status                           which suites are fresh, stale, or never run
 #   sh tests/check.sh --force yaml                       run it even if nothing it depends on changed
+#   sh tests/check.sh --serial                           one slice at a time (the default is four; --jobs=N sets it)
 #
 # A suite that takes a backend list (schema, rfc, toml, yaml, params) is run one backend at a time,
 # and each backend has its stamp: a rerun does only the backends that have not passed with the
@@ -33,8 +34,11 @@
 #
 # A word is a suite if a suite has that name, and a backend (c ada rust zig) otherwise; the
 # backends restrict the suites that take them (schema, rfc, toml, yaml, params) and the lines
-# shown for the others.  Suites run in sequence, never together, and a second check.sh refuses
-# to start while one is running: results and timings come from one job at a time.
+# shown for the others.  Suites run in sequence, never together; the slices of one suite, which
+# are a backend each and share nothing, run up to four at a time (--serial, or --jobs=N), the
+# wall time of a suite run so is the longest slice's and its CPU time is still the sum; the
+# timings of such a run are marked "j4" after the load, and are not compared with a serial one.
+# A second check.sh refuses to start while one is running.
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
@@ -59,13 +63,15 @@ if [ "${1:-}" = --list ]; then
 fi
 
 # the words: suites and backends
-WANT_S=""; WANT_B=""; FAILED=0; FORCE=0; STATUS=0; HISTORY=0
+WANT_S=""; WANT_B=""; FAILED=0; FORCE=0; STATUS=0; HISTORY=0; JOBS=${CHECK_JOBS:-4}
 for w in "$@"; do
 	case $w in
 	--failed) FAILED=1 ;;
 	--force|-f) FORCE=1 ;;
 	--status) STATUS=1 ;;
 	--history) HISTORY=1 ;;
+	--serial) JOBS=1 ;;
+	--jobs=*) JOBS=${w#--jobs=} ;;
 	*) if [ -f "tests/$w.sh" ] && [ "$w" != suite ]; then WANT_S="$WANT_S $w"
 	   else case " $BACKENDS_ALL " in *" $w "*) WANT_B="$WANT_B $w" ;;
 	        *) echo "check.sh: '$w' is neither a suite nor a backend (--list shows them)" >&2; exit 2 ;; esac
@@ -81,7 +87,7 @@ if [ $HISTORY = 1 ]; then
 	# columns: when rev gen arch libc suite item status wall [cpu load]
 	awk -F'\t' -v want="$WANT_S" '
 	BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) sel[w[i]] = 1 }
-	$7 == "(all)" && $8 == "ok" && $9 + 0 > 0 && (n == 0 || ($6 in sel)) {
+	$7 == "(all)" && $8 == "ok" && $9 + 0 > 0 && $11 !~ / j[0-9]/ && (n == 0 || ($6 in sel)) {
 		k = $6 " " $4 " " $5; c = cnt[k]++; wall[k, c] = $9; cpu[k, c] = ($10 == "" ? "-" : $10); rev[k, c] = $2
 		if (!(k in seen)) { seen[k] = 1; order[++m] = k }
 	}
@@ -218,6 +224,19 @@ emit() { # SUITE ITEM STATUS WALL-SECONDS [CPU-SECONDS LOAD]
 # CPU ticks used so far by the children this shell has waited for (the suites and what they ran)
 cpu_ticks() { awk '{ print $16 + $17 }' /proc/$$/stat 2> /dev/null || echo 0; }
 
+# One slice of a suite, for a background job of its own: its log, and "status wall cpu" in a file.  It is
+# a shell of its own so that the CPU time it counts is that of the slice alone.
+cat > "$R/.run_slice.sh" <<'EOS'
+#!/bin/sh
+s=$1; b=$2; nv=$3; shift 3
+ticks() { awk '{ print $16 + $17 }' /proc/$$/stat; }
+t0=$(date +%s); k0=$(ticks)
+env "$nv=$b" timeout 3000 sh "tests/$s.sh" "$@" > "$R/logs/$s.log.slice.$b" 2>&1 9>&-
+rc=$?
+echo "$rc $(( $(date +%s) - t0 )) $(awk -v a="$k0" -v b="$(ticks)" 'BEGIN { printf "%.1f", (b - a) / 100 }')" > "$R/.slice.$s.$b"
+EOS
+export R
+
 pass=0; fail=0; same=0; : > "$R/last-failed.new"
 for s in $WANT_S; do
 	[ -f "tests/$s.sh" ] || { echo "SKIP  $s (no such suite)"; continue; }
@@ -238,28 +257,39 @@ for s in $WANT_S; do
 	slices=0
 	if grep -q "${name}_BACKENDS" "tests/$s.sh" && [ "$(echo $blist | wc -w)" -gt 1 ] && [ -z "$WANT_B" ]; then slices=1; fi
 	t0=$(date +%s); k0=$(cpu_ticks)
+	par=0
 	if [ $slices = 1 ]; then
-		: > "$log"; rc=0; skipped=0
+		: > "$log"; rc=0; skipped=0; todo=""
 		for b in $blist; do
 			fpb=$(fingerprint "$s" "$b"); stb=$(stamp_for "$s" "$b")
 			if [ $FORCE = 0 ] && fresh "$stb" "$fpb"; then
 				printf '%-5s %-14s %-10s        (nothing it depends on changed since %s)\n' same "$s" "$b" "$(sed -n 1p "$stb")"
 				skipped=$((skipped + 1)); continue
 			fi
-			bt0=$(date +%s); bk0=$(cpu_ticks)
-			env "${name}_BACKENDS=$b" timeout 3000 sh "tests/$s.sh" $args > "$log.slice" 2>&1 9>&-
-			brc=$?
-			cat "$log.slice" >> "$log"
-			bsecs=$(( $(date +%s) - bt0 ))
-			bcpu=$(awk -v a="$bk0" -v b="$(cpu_ticks)" 'BEGIN { printf "%.1f", (b - a) / 100 }')
-			if [ $brc = 0 ]; then
-				printf '%s\n%s\n' "$(when)" "$fpb" > "$stb"
-				emit "$s" "$b" ok "$bsecs" "$bcpu" "$load"
+			todo="$todo $b"
+		done
+		# the slices that have to run, JOBS at a time, and then their results in order
+		[ "$JOBS" -gt 1 ] && [ "$(echo $todo | wc -w)" -gt 1 ] && par=$JOBS
+		running=0
+		for b in $todo; do
+			rm -f "$R/.slice.$s.$b"
+			sh "$R/.run_slice.sh" "$s" "$b" "${name}_BACKENDS" $args &
+			running=$((running + 1))
+			if [ $running -ge "$JOBS" ]; then wait; running=0; fi
+		done
+		wait
+		lp=$load; [ $par -gt 0 ] && lp="$load j$par"
+		for b in $todo; do
+			[ -f "$R/.slice.$s.$b" ] || echo "1 0 0" > "$R/.slice.$s.$b"   # the slice did not report: it failed
+			read -r brc bsecs bcpu < "$R/.slice.$s.$b"
+			cat "$log.slice.$b" >> "$log"; rm -f "$log.slice.$b" "$R/.slice.$s.$b"
+			if [ "$brc" = 0 ]; then
+				printf '%s\n%s\n' "$(when)" "$(fingerprint "$s" "$b")" > "$(stamp_for "$s" "$b")"
+				emit "$s" "$b" ok "$bsecs" "$bcpu" "$lp"
 			else
-				emit "$s" "$b" FAIL "$bsecs" "$bcpu" "$load"; rc=1
+				emit "$s" "$b" FAIL "$bsecs" "$bcpu" "$lp"; rc=1
 			fi
 		done
-		rm -f "$log.slice"
 		secs=$(( $(date +%s) - t0 ))
 		cpu=$(awk -v a="$k0" -v b="$(cpu_ticks)" 'BEGIN { printf "%.1f", (b - a) / 100 }')
 		[ $skipped -gt 0 ] && ran_all=0 || ran_all=1
@@ -286,9 +316,9 @@ for s in $WANT_S; do
 	if [ $rc = 0 ]; then printf '%s\n%s\n' "$(when)" "$fp" > "$(stamp_name "$s")"; st=ok; pass=$((pass + 1)); else st=FAIL; fail=$((fail + 1)); echo "$s" >> "$R/last-failed.new"; fi
 	# against the last time this suite passed on this machine: a change of 20% or more is said aloud
 	note=""
-	if [ $rc = 0 ] && [ "${ran_all:-1}" = 1 ] && [ -f "$R/check.tsv" ]; then
+	if [ $rc = 0 ] && [ "${ran_all:-1}" = 1 ] && [ $par = 0 ] && [ -f "$R/check.tsv" ]; then
 		note=$(awk -F'\t' -v s="$s" -v a="$arch" -v l="$libc" -v w="$secs" -v c="$cpu" '
-			$6 == s && $7 == "(all)" && $8 == "ok" && $4 == a && $5 == l && $9 + 0 > 0 { pw = $9; pc = $10 }
+			$6 == s && $7 == "(all)" && $8 == "ok" && $4 == a && $5 == l && $9 + 0 > 0 && $11 !~ / j[0-9]/ { pw = $9; pc = $10 }
 			END {
 				if (pw == "" ) exit
 				# the CPU time says more than the wall time when it was recorded; short suites are noise
@@ -300,7 +330,7 @@ for s in $WANT_S; do
 			}' "$R/check.tsv")
 	fi
 	# a run that skipped some backends has no timing of the whole suite to compare
-	if [ "${ran_all:-1}" = 1 ]; then emit "$s" "(all)" "$st" "$secs" "$cpu" "$load"; else emit "$s" "(all)" "$st" "-"; fi
+	if [ "${ran_all:-1}" = 1 ]; then emit "$s" "(all)" "$st" "$secs" "$cpu" "$([ $par -gt 0 ] && echo "$load j$par" || echo "$load")"; else emit "$s" "(all)" "$st" "-"; fi
 	[ -z "$note" ] || echo "$note"
 	[ $rc = 0 ] || { grep -E "FAIL|error|^[-+][^-+]" "$log" | head -4 | sed 's/^/        /'; echo "        (log: $log)"; }
 done
