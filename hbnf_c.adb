@@ -6298,8 +6298,130 @@ package body HBNF_C is
                Append (Buf, LF);
             end if;
 
+            declare
+            --  Adjacent branches that begin with the same elements (`x R | x`, `a b c | a b d`) would
+            --  read those elements once for each branch; the first one that fails after them gives
+            --  them back and the next reads them again, so a chain of such rules (the levels of an
+            --  expression) doubles its work at every level.  The elements are read once, then each
+            --  branch's own rest is tried in turn, in the order written: the same language and the
+            --  same tree, the shared part read once.
+            Skip_Until : Natural := 0;     --  elements up to here belong to a run that was written out
+
+            --  The number of leading elements two branches share: names and literals taken once.
+            function Common_Prefix (A, B : HBNF_Lookahead.Bounds) return Natural is
+               LA : constant Natural := A.Last - A.First + 1;
+               LB : constant Natural := B.Last - B.First + 1;
+               M  : Natural := 0;
+            begin
+               while M < LA and then M < LB loop
+                  declare
+                     X : constant Element_Access := Els (A.First + M);
+                     Y : constant Element_Access := Els (B.First + M);
+                  begin
+                     exit when X.Kind /= Y.Kind or else X.Min /= 1 or else X.Max /= 1
+                       or else Y.Min /= 1 or else Y.Max /= 1;
+                     case X.Kind is
+                        when Name =>
+                           exit when X.Name /= Y.Name or else X.Args /= Y.Args;
+                        when Literal =>
+                           exit when X.Lit /= Y.Lit or else X.No_Case /= Y.No_Case;
+                        when others =>
+                           exit;
+                     end case;
+                  end;
+                  M := M + 1;
+               end loop;
+               return M;
+            end Common_Prefix;
+
+            function Has_Guard (B : Natural) return Boolean is
+              (Bs (B).Last + 1 <= N and then Els (Bs (B).Last + 1).Kind = Alt
+               and then Els (Bs (B).Last + 1).Guard /= 0);
+
+            --  The branches First_B .. Last_B share their first M elements: write them out once.
+            procedure Emit_Run (First_B, Last_B, M : Natural) is
+               Id : constant String := Label & Img (First_B);
+               Binds : constant Boolean := Ctx_On and then Rule_Binds (Owner);
+            begin
+               Append (Buf, Ind & "size_t pf_" & Id & "_ = 0;");
+               Append (Buf, LF);
+               if Binds then
+                  Append (Buf, Ind & "hbnf_mark_t cm_" & Id & "_;");
+                  Append (Buf, LF);
+               end if;
+               Emit_Seq (Owner, Els, Bs (First_B).First, Bs (First_B).First + M - 1, Acc, Buf,
+                         "goto " & Label & "alt_fail_" & Img (Last_B) & ";", Ind,
+                         Ws, Lead_Ws => not Hoist);
+               Append (Buf, Ind & "pf_" & Id & "_ = p->pos;");
+               Append (Buf, LF);
+               if Binds then
+                  Append (Buf, Ind & "cm_" & Id & "_ = hbnf_mark();");
+                  Append (Buf, LF);
+               end if;
+               for B in First_B .. Last_B loop
+                  declare
+                     SF : constant Natural := Bs (B).First + M;      --  this branch's own rest
+                     SL : constant Natural := Bs (B).Last;
+                  begin
+                     if SF <= SL then
+                        Emit_Seq (Owner, Els, SF, SL, Acc, Buf,
+                                  (if B = Last_B
+                                   then "goto " & Label & "alt_fail_" & Img (Last_B) & ";"
+                                   else "goto " & Label & "sfail_" & Id & "_" & Img (B) & ";"),
+                                  Ind, Ws, Lead_Ws => True);
+                     end if;
+                     if (Ast_On or else (Owner > 0 and then Is_Choice (Rules (Owner))))
+                       and then Natural (Alts.Length) >= B
+                     then
+                        Append (Buf, Ind & Acc & "_alt = " & To_String (Alts (B)) & ";");
+                        Append (Buf, LF);
+                     end if;
+                     if Kind_Prefix /= "" and then Bs (B).First <= Bs (B).Last
+                       and then Els (Bs (B).First).Kind = Literal
+                     then
+                        Append (Buf, Fill ("c_alt_kind",
+                          (H ("ind", Ind),
+                           H ("acc", Acc),
+                           H ("prefix", Kind_Prefix),
+                           H ("tag", Tag_Name (Leading_Tags (Els), Els (Bs (B).First).Lit)))));
+                        Append (Buf, LF);
+                     end if;
+                     Append (Buf, Ind & "goto " & Ok & ";");
+                     Append (Buf, LF);
+                     if B < Last_B then
+                        --  this branch's rest failed: back to just after the shared part
+                        Append (Buf, Label & "sfail_" & Id & "_" & Img (B) & ":");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "p->pos = pf_" & Id & "_;");
+                        if Binds then
+                           Append (Buf, " hbnf_reset (&cm_" & Id & "_);");
+                        end if;
+                        if SF <= SL then
+                           for F of Written_Fields (Els, SF, SL, False) loop
+                              Append (Buf, " memset(&" & Acc & To_String (F) & ", 0, sizeof "
+                                & Acc & To_String (F) & ");");
+                           end loop;
+                        end if;
+                        Append (Buf, Clears);
+                        Append (Buf, ";");
+                        Append (Buf, LF);
+                     end if;
+                  end;
+               end loop;
+               Append (Buf, Label & "alt_fail_" & Img (Last_B) & ":");
+               Append (Buf, LF);
+               if Binds then
+                  --  the mark taken where the alternation began is for the branch after the run, if there is one
+                  Append (Buf, Ind & "(void) " & To_String (Cx) & ";");
+                  Append (Buf, LF);
+               end if;
+            end Emit_Run;
+
+            begin
             for K in 1 .. N + 1 loop
-               if K > N or else Els (K).Kind = Alt then
+               if K <= Skip_Until then
+                  null;                       --  written out already, with the run it belongs to
+               elsif K > N or else Els (K).Kind = Alt then
                   LBr := LBr + 1;
                   if LBr > 1 then
                      Emit_Reset;
@@ -6310,6 +6432,48 @@ package body HBNF_C is
                         Append (Buf, LF);
                      end if;
                   end if;
+                  --  a run of branches with a shared beginning is written out once
+                  if not Fork and then not Disp and then LBr < NBr
+                    and then Bs (LBr).First = LSt and then not Has_Guard (LBr)
+                  then
+                     declare
+                        M    : Natural := Common_Prefix (Bs (LBr), Bs (LBr + 1));
+                        Last : Natural := LBr;
+                     begin
+                        if M >= 1 and then Bs (LBr).Last - Bs (LBr).First + 1 > M
+                          and then not Has_Guard (LBr + 1)
+                        then
+                           Last := LBr + 1;
+                           while Last < NBr
+                             and then Bs (Last).Last - Bs (Last).First + 1 > M     --  one that is only the shared part ends the run
+                             and then not Has_Guard (Last)
+                             and then Common_Prefix (Bs (LBr), Bs (Last + 1)) >= M
+                           loop
+                              Last := Last + 1;
+                           end loop;
+                           --  A block (a context test, %as, %num) belongs to the element before it, and
+                           --  the two are written together: the shared part stops short of one.
+                           while M >= 1
+                             and then (for some B in LBr .. Last =>
+                                         Bs (B).First + M <= Bs (B).Last
+                                         and then Els (Bs (B).First + M).Kind = Block)
+                           loop
+                              M := M - 1;
+                           end loop;
+                           if M >= 1 then
+                              Emit_Run (LBr, Last, M);
+                              PSt := Bs (Last).First;
+                              PEn := Bs (Last).Last;
+                              Skip_Until := Bs (Last).Last + 1;
+                              LSt := Bs (Last).Last + 2;
+                              LBr := Last;
+                           end if;
+                        end if;
+                     end;
+                  end if;
+                  if Skip_Until >= K then
+                     null;                    --  the run covers this branch
+                  else
                   Emit_Seq (Owner, Els, LSt, K - 1, Acc, Buf,
                             "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind,
                             Ws, Lead_Ws => not Hoist);
@@ -6353,8 +6517,10 @@ package body HBNF_C is
                   PSt := LSt;
                   PEn := K - 1;
                   LSt := K + 1;
+                  end if;
                end if;
             end loop;
+            end;
          end Emit_Linear;
       begin
          Branch_Firsts (Els, Flat, Offs);

@@ -1,0 +1,19 @@
+; An expression ladder of twelve levels, each written as a choice: the longer form, then the bare operand.
+; Read naively, every level parses its operand and, with no operator after it, parses it again, so the work doubles
+; at every level.  The parser reads the shared beginning once (tests/factor.sh).
+prefix none
+include "../../grammars/common.hbnf"
+top = *( e1 ";" )
+e1 = e2 1*( "+" e2 ) | e2
+e2 = e3 1*( "*" e3 ) | e3
+e3 = e4 1*( "-" e4 ) | e4
+e4 = e5 1*( "/" e5 ) | e5
+e5 = e6 1*( "%" e6 ) | e6
+e6 = e7 1*( "&" e7 ) | e7
+e7 = e8 1*( "|" e8 ) | e8
+e8 = e9 1*( "^" e9 ) | e9
+e9 = e10 1*( "<" e10 ) | e10
+e10 = e11 1*( ">" e11 ) | e11
+e11 = e12 1*( "=" e12 ) | e12
+e12 = num | "(" e1 ")"
+num = 1*DIGIT
