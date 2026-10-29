@@ -32,11 +32,11 @@ them (a character deleted, inserted, replaced, swapped, doubled, or the text cut
 the parser hbnf makes and Python's `json.loads` (strict, `NaN` and `Infinity` refused)
 about each.  Run with 40,000 and 40,000: every valid document accepted, and the same
 answer on every mutation (13,000 of the first 3,000 were accepted, the rest refused).
-`tests/good` and `tests/bad` are 26 and 48 hand-written cases, in the style of the
+`tests/good` and `tests/bad` are 27 and 48 hand-written cases, in the style of the
 well-known JSONTestSuite, and Python agrees with where each is filed.
 
 In Tree-sitter (`sh tests/treesitter.sh corpus/json/json.hbnf corpus/json/tests/good
-corpus/json/tests/bad`) the grammar needs no conflict declared, parses all 26 good cases and
+corpus/json/tests/bad`) the grammar needs no conflict declared, parses all 27 good cases and
 shows an error on 47 of the 48 bad ones (Tree-sitter reads a byte-order mark as part of the
 file's encoding, so `bom.json` parses); `TSD_GRAMMAR=corpus/json/json.hbnf
 TSD_ORACLE=tests/json/oracle.py TSD_EXT=json sh tests/treesitter-diff.sh` finds no

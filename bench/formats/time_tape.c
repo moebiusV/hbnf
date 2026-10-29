@@ -27,7 +27,6 @@ int main(int argc, char **argv) {
     buf = malloc(len + 1);
     if (fread(buf, 1, len, f) != (size_t)len) return 2;
     buf[len] = 0; fclose(f);
-    tape_text = buf;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     tape_reserve((size_t)len);       /* the room for the tape is part of the cost */
     ok = parse_text(buf, &out, err, sizeof err, &line, &col);
@@ -35,10 +34,14 @@ int main(int argc, char **argv) {
     ms = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) / 1e6;
     getrusage(RUSAGE_SELF, &ru);
     if (ok && tape_n == 0) { strcpy(err, "the tape is empty"); ok = 0; }
-    for (i = 0; ok && i < tape_n; i += 2)
-        if ((tape[i] == T_OBJ || tape[i] == T_ARR) && (tape[i + 1] <= i || tape[i + 1] > tape_n)) {
+    for (i = 0; ok && i < tape_n; i++) {
+        uint64_t w = tape[i], t = w >> 56;
+        if ((t == T_OBJ || t == T_ARR) && ((w & ((1ull << 40) - 1)) <= i || (w & ((1ull << 40) - 1)) > tape_n)) {
             strcpy(err, "a link leaves the tape"); ok = 0;
+        } else if ((t == T_STR || t == T_KEY || t == T_NUM) && ((w >> 40) & 0xFFFF) == TAPE_LONG) {
+            i++;                       /* the length of a long text is in the word after */
         }
+    }
     if (!ok) { fprintf(stderr, "%s\n", err); printf("FAIL %ld %.2f %ld\n", len, ms, ru.ru_maxrss); return 1; }
     printf("ok %ld %.2f %ld\n", len, ms, ru.ru_maxrss);
     return 0;

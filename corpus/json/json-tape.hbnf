@@ -8,12 +8,15 @@ prefix none
 #include <stdlib.h>
 #include <sys/mman.h>
 
-/* the tape: a tag, then for a string, number or literal the offset and length of its text, for an
-   object or array the tape position after it (so a reader can skip it) and the number of members */
+/* The tape: one 64-bit word for each value and each key.  The top byte is the tag.  A string,
+   number or key holds the length of its text (16 bits) and where it starts in the input (40 bits);
+   a text of 65535 bytes or more says 65535 there and has its length in the word after.  An object
+   or array holds the tape position after it (so a reader can skip it); a literal holds nothing. */
 enum { T_OBJ = 1, T_ARR, T_STR, T_NUM, T_TRUE, T_FALSE, T_NULL, T_KEY };
+#define TAPE_TAG(t) ((uint64_t) (t) << 56)
+#define TAPE_LONG 0xFFFFu
 static uint64_t *tape;
 static size_t tape_n, tape_cap;
-static const char *tape_text;
 
 /* A tape that outgrows its room doubles; this is the way out of the fast path, not the usual one. */
 static __attribute__((noinline)) void tape_grow (void)
@@ -25,13 +28,13 @@ static __attribute__((noinline)) void tape_grow (void)
     tape_cap = cap;
 }
 
-/* Room for a document of this many bytes, before the parse: a quarter word a byte is more than
-   the usual document needs.  The room starts on a 2 MiB boundary and asks for huge pages, so
+/* Room for a document of this many bytes, before the parse: an eighth of a word a byte is more
+   than the usual document needs.  The room starts on a 2 MiB boundary and asks for huge pages, so
    filling it costs a few page faults, not one for every 4 KiB. */
 static void tape_reserve (size_t input_bytes)
 {
     const size_t huge = (size_t) 2 << 20;
-    size_t bytes = ((input_bytes / 4 + 64) * sizeof *tape + huge - 1) & ~(huge - 1);
+    size_t bytes = ((input_bytes / 8 + 64) * sizeof *tape + huge - 1) & ~(huge - 1);
     void *m = aligned_alloc (huge, bytes);
     if (!m) return;
 #ifdef MADV_HUGEPAGE
@@ -42,25 +45,32 @@ static void tape_reserve (size_t input_bytes)
     tape_cap = bytes / sizeof *tape;
 }
 
-static inline void tape_put (uint64_t a, uint64_t b)
+static inline void tape_put (uint64_t w)
 {
-    if (__builtin_expect (tape_n + 2 > tape_cap, 0)) tape_grow ();
-    tape[tape_n++] = a;
-    tape[tape_n++] = b;
+    if (__builtin_expect (tape_n + 1 > tape_cap, 0)) tape_grow ();
+    tape[tape_n++] = w;
+}
+
+/* A text of n bytes that ends at `end` in the input: the parser's position, just after the token. */
+static inline void tape_text_of (uint64_t tag, size_t end, size_t n)
+{
+    uint64_t start = end - n;
+    if (__builtin_expect (n >= TAPE_LONG, 0)) {
+        tape_put (TAPE_TAG (tag) | (uint64_t) TAPE_LONG << 40 | start);
+        tape_put (n);
+    } else {
+        tape_put (TAPE_TAG (tag) | (uint64_t) n << 40 | start);
+    }
 }
 static inline uint64_t tape_open (uint64_t tag)
 {
     uint64_t at = tape_n;
-    tape_put (tag, 0);
+    tape_put (TAPE_TAG (tag));
     return at;
 }
 static inline void tape_close (uint64_t at)
 {
-    tape[at + 1] = tape_n;
-}
-static inline void tape_text_of (uint64_t tag, const char *s, size_t n)
-{
-    tape_put (tag, (uint64_t) (s - tape_text) << 24 | n);
+    tape[at] |= tape_n;
 }
 }
 
@@ -68,13 +78,13 @@ include "json-tokens.hbnf"
 
 json  :: int = value
 value :: int = object | array
-             | string %emit{ tape_text_of (T_STR, hbnf_sp (string), hbnf_sn (string)); }
-             | number %emit{ tape_text_of (T_NUM, hbnf_sp (number), hbnf_sn (number)); }
-             | literal-true  %emit{ tape_put (T_TRUE, 0); }
-             | literal-false %emit{ tape_put (T_FALSE, 0); }
-             | literal-null  %emit{ tape_put (T_NULL, 0); }
+             | string %emit{ tape_text_of (T_STR, p->pos, hbnf_sn (string)); }
+             | number %emit{ tape_text_of (T_NUM, p->pos, hbnf_sn (number)); }
+             | literal-true  %emit{ tape_put (TAPE_TAG (T_TRUE)); }
+             | literal-false %emit{ tape_put (TAPE_TAG (T_FALSE)); }
+             | literal-null  %emit{ tape_put (TAPE_TAG (T_NULL)); }
 object :: uint64_t = "{" %emit{ $$ = tape_open (T_OBJ); } [ member *( "," member ) ] "}" %emit{ tape_close ($$); }
-member :: int = string %emit{ tape_text_of (T_KEY, hbnf_sp (string), hbnf_sn (string)); } ":" value
+member :: int = string %emit{ tape_text_of (T_KEY, p->pos, hbnf_sn (string)); } ":" value
 array  :: uint64_t = "[" %emit{ $$ = tape_open (T_ARR); } [ value *( "," value ) ] "]" %emit{ tape_close ($$); }
 
 ws = *( SP / HTAB / LF / CR )
