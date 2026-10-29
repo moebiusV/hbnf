@@ -1,0 +1,8 @@
+# Haskell comparison, glibc, amd64: the parsers Haskell programs use for JSON, TOML and YAML, built
+# with Alex and Happy where that is how they are made.  All from Debian packages, as the other rigs.
+FROM debian:stable-slim
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    build-essential ca-certificates ghc alex happy \
+    libghc-toml-parser-dev libghc-hsyaml-dev libghc-yaml-dev libghc-aeson-dev \
+    libghc-bytestring-dev libghc-vector-dev libghc-text-dev libghc-deepseq-dev python3 \
+    && rm -rf /var/lib/apt/lists/*

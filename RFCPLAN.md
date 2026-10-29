@@ -842,7 +842,7 @@ running order:
 > sources or bootstrap it.  The comparison with IMP72 in `METACOMPILERS.md` stays
 > as history, and what hbnf took from its manual (the choice rule, `A<pos,len>`)
 > stays.  **ALGOL 68 and C++ are far in the future** (the same day).  **Not started:** 14, grammars for
-> constrained decoding (added 2026-10-27), and 16, the C grammar through LLVM ORC and lld (added 2026-10-28).
+> constrained decoding (added 2026-10-27), 16, the C grammar through LLVM ORC and lld (added 2026-10-28), and 17, layouts: tree, tape, tailq and rb from one grammar (added 2026-10-29).
 >
 > **Critical path:** **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** and **14** are not gated on
@@ -2784,6 +2784,47 @@ cycles.
     port, the C preprocessor grammar), and not before the compiler front half reads the C
     corpus.  This step adds no notation.  IMP72 itself stays out of hbnf (decision of
     2026-10-22); only the C compiler is described here.
+
+17. **Layouts: one grammar, several data structures.**  *Added 2026-10-29 with the user; not
+    started.*  A grammar says which data structure its parser builds, and the rest follows from the
+    grammar: `layout tree` (today's, the default), `layout tape`, and options on a list rule for the
+    containers a program already has, `tailq` (`sys/queue.h`) and `rb` (`sys/tree.h`, keyed on a
+    field).  The three tape grammars (`json-tape.hbnf`, `toml-tape.hbnf`, `yaml-tape.hbnf`) were
+    written by hand, and the hand-written `%emit` blocks in them are what a layout would write.
+
+    *How.*  A layout is a rewrite of the rules before generation, as `Lift` is: it inserts the
+    `%emit` blocks of step 15, with the types and the `rollback` the layout needs, and the generator
+    that exists does the rest.  A tape layout makes an opener and closer for each rule that holds
+    fields, a text entry for each token, and nothing for a literal, a hidden rule, a pure choice or a
+    list wrapper (the children just follow): the tree, laid flat, with rule numbers or `%label`s as
+    tags.  `tailq` and `rb` give a list rule a container in the daemon's own struct, so the obconf
+    bindings need neither `listops` (which cannot say a key) nor the intermediate tree and the action
+    that copies it.
+
+    *What stays `%emit`.*  What the tree never had: a different meaning (`true` and `false` as tags,
+    a number converted), a different shape (YAML's explicit null for an absent value, one mapping
+    around a flow pair), a computed value.  The hand-written tape grammars stay as the references the
+    derived tape is measured against, on the three formats, before it is made the default for C.
+
+    *Operations, and rollback with them.*  A layout is a set of operations, and rollback is one of
+    them: each layout says in its own terms how to take a mark and how to put back to it.  The
+    `listops { head { } entry { } ... }` of the daemon bindings (`grammars/tailq.hbnf`) is the list-shaped
+    part of this and becomes `layout_ops { }`, with the operations the layouts need added beside
+    them (`mark`, `reset`, and for a layout that holds entries back, `commit`); `listops` stays readable
+    as the older spelling.  A grammar that names no layout but a state to put back (`rollback { tape_n }`,
+    step 15) is the shortest layout there is: its mark is the value of each lvalue and its reset assigns
+    it again.  The built-in layouts supply theirs, and a grammar may define its own.
+
+    *The rollback problem.*  `rollback` (step 15) is one store for state that is a stack: a tape put
+    back to where it was.  A `TAILQ` is nearly as cheap (unlink back to a saved tail).  A red-black tree
+    is not: undoing insertions means deleting keys.  So an `rb` layout collects the entries of a list
+    on a stack while the parse can still retry past them, and builds the tree when the enclosing rule
+    has succeeded, or keeps an undo log.  Which, is decided when it is built.
+
+    *Order.*  After the Haskell comparison (the rig is `bench/haskell.sh`), the tape layout first, since
+    its references exist; then `tailq`, which the bindings have today as `listops`; then `rb`.  C
+    backend only.  Gate: the tape derived from `json.hbnf`, `toml.hbnf` and `yaml.hbnf` is measured
+    against the three hand-written ones, and the obconf daemons' byte-identity tests pass unchanged.
 
 ## Not in this plan
 

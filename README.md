@@ -258,10 +258,53 @@ _2026-10-28; glibc 2.41, gcc (Debian 14.2.0-19) 14.2.0, node 20.19.2, Python 3.1
 
 <!-- /bench:libs -->
 
-On TOML the generated parser is the fastest of the six.  On JSON it is behind the SIMD parser
-simdjson and ahead of RapidJSON, Node's `JSON.parse`, cJSON, Python's `json`, serde_json and
-Jansson, and it holds the tree in less memory than any of them.  On YAML it is behind rapidyaml
-and ahead of libyaml, libfyaml, js-yaml, yaml-cpp and PyYAML, which build generic node trees.
+On TOML the generated parser is the fastest by a wide margin.  On JSON the parser that writes a tape
+(`corpus/json/json-tape.hbnf`) is close to the SIMD parser simdjson, uses a third of its memory, and the
+typed-tree parser is ahead of everything else; on YAML both are ahead of rapidyaml, libyaml, libfyaml,
+js-yaml, yaml-cpp and PyYAML, which build generic node trees.  The rows that say `%emit tape` build a
+flat array of words and no tree (`runtime/hbnf_tape.h`); the others build the typed tree the grammar
+describes.
+
+### Against Haskell's Alex and Happy
+
+`sh bench/haskell.sh` runs the parsers Haskell programs use for the same three documents, in a Debian
+container, on the cpu the other benchmarks use: `toml-parser`, which is an Alex lexer and a Happy parser
+(its grammar is also built again with the generators in their optimising modes); a JSON grammar in Alex
+and Happy, written for the comparison because no complete one is published, in the form the tutorials
+give and tuned; `aeson`; and, for YAML, for which no Alex and Happy parser is known, HsYAML (pure Haskell)
+and the `yaml` package on libyaml.  Every parser is asked about the good and bad files of the format's
+corpus before it is timed, and the table says where one disagrees.
+
+<!-- bench:haskell -->
+
+**JSON** (2.00 MB, the same file for every tool; best of up to 5 runs):
+
+| tool | parse time | MB/s | peak RSS | what it builds, and the corpus |
+|---|---:|---:|---:|---|
+| hbnf (C backend), %emit tape | 1.7 ms | 1150 MB/s | 5 MB | checked by tests/emit.sh against the corpus; a tape, text as offsets |
+| aeson | 41 ms | 49 MB/s | 34 MB | agrees with the corpus (75 files); a Value, text and numbers converted |
+| Alex and Happy, tuned | 109 ms | 18 MB/s | 48 MB | agrees with the corpus (75 files); a tree, text as slices of the input |
+| Alex and Happy, as the tutorials write it | 204 ms | 10 MB/s | 92 MB | agrees with the corpus (75 files); a tree, text as slices of the input |
+
+**TOML 1.0** (1.99 MB, the same file for every tool; best of up to 5 runs):
+
+| tool | parse time | MB/s | peak RSS | what it builds, and the corpus |
+|---|---:|---:|---:|---|
+| hbnf (C backend), %emit tape | 5.3 ms | 377 MB/s | 8 MB | checked by tests/emit.sh against the corpus; a tape, text as offsets |
+| toml-parser (Alex, Happy), generators in optimising modes | 291 ms | 7 MB/s | 188 MB | agrees with the corpus (31 files); a list of expressions, text as String |
+| toml-parser (Alex, Happy), as Debian ships it | 327 ms | 6 MB/s | 188 MB | agrees with the corpus (31 files); a list of expressions, text as String |
+
+**YAML 1.2** (1.99 MB, the same file for every tool; best of up to 5 runs):
+
+| tool | parse time | MB/s | peak RSS | what it builds, and the corpus |
+|---|---:|---:|---:|---|
+| hbnf (C backend), %emit tape | 7.0 ms | 282 MB/s | 5 MB | checked by tests/emit.sh against the corpus; a tape, text as offsets |
+| yaml (libyaml) into a Value | 272 ms | 7 MB/s | 75 MB | differs from the corpus on: docs.yaml explicit-key.yaml flow-dedent.yaml; a Value, text converted |
+| HsYAML (events) | 6.02 s | 0 MB/s | 17 MB | agrees with the corpus (36 files); the event stream |
+
+_2026-10-28; amd64, glibc (Debian), GHC 9.6.6, Alex 3.4.0.1, Happy 1.20.1.1; `-O2`; hbnf eac77a0.  The Haskell parsers are the syntax alone, as hbnf's are: every one is walked to the end, so nothing is left lazy when the clock stops.  Text is kept as the input holds it where the parser allows (hbnf's tape and the Alex/Happy JSON); the libraries that convert it say so._
+
+<!-- /bench:haskell -->
 
 ## Naming
 
