@@ -141,6 +141,8 @@ rules, symbols and characters; against GCC's, which carries more, fewer of each.
 | JSON | RFC 8259's ABNF | 30 | 45 | 193 | 949 |
 | | HyperBNF (`corpus/json`) | 17 | 17 | 138 | 641 |
 | | **saved** | **43%** | **62%** | **28%** | **32%** |
+| | HyperBNF with `%emit`, onto a tape (`corpus/json/json-tape.hbnf`) | 17 | 22 | 158 | 743 |
+| | the same with the C it carries (the tape, the emits) | 17 | 72 | 417 | 2279 |
 | TOML 1.0 | TOML's ABNF (toml.abnf) | 124 | 126 | 666 | 4646 |
 | | HyperBNF (`corpus/toml`) | 46 | 49 | 599 | 2599 |
 | | **saved** | **63%** | **61%** | **10%** | **44%** |

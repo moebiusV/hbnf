@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """count.py KIND FILE... -> "rules lines symbols characters", for bench/notation.sh.
 
-KIND is `yacc` (the rules between the first two %% of a yacc grammar, with the C actions, the
+KIND is `hbnf-all` (a HyperBNF grammar with its C kept), `yacc` (the rules between the first two %% of a yacc grammar, with the C actions, the
 comments and the Objective-C sections of GCC's c-parse.in taken out) or `hbnf-code` (a HyperBNF
 grammar with the scanners written beside it, in C, Rust, Zig and Ada, taken out).  What is left is
 counted the way notation.sh counts the others: a rule is a line that starts a definition, a
@@ -61,9 +61,18 @@ def hbnf(paths):
     t = re.sub(r'(?m)^\s*(prefix|whitespace|include|language|sensitivity|root|dialect|context|%start)\b.*$', '', t)
     return t, r'^[A-Za-z][\w-]*(\([^)]*\))?[ \t]*(:=|::=|=/?|:)'
 
+def hbnf_all(paths):
+    """A HyperBNF grammar with the C it carries kept (the prologue, the `%emit` blocks): only the
+    comments of both languages, the blank lines and the directives are left out."""
+    t = ''.join(open(p, errors='replace').read() + '\n' for p in paths)
+    t = re.sub(r'(?s)/\*.*?\*/', '', t)
+    t = re.sub(r'(?m)^[ \t]*;.*$', '', t)
+    t = re.sub(r'(?m)^\s*(prefix|whitespace|include|language|sensitivity|root|dialect|context|%start)\b.*$', '', t)
+    return t, r'^[A-Za-z][\w-]*(\([^)]*\))?[ \t]*(:=|::=|=/?|:)'
+
 def counted_lines(kind, paths):
     """The lines that are counted, each stripped of its blanks, and the pattern a rule starts with."""
-    text, rule = {'yacc': yacc, 'hbnf-code': hbnf, 'specbnf': specbnf}[kind](paths)
+    text, rule = {'yacc': yacc, 'hbnf-code': hbnf, 'hbnf-all': hbnf_all, 'specbnf': specbnf}[kind](paths)
     out = []
     for l in text.split('\n'):
         l = l.rstrip()

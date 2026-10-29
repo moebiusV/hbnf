@@ -818,8 +818,13 @@ The numbers are stable labels — error messages and comments in the code
 cite them — so a step that moves keeps its number and this list gives the
 running order:
 
-> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 5, 7a, 9a, 9b, 9c, 12.  **Under way:** 7b (the
-> wire layer, in C; see its entry for what is and is not built).
+> **Done:** 0, 1, 2, 3, 3b, 4a–4e, 5, 7a, 9a, 9b, 9c, 12, and 11 (built: `--backend=tree-sitter`,
+> `tests/treesitter.sh`; its entry carries no marker).  **Under way:** 7b (the
+> wire layer, in C; see its entry for what is and is not built), and 15 (values at recognition:
+> the reader, the refusal analysis, the C backend and the JSON grammar are done; YAML and the
+> daemon bindings are not).  **No marker:** 6, 8, 10 and 13, which are on the critical path
+> below; pieces of 6 and 8 exist (`--spans`, `--parents`, `--paths`, `--forks`) but neither
+> entry says how much is built.
 > **The POSIX shell grammar (`corpus/posix/`) is part of the core corpus, not
 > paused** (the user, 2026-10-23, correcting this note), and it **reads** (2026-10-23): the
 > standard's 2.10.2 grammar included unchanged, with the tokens as rules of characters, the
@@ -837,7 +842,7 @@ running order:
 > sources or bootstrap it.  The comparison with IMP72 in `METACOMPILERS.md` stays
 > as history, and what hbnf took from its manual (the choice rule, `A<pos,len>`)
 > stays.  **ALGOL 68 and C++ are far in the future** (the same day).  **Not started:** 14, grammars for
-> constrained decoding (added 2026-10-27).
+> constrained decoding (added 2026-10-27), and 16, the C grammar through LLVM ORC and lld (added 2026-10-28).
 >
 > **Critical path:** **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** and **14** are not gated on
@@ -2754,6 +2759,26 @@ cycles.
     position); the refusal analysis, with its tests; the C backend; JSON as the first grammar,
     checked against Python's `json` and measured.  Next: YAML, measured against rapidyaml, and
     the daemon bindings, whose `action` blocks become emits.
+
+16. **The C grammar through LLVM: ORC and lld.**  *Added 2026-10-28; not started.*  The C
+    grammars (`c79`, `pcc99`, `gnu99`) drive a compiler whose back end is LLVM's ORC JIT and
+    its linker library, as the author's separate IMP72 project does; later, the c79 code is
+    translated to facetlang (the author's target; its description is not yet in this plan).
+    The pieces: `%emit` blocks (step 15) run at recognition and can build IR as the parse goes
+    and hand it to ORC, `%action` blocks run after the parse over the tree and can do the same
+    from a walk, and the LLVM C API (`llvm-c/Core.h`, `LLJIT.h`) is callable from either in the
+    C backend.  liblld's interface is C++, so linking needs a small shim or a call to the lld
+    driver.  Neither is gated on the other.
+
+    *What blocks the emit route.*  An emit is refused where something above it can retry past
+    it (step 15), and C's reading of `T * x;` as a declaration or as an expression depends on
+    whether `T` names a type.  Until the grammar carries its typedef context (the queued port of
+    the Ada typedef-context handling), emits cannot sit in the C grammars; the tree route can.
+
+    *Order.*  After the older queue (the back half of the small C compiler, the typedef-context
+    port, the C preprocessor grammar), and not before the compiler front half reads the C
+    corpus.  This step adds no notation.  IMP72 itself stays out of hbnf (decision of
+    2026-10-22); only the C compiler is described here.
 
 ## Not in this plan
 

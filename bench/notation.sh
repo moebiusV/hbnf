@@ -65,6 +65,12 @@ LABEL_PUB="the Report's BNF"; DIR=corpus/algol60
 row "ALGOL 60" "$(count bnf corpus/algol60/syntax.txt)" "$(count hbnf corpus/algol60/algol60.hbnf)"
 LABEL_PUB="RFC 8259's ABNF"; DIR=corpus/json
 row "JSON" "$(count abnf corpus/json/rfc8259.abnf)" "$(count hbnf corpus/json/json.hbnf corpus/json/json-tokens.hbnf)"
+# the same language read onto a flat tape by %emit, with no tree: its grammar, and the file with the
+# C it carries (the tape's code and the emits)
+set -- $(python3 -I "$here/count.py" hbnf-code corpus/json/json-tape.hbnf corpus/json/json-tokens.hbnf)
+printf '| | HyperBNF with `%%emit`, onto a tape (`corpus/json/json-tape.hbnf`) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
+set -- $(python3 -I "$here/count.py" hbnf-all corpus/json/json-tape.hbnf corpus/json/json-tokens.hbnf)
+printf '| | the same with the C it carries (the tape, the emits) | %d | %d | %d | %d |\n' "$1" "$2" "$3" "$4"
 LABEL_PUB="TOML's ABNF (toml.abnf)"; DIR=corpus/toml
 row "TOML 1.0" "$(count abnf corpus/toml/toml.abnf)" "$(count hbnf corpus/toml/toml.hbnf corpus/toml/toml-tokens.hbnf)"
 # C: each yacc grammar against the HyperBNF grammar of the C it reads: UNIX/32V's (1979) against c79,
