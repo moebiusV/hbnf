@@ -2741,19 +2741,24 @@ cycles.
     still tries them in order, so the messages are the same).  Rust, Zig and Ada refuse an
     `%emit`, naming the rule.  Children that are full tree rules have not been tried.
 
-    *Measured.*  `corpus/json/json-tape.hbnf` writes a tape of 64-bit words.  On the 2 MB
-    document, pinned to cpu 5, one cold parse: 2.0 ms, against simdjson's 1.4 (it read 1.7 an hour
-    earlier on the same machine), RapidJSON's 4.9 and the generated tree parser's 2.3, in 7 MB
-    against simdjson's 14.  The steps that mattered, by size, on the tape: no tree took the cold
-    parse from 3.95 to about 3.4 ms; first-character dispatch and the cheaper `skip_ws` to about
-    2.8; a tape sized from the input, on a 2 MiB boundary with a huge-page hint, to 2.0.
-    Inlining the scanners made it slower, and a separate quiet-only copy of every rule would
-    save about 3% for twice the code, so neither is in.  The same memory finding was worth more
-    to the tree parsers: the C arena maps chunks past the first on a huge-page boundary and does
-    not clear them, which took the YAML tree's page faults from 8,824 to 1,061 and its parse
-    from 22 to 15 ms (rapidyaml: 15), the JSON tree from 3.4 to 2.3 and the TOML tree from 9.2
-    to 6.4.  What a tape buys over a tree is therefore smaller than the first measurements
-    said: 2.0 against 2.3 ms for JSON, and simdjson is the gap that is left.
+    *Measured.*  `corpus/json/json-tape.hbnf` writes a tape of 64-bit words, one for each
+    value and key.  On the 2 MB document, pinned to cpu 5, one cold parse: 1.8 ms against
+    simdjson's 1.7 (best of five; in an interleaved run of 25 simdjson's median was 2.13 against
+    1.82 for the tape, its minimum 1.63 against 1.80), in 5 MB against simdjson's 15; the
+    generated tree parser takes 2.1 and RapidJSON 5.4.  The steps that mattered, by size, on the
+    tape: no tree took the cold parse from 3.95 to about 3.4 ms; first-character dispatch and the
+    cheaper `skip_ws` to about 2.8; a tape sized from the input, on a 2 MiB boundary with a
+    huge-page hint, to 2.0; the generator round after it (quiet and loud bodies for a rule that
+    runs emits, a fast path for a quoted token, the stack guard on the rules called least, the
+    scanner going straight to the byte its wide step stopped on) to 1.8, from 37.9M instructions
+    for the parse to 29.6M (a hand-written parser of the same layout takes about 21M).  Inlining
+    the scanners made it slower, and a stack guard of a different form compiled to the same code.
+    The memory finding was worth more to the tree parsers: the C arena maps chunks past the first
+    on a huge-page boundary and does not clear them, which took the YAML tree's page faults from
+    8,824 to 1,061 and its parse from 22 to 15 ms and then, with the string fast path, to 14
+    (rapidyaml: 16; in an interleaved run of 25 on cpu 5, 14.3 against 15.9 at the median), the
+    JSON tree from 3.4 to 2.1 and the TOML tree from 9.2 to 6.4.  What a tape buys over a tree
+    is therefore smaller than the first measurements said: 1.8 against 2.1 ms for JSON.
 
     *Order of work.*  Done: the reader (the type after the name; `%emit` blocks in every
     position); the refusal analysis, with its tests; the C backend; JSON as the first grammar,
