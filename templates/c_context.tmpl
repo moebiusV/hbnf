@@ -2,13 +2,16 @@
    ? ctx asks, %bind adds, %scope ends what was added with its region, and a
    branch or rule that gives up puts every context back (hbnf_mark, hbnf_reset),
    so what a guess bound is gone when the guess is. */
-typedef struct { const char *s; size_t n; unsigned hash; int prev; } hbnf_ce_t;
+/* One log for every context: an add pushes, so a mark is the log's length and giving up is popping back
+   to it.  The usual give-up has nothing to pop, so hbnf_reset is one comparison, inlined; the popping
+   is out of line. */
+typedef struct { const char *s; size_t n; unsigned hash; int prev; unsigned c; } hbnf_ce_t;
 static struct {
     hbnf_ce_t *e;
     unsigned n, cap;
-    int bucket[256];
-} hbnf_cx[HBNF_NCTX];
-typedef struct { unsigned h[HBNF_NCTX]; } hbnf_mark_t;
+    int bucket[HBNF_NCTX][256];
+} hbnf_cx;
+typedef struct { unsigned n; } hbnf_mark_t;
 
 static unsigned hbnf_chash(const char *s, size_t n) {
     unsigned h = 2166136261u;
@@ -18,48 +21,47 @@ static unsigned hbnf_chash(const char *s, size_t n) {
 static void hbnf_ctx_clear(void) {
     unsigned c;
     int b;
-    for (c = 0; c < HBNF_NCTX; c++) {
-        hbnf_cx[c].n = 0;
-        for (b = 0; b < 256; b++) hbnf_cx[c].bucket[b] = -1;
-    }
+    hbnf_cx.n = 0;
+    for (c = 0; c < HBNF_NCTX; c++)
+        for (b = 0; b < 256; b++) hbnf_cx.bucket[c][b] = -1;
 }
 static void hbnf_ctx_add(unsigned c, const char *s, size_t n) {
     unsigned h = hbnf_chash(s, n);
-    if (hbnf_cx[c].n == hbnf_cx[c].cap) {
-        hbnf_cx[c].cap = hbnf_cx[c].cap ? hbnf_cx[c].cap * 2 : 64;
-        hbnf_cx[c].e = (hbnf_ce_t *)realloc(hbnf_cx[c].e,
-                                            hbnf_cx[c].cap * sizeof *hbnf_cx[c].e);
-        if (!hbnf_cx[c].e) hbnf_oom();
+    if (hbnf_cx.n == hbnf_cx.cap) {
+        hbnf_cx.cap = hbnf_cx.cap ? hbnf_cx.cap * 2 : 64;
+        hbnf_cx.e = (hbnf_ce_t *)realloc(hbnf_cx.e, hbnf_cx.cap * sizeof *hbnf_cx.e);
+        if (!hbnf_cx.e) hbnf_oom();
     }
-    hbnf_cx[c].e[hbnf_cx[c].n].s = s;
-    hbnf_cx[c].e[hbnf_cx[c].n].n = n;
-    hbnf_cx[c].e[hbnf_cx[c].n].hash = h;
-    hbnf_cx[c].e[hbnf_cx[c].n].prev = hbnf_cx[c].bucket[h & 255];
-    hbnf_cx[c].bucket[h & 255] = (int)hbnf_cx[c].n++;
+    hbnf_cx.e[hbnf_cx.n].s = s;
+    hbnf_cx.e[hbnf_cx.n].n = n;
+    hbnf_cx.e[hbnf_cx.n].hash = h;
+    hbnf_cx.e[hbnf_cx.n].c = c;
+    hbnf_cx.e[hbnf_cx.n].prev = hbnf_cx.bucket[c][h & 255];
+    hbnf_cx.bucket[c][h & 255] = (int)hbnf_cx.n++;
 }
 static int hbnf_ctx_has(unsigned c, const char *s, size_t n) {
     unsigned h = hbnf_chash(s, n);
     int i;
-    for (i = hbnf_cx[c].bucket[h & 255]; i >= 0; i = hbnf_cx[c].e[i].prev)
-        if (hbnf_cx[c].e[i].hash == h && hbnf_cx[c].e[i].n == n
-            && memcmp(hbnf_cx[c].e[i].s, s, n) == 0)
+    for (i = hbnf_cx.bucket[c][h & 255]; i >= 0; i = hbnf_cx.e[i].prev)
+        if (hbnf_cx.e[i].hash == h && hbnf_cx.e[i].n == n
+            && memcmp(hbnf_cx.e[i].s, s, n) == 0)
             return 1;
     return 0;
 }
-static hbnf_mark_t hbnf_mark(void) {
+static inline hbnf_mark_t hbnf_mark(void) {
     hbnf_mark_t m;
-    unsigned c;
-    for (c = 0; c < HBNF_NCTX; c++) m.h[c] = hbnf_cx[c].n;
+    m.n = hbnf_cx.n;
     return m;
 }
-static void hbnf_reset(const hbnf_mark_t *m) {
-    unsigned c;
-    for (c = 0; c < HBNF_NCTX; c++)
-        while (hbnf_cx[c].n > m->h[c]) {
-            hbnf_cx[c].n--;
-            hbnf_cx[c].bucket[hbnf_cx[c].e[hbnf_cx[c].n].hash & 255]
-                = hbnf_cx[c].e[hbnf_cx[c].n].prev;
-        }
+static void hbnf_reset_slow(unsigned to) {
+    while (hbnf_cx.n > to) {
+        hbnf_cx.n--;
+        hbnf_cx.bucket[hbnf_cx.e[hbnf_cx.n].c][hbnf_cx.e[hbnf_cx.n].hash & 255]
+            = hbnf_cx.e[hbnf_cx.n].prev;
+    }
+}
+static inline void hbnf_reset(const hbnf_mark_t *m) {
+    if (hbnf_cx.n > m->n) hbnf_reset_slow(m->n);
 }
 /* For %where { } and %bind { }: HBNF_IN (types, text, len) asks, HBNF_ADD adds. */
 #define HBNF_IN(c, s, n) hbnf_ctx_has(CTX_##c, (s), (n))
