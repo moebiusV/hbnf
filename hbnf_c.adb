@@ -6991,31 +6991,126 @@ package body HBNF_C is
                   end loop;
                   Append (Buf, Ind & "  default: " & Fail & LF & Ind & "  }" & LF);
                end if;
-               for K in F .. L + 1 loop
-                  if K > L or else V (K).Kind = Alt then
+               declare
+                  --  The alternatives of V (F .. L): where each begins and ends.
+                  NB   : Natural := 0;
+                  BF   : array (1 .. Alts) of Natural;
+                  BL   : array (1 .. Alts) of Natural;
+                  St2  : Natural := F;
+                  B    : Natural := 1;
+
+                  --  The leading elements two alternatives share: names and literals read the same way.
+                  function Shared (X, Y : Positive) return Natural is
+                     LX : constant Natural := BL (X) - BF (X) + 1;
+                     LY : constant Natural := BL (Y) - BF (Y) + 1;
+                     M  : Natural := 0;
+                  begin
+                     while M < LX and then M < LY loop
+                        declare
+                           P : constant Element_Access := V (BF (X) + M);
+                           Q : constant Element_Access := V (BF (Y) + M);
+                        begin
+                           exit when P.Kind /= Q.Kind or else P.Min /= 1 or else P.Max /= 1
+                             or else Q.Min /= 1 or else Q.Max /= 1;
+                           case P.Kind is
+                              when Name => exit when P.Name /= Q.Name or else P.Args /= Q.Args;
+                              when Literal => exit when P.Lit /= Q.Lit or else P.No_Case /= Q.No_Case;
+                              when others => exit;
+                           end case;
+                        end;
+                        M := M + 1;
+                     end loop;
+                     return M;
+                  end Shared;
+
+                  function Guarded (X : Positive) return Boolean is
+                    (BL (X) + 1 <= L and then V (BL (X) + 1).Kind = Alt and then V (BL (X) + 1).Guard /= 0);
+               begin
+                  for K in F .. L + 1 loop
+                     if K > L or else V (K).Kind = Alt then
+                        NB := NB + 1;
+                        BF (NB) := St2;
+                        BL (NB) := K - 1;
+                        St2 := K + 1;
+                     end if;
+                  end loop;
+                  while B <= NB loop
                      N := N + 1;
                      declare
-                        Last : constant Boolean := K > L;
-                        Next : constant String := "goto alt" & Id & "_" & Img (N) & ";";
+                        RE : Natural := B;       --  the last alternative of the run that begins here
+                        M  : Natural := 0;
                      begin
-                        if Dispatch then
-                           Append (Buf, Ind & "  br" & Id & "_" & Img (N) & ": ;" & LF);
+                        if not Dispatch and then B < NB and then not Guarded (B) and then not Guarded (B + 1) then
+                           M := Shared (B, B + 1);
+                           if M >= 1 and then BL (B) - BF (B) + 1 > M then
+                              RE := B + 1;
+                              while RE < NB and then BL (RE) - BF (RE) + 1 > M and then not Guarded (RE)
+                                and then Shared (B, RE + 1) >= M and then not Guarded (RE + 1)
+                              loop
+                                 RE := RE + 1;
+                              end loop;
+                              --  a context test, number or %as belongs to the element before it
+                              while M >= 1
+                                and then (for some C in B .. RE =>
+                                            BF (C) + M <= BL (C) and then V (BF (C) + M).Kind = Block)
+                              loop
+                                 M := M - 1;
+                              end loop;
+                              if M < 1 then
+                                 RE := B;
+                              end if;
+                           end if;
                         end if;
-                        Append (Buf, Ind & "  {" & LF);
-                        Skip_Done := Dispatch;
-                        Seq_Range (V, St, K - 1, (if Last or else Dispatch then Fail else Next),
-                                   Ind & "    ");
-                        Skip_Done := False;
-                        Append (Buf, Ind & "    goto done" & Id & ";" & LF);
-                        Append (Buf, Ind & "  }" & LF);
-                        if not Last and then not Dispatch then
-                           Append (Buf, Ind & "  alt" & Id & "_" & Img (N) & ": p->pos = as"
-                             & Id & "; " & Restore ("a" & Id) & LF);
-                        end if;
+                        declare
+                           Last : constant Boolean := RE = NB;
+                           Next : constant String := "goto alt" & Id & "_" & Img (N) & ";";
+                           Out_Fail : constant String := (if Last or else Dispatch then Fail else Next);
+                        begin
+                           if Dispatch then
+                              Append (Buf, Ind & "  br" & Id & "_" & Img (N) & ": ;" & LF);
+                           end if;
+                           if RE = B then
+                              Append (Buf, Ind & "  {" & LF);
+                              Skip_Done := Dispatch;
+                              Seq_Range (V, BF (B), BL (B), Out_Fail, Ind & "    ");
+                              Skip_Done := False;
+                              Append (Buf, Ind & "    goto done" & Id & ";" & LF);
+                              Append (Buf, Ind & "  }" & LF);
+                           else
+                              --  the shared beginning once, then each alternative's own rest in turn
+                              declare
+                                 Pf : constant String := "pf" & Id & "_" & Img (N);
+                                 LN : U;
+                              begin
+                                 Append (Buf, Ind & "  {" & LF);
+                                 Seq_Range (V, BF (B), BF (B) + M - 1, Out_Fail, Ind & "    ");
+                                 LN := Last_Name;
+                                 Append (Buf, Ind & "    size_t " & Pf & " = p->pos;  " & Save ("p" & Id & "_" & Img (N)) & LF);
+                                 for C in B .. RE loop
+                                    Last_Name := LN;
+                                    Append (Buf, Ind & "    {" & LF);
+                                    Seq_Range (V, BF (C) + M, BL (C),
+                                               (if C = RE then Out_Fail else "goto pn" & Id & "_" & Img (N) & "_" & Img (C) & ";"),
+                                               Ind & "      ");
+                                    Append (Buf, Ind & "      goto done" & Id & ";" & LF);
+                                    Append (Buf, Ind & "    }" & LF);
+                                    if C < RE then
+                                       Append (Buf, Ind & "    pn" & Id & "_" & Img (N) & "_" & Img (C) & ": p->pos = " & Pf & "; "
+                                         & Restore ("p" & Id & "_" & Img (N)) & LF);
+                                    end if;
+                                 end loop;
+                                 Append (Buf, Ind & "  }" & LF);
+                              end;
+                           end if;
+                           if not Last and then not Dispatch then
+                              Append (Buf, Ind & "  alt" & Id & "_" & Img (N) & ": p->pos = as"
+                                & Id & "; " & Restore ("a" & Id) & LF);
+                           end if;
+                        end;
+                        B := RE + 1;
                      end;
-                     St := K + 1;
-                  end if;
-               end loop;
+                  end loop;
+               end;
                Append (Buf, Ind & "  done" & Id & ": ;" & LF & Ind & "}" & LF);
             end;
          end Gen;

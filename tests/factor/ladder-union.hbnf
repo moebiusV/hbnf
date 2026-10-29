@@ -1,0 +1,19 @@
+; The same ladder in the union: the bare operand written first, then the longer form.  The analysis finds
+; that one byte after the operand says which goes on (an operator of this level, or what follows the level), so
+; the union needs no backtracking and no warning, and the parser reads the operand once (tests/factor.sh).
+prefix none
+include "../../grammars/common.hbnf"
+top = *( e1 ";" )
+e1 = e2 / e2 1*( "+" e2 )
+e2 = e3 / e3 1*( "*" e3 )
+e3 = e4 / e4 1*( "-" e4 )
+e4 = e5 / e5 1*( "/" e5 )
+e5 = e6 / e6 1*( "%" e6 )
+e6 = e7 / e7 1*( "&" e7 )
+e7 = e8 / e8 1*( "|" e8 )
+e8 = e9 / e9 1*( "^" e9 )
+e9 = e10 / e10 1*( "<" e10 )
+e10 = e11 / e11 1*( ">" e11 )
+e11 = e12 / e12 1*( "=" e12 )
+e12 = num | "(" e1 ")"
+num = 1*DIGIT

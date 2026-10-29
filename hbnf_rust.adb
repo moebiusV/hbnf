@@ -3054,55 +3054,207 @@ package body HBNF_Rust is
          Els : Element_Vectors.Vector; Acc, Reset : String;
          Buf : in out U; Ind : String := "    "; Alt_Off : Natural := 0) is
          N  : constant Natural := Natural (Els.Length);
-         St : Natural := 1;
-         Br : Natural := 0;
+         NB : Natural := 1;
       begin
+         for E of Els loop
+            if E.Kind = Alt then
+               NB := NB + 1;
+            end if;
+         end loop;
          if Ctx_On then
             Append (Buf, Ind & "let cm_ = p.cx_mark();");
             Append (Buf, LF);
          end if;
-         for K in 1 .. N + 1 loop
-            if K > N or else Els (K).Kind = Alt then
-               Br := Br + 1;
-               if Br > 1 then
-                  Append (Buf, Ind & "p.pos = save;"
-                    & (if Ctx_On then " p.cx_reset(&cm_);" else "")
-                    & (if Reset = "" then "" else " " & Reset & ";"));
-                  Append (Buf, LF);
-               end if;
-               Append (Buf, Ind & "if (|| -> Result<(), ParseError> {");
-               Append (Buf, LF);
-               Emit_Seq (Owner, Els, St, K - 1, Acc, Buf, Ind & "    ");
-               --  First match wins: this branch is taken only if the next
-               --  code point can follow the choice.
-               if K <= N and then Els (K).Kind = Alt and then Els (K).Guard /= 0
-               then
+         declare
+            --  Where each alternative begins and ends.
+            BF : array (1 .. NB) of Natural;
+            BL : array (1 .. NB) of Natural;
+            B  : Natural := 1;
+
+            --  The leading elements two alternatives share: names and literals read the same way.
+            function Shared (X, Y : Positive) return Natural is
+               LX : constant Natural := BL (X) - BF (X) + 1;
+               LY : constant Natural := BL (Y) - BF (Y) + 1;
+               M  : Natural := 0;
+            begin
+               while M < LX and then M < LY loop
                   declare
-                     G : constant String := Natural'Image (Els (K).Guard);
+                     P : constant Element_Access := Els (BF (X) + M);
+                     Q : constant Element_Access := Els (BF (Y) + M);
                   begin
-                     Append (Buf, Ind & "    { let sv = p.pos;"
-                       & (if Rules (Owner).Whitespace /= Null_Unbounded_String
-                          then " p.skip_ws();" else "")
-                       & " let g = p.guard_" & G (G'First + 1 .. G'Last)
-                       & "(); p.pos = sv; if !g { return Err(p.fail(""what "
-                       & "can follow here"")); } }");
-                     Append (Buf, LF);
+                     exit when P.Kind /= Q.Kind or else P.Min /= 1 or else P.Max /= 1
+                       or else Q.Min /= 1 or else Q.Max /= 1;
+                     case P.Kind is
+                        when Name => exit when P.Name /= Q.Name or else P.Args /= Q.Args;
+                        when Literal => exit when P.Lit /= Q.Lit or else P.No_Case /= Q.No_Case;
+                        when others => exit;
+                     end case;
                   end;
-               end if;
+                  M := M + 1;
+               end loop;
+               return M;
+            end Shared;
+
+            function Guarded (X : Positive) return Boolean is
+              (BL (X) + 1 <= N and then Els (BL (X) + 1).Kind = Alt and then Els (BL (X) + 1).Guard /= 0);
+
+            --  The fields a stretch of elements sets, for putting back what a failed alternative set.
+            function Fields (First, Last : Natural) return String_Vectors.Vector is
+               R : String_Vectors.Vector;
+               procedure Walk (V : Element_Vectors.Vector; F, L : Natural) is
+               begin
+                  for K in F .. L loop
+                     if V (K).Kind = Name then
+                        if not Is_Hidden (To_String (V (K).Name)) then
+                           declare
+                              X : constant Unbounded_String := To_Unbounded_String (Rust_Field (To_String (V (K).Name)));
+                           begin
+                              if not R.Contains (X) then
+                                 R.Append (X);
+                              end if;
+                           end;
+                        end if;
+                     elsif V (K).Kind = Group then
+                        Walk (V (K).Items, 1, Natural (V (K).Items.Length));
+                     end if;
+                  end loop;
+               end Walk;
+            begin
+               Walk (Els, First, Last);
+               return R;
+            end Fields;
+
+            procedure Tag_Alt (Br : Natural; Ind2 : String) is
+            begin
                if (Writer_On or else Ast_On)
                  and then ((Acc = "r." and then Struct_Alt (Rules (Owner), Analyze (Rules, Owner)))
                            or else (Acc = "e." and then Entry_Alt (Rules (Owner), Analyze (Rules, Owner))))
                then
-                  Append (Buf, Ind & "    " & Acc & "_alt = " & Img (Br + Alt_Off) & ";");
+                  Append (Buf, Ind2 & Acc & "_alt = " & Img (Br + Alt_Off) & ";");
                   Append (Buf, LF);
                end if;
-               Append (Buf, Ind & "    Ok(())");
-               Append (Buf, LF);
-               Append (Buf, Ind & "})().is_ok() { break 'alt; }");
-               Append (Buf, LF);
-               St := K + 1;
-            end if;
-         end loop;
+            end Tag_Alt;
+
+         begin
+            declare
+               Cnt : Natural := 0;
+               St3 : Natural := 1;
+            begin
+               for K in 1 .. N + 1 loop
+                  if K > N or else Els (K).Kind = Alt then
+                     Cnt := Cnt + 1;
+                     BF (Cnt) := St3;
+                     BL (Cnt) := K - 1;
+                     St3 := K + 1;
+                  end if;
+               end loop;
+            end;
+            while B <= NB loop
+               declare
+                  RE : Natural := B;       --  the last alternative of the run that begins here
+                  M  : Natural := 0;
+               begin
+                  if B < NB and then not Guarded (B) and then not Guarded (B + 1) then
+                     M := Shared (B, B + 1);
+                     if M >= 1 and then BL (B) - BF (B) + 1 > M then
+                        RE := B + 1;
+                        while RE < NB and then BL (RE) - BF (RE) + 1 > M and then not Guarded (RE)
+                          and then Shared (B, RE + 1) >= M and then not Guarded (RE + 1)
+                        loop
+                           RE := RE + 1;
+                        end loop;
+                        --  a context test, number or %as belongs to the element before it
+                        while M >= 1
+                          and then (for some C in B .. RE =>
+                                      BF (C) + M <= BL (C) and then Els (BF (C) + M).Kind = Block)
+                        loop
+                           M := M - 1;
+                        end loop;
+                        if M < 1 then
+                           RE := B;
+                        end if;
+                     end if;
+                  end if;
+                  if B > 1 then
+                     Append (Buf, Ind & "p.pos = save;"
+                       & (if Ctx_On then " p.cx_reset(&cm_);" else "")
+                       & (if Reset = "" then "" else " " & Reset & ";"));
+                     Append (Buf, LF);
+                  end if;
+                  if RE = B then
+                     Append (Buf, Ind & "if (|| -> Result<(), ParseError> {");
+                     Append (Buf, LF);
+                     Emit_Seq (Owner, Els, BF (B), BL (B), Acc, Buf, Ind & "    ");
+                     --  First match wins: this branch is taken only if the next
+                     --  code point can follow the choice.
+                     if BL (B) < N and then Els (BL (B) + 1).Kind = Alt and then Els (BL (B) + 1).Guard /= 0
+                     then
+                        declare
+                           G : constant String := Natural'Image (Els (BL (B) + 1).Guard);
+                        begin
+                           Append (Buf, Ind & "    { let sv = p.pos;"
+                             & (if Rules (Owner).Whitespace /= Null_Unbounded_String
+                                then " p.skip_ws();" else "")
+                             & " let g = p.guard_" & G (G'First + 1 .. G'Last)
+                             & "(); p.pos = sv; if !g { return Err(p.fail(""what "
+                             & "can follow here"")); } }");
+                           Append (Buf, LF);
+                        end;
+                     end if;
+                     Tag_Alt (B, Ind & "    ");
+                     Append (Buf, Ind & "    Ok(())");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "})().is_ok() { break 'alt; }");
+                     Append (Buf, LF);
+                  else
+                     --  the shared beginning once, then each alternative's own rest in turn
+                     declare
+                        Pf : constant String := "pf_";
+                        Cp : constant String := "cp_";
+                     begin
+                        Append (Buf, Ind & "if (|| -> Result<(), ParseError> {");
+                        Append (Buf, LF);
+                        Emit_Seq (Owner, Els, BF (B), BF (B) + M - 1, Acc, Buf, Ind & "    ");
+                        Append (Buf, Ind & "    let " & Pf & " = p.pos;");
+                        Append (Buf, LF);
+                        if Ctx_On then
+                           Append (Buf, Ind & "    let " & Cp & " = p.cx_mark();");
+                           Append (Buf, LF);
+                        end if;
+                        for C in B .. RE loop
+                           declare
+                              Last : constant Boolean := C = RE;
+                           begin
+                              Append (Buf, Ind & "    "
+                                & (if Last then "(" else "if (") & "|| -> Result<(), ParseError> {");
+                              Append (Buf, LF);
+                              Emit_Seq (Owner, Els, BF (C) + M, BL (C), Acc, Buf, Ind & "        ");
+                              Tag_Alt (C, Ind & "        ");
+                              Append (Buf, Ind & "        Ok(())");
+                              Append (Buf, LF);
+                              if Last then
+                                 Append (Buf, Ind & "    })()");
+                                 Append (Buf, LF);
+                              else
+                                 Append (Buf, Ind & "    })().is_ok() { return Ok(()); }");
+                                 Append (Buf, LF);
+                                 Append (Buf, Ind & "    p.pos = " & Pf & ";"
+                                   & (if Ctx_On then " p.cx_reset(&" & Cp & ");" else ""));
+                                 for F of Fields (BF (C) + M, BL (C)) loop
+                                    Append (Buf, " " & Acc & To_String (F) & " = Default::default();");
+                                 end loop;
+                                 Append (Buf, LF);
+                              end if;
+                           end;
+                        end loop;
+                        Append (Buf, Ind & "})().is_ok() { break 'alt; }");
+                        Append (Buf, LF);
+                     end;
+                  end if;
+                  B := RE + 1;
+               end;
+            end loop;
+         end;
       end Emit_Alternation;
 
       procedure Emit_Rule_Parser (Idx : Natural; Buf : in out U) is

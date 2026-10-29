@@ -1514,6 +1514,76 @@ package body HBNF_Lookahead is
             end if;
          end loop;
       end loop;
+      --  Two alternatives that begin with the same elements (`x R` and `x`, `a b c` and `a b d`) read those
+      --  once, and one byte after them says which goes on: if what the first goes on with cannot begin
+      --  where the other goes on, or ends (what can follow the choice), the pair needs no backtracking
+      --  however the shared part is built.  An alternative that ends there comes after the one that goes on.
+      for I in 1 .. N loop
+         for J in I + 1 .. N loop
+            declare
+               LI : constant Natural := Bs (I).Last - Bs (I).First + 1;
+               LJ : constant Natural := Bs (J).Last - Bs (J).First + 1;
+               M  : Natural := 0;
+            begin
+               while M < LI and then M < LJ loop
+                  declare
+                     X : constant Element_Access := V (Bs (I).First + M);
+                     Y : constant Element_Access := V (Bs (J).First + M);
+                  begin
+                     exit when X.Kind /= Y.Kind or else X.Min /= 1 or else X.Max /= 1
+                       or else Y.Min /= 1 or else Y.Max /= 1;
+                     case X.Kind is
+                        when Name =>
+                           exit when X.Name /= Y.Name or else X.Args /= Y.Args;
+                        when Literal =>
+                           exit when X.Lit /= Y.Lit or else X.No_Case /= Y.No_Case;
+                        when others =>
+                           exit;
+                     end case;
+                  end;
+                  M := M + 1;
+               end loop;
+               --  a block belongs to the element before it
+               if M >= 1 and then Bs (I).First + M <= Bs (I).Last
+                 and then V (Bs (I).First + M).Kind = Block
+               then
+                  M := 0;
+               end if;
+               if M >= 1 and then Bs (J).First + M <= Bs (J).Last
+                 and then V (Bs (J).First + M).Kind = Block
+               then
+                  M := 0;
+               end if;
+               if M >= 1 and then (Shadow (I, J) or else Shadow (J, I)) then
+                  declare
+                     SI, SJ : Cp_Set;
+                     NI, NJ : Boolean;
+                  begin
+                     Seq_First (Rules, A.Nullable, A.First, V, Bs (I).First + M, Bs (I).Last, SI, NI);
+                     Seq_First (Rules, A.Nullable, A.First, V, Bs (J).First + M, Bs (J).Last, SJ, NJ);
+                     if Has_Any (SI) or else Has_Any (SJ) then
+                        null;
+                     elsif not NI and then not NJ then
+                        if Is_Empty (Meet (SI, SJ)) then
+                           Shadow (I, J) := False;
+                           Shadow (J, I) := False;
+                        end if;
+                     elsif not NI and then NJ then
+                        if Is_Empty (Meet (SI, SJ)) and then Is_Empty (Meet (SI, Follow_Here)) then
+                           Shadow (I, J) := False;
+                           Shadow (J, I) := True;
+                        end if;
+                     elsif NI and then not NJ then
+                        if Is_Empty (Meet (SJ, SI)) and then Is_Empty (Meet (SJ, Follow_Here)) then
+                           Shadow (J, I) := False;
+                           Shadow (I, J) := True;
+                        end if;
+                     end if;
+                  end;
+               end if;
+            end;
+         end loop;
+      end loop;
       for I in 1 .. N loop
          for J in I + 1 .. N loop
             if Shadow (I, J) and then Shadow (J, I) then

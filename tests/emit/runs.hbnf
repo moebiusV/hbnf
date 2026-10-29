@@ -1,0 +1,14 @@
+; Alternatives that begin with the same elements read them once in a rule that runs emits.  `rollback { depth }`
+; puts the stack back when an alternative is given up.  The value is 1 for `name ( digit )`, 2 for `name ( )`,
+; 3 for `name : name` and 4 for a bare name; the first two share `name (`, the first three share `name`.
+prefix none
+whitespace none
+{
+static int stack[64], depth;
+static void push (int v) { stack[depth++] = v; }
+}
+rollback { depth }
+
+top   :: int = name "(" digit ")" %emit{ push (100); $$ = 1; } | name "(" ")" %emit{ push (200); $$ = 2; } | name ":" name %emit{ push (300); $$ = 3; } | name %emit{ push (400); $$ = 4; }
+name  :: int = "a" %emit{ push (1); } | "b" %emit{ push (1); } | "c" %emit{ push (1); }
+digit :: int = "0" %emit{ push (2); } | "1" %emit{ push (2); }

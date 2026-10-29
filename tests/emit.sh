@@ -48,6 +48,31 @@ if [ -x "$W/run" ]; then
 [t,x] error 1:4
 CASES
 fi
+# alternatives that begin with the same elements read them once, and the emits of the shared part run once
+# (the value, the depth of the stack and its sum: `rollback` puts the stack back for the alternative given up)
+"$CLI" tests/emit/runs.hbnf --backend=c > "$W/runs.c" 2> "$W/runs.err" \
+	|| { echo "emit: FAIL (runs: $(head -c 200 "$W/runs.err"))"; fail=1; }
+grep -q 'pn[0-9]*_' "$W/runs.c" || { echo "emit: FAIL (runs: the shared beginning is not written out once)"; fail=1; }
+cat tests/emit/runs.c >> "$W/runs.c"
+${CC:-cc} -std=gnu11 -w -o "$W/runs" "$W/runs.c" 2> "$W/cc.err" \
+	|| { echo "emit: FAIL (runs: does not compile: $(head -c 300 "$W/cc.err"))"; fail=1; }
+if [ -x "$W/runs" ]; then
+	while IFS== read -r input want; do
+		got=$("$W/runs" "$input")
+		[ "$got" = "$want" ] || { echo "emit: FAIL (runs $input: got '$got', wanted '$want')"; fail=1; }
+	done <<'CASES'
+a(1)=1 3 103
+b()=2 2 201
+c(0)=1 3 103
+c:a=3 3 302
+a:b=3 3 302
+a=4 2 401
+a(=error 1:3
+a(2)=error 1:3
+d=error 1:1
+b(1=error 1:4
+CASES
+fi
 # JSON read onto a tape: the same counts of each kind as Python finds, in every good document, and
 # every bad one refused
 "$CLI" corpus/json/json-tape.hbnf --backend=c > "$W/jt.c" 2> "$W/jt.err" \
