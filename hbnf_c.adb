@@ -6109,12 +6109,16 @@ package body HBNF_C is
             --  What a failed branch leaves is put back: the position, what it set, the
             --  contexts it bound.
             procedure Emit_Reset is
+               --  A branch of literals alone (a keyword of a choice among keywords) has bound and
+               --  set nothing, whatever the place it failed: only the position goes back.
+               Lits_Only : constant Boolean :=
+                 PSt <= PEn and then (for all I in PSt .. PEn => Els (I).Kind = Literal);
             begin
-               if Ctx_On and then Rule_Binds (Owner) then
+               if Ctx_On and then Rule_Binds (Owner) and then not Lits_Only then
                   Append (Buf, Ind & "hbnf_reset (&" & To_String (Cx) & ");");
                   Append (Buf, LF);
                end if;
-               Append (Buf, Ind & "p->pos = save; " & Free);
+               Append (Buf, Ind & "p->pos = save; " & (if Lits_Only then "" else Free));
                --  Free releases what the failed branch set, and the fields
                --  are then zeroed so a later branch (or the caller, on a
                --  branch that matched) never sees them, and a later
@@ -7711,14 +7715,24 @@ package body HBNF_C is
          --  bytes, so `in` never matches `input` (the boundary is grammar).
          if Has_Word then
             Append (Word_Match, "__attribute__((unused))" & LF);
-            Append (Word_Match, "static bool expect_word(parser_t *p,"
+            --  The failing case is the common one (a choice among keywords asks one word many
+            --  times), so it is cheap: the first byte before the compare, and no call to `fail`
+            --  in the first pass, which records nothing.
+            Append (Word_Match, "static bool expect_word_fail(parser_t *p, const char *lit,"
+              & " size_t n) {" & LF);
+            Append (Word_Match, "    fail(p, lit, 1, p->text + p->pos,"
+              & " n ? n : (p->pos < p->len ? 1 : 0)); return false;" & LF);
+            Append (Word_Match, "}" & LF);
+            Append (Word_Match, "__attribute__((unused))" & LF);
+            Append (Word_Match, "static inline bool expect_word(parser_t *p,"
               & " const char *lit, size_t lit_len) {" & LF);
             Append (Word_Match, "    size_t n = HBNF_WORD_AT(p, " & Word_Scanner (Rules)
               & ");" & LF);
-            Append (Word_Match, "    if (n == lit_len && memcmp(p->text + p->pos,"
-              & " lit, lit_len) == 0) { p->pos += n; return true; }" & LF);
-            Append (Word_Match, "    fail(p, lit, 1, p->text + p->pos,"
-              & " n ? n : (p->pos < p->len ? 1 : 0)); return false;" & LF);
+            Append (Word_Match, "    if (n == lit_len && p->text[p->pos] == lit[0]"
+              & " && memcmp(p->text + p->pos, lit, lit_len) == 0)"
+              & " { p->pos += n; return true; }" & LF);
+            Append (Word_Match, "    if (p->quiet) return false;" & LF);
+            Append (Word_Match, "    return expect_word_fail(p, lit, n);" & LF);
             Append (Word_Match, "}" & LF & LF);
          end if;
 
