@@ -31,6 +31,7 @@ typedef struct {
     size_t wc_pos, wc_len, wc_n;   /* the word read at wc_pos (the text cut at wc_len) is wc_n - 1 long; 0 = none */
     int quiet;   /* 1: the first pass of a parse, which records no failures and switches on the next byte */
     const char *stack_lim;   /* the first pass stops recursing when the stack reaches this */
+    size_t ws_at1, ws_from1, ws_to, ws_len1;   /* where white space was last skipped (+1; 0 = none), see skip_ws */
 } parser_t;
 
 /* A keyword is matched against the word at the position, and a choice among keywords asks at

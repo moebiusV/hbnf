@@ -222,6 +222,28 @@ package body HBNF_C is
       return To_String (Buf);
    end Subst;
 
+   --  skip_ws for a white-space rule that is a scanner and nothing more.  A scanner is a function of the
+   --  text and the position, and backtracking asks for the same positions again, so the last two answers
+   --  are kept: where white space was skipped from (and to), and where there was none left.  The marks
+   --  hold the position plus one, so that zero is "none", and are good for the length they were made at.
+   function Scanner_Skip (Scanner : String) return String is
+   begin
+      return "static void skip_ws_run(parser_t *p) {" & LF
+        & "    size_t from = p->pos, n;" & LF
+        & "    if (p->ws_len1 != p->len + 1) { p->ws_len1 = p->len + 1; p->ws_at1 = 0; p->ws_from1 = 0; }" & LF
+        & "    while ((n = " & Scanner & "(p->text, p->pos, p->len)) > 0) p->pos += n;" & LF
+        & "    if (p->pos != from) { p->ws_from1 = from + 1; p->ws_to = p->pos; }" & LF
+        & "    p->ws_at1 = p->pos + 1;" & LF
+        & "}" & LF
+        & "__attribute__((unused))" & LF
+        & "static inline void skip_ws(parser_t *p) {" & LF
+        & "    if (p->ws_len1 == p->len + 1) {" & LF
+        & "        if (p->ws_at1 == p->pos + 1) return;" & LF
+        & "        if (p->ws_from1 == p->pos + 1) { p->pos = p->ws_to; return; }" & LF
+        & "    }" & LF
+        & "    skip_ws_run(p);" & LF;
+   end Scanner_Skip;
+
    function L_Head (Name, Elem : String) return String is
       O : constant String := HBNF_Grammar.List_Override ("head");
    begin
@@ -7842,22 +7864,12 @@ package body HBNF_C is
                         Append (Ws_Skip, "    skip_ws_slow(p);" & LF);
                         end if;
                      else
-                        Append (Ws_Skip, "__attribute__((unused))" & LF);
-                        Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
-                        Append (Ws_Skip, "    size_t n;" & LF);
-                        Append (Ws_Skip, "    while ((n = "
-                          & Rule_Scanner (Rules, To_String (Ws_Name))
-                          & "(p->text, p->pos, p->len)) > 0) p->pos += n;" & LF);
+                        Append (Ws_Skip, Scanner_Skip (Rule_Scanner (Rules, To_String (Ws_Name))));
                      end if;
                   end;
                elsif First then
                   --  No single-code-point alternative: the scanner alone.
-                  Append (Ws_Skip, "__attribute__((unused))" & LF);
-                  Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
-                  Append (Ws_Skip, "    size_t n;" & LF);
-                  Append (Ws_Skip, "    while ((n = "
-                    & Rule_Scanner (Rules, To_String (Ws_Name))
-                    & "(p->text, p->pos, p->len)) > 0) p->pos += n;" & LF);
+                  Append (Ws_Skip, Scanner_Skip (Rule_Scanner (Rules, To_String (Ws_Name))));
                else
                   Append (Ws_Skip, "__attribute__((unused))" & LF);
                   Append (Ws_Skip, "static void skip_ws(parser_t *p) {" & LF);
