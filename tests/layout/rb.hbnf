@@ -1,0 +1,7 @@
+; a list of words in parentheses, kept in order of the word in a red-black tree
+prefix none
+layout rb
+layout_ops {
+  key { HBNF_RB_STR((@e@)->word) }
+}
+top = "(" *( word ) ")"

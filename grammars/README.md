@@ -80,6 +80,10 @@ language C
   (where no blank is skipped between its elements), and `hidden` and `flat` shape the rest: `hidden`
   names rules matched and kept by nothing (blanks, quote marks), `flat` names rules that keep their
   children and write no node (`flat ikey mapent inl` in `corpus/yaml/yaml.hbnf`).  The tree ignores `flat`.
+  Any other name is a directory of `layouts/` (found by `--layouts=DIR`, `$HBNF_LAYOUTS`, else beside
+  the templates): `layout tailq` gives lists the daemons' `TAILQ`, and `layout rb` keeps each list in
+  OpenBSD's red-black tree (`RB_*`, the real `sys/tree.h`) in the order of a key the grammar names,
+  `layout_ops { key { HBNF_RB_STR((@e@)->word) } }` (compile with `-Ilayouts/rb`).
 
 - **Jets** — a rule whose body is hand-written scanner code instead of a
   token sequence:

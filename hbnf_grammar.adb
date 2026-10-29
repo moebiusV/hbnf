@@ -79,6 +79,8 @@ package body HBNF_Grammar is
    List_First_Code   : Unbounded_String := Null_Unbounded_String;
    List_Next_Code    : Unbounded_String := Null_Unbounded_String;
    List_Relink_Code  : Unbounded_String := Null_Unbounded_String;
+   List_Key_Code     : Unbounded_String := Null_Unbounded_String;   --  not an operation: @key@ in the others
+   List_Generate_Code : Unbounded_String := Null_Unbounded_String;  --  once per list type, after its structs
 
    --  `statements`, `macros <rule>`, `includes <rule>`: how the C parser
    --  reads a config (see the spec).
@@ -653,6 +655,8 @@ package body HBNF_Grammar is
       List_First_Code := Null_Unbounded_String;
       List_Next_Code := Null_Unbounded_String;
       List_Relink_Code := Null_Unbounded_String;
+      List_Key_Code := Null_Unbounded_String;
+      List_Generate_Code := Null_Unbounded_String;
       Statements_On := False;
       Context_Words.Clear;
       Ctx_Pending.Clear;
@@ -2197,7 +2201,10 @@ package body HBNF_Grammar is
    function Cur (P : Parser) return Token is (P.Toks (P.Pos));
 
    --  Store the raw C for one list operation ("head", "entry", "init",
-   --  "append", "foreach", "first", "next", "relink").
+   --  "append", "foreach", "first", "next", "relink"; "key", which is no operation but the text that
+   --  @key@ stands for in the others, the key of the element @e@, and @key(X)@ the key of X; and
+   --  "generate", text written once for each list type after the structs, for the code a container
+   --  needs per type: RB_GENERATE and the comparison it calls).
    procedure Set_List_Override (Op : String; Code : String; Line : Positive)
    is
       N : constant String := "layout_ops " & Op;
@@ -2218,6 +2225,10 @@ package body HBNF_Grammar is
          Set_Directive (List_Next_Code, N, Code, Line);
       elsif Op = "relink" then
          Set_Directive (List_Relink_Code, N, Code, Line);
+      elsif Op = "key" then
+         Set_Directive (List_Key_Code, N, Code, Line);
+      elsif Op = "generate" then
+         Set_Directive (List_Generate_Code, N, Code, Line);
       else
          raise Parse_Error with "layout_ops: unknown operation `" & Op & "`";
       end if;
@@ -10292,6 +10303,10 @@ package body HBNF_Grammar is
          return To_String (List_Next_Code);
       elsif Op = "relink" then
          return To_String (List_Relink_Code);
+      elsif Op = "key" then
+         return To_String (List_Key_Code);
+      elsif Op = "generate" then
+         return To_String (List_Generate_Code);
       end if;
       return "";
    end List_Override;

@@ -1,0 +1,26 @@
+; layout rb: the tree, with its lists kept in key order in OpenBSD's red-black tree (<sys/tree.h>, RB_*),
+; of the element's own: the same tree a daemon builds, so RB_FIND, RB_MIN, RB_FOREACH and the rest work on it.
+; The grammar says what orders a list, a pointer and a length:
+;     layout_ops { key { HBNF_RB_STR((@e@)->FIELD) } }        FIELD is a string of the element
+; A repeated key is dropped, and the first stays (RB_INSERT returns the element in the tree).  The tree
+; is only built, never taken from, so a branch that gives up leaves nothing in it to undo.  The
+; comparison and RB_GENERATE are written once for each list, after its structs.  This file has no
+; `language` line, so its code is C, and only the C backend emits it.  Compile with -Ilayouts/rb.
+{
+#include "hbnf_rb.h"
+}
+
+layout_ops {
+  head { RB_HEAD(@name@, @elem@) }
+  entry { RB_ENTRY(@elem@) _link }
+  init { RB_INIT(@h@); }
+  append { (void)RB_INSERT(@name@, @h@, @e@); }
+  foreach { RB_FOREACH(@v@, @name@, @h@) }
+  first { RB_MIN(@name@, @h@) }
+  next { RB_NEXT(@name@, NULL, @e@) }
+  relink { (void)0; }
+  generate {
+    static int @name@_cmp(struct @elem@ *a, struct @elem@ *b) { return hbnf_keycmp(@key(a)@, @key(b)@); }
+    RB_GENERATE_STATIC(@name@, @elem@, _link, @name@_cmp)
+  }
+}

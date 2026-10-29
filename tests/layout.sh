@@ -70,5 +70,30 @@ grep -q 'MYINIT' "$W/ts.c" && ! grep -q 'TAILQ_INIT(&head)' "$W/ts.c" && grep -q
 printf 'prefix none\nlayout nonesuch\ntop = "a"\n' > "$W/n.hbnf"
 "$CLI" "$W/n.hbnf" --backend=c 2>&1 >/dev/null | grep -q 'no file nonesuch/layout.hbnf' \
 	|| { echo "layout: FAIL (an unknown layout is not refused with the file it wanted)"; fail=1; }
-[ $fail = 0 ] && echo "layout: OK (a tape from the plain grammars of JSON, TOML and YAML; tailq)"
+# layout rb: the list is OpenBSD's red-black tree in the order of the key, a repeated key is dropped, and
+# the walk, with the real RB_FOREACH, is `sort -u`.
+"$CLI" tests/layout/rb.hbnf --backend=c > "$W/rb.c" 2> "$W/rb.err" \
+	|| { echo "layout: FAIL (rb does not generate: $(head -c 300 "$W/rb.err"))"; fail=1; }
+cat "$W/rb.c" tests/layout/rb-main.c > "$W/rbm.c"
+${CC:-cc} -std=gnu11 -w -Ilayouts/rb -o "$W/rbm" "$W/rbm.c" 2> "$W/cc.err" \
+	|| { echo "layout: FAIL (rb does not compile: $(head -c 300 "$W/cc.err"))"; fail=1; }
+if [ -x "$W/rbm" ]; then
+	words=$(awk 'BEGIN { srand(5); for (i = 0; i < 4000; i++) printf "w%d ", int(rand() * 700) }')
+	printf '( %s)' "$words" | "$W/rbm" > "$W/rb.got"
+	printf '%s\n' $words | LC_ALL=C sort -u > "$W/rb.want"
+	cmp -s "$W/rb.got" "$W/rb.want" || { echo "layout: FAIL (rb does not walk the words in order, once each)"; fail=1; }
+	printf '( )' | "$W/rbm" | cmp -s - /dev/null || { echo "layout: FAIL (rb: an empty list is not empty)"; fail=1; }
+fi
+# the same grammar with each of the options that write more code over the lists (string fields are
+# plain pointers without the views): all must compile
+for fl in "--ast --ast-tools" --writer --compare --idref --parents --no-compact; do
+	"$CLI" tests/layout/rb.hbnf --backend=c $fl > "$W/rbf.c" 2> "$W/rbf.err" \
+		&& ${CC:-cc} -std=gnu11 -w -Ilayouts/rb -c -o "$W/rbf.o" "$W/rbf.c" 2> "$W/cc.err" \
+		|| { echo "layout: FAIL (rb with $fl: $(head -c 300 "$W/rbf.err" "$W/cc.err"))"; fail=1; }
+done
+printf 'prefix none\nlayout rb\ntop = "(" *( word ) ")"\n' > "$W/nokey.hbnf"
+"$CLI" "$W/nokey.hbnf" --backend=c 2>&1 >/dev/null | grep -q 'gives no key' \
+	|| { echo "layout: FAIL (rb with no key is not refused with how to give one)"; fail=1; }
+
+[ $fail = 0 ] && echo "layout: OK (a tape from the plain grammars of JSON, TOML and YAML; tailq; rb)"
 exit $fail

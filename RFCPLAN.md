@@ -2786,7 +2786,7 @@ cycles.
     2026-10-22); only the C compiler is described here.
 
 17. **Layouts: one grammar, several data structures.**  *Added 2026-10-29 with the user; the tape
-    layout is built (`layout tape`, `--layout=tape`); `tailq` and `rb` are not.*  A grammar says which data structure its parser builds, and the rest follows from the
+    layout is built (`layout tape`, `--layout=tape`), and `tailq` and `rb` (`layouts/NAME/`).*  A grammar says which data structure its parser builds, and the rest follows from the
     grammar: `layout ast` (today's, the default), `layout tape`, and options on a list rule for the
     containers a program already has, `tailq` (`sys/queue.h`) and `rb` (`sys/tree.h`, keyed on a
     field).  The three tape grammars (`json-tape.hbnf`, `toml-tape.hbnf`, `yaml-tape.hbnf`) were
@@ -2867,7 +2867,7 @@ cycles.
     has succeeded, or keeps an undo log.  Which, is decided when it is built.
 
     *Order.*  After the Haskell comparison (the rig is `bench/haskell.sh`), the tape layout first, since
-    its references exist; then `tailq` (built, as `layouts/tailq`: the tree whose lists are the daemons' `TAILQ`s); then `rb`.  C
+    its references exist; then `tailq` (built, as `layouts/tailq`: the tree whose lists are the daemons' `TAILQ`s); then `rb` (built, as `layouts/rb`: the tree whose lists are OpenBSD's red-black trees (`RB_*` of `<sys/tree.h>`, the real file, v1.31, kept in `layouts/rb/sys/` for hosts without one) of the element's own, in the order of a key the grammar names, so the daemons' macros work on them; insert only, so a branch that gives up leaves nothing in it to undo; a repeated key is dropped and the first stays.  The layout operations are given the tree's name and the element's tag, and `generate` writes the comparison and `RB_GENERATE` once for each list.  It is not the daemons' own tree, whose element and compare are the daemon's, so `unwind`'s `force` list stays an action).  C
     backend only.  Gate: the tape derived from `json.hbnf`, `toml.hbnf` and `yaml.hbnf` is measured
     against the three hand-written ones, and the obconf daemons' byte-identity tests pass unchanged.
 
