@@ -7096,6 +7096,12 @@ package body HBNF_C is
                   Append (Buf, "    size_t start = p->pos;");
                   Append (Buf, LF);
                end if;
+               --  The node of an iteration is taken from the arena before the iteration is known to succeed,
+               --  and the iteration that ends the list does not: its node, and whatever it read into it, is
+               --  garbage that the arena would keep for the life of the tree.  Where the arena stood is
+               --  noted, and it goes back there if the last iteration was not kept.
+               Append (Buf, "    hbnf_chunk *ac_ = NULL; size_t au_ = 0; int open_ = 0;");
+               Append (Buf, LF);
                --  The loop stops at the end of the text, unless what it repeats
                --  can match nothing: then an iteration there is still one
                --  (`1*x` over an empty `x` is satisfied by no input at all).
@@ -7113,6 +7119,8 @@ package body HBNF_C is
                        & (if At_End = "" then "1" else At_End) & ") {");
                   end if;
                end;
+               Append (Buf, LF);
+               Append (Buf, "        ac_ = hbnf_arena; au_ = ac_ ? ac_->used : 0; open_ = 1;");
                Append (Buf, LF);
                Append (Buf, "        " & C_Type_Name (NM) & " *nn ="
                  & " (" & C_Type_Name (NM) & " *)hbnf_alloc(sizeof(*nn));");
@@ -7225,6 +7233,8 @@ package body HBNF_C is
                   Append (Buf, "        *bt_ = nn; bt_ = &(nn)->_link;");
                end if;
                Append (Buf, LF);
+               Append (Buf, "        open_ = 0;");
+               Append (Buf, LF);
                if Bounded then
                   Append (Buf, "        count++;");
                   Append (Buf, LF);
@@ -7236,6 +7246,9 @@ package body HBNF_C is
                   Append (Buf, LF);
                end if;
                Append (Buf, "    }");
+               Append (Buf, LF);
+               --  (the arena hands out memory it cleared once, so what goes back is cleared again)
+               Append (Buf, "    if (open_ && ac_ && hbnf_arena == ac_) { memset (ac_->data + au_, 0, ac_->used - au_); ac_->used = au_; }");
                Append (Buf, LF);
                if E.Min > 0 then
                   --  The root's free_ also frees the arena, which the
