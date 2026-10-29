@@ -4225,9 +4225,10 @@ package body HBNF_C is
            & "    hbnf_scratch_len = 0;" & LF
            & "    return hbnf_mkstr(r, m);" & LF
            & "}" & LF);
-      elsif HBNF_Grammar.List_Override ("key") /= "" then
-         --  A layout orders its lists by a string field, as pointer and length; without the views a
-         --  string is a NUL-terminated pointer, and the layout's HBNF_RB_STR reads both alike.
+      elsif HBNF_Grammar.List_Override ("key") /= "" or else HBNF_Grammar.Layout = "tape" then
+         --  A layout reads a string field as pointer and length (rb orders a list by one, the tape
+         --  writes the text of a token); without the views a string is a NUL-terminated pointer, and
+         --  hbnf_sp and hbnf_sn read both alike.
          Append (Res, "__attribute__((unused))" & LF
            & "static inline const char *hbnf_sp(const char *v) { return v; }" & LF
            & "__attribute__((unused))" & LF
@@ -6576,8 +6577,11 @@ package body HBNF_C is
                           & "; p->pos += n; }" & LF);
                      else
                         --  the quiet body calls the quiet bodies, which every rule that is called has
+                        --  (but not one that puts the contexts back: that keeps its wrapper, and has
+                        --  no prototype of its body)
                         Append (Buf, Ind & "if (!" & Rule_Call (RN, E,
                           (if Quiet and then Needs_Parse_Fn (Rules, N)
+                             and then not (Ctx_On and then Find (N) > 0 and then Rule_Binds (Find (N)))
                            then "parse_body_" else "parse_rule_") & C_Name (N)
                           & "(p, &" & C_Field (N) & ")")
                           & ") { " & Fail & " }" & LF);
@@ -6697,7 +6701,17 @@ package body HBNF_C is
             K : Natural := St;
          begin
             while K <= En loop
-               if K < En and then V (K + 1).Kind = Block
+               if V (K).Kind = Block and then V (K).Op = B_Scope then
+                  --  `%scope`: what the rest of this sequence binds ends with it
+                  declare
+                     Sc : constant String := "sc" & Fresh & "_";
+                  begin
+                     Append (Buf, Ind & "hbnf_mark_t " & Sc & " = hbnf_mark();" & LF);
+                     Seq_Range (V, K + 1, En, Fail, Ind);
+                     Append (Buf, Ind & "hbnf_reset (&" & Sc & ");" & LF);
+                  end;
+                  K := En + 1;
+               elsif K < En and then V (K + 1).Kind = Block
                  and then V (K + 1).Op in B_Test | B_Not_Test | B_As | B_Num
                then
                   if V (K).Min /= 1 or else V (K).Max /= 1 then
@@ -6705,6 +6719,10 @@ package body HBNF_C is
                   end if;
                   Emit_Seq (Idx, V, K, K + 1, "", Buf, Fail, Ind, Ws, Lead_Ws => not Skip_Done);
                   Skip_Done := False;
+                  --  a name read with its test is still the element `$@` stands for
+                  if V (K).Kind = Name and then not Is_Core (To_String (V (K).Name)) then
+                     Last_Name := To_Unbounded_String (C_Field (To_String (V (K).Name)));
+                  end if;
                   K := K + 2;
                else
                   Elem (V (K), Fail, Ind);

@@ -9612,8 +9612,19 @@ package body HBNF_Grammar is
 
       function Rewrite (V : Element_Vectors.Vector) return Element_Vectors.Vector is
          Out_V : Element_Vectors.Vector;
+         --  The entry of a name just written, held while a context test or a number that belongs to
+         --  that name follows it (`identifier ? types`): the entry goes after them, so that the test
+         --  still sits next to the name it asks about.
+         Pending : Element_Access := null;
       begin
          for E of V loop
+            if Pending /= null and then E.Kind = Block and then E.Op in B_Test | B_Not_Test | B_As | B_Num then
+               Out_V.Append (E);
+            else
+            if Pending /= null then
+               Out_V.Append (Pending);
+               Pending := null;
+            end if;
             case E.Kind is
                when Name =>
                   declare
@@ -9631,7 +9642,7 @@ package body HBNF_Grammar is
                         begin
                            if E.Min = 1 and then E.Max = 1 then
                               Out_V.Append (E);
-                              Out_V.Append (Emit (Code));
+                              Pending := Emit (Code);
                            else
                               --  a repeated name: the entry belongs to each repetition
                               declare
@@ -9661,7 +9672,11 @@ package body HBNF_Grammar is
                when others =>
                   Out_V.Append (E);
             end case;
+            end if;
          end loop;
+         if Pending /= null then
+            Out_V.Append (Pending);
+         end if;
          return Out_V;
       end Rewrite;
 
