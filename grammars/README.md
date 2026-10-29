@@ -61,6 +61,15 @@ language C
   single character in `'…'` and a longer literal in `"…"`.  A range in such
   a rule is refused until the character model (RFCPLAN.md step 4); name it
   in a rule of its own.
+- **Values at recognition** — a rule that declares a value, `name :: type = ...`, is
+  generated as a function that runs its pattern as written and yields that value, with no
+  tree node for it.  `%emit{ code }` runs where its place in the sequence is reached (between
+  elements, at the end of a rule, once per iteration inside `*( ... )`); in it `$$` is the
+  rule's value and each element is a C variable named after its rule (a token is a view of
+  the input, a rule with a value is that value).  The code runs in the first pass of a parse
+  only, and a grammar is refused, naming the rule, when something above an emit can retry past
+  it.  `corpus/json/json-tape.hbnf` reads JSON onto a flat tape this way.  C backend only.
+
 - **Jets** — a rule whose body is hand-written scanner code instead of a
   token sequence:
 

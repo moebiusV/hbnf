@@ -2676,8 +2676,8 @@ corpus, e2e and byte-identity gates hold throughout; each is
 regression-tested by a generated-line-count figure, the way 4f is by
 cycles.
 
-15. **Values at recognition: `%emit{ }` with `$$`.**  *Decided 2026-10-28 with the user; not
-    started.*  A parser can build the structure its author wants as it reads, as yacc's
+15. **Values at recognition: `%emit{ }` with `$$`.**  *Decided 2026-10-28 with the user; the
+    reader, the analysis, the C backend and the JSON grammar are done.*  A parser can build the structure its author wants as it reads, as yacc's
     actions do, instead of a tree that a later walk converts.  The daemon bindings put their
     parse into the daemon's own structs and trees (`TAILQ`, `RB`), and JSON and YAML into the
     flat layouts the fastest parsers use (a tape of words; an array of fixed-size nodes with
@@ -2726,10 +2726,34 @@ cycles.
     analysis.  The reader's rewrite of `*n( A S ) A` into `A *n( S A )` is skipped for a repeated
     part that holds an emit, because it would move the emit; the overlap is then reported.
 
-    *Order of work.*  The reader (the type after the name; `%emit` blocks in every position);
-    the refusal analysis, with its tests; the C backend; JSON as the first grammar, checked
-    against the current parser's results and measured against it; then YAML, and the daemon
-    bindings, whose `action` blocks become emits.
+    *What the C backend does.*  A rule with an emit or a declared value is a function that runs
+    its pattern as written and fills `*out`: no struct, no list node, and the reader makes up no
+    rule for its groups or repetitions.  Each element is a local named after its rule; the
+    emit code runs only in the first (quiet) pass, so the pass that reads a failure again runs
+    none.  Context operations (`%spaces`, `%col`, `%num`, lookahead, guards) are written by the
+    sequence code, one element at a time.  A choice whose alternatives begin with different
+    ASCII characters is a `switch` on the first character in the first pass (the second pass
+    still tries them in order, so the messages are the same).  Rust, Zig and Ada refuse an
+    `%emit`, naming the rule.  Children that are full tree rules have not been tried.
+
+    *Measured.*  `corpus/json/json-tape.hbnf` writes a tape of 64-bit words.  On the 2 MB
+    document, pinned to cpu 5, one cold parse: 2.0 ms, against simdjson's 1.4 (it read 1.7 an hour
+    earlier on the same machine), RapidJSON's 4.9 and the generated tree parser's 2.3, in 7 MB
+    against simdjson's 14.  The steps that mattered, by size, on the tape: no tree took the cold
+    parse from 3.95 to about 3.4 ms; first-character dispatch and the cheaper `skip_ws` to about
+    2.8; a tape sized from the input, on a 2 MiB boundary with a huge-page hint, to 2.0.
+    Inlining the scanners made it slower, and a separate quiet-only copy of every rule would
+    save about 3% for twice the code, so neither is in.  The same memory finding was worth more
+    to the tree parsers: the C arena maps chunks past the first on a huge-page boundary and does
+    not clear them, which took the YAML tree's page faults from 8,824 to 1,061 and its parse
+    from 22 to 15 ms (rapidyaml: 15), the JSON tree from 3.4 to 2.3 and the TOML tree from 9.2
+    to 6.4.  What a tape buys over a tree is therefore smaller than the first measurements
+    said: 2.0 against 2.3 ms for JSON, and simdjson is the gap that is left.
+
+    *Order of work.*  Done: the reader (the type after the name; `%emit` blocks in every
+    position); the refusal analysis, with its tests; the C backend; JSON as the first grammar,
+    checked against Python's `json` and measured.  Next: YAML, measured against rapidyaml, and
+    the daemon bindings, whose `action` blocks become emits.
 
 ## Not in this plan
 
