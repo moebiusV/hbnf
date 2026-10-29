@@ -1,0 +1,66 @@
+; JSON (RFC 8259) read into a flat tape of 64-bit words, as json-tape.hbnf does, with the values made while the
+; text is at hand: a number is converted (the integer, or the bits of the double, in the word after its tag), and
+; a string with an escape in it is unescaped into a side buffer (its tag says so, its text is the buffer's).  A
+; string without one is read where it lies in the input, as before.  The conversions are runtime/hbnf_scalar.h's.
+prefix none
+{
+enum { T_OBJ = 1, T_ARR, T_STR, T_STRU, T_INT, T_DBL, T_TRUE, T_FALSE, T_NULL, T_KEY, T_KEYU };
+/* which tags hold a link to the position after them, and which a text (see hbnf_tape.h) */
+#define TAPE_IS_OPENER(t) ((t) == T_OBJ || (t) == T_ARR)
+#define TAPE_IS_TEXT(t) ((t) == T_STR || (t) == T_STRU || (t) == T_KEY || (t) == T_KEYU)
+#include "hbnf_tape.h"
+#include "hbnf_scalar.h"
+
+/* The unescaped strings are kept one after another in a buffer of their own; a word with the tag of an
+   unescaped string holds a length and an offset into that buffer. */
+static char *tape_sb;
+static size_t tape_sbn, tape_sbc;
+
+/* A string token, quotes included, that ends at `end` in the input: its own text where it lies if it has no
+   escape, else unescaped into the buffer.  (An escape that is wrong makes an empty string.) */
+static inline void tape_string_of (uint64_t raw, uint64_t unesc, const char *quoted, size_t n, size_t end, const char *input_end)
+{
+    size_t m;
+    if (!hbnf_has_escape_in (quoted + 1, n - 2, (size_t) (input_end - (quoted + 1)))) { tape_text_of (raw, end, n); return; }
+    if (tape_sbn + n > tape_sbc) {
+        tape_sbc = (tape_sbc + n) * 2;
+        tape_sb = (char *) realloc (tape_sb, tape_sbc);
+        if (!tape_sb) abort ();
+    }
+    m = hbnf_unescape (quoted + 1, n - 2, tape_sb + tape_sbn);
+    if (m == (size_t) -1) m = 0;
+    tape_text_of (unesc, tape_sbn + m, m);
+    tape_sbn += m;
+}
+
+/* A number: the tag, then the integer, or the bits of the double. */
+static inline void tape_number (const char *s, size_t n)
+{
+    int64_t iv;
+    double dv;
+    uint64_t bits;
+    if (hbnf_parse_number (s, n, &iv, &dv) == 1) {
+        tape_put (TAPE_TAG (T_INT));
+        tape_put ((uint64_t) iv);
+    } else {
+        memcpy (&bits, &dv, 8);
+        tape_put (TAPE_TAG (T_DBL));
+        tape_put (bits);
+    }
+}
+}
+
+include "json-tokens.hbnf"
+
+json  :: int = value
+value :: int = object | array
+             | string %emit{ tape_string_of (T_STR, T_STRU, hbnf_sp (string), hbnf_sn (string), p->pos, p->text + p->len); }
+             | number %emit{ tape_number (hbnf_sp (number), hbnf_sn (number)); }
+             | literal-true  %emit{ tape_put (TAPE_TAG (T_TRUE)); }
+             | literal-false %emit{ tape_put (TAPE_TAG (T_FALSE)); }
+             | literal-null  %emit{ tape_put (TAPE_TAG (T_NULL)); }
+object :: uint64_t = "{" %emit{ $$ = tape_open (T_OBJ); } [ member *( "," member ) ] "}" %emit{ tape_close ($$); }
+member :: int = string %emit{ tape_string_of (T_KEY, T_KEYU, hbnf_sp (string), hbnf_sn (string), p->pos, p->text + p->len); } ":" value
+array  :: uint64_t = "[" %emit{ $$ = tape_open (T_ARR); } [ value *( "," value ) ] "]" %emit{ tape_close ($$); }
+
+ws = *( SP / HTAB / LF / CR )

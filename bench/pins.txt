@@ -46,3 +46,7 @@ CSPEED_ZLIB_URL=https://zlib.net/fossils/zlib-1.3.1.tar.gz
 CSPEED_ZLIB_SHA=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
 CSPEED_SQLITE_URL=https://www.sqlite.org/2024/sqlite-amalgamation-3450100.zip
 CSPEED_SQLITE_SHA=5592243caf28b2cdef41e6ab58d25d653dfc53deded8450eb66072c929f030c4
+# fast_float, the library simdjson converts doubles with, for the comparison of runtime/hbnf_scalar.h with it
+# (bench/scalar/): the single-header release, 139,375 bytes, whose hash was recorded when it was fetched (2026-10-29).
+FASTFLOAT_URL=https://github.com/fastfloat/fast_float/releases/download/v6.1.6/fast_float.h
+FASTFLOAT_SHA=734de683d1ba414c8190b48103a10991886cac421aab07e7e910c48000df9e59
