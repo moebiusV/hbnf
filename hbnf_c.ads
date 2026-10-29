@@ -107,6 +107,11 @@ package HBNF_C is
    --  by-value cycle, so every part of the generated code already handles them.
    procedure Set_Compact (On : Boolean);
 
+   --  A ladder of binary operators (`a = b *( op b )`, `b = c *( op c )`, ...) is parsed by looking one byte past
+   --  its first operand: if no operator of the ladder can begin there, the rest of every level is empty and
+   --  the levels are not entered.  On by default; off for comparing with the plain parse (--no-ladder).
+   procedure Set_Ladder (On : Boolean);
+
    --  Views (--views): a token's value is a pointer and a length into the input, with no
    --  copy (a quoted string with an escape in it is the one copy).  The tree borrows the text,
    --  so the text must outlive it.

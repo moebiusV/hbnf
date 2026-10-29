@@ -218,6 +218,8 @@ begin
             HBNF_C.Set_Choice (False);
          elsif A = "--compact" then
             Compact := True;
+         elsif A = "--no-ladder" then
+            HBNF_C.Set_Ladder (False);
          elsif A = "--no-compact" then
             Compact := False;
          elsif A = "--views" then

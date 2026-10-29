@@ -467,6 +467,13 @@ package body HBNF_C is
    Forks_On       : Boolean := False;
    Compact_On     : Boolean := True;
 
+   Ladder_On : Boolean := True;
+
+   procedure Set_Ladder (On : Boolean) is
+   begin
+      Ladder_On := On;
+   end Set_Ladder;
+
    procedure Set_Compact (On : Boolean) is
    begin
       Compact_On := On;
@@ -7020,6 +7027,193 @@ package body HBNF_C is
          Append (Buf, "    return true;" & LF);
       end Emit_Valued;
 
+      --  ---- ladders of binary operators ----
+      --  A level is a rule `a = b *( op b )`: after the reader has lifted the repetition it is two names, the
+      --  operand rule b and the list rule of what is repeated, whose last element is b again.  A level's operand
+      --  may be another level, and so on down to a rule that is not one.  The levels are found from the
+      --  references alone, so where the rules sit in the file, and what stands between them, does not matter.
+      type Bit_Array is array (Natural range <>) of Boolean;
+
+      type Level_Info is record
+         Next : Natural := 0;     --  the operand's rule, 0 when the rule is no level
+         List : Natural := 0;     --  the list rule of `*( op b )`
+      end record;
+
+      function Level (Idx : Natural) return Level_Info is
+         R    : constant Rule := Rules (Idx);
+         None : constant Level_Info := (0, 0);
+      begin
+         if not Ladder_On or else Spans_On or else Natural (R.Pattern.Length) /= 2
+           or else R.Action_Code /= Null_Unbounded_String or else R.Jet_Code /= Null_Unbounded_String
+           or else Is_Choice (R) or else Analyze (Rules, Idx).Kind /= Struct
+         then
+            return None;
+         end if;
+         declare
+            A : constant Element_Access := R.Pattern (1);
+            B : constant Element_Access := R.Pattern (2);
+         begin
+            if A.Kind /= Name or else B.Kind /= Name or else A.Min /= 1 or else A.Max /= 1
+              or else B.Min /= 1 or else B.Max /= 1 or else Is_Core (To_String (A.Name))
+              or else Is_Back (Idx, To_String (A.Name))      --  a pointer, not a struct in place
+            then
+               return None;
+            end if;
+            declare
+               NJ : constant Natural := Find (To_String (A.Name));
+               LJ : constant Natural := Find (To_String (B.Name));
+            begin
+               if NJ = 0 or else LJ = 0 or else NJ = Idx or else Analyze (Rules, LJ).Kind /= List
+                 or else Natural (Rules (LJ).Pattern.Length) /= 1
+               then
+                  return None;
+               end if;
+               declare
+                  E : constant Element_Access := Rules (LJ).Pattern (1);
+               begin
+                  if E.Kind /= Group or else E.Min /= 0 or else E.Max >= 0
+                    or else Natural (E.Items.Length) < 2
+                  then
+                     return None;
+                  end if;
+                  declare
+                     L : constant Element_Access := E.Items (E.Items.Last_Index);
+                  begin
+                     if L.Kind /= Name or else L.Name /= A.Name or else L.Min /= 1 or else L.Max /= 1 then
+                        return None;
+                     end if;
+                  end;
+               end;
+               return (Next => NJ, List => LJ);
+            end;
+         end;
+      end Level;
+
+      type Chain_Array is array (1 .. 64) of Natural;
+
+      --  The levels from Idx down: C (1) is Idx, C (2) its operand when that is a level held by value, and so
+      --  on; Opd is the rule parsed as the first operand at the bottom.  M = 0 when Idx is no level.
+      procedure Chain (Idx : Natural; C : out Chain_Array; M : out Natural; Opd : out Natural) is
+         Cur : Natural := Idx;
+         Lv  : Level_Info;
+      begin
+         C := [others => 0];
+         M := 0;
+         Opd := 0;
+         loop
+            Lv := Level (Cur);
+            exit when Lv.Next = 0;
+            M := M + 1;
+            C (M) := Cur;
+            Opd := Lv.Next;
+            exit when M = C'Last
+              or else Level (Lv.Next).Next = 0
+              or else Is_Back (Cur, To_String (Rules (Cur).Pattern (1).Name))
+              or else (for some K in 1 .. M => C (K) = Lv.Next);
+            Cur := Lv.Next;
+         end loop;
+      end Chain;
+
+      function Hex16 (Bits : Bit_Array) return String is
+         Digits_Hex : constant String := "0123456789ABCDEF";
+         R : String (1 .. 16);
+      begin
+         for J in 0 .. 15 loop
+            declare
+               V : Natural := 0;
+            begin
+               for I in 0 .. 3 loop
+                  if Bits (Bits'First + 4 * J + I) then
+                     V := V + 2 ** I;
+                  end if;
+               end loop;
+               R (16 - J) := Digits_Hex (V + 1);
+            end;
+         end loop;
+         return R;
+      end Hex16;
+
+      --  The start of the body of level Idx for the first pass: its first operand into the innermost
+      --  struct, one look at the next byte, and the lists of the levels from the tightest out only if an
+      --  operator of the ladder can begin there.  The second pass, which reads a failure again, takes the
+      --  plain body that follows, so the rule paths of its messages are what they were.
+      procedure Emit_Ladder (Idx : Natural; Ws : Boolean; CN : String; Buf : in out U) is
+         C    : Chain_Array;
+         M    : Natural;
+         Opd  : Natural;
+         Bits : Bit_Array (0 .. 127) := [others => False];
+         Ok   : Boolean := True;
+         Path : array (1 .. 64) of Unbounded_String;
+         Fail : constant String :=
+           "{ free_" & CN & "_fields(&r); memset(&r, 0, sizeof r); p->pos = save; return false; }";
+      begin
+         Chain (Idx, C, M, Opd);
+         if M = 0 then
+            return;
+         end if;
+         for K in 1 .. M loop
+            declare
+               E   : constant Element_Access := Rules (Level (C (K)).List).Pattern (1);
+               Req : constant Element_Access := new HBNF_Grammar.Element'(E.all);
+            begin
+               Req.Min := 1;
+               Req.Max := 1;
+               declare
+                  S : constant HBNF_Lookahead.Cp_Set := HBNF_Lookahead.First_Of (La, Rules, Req);
+               begin
+                  if HBNF_Lookahead.Is_Empty (S) or else HBNF_Lookahead.Has_Any (S)
+                    or else HBNF_Lookahead.Has_Eoi (S)
+                    or else HBNF_Lookahead.El_Nullable (Rules, La.Nullable, Req)
+                  then
+                     Ok := False;
+                  else
+                     for J in 1 .. HBNF_Lookahead.Range_Count (S) loop
+                        if HBNF_Lookahead.Range_Hi (S, J) > 127 then
+                           Ok := False;
+                        else
+                           for B in HBNF_Lookahead.Range_Lo (S, J) .. HBNF_Lookahead.Range_Hi (S, J) loop
+                              Bits (B) := True;
+                           end loop;
+                        end if;
+                     end loop;
+                  end if;
+               end;
+            end;
+         end loop;
+         if not Ok then
+            return;
+         end if;
+         Path (1) := To_Unbounded_String ("r");
+         for K in 2 .. M loop
+            Path (K) := Path (K - 1) & "." & C_Field (To_String (Rules (C (K)).Name));
+         end loop;
+         declare
+            Lo : constant String := Hex16 (Bits (0 .. 63));
+            Hi : constant String := Hex16 (Bits (64 .. 127));
+            Skip : constant String := (if Ws then "        skip_ws(p);" & LF else "");
+         begin
+            Append (Buf, "    /* a ladder of " & Img (M) & " level" & (if M = 1 then "" else "s")
+              & ": one look past the first operand */" & LF);
+            Append (Buf, "    if (p->quiet) {" & LF);
+            Append (Buf, Skip);
+            Append (Buf, "        if (!parse_rule_" & C_Name (To_String (Rules (Opd).Name)) & "(p, &"
+              & To_String (Path (M)) & "." & C_Field (To_String (Rules (Opd).Name)) & ")) " & Fail & LF);
+            Append (Buf, Skip);
+            Append (Buf, "        if (p->pos >= p->len) return true;" & LF);
+            Append (Buf, "        { unsigned b_ = (unsigned char)p->text[p->pos];" & LF);
+            Append (Buf, "          if (b_ >= 128 || !(((b_ < 64 ? 0x" & Lo & "ULL : 0x" & Hi
+              & "ULL) >> (b_ & 63)) & 1ULL)) return true; }" & LF);
+            for K in reverse 1 .. M loop
+               Append (Buf, Skip);
+               Append (Buf, "        if (!parse_rule_" & C_Name (To_String (Rules (Level (C (K)).List).Name))
+                 & "(p, &" & To_String (Path (K)) & "."
+                 & C_Field (To_String (Rules (Level (C (K)).List).Name)) & ")) " & Fail & LF);
+            end loop;
+            Append (Buf, "        return true;" & LF);
+            Append (Buf, "    }" & LF);
+         end;
+      end Emit_Ladder;
+
       procedure Emit_Rule_Parser (Idx : Natural; Buf : in out U) is
          R  : constant Rule := Rules (Idx);
          P  : constant Element_Vectors.Vector := R.Pattern;
@@ -7568,6 +7762,9 @@ package body HBNF_C is
                   Append (Buf, LF);
                end if;
                Emit_Number_Deferrals (Nums, Buf, "    ");
+               if Nums.Is_Empty then
+                  Emit_Ladder (Idx, Ws, CN, Buf);
+               end if;
                --  On failure, free what the sequence built so far (its
                --  lists): the caller only restores the position.  The
                --  _fields variant, since the root's free_ also frees the

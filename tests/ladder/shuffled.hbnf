@@ -1,0 +1,20 @@
+; A ladder of seven binary-operator rules, written in no order, with rules that have nothing to do with it
+; between them.  The levels are found from what refers to what: `or` is the loosest and `mul` the tightest; `mul`
+; holds its operand by pointer (it refers back to the whole ladder through the parentheses), so the ladder the
+; generator takes is `or` down to `add`, with `mul` as its operand.  Operators that begin alike (`<`, `<<`, `<=`; `&`, `&&`) test the order.
+prefix none
+include "../../grammars/common.hbnf"
+
+mul     = operand *( ( "*" / "/" / "%" ) operand )
+program = *( statement ";" )
+eq      = rel *( ( "==" / "!=" ) rel )
+number  = 1*DIGIT
+or      = and *( "||" and )
+label   = 1*ALPHA ":"
+shift   = add *( ( "<<" / ">>" ) add )
+statement = label expr / expr
+and     = eq *( "&&" eq )
+add     = mul *( ( "+" / "-" ) mul )
+expr    = or
+rel     = shift *( ( "<=" / ">=" / "<" / ">" ) shift )
+operand = number / "(" expr ")" / "-" operand
