@@ -19,21 +19,18 @@ context vars
 ; ---- external definitions ----
 translation-unit     = *external-declaration
 external-declaration = ";"
-                     | asm-keyword [ type-qualifier ] "(" asm-body ")" ";"
+                     | asm-statement
                      | typedef-declaration
                      | static-assert-declaration
                      | ( declaration-specifiers | "" ) %scope external-rest
 external-rest        = ";"
-                     | declarator("vars") ( function-body | declarator-tail )
+                     | declarator("vars") ( [ 1*declaration ] compound-statement | declarator-tail )
 declarator-tail      = [ asm-label ] *attribute [ "=" initializer ] *( "," *attribute init-declarator ) ";"
-function-body        = [ declaration-list ] compound-statement
-declaration-list     = 1*declaration
 
 ; ---- declarations ----
 declaration          = typedef-declaration
                      | static-assert-declaration
-                     | declaration-specifiers [ init-declarator-list ] ";"
-init-declarator-list = init-declarator *( "," *attribute init-declarator )
+                     | declaration-specifiers [ init-declarator *( "," *attribute init-declarator ) ] ";"
 init-declarator      = declarator("vars") [ asm-label ] *attribute [ "=" initializer ]
 asm-label            = asm-keyword "(" 1*string-literal ")"
 asm-keyword          = "asm" | "__asm" | "__asm__"
@@ -64,53 +61,54 @@ variable-name        = identifier ?! types | identifier ? vars
 attribute            = ( "__attribute__" | "__attribute" ) "(" "(" [ attribute-item *( "," attribute-item ) ] ")" ")"
 attribute-item       = [ any-word [ "(" [ argument-list ] ")" ] ]
 
-struct-or-union-specifier = struct-or-union *attribute ( identifier [ "{" [ struct-declaration-list ] "}" ] | "{" [ struct-declaration-list ] "}" )
-struct-or-union      = "struct" | "union"
+struct-or-union-specifier = ( "struct" | "union" ) *attribute ( identifier [ "{" [ struct-declaration-list ] "}" ] | "{" [ struct-declaration-list ] "}" )
 struct-declaration-list = 1*struct-declaration
 struct-declaration   = static-assert-declaration
-                     | %scope specifier-qualifier-list [ struct-declarator-list ] 1*( ";" )
+                     | %scope specifier-qualifier-list [ struct-declarator *( "," struct-declarator ) ] 1*( ";" )
 specifier-qualifier-list = *qualifier-or-alignment ( 1*( basic-type *qualifier-or-alignment ) | typedef-name *qualifier-or-alignment )
 qualifier-or-alignment = type-qualifier | alignment-specifier | attribute
-struct-declarator-list = struct-declarator *( "," struct-declarator )
 struct-declarator    = declarator("vars") *attribute [ ":" constant-expression *attribute ] | ":" constant-expression
 enum-specifier       = "enum" ( identifier [ "{" enumerator-list [ "," ] "}" ] | "{" enumerator-list [ "," ] "}" )
 enumerator-list      = enumerator *( "," enumerator )
 enumerator           = identifier [ "=" constant-expression ]
 
 ; a declarator binds the name it declares into the context given: `vars`, or `types` for a typedef
-declarator(C in "vars" | "types") := [ pointer ] direct-declarator(C)
-direct-declarator(C in "vars" | "types") := ( identifier %bind C += identifier | "(" *attribute declarator(C) ")" ) *declarator-suffix
+declarator(C in "vars" | "types") :=
+                       [ pointer ] ( identifier %bind C += identifier | "(" *attribute declarator(C) ")" ) *declarator-suffix
 declarator-suffix    = "[" *( "static" | type-qualifier ) [ assignment-expression | "*" ] "]"
-                     | "(" [ parameter-type-list | identifier-list ] ")"
+                     | "(" [ parameter-type-list | identifier *( "," identifier ) ] ")"
 pointer              = 1*( "*" *( type-qualifier | attribute ) )
 parameter-type-list  = parameter-declaration *( "," parameter-declaration ) [ "," "..." ]
 parameter-declaration = declaration-specifiers [ declarator("vars") *attribute | abstract-declarator ]
-identifier-list      = identifier *( "," identifier )
 type-name            = specifier-qualifier-list [ abstract-declarator ]
 abstract-declarator  = pointer [ direct-abstract-declarator ] | direct-abstract-declarator
 direct-abstract-declarator = ( "(" abstract-declarator ")" | declarator-suffix *attribute ) *( declarator-suffix *attribute )
 
 initializer          = "{" [ initializer-list [ "," ] ] "}" | assignment-expression
 initializer-list     = [ designation ] initializer *( "," [ designation ] initializer )
-designation          = 1*designator "=" | identifier ":" | "[" constant-expression "..." constant-expression "]" "="
-designator           = "[" constant-expression "]" | "." identifier
+designation          = 1*( "[" constant-expression "]" | "." identifier ) "="
+                     | identifier ":"
+                     | "[" constant-expression "..." constant-expression "]" "="
 
 ; ---- statements ----
-statement            = 1*label unlabeled-statement | unlabeled-statement
-unlabeled-statement  = compound-statement | selection-statement | iteration-statement
-                     | jump-statement | asm-statement | expression-statement
+statement            = *label
+                       ( compound-statement
+                       | "if" "(" expression ")" statement [ "else" statement ]
+                       | "switch" "(" expression ")" statement
+                       | "while" "(" expression ")" statement
+                       | "do" statement "while" "(" expression ")" ";"
+                       | "for" "(" %scope ( declaration | [ expression ] ";" ) [ expression ] ";" [ expression ] ")" statement
+                       | "goto" ( identifier | "*" expression ) ";"
+                       | "continue" ";"
+                       | "break" ";"
+                       | "return" [ expression ] ";"
+                       | asm-statement
+                       | [ expression ] ";"
+                       )
 label                = identifier ":" *attribute
                      | "case" constant-expression [ "..." constant-expression ] ":"
                      | "default" ":"
-compound-statement   = "{" %scope *block-item "}"
-block-item           = declaration | statement
-expression-statement = [ expression ] ";"
-selection-statement  = "if" "(" expression ")" statement [ "else" statement ]
-                     | "switch" "(" expression ")" statement
-iteration-statement  = "while" "(" expression ")" statement
-                     | "do" statement "while" "(" expression ")" ";"
-                     | "for" "(" %scope ( declaration | [ expression ] ";" ) [ expression ] ";" [ expression ] ")" statement
-jump-statement       = "goto" ( identifier | "*" expression ) ";" | "continue" ";" | "break" ";" | "return" [ expression ] ";"
+compound-statement   = "{" %scope *( declaration | statement ) "}"
 asm-statement        = asm-keyword [ type-qualifier ] "(" asm-body ")" ";"
 asm-body             = 1*string-literal [ ":" [ asm-operands ] [ ":" [ asm-operands ] [ ":" asm-clobbers ] ] ]
 asm-operands         = asm-operand *( "," asm-operand )
@@ -123,19 +121,17 @@ primary-expression   = constant | 1*string-literal | generic-selection | offseto
 offsetof-call        = "__builtin_offsetof" "(" type-name "," unary-expression ")"
 generic-selection    = "_Generic" "(" assignment-expression "," generic-association *( "," generic-association ) ")"
 generic-association  = ( type-name | "default" ) ":" assignment-expression
-postfix-expression   = ( "(" type-name ")" "{" [ initializer-list [ "," ] ] "}" | primary-expression ) *postfix-suffix
-postfix-suffix       = "[" expression "]" | "(" [ argument-list ] ")" | "." identifier
-                     | "->" identifier | "++" | "--"
+postfix-expression   = ( "(" type-name ")" "{" [ initializer-list [ "," ] ] "}" | primary-expression )
+                       *( "[" expression "]" | "(" [ argument-list ] ")" | "." identifier | "->" identifier | "++" | "--" )
 ; a type may stand as an argument: what `va_arg` and the like are written with
 argument-list        = argument *( "," argument )
 argument             = assignment-expression | type-name
 unary-expression     = "++" unary-expression | "--" unary-expression
-                     | unary-operator cast-expression
+                     | ( "&" | "*" | "+" | "-" | "~" | "!" ) cast-expression
                      | "sizeof" ( "(" type-name ")" | unary-expression )
                      | ( "_Alignof" | "__alignof" | "__alignof__" ) "(" type-name ")"
                      | "&&" identifier
                      | postfix-expression
-unary-operator       = "&" | "*" | "+" | "-" | "~" | "!"
 cast-expression      = "(" type-name ")" cast-expression | unary-expression
 multiplicative-expression = cast-expression *( ( "*" | "/" | "%" ) cast-expression )
 additive-expression  = multiplicative-expression *( ( "+" | "-" ) multiplicative-expression )

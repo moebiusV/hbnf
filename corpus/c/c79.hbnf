@@ -14,77 +14,79 @@ context vars
 ; ---- external definitions ----
 translation-unit     = *external-definition
 external-definition  = typedef-declaration
-                     | ( attributes | "" ) %scope definition-rest
-definition-rest      = ";"
-                     | declarator ( function-body | [ initializer ] *( "," init-declarator ) ";" )
-function-body        = *declaration compound-statement
-
+                     | ( attributes | "" ) %scope
+                       ( ";"
+                       | declarator("vars") ( *declaration compound-statement
+                                            | [ initializer ] *( "," init-declarator ) ";" ) )
 ; ---- declarations ----
-declaration          = typedef-declaration | attributes [ init-declarator-list ] ";"
-init-declarator-list = init-declarator *( "," init-declarator )
-init-declarator      = declarator [ initializer ]
-typedef-declaration  = "typedef" [ type ] typedef-declarator *( "," typedef-declarator ) ";"
-                     | type "typedef" typedef-declarator *( "," typedef-declarator ) ";"
+declaration          = typedef-declaration | attributes [ init-declarator *( "," init-declarator ) ] ";"
+init-declarator      = declarator("vars") [ initializer ]
+typedef-declaration  = ( "typedef" [ type ] | type "typedef" ) declarator("types") *( "," declarator("types") ) ";"
 
 ; one storage class, one type, in either order, or either alone
 attributes           = class type | type class | class | type
 class                = "extern" | "static" | "auto" | "register" | "fortran"
-type                 = 1*3 basic-type | typedef-name | struct-specifier | enum-specifier
-basic-type           = "char" | "short" | "int" | "long" | "float" | "double" | "unsigned"
+type                 = 1*3 ( "char" | "short" | "int" | "long" | "float" | "double" | "unsigned" )
+                     | typedef-name
+                     | struct-specifier
+                     | enum-specifier
 ; A typedef name is a token of its own, so it is not a variable, unless a declaration in an
 ; inner scope has made the name a variable.
 known-type           = identifier ? types
 typedef-name         = known-type ?! vars
-variable-name        = identifier ?! types | identifier ? vars
-
 struct-specifier     = ( "struct" | "union" ) ( identifier [ "{" struct-body "}" ] | "{" struct-body "}" )
 struct-body          = member-declaration *( ";" member-declaration ) [ ";" ]
 member-declaration   = %scope type [ member-declarator *( "," member-declarator ) ]
-member-declarator    = declarator [ ":" constant-expression ] | ":" constant-expression
+member-declarator    = declarator("vars") [ ":" constant-expression ] | ":" constant-expression
 enum-specifier       = "enum" ( identifier [ "{" enumerator-list [ "," ] "}" ] | "{" enumerator-list [ "," ] "}" )
 enumerator-list      = enumerator *( "," enumerator )
 enumerator           = identifier [ "=" constant-expression ]
 
-declarator           = "*" declarator | direct-declarator
-direct-declarator    = ( identifier %bind vars += identifier | "(" declarator ")" ) *declarator-suffix
+; a declarator binds the name it declares into the context given: `vars`, or `types` for a typedef
+declarator(C in "vars" | "types") :=
+                       "*" declarator(C)
+                     | ( identifier %bind C += identifier | "(" declarator(C) ")" ) *declarator-suffix
 declarator-suffix    = "[" [ constant-expression ] "]" | "(" [ parameter-name *( "," parameter-name ) ] ")"
 ; a parameter is a name in the function, even where a typedef has the same name
 parameter-name       = identifier %bind vars += identifier
 ; the same with the name it declares added to `types`
-typedef-declarator   = "*" typedef-declarator | direct-typedef-declarator
-direct-typedef-declarator = ( identifier %bind types += identifier | "(" typedef-declarator ")" ) *declarator-suffix
 type-name            = type [ abstract-declarator ]
 abstract-declarator  = "*" [ abstract-declarator ] | direct-abstract-declarator
 direct-abstract-declarator = ( "(" [ abstract-declarator ] ")" | abstract-suffix ) *abstract-suffix
 abstract-suffix      = "[" [ constant-expression ] "]" | "(" ")"
 
 ; an initializer, with its `=` or without it
-initializer          = [ "=" !"=" ] ( "{" init-list [ "," ] "}" | assignment-expression )
+initializer          = [ "=" !"=" ] element
 init-list            = element *( "," element )
 element              = "{" init-list [ "," ] "}" | assignment-expression
 
 ; ---- statements ----
-statement            = labeled-statement | compound-statement | selection-statement
-                     | iteration-statement | jump-statement | expression-statement
-labeled-statement    = identifier ":" statement
+statement            = identifier ":" statement
                      | "case" expression ":" statement
                      | "default" ":" statement
-; the declarations come first
-compound-statement   = "{" %scope *declaration *statement "}"
-expression-statement = [ expression ] ";"
-selection-statement  = "if" "(" expression ")" statement [ "else" statement ]
+                     | compound-statement
+                     | "if" "(" expression ")" statement [ "else" statement ]
                      | "switch" "(" expression ")" statement
-iteration-statement  = "while" "(" expression ")" statement
+                     | "while" "(" expression ")" statement
                      | "do" statement "while" "(" expression ")" ";"
                      | "for" "(" [ expression ] ";" [ expression ] ";" [ expression ] ")" statement
-jump-statement       = "goto" identifier ";" | "continue" ";" | "break" ";" | "return" [ expression ] ";"
-
+                     | "goto" identifier ";"
+                     | "continue" ";"
+                     | "break" ";"
+                     | "return" [ expression ] ";"
+                     | [ expression ] ";"
+; the declarations come first
+compound-statement   = "{" %scope *declaration *statement "}"
 ; ---- expressions ----
 ; (no unary plus, and a string does not join the one next to it)
-primary-expression   = constant | string-literal | "(" expression ")" | variable-name
-postfix-expression   = primary-expression *postfix-suffix
-postfix-suffix       = "[" expression "]" | "(" [ argument-list ] ")" | "." identifier | "->" identifier | "++" | "--"
-argument-list        = assignment-expression *( "," assignment-expression )
+primary-expression   = constant
+                     | string-literal
+                     | "(" expression ")"
+                     | identifier ?! types
+                     | identifier ? vars
+postfix-expression   = primary-expression
+                       *( "[" expression "]" | "(" [ assignment-expression *( "," assignment-expression ) ] ")"
+                        | "." identifier | "->" identifier | "++" | "--" )
 unary-expression     = ( "++" | "--" | "*" | "&" | "-" | "!" | "~" ) unary-expression
                      | "sizeof" ( "(" type-name ")" | unary-expression )
                      | "(" type-name ")" unary-expression
