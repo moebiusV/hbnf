@@ -6270,7 +6270,7 @@ package body HBNF_C is
       --  nodes.  Each element is a local named after its rule; an `%emit{ }` is the author's code
       --  at its place, `$$` the rule's value.  A rule runs once on the way to a result (the quiet
       --  first pass) and the emits only there, so the pass that reads a failure again runs none.
-      procedure Emit_Valued (Idx : Natural; Buf : in out U) is
+      procedure Emit_Valued (Idx : Natural; Buf : in out U; Quiet : Boolean) is
          R   : constant Rule := Rules (Idx);
          RN  : constant String := To_String (R.Name);
          Ws  : constant Boolean := R.Whitespace /= Null_Unbounded_String;
@@ -6410,8 +6410,11 @@ package body HBNF_C is
                           & Fail & " } " & C_Field (N) & " = " & Scalar_Value (N, "n")
                           & "; p->pos += n; }" & LF);
                      else
+                        --  the quiet body calls the quiet bodies, which every rule that is called has
                         Append (Buf, Ind & "if (!" & Rule_Call (RN, E,
-                          "parse_rule_" & C_Name (N) & "(p, &" & C_Field (N) & ")")
+                          (if Quiet and then Needs_Parse_Fn (Rules, N)
+                           then "parse_body_" else "parse_rule_") & C_Name (N)
+                          & "(p, &" & C_Field (N) & ")")
                           & ") { " & Fail & " }" & LF);
                      end if;
                   end;
@@ -6429,8 +6432,12 @@ package body HBNF_C is
                     & "p->text + p->pos, 0); " & Fail & " } p->pos++;" & LF);
                when Block =>
                   if E.Op = B_Emit then
-                     Append (Buf, Ind & "if (p->quiet) {" & LF & Ind & "    "
-                       & Code_Of (To_String (E.Code)) & LF & Ind & "}" & LF);
+                     --  the code runs in the quiet pass only: the body the pass that reads a
+                     --  failure again uses has none
+                     if Quiet then
+                        Append (Buf, Ind & "{" & LF & Ind & "    "
+                          & Code_Of (To_String (E.Code)) & LF & Ind & "}" & LF);
+                     end if;
                   else
                      Element_Seq (E, Fail, Ind);
                   end if;
@@ -6520,34 +6527,29 @@ package body HBNF_C is
                   return True;
                end Dispatchable;
 
-               Dispatch : constant Boolean := Dispatchable;
+               Dispatch : constant Boolean := Quiet and then Dispatchable;
             begin
                Append (Buf, Ind & "{ size_t as" & Id & " = p->pos;" & LF);
                if Dispatch then
                   if Ws and then not Skip_Done then
-                     Append (Buf, Ind & "  skip_ws(p);  as" & Id & " = p->pos;" & LF);
+                     Append (Buf, Ind & "  skip_ws(p);" & LF);
                   end if;
-                  Append (Buf, Ind & "  if (p->quiet) {" & LF);
-                  Append (Buf, Ind & "    switch (p->pos < p->len ? (unsigned char)p->text[p->pos] : 256) {" & LF);
+                  Append (Buf, Ind & "  switch (p->pos < p->len ? (unsigned char)p->text[p->pos] : 256) {" & LF);
                   for K in Sets'Range loop
                      for Q in 1 .. HBNF_Lookahead.Range_Count (Sets (K)) loop
                         for Ch in HBNF_Lookahead.Range_Lo (Sets (K), Q) .. HBNF_Lookahead.Range_Hi (Sets (K), Q) loop
-                           Append (Buf, Ind & "    case " & Img (Ch) & ": goto br" & Id & "_" & Img (K) & ";" & LF);
+                           Append (Buf, Ind & "  case " & Img (Ch) & ": goto br" & Id & "_" & Img (K) & ";" & LF);
                         end loop;
                      end loop;
                   end loop;
-                  Append (Buf, Ind & "    default: p->pos = as" & Id & "; " & Fail & LF
-                    & Ind & "    }" & LF & Ind & "  }" & LF);
+                  Append (Buf, Ind & "  default: " & Fail & LF & Ind & "  }" & LF);
                end if;
                for K in F .. L + 1 loop
                   if K > L or else V (K).Kind = Alt then
                      N := N + 1;
                      declare
                         Last : constant Boolean := K > L;
-                        Next : constant String :=
-                          (if Dispatch
-                           then "goto bf" & Id & "_" & Img (N) & ";"
-                           else "goto alt" & Id & "_" & Img (N) & ";");
+                        Next : constant String := "goto alt" & Id & "_" & Img (N) & ";";
                      begin
                         if Dispatch then
                            Append (Buf, Ind & "  br" & Id & "_" & Img (N) & ": ;" & LF);
@@ -6555,23 +6557,13 @@ package body HBNF_C is
                         Append (Buf, Ind & "  {" & LF);
                         Skip_Done := Dispatch;
                         for X in St .. K - 1 loop
-                           Elem (V (X), (if Last and then not Dispatch then Fail else Next),
+                           Elem (V (X), (if Last or else Dispatch then Fail else Next),
                                  Ind & "    ");
                         end loop;
                         Skip_Done := False;
                         Append (Buf, Ind & "    goto done" & Id & ";" & LF);
                         Append (Buf, Ind & "  }" & LF);
-                        if Dispatch then
-                           --  a quiet pass that fails in a branch fails the choice; the pass that
-                           --  reads a failure again goes on to the next alternative
-                           Append (Buf, Ind & "  bf" & Id & "_" & Img (N) & ": if (p->quiet) { p->pos = as"
-                             & Id & "; " & Fail & " }" & LF);
-                           if not Last then
-                              Append (Buf, Ind & "  p->pos = as" & Id & ";" & LF);
-                           else
-                              Append (Buf, Ind & "  p->pos = as" & Id & "; " & Fail & LF);
-                           end if;
-                        elsif not Last then
+                        if not Last and then not Dispatch then
                            Append (Buf, Ind & "  alt" & Id & "_" & Img (N) & ": p->pos = as"
                              & Id & ";" & LF);
                         end if;
@@ -6602,7 +6594,7 @@ package body HBNF_C is
          Ws : constant Boolean := R.Whitespace /= Null_Unbounded_String;
       begin
          if Emit_Value_Type (R) /= "" then
-            Emit_Valued (Idx, Buf);
+            Emit_Valued (Idx, Buf, True);
             return;
          end if;
          if R.Jet_Code /= Null_Unbounded_String then
@@ -7953,6 +7945,153 @@ package body HBNF_C is
          end loop;
       end;
 
+      --  The check costs a few instructions in every call of a rule that has it, so it belongs
+      --  on the rules called least.  Where a guarded rule is named in more places in the grammar
+      --  than the rules it calls on its cycles, those are guarded instead (a `value` that an
+      --  `object` and an `array` hold, a thousand calls to the one for every two to the others),
+      --  provided that no cycle is left without a guard.
+      declare
+         type Rule_Flags is array (1 .. N) of Boolean;
+         Weight : array (1 .. N) of Natural := [others => 0];
+
+         procedure Count (Els : Element_Vectors.Vector) is
+         begin
+            for E of Els loop
+               case E.Kind is
+                  when Name =>
+                     if not Is_Core (To_String (E.Name)) then
+                        declare
+                           J : constant Natural := Find (To_String (E.Name));
+                        begin
+                           if J /= 0 then
+                              Weight (J) := Weight (J) + 1;
+                           end if;
+                        end;
+                     end if;
+                  when Group =>
+                     Count (E.Items);
+                  when Block =>
+                     Count (E.Look);
+                  when others =>
+                     null;
+               end case;
+            end loop;
+         end Count;
+
+         procedure Named (Els : Element_Vectors.Vector; Into : in out Rule_Flags) is
+         begin
+            for E of Els loop
+               case E.Kind is
+                  when Name =>
+                     if not Is_Core (To_String (E.Name)) then
+                        declare
+                           J : constant Natural := Find (To_String (E.Name));
+                        begin
+                           if J /= 0 then
+                              Into (J) := True;
+                           end if;
+                        end;
+                     end if;
+                  when Group =>
+                     Named (E.Items, Into);
+                  when Block =>
+                     Named (E.Look, Into);
+                  when others =>
+                     null;
+               end case;
+            end loop;
+         end Named;
+
+         function Reaches (From, To : Positive) return Boolean is
+            Seen  : Rule_Flags := [others => False];
+            Found : Boolean := False;
+            procedure Walk (I : Positive) is
+               Out_Of : Rule_Flags := [others => False];
+            begin
+               if Found or else Seen (I) then
+                  return;
+               end if;
+               Seen (I) := True;
+               Named (Rules (I).Pattern, Out_Of);
+               for J in 1 .. N loop
+                  if Out_Of (J) then
+                     if J = To then
+                        Found := True;
+                     else
+                        Walk (J);
+                     end if;
+                  end if;
+               end loop;
+            end Walk;
+         begin
+            Walk (From);
+            return Found;
+         end Reaches;
+
+         --  No cycle of references is left once the rules in Guarded are taken out.
+         function Acyclic (Guarded : Rule_Flags) return Boolean is
+            Color : array (1 .. N) of Natural := [others => 0];
+            Ok    : Boolean := True;
+            procedure Walk (I : Positive) is
+               Out_Of : Rule_Flags := [others => False];
+            begin
+               Color (I) := 1;
+               Named (Rules (I).Pattern, Out_Of);
+               for J in 1 .. N loop
+                  if Out_Of (J) and then not Guarded (J) then
+                     if Color (J) = 1 then
+                        Ok := False;
+                     elsif Color (J) = 0 then
+                        Walk (J);
+                     end if;
+                  end if;
+               end loop;
+               Color (I) := 2;
+            end Walk;
+         begin
+            for I in 1 .. N loop
+               if Color (I) = 0 and then not Guarded (I) then
+                  Walk (I);
+               end if;
+            end loop;
+            return Ok;
+         end Acyclic;
+      begin
+         for R of Rules loop
+            Count (R.Pattern);
+         end loop;
+         for T in 1 .. N loop
+            if Cycle_Target (T) then
+               declare
+                  Calls : Rule_Flags := [others => False];
+                  Trial : Rule_Flags;
+                  Total : Natural := 0;
+                  Any   : Boolean := False;
+               begin
+                  Named (Rules (T).Pattern, Calls);
+                  for K in 1 .. N loop
+                     Trial (K) := Cycle_Target (K);
+                  end loop;
+                  Trial (T) := False;
+                  for K in 1 .. N loop
+                     if Calls (K) and then K /= T and then not Cycle_Target (K)
+                       and then Reaches (K, T)
+                     then
+                        Trial (K) := True;
+                        Total := Total + Weight (K);
+                        Any := True;
+                     end if;
+                  end loop;
+                  if Any and then Total < Weight (T) and then Acyclic (Trial) then
+                     for K in 1 .. N loop
+                        Cycle_Target (K) := Trial (K);
+                     end loop;
+                  end if;
+               end;
+            end if;
+         end loop;
+      end;
+
       for I in 1 .. N loop
          declare
             R  : constant Rule := Rules (I);
@@ -7962,11 +8101,21 @@ package body HBNF_C is
                declare
                   --  A rule that can bind puts the contexts back when it
                   --  fails (a token is a scanner and binds nothing).
+                  Valued : constant Boolean := Emit_Value_Type (R) /= "";
                   Wrap_Ctx : constant Boolean :=
                     Ctx_On and then not Is_Char_Rule (Rules, NM)
                     and then R.Jet_Code = Null_Unbounded_String
                     and then Rule_Binds (I);
                begin
+                  --  A rule that runs emits has two bodies: the quiet one, the first pass, which is
+                  --  all the emits and none of the bookkeeping, and the loud one, which a pass that
+                  --  reads a failure again takes, which records what each alternative wanted.
+                  if Valued then
+                     Append (Res, "static bool parse_loud_" & C_Name (NM)
+                       & "(parser_t *p, " & Out_Type (I) & ") {" & LF);
+                     Emit_Valued (I, Res, False);
+                     Append (Res, "}" & LF & LF);
+                  end if;
                   if Wrap_Ctx or else True then
                      Append (Res, "static bool parse_body_" & C_Name (NM)
                        & "(parser_t *p, " & Out_Type (I) & ");" & LF
@@ -7989,7 +8138,8 @@ package body HBNF_C is
                        & Natural'Image (I) & "; p->stkpos[p->depth] = p->pos; }"
                        & LF
                        & "    p->depth++;" & LF
-                       & "    ok_ = parse_body_" & C_Name (NM) & "(p, out);" & LF
+                       & "    ok_ = " & (if Valued then "parse_loud_" else "parse_body_")
+                       & C_Name (NM) & "(p, out);" & LF
                        & "    p->depth--;" & LF
                        & (if Wrap_Ctx
                           then "    if (!ok_) hbnf_reset (&m_);" & LF else "")
@@ -7997,7 +8147,10 @@ package body HBNF_C is
                        & (if Cycle_Target (I) then "static bool" else "static inline bool")
                        & " parse_body_" & C_Name (NM)
                        & "(parser_t *p, " & Out_Type (I) & ") {" & LF
-                       & (if Cycle_Target (I) then "    if (p->quiet) HBNF_STACK_GUARD(p);" & LF else ""));
+                       & (if Cycle_Target (I)
+                          then (if Valued then "    HBNF_STACK_GUARD(p);" & LF
+                                else "    if (p->quiet) HBNF_STACK_GUARD(p);" & LF)
+                          else ""));
                   else
                      Append (Res, Fill ("c_rule_head",
                        (H ("name", C_Name (NM)),
@@ -8385,10 +8538,103 @@ begin
                end if;
             end loop;
          end loop;
-         Append (Res, "static size_t scan_" & C_Name (NM)
-           & "(const char *s, size_t pos, size_t len) {" & LF
-           & "    size_t i = pos, best = 0;" & LF
-           & (if Wide then "    uint32_t c; size_t n;" & LF else "    unsigned c;" & LF));
+         --  A token that is an opening character, a run of ordinary bytes and a closing character
+         --  (a quoted string) gets a short way in front of the machine: when the first bytes
+         --  after the opening one hold the closing one, before any byte that needs a state of
+         --  its own, the match is found with one wide step and no call.  Anything else, and a
+         --  string longer than that, goes to the machine.
+         declare
+            Open_C  : Natural := 0;
+            Close_C : Natural := 0;
+            Fast    : Boolean := False;
+            Temps   : Unbounded_String;
+            Tests   : Unbounded_String;
+         begin
+            if not D (1).Accepting and then Natural (D (1).Edges.Length) = 1
+              and then D (1).Edges.First_Element.Lo = D (1).Edges.First_Element.Hi
+              and then D (1).Edges.First_Element.Hi <= 127
+              and then D (1).Edges.First_Element.To /= 1
+            then
+               declare
+                  S1    : constant Positive := D (1).Edges.First_Element.To;
+                  Loops : array (0 .. 255) of Boolean := [others => False];
+                  Count : Natural := 0;
+                  Ranges : Natural := 0;
+                  C     : Natural := 0;
+               begin
+                  Open_C := D (1).Edges.First_Element.Lo;
+                  for E of D (S1).Edges loop
+                     if E.To = S1 then
+                        for B in E.Lo .. Natural'Min (E.Hi, 127) loop
+                           Loops (B) := True;
+                           Count := Count + 1;
+                        end loop;
+                     end if;
+                  end loop;
+                  if Count >= 20 and then not Loops (0) and then not D (S1).Accepting then
+                     --  the bytes that leave the run, as the wide step of the machine tests them
+                     while C <= 255 loop
+                        if not Loops (C) then
+                           declare
+                              Lo_B : constant Natural := C;
+                           begin
+                              while C <= 255 and then not Loops (C) loop
+                                 C := C + 1;
+                              end loop;
+                              Ranges := Ranges + 1;
+                              declare
+                                 Hi_B : constant Natural := C - 1;
+                              begin
+                                 if Lo_B = Hi_B then
+                                    Append (Tests, (if Ranges = 1 then "" else " | ")
+                                      & "_mm_cmpeq_epi8(v, _mm_set1_epi8((char)" & N (Lo_B) & "))");
+                                 else
+                                    Append (Temps, ", x" & N (Ranges));
+                                    Append (Tests, (if Ranges = 1 then "" else " | ")
+                                      & "(x" & N (Ranges) & " = _mm_sub_epi8(v, _mm_set1_epi8((char)" & N (Lo_B)
+                                      & ")), _mm_cmpeq_epi8(_mm_min_epu8(x" & N (Ranges)
+                                      & ", _mm_set1_epi8((char)" & N (Hi_B - Lo_B) & ")), x" & N (Ranges) & "))");
+                                 end if;
+                              end;
+                           end;
+                        else
+                           C := C + 1;
+                        end if;
+                     end loop;
+                     --  one edge out of the run that is not a byte of it and ends the token
+                     for E of D (S1).Edges loop
+                        if E.To /= S1 and then E.Lo = E.Hi and then E.Hi <= 127
+                          and then D (E.To).Accepting and then D (E.To).Edges.Is_Empty
+                        then
+                           Fast := Ranges <= 5;
+                           Close_C := E.Lo;
+                        end if;
+                     end loop;
+                  end if;
+               end;
+            end if;
+            if Fast then
+               Append (Res, "static size_t scan_" & C_Name (NM) & "_full(const char *s, size_t pos, size_t len);" & LF
+                 & "static inline size_t scan_" & C_Name (NM)
+                 & "(const char *s, size_t pos, size_t len) {" & LF
+                 & "#if defined(__SSE2__)" & LF
+                 & "    if (pos + 17 <= len && s[pos] == " & N (Open_C) & ") {" & LF
+                 & "        __m128i v = _mm_loadu_si128((const __m128i *)(s + pos + 1))" & To_String (Temps) & ";" & LF
+                 & "        unsigned mk = (unsigned)_mm_movemask_epi8(" & To_String (Tests) & ");" & LF
+                 & "        if (mk) {" & LF
+                 & "            size_t j = pos + 1 + (size_t)__builtin_ctz(mk);" & LF
+                 & "            if (s[j] == " & N (Close_C) & ") return j + 1 - pos;" & LF
+                 & "        }" & LF
+                 & "    }" & LF
+                 & "#endif" & LF
+                 & "    return scan_" & C_Name (NM) & "_full(s, pos, len);" & LF
+                 & "}" & LF);
+            end if;
+            Append (Res, "static size_t scan_" & C_Name (NM) & (if Fast then "_full" else "")
+              & "(const char *s, size_t pos, size_t len) {" & LF
+              & "    size_t i = pos, best = 0;" & LF
+              & (if Wide then "    uint32_t c; size_t n;" & LF else "    unsigned c;" & LF));
+         end;
          --  the runs: a state that loops on itself over ASCII bytes
          for St in 1 .. Natural (D.Length) loop
             declare
@@ -8481,13 +8727,18 @@ begin
                           & "    for (; i + 16 <= len; i += 16) {" & LF
                           & "        __m128i v = _mm_loadu_si128((const __m128i *)(s + i))" & To_String (Temps) & ";" & LF
                           & "        unsigned mk = (unsigned)_mm_movemask_epi8(" & To_String (Tests) & ");" & LF
-                          & "        if (mk) { i += (size_t)__builtin_ctz(mk); break; }" & LF
+                          & "        if (mk) { i += (size_t)__builtin_ctz(mk); goto RS" & N (St - 1) & "; }" & LF
                           & "    }" & LF
                           & "#endif" & LF);
                      end if;
                   end if;
+                  --  The wide step stops on the byte that is not in the run, inside the text: that
+                  --  case goes straight past the byte-at-a-time loop and the clamp.
                   Append (Res, "    while (run" & N (St - 1) & "[(unsigned char)s[i]]) i++;" & LF
-                    & "    if (i > len) i = len;" & LF);
+                    & "    if (i > len) i = len;" & LF
+                    & (if Count >= 20 and then Ranges <= 5
+                       then "RS" & N (St - 1) & ": __attribute__((unused));" & LF
+                       else ""));
                   if D (St).Accepting then
                      Append (Res, "    best = i - pos;" & LF);
                   end if;
