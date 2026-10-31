@@ -2936,6 +2936,12 @@ package body HBNF_Zig is
          end if;
       end Range_Cond;
 
+      --  The same for a position that may be a second range too (a letter of a case-insensitive literal).
+      function Range_Cond (Lo, Hi, Lo2, Hi2 : Natural) return String is
+        (if Hi2 >= Lo2
+         then "(" & Range_Cond (Lo, Hi) & " or " & Range_Cond (Lo2, Hi2) & ")"
+         else Range_Cond (Lo, Hi));
+
       procedure Emit_Seq
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural;
@@ -3227,16 +3233,22 @@ package body HBNF_Zig is
                                           then "scan_" & Zig_Snake (NM) & "(p.text, p.pos, p.text.len)"
                                           else "");
                                     begin
-                                       if Scan = "" then
-                                          raise Parse_Error with
-                                            "a lookahead (`!` or `&`) looks at a literal or a "
-                                            & "token, and `" & NM & "` is a phrase rule; make it "
-                                            & "a token (write it with characters only) or look "
-                                            & "for a literal";
-                                       end if;
                                        Append (Desc, NM);
-                                       Append (Buf, Ind & "    if (ok_) { const n_ = " & Scan
-                                         & "; if (n_ > 0) { p.pos += n_; } else { ok_ = false; } }");
+                                       if Scan /= "" then
+                                          Append (Buf, Ind & "    if (ok_) { const n_ = " & Scan
+                                            & "; if (n_ > 0) { p.pos += n_; } else { ok_ = false; } }");
+                                       elsif Find (Rules, NM) = 0 then
+                                          raise Parse_Error with
+                                            "a lookahead (`!` or `&`) looks at a literal, a rule or "
+                                            & "alternatives of those, and `" & NM & "` is not defined";
+                                       else
+                                          --  a phrase rule: parsed here and thrown away; the whole parser is put
+                                          --  back below
+                                          Append (Buf, Ind & "    if (ok_) { _ = "
+                                            & Rule_Call (To_String (Rules (Owner).Name), X,
+                                                         "parse_" & Zig_Snake (NM) & "(p)")
+                                            & " catch { ok_ = false; }; }");
+                                       end if;
                                     end;
                                  end if;
                                  Append (Buf, LF);
@@ -3926,7 +3938,7 @@ package body HBNF_Zig is
             for Rg of B loop
                Append (Res, Ind & "          if (ok) { var c: u32 = 0; const n = decode_utf8(s,"
                  & " pos + off + o, len, &c); if (n == 0 or !"
-                 & Range_Cond (Rg.Lo, Rg.Hi) & ") { ok = false; } else { o += n; } }");
+                 & Range_Cond (Rg.Lo, Rg.Hi, Rg.Lo2, Rg.Hi2) & ") { ok = false; } else { o += n; } }");
                Append (Res, LF);
             end loop;
             Append (Res, Ind & "          if (ok and o > br) { br = o; } }");
@@ -4709,7 +4721,7 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
                               Append (Res, LF);
                               Append (Res, "        const n = decode_utf8(s, pos + off, len, &c);");
                               Append (Res, LF);
-                              Append (Res, "        if (n == 0 or !" & Range_Cond (A.Lo, A.Hi)
+                              Append (Res, "        if (n == 0 or !" & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2)
                                 & ") return 0;");
                               Append (Res, LF);
                               Append (Res, "        off += n;");
@@ -4750,7 +4762,7 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
                                        Append (Res, "            const n = decode_utf8(s, pos + off, len, &c);");
                                        Append (Res, LF);
                                        Append (Res, "            if (n == 0 or !"
-                                         & Range_Cond (A.Lo, A.Hi) & ") break :br"
+                                         & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2) & ") break :br"
                                          & Img (Br) & ";");
                                        Append (Res, LF);
                                        Append (Res, "            off += n;");

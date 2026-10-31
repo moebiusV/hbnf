@@ -4776,6 +4776,12 @@ package body HBNF_C is
          end if;
       end Range_Cond;
 
+      --  The same for a position that may be a second range too (a letter of a case-insensitive literal).
+      function Range_Cond (Lo, Hi, Lo2, Hi2 : Natural) return String is
+        (if Hi2 >= Lo2
+         then "(" & Range_Cond (Lo, Hi) & " || " & Range_Cond (Lo2, Hi2) & ")"
+         else Range_Cond (Lo, Hi));
+
       function Has_Alt (Els : Element_Vectors.Vector) return Boolean is
       begin
          for E of Els loop
@@ -5664,22 +5670,43 @@ package body HBNF_C is
                                                 elsif Is_Char_Rule (Rules, NM)
                                                 then Rule_Scanner (Rules, NM)
                                                 else "");
+                                             J : constant Natural := Find (NM);
                                           begin
-                                             if Scan = "" then
-                                                raise Parse_Error with
-                                                  "a lookahead (`!` or `&`) "
-                                                  & "looks at a literal or a "
-                                                  & "token, and `" & NM
-                                                  & "` is a phrase rule; make "
-                                                  & "it a token (write it with "
-                                                  & "characters only) or look "
-                                                  & "for a literal";
-                                             end if;
                                              Append (Desc, NM);
-                                             Append (Buf, Ind & "    if (ok_) { n_ = "
-                                               & Scan & "(p->text, p->pos, "
-                                               & "p->len); if (n_) p->pos += n_; "
-                                               & "else ok_ = 0; }");
+                                             if Scan /= "" then
+                                                Append (Buf, Ind & "    if (ok_) { n_ = "
+                                                  & Scan & "(p->text, p->pos, "
+                                                  & "p->len); if (n_) p->pos += n_; "
+                                                  & "else ok_ = 0; }");
+                                             elsif J = 0 or else Emit_Value_Type (Rules (J)) /= "" then
+                                                raise Parse_Error with
+                                                  "a lookahead (`!` or `&`) looks at a literal, a rule or "
+                                                  & "alternatives of those, and `" & NM
+                                                  & "` is a rule that runs an %emit or is not defined";
+                                             else
+                                                --  a phrase rule: parsed here and thrown away, with the
+                                                --  position, what it bound and what it took from the arena
+                                                --  put back
+                                                declare
+                                                   K : constant Class_Kind := Analyze (Rules, J).Kind;
+                                                   T : constant String := Alias_Target (Rules, NM);
+                                                begin
+                                                   Append (Buf, Ind & "    if (ok_) { " & C_Type_Name (NM)
+                                                     & " t_; memset(&t_, 0, sizeof t_); hbnf_chunk *lc_ = hbnf_arena;"
+                                                     & " size_t lu_ = lc_ ? lc_->used : 0;"
+                                                     & (if Ctx_On then " hbnf_mark_t cx_ = hbnf_mark();" else "")
+                                                     & " ok_ = parse_rule_" & C_Name (NM) & "(p, &t_);"
+                                                     & (if K in Struct | List and then Find (T) /= 0
+                                                        then " free_" & C_Name (T)
+                                                             & (if Find (T) = 1 and then K = List then "_nodes" else "")
+                                                             & "(&t_);"
+                                                        else "")
+                                                     & " if (lc_ && hbnf_arena == lc_) { memset(lc_->data + lu_, 0,"
+                                                     & " lc_->used - lu_); lc_->used = lu_; }"
+                                                     & (if Ctx_On then " hbnf_reset (&cx_);" else "")
+                                                     & " (void)n_; }");
+                                                end;
+                                             end if;
                                           end;
                                        end if;
                                        Append (Buf, LF);
@@ -8006,7 +8033,9 @@ package body HBNF_C is
             return False;
          end if;
          for B of Sub loop
-            if Natural (B.Length) /= 1 or else B (1).Hi >= 16#80# then
+            if Natural (B.Length) /= 1 or else B (1).Hi >= 16#80#
+              or else (B (1).Hi2 >= B (1).Lo2 and then B (1).Hi2 >= 16#80#)
+            then
                return False;
             end if;
          end loop;
@@ -8023,8 +8052,10 @@ package body HBNF_C is
                Append (Buf, " || ");
             end if;
             First := False;
-            Append (Buf, "(b >= " & Img (B (1).Lo) & " && b <= "
-              & Img (B (1).Hi) & ")");
+            Append (Buf, "(b >= " & Img (B (1).Lo) & " && b <= " & Img (B (1).Hi) & ")");
+            if B (1).Hi2 >= B (1).Lo2 then
+               Append (Buf, " || (b >= " & Img (B (1).Lo2) & " && b <= " & Img (B (1).Hi2) & ")");
+            end if;
          end loop;
          return To_String (Buf);
       end Class_Cond;
@@ -8040,16 +8071,21 @@ package body HBNF_C is
          end if;
       end Byte_Cond;
 
+      function Byte_Cond (Lo, Hi, Lo2, Hi2 : Natural) return String is
+        (if Hi2 >= Lo2
+         then "(" & Byte_Cond (Lo, Hi) & " || " & Byte_Cond (Lo2, Hi2) & ")"
+         else Byte_Cond (Lo, Hi));
+
       --  Emit one single code point: a direct byte compare when it is ASCII,
       --  else a UTF-8 decode (the code point may be multi-byte).
       procedure Emit_Single (A : Cp_Atom; Ind : String; Fail : String) is
       begin
-         if A.Hi < 16#80# then
+         if A.Hi < 16#80# and then (A.Hi2 < A.Lo2 or else A.Hi2 < 16#80#) then
             Append (Res, Ind & "if (pos + off >= len) " & Fail & ";");
             Append (Res, LF);
             Append (Res, Ind & "{ unsigned char b = (unsigned char)s[pos + off];");
             Append (Res, LF);
-            Append (Res, Ind & "  if (!" & Byte_Cond (A.Lo, A.Hi) & ") "
+            Append (Res, Ind & "  if (!" & Byte_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2) & ") "
               & Fail & "; }");
             Append (Res, LF);
             Append (Res, Ind & "off++;");
@@ -8057,7 +8093,7 @@ package body HBNF_C is
          else
             Append (Res, Ind & "{ uint32_t c; size_t n = hbnf_decode_utf8(s,"
               & " pos + off, len, &c); if (!n || !"
-              & Range_Cond (A.Lo, A.Hi) & ") " & Fail & "; off += n; }");
+              & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2) & ") " & Fail & "; off += n; }");
             Append (Res, LF);
          end if;
       end Emit_Single;
@@ -8105,7 +8141,7 @@ package body HBNF_C is
             for Rg of B loop
                Append (Res, Ind & "          if (ok) { uint32_t c; size_t n = hbnf_decode_utf8(s,"
                  & " pos + off + o, len, &c); if (!n || !"
-                 & Range_Cond (Rg.Lo, Rg.Hi) & ") ok = 0; else o += n; }");
+                 & Range_Cond (Rg.Lo, Rg.Hi, Rg.Lo2, Rg.Hi2) & ") ok = 0; else o += n; }");
                Append (Res, LF);
             end loop;
             Append (Res, Ind & "          if (ok && o > br) br = o; }");

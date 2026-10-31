@@ -45,50 +45,37 @@ package body HBNF_Compilable is
                   C := C * 16#40# + (B - 16#80#);
                end;
             end loop;
-            V.Append (Cp_Range'(Lo => C, Hi => C));
+            V.Append (Cp_Range'(Lo => C, Hi => C, Lo2 => 1, Hi2 => 0));
             I := I + N;
          end;
       end loop;
       return V;
    end Code_Points;
 
-   --  The code points a literal matches, one branch per spelling.  A
-   --  case-insensitive one (`%i"A"`) is each ASCII letter in both cases, so
-   --  `%i"ab"` is four branches; the caller has capped the letters.  A plain one
-   --  is the one branch it always was.
+   --  The code points a literal matches: one branch, the code points in order.  A case-insensitive one
+   --  (`%i"A"`) has, for each ASCII letter, a position that is the letter in both cases (a second range), so
+   --  a word of any length is one branch and not a branch for each of its 2**n spellings.
    function Case_Variants (S : String; No_Case : Boolean)
      return Cp_Branch_Vectors.Vector is
+      Branch : Cp_Range_Vectors.Vector;
       Result : Cp_Branch_Vectors.Vector;
    begin
-      Result.Append (Cp_Range_Vectors.Empty_Vector);
       for Rg of Code_Points (S) loop
          declare
-            Next  : Cp_Branch_Vectors.Vector;
             Other : constant Natural :=
               (if not No_Case or else Rg.Lo /= Rg.Hi then 0
                elsif Rg.Lo in 65 .. 90 then Rg.Lo + 32
                elsif Rg.Lo in 97 .. 122 then Rg.Lo - 32
                else 0);
          begin
-            for B of Result loop
-               declare
-                  First : Cp_Range_Vectors.Vector := B;
-               begin
-                  First.Append (Rg);
-                  Next.Append (First);
-               end;
-               if Other /= 0 then
-                  declare
-                     Second : Cp_Range_Vectors.Vector := B;
-                  begin
-                     Second.Append (Cp_Range'(Lo => Other, Hi => Other));
-                     Next.Append (Second);
-                  end;
-               end if;
-            end loop;
-            Result := Next;
+            if Other /= 0 then
+               Branch.Append (Cp_Range'(Lo => Rg.Lo, Hi => Rg.Hi, Lo2 => Other, Hi2 => Other));
+            else
+               Branch.Append (Rg);
+            end if;
          end;
       end loop;
+      Result.Append (Branch);
       return Result;
    end Case_Variants;
 
@@ -310,7 +297,7 @@ package body HBNF_Compilable is
                   end if;
                   if E.Kind = Char_Range then
                      for B of Branches loop
-                        B.Append (Cp_Range'(Lo => E.Lo, Hi => E.Hi));
+                        B.Append (Cp_Range'(Lo => E.Lo, Hi => E.Hi, Lo2 => 1, Hi2 => 0));
                      end loop;
                   elsif E.Kind = Literal then
                      declare
@@ -402,7 +389,7 @@ package body HBNF_Compilable is
             declare
                Inner : Cp_Range_Vectors.Vector;
             begin
-               Inner.Append (Cp_Range'(Lo => E.Lo, Hi => E.Hi));
+               Inner.Append (Cp_Range'(Lo => E.Lo, Hi => E.Hi, Lo2 => 1, Hi2 => 0));
                Result.Append (Inner);
             end;
          elsif E.Kind = Literal then
@@ -451,7 +438,7 @@ package body HBNF_Compilable is
                   if Rep then
                      declare
                         Rpt : constant Cp_Atom :=
-                          Cp_Atom'(Kind => Repeat, Lo => 0, Hi => 0,
+                          Cp_Atom'(Kind => Repeat, Lo => 0, Hi => 0, Lo2 => 1, Hi2 => 0,
                                    Min => E.Min,
                                    Max => (if E.Max = -1 then 0
                                            else Natural (E.Max)),
@@ -464,7 +451,7 @@ package body HBNF_Compilable is
                   elsif E.Kind = Char_Range then
                      for B of Branches loop
                         B.Append (Cp_Atom'(Kind => Single,
-                                           Lo => E.Lo, Hi => E.Hi));
+                                           Lo => E.Lo, Hi => E.Hi, Lo2 => 1, Hi2 => 0));
                      end loop;
                   elsif E.Kind = Literal then
                      declare
@@ -479,7 +466,8 @@ package body HBNF_Compilable is
                               begin
                                  for Rg of V loop
                                     Cat.Append (Cp_Atom'(Kind => Single,
-                                                         Lo => Rg.Lo, Hi => Rg.Hi));
+                                                         Lo => Rg.Lo, Hi => Rg.Hi,
+                                                         Lo2 => Rg.Lo2, Hi2 => Rg.Hi2));
                                  end loop;
                                  New_Branches.Append (Cat);
                               end;

@@ -208,8 +208,8 @@ package HBNF_Lookahead is
    --  The rule Nm, read as text: literals, classes, groups, alternatives,
    --  repetitions and other rules built of those.  Not Ok, and Why says what
    --  stops it, when it uses a jet or a built-in scanner, refers to itself,
-   --  repeats more than 32 times with an upper bound, or needs more than 2000
-   --  states: it is never approximated, because a scanner must match exactly
+   --  repeats more than 32 times with an upper bound, or needs more than
+   --  100,000 states before it is minimized: it is never approximated, because a scanner must match exactly
    --  what the grammar says.
 
 private

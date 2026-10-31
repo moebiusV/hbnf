@@ -1,0 +1,12 @@
+ok	f(1,2);
+ok	x = 5;
+ok	g();
+ok	y = x; f(y);
+ok	if 3;
+ok	while x; else 1;
+bad	if = 3;
+bad	f(1,;
+bad	f(;
+bad	x = ;
+bad	= 5;
+bad	f 1;

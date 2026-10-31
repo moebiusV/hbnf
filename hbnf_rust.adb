@@ -2717,6 +2717,12 @@ package body HBNF_Rust is
          end if;
       end Range_Cond;
 
+      --  The same for a position that may be a second range too (a letter of a case-insensitive literal).
+      function Range_Cond (Lo, Hi, Lo2, Hi2 : Natural) return String is
+        (if Hi2 >= Lo2
+         then "(" & Range_Cond (Lo, Hi) & " || " & Range_Cond (Lo2, Hi2) & ")"
+         else Range_Cond (Lo, Hi));
+
       --  Contexts (RFCPLAN.md decision 13): named sets of names the parser keeps while it
       --  reads, which a `%bind` adds to, a `?` asks, and a failed branch, rule or `%scope`
       --  puts back to what they were.
@@ -2988,16 +2994,24 @@ package body HBNF_Rust is
                                                & "(p.text.as_bytes(), p.pos, p.text.len())"
                                           else "");
                                     begin
-                                       if Scan = "" then
-                                          raise Parse_Error with
-                                            "a lookahead (`!` or `&`) looks at a literal or a "
-                                            & "token, and `" & NM & "` is a phrase rule; make it "
-                                            & "a token (write it with characters only) or look "
-                                            & "for a literal";
-                                       end if;
                                        Append (Desc, NM);
-                                       Append (Buf, Ind & "    if ok_ { let n_ = " & Scan
-                                         & "; if n_ > 0 { p.pos += n_; } else { ok_ = false; } }");
+                                       if Scan /= "" then
+                                          Append (Buf, Ind & "    if ok_ { let n_ = " & Scan
+                                            & "; if n_ > 0 { p.pos += n_; } else { ok_ = false; } }");
+                                       elsif Find (Rules, NM) = 0 then
+                                          raise Parse_Error with
+                                            "a lookahead (`!` or `&`) looks at a literal, a rule or "
+                                            & "alternatives of those, and `" & NM & "` is not defined";
+                                       else
+                                          --  a phrase rule: parsed here and thrown away; the position and the
+                                          --  errors are put back below, the contexts it bound here
+                                          Append (Buf, Ind & "    if ok_ { "
+                                            & (if Ctx_On then "let cx_ = p.cx_mark(); " else "")
+                                            & "ok_ = " & Rule_Call (To_String (Rules (Owner).Name), X,
+                                                                    Rule_Fn (Rust_Snake (NM)) & "(p)")
+                                            & ".is_ok(); "
+                                            & (if Ctx_On then "p.cx_reset(&cx_); " else "") & "}");
+                                       end if;
                                     end;
                                  end if;
                                  Append (Buf, LF);
@@ -3568,7 +3582,7 @@ package body HBNF_Rust is
             Append (Res, LF);
             for Rg of B loop
                Append (Res, Ind & "          if ok { let (n, c) = decode_utf8(s, pos + off + o, len);"
-                 & " if n == 0 || !" & Range_Cond (Rg.Lo, Rg.Hi)
+                 & " if n == 0 || !" & Range_Cond (Rg.Lo, Rg.Hi, Rg.Lo2, Rg.Hi2)
                  & " { ok = false; } else { o += n; } }");
                Append (Res, LF);
             end loop;
@@ -4093,7 +4107,7 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                         case A.Kind is
                            when Single =>
                               Append (Res, "    { let (n, c) = decode_utf8(s, pos + off, len);"
-                                & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi)
+                                & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2)
                                 & " { return 0; } off += n; }");
                               Append (Res, LF);
                            when Repeat =>
@@ -4124,7 +4138,7 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                                  case A.Kind is
                                     when Single =>
                                        Append (Res, "        let (n, c) = decode_utf8(s, pos + off, len);"
-                                         & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi)
+                                         & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2)
                                          & " { break 'br" & Img (Br) & "; } off += n;");
                                        Append (Res, LF);
                                     when Repeat =>

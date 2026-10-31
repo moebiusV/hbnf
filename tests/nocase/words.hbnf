@@ -1,0 +1,15 @@
+; Case-insensitive literals of any length in a rule of characters (a token): each letter is both its cases at
+; one position, so a word is one branch and not one for each of its 2**n spellings.  The shapes are the plain
+; scanner shapes (a literal, then a class or a repetition), and `long` is 44 letters.  There is no `word` rule
+; here, so the literals are their characters.
+prefix none
+whitespace none
+sensitivity string %i
+include "../../grammars/common.hbnf"
+top         = 1*( entry "." )
+entry       = edited | environment | endword | long | ab
+edited      = "alphanumeric-edited" 1*DIGIT
+environment = "environment" ALPHA
+endword     = "end" ALPHA
+long        = "pneumonoultramicroscopicsilicovolcanoconiosis" DIGIT
+ab          = "ab"

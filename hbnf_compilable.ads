@@ -32,8 +32,12 @@ package HBNF_Compilable is
       V     : HBNF_Grammar.Element_Vectors.Vector) return Boolean;
 
    --  A code-point range: one code point of a char rule's match.
+   --  One position of a branch: the code points Lo .. Hi, and, when Hi2 >= Lo2, those too.  The second range is
+   --  how a letter of a case-insensitive literal is both its cases without a branch for each spelling.
    type Cp_Range is record
       Lo, Hi : Natural;
+      Lo2    : Natural := 1;
+      Hi2    : Natural := 0;       --  Hi2 < Lo2: there is no second range
    end record;
 
    package Cp_Range_Vectors is new Ada.Containers.Vectors (Positive, Cp_Range);
@@ -52,6 +56,8 @@ package HBNF_Compilable is
    type Cp_Atom_Kind is (Single, Repeat);
    type Cp_Atom (Kind : Cp_Atom_Kind := Single) is record
       Lo, Hi : Natural;
+      Lo2    : Natural := 1;           --  a second range for a Single, as in Cp_Range (Hi2 < Lo2: none)
+      Hi2    : Natural := 0;
       case Kind is
          when Single => null;
          when Repeat =>

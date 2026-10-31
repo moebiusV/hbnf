@@ -567,7 +567,10 @@ package body HBNF_Lookahead is
      (String, Ada.Strings.Hash, "=");
 
    Max_Code_Point : constant := 16#10FFFF#;
-   Max_States     : constant := 2_000;   --  past this a rule is "any text"
+   --  A bound on the size of an automaton, not on what a grammar may say: the automaton of a word list is
+   --  built as a trie (the 413 reserved words of COBOL are 1,800 nodes, and a case-insensitive letter is two
+   --  edges) and then minimized (to about 800 states), so the bound is far above what is kept.
+   Max_States     : constant := 100_000; --  past this a rule is "any text"
    Max_Nodes      : constant := 400;   --  pairs of state sets searched
 
    Approximated : Boolean := False;

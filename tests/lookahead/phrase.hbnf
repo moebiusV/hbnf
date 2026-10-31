@@ -1,0 +1,11 @@
+; A lookahead over rules that are phrases, not tokens: `&call-head` is the two elements `name "("`, and
+; `!reserved` is a rule of keywords.  Both are parsed where they stand and given back; nothing is consumed.
+prefix none
+top        = 1*( statement ";" )
+statement  = &call-head call | !reserved assignment | reserved value
+call-head  = name "("
+call       = name "(" [ value *( "," value ) ] ")"
+assignment = name "=" value
+reserved   = "if" | "else" | "while"
+name       = word
+value      = int | name

@@ -1495,6 +1495,12 @@ package body HBNF_Ada is
          end if;
       end Range_Cond;
 
+      --  The same for a position that may be a second range too (a letter of a case-insensitive literal).
+      function Range_Cond (Lo, Hi, Lo2, Hi2 : Natural) return String is
+        (if Hi2 >= Lo2
+         then "(" & Range_Cond (Lo, Hi) & " or else " & Range_Cond (Lo2, Hi2) & ")"
+         else Range_Cond (Lo, Hi));
+
       function Core_Desc (Name : String) return String is
       begin
          if Name = "str" or else Name = "atom" or else Name = "word" then
@@ -1991,18 +1997,31 @@ package body HBNF_Ada is
                                           then "Scan_" & Ada_Ident (NM)
                                           else "");
                                     begin
-                                       if Scan = "" then
-                                          raise Parse_Error with
-                                            "a lookahead (`!` or `&`) looks at a literal or a "
-                                            & "token, and `" & NM & "` is a phrase rule; make it "
-                                            & "a token (write it with characters only) or look "
-                                            & "for a literal";
-                                       end if;
                                        Append (Desc, NM);
-                                       Append (Buf, Ind & "      if Ok then declare N : constant Natural := "
-                                         & Scan & " (P.Text.all, P.Pos, Limit (P)); begin"
-                                         & " if N > 0 then P.Pos := P.Pos + N; else Ok := False; end if;"
-                                         & " end; end if;");
+                                       if Scan /= "" then
+                                          Append (Buf, Ind & "      if Ok then declare N : constant Natural := "
+                                            & Scan & " (P.Text.all, P.Pos, Limit (P)); begin"
+                                            & " if N > 0 then P.Pos := P.Pos + N; else Ok := False; end if;"
+                                            & " end; end if;");
+                                       elsif Find (Rules, NM) = 0 then
+                                          raise Parse_Error with
+                                            "a lookahead (`!` or `&`) looks at a literal, a rule or "
+                                            & "alternatives of those, and `" & NM & "` is not defined";
+                                       else
+                                          --  a phrase rule: parsed here and thrown away; the whole parser is put
+                                          --  back below
+                                          declare
+                                             J : constant Natural := Find (Rules, NM);
+                                          begin
+                                             Append (Buf, Ind & "      if Ok then declare V : "
+                                               & Ada_Ident (NM) & "_Type := "
+                                               & Rule_Call (To_String (Rules (Owner).Name), X) & "; begin"
+                                               & " if P.Failed then P.Failed := False; Ok := False; end if;"
+                                               & (if Analyze (Rules, J).Kind in Struct | List
+                                                  then " Free_" & Ada_Ident (NM) & " (V);" else "")
+                                               & " end; end if;");
+                                          end;
+                                       end if;
                                     end;
                                  end if;
                                  Append (Buf, LF);
@@ -2862,7 +2881,7 @@ package body HBNF_Ada is
                Append (Bdy, Ind & "            N := Decode_Utf8 (S, Pos + Off + O, Len, Cp);");
                Append (Bdy, LF);
                Append (Bdy, Ind & "            Match := N > 0 and then "
-                 & Range_Cond (Rg.Lo, Rg.Hi) & ";");
+                 & Range_Cond (Rg.Lo, Rg.Hi, Rg.Lo2, Rg.Hi2) & ";");
                Append (Bdy, LF);
                Append (Bdy, Ind & "            if Match then O := O + N; end if;");
                Append (Bdy, LF);
@@ -4245,7 +4264,7 @@ package body HBNF_Ada is
                            Append (Bdy, "      N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
                            Append (Bdy, LF);
                            Append (Bdy, "      if N = 0 or else not "
-                             & Range_Cond (A.Lo, A.Hi) & " then return 0; end if;");
+                             & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2) & " then return 0; end if;");
                            Append (Bdy, LF);
                            Append (Bdy, "      Off := Off + N;");
                            Append (Bdy, LF);
@@ -4282,7 +4301,7 @@ package body HBNF_Ada is
                               Append (Bdy, "         N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
                               Append (Bdy, LF);
                               Append (Bdy, "         Ok := N > 0 and then "
-                                & Range_Cond (A.Lo, A.Hi) & ";");
+                                & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2) & ";");
                               Append (Bdy, LF);
                               Append (Bdy, "         if Ok then Off := Off + N; end if;");
                               Append (Bdy, LF);

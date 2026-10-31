@@ -1,0 +1,16 @@
+ok	alphanumeric-edited42.
+ok	ALPHANUMERIC-EDITED7.
+ok	Alphanumeric-Edited123.environmentX.endZ.
+ok	EnViRoNmEnTq.
+ok	ENDd.ab.AB.aB.
+ok	pneumonoultramicroscopicsilicovolcanoconiosis5.
+ok	PNEUMONOULTRAMICROSCOPICSILICOVOLCANOCONIOSIS5.
+ok	PneumonoultramicroscopicsilicovolcanoconiOsis0.
+bad	alphanumeric-edited.
+bad	alphanumeric-edite42.
+bad	environment.
+bad	environmen1.
+bad	end.
+bad	pneumonoultramicroscopicsilicovolcanoconiosi5.
+bad	ab
+bad	.

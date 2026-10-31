@@ -2309,20 +2309,6 @@ package body HBNF_Grammar is
    function Has_Letter (S : Unbounded_String) return Boolean is
      (for some C of To_String (S) => C in 'a' .. 'z' | 'A' .. 'Z');
 
-   --  How many ASCII letters a literal has: a case-insensitive one is that many
-   --  more branches in a scanner (each letter in both cases), so a long one
-   --  stays a phrase rule.
-   function Letter_Count (S : Unbounded_String) return Natural is
-      N : Natural := 0;
-   begin
-      for C of To_String (S) loop
-         if C in 'a' .. 'z' | 'A' .. 'Z' then
-            N := N + 1;
-         end if;
-      end loop;
-      return N;
-   end Letter_Count;
-
    --  A field of the bit layer, after its name: `ttl:8`, `version@0:4`,
    --  `options:[ihl*4 - 20]`, `payload:*u8`, `src:addr`, `body:(n)*rec`,
    --  `payload:( ?(t == 6) tcp | rest:*u8 )`.  The name token was read; the
@@ -3166,7 +3152,7 @@ package body HBNF_Grammar is
    begin
       Next (P);
       if W = "not" or else W = "and" then
-         --  `!x`, `&x`: x is a literal, a token, or a group of those.
+         --  `!x`, `&x`: x is a literal, a rule (a token, or a phrase that is parsed and thrown away), or alternatives of those.
          declare
             A : constant Element_Access := Parse_Atom (P);
          begin
@@ -3183,7 +3169,7 @@ package body HBNF_Grammar is
                then
                   raise Parse_Error with
                     Where & "`" & (if W = "not" then "!" else "&")
-                    & "` looks at a literal, a token or alternatives of "
+                    & "` looks at a literal, a rule or alternatives of "
                     & "those: `!"":""`, `&("";"" / ""}"")`";
                end if;
             end loop;
@@ -7243,9 +7229,6 @@ package body HBNF_Grammar is
                         when Alt =>
                            null;
                         when Literal =>
-                           if E.No_Case and then Letter_Count (E.Lit) > 4 then
-                              return False;
-                           end if;
                            --  A repeated literal is a run of that one code
                            --  point; a longer one stays a list.
                            if (E.Min /= 1 or else E.Max /= 1)
@@ -9162,9 +9145,6 @@ package body HBNF_Grammar is
                      when Alt =>
                         null;
                      when Literal =>
-                        if E.No_Case and then Letter_Count (E.Lit) > 4 then
-                           return False;
-                        end if;
                         --  A letter/underscore-led literal is a word (a keyword
                         --  or a word matched by text), not a run of code
                         --  points; a rule with one is a phrase rule
