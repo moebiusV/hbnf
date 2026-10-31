@@ -26,8 +26,8 @@ workload, where production rulesets exceed 100,000 rules.  On a five-field
 pf-style schema the generated C parser consumes 100,000 rules (<!-- v:hbnf_100000_mbytes -->7.7<!-- /v --> MB) in
 <!-- v:hbnf_100000_ms -->18<!-- /v --> ms (<!-- v:hbnf_100000_mrules -->5.5<!-- /v --> M rules/s, <!-- v:hbnf_100000_mbs -->425<!-- /v --> MB/s, <!-- v:hbnf_100000_rss_mb -->15<!-- /v --> MB peak RSS); the full pfctl grammar
 takes <!-- v:pfctl_100000_s -->0.2<!-- /v --> s and <!-- v:pfctl_100000_rss_mb -->148<!-- /v --> MB for 100,000 real rules.  The same grammar notation compresses OpenBSD's
-httpd configuration grammar from 2,785 lines of parse.y (63 rules, 79 keyword
-tokens) to under two hundred lines.
+httpd configuration grammar from 2,490 lines of parse.y (63 rules, 79 keyword
+tokens) to 185 lines, comments and blank lines left out (§6).
 
 ## 1. Introduction
 
@@ -559,6 +559,9 @@ hands a typed rule tree to one of four emitters (`hbnf_c`, `hbnf_rust`,
 analysis pass classifies each rule (scalar, enum, struct, list), then emits
 declarations, `parse_<rule>` functions, and the lexer.  The emitted lexer is a
 template parameterized by the schema's token definitions, not a fixed body.
+The templates are Mustache; they are rendered by the project's own package, `HBNF_Template`, which reads
+a template with the parser hbnf generates from `grammars/template.hbnf`, so the generator needs no
+library beyond the Ada runtime.
 
 The C backend is the reference and the one used for the FFI story: a shared
 library `libhbnfconf` (built from `tests/server_ffi.hbnf`, whose epilogue
@@ -633,9 +636,10 @@ toy's `parse_text` reads the whole file into memory first.)  Per rule the
 full grammar is about <!-- v:pfctl_vs_toy_time -->9<!-- /v --> times slower than the toy and holds <!-- v:pfctl_vs_toy_rss -->10<!-- /v -->
 times the memory: the tree is about <!-- v:pfctl_100000_kb_per_rule -->1.5<!-- /v --> KB per rule.  The cost is the
 grammar's own width — the 35-way filter-option alternation and the address,
-port and interface parsing — and the layout: a list entry embeds the fields
-of every alternative, so the entry is sized for the largest one whichever
-alternative matched.
+port and interface parsing — and the layout: a list entry is sized for its
+widest alternative whichever alternative matched.  (The C backend's compact
+nodes, the default, hold a struct-valued field that only some alternatives use
+by pointer; the Ada backend gives every alternative its own field.)
 
 These are the figures for the plain parser, which keeps hbnf's own tree.  A
 daemon binding does not: with `statements`, each statement's tree is handed
@@ -693,13 +697,14 @@ lexer is replaced by hbnf's reader, and the actions only where they are bound:
 `language` declaration, the preamble/epilogue blocks, the id-ref serializer
 and rebuild side (§3.4), zero-copy tokens and the string arena (§5.1),
 keyword tables, statement-at-a-time parsing with macros and includes (§3.2),
-and left recursion read as a loop.  Rust, Zig and Ada have the grammar
-(including left recursion, `%i` and repetition bounds) but not scanner actions, keyword
-tables or statements.  The nine OpenBSD daemon schemas compile through all
-four emitters; the e2e suite passes, and so does the conformance suite
-(`tests/check.gpr`: 40 corpus checks and 57 emitter checks).  The character-level grammar
-(§4.1), the UTF-8 code-point path (§5.2) and scanner actions outside C are the
-remaining increments.
+`%emit` blocks that write a value as the parse proceeds instead of a tree, with
+`rollback { }` for a retry past one, and layouts (`ast`, `tape`, `tailq`, `rb`) that
+choose the data structure a grammar's parser builds.  The character-level grammar (§4.1) and the
+UTF-8 code-point path (§5.2) are built in all four backends, as are left recursion read as a loop, `%i`,
+repetition bounds, back-references and lookahead.  Rust, Zig and Ada do not have scanner
+actions, keyword tables, statement-at-a-time parsing, `%emit` or the layouts other than `ast`.
+Alternatives that begin alike are read once in all four backends.  The nine OpenBSD
+daemon schemas compile through all four emitters; the suites are listed in `tests/check.sh`.
 
 ## 7. Related work
 
@@ -713,18 +718,19 @@ rules and <!-- v:ratio_byacc_1000000 -->3.1<!-- /v --> times at 1,000,000; again
 through byacc, the ntpd binding parses a 100,000-sensor config in
 <!-- v:ntpd_hbnf_100000_ms -->60<!-- /v --> ms against <!-- v:ntpd_byacc_100000_ms -->61<!-- /v --> ms (§6).
 
-hbnf deliberately gives up four things yacc has, and each is a trade, not an
-oversight.  *Left recursion* (`list : list item | item`) is how yacc expresses
-repetition; hbnf's recursive-descent emitters cannot descend into it, so a
-schema spells the same thing as `*( item )` — a restructuring, not a loss of
-power.  *Semantic actions* — arbitrary C between rule symbols, run as the
+hbnf deliberately gives up three things yacc has, and each is a trade, not an
+oversight.  (Left recursion, `list : list item | item`, is not among them: it is
+read as a loop.)  *Semantic actions* — arbitrary C between rule symbols, run as the
 parser reduces, with `$1`/`$2` access to sub-values — are the reason yacc is a
 "compiler-compiler".  hbnf keeps a narrower form: an action is C attached
 to a rule and run once per node in a bottom-up walk after the whole parse has
 succeeded, so backtracking never re-runs a side effect and no action can steer
 the parse.  A grammar without actions still yields a typed tree in all four
 languages; a daemon binding adds actions only to build the daemon's own
-structures, which is what a drop-in for its `parse.y` has to do.  *Lexer start
+structures, which is what a drop-in for its `parse.y` has to do.  An `%emit`
+block is the other form: C that runs where its place in a rule is reached and builds the
+author's own structure at once, and a grammar is refused where an emit sits under
+something that can retry past it, unless `rollback { }` says how to put its effects back.  *Lexer start
 conditions* (`%x STRING`) let one lexer re-tokenize the same bytes by parser
 state; hbnf's scanner actions are stateless per token kind.  *Precedence declarations* (`%left`/`%right`) resolve expression
 ambiguity declaratively; hbnf resolves it structurally with ordered choice.
@@ -767,13 +773,13 @@ ABNF, whose generated lexer is a thin character stream, and whose token
 definitions live in the grammar — as BNF, as hand-written scanner actions, or as
 refinements of either.  The generated parser loads 100,000 toy rules in <!-- v:hbnf_100000_ms -->18<!-- /v --> ms
 and 100,000 real pf rules in <!-- v:pfctl_100000_s -->0.2<!-- /v --> s, and the grammar notation
-compresses a 2,785-line yacc grammar to under two hundred lines.
+compresses a 2,490-line yacc grammar to 185 lines.
 
-Near-term work is to finish the implemented surface — scanner actions, keyword tables
-and statements across the four emitters, and the spec-versus-scanner-action cross-check —
-and to bring the full pfctl grammar's cost per rule (§6) toward the toy's:
-fewer failing literal probes, and a tree that does not embed every
-alternative's fields.
+Near-term work is to finish the implemented surface — scanner actions, keyword tables,
+statements, `%emit` and the layouts across the four emitters, and the
+spec-versus-scanner-action cross-check — and to bring the full pfctl grammar's cost per rule (§6)
+toward the toy's: fewer failing literal probes, and, in the Ada backend, nodes
+that do not hold every alternative's fields.
 
 Three research directions follow from the design.
 
@@ -814,8 +820,7 @@ traversal in the C, Rust, and Zig backends, and a pass is written once per
 target language, not once per grammar.  The visitor/fold route is what makes hbnf a true
 compiler-compiler without reintroducing the semantic-action layer that would
 re-tie a grammar to one backend.  Reclaiming the remaining yacc facilities —
-left recursion (via an Earley or GLR kernel) and operator-precedence
-declarations — is a further step in the same direction.
+operator-precedence declarations — is a further step in the same direction.
 
 **Models as readers.**  A grammar has two readers, a person and a machine, and a language model
 is now a third kind of reader whose cost is counted in tokens.  The premise is that what lessens

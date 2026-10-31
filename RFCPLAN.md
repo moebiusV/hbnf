@@ -820,9 +820,11 @@ running order:
 
 > **Done:** 0, 1, 2, 3, 3b, 4a–4e, 5, 7a, 9a, 9b, 9c, 12, and 11 (built: `--backend=tree-sitter`,
 > `tests/treesitter.sh`; its entry carries no marker).  **Under way:** 7b (the
-> wire layer, in C; see its entry for what is and is not built), and 15 (values at recognition:
-> the reader, the refusal analysis, the C backend and the JSON grammar are done; YAML and the
-> daemon bindings are not).  **No marker:** 6, 8, 10 and 13, which are on the critical path
+> wire layer, in C; see its entry for what is and is not built).  **Built, C backend only:** 15
+> (values at recognition: `%emit`, `name :: type =` rules, `rollback { }`, the refusal analysis and
+> the JSON, TOML and YAML tape grammars), 17 (layouts: `ast`, `tape`, `tailq` and `rb`; the
+> daemon bindings read `layout tailq`) and 18 (context parameters; an operators table was tried and
+> set aside).  **Built 2026-10-29/31:** 19, shared beginnings, the ladder and `--lint`.  **No marker:** 6, 8, 10 and 13, which are on the critical path
 > below; pieces of 6 and 8 exist (`--spans`, `--parents`, `--paths`, `--forks`) but neither
 > entry says how much is built.
 > **The POSIX shell grammar (`corpus/posix/`) is part of the core corpus, not
@@ -842,7 +844,7 @@ running order:
 > sources or bootstrap it.  The comparison with IMP72 in `METACOMPILERS.md` stays
 > as history, and what hbnf took from its manual (the choice rule, `A<pos,len>`)
 > stays.  **ALGOL 68 and C++ are far in the future** (the same day).  **Not started:** 14, grammars for
-> constrained decoding (added 2026-10-27), 16, the C grammar through LLVM ORC and lld (added 2026-10-28), and 17, layouts: ast, tape, tailq and rb from one grammar (added 2026-10-29).  **Built 2026-10-29:** 18, context parameters (an operators table was tried and set aside).
+> constrained decoding (added 2026-10-27), and 16, the C grammar through LLVM ORC and lld (added 2026-10-28).
 >
 > **Critical path:** **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** and **14** are not gated on
@@ -852,7 +854,7 @@ Six things decide that order, and each one is a dependency rather than a
 preference:
 
 - **3b came first because it makes every later step cheaper.**  *Done.*
-  The switchover to mustache-ada moved the per-element loops out of the four
+  The switchover to Mustache templates (first mustache-ada, now `HBNF_Template`) moved the per-element loops out of the four
   emitters and into the templates.  Every step after it that touches the
   type emitter or the parse emitter — 9b above all, which adds an
   indirection to a field in all four backends — then writes its change
@@ -928,8 +930,21 @@ should claim that before 10.
    every schema through every backend.  *Done* — 71 `.tmpl` files loaded
    from disk at startup, nothing baked in.
 
-   3b. **Done 2026-10-02/03: mustache-ada renders the templates and
-       `Templates` is gone.**  All four gates met — zero references to
+   3b. **Done 2026-10-02/03: Mustache renders the templates and
+       `Templates` is gone.**  *Replaced 2026-10-31: the renderer is now
+       `HBNF_Template` (`hbnf_template.ads`, `hbnf_template.adb`), hbnf's own
+       Mustache package, and the external mustache-ada library is no longer a
+       dependency.*  A template is read by the parser hbnf makes of
+       `grammars/template.hbnf`, kept in the tree as
+       `hbnf_template_syntax*.ad[sb]` (`sh scripts/gen-template-syntax.sh`
+       writes it again), and rendered against the same scalar, list and map
+       context.  It does interpolation (`{{name}}` escaped, `{{&name}}` and
+       `{{{name}}}` as written), sections and inverted sections, comments,
+       dotted names and `{{.}}`, and drops a line that holds only a section tag
+       or a comment; partials and a change of delimiters are read and refused,
+       as no template uses either.  `tests/template.sh` checks it.  The account
+       below is the reasoning of the time, with mustache-ada where it says so.
+       All four gates met — zero references to
        `Templates`, zero `${` and `@PLACEHOLDER@` in `templates/`,
        `templates.ads` and `templates.adb` deleted, 132 snapshot files
        byte-identical — with e2e 98/0, byte-identity 18 + 24 cases, and the
@@ -982,8 +997,9 @@ should claim that before 10.
        before it was folded into one `Field_Decl`.  (It is not the whole of
        the duplication — see below.)
 
-       **Decided 2026-10-02: `moebiusV/mustache-ada` is the canonical
-       Mustache and hbnf must use it.**  So the inline subset in
+       **Decided 2026-10-02 (reversed 2026-10-31, see above):
+       `moebiusV/mustache-ada` is the canonical Mustache and hbnf must use
+       it.**  So the inline subset in
        `templates.adb` is not the renderer to switch the templates onto; it
        is a second implementation to retire — the same judgement as 9c
        makes about the interpreter, for the same reason.  A second
@@ -1018,7 +1034,9 @@ should claim that before 10.
        (`tests/spec_check tests/spec`) — which the inline subset does not
        pass and was never measured against.
 
-       Three things, in order:
+       Three things, in order (done with mustache-ada; on 2026-10-31
+       `HBNF_Template` took the place of the library, and `libhbnf.gpr` withs
+       no other project):
 
        1. **Depend on mustache-ada.**  `hbnf.gpr` withs `mustache.gpr`,
           from the `ada-on-alpine` aport (`testing/mustache-ada`, pkgver
@@ -2739,7 +2757,8 @@ cycles.
     sequence code, one element at a time.  A choice whose alternatives begin with different
     ASCII characters is a `switch` on the first character in the first pass (the second pass
     still tries them in order, so the messages are the same).  Rust, Zig and Ada refuse an
-    `%emit`, naming the rule.  Children that are full tree rules have not been tried.
+    `%emit`, naming the rule.  The C arena maps chunks past the first and goes back for the
+    iteration that ends a list; a list stores only its head.  Children that are full tree rules have not been tried.
 
     *Measured.*  `corpus/json/json-tape.hbnf` writes a tape of 64-bit words, one for each
     value and key.  On the 2 MB document, pinned to cpu 5, one cold parse: 1.8 ms against
@@ -2762,8 +2781,12 @@ cycles.
 
     *Order of work.*  Done: the reader (the type after the name; `%emit` blocks in every
     position); the refusal analysis, with its tests; the C backend; JSON as the first grammar,
-    checked against Python's `json` and measured.  Next: YAML, measured against rapidyaml, and
-    the daemon bindings, whose `action` blocks become emits.
+    checked against Python's `json` and measured; `rollback { }` (the grammar names what its emits
+    change and the generated code puts it back at every retry, so a retry past an emit is no longer
+    refused); the TOML and YAML tape grammars (`corpus/toml/toml-tape.hbnf`,
+    `corpus/yaml/yaml-tape.hbnf`, on the `runtime/hbnf_tape.h` tape), checked against `tomllib` and the
+    YAML test suite and measured (step 17).  Not done: the daemon bindings' `action` blocks as emits
+    (their lists use `layout tailq`), and an `%emit` in the Rust, Zig and Ada backends.
 
 16. **The C grammar through LLVM: ORC and lld.**  *Added 2026-10-28; not started.*  The C
     grammars (`c79`, `pcc99`, `gnu99`) drive a compiler whose back end is LLVM's ORC JIT and
@@ -2775,6 +2798,12 @@ cycles.
     C backend.  liblld's interface is C++, so linking needs a small shim or a call to the lld
     driver.  Neither is gated on the other.
 
+    *What exists.*  Six grammars of C in `corpus/c` (`c79`, `c89`, `c99`, `pcc99`, `gnu99`, `c11`), each
+    checked against the compiler of its dialect (`tests/c79.sh` and the others), against the yacc grammars
+    they replace in size (`bench/notation.sh`; generated tables only), on the SQLite amalgamation
+    (`tests/sqlite.sh`) and for speed against `gcc -fsyntax-only` (`bench/cspeed.sh`).  C17 and C23 have no
+    grammar.
+
     *What blocks the emit route.*  An emit is refused where something above it can retry past
     it (step 15), and C's reading of `T * x;` as a declaration or as an expression depends on
     whether `T` names a type.  Until the grammar carries its typedef context (the queued port of
@@ -2785,8 +2814,9 @@ cycles.
     corpus.  This step adds no notation.  IMP72 itself stays out of hbnf (decision of
     2026-10-22); only the C compiler is described here.
 
-17. **Layouts: one grammar, several data structures.**  *Added 2026-10-29 with the user; the tape
-    layout is built (`layout tape`, `--layout=tape`), and `tailq` and `rb` (`layouts/NAME/`).*  A grammar says which data structure its parser builds, and the rest follows from the
+17. **Layouts: one grammar, several data structures.**  *Added 2026-10-29 with the user; built:
+    `layout tape`, `tailq` and `rb`, C backend only.  `--layout=ast|tape|tailq|rb|NAME` (or `layout NAME` in a
+    grammar) names one; `ast` is the default.*  A grammar says which data structure its parser builds, and the rest follows from the
     grammar: `layout ast` (today's, the default), `layout tape`, and options on a list rule for the
     containers a program already has, `tailq` (`sys/queue.h`) and `rb` (`sys/tree.h`, keyed on a
     field).  The three tape grammars (`json-tape.hbnf`, `toml-tape.hbnf`, `yaml-tape.hbnf`) were
@@ -2882,6 +2912,23 @@ cycles.
     ladder; the user judged it unfit.  What is left between the C grammars and yacc's is the length of the rule
     names (55% of the characters of `pcc99.hbnf`), the keyword spellings (33 of its literals are GNU `__`
     forms), and the typedef context, which yacc does in its scanner and the count leaves out.
+
+19. **Shared beginnings, the ladder and `--lint`.**  *Built 2026-10-29/31.*  Alternatives that begin with
+    the same elements (`x R | x`, `a b c | a b d`) read the shared part once and then try each rest in the
+    order written: the same language and the same tree.  `HBNF_Lookahead.Factor` works out once which adjacent
+    alternatives share what, as a tree of runs (a run may hold runs), and the C (tree and emit paths), Rust, Zig
+    and Ada backends walk it; `--no-factor` writes the plain chain, to compare.  `/` accepts two alternatives that
+    share their first elements when one byte after the shared part tells them apart.  A ladder of binary
+    operators (`a = b *( op b )`, ...) looks once past its first operand in the C backend and runs the levels'
+    lists only if an operator can begin there; `--no-ladder` turns it off.  `--lint` prints, for each ordered
+    choice `|` that the union analysis accepts as written, where `/` would mean the same parse and leave the order
+    free.  Tests: `tests/factor.sh`, `tests/nest.sh`, `tests/ladder.sh`, `tests/lint.sh`.  Not done: a tool
+    that rewrites `|` to `/` where `--lint` says so; the same ladder fast path in Rust, Zig and Ada.
+
+    *Left undone elsewhere, not started.*  The Ada backend gives every alternative of a choice its own field
+    in a node (no compact nodes, as the C backend has), so its trees are larger: an optimisation to make.  Error
+    recovery with restarts (step 8).  The C preprocessor as a grammar; C17 and C23 grammars; the typedef-context
+    port for the Ada side (step 16 depends on it).
 
 ## Not in this plan
 

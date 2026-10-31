@@ -627,7 +627,8 @@ HyperBNF starts from where that thread left off and picks a side. Its bet is tha
 the notation worth compiling is the one the RFCs already use — ABNF — and that
 a grammar should be documentation first and a parser second. The same file that
 explains a language to a reader compiles to a parser and a typed tree in C,
-Rust, Zig, or Ada, self-contained, with no runtime library.
+Rust, Zig, or Ada, self-contained, with no runtime library. (A grammar that chooses the tape
+layout includes one header of C, `runtime/hbnf_tape.h`; the others need nothing.)
 
 It keeps the best of each system and dodges the worst, in the way Jeff Fox
 taught at UltraForth (may he rest in peace): do not solve the hard problem,
@@ -660,6 +661,26 @@ name the same byte, so a grammar can reach straight down to the bytes it
 describes instead of floating above them in a lexer's abstractions. Human
 readability and machine exactness meet there: spell the bits the way a person
 already spells them, and keep the design honest about what is underneath.
+
+**The work of 28 to 31 October 2026.** A parser can now build what its author wants as it reads:
+`%emit { }` blocks and rules that say their type (`name :: type = ...`) write a value, not a tree, and
+`rollback { }` names what the emits change so that a retry puts it back. JSON, TOML and YAML were
+written that way onto a flat tape of words (`corpus/*/*-tape.hbnf`, `runtime/hbnf_tape.h`), with
+number and string conversion in `runtime/hbnf_scalar.h`, checked bit for bit against `strtod` and
+timed against fast_float. A *layout* turned that into a choice made once for a whole grammar: `ast`
+(the default), `tape`, `tailq` and `rb` are directories, `layouts/NAME/layout.hbnf`, and the daemons'
+lists become their own `TAILQ`s and red-black trees. Context parameters let one rule stand for a pair
+(`declarator(C in "vars" | "types")`). Six grammars of C, from 32V's of 1979 to C11, are measured
+against the yacc grammars they replace and tested on the SQLite amalgamation. The C arena maps its
+chunks and goes back for the iteration that ends a list, and a list stores its head alone.
+
+Alternatives that begin alike are now read once: the generator works out a tree of shared beginnings
+once (`HBNF_Lookahead.Factor`), and the C, Rust, Zig and Ada backends all walk it; `/` accepts such
+pairs, and `--lint` says where a `|` could be a `/`. A ladder of binary operators looks once past its
+first operand. Last, the templates that the code generators fill are Mustache, and the Mustache
+renderer is the project's own: `HBNF_Template` reads a template with the parser hbnf makes of
+`grammars/template.hbnf`, so the generator now depends on a parser it generated, and the external
+mustache-ada library it used from 3 October is gone.
 
 **Where it could do better.** It has no incremental parse; an edit means parsing
 the file again. It has no error recovery; bad input fails instead of producing a

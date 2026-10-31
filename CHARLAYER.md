@@ -1,5 +1,12 @@
 # Character + binary layer — implementation plan (working note)
 
+Status note: this is the plan as it stood in September 2026 and the log of what each increment did.  The
+fixed lexer it replaces is gone: a phrase rule now reads the text at a position and runs the scanner a rule
+names there, so the `TOK_<name>` token kinds, `char_dispatch` and the `templates/*_lexer.tmpl` files below
+no longer exist; the scanners (`scan_<name>`, `hbnf_decode_utf8` and its Ada, Rust and Zig forms) and the
+character rules they come from do.  The binary layer is built (`WIRE.md`) and `json.hbnf` exists
+(`corpus/json/`); `where` and UTF-16 are not built.
+
 Goal: move hbnf's lexer from a fixed token template to a **generated,
 character-level scanner**, so schemas can express JSON (and, later, binary
 protocols) directly. Deliverable: a `json.hbnf` grammar that round-trips.
@@ -96,8 +103,8 @@ Scope (user directive, 2026-09-26):
 
 - **I2 — `where`** refinements in the C lexer (UTF-8 code-point decode already
   landed above).
-- **I3 — `json.hbnf`** flagship + round-trip test (`\uXXXX` via `utf16`).
-- **I4 — binary/octet layer** (bit fields, fixed-width whole-byte fields, `*u8`).
+- **I3 — `json.hbnf`** flagship + round-trip test: **DONE** (`corpus/json/`, `tests/json-diff.sh`); `\uXXXX` via `utf16` is not built.
+- **I4 — binary/octet layer** (bit fields, fixed-width whole-byte fields, `*u8`): **DONE** in all four backends (`WIRE.md`).
 - **I5 — Rust/Zig backends** — ~~port the char lexer~~ **DONE** (Ada, Rust, Zig
   all ported).
 
@@ -124,8 +131,7 @@ Scope (user directive, 2026-09-26):
    `%uu` (UTF-16 unit) distinction is deferred — revisit only if a syntax ever
    intermingles the two encodings in one stream.  Code points are stored 32-bit
    (`Natural` = 32-bit already; the scanner is byte-level until I2).
-6. **Binary** — whole-byte fields + `*u8`; no sub-byte
-   bitfields; deferred (I4).
+6. **Binary** — whole-byte fields, `*u8` and sub-byte bit fields (`name:N`), built; see `WIRE.md`.
 7. **Char rules are tokens, expanded to DNF** — a char rule's pattern (a
    sequence/alternation of code-point atoms, string literals and Name
    references) is expanded to disjunctive normal form by `Char_DNF`: a list of
@@ -146,8 +152,6 @@ Scope (user directive, 2026-09-26):
   and Ada backends) + `Walk`/`El_Nullable`/`Same`/`Image` accept Char_Range.
 - `hbnf_c.adb` — token enum, `hbnf_decode_utf8`, `scan_*` + `char_dispatch`,
   `Emit_Seq` char-rule branch, `First_Elem`/`Collect` Char_Range arms.
-- `templates/*_lexer.tmpl` — all four lexer templates (C, Rust, Zig, Ada) call
-  `char_dispatch`/`Char_Dispatch` after scanner actions.
 - `hbnf_ada.adb` — full char-lexer port (`Atom_Cond`, `Decode_Utf8`, `Scan_*`,
   `Char_Dispatch`; a char rule is scalar `Unbounded_String`).
 - `hbnf_rust.adb` — full char-lexer port (`Atom_Cond`, `decode_utf8`, `scan_*`,

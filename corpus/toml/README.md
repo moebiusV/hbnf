@@ -9,7 +9,7 @@ the whole syntax of TOML 1.0.  The four string forms are two hyperrules, `line(Q
 ## Onto a tape, with no tree
 
 `toml-tape.hbnf` is the same language with an `%emit{ }` where the tree would have made a node, and
-the tape of `runtime/hbnf_tape.h` that JSON's does: a table, a key with its value, an array and an
+the tape of `runtime/hbnf_tape.h` that JSON's does (`--layout=tape` makes the same kind of tape from `toml.hbnf` itself, checked by `tests/layout.sh`): a table, a key with its value, an array and an
 inline table are opened where they begin and closed where they end, and a key part or a value is one
 tag and its text.  `sh tests/emit.sh` generates it, asks it the questions `tests/toml-diff.sh` asks
 the typed parser (`TOML_GRAMMAR=corpus/toml/toml-tape.hbnf`: the same answers as `tomllib` on random
@@ -25,7 +25,7 @@ Measured with `scripts/grammar-size.py`, comments and blank lines left out:
 | | rules | alternatives | symbols | lines |
 |---|---:|---:|---:|---:|
 | `toml.abnf` (toml-lang/toml, 1.0) | 124 | 77 | 292 | 126 |
-| `toml.hbnf` + `toml-tokens.hbnf` | 46 | 116 | 283 | 49 |
+| `toml.hbnf` + `toml-tokens.hbnf` | 45 | 116 | 285 | 49 |
 
 ## Checked
 

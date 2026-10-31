@@ -3,7 +3,14 @@
 `mustache.hbnf` is the syntax of a [Mustache](https://mustache.github.io/mustache.5.html)
 template: text, `{{name}}`, `{{{name}}}`, `{{&name}}`, `{{! comment }}`, `{{> partial}}`,
 `{{#section}} ... {{/section}}`, `{{^inverted}} ... {{/inverted}}`, `{{=<% %>=}}`, and nothing
-of how a template is rendered.  Sixteen rules.
+of how a template is rendered.  Nineteen rules.
+
+`grammars/template.hbnf` is a different, smaller Mustache grammar: the one the project renders its own code
+templates with (`hbnf_template_syntax*.ad[sb]` are what hbnf makes of it).  It reads a section as a tree
+(`block = open template close`) and checks in the renderer that the closing tag names what the opening one
+did, so it uses no back-reference; it reads a partial and a change of delimiters as tags that the renderer
+refuses; and it allows blanks between `{{` and a sigil, as the library it replaced did, where this grammar
+follows mustache.js and does not.
 
 A closing tag has to say the name the opening one did.  That is not context-free, and it is
 what the **back-reference** is for: `name %as tag` keeps the text a name matched, and

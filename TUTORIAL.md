@@ -369,6 +369,7 @@ where it began:
 
 * The notation, every operator and directive: [ABNF.md](ABNF.md).
 * Text and bits in one grammar (a protocol with a header and a payload): [WIRE.md](WIRE.md).
-* Two real grammars in full, checked against other parsers: `corpus/json`, `corpus/mustache`.
+* Real grammars in full, checked against other parsers: `corpus/json`, `corpus/toml`, `corpus/yaml`, `corpus/mustache`.
 * A language: `corpus/algol60`.
+* A flat tape of words instead of a tree, for speed: `--layout=tape`, or by hand with `%emit` blocks in `corpus/json/json-tape.hbnf`; the tape is `runtime/hbnf_tape.h`.
 * Why: [WHY.md](WHY.md); the plan and what is not built yet: [RFCPLAN.md](RFCPLAN.md).

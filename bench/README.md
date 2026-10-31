@@ -1,8 +1,8 @@
 # bench — the performance comparison
 
 One command measures hbnf's generated parsers against the tools it is usually
-compared with, and writes the tables that `WHY.md`, `README.md` and
-`USENIXSUBMISSION.md` quote.  No figure in those documents is typed by hand.
+compared with, and writes the tables that `WHY.md`, `README.md`,
+`USENIXSUBMISSION.md`, `HISTORY.md` and `corpus/c/README.md` quote.  No figure in those documents is typed by hand.
 
     sh bench/run.sh                  # the whole comparison (minutes; memory-hungry at 1,000,000 rules)
     sh bench/run.sh --quick          # 100,000 rules only, best of three
@@ -35,6 +35,8 @@ is `getrusage`'s peak resident set.  C is compiled `gcc -O2`.
 | `treesitter` | the toy as a tree-sitter grammar: a cold parse, and a re-parse after a one-byte edit with the old tree | `compare/grammar.js`, `drv/ts_toy.c` |
 | `antlr` | the toy as an ANTLR 4 grammar, Java target: actions only (cold JVM, warm JVM) and the default parse tree | `compare/Toy.g4`, `compare/java/ToyMain.java` |
 | `pfctl` | OpenBSD's `sbin/pfctl/parse.y` (6,546 lines) at a pinned commit, unmodified, through byacc, against hbnf's `grammars/obconf_pfctl.hbnf`; byacc fills `struct pf_rule`, hbnf builds a tree | `pfctl/` |
+| `corpus` | the compact node layout (the default) against `--no-compact`, on the repository's own corpora (JSON, Mustache, ALGOL 60, the daemons' configs) | `stage-corpus.sh` |
+| `rustcorpus`, `zigada` | the Rust, Zig and Ada parsers on the same corpora, against the generators of `bench/pre/` | `stage-rustcorpus.sh`, `stage-zigada.sh` |
 | `ntpd` | a real `parse.y`: OpenBSD's `usr.sbin/ntpd/parse.y` at a pinned commit, unmodified, through byacc, against hbnf's binding (`grammars/bind/ntpd.hbnf`), both filling ntpd's own `struct ntpd_conf` | `ntpd/` |
 
 Two measurements stand outside `run.sh`, because they need no container and take seconds:
@@ -45,7 +47,9 @@ second checks that it counts the text the first counts, and fetches the tokenize
 sha256 in `pins.txt`, into `bench/cache`.  `sh bench/cspeed.sh` times the generated C parser
 against `gcc -fsyntax-only` on the same preprocessed C (Lua, zlib and the SQLite amalgamation, pinned in
 `pins.txt`), pinned to one cpu like the others; `sh bench/libs.sh` is the library comparison for JSON,
-TOML and YAML.
+TOML and YAML; `sh bench/haskell.sh` sets the tape parsers beside the parsers Haskell programs use for the
+same formats (Alex and Happy, HsYAML, aeson); `sh bench/scalar.sh` times the number and string conversions of
+`runtime/hbnf_scalar.h` against fast_float and glibc's `strtod`.
 
 The toy is `toy.hbnf`: `pass in on em0 proto tcp from 192.168.3.7 port 51234 to
 192.168.9.1 port 443`, one rule per line, the shape of a pf rule.  Inputs come
@@ -72,8 +76,8 @@ from `gen.sh` and are deterministic.
 ## Versions and pins
 
 `pins.txt` holds every version and hash the comparison builds against (the
-ANTLR jar, peg/leg, tree-sitter, and the OpenBSD commit the ntpd sources come
-from), and `ntpd/files.txt` the sha256 of each OpenBSD file.  A fetched file
+ANTLR jar, peg/leg, tree-sitter, Zig and Rust, the OpenBSD commit the ntpd sources come
+from, the C sources of `cspeed.sh`, fast_float and the libraries of `libs.sh`), and `ntpd/files.txt` the sha256 of each OpenBSD file.  A fetched file
 that does not match its hash is not used.  The ntpd sources are cached in
 `bench/cache/`, which is not committed.  To build OpenBSD's `parse.y` on Linux
 without changing it, `ntpd/shim/compat.h` supplies the BSD names it expects and

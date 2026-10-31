@@ -7,7 +7,9 @@ HyperBNF is not yacc with a prettier surface syntax.  Its useful combination is:
 - direct left-recursive grammar forms without forcing authors to rewrite them;
 - ABNF/RFC-style character and numeric terminals for exact protocol syntax;
 - `%scan{}` for target-language scanner escape hatches;
-- `%action{}` for target-language semantic construction.
+- `%action{}` for target-language semantic construction, run once after the parse;
+- `%where{}` for a test that runs each time an alternative is tried, and `%emit{}` for code that runs
+  as the parse proceeds (a value, a tape; C backend), with `rollback { }` to undo what a given-up form did.
 
 The next layer makes those mechanisms compiler-quality rather than importing
 legacy yacc interfaces: locations, named typed semantic values, explicit
@@ -25,8 +27,9 @@ corrected by the messages, not by reading the manual.
 
 ## Non-goals
 
-Do not add `yylval`, `$1`, `$$`, global `yyparse`, LR conflict declarations, or
-GLR merely for compatibility.  They solve problems caused by yacc's LR
+Do not add `yylval`, `$1`, global `yyparse`, LR conflict declarations, or
+GLR merely for compatibility.  (`$$` in an `%emit` block is the value of the rule being
+recognised, not yacc's.)  They solve problems caused by yacc's LR
 implementation rather than problems HyperBNF currently has.
 
 ## Invariant

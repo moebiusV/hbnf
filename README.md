@@ -1,15 +1,22 @@
 # HyperBNF
 
-> **Status, 27 October 2026.**  JSON, TOML and YAML are built and tested in all four backends
-> (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML).  The C
-> parsers build a choice as a union with the alternative taken (`_alt`) and a string as a slice of the
-> input (`hbnf_sp`, `hbnf_sn`; `--no-views` keeps copies), scan runs of a token 16 bytes at a time, and a
-> rule that is only text can be kept out of the tree (`hidden`); JSON, TOML and YAML are measured
-> against the libraries people use for them, on glibc.  C is a family of grammars, each checked against
-> its own era's yacc grammar and compiler: `c79` (UNIX/32V's C, run over the 32V source tree itself),
-> `c89`, `c99`, `pcc99` (what PCC's `cgram.y` reads), `gnu99` (what GCC 4.0.4's reads) and `c11`.
-> Next: C17 and C23 for the C family, the C preprocessor, error recovery, and the benchmark of the four
-> backends against each other (the numbers here are the C backend's).
+> **Status, 31 October 2026.**  JSON, TOML and YAML are built and tested in all four backends
+> (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML), and are
+> measured against the libraries people use for them, on glibc.  C is a family of grammars, each
+> checked against its own era's yacc grammar and compiler: `c79` (UNIX/32V's C, run over the 32V
+> source tree itself), `c89`, `c99`, `pcc99` (what PCC's `cgram.y` reads), `gnu99` (what GCC 4.0.4's
+> reads) and `c11`; the C parser is also measured against `gcc -fsyntax-only` and run over the
+> SQLite amalgamation.  A grammar chooses the structure its parser builds: the typed tree (layout
+> `ast`, the default), a flat tape of words (`tape`, `runtime/hbnf_tape.h`), or the daemons' own
+> `sys/queue.h` and `sys/tree.h` containers (`tailq`, `rb`).  `%emit` blocks write the tape by hand
+> where a layout does not fit.  The parsers read alternatives that begin alike once, and a ladder of
+> binary operators with one look past its first operand.  The code templates are rendered by the
+> project's own Mustache package, `HBNF_Template`, so libhbnf depends on nothing outside the GNAT
+> runtime.
+> Next: the tape layout for `str`, `bool`, `flag` and the fixed-width numbers and for the Rust, Zig and
+> Ada backends (`RFCPLAN.md`), C17 and C23 for the C family, the C grammars through LLVM's ORC JIT and
+> lld, the C preprocessor grammar and the typedef context for C, error recovery, and the benchmark of the
+> four backends against each other (the numbers here are the C backend's).
 
 **HyperBNF** is a grammar language, and `hbnf` is the program that reads it: a parser generator
 (a compiler compiler) that emits a parser and its typed tree in C, Rust, Zig or Ada.  The name is an
@@ -30,9 +37,8 @@ HyperBNF ships with the basic formats ready to use: JSON, TOML and YAML.  Drop o
 parser; the grammar is short, readable HyperBNF, so changing it to fit your own needs means editing a
 few lines, not learning a generator.
 
-It is powerful enough to parse context-sensitive languages such as ALGOL 68 and C++ without breaking
-a sweat: parameterised rules, back-references and context sets carry what a yacc grammar leaves to
-hand-written lexer hacks.
+Parameterised rules, back-references and context sets carry what a yacc grammar leaves to
+hand-written lexer hacks, which is what context-sensitive languages need.
 
 ABNF is the starting point because it is the notation the RFCs actually use:
 RFC 5234 defines it, RFC 7405 adds case-sensitive string literals, and dozens
@@ -56,6 +62,11 @@ This directory holds two things:
    notation and generate a parser and its typed tree in C, Rust, Zig or Ada.
 
        hbnf corpus/json/json.hbnf --backend=c|rust|zig|ada
+
+   `--layout=ast|tape|tailq|rb|NAME` picks the structure the parser builds (layouts are directories,
+   `layouts/NAME/layout.hbnf`, found by `--layouts=DIR` or `$HBNF_LAYOUTS`), `--lint` says where an
+   ordered choice `|` could be a union `/`, and `--no-factor` and `--no-ladder` turn off the shared
+   reading of alternatives that begin alike and of a ladder of binary operators.
 
    The generator's documents:
    - `WHY.md`: the grammar and its design choices, for an RFC reader;
@@ -100,12 +111,14 @@ to the OpenBSD configuration files.
   [RFC 3986](corpus/rfc/rfc3986-1.md), [RFC 5234](corpus/rfc/rfc5234-1.md),
   [RFC 5322](corpus/rfc/rfc5322-1.md), [RFC 9112](corpus/rfc/rfc9112-1.md).
 - [`corpus/posix/shell.md`](corpus/posix/shell.md): the POSIX shell grammar, read as the standard prints it, checked against dash on every script on the machine.
+  ([`corpus/posix/posix-shell-1.md`](corpus/posix/posix-shell-1.md) is the standard's text it is read from.)
+- [`corpus/c/README.md`](corpus/c/README.md): C in six grammars (`c79`, `c89`, `c99`, `pcc99`, `gnu99`, `c11`), each against its era's yacc grammar and compiler; [`corpus/c/originals/README.md`](corpus/c/originals/README.md) lists the original grammars they are counted against.
 - [`corpus/algol60/README.md`](corpus/algol60/README.md): the ALGOL 60 report and its BNF.
 - [`corpus/imp72/README.md`](corpus/imp72/README.md): the IMP72 compiler's sources (cancelled as a target: IMP72 will get its own compiler).
 - [`corpus/mustache/README.md`](corpus/mustache/README.md): Mustache templates, with the back-reference that makes a closing tag repeat its opening one.
 - [`corpus/json/README.md`](corpus/json/README.md): JSON in 14 rules, checked against Python's `json`.
 - [`corpus/toml/README.md`](corpus/toml/README.md): TOML 1.0 in 46 rules against the ABNF's 124, all 208 valid toml-test files accepted, checked against Python's `tomllib`.
-- [`corpus/yaml/README.md`](corpus/yaml/README.md): YAML 1.2, indentation as a number the parser works out, all 308 valid and 89 of 94 invalid cases of the YAML test suite, checked against PyYAML.
+- [`corpus/yaml/README.md`](corpus/yaml/README.md): YAML 1.2, indentation as a number the parser works out, all 308 valid and 89 of 94 invalid cases of the YAML test suite, checked against PyYAML.  The YAML 1.2.2 productions it is counted against are described in [`corpus/yaml/originals/README.md`](corpus/yaml/originals/README.md).
 - [`corpus/bip39/README.md`](corpus/bip39/README.md): the ten BIP-39 word lists.
 - [`corpus/bech32/README.md`](corpus/bech32/README.md): bech32 and bech32m.
 
@@ -113,7 +126,14 @@ to the OpenBSD configuration files.
 - [environment](bench/results/env.md), [headline](bench/results/headline.md),
   [toy grammar](bench/results/toy.md), [hbnf on the toy](bench/results/hbnf-toy.md),
   [yacc](bench/results/yacc.md), [ANTLR and PEG](bench/results/antlr-peg.md),
-  [tree-sitter](bench/results/treesitter.md).
+  [tree-sitter](bench/results/treesitter.md), [the libraries](bench/results/libs.md),
+  [C against gcc](bench/results/cspeed.md), [number conversion](bench/results/scalar.md),
+  [the Haskell parsers](bench/results/haskell.md), [the size of the notations](bench/results/notation.md),
+  [tokens](bench/results/tokens.md), [the corpora with the old node layout and compact nodes](bench/results/corpus.md)
+  (in [Rust](bench/results/corpus_rust.md), [Zig](bench/results/corpus_zig.md) and
+  [Ada](bench/results/corpus_ada.md) too), the daemons' speed ([ntpd](bench/results/ntpd.md), and
+  [pfctl](bench/results/hbnf-pfctl.md) against [its yacc](bench/results/pfctl_yacc.md)) and the size of
+  their grammars against `parse.y` ([parsey](bench/results/parsey.md)).
 
 **How much grammar.**  The same language in the published notation and in HyperBNF, with
 comments, blank lines and hbnf's directive lines left out of both
@@ -263,11 +283,11 @@ _2026-10-29; glibc 2.41, gcc (Debian 14.2.0-19) 14.2.0, node 20.19.2, Python 3.1
 <!-- /bench:libs -->
 
 On TOML the generated parser is the fastest by a wide margin.  On JSON the parser that writes a tape
-(`corpus/json/json-tape.hbnf`) is close to the SIMD parser simdjson, uses a third of its memory, and the
+(`corpus/json/json-tape.hbnf`) is close to the SIMD parser simdjson, uses less than half its memory, and the
 typed-tree parser is ahead of everything else; on YAML both are ahead of rapidyaml, libyaml, libfyaml,
 js-yaml, yaml-cpp and PyYAML, which build generic node trees.  The rows that say `%emit tape` build a
 flat array of words and no tree (`runtime/hbnf_tape.h`); the others build the typed tree the grammar
-describes.  `--layout=tape` makes any grammar's parser write such a tape, with no `%emit` in the grammar.
+describes.  `--layout=tape` makes any grammar's parser write such a tape, with no `%emit` in the grammar.  A program reading a tape converts a number or string with `runtime/hbnf_scalar.h`, which `bench/scalar.sh` compares with fast_float.
 
 ### C against gcc
 
@@ -343,16 +363,17 @@ _2026-10-28; amd64, glibc (Debian), GHC 9.6.6, Alex 3.4.0.1, Happy 1.20.1.1; `-O
 
 ## Building
 
-Needs [mustache-ada](https://github.com/moebiusV/mustache-ada) installed: it
-renders the code templates.  Pure Ada on the GNAT runtime, no C dependency.
+Pure Ada on the GNAT runtime, no C dependency.  The code templates are rendered by the
+library's own Mustache package, `HBNF_Template` (`hbnf_template.ads`); it reads a template with the
+parser hbnf makes of `grammars/template.hbnf` (`hbnf_template_syntax*`, regenerated by
+`scripts/gen-template-syntax.sh`, tested by `tests/template.sh`).
 
 ```
 gprbuild -P libhbnf.gpr -p -XLIBRARY_TYPE=static
 gprinstall -P libhbnf.gpr -p --prefix=/usr --sources-subdir=include/hbnf
 ```
 
-Packaged for Alpine by the `ada-on-alpine` aports overlay as `testing/hbnf`,
-which also carries `testing/mustache-ada`.
+Packaged for Alpine by the `ada-on-alpine` aports overlay as `testing/hbnf`.
 
 **Build through the project files, not `gnatmake -I.`.**  `gprbuild` keeps its
 own object directory; `gnatmake -I. -D <tmpdir>` compiles into the temp

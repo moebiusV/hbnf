@@ -8,7 +8,7 @@ last and each checked with the compiler of its own time:
 | `c79.hbnf`, `c79-words.hbnf` | the C of UNIX/32V (1979), as `usr/src/cmd/mip/cgram.y` and `scan.c` read it: no prototypes, `void` or `const`; `=+`; an initializer without its `=` | `tests/c79.sh` (22 small files) and `scripts/c79-scan.sh`: the 32V source tree itself, **901 files preprocessed with the 32V headers, all accepted** (26 more need headers its build generates) |
 | `c89.hbnf`, `c89-words.hbnf` | ISO C90, strictly | `tests/c89.sh` (25 files) against `gcc -std=c89 -pedantic-errors` |
 | `c99.hbnf`, `c99-words.hbnf` | ISO C99, strictly (no GNU forms) | `tests/c99.sh` (23 files) against `gcc -std=c99 -pedantic-errors`, and `GRAMMAR=c99 STD=c99 scripts/c-scan.sh`: **1,549 of the 1,580 units gcc accepts**; the 31 refused are GNU spellings and one string of bytes that are not UTF-8 |
-| `pcc99.hbnf`, `pcc99-words.hbnf` | the C PCC's `cgram.y` (NetBSD trunk) reads: C99, the C11 forms it has (`_Alignas`, `_Atomic`, `_Generic`, `_Static_assert`, `_Noreturn`, `_Thread_local`), and its subset of the GNU extensions; a type may stand as a call's argument | `tests/pcc.sh` (24 files, four kinds: good, bad, only PCC's grammar has, and GNU forms it lacks) and `GRAMMAR=pcc STD=gnu11 scripts/c-scan.sh`: 1,696 of the 1,953 units gcc 14 accepts; the 257 refused are what PCC's grammar has no production for (`__extension__` in glibc's headers, 132 of them; `__real__`, `__label__`, nested functions) and features newer than it |
+| `pcc99.hbnf`, `pcc99-words.hbnf` | the C PCC's `cgram.y` (NetBSD trunk) reads: C99, the C11 forms it has (`_Alignas`, `_Atomic`, `_Generic`, `_Static_assert`, `_Noreturn`, `_Thread_local`), and its subset of the GNU extensions; a type may stand as a call's argument | `tests/pcc99.sh` (24 files, four kinds: good, bad, only PCC's grammar has, and GNU forms it lacks) and `GRAMMAR=pcc STD=gnu11 scripts/c-scan.sh`: 1,696 of the 1,953 units gcc 14 accepts; the 257 refused are what PCC's grammar has no production for (`__extension__` in glibc's headers, 132 of them; `__real__`, `__label__`, nested functions) and features newer than it |
 | `gnu99.hbnf`, `gnu99-words.hbnf` | C99 and the GNU extensions GCC 4.0.4's bison grammar (`gcc/c-parse.in`) reads, which PCC's reads too; attributes and `asm` are in the grammar | `tests/gnu99.sh` (21 files) against `gcc -std=gnu99`, and `GRAMMAR=gnu99 STD=gnu99 scripts/c-scan.sh`: **1,883 of the 1,953 units gcc 14 accepts**; the 70 refused are features newer than GCC 4.0.4 (`_Float128`, `__int128`, `_Static_assert`, `[[ ]]` attributes) and one string of bytes that are not UTF-8 |
 | `c11.hbnf`, `c-words.hbnf` | C11 and the GNU forms system headers use | below |
 
@@ -27,6 +27,11 @@ produces: hbnf has no preprocessor, so the tools below use gcc's (`gcc -E -P`).
 - **`tests/c.sh`**: 57 small files, 38 that `gcc -fsyntax-only` accepts and 19 it refuses with a syntax
   error, all agreed on.  C backend only: the grammar uses the typedef context (`context types`,
   `%bind`, `%scope`, `?` and `?!`), which Rust, Zig and Ada do not have yet.
+- **`tests/layout.sh`** reads the same 57 files with `--layout=tape` (the parser writes a flat tape of
+  words, not the tree) and agrees on every one.
+- **`tests/sqlite.sh`**: the SQLite amalgamation, fetched by the pin in `bench/pins.txt`.  `c11`, `gnu99`,
+  `pcc99` and `c99` accept it; `c89` refuses it (`long long`), as `gcc -std=c89 -pedantic-errors` does, and `c79`
+  refuses it (prototypes, `void`, `const`).
 - **`scripts/c-corpus.sh`** fetches the C corpora the pcc size work used (lua, zlib, lz4, cJSON, chibicc,
   c-testsuite, mbedtls, BearSSL, the SQLite amalgamation and gcc's c-torture execute tests), preprocesses
   every file with `gcc -E`, keeps the ones `gcc -fsyntax-only` accepts, and runs the generated parser.  On
@@ -58,8 +63,8 @@ _2026-10-29; gcc (Debian 14.2.0-19) 14.2.0;ldd (Debian GLIBC 2.41-12+deb13u4) 2.
 
 <!-- /bench:cspeed -->
 
-The profile puts the time in matching keywords and skipping white space; looking a typedef name up is a
-small part of it, and giving up a branch costs one comparison when it bound nothing.
+A ladder of binary operators looks once past its first operand (`tests/ladder.sh`, `--no-ladder`), and
+alternatives that begin alike read that beginning once (`tests/factor.sh`, `tests/nest.sh`, `--no-factor`).
 
 ## How it is written
 
@@ -74,9 +79,8 @@ small part of it, and giving up a branch costs one comparison when it bound noth
   `external-declaration` and the specifiers.  The tree has an optional field where the standard has an
   alternative.
 - **The expression levels are the standard's nested rules**, seventeen of them.  Nothing was wrong with
-  that for correctness; what it costs is in the speed above.  A table of levels was tried (`%left` lines
-  in the manner of yacc) and set aside: it saved about a fifteenth of the characters and needed a
-  construct of its own.
+  that for correctness.  A table of levels was tried (`%left` lines in the manner of yacc) and set aside:
+  it needed a construct of its own.
 - **White space is one scanner** (`ws`), written once for each backend: blanks, comments, `#pragma` and
   `# line` (what the preprocessor leaves), and the GNU forms read as white space (`__attribute__((..))`,
   `__asm__("name")`, `__extension__`).

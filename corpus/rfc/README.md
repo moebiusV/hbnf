@@ -30,9 +30,9 @@ One snippet is one numbered id, `<rfc>-<n>`, and its files sit side by side:
   `\t`, `\NNN` and `\\` as printf's `%b` reads them; an empty line is the empty
   input).
 
-Other corpora follow the same rule: `corpus/posix/posix-shell-1.y` and
-`posix-shell-1.hbnf` (the yacc BNF as POSIX prints it, and the form hbnf
-compiles), with the same `.md` and `.vectors/`.
+Other corpora follow the same rule: `corpus/posix/posix-shell-1.y` (the yacc BNF as POSIX
+prints it, included unchanged) with `shell.y`, the form hbnf compiles, and the notes `posix-shell-1.md`
+and `shell.md`.
 
 ## Running it
 
@@ -52,7 +52,7 @@ around it, and the plan has the step.
 
 | What the RFC's text did | Status |
 |---|---|
-| `/` between whole phrases (`host = IP-literal / IPv4address / reg-name`, every `request-target`, `IPv6address`) was refused | **fixed**: the reader finds an order of the alternatives in which ordered choice accepts the same language, and writes the choice in it (`hbnf_lookahead.adb`).  What it still refuses is a union that needs backtracking, naming the two alternatives and a text both match |
+| `/` between whole phrases (`host = IP-literal / IPv4address / reg-name`, every `request-target`, `IPv6address`) was refused | **fixed**: the reader finds an order of the alternatives in which ordered choice accepts the same language, and writes the choice in it (`hbnf_lookahead.adb`).  A union that needs backtracking takes the first alternative that matches and is followed by something that can follow the choice, with a warning that names the two; where what follows is unknown, it is refused |
 | `|` commits to the first alternative that matches, so overlapping alternatives lose input (`host`: `IPv4address` is also a `reg-name`; `FWS`; `local-part`/`domain`) | **open**, by design where the union needs backtracking, which the generated parsers do not do.  Each is repaired by hand in the fixed-up file, and tested.  (`dec-octet` is no longer one: a character rule takes the longest alternative; `IPv6address`'s and `ls32`'s `/` are the RFC's) |
 | A repetition read greedily where ABNF would give one back (`IPv6address`: `[ *1( h16 ":" ) h16 ] "::" ...` refused `1::2` with no message) | **fixed**: `*n( A S ) A` is rewritten `A *n( S A )`, the same strings with nothing to give back; where hbnf cannot, it says "matched greedily, unlike ABNF's" and how to write it.  Checked only where nothing is skipped between elements (`whitespace none`) |
 | `/` between one-character strings (`BIT = "0" / "1"`, `HEXDIG`, `tchar`, `atext`) was refused though each is one code point | **fixed** |
@@ -64,8 +64,8 @@ around it, and the plan has the step.
 | A literal with no letters was marked case-insensitive by `sensitivity string %i` (`"1"`), which made `dec-octet` not a character rule | **fixed** |
 | Generating one rule of a collected ABNF (`host` out of RFC 3986) meant moving it to the top of the file | **fixed**: `--root=RULE` |
 | `<...>` for a rule defined elsewhere (`uri-host = <host, see [URI]...>`) was a "prose-val" refused with a bare "not written yet"; `0<pchar>` was refused the same way | **fixed**: `<...>` always names a rule, so `<pchar>` is `pchar` and `0<pchar>` compiles as written; one nothing defines is "not written yet", with the rule it probably means and what to write |
-| A later definition replaces an earlier one, so RFC 9110's prose `port` would replace RFC 3986's real one | works as designed; noted in `rfc9112/README.md` |
-| `OCTET = %x00-FF` is a byte in ABNF and a code point up to U+00FF in HyperBNF, which reads UTF-8 | **open**, the `binary` layer (step 5) |
+| A later definition replaces an earlier one, so RFC 9110's prose `port` would replace RFC 3986's real one | works as designed; noted in `rfc9112-1.md` |
+| `OCTET = %x00-FF` is a byte in ABNF and a code point up to U+00FF in HyperBNF, which reads UTF-8 | **answered by the wire layer** (`WIRE.md`): a field of `u8` or `:8` bits reads a byte, and a parser takes a buffer; the text layer still reads UTF-8 |
 | Rust: a repetition with a maximum of zero (`0pchar`) emitted a comparison rustc rejects | **fixed** |
 
 ## What a message says

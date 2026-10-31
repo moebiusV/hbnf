@@ -165,7 +165,7 @@ consumer side merge new ids, update existing, purge absent (bgpd's
 |---|---|---|
 | `--backend=c` | pointer tree + inline parser | single-process |
 | `--backend=c`, with `parse_config()` written in the grammar's epilogue (`runtime/hbnf_conf.h`) | pointer tree + the entry point the grammar defines | the OpenBSD *file* shape; still pointer-linked |
-| `--backend=c --idref` (proposed) | id-refs + serializer + find/rebuild | for privsep consumers |
+| `--backend=c --idref` | id-refs + serializer + find/rebuild | for privsep consumers |
 
 The file/entry-point shape and `--idref` are orthogonal axes: the first is written
 in the grammar's prologue and epilogue, the second is the cross-reference

@@ -3,8 +3,8 @@
 The source of the IMP72 compiler, as distributed through the DECUS library: a
 real metacompiler, written in its own language, that bootstraps from a small
 syntax reader (`rsyn.imc`) and a file that defines the language (`syntax.imc`).
-It is test data for hbnf in the way `corpus/rfc/` and `corpus/posix/` are, and
-the subject of `METACOMPILERS.md`, which compares it with META II, SNOBOL4 and
+It was to be test data for hbnf in the way `corpus/rfc/` and `corpus/posix/` are.
+It is the subject of `METACOMPILERS.md`, which compares it with META II, SNOBOL4 and
 hbnf and asks what it would take for hbnf to play the part of its kernel.
 
 ## Layout
@@ -13,8 +13,6 @@ hbnf and asks what it would take for hbnf to play the part of its kernel.
       README.md        this file
       SHA256SUMS       the hash of every file in tape/, as taken
       tape/            the files of DECUS 10-198, unchanged
-      (later)          imp72.hbnf, the syntax statements read as a grammar,
-                       and what hbnf says to them
 
 `tape/` holds the 30 text files of the program (`cd tape && sha256sum -c
 ../SHA256SUMS`).  They are byte-for-byte what the archive serves, including the
@@ -62,10 +60,10 @@ no use for them yet, and the archive keeps them (see below).
   the files unchanged, with this attribution, and points at the archive as the
   authority: where a file here and the archive disagree, the archive is right.
 
-## Status: paused
+## Status: cancelled
 
-Work on this corpus stopped on 2026-10-17, by decision, until hbnf is feature
-complete (see `RFCPLAN.md`, "Order"; bit fields and the wire layer are step 7b).
+On 2026-10-22 the work was cancelled: IMP72 gets its own compiler, and hbnf will not read or
+bootstrap it.  The files stay as the subject of `METACOMPILERS.md`.
 What exists: the tape's files with their hashes, this note, and
 `tools/imp72_to_hbnf.py`, which reads the syntax statements of `syntax.imc` and
 `impsyn.imc` and writes a HyperBNF grammar of them.  A first run of that grammar
@@ -75,14 +73,13 @@ dozen unions whose alternatives it cannot tell apart, which is the ambiguity the
 measurement was after.  The numbers are not final, and are not recorded here, for
 that reason; the converter re-runs in a second.
 
-## What it is for
+## What it was for
 
 `syntax.imc` is a compiler's language, defined by 177 productions each carrying
 its semantics, in a notation (`<CLASS> ::= elements ::= semantics ;`) that is one
-of the family hbnf reads.  Reading it is the first measurement in
+of the family hbnf reads.  Reading it was to be the first measurement in
 `METACOMPILERS.md`: what hbnf makes of it, and in particular how many of its
 ambiguities hbnf's union analysis finds, because IMP72's syntax is ambiguous on
 purpose and resolved by rule.  The other modules are the IMP source that a
-translator written with hbnf would have to read; each of them must parse, which
-is the corpus's acceptance test in the way every `corpus/rfc` snippet's vectors
-are.
+translator written with hbnf would have had to read; each of them was to parse, as
+every `corpus/rfc` snippet's vectors do.

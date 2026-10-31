@@ -79,6 +79,18 @@ choice, so there is no LR state machine and no shift/reduce conflict to debug.
 Direct left recursion (`xs = xs "," x | x`) is read as a loop in all four
 backends, so the RFC form is not rewritten.
 
+Ordered choice costs a PEG its repeated reading, and hbnf removes that cost where alternatives begin
+alike: alternatives that begin with the same elements read the shared beginning once, as a tree of runs, in the C, Rust, Zig and Ada
+backends (`--no-factor` turns it off); `/`, the union, accepts such a pair where `|` would shadow
+the second.  `--lint` says where a `|` could be a `/`.  A ladder of binary operators is parsed with one
+look past its first operand (`--no-ladder` turns it off).  Neither changes what a grammar accepts.
+
+What the parser builds is the grammar's choice, not the generator's: `--layout=ast|tape|tailq|rb|NAME`
+picks the typed tree (`ast`, the default), a flat tape of words (`runtime/hbnf_tape.h`), or a daemon's
+own `sys/queue.h` or `sys/tree.h` container, and a layout is a directory,
+`layouts/NAME/layout.hbnf`.  `%emit` blocks and `rollback { }` write a tape by hand where a layout does
+not fit; the tape grammars of JSON, TOML and YAML (`corpus/*/*-tape.hbnf`) do.
+
 Ordered choice keeps the PEG property that makes conflicts impossible, and hbnf
 keeps PEG's one failure mode from being silent. An alternative shadowed by an
 earlier one that matches a prefix of it is found at schema time and refused with

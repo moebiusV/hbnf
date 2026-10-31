@@ -244,7 +244,9 @@ A wire grammar holds C in three places, none of which hbnf reads or rewrites:
   unusual; `HBNF_FAIL ("text")` fails the read, naming the rule.
 - `%emit{ code }` runs when the record is **written**, before its fields are, on a
   copy of it as `n`: it fills in what is computed (a checksum), and the caller's
-  tree is not touched.  `HBNF_EMIT_FAIL ("text")` fails the write.
+  tree is not touched.  `HBNF_EMIT_FAIL ("text")` fails the write.  (In a text rule that declares a
+  value, `name :: type = ...`, `%emit` is another thing: it runs during the read, in the C backend only;
+  `grammars/README.md`, "Values at recognition".)
 
 Rust, Zig and Ada have both, written in their own language: the grammar says
 `language Rust` (or `Zig`, `Ada`), and a grammar in another language is refused with a
@@ -321,8 +323,7 @@ word first, and **keeps the values in the order written**: the index of `actor` 
 where the list has it.  That is what BIP-39 needs; `corpus/bip39/` holds the ten
 official 2048-word lists as include files (`include "bip39/english.hbnf"`), and
 `tests/wire.sh` reads every word of every list back to its line number.  A union
-of plain words is a sort, not a search, so a 2048-word list takes a fifth of a
-second.
+of plain words is a sort, not a search.
 
 ## What is not built yet
 

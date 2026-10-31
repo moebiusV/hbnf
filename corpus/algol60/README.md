@@ -68,12 +68,8 @@ transcription and has not been compared with the report here.
 as an example of how short and clear a grammar can be.  It is not a transliteration
 of `syntax.txt`; that file is here to compare it against.
 
-| | the Report's BNF (`syntax.txt`) | `algol60.hbnf` |
-|---|---|---|
-| rules / productions | 108 | 47 |
-| code lines (no blanks or comments) | 116 | 72 |
-| symbols (words of the grammar text) | 1,246 | 510 |
-| characters, without comments | 8,063 | 3,470 |
+The Report's BNF (`syntax.txt`) has 108 productions and `algol60.hbnf` 47 rules.  The notation table in
+`README.md` (`bench/notation.sh`) has the lines, symbols and characters of both.
 
 What hbnf let it say once instead of many times:
 

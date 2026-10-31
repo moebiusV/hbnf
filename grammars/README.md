@@ -18,8 +18,10 @@ language C
 - **Operators** — juxtaposition (sequence), `|` (ordered choice: the first
   alternative that matches wins), `( ... )` (grouping), `[ ... ]`
   (optional), `*`, `1*`, `n*m`, `*m` (repetition).  ABNF's `/` (union) is
-  taken between alternatives of one character each, where it means the
-  same as `|`; `../RFCPLAN.md` plans the rest.  Direct left recursion, as
+  taken wherever some order of the alternatives gives the same language
+  (`../ABNF.md` §3.2); the generator writes the choice in that order.
+  `--lint` says where a `|` could be a `/`.  Adjacent alternatives that begin
+  alike read the shared beginning once (`--no-factor` writes the plain chain).  Direct left recursion, as
   parse.y writes lists (`xs = xs "," x | x`), is read as a loop.  `;`
   starts a line comment.
 - **Lines** — a rule goes on to a line that is indented or starts with `|`,
@@ -172,12 +174,15 @@ emits a self-contained C parser that compiles and parses a sample config.
 
 `common.hbnf`, `obconf.hbnf` and `ascii.hbnf` are
 include-only, not daemon grammars: each is pulled in with `include "…"`.
+`obconf_roundtrip.hbnf` is obconf with its comments kept (`tests/writer.sh`), and `template.hbnf` the
+Mustache grammar the project renders its code templates with (`scripts/gen-template-syntax.sh`
+regenerates `hbnf_template_syntax*.ad[sb]` from it); neither is a daemon.
 `common.hbnf` holds the RFC 5234 character classes and core rules (`DIGIT`,
 `ALPHA`, `HEXDIG`, `WSP`, `CRLF`, …), and includes `ascii.hbnf` for the
 named ASCII characters (the C0 controls, `DEL`, the blanks, and `DQUOTE`); `obconf.hbnf`
 holds the rules the daemons share (`string`, `address`, …), which a daemon
-grammar may override.  Any script that globs `grammars/*.hbnf` must skip the
-three of them (the nine daemons above are the grammars).  The daemons' lists are
+grammar may override.  Any script that globs `grammars/*.hbnf` must skip these
+five (the nine `obconf_<daemon>.hbnf` files above are the daemon grammars).  The daemons' lists are
 the `layout tailq` of `layouts/tailq/`.
 
 ## Bindings (`bind/`)

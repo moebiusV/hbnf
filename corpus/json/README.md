@@ -1,11 +1,10 @@
 # JSON (RFC 8259) in HyperBNF
 
 `json.hbnf` (the structure) and `json-tokens.hbnf` (a string and a number, where no blank
-is allowed inside one) are the whole of JSON in 14 rules, against the RFC's 30 ABNF rules:
+is allowed inside one) are the whole of JSON in 17 rules, against the RFC's 30 ABNF rules:
 the RFC's rule for each punctuation mark is the quoted character, and a comma list is
-`x *( "," x )`.  Measured with comments and blank lines left out of both, the RFC's
-grammar is 45 lines, 193 symbols and 949 characters, and this is 14 lines, 129 symbols and
-556 characters.
+`x *( "," x )`.  The notation table in `README.md` (`bench/notation.sh`) has the lines, symbols
+and characters of both.
 
 The tokens are in their own file because a rule is a *token* (a string, scanned by an
 automaton, with no tree) only in a file that skips no white space; `json-tokens.hbnf` says
@@ -18,9 +17,13 @@ automaton, with no tree) only in a file that skips no white space; `json-tokens.
 an object or an array is opened where its bracket is read, a string, number or literal is a tag
 and the place of its text, and the closing bracket links the opener to the position after it.
 The parser makes no struct and no list node, only a flat array of 64-bit words, which is the
-layout a hand-written reader would choose.  `sh tests/emit.sh` generates it, compiles it and checks
+layout a hand-written reader would choose (`runtime/hbnf_tape.h`).  `sh tests/emit.sh` generates it, compiles it and checks
 that the tape holds as many values of each kind as Python's `json` finds in every good document
 of `tests/good` and that every document of `tests/bad` is refused.
+
+`json.hbnf` itself also gives a tape, with no `%emit` in it, under `--layout=tape` (`tests/layout.sh`).
+`json-tape-values.hbnf` makes the number and string conversions of `runtime/hbnf_scalar.h` while it
+parses (`tests/scalar.sh`).
 
 ## Checked against Python's `json`
 

@@ -9,7 +9,7 @@ HyperBNF is a meta-compiler: a program that takes a description of a language an
 produces the thing that processes it.  Configuration files were where it
 started, not where it stops.  Three older systems made the same bet from
 different directions, and each is a precedent for something in HyperBNF's
-`%scan{ }`, `%action{ }`, planned `%where{ }` and `%emit{ }`.  This reads them
+`%scan{ }`, `%action{ }`, `%where{ }` and `%emit{ }`.  This reads them
 against hbnf, from the primary sources, and ends with what hbnf could take.
 
 Sources, all read for this note (the first two as scans with a text layer):
@@ -80,9 +80,9 @@ itself advises that conditional assignment be used "whenever possible".
 | **A rule is** | a recursive subroutine that recognizes and consumes | a production stored in a table; every parse carried until resolved | a pattern value, matched by a backtracking scanner | a rule; a generated recognizer per backend |
 | **Choice** | ordered `/`, no backup, so factor by hand | ambiguity allowed, resolved by three rules | ordered alternation with full backtracking; `FENCE` and `ABORT` cut it | ordered `\|`; `/` is a union hbnf orders (or refuses with a witness); prefix factoring done by the tool |
 | **Tokens** | built-in `.ID` `.NUMBER` `.STRING` | classes `<NAME>`, `<VBL>`, ...; no reserved words | primitives `SPAN` `BREAK` `LEN` `ANY` ... | character-level grammar; `%scan` scanner actions; a rule is a token (automaton) when an exception names it |
-| **Code, when** | `.OUT` inline, as the parse proceeds | semantics run as productions reduce, held back until context settles which special case applies; `PRIORITY` forces them now | `.` after the match succeeds; `$` and `*f()` during it | `%action` once, after the parse, bottom-up; `%where` (planned) during it, each try; `%emit` (planned) |
+| **Code, when** | `.OUT` inline, as the parse proceeds | semantics run as productions reduce, held back until context settles which special case applies; `PRIORITY` forces them now | `.` after the match succeeds; `$` and `*f()` during it | `%action` once, after the parse, bottom-up; `%where` during it, each try (C); `%emit` as the parse proceeds, once per parse (C), and when a bit rule is written |
 | **Code is written in** | META II's own output language (assembly for its machine) | IMP itself (quoted), or compiler subroutines in IMP | SNOBOL4 itself (`DEFINE`d functions) | any language with a backend: C, Rust, Zig and Ada today, once per backend; there is no rule against assembly |
-| **Output** | assembly for an interpreter | object code through typed objects | none (strings) | a typed tree; round-trip printing; `%emit` planned |
+| **Output** | assembly for an interpreter | object code through typed objects | none (strings) | a typed tree; round-trip printing; values and flat tapes written as the parse proceeds (`%emit`, `layout tape`) |
 | **Fresh names** | `*1`, `*2` per run of an equation | `LOCAL R IN "..."`: a unique name per use | n/a | none yet |
 | **Grammar grows** | edit the compiler's own source | syntax statements inside the program | patterns built at run time | `include`, `dialect`, `%grammar "file"` |
 | **Self-hosting** | yes | yes | no | not yet (`hbnf_schema.hbnf` is a grammar for config files, not for HyperBNF's own notation) |
@@ -118,8 +118,8 @@ systems, three spellings of "after, or now".
 ## Names for hand-written scanner code
 
 hbnf has one word for code the grammar calls out to: an *action* (`%scan` for a
-scanner, `%action` after the parse, `%where` as a predicate, `%emit` when
-writing).  Other systems name it differently, which is only a reading aid:
+scanner, `%action` after the parse, `%where` as a predicate, `%emit` as the
+parse proceeds, and for a bit rule when it is written).  Other systems name it differently, which is only a reading aid:
 
 | system | term |
 |---|---|
@@ -232,8 +232,8 @@ In order of how much it would change hbnf.
    machine-code bytes.  Assembly is what META II emitted, and what makes a
    compiler-compiler a *true* metacompiler is that its product is a translator to
    a machine's own language, whose hooks can be that language's instructions.
-   Machine code is the limiting case, and it joins up with the planned binary
-   layer (`OCTET` is a byte; bit-precise syntax is planned): a grammar that can
+   Machine code is the limiting case, and it joins up with the binary
+   layer (`OCTET` is a byte; bit fields are built, `WIRE.md`): a grammar that can
    read bytes by their fields can have an emitter that writes them, so the same
    notation describes an instruction encoding going in and coming out.  The cost of that openness is that a hook is written
    once per backend (decision 13: "`%where Rust { }`"), so a grammar that needs a
@@ -247,7 +247,7 @@ In order of how much it would change hbnf.
 
 2. **Output templates with hygienic fresh names.**  `*1`/`*2` in META II and
    `LOCAL R IN "..."` in IMP72 exist because generating code needs labels and
-   temporaries that cannot collide.  `%emit{ }` is planned without it.  A
+   temporaries that cannot collide.  `%emit{ }` has no such facility.  A
    `gensym`-like facility in the emit language (unique per node and per use) is
    the smallest thing that makes it able to write a loop or a conditional.
 
@@ -542,15 +542,15 @@ writing assembler, in opposite directions.
 
 1. **The bit-field notation is an old, good one, and a design question.**  hbnf's
    wire layer (step 7b: widths, signedness, endianness, bit-precise syntax, an
-   `OCTET` that is a byte) needs a way to say "B bits at C".  IMP72's `A<B,C>` is
+   `OCTET` that is a byte) says "B bits at C".  IMP72's `A<B,C>` is
    that, imperative and per access.  Ada's representation clause is that,
    declarative and per type.  A grammar is declarative, so Ada's shape is the
    closer fit: a rule says its layout once, and both directions, reading and
    writing, follow from it.  What IMP72 adds that Ada does not is that its B and
    C may be *expressions*: a length field read earlier in the same record can
    say how wide the next field is, which binary formats do constantly (length
-   prefixed fields, TLV).  The wire layer should allow it, and `%where`-style
-   code is the wrong place for it.
+   prefixed fields, TLV).  The wire layer allows it (`name:[expr]`, `WIRE.md`), and
+   `%where`-style code is the wrong place for it.
 2. **Right-to-left evaluation of equal precedence is IMP72's, and a trap.**  A
    grammar that accepts `A*B+C` must say which way it nests, and hbnf's ordered
    choice with left-recursive loops gives left to right.  A grammar for IMP in

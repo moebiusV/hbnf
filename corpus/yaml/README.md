@@ -20,6 +20,10 @@ sequences, scalars, aliases) has the suite's `test.event`.  Three cases of the s
 tests could not see it.  Writing the tape found and fixed one more: a document that began with `---`
 on the line after another `---` was read as a plain scalar of the first.
 
+`yaml.hbnf` also makes a tape with no `%emit` in it, under `--layout=tape`: its `flat` and `hidden` lines
+say which rules write no node and which are matched and kept by nothing (`tests/layout.sh` checks the tape
+of a small document and runs the YAML test suite with it).
+
 ## Indentation is a number, not a copy of the rules
 
 YAML's productions take the indentation `n` as a parameter, and a document may nest as deep as
@@ -27,15 +31,14 @@ it likes.  A parameter written `k in 0..` is a number the parser works out as it
 `bmap(K)`, `child(M)` and the rest are written once and the parser and the grammar stay the same
 size at any depth.  `%spaces k` is exactly k spaces, `%col j` names the column the parser is at,
 and `x %num j` the number x matched (the digit of `|2`).  A nested block is a nested call; a
-document of 2,500 levels parses in 10 ms when the C parser is built with `-DHBNF_MAX_DEPTH=100000` and
+document of 2,500 levels parses when the C parser is built with `-DHBNF_MAX_DEPTH=100000` and
 the stack is large: the C parsers stop at `HBNF_MAX_DEPTH` rules open at once (4096 by default, about 585
 levels of YAML, because the parser recurses and a document of 50,000 `[` would otherwise overflow the stack).
 (ABNF.md, "Parameterised rule".)
 
 This replaced a first version in which every column was a rule of its own, which made the grammar
-and the generated parser grow with the deepest column allowed: 4,000 lines of C for each of 128
-columns, and a generator that took minutes.  The same grammar now generates in about two seconds
-and 14,800 lines of C, and the grammar has no limit on depth (the stack has).
+and the generated parser grow with the deepest column allowed, and a generator that took minutes.  The
+same grammar now generates in seconds, and has no limit on depth (the stack has).
 
 Each backend keeps the frames of numbers in a stack that grows with the nesting; a use of a rule
 with such parameters is a push, the call and a pop.
