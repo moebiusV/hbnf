@@ -5,7 +5,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
-with Mustache;
+with HBNF_Template;
 with HBNF_Wire;
 with HBNF_Compilable;
 with HBNF_Shape;
@@ -58,12 +58,12 @@ package body HBNF_C is
    end Replace;
 
    function Fill (Tmpl : String; Table : Holes) return String is
-      V : Mustache.Context := Mustache.View;
+      V : HBNF_Template.Context := HBNF_Template.View;
    begin
       for P of Table loop
-         Mustache.Put (V, To_String (P.Name), To_String (P.Value));
+         HBNF_Template.Put (V, To_String (P.Name), To_String (P.Value));
       end loop;
-      return Mustache.Render_File (Tmpl, V);
+      return HBNF_Template.Render_File (Tmpl, V);
    end Fill;
 
 
@@ -768,7 +768,7 @@ package body HBNF_C is
       for I in 1 .. Natural (Rules.Length) loop
          Walk (I, Rules (I).Pattern);
       end loop;
-      return To_String (Head) & Mustache.Get ("c_context") & ASCII.LF
+      return To_String (Head) & HBNF_Template.Get ("c_context") & ASCII.LF
         & To_String (R);
    end Context_Runtime;
 
@@ -2050,7 +2050,7 @@ package body HBNF_C is
                   Post  : U;
                begin
                   if Idref then
-                     Append (Pre, Mustache.Get ("c_idref"));
+                     Append (Pre, HBNF_Template.Get ("c_idref"));
                      Append (Pre, LF);
                   end if;
                   if not Info.Tags.Is_Empty then
@@ -2086,7 +2086,7 @@ package body HBNF_C is
                      Append (Items, "    };" & LF);
                   end if;
                   if R.Action_Code /= Null_Unbounded_String then
-                     Append (Post, Mustache.Get ("c_line"));
+                     Append (Post, HBNF_Template.Get ("c_line"));
                      Append (Post, LF);
                   end if;
                   Append (Buf, Fill ("c_struct",
@@ -2108,7 +2108,7 @@ package body HBNF_C is
                   Post  : U;
                begin
                   if Idref then
-                     Append (Pre, Mustache.Get ("c_idref"));
+                     Append (Pre, HBNF_Template.Get ("c_idref"));
                      Append (Pre, LF);
                   end if;
                   if not Info.Tags.Is_Empty then
@@ -2138,7 +2138,7 @@ package body HBNF_C is
                         Append (Items,
                           Field_Decl (To_String (Info.Elem_Name), False));
                      else
-                        Append (Items, Mustache.Get ("c_value"));
+                        Append (Items, HBNF_Template.Get ("c_value"));
                      end if;
                      Append (Items, LF);
                   else
@@ -2149,7 +2149,7 @@ package body HBNF_C is
                      end loop;
                   end if;
                   if R.Action_Code /= Null_Unbounded_String then
-                     Append (Post, Mustache.Get ("c_line"));
+                     Append (Post, HBNF_Template.Get ("c_line"));
                      Append (Post, LF);
                   end if;
                   Append (Buf, Fill ("c_struct",
@@ -2871,18 +2871,18 @@ package body HBNF_C is
                end if;
             end loop;
          end;
-         Append (Buf, Mustache.Get ("c_ast"));
+         Append (Buf, HBNF_Template.Get ("c_ast"));
          Append (Buf, LF);
          if Spans_On then
-            Append (Buf, Mustache.Get ("c_ast_spans"));
+            Append (Buf, HBNF_Template.Get ("c_ast_spans"));
             Append (Buf, LF);
          end if;
          if Parents_On then
-            Append (Buf, Mustache.Get ("c_ast_parents"));
+            Append (Buf, HBNF_Template.Get ("c_ast_parents"));
             Append (Buf, LF);
          end if;
          if Ast_Tools_On then
-            Append (Buf, Mustache.Get ("c_ast_tools"));
+            Append (Buf, HBNF_Template.Get ("c_ast_tools"));
             Append (Buf, LF);
          end if;
          --  The whole tree: the root rule's walk and dump.
@@ -8558,7 +8558,7 @@ package body HBNF_C is
          Append (Res, Context_Runtime (Rules));
       end if;
       if HBNF_Grammar.Uses_Frames then
-         Append (Res, Mustache.Get ("c_frames"));
+         Append (Res, HBNF_Template.Get ("c_frames"));
       end if;
       if Forks_On then
          --  The retry state: which alternative of a forked rule to start

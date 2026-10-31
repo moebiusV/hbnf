@@ -3,7 +3,7 @@ pragma Ada_2022;
 with Ada.Characters.Handling;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
-with Mustache;
+with HBNF_Template;
 with HBNF_Shape;
 with HBNF_Compilable;
 with HBNF_Lookahead;
@@ -23,10 +23,10 @@ package body HBNF_Zig is
    --  `@ROOT_TYPE@` substitution these two templates used is now
    --  `{{&root_type}}` like every other hole (RFCPLAN.md step 3b).
    function Render_Root (Name, Root_T : String) return String is
-      V : Mustache.Context := Mustache.View;
+      V : HBNF_Template.Context := HBNF_Template.View;
    begin
-      Mustache.Put (V, "root_type", Root_T);
-      return Mustache.Render_File (Name, V);
+      HBNF_Template.Put (V, "root_type", Root_T);
+      return HBNF_Template.Render_File (Name, V);
    end Render_Root;
 
 
@@ -935,20 +935,20 @@ package body HBNF_Zig is
          case Info.Kind is
             when Scalar =>
                declare
-                  V : Mustache.Context := Mustache.View;
+                  V : HBNF_Template.Context := HBNF_Template.View;
                begin
-                  Mustache.Put (V, "name", Base);
-                  Mustache.Put (V, "type", To_String (Info.Inline_Type));
-                  Append (Buf, Mustache.Render_File ("zig_scalar", V));
+                  HBNF_Template.Put (V, "name", Base);
+                  HBNF_Template.Put (V, "type", To_String (Info.Inline_Type));
+                  Append (Buf, HBNF_Template.Render_File ("zig_scalar", V));
                end;
                Append (Buf, LF);
             when Enum =>
                declare
                   Names : constant String_Vectors.Vector :=
                     Enum_Names (Info.Literals);
-                  Items : constant Mustache.Value_Access := Mustache.New_List;
-                  Row   : Mustache.Value_Access;
-                  V     : Mustache.Context := Mustache.View;
+                  Items : constant HBNF_Template.Value_Access := HBNF_Template.New_List;
+                  Row   : HBNF_Template.Value_Access;
+                  V     : HBNF_Template.Context := HBNF_Template.View;
                   --  The values follow the numbers the author gave the
                   --  alternatives, or their order as written, not the order
                   --  the parser tries them in (see Enum_Value).
@@ -963,14 +963,14 @@ package body HBNF_Zig is
                      declare
                         I : constant Positive := Ord (J);
                      begin
-                     Row := Mustache.New_Map;
-                     Mustache.Insert
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert
                        (Row, "item",
-                        Mustache.New_Scalar (To_String (Names (I))));
-                     Mustache.Insert
+                        HBNF_Template.New_Scalar (To_String (Names (I))));
+                     HBNF_Template.Insert
                        (Row, "init",
-                        Mustache.New_Scalar (Enum_Init (Vals, Ord, J)));
-                     Mustache.Append (Items, Row);
+                        HBNF_Template.New_Scalar (Enum_Init (Vals, Ord, J)));
+                     HBNF_Template.Append (Items, Row);
                      end;
                   end loop;
                   --  A struct is started from zeroes, which needs an enum to
@@ -978,13 +978,13 @@ package body HBNF_Zig is
                   --  open, `_`: 0 is then "none of them", and nothing in the
                   --  parser switches on an enum.
                   if Count > 0 and then Vals (Ord (1)) > 0 then
-                     Row := Mustache.New_Map;
-                     Mustache.Insert (Row, "item", Mustache.New_Scalar ("_"));
-                     Mustache.Insert (Row, "init", Mustache.New_Scalar (""));
-                     Mustache.Append (Items, Row);
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert (Row, "item", HBNF_Template.New_Scalar ("_"));
+                     HBNF_Template.Insert (Row, "init", HBNF_Template.New_Scalar (""));
+                     HBNF_Template.Append (Items, Row);
                   end if;
                   --  Zig gives an enum numbers only with a type for them.
-                  Mustache.Put
+                  HBNF_Template.Put
                     (V, "backing",
                      (if not Enum_Sparse (Vals, Ord)
                          and then not (Count > 0 and then Vals (Ord (1)) > 0)
@@ -992,49 +992,49 @@ package body HBNF_Zig is
                       elsif Enum_Max (Vals) < 256 then "(u8)"
                       elsif Enum_Max (Vals) < 65536 then "(u16)"
                       else "(u32)"));
-                  Mustache.Put (V, "name", Base);
-                  Mustache.Put (V, "items", Items);
-                  Append (Buf, Mustache.Render_File ("zig_enum", V));
+                  HBNF_Template.Put (V, "name", Base);
+                  HBNF_Template.Put (V, "items", Items);
+                  Append (Buf, HBNF_Template.Render_File ("zig_enum", V));
                end;
                Append (Buf, LF);
             when Struct =>
                declare
-                  Items : constant Mustache.Value_Access := Mustache.New_List;
-                  Row   : Mustache.Value_Access;
-                  V     : Mustache.Context := Mustache.View;
+                  Items : constant HBNF_Template.Value_Access := HBNF_Template.New_List;
+                  Row   : HBNF_Template.Value_Access;
+                  V     : HBNF_Template.Context := HBNF_Template.View;
                begin
                   for M of Info.Members loop
-                     Row := Mustache.New_Map;
-                     Mustache.Insert
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert
                        (Row, "field",
-                        Mustache.New_Scalar (Zig_Field (To_String (M.Name))));
-                     Mustache.Insert
+                        HBNF_Template.New_Scalar (Zig_Field (To_String (M.Name))));
+                     HBNF_Template.Insert
                        (Row, "type",
-                        Mustache.New_Scalar
+                        HBNF_Template.New_Scalar
                           (if M.Is_List
                            then "[]" & Zig_Type_Of (Rules, To_String (M.Name))
                            elsif Back_Target (Backs, Idx, To_String (M.Name)) > 0
                            then "?*" & Zig_Type_Of (Rules, To_String (M.Name))
                            else Zig_Type_Of (Rules, To_String (M.Name))));
-                     Mustache.Append (Items, Row);
+                     HBNF_Template.Append (Items, Row);
                   end loop;
                   if Struct_Alt (R, Info) then
-                     Row := Mustache.New_Map;
-                     Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
-                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
-                     Mustache.Append (Items, Row);
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar ("_alt"));
+                     HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("u16"));
+                     HBNF_Template.Append (Items, Row);
                   end if;
                   if Has_Span (Info) then
                      for F in 1 .. 2 loop
-                        Row := Mustache.New_Map;
-                        Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "_pos" else "_end"));
-                        Mustache.Insert (Row, "type", Mustache.New_Scalar ("usize"));
-                        Mustache.Append (Items, Row);
+                        Row := HBNF_Template.New_Map;
+                        HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar (if F = 1 then "_pos" else "_end"));
+                        HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("usize"));
+                        HBNF_Template.Append (Items, Row);
                      end loop;
                   end if;
-                  Mustache.Put (V, "name", Base);
-                  Mustache.Put (V, "items", Items);
-                  Append (Buf, Mustache.Render_File ("zig_struct", V));
+                  HBNF_Template.Put (V, "name", Base);
+                  HBNF_Template.Put (V, "items", Items);
+                  Append (Buf, HBNF_Template.Render_File ("zig_struct", V));
                end;
                Append (Buf, LF);
             when List =>
@@ -1061,50 +1061,50 @@ package body HBNF_Zig is
 
          if Info.Elem_Members.Is_Empty then
             declare
-               V : Mustache.Context := Mustache.View;
+               V : HBNF_Template.Context := HBNF_Template.View;
             begin
-               Mustache.Put (V, "name", Base);
+               HBNF_Template.Put (V, "name", Base);
                if Info.Elem_Name = Null_Unbounded_String then
-                  Append (Buf, Mustache.Render_File ("zig_list_bytes", V));
+                  Append (Buf, HBNF_Template.Render_File ("zig_list_bytes", V));
                else
-                  Mustache.Put
+                  HBNF_Template.Put
                     (V, "type", Zig_Type_Of (Rules, To_String (Info.Elem_Name)));
-                  Append (Buf, Mustache.Render_File ("zig_list_simple", V));
+                  Append (Buf, HBNF_Template.Render_File ("zig_list_simple", V));
                end if;
             end;
          else
             declare
-               Items : constant Mustache.Value_Access := Mustache.New_List;
-               Row   : Mustache.Value_Access;
-               V     : Mustache.Context := Mustache.View;
+               Items : constant HBNF_Template.Value_Access := HBNF_Template.New_List;
+               Row   : HBNF_Template.Value_Access;
+               V     : HBNF_Template.Context := HBNF_Template.View;
             begin
                for M of Info.Elem_Members loop
-                  Row := Mustache.New_Map;
-                  Mustache.Insert
+                  Row := HBNF_Template.New_Map;
+                  HBNF_Template.Insert
                     (Row, "field",
-                     Mustache.New_Scalar (Zig_Field (To_String (M.Name))));
-                  Mustache.Insert
+                     HBNF_Template.New_Scalar (Zig_Field (To_String (M.Name))));
+                  HBNF_Template.Insert
                     (Row, "type",
-                     Mustache.New_Scalar (Zig_Type_Of (Rules, To_String (M.Name))));
-                  Mustache.Append (Items, Row);
+                     HBNF_Template.New_Scalar (Zig_Type_Of (Rules, To_String (M.Name))));
+                  HBNF_Template.Append (Items, Row);
                end loop;
                if Entry_Alt (R, Info) then
-                  Row := Mustache.New_Map;
-                  Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
-                  Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
-                  Mustache.Append (Items, Row);
+                  Row := HBNF_Template.New_Map;
+                  HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar ("_alt"));
+                  HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("u16"));
+                  HBNF_Template.Append (Items, Row);
                end if;
                if Has_Span (Info) then
                   for F in 1 .. 2 loop
-                     Row := Mustache.New_Map;
-                     Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "_pos" else "_end"));
-                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("usize"));
-                     Mustache.Append (Items, Row);
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar (if F = 1 then "_pos" else "_end"));
+                     HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("usize"));
+                     HBNF_Template.Append (Items, Row);
                   end loop;
                end if;
-               Mustache.Put (V, "name", Base);
-               Mustache.Put (V, "items", Items);
-               Append (Buf, Mustache.Render_File ("zig_list_entry", V));
+               HBNF_Template.Put (V, "name", Base);
+               HBNF_Template.Put (V, "items", Items);
+               Append (Buf, HBNF_Template.Render_File ("zig_list_entry", V));
             end;
          end if;
          Append (Buf, LF);
@@ -4812,13 +4812,13 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
          else Zig_Type (To_String (R.Name)));
       --  parse_text: the whole text through the root rule.
       function Parse_Text_Src return String is
-         V : Mustache.Context := Mustache.View;
+         V : HBNF_Template.Context := HBNF_Template.View;
       begin
-         Mustache.Put (V, "root_type", Root_T);
-         Mustache.Put (V, "reset",
+         HBNF_Template.Put (V, "root_type", Root_T);
+         HBNF_Template.Put (V, "reset",
            (if Is_Hosted and then Hosted_Acts
             then "    bnf_warning_list = &.{};" & LF else ""));
-         Mustache.Put (V, "actions",
+         HBNF_Template.Put (V, "actions",
            (if Is_Hosted and then Hosted_Acts then
               "    var h_ = Hooks{ .alloc = alloc };" & LF
               & "    bnf_act_root(&out, &h_) catch {" & LF
@@ -4831,16 +4831,16 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
               & "    };" & LF
               & "    bnf_warning_list = h_.warnings.items;" & LF
             else ""));
-        Mustache.Put (V, "root_fn",
+        HBNF_Template.Put (V, "root_fn",
            Rule_Fn (Zig_Snake (To_String (R.Name))));
          --  The root skips whitespace around itself if its file does.
-         Mustache.Put (V, "lead_ws",
+         HBNF_Template.Put (V, "lead_ws",
            (if R.Whitespace /= Null_Unbounded_String
             then "    p.skip_ws();" & LF else ""));
-         Mustache.Put (V, "trail_ws",
+         HBNF_Template.Put (V, "trail_ws",
            (if R.Whitespace /= Null_Unbounded_String
             then "    p.skip_ws();" & LF else ""));
-         return Mustache.Render_File ("zig_parse_text", V);
+         return HBNF_Template.Render_File ("zig_parse_text", V);
       end Parse_Text_Src;
 
       Lexer  : constant String := Parse_Text_Src;

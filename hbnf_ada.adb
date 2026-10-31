@@ -3,7 +3,7 @@ pragma Ada_2022;
 with Ada.Containers.Vectors;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
-with Mustache;
+with HBNF_Template;
 with HBNF_Shape;
 with HBNF_Compilable;
 with HBNF_Lookahead;
@@ -935,19 +935,19 @@ package body HBNF_Ada is
          case Info.Kind is
             when Scalar =>
                declare
-                  V : Mustache.Context := Mustache.View;
+                  V : HBNF_Template.Context := HBNF_Template.View;
                begin
-                  Mustache.Put (V, "name", TN);
-                  Mustache.Put (V, "type", To_String (Info.Inline_Type));
-                  Append (Buf, Mustache.Render_File ("ada_scalar", V));
+                  HBNF_Template.Put (V, "name", TN);
+                  HBNF_Template.Put (V, "type", To_String (Info.Inline_Type));
+                  Append (Buf, HBNF_Template.Render_File ("ada_scalar", V));
                end;
                Append (Buf, LF);
             when Enum =>
                declare
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
-                  Items : constant Mustache.Value_Access := Mustache.New_List;
-                  Row   : Mustache.Value_Access;
-                  V     : Mustache.Context := Mustache.View;
+                  Items : constant HBNF_Template.Value_Access := HBNF_Template.New_List;
+                  Row   : HBNF_Template.Value_Access;
+                  V     : HBNF_Template.Context := HBNF_Template.View;
                   --  The values follow the numbers the author gave the
                   --  alternatives, or their order as written, not the order
                   --  the parser tries them in (see Enum_Value).
@@ -962,69 +962,69 @@ package body HBNF_Ada is
                      declare
                         I : constant Positive := Ord (J);
                      begin
-                     Row := Mustache.New_Map;
-                     Mustache.Insert
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert
                        (Row, "ident",
-                        Mustache.New_Scalar
+                        HBNF_Template.New_Scalar
                           (Base & "_" & To_String (Names (I))));
-                     Mustache.Insert
+                     HBNF_Template.Insert
                        (Row, "value",
-                        Mustache.New_Scalar
+                        HBNF_Template.New_Scalar
                           (Ada.Strings.Fixed.Trim
                              (Integer'Image (Vals (I)), Ada.Strings.Left)));
                      --  Mustache has no join, so the separator is a flag on
                      --  every row but the first: `{{#sep}}, {{/sep}}`.
                      if J > 1 then
-                        Mustache.Insert (Row, "sep", Mustache.New_Scalar ("1"));
+                        HBNF_Template.Insert (Row, "sep", HBNF_Template.New_Scalar ("1"));
                      end if;
-                     Mustache.Append (Items, Row);
+                     HBNF_Template.Append (Items, Row);
                      end;
                   end loop;
-                  Mustache.Put (V, "name", TN);
-                  Mustache.Put (V, "items", Items);
+                  HBNF_Template.Put (V, "name", TN);
+                  HBNF_Template.Put (V, "items", Items);
                   if Enum_Sparse (Vals, Ord) then
-                     Mustache.Put (V, "rep", Mustache.New_Scalar ("1"));
+                     HBNF_Template.Put (V, "rep", HBNF_Template.New_Scalar ("1"));
                   end if;
-                  Append (Buf, Mustache.Render_File ("ada_enum", V));
+                  Append (Buf, HBNF_Template.Render_File ("ada_enum", V));
                end;
                Append (Buf, LF);
             when Struct =>
                declare
-                  Items : constant Mustache.Value_Access := Mustache.New_List;
-                  Row   : Mustache.Value_Access;
-                  V     : Mustache.Context := Mustache.View;
+                  Items : constant HBNF_Template.Value_Access := HBNF_Template.New_List;
+                  Row   : HBNF_Template.Value_Access;
+                  V     : HBNF_Template.Context := HBNF_Template.View;
                begin
                   for M of Info.Members loop
-                     Row := Mustache.New_Map;
-                     Mustache.Insert
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert
                        (Row, "field",
-                        Mustache.New_Scalar (Ada_Field (To_String (M.Name))));
-                     Mustache.Insert
+                        HBNF_Template.New_Scalar (Ada_Field (To_String (M.Name))));
+                     HBNF_Template.Insert
                        (Row, "type",
-                        Mustache.New_Scalar
+                        HBNF_Template.New_Scalar
                           (if M.Is_List
                            then Base & "_" & Ada_Ident (To_String (M.Name))
                                 & "_Vectors.Vector"
                            else Elem_Type (Idx, To_String (M.Name))));
-                     Mustache.Append (Items, Row);
+                     HBNF_Template.Append (Items, Row);
                   end loop;
                   if Struct_Alt (R, Info) then
-                     Row := Mustache.New_Map;
-                     Mustache.Insert (Row, "field", Mustache.New_Scalar ("Alt_No"));
-                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
-                     Mustache.Append (Items, Row);
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar ("Alt_No"));
+                     HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("Natural"));
+                     HBNF_Template.Append (Items, Row);
                   end if;
                   if Has_Span (Info) then
                      for F in 1 .. 2 loop
-                        Row := Mustache.New_Map;
-                        Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "Span_Start" else "Span_End"));
-                        Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
-                        Mustache.Append (Items, Row);
+                        Row := HBNF_Template.New_Map;
+                        HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar (if F = 1 then "Span_Start" else "Span_End"));
+                        HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("Natural"));
+                        HBNF_Template.Append (Items, Row);
                      end loop;
                   end if;
-                  Mustache.Put (V, "name", TN);
-                  Mustache.Put (V, "items", Items);
-                  Append (Buf, Mustache.Render_File ("ada_struct", V));
+                  HBNF_Template.Put (V, "name", TN);
+                  HBNF_Template.Put (V, "items", Items);
+                  Append (Buf, HBNF_Template.Render_File ("ada_struct", V));
                end;
                Append (Buf, LF);
             when List =>
@@ -1064,47 +1064,47 @@ package body HBNF_Ada is
          else
             --  A group element: emit a named entry record (value members).
             declare
-               Items : constant Mustache.Value_Access := Mustache.New_List;
-               Row   : Mustache.Value_Access;
-               V     : Mustache.Context := Mustache.View;
+               Items : constant HBNF_Template.Value_Access := HBNF_Template.New_List;
+               Row   : HBNF_Template.Value_Access;
+               V     : HBNF_Template.Context := HBNF_Template.View;
             begin
                for M of Info.Elem_Members loop
-                  Row := Mustache.New_Map;
-                  Mustache.Insert
+                  Row := HBNF_Template.New_Map;
+                  HBNF_Template.Insert
                     (Row, "field",
-                     Mustache.New_Scalar (Ada_Field (To_String (M.Name))));
-                  Mustache.Insert
+                     HBNF_Template.New_Scalar (Ada_Field (To_String (M.Name))));
+                  HBNF_Template.Insert
                     (Row, "type",
-                     Mustache.New_Scalar (Elem_Type (Idx, To_String (M.Name), True)));
-                  Mustache.Append (Items, Row);
+                     HBNF_Template.New_Scalar (Elem_Type (Idx, To_String (M.Name), True)));
+                  HBNF_Template.Append (Items, Row);
                end loop;
                if Entry_Alt (R, Info) then
-                  Row := Mustache.New_Map;
-                  Mustache.Insert (Row, "field", Mustache.New_Scalar ("Alt_No"));
-                  Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
-                  Mustache.Append (Items, Row);
+                  Row := HBNF_Template.New_Map;
+                  HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar ("Alt_No"));
+                  HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("Natural"));
+                  HBNF_Template.Append (Items, Row);
                end if;
                if Has_Span (Info) then
                   for F in 1 .. 2 loop
-                     Row := Mustache.New_Map;
-                     Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "Span_Start" else "Span_End"));
-                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("Natural"));
-                     Mustache.Append (Items, Row);
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar (if F = 1 then "Span_Start" else "Span_End"));
+                     HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("Natural"));
+                     HBNF_Template.Append (Items, Row);
                   end loop;
                end if;
-               Mustache.Put (V, "name", Base & "_Entry");
-               Mustache.Put (V, "items", Items);
-               Append (Buf, Mustache.Render_File ("ada_struct", V));
+               HBNF_Template.Put (V, "name", Base & "_Entry");
+               HBNF_Template.Put (V, "items", Items);
+               Append (Buf, HBNF_Template.Render_File ("ada_struct", V));
             end;
             Append (Buf, LF);
             Append (Buf, Emit_Vector (Base & "_Vectors", Base & "_Entry"));
          end if;
          declare
-            V : Mustache.Context := Mustache.View;
+            V : HBNF_Template.Context := HBNF_Template.View;
          begin
-            Mustache.Put (V, "name", TN);
-            Mustache.Put (V, "base", Base);
-            Append (Buf, Mustache.Render_File ("ada_list_subtype", V));
+            HBNF_Template.Put (V, "name", TN);
+            HBNF_Template.Put (V, "base", Base);
+            Append (Buf, HBNF_Template.Render_File ("ada_list_subtype", V));
          end;
          Append (Buf, LF);
 
@@ -3964,13 +3964,13 @@ package body HBNF_Ada is
 
       --  Package specification: the exception and Parse_Text.
       declare
-         V : Mustache.Context := Mustache.View;
+         V : HBNF_Template.Context := HBNF_Template.View;
       begin
-         Mustache.Put (V, "pkg", Package_Name);
-         Mustache.Put (V, "ret", Ret_Type (1));
-         Mustache.Put (V, "frees", To_String (Free_Decls));
-         Mustache.Put (V, "hosted_spec", To_String (Hosted_Spec));
-         Mustache.Put (V, "spec_withs",
+         HBNF_Template.Put (V, "pkg", Package_Name);
+         HBNF_Template.Put (V, "ret", Ret_Type (1));
+         HBNF_Template.Put (V, "frees", To_String (Free_Decls));
+         HBNF_Template.Put (V, "hosted_spec", To_String (Hosted_Spec));
+         HBNF_Template.Put (V, "spec_withs",
            (if Length (Ast_Body) > 0
             then "with Ada.Containers.Vectors;" & LF & "with Interfaces;" & LF
                  & (if Parents_On
@@ -3978,7 +3978,7 @@ package body HBNF_Ada is
                          & "with System.Storage_Elements;" & LF
                     else "")
             else ""));
-         Append (Spec, Mustache.Render_File ("ada_parser_spec", V));
+         Append (Spec, HBNF_Template.Render_File ("ada_parser_spec", V));
          Append (Spec, LF);
       end;
 
@@ -3989,16 +3989,16 @@ package body HBNF_Ada is
            (if Has_No_Case (Rules)
             then "with Ada.Strings.Equal_Case_Insensitive;" & LF
             else "");
-         V : Mustache.Context := Mustache.View;
+         V : HBNF_Template.Context := HBNF_Template.View;
       begin
-         Mustache.Put (V, "pkg", Package_Name);
-         Mustache.Put (V, "nocase_with", Nocase_With);
-         Mustache.Put (V, "free_with", "with Ada.Unchecked_Deallocation;" & LF);
-         Mustache.Put (V, "hosted_with",
+         HBNF_Template.Put (V, "pkg", Package_Name);
+         HBNF_Template.Put (V, "nocase_with", Nocase_With);
+         HBNF_Template.Put (V, "free_with", "with Ada.Unchecked_Deallocation;" & LF);
+         HBNF_Template.Put (V, "hosted_with",
            To_String (Hosted_Withs)
            & (if Parents_On and then Length (Ast_Body) > 0
               then "with System.Storage_Elements;" & LF else ""));
-         Append (Bdy, Mustache.Render_File ("ada_parser_body", V));
+         Append (Bdy, HBNF_Template.Render_File ("ada_parser_body", V));
       end;
 
       --  The scanners.  A core rule the grammar does not define (`word`,
@@ -4318,7 +4318,7 @@ package body HBNF_Ada is
          Nocase_Proc : U;
          Skip_Body   : U;
          Kw_Fn       : U;
-         V : Mustache.Context := Mustache.View;
+         V : HBNF_Template.Context := HBNF_Template.View;
       begin
          if Has_No_Case (Rules) then
             Append (Nocase_Proc,
@@ -4374,10 +4374,10 @@ package body HBNF_Ada is
             Append (Kw_Fn, ";" & LF);
          end if;
          Append (Kw_Fn, "   end Is_Keyword;" & LF);
-         Mustache.Put (V, "nocase_proc", To_String (Nocase_Proc));
-         Mustache.Put (V, "skip_ws", To_String (Skip_Body));
-         Mustache.Put (V, "keyword_fn", To_String (Kw_Fn));
-         Mustache.Put (V, "frame_code",
+         HBNF_Template.Put (V, "nocase_proc", To_String (Nocase_Proc));
+         HBNF_Template.Put (V, "skip_ws", To_String (Skip_Body));
+         HBNF_Template.Put (V, "keyword_fn", To_String (Kw_Fn));
+         HBNF_Template.Put (V, "frame_code",
            (if HBNF_Grammar.Uses_Frames
             then LF
               & "   --  frames: the numbers of a rule with parameters worked out while parsing" & LF
@@ -4399,11 +4399,11 @@ package body HBNF_Ada is
               & "      Fb := Ob;" & LF
               & "   end Pop_Frame;" & LF
             else ""));
-         Mustache.Put (V, "parser_bit",
+         HBNF_Template.Put (V, "parser_bit",
            (if Is_Hosted
             then "      Bit  : Natural := 0;   --  bits of the octet at Pos a bit rule has read" & LF
             else ""));
-         Append (Bdy, Mustache.Render_File ("ada_parser_prims", V));
+         Append (Bdy, HBNF_Template.Render_File ("ada_parser_prims", V));
       end;
       Append (Bdy, LF);
       Append (Bdy, To_String (Free_Body));
@@ -5218,16 +5218,16 @@ package body HBNF_Ada is
 
       --  Parse_Text: the whole text through the root rule.
       declare
-         V : Mustache.Context := Mustache.View;
+         V : HBNF_Template.Context := HBNF_Template.View;
       begin
-         Mustache.Put (V, "root_type", Ret_Type (1));
-         Mustache.Put (V, "bit_init", (if Is_Hosted then ", Bit => 0" else ""));
-         Mustache.Put (V, "reset",
+         HBNF_Template.Put (V, "root_type", Ret_Type (1));
+         HBNF_Template.Put (V, "bit_init", (if Is_Hosted then ", Bit => 0" else ""));
+         HBNF_Template.Put (V, "reset",
            (if Is_Hosted and then Hosted_Acts
             then "      Bnf_Warns.Clear;" & LF else "")
            & (if HBNF_Grammar.Uses_Frames
               then "      Frames.Clear; Fb := 0;" & LF else ""));
-         Mustache.Put (V, "actions",
+         HBNF_Template.Put (V, "actions",
            (if Is_Hosted and then Hosted_Acts
               and then (Is_Record (Analyze (Rules, 1))
                         or else Analyze (Rules, 1).Kind = List)
@@ -5242,16 +5242,16 @@ package body HBNF_Ada is
               & "            raise Parse_Error with To_String (H.Msg);" & LF
               & "      end;" & LF
             else ""));
-         Mustache.Put (V, "root_fn",
+         HBNF_Template.Put (V, "root_fn",
            "Parse_" & Ada_Ident (To_String (Rules (1).Name)));
          --  The root skips whitespace around itself if its file does.
-         Mustache.Put (V, "lead_ws",
+         HBNF_Template.Put (V, "lead_ws",
            (if Rules (1).Whitespace /= Null_Unbounded_String
             then "      Skip_Ws (P);" & LF else ""));
-         Mustache.Put (V, "trail_ws",
+         HBNF_Template.Put (V, "trail_ws",
            (if Rules (1).Whitespace /= Null_Unbounded_String
             then "      Skip_Ws (P);" & LF else ""));
-         Append (Bdy, Mustache.Render_File ("ada_parse_text", V));
+         Append (Bdy, HBNF_Template.Render_File ("ada_parse_text", V));
       end;
       Append (Bdy, LF);
       Append (Bdy, LF);

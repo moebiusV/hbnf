@@ -8,16 +8,9 @@ cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 HERE=$(pwd)
 
-# mustache-ada (moebiusV/mustache-ada, the ada-on-alpine aport) renders the
-# code templates.  gprinstall puts its sources here; MUSTACHE_INC overrides
-# for a different prefix or a source checkout.  gnatmake compiles the two
-# sources itself, so no library link is needed.
-MUSTACHE_INC="${MUSTACHE_INC:-/usr/include/mustache}"
-if [ ! -f "$MUSTACHE_INC/mustache.ads" ]; then
-	echo "e2e: no mustache.ads under $MUSTACHE_INC (set MUSTACHE_INC=)" >&2
-	exit 1
-fi
-A="-gnat2022 -I. -Itests -I$MUSTACHE_INC"
+# The code templates are rendered by HBNF_Template (hbnf_template.ad[sb] and the parser in
+# hbnf_template_syntax*.ad[sb], both in this directory), so there is nothing to find or link.
+A="-gnat2022 -I. -Itests"
 
 # A stale .o in the source directory wins the link: gnatmake -D <tmpdir>
 # compiles into the temp directory, but gnatlink takes hbnf.ali from `.`, so
@@ -28,7 +21,7 @@ rm -f ./*.o ./*.ali
 
 newer_than_sources() { # $1 = binary
 	[ -f "$1" ] || return 1
-	for f in ./*.ad[bs] tests/*.ad[bs] "$MUSTACHE_INC"/*.ad[bs]; do
+	for f in ./*.ad[bs] tests/*.ad[bs]; do
 		[ -f "$f" ] || continue
 		[ "$f" -nt "$1" ] && return 1
 	done

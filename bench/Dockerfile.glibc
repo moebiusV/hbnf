@@ -1,6 +1,8 @@
 # The comparison environment on glibc: Debian with the tools hbnf is measured against.  Built
 # beside the Alpine one (tag hbnf-bench-glibc); build args come from pins.txt (see run.sh).
-# The Ada mustache library the generator needs is two files, taken from the toolchain image.
+# The Ada mustache library is two files, taken from the toolchain image: bench/stage-zigada.sh builds the
+# generator as it was before the template rewrite (bench/pre), which still uses it.  The current generator
+# renders its templates itself (HBNF_Template) and needs nothing.
 FROM debian:stable-slim
 ARG ANTLR_URL
 ARG ANTLR_SHA

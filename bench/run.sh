@@ -52,7 +52,7 @@ if [ "${BENCH_IN_CONTAINER:-}" != 1 ]; then
 		if [ ! -x "$hb" ]; then
 			mkdir -p "$here/cache"
 			docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$root:/w:ro" -v "$here/cache:/out" $IMAGE sh -c \
-				"mkdir -p /tmp/b && cp /w/*.ad[sb] /tmp/b/ && cd /tmp/b && gnatmake -q -gnat2022 -gnatws -I. -I/usr/include/mustache hbnf.adb -o /out/hbnf-glibc-$sum" \
+				"mkdir -p /tmp/b && cp /w/*.ad[sb] /tmp/b/ && cd /tmp/b && gnatmake -q -gnat2022 -gnatws -I. hbnf.adb -o /out/hbnf-glibc-$sum" \
 				|| { echo "run.sh: could not build the generator in $IMAGE" >&2; exit 1; }
 		fi
 	fi

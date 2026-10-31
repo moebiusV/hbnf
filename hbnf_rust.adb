@@ -3,7 +3,7 @@ pragma Ada_2022;
 with Ada.Characters.Handling;
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
-with Mustache;
+with HBNF_Template;
 with HBNF_Shape;
 with HBNF_Compilable;
 with HBNF_Lookahead;
@@ -13,10 +13,10 @@ package body HBNF_Rust is
    --  A whole-file template whose one hole is the root rule's type: the
    --  `@ROOT_TYPE@` substitution is now `{{&root_type}}` (RFCPLAN step 3b).
    function Render_Root (Name, Root_T : String) return String is
-      V : Mustache.Context := Mustache.View;
+      V : HBNF_Template.Context := HBNF_Template.View;
    begin
-      Mustache.Put (V, "root_type", Root_T);
-      return Mustache.Render_File (Name, V);
+      HBNF_Template.Put (V, "root_type", Root_T);
+      return HBNF_Template.Render_File (Name, V);
    end Render_Root;
 
    use Ada.Strings.Unbounded;
@@ -864,20 +864,20 @@ package body HBNF_Rust is
                --  String = String` would shadow std and is omitted.
                if Base /= To_String (Info.Inline_Type) then
                   declare
-                     V : Mustache.Context := Mustache.View;
+                     V : HBNF_Template.Context := HBNF_Template.View;
                   begin
-                     Mustache.Put (V, "name", Base);
-                     Mustache.Put (V, "type", To_String (Info.Inline_Type));
-                     Append (Buf, Mustache.Render_File ("rust_scalar", V));
+                     HBNF_Template.Put (V, "name", Base);
+                     HBNF_Template.Put (V, "type", To_String (Info.Inline_Type));
+                     Append (Buf, HBNF_Template.Render_File ("rust_scalar", V));
                   end;
                   Append (Buf, LF);
                end if;
             when Enum =>
                declare
                   Names : constant String_Vectors.Vector := Enum_Names (Info.Literals);
-                  Items : constant Mustache.Value_Access := Mustache.New_List;
-                  Row   : Mustache.Value_Access;
-                  V     : Mustache.Context := Mustache.View;
+                  Items : constant HBNF_Template.Value_Access := HBNF_Template.New_List;
+                  Row   : HBNF_Template.Value_Access;
+                  V     : HBNF_Template.Context := HBNF_Template.View;
                   --  The values follow the numbers the author gave the
                   --  alternatives, or their order as written, not the order
                   --  the parser tries them in (see Enum_Value).
@@ -892,70 +892,70 @@ package body HBNF_Rust is
                      declare
                         I : constant Positive := Ord (J);
                      begin
-                     Row := Mustache.New_Map;
-                     Mustache.Insert
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert
                        (Row, "ident",
-                        Mustache.New_Scalar
+                        HBNF_Template.New_Scalar
                           (Base & "_" & To_String (Names (I))));
-                     Mustache.Insert
+                     HBNF_Template.Insert
                        (Row, "init",
-                        Mustache.New_Scalar (Enum_Init (Vals, Ord, J)));
+                        HBNF_Template.New_Scalar (Enum_Init (Vals, Ord, J)));
                      --  `#[default]` goes on the first variant only: the two
                      --  item templates became one `{{#first}}` section.
                      if J = 1 then
-                        Mustache.Insert (Row, "first", Mustache.New_Scalar ("1"));
+                        HBNF_Template.Insert (Row, "first", HBNF_Template.New_Scalar ("1"));
                      end if;
-                     Mustache.Append (Items, Row);
+                     HBNF_Template.Append (Items, Row);
                      end;
                   end loop;
-                  Mustache.Put (V, "name", Base);
-                  Mustache.Put (V, "items", Items);
-                  Append (Buf, Mustache.Render_File ("rust_enum", V));
+                  HBNF_Template.Put (V, "name", Base);
+                  HBNF_Template.Put (V, "items", Items);
+                  Append (Buf, HBNF_Template.Render_File ("rust_enum", V));
                end;
                Append (Buf, LF);
             when Struct =>
                declare
-                  Items : constant Mustache.Value_Access := Mustache.New_List;
-                  Row   : Mustache.Value_Access;
-                  V     : Mustache.Context := Mustache.View;
+                  Items : constant HBNF_Template.Value_Access := HBNF_Template.New_List;
+                  Row   : HBNF_Template.Value_Access;
+                  V     : HBNF_Template.Context := HBNF_Template.View;
                begin
                   for M of Info.Members loop
-                     Row := Mustache.New_Map;
-                     Mustache.Insert
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert
                        (Row, "field",
-                        Mustache.New_Scalar (Rust_Field (To_String (M.Name))));
+                        HBNF_Template.New_Scalar (Rust_Field (To_String (M.Name))));
                      --  A back edge is the one field that holds its subtree
                      --  behind a pointer.  `Option`, because a struct
                      --  derives Default and `Box<T>::default()` would
                      --  recurse without end; `None` is the empty field.
-                     Mustache.Insert
+                     HBNF_Template.Insert
                        (Row, "type",
-                        Mustache.New_Scalar
+                        HBNF_Template.New_Scalar
                           (if M.Is_List
                            then "Vec<" & Rust_Type_Of (Rules, To_String (M.Name)) & ">"
                            elsif Is_Back (Backs, Idx, To_String (M.Name))
                            then "Option<Box<"
                                 & Rust_Type_Of (Rules, To_String (M.Name)) & ">>"
                            else Rust_Type_Of (Rules, To_String (M.Name))));
-                     Mustache.Append (Items, Row);
+                     HBNF_Template.Append (Items, Row);
                   end loop;
                   if Struct_Alt (R, Info) then
-                     Row := Mustache.New_Map;
-                     Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
-                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
-                     Mustache.Append (Items, Row);
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar ("_alt"));
+                     HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("u16"));
+                     HBNF_Template.Append (Items, Row);
                   end if;
                   if Has_Span (Info) then
                      for F in 1 .. 2 loop
-                        Row := Mustache.New_Map;
-                        Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "_pos" else "_end"));
-                        Mustache.Insert (Row, "type", Mustache.New_Scalar ("usize"));
-                        Mustache.Append (Items, Row);
+                        Row := HBNF_Template.New_Map;
+                        HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar (if F = 1 then "_pos" else "_end"));
+                        HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("usize"));
+                        HBNF_Template.Append (Items, Row);
                      end loop;
                   end if;
-                  Mustache.Put (V, "name", Base);
-                  Mustache.Put (V, "items", Items);
-                  Append (Buf, Mustache.Render_File ("rust_struct", V));
+                  HBNF_Template.Put (V, "name", Base);
+                  HBNF_Template.Put (V, "items", Items);
+                  Append (Buf, HBNF_Template.Render_File ("rust_struct", V));
                end;
                Append (Buf, LF);
             when List =>
@@ -983,54 +983,54 @@ package body HBNF_Rust is
          if Info.Elem_Members.Is_Empty then
             if Info.Elem_Name = Null_Unbounded_String then
                declare
-                  V : Mustache.Context := Mustache.View;
+                  V : HBNF_Template.Context := HBNF_Template.View;
                begin
-                  Mustache.Put (V, "name", Base);
-                  Append (Buf, Mustache.Render_File ("rust_list_bytes", V));
+                  HBNF_Template.Put (V, "name", Base);
+                  Append (Buf, HBNF_Template.Render_File ("rust_list_bytes", V));
                end;
             else
                declare
-                  V : Mustache.Context := Mustache.View;
+                  V : HBNF_Template.Context := HBNF_Template.View;
                begin
-                  Mustache.Put (V, "name", Base);
-                  Mustache.Put
+                  HBNF_Template.Put (V, "name", Base);
+                  HBNF_Template.Put
                     (V, "type", Rust_Type_Of (Rules, To_String (Info.Elem_Name)));
-                  Append (Buf, Mustache.Render_File ("rust_list_simple", V));
+                  Append (Buf, HBNF_Template.Render_File ("rust_list_simple", V));
                end;
             end if;
          else
             declare
-               Items : constant Mustache.Value_Access := Mustache.New_List;
-               Row   : Mustache.Value_Access;
-               V     : Mustache.Context := Mustache.View;
+               Items : constant HBNF_Template.Value_Access := HBNF_Template.New_List;
+               Row   : HBNF_Template.Value_Access;
+               V     : HBNF_Template.Context := HBNF_Template.View;
             begin
                for M of Info.Elem_Members loop
-                  Row := Mustache.New_Map;
-                  Mustache.Insert
+                  Row := HBNF_Template.New_Map;
+                  HBNF_Template.Insert
                     (Row, "field",
-                     Mustache.New_Scalar (Rust_Field (To_String (M.Name))));
-                  Mustache.Insert
+                     HBNF_Template.New_Scalar (Rust_Field (To_String (M.Name))));
+                  HBNF_Template.Insert
                     (Row, "type",
-                     Mustache.New_Scalar (Rust_Type_Of (Rules, To_String (M.Name))));
-                  Mustache.Append (Items, Row);
+                     HBNF_Template.New_Scalar (Rust_Type_Of (Rules, To_String (M.Name))));
+                  HBNF_Template.Append (Items, Row);
                end loop;
                if Entry_Alt (Rules (Idx), Info) then
-                  Row := Mustache.New_Map;
-                  Mustache.Insert (Row, "field", Mustache.New_Scalar ("_alt"));
-                  Mustache.Insert (Row, "type", Mustache.New_Scalar ("u16"));
-                  Mustache.Append (Items, Row);
+                  Row := HBNF_Template.New_Map;
+                  HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar ("_alt"));
+                  HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("u16"));
+                  HBNF_Template.Append (Items, Row);
                end if;
                if Has_Span (Info) then
                   for F in 1 .. 2 loop
-                     Row := Mustache.New_Map;
-                     Mustache.Insert (Row, "field", Mustache.New_Scalar (if F = 1 then "_pos" else "_end"));
-                     Mustache.Insert (Row, "type", Mustache.New_Scalar ("usize"));
-                     Mustache.Append (Items, Row);
+                     Row := HBNF_Template.New_Map;
+                     HBNF_Template.Insert (Row, "field", HBNF_Template.New_Scalar (if F = 1 then "_pos" else "_end"));
+                     HBNF_Template.Insert (Row, "type", HBNF_Template.New_Scalar ("usize"));
+                     HBNF_Template.Append (Items, Row);
                   end loop;
                end if;
-               Mustache.Put (V, "name", Base);
-               Mustache.Put (V, "items", Items);
-               Append (Buf, Mustache.Render_File ("rust_list_entry", V));
+               HBNF_Template.Put (V, "name", Base);
+               HBNF_Template.Put (V, "items", Items);
+               Append (Buf, HBNF_Template.Render_File ("rust_list_entry", V));
             end;
          end if;
          Append (Buf, LF);
@@ -3697,23 +3697,23 @@ package body HBNF_Rust is
               & "        }" & LF);
          end if;
          declare
-            V : Mustache.Context := Mustache.View;
+            V : HBNF_Template.Context := HBNF_Template.View;
          begin
-            Mustache.Put (V, "nocase", To_String (Nocase));
-            Mustache.Put (V, "skip_ws", To_String (Skip_Ws));
-            Mustache.Put (V, "text_type", (if Is_Hosted then "Txt<'a>" else "&'a str"));
-            Mustache.Put (V, "bit_field",
+            HBNF_Template.Put (V, "nocase", To_String (Nocase));
+            HBNF_Template.Put (V, "skip_ws", To_String (Skip_Ws));
+            HBNF_Template.Put (V, "text_type", (if Is_Hosted then "Txt<'a>" else "&'a str"));
+            HBNF_Template.Put (V, "bit_field",
               (if Is_Hosted then "bit: usize, " else ""));
-            Mustache.Put (V, "ctx_field",
+            HBNF_Template.Put (V, "ctx_field",
               (if Ctx_On then ", cx: [Cx; NCTX]" else "")
               & (if HBNF_Grammar.Uses_Frames then ", fs: Vec<i64>, fb: usize" else ""));
-            Mustache.Put (V, "first_char",
+            HBNF_Template.Put (V, "first_char",
               (if Is_Hosted then "bnf_first_char(&b[self.pos..])"
                else "self.text[self.pos..].chars().next().unwrap().to_string()"));
-            Mustache.Put (V, "line_text",
+            HBNF_Template.Put (V, "line_text",
               (if Is_Hosted then "bnf_lossy(&b[start..stop])"
                else "&self.text[start..stop]"));
-            Append (Res, Mustache.Render_File ("rust_parser", V));
+            Append (Res, HBNF_Template.Render_File ("rust_parser", V));
          end;
          if Ctx_On then
             declare
@@ -4181,34 +4181,34 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
          else Rust_Type (To_String (R.Name)));
       --  parse_text: the whole text through the root rule.
       function Parse_Text_Src return String is
-         V : Mustache.Context := Mustache.View;
+         V : HBNF_Template.Context := HBNF_Template.View;
       begin
-         Mustache.Put (V, "root_type", Root_T);
-         Mustache.Put (V, "text_param", (if Is_Hosted then "&[u8]" else "&str"));
-         Mustache.Put (V, "text_init", (if Is_Hosted then ": Txt(text)" else ""));
-         Mustache.Put (V, "bit_init", (if Is_Hosted then "bit: 0, " else ""));
-         Mustache.Put (V, "ctx_init", (if Ctx_On then ", cx: Default::default()" else "")
+         HBNF_Template.Put (V, "root_type", Root_T);
+         HBNF_Template.Put (V, "text_param", (if Is_Hosted then "&[u8]" else "&str"));
+         HBNF_Template.Put (V, "text_init", (if Is_Hosted then ": Txt(text)" else ""));
+         HBNF_Template.Put (V, "bit_init", (if Is_Hosted then "bit: 0, " else ""));
+         HBNF_Template.Put (V, "ctx_init", (if Ctx_On then ", cx: Default::default()" else "")
                        & (if HBNF_Grammar.Uses_Frames then ", fs: Vec::new(), fb: 0" else ""));
-         Mustache.Put (V, "reset",
+         HBNF_Template.Put (V, "reset",
            (if Is_Hosted and then Hosted_Acts
             then "    BNF_WARNINGS.with(|w| w.borrow_mut().clear());" & LF else ""));
-         Mustache.Put (V, "actions",
+         HBNF_Template.Put (V, "actions",
            (if Is_Hosted and then Hosted_Acts then
               "    let mut h_ = Hooks { warnings: Vec::new() };" & LF
               & "    let r_ = bnf_act_root(&out, &mut h_);" & LF
               & "    BNF_WARNINGS.with(|w| *w.borrow_mut() = h_.warnings);" & LF
               & "    if let Err(m) = r_ { return Err(ParseError { line: 0, col: 0, msg: m }); }" & LF
             else ""));
-         Mustache.Put (V, "root_fn",
+         HBNF_Template.Put (V, "root_fn",
            Rule_Fn (Rust_Snake (To_String (R.Name))));
          --  The root skips whitespace around itself if its file does.
-         Mustache.Put (V, "lead_ws",
+         HBNF_Template.Put (V, "lead_ws",
            (if R.Whitespace /= Null_Unbounded_String
             then "    p.skip_ws();" & LF else ""));
-         Mustache.Put (V, "trail_ws",
+         HBNF_Template.Put (V, "trail_ws",
            (if R.Whitespace /= Null_Unbounded_String
             then "    p.skip_ws();" & LF else ""));
-         return Mustache.Render_File ("rust_parse_text", V);
+         return HBNF_Template.Render_File ("rust_parse_text", V);
       end Parse_Text_Src;
 
       Lexer  : constant String := Parse_Text_Src;

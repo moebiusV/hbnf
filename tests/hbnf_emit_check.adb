@@ -11,7 +11,7 @@ with HBNF_Ada;
 with HBNF_C;
 with HBNF_Rust;
 with HBNF_Zig;
-with Mustache;
+with HBNF_Template;
 
 --  Check the parser and the four emitters against two schema files passed on
 --  the command line.  Usage: hbnf_emit_check <server.hbnf> <hbnf_schema.hbnf>
@@ -529,11 +529,11 @@ procedure Hbnf_Emit_Check is
              not Body_Nullable ("x = *d" & LF & "d = %x30-39" & LF));
    end Check_Nullable_Repetition;
 
-   --  The Mustache renderer (mustache-ada, RFCPLAN.md step 3b): the raw
+   --  The Mustache renderer (HBNF_Template, RFCPLAN.md step 3b): the raw
    --  interpolation hbnf's templates must use, sections over a list, and the
    --  one guarantee the switchover gave up.
    procedure Check_Templates is
-      use Mustache;
+      use HBNF_Template;
       LFc : constant Character := ASCII.LF;
    begin
       --  Every hole in hbnf's templates is `{{&name}}`, never `{{name}}`:
@@ -572,7 +572,7 @@ procedure Hbnf_Emit_Check is
    end Check_Templates;
 
 begin
-   Mustache.Load ("templates");
+   HBNF_Template.Load ("templates");
    Check_Server (Ada.Command_Line.Argument (1));
    Check_Hbnf (Ada.Command_Line.Argument (2));
    Check_Include;

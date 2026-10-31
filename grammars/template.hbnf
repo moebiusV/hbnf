@@ -1,0 +1,39 @@
+; Mustache (https://mustache.github.io/mustache.5.html) as this project writes its code generators in it.
+; The syntax of a template, and nothing of how it is rendered (HBNF_Template does that, over the tree hbnf
+; makes of this; scripts/gen-template-syntax.sh writes the parser).
+;
+; A template is text, tags and blocks.  A tag is {{&name}} (the value as it is, the one the generators use),
+; {{{name}}}, {{name}} (HTML-escaped), a comment {{! ... }}, or a partial {{> name}} or a change of delimiters
+; {{= <% %> =}}, which are read and then refused by the renderer because no template here uses either.  A block
+; is a section {{#name}} ... {{/name}} (once for a value that is there, for each item of a list) or an inverted
+; one {{^name}} ... {{/name}} (when it is not there).  A sigil (# ^ / ! & > =) may follow blanks after the {{.
+;
+; The tree is kept small on purpose: a part is a block, a tag or text, and a tag is the text of the tag, which
+; the renderer reads the name from.  That the closing tag names what the opening one did is checked there too.
+prefix none
+whitespace none
+
+template = *part
+part     = block | tag | text | lone
+
+block    = open template close
+open     = "{{" blank ( "#" | "^" ) blank name blank "}}"
+close    = "{{" blank "/" blank name blank "}}"
+
+tag      = note | unsupported | raw | triple | variable
+note        = "{{" blank "!" body "}}"
+unsupported = "{{" blank ( ">" | "=" ) body "}}"
+raw         = "{{" blank "&" blank name blank "}}"
+triple      = "{{{" blank name blank "}}}"
+variable    = "{{" blank plain blank "}}"
+
+; the pieces of a tag: a name has no blank or } in it, and a plain one does not begin with a sigil
+name     = 1*~( %x20 / %x09 / %x0D / %x0A / "}" )
+plain    = ~( %x20 / %x09 / %x0D / %x0A / "}" / "#" / "^" / "/" / "!" / "&" / ">" / "=" ) *~( %x20 / %x09 / %x0D / %x0A / "}" )
+blank    = *( %x20 / %x09 / %x0D / %x0A )
+body     = *( ~"}" / "}" ~"}" )
+
+; everything else; a { is text unless another { follows it (that is a tag), and a { at the very end is text
+text     = 1*( ~"{" | "{" ~"{" )
+lone     = "{" !any
+any      = %x00-10FFFF

@@ -9,7 +9,7 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Maps;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
-with Mustache;
+with HBNF_Template;
 with HBNF_Grammar;
 with HBNF_Lookahead;
 with HBNF_Compilable;
@@ -286,7 +286,7 @@ begin
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
       end if;
-      Mustache.Load (Dir);
+      HBNF_Template.Load (Dir);
       HBNF_Grammar.Set_Layout_Dir (Layouts_Directory (Dir));
    end;
 
@@ -691,7 +691,7 @@ exception
         (Ada.Text_IO.Standard_Error,
          "hbnf: " & Ada.Exceptions.Exception_Message (E));
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-   when E : Mustache.Template_Error =>
+   when E : HBNF_Template.Template_Error =>
       Ada.Text_IO.Put_Line
         (Ada.Text_IO.Standard_Error,
          "hbnf: " & Ada.Exceptions.Exception_Message (E));

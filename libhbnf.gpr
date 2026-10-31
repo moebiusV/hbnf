@@ -4,11 +4,9 @@
 --  C dependencies.
 --  Built and gprinstalled as a static library by the ada-on-alpine aport.
 --
---  Depends on mustache-ada (moebiusV/mustache-ada, also an ada-on-alpine
---  aport): the code templates are Mustache, rendered by that library.  Pure
---  Ada on the GNAT runtime, so it adds no C dependency.
-
-with "mustache.gpr";
+--  The code templates are Mustache, rendered by HBNF_Template over the parser hbnf
+--  makes of grammars/template.hbnf (kept in the tree, hbnf_template_syntax*).  Nothing
+--  is needed beyond the GNAT runtime, so there is no C dependency.
 
 library project Libhbnf is
 
@@ -24,7 +22,14 @@ library project Libhbnf is
       "hbnf_wire.ads", "hbnf_wire.adb",
       "hbnf_wire-c.ads", "hbnf_wire-c.adb",
       "hbnf_wire-lower.ads", "hbnf_wire-lower.adb",
-      "hbnf_wire-rust.ads", "hbnf_wire-rust.adb");
+      "hbnf_wire-rust.ads", "hbnf_wire-rust.adb",
+      "hbnf_wire-zig.ads", "hbnf_wire-zig.adb",
+      "hbnf_wire-ada_lang.ads", "hbnf_wire-ada_lang.adb",
+      "hbnf_lookahead.ads", "hbnf_lookahead.adb",
+      "hbnf_shape.ads", "hbnf_shape.adb",
+      "hbnf_tree_sitter.ads", "hbnf_tree_sitter.adb",
+      "hbnf_template.ads", "hbnf_template.adb",
+      "hbnf_template_syntax.ads", "hbnf_template_syntax-parser.ads", "hbnf_template_syntax-parser.adb");
    for Object_Dir use "obj-hbnf";
    for Create_Missing_Dirs use "True";
    for Library_Dir use "lib-hbnf";

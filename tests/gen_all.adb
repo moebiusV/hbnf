@@ -9,7 +9,7 @@ with HBNF_C;
 with HBNF_Rust;
 with HBNF_Zig;
 with HBNF_Ada;
-with Mustache;
+with HBNF_Template;
 
 --  Dump every backend's declarations + parser for a schema (arg 1) into the
 --  current directory under fixed names, for the cross-language compile smoke
@@ -43,7 +43,7 @@ procedure Gen_All is
      HBNF_Grammar.Parse (Read_File (Ada.Command_Line.Argument (1)));
 
 begin
-   Mustache.Load ("templates");
+   HBNF_Template.Load ("templates");
    declare
       Ada_Parser : constant String :=
         HBNF_Ada.Emit_Parser (Rules, "Server_Schema");
