@@ -168,7 +168,13 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--lint] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--layout=ast|tape|NAME] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--root=RULE] [--dialect=NAME]"
+         & " [--abnf] [--ebnf] [--prefix=NAME_]"
+         & " [--layout=ast|tape|tailq|rb|NAME] [--layouts=DIR] [--templates=DIR]"
+         & " [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--writer] [--compare]"
+         & " [--forks] [--quiet-forks] [--run-params|--expand-params]"
+         & " [--no-compact] [--no-views] [--no-factor] [--no-ladder] [--lint] [--werror]"
+         & " [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE]");
    end Usage;
 
 begin
