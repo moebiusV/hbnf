@@ -2925,8 +2925,12 @@ cycles.
     free.  Tests: `tests/factor.sh`, `tests/nest.sh`, `tests/ladder.sh`, `tests/lint.sh`.  Not done: a tool
     that rewrites `|` to `/` where `--lint` says so; the same ladder fast path in Rust, Zig and Ada.
 
-    *Left undone elsewhere, not started.*  The Ada backend gives every alternative of a choice its own field
-    in a node (no compact nodes, as the C backend has), so its trees are larger: an optimisation to make.  Error
+    *Left undone elsewhere, not started.*  The Ada backend already holds a field that names a record behind an
+    access type, null until its alternative is taken, which is what compact nodes do in C, Rust and Zig; the
+    strings, lists, enums and numbers of a choice's alternatives are still fields of the node (the widest nodes,
+    in the pf grammar, are a few hundred bytes, mostly those accesses).  Holding those behind an access type
+    too means a third case in every place the backend declares, assigns, frees, walks or writes a member, for
+    a saving on a few wide node types: not done.  Error
     recovery with restarts (step 8).  The C preprocessor as a grammar; C17 and C23 grammars; the typedef-context
     port for the Ada side (step 16 depends on it).
 

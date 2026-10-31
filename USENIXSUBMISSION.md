@@ -637,9 +637,11 @@ full grammar is about <!-- v:pfctl_vs_toy_time -->9<!-- /v --> times slower than
 times the memory: the tree is about <!-- v:pfctl_100000_kb_per_rule -->1.5<!-- /v --> KB per rule.  The cost is the
 grammar's own width — the 35-way filter-option alternation and the address,
 port and interface parsing — and the layout: a list entry is sized for its
-widest alternative whichever alternative matched.  (The C backend's compact
+widest alternative whichever alternative matched.  (The C, Rust and Zig backends' compact
 nodes, the default, hold a struct-valued field that only some alternatives use
-by pointer; the Ada backend gives every alternative its own field.)
+by pointer; the Ada backend always holds a field that names a record behind an
+access type, null until its alternative is taken, and keeps the alternatives'
+strings, lists and numbers in the node.)
 
 These are the figures for the plain parser, which keeps hbnf's own tree.  A
 daemon binding does not: with `statements`, each statement's tree is handed
