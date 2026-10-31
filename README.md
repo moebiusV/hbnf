@@ -15,8 +15,9 @@
 > runtime.
 > Next: the tape layout for `str`, `bool`, `flag` and the fixed-width numbers and for the Rust, Zig and
 > Ada backends (`RFCPLAN.md`), C17 and C23 for the C family, the C grammars through LLVM's ORC JIT and
-> lld, the C preprocessor grammar and the typedef context for C, error recovery, and the benchmark of the
-> four backends against each other (the numbers here are the C backend's).
+> lld, the C preprocessor grammar and the typedef context for C, error recovery, grammars for COBOL,
+> ALGOL 68 and C++ (full GLR where they need it, paid for only by the grammar that uses it), and the
+> benchmark of the four backends against each other (the numbers here are the C backend's).
 
 **HyperBNF** is a grammar language, and `hbnf` is the program that reads it: a parser generator
 (a compiler compiler) that emits a parser and its typed tree in C, Rust, Zig or Ada.  The name is an

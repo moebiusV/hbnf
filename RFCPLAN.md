@@ -36,7 +36,7 @@ messages alone tell the author how to fix what hbnf could not accept
 silently.
 
 **ALGOL 68, and C++ after it: far in the future (the user, 2026-10-22: "defer c++ and
-algol68 to far in the future").**  They were next in the running order (the user, 2026-10-18: "do algol68
+algol68 to far in the future"); on 2026-10-31 they went on the todo list, with COBOL, as step 20.**  They were next in the running order (the user, 2026-10-18: "do algol68
 before c++"), and nothing else waits on them now.  ALGOL 68 is to be written in an hbnf that has gained what the W-grammar does (the user,
 2026-10-18: "we won't do ALGOL 68 in precisely the W-grammar, we'll do it in the
 hbnf that is updated to do what a W-grammar does"): parameterised rules for the
@@ -843,8 +843,10 @@ running order:
 > thing and will get its own compiler"); hbnf does not read the IMP72 compiler's
 > sources or bootstrap it.  The comparison with IMP72 in `METACOMPILERS.md` stays
 > as history, and what hbnf took from its manual (the choice rule, `A<pos,len>`)
-> stays.  **ALGOL 68 and C++ are far in the future** (the same day).  **Not started:** 14, grammars for
-> constrained decoding (added 2026-10-27), and 16, the C grammar through LLVM ORC and lld (added 2026-10-28).
+> stays.  **ALGOL 68 and C++ are far in the future** (the same day), and on the list since 2026-10-31 as step 20.
+> **Not started:** 14, grammars for
+> constrained decoding (added 2026-10-27), 16, the C grammar through LLVM ORC and lld (added 2026-10-28), and 20,
+> grammars for COBOL, ALGOL 68 and C++, with full GLR where they need it (added 2026-10-31).
 >
 > **Critical path:** **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** and **14** are not gated on
@@ -2928,16 +2930,49 @@ cycles.
     *Left undone elsewhere, not started.*  The Ada backend already holds a field that names a record behind an
     access type, null until its alternative is taken, which is what compact nodes do in C, Rust and Zig; the
     strings, lists, enums and numbers of a choice's alternatives are still fields of the node (the widest nodes,
-    in the pf grammar, are a few hundred bytes, mostly those accesses).  Holding those behind an access type
-    too means a third case in every place the backend declares, assigns, frees, walks or writes a member, for
-    a saving on a few wide node types: not done.  Error
+    in the pf grammar, are a few hundred bytes, mostly those accesses).  *Tried and removed 2026-10-31:* a text
+    field that only some alternatives of a wide choice hold, behind an access type shared by all of them,
+    allocated when its alternative is taken (a third case in the places that declare, assign, free, walk and
+    write a member).  Peak memory over the pf, httpd and bgpd corpora moved by about one percent, either way:
+    most of an Ada tree is its lists, its strings' contents and its per-node overhead, not the unused fields.
+    Error
     recovery with restarts (step 8).  The C preprocessor as a grammar; C17 and C23 grammars; the typedef-context
     port for the Ada side (step 16 depends on it).
+
+20. **Grammars for COBOL, ALGOL 68 and C++.**  *Added 2026-10-31 (the user); not started.*  One grammar
+    for each, written to read as much like the pure BNF of the language's own standard as the notation
+    allows: compact and idiomatic, a rule for a production, the production's name, and no lexer tricks
+    beside it.  This is the test of the claim in the README that a grammar can carry a language that a
+    yacc file can only carry with hacks.  ALGOL 60 was done first, as the Report's BNF
+    (`corpus/algol60/`).  What hbnf already has for the ambiguity these three languages carry is ordered
+    choice, the union `/`, parameterised rules, back-references, context sets and the local, detected
+    fork (decision 14, `--forks`); the plan for ALGOL 68 above says which of them stand for the W-grammar's
+    machinery.  **Full GLR is allowed here** (the user, 2026-10-31), for the ambiguity those do not cover.
+    **The policy is that nothing is paid for unused:** a grammar that does not need GLR gets the parser it
+    gets today, with no stack, no table and no cost per token; the machinery is generated only for a
+    grammar that asks for it.  Still to settle, with the user before any of it is built (a syntax change is
+    shown first): how a grammar asks for it, what a parse that is ambiguous returns (one tree by a stated
+    rule, or all of them), and what the other backends do (refuse, as they do for `%emit`, or implement).
+    The order of the three is not fixed; C++ leans on the C family (`corpus/c/`) and the typedef context
+    of step 16.
+
+    *A design idea, not decided (the user, 2026-10-31).*  A grammar that reads one language can also say how a
+    rule is written out in another, so that it translates: ALGOL's `begin` statements `end` comes out as C's
+    `{` statements `}`, and a keyword comes out in capitals.  A rule is then one of three things: a
+    **transformation rule** (it is written out in a different form from the one it was read in), a rule that
+    **emits code** (its output is a template), or a rule that **runs code that emits code** (host code builds
+    the output).  The point is to keep the productions themselves idiomatic and as close to pure BNF as the
+    notation allows, with what a rule is written out as set beside it and not woven through it.  What exists:
+    the writer (`--writer`), which writes a tree back in the syntax it was read in, `%emit` at recognition time
+    with `$$` (step 15), `%action` over the finished tree, bottom-up, and the layouts, which turn a tree into a
+    tape.  What does not: an output form per rule, and a second syntax to write in.  To settle, with the user and
+    with the notation shown first: where a rule's output form is written (beside the production, keyed by its
+    name, or in a section of its own), how a token is rewritten (keyword case), and which backends refuse it.  As
+    everything here, a grammar that uses none of them pays for none of them.
 
 ## Not in this plan
 
 - RBNF (RFC 5511's routing BNF).
-- Full GLR (decision 14 is the local, detected fork instead).
 - Case-folding non-ASCII rule names.
 - Guessing any setting from an include or from seeing `%x`.
 
