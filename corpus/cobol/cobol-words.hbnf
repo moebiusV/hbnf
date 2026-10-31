@@ -1,0 +1,43 @@
+; The tokens of COBOL source in free format (ISO/IEC 1989) as rules of characters.  Nothing here skips white
+; space; cobol.hbnf, which includes this file, does that between tokens.  COBOL has no case: `sensitivity
+; string %i` makes every literal match either case.  A word is letters, digits and hyphens, so `END-IF` is one
+; word and `A - B` (with blanks) subtracts where `A-B` is a name; the keywords are the grammar's literals, matched
+; whole by `word`, and a reserved word is not a name.
+prefix none
+whitespace none
+sensitivity string %i
+include "../../grammars/common.hbnf"
+include "reserved.hbnf"
+
+wordchar  = ALNUM | "-" | "_"
+word      = ALNUM *wordchar
+user-word = word - reserved-word
+
+; Blank space between tokens: a space, a tab or a line end; a comma or a semicolon, which COBOL reads as a
+; space; and a comment, `*>` to the end of the line, which may follow anything.
+ws = SP | HTAB | CR | LF | "," | ";" | "*>" *~( CR | LF )
+
+; ---- literals (the standard's 8.3) ----
+; (a letter inside a token is written as code points: a letter-led literal would be matched as a whole word)
+exponent        = %x45 | %x65
+numeric-literal = [ sign ] ( digits [ "." digits ] | "." digits ) [ exponent [ sign ] digits ]
+sign            = "+" | "-"
+digits          = 1*DIGIT
+nonnumeric-literal = [ literal-prefix ] ( DQUOTE *( ~DQUOTE | DQUOTE DQUOTE ) DQUOTE
+                                        | SQUOTE *( ~SQUOTE | SQUOTE SQUOTE ) SQUOTE )
+literal-prefix  = ( %x58 | %x78 | %x4E | %x6E | %x5A | %x7A | %x42 | %x62 | %x47 | %x67 ) [ %x58 | %x78 ]
+SQUOTE          = %x27
+
+; The text of a PICTURE clause is whatever runs to the next blank; a period belongs to it only when more of it
+; follows (`PIC 9(5).99` is one string, the period after `PIC 9(5)` is not).
+picture-string  = 1*pic-char *( "." 1*pic-char )
+pic-char        = ~( SP | HTAB | CR | LF | "." )
+
+; A level number, and the names of procedures, which may be all digits.
+level-number    = 1*2DIGIT
+
+; The text of an identification paragraph's comment entry: a word, whatever it is made of.
+comment-word      = 1*~( SP | HTAB | CR | LF )
+
+; The name of an intrinsic function: any word, reserved or not (`FUNCTION LENGTH (X)`).
+function-name    = ALNUM *wordchar

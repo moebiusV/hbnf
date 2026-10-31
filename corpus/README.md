@@ -15,7 +15,8 @@ README that says what is in it and what state it is in.
 | `toml/` | TOML 1.0, checked against the toml-test suite and Python's `tomllib`; a tape grammar (`toml-tape.hbnf`) | in use (`tests/toml.sh`, `tests/toml-diff.sh`, `tests/emit.sh`) |
 | `yaml/` | YAML 1.2, indentation as a number the parser works out; the YAML test suite and PyYAML; a tape grammar (`yaml-tape.hbnf`) | in use (`tests/yaml.sh`, `tests/yaml-suite.sh`, `tests/yaml-diff.sh`, `tests/emit.sh`) |
 | `mustache/` | Mustache templates, with a closing tag that repeats the opening one; checked against chevron on 12,000 texts | in use (`tests/mustache-diff.sh`) |
-| `algol68/` | the Revised Report's W-grammar | far in the future (so is C++) |
+| `cobol/` | COBOL in free format: the four divisions, the data description clauses and 30-odd statements, checked against GnuCOBOL's `cobc` | begun (`tests/cobol.sh`); fixed format, `COPY` and the rest are not read yet |
+| `algol68/` | the Revised Report's W-grammar | not started; on the list (`RFCPLAN.md` step 20), with C++ |
 | `bech32/` | the bech32 and bech32m reference implementation (BIP-173, BIP-350) | saved; the segwit grammar of `tests/wire/segwit.hbnf` does not call it yet (`tests/wire.sh`) |
 | `bip39/` | the ten official BIP-39 word lists | in use (`tests/wire.sh`) |
 

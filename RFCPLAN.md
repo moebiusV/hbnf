@@ -51,7 +51,8 @@ a "not followed by" test and trying the next alternative after a later failure
 arithmetic/Boolean split, its `:` and `:=`) instead of rearranged; and two
 generator bugs on recursive grammars were found and fixed.  **The test is built
 (2026-10-18, C): `!x` and `&x`**, so the grammar says `label ":" !"="` and the
-assignment no longer has to be tried first; x is a literal, a token or
+assignment no longer has to be tried first; x is a literal, a rule (a token, or
+*since 2026-10-31* a phrase, parsed where it stands and given back) or
 alternatives of those (`!( "=" / ":" )`), is read like any element after the
 blanks, and leaves no trace if it fails (it runs on a copy of the parser);
 `tests/lookahead.sh`.  Still to come: the retry after a later failure, then
@@ -846,7 +847,7 @@ running order:
 > stays.  **ALGOL 68 and C++ are far in the future** (the same day), and on the list since 2026-10-31 as step 20.
 > **Not started:** 14, grammars for
 > constrained decoding (added 2026-10-27), 16, the C grammar through LLVM ORC and lld (added 2026-10-28), and 20,
-> grammars for COBOL, ALGOL 68 and C++, with full GLR where they need it (added 2026-10-31).
+> grammars for COBOL (begun), ALGOL 68 and C++, with full GLR where they need it (added 2026-10-31).
 >
 > **Critical path:** **5** → **6**
 > → **7b** → **8** → **4f** → **10** → **13**.  **11** and **14** are not gated on
@@ -2939,7 +2940,7 @@ cycles.
     recovery with restarts (step 8).  The C preprocessor as a grammar; C17 and C23 grammars; the typedef-context
     port for the Ada side (step 16 depends on it).
 
-20. **Grammars for COBOL, ALGOL 68 and C++.**  *Added 2026-10-31 (the user); not started.*  One grammar
+20. **Grammars for COBOL, ALGOL 68 and C++.**  *Added 2026-10-31 (the user); COBOL begun 2026-10-31 (`corpus/cobol/`: free format, a core of the divisions, data clauses and statements, checked against `cobc`), ALGOL 68 and C++ not started.*  One grammar
     for each, written to read as much like the pure BNF of the language's own standard as the notation
     allows: compact and idiomatic, a rule for a production, the production's name, and no lexer tricks
     beside it.  This is the test of the claim in the README that a grammar can carry a language that a

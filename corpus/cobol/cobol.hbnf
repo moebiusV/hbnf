@@ -1,0 +1,248 @@
+; COBOL (ISO/IEC 1989), free-format source, as hbnf: the core of the language, in the standard's own terms.
+; The rule names are the standard's where it has one.  What a verb's format says in brackets is optional here,
+; and a noise word (IS, TO, THE ... where the standard allows one) is optional.  A statement list ends where
+; the next word is no verb: a reserved word is no name (cobol-words.hbnf), so `ELSE`, `END-IF` and the verbs
+; stop a list of operands, and no scope terminator is ever guessed.  Which names the data division declares is
+; for a checking pass: a bare operand after AND or OR is an abbreviated condition (`A > B AND C`) or the
+; name of a level-88 condition, and the parser does not tell them apart (the tree has one node for both).
+; Not yet: fixed format (the sequence area, the indicator column, continuation lines), COPY and REPLACE,
+; nested programs, the report writer, the screen section, object orientation, SORT and MERGE, DECLARATIVES.
+prefix none
+sensitivity string %i
+include "cobol-words.hbnf"
+whitespace ws
+
+compilation-group  = 1*program-unit
+program-unit       = identification-division [ environment-division ] [ data-division ] [ procedure-division ]
+                     [ end-program ]
+end-program        = "END" "PROGRAM" program-name "."
+program-name       = user-word | nonnumeric-literal
+
+; ---- the identification division ----
+identification-division = ( "IDENTIFICATION" | "ID" ) "DIVISION" "." program-id-paragraph *id-paragraph
+program-id-paragraph    = "PROGRAM-ID" "." program-name [ "AS" nonnumeric-literal ] [ [ "IS" ] ( "COMMON" | "INITIAL" | "RECURSIVE" ) [ "PROGRAM" ] ] "."
+id-paragraph            = id-paragraph-name "." comment-entry
+id-paragraph-name       = "AUTHOR" | "INSTALLATION" | "DATE-WRITTEN" | "DATE-COMPILED" | "SECURITY" | "REMARKS"
+comment-entry           = *( !paragraph-start comment-word )
+paragraph-start         = id-paragraph-name | "ENVIRONMENT" | "DATA" | "PROCEDURE"
+
+; ---- the environment division ----
+environment-division    = "ENVIRONMENT" "DIVISION" "." [ configuration-section ] [ input-output-section ]
+configuration-section   = "CONFIGURATION" "SECTION" "." *configuration-paragraph
+configuration-paragraph = source-computer-paragraph | object-computer-paragraph | special-names-paragraph
+source-computer-paragraph = "SOURCE-COMPUTER" "." [ computer-name [ [ "WITH" ] "DEBUGGING" "MODE" ] "." ]
+object-computer-paragraph = "OBJECT-COMPUTER" "." [ computer-name *object-computer-clause "." ]
+object-computer-clause  = [ "PROGRAM" ] [ "COLLATING" ] "SEQUENCE" [ "IS" ] user-word
+                        | "MEMORY" "SIZE" [ "IS" ] numeric-literal ( "WORDS" | "CHARACTERS" | "MODULES" )
+computer-name           = user-word
+special-names-paragraph = "SPECIAL-NAMES" "." [ 1*special-names-entry "." ]
+special-names-entry     = "DECIMAL-POINT" [ "IS" ] "COMMA"
+                        | "CURRENCY" [ "SIGN" ] [ "IS" ] nonnumeric-literal [ "WITH" "PICTURE" "SYMBOL" nonnumeric-literal ]
+                        | "CLASS" user-word [ "IS" ] 1*class-value
+                        | "ALPHABET" user-word [ "IS" ] alphabet-name-value
+                        | "SYMBOLIC" [ "CHARACTERS" ] 1*( user-word [ "IS" ] numeric-literal )
+                        | switch-or-device-name [ "IS" user-word ]
+                          [ "ON" [ "STATUS" ] [ "IS" ] user-word ] [ "OFF" [ "STATUS" ] [ "IS" ] user-word ]
+class-value             = literal [ ( "THRU" | "THROUGH" ) literal ]
+alphabet-name-value     = "NATIVE" | "STANDARD-1" | "STANDARD-2" | "EBCDIC" | 1*class-value
+switch-or-device-name   = user-word
+
+input-output-section    = "INPUT-OUTPUT" "SECTION" "." [ file-control-paragraph ] [ i-o-control-paragraph ]
+file-control-paragraph  = "FILE-CONTROL" "." *file-control-entry
+file-control-entry      = "SELECT" [ "OPTIONAL" ] file-name 1*select-clause "."
+select-clause           = "ASSIGN" [ "TO" ] [ "EXTERNAL" | "DYNAMIC" ] ( nonnumeric-literal | user-word )
+                        | "ORGANIZATION" [ "IS" ] [ "LINE" ] ( "SEQUENTIAL" | "RELATIVE" | "INDEXED" )
+                        | "ACCESS" [ "MODE" ] [ "IS" ] ( "SEQUENTIAL" | "RANDOM" | "DYNAMIC" )
+                        | "RECORD" [ "KEY" ] [ "IS" ] identifier
+                        | "ALTERNATE" "RECORD" [ "KEY" ] [ "IS" ] identifier [ [ "WITH" ] "DUPLICATES" ]
+                        | "RELATIVE" [ "KEY" ] [ "IS" ] identifier
+                        | "FILE" "STATUS" [ "IS" ] identifier
+                        | "RESERVE" numeric-literal [ "AREA" | "AREAS" ]
+i-o-control-paragraph   = "I-O-CONTROL" "." *( ( "SAME" | "APPLY" ) 1*comment-word "." )
+file-name               = user-word
+
+; ---- the data division ----
+data-division          = "DATA" "DIVISION" "." [ file-section ] [ working-storage-section ] [ local-storage-section ]
+                         [ linkage-section ]
+file-section           = "FILE" "SECTION" "." *file-description
+file-description       = ( "FD" | "SD" ) file-name *file-clause "." *data-description-entry
+file-clause            = [ "IS" ] ( "EXTERNAL" | "GLOBAL" )
+                       | "BLOCK" [ "CONTAINS" ] numeric-literal [ "TO" numeric-literal ] [ "RECORDS" | "CHARACTERS" ]
+                       | "RECORD" ( [ "CONTAINS" ] numeric-literal [ "TO" numeric-literal ] [ "CHARACTERS" ]
+                                  | "IS" "VARYING" [ "IN" ] [ "SIZE" ] [ "FROM" numeric-literal ] [ "TO" numeric-literal ]
+                                    [ "CHARACTERS" ] [ "DEPENDING" [ "ON" ] identifier ] )
+                       | "LABEL" ( "RECORD" [ "IS" ] | "RECORDS" [ "ARE" ] ) ( "STANDARD" | "OMITTED" )
+                       | "VALUE" "OF" 1*( user-word [ "IS" ] ( literal | identifier ) )
+                       | "DATA" ( "RECORD" [ "IS" ] | "RECORDS" [ "ARE" ] ) 1*user-word
+                       | "LINAGE" [ "IS" ] operand [ "LINES" ]
+                       | "CODE-SET" [ "IS" ] user-word
+working-storage-section = "WORKING-STORAGE" "SECTION" "." *data-description-entry
+local-storage-section   = "LOCAL-STORAGE" "SECTION" "." *data-description-entry
+linkage-section         = "LINKAGE" "SECTION" "." *data-description-entry
+
+data-description-entry = level-number [ data-name | "FILLER" ] *data-clause "."
+data-name              = user-word
+data-clause            = picture-clause | usage-clause | value-clause | occurs-clause | redefines-clause
+                       | renames-clause | sign-clause | justified-clause | synchronized-clause
+                       | "BLANK" [ "WHEN" ] "ZERO" | "EXTERNAL" | "GLOBAL" | "BASED" | "CONSTANT" | "TYPEDEF" | "STATIC"
+                       | "IS" ( "EXTERNAL" | "GLOBAL" | "TYPEDEF" )
+                       | "SYNC" | "DYNAMIC" "LENGTH" [ identifier ]
+picture-clause         = ( "PICTURE" | "PIC" ) [ "IS" ] picture-string
+usage-clause           = "USAGE" [ "IS" ] ( usage | user-word ) | usage
+usage                  = "DISPLAY" | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "POINTER" | "PROCEDURE-POINTER" | "FUNCTION-POINTER"
+                       | "COMPUTATIONAL-1" | "COMPUTATIONAL-2" | "COMPUTATIONAL-3" | "COMPUTATIONAL-4" | "COMPUTATIONAL-5"
+                       | "COMPUTATIONAL-X" | "COMPUTATIONAL" | "COMP-1" | "COMP-2" | "COMP-3" | "COMP-4" | "COMP-5" | "COMP-X"
+                       | "COMP" | "BINARY-CHAR" | "BINARY-SHORT" | "BINARY-LONG" | "BINARY-DOUBLE" | "NATIONAL"
+                       | "FLOAT-SHORT" | "FLOAT-LONG" | "FLOAT-EXTENDED"
+value-clause           = "VALUE" [ "IS" ] ( 1*value-item | "ALL" literal )
+                       | "VALUES" [ "ARE" ] 1*value-item
+value-item             = literal [ ( "THRU" | "THROUGH" ) literal ]
+occurs-clause          = "OCCURS" ( operand "TO" operand "TIMES" "DEPENDING" [ "ON" ] identifier | operand [ "TIMES" ] )
+                         *( ( "ASCENDING" | "DESCENDING" ) [ "KEY" ] [ "IS" ] 1*identifier ) [ "INDEXED" [ "BY" ] 1*user-word ]
+redefines-clause       = "REDEFINES" data-name
+renames-clause         = "RENAMES" identifier [ ( "THRU" | "THROUGH" ) identifier ]
+sign-clause            = [ "SIGN" [ "IS" ] ] ( "LEADING" | "TRAILING" ) [ "SEPARATE" [ "CHARACTER" ] ]
+justified-clause       = ( "JUSTIFIED" | "JUST" ) [ "RIGHT" ]
+synchronized-clause    = ( "SYNCHRONIZED" | "SYNC" ) [ "LEFT" | "RIGHT" ]
+
+; ---- the procedure division ----
+procedure-division     = "PROCEDURE" "DIVISION" [ using-phrase ] [ returning-phrase ] "." [ body ]
+using-phrase           = "USING" 1*( [ [ "BY" ] ( "REFERENCE" | "VALUE" ) ] user-word )
+returning-phrase       = "RETURNING" user-word
+body                   = *sentence *( paragraph | section )
+section                = section-name "SECTION" [ numeric-literal ] "." *paragraph
+paragraph              = paragraph-name "." *sentence
+section-name           = user-word | digits-name
+paragraph-name         = user-word | digits-name
+digits-name            = digits
+sentence               = 1*statement "."
+statements             = 1*statement
+
+; ---- statements ----
+statement = accept-statement | add-statement | alter-statement | call-statement | cancel-statement | close-statement
+          | compute-statement | continue-statement | delete-statement | display-statement | divide-statement
+          | evaluate-statement | exit-statement | goback-statement | go-to-statement | if-statement
+          | initialize-statement | inspect-statement | move-statement | multiply-statement | open-statement
+          | perform-statement | read-statement | rewrite-statement | search-statement | set-statement
+          | start-statement | stop-statement | string-statement | subtract-statement | unstring-statement
+          | write-statement | next-sentence
+
+next-sentence = "NEXT" "SENTENCE"
+continue-statement = "CONTINUE"
+goback-statement   = "GOBACK" [ "RETURNING" operand ]
+stop-statement     = "STOP" ( "RUN" [ [ "WITH" ] ( "ERROR" | "NORMAL" ) [ "STATUS" ] [ operand ] ] | literal )
+exit-statement     = "EXIT" [ "PROGRAM" [ "RAISING" ( "LAST" "EXCEPTION" | identifier ) ] | "PARAGRAPH" | "SECTION" | "PERFORM" [ "CYCLE" ] ]
+go-to-statement    = "GO" [ "TO" ] [ 1*procedure-name [ "DEPENDING" [ "ON" ] identifier ] ]
+alter-statement    = "ALTER" 1*( procedure-name "TO" [ "PROCEED" "TO" ] procedure-name )
+procedure-name     = paragraph-name [ ( "IN" | "OF" ) section-name ]
+
+accept-statement   = "ACCEPT" identifier [ "FROM" ( "DATE" [ "YYYYMMDD" ] | "DAY" [ "YYYYDDD" ] | "DAY-OF-WEEK" | "TIME"
+                                                  | "COMMAND-LINE" | "ENVIRONMENT-VALUE" | user-word ) ]
+                     [ on-exception-phrases ] [ "END-ACCEPT" ]
+display-statement  = "DISPLAY" 1*operand [ "UPON" user-word ] [ [ "WITH" ] "NO" "ADVANCING" ] [ on-exception-phrases ] [ "END-DISPLAY" ]
+move-statement     = "MOVE" ( [ "CORRESPONDING" | "CORR" ] sending "TO" 1*identifier )
+sending            = literal | identifier
+
+add-statement      = "ADD" ( ( "CORRESPONDING" | "CORR" ) identifier "TO" rounded
+                           | 1*operand [ "TO" 1*rounded-operand ] [ "GIVING" 1*rounded ] )
+                     [ size-error-phrases ] [ "END-ADD" ]
+subtract-statement = "SUBTRACT" ( ( "CORRESPONDING" | "CORR" ) identifier "FROM" rounded
+                                | 1*operand "FROM" 1*rounded-operand [ "GIVING" 1*rounded ] )
+                     [ size-error-phrases ] [ "END-SUBTRACT" ]
+multiply-statement = "MULTIPLY" operand "BY" 1*rounded-operand [ "GIVING" 1*rounded ] [ size-error-phrases ] [ "END-MULTIPLY" ]
+divide-statement   = "DIVIDE" operand ( "INTO" | "BY" ) 1*rounded-operand [ "GIVING" 1*rounded ] [ "REMAINDER" identifier ]
+                     [ size-error-phrases ] [ "END-DIVIDE" ]
+compute-statement  = "COMPUTE" 1*rounded ( "=" | "EQUAL" ) arithmetic-expression [ size-error-phrases ] [ "END-COMPUTE" ]
+rounded            = identifier [ "ROUNDED" ]
+rounded-operand    = operand [ "ROUNDED" ]
+size-error-phrases = ( [ "ON" ] "SIZE" "ERROR" statements ) [ "NOT" [ "ON" ] "SIZE" "ERROR" statements ]
+                   | "NOT" [ "ON" ] "SIZE" "ERROR" statements
+
+if-statement       = "IF" condition [ "THEN" ] ( next-sentence | statements ) [ "ELSE" ( next-sentence | statements ) ] [ "END-IF" ]
+
+evaluate-statement = "EVALUATE" subject *( "ALSO" subject ) 1*when-phrase [ "WHEN" "OTHER" statements ] "END-EVALUATE"
+subject            = "TRUE" | "FALSE" | condition
+when-phrase        = 1*( "WHEN" object *( "ALSO" object ) ) statements
+object             = "ANY" | "TRUE" | "FALSE" | [ "NOT" ] operand ( "THRU" | "THROUGH" ) operand | condition
+
+perform-statement  = "PERFORM" ( [ perform-option ] statements "END-PERFORM"
+                               | procedure-name [ ( "THRU" | "THROUGH" ) procedure-name ] [ perform-option ] )
+perform-option     = operand "TIMES"
+                   | [ [ "WITH" ] "TEST" ( "BEFORE" | "AFTER" ) ] "UNTIL" ( "EXIT" | condition )
+                   | [ [ "WITH" ] "TEST" ( "BEFORE" | "AFTER" ) ] "VARYING" varying *( "AFTER" varying )
+varying            = identifier "FROM" operand "BY" operand "UNTIL" condition
+
+call-statement     = "CALL" operand [ "USING" 1*using-argument ] [ "RETURNING" identifier ] [ on-exception-phrases ] [ "END-CALL" ]
+using-argument     = [ [ "BY" ] ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand )
+cancel-statement   = "CANCEL" 1*operand
+on-exception-phrases = ( [ "ON" ] "EXCEPTION" statements ) [ "NOT" [ "ON" ] "EXCEPTION" statements ]
+                     | "NOT" [ "ON" ] "EXCEPTION" statements
+
+open-statement     = "OPEN" 1*( ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*file-name )
+close-statement    = "CLOSE" 1*( file-name [ [ "WITH" ] ( "LOCK" | "NO" "REWIND" ) ] )
+read-statement     = "READ" file-name [ "NEXT" | "PREVIOUS" ] [ "RECORD" ] [ "INTO" identifier ] [ "KEY" [ "IS" ] identifier ]
+                     [ end-phrases ] [ invalid-key-phrases ] [ "END-READ" ]
+write-statement    = "WRITE" user-word [ "FROM" operand ] [ ( "BEFORE" | "AFTER" ) [ "ADVANCING" ] ( "PAGE" | operand [ "LINE" | "LINES" ] ) ]
+                     [ invalid-key-phrases ] [ "END-WRITE" ]
+rewrite-statement  = "REWRITE" user-word [ "FROM" operand ] [ invalid-key-phrases ] [ "END-REWRITE" ]
+delete-statement   = "DELETE" file-name [ "RECORD" ] [ invalid-key-phrases ] [ "END-DELETE" ]
+start-statement    = "START" file-name [ "KEY" [ "IS" ] relation-operator identifier ] [ invalid-key-phrases ] [ "END-START" ]
+end-phrases        = ( "AT" "END" statements ) [ "NOT" "AT" "END" statements ] | "NOT" "AT" "END" statements
+invalid-key-phrases = ( "INVALID" [ "KEY" ] statements ) [ "NOT" "INVALID" [ "KEY" ] statements ] | "NOT" "INVALID" [ "KEY" ] statements
+
+initialize-statement = "INITIALIZE" 1*identifier [ "WITH" "FILLER" ] [ ( "ALL" | category ) [ "TO" ] "VALUE" ]
+                       [ "REPLACING" 1*( category [ "DATA" ] "BY" operand ) ] [ "THEN" "TO" "DEFAULT" ]
+category           = "ALPHABETIC" | "ALPHANUMERIC" | "ALPHANUMERIC-EDITED" | "NUMERIC" | "NUMERIC-EDITED" | "NATIONAL"
+
+string-statement   = "STRING" 1*( 1*operand "DELIMITED" [ "BY" ] ( "SIZE" | operand ) ) "INTO" identifier
+                     [ [ "WITH" ] "POINTER" identifier ] [ overflow-phrases ] [ "END-STRING" ]
+unstring-statement = "UNSTRING" identifier [ "DELIMITED" [ "BY" ] [ "ALL" ] operand *( "OR" [ "ALL" ] operand ) ]
+                     "INTO" 1*( identifier [ "DELIMITER" [ "IN" ] identifier ] [ "COUNT" [ "IN" ] identifier ] )
+                     [ [ "WITH" ] "POINTER" identifier ] [ "TALLYING" [ "IN" ] identifier ] [ overflow-phrases ] [ "END-UNSTRING" ]
+overflow-phrases   = ( [ "ON" ] "OVERFLOW" statements ) [ "NOT" [ "ON" ] "OVERFLOW" statements ] | "NOT" [ "ON" ] "OVERFLOW" statements
+
+inspect-statement  = "INSPECT" identifier ( tallying [ replacing ] | replacing | converting )
+tallying           = "TALLYING" 1*( identifier "FOR" 1*( "CHARACTERS" [ region ] | ( "ALL" | "LEADING" ) 1*( operand [ region ] ) ) )
+replacing          = "REPLACING" ( "CHARACTERS" "BY" operand [ region ]
+                                 | 1*( ( "ALL" | "LEADING" | "FIRST" ) 1*( operand "BY" operand [ region ] ) ) )
+converting         = "CONVERTING" operand "TO" operand [ region ]
+region             = *( ( "BEFORE" | "AFTER" ) [ "INITIAL" ] operand )
+
+set-statement      = "SET" ( "ADDRESS" "OF" identifier "TO" operand
+                           | 1*identifier ( "TO" ( "ON" | "OFF" | "TRUE" | "FALSE" | operand ) | ( "UP" | "DOWN" ) "BY" operand ) )
+search-statement   = "SEARCH" [ "ALL" ] identifier [ "VARYING" identifier ] [ "AT" "END" statements ]
+                     1*( "WHEN" condition ( next-sentence | statements ) ) [ "END-SEARCH" ]
+
+; ---- operands ----
+operand        = arithmetic-expression
+identifier     = ( function-call | data-name *qualifier ) [ subscripts ] [ reference-modification ]
+qualifier      = ( "OF" | "IN" ) data-name
+subscripts     = "(" 1*subscript ")"
+subscript      = "ALL" | arithmetic-expression
+reference-modification = "(" arithmetic-expression ":" [ arithmetic-expression ] ")"
+function-call  = "FUNCTION" function-name [ "(" *argument ")" ]
+argument       = arithmetic-expression
+literal        = numeric-literal | nonnumeric-literal | figurative-constant
+figurative-constant = [ "ALL" ] ( "ZEROES" | "ZEROS" | "ZERO" | "SPACES" | "SPACE" | "HIGH-VALUES" | "HIGH-VALUE"
+                                | "LOW-VALUES" | "LOW-VALUE" | "QUOTES" | "QUOTE" | "NULLS" | "NULL" )
+                    | "ALL" ( nonnumeric-literal | numeric-literal )
+
+arithmetic-expression = term *( ( "+" | "-" ) term )
+term           = factor *( ( "*" !"*" | "/" ) factor )
+factor         = unary *( "**" unary )
+unary          = [ "+" | "-" ] primary
+primary        = "(" arithmetic-expression ")" | literal | identifier
+
+; ---- conditions ----
+condition      = combination *( "OR" combination )
+combination    = negation *( "AND" negation )
+negation       = "NOT" negation | class-condition | sign-condition | relation | "(" condition ")" | abbreviation
+relation       = arithmetic-expression relation-operator arithmetic-expression
+abbreviation   = [ relation-operator ] arithmetic-expression
+class-condition = identifier [ "IS" ] [ "NOT" ] class-name
+class-name     = "NUMERIC" | "ALPHABETIC-LOWER" | "ALPHABETIC-UPPER" | "ALPHABETIC" | "ALPHANUMERIC" | user-word
+sign-condition = arithmetic-expression [ "IS" ] [ "NOT" ] ( "POSITIVE" | "NEGATIVE" | "ZERO" )
+relation-operator = [ "IS" ] [ "NOT" ] comparison
+comparison     = ">=" | "<=" | "<>" | ">" | "<" | "="
+               | "GREATER" [ "THAN" ] [ "OR" "EQUAL" [ "TO" ] ] | "LESS" [ "THAN" ] [ "OR" "EQUAL" [ "TO" ] ]
+               | "EQUAL" [ "TO" ] | "NOT" ( ">" | "<" | "=" )
