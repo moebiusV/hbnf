@@ -130,6 +130,9 @@ package HBNF_Grammar is
    procedure Reset_Warnings;
    --  Forget the count and every Warn_Once key.  Called per schema.
 
+   procedure Set_Lint (On : Boolean);
+   --  --lint: also say where an ordered choice `|` could be a union `/` (it would parse the same).
+
    procedure Set_Werror (On : Boolean);
    function Werror return Boolean;
    --  `--werror`: the caller treats Warnings > 0 as a failure.

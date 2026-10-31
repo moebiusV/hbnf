@@ -1,0 +1,20 @@
+; Alternatives that begin alike in a tree: `fromto` is the run `from` of the run `os` of (`to`, nothing), `to`
+; and nothing; `pair` shares `key` among four, and two of them share `":" val`; `item` shares `ra` and, under it,
+; `rb`.  Ordered choice, so the order written is the order tried.  Every piece carries a number, so the rules
+; are phrases (blanks between the pieces) and the tree has a field for each.
+prefix none
+top    = *( stmt ";" )
+stmt   = fromto | pair | item
+fromto = from os to | from os | from to | from
+from   = "fr" int
+os     = "os" int
+to     = "to" int
+pair   = key ":" val "!" | key ":" val | key "=" val | key
+key    = "k" int | "kk" int
+val    = "v" int | "vv" int
+item   = ra rb rc | ra rb rd | ra re | ra | rb rc
+ra     = "a" int
+rb     = "b" int
+rc     = "c" int
+rd     = "d" int
+re     = "e" int

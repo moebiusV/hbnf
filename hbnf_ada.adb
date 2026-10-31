@@ -2048,198 +2048,136 @@ package body HBNF_Ada is
          Buf : in out U; Ind : String := "         ";
          Alloc_Records : Boolean := False) is
          N  : constant Natural := Natural (Els.Length);
-         NB : Natural := 1;
+         Bs : constant HBNF_Lookahead.Bounds_Vectors.Vector := HBNF_Lookahead.Branches (Els);
          Lbl, Old_FA : Unbounded_String;
-      begin
-         for E of Els loop
-            if E.Kind = Alt then
-               NB := NB + 1;
+         --  Alternatives that begin alike read the shared elements once, then try their own rests in the
+         --  order written (HBNF_Lookahead.Factor; a run may hold runs).
+         Pl : constant HBNF_Lookahead.Plan := HBNF_Lookahead.Factor (Els);
+
+         --  The tail of a leaf: its guard, its number, the return of the record Rec ("R." or "R2_n.").
+         procedure Finish (Br : Natural; Rec : String) is
+         begin
+            --  First match wins: this branch is taken only if the next
+            --  code point can follow the choice.
+            if Bs (Br).Last < N and then Els (Bs (Br).Last + 1).Kind = Alt
+              and then Els (Bs (Br).Last + 1).Guard /= 0
+            then
+               declare
+                  G : constant String := Natural'Image (Els (Bs (Br).Last + 1).Guard);
+               begin
+                  Append (Buf, Ind & "   declare");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "      Sv : constant Natural := P.Pos;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "      Ok : Boolean;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "   begin");
+                  Append (Buf, LF);
+                  if Rules (Owner).Whitespace /= Null_Unbounded_String then
+                     Append (Buf, Ind & "      Skip_Ws (P);");
+                     Append (Buf, LF);
+                  end if;
+                  Append (Buf, Ind & "      Ok := Guard_" & G (G'First + 1 .. G'Last)
+                    & " (P.Text.all, P.Pos);");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "      P.Pos := Sv;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "      if not Ok then Fail (P, ""what can "
+                    & "follow here""); " & To_String (FA) & " end if;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "   end;");
+                  Append (Buf, LF);
+               end;
             end if;
-         end loop;
-         declare
-            --  Where each alternative begins and ends.
-            BF : array (1 .. NB) of Natural;
-            BL : array (1 .. NB) of Natural;
-            B  : Natural := 1;
+            if Struct_Alt (Rules (Owner), Analyze (Rules, Owner)) then
+               Append (Buf, Ind & "   " & Rec & "Alt_No := " & Img (Br) & ";");
+               Append (Buf, LF);
+            end if;
+            Append (Buf, Ind & "   return " & Rec (Rec'First .. Rec'Last - 1) & ";");
+            Append (Buf, LF);
+         end Finish;
 
-            --  The leading elements two alternatives share: names and literals read the same way.
-            function Shared (X, Y : Positive) return Natural is
-               LX : constant Natural := BL (X) - BF (X) + 1;
-               LY : constant Natural := BL (Y) - BF (Y) + 1;
-               M  : Natural := 0;
+         --  Node Un, reading into the record Rec ("R." or "R2_n."), with Fail the goto of where it goes
+         --  when none of it matches.  A run reads the shared elements, then tries its kids in turn: all
+         --  but the last on a copy, which is dropped when the kid fails.
+         procedure Node (Un : Positive; Rec, Fail : String) is
+            Nd : constant HBNF_Lookahead.Unit := Pl.Units (Un);
+            Save_FA : constant Unbounded_String := FA;
+         begin
+            FA := To_Unbounded_String (Fail);
+            if Nd.Kind in HBNF_Lookahead.Leaf then
+               if Nd.First <= Nd.Last then
+                  Emit_Seq (Owner, Els, Nd.First, Nd.Last, Rec, Buf, Ind & "   ", Alloc_Records);
+               end if;
+               Finish (Nd.Br, Rec);
+               FA := Save_FA;
+               return;
+            end if;
+            Emit_Seq (Owner, Els, Nd.First, Nd.Last, Rec, Buf, Ind & "   ", Alloc_Records);
+            Append (Buf, Ind & "   declare");
+            Append (Buf, LF);
+            Append (Buf, Ind & "      Pf : constant Natural := P.Pos;");
+            Append (Buf, LF);
+            Append (Buf, Ind & "   begin");
+            Append (Buf, LF);
+            declare
+               Q  : Natural := 0;
+               NK : constant Natural := Natural (Nd.Kids.Length);
             begin
-               while M < LX and then M < LY loop
+               for Kid of Nd.Kids loop
+                  Q := Q + 1;
+                  Lbl_No := Lbl_No + 1;
                   declare
-                     P : constant Element_Access := Els (BF (X) + M);
-                     Q : constant Element_Access := Els (BF (Y) + M);
+                     Inner : constant String := "Alt_Fail_" & Img (Lbl_No);
+                     Copy  : constant String := "R" & Img (Lbl_No);
                   begin
-                     exit when P.Kind /= Q.Kind or else P.Min /= 1 or else P.Max /= 1
-                       or else Q.Min /= 1 or else Q.Max /= 1;
-                     case P.Kind is
-                        when HBNF_Grammar.Name => exit when P.Name /= Q.Name or else P.Args /= Q.Args;
-                        when Literal => exit when P.Lit /= Q.Lit or else P.No_Case /= Q.No_Case;
-                        when others => exit;
-                     end case;
-                  end;
-                  M := M + 1;
-               end loop;
-               return M;
-            end Shared;
-
-            function Guarded (X : Positive) return Boolean is
-              (BL (X) + 1 <= N and then Els (BL (X) + 1).Kind = Alt and then Els (BL (X) + 1).Guard /= 0);
-
-            --  The tail of one alternative's block: its guard, its number, the return.
-            procedure Finish (Br, Last : Natural; Rec : String) is
-            begin
-               --  First match wins: this branch is taken only if the next
-               --  code point can follow the choice.
-               if Last < N and then Els (Last + 1).Kind = Alt and then Els (Last + 1).Guard /= 0
-               then
-                  declare
-                     G : constant String := Natural'Image (Els (Last + 1).Guard);
-                  begin
-                     Append (Buf, Ind & "   declare");
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "      Sv : constant Natural := P.Pos;");
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "      Ok : Boolean;");
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "   begin");
-                     Append (Buf, LF);
-                     if Rules (Owner).Whitespace /= Null_Unbounded_String then
-                        Append (Buf, Ind & "      Skip_Ws (P);");
+                     if Q < NK then
+                        Append (Buf, Ind & "      declare");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "         " & Copy & " : " & TN & " := " & Rec (Rec'First .. Rec'Last - 1) & ";");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      begin");
+                        Append (Buf, LF);
+                        Node (Kid, Copy & ".", "goto " & Inner & ";");
+                        Append (Buf, Ind & "         <<" & Inner & ">> null;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      end;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      P.Failed := False; P.Pos := Pf;");
+                        Append (Buf, LF);
+                     else
+                        Node (Kid, Rec, "goto " & Inner & ";");
+                        Append (Buf, Ind & "      <<" & Inner & ">> null;");
                         Append (Buf, LF);
                      end if;
-                     Append (Buf, Ind & "      Ok := Guard_" & G (G'First + 1 .. G'Last)
-                       & " (P.Text.all, P.Pos);");
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "      P.Pos := Sv;");
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "      if not Ok then Fail (P, ""what can "
-                       & "follow here""); " & To_String (FA) & " end if;");
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "   end;");
-                     Append (Buf, LF);
                   end;
-               end if;
-               if Struct_Alt (Rules (Owner), Analyze (Rules, Owner)) then
-                  Append (Buf, Ind & "   " & Rec & "Alt_No := " & Img (Br) & ";");
-                  Append (Buf, LF);
-               end if;
-               Append (Buf, Ind & "   return " & Rec (Rec'First .. Rec'Last - 1) & ";");
-               Append (Buf, LF);
-            end Finish;
-         begin
-            declare
-               Cnt : Natural := 0;
-               St3 : Natural := 1;
-            begin
-               for K in 1 .. N + 1 loop
-                  if K > N or else Els (K).Kind = Alt then
-                     Cnt := Cnt + 1;
-                     BF (Cnt) := St3;
-                     BL (Cnt) := K - 1;
-                     St3 := K + 1;
-                  end if;
                end loop;
             end;
-            while B <= NB loop
-               declare
-                  RE : Natural := B;       --  the last alternative of the run that begins here
-                  M  : Natural := 0;
-               begin
-                  if B < NB and then not Guarded (B) and then not Guarded (B + 1) then
-                     M := Shared (B, B + 1);
-                     if M >= 1 and then BL (B) - BF (B) + 1 > M then
-                        RE := B + 1;
-                        while RE < NB and then BL (RE) - BF (RE) + 1 > M and then not Guarded (RE)
-                          and then Shared (B, RE + 1) >= M and then not Guarded (RE + 1)
-                        loop
-                           RE := RE + 1;
-                        end loop;
-                        --  a context test, number or %as belongs to the element before it
-                        while M >= 1
-                          and then (for some C in B .. RE =>
-                                      BF (C) + M <= BL (C) and then Els (BF (C) + M).Kind = Block)
-                        loop
-                           M := M - 1;
-                        end loop;
-                        if M < 1 then
-                           RE := B;
-                        end if;
-                     end if;
-                  end if;
-                  Lbl_No := Lbl_No + 1;
-                  Lbl := To_Unbounded_String ("Alt_Fail_" & Img (Lbl_No));
-                  Old_FA := FA;
-                  FA := To_Unbounded_String ("goto " & To_String (Lbl) & ";");
-                  Append (Buf, Ind & "declare");
-                  Append (Buf, LF);
-                  Append (Buf, Ind & "   R : " & TN & ";");
-                  Append (Buf, LF);
-                  Append (Buf, Ind & "begin");
-                  Append (Buf, LF);
-                  if RE = B then
-                     Emit_Seq (Owner, Els, BF (B), BL (B), "R.", Buf, Ind & "   ", Alloc_Records);
-                     Finish (B, BL (B), "R.");
-                  else
-                     --  the shared beginning once, then each alternative's own rest in turn: all but the
-                     --  last work on a copy, which is dropped when the rest fails
-                     Emit_Seq (Owner, Els, BF (B), BF (B) + M - 1, "R.", Buf, Ind & "   ", Alloc_Records);
-                     Append (Buf, Ind & "   declare");
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "      Pf : constant Natural := P.Pos;");
-                     Append (Buf, LF);
-                     Append (Buf, Ind & "   begin");
-                     Append (Buf, LF);
-                     for C in B .. RE loop
-                        declare
-                           Inner : Unbounded_String;
-                           Save_FA : constant Unbounded_String := FA;
-                        begin
-                           Lbl_No := Lbl_No + 1;
-                           Inner := To_Unbounded_String ("Alt_Fail_" & Img (Lbl_No));
-                           FA := To_Unbounded_String ("goto " & To_String (Inner) & ";");
-                           if C < RE then
-                              Append (Buf, Ind & "      declare");
-                              Append (Buf, LF);
-                              Append (Buf, Ind & "         R2 : " & TN & " := R;");
-                              Append (Buf, LF);
-                              Append (Buf, Ind & "      begin");
-                              Append (Buf, LF);
-                              Emit_Seq (Owner, Els, BF (C) + M, BL (C), "R2.", Buf, Ind & "         ", Alloc_Records);
-                              Finish (C, BL (C), "R2.");
-                              Append (Buf, Ind & "         <<" & To_String (Inner) & ">> null;");
-                              Append (Buf, LF);
-                              Append (Buf, Ind & "      end;");
-                              Append (Buf, LF);
-                              Append (Buf, Ind & "      P.Failed := False; P.Pos := Pf;");
-                              Append (Buf, LF);
-                           else
-                              Emit_Seq (Owner, Els, BF (C) + M, BL (C), "R.", Buf, Ind & "      ", Alloc_Records);
-                              Finish (C, BL (C), "R.");
-                              Append (Buf, Ind & "      <<" & To_String (Inner) & ">> null;");
-                              Append (Buf, LF);
-                           end if;
-                           FA := Save_FA;
-                        end;
-                     end loop;
-                     Append (Buf, Ind & "   end;");
-                     Append (Buf, LF);
-                  end if;
-                  Append (Buf, Ind & "   <<" & To_String (Lbl) & ">> null;");
-                  Append (Buf, LF);
-                  Append (Buf, Ind & "end;");
-                  Append (Buf, LF);
-                  --  reached only when the branch failed: the next one starts where this began
-                  Append (Buf, Ind & "P.Failed := False; P.Pos := Save;");
-                  Append (Buf, LF);
-                  FA := Old_FA;
-                  B := RE + 1;
-               end;
-            end loop;
-         end;
+            Append (Buf, Ind & "   end;");
+            Append (Buf, LF);
+            FA := Save_FA;
+         end Node;
+      begin
+         for Top_U of Pl.Top loop
+            Lbl_No := Lbl_No + 1;
+            Lbl := To_Unbounded_String ("Alt_Fail_" & Img (Lbl_No));
+            Old_FA := FA;
+            Append (Buf, Ind & "declare");
+            Append (Buf, LF);
+            Append (Buf, Ind & "   R : " & TN & ";");
+            Append (Buf, LF);
+            Append (Buf, Ind & "begin");
+            Append (Buf, LF);
+            Node (Top_U, "R.", "goto " & To_String (Lbl) & ";");
+            Append (Buf, Ind & "   <<" & To_String (Lbl) & ">> null;");
+            Append (Buf, LF);
+            Append (Buf, Ind & "end;");
+            Append (Buf, LF);
+            --  reached only when the branch failed: the next one starts where this began
+            Append (Buf, Ind & "P.Failed := False; P.Pos := Save;");
+            Append (Buf, LF);
+            FA := Old_FA;
+         end loop;
       end Emit_Alternation;
 
       procedure Emit_Rule_Decl (Idx : Natural; Buf : in out U) is

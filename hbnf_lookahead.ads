@@ -83,6 +83,47 @@ package HBNF_Lookahead is
    function Branches (V : Element_Vectors.Vector) return Bounds_Vectors.Vector;
    --  The alternatives of a flat vector, split at its Alt elements.
 
+   --  The alternatives of a flat vector with the elements that adjacent ones begin with in common written
+   --  once.  A node is either a Leaf, one alternative's elements that remain (Last < First: none), or a Run: the
+   --  elements its Kids all begin with (names and literals taken once, never a block, never none), and the
+   --  Kids, which may be runs in turn: `from os to | from os | from to | from` is the run `from` of the run
+   --  `os` of (`to`, nothing), `to` and nothing.  The kids are tried in the order the alternatives were
+   --  written, so the language and the tree are what the plain chain gives; an alternative with nothing left
+   --  after the shared part comes last of its run (whatever followed it could not be reached).  An alternative
+   --  with a guard (`/` where the next code point must be able to follow) is a leaf of its own.
+   type Unit_Kind is (Leaf, Run);
+
+   package Index_Vectors is new Ada.Containers.Vectors (Positive, Positive);
+
+   type Unit is record
+      Kind        : Unit_Kind := Leaf;
+      First, Last : Natural := 0;
+      Br          : Natural := 0;    --  Leaf: its number among the alternatives, as written
+      Kids        : Index_Vectors.Vector;
+   end record;
+
+   package Unit_Vectors is new Ada.Containers.Vectors (Positive, Unit);
+
+   type Plan is record
+      Units : Unit_Vectors.Vector;
+      Top   : Index_Vectors.Vector;    --  in the order written
+   end record;
+
+   function Factor
+     (V : Element_Vectors.Vector; From : Natural := 1; To : Natural := 0;
+      Enable : Boolean := True) return Plan;
+   --  The alternatives of V (From .. To; To = 0: to the end), numbered from 1.  Enable = False: all leaves.
+
+   procedure Unit_Ranges
+     (P : Plan; U : Positive; Into : in out Bounds_Vectors.Vector);
+   --  Every stretch of elements the node U and what is below it reads.
+
+   function Leaves (P : Plan; U : Positive) return Natural;
+   --  How many alternatives the node U stands for.
+
+   procedure Set_Factoring (On : Boolean);
+   --  Off: every alternative is a leaf (hbnf --no-factor), to compare the two parses.
+
    function Follow_After
      (A : Analysis; Rules : Rule_Vectors.Vector;
       V : Element_Vectors.Vector; B : Bounds; P : Positive;

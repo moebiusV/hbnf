@@ -1,0 +1,12 @@
+; --lint says where an ordered choice `|` could be a union `/`: the parse is the same and the order is free.
+; `setget` and `xyz` are such choices (their alternatives begin with different words); `count` is a union
+; already; `digit2` is a set of characters; `mixed` has a core type (`int`), which the analysis cannot see into.
+prefix none
+top    = *( stmt ";" )
+stmt   = setget | xyz | count | digit2 | mixed
+setget = "set" name "=" name | "get" name | "del" name
+xyz    = "x" name | "y" name | "z" name "!"
+count  = "n" name / "m" name
+digit2 = "0" | "1" | "2"
+mixed  = "i" int | int
+name   = word

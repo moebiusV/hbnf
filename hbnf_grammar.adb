@@ -188,6 +188,17 @@ package body HBNF_Grammar is
          & "warning: " & Text);
    end Warn;
 
+   --  Said once for a place, however many times the rule is looked at.
+   procedure Lint (Key, Text : String) is
+   begin
+      if Warn_Keys.Contains ("lint:" & Key) then
+         return;
+      end if;
+      Warn_Keys.Insert ("lint:" & Key);
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error, "hbnf: " & Text);
+   end Lint;
+
    procedure Warn_Once (Key, Where, Text : String) is
    begin
       if Warn_Keys.Contains (Key) then
@@ -196,6 +207,13 @@ package body HBNF_Grammar is
       Warn_Keys.Insert (Key);
       Warn (Where, Text);
    end Warn_Once;
+
+   Lint_On : Boolean := False;
+
+   procedure Set_Lint (On : Boolean) is
+   begin
+      Lint_On := On;
+   end Set_Lint;
 
    function Warnings return Natural is (Warn_Count);
 
@@ -595,6 +613,7 @@ package body HBNF_Grammar is
    Guards : Guard_Vectors.Vector;
 
    Union_Sites : Site_Vectors.Vector;
+   Pipe_Sites  : Site_Vectors.Vector;    --  the `|` of an ordered choice, for --lint
    Greedy_Sites : Site_Vectors.Vector;   --  elements that repeat a variable number of times
 
    function Here (Line, Col : Positive; Text : String;
@@ -683,6 +702,7 @@ package body HBNF_Grammar is
       Pending_Except_B := Null_Unbounded_String;
       Declared_Tokens.Clear;
       Union_Sites.Clear;
+      Pipe_Sites.Clear;
       Greedy_Sites.Clear;
       Standing.Clear;
       Enum_Ranks.Clear;
@@ -3381,6 +3401,8 @@ package body HBNF_Grammar is
          begin
             if A.Union then
                Union_Sites.Append (Here (T.Line, T.Col, "/", A));
+            else
+               Pipe_Sites.Append (Here (T.Line, T.Col, "|", A));
             end if;
             Next (P);
             Element_Vectors.Append (V, A);
@@ -6027,6 +6049,41 @@ package body HBNF_Grammar is
                      end if;
                      Fits := True;   --  decided: no search needed
                   end;
+               end if;
+            end;
+         end if;
+
+         --  --lint: an ordered choice whose alternatives a union would take in the order written as well
+         --  (none takes input a later one needs) can be written `/`, which leaves their order free.
+         if Lint_On and then Union = null and then not Fits and then not Char_Rule
+           and then (for some E of V => E.Kind = Alt)
+           and then not (for some E of V => E.Kind = Block)
+           and then not HBNF_Lookahead.Has_Any (Follow_Here)
+         then
+            declare
+               Ok      : Boolean;
+               Message : Unbounded_String;
+               Order   : Order_Vectors.Vector;
+               Pipe    : Element_Access := null;
+            begin
+               for E of V loop
+                  if E.Kind = Alt then
+                     Pipe := E;
+                     exit;
+                  end if;
+               end loop;
+               Check_Choice
+                 (Look.all, Rules, Owner, V, Follow_Here, Ok, Message, Order);
+               if Ok and then (for all K in 1 .. Natural (Order.Length) => Order (K) = K) then
+                  for S of Pipe_Sites loop
+                     if S.Alt = Pipe then
+                        Lint
+                          (To_String (S.File) & ":" & Img (S.Line) & ":" & Img (S.Col),
+                           Pointed (S, "`|` is ordered choice, and here no alternative takes input a later "
+                             & "one needs, so `/` (the union) means the same and leaves their order free"));
+                        exit;
+                     end if;
+                  end loop;
                end if;
             end;
          end if;

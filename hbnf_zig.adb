@@ -3282,7 +3282,7 @@ package body HBNF_Zig is
          N  : constant Natural := Natural (Els.Length);
          Block_Start : Natural := 0;
          Cm_U : Unbounded_String;
-         NB : Natural := 1;
+         Bs : constant HBNF_Lookahead.Bounds_Vectors.Vector := HBNF_Lookahead.Branches (Els);
 
          function Img (X : Natural) return String is
             S : constant String := Natural'Image (X);
@@ -3292,12 +3292,124 @@ package body HBNF_Zig is
             end if;
             return S;
          end Img;
-      begin
-         for E of Els loop
-            if E.Kind = Alt then
-               NB := NB + 1;
+
+         --  Alternatives that begin alike read the shared elements once, then try their own rests in the
+         --  order written (HBNF_Lookahead.Factor; a run may hold runs).  (A rule that owns boxes frees them
+         --  with the reset, whole: it is not written out in parts.)
+         Pl : constant HBNF_Lookahead.Plan :=
+           HBNF_Lookahead.Factor (Els, Enable => not Has_Back (Backs, Owner));
+
+         --  The fields a stretch of elements sets, for putting back what a failed alternative set.
+         procedure Add_Fields (R : in out String_Vectors.Vector; V : Element_Vectors.Vector; F, L : Natural) is
+         begin
+            for K in F .. L loop
+               if V (K).Kind = Name then
+                  if not Is_Hidden (To_String (V (K).Name)) then
+                     declare
+                        X : constant Unbounded_String := To_Unbounded_String (Zig_Field (To_String (V (K).Name)));
+                     begin
+                        if not R.Contains (X) then
+                           R.Append (X);
+                        end if;
+                     end;
+                  end if;
+               elsif V (K).Kind = Group then
+                  Add_Fields (R, V (K).Items, 1, Natural (V (K).Items.Length));
+               end if;
+            end loop;
+         end Add_Fields;
+
+         --  Node Un.
+         procedure Node (Un : Positive; Ind2 : String) is
+            Nd : constant HBNF_Lookahead.Unit := Pl.Units (Un);
+         begin
+            if Nd.Kind in HBNF_Lookahead.Leaf then
+               declare
+                  Label : constant String := "blk_" & Img (Un);
+                  Br    : constant Natural := Nd.Br;
+               begin
+                  Block_Start := Length (Buf);
+                  Append (Buf, Ind2 & Label & ": {");
+                  Append (Buf, LF);
+                  if Nd.First <= Nd.Last then
+                     Emit_Seq (Owner, Els, Nd.First, Nd.Last, Acc, Buf, "break :" & Label, Ind2 & "    ");
+                  end if;
+                  --  First match wins: this branch is taken only if the next
+                  --  code point can follow the choice.
+                  if Bs (Br).Last < N and then Els (Bs (Br).Last + 1).Kind = Alt
+                    and then Els (Bs (Br).Last + 1).Guard /= 0
+                  then
+                     Append (Buf, Ind2 & "    { const sv = p.pos;"
+                       & (if Rules (Owner).Whitespace /= Null_Unbounded_String
+                          then " p.skip_ws();" else "")
+                       & " const g = p.guard_" & Img (Els (Bs (Br).Last + 1).Guard)
+                       & "(); p.pos = sv; if (!g) break :" & Label & "; }");
+                     Append (Buf, LF);
+                  end if;
+                  if (Writer_On or else Ast_On)
+                    and then Natural (Rules (Owner).Pattern.Length) > 1
+                  then
+                     Append (Buf, Ind2 & "    r._alt = " & Img (Br) & ";");
+                     Append (Buf, LF);
+                  end if;
+                  Append (Buf, Ind2 & "    matched = true;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind2 & "}");
+                  Append (Buf, LF);
+                  Drop_Unused_Label
+                    (Buf, Block_Start, Ind2 & Label & ": {", "break :" & Label, Ind2 & "{");
+                  Append (Buf, Ind2 & "if (matched) return r;");
+                  Append (Buf, LF);
+               end;
+               return;
             end if;
-         end loop;
+            declare
+               Pre : constant String := "run_" & Img (Un);
+               Pf  : constant String := "pf_" & Img (Un);
+               Cp  : constant String := "cp_" & Img (Un);
+               Rs0 : constant Natural := Length (Buf);
+               Q   : Natural := 0;
+               NK  : constant Natural := Natural (Nd.Kids.Length);
+            begin
+               Append (Buf, Ind2 & Pre & ": {");
+               Append (Buf, LF);
+               Emit_Seq (Owner, Els, Nd.First, Nd.Last, Acc, Buf, "break :" & Pre, Ind2 & "    ");
+               Append (Buf, Ind2 & "    const " & Pf & " = p.pos;");
+               Append (Buf, LF);
+               if Ctx_On then
+                  Append (Buf, Ind2 & "    const " & Cp & " = p.cx_mark();");
+                  Append (Buf, LF);
+               end if;
+               for Kid of Nd.Kids loop
+                  Q := Q + 1;
+                  Node (Kid, Ind2 & "    ");
+                  if Q < NK then
+                     Append (Buf, Ind2 & "    p.pos = " & Pf & ";" & " matched = false;"
+                       & (if Ctx_On then " p.cx_reset(&" & Cp & ");" else ""));
+                     declare
+                        Rs : HBNF_Lookahead.Bounds_Vectors.Vector;
+                        Fs : String_Vectors.Vector;
+                     begin
+                        HBNF_Lookahead.Unit_Ranges (Pl, Kid, Rs);
+                        for Rg of Rs loop
+                           if Rg.First <= Rg.Last then
+                              Add_Fields (Fs, Els, Rg.First, Rg.Last);
+                           end if;
+                        end loop;
+                        for F of Fs loop
+                           Append (Buf, " " & Acc & To_String (F) & " = std.mem.zeroes(@TypeOf("
+                             & Acc & To_String (F) & "));");
+                        end loop;
+                     end;
+                     Append (Buf, LF);
+                  end if;
+               end loop;
+               Append (Buf, Ind2 & "}");
+               Append (Buf, LF);
+               Drop_Unused_Label (Buf, Rs0, Ind2 & Pre & ": {", "break :" & Pre, Ind2 & "{");
+            end;
+         end Node;
+      begin
          Cx_Seq := Cx_Seq + 1;
          Cm_U := To_Unbounded_String ("cm_" & Img (Cx_Seq));
          if Ctx_On then
@@ -3305,182 +3417,16 @@ package body HBNF_Zig is
             Append (Buf, LF);
          end if;
          declare
-            --  Where each alternative begins and ends.
-            BF : array (1 .. NB) of Natural;
-            BL : array (1 .. NB) of Natural;
-            B  : Natural := 1;
-
-            --  The leading elements two alternatives share: names and literals read the same way.
-            function Shared (X, Y : Positive) return Natural is
-               LX : constant Natural := BL (X) - BF (X) + 1;
-               LY : constant Natural := BL (Y) - BF (Y) + 1;
-               M  : Natural := 0;
-            begin
-               while M < LX and then M < LY loop
-                  declare
-                     P : constant Element_Access := Els (BF (X) + M);
-                     Q : constant Element_Access := Els (BF (Y) + M);
-                  begin
-                     exit when P.Kind /= Q.Kind or else P.Min /= 1 or else P.Max /= 1
-                       or else Q.Min /= 1 or else Q.Max /= 1;
-                     case P.Kind is
-                        when Name => exit when P.Name /= Q.Name or else P.Args /= Q.Args;
-                        when Literal => exit when P.Lit /= Q.Lit or else P.No_Case /= Q.No_Case;
-                        when others => exit;
-                     end case;
-                  end;
-                  M := M + 1;
-               end loop;
-               return M;
-            end Shared;
-
-            function Guarded (X : Positive) return Boolean is
-              (BL (X) + 1 <= N and then Els (BL (X) + 1).Kind = Alt and then Els (BL (X) + 1).Guard /= 0);
-
-            --  The fields a stretch of elements sets, for putting back what a failed alternative set.
-            function Fields (First, Last : Natural) return String_Vectors.Vector is
-               R : String_Vectors.Vector;
-               procedure Walk (V : Element_Vectors.Vector; F, L : Natural) is
-               begin
-                  for K in F .. L loop
-                     if V (K).Kind = Name then
-                        if not Is_Hidden (To_String (V (K).Name)) then
-                           declare
-                              X : constant Unbounded_String := To_Unbounded_String (Zig_Field (To_String (V (K).Name)));
-                           begin
-                              if not R.Contains (X) then
-                                 R.Append (X);
-                              end if;
-                           end;
-                        end if;
-                     elsif V (K).Kind = Group then
-                        Walk (V (K).Items, 1, Natural (V (K).Items.Length));
-                     end if;
-                  end loop;
-               end Walk;
-            begin
-               Walk (Els, First, Last);
-               return R;
-            end Fields;
-
-            --  One alternative's block: the elements First .. Last, then the tag and the match.
-            procedure One (Br, First, Last : Natural; Label, Ind2 : String) is
-            begin
-               Block_Start := Length (Buf);
-               Append (Buf, Ind2 & Label & ": {");
-               Append (Buf, LF);
-               Emit_Seq (Owner, Els, First, Last, Acc, Buf, "break :" & Label, Ind2 & "    ");
-               --  First match wins: this branch is taken only if the next
-               --  code point can follow the choice.
-               if Last < N and then Els (Last + 1).Kind = Alt and then Els (Last + 1).Guard /= 0
-               then
-                  Append (Buf, Ind2 & "    { const sv = p.pos;"
-                    & (if Rules (Owner).Whitespace /= Null_Unbounded_String
-                       then " p.skip_ws();" else "")
-                    & " const g = p.guard_" & Img (Els (Last + 1).Guard)
-                    & "(); p.pos = sv; if (!g) break :" & Label & "; }");
-                  Append (Buf, LF);
-               end if;
-               if (Writer_On or else Ast_On)
-                 and then Natural (Rules (Owner).Pattern.Length) > 1
-               then
-                  Append (Buf, Ind2 & "    r._alt = " & Img (Br) & ";");
-                  Append (Buf, LF);
-               end if;
-               Append (Buf, Ind2 & "    matched = true;");
-               Append (Buf, LF);
-               Append (Buf, Ind2 & "}");
-               Append (Buf, LF);
-               Drop_Unused_Label
-                 (Buf, Block_Start, Ind2 & Label & ": {", "break :" & Label, Ind2 & "{");
-               Append (Buf, Ind2 & "if (matched) return r;");
-               Append (Buf, LF);
-            end One;
+            B : Natural := 0;
          begin
-            declare
-               Cnt : Natural := 0;
-               St3 : Natural := 1;
-            begin
-               for K in 1 .. N + 1 loop
-                  if K > N or else Els (K).Kind = Alt then
-                     Cnt := Cnt + 1;
-                     BF (Cnt) := St3;
-                     BL (Cnt) := K - 1;
-                     St3 := K + 1;
-                  end if;
-               end loop;
-            end;
-            while B <= NB loop
-               declare
-                  RE : Natural := B;       --  the last alternative of the run that begins here
-                  M  : Natural := 0;
-               begin
-                  --  (a rule that owns boxes frees them with the reset, whole: it is not written out in parts)
-                  if B < NB and then not Guarded (B) and then not Guarded (B + 1) and then not Has_Back (Backs, Owner) then
-                     M := Shared (B, B + 1);
-                     if M >= 1 and then BL (B) - BF (B) + 1 > M then
-                        RE := B + 1;
-                        while RE < NB and then BL (RE) - BF (RE) + 1 > M and then not Guarded (RE)
-                          and then Shared (B, RE + 1) >= M and then not Guarded (RE + 1)
-                        loop
-                           RE := RE + 1;
-                        end loop;
-                        --  a context test, number or %as belongs to the element before it
-                        while M >= 1
-                          and then (for some C in B .. RE =>
-                                      BF (C) + M <= BL (C) and then Els (BF (C) + M).Kind = Block)
-                        loop
-                           M := M - 1;
-                        end loop;
-                        if M < 1 then
-                           RE := B;
-                        end if;
-                     end if;
-                  end if;
-                  if B > 1 then
-                     Append (Buf, Ind & "p.pos = save; " & Reset & "; matched = false;"
-                       & (if Ctx_On then " p.cx_reset(&" & To_String (Cm_U) & ");" else ""));
-                     Append (Buf, LF);
-                  end if;
-                  if RE = B then
-                     One (B, BF (B), BL (B), "blk_" & Img (B), Ind);
-                  else
-                     --  the shared beginning once, then each alternative's own rest in turn
-                     declare
-                        Pre : constant String := "run_" & Img (B);
-                        Pf  : constant String := "pf_" & Img (B);
-                        Cp  : constant String := "cp_" & Img (B);
-                        Rs  : constant Natural := Length (Buf);
-                     begin
-                        Append (Buf, Ind & Pre & ": {");
-                        Append (Buf, LF);
-                        Emit_Seq (Owner, Els, BF (B), BF (B) + M - 1, Acc, Buf, "break :" & Pre, Ind & "    ");
-                        Append (Buf, Ind & "    const " & Pf & " = p.pos;");
-                        Append (Buf, LF);
-                        if Ctx_On then
-                           Append (Buf, Ind & "    const " & Cp & " = p.cx_mark();");
-                           Append (Buf, LF);
-                        end if;
-                        for C in B .. RE loop
-                           One (C, BF (C) + M, BL (C), "blk_" & Img (C), Ind & "    ");
-                           if C < RE then
-                              Append (Buf, Ind & "    p.pos = " & Pf & ";" & " matched = false;"
-                                & (if Ctx_On then " p.cx_reset(&" & Cp & ");" else ""));
-                              for F of Fields (BF (C) + M, BL (C)) loop
-                                 Append (Buf, " " & Acc & To_String (F) & " = std.mem.zeroes(@TypeOf("
-                                   & Acc & To_String (F) & "));");
-                              end loop;
-                              Append (Buf, LF);
-                           end if;
-                        end loop;
-                        Append (Buf, Ind & "}");
-                        Append (Buf, LF);
-                        Drop_Unused_Label
-                          (Buf, Rs, Ind & Pre & ": {", "break :" & Pre, Ind & "{");
-                     end;
-                  end if;
-                  B := RE + 1;
-               end;
+            for Tn of Pl.Top loop
+               B := B + 1;
+               if B > 1 then
+                  Append (Buf, Ind & "p.pos = save; " & Reset & "; matched = false;"
+                    & (if Ctx_On then " p.cx_reset(&" & To_String (Cm_U) & ");" else ""));
+                  Append (Buf, LF);
+               end if;
+               Node (Tn, Ind);
             end loop;
          end;
       end Emit_Alternation;

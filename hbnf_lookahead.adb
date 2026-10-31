@@ -1449,6 +1449,184 @@ package body HBNF_Lookahead is
       end;
    end Greedy_Overlap;
 
+   Factoring : Boolean := True;
+
+   procedure Set_Factoring (On : Boolean) is
+   begin
+      Factoring := On;
+   end Set_Factoring;
+
+   function Factor
+     (V : Element_Vectors.Vector; From : Natural := 1; To : Natural := 0;
+      Enable : Boolean := True) return Plan
+   is
+      Hi : constant Natural := (if To = 0 then Natural (V.Last_Index) else To);
+      Bs : Bounds_Vectors.Vector;
+      type Item is record
+         First, Last, Br : Natural;
+      end record;
+      package Item_Vectors is new Ada.Containers.Vectors (Positive, Item);
+      Result : Plan;
+
+      function Guarded (Br : Natural) return Boolean is
+        (Bs (Br).Last + 1 <= Hi and then V (Bs (Br).Last + 1).Kind = Alt
+         and then V (Bs (Br).Last + 1).Guard /= 0);
+
+      --  The leading elements two alternatives share: names and literals read the same way.
+      function Shared (X, Y : Item) return Natural is
+         LX : constant Natural := X.Last - X.First + 1;
+         LY : constant Natural := Y.Last - Y.First + 1;
+         M  : Natural := 0;
+      begin
+         while M < LX and then M < LY loop
+            declare
+               P : constant Element_Access := V (X.First + M);
+               Q : constant Element_Access := V (Y.First + M);
+            begin
+               exit when P.Kind /= Q.Kind or else P.Min /= 1 or else P.Max /= 1
+                 or else Q.Min /= 1 or else Q.Max /= 1;
+               case P.Kind is
+                  when HBNF_Grammar.Name => exit when P.Name /= Q.Name or else P.Args /= Q.Args;
+                  when Literal => exit when P.Lit /= Q.Lit or else P.No_Case /= Q.No_Case;
+                  when others => exit;
+               end case;
+            end;
+            M := M + 1;
+         end loop;
+         return M;
+      end Shared;
+
+      function Build (Items : Item_Vectors.Vector) return Index_Vectors.Vector is
+         R : Index_Vectors.Vector;
+         N : constant Natural := Natural (Items.Length);
+         I : Positive := 1;
+      begin
+         while I <= N loop
+            declare
+               J : Natural := I;
+               M : Natural := 0;
+            begin
+               if Factoring and then Enable and then I < N and then not Guarded (Items (I).Br)
+                 and then not Guarded (Items (I + 1).Br)
+                 and then Shared (Items (I), Items (I + 1)) >= 1
+               then
+                  --  the alternatives from I on that begin with I's first element
+                  J := I + 1;
+                  while J < N and then not Guarded (Items (J + 1).Br)
+                    and then Shared (Items (I), Items (J + 1)) >= 1
+                  loop
+                     J := J + 1;
+                  end loop;
+                  --  what they all begin with; a block belongs to the element before it, and an alternative
+                  --  with nothing left ends the group (the ones after it could not be reached)
+                  loop
+                     M := Natural'Last;
+                     for C in I + 1 .. J loop
+                        M := Natural'Min (M, Shared (Items (I), Items (C)));
+                     end loop;
+                     while M >= 1
+                       and then (for some C in I .. J =>
+                                   Items (C).First + M <= Items (C).Last
+                                   and then V (Items (C).First + M).Kind = Block)
+                     loop
+                        M := M - 1;
+                     end loop;
+                     if M < 1 then
+                        --  a block follows the shared part in one of them: leave the last one out and try again
+                        exit when J <= I + 1;
+                        J := J - 1;
+                     else
+                        declare
+                           Cut : Natural := 0;
+                        begin
+                           for C in I .. J loop
+                              if Items (C).Last - Items (C).First + 1 <= M then
+                                 Cut := C;
+                                 exit;
+                              end if;
+                           end loop;
+                           if Cut = I then
+                              M := 0;
+                              exit;
+                           elsif Cut = 0 or else Cut = J then
+                              exit;
+                           end if;
+                           J := Cut;
+                        end;
+                     end if;
+                  end loop;
+               end if;
+               if M >= 1 then
+                  declare
+                     Kids : Item_Vectors.Vector;
+                     U    : Unit;
+                  begin
+                     for C in I .. J loop
+                        Kids.Append (Item'(First => Items (C).First + M, Last => Items (C).Last, Br => Items (C).Br));
+                     end loop;
+                     U.Kind := Run;
+                     U.First := Items (I).First;
+                     U.Last := Items (I).First + M - 1;
+                     U.Kids := Build (Kids);
+                     Result.Units.Append (U);
+                     R.Append (Positive (Result.Units.Length));
+                  end;
+                  I := J + 1;
+               else
+                  declare
+                     U : Unit;
+                  begin
+                     U.Kind := Leaf;
+                     U.First := Items (I).First;
+                     U.Last := Items (I).Last;
+                     U.Br := Items (I).Br;
+                     Result.Units.Append (U);
+                     R.Append (Positive (Result.Units.Length));
+                  end;
+                  I := I + 1;
+               end if;
+            end;
+         end loop;
+         return R;
+      end Build;
+
+      Every : Item_Vectors.Vector;
+      St0 : Natural := From;
+   begin
+      for K in From .. Hi + 1 loop
+         if K > Hi or else V (K).Kind = Alt then
+            Bs.Append (Bounds'(First => St0, Last => K - 1));
+            St0 := K + 1;
+         end if;
+      end loop;
+      for K in 1 .. Natural (Bs.Length) loop
+         Every.Append (Item'(First => Bs (K).First, Last => Bs (K).Last, Br => K));
+      end loop;
+      Result.Top := Build (Every);
+      return Result;
+   end Factor;
+
+   procedure Unit_Ranges
+     (P : Plan; U : Positive; Into : in out Bounds_Vectors.Vector) is
+   begin
+      Into.Append (Bounds'(First => P.Units (U).First, Last => P.Units (U).Last));
+      for K of P.Units (U).Kids loop
+         Unit_Ranges (P, K, Into);
+      end loop;
+   end Unit_Ranges;
+
+   function Leaves (P : Plan; U : Positive) return Natural is
+      N : Natural := 0;
+   begin
+      if P.Units (U).Kind = Leaf then
+         return 1;
+      end if;
+      for K of P.Units (U).Kids loop
+         N := N + Leaves (P, K);
+      end loop;
+      return N;
+   end Leaves;
+
    procedure Check_Choice
      (A : Analysis; Rules : Rule_Vectors.Vector; Owner : Natural;
       V : Element_Vectors.Vector; Follow_Here : Cp_Set;

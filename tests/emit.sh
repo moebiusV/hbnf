@@ -52,7 +52,8 @@ fi
 # (the value, the depth of the stack and its sum: `rollback` puts the stack back for the alternative given up)
 "$CLI" tests/emit/runs.hbnf --backend=c > "$W/runs.c" 2> "$W/runs.err" \
 	|| { echo "emit: FAIL (runs: $(head -c 200 "$W/runs.err"))"; fail=1; }
-grep -q 'pn[0-9]*_' "$W/runs.c" || { echo "emit: FAIL (runs: the shared beginning is not written out once)"; fail=1; }
+grep -q 'pn[0-9]*_1_[0-9]*:' "$W/runs.c" && grep -q 'pn[0-9]*_2_[0-9]*:' "$W/runs.c" \
+	|| { echo "emit: FAIL (runs: the shared beginning is not written out once, nor the one under it)"; fail=1; }
 cat tests/emit/runs.c >> "$W/runs.c"
 ${CC:-cc} -std=gnu11 -w -o "$W/runs" "$W/runs.c" 2> "$W/cc.err" \
 	|| { echo "emit: FAIL (runs: does not compile: $(head -c 300 "$W/cc.err"))"; fail=1; }

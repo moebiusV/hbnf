@@ -6309,120 +6309,128 @@ package body HBNF_C is
             --  Adjacent branches that begin with the same elements (`x R | x`, `a b c | a b d`) would
             --  read those elements once for each branch; the first one that fails after them gives
             --  them back and the next reads them again, so a chain of such rules (the levels of an
-            --  expression) doubles its work at every level.  The elements are read once, then each
-            --  branch's own rest is tried in turn, in the order written: the same language and the
-            --  same tree, the shared part read once.
+            --  expression) doubles its work at every level.  HBNF_Lookahead.Factor says which
+            --  branches begin alike and what they have in common (a run, which may hold runs in turn);
+            --  the elements are read once, then each branch's own rest is tried in the order written:
+            --  the same language and the same tree, the shared part read once.
             Skip_Until : Natural := 0;     --  elements up to here belong to a run that was written out
+            Pl : constant HBNF_Lookahead.Plan :=
+              (if Fork or else Disp then (Units => <>, Top => <>) else HBNF_Lookahead.Factor (Els));
+            Run_Seq : Natural := 0;
 
-            --  The number of leading elements two branches share: names and literals taken once.
-            function Common_Prefix (A, B : HBNF_Lookahead.Bounds) return Natural is
-               LA : constant Natural := A.Last - A.First + 1;
-               LB : constant Natural := B.Last - B.First + 1;
-               M  : Natural := 0;
+            --  The top-level node of the plan that begins with alternative Br, 0 if none.
+            function Top_At (Br : Natural) return Natural is
+               At_Br : Natural := 1;
             begin
-               while M < LA and then M < LB loop
-                  declare
-                     X : constant Element_Access := Els (A.First + M);
-                     Y : constant Element_Access := Els (B.First + M);
-                  begin
-                     exit when X.Kind /= Y.Kind or else X.Min /= 1 or else X.Max /= 1
-                       or else Y.Min /= 1 or else Y.Max /= 1;
-                     case X.Kind is
-                        when Name =>
-                           exit when X.Name /= Y.Name or else X.Args /= Y.Args;
-                        when Literal =>
-                           exit when X.Lit /= Y.Lit or else X.No_Case /= Y.No_Case;
-                        when others =>
-                           exit;
-                     end case;
-                  end;
-                  M := M + 1;
+               for U of Pl.Top loop
+                  if At_Br = Br then
+                     return U;
+                  end if;
+                  At_Br := At_Br + HBNF_Lookahead.Leaves (Pl, U);
                end loop;
-               return M;
-            end Common_Prefix;
+               return 0;
+            end Top_At;
 
-            function Has_Guard (B : Natural) return Boolean is
-              (Bs (B).Last + 1 <= N and then Els (Bs (B).Last + 1).Kind = Alt
-               and then Els (Bs (B).Last + 1).Guard /= 0);
-
-            --  The branches First_B .. Last_B share their first M elements: write them out once.
-            procedure Emit_Run (First_B, Last_B, M : Natural) is
-               Id : constant String := Label & Img (First_B);
+            --  The node U, reading its elements; Failg is where it goes when none of it matches, with
+            --  the position and what was set put back by whoever owns the label.  A run reads the
+            --  shared elements once, then tries its kids in turn, each given back to just after them.
+            procedure Emit_Node (U : Positive; Failg : String; Top : Boolean := False) is
+               Nd : constant HBNF_Lookahead.Unit := Pl.Units (U);
                Binds : constant Boolean := Ctx_On and then Rule_Binds (Owner);
             begin
-               Append (Buf, Ind & "size_t pf_" & Id & "_ = 0;");
-               Append (Buf, LF);
-               if Binds then
-                  Append (Buf, Ind & "hbnf_mark_t cm_" & Id & "_;");
-                  Append (Buf, LF);
-               end if;
-               Emit_Seq (Owner, Els, Bs (First_B).First, Bs (First_B).First + M - 1, Acc, Buf,
-                         "goto " & Label & "alt_fail_" & Img (Last_B) & ";", Ind,
-                         Ws, Lead_Ws => not Hoist);
-               Append (Buf, Ind & "pf_" & Id & "_ = p->pos;");
-               Append (Buf, LF);
-               if Binds then
-                  Append (Buf, Ind & "cm_" & Id & "_ = hbnf_mark();");
-                  Append (Buf, LF);
-               end if;
-               for B in First_B .. Last_B loop
+               if Nd.Kind in HBNF_Lookahead.Leaf then
                   declare
-                     SF : constant Natural := Bs (B).First + M;      --  this branch's own rest
-                     SL : constant Natural := Bs (B).Last;
+                     Br : constant Natural := Nd.Br;
                   begin
-                     if SF <= SL then
-                        Emit_Seq (Owner, Els, SF, SL, Acc, Buf,
-                                  (if B = Last_B
-                                   then "goto " & Label & "alt_fail_" & Img (Last_B) & ";"
-                                   else "goto " & Label & "sfail_" & Id & "_" & Img (B) & ";"),
-                                  Ind, Ws, Lead_Ws => True);
+                     if Nd.First <= Nd.Last then
+                        Emit_Seq (Owner, Els, Nd.First, Nd.Last, Acc, Buf, Failg, Ind, Ws, Lead_Ws => True);
                      end if;
                      if (Ast_On or else (Owner > 0 and then Is_Choice (Rules (Owner))))
-                       and then Natural (Alts.Length) >= B
+                       and then Natural (Alts.Length) >= Br
                      then
-                        Append (Buf, Ind & Acc & "_alt = " & To_String (Alts (B)) & ";");
+                        Append (Buf, Ind & Acc & "_alt = " & To_String (Alts (Br)) & ";");
                         Append (Buf, LF);
                      end if;
-                     if Kind_Prefix /= "" and then Bs (B).First <= Bs (B).Last
-                       and then Els (Bs (B).First).Kind = Literal
+                     if Kind_Prefix /= "" and then Bs (Br).First <= Bs (Br).Last
+                       and then Els (Bs (Br).First).Kind = Literal
                      then
                         Append (Buf, Fill ("c_alt_kind",
                           (H ("ind", Ind),
                            H ("acc", Acc),
                            H ("prefix", Kind_Prefix),
-                           H ("tag", Tag_Name (Leading_Tags (Els), Els (Bs (B).First).Lit)))));
+                           H ("tag", Tag_Name (Leading_Tags (Els), Els (Bs (Br).First).Lit)))));
                         Append (Buf, LF);
                      end if;
                      Append (Buf, Ind & "goto " & Ok & ";");
                      Append (Buf, LF);
-                     if B < Last_B then
-                        --  this branch's rest failed: back to just after the shared part
-                        Append (Buf, Label & "sfail_" & Id & "_" & Img (B) & ":");
-                        Append (Buf, LF);
-                        Append (Buf, Ind & "p->pos = pf_" & Id & "_;");
-                        if Binds then
-                           Append (Buf, " hbnf_reset (&cm_" & Id & "_);");
-                        end if;
-                        if SF <= SL then
-                           for F of Written_Fields (Els, SF, SL, False) loop
-                              Append (Buf, " memset(&" & Acc & To_String (F) & ", 0, sizeof "
-                                & Acc & To_String (F) & ");");
-                           end loop;
-                        end if;
-                        Append (Buf, Clears);
-                        Append (Buf, ";");
-                        Append (Buf, LF);
-                     end if;
                   end;
-               end loop;
-               Append (Buf, Label & "alt_fail_" & Img (Last_B) & ":");
-               Append (Buf, LF);
-               if Binds then
-                  --  the mark taken where the alternation began is for the branch after the run, if there is one
-                  Append (Buf, Ind & "(void) " & To_String (Cx) & ";");
-                  Append (Buf, LF);
+                  return;
                end if;
-            end Emit_Run;
+               Run_Seq := Run_Seq + 1;
+               declare
+                  Id : constant String := Label & "r" & Img (Run_Seq);
+               begin
+                  Append (Buf, Ind & "size_t pf_" & Id & "_ = 0;");
+                  Append (Buf, LF);
+                  if Binds then
+                     Append (Buf, Ind & "hbnf_mark_t cm_" & Id & "_;");
+                     Append (Buf, LF);
+                  end if;
+                  Emit_Seq (Owner, Els, Nd.First, Nd.Last, Acc, Buf, Failg, Ind, Ws,
+                            Lead_Ws => not (Top and then Hoist));
+                  Append (Buf, Ind & "pf_" & Id & "_ = p->pos;");
+                  Append (Buf, LF);
+                  if Binds then
+                     Append (Buf, Ind & "cm_" & Id & "_ = hbnf_mark();");
+                     Append (Buf, LF);
+                  end if;
+                  declare
+                     Q : Natural := 0;
+                     NK : constant Natural := Natural (Nd.Kids.Length);
+                  begin
+                     for Kid of Nd.Kids loop
+                        Q := Q + 1;
+                        if Q < NK then
+                           declare
+                              Fl : constant String := Label & "sfail_" & Id & "_" & Img (Q);
+                              Rs : HBNF_Lookahead.Bounds_Vectors.Vector;
+                           begin
+                              Emit_Node (Kid, "goto " & Fl & ";");
+                              --  this kid's rest failed: back to just after the shared part
+                              Append (Buf, Fl & ":");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "p->pos = pf_" & Id & "_;");
+                              if Binds then
+                                 Append (Buf, " hbnf_reset (&cm_" & Id & "_);");
+                              end if;
+                              HBNF_Lookahead.Unit_Ranges (Pl, Kid, Rs);
+                              --  (the kid's own shared part too: it is set again by the next kid's)
+                              declare
+                                 Done : String_Vectors.Vector;
+                              begin
+                                 for Rg of Rs loop
+                                    if Rg.First <= Rg.Last then
+                                       for F of Written_Fields (Els, Rg.First, Rg.Last, False) loop
+                                          if not Done.Contains (F) then
+                                             Done.Append (F);
+                                             Append (Buf, " memset(&" & Acc & To_String (F) & ", 0, sizeof "
+                                               & Acc & To_String (F) & ");");
+                                          end if;
+                                       end loop;
+                                    end if;
+                                 end loop;
+                              end;
+                              Append (Buf, Clears);
+                              Append (Buf, ";");
+                              Append (Buf, LF);
+                           end;
+                        else
+                           Emit_Node (Kid, Failg);
+                        end if;
+                     end loop;
+                  end;
+               end;
+            end Emit_Node;
 
             begin
             for K in 1 .. N + 1 loop
@@ -6440,42 +6448,26 @@ package body HBNF_C is
                      end if;
                   end if;
                   --  a run of branches with a shared beginning is written out once
-                  if not Fork and then not Disp and then LBr < NBr
-                    and then Bs (LBr).First = LSt and then not Has_Guard (LBr)
+                  if Bs (LBr).First = LSt and then Top_At (LBr) /= 0
+                    and then Pl.Units (Top_At (LBr)).Kind in HBNF_Lookahead.Run
                   then
                      declare
-                        M    : Natural := Common_Prefix (Bs (LBr), Bs (LBr + 1));
-                        Last : Natural := LBr;
+                        U    : constant Positive := Top_At (LBr);
+                        Last : constant Natural := LBr + HBNF_Lookahead.Leaves (Pl, U) - 1;
                      begin
-                        if M >= 1 and then Bs (LBr).Last - Bs (LBr).First + 1 > M
-                          and then not Has_Guard (LBr + 1)
-                        then
-                           Last := LBr + 1;
-                           while Last < NBr
-                             and then Bs (Last).Last - Bs (Last).First + 1 > M     --  one that is only the shared part ends the run
-                             and then not Has_Guard (Last)
-                             and then Common_Prefix (Bs (LBr), Bs (Last + 1)) >= M
-                           loop
-                              Last := Last + 1;
-                           end loop;
-                           --  A block (a context test, %as, %num) belongs to the element before it, and
-                           --  the two are written together: the shared part stops short of one.
-                           while M >= 1
-                             and then (for some B in LBr .. Last =>
-                                         Bs (B).First + M <= Bs (B).Last
-                                         and then Els (Bs (B).First + M).Kind = Block)
-                           loop
-                              M := M - 1;
-                           end loop;
-                           if M >= 1 then
-                              Emit_Run (LBr, Last, M);
-                              PSt := Bs (Last).First;
-                              PEn := Bs (Last).Last;
-                              Skip_Until := Bs (Last).Last + 1;
-                              LSt := Bs (Last).Last + 2;
-                              LBr := Last;
-                           end if;
+                        Emit_Node (U, "goto " & Label & "alt_fail_" & Img (Last) & ";", Top => True);
+                        Append (Buf, Label & "alt_fail_" & Img (Last) & ":");
+                        Append (Buf, LF);
+                        if Ctx_On and then Rule_Binds (Owner) then
+                           --  the mark taken where the alternation began is for the branch after the run, if there is one
+                           Append (Buf, Ind & "(void) " & To_String (Cx) & ";");
+                           Append (Buf, LF);
                         end if;
+                        PSt := Bs (Last).First;
+                        PEn := Bs (Last).Last;
+                        Skip_Until := Bs (Last).Last + 1;
+                        LSt := Bs (Last).Last + 2;
+                        LBr := Last;
                      end;
                   end if;
                   if Skip_Until >= K then
@@ -6992,122 +6984,66 @@ package body HBNF_C is
                   Append (Buf, Ind & "  default: " & Fail & LF & Ind & "  }" & LF);
                end if;
                declare
-                  --  The alternatives of V (F .. L): where each begins and ends.
-                  NB   : Natural := 0;
-                  BF   : array (1 .. Alts) of Natural;
-                  BL   : array (1 .. Alts) of Natural;
-                  St2  : Natural := F;
-                  B    : Natural := 1;
+                  --  Alternatives that begin alike read the shared elements once, then try their own rests
+                  --  in the order written (HBNF_Lookahead.Factor; a run may hold runs).
+                  Pl : constant HBNF_Lookahead.Plan := HBNF_Lookahead.Factor (V, F, L, Enable => not Dispatch);
+                  NTop : constant Natural := Natural (Pl.Top.Length);
+                  Pn : Natural := 0;
 
-                  --  The leading elements two alternatives share: names and literals read the same way.
-                  function Shared (X, Y : Positive) return Natural is
-                     LX : constant Natural := BL (X) - BF (X) + 1;
-                     LY : constant Natural := BL (Y) - BF (Y) + 1;
-                     M  : Natural := 0;
+                  --  Node U; Failg is where it goes when none of it matches.
+                  procedure Node (Un : Positive; Failg : String; Ind2 : String) is
+                     Nd : constant HBNF_Lookahead.Unit := Pl.Units (Un);
                   begin
-                     while M < LX and then M < LY loop
-                        declare
-                           P : constant Element_Access := V (BF (X) + M);
-                           Q : constant Element_Access := V (BF (Y) + M);
-                        begin
-                           exit when P.Kind /= Q.Kind or else P.Min /= 1 or else P.Max /= 1
-                             or else Q.Min /= 1 or else Q.Max /= 1;
-                           case P.Kind is
-                              when Name => exit when P.Name /= Q.Name or else P.Args /= Q.Args;
-                              when Literal => exit when P.Lit /= Q.Lit or else P.No_Case /= Q.No_Case;
-                              when others => exit;
-                           end case;
-                        end;
-                        M := M + 1;
-                     end loop;
-                     return M;
-                  end Shared;
-
-                  function Guarded (X : Positive) return Boolean is
-                    (BL (X) + 1 <= L and then V (BL (X) + 1).Kind = Alt and then V (BL (X) + 1).Guard /= 0);
-               begin
-                  for K in F .. L + 1 loop
-                     if K > L or else V (K).Kind = Alt then
-                        NB := NB + 1;
-                        BF (NB) := St2;
-                        BL (NB) := K - 1;
-                        St2 := K + 1;
+                     if Nd.Kind in HBNF_Lookahead.Leaf then
+                        Append (Buf, Ind2 & "{" & LF);
+                        Skip_Done := Dispatch;
+                        Seq_Range (V, Nd.First, Nd.Last, Failg, Ind2 & "  ");
+                        Skip_Done := False;
+                        Append (Buf, Ind2 & "  goto done" & Id & ";" & LF);
+                        Append (Buf, Ind2 & "}" & LF);
+                        return;
                      end if;
-                  end loop;
-                  while B <= NB loop
+                     Pn := Pn + 1;
+                     declare
+                        Pf : constant String := "pf" & Id & "_" & Img (Pn);
+                        Ln : U;
+                        Q  : Natural := 0;
+                        NK : constant Natural := Natural (Nd.Kids.Length);
+                        Mine : constant Natural := Pn;
+                     begin
+                        Append (Buf, Ind2 & "{" & LF);
+                        Seq_Range (V, Nd.First, Nd.Last, Failg, Ind2 & "  ");
+                        Ln := Last_Name;
+                        Append (Buf, Ind2 & "  size_t " & Pf & " = p->pos;  " & Save ("p" & Id & "_" & Img (Mine)) & LF);
+                        for Kid of Nd.Kids loop
+                           Q := Q + 1;
+                           Last_Name := Ln;
+                           if Q < NK then
+                              Node (Kid, "goto pn" & Id & "_" & Img (Mine) & "_" & Img (Q) & ";", Ind2 & "  ");
+                              Append (Buf, Ind2 & "  pn" & Id & "_" & Img (Mine) & "_" & Img (Q) & ": p->pos = " & Pf & "; "
+                                & Restore ("p" & Id & "_" & Img (Mine)) & LF);
+                           else
+                              Node (Kid, Failg, Ind2 & "  ");
+                           end if;
+                        end loop;
+                        Append (Buf, Ind2 & "}" & LF);
+                     end;
+                  end Node;
+               begin
+                  for Tn of Pl.Top loop
                      N := N + 1;
                      declare
-                        RE : Natural := B;       --  the last alternative of the run that begins here
-                        M  : Natural := 0;
+                        Last : constant Boolean := N = NTop;
+                        Next : constant String := "goto alt" & Id & "_" & Img (N) & ";";
                      begin
-                        if not Dispatch and then B < NB and then not Guarded (B) and then not Guarded (B + 1) then
-                           M := Shared (B, B + 1);
-                           if M >= 1 and then BL (B) - BF (B) + 1 > M then
-                              RE := B + 1;
-                              while RE < NB and then BL (RE) - BF (RE) + 1 > M and then not Guarded (RE)
-                                and then Shared (B, RE + 1) >= M and then not Guarded (RE + 1)
-                              loop
-                                 RE := RE + 1;
-                              end loop;
-                              --  a context test, number or %as belongs to the element before it
-                              while M >= 1
-                                and then (for some C in B .. RE =>
-                                            BF (C) + M <= BL (C) and then V (BF (C) + M).Kind = Block)
-                              loop
-                                 M := M - 1;
-                              end loop;
-                              if M < 1 then
-                                 RE := B;
-                              end if;
-                           end if;
+                        if Dispatch then
+                           Append (Buf, Ind & "  br" & Id & "_" & Img (N) & ": ;" & LF);
                         end if;
-                        declare
-                           Last : constant Boolean := RE = NB;
-                           Next : constant String := "goto alt" & Id & "_" & Img (N) & ";";
-                           Out_Fail : constant String := (if Last or else Dispatch then Fail else Next);
-                        begin
-                           if Dispatch then
-                              Append (Buf, Ind & "  br" & Id & "_" & Img (N) & ": ;" & LF);
-                           end if;
-                           if RE = B then
-                              Append (Buf, Ind & "  {" & LF);
-                              Skip_Done := Dispatch;
-                              Seq_Range (V, BF (B), BL (B), Out_Fail, Ind & "    ");
-                              Skip_Done := False;
-                              Append (Buf, Ind & "    goto done" & Id & ";" & LF);
-                              Append (Buf, Ind & "  }" & LF);
-                           else
-                              --  the shared beginning once, then each alternative's own rest in turn
-                              declare
-                                 Pf : constant String := "pf" & Id & "_" & Img (N);
-                                 LN : U;
-                              begin
-                                 Append (Buf, Ind & "  {" & LF);
-                                 Seq_Range (V, BF (B), BF (B) + M - 1, Out_Fail, Ind & "    ");
-                                 LN := Last_Name;
-                                 Append (Buf, Ind & "    size_t " & Pf & " = p->pos;  " & Save ("p" & Id & "_" & Img (N)) & LF);
-                                 for C in B .. RE loop
-                                    Last_Name := LN;
-                                    Append (Buf, Ind & "    {" & LF);
-                                    Seq_Range (V, BF (C) + M, BL (C),
-                                               (if C = RE then Out_Fail else "goto pn" & Id & "_" & Img (N) & "_" & Img (C) & ";"),
-                                               Ind & "      ");
-                                    Append (Buf, Ind & "      goto done" & Id & ";" & LF);
-                                    Append (Buf, Ind & "    }" & LF);
-                                    if C < RE then
-                                       Append (Buf, Ind & "    pn" & Id & "_" & Img (N) & "_" & Img (C) & ": p->pos = " & Pf & "; "
-                                         & Restore ("p" & Id & "_" & Img (N)) & LF);
-                                    end if;
-                                 end loop;
-                                 Append (Buf, Ind & "  }" & LF);
-                              end;
-                           end if;
-                           if not Last and then not Dispatch then
-                              Append (Buf, Ind & "  alt" & Id & "_" & Img (N) & ": p->pos = as"
-                                & Id & "; " & Restore ("a" & Id) & LF);
-                           end if;
-                        end;
-                        B := RE + 1;
+                        Node (Tn, (if Last or else Dispatch then Fail else Next), Ind & "  ");
+                        if not Last and then not Dispatch then
+                           Append (Buf, Ind & "  alt" & Id & "_" & Img (N) & ": p->pos = as"
+                             & Id & "; " & Restore ("a" & Id) & LF);
+                        end if;
                      end;
                   end loop;
                end;

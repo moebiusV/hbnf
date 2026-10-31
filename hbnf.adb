@@ -11,6 +11,7 @@ with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Mustache;
 with HBNF_Grammar;
+with HBNF_Lookahead;
 with HBNF_Compilable;
 with HBNF_Tree_Sitter;
 with HBNF_C;
@@ -167,7 +168,7 @@ procedure Hbnf is
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
-        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--layout=ast|tape|NAME] [--templates=DIR]");
+        ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--forks] [--quiet-forks] [--no-compact] [--lint] [--no-views] [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE] [--writer] [--compare] [--root=RULE] [--dialect=NAME] [--abnf] [--ebnf] [--prefix=NAME_] [--layout=ast|tape|NAME] [--templates=DIR]");
    end Usage;
 
 begin
@@ -218,6 +219,10 @@ begin
             HBNF_C.Set_Choice (False);
          elsif A = "--compact" then
             Compact := True;
+         elsif A = "--lint" then
+            HBNF_Grammar.Set_Lint (True);
+         elsif A = "--no-factor" then
+            HBNF_Lookahead.Set_Factoring (False);
          elsif A = "--no-ladder" then
             HBNF_C.Set_Ladder (False);
          elsif A = "--no-compact" then
