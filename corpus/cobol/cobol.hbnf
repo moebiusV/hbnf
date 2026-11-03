@@ -182,7 +182,8 @@ plain-clause           = special-names-clause | "VOLATILE" | "SAME" "AS" identif
                        | "ANY" ( "LENGTH" | "NUMERIC" )
                        | "SYNC" | "DYNAMIC" "LENGTH" [ identifier ] [ "LIMIT" is operand ]
                        | "UNSIGNED" | "SIGNED"
-picture-clause         = ( "PICTURE" | "PIC" ) is picture-string [ "DEPENDING" on identifier ]
+; a picture may end in a period of its own (`PIC 999.` then the entry's `.`): that picture is the one whose period another follows
+picture-clause         = ( "PICTURE" | "PIC" ) is ( picture-with-period &"." | picture-string ) [ "DEPENDING" on identifier ]
 usage-clause           = "USAGE" is ( usage | user-word ) | usage
 usage                  = "DISPLAY" | "BIT" | "HANDLE" [ "OF" user-word ] | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "POINTER" | "PROCEDURE-POINTER" | "FUNCTION-POINTER"
                        | "PROGRAM-POINTER"
@@ -227,7 +228,7 @@ statements             = 1*statement
 
 ; ---- statements ----
 statement = transform-statement | xml-statement | json-statement | ready-statement | accept-statement | add-statement | alter-statement | call-statement | cancel-statement | close-statement
-          | compute-statement | continue-statement | delete-statement | display-statement | divide-statement
+          | compute-statement | continue-statement | delete-statement | display-message | display-statement | divide-statement
           | evaluate-statement | exit-statement | goback-statement | go-to-statement | if-statement
           | initialize-statement | inspect-statement | move-statement | multiply-statement | open-statement
           | perform-statement | read-statement | rewrite-statement | search-statement | set-statement
@@ -266,7 +267,7 @@ merge-statement    = "MERGE" file-name 1*( on ( "ASCENDING" | "DESCENDING" ) key
                      ( "OUTPUT" "PROCEDURE" is procedure-range | "GIVING" 1*file-name )
 release-statement  = "RELEASE" user-word [ "FROM" operand ]
 return-statement   = "RETURN" file-name [ "RECORD" ] [ "INTO" identifier ] end-phrases scope-end("RETURN")
-allocate-statement = "ALLOCATE" ( operand "CHARACTERS" | identifier ) [ "INITIALIZED" [ "TO" literal ] ] [ "RETURNING" identifier ]
+allocate-statement = "ALLOCATE" ( operand "CHARACTERS" | identifier ) [ "INITIALIZED" [ "TO" literal ] ] [ "LOC" numeric-literal ] [ "RETURNING" identifier ]
 free-statement     = "FREE" 1*( identifier | "ADDRESS" "OF" identifier )
 exhibit-statement  = "EXHIBIT" [ "NAMED" | "CHANGED" ] 1*operand
 initiate-statement  = "INITIATE" 1*user-word
@@ -282,6 +283,8 @@ procedure-name     = paragraph-name [ ( "IN" | "OF" ) section-name ]
 accept-statement   = "ACCEPT" ( "OMITTED" | identifier ) [ "FROM" ( "DATE" [ "YYYYMMDD" ] | "DAY" [ "YYYYDDD" ] | "DAY-OF-WEEK" | "TIME"
                                                   | "COMMAND-LINE" | "ESCAPE" [ "KEY" ] | "ENVIRONMENT-VALUE" | "ENVIRONMENT" operand | user-word ) ]
                      *screen-phrase [ on-exception-phrases ] scope-end("ACCEPT")
+; A message box (GnuCOBOL's graphical extension): its attributes follow the text.
+display-message    = "DISPLAY" "MESSAGE" [ "BOX" ] 1*operand *( ( "TITLE" | "TYPE" | "ICON" | "DEFAULT" ) ( "=" | is ) operand | "RETURNING" identifier ) scope-end("DISPLAY")
 display-statement  = "DISPLAY" [ with "CONVERSION" ] ( 1*operand | "OMITTED" ) *( "UPON" ( device-name | user-word ) | with "NO" "ADVANCING" | screen-phrase ) [ on-exception-phrases ] scope-end("DISPLAY")
 move-statement     = "MOVE" ( [ "CORRESPONDING" | "CORR" ] sending "TO" 1*identifier )
 sending            = length-of | literal | identifier
