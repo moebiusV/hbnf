@@ -109,8 +109,10 @@ file-name               = user-word
 
 ; ---- the data division ----
 data-division          = "DATA" "DIVISION" [ "." ] [ file-section ] [ working-storage-section ] [ local-storage-section ]
-                         [ linkage-section ] [ report-section ] [ screen-section ]
+                         [ communication-section ] [ linkage-section ] [ report-section ] [ screen-section ]
 file-section           = "FILE" "SECTION" "." *file-description
+; the communication section (a CD entry is words to its period, as an I-O-CONTROL entry is)
+communication-section  = "COMMUNICATION" "SECTION" "." *( "CD" 1*entry-word "." *data-description-entry )
 file-description       = ( "FD" | "SD" ) file-name *file-clause "." *data-description-entry
 file-clause            = is ( "EXTERNAL" | "GLOBAL" )
                        | "BLOCK" [ "CONTAINS" ] numeric-literal [ "TO" numeric-literal ] [ "RECORDS" | "CHARACTERS" ]
@@ -229,7 +231,7 @@ statement = transform-statement | xml-statement | json-statement | ready-stateme
           | evaluate-statement | exit-statement | goback-statement | go-to-statement | if-statement
           | initialize-statement | inspect-statement | move-statement | multiply-statement | open-statement
           | perform-statement | read-statement | rewrite-statement | search-statement | set-statement
-          | start-statement | unlock-statement | stop-statement | string-statement | subtract-statement | unstring-statement
+          | start-statement | unlock-statement | enable-statement | purge-statement | stop-statement | string-statement | subtract-statement | unstring-statement
           | write-statement | entry-statement | sort-statement | merge-statement | release-statement | return-statement
           | allocate-statement | free-statement | exhibit-statement | initiate-statement | generate-statement | terminate-statement
           | suppress-statement | next-sentence
@@ -322,7 +324,7 @@ call-statement     = "CALL" [ "STATIC" | "STDCALL" ] operand [ "USING" 1*using-a
 using-argument     = [ by ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand [ "SIZE" ( "DEFAULT" | is operand ) ] )
 cancel-statement   = "CANCEL" 1*operand
 on-exception-phrases = phrases(on ( "EXCEPTION" | "OVERFLOW" | "ESCAPE" ))
-open-statement     = "OPEN" 1*( [ "EXCLUSIVE" ] ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*( file-name *( with ( "LOCK" | "NO" "REWIND" ) ) ) )
+open-statement     = "OPEN" 1*( [ "EXCLUSIVE" ] ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*( file-name *( with ( "LOCK" | "NO" "REWIND" ) | "FOR" "LOCK" ) [ "ALLOWING" ( "ALL" | "READERS" | "UPDATERS" | "NO" [ "OTHERS" ] ) ] ) )
 close-statement    = "CLOSE" 1*( file-name [ "REEL" | "UNIT" ] [ "FOR" "REMOVAL" ] [ with ( "LOCK" | "NO" "REWIND" ) ] )
 read-statement     = "READ" file-name [ "NEXT" | "PREVIOUS" ] [ "RECORD" ] [ "INTO" identifier ] [ with ( "NO" "LOCK" | "LOCK" | "KEPT" "LOCK" ) ] [ "KEY" is identifier ]
                      [ end-phrases ] [ invalid-key-phrases ] scope-end("READ")
@@ -331,6 +333,8 @@ write-statement    = "WRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] 
 end-of-page-phrases = phrases(at ( "END-OF-PAGE" | "EOP" ))
 rewrite-statement  = "REWRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ invalid-key-phrases ] scope-end("REWRITE")
 delete-statement   = "DELETE" ( "FILE" 1*file-name | file-name [ "RECORD" ] [ invalid-key-phrases ] scope-end("DELETE") )
+enable-statement   = ( "ENABLE" | "DISABLE" ) ( [ "INPUT" ] [ "TERMINAL" ] | "I-O" "TERMINAL" | "OUTPUT" ) identifier [ with "KEY" operand ]
+purge-statement    = "PURGE" identifier
 unlock-statement   = "UNLOCK" file-name [ "RECORD" | "RECORDS" ]
 start-statement    = "START" file-name [ "FIRST" | "LAST" ] [ "KEY" is relation-operator identifier ] [ invalid-key-phrases ] scope-end("START")
 end-phrases        = phrases("AT" "END")
@@ -372,7 +376,7 @@ subscript      = "ALL" | arithmetic-expression
 reference-modification = "(" arithmetic-expression ":" [ arithmetic-expression ] ")"
 function-call  = "FUNCTION" function-name [ "(" *argument ")" ]
 argument       = arithmetic-expression | "TRAILING" | "LEADING"
-length-of      = ( "LENGTH" | "SIZE" ) "OF" ( identifier | literal ) | "ADDRESS" "OF" identifier
+length-of      = ( "LENGTH" | "SIZE" ) [ "OF" ] ( identifier | literal ) | "ADDRESS" "OF" identifier
 literal        = numeric-literal | nonnumeric-literal *( "&" nonnumeric-literal ) | figurative-constant
 figurative-constant = [ "ALL" ] ( "ZEROES" | "ZEROS" | "ZERO" | "SPACES" | "SPACE" | "HIGH-VALUES" | "HIGH-VALUE"
                                 | "LOW-VALUES" | "LOW-VALUE" | "QUOTES" | "QUOTE" | "NULLS" | "NULL" )
