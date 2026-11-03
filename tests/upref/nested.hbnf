@@ -1,0 +1,12 @@
+; A closing tag by a helper rule: `close` reads the tag of the element it is called from.  An element
+; inside an element keeps its own t, the nearest one, so <a><b></b></a> and not <a><b></a></b>.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc     = *node
+node    = element / text
+element = "<" name as t ">" *node close ">"
+close   = "</" $t^
+name    = ALPHA *( ALPHA / DIGIT )
+text    = 1*~"<"

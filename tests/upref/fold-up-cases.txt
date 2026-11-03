@@ -1,0 +1,4 @@
+ok	ab = ab;
+ok	ab = AB;
+ok	Ab = aB;ab=AB;
+bad	ab = ac;

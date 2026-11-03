@@ -278,12 +278,21 @@ package body HBNF_Grammar is
 
    Scope_Sep : constant String := "--";
 
+   --  `^.name` written in a grammar included `as` a scope, where the including grammar is the root:
+   --  the rule is the plain `name`, which must exist when every file is read.
+   type Up_Root_Ref is record
+      Base, Scope, Written, Where : Unbounded_String;
+   end record;
+   package Up_Root_Vectors is new Ada.Containers.Vectors (Positive, Up_Root_Ref);
+   Up_Root_Refs : Up_Root_Vectors.Vector;
+
    --  `=> grammar(x)`: the scopes some alternative switches to by name
    --  (Switch_Static), whether one switches to a scope named by matched text
    --  (any scope then may be a target), and whether a switch is used at all.
    Switch_Seen   : Boolean := False;
    Tag_Switch    : Boolean := False;
    Backref_Seen  : Boolean := False;
+   Ups_Done      : array (1 .. 2) of Boolean := (others => False);   --  Resolve_Ups, per phase
    function Uses_Backref return Boolean is (Backref_Seen);
    Switch_Static : Path_Sets.Set;
 
@@ -807,8 +816,10 @@ package body HBNF_Grammar is
       Scope_Defs.Clear;
       Switch_Seen := False;
       Tag_Switch := False;
+      Ups_Done := (others => False);
       Switch_Static.Clear;
       Rule_Where.Clear;
+      Up_Root_Refs.Clear;
       Pending_Scope := Null_Unbounded_String;
       Current_File := Null_Unbounded_String;
       First_Rule_Line := 0;
@@ -1241,6 +1252,16 @@ package body HBNF_Grammar is
       --  The `+` at J joins when a literal or a name is before it and a
       --  literal or a name after it, on the same line: `"END-" + K`.  Any
       --  other `+` is not hbnf's, and is refused as an unexpected character.
+      --  `^.` from K on, repeated, and then a name: the start of `^.rule`.
+      function Up_Path_At (K : Natural) return Boolean is
+         J : Natural := K;
+      begin
+         while J < Text'Last and then Text (J) = '^' and then Text (J + 1) = '.' loop
+            J := J + 2;
+         end loop;
+         return J > K and then J <= Text'Last and then Name_Start (Text (J));
+      end Up_Path_At;
+
       function Joins_Here (J : Positive) return Boolean is
          K : Natural := J + 1;
       begin
@@ -2426,10 +2447,15 @@ package body HBNF_Grammar is
                         Regex_Next := (for some C of Flags => C = 'r');
                      end;
                   end;
-               elsif Name_Start (Text (I)) then
+               elsif Name_Start (Text (I)) or else Up_Path_At (I) then
                   declare
                      Start : constant Positive := I;
                   begin
+                     --  `^.rule`, `^.^.rule`: the rule of the grammar that includes this
+                     --  one, one level out for each `^.`
+                     while Up_Path_At (I) and then Text (I) = '^' loop
+                        I := I + 2;
+                     end loop;
                      --  `scope.rule`, and `a.b.rule`: a dot between names is
                      --  the scope operator (Scoped reads it), never a part of
                      --  a name.  EBNF ends a rule with `.`, so it has none.
@@ -2520,6 +2546,17 @@ package body HBNF_Grammar is
                      while I <= Text'Last and then Name_Char (Text (I)) loop
                         I := I + 1;
                      end loop;
+                     --  `$K^` is the capture of the nearest enclosing rule that kept
+                     --  K, `$K^R` that of the enclosing rule R: the up step stays
+                     --  with the name, as `K^` and `K^R`.
+                     if I <= Text'Last and then Text (I) = '^' then
+                        I := I + 1;
+                        if I <= Text'Last and then Name_Start (Text (I)) then
+                           while I <= Text'Last and then Name_Char (Text (I)) loop
+                              I := I + 1;
+                           end loop;
+                        end if;
+                     end if;
                      Emit (T_Pct, "same");
                      Col := Col + 1;
                      Emit (T_Name, Text (Start .. I - 1));
@@ -4374,6 +4411,77 @@ package body HBNF_Grammar is
       return Term;
    end Render_Guard;
 
+   function Frame_Size (Rule_Name : String) return Natural is
+      S : constant String := To_String (Frame_Of (Rule_Name).Slots);
+      N : Natural := (if S'Length = 0 then 0 else 1);
+   begin
+      for C of S loop
+         if C = ' ' then
+            N := N + 1;
+         end if;
+      end loop;
+      return N;
+   end Frame_Size;
+
+   function Up_Level (Ctx : String) return Integer is
+   begin
+      if Ctx'Length > 0 and then Ctx (Ctx'First) = '~' then
+         return 0;
+      end if;
+      for C of Ctx loop
+         if C = '^' then
+            return 1;
+         end if;
+      end loop;
+      return -1;
+   end Up_Level;
+
+   function Up_Name (Ctx : String) return String is
+      F : Natural := Ctx'First;
+      L : Natural := Ctx'Last;
+   begin
+      if F <= L and then Ctx (F) = '~' then
+         F := F + 1;
+      end if;
+      for I in F .. L loop
+         if Ctx (I) = '^' then
+            return Ctx (F .. I - 1);
+         end if;
+      end loop;
+      return Ctx (F .. L);
+   end Up_Name;
+
+   function Up_Via (Ctx : String) return String is
+   begin
+      for I in Ctx'Range loop
+         if Ctx (I) = '^' then
+            return Ctx (I + 1 .. Ctx'Last);
+         end if;
+      end loop;
+      return "";
+   end Up_Via;
+
+   function Up_Slot (Tag : String; Via : String; Part : Character) return String is
+      function Clean (S : String) return String is
+         T : String := S;
+      begin
+         for C of T loop
+            if C = '-' then
+               C := '_';
+            end if;
+         end loop;
+         return T;
+      end Clean;
+   begin
+      return (if Via = "~" then "upo_" & Clean (Tag) & "_" & Part
+              elsif Via = "" then "upn_" & Clean (Tag) & "_" & Part
+              else "upr_" & Clean (Tag) & "_" & Clean (Via) & "_" & Part);
+   end Up_Slot;
+
+   function Up_Slot_Of (Ctx : String; Part : Character) return String is
+     (if Up_Level (Ctx) = 1 then Up_Slot (Up_Name (Ctx), Up_Via (Ctx), Part)
+      else Up_Slot (Up_Name (Ctx), "~", Part));
+
    function Slot_Of (Rule_Name, Var : String) return Integer is
       S     : constant String := To_String (Frame_Of (Rule_Name).Slots);
       Start : Positive := S'First;
@@ -4420,7 +4528,10 @@ package body HBNF_Grammar is
       if W = "not" or else W = "and" then
          --  `!x`, `&x`: x is a literal, a rule (a token, or a phrase that is parsed and thrown away), or alternatives of those.
          declare
-            A : constant Element_Access := Parse_Atom (P);
+            --  `!$K^`: the text kept as K, again, is what must not (or must) follow
+            A : constant Element_Access :=
+              (if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "same"
+               then Parse_Context_Op (P) else Parse_Atom (P));
          begin
             E.Op := (if W = "not" then B_Not else B_And);
             if A.Kind = Group then
@@ -4429,7 +4540,9 @@ package body HBNF_Grammar is
                E.Look.Append (A);
             end if;
             for X of E.Look loop
-               if not (X.Kind in Literal | Name | Alt)
+               if X.Kind = Block and then X.Op = B_Same and then X.Path = Null_Unbounded_String then
+                  null;
+               elsif not (X.Kind in Literal | Name | Alt)
                  or else (X.Kind in Literal | Name
                           and then (X.Min /= 1 or else X.Max /= 1))
                then
@@ -4451,6 +4564,11 @@ package body HBNF_Grammar is
          end if;
          E.Op := (if W = "as" then B_As else B_Same);
          E.Ctx := Cur (P).Text;
+         --  `$K` compares as the element it repeats matched; where that element has no flag of
+         --  its own, as the file says (Resolve_Captures reads the flag; 2 ignores case)
+         if W = "same" and then File_No_Case then
+            E.Id := 2;
+         end if;
          Backref_Seen := True;
          Next (P);
       elsif W = "spaces" or else W = "col" or else W = "num" then
@@ -5153,8 +5271,10 @@ package body HBNF_Grammar is
                     and then To_String (E.Ctx) = Tag
                     and then (E.Op = B_Same or else E.Path /= Null_Unbounded_String)));
 
-      procedure Walk (Els : in out Element_Vectors.Vector; Outer : Tag_Maps.Map) is
+      procedure Walk (Els : in out Element_Vectors.Vector; Outer : Tag_Maps.Map;
+                      Outer_Fold : Tag_Maps.Map := Tag_Maps.Empty_Map) is
          Me    : constant Natural := Walks + 1;
+         Fold  : Tag_Maps.Map := Outer_Fold; --  tag -> 1 matched exactly, 2 ignoring case (a literal kept)
          Env   : Tag_Maps.Map := Outer;      --  tag -> index in Bindings
          Bound : Tag_Sets.Set;               --  tags kept in this sequence so far
          First : Natural := 1;               --  where the sequence begins
@@ -5167,13 +5287,19 @@ package body HBNF_Grammar is
                case E.Kind is
                   when Alt =>
                      Env := Outer;
+                     Fold := Outer_Fold;
                      Bound.Clear;
                      First := K + 1;
                   when Group =>
-                     Walk (E.Items, Env);
+                     Walk (E.Items, Env, Fold);
                   when Block =>
                      if E.Op = B_As then
                         Bound.Include (To_String (E.Ctx));
+                        if K > First and then Els (K - 1).Kind = Literal then
+                           Fold.Include (To_String (E.Ctx), (if Els (K - 1).No_Case then 2 else 1));
+                        else
+                           Fold.Exclude (To_String (E.Ctx));
+                        end if;
                         if K > First and then Els (K - 1).Kind = Literal
                           and then Els (K - 1).Min = 1 and then Els (K - 1).Max = 1
                         then
@@ -5185,7 +5311,15 @@ package body HBNF_Grammar is
                         else
                            Env.Exclude (To_String (E.Ctx));
                         end if;
-                     elsif E.Op = B_Same and then E.Path /= Null_Unbounded_String then
+                     elsif E.Op = B_Same and then E.Path = Null_Unbounded_String
+                       and then Up_Level (To_String (E.Ctx)) < 0
+                       and then Fold.Contains (To_String (E.Ctx))
+                     then
+                        --  the flag of the literal that was kept
+                        E.Id := Fold.Element (To_String (E.Ctx));
+                     elsif E.Op = B_Same and then E.Path /= Null_Unbounded_String
+                       and then Up_Level (To_String (E.Ctx)) < 0
+                     then
                         declare
                            Tag : constant String := To_String (E.Ctx);
                            Hit : constant Boolean := Env.Contains (Tag);
@@ -5206,15 +5340,6 @@ package body HBNF_Grammar is
                                  B.Resolved := True;
                                  Bindings.Replace_Element (Env.Element (Tag), B);
                               end;
-                           elsif not Bound.Contains (Tag) then
-                              Fail ("rule `" & Spelled (To_String (Rule_Now)) & "`: `"""
-                                    & To_String (E.Path) & """ + $" & Tag
-                                    & "`: no `x as " & Tag & "` stands earlier in the "
-                                    & "sequence it is in.  A group, an option or a "
-                                    & "repetition is a sequence of its own, so a capture "
-                                    & "made outside it is not seen inside it unless it "
-                                    & "is kept from one fixed literal (`""ADD"" as " & Tag
-                                    & "`); write the capture in the same sequence");
                            end if;
                         end;
                      end if;
@@ -5247,6 +5372,705 @@ package body HBNF_Grammar is
          Walk (Rules (J).Pattern, Tag_Maps.Empty_Map);
       end loop;
    end Resolve_Captures;
+
+   --  Up references, `$K^` and `$K^R` (ABNF.md, CONTEXTS.md section 25): the
+   --  capture K of the nearest enclosing rule that kept it, or of the enclosing
+   --  rule R.  An up reference is an implicit parameter, worked out here when the
+   --  grammar is read, not a scope the parser keeps.  For every rule that holds
+   --  one, and every rule between it and the rule that kept K, the capture is
+   --  passed down the call, so a backend sees an ordinary frame of numbers (the
+   --  offset and the length of the text, `Up_Slot`), as it does for `%col` and
+   --  `x %num j`.  A parameter is a key `K^R` (R empty: the nearest).
+   --
+   --  Two phases.  Up_Static runs before the hyperrules are expanded: when K is
+   --  kept from one fixed literal at every call that passes it down
+   --  (`"ADD" as K ... scope-end`), the callee is made a hyperrule of the word
+   --  K, `scope-end(K)`, called `scope-end("ADD")`, and Expand_Params does the
+   --  rest as it does for a rule written that way.  Up_Dynamic runs after it,
+   --  and gives what is left a frame of numbers; it also lets a plain `$K` be
+   --  read in a group, an option, a repetition or a lookahead, which are rules
+   --  of their own and cannot see the locals of the rule that kept K.
+   type Up_Phase is (Up_Static, Up_Dynamic);
+
+   procedure Resolve_Ups (Rules : in out Rule_Vectors.Vector; Phase : Up_Phase) is
+      subtype U is Unbounded_String;
+      package Tag_Sets is new Ada.Containers.Indefinite_Ordered_Sets (String);
+      package Tag_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, String);
+      package Name_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, Positive);
+      package Set_Vectors is new Ada.Containers.Vectors (Positive, Tag_Sets.Set, Tag_Sets."=");
+      package Pos_Vectors is new Ada.Containers.Vectors (Positive, Positive);
+
+      --  A use of a rule inside rule Caller: a Name element.
+      type Site is record
+         Caller, Callee : Positive;
+         Elem    : Element_Access;
+         Bound   : Tag_Sets.Set;     --  the tags kept before it, here or in a sequence around it
+         Lits    : Tag_Maps.Map;     --  tag -> "i" or "s" and the one literal it keeps; "" if none
+         In_Look : Boolean := False;
+      end record;
+      package Site_Vectors is new Ada.Containers.Vectors (Positive, Site);
+
+      --  A `$K^` or `$K^R` (Own False), or a plain `$K` that stands in a group or a lookahead.
+      type Use_Rec is record
+         Rule   : Positive;
+         Tag    : U;
+         Via    : U;
+         Own    : Boolean;
+         Elem   : Element_Access;
+         Holder : Element_Access;    --  the `!` or `&` it stands in, else null
+      end record;
+      package Use_Vectors is new Ada.Containers.Vectors (Positive, Use_Rec);
+
+      Idx    : Name_Maps.Map;
+      Sites  : Site_Vectors.Vector;
+      Uses   : Use_Vectors.Vector;
+      Framed : Set_Vectors.Vector;     --  per rule: tags whose own capture lives in the frame
+      Recv   : Set_Vectors.Vector;     --  per rule: the keys `K^R` it is passed
+      Any_Up : Boolean := False;
+      Props  : Tag_Maps.Map;           --  tag -> "1" kept exactly, "2" ignoring case, "3" either/unknown
+
+      function Base_Name (S : String) return String is
+      begin
+         for I in S'Range loop
+            if S (I) = '(' then
+               return S (S'First .. I - 1);
+            end if;
+         end loop;
+         return S;
+      end Base_Name;
+
+      function Quoted (S : String) return String is ("""" & S & """");
+
+      function Key_Tag (K : String) return String is
+      begin
+         for I in K'Range loop
+            if K (I) = '^' then
+               return K (K'First .. I - 1);
+            end if;
+         end loop;
+         return K;
+      end Key_Tag;
+
+      function Key_Via (K : String) return String is
+      begin
+         for I in K'Range loop
+            if K (I) = '^' then
+               return K (I + 1 .. K'Last);
+            end if;
+         end loop;
+         return "";
+      end Key_Via;
+
+      function Key_Shown (K : String) return String is ("$" & K);
+
+      --  Is the capture a call at S passes for Key the caller's own?
+      function Satisfied (S : Site; Key : String) return Boolean is
+        (S.Bound.Contains (Key_Tag (Key))
+         and then (Key_Via (Key) = ""
+                   or else Base_Name (To_String (Rules (S.Caller).Name)) = Key_Via (Key)));
+
+      --  Walk the sequence Els of rule R.  Seen: the tags kept in sequences
+      --  around this one before it; Lits_In: what they keep.
+      procedure Collect
+        (R : Positive; Els : Element_Vectors.Vector; Seen : Tag_Sets.Set;
+         Lits_In : Tag_Maps.Map)
+      is
+         Here  : Tag_Sets.Set;
+         Lits  : Tag_Maps.Map := Lits_In;
+         First : Positive := 1;
+
+         function Dom return Tag_Sets.Set is
+            S : Tag_Sets.Set := Seen;
+         begin
+            S.Union (Here);
+            return S;
+         end Dom;
+
+         procedure Site_Of (E : Element_Access; In_Look : Boolean) is
+            B : constant String := Base_Name (To_String (E.Name));
+         begin
+            if Idx.Contains (B) then
+               Sites.Append
+                 (Site'(Caller => R, Callee => Idx.Element (B), Elem => E,
+                        Bound => Dom, Lits => Lits, In_Look => In_Look));
+            end if;
+         end Site_Of;
+      begin
+         for K in 1 .. Natural (Els.Length) loop
+            declare
+               E : constant Element_Access := Els (K);
+            begin
+               case E.Kind is
+                  when Alt =>
+                     Here.Clear;
+                     Lits := Lits_In;
+                     First := K + 1;
+                  when Group =>
+                     Collect (R, E.Items, Dom, Lits);
+                  when Name =>
+                     Site_Of (E, False);
+                  when Block =>
+                     case E.Op is
+                        when B_As =>
+                           Here.Include (To_String (E.Ctx));
+                           declare
+                              P : constant String :=
+                                (if K > First and then Els (K - 1).Kind = Literal
+                                 then (if Els (K - 1).No_Case then "2" else "1") else "3");
+                              T : constant String := To_String (E.Ctx);
+                           begin
+                              if not Props.Contains (T) then
+                                 Props.Include (T, P);
+                              elsif Props.Element (T) /= P then
+                                 Props.Include (T, "3");
+                              end if;
+                           end;
+                           if K > First and then Els (K - 1).Kind = Literal
+                             and then Els (K - 1).Min = 1 and then Els (K - 1).Max = 1
+                             and then (for all C of To_String (Els (K - 1).Lit) =>
+                                         C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_')
+                           then
+                              Lits.Include (To_String (E.Ctx),
+                                            (if Els (K - 1).No_Case then "i" else "s")
+                                            & To_String (Els (K - 1).Lit));
+                           else
+                              Lits.Include (To_String (E.Ctx), "");
+                           end if;
+                        when B_Same =>
+                           declare
+                              Lv  : constant Integer := Up_Level (To_String (E.Ctx));
+                              Tag : constant String := Up_Name (To_String (E.Ctx));
+                           begin
+                              if Lv = 1 then
+                                 Any_Up := True;
+                                 Uses.Append (Use_Rec'
+                                   (Rule => R, Tag => To_Unbounded_String (Tag),
+                                    Via => To_Unbounded_String (Up_Via (To_String (E.Ctx))),
+                                    Own => False, Elem => E, Holder => null));
+                              elsif Lv = -1 and then not Here.Contains (Tag)
+                                and then Seen.Contains (Tag)
+                              then
+                                 --  kept in a sequence around this one: a rule of its own
+                                 Uses.Append (Use_Rec'
+                                   (Rule => R, Tag => To_Unbounded_String (Tag),
+                                    Via => Null_Unbounded_String, Own => True, Elem => E,
+                                    Holder => null));
+                              elsif Lv = -1 and then not Here.Contains (Tag)
+                                and then E.Path /= Null_Unbounded_String
+                              then
+                                 Fail ("rule `" & Spelled (To_String (Rules (R).Name)) & "`: `"""
+                                       & To_String (E.Path) & """ + $" & Tag
+                                       & "`: no `x as " & Tag & "` stands earlier in the "
+                                       & "sequence it is in, or in one around it; write the "
+                                       & "capture before the join");
+                              end if;
+                           end;
+                        when B_Not | B_And =>
+                           for X of E.Look loop
+                              if X.Kind = Name then
+                                 Site_Of (X, True);
+                              elsif X.Kind = Block and then X.Op = B_Same then
+                                 declare
+                                    Lv  : constant Integer := Up_Level (To_String (X.Ctx));
+                                    Tag : constant String := Up_Name (To_String (X.Ctx));
+                                 begin
+                                    if Lv = 1 then
+                                       Any_Up := True;
+                                    end if;
+                                    if Lv = 1 or else (Lv = -1 and then Dom.Contains (Tag)) then
+                                       Uses.Append (Use_Rec'
+                                         (Rule => R, Tag => To_Unbounded_String (Tag),
+                                          Via => To_Unbounded_String (Up_Via (To_String (X.Ctx))),
+                                          Own => Lv /= 1, Elem => X, Holder => E));
+                                    end if;
+                                 end;
+                              end if;
+                           end loop;
+                        when others =>
+                           null;
+                     end case;
+                  when others =>
+                     null;
+               end case;
+            end;
+         end loop;
+      end Collect;
+
+      --  Does a `$K` of this tag (not an up reference) or a switch of it stand in Els, deep?
+      function Refers (Els : Element_Vectors.Vector; Tag : String) return Boolean is
+        (for some E of Els =>
+           (E.Kind = Group and then Refers (E.Items, Tag))
+           or else (E.Kind = Block and then E.Op in B_Same | B_Switch
+                    and then Up_Level (To_String (E.Ctx)) /= 1
+                    and then Up_Name (To_String (E.Ctx)) = Tag
+                    and then (E.Op = B_Same or else E.Path /= Null_Unbounded_String))
+           or else (E.Kind = Block and then E.Op in B_Not | B_And and then Refers (E.Look, Tag)));
+
+      function Binds (Els : Element_Vectors.Vector; Tag : String) return Boolean is
+        (for some E of Els =>
+           (E.Kind = Group and then Binds (E.Items, Tag))
+           or else (E.Kind = Block and then E.Op = B_As and then To_String (E.Ctx) = Tag));
+
+      function Slot_Count (S : String) return Natural is
+         N : Natural := 0;
+      begin
+         if S'Length = 0 then
+            return 0;
+         end if;
+         for C of S loop
+            if C = ' ' then
+               N := N + 1;
+            end if;
+         end loop;
+         return N + 1;
+      end Slot_Count;
+   begin
+      if Phase = Up_Static then
+         --  frames of an earlier reading of a grammar (the program reads one twice) are not this one's
+         Frame_Table.Clear;
+      end if;
+      if not Backref_Seen or else Ups_Done (Up_Phase'Pos (Phase) + 1) then
+         return;
+      end if;
+      Ups_Done (Up_Phase'Pos (Phase) + 1) := True;
+      for J in 1 .. Natural (Rules.Length) loop
+         Idx.Include (Base_Name (To_String (Rules (J).Name)), J);
+         Framed.Append (Tag_Sets.Empty_Set);
+         Recv.Append (Tag_Sets.Empty_Set);
+      end loop;
+      for J in 1 .. Natural (Rules.Length) loop
+         Collect (J, Rules (J).Pattern, Tag_Sets.Empty_Set, Tag_Maps.Empty_Map);
+      end loop;
+      --  `$K^` compares as what was kept does: when every `x as K` of the grammar keeps a
+      --  literal of one flag, that is the flag (else the file's, which the reader noted)
+      for U1 of Uses loop
+         if not U1.Own and then U1.Elem.Path = Null_Unbounded_String
+           and then Props.Contains (To_String (U1.Tag))
+           and then Props.Element (To_String (U1.Tag)) /= "3"
+         then
+            U1.Elem.Id := Natural'Value (Props.Element (To_String (U1.Tag)));
+         end if;
+      end loop;
+      --  nothing to do unless an up reference stands somewhere, or (the dynamic
+      --  phase) a `$K` stands where its capture is not a local
+      if Uses.Is_Empty then
+         return;
+      end if;
+      if Phase = Up_Static and then not Any_Up then
+         return;
+      end if;
+
+      --  What each rule is passed: what it uses, and what the rules it calls need
+      --  that it does not keep itself.
+      for U1 of Uses loop
+         if not U1.Own then
+            declare
+               Tag : constant String := To_String (U1.Tag);
+               Via : constant String := To_String (U1.Via);
+               Shown : constant String := "$" & Tag & "^" & Via;
+            begin
+               if Via /= "" then
+                  if not Idx.Contains (Via) then
+                     Fail ("rule `" & Spelled (To_String (Rules (U1.Rule).Name)) & "` uses `" & Shown
+                           & "`, but no rule is called `" & Via & "`");
+                  elsif not Binds (Rules (Idx.Element (Via)).Pattern, Tag) then
+                     Fail ("rule `" & Spelled (To_String (Rules (U1.Rule).Name)) & "` uses `" & Shown
+                           & "`, but rule `" & Via & "` does not keep " & Tag
+                           & " (no `x as " & Tag & "` in it)");
+                  end if;
+               end if;
+               Recv (U1.Rule).Include (Tag & "^" & Via);
+            end;
+         end if;
+      end loop;
+      declare
+         Changed : Boolean := True;
+      begin
+         while Changed loop
+            Changed := False;
+            for S of Sites loop
+               declare
+                  Keys : constant Tag_Sets.Set := Recv (S.Callee);
+               begin
+                  for Key of Keys loop
+                     if not Satisfied (S, Key) and then not Recv (S.Caller).Contains (Key) then
+                        Recv (S.Caller).Include (Key);
+                        Changed := True;
+                     end if;
+                  end loop;
+               end;
+            end loop;
+         end loop;
+      end;
+
+      --  Something is passed to the first rule, or to a rule nobody calls: the
+      --  path upward ends without the rule that keeps the capture.
+      for J in 1 .. Natural (Rules.Length) loop
+         for Key of Recv (J) loop
+            declare
+               Called : constant Boolean :=
+                 (for some S of Sites => S.Callee = J and then S.Caller /= J);
+               Tag    : constant String := Key_Tag (Key);
+               Via    : constant String := Key_Via (Key);
+            begin
+               if J = 1 or else not Called then
+                  --  the chain from J down to a rule that holds the use
+                  declare
+                     Path : Pos_Vectors.Vector;
+                     Cur  : Positive := J;
+                  begin
+                     Path.Append (J);
+                     loop
+                        exit when (for some U1 of Uses =>
+                                     U1.Rule = Cur and then not U1.Own
+                                     and then To_String (U1.Tag) = Tag
+                                     and then To_String (U1.Via) = Via);
+                        declare
+                           Next_R : Natural := 0;
+                        begin
+                           for S of Sites loop
+                              if S.Caller = Cur and then Recv (S.Callee).Contains (Key)
+                                and then not Path.Contains (S.Callee)
+                                and then not Satisfied (S, Key)
+                              then
+                                 Next_R := S.Callee;
+                                 exit;
+                              end if;
+                           end loop;
+                           exit when Next_R = 0;
+                           Path.Append (Next_R);
+                           Cur := Next_R;
+                        end;
+                     end loop;
+                     declare
+                        Chain : Unbounded_String;
+                        Used  : constant String := "$" & Tag & "^" & Via;
+                        Who   : constant String :=
+                          "rule `" & Spelled (To_String (Rules (Cur).Name)) & "` uses `" & Used & "`, ";
+                     begin
+                        for P of Path loop
+                           Append (Chain, (if Length (Chain) > 0 then " > " else "")
+                                   & Spelled (To_String (Rules (P).Name)));
+                        end loop;
+                        if Natural (Path.Length) > 1 then
+                           if Via = "" then
+                              Fail (Who & "but is called from `"
+                                    & Spelled (To_String (Rules (Path (Path.Last_Index - 1)).Name))
+                                    & "`, which does not keep " & Tag & " (the path " & To_String (Chain)
+                                    & " has no `x as " & Tag & "` before the call)");
+                           else
+                              Fail (Who & "but is called from `"
+                                    & Spelled (To_String (Rules (Path (Path.Last_Index - 1)).Name))
+                                    & "`, and the path " & To_String (Chain) & " does not pass through `"
+                                    & Via & "` where it keeps " & Tag);
+                           end if;
+                        else
+                           Fail (Who & "but "
+                                 & (if Via = "" then "no rule above it keeps " & Tag & " with `x as " & Tag & "`"
+                                    else "it is not called from `" & Via & "`, where " & Tag & " is kept")
+                                 & ": "
+                                 & (if J = 1 then "it is the first rule, which nothing calls"
+                                    else "nothing calls it"));
+                        end if;
+                     end;
+                  end;
+               end if;
+            end;
+         end loop;
+      end loop;
+
+      if Phase = Up_Static then
+         declare
+            Static : Tag_Sets.Set;
+            Tags   : Tag_Sets.Set;
+
+            --  Rewrite the joins `"p" + $K^` of a static tag into the join with the
+            --  word K.
+            procedure Rewrite (Els : in out Element_Vectors.Vector) is
+            begin
+               for I in 1 .. Natural (Els.Length) loop
+                  declare
+                     E : constant Element_Access := Els (I);
+                  begin
+                     if E.Kind = Group then
+                        Rewrite (E.Items);
+                     elsif E.Kind = Block and then E.Op = B_Same
+                       and then Up_Level (To_String (E.Ctx)) = 1
+                       and then Static.Contains (Up_Name (To_String (E.Ctx)))
+                     then
+                        Els.Replace_Element
+                          (I, new Element'
+                                (Kind => Name, Min => E.Min, Max => E.Max,
+                                 Name => To_Unbounded_String
+                                           ((if E.Id = 2 then "%i" else "")
+                                            & Quoted (To_String (E.Path)) & "+"
+                                            & Up_Name (To_String (E.Ctx))),
+                                 Fold => False, Args => Null_Unbounded_String));
+                     end if;
+                  end;
+               end loop;
+            end Rewrite;
+
+            --  Drop the `x as K` nothing reads now.
+            procedure Drop (Els : in out Element_Vectors.Vector; Tag : String) is
+               I : Natural := Natural (Els.Length);
+            begin
+               while I >= 1 loop
+                  declare
+                     E : constant Element_Access := Els (I);
+                  begin
+                     if E.Kind = Group then
+                        Drop (E.Items, Tag);
+                     elsif E.Kind = Block and then E.Op = B_As and then To_String (E.Ctx) = Tag then
+                        Els.Delete (I);
+                     end if;
+                  end;
+                  I := I - 1;
+               end loop;
+            end Drop;
+         begin
+            for J in 1 .. Natural (Rules.Length) loop
+               for Key of Recv (J) loop
+                  Tags.Include (Key_Tag (Key));
+               end loop;
+            end loop;
+            for Tag of Tags loop
+               declare
+                  Ok : Boolean := True;
+               begin
+                  --  every rule that is passed K is a plain rule and asks for the nearest
+                  for J in 1 .. Natural (Rules.Length) loop
+                     for Key of Recv (J) loop
+                        if Key_Tag (Key) = Tag
+                          and then (Key_Via (Key) /= ""
+                                    or else (for some C of To_String (Rules (J).Name) => C = '('))
+                        then
+                           Ok := False;
+                        end if;
+                     end loop;
+                  end loop;
+                  --  and only a join reads it
+                  for U1 of Uses loop
+                     if To_String (U1.Tag) = Tag and then not U1.Own
+                       and then (U1.Holder /= null or else U1.Elem.Path = Null_Unbounded_String)
+                     then
+                        Ok := False;
+                     end if;
+                  end loop;
+                  for S of Sites loop
+                     if Recv (S.Callee).Contains (Tag & "^") then
+                        if S.In_Look then
+                           Ok := False;
+                        elsif S.Bound.Contains (Tag) then
+                           declare
+                              L : constant String :=
+                                (if S.Lits.Contains (Tag) then S.Lits.Element (Tag) else "");
+                           begin
+                              if L'Length = 0 then
+                                 Ok := False;
+                              elsif L (L'First) = 'i' then
+                                 for U1 of Uses loop
+                                    if To_String (U1.Tag) = Tag and then not U1.Own
+                                      and then U1.Elem.Id /= 2
+                                    then
+                                       Ok := False;
+                                    end if;
+                                 end loop;
+                              end if;
+                           end;
+                        end if;
+                     end if;
+                  end loop;
+                  if Ok then
+                     Static.Include (Tag);
+                  end if;
+               end;
+            end loop;
+            if Static.Is_Empty then
+               return;
+            end if;
+            --  the calls first (they read the callee's name), then the rules
+            for S of Sites loop
+               declare
+                  Args : Unbounded_String;
+               begin
+                  for Tag of Static loop
+                     if Recv (S.Callee).Contains (Tag & "^") then
+                        Append (Args, (if Length (Args) > 0 then ", " else "")
+                                & (if S.Bound.Contains (Tag)
+                                   then Quoted (S.Lits.Element (Tag) (S.Lits.Element (Tag)'First + 1
+                                                                      .. S.Lits.Element (Tag)'Last))
+                                   else Tag));
+                     end if;
+                  end loop;
+                  if Length (Args) > 0 then
+                     S.Elem.Name := To_Unbounded_String
+                       (Base_Name (To_String (S.Elem.Name)) & "(" & To_String (Args) & ")");
+                  end if;
+               end;
+            end loop;
+            for J in 1 .. Natural (Rules.Length) loop
+               declare
+                  Params : Unbounded_String;
+               begin
+                  for Tag of Static loop
+                     if Recv (J).Contains (Tag & "^") then
+                        Append (Params, (if Length (Params) > 0 then ", " else "") & Tag);
+                     end if;
+                  end loop;
+                  if Length (Params) > 0 then
+                     Rules (J).Name := To_Unbounded_String
+                       (To_String (Rules (J).Name) & "(" & To_String (Params) & ")");
+                  end if;
+               end;
+               Rewrite (Rules (J).Pattern);
+            end loop;
+            for J in 1 .. Natural (Rules.Length) loop
+               for Tag of Static loop
+                  if not Refers (Rules (J).Pattern, Tag) then
+                     Drop (Rules (J).Pattern, Tag);
+                  end if;
+               end loop;
+            end loop;
+         end;
+         return;
+      end if;
+
+      --  The dynamic phase.  A plain `$K` read in a rule of its own, a lookahead
+      --  over a capture, and the calls that pass a capture down.
+      declare
+         Anon_Owner : Pos_Vectors.Vector;
+         Anon_Rules : Rule_Vectors.Vector;
+
+         procedure Mark_As (Els : in out Element_Vectors.Vector; Tags : Tag_Sets.Set) is
+         begin
+            for E of Els loop
+               if E.Kind = Group then
+                  Mark_As (E.Items, Tags);
+               elsif E.Kind = Block and then E.Op = B_As and then Tags.Contains (To_String (E.Ctx)) then
+                  E.Id := 1;
+               end if;
+            end loop;
+         end Mark_As;
+      begin
+         for S of Sites loop
+            if S.In_Look and then not Recv (S.Callee).Is_Empty then
+               Fail ("rule `" & Spelled (To_String (Rules (S.Caller).Name)) & "`: a lookahead over `"
+                     & Spelled (To_String (Rules (S.Callee).Name)) & "`, which uses `"
+                     & Key_Shown (Recv (S.Callee).First_Element) & "`: write the up reference itself, `!"
+                     & Key_Shown (Recv (S.Callee).First_Element) & "`");
+            end if;
+         end loop;
+         for U1 of Uses loop
+            declare
+               Tag : constant String := To_String (U1.Tag);
+            begin
+               if U1.Own then
+                  U1.Elem.Ctx := To_Unbounded_String ("~" & Tag);
+                  Framed (U1.Rule).Include (Tag);
+               end if;
+               if U1.Holder /= null then
+                  declare
+                     Name_R : constant String :=
+                       Base_Name (To_String (Rules (U1.Rule).Name)) & "_up"
+                       & Img (Natural (Anon_Rules.Length) + 1);
+                     R : Rule;
+                  begin
+                     R.Name := To_Unbounded_String (Name_R);
+                     R.Pattern.Append (new Element'(U1.Elem.all));
+                     R.Whitespace := Rules (U1.Rule).Whitespace;
+                     Anon_Rules.Append (R);
+                     Anon_Owner.Append (U1.Rule);
+                     for I in 1 .. Natural (U1.Holder.Look.Length) loop
+                        if U1.Holder.Look (I) = U1.Elem then
+                           U1.Holder.Look.Replace_Element
+                             (I, new Element'
+                                   (Kind => Name, Min => 1, Max => 1,
+                                    Name => To_Unbounded_String (Name_R),
+                                    Fold => False, Args => Null_Unbounded_String));
+                        end if;
+                     end loop;
+                  end;
+               end if;
+            end;
+         end loop;
+         for S of Sites loop
+            for Key of Recv (S.Callee) loop
+               if Satisfied (S, Key) then
+                  Framed (S.Caller).Include (Key_Tag (Key));
+               end if;
+            end loop;
+         end loop;
+         --  the frames
+         for J in 1 .. Natural (Rules.Length) loop
+            if not Recv (J).Is_Empty or else not Framed (J).Is_Empty then
+               declare
+                  Nm     : constant String := To_String (Rules (J).Name);
+                  F      : Frame_Info := Frame_Of (Nm);
+                  Hidden : Unbounded_String;
+                  Own    : Unbounded_String;
+                  Count  : Natural := 0;
+               begin
+                  for Key of Recv (J) loop
+                     Append (Hidden, " " & Up_Slot (Key_Tag (Key), Key_Via (Key), 'p') & " "
+                             & Up_Slot (Key_Tag (Key), Key_Via (Key), 'l'));
+                     Count := Count + 2;
+                  end loop;
+                  for Tag of Framed (J) loop
+                     Append (Own, " " & Up_Slot (Tag, "~", 'p') & " " & Up_Slot (Tag, "~", 'l'));
+                  end loop;
+                  if Count > 0 and then Slot_Count (To_String (F.Slots)) > F.Arity then
+                     Fail ("rule `" & Spelled (Nm) & "` uses an up reference and also sets numbers "
+                           & "with `%col` or `x %num j`; the numbers an up reference passes are "
+                           & "put in front of those, which is not built");
+                  end if;
+                  declare
+                     Old : constant String := To_String (F.Slots);
+                     Fix : constant String := To_String (Hidden & Own);
+                  begin
+                     F.Slots := To_Unbounded_String
+                       (Old & (if Old'Length = 0 and then Fix'Length > 0
+                               then Fix (Fix'First + 1 .. Fix'Last) else Fix));
+                  end;
+                  F.Arity := F.Arity + Count;
+                  Set_Frame (Nm, F);
+                  Mark_As (Rules (J).Pattern, Framed (J));
+               end;
+            end if;
+         end loop;
+         --  the calls
+         for S of Sites loop
+            declare
+               Extra : Unbounded_String;
+            begin
+               for Key of Recv (S.Callee) loop
+                  declare
+                     Via : constant String := (if Satisfied (S, Key) then "~" else Key_Via (Key));
+                  begin
+                     Append (Extra, (if Length (Extra) > 0 then ", " else "")
+                             & Up_Slot (Key_Tag (Key), Via, 'p') & ", "
+                             & Up_Slot (Key_Tag (Key), Via, 'l'));
+                  end;
+               end loop;
+               if Length (Extra) > 0 then
+                  S.Elem.Args := (if Length (S.Elem.Args) > 0 then S.Elem.Args & ", " else Null_Unbounded_String)
+                    & Extra;
+               end if;
+            end;
+         end loop;
+         --  the rules of the lookaheads run in the frame of the rule they stand in
+         for K in 1 .. Natural (Anon_Rules.Length) loop
+            declare
+               Owner : constant String := To_String (Rules (Anon_Owner (K)).Name);
+               F     : constant Frame_Info := Frame_Of (Owner);
+            begin
+               Set_Frame (To_String (Anon_Rules (K).Name),
+                          (Slots => F.Slots, Arity => F.Arity, Shares => True));
+               Rules.Append (Anon_Rules (K));
+            end;
+         end loop;
+      end;
+   end Resolve_Ups;
 
    --  Once every file is read (Parse_File, or Parse on its own):
    --  - a reference from a file with `sensitivity rule-name %i` takes the
@@ -7346,7 +8170,7 @@ package body HBNF_Grammar is
                         C : constant Frame_Info := Frame_Of (To_String (E.Name));
                      begin
                         if Length (C.Slots) > 0 and then not C.Shares then
-                           if Length (E.Args) = 0 then
+                           if Length (E.Args) = 0 and then C.Arity > 0 then
                               Fail ("rule `" & Owner & "`: `" & To_String (E.Name)
                                     & "` has parameters that are numbers; use it "
                                     & "with its arguments, `" & To_String (E.Name)
@@ -8257,13 +9081,28 @@ package body HBNF_Grammar is
                declare
                   E    : constant Element_Access := V (P);
                   Rest : Element_Vectors.Vector;
+                  Cut  : Boolean := False;
                begin
+                  --  `$K` repeats a text the grammar does not know: what follows it is not
+                  --  what a repetition could meet, so the look stops there
                   for I in P + 1 .. B.Last loop
-                     Rest.Append (V (I));
+                     exit when Cut;
+                     if V (I).Kind = Block and then V (I).Op = B_Same then
+                        Cut := True;
+                     else
+                        Rest.Append (V (I));
+                     end if;
                   end loop;
-                  for X of Cont loop
-                     Rest.Append (X);
-                  end loop;
+                  if not Cut then
+                     for X of Cont loop
+                        exit when Cut;
+                        if X.Kind = Block and then X.Op = B_Same then
+                           Cut := True;
+                        else
+                           Rest.Append (X);
+                        end if;
+                     end loop;
+                  end if;
                   if E.Kind = Group then
                      Check_Greedy (E.Items, Owner, Rest);
                   end if;
@@ -9727,6 +10566,144 @@ package body HBNF_Grammar is
          return (if Scope_Defs.Contains (C) then C else "");
       end Find_Scope;
 
+      --  `^.name` (Path, as written, may have `^.` in front and `scope.` before the name): the
+      --  rule it is, in the grammar that includes the one being read, as the name the rest of
+      --  the reader uses.  A scope of the tree out, strictly: a name the including grammar does
+      --  not define is an error, and the root grammar has nothing out of it.
+      function Up_Target (T : Token; Path : String) return String is
+         Where : constant String :=
+           Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": `" & Path & "`: ";
+         Here_Scope : constant String :=
+           (if Scope_Stack.Is_Empty then "" else To_String (Scope_Stack.Last_Element.Prefix));
+         Cur   : Unbounded_String := To_Unbounded_String (Here_Scope);
+         I     : Natural := Path'First;
+         N     : Natural := 0;
+      begin
+         if Scope_Stack.Is_Empty then
+            Fail (Where & "`^` goes out of an included grammar into the grammar that includes it, "
+                  & "and this grammar is not included `as` anything");
+         end if;
+         while I < Path'Last and then Path (I) = '^' and then Path (I + 1) = '.' loop
+            declare
+               S   : constant String := To_String (Cur);
+               Cut : Natural := 0;
+            begin
+               N := N + 1;
+               if S = "" then
+                  Fail (Where & "goes " & Img (N) & " level(s) out, and the grammar `"
+                        & Dotted (Here_Scope) & "` is included only "
+                        & Img (N - 1) & " level(s) deep: the root grammar has nothing out of it");
+               end if;
+               for J in reverse S'First .. S'Last - 1 loop
+                  if S (J .. J + 1) = Scope_Sep then
+                     Cut := J;
+                     exit;
+                  end if;
+               end loop;
+               Cur := To_Unbounded_String (if Cut = 0 then "" else S (S'First .. Cut - 1));
+               I := I + 2;
+            end;
+         end loop;
+         declare
+            Rest  : constant String := Path (I .. Path'Last);
+            Last_Dot : Natural := 0;
+            Out_Of : constant String :=
+              (if To_String (Cur) = "" then "the root grammar" else "the grammar `" & Dotted (To_String (Cur)) & "`");
+         begin
+            for J in reverse Rest'Range loop
+               if Rest (J) = '.' then
+                  Last_Dot := J;
+                  exit;
+               end if;
+            end loop;
+            if Last_Dot = 0 then
+               --  a rule of the grammar itself
+               if To_String (Cur) = "" then
+                  Up_Root_Refs.Append
+                    (Up_Root_Ref'(Base => To_Unbounded_String (Rest),
+                                  Scope => To_Unbounded_String (Here_Scope),
+                                  Written => To_Unbounded_String (Path),
+                                  Where => To_Unbounded_String
+                                    (To_String (Current_File) & ":" & Img (T.Line))));
+                  return Rest;
+               end if;
+               if not Scope_Defs.Contains (To_String (Cur))
+                 or else not Scope_Defs.Element (To_String (Cur)).Contains (Rest)
+               then
+                  Fail (Where & Out_Of & ", which includes the grammar `" & Dotted (Here_Scope)
+                        & "`, defines no rule `" & Rest & "`");
+               end if;
+               Note_Spelling (To_String (Cur) & Scope_Sep & Rest, To_String (Cur), Rest);
+               return To_String (Cur) & Scope_Sep & Rest;
+            end if;
+            declare
+               Key : Unbounded_String := Cur;
+               Base : constant String := Rest (Last_Dot + 1 .. Rest'Last);
+            begin
+               if Length (Key) > 0 then
+                  Append (Key, Scope_Sep);
+               end if;
+               for J in Rest'First .. Last_Dot - 1 loop
+                  Append (Key, (if Rest (J) = '.' then Scope_Sep else (1 => Rest (J))));
+               end loop;
+               if not Scope_Defs.Contains (To_String (Key)) then
+                  Fail (Where & "no grammar is included `as " & Rest (Rest'First .. Last_Dot - 1)
+                        & "` in " & Out_Of);
+               end if;
+               if not Scope_Defs.Element (To_String (Key)).Contains (Base) then
+                  Fail (Where & "the grammar `" & Dotted (To_String (Key)) & "` defines no rule `"
+                        & Base & "`");
+               end if;
+               Note_Spelling (To_String (Key) & Scope_Sep & Base, To_String (Key), Base);
+               return To_String (Key) & Scope_Sep & Base;
+            end;
+         end;
+      end Up_Target;
+
+      --  The `^.name` paths inside the arguments of a call (`f(^.x)`), resolved as the head is.
+      function Up_Args (T : Token; S : String) return String is
+         R : Unbounded_String;
+         I : Natural := S'First;
+         In_Q : Boolean := False;
+         Q : Character := '"';
+      begin
+         if (for all C of S => C /= '^') then
+            return S;
+         end if;
+         while I <= S'Last loop
+            if In_Q then
+               In_Q := S (I) /= Q;
+               Append (R, S (I));
+               I := I + 1;
+            elsif S (I) in '"' | ''' then
+               In_Q := True;
+               Q := S (I);
+               Append (R, S (I));
+               I := I + 1;
+            elsif S (I) = '^' and then I < S'Last and then S (I + 1) = '.'
+              and then (I = S'First or else S (I - 1) not in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.')
+            then
+               declare
+                  J : Natural := I;
+               begin
+                  while J < S'Last and then S (J) = '^' and then S (J + 1) = '.' loop
+                     J := J + 2;
+                  end loop;
+                  while J <= S'Last and then (Name_Char_Ok (S (J))
+                    or else (S (J) = '.' and then J < S'Last and then Name_Start_Char (S (J + 1)))) loop
+                     J := J + 1;
+                  end loop;
+                  Append (R, Up_Target (T, S (I .. J - 1)));
+                  I := J;
+               end;
+            else
+               Append (R, S (I));
+               I := I + 1;
+            end if;
+         end loop;
+         return To_String (R);
+      end Up_Args;
+
       function Split_Call (T : String) return Natural is
          --  The index of the `(` that starts a call's arguments, T'Last + 1 if none.
       begin
@@ -9763,7 +10740,8 @@ package body HBNF_Grammar is
             --  a width's field (`len:8`).
             Not_A_Rule : constant Boolean :=
               (K > 1 and then
-                (Toks (K - 1).Kind = T_Pct
+                ((Toks (K - 1).Kind = T_Pct
+                  and then To_String (Toks (K - 1).Text) not in "not" | "and")
                  or else (Toks (K - 1).Kind = T_Name
                           and then To_String (Toks (K - 1).Text) = "context")
                  or else (K > 2 and then Toks (K - 2).Kind = T_Pct
@@ -9774,7 +10752,16 @@ package body HBNF_Grammar is
                        and then Toks (K + 1).Col = T.Col + Length (T.Text));
          begin
             if T.Kind = T_Name and then not Not_A_Rule then
-               if (for some C of Head => C = '.') then
+               if Head'Length >= 2 and then Head (Head'First) = '^' and then Head (Head'First + 1) = '.' then
+                  if Is_Head then
+                     Fail (Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                       & ": `" & Head & "`: `^.rule` names a rule of the grammar that includes this "
+                       & "one; a rule is defined by its plain name");
+                  end if;
+                  Toks.Replace_Element
+                    (K, Token'(T.Kind, T.Line, T.Col,
+                               To_Unbounded_String (Up_Target (T, Head) & Up_Args (T, Rest))));
+               elsif (for some C of Head => C = '.') then
                   --  scope.rule
                   if Is_Head then
                      Fail (Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
@@ -9952,6 +10939,7 @@ package body HBNF_Grammar is
          begin
             if B = "" or else B (B'First) = '<' or else Is_Core_Name (B)
               or else B = "ws" or else Scope_Of (B) /= ""
+              or else (for some R of Up_Root_Refs => To_String (R.Base) = B and then To_String (R.Scope) = Scope)
             then
                return;
             end if;
@@ -9985,6 +10973,18 @@ package body HBNF_Grammar is
          end loop;
       end Check;
    begin
+      --  `^.name` written in a grammar whose including grammar is the root: the root defines it
+      for U of Up_Root_Refs loop
+         if not (for some R of Rules =>
+                   To_String (R.Name) = To_String (U.Base)
+                   or else (To_String (R.Name)'Length > Length (U.Base)
+                            and then To_String (R.Name) (1 .. Length (U.Base)) = To_String (U.Base)
+                            and then To_String (R.Name) (Length (U.Base) + 1) = '('))
+         then
+            Fail (To_String (U.Where) & ": `" & To_String (U.Written) & "`: the root grammar, which includes `"
+                  & Dotted (To_String (U.Scope)) & "`, defines no rule `" & To_String (U.Base) & "`");
+         end if;
+      end loop;
       if Scope_Defs.Is_Empty then
          return;
       end if;
@@ -11318,7 +12318,9 @@ package body HBNF_Grammar is
       end loop;
       if File_Depth = 0 then
          Resolve_Captures (Rules);
+         Resolve_Ups (Rules, Up_Static);
          Expand_Params (Rules);
+         Resolve_Ups (Rules, Up_Dynamic);
          Check_Contexts (Rules);
          Split_Mixed (Rules);
          Split_Wire (Rules);
@@ -11801,7 +12803,9 @@ package body HBNF_Grammar is
          end if;
          Apply_Actions (Result);
          Resolve_Captures (Result);
+         Resolve_Ups (Result, Up_Static);
          Expand_Params (Result);
+         Resolve_Ups (Result, Up_Dynamic);
          Check_Contexts (Result);
          Split_Mixed (Result);
          Split_Wire (Result);

@@ -227,6 +227,23 @@ package HBNF_Grammar is
    --  The position of Var among the frame's slots (0 is the first), or -1.
    function Slot_Of (Rule_Name, Var : String) return Integer;
    function Uses_Frames return Boolean;
+   --  How many numbers a rule's frame holds (0 for a rule with none); the first rule's is made by the entry point.
+   function Frame_Size (Rule_Name : String) return Natural;
+
+   --  Up references (`$K^`, `$K^R`, ABNF.md): the Ctx of a B_Same that reads a
+   --  capture through the frame is `K^` (the nearest enclosing rule that kept K),
+   --  `K^R` (the enclosing rule R that kept it), or `~K` (the capture of this rule's
+   --  own sequence, read in a group or a lookahead, which are rules of their
+   --  own).  Up_Level is -1 for a plain `K`, 0 for `~K`, 1 for an up reference.
+   --  The capture is two numbers of the frame, the offset of its text in the input
+   --  and its length: Up_Slot (K, Via, 'p') and Up_Slot (K, Via, 'l'), Via being
+   --  "~" for the rule's own, "" for the nearest, or the name of R.  A B_As whose
+   --  Id is 1 also writes its own pair.
+   function Up_Level (Ctx : String) return Integer;
+   function Up_Name (Ctx : String) return String;
+   function Up_Via (Ctx : String) return String;
+   function Up_Slot (Tag : String; Via : String; Part : Character) return String;
+   function Up_Slot_Of (Ctx : String; Part : Character) return String;
 
    --  A rule whose parameters are all numbers is made in a copy for each value of
    --  them (Expand), or run in a frame of them (Run).  Auto, the default, expands a

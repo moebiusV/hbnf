@@ -1,0 +1,7 @@
+; "END-" + $K in a group, which is a rule of its own at run time: the text kept by the rule that holds the group is
+; passed to it, so a join that stands in an option, a repetition or an alternation of the sequence that keeps K works.
+prefix none
+top       = 1*( statement ";" )
+statement = opener as k name [ "AT" name ] ( "END-" + $k | "." )
+opener    = "DO" | "LOOP"
+name      = word

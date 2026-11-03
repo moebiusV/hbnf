@@ -1,0 +1,7 @@
+ok	DO x END-DO;
+ok	DO x AT y END-DO;
+ok	LOOP x .;
+ok	DO x END-DO;LOOP y END-LOOP;
+bad	DO x END-LOOP;
+bad	DO x;
+bad	LOOP x AT y END-DO;

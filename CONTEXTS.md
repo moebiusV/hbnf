@@ -5,7 +5,7 @@ each point was reached; this table is where it stands.  Under the standing rule,
 
 | Point | State | Where |
 |---|---|---|
-| Islands: `include "f" as x`, `x.rule`, the dot is scope and never part of a name, strict lookup (a missing name is missing) | **built** (aff3de9), four backends; tree-sitter refuses a scope that skips white space differently | 14, 19, stage 1 status |
+| Islands: `include "f" as x`, `x.rule`, the dot is scope and never part of a name, strict lookup (a missing name is missing); `^.rule` is the way out, a rule of the including grammar (`^.^.rule` two levels, `^.sql.rule` an island of the parent) | **built** (aff3de9), four backends; tree-sitter refuses a scope that skips white space differently; `^.rule` **built** 2026-11-03 (`tests/upscope.sh`) | 14, 19, stage 1 status |
 | Switch `=> grammar(x)`, `=>` the one arrow | **built, phase 1: white space only** (aff3de9), C, Rust, Zig, Ada; tree-sitter refuses a switch | 15, 18, 19, 22, stage 2 status |
 | Pattern arguments `phrases("SIZE" "ERROR")` and the literal join `"END-" + K` | **built** (09b966c); used in COBOL as `phrases(W)` and `scope-end(K)` | 21 |
 | Two `ws` bugs (a lookahead in `ws`, a group after a literal) | **fixed** (112f19f) | 20 |
@@ -320,8 +320,8 @@ whether any word is better as punctuation (`@` is out).  The migration is mechan
 removed at once, not kept.
 
 **Back-references: `as K` and `$K` (the user, 2026-11-03).**  `x as K` captures the text `x` matched under the name `K`; `$K` matches that text again, in the same sequence, as `%as` and `%same` do today (`ABNF.md`, tests/backref, the Mustache grammar).  Named only, never numbered
-(`$1`): a number shifts when an alternative is added and a capture inside a repetition or an alternative may not exist on every path, a name does not.  The tag is local to the sequence, so nesting and backtracking work as they do now; a plain `$K` compares the bytes today (as `%same` did: the comparison is exact in all four backends, whatever the grammar's
-`sensitivity`), while the join `"lit" + $K` follows `sensitivity string %i`.  **Decided later the same day (the user): `$K` keeps the property of what it back-references, see section 26 item 24.**  `$` is free for this because `^` and `$` are not anchors in `r"..."` (section 24); inside a regex string `$K` stays literal text.  It replaces `%as` and `%same` and so removes two more `%` words from the list above; `as` and `same` become reserved words.
+(`$1`): a number shifts when an alternative is added and a capture inside a repetition or an alternative may not exist on every path, a name does not.  The tag is local to the sequence, so nesting and backtracking work as they do now; a plain `$K` compared the bytes at first (as `%same` did: exact in all four backends, whatever the grammar's
+`sensitivity`), while the join `"lit" + $K` follows `sensitivity string %i`.  **Decided later the same day (the user), and built: `$K` keeps the property of what it back-references, see section 26 item 24.**  `$` is free for this because `^` and `$` are not anchors in `r"..."` (section 24); inside a regex string `$K` stays literal text.  It replaces `%as` and `%same` and so removes two more `%` words from the list above; `as` and `same` become reserved words.
 The case that asked for it: COBOL's terminators, `add-statement = "ADD" as K ... [ "END-" + $K ]`, where the statement names its keyword once; this makes `scope-end(K)` of section 21 unnecessary for fixed keywords.  Open: whether `"END-" + $K` (a join with a captured text, resolved
 at parse time unless the capture is a single fixed literal, which the generator can resolve when the grammar is read) is written that way or `"END-" $K`.  Built 2026-11-03: `x as K` and `$K`; `"END-" + $K` is the form (two elements, `"END-" $K`, would let white space come between them), read as the literal `"END-ADD"` when `K` is kept from one fixed literal in the same sequence, else compared at run time in the sequence that keeps `K`; `%as` and `%same` are refused with the new spelling in the message; `as` is a reserved word (a rule named `as` is refused).
 
@@ -424,7 +424,7 @@ how does a fact reach a rule in another grammar (an island sees its host's facts
 Preferred for an island: `include "sql.hbnf" as sql`, and then `sql.statement` where a rule wants it.  The rules inside
 `sql.hbnf` are written as ever and refer to each other by their plain names; only the including grammar writes the
 prefix.  The included file's own `whitespace`, `sensitivity` and `dialect` apply while one of its rules is read (they are
-per file already), so crossing the dot changes the mode.  This is option 5.2 and needs no new word.
+per file already), so crossing the dot changes the mode.  This is option 5.2 and needs no new word.  **The dot goes in, the caret goes out (the user, 2026-11-03; built):** inside the included file `^.statement` is the rule `statement` of the grammar that includes it, `^.^.statement` the one two levels out, `^.sql.statement` a rule of an island `sql` of the parent; a plain name still means the file's own, and `^.name` is strict (the parent must define it, the root has nothing out of it).
 
 ```
 include "sql.hbnf" as sql
@@ -590,7 +590,7 @@ inheritance between named sets (`c99` is `c89` and its changes, section 16's las
 
 Exactly what was to be implemented, and nothing more.  What differs in the built form is in the two status sections below.
 
-**Syntax.**
+**Syntax.**  (Built later: `^.name` in the included file is a rule of the including grammar, the way out of an island, as the dot is the way in.)
 
 ```
 include "sql.hbnf" as sql              ; a file's rules, reached as sql.name; its own whitespace/sensitivity/dialect directives apply to them
@@ -942,10 +942,10 @@ Each was met writing `corpus/markdown`; the first two are the user's decisions, 
 
 **More findings, from the HTML grammar (`corpus/html`, 2026-11-03; none fixed).**
 23. **A hyperrule's literal argument ignores the file's `sensitivity string %i`**: `f(N) := "<" N ">"` called `f("a")` refuses `<A>` and accepts `<a>`; the workaround is `i"a"`.
-24. **`$K` compares bytes**, so a closing tag cannot be case-insensitive (HTML folds case: `<DIV>x</div>` is legal, and the grammar refuses it).  **Decided (the user, 2026-11-03): `$K` keeps the property of what it back-references**: it compares as the captured element matches (an `i"..."` captured is matched ignoring case, an `s"..."` exactly), and where that element carries no flag of its own, as the grammar's `sensitivity` says.  Section 10 recorded the byte comparison only to keep the output of the `%same` grammars the same; a grammar under `sensitivity string %i` that uses `$K` changes, and the byte-identity comparison finds it.  Not built.
-25. **`as K` and `$K` in the same sequence but in different group alternatives** (`"<" ALPHA as t ( "/>" | ">" "</" $t ">" )`) make the C backend write code that does not compile (`cl_t_3` undeclared); it should be a message from the reader.
+24. **`$K` compares bytes**, so a closing tag cannot be case-insensitive (HTML folds case: `<DIV>x</div>` is legal, and the grammar refuses it).  **Decided (the user, 2026-11-03): `$K` keeps the property of what it back-references**: it compares as the captured element matches (an `i"..."` captured is matched ignoring case, an `s"..."` exactly), and where that element carries no flag of its own, as the grammar's `sensitivity` says.  Section 10 recorded the byte comparison only to keep the output of the `%same` grammars the same; a grammar under `sensitivity string %i` that uses `$K` changes, and the byte-identity comparison finds it.  **BUILT 2026-11-03**: a `$K` of an `i"..."` literal ignores ASCII case, of an `s"..."` is exact, and otherwise follows the file's `sensitivity`; `corpus/html` now accepts `<DIV>x</div>`.
+25. **`as K` and `$K` in the same sequence but in different group alternatives** (`"<" ALPHA as t ( "/>" | ">" "</" $t ">" )`) make the C backend write code that does not compile (`cl_t_3` undeclared); it should be a message from the reader.  **Fixed 2026-11-03**, by the machinery of up references, not by a message: the capture is passed to the group's rule in the frame of numbers, so it compiles and works (also in an option, a repetition, a lookahead and a join, `tests/upref/group.hbnf`, `tests/backref/join-group.hbnf`).
 26. **A rule named `text` collides with `parse_text` in Rust and Zig** (fine in C), as `word` and `default` do; the generator should rename a rule that collides, as it does for `word`.
-27. **In an island (`include ... as x`)** a hyperrule defined in the guest (`sym(S) := S blank`) gives "rule `S` is not defined in grammar `js`", and a lookahead on a guest rule (`"var" !id-char`) gives "rule `id-char` is not defined in grammar `js`" though it is defined there.
+27. **In an island (`include ... as x`)** a hyperrule defined in the guest (`sym(S) := S blank`) gives "rule `S` is not defined in grammar `js`", and a lookahead on a guest rule (`"var" !id-char`) gives "rule `id-char` is not defined in grammar `js`" though it is defined there.  **The lookahead half is fixed 2026-11-03** (a name after `!` or `&` was read as the name of a capture, not of a rule); the hyperrule half is not (`^.list(^.name)`, a hyperrule defined in the host and called from the guest, is the way round it).
 28. **A generator crash**, `CONSTRAINT_ERROR hbnf_c.adb:5851`, for `chars(X) := 1*( ref / amp / !( X / "&" ) char )` called as `chars( space / DQUOTE )` (alternatives passed as a pattern); a named rule as the argument works.  Not shrunk below a copy of `corpus/html/html-tokens.hbnf`.
 29. **A multi-character lookahead in a rule of characters** (`!"-->"`, `!"]]>"`) makes the rule a list of one-character nodes and the generator warns: the same cause as item 22, seen as a tree effect.  Quick at run time.
 30. **The root after `include "html.hbnf"`** with new rules in the including file became the last new rule, not the included file's first; overriding existing rules keeps the root.
@@ -1004,3 +1004,10 @@ needed when a guest has to call back into its host (an HTML `<script>` that has 
 53. **`!` and `&` accept no code point** (`!0x7B` is refused; a rule is needed); and an island `include ... as js` fails first with the hyperrule-in-guest error (item 27).
 54. **A wish**: a one-line way to say "this token takes the blanks of its line", for the `*inl` that ends every token in item 46.
 
+**More findings, from the up references and `^.rule` (2026-11-03; the first four fixed in the same patch).**
+55. **A frame for the first rule**: a rule that keeps a capture in the frame (an `x as K` read by a group, an option or a lookahead) and is the first rule had no frame to keep it in, since the entry point made none.  Fixed: the entry point makes the first rule's frame (C, Rust, Zig, Ada).
+56. **The reader read the frames of the first reading into the second**: `hbnf` reads a grammar twice in a process, and the table of frames was kept, so a rule made a frame by the first reading was refused as called without its arguments by the second.  Fixed: the table is cleared when the second reading begins.
+57. **The greedy-repetition check took `$K` as matching nothing**, so `*( code LF ) $t extra LF` was refused for the text `<U+000A>`.  Fixed: the look stops at a `$K`, whose text the grammar does not know.
+58. **A lookahead of a name in a scope** (`!^.stop`, `!sql.x`) was not resolved to the scope's rule (see item 27); fixed.
+59. **Not fixed, in the generator as it was: a repeated group whose first element is a lookahead, followed at once by a `$K`**, loses the lookahead and the list entry gains the `$K` (C; `doc = "[" 1*ALPHA as t LF *( !"]" ALPHA LF ) $t LF`, found with the build of main).  A literal before the lookahead in the group is the way round it.
+60. **Not built**: a rule that uses an up reference and also sets numbers with `%col` or `x %num j` is refused (the numbers the up reference passes go in front of the others); a lookahead over a rule that itself uses an up reference is refused (write the up reference in the lookahead); `^.name` in a root-bound guest is checked only by the name, so a plain `name` written in the same guest beside it is also accepted when the root defines `name`; the `$K` writer (`--writer`) writes nothing for an up reference.

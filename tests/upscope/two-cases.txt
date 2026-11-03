@@ -1,0 +1,4 @@
+ok	(R);(M);
+bad	(M);(M);
+bad	(R);(R);
+bad	(R);

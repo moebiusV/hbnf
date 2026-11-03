@@ -1,0 +1,5 @@
+; An `s"..."` literal is matched exactly, also in a file that ignores case, and so is its `$k`; a literal with no flag
+; of its own follows the file.
+prefix none
+sensitivity string %i
+top  = s"ab" as k "x" $k | "cd" as k "y" $k

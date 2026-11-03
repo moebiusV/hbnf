@@ -1,0 +1,6 @@
+ok	[ab\n-x\nab\n
+ok	[ab\nab\n
+ok	[ab\n-xab\nab\n
+bad	[ab\n-ab\nab\n
+bad	[ab\n-x\n
+bad	[ab\n-x\nabc\n

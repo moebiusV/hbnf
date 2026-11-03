@@ -1,0 +1,9 @@
+ok	```\nabc\n```\n
+ok	```js\nabc\n```\n
+ok	````\n```\nabc\n````\n
+ok	````\nabc\n`````\n
+ok	```\n```\n
+ok	```\na\n```\n```\nb\n```\n
+bad	````\n```\nabc\n```\n
+bad	```\nabc\n
+bad	````\nabc\n```\n

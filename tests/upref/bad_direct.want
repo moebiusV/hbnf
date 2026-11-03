@@ -1,0 +1,1 @@
+rule `a` uses `$k^`, but is called from `top`, which does not keep k

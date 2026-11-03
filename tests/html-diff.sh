@@ -1,9 +1,9 @@
 #!/bin/sh
 # HTML (corpus/html/html.hbnf) against html5lib's strict parser (tests/html/oracle.py), which raises on a
 # document that does not conform to the WHATWG HTML Living Standard.  (1) The files of corpus/html/tests,
-# in four folders by what the two are expected to say: good (both accept), bad (both refuse), oracle-stricter
-# (the grammar accepts, html5lib refuses: it checks what a syntax cannot, or is older than the standard) and
-# grammar-stricter (the grammar refuses, html5lib accepts: an end tag must repeat the case of its start tag).
+# in three folders by what the two are expected to say: good (both accept), bad (both refuse) and oracle-stricter
+# (the grammar accepts, html5lib refuses: it checks what a syntax cannot, or is older than the standard).
+# (An end tag in another case than its start tag, <DIV>x</div>, is in good: `$tag` ignores case with the file.)
 # (2) N random valid documents (every omissible end tag, raw text, svg and math, character references,
 # every form of attribute) must all be accepted by both.  (3) N mutations of them -- a character deleted,
 # inserted, replaced, swapped, doubled, the text cut -- must get the same answer from both, except where
@@ -52,9 +52,9 @@ fail=0
 # (1) the folders: the grammar's verdict by the folder, and html5lib's where it can be asked
 oracle=1
 $PYTHON -c 'import html5lib' 2> /dev/null || { oracle=0; echo "html-diff: no python with html5lib (set PYTHON): the oracle is not asked"; }
-for d in good bad oracle-stricter grammar-stricter; do
+for d in good bad oracle-stricter; do
     case $d in good|oracle-stricter) wantg=1 ;; *) wantg=0 ;; esac
-    case $d in good|grammar-stricter) wanto=1 ;; *) wanto=0 ;; esac
+    case $d in good) wanto=1 ;; *) wanto=0 ;; esac
     ls "$T/$d"/*.html | xargs "$W/j" > "$W/$d.g"
     bad=$(grep -vc " $wantg\$" "$W/$d.g")
     [ "$bad" = 0 ] || { echo "html-diff: FAIL ($d: the grammar should say $wantg of:)"; grep -v " $wantg\$" "$W/$d.g" | head -5; fail=1; }

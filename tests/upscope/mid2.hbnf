@@ -1,0 +1,3 @@
+prefix none
+include "g2.hbnf" as in
+who = "M"

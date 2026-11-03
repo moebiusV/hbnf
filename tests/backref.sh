@@ -144,7 +144,12 @@ parsers tests/backref/join-nocase.hbnf tests/backref/join-nocase-cases.txt "c ru
 # ... and compared at run time when it is not
 parsers tests/backref/join-run.hbnf tests/backref/join-run-cases.txt "c rust zig ada"
 parsers tests/backref/join-run-nocase.hbnf tests/backref/join-run-nocase-cases.txt "c rust zig ada"
+parsers tests/backref/join-group.hbnf tests/backref/join-group-cases.txt "c rust zig ada"
 parsers tests/backref/dollar.hbnf tests/backref/dollar-cases.txt "c rust zig ada"
+# `$K` keeps the case property of the element it repeats: the file's (a rule), the literal's (i"..." or s"...")
+parsers tests/backref/fold-file.hbnf tests/backref/fold-file-cases.txt "c rust zig ada"
+parsers tests/backref/fold-exact.hbnf tests/backref/fold-exact-cases.txt "c rust zig ada"
+parsers tests/backref/fold-i.hbnf tests/backref/fold-i-cases.txt "c rust zig ada"
 
 # The static join is a literal: no capture is left in the parser, and the first-byte
 # machinery sees "END-ADD" (C: the capture variables are gone).

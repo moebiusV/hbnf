@@ -1,0 +1,5 @@
+ok	<a></a>
+ok	<A></a>
+ok	<ab></AB>
+bad	<a></b>
+bad	<a></ab>

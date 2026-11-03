@@ -1,0 +1,11 @@
+; The same with the rule named: `!$t^fence`.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc   = 1*fence
+fence = ticks as t [ info ] LF *( code LF ) $t extra LF
+ticks = 3*"`"
+info  = 1*~( LF / "`" )
+code  = !$t^fence *~LF
+extra = *'`'

@@ -1,0 +1,7 @@
+ok	<a/>
+ok	<a></a>
+ok	<a>x<b/>y</a>
+ok	<a><b></b></a>
+bad	<a></b>
+bad	<a>
+bad	<a><b></a></b>

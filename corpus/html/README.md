@@ -72,12 +72,8 @@ three forms of attribute value alike.
   where the content model does not want text, the language of a `lang`, `<meta charset>` against the real encoding, the
   length of anything.
 
-## Two things the notation does not say
+## One thing the notation does not say
 
-- **An end tag has to repeat the case of its start tag.**  `as tag` keeps the text of the tag name and `$tag` repeats it
-  byte for byte, so `<DIV>...</div>` is refused, though the standard (and html5lib) fold the case of tag names.  Every
-  other keyword of the grammar ignores case (`sensitivity string %i`).  The elements that have a rule of their own (`script`, `p`,
-  `li`, ...) match their end tag with a literal and fold the case.
 - **A big comment or script is a list of characters in the tree.**  A rule of characters that holds a lookahead of more than one
   character (`!"-->"`, `!"]]>"`, the end tag of a script) is read one character at a time and the tree has a node for each:
   the generator warns of it for `html-comment`, `cdata` and `raw-closing-script` / `raw-closing-style`.  The text parses
@@ -101,7 +97,7 @@ can read the script.  What it shows:
 - A guest is not skipped for white space in the host's way: the host skips none, a guest that skipped its own would make two
   white-space rules in one parser, and the generator refuses it, so `js-stub.hbnf` says `whitespace none` and takes its
   blanks and comments itself.
-- A hyperrule defined in the guest, and a lookahead (`!x`) on a rule of the guest, are not found in the scope.
+- A hyperrule defined in the guest is not found in the scope (a lookahead `!x` on a rule of the guest is, since 2026-11-03).
 - `=> grammar(js)` after `<script>` does generate, and changes nothing the document could show: the switch replaces
   the white space skipped, HTML skips none, and the raw text is still read by the rules of the host.  There is no way back,
   either: `=> grammar(x)` names an included file, and the host cannot include itself.  The island is the form that does the job.
@@ -120,10 +116,9 @@ two are expected to say:
 
 | folder | files | grammar | html5lib |
 |---|---:|---|---|
-| `tests/good` | 41 | accepts | accepts |
+| `tests/good` | 44 | accepts | accepts |
 | `tests/bad` | 40 | refuses | refuses |
 | `tests/oracle-stricter` | 16 | accepts | refuses |
-| `tests/grammar-stricter` | 3 | refuses | accepts |
 
 Where they differ, by design:
 
@@ -134,7 +129,9 @@ Where they differ, by design:
   (html5lib answers "Undefined error", which is its tree builder failing on a legal document).
 - *html5lib is older or stricter than the standard* (4): `<!-- a -- b -->`, `<!-- a --->` and `<!-- a --!-->` are
   conforming comments, and a doctype with `SYSTEM "About:Legacy-Compat"` is too, the string being matched without regard to case.
-- *the grammar is stricter than html5lib* (3 files): an end tag in another case than its start tag (`<DIV>x</div>`, above).
+- *an end tag in another case than its start tag* (`<DIV>x</div>`, 3 files of `good`) is legal, and both accept it: `$tag` keeps
+  the case property of the name it repeats, and the file says `sensitivity string %i`.  (Until `$K` took that property from
+  what it repeats, these 3 files were a folder of their own, `grammar-stricter`, which the grammar refused.)
 
 `html-diff.sh` also generates N random valid documents (every omissible end tag, raw text, svg with CDATA and
 integration points, math, references, all forms of attribute and doctype, a byte order mark) and N mutations of them (a

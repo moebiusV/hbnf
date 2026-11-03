@@ -1,0 +1,8 @@
+; `$t^outer` is the capture t of the enclosing rule `outer`, past the inner rule that keeps a t of its own.
+prefix none
+include "../../grammars/common.hbnf"
+top    = outer ";"
+outer  = "[" name as t inner "]"
+inner  = "(" name as t helper ")"
+helper = $t^outer "/" $t^
+name   = 1*ALPHA

@@ -1,0 +1,11 @@
+; An element whose closing tag is in a group: the group is a rule of its own, which cannot see the
+; locals of `element`.  The capture is passed to it in the frame, so a plain `$t` works there.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc     = *node
+node    = element / text
+element = "<" name as t ( "/>" | ">" *node "</" $t ">" )
+name    = ALPHA *( ALPHA / DIGIT )
+text    = 1*~"<"

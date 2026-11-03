@@ -1,0 +1,14 @@
+; The dot goes in, the caret goes out: `g.item` is a rule of the grammar included `as g`, and `^.expr` in that grammar is
+; a rule of the grammar that includes it.  Host, guest, a guest of the guest: a rule of the host reaches the guest
+; which reaches the host again (a nested template), a lookahead over a host rule, a host rule as a pattern argument.
+prefix none
+include "../../grammars/ascii.hbnf"
+include "guest.hbnf" as g
+include "mid.hbnf" as m
+top  = 1*( stmt ";" )
+stmt = "call" g.item | "list" g.names | "deep" m.l.leaf | "look" g.tail | "nest" m.inner
+expr = "(" g.item ")" | "x"
+name = word
+list(X) := X *( "," X )
+stop = "!"
+ws   = *( SP / HTAB / LF )

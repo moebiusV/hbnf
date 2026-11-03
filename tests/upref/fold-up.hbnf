@@ -1,0 +1,7 @@
+; An up reference keeps the property too: the file ignores case, so `$k^` does.
+prefix none
+sensitivity string %i
+top   = 1*( stmt ";" )
+stmt  = name as k close
+close = "=" $k^
+name  = word

@@ -1,0 +1,8 @@
+; `$k` compares as the element it repeats matched.  In a file under `sensitivity string %i` a rule (no flag of its own)
+; is matched ignoring case, so `$k` does too: <A></a> closes.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+sensitivity string %i
+top  = "<" name as t ">" "</" $t ">"
+name = 1*ALPHA

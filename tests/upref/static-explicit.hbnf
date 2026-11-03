@@ -1,0 +1,8 @@
+; The same, written as a hyperrule of a word: static.hbnf must generate the same parser.
+prefix none
+top       = 1*( statement ";" )
+statement = "ADD" name scope-end("ADD")
+          | "SUBTRACT" name scope-end("SUBTRACT")
+          | "READ" name *( "AT" "END" name ) scope-end("READ")
+scope-end(k) := [ "END-" + k ]
+name      = word

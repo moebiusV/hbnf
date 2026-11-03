@@ -1,0 +1,9 @@
+; An up reference, `$k^`: the capture of the nearest enclosing rule that kept k.  `leaf` is two
+; rules below `item`, which keeps k; each call passes the text down.
+prefix none
+include "../../grammars/common.hbnf"
+top  = 1*( item ";" )
+item = name as k "(" mid ")"
+mid  = "[" leaf "]"
+leaf = "<" $k^ ">"
+name = 1*ALPHA

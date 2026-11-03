@@ -1,0 +1,7 @@
+ok	ab x ab
+bad	ab x AB
+bad	AB x AB
+ok	cd y cd
+ok	CD y cd
+ok	cd y CD
+bad	cd y ce

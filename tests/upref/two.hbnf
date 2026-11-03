@@ -1,0 +1,9 @@
+; Two rules keep k and call the same helper; each call passes its own.  The word is read from a rule,
+; so the text is compared at run time.
+prefix none
+top    = 1*( ( stmt | other ) ";" )
+stmt   = opener as k name close
+other  = opener as k "!" close
+close  = "END-" + $k^
+opener = "DO" | "LOOP" | "WHILE"
+name   = word

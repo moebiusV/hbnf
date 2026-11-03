@@ -1,0 +1,6 @@
+prefix none
+top    = name as k look
+look   = !"x" "y"
+name   = 1*ALPHA
+call   = helper
+helper = "/" $k^

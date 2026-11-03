@@ -1,0 +1,6 @@
+ok	ab([<ab>]);
+ok	ab([<ab>]);xyz([<xyz>]);
+bad	ab([<ac>]);
+bad	ab([<a>]);
+bad	ab([<abb>]);
+bad	ab([<ab>]);xyz([<ab>]);

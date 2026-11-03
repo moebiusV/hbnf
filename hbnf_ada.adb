@@ -1745,6 +1745,15 @@ package body HBNF_Ada is
               Els (K).Kind = Block and then Els (K).Op in B_As | B_Num);
          function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
            (Pfx & "_" & Ada_Ident (To_String (Tag)) & "_" & Sid);
+         --  A capture read through the frame (`$K^`): the number of the frame, as a Natural.
+         function Up_Slot_Img (E : Element_Access; Part : Character) return String is
+           ("Frames.Element (Fb +" & Natural'Image (Natural'Max (0, HBNF_Grammar.Slot_Of
+              (To_String (Rules (Owner).Name),
+               HBNF_Grammar.Up_Slot_Of (To_String (E.Ctx), Part)))) & ")");
+         function Cap (Pfx : String; E : Element_Access) return String is
+           (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0
+            then "Natural (" & Up_Slot_Img (E, (if Pfx = "Cp" then 'p' else 'l')) & ")"
+            else Tag_Var (Pfx, E.Ctx));
       begin
          Bref_Seq := Bref_Seq + 1;
          if Wrapped then
@@ -1936,14 +1945,27 @@ package body HBNF_Ada is
                           & " " & Tag_Var ("Cp", E.Ctx) & " := "
                           & (if Skips then "P.Pos" else "Es_" & Sid & "_" & Img (K - 1))
                           & "; " & Tag_Var ("Cl", E.Ctx) & " := Kq - "
-                          & Tag_Var ("Cp", E.Ctx) & "; P.Pos := Kq; end;");
+                          & Tag_Var ("Cp", E.Ctx)
+                          & (if E.Id = 1
+                             then "; Frames.Replace_Element (Fb +"
+                                  & Natural'Image (Natural'Max (0, HBNF_Grammar.Slot_Of
+                                      (To_String (Rules (Owner).Name),
+                                       HBNF_Grammar.Up_Slot_Of (To_String (E.Ctx), 'p'))))
+                                  & ", Long_Long_Integer (" & Tag_Var ("Cp", E.Ctx) & ")); "
+                                  & "Frames.Replace_Element (Fb +"
+                                  & Natural'Image (Natural'Max (0, HBNF_Grammar.Slot_Of
+                                      (To_String (Rules (Owner).Name),
+                                       HBNF_Grammar.Up_Slot_Of (To_String (E.Ctx), 'l'))))
+                                  & ", Long_Long_Integer (" & Tag_Var ("Cl", E.Ctx) & "))"
+                             else "")
+                          & "; P.Pos := Kq; end;");
                         Append (Buf, LF);
                      elsif E.Op = B_Same and then E.Path /= Null_Unbounded_String then
                         --  `"END-" + $K`: the front and the text kept as K, one word
                         declare
                            Pre : constant String := To_String (E.Path);
-                           Cp  : constant String := Tag_Var ("Cp", E.Ctx);
-                           Cl  : constant String := Tag_Var ("Cl", E.Ctx);
+                           Cp  : constant String := Cap ("Cp", E);
+                           Cl  : constant String := Cap ("Cl", E);
                            function Differs (A, B : String) return String is
                              (if E.Id = 2 then "not Ada.Strings.Equal_Case_Insensitive (" & A & ", " & B & ")"
                               else A & " /= " & B);
@@ -1983,14 +2005,17 @@ package body HBNF_Ada is
                            Append (Buf, Ind & "Skip_Ws (P);");
                            Append (Buf, LF);
                         end if;
-                        Append (Buf, Ind & "if P.Pos + " & Tag_Var ("Cl", E.Ctx)
-                          & " - 1 > Limit (P) or else P.Text (P.Pos .. P.Pos + "
-                          & Tag_Var ("Cl", E.Ctx) & " - 1) /= P.Text (" & Tag_Var ("Cp", E.Ctx)
-                          & " .. " & Tag_Var ("Cp", E.Ctx) & " + " & Tag_Var ("Cl", E.Ctx)
-                          & " - 1) then Fail (P, ""the same text again, `"
+                        Append (Buf, Ind & "if P.Pos + " & Cap ("Cl", E)
+                          & " - 1 > Limit (P) or else "
+                          & (if E.Id = 2 then "not Ada.Strings.Equal_Case_Insensitive (" else "")
+                          & "P.Text (P.Pos .. P.Pos + "
+                          & Cap ("Cl", E) & " - 1)" & (if E.Id = 2 then ", " else " /= ")
+                          & "P.Text (" & Cap ("Cp", E)
+                          & " .. " & Cap ("Cp", E) & " + " & Cap ("Cl", E)
+                          & " - 1)" & (if E.Id = 2 then ")" else "") & " then Fail (P, ""the same text again, `"
                           & Ada_Escape (To_String (E.Ctx)) & "`""); " & To_String (FA) & " end if;");
                         Append (Buf, LF);
-                        Append (Buf, Ind & "P.Pos := P.Pos + " & Tag_Var ("Cl", E.Ctx) & ";");
+                        Append (Buf, Ind & "P.Pos := P.Pos + " & Cap ("Cl", E) & ";");
                         Append (Buf, LF);
                      elsif E.Op = B_Switch then
                         if E.Path = Null_Unbounded_String then
@@ -5529,7 +5554,11 @@ package body HBNF_Ada is
            (if Is_Hosted and then Hosted_Acts
             then "      Bnf_Warns.Clear;" & LF else "")
            & (if HBNF_Grammar.Uses_Frames
-              then "      Frames.Clear; Fb := 0;" & LF else ""));
+              then "      Frames.Clear; Fb := 0;"
+                   & (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
+                      then " for Ii in 1 .. " & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)))
+                           & " loop Frames.Append (0); end loop;"
+                      else "") & LF else ""));
          HBNF_Template.Put (V, "actions",
            (if Is_Hosted and then Hosted_Acts
               and then (Is_Record (Analyze (Rules, 1))

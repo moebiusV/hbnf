@@ -2795,10 +2795,25 @@ package body HBNF_Rust is
          Sid : constant String := Img (Bref_Seq + 1);
          function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
            (Pfx & "_" & Rust_Snake (To_String (Tag)) & "_" & Sid);
+         --  A capture read through the frame (`$K^`): the number of the frame, as a usize.
+         function Up_Slot_Img (E : Element_Access; Part : Character) return String is
+           ("p.fs[p.fb + " & Img (Natural'Max (0, HBNF_Grammar.Slot_Of
+              (To_String (Rules (Owner).Name),
+               HBNF_Grammar.Up_Slot_Of (To_String (E.Ctx), Part)))) & "]");
+         function Cap (Pfx : String; E : Element_Access) return String is
+           (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0
+            then "(" & Up_Slot_Img (E, (if Pfx = "cp" then 'p' else 'l')) & " as usize)"
+            else Tag_Var (Pfx, E.Ctx));
+         function Local_Reader (Tag : String) return Boolean is
+           (for some I in First .. Last =>
+              Els (I).Kind = Block and then Els (I).Op = B_Same
+              and then To_String (Els (I).Ctx) = Tag);
       begin
          Bref_Seq := Bref_Seq + 1;
          for K in First .. Last loop
-            if Els (K).Kind = Block and then Els (K).Op = B_As then
+            if Els (K).Kind = Block and then Els (K).Op = B_As
+              and then (Els (K).Id /= 1 or else Local_Reader (To_String (Els (K).Ctx)))
+            then
                Append (Buf, Ind & "let mut " & Tag_Var ("cp", Els (K).Ctx) & " = 0usize;");
                Append (Buf, LF);
                Append (Buf, Ind & "let mut " & Tag_Var ("cl", Els (K).Ctx) & " = 0usize;");
@@ -2913,8 +2928,15 @@ package body HBNF_Rust is
                           & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
                                & "; p.skip_ws(); " else "")
                           & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
-                          & "; p.pos = k_; " & Tag_Var ("cp", E.Ctx) & " = st_; "
-                          & Tag_Var ("cl", E.Ctx) & " = k_ - st_; }");
+                          & "; p.pos = k_; "
+                          & (if E.Id /= 1 or else Local_Reader (To_String (E.Ctx))
+                             then Tag_Var ("cp", E.Ctx) & " = st_; " & Tag_Var ("cl", E.Ctx) & " = k_ - st_; "
+                             else "")
+                          & (if E.Id = 1
+                             then Up_Slot_Img (E, 'p') & " = st_ as i64; "
+                                  & Up_Slot_Img (E, 'l') & " = (k_ - st_) as i64; "
+                             else "")
+                          & "}");
                         Append (Buf, LF);
                      elsif E.Op = B_Guard then
                         --  the clause of a rule with numeric parameters applies
@@ -3115,8 +3137,8 @@ package body HBNF_Rust is
                         --  `"END-" + $K`: the front and the text kept as K, one word
                         declare
                            Pre : constant String := To_String (E.Path);
-                           Cp  : constant String := Tag_Var ("cp", E.Ctx);
-                           Cl  : constant String := Tag_Var ("cl", E.Ctx);
+                           Cp  : constant String := Cap ("cp", E);
+                           Cl  : constant String := Cap ("cl", E);
                            Same : constant String :=
                              (if E.Id = 2 then "b_[p.pos + pre_.len()..end_].eq_ignore_ascii_case(&b_[" & Cp & ".." & Cp & " + cl_])"
                               else "b_[p.pos + pre_.len()..end_] == b_[" & Cp & ".." & Cp & " + cl_]");
@@ -3156,9 +3178,13 @@ package body HBNF_Rust is
                            Append (Buf, LF);
                         end if;
                         Append (Buf, Ind & "{ let b_ = p.text.as_bytes(); let (cp_, cl_) = ("
-                          & Tag_Var ("cp", E.Ctx) & ", " & Tag_Var ("cl", E.Ctx) & ");");
+                          & Cap ("cp", E) & ", " & Cap ("cl", E) & ");");
                         Append (Buf, LF);
-                        Append (Buf, Ind & "  if p.pos + cl_ > b_.len() || b_[p.pos..p.pos + cl_] != b_[cp_..cp_ + cl_] { return Err(p.fail(""the same text again, `"
+                        Append (Buf, Ind & "  if p.pos + cl_ > b_.len() || "
+                          & (if E.Id = 2
+                             then "!b_[p.pos..p.pos + cl_].eq_ignore_ascii_case(&b_[cp_..cp_ + cl_])"
+                             else "b_[p.pos..p.pos + cl_] != b_[cp_..cp_ + cl_]")
+                          & " { return Err(p.fail(""the same text again, `"
                           & Rust_Escape (To_String (E.Ctx)) & "`"")); }");
                         Append (Buf, LF);
                         Append (Buf, Ind & "  p.pos += cl_; }");
@@ -4460,7 +4486,11 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
          HBNF_Template.Put (V, "text_init", (if Is_Hosted then ": Txt(text)" else ""));
          HBNF_Template.Put (V, "bit_init", (if Is_Hosted then "bit: 0, " else ""));
          HBNF_Template.Put (V, "ctx_init", (if Ctx_On then ", cx: Default::default()" else "")
-                       & (if HBNF_Grammar.Uses_Frames then ", fs: Vec::new(), fb: 0" else ""));
+                       & (if HBNF_Grammar.Uses_Frames
+                          then (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
+                                then ", fs: vec![0; " & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name))) & "], fb: 0"
+                                else ", fs: Vec::new(), fb: 0")
+                          else ""));
          HBNF_Template.Put (V, "switch_init",
            (if HBNF_Grammar.Uses_Switch then ", g: 0, ev: Vec::new()" else ""));
          HBNF_Template.Put (V, "reset",

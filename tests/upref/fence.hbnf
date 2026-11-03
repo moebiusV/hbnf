@@ -1,0 +1,13 @@
+; The Markdown fence: it closes at a line that begins with the opening ticks, and a line of code is not
+; the opening ticks again (`!$t^`: the text kept as t by the rule `fence`, which calls `code`).  A fence
+; of four ticks holds a line of three and closes at the four.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc   = 1*fence
+fence = ticks as t [ info ] LF *( code LF ) $t extra LF
+ticks = 3*"`"
+info  = 1*~( LF / "`" )
+code  = !$t^ *~LF
+extra = *'`'

@@ -1,0 +1,5 @@
+ok	[ab(cd ab/cd)];
+ok	[x(y x/y)];
+bad	[ab(cd cd/ab)];
+bad	[ab(cd ab/ab)];
+bad	[ab(cd cd/cd)];

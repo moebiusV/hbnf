@@ -1,0 +1,5 @@
+prefix none
+top    = foo ";"
+foo    = name as k helper
+helper = "/" $k^zzz
+name   = 1*ALPHA

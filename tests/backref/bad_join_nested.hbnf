@@ -1,3 +1,0 @@
-prefix none
-top    = opener as k "x" [ "y" "END-" + $k ]
-opener = "DO" | "LOOP"

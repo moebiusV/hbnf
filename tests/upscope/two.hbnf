@@ -1,0 +1,6 @@
+; One guest, two parents: `^.who` is the root's `who` in the first and the middle grammar's in the second.
+prefix none
+include "g2.hbnf" as one
+include "mid2.hbnf" as two
+top  = one.item ";" two.in.item ";"
+who  = "R"

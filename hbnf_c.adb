@@ -5507,10 +5507,23 @@ package body HBNF_C is
            ("size_t k_ = p->pos, st_ = " & Var & "; "
             & (if Ws then "p->pos = " & Var & "; skip_ws(p); st_ = p->pos; "
                           & "p->pos = k_; " else ""));
+
+         --  A capture read through the frame (`$K^`, ABNF.md): its offset and length.
+         function Up_Slot_Img (E : Element_Access; Part : Character) return String is
+           ("HF(" & Ctx_Img (Natural'Max (0, HBNF_Grammar.Slot_Of
+              (To_String (Rules (Owner).Name),
+               HBNF_Grammar.Up_Slot_Of (To_String (E.Ctx), Part))))
+            & ")");
+         function Local_Reader (Tag : String) return Boolean is
+           (for some I in First .. Last =>
+              Els (I).Kind = Block and then Els (I).Op = B_Same
+              and then To_String (Els (I).Ctx) = Tag);
       begin
          Ctx_Seq := Ctx_Seq + 1;
          for K in First .. Last loop
-            if Els (K).Kind = Block and then Els (K).Op = B_As then
+            if Els (K).Kind = Block and then Els (K).Op = B_As
+              and then (Els (K).Id /= 1 or else Local_Reader (To_String (Els (K).Ctx)))
+            then
                Append (Buf, Ind & "size_t cp_"
                  & C_Ident_Lower (To_String (Els (K).Ctx)) & "_" & Sid
                  & " = 0, cl_" & C_Ident_Lower (To_String (Els (K).Ctx)) & "_"
@@ -5944,25 +5957,43 @@ package body HBNF_C is
                         when B_As =>
                            --  keep where the text of the element before began
                            --  and how long it is
-                           Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
-                             & Ctx_Img (K - 1)) & "cp_"
-                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
-                             & " = st_;  cl_"
-                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
-                             & " = k_ - st_; }");
-                           Append (Buf, LF);
+                           if E.Id /= 1 or else Local_Reader (To_String (E.Ctx)) then
+                              Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
+                                & Ctx_Img (K - 1)) & "cp_"
+                                & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
+                                & " = st_;  cl_"
+                                & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
+                                & " = k_ - st_; }");
+                              Append (Buf, LF);
+                           end if;
+                           if E.Id = 1 then
+                              --  read by a rule of its own: kept in the frame too
+                              Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
+                                & Ctx_Img (K - 1)) & "(void) k_; "
+                                & Up_Slot_Img (E, 'p') & " = (long)st_; "
+                                & Up_Slot_Img (E, 'l') & " = (long)(k_ - st_); }");
+                              Append (Buf, LF);
+                           end if;
                         when B_Same =>
                            Ws_Skip;
+                           if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then
+                              --  read through the frame: its offset and length
+                              Append (Buf, Ind & "{ size_t upp_ = (size_t)" & Up_Slot_Img (E, 'p')
+                                & ", upl_ = (size_t)" & Up_Slot_Img (E, 'l') & ";");
+                              Append (Buf, LF);
+                           end if;
                            if E.Path /= Null_Unbounded_String then
                               --  `"END-" + $K`: the front, then the text kept as
                               --  K, as one word when a keyword is a word
                               declare
                                  Pre : constant String := To_String (E.Path);
                                  PL  : constant String := Img (Pre'Length);
-                                 Cp  : constant String := "cp_"
-                                   & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid;
-                                 Cl  : constant String := "cl_"
-                                   & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid;
+                                 Cp  : constant String :=
+                                   (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then "upp_"
+                                    else "cp_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid);
+                                 Cl  : constant String :=
+                                   (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then "upl_"
+                                    else "cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid);
                                  Cmp : constant String :=
                                    (if E.Id = 2 then "strncasecmp" else "memcmp");
                                  Bad_S : constant String :=
@@ -5993,19 +6024,29 @@ package body HBNF_C is
                               end;
                               goto Same_Done;
                            end if;
-                           Append (Buf, Ind & "if (p->pos + cl_"
-                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
-                             & " > p->len || memcmp (p->text + p->pos, p->text + cp_"
-                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
-                             & ", cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_"
-                             & Sid & ")) { fail(p, ""the same text again, `"
-                             & To_String (E.Ctx) & "`"", 0, p->text + p->pos, 0); "
-                             & Fail & " }");
-                           Append (Buf, LF);
-                           Append (Buf, Ind & "p->pos += cl_"
-                             & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid & ";");
-                           Append (Buf, LF);
-                           <<Same_Done>> null;
+                           declare
+                              Cp : constant String :=
+                                (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then "upp_"
+                                 else "cp_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid);
+                              Cl : constant String :=
+                                (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then "upl_"
+                                 else "cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid);
+                           begin
+                              Append (Buf, Ind & "if (p->pos + " & Cl
+                                & " > p->len || " & (if E.Id = 2 then "strncasecmp" else "memcmp")
+                                & " (p->text + p->pos, p->text + " & Cp
+                                & ", " & Cl & ")) { fail(p, ""the same text again, `"
+                                & To_String (E.Ctx) & "`"", 0, p->text + p->pos, 0); "
+                                & Fail & " }");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "p->pos += " & Cl & ";");
+                              Append (Buf, LF);
+                           end;
+                           <<Same_Done>>
+                           if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then
+                              Append (Buf, Ind & "}");
+                              Append (Buf, LF);
+                           end if;
                         when B_Guard =>
                            --  the clause of a rule with numeric parameters applies
                            Append (Buf, Ind & "if (!" & HBNF_Grammar.Render_Guard
@@ -9351,7 +9392,10 @@ package body HBNF_C is
          Append (Res, LF);
          Append (Res, (if Ctx_On then "    hbnf_ctx_clear();" & LF else "")
            & (if HBNF_Grammar.Uses_Frames
-              then "    hbnf_fsp = 0; hbnf_fb = 0;" & LF else "")
+              then "    hbnf_fsp = 0; hbnf_fb = 0;"
+                   & (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
+                      then " hbnf_fpush(" & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name))) & ");"
+                      else "") & LF else "")
            & "    parser_t p = { text, strlen(text), 0, (size_t)-1,"
            & " 0, 0, NULL, NULL, 0, 0 };" & LF
            & "    memset(out, 0, sizeof *out);   /* the rules fill it directly and expect it clear */" & LF
@@ -9412,7 +9456,10 @@ package body HBNF_C is
            & "    if (p.quiet) {" & LF
            & (if Ctx_On then "        hbnf_ctx_clear();" & LF else "")
            & (if HBNF_Grammar.Uses_Frames
-              then "        hbnf_fsp = 0; hbnf_fb = 0;" & LF else "")
+              then "        hbnf_fsp = 0; hbnf_fb = 0;"
+                   & (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
+                      then " hbnf_fpush(" & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name))) & ");"
+                      else "") & LF else "")
            & "        p = (parser_t){ text, strlen(text), 0, (size_t)-1, 0, 0, NULL, NULL, 0, 0 };" & LF
            & "        goto start_;" & LF
            & "    }" & LF

@@ -1,0 +1,1 @@
+rule `top` uses `$k^`, but no rule above it keeps k

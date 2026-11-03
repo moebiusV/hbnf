@@ -1,0 +1,6 @@
+prefix none
+top    = foo ";" | bar ";"
+foo    = name as k helper
+bar    = name helper
+helper = "/" $k^
+name   = 1*ALPHA

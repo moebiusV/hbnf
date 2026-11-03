@@ -1,0 +1,9 @@
+; `$t` in a lookahead (a rule of its own) inside a group: a line of text is "-" and anything but the tag kept
+; by the rule that holds the group.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc   = 1*block
+block = "[" name as t LF *( "-" !$t *~LF LF ) $t LF
+name  = 1*ALPHA

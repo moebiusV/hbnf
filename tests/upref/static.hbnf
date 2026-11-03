@@ -1,0 +1,9 @@
+; The statement names its keyword once; the helper is written once.  K is kept from one fixed literal at
+; every call, so the generator reads the helper as scope-end("ADD") and the like.
+prefix none
+top       = 1*( statement ";" )
+statement = "ADD" as k name scope-end
+          | "SUBTRACT" as k name scope-end
+          | "READ" as k name *( "AT" "END" name ) scope-end
+scope-end = [ "END-" + $k^ ]
+name      = word

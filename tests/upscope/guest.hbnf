@@ -1,0 +1,6 @@
+; The guest: its rules, and the host's by `^.`.  A plain name is still the guest's own.
+prefix none
+whitespace none
+item  = "[" ^.expr "]"
+names = ^.list(^.name)
+tail  = *( !^.stop r"[a-z]" ) ^.stop

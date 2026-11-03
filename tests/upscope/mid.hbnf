@@ -1,0 +1,4 @@
+; A guest that includes a guest: `^.inner` is the rule of this grammar's includer, `^.^.expr` the host's.
+prefix none
+include "leaf.hbnf" as l
+inner = "{" ^.expr "}"

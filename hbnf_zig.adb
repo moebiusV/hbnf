@@ -2980,10 +2980,25 @@ package body HBNF_Zig is
          Sid : constant String := Img (Bref_Seq + 1);
          function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
            (Pfx & "_" & Zig_Snake (To_String (Tag)) & "_" & Sid);
+         --  A capture read through the frame (`$K^`): the number of the frame, as a usize.
+         function Up_Slot_Img (E : Element_Access; Part : Character) return String is
+           ("p.fs.items[p.fb + " & Img (Natural'Max (0, HBNF_Grammar.Slot_Of
+              (To_String (Rules (Owner).Name),
+               HBNF_Grammar.Up_Slot_Of (To_String (E.Ctx), Part)))) & "]");
+         function Cap (Pfx : String; E : Element_Access) return String is
+           (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0
+            then "@as(usize, @intCast(" & Up_Slot_Img (E, (if Pfx = "cp" then 'p' else 'l')) & "))"
+            else Tag_Var (Pfx, E.Ctx));
+         function Local_Reader (Tag : String) return Boolean is
+           (for some I in First .. Last =>
+              Els (I).Kind = Block and then Els (I).Op = B_Same
+              and then To_String (Els (I).Ctx) = Tag);
       begin
          Bref_Seq := Bref_Seq + 1;
          for K in First .. Last loop
-            if Els (K).Kind = Block and then Els (K).Op = B_As then
+            if Els (K).Kind = Block and then Els (K).Op = B_As
+              and then (Els (K).Id /= 1 or else Local_Reader (To_String (Els (K).Ctx)))
+            then
                Append (Buf, Ind & "var " & Tag_Var ("cp", Els (K).Ctx) & ": usize = 0;");
                Append (Buf, LF);
                Append (Buf, Ind & "var " & Tag_Var ("cl", Els (K).Ctx) & ": usize = 0;");
@@ -3108,15 +3123,22 @@ package body HBNF_Zig is
                           & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
                                & "; p.skip_ws(); " else "")
                           & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
-                          & "; p.pos = k_; " & Tag_Var ("cp", E.Ctx) & " = st_; "
-                          & Tag_Var ("cl", E.Ctx) & " = k_ - st_; }");
+                          & "; p.pos = k_; "
+                          & (if E.Id /= 1 or else Local_Reader (To_String (E.Ctx))
+                             then Tag_Var ("cp", E.Ctx) & " = st_; " & Tag_Var ("cl", E.Ctx) & " = k_ - st_; "
+                             else "")
+                          & (if E.Id = 1
+                             then Up_Slot_Img (E, 'p') & " = @as(i64, @intCast(st_)); "
+                                  & Up_Slot_Img (E, 'l') & " = @as(i64, @intCast(k_ - st_)); "
+                             else "")
+                          & "}");
                         Append (Buf, LF);
                      elsif E.Op = B_Same and then E.Path /= Null_Unbounded_String then
                         --  `"END-" + $K`: the front and the text kept as K, one word
                         declare
                            Pre : constant String := To_String (E.Path);
-                           Cp  : constant String := Tag_Var ("cp", E.Ctx);
-                           Cl  : constant String := Tag_Var ("cl", E.Ctx);
+                           Cp  : constant String := Cap ("cp", E);
+                           Cl  : constant String := Cap ("cl", E);
                            function Same (A, B : String) return String is
                              (if E.Id = 2 then "std.ascii.eqlIgnoreCase(" & A & ", " & B & ")"
                               else "std.mem.eql(u8, " & A & ", " & B & ")");
@@ -3154,8 +3176,10 @@ package body HBNF_Zig is
                            Append (Buf, Ind & "p.skip_ws();");
                            Append (Buf, LF);
                         end if;
+                        if HBNF_Grammar.Up_Level (To_String (E.Ctx)) < 0 then
                         Append (Buf, Ind & "if (p.pos + " & Tag_Var ("cl", E.Ctx)
-                          & " > p.text.len or !std.mem.eql(u8, p.text[p.pos .. p.pos + "
+                          & " > p.text.len or !" & (if E.Id = 2 then "std.ascii.eqlIgnoreCase(" else "std.mem.eql(u8, ")
+                          & "p.text[p.pos .. p.pos + "
                           & Tag_Var ("cl", E.Ctx) & "], p.text[" & Tag_Var ("cp", E.Ctx) & " .. "
                           & Tag_Var ("cp", E.Ctx) & " + " & Tag_Var ("cl", E.Ctx) & "])) { "
                           & Pref & "p.fail(""the same text again, `" & Zig_Escape (To_String (E.Ctx))
@@ -3163,6 +3187,19 @@ package body HBNF_Zig is
                         Append (Buf, LF);
                         Append (Buf, Ind & "p.pos += " & Tag_Var ("cl", E.Ctx) & ";");
                         Append (Buf, LF);
+                        else
+                        Append (Buf, Ind & "{ const cp_: usize = " & Cap ("cp", E) & "; const cl_: usize = "
+                          & Cap ("cl", E) & ";");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "  if (p.pos + cl_ > p.text.len or !"
+                          & (if E.Id = 2 then "std.ascii.eqlIgnoreCase(" else "std.mem.eql(u8, ")
+                          & "p.text[p.pos .. p.pos + cl_], p.text[cp_ .. cp_ + cl_])) { "
+                          & Pref & "p.fail(""the same text again, `" & Zig_Escape (To_String (E.Ctx))
+                          & "`"")" & Cat & "; }");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "  p.pos += cl_; }");
+                        Append (Buf, LF);
+                        end if;
                      elsif E.Op = B_Guard then
                         --  the clause of a rule with numeric parameters applies
                         Append (Buf, Ind & "if (!" & HBNF_Grammar.Render_Guard
@@ -5090,7 +5127,10 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
          HBNF_Template.Put (V, "switch_init", (if HBNF_Grammar.Uses_Switch then ", .evp = &evl" else ""));
          HBNF_Template.Put (V, "reset",
            (if Is_Hosted and then Hosted_Acts
-            then "    bnf_warning_list = &.{};" & LF else ""));
+            then "    bnf_warning_list = &.{};" & LF else "")
+           & (if HBNF_Grammar.Uses_Frames and then HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
+              then "    p.fs.appendNTimes(alloc, 0, " & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)))
+                   & ") catch return p.err_out(err, err_line, err_col);" & LF else ""));
          HBNF_Template.Put (V, "actions",
            (if Is_Hosted and then Hosted_Acts then
               "    var h_ = Hooks{ .alloc = alloc };" & LF

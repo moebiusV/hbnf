@@ -1,0 +1,8 @@
+; The same under `sensitivity string %i`: the join ignores case.
+prefix none
+sensitivity string %i
+top    = 1*( stmt ";" )
+stmt   = opener as k name close
+close  = "END-" + $k^
+opener = "DO" | "LOOP"
+name   = word

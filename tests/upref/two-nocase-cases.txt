@@ -1,0 +1,4 @@
+ok	DO x END-DO;
+ok	do x end-DO;
+ok	DO x end-do;
+bad	DO x END-LOOP;

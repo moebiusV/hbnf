@@ -1,0 +1,3 @@
+; An `i"..."` literal is matched ignoring case also in a file that compares exactly, and so is its `$k`.
+prefix none
+top  = i"ab" as k "x" $k | "cd" as k "y" $k

@@ -1,0 +1,1 @@
+rule `helper` uses `$k^`, but is called from `bar`, which does not keep k
