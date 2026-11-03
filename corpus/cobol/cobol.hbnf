@@ -36,7 +36,7 @@ program-name       = function-name | nonnumeric-literal
 
 ; ---- the identification division ----
 identification-division = [ ( "IDENTIFICATION" | "ID" ) "DIVISION" "." ] program-id-paragraph *id-paragraph [ options-paragraph ]
-program-id-paragraph    = ( "PROGRAM-ID" | "FUNCTION-ID" ) "." program-name [ "AS" nonnumeric-literal ] *( is ( "COMMON" | "INITIAL" | "RECURSIVE" | "PROTOTYPE" ) [ "PROGRAM" ] ) "."
+program-id-paragraph    = ( "PROGRAM-ID" | "FUNCTION-ID" ) "." program-name [ "AS" nonnumeric-literal ] [ is ( "COMMON" [ "INITIAL" | "RECURSIVE" ] | ( "INITIAL" | "RECURSIVE" ) [ "COMMON" ] | "PROTOTYPE" ) [ "PROGRAM" ] ] "."
 id-paragraph            = id-paragraph-name "." comment-entry
 id-paragraph-name       = "AUTHOR" | "INSTALLATION" | "DATE-WRITTEN" | "DATE-COMPILED" | "SECURITY" | "REMARKS"
 comment-entry           = *( !paragraph-start comment-word )
@@ -179,7 +179,7 @@ usage                  = "DISPLAY" | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "PO
 value-clause           = "VALUE" is ( 1*value-item | "ALL" literal ) [ "FALSE" is operand ]
                        | "VALUES" are 1*value-item [ "FALSE" is operand ]
 value-item             = operand [ thru operand ]
-occurs-clause          = "OCCURS" operand [ "TO" ( operand | "UNBOUNDED" ) ] [ "TIMES" ] [ "DEPENDING" on identifier ] [ "VARYING" identifier [ "FROM" operand ] [ "BY" operand ] ]
+occurs-clause          = "OCCURS" operand ( "TO" ( operand | "UNBOUNDED" ) [ "TIMES" ] "DEPENDING" on identifier | [ "TIMES" ] [ "DEPENDING" on identifier ] ) [ "VARYING" identifier [ "FROM" operand ] [ "BY" operand ] ]
                          *( ( "ASCENDING" | "DESCENDING" ) key is 1*identifier ) [ "INDEXED" by 1*user-word ]
 redefines-clause       = "REDEFINES" data-name
 renames-clause         = "RENAMES" identifier [ thru identifier ]
@@ -285,9 +285,11 @@ size-error-phrases = ( on "SIZE" "ERROR" statements ) [ "NOT" on "SIZE" "ERROR" 
 
 if-statement       = "IF" condition [ "THEN" ] ( next-sentence | [ statements ] ) [ "ELSE" ( next-sentence | statements ) ] [ "END-IF" ]
 
-evaluate-statement = "EVALUATE" subject *( "ALSO" subject ) 1*when-phrase [ "WHEN" "OTHER" [ statements ] ] [ "END-EVALUATE" ]
+evaluate-statement = "EVALUATE" subject *( "ALSO" subject ) ( 1*when-phrase [ when-tail ] | when-tail ) [ "END-EVALUATE" ]
 subject            = "TRUE" | "FALSE" | condition
-when-phrase        = 1*( "WHEN" object *( "ALSO" object ) ) [ statements ]
+when-phrase        = 1*when-head statements
+when-head          = "WHEN" object *( "ALSO" object )
+when-tail          = 1*when-head | "WHEN" "OTHER" [ statements ]
 object             = "ANY" | "TRUE" | "FALSE" | [ "NOT" ] operand thru operand | condition
 
 perform-statement  = "PERFORM" ( [ "FOREVER" | perform-option ] [ statements ] "END-PERFORM"
@@ -336,7 +338,9 @@ tallying           = "TALLYING" 1*( identifier "FOR" 1*( "CHARACTERS" [ region ]
 replacing          = "REPLACING" 1*( "CHARACTERS" "BY" operand [ region ]
                                  | ( "ALL" | "LEADING" | "TRAILING" | "FIRST" ) 1*( operand "BY" operand [ region ] ) )
 converting         = "CONVERTING" operand "TO" operand [ region ]
-region             = *( ( "BEFORE" | "AFTER" ) [ "INITIAL" ] operand )
+region             = [ before-phrase [ after-phrase ] | after-phrase [ before-phrase ] ]
+before-phrase      = "BEFORE" [ "INITIAL" ] operand
+after-phrase       = "AFTER" [ "INITIAL" ] operand
 
 set-statement      = "SET" ( "ADDRESS" "OF" identifier ( "TO" operand | ( "UP" | "DOWN" ) "BY" operand )
                            | "ENVIRONMENT" operand "TO" operand
