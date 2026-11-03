@@ -4,17 +4,20 @@
 Writes the rule `reserved-word`: the words COBOL reserves, taken from GnuCOBOL 3.2's cobc/reserved.c
 (bench/cache/cobol, fetched by tools/cobol_fetch.sh).  A word is kept when its comment there names a COBOL
 standard (1985, 2002, 2014, 2023); the vendors' extensions, and the words that are reserved only in some
-contexts (marked C/S) or only in the communication section, are left out, so a program may use them as names."""
+contexts (marked C/S) or only in the communication section, are left out, so a program may use them as names.  So are three
+words that its table lists and its scanner takes as names all the same (UNRESERVED, found by compiling a data item of each name with cobc 3.2;
+the other words it lists with the token -1, such as SELF and XOR, it refuses as `reserved, but not supported`)."""
 import re, sys
 
 text = open(sys.argv[1], errors='replace').read()
 a = text.index('default_reserved_words[] = {')
 b = text.index('\n};', a)
 entries = re.findall(r'\{\s*"([^"]+)"\s*,\s*\d\s*,\s*\d\s*,\s*[A-Za-z_0-9\-]+\s*,\s*/\*\s*([^*]*?)\s*\*/', text[a:b])
+UNRESERVED = {'SHORT', 'LOCATION', 'FLOAT-NOT-A-NUMBER'}
 keep = []
 for word, tag in entries:
     t = tag.replace('\n', ' ')
-    if 'C/S' in t or 'xtension' in t or 'Communication' in t or 'ACU' in t or 'IBM' in t or 'Obsolete' in t:
+    if word in UNRESERVED or 'C/S' in t or 'xtension' in t or 'Communication' in t or 'ACU' in t or 'IBM' in t or 'Obsolete' in t:
         continue
     if re.search(r'\b(85|2002|2014|2023|200x)\b', t) and word not in keep:
         keep.append(word)
