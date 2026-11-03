@@ -287,9 +287,9 @@ compute-statement  = "COMPUTE" 1*rounded ( "=" | "EQUAL" ) arithmetic-expression
 rounded            = identifier [ "ROUNDED" [ rounded-mode ] ]
 rounded-mode       = "MODE" is round-choice
 rounded-operand    = operand [ "ROUNDED" [ rounded-mode ] ]
-size-error-phrases = ( on "SIZE" "ERROR" statements ) [ "NOT" on "SIZE" "ERROR" statements ]
-                   | "NOT" on "SIZE" "ERROR" statements
-
+; An ON ... phrase and a NOT ON ... phrase, each with its statements, either one first or alone: W is the words that name the condition.
+phrases(W) := W statements [ "NOT" W statements ] | "NOT" W statements [ W statements ]
+size-error-phrases = phrases(on "SIZE" "ERROR")
 if-statement       = "IF" condition [ "THEN" ] ( next-sentence | [ statements ] ) [ "ELSE" ( next-sentence | statements ) ] [ "END-IF" ]
 
 evaluate-statement = "EVALUATE" subject *( "ALSO" subject ) ( 1*when-phrase [ when-tail ] | when-tail ) [ "END-EVALUATE" ]
@@ -309,26 +309,19 @@ varying            = identifier "FROM" operand [ "BY" operand ] "UNTIL" conditio
 call-statement     = "CALL" [ "STATIC" | "STDCALL" ] operand [ "USING" 1*using-argument ] [ ( "RETURNING" | "GIVING" ) ( "OMITTED" | identifier ) ] [ on-exception-phrases ] [ "END-CALL" ]
 using-argument     = [ by ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand [ "SIZE" ( "DEFAULT" | is operand ) ] )
 cancel-statement   = "CANCEL" 1*operand
-on-exception-phrases = exception-phrase [ not-exception-phrase ] | not-exception-phrase [ exception-phrase ]
-exception-phrase     = on ( "EXCEPTION" | "OVERFLOW" | "ESCAPE" ) statements
-not-exception-phrase = "NOT" on ( "EXCEPTION" | "OVERFLOW" | "ESCAPE" ) statements
-                     | "NOT" on "EXCEPTION" statements
-
+on-exception-phrases = phrases(on ( "EXCEPTION" | "OVERFLOW" | "ESCAPE" ))
 open-statement     = "OPEN" 1*( ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*( file-name *( with ( "LOCK" | "NO" "REWIND" ) ) ) )
 close-statement    = "CLOSE" 1*( file-name [ "REEL" | "UNIT" ] [ "FOR" "REMOVAL" ] [ with ( "LOCK" | "NO" "REWIND" ) ] )
 read-statement     = "READ" file-name [ "NEXT" | "PREVIOUS" ] [ "RECORD" ] [ "INTO" identifier ] [ with ( "NO" "LOCK" | "LOCK" | "KEPT" "LOCK" ) ] [ "KEY" is identifier ]
                      [ end-phrases ] [ invalid-key-phrases ] [ "END-READ" ]
 write-statement    = "WRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ ( "BEFORE" | "AFTER" ) [ "ADVANCING" ] ( "PAGE" | operand [ "LINE" | "LINES" ] ) ]
                      [ end-of-page-phrases ] [ invalid-key-phrases ] [ "END-WRITE" ]
-end-of-page-phrases = end-of-page-phrase [ not-end-of-page-phrase ] | not-end-of-page-phrase [ end-of-page-phrase ]
-end-of-page-phrase  = at ( "END-OF-PAGE" | "EOP" ) statements
-not-end-of-page-phrase = "NOT" at ( "END-OF-PAGE" | "EOP" ) statements
+end-of-page-phrases = phrases(at ( "END-OF-PAGE" | "EOP" ))
 rewrite-statement  = "REWRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ invalid-key-phrases ] [ "END-REWRITE" ]
 delete-statement   = "DELETE" ( "FILE" 1*file-name | file-name [ "RECORD" ] [ invalid-key-phrases ] [ "END-DELETE" ] )
 start-statement    = "START" file-name [ "FIRST" | "LAST" ] [ "KEY" is relation-operator identifier ] [ invalid-key-phrases ] [ "END-START" ]
-end-phrases        = ( "AT" "END" statements ) [ "NOT" "AT" "END" statements ] | "NOT" "AT" "END" statements
-invalid-key-phrases = ( "INVALID" key statements ) [ "NOT" "INVALID" key statements ] | "NOT" "INVALID" key statements
-
+end-phrases        = phrases("AT" "END")
+invalid-key-phrases = phrases("INVALID" key)
 initialize-statement = "INITIALIZE" 1*identifier [ "WITH" "FILLER" ] [ ( "ALL" | category ) to "VALUE" ]
                        [ "REPLACING" 1*( category [ "DATA" ] "BY" operand ) ] [ [ "THEN" ] to "DEFAULT" ]
 category           = "ALPHABETIC" | "ALPHANUMERIC" | "ALPHANUMERIC-EDITED" | "NUMERIC" | "NUMERIC-EDITED" | "NATIONAL"
@@ -338,8 +331,7 @@ string-statement   = "STRING" 1*( 1*operand [ "DELIMITED" by ( "SIZE" | operand 
 unstring-statement = "UNSTRING" sending [ "DELIMITED" by [ "ALL" ] operand *( "OR" [ "ALL" ] operand ) ]
                      "INTO" 1*( identifier [ "DELIMITER" [ "IN" ] identifier ] [ "COUNT" [ "IN" ] identifier ] )
                      [ with "POINTER" identifier ] [ "TALLYING" [ "IN" ] identifier ] [ overflow-phrases ] [ "END-UNSTRING" ]
-overflow-phrases   = ( on "OVERFLOW" statements ) [ "NOT" on "OVERFLOW" statements ] | "NOT" on "OVERFLOW" statements
-
+overflow-phrases   = phrases(on "OVERFLOW")
 inspect-statement  = "INSPECT" identifier ( tallying [ replacing ] | replacing | converting )
 tallying           = "TALLYING" 1*( identifier "FOR" 1*( "CHARACTERS" [ region ] | ( "ALL" | "LEADING" | "TRAILING" ) 1*( !tally-counter operand [ region ] ) ) )
 tally-counter      = identifier "FOR"
