@@ -50,3 +50,12 @@ CSPEED_SQLITE_SHA=5592243caf28b2cdef41e6ab58d25d653dfc53deded8450eb66072c929f030
 # (bench/scalar/): the single-header release, 139,375 bytes, whose hash was recorded when it was fetched (2026-10-29).
 FASTFLOAT_URL=https://github.com/fastfloat/fast_float/releases/download/v6.1.6/fast_float.h
 FASTFLOAT_SHA=734de683d1ba414c8190b48103a10991886cac421aab07e7e910c48000df9e59
+# The Raku ecosystem archive's tarballs of the grammar-based Raku parsers the Raku rig times (stage raku, fetched into
+# bench/cache/raku; recorded 2026-11-02): JSON::Tiny 1.0 (cpan:MORITZ, a JSON grammar), TOML 3 (zef:tony-o, TOML 1.0),
+# YAMLish 0.1.3 (zef:leont, a YAML grammar).  Rakudo, zef and JSON::Fast (hand-written) are Debian packages.
+RAKU_JSONTINY_URL=https://raw.githubusercontent.com/raku/REA/main/archive/J/JSON%3A%3ATiny/JSON%3A%3ATiny%3Aver%3C1.0%3E%3Aauth%3Ccpan%3AMORITZ%3E.tar.gz
+RAKU_JSONTINY_SHA=35942bcd2d339381c957c77eb841b7edffb5c53d26b9a04035f388c9c2aa839b
+RAKU_TOML_URL=https://raw.githubusercontent.com/raku/REA/main/archive/T/TOML/TOML%3Aver%3C3%3E%3Aauth%3Czef%3Atony-o%3E.tar.gz
+RAKU_TOML_SHA=55a8d08deda969564f82f6acfdce658efdf71a06490fb644a82037a8c2e9df38
+RAKU_YAMLISH_URL=https://raw.githubusercontent.com/raku/REA/main/archive/Y/YAMLish/YAMLish%3Aver%3C0.1.3%3E%3Aauth%3Czef%3Aleont%3E.tar.gz
+RAKU_YAMLISH_SHA=a60097825494da79ad70719ecb4768e8b87baacf5b21c7f895fb372ab098b690

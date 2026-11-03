@@ -130,7 +130,7 @@ to the OpenBSD configuration files.
   [yacc](bench/results/yacc.md), [ANTLR and PEG](bench/results/antlr-peg.md),
   [tree-sitter](bench/results/treesitter.md), [the libraries](bench/results/libs.md),
   [C against gcc](bench/results/cspeed.md), [number conversion](bench/results/scalar.md),
-  [the Haskell parsers](bench/results/haskell.md), [the size of the notations](bench/results/notation.md),
+  [the Haskell parsers](bench/results/haskell.md), [the Raku parsers](bench/results/raku.md), [the size of the notations](bench/results/notation.md),
   [tokens](bench/results/tokens.md), [the corpora with the old node layout and compact nodes](bench/results/corpus.md)
   (in [Rust](bench/results/corpus_rust.md), [Zig](bench/results/corpus_zig.md) and
   [Ada](bench/results/corpus_ada.md) too), the daemons' speed ([ntpd](bench/results/ntpd.md), and
@@ -353,6 +353,43 @@ corpus before it is timed, and the table says where one disagrees.
 _2026-10-28; amd64, glibc (Debian), GHC 9.6.6, Alex 3.4.0.1, Happy 1.20.1.1; `-O2`; hbnf eac77a0.  The Haskell parsers are the syntax alone, as hbnf's are: every one is walked to the end, so nothing is left lazy when the clock stops.  Text is kept as the input holds it where the parser allows (hbnf's tape and the Alex/Happy JSON); the libraries that convert it say so._
 
 <!-- /bench:haskell -->
+
+### Against Raku's grammars
+
+`sh bench/raku.sh` runs the parsers Raku programs use for the same three documents, in a Debian container,
+on the cpu the other benchmarks use: `JSON::Tiny`, a JSON grammar written as a Raku grammar, and `JSON::Fast`,
+which is hand-written; `TOML`, a Raku grammar for TOML 1.0; and `YAMLish`, a Raku grammar for YAML.  The
+grammar-based modules are the ecosystem's tarballs, pinned by hash in `bench/pins.txt`.  Every parser is asked
+about the good and bad files of the format's corpus before it is timed, and the table says where one
+disagrees or refuses the document.  A parse over 20 seconds is run once.
+
+<!-- bench:raku -->
+
+**JSON** (2.00 MB, the same file for every tool; best of up to 5 runs):
+
+| tool | parse time | MB/s | peak RSS | what it builds, and the corpus |
+|---|---:|---:|---:|---|
+| hbnf (C backend), %emit tape | 1.8 ms | 1136 MB/s | 5 MB | checked by tests/emit.sh against the corpus; a tape, text as offsets |
+| JSON::Fast (hand-written Raku) | 291 ms | 7 MB/s | 168 MB | differs from the corpus on: bom.json leading-zero.json; a Raku tree, text and numbers converted |
+| JSON::Tiny (a Raku grammar) | 4.29 s | 0 MB/s | 463 MB | differs from the corpus on: bom.json form-feed.json nbsp.json vertical-tab.json; a Raku tree, text and numbers converted |
+
+**TOML 1.0** (1.99 MB, the same file for every tool; best of up to 5 runs):
+
+| tool | parse time | MB/s | peak RSS | what it builds, and the corpus |
+|---|---:|---:|---:|---|
+| hbnf (C backend), %emit tape | 4.5 ms | 440 MB/s | 7 MB | checked by tests/emit.sh against the corpus; a tape, text as offsets |
+| TOML (a Raku grammar) | 4.49 s | 0 MB/s | 193 MB | differs from the corpus on: arrays.toml dates.toml dotted.toml inline.toml numbers.toml bare-cr.toml inline-newline.toml inline-trailing-comma.toml; a Raku Hash tree, text and numbers converted |
+
+**YAML 1.2** (1.99 MB, the same file for every tool; best of up to 5 runs):
+
+| tool | parse time | MB/s | peak RSS | what it builds, and the corpus |
+|---|---:|---:|---:|---|
+| hbnf (C backend), %emit tape | 7.0 ms | 285 MB/s | 5 MB | checked by tests/emit.sh against the corpus; a tape, text as offsets |
+| YAMLish (a Raku grammar) | refused: the module refused the document  | | | differs from the corpus on: anchors.yaml comment.yaml empty.yaml explicit-key.yaml literal.yaml double-yaml.yaml flow-dedent.yaml marker-in-flow.yaml; a Raku tree, text converted |
+
+_2026-11-02; amd64, glibc (Debian), Rakudo v2024.09; hbnf d9f7a84.  The Raku modules are the syntax alone, as hbnf's are: the tree each builds is complete when the clock stops.  A run over 20 s is not repeated.  The grammar-based modules build Raku values and convert text and numbers; hbnf's tape holds offsets._
+
+<!-- /bench:raku -->
 
 ## Naming
 

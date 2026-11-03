@@ -10,7 +10,7 @@ produces the thing that processes it.  Configuration files were where it
 started, not where it stops.  Three older systems made the same bet from
 different directions, and each is a precedent for something in HyperBNF's
 `%scan{ }`, `%action{ }`, `%where{ }` and `%emit{ }`.  This reads them
-against hbnf, from the primary sources, and ends with what hbnf could take.
+against hbnf, from the primary sources, and ends with what hbnf could take.  A later section reads Raku's grammars the same way.
 
 Sources, all read for this note (the first two as scans with a text layer):
 
@@ -216,6 +216,62 @@ names with spaces and consistent substitution across a whole rule is a reading
 puzzle, against hbnf's "not surprising to a BNF user" bar); symbol-spelling
 rules (`letter a symbol`).  Affix/inherited attributes as the answer to context
 were weighed in decision 13 and stay a second choice to persistent context.
+
+## Raku grammars
+
+Raku (formerly Perl 6) has grammars as a part of the language, and they are the nearest living relative of what hbnf does, so
+they are read here as the three older systems are.  Sources: the Raku documentation on
+[grammars](https://docs.raku.org/language/grammars), [regexes](https://docs.raku.org/language/regexes) and
+[slangs](https://docs.raku.org/language/slangs); the roast test `S05-grammar/inheritance.t`; the module
+[Grammar::PrettyErrors](https://raku.land/zef:bduggan/Grammar::PrettyErrors); and, for what is not in the reference, a 2016
+developer chat (<https://irclogs.raku.org/perl6-macros/2016-06-19.html>) and the 2011 Hacker News thread on Colm
+(<https://news.ycombinator.com/item?id=2560524>), where the Perl 6 implementer `audreyt` states one limit.
+
+What the documentation says:
+
+- A grammar is a class; its rules are methods.  `token` and `rule` are ratcheting: "the match engine won't back up and try
+  again if it fails to match something".  `rule` also turns on `:sigspace`, so white space in the pattern matches the
+  grammar's `ws` (by default `token ws { <!ww> \s* }`).  `regex` backtracks.
+- Alternation has two forms: `||` takes the first branch that matches, and `|` takes the longest match of the declarative
+  prefix, "independent of the textual ordering in the regex".
+- Values are not built by the grammar.  An actions class has a method named after a rule, called after that rule matches
+  (post-order); `make` and `.made` carry values up the tree.
+- Code can be embedded anywhere: `{ }` blocks, `<?{ }>` guards that allow or prevent a match, and dynamic variables (`$*USE-WS`)
+  that "cascade down through all tokens defined thereafter".
+- Grammars inherit (`grammar B is A`, tested in roast) and compose with roles.  A *slang* changes the language of a lexical scope
+  by mixing a grammar role and an actions role into the current sub-language (`$*LANG`, `define_slang`): it acts when the Raku
+  program is compiled.
+
+What the documentation does not say, and what was found elsewhere:
+
+- A failed `.parse` gives a failure without the position or the rule; a third-party module exists to report line, column and the
+  last rule reached (its README describes its purpose as failing "with a pretty error rather than returning nil").
+- Side effects of embedded code are not undone when the engine backtracks: Raku developers say so in the 2016 chat ("don't
+  run any side effects until you're sure you're in the right rule"), and the 2011 thread has `audreyt` saying Colm can reverse global
+  state on backtracking where Perl 6 grammars cannot yet.  The reference pages read say nothing either way.
+- **Not verified:** whether a left-recursive rule is supported or loops (no source found), and how fast the engine is (only
+  anecdotes; nothing measured here, so no claim is made).
+
+| | Raku grammars | hbnf |
+|---|---|---|
+| A grammar is | a class the Raku runtime interprets | a file compiled to a standalone parser: C, Rust, Zig, Ada; tree-sitter |
+| Choice | `\|\|` first match; `\|` longest token | `\|` first match; `/` a union hbnf orders or refuses with a witness |
+| White space | `rule` (sigspace) against `token`, chosen per rule | `whitespace ws` per file; text rules against phrase rules |
+| Values | an actions class, post-order | a typed tree; `%action` after the parse; `%emit` as it goes |
+| Context | embedded code and dynamic variables | symbol-table contexts rolled back with the guess; facts and `=> grammar(x)` planned (`CONTEXTS.md`) |
+| Composition | inheritance, roles, slangs | `include`; `include ... as` scopes and `=> grammar(x)` planned |
+| Side effects on backtracking | not undone, by the developers' account | undone for the context sets; `%where` code is the exception |
+| Parse error | a failure; position by a module | the expected set and the position, from the generated parser |
+
+Code in the grammar is not the difference.  hbnf has had `{ code }` blocks since the beginning (`%action`, `%where`, `%emit`, `%scan`),
+and is not against them: the aim is the smallest total ruleset, in lines, characters, tokens and rules, and code belongs
+where it shortens that (a scanner jet that replaces a page of rules; a test that replaces a family of rules).  Where the two
+differ is what the engine promises about the code: Raku does not undo the side effects of a block when it backtracks, and
+hbnf's context sets are put back with the guess, while a `%where` block runs where its place in the sequence is reached and
+its effects are the author's.
+
+What hbnf can take: the per-rule choice of `token` against `rule` (ratchet and white space set for one rule, where hbnf sets
+white space per file), and the slang, a change of the language for a scope, which is the model for `=> grammar(x)`.
 
 ## What HyperBNF could learn
 

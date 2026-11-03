@@ -1,0 +1,6 @@
+# Raku comparison, glibc, amd64: the parsers Raku programs use for JSON, TOML and YAML.  Rakudo, zef and
+# JSON::Fast are Debian packages; the grammar-based modules are pinned in pins.txt (build.sh installs them).
+FROM debian:stable-slim
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    build-essential ca-certificates curl git rakudo raku-zef raku-json-fast python3 \
+    && rm -rf /var/lib/apt/lists/*
