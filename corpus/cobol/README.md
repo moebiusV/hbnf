@@ -21,21 +21,33 @@ simple:
 
 ## What is read
 
-Free format only.  Programs, the four divisions, `FILE-CONTROL` and `SPECIAL-NAMES`, the data description
-entries (`PICTURE`, `USAGE`, `VALUE`, `OCCURS`, `REDEFINES`, `RENAMES`, `SIGN`, level 88), and the statements
-`ACCEPT ADD ALTER CALL CANCEL CLOSE COMPUTE CONTINUE DELETE DISPLAY DIVIDE EVALUATE EXIT GO GOBACK IF INITIALIZE
-INSPECT MOVE MULTIPLY OPEN PERFORM READ REWRITE SEARCH SET START STOP STRING SUBTRACT UNSTRING WRITE`, the
+Free format only.  Programs (nested ones too), the four divisions, `FILE-CONTROL`, `SPECIAL-NAMES` and
+`REPOSITORY`, the data description entries (`PICTURE`, `USAGE`, `VALUE`, `OCCURS`, `REDEFINES`, `RENAMES`, `SIGN`,
+`CONSTANT`, level 88), the report section (`RD` and its groups) and the screen section, `DECLARATIVES`, and the
+statements `ACCEPT ADD ALLOCATE ALTER CALL CANCEL CLOSE COMPUTE CONTINUE DELETE DISPLAY DIVIDE ENTRY EVALUATE
+EXHIBIT EXIT FREE GENERATE GO GOBACK IF INITIALIZE INITIATE INSPECT MERGE MOVE MULTIPLY OPEN PERFORM READ
+RELEASE RETURN REWRITE SEARCH SET SORT START STOP STRING SUBTRACT SUPPRESS TERMINATE UNSTRING WRITE`, the
 conditions (relation, class, sign, abbreviated, combined) and arithmetic expressions with subscripts, reference
-modification and `FUNCTION`.
+modification, `LENGTH OF` and `FUNCTION`.  A compiler directive (`>>` to the end of the line) and a `$` line
+are read as comments.
 
-Not yet: fixed format (the sequence area, the indicator column, continuation lines), `COPY` and `REPLACE`,
-nested programs, `SORT` and `MERGE`, `DECLARATIVES`, the report writer, the screen section, object orientation
-and the vendor extensions.  This is a core, not the language; a size comparison with GnuCOBOL's `parser.y`
-waits until it is the language.
+Not yet: fixed format (the sequence area, the indicator column, continuation lines), `COPY` and `REPLACE`
+(a preprocessor's work: textual inclusion and replacement that can happen between any two tokens, so it belongs
+with the C preprocessor item of `RFCPLAN.md`, as one include-and-replace layer), the XML and JSON statements, the
+object-oriented features and the rest of the vendor extensions.  This is a core, not the language; a size
+comparison with GnuCOBOL's `parser.y` waits until it is the language.
+
+What the grammar leaves to a later pass, on purpose: types.  A `PICTURE` and a `USAGE` are kept as written, so
+`COMP-3` is the text `COMP-3` and nothing is inferred (a decimal that is read as a float rounds); the checking pass
+that derives the type from them is where the exactness is kept.
 
 ## Checked against GnuCOBOL
 
-`sh tests/cobol.sh` generates the parser and runs it over `tests/good` and `tests/bad`.  Where `cobc` is
+`sh tests/cobol.sh` generates the parser and runs it over `tests/good` and `tests/bad`.  `sh tests/cobol-scan.sh`
+goes further: it takes the programs of GnuCOBOL's own test suite, which `tools/cobol_fetch.sh` fetches and
+`tools/cobol_extract.py` writes out in free format (they are fixed format and GPL, so they are fetched and not
+kept here), and counts those `cobc` accepts that the parser refuses.  The number of them is
+`tests/cobol/scan-baseline.txt`; it must not grow, and `scripts/cobol-scan.sh` lists them.  Where `cobc` is
 installed it must agree on every file: it accepts each good one and refuses each bad one with
 `cobc -free -fsyntax-only` (a bad file is one the compiler also refuses).  GnuCOBOL 3.2 comes from the
 Debian `gnucobol3` package; its source, for `reserved.c` and `parser.y`, is

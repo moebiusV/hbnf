@@ -1,7 +1,8 @@
 #!/bin/sh
-# Fetches GnuCOBOL 3.2's source into bench/cache/cobol (not in the repository) and unpacks the two files
-# the COBOL work reads: cobc/reserved.c (tools/cobol_reserved.py makes corpus/cobol/reserved.hbnf from it) and
-# cobc/parser.y (its yacc grammar, to be counted against corpus/cobol/cobol.hbnf).  The hash is that of the
+# Fetches GnuCOBOL 3.2's source into bench/cache/cobol (not in the repository) and unpacks what the COBOL work reads:
+# cobc/reserved.c (tools/cobol_reserved.py makes corpus/cobol/reserved.hbnf from it), cobc/parser.y (its yacc
+# grammar, to be counted against corpus/cobol/cobol.hbnf) and the test suite, tests/testsuite.src, whose programs
+# tools/cobol_extract.py writes out as free-format files (bench/cache/cobol/programs) for scripts/cobol-scan.sh.  The hash is that of the
 # tarball as first fetched, 2026-10-31.
 #   sh tools/cobol_fetch.sh
 set -eu
@@ -16,4 +17,7 @@ if [ ! -f "$D/gnucobol-3.2.tar.xz" ]; then
 fi
 echo "$SHA  $D/gnucobol-3.2.tar.xz" | sha256sum -c - > /dev/null || { echo "cobol_fetch: the tarball is not the one pinned" >&2; exit 1; }
 tar -xJf "$D/gnucobol-3.2.tar.xz" -C "$D/src" --strip-components=1 gnucobol-3.2/cobc/reserved.c gnucobol-3.2/cobc/parser.y
-echo "cobol_fetch: $D/src/cobc/reserved.c and parser.y"
+mkdir -p "$D/tests"
+tar -xJf "$D/gnucobol-3.2.tar.xz" -C "$D/tests" gnucobol-3.2/tests/testsuite.src
+python3 tools/cobol_extract.py "$D/tests/gnucobol-3.2/tests/testsuite.src" "$D/programs"
+echo "cobol_fetch: $D/src/cobc/reserved.c and parser.y, the tests in $D/tests, the programs in $D/programs"

@@ -2940,7 +2940,7 @@ cycles.
     recovery with restarts (step 8).  The C preprocessor as a grammar; C17 and C23 grammars; the typedef-context
     port for the Ada side (step 16 depends on it).
 
-20. **Grammars for COBOL, ALGOL 68 and C++.**  *Added 2026-10-31 (the user); COBOL begun 2026-10-31 (`corpus/cobol/`: free format, a core of the divisions, data clauses and statements, checked against `cobc`), ALGOL 68 and C++ not started.*  One grammar
+20. **Grammars for COBOL, ALGOL 68 and C++.**  *Added 2026-10-31 (the user); COBOL begun 2026-10-31 (`corpus/cobol/`: free format, checked against `cobc` on a few programs of its own and on the programs of GnuCOBOL's test suite, `tests/cobol-scan.sh`), ALGOL 68 and C++ not started.*  What makes COBOL hard is not its syntax but what surrounds it: `COPY` chains (a preprocessor's work, so with the C preprocessor item), fixed-format columns (a `ws` scanner can skip the sequence area and read the indicator column, since it can look back to the line start; the continuation of a literal is the hard part), decades of dialects, and a type system in the `PICTURE` and `USAGE` that a parser must keep as written.  One grammar
     for each, written to read as much like the pure BNF of the language's own standard as the notation
     allows: compact and idiomatic, a rule for a production, the production's name, and no lexer tricks
     beside it.  This is the test of the claim in the README that a grammar can carry a language that a
