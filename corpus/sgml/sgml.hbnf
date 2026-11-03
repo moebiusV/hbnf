@@ -1,0 +1,77 @@
+; SGML (ISO 8879:1986): the document type declaration with the declarations that fill it, the SGML
+; declaration, and the instance at the level of markup.  Not all of SGML is a grammar (README.md);
+; this is the part that is.  `document` reads a whole document, `dtd` (--root=dtd) a file of declarations.
+prefix none
+sensitivity string %i
+include "sgml-instance.hbnf"
+
+document = [ sgml-declaration ] *prolog-item [ doctype *prolog-item ] instance
+prolog-item = comment-decl | pi
+dtd = *dtd-item
+dtd-item = declaration | comment-decl | pi | pe-ref | dtd-section
+dtd-section = include-open *dtd-item "]]>" | ignore-open ignored "]]>"
+
+; Between the parts of a declaration there are blanks and comments.
+ws = *( blank | com )
+
+; every declaration is <! a keyword, its parameters, and >
+decl(P) := "<!" P ">"
+declaration = element | attlist | entity | notation | shortref | usemap
+doctype     = decl("DOCTYPE" name [ external-id ] [ "[" *dtd-item "]" ])
+
+; <!ELEMENT name - O (content) +(in) -(out)>: both omission flags or neither
+element       = decl("ELEMENT" element-names [ omit omit | pe-ref ] content)
+element-names = name | name-group | pe-ref
+omit          = "-" | "O"
+content       = "CDATA" | "RCDATA" | "EMPTY" | "ANY" | pe-ref | model-group [ exceptions ]
+exceptions    = inclusions [ exclusions ] | exclusions [ inclusions ]
+inclusions    = "+" name-group
+exclusions    = "-" name-group
+
+; a model group has one connector throughout; an occurrence indicator follows it at once, so a + that
+; is followed by ( begins an inclusion
+model-group = "(" model-token [ 1*( "," model-token ) | 1*( "|" model-token ) | 1*( "&" model-token ) ] ")" [ occur ]
+model-token = ( "#PCDATA" | name | pe-ref ) [ occur ] | model-group
+occur       = "?" | "*" | "+" !"("
+name-group  = "(" member *( ( "," | "|" | "&" ) member ) ")"
+member      = name-token | pe-ref
+
+; <!ATTLIST element-or-group name declared default ...>
+attlist        = decl("ATTLIST" ( element-names | "#NOTATION" element-names ) 1*attdef)
+attdef         = name declared-value default-value | pe-ref
+declared-value = "CDATA" | "ENTITIES" | "ENTITY" | "IDREFS" | "IDREF" | "ID" | "NAMES" | "NAME" | "NMTOKENS"
+               | "NMTOKEN" | "NUMBERS" | "NUMBER" | "NUTOKENS" | "NUTOKEN" | "NOTATION" name-group | name-group | pe-ref
+default-value  = "#REQUIRED" | "#IMPLIED" | "#CURRENT" | "#CONREF" | [ "#FIXED" ] ( literal | name-token ) | pe-ref
+
+; <!ENTITY [%] name "text"> or its type and text, or an external identifier and its notation
+entity      = decl("ENTITY" [ "%" ] ( name | "#DEFAULT" ) ( [ entity-type ] literal | external-id [ data-type ] ))
+entity-type = "CDATA" | "SDATA" | "PI" | "STARTTAG" | "ENDTAG" | "MS" | "MD"
+data-type   = ( "CDATA" | "SDATA" | "NDATA" ) name | "SUBDOC"
+external-id = "SYSTEM" [ literal ] | "PUBLIC" literal [ literal ]
+
+notation = decl("NOTATION" name external-id)
+shortref = decl("SHORTREF" name 1*( literal ( name | pe-ref ) ))
+usemap   = decl("USEMAP" ( name | "#EMPTY" ) [ element-names ])
+
+; <!SGML "ISO 8879:1986" CHARSET ... CAPACITY ... SCOPE ... SYNTAX ... FEATURES ... APPINFO ...>
+sgml-declaration = decl("SGML" literal [ charset ] [ capacity ] [ scope ] [ syntax ] [ features ] [ appinfo ])
+charset     = "CHARSET" charset-body
+charset-body = 1*( "BASESET" literal "DESCSET" 1*( number number ( number | "UNUSED" ) ) )
+capacity    = "CAPACITY" ( "PUBLIC" literal | "SGMLREF" *( capname number ) )
+capname     = "TOTALCAP" | "ENTCAP" | "ENTCHCAP" | "ELEMCAP" | "GRPCAP" | "EXGRPCAP" | "EXNMCAP" | "ATTCAP" | "ATTCHCAP"
+            | "AVGRPCAP" | "NOTCAP" | "NOTCHCAP" | "IDCAP" | "IDREFCAP" | "MAPCAP" | "LKSETCAP" | "LKNMCAP"
+scope       = "SCOPE" ( "DOCUMENT" | "INSTANCE" )
+syntax      = "SYNTAX" ( "PUBLIC" literal [ "SWITCHES" 1*( number number ) ]
+                       | shunchar charset-body function naming delim names quantity )
+shunchar    = "SHUNCHAR" ( "NONE" | [ "CONTROLS" ] *number )
+function    = "FUNCTION" "RE" number "RS" number "SPACE" number *( name ( "FUNCHAR" | "MSICHAR" | "MSOCHAR" | "MSSCHAR" | "SEPCHAR" ) number )
+naming      = "NAMING" "LCNMSTRT" literal "UCNMSTRT" literal "LCNMCHAR" literal "UCNMCHAR" literal "NAMECASE" "GENERAL" yes-no "ENTITY" yes-no
+delim       = "DELIM" "GENERAL" "SGMLREF" *( name literal ) "SHORTREF" ( "SGMLREF" | "NONE" ) *literal
+names       = "NAMES" "SGMLREF" *( !"QUANTITY" name name )
+quantity    = "QUANTITY" "SGMLREF" *( name number )
+features    = "FEATURES" "MINIMIZE" feature("DATATAG") feature("OMITTAG") feature("RANK") feature("SHORTTAG")
+              "LINK" feature("SIMPLE") feature("IMPLICIT") feature("EXPLICIT")
+              "OTHER" feature("CONCUR") feature("SUBDOC") feature("FORMAL")
+feature(F)  := F ( "YES" [ number ] | "NO" )
+yes-no      = "YES" | "NO"
+appinfo     = "APPINFO" ps ( "NONE" | literal )

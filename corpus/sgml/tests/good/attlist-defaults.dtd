@@ -1,0 +1,13 @@
+<!ATTLIST img
+  src      CDATA #REQUIRED
+  alt      CDATA #IMPLIED
+  id       ID #CURRENT
+  ref      IDREF #CONREF
+  version  CDATA #FIXED "1.0"
+  count    NUMBER #FIXED 3
+  align    (top|bottom|middle) bottom
+  border   NUMBER 0
+  title    CDATA "A title with 'quotes' and -- dashes --"
+  class    CDATA 'single quoted'
+  lang     NAME en
+  case     NAME #FIXED en-US>

@@ -1,0 +1,20 @@
+<!DOCTYPE memo [
+<!ELEMENT memo     - - (to, from, date?, subject, body)>
+<!ELEMENT (to|from|date|subject) - O (#PCDATA)>
+<!ELEMENT body     - - (p+)>
+<!ELEMENT p        - O (#PCDATA | em)*>
+<!ELEMENT em       - - (#PCDATA)>
+<!ATTLIST memo     id ID #IMPLIED
+                   status (draft|final) draft>
+<!ENTITY company   "Example Corp.">
+<!ENTITY % pubid   "-//Example//DTD Memo//EN">
+]>
+<memo status=final>
+<to>All staff
+<from>The Director
+<subject>The &company; annual meeting
+<body>
+<p>The meeting will take place on <em>Friday</em>, at 10:00.
+<p>Please be on time; the doors close at 10:05 &amp; not later.
+</body>
+</memo>

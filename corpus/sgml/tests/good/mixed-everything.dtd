@@ -1,0 +1,12 @@
+<?sgml-app "mixed"?>
+<!ENTITY % common SYSTEM "common.ent">
+%common;
+<![ %conf; [
+<!-- configuration-dependent part -->
+<!ELEMENT doc - - (head, body)>
+<!ATTLIST doc version CDATA #FIXED "1.0" xml:lang NAME en>
+]]>
+<!NOTATION txt SYSTEM "text/plain">
+<!ENTITY note1 SYSTEM "note1.txt" NDATA txt>
+<!SHORTREF docmap "&#RE;" nl "&#TAB;" tab>
+<!USEMAP docmap body>

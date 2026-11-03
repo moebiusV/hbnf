@@ -1,0 +1,23 @@
+<!ENTITY % HTML.Reserved "IGNORE">
+<![ %HTML.Reserved; [
+<!ENTITY % reserved "datasrc %URI; #IMPLIED">
+]]>
+<![ INCLUDE [
+<!ELEMENT a - - (b)>
+<!ELEMENT b - O EMPTY>
+]]>
+<![ IGNORE [
+<!ELEMENT never - - (this is not parsed because it is ignored )>
+this text is not markup at all
+<![ INCLUDE [ nested sections count: <![ IGNORE [ deeper ]]> ]]>
+still ignored ]]>
+<![ TEMP [ <!ELEMENT t - - (#PCDATA)> ]]>
+<![ TEMP INCLUDE [ <!ELEMENT t2 - - (#PCDATA)> ]]>
+<![%dbpool.module;[
+<!ELEMENT para - O ((%para.char.mix; | %para.mix;)+)>
+]]>
+<![ %TEI.prose; [ <!ENTITY % p.sec 'INCLUDE'> ]]>
+<![ ignore [ lower case <!ELEMENT x ]]>
+<![ INCLUDE [ ]]>
+<![ IGNORE [ ]]>
+<![ INCLUDE [ <![ IGNORE [ <!ELEMENT inner - - EMPTY> ]]> ]]>

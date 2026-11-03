@@ -1,0 +1,4 @@
+<!DOCTYPE d [
+<!ELEMENT d - O EMPTY>
+>
+<d>x</d>

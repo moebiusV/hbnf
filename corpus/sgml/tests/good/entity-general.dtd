@@ -1,0 +1,15 @@
+<!ENTITY amp   CDATA "&#38;">
+<!ENTITY lt    CDATA "&#60;">
+<!ENTITY sdata SDATA "[eacute]">
+<!ENTITY pi    PI "xml version='1.0'">
+<!ENTITY st    STARTTAG "emph">
+<!ENTITY et    ENDTAG "emph">
+<!ENTITY ms    MS "<![CDATA[x < y]]>">
+<!ENTITY md    MD "<!ENTITY x 'y'>">
+<!ENTITY plain "plain replacement text">
+<!ENTITY single "it's">
+<!ENTITY empty "">
+<!ENTITY #DEFAULT "unknown entity">
+<!ENTITY withtag "<emph>text</emph> and &amp; more">
+<!ENTITY multiline "line one
+line two">

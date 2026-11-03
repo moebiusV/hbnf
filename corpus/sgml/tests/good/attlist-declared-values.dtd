@@ -1,0 +1,19 @@
+<!ATTLIST x
+  a CDATA #IMPLIED
+  b ENTITY #IMPLIED
+  c ENTITIES #IMPLIED
+  d ID #IMPLIED
+  e IDREF #IMPLIED
+  f IDREFS #IMPLIED
+  g NAME #IMPLIED
+  h NAMES #IMPLIED
+  i NMTOKEN #IMPLIED
+  j NMTOKENS #IMPLIED
+  k NUMBER #IMPLIED
+  l NUMBERS #IMPLIED
+  m NUTOKEN #IMPLIED
+  n NUTOKENS #IMPLIED
+  o NOTATION (gif | jpeg | png) #IMPLIED
+  p (left | center | right) #IMPLIED
+  q (1 | 2 | 3) 1
+  r (yes|no) yes>

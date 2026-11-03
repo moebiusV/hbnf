@@ -1,0 +1,5 @@
+<?sgml-dtd version="4.1">
+<!ELEMENT a - - (b)>
+<?dtd-comment this is an application's business, and may hold anything but the end?>
+<?>
+<?x y z>

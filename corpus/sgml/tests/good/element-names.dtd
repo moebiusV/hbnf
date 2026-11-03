@@ -1,0 +1,9 @@
+<!ELEMENT (h1|h2|h3) - - (#PCDATA)>
+<!ELEMENT (b, i, u) - - (#PCDATA)>
+<!ELEMENT %hname; - - (#PCDATA)>
+<!ELEMENT (%fontstyle;|%phrase;) - - (%inline;)*>
+<!ELEMENT %n.p; - O (%m.paraContent;)*>
+<!ELEMENT x %omit; (a, b)>
+<!ELEMENT y - - %content;>
+<!ELEMENT %el; %omit; %content;>
+<!ELEMENT x.y-z_w:v - - (a.b | c-d | e_f | g:h)>

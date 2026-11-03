@@ -1,0 +1,39 @@
+; Experiment A: sgml-instance.hbnf with content(D) written out three times (a pattern rule inside an island is refused).
+; The instance of an SGML document at the level of markup, in the reference concrete syntax: start
+; and end tags, the empty tags <> and </>, a NET-enabling start tag with its null end tag <a/text/,
+; comments, processing instructions, marked sections, references, and data.  The content is a flat
+; run of these: which element a tag opens or closes, and which end tag was left out, is the DTD's.
+; Blanks and comments are data here, so this file skips none.
+whitespace none
+prefix none
+include "../sgml-tokens.hbnf"
+
+instance = content
+
+; content(D) is what comes between tags, D being the data it may hold; between the / of a NET-enabling
+; start tag and its null end tag, a / is the end and no data.
+content = *( net-element | start-tag | end-tag | comment-decl | pi | section | char-ref | entity-ref | data )
+net-element = tag-head "/" content-net [ "/" ]
+start-tag   = tag-head ( ">" | &"<" ) | "<>"
+end-tag     = "</" [ name [ blank ] ] ( ">" | &"<" )
+tag-head    = "<" name *( blank attribute ) [ blank ]
+
+; the three forms of an attribute: name=value, a name token alone, a value alone (the last two are
+; the same thing: which attribute a token belongs to is the DTD's)
+attribute = [ name-token [ blank ] "=" [ blank ] ] ( literal | name-token )
+
+; a < or & is markup only before what can begin it; anywhere else it is data.  Between the / of a
+; NET-enabling start tag and its null end tag a / is the end; in a marked section ]]> is.
+data      = 1*( text | lt | amp )
+net-data  = 1*( net-text | lt | amp )
+sect-data = 1*( sect-text | lt | amp | !"]]>" "]" )
+text      = 1*~( "<" | "&" )
+net-text  = 1*~( "<" | "&" | "/" )
+sect-text = 1*~( "<" | "&" | "]" )
+lt        = "<" !( ALPHA | "/" | "!" | "?" | ">" )
+amp       = "&" !( ALPHA | "#" )
+
+section = raw-open raw "]]>" | ignore-open ignored "]]>" | include-open content-sect "]]>"
+
+content-net  = *( net-element | start-tag | end-tag | comment-decl | pi | section | char-ref | entity-ref | net-data )
+content-sect = *( net-element | start-tag | end-tag | comment-decl | pi | section | char-ref | entity-ref | sect-data )

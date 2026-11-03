@@ -1,0 +1,41 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+   "http://www.w3.org/TR/html4/strict.dtd">
+<HTML>
+<HEAD>
+<TITLE>A Document in the SGML Style</TITLE>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<LINK rel=stylesheet type="text/css" href="style.css">
+<STYLE type="text/css">
+  P { color: red }
+  A:link > B { font-weight: bold }
+</STYLE>
+<SCRIPT type="text/javascript">
+  if (a < b && c > d) { document.write("<B>x</B>"); }
+</SCRIPT>
+</HEAD>
+<BODY onload="init()">
+<H1 id=top>Heading &amp; more</H1>
+<P>First paragraph, with an <A href="http://example.org/?a=1&b=2">anchor</A>
+and an <EM>emphasis</EM>.
+<P>Second paragraph, <BR>with a break and &nbsp; spaces &copy; 2001.
+<UL>
+<LI>one
+<LI>two <B>bold <I>and italic</I></B>
+<LI>three
+</UL>
+<TABLE border=1 summary="a table">
+<CAPTION>Table</CAPTION>
+<TR><TH>Name<TH>Value
+<TR><TD>x<TD nowrap>1
+<TR><TD>y<TD>2
+</TABLE>
+<FORM action="/cgi-bin/x" method=POST>
+<P><LABEL for=name>Name</LABEL> <INPUT type=text name=name size=20>
+<INPUT type=checkbox name=c checked>
+<SELECT name=s><OPTION selected>one<OPTION>two</SELECT>
+<INPUT type=submit value="Send">
+</FORM>
+<HR>
+<ADDRESS>Someone &lt;someone@example.org&gt;</ADDRESS>
+</BODY>
+</HTML>

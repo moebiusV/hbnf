@@ -1,0 +1,9 @@
+<!ELEMENT body O O (p+) +(ins|del)>
+<!ELEMENT a - - (#PCDATA) -(a)>
+<!ELEMENT form - - (p+) -(form)>
+<!ELEMENT div - - (p*) +(note) -(div, form)>
+<!ELEMENT section - - (p*) -(note) +(footnote)>
+<!ELEMENT pre - - (#PCDATA | em)* -(img|object|big|small|sub|sup)>
+<!ELEMENT x - - (a)+ +(b)>
+<!ELEMENT y - - (a)+ -(b)>
+<!ELEMENT z - - (a)* +(b|c|d)>

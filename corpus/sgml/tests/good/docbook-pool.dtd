@@ -1,0 +1,118 @@
+<!-- ...................................................................... -->
+<!-- DocBook information pool module (an excerpt, in the style of V3.0) .... -->
+
+<!-- ...................................................................... -->
+<!-- Notation declarations ................................................ -->
+
+<!ENTITY % local.notation.class "">
+<!ENTITY % notation.class
+		"BMP| CGM-CHAR | CGM-BINARY | CGM-CLEAR | DITROFF | DVI
+		| EPS | EQN | FAX | GIF | GIF87a | GIF89a
+		| JPG | JPEG | IGES | PCX
+		| PIC | PS | SGML | TBL | TEX | TIFF | WMF | WPG
+		| linespecific
+		%local.notation.class;">
+
+<!NOTATION BMP		PUBLIC "+//ISBN 0-7923-94??-?//NOTATION Microsoft Windows bitmap//EN">
+<!NOTATION CGM-CHAR	PUBLIC "ISO 8632/2//NOTATION Character encoding//EN">
+<!NOTATION CGM-BINARY	PUBLIC "ISO 8632/3//NOTATION Binary encoding//EN">
+<!NOTATION CGM-CLEAR	PUBLIC "ISO 8632/4//NOTATION Clear text encoding//EN">
+<!NOTATION DITROFF	SYSTEM "DITROFF">
+<!NOTATION DVI		SYSTEM "DVI">
+<!NOTATION EPS		PUBLIC "+//ISBN 0-201-18127-4::Adobe//NOTATION PostScript Language Ref. Manual//EN">
+<!NOTATION EQN		SYSTEM "EQN">
+<!NOTATION GIF		SYSTEM "GIF">
+<!NOTATION linespecific	SYSTEM "linespecific">
+
+<!-- ...................................................................... -->
+<!-- Entities for attribute values ........................................ -->
+
+<!ENTITY % yesorno.attvals	"NUMBER">
+<!ENTITY % yesorno "NUMBER" -- 0 means no, any other number means yes -->
+
+<!-- ...................................................................... -->
+<!-- Common attributes .................................................... -->
+
+<!ENTITY % common.attrib
+		"id		ID		#IMPLIED
+		 lang		CDATA		#IMPLIED
+		 remap		CDATA		#IMPLIED
+		 role		CDATA		#IMPLIED
+		 xreflabel	CDATA		#IMPLIED
+		 revisionflag	(changed
+				|added
+				|deleted
+				|off)		#IMPLIED
+		 %effectivity.attrs;
+		 %local.common.attrib;">
+
+<!ENTITY % idreq.common.attrib
+		"id		ID		#REQUIRED
+		 lang		CDATA		#IMPLIED
+		 remap		CDATA		#IMPLIED
+		 role		CDATA		#IMPLIED
+		 xreflabel	CDATA		#IMPLIED
+		 %effectivity.attrs;
+		 %local.idreq.common.attrib;">
+
+<!ENTITY % local.para.char.mix "">
+<!ENTITY % para.char.mix
+		"#PCDATA
+		|%xref.char.class;	|%gen.char.class;
+		|%link.char.class;	|%tech.char.class;
+		|%base.char.class;	|%docinfo.char.class;
+		|%other.char.class;	|%inlineobj.char.class;
+		|%synop.class;
+		|%ndxterm.class;	|beginpage
+		%local.para.char.mix;">
+
+<![ %dbpool.module; [
+<!ENTITY % para.element "INCLUDE">
+]]>
+<![ %para.element; [
+<!ELEMENT para - O ((%para.char.mix; | %para.mix;)+)>
+<!ATTLIST para
+		%common.attrib;
+		%para.attrib;
+>
+]]>
+
+<!ENTITY % emphasis.element "INCLUDE">
+<![ %emphasis.element; [
+<!ELEMENT emphasis - - ((%para.char.mix;)*)>
+<!ATTLIST emphasis
+		role		CDATA		#IMPLIED
+		%common.attrib;
+>
+]]>
+
+<!ELEMENT graphic - O EMPTY>
+<!ATTLIST graphic
+		%common.attrib;
+		fileref		CDATA		#IMPLIED
+		entityref	ENTITY		#IMPLIED
+		format		(%notation.class;)
+				#IMPLIED
+		srccredit	CDATA		#IMPLIED
+		width		CDATA		#IMPLIED
+		depth		CDATA		#IMPLIED
+		align		(left
+				|right
+				|center)	#IMPLIED
+		scale		NUMBER		#IMPLIED
+		scalefit	%yesorno.attvals;
+				#IMPLIED
+>
+
+<!ELEMENT itemizedlist - - (listitem+)>
+<!ATTLIST itemizedlist
+		spacing		(normal
+				|compact)	#IMPLIED
+		mark		CDATA		#IMPLIED
+		%common.attrib;
+>
+<!ELEMENT listitem - O ((%component.mix;)+)>
+<!ATTLIST listitem
+		override	CDATA		#IMPLIED
+		%common.attrib;
+>

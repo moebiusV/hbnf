@@ -1,0 +1,23 @@
+<!-- TEI P3: the header (an excerpt in the style of the published tag set) -->
+<!ENTITY % TEI.header 'INCLUDE'>
+<![ %TEI.header; [
+<!ELEMENT %n.teiHeader; - - (%n.fileDesc;, %n.encodingDesc;?, %n.profileDesc;?,
+                             %n.revisionDesc;?)>
+<!ATTLIST %n.teiHeader;
+          %a.global;
+          creator   CDATA       #IMPLIED
+          status    (new | revised | corrected | frozen)  new
+          date.created  CDATA   #IMPLIED
+          date.updated  CDATA   #IMPLIED
+          TEIform   CDATA       'teiHeader'>
+<!ELEMENT %n.fileDesc; - - (%n.titleStmt;, %n.editionStmt;?, %n.extent;?,
+                            %n.publicationStmt;, %n.seriesStmt;?,
+                            %n.notesStmt;?, %n.sourceDesc;+)>
+<!ELEMENT %n.titleStmt; - - (%n.title;+, %n.author;*, %n.funder;*)>
+<!ELEMENT %n.title; - - (#PCDATA | %n.hi;)*>
+<!ATTLIST %n.title;
+          %a.global;
+          level     (a | m | j | s | u)   m
+          type      CDATA       #IMPLIED
+          TEIform   CDATA       'title'>
+]]>

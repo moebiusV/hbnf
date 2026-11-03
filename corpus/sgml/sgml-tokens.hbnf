@@ -1,0 +1,39 @@
+; The tokens of SGML (ISO 8879:1986) in the reference concrete syntax: a name, a number, a literal, a
+; comment, a reference.  No blank is allowed inside one, so this file skips none (`whitespace none`).
+; A name is the HTML 4.01 declaration's: letters, digits and . - _ :  (the reference syntax has
+; only . and -, and NAMELEN 8; the capacity is not checked).
+whitespace none
+prefix none
+include "../../grammars/common.hbnf"
+
+name       = ALPHA *name-char
+name-token = 1*name-char
+name-char  = ALNUM | "." | "-" | "_" | ":"
+number     = 1*DIGIT
+blank      = 1*( SP | HTAB | CR | LF )
+literal    = DQUOTE *~DQUOTE DQUOTE | "'" *~"'" "'"
+
+; A comment is -- ... -- with no -- inside, and a comment declaration is <! and > round any number of
+; them and blanks, so <!-- a -- -- b --> and <!> are both one.
+com          = "--" *( ~"-" | "-" ~"-" ) "--"
+comment-decl = "<!" *( blank | com ) ">"
+pi           = "<?" *~">" ">"
+
+; A reference ends at its ; and, when that is left out, at the first character that cannot be in a name.
+pe-ref     = "%" name [ ";" ]
+entity-ref = "&" name [ ";" ]
+char-ref   = "&#" ( number | name ) [ ";" ]
+
+; ps is what separates the parts of a declaration where the grammar's own white space is not at hand.
+ps            = *( blank | com )
+
+; Marked sections: the three openers say what the body is, and every body ends at ]]>.  An ignored body
+; counts the <![ and ]]> inside it; a raw one (CDATA, RCDATA) is everything up to the first ]]>.
+include-open  = "<![" ps 1*( status ps ) "["
+status        = i"INCLUDE" | i"TEMP" | pe-ref
+ignore-open   = "<![" ps i"IGNORE" ps "["
+raw-open      = "<![" ps ( i"CDATA" | i"RCDATA" ) ps "["
+ignored       = *ignored-part
+ignored-part  = "<![" ignored "]]>" | 1*~( "<" | "]" ) | !( "]]>" | "<![" ) any
+raw           = *( 1*~"]" | !"]]>" "]" )
+any           = 0x00..0x10FFFF

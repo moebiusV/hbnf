@@ -1,0 +1,60 @@
+<!-- TEI P3 DTD, core tag set, in the style of the published files
+     (an excerpt, rewritten from memory of their conventions) -->
+<!ENTITY % TEI.prose 'INCLUDE'>
+<!ENTITY % TEI.verse 'IGNORE'>
+<!ENTITY % TEI.core 'INCLUDE'>
+
+<!-- 2.1 Global attributes -->
+<!ENTITY % a.global
+   'id        ID        #IMPLIED
+    n         CDATA     #IMPLIED
+    lang      IDREF     #IMPLIED
+    rend      CDATA     #IMPLIED
+    TEIform   CDATA     #IMPLIED
+    %a.global.extra;'>
+<!ENTITY % a.global.extra ''>
+
+<!ENTITY % n.p 'p' -- the generic identifier of the paragraph element -->
+<!ENTITY % n.hi 'hi'>
+<!ENTITY % n.emph 'emph'>
+<!ENTITY % n.q 'q'>
+<!ENTITY % m.phrase '%n.hi; | %n.emph; | %n.q;'>
+<!ENTITY % m.inter '%n.list; | %n.q;'>
+<!ENTITY % m.data '#PCDATA'>
+<!ENTITY % paraContent '(%m.data; | %m.phrase; | %m.inter;)*'>
+
+<![ %TEI.core; [
+<!ELEMENT %n.p; - O (%paraContent;)>
+<!ATTLIST %n.p;
+          %a.global;
+          TEIform   CDATA        'p'>
+
+<!ELEMENT %n.hi; - - (%paraContent;)>
+<!ATTLIST %n.hi;
+          %a.global;
+          TEIform   CDATA        'hi'>
+
+<!ELEMENT %n.emph; - - (%paraContent;)>
+<!ATTLIST %n.emph;
+          %a.global;
+          TEIform   CDATA        'emph'>
+
+<!ELEMENT %n.q; - - (%paraContent;)>
+<!ATTLIST %n.q;
+          %a.global;
+          type      CDATA        #IMPLIED
+          who       IDREFS       #IMPLIED
+          TEIform   CDATA        'q'>
+]]>
+
+<![ %TEI.prose; [
+<!ENTITY % n.div 'div'>
+<!ELEMENT %n.div; - O ((%m.divtop;)*, ((%m.divcont;)+, (%n.div;)*))>
+<!ATTLIST %n.div;
+          %a.global;
+          type      CDATA        #IMPLIED
+          org       (composite | uniform)  uniform
+          sample    (complete | fragment)  complete
+          part      (Y | N | I | M | F)    N
+          TEIform   CDATA        'div'>
+]]>

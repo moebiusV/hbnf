@@ -1,0 +1,4 @@
+<!ELEMENT a - - (b)>
+<!ELEMENT b - O EMPTY>
+<!ELEMENT c - - (a)
+<!ELEMENT d - - (a)>

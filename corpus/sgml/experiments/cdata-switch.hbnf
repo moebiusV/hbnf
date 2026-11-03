@@ -1,0 +1,19 @@
+; Experiment B: a CDATA marked section as a switch.  `<![CDATA[` switches to the grammar `raw`, whose white space is
+; everything up to ]]> (so the text is skipped as white space and is not in the tree), and the ]]> switches back.
+; Result: works in C (verdicts for a section, an empty one, three in a row, a stray ]]>, an unclosed one), and
+; generates for Rust, Zig and Ada; tree-sitter refuses the switch.  raw.hbnf cannot say "up to ]]>" exactly: a
+; lookahead inside what a character rule repeats is refused (so `*( !"]]>" any )` is), and the approximation it
+; uses gives up on ]]]>.  sgml.hbnf does not need a switch for this: `raw` is a token.
+prefix none
+include "../../../grammars/common.hbnf"
+include "plain.hbnf" as plain
+include "raw.hbnf" as raw
+
+doc     = *item
+item    = run | cdata
+run     = 1*( ALPHA | DIGIT )
+cdata   = cdata-open cdata-close
+cdata-open  = "<![CDATA[" => grammar(raw)
+cdata-close = "]]>" => grammar(plain)
+
+ws = *( SP | HTAB | LF )

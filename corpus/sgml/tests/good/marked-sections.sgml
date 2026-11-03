@@ -1,0 +1,11 @@
+<doc>
+<![ CDATA [ a <b> & c ]] ]> and </doc> are all data ]]>
+<![ RCDATA [ entities &amp; are recognized, <tags> are not ]]>
+<![ IGNORE [ ignored <b> text <![ INCLUDE [ and nested ]]> sections ]]>
+<![ INCLUDE [ <p>included <b>text</b> &amp; so on</p> ]]>
+<![ TEMP [ <p>temporary</p> ]]>
+<![ %draft; [ <p>draft only</p> ]]>
+<![cdata[lower case]]>
+<![ CDATA [ ]]>
+<![ INCLUDE [ <![ CDATA [ raw inside included ]]> ]]>
+</doc>

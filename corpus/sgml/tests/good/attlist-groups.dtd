@@ -1,0 +1,14 @@
+<!ATTLIST (th|td) align (left|right|center) left valign (top|bottom) top>
+<!ATTLIST (a, b, c) id ID #IMPLIED>
+<!ATTLIST #NOTATION gif size NUMBER #IMPLIED>
+<!ATTLIST %n.p; %a.global; type CDATA #IMPLIED>
+<!ATTLIST x %coreattrs; %i18n; %events;>
+<!ATTLIST x
+   id        ID              #IMPLIED  -- unique id --
+   style     %StyleSheet;    #IMPLIED  -- style info --
+   lang      %LanguageCode;  #IMPLIED
+   dir       (ltr|rtl)       #IMPLIED
+   %events;
+   enctype   %ContentType;   "application/x-www-form-urlencoded"
+   shape     %Shape;         rect
+   onclick   %Script;        #IMPLIED>

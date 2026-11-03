@@ -1,0 +1,16 @@
+<!element a - - (b | c)>
+<!Attlist a x Cdata #Implied y (A|b) a>
+<!ENTITY e Cdata "x">
+	<!Notation n System "s">
+
+
+   <!entity % pe "z">  
+<!ELEMENT	a	-	-	(b)>
+<!ELEMENT
+	a
+	-
+	-
+	(
+	b
+	)
+	>

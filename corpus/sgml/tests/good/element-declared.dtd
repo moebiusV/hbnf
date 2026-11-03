@@ -1,0 +1,6 @@
+<!ELEMENT br - O EMPTY>
+<!ELEMENT script - - CDATA>
+<!ELEMENT title - - RCDATA>
+<!ELEMENT anything - - ANY>
+<!ELEMENT (img|hr|input) - O EMPTY -- three at once -->
+<!ELEMENT para - O (#PCDATA)>

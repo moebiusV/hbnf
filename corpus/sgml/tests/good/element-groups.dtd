@@ -1,0 +1,11 @@
+<!ELEMENT seq - - (a, b, c)>
+<!ELEMENT any - - (a | b | c)>
+<!ELEMENT all - - (a & b & c)>
+<!ELEMENT one - - (a)>
+<!ELEMENT opt - - (a?, b*, c+)>
+<!ELEMENT nest - - ((a | b)+, (c, d)*, (e & f)?)>
+<!ELEMENT deep - - (((a)))>
+<!ELEMENT mixed - - (#PCDATA | em | strong)*>
+<!ELEMENT grpocc - - ((a, b)+)>
+<!ELEMENT nospace - - (a,b,c)>
+<!ELEMENT spaced - - ( a , b , c )>

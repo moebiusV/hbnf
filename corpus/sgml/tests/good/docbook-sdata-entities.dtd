@@ -1,0 +1,12 @@
+<!ENTITY % ISOamsa PUBLIC "ISO 8879:1986//ENTITIES Added Math Symbols: Arrow Relations//EN">
+%ISOamsa;
+<!ENTITY aacute	SDATA "[aacute]"	-- =small a, acute accent -->
+<!ENTITY Aacute	SDATA "[Aacute]"	-- =capital A, acute accent -->
+<!ENTITY acirc	SDATA "[acirc ]"	-- =small a, circumflex accent -->
+<!ENTITY agrave	SDATA "[agrave]"	-- =small a, grave accent -->
+<!ENTITY amp	SDATA "[amp   ]"	-- =ampersand -->
+<!ENTITY lt	SDATA "[lt    ]"	-- =less-than sign R: -->
+<!ENTITY hyphen	SDATA "[hyphen]"	-- =hyphen -->
+<!ENTITY % ISOlat1 PUBLIC "ISO 8879:1986//ENTITIES Added Latin 1//EN">
+<!ENTITY % docbook.dtd PUBLIC "-//OASIS//DTD DocBook V4.1//EN">
+%ISOlat1;

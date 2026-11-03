@@ -1,0 +1,12 @@
+<!ENTITY % ContentType "CDATA" -- media type -->
+<!ENTITY % inline "#PCDATA | %fontstyle; | %phrase;">
+<!ENTITY % block "P | %heading; | %list;">
+<!ENTITY % flow "%block; | %inline;">
+<!ENTITY % Length "CDATA">
+<!ENTITY %lowcase "x">
+<!ENTITY % attrs "%coreattrs; %i18n; %events;">
+<!ENTITY % empty "">
+<!ENTITY % local.para.class "">
+<!ENTITY % para.class "formalpara | para | simpara %local.para.class;">
+%ContentType;
+%inline

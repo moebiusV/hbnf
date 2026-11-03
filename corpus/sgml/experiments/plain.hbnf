@@ -1,0 +1,4 @@
+prefix none
+whitespace ws
+include "../../../grammars/common.hbnf"
+ws = *( SP | HTAB | LF )

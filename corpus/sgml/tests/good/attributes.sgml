@@ -1,0 +1,12 @@
+<a href="x" title='y' name=z nowrap checked 12 "literal value" 'another'>
+<td nowrap>
+<input type=checkbox checked>
+<p class = "a" id= b lang =en-US>
+<img
+  src="a.gif"
+  alt="multi
+line value"
+  width=10 height=20>
+<tag a="with 'single' quotes" b='with "double" quotes' c="" d=''>
+<x.y-z_w:v a.b-c_d:e=f.g-h_i:j>
+<a href="<b>not a tag</b> &amp; not a ref">

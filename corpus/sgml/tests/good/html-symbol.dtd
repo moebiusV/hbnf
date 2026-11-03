@@ -1,0 +1,19 @@
+<!-- Mathematical, Greek and Symbolic characters for HTML (head of HTMLsymbol.ent) -->
+<!ENTITY fnof     CDATA "&#402;" -- latin small f with hook = function
+                                    = florin, U+0192 ISOtech -->
+<!ENTITY Alpha    CDATA "&#913;" -- greek capital letter alpha, U+0391 -->
+<!ENTITY Beta     CDATA "&#914;" -- greek capital letter beta, U+0392 -->
+<!ENTITY Gamma    CDATA "&#915;" -- greek capital letter gamma,
+                                    U+0393 ISOgrk3 -->
+<!ENTITY alpha    CDATA "&#945;" -- greek small letter alpha,
+                                    U+03B1 ISOgrk3 -->
+<!ENTITY forall   CDATA "&#8704;" -- for all, U+2200 ISOtech -->
+<!ENTITY part     CDATA "&#8706;" -- partial differential, U+2202 ISOtech  -->
+<!ENTITY exist    CDATA "&#8707;" -- there exists, U+2203 ISOtech -->
+<!ENTITY empty    CDATA "&#8709;" -- empty set = null set = diameter,
+                                    U+2205 ISOamso -->
+<!ENTITY isin     CDATA "&#8712;" -- element of, U+2208 ISOtech -->
+<!ENTITY sum      CDATA "&#8721;" -- n-ary summation, U+2211 ISOamsb -->
+<!ENTITY infin    CDATA "&#8734;" -- infinity, U+221E ISOtech -->
+<!ENTITY larr     CDATA "&#8592;" -- leftwards arrow, U+2190 ISOnum -->
+<!ENTITY rarr     CDATA "&#8594;" -- rightwards arrow, U+2192 ISOnum -->

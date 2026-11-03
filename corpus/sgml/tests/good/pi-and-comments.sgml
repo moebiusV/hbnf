@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!-- a comment before the document -->
+<!DOCTYPE doc SYSTEM "doc.dtd">
+<?php echo "hello" ?>
+<doc>
+<!-- a comment in the content -->
+<!--first-- --second--  >
+<!-- comments <b>hide</b> markup & entities -->
+<!>
+<?app does something with this?>
+text <?pi in the middle?> more text
+</doc>
+<!-- and one after the end -->

@@ -1,0 +1,18 @@
+<!DOCTYPE memo [
+<!ENTITY % emph "em | strong">
+<!ELEMENT memo - - (head, body)>
+<!ELEMENT head - O (from & to & date?)>
+<!ELEMENT (from|to) - O (#PCDATA)>
+<!ELEMENT date - O (#PCDATA)>
+<!ELEMENT body - - (para+)>
+<!ELEMENT para - O (#PCDATA | %emph;)*>
+<!ELEMENT (%emph;) - - (#PCDATA)>
+<!ATTLIST memo security (public|private|secret) public>
+]>
+<memo security=private>
+<head><to>Jim<from>Pam<date>1 April</head>
+<body>
+<para>Remember to be <em>careful</em>.
+<para>This is <strong>not</strong> a joke.
+</body>
+</memo>

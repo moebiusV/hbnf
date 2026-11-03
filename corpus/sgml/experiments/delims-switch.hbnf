@@ -1,0 +1,15 @@
+; Experiment C: the SGML declaration's SYNTAX section changes the delimiters; `alt` redefines the token rules stago and
+; tagc.  Result: refused, "`alt.stago` is defined, and the including grammar has a rule `stago` too: while `alt` is
+; current it would replace it.  A grammar a parser switches to replaces white space only so far (token rules are
+; the next step, phrase rules need a typed variant): rename `alt.stago`".
+prefix none
+include "../../../grammars/common.hbnf"
+include "alt.hbnf" as alt
+
+doc  = decl *tag
+decl = "<!SGML" "SYNTAX" "ALT" ">" => grammar(alt)
+tag  = stago name tagc
+stago = "<"
+tagc  = ">"
+name = 1*( ALPHA | DIGIT )
+ws = *( SP | HTAB | LF )

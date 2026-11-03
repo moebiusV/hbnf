@@ -1,0 +1,13 @@
+<!ENTITY nl STARTTAG "br">
+<!ENTITY tab CDATA "    ">
+<!SHORTREF listmap
+  "&#RE;"      nl
+  "&#RS;B"     nl
+  "&#TAB;"     tab
+  "B&#RE;"     nl
+  "BB"         tab
+  "[["         lbr>
+<!USEMAP listmap ul>
+<!USEMAP listmap (ul|ol)>
+<!USEMAP #EMPTY li>
+<!USEMAP listmap>

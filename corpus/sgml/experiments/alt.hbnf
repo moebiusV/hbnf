@@ -1,0 +1,6 @@
+prefix none
+whitespace ws
+include "../../../grammars/common.hbnf"
+stago = "["
+tagc  = "]"
+ws = *( SP | HTAB | LF )

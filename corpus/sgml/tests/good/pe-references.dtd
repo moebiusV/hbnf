@@ -1,0 +1,8 @@
+%ISOnum;
+%ISOlat1;
+%dbpool;
+%dbhier
+%local.config;
+<!ELEMENT a - - (b)>
+%more;
+%even-more.stuff;

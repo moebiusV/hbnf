@@ -1,0 +1,84 @@
+element-unterminated.dtd	4	an element declaration with no > : the next declaration begins inside it
+element-one-flag.dtd	1	one minimization flag where there are two
+element-bad-flag.dtd	1	a minimization flag that is neither - nor O
+element-flags-after-content.dtd	1	the minimization flags come before the content, not after
+element-three-flags.dtd	1	three minimization flags
+element-no-content.dtd	1	an element declaration with no content
+element-no-name.dtd	1	an element declaration with no element name
+element-digit-name.dtd	1	a name that begins with a digit
+element-content-word.dtd	1	a declared content that is none of CDATA, RCDATA, EMPTY and ANY
+element-mixed-connectors.dtd	1	a model group with two kinds of connector
+element-mixed-connectors-all.dtd	1	a model group with & and , in one group
+element-missing-connector.dtd	1	two model tokens with no connector between them
+element-leading-connector.dtd	1	a connector before the first model token
+element-trailing-connector.dtd	1	a connector after the last model token
+element-doubled-connector.dtd	1	two connectors in a row
+element-unclosed-group.dtd	1	a model group with no closing parenthesis
+element-empty-group.dtd	1	a model group with nothing in it
+element-occurrence-first.dtd	1	an occurrence indicator before the token it applies to
+element-double-occurrence.dtd	1	two occurrence indicators on one token
+element-exception-no-group.dtd	1	an exclusion that is a name and not a name group
+element-exception-empty.dtd	1	an inclusion with an empty name group
+element-exceptions-twice.dtd	1	two inclusions on one element
+element-pcdata-bare.dtd	1	#PCDATA outside a model group
+comment-unterminated.dtd	3	a comment declaration whose comment has no closing --
+comment-no-close.dtd	3	a comment closed with - and not --
+comment-text-between.dtd	3	text between two comments of one comment declaration
+comment-in-declaration-unbalanced.dtd	1	a -- comment inside a declaration with no closing --
+comment-three-dashes.dtd	3	a comment that closes at the first -- and leaves a stray hyphen
+attlist-no-default.dtd	1	an attribute definition with no default value
+attlist-bad-default.dtd	1	a reserved name that is not one of #REQUIRED, #IMPLIED, #CURRENT, #CONREF, #FIXED
+attlist-bad-declared-value.dtd	1	a declared value that is none of the keywords and not a name group
+attlist-fixed-no-value.dtd	1	#FIXED with no value after it
+attlist-unclosed-group.dtd	1	a name token group with no closing parenthesis
+attlist-no-definitions.dtd	1	an attribute definition list declaration with no definitions
+attlist-unterminated.dtd	2	an attribute definition list with no >
+entity-no-text.dtd	1	an entity declaration with no entity text
+entity-unquoted-text.dtd	1	entity text that is not a literal
+entity-bad-type.dtd	1	an entity type that is none of CDATA, SDATA, PI, STARTTAG, ENDTAG, MS, MD
+entity-unterminated-literal.dtd	1	a literal with no closing quote
+entity-ndata-no-notation.dtd	1	NDATA with no notation name after it
+entity-percent-alone.dtd	1	a parameter entity declaration with no name
+notation-no-id.dtd	1	a notation declaration with no external identifier
+notation-bad-id.dtd	1	an external identifier that is neither PUBLIC nor SYSTEM
+shortref-odd.dtd	1	a short reference delimiter with no entity name after it
+section-unterminated.dtd	3	a marked section with no ]]>
+section-ignore-unterminated.dtd	2	an ignored section whose nested section is closed and itself is not
+section-no-status.dtd	1	a marked section with no status keyword
+section-bad-status.dtd	1	a marked section whose status keyword is none of INCLUDE, IGNORE, TEMP
+section-no-dso.dtd	1	a marked section with no [ after the status keyword
+section-bad-contents.dtd	1	text that is not a declaration inside an included section of a DTD
+declaration-unknown.dtd	1	a markup declaration whose keyword is not one SGML has
+declaration-stray-text.dtd	2	text between declarations
+pe-ref-no-name.dtd	1	a parameter entity reference with no name
+pi-unterminated.dtd	2	a processing instruction with no >
+doctype-in-dtd.dtd	1	a document type declaration inside a file of declarations, which holds the subset only
+sgml-decl-no-version.sgml	1	an SGML declaration with no version literal
+sgml-decl-bad-feature.sgml	2	a feature value that is neither YES nor NO
+sgml-decl-bad-capacity.sgml	2	a capacity name that is not one of the standard ones
+sgml-decl-sections-out-of-order.sgml	3	the SCOPE section before the CAPACITY section
+sgml-decl-unterminated.sgml	3	an SGML declaration with no >
+sgml-decl-after-doctype.sgml	2	the SGML declaration after the document type declaration
+sgml-decl-descset-short.sgml	2	a described character range with two numbers and no third
+doctype-no-name.sgml	1	a document type declaration with no document type name
+doctype-unclosed-subset.sgml	3	an internal subset with no ]
+doctype-public-no-fpi.sgml	1	PUBLIC with no formal public identifier
+doctype-twice.sgml	2	a second document type declaration
+doctype-bad-subset-content.sgml	1	a start tag inside the internal subset
+doctype-unterminated.sgml	2	a document type declaration with no >
+tag-unterminated.sgml	1	a start tag cut off at the end of the input
+tag-unterminated-literal.sgml	1	an attribute value literal with no closing quote
+tag-equals-no-value.sgml	1	an = with no attribute value after it
+tag-bad-value.sgml	1	an unquoted attribute value with a character no name token has
+tag-no-separator.sgml	1	two attributes with no blank between them
+endtag-garbage.sgml	1	an end tag with something after its name
+endtag-unterminated.sgml	1	an end tag cut off at the end of the input
+endtag-bad-name.sgml	1	an end tag whose name begins with a digit
+comment-unterminated.sgml	1	a comment in the content with no closing --
+comment-bare-text.sgml	1	text between the comments of one comment declaration in the content
+declaration-in-content.sgml	1	an element declaration in the content of the instance
+pi-unterminated.sgml	1	a processing instruction with no >
+section-unterminated.sgml	2	a CDATA marked section with no ]]>
+section-bad-status.sgml	1	a marked section whose status keyword is none of the five
+section-nested-unclosed.sgml	2	an included marked section whose closing ]]> is missing
+charref-empty.sgml	1	a character reference with nothing after &#

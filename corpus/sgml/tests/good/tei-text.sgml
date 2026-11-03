@@ -1,0 +1,17 @@
+<!DOCTYPE tei.2 PUBLIC "-//TEI P3//DTD Main Document Type//EN" [
+<!ENTITY % TEI.prose 'INCLUDE'>
+<!ENTITY % TEI.verse 'IGNORE'>
+]>
+<tei.2>
+<teiHeader creator="x" status=new>
+<fileDesc>
+<titleStmt><title level=m>A Sample</title></titleStmt>
+</fileDesc>
+</teiHeader>
+<text><body>
+<div type=chapter n=1>
+<head>One</head>
+<p id=p1>Some <hi rend=italic>text</hi> with a <q who=A>quotation</q>.
+</div>
+</body></text>
+</tei.2>

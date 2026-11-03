@@ -1,0 +1,51 @@
+<!-- ...................................................................... -->
+<!-- DocBook document hierarchy module (an excerpt, in the style of V3.0) .. -->
+
+<!ENTITY % local.divcomponent.mix "">
+<!ENTITY % divcomponent.mix
+		"%list.class;		|%admon.class;
+		|%linespecific.class;	|%synop.class;
+		|%para.class;		|%informal.class;
+		|%formal.class;		|%compound.class;
+		|%genobj.class;		|%descobj.class;
+		|%ndxterm.class;	|beginpage
+		%local.divcomponent.mix;">
+
+<!ELEMENT book - O (bookinfo?, (dedication | toc | lot
+		| glossary | bibliography | preface
+		| %chapter.class; | reference | part
+		| %nav.class; | article
+		| appendix | colophon)*)
+		+(%ubiq.mix;)>
+<!ATTLIST book
+		fpi		CDATA		#IMPLIED
+		%label.attrib;
+		%common.attrib;
+>
+
+<!ELEMENT article - O ((%div.title.content;)?, articleinfo?, tocchap?, lot*,
+		(%bookcomponent.content;),
+		(%nav.class; | %appendix.class; | colophon | ackno)*)
+		+(%ubiq.mix;)>
+<!ATTLIST article
+		class		(journalarticle
+				|productsheet
+				|whitepaper
+				|techreport
+				|specification
+				|faq)		#IMPLIED
+		parentbook	IDREF		#IMPLIED
+		%status.attrib;
+		%common.attrib;
+>
+
+<!ELEMENT sect1 - O (sect1info?, (%sect.title.content;), (%nav.class;)*,
+		(((%divcomponent.mix;)+, ((%refentry.class;)* | sect2* | simplesect*))
+		| (%refentry.class;)+ | sect2+ | simplesect+), (%nav.class;)*)
+		+(%ubiq.mix;)>
+<!ATTLIST sect1
+		renderas	(sect2|sect3|sect4|sect5)	#IMPLIED
+		%label.attrib;
+		%status.attrib;
+		%common.attrib;
+>

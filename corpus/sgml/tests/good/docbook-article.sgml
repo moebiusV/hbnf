@@ -1,0 +1,18 @@
+<!DOCTYPE article PUBLIC "-//OASIS//DTD DocBook V4.1//EN" [
+<!ENTITY % local.para.char.mix "|trademark">
+<!ENTITY product "SGMLware">
+]>
+<article id="intro" lang="en">
+<articleinfo>
+<title>Introduction to &product;</title>
+<author><firstname>Ann</firstname><surname>Author</surname></author>
+</articleinfo>
+<sect1 id="s1"><title>Overview</title>
+<para>&product; reads <emphasis role="strong">SGML</emphasis> documents.
+<itemizedlist spacing="compact">
+<listitem><para>one
+<listitem><para>two
+</itemizedlist>
+<graphic fileref="logo.gif" format="GIF">
+</sect1>
+</article>

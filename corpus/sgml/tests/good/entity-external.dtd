@@ -1,0 +1,12 @@
+<!ENTITY % HTMLlat1 PUBLIC "-//W3C//ENTITIES Latin1//EN//HTML" "HTMLlat1.ent">
+%HTMLlat1;
+<!ENTITY % ISOnum PUBLIC "ISO 8879:1986//ENTITIES Numeric and Special Graphic//EN">
+%ISOnum;
+<!ENTITY chapter1 SYSTEM "chap1.sgm">
+<!ENTITY chapter2 SYSTEM>
+<!ENTITY logo SYSTEM "logo.gif" NDATA gif>
+<!ENTITY photo PUBLIC "-//ACME//PHOTO 1//EN" "p.jpg" NDATA jpeg>
+<!ENTITY data SYSTEM "x.dat" CDATA dat>
+<!ENTITY more SYSTEM "x.sgm" SUBDOC>
+<!ENTITY sdat SYSTEM "x.sd" SDATA fmt>
+<!ENTITY % local SYSTEM 'local.ent'>

@@ -1,0 +1,18 @@
+<!-- an ordinary comment -->
+<!---->
+<!-- one --  -- two -->
+<!-- a -- -- b -- -- c -->
+<!>
+<! >
+<!-- single - hyphens - are - fine, and so are > and < and & and " and ' -->
+<!-- multi
+     line
+     comment -->
+<!ELEMENT a - - (b) -- comment inside -->
+<!ELEMENT a -- before flags -- - -- between -- - -- after flags -- (b) -- after content -- >
+<!ELEMENT -- first -- b - O EMPTY>
+<!-- ELEMENT in a comment is not <!ELEMENT a - - (b)> a declaration -->
+<!ATTLIST a x CDATA #IMPLIED -- one -- y CDATA #IMPLIED -- two -->
+<!ENTITY e "text" -- tail comment -->
+<!ENTITY -- name next -- f "t">
+<!-- ends with a hyphen - -->

@@ -1,0 +1,11 @@
+<!ELEMENT a - - (b)>
+<!ELEMENT b - O (c)>
+<!ELEMENT c O - (d)>
+<!ELEMENT d O O (e)>
+<!ELEMENT e - - (#PCDATA)>
+<!element f - o (#pcdata)>
+<!-- the flags may be separated by comments and any blanks -->
+<!ELEMENT g - -- no end tag omission -- O (#PCDATA)>
+<!ELEMENT h -
+  O
+  EMPTY>

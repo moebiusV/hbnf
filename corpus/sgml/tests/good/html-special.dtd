@@ -1,0 +1,45 @@
+<!-- Special characters for HTML (head of HTMLspecial.ent) -->
+<!-- Character entity set. Typical invocation:
+     <!ENTITY % HTMLspecial PUBLIC
+       "-//W3C//ENTITIES Special//EN//HTML">
+     %HTMLspecial; -->
+
+<!-- Portions (C) International Organization for Standardization 1986:
+     Permission to copy in any form is granted for use with
+     conforming SGML systems and applications as defined in
+     ISO 8879, provided this notice is included in all copies.
+-->
+
+<!-- Relevant ISO entity set is given unless names are newly introduced.
+     New names (i.e., not in ISO 8879 list) do not clash with any
+     existing ISO 8879 entity names. ISO 10646 character numbers
+     are given for each character, in hex. CDATA values are decimal
+     conversions of the ISO 10646 values and refer to the document
+     character set. Names are ISO 10646 names.
+
+-->
+
+<!-- C0 Controls and Basic Latin -->
+<!ENTITY quot    CDATA "&#34;"   -- quotation mark = APL quote,
+                                    U+0022 ISOnum -->
+<!ENTITY amp     CDATA "&#38;"   -- ampersand, U+0026 ISOnum -->
+<!ENTITY lt      CDATA "&#60;"   -- less-than sign, U+003C ISOnum -->
+<!ENTITY gt      CDATA "&#62;"   -- greater-than sign, U+003E ISOnum -->
+
+<!-- Latin Extended-A -->
+<!ENTITY OElig   CDATA "&#338;"  -- latin capital ligature OE,
+                                    U+0152 ISOlat2 -->
+<!ENTITY oelig   CDATA "&#339;"  -- latin small ligature oe, U+0153 ISOlat2 -->
+<!ENTITY Scaron  CDATA "&#352;"  -- latin capital letter S with caron,
+                                    U+0160 ISOlat2 -->
+
+<!-- General Punctuation -->
+<!ENTITY ensp    CDATA "&#8194;" -- en space, U+2002 ISOpub -->
+<!ENTITY emsp    CDATA "&#8195;" -- em space, U+2003 ISOpub -->
+<!ENTITY ndash   CDATA "&#8211;" -- en dash, U+2013 ISOpub -->
+<!ENTITY mdash   CDATA "&#8212;" -- em dash, U+2014 ISOpub -->
+<!ENTITY lsquo   CDATA "&#8216;" -- left single quotation mark,
+                                    U+2018 ISOnum -->
+<!ENTITY dagger  CDATA "&#8224;" -- dagger, U+2020 ISOpub -->
+<!ENTITY permil  CDATA "&#8240;" -- per mille sign, U+2030 ISOtech -->
+<!ENTITY euro   CDATA "&#8364;"  -- euro sign, U+20AC NEW -->
