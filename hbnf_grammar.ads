@@ -503,7 +503,9 @@ package HBNF_Grammar is
    --  a scanner and a token kind, not a tree node.  A repetition is scanned
    --  one full DNF branch per iteration (multi-code-point included).  A %i
    --  literal or a group is not char-level (Char_DNF raises for the shapes it
-   --  cannot yet scan).
+   --  cannot yet scan).  The whitespace rule, and the rules it reaches, may
+   --  also hold a lookahead (`!x`, `&x`) over char-level rules: they are
+   --  scanned, never parsed, so the scanner looks at x a character at a time.
    function Is_Hidden (Nm : String) return Boolean;
 
    --  The C type of the value a rule has, from `name :: type = ...` (RFCPLAN.md step 15); ""

@@ -49,11 +49,17 @@ package HBNF_Compilable is
      (Positive, Cp_Range_Vectors.Vector);
    use type Cp_Branch_Vectors.Vector;  --  "=" visible for Cp_Atom's Sub field
 
-   --  One atom of a char rule's branch: a single code point, or a repetition
-   --  (Min .. Max times; Max = 0 means unbounded) of a flat DNF.  A
-   --  repetition is always the last atom of its branch, so the scanner can
-   --  match it greedily with no backtracking.
-   type Cp_Atom_Kind is (Single, Repeat);
+   --  One atom of a char rule's branch: a single code point, a repetition
+   --  (Min .. Max times; Max = 0 means unbounded) of a flat DNF, or a
+   --  lookahead.  A repetition is always the last atom of its branch, so the
+   --  scanner can match it greedily with no backtracking.  A lookahead (`!x`,
+   --  `&x`) is allowed in the whitespace rule and the rules it reaches: it
+   --  matches, or does not, the text x names at the position, and moves
+   --  nothing.  x is a branch list of its own, which the backends write as a
+   --  function named Fn (see Look_Helpers).
+   type Cp_Atom_Kind is (Single, Repeat, Look);
+   type Look_Body;                                   --  completed below
+   type Look_Access is access Look_Body;
    type Cp_Atom (Kind : Cp_Atom_Kind := Single) is record
       Lo, Hi : Natural;
       Lo2    : Natural := 1;           --  a second range for a Single, as in Cp_Range (Hi2 < Lo2: none)
@@ -64,6 +70,10 @@ package HBNF_Compilable is
             Min : Natural;                  --  minimum iterations
             Max : Natural;                  --  0 = unbounded
             Sub : Cp_Branch_Vectors.Vector; --  DNF of one iteration
+         when Look =>
+            Negative : Boolean;             --  `!x` (True) or `&x`
+            Fn       : Ada.Strings.Unbounded.Unbounded_String;
+            Inner    : Look_Access;         --  the branches of x
       end case;
    end record;
 
@@ -74,6 +84,23 @@ package HBNF_Compilable is
    --  repetition); Char_DNF returns the list of branches.
    package Cp_Branch_Atom_Vectors is new Ada.Containers.Vectors
      (Positive, Cp_Atom_Vectors.Vector);
+
+   type Look_Body is record
+      Branches : Cp_Branch_Atom_Vectors.Vector;
+   end record;
+
+   --  The functions a scanner calls for its lookaheads: for each Look atom of
+   --  the branches, nested ones first, the name and the branches of what it
+   --  looks at.  A function matches when some branch matches (the empty one
+   --  too) and says whether it did.
+   type Look_Helper is record
+      Name     : Ada.Strings.Unbounded.Unbounded_String;
+      Branches : Cp_Branch_Atom_Vectors.Vector;
+   end record;
+   package Look_Helper_Vectors is new Ada.Containers.Vectors (Positive, Look_Helper);
+
+   function Look_Helpers (DNF : Cp_Branch_Atom_Vectors.Vector)
+      return Look_Helper_Vectors.Vector;
 
    function Char_DNF
      (Rules : HBNF_Grammar.Rule_Vectors.Vector; Nm : String)

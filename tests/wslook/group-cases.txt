@@ -1,0 +1,8 @@
+ok	$SET FOO\na pic 9;
+ok	$set x\n$iF y\n$Ignore\na pic 9;
+ok	a pic $BB**,***.**.;
+ok	a pic $X;
+ok	a pic 9;\n$si\nb pic $Z9;
+bad	a pic $S;
+bad	a pic $i9;
+bad	$X a pic 9;

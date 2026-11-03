@@ -1,5 +1,6 @@
 pragma Ada_2022;
 
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with HBNF_Lookahead;
@@ -269,6 +270,8 @@ package body HBNF_Compilable is
    function Char_DNF (Rules : Rule_Vectors.Vector; Nm : String)
       return Cp_Branch_Atom_Vectors.Vector is
 
+      Looks : Natural := 0;     --  the lookaheads met so far, which name their functions
+
       function Has_Trailing_Rep (Sub : Cp_Branch_Atom_Vectors.Vector)
         return Boolean is
         (for some B of Sub =>
@@ -319,6 +322,11 @@ package body HBNF_Compilable is
                         end loop;
                         Branches := New_Branches;
                      end;
+                  elsif E.Kind = Block then
+                     raise Parse_Error with To_String (R.Name)
+                       & ": a lookahead (`!` or `&`) inside what a character rule repeats "
+                       & "cannot be scanned.  Put it outside the repetition, or write what "
+                       & "is repeated as a rule that has none";
                   elsif E.Kind = Name then
                      declare
                         Idx : constant Natural := Find (Rules, To_String (E.Name));
@@ -414,10 +422,22 @@ package body HBNF_Compilable is
          return Result;
       end Flat_Element;
 
-      --  The atom DNF (branches of Single/Repeat atoms) of a rule.
+      --  The atom DNF (branches of Single/Repeat/Look atoms) of a pattern.
+      function Atom_Pat (P : Element_Vectors.Vector; Depth : Natural)
+        return Cp_Branch_Atom_Vectors.Vector;
+
+      --  The atom DNF of a rule.
       function Atom (J : Natural; Depth : Natural)
         return Cp_Branch_Atom_Vectors.Vector is
-         R : constant Rule := Rules (J);
+      begin
+         if J = 0 then
+            return Atom_Pat (Element_Vectors.Empty_Vector, Depth);
+         end if;
+         return Atom_Pat (Rules (J).Pattern, Depth);
+      end Atom;
+
+      function Atom_Pat (P : Element_Vectors.Vector; Depth : Natural)
+        return Cp_Branch_Atom_Vectors.Vector is
 
          function Atom_Seq (First, Last : Natural)
            return Cp_Branch_Atom_Vectors.Vector is
@@ -426,7 +446,7 @@ package body HBNF_Compilable is
             Branches.Append (Cp_Atom_Vectors.Empty_Vector);
             for K in First .. Last loop
                declare
-                  E       : constant Element_Access := R.Pattern (K);
+                  E       : constant Element_Access := P (K);
                   Rep     : constant Boolean := E.Min /= 1 or else E.Max /= 1;
                begin
                   --  A repetition may sit in the middle of a branch: the
@@ -475,6 +495,28 @@ package body HBNF_Compilable is
                         end loop;
                         Branches := New_Branches;
                      end;
+                  elsif E.Kind = Block then
+                     --  A lookahead: a function of its own matches what it looks at.
+                     if E.Op not in B_Not | B_And or else E.Look.Is_Empty then
+                        raise Parse_Error with
+                          "a character rule holds something that is not text and not a "
+                          & "lookahead (`!` or `&`)";
+                     end if;
+                     Looks := Looks + 1;
+                     declare
+                        Sub : constant Cp_Atom := Cp_Atom'
+                          (Kind => Look, Lo => 0, Hi => 0, Lo2 => 1, Hi2 => 0,
+                           Negative => E.Op = B_Not,
+                           Fn       => To_Unbounded_String
+                             (Nm & "_look_"
+                              & Ada.Strings.Fixed.Trim (Natural'Image (Looks), Ada.Strings.Left)),
+                           Inner    => new Look_Body'
+                             (Branches => Atom_Pat (E.Look, Depth - 1)));
+                     begin
+                        for B of Branches loop
+                           B.Append (Sub);
+                        end loop;
+                     end;
                   else
                      --  A non-repeated Name: distribute its atom DNF.
                      declare
@@ -508,7 +550,7 @@ package body HBNF_Compilable is
             return Branches;
          end Atom_Seq;
       begin
-         if J = 0 or else Depth = 0 or else Natural (R.Pattern.Length) = 0 then
+         if Depth = 0 or else Natural (P.Length) = 0 then
             declare
                One : Cp_Branch_Atom_Vectors.Vector;
             begin
@@ -517,7 +559,6 @@ package body HBNF_Compilable is
             end;
          end if;
          declare
-            P        : constant Element_Vectors.Vector := R.Pattern;
             Branches : Cp_Branch_Atom_Vectors.Vector;
             St       : Natural := 1;
          begin
@@ -535,10 +576,33 @@ package body HBNF_Compilable is
             end loop;
             return Branches;
          end;
-      end Atom;
+      end Atom_Pat;
    begin
       return Atom (Find (Rules, Nm), 20);
    end Char_DNF;
+
+   function Look_Helpers (DNF : Cp_Branch_Atom_Vectors.Vector)
+      return Look_Helper_Vectors.Vector is
+      Result : Look_Helper_Vectors.Vector;
+
+      procedure Walk (Branches : Cp_Branch_Atom_Vectors.Vector) is
+      begin
+         for B of Branches loop
+            for A of B loop
+               --  (an atom is shared by the branches a later alternation split in two)
+               if A.Kind = Look
+                 and then not (for some H of Result => H.Name = A.Fn)
+               then
+                  Walk (A.Inner.Branches);       --  what it calls first
+                  Result.Append (Look_Helper'(Name => A.Fn, Branches => A.Inner.Branches));
+               end if;
+            end loop;
+         end loop;
+      end Walk;
+   begin
+      Walk (DNF);
+      return Result;
+   end Look_Helpers;
 
    function Is_List_Rule (R : Rule) return Boolean is
      (Natural (R.Pattern.Length) = 1
@@ -1357,6 +1421,35 @@ package body HBNF_Compilable is
             begin
                null;
             end;
+         end if;
+      end loop;
+
+      --  The parser skips the whitespace rule by running a scanner over it,
+      --  so it must be one: text, in a rule of characters (or a scanner action).
+      --  Anything else would leave the parser calling a scanner that is not there.
+      for R of Rules loop
+         if R.Whitespace /= Null_Unbounded_String then
+            declare
+               W : constant String := To_String (R.Whitespace);
+               J : constant Natural := Find (Rules, W);
+            begin
+               if J /= 0 and then Rules (J).Jet_Code = Null_Unbounded_String
+                 and then not HBNF_Grammar.Is_Char_Rule (Rules, W)
+               then
+                  raise Parse_Error with
+                    "the whitespace rule `" & W & "` is not a rule of characters, and "
+                    & "the parser skips it by scanning it.  It may hold literals, `%x` "
+                    & "ranges, rules of characters, a group of those, and `!` or `&` "
+                    & "over those, but a lookahead and a group cannot share one rule "
+                    & "(write the group as a rule of its own), a lookahead cannot be "
+                    & "inside what a rule repeats, it may not name a built-in type "
+                    & "(`word`, `int`, `str`) or a rule that does, and a letter is "
+                    & "written as a code point (`%x53`), since a letter-led literal is "
+                    & "a keyword in a grammar that has them.  Write it as a scanner "
+                    & "action (`" & W & " = C { ... }`) if it needs more";
+               end if;
+            end;
+            exit;     --  the first is the one the backends skip
          end if;
       end loop;
 

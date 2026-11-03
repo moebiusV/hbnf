@@ -2957,11 +2957,16 @@ cycles.
     The order of the three is not fixed; C++ leans on the C family (`corpus/c/`) and the typedef context
     of step 16.
 
-    *Generator bugs found while working on the COBOL grammar (2026-11-02; to fix, not to work around).*  (1) A lookahead (`!` or `&`) inside the character-level
-    `ws` rule (`ws = ... | "$" !picture-start *~( CR | LF )`) stops generation with `raised CONSTRAINT_ERROR : hbnf_compilable.adb:481 discriminant check
-    failed`, after the warning that `ws` is no longer one token.  (2) A group of alternatives after a literal in `ws` (`ws = ... | "$" ( %x53 | %x73 | ... ) *~( CR | LF )`)
-    generates `scan_ws_1`, `scan_ws_2`, `scan_ws_4` and no `scan_ws`, which `skip_ws` calls, so the C does not compile.  Both stand in the way of one thing: a `$` directive
-    line in `ws` that does not swallow a picture beginning `$B` or `$Z` (`PIC $BB**,***.**.` is read as a comment line today).
+    *Generator bugs found while working on the COBOL grammar (2026-11-02), and fixed.*  (1) A lookahead (`!` or `&`) inside the character-level
+    `ws` rule (`ws = ... | "$" !picture-start *~( CR | LF )`) stopped generation with `raised CONSTRAINT_ERROR : hbnf_compilable.adb:481 discriminant check
+    failed`.  The parser skips `ws` by running a scanner, so `ws` and what it reaches are now rules of characters even where they hold a lookahead: the
+    scanner (`Char_DNF`) has a Look atom, and each backend writes a function for what the lookahead looks at (`look_...`), read a character at a time
+    and building no tree.  (2) A group of alternatives after a literal in `ws` (`ws = ... | "$" ( %x53 | %x73 | ... ) *~( CR | LF )`) generated
+    `scan_ws_1`, `scan_ws_2`, `scan_ws_4` and no `scan_ws`: the reader turned each `%x` letter in a rule with a group into a literal, and a letter-led
+    literal is a keyword in a grammar that has them, so `ws` was no text and was lifted into rules; a code point stays a code point in the
+    whitespace rule and what it reaches.  A `ws` that is not text at all (`ws = ... | "#" word`) is now refused, naming the rule, in every backend
+    but tree-sitter.  Both stood in the way of one thing: a `$` directive line in `ws` that does not swallow a picture beginning `$B` or `$Z`
+    (`PIC $BB**,***.**.`); tests/wslook.sh.
 
     *A design idea, not decided (the user, 2026-10-31).*  A grammar that reads one language can also say how a
     rule is written out in another, so that it translates: ALGOL's `begin` statements `end` comes out as C's

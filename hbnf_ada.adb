@@ -2982,6 +2982,68 @@ package body HBNF_Ada is
          Append (Bdy, Ind & "end;");
          Append (Bdy, LF);
       end Emit_Repeat;
+
+      --  A lookahead: the function written for it (Emit_Look_Fn) says whether
+      --  what it looks at matches here; nothing is consumed.  Fail runs when
+      --  the lookahead is not satisfied.
+      procedure Emit_Look (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         Append (Bdy, Ind & "if " & (if A.Negative then "" else "not ") & "Look_"
+           & Ada_Ident (To_String (A.Fn)) & " (S, Pos + Off, Len) then " & Fail & "; end if;");
+         Append (Bdy, LF);
+      end Emit_Look;
+
+      --  The function a lookahead calls: true when some branch matches at Pos
+      --  (the empty one too).
+      procedure Emit_Look_Fn (H : Look_Helper) is
+      begin
+         Append (Bdy, "   function Look_" & Ada_Ident (To_String (H.Name))
+           & " (S : String; Pos, Len : Natural) return Boolean is");
+         Append (Bdy, LF);
+         Append (Bdy, "      Cp   : Natural;");
+         Append (Bdy, LF);
+         Append (Bdy, "      N    : Natural;");
+         Append (Bdy, LF);
+         Append (Bdy, "      Off  : Natural;");
+         Append (Bdy, LF);
+         Append (Bdy, "      Ok   : Boolean;");
+         Append (Bdy, LF);
+         Append (Bdy, "   begin");
+         Append (Bdy, LF);
+         for B of H.Branches loop
+            Append (Bdy, "      Off := 0;");
+            Append (Bdy, LF);
+            Append (Bdy, "      Ok := True;");
+            Append (Bdy, LF);
+            for A of B loop
+               Append (Bdy, "      if Ok then");
+               Append (Bdy, LF);
+               case A.Kind is
+                  when Single =>
+                     Append (Bdy, "         N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         Ok := N > 0 and then "
+                       & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2) & ";");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         if Ok then Off := Off + N; end if;");
+                     Append (Bdy, LF);
+                  when Repeat =>
+                     Emit_Repeat (A, "         ", "Ok := False");
+                  when Look =>
+                     Emit_Look (A, "         ", "Ok := False");
+               end case;
+               Append (Bdy, "      end if;");
+               Append (Bdy, LF);
+            end loop;
+            Append (Bdy, "      if Ok then return True; end if;");
+            Append (Bdy, LF);
+         end loop;
+         Append (Bdy, "      return False;");
+         Append (Bdy, LF);
+         Append (Bdy, "   end Look_" & Ada_Ident (To_String (H.Name)) & ";");
+         Append (Bdy, LF);
+         Append (Bdy, LF);
+      end Emit_Look_Fn;
    begin
       --  Free_<rule>: release a tree the parse functions built.  A consumer
       --  calls Free_<root> once it is finished with one, and the access nodes
@@ -4322,6 +4384,9 @@ package body HBNF_Ada is
                      Append (Bdy, "   end Scan_" & Ada_Ident (NM) & ";" & LF & LF);
                   end;
                else
+               for H of Look_Helpers (DNF) loop
+                  Emit_Look_Fn (H);
+               end loop;
                Append (Bdy, "   function Scan_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
                Append (Bdy, LF);
@@ -4348,6 +4413,8 @@ package body HBNF_Ada is
                            Append (Bdy, LF);
                         when Repeat =>
                            Emit_Repeat (A, "      ", "return 0");
+                        when Look =>
+                           Emit_Look (A, "      ", "return 0");
                      end case;
                   end loop;
                   Append (Bdy, "      return Off;");
@@ -4389,6 +4456,12 @@ package body HBNF_Ada is
                               Append (Bdy, "      if Ok then");
                               Append (Bdy, LF);
                               Emit_Repeat (A, "         ", "Ok := False");
+                              Append (Bdy, "      end if;");
+                              Append (Bdy, LF);
+                           when Look =>
+                              Append (Bdy, "      if Ok then");
+                              Append (Bdy, LF);
+                              Emit_Look (A, "         ", "Ok := False");
                               Append (Bdy, "      end if;");
                               Append (Bdy, LF);
                         end case;

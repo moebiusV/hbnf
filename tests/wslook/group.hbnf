@@ -1,0 +1,13 @@
+; A group of alternatives after a literal in the whitespace rule: `$S`, `$s`, `$I` and `$i` begin a directive line.
+; The letters are written as code points, so they are characters; a letter-led literal would be a keyword here.
+prefix none
+whitespace ws
+include "../../grammars/common.hbnf"
+
+top = 1*stmt
+stmt = word picture ";"
+picture = "pic" picture-string
+picture-string = 1*pic-char
+pic-char = ~( SP | LF | ";" )
+
+ws = SP | LF | "$" ( %x53 | %x73 | %x49 | %x69 ) *~( CR | LF )

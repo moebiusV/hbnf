@@ -1,0 +1,9 @@
+; A whitespace rule that is not text: the parser would call a scanner that does not exist.  Generation says so.
+prefix none
+whitespace ws
+include "../../grammars/common.hbnf"
+
+top = 1*stmt
+stmt = word ";"
+
+ws = SP | LF | "#" word

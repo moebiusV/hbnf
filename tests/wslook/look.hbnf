@@ -1,0 +1,17 @@
+; A lookahead in the whitespace rule.  The parser skips `ws` by scanning it, so it is a rule of characters, and
+; a `!x` in it looks at the text x names, without moving, a character at a time: a `$` begins a directive line
+; (`$SET ...`: a letter), which is blank space, unless what follows is a picture (`$BB**,***.**.`), which is not.
+; The letter after the lookahead splits the choice that comes after it in two, one for each case of the letter.
+prefix none
+whitespace ws
+include "../../grammars/common.hbnf"
+
+top = 1*stmt
+stmt = word picture ";"
+picture = "pic" picture-string
+picture-string = 1*pic-char
+pic-char = ~( SP | LF | ";" )
+
+ws = SP | LF | "$" !picture-start ALPHA *~( CR | LF )
+picture-start = *picletter !ALPHA
+picletter = %x42 | %x5A | %x39

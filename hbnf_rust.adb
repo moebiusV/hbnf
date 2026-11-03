@@ -3692,6 +3692,78 @@ package body HBNF_Rust is
             Append (Res, LF);
          end;
       end Emit_Repeat;
+
+      --  A lookahead: the function written for it (Emit_Look_Fn) says whether
+      --  what it looks at matches here; nothing is consumed.
+      procedure Emit_Look (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "if " & (if A.Negative then "" else "!") & "look_"
+           & Rust_Snake (To_String (A.Fn)) & "(s, pos + off, len) { " & Fail & "; }");
+         Append (Res, LF);
+      end Emit_Look;
+
+      --  The function a lookahead calls: true when some branch matches at pos
+      --  (the empty one too).
+      procedure Emit_Look_Fn (H : Look_Helper) is
+         Br     : Natural := 0;
+         Always : Boolean := False;      --  a branch that cannot fail ends the choice
+      begin
+         Append (Res, "fn look_" & Rust_Snake (To_String (H.Name))
+           & "(s: &[u8], pos: usize, len: usize) -> bool {");
+         Append (Res, LF);
+         for B of H.Branches loop
+            exit when Always;
+            Br := Br + 1;
+            declare
+               Mark  : constant Natural := Length (Res);
+               Moves : constant Boolean := (for some A of B => A.Kind /= Look);
+               Branch_Text : Unbounded_String;
+            begin
+               if Br = 1 and then B.Is_Empty then
+                  Append (Res, "        let _ = (s, pos, len);");
+                  Append (Res, LF);
+               end if;
+               Append (Res, "        " & (if Moves then "let mut off" else "let off") & " = 0usize;");
+               Append (Res, LF);
+               for A of B loop
+                  case A.Kind is
+                     when Single =>
+                        Append (Res, "        let (n, c) = decode_utf8(s, pos + off, len);"
+                          & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2)
+                          & " { break 'br" & Img (Br) & "; } off += n;");
+                        Append (Res, LF);
+                     when Repeat =>
+                        Emit_Repeat (A, "        ", "break 'br" & Img (Br));
+                     when Look =>
+                        Emit_Look (A, "        ", "break 'br" & Img (Br));
+                  end case;
+               end loop;
+               if Moves then
+                  Append (Res, "        let _ = off;");
+                  Append (Res, LF);
+               end if;
+               Append (Res, "        return true;");
+               Append (Res, LF);
+               Branch_Text := To_Unbounded_String (Slice (Res, Mark + 1, Length (Res)));
+               Delete (Res, Mark + 1, Length (Res));
+               Always := not (Index (Branch_Text, "break 'br" & Img (Br) & ";") > 0
+                              or else Index (Branch_Text, "break 'br" & Img (Br) & " ") > 0
+                              or else Index (Branch_Text, "break 'br" & Img (Br) & "}") > 0);
+               Append (Res, "    " & (if Always then "" else "'br" & Img (Br) & ": ") & "{");
+               Append (Res, LF);
+               Append (Res, Branch_Text);
+               Append (Res, "    }");
+               Append (Res, LF);
+            end;
+         end loop;
+         if not Always then
+            Append (Res, "    false");
+            Append (Res, LF);
+         end if;
+         Append (Res, "}");
+         Append (Res, LF);
+         Append (Res, LF);
+      end Emit_Look_Fn;
    begin
       if Preamble ("Rust") /= "" then
          Append (Res, Preamble ("Rust"));
@@ -4189,6 +4261,9 @@ begin
    Append (Res, "    best" & LF & "}" & LF & LF);
 end;
 else
+for H of Look_Helpers (DNF) loop
+   Emit_Look_Fn (H);
+end loop;
 Append (Res, "fn scan_" & Rust_Snake (NM)
                     & "(s: &[u8], pos: usize, len: usize) -> usize {");
                   Append (Res, LF);
@@ -4206,6 +4281,8 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                               Append (Res, LF);
                            when Repeat =>
                               Emit_Repeat (A, "    ", "return 0");
+                           when Look =>
+                              Emit_Look (A, "    ", "return 0");
                         end case;
                      end loop;
                      Append (Res, "    off");
@@ -4237,6 +4314,8 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                                        Append (Res, LF);
                                     when Repeat =>
                                        Emit_Repeat (A, "        ", "break 'br" & Img (Br));
+                                    when Look =>
+                                       Emit_Look (A, "        ", "break 'br" & Img (Br));
                                  end case;
                               end loop;
                               Append (Res, "        if off > best { best = off; }");

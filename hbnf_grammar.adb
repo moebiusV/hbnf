@@ -653,6 +653,45 @@ package body HBNF_Grammar is
       return 0;
    end Index_Of;
 
+   --  The names of the whitespace rule and of every rule it reaches (through a
+   --  name, a group, or what a lookahead looks at).  The parser skips the
+   --  whitespace rule with a scanner, so these are rules of characters even
+   --  where they hold a group or a lookahead.
+   function Ws_Reach (Rules : Rule_Vectors.Vector) return Path_Sets.Set is
+      Seen : Path_Sets.Set;
+
+      procedure Visit (N : String);
+
+      procedure Walk (V : Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            if E.Kind = Name then
+               Visit (To_String (E.Name));
+            elsif E.Kind = Group then
+               Walk (E.Items);
+            elsif E.Kind = Block then
+               Walk (E.Look);
+            end if;
+         end loop;
+      end Walk;
+
+      procedure Visit (N : String) is
+         J : constant Natural := Index_Of (Rules, N);
+      begin
+         if J /= 0 and then not Seen.Contains (N) then
+            Seen.Insert (N);
+            Walk (Rules (J).Pattern);
+         end if;
+      end Visit;
+   begin
+      for R of Rules loop
+         if R.Whitespace /= Null_Unbounded_String then
+            Visit (To_String (R.Whitespace));
+         end if;
+      end loop;
+      return Seen;
+   end Ws_Reach;
+
    function Is_Char_Rule_Plain (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean;
    --  The scanner shapes (a sequence of code points ending in one repetition),
@@ -7973,6 +8012,10 @@ package body HBNF_Grammar is
       --  Single code points in the other rules, now the checks are done.
       declare
          Used : Path_Sets.Set;
+         --  The whitespace rule and what it reaches are scanned, so a code point
+         --  written in them stays a code point: as a literal, a letter would be a
+         --  keyword (`"$" ( %x53 | %x73 )` is not `"$" ( "S" | "s" )`).
+         Scanned : constant Path_Sets.Set := Ws_Reach (Rules);
 
          --  A character rule, as HBNF_Compilable.Is_Char_Rule decides: a
          --  sequence/alternation of ranges, plain literals and references
@@ -8111,8 +8154,10 @@ package body HBNF_Grammar is
 
          Lifted_Ranges : Rule_Vectors.Vector;
 
+         --  Keep_Points: a single code point stays a range (a rule that is scanned).
          procedure Literalize (V : in out Element_Vectors.Vector;
-                               In_Rule : String; Is_Used : Boolean) is
+                               In_Rule : String; Is_Used : Boolean;
+                               Keep_Points : Boolean) is
          begin
             for I in 1 .. Natural (V.Length) loop
                declare
@@ -8120,13 +8165,16 @@ package body HBNF_Grammar is
                begin
                   if E.Kind = Char_Range then
                      if E.Lo = E.Hi then
-                        V.Replace_Element
-                          (I, new Element'(Kind => Literal, Min => E.Min,
-                                           Max => E.Max,
-                                           Has_Value => False, Value => 0,
-                                           Lit => To_Unbounded_String
-                                                    (UTF8 (E.Lo)),
-                                           No_Case => False));
+                        --  (a scanned rule keeps its code points; see Keep_Points)
+                        if not Keep_Points then
+                           V.Replace_Element
+                             (I, new Element'(Kind => Literal, Min => E.Min,
+                                              Max => E.Max,
+                                              Has_Value => False, Value => 0,
+                                              Lit => To_Unbounded_String
+                                                       (UTF8 (E.Lo)),
+                                              No_Case => False));
+                        end if;
                      elsif Is_Used then
                         --  A range in a rule that also names other rules is
                         --  not matched there; it is a rule of its own, and
@@ -8167,7 +8215,7 @@ package body HBNF_Grammar is
                         end;
                      end if;
                   elsif E.Kind = Group then
-                     Literalize (E.Items, In_Rule, Is_Used);
+                     Literalize (E.Items, In_Rule, Is_Used, Keep_Points);
                   end if;
                end;
             end loop;
@@ -8181,7 +8229,8 @@ package body HBNF_Grammar is
                N : constant String := To_String (Rules (J).Name);
             begin
                if not Is_Char (N, 32) then
-                  Literalize (Rules (J).Pattern, N, Used.Contains (N));
+                  Literalize (Rules (J).Pattern, N, Used.Contains (N),
+                              Scanned.Contains (N));
                end if;
             end;
          end loop;
@@ -10753,6 +10802,8 @@ package body HBNF_Grammar is
       --  paths (a grammar whose rules refer to the ones below by several
       --  names) is looked at once, not once per path.
       Memo_Yes, Memo_No : Name_Sets.Set;
+      Reach      : Path_Sets.Set;     --  Ws_Reach, worked out when a lookahead is first met
+      Have_Reach : Boolean := False;
 
       function Rec_Raw (N : String; Depth : Natural) return Boolean;
 
@@ -10776,6 +10827,100 @@ package body HBNF_Grammar is
          end;
       end Rec;
 
+      --  The elements of a rule's pattern (or of what a lookahead looks at),
+      --  Owner being the rule they are in.  The core scanners `int`/`str`/`word`
+      --  may repeat a multi-code-point building block (`str`'s `*str_char`); a
+      --  repetition over a longer sequence in any other rule stays a list.
+      function Els_Plain
+        (Els : Element_Vectors.Vector; Owner : String; Depth : Natural;
+         Core_Scanner, Need_Anchor : Boolean) return Boolean
+      is
+         Has_Anchor : Boolean := False;
+      begin
+         for E of Els loop
+            case E.Kind is
+               when Char_Range =>
+                  Has_Anchor := True;
+               when Alt =>
+                  null;
+               when Literal =>
+                  --  A letter/underscore-led literal is a word (a keyword
+                  --  or a word matched by text), not a run of code
+                  --  points; a rule with one is a phrase rule
+                  --  (`rtable = "rtable" int`).  A punctuation or
+                  --  digit-led literal (`"-"`, `"0x"`) stays char-level.
+                  declare
+                     S : constant String := To_String (E.Lit);
+                  begin
+                     if Keywords_Apply
+                       and then S'Length > 0
+                       and then (S (S'First) in 'a' .. 'z'
+                                 or else S (S'First) in 'A' .. 'Z'
+                                 or else (S (S'First) = '_'
+                                          and then S'Length > 1))
+                     then
+                        return False;
+                     end if;
+                     --  A repeated multi-code-point literal is a list
+                     --  (`1*"0x"`); a one-code-point one a run.
+                     if not Core_Scanner
+                       and then (E.Min /= 1 or else E.Max /= 1)
+                       and then not Single_Code_Point (S)
+                     then
+                        return False;
+                     end if;
+                  end;
+               when Name =>
+                  if Is_Core_Name (To_String (E.Name)) then
+                     return False;
+                  end if;
+                  --  An exception (`X = A - B`) is a token scanned by a
+                  --  function of its own; a rule that refers to it is a
+                  --  phrase rule that calls it, not one whose scanner
+                  --  would inline A and lose the exception.
+                  if Excepts.Contains (To_String (E.Name)) then
+                     return False;
+                  end if;
+                  if not Rec (To_String (E.Name), Depth - 1) then
+                     return False;
+                  end if;
+                  Has_Anchor := True;
+                  if not Core_Scanner
+                    and then (E.Min /= 1 or else E.Max /= 1)
+                    and then not Is_Char_Class
+                      (Rules, To_String (E.Name))
+                  then
+                     return False;
+                  end if;
+               when Group =>
+                  return False;
+               when Block =>
+                  --  A character rule is code points; a `%action{ }` in
+                  --  one is not char-level.  A lookahead is, in the
+                  --  whitespace rule and the rules it reaches: they are
+                  --  scanned and not parsed, and the scanner looks at what
+                  --  the lookahead names without moving.
+                  if E.Op not in B_Not | B_And or else E.Look.Is_Empty then
+                     return False;
+                  end if;
+                  if not Have_Reach then
+                     Reach := Ws_Reach (Rules);
+                     Have_Reach := True;
+                  end if;
+                  if not Reach.Contains (Owner)
+                    or else not Els_Plain (E.Look, Owner, Depth, False, False)
+                  then
+                     return False;
+                  end if;
+               when Bit_Field =>
+                  null;     --  a rule with bit fields never reaches here (Split_Wire)
+               when Negation =>
+                  null;   --  resolved into a rule of ranges before this runs
+            end case;
+         end loop;
+         return Has_Anchor or else not Need_Anchor;
+      end Els_Plain;
+
       function Rec_Raw (N : String; Depth : Natural) return Boolean is
          J : constant Natural := Index_Of (Rules, N);
       begin
@@ -10784,88 +10929,13 @@ package body HBNF_Grammar is
          end if;
          declare
             R : constant Rule := Rules (J);
-            --  The core scanners `int`/`str`/`word` may repeat a multi-code-point
-            --  building block (`str`'s `*str_char`); a repetition over a longer
-            --  sequence in any other rule stays a list.
-            Core_Scanner : constant Boolean := Is_Core_Name (N);
          begin
             if R.Jet_Code /= Null_Unbounded_String
               or else Natural (R.Pattern.Length) = 0
             then
                return False;
             end if;
-            declare
-               Has_Anchor : Boolean := False;
-            begin
-               for E of R.Pattern loop
-                  case E.Kind is
-                     when Char_Range =>
-                        Has_Anchor := True;
-                     when Alt =>
-                        null;
-                     when Literal =>
-                        --  A letter/underscore-led literal is a word (a keyword
-                        --  or a word matched by text), not a run of code
-                        --  points; a rule with one is a phrase rule
-                        --  (`rtable = "rtable" int`).  A punctuation or
-                        --  digit-led literal (`"-"`, `"0x"`) stays char-level.
-                        declare
-                           S : constant String := To_String (E.Lit);
-                        begin
-                           if Keywords_Apply
-                             and then S'Length > 0
-                             and then (S (S'First) in 'a' .. 'z'
-                                       or else S (S'First) in 'A' .. 'Z'
-                                       or else (S (S'First) = '_'
-                                                and then S'Length > 1))
-                           then
-                              return False;
-                           end if;
-                           --  A repeated multi-code-point literal is a list
-                           --  (`1*"0x"`); a one-code-point one a run.
-                           if not Core_Scanner
-                             and then (E.Min /= 1 or else E.Max /= 1)
-                             and then not Single_Code_Point (S)
-                           then
-                              return False;
-                           end if;
-                        end;
-                     when Name =>
-                        if Is_Core_Name (To_String (E.Name)) then
-                           return False;
-                        end if;
-                        --  An exception (`X = A - B`) is a token scanned by a
-                        --  function of its own; a rule that refers to it is a
-                        --  phrase rule that calls it, not one whose scanner
-                        --  would inline A and lose the exception.
-                        if Excepts.Contains (To_String (E.Name)) then
-                           return False;
-                        end if;
-                        if not Rec (To_String (E.Name), Depth - 1) then
-                           return False;
-                        end if;
-                        Has_Anchor := True;
-                        if not Core_Scanner
-                          and then (E.Min /= 1 or else E.Max /= 1)
-                          and then not Is_Char_Class
-                            (Rules, To_String (E.Name))
-                        then
-                           return False;
-                        end if;
-                     when Group =>
-                        return False;
-                     when Block =>
-                        --  A character rule is code points; a `%action{ }` in
-                        --  one is not char-level.
-                        return False;
-                     when Bit_Field =>
-                        null;     --  a rule with bit fields never reaches here (Split_Wire)
-                     when Negation =>
-                        null;   --  resolved into a rule of ranges before this runs
-                  end case;
-               end loop;
-               return Has_Anchor;
-            end;
+            return Els_Plain (R.Pattern, N, Depth, Is_Core_Name (N), True);
          end;
       end Rec_Raw;
    begin

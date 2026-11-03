@@ -8392,6 +8392,54 @@ package body HBNF_C is
             Append (Res, LF);
          end if;
       end Emit_Repeat;
+
+      --  A lookahead: the function written for it (Emit_Look_Fn) says whether
+      --  what it looks at matches here; nothing is consumed.
+      procedure Emit_Look (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "if (" & (if A.Negative then "" else "!") & "look_"
+           & C_Name (To_String (A.Fn)) & "(s, pos + off, len)) " & Fail & ";");
+         Append (Res, LF);
+      end Emit_Look;
+
+      --  The function a lookahead calls: 1 when some branch matches at pos
+      --  (the empty one too), else 0.
+      procedure Emit_Look_Fn (H : Look_Helper) is
+      begin
+         Append (Res, "static int look_" & C_Name (To_String (H.Name))
+           & "(const char *s, size_t pos, size_t len) {");
+         Append (Res, LF);
+         for B of H.Branches loop
+            if B.Is_Empty then
+               Append (Res, "    return 1;");
+               Append (Res, LF);
+            else
+               Append (Res, "    do {");
+               Append (Res, LF);
+               Append (Res, "        size_t off = 0;");
+               Append (Res, LF);
+               for A of B loop
+                  case A.Kind is
+                     when Single =>
+                        Emit_Single (A, "        ", "break");
+                     when Repeat =>
+                        Emit_Repeat (A, "        ", "break");
+                     when Look =>
+                        Emit_Look (A, "        ", "break");
+                  end case;
+               end loop;
+               Append (Res, "        return 1;");
+               Append (Res, LF);
+               Append (Res, "    } while (0);");
+               Append (Res, LF);
+            end if;
+         end loop;
+         Append (Res, "    return 0;");
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+         Append (Res, LF);
+      end Emit_Look_Fn;
    begin
       for R of Rules loop
          Collect_Case (R.Pattern);
@@ -9880,6 +9928,9 @@ begin
    end if;
 end;
 else
+for H of Look_Helpers (DNF) loop
+   Emit_Look_Fn (H);
+end loop;
 Append (Res, "static size_t scan_" & C_Name (NM)
                  & "(const char *s, size_t pos, size_t len) {");
                Append (Res, LF);
@@ -9921,6 +9972,8 @@ Append (Res, "static size_t scan_" & C_Name (NM)
                            Emit_Single (A, "    ", "return 0");
                         when Repeat =>
                            Emit_Repeat (A, "    ", "return 0");
+                        when Look =>
+                           Emit_Look (A, "    ", "return 0");
                      end case;
                   end loop;
                   Append (Res, "    return off;");
@@ -9940,6 +9993,8 @@ Append (Res, "static size_t scan_" & C_Name (NM)
                               Emit_Single (A, "        ", "break");
                            when Repeat =>
                               Emit_Repeat (A, "        ", "break");
+                           when Look =>
+                              Emit_Look (A, "        ", "break");
                         end case;
                      end loop;
                      Append (Res, "        if (off > best) best = off;");

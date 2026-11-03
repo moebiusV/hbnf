@@ -1,0 +1,12 @@
+ok	a pic $BB**,***.**.;
+ok	$SET FOO\na pic 9;
+ok	a pic 99;\n$SET X Y\nb pic $ZZ9;
+ok	$SET\n$SET A\n\n$SET B\na pic 9;
+ok	a pic $9;
+ok	a pic $Z$;
+bad	a pic $SET;
+ok	a pic $9A;
+ok	a pic $ZZ9;
+bad	a pic $1 pic;
+bad	$B x pic 9;
+bad	a pic ;
