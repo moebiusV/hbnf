@@ -1,0 +1,5 @@
+; Only literals and word parameters can be joined: identifier is a rule.
+prefix none
+top = "a" tail("x")
+tail(K) := "END-" + identifier K
+identifier = "q"

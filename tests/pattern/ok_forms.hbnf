@@ -1,0 +1,10 @@
+; What an argument may be: everything up to the next comma or the closing parenthesis of the use,
+; outside parentheses, brackets and quotes.  `("A" "B")` and `"A" "B"` are one pattern, so the
+; second use of `pair` makes no second rule; `[ "x" "," "y" ]` has a comma of its own.
+prefix none
+top = pair("A" "B", "C" | "D") ";" pair(("A" "B"), "C" | "D") ";"
+      wrap([ "x" "," "y" ] "z") wrap(2*( "k" )) wrap("A" + "B") wrap(list2(item)) wrap(list2(item) "e")
+pair(P, Q) := P "-" Q
+wrap(P) := "<" P ">"
+list2(X) := X *( "," X )
+item = "i"

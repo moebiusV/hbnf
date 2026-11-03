@@ -1,0 +1,5 @@
+; A use of a parameterised rule is not a word.
+prefix none
+top = "a" + list(item)
+list(X) := X *( "," X )
+item = "q"

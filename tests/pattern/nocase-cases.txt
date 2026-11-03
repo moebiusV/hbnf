@@ -1,0 +1,14 @@
+ok	go;
+ok	GO END-IF;
+ok	go end-if;
+ok	go End-If;
+bad	go end-ifx;
+bad	go end - if;
+bad	go end-add;
+ok	size ON SIZE ERROR DO;
+ok	size on size error do;
+bad	size on error size do;
+ok	pre UNFIXES;
+ok	pre unfixes;
+bad	pre un fixes;
+bad	pre unfix;

@@ -1,0 +1,5 @@
+; N is a number here, not a word.
+prefix none
+top = tail(2)
+tail(N in 1..3) := "END-" + N
+tail(3) := "last"

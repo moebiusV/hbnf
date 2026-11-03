@@ -683,6 +683,7 @@ package body HBNF_Grammar is
    Union_Sites : Site_Vectors.Vector;
    Pipe_Sites  : Site_Vectors.Vector;    --  the `|` of an ordered choice, for --lint
    Greedy_Sites : Site_Vectors.Vector;   --  elements that repeat a variable number of times
+   Fold_Sites  : Element_Vectors.Vector; --  uses of parameterised rules written under `sensitivity string %i`
 
    function Here (Line, Col : Positive; Text : String;
                   Alt : Element_Access := null) return Site is
@@ -779,6 +780,7 @@ package body HBNF_Grammar is
       Union_Sites.Clear;
       Pipe_Sites.Clear;
       Greedy_Sites.Clear;
+      Fold_Sites.Clear;
       Standing.Clear;
       Enum_Ranks.Clear;
       Emit_Table.Clear;
@@ -792,6 +794,8 @@ package body HBNF_Grammar is
 
    --  T_Pct: `%` and the word after it (`%i`, `%s`, `%scan`, `%action`,
    --  `%x20-7E`); its Text is the word without the `%`.
+   --  T_Plus: the `+` of a literal join, `"END-" + K`; the lexer makes one only
+   --  between a literal or a name and the literal or name after it.
    --  T_Eq_Slash: `=/`, ABNF's incremental alternatives.  T_Slash: `/`,
    --  ABNF's union.  T_Prose: a <prose-val>; its Text is what is between
    --  the angle brackets.
@@ -799,7 +803,7 @@ package body HBNF_Grammar is
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
                      T_Prose, T_Tilde, T_At, T_Colon, T_Octets, T_Count, T_Bits,
-                     T_Guard, T_Hash, T_Meta, T_Arrow, T_EOF);
+                     T_Guard, T_Hash, T_Meta, T_Arrow, T_Plus, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -1170,6 +1174,23 @@ package body HBNF_Grammar is
 
       function Name_Char (C : Character) return Boolean is
          (Name_Start (C) or (C in '0' .. '9') or C = '-');
+
+      --  The `+` at J joins when a literal or a name is before it and a
+      --  literal or a name after it, on the same line: `"END-" + K`.  Any
+      --  other `+` is not hbnf's, and is refused as an unexpected character.
+      function Joins_Here (J : Positive) return Boolean is
+         K : Natural := J + 1;
+      begin
+         if Toks.Is_Empty
+           or else Toks.Last_Element.Kind not in T_String | T_Name
+         then
+            return False;
+         end if;
+         while K <= Text'Last and then Text (K) in ' ' | ASCII.HT loop
+            K := K + 1;
+         end loop;
+         return K <= Text'Last and then (Text (K) = '"' or else Name_Start (Text (K)));
+      end Joins_Here;
 
       --  Open `(` and `[`: inside them a newline is only white space.
       Group_Depth : Natural := 0;
@@ -2248,6 +2269,7 @@ package body HBNF_Grammar is
                         declare
                            Depth : Natural := 0;
                            In_Q  : Boolean := False;
+                           Q     : Character := '"';
                         begin
                            while I <= Text'Last loop
                               if Text (I) = ASCII.LF then
@@ -2257,9 +2279,12 @@ package body HBNF_Grammar is
                                    & "arguments of a parameterised rule end with "
                                    & "`)` on the same line";
                               end if;
-                              if Text (I) = '"' then
-                                 In_Q := not In_Q;
-                              elsif not In_Q then
+                              if In_Q then
+                                 In_Q := Text (I) /= Q;
+                              elsif Text (I) in '"' | ''' then
+                                 In_Q := True;
+                                 Q := Text (I);
+                              else
                                  if Text (I) = '(' then
                                     Depth := Depth + 1;
                                  elsif Text (I) = ')' then
@@ -2284,6 +2309,8 @@ package body HBNF_Grammar is
                      Emit (T_Name, Text (Start .. I - 1));
                      Col := Col + (I - Start);
                   end;
+               elsif Text (I) = '+' and then Joins_Here (I) then
+                  Emit (T_Plus);  I := I + 1;  Col := Col + 1;
                else
                   raise Parse_Error with
                     Integer'Image (Line) & ":" & Integer'Image (Col) &
@@ -2395,6 +2422,77 @@ package body HBNF_Grammar is
    --  a rule made of such literals be a character rule.
    function Has_Letter (S : Unbounded_String) return Boolean is
      (for some C of To_String (S) => C in 'a' .. 'z' | 'A' .. 'Z');
+
+   --  The literal join (ABNF.md): `"END-" + K`, `"__" + "const" + "__"`.  First
+   --  is the operand before the first `+`, read already.  Joined literals are
+   --  one literal, with no white space between the parts, here and now.  With a
+   --  name among them (a word parameter of the rule it is in) the join is kept as
+   --  a name whose text is the join, `"END-"+K`, with `%i` first in a file whose
+   --  literals ignore case; Expand_Params puts the word in and makes the literal.
+   function Parse_Join (P : in out Parser; First : Token) return Element_Access is
+      Parts   : Token_Vectors.Vector;
+      Shown   : Unbounded_String;      --  as written, for messages
+      Joined  : Unbounded_String;      --  the literals alone
+      Code    : Unbounded_String;      --  the text a name keeps
+      Is_Name : Boolean := False;
+
+      procedure Bad (T : Token; Msg : String) is
+      begin
+         raise Parse_Error with
+           Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": " & Msg;
+      end Bad;
+
+      function Show (T : Token) return String is
+        (if T.Kind = T_String then """" & To_String (T.Text) & """"
+         else To_String (T.Text));
+   begin
+      Parts.Append (First);
+      while Cur (P).Kind = T_Plus loop
+         Next (P);
+         declare
+            T : constant Token := Cur (P);
+         begin
+            if T.Kind not in T_String | T_Name then
+               Bad (T, "`+` joins literals and word parameters, and what follows "
+                    & "it here is neither: write a quoted literal or the name of a "
+                    & "parameter after it, `""END-"" + K`");
+            end if;
+            Parts.Append (T);
+            Next (P);
+         end;
+      end loop;
+      for T of Parts loop
+         Append (Shown, (if Length (Shown) > 0 then " + " else "") & Show (T));
+         if T.Kind = T_Name then
+            Is_Name := True;
+            if (for some C of To_String (T.Text) => C = '(') then
+               Bad (T, "`" & To_String (Shown) & "`: only literals and word "
+                    & "parameters can be joined, and `" & To_String (T.Text)
+                    & "` is a use of a parameterised rule");
+            end if;
+         end if;
+      end loop;
+      for T of Parts loop
+         if T.Kind = T_String then
+            Append (Joined, T.Text);
+            if Is_Name and then (for some C of To_String (T.Text) => C = '"') then
+               Bad (T, "`" & To_String (Shown) & "`: the literal " & Show (T)
+                    & " has a quote in it, which a join with a parameter "
+                    & "cannot keep; write the quote in the word instead");
+            end if;
+         end if;
+         Append (Code, (if Length (Code) > 0 then "+" else "") & Show (T));
+      end loop;
+      if not Is_Name then
+         return new Element'(Kind => Literal, Min => 1, Max => 1, Lit => Joined,
+                             Has_Value => False, Value => 0,
+                             No_Case => File_No_Case and then Has_Letter (Joined));
+      end if;
+      return new Element'
+        (Kind => Name, Min => 1, Max => 1,
+         Name => (if File_No_Case then "%i" else "") & Code,
+         Fold => False, Args => Null_Unbounded_String);
+   end Parse_Join;
 
    --  A field of the bit layer, after its name: `ttl:8`, `version@0:4`,
    --  `options:[ihl*4 - 20]`, `payload:*u8`, `src:addr`, `body:(n)*rec`,
@@ -2586,9 +2684,13 @@ package body HBNF_Grammar is
       case Cur (P).Kind is
          when T_String =>
             declare
-               Lit : constant Unbounded_String := Cur (P).Text;
+               Tok : constant Token := Cur (P);
+               Lit : constant Unbounded_String := Tok.Text;
             begin
                Next (P);
+               if Cur (P).Kind = T_Plus then
+                  return Parse_Join (P, Tok);
+               end if;
                --  A bare literal takes its file's `sensitivity string`.
                return new Element'(Kind => Literal, Min => 1, Max => 1,
                                    Lit => Lit, Has_Value => False, Value => 0,
@@ -2786,9 +2888,21 @@ package body HBNF_Grammar is
                then
                   return Parse_Field (P, T);
                end if;
-               return new Element'
-                 (Kind => Name, Min => 1, Max => 1, Name => N,
-                  Fold => File_Fold_Names, Args => Null_Unbounded_String);
+               if Cur (P).Kind = T_Plus then
+                  return Parse_Join (P, T);
+               end if;
+               declare
+                  E : constant Element_Access := new Element'
+                    (Kind => Name, Min => 1, Max => 1, Name => N,
+                     Fold => File_Fold_Names, Args => Null_Unbounded_String);
+               begin
+                  --  A use of a parameterised rule remembers the literals of
+                  --  its pattern arguments are in a file that ignores case.
+                  if File_No_Case and then (for some C of To_String (N) => C = '(') then
+                     Fold_Sites.Append (E);
+                  end if;
+                  return E;
+               end;
             end;
          when T_Guard =>
             --  `?(cond)` (with `"words"` after it for a check that has them):
@@ -2841,6 +2955,16 @@ package body HBNF_Grammar is
                   Name => To_Unbounded_String
                             ("<" & Img (Natural (Prose_Sites.Length)) & ">"),
                   Fold => False, Args => Null_Unbounded_String);
+            end;
+         when T_Plus =>
+            declare
+               T : constant Token := Cur (P);
+            begin
+               raise Parse_Error with
+                 Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                 & ": `+` joins a quoted literal or a word parameter to the "
+                 & "literal or word parameter before it, `""END-"" + K`; "
+                 & "nothing here to join";
             end;
          when T_LParen =>
             Next (P);
@@ -3955,6 +4079,13 @@ package body HBNF_Grammar is
    --  gives constants for the arguments wins over the general one.  What a
    --  chain of uses may not do is grow: an instance that needs a bigger instance of
    --  itself has no end, and is refused with the chain.
+   --
+   --  An argument that is none of those, a pattern (`phrases("SIZE" "ERROR")`,
+   --  `phrases("EXCEPTION" | "OVERFLOW")`), is everything up to the next comma or
+   --  the `)` of the call outside parentheses, brackets and quotes; its
+   --  occurrences in the body are the pattern in a group.  The instance is named
+   --  from the words of the pattern (`phrases-size_error`).  `"END-" + K` in a
+   --  body, K a word parameter, is the one literal `"END-IF"` (Parse_Join).
    procedure Expand_Params (Rules : in out Rule_Vectors.Vector) is
       use Ada.Characters.Handling;
 
@@ -3963,7 +4094,10 @@ package body HBNF_Grammar is
       package Natural_Vectors is new Ada.Containers.Vectors (Positive, Natural);
       type Long_Long_Integer_Array is array (Positive range <>) of Long_Long_Integer;
 
-      type Value_Kind is (V_Int, V_Lit, V_Name);
+      --  V_Pat: Text is the pattern as written, white space made single and the
+      --  parameters of the rule that passes it put in; Int is 1 when its
+      --  literals ignore case.
+      type Value_Kind is (V_Int, V_Lit, V_Name, V_Pat);
       type Value is record
          Kind : Value_Kind := V_Name;
          Int  : Long_Long_Integer := 0;
@@ -4008,7 +4142,13 @@ package body HBNF_Grammar is
       Ordinary  : Rule_Vectors.Vector;
       Instances : Rule_Vectors.Vector;          --  the rules the uses make
       Made      : Index_Maps.Map;               --  instance name -> made
+      package Key_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, String);
+      Made_Key  : Key_Maps.Map;                 --  instance name -> the use that made it
       Limit     : constant := 20_000;
+
+      --  Whether the literals of a pattern argument ignore case: the use being
+      --  read was written under `sensitivity string %i` (Fold_Sites).
+      Arg_No_Case : Boolean := False;
 
       --  The chain of instances being made, for the message of a loop.
       type Frame is record
@@ -4078,17 +4218,21 @@ package body HBNF_Grammar is
          Start : Natural := S'First;
          Depth : Natural := 0;
          In_Q  : Boolean := False;
+         Q     : Character := '"';
       begin
          if Trim (S) = "" then
             return R;
          end if;
          for I in S'Range loop
-            if S (I) = '"' then
-               In_Q := not In_Q;
-            elsif not In_Q then
-               if S (I) = '(' then
+            if In_Q then
+               In_Q := S (I) /= Q;
+            elsif S (I) in '"' | ''' then
+               In_Q := True;
+               Q := S (I);
+            else
+               if S (I) in '(' | '[' then
                   Depth := Depth + 1;
-               elsif S (I) = ')' then
+               elsif S (I) in ')' | ']' then
                   Depth := Depth - 1;
                elsif S (I) = ',' and then Depth = 0 then
                   R.Append (To_Unbounded_String (Trim (S (Start .. I - 1))));
@@ -4121,13 +4265,62 @@ package body HBNF_Grammar is
         (case V.Kind is
             when V_Int  => Img (V.Int),
             when V_Lit  => """" & To_String (V.Text) & """",
-            when V_Name => To_String (V.Text));
+            when V_Name | V_Pat => To_String (V.Text));
+
+      --  The name a pattern gives an instance, from its words: `"SIZE" "ERROR"`
+      --  is `size_error`, `"A" | "B"` is `a_or_b`, `2*( "Z" )` is `2_star_z`; any
+      --  other character is `x` and its code.
+      function Pattern_Slug (S : String) return String is
+         R   : U;
+         Sep : Boolean := False;
+         I   : Natural := S'First;
+
+         procedure Word (W : String) is
+         begin
+            if Sep and then Length (R) > 0 then
+               Append (R, '_');
+            end if;
+            Sep := False;
+            Append (R, W);
+         end Word;
+
+         function Word_Char (C : Character) return Boolean is
+           (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-');
+      begin
+         while I <= S'Last loop
+            if Word_Char (S (I)) then
+               declare
+                  J : Natural := I;
+               begin
+                  while J <= S'Last and then Word_Char (S (J)) loop
+                     J := J + 1;
+                  end loop;
+                  Word (Slug (S (I .. J - 1)));
+                  I := J;
+               end;
+            else
+               if S (I) in ' ' | ASCII.HT | '"' | '(' | ')' | '[' | ']' then
+                  Sep := True;
+               elsif S (I) in '|' | '/' then
+                  Word ("or");
+               elsif S (I) = '*' then
+                  Sep := True;
+                  Word ("star");
+               else
+                  Word ("x" & Img (Long_Long_Integer (Character'Pos (S (I)))));
+               end if;
+               I := I + 1;
+            end if;
+         end loop;
+         return To_String (R);
+      end Pattern_Slug;
 
       function Part_Of (V : Value) return String is
         (case V.Kind is
             when V_Int  => (if V.Int < 0 then "m" & Img (-V.Int) else Img (V.Int)),
             when V_Lit  => Slug (To_String (V.Text)),
-            when V_Name => To_String (V.Text));
+            when V_Name => To_String (V.Text),
+            when V_Pat  => Pattern_Slug (To_String (V.Text)));
 
       function Instance_Name (Base : String; Vals : Value_Vectors.Vector)
         return String
@@ -4338,8 +4531,277 @@ package body HBNF_Grammar is
         (Base : String; Vals : Value_Vectors.Vector; Name : out U;
          Via : String);
 
+      --  True when the argument is what Eval reads as a value: a number, a quoted
+      --  word, a rule name or a use of a parameterised rule, with `+` and `-`
+      --  between them and parentheses around.  Anything else is a pattern.  An
+      --  argument that stops short is left to Eval, which says so.
+      function Is_Value (S : String) return Boolean is
+         Pos : Natural := S'First;
+
+         procedure Skip is
+         begin
+            while Pos <= S'Last and then S (Pos) in ' ' | ASCII.HT loop
+               Pos := Pos + 1;
+            end loop;
+         end Skip;
+
+         function Expr return Boolean;
+
+         function Term return Boolean is
+         begin
+            Skip;
+            if Pos > S'Last then
+               return True;
+            elsif S (Pos) = '(' then
+               Pos := Pos + 1;
+               if not Expr then
+                  return False;
+               end if;
+               Skip;
+               if Pos > S'Last or else S (Pos) /= ')' then
+                  return False;
+               end if;
+               Pos := Pos + 1;
+               return True;
+            elsif S (Pos) = '"' then
+               Pos := Pos + 1;
+               while Pos <= S'Last and then S (Pos) /= '"' loop
+                  Pos := Pos + 1;
+               end loop;
+               Pos := Pos + 1;
+               return True;
+            elsif S (Pos) in '0' .. '9' then
+               while Pos <= S'Last and then S (Pos) in '0' .. '9' loop
+                  Pos := Pos + 1;
+               end loop;
+               return True;
+            elsif S (Pos) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+               while Pos <= S'Last
+                 and then S (Pos) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9'
+                                     | '_' | '-' | '.'
+               loop
+                  Pos := Pos + 1;
+               end loop;
+               if Pos <= S'Last and then S (Pos) = '(' then
+                  declare
+                     Depth : Natural := 0;
+                  begin
+                     while Pos <= S'Last loop
+                        if S (Pos) = '(' then
+                           Depth := Depth + 1;
+                        elsif S (Pos) = ')' then
+                           Depth := Depth - 1;
+                           if Depth = 0 then
+                              Pos := Pos + 1;
+                              exit;
+                           end if;
+                        end if;
+                        Pos := Pos + 1;
+                     end loop;
+                  end;
+               end if;
+               return True;
+            end if;
+            return False;
+         end Term;
+
+         function Expr return Boolean is
+         begin
+            if not Term then
+               return False;
+            end if;
+            loop
+               Skip;
+               exit when Pos > S'Last or else S (Pos) not in '+' | '-';
+               Pos := Pos + 1;
+               if not Term then
+                  return False;
+               end if;
+            end loop;
+            return True;
+         end Expr;
+      begin
+         if not Expr then
+            return False;
+         end if;
+         Skip;
+         return Pos > S'Last;
+      end Is_Value;
+
+      --  Several white space characters outside quotes are one blank, and the
+      --  ends have none: the same pattern written two ways is one argument.
+      function Squeeze (S : String) return String is
+         R    : U;
+         In_Q : Boolean := False;
+         Q    : Character := '"';
+         Gap  : Boolean := False;
+      begin
+         for C of S loop
+            if not In_Q and then C in ' ' | ASCII.HT then
+               Gap := Length (R) > 0;
+            else
+               if Gap then
+                  Append (R, ' ');
+                  Gap := False;
+               end if;
+               Append (R, C);
+               if In_Q then
+                  In_Q := C /= Q;
+               elsif C in '"' | ''' then
+                  In_Q := True;
+                  Q := C;
+               end if;
+            end if;
+         end loop;
+         return To_String (R);
+      end Squeeze;
+
+      --  The text of a pattern argument with the parameters of the rule that
+      --  passes it put in: a number as its digits, a word in quotes, a rule
+      --  name, a pattern in parentheses (inside the parentheses of a use, where
+      --  names are in expressions and `-` is minus, as it is).
+      function Ground (S : String; B : Binding_Vectors.Vector) return String is
+         R       : U;
+         I       : Natural := S'First;
+         Calls   : Natural := 0;
+         Is_Use  : Boolean := False;
+         function Word_Char (C : Character) return Boolean is
+           (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+      begin
+         while I <= S'Last loop
+            if S (I) in '"' | ''' then
+               declare
+                  J : Natural := I + 1;
+               begin
+                  while J <= S'Last and then S (J) /= S (I) loop
+                     J := J + 1;
+                  end loop;
+                  Append (R, S (I .. Natural'Min (J, S'Last)));
+                  I := J + 1;
+               end;
+            elsif S (I) = '%' or else S (I) in '0' .. '9' then
+               --  %x41, %d13.10, 3DIGIT: not names
+               declare
+                  J : Natural := I + 1;
+               begin
+                  while J <= S'Last and then (Word_Char (S (J)) or else S (J) in '.' | '-')
+                  loop
+                     J := J + 1;
+                  end loop;
+                  Append (R, S (I .. J - 1));
+                  I := J;
+               end;
+            elsif S (I) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+               declare
+                  J     : Natural := I;
+                  Found : Boolean;
+               begin
+                  while J <= S'Last
+                    and then (Word_Char (S (J)) or else (Calls = 0 and then S (J) = '-'))
+                  loop
+                     J := J + 1;
+                  end loop;
+                  Is_Use := J <= S'Last and then S (J) = '(';
+                  declare
+                     V : constant Value := Lookup (B, S (I .. J - 1), Found);
+                  begin
+                     if not Found or else Is_Use then
+                        Append (R, S (I .. J - 1));
+                     elsif V.Kind = V_Pat and then Calls = 0 then
+                        Append (R, "(" & To_String (V.Text) & ")");
+                     else
+                        Append (R, Text_Of (V));
+                     end if;
+                  end;
+                  I := J;
+               end;
+            else
+               if S (I) = '(' and then (Is_Use or else Calls > 0) then
+                  Calls := Calls + 1;
+               elsif S (I) = ')' and then Calls > 0 then
+                  Calls := Calls - 1;
+               end if;
+               Is_Use := False;
+               Append (R, S (I));
+               I := I + 1;
+            end if;
+         end loop;
+         return To_String (R);
+      end Ground;
+
+      --  Read the text of a pattern argument.  No_Case: its literals ignore
+      --  case, as the use it is in was written in a file that says so.
+      function Parse_Text
+        (Text : String; No_Case : Boolean; Where : String)
+         return Element_Vectors.Vector
+      is
+         Saved   : constant Boolean := File_No_Case;
+         P       : Parser;
+         Result  : Element_Vectors.Vector;
+         Stopped : Boolean;
+      begin
+         File_No_Case := No_Case;
+         P.Toks := Lex (Text);
+         Result := Parse_Alternation (P);
+         File_No_Case := Saved;
+         Stopped := Cur (P).Kind /= T_EOF;
+         if Stopped then
+            Fail (Where & ": the argument `" & Text & "` is not a pattern: a `)` "
+                  & "or `]` has no opening one before it");
+         end if;
+         return Result;
+      exception
+         when E : Parse_Error =>
+            File_No_Case := Saved;
+            Fail (Where & ": the argument `" & Text & "` is not a pattern: "
+                  & Trim (Ada.Exceptions.Exception_Message (E)));
+            return Result;
+      end Parse_Text;
+
+      --  `("SIZE" "ERROR")` and `"SIZE" "ERROR"` are one pattern: a pair of
+      --  parentheses round all of it is the group the body puts it in anyway.
+      function Unwrap (S : String) return String is
+         Depth : Natural := 0;
+         In_Q  : Boolean := False;
+         Q     : Character := '"';
+      begin
+         if S'Length < 2 or else S (S'First) /= '(' or else S (S'Last) /= ')' then
+            return S;
+         end if;
+         for I in S'Range loop
+            if In_Q then
+               In_Q := S (I) /= Q;
+            elsif S (I) in '"' | ''' then
+               In_Q := True;
+               Q := S (I);
+            elsif S (I) = '(' then
+               Depth := Depth + 1;
+            elsif S (I) = ')' then
+               Depth := Depth - 1;
+               if Depth = 0 then
+                  return (if I = S'Last then Unwrap (Squeeze (S (S'First + 1 .. S'Last - 1)))
+                          else S);
+               end if;
+            end if;
+         end loop;
+         return S;
+      end Unwrap;
+
+      function Pattern_Value
+        (S : String; B : Binding_Vectors.Vector; Where : String) return Value
+      is
+         T : constant String := Unwrap (Squeeze (Ground (S, B)));
+      begin
+         if Parse_Text (T, Arg_No_Case, Where).Is_Empty then
+            Fail (Where & ": the argument is empty; write a value, a rule name "
+                  & "or a pattern");
+         end if;
+         return (V_Pat, (if Arg_No_Case then 1 else 0), To_Unbounded_String (T));
+      end Pattern_Value;
+
       --  An argument: a number (+ and - over numbers, parentheses), a quoted word,
-      --  a rule name, or a use of a parameterised rule.
+      --  a rule name, or a use of a parameterised rule; or, when it is none of
+      --  those, a pattern (`"SIZE" "ERROR"`, `"A" | "B"`).
       function Eval
         (Text : String; B : Binding_Vectors.Vector; Where : String) return Value
       is
@@ -4463,24 +4925,37 @@ package body HBNF_Grammar is
                begin
                   Pos := Pos + 1;
                   R := Term;
-                  if L.Kind /= V_Int or else R.Kind /= V_Int then
-                     Fail (Where & ": `" & S & "`: `" & Op & "` is between "
-                           & "numbers, and `" & Text_Of (L) & "` or `"
-                           & Text_Of (R) & "` is not one");
+                  if Op = '+' and then L.Kind = V_Lit and then R.Kind = V_Lit then
+                     --  the join of two words is one word
+                     Append (L.Text, R.Text);
+                  else
+                     if L.Kind /= V_Int or else R.Kind /= V_Int then
+                        Fail (Where & ": `" & S & "`: `" & Op & "` is between "
+                              & "numbers"
+                              & (if Op = '+' and then (L.Kind = V_Lit or else R.Kind = V_Lit)
+                                 then " or between two quoted words (it joins them)"
+                                 else "")
+                              & ", and `" & Text_Of (L) & "` or `" & Text_Of (R)
+                              & "` is not one");
+                     end if;
+                     L.Int := (if Op = '+' then L.Int + R.Int else L.Int - R.Int);
                   end if;
-                  L.Int := (if Op = '+' then L.Int + R.Int else L.Int - R.Int);
                end;
             end loop;
             return L;
          end Expr;
 
-         V : constant Value := Expr;
+         Plain : constant Boolean := Is_Value (S);
+         V     : constant Value :=
+           (if Plain then Expr else Pattern_Value (S, B, Where));
       begin
-         Skip;
-         if Pos <= S'Last then
-            Fail (Where & ": `" & S (Pos .. S'Last) & "` follows the "
-                  & "argument `" & S (S'First .. Pos - 1) & "` and is not "
-                  & "part of it");
+         if Plain then
+            Skip;
+            if Pos <= S'Last then
+               Fail (Where & ": `" & S (Pos .. S'Last) & "` follows the "
+                     & "argument `" & S (S'First .. Pos - 1) & "` and is not "
+                     & "part of it");
+            end if;
          end if;
          return V;
       end Eval;
@@ -4534,6 +5009,102 @@ package body HBNF_Grammar is
          return To_String (R);
       end Bound_Text;
 
+      --  A name that is a literal join (Parse_Join): a `+` outside quotes and
+      --  parentheses.  No rule name has one.
+      function Is_Join (T : String) return Boolean is
+         In_Q  : Boolean := False;
+         Depth : Natural := 0;
+      begin
+         for C of T loop
+            if C = '"' then
+               In_Q := not In_Q;
+            elsif not In_Q then
+               if C = '(' then
+                  Depth := Depth + 1;
+               elsif C = ')' and then Depth > 0 then
+                  Depth := Depth - 1;
+               elsif C = '+' and then Depth = 0 then
+                  return True;
+               end if;
+            end if;
+         end loop;
+         return False;
+      end Is_Join;
+
+      --  The literal a join makes once the words of its parameters are known.
+      function Join_Literal
+        (E : Element_Access; B : Binding_Vectors.Vector; In_Rule : String)
+         return Element_Access
+      is
+         Code   : constant String := To_String (E.Name);
+         Fold   : constant Boolean :=
+           Code'Length > 2 and then Code (Code'First .. Code'First + 1) = "%i";
+         Text   : constant String :=
+           (if Fold then Code (Code'First + 2 .. Code'Last) else Code);
+         Parts  : Text_Vectors.Vector;
+         Shown  : U;                   --  as written, for messages
+         Joined : U;
+         Start  : Natural := Text'First;
+         In_Q   : Boolean := False;
+      begin
+         for I in Text'Range loop
+            if Text (I) = '"' then
+               In_Q := not In_Q;
+            elsif Text (I) = '+' and then not In_Q then
+               Parts.Append (To_Unbounded_String (Text (Start .. I - 1)));
+               Start := I + 1;
+            end if;
+         end loop;
+         Parts.Append (To_Unbounded_String (Text (Start .. Text'Last)));
+         for Part of Parts loop
+            Append (Shown, (if Length (Shown) > 0 then " + " else "") & To_String (Part));
+         end loop;
+         for Part of Parts loop
+            declare
+               W     : constant String := To_String (Part);
+               Found : Boolean;
+               Head  : constant String :=
+                 "rule `" & In_Rule & "`: `" & To_String (Shown)
+                 & "`: only quoted literals and word parameters can be joined";
+            begin
+               if W (W'First) = '"' then
+                  Append (Joined, W (W'First + 1 .. W'Last - 1));
+               else
+                  declare
+                     V : constant Value := Lookup (B, W, Found);
+                  begin
+                     if not Found then
+                        Fail (Head & ", and `" & W & "` "
+                              & (if Slot_Of (In_Rule, W) >= 0
+                                 then "is a number the parser works out as it reads, "
+                                      & "not a word"
+                                 else "is not a parameter of this rule (a parameter "
+                                      & "ranges over words, `K in ""IF"" | ""ADD""`, "
+                                      & "or is given a quoted word)"));
+                     end if;
+                     case V.Kind is
+                        when V_Lit =>
+                           Append (Joined, V.Text);
+                        when V_Int =>
+                           Fail (Head & ", and `" & W & "` is the number "
+                                 & Img (V.Int) & ", not a word");
+                        when V_Name =>
+                           Fail (Head & ", and `" & W & "` is the rule name `"
+                                 & To_String (V.Text) & "`, not a word");
+                        when V_Pat =>
+                           Fail (Head & ", and `" & W & "` is the pattern `"
+                                 & To_String (V.Text) & "`, not a word");
+                     end case;
+                  end;
+               end if;
+            end;
+         end loop;
+         return new Element'
+           (Kind => Literal, Min => E.Min, Max => E.Max, Lit => Joined,
+            No_Case => Fold and then Has_Letter (Joined),
+            Has_Value => False, Value => 0);
+      end Join_Literal;
+
       function Subst_One
         (E : Element_Access; B : Binding_Vectors.Vector; In_Rule : String)
          return Element_Access
@@ -4545,6 +5116,9 @@ package body HBNF_Grammar is
                   T : constant String := To_String (E.Name);
                   Found : Boolean;
                begin
+                  if Is_Join (T) then
+                     return Join_Literal (E, B, In_Rule);
+                  end if;
                   if Is_Call (T) and then Frame_Table.Contains (Base_Of (T)) then
                      --  A rule whose parameters are numbers worked out while
                      --  parsing: it is not made in as many copies as there are
@@ -4605,6 +5179,7 @@ package body HBNF_Grammar is
                         Nm   : U;
                         X    : constant Element_Access := new Element'(E.all);
                      begin
+                        Arg_No_Case := (for some S of Fold_Sites => S = E);
                         for A of Args loop
                            Vals.Append (Eval (To_String (A), B, "rule `" & In_Rule & "`, `" & T & "`"));
                         end loop;
@@ -4632,6 +5207,13 @@ package body HBNF_Grammar is
                              (Kind => Literal, Min => E.Min, Max => E.Max,
                               Lit => V.Text, No_Case => False,
                               Has_Value => False, Value => 0);
+                        when V_Pat =>
+                           --  the pattern, in a group, where the parameter stood
+                           return new Element'
+                             (Kind => Group, Min => E.Min, Max => E.Max,
+                              Items => Subst (Parse_Text (To_String (V.Text), V.Int = 1,
+                                                          "rule `" & In_Rule & "`"),
+                                              Binding_Vectors.Empty_Vector, In_Rule));
                         when V_Int =>
                            Fail ("rule `" & In_Rule & "`: `" & T & "` is the "
                                  & "number " & Img (V.Int) & ", and a number "
@@ -4669,6 +5251,11 @@ package body HBNF_Grammar is
                            if V.Kind = V_Int then
                               Fail ("rule `" & In_Rule & "`: `" & To_String (E.Ctx)
                                     & "` is a number, and a context is a name");
+                           elsif V.Kind = V_Pat then
+                              Fail ("rule `" & In_Rule & "`: `" & To_String (E.Ctx)
+                                    & "` is the pattern `" & To_String (V.Text)
+                                    & "`, and a context is a name: give a plain "
+                                    & "name or a quoted word for it");
                            end if;
                            X.Ctx := V.Text;
                         end if;
@@ -4736,8 +5323,36 @@ package body HBNF_Grammar is
          Arity     : Natural := 0;
          Any       : Boolean := False;
          Why       : U;
-         N         : constant String := Instance_Name (Base, Vals);
          C         : constant String := Call_Text (Base, Vals);
+         --  what tells two uses apart: a pattern written under `%i` is not the
+         --  same use as the same pattern written without it
+         Key       : constant String :=
+           (if (for some V of Vals => V.Kind = V_Pat) then "P" else "L") & C
+           & (if (for some V of Vals => V.Kind = V_Pat and then V.Int = 1)
+              then " %i" else "");
+
+         --  Two patterns can have the same words (`"A_B"` and `"A" "B"`): the
+         --  later one is told apart with a number.
+         function Unique return String is
+            N0 : constant String := Instance_Name (Base, Vals);
+            K  : Natural := 1;
+         begin
+            loop
+               declare
+                  N : constant String := (if K = 1 then N0 else N0 & "_" & Img (Long_Long_Integer (K)));
+               begin
+                  if not Made_Key.Contains (N) or else Made_Key.Element (N) = Key
+                    or else (Key (Key'First) = 'L'
+                             and then Made_Key.Element (N) (Made_Key.Element (N)'First) = 'L')
+                  then
+                     return N;
+                  end if;
+                  K := K + 1;
+               end;
+            end loop;
+         end Unique;
+
+         N         : constant String := Unique;
       begin
          Name := To_Unbounded_String (N);
          if Hidden_Bases.Contains (Base) then
@@ -4860,11 +5475,17 @@ package body HBNF_Grammar is
                end if;
             end loop;
             Made.Insert (N, 1);
+            Made_Key.Insert (N, Key);
             Stack.Append (Frame'(Base => To_Unbounded_String (Base),
                                  Name => To_Unbounded_String (N),
                                  Size => Size_Of (Vals)));
             R.Name := To_Unbounded_String (N);
-            R.Pattern := Subst (T.R.Pattern, B, N);
+            declare
+               Saved : constant Boolean := Arg_No_Case;
+            begin
+               R.Pattern := Subst (T.R.Pattern, B, N);
+               Arg_No_Case := Saved;
+            end;
             Instances.Append (R);
             Stack.Delete_Last;
          end;
@@ -5415,6 +6036,14 @@ package body HBNF_Grammar is
                               & To_String (E.Name) & "`: no parameterised rule `"
                               & Base_Of (To_String (E.Name)) & "` is defined; write `"
                               & Base_Of (To_String (E.Name)) & "(X) = ...`");
+                     elsif E.Kind = Name and then Is_Join (To_String (E.Name)) then
+                        --  a join with a name has a parameter to join; here
+                        --  there are none, and Join_Literal says so
+                        if Join_Literal (E, Binding_Vectors.Empty_Vector,
+                                         To_String (R.Name)) = null
+                        then
+                           null;
+                        end if;
                      elsif E.Kind = Group then
                         Look (E.Items);
                      end if;

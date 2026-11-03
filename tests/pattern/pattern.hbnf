@@ -1,0 +1,16 @@
+; A pattern as the argument of a parameterised rule, and the literal join `+`.  Both
+; are settled when the grammar is read: the rules below become ordinary rules, one for
+; each distinct argument.
+prefix none
+top       = 1*( statement ";" )
+statement = "go" end("IF") / "go-on" end("ADD") / "plural" plural("RECORD")
+          / "affix" affix("do") / "size" phrases("SIZE" "ERROR")
+          / "except" phrases("EXCEPTION" | "OVERFLOW") / "joined" joined / "let" name
+end(K in "IF" | "ADD" | "READ") := [ "END-" + K ]
+plural(K) := K | K + "S"
+affix(K) := K | "un" + K | "un" + K + "ed"
+phrases(W) := ( on W statements ) [ "NOT" on W statements ] | "NOT" on W statements
+on         = "ON"
+statements = 1*( "do" )
+joined     = "un" + "do" + "ne"
+name       = word

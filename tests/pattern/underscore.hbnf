@@ -1,0 +1,6 @@
+; The gnu rule: the word as it is, with two underscores before, with two on both sides.  A joined
+; literal is a keyword like one written whole, so `__const__` is not read as `__const` and a
+; leftover.
+prefix none
+top = 1*( "gnu" gnu("const") ";" ) / "name" word ";"
+gnu(K) := K | "__" + K | "__" + K + "__"

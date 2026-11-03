@@ -1,0 +1,9 @@
+ok	gnu const;
+ok	gnu __const;
+ok	gnu __const__;
+bad	gnu _const;
+bad	gnu const__;
+bad	gnu __const___;
+bad	gnu __ const;
+ok	name __constant;
+bad	name __const__;

@@ -1,0 +1,5 @@
+; K is the name of a rule here, not a word.
+prefix none
+top = tail(item)
+tail(K) := "END-" + K
+item = "q"

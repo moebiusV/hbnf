@@ -1,0 +1,4 @@
+; A join in a rule that has no parameters has nothing to put in.
+prefix none
+top = "END-" + identifier
+identifier = "q"

@@ -1,0 +1,8 @@
+; In a file whose literals ignore case a joined literal does too, and so do the literals of a
+; pattern argument; a join stays one literal, so no white space may come between its parts.
+prefix none
+sensitivity string %i
+top = 1*( ( "go" end("if") / "size" phrases("size" "error") / "pre" suffixed("fix") ) ";" )
+end(K in "if" | "add") := [ "end-" + K ]
+phrases(W) := "on" W "do"
+suffixed(K) := "un" + K + "es"

@@ -1,0 +1,10 @@
+; A context is a name, and a pattern is not one.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+context types
+context vars
+
+top = decl("types" "vars") ";"
+decl(C) := name %bind C += name
+name = 1*ALPHA

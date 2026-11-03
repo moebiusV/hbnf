@@ -1,0 +1,4 @@
+; A pattern is not a word of K's domain.
+prefix none
+top = word("a" "b")
+word(K in "a" | "b") := K

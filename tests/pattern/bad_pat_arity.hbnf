@@ -1,0 +1,4 @@
+; The pattern is one argument: pair takes two.
+prefix none
+top = pair("A" "B")
+pair(P, Q) := P Q

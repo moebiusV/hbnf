@@ -1,0 +1,4 @@
+; A bracket that is not closed.
+prefix none
+top = wrap([ "A" "B")
+wrap(P) := "<" P ">"

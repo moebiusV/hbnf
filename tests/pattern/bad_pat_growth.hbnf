@@ -1,0 +1,4 @@
+; An instance that needs one with a longer pattern again has no end.
+prefix none
+top = more("x")
+more(P) := P more(P "x")

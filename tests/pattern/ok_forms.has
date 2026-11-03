@@ -1,0 +1,7 @@
+typedef struct pair_a_b_c_or_d_s pair_a_b_c_or_d_t;
+typedef pair_a_b_c_or_d_t pair_a_b_c_or_d_2_t;
+!typedef struct pair_a_b_c_or_d_2_s
+typedef struct wrap_x_x44_y_z_s wrap_x_x44_y_z_t;
+typedef struct wrap_2_star_k_s wrap_2_star_k_t;
+typedef struct wrap_ab_s wrap_ab_t;
+typedef struct wrap_list2_item_s wrap_list2_item_t;

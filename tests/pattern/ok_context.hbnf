@@ -1,0 +1,10 @@
+; A parameter that names a context still gets a plain name, while another takes a pattern.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+context types
+context vars
+
+top = "typedef " decl("types", "int" "eger") ";" "var " decl("vars", "str" | "text") ";"
+decl(C in "types" | "vars", T) := name %bind C += name T
+name = 1*ALPHA

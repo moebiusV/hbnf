@@ -1,0 +1,2 @@
+typedef struct decl_types_int_eger_s decl_types_int_eger_t;
+typedef struct decl_vars_str_or_text_s decl_vars_str_or_text_t;
