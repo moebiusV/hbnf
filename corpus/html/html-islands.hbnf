@@ -1,0 +1,8 @@
+; html.hbnf with the inside of <script> read by another grammar: `include "js-stub.hbnf" as js`
+; puts that file's rules in the scope `js`, and `js.program` reads one.  The script ends at the end
+; tag, because no statement of the stub can begin with "<".
+prefix none
+include "html.hbnf"
+include "js-stub.hbnf" as js
+
+script = open(i"script") js.program *space end(i"script")

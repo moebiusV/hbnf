@@ -1,0 +1,26 @@
+; A stub of JavaScript, only to show a grammar inside <script> (html-islands.hbnf): var, assignment, call, if,
+; strings, numbers, names, + - < > && || and // comments.  Real JavaScript is a grammar of its own and
+; would be included the same way.  The host skips no white space, and a guest that skips its own would need a
+; second white-space rule in the one parser, so the stub writes its blanks out: every token takes the blanks
+; (and comments) after it, and the program the ones before the first.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+program   = blank *statement
+statement = name eq expr semi | call semi | var name eq expr semi | if lp expr rp statement
+expr      = term *( op term )
+term      = number | string | call | name
+call      = name lp [ expr *( comma expr ) ] rp
+var       = "var" blank
+if        = "if" blank
+name      = ALPHA *( ALNUM / "_" / "$" / "." ) blank
+number    = 1*DIGIT blank
+string    = ( DQUOTE *~DQUOTE DQUOTE / "'" *~"'" "'" ) blank
+op        = ( "+" / "-" / "<" / ">" / "&&" / "||" ) blank
+eq        = "=" blank
+semi      = ";" blank
+lp        = "(" blank
+rp        = ")" blank
+comma     = "," blank
+blank     = *( 1*( SP / HTAB / CR / LF ) / "//" *~LF )

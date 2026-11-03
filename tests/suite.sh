@@ -120,7 +120,7 @@ suite() { # LABEL SCHEMA-FILE [ROOT-RULE], with ACCEPT and REJECT set
 			|| { echo "$LABEL: Rust FAIL (does not generate): $(head -1 "$D/rs.err")"; rc=1; }
 		if [ -s "$D/rs/schema.rs" ]; then
 			cp $T/main.rs "$D/rs/"
-			if (cd "$D/rs" && rustc -D warnings main.rs -o main) > "$D/rs.err" 2>&1; then
+			if (cd "$D/rs" && rustc ${RUST_LINTS:--D warnings} main.rs -o main) > "$D/rs.err" 2>&1; then
 				guard "$D/rs/main" $ACCEPT $REJECT > "$D/rs.out" 2>&1
 				verdicts Rust "$D/rs.out"
 			else

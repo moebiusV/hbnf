@@ -1,0 +1,49 @@
+; The characters of HTML (WHATWG HTML Living Standard, 13.1 "Writing HTML documents"): white space,
+; names, text and character references, attribute values, comments.  No blank is skipped between
+; them, so this file skips none (`whitespace none`); the white space of HTML is text, and where it
+; may stand is said in html.hbnf.  Literals ignore case, as every keyword of HTML does (`<!DOCTYPE`,
+; a tag name); `s"<![CDATA["` is the one that does not.
+whitespace none
+prefix none
+sensitivity string %i
+include "../../grammars/common.hbnf"
+
+space = 0x09 / 0x0A / 0x0C / 0x0D / 0x20
+
+; A character a document may hold (13.1.1): no NUL, no control other than white space, no surrogate,
+; no noncharacter.  The last two code points of each plane (U+1FFFE, U+1FFFF ... U+10FFFE, U+10FFFF)
+; are not left out.
+char = 0x09 / 0x0A / 0x0C / 0x0D / 0x20..0x7E / 0xA0..0xD7FF / 0xE000..0xFDCF / 0xFDF0..0xFFFD / 0x10000..0x10FFFF
+
+; Characters up to X, with the character references among them (13.1.4): the text of an element
+; (X is "<"), the text of a title (X is its end tag) and an attribute value (X is its quote, or
+; for no quotes the characters that end it).  A "&" is text unless it starts a reference.
+chars(X) := 1*( ref / amp / !( X / "&" ) char )
+ref      = "&" ( "#" ( 1*DIGIT / "x" 1*HEXDIG ) ";" / named )
+named    = 1*ALNUM ";"
+amp      = "&" !( "#" / named )
+
+; Names (13.1.2): an element's, an attribute's.
+tag-char  = !( space / "/" / ">" ) char
+tag-name  = ALPHA *tag-char
+attr-name = 1*( !( "=" / "<" / DQUOTE / "'" ) tag-char )
+
+; An attribute value (13.1.2.3).
+unquoted   = space / DQUOTE / "'" / "=" / "<" / ">" / "`"
+attr-value = DQUOTE [ chars(DQUOTE) ] DQUOTE / "'" [ chars("'") ] "'" / chars(unquoted)
+
+; A comment (13.1.6) may not begin with ">" or "->" or hold "<!--" (except as "<!-->", which is "<!" and
+; the end), "-->" or "--!>"; two hyphens by themselves are allowed.
+html-comment = "<!--" !( ">" / "->" ) *( !comment-stop char ) "-->"
+comment-stop = "-->" / "--!>" / nested
+nested       = "<!--" !">"
+cdata        = s"<![CDATA[" *( !"]]>" char ) "]]>"
+
+; The end of an element: "</" name and a blank or ">" to follow (the text of a script runs to
+; there).
+closing(N) := "</" N !tag-char
+raw(X)     := *( !X char )
+
+; The end of the text.
+eof        = !any
+any        = 0x00..0x10FFFF

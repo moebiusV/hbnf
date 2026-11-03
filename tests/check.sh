@@ -15,7 +15,7 @@
 #   sh tests/check.sh --force yaml                       run it even if nothing it depends on changed
 #   sh tests/check.sh --serial                           one slice at a time (the default is four; --jobs=N sets it)
 #
-# A suite that takes a backend list (schema, rfc, toml, yaml, params) is run one backend at a time,
+# A suite that takes a backend list (schema, rfc, toml, yaml, params, html) is run one backend at a time,
 # and each backend has its stamp: a rerun does only the backends that have not passed with the
 # present inputs, and a change to one backend's generator touches only its slices.
 #
@@ -33,7 +33,7 @@
 # of idle cores makes the wall time unreliable, and the CPU time less so.
 #
 # A word is a suite if a suite has that name, and a backend (c ada rust zig) otherwise; the
-# backends restrict the suites that take them (schema, rfc, toml, yaml, params) and the lines
+# backends restrict the suites that take them (schema, rfc, toml, yaml, params, html) and the lines
 # shown for the others.  Suites run in sequence, never together; the slices of one suite, which
 # are a backend each and share nothing, run up to four at a time (--serial, or --jobs=N), the
 # wall time of a suite run so is the longest slice's and its CPU time is still the sum; the
@@ -52,8 +52,8 @@ mkdir -p "$R/logs"
 SUITES="wire abnf syntax schema rfc enumval leftrec daemons writer ast spans tutorial errors forks
 lookahead pattern paths stmt recursive context params commalist compare algol60 numbers backref compact
 posix hidden emit layout views textwarn c c79 c89 c99 gnu99 pcc99 toml yaml params-modes
-e2e json-diff toml-diff yaml-suite yaml-diff xml xml-diff sqlite scalar factor ladder nest lint template cobol cobol-scan nocase island switch wslook literal markdown graphql graphql-diff"
-ARGS_json_diff=3000; ARGS_toml_diff=3000; ARGS_yaml_diff=1000; ARGS_xml_diff=3000; ARGS_graphql_diff=20000
+e2e json-diff toml-diff yaml-suite yaml-diff xml xml-diff html html-diff sqlite scalar factor ladder nest lint template cobol cobol-scan nocase island switch wslook literal markdown graphql graphql-diff"
+ARGS_json_diff=3000; ARGS_toml_diff=3000; ARGS_yaml_diff=1000; ARGS_xml_diff=3000; ARGS_html_diff=1500; ARGS_graphql_diff=20000
 BACKENDS_ALL="c ada rust zig"
 
 if [ "${1:-}" = --list ]; then

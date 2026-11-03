@@ -1,0 +1,74 @@
+; HTML (WHATWG HTML Living Standard, 13.1 "Writing HTML documents"): what a conforming document looks
+; like, and nothing of the error-recovering parser of 13.2 or of the content model (which element
+; may hold which).  The characters, names, references and comments are in html-tokens.hbnf; README.md
+; says what is covered and what is not.
+prefix none
+whitespace none
+sensitivity string %i
+include "html-tokens.hbnf"
+
+; A document: a doctype, then nodes.  The start tags of html, head and body may be left out, so
+; their end tags may come with no start tag (`top`).
+document = [ 0xFEFF ] *misc doctype *top
+misc     = 1*space / html-comment
+doctype  = "<!doctype" 1*space "html" [ 1*space "system" 1*space legacy ] *space ">"
+legacy   = DQUOTE "about:legacy-compat" DQUOTE / "'" "about:legacy-compat" "'"
+top      = node | end(i"head" | i"body" | i"html")
+node     = chardata / html-comment / element
+chardata = chars("<")
+
+; An element, tried in this order.  A tag name is matched whole (`!tag-char`); `special` keeps the names that
+; have a rule of their own from being read again as any other (a document with an error in it would otherwise
+; be parsed twice at every level).
+element  = void | script | style | rcdata-element(i"textarea") | rcdata-element(i"title") | omissible
+         | foreign(foreign-root) | normal
+void     = "<" void-name !tag-char attrs [ "/" ] ">"
+normal   = "<" !special tag-name as tag attrs ">" *node "</" $tag *space ">"
+script   = raw-element(i"script")
+style    = raw-element(i"style")
+special  = ( void-name / foreign-root / "script" / "style" / "textarea" / "title" / "table" / "html" / "head" / "body"
+           / "li" / "dt" / "dd" / "p" / "option" / "optgroup" / "rt" / "rp" / "caption" / "colgroup" / "thead"
+           / "tbody" / "tfoot" / "tr" / "td" / "th" ) !tag-char
+void-name = "area" / "base" / "br" / "col" / "embed" / "hr" / "img" / "input" / "link" / "meta" / "source"
+          / "track" / "wbr"
+
+; The start tag, with its attributes: white space before each, so after a quoted value there must be some,
+; and "=" may have white space round it.  The end tag takes no attributes.
+open(N)   := "<" N !tag-char attrs ">"
+end(N)    := closing(N) *space ">"
+attrs     = *( 1*space attribute ) *space
+attribute = attr-name [ *space "=" *space attr-value ]
+
+; script and style hold raw text up to their end tag; textarea and title the same with character references.
+raw-element(N)    := open(N) raw(closing(N)) end(N)
+rcdata-element(N) := open(N) [ chars(closing(N)) ] end(N)
+
+; The end tags that may be left out (13.1.2.4), as far as the content model is not needed: the element ends
+; where its end tag is, or before the end tag of its parent or the end of the text, or before a start tag S that
+; cannot be inside it.  The elements with a start tag that may be left out (html, head, body, colgroup, tbody)
+; are read as they come; the content model is what would say they are there.
+omissible = omit(i"li", i"li") | omit(i"dt", i"dt" | i"dd") | omit(i"dd", i"dt" | i"dd") | omit(i"p", block)
+          | omit(i"option", i"option" | i"optgroup") | omit(i"optgroup", i"optgroup")
+          | omit(i"rt", i"rt" | i"rp") | omit(i"rp", i"rt" | i"rp")
+          | omit(i"caption", table-part) | omit(i"colgroup", table-part)
+          | omit(i"thead", i"tbody" | i"tfoot") | omit(i"tbody", i"tbody" | i"tfoot") | omit(i"tr", i"tr")
+          | omit(i"td", i"td" | i"th") | omit(i"th", i"td" | i"th")
+          | omit(i"head", i"body") | last(i"tfoot") | last(i"body") | html | table
+omit(N, S) := open(N) *( !starts(S) node ) ( end(N) | &( "</" | starts(S) | eof ) )
+last(N)    := open(N) *node ( end(N) | &( "</" | eof ) )
+starts(S)  := "<" S !tag-char
+html       = open(i"html") *top
+table      = open(i"table") *( node | end(i"colgroup" | i"tbody") ) end(i"table")
+block      = "address" / "article" / "aside" / "blockquote" / "details" / "div" / "dl" / "fieldset" / "figcaption"
+           / "figure" / "footer" / "form" / "h1" / "h2" / "h3" / "h4" / "h5" / "h6" / "header" / "hgroup" / "hr"
+           / "main" / "menu" / "nav" / "ol" / "p" / "pre" / "search" / "section" / "table" / "ul"
+table-part = "colgroup" / "thead" / "tbody" / "tfoot" / "tr"
+
+; svg and math hold elements of any name, which may be self-closed, and CDATA sections (13.1.2.6); the
+; integration points inside svg hold HTML again.
+foreign-root     = "svg" / "math"
+foreign-node     = chardata | html-comment | cdata | integration | foreign(tag-name)
+foreign(N)      := "<" N attrs "/>" | "<" N as tag attrs ">" *foreign-node "</" $tag *space ">"
+integration-name = "foreignObject" / "desc" / "title"
+integration      = "<" integration-name attrs "/>"
+                 | "<" integration-name as tag attrs ">" *node "</" $tag *space ">"
