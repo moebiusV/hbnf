@@ -188,7 +188,7 @@ declaratives           = "DECLARATIVES" "." 1*( section-name "SECTION" "." use-s
 use-sentence           = "USE" ( [ "GLOBAL" ] "AFTER" [ "STANDARD" ] ( "EXCEPTION" | "ERROR" ) [ "PROCEDURE" ] "ON" ( 1*file-name | "INPUT" | "OUTPUT" | "I-O" | "EXTEND" )
                               | "BEFORE" "REPORTING" identifier
                               | "FOR" "DEBUGGING" "ON" ( "ALL" ( "PROCEDURES" | "REFERENCES" "OF" identifier ) | 1*( procedure-name | identifier ) ) ) "."
-using-phrase           = "USING" 1*( [ by ( "REFERENCE" | "VALUE" ) ] [ "OPTIONAL" ] user-word )
+using-phrase           = "USING" 1*( [ by ( "REFERENCE" | "VALUE" ) ] [ "OPTIONAL" ] user-word [ "SIZE" is operand ] )
 chaining-phrase        = "CHAINING" 1*user-word
 returning-phrase       = "RETURNING" ( "OMITTED" | user-word )
 body                   = *sentence *( paragraph | section )
@@ -249,9 +249,9 @@ initiate-statement  = "INITIATE" 1*user-word
 generate-statement  = "GENERATE" user-word
 terminate-statement = "TERMINATE" 1*user-word
 suppress-statement  = "SUPPRESS" [ "PRINTING" ]
-stop-statement     = "STOP" ( "RUN" [ ( "RETURNING" | "GIVING" ) operand | with ( "ERROR" | "NORMAL" ) [ "STATUS" ] [ operand ] ] | literal | identifier )
+stop-statement     = "STOP" ( "RUN" [ ( "RETURNING" | "GIVING" ) operand | with ( "ERROR" | "NORMAL" ) [ "STATUS" ] [ operand ] | numeric-literal ] | literal | identifier )
 exit-statement     = "EXIT" [ "PROGRAM" [ "RETURNING" operand ] [ "RAISING" ( "LAST" "EXCEPTION" | identifier ) ] | "PARAGRAPH" | "SECTION" | "PERFORM" [ "CYCLE" ] ]
-go-to-statement    = "GO" to [ 1*procedure-name [ "DEPENDING" on identifier ] ]
+go-to-statement    = "GO" to [ "ENTRY" 1*literal [ "DEPENDING" on identifier ] | 1*procedure-name [ "DEPENDING" on identifier ] ]
 alter-statement    = "ALTER" 1*( procedure-name "TO" [ "PROCEED" "TO" ] procedure-name )
 procedure-name     = paragraph-name [ ( "IN" | "OF" ) section-name ]
 
@@ -280,9 +280,9 @@ size-error-phrases = ( on "SIZE" "ERROR" statements ) [ "NOT" on "SIZE" "ERROR" 
 
 if-statement       = "IF" condition [ "THEN" ] ( next-sentence | [ statements ] ) [ "ELSE" ( next-sentence | statements ) ] [ "END-IF" ]
 
-evaluate-statement = "EVALUATE" subject *( "ALSO" subject ) 1*when-phrase [ "WHEN" "OTHER" statements ] "END-EVALUATE"
+evaluate-statement = "EVALUATE" subject *( "ALSO" subject ) 1*when-phrase [ "WHEN" "OTHER" [ statements ] ] [ "END-EVALUATE" ]
 subject            = "TRUE" | "FALSE" | condition
-when-phrase        = 1*( "WHEN" object *( "ALSO" object ) ) statements
+when-phrase        = 1*( "WHEN" object *( "ALSO" object ) ) [ statements ]
 object             = "ANY" | "TRUE" | "FALSE" | [ "NOT" ] operand thru operand | condition
 
 perform-statement  = "PERFORM" ( [ "FOREVER" | perform-option ] [ statements ] "END-PERFORM"
@@ -293,11 +293,11 @@ perform-option     = operand "TIMES"
 varying            = identifier "FROM" operand [ "BY" operand ] "UNTIL" condition
 
 call-statement     = "CALL" [ "STATIC" | "STDCALL" ] operand [ "USING" 1*using-argument ] [ ( "RETURNING" | "GIVING" ) ( "OMITTED" | identifier ) ] [ on-exception-phrases ] [ "END-CALL" ]
-using-argument     = [ by ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand [ "SIZE" is operand ] )
+using-argument     = [ by ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand [ "SIZE" ( "DEFAULT" | is operand ) ] )
 cancel-statement   = "CANCEL" 1*operand
 on-exception-phrases = exception-phrase [ not-exception-phrase ] | not-exception-phrase [ exception-phrase ]
-exception-phrase     = on ( "EXCEPTION" | "OVERFLOW" ) statements
-not-exception-phrase = "NOT" on ( "EXCEPTION" | "OVERFLOW" ) statements
+exception-phrase     = on ( "EXCEPTION" | "OVERFLOW" | "ESCAPE" ) statements
+not-exception-phrase = "NOT" on ( "EXCEPTION" | "OVERFLOW" | "ESCAPE" ) statements
                      | "NOT" on "EXCEPTION" statements
 
 open-statement     = "OPEN" 1*( ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*( file-name *( with ( "LOCK" | "NO" "REWIND" ) ) ) )
