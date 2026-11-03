@@ -61,7 +61,7 @@ configuration-section   = "CONFIGURATION" "SECTION" "." *configuration-paragraph
 configuration-paragraph = options-paragraph | source-computer-paragraph | object-computer-paragraph | special-names-paragraph | repository-paragraph
 source-computer-paragraph = "SOURCE-COMPUTER" "." [ computer-name [ with "DEBUGGING" "MODE" ] "." ]
 object-computer-paragraph = "OBJECT-COMPUTER" "." [ [ computer-name ] *object-computer-clause "." ]
-object-computer-clause  = [ "PROGRAM" ] [ "COLLATING" ] "SEQUENCE" is user-word
+object-computer-clause  = [ "PROGRAM" ] [ "COLLATING" ] "SEQUENCE" ( is 1*user-word | 1*( "FOR" ( "ALPHANUMERIC" | "NATIONAL" ) is user-word ) )
                         | "MEMORY" "SIZE" is numeric-literal ( "WORDS" | "CHARACTERS" | "MODULES" )
 computer-name           = user-word
 special-names-paragraph = "SPECIAL-NAMES" "." *( special-names-entry [ "." ] )
@@ -90,7 +90,7 @@ select-clause           = "ASSIGN" ( "USING" identifier | to "VARYING" identifie
                         | "RECORD" key is identifier *( "=" identifier ) [ "SOURCE" is 1*identifier ] [ with [ "NO" ] "DUPLICATES" ]
                         | "ALTERNATE" [ "RECORD" ] key is identifier *( "=" identifier ) [ "SOURCE" is 1*identifier ] [ with [ "NO" ] "DUPLICATES" ] [ "SUPPRESS" "WHEN" operand ]
                         | [ "FILE" ] "STATUS" is identifier [ identifier ]
-                        | "LOCK" "MODE" is ( "EXCLUSIVE" | "MANUAL" | "AUTOMATIC" ) [ with "LOCK" "ON" [ "MULTIPLE" ] ( "RECORD" | "RECORDS" ) ]
+                        | "LOCK" [ "MODE" ] is ( "EXCLUSIVE" [ "MASS-UPDATE" ] | "MANUAL" | "AUTOMATIC" ) [ with "LOCK" "ON" [ "MULTIPLE" ] ( "RECORD" | "RECORDS" ) ]
                         | "SHARING" with ( "ALL" "OTHER" | "NO" [ "OTHER" ] | "READ" "ONLY" )
                         | [ "PROGRAM" ] "COLLATING" "SEQUENCE" is user-word
                         | "PADDING" [ "CHARACTER" ] is operand
@@ -197,9 +197,10 @@ synchronized-clause    = ( "SYNCHRONIZED" | "SYNC" ) [ "LEFT" | "RIGHT" ]
 ; ---- the procedure division ----
 procedure-division     = "PROCEDURE" "DIVISION" [ "EXTERN" | "STDCALL" | "STATIC" | "WITH" user-word "LINKAGE" ] [ using-phrase ] [ chaining-phrase ] [ returning-phrase ] "." [ declaratives ] [ body ]
 declaratives           = "DECLARATIVES" "." 1*( section-name "SECTION" "." use-sentence *sentence *paragraph ) "END" "DECLARATIVES" "."
-use-sentence           = "USE" ( [ "GLOBAL" ] "AFTER" [ "STANDARD" ] ( "EXCEPTION" | "ERROR" ) [ "PROCEDURE" ] "ON" ( 1*file-name | "INPUT" | "OUTPUT" | "I-O" | "EXTEND" )
+use-sentence           = "USE" ( [ "GLOBAL" ] [ "AFTER" ] "EXCEPTION" "CONDITION" 1*user-word
+                              | [ "GLOBAL" ] "AFTER" [ "STANDARD" ] ( "EXCEPTION" | "ERROR" ) [ "PROCEDURE" ] "ON" ( 1*file-name | "INPUT" | "OUTPUT" | "I-O" | "EXTEND" )
                               | "BEFORE" "REPORTING" identifier
-                              | "FOR" "DEBUGGING" "ON" ( "ALL" ( "PROCEDURES" | "REFERENCES" "OF" identifier ) | 1*( procedure-name | identifier ) ) ) "."
+                              | "FOR" "DEBUGGING" "ON" ( 1*( "ALL" "PROCEDURES" | [ "ALL" [ "REFERENCES" "OF" ] ] ( procedure-name | identifier ) ) ) ) "."
 using-phrase           = "USING" 1*( [ by ( "REFERENCE" | "VALUE" ) ] [ "OPTIONAL" ] user-word [ "SIZE" is operand ] )
 chaining-phrase        = "CHAINING" 1*user-word
 returning-phrase       = "RETURNING" ( "OMITTED" | user-word )
@@ -268,7 +269,7 @@ alter-statement    = "ALTER" 1*( procedure-name "TO" [ "PROCEED" "TO" ] procedur
 procedure-name     = paragraph-name [ ( "IN" | "OF" ) section-name ]
 
 accept-statement   = "ACCEPT" ( "OMITTED" | identifier ) [ "FROM" ( "DATE" [ "YYYYMMDD" ] | "DAY" [ "YYYYDDD" ] | "DAY-OF-WEEK" | "TIME"
-                                                  | "COMMAND-LINE" | "ESCAPE" "KEY" | "ENVIRONMENT-VALUE" | "ENVIRONMENT" operand | user-word ) ]
+                                                  | "COMMAND-LINE" | "ESCAPE" [ "KEY" ] | "ENVIRONMENT-VALUE" | "ENVIRONMENT" operand | user-word ) ]
                      *screen-phrase [ on-exception-phrases ] scope-end("ACCEPT")
 display-statement  = "DISPLAY" ( 1*operand | "OMITTED" ) *( "UPON" ( device-name | user-word ) | with "NO" "ADVANCING" | screen-phrase ) [ on-exception-phrases ] scope-end("DISPLAY")
 move-statement     = "MOVE" ( [ "CORRESPONDING" | "CORR" ] sending "TO" 1*identifier )
@@ -312,7 +313,7 @@ call-statement     = "CALL" [ "STATIC" | "STDCALL" ] operand [ "USING" 1*using-a
 using-argument     = [ by ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand [ "SIZE" ( "DEFAULT" | is operand ) ] )
 cancel-statement   = "CANCEL" 1*operand
 on-exception-phrases = phrases(on ( "EXCEPTION" | "OVERFLOW" | "ESCAPE" ))
-open-statement     = "OPEN" 1*( ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*( file-name *( with ( "LOCK" | "NO" "REWIND" ) ) ) )
+open-statement     = "OPEN" 1*( [ "EXCLUSIVE" ] ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*( file-name *( with ( "LOCK" | "NO" "REWIND" ) ) ) )
 close-statement    = "CLOSE" 1*( file-name [ "REEL" | "UNIT" ] [ "FOR" "REMOVAL" ] [ with ( "LOCK" | "NO" "REWIND" ) ] )
 read-statement     = "READ" file-name [ "NEXT" | "PREVIOUS" ] [ "RECORD" ] [ "INTO" identifier ] [ with ( "NO" "LOCK" | "LOCK" | "KEPT" "LOCK" ) ] [ "KEY" is identifier ]
                      [ end-phrases ] [ invalid-key-phrases ] scope-end("READ")
