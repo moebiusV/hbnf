@@ -1,0 +1,20 @@
+; A calculator whose `>>FIXED` and `>>FREE` directives change the white space that is skipped between
+; tokens from there on: free skips blanks and line ends (the grammar's own `ws`), fixed skips blanks only,
+; so a line end where fixed is current is an error.  `>>MODE name` names the grammar by the text it
+; matched.  `>>TRY` is a guess: it switches to fixed and wants a `~`, and if that fails the switch is undone and the
+; second branch reads the same text with the white space it had.  `fixed` and `free` are the files included below; each says which `ws` is its own.
+prefix none
+include "../../grammars/ascii.hbnf"
+include "fixed.hbnf" as fixed
+include "free.hbnf" as free
+top       = *item
+item      = probe | directive | block | stmt
+directive = ">>" "FIXED" => grammar(fixed)
+          | ">>" "FREE" => grammar(free)
+          | ">>" "MODE" word %as mode => grammar(mode)
+block     = "{" *item "}"
+probe     = flip "~" | ">>" "TRY" "1" ";"
+flip      = ">>" "TRY" => grammar(fixed)
+stmt      = expr ";"
+expr      = int *( ( "+" / "-" ) int )
+ws        = *( SP / HTAB / LF )

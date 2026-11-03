@@ -1,0 +1,16 @@
+; The guest of host.hbnf.  Everything here is read in the scope it is included `as`: its settings (no white
+; space skipped, case ignored) apply to its rules alone; its `name`, `number` and `ws` are not the host's.  A guest
+; sees only its own rules and those of files it includes (here ascii.hbnf, read again for the scope).
+prefix none
+whitespace none
+sensitivity string %i
+include "../../grammars/ascii.hbnf"
+include "../../grammars/common.hbnf"
+stmt    = select | delete
+select  = "select" gap columns gap "from" gap name [ gap "where" gap name *gap "=" *gap number ]
+delete  = "delete" gap "from" gap name
+columns = "*" | name *( "," name )
+name    = 1*( %x61-7A / %x41-5A / "_" )
+gap      = 1*( SP / HTAB )
+number  = 1*DIGIT
+ws      = *( SP / HTAB )

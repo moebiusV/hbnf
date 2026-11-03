@@ -2685,6 +2685,20 @@ package body HBNF_Zig is
       return To_String (Res);
    end Emit;
 
+   function Switch_Names return String is
+      R : Unbounded_String;
+   begin
+      for K in 1 .. HBNF_Grammar.Switch_Count loop
+         if HBNF_Grammar.Is_Switch_Target (K) then
+            if R /= Null_Unbounded_String then
+               Append (R, ", ");
+            end if;
+            Append (R, HBNF_Grammar.Switch_Dotted (K));
+         end if;
+      end loop;
+      return To_String (R);
+   end Switch_Names;
+
    function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
       --  Can a rule match the empty text?  Then a scan of length 0 is a match,
       --  not a failure (a lifted `[ x ]` of a token is such a rule).
@@ -3167,6 +3181,17 @@ package body HBNF_Zig is
                              & To_String (R) & ")" & Cat & ";");
                            Append (Buf, LF);
                         end;
+                     elsif E.Op = B_Switch then
+                        if E.Path = Null_Unbounded_String then
+                           Append (Buf, Ind & "p.push_g("
+                             & Img (HBNF_Grammar.Switch_Index (To_String (E.Ctx))) & ");");
+                        else
+                           Append (Buf, Ind & "if (P.grammar_named(p.text[" & Tag_Var ("cp", E.Ctx) & " .. "
+                             & Tag_Var ("cp", E.Ctx) & " + " & Tag_Var ("cl", E.Ctx) & "])) |g_| p.push_g(g_) else { p.pos = "
+                             & Tag_Var ("cp", E.Ctx) & "; " & Pref & "p.fail(""a grammar: "
+                             & Zig_Escape (Switch_Names) & """)" & Cat & "; }");
+                        end if;
+                        Append (Buf, LF);
                      elsif E.Op = B_Scope then
                         Cx_Seq := Cx_Seq + 1;
                         Scopes.Append (To_Unbounded_String ("sc_" & Img (Cx_Seq)));
@@ -4057,6 +4082,14 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "    pos: usize = 0,");
       Append (Res, LF);
+      if HBNF_Grammar.Uses_Switch then
+         Append (Res, "    g: usize = 0,   // the current grammar: 0 the including one, k the kth included");
+         Append (Res, LF);
+         Append (Res, "    nev: usize = 0,   // how many switches are in force, in evp");
+         Append (Res, LF);
+         Append (Res, "    evp: *std.ArrayList([2]usize) = undefined,");
+         Append (Res, LF);
+      end if;
       Append (Res, "    e: ErrState = .{},   // the farthest failure, as the message");
       Append (Res, LF);
       Append (Res, "    depth: usize = 0,   // the rules being read, and where each began");
@@ -4327,7 +4360,32 @@ package body HBNF_Zig is
          end if;
          Put ("    // Skip what the grammar calls whitespace, one match at a time.");
          Put ("    fn skip_ws(self: *P) void {");
-         if Ws_Name = "" then
+         if HBNF_Grammar.Uses_Switch then
+            Put ("        switch (self.g) {");
+            for Gx in 1 .. HBNF_Grammar.Switch_Count loop
+               declare
+                  W : constant String := HBNF_Grammar.Switch_Ws (Rules, Gx);
+               begin
+                  if W = "" then
+                     Put ("            " & Img (Gx) & " => {},");
+                  else
+                     Put ("            " & Img (Gx) & " => while (true) { const n = scan_" & Zig_Snake (W)
+                       & "(self.text, self.pos, self.text.len); if (n == 0) break; self.pos += n; },");
+                  end if;
+               end;
+            end loop;
+            declare
+               W : constant String := HBNF_Grammar.Switch_Ws (Rules, 0);
+            begin
+               if W = "" then
+                  Put ("            else => {},");
+               else
+                  Put ("            else => while (true) { const n = scan_" & Zig_Snake (W)
+                    & "(self.text, self.pos, self.text.len); if (n == 0) break; self.pos += n; },");
+               end if;
+            end;
+            Put ("        }");
+         elsif Ws_Name = "" then
             Put ("        _ = self;");
          else
             Put ("        while (true) {");
@@ -4339,6 +4397,33 @@ package body HBNF_Zig is
          end if;
          Put ("    }");
          Put ("");
+         if HBNF_Grammar.Uses_Switch then
+            Put ("    // A switch is an event at the position where its alternative ended; going back");
+            Put ("    // before it undoes it.");
+            Put ("    fn push_g(self: *P, g: usize) void {");
+            Put ("        self.evp.shrinkRetainingCapacity(self.nev);");
+            Put ("        self.evp.append(self.alloc, .{ self.pos, g }) catch @panic(""out of memory"");");
+            Put ("        self.nev += 1;");
+            Put ("        self.g = g;");
+            Put ("    }");
+            Put ("    fn set_pos(self: *P, pos: usize) void {");
+            Put ("        self.pos = pos;");
+            Put ("        if (self.nev > 0 and self.evp.items[self.nev - 1][0] > pos) {");
+            Put ("            while (self.nev > 0 and self.evp.items[self.nev - 1][0] > pos) self.nev -= 1;");
+            Put ("            self.g = if (self.nev > 0) self.evp.items[self.nev - 1][1] else 0;");
+            Put ("        }");
+            Put ("    }");
+            Put ("    fn grammar_named(s: []const u8) ?usize {");
+            for K in 1 .. HBNF_Grammar.Switch_Count loop
+               if HBNF_Grammar.Is_Switch_Target (K) then
+                  Put ("        if (std.mem.eql(u8, s, """ & Zig_Escape (HBNF_Grammar.Switch_Dotted (K))
+                    & """)) return " & Img (K) & ";");
+               end if;
+            end loop;
+            Put ("        return null;");
+            Put ("    }");
+            Put ("");
+         end if;
       end;
       Append (Res, "    fn err_out(self: *P, out: *[512]u8, line: *usize, col: *usize) ParseError {");
       Append (Res, LF);
@@ -4599,7 +4684,8 @@ package body HBNF_Zig is
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name))
               and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
-                        or else To_String (Rules (I).Name) = Ws_Name)
+                        or else To_String (Rules (I).Name) = Ws_Name
+                        or else HBNF_Grammar.Is_Switch_Ws (Rules, To_String (Rules (I).Name)))
             then
                Has_Char := True;
             end if;
@@ -4652,7 +4738,8 @@ package body HBNF_Zig is
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name))
               and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
-                        or else To_String (Rules (I).Name) = Ws_Name)
+                        or else To_String (Rules (I).Name) = Ws_Name
+                        or else HBNF_Grammar.Is_Switch_Ws (Rules, To_String (Rules (I).Name)))
             then
                declare
                   NM  : constant String := To_String (Rules (I).Name);
@@ -4804,7 +4891,9 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
       end;
 
       Append (Res, Hosted_Code);
-      return To_String (Res);
+      return (if HBNF_Grammar.Uses_Switch
+              then HBNF_Grammar.Hook_Restores (To_String (Res), "p.pos = ", "p.set_pos(", ");")
+              else To_String (Res));
    end Emit_Parser;
 
    function Emit_Lexer (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
@@ -4827,6 +4916,10 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
          V : HBNF_Template.Context := HBNF_Template.View;
       begin
          HBNF_Template.Put (V, "root_type", Root_T);
+         HBNF_Template.Put (V, "switch_decl",
+           (if HBNF_Grammar.Uses_Switch
+            then "    var evl: std.ArrayList([2]usize) = .empty;" & LF & "    defer evl.deinit(alloc);" & LF else ""));
+         HBNF_Template.Put (V, "switch_init", (if HBNF_Grammar.Uses_Switch then ", .evp = &evl" else ""));
          HBNF_Template.Put (V, "reset",
            (if Is_Hosted and then Hosted_Acts
             then "    bnf_warning_list = &.{};" & LF else ""));

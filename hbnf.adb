@@ -619,6 +619,14 @@ begin
          HBNF_Grammar.Set_Type_Prefix (To_String (Prefix));
       end if;
       HBNF_Grammar.Note_Rule_Names (Rules);
+      if HBNF_Grammar.Uses_Switch then
+         if B = "tree-sitter" then
+            raise HBNF_Grammar.Parse_Error with
+              "this grammar switches grammars (`=> grammar(...)`), and tree-sitter has one "
+              & "fixed set of rules and one `extras`; a switch would need an external "
+              & "scanner that keeps the current grammar, which hbnf does not generate yet";
+         end if;
+      end if;
       if B /= "tree-sitter" then
          HBNF_Compilable.Check (Rules, B);
       end if;

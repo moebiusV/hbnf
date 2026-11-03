@@ -1,0 +1,23 @@
+ok	1 + 2;
+ok	1 +\n 2;\n
+ok	>>FIXED 1 + 2;
+bad	>>FIXED 1 +\n 2;
+bad	>>FIXED\n1;
+ok	>>FIXED 1; >>FREE 1 +\n 2;
+bad	>>FIXED 1;\n
+bad	>>FIXED 1; 2 +\n 3;
+ok	>>FIXED 1; >>FREE\n 2 +\n 3;
+ok	{ 1;\n }
+bad	{ >>FIXED 1;\n }
+ok	{ >>FIXED 1; } 2;
+bad	{ >>FIXED 1; }\n2;
+ok	{ >>FIXED 1; >>FREE }\n 2;
+ok	>>MODE fixed 1;
+bad	>>MODE fixed\n1;
+ok	>>MODE free\n1;
+ok	>>MODE fixed 1; >>MODE free\n 2;
+bad	>>MODE nosuch 1;
+bad	>>MODE Fixed 1;
+ok	>>TRY\n1;
+ok	>>TRY ~
+bad	>>TRY\n~

@@ -1,0 +1,5 @@
+; The grammar `fixed` of calc.hbnf: blanks are skipped between tokens, line ends are not.
+prefix none
+whitespace ws
+include "../../grammars/ascii.hbnf"
+ws = *( SP / HTAB )

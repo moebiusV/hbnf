@@ -9,7 +9,7 @@
       Pos  : Natural := 1;
       Last : Natural := Natural'Last;   --  the input is cut here for a trial parse (`a - b`)
       Failed : Boolean := False;        --  a parse that failed returns at once, up to whoever tries the next way
-{{&parser_bit}}      --  The farthest failure (Err_Pos, 0 while there is none): what could have stood
+{{&parser_bit}}{{&switch_fields}}      --  The farthest failure (Err_Pos, 0 while there is none): what could have stood
       --  there, each told once, and the rules being read then and where each began.
       Err_Pos    : Natural := 0;
       Alt_N      : Natural := 0;
@@ -22,7 +22,7 @@
       Err_Stk    : Rule_Stack := (others => 0);
       Err_Stkpos : Rule_Stack := (others => 0);
    end record;
-
+{{&switch_support}}
    --  A rule is being read from here (and not any more, when it returns).
    procedure Enter (P : in out Parser; Rule : Positive) is
    begin

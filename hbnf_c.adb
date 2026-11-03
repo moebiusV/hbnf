@@ -660,6 +660,171 @@ package body HBNF_C is
       return 0;
    end Find;
 
+   function Sw_Img (N : Natural) return String is
+     (Ada.Strings.Fixed.Trim (Natural'Image (N), Ada.Strings.Left));
+
+   --  Parsers that switch grammars (`=> grammar(x)`): the white space of grammar Gx (0: the
+   --  including grammar, k: the kth included), "" when it skips none.
+   function Ws_Of_Grammar (Rules : Rule_Vectors.Vector; Gx : Natural) return Unbounded_String is
+   begin
+      for R of Rules loop
+         if HBNF_Grammar.Grammar_Of (To_String (R.Name)) = Gx
+           and then R.Whitespace /= Null_Unbounded_String
+         then
+            return R.Whitespace;
+         end if;
+      end loop;
+      return Null_Unbounded_String;
+   end Ws_Of_Grammar;
+
+   --  True when NM is the white-space rule of some grammar that can be current.
+   function Is_Any_Ws (Rules : Rule_Vectors.Vector; NM : String) return Boolean is
+   begin
+      if not HBNF_Grammar.Uses_Switch then
+         return False;
+      end if;
+      for R of Rules loop
+         if R.Whitespace /= Null_Unbounded_String and then To_String (R.Whitespace) = NM then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Any_Ws;
+
+   --  Every whole identifier of S that belongs to a white-space skip gets Suffix.
+   function Suffix_Idents (S, Suffix : String) return String is
+      R : Unbounded_String;
+      I : Natural := S'First;
+      function Is_Id (C : Character) return Boolean is
+        (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+   begin
+      while I <= S'Last loop
+         if Is_Id (S (I)) then
+            declare
+               J : Natural := I;
+            begin
+               while J <= S'Last and then Is_Id (S (J)) loop
+                  J := J + 1;
+               end loop;
+               declare
+                  W : constant String := S (I .. J - 1);
+               begin
+                  Append (R, W);
+                  if W in "skip_ws" | "skip_ws_run" | "skip_ws_slow" | "ws_run" | "ws_starts" then
+                     Append (R, Suffix);
+                  end if;
+               end;
+               I := J;
+            end;
+         else
+            Append (R, S (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return To_String (R);
+   end Suffix_Idents;
+
+   --  Every `p->pos = name;` becomes HBNF_SETPOS(p, name): where the parser goes back, the
+   --  switches it passed are undone (the macro is in Switch_Support).
+   function Hook_Restores (S : String) return String is
+      R   : Unbounded_String;
+      I   : Natural := S'First;
+      Pat : constant String := "p->pos = ";
+      function Is_Id (C : Character) return Boolean is
+        (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+   begin
+      while I <= S'Last loop
+         if I + Pat'Length <= S'Last and then S (I .. I + Pat'Length - 1) = Pat
+           and then (I = S'First or else not Is_Id (S (I - 1)))
+         then
+            declare
+               J : Natural := I + Pat'Length;
+            begin
+               while J <= S'Last and then Is_Id (S (J)) loop
+                  J := J + 1;
+               end loop;
+               if J > I + Pat'Length and then J <= S'Last and then S (J) = ';'
+                 and then S (I + Pat'Length) not in '0' .. '9'
+               then
+                  Append (R, "HBNF_SETPOS(p, " & S (I + Pat'Length .. J - 1) & ");");
+                  I := J + 1;
+               else
+                  Append (R, S (I));
+                  I := I + 1;
+               end if;
+            end;
+         else
+            Append (R, S (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return To_String (R);
+   end Hook_Restores;
+
+   function Switch_Field return String is
+     (if not HBNF_Grammar.Uses_Switch then ""
+      else ASCII.LF & "    int g;   /* the current grammar: 0 the including one, k the kth included (=> grammar) */"
+           & ASCII.LF & "    size_t nev;   /* how many switches are in force, in hbnf_ev */");
+
+   --  The journal of switches and what undoes them.  A switch is an event at the position where
+   --  its alternative ended; going back to a position before an event undoes it, so a guess given
+   --  back leaves no switch behind.  The caches of white space and of the word read are keyed by
+   --  position and not by grammar, so a change of grammar forgets them.
+   function Switch_Support return String is
+      LF  : constant Character := ASCII.LF;
+      Res : Unbounded_String;
+   begin
+      if not HBNF_Grammar.Uses_Switch then
+         return "";
+      end if;
+      Append (Res, LF & LF & "typedef struct { size_t pos; int g; } hbnf_ev_t;" & LF
+        & "static _Thread_local hbnf_ev_t *hbnf_ev;" & LF
+        & "static _Thread_local size_t hbnf_cev;" & LF
+        & "static void hbnf_push(parser_t *p, int g) {" & LF
+        & "    if (p->nev == hbnf_cev) {" & LF
+        & "        hbnf_cev = hbnf_cev ? hbnf_cev * 2 : 64;" & LF
+        & "        hbnf_ev = (hbnf_ev_t *)realloc(hbnf_ev, hbnf_cev * sizeof *hbnf_ev);" & LF
+        & "        if (!hbnf_ev) { fputs(""hbnf: out of memory\n"", stderr); exit(1); }" & LF
+        & "    }" & LF
+        & "    hbnf_ev[p->nev].pos = p->pos; hbnf_ev[p->nev].g = g; p->nev++; p->g = g;" & LF
+        & "    p->ws_len1 = 0; p->wc_n = 0;" & LF
+        & "}" & LF
+        & "static void hbnf_unwind(parser_t *p) {" & LF
+        & "    size_t n = p->nev;" & LF
+        & "    while (n && hbnf_ev[n - 1].pos > p->pos) n--;" & LF
+        & "    p->nev = n; p->g = n ? hbnf_ev[n - 1].g : 0;" & LF
+        & "    p->ws_len1 = 0; p->wc_n = 0;" & LF
+        & "}" & LF
+        & "#define HBNF_SETPOS(P, X) do { (P)->pos = (X); if ((P)->nev && hbnf_ev[(P)->nev - 1].pos > (P)->pos) hbnf_unwind(P); } while (0)" & LF
+        & "static int hbnf_grammar_named(const char *s, size_t n) {" & LF);
+      for K in 1 .. HBNF_Grammar.Switch_Count loop
+         if HBNF_Grammar.Is_Switch_Target (K) then
+            declare
+               Nm : constant String := HBNF_Grammar.Switch_Dotted (K);
+            begin
+               Append (Res, "    if (n == " & Sw_Img (Nm'Length) & " && memcmp(s, """ & C_Escape (Nm)
+                 & """, n) == 0) return " & Sw_Img (K) & ";" & LF);
+            end;
+         end if;
+      end loop;
+      Append (Res, "    return -1;" & LF & "}");
+      return To_String (Res);
+   end Switch_Support;
+
+   function Switch_Names return String is
+      R : Unbounded_String;
+   begin
+      for K in 1 .. HBNF_Grammar.Switch_Count loop
+         if HBNF_Grammar.Is_Switch_Target (K) then
+            if R /= Null_Unbounded_String then
+               Append (R, ", ");
+            end if;
+            Append (R, HBNF_Grammar.Switch_Dotted (K));
+         end if;
+      end loop;
+      return To_String (R);
+   end Switch_Names;
+
    function Whitespace_Rule_Name (Rules : Rule_Vectors.Vector)
      return Unbounded_String
    is
@@ -686,7 +851,7 @@ package body HBNF_C is
       if Is_Char_Rule (Rules, NM) and then not Is_Char_Token (Rules, NM) then
          return False;
       end if;
-      if NM = To_String (Whitespace_Rule_Name (Rules)) then
+      if NM = To_String (Whitespace_Rule_Name (Rules)) or else Is_Any_Ws (Rules, NM) then
          return False;
       end if;
       return True;
@@ -5552,6 +5717,26 @@ package body HBNF_C is
                      case E.Op is
                         when B_Emit =>
                            null;  --  refused before emission until it is generated
+                        when B_Switch =>
+                           if E.Path = Null_Unbounded_String then
+                              Append (Buf, Ind & "hbnf_push(p, "
+                                & Img (HBNF_Grammar.Switch_Index (To_String (E.Ctx))) & ");");
+                           else
+                              declare
+                                 T : constant String := C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid;
+                              begin
+                                 Append (Buf, Ind & "{ int g_ = hbnf_grammar_named(p->text + cp_" & T
+                                   & ", cl_" & T & ");");
+                                 Append (Buf, LF);
+                                 Append (Buf, Ind & "  if (g_ < 0) { size_t at_ = p->pos; p->pos = cp_" & T
+                                   & "; fail(p, ""a grammar: " & C_Escape (Switch_Names)
+                                   & """, 0, p->text + cp_" & T & ", cl_" & T
+                                   & "); p->pos = at_; " & Fail & " }");
+                                 Append (Buf, LF);
+                                 Append (Buf, Ind & "  hbnf_push(p, g_); }");
+                              end;
+                           end if;
+                           Append (Buf, LF);
                         when B_Action =>
                            null;  --  lifted to a rule of its own before emission
                         when B_Test | B_Not_Test =>
@@ -8226,6 +8411,7 @@ package body HBNF_C is
          Nocase     : U;
          Kw         : U;
          Ws_Name    : Unbounded_String := Null_Unbounded_String;
+         Ws_Mark    : Natural := 0;
          Has_Word   : Boolean := False;
          Strings_H  : constant String :=
            (if Nocase_Words.Is_Empty then "" else "#include <strings.h>" & LF);
@@ -8254,7 +8440,7 @@ package body HBNF_C is
                   NM : constant String := To_String (Rules (I).Name);
                begin
                   if Is_Char_Token (Rules, NM)
-                    or else NM = To_String (Ws_Name)
+                    or else NM = To_String (Ws_Name) or else Is_Any_Ws (Rules, NM)
                   then
                      Append (Scanners, "static size_t scan_" & C_Name (NM)
                        & "(const char *s, size_t pos, size_t len);" & LF);
@@ -8304,6 +8490,11 @@ package body HBNF_C is
          --  derived from the grammar, so a file whose `ws` is something else
          --  gets its own, and a rule with no single-code-point alternative
          --  falls back to the scanner alone.
+         for Gx in 0 .. (if HBNF_Grammar.Uses_Switch then HBNF_Grammar.Switch_Count else 0) loop
+         Ws_Mark := Length (Ws_Skip);
+         if HBNF_Grammar.Uses_Switch then
+            Ws_Name := Ws_Of_Grammar (Rules, Gx);
+         end if;
          if Ws_Name /= Null_Unbounded_String then
             declare
                DNF   : constant Cp_Branch_Atom_Vectors.Vector :=
@@ -8468,6 +8659,30 @@ package body HBNF_C is
                Append (Ws_Skip, "}" & LF & LF);
             end;
          end if;
+         if HBNF_Grammar.Uses_Switch then
+            --  This grammar's own skip, under names of its own; skip_ws below picks one.
+            declare
+               Seg : constant String := Slice (Ws_Skip, Ws_Mark + 1, Length (Ws_Skip));
+            begin
+               Delete (Ws_Skip, Ws_Mark + 1, Length (Ws_Skip));
+               if Ws_Name = Null_Unbounded_String then
+                  Append (Ws_Skip, "__attribute__((unused))" & LF
+                    & "static inline void skip_ws_g" & Img (Gx) & "(parser_t *p) { (void)p; }" & LF & LF);
+               else
+                  Append (Ws_Skip, Suffix_Idents (Seg, "_g" & Img (Gx)));
+               end if;
+            end;
+         end if;
+         end loop;
+         if HBNF_Grammar.Uses_Switch then
+            Append (Ws_Skip, "__attribute__((unused))" & LF
+              & "static inline void skip_ws(parser_t *p) {" & LF
+              & "    switch (p->g) {" & LF);
+            for Gx in 1 .. HBNF_Grammar.Switch_Count loop
+               Append (Ws_Skip, "    case " & Img (Gx) & ": skip_ws_g" & Img (Gx) & "(p); break;" & LF);
+            end loop;
+            Append (Ws_Skip, "    default: skip_ws_g0(p);" & LF & "    }" & LF & "}" & LF & LF);
+         end if;
 
          if not Nocase_Words.Is_Empty then
             Append (Nocase, "__attribute__((unused))" & LF);
@@ -8532,6 +8747,8 @@ package body HBNF_C is
             H ("scanners", To_String (Scanners)),
             H ("word_matcher", To_String (Word_Match)),
             H ("ws_skip", To_String (Ws_Skip)),
+            H ("switch_field", Switch_Field),
+            H ("switch_support", Switch_Support),
             H ("nocase", To_String (Nocase)),
             H ("bit_field",
                (if Hosted_Code = Null_Unbounded_String then ""
@@ -9227,7 +9444,8 @@ package body HBNF_C is
          if Is_Char_Rule (Rules, To_String (Rules (I).Name))
            and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
                      or else To_String (Rules (I).Name)
-                             = To_String (Whitespace_Rule_Name (Rules)))
+                             = To_String (Whitespace_Rule_Name (Rules))
+                     or else Is_Any_Ws (Rules, To_String (Rules (I).Name)))
          then
             declare
                NM  : constant String := To_String (Rules (I).Name);
@@ -9744,7 +9962,7 @@ Append (Res, "static size_t scan_" & C_Name (NM)
          Emit_Statement_Hooks (Res);
       end if;
 
-      return To_String (Res);
+      return (if HBNF_Grammar.Uses_Switch then Hook_Restores (To_String (Res)) else To_String (Res));
    end Emit_Parser;
 
    function Emit_Lexer (Rules : Rule_Vectors.Vector) return String is

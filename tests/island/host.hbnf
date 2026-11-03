@@ -1,0 +1,13 @@
+; An island: `include "guest.hbnf" as sql` puts the guest's rules in the scope `sql`, and `sql.stmt` reads one of
+; them.  The host skips blanks and line ends and is case-sensitive; the guest (a small SQL) skips nothing,
+; ignores case, and has rules of the host's names (`ws`, `name`, `number`, `SP`).
+prefix none
+include "../../grammars/ascii.hbnf"
+include "guest.hbnf" as sql
+top       = 1*( statement ";" )
+statement = exec | assign
+exec      = "EXEC" sql.stmt "END"
+assign    = name "=" number
+name      = word
+number    = int
+ws        = *( SP / HTAB / LF )

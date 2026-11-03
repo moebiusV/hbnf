@@ -2490,6 +2490,52 @@ package body HBNF_Rust is
       return To_String (Res);
    end Emit;
 
+   function Switch_Names return String is
+      R : Unbounded_String;
+   begin
+      for K in 1 .. HBNF_Grammar.Switch_Count loop
+         if HBNF_Grammar.Is_Switch_Target (K) then
+            if R /= Null_Unbounded_String then
+               Append (R, ", ");
+            end if;
+            Append (R, HBNF_Grammar.Switch_Dotted (K));
+         end if;
+      end loop;
+      return To_String (R);
+   end Switch_Names;
+
+   --  The methods of a parser that switches grammars: the journal of switches, and going back
+   --  to a position undoes the ones after it.
+   function Switch_Methods return String is
+      R : Unbounded_String;
+   begin
+      if not HBNF_Grammar.Uses_Switch then
+         return "";
+      end if;
+      Append (R, LF & "    // The grammar the parser is in, and the switches that put it there: a switch is an event"
+        & LF & "    // at the position where its alternative ended, and going back before it undoes it."
+        & LF & "    fn push_g(&mut self, g: usize) { self.ev.push((self.pos, g)); self.g = g; }"
+        & LF & "    fn set_pos(&mut self, pos: usize) {"
+        & LF & "        self.pos = pos;"
+        & LF & "        if self.ev.last().map_or(false, |e| e.0 > pos) {"
+        & LF & "            while self.ev.last().map_or(false, |e| e.0 > pos) { self.ev.pop(); }"
+        & LF & "            self.g = self.ev.last().map_or(0, |e| e.1);"
+        & LF & "        }"
+        & LF & "    }"
+        & LF & "    fn grammar_named(s: &str) -> Option<usize> {"
+        & LF & "        match s {");
+      for K in 1 .. HBNF_Grammar.Switch_Count loop
+         if HBNF_Grammar.Is_Switch_Target (K) then
+            Append (R, LF & "            """ & Rust_Escape (HBNF_Grammar.Switch_Dotted (K)) & """ => Some("
+              & Img (K) & "),");
+         end if;
+      end loop;
+      Append (R, LF & "            _ => None,"
+        & LF & "        }"
+        & LF & "    }");
+      return To_String (R);
+   end Switch_Methods;
+
    function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
       --  Can a rule match the empty text?  Then a scan of length 0 is a match,
       --  not a failure (a lifted `[ x ]` of a token is such a rule).
@@ -2928,6 +2974,24 @@ package body HBNF_Rust is
                              & "; p.cx_add(" & Ctx_Const (To_String (E.Ctx)) & ", &v_); }");
                            Append (Buf, LF);
                         end;
+                     elsif E.Op = B_Switch then
+                        if E.Path = Null_Unbounded_String then
+                           Append (Buf, Ind & "p.push_g("
+                             & Img (HBNF_Grammar.Switch_Index (To_String (E.Ctx))) & ");");
+                        else
+                           Append (Buf, Ind & "{ let (cp_, cl_) = ("
+                             & Tag_Var ("cp", E.Ctx) & ", " & Tag_Var ("cl", E.Ctx) & ");");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  match P::grammar_named(std::str::from_utf8(&p.text.as_bytes()[cp_..cp_ + cl_]).unwrap_or("""")) {");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    Some(g_) => p.push_g(g_),");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    None => { let at_ = p.pos; p.pos = cp_; let e_ = p.fail(""a grammar: "
+                             & Rust_Escape (Switch_Names) & """); p.pos = at_; return Err(e_); }");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  } }");
+                        end if;
+                        Append (Buf, LF);
                      elsif E.Op = B_Scope then
                         Scope_Seq := Scope_Seq + 1;
                         Scopes.Append (To_Unbounded_String ("sc_" & Img (Scope_Seq)));
@@ -3700,7 +3764,32 @@ package body HBNF_Rust is
             Append (Nocase, "    }");
             Append (Nocase, LF);
          end if;
-         if Ws_Name = "" then
+         if HBNF_Grammar.Uses_Switch then
+            --  one loop for each grammar; the current one is chosen where the white space is skipped
+            Append (Skip_Ws, "        match self.g {" & LF);
+            for Gx in 1 .. HBNF_Grammar.Switch_Count loop
+               Append (Skip_Ws, "            " & Img (Gx) & " => {" & LF);
+               declare
+                  W : constant String := HBNF_Grammar.Switch_Ws (Rules, Gx);
+               begin
+                  if W /= "" then
+                     Append (Skip_Ws, "                loop { let n = scan_" & Rust_Snake (W)
+                       & "(self.text.as_bytes(), self.pos, self.text.len()); if n == 0 { break; } self.pos += n; }" & LF);
+                  end if;
+               end;
+               Append (Skip_Ws, "            }" & LF);
+            end loop;
+            Append (Skip_Ws, "            _ => {" & LF);
+            declare
+               W : constant String := HBNF_Grammar.Switch_Ws (Rules, 0);
+            begin
+               if W /= "" then
+                  Append (Skip_Ws, "                loop { let n = scan_" & Rust_Snake (W)
+                    & "(self.text.as_bytes(), self.pos, self.text.len()); if n == 0 { break; } self.pos += n; }" & LF);
+               end if;
+            end;
+            Append (Skip_Ws, "            }" & LF & "        }" & LF);
+         elsif Ws_Name = "" then
             Append (Skip_Ws, "");
          else
             Append (Skip_Ws, "        loop {" & LF
@@ -3715,6 +3804,9 @@ package body HBNF_Rust is
          begin
             HBNF_Template.Put (V, "nocase", To_String (Nocase));
             HBNF_Template.Put (V, "skip_ws", To_String (Skip_Ws));
+            HBNF_Template.Put (V, "switch_field",
+              (if HBNF_Grammar.Uses_Switch then ", g: usize, ev: Vec<(usize, usize)>" else ""));
+            HBNF_Template.Put (V, "switch_methods", Switch_Methods);
             HBNF_Template.Put (V, "text_type", (if Is_Hosted then "Txt<'a>" else "&'a str"));
             HBNF_Template.Put (V, "bit_field",
               (if Is_Hosted then "bit: usize, " else ""));
@@ -4006,7 +4098,8 @@ package body HBNF_Rust is
            (for some I in 1 .. N =>
               Is_Char_Rule (Rules, To_String (Rules (I).Name))
                 and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
-                          or else To_String (Rules (I).Name) = Ws_Name));
+                          or else To_String (Rules (I).Name) = Ws_Name
+                          or else HBNF_Grammar.Is_Switch_Ws (Rules, To_String (Rules (I).Name))));
       begin
          if Has_Char then
             Append (Res, "fn decode_utf8(s: &[u8], pos: usize, len: usize) -> (usize, u32) {");
@@ -4047,7 +4140,8 @@ package body HBNF_Rust is
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name))
               and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
-                        or else To_String (Rules (I).Name) = Ws_Name)
+                        or else To_String (Rules (I).Name) = Ws_Name
+                        or else HBNF_Grammar.Is_Switch_Ws (Rules, To_String (Rules (I).Name)))
             then
                declare
                   NM  : constant String := To_String (Rules (I).Name);
@@ -4175,7 +4269,9 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
 
       end;
 
-      return To_String (Res);
+      return (if HBNF_Grammar.Uses_Switch
+              then HBNF_Grammar.Hook_Restores (To_String (Res), "p.pos = ", "p.set_pos(", ");")
+              else To_String (Res));
    end Emit_Parser;
 
    function Emit_Lexer (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
@@ -4203,6 +4299,8 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
          HBNF_Template.Put (V, "bit_init", (if Is_Hosted then "bit: 0, " else ""));
          HBNF_Template.Put (V, "ctx_init", (if Ctx_On then ", cx: Default::default()" else "")
                        & (if HBNF_Grammar.Uses_Frames then ", fs: Vec::new(), fb: 0" else ""));
+         HBNF_Template.Put (V, "switch_init",
+           (if HBNF_Grammar.Uses_Switch then ", g: 0, ev: Vec::new()" else ""));
          HBNF_Template.Put (V, "reset",
            (if Is_Hosted and then Hosted_Acts
             then "    BNF_WARNINGS.with(|w| w.borrow_mut().clear());" & LF else ""));

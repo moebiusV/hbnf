@@ -181,11 +181,33 @@ package HBNF_Grammar is
       B_Spaces,      --  %spaces n: exactly n spaces (n a number expression)
       B_Col,         --  %col j: j is the column the parser is at
       B_Num,         --  x %num j: j is the decimal number x matched
-      B_Guard);      --  the clause of a rule with numeric parameters applies: a test on the frame
+      B_Guard,       --  the clause of a rule with numeric parameters applies: a test on the frame
+      B_Switch);     --  `=> grammar(x)`: when the alternative has matched, x is the current grammar
+                     --  (Path = "tag": Ctx is a tag bound by %as, the text it kept names the grammar)
 
    --  True once a grammar has read `%as` or `%same`: a back-reference, which the
    --  C backend alone emits so far.
    function Uses_Backref return Boolean;
+
+   --  Switching grammars (`=> grammar(x)`): grammar 0 is the including
+   --  grammar, 1 .. Switch_Count the scopes in name order (Switch_Prefix is a
+   --  scope's mangled prefix, `x` for `include "f" as x`).  A rule belongs to
+   --  the grammar Grammar_Of gives (0: the including grammar's).  A target
+   --  is a scope some alternative switches to (any, when one switches to a
+   --  matched name): its white space and the token rules it defines under a
+   --  name the including grammar also has replace those while it is current.
+   function Uses_Switch return Boolean;
+   function Switch_Count return Natural;
+   function Switch_Prefix (K : Positive) return String;
+   function Switch_Dotted (K : Positive) return String;
+   function Switch_Index (Prefix : String) return Natural;
+   function Is_Switch_Target (K : Positive) return Boolean;
+   function Grammar_Of (Rule_Name : String) return Natural;
+
+   --  The text of generated code with every restore of the position, `Pat name;` (and
+   --  `Pat name.0;`), written as Open & name & Close: where the parser goes back, the
+   --  switches it passed are undone.
+   function Hook_Restores (S, Pat, Open, Close : String) return String;
 
    --  Rules with parameters that are numbers worked out while parsing (an
    --  indentation: `block(K in 0..)`).  Such a rule runs in a frame of numbers,
@@ -388,6 +410,11 @@ package HBNF_Grammar is
    --  overridden root is still the root; `name =/ alternatives` adds to
    --  it.  Text is one file; `include` lines are Parse_File's.  Called on
    --  its own, it finishes the schema as Parse_File does.
+   --  The white-space rule of grammar Gx ("" when it skips none), and whether Name is the
+   --  white-space rule of some grammar (False unless the parser switches).
+   function Switch_Ws (Rules : Rule_Vectors.Vector; Gx : Natural) return String;
+   function Is_Switch_Ws (Rules : Rule_Vectors.Vector; Name : String) return Boolean;
+
    function Is_Text_Rule
      (Rules : Rule_Vectors.Vector; Nm : String) return Boolean;
    --  A rule that is only text: literals, classes, groups, alternatives,

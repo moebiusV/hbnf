@@ -52,7 +52,10 @@ package body HBNF_Ada is
    begin
       for C of HBNF_Grammar.Prefixed (S) loop
          if C = '-' then
-            Append (Buf, '_');
+            --  `--` (a rule of a scope, `x--rule`) is one `_`: Ada has no `__`.
+            if Length (Buf) = 0 or else Ada.Strings.Unbounded.Element (Buf, Length (Buf)) /= '_' then
+               Append (Buf, '_');
+            end if;
          elsif First and then C in 'a' .. 'z' then
             Append (Buf, Character'Val (Character'Pos (C) - 32));
          else
@@ -1414,6 +1417,64 @@ package body HBNF_Ada is
       return To_String (Res);
    end Emit;
 
+   function Switch_Names return String is
+      R : Unbounded_String;
+   begin
+      for K in 1 .. HBNF_Grammar.Switch_Count loop
+         if HBNF_Grammar.Is_Switch_Target (K) then
+            if R /= Null_Unbounded_String then
+               Append (R, ", ");
+            end if;
+            Append (R, HBNF_Grammar.Switch_Dotted (K));
+         end if;
+      end loop;
+      return To_String (R);
+   end Switch_Names;
+
+   --  The journal of switches (`=> grammar(x)`) and what undoes them: a switch is an event at
+   --  the position where its alternative ended, and going back before it undoes it.
+   function Switch_Support return String is
+      R : Unbounded_String;
+   begin
+      if not HBNF_Grammar.Uses_Switch then
+         return "";
+      end if;
+      Append (R, LF
+        & "   type Event is record" & LF
+        & "      Pos : Natural;" & LF
+        & "      G   : Natural;" & LF
+        & "   end record;" & LF
+        & "   package Event_Vectors is new Ada.Containers.Vectors (Positive, Event);" & LF
+        & "   Events : Event_Vectors.Vector;" & LF & LF
+        & "   procedure Push_G (P : in out Parser; G : Natural) is" & LF
+        & "   begin" & LF
+        & "      Events.Set_Length (Ada.Containers.Count_Type (P.Nev));" & LF
+        & "      Events.Append (Event'(Pos => P.Pos, G => G));" & LF
+        & "      P.Nev := P.Nev + 1;" & LF
+        & "      P.G := G;" & LF
+        & "   end Push_G;" & LF & LF
+        & "   procedure Set_Pos (P : in out Parser; Pos : Natural) is" & LF
+        & "   begin" & LF
+        & "      P.Pos := Pos;" & LF
+        & "      if P.Nev > 0 and then Events (P.Nev).Pos > Pos then" & LF
+        & "         while P.Nev > 0 and then Events (P.Nev).Pos > Pos loop" & LF
+        & "            P.Nev := P.Nev - 1;" & LF
+        & "         end loop;" & LF
+        & "         P.G := (if P.Nev > 0 then Events (P.Nev).G else 0);" & LF
+        & "      end if;" & LF
+        & "   end Set_Pos;" & LF & LF
+        & "   function Grammar_Named (S : String) return Natural is" & LF
+        & "   begin" & LF);
+      for K in 1 .. HBNF_Grammar.Switch_Count loop
+         if HBNF_Grammar.Is_Switch_Target (K) then
+            Append (R, "      if S = """ & Ada_Escape (HBNF_Grammar.Switch_Dotted (K)) & """ then return "
+              & Img (K) & "; end if;" & LF);
+         end if;
+      end loop;
+      Append (R, "      return 0;" & LF & "   end Grammar_Named;" & LF);
+      return To_String (R);
+   end Switch_Support;
+
    function Emit_Parser
      (Rules : HBNF_Grammar.Rule_Vectors.Vector; Package_Name : String)
       return String
@@ -1890,6 +1951,19 @@ package body HBNF_Ada is
                           & Ada_Escape (To_String (E.Ctx)) & "`""); " & To_String (FA) & " end if;");
                         Append (Buf, LF);
                         Append (Buf, Ind & "P.Pos := P.Pos + " & Tag_Var ("Cl", E.Ctx) & ";");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Switch then
+                        if E.Path = Null_Unbounded_String then
+                           Append (Buf, Ind & "Push_G (P, "
+                             & Img (HBNF_Grammar.Switch_Index (To_String (E.Ctx))) & ");");
+                        else
+                           Append (Buf, Ind & "declare Gn : constant Natural := Grammar_Named (P.Text ("
+                             & Tag_Var ("Cp", E.Ctx) & " .. " & Tag_Var ("Cp", E.Ctx) & " + "
+                             & Tag_Var ("Cl", E.Ctx) & " - 1)); begin if Gn = 0 then P.Pos := "
+                             & Tag_Var ("Cp", E.Ctx) & "; Fail (P, ""a grammar: "
+                             & Ada_Escape (Switch_Names) & """); " & To_String (FA)
+                             & " else Push_G (P, Gn); end if; end;");
+                        end if;
                         Append (Buf, LF);
                      elsif E.Op = B_Guard then
                         --  the clause of a rule with numeric parameters applies
@@ -4013,6 +4087,8 @@ package body HBNF_Ada is
          HBNF_Template.Put (V, "pkg", Package_Name);
          HBNF_Template.Put (V, "nocase_with", Nocase_With);
          HBNF_Template.Put (V, "free_with", "with Ada.Unchecked_Deallocation;" & LF);
+         HBNF_Template.Put (V, "switch_with",
+           (if HBNF_Grammar.Uses_Switch then "with Ada.Containers.Vectors;" & LF else ""));
          HBNF_Template.Put (V, "hosted_with",
            To_String (Hosted_Withs)
            & (if Parents_On and then Length (Ast_Body) > 0
@@ -4112,7 +4188,8 @@ package body HBNF_Ada is
          for I in 1 .. N loop
             if Is_Char_Rule (Rules, To_String (Rules (I).Name))
               and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
-                        or else To_String (Rules (I).Name) = Ws_Name)
+                        or else To_String (Rules (I).Name) = Ws_Name
+                        or else HBNF_Grammar.Is_Switch_Ws (Rules, To_String (Rules (I).Name)))
             then
                Has_Char := True;
             end if;
@@ -4178,7 +4255,8 @@ package body HBNF_Ada is
       for I in 1 .. N loop
          if Is_Char_Rule (Rules, To_String (Rules (I).Name))
            and then (Is_Char_Token (Rules, To_String (Rules (I).Name))
-                     or else To_String (Rules (I).Name) = Ws_Name)
+                     or else To_String (Rules (I).Name) = Ws_Name
+                     or else HBNF_Grammar.Is_Switch_Ws (Rules, To_String (Rules (I).Name)))
          then
             declare
                NM  : constant String := To_String (Rules (I).Name);
@@ -4366,7 +4444,30 @@ package body HBNF_Ada is
               & "      end if;" & LF
               & "   end Expect_Lit_Nocase;" & LF & LF);
          end if;
-         if Ws_Name = "" then
+         if HBNF_Grammar.Uses_Switch then
+            Append (Skip_Body, "      N : Natural;" & LF & "   begin" & LF
+              & "      case P.G is" & LF);
+            for Gx in 1 .. HBNF_Grammar.Switch_Count + 1 loop
+               declare
+                  W : constant String :=
+                    HBNF_Grammar.Switch_Ws (Rules, (if Gx > HBNF_Grammar.Switch_Count then 0 else Gx));
+               begin
+                  Append (Skip_Body, "         when "
+                    & (if Gx > HBNF_Grammar.Switch_Count then "others" else Img (Gx)) & " =>" & LF);
+                  if W = "" then
+                     Append (Skip_Body, "            null;" & LF);
+                  else
+                     Append (Skip_Body, "            loop" & LF
+                       & "               N := Scan_" & Ada_Ident (W)
+                       & " (P.Text.all, P.Pos, Limit (P));" & LF
+                       & "               exit when N = 0;" & LF
+                       & "               P.Pos := P.Pos + N;" & LF
+                       & "            end loop;" & LF);
+                  end if;
+               end;
+            end loop;
+            Append (Skip_Body, "      end case;" & LF & "   end Skip_Ws;");
+         elsif Ws_Name = "" then
             Append (Skip_Body, "   begin" & LF & "      null;" & LF
               & "   end Skip_Ws;");
          else
@@ -4418,6 +4519,12 @@ package body HBNF_Ada is
               & "      Fb := Ob;" & LF
               & "   end Pop_Frame;" & LF
             else ""));
+         HBNF_Template.Put (V, "switch_fields",
+           (if HBNF_Grammar.Uses_Switch
+            then "      G   : Natural := 0;   --  the current grammar: 0 the including one, k the kth included" & LF
+                 & "      Nev : Natural := 0;   --  how many switches are in force, in Events" & LF
+            else ""));
+         HBNF_Template.Put (V, "switch_support", Switch_Support);
          HBNF_Template.Put (V, "parser_bit",
            (if Is_Hosted
             then "      Bit  : Natural := 0;   --  bits of the octet at Pos a bit rule has read" & LF
@@ -4505,7 +4612,20 @@ package body HBNF_Ada is
                Emit_Rule_Decl (I, Bdy);
                Append (Bdy, "   begin");
                Append (Bdy, LF);
-               Emit_Rule_Parser (I, Bdy);
+               declare
+                  Mark : constant Natural := Length (Bdy);
+               begin
+                  Emit_Rule_Parser (I, Bdy);
+                  if HBNF_Grammar.Uses_Switch then
+                     --  going back to a position undoes the switches after it
+                     declare
+                        Seg : constant String := Slice (Bdy, Mark + 1, Length (Bdy));
+                     begin
+                        Delete (Bdy, Mark + 1, Length (Bdy));
+                        Append (Bdy, HBNF_Grammar.Hook_Restores (Seg, "P.Pos := ", "Set_Pos (P, ", ");"));
+                     end;
+                  end if;
+               end;
                Append (Bdy, "   end Body_Of_" & Ada_Ident (NM) & ";");
                Append (Bdy, LF);
                Append (Bdy, LF);

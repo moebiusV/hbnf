@@ -1,0 +1,16 @@
+ok	x1 = 5;
+ok	EXEC select * from t END;
+ok	EXEC SELECT a,b FROM tbl WHERE a = 7 END;
+ok	EXEC select * from t where u=12 END;
+ok	EXEC delete from t END; y = 1;
+ok	x = 5;\n\nEXEC\nselect * from t\nEND;\n
+ok	EXEC DeLeTe FrOm t END;
+bad	EXEC select *\n from t END;
+bad	exec select * from t end;
+bad	EXEC select * from t end;
+bad	EXEC select from t END;
+bad	EXEC select * from t1 END;
+bad	EXEC select a , b from t END;
+bad	EXEC select * from t where a = b END;
+bad	EXEC x = 5 END;
+bad	SELECT * FROM t;

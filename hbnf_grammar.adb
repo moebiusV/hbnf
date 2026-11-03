@@ -249,6 +249,74 @@ package body HBNF_Grammar is
      (String, Ada.Strings.Hash, "=");
    Seen_Files : Path_Sets.Set;
 
+   --  `include "file" as x`: the file's rules live in the scope `x`, a rule
+   --  `statement` of it being the rule `x--statement` for everything after
+   --  the lexer (the name is a legal identifier in every backend, and Spelled
+   --  gives `x.statement` back for a message).  A scope nests (`a--b`).
+   --  Scope_Stack is the scopes open while a file is read, outermost first;
+   --  Scope_Defs holds, for each scope that was ever open, the names its files
+   --  define (found before the files are read, so a name used before its
+   --  definition resolves too).
+   type Scope_Info is record
+      Prefix : Unbounded_String;   --  "a--b"
+   end record;
+   package Scope_Vectors is new Ada.Containers.Vectors (Positive, Scope_Info);
+   package Defs_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (String, Path_Sets.Set, Ada.Strings.Hash, "=", Path_Sets."=");
+   package Sorted_Names is new Ada.Containers.Indefinite_Ordered_Sets (String);
+   Scope_Stack   : Scope_Vectors.Vector;
+   Scope_Defs    : Defs_Maps.Map;
+   --  The scope the next Parse_File opens (set by the include line that names it).
+   Pending_Scope : Unbounded_String := Null_Unbounded_String;
+   --  Where each scoped rule is defined (file:line), for messages.
+   package Where_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (String, String, Ada.Strings.Hash, "=");
+   Rule_Where    : Where_Maps.Map;
+
+   Scope_Sep : constant String := "--";
+
+   --  `=> grammar(x)`: the scopes some alternative switches to by name
+   --  (Switch_Static), whether one switches to a scope named by matched text
+   --  (any scope then may be a target), and whether a switch is used at all.
+   Switch_Seen   : Boolean := False;
+   Tag_Switch    : Boolean := False;
+   Switch_Static : Path_Sets.Set;
+
+   function Name_Start_Char (C : Character) return Boolean is
+     (C in 'a' .. 'z' | 'A' .. 'Z' | '_');
+   function Name_Char_Ok (C : Character) return Boolean is
+     (Name_Start_Char (C) or else C in '0' .. '9' | '-');
+
+   function Scope_Prefix return String is
+     (if Scope_Stack.Is_Empty then ""
+      else To_String (Scope_Stack.Last_Element.Prefix));
+
+   function Child_Prefix (Scope : String) return String is
+     (if Scope = "" then Scope_Prefix
+      elsif Scope_Prefix = "" then Scope
+      else Scope_Prefix & Scope_Sep & Scope);
+
+   --  A file is read once per scope it is included in.
+   function Seen_Key (Resolved_Path, Prefix : String) return String is
+     (if Prefix = "" then Resolved_Path else Resolved_Path & "|" & Prefix);
+
+   --  `a--b` as the author writes it: `a.b`.
+   function Dotted (Mangled : String) return String is
+      R : Unbounded_String;
+      I : Natural := Mangled'First;
+   begin
+      while I <= Mangled'Last loop
+         if I < Mangled'Last and then Mangled (I .. I + 1) = Scope_Sep then
+            Append (R, '.');
+            I := I + 2;
+         else
+            Append (R, Mangled (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return To_String (R);
+   end Dotted;
+
    --  Each whole-parser directive set so far (`layout_ops init` for one list
    --  operation), with its value and where it was set.
    type Setting is record
@@ -685,6 +753,13 @@ package body HBNF_Grammar is
       Pending_Actions.Clear;
       Settings.Clear;
       Seen_Files.Clear;
+      Scope_Stack.Clear;
+      Scope_Defs.Clear;
+      Switch_Seen := False;
+      Tag_Switch := False;
+      Switch_Static.Clear;
+      Rule_Where.Clear;
+      Pending_Scope := Null_Unbounded_String;
       Current_File := Null_Unbounded_String;
       First_Rule_Line := 0;
       Prose_Sites.Clear;
@@ -724,7 +799,7 @@ package body HBNF_Grammar is
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
                      T_Prose, T_Tilde, T_At, T_Colon, T_Octets, T_Count, T_Bits,
-                     T_Guard, T_Hash, T_Meta, T_EOF);
+                     T_Guard, T_Hash, T_Meta, T_Arrow, T_EOF);
 
    type Token is record
       Kind : Tok_Kind;
@@ -1515,6 +1590,9 @@ package body HBNF_Grammar is
                --  `=/` adds alternatives to a rule (RFC 5234 §3.3).
                if I < Text'Last and then Text (I + 1) = '/' then
                   Emit (T_Eq_Slash);  I := I + 2;  Col := Col + 2;
+               elsif I < Text'Last and then Text (I + 1) = '>' then
+                  --  `=>`: what happens because the alternative matched.
+                  Emit (T_Arrow);  I := I + 2;  Col := Col + 2;
                else
                   Emit (T_Eq, (if Legacy_Ops then "" else "="));
                   I := I + 1;  Col := Col + 1;
@@ -2147,7 +2225,16 @@ package body HBNF_Grammar is
                   declare
                      Start : constant Positive := I;
                   begin
-                     while I <= Text'Last and then Name_Char (Text (I)) loop
+                     --  `scope.rule`, and `a.b.rule`: a dot between names is
+                     --  the scope operator (Scoped reads it), never a part of
+                     --  a name.  EBNF ends a rule with `.`, so it has none.
+                     loop
+                        while I <= Text'Last and then Name_Char (Text (I)) loop
+                           I := I + 1;
+                        end loop;
+                        exit when Ebnf_Here or else I >= Text'Last
+                          or else Text (I) /= '.'
+                          or else not Name_Start (Text (I + 1));
                         I := I + 1;
                      end loop;
                      --  `name(args)` with the parenthesis against the name is a
@@ -3255,7 +3342,7 @@ package body HBNF_Grammar is
       function Ends_Pattern (K : Positive) return Boolean is
         (P.Toks (K).Kind in
            T_Newline | T_RParen | T_RBrack | T_Bar | T_Slash | T_Comment
-           | T_Code | T_EOF
+           | T_Code | T_Arrow | T_EOF
          or else (P.Toks (K).Kind = T_Pct
                   and then To_String (P.Toks (K).Text)
                            in "scan" | "action" | "emit" | "label"));
@@ -3329,6 +3416,112 @@ package body HBNF_Grammar is
       return V;
    end Parse_Pattern;
 
+   --  The grammars (scopes) an `include "f" as x` has made, as the author
+   --  writes them, for a message.
+   function Known_Scopes return String is
+      Known : Sorted_Names.Set;
+      List  : Unbounded_String;
+   begin
+      for C in Scope_Defs.Iterate loop
+         Known.Include (Dotted (Defs_Maps.Key (C)));
+      end loop;
+      for S of Known loop
+         if List /= Null_Unbounded_String then
+            Append (List, ", ");
+         end if;
+         Append (List, S);
+      end loop;
+      return To_String (List);
+   end Known_Scopes;
+
+   --  `=> grammar(NAME)` at the end of an alternative whose pattern is B: the
+   --  switch is a zero-width element after the pattern.  NAME is a scope
+   --  (`include "f" as NAME`) or a tag the pattern bound with `%as`.
+   procedure Append_Switch (P : in out Parser; B : in out Element_Vectors.Vector) is
+      T : constant Token := Cur (P);
+      Where : constant String := Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": ";
+   begin
+      Next (P);
+      if not Scope_Stack.Is_Empty then
+         Fail (Where & "`=> grammar(...)` is written in the grammar that includes the "
+               & "others, not yet inside one included `as` a scope (`"
+               & Dotted (Scope_Prefix) & "`)");
+      end if;
+      declare
+         C   : constant Token := Cur (P);
+         Txt : constant String := To_String (C.Text);
+      begin
+         if C.Kind /= T_Name or else Txt'Length < 10
+           or else Txt (Txt'First .. Txt'First + 7) /= "grammar("
+           or else Txt (Txt'Last) /= ')'
+         then
+            Fail (Where & "`=>` takes `grammar(name)` in this version: it makes the "
+                  & "grammar the name gives the current one.  The other "
+                  & "consequences of a match (a value, a fact) are not built yet");
+         end if;
+         Next (P);
+         declare
+            Arg : constant String := Txt (Txt'First + 8 .. Txt'Last - 1);
+            Tag : Boolean := False;
+            Pre : Unbounded_String;
+         begin
+            if Arg = "" or else not (for all Ch of Arg =>
+                 Ch in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.')
+            then
+               Fail (Where & "`grammar(" & Arg & ")` takes a name: a grammar "
+                     & "included `as name`, or a tag bound earlier in the alternative "
+                     & "by `word %as tag`");
+            end if;
+            for E of B loop
+               if E.Kind = Block and then E.Op = B_As and then To_String (E.Ctx) = Arg then
+                  Tag := True;
+               end if;
+            end loop;
+            Switch_Seen := True;
+            if Tag then
+               Tag_Switch := True;
+               Pre := To_Unbounded_String (Arg);
+            else
+               declare
+                  Path : Unbounded_String;
+               begin
+                  for Ch of Arg loop
+                     if Ch = '.' then
+                        Append (Path, Scope_Sep);
+                     else
+                        Append (Path, Ch);
+                     end if;
+                  end loop;
+                  declare
+                     Cand : constant String :=
+                       (if Scope_Stack.Is_Empty then To_String (Path)
+                        else To_String (Scope_Stack.Last_Element.Prefix) & Scope_Sep
+                             & To_String (Path));
+                  begin
+                     if not Scope_Defs.Contains (Cand) then
+                        Fail (Where & "`grammar(" & Arg & ")`: no grammar is included "
+                              & "`as " & Arg & "`, and no earlier `%as " & Arg
+                              & "` in this alternative names a tag; "
+                              & (if Known_Scopes = ""
+                                 then "no grammar is included `as` anything here"
+                                 else "the grammars included `as` here are: "
+                                      & Known_Scopes));
+                     end if;
+                     Pre := To_Unbounded_String (Cand);
+                     Switch_Static.Include (Cand);
+                  end;
+               end;
+            end if;
+            B.Append
+              (new Element'(Kind => Block, Min => 1, Max => 1,
+                            Op => B_Switch, Ctx => Pre,
+                            Path => (if Tag then To_Unbounded_String ("tag")
+                                     else Null_Unbounded_String),
+                            Id => 0, Look => <>, Code => Null_Unbounded_String));
+         end;
+      end;
+   end Append_Switch;
+
    --  An alternation: concatenation *( "|" concatenation ), flattened
    --  with Alt separator elements, used for a group/bracket's inside and a
    --  rule's whole RHS; the caller checks the terminating token.
@@ -3338,8 +3531,11 @@ package body HBNF_Grammar is
 
       --  One alternative, and its `%label name` if it has one.
       function Branch return Element_Vectors.Vector is
-         B : constant Element_Vectors.Vector := Parse_Pattern (P);
+         B : Element_Vectors.Vector := Parse_Pattern (P);
       begin
+         if Cur (P).Kind = T_Arrow then
+            Append_Switch (P, B);
+         end if;
          if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "label"
          then
             declare
@@ -7570,8 +7766,665 @@ package body HBNF_Grammar is
       end;
    end Extend;
 
+   --  The rules a file defines (names without parameters), from its tokens: a
+   --  name that starts a rule and is followed by `=`, `:=` or `=/`.
+   function Token_Defs (Toks : Token_Vectors.Vector) return Path_Sets.Set is
+      R : Path_Sets.Set;
+      N : constant Natural := Natural (Toks.Length);
+   begin
+      for K in 1 .. N - 1 loop
+         if Toks (K).Kind = T_Name
+           and then (Toks (K + 1).Kind in T_Eq | T_Eq_Slash
+                     or else (Toks (K + 1).Kind = T_Name
+                              and then To_String (Toks (K + 1).Text) = "::"))
+           and then (K = 1
+                     or else Toks (K - 1).Kind in T_Newline | T_Comment | T_Code
+                     or else (Toks (K - 1).Kind = T_Name
+                              and then To_String (Toks (K - 1).Text) = "hidden"))
+         then
+            declare
+               T    : constant String := To_String (Toks (K).Text);
+               Stop : Natural := T'First;
+            begin
+               while Stop <= T'Last and then T (Stop) /= '(' loop
+                  Stop := Stop + 1;
+               end loop;
+               if not (for some C of T (T'First .. Stop - 1) => C = '.') then
+                  R.Include (T (T'First .. Stop - 1));
+               end if;
+            end;
+         end if;
+      end loop;
+      return R;
+   end Token_Defs;
+
+   --  The names in Toks that mean a rule of a scope, made what the rest of the
+   --  generator reads: in a file read under `include "f" as x`, a name that
+   --  the scope defines (or that an enclosing scope does, the innermost first)
+   --  becomes `x--name`, and any other name stays, so it is the including
+   --  grammar's.  `x.name` and `a.b.name`, written anywhere, are the rule
+   --  `name` of that scope, which must exist.
+   function Scoped (In_Toks : Token_Vectors.Vector) return Token_Vectors.Vector is
+      Toks : Token_Vectors.Vector := In_Toks;
+      N    : constant Natural := Natural (Toks.Length);
+
+      Any : Boolean := not Scope_Stack.Is_Empty;
+
+      procedure Note_Spelling (Mangled, Prefix, Base : String) is
+      begin
+         if not Bnf_Spellings.Contains (Mangled) then
+            Bnf_Spellings.Insert
+              (Mangled,
+               Dotted (Prefix) & "."
+               & (if Bnf_Spellings.Contains (Base) then Bnf_Spellings.Element (Base)
+                  else Base));
+         end if;
+      end Note_Spelling;
+
+      --  Where the scope named by the segments (outermost first) is, among
+      --  the scopes the open file includes (a file sees no scope of the grammar
+      --  that includes it): its mangled prefix, "" if there is none.
+      function Find_Scope (Path : String) return String is
+         C : constant String :=
+           (if Scope_Stack.Is_Empty then Path
+            else To_String (Scope_Stack.Last_Element.Prefix) & Scope_Sep & Path);
+      begin
+         return (if Scope_Defs.Contains (C) then C else "");
+      end Find_Scope;
+
+      function Split_Call (T : String) return Natural is
+         --  The index of the `(` that starts a call's arguments, T'Last + 1 if none.
+      begin
+         for I in T'Range loop
+            if T (I) = '(' then
+               return I;
+            end if;
+         end loop;
+         return T'Last + 1;
+      end Split_Call;
+   begin
+      if not Any then
+         Any := (for some T of Toks => T.Kind = T_Name
+                   and then (for some C of To_String (T.Text) => C = '.'));
+         if not Any then
+            return In_Toks;
+         end if;
+      end if;
+      for K in 1 .. N loop
+         declare
+            T     : constant Token := Toks (K);
+            Text  : constant String := To_String (T.Text);
+            Stop  : constant Natural := Split_Call (Text);
+            Head  : constant String := Text (Text'First .. Stop - 1);
+            Rest  : constant String := Text (Stop .. Text'Last);
+            Is_Head : constant Boolean :=
+              T.Kind = T_Name and then K < N
+              and then (Toks (K + 1).Kind in T_Eq | T_Eq_Slash)
+              and then (K = 1 or else Toks (K - 1).Kind in T_Newline | T_Comment | T_Code
+                        or else (Toks (K - 1).Kind = T_Name
+                                 and then To_String (Toks (K - 1).Text) = "hidden"));
+            --  Names that are not rules: after a `%` word (`%as tag`, `?
+            --  types`), after `context`, the pieces of `%bind ctx += path`, and
+            --  a width's field (`len:8`).
+            Not_A_Rule : constant Boolean :=
+              (K > 1 and then
+                (Toks (K - 1).Kind = T_Pct
+                 or else (Toks (K - 1).Kind = T_Name
+                          and then To_String (Toks (K - 1).Text) = "context")
+                 or else (K > 2 and then Toks (K - 2).Kind = T_Pct
+                          and then To_String (Toks (K - 2).Text) = "bind"
+                          and then Toks (K - 1).Kind = T_Name)))
+              or else (K < N and then Toks (K + 1).Kind = T_Colon
+                       and then Toks (K + 1).Line = T.Line
+                       and then Toks (K + 1).Col = T.Col + Length (T.Text));
+         begin
+            if T.Kind = T_Name and then not Not_A_Rule then
+               if (for some C of Head => C = '.') then
+                  --  scope.rule
+                  if Is_Head then
+                     Fail (Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                       & ": `" & Head & "`: a rule's name has no dot; a dot "
+                       & "means a scope, `x.rule` being the rule `rule` of the "
+                       & "grammar included `as x`.  To have a dot in a name, "
+                       & "write the name in angle brackets: `<" & Head & ">`");
+                  end if;
+                  declare
+                     Last_Dot : Natural := Head'Last;
+                     Scope_Path, Mangled_Path : Unbounded_String;
+                  begin
+                     while Head (Last_Dot) /= '.' loop
+                        Last_Dot := Last_Dot - 1;
+                     end loop;
+                     for I in Head'First .. Last_Dot - 1 loop
+                        if Head (I) = '.' then
+                           Append (Mangled_Path, Scope_Sep);
+                        else
+                           Append (Mangled_Path, Head (I));
+                        end if;
+                     end loop;
+                     Scope_Path := Mangled_Path;
+                     declare
+                        Base  : constant String := Head (Last_Dot + 1 .. Head'Last);
+                        Where : constant String :=
+                          Find_Scope (To_String (Scope_Path));
+                        Shown : constant String :=
+                          Head (Head'First .. Last_Dot - 1);
+                     begin
+                        if Where = "" then
+                           declare
+                              Known : Sorted_Names.Set;
+                              List  : Unbounded_String;
+                           begin
+                              for C in Scope_Defs.Iterate loop
+                                 Known.Include (Dotted (Defs_Maps.Key (C)));
+                              end loop;
+                              for S of Known loop
+                                 if List /= Null_Unbounded_String then
+                                    Append (List, ", ");
+                                 end if;
+                                 Append (List, S);
+                              end loop;
+                              Fail (Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                                & ": `" & Head & "`: no grammar is included "
+                                & "`as " & Shown & "` (a rule of an included "
+                                & "grammar is written `scope.rule`, the scope "
+                                & "being the name after `as` in `include ""file"" "
+                                & "as scope`); "
+                                & (if Known.Is_Empty
+                                   then "no grammar is included `as` anything here"
+                                   else "the grammars included `as` here are: "
+                                        & To_String (List)));
+                           end;
+                        end if;
+                        if not Scope_Defs.Element (Where).Contains (Base) then
+                           declare
+                              Known : Sorted_Names.Set;
+                              List  : Unbounded_String;
+                           begin
+                              for D of Scope_Defs.Element (Where) loop
+                                 Known.Include (D);
+                              end loop;
+                              for S of Known loop
+                                 if List /= Null_Unbounded_String then
+                                    Append (List, ", ");
+                                 end if;
+                                 Append (List, S);
+                              end loop;
+                              Fail (Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                                & ": `" & Head & "`: the grammar `"
+                                & Dotted (Where) & "` defines no rule `" & Base
+                                & "`; it defines: "
+                                & (if Known.Is_Empty then "(no rules)"
+                                   else To_String (List)));
+                           end;
+                        end if;
+                        Note_Spelling (Where & Scope_Sep & Base, Where, Base);
+                        Toks.Replace_Element
+                          (K, Token'(T.Kind, T.Line, T.Col,
+                                     To_Unbounded_String
+                                       (Where & Scope_Sep & Base & Rest)));
+                     end;
+                  end;
+               else
+                  for I in Natural'Max (1, Natural (Scope_Stack.Length)) .. Natural (Scope_Stack.Length) loop
+                     declare
+                        Pre : constant String := To_String (Scope_Stack (I).Prefix);
+                     begin
+                        if Scope_Defs.Contains (Pre)
+                          and then Scope_Defs.Element (Pre).Contains (Head)
+                        then
+                           Note_Spelling (Pre & Scope_Sep & Head, Pre, Head);
+                           if Is_Head and then not Rule_Where.Contains (Pre & Scope_Sep & Head) then
+                              Rule_Where.Insert
+                                (Pre & Scope_Sep & Head,
+                                 To_String (Current_File) & ":" & Img (T.Line));
+                           end if;
+                           Toks.Replace_Element
+                             (K, Token'(T.Kind, T.Line, T.Col,
+                                        To_Unbounded_String
+                                          (Pre & Scope_Sep & Head & Rest)));
+                           exit;
+                        end if;
+                     end;
+                  end loop;
+               end if;
+            elsif T.Kind = T_Prose and then not Scope_Stack.Is_Empty
+              and then Plain_Words (Text) and then Prose_Id (Text) /= ""
+            then
+               --  `<select>`, a reference in BNF: the same name as `select`.
+               declare
+                  Id : constant String := Prose_Id (Text);
+               begin
+                  for I in Natural'Max (1, Natural (Scope_Stack.Length)) .. Natural (Scope_Stack.Length) loop
+                     declare
+                        Pre : constant String := To_String (Scope_Stack (I).Prefix);
+                     begin
+                        if Scope_Defs.Contains (Pre)
+                          and then Scope_Defs.Element (Pre).Contains (Id)
+                        then
+                           Note_Spelling (Pre & Scope_Sep & Id, Pre, Id);
+                           Toks.Replace_Element
+                             (K, Token'(T.Kind, T.Line, T.Col,
+                                        To_Unbounded_String (Pre & Scope_Sep & Id)));
+                           exit;
+                        end if;
+                     end;
+                  end loop;
+               end;
+            end if;
+         end;
+      end loop;
+      return Toks;
+   end Scoped;
+
+   --  A rule of a scope sees the rules of its own file and of the files that
+   --  file includes (all in the scope), the scopes below it by `x.rule`, and
+   --  the built-in names: nothing of the grammar that includes it.  Scoped
+   --  turned the names it could find into the scope's; a name left plain in
+   --  such a rule is defined nowhere the rule can see.
+   procedure Check_Scope_Names (Rules : Rule_Vectors.Vector) is
+
+      function Scope_Of (Name : String) return String is
+         Best : Unbounded_String;
+      begin
+         for C in Scope_Defs.Iterate loop
+            declare
+               K : constant String := Defs_Maps.Key (C);
+            begin
+               if Name'Length > K'Length + Scope_Sep'Length
+                 and then Name (Name'First .. Name'First + K'Length - 1) = K
+                 and then Name (Name'First + K'Length ..
+                                Name'First + K'Length + Scope_Sep'Length - 1) = Scope_Sep
+                 and then Length (Best) < K'Length
+               then
+                  Best := To_Unbounded_String (K);
+               end if;
+            end;
+         end loop;
+         return To_String (Best);
+      end Scope_Of;
+
+      procedure Check (Owner, Scope : String; V : Element_Vectors.Vector);
+
+      procedure Check_Name (Owner, Scope, Nm : String) is
+         Stop : Natural := Nm'First;
+      begin
+         while Stop <= Nm'Last and then Nm (Stop) /= '(' loop
+            Stop := Stop + 1;
+         end loop;
+         declare
+            B : constant String := Nm (Nm'First .. Stop - 1);
+         begin
+            if B = "" or else B (B'First) = '<' or else Is_Core_Name (B)
+              or else B = "ws" or else Scope_Of (B) /= ""
+            then
+               return;
+            end if;
+            Fail ((if Rule_Where.Contains (Owner) then Rule_Where.Element (Owner) & ": " else "")
+                  & "rule `" & B & "` is not defined in grammar `" & Dotted (Scope)
+                  & "` (it is used by `" & Spelled (Owner) & "`).  A grammar sees "
+                  & "only its own rules, those of the files it includes, and the "
+                  & "built-in names, never the including grammar's: `include` the file "
+                  & "that defines `" & B & "` in the file of `" & Dotted (Scope) & "`");
+         end;
+      end Check_Name;
+
+      procedure Check (Owner, Scope : String; V : Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            case E.Kind is
+               when Name =>
+                  Check_Name (Owner, Scope, To_String (E.Name));
+               when Group =>
+                  Check (Owner, Scope, E.Items);
+               when Block =>
+                  Check (Owner, Scope, E.Look);
+               when Bit_Field =>
+                  if E.F_Ref /= Null_Unbounded_String then
+                     Check_Name (Owner, Scope, To_String (E.F_Ref));
+                  end if;
+                  Check (Owner, Scope, E.F_Alts);
+               when others =>
+                  null;
+            end case;
+         end loop;
+      end Check;
+   begin
+      if Scope_Defs.Is_Empty then
+         return;
+      end if;
+      for R of Rules loop
+         declare
+            Nm : constant String := To_String (R.Name);
+            Sc : constant String := Scope_Of (Nm);
+         begin
+            if Sc /= "" then
+               Check (Nm, Sc, R.Pattern);
+            end if;
+         end;
+      end loop;
+   end Check_Scope_Names;
+
+  
+
+   --  The grammars of a parser that switches: 0 is the including grammar, 1 ..
+   --  Switch_Count the scopes (`include "f" as x`) in name order.
+   function Uses_Switch return Boolean is (Switch_Seen);
+
+   function Scope_Keys return Sorted_Names.Set is
+      R : Sorted_Names.Set;
+   begin
+      for C in Scope_Defs.Iterate loop
+         R.Include (Defs_Maps.Key (C));
+      end loop;
+      return R;
+   end Scope_Keys;
+
+   function Switch_Count return Natural is (Natural (Scope_Keys.Length));
+
+   function Switch_Prefix (K : Positive) return String is
+      N : Natural := 0;
+   begin
+      for S of Scope_Keys loop
+         N := N + 1;
+         if N = K then
+            return S;
+         end if;
+      end loop;
+      return "";
+   end Switch_Prefix;
+
+   function Switch_Dotted (K : Positive) return String is (Dotted (Switch_Prefix (K)));
+
+   function Switch_Index (Prefix : String) return Natural is
+      N : Natural := 0;
+   begin
+      for S of Scope_Keys loop
+         N := N + 1;
+         if S = Prefix then
+            return N;
+         end if;
+      end loop;
+      return 0;
+   end Switch_Index;
+
+   function Is_Switch_Target (K : Positive) return Boolean is
+     (Switch_Seen and then (Tag_Switch or else Switch_Static.Contains (Switch_Prefix (K))));
+
+   function Grammar_Of (Rule_Name : String) return Natural is
+      Best : Natural := 0;
+      Len  : Natural := 0;
+      N    : Natural := 0;
+   begin
+      for S of Scope_Keys loop
+         N := N + 1;
+         if Rule_Name'Length > S'Length + Scope_Sep'Length
+           and then Rule_Name (Rule_Name'First .. Rule_Name'First + S'Length - 1) = S
+           and then Rule_Name (Rule_Name'First + S'Length
+                               .. Rule_Name'First + S'Length + Scope_Sep'Length - 1) = Scope_Sep
+           and then S'Length > Len
+         then
+            Best := N;
+            Len := S'Length;
+         end if;
+      end loop;
+      return Best;
+   end Grammar_Of;
+
+   function Ws_Of (Rules : Rule_Vectors.Vector; K : Natural) return String is
+   begin
+      for R of Rules loop
+         if Grammar_Of (To_String (R.Name)) = K and then R.Whitespace /= Null_Unbounded_String then
+            return To_String (R.Whitespace);
+         end if;
+      end loop;
+      return "";
+   end Ws_Of;
+
+   function Switch_Ws (Rules : Rule_Vectors.Vector; Gx : Natural) return String is (Ws_Of (Rules, Gx));
+
+   function Is_Switch_Ws (Rules : Rule_Vectors.Vector; Name : String) return Boolean is
+   begin
+      if not Switch_Seen then
+         return False;
+      end if;
+      for R of Rules loop
+         if R.Whitespace /= Null_Unbounded_String and then To_String (R.Whitespace) = Name then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Switch_Ws;
+
+   function Hook_Restores (S, Pat, Open, Close : String) return String is
+      R : Unbounded_String;
+      I : Natural := S'First;
+      function Is_Id (C : Character) return Boolean is
+        (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_');
+   begin
+      while I <= S'Last loop
+         if I + Pat'Length <= S'Last and then S (I .. I + Pat'Length - 1) = Pat
+           and then (I = S'First or else not Is_Id (S (I - 1)))
+         then
+            declare
+               J : Natural := I + Pat'Length;
+            begin
+               while J <= S'Last and then Is_Id (S (J)) loop
+                  J := J + 1;
+               end loop;
+               if J < S'Last and then S (J) = '.' and then Is_Id (S (J + 1)) then
+                  J := J + 1;
+                  while J <= S'Last and then Is_Id (S (J)) loop
+                     J := J + 1;
+                  end loop;
+               end if;
+               if J > I + Pat'Length and then J <= S'Last and then S (J) = ';'
+                 and then S (I + Pat'Length) not in '0' .. '9'
+               then
+                  Append (R, Open & S (I + Pat'Length .. J - 1) & Close);
+                  I := J + 1;
+               else
+                  Append (R, S (I));
+                  I := I + 1;
+               end if;
+            end;
+         else
+            Append (R, S (I));
+            I := I + 1;
+         end if;
+      end loop;
+      return To_String (R);
+   end Hook_Restores;
+
+   --  A rule that stands for one scalar: `name = word`, `number = int`.
+   function Scalar_Alias (Rules : Rule_Vectors.Vector; Nm : String) return String is
+      J : constant Natural := Index_Of (Rules, Nm);
+   begin
+      if J = 0 then
+         return "";
+      end if;
+      declare
+         P : constant Element_Vectors.Vector := Rules (J).Pattern;
+      begin
+         if Natural (P.Length) = 1 and then P.First_Element.Kind = Name
+           and then P.First_Element.Min = 1 and then P.First_Element.Max = 1
+           and then Is_Core_Name (To_String (P.First_Element.Name))
+         then
+            return To_String (P.First_Element.Name);
+         end if;
+      end;
+      return "";
+   end Scalar_Alias;
+
+   --  A switch target is a dialect of the including grammar: while it is current, its
+   --  white space replaces the including grammar's.  This version replaces nothing else: a
+   --  rule it defines under the name of one the including grammar has is refused (token
+   --  rules are the next step, phrase rules need a typed variant), and so is a reference to
+   --  one of its rules from the including grammar when the white space differs (its rules
+   --  skip with their own, the current grammar's would be wrong for them).  A switch
+   --  alternative must consume text, or going back could not tell it from not having been.
+   procedure Check_Switch_Targets (Rules : Rule_Vectors.Vector) is
+      Ws : Unbounded_String;
+
+      --  The same text of a rule, the scope's prefix aside: a file a scope includes (ascii.hbnf)
+      --  is read for the scope as it is for the including grammar, and is no override.
+      function Same_Els (A, B : Element_Vectors.Vector; Pre : String) return Boolean is
+      begin
+         if Natural (A.Length) /= Natural (B.Length) then
+            return False;
+         end if;
+         for I in 1 .. Natural (A.Length) loop
+            declare
+               X : constant Element_Access := A (I);
+               Y : constant Element_Access := B (I);
+            begin
+               if X.Kind /= Y.Kind or else X.Min /= Y.Min or else X.Max /= Y.Max then
+                  return False;
+               end if;
+               case X.Kind is
+                  when Literal =>
+                     if X.Lit /= Y.Lit or else X.No_Case /= Y.No_Case then
+                        return False;
+                     end if;
+                  when Name =>
+                     declare
+                        NB : constant String := To_String (Y.Name);
+                     begin
+                        if X.Args /= Y.Args
+                          or else To_String (X.Name) /=
+                            (if NB'Length > Pre'Length + Scope_Sep'Length
+                               and then NB (NB'First .. NB'First + Pre'Length + Scope_Sep'Length - 1)
+                                        = Pre & Scope_Sep
+                             then NB (NB'First + Pre'Length + Scope_Sep'Length .. NB'Last) else NB)
+                        then
+                           return False;
+                        end if;
+                     end;
+                  when Group =>
+                     if not Same_Els (X.Items, Y.Items, Pre) then
+                        return False;
+                     end if;
+                  when Negation =>
+                     if not Same_Els (X.Operand, Y.Operand, Pre) then
+                        return False;
+                     end if;
+                  when Char_Range =>
+                     if X.Lo /= Y.Lo or else X.Hi /= Y.Hi then
+                        return False;
+                     end if;
+                  when Alt =>
+                     if X.Union /= Y.Union then
+                        return False;
+                     end if;
+                  when others =>
+                     return False;
+               end case;
+            end;
+         end loop;
+         return True;
+      end Same_Els;
+
+      Nullable : constant HBNF_Lookahead.Flags := HBNF_Lookahead.Nullable_Set (Rules);
+
+      procedure Walk (Owner : String; V : Element_Vectors.Vector) is
+         First : Positive := 1;
+      begin
+         for K in 1 .. Natural (V.Length) loop
+            declare
+               E : constant Element_Access := V (K);
+            begin
+               case E.Kind is
+                  when Alt =>
+                     First := K + 1;
+                  when Group =>
+                     Walk (Owner, E.Items);
+                  when Block =>
+                     if E.Op = B_Switch
+                       and then HBNF_Lookahead.Seq_Nullable (Rules, Nullable, V, First, K - 1)
+                     then
+                        Fail ("an alternative of `" & Spelled (Owner) & "` switches grammar "
+                              & "(`=> grammar(" & (if E.Path = Null_Unbounded_String
+                                                   then Dotted (To_String (E.Ctx))
+                                                   else To_String (E.Ctx)) & ")`) but can "
+                              & "match no text: the switch has to follow something it "
+                              & "consumes, or a guess given back could not undo it");
+                     end if;
+                  when others =>
+                     null;
+               end case;
+            end;
+         end loop;
+      end Walk;
+
+      procedure Refer (Owner : String; V : Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            case E.Kind is
+               when Name =>
+                  declare
+                     N : constant String := To_String (E.Name);
+                     K : constant Natural := Grammar_Of (N);
+                  begin
+                     if K /= 0 and then Is_Switch_Target (K)
+                       and then Ws_Of (Rules, K) /= To_String (Ws)
+                     then
+                        Fail ("`" & Spelled (Owner) & "` refers to `" & Spelled (N) & "`, a rule of "
+                              & "the grammar `" & Dotted (Switch_Prefix (K)) & "`, which the parser "
+                              & "switches to and which skips white space differently: its rules "
+                              & "are reached by the switch, not by `" & Dotted (Switch_Prefix (K))
+                              & ".rule` (that is not built for a grammar with its own white space)");
+                     end if;
+                  end;
+               when Group =>
+                  Refer (Owner, E.Items);
+               when others =>
+                  null;
+            end case;
+         end loop;
+      end Refer;
+   begin
+      if not Switch_Seen then
+         return;
+      end if;
+      for R of Rules loop
+         if Grammar_Of (To_String (R.Name)) = 0 and then R.Whitespace /= Null_Unbounded_String then
+            Ws := R.Whitespace;
+            exit;
+         end if;
+      end loop;
+      for R of Rules loop
+         declare
+            Full : constant String := To_String (R.Name);
+            K    : constant Natural := Grammar_Of (Full);
+         begin
+            Walk (Full, R.Pattern);
+            if K = 0 then
+               Refer (Full, R.Pattern);
+            elsif Is_Switch_Target (K) then
+               declare
+                  Pre  : constant String := Switch_Prefix (K);
+                  Base : constant String := Full (Full'First + Pre'Length + Scope_Sep'Length .. Full'Last);
+               begin
+                  if Index_Of (Rules, Base) /= 0 and then Base /= To_String (Ws)
+                    and then not Is_Core_Name (Base)
+                    and then not (Rules (Index_Of (Rules, Base)).Jet_Code = R.Jet_Code
+                                  and then Same_Els (Rules (Index_Of (Rules, Base)).Pattern,
+                                                     R.Pattern, Pre))
+                  then
+                     Fail ("`" & Dotted (Full) & "` is defined, and the including grammar has a "
+                           & "rule `" & Base & "` too: while `" & Dotted (Pre) & "` is current "
+                           & "it would replace it.  A grammar a parser switches to replaces "
+                           & "white space only so far (token rules are the next step, phrase "
+                           & "rules need a typed variant): rename `" & Dotted (Full) & "`");
+                  end if;
+               end;
+            end if;
+         end;
+      end loop;
+   end Check_Switch_Targets;
+
    function Parse (Text : String) return Rule_Vectors.Vector is
-      P     : Parser := (Toks => Lex (Text), Pos => 1);
+      P     : Parser := (Toks => Scoped (Lex (Text)), Pos => 1);
       Rules : Rule_Vectors.Vector;
       Index : Index_Maps.Map;
       Name  : Unbounded_String;
@@ -8634,6 +9487,65 @@ package body HBNF_Grammar is
          end;
       end Include_Target;
 
+      --  `include "path" as NAME`: NAME, the scope the file's rules are in;
+      --  "" for a plain `include "path"`.
+      function Include_Scope (Line : String; Line_No : Positive) return String is
+         I : Natural := Line'First;
+      begin
+         while I <= Line'Last and then Line (I) /= '"' loop
+            I := I + 1;
+         end loop;
+         I := I + 1;
+         while I <= Line'Last and then Line (I) /= '"' loop
+            I := I + 1;
+         end loop;
+         I := I + 1;
+         while I <= Line'Last and then Line (I) in ' ' | ASCII.HT loop
+            I := I + 1;
+         end loop;
+         if I + 1 > Line'Last or else Line (I .. I + 1) /= "as"
+           or else (I + 2 <= Line'Last and then Line (I + 2) not in ' ' | ASCII.HT)
+         then
+            return "";
+         end if;
+         I := I + 2;
+         while I <= Line'Last and then Line (I) in ' ' | ASCII.HT loop
+            I := I + 1;
+         end loop;
+         declare
+            S : constant Natural := I;
+         begin
+            while I <= Line'Last and then Line (I) not in ' ' | ASCII.HT | ';' loop
+               I := I + 1;
+            end loop;
+            declare
+               Name : constant String := Line (S .. I - 1);
+            begin
+               if Name = "" then
+                  Fail (Integer'Image (Line_No) & ": `include ""file"" as` needs the "
+                    & "name of the scope: `include ""file"" as sql`, then "
+                    & "`sql.rule` reaches a rule of the file");
+               end if;
+               if (for some C of Name => C = '.') then
+                  Fail (Integer'Image (Line_No) & ": `as " & Name & "`: a scope's "
+                    & "name has no dot (a dot separates scopes: `a.b.rule`); "
+                    & "a scope inside a scope comes from an included file that "
+                    & "has its own `include ""file"" as b`");
+               end if;
+               if not Name_Start_Char (Name (Name'First))
+                 or else not (for all C of Name => Name_Char_Ok (C))
+                 or else (for some J in Name'First .. Name'Last - 1 =>
+                            Name (J .. J + 1) = Scope_Sep)
+               then
+                  Fail (Integer'Image (Line_No) & ": `as " & Name & "`: a scope's "
+                    & "name is letters, digits, `_` and single `-`, starting "
+                    & "with a letter");
+               end if;
+               return Name;
+            end;
+         end;
+      end Include_Scope;
+
       --  Where a path leads, links resolved, so a file included twice by
       --  different paths is still read once.
       function Resolved (P : String) return String is
@@ -8651,7 +9563,7 @@ package body HBNF_Grammar is
               & (if To_String (Layout_Dir) = "" then "" else " (" & To_String (Layout_Dir) & ")")
               & "; the layouts are ast, tape, and those files";
          end if;
-         if not Seen_Files.Contains (Resolved (Path)) then
+         if not Seen_Files.Contains (Seen_Key (Resolved (Path), Scope_Prefix)) then
             In_Layout := In_Layout + 1;
             for R of Parse_File (Path) loop
                Define (Acc, Acc_Index, R);
@@ -8722,8 +9634,12 @@ package body HBNF_Grammar is
                      declare
                         Sub_Path : constant String :=
                           Join (Dir, To_String (Target));
+                        Scope : constant String := Include_Scope (Line, Line_No);
                      begin
-                        if not Seen_Files.Contains (Resolved (Sub_Path)) then
+                        if not Seen_Files.Contains
+                                 (Seen_Key (Resolved (Sub_Path), Child_Prefix (Scope)))
+                        then
+                           Pending_Scope := To_Unbounded_String (Scope);
                            for R of Parse_File (Sub_Path) loop
                               Define (Acc, Acc_Index, R);
                            end loop;
@@ -8818,6 +9734,59 @@ package body HBNF_Grammar is
          Pending_Actions.Clear;
       end Apply_Actions;
 
+      --  The names the file at P defines, and those of the files it includes
+      --  without `as` (their rules are in the same scope), added to Into.
+      --  Read before the file is parsed, so a rule can use a name that a later
+      --  line, or a file included after it, defines.  A file that cannot be
+      --  read or lexed is left to the real read, which says why.
+      procedure Scan_Defs (P : String; Into : in out Path_Sets.Set;
+                           Seen : in out Path_Sets.Set) is
+         Key : constant String :=
+           (if Ada.Directories.Exists (P) then Resolved (P) else "");
+      begin
+         if Key = "" or else Seen.Contains (Key) then
+            return;
+         end if;
+         Seen.Include (Key);
+         declare
+            Text : constant String := Read_File (P);
+            Start : Natural := Text'First;
+            Line_No : Positive := 1;
+         begin
+            begin
+               for D of Token_Defs (Lex (Text)) loop
+                  Into.Include (D);
+               end loop;
+            exception
+               when Parse_Error => null;
+            end;
+            while Start <= Text'Last loop
+               declare
+                  Stop : Natural := Start;
+               begin
+                  while Stop <= Text'Last and then Text (Stop) /= ASCII.LF loop
+                     Stop := Stop + 1;
+                  end loop;
+                  declare
+                     Line   : constant String := Text (Start .. Stop - 1);
+                     Target : constant Unbounded_String := Include_Target (Line);
+                  begin
+                     if Target /= Null_Unbounded_String
+                       and then Include_Scope (Line, Line_No) = ""
+                     then
+                        Scan_Defs (Join (Dir_Of (P), To_String (Target)), Into, Seen);
+                     end if;
+                  end;
+                  Start := Stop + 1;
+                  Line_No := Line_No + 1;
+               end;
+            end loop;
+         end;
+      exception
+         when Parse_Error => null;
+      end Scan_Defs;
+
+      Own_Scope : constant String := To_String (Pending_Scope);
       Included : Rule_Vectors.Vector;
       Inc_Index : Index_Maps.Map;
       Incs     : Include_Vectors.Vector;
@@ -8829,7 +9798,26 @@ package body HBNF_Grammar is
          Reset;
       end if;
       File_Depth := File_Depth + 1;
-      Seen_Files.Include (Resolved (Path));
+      Pending_Scope := Null_Unbounded_String;
+      if Own_Scope /= "" then
+         --  `include "file" as NAME`: the file's rules are in the scope NAME,
+         --  inside the one that includes it.
+         declare
+            Prefix : constant String := Child_Prefix (Own_Scope);
+            Names  : Path_Sets.Set;
+            Seen   : Path_Sets.Set;
+         begin
+            Scan_Defs (Path, Names, Seen);
+            if not Scope_Defs.Contains (Prefix) then
+               Scope_Defs.Insert (Prefix, Path_Sets.Empty_Set);
+            end if;
+            for N of Names loop
+               Scope_Defs.Reference (Prefix).Include (N);
+            end loop;
+            Scope_Stack.Append (Scope_Info'(Prefix => To_Unbounded_String (Prefix)));
+         end;
+      end if;
+      Seen_Files.Include (Seen_Key (Resolved (Path), Scope_Prefix));
       --  --layout=NAME, for a file layout, is read before the grammar is
       if File_Depth = 1 and then Layout_Given and then Is_File_Layout (To_String (Layout_Text)) then
          Include_Layout (To_String (Layout_Text), Included, Inc_Index);
@@ -8857,12 +9845,44 @@ package body HBNF_Grammar is
       end loop;
       Result := Override (Local, Included, First_Defined);
       if File_Depth = 1 then
+         Check_Scope_Names (Result);
+         if not Scope_Defs.Is_Empty then
+            declare
+               Ws : Unbounded_String;
+               By : Unbounded_String;
+            begin
+               for R of Result loop
+                  if R.Whitespace /= Null_Unbounded_String
+                    and then not (Grammar_Of (To_String (R.Name)) /= 0
+                                  and then Is_Switch_Target (Grammar_Of (To_String (R.Name))))
+                  then
+                     if Ws = Null_Unbounded_String then
+                        Ws := R.Whitespace;
+                        By := R.Name;
+                     elsif R.Whitespace /= Ws then
+                        Fail ("`" & Spelled (To_String (R.Name)) & "` skips white space with `"
+                              & Spelled (To_String (R.Whitespace)) & "`, but `"
+                              & Spelled (To_String (By)) & "` does so with `"
+                              & Spelled (To_String (Ws)) & "`: a generated parser has one "
+                              & "white-space rule.  A grammar included `as` a scope either "
+                              & "shares the including grammar's (it has no "
+                              & "`whitespace` line) or skips none (`whitespace none`, "
+                              & "its blanks written out)");
+                     end if;
+                  end if;
+               end loop;
+            end;
+         end if;
          Apply_Actions (Result);
          Expand_Params (Result);
          Check_Contexts (Result);
          Split_Mixed (Result);
          Split_Wire (Result);
          Finish (Result);
+         Check_Switch_Targets (Result);
+      end if;
+      if Own_Scope /= "" then
+         Scope_Stack.Delete_Last;
       end if;
       File_Depth := File_Depth - 1;
       return Result;
@@ -8953,6 +9973,16 @@ package body HBNF_Grammar is
          return Rules;
       end if;
       Mark (Rules (1).Name);
+      if Switch_Seen then
+         --  the white space of a grammar the parser switches to is scanned by skip_ws
+         for I in 1 .. N loop
+            if Grammar_Of (To_String (Rules (I).Name)) /= 0
+              and then Rules (I).Whitespace /= Null_Unbounded_String
+            then
+               Mark (Rules (I).Whitespace);
+            end if;
+         end loop;
+      end if;
       for I in 1 .. N loop
          if Seen (I) or else Rules (I).Jet_Code /= Null_Unbounded_String then
             Result.Append (Rules (I));
