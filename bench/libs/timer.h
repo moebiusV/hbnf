@@ -30,4 +30,20 @@ static int report(int ok, long len, double t0, double t1, const char *why) {
     printf("ok %ld %.2f %ld\n", len, t1 - t0, ru.ru_maxrss);
     return 0;
 }
+/* the XML drivers also print what they found, so that a parser that skipped something is noticed:
+ * "ok BYTES MS RSS_KIB ELEMENTS ATTRIBUTES TEXT" where ATTRIBUTES leaves out the xmlns declarations and TEXT is
+ * the bytes of character data (references decoded, CDATA included) that are not blanks, or -1 for a count the
+ * driver does not make.  inner.sh compares them with bench/formats/xml_expect.py's. */
+static int report_xml(int ok, long len, double t0, double t1, const char *why, long el, long at, long tx) {
+    struct rusage ru;
+    getrusage(RUSAGE_SELF, &ru);
+    if (!ok) { fprintf(stderr, "%s\n", why ? why : "refused"); printf("FAIL %ld %.2f %ld\n", len, t1 - t0, ru.ru_maxrss); return 1; }
+    printf("ok %ld %.2f %ld %ld %ld %ld\n", len, t1 - t0, ru.ru_maxrss, el, at, tx);
+    return 0;
+}
+static long nonblank(const char *s, size_t n) {
+    long k = 0; size_t i;
+    for (i = 0; i < n; i++) k += !(s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r');
+    return k;
+}
 #endif

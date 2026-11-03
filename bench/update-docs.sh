@@ -12,7 +12,7 @@
 # stays hand-written and the figures stay generated.
 #
 #   --check          change nothing; exit 1 if a document differs from the results
-#   --allow-skipped  accept a results file with a "skipped:" row (a tool that
+#   --allow-skipped  accept a results file with a "skipped:" or "check failed:" row (a tool that
 #                    could not be run); without it that is an error, so a
 #                    missing comparator is never written up as a result
 set -u
@@ -74,8 +74,8 @@ for doc in WHY.md README.md USENIXSUBMISSION.md HISTORY.md corpus/c/README.md; d
 			print
 			print ""           # a table must follow a blank line to render on the site
 			while ((getline line < path) > 0) {
-				if (line ~ /skipped:/ && !allow) {
-					print "update-docs: `" name "` has a skipped row: " line > "/dev/stderr"
+				if (line ~ /skipped:|check failed:/ && !allow) {
+					print "update-docs: `" name "` has a skipped or failed row: " line > "/dev/stderr"
 					bad = 1
 				}
 				print line

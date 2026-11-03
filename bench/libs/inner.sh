@@ -1,8 +1,9 @@
 #!/bin/sh
 # inner.sh -- inside one of the two containers (musl or glibc): build every driver and the hbnf
 # parsers, time each on its document, print one TSV row each: FORMAT LABEL MS RSS_KIB STATUS.
-# /w is the repository (read-only), /o the work directory holding doc.{json,toml,yaml} and the
-# generated {json,toml,yaml}.c.
+# /w is the repository (read-only), /o the work directory holding doc.{json,toml,yaml,xml} and the
+# generated {json,toml,yaml,xml}.c.  The XML drivers also print what they found (elements, attributes, text);
+# best compares it with xml_expect.py's, and a parser that found something else is a "check failed" row.
 set -u
 RUNS=${RUNS:-5}
 L=/w/bench/libs
@@ -17,6 +18,10 @@ best() {   # best FORMAT LABEL DOC CMD...: least parse time of RUNS runs
 	while [ $i -lt $RUNS ]; do
 		out=$("$@" "$doc" 2> /o/err.txt | tail -1)
 		case $out in ok*) ;; *) st="refused: $(head -c 80 /o/err.txt | tr '\n\t' '  ')"; break ;; esac
+		if [ "$fmt" = xml ]; then
+			bad=$(echo "$out $XE" | awk 'BEGIN{split("elements attributes text", nm, " ")} {for (i = 1; i <= 3; i++) if ($(i+4) != -1 && $(i+4) != $(i+7)) printf "%s%s %s, expected %s", (n++ ? "; " : ""), nm[i], $(i+4), $(i+7)}')
+			if [ -n "$bad" ]; then st="check failed: $bad"; break; fi
+		fi
 		ms=$(echo "$out" | awk '{print $3}'); rss=$(echo "$out" | awk '{print $4}')
 		if [ -z "$bm" ] || awk -v a="$ms" -v b="$bm" 'BEGIN{exit !(a<b)}'; then bm=$ms; br=$rss; fi
 		i=$((i + 1))
@@ -27,7 +32,7 @@ try() {   # try FORMAT LABEL DOC SRC FLAGS...: compile, then time
 	fmt=$1; label=$2; doc=$3; src=$4; shift 4
 	exe=/o/bin-$(basename "$src" | tr . _)
 	case $src in *.cpp) cc="$CXX" ;; *) cc="$CC" ;; esac
-	if $cc -I"$L" -I/o "$L/$src" -o "$exe" "$@" 2> /o/cc.txt; then best "$fmt" "$label" "$doc" "$exe"
+	if $cc -I"$L" -I/o "$L/$src" -o "$exe" "$@" 2> /o/cc.txt; then best "$fmt" "$label" "$doc" "$exe" ${MODE:+"$MODE"}
 	else printf '%s\t%s\t0\t0\tbuild failed: %s\n' "$fmt" "$label" "$(grep -m1 error /o/cc.txt | head -c 80)"; fi
 }
 
@@ -57,6 +62,29 @@ try yaml libyaml    /o/doc.yaml libyaml.c -lyaml
 try yaml libfyaml   /o/doc.yaml libfyaml.c -lfyaml
 try yaml yaml-cpp   /o/doc.yaml yamlcpp.cpp -lyaml-cpp
 try yaml rapidyaml  /o/doc.yaml ryml.cpp
+
+# XML: the same generated catalog for every parser; XE is what ElementTree finds in it (elements, attributes,
+# bytes of text), which each driver must find too.  hbnf's tree parser first, then the C and C++ libraries (expat
+# and libxml2 in two modes each), then the parsers of Python and Node.
+XE=$(python3 -I /w/bench/formats/xml_expect.py /o/doc.xml)
+t=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' /o/xml.c)
+cat /o/xml.c /w/bench/formats/time_xml_tree.c > /o/xml-m.c
+if $CC -std=gnu11 -D_GNU_SOURCE "-DOUT_T=$t" /o/xml-m.c -o /o/bin-hbnf-xml 2> /o/cc.txt; then best xml "hbnf (C backend), tree" /o/doc.xml /o/bin-hbnf-xml
+else printf 'xml\thbnf (C backend), tree\t0\t0\tbuild failed: %s\n' "$(grep -m1 error /o/cc.txt | head -c 80)"; fi
+MODE=events try xml "expat, events only" /o/doc.xml expat.c -lexpat
+MODE=copy try xml "expat, events copied into a tree" /o/doc.xml expat.c -lexpat
+MODE=dom try xml "libxml2, DOM" /o/doc.xml libxml2.c $(pkg-config --cflags --libs libxml-2.0)
+MODE=sax try xml "libxml2, SAX2 events only" /o/doc.xml libxml2.c $(pkg-config --cflags --libs libxml-2.0)
+MODE=
+try xml pugixml /o/doc.xml pugixml.cpp -lpugixml
+try xml TinyXML-2 /o/doc.xml tinyxml2.cpp -ltinyxml2
+try xml RapidXML /o/doc.xml rapidxml.cpp
+best xml "Python xml.etree.ElementTree" /o/doc.xml python3 /w/bench/formats/time_xml.py etree
+best xml "lxml (Python)" /o/doc.xml python3 /w/bench/formats/time_xml.py lxml
+best xml "Python xml.parsers.expat, no handlers" /o/doc.xml python3 /w/bench/formats/time_xml.py pyexpat
+best xml "Python xml.parsers.expat, Python callbacks" /o/doc.xml python3 /w/bench/formats/time_xml.py pyexpat-cb
+best xml "fast-xml-parser (Node)" /o/doc.xml node /w/bench/libs/time_xml.js fxp
+best xml "sax (Node)" /o/doc.xml node /w/bench/libs/time_xml.js sax
 
 cp -r $L/rust /o/rust
 if (cd /o/rust && CARGO_TARGET_DIR=/o/rust-target cargo build -q --release 2> /o/cargo.txt); then

@@ -1,0 +1,10 @@
+{
+  "name": "libs-node",
+  "version": "0.0.0",
+  "private": true,
+  "description": "the XML parsers of bench/libs.sh that Node programs use, at exact versions; package-lock.json holds the integrity hashes",
+  "dependencies": {
+    "fast-xml-parser": "5.11.2",
+    "sax": "1.6.1"
+  }
+}

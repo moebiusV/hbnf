@@ -13,7 +13,25 @@ for line in open(f"{W}/glibc.tsv"):
     rows.setdefault(fmt, []).append((label, float(ms), int(rss), status))
 vers = dict(re.findall(r'name = "([^"]+)"\nversion = "([^"]+)"', open(lock).read()))
 ver = open(f"{W}/glibc.ver").read().split("\n")
-titles = {"json": "JSON", "toml": "TOML 1.0", "yaml": "YAML 1.2"}
+titles = {"json": "JSON", "toml": "TOML 1.0", "yaml": "YAML 1.2", "xml": "XML 1.0"}
+# the XML table says what each parser hands the program, since they are not doing the same work
+builds = {
+    "hbnf (C backend), tree": "the grammar's typed tree",
+    "expat, events only": "nothing (handlers count)",
+    "expat, events copied into a tree": "a cheap tree of copies",
+    "libxml2, DOM": "DOM",
+    "libxml2, SAX2 events only": "nothing (handlers count)",
+    "pugixml": "DOM, in place",
+    "TinyXML-2": "DOM",
+    "RapidXML": "DOM, in place",
+    "Python xml.etree.ElementTree": "Element tree",
+    "lxml (Python)": "Element tree on libxml2",
+    "Python xml.parsers.expat, no handlers": "nothing (well-formedness only)",
+    "Python xml.parsers.expat, Python callbacks": "nothing (Python callbacks count)",
+    "fast-xml-parser (Node)": "JavaScript objects",
+    "sax (Node)": "nothing (handlers count)",
+}
+dpkg = dict(l.split("=", 1) for l in ver[5:] if "=" in l)
 
 
 def tm(ms):
@@ -22,25 +40,48 @@ def tm(ms):
     return "%.0f ms" % ms if ms < 1000 else "%.2f s" % (ms / 1000)
 
 
-for fmt in ("json", "toml", "yaml"):
+for fmt in ("json", "toml", "yaml", "xml"):
     size = len(open(f"{W}/doc.{fmt}", "rb").read())
     print(f"**{titles[fmt]}** ({size / 1e6:.2f} MB, the same file for every tool; best of up to {runs} runs):\n")
-    print("| tool | parse time | MB/s | peak RSS | RSS over the input |")
-    print("|---|---:|---:|---:|---:|")
+    if fmt == "xml":
+        print("| tool | builds | parse time | MB/s | peak RSS | RSS over the input |")
+        print("|---|---|---:|---:|---:|---:|")
+    else:
+        print("| tool | parse time | MB/s | peak RSS | RSS over the input |")
+        print("|---|---:|---:|---:|---:|")
     for label, ms, rss, status in sorted(rows[fmt], key=lambda r: (r[3] != "ok", r[1])):
         if label.startswith("serde_json"):
             label += " " + vers.get("serde_json", "")
         if label.startswith("toml (Rust)"):
             label += " " + vers.get("toml", "")
+        what = f" {builds.get(label, '')} |" if fmt == "xml" else ""
         if status != "ok":
-            print(f"| {label} | {status} | | | |")
+            print(f"| {label} |{what} {status} | | | |")
             continue
         over = max(rss * 1024 - size, 0) / size
-        print(f"| {label} | {tm(ms)} | {size / 1e6 / (ms / 1000):.0f} MB/s | {rss // 1024} MB | {over:.1f}x |")
+        print(f"| {label} |{what} {tm(ms)} | {size / 1e6 / (ms / 1000):.0f} MB/s | {rss // 1024} MB | {over:.1f}x |")
     print()
+
+
+def xml_note():
+    def d(k):
+        return re.split(r"[-+~]", dpkg.get(k, "?"))[0]
+    return (f"  The XML parsers: expat {d('libexpat1-dev')}, libxml2 {d('libxml2-dev')}, pugixml {d('libpugixml-dev')}, "
+            f"TinyXML-2 {d('libtinyxml2-dev')}, RapidXML {d('librapidxml-dev')} (Marcin Kalicinski's original, unmaintained since 2009), "
+            f"lxml {d('python3-lxml')}, fast-xml-parser {dpkg.get('fast-xml-parser', '?')}, sax {dpkg.get('sax', '?')}; the first six are Debian packages, "
+            "the Node ones are locked by `bench/libs/node/package-lock.json`.  Every XML parser reads the same catalog and must find "
+            "the same number of elements, of attributes (not counting xmlns declarations) and of non-blank bytes of text, references decoded, "
+            "as ElementTree does (a driver that cannot count something does not, and a mismatch is a `check failed` row).  "
+            "The time is the parse call alone; the counting walks of the tree parsers come after the clock.  expat, libxml2's SAX2 and sax "
+            "build nothing, their handlers count, and the expat row that copies makes a small tree of names, attributes and text.  "
+            "pugixml and RapidXML parse the buffer in place, the others leave it alone.  hbnf's XML grammar has no `%emit tape` "
+            "row: `corpus/xml/xml.hbnf` does not generate under `--layout=tape` yet, so only its typed tree is measured, and that tree "
+            "is the grammar's concrete syntax (a reference is a node and characters are not decoded).")
+
+
 rev = subprocess.check_output(["git", "-C", root, "rev-parse", "--short", "HEAD"]).decode().strip()
 print(f"_{datetime.date.today()}; glibc {ver[1].split()[-1]}, {ver[0].strip()}, node {ver[2].strip().lstrip('v')}, "
       f"{ver[3].strip()}; `-O2`, the same sources and flags for every native library; hbnf {rev}.  "
       "simdjson is its DOM API; the C++ and Rust libraries, Python, Node and the YAML parsers build "
       "their own value types, and hbnf builds the typed tree its grammar describes, except in the row "
-      "that says `%emit tape`: that grammar writes a flat tape of 64-bit words and builds no tree._")
+      "that says `%emit tape`: that grammar writes a flat tape of 64-bit words and builds no tree." + xml_note() + "_")

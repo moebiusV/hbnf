@@ -47,7 +47,7 @@ second checks that it counts the text the first counts, and fetches the tokenize
 sha256 in `pins.txt`, into `bench/cache`.  `sh bench/cspeed.sh` times the generated C parser
 against `gcc -fsyntax-only` on the same preprocessed C (Lua, zlib and the SQLite amalgamation, pinned in
 `pins.txt`), pinned to one cpu like the others; `sh bench/libs.sh` is the library comparison for JSON,
-TOML and YAML; `sh bench/haskell.sh` sets the tape parsers beside the parsers Haskell programs use for the
+TOML, YAML and XML (expat, libxml2, pugixml, TinyXML-2, RapidXML, ElementTree, lxml, pyexpat, fast-xml-parser, sax); `sh bench/haskell.sh` sets the tape parsers beside the parsers Haskell programs use for the
 same formats (Alex and Happy, HsYAML, aeson); `sh bench/scalar.sh` times the number and string conversions of
 `runtime/hbnf_scalar.h` against fast_float and glibc's `strtod`.
 

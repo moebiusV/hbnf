@@ -1,9 +1,13 @@
-# Library comparison, glibc: Debian with the popular parsers for JSON, TOML and YAML.
+# Library comparison, glibc: Debian with the popular parsers for JSON, TOML, YAML and XML.
 FROM debian:stable-slim
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-    build-essential cargo ca-certificates nodejs npm python3 python3-yaml \
+    build-essential cargo ca-certificates nodejs npm python3 python3-yaml pkg-config \
     libcjson-dev libjansson-dev libsimdjson-dev rapidjson-dev \
     libtomlplusplus-dev libtoml11-dev libyaml-dev libyaml-cpp-dev libfyaml-dev \
+    libexpat1-dev libxml2-dev libpugixml-dev libtinyxml2-dev librapidxml-dev python3-lxml \
     && rm -rf /var/lib/apt/lists/*
 # js-yaml, the YAML parser Node programs use (JSON.parse and Python's tomllib are built in).
 RUN mkdir -p /opt/js && cd /opt/js && npm install --silent js-yaml@4.1.0 2>&1 | tail -1
+# fast-xml-parser and sax, the XML parsers Node programs use, from the lock file (exact versions, sha512 integrity).
+COPY node/package.json node/package-lock.json /opt/js-xml/
+RUN cd /opt/js-xml && npm ci --silent --ignore-scripts 2>&1 | tail -1

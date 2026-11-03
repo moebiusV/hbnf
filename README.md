@@ -232,12 +232,21 @@ _Measured 2026-10-27 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 6.1
 
 <!-- /bench:headline -->
 
-### JSON, TOML and YAML against the parsers people use
+### JSON, TOML, YAML and XML against the parsers people use
 
-The same three documents against the parsers people use for each format: the popular C, C++ and
+The same four documents against the parsers people use for each format: the popular C, C++ and
 Rust libraries, built from one source with the same flags, and the parsers that Python and Node
 programs call.  All of it runs on glibc (Debian).  The libraries were picked by GitHub stars and
-package downloads, limited to what Debian packages or ships as a single file.  What each builds
+package downloads, limited to what Debian packages or ships as a single file.  For XML they are
+expat (the base of Python's pyexpat and ElementTree, of Firefox and Apache), libxml2 (the base of lxml
+and xmllint), pugixml, TinyXML-2 and RapidXML (the original 1.13, unmaintained since 2009), the Python
+and Node parsers (ElementTree, lxml, the raw `xml.parsers.expat`, fast-xml-parser and sax), against the
+typed tree of `corpus/xml/xml.hbnf`.  The XML table has a column that says what each parser hands the
+program, because they differ most there: expat, libxml2's SAX2 interface, pyexpat and sax are event
+parsers that build nothing (the expat row that copies names, attributes and text into arrays shows the
+price of a cheap tree), pugixml, TinyXML-2, RapidXML, libxml2, ElementTree and lxml build a DOM, and
+every XML parser has to find the same elements, attributes and text as ElementTree or its row says
+`check failed`.  What each builds
 differs: the C++ and Rust libraries, Python, Node and the YAML parsers produce their own value
 types, simdjson is its DOM API, and hbnf builds the typed tree its grammar describes.  Peak RSS is
 the whole process, input included, and the last column shows it as a multiple of the input.  The

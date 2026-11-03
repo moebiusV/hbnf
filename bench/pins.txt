@@ -64,3 +64,8 @@ RAKU_YAMLISH_SHA=a60097825494da79ad70719ecb4768e8b87baacf5b21c7f895fb372ab098b69
 JS262_COMMIT=0e808c74fbec780646434cad17bb22dc52461003
 JS262_URL=https://codeload.github.com/tc39/test262-parser-tests/tar.gz/0e808c74fbec780646434cad17bb22dc52461003
 JS262_SHA=363d1f684888d3cbf0ee5e6cdd248cd33453972b01856bcd7380f3a3ee3a1b52
+# The XML parsers of the library comparison (libs.sh), recorded 2026-11-03.  expat, libxml2, pugixml, TinyXML-2,
+# RapidXML (librapidxml-dev 1.13, the original by Marcin Kalicinski) and lxml are Debian packages of the glibc image
+# (their versions are printed under the results table); fast-xml-parser 5.11.2 and sax 1.6.1 come from npm by the
+# lock file bench/libs/node/package-lock.json (sha512 integrity of every package), whose sha256 is checked here.
+XMLJS_LOCK_SHA=7f77962f3c30f85cc220599a79dc7b21972f55166852f96acac38590dfc4af1e
