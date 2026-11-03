@@ -90,6 +90,7 @@ to the OpenBSD configuration files.
 - [`WHY.md`](WHY.md): the grammar and its design choices, for an RFC reader.
 - [`RFCPLAN.md`](RFCPLAN.md): the plan, its decisions and its status, step by step.
 - [`ABNF.md`](ABNF.md): the notation against RFC 5234, feature by feature.
+- [`CONTEXTS.md`](CONTEXTS.md): design notes, reviewed and kept current: how a rule says it is in a context (an embedded language, a picture string), has an attribute, or is a kind of thing; what is decided and what is built is in the table at the top.
 - [`CHARLAYER.md`](CHARLAYER.md): character rules, numeric terminals and UTF-8.
 - [`WIRE.md`](WIRE.md): octets and bit fields, enum numbers, text and bit rules
   together, and parsers that also write bytes back.

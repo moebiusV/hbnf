@@ -2957,6 +2957,8 @@ cycles.
     The order of the three is not fixed; C++ leans on the C family (`corpus/c/`) and the typedef context
     of step 16.
 
+    *A preprocessor in the same grammar (the user's question, 2026-11-02; an idea, not decided).*  `COPY`, `REPLACE`, `#include` and `#define` can be applied as the parser goes, instead of in a pass before it: a source stack. Reaching `COPY name.` or a macro call pushes the other text (a copybook, a macro's expansion) as the current input, the same rules go on reading it, and its end pops back. A `REPLACE` or a `#define` is a fact (the pattern and its replacement, live until `REPLACE OFF` or `#undef`) that the scanner consults at each token; `#if` is a live/skipped region. Facts and the stack are put back when a guess is given back, as the typedef sets are. It handles what a separate pass handles badly (a macro that expands to half a declaration), and a program with no preprocessing pays nothing. Every position is then a chain of origins, `(source, offset)` with the place that pushed it, so an error or a tree node can be reported as gcc does (`in expansion of macro M, at a.c:3`, `copied from X.cpy by prog.cob:12`). Open: how the memo of a speculative parse keys positions that come from different sources, and where `REPLACE`'s pseudo-text matching (a token sequence, not a name) sits in the scanner. Sketched with the island and switch of `CONTEXTS.md`.
+
     *Generator bugs found while working on the COBOL grammar (2026-11-02), and fixed.*  (1) A lookahead (`!` or `&`) inside the character-level
     `ws` rule (`ws = ... | "$" !picture-start *~( CR | LF )`) stopped generation with `raised CONSTRAINT_ERROR : hbnf_compilable.adb:481 discriminant check
     failed`.  The parser skips `ws` by running a scanner, so `ws` and what it reaches are now rules of characters even where they hold a lookahead: the
@@ -2967,6 +2969,10 @@ cycles.
     whitespace rule and what it reaches.  A `ws` that is not text at all (`ws = ... | "#" word`) is now refused, naming the rule, in every backend
     but tree-sitter.  Both stood in the way of one thing: a `$` directive line in `ws` that does not swallow a picture beginning `$B` or `$Z`
     (`PIC $BB**,***.**.`); tests/wslook.sh.
+
+    *First slice decided (the user, 2026-11-02): islands (`include "x.hbnf" as x`, `x.rule`) and the switch `=> grammar(x)`; spelled out in `CONTEXTS.md` section 19; built (islands and the switch of white space, 2026-11-02), with the rest in the status table at the top of that page.*
+
+    *Contexts (the user, 2026-11-02): embedded languages in COBOL (SQL, CICS), the PICTURE clause as a language of its own, and the data division's declarations all depend on a context; `CONTEXTS.md` names the three relations (in, has, is), what else might count, and the options for writing each, for review.*
 
     *A design idea, not decided (the user, 2026-10-31).*  A grammar that reads one language can also say how a
     rule is written out in another, so that it translates: ALGOL's `begin` statements `end` comes out as C's
