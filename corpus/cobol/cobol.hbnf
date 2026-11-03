@@ -30,6 +30,7 @@ by     = [ "BY" ]
 thru            = "THRU" | "THROUGH"
 procedure-range = procedure-name [ thru procedure-name ]
 control-name    = "FINAL" | identifier
+control-list    = [ "FOR" ] control-name *( "OR" ( control-name | "PAGE" ) )
 item-clause     = picture-clause | usage-clause | value-clause(value-item)
 display-item-clause = picture-clause | [ "USAGE" is ] ( "DISPLAY" | "NATIONAL" | "DISPLAY-1" | "UTF-8" ) | value-clause(value-item)
 program-unit       = identification-division unit-body [ end-program ]
@@ -149,7 +150,7 @@ report-clause           = is "GLOBAL" | "CODE" is operand
                           *( ( "HEADING" | "FIRST" "DETAIL" | "LAST" "DETAIL" | "FOOTING" ) is operand )
                         | "LINE" ( "LIMIT" is | "LIMITS" are ) operand
                         | ( "HEADING" | "FIRST" "DETAIL" | "LAST" "DETAIL" | "FOOTING" ) is operand
-present-event            = "NEW" identifier | "PAGE"
+present-event            = [ "NEW" ] identifier | "PAGE"
 report-group-entry      = level-number [ data-name | "FILLER" ] *report-group-clause "."
 report-group-clause     = "TYPE" is report-type
                         | "LINE" number is ( "PLUS" | "+" ) operand | "LINE" number is operand [ "ON" "NEXT" "PAGE" ]
@@ -159,9 +160,9 @@ report-group-clause     = "TYPE" is report-type
                         | "RESET" on control-name | "GROUP" [ "INDICATE" ] | ( "PRESENT" | "ABSENT" ) ( "WHEN" condition | "AFTER" present-event *( "OR" present-event ) )
                         | "VARYING" identifier "FROM" operand "BY" operand
                         | display-item-clause | occurs-clause | sign-clause | justified-clause
-                        | "BLANK" [ "WHEN" ] "ZERO" | "TYPE" to identifier | "IDENTIFIED" by operand | "GLOBAL" | "COLUMN" operand | "STEP" operand
-report-type             = "REPORT" "HEADING" | "RH" | "PAGE" "HEADING" | "PH" | "CONTROL" "HEADING" control-name | "CH" control-name
-                        | "DETAIL" | "DE" | "CONTROL" "FOOTING" control-name | "CF" control-name
+                        | "BLANK" [ "WHEN" ] "ZERO" | "TYPE" to identifier | "DEFAULT" is operand | "PRESENT" "WHEN" condition | "DESTINATION" identifier | "CLASS" is ( "NUMERIC" | "ALPHABETIC" | "ALPHABETIC-LOWER" | "ALPHABETIC-UPPER" | user-word ) | "IDENTIFIED" by operand | "GLOBAL" | "COLUMN" operand | "STEP" operand
+report-type             = "REPORT" "HEADING" | "RH" | "PAGE" "HEADING" | "PH" | "CONTROL" "HEADING" control-list | "CH" control-list
+                        | "DETAIL" | "DE" | "CONTROL" "FOOTING" control-list | "CF" control-list
                         | "PAGE" "FOOTING" | "PF" | "REPORT" "FOOTING" | "RF"
 special-names-clause = is "SPECIAL-NAMES" ( "CURSOR" | "CRT" "STATUS" )
 data-description-entry = "66" data-name renames-clause "."
@@ -173,7 +174,7 @@ data-clause            = plain-clause | occurs-clause
 ; a level 66, 78 or 88 item has no OCCURS (cobc allows it on the others)
 plain-clause           = special-names-clause | "VOLATILE" | "SAME" "AS" identifier | item-clause | redefines-clause
                        | renames-clause | sign-clause | justified-clause | synchronized-clause
-                       | "BLANK" [ "WHEN" ] "ZERO" | "TYPE" to identifier | "IDENTIFIED" by operand | "GLOBAL" | "BASED" | "TYPEDEF" | "STATIC"
+                       | "BLANK" [ "WHEN" ] "ZERO" | "TYPE" to identifier | "DEFAULT" is operand | "PRESENT" "WHEN" condition | "DESTINATION" identifier | "CLASS" is ( "NUMERIC" | "ALPHABETIC" | "ALPHABETIC-LOWER" | "ALPHABETIC-UPPER" | user-word ) | "IDENTIFIED" by operand | "GLOBAL" | "BASED" | "TYPEDEF" | "STATIC"
                        | is "EXTERNAL" [ "AS" operand ] | is "EXTERNAL-FORM" [ "IDENTIFIED" by operand ] | is "GLOBAL" | is "TYPEDEF"
                        | "CONSTANT" [ is "GLOBAL" ] [ "AS" ] [ "FROM" identifier | ( "LENGTH" | "BYTE-LENGTH" ) [ "OF" ] ( operand | usage ) | operand *( "&" operand ) ]
                        | "ANY" ( "LENGTH" | "NUMERIC" )
@@ -191,7 +192,7 @@ usage                  = "DISPLAY" | "BIT" | "HANDLE" [ "OF" user-word ] | "BINA
 ; V is the kind of item the list holds: an expression for a data item or level 78, a plain value for a level-88 condition (where "-9 THRU -2" is no subtraction).
 value-clause(V)        := "VALUE" is ( V *( [ "OR" ] V ) | "ALL" literal ) [ [ "WHEN" "SET" to ] "FALSE" is operand ]
                         | "VALUES" are V *( [ "OR" ] V ) [ [ "WHEN" "SET" to ] "FALSE" is operand ]
-value-item             = "NEXT" | operand [ thru operand ]
+value-item             = "NEXT" | "START" "OF" identifier | operand [ thru operand ]
 condition-value        = "NEXT" | condition-operand [ thru condition-operand ]
 condition-operand      = literal | identifier
 occurs-clause          = "OCCURS" ( "UNBOUNDED" "DEPENDING" on identifier | !"UNBOUNDED" operand ( "TO" ( operand | "UNBOUNDED" ) [ "TIMES" ] "DEPENDING" on identifier | [ "TIMES" ] [ "DEPENDING" on identifier ] ) ) [ "VARYING" identifier [ "FROM" operand ] [ "BY" operand ] ]
@@ -228,7 +229,7 @@ statement = transform-statement | xml-statement | json-statement | ready-stateme
           | evaluate-statement | exit-statement | goback-statement | go-to-statement | if-statement
           | initialize-statement | inspect-statement | move-statement | multiply-statement | open-statement
           | perform-statement | read-statement | rewrite-statement | search-statement | set-statement
-          | start-statement | stop-statement | string-statement | subtract-statement | unstring-statement
+          | start-statement | unlock-statement | stop-statement | string-statement | subtract-statement | unstring-statement
           | write-statement | entry-statement | sort-statement | merge-statement | release-statement | return-statement
           | allocate-statement | free-statement | exhibit-statement | initiate-statement | generate-statement | terminate-statement
           | suppress-statement | next-sentence
@@ -330,6 +331,7 @@ write-statement    = "WRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] 
 end-of-page-phrases = phrases(at ( "END-OF-PAGE" | "EOP" ))
 rewrite-statement  = "REWRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ invalid-key-phrases ] scope-end("REWRITE")
 delete-statement   = "DELETE" ( "FILE" 1*file-name | file-name [ "RECORD" ] [ invalid-key-phrases ] scope-end("DELETE") )
+unlock-statement   = "UNLOCK" file-name [ "RECORD" | "RECORDS" ]
 start-statement    = "START" file-name [ "FIRST" | "LAST" ] [ "KEY" is relation-operator identifier ] [ invalid-key-phrases ] scope-end("START")
 end-phrases        = phrases("AT" "END")
 invalid-key-phrases = phrases("INVALID" key)
