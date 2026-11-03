@@ -2,8 +2,8 @@
 ; template and nothing of how it is rendered.
 ;
 ; A closing tag has to say the name the opening one did: {{#items}} ... {{/items}}.
-; That is not context-free, and it is what `%as` and `%same` are for: `name %as tag`
-; keeps the text the name matched, and `%same tag` is that text again, in this rule
+; That is not context-free, and it is what `as` and `$K` are for: `name as tag`
+; keeps the text the name matched, and `$tag` is that text again, in this rule
 ; and no other, so nesting and backtracking cannot mix two sections up.
 ;
 ; The sigil (# ^ / ! > &) follows the {{ at once, as in mustache.js: {{ /a}} is a
@@ -17,8 +17,8 @@ template = *part
 part     = section | inverted | note | partial | delimiters | unescaped | variable
          | text | lone-brace
 
-section  = "{{" "#" blank name %as tag blank "}}" template "{{" "/" blank %same tag blank "}}"
-inverted = "{{" "^" blank name %as tag blank "}}" template "{{" "/" blank %same tag blank "}}"
+section  = "{{" "#" blank name as tag blank "}}" template "{{" "/" blank $tag blank "}}"
+inverted = "{{" "^" blank name as tag blank "}}" template "{{" "/" blank $tag blank "}}"
 
 note       = "{{" "!" body "}}"
 partial    = "{{" ">" blank first body "}}"

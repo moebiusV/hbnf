@@ -1,0 +1,7 @@
+; "END-" + $K where K is kept from a rule, so only the text the parser reads says which
+; word closes: the parsers compare at run time.
+prefix none
+top       = 1*( statement ";" )
+statement = opener as k name "END-" + $k
+opener    = "DO" | "LOOP" | "WHILE"
+name      = word

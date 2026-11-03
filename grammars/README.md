@@ -53,10 +53,11 @@ language C
   rule made only of these is a character rule, compiled to a scanner.
 - **`%` is the dispatch prefix** — the reader macro of hbnf, what `#'` is to
   Common Lisp: it marks a special form rather than a rule name: `%scan` and
-  `%action` (code blocks), `%as`, `%same`, `%spaces`.  The case markers and the
+  `%action` (code blocks), `%spaces`.  The case markers and the
   numeric terminals have no percent sign in hbnf's own notation: `i"abc"` and
   `s"abc"` (any case, this case), `r"[a-z]+"` (a regular expression, for a
-  rule of characters) and numbers.  A file that says `dialect abnf` writes
+  rule of characters) and numbers.  A back-reference is `x as K` ... `$K` (`as` is a
+  word of the notation, so no rule is named `as`).  A file that says `dialect abnf` writes
   them as RFC 5234 and RFC 7405 do, `%i"abc"`, `%x41`; `tools/hbnf_modernize.py`
   rewrites the old spellings of a file.
 - **Character literals** — `'a'` is a single code point (C escapes allowed),

@@ -1,0 +1,6 @@
+ok	do x end-do;
+ok	DO x End-Do;
+ok	Loop y END-LOOP;
+bad	do x end-loop;
+bad	do x end-dox;
+bad	do x end- do;

@@ -3254,10 +3254,11 @@ package body HBNF_C is
            (Idx : Natural; Els : Element_Vectors.Vector; First, Last : Natural;
             Acc, Gap : String; Buf : in out U; Ind : String)
          is
-            --  `x %as tag`: how the token x is written, for the `%same tag`
+            --  `x as K`: how the token x is written, for the `$K`
             --  that writes it again.
             Tags  : String_Vectors.Vector;
             Again : String_Vectors.Vector;
+            Again0 : String_Vectors.Vector;   --  the same, against what is before it
          begin
             for K in First .. Last loop
                declare
@@ -3342,8 +3343,8 @@ package body HBNF_C is
                                      Acc, Gap, Buf, Ind);
                         end if;
                      when HBNF_Grammar.Block =>
-                        --  a test or a binding writes nothing; a `%same` writes
-                        --  the token its `%as` kept, again
+                        --  a test or a binding writes nothing; a `$K` writes
+                        --  the token its `as` kept, again
                         if E.Op = B_As and then K > First
                           and then Els (K - 1).Kind = HBNF_Grammar.Name
                         then
@@ -3353,11 +3354,22 @@ package body HBNF_C is
                               Tags.Append (E.Ctx);
                               Again.Append (To_Unbounded_String
                                 (Leaf (Nm, Acc & C_Field (Nm), Gap)));
+                              Again0.Append (To_Unbounded_String
+                                (Leaf (Nm, Acc & C_Field (Nm), "0")));
                            end;
                         elsif E.Op = B_Same then
                            for T in 1 .. Natural (Tags.Length) loop
                               if Tags (T) = E.Ctx then
-                                 Append (Buf, Ind & To_String (Again (T)));
+                                 if E.Path /= Null_Unbounded_String then
+                                    --  `"END-" + $K`: one word
+                                    Append (Buf, Ind & "hbnf_wlit (w, " & Gap & ", """
+                                      & C_Escape (To_String (E.Path)) & """, "
+                                      & Img (To_String (E.Path)'Length) & ");");
+                                    Append (Buf, LF);
+                                    Append (Buf, Ind & To_String (Again0 (T)));
+                                 else
+                                    Append (Buf, Ind & To_String (Again (T)));
+                                 end if;
                                  Append (Buf, LF);
                               end if;
                            end loop;
@@ -5031,6 +5043,13 @@ package body HBNF_C is
                   end if;
                when Group =>
                   Collect_Case (E.Items);
+               when Block =>
+                  --  `"END-" + $K` in a file whose literals ignore case
+                  if E.Op = B_Same and then E.Id = 2
+                    and then not Nocase_Words.Contains (E.Path)
+                  then
+                     Nocase_Words.Append (E.Path);
+                  end if;
                when others =>
                   null;
             end case;
@@ -5934,6 +5953,46 @@ package body HBNF_C is
                            Append (Buf, LF);
                         when B_Same =>
                            Ws_Skip;
+                           if E.Path /= Null_Unbounded_String then
+                              --  `"END-" + $K`: the front, then the text kept as
+                              --  K, as one word when a keyword is a word
+                              declare
+                                 Pre : constant String := To_String (E.Path);
+                                 PL  : constant String := Img (Pre'Length);
+                                 Cp  : constant String := "cp_"
+                                   & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid;
+                                 Cl  : constant String := "cl_"
+                                   & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid;
+                                 Cmp : constant String :=
+                                   (if E.Id = 2 then "strncasecmp" else "memcmp");
+                                 Bad_S : constant String :=
+                                   "fail(p, ""`" & C_Escape (Pre) & "` and the text kept as `"
+                                   & To_String (E.Ctx) & "`"", 0, p->text + p->pos, 0); " & Fail;
+                              begin
+                                 if Is_Keyword_Lit (Pre) then
+                                    Append (Buf, Ind & "{ size_t n_ = HBNF_WORD_AT(p, "
+                                      & Word_Scanner (Rules) & ");");
+                                    Append (Buf, LF);
+                                    Append (Buf, Ind & "  if (n_ != " & PL & " + " & Cl & " || "
+                                      & Cmp & " (p->text + p->pos, """ & C_Escape (Pre)
+                                      & """, " & PL & ") || " & Cmp & " (p->text + p->pos + "
+                                      & PL & ", p->text + " & Cp & ", " & Cl & ")) { "
+                                      & Bad_S & " }");
+                                    Append (Buf, LF);
+                                    Append (Buf, Ind & "  p->pos += n_; }");
+                                 else
+                                    Append (Buf, Ind & "if (p->pos + " & PL & " + " & Cl
+                                      & " > p->len || " & Cmp & " (p->text + p->pos, """
+                                      & C_Escape (Pre) & """, " & PL & ") || " & Cmp
+                                      & " (p->text + p->pos + " & PL & ", p->text + " & Cp & ", "
+                                      & Cl & ")) { " & Bad_S & " }");
+                                    Append (Buf, LF);
+                                    Append (Buf, Ind & "p->pos += " & PL & " + " & Cl & ";");
+                                 end if;
+                                 Append (Buf, LF);
+                              end;
+                              goto Same_Done;
+                           end if;
                            Append (Buf, Ind & "if (p->pos + cl_"
                              & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
                              & " > p->len || memcmp (p->text + p->pos, p->text + cp_"
@@ -5946,6 +6005,7 @@ package body HBNF_C is
                            Append (Buf, Ind & "p->pos += cl_"
                              & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid & ";");
                            Append (Buf, LF);
+                           <<Same_Done>> null;
                         when B_Guard =>
                            --  the clause of a rule with numeric parameters applies
                            Append (Buf, Ind & "if (!" & HBNF_Grammar.Render_Guard
@@ -7106,7 +7166,7 @@ package body HBNF_C is
             Skip_Done := False;
          end Elem;
 
-         --  Elements St .. En of V in order.  An element that a `? ctx`, `%as` or `%num` follows is
+         --  Elements St .. En of V in order.  An element that a `? ctx`, `as` or `%num` follows is
          --  taken with it by the sequence code, which notes where the element began.
          procedure Seq_Range (V : Element_Vectors.Vector; St, En : Natural; Fail, Ind : String) is
             K : Natural := St;

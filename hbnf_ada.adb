@@ -221,7 +221,7 @@ package body HBNF_Ada is
 
    Writer_On    : Boolean := False;   --  --writer: Write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
-   Bref_Seq     : Natural := 0;       --  numbers the sequences that have %as / %same
+   Bref_Seq     : Natural := 0;       --  numbers the sequences that have `as` / `$K`
    Spans_On     : Boolean := False;   --  --spans: where each node is in the text
    Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
@@ -1737,7 +1737,7 @@ package body HBNF_Ada is
          --  (`whitespace none` says it does not).
          Skips : constant Boolean :=
            Rules (Owner).Whitespace /= Null_Unbounded_String;
-         --  `x %as tag` keeps where the text x matched is and how long; `%same tag`
+         --  `x as K` keeps where the text x matched is and how long; `$K`
          --  is that text again.  The pair is local to this sequence.
          Sid : constant String := Img (Bref_Seq + 1);
          Wrapped : constant Boolean :=
@@ -1938,6 +1938,46 @@ package body HBNF_Ada is
                           & "; " & Tag_Var ("Cl", E.Ctx) & " := Kq - "
                           & Tag_Var ("Cp", E.Ctx) & "; P.Pos := Kq; end;");
                         Append (Buf, LF);
+                     elsif E.Op = B_Same and then E.Path /= Null_Unbounded_String then
+                        --  `"END-" + $K`: the front and the text kept as K, one word
+                        declare
+                           Pre : constant String := To_String (E.Path);
+                           Cp  : constant String := Tag_Var ("Cp", E.Ctx);
+                           Cl  : constant String := Tag_Var ("Cl", E.Ctx);
+                           function Differs (A, B : String) return String is
+                             (if E.Id = 2 then "not Ada.Strings.Equal_Case_Insensitive (" & A & ", " & B & ")"
+                              else A & " /= " & B);
+                           Msg : constant String := "`" & Ada_Escape (Pre) & "` and the text kept as `"
+                             & Ada_Escape (To_String (E.Ctx)) & "`";
+                           PL  : constant String := Img (Pre'Length);
+                        begin
+                           if Skips then
+                              Append (Buf, Ind & "Skip_Ws (P);");
+                              Append (Buf, LF);
+                           end if;
+                           if Is_Keyword_Lit (Pre) then
+                              Append (Buf, Ind & "declare Nw : constant Natural := Scan_Word (P.Text.all, P.Pos, Limit (P)); begin");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "   if Nw /= " & PL & " + " & Cl & " or else "
+                                & Differs ("P.Text (P.Pos .. P.Pos + " & PL & " - 1)", """" & Ada_Escape (Pre) & """")
+                                & " or else "
+                                & Differs ("P.Text (P.Pos + " & PL & " .. P.Pos + Nw - 1)",
+                                           "P.Text (" & Cp & " .. " & Cp & " + " & Cl & " - 1)")
+                                & " then Fail (P, """ & Msg & """); " & To_String (FA) & " end if;");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "   P.Pos := P.Pos + Nw; end;");
+                           else
+                              Append (Buf, Ind & "if P.Pos + " & PL & " + " & Cl & " - 1 > Limit (P) or else "
+                                & Differs ("P.Text (P.Pos .. P.Pos + " & PL & " - 1)", """" & Ada_Escape (Pre) & """")
+                                & " or else "
+                                & Differs ("P.Text (P.Pos + " & PL & " .. P.Pos + " & PL & " + " & Cl & " - 1)",
+                                           "P.Text (" & Cp & " .. " & Cp & " + " & Cl & " - 1)")
+                                & " then Fail (P, """ & Msg & """); " & To_String (FA) & " end if;");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "P.Pos := P.Pos + " & PL & " + " & Cl & ";");
+                           end if;
+                           Append (Buf, LF);
+                        end;
                      elsif E.Op = B_Same then
                         if Skips then
                            Append (Buf, Ind & "Skip_Ws (P);");
@@ -5108,7 +5148,7 @@ package body HBNF_Ada is
               (Idx : Natural; Els : Element_Vectors.Vector; Prefix, Gap : String;
                Ind : Natural; Held : Boolean; Alt_Ok : Boolean := False;
                Alt_Off : Natural := 0) is
-               --  `x %as tag`: how x is written, for the `%same tag` that writes it again
+               --  `x as K`: how x is written, for the `$K` that writes it again
                Tag_Name, Tag_Nm : String_Vectors.Vector;
                Last_Nm : Unbounded_String;
                Last_List : Boolean := False;
@@ -5160,6 +5200,13 @@ package body HBNF_Ada is
                         if E.Op = B_As and then Last_Nm /= Null_Unbounded_String then
                            Tag_Name.Append (E.Ctx);
                            Tag_Nm.Append (Last_Nm);
+                        elsif E.Op = B_Same and then E.Path /= Null_Unbounded_String then
+                           for T in 1 .. Natural (Tag_Name.Length) loop
+                              if Tag_Name (T) = E.Ctx then
+                                 P (Ind, "Wlit (W, " & Gap & ", " & Q (To_String (E.Path)) & ");");
+                                 Member (Idx, To_String (Tag_Nm (T)), False, Prefix, "False", Ind, Held);
+                              end if;
+                           end loop;
                         elsif E.Op = B_Same then
                            for T in 1 .. Natural (Tag_Name.Length) loop
                               if Tag_Name (T) = E.Ctx then

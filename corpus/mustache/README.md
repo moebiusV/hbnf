@@ -13,10 +13,10 @@ refuses; and it allows blanks between `{{` and a sigil, as the library it replac
 follows mustache.js and does not.
 
 A closing tag has to say the name the opening one did.  That is not context-free, and it is
-what the **back-reference** is for: `name %as tag` keeps the text a name matched, and
-`%same tag` is that text again, later in the same sequence.  It is local to the rule, so
+what the **back-reference** is for: `name as tag` keeps the text a name matched, and
+`$tag` is that text again, later in the same sequence.  It is local to the rule, so
 `{{#a}}{{#a}}x{{/a}}{{/a}}` closes each section with its own tag, and a backtrack
-restores it with the position.  The same two words write XML's `<a> ... </a>`, a
+restores it with the position.  The same two forms write XML's `<a> ... </a>`, a
 here-document's terminator and a raw string's delimiter (`tests/backref.sh`).
 
 The details follow mustache.js: the sigil (`#` `^` `/` `!` `>` `&` `=`) comes right after the
@@ -42,7 +42,7 @@ Not done: `{{=<% %>=}}` is read as a tag but does not change the delimiters.
 In Tree-sitter (`sh tests/treesitter.sh corpus/mustache/mustache.hbnf corpus/mustache/tests/good
 corpus/mustache/tests/bad`) the grammar generates with one declared conflict and parses all 25
 good templates and shows an error on all 13 bad ones.  A Tree-sitter grammar cannot make a
-closing tag repeat the opening one, so the backend writes `%as` and `%same` with an external
+closing tag repeat the opening one, so the backend writes `as` and `$tag` with an external
 scanner (`--ts-scanner=FILE`, the `scanner.c` that goes in `src/`): the scanner keeps each captured
 name in its state, which Tree-sitter saves for every fork, and accepts the closing name only if it
 is the same text.  Without the scanner the closing name is any name, and the five mismatched bad

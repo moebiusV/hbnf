@@ -11,7 +11,7 @@ top       = *item
 item      = probe | directive | block | stmt
 directive = ">>" "FIXED" => grammar(fixed)
           | ">>" "FREE" => grammar(free)
-          | ">>" "MODE" word %as mode => grammar(mode)
+          | ">>" "MODE" word as mode => grammar(mode)
 block     = "{" *item "}"
 probe     = flip "~" | ">>" "TRY" "1" ";"
 flip      = ">>" "TRY" => grammar(fixed)

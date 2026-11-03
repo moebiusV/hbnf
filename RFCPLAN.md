@@ -1785,7 +1785,7 @@ lookahead or a context test not at all.
     (2026-10-22): `tests/writer.sh` round-trips the same corpora in all four (json, obconf, the daemon
     grammars, ALGOL 60 in Rust and Zig), each file written and read back to the same dump; what the
     other three cannot read is a grammar with a scanner written in C (a `jet`).  Back-references
-    (`%as`/`%same`) and the lookaheads `!x` / `&x` are parsed in Rust, Zig and Ada too (2026-10-22;
+    (`as`/`$K`, then written `%as`/`%same`) and the lookaheads `!x` / `&x` are parsed in Rust, Zig and Ada too (2026-10-22;
     until then they were silently dropped, which made ALGOL 60 and Mustache parse wrongly there):
     Mustache round-trips in all four, ALGOL 60 in Rust and Zig.
     **2026-10-22: `--ast` in Rust, Zig and Ada** (`tests/ast.sh`, `tutorial/tools.*`): `Node` (a

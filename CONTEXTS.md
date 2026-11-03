@@ -302,7 +302,7 @@ Suggested words, one idea each, nothing that needs a prefix:
 
 | now | bare | reads as |
 |---|---|---|
-| `x %as tag` ... `%same tag` | `x as tag` ... `same tag` | name the text, later say "the same text as `tag`" |
+| `x %as tag` ... `%same tag` | `x as K` ... `$K` | name the text, later say "the same text as `K`" (decided 2026-11-03, below) |
 | `%emit ...` | `emit ...` | what the rule writes |
 | `%label`, `%action`, `%token` | `label`, `action`, `token` | the same, named by what they are |
 | `%num D`, `%spaces K`, `%col` | `number D`, `spaces K`, `column` | a count, an indent, a position |
@@ -320,10 +320,10 @@ whether any word is better as punctuation (`@` is out).  The migration is mechan
 removed at once, not kept.
 
 **Back-references: `as K` and `$K` (the user, 2026-11-03).**  `x as K` captures the text `x` matched under the name `K`; `$K` matches that text again, in the same sequence, as `%as` and `%same` do today (`ABNF.md`, tests/backref, the Mustache grammar).  Named only, never numbered
-(`$1`): a number shifts when an alternative is added and a capture inside a repetition or an alternative may not exist on every path, a name does not.  The tag is local to the sequence, so nesting and backtracking work as they do now; the comparison follows the grammar's
-`sensitivity`.  `$` is free for this because `^` and `$` are not anchors in `r"..."` (section 24); inside a regex string `$K` stays literal text.  It replaces `%as` and `%same` and so removes two more `%` words from the list above; `as` and `same` become reserved words.
+(`$1`): a number shifts when an alternative is added and a capture inside a repetition or an alternative may not exist on every path, a name does not.  The tag is local to the sequence, so nesting and backtracking work as they do now; a plain `$K` compares the bytes (as `%same` did: the comparison is exact in all four backends, whatever the grammar's
+`sensitivity`), while the join `"lit" + $K` follows `sensitivity string %i`.  `$` is free for this because `^` and `$` are not anchors in `r"..."` (section 24); inside a regex string `$K` stays literal text.  It replaces `%as` and `%same` and so removes two more `%` words from the list above; `as` and `same` become reserved words.
 The case that asked for it: COBOL's terminators, `add-statement = "ADD" as K ... [ "END-" + $K ]`, where the statement names its keyword once; this makes `scope-end(K)` of section 21 unnecessary for fixed keywords.  Open: whether `"END-" + $K` (a join with a captured text, resolved
-at parse time unless the capture is a single fixed literal, which the generator can resolve when the grammar is read) is written that way or `"END-" $K`.  Built: `%as` and `%same`; the new spelling is not.
+at parse time unless the capture is a single fixed literal, which the generator can resolve when the grammar is read) is written that way or `"END-" $K`.  Built 2026-11-03: `x as K` and `$K`; `"END-" + $K` is the form (two elements, `"END-" $K`, would let white space come between them), read as the literal `"END-ADD"` when `K` is kept from one fixed literal in the same sequence, else compared at run time in the sequence that keeps `K`; `%as` and `%same` are refused with the new spelling in the message; `as` is a reserved word (a rule named `as` is refused).
 
 ## 11. An active grammar is a set of live rules (the user, 2026-11-02)
 
@@ -595,13 +595,13 @@ Exactly what was to be implemented, and nothing more.  What differs in the built
 ```
 include "sql.hbnf" as sql              ; a file's rules, reached as sql.name; its own whitespace/sensitivity/dialect directives apply to them
 exec-sql = "EXEC" "SQL" sql.statement "END-EXEC"                       ; island
-mode-directive = ">>" "MODE" word %as m  =>  grammar(m)                ; switch, the grammar named by the matched text
+mode-directive = ">>" "MODE" word as m  =>  grammar(m)                  ; switch, the grammar named by the matched text
 fixed-directive = ">>" "FIXED"  =>  grammar(fixed)                     ; switch to a named grammar
 ```
 
 - `include "file" as name`: the file is a grammar named `name`; without `as` it is the file's rules merged into the including one, as `include` is today.
 - `name.rule`: a rule of the grammar `name`.  **The dot is never part of a rule name (the user, 2026-11-02): it always means scope or context**, `scope.rule`, and scopes nest (`a.b.rule`).  The one way to have a dot or a space in a name is the angle-bracket form: everything between `<` and `>`, the brackets included, is one bareword, so `<my . bare . word>` is a single rule name and `<my . bare . word>.foo` is the rule `foo` inside the scope named `<my . bare . word>`.  (The dotted path in `%bind types += decl.name` is the same idea: `name` inside `decl`.)
-- `=> grammar(x)` ends a rule, after its pattern: `x` is a grammar name, or a name bound earlier in the same rule by `as` (until the `%`-free keywords, today's `%as`).  It is the only form of `=>` in this slice (the output forms come later).
+- `=> grammar(x)` ends a rule, after its pattern: `x` is a grammar name, or a name bound earlier in the same rule by `as` (`word as m`; it was `%as m` when this was written).  It is the only form of `=>` in this slice (the output forms come later).
 - The `%` words stay as they are in this slice; Q7 is not touched.
 
 **Meaning.**
@@ -726,7 +726,7 @@ white-space case in C; then phrase overrides in `ast`; then the tape case; then 
 
 ## Stage 2 status (white-space dialects, built 2026-11-02)
 
-Built: `=> grammar(x)` and `=> grammar(tag)` (the tag bound by `x %as tag`) at the end of an alternative, through the C, Rust, Zig and
+Built: `=> grammar(x)` and `=> grammar(tag)` (the tag bound by `x as tag`) at the end of an alternative, through the C, Rust, Zig and
 Ada backends.  A switch is an event at the position where its alternative ended; the current grammar is the last event in force, and
 going back before an event undoes it (every restore of the position in the generated parse functions goes through one macro or method
 for a parser that switches, so a switch in a guess that is given back is undone).  The caches keyed by position (white space, the word
@@ -921,4 +921,13 @@ Each was met writing `corpus/markdown`; the first two are the user's decisions, 
    `*( %spaces N *SP row )` does.  The repro is in `/home/matthew/hbnf-repro-spaces/` (README.txt, the failing grammar, the input, five variants).
 7. **A pattern rule's instances are named for the pattern** (`marked-x42x42`) in the tape and the tree; a rule written with the pattern as its body would want the caller's name (`strong = marked("**") | marked("__")` as one node `strong`).
 8. **Up references (section 25)** are the one item here that is a feature and not a repair.
+
+**More findings from the GraphQL grammar (`corpus/graphql`, 2026-11-03; each found by the agent that wrote it, none fixed).**
+9. **Ada**: a literal alternation holding `"type"` makes the enum value `<Rule>_Type`, which collides with the generated type of the same name and does not compile (`( "type" | "interface" )`).
+10. **Rust**: a rule called `body(X)` collides with the generated `parse_body_<rule>` functions (`parse_body_root_operation` is defined twice).
+11. **A negative lookahead over a rule that itself ends in a negative lookahead** (`!bare`, `bare = ... !( ... )`) works in C and wrongly refuses in Rust and Zig; a positive `&adds` is the workaround.  This is a backend bug, not a limit.
+12. **Ada** writes a raw TAB for `0x09` inside an Ada string literal when a character rule has a lookahead and is read a character at a time; the file does not compile.
+13. **`word`** is renamed `word-rule` when it is a regex or holds a group under a repetition, and the keyword boundary then breaks (`scan_word` undefined in C).
+14. **A token exception** `name - "on"` with a literal operand is refused with "expected a literal, name, or group"; the operand has to be a rule.
+15. **Letters in a rule of characters** must be `'e'`, not `"e"`: `"e"` is read as a whole word and fails on `e10`.
 

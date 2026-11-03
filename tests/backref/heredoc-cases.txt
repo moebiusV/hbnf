@@ -1,0 +1,8 @@
+ok	<<EOT\n> a\n> b\nEOT\n
+ok	<<X\nX\n
+ok	<<ab\n> x\nab\n
+bad	<<EOT\n> a\nEND\n
+bad	<<EOT\n> a\nEO\n
+bad	<<EOT\n> a\nEOTX\n
+bad	<<EOT\n> a\n
+bad	<<EOT\n> a\nEOT

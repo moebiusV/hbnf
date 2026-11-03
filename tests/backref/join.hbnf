@@ -1,0 +1,8 @@
+; "END-" + $K: a statement closes with END- and its own keyword.  K is kept from one fixed
+; literal, so each join is read as the literal it is, "END-ADD" and the like.
+prefix none
+top       = 1*( statement ";" )
+statement = "ADD" as k name [ "END-" + $k ]
+          | "SUBTRACT" as k name [ "END-" + $k ]
+          | "READ" as k name *( "AT" "END" name ) [ "END-" + $k ]
+name      = word

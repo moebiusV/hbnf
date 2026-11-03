@@ -1,0 +1,7 @@
+ok	add x;
+ok	add x end-add;
+ok	ADD x End-Add;
+ok	Subtract y END-SUBTRACT;
+bad	add x end-subtract;
+bad	add x end- add;
+bad	add x end-addx;

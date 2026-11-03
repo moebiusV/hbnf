@@ -1,0 +1,4 @@
+ok	$k|a$b|$12|34
+bad	$k|a$b|$12|3x
+bad	k|a$b|$12|34
+bad	$k|a$b|12|34

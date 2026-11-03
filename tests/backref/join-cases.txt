@@ -1,0 +1,12 @@
+ok	ADD x;
+ok	ADD x END-ADD;
+ok	SUBTRACT y END-SUBTRACT;
+ok	READ f AT END z END-READ;
+ok	ADD x END-ADD;SUBTRACT y;READ f END-READ;
+bad	ADD x END-SUBTRACT;
+bad	SUBTRACT y END-ADD;
+bad	ADD x END-ADDX;
+bad	ADD x END- ADD;
+bad	ADD x END -ADD;
+bad	ADD x end-add;
+bad	ADD x END-ADD END-ADD;

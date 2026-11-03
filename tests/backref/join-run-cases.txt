@@ -1,0 +1,10 @@
+ok	DO x END-DO;
+ok	LOOP y END-LOOP;
+ok	DO x END-DO;WHILE z END-WHILE;
+bad	DO x END-LOOP;
+bad	LOOP y END-DO;
+bad	DO x END-DOX;
+bad	DO x END-;
+bad	DO x END- DO;
+bad	DO x END-do;
+bad	DO x;

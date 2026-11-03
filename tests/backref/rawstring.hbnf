@@ -1,0 +1,8 @@
+; A raw string as C++ and Rust write them: R"delim(text)delim".  The delimiter is a run
+; of letters, empty or not, and the string closes with the same one.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+raw      = "R\"" delim as d "(" *~")" ")" $d "\""
+delim    = *ALPHA

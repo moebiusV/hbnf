@@ -92,7 +92,7 @@ refuse "an unknown grammar, the known ones" 'the grammars included `as` here are
 printf "${inc}top = \"a\" => 0\n" > tests/switch/_m/g.hbnf
 refuse "a value after =>" 'are not built yet'
 printf "${inc}top = \"a\" => grammar(mode)\n" > tests/switch/_m/g.hbnf
-refuse "a tag that is not bound" 'no earlier `%as mode`'
+refuse "a tag that is not bound" 'no earlier `as mode`'
 printf "${inc}top = [ \"a\" ] => grammar(free)\n" > tests/switch/_m/g.hbnf
 refuse "a switch that can match no text" 'can match no text'
 # a rule the grammar replaces besides white space

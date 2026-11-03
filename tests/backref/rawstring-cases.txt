@@ -1,0 +1,8 @@
+ok	R"x(hello)x"
+ok	R"(hi)"
+ok	R"abc(a b c)abc"
+bad	R"x(hello)y"
+bad	R"x(hello)"
+bad	R"(hi)x"
+bad	R"ab(hello)a"
+bad	R"ab(hello)abc"

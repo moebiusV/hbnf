@@ -347,7 +347,7 @@ begin
       then
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error,
-            "hbnf: a grammar with `%as` / `%same` can be emitted in C so far ("
+            "hbnf: a grammar with `as` / `$K` can be emitted in C so far ("
             & To_String (Backend) & " follows; RFCPLAN.md, W-grammars)");
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;

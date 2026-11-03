@@ -34,7 +34,7 @@ package HBNF_Tree_Sitter is
    --  `prec.dynamic`, the first the most, so that when forked parses both
    --  succeed the one hbnf's ordered choice would have taken wins.
 
-   --  Scanner: write `x %as tag` ... `%same tag` with an external scanner (the
+   --  Scanner: write `x as K` ... `$K` with an external scanner (the
    --  grammar gets `externals`, and Scanner_Source is the scanner.c that goes in
    --  `src/` next to the generated parser) so the closing text must repeat the
    --  opening one, as in hbnf.  The scanner keeps the tags in its state, which

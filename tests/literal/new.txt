@@ -7,3 +7,4 @@ c = len:8 data:[len] %d13.10
 d = 48..57 0x5a 0x5B
 e(N in 1..3) := 0x41 f(N % 2)
 f = 1*3( "x" ) 2"y" %spaces 4 z 2(0x41)
+g = name as t ">" "</" $t ">" "%as t" *( name as u "%same u" $u )

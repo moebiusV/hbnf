@@ -1,0 +1,7 @@
+; The run-time join in a file whose literals ignore case.
+prefix none
+sensitivity string %i
+top       = 1*( statement ";" )
+statement = opener as k name "END-" + $k
+opener    = "DO" | "LOOP"
+name      = word

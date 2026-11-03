@@ -1,0 +1,7 @@
+; The same in a file whose literals ignore case: so does the join.
+prefix none
+sensitivity string %i
+top       = 1*( statement ";" )
+statement = "ADD" as k name [ "END-" + $k ]
+          | "SUBTRACT" as k name [ "END-" + $k ]
+name      = word

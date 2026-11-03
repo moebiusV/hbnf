@@ -218,8 +218,8 @@ W-grammars, has the argument; `RFCPLAN.md` has the decisions):
   written by hand. No runtime cost, no new parsing algorithm, no undecidability. Domains are
   checked when the grammar is read, so a use that can never match is an error with a message.
   *Built (`tests/params.sh`): see "Why a two-level grammar can fail to end" below.*
-- *Consistent substitution* becomes a back-reference: `name %as tag` keeps the text a name
-  matched and `%same tag` is that text again, in the same sequence. It is a slice of the input
+- *Consistent substitution* becomes a back-reference: `name as tag` keeps the text a name
+  matched and `$tag` is that text again, in the same sequence. It is a slice of the input
   (two integers in the generated function, no copy), so a backtrack restores it with the
   position and nesting cannot mix two of them up. Mustache's closing tag, XML's, a here-document's
   terminator are the same rule. *Built, in C (`tests/backref.sh`, `corpus/mustache`).*
@@ -298,7 +298,7 @@ a BNF rule read as a metarule is refused with the line to add.
   instead of running to a limit (there is a limit as well, at 20,000 instances).
 - Where the family is open, as Algol 68's modes are, the plan is the lazy, input-driven instantiation
   above, with a no-progress check; it needs support in the parser and is the Algol 68 step's work.
-- Consistent substitution is the back-reference (`%as`, `%same`), and what a finite domain cannot
+- Consistent substitution is the back-reference (`as`, `$K`), and what a finite domain cannot
   hold, the names declared so far, is the context of decision 13. Neither needs the infinite family.
 
 **Why real grammars rarely meet it.** A grammar that is written to be read, which the Report's is and
@@ -597,7 +597,7 @@ turned into `conflicts` and `prec.dynamic` (four conflicts for ALGOL 60), and a 
 context test or a back-reference cannot be turned into anything: it is left out, and the nine
 mutants out of 500 that only Tree-sitter accepted were all the lookahead that was left out. The
 clearest case is Mustache, whose closing tag must repeat the opening one (`{{#a}} ... {{/a}}`):
-hbnf says it with `%as` and `%same`, and the Tree-sitter grammar it writes accepts `{{#a}}x{{/b}}`,
+hbnf says it with `as` and `$K`, and the Tree-sitter grammar it writes accepts `{{#a}}x{{/b}}`,
 because a Tree-sitter grammar cannot make a token repeat another; 106 of 2,000 mutated templates
 were accepted by Tree-sitter alone, and 103 of those 106 have a closing tag naming another section.
 Tree-sitter's one place for state is the external scanner, a C file with state of its own that

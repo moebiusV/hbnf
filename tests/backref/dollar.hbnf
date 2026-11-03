@@ -1,0 +1,7 @@
+; A `$` in a string is a character, and `$K` in a string is the text `$K`; in a
+; regular expression `$` is no anchor (`eol` is), and in a class it is a character.
+prefix none
+whitespace none
+top      = "$k" "|" "a$b" "|" cost "|" digits
+cost     = r"[$][0-9]+"
+digits   = r"[0-9]+"

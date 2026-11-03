@@ -176,8 +176,8 @@ package HBNF_Grammar is
       B_Where,       --  %where { code }: a test the alternative must pass
       B_Not,         --  !x: x does not match here; nothing is consumed
       B_And,         --  &x: x matches here; nothing is consumed
-      B_As,          --  x %as tag: the text x matched is kept, as `tag`
-      B_Same,        --  %same tag: the text kept as `tag` again, here
+      B_As,          --  x as K: the text x matched is kept, as `K`
+      B_Same,        --  $K: the text kept as `K` again, here (Path non-empty: `"END-" + $K`, Id 1 or 2 = ignore case)
       B_Spaces,      --  %spaces n: exactly n spaces (n a number expression)
       B_Col,         --  %col j: j is the column the parser is at
       B_Num,         --  x %num j: j is the decimal number x matched
@@ -185,9 +185,9 @@ package HBNF_Grammar is
       B_Bol,         --  bol: the position is the beginning of a line; nothing is consumed
       B_Eol,         --  eol: a line feed, a carriage return or the end of the input follows; nothing is consumed
       B_Switch);     --  `=> grammar(x)`: when the alternative has matched, x is the current grammar
-                     --  (Path = "tag": Ctx is a tag bound by %as, the text it kept names the grammar)
+                     --  (Path = "tag": Ctx is a tag bound by `as`, the text it kept names the grammar)
 
-   --  True once a grammar has read `%as` or `%same`: a back-reference, which the
+   --  True once a grammar has read `as` or `$K`: a back-reference, which the
    --  C backend alone emits so far.
    function Uses_Backref return Boolean;
 

@@ -283,6 +283,8 @@ package body HBNF_Grammar is
    --  (any scope then may be a target), and whether a switch is used at all.
    Switch_Seen   : Boolean := False;
    Tag_Switch    : Boolean := False;
+   Backref_Seen  : Boolean := False;
+   function Uses_Backref return Boolean is (Backref_Seen);
    Switch_Static : Path_Sets.Set;
 
    function Name_Start_Char (C : Character) return Boolean is
@@ -1250,7 +1252,11 @@ package body HBNF_Grammar is
          while K <= Text'Last and then Text (K) in ' ' | ASCII.HT loop
             K := K + 1;
          end loop;
-         return K <= Text'Last and then (Text (K) = '"' or else Name_Start (Text (K)));
+         return K <= Text'Last
+           and then (Text (K) = '"' or else Name_Start (Text (K))
+                     or else (Text (K) = '$' and then Hbnf_Notation
+                              and then K < Text'Last
+                              and then Name_Start (Text (K + 1))));
       end Joins_Here;
 
       --  Only the letters i, s and r, then a quote, from K on.
@@ -1598,6 +1604,25 @@ package body HBNF_Grammar is
                   loop
                      I := I + 1;
                   end loop;
+                  if Text (Start .. I - 1) in "as" | "same" then
+                     --  `%as` and `%same` were hbnf's own words, not ABNF's:
+                     --  they are written `x as K` and `$K`.
+                     raise Parse_Error with
+                       Integer'Image (Line) & ":" & Integer'Image (Col)
+                       & ": `%" & Text (Start .. I - 1) & "` is "
+                       & (if Text (Start .. I - 1) = "as"
+                          then "written `as`: `x as K` keeps the text x "
+                               & "matched under the name K"
+                          else "written `$`: `$K` is the text kept as K, "
+                               & "again, later in the same sequence")
+                       & (if Hbnf_Notation
+                          then ".  (tools/hbnf_modernize.py rewrites a "
+                               & "grammar.)"
+                          else ".  ABNF and the other dialects have no "
+                               & "back-reference; take the `dialect` line out "
+                               & "to read the file in hbnf's own notation, "
+                               & "where `x as K` and `$K` are written.");
+                  end if;
                   Emit (T_Pct, Text (Start .. I - 1));
                   Col := Col + (I - Start + 1);
                   --  `%spaces(k + 1)`: the number is an expression in
@@ -2465,6 +2490,38 @@ package body HBNF_Grammar is
                            end if;
                         end;
                      end if;
+                     if Hbnf_Notation and then Text (Start .. I - 1) = "as" then
+                        --  `x as K`: a word of hbnf's own notation, so no
+                        --  rule is named `as` (it is not ABNF's, EBNF's or
+                        --  yacc's: those dialects keep it a name).
+                        if Col = 1 then
+                           raise Parse_Error with
+                             Integer'Image (Line) & ":" & Integer'Image (Col)
+                             & ": `as` is a word of hbnf's notation (`x as K` keeps the "
+                             & "text x matched under the name K), so no rule is named "
+                             & "`as`; call this one `as-word`, or the like";
+                        end if;
+                        Emit (T_Pct, "as");
+                     else
+                        Emit (T_Name, Text (Start .. I - 1));
+                     end if;
+                     Col := Col + (I - Start);
+                  end;
+               elsif Text (I) = '$' and then Hbnf_Notation and then I < Text'Last
+                 and then Name_Start (Text (I + 1))
+               then
+                  --  `$K`: the text kept as K by `x as K`, again.  (Inside a
+                  --  string, `$` is a character like any other; the strings
+                  --  are read above.)
+                  declare
+                     Start : constant Positive := I + 1;
+                  begin
+                     I := I + 1;
+                     while I <= Text'Last and then Name_Char (Text (I)) loop
+                        I := I + 1;
+                     end loop;
+                     Emit (T_Pct, "same");
+                     Col := Col + 1;
                      Emit (T_Name, Text (Start .. I - 1));
                      Col := Col + (I - Start);
                   end;
@@ -2621,15 +2678,48 @@ package body HBNF_Grammar is
          declare
             T : constant Token := Cur (P);
          begin
-            if T.Kind not in T_String | T_Name then
-               Bad (T, "`+` joins literals and word parameters, and what follows "
-                    & "it here is neither: write a quoted literal or the name of a "
-                    & "parameter after it, `""END-"" + K`");
+            if T.Kind = T_Pct and then To_String (T.Text) = "same" then
+               --  `"END-" + $K`: a captured text.  The tag is the name that
+               --  follows; the part is kept as a T_Pct whose text is the tag.
+               Next (P);
+               if Cur (P).Kind /= T_Name then
+                  Bad (T, "`$` takes the name of a capture: `""END-"" + $K`, "
+                       & "with `x as K` earlier in the sequence");
+               end if;
+               Parts.Append (Token'(T_Pct, T.Line, T.Col, Cur (P).Text));
+               Next (P);
+            else
+               if T.Kind not in T_String | T_Name then
+                  Bad (T, "`+` joins literals and word parameters, and what follows "
+                       & "it here is neither: write a quoted literal or the name of a "
+                       & "parameter after it, `""END-"" + K`, or a captured text, "
+                       & "`""END-"" + $K`");
+               end if;
+               Parts.Append (T);
+               Next (P);
             end if;
-            Parts.Append (T);
-            Next (P);
          end;
       end loop;
+      --  A captured text: one literal, then `$K`, and nothing else.
+      if (for some T of Parts => T.Kind = T_Pct) then
+         if Natural (Parts.Length) /= 2 or else Parts (1).Kind /= T_String
+           or else Parts (2).Kind /= T_Pct
+         then
+            Bad (First, "a join with a captured text is a literal and `$K`: "
+                 & "`""END-"" + $K` (the one word END- and the text kept as K, "
+                 & "no white space between); it takes no other part");
+         end if;
+         if (for some C of To_String (Parts (1).Text) => C in ' ' | ASCII.HT | ASCII.LF) then
+            Bad (First, "the literal of a join with `$K` is the front of one word, "
+                 & "and has a blank in it");
+         end if;
+         Backref_Seen := True;
+         return new Element'
+           (Kind => Block, Min => 1, Max => 1, Op => B_Same,
+            Ctx => Parts (2).Text, Path => Parts (1).Text,
+            Id => (if File_No_Case and then Has_Letter (Parts (1).Text) then 2 else 1),
+            Look => <>, Code => <>);
+      end if;
       for T of Parts loop
          Append (Shown, (if Length (Shown) > 0 then " + " else "") & Show (T));
          if T.Kind = T_Name then
@@ -2867,7 +2957,7 @@ package body HBNF_Grammar is
             when '1' .. '9' =>
                Bad ("`\" & C & "` is a back-reference, which needs a regular "
                     & "expression engine to backtrack; hbnf keeps a text "
-                    & "with `x %as tag` and repeats it with `%same tag`");
+                    & "with `x as K` and repeats it with `$K`");
             when 'p' | 'P' =>
                Bad ("`\" & C & "` is a Unicode property class; write the "
                     & "ranges, `[\u00C0-\u00FF]`");
@@ -4154,9 +4244,6 @@ package body HBNF_Grammar is
    --  One of the context operations (RFCPLAN.md decision 13): `? types`,
    --  `%bind types += field.path` or `%bind { code }`, `%scope`,
    --  `%where { code }`.  They stay in the sequence where they are written.
-   Backref_Seen : Boolean := False;
-   function Uses_Backref return Boolean is (Backref_Seen);
-
    --  The frames of rules with parameters that are numbers worked out while
    --  parsing, by rule name.
    Frames_Seen : Boolean := False;
@@ -4354,11 +4441,13 @@ package body HBNF_Grammar is
             end loop;
          end;
       elsif W = "as" or else W = "same" then
-         --  `x %as tag` keeps the text x matched; `%same tag` is that text
-         --  again.  The tag is local to the sequence they stand in.
+         --  `x as K` keeps the text x matched; `$K` is that text again.  The
+         --  tag is local to the sequence they stand in.  (The lexer makes
+         --  T_Pct "as" of the word `as` and T_Pct "same" of `$`.)
          if Cur (P).Kind /= T_Name then
             raise Parse_Error with
-              Where & "`%" & W & "` takes a tag: `name %as tag` ... `%same tag`";
+              Where & (if W = "as" then "`as` takes the name of a capture: `x as K` ... `$K`"
+                       else "`$` takes the name of a capture: `x as K` ... `$K`");
          end if;
          E.Op := (if W = "as" then B_As else B_Same);
          E.Ctx := Cur (P).Text;
@@ -4483,6 +4572,12 @@ package body HBNF_Grammar is
                     in "test" | "nottest" | "bind" | "scope" | "where" | "not" | "and"
                        | "as" | "same" | "spaces" | "col" | "num"
          then
+            if V.Is_Empty and then To_String (Cur (P).Text) = "as" then
+               raise Parse_Error with
+                 Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                 & ": `as` follows the element whose text it keeps: `x as K`.  "
+                 & "It is a word of hbnf's notation, so no rule is named `as`";
+            end if;
             Element_Vectors.Append (V, Parse_Context_Op (P));
          elsif Cur (P).Kind = T_Code
            and then not Ends_Pattern (P.Pos + 1)
@@ -4528,7 +4623,7 @@ package body HBNF_Grammar is
 
    --  `=> grammar(NAME)` at the end of an alternative whose pattern is B: the
    --  switch is a zero-width element after the pattern.  NAME is a scope
-   --  (`include "f" as NAME`) or a tag the pattern bound with `%as`.
+   --  (`include "f" as NAME`) or a tag the pattern bound with `as`.
    procedure Append_Switch (P : in out Parser; B : in out Element_Vectors.Vector) is
       T : constant Token := Cur (P);
       Where : constant String := Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": ";
@@ -4562,7 +4657,7 @@ package body HBNF_Grammar is
             then
                Fail (Where & "`grammar(" & Arg & ")` takes a name: a grammar "
                      & "included `as name`, or a tag bound earlier in the alternative "
-                     & "by `word %as tag`");
+                     & "by `word as tag`");
             end if;
             for E of B loop
                if E.Kind = Block and then E.Op = B_As and then To_String (E.Ctx) = Arg then
@@ -4592,7 +4687,7 @@ package body HBNF_Grammar is
                   begin
                      if not Scope_Defs.Contains (Cand) then
                         Fail (Where & "`grammar(" & Arg & ")`: no grammar is included "
-                              & "`as " & Arg & "`, and no earlier `%as " & Arg
+                              & "`as " & Arg & "`, and no earlier `as " & Arg
                               & "` in this alternative names a tag; "
                               & (if Known_Scopes = ""
                                  then "no grammar is included `as` anything here"
@@ -4951,6 +5046,7 @@ package body HBNF_Grammar is
       function In_Seq (V : Element_Vectors.Vector) return Boolean is
         (for some E of V =>
            (E.Kind = Literal and then E.No_Case)
+           or else (E.Kind = Block and then E.Op = B_Same and then E.Id = 2)
            or else (E.Kind = Group and then In_Seq (E.Items)));
    begin
       return (for some R of Rules => In_Seq (R.Pattern));
@@ -5018,6 +5114,139 @@ package body HBNF_Grammar is
    function Ends_Directive (P : Parser; K : Positive) return Boolean is
      (P.Pos + K > Natural (P.Toks.Length)
       or else P.Toks (P.Pos + K).Kind in T_Newline | T_Comment | T_EOF);
+
+   --  The join with a captured text, `"END-" + $K` (ABNF.md).  When K is kept
+   --  from ONE fixed literal that stands in the same sequence before the join
+   --  (`"ADD" as K ... [ "END-" + $K ]`: the join may be in a group, an option
+   --  or a repetition of that sequence), the join is that literal,
+   --  `"END-ADD"`, and the reader makes it here: a backend sees an ordinary
+   --  literal, and the capture, unused by then, is dropped.  Any other join is
+   --  kept as it is, a `$K` with a prefix, and the backends compare at run time;
+   --  that has to stand in the sequence that keeps K, since a group, an option
+   --  or a repetition is a sequence of its own at run time, and is refused
+   --  here when it does not.
+   procedure Resolve_Captures (Rules : in out Rule_Vectors.Vector) is
+      package Tag_Maps is new Ada.Containers.Indefinite_Ordered_Maps
+        (String, Natural);
+      package Tag_Sets is new Ada.Containers.Indefinite_Ordered_Sets (String);
+
+      --  A `x as K` after one fixed literal.
+      type Binding is record
+         Tag      : Unbounded_String;
+         Lit      : Unbounded_String;
+         No_Case  : Boolean;
+         Owner    : Natural;               --  the Walk that read it
+         Elem     : Element_Access;        --  the `as` element
+         Resolved : Boolean := False;
+      end record;
+      package Binding_Vectors is new Ada.Containers.Vectors (Positive, Binding);
+
+      Bindings : Binding_Vectors.Vector;
+      Walks    : Natural := 0;
+      Rule_Now : Unbounded_String;
+
+      --  Does a `$K` or `=> grammar(K)` of this tag stand in Els, deep?
+      function Refers (Els : Element_Vectors.Vector; Tag : String) return Boolean is
+        (for some E of Els =>
+           (E.Kind = Group and then Refers (E.Items, Tag))
+           or else (E.Kind = Block and then E.Op in B_Same | B_Switch
+                    and then To_String (E.Ctx) = Tag
+                    and then (E.Op = B_Same or else E.Path /= Null_Unbounded_String)));
+
+      procedure Walk (Els : in out Element_Vectors.Vector; Outer : Tag_Maps.Map) is
+         Me    : constant Natural := Walks + 1;
+         Env   : Tag_Maps.Map := Outer;      --  tag -> index in Bindings
+         Bound : Tag_Sets.Set;               --  tags kept in this sequence so far
+         First : Natural := 1;               --  where the sequence begins
+      begin
+         Walks := Me;
+         for K in 1 .. Natural (Els.Length) loop
+            declare
+               E : constant Element_Access := Els (K);
+            begin
+               case E.Kind is
+                  when Alt =>
+                     Env := Outer;
+                     Bound.Clear;
+                     First := K + 1;
+                  when Group =>
+                     Walk (E.Items, Env);
+                  when Block =>
+                     if E.Op = B_As then
+                        Bound.Include (To_String (E.Ctx));
+                        if K > First and then Els (K - 1).Kind = Literal
+                          and then Els (K - 1).Min = 1 and then Els (K - 1).Max = 1
+                        then
+                           Bindings.Append
+                             (Binding'(Tag => E.Ctx, Lit => Els (K - 1).Lit,
+                                       No_Case => Els (K - 1).No_Case, Owner => Me,
+                                       Elem => E, Resolved => False));
+                           Env.Include (To_String (E.Ctx), Natural (Bindings.Length));
+                        else
+                           Env.Exclude (To_String (E.Ctx));
+                        end if;
+                     elsif E.Op = B_Same and then E.Path /= Null_Unbounded_String then
+                        declare
+                           Tag : constant String := To_String (E.Ctx);
+                           Hit : constant Boolean := Env.Contains (Tag);
+                        begin
+                           if Hit
+                             and then (E.Id = 2
+                                       or else not Bindings (Env.Element (Tag)).No_Case)
+                           then
+                              declare
+                                 B : Binding := Bindings (Env.Element (Tag));
+                                 Whole : constant Unbounded_String := E.Path & B.Lit;
+                              begin
+                                 Els.Replace_Element
+                                   (K, new Element'
+                                         (Kind => Literal, Min => E.Min, Max => E.Max,
+                                          Lit => Whole, Has_Value => False, Value => 0,
+                                          No_Case => E.Id = 2));
+                                 B.Resolved := True;
+                                 Bindings.Replace_Element (Env.Element (Tag), B);
+                              end;
+                           elsif not Bound.Contains (Tag) then
+                              Fail ("rule `" & Spelled (To_String (Rule_Now)) & "`: `"""
+                                    & To_String (E.Path) & """ + $" & Tag
+                                    & "`: no `x as " & Tag & "` stands earlier in the "
+                                    & "sequence it is in.  A group, an option or a "
+                                    & "repetition is a sequence of its own, so a capture "
+                                    & "made outside it is not seen inside it unless it "
+                                    & "is kept from one fixed literal (`""ADD"" as " & Tag
+                                    & "`); write the capture in the same sequence");
+                           end if;
+                        end;
+                     end if;
+                  when others =>
+                     null;
+               end case;
+            end;
+         end loop;
+         --  A capture that only the joins used, and they are literals now.
+         for B in reverse 1 .. Natural (Bindings.Length) loop
+            declare
+               X : constant Binding := Bindings (B);
+            begin
+               if X.Owner = Me and then X.Resolved
+                 and then not Refers (Els, To_String (X.Tag))
+               then
+                  for I in reverse 1 .. Natural (Els.Length) loop
+                     if Els (I) = X.Elem then
+                        Els.Delete (I);
+                        exit;
+                     end if;
+                  end loop;
+               end if;
+            end;
+         end loop;
+      end Walk;
+   begin
+      for J in 1 .. Natural (Rules.Length) loop
+         Rule_Now := Rules (J).Name;
+         Walk (Rules (J).Pattern, Tag_Maps.Empty_Map);
+      end loop;
+   end Resolve_Captures;
 
    --  Once every file is read (Parse_File, or Parse on its own):
    --  - a reference from a file with `sensitivity rule-name %i` takes the
@@ -9529,7 +9758,7 @@ package body HBNF_Grammar is
               and then (K = 1 or else Toks (K - 1).Kind in T_Newline | T_Comment | T_Code
                         or else (Toks (K - 1).Kind = T_Name
                                  and then To_String (Toks (K - 1).Text) = "hidden"));
-            --  Names that are not rules: after a `%` word (`%as tag`, `?
+            --  Names that are not rules: after a `%` word (`as tag`, `$tag`, `?
             --  types`), after `context`, the pieces of `%bind ctx += path`, and
             --  a width's field (`len:8`).
             Not_A_Rule : constant Boolean :=
@@ -11088,6 +11317,7 @@ package body HBNF_Grammar is
          <<Next_Item>>
       end loop;
       if File_Depth = 0 then
+         Resolve_Captures (Rules);
          Expand_Params (Rules);
          Check_Contexts (Rules);
          Split_Mixed (Rules);
@@ -11570,6 +11800,7 @@ package body HBNF_Grammar is
             end;
          end if;
          Apply_Actions (Result);
+         Resolve_Captures (Result);
          Expand_Params (Result);
          Check_Contexts (Result);
          Split_Mixed (Result);

@@ -276,7 +276,7 @@ package body HBNF_Zig is
 
    Writer_On    : Boolean := False;   --  --writer: write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
-   Bref_Seq     : Natural := 0;       --  numbers the sequences that have %as / %same
+   Bref_Seq     : Natural := 0;       --  numbers the sequences that have `as` / `$K`
    Spans_On     : Boolean := False;   --  --spans: where each node is in the text
    Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
@@ -1727,7 +1727,7 @@ package body HBNF_Zig is
          procedure Elements
            (Idx : Natural; Els : Element_Vectors.Vector; Acc, Gap : String;
             Ind : Natural; Alt_Ok : Boolean := False; Alt_Off : Natural := 0) is
-            --  `x %as tag`: how x is written, for the `%same tag` that writes it again
+            --  `x as K`: how x is written, for the `$K` that writes it again
             Tag_Name, Tag_Nm, Tag_Ex : String_Vectors.Vector;
             Last_Nm, Last_Ex : Unbounded_String;
          begin
@@ -1794,6 +1794,14 @@ package body HBNF_Zig is
                         Tag_Name.Append (E.Ctx);
                         Tag_Nm.Append (Last_Nm);
                         Tag_Ex.Append (Last_Ex);
+                     elsif E.Op = B_Same and then E.Path /= Null_Unbounded_String then
+                        for T in 1 .. Natural (Tag_Name.Length) loop
+                           if Tag_Name (T) = E.Ctx then
+                              P (Ind, "w.lit(" & Gap & ", """ & Zig_Escape (To_String (E.Path)) & """);");
+                              Value (Idx, To_String (Tag_Nm (T)), To_String (Tag_Ex (T)),
+                                     "false", False, Ind);
+                           end if;
+                        end loop;
                      elsif E.Op = B_Same then
                         for T in 1 .. Natural (Tag_Name.Length) loop
                            if Tag_Name (T) = E.Ctx then
@@ -2967,7 +2975,7 @@ package body HBNF_Zig is
          Pref : constant String := (if Fail = "" then "try " else "");
          Cat  : constant String := (if Fail = "" then "" else " catch " & Fail);
          Scopes : String_Vectors.Vector;
-         --  `x %as tag` keeps where the text x matched is and how long; `%same tag`
+         --  `x as K` keeps where the text x matched is and how long; `$K`
          --  is that text again.  The pair is local to this sequence.
          Sid : constant String := Img (Bref_Seq + 1);
          function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
@@ -3103,6 +3111,44 @@ package body HBNF_Zig is
                           & "; p.pos = k_; " & Tag_Var ("cp", E.Ctx) & " = st_; "
                           & Tag_Var ("cl", E.Ctx) & " = k_ - st_; }");
                         Append (Buf, LF);
+                     elsif E.Op = B_Same and then E.Path /= Null_Unbounded_String then
+                        --  `"END-" + $K`: the front and the text kept as K, one word
+                        declare
+                           Pre : constant String := To_String (E.Path);
+                           Cp  : constant String := Tag_Var ("cp", E.Ctx);
+                           Cl  : constant String := Tag_Var ("cl", E.Ctx);
+                           function Same (A, B : String) return String is
+                             (if E.Id = 2 then "std.ascii.eqlIgnoreCase(" & A & ", " & B & ")"
+                              else "std.mem.eql(u8, " & A & ", " & B & ")");
+                           Msg : constant String := "`" & Zig_Escape (Pre) & "` and the text kept as `"
+                             & Zig_Escape (To_String (E.Ctx)) & "`";
+                        begin
+                           if Skips then
+                              Append (Buf, Ind & "p.skip_ws();");
+                              Append (Buf, LF);
+                           end if;
+                           Append (Buf, Ind & "{ const b_ = p.text; const pre_ = """ & Zig_Escape (Pre)
+                             & """; const cl_ = " & Cl & ";");
+                           Append (Buf, LF);
+                           if Is_Keyword_Lit (Pre) then
+                              Append (Buf, Ind & "  const n_ = scan_word(b_, p.pos, b_.len);");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  if (n_ != pre_.len + cl_ or !"
+                                & Same ("b_[p.pos .. p.pos + pre_.len]", "pre_") & " or !"
+                                & Same ("b_[p.pos + pre_.len .. p.pos + n_]", "b_[" & Cp & " .. " & Cp & " + cl_]")
+                                & ") { " & Pref & "p.fail(""" & Msg & """)" & Cat & "; }");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  p.pos += n_; }");
+                           else
+                              Append (Buf, Ind & "  if (p.pos + pre_.len + cl_ > b_.len or !"
+                                & Same ("b_[p.pos .. p.pos + pre_.len]", "pre_") & " or !"
+                                & Same ("b_[p.pos + pre_.len .. p.pos + pre_.len + cl_]", "b_[" & Cp & " .. " & Cp & " + cl_]")
+                                & ") { " & Pref & "p.fail(""" & Msg & """)" & Cat & "; }");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  p.pos += pre_.len + cl_; }");
+                           end if;
+                           Append (Buf, LF);
+                        end;
                      elsif E.Op = B_Same then
                         if Skips then
                            Append (Buf, Ind & "p.skip_ws();");

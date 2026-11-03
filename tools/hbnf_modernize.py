@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Rewrite the old spellings of hbnf's own notation to the new ones.
 
-    %x41  %x41-5A  %x0D.0A  %d65  %b1000001  %i"abc"  %s"abc"
+    %x41  %x41-5A  %x0D.0A  %d65  %b1000001  %i"abc"  %s"abc"  %as K  %same K
 becomes
-    0x41  0x41..0x5A  0x0D 0x0A  65  0b1000001  i"abc"  s"abc"
+    0x41  0x41..0x5A  0x0D 0x0A  65  0b1000001  i"abc"  s"abc"  as K  $K
 
 hbnf's own notation is a file with no `dialect` line, or `dialect hbnf`.  A file
 that says `dialect abnf`, `ebnf`, `bnf` or `ybnf` is another notation's and is
@@ -29,7 +29,8 @@ OTHER_DIALECTS = {"abnf", "ebnf", "bnf", "ybnf"}
 
 PATTERN = re.compile(
     r"%(?P<base>[xXdDbBoOuU])(?P<digits>[0-9A-Fa-f]+(?:[-.][0-9A-Fa-f]+)*)(?![A-Za-z0-9_])"
-    r"|%(?P<case>[iIsS])[ \t]*(?![A-Za-z0-9_])")
+    r"|%(?P<case>[iIsS])[ \t]*(?![A-Za-z0-9_])"
+    r"|%(?P<bref>as|same)(?P<gap>[ \t]+)(?=[A-Za-z_])")
 # A repetition count written apart from what it repeats (`1*3 ( x )`, `2 "x"`): in hbnf's own notation a decimal
 # number is a code point unless it is against the element after it.
 SPACED = re.compile(r"(?<![A-Za-z0-9_.@:#%-])(\d+)([ \t]+)(?=[A-Za-z_(\"'<~\[%!&])")
@@ -298,7 +299,13 @@ def rewrite(text):
                 pieces.append(s[pos:m.start()])
                 before = (tail + "".join(pieces))[-24:]
                 after = s[m.end():] or nxt
-                if m.group("case"):
+                if m.group("bref"):
+                    # `x %as K` is `x as K`; `%same K` is `$K`
+                    if m.group("bref") == "same":
+                        new = "$"
+                    else:
+                        new = ("as" if not NAME_END.search(before).group(0) else " as") + m.group("gap")
+                elif m.group("case"):
                     # %i"abc": the string is the next token
                     new = m.group("case").lower() if (m.end() == len(s) and nxt == '"') else m.group(0)
                 else:

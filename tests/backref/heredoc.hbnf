@@ -1,0 +1,8 @@
+; A here-document: the terminator line repeats the word after `<<`.  The body lines
+; here begin with "> ", so that the terminator is the first line that does not.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc      = "<<" delim as d LF *( "> " *~LF LF ) $d LF
+delim    = 1*ALPHA
