@@ -1,0 +1,2 @@
+# bad: a list of variable definitions holds at least one
+query () { a }

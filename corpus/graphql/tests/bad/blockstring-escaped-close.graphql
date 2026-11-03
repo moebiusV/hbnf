@@ -1,0 +1,2 @@
+# bad: a backslash escapes the closing quotes, so the block string is not closed
+{ a(x: """abc\""" }

@@ -1,0 +1,3 @@
+query{a}
+mutation{b}
+subscription{c}

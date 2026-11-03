@@ -1,0 +1,2 @@
+# bad: a fragment definition needs a selection set
+fragment F on T

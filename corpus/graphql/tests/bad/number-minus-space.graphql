@@ -1,0 +1,2 @@
+# bad: a minus sign is part of the number
+{ a(x: - 1) }

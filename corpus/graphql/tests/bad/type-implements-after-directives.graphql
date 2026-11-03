@@ -1,0 +1,2 @@
+# bad: implements comes before the directives
+type A @d implements B { a: Int }

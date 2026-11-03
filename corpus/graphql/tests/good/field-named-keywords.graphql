@@ -1,0 +1,1 @@
+type A { query: Int, mutation: Int, fragment: Int, on: Int, extend: Int, repeatable: Int, implements: Int, directive: Int, true: Int, false: Int, null: Int }

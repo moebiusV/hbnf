@@ -1,0 +1,3 @@
+extend union U = C
+extend union V @d
+extend union W @d = | X

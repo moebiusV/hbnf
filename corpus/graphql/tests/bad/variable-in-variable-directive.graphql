@@ -1,0 +1,2 @@
+# bad: a directive on a variable definition is constant
+query ($a: Int @d(x: $b)) { c }

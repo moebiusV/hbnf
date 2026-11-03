@@ -1,0 +1,7 @@
+{ a(x: """
+    Hello,
+      World!
+
+    Yours,
+      GraphQL.
+  """) }

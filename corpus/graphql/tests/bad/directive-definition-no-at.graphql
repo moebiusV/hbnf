@@ -1,0 +1,2 @@
+# bad: a directive name starts with @
+directive a on FIELD

@@ -1,0 +1,1 @@
+type A implements B & C @d @e(x: 1) { f: Int }

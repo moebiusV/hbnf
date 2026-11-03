@@ -1,0 +1,2 @@
+# bad: a type needs a name
+type { a: Int }

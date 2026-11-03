@@ -1,0 +1,2 @@
+# bad: `on` is not a fragment name
+fragment on on X { a }

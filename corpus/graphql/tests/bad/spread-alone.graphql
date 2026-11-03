@@ -1,0 +1,2 @@
+# bad: a spread needs a fragment name or a selection set
+{ ... }

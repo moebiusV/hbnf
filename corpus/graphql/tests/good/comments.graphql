@@ -1,0 +1,6 @@
+# a comment
+{ # another
+  a # trailing
+  # between
+  b
+} # end

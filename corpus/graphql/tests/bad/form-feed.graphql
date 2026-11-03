@@ -1,0 +1,2 @@
+# bad: a form feed is no white space
+{ a  b }

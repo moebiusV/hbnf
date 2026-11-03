@@ -1,0 +1,2 @@
+# bad: a default value in the type system is constant
+type A { f(x: Int = $v): Int }

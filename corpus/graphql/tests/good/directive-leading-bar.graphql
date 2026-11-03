@@ -1,0 +1,4 @@
+directive @a on
+  | QUERY
+  | MUTATION
+  | SUBSCRIPTION

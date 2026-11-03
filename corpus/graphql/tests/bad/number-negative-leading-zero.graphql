@@ -1,0 +1,2 @@
+# bad: an integer has no leading zero
+{ a(x: -01) }

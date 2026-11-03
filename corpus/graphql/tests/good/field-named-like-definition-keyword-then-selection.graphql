@@ -1,0 +1,1 @@
+{ type { on { fragment } } schema(extend: 1) { scalar } }

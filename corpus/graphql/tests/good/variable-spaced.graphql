@@ -1,0 +1,1 @@
+query ( $ a : Int ) { f(a: $ a) }

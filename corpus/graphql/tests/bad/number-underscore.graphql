@@ -1,0 +1,2 @@
+# bad: an underscore (a name character) cannot follow a number
+{ a(x: 1_000) }

@@ -1,0 +1,2 @@
+# bad: a dot cannot follow a float
+{ a(x: 1e5.5) }

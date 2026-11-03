@@ -1,0 +1,2 @@
+# bad: implements needs an interface
+type A implements { a: Int }

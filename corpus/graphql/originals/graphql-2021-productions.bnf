@@ -1,0 +1,210 @@
+# The grammar blocks of the GraphQL specification, October 2021 edition (spec.graphql.org/October2021/),
+# sections 2 (Language) and 3 (Type System), written down from memory of the specification and not
+# fetched: a transcription, the baseline bench/count.py counts hbnf's grammar against.  The
+# specification writes a lexical production with `::` and a syntactic one with `:`, and one
+# alternative to a line; here both are `::=`, a parameter `[Const]` is `(Const)`, "one of" is a list of
+# alternatives, and the prose of a production (`but not`, `[lookahead != ...]`) is kept as comments.
+#
+# 2.1 to 2.9: the lexical grammar
+SourceCharacter ::=
+    x09 | x0A | x0D | [x20-xFFFF]
+Ignored ::=
+    UnicodeBOM
+  | WhiteSpace
+  | LineTerminator
+  | Comment
+  | Comma
+UnicodeBOM ::= xFEFF
+WhiteSpace ::=
+    x09
+  | x20
+LineTerminator ::=
+    x0A
+  | x0D                  # [lookahead != x0A]
+  | x0D x0A
+Comment ::= x23 CommentChar*                      # [lookahead != CommentChar]
+CommentChar ::= SourceCharacter                   # but not LineTerminator
+Comma ::= ','
+Token ::=
+    Punctuator
+  | Name
+  | IntValue
+  | FloatValue
+  | StringValue
+Punctuator ::= '!' | '$' | '&' | '(' | ')' | '...' | ':' | '=' | '@' | '[' | ']' | '{' | '|' | '}'
+Name ::= NameStart NameContinue*                  # [lookahead != NameContinue]
+NameStart ::=
+    Letter
+  | '_'
+NameContinue ::=
+    Letter
+  | Digit
+  | '_'
+Letter ::= [A-Za-z]
+Digit ::= [0-9]
+IntValue ::= IntegerPart                          # [lookahead != Digit, '.', NameStart]
+IntegerPart ::=
+    NegativeSign? '0'
+  | NegativeSign? NonZeroDigit Digit*
+NegativeSign ::= '-'
+NonZeroDigit ::= Digit                            # but not '0'
+FloatValue ::=
+    IntegerPart FractionalPart                    # [lookahead != Digit, '.', NameStart]
+  | IntegerPart ExponentPart                      # [lookahead != Digit, '.', NameStart]
+  | IntegerPart FractionalPart ExponentPart       # [lookahead != Digit, '.', NameStart]
+FractionalPart ::= '.' Digit+
+ExponentPart ::= ExponentIndicator Sign? Digit+
+ExponentIndicator ::= 'e' | 'E'
+Sign ::= '+' | '-'
+StringValue ::=
+    '""'                                          # [lookahead != '"']
+  | '"' StringCharacter+ '"'
+  | BlockString
+StringCharacter ::=
+    SourceCharacter                               # but not '"' or '\' or LineTerminator
+  | '\u' EscapedUnicode
+  | '\' EscapedCharacter
+EscapedUnicode ::= [0-9A-Fa-f]{4}
+EscapedCharacter ::= '"' | '\' | '/' | 'b' | 'f' | 'n' | 'r' | 't'
+BlockString ::= '"""' BlockStringCharacter* '"""'
+BlockStringCharacter ::=
+    SourceCharacter                               # but not '"""' or '\"""'
+  | '\"""'
+# 2.2 to 2.13: the executable language
+Document ::= Definition+
+Definition ::=
+    ExecutableDefinition
+  | TypeSystemDefinition
+  | TypeSystemExtension
+ExecutableDocument ::= ExecutableDefinition+
+ExecutableDefinition ::=
+    OperationDefinition
+  | FragmentDefinition
+OperationDefinition ::=
+    OperationType Name? VariableDefinitions? Directives? SelectionSet
+  | SelectionSet
+OperationType ::= 'query' | 'mutation' | 'subscription'
+SelectionSet ::= '{' Selection+ '}'
+Selection ::=
+    Field
+  | FragmentSpread
+  | InlineFragment
+Field ::= Alias? Name Arguments? Directives? SelectionSet?
+Arguments(Const) ::= '(' Argument(?Const)+ ')'
+Argument(Const) ::= Name ':' Value(?Const)
+Alias ::= Name ':'
+FragmentSpread ::= '...' FragmentName Directives?
+FragmentDefinition ::= 'fragment' FragmentName TypeCondition Directives? SelectionSet
+FragmentName ::= Name                             # but not 'on'
+TypeCondition ::= 'on' NamedType
+InlineFragment ::= '...' TypeCondition? Directives? SelectionSet
+Value(Const) ::=
+    Variable                                      # if not Const
+  | IntValue
+  | FloatValue
+  | StringValue
+  | BooleanValue
+  | NullValue
+  | EnumValue
+  | ListValue(?Const)
+  | ObjectValue(?Const)
+BooleanValue ::= 'true' | 'false'
+NullValue ::= 'null'
+EnumValue ::= Name                                # but not 'true', 'false' or 'null'
+ListValue(Const) ::=
+    '[' ']'
+  | '[' Value(?Const)+ ']'
+ObjectValue(Const) ::=
+    '{' '}'
+  | '{' ObjectField(?Const)+ '}'
+ObjectField(Const) ::= Name ':' Value(?Const)
+VariableDefinitions ::= '(' VariableDefinition+ ')'
+VariableDefinition ::= Variable ':' Type DefaultValue? Directives(Const)?
+Variable ::= '$' Name
+DefaultValue ::= '=' Value(Const)
+Type ::=
+    NamedType
+  | ListType
+  | NonNullType
+NamedType ::= Name
+ListType ::= '[' Type ']'
+NonNullType ::=
+    NamedType '!'
+  | ListType '!'
+Directives(Const) ::= Directive(?Const)+
+Directive(Const) ::= '@' Name Arguments(?Const)?
+# 3: the type system
+TypeSystemDocument ::= TypeSystemDefinition+
+TypeSystemDefinition ::=
+    SchemaDefinition
+  | TypeDefinition
+  | DirectiveDefinition
+TypeSystemExtension ::=
+    SchemaExtension
+  | TypeExtension
+SchemaDefinition ::= Description? 'schema' Directives(Const)? '{' RootOperationTypeDefinition+ '}'
+SchemaExtension ::=
+    'extend' 'schema' Directives(Const)? '{' RootOperationTypeDefinition+ '}'
+  | 'extend' 'schema' Directives(Const)                 # [lookahead != '{']
+RootOperationTypeDefinition ::= OperationType ':' NamedType
+Description ::= StringValue
+TypeDefinition ::=
+    ScalarTypeDefinition
+  | ObjectTypeDefinition
+  | InterfaceTypeDefinition
+  | UnionTypeDefinition
+  | EnumTypeDefinition
+  | InputObjectTypeDefinition
+TypeExtension ::=
+    ScalarTypeExtension
+  | ObjectTypeExtension
+  | InterfaceTypeExtension
+  | UnionTypeExtension
+  | EnumTypeExtension
+  | InputObjectTypeExtension
+ScalarTypeDefinition ::= Description? 'scalar' Name Directives(Const)?
+ScalarTypeExtension ::= 'extend' 'scalar' Name Directives(Const)
+ObjectTypeDefinition ::= Description? 'type' Name ImplementsInterfaces? Directives(Const)? FieldsDefinition?
+ImplementsInterfaces ::=
+    ImplementsInterfaces '&' NamedType
+  | 'implements' '&'? NamedType
+FieldsDefinition ::= '{' FieldDefinition+ '}'
+FieldDefinition ::= Description? Name ArgumentsDefinition? ':' Type Directives(Const)?
+ArgumentsDefinition ::= '(' InputValueDefinition+ ')'
+InputValueDefinition ::= Description? Name ':' Type DefaultValue? Directives(Const)?
+ObjectTypeExtension ::=
+    'extend' 'type' Name ImplementsInterfaces? Directives(Const)? FieldsDefinition
+  | 'extend' 'type' Name ImplementsInterfaces? Directives(Const)         # [lookahead != '{']
+  | 'extend' 'type' Name ImplementsInterfaces                            # [lookahead != '{']
+InterfaceTypeDefinition ::= Description? 'interface' Name ImplementsInterfaces? Directives(Const)? FieldsDefinition?
+InterfaceTypeExtension ::=
+    'extend' 'interface' Name ImplementsInterfaces? Directives(Const)? FieldsDefinition
+  | 'extend' 'interface' Name ImplementsInterfaces? Directives(Const)    # [lookahead != '{']
+  | 'extend' 'interface' Name ImplementsInterfaces                       # [lookahead != '{']
+UnionTypeDefinition ::= Description? 'union' Name Directives(Const)? UnionMemberTypes?
+UnionMemberTypes ::=
+    '=' '|'? NamedType
+  | UnionMemberTypes '|' NamedType
+UnionTypeExtension ::=
+    'extend' 'union' Name Directives(Const)? UnionMemberTypes
+  | 'extend' 'union' Name Directives(Const)
+EnumTypeDefinition ::= Description? 'enum' Name Directives(Const)? EnumValuesDefinition?
+EnumValuesDefinition ::= '{' EnumValueDefinition+ '}'
+EnumValueDefinition ::= Description? EnumValue Directives(Const)?
+EnumTypeExtension ::=
+    'extend' 'enum' Name Directives(Const)? EnumValuesDefinition
+  | 'extend' 'enum' Name Directives(Const)
+InputObjectTypeDefinition ::= Description? 'input' Name Directives(Const)? InputFieldsDefinition?
+InputFieldsDefinition ::= '{' InputValueDefinition+ '}'
+InputObjectTypeExtension ::=
+    'extend' 'input' Name Directives(Const)? InputFieldsDefinition
+  | 'extend' 'input' Name Directives(Const)
+DirectiveDefinition ::= Description? 'directive' '@' Name ArgumentsDefinition? 'repeatable'? 'on' DirectiveLocations
+DirectiveLocations ::=
+    DirectiveLocations '|' DirectiveLocation
+  | '|'? DirectiveLocation
+DirectiveLocation ::=
+    ExecutableDirectiveLocation
+  | TypeSystemDirectiveLocation
+ExecutableDirectiveLocation ::= 'QUERY' | 'MUTATION' | 'SUBSCRIPTION' | 'FIELD' | 'FRAGMENT_DEFINITION' | 'FRAGMENT_SPREAD' | 'INLINE_FRAGMENT' | 'VARIABLE_DEFINITION'
+TypeSystemDirectiveLocation ::= 'SCHEMA' | 'SCALAR' | 'OBJECT' | 'FIELD_DEFINITION' | 'ARGUMENT_DEFINITION' | 'INTERFACE' | 'UNION' | 'ENUM_VALUE' | 'ENUM' | 'INPUT_OBJECT' | 'INPUT_FIELD_DEFINITION'

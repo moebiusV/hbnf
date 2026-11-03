@@ -1,0 +1,5 @@
+type Business implements NamedEntity & ValuedEntity {
+  name: String
+  value: Int
+  employeeCount: Int
+}

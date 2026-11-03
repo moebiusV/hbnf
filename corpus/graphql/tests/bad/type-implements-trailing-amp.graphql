@@ -1,0 +1,2 @@
+# bad: implements does not end with &
+type A implements B & { a: Int }

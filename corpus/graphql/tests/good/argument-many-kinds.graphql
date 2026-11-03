@@ -1,0 +1,1 @@
+{ a(i: 1, f: 2.5, s: "str", b: true, c: false, n: null, e: ENUM, l: [], o: {}) }

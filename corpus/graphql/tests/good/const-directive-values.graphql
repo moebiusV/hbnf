@@ -1,0 +1,1 @@
+type A @d(a: [1, {b: 2}], c: ENUM, d: null, e: "s", f: 1.5, g: true) { f: Int }

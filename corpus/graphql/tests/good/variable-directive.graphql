@@ -1,0 +1,1 @@
+query ($a: Int = 1 @deprecated, $b: [Int!]! @d(x: [1]) ) { f(a: $a, b: $b) }

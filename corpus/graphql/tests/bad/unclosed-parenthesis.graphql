@@ -1,0 +1,2 @@
+# bad: arguments close with a parenthesis
+{ a(x: 1 }

@@ -1,0 +1,2 @@
+# bad: a semicolon is no token
+{ a; b }

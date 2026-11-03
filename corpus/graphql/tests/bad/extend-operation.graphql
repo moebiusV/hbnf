@@ -1,0 +1,2 @@
+# bad: only the type system is extended
+extend query { a }

@@ -1,0 +1,2 @@
+# bad: a union member follows each bar
+union U = A |

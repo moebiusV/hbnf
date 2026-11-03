@@ -1,0 +1,2 @@
+# bad: an enum values definition holds at least one value
+enum E {}

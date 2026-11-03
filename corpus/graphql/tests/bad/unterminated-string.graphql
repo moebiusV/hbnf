@@ -1,0 +1,2 @@
+# bad: a string must be closed on its line
+{ a(x: "abc) }

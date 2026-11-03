@@ -1,0 +1,1 @@
+type A implements & B & C & D { f: Int }

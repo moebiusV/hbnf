@@ -1,0 +1,2 @@
+# bad: a schema definition needs a root operation
+schema { }

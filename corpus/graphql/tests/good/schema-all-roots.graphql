@@ -1,0 +1,1 @@
+schema { query: Q mutation: M subscription: S }

@@ -1,0 +1,3 @@
+query getZuckProfile($devicePicSize: Int = 60, $ids: [ID!]! = [1, 2], $o: In = {a: 1}) {
+  user(id: 4) { profilePic(size: $devicePicSize) }
+}

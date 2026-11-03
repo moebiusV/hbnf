@@ -1,0 +1,1 @@
+query Q($a:Int=1){f(a:$a){...F ...on T{x}}}fragment F on T{y}

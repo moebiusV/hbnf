@@ -1,0 +1,2 @@
+# bad: an ampersand belongs to implements
+{ a & b }

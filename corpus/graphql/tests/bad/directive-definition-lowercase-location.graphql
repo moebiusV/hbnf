@@ -1,0 +1,2 @@
+# bad: the locations are upper case
+directive @a on field

@@ -1,0 +1,4 @@
+extend type extend { a: Int }
+extend type type @d
+extend type on { a: Int }
+extend enum schema { A }

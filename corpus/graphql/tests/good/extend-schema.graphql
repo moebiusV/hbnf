@@ -1,0 +1,3 @@
+extend schema @d
+extend schema { subscription: S }
+extend schema @d { subscription: S }

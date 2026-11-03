@@ -1,0 +1,2 @@
+# bad: a name does not start with a digit
+query 1a { b }

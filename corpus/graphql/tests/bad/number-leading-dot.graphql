@@ -1,0 +1,2 @@
+# bad: a number begins with a digit
+{ a(x: .5) }

@@ -1,0 +1,1 @@
+extend type Story implements Node & Named @d { x: Int }

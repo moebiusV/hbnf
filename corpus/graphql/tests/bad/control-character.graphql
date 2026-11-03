@@ -1,0 +1,2 @@
+# bad: a control character is no source character
+{ a }

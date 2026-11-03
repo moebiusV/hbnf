@@ -1,0 +1,2 @@
+# bad: a fragment spread has no selection set
+{ ...F { a } }

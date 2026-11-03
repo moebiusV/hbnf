@@ -1,0 +1,1 @@
+query ($on: Int, $type: Int, $query: Int, $fragment: Int, $true: Int, $null: Int) { a(x: $on, y: $type, z: $null) }

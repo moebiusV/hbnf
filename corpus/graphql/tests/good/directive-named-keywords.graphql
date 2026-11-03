@@ -1,0 +1,3 @@
+directive @on on FIELD
+directive @repeatable repeatable on FIELD
+directive @type on OBJECT

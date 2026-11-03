@@ -1,0 +1,2 @@
+# bad: `true` is no enum value
+enum E { true }

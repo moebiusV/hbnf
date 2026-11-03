@@ -1,0 +1,2 @@
+# bad: an argument definition needs a type
+type A { f(x): Int }

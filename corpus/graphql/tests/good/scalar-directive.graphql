@@ -1,0 +1,2 @@
+"A date."
+scalar Date @specifiedBy(url: "https://example.com/date")

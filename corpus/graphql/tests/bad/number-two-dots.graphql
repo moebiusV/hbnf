@@ -1,0 +1,2 @@
+# bad: a float has one dot
+{ a(x: 1.5.5) }

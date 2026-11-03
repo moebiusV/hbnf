@@ -1,0 +1,2 @@
+# bad: the first unescaped three quotes close a block string, the fourth quote opens a string
+{ a(x: """abc"""") }

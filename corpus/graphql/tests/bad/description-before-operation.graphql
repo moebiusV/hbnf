@@ -1,0 +1,2 @@
+# bad: only the type system has descriptions
+"d" query { a }

@@ -1,0 +1,11 @@
+type A {
+  "The name."
+  name: String
+  """
+  The age.
+  """
+  age(
+    "The unit."
+    unit: String
+  ): Int
+}

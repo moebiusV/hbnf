@@ -1,0 +1,2 @@
+type A @d
+query { a }

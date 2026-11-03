@@ -1,0 +1,2 @@
+# bad: a root operation is query, mutation or subscription
+schema { read: R }

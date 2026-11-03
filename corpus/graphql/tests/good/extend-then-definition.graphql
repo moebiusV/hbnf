@@ -1,0 +1,4 @@
+extend type A @d
+type B { b: Int }
+extend scalar S @d
+scalar T

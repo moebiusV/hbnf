@@ -1,0 +1,2 @@
+# bad: a list type holds one type
+query ($a: [Int Float]) { b }

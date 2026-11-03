@@ -1,0 +1,2 @@
+# bad: a fragment definition needs a name
+fragment on T { a }

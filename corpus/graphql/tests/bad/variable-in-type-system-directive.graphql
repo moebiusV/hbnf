@@ -1,0 +1,2 @@
+# bad: a directive in the type system is constant
+type A @d(x: $v) { a: Int }

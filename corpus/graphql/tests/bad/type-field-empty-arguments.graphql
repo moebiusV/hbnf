@@ -1,0 +1,2 @@
+# bad: an arguments definition holds at least one argument
+type A { f(): Int }

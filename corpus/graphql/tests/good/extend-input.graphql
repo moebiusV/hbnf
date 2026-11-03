@@ -1,0 +1,2 @@
+extend input I { c: Int }
+extend input J @d

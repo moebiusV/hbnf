@@ -1,0 +1,2 @@
+# bad: a block string must be closed
+{ a(x: """abc }

@@ -1,0 +1,2 @@
+# bad: a default value is constant, it holds no variable
+query ($a: Int = $b) { c }

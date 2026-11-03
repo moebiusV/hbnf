@@ -1,0 +1,2 @@
+# bad: a dot is not a name character
+{ a.b }

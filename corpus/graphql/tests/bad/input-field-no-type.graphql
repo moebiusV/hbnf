@@ -1,0 +1,2 @@
+# bad: an input field needs a type
+input I { a }

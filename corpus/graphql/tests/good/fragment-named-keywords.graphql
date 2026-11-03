@@ -1,0 +1,4 @@
+fragment fragment on query { a }
+fragment query on type { b }
+fragment type on on { c }
+fragment true on null { d }

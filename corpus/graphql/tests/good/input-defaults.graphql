@@ -1,0 +1,6 @@
+input I @d {
+  a: Int = 1
+  b: [String] = ["x", "y"]
+  c: In = {k: [1, 2], l: {m: null}}
+  "doc" d: E = ENUM @deprecated
+}

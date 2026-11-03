@@ -1,0 +1,2 @@
+# bad: a fields definition holds at least one field
+interface I {}

@@ -1,0 +1,2 @@
+# bad: an escape is one of " \ / b f n r t or uXXXX
+{ a(x: "\q") }

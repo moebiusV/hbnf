@@ -1,0 +1,2 @@
+# bad: a string must be closed
+{ a(x: "abc

@@ -1,0 +1,4 @@
+query A { a }
+query B { b }
+mutation C { c }
+subscription D { d }

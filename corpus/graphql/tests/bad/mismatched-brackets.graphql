@@ -1,0 +1,2 @@
+# bad: a list closes with a bracket
+{ a(x: [1, 2) }

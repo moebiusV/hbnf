@@ -1,0 +1,2 @@
+# bad: an object field has a value
+{ a(x: {k}) }

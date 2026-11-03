@@ -1,0 +1,2 @@
+# bad: a list of arguments holds at least one argument
+{ a() }

@@ -1,0 +1,2 @@
+# bad: a variable is a value, not a definition
+$x

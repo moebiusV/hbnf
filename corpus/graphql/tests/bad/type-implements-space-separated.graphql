@@ -1,0 +1,2 @@
+# bad: interfaces are separated by &
+type A implements B C { a: Int }

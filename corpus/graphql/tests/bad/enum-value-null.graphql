@@ -1,0 +1,2 @@
+# bad: `null` is no enum value
+enum E { null }

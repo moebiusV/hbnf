@@ -1,0 +1,2 @@
+# bad: union members come after an equals sign
+union U A | B

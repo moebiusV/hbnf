@@ -1,0 +1,2 @@
+# bad: a fraction needs a digit after the dot
+{ a(x: 1.) }

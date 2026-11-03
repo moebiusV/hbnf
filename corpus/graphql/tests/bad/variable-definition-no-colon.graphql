@@ -1,0 +1,2 @@
+# bad: a variable definition needs a colon and a type
+query ($a Int) { b }

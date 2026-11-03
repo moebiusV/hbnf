@@ -1,0 +1,3 @@
+directive @a on FIELD | FIELD_DEFINITION | ENUM | ENUM_VALUE
+directive @b on FIELD_DEFINITION
+directive @c on ENUM_VALUE

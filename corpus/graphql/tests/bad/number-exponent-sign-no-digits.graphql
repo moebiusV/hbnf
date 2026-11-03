@@ -1,0 +1,2 @@
+# bad: an exponent needs a digit
+{ a(x: 1e+) }

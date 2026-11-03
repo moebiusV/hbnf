@@ -1,0 +1,2 @@
+# bad: a minus sign needs a digit after it
+{ a(x: -) }

@@ -1,0 +1,2 @@
+# bad: a variable has a name
+query ($) { a }

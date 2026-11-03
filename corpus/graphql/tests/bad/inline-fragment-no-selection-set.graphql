@@ -1,0 +1,2 @@
+# bad: an inline fragment needs a selection set
+{ ... on T }

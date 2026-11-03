@@ -1,0 +1,2 @@
+# bad: a union has members after the equals sign
+union U =

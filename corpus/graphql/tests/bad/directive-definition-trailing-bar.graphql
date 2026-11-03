@@ -1,0 +1,2 @@
+# bad: a location follows each bar
+directive @a on FIELD |

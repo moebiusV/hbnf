@@ -1,0 +1,2 @@
+# bad: a string is in double quotes
+{ a(x: 'abc') }

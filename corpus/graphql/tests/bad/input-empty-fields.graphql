@@ -1,0 +1,2 @@
+# bad: an input fields definition holds at least one field
+input I {}

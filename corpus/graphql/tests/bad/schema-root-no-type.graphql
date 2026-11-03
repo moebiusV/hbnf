@@ -1,0 +1,2 @@
+# bad: a root operation names its type
+schema { query }

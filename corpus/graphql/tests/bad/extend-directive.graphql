@@ -1,0 +1,2 @@
+# bad: a directive definition cannot be extended
+extend directive @a on FIELD

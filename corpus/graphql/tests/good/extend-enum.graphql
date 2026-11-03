@@ -1,0 +1,3 @@
+extend enum E { C }
+extend enum F @d
+extend enum G @d { H }

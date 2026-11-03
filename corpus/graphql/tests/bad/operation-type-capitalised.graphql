@@ -1,0 +1,2 @@
+# bad: the operation type is lower case
+Query { a }

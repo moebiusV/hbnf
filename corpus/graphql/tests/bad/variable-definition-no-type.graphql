@@ -1,0 +1,2 @@
+# bad: a variable definition needs a type
+query ($a:) { b }

@@ -1,0 +1,2 @@
+# bad: a directive definition needs a location
+directive @a on

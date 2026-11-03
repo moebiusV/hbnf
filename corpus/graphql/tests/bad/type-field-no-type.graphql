@@ -1,0 +1,2 @@
+# bad: a field definition needs a colon and a type
+type A { f }

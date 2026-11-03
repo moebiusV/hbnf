@@ -14,6 +14,7 @@ README that says what is in it and what state it is in.
 | `json/` | RFC 8259 in HyperBNF, checked against Python's `json` on 80,000 texts; a tape grammar (`json-tape.hbnf`) | in use (`tests/json-diff.sh`, `tests/emit.sh`) |
 | `toml/` | TOML 1.0, checked against the toml-test suite and Python's `tomllib`; a tape grammar (`toml-tape.hbnf`) | in use (`tests/toml.sh`, `tests/toml-diff.sh`, `tests/emit.sh`) |
 | `yaml/` | YAML 1.2, indentation as a number the parser works out; the YAML test suite and PyYAML; a tape grammar (`yaml-tape.hbnf`) | in use (`tests/yaml.sh`, `tests/yaml-suite.sh`, `tests/yaml-diff.sh`, `tests/emit.sh`) |
+| `graphql/` | GraphQL (October 2021): the executable language, the type system and its extensions, in 54 rules against the specification's 99 productions; checked by the specification's examples in four backends and against a second scanner of its lexical grammar | in use (`tests/graphql.sh`, `tests/graphql-diff.sh`) |
 | `mustache/` | Mustache templates, with a closing tag that repeats the opening one; checked against chevron on 12,000 texts | in use (`tests/mustache-diff.sh`) |
 | `cobol/` | COBOL in free format: the four divisions, the data description clauses and 30-odd statements, checked against GnuCOBOL's `cobc` | begun (`tests/cobol.sh`); fixed format, `COPY` and the rest are not read yet |
 | `algol68/` | the Revised Report's W-grammar | not started; on the list (`RFCPLAN.md` step 20), with C++ |

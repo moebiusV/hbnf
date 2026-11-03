@@ -1,0 +1,2 @@
+"The schema."
+schema { query: Q }

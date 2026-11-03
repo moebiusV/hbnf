@@ -1,0 +1,2 @@
+# bad: a schema definition needs its root operations
+schema @d

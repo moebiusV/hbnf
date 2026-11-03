@@ -1,0 +1,2 @@
+# bad: a list type is closed
+query ($a: [Int) { b }

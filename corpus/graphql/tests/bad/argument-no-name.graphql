@@ -1,0 +1,2 @@
+# bad: an argument has a name
+{ a(: 1) }

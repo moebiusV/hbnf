@@ -1,0 +1,2 @@
+# bad: a question mark is no token
+{ a? }

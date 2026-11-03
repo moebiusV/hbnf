@@ -1,0 +1,2 @@
+# bad: only the type system has descriptions
+"d" fragment F on T { a }

@@ -1,0 +1,2 @@
+# bad: a variable name starts with $
+query (a: Int) { b }

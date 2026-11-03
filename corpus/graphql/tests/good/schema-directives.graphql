@@ -1,0 +1,1 @@
+schema @d(a: 1) @e { query: Q }

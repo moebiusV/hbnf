@@ -1,0 +1,2 @@
+# bad: a number is decimal, and a name cannot follow it
+{ a(x: 0x10) }

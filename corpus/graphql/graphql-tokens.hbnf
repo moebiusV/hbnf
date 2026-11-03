@@ -1,0 +1,38 @@
+; The tokens of GraphQL (October 2021, sections 2.1 to 2.9): names, numbers and strings.  No blank is
+; allowed inside one, so this file skips none (`whitespace none`); the punctuators and the keywords
+; are the quoted words of graphql.hbnf.  A block string is kept as written: its indentation and its
+; `\"""` are the later stage the specification calls BlockStringValue().
+whitespace none
+prefix none
+include "../../grammars/common.hbnf"
+
+; `word` is what hbnf reads a keyword against: `true` is not the front of `trueish`.
+name-start = 0x5F | ALPHA
+name-char  = name-start | DIGIT
+word       = name-start *name-char
+name       = word
+
+; A fragment name or an enum value is a name that is not `on`, or not `true`, `false` or `null`.
+on-word       = "on"
+value-word    = "true" | "false" | "null"
+fragment-name = name - on-word
+enum-value    = name - value-word
+
+; A number is not followed by what could go on with it: `01`, `1.`, `1.5.2`, `1e` and `0x` are each one error.
+integer-part = [ "-" ] ( "0" | 0x31..0x39 *DIGIT )
+exponent     = ( 'e' | 'E' ) [ "+" | "-" ] 1*DIGIT
+number-end   = "." | DIGIT | name-start
+int-value    = integer-part !number-end
+float-value  = integer-part ( "." 1*DIGIT [ exponent ] | exponent ) !number-end
+
+; SourceCharacter is a tab, a line end or U+0020 and up (the spec stops at U+FFFF, which is UTF-16's view).
+; A block string ends at the first `"""` that no backslash escapes.
+quotes2      = DQUOTE DQUOTE
+quotes3      = DQUOTE DQUOTE DQUOTE
+string-value = block-string | string
+empty-string = quotes2 !DQUOTE
+string       = empty-string | DQUOTE 1*string-char DQUOTE
+string-char  = 0x09 | 0x20..0x21 | 0x23..0x5B | 0x5D..0x10FFFF | "\\" ( 'u' 4HEXDIG | 0x22 | "\\" | "/" | 'b' | 'f' | 'n' | 'r' | 't' )
+block-string = quotes3 *block-char quotes3
+block-plain  = 0x09 | LF | CR | 0x20..0x21 | 0x23..0x5B | 0x5D..0x10FFFF
+block-char   = block-plain | "\\" quotes3 | "\\" !quotes3 | DQUOTE !quotes2

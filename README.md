@@ -122,6 +122,7 @@ to the OpenBSD configuration files.
 - [`corpus/json/README.md`](corpus/json/README.md): JSON in 14 rules, checked against Python's `json`.
 - [`corpus/toml/README.md`](corpus/toml/README.md): TOML 1.0 in 46 rules against the ABNF's 124, all 208 valid toml-test files accepted, checked against Python's `tomllib`.
 - [`corpus/yaml/README.md`](corpus/yaml/README.md): YAML 1.2, indentation as a number the parser works out, all 308 valid and 89 of 94 invalid cases of the YAML test suite, checked against PyYAML.  The YAML 1.2.2 productions it is counted against are described in [`corpus/yaml/originals/README.md`](corpus/yaml/originals/README.md).
+- [`corpus/graphql/README.md`](corpus/graphql/README.md): GraphQL (October 2021), the executable language and the type system in 54 rules against the specification's 99, no word reserved where the specification does not reserve it, 145 good and 145 bad files in four backends.
 - [`corpus/bip39/README.md`](corpus/bip39/README.md): the ten BIP-39 word lists.
 - [`corpus/bech32/README.md`](corpus/bech32/README.md): bech32 and bech32m.
 

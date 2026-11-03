@@ -1,0 +1,70 @@
+; GraphQL (October 2021), the executable documents and the type system, in HyperBNF.  The tokens are in
+; graphql-tokens.hbnf.  No word is reserved: `query`, `type`, `on`, `fragment` and the rest are quoted
+; words only where the spec has them in that place, and a name everywhere else.  Two names are
+; excluded where the spec says "but not": `on` as a fragment name and `true`, `false`, `null` as an
+; enum value (both in the tokens file).  A value, and what holds one, takes `"const"` or `"var"`: a
+; variable is allowed in a document's operations and not in a default value or a type system directive.
+prefix none
+include "graphql-tokens.hbnf"
+
+document   = 1*definition
+definition = operation | "fragment" fragment-name type-condition directives("var") selection-set | type-system
+
+; ---- operations ----
+operation      = selection-set | operation-type [ name ] args(variable-definition) directives("var") selection-set
+operation-type = "query" | "mutation" | "subscription"
+selection-set  = braced(selection)
+selection      = "..." ( fragment-name directives("var") | [ type-condition ] directives("var") selection-set )
+               | [ name ":" ] name arguments("var") directives("var") [ selection-set ]
+type-condition = "on" named-type
+
+variable-definition = variable ":" type [ default-value ] directives("const")
+variable            = "$" name
+default-value       = "=" value("const")
+type                = ( named-type | "[" type "]" ) [ "!" ]
+named-type          = name
+
+; The lists the spec writes with `?` around them are optional here, so a use never needs a bracket:
+; `args` is a list in parentheses, `directives` any number of them, and `block` is a list in braces that,
+; once its brace is there, must be whole (`type A { f }` is an error, not `type A` and then a query).
+braced(X)     := "{" 1*X "}"
+block(X)      := braced(X) | !"{"
+args(X)       := [ "(" 1*X ")" ]
+arguments(K)  := args(name ":" value(K))
+directives(K) := *( "@" name arguments(K) )
+
+; ---- values ----
+value(K in "const" | "var") := literal(K)
+value("var")                := variable | literal("var")
+literal(K) := float-value | int-value | string-value | "true" | "false" | "null" | enum-value
+            | "[" *value(K) "]" | "{" *( name ":" value(K) ) "}"
+
+; ---- the type system ----
+; An extension must add something: `extend type A` and nothing after it is refused (`adds` looks for what it can add).
+type-system = [ description ] ( "schema" directives("const") braced(root-operation) | definition-body | directive-definition )
+            | "extend" &adds ( "schema" directives("const") block(root-operation) | definition-body )
+adds        = ( "scalar" | "union" ) name ( "@" | "=" )
+            | ( "schema" | "interface" | "enum" | "input" ) [ name ] ( "@" | "{" | "implements" )
+            | "type" name ( "@" | "{" | "implements" )
+description    = string-value
+root-operation = operation-type ":" named-type
+
+definition-body = "scalar" name directives("const")
+                | object("type") | object("interface")
+                | "union" name directives("const") [ "=" [ "|" ] named-type *( "|" named-type ) ]
+                | "enum" name directives("const") block(enum-value-definition)
+                | "input" name directives("const") block(input-value-definition)
+object(K)       := K name [ implements ] directives("const") block(field-definition)
+implements      = "implements" [ "&" ] named-type *( "&" named-type )
+
+field-definition       = [ description ] name args(input-value-definition) ":" type directives("const")
+input-value-definition = [ description ] name ":" type [ default-value ] directives("const")
+enum-value-definition  = [ description ] enum-value directives("const")
+
+directive-definition = "directive" "@" name args(input-value-definition) [ "repeatable" ] "on" [ "|" ] location *( "|" location )
+location = "QUERY" | "MUTATION" | "SUBSCRIPTION" | "FIELD_DEFINITION" | "FIELD" | "FRAGMENT_DEFINITION" | "FRAGMENT_SPREAD"
+         | "INLINE_FRAGMENT" | "VARIABLE_DEFINITION" | "SCHEMA" | "SCALAR" | "OBJECT" | "ARGUMENT_DEFINITION"
+         | "INTERFACE" | "UNION" | "ENUM_VALUE" | "ENUM" | "INPUT_OBJECT" | "INPUT_FIELD_DEFINITION"
+
+; The ignored tokens: white space, line ends, commas, the byte order mark, comments.
+ws = *( 0x09 | 0x20 | LF | CR | "," | 0xFEFF | "#" *( 0x09 | 0x20..0x10FFFF ) )

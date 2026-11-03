@@ -1,0 +1,2 @@
+# bad: the locations are a fixed list
+directive @a on FOO

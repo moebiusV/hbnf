@@ -1,0 +1,5 @@
+query query { a }
+query mutation { b }
+query fragment { c }
+query on { d }
+query subscription { e }

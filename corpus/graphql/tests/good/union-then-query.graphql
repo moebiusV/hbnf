@@ -1,0 +1,2 @@
+union U = A | B
+{ a }

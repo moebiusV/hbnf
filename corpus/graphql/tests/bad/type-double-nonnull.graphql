@@ -1,0 +1,2 @@
+# bad: a type is non-null once
+query ($a: Int!!) { b }

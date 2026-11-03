@@ -1,0 +1,3 @@
+type A {
+  f(a: Int = 1, b: [String!]! = ["x"], c: In = {k: 1} @deprecated, d: E = ENUM): T @d
+}

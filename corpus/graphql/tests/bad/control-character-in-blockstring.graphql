@@ -1,0 +1,2 @@
+# bad: a control character is no source character, in a block string too
+{ a(x: """""") }

@@ -1,0 +1,2 @@
+# bad: a hyphen is not a name character
+{ a-b }

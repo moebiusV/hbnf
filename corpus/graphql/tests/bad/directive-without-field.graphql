@@ -1,0 +1,2 @@
+# bad: a directive follows a field
+{ @a }

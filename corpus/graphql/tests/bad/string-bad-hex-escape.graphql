@@ -1,0 +1,2 @@
+# bad: a \u escape takes four hex digits
+{ a(x: "\u12G4") }

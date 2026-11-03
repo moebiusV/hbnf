@@ -1,0 +1,2 @@
+# bad: a field has one alias
+{ a: b: c }

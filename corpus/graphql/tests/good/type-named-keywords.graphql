@@ -1,0 +1,11 @@
+type type { type: type }
+type on { on: on }
+type extend { extend: Int }
+type schema { schema: schema }
+type implements
+type query
+enum enum { enum }
+input input { input: input }
+scalar scalar
+union union = union
+interface interface { interface: Int }

@@ -1,0 +1,3 @@
+fragment onFoo on Foo { a }
+fragment on_ on Foo { a }
+fragment one on One { ...onFoo ... on_ }

@@ -1,0 +1,2 @@
+# bad: a (non-block) string cannot hold a carriage return
+{ a(x: "abcd") }

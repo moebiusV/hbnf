@@ -1,0 +1,2 @@
+# bad: a number has no plus sign
+{ a(x: +1) }

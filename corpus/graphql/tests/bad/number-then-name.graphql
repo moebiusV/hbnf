@@ -1,0 +1,2 @@
+# bad: a name cannot follow a number
+{ a(x: 12abc) }

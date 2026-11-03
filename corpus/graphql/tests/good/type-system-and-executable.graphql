@@ -1,0 +1,4 @@
+type Query { a: Int }
+query { a }
+extend type Query { b: Int }
+fragment F on Query { b }

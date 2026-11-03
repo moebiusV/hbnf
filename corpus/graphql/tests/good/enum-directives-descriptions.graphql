@@ -1,0 +1,6 @@
+enum E @d {
+  "The first."
+  A @deprecated(reason: "no")
+  """The second."""
+  B
+}

@@ -1,0 +1,2 @@
+# bad: a directive has a name
+{ a @(x: 1) }

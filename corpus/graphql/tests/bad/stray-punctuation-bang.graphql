@@ -1,0 +1,2 @@
+# bad: a stray punctuator is no definition
+{ a } !

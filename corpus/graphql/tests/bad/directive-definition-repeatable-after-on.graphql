@@ -1,0 +1,2 @@
+# bad: repeatable comes before on
+directive @a on repeatable FIELD

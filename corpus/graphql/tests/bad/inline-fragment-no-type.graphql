@@ -1,0 +1,2 @@
+# bad: a type condition needs a type name
+{ ... on { a } }
