@@ -158,7 +158,7 @@ data-clause            = special-names-clause | "VOLATILE" | "SAME" "AS" identif
                        | renames-clause | sign-clause | justified-clause | synchronized-clause
                        | "BLANK" [ "WHEN" ] "ZERO" | "GLOBAL" | "BASED" | "TYPEDEF" | "STATIC"
                        | is "EXTERNAL" [ "AS" operand ] | is "GLOBAL" | is "TYPEDEF"
-                       | "CONSTANT" [ is "GLOBAL" ] [ "AS" ] [ "FROM" identifier | operand ]
+                       | "CONSTANT" [ is "GLOBAL" ] [ "AS" ] [ "FROM" identifier | ( "LENGTH" | "BYTE-LENGTH" ) [ "OF" ] ( operand | usage ) | operand *( "&" operand ) ]
                        | "ANY" ( "LENGTH" | "NUMERIC" )
                        | "SYNC" | "DYNAMIC" "LENGTH" [ identifier ] [ "LIMIT" is operand ]
                        | "UNSIGNED" | "SIGNED"
@@ -306,7 +306,9 @@ read-statement     = "READ" file-name [ "NEXT" | "PREVIOUS" ] [ "RECORD" ] [ "IN
                      [ end-phrases ] [ invalid-key-phrases ] [ "END-READ" ]
 write-statement    = "WRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ ( "BEFORE" | "AFTER" ) [ "ADVANCING" ] ( "PAGE" | operand [ "LINE" | "LINES" ] ) ]
                      [ end-of-page-phrases ] [ invalid-key-phrases ] [ "END-WRITE" ]
-end-of-page-phrases = ( at ( "END-OF-PAGE" | "EOP" ) statements ) [ "NOT" at ( "END-OF-PAGE" | "EOP" ) statements ] | "NOT" at ( "END-OF-PAGE" | "EOP" ) statements
+end-of-page-phrases = end-of-page-phrase [ not-end-of-page-phrase ] | not-end-of-page-phrase [ end-of-page-phrase ]
+end-of-page-phrase  = at ( "END-OF-PAGE" | "EOP" ) statements
+not-end-of-page-phrase = "NOT" at ( "END-OF-PAGE" | "EOP" ) statements
 rewrite-statement  = "REWRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ invalid-key-phrases ] [ "END-REWRITE" ]
 delete-statement   = "DELETE" ( "FILE" 1*file-name | file-name [ "RECORD" ] [ invalid-key-phrases ] [ "END-DELETE" ] )
 start-statement    = "START" file-name [ "FIRST" | "LAST" ] [ "KEY" is relation-operator identifier ] [ invalid-key-phrases ] [ "END-START" ]

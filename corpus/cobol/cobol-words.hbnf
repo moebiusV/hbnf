@@ -13,8 +13,8 @@ wordchar  = ALNUM | "-" | "_"
 word      = ALNUM *wordchar
 ; a user-defined word has a letter in it (a word of digits and hyphens alone names a paragraph or a section, or is a number)
 no-letter = 1*( DIGIT | "-" | "_" )
-; XML, JSON, ABSENT and EQUALS are context words in cobc (not reserved); here they start a statement or a clause, so a list of operands stops at them
-not-a-name = reserved-word | no-letter | "XML" | "JSON" | "END-XML" | "END-JSON" | "ABSENT" | "EQUALS"
+; XML, JSON, ABSENT, EQUALS and PROMPT are context words in cobc (not reserved); here they start a statement or a clause, so a list of operands stops at them
+not-a-name = reserved-word | no-letter | "XML" | "JSON" | "END-XML" | "END-JSON" | "ABSENT" | "EQUALS" | "PROMPT"
 user-word = word - not-a-name
 
 ; Blank space between tokens: a space, a tab or a line end; a comma or a semicolon, which COBOL reads as a
