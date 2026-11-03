@@ -36,7 +36,7 @@ program-name       = function-name | nonnumeric-literal
 
 ; ---- the identification division ----
 identification-division = [ ( "IDENTIFICATION" | "ID" ) "DIVISION" "." ] program-id-paragraph *id-paragraph [ options-paragraph ]
-program-id-paragraph    = ( "PROGRAM-ID" | "FUNCTION-ID" ) "." program-name [ "AS" nonnumeric-literal ] *( is ( "COMMON" | "INITIAL" | "RECURSIVE" ) [ "PROGRAM" ] ) "."
+program-id-paragraph    = ( "PROGRAM-ID" | "FUNCTION-ID" ) "." program-name [ "AS" nonnumeric-literal ] *( is ( "COMMON" | "INITIAL" | "RECURSIVE" | "PROTOTYPE" ) [ "PROGRAM" ] ) "."
 id-paragraph            = id-paragraph-name "." comment-entry
 id-paragraph-name       = "AUTHOR" | "INSTALLATION" | "DATE-WRITTEN" | "DATE-COMPILED" | "SECURITY" | "REMARKS"
 comment-entry           = *( !paragraph-start comment-word )
@@ -293,7 +293,7 @@ perform-option     = operand "TIMES"
 varying            = identifier "FROM" operand [ "BY" operand ] "UNTIL" condition
 
 call-statement     = "CALL" [ "STATIC" | "STDCALL" ] operand [ "USING" 1*using-argument ] [ ( "RETURNING" | "GIVING" ) ( "OMITTED" | identifier ) ] [ on-exception-phrases ] [ "END-CALL" ]
-using-argument     = [ by ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand )
+using-argument     = [ by ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand [ "SIZE" is operand ] )
 cancel-statement   = "CANCEL" 1*operand
 on-exception-phrases = exception-phrase [ not-exception-phrase ] | not-exception-phrase [ exception-phrase ]
 exception-phrase     = on ( "EXCEPTION" | "OVERFLOW" ) statements
@@ -348,7 +348,7 @@ subscript      = "ALL" | arithmetic-expression
 reference-modification = "(" arithmetic-expression ":" [ arithmetic-expression ] ")"
 function-call  = "FUNCTION" function-name [ "(" *argument ")" ]
 argument       = arithmetic-expression | "TRAILING" | "LEADING"
-length-of      = "LENGTH" "OF" ( identifier | literal ) | "ADDRESS" "OF" identifier
+length-of      = ( "LENGTH" | "SIZE" ) "OF" ( identifier | literal ) | "ADDRESS" "OF" identifier
 literal        = numeric-literal | nonnumeric-literal *( "&" nonnumeric-literal ) | figurative-constant
 figurative-constant = [ "ALL" ] ( "ZEROES" | "ZEROS" | "ZERO" | "SPACES" | "SPACE" | "HIGH-VALUES" | "HIGH-VALUE"
                                 | "LOW-VALUES" | "LOW-VALUE" | "QUOTES" | "QUOTE" | "NULLS" | "NULL" )

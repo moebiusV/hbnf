@@ -2957,6 +2957,12 @@ cycles.
     The order of the three is not fixed; C++ leans on the C family (`corpus/c/`) and the typedef context
     of step 16.
 
+    *Generator bugs found while working on the COBOL grammar (2026-11-02; to fix, not to work around).*  (1) A lookahead (`!` or `&`) inside the character-level
+    `ws` rule (`ws = ... | "$" !picture-start *~( CR | LF )`) stops generation with `raised CONSTRAINT_ERROR : hbnf_compilable.adb:481 discriminant check
+    failed`, after the warning that `ws` is no longer one token.  (2) A group of alternatives after a literal in `ws` (`ws = ... | "$" ( %x53 | %x73 | ... ) *~( CR | LF )`)
+    generates `scan_ws_1`, `scan_ws_2`, `scan_ws_4` and no `scan_ws`, which `skip_ws` calls, so the C does not compile.  Both stand in the way of one thing: a `$` directive
+    line in `ws` that does not swallow a picture beginning `$B` or `$Z` (`PIC $BB**,***.**.` is read as a comment line today).
+
     *A design idea, not decided (the user, 2026-10-31).*  A grammar that reads one language can also say how a
     rule is written out in another, so that it translates: ALGOL's `begin` statements `end` comes out as C's
     `{` statements `}`, and a keyword comes out in capitals.  A rule is then one of three things: a
