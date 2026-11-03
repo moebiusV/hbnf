@@ -47,7 +47,13 @@ that derives the type from them is where the exactness is kept.
 goes further: it takes the programs of GnuCOBOL's own test suite, which `tools/cobol_fetch.sh` fetches and
 `tools/cobol_extract.py` writes out in free format (they are fixed format and GPL, so they are fetched and not
 kept here), and counts those `cobc` accepts that the parser refuses.  The number of them is
-`tests/cobol/scan-baseline.txt`; it must not grow, and `scripts/cobol-scan.sh` lists them.  Where `cobc` is
+`tests/cobol/scan-baseline.txt`; it must not grow, and `scripts/cobol-scan.sh` lists them.
+
+The other side of the comparison, programs the parser accepts and `cobc` refuses, is almost all semantic: an undefined
+or ambiguous name, a redefinition, a `MOVE` between incompatible items, `OCCURS` under a variable-length group, a
+missing file description, the wrong number of `CALL` arguments.  Those belong to the checking pass, which needs the
+data division's declarations; the grammar does not try to refuse them.  The few syntax errors among them (`OCCURS` on a
+level-01 or 77 item, the communication section's `SEND`) are not yet refused.  Where `cobc` is
 installed it must agree on every file: it accepts each good one and refuses each bad one with
 `cobc -free -fsyntax-only` (a bad file is one the compiler also refuses).  GnuCOBOL 3.2 comes from the
 Debian `gnucobol3` package; its source, for `reserved.c` and `parser.y`, is

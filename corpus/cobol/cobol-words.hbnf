@@ -19,12 +19,12 @@ user-word = word - not-a-name
 ; Blank space between tokens: a space, a tab or a line end; a comma or a semicolon, which COBOL reads as a
 ; space; and a comment, `*>` to the end of the line, which may follow anything; and a compiler directive, `>>` to the end of the line,
 ; which is read as a comment (so `>>IF` and `>>END-IF` both take effect, and a program with alternatives in them is read twice).
-ws = SP | HTAB | CR | LF | "," | ";" | "*>" *~( CR | LF ) | ">>" *~( CR | LF ) | "$" *~( CR | LF )
+ws = SP | HTAB | CR | LF | "," | ";" | "*>" *~( CR | LF ) | ">>" *~( CR | LF ) | "$" ALPHA *~( CR | LF )
 
 ; ---- literals (the standard's 8.3) ----
 ; (a letter inside a token is written as code points: a letter-led literal would be matched as a whole word)
 exponent        = %x45 | %x65
-numeric-literal = [ sign ] ( digits [ "." digits ] | "." digits ) [ exponent [ sign ] digits ]
+numeric-literal = [ sign ] ( digits [ "." digits ] | "." digits ) [ exponent [ sign ] digits ] !( ALPHA | "_" | "-" ALPHA )
 sign            = "+" | "-"
 digits          = 1*DIGIT
 nonnumeric-literal = [ literal-prefix ] ( DQUOTE *( ~DQUOTE | DQUOTE DQUOTE ) DQUOTE
