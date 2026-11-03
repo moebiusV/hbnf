@@ -1,0 +1,2 @@
+@media not print { a { b: c } }
+@media only screen and (color) { a { b: c } }

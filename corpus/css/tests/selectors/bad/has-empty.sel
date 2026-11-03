@@ -1,0 +1,2 @@
+/* bad: :has() takes a selector */
+:has()

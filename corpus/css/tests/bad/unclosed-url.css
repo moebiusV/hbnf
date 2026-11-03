@@ -1,0 +1,2 @@
+/* bad: the url is not closed */
+a { b: url(c }

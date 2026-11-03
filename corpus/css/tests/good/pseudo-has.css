@@ -1,0 +1,1 @@
+a:has(> b), a:has(+ b), a:has(~ b), a:has(b c), a:has(> b, + c) {}

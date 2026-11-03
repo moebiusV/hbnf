@@ -1,0 +1,2 @@
+/* bad: an unknown attribute operator */
+[a!=b]

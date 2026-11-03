@@ -1,0 +1,2 @@
+/* bad: not an An+B */
+:nth-child(x)

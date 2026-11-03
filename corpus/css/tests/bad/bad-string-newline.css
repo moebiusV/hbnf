@@ -1,0 +1,3 @@
+/* bad: a newline inside a string */
+a { content: "a
+b" }

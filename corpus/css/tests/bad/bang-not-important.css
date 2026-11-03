@@ -1,0 +1,2 @@
+/* bad: a ! that is not !important */
+a { b: c ! d }

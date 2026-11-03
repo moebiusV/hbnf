@@ -1,0 +1,46 @@
+# The cases of css-parsing-tests where the grammar and the expected parse differ.  CSS Syntax never refuses: it recovers,
+# and a parse error is a node in the tree; the grammar is for conforming style sheets, so it refuses
+# (refuse) what the Syntax keeps without an error node but a conforming sheet does not hold, and it accepts (accept)
+# what the Syntax marks as an error but the grammar does not look at.  NAME INDEX # reason.  tests/css-diff.sh checks
+# that these are the cases that differ, and no others.
+#
+# unclosed: the text ends inside a block, a string, a url or a (  [ pair: CSS Syntax closes it silently
+# prelude:  a rule with an empty prelude, or with <!-- --> in it: the syntax allows it, a selector does not
+# eof-esc:  a backslash at the end of the text (read as U+FFFD): an escape needs a character after it
+# bang:     a `!` in a value that is not the one of !important (the syntax keeps it in the value)
+# at-rule:  the root declaration-list holds declarations only; the Syntax's list holds at-rules too
+# empty-fn: rgba() with nothing in it: the grammar checks the arguments of a color function
+# top-level: the list of rules of a block takes <!-- and --> as tokens of the prelude; a style sheet skips them
+stylesheet 5 # unclosed
+stylesheet 6 # unclosed
+stylesheet 7 # unclosed
+stylesheet 9 # unclosed, empty prelude
+stylesheet 10 # unclosed, empty prelude
+stylesheet 11 # unclosed, <!-- and --> in a prelude
+stylesheet 15 # prelude: {} has no selector
+rule_list 5 # unclosed
+rule_list 6 # unclosed
+rule_list 7 # unclosed
+rule_list 9 # unclosed, empty prelude
+rule_list 10 # unclosed, empty prelude
+rule_list 12 # top-level: the list of rules is not a style sheet, --> would begin a rule's prelude
+rule_list 14 # prelude: {} has no selector
+one_rule 5 # unclosed
+one_rule 6 # unclosed
+one_rule 7 # unclosed
+one_rule 9 # unclosed, empty prelude
+one_rule 10 # unclosed, empty prelude
+declaration_list 4 # bang: z:x!
+declaration_list 6 # at-rule
+declaration_list 7 # at-rule, unclosed
+one_declaration 17 # bang: !İmportant is not !important
+one_declaration 18 # bang: !important!
+component_value_list 1 # unclosed: the last comment
+component_value_list 7 # eof-esc
+component_value_list 9 # empty-fn: rgba()
+component_value_list 10 # eof-esc
+component_value_list 11 # eof-esc
+component_value_list 21 # unclosed: url(' at the end
+blocks_contents 3 # bang
+blocks_contents 6 # unclosed
+blocks_contents 7 # unclosed, and `@ media` is no at-rule

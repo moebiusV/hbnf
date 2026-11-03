@@ -1,0 +1,2 @@
+/* bad: a space between + and n */
+a:nth-child(+ n) { b: c }

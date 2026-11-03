@@ -1,0 +1,2 @@
+/* bad: two signs */
+a:nth-child(n + -1) { b: c }

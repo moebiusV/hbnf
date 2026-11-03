@@ -1,0 +1,2 @@
+a[href^="http://"]:not([href*="example.com" i])::after { content: " \2197" }
+input[type=checkbox]:checked + label { x: y }

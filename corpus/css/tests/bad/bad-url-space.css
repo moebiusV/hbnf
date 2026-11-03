@@ -1,0 +1,2 @@
+/* bad: white space inside an unquoted url */
+a { b: url(a b) }

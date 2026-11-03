@@ -1,0 +1,2 @@
+/* bad: a pseudo-class function not closed */
+:not(a

@@ -1,0 +1,2 @@
+/* bad: an attribute selector not closed */
+[a

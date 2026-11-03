@@ -1,0 +1,2 @@
+/* bad: a keyframe selector that is a plain number */
+@keyframes x { 50 { a: b } }

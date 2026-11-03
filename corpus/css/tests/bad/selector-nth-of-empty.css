@@ -1,0 +1,2 @@
+/* bad: "of" with no selector */
+a:nth-child(2n of) { b: c }

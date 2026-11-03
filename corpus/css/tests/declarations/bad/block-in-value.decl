@@ -1,0 +1,2 @@
+/* bad: a block in the value of an ordinary property */
+color: { red }

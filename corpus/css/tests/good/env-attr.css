@@ -1,0 +1,1 @@
+a { padding: env(safe-area-inset-top, 20px); content: attr(data-x); }

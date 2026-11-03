@@ -1,0 +1,2 @@
+@container (min-width: 400px) { a { b: c } }
+@container card (min-width: 400px) { a { b: c } }

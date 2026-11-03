@@ -1,0 +1,2 @@
+/* bad: rgb() takes channels */
+a { b: rgb() }

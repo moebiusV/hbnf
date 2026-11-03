@@ -1,0 +1,2 @@
+/* bad: a class that starts with a digit */
+.1

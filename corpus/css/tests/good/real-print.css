@@ -1,0 +1,1 @@
+@media print { nav, .no-print { display: none !important } a[href]::after { content: " (" attr(href) ")" } }

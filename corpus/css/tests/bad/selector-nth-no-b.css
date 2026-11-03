@@ -1,0 +1,2 @@
+/* bad: an + with no number after it */
+a:nth-child(2n+) { b: c }

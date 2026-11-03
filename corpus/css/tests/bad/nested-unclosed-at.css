@@ -1,0 +1,2 @@
+/* bad: an at-rule inside a rule that is not closed */
+a { @media screen { b: c }

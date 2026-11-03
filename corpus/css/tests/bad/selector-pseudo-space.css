@@ -1,0 +1,2 @@
+/* bad: a pseudo-class name after a space */
+a: hover { b: c }

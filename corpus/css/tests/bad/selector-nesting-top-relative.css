@@ -1,0 +1,2 @@
+/* bad: a relative selector at the top level of a style sheet */
++ a { b: c }

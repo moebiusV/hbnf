@@ -1,0 +1,2 @@
+/* bad: @media with nothing in the prelude */
+@media { a { b: c } }

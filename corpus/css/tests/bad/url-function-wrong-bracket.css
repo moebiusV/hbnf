@@ -1,0 +1,2 @@
+/* bad: a url function closed by the wrong bracket */
+a { b: url("a"] }

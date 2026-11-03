@@ -1,0 +1,2 @@
+/* bad: a combinator with nothing after it */
+a > { b: c }

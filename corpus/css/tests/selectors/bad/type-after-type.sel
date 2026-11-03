@@ -1,0 +1,2 @@
+/* bad: a type selector after a type selector */
+a*

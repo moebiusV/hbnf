@@ -1,0 +1,119 @@
+# The grammar of CSS as the specifications state it, written down from memory of them and not fetched (the
+# specifications cannot be downloaded here): CSS Syntax Module Level 3 (the candidate recommendation of
+# December 2021 with the nesting changes of 2023), section 4 (tokenization, which the specification gives as an
+# algorithm and as the definitions it uses: written here as productions) and section 5 (parsing), section 6
+# (the An+B microsyntax), and the grammar of Selectors Level 4 (section 18, "Grammar"), with CSS Nesting.  A
+# transcription, the baseline bench/count.py counts hbnf's grammar against: one alternative to a line as the
+# other transcriptions here have it; `<x>` is written x, `[ ]` a group, `#` a comma list, `!` the group must not
+# be empty.  The prose of the specifications (the tokenizer's states, error recovery, "consume an escaped code
+# point", the validity of a property's value, what a selector matches) is not a production and is not here.
+#
+# ---- Syntax 3, section 4: the tokens ----
+digit ::= [0-9]
+hex-digit ::= digit | [A-F] | [a-f]
+uppercase-letter ::= [A-Z]
+lowercase-letter ::= [a-z]
+letter ::= uppercase-letter | lowercase-letter
+non-ascii-code-point ::= [x80-x10FFFF]
+ident-start-code-point ::= letter | non-ascii-code-point | _
+ident-code-point ::= ident-start-code-point | digit | -
+non-printable-code-point ::= [x00-x08] | x0B | [x0E-x1F] | x7F
+newline ::= x0A | x0D | x0C
+whitespace ::= newline | x09 | x20
+comment ::= /* *-not-followed-by-slash... */
+whitespace-token ::= whitespace+
+ident-token ::= ident-sequence
+function-token ::= ident-sequence (
+at-keyword-token ::= @ ident-sequence
+hash-token ::= # ident-code-point+
+string-token ::= " string-char* " | ' string-char* '
+string-char ::= any code point but the quote, \ and newline | escape | \ newline
+bad-string-token ::= " string-char* newline
+url-token ::= url ( whitespace* [ url-char+ whitespace* ]? )
+url-char ::= any code point but " ' ( ) \ whitespace and non-printable | escape
+bad-url-token ::= url ( whitespace* url-char* [ any code point but ) ]* )
+delim-token ::= any code point that begins no other token
+number-token ::= number
+percentage-token ::= number %
+dimension-token ::= number ident-sequence
+number ::= sign? [ digit+ | digit* . digit+ ] [ [ e | E ] sign? digit+ ]?
+sign ::= + | -
+unicode-range-token ::= [ u | U ] + [ hex-digit{1,6} | hex-digit{0,5} ?{1,6} ] ( - hex-digit{1,6} )?
+CDO-token ::= <!--
+CDC-token ::= -->
+colon-token ::= :
+semicolon-token ::= ;
+comma-token ::= ,
+open-square-token ::= [
+close-square-token ::= ]
+open-paren-token ::= (
+close-paren-token ::= )
+open-curly-token ::= {
+close-curly-token ::= }
+ident-sequence ::= [ -- | -? ident-start-code-point | -? escape ] [ ident-code-point | escape ]*
+escape ::= \ [ hex-digit{1,6} whitespace? | any code point but hex-digit and newline ]
+valid-escape ::= \ any code point but newline
+token ::= whitespace-token | string-token | bad-string-token | hash-token | delim-token | open-paren-token | close-paren-token | comma-token | number-token | percentage-token | dimension-token | CDC-token | colon-token | semicolon-token | CDO-token | at-keyword-token | open-square-token | close-square-token | open-curly-token | close-curly-token | ident-token | function-token | url-token | bad-url-token
+# ---- Syntax 3, section 5: the parser ----
+stylesheet ::= top-level-rule*
+top-level-rule ::= CDO-token | CDC-token | whitespace-token | rule
+rule-list ::= rule*
+rule ::= at-rule | qualified-rule
+at-rule ::= at-keyword-token component-value* [ ; | simple-block-curly ]
+qualified-rule ::= component-value* simple-block-curly
+block-contents ::= [ whitespace-token | ; | declaration ; | rule ]* declaration?
+declaration-list ::= [ whitespace-token | ; | declaration ; | at-rule ]* declaration?
+declaration ::= ident-token whitespace* : declaration-value important?
+important ::= ! whitespace* ident-token(important)
+declaration-value ::= component-value*
+component-value ::= preserved-token | simple-block | function
+preserved-token ::= any token but a function-token, ( [ {
+simple-block ::= simple-block-curly | simple-block-square | simple-block-paren
+simple-block-curly ::= { component-value* }
+simple-block-square ::= [ component-value* ]
+simple-block-paren ::= ( component-value* )
+function ::= function-token component-value* )
+# ---- Syntax 3, section 6: An+B ----
+an+b ::= even | odd | integer | n-dimension | + n | -n | ndashdigit-dimension | + ndashdigit-ident | dashndashdigit-ident | n-dimension signed-integer | + n signed-integer | -n signed-integer | ndash-dimension signless-integer | + n- signless-integer | -n- signless-integer | n-dimension [ + | - ] signless-integer | + n [ + | - ] signless-integer | -n [ + | - ] signless-integer
+n-dimension ::= dimension-token with an integer value and the unit n
+ndash-dimension ::= dimension-token with an integer value and the unit n-
+ndashdigit-dimension ::= dimension-token with an integer value and the unit n- digit+
+ndashdigit-ident ::= ident-token n- digit+
+dashndashdigit-ident ::= ident-token -n- digit+
+integer ::= number-token with an integer value
+signed-integer ::= number-token with an integer value and a sign
+signless-integer ::= number-token with an integer value and no sign
+# ---- Selectors 4, section 18: the grammar ----
+selector-list ::= complex-selector-list
+complex-selector-list ::= complex-selector#
+compound-selector-list ::= compound-selector#
+simple-selector-list ::= simple-selector#
+relative-selector-list ::= relative-selector#
+complex-selector ::= compound-selector [ combinator? compound-selector ]*
+relative-selector ::= combinator? complex-selector
+compound-selector ::= [ type-selector? subclass-selector* [ pseudo-element-selector pseudo-class-selector* ]* ]!
+simple-selector ::= type-selector | subclass-selector
+combinator ::= > | + | ~ | [ | | ]
+type-selector ::= wq-name | ns-prefix? *
+ns-prefix ::= [ ident-token | * ]? |
+wq-name ::= ns-prefix? ident-token
+subclass-selector ::= id-selector | class-selector | attribute-selector | pseudo-class-selector
+id-selector ::= hash-token
+class-selector ::= . ident-token
+attribute-selector ::= [ wq-name ] | [ wq-name attr-matcher [ string-token | ident-token ] attr-modifier? ]
+attr-matcher ::= [ ~ | | | ^ | $ | * ]? =
+attr-modifier ::= i | s
+pseudo-class-selector ::= : ident-token | : function-token any-value )
+pseudo-element-selector ::= : pseudo-class-selector
+legacy-pseudo-element-selector ::= : [ before | after | first-line | first-letter ]
+nesting-selector ::= &
+# the functional pseudo-classes, each with its own argument (Selectors 4, sections 4 and 14)
+negation-pseudo-class ::= :not( complex-real-selector-list )
+matches-pseudo-class ::= :is( forgiving-selector-list )
+where-pseudo-class ::= :where( forgiving-selector-list )
+relational-pseudo-class ::= :has( relative-selector-list )
+nth-child-pseudo-class ::= :nth-child( an+b [ of complex-real-selector-list ]? ) | :nth-last-child( an+b [ of complex-real-selector-list ]? )
+nth-of-type-pseudo-class ::= :nth-of-type( an+b ) | :nth-last-of-type( an+b )
+complex-real-selector-list ::= complex-real-selector#
+complex-real-selector ::= compound-selector [ combinator? compound-selector ]*
+forgiving-selector-list ::= complex-real-selector?#

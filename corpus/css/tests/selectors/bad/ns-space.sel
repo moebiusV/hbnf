@@ -1,0 +1,2 @@
+/* bad: white space inside a namespace prefix */
+a | b

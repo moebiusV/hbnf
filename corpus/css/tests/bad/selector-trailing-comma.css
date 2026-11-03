@@ -1,0 +1,2 @@
+/* bad: a comma with nothing after it */
+a, { b: c }

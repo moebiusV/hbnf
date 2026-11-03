@@ -1,0 +1,2 @@
+/* bad: rgb() does not mix commas and spaces */
+a { b: rgb(1 2, 3) }

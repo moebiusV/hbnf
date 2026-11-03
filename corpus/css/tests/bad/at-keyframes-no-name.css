@@ -1,0 +1,2 @@
+/* bad: @keyframes needs a name */
+@keyframes { from { a: b } }

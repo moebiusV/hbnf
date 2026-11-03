@@ -1,0 +1,2 @@
+/* bad: an attribute selector with two values */
+[a=b c] { d: e }

@@ -1,0 +1,2 @@
+/* bad: a combinator with nothing before it, outside a rule */
+> a { b: c }

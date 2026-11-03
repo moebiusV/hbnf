@@ -1,0 +1,2 @@
+/* bad: a layer name that ends in a dot */
+@layer a.;

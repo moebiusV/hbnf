@@ -1,0 +1,3 @@
+/* bad: a single-quoted string is not closed */
+a { content: 'abc
+}

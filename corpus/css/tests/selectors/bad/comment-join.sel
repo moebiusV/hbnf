@@ -1,0 +1,2 @@
+/* bad: a comment alone does not separate two selectors */
+a/**/b

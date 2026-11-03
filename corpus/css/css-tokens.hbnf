@@ -1,0 +1,41 @@
+; The tokens of CSS (CSS Syntax Module Level 3, section 4): white space and comments, names, escapes, numbers,
+; strings and urls.  White space is a token of CSS (a descendant combinator, the `-` of a calc() sum), so this
+; file skips none (`whitespace none`) and css.hbnf says where `ws` may stand; a comment is white space.
+whitespace none
+prefix none
+sensitivity string %i
+include "../../grammars/common.hbnf"
+
+space   = 0x09 | 0x0A | 0x0C | 0x0D | 0x20
+hidden comment = r"/\*[^*]*\*+([^/*][^*]*\*+)*/"
+hidden ws      = *( space | comment )
+hidden blank   = 1*( space | comment )
+hidden gap     = *comment space ws
+
+; An escape is a backslash and one to six hex digits (with one white space after them) or any other character
+; but a line end; a backslash and a line end are a line continuation inside a string.
+newline  = LF | CR | 0x0C
+escape   = "\\" ( 1*6HEXDIG [ CR LF | space ] | ~( HEXDIG | newline ) )
+name-start = ALPHA | "_" | 0x80..0x10FFFF | escape
+name-char  = name-start | DIGIT | "-"
+
+; An identifier cannot begin with a digit, or with a hyphen and a digit; `--x` is one (a custom property).
+ident     = "--" *name-char | [ "-" ] name-start *name-char
+at-keyword = "@" ident
+hash      = "#" 1*name-char
+
+; A number takes a sign, a fraction and an exponent; a percentage or a dimension is a number and a percent sign or a unit that is
+; an identifier.  `numeric` is the three in one rule, so that the longest text wins as in the tokenizer: `2.5e+2` is a number, not
+; `2.5` and the unit `e`, and `1e3` is a number and `1em` a number and a unit.
+number     = r"[+-]?([0-9]+(\.[0-9]+)?|\.[0-9]+)([eE][+-]?[0-9]+)?"
+numeric    = number [ "%" | ident ]
+percentage = number "%"
+
+; A string ends at its quote, and a line end inside it is an error unless a backslash escapes it.
+string    = quoted(DQUOTE) | quoted("'")
+quoted(Q) := Q *( ~( Q | "\\" | newline ) | escape | "\\" ( CR LF | newline ) ) Q
+
+; An unquoted url: no quote, parenthesis, white space inside, or control character; white space may stand
+; at either end.  (A url whose first character is a quote is a function, `url("a.png")`.)
+url = i"url(" ws [ 1*url-char ws ] ")"
+url-char = ~( DQUOTE | "'" | "(" | ")" | "\\" | space | 0x00..0x08 | 0x0B | 0x0E..0x1F | 0x7F ) | escape

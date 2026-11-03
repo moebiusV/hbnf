@@ -1,0 +1,2 @@
+/* bad: !important is not at the end of the value */
+a { b: c !important d }

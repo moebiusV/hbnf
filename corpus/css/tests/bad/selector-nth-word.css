@@ -1,0 +1,2 @@
+/* bad: a word that is not odd or even */
+a:nth-child(first) { b: c }

@@ -1,0 +1,125 @@
+; CSS: the syntax of a conforming style sheet (CSS Syntax Level 3 with CSS Nesting), its selectors (Selectors Level 4),
+; the preludes of the at-rules that have a grammar of their own, and the value functions common to the properties.
+; The tokens are in css-tokens.hbnf.  Roots: stylesheet (an HTML <style> element), declaration-list (a style
+; attribute), selector-list (querySelector).
+prefix none
+whitespace none
+sensitivity string %i
+include "css-tokens.hbnf"
+
+stylesheet       = *( blank | "<!--" | "-->" | rule("abs") )
+declaration-list = *( blank | ";" | declaration )
+selector-list    = ws selectors("abs") ws
+component-value-list = *cv
+
+; ---- rules: K says whether a selector may begin with a combinator (inside a style rule, "rel") ----
+rule(K in "abs" | "rel") := at-rule(K) | style-rule(K)
+style-rule(K)  := selectors(K) ws block("rel")
+block(K)       := "{" *( blank | ";" | declaration | rule(K) ) "}"
+at(N)          := "@" N !name-char ws
+
+; An at-rule whose prelude has a grammar is checked by it; any other is a name, component values and a block or a `;`.
+at-rule(K) := at(i"media") media-query-list ws block(K)
+            | at(i"supports") condition(supports-in-parens) ws block(K)
+            | at(i"container") [ ident !"(" ws ] condition(container-in-parens) ws block(K)
+            | at(i"layer") [ layer-name *( ws "," ws layer-name ) ws ] ( ending | block(K) )
+            | "@" [ vendor ] i"keyframes" !name-char ws ( ident | string ) ws "{" *( blank | keyframe ) "}"
+            | at(i"import") ( url | string | function ) ws [ i"layer" [ "(" ws layer-name ws ")" ] ws ]
+                [ i"supports(" ws ( condition(supports-in-parens) | declaration ) ws ")" ws ] [ media-query-list ws ] ending
+            | at(i"namespace") [ ident !"(" ws ] ( url | string | function ) ws ending
+            | at(i"charset") string ws ending
+            | "@" other-at prelude ( ending | block(K) )
+other-at   = ident - known-at
+known-at   = i"media" | i"supports" | i"container" | i"layer" | i"keyframes" | i"import" | i"namespace" | i"charset"
+prelude    = *( !( ";" | "{" ) cv )
+vendor     = "-" 1*ALNUM "-"
+layer-name = ident *( "." ident )
+keyframe   = keyframe-selector *( ws "," ws keyframe-selector ) ws block("rel")
+keyframe-selector = i"from" | i"to" | percentage
+
+; ---- the conditions: not, and, or over a parenthesised P ----
+and-list(P)  := i"not" blank P | P *( blank i"and" blank P )
+condition(P) := P 1*( blank i"or" blank P ) | and-list(P)
+enclosed-any  = fn-name "(" *cv ")" | "(" ws ident *cv ")"
+
+; media queries (Level 4), with the range syntax
+media-query-list = media-query *( ws "," ws media-query )
+media-query      = condition(media-in-parens)
+                 | [ ( i"not" | i"only" ) blank ] media-type [ blank i"and" blank and-list(media-in-parens) ]
+media-type       = ident - connective
+connective       = i"not" | i"and" | i"or" | i"only"
+media-in-parens  = "(" ws ( condition(media-in-parens) | media-feature ) ws ")" | enclosed-any
+media-feature    = ident ws [ ":" ws mf-value | cmp ws mf-value ] | mf-value ws cmp ws ident [ ws cmp ws mf-value ]
+mf-value         = numeric [ ws "/" ws number ] | ident
+cmp              = "<=" | ">=" | "<" | ">" | "="
+
+; @supports, and @container
+supports-in-parens  = "(" ws ( condition(supports-in-parens) | declaration ) ws ")" | i"selector(" ws complex ws ")" | enclosed-any
+container-in-parens = "(" ws ( condition(container-in-parens) | media-feature ) ws ")"
+                    | i"style(" ws declaration ws ")" | enclosed-any
+
+; ---- declarations ----
+declaration  = custom-name ws ":" ws ( enclosed("{", "}") ws | !"{" custom-value [ important ] ) ending
+             | ident ws ":" ws value [ important ] ending
+custom-name  = "--" *name-char
+value        = *( !( ";" | "!" | "{" ) cv )
+custom-value = *( !( ";" | "!" ) cv )
+important    = "!" ws i"important" ws
+ending       = ";" | &( "}" | ")" ) | !any
+any          = 0x00..0x10FFFF
+
+; ---- component values ----
+cv = blank | string | "<!--" | "-->" | url | function | hash | at-keyword | numeric
+   | ident !"(" | enclosed("(", ")") | enclosed("[", "]") | enclosed("{", "}") | "/" !"*" | delim
+enclosed(O, C) := O *cv C
+delim = ~( ALPHA | DIGIT | "_" | 0x80..0x10FFFF | "/" | "\\" | DQUOTE | "'" | "(" | ")" | "[" | "]" | "{" | "}" | space )
+
+; A function is one of the value functions below, url() with a quoted url, or a name and component values.
+function = math | var-fn | color-fn | url-word "(" ws &( DQUOTE | "'" ) *cv ")" | fn-name "(" *cv ")"
+fn-name  = ident - special-fn
+special-fn = i"calc" | math-name | color-name | url-word | i"var" | i"env" | i"attr"
+url-word = i"url"
+
+; calc() and the other functions of numbers: a sum needs white space round its + and -, a product does not.
+math      = i"calc" "(" ws sum ws ")" | math-name "(" ws sum ws *( "," ws sum ws ) ")"
+math-name = i"min" | i"max" | i"clamp" | i"round" | i"mod" | i"rem" | i"abs" | i"sign" | i"sqrt" | i"hypot" | i"pow"
+          | i"log" | i"exp" | i"sin" | i"cos" | i"tan" | i"asin" | i"acos" | i"atan2" | i"atan"
+sum       = product *( gap sign gap product )
+product   = term *( ws ( "*" | "/" ) ws term )
+term      = numeric | ident !"(" | "(" ws sum ws ")" | math | var-fn
+
+var-fn = i"var" "(" ws custom-name ws [ "," *cv ] ")" | ( i"env" | i"attr" ) "(" ws ident *cv ")"
+
+; rgb() and the other color functions: the arguments are separated by white space (and `/` before the alpha) or by commas.
+color-fn   = color-name "(" ws ( channel 1*( ws "," ws channel ) | channel *( blank channel ) [ ws "/" ws channel ] ) ws ")"
+color-name = i"rgba" | i"rgb" | i"hsla" | i"hsl" | i"hwb" | i"lab" | i"lch" | i"oklab" | i"oklch"
+channel    = term | hash
+
+; ---- selectors ----
+selectors(K in "abs" | "rel" | "any") := item(K) *( ws "," ws item(K) )
+item("abs") := complex
+item("any") := [ complex ]
+item("rel") := [ ws op ws ] complex
+complex     = compound *( combinator compound )
+combinator  = ws op ws | gap
+op          = ">" | "+" | "~" | "||"
+compound    = type *piece | 1*piece
+type        = qualified(name-or-star)
+name-or-star = ident | "*"
+qualified(X) := ns X | X
+ns          = [ name-or-star ] "|"
+piece       = *comment ( "#" ident | "." ident | attribute | pseudo | "&" )
+attribute   = "[" ws qualified(ident) ws [ attr-op ws ( ident | string ) ws [ ( i"i" | i"s" ) ws ] ] "]"
+attr-op     = [ "~" | "|" | "^" | "$" | "*" ] "="
+pseudo      = ":" [ ":" ] ( pseudo-fn | ident )
+pseudo-fn   = i"not" "(" ws selectors("abs") ws ")"
+            | ( i"is" | i"where" ) "(" ws selectors("any") ws ")"
+            | i"has" "(" ws selectors("rel") ws ")"
+            | ( i"nth-child" | i"nth-last-child" ) "(" ws anb [ blank i"of" blank selectors("abs") ] ws ")"
+            | ( i"nth-of-type" | i"nth-last-of-type" ) "(" ws anb ws ")"
+            | other-fn "(" *cv ")"
+other-fn    = ident - selector-fn
+selector-fn = i"not" | i"is" | i"where" | i"has" | i"nth-child" | i"nth-last-child" | i"nth-of-type" | i"nth-last-of-type"
+anb         = [ sign ] [ digits ] i"n" [ ws sign ws digits ] | i"even" | i"odd" | [ sign ] digits
+sign        = "+" | "-"
+digits      = 1*DIGIT

@@ -1,0 +1,2 @@
+/* bad: "not" takes one condition, not a list */
+@media not (a) and (b) { }

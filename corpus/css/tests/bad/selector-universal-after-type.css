@@ -1,0 +1,2 @@
+/* bad: a universal selector right after a type selector */
+a* { b: c }

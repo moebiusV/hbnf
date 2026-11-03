@@ -1,0 +1,2 @@
+/* bad: an operator with nothing after it */
+a { b: calc(1px + ) }

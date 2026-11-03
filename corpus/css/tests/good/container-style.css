@@ -1,0 +1,1 @@
+@container style(--x: 1) { } @container not (width < 1px) { }

@@ -1,0 +1,2 @@
+/* bad: the parenthesis is not closed */
+width: calc(1px + 2px

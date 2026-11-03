@@ -1,0 +1,2 @@
+/* bad: text after the last rule that is no rule */
+a { b: c } d

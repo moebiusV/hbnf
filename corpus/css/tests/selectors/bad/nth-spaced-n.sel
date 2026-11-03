@@ -1,0 +1,2 @@
+/* bad: a space inside 2n */
+:nth-child(2 n)

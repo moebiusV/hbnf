@@ -1,0 +1,2 @@
+/* bad: and and or mixed */
+@supports (a: b) and (c: d) or (e: f) { }

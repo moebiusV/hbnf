@@ -1,0 +1,2 @@
+/* bad: var() starts with a custom property name */
+a { b: var() }

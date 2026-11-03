@@ -1,0 +1,3 @@
+/* bad: a string is not closed before the line ends */
+a { content: "abc
+}

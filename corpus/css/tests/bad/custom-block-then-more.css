@@ -1,0 +1,2 @@
+/* bad: a custom property whose value starts with a block holds nothing else */
+a { --x: { a: b } c }

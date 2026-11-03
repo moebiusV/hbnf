@@ -1,0 +1,2 @@
+/* bad: @namespace takes one prefix */
+@namespace a b "x";

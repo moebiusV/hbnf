@@ -1,0 +1,2 @@
+/* bad: two combinators */
+a > > b

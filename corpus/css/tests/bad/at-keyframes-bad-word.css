@@ -1,0 +1,2 @@
+/* bad: a keyframe selector that is not from, to or a percentage */
+@keyframes x { middle { a: b } }

@@ -1,0 +1,2 @@
+/* bad: a string is no selector */
+"a"

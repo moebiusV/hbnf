@@ -1,0 +1,9 @@
+:root {
+  --bg: #fff;
+  --fg: #111;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111; --fg: #eee }
+}
+body { background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif }
+a:hover:not(.button) { text-decoration: underline }

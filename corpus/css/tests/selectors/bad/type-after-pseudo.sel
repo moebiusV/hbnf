@@ -1,0 +1,2 @@
+/* bad: a type selector after a pseudo-class */
+:hover a:hover b*

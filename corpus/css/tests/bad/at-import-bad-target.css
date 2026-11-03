@@ -1,0 +1,2 @@
+/* bad: @import takes a url or a string, not a name */
+@import foo;

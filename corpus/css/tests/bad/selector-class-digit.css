@@ -1,0 +1,2 @@
+/* bad: a class name that starts with a digit */
+.1a { b: c }

@@ -1,0 +1,2 @@
+/* bad: a bracket pair closed by the wrong one */
+a { b: (c] }

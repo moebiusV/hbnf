@@ -1,0 +1,2 @@
+/* bad: a property name that is a number */
+a { 1: red }

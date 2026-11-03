@@ -1,0 +1,2 @@
+/* bad: a space between the number and n */
+a:nth-child(2 n) { b: c }

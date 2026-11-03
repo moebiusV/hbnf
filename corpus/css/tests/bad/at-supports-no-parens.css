@@ -1,0 +1,2 @@
+/* bad: a declaration without its parentheses */
+@supports display: grid { }

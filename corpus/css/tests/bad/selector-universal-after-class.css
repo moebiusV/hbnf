@@ -1,0 +1,2 @@
+/* bad: a universal selector right after a class */
+.a* { x: y }

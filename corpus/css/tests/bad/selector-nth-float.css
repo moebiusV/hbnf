@@ -1,0 +1,2 @@
+/* bad: a number that is not an integer */
+a:nth-child(1.5n) { b: c }

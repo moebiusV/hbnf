@@ -1,0 +1,2 @@
+/* bad: var() takes a name that starts with -- */
+a { b: var(x) }

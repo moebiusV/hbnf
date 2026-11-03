@@ -1,0 +1,2 @@
+/* bad: a rule is no declaration */
+a { b: c }

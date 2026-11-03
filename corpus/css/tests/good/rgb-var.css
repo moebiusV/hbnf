@@ -1,0 +1,1 @@
+a { color: rgb(var(--r) var(--g) var(--b)); color: rgb(var(--rgb) / 50%); }

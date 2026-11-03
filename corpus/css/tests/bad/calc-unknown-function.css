@@ -1,0 +1,2 @@
+/* bad: a function that is not a math function inside calc() */
+a { b: calc(foo(1) + 2) }

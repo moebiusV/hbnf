@@ -1,0 +1,2 @@
+/* bad: the function is not closed */
+a { b: foo(c }

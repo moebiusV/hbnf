@@ -1,0 +1,2 @@
+/* bad: and and or without parentheses */
+@media (a) and (b) or (c) { }

@@ -1,0 +1,2 @@
+/* bad: a * before a property name (the IE hack) is no declaration */
+a { *zoom: 1 }

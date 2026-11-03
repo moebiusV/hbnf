@@ -1,0 +1,2 @@
+/* bad: @supports needs a block */
+@supports (a: b);

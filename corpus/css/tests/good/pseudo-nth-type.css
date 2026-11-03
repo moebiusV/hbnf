@@ -1,0 +1,1 @@
+p:nth-of-type(2), p:nth-last-of-type(-2n + 5) {}

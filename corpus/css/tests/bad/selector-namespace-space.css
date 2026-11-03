@@ -1,0 +1,2 @@
+/* bad: a space inside a namespace prefix */
+svg | a { b: c }

@@ -1,0 +1,2 @@
+/* bad: a dot and its name are separated */
+. a { b: c }

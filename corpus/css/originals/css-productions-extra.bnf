@@ -1,0 +1,78 @@
+# The productions of the other specifications that css.hbnf also covers, written down from memory of them and not
+# fetched, in the form of css-productions.bnf: Media Queries Level 4, CSS Conditional Rules 3 (@supports), CSS
+# Containment 3 (@container), CSS Cascading 5 (@import, @layer), CSS Namespaces 3, CSS Animations 1 (@keyframes), CSS
+# Values and Units 4 (the math functions, var(), env(), attr()) and CSS Color 4 (the syntax of the color functions).
+# Together with css-productions.bnf they are the baseline for everything css.hbnf accepts.
+#
+# Media Queries 4
+media-query-list ::= media-query#
+media-query ::= media-condition | [ not | only ]? media-type [ and media-condition-without-or ]?
+media-type ::= ident-token
+media-condition ::= media-not | media-in-parens [ media-and* | media-or* ]
+media-condition-without-or ::= media-not | media-in-parens media-and*
+media-not ::= not media-in-parens
+media-and ::= and media-in-parens
+media-or ::= or media-in-parens
+media-in-parens ::= ( media-condition ) | media-feature | general-enclosed
+media-feature ::= ( [ mf-plain | mf-boolean | mf-range ] )
+mf-plain ::= mf-name : mf-value
+mf-boolean ::= mf-name
+mf-range ::= mf-name mf-comparison mf-value | mf-value mf-comparison mf-name | mf-value mf-lt mf-name mf-lt mf-value | mf-value mf-gt mf-name mf-gt mf-value
+mf-name ::= ident-token
+mf-value ::= number-token | dimension-token | ident-token | ratio
+mf-lt ::= < =?
+mf-gt ::= > =?
+mf-eq ::= =
+mf-comparison ::= mf-lt | mf-gt | mf-eq
+ratio ::= number-token [ / number-token ]?
+general-enclosed ::= function-token any-value ) | ( ident-token any-value )
+# Conditional 3
+supports-condition ::= not supports-in-parens | supports-in-parens [ and supports-in-parens ]* | supports-in-parens [ or supports-in-parens ]*
+supports-in-parens ::= ( supports-condition ) | supports-feature | general-enclosed
+supports-feature ::= supports-decl | supports-selector-fn
+supports-decl ::= ( declaration )
+supports-selector-fn ::= selector( complex-selector )
+# Containment 3
+container-condition ::= [ container-name ]? container-query
+container-name ::= custom-ident
+container-query ::= not query-in-parens | query-in-parens [ [ and query-in-parens ]* | [ or query-in-parens ]* ]
+query-in-parens ::= ( container-query ) | ( size-feature ) | style( style-query ) | general-enclosed
+style-query ::= not style-in-parens | style-in-parens [ [ and style-in-parens ]* | [ or style-in-parens ]* ] | style-feature
+style-in-parens ::= ( style-query ) | ( style-feature ) | general-enclosed
+# Cascade 5, Namespaces 3, Syntax 3 (@charset), Animations 1
+import-rule ::= @import [ url | string ] [ layer | layer( layer-name ) ]? import-conditions ;
+import-conditions ::= [ supports( [ supports-condition | declaration ] ) ]? media-query-list?
+layer-name ::= ident-token [ . ident-token ]*
+layer-rule ::= @layer layer-name# ; | @layer layer-name? { rule-list }
+namespace-rule ::= @namespace namespace-prefix? [ string | url ] ;
+namespace-prefix ::= ident-token
+charset-rule ::= @charset string ;
+keyframes-rule ::= @keyframes keyframes-name { keyframe-block* }
+keyframes-name ::= ident-token | string
+keyframe-block ::= keyframe-selector# { declaration-list }
+keyframe-selector ::= from | to | percentage-token
+# Values 4
+calc ::= calc( calc-sum )
+calc-sum ::= calc-product [ [ + | - ] calc-product ]*
+calc-product ::= calc-value [ [ * | / ] calc-value ]*
+calc-value ::= number-token | dimension-token | percentage-token | calc-keyword | ( calc-sum ) | math-function
+calc-keyword ::= e | pi | infinity | -infinity | NaN
+math-function ::= calc | min | max | clamp | round | mod | rem | sin | cos | tan | asin | acos | atan | atan2 | pow | sqrt | hypot | log | exp | abs | sign
+min ::= min( calc-sum# )
+max ::= max( calc-sum# )
+clamp ::= clamp( [ calc-sum | none ] , calc-sum , [ calc-sum | none ] )
+round ::= round( rounding-strategy? , calc-sum , calc-sum )
+mod ::= mod( calc-sum , calc-sum )
+rem ::= rem( calc-sum , calc-sum )
+var ::= var( custom-property-name [ , declaration-value? ]? )
+env ::= env( ident-token [ , declaration-value? ]? )
+attr ::= attr( attr-name attr-type? [ , declaration-value? ]? )
+# Color 4
+rgb-function ::= [ rgb | rgba ] ( [ legacy-rgb-syntax | modern-rgb-syntax ] )
+legacy-rgb-syntax ::= percentage# , number# , alpha-value?
+modern-rgb-syntax ::= [ from color ]? [ number | percentage | none ]{3} [ / alpha-value ]?
+hsl-function ::= [ hsl | hsla ] ( [ legacy-hsl-syntax | modern-hsl-syntax ] )
+legacy-hsl-syntax ::= hue , percentage , percentage , alpha-value?
+modern-hsl-syntax ::= [ from color ]? [ hue | none ] [ percentage | number | none ] [ percentage | number | none ] [ / alpha-value ]?
+hue ::= number | angle
+alpha-value ::= number | percentage

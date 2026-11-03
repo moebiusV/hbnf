@@ -1,0 +1,2 @@
+/* bad: an attribute selector that is not closed */
+[a=b { c: d }

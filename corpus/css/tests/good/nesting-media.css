@@ -1,0 +1,1 @@
+a { color: red; @media (width >= 600px) { color: blue; & b { x: y } } }

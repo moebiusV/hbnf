@@ -1,0 +1,2 @@
+/* bad: a name that is neither a declaration (no colon) nor a rule (no block) */
+a { b: c; d }

@@ -1,0 +1,2 @@
+/* bad: != is not an attribute operator */
+[a!=b] { c: d }

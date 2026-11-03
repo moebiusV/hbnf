@@ -1,0 +1,2 @@
+/* bad: calc() holds an expression */
+a { b: calc() }

@@ -1,0 +1,2 @@
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 1rem; grid-template-areas: "a a" "b c"; }
+.grid > :nth-child(3n+1) { grid-column: span 2 }

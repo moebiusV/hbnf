@@ -1,0 +1,2 @@
+/* bad: var() takes two arguments at most */
+a { b: var(--x, 1, 2 }

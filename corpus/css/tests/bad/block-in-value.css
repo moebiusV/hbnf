@@ -1,0 +1,2 @@
+/* bad: a {} block as the value of an ordinary property */
+a { b: { c } }

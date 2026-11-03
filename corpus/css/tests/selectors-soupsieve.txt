@@ -1,0 +1,400 @@
+# The selectors of soupsieve 4.0's own test suite (the strings given to assert_selector and assert_raises; MIT licence, the
+# sdist soupsieve-4.0.tar.gz, sha256 recorded in README.md): "G O selector", G the grammar's verdict and O soupsieve's
+# (+ accepted, - refused), the selector with \\ for a backslash, \n and \t.  tests/css-diff.sh checks the G column.
+- + body [id!=\\35]
+- + body [id!='5']
+- + body [id!="5"]
+- + td[class!="c"]
++ + td:not([class="c"])
+- + td[class!="C" i]
++ + td:not([class="C" i])
+- + td[class!="CENTER" i]
+- + td[class!="c.*"]
+- + p[type!="a"]
+- + td[class!="center micro screen-only"]
++ + td:not([class='center micro screen-only'])
++ - :--headers
++ - :--headers:nth-child(2)
++ - p:--parent
++ - :--\\HeaderS
++ - :--
++ - :--parent-paragraph
++ - :--parent
++ - :--wrong
++ + div
++ + [dir=auto]:dir(rtl)
++ + iframe > p
++ + root p
++ + p
++ + iframe
++ + iframe:empty
++ + [id]:-soup-contains("<p")
++ + div p
++ + [id]:-soup-contains("text")
++ + body span:-soup-contains(that)
++ + body span:-soup-contains(" that ")
++ + body :-soup-contains( "Testing" )
++ + body :-soup-contains("Test\\\ning")
++ + body :-soup-contains("Test\\\r\ning")
++ + body span:-soup-contains("does not exist", "that")
++ + body span:-soup-contains("th"):-soup-contains("at")
++ + body span:not(:-soup-contains("does not exist")):-soup-contains("that")
++ + body span:not(:-soup-contains("that")):-soup-contains("that")
++ + body :-soup-contains(" that ")
++ + body :-soup-contains(bad)
++ + body span:-soup-contains("\\0a that")
++ + body *:-soup-contains("that")
++ + *:-soup-contains("that")
++ + div:-soup-contains("iframe")
++ + div:-soup-contains("text")
++ + span:-soup-contains("iframe")
++ + body span:contains(that)
++ + body div:-soup-contains-own(that)
++ + body *:-soup-contains-own(that)
++ + body *:-soup-contains-own("that")
++ + *:-soup-contains-own("that")
++ + body div:-soup-contains-own("test  show")
++ + [id]
++ + template + span
++ + template ~ span
++ + #after:nth-child(2)
++ + div:has(> template)
++ + template:empty
++ + div:empty
++ + div:has(p)
++ + template:has(p)
++ + template:has(> p)
++ + template > p
++ + a:active
+- - @page :left
++ + .foo
++ + a.bar
++ + a.\\0 bar
+- + span.foo\\
+- - td.+#some-id
++ + a.foo.bar
+- - td:#id
++ + \n            /* Start comment */\n            div\n            /* This still works as new lines and whitespace count as descendant combiner.\n               This comment won't be seen. */\n            span#\\33\n            /* End comment */\n            
++ + \n            span:not(\n                /* Comments should basically work like they do in real CSS. */\n                span#\\33 /* Don't select id 3 */\n            )\n            
++ + div span
++ + section div p
++ + section p span
++ + div p, section span
++ + div section p span
++ + section :not(div p)
++ + .foo\\:bar\\3a foobar
++ + .\\d800
++ + #\\31
++ + a#\\32
+- - td#.some-class
++ + :link
++ + :\\liNk
++ + a:link
++ + span, a
+- - , p
+- - p,
+- - div,, a
++ - :not-implemented
++ - :before
++ - ::first-line
++ + span
++ + tag
++ + Tag
++ + TAG
+- - div?
+- - -
++ + a:visited
++ + [href]
++ + [   href   ]
++ + span[id].test[data-test=test]
++ + [id=\\35]
++ + [id='5']
++ + [id="5"]
++ + [  id  =  "5"  ]
++ + [ID="5"]
++ + [id="pr\\\ne"]
++ + [id="\x00pre"]
++ + [id="\\0 pre"]
+- - [href]p
+- - div[attr={}]
++ + [type="test"]
++ + [method="post"]
++ + [rel~="nofollow"]
++ + [lang|="en"][dir="rtl"]
++ + [title="abc"]
++ + [type="checkbox"]
++ + [type="fractalnoise"]
++ + [type="fractalNoise"]
++ + [rel="nofollow"]
++ + [rel~="stylesheet"]
++ + [rel*="match"]
++ + [lang|=en]
++ + [class~=test2]
++ + [class~=test-a]
++ + [class~=test-b]
++ + [class~="test1 test2"]
++ + [class~=""]
++ + [class~="test1\\ test2"]
++ + div > span
++ + div>span
+- - div >> p
+- - >> div > p
+- - div >
+- - div >, div
+- - > p
+- - div, > a
++ + span:first-child
++ + input:focus
++ + input:not(:focus)
++ + a:hover
++ + p:lang(de)
++ + p:lang(en)
++ + span + span
++ + span+span
++ + span#\\34 + span#\\35
++ + body *
++ + [class^=here]
++ + [class$=words]
++ + [class*=words]
++ + [class^=""]
++ + [class$=""]
++ + [class*=""]
++ + span[title*='bar']
++ + span[title^='foo']
++ + span[title$='bar']
++ + span[title|='fo']
++ + span[title~='baz']
++ + :checked
++ + input:not(:checked)
++ + option:not(:checked)
++ + :disabled
++ + body :empty
++ + :enabled
++ + p:first-of-type
++ + span:first-of-type
++ + body :first-of-type
++ + span:last-child
++ + span:LAST-CHILD
++ + p:last-of-type
++ + span:last-of-type
++ + body :last-of-type
++ + foo|title
++ + FOO|title
++ + bar|*
++ + |head
++ + *|e2
++ + e3
++ + head
++ + e4
++ + other|e4
++ + ns1|el, ns2|el
++ + [xlink|href*=forw],[xlink|href="images/sprites.svg#icon-redo"]
++ + [xlink\\:href*=forw]
++ + [\\:href]
++ + [xlink\\:nomatch*=forw]
++ + [bad|href*=forw]
++ + div :not([id="1"])
++ + span:not([id="1"])
++ + div :NOT([id="1"])
+- - :not()
+- - :not(.class,)
+- - :not(,.class)
+- - :not(.this,,.that)
++ + p:nth-child(-2)
++ + p:nth-child(2)
++ + p:NTH-CHILD(2)
++ + p:NT\\H-CH\\ILD(2)
++ + p:nth-child(odd)
++ + p:nth-child(ODD)
++ + p:nth-child(even)
++ + p:nth-child(EVEN)
++ + p:nth-child(2n-5)
++ + p:nth-child(2N-5)
++ + p:nth-child(-2n+20)
++ + p:nth-child(50n-20)
++ + p:nth-child(-2n-2)
++ + p:nth-child(9n - 1)
++ + p:nth-child(2n + 1)
++ + p:nth-child(-n+3)
++ + span:nth-child(-n+3)
++ + body *:nth-child(-n+3)
+- - :nth-child(a)
++ + i:nth-child(2n-2)
++ + i:nth-child(n-1)
++ + i:nth-child(n+5)
++ + i:nth-child(2n+5)
++ + i:nth-last-child(2n-2)
++ + i:nth-last-child(n+5)
++ + p:nth-last-child(2)
++ + p:nth-last-child(2n + 1)
++ + p:nth-last-of-type(3)
++ + p:nth-last-of-type(2n + 1)
++ + p:nth-of-type(3)
++ + p:nth-of-type(2n + 1)
++ + span:nth-of-type(2n + 1)
++ + body :nth-of-type(2n + 1)
++ + span:only-child
++ + p:only-of-type
++ + :root
++ + :root > body > div
++ + :root div
++ + a ~ c
++ + a:has(~ c)
++ + p ~ span
++ + #head-2:target
++ + #head-2:not(:target)
++ + :any-link
++ + a:any-link
++ + :not(a:any-link)
++ + [class*=WORDS]
++ + [class*=WORDS i]
++ + [class*=WORDSi]
++ + [class*='WORDS'i]
++ + [type="test" i]
+- - [id i]
++ + [type="test" s]
++ + p:current
++ + p:not(:current)
++ + :current(p, div, a)
++ + :current(p, :not(div), a)
++ + body :not(:current(p, div, a))
++ + body :not(:current(p, :not(div), a))
++ + :default
++ + :default:default
++ + body :defined
++ + a:defined, b
++ + [id]:not(:defined)
++ + svg|a:defined
++ + div:dir(rtl)
++ + div:dir(ltr)
++ + div:dir(ltr):dir(rtl)
++ + span:dir(rtl)
++ + span:dir(ltr)
++ + :is(input, textarea):dir(ltr)
++ + :is(input, textarea):dir(rtl)
++ + input:dir(rtl)
++ + input:dir(ltr)
++ + :is(div, span):dir(rtl)
++ + :is(div, span):dir(ltr)
++ + html:dir(ltr)
++ + math:dir(rtl)
++ + [id]:dir(rtl)
++ + [id]:dir(ltr)
++ + :is(div, bdi, template)[id]:dir(ltr)
++ + div[id]:dir(rtl)
++ + span:not(:dir(foo))
++ + span:dir(\\72 tl)
++ + span:dir(\\4c TR)
++ + svg|a:dir(ltr)
++ + a:dir(ltr)
++ + a:dir(ltr), b
++ + [id]:not(:dir(ltr))
++ + form:focus-visible
++ + form:not(:focus-visible)
++ + form:focus-within
++ + form:not(:focus-within)
++ + p:future
++ + p:not(:future)
++ - div:not(.aaaa):has(.kkkk > p.llll)
++ - p:has(+ .dddd:has(+ div .jjjj))
++ + p:has(~ .jjjj)
++ + div:has(> .bbbb)
++ - div:NOT(.aaaa):HAS(.kkkk > p.llll)
++ + div:has(> .bbbb, .ffff, .jjjj)
++ + div:has(.ffff, > .bbbb, .jjjj)
++ + div:has(> :not(.bbbb, .ffff, .jjjj))
++ + div:not(:has(> .bbbb, .ffff, .jjjj))
++ + div:has(:paused)
++ - :has(a ~ b)
+- - div:has()
+- - div:has(,a)
+- - div:has(a,)
+- - div:has(a,,a)
+- - :has(>)
+- - :has(>> has a)
+- - :has(> has, >> a)
+- - :has(> has >> a)
+- - :has(> has >)
++ + div > :has(~ b)
++ + :host
++ + :host(h1)
++ + :host-context(h1, h2)
++ + :in-range
++ + :out-of-range
++ + :indeterminate
++ + :is(span, a)
++ + :is(span, , a)
++ + :is(, span, a)
++ + :is(span, a, )
++ + :is()
++ + :is(span, a:is(#\\32))
++ + :is(span):not(span)
++ + :is(span):is(div)
++ + :is(a):is(#\\32)
+- - :is(> div)
+- - :is(div, > div)
+- - div)
+- - :is(div
++ + p:lang(de-DE)
++ + p:lang(de--DE)
++ + p:lang(de-\\*-DE)
++ + p:lang('*')
++ + p:lang('*-de-DE')
++ + p:lang('*-*-*-DE')
++ + p:lang(\\*-DE)
++ + p:lang('de-DE')
++ + p:lang('de-\\\nDE')
++ + p:lang('*-DE')
++ + p[lang]:lang(de-DE)
++ + div:lang('*')
++ + div:lang('')
++ + p:lang(de-DE, '*-US')
++ + p:lang('*-US')
++ + :lang(en)
++ + :lang(de)
++ + [id]:lang(fr)
++ + mtext:lang(en)
++ + a:local-link
++ + a:not(:local-link)
++ + :matches(span, a)
++ + :matches(span, a:matches(#\\32))
++ + video:muted
++ + video:not(:muted)
++ + div :not(p, :not([id=\\35]))
++ + :nth-child(-n+3 of p)
++ + :nth-child(2n + 1 of :is(p, span).test)
++ + :nth-child(2n + 1 OF :is(p, span).test)
++ + :nth-last-child(2n + 1 of p[id], span[id])
++ + :nth-last-child(1 of .test)
++ + :nth-last-child(2 of .test)
++ + :nth-last-child(odd of .test)
++ + :open
++ + details:open
++ + dialog:open
++ + :is(dialog, details):not(:open)
++ + :optional
++ + input:optional
++ + p:past
++ + p:not(:past)
++ + video:paused
++ + video:not(:paused)
++ + :placeholder-shown
++ + video:playing
++ + video:not(:playing)
++ + body :read-only
++ + :read-write
++ + body :read-write
++ + input:read-write
++ + input:read-only
++ + :required
++ + input:required
++ + :scope
++ + :scope > body > div
++ + article:target-within
++ + article:not(:target-within)
++ + input:user-invalid
++ + input:not(:user-invalid)
++ + :where(span, a)
++ + :where(span, a:where(#\\32))
++ + &
++ + & > body > div

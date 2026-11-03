@@ -1,0 +1,2 @@
+/* bad: an empty selector between two commas */
+a,, b { c: d }

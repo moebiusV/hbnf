@@ -1,0 +1,2 @@
+/* bad: two compound selectors joined by a comment alone (no white space) */
+a/**/b { c: d }
