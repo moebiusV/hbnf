@@ -885,7 +885,7 @@ blank     = r"[ \t]*\r?\n"
    (ABNF.md, "Values at recognition") with a default, so the substrate exists: the value returns up the parse, and giving up a branch drops it, which is why no rollback is needed (C only today).
 2. **`x as K` captures a value, not only text, and `$K` reads it back**: in the same rule (`ticks as T ... $T`, the back-reference being built now) and in the template.  `row as H` keeps the row's cells,
    `$H.cell` names them (`.` is scope, as everywhere).
-3. **Up references, `$^K`: the nearest enclosing rule that captured K.**  The sketch needs two.  The closing fence: `code(N) := !$^T ...` says a line of code is not the opening ticks again, which is
+3. **Up references, `$^K`: the nearest enclosing rule that captured K.**  (The user, 2026-11-03: `.` indexes into a scope, so `^` is up and out of one.  `$K` is the rule's own capture, `$^K` the nearest enclosing rule's, `$^^K` the next one out, so an inner rule that rebinds K can still reach the outer one.  Decided; being built.)  The sketch needs two.  The closing fence: `code(N) := !$^T ...` says a line of code is not the opening ticks again, which is
    what a rule reached from `fence` must see of `fence`'s capture, and which no lookahead over a rule can say today.  The other is a fact down the tree (`tight`, the kind of list marker, the table's
    column count).  **An up reference is an implicit parameter**: the generator adds the captured value to every rule on the paths from the capturing rule to the use, as `%col` and `%num` already travel in
    a frame; a rule reachable from two parents that do not both bind K is an error, or the reference is optional (`$^T?`).  So it is hyperrule machinery that exists, not a new runtime.
@@ -952,4 +952,28 @@ Each was met writing `corpus/markdown`; the first two are the user's decisions, 
 31. **`=> grammar(js)` after `<script>`** generates and changes nothing (the switch replaces white space only and HTML skips none); and there is no way back, since `grammar(x)` needs an `include ... as x` and a host cannot include itself.  This is phase 2 of the switch.
 32. **Rust**: a rule using `as` assigns a value never read, and `-D warnings` refuses it (also item 20); `tests/suite.sh` now takes `RUST_LINTS`.
 33. **Tree-sitter** drops lookaheads, so comments and raw text over-match.
+
+
+## 27. JavaScript and CSS as islands in HTML (the user, 2026-11-03; decided in outline, nothing built)
+
+The user: `js` and `css` should be islands in `html`, each in its own grammar file.  So `corpus/js/js.hbnf` and `corpus/css/css.hbnf` are standalone grammars, and `html-islands.hbnf` includes them (`include "../js/js.hbnf" as js`).
+
+**Two things the island mechanism does not do yet**, both found by the HTML grammar's island variant (section 26, items 27 and 31):
+1. **A guest with its own white space.**  A grammar included `as x` shares the including grammar's `ws` or says `whitespace none`; one with a `ws` rule of its own is refused ("one white-space rule").  JavaScript and CSS both have their own (comments,
+   line terminators that matter to JavaScript's semicolon insertion), so an island needs the per-grammar scanner that the switch `=> grammar(x)` already has (stage 2: `skip_ws` is one dispatch on the current grammar).
+2. **A bounded island.**  The end of a `<script>` is decided by the HTML tokenizer (the first `</script`), not by the JavaScript inside it; today the guest runs on the host's text and stops where it stops, so `var a = "</script>";` ends
+   the script at the wrong place.  The host should first take the raw text, and the guest should read exactly that text:
+   `script = "<script" attributes ">" raw as R "</script" ">"` with the guest applied to it, written `js.program in $R` (proposed spelling; `in` is already the word of a parameter's domain).  The guest must consume all of the text, or the
+   element fails; the positions the guest reports are the host's.  This is `x as K` and `$K` (built) used as an input, not as a match.
+
+**The grammars.**  `corpus/js`: ECMAScript, the Script goal and the Module goal if it is cheap; the lexical ambiguities of JavaScript (a `/` is a division or a regular expression; template literals nest; automatic semicolon insertion; the contextual
+keywords `async await yield of get set static let`) are written for a scannerless reader, which tries a regular expression where an expression is expected and a division where an operator is.  `corpus/css`: CSS Syntax Level 3 (rules, at-rules,
+declarations, blocks, functions, custom properties, comments, the escapes of identifiers and strings) with the selectors of Level 4 and the value syntax of the common properties as far as is cheap; roots `stylesheet` (a `<style>` element) and
+`declaration-list` (a `style=""` attribute).  The attribute values of HTML (`onclick`, `style`) are the same islands with other roots.  Both are standalone and tested alone first.
+
+**Order.**  (1) the two grammars, as agents; (2) island with its own white space, then the bounded island, in the generator (after the speed work on the C scanner, which touches the same files); (3) `html-islands.hbnf` over the real grammars, and the
+test the stub could not pass: `var a = "</script>";` read as the browser reads it.
+
+**Later, from the same sign (the user, 2026-11-03).**  `^` as "out of" also fits islands: inside a guest grammar, `^.rule` would name a rule of the including grammar, an explicit way out that is not a fallback (missing names stay missing).  Not decided, not built;
+needed when a guest has to call back into its host (an HTML `<script>` that has to end where the host says, or a template language whose guest reaches the host's names).
 
