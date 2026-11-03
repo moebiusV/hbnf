@@ -115,11 +115,11 @@ package body HBNF_Compilable is
          end if;
          case V (I).Kind is
             when Literal =>
-               Append (Buf, (if V (I).No_Case then "%i" else "")
+               Append (Buf, (if V (I).No_Case then "i" else "")
                             & '"' & To_String (V (I).Lit) & '"');
             when Name    => Append (Buf, V (I).Name);
             when Group   => Append (Buf, "( ... )");
-            when Char_Range   => Append (Buf, "%x..");
+            when Char_Range   => Append (Buf, "0x..");
             when Block   => Append (Buf, "%action{ ... }");
             when Alt     => Append (Buf, "|");
             when Bit_Field =>
@@ -1292,7 +1292,7 @@ package body HBNF_Compilable is
                     & "every list entry hold nothing, which no backend "
                     & "represents; group it (`*( " & '"' & To_String (E.Lit)
                     & '"' & " )`) for a list of entries, or make it a "
-                    & "character rule (`%x`, or a `'c'` literal) to repeat "
+                    & "character rule (`0x41`, or a `'c'` literal) to repeat "
                     & "the character";
                end if;
             end loop;

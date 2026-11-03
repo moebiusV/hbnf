@@ -6,12 +6,12 @@ include "../../grammars/common.hbnf"
 hidden SP WSP DQUOTE    ; blanks and the quote marks round a quoted scalar: matched, and kept by nothing
 
 hidden nl = CRLF | LF | CR
-any      = %x00-10FFFF
+any      = 0x00..0x10FFFF
 WSP      = SP | HTAB
-nonns    = %x00-20 | %x7F-84 | %x86-9F | %xD800-DFFF | %xFEFF | %xFFFE-FFFF
+nonns    = 0x00..0x20 | 0x7F..0x84 | 0x86..0x9F | 0xD800..0xDFFF | 0xFEFF | 0xFFFE..0xFFFF
 ns       = ~nonns
-nb       = HTAB | %x20-7E | %x85 | %xA0-D7FF | %xE000-FEFE | %xFF00-FFFD | %x10000-10FFFF
-flow-ind = %x2C | %x5B | %x5D | %x7B | %x7D
+nb       = HTAB | 0x20..0x7E | 0x85 | 0xA0..0xD7FF | 0xE000..0xFEFE | 0xFF00..0xFFFD | 0x10000..0x10FFFF
+flow-ind = 0x2C | 0x5B | 0x5D | 0x7B | 0x7D
 indicator = "-" | "?" | ":" | "," | "[" | "]" | "{" | "}" | "#" | "&" | "*" | "!" | "|" | ">" | "'" | DQUOTE | "%" | "@" | "`"
 marker   = ( "---" | "..." ) ( WSP | nl )
 
@@ -42,8 +42,8 @@ ptail(C in "block" | "flow") := *( pc(C) | ":" safe(C) | 1*WSP ( pcx(C) | ":" sa
 pcont(C in "block" | "flow") := ( pcx(C) | ":" safe(C) ) ptail(C)
 
 ; ---- quoted scalars
-esc      = "0" | "a" | "b" | "t" | HTAB | "n" | "v" | "f" | "r" | "e" | SP | DQUOTE | "/" | %x5C | "N" | "_" | "L" | "P" | "x" 2HEXDIG | "u" 4HEXDIG | "U" 8HEXDIG
-dqc      = SP | HTAB | ~( nonns | DQUOTE | %x5C ) | %x5C esc
+esc      = "0" | "a" | "b" | "t" | HTAB | "n" | "v" | "f" | "r" | "e" | SP | DQUOTE | "/" | 0x5C | "N" | "_" | "L" | "P" | "x" 2HEXDIG | "u" 4HEXDIG | "U" 8HEXDIG
+dqc      = SP | HTAB | ~( nonns | DQUOTE | 0x5C ) | 0x5C esc
 sqc      = SP | HTAB | ~( nonns | "'" ) | "''"
 dqs        = 1*dqc
 sqs        = 1*sqc
@@ -54,4 +54,4 @@ dword    = 1*ns
 dres     = "YAML" | "TAG"
 dname    = dword - dres
 chomp    = "+" | "-"
-digit19  = %x31-39
+digit19  = 0x31..0x39

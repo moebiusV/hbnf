@@ -167,14 +167,14 @@ userspec        = "authkey" string
                 | "enc" enc
 
 ; parse.y compares these with strcasecmp, so any case matches.
-auth            = %i"hmac-md5" | %i"hmac-md5-96"
-                | %i"hmac-sha1" | %i"hmac-sha1-96"
-                | %i"hmac-sha224" | %i"usmHMAC128SHA224AuthProtocol"
-                | %i"hmac-sha256" | %i"usmHMAC192SHA256AuthProtocol"
-                | %i"hmac-sha384" | %i"usmHMAC256SHA384AuthProtocol"
-                | %i"hmac-sha512" | %i"usmHMAC384SHA512AuthProtocol"
+auth            = i"hmac-md5" | i"hmac-md5-96"
+                | i"hmac-sha1" | i"hmac-sha1-96"
+                | i"hmac-sha224" | i"usmHMAC128SHA224AuthProtocol"
+                | i"hmac-sha256" | i"usmHMAC192SHA256AuthProtocol"
+                | i"hmac-sha384" | i"usmHMAC256SHA384AuthProtocol"
+                | i"hmac-sha512" | i"usmHMAC384SHA512AuthProtocol"
 
-enc             = %i"des" | %i"cbc-des" | %i"aes" | %i"cfb128-aes-128"
+enc             = i"des" | i"cbc-des" | i"aes" | i"cfb128-aes-128"
 
 mib             = "mib" "directory" string
 

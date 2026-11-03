@@ -6,8 +6,8 @@ prefix none
 whitespace none
 include "../../grammars/common.hbnf"
 
-BS     = %x5C
-SQUOTE = %x27
+BS     = 0x5C
+SQUOTE = 0x27
 
 idstart    = ALPHA | "_"
 idchar     = ALPHA | DIGIT | "_"
@@ -23,34 +23,34 @@ identifier = word - keyword
 ; ---- constants (6.4.4) ----
 ; (the letters inside a token are written as code points: a letter-led literal is a whole word)
 constant   = floating-constant | integer-constant | character-constant
-ex         = %x78 | %x58
-bee        = %x62 | %x42
-you        = %x75 | %x55
-ell        = %x6C | %x4C
-eee        = %x65 | %x45
-pee        = %x70 | %x50
-eff        = %x66 | %x46
-sign       = %x2B | %x2D
-imag       = %x69 | %x49 | %x6A | %x4A
+ex         = 0x78 | 0x58
+bee        = 0x62 | 0x42
+you        = 0x75 | 0x55
+ell        = 0x6C | 0x4C
+eee        = 0x65 | 0x45
+pee        = 0x70 | 0x50
+eff        = 0x66 | 0x46
+sign       = 0x2B | 0x2D
+imag       = 0x69 | 0x49 | 0x6A | 0x4A
 int-suffix = you | ell | imag
 digits     = 1*DIGIT
-hexd       = DIGIT | %x41-46 | %x61-66
+hexd       = DIGIT | 0x41..0x46 | 0x61..0x66
 hexdigits  = 1*hexd
-bin-digit  = %x30 | %x31
-integer-constant = ( %x30 ex hexdigits | %x30 bee 1*bin-digit | digits ) *int-suffix
+bin-digit  = 0x30 | 0x31
+integer-constant = ( 0x30 ex hexdigits | 0x30 bee 1*bin-digit | digits ) *int-suffix
 floating-constant = ( dec-float | hex-float ) *fsuffix
 fdigit     = DIGIT | ex
 fsuffix    = eff *fdigit | ell | imag
-dec-float  = digits %x2E *DIGIT [ exponent ] | %x2E digits [ exponent ] | digits exponent
+dec-float  = digits 0x2E *DIGIT [ exponent ] | 0x2E digits [ exponent ] | digits exponent
 exponent   = eee [ sign ] digits
-hex-float  = %x30 ex hex-mantissa pee [ sign ] digits
-hex-mantissa = hexdigits %x2E *hexd | hexdigits | %x2E hexdigits
-char-prefix = %x4C | you
+hex-float  = 0x30 ex hex-mantissa pee [ sign ] digits
+hex-mantissa = hexdigits 0x2E *hexd | hexdigits | 0x2E hexdigits
+char-prefix = 0x4C | you
 char-body  = ~( SQUOTE | BS | LF ) | BS ~LF
 character-constant = [ char-prefix ] SQUOTE 1*char-body SQUOTE
 
 ; ---- string literals (6.4.5) ----
-str-prefix = you %x38 | %x4C | you
+str-prefix = you 0x38 | 0x4C | you
 str-body   = ~( DQUOTE | BS | LF ) | BS ( LF | ~LF )
 string-literal = [ str-prefix ] DQUOTE *str-body DQUOTE
 

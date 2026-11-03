@@ -10,7 +10,7 @@ stmt    = select | delete
 select  = "select" gap columns gap "from" gap name [ gap "where" gap name *gap "=" *gap number ]
 delete  = "delete" gap "from" gap name
 columns = "*" | name *( "," name )
-name    = 1*( %x61-7A / %x41-5A / "_" )
+name    = 1*( 0x61..0x7A / 0x41..0x5A / "_" )
 gap      = 1*( SP / HTAB )
 number  = 1*DIGIT
 ws      = *( SP / HTAB )

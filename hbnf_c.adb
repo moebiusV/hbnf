@@ -8448,7 +8448,7 @@ package body HBNF_C is
          if Case_Words.Contains (W) and then Is_Keyword_Lit (To_String (W))
          then
             raise HBNF_Grammar.Parse_Error with
-              "the keyword `" & To_String (W) & "` is written both with %i "
+              "the keyword `" & To_String (W) & "` is written both with `i""...""` "
               & "and without; a keyword matches one way or the other";
          end if;
       end loop;

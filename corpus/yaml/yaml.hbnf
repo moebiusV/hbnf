@@ -14,7 +14,7 @@ flat fgap fnode fval fvaln fkeyj fkeyp fmitem fempty
 
 ; ---- line breaks inside a node: the next line is indented M or more
 brk(M in 0..) := lines !marker %spaces M *WSP
-dq(M in 0..) := DQUOTE [ dqs ] *( [ %x5C ] brk(M) [ dqs ] ) DQUOTE
+dq(M in 0..) := DQUOTE [ dqs ] *( [ 0x5C ] brk(M) [ dqs ] ) DQUOTE
 sq(M in 0..) := "'" [ sqs ] *( brk(M) [ sqs ] ) "'"
 pml(M in 0..) := plainline("block") *( brk(M) pcont("block") )
 
@@ -73,7 +73,7 @@ cbody(Q in 0..) := bmap(Q) | bseq(Q)
 
 ; ---- documents
 top(M in 0..) := *SP %col K body(K, M)
-BOM      = %xFEFF
+BOM      = 0xFEFF
 thandle  = "!" | "!!" | "!" 1*( ALNUM | "-" ) "!"
 tagdir   = "%" "TAG" 1*WSP thandle 1*WSP 1*( uri | flow-ind | "!" ) trail nl gap
 yamldir  = "%" "YAML" 1*WSP 1*DIGIT "." 1*DIGIT trail nl gap

@@ -40,25 +40,30 @@ language C
   set one differently are an error.
 - **`sensitivity`** — `sensitivity %i` makes the file's bare literals and
   rule references ignore case, as ABNF's do; `sensitivity string %i` or
-  `sensitivity rule-name %i` does one of the two.  A literal's own `%i` or
-  `%s` wins.
+  `sensitivity rule-name %i` does one of the two.  A literal's own `i"…"` or
+  `s"…"` wins.
 - **Keywords** are quoted literals in their config spelling (`"router-id"`,
   `"read-only"`), never the yacc `%token` identifier.
 - **Readable typed tokens** — `str` (quoted string), `word`/`atom`
   (bareword), `int`, `bool`/`flag` (yes/no), `u8`..`u64`/`i8`..`i64`
   (fixed-width).  Character classes are the RFC 5234 names in
   `common.hbnf` (`DIGIT`, `ALPHA`, `HEXDIG`, …, uppercase), and single code
-  points and ranges are the `%b`/`%d`/`%o`/`%u`/`%x` numeric terminals.  A
+  points and ranges are numbers in C's notation, `0x41`, `65`, `0b1000001`,
+  `0x41..0x5A` (ABNF's `%b`/`%d`/`%o`/`%u`/`%x` under `dialect abnf`).  A
   rule made only of these is a character rule, compiled to a scanner.
 - **`%` is the dispatch prefix** — the reader macro of hbnf, what `#'` is to
-  Common Lisp: it marks a special form rather than a rule name.  `%i`/`%s`
-  (case markers), `%b`/`%d`/`%o`/`%x` (numeric terminals), `%u` (a Unicode
-  code point), and `%scan`/`%action` (code blocks).
+  Common Lisp: it marks a special form rather than a rule name: `%scan` and
+  `%action` (code blocks), `%as`, `%same`, `%spaces`.  The case markers and the
+  numeric terminals have no percent sign in hbnf's own notation: `i"abc"` and
+  `s"abc"` (any case, this case), `r"[a-z]+"` (a regular expression, for a
+  rule of characters) and numbers.  A file that says `dialect abnf` writes
+  them as RFC 5234 and RFC 7405 do, `%i"abc"`, `%x41`; `tools/hbnf_modernize.py`
+  rewrites the old spellings of a file.
 - **Character literals** — `'a'` is a single code point (C escapes allowed),
-  and `-` ranges two code-point designators: `'a'-'c'` = `%x61-63`, the
-  endpoint order not mattering.  `-` is a range only after `'` or `%`, so it
-  never collides with `-` in a rule name (`close-ma9`).  In a rule that is
-  not a character rule, a single character (`','`, `%x2C`) is the
+  and `..` or `-` ranges two code-point designators: `'a'..'z'`, `'a'-'c'` =
+  `0x61..0x63`, the order of the ends not mattering for `-`.  `-` is a range
+  only after `'`, so it never collides with `-` in a rule name (`close-ma9`).
+  In a rule that is not a character rule, a single character (`','`, `0x2C`) is the
   one-character literal: `'{'` and `"{"` are the same there.  Write a
   single character in `'…'` and a longer literal in `"…"`.  A range in such
   a rule is refused until the character model (RFCPLAN.md step 4); name it

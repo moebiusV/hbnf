@@ -18,8 +18,8 @@ op        = "+" | "-"
 
 ; %i: `mode` in any case, `fast` in any case, `slow` only as written.
 modes     = *( modeset )
-modeset   = %i"mode" mode ";"
-mode      = %i"fast" | "slow"
+modeset   = i"mode" mode ";"
+mode      = i"fast" | "slow"
 
 ; two or three hosts
 pair      = 2*3host

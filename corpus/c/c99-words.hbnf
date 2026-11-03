@@ -6,8 +6,8 @@ prefix none
 whitespace none
 include "../../grammars/common.hbnf"
 
-BS     = %x5C
-SQUOTE = %x27
+BS     = 0x5C
+SQUOTE = 0x27
 
 ; ---- identifiers (6.4.2) ----
 ; (the letters inside a token are written as code points: a letter-led literal is a whole word)
@@ -24,35 +24,35 @@ identifier = word - keyword
 
 ; ---- constants (6.4.4) ----
 constant   = floating-constant | integer-constant | character-constant
-ex         = %x78 | %x58
-you        = %x75 | %x55
-ell        = %x6C | %x4C
-eee        = %x65 | %x45
-pee        = %x70 | %x50
-eff        = %x66 | %x46
-sign       = %x2B | %x2D
+ex         = 0x78 | 0x58
+you        = 0x75 | 0x55
+ell        = 0x6C | 0x4C
+eee        = 0x65 | 0x45
+pee        = 0x70 | 0x50
+eff        = 0x66 | 0x46
+sign       = 0x2B | 0x2D
 digits     = 1*DIGIT
-octd       = %x30-37
-hexd       = DIGIT | %x41-46 | %x61-66
+octd       = 0x30..0x37
+hexd       = DIGIT | 0x41..0x46 | 0x61..0x66
 hexdigits  = 1*hexd
-long-suffix = %x6C %x6C | %x4C %x4C | ell
+long-suffix = 0x6C 0x6C | 0x4C 0x4C | ell
 int-suffix = you [ long-suffix ] | long-suffix [ you ]
-integer-constant = ( %x31-39 *DIGIT | %x30 ex hexdigits | %x30 *octd ) [ int-suffix ]
+integer-constant = ( 0x31..0x39 *DIGIT | 0x30 ex hexdigits | 0x30 *octd ) [ int-suffix ]
 floating-constant = ( dec-float | hex-float ) [ eff | ell ]
-dec-float  = digits %x2E *DIGIT [ exponent ] | %x2E digits [ exponent ] | digits exponent
+dec-float  = digits 0x2E *DIGIT [ exponent ] | 0x2E digits [ exponent ] | digits exponent
 exponent   = eee [ sign ] digits
-hex-float  = %x30 ex hex-mantissa pee [ sign ] digits
-hex-mantissa = hexdigits %x2E *hexd | hexdigits | %x2E hexdigits
+hex-float  = 0x30 ex hex-mantissa pee [ sign ] digits
+hex-mantissa = hexdigits 0x2E *hexd | hexdigits | 0x2E hexdigits
 char-body  = ~( SQUOTE | BS | LF ) | BS ~LF
-character-constant = [ %x4C ] SQUOTE 1*char-body SQUOTE
+character-constant = [ 0x4C ] SQUOTE 1*char-body SQUOTE
 
 ; ---- string literals (6.4.5) ----
 str-body   = ~( DQUOTE | BS | LF ) | BS ( LF | ~LF )
-string-literal = [ %x4C ] DQUOTE *str-body DQUOTE
+string-literal = [ 0x4C ] DQUOTE *str-body DQUOTE
 
 ; White space between tokens: blanks, both kinds of comment (6.4.9), and the lines a preprocessor
 ; leaves in its output (`# 12 "file.c"`, `#pragma`), since hbnf has no preprocessor.
-blank      = SP | HTAB | LF | CR | %x0B | %x0C
+blank      = SP | HTAB | LF | CR | 0x0B | 0x0C
 comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
 line-comment = "//" *~LF
 pp-line    = "#" *~LF

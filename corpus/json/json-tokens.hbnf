@@ -8,14 +8,14 @@ prefix none
 include "../../grammars/common.hbnf"
 
 string    = DQUOTE *char DQUOTE
-char      = unescaped / %x5C escape
-unescaped = %x20-21 / %x23-5B / %x5D-10FFFF
-escape    = %x22 / %x5C / %x2F / %x62 / %x66 / %x6E / %x72 / %x74 / %x75 4HEXDIG
+char      = unescaped / 0x5C escape
+unescaped = 0x20..0x21 / 0x23..0x5B / 0x5D..0x10FFFF
+escape    = 0x22 / 0x5C / 0x2F / 0x62 / 0x66 / 0x6E / 0x72 / 0x74 / 0x75 4HEXDIG
 
 number    = [ "-" ] integer [ frac ] [ exp ]
-integer   = "0" / %x31-39 *DIGIT
+integer   = "0" / 0x31..0x39 *DIGIT
 frac      = "." 1*DIGIT
-exp       = ( %x65 / %x45 ) [ "+" / "-" ] 1*DIGIT
+exp       = ( 0x65 / 0x45 ) [ "+" / "-" ] 1*DIGIT
 
 ; The three literals are tokens of their own, so the tree says which one was read
 ; (a quoted "true" in json.hbnf would leave no field and all three would look alike).

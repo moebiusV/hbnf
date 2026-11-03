@@ -126,7 +126,7 @@ def lit(s):
     """An hbnf literal for the terminal s."""
     if s.isalnum():
         return '"%s"' % s
-    return " ".join("%%x%02X" % ord(c) for c in s) if any(c in '"\\' for c in s) else '"%s"' % s
+    return " ".join("0x%02X" % ord(c) for c in s) if any(c in '"\\' for c in s) else '"%s"' % s
 
 
 def rulename(c):
@@ -181,11 +181,11 @@ def main(argv):
         out.append("")
     out.append("; The lexer's classes: a name is a letter or digit run (numbers are names),")
     out.append("; a symbol is any other printing character.")
-    out.append("nam = 1*( %x41-5A / %x61-7A / %x30-39 )")
-    out.append("sym = %x21-2F / %x3A-40 / %x5B-60 / %x7B-7E")
+    out.append("nam = 1*( 0x41..0x5A / 0x61..0x7A / 0x30..0x39 )")
+    out.append("sym = 0x21..0x2F / 0x3A..0x40 / 0x5B..0x60 / 0x7B..0x7E")
     out.append("")
     out.append("; Blanks and `#` comments.")
-    out.append("ws = 1*( %x20 / %x09 / %x0D / %x0A / comment )")
+    out.append("ws = 1*( 0x20 / 0x09 / 0x0D / 0x0A / comment )")
     out.append('comment = "#" *~"#" "#"')
     sys.stdout.write("\n".join(out) + "\n")
     sys.stderr.write("%d statements, %d classes (%d lexical), %d alternatives\n" % (

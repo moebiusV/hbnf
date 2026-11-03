@@ -8,8 +8,8 @@ prefix none
 whitespace none
 include "../../grammars/common.hbnf"
 
-BS     = %x5C
-SQUOTE = %x27
+BS     = 0x5C
+SQUOTE = 0x27
 
 idstart    = ALPHA | "_"
 idchar     = ALPHA | DIGIT | "_"
@@ -23,30 +23,30 @@ identifier = word - keyword
 ; ---- constants (3.1.3) ----
 ; (the letters inside a token are written as code points: a letter-led literal is a whole word)
 constant   = floating-constant | integer-constant | character-constant
-ex         = %x78 | %x58
-you        = %x75 | %x55
-ell        = %x6C | %x4C
-eee        = %x65 | %x45
-eff        = %x66 | %x46
-sign       = %x2B | %x2D
+ex         = 0x78 | 0x58
+you        = 0x75 | 0x55
+ell        = 0x6C | 0x4C
+eee        = 0x65 | 0x45
+eff        = 0x66 | 0x46
+sign       = 0x2B | 0x2D
 digits     = 1*DIGIT
-octd       = %x30-37
-hexd       = DIGIT | %x41-46 | %x61-66
+octd       = 0x30..0x37
+hexd       = DIGIT | 0x41..0x46 | 0x61..0x66
 int-suffix = you [ ell ] | ell [ you ]
-integer-constant = ( %x31-39 *DIGIT | %x30 ex 1*hexd | %x30 *octd ) [ int-suffix ]
+integer-constant = ( 0x31..0x39 *DIGIT | 0x30 ex 1*hexd | 0x30 *octd ) [ int-suffix ]
 floating-constant = ( dec-float | digits exponent ) [ eff | ell ]
-dec-float  = digits %x2E *DIGIT [ exponent ] | %x2E digits [ exponent ]
+dec-float  = digits 0x2E *DIGIT [ exponent ] | 0x2E digits [ exponent ]
 exponent   = eee [ sign ] digits
 char-body  = ~( SQUOTE | BS | LF ) | BS ~LF
-character-constant = [ %x4C ] SQUOTE 1*char-body SQUOTE
+character-constant = [ 0x4C ] SQUOTE 1*char-body SQUOTE
 
 ; ---- string literals (3.1.4) ----
 str-body   = ~( DQUOTE | BS | LF ) | BS ( LF | ~LF )
-string-literal = [ %x4C ] DQUOTE *str-body DQUOTE
+string-literal = [ 0x4C ] DQUOTE *str-body DQUOTE
 
 ; White space between tokens: blanks, comments (3.1.9; `//` is not one in C90), and the lines a
 ; preprocessor leaves in its output (`# 12 "file.c"`, `#pragma`), since hbnf has no preprocessor.
-blank      = SP | HTAB | LF | CR | %x0B | %x0C
+blank      = SP | HTAB | LF | CR | 0x0B | 0x0C
 comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
 pp-line    = "#" *~LF
 ws         = 1*( blank | comment | pp-line )

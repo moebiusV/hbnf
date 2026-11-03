@@ -1,2 +1,2 @@
 whitespace none
-hidden doc = 1*%x61-7A
+hidden doc = 1*0x61..0x7A

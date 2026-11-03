@@ -653,10 +653,10 @@ pretty-printing and debug printouts become simple and pleasant. A parse failure
 is a line, a column, and a caret under the token that was expected.
 
 The literal syntax is C's on purpose: a string is `"…"`, a character `'a'`, a
-code point `%x21` or `%d33`, an escape `\n`. The reader already knows these
+code point `0x21` or `33`, an escape `\n`. The reader already knows these
 spellings, and a notation should astonish no one — every mark it invents is one
 more thing to learn before the grammar is readable. The choice is not cosmetic.
-At the root a token is a sequence of bits, and nothing else; `%x21` and `"!"`
+At the root a token is a sequence of bits, and nothing else; `0x21` and `"!"`
 name the same byte, so a grammar can reach straight down to the bytes it
 describes instead of floating above them in a lexer's abstractions. Human
 readability and machine exactness meet there: spell the bits the way a person

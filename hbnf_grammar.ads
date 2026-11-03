@@ -249,7 +249,7 @@ package HBNF_Grammar is
       case Kind is
          when Literal =>
             Lit : Unbounded_String;      --  keyword to match-and-skip
-            No_Case : Boolean := False;  --  %i"...": any case matches
+            No_Case : Boolean := False;  --  i"...", %i"...": any case matches
             Has_Value : Boolean := False;
             Value : Natural := 0;
             --  `"foo"@7`: the number this literal has as an enum value, as

@@ -1,0 +1,9 @@
+; The old spellings, for tools/hbnf_modernize.py: the comment %x41 and the string "%x41" stay.
+whitespace none
+sensitivity string %i
+a = %x41 / %x61-7A / %d65 / %b1000001 / %x0D.0A / 3%x41 / *%x30-39 / %x7A-61
+b = %i"abc" %s "def" "%x41 in a string" 'x' { code %x41 }
+c = len:8 data:[len] %d13.10
+d = %d048-057 %X5a%x5B
+e(N in 1..3) := %x41 f(N % 2)
+f = 1*3 ( "x" ) 2 "y" %spaces 4 z 2 %x41

@@ -28,12 +28,12 @@ triple      = "{{{" blank name blank "}}}"
 variable    = "{{" blank plain blank "}}"
 
 ; the pieces of a tag: a name has no blank or } in it, and a plain one does not begin with a sigil
-name     = 1*~( %x20 / %x09 / %x0D / %x0A / "}" )
-plain    = ~( %x20 / %x09 / %x0D / %x0A / "}" / "#" / "^" / "/" / "!" / "&" / ">" / "=" ) *~( %x20 / %x09 / %x0D / %x0A / "}" )
-blank    = *( %x20 / %x09 / %x0D / %x0A )
+name     = 1*~( 0x20 / 0x09 / 0x0D / 0x0A / "}" )
+plain    = ~( 0x20 / 0x09 / 0x0D / 0x0A / "}" / "#" / "^" / "/" / "!" / "&" / ">" / "=" ) *~( 0x20 / 0x09 / 0x0D / 0x0A / "}" )
+blank    = *( 0x20 / 0x09 / 0x0D / 0x0A )
 body     = *( ~"}" / "}" ~"}" )
 
 ; everything else; a { is text unless another { follows it (that is a tag), and a { at the very end is text
 text     = 1*( ~"{" | "{" ~"{" )
 lone     = "{" !any
-any      = %x00-10FFFF
+any      = 0x00..0x10FFFF

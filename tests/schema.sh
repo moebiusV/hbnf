@@ -111,8 +111,8 @@ whitespace none
 doc = word-ok "." tail
 word-ok = word-any - reserved
 word-any = lower *( lower / digit / "-" )
-lower = %x61-7A
-digit = %x30-39
+lower = 0x61..0x7A
+digit = 0x30..0x39
 reserved = ( "if" / "then" ) / "fi" / 2( "x" / "y" )
 tail = word-any
 G
@@ -163,7 +163,7 @@ assign = name "=" arg
 name = word
 arg = word
 ws = 1*wsc
-wsc = %x20 / %x09
+wsc = 0x20 / 0x09
 G
 n=0
 for v in 'a;' '  a  ;' 'abc ;' 'a ;'; do
@@ -217,7 +217,7 @@ items = 1*item
 item = name ","
 name = word
 ws = 1*wsc
-wsc = %x20 / %x09
+wsc = 0x20 / 0x09
 G
 n=0
 for v in 'a,;' 'a, b, c,;' ' a , b ,  ;'; do
@@ -267,8 +267,8 @@ whitespace none
 include "$(pwd)/grammars/common.hbnf"
 doc = str
 str = DQUOTE *( esc / plain ) DQUOTE
-esc = %x5C %x00-10FFFF
-plain = ~( DQUOTE / %x5C )
+esc = 0x5C 0x00..0x10FFFF
+plain = ~( DQUOTE / 0x5C )
 G
 n=0
 for v in '""' '"abc"' '"a\"b"' '"a\\"' '"é"'; do

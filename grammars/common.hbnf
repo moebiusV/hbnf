@@ -8,17 +8,17 @@
 include "ascii.hbnf"
 
 ; --- RFC 5234 Appendix B.1 character classes (each matches one code point) ---
-DIGIT  = %x30-39
-LOWER  = %x61-7A
-UPPER  = %x41-5A
-ALPHA  = %x41-5A | %x61-7A
-ALNUM  = %x30-39 | %x41-5A | %x61-7A
-HEXDIG = %x30-39 | %x41-46 | %x61-66
-BIT    = %x30 | %x31
-CHAR   = %x01-7F
-CTL    = %x00-1F | %x7F
-VCHAR  = %x21-7E
-OCTET  = %x00-FF
+DIGIT  = 0x30..0x39
+LOWER  = 0x61..0x7A
+UPPER  = 0x41..0x5A
+ALPHA  = 0x41..0x5A | 0x61..0x7A
+ALNUM  = 0x30..0x39 | 0x41..0x5A | 0x61..0x7A
+HEXDIG = 0x30..0x39 | 0x41..0x46 | 0x61..0x66
+BIT    = 0x30 | 0x31
+CHAR   = 0x01..0x7F
+CTL    = 0x00..0x1F | 0x7F
+VCHAR  = 0x21..0x7E
+OCTET  = 0x00..0xFF
 WSP    = SP | HTAB             ; white space
 
 CRLF = CR LF                   ; Internet standard newline

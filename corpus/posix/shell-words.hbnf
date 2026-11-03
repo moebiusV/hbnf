@@ -8,8 +8,8 @@ prefix none
 whitespace none
 include "../../grammars/common.hbnf"
 
-BS      = %x5C
-SQUOTE  = %x27
+BS      = 0x5C
+SQUOTE  = 0x27
 
 ; ---- the operators of more than one character ----
 AND_IF    = "&&"

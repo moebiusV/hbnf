@@ -3,4 +3,4 @@
 prefix none
 whitespace none
 top = "[[" %emit{ array_table(); } key "]]" / "[" %emit{ table(); } key "]"
-key = 1*%x61-7A
+key = 1*0x61..0x7A

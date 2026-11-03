@@ -129,7 +129,7 @@ check FAIL "//y" "neither, the other way"
 rm -f "$W/t"; gen <<G
 include "$CORE"
 doc = oct
-oct = DIGIT / %x31-39 DIGIT / "1" 2DIGIT
+oct = DIGIT / 0x31..0x39 DIGIT / "1" 2DIGIT
 G
 check OK   "7"   "a character rule takes the longest alternative: one digit"
 check OK   "42"  "two digits"
@@ -231,8 +231,8 @@ whitespace none
 doc = word-ok "." tail
 word-ok = word-any - reserved
 word-any = lower *( lower / digit / "-" )
-lower = %x61-7A
-digit = %x30-39
+lower = 0x61..0x7A
+digit = 0x30..0x39
 reserved = ( "if" / "then" ) / "fi" / 2( "x" / "y" )
 tail = word-any
 G
@@ -248,7 +248,7 @@ whitespace none
 doc = word-ok "."
 word-ok = word-any - phrase
 word-any = 1*( lower / "!" )
-lower = %x61-7A
+lower = 0x61..0x7A
 phrase = word "!"
 G
 check OK   "abc."   "a built-in inside the second operand makes it a phrase exception"
@@ -263,7 +263,7 @@ x = word - assign
 assign = name "=" name
 name = word
 ws = 1*wsc
-wsc = %x20
+wsc = 0x20
 G
 
 echo "== tokens everywhere: a rule that is only text is one string =="
@@ -291,7 +291,7 @@ include "$CORE"
 doc = items
 items = 1*item
 item = ALPHA "-" ALPHA
-ws = 1*( %x20 )
+ws = 1*( 0x20 )
 G
 if "$CLI" "$W/tk2.hbnf" --backend=c > "$W/tk2.c" 2> "$W/err.txt" \
    && grep -q 'struct bnf_items_list' "$W/tk2.c"; then
@@ -331,7 +331,7 @@ pair = "a" "b"
 G
 refuse "matches nothing" "the complement of every character" <<'G'
 whitespace none
-doc = ~%x0-10FFFF
+doc = ~0x0..0x10FFFF
 G
 
 echo "== YBNF, yacc's grammar language: %token, %start, %%, and | as the union =="
@@ -439,8 +439,8 @@ check OK   "x9" "a group across lines"
 rm -f "$W/t"; gen <<'G'
 doc = A
       B   ; the rule goes on here
-A = %x41
-B = %x42
+A = 0x41
+B = 0x42
 G
 check OK   "AB" "A, then B on the next line"
 check FAIL "A"  "A alone"
@@ -450,7 +450,7 @@ rm -f "$W/t"; gen <<G
 include "$CORE"
 doc = 1*hex
 hex = DIGIT
-hex =/ %x61-66
+hex =/ 0x61..0x66
 G
 check OK   "12af" "decimal and a-f"
 check FAIL "g"    "g"
@@ -475,7 +475,7 @@ G
 check OK   "{ a, b c }" "commas that may be left out"
 check FAIL "{ a, }"     "a trailing comma"
 rm -f "$W/t"; gen <<'G'
-r = word %x30-39
+r = word 0x30..0x39
 G
 check OK   "ab 7" "a range in a rule of words is a rule of its own, which the reader writes"
 check FAIL "ab"   "the range needs a digit"
@@ -490,10 +490,10 @@ check FAIL "{ a tcp, }"               "a trailing comma"
 check FAIL "{ a port udp }"           "port without its number"
 check FAIL "{ a }"                    "neither tcp nor udp"
 
-echo "== %d65.66 and *m =="
+echo "== 65 66 and *m =="
 rm -f "$W/t"; gen <<'G'
 doc  = 1*pair
-pair = %d65.66
+pair = 65 66
 G
 check OK   "ABAB" "two AB pairs"
 check FAIL "ABA"  "a lone A"
@@ -507,10 +507,10 @@ check FAIL "123" "three digits"
 echo "== sensitivity =="
 rm -f "$W/t"; gen <<'G'
 sensitivity string %i
-doc = "hello" %s"World"
+doc = "hello" s"World"
 G
 check OK   "HELLO World" "a bare literal ignores case"
-check FAIL "hello world" "a %s literal does not"
+check FAIL "hello world" "an s-prefixed literal does not"
 rm -f "$W/t"; gen <<G
 sensitivity rule-name %i
 include "$CORE"
@@ -664,7 +664,7 @@ for shape in '*"a"' '( *"a" )' '1*"a"' '"k" *"a"' '3*5"a"'; do
 	echo "  PASS [doc = $shape: all four backends refuse it, with the reason]"
 done
 # and the spellings the message names do work
-for shape in '*( "a" )' '*%x41' '"k" *word'; do
+for shape in '*( "a" )' '*0x41' '"k" *word'; do
 	printf 'language C\ndoc = %s\n' "$shape" > "$W/rl.hbnf"
 	ok=1
 	for b in c rust zig ada; do
@@ -798,8 +798,8 @@ include "$CORE"
 doc   = lines END
 lines = 1*line
 line  = A WSP A CRLF
-A    = %x41
-END  = %x2E
+A    = 0x41
+END  = 0x2E
 G
 check OK   "$(printf 'A A\r\nA\tA\r\n.')" "two lines"
 check FAIL "$(printf 'AA\r\n.')"          "no white space"

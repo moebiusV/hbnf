@@ -21,21 +21,21 @@ user-word = word - not-a-name
 ; space; and a comment, `*>` to the end of the line, which may follow anything; and a compiler directive, `>>` to the end of the line,
 ; which is read as a comment (so `>>IF` and `>>END-IF` both take effect, and a program with alternatives in them is read twice).
 ; A `$` line is a directive (`$SET`, `$IF`) unless picture symbols only follow, up to a character that is no letter: `$BB**,**9` and `$99` are pictures.
-picletter     = %x41 | %x42 | %x43 | %x44 | %x45 | %x50 | %x52 | %x53 | %x56 | %x58 | %x5A
-              | %x61 | %x62 | %x63 | %x64 | %x65 | %x70 | %x72 | %x73 | %x76 | %x78 | %x7A
+picletter     = 0x41 | 0x42 | 0x43 | 0x44 | 0x45 | 0x50 | 0x52 | 0x53 | 0x56 | 0x58 | 0x5A
+              | 0x61 | 0x62 | 0x63 | 0x64 | 0x65 | 0x70 | 0x72 | 0x73 | 0x76 | 0x78 | 0x7A
 picture-start = *picletter !ALPHA
 ws = SP | HTAB | CR | LF | "," | ";" | "*>" *~( CR | LF ) | ">>" *~( CR | LF ) | "$" !picture-start ALPHA *~( CR | LF )
 
 ; ---- literals (the standard's 8.3) ----
 ; (a letter inside a token is written as code points: a letter-led literal would be matched as a whole word)
-exponent        = %x45 | %x65
+exponent        = 0x45 | 0x65
 numeric-literal = [ sign ] ( digits [ "." digits ] | "." digits ) [ exponent [ sign ] digits ] !( ALPHA | "_" | "-" ALPHA )
 sign            = "+" | "-"
 digits          = 1*DIGIT
 nonnumeric-literal = [ literal-prefix ] ( DQUOTE *( ~DQUOTE | DQUOTE DQUOTE ) DQUOTE
                                         | SQUOTE *( ~SQUOTE | SQUOTE SQUOTE ) SQUOTE )
-literal-prefix  = ( %x58 | %x78 | %x4E | %x6E | %x5A | %x7A | %x42 | %x62 | %x47 | %x67 ) [ %x58 | %x78 ]
-SQUOTE          = %x27
+literal-prefix  = ( 0x58 | 0x78 | 0x4E | 0x6E | 0x5A | 0x7A | 0x42 | 0x62 | 0x47 | 0x67 ) [ 0x58 | 0x78 ]
+SQUOTE          = 0x27
 
 ; The text of a PICTURE clause is whatever runs to the next blank; a period belongs to it only when more of it
 ; follows (`PIC 9(5).99` is one string, the period after `PIC 9(5)` is not).

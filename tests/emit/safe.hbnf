@@ -3,5 +3,5 @@ prefix none
 whitespace none
 top :: uint32_t = "{" %emit{ $$ = open(); } [ pair *( "," pair ) ] "}" %emit{ close($$); }
 pair :: uint32_t = key ":" val %emit{ put(key, val); }
-key = %x61-7A
+key = 0x61..0x7A
 val = "t" %emit{ yes(); } | "f" %emit{ no(); } | top

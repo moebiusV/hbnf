@@ -603,6 +603,10 @@ package body HBNF_Grammar is
    Flag_No_Prefix : Boolean := False;
    Emitted_Rules : Path_Sets.Set;
    File_Dialect : Unbounded_String;
+   --  What the last Lex call found out about the notation of its text, for
+   --  the parser made from it: hbnf's own, and ABNF.
+   Last_Lex_Hbnf : Boolean := True;
+   Last_Lex_Abnf : Boolean := False;
 
    --  A rule by name.  A grammar with parameterised rules has thousands, and the
    --  checks ask for them hundreds of thousands of times, so the names are kept
@@ -723,6 +727,7 @@ package body HBNF_Grammar is
    Pipe_Sites  : Site_Vectors.Vector;    --  the `|` of an ordered choice, for --lint
    Greedy_Sites : Site_Vectors.Vector;   --  elements that repeat a variable number of times
    Fold_Sites  : Element_Vectors.Vector; --  uses of parameterised rules written under `sensitivity string %i`
+   Regex_Sites  : Site_Vectors.Vector;   --  the groups `r"..."` became, for the rules they stand in
 
    function Here (Line, Col : Positive; Text : String;
                   Alt : Element_Access := null) return Site is
@@ -820,6 +825,7 @@ package body HBNF_Grammar is
       Pipe_Sites.Clear;
       Greedy_Sites.Clear;
       Fold_Sites.Clear;
+      Regex_Sites.Clear;
       Standing.Clear;
       Enum_Ranks.Clear;
       Emit_Table.Clear;
@@ -842,7 +848,10 @@ package body HBNF_Grammar is
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
                      T_Prose, T_Tilde, T_At, T_Colon, T_Octets, T_Count, T_Bits,
-                     T_Guard, T_Hash, T_Meta, T_Arrow, T_Plus, T_EOF);
+                     T_Guard, T_Hash, T_Meta, T_Arrow, T_Plus, T_Prefix, T_DotDot, T_EOF);
+   --  T_Prefix: the flags of a prefixed string, `i`, `s`, `r`, `ir` or `sr`,
+   --  which the string token after it (T_String) belongs to.  T_DotDot: `..`,
+   --  the range of two code points.
 
    type Token is record
       Kind : Tok_Kind;
@@ -1041,7 +1050,7 @@ package body HBNF_Grammar is
               & "ends at the end of the line (a line that goes on is "
               & "indented), so leave the `.` out.  (In BNF `...` abbreviates "
               & "a list of terminals: write them out, or a range such as "
-              & "`%x30-39`.)";
+              & "`0x30..0x39`.)";
          when '>' =>
             return LF2 & "`>` closes a BNF rule name `<name>`, and no `<` "
               & "opened one here.";
@@ -1121,6 +1130,14 @@ package body HBNF_Grammar is
       --  `::`.  A file that names another notation (`dialect bnf`, `ybnf`,
       --  `ebnf`, `abnf`) reads every operator as the one that defines a rule.
       Legacy_Ops : constant Boolean := Bar_Is_Union or else Raw_Strings;
+
+      --  hbnf's own notation: `0x41` and `i"abc"` where ABNF writes `%x41` and
+      --  `%i"abc"`.  The other dialects read the spellings of their notations.
+      Hbnf_Notation : constant Boolean := not Legacy_Ops;
+
+      --  The string that comes next is `r"..."`: raw, a backslash only keeps
+      --  the character after it from closing the string.
+      Regex_Next : Boolean := False;
 
       --  First_Col is the token's first column, for a token Emit sees
       --  only once it has been read past (a quoted string); 0 means Col.
@@ -1231,6 +1248,16 @@ package body HBNF_Grammar is
          return K <= Text'Last and then (Text (K) = '"' or else Name_Start (Text (K)));
       end Joins_Here;
 
+      --  Only the letters i, s and r, then a quote, from K on.
+      function Flags_Then_Quote (K : Positive) return Boolean is
+         J : Natural := K;
+      begin
+         while J <= Text'Last and then Text (J) in 'i' | 's' | 'r' loop
+            J := J + 1;
+         end loop;
+         return J <= Text'Last and then Text (J) = '"';
+      end Flags_Then_Quote;
+
       --  Open `(` and `[`: inside them a newline is only white space.
       Group_Depth : Natural := 0;
 
@@ -1319,6 +1346,8 @@ package body HBNF_Grammar is
       end Block_Comment;
 
    begin
+      Last_Lex_Hbnf := Hbnf_Notation;
+      Last_Lex_Abnf := Abnf_Here;
       while I <= Text'Last loop
          case Text (I) is
             when ' ' | ASCII.HT =>
@@ -1425,6 +1454,15 @@ package body HBNF_Grammar is
                         Col := Col + 1;
                         Closed := True;
                         exit;
+                     elsif Regex_Next and then Text (I) = '\'
+                       and then I < Text'Last and then Text (I + 1) /= ASCII.LF
+                     then
+                        --  `r"\d+"`: no escape is read here; the regular
+                        --  expression reads them.  `\"` does not close the string.
+                        Append (Buf, Text (I));
+                        Append (Buf, Text (I + 1));
+                        I := I + 2;
+                        Col := Col + 2;
                      elsif Text (I) = '\' and then not Raw_Strings then
                         --  (Under `--abnf` a backslash is a backslash, as
                         --  RFC 5234 reads `"\"`.)
@@ -1532,8 +1570,18 @@ package body HBNF_Grammar is
                        Integer'Image (Line) & ":" & Integer'Image (Col) &
                        ": unterminated string literal";
                   end if;
+                  Regex_Next := False;
                   Emit (T_String, To_String (Buf), At_Col);
                end;
+            when '.' =>
+               if Hbnf_Notation and then I < Text'Last and then Text (I + 1) = '.'
+               then
+                  Emit (T_DotDot);  I := I + 2;  Col := Col + 2;
+               else
+                  raise Parse_Error with
+                    Integer'Image (Line) & ":" & Integer'Image (Col) &
+                    ": unexpected character '.'" & Character_Hint ('.');
+               end if;
             when '%' =>
                declare
                   Start : constant Positive := I + 1;
@@ -1858,6 +1906,16 @@ package body HBNF_Grammar is
                  and then not Toks.Is_Empty
                  and then Toks.Last_Element.Kind = T_Number
                  and then Toks.Last_Element.Line = Line
+                 --  In hbnf's own notation `65 *x` and `0x2E *x` are a code
+                 --  point and a repetition; only `3 * x`, spaced on both
+                 --  sides, is EBNF's way of writing a count.
+                 and then (not Hbnf_Notation
+                           or else (I < Text'Last
+                                    and then Text (I + 1) in ' ' | ASCII.HT
+                                    and then not (Length (Toks.Last_Element.Text) > 2
+                                      and then Ada.Strings.Unbounded.Element (Toks.Last_Element.Text, 1) = '0'
+                                      and then Ada.Strings.Unbounded.Element (Toks.Last_Element.Text, 2)
+                                                 in 'x' | 'X' | 'b' | 'B')))
                then
                   raise Parse_Error with
                     Integer'Image (Line) & ":" & Integer'Image (Col)
@@ -1992,8 +2050,20 @@ package body HBNF_Grammar is
                            end;
                         end if;
                      else
-                        Append (Buf, Text (I));
-                        I := I + 1;  Col := Col + 1;
+                        --  'é': the bytes of one UTF-8 character are one
+                        --  code point.
+                        declare
+                           Lead : constant Natural := Character'Pos (Text (I));
+                        begin
+                           Append (Buf, Text (I));
+                           I := I + 1;  Col := Col + 1;
+                           while Lead >= 16#C0# and then I <= Text'Last
+                             and then Character'Pos (Text (I)) in 16#80# .. 16#BF#
+                           loop
+                              Append (Buf, Text (I));
+                              I := I + 1;
+                           end loop;
+                        end;
                      end if;
                      if I > Text'Last or else Text (I) /= ''' then
                         raise Parse_Error with
@@ -2281,7 +2351,52 @@ package body HBNF_Grammar is
                   Col := Col + (I - Start);
                end;
             when others =>
-               if Name_Start (Text (I)) then
+               if Text (I) in 'i' | 's' | 'r'
+                 and then (Hbnf_Notation or else Abnf_Here)
+                 and then Flags_Then_Quote (I)
+               then
+                  --  `i"abc"`, `s"abc"`, `r"\d+"`, `ir"[a-f]+"`: a string
+                  --  with flags, as Python has them.  The flags are the
+                  --  letters against the quote.
+                  declare
+                     Start : constant Positive := I;
+                  begin
+                     while Text (I) /= '"' loop
+                        I := I + 1;
+                     end loop;
+                     declare
+                        Flags : constant String := Text (Start .. I - 1);
+                        Fix   : constant String :=
+                          (if Flags = "ri" then "ir" elsif Flags = "rs" then "sr"
+                           else "");
+                     begin
+                        if Abnf_Here then
+                           raise Parse_Error with
+                             Integer'Image (Line) & ":" & Integer'Image (Col)
+                             & ": `" & Flags & """...""` is hbnf's spelling; "
+                             & "ABNF writes `%i""...""` (RFC 7405) or "
+                             & "`%s""...""`, and has no regular expressions.  "
+                             & "Take the line `dialect abnf` out to read the "
+                             & "file as hbnf";
+                        elsif Fix /= "" then
+                           raise Parse_Error with
+                             Integer'Image (Line) & ":" & Integer'Image (Col)
+                             & ": the flags of a string go in the order `"
+                             & Fix & """...""`, the case flag before `r`; `"
+                             & Flags & """...""` is refused";
+                        elsif Flags not in "i" | "s" | "r" | "ir" | "sr" then
+                           raise Parse_Error with
+                             Integer'Image (Line) & ":" & Integer'Image (Col)
+                             & ": `" & Flags & """...""`: the flags of a "
+                             & "string are `i` (any case), `s` (this case), "
+                             & "`r` (a regular expression), and `ir` or `sr`";
+                        end if;
+                        Emit (T_Prefix, Flags);
+                        Col := Col + Flags'Length;
+                        Regex_Next := (for some C of Flags => C = 'r');
+                     end;
+                  end;
+               elsif Name_Start (Text (I)) then
                   declare
                      Start : constant Positive := I;
                   begin
@@ -2369,6 +2484,16 @@ package body HBNF_Grammar is
    type Parser is record
       Toks : Token_Vectors.Vector;
       Pos  : Positive := 1;
+      --  The file is written in hbnf's own notation (no `dialect` line, or
+      --  `dialect hbnf`): `0x41` and `i"abc"` spell what `%x41` and `%i"abc"`
+      --  spell in ABNF.  Abnf is the file that says `dialect abnf`.
+      Hbnf : Boolean := True;
+      Abnf : Boolean := False;
+      --  The rule being read holds bit fields, where `0x05` is a constant as
+      --  wide as its digits and not a code point; and the names that are the
+      --  value sets of such fields.
+      Wire       : Boolean := False;
+      Wire_Names : Path_Sets.Set;
    end record;
 
    function Cur (P : Parser) return Token is (P.Toks (P.Pos));
@@ -2532,6 +2657,516 @@ package body HBNF_Grammar is
          Name => (if File_No_Case then "%i" else "") & Code,
          Fold => False, Args => Null_Unbounded_String);
    end Parse_Join;
+
+   --  ====================================================================
+   --  Regular expressions: r"..."
+   --  ====================================================================
+
+   --  A regular expression is read when the grammar is, into the elements a
+   --  rule of characters written out would hold: a Group of code point
+   --  ranges, groups, alternatives and repetitions.  The meaning is hbnf's,
+   --  not a regex engine's: a repetition takes as many as match and gives
+   --  none back, and `|` tries its branches in order.  `.` is any code point
+   --  but a line feed.  What would need backtracking, or looks around, or
+   --  anchors, is refused with the hbnf spelling.
+   type Cp_Pair is record
+      Lo, Hi : Natural;
+   end record;
+   package Cp_Pair_Vectors is new Ada.Containers.Vectors (Positive, Cp_Pair);
+
+   --  The repetitions inside Items, for the check that warns of a repetition
+   --  followed by text that could begin like one more of it.
+   procedure Note_Regex_Repeats
+     (Items : Element_Vectors.Vector; Line, Col : Positive; Src : String) is
+   begin
+      for E of Items loop
+         if E.Min /= E.Max then
+            Greedy_Sites.Append (Here (Line, Col, Src, E));
+         end if;
+         if E.Kind = Group then
+            Note_Regex_Repeats (E.Items, Line, Col, Src);
+         end if;
+      end loop;
+   end Note_Regex_Repeats;
+
+   function Regex_Group
+     (Src : String; Fold : Boolean; Line, Col : Positive) return Element_Access
+   is
+      Pos : Natural := Src'First;
+
+      procedure Bad (Msg : String) is
+      begin
+         raise Parse_Error with
+           Integer'Image (Line) & ":" & Integer'Image (Col) & ": r""" & Src
+           & """: " & Msg;
+      end Bad;
+
+      function Look (K : Natural := 0) return Character is
+        (if Pos + K <= Src'Last then Src (Pos + K) else ASCII.NUL);
+
+      --  The code point at Pos, a UTF-8 character.
+      function Take_Cp return Natural is
+         B0  : constant Natural := Character'Pos (Src (Pos));
+         Len : constant Natural :=
+           (if B0 < 16#C0# then 1 elsif B0 < 16#E0# then 2
+            elsif B0 < 16#F0# then 3 else 4);
+         V   : Natural;
+      begin
+         if Pos + Len - 1 > Src'Last then
+            Bad ("a character cut short at the end");
+         end if;
+         V := (if Len = 1 then B0
+               elsif Len = 2 then B0 - 16#C0#
+               elsif Len = 3 then B0 - 16#E0# else B0 - 16#F0#);
+         for K in 1 .. Len - 1 loop
+            V := V * 64 + Character'Pos (Src (Pos + K)) mod 64;
+         end loop;
+         Pos := Pos + Len;
+         return V;
+      end Take_Cp;
+
+      function Hex (N : Positive; Esc : Character) return Natural is
+         V : Natural := 0;
+      begin
+         for K in 1 .. N loop
+            if Hex_Digit (Look) < 0 then
+               Bad ("`\" & Esc & "` takes " & Img (N) & " hex digits");
+            end if;
+            V := V * 16 + Hex_Digit (Look);
+            Pos := Pos + 1;
+         end loop;
+         return V;
+      end Hex;
+
+      function Cr (Lo, Hi : Natural) return Element_Access is
+        (new Element'(Kind => Char_Range, Min => 1, Max => 1, Lo => Lo, Hi => Hi));
+
+      function Bar return Element_Access is
+        (new Element'(Kind => Alt, Min => 1, Max => 1, Guard => 0,
+                      Union => False));
+
+      --  A set of code points; with the `i` flag a letter brings its other case.
+      procedure Add (Set : in out Cp_Pair_Vectors.Vector; Lo, Hi : Natural) is
+      begin
+         Set.Append (Cp_Pair'(Lo, Hi));
+         if Fold then
+            if Hi >= 65 and then Lo <= 90 then
+               Set.Append (Cp_Pair'(Natural'Max (Lo, 65) + 32, Natural'Min (Hi, 90) + 32));
+            end if;
+            if Hi >= 97 and then Lo <= 122 then
+               Set.Append (Cp_Pair'(Natural'Max (Lo, 97) - 32, Natural'Min (Hi, 122) - 32));
+            end if;
+         end if;
+      end Add;
+
+      --  Sorted, with overlapping and adjacent ranges joined.
+      procedure Merge (Set : in out Cp_Pair_Vectors.Vector) is
+         Joined : Cp_Pair_Vectors.Vector;
+      begin
+         for I in 2 .. Natural (Set.Length) loop
+            declare
+               K : Natural := I;
+               X : constant Cp_Pair := Set (I);
+            begin
+               while K > 1 and then Set (K - 1).Lo > X.Lo loop
+                  Set.Replace_Element (K, Set (K - 1));
+                  K := K - 1;
+               end loop;
+               Set.Replace_Element (K, X);
+            end;
+         end loop;
+         for P of Set loop
+            if not Joined.Is_Empty
+              and then P.Lo <= Joined.Last_Element.Hi + 1
+            then
+               Joined.Replace_Element
+                 (Joined.Last_Index,
+                  Cp_Pair'(Joined.Last_Element.Lo,
+                           Natural'Max (Joined.Last_Element.Hi, P.Hi)));
+            else
+               Joined.Append (P);
+            end if;
+         end loop;
+         Set := Joined;
+      end Merge;
+
+      --  The set as an element: one range, or alternatives of ranges; `~`
+      --  of that when negated.
+      function Set_Element
+        (Set : in out Cp_Pair_Vectors.Vector; Negated : Boolean)
+         return Element_Access
+      is
+         One : Element_Access;
+      begin
+         Merge (Set);
+         if Natural (Set.Length) = 1 then
+            One := Cr (Set (1).Lo, Set (1).Hi);
+         else
+            declare
+               Items : Element_Vectors.Vector;
+            begin
+               for P of Set loop
+                  if not Items.Is_Empty then
+                     Items.Append (Bar);
+                  end if;
+                  Items.Append (Cr (P.Lo, P.Hi));
+               end loop;
+               One := new Element'(Kind => Group, Min => 1, Max => 1,
+                                   Items => Items);
+            end;
+         end if;
+         if Negated then
+            declare
+               N : constant Element_Access :=
+                 new Element'(Kind => Negation, Min => 1, Max => 1,
+                              Operand => Element_Vectors.Empty_Vector);
+            begin
+               N.Operand.Append (One);
+               return N;
+            end;
+         end if;
+         return One;
+      end Set_Element;
+
+      type Esc_Kind is (E_Char, E_Digit, E_Word, E_Space,
+                        E_Not_Digit, E_Not_Word, E_Not_Space);
+
+      --  After the backslash, which Pos is at.
+      procedure Read_Escape (Kind : out Esc_Kind; Cp : out Natural) is
+         C : constant Character := Look;
+      begin
+         Kind := E_Char;
+         Cp := 0;
+         if Pos > Src'Last then
+            Bad ("a backslash at the end; `\\` is a backslash");
+         end if;
+         case C is
+            when 'd' => Kind := E_Digit;      Pos := Pos + 1;
+            when 'D' => Kind := E_Not_Digit;  Pos := Pos + 1;
+            when 'w' => Kind := E_Word;       Pos := Pos + 1;
+            when 'W' => Kind := E_Not_Word;   Pos := Pos + 1;
+            when 's' => Kind := E_Space;      Pos := Pos + 1;
+            when 'S' => Kind := E_Not_Space;  Pos := Pos + 1;
+            when 'n' => Cp := 10;  Pos := Pos + 1;
+            when 'r' => Cp := 13;  Pos := Pos + 1;
+            when 't' => Cp := 9;   Pos := Pos + 1;
+            when 'f' => Cp := 12;  Pos := Pos + 1;
+            when 'v' => Cp := 11;  Pos := Pos + 1;
+            when 'x' => Pos := Pos + 1;  Cp := Hex (2, 'x');
+            when 'u' => Pos := Pos + 1;  Cp := Hex (4, 'u');
+            when 'b' | 'B' | 'A' | 'Z' | 'z' | 'G' =>
+               Bad ("`\" & C & "` is an anchor, and a regular expression "
+                    & "here has none: it is read at one place in the text.  "
+                    & "To test what is next, write `!x` or `&x` beside the "
+                    & "rule");
+            when '1' .. '9' =>
+               Bad ("`\" & C & "` is a back-reference, which needs a regular "
+                    & "expression engine to backtrack; hbnf keeps a text "
+                    & "with `x %as tag` and repeats it with `%same tag`");
+            when 'p' | 'P' =>
+               Bad ("`\" & C & "` is a Unicode property class; write the "
+                    & "ranges, `[\u00C0-\u00FF]`");
+            when others =>
+               if C in 'a' .. 'z' | 'A' .. 'Z' | '0' then
+                  Bad ("unknown escape `\" & C & "`.  The escapes are \d \D "
+                       & "\w \W \s \S \n \r \t \f \v \xHH \uHHHH, and a "
+                       & "backslash before a punctuation character is that "
+                       & "character");
+               end if;
+               Cp := Take_Cp;
+         end case;
+      end Read_Escape;
+
+      procedure Add_Shorthand (Set : in out Cp_Pair_Vectors.Vector; K : Esc_Kind)
+      is
+      begin
+         case K is
+            when E_Digit | E_Not_Digit =>
+               Add (Set, 48, 57);
+            when E_Word | E_Not_Word =>
+               Add (Set, 48, 57);  Add (Set, 65, 90);
+               Add (Set, 95, 95);  Add (Set, 97, 122);
+            when E_Space | E_Not_Space =>
+               Add (Set, 9, 13);  Add (Set, 32, 32);
+            when E_Char =>
+               null;
+         end case;
+      end Add_Shorthand;
+
+      function Class return Element_Access is
+         Set     : Cp_Pair_Vectors.Vector;
+         Negated : Boolean := False;
+         Start   : constant Natural := Pos;
+
+         --  One item of a class; Shorthand is true for \d \w \s, which
+         --  add themselves and are no end of a range.
+         procedure Item (Cp : out Natural; Shorthand : out Boolean) is
+            K : Esc_Kind;
+         begin
+            Shorthand := False;
+            Cp := 0;
+            if Look = '\' then
+               Pos := Pos + 1;
+               Read_Escape (K, Cp);
+               if K in E_Not_Digit | E_Not_Word | E_Not_Space then
+                  Bad ("`\" & Src (Pos - 1) & "` inside a class: write the "
+                       & "negated class `[^...]`");
+               elsif K /= E_Char then
+                  Add_Shorthand (Set, K);
+                  Shorthand := True;
+               end if;
+            elsif Look = '[' and then Look (1) = ':' then
+               Bad ("a POSIX class `[:name:]` is not supported; write the "
+                    & "ranges, `[a-zA-Z]`");
+            else
+               Cp := Take_Cp;
+            end if;
+         end Item;
+      begin
+         Pos := Pos + 1;                             --  the [
+         if Look = '^' then
+            Negated := True;
+            Pos := Pos + 1;
+         end if;
+         if Look = ']' then
+            Bad ("an empty class; a `]` in a class is written `\]`");
+         end if;
+         loop
+            if Pos > Src'Last then
+               Pos := Start;
+               Bad ("this `[` is never closed");
+            end if;
+            exit when Look = ']';
+            declare
+               Lo, Hi : Natural;
+               Sh     : Boolean;
+            begin
+               Item (Lo, Sh);
+               if not Sh then
+                  if Look = '-' and then Pos < Src'Last and then Look (1) /= ']'
+                  then
+                     Pos := Pos + 1;
+                     Item (Hi, Sh);
+                     if Sh then
+                        Bad ("a range ends at a character, not at a class");
+                     elsif Hi < Lo then
+                        Bad ("the range " & Img (Lo) & "-" & Img (Hi)
+                             & " runs from a code point down to a lower one");
+                     end if;
+                     Add (Set, Lo, Hi);
+                  else
+                     Add (Set, Lo, Lo);
+                  end if;
+               end if;
+            end;
+         end loop;
+         Pos := Pos + 1;                             --  the ]
+         return Set_Element (Set, Negated);
+      end Class;
+
+      function Alternatives return Element_Vectors.Vector;
+
+      --  One thing that can be repeated.
+      function Atom return Element_Access is
+         C : constant Character := Look;
+      begin
+         case C is
+            when '(' =>
+               Pos := Pos + 1;
+               if Look = '?' then
+                  case Look (1) is
+                     when ':' =>
+                        Pos := Pos + 2;
+                     when '=' | '!' =>
+                        Bad ("`(?" & Look (1) & "` looks ahead; write `"
+                             & (if Look (1) = '=' then "&" else "!")
+                             & "x` in the rule, before the text it tests");
+                     when '<' =>
+                        if Look (2) in '=' | '!' then
+                           Bad ("`(?<" & Look (2) & "` looks behind, which "
+                                & "hbnf does not do: the parser reads "
+                                & "forward only");
+                        else
+                           Bad ("a named group `(?<name>...)` names what it "
+                                & "matched; a rule of its own is the name "
+                                & "in hbnf");
+                        end if;
+                     when 'P' =>
+                        Bad ("a named group `(?P<name>...)` names what it "
+                             & "matched; a rule of its own is the name in "
+                             & "hbnf");
+                     when others =>
+                        Bad ("`(?" & Look (1) & "` is an inline flag or an "
+                             & "extension; the case flag is the prefix, "
+                             & "`ir""...""`, and a plain group is `(?:...)`");
+                  end case;
+               end if;
+               declare
+                  Items : constant Element_Vectors.Vector := Alternatives;
+               begin
+                  if Look /= ')' then
+                     Bad ("a `(` is never closed");
+                  end if;
+                  Pos := Pos + 1;
+                  return new Element'(Kind => Group, Min => 1, Max => 1,
+                                      Items => Items);
+               end;
+            when '[' =>
+               return Class;
+            when '.' =>
+               Pos := Pos + 1;
+               declare
+                  N : constant Element_Access :=
+                    new Element'(Kind => Negation, Min => 1, Max => 1,
+                                 Operand => Element_Vectors.Empty_Vector);
+               begin
+                  N.Operand.Append (Cr (10, 10));
+                  return N;
+               end;
+            when '\' =>
+               declare
+                  K   : Esc_Kind;
+                  Cp  : Natural;
+                  Set : Cp_Pair_Vectors.Vector;
+               begin
+                  Pos := Pos + 1;
+                  Read_Escape (K, Cp);
+                  if K = E_Char then
+                     Add (Set, Cp, Cp);
+                     return Set_Element (Set, False);
+                  end if;
+                  Add_Shorthand (Set, K);
+                  return Set_Element
+                    (Set, K in E_Not_Digit | E_Not_Word | E_Not_Space);
+               end;
+            when '^' | '$' =>
+               Bad ("`" & C & "` is an anchor, and a regular expression "
+                    & "here has none: it is read at one place in the text.  "
+                    & "To test what is next, write `!x` or `&x` beside the "
+                    & "rule");
+            when '*' | '+' | '?' =>
+               Bad ("`" & C & "` has nothing to repeat");
+            when '{' | '}' | ']' | ')' =>
+               Bad ("`" & C & "` here: write `\" & C & "` for the character"
+                    & (if C = '{' then ", or `{m}`, `{m,}`, `{m,n}` after "
+                       & "what is repeated" else ""));
+            when others =>
+               declare
+                  Set : Cp_Pair_Vectors.Vector;
+                  Cp  : constant Natural := Take_Cp;
+               begin
+                  Add (Set, Cp, Cp);
+                  return Set_Element (Set, False);
+               end;
+         end case;
+         return null;
+      end Atom;
+
+      --  What follows an atom: `* + ? {m} {m,} {m,n}`.
+      procedure Repeat (E : Element_Access) is
+         C   : constant Character := Look;
+         Min : Natural;
+         Max : Integer;
+
+         function Count return Natural is
+            V : Natural := 0;
+            N : Natural := 0;
+         begin
+            while Look in '0' .. '9' loop
+               V := V * 10 + Character'Pos (Look) - 48;
+               N := N + 1;
+               Pos := Pos + 1;
+               if V > 65535 then
+                  Bad ("a count above 65535");
+               end if;
+            end loop;
+            if N = 0 then
+               Bad ("`{` is not a count; write `\{` for the character, or "
+                    & "`{m}`, `{m,}`, `{m,n}` after what is repeated");
+            end if;
+            return V;
+         end Count;
+      begin
+         case C is
+            when '*' => Min := 0;  Max := -1;  Pos := Pos + 1;
+            when '+' => Min := 1;  Max := -1;  Pos := Pos + 1;
+            when '?' => Min := 0;  Max := 1;   Pos := Pos + 1;
+            when '{' =>
+               Pos := Pos + 1;
+               Min := Count;
+               if Look = ',' then
+                  Pos := Pos + 1;
+                  if Look = '}' then
+                     Max := -1;
+                  else
+                     Max := Count;
+                     if Max < Min then
+                        Bad ("`{" & Img (Min) & "," & Img (Max)
+                             & "}`: the most is below the least");
+                     end if;
+                  end if;
+               else
+                  Max := Min;
+               end if;
+               if Look /= '}' then
+                  Bad ("`{` is not a count; write `\{` for the character, "
+                       & "or `{m}`, `{m,}`, `{m,n}` after what is repeated");
+               end if;
+               Pos := Pos + 1;
+            when others =>
+               return;
+         end case;
+         case Look is
+            when '?' =>
+               Bad ("a lazy repetition (`*?`, `+?`, `??`) gives back what it "
+                    & "took until the rest matches, which hbnf never does: a "
+                    & "repetition takes every one that matches.  Write what "
+                    & "ends it after it, as a rule of its own, or use `!x`");
+            when '+' =>
+               Bad ("a possessive repetition (`*+`, `++`) is what every "
+                    & "repetition is in hbnf, so write the plain one");
+            when '*' | '{' =>
+               Bad ("a repetition of a repetition; group the first, "
+                    & "`(?:a*)*`");
+            when others =>
+               null;
+         end case;
+         E.Min := Min;
+         E.Max := Max;
+      end Repeat;
+
+      function Alternatives return Element_Vectors.Vector is
+         V : Element_Vectors.Vector;
+      begin
+         loop
+            loop
+               exit when Pos > Src'Last or else Look in '|' | ')';
+               declare
+                  E : constant Element_Access := Atom;
+               begin
+                  Repeat (E);
+                  V.Append (E);
+               end;
+            end loop;
+            exit when Pos > Src'Last or else Look = ')';
+            Pos := Pos + 1;                          --  the |
+            V.Append (Bar);
+         end loop;
+         return V;
+      end Alternatives;
+
+      Items : Element_Vectors.Vector;
+   begin
+      if Src = "" then
+         Bad ("an empty regular expression");
+      end if;
+      Items := Alternatives;
+      if Pos <= Src'Last then
+         Bad ("this `)` closes nothing; write `\)` for the character");
+      end if;
+      Note_Regex_Repeats (Items, Line, Col, Src);
+      return new Element'(Kind => Group, Min => 1, Max => 1, Items => Items);
+   end Regex_Group;
 
    --  A field of the bit layer, after its name: `ttl:8`, `version@0:4`,
    --  `options:[ihl*4 - 20]`, `payload:*u8`, `src:addr`, `body:(n)*rec`,
@@ -2718,9 +3353,231 @@ package body HBNF_Grammar is
       return F;
    end Parse_Field;
 
+   --  ====================================================================
+   --  Code points: 0x41, 0b1000001, 65, 'A', and the range 0x41..0x5A
+   --  ====================================================================
+
+   --  The code point a character literal holds: a byte, or the UTF-8 bytes of
+   --  one character.
+   function Cp_Of_Char (S : String) return Natural is
+      function B (K : Natural) return Natural is
+        (Character'Pos (S (S'First + K)));
+   begin
+      if S'Length = 1 or else B (0) < 16#C0# then
+         return B (0);
+      elsif S'Length = 2 then
+         return (B (0) - 16#C0#) * 64 + B (1) mod 64;
+      elsif S'Length = 3 then
+         return (B (0) - 16#E0#) * 4096 + (B (1) mod 64) * 64 + B (2) mod 64;
+      else
+         return (B (0) - 16#F0#) * 262144 + (B (1) mod 64) * 4096
+                + (B (2) mod 64) * 64 + B (3) mod 64;
+      end if;
+   end Cp_Of_Char;
+
+   --  Is the number at the cursor a repetition count (`3DIGIT`, `2("x")`,
+   --  `1*2DIGIT`, `2#x`)?  It is when it is against what it repeats, or is
+   --  followed by `*` or `#`.
+   function Is_Count (P : Parser) return Boolean is
+      T : constant Token := Cur (P);
+      N : constant Token := P.Toks (P.Pos + 1);
+   begin
+      return N.Kind in T_Star | T_Hash
+        or else (N.Line = T.Line and then N.Col = T.Col + Length (T.Text)
+                 and then N.Kind in T_Name | T_String | T_LParen | T_LBrack
+                                    | T_Pct | T_Char | T_Prose | T_Tilde
+                                    | T_Prefix);
+   end Is_Count;
+
+   --  Is the number at the cursor a code point?  In hbnf's own notation, in a
+   --  rule that is not of bit fields (where `0x05` is a constant as wide as
+   --  its digits): `0x` and `0b` numbers always, a decimal number when it is
+   --  no repetition count.
+   function Is_Code_Point (P : Parser) return Boolean is
+      T : constant Token := Cur (P);
+      S : constant String := To_String (T.Text);
+   begin
+      if not P.Hbnf or else P.Wire or else T.Kind /= T_Number then
+         return False;
+      elsif S'Length > 2 and then S (S'First) = '0' then
+         return S (S'First + 1) in 'x' | 'X' | 'b' | 'B'
+           or else (S (S'First + 1) not in 'o' | 'O' and then not Is_Count (P));
+      end if;
+      return not Is_Count (P);
+   end Is_Code_Point;
+
+   --  Is the rule whose body the cursor is at a rule of bit fields?  It is when
+   --  the body holds a field (`name:8`, `data:[n]`, `?(cond)`), or the rule is
+   --  the value set of one.  There `0x05` is a constant and `%x` is still
+   --  read; elsewhere a number is a code point.
+   procedure Note_Wire (P : in out Parser; Name : String) is
+      K : Positive := P.Pos;
+   begin
+      P.Wire := P.Wire_Names.Contains (Name);
+      while not P.Wire and then P.Toks (K).Kind not in T_Newline | T_EOF loop
+         P.Wire := P.Toks (K).Kind in
+           T_Colon | T_Guard | T_Octets | T_Count | T_Bits;
+         K := K + 1;
+      end loop;
+   end Note_Wire;
+
+   --  A rule that is only a regular expression, `name = r"..."`, is a rule of
+   --  characters: what the expression holds stands as the rule's own pattern,
+   --  and the rule skips no white space, whatever the file does between the
+   --  parts of its other rules.
+   function Unwrap_Regex
+     (V : Element_Vectors.Vector; Alone : out Boolean)
+      return Element_Vectors.Vector is
+   begin
+      Alone := False;
+      if Natural (V.Length) = 1 and then V.First_Element.Kind = Group
+        and then V.First_Element.Min = 1 and then V.First_Element.Max = 1
+      then
+         for S of Regex_Sites loop
+            if S.Alt = V.First_Element then
+               Alone := True;
+               S.Alt := V.First_Element.Items.First_Element;
+               exit;
+            end if;
+         end loop;
+      end if;
+      return (if Alone then V.First_Element.Items else V);
+   end Unwrap_Regex;
+
+   --  A code point: a number, or a character literal.
+   function Cp_Operand (P : in out Parser) return Natural is
+      T : constant Token := Cur (P);
+      S : constant String := To_String (T.Text);
+      V : Long_Long_Integer;
+   begin
+      case T.Kind is
+         when T_Char =>
+            Next (P);
+            return Cp_Of_Char (S);
+         when T_Number =>
+            if S'Length > 1 and then S (S'First) = '0'
+              and then (for all C of S => C in '0' .. '9')
+            then
+               raise Parse_Error with
+                 Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                 & ": `" & S & "` has a leading zero, which C reads as an "
+                 & "octal number and hbnf does not read as a number at all"
+                 & ASCII.LF & "  Write the code point in decimal without the "
+                 & "zero, or in hex, `0x41`";
+            end if;
+            V := Number_Value (S);
+            if V > 16#10FFFF# then
+               raise Parse_Error with
+                 Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                 & ": " & S & " is above the last Unicode code point, "
+                 & "0x10FFFF";
+            end if;
+            Next (P);
+            return Natural (V);
+         when others =>
+            raise Parse_Error with
+              Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+              & ": expected a code point: a number (`0x41`, `65`, "
+              & "`0b1000001`) or a character (`'A'`)";
+      end case;
+   end Cp_Operand;
+
+   --  `0x41`, `65`, `'A'`, and `0x41..0x5A`: one element that matches one
+   --  code point of the range.
+   function Code_Point_Atom (P : in out Parser) return Element_Access is
+      T  : constant Token := Cur (P);
+      Lo : constant Natural := Cp_Operand (P);
+      Hi : Natural := Lo;
+   begin
+      if Cur (P).Kind = T_DotDot then
+         Next (P);
+         Hi := Cp_Operand (P);
+         if Hi < Lo then
+            raise Parse_Error with
+              Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+              & ": a range runs from the lower code point to the higher: "
+              & "write it the other way round";
+         end if;
+      end if;
+      return new Element'(Kind => Char_Range, Min => 1, Max => 1,
+                          Lo => Lo, Hi => Hi);
+   end Code_Point_Atom;
+
+   --  How hbnf writes what an ABNF numeric value (`%x41-5A`, `%d13.10`)
+   --  writes, for the message that refuses it.
+   function Modern_Spelling (W : String) return String is
+      Result : Unbounded_String;
+      Base   : constant Natural :=
+        (case W (W'First) is when 'b' | 'B' => 2, when 'd' | 'D' => 10,
+                             when 'o' | 'O' => 8, when others => 16);
+      St     : Positive := W'First + 1;
+
+      function Hex_Of (V : Natural) return String is
+         Digits_16 : constant String := "0123456789ABCDEF";
+      begin
+         return (if V < 16 then (1 => Digits_16 (V + 1))
+                 else Hex_Of (V / 16) & Digits_16 (V mod 16 + 1));
+      end Hex_Of;
+
+      function One (D : String) return String is
+         V : Natural := 0;
+      begin
+         for C of D loop
+            V := V * Base + Natural'Max (0, Hex_Digit (C));
+         end loop;
+         return (case W (W'First) is
+                    when 'b' | 'B' => "0b" & D,
+                    when 'd' | 'D' => Img (V),
+                    when 'o' | 'O' => "0x" & Hex_Of (V),
+                    when others => "0x" & D);
+      end One;
+   begin
+      for I in W'First + 1 .. W'Last + 1 loop
+         if I > W'Last or else W (I) in '-' | '.' then
+            if I > St then
+               Append (Result, One (W (St .. I - 1)));
+            end if;
+            if I <= W'Last then
+               Append (Result, (if W (I) = '-' then ".." else " "));
+            end if;
+            St := I + 1;
+         end if;
+      end loop;
+      return To_String (Result);
+   end Modern_Spelling;
+
    function Parse_Atom (P : in out Parser) return Element_Access is
    begin
+      if Is_Code_Point (P) then
+         return Code_Point_Atom (P);
+      end if;
       case Cur (P).Kind is
+         when T_Prefix =>
+            --  `i"abc"`, `s"abc"`, `r"\d+"`, `ir"[a-f]+"`.
+            declare
+               T     : constant Token := Cur (P);
+               Flags : constant String := To_String (T.Text);
+               S     : constant Token := P.Toks (P.Pos + 1);
+               Rx    : constant Boolean := (for some C of Flags => C = 'r');
+               Fold  : constant Boolean := (for some C of Flags => C = 'i');
+            begin
+               Next (P);
+               Next (P);
+               if Rx then
+                  declare
+                     E : constant Element_Access :=
+                       Regex_Group (To_String (S.Text), Fold, T.Line, T.Col);
+                  begin
+                     Regex_Sites.Append
+                       (Here (T.Line, T.Col, To_String (S.Text), E));
+                     return E;
+                  end;
+               end if;
+               return new Element'(Kind => Literal, Min => 1, Max => 1,
+                                   Lit => S.Text, Has_Value => False,
+                                   Value => 0,
+                                   No_Case => Fold and then Has_Letter (S.Text));
+            end;
          when T_String =>
             declare
                Tok : constant Token := Cur (P);
@@ -2744,6 +3601,28 @@ package body HBNF_Grammar is
                W  : constant String :=
                  Ada.Characters.Handling.To_Lower (To_String (T.Text));
             begin
+               if P.Hbnf and then not P.Wire
+                 and then (W = "i" or else W = "s")
+               then
+                  raise Parse_Error with
+                    Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                    & ": `%" & W & """...""` is ABNF's spelling (RFC 7405); "
+                    & "hbnf writes `" & W & """...""`.  (A file that says "
+                    & "`dialect abnf` reads the `%` form.)";
+               elsif P.Hbnf and then not P.Wire and then W'Length > 1
+                 and then W (W'First) in 'b' | 'd' | 'o' | 'u' | 'x'
+                 and then (for all C of W (W'First + 1 .. W'Last) =>
+                             Hex_Digit (C) >= 0 or else C in '.' | '-')
+               then
+                  raise Parse_Error with
+                    Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+                    & ": `%" & W & "` is ABNF's spelling of a code point; "
+                    & "hbnf writes `" & Modern_Spelling (W) & "`" & ASCII.LF
+                    & "  A code point is `0x41`, `65` or `0b1000001`, a range "
+                    & "`0x41..0x5A`, a run of them the numbers one after "
+                    & "another.  (A file that says `dialect abnf` reads the "
+                    & "`%` form.)";
+               end if;
                if W = "i" or else W = "s" then
                   --  RFC 7405's case markers.  hbnf literals are
                   --  case-sensitive, so %s is the default spelled out.
@@ -2889,10 +3768,28 @@ package body HBNF_Grammar is
             --  following '-' a code-point range ('a'-'c').
             declare
                S   : constant String := To_String (Cur (P).Text);
-               Cp1 : constant Natural := Character'Pos (S (S'First));
+               Cp1 : constant Natural := Cp_Of_Char (S);
             begin
                Next (P);
-               if Cur (P).Kind = T_Dash then
+               if Cur (P).Kind = T_DotDot then
+                  --  `'a'..'z'`, or `'0'..0x39`.
+                  declare
+                     Hi : Natural;
+                  begin
+                     Next (P);
+                     Hi := Cp_Operand (P);
+                     if Hi < Cp1 then
+                        raise Parse_Error with
+                          Integer'Image (Cur (P).Line) & ":"
+                          & Integer'Image (Cur (P).Col)
+                          & ": a range runs from the lower code point to the "
+                          & "higher: write it the other way round";
+                     end if;
+                     return new Element'
+                       (Kind => Char_Range, Min => 1, Max => 1,
+                        Lo => Cp1, Hi => Hi);
+                  end;
+               elsif Cur (P).Kind = T_Dash then
                   Next (P);
                   if Cur (P).Kind /= T_Char then
                      raise Parse_Error with
@@ -2902,7 +3799,7 @@ package body HBNF_Grammar is
                   end if;
                   declare
                      S2  : constant String := To_String (Cur (P).Text);
-                     Cp2 : constant Natural := Character'Pos (S2 (S2'First));
+                     Cp2 : constant Natural := Cp_Of_Char (S2);
                   begin
                      Next (P);
                      return new Element'
@@ -3052,7 +3949,15 @@ package body HBNF_Grammar is
       if Cur (P).Kind = T_Number and then Length (Cur (P).Text) > 2
         and then Ada.Strings.Unbounded.Element (Cur (P).Text, 1) = '0'
         and then Ada.Strings.Unbounded.Element (Cur (P).Text, 2) in 'x' | 'X' | 'b' | 'B' | 'o' | 'O'
+        and then not Is_Code_Point (P)
       then
+         if P.Abnf then
+            raise Parse_Error with
+              Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+              & ": `" & To_String (Cur (P).Text) & "` is hbnf's spelling of "
+              & "a code point; ABNF writes `%x41`, `%d65` or `%b1000001`.  "
+              & "Take the line `dialect abnf` out to read the file as hbnf";
+         end if;
          declare
             T      : constant Token := Cur (P);
             S      : constant String := To_String (T.Text);
@@ -3099,7 +4004,7 @@ package body HBNF_Grammar is
             if Cur (P).Kind = T_Number
               and then P.Toks (P.Pos + 1).Kind in
                          T_Name | T_String | T_LParen | T_LBrack | T_Pct
-                         | T_Char | T_Prose | T_Tilde
+                         | T_Char | T_Prose | T_Tilde | T_Prefix
             then
                M := Integer (Number_Value (To_String (Cur (P).Text)));
                Next (P);
@@ -3135,10 +4040,10 @@ package body HBNF_Grammar is
       if Cur (P).Kind = T_Star then
          Min := 0;  Max := -1;  Has_Prefix := True;  Next (P);
          --  `*m`: at most m (`*2DIGIT`).
-         if Cur (P).Kind = T_Number then
+         if Cur (P).Kind = T_Number and then not Is_Code_Point (P) then
             Max := Integer (Number_Value (To_String (Cur (P).Text)));  Next (P);
          end if;
-      elsif Cur (P).Kind = T_Number then
+      elsif Cur (P).Kind = T_Number and then not Is_Code_Point (P) then
          Min := Natural (Number_Value (To_String (Cur (P).Text)));
          --  A number with nothing to repeat is a bare terminal, as Backus-Naur
          --  form writes `0`; hbnf writes it in quotes.
@@ -3157,7 +4062,7 @@ package body HBNF_Grammar is
          Next (P);
          if Cur (P).Kind = T_Star then
             Next (P);
-            if Cur (P).Kind = T_Number then
+            if Cur (P).Kind = T_Number and then not Is_Code_Point (P) then
                Max := Integer (Number_Value (To_String (Cur (P).Text)));  Next (P);
             else
                Max := -1;
@@ -3833,7 +4738,8 @@ package body HBNF_Grammar is
             Next (P);
             Next (P);
             declare
-               Sub : Parser := (Toks => Lex (Read_Text (Path)), Pos => 1);
+               Sub : Parser := (Toks => Lex (Read_Text (Path)), Pos => 1,
+                               Hbnf => P.Hbnf, Abnf => P.Abnf, others => <>);
                V   : constant Element_Vectors.Vector := Parse_Alternation (Sub);
             begin
                while Cur (Sub).Kind in T_Newline | T_Comment loop
@@ -7047,6 +7953,42 @@ package body HBNF_Grammar is
          end;
       end Check_Unions;
 
+      --  A regular expression, `r"..."`, is read in a rule of characters, where
+      --  nothing is skipped and a letter is a character.  In a phrase rule a
+      --  literal is a keyword matched as a whole word, which a regex is not.
+      procedure Check_Regex (V : Element_Vectors.Vector; Owner : String) is
+
+         function Holds (Items : Element_Vectors.Vector; E : Element_Access)
+           return Boolean is
+         begin
+            for X of Items loop
+               if X = E or else (X.Kind = Group and then Holds (X.Items, E))
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Holds;
+      begin
+         if Regex_Sites.Is_Empty
+           or else Is_Char_Rule (Rules, Owner)
+         then
+            return;
+         end if;
+         for S of Regex_Sites loop
+            if Holds (V, S.Alt) then
+               Report
+                 (S, "r""" & To_String (S.Text) & """ is in the phrase rule `"
+                  & Owner & "`" & ASCII.LF
+                  & "  A regular expression is read in a rule of characters. "
+                  & " In a phrase rule a literal is a keyword matched as a "
+                  & "whole word, which a regex is not.  Write `name = r"""
+                  & To_String (S.Text) & """` as a rule of its own and use "
+                  & "`name` here");
+            end if;
+         end loop;
+      end Check_Regex;
+
       --  A repetition (`*x`, `[ x ]`, `1*4x`) is read greedily: as many as
       --  match, and none given back.  ABNF gives one back if what follows
       --  needed it, so where what follows can begin the way one more
@@ -7082,7 +8024,23 @@ package body HBNF_Grammar is
                               HBNF_Lookahead.Greedy_Overlap
                                 (Rules, Owner, E, Rest, 1,
                                  Natural (Rest.Length), Found, Text);
-                              if Found then
+                              if Found and then S.Text /= Null_Unbounded_String
+                              then
+                                 Report
+                                   (S, "r""" & To_String (S.Text)
+                                    & """ can fail on text it looks as if it "
+                                    & "matches: a repetition in a regular "
+                                    & "expression takes every one that "
+                                    & "matches and gives none back (it is "
+                                    & "possessive, not backtracking), and "
+                                    & "what follows it can begin the way one "
+                                    & "more repetition does (text such as `"
+                                    & To_String (Text) & "`)" & ASCII.LF
+                                    & "  `r""a*a""` can never match: the "
+                                    & "repetition takes every `a`.  Write "
+                                    & "what is shared once before the "
+                                    & "repetition: `a+` for `a*a`");
+                              elsif Found then
                                  Report
                                    (S, "this repetition is matched greedily, "
                                     & "unlike ABNF's" & ASCII.LF
@@ -7957,6 +8915,7 @@ package body HBNF_Grammar is
                   end loop;
                end;
             end if;
+            Check_Regex (Used (J).Pattern, To_String (Used (J).Name));
             Check_Prose (Used (J).Pattern, To_String (Used (J).Name));
             Check_Undefined (Used (J).Pattern, To_String (Used (J).Name));
             --  `str`, `atom`, `word`, `int`, `bool`, `flag`, `uN` and `iN` are
@@ -8423,6 +9382,7 @@ package body HBNF_Grammar is
          end if;
          Union_Sites.Append (Here (Op.Line, Op.Col, "=/", Sep));
          Raw.Append (Sep);
+         Note_Wire (P, To_String (Key));
          Append_All (Raw, Parse_Alternation (P));
          if Cur (P).Kind in T_Code | T_Pct then
             --  Parse_Alternation stops at a %action or a code block.
@@ -9102,7 +10062,7 @@ package body HBNF_Grammar is
    end Check_Switch_Targets;
 
    function Parse (Text : String) return Rule_Vectors.Vector is
-      P     : Parser := (Toks => Scoped (Lex (Text)), Pos => 1);
+      P     : Parser := (Toks => Scoped (Lex (Text)), Pos => 1, others => <>);
       Rules : Rule_Vectors.Vector;
       Index : Index_Maps.Map;
       Name  : Unbounded_String;
@@ -9119,6 +10079,22 @@ package body HBNF_Grammar is
       Names_Line   : Natural := 0;
       Strings_Line : Natural := 0;
    begin
+      P.Hbnf := Last_Lex_Hbnf;
+      P.Abnf := Last_Lex_Abnf;
+      --  The names of fields' value sets (`ethertype:16`, `proto:u8`): a rule
+      --  of that name is a rule of bit fields even when it holds only
+      --  constants, `ethertype = 0x0800 | 0x0806`.
+      for K in 1 .. Natural (P.Toks.Length) loop
+         if P.Toks (K).Kind = T_Colon then
+            if K > 1 and then P.Toks (K - 1).Kind = T_Name then
+               P.Wire_Names.Include (To_String (P.Toks (K - 1).Text));
+            end if;
+            if K < Natural (P.Toks.Length) and then P.Toks (K + 1).Kind = T_Name
+            then
+               P.Wire_Names.Include (To_String (P.Toks (K + 1).Text));
+            end if;
+         end if;
+      end loop;
       if File_Depth = 0 then
          Reset;
       end if;
@@ -9902,6 +10878,7 @@ package body HBNF_Grammar is
             end;
             Next (P);
             Next (P);   --  the '='
+            Note_Wire (P, To_String (Name));
 
             --  `name = %scan{ code }` is a jet, as `name = { code }` is.
             if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "scan"
@@ -9970,7 +10947,9 @@ package body HBNF_Grammar is
             else
                declare
                   Action  : Unbounded_String := Null_Unbounded_String;
-                  Pattern : Element_Vectors.Vector := Parse_Body (P);
+                  Alone   : Boolean;
+                  Pattern : Element_Vectors.Vector :=
+                    Unwrap_Regex (Parse_Body (P), Alone);
                   Raw     : constant Element_Vectors.Vector := Pattern;
                   Bases   : Natural;
                begin
@@ -10049,7 +11028,9 @@ package body HBNF_Grammar is
                            Jet_Code        => Null_Unbounded_String,
                            Action_Code     => Action,
                            Left_Bases      => Bases,
-                           Whitespace      => File_Whitespace));
+                           Whitespace      =>
+                             (if Alone then Null_Unbounded_String
+                              else File_Whitespace)));
                   Standing.Include
                     (To_String (Name),
                      Standing_Rule'(R   => Rules (Index (To_String (Name))),

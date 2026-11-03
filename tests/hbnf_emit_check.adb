@@ -321,9 +321,9 @@ procedure Hbnf_Emit_Check is
       end Refused;
    begin
       declare
-         R : constant Rule_Vectors.Vector := Parse ("crlf = %d13.10" & LF);
+         R : constant Rule_Vectors.Vector := Parse ("crlf = 13 10" & LF);
       begin
-         Check ("%d13.10 is two code points in sequence",
+         Check ("13 10 is two code points in sequence",
                 Natural (R (1).Pattern.Length) = 2
                 and then R (1).Pattern (1).Kind = Char_Range
                 and then R (1).Pattern (1).Lo = 13
@@ -331,7 +331,7 @@ procedure Hbnf_Emit_Check is
       end;
       declare
          R : constant Rule_Vectors.Vector :=
-           Parse ("d = *2x" & LF & "x = %x30-39" & LF);
+           Parse ("d = *2x" & LF & "x = 0x30..0x39" & LF);
       begin
          Check ("*2x is zero to two",
                 R (1).Pattern (1).Min = 0 and then R (1).Pattern (1).Max = 2);
@@ -339,7 +339,7 @@ procedure Hbnf_Emit_Check is
       declare
          R : constant Rule_Vectors.Vector :=
            Parse ("r = a ; a comment inside the rule" & LF
-                  & "    b" & LF & "a = %x41" & LF & "b = %x42" & LF);
+                  & "    b" & LF & "a = 0x41" & LF & "b = 0x42" & LF);
       begin
          Check ("an indented line goes on with the rule",
                 Natural (R.Length) = 7
@@ -348,7 +348,7 @@ procedure Hbnf_Emit_Check is
       declare
          R : constant Rule_Vectors.Vector :=
            Parse ("r = 1*( a" & LF & "  / b )" & LF
-                  & "a = %x41" & LF & "b = %x42" & LF);
+                  & "a = 0x41" & LF & "b = 0x42" & LF);
       begin
          Check ("a group across lines, joined by /",
                 Natural (R (1).Pattern (1).Items.Length) = 3
@@ -357,7 +357,7 @@ procedure Hbnf_Emit_Check is
       end;
       declare
          R : constant Rule_Vectors.Vector :=
-           Parse ("r = a" & LF & "a = %x41" & LF & "a =/ %x42" & LF);
+           Parse ("r = a" & LF & "a = 0x41" & LF & "a =/ 0x42" & LF);
       begin
          Check ("=/ adds an alternative in the rule's place",
                 Natural (R.Length) = 6
@@ -368,7 +368,7 @@ procedure Hbnf_Emit_Check is
       declare
          R : constant Rule_Vectors.Vector :=
            Parse ("sensitivity string %i" & LF
-                  & "r = ""a"" %s""b"" %i""c""" & LF);
+                  & "r = ""a"" s""b"" i""c""" & LF);
       begin
          Check ("sensitivity string %i: a bare literal ignores case",
                 R (1).Pattern (1).No_Case
@@ -378,18 +378,18 @@ procedure Hbnf_Emit_Check is
       declare
          R : constant Rule_Vectors.Vector :=
            Parse ("sensitivity rule-name %i" & LF
-                  & "r = digit" & LF & "DIGIT = %x30-39" & LF);
+                  & "r = digit" & LF & "DIGIT = 0x30..0x39" & LF);
       begin
          Check ("sensitivity rule-name %i: digit finds DIGIT",
                 To_String (R (1).Pattern (1).Name) = "DIGIT");
       end;
       Check ("a <prose-val> the parser uses is reported with its line",
-             Refused ("r = x <to be written>" & LF & "x = %x41" & LF,
+             Refused ("r = x <to be written>" & LF & "x = 0x41" & LF,
                       "1:7: not written yet, in `r`: <to be written>")
-             and then Refused ("r = x <to be written>" & LF & "x = %x41" & LF,
+             and then Refused ("r = x <to be written>" & LF & "x = 0x41" & LF,
                                "  r = x <to be written>" & LF & "        ^"));
       Check ("an unused <prose-val> is not",
-             not Refused ("r = x" & LF & "x = %x41" & LF & "y = <later>" & LF,
+             not Refused ("r = x" & LF & "x = 0x41" & LF & "y = <later>" & LF,
                           "not written yet"));
       Check ("/ between phrases that match the same text is first match wins",
              not Refused ("r = x / y" & LF & "x = ""a"" ""b""" & LF
@@ -409,10 +409,10 @@ procedure Hbnf_Emit_Check is
                 R (3).Pattern (1).Kind = Char_Range);
       end;
       Check ("a range in a rule of words is a rule of its own",
-             not Refused ("r = w %x30-39" & LF & "w = word" & LF,
+             not Refused ("r = w 0x30..0x39" & LF & "w = word" & LF,
                           "is in a rule that is not a character rule"));
       Check ("names that differ only in case are refused",
-             Refused ("r = a A" & LF & "a = %x41" & LF & "A = %x42" & LF,
+             Refused ("r = a A" & LF & "a = 0x41" & LF & "A = 0x42" & LF,
                       "differ only in case"));
    end Check_Abnf;
 
@@ -526,7 +526,7 @@ procedure Hbnf_Emit_Check is
       Check ("solid body: a group of two literals",
              not Body_Nullable ("x = *( ""a"" ""b"" )" & LF));
       Check ("solid body: a character class",
-             not Body_Nullable ("x = *d" & LF & "d = %x30-39" & LF));
+             not Body_Nullable ("x = *d" & LF & "d = 0x30..0x39" & LF));
    end Check_Nullable_Repetition;
 
    --  The Mustache renderer (HBNF_Template, RFCPLAN.md step 3b): the raw

@@ -42,14 +42,14 @@ word = word_start *wordchars | 1*DIGIT word_non_digit *wordchars
 ; The interior repeats `\` + any code point, or any code point except `"` and
 ; `\` — a repetition over a DNF (one full branch per iteration, longest match).
 str = DQUOTE *str_char DQUOTE
-str_char = %x5C %x00-10FFFF | %x00-21 | %x23-5B | %x5D-10FFFF
+str_char = 0x5C 0x00..0x10FFFF | 0x00..0x21 | 0x23..0x5B | 0x5D..0x10FFFF
 
 ; `#` to end of line (matched and skipped, not a token).
 comment = "#" *comment_char
-comment_char = %x01-09 | %x0B-10FFFF
+comment_char = 0x01..0x09 | 0x0B..0x10FFFF
 
 ; backslash-newline continuation (parse.y's lgetc), matched and skipped.
-continuation = %x5C LF
+continuation = 0x5C LF
 
 ; what a phrase rule skips between its elements: inline white space (a newline
 ; included — a block's entries sit on their own lines), a comment or a

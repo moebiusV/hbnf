@@ -33,7 +33,7 @@ props2  :: int = tag %emit{ tape_text_of (T_TAG, p->pos, hbnf_sn (tag)); } 1*WSP
 
 ; ---- line breaks inside a node: the next line is indented M or more
 brk(M in 0..) :: int := lines !marker %spaces M *WSP
-dq(M in 0..) :: uint64_t := %emit{ $$ = p->pos; } DQUOTE [ dqs ] *( [ %x5C ] brk(M) [ dqs ] ) DQUOTE %emit{ tape_text_of (T_DQ, p->pos, p->pos - $$); }
+dq(M in 0..) :: uint64_t := %emit{ $$ = p->pos; } DQUOTE [ dqs ] *( [ 0x5C ] brk(M) [ dqs ] ) DQUOTE %emit{ tape_text_of (T_DQ, p->pos, p->pos - $$); }
 sq(M in 0..) :: uint64_t := %emit{ $$ = p->pos; } "'" [ sqs ] *( brk(M) [ sqs ] ) "'" %emit{ tape_text_of (T_SQ, p->pos, p->pos - $$); }
 pml(M in 0..) :: uint64_t := %emit{ $$ = p->pos; } plainline("block") *( brk(M) pcont("block") ) %emit{ tape_text_of (T_PLAIN, p->pos, p->pos - $$); }
 
@@ -100,7 +100,7 @@ cbody(Q in 0..) :: int := bmap(Q) | bseq(Q)
 
 ; ---- documents
 top(M in 0..) :: int := *SP %col K body(K, M)
-BOM      = %xFEFF
+BOM      = 0xFEFF
 thandle  = "!" | "!!" | "!" 1*( ALNUM | "-" ) "!"
 tagdir   = "%" "TAG" 1*WSP thandle 1*WSP 1*( uri | flow-ind | "!" ) trail nl gap
 yamldir  = "%" "YAML" 1*WSP 1*DIGIT "." 1*DIGIT trail nl gap

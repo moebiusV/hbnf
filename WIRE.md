@@ -98,7 +98,10 @@ A text element and a bit field may stand in the *same* rule
 runs, each run of bit fields and each run of text becoming a hidden rule
 `req_1`, `req_2`, `req_3`, and `req` a sequence naming them; the fields are
 reached through them (`out.req_2.len`).  A group that holds both kinds is
-refused, with a message saying to split it.
+refused, with a message saying to split it.  In a rule that holds bit fields
+a number is a constant as wide as its digits (`0x05`), so the text there
+writes its code points the ABNF way, `%d13.10`; in any other rule of hbnf's
+own notation a code point is `13 10`.
 
 ## Why these two characters
 

@@ -1,6 +1,6 @@
 #!/bin/sh
 # hbnf's notation beyond RFC 5234 (tests/syntax/syntax.hbnf): `|`,
-# %i and %s literals, a %i keyword, C escapes in a literal, %scan{ } and
+# i and s literals, an i keyword, C escapes in a literal, %scan{ } and
 # %action{ }.  good.conf must parse as tests/syntax/expected.txt says; each
 # *.bad must fail.
 #   HBNF=/path/to/hbnf sh tests/syntax.sh      (default ./hbnf)
@@ -28,10 +28,11 @@ refuse() {
 	fi
 	grep -q "$1" "$W/err.txt" || { echo "syntax: FAIL ($2: $(tail -1 "$W/err.txt"))"; exit 1; }
 }
-refuse "a range or a sequence, not both" 'r = %d13.10-12'
+refuse "a range or a sequence, not both" 'dialect abnf
+r = %d13.10-12'
 refuse "takes the place of a pattern" 'r = "a" %scan{ return 0; }'
-refuse "both with %i and without" 'r = "go" | x | word
-x = %i"go" "now"'
+refuse "written both with" 'r = "go" | x | word
+x = i"go" "now"'
 refuse "an action runs on a node" 'r = *( e )
 e = "a" m
 m = "x" | "y" %action{ (void)n; }'

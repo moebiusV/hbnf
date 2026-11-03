@@ -43,12 +43,12 @@ ws = SP | HTAB | CR | comment | continuation
 ; hex digits and checked the value's range; a grammar cannot, so a longer
 ; `\x` run is refused here, and so is `\U`, whose eight hex digits would
 ; expand to thousands of scanner branches for an escape no config uses.)
-str_char   = str_escape | %x00-09 | %x0B-21 | %x23-5B | %x5D-10FFFF
+str_char   = str_escape | 0x00..0x09 | 0x0B..0x21 | 0x23..0x5B | 0x5D..0x10FFFF
 str_escape = esc_simple | esc_oct | esc_hex | esc_u
-esc_simple = %x5C esc_one
-esc_one    = %x61 | %x62 | %x66 | %x6E | %x72 | %x74 | %x76
-           | %x5C | %x27 | %x22 | %x3F | LF
-esc_oct    = %x5C OCTDIG | %x5C OCTDIG OCTDIG | %x5C OCTDIG OCTDIG OCTDIG
-esc_hex    = %x5C %x78 HEXDIG | %x5C %x78 HEXDIG HEXDIG
-esc_u      = %x5C %x75 HEXDIG HEXDIG HEXDIG HEXDIG
-OCTDIG     = %x30-37
+esc_simple = 0x5C esc_one
+esc_one    = 0x61 | 0x62 | 0x66 | 0x6E | 0x72 | 0x74 | 0x76
+           | 0x5C | 0x27 | 0x22 | 0x3F | LF
+esc_oct    = 0x5C OCTDIG | 0x5C OCTDIG OCTDIG | 0x5C OCTDIG OCTDIG OCTDIG
+esc_hex    = 0x5C 0x78 HEXDIG | 0x5C 0x78 HEXDIG HEXDIG
+esc_u      = 0x5C 0x75 HEXDIG HEXDIG HEXDIG HEXDIG
+OCTDIG     = 0x30..0x37

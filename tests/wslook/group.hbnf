@@ -10,4 +10,4 @@ picture = "pic" picture-string
 picture-string = 1*pic-char
 pic-char = ~( SP | LF | ";" )
 
-ws = SP | LF | "$" ( %x53 | %x73 | %x49 | %x69 ) *~( CR | LF )
+ws = SP | LF | "$" ( 0x53 | 0x73 | 0x49 | 0x69 ) *~( CR | LF )

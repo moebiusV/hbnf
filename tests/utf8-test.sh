@@ -44,23 +44,23 @@ echo "== single-char multi-byte tokens =="
 gen <<'G'
 doc = 1*item
 item = EURO | HIRAGANA | DIGIT | OTHER
-EURO     = %u20AC
-HIRAGANA = %u3042
-DIGIT    = %x30-39
-OTHER    = %x20-10FFFF
+EURO     = 0x20AC
+HIRAGANA = 0x3042
+DIGIT    = 0x30..0x39
+OTHER    = 0x20..0x10FFFF
 G
 harness
 check OK  "$(printf '\342\202\254\343\201\202\067')" "euro+hiragana+digit (\xc2\xac=U+20AC, \xe3\x81\x82=U+3042)"
 check OK  "$(printf '\343\201\202\342\202\254')" "hiragana+euro"
-check OK  "$(printf '\302\200')" "U+0080 (multi-byte, matches OTHER %x20-10FFFF)"
+check OK  "$(printf '\302\200')" "U+0080 (multi-byte, matches OTHER 0x20..0x10FFFF)"
 check FAIL "$(printf '\001')" "SOH control char (0x01 < 0x20)"
 check FAIL "$(printf '\200')" "invalid UTF-8 (lone continuation byte 0x80)"
 
 echo "== multi-byte sequence (maximal munch across bytes) =="
 gen <<'G'
 seq = EURO DIGIT
-EURO  = %u20AC
-DIGIT = %x30-39
+EURO  = 0x20AC
+DIGIT = 0x30..0x39
 G
 harness
 check OK   "$(printf '\342\202\254\067')" "euro+digit"
@@ -71,9 +71,9 @@ check FAIL "$(printf '\067\342\202\254')" "digit+euro (wrong order)"
 echo "== alternation with a multi-code-point branch =="
 gen <<'G'
 doc = A | B C
-A = %x41
-B = %x42
-C = %x43
+A = 0x41
+B = 0x42
+C = 0x43
 G
 harness
 check OK   "A"     "A (the 1-code-point branch)"
@@ -86,8 +86,8 @@ echo "== a reference to a multi-code-point rule =="
 gen <<'G'
 doc = PAIR PAIR
 PAIR = A B
-A = %x41
-B = %x42
+A = 0x41
+B = 0x42
 G
 harness
 check OK   "ABAB" "PAIR PAIR (A B A B, 4 code points)"
@@ -102,8 +102,8 @@ gen <<'G'
 doc = 1*( ident | hex )
 ident = 1*ALPHA
 hex = "0x" 1*HEXDIG
-ALPHA = %x41-5A / %x61-7A
-HEXDIG = %x30-39 / %x41-46 / %x61-66
+ALPHA = 0x41..0x5A / 0x61..0x7A
+HEXDIG = 0x30..0x39 / 0x41..0x46 / 0x61..0x66
 G
 harness
 check OK   "abc"        "an ident (letters only)"

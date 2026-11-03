@@ -15,7 +15,7 @@ config  = *( entry )
 entry   = setmode
         | "proto" proto
         | "quote" str quote_end
-        | %i"level" %i"high"           ; a %i keyword, then a %i word
+        | i"level" i"high"           ; a %i keyword, then a %i word
         | tag
 
 ; an action, spelled %action{ }
@@ -23,8 +23,8 @@ setmode = "set" "mode" mode %action{ (void)n; modes_seen++; }
 
 ; %s is the default spelled out; %i matches any case.  Neither word is in
 ; the keyword table, so both are matched by their text.
-mode    = %i"fast" | %s"slow"
-proto   = "tcp" | %i"udp"
+mode    = i"fast" | s"slow"
+proto   = "tcp" | i"udp"
 
 ; C escapes: \073 is `;` (octal), \? is `?`.
 quote_end = "\073" | "\?"

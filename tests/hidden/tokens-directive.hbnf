@@ -1,4 +1,4 @@
 whitespace none
 hidden dash
 dash = 1*"-"
-letters = 1*%x61-7A
+letters = 1*0x61..0x7A

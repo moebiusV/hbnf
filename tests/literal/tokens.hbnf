@@ -1,0 +1,28 @@
+; The read-time spellings of hbnf's own notation: i"..." and s"..." (the case of a string), r"..." (a regular
+; expression, compiled into the rule of characters it stands for), and C numbers for code points (0x41, 65,
+; 0b1000001, 0x41..0x5A, a run of them).  The file is insensitive, so s"..." is the one that says otherwise.
+; Each entry of the input is a tag, a token and a dot: `kw:SELECT.`.
+prefix none
+whitespace none
+sensitivity string %i
+top      = 1*( entry "." )
+entry    = "kw:" keyword | "sens:" sens | "num:" number | "id:" ident | "date:" date | "hex:" hexnum
+         | "cp:" cps | "rng:" ranges | "rep:" repeats | "any:" anything | "ord:" ordered | "neg:" negated
+         | "esc:" escapes | "ws:" blanks | "word:" words | "opt:" optional
+keyword  = i"select" | i"from"
+sens     = s"Abc"
+number   = r"[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?"
+ident    = r"[A-Za-z_]\w*"
+date     = r"\d{4}-\d{2}-\d{2}"
+hexnum   = ir"0x[0-9a-f]+"
+cps      = 0x41 0x42 67 0b1000100
+ranges   = 1*( 0x61..0x7A | 48..57 | 'A'..'F' | '\x2d' )
+repeats  = 3digit "-" 2*4digit "-" 2("x") "-" 1*2digit
+digit    = 48..57
+anything = r"a.c"
+ordered  = r"a|ab"   ; a rule of characters takes the longest branch, as `"a" | "ab"` does
+negated  = r"[^0-9.\n]+"
+escapes  = r"\x41\u0042\.\-\\"
+blanks   = r"\s+\S\w?\W"
+words    = r"(?:ab){2,}c{0,1}d{2,}"
+optional = r"-?x*y+z?"

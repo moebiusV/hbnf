@@ -545,8 +545,8 @@ package body HBNF_Lookahead is
            (case E.Kind is
                when Name       => Spelled (To_String (E.Name)),
                when Literal    => """" & To_String (E.Lit) & """",
-               when Char_Range => "%x" & Hex (E.Lo)
-                                  & (if E.Hi /= E.Lo then "-" & Hex (E.Hi)
+               when Char_Range => "0x" & Hex (E.Lo)
+                                  & (if E.Hi /= E.Lo then "..0x" & Hex (E.Hi)
                                      else ""),
                when Group      => Group_Text (E),
                when others     => "...");

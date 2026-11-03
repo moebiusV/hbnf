@@ -14,4 +14,4 @@ pic-char = ~( SP | LF | ";" )
 
 ws = SP | LF | "$" !picture-start ALPHA *~( CR | LF )
 picture-start = *picletter !ALPHA
-picletter = %x42 | %x5A | %x39
+picletter = 0x42 | 0x5A | 0x39

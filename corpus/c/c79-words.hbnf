@@ -7,8 +7,8 @@ prefix none
 whitespace none
 include "../../grammars/common.hbnf"
 
-BS     = %x5C
-SQUOTE = %x27
+BS     = 0x5C
+SQUOTE = 0x27
 
 idstart    = ALPHA | "_"
 idchar     = ALPHA | DIGIT | "_"
@@ -23,14 +23,14 @@ identifier = word - keyword
 ; (the letters inside a token are written as code points: a letter-led literal is a whole word)
 ; A constant that begins with 0 is octal and its digits are not checked, so `08` is a constant.
 constant   = floating-constant | integer-constant | character-constant
-ex         = %x78 | %x58
-ell        = %x6C | %x4C
-eee        = %x65 | %x45
-sign       = %x2B | %x2D
-hexd       = DIGIT | %x41-46 | %x61-66
+ex         = 0x78 | 0x58
+ell        = 0x6C | 0x4C
+eee        = 0x65 | 0x45
+sign       = 0x2B | 0x2D
+hexd       = DIGIT | 0x41..0x46 | 0x61..0x66
 digits     = 1*DIGIT
-integer-constant = ( %x30 ex 1*hexd | digits ) [ ell ]
-floating-constant = digits %x2E *DIGIT [ exponent ] | %x2E digits [ exponent ] | digits exponent
+integer-constant = ( 0x30 ex 1*hexd | digits ) [ ell ]
+floating-constant = digits 0x2E *DIGIT [ exponent ] | 0x2E digits [ exponent ] | digits exponent
 exponent   = eee [ sign ] digits
 char-body  = ~( SQUOTE | BS | LF ) | BS ( LF | ~LF )
 character-constant = SQUOTE 1*char-body SQUOTE
@@ -46,9 +46,9 @@ op-assign  = ( "*" | "/" | "%" | "+" | "-" | "<<" | ">>" | "&" | "|" | "^" ) "="
 ; ---- white space ----
 ; Blanks, comments (the bracketed kind only), the lines the preprocessor leaves (`# 12 "file.c"`), and
 ; `asm ( "text" )` (its letters are code points, as a keyword would be a whole word), which the lexer reads and hands the assembler, so the parser never sees it.
-blank      = SP | HTAB | LF | CR | %x08 | %x0C
+blank      = SP | HTAB | LF | CR | 0x08 | 0x0C
 comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
 pp-line    = "#" *~LF
 asm-char   = ~( DQUOTE | LF )
-asm-text   = %x61 %x73 %x6D *blank "(" *blank DQUOTE *asm-char DQUOTE *blank ")"
+asm-text   = 0x61 0x73 0x6D *blank "(" *blank DQUOTE *asm-char DQUOTE *blank ")"
 ws         = 1*( blank | comment | pp-line | asm-text )
