@@ -12,7 +12,9 @@ sensitivity string %i
 include "cobol-words.hbnf"
 whitespace ws
 
-compilation-group  = 1*program-unit
+compilation-group  = *compiler-options 1*program-unit
+; IBM's PROCESS (or CBL) statement, compiler options before the program: its words go to the first word that begins a program
+compiler-options   = ( "PROCESS" | "CBL" ) 1*( !( "IDENTIFICATION" | "ID" | "PROGRAM-ID" | "FUNCTION-ID" ) comment-word )
 
 ; The standard's optional words, as rules: `"VALUE" is operand` reads `VALUE operand` and `VALUE IS operand` alike.
 is     = [ "IS" ]
@@ -74,7 +76,7 @@ special-names-entry     = "DECIMAL-POINT" is "COMMA"
                         | "CALL-CONVENTION" numeric-literal is user-word
                         | switch-or-device-name [ "IS" user-word ]
                           [ "ON" [ "STATUS" ] is user-word ] [ "OFF" [ "STATUS" ] is user-word ]
-class-value             = literal [ thru literal ]
+class-value             = literal [ thru literal | 1*( "ALSO" literal ) ]
 alphabet-name-value     = "NATIVE" | "ASCII" | "STANDARD-1" | "STANDARD-2" | "EBCDIC" | 1*class-value
 switch-or-device-name   = user-word
 
@@ -92,11 +94,11 @@ select-clause           = "ASSIGN" ( "USING" identifier | to "VARYING" identifie
                         | "SHARING" with ( "ALL" "OTHER" | "NO" [ "OTHER" ] | "READ" "ONLY" )
                         | [ "PROGRAM" ] "COLLATING" "SEQUENCE" is user-word
                         | "PADDING" [ "CHARACTER" ] is operand
-                        | "RECORD" "DELIMITER" is user-word
+                        | "RECORD" "DELIMITER" is ( "STANDARD-1" | user-word )
                         | "RESERVE" numeric-literal [ "AREA" | "AREAS" ]
 device-name             = "EXTERNAL" | "DYNAMIC" | "CRT" | "INPUT-OUTPUT" | "INPUT" | "OUTPUT" | "CARD-PUNCH" | "CARD-READER" | "DISK" | "PRINTER" | "DISPLAY" | "KEYBOARD" | "LINE" "ADVANCING"
 assign-name             = nonnumeric-literal | identifier
-i-o-control-paragraph   = "I-O-CONTROL" "." *( ( "SAME" | "APPLY" ) 1*comment-word "." )
+i-o-control-paragraph   = "I-O-CONTROL" "." *( ( "SAME" | "APPLY" | "RERUN" | "MULTIPLE" ) *entry-word "." )
 file-name               = user-word
 
 ; ---- the data division ----
@@ -313,7 +315,7 @@ not-exception-phrase = "NOT" on ( "EXCEPTION" | "OVERFLOW" | "ESCAPE" ) statemen
                      | "NOT" on "EXCEPTION" statements
 
 open-statement     = "OPEN" 1*( ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*( file-name *( with ( "LOCK" | "NO" "REWIND" ) ) ) )
-close-statement    = "CLOSE" 1*( file-name [ with ( "LOCK" | "NO" "REWIND" ) ] )
+close-statement    = "CLOSE" 1*( file-name [ "REEL" | "UNIT" ] [ "FOR" "REMOVAL" ] [ with ( "LOCK" | "NO" "REWIND" ) ] )
 read-statement     = "READ" file-name [ "NEXT" | "PREVIOUS" ] [ "RECORD" ] [ "INTO" identifier ] [ with ( "NO" "LOCK" | "LOCK" | "KEPT" "LOCK" ) ] [ "KEY" is identifier ]
                      [ end-phrases ] [ invalid-key-phrases ] [ "END-READ" ]
 write-statement    = "WRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ ( "BEFORE" | "AFTER" ) [ "ADVANCING" ] ( "PAGE" | operand [ "LINE" | "LINES" ] ) ]
@@ -339,7 +341,8 @@ unstring-statement = "UNSTRING" sending [ "DELIMITED" by [ "ALL" ] operand *( "O
 overflow-phrases   = ( on "OVERFLOW" statements ) [ "NOT" on "OVERFLOW" statements ] | "NOT" on "OVERFLOW" statements
 
 inspect-statement  = "INSPECT" identifier ( tallying [ replacing ] | replacing | converting )
-tallying           = "TALLYING" 1*( identifier "FOR" 1*( "CHARACTERS" [ region ] | ( "ALL" | "LEADING" | "TRAILING" ) 1*( operand [ region ] ) ) )
+tallying           = "TALLYING" 1*( identifier "FOR" 1*( "CHARACTERS" [ region ] | ( "ALL" | "LEADING" | "TRAILING" ) 1*( !tally-counter operand [ region ] ) ) )
+tally-counter      = identifier "FOR"
 replacing          = "REPLACING" 1*( "CHARACTERS" "BY" operand [ region ]
                                  | ( "ALL" | "LEADING" | "TRAILING" | "FIRST" ) 1*( operand "BY" operand [ region ] ) )
 converting         = "CONVERTING" operand "TO" operand [ region ]
@@ -378,7 +381,7 @@ primary        = "(" arithmetic-expression ")" | length-of | literal | identifie
 ; ---- conditions ----
 condition      = combination *( "OR" combination )
 combination    = negation *( "AND" negation )
-negation       = "NOT" negation | class-condition | sign-condition | relation | "(" condition ")" | abbreviation
+negation       = "NOT" negation | class-condition | sign-condition | relation | abbreviation | "(" condition ")"
 relation       = arithmetic-expression relation-operator ( arithmetic-expression | "(" condition ")" )
 abbreviation   = [ relation-operator ] arithmetic-expression
 class-condition = identifier is [ "NOT" ] class-name
