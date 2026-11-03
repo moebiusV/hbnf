@@ -20,7 +20,11 @@ user-word = word - not-a-name
 ; Blank space between tokens: a space, a tab or a line end; a comma or a semicolon, which COBOL reads as a
 ; space; and a comment, `*>` to the end of the line, which may follow anything; and a compiler directive, `>>` to the end of the line,
 ; which is read as a comment (so `>>IF` and `>>END-IF` both take effect, and a program with alternatives in them is read twice).
-ws = SP | HTAB | CR | LF | "," | ";" | "*>" *~( CR | LF ) | ">>" *~( CR | LF ) | "$" ALPHA *~( CR | LF )
+; A `$` line is a directive (`$SET`, `$IF`) unless picture symbols only follow, up to a character that is no letter: `$BB**,**9` and `$99` are pictures.
+picletter     = %x41 | %x42 | %x43 | %x44 | %x45 | %x50 | %x52 | %x53 | %x56 | %x58 | %x5A
+              | %x61 | %x62 | %x63 | %x64 | %x65 | %x70 | %x72 | %x73 | %x76 | %x78 | %x7A
+picture-start = *picletter !ALPHA
+ws = SP | HTAB | CR | LF | "," | ";" | "*>" *~( CR | LF ) | ">>" *~( CR | LF ) | "$" !picture-start ALPHA *~( CR | LF )
 
 ; ---- literals (the standard's 8.3) ----
 ; (a letter inside a token is written as code points: a letter-led literal would be matched as a whole word)
