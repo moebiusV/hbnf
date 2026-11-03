@@ -29,14 +29,19 @@ thru            = "THRU" | "THROUGH"
 procedure-range = procedure-name [ thru procedure-name ]
 control-name    = "FINAL" | identifier
 item-clause     = picture-clause | usage-clause | value-clause
-program-unit       = identification-division [ environment-division ] [ data-division ] [ procedure-division ]
-                     *program-unit [ end-program ]
-end-program        = "END" ( "PROGRAM" | "FUNCTION" ) program-name "."
+display-item-clause = picture-clause | [ "USAGE" is ] ( "DISPLAY" | "NATIONAL" | "DISPLAY-1" | "UTF-8" ) | value-clause
+program-unit       = identification-division unit-body [ end-program ]
+                   | function-identification unit-body end-function
+unit-body          = [ environment-division ] [ data-division ] [ procedure-division ] *program-unit
+end-program        = "END" "PROGRAM" program-name "."
+end-function       = "END" "FUNCTION" program-name "."
 program-name       = function-name | nonnumeric-literal
 
 ; ---- the identification division ----
 identification-division = [ ( "IDENTIFICATION" | "ID" ) "DIVISION" "." ] program-id-paragraph *id-paragraph [ options-paragraph ]
-program-id-paragraph    = ( "PROGRAM-ID" | "FUNCTION-ID" ) "." program-name [ "AS" nonnumeric-literal ] [ is ( "COMMON" [ "INITIAL" | "RECURSIVE" ] | ( "INITIAL" | "RECURSIVE" ) [ "COMMON" ] | "PROTOTYPE" ) [ "PROGRAM" ] ] "."
+function-identification = [ ( "IDENTIFICATION" | "ID" ) "DIVISION" "." ] function-id-paragraph *id-paragraph [ options-paragraph ]
+program-id-paragraph    = "PROGRAM-ID" "." program-name [ "AS" nonnumeric-literal ] [ is ( "COMMON" [ "INITIAL" | "RECURSIVE" ] | ( "INITIAL" | "RECURSIVE" ) [ "COMMON" ] | "PROTOTYPE" ) [ "PROGRAM" ] ] "."
+function-id-paragraph   = "FUNCTION-ID" "." program-name [ "AS" nonnumeric-literal ] [ is ( "COMMON" [ "INITIAL" | "RECURSIVE" ] | ( "INITIAL" | "RECURSIVE" ) [ "COMMON" ] | "PROTOTYPE" ) [ "PROGRAM" ] ] "."
 id-paragraph            = id-paragraph-name "." comment-entry
 id-paragraph-name       = "AUTHOR" | "INSTALLATION" | "DATE-WRITTEN" | "DATE-COMPILED" | "SECURITY" | "REMARKS"
 comment-entry           = *( !paragraph-start comment-word )
@@ -117,7 +122,7 @@ linkage-section         = "LINKAGE" "SECTION" "." *data-description-entry
 
 screen-section          = "SCREEN" "SECTION" "." *screen-description-entry
 screen-description-entry = level-number [ data-name | "FILLER" ] *screen-clause "."
-screen-clause           = screen-phrase | item-clause | occurs-clause | redefines-clause | ( "FROM" | "TO" | "USING" ) operand
+screen-clause           = screen-phrase | display-item-clause | occurs-clause | redefines-clause | ( "FROM" | "TO" | "USING" ) operand
                         | "SIGN" is ( "LEADING" | "TRAILING" ) [ "SEPARATE" [ "CHARACTER" ] ] | justified-clause | sign-clause
                         | "GLOBAL" | "ZERO-FILL" | "SPACE-FILL" | "LEFT-JUSTIFY" | "RIGHT-JUSTIFY"
 screen-phrase           = at screen-position | with screen-attribute
@@ -146,7 +151,7 @@ report-group-clause     = "TYPE" is report-type
                         | "SOURCE" is operand [ "ROUNDED" ] | "SUM" 1*operand [ "UPON" 1*user-word ]
                         | "RESET" on control-name | "GROUP" [ "INDICATE" ] | ( "PRESENT" | "ABSENT" ) ( "WHEN" condition | "AFTER" present-event *( "OR" present-event ) )
                         | "VARYING" identifier "FROM" operand "BY" operand
-                        | item-clause | occurs-clause | sign-clause | justified-clause
+                        | display-item-clause | occurs-clause | sign-clause | justified-clause
                         | "BLANK" [ "WHEN" ] "ZERO" | "GLOBAL" | "COLUMN" operand | "STEP" operand
 report-type             = "REPORT" "HEADING" | "RH" | "PAGE" "HEADING" | "PH" | "CONTROL" "HEADING" control-name | "CH" control-name
                         | "DETAIL" | "DE" | "CONTROL" "FOOTING" control-name | "CF" control-name
@@ -179,7 +184,7 @@ usage                  = "DISPLAY" | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "PO
 value-clause           = "VALUE" is ( 1*value-item | "ALL" literal ) [ "FALSE" is operand ]
                        | "VALUES" are 1*value-item [ "FALSE" is operand ]
 value-item             = operand [ thru operand ]
-occurs-clause          = "OCCURS" operand ( "TO" ( operand | "UNBOUNDED" ) [ "TIMES" ] "DEPENDING" on identifier | [ "TIMES" ] [ "DEPENDING" on identifier ] ) [ "VARYING" identifier [ "FROM" operand ] [ "BY" operand ] ]
+occurs-clause          = "OCCURS" ( "UNBOUNDED" "DEPENDING" on identifier | !"UNBOUNDED" operand ( "TO" ( operand | "UNBOUNDED" ) [ "TIMES" ] "DEPENDING" on identifier | [ "TIMES" ] [ "DEPENDING" on identifier ] ) ) [ "VARYING" identifier [ "FROM" operand ] [ "BY" operand ] ]
                          *( ( "ASCENDING" | "DESCENDING" ) key is 1*identifier ) [ "INDEXED" by 1*user-word ]
 redefines-clause       = "REDEFINES" data-name
 renames-clause         = "RENAMES" identifier [ thru identifier ]
