@@ -1,6 +1,7 @@
 #!/bin/sh
 # The COBOL grammar against the programs of GnuCOBOL's own test suite (scripts/cobol-scan.sh): every program cobc
-# accepts in free format that the parser refuses is a gap in the grammar, and the number of them must not grow
+# accepts in free format that the parser refuses is a gap in the grammar (a program that uses COPY or REPLACE is
+# set apart by the scan, as a preprocessor's work), and the number of them must not grow
 # (tests/cobol/scan-baseline.txt is the number now; lower it when the grammar learns more).  The programs
 # are fixed format in the suite and GPL: they are fetched, not kept (sh tools/cobol_fetch.sh), and converted
 # to free format by tools/cobol_extract.py.  Skipped without the fetched source or without cobc.

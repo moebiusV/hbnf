@@ -28,12 +28,12 @@ statements `ACCEPT ADD ALLOCATE ALTER CALL CANCEL CLOSE COMPUTE CONTINUE DELETE 
 EXHIBIT EXIT FREE GENERATE GO GOBACK IF INITIALIZE INITIATE INSPECT MERGE MOVE MULTIPLY OPEN PERFORM READ
 RELEASE RETURN REWRITE SEARCH SET SORT START STOP STRING SUBTRACT SUPPRESS TERMINATE UNSTRING WRITE`, the
 conditions (relation, class, sign, abbreviated, combined) and arithmetic expressions with subscripts, reference
-modification, `LENGTH OF` and `FUNCTION`.  A compiler directive (`>>` to the end of the line) and a `$` line
+modification, `LENGTH OF` and `FUNCTION`; and the XML and JSON statements (`XML GENERATE` and `PARSE`, `JSON GENERATE` and `PARSE`).  A compiler directive (`>>` to the end of the line) and a `$` line
 are read as comments.
 
 Not yet: fixed format (the sequence area, the indicator column, continuation lines), `COPY` and `REPLACE`
 (a preprocessor's work: textual inclusion and replacement that can happen between any two tokens, so it belongs
-with the C preprocessor item of `RFCPLAN.md`, as one include-and-replace layer), the XML and JSON statements, the
+with the C preprocessor item of `RFCPLAN.md`, as one include-and-replace layer), the
 object-oriented features and the rest of the vendor extensions.  This is a core, not the language; a size
 comparison with GnuCOBOL's `parser.y` waits until it is the language.
 
@@ -47,7 +47,7 @@ that derives the type from them is where the exactness is kept.
 goes further: it takes the programs of GnuCOBOL's own test suite, which `tools/cobol_fetch.sh` fetches and
 `tools/cobol_extract.py` writes out in free format (they are fixed format and GPL, so they are fetched and not
 kept here), and counts those `cobc` accepts that the parser refuses.  The number of them is
-`tests/cobol/scan-baseline.txt`; it must not grow, and `scripts/cobol-scan.sh` lists them.
+`tests/cobol/scan-baseline.txt`; it must not grow, and `scripts/cobol-scan.sh` lists them.  A program that uses `COPY` or `REPLACE` is listed apart, not counted: they rewrite the text before the grammar sees it (the preprocessor layer of `RFCPLAN.md`).
 
 The other side of the comparison, programs the parser accepts and `cobc` refuses, is almost all semantic: an undefined
 or ambiguous name, a redefinition, a `MOVE` between incompatible items, `OCCURS` under a variable-length group, a

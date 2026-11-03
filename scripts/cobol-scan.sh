@@ -2,6 +2,7 @@
 # Runs the COBOL grammar (corpus/cobol/cobol.hbnf) and GnuCOBOL's cobc over a directory of free-format COBOL programs
 # and says where they differ: the files cobc accepts and the parser refuses (the gaps in the grammar), and the files
 # cobc refuses and the parser accepts (a checking pass's business, mostly: an undefined name is no syntax error).
+# Programs that use COPY or REPLACE are listed apart (cobol-outofscope.txt), not as gaps.
 # tools/cobol_extract.py makes such a directory from GnuCOBOL's test suite (bench/cache/cobol, from
 # tools/cobol_fetch.sh).  With no cobc, only the parser's verdicts are written.
 #   HBNF=/path/to/hbnf sh scripts/cobol-scan.sh DIR [OUT]      (default ./hbnf; OUT is where the lists go, default /tmp)
@@ -31,4 +32,13 @@ if command -v cobc > /dev/null 2>&1; then
 	awk '{print $1, $2}' "$OUT/cobol-parser.txt" | sed 's/:$//' | sort -k2 > "$W/p"
 	awk '{print $1, $2}' "$OUT/cobol-cobc.txt" | sed 's/:$//' | sort -k2 > "$W/c"
 	join -j 2 "$W/p" "$W/c" | awk '{ k = $2 "/" $3; n[k]++; if ($2 == "bad" && $3 == "ok") print $1 > "'"$OUT"'/cobol-gaps.txt"; if ($2 == "ok" && $3 == "bad") print $1 > "'"$OUT"'/cobol-lenient.txt" } END { for (k in n) print "   parser/cobc " k ": " n[k] }' | sort
+	# a program with COPY or REPLACE (a preprocessor's work, RFCPLAN) is not a gap of the grammar
+	if [ -f "$OUT/cobol-gaps.txt" ]; then
+		: > "$W/in"; : > "$OUT/cobol-outofscope.txt"
+		while read -r f; do
+			if grep -qiE '^[[:space:]]*(copy|replace)[[:space:]]' "$f"; then echo "$f" >> "$OUT/cobol-outofscope.txt"; else echo "$f" >> "$W/in"; fi
+		done < "$OUT/cobol-gaps.txt"
+		cp "$W/in" "$OUT/cobol-gaps.txt"
+		echo "cobol-scan: $(wc -l < "$OUT/cobol-gaps.txt") gaps in the grammar; $(wc -l < "$OUT/cobol-outofscope.txt") more need COPY or REPLACE"
+	fi
 fi

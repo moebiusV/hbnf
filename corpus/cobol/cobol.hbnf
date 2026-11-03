@@ -6,7 +6,7 @@
 ; for a checking pass: a bare operand after AND or OR is an abbreviated condition (`A > B AND C`) or the
 ; name of a level-88 condition, and the parser does not tell them apart (the tree has one node for both).
 ; Not yet: fixed format (the sequence area, the indicator column, continuation lines), COPY and REPLACE,
-; object orientation, the XML and JSON statements.
+; object orientation.
 prefix none
 sensitivity string %i
 include "cobol-words.hbnf"
@@ -60,7 +60,7 @@ switch-or-device-name   = user-word
 input-output-section    = "INPUT-OUTPUT" "SECTION" "." [ file-control-paragraph ] [ i-o-control-paragraph ]
 file-control-paragraph  = "FILE-CONTROL" "." *file-control-entry
 file-control-entry      = "SELECT" [ "OPTIONAL" ] file-name 1*select-clause "."
-select-clause           = "ASSIGN" ( "USING" identifier | [ "TO" ] 1*( device-name | assign-name ) )
+select-clause           = "ASSIGN" ( "USING" identifier | [ "TO" ] "VARYING" identifier | [ "TO" ] 1*( device-name | assign-name ) [ "USING" identifier ] )
                         | "RELATIVE" [ "KEY" ] [ "IS" ] identifier
                         | [ ( "ORGANIZATION" | "ORGANISATION" ) [ "IS" ] ] [ "LINE" ] ( "SEQUENTIAL" | "RELATIVE" | "INDEXED" )
                         | "ACCESS" [ "MODE" ] [ "IS" ] ( "SEQUENTIAL" | "RANDOM" | "DYNAMIC" )
@@ -73,7 +73,7 @@ select-clause           = "ASSIGN" ( "USING" identifier | [ "TO" ] 1*( device-na
                         | "PADDING" [ "CHARACTER" ] [ "IS" ] operand
                         | "RECORD" "DELIMITER" [ "IS" ] user-word
                         | "RESERVE" numeric-literal [ "AREA" | "AREAS" ]
-device-name             = "EXTERNAL" | "DYNAMIC" | "CRT" | "CARD-PUNCH" | "CARD-READER" | "DISK" | "PRINTER" | "DISPLAY" | "KEYBOARD" | "LINE" "ADVANCING"
+device-name             = "EXTERNAL" | "DYNAMIC" | "CRT" | "INPUT-OUTPUT" | "INPUT" | "OUTPUT" | "CARD-PUNCH" | "CARD-READER" | "DISK" | "PRINTER" | "DISPLAY" | "KEYBOARD" | "LINE" "ADVANCING"
 assign-name             = nonnumeric-literal | identifier
 i-o-control-paragraph   = "I-O-CONTROL" "." *( ( "SAME" | "APPLY" ) 1*comment-word "." )
 file-name               = user-word
@@ -113,7 +113,7 @@ screen-position         = "LINE" [ "NUMBER" ] [ "IS" ] [ "PLUS" | "MINUS" | "+" 
                         | operand
 screen-attribute        = ( "FOREGROUND-COLOR" | "BACKGROUND-COLOR" ) [ "IS" ] operand | "BLANK" ( "SCREEN" | "LINE" ) | "ERASE" [ "EOL" | "EOS" ]
                         | "BELL" | "BLINK" | "HIGHLIGHT" | "LOWLIGHT" | "REVERSE-VIDEO" | "UNDERLINE" | "AUTO" | "SECURE" | "REQUIRED" | "FULL"
-                        | "NO-ECHO" | "AUTO-SKIP" | "EMPTY-CHECK" | "OVERLINE" | "GRID" | "LEFTLINE" | "SUPPRESS" [ "WHEN" operand ] | "UPDATE" | "NO" "UPDATE" | "TAB" | "TIME-OUT" [ "AFTER" ] operand | "DEFAULT" [ "IS" ] [ operand ] | "AUTOTERMINATE" | "PROTECTED" | "UPPER" | "LOWER" | "INITIAL" | "PROMPT" [ "CHARACTER" ] [ [ "IS" ] operand ] | "SIZE" [ "IS" ] operand | "TIMEOUT" [ "AFTER" ] operand
+                        | "NO-ECHO" | "AUTO-SKIP" | "EMPTY-CHECK" | "OVERLINE" | "GRID" | "LEFTLINE" | "SUPPRESS" [ "WHEN" operand ] | "UPDATE" | "NO" ( "UPDATE" | "DEFAULT" ) | "TAB" | "TIME-OUT" [ "AFTER" ] operand | "DEFAULT" [ "IS" ] [ operand ] | "AUTOTERMINATE" | "PROTECTED" | "UPPER" | "LOWER" | "INITIAL" | "PROMPT" [ "CHARACTER" ] [ [ "IS" ] operand ] | "SIZE" [ "IS" ] operand | "TIMEOUT" [ "AFTER" ] operand
                         | "CURSOR" [ "IS" ] operand | "CONTROL" [ "IS" ] operand
 
 ; ---- the report writer ----
@@ -121,7 +121,7 @@ report-section          = "REPORT" "SECTION" "." *report-description
 report-description      = "RD" data-name *report-clause "." *report-group-entry
 report-clause           = [ "IS" ] "GLOBAL" | "CODE" [ "IS" ] operand
                         | "CONTROL" ( "IS" | "ARE" ) 1*( "FINAL" | identifier ) | "CONTROLS" ( "IS" | "ARE" ) 1*( "FINAL" | identifier )
-                        | "PAGE" [ "LIMIT" [ "IS" ] | "LIMITS" [ "ARE" ] ] operand [ "LINE" | "LINES" ] [ operand ( "COLUMN" | "COLUMNS" | "COL" | "COLS" ) ]
+                        | "PAGE" [ "LIMIT" [ "IS" ] | "LIMITS" [ "ARE" ] ] operand [ "LINES" | "LINE" !"LIMIT" ] [ operand ( "COLUMN" | "COLUMNS" | "COL" | "COLS" ) ]
                           *( ( "HEADING" | "FIRST" "DETAIL" | "LAST" "DETAIL" | "FOOTING" ) [ "IS" ] operand )
                         | "LINE" ( "LIMIT" [ "IS" ] | "LIMITS" [ "ARE" ] ) operand
                         | ( "HEADING" | "FIRST" "DETAIL" | "LAST" "DETAIL" | "FOOTING" ) [ "IS" ] operand
@@ -132,7 +132,7 @@ report-group-clause     = "TYPE" [ "IS" ] report-type
                         | ( "COLUMN" | "COL" ) [ "NUMBER" ] [ "IS" ] [ "PLUS" | "+" ] operand [ "LEFT" | "CENTER" | "RIGHT" ]
                         | "NEXT" "GROUP" [ "IS" ] ( "NEXT" "PAGE" | [ "PLUS" | "+" ] operand )
                         | "SOURCE" [ "IS" ] operand [ "ROUNDED" ] | "SUM" 1*operand [ "UPON" 1*user-word ]
-                        | "RESET" [ "ON" ] ( "FINAL" | identifier ) | "GROUP" [ "INDICATE" ] | "PRESENT" ( "WHEN" condition | "AFTER" present-event *( "OR" present-event ) )
+                        | "RESET" [ "ON" ] ( "FINAL" | identifier ) | "GROUP" [ "INDICATE" ] | ( "PRESENT" | "ABSENT" ) ( "WHEN" condition | "AFTER" present-event *( "OR" present-event ) )
                         | "VARYING" identifier "FROM" operand "BY" operand
                         | picture-clause | usage-clause | value-clause | occurs-clause | sign-clause | justified-clause
                         | "BLANK" [ "WHEN" ] "ZERO" | "GLOBAL" | "COLUMN" operand | "STEP" operand
@@ -162,7 +162,7 @@ usage                  = "DISPLAY" | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "PO
 value-clause           = "VALUE" [ "IS" ] ( 1*value-item | "ALL" literal ) [ "FALSE" [ "IS" ] operand ]
                        | "VALUES" [ "ARE" ] 1*value-item [ "FALSE" [ "IS" ] operand ]
 value-item             = operand [ ( "THRU" | "THROUGH" ) operand ]
-occurs-clause          = "OCCURS" operand [ "TO" ( operand | "UNBOUNDED" ) ] [ "TIMES" ] [ "DEPENDING" [ "ON" ] identifier ]
+occurs-clause          = "OCCURS" operand [ "TO" ( operand | "UNBOUNDED" ) ] [ "TIMES" ] [ "DEPENDING" [ "ON" ] identifier ] [ "VARYING" identifier "FROM" operand [ "BY" operand ] ]
                          *( ( "ASCENDING" | "DESCENDING" ) [ "KEY" ] [ "IS" ] 1*identifier ) [ "INDEXED" [ "BY" ] 1*user-word ]
 redefines-clause       = "REDEFINES" data-name
 renames-clause         = "RENAMES" identifier [ ( "THRU" | "THROUGH" ) identifier ]
@@ -190,7 +190,7 @@ end-of-unit            = "END" ( "PROGRAM" | "FUNCTION" )
 statements             = 1*statement
 
 ; ---- statements ----
-statement = ready-statement | accept-statement | add-statement | alter-statement | call-statement | cancel-statement | close-statement
+statement = xml-statement | json-statement | ready-statement | accept-statement | add-statement | alter-statement | call-statement | cancel-statement | close-statement
           | compute-statement | continue-statement | delete-statement | display-statement | divide-statement
           | evaluate-statement | exit-statement | goback-statement | go-to-statement | if-statement
           | initialize-statement | inspect-statement | move-statement | multiply-statement | open-statement
@@ -200,6 +200,21 @@ statement = ready-statement | accept-statement | add-statement | alter-statement
           | allocate-statement | free-statement | exhibit-statement | initiate-statement | generate-statement | terminate-statement
           | suppress-statement | next-sentence
 
+; ---- XML and JSON ----
+xml-statement      = "XML" ( "GENERATE" identifier "FROM" identifier [ count-in ]
+                             *( [ "WITH" ] ( "ENCODING" operand | "XML-DECLARATION" | "ATTRIBUTES" ) )
+                             [ "NAMESPACE" [ "IS" ] operand [ "NAMESPACE-PREFIX" [ "IS" ] operand ] ]
+                             [ name-of ] [ "TYPE" [ "OF" ] 1*( identifier [ "IS" ] ( "ATTRIBUTE" | "ELEMENT" | "CONTENT" ) ) ]
+                             [ suppress-list ] [ on-exception-phrases ]
+                           | "PARSE" identifier [ [ "WITH" ] "ENCODING" operand ] [ "RETURNING" "NATIONAL" ] [ "VALIDATING" [ "WITH" ] identifier ]
+                             "PROCESSING" "PROCEDURE" [ "IS" ] procedure-name [ ( "THRU" | "THROUGH" ) procedure-name ] [ on-exception-phrases ] )
+                     [ "END-XML" ]
+json-statement     = "JSON" ( "GENERATE" identifier "FROM" identifier [ count-in ]
+                            | "PARSE" identifier "INTO" identifier [ [ "WITH" ] "DETAIL" ] )
+                     [ name-of ] [ suppress-list ] [ on-exception-phrases ] [ "END-JSON" ]
+count-in           = "COUNT" [ "IN" ] identifier
+name-of            = "NAME" [ "OF" ] 1*( identifier [ "IS" ] ( "OMITTED" | operand ) )
+suppress-list      = "SUPPRESS" 1*( [ "EVERY" ( "ELEMENT" | "ATTRIBUTE" ) ] "WHEN" figurative-constant *( "OR" figurative-constant ) | identifier [ "WHEN" figurative-constant ] )
 ready-statement = ( "READY" | "RESET" ) "TRACE"
 next-sentence = "NEXT" "SENTENCE"
 continue-statement = "CONTINUE"
@@ -267,14 +282,16 @@ varying            = identifier "FROM" operand [ "BY" operand ] "UNTIL" conditio
 call-statement     = "CALL" [ "STATIC" | "STDCALL" ] operand [ "USING" 1*using-argument ] [ ( "RETURNING" | "GIVING" ) ( "OMITTED" | identifier ) ] [ on-exception-phrases ] [ "END-CALL" ]
 using-argument     = [ [ "BY" ] ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand )
 cancel-statement   = "CANCEL" 1*operand
-on-exception-phrases = ( [ "ON" ] ( "EXCEPTION" | "OVERFLOW" ) statements ) [ "NOT" [ "ON" ] ( "EXCEPTION" | "OVERFLOW" ) statements ]
+on-exception-phrases = exception-phrase [ not-exception-phrase ] | not-exception-phrase [ exception-phrase ]
+exception-phrase     = [ "ON" ] ( "EXCEPTION" | "OVERFLOW" ) statements
+not-exception-phrase = "NOT" [ "ON" ] ( "EXCEPTION" | "OVERFLOW" ) statements
                      | "NOT" [ "ON" ] "EXCEPTION" statements
 
 open-statement     = "OPEN" 1*( ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*( file-name *( [ "WITH" ] ( "LOCK" | "NO" "REWIND" ) ) ) )
 close-statement    = "CLOSE" 1*( file-name [ [ "WITH" ] ( "LOCK" | "NO" "REWIND" ) ] )
 read-statement     = "READ" file-name [ "NEXT" | "PREVIOUS" ] [ "RECORD" ] [ "INTO" identifier ] [ [ "WITH" ] ( "NO" "LOCK" | "LOCK" | "KEPT" "LOCK" ) ] [ "KEY" [ "IS" ] identifier ]
                      [ end-phrases ] [ invalid-key-phrases ] [ "END-READ" ]
-write-statement    = "WRITE" user-word [ "FROM" operand ] [ ( "BEFORE" | "AFTER" ) [ "ADVANCING" ] ( "PAGE" | operand [ "LINE" | "LINES" ] ) ]
+write-statement    = "WRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ ( "BEFORE" | "AFTER" ) [ "ADVANCING" ] ( "PAGE" | operand [ "LINE" | "LINES" ] ) ]
                      [ end-of-page-phrases ] [ invalid-key-phrases ] [ "END-WRITE" ]
 end-of-page-phrases = ( [ "AT" ] ( "END-OF-PAGE" | "EOP" ) statements ) [ "NOT" [ "AT" ] ( "END-OF-PAGE" | "EOP" ) statements ] | "NOT" [ "AT" ] ( "END-OF-PAGE" | "EOP" ) statements
 rewrite-statement  = "REWRITE" [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ invalid-key-phrases ] [ "END-REWRITE" ]
@@ -341,4 +358,4 @@ sign-condition = arithmetic-expression [ "IS" ] [ "NOT" ] ( "POSITIVE" | "NEGATI
 relation-operator = [ "IS" ] [ "NOT" ] comparison
 comparison     = ">=" | "<=" | "<>" | ">" | "<" | "="
                | "GREATER" [ "THAN" ] [ "OR" ( "EQUALS" | "EQUAL" [ "TO" ] ) ] | "LESS" [ "THAN" ] [ "OR" ( "EQUALS" | "EQUAL" [ "TO" ] ) ]
-               | ( "EQUALS" | "EQUAL" [ "TO" ] ) | "NOT" ( ">" | "<" | "=" )
+               | ( "EQUALS" | "EQUAL" ) [ "TO" ] | "NOT" ( ">" | "<" | "=" )
