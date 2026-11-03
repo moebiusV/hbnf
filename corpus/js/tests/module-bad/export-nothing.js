@@ -1,0 +1,2 @@
+// bad: export nothing
+export;

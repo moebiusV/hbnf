@@ -1,0 +1,2 @@
+// bad: comma leading
+, a;

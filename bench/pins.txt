@@ -59,3 +59,8 @@ RAKU_TOML_URL=https://raw.githubusercontent.com/raku/REA/main/archive/T/TOML/TOM
 RAKU_TOML_SHA=55a8d08deda969564f82f6acfdce658efdf71a06490fb644a82037a8c2e9df38
 RAKU_YAMLISH_URL=https://raw.githubusercontent.com/raku/REA/main/archive/Y/YAMLish/YAMLish%3Aver%3C0.1.3%3E%3Aauth%3Czef%3Aleont%3E.tar.gz
 RAKU_YAMLISH_SHA=a60097825494da79ad70719ecb4768e8b87baacf5b21c7f895fb372ab098b690
+# test262-parser-tests (tc39/test262-parser-tests) at one commit, the tarball GitHub serves for it (pass/, fail/, early/ and
+# pass-explicit/ hold about 4,000 small files), fetched into bench/cache/js262 by tests/js262.sh.
+JS262_COMMIT=0e808c74fbec780646434cad17bb22dc52461003
+JS262_URL=https://codeload.github.com/tc39/test262-parser-tests/tar.gz/0e808c74fbec780646434cad17bb22dc52461003
+JS262_SHA=363d1f684888d3cbf0ee5e6cdd248cd33453972b01856bcd7380f3a3ee3a1b52

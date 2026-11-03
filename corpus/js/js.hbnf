@@ -1,0 +1,154 @@
+; ECMAScript 2023 (ECMA-262 14th edition, clauses 13 to 16 and Annex B) in HyperBNF: the Script goal (`script`, the first
+; rule), the Module goal (`--root=module`) and the FunctionBody (`--root=function-body`, for the code of an attribute
+; such as onclick).  The tokens are in js-tokens.hbnf.  README.md has the counts, the tests, and what is left out.
+;
+; The four things that a grammar of JavaScript has to say, and how it says them:
+;  - `/` and `}`.  A regular expression is a primary expression, so it is read only where an operand is expected and `/`
+;    is a division only after one; a `}` ends a template substitution because the template is a rule
+;    (`tpl-head expression *( tpl-mid expression ) tpl-tail`) and the pieces between the substitutions are tokens.
+;  - Automatic semicolon insertion (12.10) and the restricted productions.  `ends(X)` is X and a `;`, or X and a `}`, or X and
+;    the end of the input, or X and a line end.  The last is `eol`, a test that sees the position X ended at before the blanks
+;    after it are skipped, and the tokens that can end a statement end with `*inl`, the blanks and comments on the same line, so
+;    that the line end is what `eol` finds.  For that position to be X's end, a rule that can end a statement is written
+;    `a b | a` and not `a [ b ]`: an optional or repeated last element has skipped the blanks before it.  `return`, `break`,
+;    `continue`, `yield`, `throw` and `async` are tokens that look at what follows them (`bare`, `nolt`); `x ++` is `x` and a
+;    lookahead; `=>` has its own lookahead on the name or the `)` before it (`arrow-id`, `arrow-rpar`).
+;  - The cover grammars.  `(a, b) => x` is tried before `(a, b)`; `async (x) => y` before the call `async(x)`; the pattern of an
+;    assignment is read as a pattern (`pattern(assign-target)`) only when the expression, read first, was followed by `=`.
+;    One shape, `pattern(T)`, binds names (T is a binding-target) and assigns to targets (T is an assign-target).
+;  - Contextual words.  No word is reserved but the ones the specification reserves (`reserved` in the tokens file); `async`,
+;    `of`, `get`, `set`, `static`, `let`, `yield` and `await` are names where they are not the word of a construct.
+; A rule family is one rule: `binary(N, I)` is the eight levels of binary operators from `|` to `*` and `I` says whether `in` is one of them;
+; `item(R)` and `statement(R)` say whether `return` may stand (R is "fn" in a function and "top" in a script).
+prefix none
+include "js-tokens.hbnf"
+
+script        = [ hashbang ] [ close-tail ] *item("top")
+module        = [ hashbang ] *( module-item )
+function-body = *item("fn")
+
+; ---- statements (clause 14); R says whether `return` may stand ----
+item(R in "fn" | "top") := declaration | statement(R)
+declaration  = function-form(identifier) | class-form(identifier) | ends(( "let" | "const" ) binding-list("in"))
+block(R in "fn" | "top") := "{" *item(R) rbrace
+branch(R in "fn" | "top")  := statement(R) | "function" identifier parameters(rpar) function-block
+
+statement(R in "fn" | "top") := block(R) | ends("var" binding-list("in")) | ";"
+    | "if" "(" expression("in") ")" branch(R) [ "else" branch(R) ]
+    | "for" "(" for-head ")" statement(R) | "for" "await" "(" for-of ")" statement(R)
+    | "while" "(" expression("in") ")" statement(R)
+    | "do" statement(R) "while" "(" expression("in") rpar [ ";" ]
+    | "switch" "(" expression("in") ")" "{" *case(R) [ "default" ":" *item(R) *case(R) ] rbrace
+    | jump(bare("continue"), identifier) | jump(bare("break"), identifier) | return-form(R)
+    | ends(nolt("throw") expression("in"))
+    | "with" "(" expression("in") ")" statement(R)
+    | "try" block(R) ( "catch" [ "(" binding-target ")" ] block(R) [ "finally" block(R) ] | "finally" block(R) )
+    | ends(bare("debugger"))
+    | identifier ":" branch(R)
+    | !no-expression-start ends(expression("in"))
+return-form("fn")  := jump(bare("return"), expression("in"))
+return-form("top") := !any any
+case(R in "fn" | "top") := "case" expression("in") ":" *item(R)
+no-expression-start = "{" | "function" | "class" | "let" "[" | nolt("async") "function"
+
+; the end of a statement (12.10): a `;`, a line end, a `}` or the end of the input.  What a statement might end with
+; is written `a b | a`, for the reason in the head of this file.
+ends(X) := X ";" | X rbrace-ahead | X eof | X eol
+jump(K, OPERAND) := ends(K) | ends(K OPERAND)
+eof = !any
+rbrace-ahead = &"}"
+any = 0x00..0x10FFFF
+
+; the head of a `for`: a declaration or a target and `in` or `of`, or the three parts of the loop
+for-head = for-of
+         | ( "var" | "let" | "const" ) binding-target "in" expression("in")
+         | assign-target "in" expression("in")
+         | ( ( "var" | "let" | "const" ) binding-list("no") | [ expression("no") ] ) ";" [ expression("in") ] ";" [ expression("in") ]
+for-of   = ( "var" | "let" | "const" ) binding-target "of" assignment("in") | !"let" assign-target "of" assignment("in")
+
+; ---- declarations and patterns (13.3, 14.3.3, 13.15.5): the one shape of pattern binds names (T is a binding-target) or assigns to targets ----
+binding-list(I in "in" | "no") := binding(I) 1*( "," binding(I) ) | binding(I)
+binding(I in "in" | "no")      := identifier "=" assignment(I) | identifier | pattern(binding-target) "=" assignment(I)
+binding-target  = identifier | pattern(binding-target)
+assign-target   = pattern(assign-target) | simple-target
+simple-target   = call-head 1*suffix | identifier | "(" simple-target rpar
+pattern(T)      := "[" holes(element(T) | rest(T) !",") rbrk | "{" list(entry(T) | rest(T) !",") rbrace
+element(T)      := T "=" assignment("in") | T
+entry(T)        := property-key ":" element(T) | identifier [ "=" assignment("in") ]
+rest(T)         := "..." T
+list(E)         := [ E *( "," E ) [ "," ] ]
+holes(E)        := [ E ] *( "," [ E ] )
+
+; ---- functions and classes (15) ----
+function-form(N) := [ nolt("async") ] "function" [ "*" ] N parameters(rpar) function-block
+parameters(C)    := "(" list(element(binding-target) | rest(binding-target) !",") C
+function-block   = "{" function-body rbrace
+class-form(N)    := "class" N [ "extends" lhs ] "{" *class-element rbrace
+class-element    = ";" | "static" ( "{" *item("top") rbrace | class-member ) | class-member
+class-member     = method(class-key) | ends(class-key "=" assignment("in") | class-key)
+class-key        = property-key | private-name
+property-key     = property-name | string | number | "[" assignment("in") "]"
+method(N) := nolt("async") [ "*" ] N parameters(rpar) function-block
+    | "*" N parameters(rpar) function-block
+    | "get" N "(" ")" function-block | "set" N "(" element(binding-target) ")" function-block
+    | N parameters(rpar) function-block
+
+; ---- expressions (13) ----
+expression(I in "in" | "no") := assignment(I) 1*( "," assignment(I) ) | assignment(I)
+assignment(I in "in" | "no") := arrow(I) | yield-form(I) | assign(I)
+assign(I in "in" | "no")     := conditional(I) !assign-op | pattern(assign-target) "=" assignment(I) | simple-target assign-op assignment(I)
+assign-op = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "<<=" | ">>=" | ">>>=" | "&=" | "^=" | "|=" | "&&=" | "||=" | "??="
+yield-form(I in "in" | "no") := bare("yield") eol | bare("yield") &( ")" | "]" | "}" | "," | ";" | ":" ) | bare("yield") [ "*" ] assignment(I)
+arrow(I in "in" | "no") := ( nolt("async") arrow-params | arrow-params ) "=>" ( "{" function-body rbrace | assignment(I) )
+arrow-params = arrow-id | parameters(arrow-rpar)
+
+conditional(I in "in" | "no") := short(I) "?" assignment("in") ":" assignment(I) | short(I)
+short(I in "in" | "no") := binary(1, I) 1*( "??" binary(1, I) )
+    | binary(1, I) 1*( "&&" binary(1, I) ) 1*( "||" and(I) ) | binary(1, I) 1*( "&&" binary(1, I) ) | binary(1, I) 1*( "||" and(I) )
+    | binary(1, I)
+and(I in "in" | "no")   := binary(1, I) 1*( "&&" binary(1, I) ) | binary(1, I)
+binary(N in 1..8, I in "in" | "no") := binary(N+1, I) 1*( op(N, I) binary(N+1, I) ) | binary(N+1, I)
+binary(9, I) := unary
+op(1, I) := "|"
+op(2, I) := "^"
+op(3, I) := "&"
+op(4, I) := "===" | "!==" | "==" | "!="
+op(5, I) := "<=" | ">=" | "<" | ">" | "instanceof" | in-op(I)
+op(6, I) := ">>>" | "<<" | ">>"
+op(7, I) := add-op
+op(8, I) := "*" | "/" | "%"
+in-op("in") := "in"
+in-op("no") := !any any
+
+unary-bare = unary-op unary-bare | update
+unary      = unary-op unary-bare | exponent
+exponent   = update "**" unary | update
+unary-op   = sign-op | "typeof" | "void" | "delete" | "await"
+update     = incr simple-target | lhs !incr-ahead | lhs eol | simple-target incr
+
+lhs       = call-head 1*suffix | call-head
+call-head = new-form | "import" ( "." bare("meta") | "(" assignment("in") [ "," [ assignment("in") [ "," ] ] ] rpar ) | "super" &( "(" | "." | "[" ) | primary
+new-form  = "new" ( "." bare("target") | new-callee arguments | new-callee !qdot )
+new-callee = new-head 1*member | new-head
+new-head   = new-form | "super" &( "." | "[" ) | primary
+member    = "." ( property-name | private-name ) | "[" expression("in") rbrk | template(esc-any)
+suffix    = member | arguments | qdot ( property-name | private-name | "[" expression("in") rbrk | arguments )
+arguments = "(" list(element) rpar
+element   = "..." assignment("in") | assignment("in")
+
+primary = keyword-value | number | string | regex | template(esc-tpl) | private-name &"in"
+        | function-form([ identifier ]) | class-form([ identifier ]) | identifier | "(" expression("in") rpar
+        | "[" holes(element) rbrk | "{" list(property) rbrace
+property = "..." assignment("in") | method(property-key) | property-key ":" assignment("in") | identifier
+template(E) := tpl-full(E) | tpl-head(E) expression("in") *( tpl-mid(E) expression("in") ) tpl-tail(E)
+
+; ---- modules (16.2) ----
+module-item = ends("import" ( string | import-clause "from" string ))
+            | "export" "default" ( function-form([ identifier ]) | class-form([ identifier ]) | ends(assignment("in")) )
+            | "export" ends("*" [ "as" module-name ] "from" string | named-exports "from" string | named-exports)
+            | "export" ( declaration | ends("var" binding-list("in")) )
+            | item("top")
+import-clause = identifier "," ( "*" "as" identifier | named-imports ) | identifier | "*" "as" identifier | named-imports
+named-imports = "{" list(module-name "as" identifier | identifier) rbrace
+named-exports = "{" list(module-name "as" module-name | module-name) rbrace
+module-name   = property-name | string

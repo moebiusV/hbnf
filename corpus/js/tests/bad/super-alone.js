@@ -1,0 +1,2 @@
+// bad: super alone
+super;

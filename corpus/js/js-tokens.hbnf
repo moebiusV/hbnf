@@ -1,0 +1,113 @@
+; The lexical grammar of ECMAScript 2023 (ECMA-262 14th edition, clause 12): white space, comments,
+; names, numbers, strings, templates and regular expressions.  A token has no blank inside it, so this
+; file skips none (`whitespace none`).  js.hbnf says where the blanks go, and how a line end matters.
+;
+; Every token that can be the last one of a statement ends with `*inl`: the blanks and comments on the same
+; line.  Then `eol`, a test that sees the position the token ended at and before the blanks after it are
+; skipped, says whether a line end follows at once, and that is all that automatic semicolon insertion and
+; the restricted productions (`return` and its operand, `x` and `++`) need to know.
+whitespace none
+prefix none
+include "../../grammars/common.hbnf"
+include "js-unicode.hbnf"
+
+BS = 0x5C
+
+; ---- white space and line ends (12.2, 12.3), comments (12.4), and Annex B's HTML-like comments ----
+lt             = 0x0A | 0x0D | 0x2028 | 0x2029
+blank          = 0x09 | 0x0B | 0x0C | 0x20 | 0xA0 | 0xFEFF | 0x1680 | 0x2000..0x200A | 0x202F | 0x205F | 0x3000
+line-comment   = "//" *~lt
+block-comment  = "/*" *( ~0x2A | 1*0x2A ~( 0x2A | 0x2F ) ) 1*0x2A 0x2F
+inline-comment = "/*" *( ~( 0x2A | lt ) | 1*0x2A ~( 0x2A | 0x2F | lt ) ) 1*0x2A 0x2F
+html-open      = "<!--" *~lt
+html-close     = lt close-tail
+close-tail     = *( blank | inline-comment ) "-->" *~lt
+hashbang       = "#!" *~lt
+
+; the blanks and comments that stand on one line, after a token
+inl = *( blank | line-comment | inline-comment | html-open )
+
+; The white space between two tokens: blanks, line ends and comments.
+ws = blank | lt | line-comment | block-comment | html-open | html-close
+
+; what `=>` needs just before it: the name or the `)` on the same line, no line end between (12.9.1: no LineTerminator before `=>`)
+arrow-ahead = *inl "=>"
+arrow-id    = identifier &arrow-ahead
+arrow-rpar  = ")" &arrow-ahead
+incr-ahead  = "++" | "--"
+
+; ---- names (12.7) ----
+; A name is read in two ways, so that the long tables of non-ASCII letters are looked at only for a name that
+; has one: the ASCII way (`$`, `_`, letters, digits, \u escapes), and, when the name goes on with a code
+; point above 127, the way that checks that code point.  `word` is the loose run that a keyword is read against.
+plain-start = 0x24 | 0x41..0x5A | 0x5F | 0x61..0x7A
+plain-part  = plain-start | 0x30..0x39
+ascii-start = plain-start | escape
+ascii-part  = plain-part | escape
+escape      = BS unicode-esc
+; a code point is 0 to 10FFFF, with any zeros before it
+code-point  = 1*0x30 | *0x30 ( nonzero-hex 0*4HEXDIG | 0x31 0x30 4HEXDIG )
+nonzero-hex = 0x31..0x39 | 0x41..0x46 | 0x61..0x66
+high        = 0x80..0x10FFFF
+word-char   = 0x24 | 0x30..0x39 | 0x41..0x5A | 0x5F | 0x61..0x7A | BS | high
+word        = word-char *word-char
+ascii-name  = ascii-start *ascii-part
+exact-name  = 1*exact-part
+exact-start = plain-start | id-start-high
+exact-part  = plain-part | id-part-high
+ident-name  = ascii-name !high | &exact-start exact-name
+
+reserved = "break" | "case" | "catch" | "class" | "const" | "continue" | "debugger" | "default" | "delete" | "do"
+         | "else" | "enum" | "export" | "extends" | "false" | "finally" | "for" | "function" | "if" | "import" | "in"
+         | "instanceof" | "new" | "null" | "return" | "super" | "switch" | "this" | "throw" | "true" | "try"
+         | "typeof" | "var" | "void" | "while" | "with"
+plain-word    = word - reserved
+identifier    = &plain-word ident-name *inl
+property-name = ident-name *inl
+private-name  = "#" ident-name *inl
+value-word    = "this" | "null" | "true" | "false"
+keyword-value = value-word *inl
+
+; ---- numeric literals (12.9.3), with the separators of ES2021, bigint, and the legacy octal forms of Annex B ----
+number-text = r"0[xX][0-9a-fA-F]+(_[0-9a-fA-F]+)*n?|0[oO][0-7]+(_[0-7]+)*n?|0[bB][01]+(_[01]+)*n?|(0|[1-9](_?[0-9])*)n|0[0-7]+|0[0-9]*[89][0-9]*(\.[0-9]*)?([eE][+-]?[0-9]+)?|(0|[1-9](_?[0-9])*)(\.([0-9](_?[0-9])*)?)?([eE][+-]?[0-9](_?[0-9])*)?|\.[0-9](_?[0-9])*([eE][+-]?[0-9](_?[0-9])*)?"
+number      = number-text !ascii-part !id-start-high *inl
+
+; ---- string literals (12.9.4): a line end only after a backslash ----
+quote2      = 0x22
+quote1      = 0x27
+string      = ( quote2 *( ~( quote2 | BS | 0x0A | 0x0D ) | BS esc ) quote2 | quote1 *( ~( quote1 | BS | 0x0A | 0x0D ) | BS esc ) quote1 ) *inl
+esc         = CR LF | ~( 'x' | 'u' | 0x0A | 0x0D ) | hex-esc | unicode-esc | lt
+hex-esc     = 'x' 2HEXDIG
+unicode-esc = 'u' ( 4HEXDIG | '{' code-point '}' )
+
+; ---- template literals (12.9.6): the pieces between and around the substitutions.  E is the escape that may follow a backslash:
+; `esc-tpl` in a template, and any character in a tagged one (ES2018: the tag is handed the text as it is) ----
+esc-tpl   = CR LF | nul-esc | ~( DIGIT | 'x' | 'u' | 0x0A | 0x0D ) | hex-esc | unicode-esc | lt
+nul-esc   = '0' !DIGIT
+esc-any   = 0x00..0x10FFFF
+lbrace    = 0x7B
+tpl-body(E) := *( ~( 0x60 | BS | 0x24 ) | 0x24 !lbrace | BS E )
+tpl-full(E) := 0x60 tpl-body(E) 0x60 *inl
+tpl-head(E) := 0x60 tpl-body(E) 0x24 0x7B
+tpl-mid(E)  := 0x7D tpl-body(E) 0x24 0x7B
+tpl-tail(E) := 0x7D tpl-body(E) 0x60 *inl
+
+; ---- regular expression literals (12.9.5): the body is read, not checked ----
+re-class = 0x5B *( ~( 0x5D | BS | lt ) | BS ~lt ) 0x5D
+re-char  = ~( 0x2F | BS | 0x5B | lt ) | BS ~lt | re-class
+re-first = ~( 0x2A | 0x2F | BS | 0x5B | lt ) | BS ~lt | re-class
+regex    = 0x2F re-first *re-char 0x2F *ascii-part *inl
+
+; ---- punctuators that can end a statement, or that a restriction looks at ----
+rpar     = ")" *inl
+rbrk     = "]" *inl
+rbrace   = "}" *inl
+incr     = ( "++" | "--" ) *inl
+add-op   = "+" !( "+" | "=" ) | "-" !( "-" | "=" )
+qdot     = "?." !DIGIT
+sign-op  = "+" !"+" | "-" !"-" | "!" | "~"
+
+; the keywords that end a statement (a `return` with no operand), and the ones with no line end after them
+bare(K)   := K *inl
+nolt(K)   := K *inl !( lt | "/*" )
+

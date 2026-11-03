@@ -1,0 +1,97 @@
+pass pass/465b79616fdc9794.js a name that holds a \u escape after a non-ASCII letter: the table of non-ASCII letters cannot share a scanner with an escape (the generator does not finish)
+pass pass/6498dcc494193cb4.js U+2028 or U+2029 as the line terminator that ends a statement: the test for a line end (eol) sees LF and CR only
+pass pass/7b0a9215ec756496.js a multi-line comment that holds a line terminator, as the only line end between two statements: it is not taken as the line end that ends the first
+pass pass/c7e5fba8bf3854cd.js a NUL character inside a string: the C backend reads the text as a C string, which a NUL ends
+pass pass/de24062f6e293cf0.js a pattern assignment nested 20 deep: the array is read as an expression first and then as a pattern, at every level (exponential)
+pass pass/fe2d3b945530c806.js U+2028 or U+2029 as the line terminator that ends a statement: the test for a line end (eol) sees LF and CR only
+fail fail/04bc213db9cd1130.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/09af6db5fe41b857.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/0d5e450f1da8a92a.js `\8` and `\9` in a string: an error before ES2021, legal in sloppy code since (the test is older)
+fail fail/0df19c6187ef3cbc.module.js HTML-like comments are a Script feature (Annex B) and the module goal reads them too
+fail fail/11d61dbd7c1fbd1b.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/13ce2dd24993176a.js a name bound twice in one declaration: an early error, which the grammar does not check
+fail fail/147fa078a7436e0e.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/15a6123f6b825c38.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/16947dc1d11e5e70.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/175c1c09015415e1.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/19699bcdea35eb46.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/1a32df2e8d4bea98.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/1ad1143aa95cf8bf.js an escape in a name that is not a name character: an early error, which the grammar does not check
+fail fail/1aefe47e20eb91fa.module.js `await` as a name in a module (the grammar reads it as an operator or a name wherever either fits)
+fail fail/1bde73ba53c309c8.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/2226edabbd2261a7.module.js `await` as a name in a module (the grammar reads it as an operator or a name wherever either fits)
+fail fail/247e71c8786de6b6.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/2774b3cce5a09798.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/295b0ed4d7872983.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/29fb02620b662387.js `let` as a name in a lexical declaration: an early error, which the grammar does not check
+fail fail/2b8d54f6fc1dcbd6.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/2d46c7c14cfb0330.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/2e95646f9143563e.js an escape in a name that is not a name character: an early error, which the grammar does not check
+fail fail/3078b4fed5626e2a.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/30f6acf0bf2f7f06.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/32529ec69f32cac1.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/328fddc7bdffb499.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/3425ca087ec1adb1.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/37b860dbda4d4c9c.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/37cb7557997d4fd6.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/37e9fb0470e7ec3d.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/3990bb94b19b1071.module.js a module is strict: a legacy octal escape is an error there (the grammar does not know the mode)
+fail fail/3bc2b27a7430f818.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/3d3e6ce2b81a224d.js an invalid pattern nested 20 deep: refused after a time exponential in the depth (here: not finished)
+fail fail/4882f5db31935a04.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/4a887c2761eb95fb.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/4ce3c0a393c624d5.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/4ec83547ebdea18c.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/5301846f80919b63.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/5c63ac420337d014.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/5d42f9f543d5f55c.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/5e6f67a0e748cc42.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/618f5bdbe9497960.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/66e383bfd18e66ab.js a regular expression with the u flag that does not compile: an early error, the body of a regular expression is not read
+fail fail/66e667cc2b718770.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/68766c3f46c4851a.js an escape in a name that is not a name character: an early error, which the grammar does not check
+fail fail/6ac4f95d48362a35.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/721efc4cbc95a6a0.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/748656edbfb2d0bb.js `\8` and `\9` in a string: an error before ES2021, legal in sloppy code since (the test is older)
+fail fail/75f1656578c2d7e8.js an escape in a name that is not a name character: an early error, which the grammar does not check
+fail fail/7624feb2a003e001.js an escape in a name that is not a name character: an early error, which the grammar does not check
+fail fail/78c215fabdf13bae.js a regular expression with the u flag that does not compile: an early error, the body of a regular expression is not read
+fail fail/78e861dca5c2377d.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/79f882da06f88c9f.js `\8` and `\9` in a string: an error before ES2021, legal in sloppy code since (the test is older)
+fail fail/80bfa9f27278bbba.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/84633c379e4010bf.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/8dc484a35dd0dc16.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/8fdb7e6ddfb89e3a.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/92b6af54adef3624.js `\8` and `\9` in a string: an error before ES2021, legal in sloppy code since (the test is older)
+fail fail/938db8c9f82c8cb5.module.js a module is strict: a legacy octal literal is an error there (the grammar does not know the mode)
+fail fail/974222e3683f284a.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/98204d734f8c72b3.js a class field without an initializer: an error in ES2015, valid since ES2022 (the test is older than the fields)
+fail fail/9f15affa01060595.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/a028a9ab5777d337.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/a651ee9d0db08692.js `let` as a name inside a pattern in a lexical declaration: an early error, which the grammar does not check
+fail fail/a8beb1480f385441.js a call as the target of an assignment: an early error of the specification, which the grammar does not check
+fail fail/aa232c1eb3da8805.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/ab35979364766bf0.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/abc46381e4e6bcca.js an escape in a name that is not a name character: an early error, which the grammar does not check
+fail fail/af3a9b653481f43a.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/b3b14fb0e398703d.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/befeaa367d8f27db.js an escape in a name that is not a name character: an early error, which the grammar does not check
+fail fail/bf49ec8d96884562.js a regular expression with the u flag that does not compile: an early error, the body of a regular expression is not read
+fail fail/bfadeead1ddbd122.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/c0a8cdfa09f3b86c.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/c5af6ad6ff9d213f.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/ca2716d236c027cd.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/ca27a03a9d04acd2.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/d04aecd166354406.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/d0804b4856dbb6be.module.js HTML-like comments are a Script feature (Annex B) and the module goal reads them too
+fail fail/d201e6e384a593bb.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/d3ac25ddc7ba9779.module.js HTML-like comments are a Script feature (Annex B) and the module goal reads them too
+fail fail/d4cf8ae9018f6a28.js an escape in a name that is not a name character: an early error, which the grammar does not check
+fail fail/d5bc0fb6d6e472cb.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/e115bbef8bec1a84.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/e4a43066905a597b.js a regular expression with the u flag that does not compile: an early error, the body of a regular expression is not read
+fail fail/ea4d962dac83e2a1.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/ef81b93cf9bdb4ec.js a class field with an initializer: an error in ES2015, valid since ES2022 (the test is older than the fields)
+fail fail/efb9e5d27e1cfa30.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
+fail fail/f6924dd818b18733.js strict mode (a "use strict" directive): the grammar is the sloppy Script and keeps no mode
+fail fail/fc7ed197a376fa5f.js `yield` or `await` outside a generator or an async function, or as a name inside one: the grammar does not know which function it is in
