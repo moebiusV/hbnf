@@ -5,8 +5,11 @@ Writes each COBOL program embedded in GnuCOBOL's autotest files (AT_DATA([name.c
 OUT-DIR, named after the test file and the program's number in it.  The tests are fixed format (a sequence area,
 an indicator column, the text from column 8 to 72); the conversion is the reference format's own: the first seven
 columns go, a `*` or `/` in column 7 makes a comment line, a `D` makes a debugging line (also dropped), and nothing
-after column 72 is read.  A program with a continuation line (`-` in column 7) or a tab is left out, as one with a
-`>>SOURCE` directive that already says its format; one that the tests compile with -free is copied as it is.
+after column 72 is read.  A tab goes to the next multiple of 8 columns first; a continuation line (`-` in column 7) is joined to the
+line before it, and when that line ends inside a nonnumeric literal, which runs through column 72, the literal goes on after the
+quote that opens the continuation.  A program with a `>>SOURCE FORMAT` directive that changes the format in it is left out (it is the
+case a switch of grammar is for), as is one that has a continuation the rules above cannot join; one with `>>SOURCE FORMAT FREE`
+only, and one that the tests compile with -free, is copied as it is.
 Prints how many were written and how many left out, and why."""
 import os, re, sys
 
@@ -30,17 +33,38 @@ def blocks(text):
         end = text.find('AT_CLEANUP', i)
         yield m.group(1), body, text[i:end if end >= 0 else i + 4000]
 
+def open_quote(text):
+    """The quote character of a nonnumeric literal that `text` leaves open, or ''."""
+    q = ''
+    for c in text:
+        if q:
+            if c == q:
+                q = ''
+        elif c in '"\'':
+            q = c
+    return q
+
 def to_free(lines):
     out = []
     for l in lines:
-        l = l.rstrip('\n')
+        l = l.rstrip('\n').expandtabs(8)
         ind = l[6] if len(l) > 6 else ' '
-        if ind in '*/':
-            out.append('')
-        elif ind in 'Dd':
+        if ind in '*/' or ind in 'Dd':
             out.append('')
         elif ind == '-':
-            return None
+            c = l[7:72].lstrip()
+            prev = next((i for i in range(len(out) - 1, -1, -1) if out[i].strip()), None)
+            if prev is None:
+                return None
+            q = open_quote(out[prev])
+            if q:
+                # the literal runs through column 72: pad the line before, then go on after the opening quote
+                if not c.startswith(q):
+                    return None
+                out[prev] = out[prev].ljust(72) + c[1:]
+                out[prev + 1:] = []
+            else:
+                out.append('       ' + c)
         else:
             out.append('       ' + l[7:72] if len(l) > 7 else '')
     return out
@@ -63,11 +87,10 @@ def main():
             if lines and lines[0].strip() == '':
                 lines = lines[1:]
             why = None
-            if any('\t' in l for l in lines):
-                why = 'tab'
-            elif re.search(r'>>\s*SOURCE', body, re.I):
+            fmts = re.findall(r'>>\s*SOURCE\s+(?:FORMAT\s+)?(?:IS\s+)?(\w+)', body, re.I)
+            if any(f.upper() != 'FREE' for f in fmts):
                 why = 'source directive'
-            free = bool(re.search(r'-free\b|-fformat=free|\$COMPILE_ONLY.*-F\b', tail))
+            free = bool(re.search(r'-free\b|-fformat=free|\$COMPILE_ONLY.*-F\b', tail)) or bool(fmts)
             if why is None and not free:
                 conv = to_free(lines)
                 if conv is None:
