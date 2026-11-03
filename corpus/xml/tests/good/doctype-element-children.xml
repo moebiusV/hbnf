@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ELEMENT a (b,c)><!ELEMENT b (c|d|e)><!ELEMENT c (d)><!ELEMENT d (e?,f*,g+)><!ELEMENT e ((b|c)+,(d,e)*)?>]><a/>

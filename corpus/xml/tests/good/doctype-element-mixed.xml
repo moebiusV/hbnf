@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ELEMENT a (#PCDATA)><!ELEMENT b (#PCDATA)*><!ELEMENT c ( #PCDATA | a | b )*><!ELEMENT d (#PCDATA|a)*>]><a/>

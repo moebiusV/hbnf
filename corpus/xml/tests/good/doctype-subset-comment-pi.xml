@@ -1,0 +1,3 @@
+<!DOCTYPE a [<!-- c --><?pi x?>
+<!ELEMENT a ANY>
+<!-- d -->]><a/>

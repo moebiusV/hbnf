@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ELEMENT x:a (x:b)>]><a/>

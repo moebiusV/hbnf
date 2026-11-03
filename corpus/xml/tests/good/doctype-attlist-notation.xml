@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!NOTATION n SYSTEM "x"><!ATTLIST a e NOTATION (n|m) #IMPLIED>]><a/>

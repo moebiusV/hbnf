@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ATTLIST x:a xmlns:x CDATA #FIXED "urn:x" x:b CDATA #IMPLIED>]><a/>

@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ENTITY e SYSTEM "e.xml"><!ENTITY f PUBLIC "-//X//" "f.xml">]><a/>

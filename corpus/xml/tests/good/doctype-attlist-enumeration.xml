@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ATTLIST a e (x|y|z) "x" f ( 1 | 2.3 | a:b ) #REQUIRED>]><a/>

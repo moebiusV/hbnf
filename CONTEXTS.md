@@ -931,3 +931,12 @@ Each was met writing `corpus/markdown`; the first two are the user's decisions, 
 14. **A token exception** `name - "on"` with a literal operand is refused with "expected a literal, name, or group"; the operand has to be a rule.
 15. **Letters in a rule of characters** must be `'e'`, not `"e"`: `"e"` is read as a whole word and fails on `e10`.
 
+**More findings, from the XML grammar (`corpus/xml`, 2026-11-03; none fixed).**
+16. **`--layout=tape` with a back-reference** writes C that does not compile (`cl_tag_N` undeclared): `tests/backref/tags.hbnf --layout=tape` is the smallest case.  So a closing tag cannot be checked in a tape.
+17. **`--layout=tape` and a lookahead over a rule** (`legal = *Char !any`, `document = &legal ...`) is refused ("an %emit inside a lookahead"), also when `legal` is `hidden`; the workaround is about three times slower (37 ms against 11 ms per MB).  The silent variant of item 4 is the cure.
+18. **Ada**: a pattern rule's instance is named from its literal arguments, and a `-` or `_` in an argument gives `__`, which Ada refuses (`t("--")`); passing the literal through a rule avoids it.  The same as item 7, for Ada.
+19. **Rust**: a rule named `default` becomes a struct `Default` that shadows the trait, and `Default::default()` fails to compile.
+20. **Rust**: the generated `let mut cp_tag = 0usize` is assigned again before it is read, which `-D warnings` rejects (`unused_assignments`); `tests/xml.sh` shims `rustc -A unused-assignments`.
+21. **C**: a NUL byte ends the text, so `<a/>` then a NUL and more is accepted; and an overlong UTF-8 sequence (`\xC0\x80`) is read as valid while `\xFF` is refused.
+22. **A lookahead rule inside a rule of characters always warns** ("read a character at a time"); `legal`, `chardata` and the `quoted(...)` and `till(...)` instances all do.
+

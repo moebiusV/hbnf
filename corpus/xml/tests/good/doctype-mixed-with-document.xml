@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE note [
+<!ELEMENT note (to,body)>
+<!ELEMENT to (#PCDATA)>
+<!ELEMENT body (#PCDATA)>
+<!ATTLIST note id ID #IMPLIED>
+<!ENTITY sig "-- me">
+]>
+<note id="n1"><to>You</to><body>Hi &sig;</body></note>

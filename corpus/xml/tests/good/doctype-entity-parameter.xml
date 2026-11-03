@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ENTITY % p "<!ELEMENT a ANY>"><!ENTITY % q SYSTEM "q.dtd">%p;%q;]><a/>

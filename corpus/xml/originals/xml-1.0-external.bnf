@@ -1,0 +1,13 @@
+# The rest of the productions of XML 1.0 (Fifth Edition): the ones a check of a document entity with its
+# internal subset does not use (see xml-1.0-productions.bnf).
+Names ::= Name (#x20 Name)*
+Nmtokens ::= Nmtoken (#x20 Nmtoken)*
+extSubset ::= TextDecl? extSubsetDecl
+extSubsetDecl ::= ( markupdecl | conditionalSect | DeclSep)*
+conditionalSect ::= includeSect | ignoreSect
+includeSect ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
+ignoreSect ::= '<![' S? 'IGNORE' S? '[' ignoreSectContents* ']]>'
+ignoreSectContents ::= Ignore ('<![' ignoreSectContents ']]>' Ignore)*
+Ignore ::= Char* - (Char* ('<![' | ']]>') Char*)
+TextDecl ::= '<?xml' VersionInfo? EncodingDecl S? '?>'
+extParsedEnt ::= ( TextDecl? content )

@@ -1,0 +1,91 @@
+; XML 1.0 (Fifth Edition) well-formed documents, with the lexical rule of Namespaces in XML 1.0: a name is
+; [prefix ":"] local, read and not resolved.  The specification's productions are the baseline; this is
+; the same language with these differences:
+;
+; * The legal characters (Char) are checked once, for the whole document, before it is read: a character
+;   outside Char is an error wherever it is, so no rule below says "Char minus ...", and `~"<"` stands
+;   for the specification's [^<].
+; * "anything up to a terminator" is one rule, `till(T)`: a comment's text (up to --), a processing
+;   instruction's (up to ?>) and a CDATA section's (up to ]]>).
+; * A quoted literal is `quoted(C)`, C the character of it: the AttValue, the EntityValue, the
+;   SystemLiteral and the PubidLiteral in either quote.  A pseudo-attribute of the XML declaration
+;   (version, encoding, standalone) is `pseudo(K, V)`.  A list in parentheses of names is `alts(X)`.
+; * A choice and a sequence in an element declaration are one rule, `group`; and the end tag repeats the
+;   start tag's name by a back-reference (`qname as tag` ... `$tag`, as corpus/mustache does).
+;
+; Not done: what the syntax cannot say or what needs the declarations.  A character reference to a
+; character outside Char (&#0;) is read, as are a repeated attribute and a reference to an entity that
+; is not declared; entities are not expanded; the DOCTYPE name need not be the root's; the encoding
+; declaration is read and not used; the external subset (conditional sections) is another file's.  A
+; byte order mark at the very start is accepted (it is the encoding's, not the document's).
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+document = &legal [ 0xFEFF ] [ xml-decl ] *misc [ doctype *misc ] element *misc
+misc     = remark | pi | S
+legal    = *Char !any
+Char     = 0x09 | 0x0A | 0x0D | 0x20..0xD7FF | 0xE000..0xFFFD | 0x10000..0x10FFFF
+any      = 0x00..0x10FFFF
+
+hidden S  = 1*( WSP | CR | LF )
+hidden eq = [ S ] "=" [ S ]
+
+; ---- the document ----
+element    = "<" qname attributes "/>"
+           | "<" qname as tag attributes ">" content "</" $tag [ S ] ">"
+attributes = *( S attribute ) [ S ]
+attribute  = qname eq quoted(att-char)
+att-char   = ~( "<" | "&" ) | reference
+content    = *( element | chardata | reference | cdata | pi | remark )
+chardata   = 1*( !( "<" | "&" | "]]>" ) any )
+reference  = "&" ( ncname | "#" ( 1*DIGIT | "x" 1*HEXDIG ) ) ";"
+cdata      = "<![CDATA[" till("]]>") "]]>"
+remark     = "<!--" till(dashes) "-->"
+pi         = "<?" pi-target [ S till("?>") ] "?>"
+pi-target  = ncname - reserved
+dashes     = "--"
+reserved   = i"xml"
+
+till(T)   := *( !T any )
+quoted(C) := DQUOTE *( !DQUOTE C ) DQUOTE | "'" *( !"'" C ) "'"
+
+; ---- the prolog ----
+xml-decl    = "<?xml" pseudo("version", "1." 1*DIGIT) [ pseudo("encoding", enc-name) ] [ pseudo("standalone", "yes" | "no") ] [ S ] "?>"
+pseudo(K, V) := S K eq ( DQUOTE V DQUOTE | "'" V "'" )
+enc-name    = ALPHA *( ALNUM | "." | "_" | "-" )
+
+doctype     = "<!DOCTYPE" S qname [ S external-id ] [ S ] [ "[" *( markupdecl | "%" ncname ";" | S ) "]" [ S ] ] ">"
+external-id = "SYSTEM" S quoted(any) | "PUBLIC" S quoted(pubid-char) S quoted(any)
+pubid-char  = r"[-a-zA-Z0-9 \r\n'()+,./:=?;!*#@$_%]"
+
+; ---- the declarations of the internal subset (a parameter-entity reference may stand between them, not inside one) ----
+markupdecl    = element-decl | attlist-decl | entity-decl | notation-decl | pi | remark
+element-decl  = "<!ELEMENT" S qname S contentspec [ S ] ">"
+contentspec   = "EMPTY" | "ANY" | mixed | group [ occ ]
+mixed         = "(" [ S ] "#PCDATA" ( 1*( sep("|") qname ) [ S ] ")*" | [ S ] ")" [ "*" ] )
+group         = "(" [ S ] cp ( 1*( sep("|") cp ) | *( sep(",") cp ) ) [ S ] ")"
+cp            = ( qname | group ) [ occ ]
+occ           = "?" | "*" | "+"
+
+attlist-decl  = "<!ATTLIST" S qname *( S qname S att-type S default-decl ) [ S ] ">"
+att-type      = "CDATA" | tokenized | "NOTATION" S alts(ncname) | alts(nmtoken)
+tokenized     = r"ID(REFS?)?|ENTIT(Y|IES)|NMTOKENS?"
+default-decl  = "#REQUIRED" | "#IMPLIED" | [ "#FIXED" S ] quoted(att-char)
+
+entity-decl   = "<!ENTITY" S ( "%" S ncname S ( entity-value | external-id )
+                             | ncname S ( entity-value | external-id [ S "NDATA" S ncname ] ) ) [ S ] ">"
+entity-value  = quoted(entity-char)
+entity-char   = ~( "%" | "&" ) | reference
+notation-decl = "<!NOTATION" S ncname S ( external-id | "PUBLIC" S quoted(pubid-char) ) [ S ] ">"
+
+sep(C)       := [ S ] C [ S ]
+alts(X)      := "(" [ S ] X *( sep("|") X ) [ S ] ")"
+
+; ---- names: the Fifth Edition's NameStartChar and NameChar, without the colon, which a QName places ----
+qname      = ncname [ ":" ncname ]
+ncname     = name-start *name-char
+nmtoken    = 1*( name-char | ":" )
+name-start = ALPHA | "_" | 0xC0..0xD6 | 0xD8..0xF6 | 0xF8..0x2FF | 0x370..0x37D | 0x37F..0x1FFF | 0x200C..0x200D
+           | 0x2070..0x218F | 0x2C00..0x2FEF | 0x3001..0xD7FF | 0xF900..0xFDCF | 0xFDF0..0xFFFD | 0x10000..0xEFFFF
+name-char  = name-start | "-" | "." | DIGIT | 0xB7 | 0x300..0x36F | 0x203F..0x2040

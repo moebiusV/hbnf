@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ATTLIST a r CDATA #REQUIRED i CDATA #IMPLIED f CDATA #FIXED "v" d CDATA 'd' amp CDATA "a &amp; b &#65; &lt;">]><a r="1"/>
