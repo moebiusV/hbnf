@@ -1,0 +1,78 @@
+; The text ends with a line feed (the driver adds one): `eol` is no text, so the end of a line is `nl`.
+; The Markdown that Claude Code writes for a document: headings, paragraphs, bullet and numbered lists
+; that nest, fenced code, tables, block quotes, rules, and the inline marks (code, bold, italic,
+; strike, links, images).  It is a subset of CommonMark with GitHub's tables, not the whole of either.
+;
+; Indentation is a parameter, as in YAML: `block(N)` is a block whose container's text starts in
+; column N, and a list item at column N holds blocks at its own content column M, which the parser
+; reads off the line (`%col M`).
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+; what is matched and kept by nothing: the blanks, the line ends, the tests that only look
+hidden SP WSP LF CR DQUOTE nl blank starter cell-end ticks rest dash dashes title
+flat code                                   ; a line of code stands for the text it holds
+
+document = *blank *( block(0) *blank )
+block(N in 0..) := heading | fence(N) | rule | quote(N) | table(N) | list(N) | paragraph(N)
+
+; ---- blocks
+heading   = hashes 1*SP 1*inline *WSP nl
+hashes    = 1*6'#'
+rule      = dashes *WSP nl
+dashes    = 3*'-' | 3*'*' | 3*'_'
+paragraph(N in 0..) := line *( LF %spaces N *SP !starter line ) nl
+quote(N in 0..)     := qline *( %spaces N qline )
+qline     = '>' *SP [ line ] nl
+line      = 1*inline *WSP
+
+; a line that opens some other block ends a paragraph
+starter   = r"[#>|]|`{3}|[-*+] |[0-9]{1,9}[.)] "
+
+; a fence closes at the first line that starts with ticks (a fence of four ticks that holds a fence
+; of three is not told apart: that needs the closing ticks to be the opening ones); a line of code is
+; any line that does not begin with three of them
+fence(N in 0..) := ticks [ info ] nl *( code(N) nl ) %spaces N *SP ticks rest nl
+ticks     = 3*'`'
+rest      = *'`'
+info      = *SP 1*~( SP | LF | '`' )
+code(N in 0..) := %spaces N codeline | codeline
+codeline  = r" *([^` \r\n][^\r\n]*|`{1,2}([^`\r\n][^\r\n]*)?)?"
+
+list(N in 0..) := item(N) *( *blank %spaces N item(N) )
+item(N in 0..) := marker 1*SP %col M block(M) *( *blank %spaces M *SP %col K block(K) )
+marker    = bullet | ordinal
+bullet    = '-' | '*' | '+'
+ordinal   = 1*9DIGIT ( '.' | ')' )
+
+table(N in 0..) := row %spaces N delimiter *( %spaces N *SP row )
+row       = '|' 1*( cell '|' ) *WSP nl
+cell      = *WSP *( !cell-end inline ) *WSP
+cell-end  = *WSP '|'
+delimiter = '|' 1*( *WSP [ ':' ] dash [ ':' ] *WSP '|' ) *WSP nl
+
+dash      = 1*'-'
+
+; ---- inline marks
+inline    = code-span | strong | emph | strike | image | link | autolink | escape | text | lone
+code-span = r"`[^`\n]+`"
+; an opening mark is not followed by a space, so 2 * 3 * 4 is text
+strong    = "**" !SP 1*( !"**" inline ) "**" | "__" !SP 1*( !"__" inline ) "__"
+emph      = "*" !SP 1*( !"*" inline ) "*" | "_" !SP 1*( !"_" inline ) "_"
+strike    = "~~" !SP 1*( !"~~" inline ) "~~"
+image     = '!' '[' *~( ']' | LF ) ']' '(' dest ')'
+link      = '[' 1*( !"]" inline ) ']' '(' dest ')'
+autolink  = '<' 1*ALPHA ':' 1*~( '>' | SP | LF ) '>'
+dest      = url [ 1*SP title ]
+url       = 1*~( ')' | SP | LF )
+title     = DQUOTE *~( DQUOTE | LF ) DQUOTE
+escape    = '\\' ~( ALNUM | LF )
+lone      = '`' | '*' | '!' | '[' | ']' | '<' | '\\' | '|' | '_' | '~'
+
+; text: words with spaces between them; an underscore only inside a word, so snake_case is one
+; word and _this_ is emphasis
+text      = r"([^`*!\[\]<\\|_~ \r\n]+(_[^`*!\[\]<\\|_~ \r\n]+)*| )+"
+
+nl        = r"\r?\n"
+blank     = r"[ \t]*\r?\n"
