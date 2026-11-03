@@ -60,7 +60,12 @@ package HBNF_Compilable is
    --  Bol and Eol are the built-in rules of those names: the position is the beginning of a line (the
    --  start of the text, or just after a line feed), or a line feed, a carriage return or the end of the
    --  text follows.  Like a lookahead they move nothing.
-   type Cp_Atom_Kind is (Single, Repeat, Look, Bol, Eol);
+   --  Iter is a repetition of what is not one code point a time: a group, or a rule, with a lookahead or
+   --  a repetition of its own inside (`*( !"]]>" any )`).  Lo and Hi are the least and the most times
+   --  (Hi = 0: no most), Inner is one time's branches, a function named Fn like a lookahead's, which
+   --  says how much of the longest branch matches (0: none).  Only the C backend gets one (see
+   --  HBNF_Grammar.Set_Scan_Look); like a Repeat it takes as many as match, and does not give any back.
+   type Cp_Atom_Kind is (Single, Repeat, Look, Bol, Eol, Iter);
    type Look_Body;                                   --  completed below
    type Look_Access is access Look_Body;
    type Cp_Atom (Kind : Cp_Atom_Kind := Single) is record
@@ -73,8 +78,8 @@ package HBNF_Compilable is
             Min : Natural;                  --  minimum iterations
             Max : Natural;                  --  0 = unbounded
             Sub : Cp_Branch_Vectors.Vector; --  DNF of one iteration
-         when Look =>
-            Negative : Boolean;             --  `!x` (True) or `&x`
+         when Look | Iter =>
+            Negative : Boolean;             --  `!x` (True) or `&x`; False for an Iter
             Fn       : Ada.Strings.Unbounded.Unbounded_String;
             Inner    : Look_Access;         --  the branches of x
       end case;
@@ -99,6 +104,7 @@ package HBNF_Compilable is
    type Look_Helper is record
       Name     : Ada.Strings.Unbounded.Unbounded_String;
       Branches : Cp_Branch_Atom_Vectors.Vector;
+      Is_Iter  : Boolean := False;     --  one time of an Iter, which says how much matched
    end record;
    package Look_Helper_Vectors is new Ada.Containers.Vectors (Positive, Look_Helper);
 

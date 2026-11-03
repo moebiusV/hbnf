@@ -422,7 +422,26 @@ package body HBNF_Compilable is
          return Result;
       end Flat_Element;
 
-      --  The atom DNF (branches of Single/Repeat/Look atoms) of a pattern.
+      --  Is the rule at J one Flat can make into branches of single code points?  A repeated
+      --  rule that is not (it holds a group, a lookahead, a repetition) is a Loop's.
+      function Flat_Ok (J : Natural; Depth : Natural) return Boolean is
+      begin
+         if J = 0 or else Depth = 0 then
+            return True;
+         end if;
+         for E of Rules (J).Pattern loop
+            if E.Kind = Alt then
+               null;
+            elsif E.Min /= 1 or else E.Max /= 1 or else E.Kind not in Char_Range | Literal | Name then
+               return False;
+            elsif E.Kind = Name and then not Flat_Ok (Find (Rules, To_String (E.Name)), Depth - 1) then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Flat_Ok;
+
+      --  The atom DNF (branches of Single/Repeat/Look/Loop atoms) of a pattern.
       function Atom_Pat (P : Element_Vectors.Vector; Depth : Natural)
         return Cp_Branch_Atom_Vectors.Vector;
 
@@ -455,7 +474,33 @@ package body HBNF_Compilable is
                   --  following atom that overlaps the repetition's class
                   --  makes the branch unsatisfiable, which the author sees
                   --  as a never-matching rule rather than a wrong parse.
-                  if Rep then
+                  if Rep and then (E.Kind = Group
+                                   or else (E.Kind = Name
+                                            and then not Flat_Ok (Find (Rules, To_String (E.Name)),
+                                                                  Depth - 1)))
+                  then
+                     --  Repeated, and more than a code point (or a flat rule) at a time: an Iter,
+                     --  whose one time is a function of its own (like a lookahead's).
+                     Looks := Looks + 1;
+                     declare
+                        Mine : constant Natural := Looks;     --  (what is inside numbers its own after this one)
+                        Once : constant Cp_Branch_Atom_Vectors.Vector :=
+                          (if E.Kind = Group then Atom_Pat (E.Items, Depth - 1)
+                           else Atom (Find (Rules, To_String (E.Name)), Depth - 1));
+                        Lp : constant Cp_Atom := Cp_Atom'
+                          (Kind => Iter, Lo => E.Min,
+                           Hi => (if E.Max = -1 then 0 else Natural (E.Max)),
+                           Lo2 => 1, Hi2 => 0, Negative => False,
+                           Fn => To_Unbounded_String
+                             (Nm & "_loop_"
+                              & Ada.Strings.Fixed.Trim (Natural'Image (Mine), Ada.Strings.Left)),
+                           Inner => new Look_Body'(Branches => Once));
+                     begin
+                        for B of Branches loop
+                           B.Append (Lp);
+                        end loop;
+                     end;
+                  elsif Rep then
                      declare
                         Rpt : constant Cp_Atom :=
                           Cp_Atom'(Kind => Repeat, Lo => 0, Hi => 0, Lo2 => 1, Hi2 => 0,
@@ -527,13 +572,17 @@ package body HBNF_Compilable is
                         end loop;
                      end;
                   else
-                     --  A non-repeated Name: distribute its atom DNF.
+                     --  A non-repeated Name, or a group (its alternatives are the branches of a rule
+                     --  of its own): distribute its atom DNF.
                      declare
-                        Idx : constant Natural := Find (Rules, To_String (E.Name));
+                        Idx : constant Natural :=
+                          (if E.Kind = Name then Find (Rules, To_String (E.Name)) else 0);
                         Sub : Cp_Branch_Atom_Vectors.Vector;
                         New_Branches : Cp_Branch_Atom_Vectors.Vector;
                      begin
-                        if Idx /= 0 then
+                        if E.Kind = Group then
+                           Sub := Atom_Pat (E.Items, Depth - 1);
+                        elsif Idx /= 0 then
                            Sub := Atom (Idx, Depth - 1);
                         end if;
                         --  A referenced rule whose DNF ends in a repetition is
@@ -599,11 +648,12 @@ package body HBNF_Compilable is
          for B of Branches loop
             for A of B loop
                --  (an atom is shared by the branches a later alternation split in two)
-               if A.Kind = Look
+               if A.Kind in Look | Iter
                  and then not (for some H of Result => H.Name = A.Fn)
                then
                   Walk (A.Inner.Branches);       --  what it calls first
-                  Result.Append (Look_Helper'(Name => A.Fn, Branches => A.Inner.Branches));
+                  Result.Append (Look_Helper'(Name => A.Fn, Branches => A.Inner.Branches,
+                                              Is_Iter => A.Kind = Iter));
                end if;
             end loop;
          end loop;

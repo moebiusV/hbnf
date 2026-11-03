@@ -557,6 +557,16 @@ package HBNF_Grammar is
    function Is_Char_Rule (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean;
 
+   --  The C backend scans a rule of characters that holds a lookahead (`!x`, `&x`) where it likes and
+   --  repeats a group (`chardata = 1*( !( "<" | "&" ) any )`), instead of parsing it a character at a
+   --  time into a node for each.  The other backends do not yet, so say it, before the schema is read,
+   --  for C only.  Without it a lookahead is allowed only in the white-space rule and what it reaches.
+   procedure Set_Scan_Look (On : Boolean);
+   --  A rule of characters that is one only because of that (it holds a lookahead of its own and
+   --  repeats something): the scanner is written for it in the way a lookahead needs.
+   function Is_Wide_Rule (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean;
+
    --  True when the char rule named Nm is a lexer token: a core-type name
    --  (`int`/`str`/`word`), the root, or referenced directly by a phrase
    --  (non-char) rule.  The other char rules are building blocks, inlined

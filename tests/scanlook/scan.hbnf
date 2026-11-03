@@ -1,0 +1,25 @@
+; A lookahead inside a rule of characters.  The C parser scans these rules as one token each, where it used to read
+; them a character at a time and build a tree node for each (and say so).  The shapes of XML's character data:
+;   legal    = *Char !any                 a repetition, then a lookahead
+;   text     = 1*( !( ... ) any )         a group that repeats, with a lookahead at its head
+;   till(T)  := *( !T any )               the same, as a hyperrule
+;   quoted(C)                             two alternatives, each a repeated group with a lookahead, and a rule
+;                                         (`vchar`) with an alternative that is not a code point (`ref`).  `doc` is not text (it holds `int`), and `top`, the rule of characters with the lookahead, is the token it calls
+whitespace none
+doc     = "#" int top
+top     = &legal 1*( note | cdata | attr | text )
+legal   = *Char !any
+Char    = 0x0A | 0x0D | 0x20..0xD7FF | 0xE000..0xFFFD | 0x10000..0x10FFFF
+any     = 0x00..0x10FFFF
+text    = 1*( !( "<" | "&" | "]]>" | "@" ) any )
+note    = "<!--" till(dashes) "-->"
+dashes  = "--"
+cdata   = "<![CDATA[" till("]]>") "]]>"
+attr    = "@" 1*ALPHA "=" quoted(vchar)
+vchar   = ~( "<" | "&" ) | ref
+ref     = "&" 1*ALPHA ";"
+ALPHA   = 0x41..0x5A | 0x61..0x7A
+DQUOTE  = 0x22
+
+till(T)   := *( !T any )
+quoted(C) := DQUOTE *( !DQUOTE C ) DQUOTE | "'" *( !"'" C ) "'"

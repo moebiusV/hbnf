@@ -8429,6 +8429,73 @@ package body HBNF_C is
          return "";
       end Comment_Kind;
 
+      --  True while the scanner of a rule that is a rule of characters only because it may hold a
+      --  lookahead (HBNF_Grammar.Is_Wide_Rule) is written: such a rule gets the faster loops below.
+      --  Every other rule is written as it always was.
+      Wide_Scan : Boolean := False;
+
+      --  Every branch of a repetition's DNF is one position (a class of code points, not a sequence).
+      function Is_Class (Sub : Cp_Branch_Vectors.Vector) return Boolean is
+        (not Sub.Is_Empty and then (for all B of Sub => Natural (B.Length) = 1));
+
+      --  A class of code points, repeated, as bytes where the byte is ASCII and a decoded code point
+      --  where it is not: `Char` (tab, line feeds, 0x20 to 0xD7FF, ...) or `any` is read a byte at a
+      --  time through the common case, and a multi-byte sequence is decoded only when one is met.
+      procedure Emit_Class_Repeat (A : Cp_Atom; Ind : String; Fail : String) is
+         Tab : U;                                        --  the ASCII members, one entry for each byte below 0x80
+         Is_In : array (0 .. 127) of Boolean := [others => False];
+         Other : U;
+         Needs_Cnt : constant Boolean := A.Max /= 0 or else A.Min > 0;
+      begin
+         for B of A.Sub loop
+            declare
+               Rg : constant Cp_Range := B (1);
+            begin
+               for C in Rg.Lo .. Natural'Min (Rg.Hi, 16#7F#) loop
+                  Is_In (C) := True;
+               end loop;
+               if Rg.Hi2 >= Rg.Lo2 then
+                  for C in Rg.Lo2 .. Natural'Min (Rg.Hi2, 16#7F#) loop
+                     Is_In (C) := True;
+                  end loop;
+               end if;
+               Append (Other, (if Length (Other) = 0 then "" else " || ")
+                 & Range_Cond (Rg.Lo, Rg.Hi, Rg.Lo2, Rg.Hi2));
+            end;
+         end loop;
+         for C in Is_In'Range loop
+            Append (Tab, (if Is_In (C) then "1," else "0,"));
+         end loop;
+         Append (Res, Ind & "{ static const unsigned char tb[128] = {" & To_String (Tab) & "};"
+           & (if Needs_Cnt then " size_t cnt = 0;" else ""));
+         Append (Res, LF);
+         Append (Res, Ind & (if A.Max = 0 then "    for (;;) {" else "    while (cnt < " & Img (A.Max) & ") {"));
+         Append (Res, LF);
+         Append (Res, Ind & "        unsigned char b;");
+         Append (Res, LF);
+         Append (Res, Ind & "        if (pos + off >= len) break;");
+         Append (Res, LF);
+         Append (Res, Ind & "        b = (unsigned char)s[pos + off];");
+         Append (Res, LF);
+         Append (Res, Ind & "        if (b < 0x80) { if (!tb[b]) break; off++; }");
+         Append (Res, LF);
+         Append (Res, Ind & "        else { uint32_t c; size_t n = hbnf_decode_utf8(s, pos + off, len, &c);"
+           & " if (!n || !(" & To_String (Other) & ")) break; off += n; }");
+         Append (Res, LF);
+         if Needs_Cnt then
+            Append (Res, Ind & "        cnt++;");
+            Append (Res, LF);
+         end if;
+         Append (Res, Ind & "    }");
+         Append (Res, LF);
+         if A.Min > 0 then
+            Append (Res, Ind & "    if (cnt < " & Img (A.Min) & ") " & Fail & ";");
+            Append (Res, LF);
+         end if;
+         Append (Res, Ind & "}");
+         Append (Res, LF);
+      end Emit_Class_Repeat;
+
       --  Emit the greedy loop for a repetition: match one full branch of the
       --  DNF (the longest one) as many times as Max allows (0 = unbounded),
       --  then require Min.  A branch is a sequence of decoded code points.
@@ -8448,7 +8515,9 @@ package body HBNF_C is
          end Emit_Branch;
          Needs_Cnt : constant Boolean := A.Max /= 0 or else A.Min > 0;
       begin
-         if Is_Ascii_Class (A.Sub) then
+         if Wide_Scan and then not Is_Ascii_Class (A.Sub) and then Is_Class (A.Sub) then
+            Emit_Class_Repeat (A, Ind, Fail);
+         elsif Is_Ascii_Class (A.Sub) then
             --  A flat ASCII class: match it as raw bytes in one tight loop,
             --  no per-code-point decode.
             Append (Res, Ind & "{" & (if Needs_Cnt then " size_t cnt = 0;" else ""));
@@ -8530,6 +8599,32 @@ package body HBNF_C is
          Append (Res, LF);
       end Emit_Eol;
 
+      --  An Iter: one time of it is the function written for it (Emit_Loop_Fn), which says how many
+      --  bytes the longest of its branches takes (0: none matches); take as many times as match, then
+      --  require the least.
+      procedure Emit_Loop (A : Cp_Atom; Ind : String; Fail : String) is
+         Needs_Cnt : constant Boolean := A.Hi /= 0 or else A.Lo > 0;
+      begin
+         Append (Res, Ind & "{" & (if Needs_Cnt then " size_t cnt = 0;" else ""));
+         Append (Res, LF);
+         Append (Res, Ind & (if A.Hi = 0 then "    for (;;) {" else "    while (cnt < " & Img (A.Hi) & ") {"));
+         Append (Res, LF);
+         Append (Res, Ind & "        size_t n = loop_" & C_Name (To_String (A.Fn)) & "(s, pos + off, len);");
+         Append (Res, LF);
+         Append (Res, Ind & "        if (!n) break;");
+         Append (Res, LF);
+         Append (Res, Ind & "        off += n;" & (if Needs_Cnt then " cnt++;" else ""));
+         Append (Res, LF);
+         Append (Res, Ind & "    }");
+         Append (Res, LF);
+         if A.Lo > 0 then
+            Append (Res, Ind & "    if (cnt < " & Img (A.Lo) & ") " & Fail & ";");
+            Append (Res, LF);
+         end if;
+         Append (Res, Ind & "}");
+         Append (Res, LF);
+      end Emit_Loop;
+
       --  The function a lookahead calls: 1 when some branch matches at pos
       --  (the empty one too), else 0.
       procedure Emit_Look_Fn (H : Look_Helper) is
@@ -8558,6 +8653,8 @@ package body HBNF_C is
                         Emit_Bol ("        ", "break");
                      when Eol =>
                         Emit_Eol ("        ", "break");
+                     when Iter =>
+                        Emit_Loop (A, "        ", "break");
                   end case;
                end loop;
                Append (Res, "        return 1;");
@@ -8572,6 +8669,47 @@ package body HBNF_C is
          Append (Res, LF);
          Append (Res, LF);
       end Emit_Look_Fn;
+
+      --  The function an Iter calls: the length of the longest branch that matches at pos, 0 if none.
+      procedure Emit_Loop_Fn (H : Look_Helper) is
+      begin
+         Append (Res, "static size_t loop_" & C_Name (To_String (H.Name))
+           & "(const char *s, size_t pos, size_t len) {");
+         Append (Res, LF);
+         Append (Res, "    size_t best = 0;");
+         Append (Res, LF);
+         for B of H.Branches loop
+            Append (Res, "    do {");
+            Append (Res, LF);
+            Append (Res, "        size_t off = 0;");
+            Append (Res, LF);
+            for A of B loop
+               case A.Kind is
+                  when Single =>
+                     Emit_Single (A, "        ", "break");
+                  when Repeat =>
+                     Emit_Repeat (A, "        ", "break");
+                  when Look =>
+                     Emit_Look (A, "        ", "break");
+                  when Bol =>
+                     Emit_Bol ("        ", "break");
+                  when Eol =>
+                     Emit_Eol ("        ", "break");
+                  when Iter =>
+                     Emit_Loop (A, "        ", "break");
+               end case;
+            end loop;
+            Append (Res, "        if (off > best) best = off;");
+            Append (Res, LF);
+            Append (Res, "    } while (0);");
+            Append (Res, LF);
+         end loop;
+         Append (Res, "    return best;");
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+         Append (Res, LF);
+      end Emit_Loop_Fn;
    begin
       for R of Rules loop
          Collect_Case (R.Pattern);
@@ -10066,8 +10204,13 @@ begin
    end if;
 end;
 else
+Wide_Scan := HBNF_Grammar.Is_Wide_Rule (Rules, NM);
 for H of Look_Helpers (DNF) loop
-   Emit_Look_Fn (H);
+   if H.Is_Iter then
+      Emit_Loop_Fn (H);
+   else
+      Emit_Look_Fn (H);
+   end if;
 end loop;
 Append (Res, "static size_t scan_" & C_Name (NM)
                  & "(const char *s, size_t pos, size_t len) {");
@@ -10116,6 +10259,8 @@ Append (Res, "static size_t scan_" & C_Name (NM)
                            Emit_Bol ("    ", "return 0");
                         when Eol =>
                            Emit_Eol ("    ", "return 0");
+                        when Iter =>
+                           Emit_Loop (A, "    ", "return 0");
                      end case;
                   end loop;
                   Append (Res, "    return off;");
@@ -10141,6 +10286,8 @@ Append (Res, "static size_t scan_" & C_Name (NM)
                               Emit_Bol ("        ", "break");
                            when Eol =>
                               Emit_Eol ("        ", "break");
+                           when Iter =>
+                              Emit_Loop (A, "        ", "break");
                         end case;
                      end loop;
                      Append (Res, "        if (off > best) best = off;");

@@ -4156,7 +4156,7 @@ package body HBNF_Zig is
                         Append (Res, LF);
                      when Repeat =>
                         Emit_Repeat (A, "        ", "break :br" & Img (Br));
-                     when Look =>
+                     when Look | Iter =>
                         Emit_Look (A, "        ", "break :br" & Img (Br));
                      when Bol =>
                         Emit_Bol ("        ", "break :br" & Img (Br));
@@ -5010,7 +5010,7 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
                               Append (Res, LF);
                            when Repeat =>
                               Emit_Repeat (A, "    ", "return 0");
-                           when Look =>
+                           when Look | Iter =>
                               Emit_Look (A, "    ", "return 0");
                            when Bol =>
                               Emit_Bol ("    ", "return 0");
@@ -5057,7 +5057,7 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
                                        Append (Res, LF);
                                     when Repeat =>
                                        Emit_Repeat (A, "        ", "break :br" & Img (Br));
-                                    when Look =>
+                                    when Look | Iter =>
                                        Emit_Look (A, "        ", "break :br" & Img (Br));
                                     when Bol =>
                                        Emit_Bol ("        ", "break :br" & Img (Br));

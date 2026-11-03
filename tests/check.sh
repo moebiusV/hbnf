@@ -52,7 +52,7 @@ mkdir -p "$R/logs"
 SUITES="wire abnf syntax schema rfc enumval leftrec daemons writer ast spans tutorial errors forks
 lookahead pattern paths stmt recursive context params commalist compare algol60 numbers backref upref upscope compact
 posix hidden emit layout views textwarn c c79 c89 c99 gnu99 pcc99 toml yaml params-modes
-e2e json-diff toml-diff yaml-suite yaml-diff xml xml-diff html html-diff sqlite scalar factor ladder nest lint template cobol cobol-scan nocase island switch wslook literal markdown graphql graphql-diff"
+e2e json-diff toml-diff yaml-suite yaml-diff xml xml-diff html html-diff sqlite scalar factor ladder nest lint template cobol cobol-scan nocase island switch wslook literal markdown graphql graphql-diff scanlook"
 ARGS_json_diff=3000; ARGS_toml_diff=3000; ARGS_yaml_diff=1000; ARGS_xml_diff=3000; ARGS_html_diff=1500; ARGS_graphql_diff=20000
 BACKENDS_ALL="c ada rust zig"
 

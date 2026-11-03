@@ -3120,7 +3120,7 @@ package body HBNF_Ada is
                      Append (Bdy, LF);
                   when Repeat =>
                      Emit_Repeat (A, "         ", "Ok := False");
-                  when Look =>
+                  when Look | Iter =>
                      Emit_Look (A, "         ", "Ok := False");
                   when Bol =>
                      Emit_Bol ("         ", "Ok := False");
@@ -4508,7 +4508,7 @@ package body HBNF_Ada is
                            Append (Bdy, LF);
                         when Repeat =>
                            Emit_Repeat (A, "      ", "return 0");
-                        when Look =>
+                        when Look | Iter =>
                            Emit_Look (A, "      ", "return 0");
                         when Bol =>
                            Emit_Bol ("      ", "return 0");
@@ -4557,7 +4557,7 @@ package body HBNF_Ada is
                               Emit_Repeat (A, "         ", "Ok := False");
                               Append (Bdy, "      end if;");
                               Append (Bdy, LF);
-                           when Look =>
+                           when Look | Iter =>
                               Append (Bdy, "      if Ok then");
                               Append (Bdy, LF);
                               Emit_Look (A, "         ", "Ok := False");

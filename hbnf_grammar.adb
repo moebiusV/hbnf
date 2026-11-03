@@ -251,6 +251,8 @@ package body HBNF_Grammar is
 
    package Name_Sets is new Ada.Containers.Indefinite_Ordered_Sets (String);
    Plain_Yes, Plain_No : Name_Sets.Set;   --  Is_Char_Rule_Plain, per rule count
+   Wide_Yes : Name_Sets.Set;              --  of those, the rules read as text only because of Scan_Look
+   Scan_Look : Boolean := False;          --  Set_Scan_Look
 
    --  `include "file" as x`: the file's rules live in the scope `x`, a rule
    --  `statement` of it being the rule `x--statement` for everything after
@@ -836,6 +838,7 @@ package body HBNF_Grammar is
       Text_Yes.Clear;
       Plain_Yes.Clear;
       Plain_No.Clear;
+      Wide_Yes.Clear;
       Text_No.Clear;
       Pending_Except_B := Null_Unbounded_String;
       Declared_Tokens.Clear;
@@ -13046,13 +13049,17 @@ package body HBNF_Grammar is
    end Is_Except_Operand;
 
 
-   function Is_Char_Rule_Plain (Rules : Rule_Vectors.Vector; Nm : String)
-      return Boolean is
+   --  Is_Char_Rule_Plain and Is_Wide_Rule are one question asked two ways: 0 when Nm is not a
+   --  rule of characters, 1 when it is, 2 when it is one only because Scan_Look lets a rule of
+   --  characters hold a lookahead anywhere and repeat a group (see Wide_Admitted).
+   function Plain_Kind (Rules : Rule_Vectors.Vector; Nm : String) return Natural is
       Key : constant String := Nm & "#" & Natural'Image (Natural (Rules.Length));
       --  Rec of a name at a depth, kept for the call: a rule reached by many
       --  paths (a grammar whose rules refer to the ones below by several
       --  names) is looked at once, not once per path.
       Memo_Yes, Memo_No : Name_Sets.Set;
+      Adm_Yes, Adm_No   : Name_Sets.Set;     --  Wide_Admitted, kept the same way
+      Wide_Memo_Yes, Wide_Memo_No : Name_Sets.Set;
       Reach      : Path_Sets.Set;     --  Ws_Reach, worked out when a lookahead is first met
       Have_Reach : Boolean := False;
 
@@ -13077,6 +13084,149 @@ package body HBNF_Grammar is
             return Result;
          end;
       end Rec;
+
+      function Wide_Admitted (N : String; Depth : Natural) return Boolean;
+
+      --  What the C scanner can read when a rule of characters may hold a lookahead anywhere
+      --  and repeat a group (Scan_Look): literals, ranges, alternatives, groups, rules that
+      --  are such text, `bol` and `eol`, and `!x` and `&x` over such text.  A letter-led
+      --  literal is a keyword where the grammar has them, so it is not text.
+      function Wide_Els
+        (Els : Element_Vectors.Vector; Owner : String; Depth : Natural) return Boolean;
+
+      function Wide_Rec (N : String; Depth : Natural) return Boolean is
+         K : constant String := N & "#" & Natural'Image (Depth);
+         J : constant Natural := Index_Of (Rules, N);
+      begin
+         if Wide_Memo_Yes.Contains (K) then
+            return True;
+         elsif Wide_Memo_No.Contains (K) or else J = 0 or else Depth = 0 then
+            return False;
+         end if;
+         declare
+            R : constant Rule := Rules (J);
+            Result : constant Boolean :=
+              R.Jet_Code = Null_Unbounded_String
+              and then Natural (R.Pattern.Length) > 0
+              and then not Is_Core_Name (N)
+              and then not Excepts.Contains (N)
+              and then Wide_Els (R.Pattern, N, Depth);
+         begin
+            if Result then
+               Wide_Memo_Yes.Include (K);
+            else
+               Wide_Memo_No.Include (K);
+            end if;
+            return Result;
+         end;
+      end Wide_Rec;
+
+      function Wide_Els
+        (Els : Element_Vectors.Vector; Owner : String; Depth : Natural) return Boolean is
+      begin
+         for E of Els loop
+            case E.Kind is
+               when Char_Range | Alt | Negation | Bit_Field =>
+                  null;
+               when Literal =>
+                  declare
+                     S : constant String := To_String (E.Lit);
+                  begin
+                     if Keywords_Apply
+                       and then S'Length > 0
+                       and then (S (S'First) in 'a' .. 'z'
+                                 or else S (S'First) in 'A' .. 'Z'
+                                 or else (S (S'First) = '_' and then S'Length > 1))
+                     then
+                        return False;
+                     end if;
+                  end;
+               when Name =>
+                  if E.Args /= Null_Unbounded_String
+                    or else not (Rec (To_String (E.Name), Depth - 1)
+                                 or else Wide_Admitted (To_String (E.Name), Depth - 1)
+                                 or else Wide_Rec (To_String (E.Name), Depth - 1))
+                  then
+                     return False;
+                  end if;
+               when Group =>
+                  if not Wide_Els (E.Items, Owner, Depth) then
+                     return False;
+                  end if;
+               when Block =>
+                  if E.Op in B_Bol | B_Eol then
+                     null;
+                  elsif E.Op not in B_Not | B_And or else E.Look.Is_Empty
+                    or else not Wide_Els (E.Look, Owner, Depth)
+                  then
+                     return False;
+                  end if;
+            end case;
+         end loop;
+         return True;
+      end Wide_Els;
+
+      --  The rules hbnf warns about, in C, are read as text: a rule with a lookahead in it
+      --  (`!x` or `&x`, anywhere, in a group too) that repeats something, all text, and no code,
+      --  no white space skipped in it.  Only these: a rule with a lookahead and no repetition
+      --  stays a phrase rule, as it was.
+      function Wide_Admitted (N : String; Depth : Natural) return Boolean is
+         K : constant String := N & "#" & Natural'Image (Depth);
+         J : constant Natural := Index_Of (Rules, N);
+
+         function Has_Look (Els : Element_Vectors.Vector) return Boolean is
+         begin
+            for E of Els loop
+               if (E.Kind = Block and then E.Op in B_Not | B_And and then not E.Look.Is_Empty)
+                 or else (E.Kind = Group and then Has_Look (E.Items))
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has_Look;
+
+         function Repeats (Els : Element_Vectors.Vector) return Boolean is
+         begin
+            for E of Els loop
+               if E.Kind in Name | Literal | Char_Range | Group
+                 and then (E.Min /= 1 or else E.Max /= 1)
+               then
+                  return True;
+               end if;
+               if E.Kind = Group and then Repeats (E.Items) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Repeats;
+      begin
+         if not Scan_Look or else J = 0 or else Depth = 0 then
+            return False;
+         elsif Adm_Yes.Contains (K) then
+            return True;
+         elsif Adm_No.Contains (K) then
+            return False;
+         end if;
+         declare
+            R : constant Rule := Rules (J);
+            Result : constant Boolean :=
+              R.Jet_Code = Null_Unbounded_String
+              and then R.Whitespace = Null_Unbounded_String
+              and then not Is_Core_Name (N)
+              and then not Excepts.Contains (N)
+              and then Has_Look (R.Pattern)
+              and then Repeats (R.Pattern)
+              and then Wide_Els (R.Pattern, N, Depth);
+         begin
+            if Result then
+               Adm_Yes.Include (K);
+            else
+               Adm_No.Include (K);
+            end if;
+            return Result;
+         end;
+      end Wide_Admitted;
 
       --  The elements of a rule's pattern (or of what a lookahead looks at),
       --  Owner being the rule they are in.  The core scanners `int`/`str`/`word`
@@ -13132,7 +13282,9 @@ package body HBNF_Grammar is
                   if Excepts.Contains (To_String (E.Name)) then
                      return False;
                   end if;
-                  if not Rec (To_String (E.Name), Depth - 1) then
+                  if not (Rec (To_String (E.Name), Depth - 1)
+                          or else Wide_Admitted (To_String (E.Name), Depth - 1))
+                  then
                      return False;
                   end if;
                   Has_Anchor := True;
@@ -13195,21 +13347,36 @@ package body HBNF_Grammar is
       end Rec_Raw;
    begin
       if Plain_Yes.Contains (Key) then
-         return True;
+         return (if Wide_Yes.Contains (Key) then 2 else 1);
       elsif Plain_No.Contains (Key) then
-         return False;
+         return 0;
       end if;
       declare
-         Result : constant Boolean := Rec (Nm, 20);
+         Old    : constant Boolean := Rec (Nm, 20);
+         Result : constant Boolean := Old or else Wide_Admitted (Nm, 20);
       begin
          if Result then
             Plain_Yes.Include (Key);
+            if not Old then
+               Wide_Yes.Include (Key);
+            end if;
          else
             Plain_No.Include (Key);
          end if;
-         return Result;
+         return (if not Result then 0 elsif Old then 1 else 2);
       end;
-   end Is_Char_Rule_Plain;
+   end Plain_Kind;
+
+   function Is_Char_Rule_Plain (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean is (Plain_Kind (Rules, Nm) /= 0);
+
+   function Is_Wide_Rule (Rules : Rule_Vectors.Vector; Nm : String)
+      return Boolean is (Plain_Kind (Rules, Nm) = 2);
+
+   procedure Set_Scan_Look (On : Boolean) is
+   begin
+      Scan_Look := On;
+   end Set_Scan_Look;
 
    --  Does a rule, or any rule it reaches, skip whitespace between elements?
    function Skips_Whitespace
