@@ -40,7 +40,7 @@ end-function       = "END" "FUNCTION" program-name "."
 program-name       = function-name | nonnumeric-literal
 
 ; ---- the identification division ----
-identification-division = [ ( "IDENTIFICATION" | "ID" ) "DIVISION" "." ] program-id-paragraph *id-paragraph [ options-paragraph ]
+identification-division = [ ( "IDENTIFICATION" | "ID" ) "DIVISION" [ "." ] ] program-id-paragraph *id-paragraph [ options-paragraph ]
 function-identification = [ ( "IDENTIFICATION" | "ID" ) "DIVISION" "." ] function-id-paragraph *id-paragraph [ options-paragraph ]
 program-id-paragraph    = "PROGRAM-ID" "." program-name [ "AS" nonnumeric-literal ] [ is ( "COMMON" [ "INITIAL" | "RECURSIVE" ] | ( "INITIAL" | "RECURSIVE" ) [ "COMMON" ] | "PROTOTYPE" ) [ "PROGRAM" ] ] "."
 function-id-paragraph   = "FUNCTION-ID" "." program-name [ "AS" nonnumeric-literal ] [ is ( "COMMON" [ "INITIAL" | "RECURSIVE" ] | ( "INITIAL" | "RECURSIVE" ) [ "COMMON" ] | "PROTOTYPE" ) [ "PROGRAM" ] ] "."
@@ -63,6 +63,7 @@ source-computer-paragraph = "SOURCE-COMPUTER" "." [ computer-name [ with "DEBUGG
 object-computer-paragraph = "OBJECT-COMPUTER" "." [ [ computer-name ] *object-computer-clause "." ]
 object-computer-clause  = [ "PROGRAM" ] [ "COLLATING" ] "SEQUENCE" ( is 1*user-word | 1*( "FOR" ( "ALPHANUMERIC" | "NATIONAL" ) is user-word ) )
                         | "MEMORY" "SIZE" is numeric-literal ( "WORDS" | "CHARACTERS" | "MODULES" )
+                        | "SEGMENT-LIMIT" is numeric-literal
 computer-name           = user-word
 special-names-paragraph = "SPECIAL-NAMES" "." *( special-names-entry [ "." ] )
 repository-paragraph    = "REPOSITORY" "." *( "FUNCTION" ( "ALL" "INTRINSIC" | 1*( user-word [ "AS" nonnumeric-literal ] ) ) | ( "PROGRAM" | "CLASS" | "INTERFACE" ) user-word [ "AS" nonnumeric-literal ] ) [ "." ]
@@ -70,7 +71,7 @@ special-names-entry     = "DECIMAL-POINT" is "COMMA"
                         | "CURRENCY" [ "SIGN" ] is nonnumeric-literal [ "WITH" "PICTURE" "SYMBOL" nonnumeric-literal ]
                         | "CLASS" user-word is 1*class-value
                         | "ALPHABET" user-word is alphabet-name-value
-                        | "SYMBOLIC" [ "CHARACTERS" ] 1*( user-word is numeric-literal [ "IN" user-word ] )
+                        | "SYMBOLIC" ( "CONSTANT" 1*( user-word is literal ) | [ "CHARACTERS" ] 1*( user-word is numeric-literal [ "IN" user-word ] ) )
                         | "CURSOR" is identifier
                         | "CRT" "STATUS" is identifier
                         | "CALL-CONVENTION" numeric-literal is user-word
@@ -85,6 +86,9 @@ file-control-paragraph  = "FILE-CONTROL" "." *file-control-entry
 file-control-entry      = "SELECT" [ "OPTIONAL" ] file-name 1*select-clause "."
 select-clause           = "ASSIGN" ( "USING" identifier | to "VARYING" identifier | to 1*( device-name | assign-name ) [ ( "USING" | "FROM" ) identifier ] )
                         | "RELATIVE" key is identifier
+                        | "FILE-LIMITS" are 1*( operand "THRU" operand )
+                        | "TRACK-AREA" operand [ "CHARACTERS" ]
+                        | "TRACK-LIMIT" operand [ "TRACKS" ]
                         | [ ( "ORGANIZATION" | "ORGANISATION" ) is ] [ "LINE" ] ( "SEQUENTIAL" | "RELATIVE" | "INDEXED" )
                         | "ACCESS" [ "MODE" ] is ( "SEQUENTIAL" | "RANDOM" | "DYNAMIC" )
                         | "RECORD" key is identifier *( "=" identifier ) [ "SOURCE" is 1*identifier ] [ with [ "NO" ] "DUPLICATES" ]
@@ -102,7 +106,7 @@ i-o-control-paragraph   = "I-O-CONTROL" "." *( ( "SAME" | "APPLY" | "RERUN" | "M
 file-name               = user-word
 
 ; ---- the data division ----
-data-division          = "DATA" "DIVISION" "." [ file-section ] [ working-storage-section ] [ local-storage-section ]
+data-division          = "DATA" "DIVISION" [ "." ] [ file-section ] [ working-storage-section ] [ local-storage-section ]
                          [ linkage-section ] [ report-section ] [ screen-section ]
 file-section           = "FILE" "SECTION" "." *file-description
 file-description       = ( "FD" | "SD" ) file-name *file-clause "." *data-description-entry
@@ -154,7 +158,7 @@ report-group-clause     = "TYPE" is report-type
                         | "RESET" on control-name | "GROUP" [ "INDICATE" ] | ( "PRESENT" | "ABSENT" ) ( "WHEN" condition | "AFTER" present-event *( "OR" present-event ) )
                         | "VARYING" identifier "FROM" operand "BY" operand
                         | display-item-clause | occurs-clause | sign-clause | justified-clause
-                        | "BLANK" [ "WHEN" ] "ZERO" | "GLOBAL" | "COLUMN" operand | "STEP" operand
+                        | "BLANK" [ "WHEN" ] "ZERO" | "IDENTIFIED" by operand | "GLOBAL" | "COLUMN" operand | "STEP" operand
 report-type             = "REPORT" "HEADING" | "RH" | "PAGE" "HEADING" | "PH" | "CONTROL" "HEADING" control-name | "CH" control-name
                         | "DETAIL" | "DE" | "CONTROL" "FOOTING" control-name | "CF" control-name
                         | "PAGE" "FOOTING" | "PF" | "REPORT" "FOOTING" | "RF"
@@ -168,23 +172,23 @@ data-clause            = plain-clause | occurs-clause
 ; a level 66, 78 or 88 item has no OCCURS (cobc allows it on the others)
 plain-clause           = special-names-clause | "VOLATILE" | "SAME" "AS" identifier | item-clause | redefines-clause
                        | renames-clause | sign-clause | justified-clause | synchronized-clause
-                       | "BLANK" [ "WHEN" ] "ZERO" | "GLOBAL" | "BASED" | "TYPEDEF" | "STATIC"
-                       | is "EXTERNAL" [ "AS" operand ] | is "GLOBAL" | is "TYPEDEF"
+                       | "BLANK" [ "WHEN" ] "ZERO" | "IDENTIFIED" by operand | "GLOBAL" | "BASED" | "TYPEDEF" | "STATIC"
+                       | is "EXTERNAL" [ "AS" operand ] | is "EXTERNAL-FORM" [ "IDENTIFIED" by operand ] | is "GLOBAL" | is "TYPEDEF"
                        | "CONSTANT" [ is "GLOBAL" ] [ "AS" ] [ "FROM" identifier | ( "LENGTH" | "BYTE-LENGTH" ) [ "OF" ] ( operand | usage ) | operand *( "&" operand ) ]
                        | "ANY" ( "LENGTH" | "NUMERIC" )
                        | "SYNC" | "DYNAMIC" "LENGTH" [ identifier ] [ "LIMIT" is operand ]
                        | "UNSIGNED" | "SIGNED"
 picture-clause         = ( "PICTURE" | "PIC" ) is picture-string [ "DEPENDING" on identifier ]
 usage-clause           = "USAGE" is ( usage | user-word ) | usage
-usage                  = "DISPLAY" | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "POINTER" | "PROCEDURE-POINTER" | "FUNCTION-POINTER"
+usage                  = "DISPLAY" | "BIT" | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "POINTER" | "PROCEDURE-POINTER" | "FUNCTION-POINTER"
                        | "PROGRAM-POINTER"
                        | "COMPUTATIONAL-1" | "COMPUTATIONAL-2" | "COMPUTATIONAL-3" | "COMPUTATIONAL-4" | "COMPUTATIONAL-5"
                        | "COMPUTATIONAL-X" | "COMPUTATIONAL-6" | "COMPUTATIONAL" | "COMP-1" | "COMP-2" | "COMP-3" | "COMP-4" | "COMP-5" | "COMP-X"
                        | "COMP-6" | "COMP" | "BINARY-C-LONG" | "SIGNED-SHORT" | "SIGNED-INT" | "SIGNED-LONG" | "BINARY-LONG-LONG" | "UNSIGNED-SHORT" | "UNSIGNED-INT" | "UNSIGNED-LONG" | "UNSIGNED-CHAR" | "BINARY-INT" | "COMP-N" | "BINARY-CHAR" | "BINARY-SHORT" | "BINARY-LONG" | "BINARY-DOUBLE" | "NATIONAL"
                        | "FLOAT-SHORT" | "FLOAT-LONG" | "FLOAT-EXTENDED" | "FLOAT-BINARY-32" | "FLOAT-BINARY-64" | "FLOAT-BINARY-128"
                        | "FLOAT-DECIMAL-16" | "FLOAT-DECIMAL-34"
-value-clause           = "VALUE" is ( 1*value-item | "ALL" literal ) [ "FALSE" is operand ]
-                       | "VALUES" are 1*value-item [ "FALSE" is operand ]
+value-clause           = "VALUE" is ( value-item *( [ "OR" ] value-item ) | "ALL" literal ) [ "FALSE" is operand ]
+                       | "VALUES" are value-item *( [ "OR" ] value-item ) [ "FALSE" is operand ]
 value-item             = operand [ thru operand ]
 occurs-clause          = "OCCURS" ( "UNBOUNDED" "DEPENDING" on identifier | !"UNBOUNDED" operand ( "TO" ( operand | "UNBOUNDED" ) [ "TIMES" ] "DEPENDING" on identifier | [ "TIMES" ] [ "DEPENDING" on identifier ] ) ) [ "VARYING" identifier [ "FROM" operand ] [ "BY" operand ] ]
                          *( ( "ASCENDING" | "DESCENDING" ) key is 1*identifier ) [ "INDEXED" by 1*user-word ]
@@ -245,7 +249,7 @@ ready-statement = ( "READY" | "RESET" ) "TRACE"
 next-sentence = "NEXT" "SENTENCE"
 continue-statement = "CONTINUE" [ "AFTER" operand ( "SECONDS" | "SECOND" ) ]
 goback-statement   = "GOBACK" [ ( "RETURNING" | "GIVING" ) operand ]
-entry-statement    = "ENTRY" nonnumeric-literal [ "USING" 1*using-argument ]
+entry-statement    = "ENTRY" [ "FOR" "GO" to ] nonnumeric-literal [ "USING" 1*using-argument ]
 sort-statement     = "SORT" identifier *( on ( "ASCENDING" | "DESCENDING" ) key *identifier ) [ with "DUPLICATES" [ "IN" ] [ "ORDER" ] ]
                      [ [ "COLLATING" ] "SEQUENCE" is user-word ]
                      [ "INPUT" "PROCEDURE" is procedure-range | "USING" 1*file-name ]
@@ -271,7 +275,7 @@ procedure-name     = paragraph-name [ ( "IN" | "OF" ) section-name ]
 accept-statement   = "ACCEPT" ( "OMITTED" | identifier ) [ "FROM" ( "DATE" [ "YYYYMMDD" ] | "DAY" [ "YYYYDDD" ] | "DAY-OF-WEEK" | "TIME"
                                                   | "COMMAND-LINE" | "ESCAPE" [ "KEY" ] | "ENVIRONMENT-VALUE" | "ENVIRONMENT" operand | user-word ) ]
                      *screen-phrase [ on-exception-phrases ] scope-end("ACCEPT")
-display-statement  = "DISPLAY" ( 1*operand | "OMITTED" ) *( "UPON" ( device-name | user-word ) | with "NO" "ADVANCING" | screen-phrase ) [ on-exception-phrases ] scope-end("DISPLAY")
+display-statement  = "DISPLAY" [ with "CONVERSION" ] ( 1*operand | "OMITTED" ) *( "UPON" ( device-name | user-word ) | with "NO" "ADVANCING" | screen-phrase ) [ on-exception-phrases ] scope-end("DISPLAY")
 move-statement     = "MOVE" ( [ "CORRESPONDING" | "CORR" ] sending "TO" 1*identifier )
 sending            = length-of | literal | identifier
 
