@@ -40,6 +40,8 @@ pic-char        = ~( SP | HTAB | CR | LF | "." )
 
 ; A level number, and the names of procedures, which may be all digits.
 level-number    = 1*2DIGIT
+special-level   = "66" | "78" | "88"
+plain-level     = level-number - special-level
 
 ; The text of an identification paragraph's comment entry: a word, whatever it is made of.
 comment-word      = 1*~( SP | HTAB | CR | LF )

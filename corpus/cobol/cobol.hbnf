@@ -28,7 +28,7 @@ by     = [ "BY" ]
 thru            = "THRU" | "THROUGH"
 procedure-range = procedure-name [ thru procedure-name ]
 control-name    = "FINAL" | identifier
-item-clause     = picture-clause | usage-clause | value-clause | occurs-clause
+item-clause     = picture-clause | usage-clause | value-clause
 program-unit       = identification-division [ environment-division ] [ data-division ] [ procedure-division ]
                      *program-unit [ end-program ]
 end-program        = "END" ( "PROGRAM" | "FUNCTION" ) program-name "."
@@ -117,7 +117,7 @@ linkage-section         = "LINKAGE" "SECTION" "." *data-description-entry
 
 screen-section          = "SCREEN" "SECTION" "." *screen-description-entry
 screen-description-entry = level-number [ data-name | "FILLER" ] *screen-clause "."
-screen-clause           = screen-phrase | item-clause | redefines-clause | ( "FROM" | "TO" | "USING" ) operand
+screen-clause           = screen-phrase | item-clause | occurs-clause | redefines-clause | ( "FROM" | "TO" | "USING" ) operand
                         | "SIGN" is ( "LEADING" | "TRAILING" ) [ "SEPARATE" [ "CHARACTER" ] ] | justified-clause | sign-clause
                         | "GLOBAL" | "ZERO-FILL" | "SPACE-FILL" | "LEFT-JUSTIFY" | "RIGHT-JUSTIFY"
 screen-phrase           = at screen-position | with screen-attribute
@@ -146,15 +146,20 @@ report-group-clause     = "TYPE" is report-type
                         | "SOURCE" is operand [ "ROUNDED" ] | "SUM" 1*operand [ "UPON" 1*user-word ]
                         | "RESET" on control-name | "GROUP" [ "INDICATE" ] | ( "PRESENT" | "ABSENT" ) ( "WHEN" condition | "AFTER" present-event *( "OR" present-event ) )
                         | "VARYING" identifier "FROM" operand "BY" operand
-                        | item-clause | sign-clause | justified-clause
+                        | item-clause | occurs-clause | sign-clause | justified-clause
                         | "BLANK" [ "WHEN" ] "ZERO" | "GLOBAL" | "COLUMN" operand | "STEP" operand
 report-type             = "REPORT" "HEADING" | "RH" | "PAGE" "HEADING" | "PH" | "CONTROL" "HEADING" control-name | "CH" control-name
                         | "DETAIL" | "DE" | "CONTROL" "FOOTING" control-name | "CF" control-name
                         | "PAGE" "FOOTING" | "PF" | "REPORT" "FOOTING" | "RF"
 special-names-clause = is "SPECIAL-NAMES" ( "CURSOR" | "CRT" "STATUS" )
-data-description-entry = level-number [ data-name | "FILLER" ] *data-clause "."
+data-description-entry = "66" data-name renames-clause "."
+                       | "88" data-name 1*value-clause "."
+                       | "78" data-name *plain-clause "."
+                       | plain-level [ data-name | "FILLER" ] *data-clause "."
 data-name              = user-word | "PAGE-COUNTER" | "LINE-COUNTER" | "LINAGE-COUNTER"
-data-clause            = special-names-clause | "VOLATILE" | "SAME" "AS" identifier | item-clause | redefines-clause
+data-clause            = plain-clause | occurs-clause
+; a level 66, 78 or 88 item has no OCCURS (cobc allows it on the others)
+plain-clause           = special-names-clause | "VOLATILE" | "SAME" "AS" identifier | item-clause | redefines-clause
                        | renames-clause | sign-clause | justified-clause | synchronized-clause
                        | "BLANK" [ "WHEN" ] "ZERO" | "GLOBAL" | "BASED" | "TYPEDEF" | "STATIC"
                        | is "EXTERNAL" [ "AS" operand ] | is "GLOBAL" | is "TYPEDEF"
