@@ -1,0 +1,10 @@
+; A lookahead rule whose alternatives overlap is NOT scanned in C: the scanner takes the longest alternative that
+; matches each time and never gives it back, and the generator cannot prove that is what the parser does when the
+; alternatives (`one` and `two`, both begin with `-`) can both match here.  So the rule is read a character at a
+; time, and warns, in C as in the others.  The cases pin what that reading does (every backend gives it).
+whitespace none
+doc = "#" int top
+top = *( one | two ) !"c" "+"
+one = "-" 1*DIGIT
+two = "-" "7" "7" "x"
+DIGIT = 0x30..0x39

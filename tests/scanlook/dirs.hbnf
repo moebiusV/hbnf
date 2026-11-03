@@ -1,0 +1,12 @@
+; The shape of YAML's directives (`dirs`): a lookahead, a repetition of alternatives that all begin with `%`, then
+; an optional group that starts with one more directive.  A document has one `%Y` directive at most: the repetition
+; stops at it, and a second is not for the repetition to take.  Not scanned (the alternatives of the repetition
+; share their first byte); it must generate with `--layout=tape` too.
+whitespace none
+doc  = "#" int dirs "---"
+dirs = &"%" *( tagd | otherd ) [ yamld *( tagd | otherd ) ]
+tagd   = "%T" 1*ALPHA LF
+otherd = "%O" 1*ALPHA LF
+yamld  = "%Y" 1*ALPHA LF
+ALPHA  = 0x41..0x5A | 0x61..0x7A
+LF     = 0x0A

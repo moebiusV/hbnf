@@ -13049,6 +13049,224 @@ package body HBNF_Grammar is
    end Is_Except_Operand;
 
 
+   --  A rule of characters is scanned: of its alternatives the scanner takes the longest that matches, and
+   --  a repetition takes every time that matches.  Parsed (ordered choice) the first alternative that
+   --  matches is taken.  The two are the same language where at most one alternative can begin at a
+   --  position, which is what Choices_Ok proves, by the bytes each alternative can begin with: every
+   --  choice in the rule, in the groups of it and in the rules it names, is between alternatives that
+   --  cannot match nothing and whose first bytes (of the UTF-8) are not shared, or between single code
+   --  points (which all take one).  A lookahead is a test and not a choice: what it holds is not looked at.
+   type Byte_Set is array (0 .. 255) of Boolean;
+   type First_Info is record
+      Bytes    : Byte_Set := [others => False];
+      Nullable : Boolean := False;
+   end record;
+
+   function Lead_Byte (Cp : Natural) return Natural is
+     (if Cp < 16#80# then Cp
+      elsif Cp < 16#800# then 16#C0# + Cp / 64
+      elsif Cp < 16#10000# then 16#E0# + Cp / 4096
+      else Natural'Min (16#F4#, 16#F0# + Cp / 262144));
+
+   function Choices_Ok
+     (Rules : Rule_Vectors.Vector; Els : Element_Vectors.Vector; Depth : Natural) return Boolean
+   is
+      --  What a sequence of alternatives (Els, split at the Alt elements) can begin with.
+      function First_Of_Pat (V : Element_Vectors.Vector; D : Natural) return First_Info;
+
+      function First_Of_El (E : Element_Access; D : Natural) return First_Info is
+         R : First_Info;
+      begin
+         case E.Kind is
+            when Char_Range =>
+               for B in Lead_Byte (E.Lo) .. Lead_Byte (E.Hi) loop
+                  R.Bytes (B) := True;
+               end loop;
+            when Literal =>
+               declare
+                  S : constant String := To_String (E.Lit);
+               begin
+                  if S'Length = 0 then
+                     R.Nullable := True;
+                  else
+                     R.Bytes (Character'Pos (S (S'First))) := True;
+                     if E.No_Case then
+                        R.Bytes (Character'Pos (Ada.Characters.Handling.To_Lower (S (S'First)))) := True;
+                        R.Bytes (Character'Pos (Ada.Characters.Handling.To_Upper (S (S'First)))) := True;
+                     end if;
+                  end if;
+               end;
+            when Name =>
+               declare
+                  J : constant Natural := Index_Of (Rules, To_String (E.Name));
+               begin
+                  if J = 0 or else D = 0 then
+                     R.Bytes := [others => True];
+                     R.Nullable := True;
+                  else
+                     R := First_Of_Pat (Rules (J).Pattern, D - 1);
+                  end if;
+               end;
+            when Group =>
+               R := First_Of_Pat (E.Items, D);
+            when Block =>
+               R.Nullable := True;          --  a test: nothing is taken
+            when others =>
+               R.Bytes := [others => True];
+               R.Nullable := True;
+         end case;
+         if E.Kind /= Block and then E.Min = 0 then
+            R.Nullable := True;
+         end if;
+         return R;
+      end First_Of_El;
+
+      function First_Of_Pat (V : Element_Vectors.Vector; D : Natural) return First_Info is
+         R   : First_Info;
+         Cur : First_Info;
+         Open : Boolean := True;       --  nothing non-empty has come yet in this alternative
+      begin
+         Cur.Nullable := False;
+         for E of V loop
+            if E.Kind = Alt then
+               for B in Byte_Set'Range loop
+                  R.Bytes (B) := R.Bytes (B) or else Cur.Bytes (B);
+               end loop;
+               R.Nullable := R.Nullable or else Open;
+               Cur := (others => <>);
+               Open := True;
+            elsif Open then
+               declare
+                  F : constant First_Info := First_Of_El (E, D);
+               begin
+                  for B in Byte_Set'Range loop
+                     Cur.Bytes (B) := Cur.Bytes (B) or else F.Bytes (B);
+                  end loop;
+                  Open := F.Nullable;
+               end;
+            end if;
+         end loop;
+         for B in Byte_Set'Range loop
+            R.Bytes (B) := R.Bytes (B) or else Cur.Bytes (B);
+         end loop;
+         R.Nullable := R.Nullable or else Open;
+         return R;
+      end First_Of_Pat;
+
+      --  One alternative as a pattern of its own.
+      function Alt_Slice (V : Element_Vectors.Vector; From : Natural; To : Natural)
+        return Element_Vectors.Vector
+      is
+         R : Element_Vectors.Vector;
+      begin
+         for K in From .. To loop
+            R.Append (V (K));
+         end loop;
+         return R;
+      end Alt_Slice;
+
+      function One_Point (V : Element_Vectors.Vector; D : Natural) return Boolean;
+
+      --  A rule that is only alternatives of one code point each (a class: `ALPHA`, `name-start`).
+      function Class_Rule (N : String; D : Natural) return Boolean is
+         J     : constant Natural := Index_Of (Rules, N);
+         Start : Natural := 1;
+      begin
+         if J = 0 or else D = 0 or else Rules (J).Pattern.Is_Empty then
+            return False;
+         end if;
+         declare
+            P : constant Element_Vectors.Vector := Rules (J).Pattern;
+         begin
+            for K in 1 .. Natural (P.Length) + 1 loop
+               if K > Natural (P.Length) or else P (K).Kind = Alt then
+                  if K = Start or else not One_Point (Alt_Slice (P, Start, K - 1), D) then
+                     return False;
+                  end if;
+                  Start := K + 1;
+               end if;
+            end loop;
+         end;
+         return True;
+      end Class_Rule;
+
+      function One_Point (V : Element_Vectors.Vector; D : Natural) return Boolean is
+        (Natural (V.Length) = 1 and then V (1).Min = 1 and then V (1).Max = 1
+         and then (V (1).Kind = Char_Range
+                   or else (V (1).Kind = Literal and then Single_Code_Point (To_String (V (1).Lit))
+                            and then not V (1).No_Case)
+                   or else (V (1).Kind = Name and then Class_Rule (To_String (V (1).Name), D - 1))));
+
+      Seen : Path_Sets.Set;
+
+      function Walk (V : Element_Vectors.Vector; D : Natural) return Boolean is
+         Alts  : Natural := 1;
+         Start : Natural := 1;
+         type Slice_Range is record
+            From, To : Natural;
+         end record;
+         package Slice_Vectors is new Ada.Containers.Vectors (Positive, Slice_Range);
+         Slices : Slice_Vectors.Vector;
+      begin
+         if D = 0 then
+            return False;
+         end if;
+         for K in 1 .. Natural (V.Length) + 1 loop
+            if K > Natural (V.Length) or else V (K).Kind = Alt then
+               Slices.Append (Slice_Range'(From => Start, To => K - 1));
+               Start := K + 1;
+            end if;
+         end loop;
+         Alts := Natural (Slices.Length);
+         if Alts > 1
+           and then not (for all S of Slices => One_Point (Alt_Slice (V, S.From, S.To), 20))
+         then
+            for A in 1 .. Alts loop
+               declare
+                  FA : constant First_Info :=
+                    First_Of_Pat (Alt_Slice (V, Slices (A).From, Slices (A).To), 20);
+               begin
+                  if FA.Nullable then
+                     return False;
+                  end if;
+                  for B in A + 1 .. Alts loop
+                     declare
+                        FB : constant First_Info :=
+                          First_Of_Pat (Alt_Slice (V, Slices (B).From, Slices (B).To), 20);
+                     begin
+                        if (for some X in Byte_Set'Range => FA.Bytes (X) and then FB.Bytes (X)) then
+                           return False;
+                        end if;
+                     end;
+                  end loop;
+               end;
+            end loop;
+         end if;
+         for E of V loop
+            if E.Kind = Group then
+               if not Walk (E.Items, D - 1) then
+                  return False;
+               end if;
+            elsif E.Kind = Name then
+               declare
+                  N : constant String := To_String (E.Name);
+                  J : constant Natural := Index_Of (Rules, N);
+               begin
+                  if J /= 0 and then not Seen.Contains (N) then
+                     Seen.Insert (N);
+                     if not Walk (Rules (J).Pattern, D - 1) then
+                        return False;
+                     end if;
+                  end if;
+               end;
+            end if;
+         end loop;
+         return True;
+      end Walk;
+   begin
+      return Walk (Els, Depth);
+   end Choices_Ok;
+
    --  Is_Char_Rule_Plain and Is_Wide_Rule are one question asked two ways: 0 when Nm is not a
    --  rule of characters, 1 when it is, 2 when it is one only because Scan_Look lets a rule of
    --  characters hold a lookahead anywhere and repeat a group (see Wide_Admitted).
@@ -13110,6 +13328,7 @@ package body HBNF_Grammar is
               and then Natural (R.Pattern.Length) > 0
               and then not Is_Core_Name (N)
               and then not Excepts.Contains (N)
+              and then Length (Frame_Of (N).Slots) = 0     --  (no numbers passed down to it: an up reference, `%col`)
               and then Wide_Els (R.Pattern, N, Depth);
          begin
             if Result then
@@ -13215,9 +13434,11 @@ package body HBNF_Grammar is
               and then R.Whitespace = Null_Unbounded_String
               and then not Is_Core_Name (N)
               and then not Excepts.Contains (N)
+              and then Length (Frame_Of (N).Slots) = 0
               and then Has_Look (R.Pattern)
               and then Repeats (R.Pattern)
-              and then Wide_Els (R.Pattern, N, Depth);
+              and then Wide_Els (R.Pattern, N, Depth)
+              and then Choices_Ok (Rules, R.Pattern, 20);
          begin
             if Result then
                Adm_Yes.Include (K);
@@ -13282,9 +13503,7 @@ package body HBNF_Grammar is
                   if Excepts.Contains (To_String (E.Name)) then
                      return False;
                   end if;
-                  if not (Rec (To_String (E.Name), Depth - 1)
-                          or else Wide_Admitted (To_String (E.Name), Depth - 1))
-                  then
+                  if not Rec (To_String (E.Name), Depth - 1) then
                      return False;
                   end if;
                   Has_Anchor := True;

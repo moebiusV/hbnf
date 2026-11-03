@@ -71,6 +71,8 @@ run() {   # NAME
 	fi
 }
 run scan
+run overlap
+run dirs
 
 # C: no warning, and a scanner for the rule that holds the lookahead (a rule read a character at a time has none), with the
 # functions it calls for what repeats inside it
@@ -89,5 +91,16 @@ for b in rust zig ada; do
 		|| { echo "scanlook: FAIL ($b does not warn that a rule with a lookahead is read a character at a time)"; fail=1; }
 	n=$((n + 1))
 done
-[ $fail = 0 ] && echo "scanlook: OK ($n results: one grammar, its cases in each backend installed, C scanned and the others warning)"
+# a rule whose alternatives overlap (overlap.hbnf: `*( "a" | "ab" )`; dirs.hbnf: YAML's directives) is not scanned, in C either: it
+# warns as before and no function loops over its alternatives; and the directives generate as a tape
+for g in overlap dirs; do
+	"$CLI" tests/scanlook/$g.hbnf --backend=c > "$W/o.c" 2> "$W/err"
+	grep -q 'keeps it from being one token' "$W/err" || { echo "scanlook: FAIL ($g: C does not warn that the rule is read a character at a time)"; fail=1; }
+	! grep -q '^static size_t loop_' "$W/o.c" || { echo "scanlook: FAIL ($g: C loops over alternatives that overlap)"; fail=1; }
+	n=$((n + 1))
+done
+"$CLI" tests/scanlook/dirs.hbnf --backend=c --layout=tape > "$W/o.c" 2> "$W/err" \
+	|| { echo "scanlook: FAIL (dirs.hbnf as a tape: $(head -c 300 "$W/err"))"; fail=1; }
+n=$((n + 1))
+[ $fail = 0 ] && echo "scanlook: OK ($n results: three grammars, their cases in each backend installed, C scanning the one whose alternatives cannot overlap, the others warning)"
 exit $fail

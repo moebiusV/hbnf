@@ -1,8 +1,8 @@
 ok	#1plain text
 ok	#1<!-- a comment -->after
 ok	#1<!---->
-ok	#1<![CDATA[ a < b & c ]]>
-ok	#1<![CDATA[]]>
+ok	#1[[ a < b & c ]]>
+ok	#1[[]]>
 ok	#1@a="x y" @b='it "is"' @c="&amp;z;"
 ok	#1@a=""
 ok	#1caf\0303\0251 \0360\0237\0230\0200 \0357\0277\0275
@@ -10,7 +10,7 @@ ok	#1a\nb c\r\nd
 ok	#1@a="caf\0303\0251"<!-- \0360\0237\0230\0200 -->
 bad	#1<!-- a -- b -->
 bad	#1<!-- never closed
-bad	#1<![CDATA[ never closed
+bad	#1[[ never closed
 bad	#1a ]]> b
 bad	#1a < b
 bad	#1a & b

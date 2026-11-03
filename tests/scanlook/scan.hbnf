@@ -7,14 +7,14 @@
 ;                                         (`vchar`) with an alternative that is not a code point (`ref`).  `doc` is not text (it holds `int`), and `top`, the rule of characters with the lookahead, is the token it calls
 whitespace none
 doc     = "#" int top
-top     = &legal 1*( note | cdata | attr | text )
+top     = &legal *text *( ( note | cdata | attr ) *text )
 legal   = *Char !any
 Char    = 0x0A | 0x0D | 0x20..0xD7FF | 0xE000..0xFFFD | 0x10000..0x10FFFF
 any     = 0x00..0x10FFFF
-text    = 1*( !( "<" | "&" | "]]>" | "@" ) any )
+text    = 1*( !( "<" | "&" | "]]>" | "@" | "[[" ) any )
 note    = "<!--" till(dashes) "-->"
 dashes  = "--"
-cdata   = "<![CDATA[" till("]]>") "]]>"
+cdata   = "[[" till("]]>") "]]>"
 attr    = "@" 1*ALPHA "=" quoted(vchar)
 vchar   = ~( "<" | "&" ) | ref
 ref     = "&" 1*ALPHA ";"

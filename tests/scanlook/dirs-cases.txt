@@ -1,0 +1,7 @@
+ok	#1%Yx\n---
+ok	#1%Tx\n%Oz\n%Yq\n%Tr\n---
+ok	#1%Ta\n---
+bad	#1%Yx\n%Yy\n---
+bad	#1---
+bad	#1%Yx\n
+bad	#1%Yx\n%Tr\n%Yy\n---
