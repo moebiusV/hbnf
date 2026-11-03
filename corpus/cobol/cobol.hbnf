@@ -30,8 +30,8 @@ by     = [ "BY" ]
 thru            = "THRU" | "THROUGH"
 procedure-range = procedure-name [ thru procedure-name ]
 control-name    = "FINAL" | identifier
-item-clause     = picture-clause | usage-clause | value-clause
-display-item-clause = picture-clause | [ "USAGE" is ] ( "DISPLAY" | "NATIONAL" | "DISPLAY-1" | "UTF-8" ) | value-clause
+item-clause     = picture-clause | usage-clause | value-clause(value-item)
+display-item-clause = picture-clause | [ "USAGE" is ] ( "DISPLAY" | "NATIONAL" | "DISPLAY-1" | "UTF-8" ) | value-clause(value-item)
 program-unit       = identification-division unit-body [ end-program ]
                    | function-identification unit-body end-function
 unit-body          = [ environment-division ] [ data-division ] [ procedure-division ] *program-unit
@@ -61,7 +61,7 @@ configuration-section   = "CONFIGURATION" "SECTION" "." *configuration-paragraph
 configuration-paragraph = options-paragraph | source-computer-paragraph | object-computer-paragraph | special-names-paragraph | repository-paragraph
 source-computer-paragraph = "SOURCE-COMPUTER" "." [ computer-name [ with "DEBUGGING" "MODE" ] "." ]
 object-computer-paragraph = "OBJECT-COMPUTER" "." [ [ computer-name ] *object-computer-clause "." ]
-object-computer-clause  = [ "PROGRAM" ] [ "COLLATING" ] "SEQUENCE" ( is 1*user-word | 1*( "FOR" ( "ALPHANUMERIC" | "NATIONAL" ) is user-word ) )
+object-computer-clause  = [ "PROGRAM" ] [ "COLLATING" ] "SEQUENCE" ( is 1*user-word | 1*( [ "FOR" ] ( "ALPHANUMERIC" | "NATIONAL" ) is user-word ) )
                         | "MEMORY" "SIZE" is numeric-literal ( "WORDS" | "CHARACTERS" | "MODULES" )
                         | "SEGMENT-LIMIT" is numeric-literal
 computer-name           = user-word
@@ -86,13 +86,14 @@ file-control-paragraph  = "FILE-CONTROL" "." *file-control-entry
 file-control-entry      = "SELECT" [ "OPTIONAL" ] file-name 1*select-clause "."
 select-clause           = "ASSIGN" ( "USING" identifier | to "VARYING" identifier | to 1*( device-name | assign-name ) [ ( "USING" | "FROM" ) identifier ] )
                         | "RELATIVE" key is identifier
+                        | "ACTUAL" key is identifier
                         | "FILE-LIMITS" are 1*( operand "THRU" operand )
                         | "TRACK-AREA" operand [ "CHARACTERS" ]
                         | "TRACK-LIMIT" operand [ "TRACKS" ]
                         | [ ( "ORGANIZATION" | "ORGANISATION" ) is ] [ "LINE" ] ( "SEQUENTIAL" | "RELATIVE" | "INDEXED" )
                         | "ACCESS" [ "MODE" ] is ( "SEQUENTIAL" | "RANDOM" | "DYNAMIC" )
-                        | "RECORD" key is identifier *( "=" identifier ) [ "SOURCE" is 1*identifier ] [ with [ "NO" ] "DUPLICATES" ]
-                        | "ALTERNATE" [ "RECORD" ] key is identifier *( "=" identifier ) [ "SOURCE" is 1*identifier ] [ with [ "NO" ] "DUPLICATES" ] [ "SUPPRESS" "WHEN" operand ]
+                        | "RECORD" key is identifier *( "=" 1*identifier ) [ "SOURCE" is 1*identifier ] [ with [ "NO" ] "DUPLICATES" ]
+                        | "ALTERNATE" [ "RECORD" ] key is identifier *( "=" 1*identifier ) [ "SOURCE" is 1*identifier ] [ with [ "NO" ] "DUPLICATES" ] [ "SUPPRESS" "WHEN" operand ]
                         | [ "FILE" ] "STATUS" is identifier [ identifier ]
                         | "LOCK" [ "MODE" ] is ( "EXCLUSIVE" [ "MASS-UPDATE" ] | "MANUAL" | "AUTOMATIC" ) [ with "LOCK" "ON" [ "MULTIPLE" ] ( "RECORD" | "RECORDS" ) ]
                         | "SHARING" with ( "ALL" "OTHER" | "NO" [ "OTHER" ] | "READ" "ONLY" )
@@ -158,13 +159,13 @@ report-group-clause     = "TYPE" is report-type
                         | "RESET" on control-name | "GROUP" [ "INDICATE" ] | ( "PRESENT" | "ABSENT" ) ( "WHEN" condition | "AFTER" present-event *( "OR" present-event ) )
                         | "VARYING" identifier "FROM" operand "BY" operand
                         | display-item-clause | occurs-clause | sign-clause | justified-clause
-                        | "BLANK" [ "WHEN" ] "ZERO" | "IDENTIFIED" by operand | "GLOBAL" | "COLUMN" operand | "STEP" operand
+                        | "BLANK" [ "WHEN" ] "ZERO" | "TYPE" to identifier | "IDENTIFIED" by operand | "GLOBAL" | "COLUMN" operand | "STEP" operand
 report-type             = "REPORT" "HEADING" | "RH" | "PAGE" "HEADING" | "PH" | "CONTROL" "HEADING" control-name | "CH" control-name
                         | "DETAIL" | "DE" | "CONTROL" "FOOTING" control-name | "CF" control-name
                         | "PAGE" "FOOTING" | "PF" | "REPORT" "FOOTING" | "RF"
 special-names-clause = is "SPECIAL-NAMES" ( "CURSOR" | "CRT" "STATUS" )
 data-description-entry = "66" data-name renames-clause "."
-                       | "88" data-name 1*value-clause "."
+                       | "88" data-name 1*value-clause(condition-value) "."
                        | "78" data-name *plain-clause "."
                        | plain-level [ data-name | "FILLER" ] *data-clause "."
 data-name              = user-word | "PAGE-COUNTER" | "LINE-COUNTER" | "LINAGE-COUNTER"
@@ -172,7 +173,7 @@ data-clause            = plain-clause | occurs-clause
 ; a level 66, 78 or 88 item has no OCCURS (cobc allows it on the others)
 plain-clause           = special-names-clause | "VOLATILE" | "SAME" "AS" identifier | item-clause | redefines-clause
                        | renames-clause | sign-clause | justified-clause | synchronized-clause
-                       | "BLANK" [ "WHEN" ] "ZERO" | "IDENTIFIED" by operand | "GLOBAL" | "BASED" | "TYPEDEF" | "STATIC"
+                       | "BLANK" [ "WHEN" ] "ZERO" | "TYPE" to identifier | "IDENTIFIED" by operand | "GLOBAL" | "BASED" | "TYPEDEF" | "STATIC"
                        | is "EXTERNAL" [ "AS" operand ] | is "EXTERNAL-FORM" [ "IDENTIFIED" by operand ] | is "GLOBAL" | is "TYPEDEF"
                        | "CONSTANT" [ is "GLOBAL" ] [ "AS" ] [ "FROM" identifier | ( "LENGTH" | "BYTE-LENGTH" ) [ "OF" ] ( operand | usage ) | operand *( "&" operand ) ]
                        | "ANY" ( "LENGTH" | "NUMERIC" )
@@ -180,16 +181,19 @@ plain-clause           = special-names-clause | "VOLATILE" | "SAME" "AS" identif
                        | "UNSIGNED" | "SIGNED"
 picture-clause         = ( "PICTURE" | "PIC" ) is picture-string [ "DEPENDING" on identifier ]
 usage-clause           = "USAGE" is ( usage | user-word ) | usage
-usage                  = "DISPLAY" | "BIT" | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "POINTER" | "PROCEDURE-POINTER" | "FUNCTION-POINTER"
+usage                  = "DISPLAY" | "BIT" | "HANDLE" [ "OF" user-word ] | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "POINTER" | "PROCEDURE-POINTER" | "FUNCTION-POINTER"
                        | "PROGRAM-POINTER"
                        | "COMPUTATIONAL-1" | "COMPUTATIONAL-2" | "COMPUTATIONAL-3" | "COMPUTATIONAL-4" | "COMPUTATIONAL-5"
                        | "COMPUTATIONAL-X" | "COMPUTATIONAL-6" | "COMPUTATIONAL" | "COMP-1" | "COMP-2" | "COMP-3" | "COMP-4" | "COMP-5" | "COMP-X"
                        | "COMP-6" | "COMP" | "BINARY-C-LONG" | "SIGNED-SHORT" | "SIGNED-INT" | "SIGNED-LONG" | "BINARY-LONG-LONG" | "UNSIGNED-SHORT" | "UNSIGNED-INT" | "UNSIGNED-LONG" | "UNSIGNED-CHAR" | "BINARY-INT" | "COMP-N" | "BINARY-CHAR" | "BINARY-SHORT" | "BINARY-LONG" | "BINARY-DOUBLE" | "NATIONAL"
                        | "FLOAT-SHORT" | "FLOAT-LONG" | "FLOAT-EXTENDED" | "FLOAT-BINARY-32" | "FLOAT-BINARY-64" | "FLOAT-BINARY-128"
                        | "FLOAT-DECIMAL-16" | "FLOAT-DECIMAL-34"
-value-clause           = "VALUE" is ( value-item *( [ "OR" ] value-item ) | "ALL" literal ) [ "FALSE" is operand ]
-                       | "VALUES" are value-item *( [ "OR" ] value-item ) [ "FALSE" is operand ]
-value-item             = operand [ thru operand ]
+; V is the kind of item the list holds: an expression for a data item or level 78, a plain value for a level-88 condition (where "-9 THRU -2" is no subtraction).
+value-clause(V)        := "VALUE" is ( V *( [ "OR" ] V ) | "ALL" literal ) [ [ "WHEN" "SET" to ] "FALSE" is operand ]
+                        | "VALUES" are V *( [ "OR" ] V ) [ [ "WHEN" "SET" to ] "FALSE" is operand ]
+value-item             = "NEXT" | operand [ thru operand ]
+condition-value        = "NEXT" | condition-operand [ thru condition-operand ]
+condition-operand      = literal | identifier
 occurs-clause          = "OCCURS" ( "UNBOUNDED" "DEPENDING" on identifier | !"UNBOUNDED" operand ( "TO" ( operand | "UNBOUNDED" ) [ "TIMES" ] "DEPENDING" on identifier | [ "TIMES" ] [ "DEPENDING" on identifier ] ) ) [ "VARYING" identifier [ "FROM" operand ] [ "BY" operand ] ]
                          *( ( "ASCENDING" | "DESCENDING" ) key is 1*identifier ) [ "INDEXED" by 1*user-word ]
 redefines-clause       = "REDEFINES" data-name
@@ -354,7 +358,7 @@ set-statement      = "SET" ( "ADDRESS" "OF" identifier ( "TO" operand | ( "UP" |
                            | "LAST" "EXCEPTION" "TO" "OFF"
                            | 1*identifier ( "TO" ( "ON" | "OFF" | "TRUE" | "FALSE" | "ENTRY" operand | "ADDRESS" "OF" ( "PROGRAM" operand | identifier ) | "NULL" | operand )
                                           | ( "UP" | "DOWN" ) "BY" operand ) )
-search-statement   = "SEARCH" [ "ALL" ] identifier [ "VARYING" identifier ] [ "AT" "END" statements ]
+search-statement   = "SEARCH" [ "ALL" ] identifier [ "VARYING" identifier ] [ [ "AT" ] "END" statements ]
                      1*( "WHEN" condition ( next-sentence | statements ) ) scope-end("SEARCH")
 
 ; ---- operands ----
