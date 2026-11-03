@@ -249,6 +249,9 @@ package body HBNF_Grammar is
      (String, Ada.Strings.Hash, "=");
    Seen_Files : Path_Sets.Set;
 
+   package Name_Sets is new Ada.Containers.Indefinite_Ordered_Sets (String);
+   Plain_Yes, Plain_No : Name_Sets.Set;   --  Is_Char_Rule_Plain, per rule count
+
    --  `include "file" as x`: the file's rules live in the scope `x`, a rule
    --  `statement` of it being the rule `x--statement` for everything after
    --  the lexer (the name is a legal identifier in every backend, and Spelled
@@ -818,6 +821,8 @@ package body HBNF_Grammar is
       Token_Yes.Clear;
       Token_No.Clear;
       Text_Yes.Clear;
+      Plain_Yes.Clear;
+      Plain_No.Clear;
       Text_No.Clear;
       Pending_Except_B := Null_Unbounded_String;
       Declared_Tokens.Clear;
@@ -3041,9 +3046,13 @@ package body HBNF_Grammar is
                end;
             when '^' | '$' =>
                Bad ("`" & C & "` is an anchor, and a regular expression "
-                    & "here has none: it is read at one place in the text.  "
-                    & "To test what is next, write `!x` or `&x` beside the "
-                    & "rule");
+                    & "here has none.  hbnf has the rule `"
+                    & (if C = '^' then "bol" else "eol")
+                    & "` for "
+                    & (if C = '^' then "the beginning of a line" else "the end of a line")
+                    & ": write it beside the regular expression, `"
+                    & (if C = '^' then "bol r""...""" else "r""..."" eol")
+                    & "`, in the rule of characters that holds it");
             when '*' | '+' | '?' =>
                Bad ("`" & C & "` has nothing to repeat");
             when '{' | '}' | ']' | ')' =>
@@ -3827,6 +3836,14 @@ package body HBNF_Grammar is
                if Cur (P).Kind = T_Plus then
                   return Parse_Join (P, T);
                end if;
+               --  `bol` and `eol` are rules the grammar does not define: tests of
+               --  the position that consume nothing.
+               if To_String (N) in "bol" | "eol" then
+                  return new Element'
+                    (Kind => Block, Min => 1, Max => 1,
+                     Op => (if To_String (N) = "bol" then B_Bol else B_Eol),
+                     Ctx => <>, Path => <>, Id => 0, Look => <>, Code => <>);
+               end if;
                declare
                   E : constant Element_Access := new Element'
                     (Kind => Name, Min => 1, Max => 1, Name => N,
@@ -4119,6 +4136,13 @@ package body HBNF_Grammar is
          end if;
          if Has_Prefix then
             E.Min := Min;  E.Max := Max;
+            if E.Kind = Block and then E.Op in B_Bol | B_Eol then
+               raise Parse_Error with
+                 Integer'Image (Start.Line) & ":" & Integer'Image (Start.Col)
+                 & ": `" & (if E.Op = B_Bol then "bol" else "eol") & "` tests the position and "
+                 & "consumes nothing, so a count in front of it means nothing; write it once, "
+                 & "or in `[ ]` to allow it and not insist";
+            end if;
          end if;
          if E.Min /= E.Max then
             Greedy_Sites.Append (Here (Start.Line, Start.Col, "", E));
@@ -9187,9 +9211,13 @@ package body HBNF_Grammar is
             declare
                N : constant String := To_String (Rules (J).Name);
             begin
+               --  A rule that is only text is one token, scanned, whatever its shape: with keywords in the
+               --  grammar a letter written as a literal would make it a phrase that matches a whole word
+               --  (`exponent = ( %x45 | %x65 )` beside a `word`), so its code points stay.
                if not Is_Char (N, 32) then
                   Literalize (Rules (J).Pattern, N, Used.Contains (N),
-                              Scanned.Contains (N));
+                              Scanned.Contains (N)
+                              or else (Keywords_Apply and then Is_Char_Rule (Rules, N)));
                end if;
             end;
          end loop;
@@ -10861,7 +10889,16 @@ package body HBNF_Grammar is
                Op : constant String := To_String (P.Toks (P.Pos + 1).Text);
                Hd : constant String := To_String (Name);
             begin
-               if Op = "=" and then (for some C of Hd => C = '(') then
+               if Hd in "bol" | "eol" then
+                  raise Parse_Error with
+                    Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                    & ": `" & Hd & "` is built in, "
+                    & (if Hd = "bol"
+                       then "the beginning of a line (the start of the input, or just after a line feed)"
+                       else "the end of a line (a line feed, a carriage return or the end of the input follows)")
+                    & ", and tests it without consuming anything: a grammar uses it and cannot define it"
+                    & ASCII.LF & "  Call your own rule something else";
+               elsif Op = "=" and then (for some C of Hd => C = '(') then
                   raise Parse_Error with
                     Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
                     & ": `" & Hd & "` has parameters, and a rule with "
@@ -11773,8 +11810,6 @@ package body HBNF_Grammar is
       return False;
    end Is_Except_Operand;
 
-   package Name_Sets is new Ada.Containers.Indefinite_Ordered_Sets (String);
-   Plain_Yes, Plain_No : Name_Sets.Set;   --  Is_Char_Rule_Plain, per rule count
 
    function Is_Char_Rule_Plain (Rules : Rule_Vectors.Vector; Nm : String)
       return Boolean is
@@ -11881,17 +11916,21 @@ package body HBNF_Grammar is
                   --  whitespace rule and the rules it reaches: they are
                   --  scanned and not parsed, and the scanner looks at what
                   --  the lookahead names without moving.
-                  if E.Op not in B_Not | B_And or else E.Look.Is_Empty then
-                     return False;
-                  end if;
-                  if not Have_Reach then
-                     Reach := Ws_Reach (Rules);
-                     Have_Reach := True;
-                  end if;
-                  if not Reach.Contains (Owner)
-                    or else not Els_Plain (E.Look, Owner, Depth, False, False)
-                  then
-                     return False;
+                  if E.Op in B_Bol | B_Eol then
+                     null;     --  a test of the position, scanned anywhere in a rule of characters
+                  else
+                     if E.Op not in B_Not | B_And or else E.Look.Is_Empty then
+                        return False;
+                     end if;
+                     if not Have_Reach then
+                        Reach := Ws_Reach (Rules);
+                        Have_Reach := True;
+                     end if;
+                     if not Reach.Contains (Owner)
+                       or else not Els_Plain (E.Look, Owner, Depth, False, False)
+                     then
+                        return False;
+                     end if;
                   end if;
                when Bit_Field =>
                   null;     --  a rule with bit fields never reaches here (Split_Wire)

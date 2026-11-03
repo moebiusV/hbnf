@@ -1,0 +1,10 @@
+; bol and eol in rules of characters, where nothing is skipped: a line is a heading or an item, starts a line
+; (the start of the input, or just after a line feed) and ends one (a line feed, a carriage return or the end of
+; the input follows).  A carriage return alone does not start a line.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top     = 1*line
+line    = bol ( heading | item ) eol [ CR ] [ LF ]
+heading = "#" 1*ALPHA
+item    = "- " 1*ALPHA

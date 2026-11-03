@@ -5964,6 +5964,19 @@ package body HBNF_C is
                              & " if (i_ != n_) { fail(p, ""the indentation"", 0, p->text + p->pos, 0); "
                              & Fail & " } p->pos += (size_t)n_; }");
                            Append (Buf, LF);
+                        when B_Bol =>
+                           --  the position is the start of a line; nothing is consumed
+                           Append (Buf, Ind & "if (!(p->pos == 0 || p->text[p->pos - 1] == '\n')) "
+                             & "{ fail(p, ""the beginning of a line"", 0, p->text + p->pos, 0); "
+                             & Fail & " }");
+                           Append (Buf, LF);
+                        when B_Eol =>
+                           --  a line feed, a carriage return or the end of the input follows
+                           Append (Buf, Ind & "if (!(p->pos >= p->len || p->text[p->pos] == '\n' "
+                             & "|| p->text[p->pos] == '\r')) "
+                             & "{ fail(p, ""the end of a line"", 0, p->text + p->pos, 0); "
+                             & Fail & " }");
+                           Append (Buf, LF);
                         when B_Col =>
                            --  the column: the code points since the line began
                            Append (Buf, Ind & "{ size_t b_ = p->pos; long c_ = 0; "
@@ -8402,6 +8415,20 @@ package body HBNF_C is
          Append (Res, LF);
       end Emit_Look;
 
+      --  bol and eol: tests of the position, in the scanner; nothing is consumed.
+      procedure Emit_Bol (Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "if (!(pos + off == 0 || s[pos + off - 1] == '\n')) " & Fail & ";");
+         Append (Res, LF);
+      end Emit_Bol;
+
+      procedure Emit_Eol (Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "if (!(pos + off >= len || s[pos + off] == '\n' || s[pos + off] == '\r')) "
+           & Fail & ";");
+         Append (Res, LF);
+      end Emit_Eol;
+
       --  The function a lookahead calls: 1 when some branch matches at pos
       --  (the empty one too), else 0.
       procedure Emit_Look_Fn (H : Look_Helper) is
@@ -8426,6 +8453,10 @@ package body HBNF_C is
                         Emit_Repeat (A, "        ", "break");
                      when Look =>
                         Emit_Look (A, "        ", "break");
+                     when Bol =>
+                        Emit_Bol ("        ", "break");
+                     when Eol =>
+                        Emit_Eol ("        ", "break");
                   end case;
                end loop;
                Append (Res, "        return 1;");
@@ -9974,6 +10005,10 @@ Append (Res, "static size_t scan_" & C_Name (NM)
                            Emit_Repeat (A, "    ", "return 0");
                         when Look =>
                            Emit_Look (A, "    ", "return 0");
+                        when Bol =>
+                           Emit_Bol ("    ", "return 0");
+                        when Eol =>
+                           Emit_Eol ("    ", "return 0");
                      end case;
                   end loop;
                   Append (Res, "    return off;");
@@ -9995,6 +10030,10 @@ Append (Res, "static size_t scan_" & C_Name (NM)
                               Emit_Repeat (A, "        ", "break");
                            when Look =>
                               Emit_Look (A, "        ", "break");
+                           when Bol =>
+                              Emit_Bol ("        ", "break");
+                           when Eol =>
+                              Emit_Eol ("        ", "break");
                         end case;
                      end loop;
                      Append (Res, "        if (off > best) best = off;");

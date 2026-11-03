@@ -1,0 +1,15 @@
+; A slice of corpus/cobol/cobol-words.hbnf: a numeric literal with an optional exponent, in a grammar that has
+; keywords (`word` is used).  `exponent` is a rule of characters, written as a regular expression; when the reader
+; made the one-letter code points of such a rule into literals, they were keywords matched as whole words, and
+; `1.23E0` never matched.
+prefix none
+whitespace ws
+sensitivity string %i
+include "../../grammars/common.hbnf"
+top             = 1*( "#" numeric-literal ) | "@" name
+name            = word
+ws              = SP | HTAB | CR | LF
+exponent        = ir"E"
+numeric-literal = [ sign ] ( nums [ "." nums ] | "." nums ) [ exponent [ sign ] nums ] !( ALPHA | "_" | "-" ALPHA )
+sign            = "+" | "-"
+nums            = r"\d+"

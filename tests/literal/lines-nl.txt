@@ -1,0 +1,11 @@
+ok	a = b
+ok	a = b\nc = d\n
+ok	a = b\r\nc = d
+ok	a = b\n* a comment = x\nc = d
+ok	* first\na = b
+ok	a = b\n\n\n* last
+bad	a = b c = d
+bad	a = * b
+bad	a = b * x\n
+bad	a = b\nc = d e = f
+bad	a b

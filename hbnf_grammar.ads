@@ -182,6 +182,8 @@ package HBNF_Grammar is
       B_Col,         --  %col j: j is the column the parser is at
       B_Num,         --  x %num j: j is the decimal number x matched
       B_Guard,       --  the clause of a rule with numeric parameters applies: a test on the frame
+      B_Bol,         --  bol: the position is the beginning of a line; nothing is consumed
+      B_Eol,         --  eol: a line feed, a carriage return or the end of the input follows; nothing is consumed
       B_Switch);     --  `=> grammar(x)`: when the alternative has matched, x is the current grammar
                      --  (Path = "tag": Ctx is a tag bound by %as, the text it kept names the grammar)
 

@@ -3133,6 +3133,17 @@ package body HBNF_Zig is
                           & " if (i_ != n_) { " & Pref & "p.fail(""the indentation"")" & Cat
                           & "; } p.pos += @as(usize, @intCast(n_)); }");
                         Append (Buf, LF);
+                     elsif E.Op = B_Bol then
+                        --  the position is the start of a line; nothing is consumed
+                        Append (Buf, Ind & "if (!(p.pos == 0 or p.text[p.pos - 1] == '\n')) { "
+                          & Pref & "p.fail(""the beginning of a line"")" & Cat & "; }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Eol then
+                        --  a line feed, a carriage return or the end of the input follows
+                        Append (Buf, Ind & "if (!(p.pos >= p.text.len or p.text[p.pos] == '\n' "
+                          & "or p.text[p.pos] == '\r')) { "
+                          & Pref & "p.fail(""the end of a line"")" & Cat & "; }");
+                        Append (Buf, LF);
                      elsif E.Op = B_Col then
                         --  the column: the code points since the line began
                         Append (Buf, Ind & "{ var q_ = p.pos; var c_: i64 = 0;"
@@ -4006,6 +4017,20 @@ package body HBNF_Zig is
          Append (Res, LF);
       end Emit_Look;
 
+      --  bol and eol: tests of the position, in the scanner; nothing is consumed.
+      procedure Emit_Bol (Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "if (!(pos + off == 0 or s[pos + off - 1] == '\n')) " & Fail & ";");
+         Append (Res, LF);
+      end Emit_Bol;
+
+      procedure Emit_Eol (Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "if (!(pos + off >= len or s[pos + off] == '\n' or s[pos + off] == '\r')) "
+           & Fail & ";");
+         Append (Res, LF);
+      end Emit_Eol;
+
       --  The function a lookahead calls: true when some branch matches at pos
       --  (the empty one too).
       procedure Emit_Look_Fn (H : Look_Helper) is
@@ -4020,7 +4045,7 @@ package body HBNF_Zig is
             Br := Br + 1;
             declare
                Mark  : constant Natural := Length (Res);
-               Moves : constant Boolean := (for some A of B => A.Kind /= Look);
+               Moves : constant Boolean := (for some A of B => A.Kind not in Look | Bol | Eol);
                Branch_Text : Unbounded_String;
             begin
                if Br = 1 and then B.Is_Empty then
@@ -4050,6 +4075,10 @@ package body HBNF_Zig is
                         Emit_Repeat (A, "        ", "break :br" & Img (Br));
                      when Look =>
                         Emit_Look (A, "        ", "break :br" & Img (Br));
+                     when Bol =>
+                        Emit_Bol ("        ", "break :br" & Img (Br));
+                     when Eol =>
+                        Emit_Eol ("        ", "break :br" & Img (Br));
                   end case;
                end loop;
                Append (Res, "        return true;");
@@ -4900,6 +4929,10 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
                               Emit_Repeat (A, "    ", "return 0");
                            when Look =>
                               Emit_Look (A, "    ", "return 0");
+                           when Bol =>
+                              Emit_Bol ("    ", "return 0");
+                           when Eol =>
+                              Emit_Eol ("    ", "return 0");
                         end case;
                      end loop;
                      Append (Res, "    return off;");
@@ -4943,6 +4976,10 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
                                        Emit_Repeat (A, "        ", "break :br" & Img (Br));
                                     when Look =>
                                        Emit_Look (A, "        ", "break :br" & Img (Br));
+                                    when Bol =>
+                                       Emit_Bol ("        ", "break :br" & Img (Br));
+                                    when Eol =>
+                                       Emit_Eol ("        ", "break :br" & Img (Br));
                                  end case;
                               end loop;
                               Append (Res, "        if (off > best) best = off;");

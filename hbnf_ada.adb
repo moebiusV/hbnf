@@ -1982,6 +1982,17 @@ package body HBNF_Ada is
                           & " if Ii /= Nn then Fail (P, ""the indentation""); " & To_String (FA)
                           & " end if; P.Pos := P.Pos + Natural (Nn); end;");
                         Append (Buf, LF);
+                     elsif E.Op = B_Bol then
+                        --  the position is the start of a line; nothing is consumed
+                        Append (Buf, Ind & "if not (P.Pos = P.Text'First or else P.Text (P.Pos - 1) = ASCII.LF) then"
+                          & " Fail (P, ""the beginning of a line""); " & To_String (FA) & " end if;");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Eol then
+                        --  a line feed, a carriage return or the end of the input follows
+                        Append (Buf, Ind & "if not (P.Pos > Limit (P) or else P.Text (P.Pos) = ASCII.LF"
+                          & " or else P.Text (P.Pos) = ASCII.CR) then"
+                          & " Fail (P, ""the end of a line""); " & To_String (FA) & " end if;");
+                        Append (Buf, LF);
                      elsif E.Op = B_Col then
                         --  the column: the code points since the line began
                         Append (Buf, Ind & "declare Qq : Natural := P.Pos; Cc : Long_Long_Integer := 0; begin"
@@ -2993,6 +3004,21 @@ package body HBNF_Ada is
          Append (Bdy, LF);
       end Emit_Look;
 
+      --  bol and eol: tests of the position, in the scanner; nothing is consumed.
+      procedure Emit_Bol (Ind : String; Fail : String) is
+      begin
+         Append (Bdy, Ind & "if not (Pos + Off = S'First or else S (Pos + Off - 1) = ASCII.LF) then "
+           & Fail & "; end if;");
+         Append (Bdy, LF);
+      end Emit_Bol;
+
+      procedure Emit_Eol (Ind : String; Fail : String) is
+      begin
+         Append (Bdy, Ind & "if not (Pos + Off > Len or else S (Pos + Off) = ASCII.LF"
+           & " or else S (Pos + Off) = ASCII.CR) then " & Fail & "; end if;");
+         Append (Bdy, LF);
+      end Emit_Eol;
+
       --  The function a lookahead calls: true when some branch matches at Pos
       --  (the empty one too).
       procedure Emit_Look_Fn (H : Look_Helper) is
@@ -3031,6 +3057,10 @@ package body HBNF_Ada is
                      Emit_Repeat (A, "         ", "Ok := False");
                   when Look =>
                      Emit_Look (A, "         ", "Ok := False");
+                  when Bol =>
+                     Emit_Bol ("         ", "Ok := False");
+                  when Eol =>
+                     Emit_Eol ("         ", "Ok := False");
                end case;
                Append (Bdy, "      end if;");
                Append (Bdy, LF);
@@ -4415,6 +4445,10 @@ package body HBNF_Ada is
                            Emit_Repeat (A, "      ", "return 0");
                         when Look =>
                            Emit_Look (A, "      ", "return 0");
+                        when Bol =>
+                           Emit_Bol ("      ", "return 0");
+                        when Eol =>
+                           Emit_Eol ("      ", "return 0");
                      end case;
                   end loop;
                   Append (Bdy, "      return Off;");
@@ -4462,6 +4496,16 @@ package body HBNF_Ada is
                               Append (Bdy, "      if Ok then");
                               Append (Bdy, LF);
                               Emit_Look (A, "         ", "Ok := False");
+                              Append (Bdy, "      end if;");
+                              Append (Bdy, LF);
+                           when Bol | Eol =>
+                              Append (Bdy, "      if Ok then");
+                              Append (Bdy, LF);
+                              if A.Kind = Bol then
+                                 Emit_Bol ("         ", "Ok := False");
+                              else
+                                 Emit_Eol ("         ", "Ok := False");
+                              end if;
                               Append (Bdy, "      end if;");
                               Append (Bdy, LF);
                         end case;

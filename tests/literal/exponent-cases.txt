@@ -1,0 +1,7 @@
+ok	#1.23E0
+ok	#1.23e+5 #7 #.5E-2
+ok	#12E3
+ok	@abc
+bad	#1.5E
+bad	#1.5E2x
+bad	#1.5E2e

@@ -2924,6 +2924,17 @@ package body HBNF_Rust is
                           & " while i_ < n_ && p.pos + (i_ as usize) < b_.len() && b_[p.pos + i_ as usize] == b' ' { i_ += 1; }"
                           & " if i_ != n_ { return Err(p.fail(""the indentation"")); } p.pos += n_ as usize; }");
                         Append (Buf, LF);
+                     elsif E.Op = B_Bol then
+                        --  the position is the start of a line; nothing is consumed
+                        Append (Buf, Ind & "if !(p.pos == 0 || p.text.as_bytes()[p.pos - 1] == b'\n') "
+                          & "{ return Err(p.fail(""the beginning of a line"")); }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Eol then
+                        --  a line feed, a carriage return or the end of the input follows
+                        Append (Buf, Ind & "if !(p.pos >= p.text.len() || p.text.as_bytes()[p.pos] == b'\n' "
+                          & "|| p.text.as_bytes()[p.pos] == b'\r') "
+                          & "{ return Err(p.fail(""the end of a line"")); }");
+                        Append (Buf, LF);
                      elsif E.Op = B_Col then
                         --  the column: the code points since the line began
                         Append (Buf, Ind & "{ let b_ = p.text.as_bytes(); let mut q_ = p.pos; let mut c_: i64 = 0;"
@@ -3702,6 +3713,20 @@ package body HBNF_Rust is
          Append (Res, LF);
       end Emit_Look;
 
+      --  bol and eol: tests of the position, in the scanner; nothing is consumed.
+      procedure Emit_Bol (Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "if !(pos + off == 0 || s[pos + off - 1] == b'\n') { " & Fail & "; }");
+         Append (Res, LF);
+      end Emit_Bol;
+
+      procedure Emit_Eol (Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "if !(pos + off >= len || s[pos + off] == b'\n' || s[pos + off] == b'\r') { "
+           & Fail & "; }");
+         Append (Res, LF);
+      end Emit_Eol;
+
       --  The function a lookahead calls: true when some branch matches at pos
       --  (the empty one too).
       procedure Emit_Look_Fn (H : Look_Helper) is
@@ -3716,7 +3741,7 @@ package body HBNF_Rust is
             Br := Br + 1;
             declare
                Mark  : constant Natural := Length (Res);
-               Moves : constant Boolean := (for some A of B => A.Kind /= Look);
+               Moves : constant Boolean := (for some A of B => A.Kind not in Look | Bol | Eol);
                Branch_Text : Unbounded_String;
             begin
                if Br = 1 and then B.Is_Empty then
@@ -3736,6 +3761,10 @@ package body HBNF_Rust is
                         Emit_Repeat (A, "        ", "break 'br" & Img (Br));
                      when Look =>
                         Emit_Look (A, "        ", "break 'br" & Img (Br));
+                     when Bol =>
+                        Emit_Bol ("        ", "break 'br" & Img (Br));
+                     when Eol =>
+                        Emit_Eol ("        ", "break 'br" & Img (Br));
                   end case;
                end loop;
                if Moves then
@@ -4283,6 +4312,10 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                               Emit_Repeat (A, "    ", "return 0");
                            when Look =>
                               Emit_Look (A, "    ", "return 0");
+                           when Bol =>
+                              Emit_Bol ("    ", "return 0");
+                           when Eol =>
+                              Emit_Eol ("    ", "return 0");
                         end case;
                      end loop;
                      Append (Res, "    off");
@@ -4316,6 +4349,10 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                                        Emit_Repeat (A, "        ", "break 'br" & Img (Br));
                                     when Look =>
                                        Emit_Look (A, "        ", "break 'br" & Img (Br));
+                                    when Bol =>
+                                       Emit_Bol ("        ", "break 'br" & Img (Br));
+                                    when Eol =>
+                                       Emit_Eol ("        ", "break 'br" & Img (Br));
                                  end case;
                               end loop;
                               Append (Res, "        if off > best { best = off; }");

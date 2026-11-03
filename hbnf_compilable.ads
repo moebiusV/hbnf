@@ -57,7 +57,10 @@ package HBNF_Compilable is
    --  matches, or does not, the text x names at the position, and moves
    --  nothing.  x is a branch list of its own, which the backends write as a
    --  function named Fn (see Look_Helpers).
-   type Cp_Atom_Kind is (Single, Repeat, Look);
+   --  Bol and Eol are the built-in rules of those names: the position is the beginning of a line (the
+   --  start of the text, or just after a line feed), or a line feed, a carriage return or the end of the
+   --  text follows.  Like a lookahead they move nothing.
+   type Cp_Atom_Kind is (Single, Repeat, Look, Bol, Eol);
    type Look_Body;                                   --  completed below
    type Look_Access is access Look_Body;
    type Cp_Atom (Kind : Cp_Atom_Kind := Single) is record
@@ -65,7 +68,7 @@ package HBNF_Compilable is
       Lo2    : Natural := 1;           --  a second range for a Single, as in Cp_Range (Hi2 < Lo2: none)
       Hi2    : Natural := 0;
       case Kind is
-         when Single => null;
+         when Single | Bol | Eol => null;
          when Repeat =>
             Min : Natural;                  --  minimum iterations
             Max : Natural;                  --  0 = unbounded

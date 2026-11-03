@@ -1,0 +1,9 @@
+ok	#abc
+ok	#abc\n- def\n
+ok	- x\r\n#y
+ok	#a\n#b\n#c
+bad	#abc- def
+bad	#a\r#b
+bad	#a #b
+bad	-
+bad	x

@@ -324,7 +324,7 @@ package body HBNF_Compilable is
                      end;
                   elsif E.Kind = Block then
                      raise Parse_Error with To_String (R.Name)
-                       & ": a lookahead (`!` or `&`) inside what a character rule repeats "
+                       & ": a lookahead (`!` or `&`), `bol` or `eol` inside what a character rule repeats "
                        & "cannot be scanned.  Put it outside the repetition, or write what "
                        & "is repeated as a rule that has none";
                   elsif E.Kind = Name then
@@ -495,6 +495,15 @@ package body HBNF_Compilable is
                         end loop;
                         Branches := New_Branches;
                      end;
+                  elsif E.Kind = Block and then E.Op in B_Bol | B_Eol then
+                     --  A test of the position: it moves nothing.
+                     for B of Branches loop
+                        if E.Op = B_Bol then
+                           B.Append (Cp_Atom'(Kind => Bol, Lo => 0, Hi => 0, Lo2 => 1, Hi2 => 0));
+                        else
+                           B.Append (Cp_Atom'(Kind => Eol, Lo => 0, Hi => 0, Lo2 => 1, Hi2 => 0));
+                        end if;
+                     end loop;
                   elsif E.Kind = Block then
                      --  A lookahead: a function of its own matches what it looks at.
                      if E.Op not in B_Not | B_And or else E.Look.Is_Empty then

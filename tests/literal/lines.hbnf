@@ -1,0 +1,9 @@
+; bol and eol, built-in rules that test the position and consume nothing.  A statement is two words with an `=`
+; that ends its line (`eol`, in a phrase rule), and a line that starts with `*` is a comment (`bol`, in `ws`, which
+; is scanned a character at a time): a `*` anywhere else is no comment.
+prefix none
+whitespace ws
+include "../../grammars/common.hbnf"
+top  = 1*stmt
+stmt = word "=" word eol
+ws   = SP | HTAB | LF | CR | bol "*" *~( CR | LF )
