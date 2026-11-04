@@ -4234,9 +4234,13 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "   malloc'd: the kernel hands out zeroed pages, so the chunk needs no clearing, and it starts on a");
       Append (Res, LF);
-      Append (Res, "   2 MiB boundary and asks for huge pages, so a tree of tens of megabytes costs a few dozen page");
+      Append (Res, "   2 MiB boundary, so the kernel can back it with huge pages where it has them.  It does not ask for");
       Append (Res, LF);
-      Append (Res, "   faults and not one for every 4 KiB. */");
+      Append (Res, "   them (-DHBNF_HUGEPAGES does): on a host whose memory is fragmented, which a machine that has been up for");
+      Append (Res, LF);
+      Append (Res, "   weeks usually is, the request makes every fault try to compact memory, nearly always fails, and a parse");
+      Append (Res, LF);
+      Append (Res, "   that takes 12 ms takes 40 to 100.  Where the memory is clean the request saves a quarter of the time. */");
       Append (Res, LF);
       Append (Res, "#if defined(__linux__)");
       Append (Res, LF);
@@ -4254,7 +4258,7 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "    hbnf_chunk *c = (hbnf_chunk *)(((uintptr_t)m + huge - 1) & ~(uintptr_t)(huge - 1));");
       Append (Res, LF);
-      Append (Res, "#ifdef MADV_HUGEPAGE");
+      Append (Res, "#if defined(MADV_HUGEPAGE) && defined(HBNF_HUGEPAGES)");
       Append (Res, LF);
       Append (Res, "    madvise(c, len, MADV_HUGEPAGE);");
       Append (Res, LF);

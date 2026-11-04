@@ -30,15 +30,17 @@ static __attribute__((noinline, unused)) void tape_grow (void)
 }
 
 /* Room for a document of this many bytes, before the parse: a quarter word a byte is more
-   than the usual document needs.  The room starts on a 2 MiB boundary and asks for huge pages, so
-   filling it costs a few page faults, not one for every 4 KiB. */
+   than the usual document needs.  The room starts on a 2 MiB boundary, so the kernel can back it with huge
+   pages where it has them; it does not ask for them unless -DHBNF_HUGEPAGES (see the arena of a generated
+   parser: on a fragmented host the request makes every fault try to compact memory and a parse takes
+   three to eight times as long). */
 __attribute__((unused)) static void tape_reserve (size_t input_bytes)
 {
     const size_t huge = (size_t) 2 << 20;
     size_t bytes = ((input_bytes / 4 + 64) * sizeof *tape + huge - 1) & ~(huge - 1);
     void *m = aligned_alloc (huge, bytes);
     if (!m) return;
-#ifdef MADV_HUGEPAGE
+#if defined(MADV_HUGEPAGE) && defined(HBNF_HUGEPAGES)
     madvise (m, bytes, MADV_HUGEPAGE);
 #endif
     free (tape);
