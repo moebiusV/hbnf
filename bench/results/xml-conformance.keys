@@ -8,4 +8,4 @@ ElementTree	Python 3.13.5 4643bfcdbc109c76
 lxml	5.4.0-1 4643bfcdbc109c76
 fast-xml-parser	5.11.2 4643bfcdbc109c76
 sax (Node)	1.6.1 4643bfcdbc109c76
-hbnf	grammar 0118e17e9713a5eb, generator 7b030ccfbf59 4643bfcdbc109c76
+hbnf	grammar 0118e17e9713a5eb, generator 8a98eb481022 4643bfcdbc109c76
