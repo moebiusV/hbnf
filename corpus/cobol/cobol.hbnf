@@ -245,10 +245,10 @@ xml-statement      = "XML" as K ( "GENERATE" identifier "FROM" identifier [ coun
                              [ suppress-list ] [ on-exception-phrases ]
                            | "PARSE" identifier [ with "ENCODING" operand ] [ "RETURNING" "NATIONAL" ] [ "VALIDATING" with identifier ]
                              "PROCESSING" "PROCEDURE" is procedure-range [ on-exception-phrases ] )
-                     [ "END-" + $K ]
+                     scope-end
 json-statement     = "JSON" as K ( "GENERATE" identifier "FROM" identifier [ count-in ]
                             | "PARSE" identifier "INTO" identifier [ with "DETAIL" ] )
-                     [ name-of ] [ suppress-list ] [ on-exception-phrases ] [ "END-" + $K ]
+                     [ name-of ] [ suppress-list ] [ on-exception-phrases ] scope-end
 count-in           = "COUNT" [ "IN" ] identifier
 name-of            = "NAME" [ "OF" ] 1*( identifier is ( "OMITTED" | operand ) )
 suppress-list      = "SUPPRESS" 1*( [ "EVERY" ( "ELEMENT" | "ATTRIBUTE" ) ] "WHEN" figurative-constant *( "OR" figurative-constant ) | identifier [ "WHEN" figurative-constant ] )
@@ -266,7 +266,7 @@ merge-statement    = "MERGE" file-name 1*( on ( "ASCENDING" | "DESCENDING" ) key
                      [ [ "COLLATING" ] "SEQUENCE" is user-word ] "USING" 1*file-name
                      ( "OUTPUT" "PROCEDURE" is procedure-range | "GIVING" 1*file-name )
 release-statement  = "RELEASE" user-word [ "FROM" operand ]
-return-statement   = "RETURN" as K file-name [ "RECORD" ] [ "INTO" identifier ] end-phrases [ "END-" + $K ]
+return-statement   = "RETURN" as K file-name [ "RECORD" ] [ "INTO" identifier ] end-phrases scope-end
 allocate-statement = "ALLOCATE" ( operand "CHARACTERS" | identifier ) [ "INITIALIZED" [ "TO" literal ] ] [ "LOC" numeric-literal ] [ "RETURNING" identifier ]
 free-statement     = "FREE" 1*( identifier | "ADDRESS" "OF" identifier )
 exhibit-statement  = "EXHIBIT" [ "NAMED" | "CHANGED" ] 1*operand
@@ -282,32 +282,34 @@ procedure-name     = paragraph-name [ ( "IN" | "OF" ) section-name ]
 
 accept-statement   = "ACCEPT" as K ( "OMITTED" | identifier ) [ "FROM" ( "DATE" [ "YYYYMMDD" ] | "DAY" [ "YYYYDDD" ] | "DAY-OF-WEEK" | "TIME"
                                                   | "COMMAND-LINE" | "ESCAPE" [ "KEY" ] | "ENVIRONMENT-VALUE" | "ENVIRONMENT" operand | user-word ) ]
-                     *screen-phrase [ on-exception-phrases ] [ "END-" + $K ]
+                     *screen-phrase [ on-exception-phrases ] scope-end
 ; A message box (GnuCOBOL's graphical extension): its attributes follow the text.
-display-message    = "DISPLAY" as K "MESSAGE" [ "BOX" ] 1*operand *( ( "TITLE" | "TYPE" | "ICON" | "DEFAULT" ) ( "=" | is ) operand | "RETURNING" identifier ) [ "END-" + $K ]
-display-statement  = "DISPLAY" as K [ with "CONVERSION" ] ( 1*operand | "OMITTED" ) *( "UPON" ( device-name | user-word ) | with "NO" "ADVANCING" | screen-phrase ) [ on-exception-phrases ] [ "END-" + $K ]
+display-message    = "DISPLAY" as K "MESSAGE" [ "BOX" ] 1*operand *( ( "TITLE" | "TYPE" | "ICON" | "DEFAULT" ) ( "=" | is ) operand | "RETURNING" identifier ) scope-end
+display-statement  = "DISPLAY" as K [ with "CONVERSION" ] ( 1*operand | "OMITTED" ) *( "UPON" ( device-name | user-word ) | with "NO" "ADVANCING" | screen-phrase ) [ on-exception-phrases ] scope-end
 move-statement     = "MOVE" ( [ "CORRESPONDING" | "CORR" ] sending "TO" 1*identifier )
 sending            = length-of | literal | identifier
 
 add-statement      = "ADD" as K ( ( "CORRESPONDING" | "CORR" ) identifier "TO" rounded
                            | 1*operand [ "TO" 1*rounded-operand ] [ "GIVING" 1*rounded ] )
-                     [ size-error-phrases ] [ "END-" + $K ]
+                     [ size-error-phrases ] scope-end
 subtract-statement = "SUBTRACT" as K ( ( "CORRESPONDING" | "CORR" ) identifier "FROM" rounded
                                 | 1*operand "FROM" 1*rounded-operand [ "GIVING" 1*rounded ] )
-                     [ size-error-phrases ] [ "END-" + $K ]
-multiply-statement = "MULTIPLY" as K operand "BY" 1*rounded-operand [ "GIVING" 1*rounded ] [ size-error-phrases ] [ "END-" + $K ]
+                     [ size-error-phrases ] scope-end
+multiply-statement = "MULTIPLY" as K operand "BY" 1*rounded-operand [ "GIVING" 1*rounded ] [ size-error-phrases ] scope-end
 divide-statement   = "DIVIDE" as K operand ( "INTO" | "BY" ) 1*rounded-operand [ "GIVING" 1*rounded ] [ "REMAINDER" identifier ]
-                     [ size-error-phrases ] [ "END-" + $K ]
-compute-statement  = "COMPUTE" as K 1*rounded ( "=" | "EQUAL" ) arithmetic-expression [ size-error-phrases ] [ "END-" + $K ]
+                     [ size-error-phrases ] scope-end
+compute-statement  = "COMPUTE" as K 1*rounded ( "=" | "EQUAL" ) arithmetic-expression [ size-error-phrases ] scope-end
 rounded            = identifier [ "ROUNDED" [ rounded-mode ] ]
 rounded-mode       = "MODE" is round-choice
 rounded-operand    = operand [ "ROUNDED" [ rounded-mode ] ]
+; A statement may end with END- and its own word: scope-end reads the K that the statement kept with `"ADD" as K`.
+scope-end = [ "END-" + $K^ ]
 ; An ON ... phrase and a NOT ON ... phrase, each with its statements, either one first or alone: W is the words that name the condition.
 phrases(W) := W statements [ "NOT" W statements ] | "NOT" W statements [ W statements ]
 size-error-phrases = phrases(on "SIZE" "ERROR")
-if-statement       = "IF" as K condition [ "THEN" ] ( next-sentence | [ statements ] ) [ "ELSE" ( next-sentence | statements ) ] [ "END-" + $K ]
+if-statement       = "IF" as K condition [ "THEN" ] ( next-sentence | [ statements ] ) [ "ELSE" ( next-sentence | statements ) ] scope-end
 
-evaluate-statement = "EVALUATE" as K subject *( "ALSO" subject ) ( 1*when-phrase [ when-tail ] | when-tail ) [ "END-" + $K ]
+evaluate-statement = "EVALUATE" as K subject *( "ALSO" subject ) ( 1*when-phrase [ when-tail ] | when-tail ) scope-end
 subject            = "TRUE" | "FALSE" | condition
 when-phrase        = 1*when-head statements
 when-head          = "WHEN" object *( "ALSO" object )
@@ -321,23 +323,23 @@ perform-option     = operand "TIMES"
                    | [ with "TEST" ( "BEFORE" | "AFTER" ) ] "VARYING" varying *( "AFTER" varying )
 varying            = identifier "FROM" operand [ "BY" operand ] "UNTIL" condition
 
-call-statement     = "CALL" as K [ "STATIC" | "STDCALL" ] operand [ "USING" 1*using-argument ] [ ( "RETURNING" | "GIVING" ) ( "OMITTED" | identifier ) ] [ on-exception-phrases ] [ "END-" + $K ]
+call-statement     = "CALL" as K [ "STATIC" | "STDCALL" ] operand [ "USING" 1*using-argument ] [ ( "RETURNING" | "GIVING" ) ( "OMITTED" | identifier ) ] [ on-exception-phrases ] scope-end
 using-argument     = [ by ( "REFERENCE" | "CONTENT" | "VALUE" ) ] ( "OMITTED" | "ADDRESS" "OF" identifier | operand [ "SIZE" ( "DEFAULT" | is operand ) ] )
 cancel-statement   = "CANCEL" 1*operand
 on-exception-phrases = phrases(on ( "EXCEPTION" | "OVERFLOW" | "ESCAPE" ))
 open-statement     = "OPEN" 1*( [ "EXCLUSIVE" ] ( "INPUT" | "OUTPUT" | "I-O" | "EXTEND" ) 1*( file-name *( with ( "LOCK" | "NO" "REWIND" ) | "FOR" "LOCK" ) [ "ALLOWING" ( "ALL" | "READERS" | "UPDATERS" | "NO" [ "OTHERS" ] ) ] ) )
 close-statement    = "CLOSE" 1*( file-name [ "REEL" | "UNIT" ] [ "FOR" "REMOVAL" ] [ with ( "LOCK" | "NO" "REWIND" ) ] )
 read-statement     = "READ" as K file-name [ "NEXT" | "PREVIOUS" ] [ "RECORD" ] [ "INTO" identifier ] [ with ( "NO" "LOCK" | "LOCK" | "KEPT" "LOCK" ) ] [ "KEY" is identifier ]
-                     [ end-phrases ] [ invalid-key-phrases ] [ "END-" + $K ]
+                     [ end-phrases ] [ invalid-key-phrases ] scope-end
 write-statement    = "WRITE" as K [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ ( "BEFORE" | "AFTER" ) [ "ADVANCING" ] ( "PAGE" | operand [ "LINE" | "LINES" ] ) ]
-                     [ end-of-page-phrases ] [ invalid-key-phrases ] [ "END-" + $K ]
+                     [ end-of-page-phrases ] [ invalid-key-phrases ] scope-end
 end-of-page-phrases = phrases(at ( "END-OF-PAGE" | "EOP" ))
-rewrite-statement  = "REWRITE" as K [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ invalid-key-phrases ] [ "END-" + $K ]
-delete-statement   = "DELETE" as K ( "FILE" 1*file-name | file-name [ "RECORD" ] [ invalid-key-phrases ] [ "END-" + $K ] )
+rewrite-statement  = "REWRITE" as K [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ invalid-key-phrases ] scope-end
+delete-statement   = "DELETE" as K ( "FILE" 1*file-name | file-name [ "RECORD" ] [ invalid-key-phrases ] scope-end )
 enable-statement   = ( "ENABLE" | "DISABLE" ) ( [ "INPUT" ] [ "TERMINAL" ] | "I-O" "TERMINAL" | "OUTPUT" ) identifier [ with "KEY" operand ]
 purge-statement    = "PURGE" identifier
 unlock-statement   = "UNLOCK" file-name [ "RECORD" | "RECORDS" ]
-start-statement    = "START" as K file-name [ "FIRST" | "LAST" ] [ "KEY" is relation-operator identifier ] [ invalid-key-phrases ] [ "END-" + $K ]
+start-statement    = "START" as K file-name [ "FIRST" | "LAST" ] [ "KEY" is relation-operator identifier ] [ invalid-key-phrases ] scope-end
 end-phrases        = phrases("AT" "END")
 invalid-key-phrases = phrases("INVALID" key)
 initialize-statement = "INITIALIZE" 1*identifier [ "WITH" "FILLER" ] [ ( "ALL" | category ) to "VALUE" ]
@@ -345,10 +347,10 @@ initialize-statement = "INITIALIZE" 1*identifier [ "WITH" "FILLER" ] [ ( "ALL" |
 category           = "ALPHABETIC" | "ALPHANUMERIC" | "ALPHANUMERIC-EDITED" | "NUMERIC" | "NUMERIC-EDITED" | "NATIONAL"
 
 string-statement   = "STRING" as K 1*( 1*operand [ "DELIMITED" by ( "SIZE" | operand ) ] ) "INTO" identifier
-                     [ with "POINTER" identifier ] [ overflow-phrases ] [ "END-" + $K ]
+                     [ with "POINTER" identifier ] [ overflow-phrases ] scope-end
 unstring-statement = "UNSTRING" as K sending [ "DELIMITED" by [ "ALL" ] operand *( "OR" [ "ALL" ] operand ) ]
                      "INTO" 1*( identifier [ "DELIMITER" [ "IN" ] identifier ] [ "COUNT" [ "IN" ] identifier ] )
-                     [ with "POINTER" identifier ] [ "TALLYING" [ "IN" ] identifier ] [ overflow-phrases ] [ "END-" + $K ]
+                     [ with "POINTER" identifier ] [ "TALLYING" [ "IN" ] identifier ] [ overflow-phrases ] scope-end
 overflow-phrases   = phrases(on "OVERFLOW")
 inspect-statement  = "INSPECT" identifier ( tallying [ replacing ] | replacing | converting )
 tallying           = "TALLYING" 1*( identifier "FOR" 1*( "CHARACTERS" [ region ] | ( "ALL" | "LEADING" | "TRAILING" ) 1*( !tally-counter operand [ region ] ) ) )
@@ -366,7 +368,7 @@ set-statement      = "SET" ( "ADDRESS" "OF" identifier ( "TO" operand | ( "UP" |
                            | 1*identifier ( "TO" ( "ON" | "OFF" | "TRUE" | "FALSE" | "ENTRY" operand | "ADDRESS" "OF" ( "PROGRAM" operand | identifier ) | "NULL" | operand )
                                           | ( "UP" | "DOWN" ) "BY" operand ) )
 search-statement   = "SEARCH" as K [ "ALL" ] identifier [ "VARYING" identifier ] [ [ "AT" ] "END" statements ]
-                     1*( "WHEN" condition ( next-sentence | statements ) ) [ "END-" + $K ]
+                     1*( "WHEN" condition ( next-sentence | statements ) ) scope-end
 
 ; ---- operands ----
 operand        = arithmetic-expression
