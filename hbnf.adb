@@ -398,7 +398,7 @@ begin
            To_String (Backend) /= "c" or else Tree_Tools or else Idref or else Forks
            or else Compare or else HBNF_Grammar.Statements
            or else not HBNF_Grammar.Wire_Rules.Is_Empty
-           or else HBNF_Grammar.Context_Count > 0
+           or else HBNF_Grammar.Context_Code
            or else HBNF_C.Needs_Copies;
       begin
          if Views and then Cannot then

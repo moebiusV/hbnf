@@ -1,0 +1,1 @@
+<!DOCTYPE a SYSTEM "a.dtd" [<!ENTITY f "x">]><a>&e;&f;</a>

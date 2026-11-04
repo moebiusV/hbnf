@@ -12,15 +12,18 @@ validity), plus the one lexical rule of Namespaces in XML that expat leaves to a
                               the Fifth Edition's NameStartChar, or NameChar, includes X.  This does not ask
                               expat: its tables are the Fourth Edition's.
 
-The document is given to expat as text (so a declared encoding is not used), with an external subset
-supposed (UseForeignDTD) so that an undeclared entity is skipped and not an error: a grammar that does not
-read declarations cannot tell.  The names of elements, attributes, declarations, entities, notations and
+The document is given to expat as text (so a declared encoding is not used), with all of expat's own checks
+on: a repeated attribute, a character reference to a character that is not a Char, an entity that is not
+declared (unless an external subset or a parameter-entity reference may have declared it, or standalone="yes"
+says it did not), an external or unparsed entity in an attribute value, an unparsed one in content.  The names of elements, attributes, declarations, entities, notations and
 instruction targets must be QNames, [prefix ":"] local with both parts NCNames; expat reads a Name, where
 colons are ordinary.
 
-LOOSE are the checks of the specification that need more than the syntax and that the grammar leaves out;
-for a document that expat refuses for one of them, the verdict is L: the grammar may accept it, and should
-not be asked to refuse it."""
+LOOSE are the checks of expat that the grammar does not make (corpus/xml/README.md, "Not checked"): the
+encoding declaration (the document is text here, so expat never reads the declared name), and the text of an
+entity, which expat reads when the entity is used and the grammar does not read at all (an entity that
+recurs, one whose text is not balanced markup).  For a document that expat refuses for one of them, the
+verdict is L: the grammar may accept it, and should not be asked to refuse it."""
 import os, random, re, sys
 import xml.parsers.expat as ex
 
@@ -31,10 +34,8 @@ NCNAME = "[%s][%s]*" % (START, CONT)
 QNAME = re.compile("(%s:)?%s\\Z" % (NCNAME, NCNAME))
 NC = re.compile("%s\\Z" % NCNAME)
 
-LOOSE = ("duplicate attribute", "reference to invalid character number", "recursive entity reference",
-         "reference to external entity in attribute", "reference to binary entity", "undefined entity",
-         "unknown encoding", "'<' in attribute value", "asynchronous entity", "incorrect encoding",
-         "reference to invalid character")
+LOOSE = ("unknown encoding", "incorrect encoding", "asynchronous entity")
+# and an error in the text of an entity that is used: see verdict
 
 
 def model_names(m, out):
@@ -108,8 +109,8 @@ def tag_text(t, i):
     return t[i:j]
 
 
-def verdict(b, again=True):
-    """(1|0|L, message)"""
+def verdict(b, again=True, foreign=False):
+    """(1|0|L, message).  `foreign` is for the second look at a document with parameter-entity references (below)."""
     try:
         t = b.decode("utf-8")
         t = fold(t[1:] if t.startswith("\ufeff") else t)   # a byte order mark is the encoding's, expat takes it off bytes
@@ -117,7 +118,8 @@ def verdict(b, again=True):
         return "0", "not UTF-8"
     seen = []
     p = ex.ParserCreate()
-    p.UseForeignDTD(True)
+    if foreign:
+        p.UseForeignDTD(True)
     p.SetParamEntityParsing(ex.XML_PARAM_ENTITY_PARSING_NEVER)
 
     def qn(*names):
@@ -139,7 +141,14 @@ def verdict(b, again=True):
     p.ElementDeclHandler = lambda n, m: (qn(n), [qn(x) for x in (lambda o: (model_names(m, o), o)[1])([])])
     p.AttlistDeclHandler = lambda e, a, ty, d, r: (
         qn(e, a), nc(*ref_names(d or "")), nc(*(ty[9:-1].split("|") if ty.startswith("NOTATION(") else [])))
-    p.EntityDeclHandler = lambda n, pe, v, b, s, pub, nd: (nc(n.lstrip("%")), nc(*ref_names(v or "")), nc(*([nd] if nd else [])))
+    internal = set()      # the general entities declared with a replacement text (the first declaration counts)
+    external = set()
+
+    def entity_decl(n, pe, v, b, s_, pub, nd):
+        nc(n.lstrip("%")), nc(*ref_names(v or "")), nc(*([nd] if nd else []))
+        if not pe and n not in internal and n not in external:
+            (internal if v is not None else external).add(n)
+    p.EntityDeclHandler = entity_decl
     p.NotationDeclHandler = lambda n, b, s, pub: nc(n)
     p.ProcessingInstructionHandler = lambda t, d: nc(t)
     p.SkippedEntityHandler = lambda n, pe: nc(n.lstrip("%"))
@@ -150,7 +159,7 @@ def verdict(b, again=True):
         # a parameter-entity reference: expat reports no declaration after one (it may have changed them)
         if in_dtd and re.match("%[^\\s;]+;\\Z", d):
             pes.append((p.CurrentByteIndex, len(d.encode("utf-8")), d[1:-1]))
-    p.DefaultHandler = default
+    p.DefaultHandlerExpand = default      # (DefaultHandler would stop expat expanding the internal entities)
     p.EndDoctypeDeclHandler = lambda: (in_dtd.clear(), span.append(p.CurrentByteIndex))
     try:
         p.Parse(t, True)
@@ -158,19 +167,32 @@ def verdict(b, again=True):
         msg = str(e)
         if any(m in msg for m in LOOSE):
             return "L", msg
+        # an error that expat finds in the replacement text of an entity when it is used (a reference to an entity
+        # that is not declared, a character reference to a character out of range, a `<` in an attribute value, an
+        # unparsed entity ...) is reported at the reference to that entity; the grammar does not read the text
+        # of an entity, so it may accept such a document
+        if "recursive" in msg or "undefined entity" in msg:      # the grammar walks the texts of the entities for these
+            return "0", msg
+        if internal and again and not in_dtd:        # (an error in the DOCTYPE itself is the grammar's)
+            # with the text of every entity made harmless: if expat then accepts the document, the error was in that text
+            t2 = re.sub("(<!ENTITY[ \t\r\n]+[^%\\s]+[ \t\r\n]+)(\"[^\"]*\"|'[^']*')", lambda m: m.group(1) + '"x"', t)
+            if verdict(t2.encode("utf-8", "surrogatepass"), False)[0] == "1":
+                return "L", msg + " (in the text of an entity)"
         return "0", msg
     # expat says nothing at all of an ATTLIST that defines no attribute, not even its name
     if len(span) == 2:
         dtd = tb[span[0]:span[1]].decode("utf-8", "replace")
+        dtd = re.sub("<!--.*?-->|<\\?.*?\\?>", "", dtd, flags=re.S)       # not the text of a comment or an instruction
         seen += [(n, True) for n in re.findall("<!ATTLIST[ \t\r\n]+([^\\s>]+)[ \t\r\n]*>", dtd)]
     for n, q in seen + [(n, False) for _, _, n in pes]:
         if not (QNAME if q else NC).match(n):
             return "0", "not a QName: " + n
     if pes and again:
-        # the declarations after a reference were not reported: ask again with the references taken out
+        # the declarations after a reference were not reported: ask again with the references taken out (and an
+        # external subset supposed, since the references were what made an undeclared entity no error)
         for i, n, _ in reversed(pes):
             tb = tb[:i] + b" " * n + tb[i + n:]
-        return verdict(tb, False)
+        return verdict(tb, False, True)
     return "1", ""
 
 
@@ -200,10 +222,16 @@ def S(r):
     return blanks(r, 1) or " "
 
 
+NEED = set()      # the names of the entities the document refers to: the prolog has to declare them
+
+
 def reference(r):
     k = r.random()
     if k < 0.4:
-        return "&" + r.choice(["amp", "lt", "gt", "quot", "apos", "other", ncname(r)]) + ";"
+        n = r.choice(["amp", "lt", "gt", "quot", "apos", "other", ncname(r)])
+        if n not in ("amp", "lt", "gt", "quot", "apos"):
+            NEED.add(n)
+        return "&" + n + ";"
     if k < 0.7:
         return "&#%d;" % r.choice([65, 233, 8364, 0x1D11E, 9, 10, 0x2028])
     return "&#x%s;" % r.choice(["41", "e9", "20AC", "1D11E", "a", "D", "FFFD"])
@@ -373,13 +401,19 @@ def prolog(r, prefixes):
         out.append(d + blanks(r) + "?>")
     misc = lambda: "".join(blanks(r) + r.choice([comment, pi])(r) for _ in range(r.choice([0, 0, 1, 2]))) + blanks(r)
     out.append(misc())
-    if r.random() < 0.5:
+    if r.random() < 0.5 or NEED:
         d = "<!DOCTYPE" + S(r) + qname(r, prefixes)
-        if r.random() < 0.4:
+        # a reference to an entity needs its declaration, or an external subset that may hold it
+        ext = r.random() < 0.4 or (NEED and r.random() < 0.3)
+        if ext:
             d += S(r) + r.choice(["SYSTEM" + S(r) + literal(r, "abc/. \"'"),
                                   "PUBLIC" + S(r) + literal(r, "abc -()+,./:=?;!*#@$_%") + S(r) + literal(r, "abc/.")])
-        if r.random() < 0.7:
-            d += blanks(r) + "[" + "".join(blanks(r) + decl(r, prefixes) for _ in range(r.randint(0, 6))) + blanks(r) + "]"
+        if r.random() < 0.7 or (NEED and not ext):
+            decls = [blanks(r) + decl(r, prefixes) for _ in range(r.randint(0, 6))]
+            if not ext:
+                decls += [blanks(r) + "<!ENTITY " + n + S(r) + r.choice(['"v"', "'v w'", '"&amp;"']) + blanks(r) + ">" for n in sorted(NEED)]
+            r.shuffle(decls)
+            d += blanks(r) + "[" + "".join(decls) + blanks(r) + "]"
         d += blanks(r) + ">"
         out.append(d + misc())
     return "".join(out)
@@ -387,7 +421,9 @@ def prolog(r, prefixes):
 
 def document(r):
     prefixes = ["x", "y", "xmlns", "xml"] if r.random() < 0.5 else []
-    return prolog(r, prefixes) + element(r, r.randint(0, 5), prefixes) + "".join(
+    NEED.clear()
+    root = element(r, r.randint(0, 5), prefixes)
+    return prolog(r, prefixes) + root + "".join(
         blanks(r) + r.choice([comment, pi])(r) for _ in range(r.choice([0, 0, 1]))) + blanks(r)
 
 

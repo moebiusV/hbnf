@@ -642,6 +642,8 @@ package HBNF_Grammar is
    --  adds, `%scope` ends what is added after it with its rule, and a backtrack
    --  puts a context back as it was.
    function Context_Count return Natural;
+   --  True when a `%where { }` or a `%bind { }` is written that names the node `n`: code that reads the tree.
+   function Context_Code return Boolean;
    function Context_Name (K : Positive) return String;
 
    --  `macros varset`: a statement the named rule matches whole defines a

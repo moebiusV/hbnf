@@ -450,21 +450,21 @@ c45.xml	fast-xml-parser	accept
 c45.xml	sax (Node)	accept
 c01.xml	hbnf	refuse
 c02.xml	hbnf	refuse
-c03.xml	hbnf	accept
+c03.xml	hbnf	refuse
 c04.xml	hbnf	refuse
 c05.xml	hbnf	refuse
 c06.xml	hbnf	refuse
 c07.xml	hbnf	refuse
-c08.xml	hbnf	accept
-c09.xml	hbnf	accept
-c10.xml	hbnf	accept
-c11.xml	hbnf	accept
+c08.xml	hbnf	refuse
+c09.xml	hbnf	refuse
+c10.xml	hbnf	refuse
+c11.xml	hbnf	refuse
 c12.xml	hbnf	refuse
 c13.xml	hbnf	refuse
 c14.xml	hbnf	refuse
 c15.xml	hbnf	refuse
 c16.xml	hbnf	refuse
-c17.xml	hbnf	accept
+c17.xml	hbnf	refuse
 c18.xml	hbnf	refuse
 c19.xml	hbnf	refuse
 c20.xml	hbnf	refuse
@@ -480,7 +480,7 @@ c29.xml	hbnf	refuse
 c30.xml	hbnf	refuse
 c31.xml	hbnf	refuse
 c32.xml	hbnf	refuse
-c33.xml	hbnf	accept
+c33.xml	hbnf	refuse
 c34.xml	hbnf	refuse
 c35.xml	hbnf	accept
 c36.xml	hbnf	accept

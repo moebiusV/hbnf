@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ENTITY e "x"><!ATTLIST a b CDATA "&e;">]><a/>

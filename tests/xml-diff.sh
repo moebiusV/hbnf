@@ -4,10 +4,10 @@
 # that the parts are NCNames) are asked about the same texts.
 # (1) Random well-formed documents must all be accepted.  (2) Random mutations of them -- a character
 # deleted, inserted, replaced, swapped, doubled, the text cut -- must get the same answer, except where
-# expat refuses for a check the grammar leaves out by design (a repeated attribute, a character
-# reference to a character XML does not allow, an entity that is not declared, an encoding it does not
-# know ...: the oracle marks those L).  An L document may be accepted; if it is refused it is not known
-# whether the grammar or expat is right and it is counted apart.  (3) Every code point as the first and as
+# expat refuses for a check the grammar still leaves out (the text of an entity when it is used: an entity
+# that recurs, one whose text is not balanced or holds an error; an encoding it does not know: the oracle
+# marks those L).  An L document may be accepted; if it is refused it is not known whether the grammar or
+# expat is right and it is counted apart.  (3) Every code point as the first and as
 # a later character of a name, against the Fifth Edition's ranges (not against expat, whose tables are the
 # Fourth Edition's).  (4) The folders corpus/xml/tests/{good,bad,loose}.
 #   HBNF=/path/to/hbnf sh tests/xml-diff.sh [N [SEED]]      (HBNF_FLAGS= adds generator flags)
@@ -93,13 +93,13 @@ done
 for f in corpus/xml/tests/bad/*.xml; do
     "$W/j" "$f" | grep -q ' 0$' || { echo "FAIL bad folder: $f"; bad_folder=1; }
 done
-# and the oracle agrees with where each is filed: good accepted, bad refused, loose refused for a check left out
+# and the oracle agrees with where each is filed: good accepted, bad refused, loose refused for a check left out (L)
 ls corpus/xml/tests/good/*.xml | xargs python3 -I tests/xml/oracle.py check | grep -v ' 1$' | sed 's/^/FAIL oracle refuses good: /' > "$W/folder"
 ls corpus/xml/tests/bad/*.xml | xargs python3 -I tests/xml/oracle.py check | grep -v ' 0$' | sed 's/^/FAIL oracle accepts bad: /' >> "$W/folder"
 ls corpus/xml/tests/loose/*.xml | xargs python3 -I tests/xml/oracle.py check | grep -v ' [L1]$' | sed 's/^/FAIL oracle refuses loose for its syntax: /' >> "$W/folder"
 [ ! -s "$W/folder" ] || { cat "$W/folder"; bad_folder=1; }
 echo "xml-diff: well-formed documents: $N, hbnf refuses $gbad"
-echo "xml-diff: mutations: $agree agree, $loose hbnf looser, $strict hbnf stricter, $design accepted where expat refuses a check left out, $unknown refused where expat refuses a check left out (not known)"
+echo "xml-diff: mutations: $agree agree, $loose hbnf looser, $strict hbnf stricter, $design accepted where expat refuses one of the checks left out (L), $unknown refused where expat refuses one of those (not known)"
 echo "xml-diff: name characters: $((ncp / 2)) code points, $nbad differ from the Fifth Edition's ranges"
 [ "$loose$strict" = 00 ] || head -10 "$W/diff"
 [ -z "${DIFF_DIR:-}" ] || echo "xml-diff: files in $W"

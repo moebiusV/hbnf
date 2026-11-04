@@ -1,1 +1,1 @@
-<!DOCTYPE a [<!ENTITY e "text &amp; more &#65; &other;"><!ENTITY f 'single "q"'>]><a>&e;</a>
+<!DOCTYPE a [<!ENTITY other "o"><!ENTITY e "text &amp; more &#65; &other;"><!ENTITY f 'single "q"'>]><a>&e;</a>

@@ -1,1 +1,1 @@
-<a>&amp;&lt;&gt;&quot;&apos;&anything;</a>
+<!DOCTYPE a [<!ENTITY anything "x">]><a>&amp;&lt;&gt;&quot;&apos;&anything;</a>

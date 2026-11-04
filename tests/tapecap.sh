@@ -85,7 +85,11 @@ folder() {
 		n=$((n + 1))
 	done
 }
-folder corpus/xml/xml.hbnf document ok:corpus/xml/tests/good bad:corpus/xml/tests/bad
+# xml keeps the names of a tag's attributes and the declared entities in contexts (a repeated attribute, an entity that
+# is not declared ...): the cases of corpus/xml/tests/bad that are about them are in this comparison, and a tape that
+# is built next to a context must still hold every word (a rule that puts the contexts back once went to the pass that
+# writes none)
+folder corpus/xml/xml.hbnf document ok:corpus/xml/tests/good ok:corpus/xml/tests/loose bad:corpus/xml/tests/bad
 ls corpus/mustache/tests > /dev/null 2>&1 && folder corpus/mustache/mustache.hbnf "$(sed -n 's/^\([a-z][a-z-]*\) *=.*/\1/p' corpus/mustache/mustache.hbnf | head -1)" ok:corpus/mustache/tests/good bad:corpus/mustache/tests/bad
 # (html is not here: CONTEXTS.md section 26 item 63, a lookahead over a rule, is not about captures)
 
@@ -117,5 +121,26 @@ if [ -x "$W/abandon-d" ] && [ -x "$W/factored-d" ]; then
 		n=$((n + 1))
 	done
 fi
+# the tape of a small document with a context grammar holds the words of the tree: the document, the element, its
+# name, the attributes and their values, the text and the empty element inside
+cat > "$W/tags.c" <<'EOC'
+#include <stdio.h>
+int main(int argc, char **argv) {
+    char err[256]; size_t l, c, i; OUT_T out; int ok;
+    ok = parse_text(argv[1], &out, err, sizeof err, &l, &c);
+    for (i = 0; ok && i < tape_n; i++) printf("%s ", tape_tag_names[tape[i] >> 56]);
+    printf("\n");
+    return 0;
+}
+EOC
+"$CLI" corpus/xml/xml.hbnf --backend=c --layout=tape --root=document > "$W/xt.c" 2> "$W/xt.err" && {
+	root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/xt.c")
+	cat "$W/xt.c" "$W/tags.c" > "$W/xt-d.c"
+	cc -std=gnu11 -D_GNU_SOURCE -w -I runtime "-DOUT_T=$root" "$W/xt-d.c" -o "$W/xt-d" 2> "$W/xt.cc" || { echo "tapecap: FAIL (xml tags driver: $(head -c 300 "$W/xt.cc"))"; fail=1; }
+	got=$("$W/xt-d" '<a x="1">t<b/></a>' 2> /dev/null)
+	echo "$got" | grep -q '^document element qname attributes attribute qname .* content chardata element qname' \
+		|| { echo "tapecap: FAIL (the tape of an xml document lost words: $got)"; fail=1; }
+	n=$((n + 1))
+}
 [ $fail = 0 ] || exit 1
 echo "tapecap: OK (the tape reads what the tree reads, in $n parser(s): back-references, joins, up references, case folding; xml and mustache)"

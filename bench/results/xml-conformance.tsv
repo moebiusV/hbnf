@@ -3,7 +3,7 @@ libxml2 DOM	34	34	11	11
 libxml2 SAX2	34	34	11	11
 ElementTree	34	34	11	11
 lxml	34	34	11	11
-hbnf	27	34	11	11
+hbnf	34	34	11	11
 sax (Node)	20	34	10	11
 TinyXML-2	9	34	10	11
 pugixml	8	34	11	11

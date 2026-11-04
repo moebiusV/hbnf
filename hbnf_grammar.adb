@@ -89,6 +89,56 @@ package body HBNF_Grammar is
    --  rule, belongs to the end of the file (the included rules come first), not the start.
    Epilogue_After_Line : Natural := 0;
    Context_Words   : Word_Vectors.Vector;
+   Ctx_Code        : Boolean := False;   --  a `%where { }` or a `%bind { }` is written somewhere
+
+   --  Whether the code of a `%where { }` or `%bind { }` names the node (`n`, not `x.n` or `p->n`): only code that
+   --  does reads the tree, and needs its strings as C strings and its nodes as they are written.
+   function Reads_Node (Code : String) return Boolean is
+      I : Natural := Code'First;
+   begin
+      while I <= Code'Last loop
+         if Code (I) = '/' and then I < Code'Last and then Code (I + 1) = '*' then
+            I := I + 2;                       --  a comment
+            while I < Code'Last and then not (Code (I) = '*' and then Code (I + 1) = '/') loop
+               I := I + 1;
+            end loop;
+            I := I + 2;
+         elsif Code (I) = '/' and then I < Code'Last and then Code (I + 1) = '/' then
+            while I <= Code'Last and then Code (I) /= ASCII.LF loop
+               I := I + 1;
+            end loop;
+         elsif Code (I) = '"' or else Code (I) = ''' then
+            declare
+               Q : constant Character := Code (I);   --  a string or a character literal
+            begin
+               I := I + 1;
+               while I <= Code'Last and then Code (I) /= Q loop
+                  I := I + (if Code (I) = '\' then 2 else 1);
+               end loop;
+               I := I + 1;
+            end;
+         elsif Code (I) in 'a' .. 'z' | 'A' .. 'Z' | '_' then
+            declare
+               B : constant Natural := I;
+            begin
+               while I <= Code'Last
+                 and then Code (I) in 'a' .. 'z' | 'A' .. 'Z' | '_' | '0' .. '9'
+               loop
+                  I := I + 1;
+               end loop;
+               if I - B = 1 and then Code (B) = 'n'
+                 and then not (B > Code'First
+                               and then (Code (B - 1) = '.' or else Code (B - 1) = '>'))
+               then
+                  return True;
+               end if;
+            end;
+         else
+            I := I + 1;
+         end if;
+      end loop;
+      return False;
+   end Reads_Node;
    Macros_Name     : Unbounded_String := Null_Unbounded_String;
    Includes_Name   : Unbounded_String := Null_Unbounded_String;
 
@@ -807,6 +857,7 @@ package body HBNF_Grammar is
       List_Generate_Code := Null_Unbounded_String;
       Statements_On := False;
       Context_Words.Clear;
+      Ctx_Code := False;
       Ctx_Pending.Clear;
       Macros_Name := Null_Unbounded_String;
       Includes_Name := Null_Unbounded_String;
@@ -4609,11 +4660,17 @@ package body HBNF_Grammar is
               & "`%where { return ok (text, len); }`";
          end if;
          E.Op := B_Where;
+         if Reads_Node (To_String (Cur (P).Text)) then
+            Ctx_Code := True;
+         end if;
          E.Code := Cur (P).Text;
          Next (P);
       else
          if Cur (P).Kind = T_Code then
             E.Op := B_Bind_Code;
+            if Reads_Node (To_String (Cur (P).Text)) then
+               Ctx_Code := True;
+            end if;
             E.Code := Cur (P).Text;
             Next (P);
          elsif Cur (P).Kind = T_Name
@@ -14751,6 +14808,7 @@ package body HBNF_Grammar is
    function Statements return Boolean is (Statements_On);
 
    function Context_Count return Natural is (Natural (Context_Words.Length));
+   function Context_Code return Boolean is (Ctx_Code);
    function Context_Name (K : Positive) return String is
      (To_String (Context_Words (K)));
 

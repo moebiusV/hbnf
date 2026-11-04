@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ENTITY ampx "x">]><a>&ampx;</a>

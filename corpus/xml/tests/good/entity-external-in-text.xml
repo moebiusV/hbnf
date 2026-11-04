@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ENTITY e SYSTEM "e.xml">]><a>&e;</a>

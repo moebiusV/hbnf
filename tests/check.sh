@@ -155,6 +155,8 @@ suite_files() {
 # the backend by a variable (or takes BACKENDS) runs all.  With a backend filter, those.
 suite_backends() {
 	if [ -n "$WANT_B" ]; then echo $WANT_B; return; fi
+	# xml checks that no entity recurs with a `%where { }`, which only the C backend has
+	[ "$1" = xml ] && { echo c; return; }
 	b=$(grep -oE -- '--backend=[A-Za-z$_{}]+' "tests/$1.sh" | sed 's/--backend=//' | sort -u)
 	case "$b$(grep -c 'BACKENDS\|want ' "tests/$1.sh")" in
 	*'$'*|*'{'*|*[1-9]) echo "$BACKENDS_ALL" ;;

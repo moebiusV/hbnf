@@ -1357,9 +1357,9 @@ package body HBNF_C is
    --  Whether the parser puts the arena back where it stood when a rule or a branch gives up (the comment
    --  at Unwind_Allowed in Emit_Parser says why, and where not).
    --  True where nothing outside the rules reads or holds the nodes of a branch: no action, no %emit,
-   --  no context, no fork.
+   --  no context with code (`%where { }`, `%bind { }`: those read the tree's strings as C strings), no fork.
    function Plain_Parser (Rules : Rule_Vectors.Vector) return Boolean is
-     (not Forks_On and then not Ctx_On and then not Hosted_Actions
+     (not Forks_On and then not HBNF_Grammar.Context_Code and then not Hosted_Actions
       and then (for all R of Rules =>
                   R.Action_Code = Null_Unbounded_String
                   and then Emit_Value_Type (R) = ""));
@@ -6208,7 +6208,9 @@ package body HBNF_C is
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural; Acc : String;
          Buf  : in out U; Fail : String; Ind : String := "    ";
-         Ws   : Boolean := False; Lead_Ws : Boolean := True) is
+         Ws   : Boolean := False; Lead_Ws : Boolean := True; Seg_Var : String := "") is
+         --  Seg_Var names where the sequence the caller is writing began, for a `%where { }` or `%bind { }`
+         --  that stands alone in the range (the layouts with emits write an element at a time).
          --  Lead_Ws is False when the caller has already skipped whitespace
          --  at this position (Emit_Linear hoists it out of an alternation,
          --  where every branch would otherwise re-skip the same run).
@@ -6226,18 +6228,19 @@ package body HBNF_C is
          --  `%where` and `%bind { }`, which see the text matched so far),
          --  the scopes it opens, and the element a `? ctx` follows.
          Sid  : constant String := Ctx_Img (Ctx_Seq + 1);
-         Seg  : constant String := "sg" & Sid & "_";
+         Seg  : constant String := (if Seg_Var /= "" then Seg_Var else "sg" & Sid & "_");
          Tsid : constant String :=
            (if Tag_Sid /= Null_Unbounded_String then To_String (Tag_Sid) else Sid);
          Scopes : String_Vectors.Vector;
-         Needs_Seg : constant Boolean :=
+         Needs_Seg : constant Boolean := Seg_Var = "" and then
            (for some K in First .. Last =>
               Els (K).Kind = Block
               and then Els (K).Op in B_Where | B_Bind_Code);
 
          --  `Acc` is `r.` or `nn->`; the node as a pointer.
          function Node_Ptr return String is
-           (if Acc'Length >= 2 and then Acc (Acc'Last) = '.'
+           (if Acc'Length < 2 then "0"            --  a layout that builds no node: the code may not read it
+            elsif Acc (Acc'Last) = '.'
             then "&" & Acc (Acc'First .. Acc'Last - 1)
             else Acc (Acc'First .. Acc'Last - 2));
 
@@ -6542,11 +6545,20 @@ package body HBNF_C is
                              & Fail & " } }");
                            Append (Buf, LF);
                         when B_Bind =>
-                           Append (Buf, Ind & "{ const char *v_ = "
-                             & Path_C (To_String (E.Path)) & "; if (v_) "
-                             & "hbnf_ctx_add (CTX_"
-                             & C_Ident_Lower (To_String (E.Ctx))
-                             & ", v_, strlen (v_)); }");
+                           if Views_On then
+                              --  the field is a slice of the input: its text is what is kept
+                              Append (Buf, Ind & "{ hbnf_str v_ = "
+                                & Path_C (To_String (E.Path)) & "; if (v_) "
+                                & "hbnf_ctx_add (CTX_"
+                                & C_Ident_Lower (To_String (E.Ctx))
+                                & ", hbnf_sp (v_), hbnf_sn (v_)); }");
+                           else
+                              Append (Buf, Ind & "{ const char *v_ = "
+                                & Path_C (To_String (E.Path)) & "; if (v_) "
+                                & "hbnf_ctx_add (CTX_"
+                                & C_Ident_Lower (To_String (E.Ctx))
+                                & ", v_, strlen (v_)); }");
+                           end if;
                            Append (Buf, LF);
                         when B_Bind_Code =>
                            Append (Buf, Ind & "{ " & Span_Of (Seg)
@@ -7836,6 +7848,9 @@ package body HBNF_C is
          Rb : constant String_Vectors.Vector :=
            (if Quiet then Rollback_Items else String_Vectors.Empty_Vector);
 
+         --  A rule that can bind a context puts the contexts back where it puts the rest back, in both passes.
+         Binds : constant Boolean := Ctx_On and then Rule_Binds (Idx);
+
          function Save (Tag : String) return String is
             R : U;
          begin
@@ -7843,6 +7858,9 @@ package body HBNF_C is
                Append (R, "__typeof__(" & To_String (Rb (K)) & ") rb" & Tag & "_" & Img (K) & " = "
                  & To_String (Rb (K)) & "; ");
             end loop;
+            if Binds then
+               Append (R, "hbnf_mark_t rbx" & Tag & " = hbnf_mark(); ");
+            end if;
             return To_String (R);
          end Save;
 
@@ -7852,12 +7870,16 @@ package body HBNF_C is
             for K in 1 .. Natural (Rb.Length) loop
                Append (R, To_String (Rb (K)) & " = rb" & Tag & "_" & Img (K) & "; ");
             end loop;
+            if Binds then
+               Append (R, "hbnf_reset (&rbx" & Tag & "); ");
+            end if;
             return To_String (R);
          end Restore;
 
          --  True while the position is known to be past the blanks already, so the next token
          --  need not skip them again (after a dispatch, which skipped before choosing).
          Skip_Done : Boolean := False;
+         Cur_Seg : U;       --  where the sequence being written began, when it holds `%where { }` or `%bind { }`
          Seen : String_Vectors.Vector;
          Look : constant HBNF_Lookahead.Analysis := HBNF_Lookahead.Analyze (Rules);
 
@@ -7966,7 +7988,7 @@ package body HBNF_C is
          procedure Element_Seq (E : Element_Access; Fail, Ind : String) is
          begin
             Emit_Seq (Idx, Element_Vectors.To_Vector (E, 1), 1, 1, "", Buf, Fail, Ind, Ws,
-                      Lead_Ws => not Skip_Done);
+                      Lead_Ws => not Skip_Done, Seg_Var => To_String (Cur_Seg));
             Skip_Done := False;
          end Element_Seq;
 
@@ -8132,11 +8154,19 @@ package body HBNF_C is
             K : Natural := St;
             Own : constant Boolean := Tag_Sid = Null_Unbounded_String
               and then (for some X in St .. En => V (X).Kind = Block and then V (X).Op = B_As);
+            Saved_Seg : U;
          begin
             --  `qname as tag` and a later `"</" $tag` are taken by different segments
             --  of this sequence: they must name the capture alike
             if Own then
                Tag_Sid := To_Unbounded_String ("t" & Fresh);
+            end if;
+            Saved_Seg := Cur_Seg;
+            if (for some X in St .. En => V (X).Kind = Block and then V (X).Op in B_Where | B_Bind_Code) then
+               Cur_Seg := To_Unbounded_String ("vg" & Fresh & "_");
+               Append (Buf, Ind & "size_t " & To_String (Cur_Seg) & " = p->pos;" & LF);
+            else
+               Cur_Seg := Null_Unbounded_String;
             end if;
             while K <= En loop
                if V (K).Kind = Block and then V (K).Op = B_Scope then
@@ -8167,6 +8197,7 @@ package body HBNF_C is
                   K := K + 1;
                end if;
             end loop;
+            Cur_Seg := Saved_Seg;
             if Own then
                Tag_Sid := Null_Unbounded_String;
             end if;
@@ -10281,6 +10312,14 @@ package body HBNF_C is
                     & "(parser_t *p, " & Out_Type (I) & ");" & LF
                     & "#define parse_rule_" & C_Name (NM) & "(p_, o_) ((p_)->quiet ? parse_body_"
                     & C_Name (NM) & "((p_), (o_)) : (parse_rule_" & C_Name (NM) & ")((p_), (o_)))" & LF);
+               else
+                  --  The first pass goes straight to the body here too, with the contexts put back when it
+                  --  fails (the wrapper's other work, the path of rules and the depth, is for the second pass).
+                  Append (Res, "static bool parse_body_" & C_Name (NM)
+                    & "(parser_t *p, " & Out_Type (I) & ");" & LF
+                    & "#define parse_rule_" & C_Name (NM) & "(p_, o_) ((p_)->quiet ? ({ hbnf_mark_t cxm_ = hbnf_mark(); "
+                    & "bool cxok_ = parse_body_" & C_Name (NM) & "((p_), (o_)); if (!cxok_) hbnf_reset (&cxm_); cxok_; }) : (parse_rule_"
+                    & C_Name (NM) & ")((p_), (o_)))" & LF);
                end if;
             end if;
          end;

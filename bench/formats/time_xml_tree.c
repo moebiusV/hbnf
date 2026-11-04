@@ -37,7 +37,7 @@ static void visit(const void *node, node_kind_t kind, void *ctx) {
                                * _alt says which (from 1, in the order of content = *( element | chardata | reference | cdata | pi | remark )),
                                * and the fields of the others share its space */
         const content_t *c = node;
-        if (c->_alt == 3) ntx += ref_bytes(hbnf_sp(c->reference), hbnf_sn(c->reference));
+        if (c->_alt == 3) { if (c->reference._alt == 1) ntx += ref_bytes(hbnf_sp(c->reference.simple_ref), hbnf_sn(c->reference.simple_ref)); }
         else if (c->_alt == 2) ntx += blank(hbnf_sp(c->chardata), hbnf_sn(c->chardata));
         break; }
     case NODE_CDATA: { hbnf_str a = ((const cdata_t *)node)->till_x93x93x62; ntx += blank(hbnf_sp(a), hbnf_sn(a)); break; }

@@ -9,7 +9,7 @@ The same 45 documents through each parser, by the drivers of `bench/libs.sh` (`s
 | libxml2 SAX2 | 34 of 34 | 11 of 11 | none |
 | ElementTree | 34 of 34 | 11 of 11 | none |
 | lxml | 34 of 34 | 11 of 11 | none |
-| hbnf | 27 of 34 | 11 of 11 | 7 inputs (see below) |
+| hbnf | 34 of 34 | 11 of 11 | none |
 | sax (Node) | 20 of 34 | 10 of 11 | 14 inputs (see below) |
 | TinyXML-2 | 9 of 34 | 10 of 11 | 25 inputs (see below) |
 | pugixml | 8 of 34 | 11 of 11 | 26 inputs (see below) |
@@ -22,21 +22,21 @@ The same 45 documents through each parser, by the drivers of `bench/libs.sh` (`s
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | control character U+0001 in text | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** | **accept** |
 | control character U+0001 in an attribute | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** | **accept** |
-| duplicate attribute | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | refuse | **accept** | **accept** | **accept** |
+| duplicate attribute | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | refuse | **accept** | **accept** | **accept** |
 | invalid UTF-8 in text (FF FE) | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** | **accept** |
 | overlong UTF-8 (C0 80) | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** | **accept** |
 | name containing U+0080 | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** |
 | name starting with a digit | refuse | refuse | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** |
-| character reference &#0; | refuse | refuse | refuse | refuse | refuse | **accept** | refuse | **accept** | **accept** | **accept** | **accept** |
-| character reference &#x110000; | refuse | refuse | refuse | refuse | refuse | **accept** | refuse | **accept** | **accept** | refuse | **accept** |
-| character reference &#xD800; (surrogate) | refuse | refuse | refuse | refuse | refuse | **accept** | refuse | **accept** | **accept** | **accept** | **accept** |
-| character reference &#xFFFE; | refuse | refuse | refuse | refuse | refuse | **accept** | refuse | **accept** | **accept** | **accept** | **accept** |
+| character reference &#0; | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** |
+| character reference &#x110000; | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | refuse | **accept** |
+| character reference &#xD800; (surrogate) | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** |
+| character reference &#xFFFE; | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** |
 | literal U+FFFE in text | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** | **accept** |
 | literal ]]> in text | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** | **accept** |
 | < in an attribute value | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** | **accept** |
 | -- inside a comment | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** |
 | comment ending in ---> | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** |
-| undeclared entity &foo; | refuse | refuse | refuse | refuse | refuse | **accept** | refuse | **accept** | **accept** | **accept** | **accept** |
+| undeclared entity &foo; | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** |
 | two root elements | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** | **accept** |
 | no root element, only text | refuse | refuse | refuse | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** |
 | mismatched end tag | refuse | refuse | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** |
@@ -52,7 +52,7 @@ The same 45 documents through each parser, by the drivers of `bench/libs.sh` (`s
 | processing instruction named XML | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | refuse | **accept** | **accept** | **accept** |
 | CDATA section outside the root | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** | **accept** |
 | DOCTYPE after the root element | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** |
-| recursive entity | refuse | refuse | refuse | refuse | refuse | **accept** | refuse | **accept** | **accept** | **accept** | **accept** |
+| recursive entity | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | **accept** | **accept** | **accept** |
 | end tag with an attribute | refuse | refuse | refuse | refuse | refuse | refuse | refuse | **accept** | refuse | refuse | **accept** |
 | empty element (well-formed) | accept | accept | accept | accept | accept | accept | accept | accept | accept | accept | accept |
 | tab and newline in content (well-formed) | accept | accept | accept | accept | accept | accept | accept | accept | accept | accept | accept |

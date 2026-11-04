@@ -27,7 +27,7 @@ static long ref_bytes(const char *s, size_t n) {   /* s is "&...;" */
 int main(int argc, char **argv) {
     FILE *f;
     char *buf, err[512];
-    long len, nel = 0, nat = 0, ntx = 0;
+    long len, nel = 0, nat = 0, ntx = 0; int pend = 0;
     size_t line, col, i;
     OUT_T out;
     struct timespec t0, t1;
@@ -53,12 +53,13 @@ int main(int argc, char **argv) {
         if (TAPE_IS_OPENER(t)) {
             if (at <= i || at > tape_n) { strcpy(err, "a link leaves the tape"); ok = 0; }
             if (t == T_element) nel++;
+            if (t == T_attribute) pend = 1;
         } else if (TAPE_IS_TEXT(t)) {
             if (n == TAPE_LONG) n = tape[++i];
             if (at + n > (size_t)len) { strcpy(err, "a text leaves the input"); ok = 0; break; }
-            if (t == T_attribute) nat += !!strncmp(buf + at, "xmlns", n < 5 ? n : 5);
+            if (t == T_qname && pend) { nat += !!strncmp(buf + at, "xmlns", n < 5 ? n : 5); pend = 0; }
             else if (t == T_chardata || t == T_till_x93x93x62) ntx += blank(buf + at, n);
-            else if (t == T_reference) ntx += ref_bytes(buf + at, n);
+            else if (t == T_simple_ref) ntx += ref_bytes(buf + at, n);
         }
     }
     if (!ok) { fprintf(stderr, "%s\n", err); printf("FAIL %ld %.2f %ld\n", len, ms, ru.ru_maxrss); return 1; }

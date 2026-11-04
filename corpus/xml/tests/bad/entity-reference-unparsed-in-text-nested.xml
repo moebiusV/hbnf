@@ -1,0 +1,1 @@
+<!DOCTYPE a [<!ENTITY e SYSTEM "x.gif" NDATA gif>]><a><b>&e;</b></a>

@@ -13,12 +13,32 @@
 ; * A choice and a sequence in an element declaration are one rule, `group`; and the end tag repeats the
 ;   start tag's name by a back-reference (`qname as tag` ... `$tag`, as corpus/mustache does).
 ;
-; Not done: what the syntax cannot say or what needs the declarations.  A character reference to a
-; character outside Char (&#0;) is read, as are a repeated attribute and a reference to an entity that
-; is not declared; entities are not expanded; the DOCTYPE name need not be the root's; the encoding
-; declaration is read and not used; the external subset (conditional sections) is another file's.  A
-; byte order mark at the very start is accepted (it is the encoding's, not the document's).
+;
+; The well-formedness constraints that need a table, which the specification states apart from the syntax, are
+; contexts (named sets of names the parser keeps while it reads; `x ? C` tests one, `%bind C += x` adds to it):
+; * Unique Att Spec: the names of one tag's attributes are in `atts`, which `%scope` empties at the end of the tag.
+; * Legal Character: a reference `&#...;` names a character of Char, said by a regular expression over the digits
+;   (`charnum`; tools/xml_charref.py writes it).
+; * Entity Declared: `ents` holds the names of the general entities of the internal subset, and the five
+;   predefined ones are `predef`.  A name that is not there is no error when an external subset or a
+;   parameter-entity reference may have declared it, unless standalone="yes": `open` is bound by the DOCTYPE
+;   when it has an external identifier or a `%name;`, and `solo` by standalone="yes".  A flag is a name that
+;   matched nothing (`nil = ""`): it is in the set or it is not.
+; * Parsed Entity, No External Entity References: `unp` and `ext` hold the entities declared with NDATA and with
+;   an external identifier; the first declaration of a name is the binding one, so a repeated one binds nothing.
+; * No < in Attribute Values, In DTD: a `<` is not an attribute character, and a `%` outside the DTD is text.
+;
+; * No Recursion: the text of each entity is kept in the context log (`vals`, next to its name) and `declared` walks the
+;   entities that the texts name, in C (`%where`, `%bind`: C only).  A name inside an entity's text that is not
+;   declared is an error then too.
+;
+; Not done: the replacement text of an entity is not parsed as markup when the entity is used, so an entity whose text
+; is not balanced (`<!ENTITY e "<b>">`), a `<` or an unparsed entity named inside an entity's text, and a character
+; reference made by `&#38;#0;` are accepted; the DOCTYPE name need not be the root's; the encoding declaration is read
+; and not used; the external subset (conditional sections) is another file's.  A byte order mark at the very start is
+; accepted (it is the encoding's, not the document's).
 prefix none
+context atts ents ext unp solo open vals safe
 include "../../grammars/common.hbnf"
 whitespace none
 
@@ -33,12 +53,67 @@ hidden eq = [ S ] "=" [ S ]
 
 ; ---- the document ----
 element    = "<" qname as tag attributes ( "/>" | ">" content "</" $tag [ S ] ">" )
-attributes = *( S attribute ) [ S ]
-attribute  = qname eq quoted(att-char)
-att-char   = ~( "<" | "&" ) | reference
+attributes = %scope *( S attribute ) [ S ]
+attribute  = qname ?! atts %bind atts += qname eq att-value
+att-value  = quoted(att-char) | mixed-value
+att-char   = ~( "<" | "&" )
+mixed-value = DQUOTE *( att-run(DQUOTE) | att-ref ) DQUOTE | "'" *( att-run("'") | att-ref ) "'"
+att-ref    = simple-ref | ent-ref("ext")
 content    = *( element | chardata | reference | cdata | pi | remark )
 chardata   = 1*( !( "<" | "&" | "]]>" ) any )
-reference  = "&" ( ncname | "#" ( 1*DIGIT | "x" 1*HEXDIG ) ) ";"
+reference  = simple-ref | ent-ref("unp")
+simple-ref = charref | predef
+predef     = r"&(lt|gt|amp|apos|quot);"
+charref    = "&" charnum
+charnum    = r"#(0*(1(0[0-9]{0,5}|1(0[0-9]{0,4}|1([0-3][0-9]{0,3}|4(0[0-9]{0,2}|1(0[0-9]{0,1}|1([0-1])?|[2-9])?|[2-9][0-9]{0,1})?|[5-9][0-9]{0,2})?|[2-9][0-9]{0,3})|[24-9][0-9]{1,4}|3[0-9]{0,4})|2[0-9]{2,5}|3([0-1][0-9]{1,4}|[2-9][0-9]{0,4})|[47-8][0-9]{1,5}|5([0-48-9][0-9]{0,4}|5([0-1][0-9]{0,3}|2([0-8][0-9]{0,2}|9([0-5][0-9]{0,1}|[6-9][0-9])?)?|[3-9]([0-9]([0-9]{2})?)?)?|6([0-9]([0-9]([0-9]{2})?)?)?|7([0-2]([0-9]([0-9]{2})?)?|3([0-3]([0-9]{2})?|4([0-3][0-9]|[4-9][0-9]{0,1})?|[5-9][0-9]{0,2})?|[4-9][0-9]{0,3})?)|6([0-46-9][0-9]{0,4}|5([0-46-9][0-9]{0,3}|5([0-24-9][0-9]{0,2}|3([0-36-9][0-9]{0,1}|[4-5][0-9])?)?)?)|9[0-9]{0,5})|x0*(1(0[0-9a-fA-F]{1,4}|[1-9a-fA-F][0-9a-fA-F]{1,3})|[2-8b-cB-CeE][0-9a-fA-F]{1,4}|[9aA][0-9a-fA-F]{0,4}|[dD]([0-7][0-9a-fA-F]{0,3}|[8-9a-fA-F]([0-9a-fA-F]([0-9a-fA-F]{2})?)?)?|[fF]([0-9a-eA-E][0-9a-fA-F]{0,3}|[fF]([0-9a-eA-E][0-9a-fA-F]{0,2}|[fF]([0-9a-dA-D][0-9a-fA-F]{0,1}|[e-fE-F][0-9a-fA-F])?)?)));"
+ent-ref(C in "unp" | "ext") := "&" declared ?! C ";"
+declared   = ncname ? ents %where {
+    /* No Recursion, and Entity Declared once more: the entities that the text of this one names, and theirs, do not
+       name it, and every name they use is declared.  Each entity
+       declared with a text is two entries of the context log, its name in ents and its text in vals. */
+#define FIND(s_, l_) ({ long r_ = -1; unsigned h_ = hbnf_chash (s_, l_); int q_;                       \
+        for (q_ = hbnf_cx.bucket[CTX_ents][h_ & 255]; q_ >= 0; q_ = hbnf_cx.e[q_].prev)               \
+            if (hbnf_cx.e[q_].hash == h_ && hbnf_cx.e[q_].n == (l_) && !memcmp (hbnf_cx.e[q_].s, (s_), (l_))) { r_ = q_; break; } \
+        r_; })
+    unsigned top = hbnf_cx.n;
+    long first = FIND (text, len);
+    int sp = 0, bad = 0;
+    unsigned char *state;
+    long *stk;
+    size_t *pos;
+    if (first < 0 || HBNF_IN (safe, text, len)) return true;
+    state = calloc (top + 1, 1);  stk = malloc ((top + 1) * sizeof *stk);  pos = malloc ((top + 1) * sizeof *pos);
+    if (!state || !stk || !pos) hbnf_oom ();
+    stk[0] = first;  pos[0] = 0;  state[first] = 1;
+    while (sp >= 0 && !bad) {
+        long at = stk[sp], j;
+        int has = at + 1 < (long) top && hbnf_cx.e[at + 1].c == CTX_vals;
+        const char *tx = has ? hbnf_cx.e[at + 1].s : 0;
+        size_t tl = has ? hbnf_cx.e[at + 1].n : 0, k = pos[sp], b, d;
+        while (k < tl && !(tx[k] == '&' && k + 1 < tl && tx[k + 1] != '#')) k++;
+        if (k >= tl) { state[at] = 2; sp--; continue; }
+        b = k + 1;  for (d = b; d < tl && tx[d] != ';'; d++) ;
+        pos[sp] = d + 1;
+        j = FIND (tx + b, d - b);
+        if (j < 0) {            /* a name that is not declared: an error unless an external subset may have declared it */
+            size_t l = d - b;
+            int predef = (l == 2 && (!memcmp (tx + b, "lt", 2) || !memcmp (tx + b, "gt", 2))) || (l == 3 && !memcmp (tx + b, "amp", 3))
+                      || (l == 4 && (!memcmp (tx + b, "apos", 4) || !memcmp (tx + b, "quot", 4)));
+            if (!predef && !HBNF_IN (open, tx, 0)) { bad = 1; break; }
+            continue;
+        }
+        if (state[j] == 2) continue;
+        if (state[j] == 1) { bad = 1; break; }
+        state[j] = 1;  stk[++sp] = j;  pos[sp] = 0;
+    }
+    free (state);  free (stk);  free (pos);
+#undef FIND
+    if (!bad) HBNF_ADD (safe, text, len);
+    return !bad;
+} | ncname ?! ents open-test
+open-test  = nil ? open
+open-gate  = nil ?! solo %bind open += nil
+nil        = ""
 cdata      = "<![CDATA[" till("]]>") "]]>"
 remark     = "<!--" till(dashes) "-->"
 pi         = "<?" pi-target [ S till("?>") ] "?>"
@@ -47,14 +122,18 @@ dashes     = "--"
 reserved   = i"xml"
 
 till(T)   := *( !T any )
+att-run(Q) := 1*( !Q att-char )
 quoted(C) := DQUOTE *( !DQUOTE C ) DQUOTE | "'" *( !"'" C ) "'"
 
 ; ---- the prolog ----
-xml-decl    = "<?xml" pseudo("version", "1." 1*DIGIT) [ pseudo("encoding", enc-name) ] [ pseudo("standalone", "yes" | "no") ] [ S ] "?>"
+xml-decl    = "<?xml" pseudo("version", "1." 1*DIGIT) [ pseudo("encoding", enc-name) ] [ pseudo("standalone", standalone) ] [ S ] "?>"
+standalone  = "yes" solo-mark %bind solo += solo-mark | "no"
+solo-mark   = ""
 pseudo(K, V) := S K eq ( DQUOTE V DQUOTE | "'" V "'" )
 enc-name    = ALPHA *( ALNUM | "." | "_" | "-" )
 
-doctype     = "<!DOCTYPE" S qname [ S external-id ] [ S ] [ "[" *( markupdecl | "%" ncname ";" | S ) "]" [ S ] ] ">"
+doctype     = "<!DOCTYPE" S qname [ S external-id open-gate ] [ S ]
+              [ "[" *( markupdecl | "%" ncname ";" open-gate | S ) "]" [ S ] ] ">"
 external-id = "SYSTEM" S quoted(any) | "PUBLIC" S quoted(pubid-char) S quoted(any)
 pubid-char  = r"[-a-zA-Z0-9 \r\n'()+,./:=?;!*#@$_%]"
 
@@ -70,12 +149,23 @@ occ           = "?" | "*" | "+"
 attlist-decl  = "<!ATTLIST" S qname *( S qname S att-type S default-decl ) [ S ] ">"
 att-type      = "CDATA" | tokenized | "NOTATION" S alts(ncname) | alts(nmtoken)
 tokenized     = r"ID(REFS?)?|ENTIT(Y|IES)|NMTOKENS?"
-default-decl  = "#REQUIRED" | "#IMPLIED" | [ "#FIXED" S ] quoted(att-char)
+default-decl  = "#REQUIRED" | "#IMPLIED" | [ "#FIXED" S ] att-value
 
-entity-decl   = "<!ENTITY" S ( "%" S ncname S ( entity-value | external-id )
-                             | ncname S ( entity-value | external-id [ S "NDATA" S ncname ] ) ) [ S ] ">"
+entity-decl   = "<!ENTITY" S ( "%" S ncname S ( entity-value | external-id ) | gen-entity ) [ S ] ">"
+gen-entity    = ent-name ?! ents %bind ents += ent-name S entity-value %bind {
+    /* the text of the entity, kept next to its name: the quotes are taken off */
+    const char *s = text, *e = text + len;
+    while (s < e && *s != ' ' && *s != '\t' && *s != '\r' && *s != '\n') s++;
+    while (s < e && (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')) s++;
+    if (s + 1 < e) HBNF_ADD (vals, s + 1, (size_t) (e - s) - 2);
+}
+              | ent-name ?! ents %bind ents += ent-name S external-id %bind ext += ent-name S "NDATA" S ncname %bind unp += ent-name
+              | ent-name ?! ents %bind ents += ent-name S external-id %bind ext += ent-name
+              | ent-name S ( entity-value | external-id [ S "NDATA" S ncname ] )
+ent-name      = ncname
 entity-value  = quoted(entity-char)
-entity-char   = ~( "%" | "&" ) | reference
+entity-char   = ~( "%" | "&" ) | entity-ref
+entity-ref    = "&" ( ncname ";" | charnum )
 notation-decl = "<!NOTATION" S ncname S ( external-id | "PUBLIC" S quoted(pubid-char) ) [ S ] ">"
 
 sep(C)       := [ S ] C [ S ]
