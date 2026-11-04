@@ -14307,8 +14307,21 @@ package body HBNF_Grammar is
             R : Rule := Rules (J);
             Nm : constant String := To_String (R.Name);
             Base : Natural := Nm'First;
+
+            --  The rule an up reference makes of a lookahead's `$K^` (`code_up1`, `block_up2`): it matches
+            --  text and writes nothing, so it stays a phrase rule, which a lookahead may look at
+            function Up_Helper return Boolean is
+               K : Natural := Nm'Last;
+            begin
+               while K >= Nm'First and then Nm (K) in '0' .. '9' loop
+                  K := K - 1;
+               end loop;
+               return K < Nm'Last and then K >= Nm'First + 2 and then Nm (K - 2 .. K) = "_up";
+            end Up_Helper;
          begin
-            if Roles (J) in Opener | Span | Pass then
+            if Roles (J) in Opener | Span | Pass
+              and then not (Roles (J) = Pass and then not Info (J) and then Up_Helper)
+            then
                while Base <= Nm'Last and then Nm (Base) /= '(' loop
                   Base := Base + 1;
                end loop;

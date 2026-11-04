@@ -32,8 +32,7 @@ hidden S  = 1*( WSP | CR | LF )
 hidden eq = [ S ] "=" [ S ]
 
 ; ---- the document ----
-element    = "<" qname attributes "/>"
-           | "<" qname as tag attributes ">" content "</" $tag [ S ] ">"
+element    = "<" qname as tag attributes ( "/>" | ">" content "</" $tag [ S ] ">" )
 attributes = *( S attribute ) [ S ]
 attribute  = qname eq quoted(att-char)
 att-char   = ~( "<" | "&" ) | reference

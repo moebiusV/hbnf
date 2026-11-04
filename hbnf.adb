@@ -173,7 +173,7 @@ procedure Hbnf is
          & " [--layout=ast|tape|tailq|rb|NAME] [--layouts=DIR] [--templates=DIR]"
          & " [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--writer] [--compare]"
          & " [--forks] [--quiet-forks] [--run-params|--expand-params]"
-         & " [--no-compact] [--no-views] [--no-factor] [--no-ladder] [--no-unwind] [--no-overlay] [--lint] [--werror]"
+         & " [--no-compact] [--no-views] [--no-factor] [--no-ladder] [--no-unwind] [--no-overlay] [--unwind] [--overlay] [--lint] [--werror]"
          & " [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE]");
    end Usage;
 
@@ -235,6 +235,12 @@ begin
             HBNF_C.Set_Unwind (False);
          elsif A = "--no-overlay" then
             HBNF_C.Set_Overlay (False);
+         elsif A'Length > 14 and then A (A'First .. A'First + 13) = "--overlay-min=" then
+            HBNF_C.Set_Overlay_Min (Natural'Value (A (A'First + 14 .. A'Last)));
+         elsif A = "--overlay" then
+            HBNF_C.Set_Overlay (True, Force => True);
+         elsif A = "--unwind" then
+            HBNF_C.Set_Unwind (True);
          elsif A = "--no-compact" then
             Compact := False;
          elsif A = "--views" then

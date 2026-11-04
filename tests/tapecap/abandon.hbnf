@@ -1,0 +1,13 @@
+; The empty element is tried first: a start tag that is not empty is read, given up and read again, and the
+; tape must hold only the second reading.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc      = *node
+node     = element / text
+element  = "<" name attrs "/>"
+         | "<" name as tag attrs ">" *node "</" $tag ">"
+attrs    = *( SP name "=" DQUOTE *~DQUOTE DQUOTE )
+name     = ALPHA *( ALPHA / DIGIT )
+text     = 1*~"<"

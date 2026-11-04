@@ -471,6 +471,10 @@ package body HBNF_C is
    By_Value_Small : Boolean := True;
    Overlay_On     : Boolean := True;   --  the fields of the alternatives of a choice share their space
    Unwind_On      : Boolean := True;   --  the arena goes back where it stood when a rule or a branch fails
+   Overlay_Force  : Boolean := False;  --  --overlay: overlay every node that can be, however little it saves
+   Overlay_Min    : Natural := 16;     --  bytes: a node is overlaid when the alternatives sharing space save this much (two members).
+                                       --  Measured (YAML, XML trees, 2 MB): 8 and 16 the same on YAML (20.1 MB), 24 and up 17% slower and 22 MB;
+                                       --  XML: 16 is 1.5% faster than 8 (a node that saves one member does not pay)
 
    Ladder_On : Boolean := True;
 
@@ -479,10 +483,16 @@ package body HBNF_C is
       Ladder_On := On;
    end Set_Ladder;
 
-   procedure Set_Overlay (On : Boolean) is
+   procedure Set_Overlay_Min (Bytes : Natural) is
+   begin
+      Overlay_Min := Bytes;
+   end Set_Overlay_Min;
+
+   procedure Set_Overlay (On : Boolean; Force : Boolean := False) is
    begin
       Overlay_On := On;
       By_Value_Small := On;
+      Overlay_Force := On and then Force;
    end Set_Overlay;
 
    procedure Set_Unwind (On : Boolean) is
@@ -879,6 +889,7 @@ package body HBNF_C is
    --  Contexts (RFCPLAN.md decision 13): true when the grammar declares one.
    function Ctx_On return Boolean is (HBNF_Grammar.Context_Count > 0);
    Ctx_Seq : Natural := 0;       --  numbers the names the emitters make up
+   Tag_Sid : Unbounded_String;   --  non-empty: the names of `as` captures (cp_K_<sid>) are shared by the segments of one sequence
 
    --  The C spelling of a context's name, for CTX_<name>: hyphens are
    --  underscores.
@@ -1736,13 +1747,15 @@ package body HBNF_C is
                      return False;           --  a group written as the whole pattern is read by its own code
                   end if;
                   Overlay_Slots (Info.Members, Branch_Members (Els), Slot, Cnt);
-                  return Cnt < Natural (Info.Members.Length);
+                  return Cnt < Natural (Info.Members.Length)
+                    and then (Overlay_Force or else (Natural (Info.Members.Length) - Cnt) * 8 >= Overlay_Min);
                when List =>
                   if Info.Elem_Members.Is_Empty or else not Info.Tags.Is_Empty then
                      return False;
                   end if;
                   Overlay_Slots (Info.Elem_Members, Branch_Members (Els), Slot, Cnt);
-                  return Cnt < Natural (Info.Elem_Members.Length);
+                  return Cnt < Natural (Info.Elem_Members.Length)
+                    and then (Overlay_Force or else (Natural (Info.Elem_Members.Length) - Cnt) * 8 >= Overlay_Min);
                when others =>
                   return False;
             end case;
@@ -5872,6 +5885,264 @@ package body HBNF_C is
       --  action, an %emit, a context, the retry of a fork.
       Unwind_Allowed : constant Boolean := Unwinds (Rules);
 
+      --  Where the arena is put back (the marks).  A parse goes on after a failure only at a TRIAL POINT: an
+      --  alternative of a choice that the next byte does not decide, an option, an iteration of a repetition, a
+      --  lookahead.  Everywhere else a failure is the failure of the enclosing rule, up to the trial point, and the
+      --  mark taken there puts back everything taken since, whatever the rules below did.  So a rule keeps a
+      --  mark of its own only where it is a trial point itself or is called as one:
+      --    - it has a choice whose branches the next byte does not tell apart (Undecided), or
+      --    - it is named where its failure is survived without a mark at the call (Swallowed): an element that
+      --      may be absent or repeated, or one inside a group that may.
+      --  A rule with neither (every choice of it decided by the first byte of a branch, called only once in a
+      --  sequence) has no mark at all; a grammar whose rules are all such has none (the iteration of a list
+      --  keeps its own, which takes back the node of the iteration that ends the list).
+      --  When anything is unclear the mark stays.
+      function Choice_Decided (V : Element_Vectors.Vector) return Boolean is
+         Bs : constant HBNF_Lookahead.Bounds_Vectors.Vector := HBNF_Lookahead.Branches (V);
+         Sets : array (1 .. Natural (Bs.Length)) of HBNF_Lookahead.Cp_Set;
+      begin
+         if Natural (Bs.Length) < 2 then
+            return True;
+         end if;
+         for E of V loop
+            if E.Kind = Alt and then E.Guard /= 0 then
+               return False;
+            end if;
+         end loop;
+         for K in 1 .. Natural (Bs.Length) loop
+            declare
+               Null_Branch : Boolean;
+            begin
+               if Bs (K).Last < Bs (K).First then
+                  return False;
+               end if;
+               for X in Bs (K).First .. Bs (K).Last loop
+                  if V (X).Kind = Block and then V (X).Op not in B_As | B_Not | B_And then
+                     return False;
+                  end if;
+               end loop;
+               HBNF_Lookahead.Branch_First (La, Rules, V, Bs (K), Sets (K), Null_Branch);
+               if Null_Branch or else HBNF_Lookahead.Has_Any (Sets (K)) or else HBNF_Lookahead.Has_Eoi (Sets (K))
+                 or else HBNF_Lookahead.Is_Empty (Sets (K))
+               then
+                  return False;
+               end if;
+            end;
+         end loop;
+         for K in 1 .. Natural (Bs.Length) loop
+            for L in K + 1 .. Natural (Bs.Length) loop
+               if not HBNF_Lookahead.Is_Empty (HBNF_Lookahead.Meet (Sets (K), Sets (L))) then
+                  return False;
+               end if;
+            end loop;
+         end loop;
+         return True;
+      end Choice_Decided;
+
+      function Undecided_In (V : Element_Vectors.Vector) return Boolean is
+      begin
+         if (for some E of V => E.Kind = Alt) and then not Choice_Decided (V) then
+            return True;
+         end if;
+         for E of V loop
+            if E.Kind = Group and then Undecided_In (E.Items) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Undecided_In;
+
+      --  An element that may be absent or repeated is a trial point only if the parse can go on after its
+      --  failure.  When the byte that begins it cannot begin anything that may come after one time of it (an
+      --  option `[ member ... ]` before `"}"`, the `"," member` of a list before `"]"`), an attempt that has begun
+      --  and fails makes whatever follows fail at the same byte: the failure goes on up, and no mark is needed here.
+      function Decided_Optional (V : Element_Vectors.Vector; B : HBNF_Lookahead.Bounds; P : Positive;
+                                 FB : HBNF_Lookahead.Cp_Set) return Boolean is
+         E    : constant Element_Access := V (P);
+         Once : Element_Vectors.Vector := V;
+         C    : constant Element_Access := new HBNF_Grammar.Element'(E.all);
+      begin
+         if E.Kind not in Name | Group then
+            return False;
+         end if;
+         C.Min := 1;
+         C.Max := 1;
+         Once.Replace_Element (P, C);
+         declare
+            S : constant HBNF_Lookahead.Cp_Set := HBNF_Lookahead.First_Of (La, Rules, C);
+            F : constant HBNF_Lookahead.Cp_Set := HBNF_Lookahead.Follow_After (La, Rules, Once, B, P, FB);
+         begin
+            return not HBNF_Lookahead.Has_Any (S) and then not HBNF_Lookahead.Has_Eoi (S)
+              and then not HBNF_Lookahead.Is_Empty (S)
+              and then not HBNF_Lookahead.El_Nullable (Rules, La.Nullable, C)
+              and then not HBNF_Lookahead.Has_Any (F)
+              and then HBNF_Lookahead.Is_Empty (HBNF_Lookahead.Meet (S, F));
+         end;
+      end Decided_Optional;
+
+      function Swallowed_In (V : Element_Vectors.Vector; Nm : String; Optional : Boolean;
+                             FB : HBNF_Lookahead.Cp_Set) return Boolean is
+      begin
+         for B of HBNF_Lookahead.Branches (V) loop
+            for P in B.First .. B.Last loop
+               declare
+                  E   : constant Element_Access := V (P);
+                  Opt : constant Boolean :=
+                    Optional
+                    or else ((E.Min /= 1 or else E.Max /= 1) and then not Decided_Optional (V, B, P, FB));
+               begin
+                  if E.Kind = Name and then To_String (E.Name) = Nm and then Opt then
+                     return True;
+                  elsif E.Kind = Group
+                    and then Swallowed_In (E.Items, Nm, Opt,
+                                           HBNF_Lookahead.Follow_After (La, Rules, V, B, P, FB))
+                  then
+                     return True;
+                  elsif E.Kind = Block and then Swallowed_In (E.Look, Nm, True, FB) then
+                     return True;
+                  end if;
+               end;
+            end loop;
+         end loop;
+         return False;
+      end Swallowed_In;
+
+      --  Whether the failure of a rule can leave nodes in the arena: it takes memory (a node, a list, a copied
+      --  string) and a later element can fail, or an element that can fail leaves some itself.  A rule that
+      --  cannot has nothing to put back, whatever the trial points above it do.  Found as a least fixpoint over
+      --  the rules (a cycle through rules with no source of garbage has none).  A repetition is cleaned by the
+      --  mark of its iteration (what an iteration took goes back when it fails), except after `Min` >= 2
+      --  iterations that went well.
+      Leak_Out : array (1 .. N) of Boolean := [others => False];
+      Leak_In  : array (1 .. N) of Boolean := [others => False];
+      Leaks_Done : Boolean := False;
+
+      function Allocs_Rule (J : Natural) return Boolean is
+      begin
+         if J = 0 then
+            return True;
+         elsif not Views_On then
+            return True;
+         end if;
+         return Analyze (Rules, J).Kind in Struct | List;
+      end Allocs_Rule;
+
+      function Leaks_V (V : Element_Vectors.Vector) return Boolean is
+         Seen : Boolean := False;
+      begin
+         for E of V loop
+            if E.Kind = Alt then
+               Seen := False;
+            else
+               declare
+                  Fallible : constant Boolean :=
+                    E.Min >= 1 and then not (E.Kind = Block and then E.Op = B_As);
+                  Inner    : Boolean := False;       --  it leaves garbage when it fails
+                  Takes    : Boolean := False;       --  it takes memory
+               begin
+                  case E.Kind is
+                     when Name =>
+                        declare
+                           J : constant Natural := Find (Rules, To_String (E.Name));
+                        begin
+                           Takes := Allocs_Rule (J) or else E.Max /= 1;
+                           Inner := J = 0 or else Leak_Out (J);
+                        end;
+                     when Group =>
+                        Takes := True;
+                        Inner := Leaks_V (E.Items);
+                     when Literal | Char_Range =>
+                        null;
+                     when Block =>
+                        Takes := E.Op not in B_As;
+                     when others =>
+                        Takes := True;
+                        Inner := True;
+                  end case;
+                  if E.Max /= 1 and then E.Min <= 1 then
+                     Inner := False;                --  an iteration that fails takes back what it took
+                  elsif E.Max /= 1 and then E.Min >= 2 and then Takes then
+                     return True;
+                  end if;
+                  if Fallible and then (Seen or else Inner) then
+                     return True;
+                  end if;
+                  if Takes then
+                     Seen := True;
+                  end if;
+               end;
+            end if;
+         end loop;
+         return False;
+      end Leaks_V;
+
+      --  The leaks of a repeated group of a list rule, looked at inside the iteration: the branches of the
+      --  choice in it reset the arena to the mark of the rule.
+      function Leaks_Inside (V : Element_Vectors.Vector) return Boolean is
+      begin
+         if Leaks_V (V) then
+            return True;
+         end if;
+         for E of V loop
+            if E.Kind = Group and then Leaks_Inside (E.Items) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Leaks_Inside;
+
+      procedure Find_Leaks is
+         Changed : Boolean := True;
+      begin
+         if Leaks_Done then
+            return;
+         end if;
+         Leaks_Done := True;
+         while Changed loop
+            Changed := False;
+            for J in 1 .. N loop
+               declare
+                  R : constant Rule := Rules (J);
+                  Inside : constant Boolean := Leaks_Inside (R.Pattern);
+                  Out_L  : Boolean := Leaks_V (R.Pattern);
+               begin
+                  if Inside and then not Leak_In (J) then
+                     Leak_In (J) := True;
+                     Changed := True;
+                  end if;
+                  if Out_L and then not Leak_Out (J) then
+                     Leak_Out (J) := True;
+                     Changed := True;
+                  end if;
+               end;
+            end loop;
+         end loop;
+      end Find_Leaks;
+
+      Mark_Memo : array (1 .. N) of Integer := [others => -1];
+
+      function Needs_Mark (Idx : Natural) return Boolean is
+         Nm : constant String := To_String (Rules (Idx).Name);
+      begin
+         if Mark_Memo (Idx) < 0 then
+            Mark_Memo (Idx) := 0;
+            Find_Leaks;
+            if not Leak_In (Idx) then
+               null;                                --  nothing it takes can be left behind by its failure
+            elsif Undecided_In (Rules (Idx).Pattern) then
+               Mark_Memo (Idx) := 1;
+            else
+               for J in 1 .. N loop
+                  if Swallowed_In (Rules (J).Pattern, Nm, False, La.Follow (J)) then
+                     Mark_Memo (Idx) := 1;
+                     exit;
+                  end if;
+               end loop;
+            end if;
+         end if;
+         return Mark_Memo (Idx) = 1;
+      end Needs_Mark;
+
       --  True if a parse of the rule can take memory from the arena: it holds a list, or a node
       --  by value or by pointer, or (when strings are copied) a string.
       function May_Alloc (Idx : Natural) return Boolean is
@@ -5894,7 +6165,7 @@ package body HBNF_C is
             return False;
          end Held;
       begin
-         if not Unwind_Allowed then
+         if not Unwind_Allowed or else not Needs_Mark (Idx) then
             return False;
          elsif not Views_On then
             return True;
@@ -5956,6 +6227,8 @@ package body HBNF_C is
          --  the scopes it opens, and the element a `? ctx` follows.
          Sid  : constant String := Ctx_Img (Ctx_Seq + 1);
          Seg  : constant String := "sg" & Sid & "_";
+         Tsid : constant String :=
+           (if Tag_Sid /= Null_Unbounded_String then To_String (Tag_Sid) else Sid);
          Scopes : String_Vectors.Vector;
          Needs_Seg : constant Boolean :=
            (for some K in First .. Last =>
@@ -5997,9 +6270,10 @@ package body HBNF_C is
                HBNF_Grammar.Up_Slot_Of (To_String (E.Ctx), Part))))
             & ")");
          function Local_Reader (Tag : String) return Boolean is
-           (for some I in First .. Last =>
+           (Tag_Sid /= Null_Unbounded_String          --  the sequence is taken in pieces: a later one may read it
+            or else (for some I in First .. Last =>
               Els (I).Kind = Block and then Els (I).Op = B_Same
-              and then To_String (Els (I).Ctx) = Tag);
+              and then To_String (Els (I).Ctx) = Tag));
       begin
          Ctx_Seq := Ctx_Seq + 1;
          for K in First .. Last loop
@@ -6007,9 +6281,9 @@ package body HBNF_C is
               and then (Els (K).Id /= 1 or else Local_Reader (To_String (Els (K).Ctx)))
             then
                Append (Buf, Ind & "size_t cp_"
-                 & C_Ident_Lower (To_String (Els (K).Ctx)) & "_" & Sid
+                 & C_Ident_Lower (To_String (Els (K).Ctx)) & "_" & Tsid
                  & " = 0, cl_" & C_Ident_Lower (To_String (Els (K).Ctx)) & "_"
-                 & Sid & " = 0;");
+                 & Tsid & " = 0;");
                Append (Buf, LF);
             end if;
          end loop;
@@ -6237,7 +6511,7 @@ package body HBNF_C is
                                 & Img (HBNF_Grammar.Switch_Index (To_String (E.Ctx))) & ");");
                            else
                               declare
-                                 T : constant String := C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid;
+                                 T : constant String := C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid;
                               begin
                                  Append (Buf, Ind & "{ int g_ = hbnf_grammar_named(p->text + cp_" & T
                                    & ", cl_" & T & ");");
@@ -6442,9 +6716,9 @@ package body HBNF_C is
                            if E.Id /= 1 or else Local_Reader (To_String (E.Ctx)) then
                               Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
                                 & Ctx_Img (K - 1)) & "cp_"
-                                & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
+                                & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid
                                 & " = st_;  cl_"
-                                & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid
+                                & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid
                                 & " = k_ - st_; }");
                               Append (Buf, LF);
                            end if;
@@ -6472,10 +6746,10 @@ package body HBNF_C is
                                  PL  : constant String := Img (Pre'Length);
                                  Cp  : constant String :=
                                    (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then "upp_"
-                                    else "cp_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid);
+                                    else "cp_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid);
                                  Cl  : constant String :=
                                    (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then "upl_"
-                                    else "cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid);
+                                    else "cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid);
                                  Cmp : constant String :=
                                    (if E.Id = 2 then "strncasecmp" else "memcmp");
                                  Bad_S : constant String :=
@@ -6509,10 +6783,10 @@ package body HBNF_C is
                            declare
                               Cp : constant String :=
                                 (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then "upp_"
-                                 else "cp_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid);
+                                 else "cp_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid);
                               Cl : constant String :=
                                 (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0 then "upl_"
-                                 else "cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Sid);
+                                 else "cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid);
                            begin
                               Append (Buf, Ind & "if (p->pos + " & Cl
                                 & " > p->len || " & (if E.Id = 2 then "strncasecmp" else "memcmp")
@@ -6998,6 +7272,121 @@ package body HBNF_C is
                Plan_Ok := Used;
             end Plan;
 
+            --  A branch that cannot begin with the byte at hand (or with the two bytes at hand) is not
+            --  tried: the dispatch above picks where the chain starts, and these keep it from trying, on the
+            --  way down, a branch that the next byte rules out (`</` in an element's content: an element
+            --  begins with `<` and a name, the others with other bytes, and nothing begins `</`).  Quiet pass
+            --  only, as the dispatch is.
+            type Byte_Table is array (0 .. 255) of Boolean;
+            Skip_Used : array (1 .. Natural'Max (1, NBr)) of Boolean := [others => False];
+
+            procedure Guard_Of (K : Positive; G1, G2 : out Byte_Table; Has1, Has2 : out Boolean) is
+               B    : constant HBNF_Lookahead.Bounds := Bs (K);
+               Set  : HBNF_Lookahead.Cp_Set;
+               Null_Branch : Boolean;
+               Wide : Boolean := False;
+
+               procedure Add (T : in out Byte_Table; V : Natural) is
+               begin
+                  if V <= 255 then
+                     T (V) := True;
+                     if V in Character'Pos ('a') .. Character'Pos ('z') then
+                        T (V - 32) := True;
+                     elsif V in Character'Pos ('A') .. Character'Pos ('Z') then
+                        T (V + 32) := True;
+                     end if;
+                  end if;
+               end Add;
+
+               procedure Of_Set (S : HBNF_Lookahead.Cp_Set; T : out Byte_Table; Known : out Boolean) is
+               begin
+                  T := [others => False];
+                  Known := not (HBNF_Lookahead.Has_Any (S) or else HBNF_Lookahead.Is_Empty (S));
+                  if Known then
+                     for R in 1 .. HBNF_Lookahead.Range_Count (S) loop
+                        for V in HBNF_Lookahead.Range_Lo (S, R)
+                                 .. Natural'Min (127, HBNF_Lookahead.Range_Hi (S, R)) loop
+                           Add (T, V);
+                        end loop;
+                        if HBNF_Lookahead.Range_Hi (S, R) >= 128 then
+                           for V in 128 .. 255 loop
+                              T (V) := True;
+                           end loop;
+                        end if;
+                     end loop;
+                  end if;
+               end Of_Set;
+
+               --  The bytes that can follow the first byte of V (F .. L), when its first element is a literal
+               --  or a rule that begins with one: `"<" qname`, `"<![CDATA["`.
+               procedure Second (V : Element_Vectors.Vector; F, L : Natural; Depth : Natural;
+                                 T : out Byte_Table; Known : out Boolean) is
+               begin
+                  T := [others => True];
+                  Known := False;
+                  if F > L or else Depth > 4 or else V (F).Min /= 1 or else V (F).Max /= 1 then
+                     return;
+                  end if;
+                  case V (F).Kind is
+                     when Literal =>
+                        declare
+                           Lt : constant String := To_String (V (F).Lit);
+                        begin
+                           if Lt'Length >= 2 then
+                              T := [others => False];
+                              Add (T, Character'Pos (Lt (Lt'First + 1)));
+                              Known := True;
+                           elsif Lt'Length = 1 and then F < L
+                             and then V (F + 1).Kind in Name | Group | Literal
+                             and then V (F + 1).Min >= 1
+                             and then not HBNF_Lookahead.El_Nullable (Rules, La.Nullable, V (F + 1))
+                           then
+                              Of_Set (HBNF_Lookahead.First_Of (La, Rules, V (F + 1)), T, Known);
+                           end if;
+                        end;
+                     when Name =>
+                        declare
+                           J : constant Natural := Find (Rules, To_String (V (F).Name));
+                        begin
+                           if J /= 0 and then Rules (J).Jet_Code = Null_Unbounded_String
+                             and then not Rules (J).Pattern.Is_Empty
+                             and then not (for some X of Rules (J).Pattern => X.Kind = Alt)
+                           then
+                              Second (Rules (J).Pattern, 1, Natural (Rules (J).Pattern.Length), Depth + 1, T, Known);
+                           end if;
+                        end;
+                     when others =>
+                        null;
+                  end case;
+               end Second;
+            begin
+               G1 := [others => True];
+               G2 := [others => True];
+               Has1 := False;
+               Has2 := False;
+               if B.Last < B.First then
+                  return;
+               end if;
+               HBNF_Lookahead.Branch_First (La, Rules, Els, B, Set, Null_Branch);
+               if not Null_Branch and then not (for some X in B.First .. B.Last =>
+                                                  Els (X).Kind = Block and then Els (X).Op in B_Same | B_Spaces)
+               then
+                  Of_Set (Set, G1, Has1);
+                  Has1 := Has1 and then (for some V in G1'Range => not G1 (V));
+               end if;
+               Second (Els, B.First, B.Last, 0, G2, Has2);
+               Has2 := Has2 and then (for some V in G2'Range => not G2 (V));
+            end Guard_Of;
+
+            function Table_Text (T : Byte_Table) return String is
+               R : U;
+            begin
+               for V in T'Range loop
+                  Append (R, (if T (V) then "1," else "0,"));
+               end loop;
+               return To_String (R);
+            end Table_Text;
+
             --  A guarded choice is a plain chain: each branch's guard is
             --  checked where it succeeds.
             Disp : Boolean := False;
@@ -7294,9 +7683,41 @@ package body HBNF_C is
                         LBr := Last;
                      end;
                   end if;
+                  if Disp and then Skip_Used (LBr) then
+                     Append (Buf, Label & "alt_skip_" & Img (LBr) & ": ;");
+                     Append (Buf, LF);
+                  end if;
                   if Skip_Until >= K then
                      null;                    --  the run covers this branch
                   else
+                  if Disp and then not Ws and then not Fork then
+                     declare
+                        G1, G2 : Byte_Table;
+                        H1, H2 : Boolean;
+                        Target : constant String :=
+                          (if LBr < NBr then Label & "alt_skip_" & Img (LBr + 1) else Label & "alt_fail_" & Img (LBr));
+                     begin
+                        Guard_Of (LBr, G1, G2, H1, H2);
+                        if H1 or else H2 then
+                           if LBr < NBr then
+                              Skip_Used (LBr + 1) := True;
+                           end if;
+                           Append (Buf, Ind & "if (p->quiet && p->pos < p->len) {");
+                           if H1 then
+                              Append (Buf, " static const unsigned char gb" & Label & Img (LBr)
+                                & "_[256] = {" & Table_Text (G1) & "}; if (!gb" & Label & Img (LBr)
+                                & "_[(unsigned char)p->text[p->pos]]) goto " & Target & ";");
+                           end if;
+                           if H2 then
+                              Append (Buf, " static const unsigned char gc" & Label & Img (LBr)
+                                & "_[256] = {" & Table_Text (G2) & "}; if (p->pos + 1 < p->len && !gc" & Label
+                                & Img (LBr) & "_[(unsigned char)p->text[p->pos + 1]]) goto " & Target & ";");
+                           end if;
+                           Append (Buf, " }");
+                           Append (Buf, LF);
+                        end if;
+                     end;
+                  end if;
                   Emit_Seq (Owner, Els, LSt, K - 1, Acc, Buf,
                             "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind,
                             Ws, Lead_Ws => not Hoist);
@@ -7709,7 +8130,14 @@ package body HBNF_C is
          --  taken with it by the sequence code, which notes where the element began.
          procedure Seq_Range (V : Element_Vectors.Vector; St, En : Natural; Fail, Ind : String) is
             K : Natural := St;
+            Own : constant Boolean := Tag_Sid = Null_Unbounded_String
+              and then (for some X in St .. En => V (X).Kind = Block and then V (X).Op = B_As);
          begin
+            --  `qname as tag` and a later `"</" $tag` are taken by different segments
+            --  of this sequence: they must name the capture alike
+            if Own then
+               Tag_Sid := To_Unbounded_String ("t" & Fresh);
+            end if;
             while K <= En loop
                if V (K).Kind = Block and then V (K).Op = B_Scope then
                   --  `%scope`: what the rest of this sequence binds ends with it
@@ -7739,6 +8167,9 @@ package body HBNF_C is
                   K := K + 1;
                end if;
             end loop;
+            if Own then
+               Tag_Sid := Null_Unbounded_String;
+            end if;
          end Seq_Range;
 
          --  V (F .. L): alternatives are tried in order; one that fails gives back its input.
@@ -8989,6 +9420,50 @@ package body HBNF_C is
          Append (Res, LF);
          Append (Res, Ind & (if A.Max = 0 then "    for (;;) {" else "    while (cnt < " & Img (A.Max) & ") {"));
          Append (Res, LF);
+         --  An unbounded run of a class of bytes is walked sixteen at a time while no byte of the 16
+         --  is outside the ASCII members or non-ASCII; the first one that is stops it, and the step
+         --  below reads that byte (and the next sixteen are looked at again after it).
+         declare
+            Bad    : U;
+            Ranges : Natural := 0;
+            C      : Natural := 0;
+         begin
+            if A.Max = 0 then
+               while C <= 127 loop
+                  if not Is_In (C) then
+                     declare
+                        Lo_B : constant Natural := C;
+                     begin
+                        while C <= 127 and then not Is_In (C) loop
+                           C := C + 1;
+                        end loop;
+                        Ranges := Ranges + 1;
+                        Append (Bad, " | ");
+                        if C - 1 = Lo_B then
+                           Append (Bad, "_mm_cmpeq_epi8(v, _mm_set1_epi8((char)" & Img (Lo_B) & "))");
+                        else
+                           Append (Bad, "_mm_cmpeq_epi8(_mm_min_epu8(_mm_sub_epi8(v, _mm_set1_epi8((char)" & Img (Lo_B)
+                             & ")), _mm_set1_epi8((char)" & Img (C - 1 - Lo_B) & ")), _mm_sub_epi8(v, _mm_set1_epi8((char)"
+                             & Img (Lo_B) & ")))");
+                        end if;
+                     end;
+                  else
+                     C := C + 1;
+                  end if;
+               end loop;
+               if Ranges in 1 .. 6 then
+                  Append (Res, "#if defined(__SSE2__)" & LF);
+                  Append (Res, Ind & "        while (pos + off + 16 <= len) {" & LF);
+                  Append (Res, Ind & "            __m128i v = _mm_loadu_si128((const __m128i *)(s + pos + off));" & LF);
+                  Append (Res, Ind & "            unsigned mk = (unsigned)_mm_movemask_epi8(v" & To_String (Bad) & ");" & LF);
+                  Append (Res, Ind & "            if (mk) { unsigned k = (unsigned)__builtin_ctz(mk); off += k;"
+                    & (if Needs_Cnt then " cnt += k;" else "") & " break; }" & LF);
+                  Append (Res, Ind & "            off += 16;" & (if Needs_Cnt then " cnt += 16;" else "") & LF);
+                  Append (Res, Ind & "        }" & LF);
+                  Append (Res, "#endif" & LF);
+               end if;
+            end if;
+         end;
          Append (Res, Ind & "        unsigned char b;");
          Append (Res, LF);
          Append (Res, Ind & "        if (pos + off >= len) break;");
@@ -9117,16 +9592,33 @@ package body HBNF_C is
          Append (Res, LF);
       end Emit_Eol;
 
+      --  The loops (Iters) that have a table of the bytes they take alone and one at a time.
+      Run_Helpers : String_Vectors.Vector;
+
       --  An Iter: one time of it is the function written for it (Emit_Loop_Fn), which says how many
       --  bytes the longest of its branches takes (0: none matches); take as many times as match, then
       --  require the least.
       procedure Emit_Loop (A : Cp_Atom; Ind : String; Fail : String) is
          Needs_Cnt : constant Boolean := A.Hi /= 0 or else A.Lo > 0;
+         Fast : constant Boolean := Run_Helpers.Contains (A.Fn);
       begin
          Append (Res, Ind & "{" & (if Needs_Cnt then " size_t cnt = 0;" else ""));
          Append (Res, LF);
          Append (Res, Ind & (if A.Hi = 0 then "    for (;;) {" else "    while (cnt < " & Img (A.Hi) & ") {"));
          Append (Res, LF);
+         if Fast then
+            --  the bytes that one time of the loop takes alone and always (see Emit_Loop_Fn): a run of
+            --  them, one time each, without a call for each
+            Append (Res, Ind & "        while (pos + off < len && (unsigned char)s[pos + off] < 0x80 && rt_"
+              & C_Name (To_String (A.Fn)) & "[(unsigned char)s[pos + off]]"
+              & (if A.Hi = 0 then "" else " && cnt < " & Img (A.Hi))
+              & ") { off++;" & (if Needs_Cnt then " cnt++;" else "") & " }");
+            Append (Res, LF);
+            if A.Hi /= 0 then
+               Append (Res, Ind & "        if (cnt >= " & Img (A.Hi) & ") break;");
+               Append (Res, LF);
+            end if;
+         end if;
          Append (Res, Ind & "        size_t n = loop_" & C_Name (To_String (A.Fn)) & "(s, pos + off, len);");
          Append (Res, LF);
          Append (Res, Ind & "        if (!n) break;");
@@ -9190,7 +9682,111 @@ package body HBNF_C is
 
       --  The function an Iter calls: the length of the longest branch that matches at pos, 0 if none.
       procedure Emit_Loop_Fn (H : Look_Helper) is
+         --  The ASCII bytes that one time of this loop takes as exactly one byte and that no other
+         --  branch could begin with: a branch of lookaheads and one class (`!"\"" ~( "<" | "&" )`) is
+         --  a test of the byte, and a run of such bytes is a run of times of the loop, which the
+         --  caller walks in a tight loop instead of a call, with its lookaheads, for each.
+         type Verdict is (No, Pure, Maybe);
+         Rt     : array (0 .. 127) of Boolean := [others => False];
+         Any_Rt : Boolean := False;
+
+         function In_Single (A : Cp_Atom; B : Natural) return Boolean is
+           ((B >= A.Lo and then B <= A.Hi) or else (A.Hi2 >= A.Lo2 and then B >= A.Lo2 and then B <= A.Hi2));
+         function In_Range (A : Cp_Range; B : Natural) return Boolean is
+           ((B >= A.Lo and then B <= A.Hi) or else (A.Hi2 >= A.Lo2 and then B >= A.Lo2 and then B <= A.Hi2));
+
+         --  Does the lookahead hold at a byte B: 1 yes, 0 no, -1 not known
+         function Look_At (A : Cp_Atom; B : Natural) return Integer is
+            Unknown : Boolean := False;
+         begin
+            for Br of A.Inner.Branches loop
+               if Br.Is_Empty then
+                  return 1;
+               elsif Br.First_Element.Kind = Single then
+                  if In_Single (Br.First_Element, B) then
+                     if Natural (Br.Length) = 1 then
+                        return 1;
+                     end if;
+                     Unknown := True;      --  begins with B and goes on: not known from the byte
+                  end if;
+               else
+                  Unknown := True;
+               end if;
+            end loop;
+            return (if Unknown then -1 else 0);
+         end Look_At;
+
+         function Branch_At (Br : Cp_Atom_Vectors.Vector; B : Natural) return Verdict is
+            Sure : Boolean := True;
+         begin
+            if Br.Is_Empty then
+               return No;
+            end if;
+            for K in Br.First_Index .. Br.Last_Index loop
+               declare
+                  A : constant Cp_Atom := Br (K);
+               begin
+                  case A.Kind is
+                     when Look =>
+                        declare
+                           L : constant Integer := Look_At (A, B);
+                        begin
+                           if L < 0 then
+                              Sure := False;
+                           elsif (L = 1) = A.Negative then
+                              return No;
+                           end if;
+                        end;
+                     when Single =>
+                        if not In_Single (A, B) then
+                           return No;
+                        end if;
+                        return (if K = Br.Last_Index and then Sure then Pure else Maybe);
+                     when Repeat =>
+                        if A.Min = 0 then
+                           return Maybe;
+                        end if;
+                        for Sub of A.Sub loop
+                           if not Sub.Is_Empty and then In_Range (Sub.First_Element, B) then
+                              return Maybe;
+                           end if;
+                        end loop;
+                        return No;
+                     when others =>
+                        return Maybe;
+                  end case;
+               end;
+            end loop;
+            return Maybe;
+         end Branch_At;
       begin
+         for B in Rt'Range loop
+            declare
+               Pure_Seen, Maybe_Seen : Boolean := False;
+            begin
+               for Br of H.Branches loop
+                  case Branch_At (Br, B) is
+                     when Pure  => Pure_Seen := True;
+                     when Maybe => Maybe_Seen := True;
+                     when No    => null;
+                  end case;
+               end loop;
+               Rt (B) := Pure_Seen and then not Maybe_Seen;
+               Any_Rt := Any_Rt or else Rt (B);
+            end;
+         end loop;
+         if Any_Rt then
+            declare
+               Tab : U;
+            begin
+               for B in Rt'Range loop
+                  Append (Tab, (if Rt (B) then "1," else "0,"));
+               end loop;
+               Append (Res, "static const unsigned char rt_" & C_Name (To_String (H.Name))
+                 & "[128] = {" & To_String (Tab) & "};" & LF);
+               Run_Helpers.Append (H.Name);
+            end;
+         end if;
          Append (Res, "static size_t loop_" & C_Name (To_String (H.Name))
            & "(const char *s, size_t pos, size_t len) {");
          Append (Res, LF);

@@ -1,0 +1,11 @@
+; abandon.hbnf with the start tag read once: the same language and the same tape.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc      = *node
+node     = element / text
+element  = "<" name as tag attrs ( "/>" | ">" *node "</" $tag ">" )
+attrs    = *( SP name "=" DQUOTE *~DQUOTE DQUOTE )
+name     = ALPHA *( ALPHA / DIGIT )
+text     = 1*~"<"

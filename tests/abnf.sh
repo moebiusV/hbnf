@@ -774,7 +774,7 @@ else
 fi
 # And in the default layout, where the fields of the alternatives share their space: the node says
 # which alternative it holds, and the failed first branch leaves nothing in the field of the second.
-if "$CLI" "$W/stale.hbnf" --backend=c > "$W/sto.c" 2> "$W/err.txt"; then
+if "$CLI" "$W/stale.hbnf" --backend=c --overlay > "$W/sto.c" 2> "$W/err.txt"; then
 	cp "$W/sto.c" "$W/stom.c"
 	cat >> "$W/stom.c" <<EOC
 int main(int argc, char **argv) {

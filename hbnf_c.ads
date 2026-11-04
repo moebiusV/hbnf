@@ -119,8 +119,12 @@ package HBNF_C is
 
    --  A node that is one of several alternatives holds the fields of the alternative taken, in space shared with
    --  the fields of the others, and says which in `_alt`.  On by default (and not with an action, --ast, --writer,
-   --  --idref and the like, which read a field for each alternative); --no-overlay turns it off.
-   procedure Set_Overlay (On : Boolean);
+   --  --idref and the like, which read a field for each alternative); --no-overlay turns it off.  A node is
+   --  overlaid where it pays: the alternatives that share space must save at least 24 bytes (three members);
+   --  Force (--overlay) overlays every node that can be.
+   procedure Set_Overlay (On : Boolean; Force : Boolean := False);
+   --  --overlay-min=N: a node is overlaid when the alternatives that share space save at least N bytes (eight a member).
+   procedure Set_Overlay_Min (Bytes : Natural);
 
    --  Views (--views): a token's value is a pointer and a length into the input, with no
    --  copy (a quoted string with an escape in it is the one copy).  The tree borrows the text,

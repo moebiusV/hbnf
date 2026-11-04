@@ -1,0 +1,9 @@
+ok	
+ok	<a></a>
+ok	x<a>t</a>y
+ok	<a><b>x</b><b>y</b></a>
+ok	p<a><a>q</a></a>r
+bad	<a></b>
+bad	<a><b></a></b>
+bad	<a>
+bad	<a></A>

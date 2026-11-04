@@ -71,6 +71,11 @@ t=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' /o/xml.c)
 cat /o/xml.c /w/bench/formats/time_xml_tree.c > /o/xml-m.c
 if $CC -std=gnu11 -D_GNU_SOURCE "-DOUT_T=$t" /o/xml-m.c -o /o/bin-hbnf-xml 2> /o/cc.txt; then best xml "hbnf (C backend), tree" /o/doc.xml /o/bin-hbnf-xml
 else printf 'xml\thbnf (C backend), tree\t0\t0\tbuild failed: %s\n' "$(grep -m1 error /o/cc.txt | head -c 80)"; fi
+# and the same grammar read onto a flat tape (--layout=tape): the driver counts the elements, attributes and text from the tape
+tt=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' /o/xml-tape.c)
+cat /o/xml-tape.c /w/bench/formats/time_xml_tape.c > /o/xml-tape-m.c
+if $CC -std=gnu11 -D_GNU_SOURCE -I/w/runtime "-DOUT_T=$tt" /o/xml-tape-m.c -o /o/bin-hbnf-xml-tape 2> /o/cc.txt; then best xml "hbnf (C backend), tape" /o/doc.xml /o/bin-hbnf-xml-tape
+else printf 'xml\thbnf (C backend), tape\t0\t0\tbuild failed: %s\n' "$(grep -m1 error /o/cc.txt | head -c 80)"; fi
 MODE=events try xml "expat, events only" /o/doc.xml expat.c -lexpat
 MODE=copy try xml "expat, events copied into a tree" /o/doc.xml expat.c -lexpat
 MODE=dom try xml "libxml2, DOM" /o/doc.xml libxml2.c $(pkg-config --cflags --libs libxml-2.0)

@@ -17,6 +17,7 @@ titles = {"json": "JSON", "toml": "TOML 1.0", "yaml": "YAML 1.2", "xml": "XML 1.
 # the XML table says what each parser hands the program, since they are not doing the same work
 builds = {
     "hbnf (C backend), tree": "the grammar's typed tree",
+    "hbnf (C backend), tape": "a flat tape of 64-bit words",
     "expat, events only": "nothing (handlers count)",
     "expat, events copied into a tree": "a cheap tree of copies",
     "libxml2, DOM": "DOM",
@@ -74,9 +75,8 @@ def xml_note():
             "as ElementTree does (a driver that cannot count something does not, and a mismatch is a `check failed` row).  "
             "The time is the parse call alone; the counting walks of the tree parsers come after the clock.  expat, libxml2's SAX2 and sax "
             "build nothing, their handlers count, and the expat row that copies makes a small tree of names, attributes and text.  "
-            "pugixml and RapidXML parse the buffer in place, the others leave it alone.  hbnf's XML grammar has no `%emit tape` "
-            "row: `corpus/xml/xml.hbnf` does not generate under `--layout=tape` yet, so only its typed tree is measured, and that tree "
-            "is the grammar's concrete syntax (a reference is a node and characters are not decoded).")
+            "pugixml and RapidXML parse the buffer in place, the others leave it alone.  hbnf's XML grammar is measured twice: its typed tree and the same grammar under `--layout=tape` (the tape holds the "
+            "elements, attributes and texts as 64-bit words; the driver counts from it), and that tree and that tape is the grammar's concrete syntax (a reference is a node and characters are not decoded).")
 
 
 rev = subprocess.check_output(["git", "-C", root, "rev-parse", "--short", "HEAD"]).decode().strip()
