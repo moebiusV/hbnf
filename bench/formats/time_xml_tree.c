@@ -1,7 +1,7 @@
 /* time_xml_tree.c -- time parse_text of the XML grammar's generated C parser over one file, as time_format.c does,
  * and then count what the tree holds so that bench/libs.sh can check it against the other parsers: elements,
  * attributes (not the xmlns declarations) and the bytes of text that are not blanks.  The grammar reads the markup
- * and decodes nothing, so a reference is a node of its own here, and the walk gives it the length of the
+ * and decodes nothing, so a reference is an item of its own here, and the walk gives it the length of the
  * character it stands for (&amp; and the other four are one byte, &#N; and &#xN; the UTF-8 length of N).
  * Built by concatenating the generated parser ahead of this file, with -DOUT_T=document_t.
  * Prints "ok BYTES MS RSS_KIB ELEMENTS ATTRIBUTES TEXT". */
@@ -33,12 +33,13 @@ static void visit(const void *node, node_kind_t kind, void *ctx) {
         hbnf_str q = ((const attribute_t *)node)->qname;
         nat += !!strncmp(hbnf_sp(q), "xmlns", hbnf_sn(q) < 5 ? hbnf_sn(q) : 5);
         break; }
-    case NODE_CONTENT: {
-        hbnf_str r = ((const content_t *)node)->reference;
+    case NODE_CONTENT: {      /* a content item holds one of: character data, a reference, a CDATA section, ... (the others are empty) */
+        const content_t *c = node;
+        hbnf_str r = c->reference, d = c->chardata;
         if (hbnf_sn(r)) ntx += ref_bytes(hbnf_sp(r), hbnf_sn(r));
+        ntx += blank(hbnf_sp(d), hbnf_sn(d));
         break; }
-    case NODE_CHARDATA: { hbnf_str a = ((const chardata_t *)node)->any; ntx += blank(hbnf_sp(a), hbnf_sn(a)); break; }
-    case NODE_TILL_X93X93X62: { hbnf_str a = ((const till_x93x93x62_t *)node)->any; ntx += blank(hbnf_sp(a), hbnf_sn(a)); break; }
+    case NODE_CDATA: { hbnf_str a = ((const cdata_t *)node)->till_x93x93x62; ntx += blank(hbnf_sp(a), hbnf_sn(a)); break; }
     default: break;
     }
 }
