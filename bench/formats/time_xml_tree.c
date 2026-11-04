@@ -28,16 +28,17 @@ static long ref_bytes(const char *s, size_t n) {   /* s is "&...;" */
 static void visit(const void *node, node_kind_t kind, void *ctx) {
     (void)ctx;
     switch (kind) {
-    case NODE_ELEMENT: nel += hbnf_sn(((const element_t *)node)->qname) != 0; break;   /* every content item carries an element slot */
+    case NODE_ELEMENT: nel++; break;
     case NODE_ATTRIBUTE: {
         hbnf_str q = ((const attribute_t *)node)->qname;
         nat += !!strncmp(hbnf_sp(q), "xmlns", hbnf_sn(q) < 5 ? hbnf_sn(q) : 5);
         break; }
-    case NODE_CONTENT: {      /* a content item holds one of: character data, a reference, a CDATA section, ... (the others are empty) */
+    case NODE_CONTENT: {      /* a content item holds one of: an element, character data, a reference, a CDATA section, ...;
+                               * _alt says which (from 1, in the order of content = *( element | chardata | reference | cdata | pi | remark )),
+                               * and the fields of the others share its space */
         const content_t *c = node;
-        hbnf_str r = c->reference, d = c->chardata;
-        if (hbnf_sn(r)) ntx += ref_bytes(hbnf_sp(r), hbnf_sn(r));
-        ntx += blank(hbnf_sp(d), hbnf_sn(d));
+        if (c->_alt == 3) ntx += ref_bytes(hbnf_sp(c->reference), hbnf_sn(c->reference));
+        else if (c->_alt == 2) ntx += blank(hbnf_sp(c->chardata), hbnf_sn(c->chardata));
         break; }
     case NODE_CDATA: { hbnf_str a = ((const cdata_t *)node)->till_x93x93x62; ntx += blank(hbnf_sp(a), hbnf_sn(a)); break; }
     default: break;

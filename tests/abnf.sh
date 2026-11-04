@@ -746,7 +746,7 @@ t = a ')' | b
 a = word
 b = word
 EOG
-if "$CLI" "$W/stale.hbnf" --backend=c > "$W/st.c" 2> "$W/err.txt"; then
+if "$CLI" "$W/stale.hbnf" --backend=c --no-overlay > "$W/st.c" 2> "$W/err.txt"; then
 	STROOT=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/st.c")
 	cp "$W/st.c" "$W/stm.c"
 	cat >> "$W/stm.c" <<EOC
@@ -771,6 +771,33 @@ EOC
 	fi
 else
 	echo "  FAIL [the stale-field grammar generates in C]: $(head -1 "$W/err.txt")"; rc=1
+fi
+# And in the default layout, where the fields of the alternatives share their space: the node says
+# which alternative it holds, and the failed first branch leaves nothing in the field of the second.
+if "$CLI" "$W/stale.hbnf" --backend=c > "$W/sto.c" 2> "$W/err.txt"; then
+	cp "$W/sto.c" "$W/stom.c"
+	cat >> "$W/stom.c" <<EOC
+int main(int argc, char **argv) {
+    $STROOT out; char err[512]; size_t l = 0, c = 0;
+    if (argc < 2 || !parse_text(argv[1], &out, err, sizeof err, &l, &c)) return 1;
+    printf("alt=%d a=%s\n", (int)out._alt, out._alt == 1 ? (out.a ? "set" : "null") : (out.b ? "b-set" : "b-null")); return 0;
+}
+EOC
+	if gcc -std=gnu11 -D_GNU_SOURCE -w -Itests/bsdinc "$W/stom.c" -o "$W/sto"; then
+		for want in "foo:alt=2 a=b-set" "foo):alt=1 a=set"; do
+			in=${want%%:*}; exp=${want#*:}
+			got=$("$W/sto" "$in" 2>&1)
+			if [ "$got" = "$exp" ]; then
+				echo "  PASS [an overlaid node says which branch it holds: $in -> $got]"
+			else
+				echo "  FAIL [an overlaid node says which branch it holds: $in -> '$got', wanted '$exp']"; rc=1
+			fi
+		done
+	else
+		echo "  FAIL [the overlaid stale-field grammar does not compile in C]"; rc=1
+	fi
+else
+	echo "  FAIL [the stale-field grammar generates in C (overlay)]: $(head -1 "$W/err.txt")"; rc=1
 fi
 # A cycle laundered through a list is *not* a cycle: a list field holds the
 # list's head, which is two pointers.  It used to be emitted as one of the

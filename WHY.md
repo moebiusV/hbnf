@@ -366,6 +366,43 @@ before `strcmp`.  That speeds every C parser with a keyword-heavy choice (the ol
 went from 700 to 540 ms).  A grammar whose
 choices are few gains nothing, because there is nothing to compact.
 
+### Nodes that hold one alternative, and the arena put back
+
+The typed-tree parser for YAML took 29 MB to read a 2 MB document, 14.5 times the input.  A count of
+what the arena handed out, by the rule each node was made for, showed where: the 26 MB of the arena
+were 24 MB of nodes the tree keeps and 1.9 MB of nodes it does not.
+
+**Nodes of a guess.**  `mapent = "?" eval | ikey *WSP ":" mval` reads the key of `- foo` before it finds there
+is no `:`, and the key's node stayed in the arena for the life of the tree; an XML `element` tried as
+`<a b="c"/>` kept the attributes of that try when it went on to `<a b="c">..</a>`.  A rule or an
+alternative that fails now gives back what it took (the arena is a bump allocator, so it is one store
+and clearing the bytes again), in the YAML parser 1.9 MB of 26 and in the XML parser 0.7 MB of 11.
+The tree is the same.  It is off where something outside the rules may hold a pointer into the nodes of
+a branch (an action, an `%emit`, a context, a fork), and `--no-unwind` turns it off.
+
+**One alternative, one set of fields.**  A node that is one of several alternatives had a field for each:
+`ikey` (a key is a plain scalar, a quoted one, an alias, a flow collection ..) was eight words, 64 bytes,
+and one of the eight is ever set; an entry of the XML `content` (an element, text, a reference ..) was
+88 bytes and held one.  The fields of the alternatives now share their space (fields that no alternative
+holds together take one slot), and the node's `_alt` says which it holds: `ikey` is 24 bytes, a
+`content` entry 48.  The fields keep their names, but a field is the field of the alternative taken only:
+code that told the alternative by a field being empty reads `_alt` (from 1, in the order the alternatives
+are written; the same `_alt` that `--ast` records).  A struct no bigger than a pointer (an object that
+is one list head) that such a node holds is held by value, not by a pointer to a node of its own, and
+a choice among structs of 32 bytes or less (TOML's `expr = keyval / table`) holds them by value.  Not
+with an action, `%emit`, `context`, `--forks`, `--spans`, `--parents`, `--writer`, `--idref`,
+`--compare`, a keyword `kind`, a number field or a `layout`; `--no-overlay` turns it off.
+
+2 MB documents, as `bench/libs.sh` makes them (the arena counted in the parser; peak RSS and minor
+faults of a fresh process with transparent huge pages off, so a fault is a 4 KiB page):
+
+| | arena before | arena after | peak RSS before | peak RSS after | minor faults before | minor faults after |
+|---|---:|---:|---:|---:|---:|---:|
+| JSON | 4.06 MB | 3.85 MB | 7.5 MB | 7.2 MB | 1666 | 1621 |
+| TOML | 7.53 MB | 6.84 MB | 10.8 MB | 10.1 MB | 2634 | 2516 |
+| YAML | 26.11 MB | 16.07 MB | 29.0 MB | 19.3 MB | 7799 | 4870 |
+| XML | 11.18 MB | 6.13 MB | 14.4 MB | 9.4 MB | 3896 | 2314 |
+
 ### The same for Rust
 
 The Rust parser had both faults, the second much worse.  Compact nodes are the same change: a

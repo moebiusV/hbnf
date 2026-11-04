@@ -173,7 +173,7 @@ procedure Hbnf is
          & " [--layout=ast|tape|tailq|rb|NAME] [--layouts=DIR] [--templates=DIR]"
          & " [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--writer] [--compare]"
          & " [--forks] [--quiet-forks] [--run-params|--expand-params]"
-         & " [--no-compact] [--no-views] [--no-factor] [--no-ladder] [--lint] [--werror]"
+         & " [--no-compact] [--no-views] [--no-factor] [--no-ladder] [--no-unwind] [--no-overlay] [--lint] [--werror]"
          & " [--ts-conflicts=a,b;c,d] [--ts-ordered] [--ts-scanner=FILE]");
    end Usage;
 
@@ -231,6 +231,10 @@ begin
             HBNF_Lookahead.Set_Factoring (False);
          elsif A = "--no-ladder" then
             HBNF_C.Set_Ladder (False);
+         elsif A = "--no-unwind" then
+            HBNF_C.Set_Unwind (False);
+         elsif A = "--no-overlay" then
+            HBNF_C.Set_Overlay (False);
          elsif A = "--no-compact" then
             Compact := False;
          elsif A = "--views" then

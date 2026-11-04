@@ -112,6 +112,16 @@ package HBNF_C is
    --  the levels are not entered.  On by default; off for comparing with the plain parse (--no-ladder).
    procedure Set_Ladder (On : Boolean);
 
+   --  A rule or a branch that gives up puts the arena back where it stood when it began, so the nodes it had
+   --  built are not kept for the life of the tree.  On by default (and not where an action, an %emit, a context
+   --  or a fork may hold a pointer into them); --no-unwind turns it off.
+   procedure Set_Unwind (On : Boolean);
+
+   --  A node that is one of several alternatives holds the fields of the alternative taken, in space shared with
+   --  the fields of the others, and says which in `_alt`.  On by default (and not with an action, --ast, --writer,
+   --  --idref and the like, which read a field for each alternative); --no-overlay turns it off.
+   procedure Set_Overlay (On : Boolean);
+
    --  Views (--views): a token's value is a pointer and a length into the input, with no
    --  copy (a quoted string with an escape in it is the one copy).  The tree borrows the text,
    --  so the text must outlive it.

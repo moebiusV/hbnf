@@ -466,6 +466,11 @@ package body HBNF_C is
 
    Forks_On       : Boolean := False;
    Compact_On     : Boolean := True;
+   Pack_Node      : constant := 32;  --  bytes: a choice among nodes this small holds them by value
+   Small_Node     : constant := 8;   --  bytes: a node no bigger than a pointer is held by value in a node of alternatives (it costs nothing there)
+   By_Value_Small : Boolean := True;
+   Overlay_On     : Boolean := True;   --  the fields of the alternatives of a choice share their space
+   Unwind_On      : Boolean := True;   --  the arena goes back where it stood when a rule or a branch fails
 
    Ladder_On : Boolean := True;
 
@@ -473,6 +478,17 @@ package body HBNF_C is
    begin
       Ladder_On := On;
    end Set_Ladder;
+
+   procedure Set_Overlay (On : Boolean) is
+   begin
+      Overlay_On := On;
+      By_Value_Small := On;
+   end Set_Overlay;
+
+   procedure Set_Unwind (On : Boolean) is
+   begin
+      Unwind_On := On;
+   end Set_Unwind;
 
    procedure Set_Compact (On : Boolean) is
    begin
@@ -1327,6 +1343,20 @@ package body HBNF_C is
       return "";
    end Emit_Value_Type;
 
+   --  Whether the parser puts the arena back where it stood when a rule or a branch gives up (the comment
+   --  at Unwind_Allowed in Emit_Parser says why, and where not).
+   --  True where nothing outside the rules reads or holds the nodes of a branch: no action, no %emit,
+   --  no context, no fork.
+   function Plain_Parser (Rules : Rule_Vectors.Vector) return Boolean is
+     (not Forks_On and then not Ctx_On and then not Hosted_Actions
+      and then (for all R of Rules =>
+                  R.Action_Code = Null_Unbounded_String
+                  and then Emit_Value_Type (R) = ""));
+
+   function Unwinds (Rules : Rule_Vectors.Vector) return Boolean is
+     (Unwind_On and then Plain_Parser (Rules));
+
+
    function Analyze (Rules : Rule_Vectors.Vector; Idx : Natural)
       return Rule_Info is
       R : constant Rule := Rules (Idx);
@@ -1551,6 +1581,175 @@ package body HBNF_C is
       return True;
    end Is_Choice;
 
+   --  ---- Overlay: a choice of sequences holds one alternative, so the fields of the alternatives share
+   --  their space.  `ikey = props 1*WSP ( dqline | .. ) | alias | dqline | sqline | ..` took a field for each of
+   --  the eight, 64 bytes, and one is ever set; a field takes a slot, fields that no alternative holds together
+   --  take the same slot, and the node is its `_alt` (the alternative taken, from 1) and the slots.  A field
+   --  is still named as it was (`n->alias`), but is the field of the alternative taken only: `_alt` says which.
+   --  Where something reads the fields as a struct (Is_Choice names the tools), or an action may, the
+   --  node keeps a field for each.
+   package Branch_Vectors is new Ada.Containers.Vectors (Positive, Member_Vectors.Vector, Member_Vectors."=");
+
+   --  The flat elements, with Alt separators, of the rule whose entry is one of several alternatives.
+   function Alt_Elements (R : Rule) return Element_Vectors.Vector is
+      P : constant Element_Vectors.Vector := R.Pattern;
+   begin
+      if Natural (P.Length) = 1 then
+         if P (1).Kind = Group then
+            return P (1).Items;
+         end if;
+         return Element_Vectors.Empty_Vector;
+      end if;
+      return P;
+   end Alt_Elements;
+
+   --  The members each alternative holds, in the order of the alternatives.
+   function Branch_Members (Els : Element_Vectors.Vector) return Branch_Vectors.Vector is
+      Res : Branch_Vectors.Vector;
+      Cur : Element_Vectors.Vector;
+
+      procedure Flush is
+         Ms   : Member_Vectors.Vector;
+         Lits : String_Vectors.Vector;
+         Ha   : Boolean := False;
+      begin
+         Collect (Cur, Ms, Lits, Ha);
+         Res.Append (Ms);
+         Cur.Clear;
+      end Flush;
+   begin
+      for E of Els loop
+         if E.Kind = Alt then
+            Flush;
+         else
+            Cur.Append (E);
+         end if;
+      end loop;
+      Flush;
+      return Res;
+   end Branch_Members;
+
+   function Is_Numeric_Name (N : String) return Boolean is
+     (N = "int"
+      or else (N'Length >= 2 and then N (N'First) in 'u' | 'i'
+               and then (for all C of N (N'First + 1 .. N'Last) => C in '0' .. '9')));
+
+   function Has_Numeric (Els : Element_Vectors.Vector) return Boolean is
+   begin
+      for E of Els loop
+         if (E.Kind = Name and then Is_Numeric_Name (To_String (E.Name)))
+           or else (E.Kind = Group and then Has_Numeric (E.Items))
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Has_Numeric;
+
+   --  The slot of each member of the rule (the order of Info.Members, or of Info.Elem_Members), and how many
+   --  slots there are: a member goes in the first slot that none of the members it is held with has.
+   procedure Overlay_Slots (Ms : Member_Vectors.Vector; Brs : Branch_Vectors.Vector;
+                            Slot : out Natural_Vectors.Vector; Count : out Natural) is
+      function Index_Of (S : U) return Natural is
+      begin
+         for K in 1 .. Natural (Ms.Length) loop
+            if Ms (K).Name = S then
+               return K;
+            end if;
+         end loop;
+         return 0;
+      end Index_Of;
+
+      function Together (A, B : Natural) return Boolean is
+      begin
+         for Br of Brs loop
+            declare
+               Ha, Hb : Boolean := False;
+            begin
+               for M of Br loop
+                  Ha := Ha or else Index_Of (M.Name) = A;
+                  Hb := Hb or else Index_Of (M.Name) = B;
+               end loop;
+               if Ha and then Hb then
+                  return True;
+               end if;
+            end;
+         end loop;
+         return False;
+      end Together;
+   begin
+      Slot.Clear;
+      Count := 0;
+      for K in 1 .. Natural (Ms.Length) loop
+         declare
+            S : Natural := 0;
+         begin
+            loop
+               declare
+                  Clash : Boolean := False;
+               begin
+                  for J in 1 .. K - 1 loop
+                     if Slot (J) = S and then Together (J, K) then
+                        Clash := True;
+                     end if;
+                  end loop;
+                  exit when not Clash;
+                  S := S + 1;
+               end;
+            end loop;
+            Slot.Append (S);
+            Count := Natural'Max (Count, S + 1);
+         end;
+      end loop;
+   end Overlay_Slots;
+
+   function Is_Overlay (Rules : Rule_Vectors.Vector; Idx : Natural) return Boolean is
+      R : constant Rule := Rules (Idx);
+   begin
+      if not Overlay_On or else Choice_Off or else Spans_On or else Parents_On
+        or else Forks_On or else Writer_On or else Has_Listops
+        or else HBNF_Grammar.List_Override ("key") /= "" or else HBNF_Grammar.Layout = "tape"
+        or else R.Action_Code /= Null_Unbounded_String
+        or else R.Left_Bases > 0
+        or else not Plain_Parser (Rules)
+        or else Is_Choice (R)
+        or else HBNF_Grammar.Is_Wire_Rule (To_String (R.Name))
+      then
+         return False;
+      end if;
+      declare
+         Els : constant Element_Vectors.Vector := Alt_Elements (R);
+      begin
+         if not (for some E of Els => E.Kind = Alt) or else Has_Numeric (Els)
+           or else not Leading_Tags (Els).Is_Empty
+         then
+            return False;
+         end if;
+         declare
+            Info : constant Rule_Info := Analyze (Rules, Idx);
+            Slot : Natural_Vectors.Vector;
+            Cnt  : Natural;
+         begin
+            case Info.Kind is
+               when Struct =>
+                  if Natural (R.Pattern.Length) = 1 then
+                     return False;           --  a group written as the whole pattern is read by its own code
+                  end if;
+                  Overlay_Slots (Info.Members, Branch_Members (Els), Slot, Cnt);
+                  return Cnt < Natural (Info.Members.Length);
+               when List =>
+                  if Info.Elem_Members.Is_Empty or else not Info.Tags.Is_Empty then
+                     return False;
+                  end if;
+                  Overlay_Slots (Info.Elem_Members, Branch_Members (Els), Slot, Cnt);
+                  return Cnt < Natural (Info.Elem_Members.Length);
+               when others =>
+                  return False;
+            end case;
+         end;
+      end;
+   end Is_Overlay;
+
 
    --  The fields the C backend must emit indirectly, one per cycle in the
    --  by-value graph, chosen by the one detector in HBNF_Compilable.  Emit
@@ -1592,6 +1791,83 @@ package body HBNF_C is
       end Resolve;
 
       E : Edge_Vectors.Vector;
+
+      --  About how many bytes the node of rule J takes, by value.  Only used to choose: a field of a node
+      --  that holds one alternative (a choice, an overlay) is held by value when what it holds is small, as
+      --  the alternatives share the space and a pointer would cost eight bytes and a node of its own.
+      function Size_Est (J : Natural; Depth : Natural) return Natural is
+         Info : constant Rule_Info := Infos (J);
+
+         function Member_Size (M : Member) return Natural is
+            T : constant Natural := Resolve (M.Name);
+         begin
+            if M.Is_List or else T = 0 then
+               return 8;
+            end if;
+            return Size_Est (T, Depth + 1);
+         end Member_Size;
+      begin
+         if Depth > 6 then
+            return 1000;
+         elsif Info.Kind /= Struct then
+            return 8;
+         end if;
+         declare
+            Total : Natural := 0;
+            Sizes : Natural_Vectors.Vector;
+         begin
+            for M of Info.Members loop
+               Sizes.Append (Member_Size (M));
+            end loop;
+            if Is_Overlay (Rules, J) then
+               declare
+                  Slot : Natural_Vectors.Vector;
+                  Cnt  : Natural;
+               begin
+                  Overlay_Slots (Info.Members, Branch_Members (Alt_Elements (Rules (J))), Slot, Cnt);
+                  for S in 0 .. Cnt - 1 loop
+                     declare
+                        Mx : Natural := 0;
+                     begin
+                        for K in 1 .. Natural (Sizes.Length) loop
+                           if Slot (K) = S then
+                              Mx := Natural'Max (Mx, Sizes (K));
+                           end if;
+                        end loop;
+                        Total := Total + Mx;
+                     end;
+                  end loop;
+               end;
+               return Total + 8;
+            elsif Is_Choice (Rules (J)) then
+               for Z of Sizes loop
+                  Total := Natural'Max (Total, Z);
+               end loop;
+               return Total + 8;
+            end if;
+            for Z of Sizes loop
+               Total := Total + Z;
+            end loop;
+            return Total;
+         end;
+      end Size_Est;
+
+      --  Whether every struct a node holds is no bigger than Lim.
+      function Within (I : Natural; Lim : Natural) return Boolean is
+         Info : constant Rule_Info := Infos (I);
+      begin
+         if Info.Kind /= Struct then
+            return False;
+         end if;
+         for M of Info.Members loop
+            if not M.Is_List and then Resolve (M.Name) > 0
+              and then Size_Est (Resolve (M.Name), 0) > Lim
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Within;
    begin
       for I in 1 .. N loop
          Infos.Append (Analyze (Rules, I));
@@ -1661,6 +1937,10 @@ package body HBNF_C is
                         if not M.Is_List and then Resolve (M.Name) > 0
                           and then HBNF_Compilable.Partly_Held
                                      (Rules (I).Pattern, To_String (M.Name))
+                          and then not (By_Value_Small
+                                        and then (Is_Choice (Rules (I)) or else Is_Overlay (Rules, I))
+                                        and then (Size_Est (Resolve (M.Name), 0) <= Small_Node
+                                                  or else (Is_Choice (Rules (I)) and then Within (I, Pack_Node))))
                         then
                            declare
                               Have : Boolean := False;
@@ -2159,6 +2439,39 @@ package body HBNF_C is
                   (if Is_Head then Pfx & C_Name (Nm) else C_Type_Of (Nm))),
                 H ("field", C_Field (Nm))));
          end Field_Decl;
+
+         Ov : constant Boolean := Is_Overlay (Rules, Idx);
+
+         --  The members of an overlaid node: one union to a slot that several alternatives use.
+         procedure Slots_Of (Ms : Member_Vectors.Vector; Items : in out U) is
+            Slot : Natural_Vectors.Vector;
+            Cnt  : Natural;
+         begin
+            Overlay_Slots (Ms, Branch_Members (Alt_Elements (R)), Slot, Cnt);
+            for S in 0 .. Cnt - 1 loop
+               declare
+                  In_Slot : Natural := 0;
+               begin
+                  for K in 1 .. Natural (Ms.Length) loop
+                     if Slot (K) = S then
+                        In_Slot := In_Slot + 1;
+                     end if;
+                  end loop;
+                  if In_Slot > 1 then
+                     Append (Items, "    union {" & LF);
+                  end if;
+                  for K in 1 .. Natural (Ms.Length) loop
+                     if Slot (K) = S then
+                        Append (Items, Field_Decl (To_String (Ms (K).Name), Ms (K).Is_List));
+                        Append (Items, LF);
+                     end if;
+                  end loop;
+                  if In_Slot > 1 then
+                     Append (Items, "    };" & LF);
+                  end if;
+               end;
+            end loop;
+         end Slots_Of;
       begin
          if R.Leading_Comment /= Null_Unbounded_String then
             Append (Buf, "/* " & To_String (R.Leading_Comment) & " */");
@@ -2241,12 +2554,19 @@ package body HBNF_C is
                      Append (Pre, "    unsigned short _alt;   /* the alternative taken, from 1: the"
                        & " member of the union that is set */" & LF);
                      Append (Items, "    union {" & LF);
+                  elsif Ov and then not Ast_On then
+                     Append (Pre, "    unsigned short _alt;   /* the alternative taken, from 1: only its fields are set,"
+                       & " and fields of different alternatives share space */" & LF);
                   end if;
+                  if Ov then
+                     Slots_Of (Info.Members, Items);
+                  else
                   for M of Info.Members loop
                      Append (Items,
                        Field_Decl (To_String (M.Name), M.Is_List));
                      Append (Items, LF);
                   end loop;
+                  end if;
                   if Is_Choice (R) then
                      Append (Items, "    };" & LF);
                   end if;
@@ -2298,7 +2618,13 @@ package body HBNF_C is
                        & "holds this one (--parents; node_link) */" & LF
                        & "    unsigned short _upk;   /* and its rule */" & LF);
                   end if;
-                  if Info.Elem_Members.Is_Empty then
+                  if Ov then
+                     if not Ast_On then
+                        Append (Items, "    unsigned short _alt;   /* the alternative taken, from 1: only its fields are set,"
+                          & " and fields of different alternatives share space */" & LF);
+                     end if;
+                     Slots_Of (Info.Elem_Members, Items);
+                  elsif Info.Elem_Members.Is_Empty then
                      if Info.Elem_Name /= Null_Unbounded_String then
                         Append (Items,
                           Field_Decl (To_String (Info.Elem_Name), False));
@@ -2378,7 +2704,22 @@ package body HBNF_C is
                                  Prefix : String;
                                  Buf : in out U; Ind : String) is
          begin
-            if Info.Elem_Members.Is_Empty then
+            if Is_Overlay (Rules, Idx) then
+               Append (Buf, Ind & "switch (n->_alt) {" & LF);
+               declare
+                  K : Natural := 0;
+               begin
+                  for Br of Branch_Members (Alt_Elements (Rules (Idx))) loop
+                     K := K + 1;
+                     Append (Buf, Ind & "case " & Img (K) & ":" & LF);
+                     for M of Br loop
+                        Recurse (Idx, To_String (M.Name), Prefix, Buf, Ind & "    ");
+                     end loop;
+                     Append (Buf, Ind & "    break;" & LF);
+                  end loop;
+               end;
+               Append (Buf, Ind & "default: break;" & LF & Ind & "}" & LF);
+            elsif Info.Elem_Members.Is_Empty then
                if Info.Elem_Name /= Null_Unbounded_String then
                   Recurse (Idx, To_String (Info.Elem_Name), Prefix, Buf, Ind);
                end if;
@@ -2411,6 +2752,21 @@ package body HBNF_C is
                         K := K + 1;
                         Append (Buf, "    case " & Img (K) & ":" & LF);
                         Recurse (Idx, To_String (M.Name), "visit", Buf, "        ");
+                        Append (Buf, "        break;" & LF);
+                     end loop;
+                  end;
+                  Append (Buf, "    default: break;" & LF & "    }" & LF);
+               elsif Is_Overlay (Rules, Idx) then
+                  Append (Buf, "    switch (n->_alt) {" & LF);
+                  declare
+                     K : Natural := 0;
+                  begin
+                     for Br of Branch_Members (Alt_Elements (Rules (Idx))) loop
+                        K := K + 1;
+                        Append (Buf, "    case " & Img (K) & ":" & LF);
+                        for M of Br loop
+                           Recurse (Idx, To_String (M.Name), "visit", Buf, "        ");
+                        end loop;
                         Append (Buf, "        break;" & LF);
                      end loop;
                   end;
@@ -2458,6 +2814,21 @@ package body HBNF_C is
                         K := K + 1;
                         Append (Buf, "    case " & Img (K) & ":" & LF);
                         Recurse (Idx, To_String (M.Name), "map", Buf, "        ");
+                        Append (Buf, "        break;" & LF);
+                     end loop;
+                  end;
+                  Append (Buf, "    default: break;" & LF & "    }" & LF);
+               elsif Is_Overlay (Rules, Idx) then
+                  Append (Buf, "    switch (n->_alt) {" & LF);
+                  declare
+                     K : Natural := 0;
+                  begin
+                     for Br of Branch_Members (Alt_Elements (Rules (Idx))) loop
+                        K := K + 1;
+                        Append (Buf, "    case " & Img (K) & ":" & LF);
+                        for M of Br loop
+                           Recurse (Idx, To_String (M.Name), "map", Buf, "        ");
+                        end loop;
                         Append (Buf, "        break;" & LF);
                      end loop;
                   end;
@@ -3836,6 +4207,21 @@ package body HBNF_C is
                   end loop;
                end;
                Append (Buf, "    default: break;" & LF & "    }" & LF);
+            elsif Is_Overlay (Rules, Idx) then
+               Append (Buf, "    switch (n->_alt) {" & LF);
+               declare
+                  K : Natural := 0;
+               begin
+                  for Br of Branch_Members (Alt_Elements (Rules (Idx))) loop
+                     K := K + 1;
+                     Append (Buf, "    case " & Img (K) & ":" & LF);
+                     for M of Br loop
+                        Free_Field (Idx, To_String (M.Name), Buf, "        ");
+                     end loop;
+                     Append (Buf, "        break;" & LF);
+                  end loop;
+               end;
+               Append (Buf, "    default: break;" & LF & "    }" & LF);
             elsif Info.Kind = Struct then
                for M of Info.Members loop
                   Free_Field (Idx, To_String (M.Name), Buf, "    ");
@@ -4104,6 +4490,21 @@ package body HBNF_C is
                            end loop;
                         end;
                         Append (Buf, "    default: break;" & LF & "    }" & LF);
+                     elsif Is_Overlay (Rules, I) then
+                        Append (Buf, "    switch (n->_alt) {" & LF);
+                        declare
+                           K : Natural := 0;
+                        begin
+                           for Br of Branch_Members (Alt_Elements (Rules (I))) loop
+                              K := K + 1;
+                              Append (Buf, "    case " & Img (K) & ":" & LF);
+                              for M of Br loop
+                                 Field (I, To_String (M.Name), Buf);
+                              end loop;
+                              Append (Buf, "        break;" & LF);
+                           end loop;
+                        end;
+                        Append (Buf, "    default: break;" & LF & "    }" & LF);
                      elsif Info.Kind = Struct then
                         for M of Info.Members loop
                            Field (I, To_String (M.Name), Buf);
@@ -4352,6 +4753,24 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "}");
       Append (Res, LF);
+      if Unwinds (Rules) then
+         Append (Res, "/* Where the arena stands, and back to it: a rule that gives up has taken nodes that nothing will point to,");
+         Append (Res, LF);
+         Append (Res, "   and what goes back is cleared again, since the arena hands out memory it cleared once.  Not across a");
+         Append (Res, LF);
+         Append (Res, "   chunk: what was taken from a later chunk stays. */");
+         Append (Res, LF);
+         Append (Res, "typedef struct { hbnf_chunk *c; size_t u; } hbnf_amark_t;");
+         Append (Res, LF);
+         Append (Res, "static inline hbnf_amark_t hbnf_amark(void) { hbnf_amark_t m; m.c = hbnf_arena; m.u = m.c ? m.c->used : 0; return m; }");
+         Append (Res, LF);
+         Append (Res, "static inline void hbnf_arena_back(hbnf_amark_t m) {");
+         Append (Res, LF);
+         Append (Res, "    if (m.c && hbnf_arena == m.c && m.c->used > m.u) { memset(m.c->data + m.u, 0, m.c->used - m.u); m.c->used = m.u; }");
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+      end if;
       Append (Res, "/* Copy a (non-NUL-terminated) token slice into the arena, NUL-terminated,");
       Append (Res, LF);
       Append (Res, "   and return it.  No per-string malloc. */");
@@ -5442,6 +5861,65 @@ package body HBNF_C is
       Null_Flags : constant HBNF_Lookahead.Flags :=
         HBNF_Lookahead.Nullable_Set (Rules);
 
+      --  The arena goes back where it stood when a branch or a rule gives up.  A rule that fails has
+      --  built nodes (the children it had read, a list it had filled) that nothing will ever point
+      --  to, and a bump arena keeps them for the life of the tree: in the YAML parser one block
+      --  mapping entry in fourteen is a guess that fails after its key was read, and in the XML
+      --  parser an element tried as `<a b="c"/>` and then as `<a b="c">..</a>` keeps the
+      --  attributes of the first try.  hbnf_amark() notes where the arena stands at the start of the
+      --  rule (or of an iteration of a list), hbnf_arena_back() puts it back and clears what it held.
+      --  Not where something outside the rules may hold a pointer into what a branch built: an
+      --  action, an %emit, a context, the retry of a fork.
+      Unwind_Allowed : constant Boolean := Unwinds (Rules);
+
+      --  True if a parse of the rule can take memory from the arena: it holds a list, or a node
+      --  by value or by pointer, or (when strings are copied) a string.
+      function May_Alloc (Idx : Natural) return Boolean is
+         Info : constant Rule_Info := Analyze (Rules, Idx);
+
+         function Held (Ms : Member_Vectors.Vector) return Boolean is
+         begin
+            for M of Ms loop
+               if M.Is_List then
+                  return True;
+               end if;
+               declare
+                  J : constant Natural := Find (Alias_Target (Rules, To_String (M.Name)));
+               begin
+                  if J > 0 and then Analyze (Rules, J).Kind in Struct | List then
+                     return True;
+                  end if;
+               end;
+            end loop;
+            return False;
+         end Held;
+      begin
+         if not Unwind_Allowed then
+            return False;
+         elsif not Views_On then
+            return True;
+         end if;
+         case Info.Kind is
+            when Struct => return Held (Info.Members);
+            when List   => return Held (Info.Elem_Members);
+            when others => return False;
+         end case;
+      end May_Alloc;
+
+      --  Whether the rule's node is an overlay (Is_Overlay), asked once for each rule.
+      Overlay_Memo : array (1 .. N) of Integer := [others => -1];
+
+      function Overlay_Of (Idx : Natural) return Boolean is
+      begin
+         if Idx = 0 then
+            return False;
+         end if;
+         if Overlay_Memo (Idx) < 0 then
+            Overlay_Memo (Idx) := (if Is_Overlay (Rules, Idx) then 1 else 0);
+         end if;
+         return Overlay_Memo (Idx) = 1;
+      end Overlay_Of;
+
       function Is_Forked (Idx : Natural) return Boolean is
          I, J : Natural;
       begin
@@ -6363,7 +6841,8 @@ package body HBNF_C is
          Buf : in out U; Ind : String := "    "; Label : String := "";
          Ws   : Boolean := False;
          Alts : String_Vectors.Vector := String_Vectors.Empty_Vector;
-         Fork : Boolean := False) is
+         Fork : Boolean := False;
+         Unwind : Boolean := False) is      --  `am_`, noted where the alternation began, is in scope
          N    : constant Natural := Natural (Els.Length);
          Flat : String_Vectors.Vector;
          Offs : Natural_Vectors.Vector;
@@ -6554,6 +7033,10 @@ package body HBNF_C is
                end;
                Append (Buf, Clears);
                Append (Buf, ";");
+               if Unwind and then not Lits_Only then
+                  --  everything the branch took from the arena is garbage now
+                  Append (Buf, " hbnf_arena_back(am_);");
+               end if;
                Append (Buf, LF);
             end Emit_Reset;
          begin
@@ -6675,7 +7158,7 @@ package body HBNF_C is
                      if Nd.First <= Nd.Last then
                         Emit_Seq (Owner, Els, Nd.First, Nd.Last, Acc, Buf, Failg, Ind, Ws, Lead_Ws => True);
                      end if;
-                     if (Ast_On or else (Owner > 0 and then Is_Choice (Rules (Owner))))
+                     if (Ast_On or else (Owner > 0 and then (Is_Choice (Rules (Owner)) or else Overlay_Of (Owner))))
                        and then Natural (Alts.Length) >= Br
                      then
                         Append (Buf, Ind & Acc & "_alt = " & To_String (Alts (Br)) & ";");
@@ -6702,6 +7185,10 @@ package body HBNF_C is
                begin
                   Append (Buf, Ind & "size_t pf_" & Id & "_ = 0;");
                   Append (Buf, LF);
+                  if Unwind then
+                     Append (Buf, Ind & "hbnf_amark_t pa_" & Id & "_ __attribute__((unused));");
+                     Append (Buf, LF);
+                  end if;
                   if Binds then
                      Append (Buf, Ind & "hbnf_mark_t cm_" & Id & "_;");
                      Append (Buf, LF);
@@ -6709,6 +7196,9 @@ package body HBNF_C is
                   Emit_Seq (Owner, Els, Nd.First, Nd.Last, Acc, Buf, Failg, Ind, Ws,
                             Lead_Ws => not (Top and then Hoist));
                   Append (Buf, Ind & "pf_" & Id & "_ = p->pos;");
+                  if Unwind then
+                     Append (Buf, " pa_" & Id & "_ = hbnf_amark();");
+                  end if;
                   Append (Buf, LF);
                   if Binds then
                      Append (Buf, Ind & "cm_" & Id & "_ = hbnf_mark();");
@@ -6752,6 +7242,10 @@ package body HBNF_C is
                               end;
                               Append (Buf, Clears);
                               Append (Buf, ";");
+                              if Unwind then
+                                 --  what the kid took after the shared part is garbage; the shared part stays
+                                 Append (Buf, " hbnf_arena_back(pa_" & Id & "_);");
+                              end if;
                               Append (Buf, LF);
                            end;
                         else
@@ -6806,7 +7300,7 @@ package body HBNF_C is
                   Emit_Seq (Owner, Els, LSt, K - 1, Acc, Buf,
                             "goto " & Label & "alt_fail_" & Img (LBr) & ";", Ind,
                             Ws, Lead_Ws => not Hoist);
-                  if (Ast_On or else (Owner > 0 and then Is_Choice (Rules (Owner))))
+                  if (Ast_On or else (Owner > 0 and then (Is_Choice (Rules (Owner)) or else Overlay_Of (Owner))))
                     and then Natural (Alts.Length) >= LBr
                   then
                      Append (Buf, Ind & Acc & "_alt = "
@@ -7506,7 +8000,8 @@ package body HBNF_C is
          Ok   : Boolean := True;
          Path : array (1 .. 64) of Unbounded_String;
          Fail : constant String :=
-           "{ free_" & CN & "_fields(&r); memset(&r, 0, sizeof r); p->pos = save; return false; }";
+           "{ free_" & CN & "_fields(&r); memset(&r, 0, sizeof r); "
+           & (if May_Alloc (Idx) then "hbnf_arena_back(am_); " else "") & "p->pos = save; return false; }";
       begin
          Chain (Idx, C, M, Opd);
          if M = 0 then
@@ -7683,6 +8178,10 @@ package body HBNF_C is
                Append (Buf, "        if (!nn) hbnf_oom();");
                Append (Buf, LF);
                Append (Buf, "        size_t save = p->pos;");
+               if E.Kind /= Name and then May_Alloc (Idx) then
+                  --  (the node of the iteration was taken above the mark: it stays)
+                  Append (Buf, " hbnf_amark_t am_ __attribute__((unused)) = hbnf_amark();");
+               end if;
                if Ctx_On and then Rule_Binds (Idx) then
                   Append (Buf, LF);
                   Append (Buf, "        hbnf_mark_t lm_;  lm_ = hbnf_mark();");
@@ -7736,7 +8235,8 @@ package body HBNF_C is
                      Emit_Alternation
                        (Idx, Base_Branches (R), "nn->", Free, Clears, "have", "",
                         Buf, "            ", Label => "base_", Ws => Ws,
-                        Alts => Alt_Idents (CN, Base_Branches (R)));
+                        Alts => Alt_Idents (CN, Base_Branches (R)),
+                        Unwind => May_Alloc (Idx));
                      Append (Buf, "            "
                        & (if Ctx_On and then Rule_Binds (Idx) then "hbnf_reset (&lm_); " else "")
                        & "p->pos = save; break;");
@@ -7749,7 +8249,8 @@ package body HBNF_C is
                         Buf, "        ", Ws => Ws,
                         Alts => Alt_Idents
                           (CN, Tail_Branches (R),
-                           Natural (Alt_Labels (Base_Branches (R)).Length) + 1));
+                           Natural (Alt_Labels (Base_Branches (R)).Length) + 1),
+                        Unwind => May_Alloc (Idx));
                   end;
                else
                   declare
@@ -7762,7 +8263,8 @@ package body HBNF_C is
                         "have",
                         (if Tags.Is_Empty then "" else C_Ident (CN)),
                         Buf, "        ", Ws => Ws,
-                        Alts => Rule_Alts (R, True));
+                        Alts => Rule_Alts (R, True),
+                        Unwind => May_Alloc (Idx));
                   end;
                end if;
                Append (Buf, "        "
@@ -8069,6 +8571,10 @@ package body HBNF_C is
             begin
                Append (Buf, "    size_t save = p->pos;");
                Append (Buf, LF);
+               if May_Alloc (Idx) then
+                  Append (Buf, "    hbnf_amark_t am_ __attribute__((unused)) = hbnf_amark();");
+                  Append (Buf, LF);
+               end if;
                --  The rule fills its caller's output directly: callers hand over a cleared
                --  value, and a rule that fails clears what it wrote.  No local copy, no
                --  clearing of it, no copying it out.
@@ -8084,12 +8590,14 @@ package body HBNF_C is
                                  (if Leading_Tags (P).Is_Empty then "" else C_Ident (CN)),
                                  Buf, Ws => Ws,
                                  Alts => Rule_Alts (R, False),
-                                 Fork => Is_Forked (Idx));
+                                 Fork => Is_Forked (Idx),
+                                 Unwind => May_Alloc (Idx));
                --  The last branch failed: free what it built (a list it
                --  had filled before a later token failed), as each
                --  earlier branch's failure does.
                Append (Buf, "    p->pos = save; free_" & CN
-                 & "_fields(&r); memset(&r, 0, sizeof r); return false;");
+                 & "_fields(&r); memset(&r, 0, sizeof r); "
+                 & (if May_Alloc (Idx) then "hbnf_arena_back(am_); " else "") & "return false;");
                Append (Buf, LF);
                Append (Buf, "ok:");
                Append (Buf, LF);
@@ -8114,6 +8622,10 @@ package body HBNF_C is
             begin
                Append (Buf, "    size_t save = p->pos;");
                Append (Buf, LF);
+               if May_Alloc (Idx) then
+                  Append (Buf, "    hbnf_amark_t am_ __attribute__((unused)) = hbnf_amark();");
+                  Append (Buf, LF);
+               end if;
                --  The rule fills its caller's output directly: callers hand over a cleared
                --  value, and a rule that fails clears what it wrote.  No local copy, no
                --  clearing of it, no copying it out.
@@ -8134,7 +8646,9 @@ package body HBNF_C is
                          (if Analyze (Rules, Idx).Kind = Struct
                           then "free_" & CN & "_fields(&r); "
                           else "")
-                         & "memset(&r, 0, sizeof r); p->pos = save; return false;",
+                         & "memset(&r, 0, sizeof r); "
+                         & (if May_Alloc (Idx) then "hbnf_arena_back(am_); " else "")
+                         & "p->pos = save; return false;",
                          Ws => Ws);
                if Spans_On and then Analyze (Rules, Idx).Kind = Struct then
                   Append (Buf, "    r._end = p->pos;");
@@ -9602,6 +10116,7 @@ package body HBNF_C is
                    & (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
                       then " hbnf_fpush(" & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name))) & ");"
                       else "") & LF else "")
+           & "        memset(out, 0, sizeof *out);   /* the first pass left a tree here, and the fields of alternatives share space */" & LF
            & "        p = (parser_t){ text, strlen(text), 0, (size_t)-1, 0, 0, NULL, NULL, 0, 0 };" & LF
            & "        goto start_;" & LF
            & "    }" & LF
