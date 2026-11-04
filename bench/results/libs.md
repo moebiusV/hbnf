@@ -37,7 +37,20 @@
 | yaml-cpp | 254 ms | 8 MB/s | 110 MB | 57.3x |
 | PyYAML on libyaml (C) | 697 ms | 3 MB/s | 117 MB | 61.1x |
 
-**XML 1.0** (2.00 MB, the same file for every tool; best of up to 5 runs):
+**XML 1.0, conforming parsers** (2.00 MB, the same file for every tool; best of up to 5 runs; each refuses all of the 34 documents that break a well-formedness constraint and accepts the 11 well-formed ones of `bench/xml-conformance.sh`):
+
+| tool | builds | parse time | MB/s | peak RSS | RSS over the input | refuses ill-formed XML |
+|---|---|---:|---:|---:|---:|---:|
+| libxml2, SAX2 events only | nothing (handlers count) | 5.1 ms | 394 MB/s | 6 MB | 2.5x | 34 of 34 |
+| expat, events only | nothing (handlers count) | 8.6 ms | 233 MB/s | 5 MB | 1.8x | 34 of 34 |
+| Python xml.parsers.expat, no handlers | nothing (well-formedness only) | 9.1 ms | 220 MB/s | 12 MB | 5.8x | 34 of 34 |
+| expat, events copied into a tree | a cheap tree of copies | 12 ms | 167 MB/s | 11 MB | 5.0x | 34 of 34 |
+| libxml2, DOM | DOM | 17 ms | 115 MB/s | 29 MB | 14.5x | 34 of 34 |
+| lxml (Python) | Element tree on libxml2 | 25 ms | 81 MB/s | 42 MB | 21.1x | 34 of 34 |
+| Python xml.etree.ElementTree | Element tree | 31 ms | 65 MB/s | 30 MB | 15.1x | 34 of 34 |
+| Python xml.parsers.expat, Python callbacks | nothing (Python callbacks count) | 31 ms | 64 MB/s | 13 MB | 5.8x | 34 of 34 |
+
+**XML 1.0, parsers that do not refuse every ill-formed document** (2.00 MB, the same file for every tool; best of up to 5 runs; they check less than XML requires, so these times are not like for like with the table above, and a parser joins that table when the conformance run shows it refusing all 34):
 
 | tool | builds | parse time | MB/s | peak RSS | RSS over the input | refuses ill-formed XML |
 |---|---|---:|---:|---:|---:|---:|
@@ -45,15 +58,7 @@
 | hbnf (C backend), tape | a flat tape of 64-bit words | 3.5 ms | 571 MB/s | 5 MB | 1.8x | 27 of 34 |
 | RapidXML | DOM, in place | 3.5 ms | 569 MB/s | 13 MB | 5.9x | 7 of 34 |
 | hbnf (C backend), tree | the grammar's typed tree | 3.7 ms | 539 MB/s | 9 MB | 4.0x | 27 of 34 |
-| libxml2, SAX2 events only | nothing (handlers count) | 5.1 ms | 394 MB/s | 6 MB | 2.5x | 34 of 34 |
-| expat, events only | nothing (handlers count) | 8.6 ms | 233 MB/s | 5 MB | 1.8x | 34 of 34 |
-| Python xml.parsers.expat, no handlers | nothing (well-formedness only) | 9.1 ms | 220 MB/s | 12 MB | 5.8x | 34 of 34 |
 | TinyXML-2 | DOM | 10 ms | 192 MB/s | 17 MB | 8.1x | 9 of 34 |
-| expat, events copied into a tree | a cheap tree of copies | 12 ms | 167 MB/s | 11 MB | 5.0x | 34 of 34 |
-| libxml2, DOM | DOM | 17 ms | 115 MB/s | 29 MB | 14.5x | 34 of 34 |
-| lxml (Python) | Element tree on libxml2 | 25 ms | 81 MB/s | 42 MB | 21.1x | 34 of 34 |
-| Python xml.etree.ElementTree | Element tree | 31 ms | 65 MB/s | 30 MB | 15.1x | 34 of 34 |
-| Python xml.parsers.expat, Python callbacks | nothing (Python callbacks count) | 31 ms | 64 MB/s | 13 MB | 5.8x | 34 of 34 |
 | sax (Node) | nothing (handlers count) | 109 ms | 18 MB/s | 69 MB | 35.7x | 20 of 34 |
 | fast-xml-parser (Node) | JavaScript objects | 273 ms | 7 MB/s | 112 MB | 58.3x | 0 of 34 |
 

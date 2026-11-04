@@ -35,10 +35,12 @@ builds = {
 dpkg = dict(l.split("=", 1) for l in ver[5:] if "=" in l)
 # bench/xml-conformance.sh: how many of the documents that break a well-formedness constraint of XML 1.0 each parser refuses
 conf = {}
+conforms = {}   # refuses every ill-formed document and accepts every well-formed one
 try:
     for l in open(f"{root}/bench/results/xml-conformance.tsv"):
         n, r, ill, a, wf = l.rstrip("\n").split("\t")
         conf[n] = f"{r} of {ill}"
+        conforms[n] = (int(r) == int(ill) and int(a) == int(wf))
 except OSError:
     pass
 conf_of = {
@@ -57,16 +59,16 @@ def tm(ms):
     return "%.0f ms" % ms if ms < 1000 else "%.2f s" % (ms / 1000)
 
 
-for fmt in ("json", "toml", "yaml", "xml"):
+def table(fmt, title, intro, rs):
     size = len(open(f"{W}/doc.{fmt}", "rb").read())
-    print(f"**{titles[fmt]}** ({size / 1e6:.2f} MB, the same file for every tool; best of up to {runs} runs):\n")
+    print(f"**{title}** ({size / 1e6:.2f} MB, the same file for every tool; best of up to {runs} runs{intro}):\n")
     if fmt == "xml":
         print("| tool | builds | parse time | MB/s | peak RSS | RSS over the input | refuses ill-formed XML |")
         print("|---|---|---:|---:|---:|---:|---:|")
     else:
         print("| tool | parse time | MB/s | peak RSS | RSS over the input |")
         print("|---|---:|---:|---:|---:|")
-    for label, ms, rss, status in sorted(rows[fmt], key=lambda r: (r[3] != "ok", r[1])):
+    for label, ms, rss, status in sorted(rs, key=lambda r: (r[3] != "ok", r[1])):
         if label.startswith("serde_json"):
             label += " " + vers.get("serde_json", "")
         if label.startswith("toml (Rust)"):
@@ -79,6 +81,17 @@ for fmt in ("json", "toml", "yaml", "xml"):
         over = max(rss * 1024 - size, 0) / size
         print(f"| {label} |{what} {tm(ms)} | {size / 1e6 / (ms / 1000):.0f} MB/s | {rss // 1024} MB | {over:.1f}x |{cf}")
     print()
+
+
+for fmt in ("json", "toml", "yaml", "xml"):
+    if fmt != "xml" or not conforms:
+        table(fmt, titles[fmt], "", rows[fmt])
+        continue
+    # XML: a parser is compared with the others only if it is a conforming XML parser; the rest are shown, apart
+    ok = [r for r in rows[fmt] if conforms.get(conf_of.get(r[0], ""), False)]
+    lax = [r for r in rows[fmt] if not conforms.get(conf_of.get(r[0], ""), False)]
+    table(fmt, "XML 1.0, conforming parsers", "; each refuses all of the 34 documents that break a well-formedness constraint and accepts the 11 well-formed ones of `bench/xml-conformance.sh`", ok)
+    table(fmt, "XML 1.0, parsers that do not refuse every ill-formed document", "; they check less than XML requires, so these times are not like for like with the table above, and a parser joins that table when the conformance run shows it refusing all 34", lax)
 
 
 def xml_note():
