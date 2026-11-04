@@ -9594,6 +9594,7 @@ package body HBNF_C is
 
       --  The loops (Iters) that have a table of the bytes they take alone and one at a time.
       Run_Helpers : String_Vectors.Vector;
+      Run_Bad     : String_Vectors.Vector;   --  parallel to Run_Helpers: the SSE2 test of the stopping bytes, or ""
 
       --  An Iter: one time of it is the function written for it (Emit_Loop_Fn), which says how many
       --  bytes the longest of its branches takes (0: none matches); take as many times as match, then
@@ -9608,7 +9609,23 @@ package body HBNF_C is
          Append (Res, LF);
          if Fast then
             --  the bytes that one time of the loop takes alone and always (see Emit_Loop_Fn): a run of
-            --  them, one time each, without a call for each
+            --  them, one time each, without a call for each; sixteen at a time first, where the stopping
+            --  bytes are few
+            declare
+               Bad : constant String := To_String (Run_Bad (Run_Helpers.Find_Index (A.Fn)));
+            begin
+               if Bad /= "" and then A.Hi = 0 then
+                  Append (Res, "#if defined(__SSE2__)" & LF);
+                  Append (Res, Ind & "        while (pos + off + 16 <= len) {" & LF);
+                  Append (Res, Ind & "            __m128i v = _mm_loadu_si128((const __m128i *)(s + pos + off));" & LF);
+                  Append (Res, Ind & "            unsigned mk = (unsigned)_mm_movemask_epi8(v" & Bad & ");" & LF);
+                  Append (Res, Ind & "            if (mk) { unsigned k = (unsigned)__builtin_ctz(mk); off += k;"
+                    & (if Needs_Cnt then " cnt += k;" else "") & " break; }" & LF);
+                  Append (Res, Ind & "            off += 16;" & (if Needs_Cnt then " cnt += 16;" else "") & LF);
+                  Append (Res, Ind & "        }" & LF);
+                  Append (Res, "#endif" & LF);
+               end if;
+            end;
             Append (Res, Ind & "        while (pos + off < len && (unsigned char)s[pos + off] < 0x80 && rt_"
               & C_Name (To_String (A.Fn)) & "[(unsigned char)s[pos + off]]"
               & (if A.Hi = 0 then "" else " && cnt < " & Img (A.Hi))
@@ -9785,6 +9802,37 @@ package body HBNF_C is
                Append (Res, "static const unsigned char rt_" & C_Name (To_String (H.Name))
                  & "[128] = {" & To_String (Tab) & "};" & LF);
                Run_Helpers.Append (H.Name);
+               --  the same run, sixteen bytes at a time: the bytes outside the table (up to 6 ranges of them)
+               --  and every byte >= 0x80 stop it, and the scalar loop below takes it from there
+               declare
+                  Bad    : U;
+                  Ranges : Natural := 0;
+                  C      : Natural := 0;
+               begin
+                  while C <= 127 loop
+                     if not Rt (C) then
+                        declare
+                           Lo_B : constant Natural := C;
+                        begin
+                           while C <= 127 and then not Rt (C) loop
+                              C := C + 1;
+                           end loop;
+                           Ranges := Ranges + 1;
+                           Append (Bad, " | ");
+                           if C - 1 = Lo_B then
+                              Append (Bad, "_mm_cmpeq_epi8(v, _mm_set1_epi8((char)" & Img (Lo_B) & "))");
+                           else
+                              Append (Bad, "_mm_cmpeq_epi8(_mm_min_epu8(_mm_sub_epi8(v, _mm_set1_epi8((char)" & Img (Lo_B)
+                                & ")), _mm_set1_epi8((char)" & Img (C - 1 - Lo_B) & ")), _mm_sub_epi8(v, _mm_set1_epi8((char)"
+                                & Img (Lo_B) & ")))");
+                           end if;
+                        end;
+                     else
+                        C := C + 1;
+                     end if;
+                  end loop;
+                  Run_Bad.Append (if Ranges in 1 .. 6 then Bad else Null_Unbounded_String);
+               end;
             end;
          end if;
          Append (Res, "static size_t loop_" & C_Name (To_String (H.Name))
