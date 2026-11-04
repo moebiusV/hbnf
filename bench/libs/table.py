@@ -60,11 +60,11 @@ def tm(ms):
 
 
 def conformance_cell(label):
-    """A green tick for a parser that refuses all of the ill-formed documents and accepts all of the well-formed ones, a red cross for the rest."""
+    """The count; a conforming parser (refuses every ill-formed document, accepts every well-formed one) is left unmarked, the rest get a red cross."""
     k = conf_of.get(label, "")
     if k not in conf:
         return ""
-    return ("\u2705 " if conforms.get(k) else "\u274c ") + conf[k]
+    return conf[k] if conforms.get(k) else "\u274c " + conf[k]
 
 
 def table(fmt, title, intro, rs):
@@ -118,13 +118,13 @@ def conformance_note():
     c = lambda k: conf.get(k, "?")
     return ("  The last column is `bench/xml-conformance.sh` (`bench/results/xml-conformance.md`): of 34 documents that each break one "
             "well-formedness constraint of XML 1.0 (a forbidden control character, invalid UTF-8, `]]>` or `<` where they may not be, two root "
-            "elements, a bad character reference, a duplicate attribute, an undeclared entity ...), how many the parser refuses; \u2705 marks a parser "
-            "that refuses all of them and accepts the 11 well-formed ones, \u274c one that does not.  "
+            "elements, a bad character reference, a duplicate attribute, an undeclared entity ...), how many the parser refuses; \u274c marks a parser "
+            "that does not refuse all of them or refuses a well-formed one; conforming parsers are left unmarked.  "
             f"Expat, libxml2, ElementTree and lxml refuse all of them ({c('expat')}).  **pugixml ({c('pugixml')}), TinyXML-2 ({c('TinyXML-2')}) and RapidXML "
             f"({c('RapidXML')}) are not conforming XML parsers**: they check the structure of the tags and accept most content that XML forbids, "
             f"and fast-xml-parser's `parse` ({c('fast-xml-parser')}) does not check well-formedness at all (the library has a separate `XMLValidator`, "
             f"which this table does not time).  hbnf's grammar refuses {c('hbnf')}.  A parser that skips checks does less work, so the time column is not like for like "
-            "for the \u274c rows.  The check is done once and kept: a parser is checked again only when its version, the case set or, for hbnf, its grammar or generator changes.")
+            "for the marked rows.  The check is done once and kept: a parser is checked again only when its version, the case set or, for hbnf, its grammar or generator changes.")
 
 
 rev = subprocess.check_output(["git", "-C", root, "rev-parse", "--short", "HEAD"]).decode().strip()
