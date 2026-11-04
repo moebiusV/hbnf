@@ -1,0 +1,495 @@
+c01.xml	expat	refuse
+c01.xml	libxml2 DOM	refuse
+c01.xml	libxml2 SAX2	refuse
+c01.xml	pugixml	accept
+c01.xml	TinyXML-2	accept
+c01.xml	RapidXML	accept
+c01.xml	ElementTree	refuse
+c01.xml	lxml	refuse
+c01.xml	fast-xml-parser	accept
+c01.xml	sax (Node)	accept
+c02.xml	expat	refuse
+c02.xml	libxml2 DOM	refuse
+c02.xml	libxml2 SAX2	refuse
+c02.xml	pugixml	accept
+c02.xml	TinyXML-2	accept
+c02.xml	RapidXML	accept
+c02.xml	ElementTree	refuse
+c02.xml	lxml	refuse
+c02.xml	fast-xml-parser	accept
+c02.xml	sax (Node)	accept
+c03.xml	expat	refuse
+c03.xml	libxml2 DOM	refuse
+c03.xml	libxml2 SAX2	refuse
+c03.xml	pugixml	accept
+c03.xml	TinyXML-2	refuse
+c03.xml	RapidXML	accept
+c03.xml	ElementTree	refuse
+c03.xml	lxml	refuse
+c03.xml	fast-xml-parser	accept
+c03.xml	sax (Node)	accept
+c04.xml	expat	refuse
+c04.xml	libxml2 DOM	refuse
+c04.xml	libxml2 SAX2	refuse
+c04.xml	pugixml	accept
+c04.xml	TinyXML-2	accept
+c04.xml	RapidXML	accept
+c04.xml	ElementTree	refuse
+c04.xml	lxml	refuse
+c04.xml	fast-xml-parser	accept
+c04.xml	sax (Node)	accept
+c05.xml	expat	refuse
+c05.xml	libxml2 DOM	refuse
+c05.xml	libxml2 SAX2	refuse
+c05.xml	pugixml	accept
+c05.xml	TinyXML-2	accept
+c05.xml	RapidXML	accept
+c05.xml	ElementTree	refuse
+c05.xml	lxml	refuse
+c05.xml	fast-xml-parser	accept
+c05.xml	sax (Node)	accept
+c06.xml	expat	refuse
+c06.xml	libxml2 DOM	refuse
+c06.xml	libxml2 SAX2	refuse
+c06.xml	pugixml	accept
+c06.xml	TinyXML-2	accept
+c06.xml	RapidXML	accept
+c06.xml	ElementTree	refuse
+c06.xml	lxml	refuse
+c06.xml	fast-xml-parser	accept
+c06.xml	sax (Node)	refuse
+c07.xml	expat	refuse
+c07.xml	libxml2 DOM	refuse
+c07.xml	libxml2 SAX2	refuse
+c07.xml	pugixml	refuse
+c07.xml	TinyXML-2	refuse
+c07.xml	RapidXML	accept
+c07.xml	ElementTree	refuse
+c07.xml	lxml	refuse
+c07.xml	fast-xml-parser	accept
+c07.xml	sax (Node)	refuse
+c08.xml	expat	refuse
+c08.xml	libxml2 DOM	refuse
+c08.xml	libxml2 SAX2	refuse
+c08.xml	pugixml	accept
+c08.xml	TinyXML-2	accept
+c08.xml	RapidXML	accept
+c08.xml	ElementTree	refuse
+c08.xml	lxml	refuse
+c08.xml	fast-xml-parser	accept
+c08.xml	sax (Node)	refuse
+c09.xml	expat	refuse
+c09.xml	libxml2 DOM	refuse
+c09.xml	libxml2 SAX2	refuse
+c09.xml	pugixml	accept
+c09.xml	TinyXML-2	accept
+c09.xml	RapidXML	refuse
+c09.xml	ElementTree	refuse
+c09.xml	lxml	refuse
+c09.xml	fast-xml-parser	accept
+c09.xml	sax (Node)	refuse
+c10.xml	expat	refuse
+c10.xml	libxml2 DOM	refuse
+c10.xml	libxml2 SAX2	refuse
+c10.xml	pugixml	accept
+c10.xml	TinyXML-2	accept
+c10.xml	RapidXML	accept
+c10.xml	ElementTree	refuse
+c10.xml	lxml	refuse
+c10.xml	fast-xml-parser	accept
+c10.xml	sax (Node)	refuse
+c11.xml	expat	refuse
+c11.xml	libxml2 DOM	refuse
+c11.xml	libxml2 SAX2	refuse
+c11.xml	pugixml	accept
+c11.xml	TinyXML-2	accept
+c11.xml	RapidXML	accept
+c11.xml	ElementTree	refuse
+c11.xml	lxml	refuse
+c11.xml	fast-xml-parser	accept
+c11.xml	sax (Node)	refuse
+c12.xml	expat	refuse
+c12.xml	libxml2 DOM	refuse
+c12.xml	libxml2 SAX2	refuse
+c12.xml	pugixml	accept
+c12.xml	TinyXML-2	accept
+c12.xml	RapidXML	accept
+c12.xml	ElementTree	refuse
+c12.xml	lxml	refuse
+c12.xml	fast-xml-parser	accept
+c12.xml	sax (Node)	accept
+c13.xml	expat	refuse
+c13.xml	libxml2 DOM	refuse
+c13.xml	libxml2 SAX2	refuse
+c13.xml	pugixml	accept
+c13.xml	TinyXML-2	accept
+c13.xml	RapidXML	accept
+c13.xml	ElementTree	refuse
+c13.xml	lxml	refuse
+c13.xml	fast-xml-parser	accept
+c13.xml	sax (Node)	accept
+c14.xml	expat	refuse
+c14.xml	libxml2 DOM	refuse
+c14.xml	libxml2 SAX2	refuse
+c14.xml	pugixml	accept
+c14.xml	TinyXML-2	accept
+c14.xml	RapidXML	accept
+c14.xml	ElementTree	refuse
+c14.xml	lxml	refuse
+c14.xml	fast-xml-parser	accept
+c14.xml	sax (Node)	accept
+c15.xml	expat	refuse
+c15.xml	libxml2 DOM	refuse
+c15.xml	libxml2 SAX2	refuse
+c15.xml	pugixml	accept
+c15.xml	TinyXML-2	accept
+c15.xml	RapidXML	accept
+c15.xml	ElementTree	refuse
+c15.xml	lxml	refuse
+c15.xml	fast-xml-parser	accept
+c15.xml	sax (Node)	refuse
+c16.xml	expat	refuse
+c16.xml	libxml2 DOM	refuse
+c16.xml	libxml2 SAX2	refuse
+c16.xml	pugixml	accept
+c16.xml	TinyXML-2	accept
+c16.xml	RapidXML	accept
+c16.xml	ElementTree	refuse
+c16.xml	lxml	refuse
+c16.xml	fast-xml-parser	accept
+c16.xml	sax (Node)	refuse
+c17.xml	expat	refuse
+c17.xml	libxml2 DOM	refuse
+c17.xml	libxml2 SAX2	refuse
+c17.xml	pugixml	accept
+c17.xml	TinyXML-2	accept
+c17.xml	RapidXML	accept
+c17.xml	ElementTree	refuse
+c17.xml	lxml	refuse
+c17.xml	fast-xml-parser	accept
+c17.xml	sax (Node)	refuse
+c18.xml	expat	refuse
+c18.xml	libxml2 DOM	refuse
+c18.xml	libxml2 SAX2	refuse
+c18.xml	pugixml	accept
+c18.xml	TinyXML-2	accept
+c18.xml	RapidXML	accept
+c18.xml	ElementTree	refuse
+c18.xml	lxml	refuse
+c18.xml	fast-xml-parser	accept
+c18.xml	sax (Node)	accept
+c19.xml	expat	refuse
+c19.xml	libxml2 DOM	refuse
+c19.xml	libxml2 SAX2	refuse
+c19.xml	pugixml	refuse
+c19.xml	TinyXML-2	refuse
+c19.xml	RapidXML	refuse
+c19.xml	ElementTree	refuse
+c19.xml	lxml	refuse
+c19.xml	fast-xml-parser	accept
+c19.xml	sax (Node)	refuse
+c20.xml	expat	refuse
+c20.xml	libxml2 DOM	refuse
+c20.xml	libxml2 SAX2	refuse
+c20.xml	pugixml	refuse
+c20.xml	TinyXML-2	refuse
+c20.xml	RapidXML	accept
+c20.xml	ElementTree	refuse
+c20.xml	lxml	refuse
+c20.xml	fast-xml-parser	accept
+c20.xml	sax (Node)	refuse
+c21.xml	expat	refuse
+c21.xml	libxml2 DOM	refuse
+c21.xml	libxml2 SAX2	refuse
+c21.xml	pugixml	refuse
+c21.xml	TinyXML-2	refuse
+c21.xml	RapidXML	refuse
+c21.xml	ElementTree	refuse
+c21.xml	lxml	refuse
+c21.xml	fast-xml-parser	accept
+c21.xml	sax (Node)	accept
+c22.xml	expat	refuse
+c22.xml	libxml2 DOM	refuse
+c22.xml	libxml2 SAX2	refuse
+c22.xml	pugixml	refuse
+c22.xml	TinyXML-2	refuse
+c22.xml	RapidXML	refuse
+c22.xml	ElementTree	refuse
+c22.xml	lxml	refuse
+c22.xml	fast-xml-parser	accept
+c22.xml	sax (Node)	refuse
+c23.xml	expat	refuse
+c23.xml	libxml2 DOM	refuse
+c23.xml	libxml2 SAX2	refuse
+c23.xml	pugixml	refuse
+c23.xml	TinyXML-2	refuse
+c23.xml	RapidXML	refuse
+c23.xml	ElementTree	refuse
+c23.xml	lxml	refuse
+c23.xml	fast-xml-parser	accept
+c23.xml	sax (Node)	refuse
+c24.xml	expat	refuse
+c24.xml	libxml2 DOM	refuse
+c24.xml	libxml2 SAX2	refuse
+c24.xml	pugixml	refuse
+c24.xml	TinyXML-2	accept
+c24.xml	RapidXML	accept
+c24.xml	ElementTree	refuse
+c24.xml	lxml	refuse
+c24.xml	fast-xml-parser	accept
+c24.xml	sax (Node)	refuse
+c25.xml	expat	refuse
+c25.xml	libxml2 DOM	refuse
+c25.xml	libxml2 SAX2	refuse
+c25.xml	pugixml	accept
+c25.xml	TinyXML-2	accept
+c25.xml	RapidXML	accept
+c25.xml	ElementTree	refuse
+c25.xml	lxml	refuse
+c25.xml	fast-xml-parser	accept
+c25.xml	sax (Node)	accept
+c26.xml	expat	refuse
+c26.xml	libxml2 DOM	refuse
+c26.xml	libxml2 SAX2	refuse
+c26.xml	pugixml	accept
+c26.xml	TinyXML-2	accept
+c26.xml	RapidXML	accept
+c26.xml	ElementTree	refuse
+c26.xml	lxml	refuse
+c26.xml	fast-xml-parser	accept
+c26.xml	sax (Node)	accept
+c27.xml	expat	refuse
+c27.xml	libxml2 DOM	refuse
+c27.xml	libxml2 SAX2	refuse
+c27.xml	pugixml	accept
+c27.xml	TinyXML-2	accept
+c27.xml	RapidXML	accept
+c27.xml	ElementTree	refuse
+c27.xml	lxml	refuse
+c27.xml	fast-xml-parser	accept
+c27.xml	sax (Node)	refuse
+c28.xml	expat	refuse
+c28.xml	libxml2 DOM	refuse
+c28.xml	libxml2 SAX2	refuse
+c28.xml	pugixml	accept
+c28.xml	TinyXML-2	accept
+c28.xml	RapidXML	accept
+c28.xml	ElementTree	refuse
+c28.xml	lxml	refuse
+c28.xml	fast-xml-parser	accept
+c28.xml	sax (Node)	refuse
+c29.xml	expat	refuse
+c29.xml	libxml2 DOM	refuse
+c29.xml	libxml2 SAX2	refuse
+c29.xml	pugixml	accept
+c29.xml	TinyXML-2	refuse
+c29.xml	RapidXML	refuse
+c29.xml	ElementTree	refuse
+c29.xml	lxml	refuse
+c29.xml	fast-xml-parser	accept
+c29.xml	sax (Node)	refuse
+c30.xml	expat	refuse
+c30.xml	libxml2 DOM	refuse
+c30.xml	libxml2 SAX2	refuse
+c30.xml	pugixml	accept
+c30.xml	TinyXML-2	refuse
+c30.xml	RapidXML	accept
+c30.xml	ElementTree	refuse
+c30.xml	lxml	refuse
+c30.xml	fast-xml-parser	accept
+c30.xml	sax (Node)	accept
+c31.xml	expat	refuse
+c31.xml	libxml2 DOM	refuse
+c31.xml	libxml2 SAX2	refuse
+c31.xml	pugixml	accept
+c31.xml	TinyXML-2	accept
+c31.xml	RapidXML	accept
+c31.xml	ElementTree	refuse
+c31.xml	lxml	refuse
+c31.xml	fast-xml-parser	accept
+c31.xml	sax (Node)	accept
+c32.xml	expat	refuse
+c32.xml	libxml2 DOM	refuse
+c32.xml	libxml2 SAX2	refuse
+c32.xml	pugixml	accept
+c32.xml	TinyXML-2	accept
+c32.xml	RapidXML	accept
+c32.xml	ElementTree	refuse
+c32.xml	lxml	refuse
+c32.xml	fast-xml-parser	accept
+c32.xml	sax (Node)	refuse
+c33.xml	expat	refuse
+c33.xml	libxml2 DOM	refuse
+c33.xml	libxml2 SAX2	refuse
+c33.xml	pugixml	accept
+c33.xml	TinyXML-2	accept
+c33.xml	RapidXML	accept
+c33.xml	ElementTree	refuse
+c33.xml	lxml	refuse
+c33.xml	fast-xml-parser	accept
+c33.xml	sax (Node)	refuse
+c34.xml	expat	refuse
+c34.xml	libxml2 DOM	refuse
+c34.xml	libxml2 SAX2	refuse
+c34.xml	pugixml	refuse
+c34.xml	TinyXML-2	accept
+c34.xml	RapidXML	refuse
+c34.xml	ElementTree	refuse
+c34.xml	lxml	refuse
+c34.xml	fast-xml-parser	accept
+c34.xml	sax (Node)	refuse
+c35.xml	expat	accept
+c35.xml	libxml2 DOM	accept
+c35.xml	libxml2 SAX2	accept
+c35.xml	pugixml	accept
+c35.xml	TinyXML-2	accept
+c35.xml	RapidXML	accept
+c35.xml	ElementTree	accept
+c35.xml	lxml	accept
+c35.xml	fast-xml-parser	accept
+c35.xml	sax (Node)	accept
+c36.xml	expat	accept
+c36.xml	libxml2 DOM	accept
+c36.xml	libxml2 SAX2	accept
+c36.xml	pugixml	accept
+c36.xml	TinyXML-2	accept
+c36.xml	RapidXML	accept
+c36.xml	ElementTree	accept
+c36.xml	lxml	accept
+c36.xml	fast-xml-parser	accept
+c36.xml	sax (Node)	accept
+c37.xml	expat	accept
+c37.xml	libxml2 DOM	accept
+c37.xml	libxml2 SAX2	accept
+c37.xml	pugixml	accept
+c37.xml	TinyXML-2	accept
+c37.xml	RapidXML	accept
+c37.xml	ElementTree	accept
+c37.xml	lxml	accept
+c37.xml	fast-xml-parser	accept
+c37.xml	sax (Node)	accept
+c38.xml	expat	accept
+c38.xml	libxml2 DOM	accept
+c38.xml	libxml2 SAX2	accept
+c38.xml	pugixml	accept
+c38.xml	TinyXML-2	accept
+c38.xml	RapidXML	accept
+c38.xml	ElementTree	accept
+c38.xml	lxml	accept
+c38.xml	fast-xml-parser	accept
+c38.xml	sax (Node)	accept
+c39.xml	expat	accept
+c39.xml	libxml2 DOM	accept
+c39.xml	libxml2 SAX2	accept
+c39.xml	pugixml	accept
+c39.xml	TinyXML-2	accept
+c39.xml	RapidXML	accept
+c39.xml	ElementTree	accept
+c39.xml	lxml	accept
+c39.xml	fast-xml-parser	accept
+c39.xml	sax (Node)	accept
+c40.xml	expat	accept
+c40.xml	libxml2 DOM	accept
+c40.xml	libxml2 SAX2	accept
+c40.xml	pugixml	accept
+c40.xml	TinyXML-2	accept
+c40.xml	RapidXML	accept
+c40.xml	ElementTree	accept
+c40.xml	lxml	accept
+c40.xml	fast-xml-parser	accept
+c40.xml	sax (Node)	accept
+c41.xml	expat	accept
+c41.xml	libxml2 DOM	accept
+c41.xml	libxml2 SAX2	accept
+c41.xml	pugixml	accept
+c41.xml	TinyXML-2	accept
+c41.xml	RapidXML	accept
+c41.xml	ElementTree	accept
+c41.xml	lxml	accept
+c41.xml	fast-xml-parser	accept
+c41.xml	sax (Node)	refuse
+c42.xml	expat	accept
+c42.xml	libxml2 DOM	accept
+c42.xml	libxml2 SAX2	accept
+c42.xml	pugixml	accept
+c42.xml	TinyXML-2	refuse
+c42.xml	RapidXML	accept
+c42.xml	ElementTree	accept
+c42.xml	lxml	accept
+c42.xml	fast-xml-parser	accept
+c42.xml	sax (Node)	accept
+c43.xml	expat	accept
+c43.xml	libxml2 DOM	accept
+c43.xml	libxml2 SAX2	accept
+c43.xml	pugixml	accept
+c43.xml	TinyXML-2	accept
+c43.xml	RapidXML	accept
+c43.xml	ElementTree	accept
+c43.xml	lxml	accept
+c43.xml	fast-xml-parser	accept
+c43.xml	sax (Node)	accept
+c44.xml	expat	accept
+c44.xml	libxml2 DOM	accept
+c44.xml	libxml2 SAX2	accept
+c44.xml	pugixml	accept
+c44.xml	TinyXML-2	accept
+c44.xml	RapidXML	accept
+c44.xml	ElementTree	accept
+c44.xml	lxml	accept
+c44.xml	fast-xml-parser	accept
+c44.xml	sax (Node)	accept
+c45.xml	expat	accept
+c45.xml	libxml2 DOM	accept
+c45.xml	libxml2 SAX2	accept
+c45.xml	pugixml	accept
+c45.xml	TinyXML-2	accept
+c45.xml	RapidXML	accept
+c45.xml	ElementTree	accept
+c45.xml	lxml	accept
+c45.xml	fast-xml-parser	accept
+c45.xml	sax (Node)	accept
+c01.xml	hbnf	refuse
+c02.xml	hbnf	refuse
+c03.xml	hbnf	accept
+c04.xml	hbnf	refuse
+c05.xml	hbnf	refuse
+c06.xml	hbnf	refuse
+c07.xml	hbnf	refuse
+c08.xml	hbnf	accept
+c09.xml	hbnf	accept
+c10.xml	hbnf	accept
+c11.xml	hbnf	accept
+c12.xml	hbnf	refuse
+c13.xml	hbnf	refuse
+c14.xml	hbnf	refuse
+c15.xml	hbnf	refuse
+c16.xml	hbnf	refuse
+c17.xml	hbnf	accept
+c18.xml	hbnf	refuse
+c19.xml	hbnf	refuse
+c20.xml	hbnf	refuse
+c21.xml	hbnf	refuse
+c22.xml	hbnf	refuse
+c23.xml	hbnf	refuse
+c24.xml	hbnf	refuse
+c25.xml	hbnf	refuse
+c26.xml	hbnf	refuse
+c27.xml	hbnf	refuse
+c28.xml	hbnf	refuse
+c29.xml	hbnf	refuse
+c30.xml	hbnf	refuse
+c31.xml	hbnf	refuse
+c32.xml	hbnf	refuse
+c33.xml	hbnf	accept
+c34.xml	hbnf	refuse
+c35.xml	hbnf	accept
+c36.xml	hbnf	accept
+c37.xml	hbnf	accept
+c38.xml	hbnf	accept
+c39.xml	hbnf	accept
+c40.xml	hbnf	accept
+c41.xml	hbnf	accept
+c42.xml	hbnf	accept
+c43.xml	hbnf	accept
+c44.xml	hbnf	accept
+c45.xml	hbnf	accept

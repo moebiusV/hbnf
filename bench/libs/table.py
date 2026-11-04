@@ -59,11 +59,19 @@ def tm(ms):
     return "%.0f ms" % ms if ms < 1000 else "%.2f s" % (ms / 1000)
 
 
+def conformance_cell(label):
+    """A green tick for a parser that refuses all of the ill-formed documents and accepts all of the well-formed ones, a red cross for the rest."""
+    k = conf_of.get(label, "")
+    if k not in conf:
+        return ""
+    return ("\u2705 " if conforms.get(k) else "\u274c ") + conf[k]
+
+
 def table(fmt, title, intro, rs):
     size = len(open(f"{W}/doc.{fmt}", "rb").read())
     print(f"**{title}** ({size / 1e6:.2f} MB, the same file for every tool; best of up to {runs} runs{intro}):\n")
     if fmt == "xml":
-        print("| tool | builds | parse time | MB/s | peak RSS | RSS over the input | refuses ill-formed XML |")
+        print("| tool | builds | parse time | MB/s | peak RSS | RSS over the input | conforms to XML 1.0 (refuses the 34 ill-formed documents) |")
         print("|---|---|---:|---:|---:|---:|---:|")
     else:
         print("| tool | parse time | MB/s | peak RSS | RSS over the input |")
@@ -74,7 +82,7 @@ def table(fmt, title, intro, rs):
         if label.startswith("toml (Rust)"):
             label += " " + vers.get("toml", "")
         what = f" {builds.get(label, '')} |" if fmt == "xml" else ""
-        cf = f" {conf.get(conf_of.get(label, ''), '')} |" if fmt == "xml" else ""
+        cf = f" {conformance_cell(label)} |" if fmt == "xml" else ""
         if status != "ok":
             print(f"| {label} |{what} {status} | | | |{' |' if fmt == 'xml' else ''}")
             continue
@@ -84,14 +92,7 @@ def table(fmt, title, intro, rs):
 
 
 for fmt in ("json", "toml", "yaml", "xml"):
-    if fmt != "xml" or not conforms:
-        table(fmt, titles[fmt], "", rows[fmt])
-        continue
-    # XML: a parser is compared with the others only if it is a conforming XML parser; the rest are shown, apart
-    ok = [r for r in rows[fmt] if conforms.get(conf_of.get(r[0], ""), False)]
-    lax = [r for r in rows[fmt] if not conforms.get(conf_of.get(r[0], ""), False)]
-    table(fmt, "XML 1.0, conforming parsers", "; each refuses all of the 34 documents that break a well-formedness constraint and accepts the 11 well-formed ones of `bench/xml-conformance.sh`", ok)
-    table(fmt, "XML 1.0, parsers that do not refuse every ill-formed document", "; they check less than XML requires, so these times are not like for like with the table above, and a parser joins that table when the conformance run shows it refusing all 34", lax)
+    table(fmt, titles[fmt], "", rows[fmt])
 
 
 def xml_note():
@@ -117,11 +118,13 @@ def conformance_note():
     c = lambda k: conf.get(k, "?")
     return ("  The last column is `bench/xml-conformance.sh` (`bench/results/xml-conformance.md`): of 34 documents that each break one "
             "well-formedness constraint of XML 1.0 (a forbidden control character, invalid UTF-8, `]]>` or `<` where they may not be, two root "
-            "elements, a bad character reference, a duplicate attribute, an undeclared entity ...), how many the parser refuses.  "
+            "elements, a bad character reference, a duplicate attribute, an undeclared entity ...), how many the parser refuses; \u2705 marks a parser "
+            "that refuses all of them and accepts the 11 well-formed ones, \u274c one that does not.  "
             f"Expat, libxml2, ElementTree and lxml refuse all of them ({c('expat')}).  **pugixml ({c('pugixml')}), TinyXML-2 ({c('TinyXML-2')}) and RapidXML "
             f"({c('RapidXML')}) are not conforming XML parsers**: they check the structure of the tags and accept most content that XML forbids, "
             f"and fast-xml-parser's `parse` ({c('fast-xml-parser')}) does not check well-formedness at all (the library has a separate `XMLValidator`, "
-            f"which this table does not time).  hbnf's grammar refuses {c('hbnf')}.  A parser that skips checks does less work, so the time column is not like for like.")
+            f"which this table does not time).  hbnf's grammar refuses {c('hbnf')}.  A parser that skips checks does less work, so the time column is not like for like "
+            "for the \u274c rows.  The check is done once and kept: a parser is checked again only when its version, the case set or, for hbnf, its grammar or generator changes.")
 
 
 rev = subprocess.check_output(["git", "-C", root, "rev-parse", "--short", "HEAD"]).decode().strip()

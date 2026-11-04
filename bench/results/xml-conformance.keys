@@ -1,0 +1,11 @@
+expat	2.9.0-1~deb13u1 4643bfcdbc109c76
+libxml2 DOM	2.12.7+dfsg+really2.9.14-2.1+deb13u3 4643bfcdbc109c76
+libxml2 SAX2	2.12.7+dfsg+really2.9.14-2.1+deb13u3 4643bfcdbc109c76
+pugixml	1.14-2 4643bfcdbc109c76
+TinyXML-2	11.0.0+dfsg-1+b1 4643bfcdbc109c76
+RapidXML	1.13-3 4643bfcdbc109c76
+ElementTree	Python 3.13.5 4643bfcdbc109c76
+lxml	5.4.0-1 4643bfcdbc109c76
+fast-xml-parser	5.11.2 4643bfcdbc109c76
+sax (Node)	1.6.1 4643bfcdbc109c76
+hbnf	grammar f741d075fedf5371, generator 31642c247863 4643bfcdbc109c76

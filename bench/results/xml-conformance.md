@@ -1,6 +1,6 @@
 # XML conformance of the parsers of the library benchmark
 
-The same 45 documents through each parser, by the drivers of `bench/libs.sh` (`sh bench/xml-conformance.sh`): 34 break one well-formedness constraint of XML 1.0 each and a conforming parser refuses them; 11 are well-formed, so that refusing everything does not look conformant.  Expat, with its own checks on, is the reference.
+The same 45 documents through each parser, by the drivers of `bench/libs.sh` (`sh bench/xml-conformance.sh`): 34 break one well-formedness constraint of XML 1.0 each and a conforming parser refuses them; 11 are well-formed, so that refusing everything does not look conformant.  Expat, with its own checks on, is the reference.  The check is done once and kept: each parser's verdicts are stored with a key (its version, the case set, for hbnf the grammar) and rerun only when the key changes.
 
 | parser | refuses the ill-formed | accepts the well-formed | accepts, wrongly |
 |---|---:|---:|---|
