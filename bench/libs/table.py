@@ -33,6 +33,22 @@ builds = {
     "sax (Node)": "nothing (handlers count)",
 }
 dpkg = dict(l.split("=", 1) for l in ver[5:] if "=" in l)
+# bench/xml-conformance.sh: how many of the documents that break a well-formedness constraint of XML 1.0 each parser refuses
+conf = {}
+try:
+    for l in open(f"{root}/bench/results/xml-conformance.tsv"):
+        n, r, ill, a, wf = l.rstrip("\n").split("\t")
+        conf[n] = f"{r} of {ill}"
+except OSError:
+    pass
+conf_of = {
+    "hbnf (C backend), tree": "hbnf", "hbnf (C backend), tape": "hbnf", "expat, events only": "expat",
+    "expat, events copied into a tree": "expat", "Python xml.parsers.expat, no handlers": "expat",
+    "Python xml.parsers.expat, Python callbacks": "expat", "libxml2, DOM": "libxml2 DOM",
+    "libxml2, SAX2 events only": "libxml2 SAX2", "pugixml": "pugixml", "TinyXML-2": "TinyXML-2", "RapidXML": "RapidXML",
+    "Python xml.etree.ElementTree": "ElementTree", "lxml (Python)": "lxml", "fast-xml-parser (Node)": "fast-xml-parser",
+    "sax (Node)": "sax (Node)",
+}
 
 
 def tm(ms):
@@ -45,8 +61,8 @@ for fmt in ("json", "toml", "yaml", "xml"):
     size = len(open(f"{W}/doc.{fmt}", "rb").read())
     print(f"**{titles[fmt]}** ({size / 1e6:.2f} MB, the same file for every tool; best of up to {runs} runs):\n")
     if fmt == "xml":
-        print("| tool | builds | parse time | MB/s | peak RSS | RSS over the input |")
-        print("|---|---|---:|---:|---:|---:|")
+        print("| tool | builds | parse time | MB/s | peak RSS | RSS over the input | refuses ill-formed XML |")
+        print("|---|---|---:|---:|---:|---:|---:|")
     else:
         print("| tool | parse time | MB/s | peak RSS | RSS over the input |")
         print("|---|---:|---:|---:|---:|")
@@ -56,11 +72,12 @@ for fmt in ("json", "toml", "yaml", "xml"):
         if label.startswith("toml (Rust)"):
             label += " " + vers.get("toml", "")
         what = f" {builds.get(label, '')} |" if fmt == "xml" else ""
+        cf = f" {conf.get(conf_of.get(label, ''), '')} |" if fmt == "xml" else ""
         if status != "ok":
-            print(f"| {label} |{what} {status} | | | |")
+            print(f"| {label} |{what} {status} | | | |{' |' if fmt == 'xml' else ''}")
             continue
         over = max(rss * 1024 - size, 0) / size
-        print(f"| {label} |{what} {tm(ms)} | {size / 1e6 / (ms / 1000):.0f} MB/s | {rss // 1024} MB | {over:.1f}x |")
+        print(f"| {label} |{what} {tm(ms)} | {size / 1e6 / (ms / 1000):.0f} MB/s | {rss // 1024} MB | {over:.1f}x |{cf}")
     print()
 
 
@@ -76,7 +93,22 @@ def xml_note():
             "The time is the parse call alone; the counting walks of the tree parsers come after the clock.  expat, libxml2's SAX2 and sax "
             "build nothing, their handlers count, and the expat row that copies makes a small tree of names, attributes and text.  "
             "pugixml and RapidXML parse the buffer in place, the others leave it alone.  hbnf's XML grammar is measured twice: its typed tree and the same grammar under `--layout=tape` (the tape holds the "
-            "elements, attributes and texts as 64-bit words; the driver counts from it), and that tree and that tape is the grammar's concrete syntax (a reference is a node and characters are not decoded).")
+            "elements, attributes and texts as 64-bit words; the driver counts from it), and that tree and that tape is the grammar's concrete syntax (a reference is a node and characters are not decoded)."
+            + conformance_note())
+
+
+def conformance_note():
+    """The last column, and what it says about the parsers that do less than the standard asks."""
+    if not conf:
+        return ""
+    c = lambda k: conf.get(k, "?")
+    return ("  The last column is `bench/xml-conformance.sh` (`bench/results/xml-conformance.md`): of 34 documents that each break one "
+            "well-formedness constraint of XML 1.0 (a forbidden control character, invalid UTF-8, `]]>` or `<` where they may not be, two root "
+            "elements, a bad character reference, a duplicate attribute, an undeclared entity ...), how many the parser refuses.  "
+            f"Expat, libxml2, ElementTree and lxml refuse all of them ({c('expat')}).  **pugixml ({c('pugixml')}), TinyXML-2 ({c('TinyXML-2')}) and RapidXML "
+            f"({c('RapidXML')}) are not conforming XML parsers**: they check the structure of the tags and accept most content that XML forbids, "
+            f"and fast-xml-parser's `parse` ({c('fast-xml-parser')}) does not check well-formedness at all (the library has a separate `XMLValidator`, "
+            f"which this table does not time).  hbnf's grammar refuses {c('hbnf')}.  A parser that skips checks does less work, so the time column is not like for like.")
 
 
 rev = subprocess.check_output(["git", "-C", root, "rev-parse", "--short", "HEAD"]).decode().strip()
