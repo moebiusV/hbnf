@@ -2,8 +2,8 @@
 
 | tool | time | MB/s | peak memory, the largest unit alone (2.5 MB of C) |
 |---|---:|---:|---:|
-| hbnf (C backend), the C11 grammar, typed tree | 0.20 s | 25.0 MB/s | 66 MB |
-| hbnf (C backend), the same grammar, `--layout=tape` | 0.17 s | 29.2 MB/s | 14 MB |
-| `gcc -fsyntax-only` | 0.41 s | 12.3 MB/s | |
+| hbnf (C backend), the C11 grammar, typed tree | 0.20 s | 24.4 MB/s | 47 MB |
+| hbnf (C backend), the same grammar, `--layout=tape` | 0.12 s | 40.0 MB/s | 27 MB |
+| `gcc -fsyntax-only` | 0.48 s | 10.4 MB/s | |
 
-_2026-10-29; gcc (Debian 14.2.0-19) 14.2.0;ldd (Debian GLIBC 2.41-12+deb13u4) 2.41; `-O2`; hbnf bad5b34.  `gcc -fsyntax-only` also checks types and starts once for each file; the tree reads the whole program into memory, the tape a word or two for each token and rule._
+_2026-11-05; gcc (Debian 14.2.0-19) 14.2.0;ldd (Debian GLIBC 2.41-12+deb13u4) 2.41; `-O2`; hbnf 4d2f65a.  `gcc -fsyntax-only` also checks types and starts once for each file; the tree reads the whole program into memory, the tape a word or two for each token and rule._
