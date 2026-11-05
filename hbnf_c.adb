@@ -4638,7 +4638,13 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "typedef struct hbnf_chunk hbnf_chunk;");
       Append (Res, LF);
-      Append (Res, "struct hbnf_chunk { hbnf_chunk *next; size_t used, cap; void *map; size_t map_len; char data[]; };");
+      Append (Res, "struct hbnf_chunk { hbnf_chunk *next; size_t used, cap; void *map; size_t map_len; size_t hard; char data[]; };");
+      Append (Res, LF);
+      Append (Res, "/* hard is what a mapped chunk holds; cap is how much of it is ready (backed by pages): the bump allocator");
+      Append (Res, LF);
+      Append (Res, "   checks cap alone, and the slow path backs the next window in one call (see hbnf_alloc_slow). */");
+      Append (Res, LF);
+      Append (Res, "static size_t hbnf_arena_hint;   /* the bytes the first chunk should hold, from the input's length; 0: none */");
       Append (Res, LF);
       Append (Res, "static hbnf_chunk *hbnf_arena;");
       Append (Res, LF);
@@ -4680,7 +4686,9 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "    c->map = m; c->map_len = len + huge;");
       Append (Res, LF);
-      Append (Res, "    c->cap = len - sizeof(hbnf_chunk);");
+      Append (Res, "    c->hard = len - sizeof(hbnf_chunk);");
+      Append (Res, LF);
+      Append (Res, "    c->cap = c->hard;");
       Append (Res, LF);
       Append (Res, "    return c;");
       Append (Res, LF);
@@ -4692,15 +4700,53 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "   across chunks. */");
       Append (Res, LF);
+      Append (Res, "/* A mapped chunk is backed with pages a window (256 KiB) ahead of the bump, one call for the window, not one");
+      Append (Res, LF);
+      Append (Res, "   page fault for each page; what is not reached is never touched.  Where the call is not there the pages come as they are used. */");
+      Append (Res, LF);
+      Append (Res, "#if defined(__linux__) && defined(MADV_POPULATE_WRITE)");
+      Append (Res, LF);
+      Append (Res, "enum { HBNF_POPSTEP = 256 << 10 };");
+      Append (Res, LF);
+      Append (Res, "static void hbnf_populate(hbnf_chunk *c, size_t from, size_t to) {");
+      Append (Res, LF);
+      Append (Res, "    uintptr_t a = ((uintptr_t)c->data + from) & ~(uintptr_t)4095, b = ((uintptr_t)c->data + to + 4095) & ~(uintptr_t)4095;");
+      Append (Res, LF);
+      Append (Res, "    madvise((void *)a, b - a, MADV_POPULATE_WRITE);");
+      Append (Res, LF);
+      Append (Res, "}");
+      Append (Res, LF);
+      Append (Res, "#endif");
+      Append (Res, LF);
       Append (Res, "static void *hbnf_alloc_slow(size_t n) {");
+      Append (Res, LF);
+      Append (Res, "#if defined(__linux__) && defined(MADV_POPULATE_WRITE)");
+      Append (Res, LF);
+      Append (Res, "    if (hbnf_arena && hbnf_arena->map && hbnf_arena->cap < hbnf_arena->hard && hbnf_arena->used + n <= hbnf_arena->hard) {");
+      Append (Res, LF);
+      Append (Res, "        hbnf_chunk *c = hbnf_arena;");
+      Append (Res, LF);
+      Append (Res, "        size_t to = c->used + n + HBNF_POPSTEP;");
+      Append (Res, LF);
+      Append (Res, "        if (to > c->hard) to = c->hard;");
+      Append (Res, LF);
+      Append (Res, "        hbnf_populate(c, c->cap, to);  c->cap = to;");
+      Append (Res, LF);
+      Append (Res, "        void *p = c->data + c->used;  c->used += n;  return p;");
+      Append (Res, LF);
+      Append (Res, "    }");
+      Append (Res, LF);
+      Append (Res, "#endif");
       Append (Res, LF);
       Append (Res, "    size_t cap = n > (size_t)HBNF_ARENA_CHUNK ? n : (size_t)HBNF_ARENA_CHUNK;");
       Append (Res, LF);
       Append (Res, "    hbnf_chunk *c = NULL;");
       Append (Res, LF);
+      Append (Res, "    if (!hbnf_arena && hbnf_arena_hint > cap) cap = hbnf_arena_hint;");
+      Append (Res, LF);
       Append (Res, "    if (hbnf_arena) {");
       Append (Res, LF);
-      Append (Res, "        size_t grow = hbnf_arena->cap >= ((size_t)1 << 20) ? hbnf_arena->cap * 2 : ((size_t)1 << 20);");
+      Append (Res, "        size_t grow = hbnf_arena->hard >= ((size_t)1 << 20) ? hbnf_arena->hard * 2 : ((size_t)1 << 20);");
       Append (Res, LF);
       Append (Res, "        if (grow > ((size_t)8 << 20)) grow = (size_t)8 << 20;");
       Append (Res, LF);
@@ -4711,6 +4757,8 @@ package body HBNF_C is
       Append (Res, "#if defined(__linux__)");
       Append (Res, LF);
       Append (Res, "    if (cap >= ((size_t)1 << 20)) c = hbnf_map_chunk(cap);");
+      Append (Res, LF);
+      Append (Res, "    if (!c && !hbnf_arena && cap == hbnf_arena_hint) cap = n > (size_t)HBNF_ARENA_CHUNK ? n : (size_t)HBNF_ARENA_CHUNK;   /* no map for the hint: the usual first chunk */");
       Append (Res, LF);
       Append (Res, "#endif");
       Append (Res, LF);
@@ -4726,7 +4774,7 @@ package body HBNF_C is
       Append (Res, LF);
       Append (Res, "        memset(c->data, 0, cap);   /* a chunk is cleared once, as it is taken: no clearing per allocation */");
       Append (Res, LF);
-      Append (Res, "        c->map = NULL; c->map_len = 0;");
+      Append (Res, "        c->map = NULL; c->map_len = 0; c->hard = cap;");
       Append (Res, LF);
       Append (Res, "    } else {");
       Append (Res, LF);
@@ -4735,6 +4783,22 @@ package body HBNF_C is
       Append (Res, "    }");
       Append (Res, LF);
       Append (Res, "    c->next = hbnf_arena; c->used = 0; c->cap = cap;");
+      Append (Res, LF);
+      Append (Res, "#if defined(__linux__)");
+      Append (Res, LF);
+      Append (Res, "    if (c->map) {");
+      Append (Res, LF);
+      Append (Res, "        c->hard = cap;");
+      Append (Res, LF);
+      Append (Res, "#if defined(MADV_POPULATE_WRITE)");
+      Append (Res, LF);
+      Append (Res, "        { size_t to = n + HBNF_POPSTEP;  if (to > cap) to = cap;  hbnf_populate(c, 0, to);  c->cap = to; }");
+      Append (Res, LF);
+      Append (Res, "#endif");
+      Append (Res, LF);
+      Append (Res, "    }");
+      Append (Res, LF);
+      Append (Res, "#endif");
       Append (Res, LF);
       Append (Res, "    hbnf_arena = c;");
       Append (Res, LF);
@@ -10737,6 +10801,8 @@ package body HBNF_C is
                       else "") & LF else "")
            & "    parser_t p = { text, strlen(text), 0, (size_t)-1,"
            & " 0, 0, NULL, NULL, 0, 0 };" & LF
+           & (if HBNF_Grammar.Statements then ""
+              else "    hbnf_arena_hint = p.len > ((size_t)256 << 10) ? (p.len < ((size_t)8 << 20) ? p.len * 8 : ((size_t)64 << 20)) : 0;   /* one map for a big input's tree */" & LF)
            & "    memset(out, 0, sizeof *out);   /* the rules fill it directly and expect it clear */" & LF
            & "    p.quiet = 1;   /* the first pass records no failures; one that fails is read again */" & LF
            & "    p.stack_lim = (const char *)__builtin_frame_address(0) - (size_t)HBNF_MAX_DEPTH * 256;" & LF

@@ -13,20 +13,41 @@ static struct {
 } hbnf_cx;
 typedef struct { unsigned n; } hbnf_mark_t;
 
-static unsigned hbnf_chash(const char *s, size_t n) {
-    unsigned h = 2166136261u;
-    while (n--) h = (h ^ (unsigned char)*s++) * 16777619u;
-    return h;
+/* The hash of a name: eight bytes at a time, and the last one to seven bytes as overlapping loads of
+   the name's own bytes (no read past the name), so a short name is one multiply and not one for each byte. */
+static inline unsigned hbnf_chash(const char *s, size_t n) {
+    uint64_t h = 0x9E3779B97F4A7C15ull ^ (uint64_t)n, w;
+    while (n >= 8) {
+        memcpy(&w, s, 8);
+        h = (h ^ w) * 0xFF51AFD7ED558CCDull;  h ^= h >> 32;
+        s += 8;  n -= 8;
+    }
+    if (n >= 4) {
+        uint32_t a, b;
+        memcpy(&a, s, 4);  memcpy(&b, s + n - 4, 4);
+        w = ((uint64_t)a << 32) | b;
+    } else if (n) {
+        w = ((uint64_t)(unsigned char)s[0] << 16) | ((uint64_t)(unsigned char)s[n >> 1] << 8) | (unsigned char)s[n - 1];
+    } else w = 0;
+    h = (h ^ w) * 0xFF51AFD7ED558CCDull;  h ^= h >> 32;
+    h *= 0xC4CEB9FE1A85EC53ull;  h ^= h >> 29;
+    return (unsigned)h;
 }
+/* The name that was last asked about, with its hash: a %bind that follows the ?! test of the same name
+   (a duplicate-attribute check) does not hash it again.  Forgotten at the start of a parse. */
+static const char *hbnf_lh_s;
+static size_t hbnf_lh_n;
+static unsigned hbnf_lh_h;
 static void hbnf_ctx_clear(void) {
     unsigned c;
     int b;
+    hbnf_lh_s = NULL;
     hbnf_cx.n = 0;
     for (c = 0; c < HBNF_NCTX; c++)
         for (b = 0; b < 256; b++) hbnf_cx.bucket[c][b] = -1;
 }
 static void hbnf_ctx_add(unsigned c, const char *s, size_t n) {
-    unsigned h = hbnf_chash(s, n);
+    unsigned h = (s == hbnf_lh_s && n == hbnf_lh_n) ? hbnf_lh_h : hbnf_chash(s, n);
     if (hbnf_cx.n == hbnf_cx.cap) {
         hbnf_cx.cap = hbnf_cx.cap ? hbnf_cx.cap * 2 : 64;
         hbnf_cx.e = (hbnf_ce_t *)realloc(hbnf_cx.e, hbnf_cx.cap * sizeof *hbnf_cx.e);
@@ -42,6 +63,7 @@ static void hbnf_ctx_add(unsigned c, const char *s, size_t n) {
 static int hbnf_ctx_has(unsigned c, const char *s, size_t n) {
     unsigned h = hbnf_chash(s, n);
     int i;
+    hbnf_lh_s = s;  hbnf_lh_n = n;  hbnf_lh_h = h;
     for (i = hbnf_cx.bucket[c][h & 255]; i >= 0; i = hbnf_cx.e[i].prev)
         if (hbnf_cx.e[i].hash == h && hbnf_cx.e[i].n == n
             && memcmp(hbnf_cx.e[i].s, s, n) == 0)

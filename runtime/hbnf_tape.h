@@ -18,15 +18,38 @@
 #define TAPE_LONG 0xFFFFu
 static uint64_t *tape;
 static size_t tape_n, tape_cap;
+/* tape_hard is the room tape_reserve took; tape_cap is how much of it is backed with pages so far (a window of
+   32768 words, 256 KiB, ahead of the writes, backed in one call each: not one page fault for each page).  The
+   fast path checks tape_cap alone; where the room is not reserved, tape_hard is 0 and tape_cap is all of it. */
+static size_t tape_hard;
+#if defined(MADV_POPULATE_WRITE)
+enum { TAPE_WINDOW = 1 << 15 };
+static void tape_populate (size_t from, size_t to)
+{
+    uintptr_t a = ((uintptr_t) (tape + from)) & ~(uintptr_t) 4095, b = ((uintptr_t) (tape + to) + 4095) & ~(uintptr_t) 4095;
+    madvise ((void *) a, b - a, MADV_POPULATE_WRITE);
+}
+#endif
 
 /* A tape that outgrows its room doubles; this is the way out of the fast path, not the usual one. */
 static __attribute__((noinline, unused)) void tape_grow (void)
 {
-    size_t cap = tape_cap ? tape_cap * 2 : 1 << 16;
-    uint64_t *t = realloc (tape, cap * sizeof *tape);
+    size_t cap;
+    uint64_t *t;
+#if defined(MADV_POPULATE_WRITE)
+    if (tape_cap < tape_hard) {
+        cap = tape_cap + TAPE_WINDOW;
+        if (cap > tape_hard) cap = tape_hard;
+        tape_populate (tape_cap, cap);
+        tape_cap = cap;
+        return;
+    }
+#endif
+    cap = tape_cap ? tape_cap * 2 : 1 << 16;
+    t = realloc (tape, cap * sizeof *tape);
     if (!t) abort ();
     tape = t;
-    tape_cap = cap;
+    tape_cap = tape_hard = cap;
 }
 
 /* Room for a document of this many bytes, before the parse: a quarter word a byte is more
@@ -45,7 +68,11 @@ __attribute__((unused)) static void tape_reserve (size_t input_bytes)
 #endif
     free (tape);
     tape = m;
-    tape_cap = bytes / sizeof *tape;
+    tape_cap = tape_hard = bytes / sizeof *tape;
+#if defined(MADV_POPULATE_WRITE)
+    tape_cap = TAPE_WINDOW < tape_hard ? TAPE_WINDOW : tape_hard;
+    tape_populate (0, tape_cap);
+#endif
 }
 
 static inline void tape_put (uint64_t w)
