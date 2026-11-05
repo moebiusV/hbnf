@@ -5,6 +5,7 @@ with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Strings.Fixed;
 with Ada.Text_IO;
+with HBNF_Grammar;
 with HBNF_Template;
 with Interfaces;
 
@@ -236,6 +237,23 @@ package body HBNF_Layout is
       return (if S'Length <= Room then S else S (S'First .. S'First + Room - 1));
    end Fit;
 
+   --  The running totals of the table target: runs and places over all the charts so far, so that a leaf table can
+   --  say where its places start in the place pool (`run0`, `place0`), as the C tables of a codec do.
+   Glob_Runs   : Natural := 0;
+   Glob_Places : Natural := 0;
+
+   type Run_Rec is record
+      Parcel, Hi, Len : Natural;
+   end record;
+   package Run_Vectors is new Ada.Containers.Vectors (Positive, Run_Rec);
+   type Place_Rec is record
+      Name, Label, Role : Unbounded_String;
+      Bits   : Natural := 0;
+      Signed : Boolean := False;
+      Runs   : Run_Vectors.Vector;
+   end record;
+   package Place_Vectors is new Ada.Containers.Vectors (Positive, Place_Rec);
+
    function Chart_Model
      (C : Chart_Rec; Index : Positive; O : Options; File : String; Uid : in out Natural) return T.Value_Access
    is
@@ -245,6 +263,12 @@ package body HBNF_Layout is
       Roles  : constant T.Value_Access := T.New_List;
       Seen   : Text_Vectors.Vector;
       Unit   : constant Natural := O.Unit;
+      Places : constant T.Value_Access := T.New_List;
+      Plist  : Place_Vectors.Vector;
+      Cur    : Run_Vectors.Vector;                 --  the runs of the field being laid out
+      Place0 : constant Natural := Glob_Places;
+      Prefix_Bits : Natural := 0;
+      Prefix_Value : Interfaces.Unsigned_64 := 0;
       Pos    : Natural := 0;                 --  absolute bit, from the left
       Fixed  : Boolean := True;
       Row    : T.Value_Access := null;
@@ -304,6 +328,8 @@ package body HBNF_Layout is
       begin
          Uid := Uid + 1;
          Put (P, "uid", Img (Uid));
+         Put (P, "parcel", Img (Row_N));
+         Cur.Append (Run_Rec'(Parcel => Row_N, Hi => Unit - 1 - Col, Len => W));
          Put (P, "name", Name);
          Put (P, "label", Label);
          Put (P, "short", Fit (Label, W));
@@ -424,6 +450,11 @@ package body HBNF_Layout is
                Open_Row ("then", False);
                Pos := 0;
             else
+               Cur.Clear;
+               if F.Kind = S_Const and then Total = 0 and then Prefix_Bits = 0 then
+                  Prefix_Bits := F.Bits;
+                  Prefix_Value := F.Value;
+               end if;
                declare
                   Left : Natural := W;                 --  bits of the field still to place
                   Hi   : Natural := W - 1;
@@ -445,6 +476,31 @@ package body HBNF_Layout is
                      end;
                   end loop;
                end;
+               if F.Kind /= S_Const then
+                  --  A field is a place; fields that carry one label are the pieces of one field (the label names
+                  --  the logical field), their runs kept together, in the order of the bits.
+                  declare
+                     Merged : Boolean := False;
+                  begin
+                     if F.Label /= Null_Unbounded_String then
+                        for Pl of Plist loop
+                           if Pl.Label = F.Label then
+                              Pl.Bits := Pl.Bits + W;
+                              for R of Cur loop
+                                 Pl.Runs.Append (R);
+                              end loop;
+                              Merged := True;
+                              exit;
+                           end if;
+                        end loop;
+                     end if;
+                     if not Merged then
+                        Plist.Append
+                          (Place_Rec'(Name => F.Name, Label => F.Label, Role => F.Role, Bits => W,
+                                      Signed => F.Signed, Runs => Cur));
+                     end if;
+                  end;
+               end if;
             end if;
          end;
       end loop;
@@ -455,6 +511,40 @@ package body HBNF_Layout is
          Nrows := Nrows - 1;
       end if;
       T.Insert (M, "rows", Rows);
+      for Pl of Plist loop
+         declare
+            E    : constant T.Value_Access := T.New_Map;
+            Runs : constant T.Value_Access := T.New_List;
+         begin
+            Put (E, "name", To_String (Pl.Name));
+            Put (E, "label", To_String (Pl.Label));
+            Put (E, "role", To_String (Pl.Role));
+            Put (E, "bits", Img (Pl.Bits));
+            Put (E, "signed", Flag (Pl.Signed));
+            Put (E, "nruns", Img (Natural (Pl.Runs.Length)));
+            Put (E, "run0", Img (Glob_Runs));
+            for R of Pl.Runs loop
+               declare
+                  X : constant T.Value_Access := T.New_Map;
+               begin
+                  Put (X, "parcel", Img (R.Parcel));
+                  Put (X, "hi", Img (R.Hi));
+                  Put (X, "len", Img (R.Len));
+                  T.Append (Runs, X);
+               end;
+            end loop;
+            T.Insert (E, "runs", Runs);
+            Glob_Runs := Glob_Runs + Natural (Pl.Runs.Length);
+            T.Append (Places, E);
+         end;
+      end loop;
+      T.Insert (M, "places", Places);
+      Put (M, "nplaces", Img (Natural (Plist.Length)));
+      Put (M, "place0", Img (Place0));
+      Glob_Places := Glob_Places + Natural (Plist.Length);
+      Put (M, "prefix_bits", Img (Prefix_Bits));
+      Put (M, "prefix_value", Ada.Strings.Fixed.Trim (Interfaces.Unsigned_64'Image (Prefix_Value), Ada.Strings.Left));
+      Put (M, "nparcels", Img ((Total + Unit - 1) / Unit));
       T.Insert (M, "roles", Roles);
       Put (M, "nrows", Img (Nrows));
       Put (M, "nroles", Img (Natural (Roles.Items.Length)));
@@ -580,6 +670,8 @@ package body HBNF_Layout is
       --  The model
       declare
          Dir     : constant String := To_String (O.Target_Dir);
+         Slash   : constant Natural := Ada.Strings.Fixed.Index (Dir, "/", Ada.Strings.Backward);
+         Target_Name : constant String := (if Slash = 0 then Dir else Dir (Slash + 1 .. Dir'Last));
          Top     : T.Context := T.View;
          List    : constant T.Value_Access := T.New_List;
          Models  : constant T.Value_Access := T.New_List;
@@ -648,7 +740,16 @@ package body HBNF_Layout is
                      begin
                         Ctx.Scopes.Append (Models.Items (I));
                         declare
-                           Text : constant String := T.Render_File ("target:" & Simple, Ctx);
+                           --  A rule's own transform for this target (`%svg{ ... }` at the end of the rule)
+                           --  stands in for the target's chart template.
+                           Own  : constant String :=
+                             HBNF_Grammar.Rule_Transform
+                               (To_String (if Charts (I).Last_Ref /= Null_Unbounded_String
+                                           then Charts (I).Last_Ref else Charts (I).Rule),
+                                Target_Name);
+                           Text : constant String :=
+                             (if Own /= "" then T.Render (Own, Ctx)
+                              else T.Render_File ("target:" & Simple, Ctx));
                         begin
                            Write_File (To_String (O.Out_Dir), Name, Text);
                            Outputs.Append (US (Name));

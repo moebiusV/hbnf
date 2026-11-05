@@ -23,6 +23,9 @@ check() {
 check mini-svg examples/mini.hbnf "$(pwd)/targets/svg" tests/target/mini-svg.expected
 check expr examples/mini.hbnf "$(pwd)/tests/target/expr" tests/target/expr.expected
 
+check override tests/target/override.hbnf "$(pwd)/tests/target/expr" tests/target/override.expected
+check mini-c-tables examples/mini.hbnf "$(pwd)/targets/c-tables" tests/target/mini-c-tables.expected
+
 # the same run twice, and a run with --out: byte-stable, and the files are the stream
 "$CLI" examples/mini.hbnf --target="$(pwd)/targets/svg" > "$T/a" 2>/dev/null
 "$CLI" examples/mini.hbnf --target="$(pwd)/targets/svg" > "$T/b" 2>/dev/null
@@ -38,6 +41,15 @@ count() {
 count examples/pdp64/pdp64-16/pdp64-16.hbnf 270 pdp64/16
 count examples/pdp64/pdp64-32/pdp64-32.hbnf 268 pdp64/32
 count examples/pdp64/r20/pdp64.hbnf 21 r20
+
+# the tables of the real encodings: the digest of what the c-tables target writes (these tables were compared, leaf by leaf,
+# with the ones tools/mkenc.py of the pdp64 repository writes: prefix, length, and the runs of every field; see LAYOUT.md)
+sha() {
+	d=$("$CLI" "$1" --target="$(pwd)/targets/c-tables" 2>/dev/null | sha256sum | cut -c1-16)
+	[ "$d" = "$2" ] && ok "c-tables $3" || bad "c-tables $3: $d"
+}
+sha examples/pdp64/pdp64-16/pdp64-16.hbnf 0b6e68ab9aab0f2a pdp64/16
+sha examples/pdp64/pdp64-32/pdp64-32.hbnf 5757cd5dcde402f1 pdp64/32
 
 # an annotation changes nothing the code backends generate
 sed -E 's/ %[a-z-]+\(("[^"]*" ?)+\)//g; s/ %(prefix)\b//g' examples/mini.hbnf > "$T/plain.hbnf"

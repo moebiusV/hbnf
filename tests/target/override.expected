@@ -1,0 +1,8 @@
+%%% a.txt
+ custom: a has 1 field(s), prefix 2/2
+%%% b.txt
+b rows=1 bits=8
+ pos=0 w=2 x=2 narrow span=1 shl=4 one=0 neg=-2 mix=1
+y pos=2 w=6 x=12 wide span=5 shl=64 one=0 neg=-6 mix=4
+
+
