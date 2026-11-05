@@ -246,7 +246,7 @@ program, because they differ most there: expat, libxml2's SAX2 interface, pyexpa
 parsers that build nothing (the expat row that copies names, attributes and text into arrays shows the
 price of a cheap tree), pugixml, TinyXML-2, RapidXML, libxml2, ElementTree and lxml build a DOM, and
 every XML parser has to find the same elements, attributes and text as ElementTree or its row says
-`check failed`.  What each builds
+`check failed`.  The last column says whether the parser is a conforming XML 1.0 parser: how many of 34 documents that each break one well-formedness constraint it refuses (and, not shown, whether it accepts 11 well-formed ones), by `bench/xml-conformance.sh`, which keeps its result and checks a parser again only when its version, the case set or hbnf's grammar changes.  expat, libxml2, ElementTree and lxml refuse all 34; hbnf's grammar does since 2026-11-04; pugixml (8), RapidXML (7), TinyXML-2 (9), sax (20) and fast-xml-parser's `parse` (0) are marked with a red cross, because they accept content XML forbids, and their times are not like for like with the others.  What each builds
 differs: the C++ and Rust libraries, Python, Node and the YAML parsers produce their own value
 types, simdjson is its DOM API, and hbnf builds the typed tree its grammar describes.  Peak RSS is
 the whole process, input included, and the last column shows it as a multiple of the input.  The

@@ -1,6 +1,6 @@
 # Contexts: where a rule is, what it has, what it is
 
-**Status (reviewed; kept up to date with what is decided and what is built, last 2026-11-03).**  The sections below are the record of how
+**Status (reviewed; kept up to date with what is decided and what is built, last 2026-11-05).**  The sections below are the record of how
 each point was reached; this table is where it stands.  Under the standing rule, no syntax is implemented before it has been shown and approved.
 
 | Point | State | Where |
@@ -10,10 +10,10 @@ each point was reached; this table is where it stands.  Under the standing rule,
 | Pattern arguments `phrases("SIZE" "ERROR")` and the literal join `"END-" + K` | **built** (09b966c); used in COBOL as `phrases(W)` and `scope-end(K)` | 21 |
 | Two `ws` bugs (a lookahead in `ws`, a group after a literal) | **fixed** (112f19f) | 20 |
 | Notation `i"..."`, `s"..."`, `r"..."`, C numbers; the `%` forms kept for the ABNF dialect only | **built** (8328962); the repository's grammars rewritten | 23 |
-| `bol` and `eol`, built-in zero-width rules; no `^` or `$` in `r"..."` | **decided 2026-11-03, being built** | 24 |
-| `r"..."` with a one-letter rule (`exponent = ir"E"`) in the full COBOL grammar | **a defect, found 2026-11-03, being fixed**; the rule stays code points meanwhile | 23 |
+| `bol` and `eol`, built-in zero-width rules; no `^` or `$` in `r"..."` | **built** (b0f0302) | 24 |
+| `r"..."` with a one-letter rule (`exponent = ir"E"`) in the full COBOL grammar | **fixed** (b0f0302: a letter rule that became a keyword) | 23 |
 | Keywords as reserved words, without `%` | **decided** as to reserved words; the spellings of `%label`, `%num`, `%action` and the rest are **open**; nothing built | 10 |
-| Back-references: `x as K` captures, `$K` matches the same text again (replaces `%as` and `%same`); named only | **decided 2026-11-03**; `%as`/`%same` are built, the new spelling is not | 10 |
+| Back-references: `x as K` captures, `$K` matches the same text again (replaces `%as` and `%same`); named only | **built** (1c9c7ac); up references `$K^` and `$K^R`, the case property kept by `$K`, and `^.rule` **built** (a4f96d9); `%as`/`%same` remain for the ABNF dialect | 10, 25 |
 | Facts (a rule's own attributes, keyed by name) | **decided yes**; nothing built | 13 |
 | Labels (`name:` lines that set the context) | **open**; nothing built | 16 |
 | Switch phase 2 (token and scalar overrides: decimal comma, per-region reserved words) and phase 3 (phrase variants in `ast`, the tape case) | **decided design**; not built | 22 |
