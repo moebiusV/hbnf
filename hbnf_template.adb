@@ -6,13 +6,16 @@ with Ada.Exceptions;
 with Ada.Strings.Fixed;
 with Ada.Text_IO;
 with Ada.Unchecked_Deallocation;
+with Interfaces;
 with HBNF_Template_Syntax;
+with HBNF_Wire;
 with HBNF_Template_Syntax.Parser;
 
 package body HBNF_Template is
 
    use Ada.Strings.Unbounded;
    use HBNF_Template_Syntax;
+   use type Interfaces.Unsigned_64;
 
    package Text_Maps is new Ada.Containers.Indefinite_Ordered_Maps
      (String, Unbounded_String);
@@ -313,6 +316,83 @@ package body HBNF_Template is
       return Resolve_Tail (Found, Tail);
    end Resolve;
 
+
+   --  =====================================================================
+   --  Expressions (LAYOUT.md): a name that begins with `(` is C's integer
+   --  arithmetic over the numbers in scope, read by the wire layer's own
+   --  expression reader: {{(x0+bit*38)}} prints a number, {{#(w>=3)}} ...
+   --  {{/(w>=3)}} is a section taken when the value is not zero, {{^(..)}}
+   --  when it is.  No blank may stand inside a tag (the template grammar
+   --  reads a name up to the first blank).
+   --  =====================================================================
+
+   function Int_Of (V : Value_Access) return Long_Long_Integer is
+      S : constant String :=
+        (if V = null or else V.Kind /= Scalar then "" else To_String (V.Text));
+   begin
+      return Long_Long_Integer'Value (S);
+   exception
+      when Constraint_Error => return 0;
+   end Int_Of;
+
+   function Eval (E : HBNF_Wire.Expr_Access; Ctx : Context) return Long_Long_Integer is
+      use HBNF_Wire;
+      function B (X : Boolean) return Long_Long_Integer is (if X then 1 else 0);
+   begin
+      case E.Kind is
+         when E_Num => return E.Value;
+         when E_Var => return Int_Of (Resolve (Ctx, To_String (E.Name)));
+         when E_Unary =>
+            declare
+               V : constant Long_Long_Integer := Eval (E.Operand, Ctx);
+               O : constant String := To_String (E.Un_Op);
+            begin
+               return (if O = "-" then -V elsif O = "!" then B (V = 0) else -V - 1);
+            end;
+         when E_Call => return 0;
+         when E_Binary =>
+            declare
+               O : constant String := To_String (E.Bin_Op);
+               L : constant Long_Long_Integer := Eval (E.Left, Ctx);
+               R : constant Long_Long_Integer := Eval (E.Right, Ctx);
+            begin
+               if O = "+" then return L + R;
+               elsif O = "-" then return L - R;
+               elsif O = "*" then return L * R;
+               elsif O = "/" then return (if R = 0 then 0 else L / R);
+               elsif O = "%" then return (if R = 0 then 0 else L mod R);
+               elsif O = "<<" then return L * 2 ** Natural (R mod 62);
+               elsif O = ">>" then return L / 2 ** Natural (R mod 62);
+               elsif O = "&" then return Long_Long_Integer (Interfaces.Unsigned_64'Mod (L) and Interfaces.Unsigned_64'Mod (R));
+               elsif O = "|" then return Long_Long_Integer (Interfaces.Unsigned_64'Mod (L) or Interfaces.Unsigned_64'Mod (R));
+               elsif O = "^" then return Long_Long_Integer (Interfaces.Unsigned_64'Mod (L) xor Interfaces.Unsigned_64'Mod (R));
+               elsif O = "==" then return B (L = R);
+               elsif O = "!=" then return B (L /= R);
+               elsif O = "<" then return B (L < R);
+               elsif O = "<=" then return B (L <= R);
+               elsif O = ">" then return B (L > R);
+               elsif O = ">=" then return B (L >= R);
+               elsif O = "&&" then return B (L /= 0 and then R /= 0);
+               elsif O = "||" then return B (L /= 0 or else R /= 0);
+               end if;
+               return 0;
+            end;
+      end case;
+   end Eval;
+
+   function Is_Expr (Name : String) return Boolean is
+     (Name'Length > 0 and then Name (Name'First) = '(');
+
+   function Eval_Text (Name : String; Ctx : Context) return Long_Long_Integer is
+     (Eval (HBNF_Wire.Parse_Expression (Name, "template expression"), Ctx));
+
+   function Img (N : Long_Long_Integer) return String is
+      S : constant String := Long_Long_Integer'Image (N);
+   begin
+      return (if S (S'First) = ' ' then S (S'First + 1 .. S'Last) else S);
+   end Img;
+
+
    function String_Of (V : Value_Access) return String is
      (if V = null or else V.Kind /= Scalar then "" else To_String (V.Text));
 
@@ -415,6 +495,15 @@ package body HBNF_Template is
                Name  : Unbounded_String;
             begin
                Split_Tag (P.Block.Open, Sigil, Name);
+               if Is_Expr (To_String (Name)) then
+                  declare
+                     Yes : constant Boolean := Eval_Text (To_String (Name), Ctx) /= 0;
+                  begin
+                     if Yes = (Sigil /= '^') then
+                        Render_Parts (P.Block.Template, Ctx, Result);
+                     end if;
+                  end;
+               else
                declare
                   V : constant Value_Access := Resolve (Ctx, To_String (Name));
                begin
@@ -436,6 +525,7 @@ package body HBNF_Template is
                      Ctx.Scopes.Delete_Last;
                   end if;
                end;
+               end if;
             end;
          elsif Length (P.Tag) > 0 then
             declare
@@ -443,6 +533,10 @@ package body HBNF_Template is
                Name  : Unbounded_String;
             begin
                Split_Tag (P.Tag, Sigil, Name);
+               if Is_Expr (To_String (Name)) and then Sigil in '&' | '{' | ' ' then
+                  Append (Result, Img (Eval_Text (To_String (Name), Ctx)));
+                  goto Next_Part;
+               end if;
                case Sigil is
                   when '&' | '{' =>
                      Append (Result, String_Of (Resolve (Ctx, To_String (Name))));
@@ -461,6 +555,8 @@ package body HBNF_Template is
          elsif P.Lone /= null then
             Append (Result, '{');
          end if;
+         <<Next_Part>>
+         null;
       end loop;
    end Render_Parts;
 
