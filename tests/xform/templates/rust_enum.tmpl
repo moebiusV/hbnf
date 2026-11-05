@@ -1,0 +1,5 @@
+#[derive(Default)]
+pub enum {{&name}} {
+{{#items}}{{#(_i==0)}}    #[default]
+{{/(_i==0)}}    {{&ident}}{{&init}},
+{{/items}}}

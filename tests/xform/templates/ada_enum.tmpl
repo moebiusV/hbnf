@@ -1,0 +1,2 @@
+   type {{&name}} is ({{#items}}{{#(_i>0)}}, {{/(_i>0)}}{{&ident}}{{/items}});{{#rep}}
+   for {{&name}} use ({{#items}}{{#(_i>0)}}, {{/(_i>0)}}{{&ident}} => {{&value}}{{/items}});{{/rep}}

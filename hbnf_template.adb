@@ -514,11 +514,30 @@ package body HBNF_Template is
                   elsif V = null then
                      null;
                   elsif V.Kind = List then
-                     for E of V.Items loop
-                        Ctx.Scopes.Append (E);
-                        Render_Parts (P.Block.Template, Ctx, Result);
-                        Ctx.Scopes.Delete_Last;
-                     end loop;
+                     --  Beneath each item a scope of its place in the list: `_i` (from 0), `_n` (how many),
+                     --  `_first`, `_last` (non-empty on the first and last): what a template needs to put a
+                     --  separator or a different head on, so the program that fills it need not.
+                     declare
+                        K : Natural := 0;
+                        N : constant Natural := Natural (V.Items.Length);
+                     begin
+                        for E of V.Items loop
+                           declare
+                              Meta : constant Value_Access := New_Map;
+                           begin
+                              Insert (Meta, "_i", New_Scalar (Img (Long_Long_Integer (K))));
+                              Insert (Meta, "_n", New_Scalar (Img (Long_Long_Integer (N))));
+                              Insert (Meta, "_first", New_Scalar (if K = 0 then "1" else ""));
+                              Insert (Meta, "_last", New_Scalar (if K = N - 1 then "1" else ""));
+                              Ctx.Scopes.Append (Meta);
+                           end;
+                           Ctx.Scopes.Append (E);
+                           Render_Parts (P.Block.Template, Ctx, Result);
+                           Ctx.Scopes.Delete_Last;
+                           Ctx.Scopes.Delete_Last;
+                           K := K + 1;
+                        end loop;
+                     end;
                   elsif Is_Truthy (V) then
                      Ctx.Scopes.Append (V);
                      Render_Parts (P.Block.Template, Ctx, Result);
