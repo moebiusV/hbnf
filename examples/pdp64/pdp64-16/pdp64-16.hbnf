@@ -1,0 +1,1690 @@
+; pdp64/16: the grammar of the encoding -- 16 registers (r0-r15), 208 forms, 270 leaves.
+;
+; Written by docs/codegen-data/encoding/write_hbnf.py and edited by hand from then on (the vocabulary is in pdp64-enc.hbnf, the workflow in spec/README.md).
+; Everything the codec, the assembler, the linker, the simulator and the documentation know of this encoding is generated from this file.
+
+prefix none
+include "../pdp64-enc.hbnf"
+
+; The instruction: one leaf.  A first parcel that no leaf matches (3,277 of the 65,536) is an illegal instruction.
+insn = leaf:( leaf-SYS0-1 | leaf-SYS0-2 | leaf-SYSR-1 | leaf-SYSR-2 | leaf-SETF-1 | leaf-SYSI-1 | leaf-MFSR-1 | leaf-MTSR-1 | leaf-R2-1 | leaf-R3-1
+       | leaf-R4-1 | leaf-RRI-1 | leaf-BFx-1 | leaf-BFy-1 | leaf-MOVQL-1 | leaf-LDU-B28-1 | leaf-LDU-B28-2 | leaf-LDU-B28-3 | leaf-STU-B28-1
+       | leaf-LDU-B12-1 | leaf-LDU-B12-2 | leaf-LDU-B12-3 | leaf-STU-B12-1 | leaf-LDU-X6-1 | leaf-LDU-X6-2 | leaf-LDU-X6-3 | leaf-STU-X6-1
+       | leaf-LDF-B28-1 | leaf-LDF-B28-2 | leaf-LDF-B28-3 | leaf-LDF-B28-4 | leaf-LDF-X22-1 | leaf-LDF-X22-2 | leaf-LDF-X22-3 | leaf-LDF-X22-4
+       | leaf-LDF-PI12-1 | leaf-LDF-PI12-2 | leaf-LDF-PI12-3 | leaf-LDF-PI12-4 | leaf-LDF-PD12-1 | leaf-LDF-PD12-2 | leaf-LDF-PD12-3 | leaf-LDF-PD12-4
+       | leaf-LDF-PC32-1 | leaf-LDF-PC32-2 | leaf-LDF-PC32-3 | leaf-LDF-PC32-4 | leaf-LDF-A32-1 | leaf-LDF-A32-2 | leaf-LDF-A32-3 | leaf-LDF-A32-4
+       | leaf-LDFI-I32-1 | leaf-LDFI-I32-2 | leaf-LDFI-I32-3 | leaf-STF-B28-1 | leaf-STF-B28-2 | leaf-STF-X22-1 | leaf-STF-X22-2 | leaf-STF-PI12-1
+       | leaf-STF-PI12-2 | leaf-STF-PD12-1 | leaf-STF-PD12-2 | leaf-STF-PC32-1 | leaf-STF-PC32-2 | leaf-STF-A32-1 | leaf-STF-A32-2 | leaf-CMF-B28-1
+       | leaf-CMF-X22-1 | leaf-CMF-PI12-1 | leaf-CMF-PD12-1 | leaf-CMF-PC32-1 | leaf-CMF-A32-1 | leaf-CMF-I32-1 | leaf-SOF-B28-1 | leaf-SOF-X22-1
+       | leaf-SOF-PI12-1 | leaf-SOF-PD12-1 | leaf-SOF-PC32-1 | leaf-SOF-A32-1 | leaf-DPF-D28-1 | leaf-DPF-D28-2 | leaf-DPF-D28-3 | leaf-DPF-D28-4
+       | leaf-BRF-1 | leaf-BRF-2 | leaf-BRF-3 | leaf-BRF-4 | leaf-CALLF-1 | leaf-PUSHMF-1 | leaf-SOPR-1 | leaf-SOPR-2 | leaf-SOPR-3 | leaf-PUSHI3-1
+       | leaf-PUSHI2-1 | leaf-JTAG3-1 | leaf-JTAG2-1 | leaf-RRF-1 | leaf-RRF-2 | leaf-CBDI-1 | leaf-CBDR-1 | leaf-SOB-1 | leaf-TAG-1 | leaf-SPADJF-1
+       | leaf-FX-MOVCALL3-1 | leaf-FX-MOVCALL2-1 | leaf-FX-POPMRET-1 | leaf-FX-POPRET-1 | leaf-FX-MOV2-1 | leaf-BR2-16-a-1 | leaf-LDI12-a-1
+       | leaf-STBs8-a-1 | leaf-CB3I16-12-a-1 | leaf-CALL2-16-c-1 | leaf-CB3I16-12-b-1 | leaf-LDI12-b-1 | leaf-LDI12-b-2 | leaf-CBR8-a-1
+       | leaf-PUSHM16a-a-1 | leaf-STBu8-b-1 | leaf-LDI12-d-1 | leaf-LDI12-d-2 | leaf-LDI12-d-3 | leaf-BR2-16-b-1 | leaf-LEASx12-a-1 | leaf-LDPC12-a-1
+       | leaf-LDBu8-b-1 | leaf-CMBu8-a-1 | leaf-CALL2-18-c-1 | leaf-CBR8-c-1 | leaf-BR1-6-a-1 | leaf-CALL2-16-j-1 | leaf-CB3I16-12-c-1
+       | leaf-CBZ2-12-a-1 | leaf-LDBs8-a-1 | leaf-LDBu8-c-1 | leaf-LDBu8-c-2 | leaf-CBI5-8-a-1 | leaf-LDPC14-a-1 | leaf-LDI14-a-1 | leaf-SOBu12-a-1
+       | leaf-SOBu12-a-2 | leaf-STX2-b-1 | leaf-CBR8-b-1 | leaf-STX2-a-1 | leaf-CBI8-8-b-1 | leaf-SOBu12-x-1 | leaf-LDI16-a-1 | leaf-IMM3-a-1
+       | leaf-CBI6-8-a-1 | leaf-CBI10-8-a-1 | leaf-LDI12-c-1 | leaf-LDX2-b-1 | leaf-BR2-16-c-1 | leaf-BR2-16-c-2 | leaf-LDPC16-a-1 | leaf-LDBu10-a-1
+       | leaf-CB3I8-20-a-1 | leaf-SPADJ6-a-1 | leaf-LDHHH1-a-1 | leaf-CBI4-8-c-1 | leaf-STHHH1-a-1 | leaf-STBu10-a-1 | leaf-LEASP4-a-1
+       | leaf-BR1-8-a-1 | leaf-CMI12-a-1 | leaf-LDSP4-a-1 | leaf-CBZ1-4-a-1 | leaf-BR1-6-b-1 | leaf-CBI6-8-c-1 | leaf-STSP4-a-1 | leaf-CBI5-10-a-1
+       | leaf-CBZ2-12-b-1 | leaf-LDI14-b-1 | leaf-LDI14-b-2 | leaf-CB3R24-a-1 | leaf-CB3R24-c-1 | leaf-STBs8-b-1 | leaf-SHI3-a-1 | leaf-LDBu12-a-1
+       | leaf-PUSHM8-a-1 | leaf-IMM5-a-1 | leaf-STBu10-b-1 | leaf-CMBu10-a-1 | leaf-LDX2-c-1 | leaf-LDX2-c-2 | leaf-LDHHH3-a-1 | leaf-IMM3-b-1
+       | leaf-IMM3-b-2 | leaf-STHHH1-b-1 | leaf-LDX6-a-1 | leaf-LDS12-c-1 | leaf-LDS12-c-2 | leaf-LDI18-b-1 | leaf-LDI18-b-2 | leaf-IMM7-a-1
+       | leaf-CBZ1-5-a-1 | leaf-STBu12-a-1 | leaf-CBI8-10-a-1 | leaf-STX6-a-1 | leaf-CBR10-c-1 | leaf-STBu12-b-1 | leaf-LDBu10-b-1 | leaf-LDBs10-a-1
+       | leaf-CBI8-8-c-1 | leaf-SHI5-a-1 | leaf-LDPC16-c-1 | leaf-LDPC16-c-2 | leaf-BR1-9-a-1 | leaf-LDSP5-a-1 | leaf-STHHH3-a-1 | leaf-LEAS12-a-1
+       | leaf-CBR10-a-1 | leaf-LDHHH1-b-1 | leaf-LDBs10-c-1 | leaf-LDBs10-c-2 | leaf-LDBu12-b-1 | leaf-LD0-a-1 | leaf-CB3I8-20-b-1 | leaf-STX6-b-1
+       | leaf-IMM4-b-1 | leaf-IMM4-b-2 | leaf-LDPC12-b-1 | leaf-CB3R24-b-1 | leaf-STSP5-a-1 | leaf-CBI4-12-a-1 | leaf-LEASP6-a-1 | leaf-CMI18-a-1
+       | leaf-CMPC16-a-1 | leaf-CBZ1-7-a-1 | leaf-SOX6-a-1 | leaf-SOX6-a-2 | leaf-CBI4-10-c-1 | leaf-CMX2-a-1 | leaf-LDI18-a-1 | leaf-CBZ2-14-a-1
+       | leaf-CB3I8-20-c-1 | leaf-CBI4-10-b-1 | leaf-ST0-a-1 | leaf-BR1-6-c-1 | leaf-BR1-6-c-2 | leaf-LDBs8-b-1 | leaf-CMS12-a-1 | leaf-LDX4-b-1
+       | leaf-CBI6-12-a-1 | leaf-LDPC12-d-1 | leaf-LDPC12-d-2 | leaf-LDBs14-a-1 | leaf-LDPC14-b-1 | leaf-STSP4-b-1 | leaf-BR1-7-b-1 | leaf-CMBu12-a-1
+       | leaf-SPADJ8-a-1 | leaf-CBI10-8-c-1 | leaf-STBs10-a-1 | leaf-IMM3-c-1 | leaf-LDHRH2-a-1 | leaf-LDI14-c-1 | leaf-LDSP7-a-1 | leaf-LDX8-a-1
+       | leaf-LDHHR2-a-1 | leaf-CBI6-10-c-1 | leaf-SOBs12-a-1 | leaf-SOBs12-a-2 | leaf-STHHH2-b-1 | leaf-LDBs8-d-1 | leaf-LDBs8-d-2 | leaf-SOX6-x-1
+       | leaf-CMBs10-a-1 | leaf-LEAS14-a-1 | leaf-STBs10-b-1 )
+
+encoding-name = "pdp64/16"
+
+; ---- the registers
+regs = "r0"@0 | "r1"@1 | "r2"@2 | "r3"@3 | "r4"@4 | "r5"@5 | "r6"@6 | "r7"@7 | "r8"@8 | "r9"@9 | "r10"@10 | "r11"@11 | "r12"@12 | "r13"@13 | "r14"@14
+     | "r15"@15
+; A register field of W bits that cannot hold a register number is an index into the table hotW (the part of the ABI the encoding depends on, docs/abi.md).
+hot3 = "r0" | "r1" | "r8" | "r2" | "sp" | "r3" | "r9" | "r10"
+
+; ---- the fused instructions (the assembler never fuses: they are ordinary mnemonics with operands, chosen by the compiler)
+fused = "movcall" | "popmret" | "popret" | "mov2"
+
+; ---- the catalogue of forms: the number is the index of the form (the assembler tries the forms of a mnemonic, shorter first, in this order)
+forms = "SYS0"@0 | "SYSR"@1 | "SETF"@2 | "SYSI"@3 | "MFSR"@4 | "MTSR"@5 | "R2"@6 | "R3"@7 | "R4"@8 | "RRI"@9 | "BFx"@10 | "BFy"@11 | "MOVQL"@12
+      | "LDU.B28"@13 | "STU.B28"@14 | "LDU.B12"@15 | "STU.B12"@16 | "LDU.X6"@17 | "STU.X6"@18 | "LDF.B28"@19 | "LDF.X22"@20 | "LDF.PI12"@21
+      | "LDF.PD12"@22 | "LDF.PC32"@23 | "LDF.A32"@24 | "LDFI.I32"@25 | "STF.B28"@26 | "STF.X22"@27 | "STF.PI12"@28 | "STF.PD12"@29 | "STF.PC32"@30
+      | "STF.A32"@31 | "CMF.B28"@32 | "CMF.X22"@33 | "CMF.PI12"@34 | "CMF.PD12"@35 | "CMF.PC32"@36 | "CMF.A32"@37 | "CMF.I32"@38 | "SOF.B28"@39
+      | "SOF.X22"@40 | "SOF.PI12"@41 | "SOF.PD12"@42 | "SOF.PC32"@43 | "SOF.A32"@44 | "DPF.D28"@45 | "BRF"@46 | "CALLF"@47 | "PUSHMF"@48 | "SOPR"@49
+      | "PUSHI3"@50 | "PUSHI2"@51 | "JTAG3"@52 | "JTAG2"@53 | "RRF"@54 | "CBDI"@55 | "CBDR"@56 | "SOB"@57 | "TAG"@58 | "SPADJF"@59 | "FX.MOVCALL3"@60
+      | "FX.MOVCALL2"@61 | "FX.POPMRET"@62 | "FX.POPRET"@63 | "FX.MOV2"@64 | "BR2_16/a"@65 | "LDI12/a"@66 | "STBs8/a"@67 | "CB3I16_12/a"@68
+      | "CALL2_16/c"@69 | "CB3I16_12/b"@70 | "LDI12/b"@71 | "CBR8/a"@72 | "PUSHM16a/a"@73 | "STBu8/b"@74 | "LDI12/d"@75 | "BR2_16/b"@76
+      | "LEASx12/a"@77 | "LDPC12/a"@78 | "LDBu8/b"@79 | "CMBu8/a"@80 | "CALL2_18/c"@81 | "CBR8/c"@82 | "BR1_6/a"@83 | "CALL2_16/j"@84
+      | "CB3I16_12/c"@85 | "CBZ2_12/a"@86 | "LDBs8/a"@87 | "LDBu8/c"@88 | "CBI5_8/a"@89 | "LDPC14/a"@90 | "LDI14/a"@91 | "SOBu12/a"@92 | "STX2/b"@93
+      | "CBR8/b"@94 | "STX2/a"@95 | "CBI8_8/b"@96 | "SOBu12/x"@97 | "LDI16/a"@98 | "IMM3/a"@99 | "CBI6_8/a"@100 | "CBI10_8/a"@101 | "LDI12/c"@102
+      | "LDX2/b"@103 | "BR2_16/c"@104 | "LDPC16/a"@105 | "LDBu10/a"@106 | "CB3I8_20/a"@107 | "SPADJ6/a"@108 | "LDHHH1/a"@109 | "CBI4_8/c"@110
+      | "STHHH1/a"@111 | "STBu10/a"@112 | "LEASP4/a"@113 | "BR1_8/a"@114 | "CMI12/a"@115 | "LDSP4/a"@116 | "CBZ1_4/a"@117 | "BR1_6/b"@118
+      | "CBI6_8/c"@119 | "STSP4/a"@120 | "CBI5_10/a"@121 | "CBZ2_12/b"@122 | "LDI14/b"@123 | "CB3R24/a"@124 | "CB3R24/c"@125 | "STBs8/b"@126
+      | "SHI3/a"@127 | "LDBu12/a"@128 | "PUSHM8/a"@129 | "IMM5/a"@130 | "STBu10/b"@131 | "CMBu10/a"@132 | "LDX2/c"@133 | "LDHHH3/a"@134 | "IMM3/b"@135
+      | "STHHH1/b"@136 | "LDX6/a"@137 | "LDS12/c"@138 | "LDI18/b"@139 | "IMM7/a"@140 | "CBZ1_5/a"@141 | "STBu12/a"@142 | "CBI8_10/a"@143
+      | "STX6/a"@144 | "CBR10/c"@145 | "STBu12/b"@146 | "LDBu10/b"@147 | "LDBs10/a"@148 | "CBI8_8/c"@149 | "SHI5/a"@150 | "LDPC16/c"@151
+      | "BR1_9/a"@152 | "LDSP5/a"@153 | "STHHH3/a"@154 | "LEAS12/a"@155 | "CBR10/a"@156 | "LDHHH1/b"@157 | "LDBs10/c"@158 | "LDBu12/b"@159
+      | "LD0/a"@160 | "CB3I8_20/b"@161 | "STX6/b"@162 | "IMM4/b"@163 | "LDPC12/b"@164 | "CB3R24/b"@165 | "STSP5/a"@166 | "CBI4_12/a"@167
+      | "LEASP6/a"@168 | "CMI18/a"@169 | "CMPC16/a"@170 | "CBZ1_7/a"@171 | "SOX6/a"@172 | "CBI4_10/c"@173 | "CMX2/a"@174 | "LDI18/a"@175
+      | "CBZ2_14/a"@176 | "CB3I8_20/c"@177 | "CBI4_10/b"@178 | "ST0/a"@179 | "BR1_6/c"@180 | "LDBs8/b"@181 | "CMS12/a"@182 | "LDX4/b"@183
+      | "CBI6_12/a"@184 | "LDPC12/d"@185 | "LDBs14/a"@186 | "LDPC14/b"@187 | "STSP4/b"@188 | "BR1_7/b"@189 | "CMBu12/a"@190 | "SPADJ8/a"@191
+      | "CBI10_8/c"@192 | "STBs10/a"@193 | "IMM3/c"@194 | "LDHRH2/a"@195 | "LDI14/c"@196 | "LDSP7/a"@197 | "LDX8/a"@198 | "LDHHR2/a"@199
+      | "CBI6_10/c"@200 | "SOBs12/a"@201 | "STHHH2/b"@202 | "LDBs8/d"@203 | "SOX6/x"@204 | "CMBs10/a"@205 | "LEAS14/a"@206 | "STBs10/b"@207
+
+; ======================================================================================================================================================
+; family SYS: 1 form, 2 leaves, 1 parcel; mnemonics nop rti rtt ret halt bpt ...
+; ======================================================================================================================================================
+
+; form SYS0 (index 0): 1 parcel
+form-SYS0 = noop
+leaf-SYS0-1 = 0b11101100100 %prefix sub:5 %sub("sub" "nop rti rtt ret halt bpt fence wfe sev lpad tlbia tlbsync icinva pushx popx isync trapcc.ne trapcc.eq trapcc.pl trapcc.mi trapcc.vc trapcc.vs trapcc.cc trapcc.cs trapcc.ge trapcc.lt trapcc.gt trapcc.le trapcc.hi trapcc.los syspg0 syspg1") %title("SYS0-1: nop rti rtt ret ...")
+sub-SYS0-1 = "nop" | "rti" | "rtt" | "ret" | "halt" | "bpt" | "fence" | "wfe" | "sev" | "lpad" | "tlbia" | "tlbsync" | "icinva" | "pushx" | "popx"
+     | "isync" | "trapcc.ne" | "trapcc.eq" | "trapcc.pl" | "trapcc.mi" | "trapcc.vc" | "trapcc.vs" | "trapcc.cc" | "trapcc.cs" | "trapcc.ge"
+     | "trapcc.lt" | "trapcc.gt" | "trapcc.le" | "trapcc.hi" | "trapcc.los" | "syspg0" | "syspg1"
+leaf-SYS0-2 = 0b11110010010110 %prefix sub:2 %sub("sub" "syspg2 syspg3 syspg4 syspg5") %title("SYS0-2: syspg2 syspg3 syspg4 syspg5")
+sub-SYS0-2 = "syspg2" | "syspg3" | "syspg4" | "syspg5"
+
+; ======================================================================================================================================================
+; family SYSR: 1 form, 2 leaves, 1 parcel; mnemonics mtps mfps tlbi mtasid mfasid mtdp ...
+; ======================================================================================================================================================
+
+; form SYSR (index 1): 1 parcel
+form-SYSR = o1:reg4
+leaf-SYSR-1 = 0b110110100 %prefix sub:3 %sub("sub" "mtps mfps tlbi mtasid mfasid mtdp mfdp mtdmw") o1-r:4 %reg("r1") %title("SYSR-1: mtps mfps tlbi mtasid ...")
+sub-SYSR-1 = "mtps" | "mfps" | "tlbi" | "mtasid" | "mfasid" | "mtdp" | "mfdp" | "mtdmw"
+leaf-SYSR-2 = 0b11101100101 %prefix sub:1 %sub("sub" "mfcpuid icinv") o1-r:4 %reg("r1") %title("SYSR-2: mfcpuid icinv")
+sub-SYSR-2 = "mfcpuid" | "icinv"
+
+; ======================================================================================================================================================
+; family SETF: 1 form, 1 leaves, 2 parcels; mnemonics set
+; ======================================================================================================================================================
+
+; form SETF (index 2): 2 parcels
+form-SETF = o1:imm4u o2:reg4
+leaf-SETF-1 = 0b111011110110 %prefix o2-r:4 %reg("r2") o1-imm:4 %imm("imm1") xsub:12 %sub("xsub" "set") ?(xsub < 1) %title("SETF-1: set")
+sub-SETF-1 = "set"
+
+; ======================================================================================================================================================
+; family SYSI: 1 form, 1 leaves, 1 parcel; mnemonics spl trap trapl hint
+; ======================================================================================================================================================
+
+; form SYSI (index 3): 1 parcel
+form-SYSI = o1:imm8u
+leaf-SYSI-1 = 0b100010 %prefix sub:2 %sub("sub" "spl trap trapl hint") o1-imm:8 %imm("imm1") %title("SYSI-1: spl trap trapl hint")
+sub-SYSI-1 = "spl" | "trap" | "trapl" | "hint"
+
+; ======================================================================================================================================================
+; family MFSR: 1 form, 1 leaves, 2 parcels; mnemonics mfsr
+; ======================================================================================================================================================
+
+; form MFSR (index 4): 2 parcels
+form-MFSR = o1:reg4 o2:imm12u
+leaf-MFSR-1 = 0b1111001100011100 %prefix o1-r:4 %reg("r1") o2-imm:12 %imm("imm2") %title("MFSR-1: mfsr")
+sub-MFSR-1 = "mfsr"
+
+; ======================================================================================================================================================
+; family MTSR: 1 form, 1 leaves, 2 parcels; mnemonics mtsr
+; ======================================================================================================================================================
+
+; form MTSR (index 5): 2 parcels
+form-MTSR = o1:imm12u o2:reg4
+leaf-MTSR-1 = 0b1111001100011101 %prefix o2-r:4 %reg("r2") o1-imm:12 %imm("imm1") %title("MTSR-1: mtsr")
+sub-MTSR-1 = "mtsr"
+
+; ======================================================================================================================================================
+; family R: 3 forms, 3 leaves, 2 parcels; mnemonics clz ctz clo cto popcnt bswap ...
+; ======================================================================================================================================================
+
+; form R2 (index 6): 2 parcels
+form-R2 = o1:reg4 o2:reg4
+leaf-R2-1 = 0b111011110111 %prefix o2-r:4 %reg("r2") o1-r:4 %reg("r1") xsub:12 %sub("xsub" "clz ctz clo cto popcnt bswap bswapw bswapl bitrev utf8len utf8dec utf8enc mval abs prober probew fdiv fsqrt fadd32 fsub32 fmul32 fdiv32 fsqrt32 fcmp32 fneg fabs fclass fclass32 frint frintz frintm frintp frinta fcvtdq fcvtqd fcvtds fcvtsd fcvtsl fcvtls fcvtdqu fcvtqud fsflags fadd16 fsub16 fmul16 fdiv16 fsqrt16 fcmp16 fclass16 fcvtsh fcvths fcvtdh fcvthd fcvthl fcvtlh aesim sha256sig0 sha256sig1 sha256sum0 sha256sum1 sha512sig0 sha512sig1 sha512sum0 sha512sum1 addv subv mulv") ?(xsub < 67) %title("R2-1: clz ctz clo cto ...")
+sub-R2-1 = "clz" | "ctz" | "clo" | "cto" | "popcnt" | "bswap" | "bswapw" | "bswapl" | "bitrev" | "utf8len" | "utf8dec" | "utf8enc" | "mval" | "abs"
+     | "prober" | "probew" | "fdiv" | "fsqrt" | "fadd32" | "fsub32" | "fmul32" | "fdiv32" | "fsqrt32" | "fcmp32" | "fneg" | "fabs" | "fclass"
+     | "fclass32" | "frint" | "frintz" | "frintm" | "frintp" | "frinta" | "fcvtdq" | "fcvtqd" | "fcvtds" | "fcvtsd" | "fcvtsl" | "fcvtls" | "fcvtdqu"
+     | "fcvtqud" | "fsflags" | "fadd16" | "fsub16" | "fmul16" | "fdiv16" | "fsqrt16" | "fcmp16" | "fclass16" | "fcvtsh" | "fcvths" | "fcvtdh"
+     | "fcvthd" | "fcvthl" | "fcvtlh" | "aesim" | "sha256sig0" | "sha256sig1" | "sha256sum0" | "sha256sum1" | "sha512sig0" | "sha512sig1"
+     | "sha512sum0" | "sha512sum1" | "addv" | "subv" | "mulv"
+
+; form R3 (index 7): 2 parcels
+form-R3 = o1:reg4 o2:reg4 o3:reg4
+leaf-R3-1 = 0b111011111000 %prefix o3-r:4 %reg("r3") o1-r:4 %reg("r1") o2-r:4 %reg("r2") xsub:8 %sub("xsub" "ror xnorpop clmull clmulh mcpy mmov mset mcmp mscn mscnn div divu mod modu mulhu min minu max maxu fcopysign fmin fmax maskeqz masknez aeses aesesm aesds aesdsm aesks2 xadd xadddb swap swapdb xand xanddb xor_ xor_db xxor xxordb xmax xmaxdb xmin xmindb xmaxu xmaxudb xminu xminudb ll sc msha256 msha512") ?(xsub < 51) %title("R3-1: ror xnorpop clmull clmulh ...")
+sub-R3-1 = "ror" | "xnorpop" | "clmull" | "clmulh" | "mcpy" | "mmov" | "mset" | "mcmp" | "mscn" | "mscnn" | "div" | "divu" | "mod" | "modu" | "mulhu"
+     | "min" | "minu" | "max" | "maxu" | "fcopysign" | "fmin" | "fmax" | "maskeqz" | "masknez" | "aeses" | "aesesm" | "aesds" | "aesdsm" | "aesks2"
+     | "xadd" | "xadddb" | "swap" | "swapdb" | "xand" | "xanddb" | "xor_" | "xor_db" | "xxor" | "xxordb" | "xmax" | "xmaxdb" | "xmin" | "xmindb"
+     | "xmaxu" | "xmaxudb" | "xminu" | "xminudb" | "ll" | "sc" | "msha256" | "msha512"
+
+; form R4 (index 8): 2 parcels
+form-R4 = o1:reg4 o2:reg4 o3:reg4 o4:reg4
+leaf-R4-1 = 0b111011111001 %prefix o4-r:4 %reg("r4") xsub:4 %sub("xsub" "fmadd fmsub fnmadd fnmsub fmadd32 fmsub32 fnmadd32 fnmsub32 fmadd16 fmsub16 fnmadd16 fnmsub16 bsel cas casdb maesctr") o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-r:4 %reg("r3") %title("R4-1: fmadd fmsub fnmadd fnmsub ...")
+sub-R4-1 = "fmadd" | "fmsub" | "fnmadd" | "fnmsub" | "fmadd32" | "fmsub32" | "fnmadd32" | "fnmsub32" | "fmadd16" | "fmsub16" | "fnmadd16" | "fnmsub16"
+     | "bsel" | "cas" | "casdb" | "maesctr"
+
+; ======================================================================================================================================================
+; family RRI: 1 form, 1 leaves, 2 parcels; mnemonics rori rori32 rol aesks1
+; ======================================================================================================================================================
+
+; form RRI (index 9): 2 parcels
+form-RRI = o1:reg4 o2:imm6u o3:reg4
+leaf-RRI-1 = 0b111011111010 %prefix o3-r:4 %reg("r3") xsub:6 %sub("xsub" "rori rori32 rol aesks1") o1-r:4 %reg("r1") o2-imm:6 %imm("imm2") ?(xsub < 4) %title("RRI-1: rori rori32 rol aesks1")
+sub-RRI-1 = "rori" | "rori32" | "rol" | "aesks1"
+
+; ======================================================================================================================================================
+; family BFx: 1 form, 1 leaves, 3 parcels; mnemonics dshr
+; ======================================================================================================================================================
+
+; form BFx (index 10): 3 parcels
+form-BFx = o1:reg4 o2:reg4 o3:imm6u o4:reg4
+leaf-BFx-1 = 0b1110010100 %prefix o1-r-1:2 %reg("r1") o4-r:4 %reg("r4") o1-r-2:2 %reg("r1") o2-r:4 %reg("r2") o3-imm:6 %imm("imm3") xsub:20 %sub("xsub" "dshr") ?(xsub < 1) %title("BFx-1: dshr")
+sub-BFx-1 = "dshr"
+
+; ======================================================================================================================================================
+; family BFy: 1 form, 1 leaves, 3 parcels; mnemonics extb extzb insb
+; ======================================================================================================================================================
+
+; form BFy (index 11): 3 parcels
+form-BFy = o1:reg4 o2:imm6u o3:imm6u o4:reg4
+leaf-BFy-1 = 0b1110010101 %prefix o1-r-1:2 %reg("r1") o4-r:4 %reg("r4") o1-r-2:2 %reg("r1") o2-imm:6 %imm("imm2") o3-imm:6 %imm("imm3") xsub:18 %sub("xsub" "extb extzb insb") ?(xsub < 3) %title("BFy-1: extb extzb insb")
+sub-BFy-1 = "extb" | "extzb" | "insb"
+
+; ======================================================================================================================================================
+; family MOVQL: 1 form, 1 leaves, 5 parcels; mnemonics movql
+; ======================================================================================================================================================
+
+; form MOVQL (index 12): 5 parcels
+form-MOVQL = o1:imm64s o2:reg4
+leaf-MOVQL-1 = 0b111011111011 %prefix o2-r:4 %reg("r2") o1-imm:64 %imm("imm1") %title("MOVQL-1: movql")
+sub-MOVQL-1 = "movql"
+
+; ======================================================================================================================================================
+; family LDU.B: 2 forms, 6 leaves, 3 parcels; mnemonics movq.u movl.u movw.u movb.u movzl.u movzw.u ...
+; ======================================================================================================================================================
+
+; form LDU.B28 (index 13): 3 parcels
+form-LDU-B28 = o1:b4d28s-x1 o2:reg4
+leaf-LDU-B28-1 = 0b11000010 %prefix sub:4 %sub("sub" "movq.u movl.u movw.u movb.u movzl.u movzw.u movzb.u movq.d movl.d movw.d movb.d movzl.d movzw.d movzb.d movq.ud movl.ud") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:28 %disp("d1") %title("LDU-B28-1: movq.u movl.u movw.u movb.u ...")
+sub-LDU-B28-1 = "movq.u" | "movl.u" | "movw.u" | "movb.u" | "movzl.u" | "movzw.u" | "movzb.u" | "movq.d" | "movl.d" | "movw.d" | "movb.d" | "movzl.d"
+     | "movzw.d" | "movzb.d" | "movq.ud" | "movl.ud"
+leaf-LDU-B28-2 = 0b1110010110 %prefix sub:2 %sub("sub" "movw.ud movb.ud movzl.ud movzw.ud") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:28 %disp("d1") %title("LDU-B28-2: movw.ud movb.ud movzl.ud movzw.ud")
+sub-LDU-B28-2 = "movw.ud" | "movb.ud" | "movzl.ud" | "movzw.ud"
+leaf-LDU-B28-3 = 0b111011111100 %prefix o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:28 %disp("d1") %title("LDU-B28-3: movzb.ud")
+sub-LDU-B28-3 = "movzb.ud"
+
+; form LDU.B12 (index 15): 2 parcels
+form-LDU-B12 = o1:b4d12s-x1 o2:reg4
+leaf-LDU-B12-1 = 0b11000011 %prefix sub:4 %sub("sub" "movq.u movl.u movw.u movb.u movzl.u movzw.u movzb.u movq.d movl.d movw.d movb.d movzl.d movzw.d movzb.d movq.ud movl.ud") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("LDU-B12-1: movq.u movl.u movw.u movb.u ...")
+sub-LDU-B12-1 = "movq.u" | "movl.u" | "movw.u" | "movb.u" | "movzl.u" | "movzw.u" | "movzb.u" | "movq.d" | "movl.d" | "movw.d" | "movb.d" | "movzl.d"
+     | "movzw.d" | "movzb.d" | "movq.ud" | "movl.ud"
+leaf-LDU-B12-2 = 0b1110011000 %prefix sub:2 %sub("sub" "movw.ud movb.ud movzl.ud movzw.ud") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("LDU-B12-2: movw.ud movb.ud movzl.ud movzw.ud")
+sub-LDU-B12-2 = "movw.ud" | "movb.ud" | "movzl.ud" | "movzw.ud"
+leaf-LDU-B12-3 = 0b111011111101 %prefix o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("LDU-B12-3: movzb.ud")
+sub-LDU-B12-3 = "movzb.ud"
+
+; ======================================================================================================================================================
+; family STU.B: 2 forms, 2 leaves, 3 parcels; mnemonics movq.u movl.u movw.u movb.u movq.u movl.u ...
+; ======================================================================================================================================================
+
+; form STU.B28 (index 14): 3 parcels
+form-STU-B28 = o1:reg4 o2:b4d28s-x1
+leaf-STU-B28-1 = 0b1110010111 %prefix sub:2 %sub("sub" "movq.u movl.u movw.u movb.u") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-d:28 %disp("d2") %title("STU-B28-1: movq.u movl.u movw.u movb.u")
+sub-STU-B28-1 = "movq.u" | "movl.u" | "movw.u" | "movb.u"
+
+; form STU.B12 (index 16): 2 parcels
+form-STU-B12 = o1:reg4 o2:b4d12s-x1
+leaf-STU-B12-1 = 0b1110011001 %prefix sub:2 %sub("sub" "movq.u movl.u movw.u movb.u") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-d:12 %disp("d2") %title("STU-B12-1: movq.u movl.u movw.u movb.u")
+sub-STU-B12-1 = "movq.u" | "movl.u" | "movw.u" | "movb.u"
+
+; ======================================================================================================================================================
+; family LDU.X: 1 form, 3 leaves, 2 parcels; mnemonics movq.u movl.u movw.u movb.u movzl.u movzw.u ...
+; ======================================================================================================================================================
+
+; form LDU.X6 (index 17): 2 parcels
+form-LDU-X6 = o1:x4-4d6s o2:reg4
+leaf-LDU-X6-1 = 0b11000100 %prefix sub:4 %sub("sub" "movq.u movl.u movw.u movb.u movzl.u movzw.u movzb.u movq.d movl.d movw.d movb.d movzl.d movzw.d movzb.d movq.ud movl.ud") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:6 %disp("d1") %title("LDU-X6-1: movq.u movl.u movw.u movb.u ...")
+sub-LDU-X6-1 = "movq.u" | "movl.u" | "movw.u" | "movb.u" | "movzl.u" | "movzw.u" | "movzb.u" | "movq.d" | "movl.d" | "movw.d" | "movb.d" | "movzl.d"
+     | "movzw.d" | "movzb.d" | "movq.ud" | "movl.ud"
+leaf-LDU-X6-2 = 0b1110011010 %prefix sub:2 %sub("sub" "movw.ud movb.ud movzl.ud movzw.ud") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:6 %disp("d1") %title("LDU-X6-2: movw.ud movb.ud movzl.ud movzw.ud")
+sub-LDU-X6-2 = "movw.ud" | "movb.ud" | "movzl.ud" | "movzw.ud"
+leaf-LDU-X6-3 = 0b111011111110 %prefix o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:6 %disp("d1") %title("LDU-X6-3: movzb.ud")
+sub-LDU-X6-3 = "movzb.ud"
+
+; ======================================================================================================================================================
+; family STU.X: 1 form, 1 leaves, 2 parcels; mnemonics movq.u movl.u movw.u movb.u
+; ======================================================================================================================================================
+
+; form STU.X6 (index 18): 2 parcels
+form-STU-X6 = o1:reg4 o2:x4-4d6s
+leaf-STU-X6-1 = 0b1110011011 %prefix sub:2 %sub("sub" "movq.u movl.u movw.u movb.u") o2-index:4 %reg("index2") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-scale:2 %scale("scale2") o2-d:6 %disp("d2") %title("STU-X6-1: movq.u movl.u movw.u movb.u")
+sub-STU-X6-1 = "movq.u" | "movl.u" | "movw.u" | "movb.u"
+
+; ======================================================================================================================================================
+; family LDF.B: 1 form, 4 leaves, 3 parcels; mnemonics movq movl movw movb movzl movzw ...
+; ======================================================================================================================================================
+
+; form LDF.B28 (index 19): 3 parcels
+form-LDF-B28 = o1:b4d28s-x1 o2:reg4
+leaf-LDF-B28-1 = 0b11000101 %prefix sub:4 %sub("sub" "movq movl movw movb movzl movzw movzb add sub bic bis xor and mul mulh shl") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:28 %disp("d1") %title("LDF-B28-1: movq movl movw movb ...")
+sub-LDF-B28-1 = "movq" | "movl" | "movw" | "movb" | "movzl" | "movzw" | "movzb" | "add" | "sub" | "bic" | "bis" | "xor" | "and" | "mul" | "mulh"
+     | "shl"
+leaf-LDF-B28-2 = 0b110110101 %prefix sub:3 %sub("sub" "shr sar fadd fsub fmul bit lea movub") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:28 %disp("d1") %title("LDF-B28-2: shr sar fadd fsub ...")
+sub-LDF-B28-2 = "shr" | "sar" | "fadd" | "fsub" | "fmul" | "bit" | "lea" | "movub"
+leaf-LDF-B28-3 = 0b11101100110 %prefix sub:1 %sub("sub" "movuw movul") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:28 %disp("d1") %title("LDF-B28-3: movuw movul")
+sub-LDF-B28-3 = "movuw" | "movul"
+leaf-LDF-B28-4 = 0b111011111111 %prefix o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:28 %disp("d1") %title("LDF-B28-4: movuq")
+sub-LDF-B28-4 = "movuq"
+
+; ======================================================================================================================================================
+; family LDF.X: 1 form, 4 leaves, 3 parcels; mnemonics movq movl movw movb movzl movzw ...
+; ======================================================================================================================================================
+
+; form LDF.X22 (index 20): 3 parcels
+form-LDF-X22 = o1:x4-4d22s o2:reg4
+leaf-LDF-X22-1 = 0b11000110 %prefix sub:4 %sub("sub" "movq movl movw movb movzl movzw movzb add sub bic bis xor and mul mulh shl") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:22 %disp("d1") %title("LDF-X22-1: movq movl movw movb ...")
+sub-LDF-X22-1 = "movq" | "movl" | "movw" | "movb" | "movzl" | "movzw" | "movzb" | "add" | "sub" | "bic" | "bis" | "xor" | "and" | "mul" | "mulh"
+     | "shl"
+leaf-LDF-X22-2 = 0b110110110 %prefix sub:3 %sub("sub" "shr sar fadd fsub fmul bit lea movub") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:22 %disp("d1") %title("LDF-X22-2: shr sar fadd fsub ...")
+sub-LDF-X22-2 = "shr" | "sar" | "fadd" | "fsub" | "fmul" | "bit" | "lea" | "movub"
+leaf-LDF-X22-3 = 0b11101100111 %prefix sub:1 %sub("sub" "movuw movul") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:22 %disp("d1") %title("LDF-X22-3: movuw movul")
+sub-LDF-X22-3 = "movuw" | "movul"
+leaf-LDF-X22-4 = 0b111100000000 %prefix o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:22 %disp("d1") %title("LDF-X22-4: movuq")
+sub-LDF-X22-4 = "movuq"
+
+; ======================================================================================================================================================
+; family LDF.PI: 1 form, 4 leaves, 2 parcels; mnemonics movq movl movw movb movzl movzw ...
+; ======================================================================================================================================================
+
+; form LDF.PI12 (index 21): 2 parcels
+form-LDF-PI12 = o1:pi4-s12 o2:reg4
+leaf-LDF-PI12-1 = 0b11000111 %prefix sub:4 %sub("sub" "movq movl movw movb movzl movzw movzb add sub bic bis xor and mul mulh shl") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("LDF-PI12-1: movq movl movw movb ...")
+sub-LDF-PI12-1 = "movq" | "movl" | "movw" | "movb" | "movzl" | "movzw" | "movzb" | "add" | "sub" | "bic" | "bis" | "xor" | "and" | "mul" | "mulh"
+     | "shl"
+leaf-LDF-PI12-2 = 0b110110111 %prefix sub:3 %sub("sub" "shr sar fadd fsub fmul bit lea movub") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("LDF-PI12-2: shr sar fadd fsub ...")
+sub-LDF-PI12-2 = "shr" | "sar" | "fadd" | "fsub" | "fmul" | "bit" | "lea" | "movub"
+leaf-LDF-PI12-3 = 0b11101101000 %prefix sub:1 %sub("sub" "movuw movul") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("LDF-PI12-3: movuw movul")
+sub-LDF-PI12-3 = "movuw" | "movul"
+leaf-LDF-PI12-4 = 0b111100000001 %prefix o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("LDF-PI12-4: movuq")
+sub-LDF-PI12-4 = "movuq"
+
+; ======================================================================================================================================================
+; family LDF.PD: 1 form, 4 leaves, 2 parcels; mnemonics movq movl movw movb movzl movzw ...
+; ======================================================================================================================================================
+
+; form LDF.PD12 (index 22): 2 parcels
+form-LDF-PD12 = o1:pd4-s12 o2:reg4
+leaf-LDF-PD12-1 = 0b11001000 %prefix sub:4 %sub("sub" "movq movl movw movb movzl movzw movzb add sub bic bis xor and mul mulh shl") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("LDF-PD12-1: movq movl movw movb ...")
+sub-LDF-PD12-1 = "movq" | "movl" | "movw" | "movb" | "movzl" | "movzw" | "movzb" | "add" | "sub" | "bic" | "bis" | "xor" | "and" | "mul" | "mulh"
+     | "shl"
+leaf-LDF-PD12-2 = 0b110111000 %prefix sub:3 %sub("sub" "shr sar fadd fsub fmul bit lea movub") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("LDF-PD12-2: shr sar fadd fsub ...")
+sub-LDF-PD12-2 = "shr" | "sar" | "fadd" | "fsub" | "fmul" | "bit" | "lea" | "movub"
+leaf-LDF-PD12-3 = 0b11101101001 %prefix sub:1 %sub("sub" "movuw movul") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("LDF-PD12-3: movuw movul")
+sub-LDF-PD12-3 = "movuw" | "movul"
+leaf-LDF-PD12-4 = 0b111100000010 %prefix o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("LDF-PD12-4: movuq")
+sub-LDF-PD12-4 = "movuq"
+
+; ======================================================================================================================================================
+; family LDF.PC: 1 form, 4 leaves, 3 parcels; mnemonics movq movl movw movb movzl movzw ...
+; ======================================================================================================================================================
+
+; form LDF.PC32 (index 23): 3 parcels
+form-LDF-PC32 = o1:pc32-u1 o2:reg4
+leaf-LDF-PC32-1 = 0b11001001 %prefix sub:4 %sub("sub" "movq movl movw movb movzl movzw movzb add sub bic bis xor and mul mulh shl") o2-r:4 %reg("r2") o1-pcrel:32 %disp("pcrel1") %title("LDF-PC32-1: movq movl movw movb ...")
+sub-LDF-PC32-1 = "movq" | "movl" | "movw" | "movb" | "movzl" | "movzw" | "movzb" | "add" | "sub" | "bic" | "bis" | "xor" | "and" | "mul" | "mulh"
+     | "shl"
+leaf-LDF-PC32-2 = 0b110111001 %prefix sub:3 %sub("sub" "shr sar fadd fsub fmul bit lea movub") o2-r:4 %reg("r2") o1-pcrel:32 %disp("pcrel1") %title("LDF-PC32-2: shr sar fadd fsub ...")
+sub-LDF-PC32-2 = "shr" | "sar" | "fadd" | "fsub" | "fmul" | "bit" | "lea" | "movub"
+leaf-LDF-PC32-3 = 0b11101101010 %prefix sub:1 %sub("sub" "movuw movul") o2-r:4 %reg("r2") o1-pcrel:32 %disp("pcrel1") %title("LDF-PC32-3: movuw movul")
+sub-LDF-PC32-3 = "movuw" | "movul"
+leaf-LDF-PC32-4 = 0b111100000011 %prefix o2-r:4 %reg("r2") o1-pcrel:32 %disp("pcrel1") %title("LDF-PC32-4: movuq")
+sub-LDF-PC32-4 = "movuq"
+
+; ======================================================================================================================================================
+; family LDF.A: 1 form, 4 leaves, 3 parcels; mnemonics movq movl movw movb movzl movzw ...
+; ======================================================================================================================================================
+
+; form LDF.A32 (index 24): 3 parcels
+form-LDF-A32 = o1:abs32 o2:reg4
+leaf-LDF-A32-1 = 0b11001010 %prefix sub:4 %sub("sub" "movq movl movw movb movzl movzw movzb add sub bic bis xor and mul mulh shl") o2-r:4 %reg("r2") o1-abs:32 %disp("abs1") %title("LDF-A32-1: movq movl movw movb ...")
+sub-LDF-A32-1 = "movq" | "movl" | "movw" | "movb" | "movzl" | "movzw" | "movzb" | "add" | "sub" | "bic" | "bis" | "xor" | "and" | "mul" | "mulh"
+     | "shl"
+leaf-LDF-A32-2 = 0b110111010 %prefix sub:3 %sub("sub" "shr sar fadd fsub fmul bit lea movub") o2-r:4 %reg("r2") o1-abs:32 %disp("abs1") %title("LDF-A32-2: shr sar fadd fsub ...")
+sub-LDF-A32-2 = "shr" | "sar" | "fadd" | "fsub" | "fmul" | "bit" | "lea" | "movub"
+leaf-LDF-A32-3 = 0b11101101011 %prefix sub:1 %sub("sub" "movuw movul") o2-r:4 %reg("r2") o1-abs:32 %disp("abs1") %title("LDF-A32-3: movuw movul")
+sub-LDF-A32-3 = "movuw" | "movul"
+leaf-LDF-A32-4 = 0b111100000100 %prefix o2-r:4 %reg("r2") o1-abs:32 %disp("abs1") %title("LDF-A32-4: movuq")
+sub-LDF-A32-4 = "movuq"
+
+; ======================================================================================================================================================
+; family LDFI.I: 1 form, 3 leaves, 3 parcels; mnemonics add sub bic bis xor and ...
+; ======================================================================================================================================================
+
+; form LDFI.I32 (index 25): 3 parcels
+form-LDFI-I32 = o1:imm32s o2:reg4
+leaf-LDFI-I32-1 = 0b11001011 %prefix sub:4 %sub("sub" "add sub bic bis xor and mul mulh shl shr sar fadd fsub fmul bit movq") o2-r:4 %reg("r2") o1-imm:32 %imm("imm1") %title("LDFI-I32-1: add sub bic bis ...")
+sub-LDFI-I32-1 = "add" | "sub" | "bic" | "bis" | "xor" | "and" | "mul" | "mulh" | "shl" | "shr" | "sar" | "fadd" | "fsub" | "fmul" | "bit" | "movq"
+leaf-LDFI-I32-2 = 0b1110011100 %prefix sub:2 %sub("sub" "movl movw movb movzl") o2-r:4 %reg("r2") o1-imm:32 %imm("imm1") %title("LDFI-I32-2: movl movw movb movzl")
+sub-LDFI-I32-2 = "movl" | "movw" | "movb" | "movzl"
+leaf-LDFI-I32-3 = 0b11101101100 %prefix sub:1 %sub("sub" "movzw movzb") o2-r:4 %reg("r2") o1-imm:32 %imm("imm1") %title("LDFI-I32-3: movzw movzb")
+sub-LDFI-I32-3 = "movzw" | "movzb"
+
+; ======================================================================================================================================================
+; family STF.B: 1 form, 2 leaves, 3 parcels; mnemonics movq movl movw movb movub movuw ...
+; ======================================================================================================================================================
+
+; form STF.B28 (index 26): 3 parcels
+form-STF-B28 = o1:reg4 o2:b4d28s-x1
+leaf-STF-B28-1 = 0b110111011 %prefix sub:3 %sub("sub" "movq movl movw movb movub movuw movul movuq") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-d:28 %disp("d2") %title("STF-B28-1: movq movl movw movb ...")
+sub-STF-B28-1 = "movq" | "movl" | "movw" | "movb" | "movub" | "movuw" | "movul" | "movuq"
+leaf-STF-B28-2 = 0b1110011101 %prefix sub:2 %sub("sub" "addm subm bicm bism") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-d:28 %disp("d2") %title("STF-B28-2: addm subm bicm bism")
+sub-STF-B28-2 = "addm" | "subm" | "bicm" | "bism"
+
+; ======================================================================================================================================================
+; family STF.X: 1 form, 2 leaves, 3 parcels; mnemonics movq movl movw movb movub movuw ...
+; ======================================================================================================================================================
+
+; form STF.X22 (index 27): 3 parcels
+form-STF-X22 = o1:reg4 o2:x4-4d22s
+leaf-STF-X22-1 = 0b110111100 %prefix sub:3 %sub("sub" "movq movl movw movb movub movuw movul movuq") o2-index:4 %reg("index2") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-scale:2 %scale("scale2") o2-d:22 %disp("d2") %title("STF-X22-1: movq movl movw movb ...")
+sub-STF-X22-1 = "movq" | "movl" | "movw" | "movb" | "movub" | "movuw" | "movul" | "movuq"
+leaf-STF-X22-2 = 0b1110011110 %prefix sub:2 %sub("sub" "addm subm bicm bism") o2-index:4 %reg("index2") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-scale:2 %scale("scale2") o2-d:22 %disp("d2") %title("STF-X22-2: addm subm bicm bism")
+sub-STF-X22-2 = "addm" | "subm" | "bicm" | "bism"
+
+; ======================================================================================================================================================
+; family STF.PI: 1 form, 2 leaves, 2 parcels; mnemonics movq movl movw movb movub movuw ...
+; ======================================================================================================================================================
+
+; form STF.PI12 (index 28): 2 parcels
+form-STF-PI12 = o1:reg4 o2:pi4-s12
+leaf-STF-PI12-1 = 0b110111101 %prefix sub:3 %sub("sub" "movq movl movw movb movub movuw movul movuq") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-stride:12 %disp("stride2") %title("STF-PI12-1: movq movl movw movb ...")
+sub-STF-PI12-1 = "movq" | "movl" | "movw" | "movb" | "movub" | "movuw" | "movul" | "movuq"
+leaf-STF-PI12-2 = 0b1110011111 %prefix sub:2 %sub("sub" "addm subm bicm bism") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-stride:12 %disp("stride2") %title("STF-PI12-2: addm subm bicm bism")
+sub-STF-PI12-2 = "addm" | "subm" | "bicm" | "bism"
+
+; ======================================================================================================================================================
+; family STF.PD: 1 form, 2 leaves, 2 parcels; mnemonics movq movl movw movb movub movuw ...
+; ======================================================================================================================================================
+
+; form STF.PD12 (index 29): 2 parcels
+form-STF-PD12 = o1:reg4 o2:pd4-s12
+leaf-STF-PD12-1 = 0b110111110 %prefix sub:3 %sub("sub" "movq movl movw movb movub movuw movul movuq") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-stride:12 %disp("stride2") %title("STF-PD12-1: movq movl movw movb ...")
+sub-STF-PD12-1 = "movq" | "movl" | "movw" | "movb" | "movub" | "movuw" | "movul" | "movuq"
+leaf-STF-PD12-2 = 0b1110100000 %prefix sub:2 %sub("sub" "addm subm bicm bism") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-stride:12 %disp("stride2") %title("STF-PD12-2: addm subm bicm bism")
+sub-STF-PD12-2 = "addm" | "subm" | "bicm" | "bism"
+
+; ======================================================================================================================================================
+; family STF.PC: 1 form, 2 leaves, 3 parcels; mnemonics movq movl movw movb movub movuw ...
+; ======================================================================================================================================================
+
+; form STF.PC32 (index 30): 3 parcels
+form-STF-PC32 = o1:reg4 o2:pc32-u1
+leaf-STF-PC32-1 = 0b110111111 %prefix sub:3 %sub("sub" "movq movl movw movb movub movuw movul movuq") o1-r:4 %reg("r1") o2-pcrel:32 %disp("pcrel2") %title("STF-PC32-1: movq movl movw movb ...")
+sub-STF-PC32-1 = "movq" | "movl" | "movw" | "movb" | "movub" | "movuw" | "movul" | "movuq"
+leaf-STF-PC32-2 = 0b1110100001 %prefix sub:2 %sub("sub" "addm subm bicm bism") o1-r:4 %reg("r1") o2-pcrel:32 %disp("pcrel2") %title("STF-PC32-2: addm subm bicm bism")
+sub-STF-PC32-2 = "addm" | "subm" | "bicm" | "bism"
+
+; ======================================================================================================================================================
+; family STF.A: 1 form, 2 leaves, 3 parcels; mnemonics movq movl movw movb movub movuw ...
+; ======================================================================================================================================================
+
+; form STF.A32 (index 31): 3 parcels
+form-STF-A32 = o1:reg4 o2:abs32
+leaf-STF-A32-1 = 0b111000000 %prefix sub:3 %sub("sub" "movq movl movw movb movub movuw movul movuq") o1-r:4 %reg("r1") o2-abs:32 %disp("abs2") %title("STF-A32-1: movq movl movw movb ...")
+sub-STF-A32-1 = "movq" | "movl" | "movw" | "movb" | "movub" | "movuw" | "movul" | "movuq"
+leaf-STF-A32-2 = 0b1110100010 %prefix sub:2 %sub("sub" "addm subm bicm bism") o1-r:4 %reg("r1") o2-abs:32 %disp("abs2") %title("STF-A32-2: addm subm bicm bism")
+sub-STF-A32-2 = "addm" | "subm" | "bicm" | "bism"
+
+; ======================================================================================================================================================
+; family CMF.B: 1 form, 1 leaves, 3 parcels; mnemonics cmp fcmp
+; ======================================================================================================================================================
+
+; form CMF.B28 (index 32): 3 parcels
+form-CMF-B28 = o1:reg4 o2:b4d28s-x1
+leaf-CMF-B28-1 = 0b11101101101 %prefix sub:1 %sub("sub" "cmp fcmp") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-d:28 %disp("d2") %title("CMF-B28-1: cmp fcmp")
+sub-CMF-B28-1 = "cmp" | "fcmp"
+
+; ======================================================================================================================================================
+; family CMF.X: 1 form, 1 leaves, 3 parcels; mnemonics cmp fcmp
+; ======================================================================================================================================================
+
+; form CMF.X22 (index 33): 3 parcels
+form-CMF-X22 = o1:reg4 o2:x4-4d22s
+leaf-CMF-X22-1 = 0b11101101110 %prefix sub:1 %sub("sub" "cmp fcmp") o2-index:4 %reg("index2") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-scale:2 %scale("scale2") o2-d:22 %disp("d2") %title("CMF-X22-1: cmp fcmp")
+sub-CMF-X22-1 = "cmp" | "fcmp"
+
+; ======================================================================================================================================================
+; family CMF.PI: 1 form, 1 leaves, 2 parcels; mnemonics cmp fcmp
+; ======================================================================================================================================================
+
+; form CMF.PI12 (index 34): 2 parcels
+form-CMF-PI12 = o1:reg4 o2:pi4-s12
+leaf-CMF-PI12-1 = 0b11101101111 %prefix sub:1 %sub("sub" "cmp fcmp") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-stride:12 %disp("stride2") %title("CMF-PI12-1: cmp fcmp")
+sub-CMF-PI12-1 = "cmp" | "fcmp"
+
+; ======================================================================================================================================================
+; family CMF.PD: 1 form, 1 leaves, 2 parcels; mnemonics cmp fcmp
+; ======================================================================================================================================================
+
+; form CMF.PD12 (index 35): 2 parcels
+form-CMF-PD12 = o1:reg4 o2:pd4-s12
+leaf-CMF-PD12-1 = 0b11101110000 %prefix sub:1 %sub("sub" "cmp fcmp") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-stride:12 %disp("stride2") %title("CMF-PD12-1: cmp fcmp")
+sub-CMF-PD12-1 = "cmp" | "fcmp"
+
+; ======================================================================================================================================================
+; family CMF.PC: 1 form, 1 leaves, 3 parcels; mnemonics cmp fcmp
+; ======================================================================================================================================================
+
+; form CMF.PC32 (index 36): 3 parcels
+form-CMF-PC32 = o1:reg4 o2:pc32-u1
+leaf-CMF-PC32-1 = 0b11101110001 %prefix sub:1 %sub("sub" "cmp fcmp") o1-r:4 %reg("r1") o2-pcrel:32 %disp("pcrel2") %title("CMF-PC32-1: cmp fcmp")
+sub-CMF-PC32-1 = "cmp" | "fcmp"
+
+; ======================================================================================================================================================
+; family CMF.A: 1 form, 1 leaves, 3 parcels; mnemonics cmp fcmp
+; ======================================================================================================================================================
+
+; form CMF.A32 (index 37): 3 parcels
+form-CMF-A32 = o1:reg4 o2:abs32
+leaf-CMF-A32-1 = 0b11101110010 %prefix sub:1 %sub("sub" "cmp fcmp") o1-r:4 %reg("r1") o2-abs:32 %disp("abs2") %title("CMF-A32-1: cmp fcmp")
+sub-CMF-A32-1 = "cmp" | "fcmp"
+
+; ======================================================================================================================================================
+; family CMF.I: 1 form, 1 leaves, 3 parcels; mnemonics cmp fcmp
+; ======================================================================================================================================================
+
+; form CMF.I32 (index 38): 3 parcels
+form-CMF-I32 = o1:reg4 o2:imm32s
+leaf-CMF-I32-1 = 0b11101110011 %prefix sub:1 %sub("sub" "cmp fcmp") o1-r:4 %reg("r1") o2-imm:32 %imm("imm2") %title("CMF-I32-1: cmp fcmp")
+sub-CMF-I32-1 = "cmp" | "fcmp"
+
+; ======================================================================================================================================================
+; family SOF.B: 1 form, 1 leaves, 3 parcels; mnemonics clr com inc dec neg tst ...
+; ======================================================================================================================================================
+
+; form SOF.B28 (index 39): 3 parcels
+form-SOF-B28 = o1:b4d28s-x1
+leaf-SOF-B28-1 = 0b111100000101 %prefix sub:4 %sub("sub" "clr com inc dec neg tst adc sbc asl asr push pop jmp call jmpi calli") o1-base:4 %reg("base1") o1-d:28 %disp("d1") %title("SOF-B28-1: clr com inc dec ...")
+sub-SOF-B28-1 = "clr" | "com" | "inc" | "dec" | "neg" | "tst" | "adc" | "sbc" | "asl" | "asr" | "push" | "pop" | "jmp" | "call" | "jmpi" | "calli"
+
+; ======================================================================================================================================================
+; family SOF.X: 1 form, 1 leaves, 3 parcels; mnemonics clr com inc dec neg tst ...
+; ======================================================================================================================================================
+
+; form SOF.X22 (index 40): 3 parcels
+form-SOF-X22 = o1:x4-4d22s
+leaf-SOF-X22-1 = 0b111100000110 %prefix sub:4 %sub("sub" "clr com inc dec neg tst adc sbc asl asr push pop jmp call jmpi calli") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:22 %disp("d1") %title("SOF-X22-1: clr com inc dec ...")
+sub-SOF-X22-1 = "clr" | "com" | "inc" | "dec" | "neg" | "tst" | "adc" | "sbc" | "asl" | "asr" | "push" | "pop" | "jmp" | "call" | "jmpi" | "calli"
+
+; ======================================================================================================================================================
+; family SOF.PI: 1 form, 1 leaves, 2 parcels; mnemonics clr com inc dec neg tst ...
+; ======================================================================================================================================================
+
+; form SOF.PI12 (index 41): 2 parcels
+form-SOF-PI12 = o1:pi4-s12
+leaf-SOF-PI12-1 = 0b111100000111 %prefix sub:4 %sub("sub" "clr com inc dec neg tst adc sbc asl asr push pop jmp call jmpi calli") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("SOF-PI12-1: clr com inc dec ...")
+sub-SOF-PI12-1 = "clr" | "com" | "inc" | "dec" | "neg" | "tst" | "adc" | "sbc" | "asl" | "asr" | "push" | "pop" | "jmp" | "call" | "jmpi" | "calli"
+
+; ======================================================================================================================================================
+; family SOF.PD: 1 form, 1 leaves, 2 parcels; mnemonics clr com inc dec neg tst ...
+; ======================================================================================================================================================
+
+; form SOF.PD12 (index 42): 2 parcels
+form-SOF-PD12 = o1:pd4-s12
+leaf-SOF-PD12-1 = 0b111100001000 %prefix sub:4 %sub("sub" "clr com inc dec neg tst adc sbc asl asr push pop jmp call jmpi calli") o1-base:4 %reg("base1") o1-stride:12 %disp("stride1") %title("SOF-PD12-1: clr com inc dec ...")
+sub-SOF-PD12-1 = "clr" | "com" | "inc" | "dec" | "neg" | "tst" | "adc" | "sbc" | "asl" | "asr" | "push" | "pop" | "jmp" | "call" | "jmpi" | "calli"
+
+; ======================================================================================================================================================
+; family SOF.PC: 1 form, 1 leaves, 3 parcels; mnemonics clr com inc dec neg tst ...
+; ======================================================================================================================================================
+
+; form SOF.PC32 (index 43): 3 parcels
+form-SOF-PC32 = o1:pc32-u1
+leaf-SOF-PC32-1 = 0b111100001001 %prefix sub:4 %sub("sub" "clr com inc dec neg tst adc sbc asl asr push pop jmp call jmpi calli") o1-pcrel:32 %disp("pcrel1") %title("SOF-PC32-1: clr com inc dec ...")
+sub-SOF-PC32-1 = "clr" | "com" | "inc" | "dec" | "neg" | "tst" | "adc" | "sbc" | "asl" | "asr" | "push" | "pop" | "jmp" | "call" | "jmpi" | "calli"
+
+; ======================================================================================================================================================
+; family SOF.A: 1 form, 1 leaves, 3 parcels; mnemonics clr com inc dec neg tst ...
+; ======================================================================================================================================================
+
+; form SOF.A32 (index 44): 3 parcels
+form-SOF-A32 = o1:abs32
+leaf-SOF-A32-1 = 0b111100001010 %prefix sub:4 %sub("sub" "clr com inc dec neg tst adc sbc asl asr push pop jmp call jmpi calli") o1-abs:32 %disp("abs1") %title("SOF-A32-1: clr com inc dec ...")
+sub-SOF-A32-1 = "clr" | "com" | "inc" | "dec" | "neg" | "tst" | "adc" | "sbc" | "asl" | "asr" | "push" | "pop" | "jmp" | "call" | "jmpi" | "calli"
+
+; ======================================================================================================================================================
+; family DPF.D: 1 form, 4 leaves, 3 parcels; mnemonics movq movl movw movb movzl movzw ...
+; ======================================================================================================================================================
+
+; form DPF.D28 (index 45): 3 parcels
+form-DPF-D28 = o1:dpd28s-x1 o2:reg4
+leaf-DPF-D28-1 = 0b111100001011 %prefix sub:4 %sub("sub" "movq movl movw movb movzl movzw movzb add sub bic bis xor and mul mulh shl") o2-r:4 %reg("r2") o1-d:28 %disp("d1") %title("DPF-D28-1: movq movl movw movb ...")
+sub-DPF-D28-1 = "movq" | "movl" | "movw" | "movb" | "movzl" | "movzw" | "movzb" | "add" | "sub" | "bic" | "bis" | "xor" | "and" | "mul" | "mulh"
+     | "shl"
+leaf-DPF-D28-2 = 0b1111000111110 %prefix sub:3 %sub("sub" "shr sar fadd fsub fmul bit lea movub") o2-r:4 %reg("r2") o1-d:28 %disp("d1") %title("DPF-D28-2: shr sar fadd fsub ...")
+sub-DPF-D28-2 = "shr" | "sar" | "fadd" | "fsub" | "fmul" | "bit" | "lea" | "movub"
+leaf-DPF-D28-3 = 0b111100101110110 %prefix sub:1 %sub("sub" "movuw movul") o2-r:4 %reg("r2") o1-d:28 %disp("d1") %title("DPF-D28-3: movuw movul")
+sub-DPF-D28-3 = "movuw" | "movul"
+leaf-DPF-D28-4 = 0b1111001100011110 %prefix o2-r:4 %reg("r2") o1-d:28 %disp("d1") %title("DPF-D28-4: movuq")
+sub-DPF-D28-4 = "movuq"
+
+; ======================================================================================================================================================
+; family BRF: 1 form, 4 leaves, 3 parcels; mnemonics br bne beq bpl bmi bvc ...
+; ======================================================================================================================================================
+
+; form BRF (index 46): 3 parcels
+form-BRF = o1:pc32-u2
+leaf-BRF-1 = 0b1111000111111 %prefix sub:3 %sub("sub" "br bne beq bpl bmi bvc bvs bcc") o1-pcrel:32 %disp("pcrel1") %title("BRF-1: br bne beq bpl ...")
+sub-BRF-1 = "br" | "bne" | "beq" | "bpl" | "bmi" | "bvc" | "bvs" | "bcc"
+leaf-BRF-2 = 0b11110010010111 %prefix sub:2 %sub("sub" "bcs bge blt bgt") o1-pcrel:32 %disp("pcrel1") %title("BRF-2: bcs bge blt bgt")
+sub-BRF-2 = "bcs" | "bge" | "blt" | "bgt"
+leaf-BRF-3 = 0b111100101110111 %prefix sub:1 %sub("sub" "ble bhi") o1-pcrel:32 %disp("pcrel1") %title("BRF-3: ble bhi")
+sub-BRF-3 = "ble" | "bhi"
+leaf-BRF-4 = 0b1111001100011111 %prefix o1-pcrel:32 %disp("pcrel1") %title("BRF-4: blos")
+sub-BRF-4 = "blos"
+
+; ======================================================================================================================================================
+; family CALLF: 1 form, 1 leaves, 3 parcels; mnemonics call jmp
+; ======================================================================================================================================================
+
+; form CALLF (index 47): 3 parcels
+form-CALLF = o1:pc32-u2
+leaf-CALLF-1 = 0b111100101111000 %prefix sub:1 %sub("sub" "call jmp") o1-pcrel:32 %disp("pcrel1") %title("CALLF-1: call jmp")
+sub-CALLF-1 = "call" | "jmp"
+
+; ======================================================================================================================================================
+; family PUSHMF: 1 form, 1 leaves, 3 parcels; mnemonics pushm popm
+; ======================================================================================================================================================
+
+; form PUSHMF (index 48): 3 parcels
+form-PUSHMF = o1:imm32u
+leaf-PUSHMF-1 = 0b111100101111001 %prefix sub:1 %sub("sub" "pushm popm") o1-imm:32 %imm("imm1") %title("PUSHMF-1: pushm popm")
+sub-PUSHMF-1 = "pushm" | "popm"
+
+; ======================================================================================================================================================
+; family SOPR: 1 form, 3 leaves, 1 parcel; mnemonics clr com inc dec neg tst ...
+; ======================================================================================================================================================
+
+; form SOPR (index 49): 1 parcel
+form-SOPR = o1:reg4
+leaf-SOPR-1 = 0b111000001 %prefix sub:3 %sub("sub" "clr com inc dec neg tst adc sbc") o1-r:4 %reg("r1") %title("SOPR-1: clr com inc dec ...")
+sub-SOPR-1 = "clr" | "com" | "inc" | "dec" | "neg" | "tst" | "adc" | "sbc"
+leaf-SOPR-2 = 0b1110100011 %prefix sub:2 %sub("sub" "asl asr push pop") o1-r:4 %reg("r1") %title("SOPR-2: asl asr push pop")
+sub-SOPR-2 = "asl" | "asr" | "push" | "pop"
+leaf-SOPR-3 = 0b11101110100 %prefix sub:1 %sub("sub" "jmp call") o1-r:4 %reg("r1") %title("SOPR-3: jmp call")
+sub-SOPR-3 = "jmp" | "call"
+
+; ======================================================================================================================================================
+; family PUSHI: 2 forms, 2 leaves, 3 parcels; mnemonics push push
+; ======================================================================================================================================================
+
+; form PUSHI3 (index 50): 3 parcels
+form-PUSHI3 = o1:imm32s
+leaf-PUSHI3-1 = 0b1111001100100000 %prefix o1-imm:32 %imm("imm1") %title("PUSHI3-1: push")
+sub-PUSHI3-1 = "push"
+
+; form PUSHI2 (index 51): 2 parcels
+form-PUSHI2 = o1:imm16s
+leaf-PUSHI2-1 = 0b1111001100100001 %prefix o1-imm:16 %imm("imm1") %title("PUSHI2-1: push")
+sub-PUSHI2-1 = "push"
+
+; ======================================================================================================================================================
+; family JTAG: 2 forms, 2 leaves, 3 parcels; mnemonics jtag jtag
+; ======================================================================================================================================================
+
+; form JTAG3 (index 52): 3 parcels
+form-JTAG3 = o1:x4-4d22s
+leaf-JTAG3-1 = 0b1111001100100010 %prefix o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:22 %disp("d1") %title("JTAG3-1: jtag")
+sub-JTAG3-1 = "jtag"
+
+; form JTAG2 (index 53): 2 parcels
+form-JTAG2 = o1:x4-4d6s
+leaf-JTAG2-1 = 0b1111001100100011 %prefix o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:6 %disp("d1") %title("JTAG2-1: jtag")
+sub-JTAG2-1 = "jtag"
+
+; ======================================================================================================================================================
+; family RRF: 1 form, 2 leaves, 1 parcel; mnemonics movq movl movw movb movzl movzw ...
+; ======================================================================================================================================================
+
+; form RRF (index 54): 1 parcel
+form-RRF = o1:reg4 o2:reg4
+leaf-RRF-1 = 0b0010 %prefix sub:4 %sub("sub" "movq movl movw movb movzl movzw movzb add sub bic bis xor and mul mulh shl") o1-r:4 %reg("r1") o2-r:4 %reg("r2") %title("RRF-1: movq movl movw movb ...")
+sub-RRF-1 = "movq" | "movl" | "movw" | "movb" | "movzl" | "movzw" | "movzb" | "add" | "sub" | "bic" | "bis" | "xor" | "and" | "mul" | "mulh" | "shl"
+leaf-RRF-2 = 0b01010 %prefix sub:3 %sub("sub" "shr sar fadd fsub fmul bit cmp fcmp") o1-r:4 %reg("r1") o2-r:4 %reg("r2") %title("RRF-2: shr sar fadd fsub ...")
+sub-RRF-2 = "shr" | "sar" | "fadd" | "fsub" | "fmul" | "bit" | "cmp" | "fcmp"
+
+; ======================================================================================================================================================
+; family CBDI: 1 form, 1 leaves, 2 parcels; mnemonics cbpl cbmi cbvc cbvs
+; ======================================================================================================================================================
+
+; form CBDI (index 55): 2 parcels
+form-CBDI = o1:reg4 o2:imm6s o3:pc10-u2
+leaf-CBDI-1 = 0b1110100100 %prefix sub:2 %sub("sub" "cbpl cbmi cbvc cbvs") o1-r:4 %reg("r1") o2-imm:6 %imm("imm2") o3-pcrel:10 %disp("pcrel3") %title("CBDI-1: cbpl cbmi cbvc cbvs")
+sub-CBDI-1 = "cbpl" | "cbmi" | "cbvc" | "cbvs"
+
+; ======================================================================================================================================================
+; family CBDR: 1 form, 1 leaves, 2 parcels; mnemonics cbpl cbmi cbvc cbvs
+; ======================================================================================================================================================
+
+; form CBDR (index 56): 2 parcels
+form-CBDR = o1:reg4 o2:reg4 o3:pc12-u2
+leaf-CBDR-1 = 0b1110100101 %prefix sub:2 %sub("sub" "cbpl cbmi cbvc cbvs") o2-r:4 %reg("r2") o1-r:4 %reg("r1") o3-pcrel:12 %disp("pcrel3") %title("CBDR-1: cbpl cbmi cbvc cbvs")
+sub-CBDR-1 = "cbpl" | "cbmi" | "cbvc" | "cbvs"
+
+; ======================================================================================================================================================
+; family SOB: 1 form, 1 leaves, 2 parcels; mnemonics sob
+; ======================================================================================================================================================
+
+; form SOB (index 57): 2 parcels
+form-SOB = o1:reg4 o2:pc16-u2
+leaf-SOB-1 = 0b111100001100 %prefix o1-r:4 %reg("r1") o2-pcrel:16 %disp("pcrel2") %title("SOB-1: sob")
+sub-SOB-1 = "sob"
+
+; ======================================================================================================================================================
+; family TAG: 1 form, 1 leaves, 2 parcels; mnemonics btag bntag
+; ======================================================================================================================================================
+
+; form TAG (index 58): 2 parcels
+form-TAG = o1:reg4 o2:imm3u o3:pc13-u2
+leaf-TAG-1 = 0b11101110101 %prefix sub:1 %sub("sub" "btag bntag") o1-r:4 %reg("r1") o2-imm:3 %imm("imm2") o3-pcrel:13 %disp("pcrel3") %title("TAG-1: btag bntag")
+sub-TAG-1 = "btag" | "bntag"
+
+; ======================================================================================================================================================
+; family SPADJF: 1 form, 1 leaves, 3 parcels; mnemonics add sub
+; ======================================================================================================================================================
+
+; form SPADJF (index 59): 3 parcels
+form-SPADJF = o1:imm32s o2:k-sp
+leaf-SPADJF-1 = 0b111100101111010 %prefix sub:1 %sub("sub" "add sub") o1-imm:32 %imm("imm1") %title("SPADJF-1: add sub")
+sub-SPADJF-1 = "add" | "sub"
+
+; ======================================================================================================================================================
+; family FX.MOVCALL: 2 forms, 2 leaves, 3 parcels; mnemonics movcall movcall
+; ======================================================================================================================================================
+
+; form FX.MOVCALL3 (index 60): 3 parcels
+form-FX-MOVCALL3 = o1:reg4 o2:reg4 o3:pc32-u2
+leaf-FX-MOVCALL3-1 = 0b11001100 %prefix o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:32 %disp("pcrel3") %title("FX-MOVCALL3-1: movcall")
+sub-FX-MOVCALL3-1 = "movcall"
+
+; form FX.MOVCALL2 (index 61): 2 parcels
+form-FX-MOVCALL2 = o1:reg4 o2:reg4 o3:pc16-u2
+leaf-FX-MOVCALL2-1 = 0b11001101 %prefix o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:16 %disp("pcrel3") %title("FX-MOVCALL2-1: movcall")
+sub-FX-MOVCALL2-1 = "movcall"
+
+; ======================================================================================================================================================
+; family FX.POPMRET: 1 form, 1 leaves, 1 parcel; mnemonics popmret
+; ======================================================================================================================================================
+
+; form FX.POPMRET (index 62): 1 parcel
+form-FX-POPMRET = o1:imm8u-x256
+leaf-FX-POPMRET-1 = 0b11001110 %prefix o1-imm:8 %imm("imm1") %title("FX-POPMRET-1: popmret")
+sub-FX-POPMRET-1 = "popmret"
+
+; ======================================================================================================================================================
+; family FX.POPRET: 1 form, 1 leaves, 1 parcel; mnemonics popret
+; ======================================================================================================================================================
+
+; form FX.POPRET (index 63): 1 parcel
+form-FX-POPRET = o1:reg4
+leaf-FX-POPRET-1 = 0b111100001101 %prefix o1-r:4 %reg("r1") %title("FX-POPRET-1: popret")
+sub-FX-POPRET-1 = "popret"
+
+; ======================================================================================================================================================
+; family FX.MOV: 1 form, 1 leaves, 1 parcel; mnemonics mov2
+; ======================================================================================================================================================
+
+; form FX.MOV2 (index 64): 1 parcel
+form-FX-MOV2 = o1:reg3 o2:reg3 o3:reg3 o4:reg3
+leaf-FX-MOV2-1 = 0b0011 %prefix o1-r:3 %reg("r1") o2-r:3 %reg("r2") o3-r:3 %reg("r3") o4-r:3 %reg("r4") %title("FX-MOV2-1: mov2")
+sub-FX-MOV2-1 = "mov2"
+
+; ======================================================================================================================================================
+; family BR2: 3 forms, 4 leaves, 2 parcels; mnemonics br beq bne bpl bmi bvc ...
+; ======================================================================================================================================================
+
+; form BR2_16/a (index 65): 2 parcels
+form-BR2-16-a = o1:pc16-u2
+leaf-BR2-16-a-1 = 0b1111001100100100 %prefix o1-pcrel:16 %disp("pcrel1") %title("BR2-16-a-1: br")
+sub-BR2-16-a-1 = "br"
+
+; form BR2_16/b (index 76): 2 parcels
+form-BR2-16-b = o1:pc16-u2
+leaf-BR2-16-b-1 = 0b111100110000010 %prefix sub:1 %sub("sub" "beq bne") o1-pcrel:16 %disp("pcrel1") %title("BR2-16-b-1: beq bne")
+sub-BR2-16-b-1 = "beq" | "bne"
+
+; form BR2_16/c (index 104): 2 parcels
+form-BR2-16-c = o1:pc16-u2
+leaf-BR2-16-c-1 = 0b1111001000001 %prefix sub:3 %sub("sub" "bpl bmi bvc bvs bcc bcs bge blt") o1-pcrel:16 %disp("pcrel1") %title("BR2-16-c-1: bpl bmi bvc bvs ...")
+sub-BR2-16-c-1 = "bpl" | "bmi" | "bvc" | "bvs" | "bcc" | "bcs" | "bge" | "blt"
+leaf-BR2-16-c-2 = 0b11110010101000 %prefix sub:2 %sub("sub" "bgt ble bhi blos") o1-pcrel:16 %disp("pcrel1") %title("BR2-16-c-2: bgt ble bhi blos")
+sub-BR2-16-c-2 = "bgt" | "ble" | "bhi" | "blos"
+
+; ======================================================================================================================================================
+; family LDI: 10 forms, 15 leaves, 2 parcels; mnemonics movq add sub and shl shr ...
+; ======================================================================================================================================================
+
+; form LDI12/a (index 66): 2 parcels
+form-LDI12-a = o1:imm12s o2:reg4
+leaf-LDI12-a-1 = 0b1111001100100101 %prefix o2-r:4 %reg("r2") o1-imm:12 %imm("imm1") %title("LDI12-a-1: movq")
+sub-LDI12-a-1 = "movq"
+
+; form LDI12/b (index 71): 2 parcels
+form-LDI12-b = o1:imm12s o2:reg4
+leaf-LDI12-b-1 = 0b111100101111101 %prefix sub:1 %sub("sub" "add sub") o2-r:4 %reg("r2") o1-imm:12 %imm("imm1") %title("LDI12-b-1: add sub")
+sub-LDI12-b-1 = "add" | "sub"
+leaf-LDI12-b-2 = 0b1111001100100111 %prefix o2-r:4 %reg("r2") o1-imm:12 %imm("imm1") %title("LDI12-b-2: and")
+sub-LDI12-b-2 = "and"
+
+; form LDI12/d (index 75): 2 parcels
+form-LDI12-d = o1:imm12s o2:reg4
+leaf-LDI12-d-1 = 0b11110010011001 %prefix sub:2 %sub("sub" "shl shr sar mul") o2-r:4 %reg("r2") o1-imm:12 %imm("imm1") %title("LDI12-d-1: shl shr sar mul")
+sub-LDI12-d-1 = "shl" | "shr" | "sar" | "mul"
+leaf-LDI12-d-2 = 0b111100110000001 %prefix sub:1 %sub("sub" "bic movb") o2-r:4 %reg("r2") o1-imm:12 %imm("imm1") %title("LDI12-d-2: bic movb")
+sub-LDI12-d-2 = "bic" | "movb"
+leaf-LDI12-d-3 = 0b1111001100101000 %prefix o2-r:4 %reg("r2") o1-imm:12 %imm("imm1") %title("LDI12-d-3: bit")
+sub-LDI12-d-3 = "bit"
+
+; form LDI14/a (index 91): 2 parcels
+form-LDI14-a = o1:imm14s o2:reg4
+leaf-LDI14-a-1 = 0b11110010100010 %prefix o2-r:4 %reg("r2") o1-imm:14 %imm("imm1") %title("LDI14-a-1: movq")
+sub-LDI14-a-1 = "movq"
+
+; form LDI16/a (index 98): 2 parcels
+form-LDI16-a = o1:imm16s o2:reg4
+leaf-LDI16-a-1 = 0b111100001111 %prefix o2-r:4 %reg("r2") o1-imm:16 %imm("imm1") %title("LDI16-a-1: movq")
+sub-LDI16-a-1 = "movq"
+
+; form LDI12/c (index 102): 2 parcels
+form-LDI12-c = o1:imm12s o2:reg4
+leaf-LDI12-c-1 = 0b11110010100110 %prefix sub:2 %sub("sub" "bis xor mul bic") o2-r:4 %reg("r2") o1-imm:12 %imm("imm1") %title("LDI12-c-1: bis xor mul bic")
+sub-LDI12-c-1 = "bis" | "xor" | "mul" | "bic"
+
+; form LDI14/b (index 123): 2 parcels
+form-LDI14-b = o1:imm14s o2:reg4
+leaf-LDI14-b-1 = 0b1111001000011 %prefix sub:1 %sub("sub" "add sub") o2-r:4 %reg("r2") o1-imm:14 %imm("imm1") %title("LDI14-b-1: add sub")
+sub-LDI14-b-1 = "add" | "sub"
+leaf-LDI14-b-2 = 0b11110010101011 %prefix o2-r:4 %reg("r2") o1-imm:14 %imm("imm1") %title("LDI14-b-2: and")
+sub-LDI14-b-2 = "and"
+
+; form LDI18/b (index 139): 2 parcels
+form-LDI18-b = o1:imm18s o2:reg4
+leaf-LDI18-b-1 = 0b111000111 %prefix sub:1 %sub("sub" "add sub") o1-imm-1:2 %imm("imm1") o2-r:4 %reg("r2") o1-imm-2:16 %imm("imm1") %title("LDI18-b-1: add sub")
+sub-LDI18-b-1 = "add" | "sub"
+leaf-LDI18-b-2 = 0b1110101011 %prefix o1-imm-1:2 %imm("imm1") o2-r:4 %reg("r2") o1-imm-2:16 %imm("imm1") %title("LDI18-b-2: and")
+sub-LDI18-b-2 = "and"
+
+; form LDI18/a (index 175): 2 parcels
+form-LDI18-a = o1:imm18s o2:reg4
+leaf-LDI18-a-1 = 0b1110110000 %prefix o1-imm-1:2 %imm("imm1") o2-r:4 %reg("r2") o1-imm-2:16 %imm("imm1") %title("LDI18-a-1: movq")
+sub-LDI18-a-1 = "movq"
+
+; form LDI14/c (index 196): 2 parcels
+form-LDI14-c = o1:imm14s o2:reg4
+leaf-LDI14-c-1 = 0b111100011110 %prefix sub:2 %sub("sub" "bis xor mul bic") o2-r:4 %reg("r2") o1-imm:14 %imm("imm1") %title("LDI14-c-1: bis xor mul bic")
+sub-LDI14-c-1 = "bis" | "xor" | "mul" | "bic"
+
+; ======================================================================================================================================================
+; family STBs: 4 forms, 4 leaves, 2 parcels; mnemonics movq movl movw movb movq movl ...
+; ======================================================================================================================================================
+
+; form STBs8/a (index 67): 2 parcels
+form-STBs8-a = o1:reg4 o2:b4d8s-xsz
+leaf-STBs8-a-1 = 0b111100101111011 %prefix sub:1 %sub("sub" "movq movl") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:8 %disp("d2") %title("STBs8-a-1: movq movl")
+sub-STBs8-a-1 = "movq" | "movl"
+
+; form STBs8/b (index 126): 2 parcels
+form-STBs8-b = o1:reg4 o2:b4d8s-xsz
+leaf-STBs8-b-1 = 0b111100110001001 %prefix sub:1 %sub("sub" "movw movb") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:8 %disp("d2") %title("STBs8-b-1: movw movb")
+sub-STBs8-b-1 = "movw" | "movb"
+
+; form STBs10/a (index 193): 2 parcels
+form-STBs10-a = o1:reg4 o2:b4d10s-xsz
+leaf-STBs10-a-1 = 0b1111001001000 %prefix sub:1 %sub("sub" "movq movl") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:10 %disp("d2") %title("STBs10-a-1: movq movl")
+sub-STBs10-a-1 = "movq" | "movl"
+
+; form STBs10/b (index 207): 2 parcels
+form-STBs10-b = o1:reg4 o2:b4d10s-xsz
+leaf-STBs10-b-1 = 0b1111001001010 %prefix sub:1 %sub("sub" "movw movb") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:10 %disp("d2") %title("STBs10-b-1: movw movb")
+sub-STBs10-b-1 = "movw" | "movb"
+
+; ======================================================================================================================================================
+; family CB3I16: 3 forms, 3 leaves, 3 parcels; mnemonics cbeq cbne cblt cbge cbgt cble ...
+; ======================================================================================================================================================
+
+; form CB3I16_12/a (index 68): 3 parcels
+form-CB3I16-12-a = o1:reg4 o2:imm16s o3:pc12-u2
+leaf-CB3I16-12-a-1 = 0b111100101111100 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o2-imm:16 %imm("imm2") o3-pcrel:12 %disp("pcrel3") %title("CB3I16-12-a-1: cbeq cbne")
+sub-CB3I16-12-a-1 = "cbeq" | "cbne"
+
+; form CB3I16_12/b (index 70): 3 parcels
+form-CB3I16-12-b = o1:reg4 o2:imm16s o3:pc12-u2
+leaf-CB3I16-12-b-1 = 0b11110010011000 %prefix sub:2 %sub("sub" "cblt cbge cbgt cble") o1-r:4 %reg("r1") o2-imm:16 %imm("imm2") o3-pcrel:12 %disp("pcrel3") %title("CB3I16-12-b-1: cblt cbge cbgt cble")
+sub-CB3I16-12-b-1 = "cblt" | "cbge" | "cbgt" | "cble"
+
+; form CB3I16_12/c (index 85): 3 parcels
+form-CB3I16-12-c = o1:reg4 o2:imm16s o3:pc12-u2
+leaf-CB3I16-12-c-1 = 0b11110010011110 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-imm:16 %imm("imm2") o3-pcrel:12 %disp("pcrel3") %title("CB3I16-12-c-1: cbcs cbcc cbhi cblos")
+sub-CB3I16-12-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; ======================================================================================================================================================
+; family CALL2: 3 forms, 3 leaves, 2 parcels; mnemonics call call jmp
+; ======================================================================================================================================================
+
+; form CALL2_16/c (index 69): 2 parcels
+form-CALL2-16-c = o1:pc16-u2
+leaf-CALL2-16-c-1 = 0b1111001100100110 %prefix o1-pcrel:16 %disp("pcrel1") %title("CALL2-16-c-1: call")
+sub-CALL2-16-c-1 = "call"
+
+; form CALL2_18/c (index 81): 2 parcels
+form-CALL2-18-c = o1:pc18-u2
+leaf-CALL2-18-c-1 = 0b11110010011100 %prefix o1-pcrel:18 %disp("pcrel1") %title("CALL2-18-c-1: call")
+sub-CALL2-18-c-1 = "call"
+
+; form CALL2_16/j (index 84): 2 parcels
+form-CALL2-16-j = o1:pc16-u2
+leaf-CALL2-16-j-1 = 0b1111001100101011 %prefix o1-pcrel:16 %disp("pcrel1") %title("CALL2-16-j-1: jmp")
+sub-CALL2-16-j-1 = "jmp"
+
+; ======================================================================================================================================================
+; family CBR: 5 forms, 5 leaves, 2 parcels; mnemonics cbeq cbne cbcs cbcc cbhi cblos ...
+; ======================================================================================================================================================
+
+; form CBR8/a (index 72): 2 parcels
+form-CBR8-a = o1:reg4 o2:reg4 o3:pc8-u2
+leaf-CBR8-a-1 = 0b111100101111110 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:8 %disp("pcrel3") %title("CBR8-a-1: cbeq cbne")
+sub-CBR8-a-1 = "cbeq" | "cbne"
+
+; form CBR8/c (index 82): 2 parcels
+form-CBR8-c = o1:reg4 o2:reg4 o3:pc8-u2
+leaf-CBR8-c-1 = 0b11110010011101 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:8 %disp("pcrel3") %title("CBR8-c-1: cbcs cbcc cbhi cblos")
+sub-CBR8-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; form CBR8/b (index 94): 2 parcels
+form-CBR8-b = o1:reg4 o2:reg4 o3:pc8-u2
+leaf-CBR8-b-1 = 0b11110010100100 %prefix sub:2 %sub("sub" "cblt cbge cbgt cble") o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:8 %disp("pcrel3") %title("CBR8-b-1: cblt cbge cbgt cble")
+sub-CBR8-b-1 = "cblt" | "cbge" | "cbgt" | "cble"
+
+; form CBR10/c (index 145): 2 parcels
+form-CBR10-c = o1:reg4 o2:reg4 o3:pc10-u2
+leaf-CBR10-c-1 = 0b111100010011 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:10 %disp("pcrel3") %title("CBR10-c-1: cbcs cbcc cbhi cblos")
+sub-CBR10-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; form CBR10/a (index 156): 2 parcels
+form-CBR10-a = o1:reg4 o2:reg4 o3:pc10-u2
+leaf-CBR10-a-1 = 0b1111001000101 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:10 %disp("pcrel3") %title("CBR10-a-1: cbeq cbne")
+sub-CBR10-a-1 = "cbeq" | "cbne"
+
+; ======================================================================================================================================================
+; family PUSHM16a: 1 form, 1 leaves, 2 parcels; mnemonics pushm popm
+; ======================================================================================================================================================
+
+; form PUSHM16a/a (index 73): 2 parcels
+form-PUSHM16a-a = o1:imm16u
+leaf-PUSHM16a-a-1 = 0b111100101111111 %prefix sub:1 %sub("sub" "pushm popm") o1-imm:16 %imm("imm1") %title("PUSHM16a-a-1: pushm popm")
+sub-PUSHM16a-a-1 = "pushm" | "popm"
+
+; ======================================================================================================================================================
+; family STBu: 5 forms, 5 leaves, 2 parcels; mnemonics movw movb movq movl movw movb ...
+; ======================================================================================================================================================
+
+; form STBu8/b (index 74): 2 parcels
+form-STBu8-b = o1:reg4 o2:b4d8u-xsz
+leaf-STBu8-b-1 = 0b111100110000000 %prefix sub:1 %sub("sub" "movw movb") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:8 %disp("d2") %title("STBu8-b-1: movw movb")
+sub-STBu8-b-1 = "movw" | "movb"
+
+; form STBu10/a (index 112): 2 parcels
+form-STBu10-a = o1:reg4 o2:b4d10u-xsz
+leaf-STBu10-a-1 = 0b1111001000010 %prefix sub:1 %sub("sub" "movq movl") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:10 %disp("d2") %title("STBu10-a-1: movq movl")
+sub-STBu10-a-1 = "movq" | "movl"
+
+; form STBu10/b (index 131): 2 parcels
+form-STBu10-b = o1:reg4 o2:b4d10u-xsz
+leaf-STBu10-b-1 = 0b1111001000100 %prefix sub:1 %sub("sub" "movw movb") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:10 %disp("d2") %title("STBu10-b-1: movw movb")
+sub-STBu10-b-1 = "movw" | "movb"
+
+; form STBu12/a (index 142): 2 parcels
+form-STBu12-a = o1:reg4 o2:b4d12u-xsz
+leaf-STBu12-a-1 = 0b11101110110 %prefix sub:1 %sub("sub" "movq movl") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-d:12 %disp("d2") %title("STBu12-a-1: movq movl")
+sub-STBu12-a-1 = "movq" | "movl"
+
+; form STBu12/b (index 146): 2 parcels
+form-STBu12-b = o1:reg4 o2:b4d12u-xsz
+leaf-STBu12-b-1 = 0b11101111000 %prefix sub:1 %sub("sub" "movw movb") o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-d:12 %disp("d2") %title("STBu12-b-1: movw movb")
+sub-STBu12-b-1 = "movw" | "movb"
+
+; ======================================================================================================================================================
+; family LEASx: 1 form, 1 leaves, 2 parcels; mnemonics lea
+; ======================================================================================================================================================
+
+; form LEASx12/a (index 77): 2 parcels
+form-LEASx12-a = o1:spd12s-x1 o2:reg4
+leaf-LEASx12-a-1 = 0b1111001100101001 %prefix o2-r:4 %reg("r2") o1-d:12 %disp("d1") %title("LEASx12-a-1: lea")
+sub-LEASx12-a-1 = "lea"
+
+; ======================================================================================================================================================
+; family LDPC: 7 forms, 9 leaves, 2 parcels; mnemonics movq movl movzb lea movq movl ...
+; ======================================================================================================================================================
+
+; form LDPC12/a (index 78): 2 parcels
+form-LDPC12-a = o1:pc12-u1 o2:reg4
+leaf-LDPC12-a-1 = 0b11110010011010 %prefix sub:2 %sub("sub" "movq movl movzb lea") o2-r:4 %reg("r2") o1-pcrel:12 %disp("pcrel1") %title("LDPC12-a-1: movq movl movzb lea")
+sub-LDPC12-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDPC14/a (index 90): 2 parcels
+form-LDPC14-a = o1:pc14-u1 o2:reg4
+leaf-LDPC14-a-1 = 0b111100001110 %prefix sub:2 %sub("sub" "movq movl movzb lea") o2-r:4 %reg("r2") o1-pcrel:14 %disp("pcrel1") %title("LDPC14-a-1: movq movl movzb lea")
+sub-LDPC14-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDPC16/a (index 105): 2 parcels
+form-LDPC16-a = o1:pc16-u1 o2:reg4
+leaf-LDPC16-a-1 = 0b1110101000 %prefix sub:2 %sub("sub" "movq movl movzb lea") o2-r:4 %reg("r2") o1-pcrel:16 %disp("pcrel1") %title("LDPC16-a-1: movq movl movzb lea")
+sub-LDPC16-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDPC16/c (index 151): 2 parcels
+form-LDPC16-c = o1:pc16-u1 o2:reg4
+leaf-LDPC16-c-1 = 0b1110101101 %prefix sub:2 %sub("sub" "add sub and bis") o2-r:4 %reg("r2") o1-pcrel:16 %disp("pcrel1") %title("LDPC16-c-1: add sub and bis")
+sub-LDPC16-c-1 = "add" | "sub" | "and" | "bis"
+leaf-LDPC16-c-2 = 0b111100010110 %prefix o2-r:4 %reg("r2") o1-pcrel:16 %disp("pcrel1") %title("LDPC16-c-2: xor")
+sub-LDPC16-c-2 = "xor"
+
+; form LDPC12/b (index 164): 2 parcels
+form-LDPC12-b = o1:pc12-u1 o2:reg4
+leaf-LDPC12-b-1 = 0b11110010110010 %prefix sub:2 %sub("sub" "movw movb movzl movzw") o2-r:4 %reg("r2") o1-pcrel:12 %disp("pcrel1") %title("LDPC12-b-1: movw movb movzl movzw")
+sub-LDPC12-b-1 = "movw" | "movb" | "movzl" | "movzw"
+
+; form LDPC12/d (index 185): 2 parcels
+form-LDPC12-d = o1:pc12-u1 o2:reg4
+leaf-LDPC12-d-1 = 0b1111001000111 %prefix sub:3 %sub("sub" "bic mul mulh shl shr sar fadd fsub") o2-r:4 %reg("r2") o1-pcrel:12 %disp("pcrel1") %title("LDPC12-d-1: bic mul mulh shl ...")
+sub-LDPC12-d-1 = "bic" | "mul" | "mulh" | "shl" | "shr" | "sar" | "fadd" | "fsub"
+leaf-LDPC12-d-2 = 0b111100110001011 %prefix sub:1 %sub("sub" "fmul bit") o2-r:4 %reg("r2") o1-pcrel:12 %disp("pcrel1") %title("LDPC12-d-2: fmul bit")
+sub-LDPC12-d-2 = "fmul" | "bit"
+
+; form LDPC14/b (index 187): 2 parcels
+form-LDPC14-b = o1:pc14-u1 o2:reg4
+leaf-LDPC14-b-1 = 0b111100011100 %prefix sub:2 %sub("sub" "movw movb movzl movzw") o2-r:4 %reg("r2") o1-pcrel:14 %disp("pcrel1") %title("LDPC14-b-1: movw movb movzl movzw")
+sub-LDPC14-b-1 = "movw" | "movb" | "movzl" | "movzw"
+
+; ======================================================================================================================================================
+; family LDBu: 6 forms, 7 leaves, 2 parcels; mnemonics movw movb movzl movzw add sub ...
+; ======================================================================================================================================================
+
+; form LDBu8/b (index 79): 2 parcels
+form-LDBu8-b = o1:b4d8u-xsz o2:reg4
+leaf-LDBu8-b-1 = 0b11110010011011 %prefix sub:2 %sub("sub" "movw movb movzl movzw") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:8 %disp("d1") %title("LDBu8-b-1: movw movb movzl movzw")
+sub-LDBu8-b-1 = "movw" | "movb" | "movzl" | "movzw"
+
+; form LDBu8/c (index 88): 2 parcels
+form-LDBu8-c = o1:b4d8u-xsz o2:reg4
+leaf-LDBu8-c-1 = 0b11110010100000 %prefix sub:2 %sub("sub" "add sub and bis") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:8 %disp("d1") %title("LDBu8-c-1: add sub and bis")
+sub-LDBu8-c-1 = "add" | "sub" | "and" | "bis"
+leaf-LDBu8-c-2 = 0b1111001100101100 %prefix o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:8 %disp("d1") %title("LDBu8-c-2: xor")
+sub-LDBu8-c-2 = "xor"
+
+; form LDBu10/a (index 106): 2 parcels
+form-LDBu10-a = o1:b4d10u-xsz o2:reg4
+leaf-LDBu10-a-1 = 0b111100010000 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:10 %disp("d1") %title("LDBu10-a-1: movq movl movzb lea")
+sub-LDBu10-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDBu12/a (index 128): 2 parcels
+form-LDBu12-a = o1:b4d12u-xsz o2:reg4
+leaf-LDBu12-a-1 = 0b1110101001 %prefix sub:2 %sub("sub" "movq movl movzb lea") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("LDBu12-a-1: movq movl movzb lea")
+sub-LDBu12-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDBu10/b (index 147): 2 parcels
+form-LDBu10-b = o1:b4d10u-xsz o2:reg4
+leaf-LDBu10-b-1 = 0b111100010100 %prefix sub:2 %sub("sub" "movw movb movzl movzw") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:10 %disp("d1") %title("LDBu10-b-1: movw movb movzl movzw")
+sub-LDBu10-b-1 = "movw" | "movb" | "movzl" | "movzw"
+
+; form LDBu12/b (index 159): 2 parcels
+form-LDBu12-b = o1:b4d12u-xsz o2:reg4
+leaf-LDBu12-b-1 = 0b1110101110 %prefix sub:2 %sub("sub" "movw movb movzl movzw") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("LDBu12-b-1: movw movb movzl movzw")
+sub-LDBu12-b-1 = "movw" | "movb" | "movzl" | "movzw"
+
+; ======================================================================================================================================================
+; family CMBu: 3 forms, 3 leaves, 2 parcels; mnemonics cmp cmp cmp
+; ======================================================================================================================================================
+
+; form CMBu8/a (index 80): 2 parcels
+form-CMBu8-a = o1:reg4 o2:b4d8u-xsz
+leaf-CMBu8-a-1 = 0b1111001100101010 %prefix o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:8 %disp("d2") %title("CMBu8-a-1: cmp")
+sub-CMBu8-a-1 = "cmp"
+
+; form CMBu10/a (index 132): 2 parcels
+form-CMBu10-a = o1:reg4 o2:b4d10u-xsz
+leaf-CMBu10-a-1 = 0b11110010101101 %prefix o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:10 %disp("d2") %title("CMBu10-a-1: cmp")
+sub-CMBu10-a-1 = "cmp"
+
+; form CMBu12/a (index 190): 2 parcels
+form-CMBu12-a = o1:reg4 o2:b4d12u-xsz
+leaf-CMBu12-a-1 = 0b111100011101 %prefix o2-base:4 %reg("base2") o1-r:4 %reg("r1") o2-d:12 %disp("d2") %title("CMBu12-a-1: cmp")
+sub-CMBu12-a-1 = "cmp"
+
+; ======================================================================================================================================================
+; family BR1: 6 forms, 7 leaves, 1 parcel; mnemonics br br beq bne br bpl ...
+; ======================================================================================================================================================
+
+; form BR1_6/a (index 83): 1 parcel
+form-BR1-6-a = o1:pc6-u2
+leaf-BR1-6-a-1 = 0b1110100110 %prefix o1-pcrel:6 %disp("pcrel1") %title("BR1-6-a-1: br")
+sub-BR1-6-a-1 = "br"
+
+; form BR1_8/a (index 114): 1 parcel
+form-BR1-8-a = o1:pc8-u2
+leaf-BR1-8-a-1 = 0b11010001 %prefix o1-pcrel:8 %disp("pcrel1") %title("BR1-8-a-1: br")
+sub-BR1-8-a-1 = "br"
+
+; form BR1_6/b (index 118): 1 parcel
+form-BR1-6-b = o1:pc6-u2
+leaf-BR1-6-b-1 = 0b111000101 %prefix sub:1 %sub("sub" "beq bne") o1-pcrel:6 %disp("pcrel1") %title("BR1-6-b-1: beq bne")
+sub-BR1-6-b-1 = "beq" | "bne"
+
+; form BR1_9/a (index 152): 1 parcel
+form-BR1-9-a = o1:pc9-u2
+leaf-BR1-9-a-1 = 0b1011000 %prefix o1-pcrel:9 %disp("pcrel1") %title("BR1-9-a-1: br")
+sub-BR1-9-a-1 = "br"
+
+; form BR1_6/c (index 180): 1 parcel
+form-BR1-6-c = o1:pc6-u2
+leaf-BR1-6-c-1 = 0b1011100 %prefix sub:3 %sub("sub" "bpl bmi bvc bvs bcc bcs bge blt") o1-pcrel:6 %disp("pcrel1") %title("BR1-6-c-1: bpl bmi bvc bvs ...")
+sub-BR1-6-c-1 = "bpl" | "bmi" | "bvc" | "bvs" | "bcc" | "bcs" | "bge" | "blt"
+leaf-BR1-6-c-2 = 0b11010101 %prefix sub:2 %sub("sub" "bgt ble bhi blos") o1-pcrel:6 %disp("pcrel1") %title("BR1-6-c-2: bgt ble bhi blos")
+sub-BR1-6-c-2 = "bgt" | "ble" | "bhi" | "blos"
+
+; form BR1_7/b (index 189): 1 parcel
+form-BR1-7-b = o1:pc7-u2
+leaf-BR1-7-b-1 = 0b11010111 %prefix sub:1 %sub("sub" "beq bne") o1-pcrel:7 %disp("pcrel1") %title("BR1-7-b-1: beq bne")
+sub-BR1-7-b-1 = "beq" | "bne"
+
+; ======================================================================================================================================================
+; family CBZ2: 3 forms, 3 leaves, 2 parcels; mnemonics cbeq cbne cblt cbge cbgt cble ...
+; ======================================================================================================================================================
+
+; form CBZ2_12/a (index 86): 2 parcels
+form-CBZ2-12-a = o1:reg4 o2:k-imm0 o3:pc12-u2
+leaf-CBZ2-12-a-1 = 0b111100110000011 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o3-pcrel:12 %disp("pcrel3") %title("CBZ2-12-a-1: cbeq cbne")
+sub-CBZ2-12-a-1 = "cbeq" | "cbne"
+
+; form CBZ2_12/b (index 122): 2 parcels
+form-CBZ2-12-b = o1:reg4 o2:k-imm0 o3:pc12-u2
+leaf-CBZ2-12-b-1 = 0b11110010101010 %prefix sub:2 %sub("sub" "cblt cbge cbgt cble") o1-r:4 %reg("r1") o3-pcrel:12 %disp("pcrel3") %title("CBZ2-12-b-1: cblt cbge cbgt cble")
+sub-CBZ2-12-b-1 = "cblt" | "cbge" | "cbgt" | "cble"
+
+; form CBZ2_14/a (index 176): 2 parcels
+form-CBZ2-14-a = o1:reg4 o2:k-imm0 o3:pc14-u2
+leaf-CBZ2-14-a-1 = 0b1111001000110 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o3-pcrel:14 %disp("pcrel3") %title("CBZ2-14-a-1: cbeq cbne")
+sub-CBZ2-14-a-1 = "cbeq" | "cbne"
+
+; ======================================================================================================================================================
+; family LDBs: 6 forms, 8 leaves, 2 parcels; mnemonics movq movl movzb lea movq movl ...
+; ======================================================================================================================================================
+
+; form LDBs8/a (index 87): 2 parcels
+form-LDBs8-a = o1:b4d8s-xsz o2:reg4
+leaf-LDBs8-a-1 = 0b11110010011111 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:8 %disp("d1") %title("LDBs8-a-1: movq movl movzb lea")
+sub-LDBs8-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDBs10/a (index 148): 2 parcels
+form-LDBs10-a = o1:b4d10s-xsz o2:reg4
+leaf-LDBs10-a-1 = 0b111100010101 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:10 %disp("d1") %title("LDBs10-a-1: movq movl movzb lea")
+sub-LDBs10-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDBs10/c (index 158): 2 parcels
+form-LDBs10-c = o1:b4d10s-xsz o2:reg4
+leaf-LDBs10-c-1 = 0b111100010111 %prefix sub:2 %sub("sub" "add sub and bis") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:10 %disp("d1") %title("LDBs10-c-1: add sub and bis")
+sub-LDBs10-c-1 = "add" | "sub" | "and" | "bis"
+leaf-LDBs10-c-2 = 0b11110010110000 %prefix o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:10 %disp("d1") %title("LDBs10-c-2: xor")
+sub-LDBs10-c-2 = "xor"
+
+; form LDBs8/b (index 181): 2 parcels
+form-LDBs8-b = o1:b4d8s-xsz o2:reg4
+leaf-LDBs8-b-1 = 0b11110010110110 %prefix sub:2 %sub("sub" "movw movb movzl movzw") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:8 %disp("d1") %title("LDBs8-b-1: movw movb movzl movzw")
+sub-LDBs8-b-1 = "movw" | "movb" | "movzl" | "movzw"
+
+; form LDBs14/a (index 186): 2 parcels
+form-LDBs14-a = o1:b4d14s-xsz o2:reg4
+leaf-LDBs14-a-1 = 0b11010110 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-base-1:2 %reg("base1") o2-r:4 %reg("r2") o1-base-2:2 %reg("base1") o1-d:14 %disp("d1") %title("LDBs14-a-1: movq movl movzb lea")
+sub-LDBs14-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDBs8/d (index 203): 2 parcels
+form-LDBs8-d = o1:b4d8s-xsz o2:reg4
+leaf-LDBs8-d-1 = 0b1111001001001 %prefix sub:3 %sub("sub" "bic mul mulh shl shr sar fadd fsub") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:8 %disp("d1") %title("LDBs8-d-1: bic mul mulh shl ...")
+sub-LDBs8-d-1 = "bic" | "mul" | "mulh" | "shl" | "shr" | "sar" | "fadd" | "fsub"
+leaf-LDBs8-d-2 = 0b111100110001101 %prefix sub:1 %sub("sub" "fmul bit") o1-base:4 %reg("base1") o2-r:4 %reg("r2") o1-d:8 %disp("d1") %title("LDBs8-d-2: fmul bit")
+sub-LDBs8-d-2 = "fmul" | "bit"
+
+; ======================================================================================================================================================
+; family CBI5: 2 forms, 2 leaves, 2 parcels; mnemonics cbeq cbne cbeq cbne
+; ======================================================================================================================================================
+
+; form CBI5_8/a (index 89): 2 parcels
+form-CBI5-8-a = o1:reg4 o2:imm5s o3:pc8-u2
+leaf-CBI5-8-a-1 = 0b11110010100001 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o2-imm:5 %imm("imm2") o3-pcrel:8 %disp("pcrel3") %title("CBI5-8-a-1: cbeq cbne")
+sub-CBI5-8-a-1 = "cbeq" | "cbne"
+
+; form CBI5_10/a (index 121): 2 parcels
+form-CBI5-10-a = o1:reg4 o2:imm5s o3:pc10-u2
+leaf-CBI5-10-a-1 = 0b111100010010 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o2-imm:5 %imm("imm2") o3-pcrel:10 %disp("pcrel3") %title("CBI5-10-a-1: cbeq cbne")
+sub-CBI5-10-a-1 = "cbeq" | "cbne"
+
+; ======================================================================================================================================================
+; family SOBu: 2 forms, 3 leaves, 2 parcels; mnemonics clr inc dec tst push pop ...
+; ======================================================================================================================================================
+
+; form SOBu12/a (index 92): 2 parcels
+form-SOBu12-a = o1:b4d12u-xsz
+leaf-SOBu12-a-1 = 0b11110010100011 %prefix sub:2 %sub("sub" "clr inc dec tst") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("SOBu12-a-1: clr inc dec tst")
+sub-SOBu12-a-1 = "clr" | "inc" | "dec" | "tst"
+leaf-SOBu12-a-2 = 0b111100110000100 %prefix sub:1 %sub("sub" "push pop") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("SOBu12-a-2: push pop")
+sub-SOBu12-a-2 = "push" | "pop"
+
+; form SOBu12/x (index 97): 2 parcels
+form-SOBu12-x = o1:b4d12u-xsz
+leaf-SOBu12-x-1 = 0b11110010100101 %prefix sub:2 %sub("sub" "jmp call jmpi calli") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("SOBu12-x-1: jmp call jmpi calli")
+sub-SOBu12-x-1 = "jmp" | "call" | "jmpi" | "calli"
+
+; ======================================================================================================================================================
+; family STX: 4 forms, 4 leaves, 2 parcels; mnemonics movw movb movq movl movq movl ...
+; ======================================================================================================================================================
+
+; form STX2/b (index 93): 2 parcels
+form-STX2-b = o1:reg4 o2:x4-4d2s
+leaf-STX2-b-1 = 0b111100110000101 %prefix sub:1 %sub("sub" "movw movb") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-index:4 %reg("index2") o2-scale:2 %scale("scale2") o2-d:2 %disp("d2") %title("STX2-b-1: movw movb")
+sub-STX2-b-1 = "movw" | "movb"
+
+; form STX2/a (index 95): 2 parcels
+form-STX2-a = o1:reg4 o2:x4-4d2s
+leaf-STX2-a-1 = 0b111100110000110 %prefix sub:1 %sub("sub" "movq movl") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-index:4 %reg("index2") o2-scale:2 %scale("scale2") o2-d:2 %disp("d2") %title("STX2-a-1: movq movl")
+sub-STX2-a-1 = "movq" | "movl"
+
+; form STX6/a (index 144): 2 parcels
+form-STX6-a = o1:reg4 o2:x4-4d6s
+leaf-STX6-a-1 = 0b11101110111 %prefix sub:1 %sub("sub" "movq movl") o2-index:4 %reg("index2") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-scale:2 %scale("scale2") o2-d:6 %disp("d2") %title("STX6-a-1: movq movl")
+sub-STX6-a-1 = "movq" | "movl"
+
+; form STX6/b (index 162): 2 parcels
+form-STX6-b = o1:reg4 o2:x4-4d6s
+leaf-STX6-b-1 = 0b11101111001 %prefix sub:1 %sub("sub" "movw movb") o2-index:4 %reg("index2") o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-scale:2 %scale("scale2") o2-d:6 %disp("d2") %title("STX6-b-1: movw movb")
+sub-STX6-b-1 = "movw" | "movb"
+
+; ======================================================================================================================================================
+; family CBI8: 3 forms, 3 leaves, 2 parcels; mnemonics cblt cbge cbgt cble cbeq cbne ...
+; ======================================================================================================================================================
+
+; form CBI8_8/b (index 96): 2 parcels
+form-CBI8-8-b = o1:reg4 o2:imm8s o3:pc8-u2
+leaf-CBI8-8-b-1 = 0b1110100111 %prefix sub:2 %sub("sub" "cblt cbge cbgt cble") o1-r:4 %reg("r1") o2-imm:8 %imm("imm2") o3-pcrel:8 %disp("pcrel3") %title("CBI8-8-b-1: cblt cbge cbgt cble")
+sub-CBI8-8-b-1 = "cblt" | "cbge" | "cbgt" | "cble"
+
+; form CBI8_10/a (index 143): 2 parcels
+form-CBI8-10-a = o1:reg4 o2:imm8s o3:pc10-u2
+leaf-CBI8-10-a-1 = 0b111001000 %prefix sub:1 %sub("sub" "cbeq cbne") o2-imm-1:2 %imm("imm2") o1-r:4 %reg("r1") o2-imm-2:6 %imm("imm2") o3-pcrel:10 %disp("pcrel3") %title("CBI8-10-a-1: cbeq cbne")
+sub-CBI8-10-a-1 = "cbeq" | "cbne"
+
+; form CBI8_8/c (index 149): 2 parcels
+form-CBI8-8-c = o1:reg4 o2:imm8s o3:pc8-u2
+leaf-CBI8-8-c-1 = 0b1110101100 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-imm:8 %imm("imm2") o3-pcrel:8 %disp("pcrel3") %title("CBI8-8-c-1: cbcs cbcc cbhi cblos")
+sub-CBI8-8-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; ======================================================================================================================================================
+; family IMM: 6 forms, 8 leaves, 1 parcel; mnemonics movq movq add sub and movq ...
+; ======================================================================================================================================================
+
+; form IMM3/a (index 99): 1 parcel
+form-IMM3-a = o1:imm3s o2:reg4
+leaf-IMM3-a-1 = 0b111000010 %prefix o1-imm:3 %imm("imm1") o2-r:4 %reg("r2") %title("IMM3-a-1: movq")
+sub-IMM3-a-1 = "movq"
+
+; form IMM5/a (index 130): 1 parcel
+form-IMM5-a = o1:imm5s o2:reg4
+leaf-IMM5-a-1 = 0b1010111 %prefix o1-imm:5 %imm("imm1") o2-r:4 %reg("r2") %title("IMM5-a-1: movq")
+sub-IMM5-a-1 = "movq"
+
+; form IMM3/b (index 135): 1 parcel
+form-IMM3-b = o1:imm3s o2:reg4
+leaf-IMM3-b-1 = 0b11010010 %prefix sub:1 %sub("sub" "add sub") o1-imm:3 %imm("imm1") o2-r:4 %reg("r2") %title("IMM3-b-1: add sub")
+sub-IMM3-b-1 = "add" | "sub"
+leaf-IMM3-b-2 = 0b111000110 %prefix o1-imm:3 %imm("imm1") o2-r:4 %reg("r2") %title("IMM3-b-2: and")
+sub-IMM3-b-2 = "and"
+
+; form IMM7/a (index 140): 1 parcel
+form-IMM7-a = o1:imm7s o2:reg4
+leaf-IMM7-a-1 = 0b01100 %prefix o1-imm:7 %imm("imm1") o2-r:4 %reg("r2") %title("IMM7-a-1: movq")
+sub-IMM7-a-1 = "movq"
+
+; form IMM4/b (index 163): 1 parcel
+form-IMM4-b = o1:imm4s o2:reg4
+leaf-IMM4-b-1 = 0b1011010 %prefix sub:1 %sub("sub" "add sub") o1-imm:4 %imm("imm1") o2-r:4 %reg("r2") %title("IMM4-b-1: add sub")
+sub-IMM4-b-1 = "add" | "sub"
+leaf-IMM4-b-2 = 0b11010100 %prefix o1-imm:4 %imm("imm1") o2-r:4 %reg("r2") %title("IMM4-b-2: and")
+sub-IMM4-b-2 = "and"
+
+; form IMM3/c (index 194): 1 parcel
+form-IMM3-c = o1:imm3s o2:reg4
+leaf-IMM3-c-1 = 0b1011111 %prefix sub:2 %sub("sub" "bis xor mul bic") o1-imm:3 %imm("imm1") o2-r:4 %reg("r2") %title("IMM3-c-1: bis xor mul bic")
+sub-IMM3-c-1 = "bis" | "xor" | "mul" | "bic"
+
+; ======================================================================================================================================================
+; family CBI6: 4 forms, 4 leaves, 2 parcels; mnemonics cbeq cbne cbcs cbcc cbhi cblos ...
+; ======================================================================================================================================================
+
+; form CBI6_8/a (index 100): 2 parcels
+form-CBI6-8-a = o1:reg4 o2:imm6s o3:pc8-u2
+leaf-CBI6-8-a-1 = 0b1111001000000 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o2-imm:6 %imm("imm2") o3-pcrel:8 %disp("pcrel3") %title("CBI6-8-a-1: cbeq cbne")
+sub-CBI6-8-a-1 = "cbeq" | "cbne"
+
+; form CBI6_8/c (index 119): 2 parcels
+form-CBI6-8-c = o1:reg4 o2:imm6s o3:pc8-u2
+leaf-CBI6-8-c-1 = 0b111100010001 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-imm:6 %imm("imm2") o3-pcrel:8 %disp("pcrel3") %title("CBI6-8-c-1: cbcs cbcc cbhi cblos")
+sub-CBI6-8-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; form CBI6_12/a (index 184): 2 parcels
+form-CBI6-12-a = o1:reg4 o2:imm6s o3:pc12-u2
+leaf-CBI6-12-a-1 = 0b111001001 %prefix sub:1 %sub("sub" "cbeq cbne") o2-imm-1:2 %imm("imm2") o1-r:4 %reg("r1") o2-imm-2:4 %imm("imm2") o3-pcrel:12 %disp("pcrel3") %title("CBI6-12-a-1: cbeq cbne")
+sub-CBI6-12-a-1 = "cbeq" | "cbne"
+
+; form CBI6_10/c (index 200): 2 parcels
+form-CBI6-10-c = o1:reg4 o2:imm6s o3:pc10-u2
+leaf-CBI6-10-c-1 = 0b1110110001 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-imm:6 %imm("imm2") o3-pcrel:10 %disp("pcrel3") %title("CBI6-10-c-1: cbcs cbcc cbhi cblos")
+sub-CBI6-10-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; ======================================================================================================================================================
+; family CBI10: 2 forms, 2 leaves, 2 parcels; mnemonics cbeq cbne cbcs cbcc cbhi cblos
+; ======================================================================================================================================================
+
+; form CBI10_8/a (index 101): 2 parcels
+form-CBI10-8-a = o1:reg4 o2:imm10s o3:pc8-u2
+leaf-CBI10-8-a-1 = 0b111000011 %prefix sub:1 %sub("sub" "cbeq cbne") o2-imm-1:2 %imm("imm2") o1-r:4 %reg("r1") o2-imm-2:8 %imm("imm2") o3-pcrel:8 %disp("pcrel3") %title("CBI10-8-a-1: cbeq cbne")
+sub-CBI10-8-a-1 = "cbeq" | "cbne"
+
+; form CBI10_8/c (index 192): 2 parcels
+form-CBI10-8-c = o1:reg4 o2:imm10s o3:pc8-u2
+leaf-CBI10-8-c-1 = 0b11011000 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o2-imm-1:2 %imm("imm2") o1-r:4 %reg("r1") o2-imm-2:8 %imm("imm2") o3-pcrel:8 %disp("pcrel3") %title("CBI10-8-c-1: cbcs cbcc cbhi cblos")
+sub-CBI10-8-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; ======================================================================================================================================================
+; family LDX: 5 forms, 6 leaves, 2 parcels; mnemonics movw movb movzl movzw add sub ...
+; ======================================================================================================================================================
+
+; form LDX2/b (index 103): 2 parcels
+form-LDX2-b = o1:x4-4d2s o2:reg4
+leaf-LDX2-b-1 = 0b11110010100111 %prefix sub:2 %sub("sub" "movw movb movzl movzw") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:2 %disp("d1") o2-r:4 %reg("r2") %title("LDX2-b-1: movw movb movzl movzw")
+sub-LDX2-b-1 = "movw" | "movb" | "movzl" | "movzw"
+
+; form LDX2/c (index 133): 2 parcels
+form-LDX2-c = o1:x4-4d2s o2:reg4
+leaf-LDX2-c-1 = 0b11110010101110 %prefix sub:2 %sub("sub" "add sub and bis") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:2 %disp("d1") o2-r:4 %reg("r2") %title("LDX2-c-1: add sub and bis")
+sub-LDX2-c-1 = "add" | "sub" | "and" | "bis"
+leaf-LDX2-c-2 = 0b1111001100101110 %prefix o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:2 %disp("d1") o2-r:4 %reg("r2") %title("LDX2-c-2: xor")
+sub-LDX2-c-2 = "xor"
+
+; form LDX6/a (index 137): 2 parcels
+form-LDX6-a = o1:x4-4d6s o2:reg4
+leaf-LDX6-a-1 = 0b1110101010 %prefix sub:2 %sub("sub" "movq movl movzb lea") o2-r:4 %reg("r2") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:6 %disp("d1") %title("LDX6-a-1: movq movl movzb lea")
+sub-LDX6-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDX4/b (index 183): 2 parcels
+form-LDX4-b = o1:x4-4d4s o2:reg4
+leaf-LDX4-b-1 = 0b111100011011 %prefix sub:2 %sub("sub" "movw movb movzl movzw") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:4 %disp("d1") o2-r:4 %reg("r2") %title("LDX4-b-1: movw movb movzl movzw")
+sub-LDX4-b-1 = "movw" | "movb" | "movzl" | "movzw"
+
+; form LDX8/a (index 198): 2 parcels
+form-LDX8-a = o1:x4-4d8s o2:reg4
+leaf-LDX8-a-1 = 0b11011001 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-base-1:2 %reg("base1") o2-r:4 %reg("r2") o1-base-2:2 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:8 %disp("d1") %title("LDX8-a-1: movq movl movzb lea")
+sub-LDX8-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; ======================================================================================================================================================
+; family CB3I8: 3 forms, 3 leaves, 3 parcels; mnemonics cbeq cbne cblt cbge cbgt cble ...
+; ======================================================================================================================================================
+
+; form CB3I8_20/a (index 107): 3 parcels
+form-CB3I8-20-a = o1:reg4 o2:imm8s o3:pc20-u2
+leaf-CB3I8-20-a-1 = 0b111100110000111 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o2-imm:8 %imm("imm2") o3-pcrel:20 %disp("pcrel3") %title("CB3I8-20-a-1: cbeq cbne")
+sub-CB3I8-20-a-1 = "cbeq" | "cbne"
+
+; form CB3I8_20/b (index 161): 3 parcels
+form-CB3I8-20-b = o1:reg4 o2:imm8s o3:pc20-u2
+leaf-CB3I8-20-b-1 = 0b11110010110001 %prefix sub:2 %sub("sub" "cblt cbge cbgt cble") o1-r:4 %reg("r1") o2-imm:8 %imm("imm2") o3-pcrel:20 %disp("pcrel3") %title("CB3I8-20-b-1: cblt cbge cbgt cble")
+sub-CB3I8-20-b-1 = "cblt" | "cbge" | "cbgt" | "cble"
+
+; form CB3I8_20/c (index 177): 3 parcels
+form-CB3I8-20-c = o1:reg4 o2:imm8s o3:pc20-u2
+leaf-CB3I8-20-c-1 = 0b11110010110101 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-imm:8 %imm("imm2") o3-pcrel:20 %disp("pcrel3") %title("CB3I8-20-c-1: cbcs cbcc cbhi cblos")
+sub-CB3I8-20-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; ======================================================================================================================================================
+; family SPADJ: 2 forms, 2 leaves, 1 parcel; mnemonics add sub add sub
+; ======================================================================================================================================================
+
+; form SPADJ6/a (index 108): 1 parcel
+form-SPADJ6-a = o1:imm6u-x8 o2:k-sp
+leaf-SPADJ6-a-1 = 0b111000100 %prefix sub:1 %sub("sub" "add sub") o1-imm:6 %imm("imm1") %title("SPADJ6-a-1: add sub")
+sub-SPADJ6-a-1 = "add" | "sub"
+
+; form SPADJ8/a (index 191): 1 parcel
+form-SPADJ8-a = o1:imm8u-x8 o2:k-sp
+leaf-SPADJ8-a-1 = 0b1011110 %prefix sub:1 %sub("sub" "add sub") o1-imm:8 %imm("imm1") %title("SPADJ8-a-1: add sub")
+sub-SPADJ8-a-1 = "add" | "sub"
+
+; ======================================================================================================================================================
+; family LDHH: 3 forms, 3 leaves, 1 parcel; mnemonics movq movl movzb lea movq movl ...
+; ======================================================================================================================================================
+
+; form LDHHH1/a (index 109): 1 parcel
+form-LDHHH1-a = o1:b3d1u-xsz o2:reg3
+leaf-LDHHH1-a-1 = 0b1010010 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-d:1 %disp("d1") o1-base:3 %reg("base1") o2-r:3 %reg("r2") %title("LDHHH1-a-1: movq movl movzb lea")
+sub-LDHHH1-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDHHH3/a (index 134): 1 parcel
+form-LDHHH3-a = o1:b3d3u-xsz o2:reg3
+leaf-LDHHH3-a-1 = 0b01011 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-d:3 %disp("d1") o1-base:3 %reg("base1") o2-r:3 %reg("r2") %title("LDHHH3-a-1: movq movl movzb lea")
+sub-LDHHH3-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDHHH1/b (index 157): 1 parcel
+form-LDHHH1-b = o1:b3d1u-xsz o2:reg3
+leaf-LDHHH1-b-1 = 0b1011001 %prefix sub:2 %sub("sub" "movw movb movzl movzw") o1-d:1 %disp("d1") o1-base:3 %reg("base1") o2-r:3 %reg("r2") %title("LDHHH1-b-1: movw movb movzl movzw")
+sub-LDHHH1-b-1 = "movw" | "movb" | "movzl" | "movzw"
+
+; ======================================================================================================================================================
+; family CBI4: 4 forms, 4 leaves, 2 parcels; mnemonics cbcs cbcc cbhi cblos cbeq cbne ...
+; ======================================================================================================================================================
+
+; form CBI4_8/c (index 110): 2 parcels
+form-CBI4-8-c = o1:reg4 o2:imm4s o3:pc8-u2
+leaf-CBI4-8-c-1 = 0b11110010101001 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-imm:4 %imm("imm2") o3-pcrel:8 %disp("pcrel3") %title("CBI4-8-c-1: cbcs cbcc cbhi cblos")
+sub-CBI4-8-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; form CBI4_12/a (index 167): 2 parcels
+form-CBI4-12-a = o1:reg4 o2:imm4s o3:pc12-u2
+leaf-CBI4-12-a-1 = 0b11101111010 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o2-imm:4 %imm("imm2") o3-pcrel:12 %disp("pcrel3") %title("CBI4-12-a-1: cbeq cbne")
+sub-CBI4-12-a-1 = "cbeq" | "cbne"
+
+; form CBI4_10/c (index 173): 2 parcels
+form-CBI4-10-c = o1:reg4 o2:imm4s o3:pc10-u2
+leaf-CBI4-10-c-1 = 0b111100011001 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-imm:4 %imm("imm2") o3-pcrel:10 %disp("pcrel3") %title("CBI4-10-c-1: cbcs cbcc cbhi cblos")
+sub-CBI4-10-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; form CBI4_10/b (index 178): 2 parcels
+form-CBI4-10-b = o1:reg4 o2:imm4s o3:pc10-u2
+leaf-CBI4-10-b-1 = 0b111100011010 %prefix sub:2 %sub("sub" "cblt cbge cbgt cble") o1-r:4 %reg("r1") o2-imm:4 %imm("imm2") o3-pcrel:10 %disp("pcrel3") %title("CBI4-10-b-1: cblt cbge cbgt cble")
+sub-CBI4-10-b-1 = "cblt" | "cbge" | "cbgt" | "cble"
+
+; ======================================================================================================================================================
+; family STHH: 4 forms, 4 leaves, 1 parcel; mnemonics movq movl movw movb movq movl ...
+; ======================================================================================================================================================
+
+; form STHHH1/a (index 111): 1 parcel
+form-STHHH1-a = o1:reg3 o2:b3d1u-xsz
+leaf-STHHH1-a-1 = 0b11001111 %prefix sub:1 %sub("sub" "movq movl") o2-d:1 %disp("d2") o1-r:3 %reg("r1") o2-base:3 %reg("base2") %title("STHHH1-a-1: movq movl")
+sub-STHHH1-a-1 = "movq" | "movl"
+
+; form STHHH1/b (index 136): 1 parcel
+form-STHHH1-b = o1:reg3 o2:b3d1u-xsz
+leaf-STHHH1-b-1 = 0b11010011 %prefix sub:1 %sub("sub" "movw movb") o2-d:1 %disp("d2") o1-r:3 %reg("r1") o2-base:3 %reg("base2") %title("STHHH1-b-1: movw movb")
+sub-STHHH1-b-1 = "movw" | "movb"
+
+; form STHHH3/a (index 154): 1 parcel
+form-STHHH3-a = o1:reg3 o2:b3d3u-xsz
+leaf-STHHH3-a-1 = 0b100101 %prefix sub:1 %sub("sub" "movq movl") o2-d:3 %disp("d2") o1-r:3 %reg("r1") o2-base:3 %reg("base2") %title("STHHH3-a-1: movq movl")
+sub-STHHH3-a-1 = "movq" | "movl"
+
+; form STHHH2/b (index 202): 1 parcel
+form-STHHH2-b = o1:reg3 o2:b3d2u-xsz
+leaf-STHHH2-b-1 = 0b1100000 %prefix sub:1 %sub("sub" "movw movb") o2-d:2 %disp("d2") o1-r:3 %reg("r1") o2-base:3 %reg("base2") %title("STHHH2-b-1: movw movb")
+sub-STHHH2-b-1 = "movw" | "movb"
+
+; ======================================================================================================================================================
+; family LEASP: 2 forms, 2 leaves, 1 parcel; mnemonics lea lea
+; ======================================================================================================================================================
+
+; form LEASP4/a (index 113): 1 parcel
+form-LEASP4-a = o1:spd4u-x8 o2:reg4
+leaf-LEASP4-a-1 = 0b11010000 %prefix o1-d:4 %disp("d1") o2-r:4 %reg("r2") %title("LEASP4-a-1: lea")
+sub-LEASP4-a-1 = "lea"
+
+; form LEASP6/a (index 168): 1 parcel
+form-LEASP6-a = o1:spd6u-x8 o2:reg4
+leaf-LEASP6-a-1 = 0b101000 %prefix o1-d:6 %disp("d1") o2-r:4 %reg("r2") %title("LEASP6-a-1: lea")
+sub-LEASP6-a-1 = "lea"
+
+; ======================================================================================================================================================
+; family CMI: 2 forms, 2 leaves, 2 parcels; mnemonics cmp cmp
+; ======================================================================================================================================================
+
+; form CMI12/a (index 115): 2 parcels
+form-CMI12-a = o1:reg4 o2:imm12s
+leaf-CMI12-a-1 = 0b1111001100101101 %prefix o1-r:4 %reg("r1") o2-imm:12 %imm("imm2") %title("CMI12-a-1: cmp")
+sub-CMI12-a-1 = "cmp"
+
+; form CMI18/a (index 169): 2 parcels
+form-CMI18-a = o1:reg4 o2:imm18s
+leaf-CMI18-a-1 = 0b1110101111 %prefix o2-imm-1:2 %imm("imm2") o1-r:4 %reg("r1") o2-imm-2:16 %imm("imm2") %title("CMI18-a-1: cmp")
+sub-CMI18-a-1 = "cmp"
+
+; ======================================================================================================================================================
+; family LDSP: 3 forms, 3 leaves, 1 parcel; mnemonics movq movl movzb lea movq movl ...
+; ======================================================================================================================================================
+
+; form LDSP4/a (index 116): 1 parcel
+form-LDSP4-a = o1:spd4u-xsz o2:reg4
+leaf-LDSP4-a-1 = 0b100011 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-d:4 %disp("d1") o2-r:4 %reg("r2") %title("LDSP4-a-1: movq movl movzb lea")
+sub-LDSP4-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDSP5/a (index 153): 1 parcel
+form-LDSP5-a = o1:spd5u-xsz o2:reg4
+leaf-LDSP5-a-1 = 0b01110 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-d:5 %disp("d1") o2-r:4 %reg("r2") %title("LDSP5-a-1: movq movl movzb lea")
+sub-LDSP5-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; form LDSP7/a (index 197): 1 parcel
+form-LDSP7-a = o1:spd7u-xsz o2:reg4
+leaf-LDSP7-a-1 = 0b000 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-d:7 %disp("d1") o2-r:4 %reg("r2") %title("LDSP7-a-1: movq movl movzb lea")
+sub-LDSP7-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; ======================================================================================================================================================
+; family CBZ1: 3 forms, 3 leaves, 1 parcel; mnemonics cbeq cbne cbeq cbne cbeq cbne
+; ======================================================================================================================================================
+
+; form CBZ1_4/a (index 117): 1 parcel
+form-CBZ1-4-a = o1:reg4 o2:k-imm0 o3:pc4-u2
+leaf-CBZ1-4-a-1 = 0b1010011 %prefix sub:1 %sub("sub" "cbeq cbne") o3-pcrel:4 %disp("pcrel3") o1-r:4 %reg("r1") %title("CBZ1-4-a-1: cbeq cbne")
+sub-CBZ1-4-a-1 = "cbeq" | "cbne"
+
+; form CBZ1_5/a (index 141): 1 parcel
+form-CBZ1-5-a = o1:reg4 o2:k-imm0 o3:pc5-u2
+leaf-CBZ1-5-a-1 = 0b100100 %prefix sub:1 %sub("sub" "cbeq cbne") o3-pcrel:5 %disp("pcrel3") o1-r:4 %reg("r1") %title("CBZ1-5-a-1: cbeq cbne")
+sub-CBZ1-5-a-1 = "cbeq" | "cbne"
+
+; form CBZ1_7/a (index 171): 1 parcel
+form-CBZ1-7-a = o1:reg4 o2:k-imm0 o3:pc7-u2
+leaf-CBZ1-7-a-1 = 0b0100 %prefix sub:1 %sub("sub" "cbeq cbne") o3-pcrel:7 %disp("pcrel3") o1-r:4 %reg("r1") %title("CBZ1-7-a-1: cbeq cbne")
+sub-CBZ1-7-a-1 = "cbeq" | "cbne"
+
+; ======================================================================================================================================================
+; family STSP: 3 forms, 3 leaves, 1 parcel; mnemonics movq movl movq movl movw movb
+; ======================================================================================================================================================
+
+; form STSP4/a (index 120): 1 parcel
+form-STSP4-a = o1:reg4 o2:spd4u-xsz
+leaf-STSP4-a-1 = 0b1010100 %prefix sub:1 %sub("sub" "movq movl") o2-d:4 %disp("d2") o1-r:4 %reg("r1") %title("STSP4-a-1: movq movl")
+sub-STSP4-a-1 = "movq" | "movl"
+
+; form STSP5/a (index 166): 1 parcel
+form-STSP5-a = o1:reg4 o2:spd5u-xsz
+leaf-STSP5-a-1 = 0b100111 %prefix sub:1 %sub("sub" "movq movl") o2-d:5 %disp("d2") o1-r:4 %reg("r1") %title("STSP5-a-1: movq movl")
+sub-STSP5-a-1 = "movq" | "movl"
+
+; form STSP4/b (index 188): 1 parcel
+form-STSP4-b = o1:reg4 o2:spd4u-xsz
+leaf-STSP4-b-1 = 0b1011101 %prefix sub:1 %sub("sub" "movw movb") o2-d:4 %disp("d2") o1-r:4 %reg("r1") %title("STSP4-b-1: movw movb")
+sub-STSP4-b-1 = "movw" | "movb"
+
+; ======================================================================================================================================================
+; family CB3R: 3 forms, 3 leaves, 3 parcels; mnemonics cbeq cbne cbcs cbcc cbhi cblos ...
+; ======================================================================================================================================================
+
+; form CB3R24/a (index 124): 3 parcels
+form-CB3R24-a = o1:reg4 o2:reg4 o3:pc24-u2
+leaf-CB3R24-a-1 = 0b111100110001000 %prefix sub:1 %sub("sub" "cbeq cbne") o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:24 %disp("pcrel3") %title("CB3R24-a-1: cbeq cbne")
+sub-CB3R24-a-1 = "cbeq" | "cbne"
+
+; form CB3R24/c (index 125): 3 parcels
+form-CB3R24-c = o1:reg4 o2:reg4 o3:pc24-u2
+leaf-CB3R24-c-1 = 0b11110010101100 %prefix sub:2 %sub("sub" "cbcs cbcc cbhi cblos") o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:24 %disp("pcrel3") %title("CB3R24-c-1: cbcs cbcc cbhi cblos")
+sub-CB3R24-c-1 = "cbcs" | "cbcc" | "cbhi" | "cblos"
+
+; form CB3R24/b (index 165): 3 parcels
+form-CB3R24-b = o1:reg4 o2:reg4 o3:pc24-u2
+leaf-CB3R24-b-1 = 0b11110010110011 %prefix sub:2 %sub("sub" "cblt cbge cbgt cble") o1-r:4 %reg("r1") o2-r:4 %reg("r2") o3-pcrel:24 %disp("pcrel3") %title("CB3R24-b-1: cblt cbge cbgt cble")
+sub-CB3R24-b-1 = "cblt" | "cbge" | "cbgt" | "cble"
+
+; ======================================================================================================================================================
+; family SHI: 2 forms, 2 leaves, 1 parcel; mnemonics shl shr sar rol shl shr ...
+; ======================================================================================================================================================
+
+; form SHI3/a (index 127): 1 parcel
+form-SHI3-a = o1:imm3u o2:reg4
+leaf-SHI3-a-1 = 0b1010101 %prefix sub:2 %sub("sub" "shl shr sar rol") o1-imm:3 %imm("imm1") o2-r:4 %reg("r2") %title("SHI3-a-1: shl shr sar rol")
+sub-SHI3-a-1 = "shl" | "shr" | "sar" | "rol"
+
+; form SHI5/a (index 150): 1 parcel
+form-SHI5-a = o1:imm5u o2:reg4
+leaf-SHI5-a-1 = 0b01101 %prefix sub:2 %sub("sub" "shl shr sar rol") o1-imm:5 %imm("imm1") o2-r:4 %reg("r2") %title("SHI5-a-1: shl shr sar rol")
+sub-SHI5-a-1 = "shl" | "shr" | "sar" | "rol"
+
+; ======================================================================================================================================================
+; family PUSHM: 1 form, 1 leaves, 1 parcel; mnemonics pushm popm
+; ======================================================================================================================================================
+
+; form PUSHM8/a (index 129): 1 parcel
+form-PUSHM8-a = o1:imm8u-x256
+leaf-PUSHM8-a-1 = 0b1010110 %prefix sub:1 %sub("sub" "pushm popm") o1-imm:8 %imm("imm1") %title("PUSHM8-a-1: pushm popm")
+sub-PUSHM8-a-1 = "pushm" | "popm"
+
+; ======================================================================================================================================================
+; family LDS: 1 form, 2 leaves, 2 parcels; mnemonics add sub and bis xor
+; ======================================================================================================================================================
+
+; form LDS12/c (index 138): 2 parcels
+form-LDS12-c = o1:spd12u-xsz o2:reg4
+leaf-LDS12-c-1 = 0b11110010101111 %prefix sub:2 %sub("sub" "add sub and bis") o2-r:4 %reg("r2") o1-d:12 %disp("d1") %title("LDS12-c-1: add sub and bis")
+sub-LDS12-c-1 = "add" | "sub" | "and" | "bis"
+leaf-LDS12-c-2 = 0b1111001100101111 %prefix o2-r:4 %reg("r2") o1-d:12 %disp("d1") %title("LDS12-c-2: xor")
+sub-LDS12-c-2 = "xor"
+
+; ======================================================================================================================================================
+; family LEAS: 2 forms, 2 leaves, 2 parcels; mnemonics lea lea
+; ======================================================================================================================================================
+
+; form LEAS12/a (index 155): 2 parcels
+form-LEAS12-a = o1:spd12u-x8 o2:reg4
+leaf-LEAS12-a-1 = 0b1111001100110000 %prefix o2-r:4 %reg("r2") o1-d:12 %disp("d1") %title("LEAS12-a-1: lea")
+sub-LEAS12-a-1 = "lea"
+
+; form LEAS14/a (index 206): 2 parcels
+form-LEAS14-a = o1:spd14u-x8 o2:reg4
+leaf-LEAS14-a-1 = 0b11110010111010 %prefix o2-r:4 %reg("r2") o1-d:14 %disp("d1") %title("LEAS14-a-1: lea")
+sub-LEAS14-a-1 = "lea"
+
+; ======================================================================================================================================================
+; family LD: 1 form, 1 leaves, 1 parcel; mnemonics movq movl movzb lea
+; ======================================================================================================================================================
+
+; form LD0/a (index 160): 1 parcel
+form-LD0-a = o1:b4d0s-xsz o2:reg4
+leaf-LD0-a-1 = 0b100110 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-base:4 %reg("base1") o2-r:4 %reg("r2") %title("LD0-a-1: movq movl movzb lea")
+sub-LD0-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; ======================================================================================================================================================
+; family CMPC: 1 form, 1 leaves, 2 parcels; mnemonics cmp
+; ======================================================================================================================================================
+
+; form CMPC16/a (index 170): 2 parcels
+form-CMPC16-a = o1:reg4 o2:pc16-u1
+leaf-CMPC16-a-1 = 0b111100011000 %prefix o1-r:4 %reg("r1") o2-pcrel:16 %disp("pcrel2") %title("CMPC16-a-1: cmp")
+sub-CMPC16-a-1 = "cmp"
+
+; ======================================================================================================================================================
+; family SOX: 2 forms, 3 leaves, 2 parcels; mnemonics clr inc dec tst push pop ...
+; ======================================================================================================================================================
+
+; form SOX6/a (index 172): 2 parcels
+form-SOX6-a = o1:x4-4d6s
+leaf-SOX6-a-1 = 0b11110010110100 %prefix sub:2 %sub("sub" "clr inc dec tst") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:6 %disp("d1") %title("SOX6-a-1: clr inc dec tst")
+sub-SOX6-a-1 = "clr" | "inc" | "dec" | "tst"
+leaf-SOX6-a-2 = 0b111100110001010 %prefix sub:1 %sub("sub" "push pop") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:6 %disp("d1") %title("SOX6-a-2: push pop")
+sub-SOX6-a-2 = "push" | "pop"
+
+; form SOX6/x (index 204): 2 parcels
+form-SOX6-x = o1:x4-4d6s
+leaf-SOX6-x-1 = 0b11110010111000 %prefix sub:2 %sub("sub" "jmp call jmpi calli") o1-base:4 %reg("base1") o1-index:4 %reg("index1") o1-scale:2 %scale("scale1") o1-d:6 %disp("d1") %title("SOX6-x-1: jmp call jmpi calli")
+sub-SOX6-x-1 = "jmp" | "call" | "jmpi" | "calli"
+
+; ======================================================================================================================================================
+; family CMX: 1 form, 1 leaves, 2 parcels; mnemonics cmp
+; ======================================================================================================================================================
+
+; form CMX2/a (index 174): 2 parcels
+form-CMX2-a = o1:reg4 o2:x4-4d2s
+leaf-CMX2-a-1 = 0b1111001100110001 %prefix o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-index:4 %reg("index2") o2-scale:2 %scale("scale2") o2-d:2 %disp("d2") %title("CMX2-a-1: cmp")
+sub-CMX2-a-1 = "cmp"
+
+; ======================================================================================================================================================
+; family ST: 1 form, 1 leaves, 1 parcel; mnemonics movq movl
+; ======================================================================================================================================================
+
+; form ST0/a (index 179): 1 parcel
+form-ST0-a = o1:reg4 o2:b4d0s-xsz
+leaf-ST0-a-1 = 0b1011011 %prefix sub:1 %sub("sub" "movq movl") o1-r:4 %reg("r1") o2-base:4 %reg("base2") %title("ST0-a-1: movq movl")
+sub-ST0-a-1 = "movq" | "movl"
+
+; ======================================================================================================================================================
+; family CMS: 1 form, 1 leaves, 2 parcels; mnemonics cmp
+; ======================================================================================================================================================
+
+; form CMS12/a (index 182): 2 parcels
+form-CMS12-a = o1:reg4 o2:spd12u-xsz
+leaf-CMS12-a-1 = 0b1111001100110010 %prefix o1-r:4 %reg("r1") o2-d:12 %disp("d2") %title("CMS12-a-1: cmp")
+sub-CMS12-a-1 = "cmp"
+
+; ======================================================================================================================================================
+; family LDHR: 1 form, 1 leaves, 1 parcel; mnemonics movq movl movzb lea
+; ======================================================================================================================================================
+
+; form LDHRH2/a (index 195): 1 parcel
+form-LDHRH2-a = o1:b4d2u-xsz o2:reg3
+leaf-LDHRH2-a-1 = 0b01111 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-d:2 %disp("d1") o1-base:4 %reg("base1") o2-r:3 %reg("r2") %title("LDHRH2-a-1: movq movl movzb lea")
+sub-LDHRH2-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; ======================================================================================================================================================
+; family LDHHR: 1 form, 1 leaves, 1 parcel; mnemonics movq movl movzb lea
+; ======================================================================================================================================================
+
+; form LDHHR2/a (index 199): 1 parcel
+form-LDHHR2-a = o1:b3d2u-xsz o2:reg4
+leaf-LDHHR2-a-1 = 0b10000 %prefix sub:2 %sub("sub" "movq movl movzb lea") o1-d:2 %disp("d1") o1-base:3 %reg("base1") o2-r:4 %reg("r2") %title("LDHHR2-a-1: movq movl movzb lea")
+sub-LDHHR2-a-1 = "movq" | "movl" | "movzb" | "lea"
+
+; ======================================================================================================================================================
+; family SOBs: 1 form, 2 leaves, 2 parcels; mnemonics clr inc dec tst push pop
+; ======================================================================================================================================================
+
+; form SOBs12/a (index 201): 2 parcels
+form-SOBs12-a = o1:b4d12s-xsz
+leaf-SOBs12-a-1 = 0b11110010110111 %prefix sub:2 %sub("sub" "clr inc dec tst") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("SOBs12-a-1: clr inc dec tst")
+sub-SOBs12-a-1 = "clr" | "inc" | "dec" | "tst"
+leaf-SOBs12-a-2 = 0b111100110001100 %prefix sub:1 %sub("sub" "push pop") o1-base:4 %reg("base1") o1-d:12 %disp("d1") %title("SOBs12-a-2: push pop")
+sub-SOBs12-a-2 = "push" | "pop"
+
+; ======================================================================================================================================================
+; family CMBs: 1 form, 1 leaves, 2 parcels; mnemonics cmp
+; ======================================================================================================================================================
+
+; form CMBs10/a (index 205): 2 parcels
+form-CMBs10-a = o1:reg4 o2:b4d10s-xsz
+leaf-CMBs10-a-1 = 0b11110010111001 %prefix o1-r:4 %reg("r1") o2-base:4 %reg("base2") o2-d:10 %disp("d2") %title("CMBs10-a-1: cmp")
+sub-CMBs10-a-1 = "cmp"
+

@@ -1,0 +1,178 @@
+; pdp64-enc.hbnf -- what the prefix-coded encodings (pdp64/16, pdp64/32) have in common.  Written by docs/codegen-data/encoding/write_hbnf.py
+; from the optimiser's layout, and edited by hand from then on; tools/mkenc.py reads it (through tools/encgram.py) and the members' grammars
+; (pdp64-16/pdp64-16.hbnf, pdp64-32/pdp64-32.hbnf) include it.  Nothing else holds the encodings: see spec/README.md.
+;
+; HOW THE GRAMMARS DESCRIBE AN ENCODING
+;
+; The input is one instruction: a record of bit fields, read from the top bit of parcel 0, parcel after parcel, each parcel big-endian (the
+; same convention as pdp64.hbnf.in: in memory the parcels are little-endian and the reader swaps them).  hbnf numbers bits from the top, so the
+; first field of a record is bits 15... of parcel 0 and a field that runs on from parcel k to parcel k+1 is one field.
+;
+; A LEAF is one alternative of `insn`: the prefix (a constant, as wide as its binary digits: 1 to 16 bits), then the sub-opcode `sub` (or `xsub`),
+; then the pieces of the operands, in the order of the bits.  There is no padding: the fields cover the 16*n bits of the n parcels exactly (the
+; length of an instruction is a function of its prefix alone).  A leaf is named leaf-FORM-K (K = 1, 2, ... in the order of the sub-opcode ranges).
+;
+;   sub:J     J bits (binary-aligned) selecting one of the mnemonics of the leaf; the mnemonics are the enum rule sub-FORM-K, numbered 0, 1, 2...
+;             (`sub-FORM-K` is the leaf's `leaf-FORM-K` with the prefix `sub-`); a number the enum does not have is illegal (`?(sub < N)`)
+;   xsub:W    the same, for the forms that give the mnemonic index W bits of its own wherever they are (the leaf lists the whole mnemonic list)
+;   oI-PART   a field (or the first piece of a field) of operand I (1 is the first operand of the assembly syntax); PART is a field of the operand's shape;
+;   oI-PART-N the Nth piece (from the top) of a field that the layout splits in two or more places
+;
+; A FORM is the list of operand shapes of the leaves that share it, form-FORM = o1:shape o2:shape ...  A SHAPE is the operand as the assembly
+; language writes it and the fields it is made of (their widths, `s` for signed); the order of the fields of a shape is the order of its parts.
+; The name of a shape holds what the fields cannot say:
+;
+;   regW                 a register, W bits.  W bits that cannot name every register of the member (hotW in the member's grammar) are an index into that table
+;   immW[s|u][-xS]       an immediate of W bits, signed or not, in units of S (1 if omitted)
+;   bRdD[s|u]-xS         base register of R bits and displacement of D bits (D = 0: none), in units of S bytes; S = sz is the size of the access
+;   spdD[s|u]-xS, dpdD   the same with (sp) or the direct page register (dp) as the base, which takes no bits
+;   xR-RxdD[s|u]        indexed: base R bits, index Rx bits, scale 2 bits, displacement D bits
+;   piR-sD, pdR-sD       (r)+ and -(r): base R bits and a stride field of D bits (0 stride means the size of the access)
+;   pcW-uU               pc-relative, W bits, U bytes to the unit (2: the field counts parcels)
+;   absW                 absolute address of W bits
+;   k-sp, k-dp, k-imm0   a constant operand that takes no bits: (sp), (dp) (direct page), #0
+;
+; The assembler tries the forms of a mnemonic in the order of the `forms` catalogue of the member's grammar (the number is the index of the form), the shorter
+; first; the order of the leaves of one form is the order of their numbers.  Everything else is generated from this: the C tables of the codec
+; (build/pdp64-NN-tab.c), the assembly grammar of as64 (build/x/), the tables of spec/pdp64-NN/tables.md.
+prefix none
+
+; ---- operand shapes: a register
+
+reg3           = r:3
+reg4           = r:4
+reg5           = r:5
+
+; ---- operand shapes: a constant operand (no bits)
+
+k-sp           = sp:bits(0)
+k-imm0         = imm0:bits(0)
+
+; ---- operand shapes: an immediate
+
+imm3s          = imm:3s
+imm3u          = imm:3
+imm4s          = imm:4s
+imm4u          = imm:4
+imm5s          = imm:5s
+imm5u          = imm:5
+imm6s          = imm:6s
+imm6u          = imm:6
+imm7s          = imm:7s
+imm8s          = imm:8s
+imm8u          = imm:8
+imm10s         = imm:10s
+imm12s         = imm:12s
+imm12u         = imm:12
+imm14s         = imm:14s
+imm16s         = imm:16s
+imm16u         = imm:16
+imm18s         = imm:18s
+imm32s         = imm:32s
+imm32u         = imm:32
+imm64s         = imm:64s
+imm6u-x8       = imm:6
+imm8u-x8       = imm:8
+imm8u-x256     = imm:8
+imm16u-x256    = imm:16
+imm24u-x256    = imm:24
+
+; ---- operand shapes: base register and displacement: d(rb)
+
+spd4u-x8       = d:4
+spd6u-x8       = d:6
+b3d1u-xsz      = base:3 d:1
+b3d2u-xsz      = base:3 d:2
+b3d3u-xsz      = base:3 d:3
+b4d0s-xsz      = base:4
+b4d12s-x1      = base:4 d:12s
+b4d28s-x1      = base:4 d:28s
+b4d2u-xsz      = base:4 d:2
+b4d8s-xsz      = base:4 d:8s
+b4d8u-xsz      = base:4 d:8
+b5d12s-x1      = base:5 d:12s
+b5d28s-x1      = base:5 d:28s
+b5d6s-xsz      = base:5 d:6s
+b5d6u-xsz      = base:5 d:6
+b5d8s-xsz      = base:5 d:8s
+b5d8u-xsz      = base:5 d:8
+dpd28s-x1      = d:28s
+spd12s-x1      = d:12s
+spd12u-x8      = d:12
+spd14u-x8      = d:14
+spd4u-xsz      = d:4
+spd5u-xsz      = d:5
+spd7u-xsz      = d:7
+b4d10s-xsz     = base:4 d:10s
+b4d10u-xsz     = base:4 d:10
+b4d12s-xsz     = base:4 d:12s
+b4d12u-xsz     = base:4 d:12
+b4d14s-xsz     = base:4 d:14s
+b5d10s-xsz     = base:5 d:10s
+b5d12s-xsz     = base:5 d:12s
+spd12u-xsz     = d:12
+
+; ---- operand shapes: indexed: d(rb,rx,scale)
+
+x4-4d2s        = base:4 index:4 scale:2 d:2s
+x4-4d4s        = base:4 index:4 scale:2 d:4s
+x4-4d6s        = base:4 index:4 scale:2 d:6s
+x4-4d8s        = base:4 index:4 scale:2 d:8s
+x5-5d0s        = base:5 index:5 scale:2
+x5-5d4s        = base:5 index:5 scale:2 d:4s
+x5-5d6s        = base:5 index:5 scale:2 d:6s
+x4-4d22s       = base:4 index:4 scale:2 d:22s
+x5-5d22s       = base:5 index:5 scale:2 d:22s
+
+; ---- operand shapes: auto-increment (r)+ and auto-decrement -(r)
+
+pd4-s12        = base:4 stride:12
+pd5-s12        = base:5 stride:12
+pi4-s12        = base:4 stride:12
+pi5-s12        = base:5 stride:12
+
+; ---- operand shapes: pc-relative
+
+pc4-u2         = pcrel:4
+pc5-u2         = pcrel:5
+pc6-u2         = pcrel:6
+pc7-u2         = pcrel:7
+pc8-u2         = pcrel:8
+pc9-u2         = pcrel:9
+pc10-u2        = pcrel:10
+pc12-u1        = pcrel:12
+pc12-u2        = pcrel:12
+pc13-u2        = pcrel:13
+pc14-u1        = pcrel:14
+pc14-u2        = pcrel:14
+pc16-u1        = pcrel:16
+pc16-u2        = pcrel:16
+pc18-u2        = pcrel:18
+pc20-u2        = pcrel:20
+pc24-u2        = pcrel:24
+pc32-u1        = pcrel:32
+pc32-u2        = pcrel:32
+
+; ---- operand shapes: absolute
+
+abs32          = abs:32
+
+; ---- no operand
+noop           = none:bits(0)
+
+; ---- the size of the access of the moves, in bytes: the words of each rule (a suffix after a dot, .u .d .ud, does not change it); every other mnemonic: 1
+acc-8 = "movq"
+acc-4 = "movl" | "movzl"
+acc-2 = "movw" | "movzw"
+acc-1 = "movb" | "movzb"
+
+
+; ---- the mnemonics that only the prefix-coded encodings have (group mn-ext of the assembly grammar of as64): the number is the position in the list
+mn-ext = "addv"@0 | "aesds"@1 | "aesdsm"@2 | "aeses"@3 | "aesesm"@4 | "aesim"@5 | "aesks1"@6 | "aesks2"@7 | "bsel"@8 | "maesctr"@9 | "maskeqz"@10
+       | "masknez"@11 | "mov2"@12 | "movb.d"@13 | "movb.u"@14 | "movb.ud"@15 | "movcall"@16 | "movl.d"@17 | "movl.u"@18 | "movl.ud"@19 | "movq.d"@20
+       | "movq.u"@21 | "movq.ud"@22 | "movql"@23 | "movw.d"@24 | "movw.u"@25 | "movw.ud"@26 | "movzb.d"@27 | "movzb.u"@28 | "movzb.ud"@29
+       | "movzl.d"@30 | "movzl.u"@31 | "movzl.ud"@32 | "movzw.d"@33 | "movzw.u"@34 | "movzw.ud"@35 | "msha256"@36 | "msha512"@37 | "mulv"@38
+       | "popmret"@39 | "popret"@40 | "sha256sig0"@41 | "sha256sig1"@42 | "sha256sum0"@43 | "sha256sum1"@44 | "sha512sig0"@45 | "sha512sig1"@46
+       | "sha512sum0"@47 | "sha512sum1"@48 | "subv"@49 | "syspg0"@50 | "syspg1"@51 | "syspg2"@52 | "syspg3"@53 | "syspg4"@54 | "syspg5"@55
+       | "trapcc.cc"@56 | "trapcc.cs"@57 | "trapcc.eq"@58 | "trapcc.ge"@59 | "trapcc.gt"@60 | "trapcc.hi"@61 | "trapcc.le"@62 | "trapcc.los"@63
+       | "trapcc.lt"@64 | "trapcc.mi"@65 | "trapcc.ne"@66 | "trapcc.pl"@67 | "trapcc.vc"@68 | "trapcc.vs"@69
