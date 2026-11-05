@@ -361,25 +361,43 @@ package body HBNF_Layout is
       Put (M, "note", To_String (C.Note));
       Put (M, "unit", Img (Unit));
       Put (M, "unit_name", To_String (O.Unit_Name));
+      --  A guard is drawn as lines of at most 78 characters, broken at a blank.
       for Gd of C.Guards loop
          declare
-            E : constant T.Value_Access := T.New_Map;
+            Txt  : constant String := To_String (Gd);
+            From : Positive := Txt'First;
          begin
-            Put (E, "g", To_String (Gd));
-            Put (E, "gi", Img (Natural (Guards.Items.Length)));
-            T.Append (Guards, E);
-            Guard_Seen := True;
+            while From <= Txt'Last loop
+               declare
+                  Last : Natural := Natural'Min (Txt'Last, From + 77);
+                  E    : constant T.Value_Access := T.New_Map;
+               begin
+                  if Last < Txt'Last then
+                     while Last > From and then Txt (Last) /= ' ' loop
+                        Last := Last - 1;
+                     end loop;
+                     if Last = From then
+                        Last := Natural'Min (Txt'Last, From + 77);
+                     end if;
+                  end if;
+                  Put (E, "g", Txt (From .. Last));
+                  Put (E, "gi", Img (Natural (Guards.Items.Length)));
+                  T.Append (Guards, E);
+                  Guard_Seen := True;
+                  From := Last + 1;
+               end;
+            end loop;
          end;
       end loop;
       T.Insert (M, "guards", Guards);
       Put (M, "has_guards", Flag (Guard_Seen));
-      Put (M, "nguards", Img (Natural (C.Guards.Length)));
+      Put (M, "nguards", Img (Natural (Guards.Items.Length)));
       --  The geometry a drawing wants, fixed here so that every target agrees: the left margin that holds the row
       --  labels, the width of a bit (36 for a 16-bit row, narrower for a wider one so the chart stays 576 wide),
       --  the height of the head (title and guards).
       Put (M, "left", "80");
       Put (M, "cell", Img (if Unit <= 16 then 36 else Natural'Max (10, 576 / Unit)));
-      Put (M, "hdr", Img (34 + 14 * Natural (C.Guards.Length)));
+      Put (M, "hdr", Img (34 + 14 * Natural (Guards.Items.Length)));
       --  Lay the fields out: a row is Unit bits; a field that crosses a row is split; a field of unknown size
       --  (octets, a count of bits, a list, a text rule) is a row of its own, and what follows it starts a row.
       Open_Row (To_String (O.Unit_Name) & " 0", False);
@@ -439,6 +457,7 @@ package body HBNF_Layout is
       T.Insert (M, "rows", Rows);
       T.Insert (M, "roles", Roles);
       Put (M, "nrows", Img (Nrows));
+      Put (M, "nroles", Img (Natural (Roles.Items.Length)));
       Put (M, "bits", (if Fixed then Img (Total) else ""));
       Put (M, "fixed", Flag (Fixed));
       return M;
@@ -530,24 +549,28 @@ package body HBNF_Layout is
             for C of Mine loop
                C.Name := (if C.Last_Ref /= Null_Unbounded_String then C.Last_Ref else C.Rule);
             end loop;
-            for I in Mine.First_Index .. Mine.Last_Index loop
-               declare
-                  Dup : Natural := 0;
-                  Nth : Natural := 0;
-               begin
-                  for J in Mine.First_Index .. Mine.Last_Index loop
-                     if Mine (J).Name = Mine (I).Name then
-                        Dup := Dup + 1;
-                        if J <= I then
-                           Nth := Nth + 1;
+            declare
+               Base : constant Chart_Vectors.Vector := Mine;   --  the names before they are numbered
+            begin
+               for I in Mine.First_Index .. Mine.Last_Index loop
+                  declare
+                     Dup : Natural := 0;
+                     Nth : Natural := 0;
+                  begin
+                     for J in Base.First_Index .. Base.Last_Index loop
+                        if Base (J).Name = Base (I).Name then
+                           Dup := Dup + 1;
+                           if J <= I then
+                              Nth := Nth + 1;
+                           end if;
                         end if;
+                     end loop;
+                     if Dup > 1 then
+                        Mine (I).Name := Base (I).Name & US ("-" & Img (Nth));
                      end if;
-                  end loop;
-                  if Dup > 1 then
-                     Mine (I).Name := Mine (I).Name & US ("-" & Img (Nth));
-                  end if;
-               end;
-            end loop;
+                  end;
+               end loop;
+            end;
             for C of Mine loop
                Charts.Append (C);
             end loop;

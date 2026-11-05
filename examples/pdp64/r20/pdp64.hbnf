@@ -1,0 +1,70 @@
+; pdp64 instruction formats (ISA r20, docs/errata.md for the decisions), as hbnf bit rules.
+;
+; The input is one instruction, parcel 0 first, each parcel big-endian (the decoder byte-swaps the parcels it
+; fetches: they are little-endian in memory).  hbnf numbers bits from the most significant bit, which is the
+; order of the diagrams in the ISA document: bit 15 of parcel 0 is the first bit of the record.
+;
+;   parcel 0:   len:2 opc:6 reg:4 low:4
+;   len         0..2: the number of extension parcels, the instruction is len+1 parcels (page 1); 3: page 2, a one-parcel instruction with its own
+;               64-entry opcode map (the opcode of a page-2 instruction is not a page-1 opcode; the map is p2op in spec/pdp64-mnemonics.hbnf)
+;   opc         the opcode, 0x00..0x3F (the map is in docs/11-64W/11-64W-isa-r20.md section 4.16)
+;   reg, low    their meaning depends on the opcode class below; `low` is the mode at len >= 1 for the
+;               memory classes and a second register at len == 0
+;
+; The extension parcels are `body`.  Displacement and immediate fields are unsigned here; the consumer sign-extends
+; from the width (`d` is 12+16*(len-1) bits in the base-register modes, 6+16*(len-1) in the indexed one, 16*len in the wide ones and the
+; branches: 12/28, 6/22, 16/32 bits).  Page 2 has no body: all of its information is in parcel 0, and what it means is a table (common/p2.c).
+prefix none
+;
+; This file is a template.  tools/mkgrammar.py writes spec/pdp64.hbnf from it, replacing every name between two at-signs with the number of that enumerator of
+; spec/pdp64-mnemonics.hbnf (MN_ALU_ADD, AMODE_IMM, OPGROUP_SOP...) or the text of a %define below, because hbnf expressions have no
+; names and no functions.  The numbers of the architecture are written once, in that file.
+
+
+insn = len:2 %len("len") opc:6 %opcode("opc") reg:4 %reg("reg") low:4 %low("low") body:(
+
+    ; --- memory operand classes: moves, LEA, the ALU, SOP, XFER, the FP ALU group.  len = 0: low is a register.
+      ?(len == 0 && (opc <= 0xB || opc == 0x12 || opc == 0x13 || (opc >= 0x16 && opc <= 0x27))) %title("Memory operand, len = 0 (low is a register)")
+    | ?((len >= 1 && len < 0x3) && (opc <= 0xB || opc == 0x12 || opc == 0x13 || (opc >= 0x16 && opc <= 0x27)) && (low == 0x0 || low == 0x6 || low == 0x7))                           rm:4 %reg("rm") d:bits(12 + 16 * (len - 1)) %disp("d") %title("Memory operand, base modes")
+    | ?((len >= 1 && len < 0x3) && (opc <= 0xB || opc == 0x12 || opc == 0x13 || (opc >= 0x16 && opc <= 0x27)) && low == 0x1)                 rm:4 %reg("rm") rx:4 %reg("rx") s:2 %scale("s") d:bits(6 + 16 * (len - 1)) %disp("d") %title("Memory operand, indexed")
+    | ?((len >= 1 && len < 0x3) && (opc <= 0xB || opc == 0x12 || opc == 0x13 || (opc >= 0x16 && opc <= 0x27)) && low == 0x3)                    pad:4 %pad("pad") d:bits(12 + 16 * (len - 1)) %disp("d") %title("Memory operand, direct page")
+    | ?((len >= 1 && len < 0x3) && (opc <= 0xB || opc == 0x12 || opc == 0x13 || (opc >= 0x16 && opc <= 0x27)) && (low == 0x2 || low == 0x4 || low == 0x5))                           d:bits(16 * len) %disp("d") %title("Memory operand, wide modes (pc-relative, immediate, absolute)")
+
+    ; --- BESC, MBLK, AESC, FESC, ATOM: low is a register; parcel 1 is sub:8 %sub("sub") t:4 %reg("t") x:4 %imm("x"), further parcels follow.  Three forms of BESC
+    ;     name their fields: RORI keeps its count in the low byte, and the bit-field operations take position and width from parcel 2.
+    | ?((len >= 1 && len < 0x3) && opc == 0xC)                        sub:8 %sub("sub") ?((sub == 0x11 || sub == 0x12)) count:8 %imm("count") more:bits(16 * (len - 1)) %more("more") %title("BESC RORI: a count in the low byte")
+    | ?((len >= 2 && len < 0x3) && opc == 0xC)                        sub:8 %sub("sub") ?((sub == 0x20 || sub == 0x21 || sub == 0x22 || sub == 0x23)) t:4 %reg("t") x:4 %imm("x") pos:8 %imm("pos") width:8 %imm("width") more:bits(16 * (len - 2)) %more("more") %title("BESC bit-field operations (position and width in parcel 2)")
+    | ?((len >= 1 && len < 0x3) && (opc == 0xC || opc == 0xD || opc == 0xE || opc == 0x10 || opc == 0x11))                                      sub:8 %sub("sub") t:4 %reg("t") x:4 %imm("x") more:bits(16 * (len - 1)) %more("more") %title("BESC, MBLK, AESC, FESC, ATOM: sub-opcode and registers")
+
+    ; --- MESC: low is a mode, parcel 1 is sub:4 %sub("sub") rm:4 %reg("rm") and 8 bits of displacement, 16 more per further parcel
+    | ?((len >= 1 && len < 0x3) && opc == 0xF)                         sub:4 %sub("sub") rm:4 %reg("rm") d:bits(8 + 16 * (len - 1)) %disp("d") %title("MESC: sub-opcode, register and displacement")
+
+    ; --- conditional branches: len = 0: reg:low is the 8-bit displacement (in parcels); len >= 1: 16 or 32 bits.
+    ;     SOB and TAGOP exist from len = 1: reg is the register, low the sense and tag or unused.
+    | ?(len == 0 && (opc >= 0x30 && opc <= 0x3E)) %title("Conditional branch, len = 0 (8-bit displacement in reg:low)")
+    | ?((len >= 1 && len < 0x3) && ((opc >= 0x30 && opc <= 0x3E) || opc == 0x3F || opc == 0x15)) d:bits(16 * len) %disp("d") %title("Branch, SOB, TAG: 16 or 32 bit displacement")
+
+    ; --- SYS: reg is the class, low the register or minor.  PROBER and PROBEW name a second register in parcel 1; TRAPL a vector number.
+    | ?(len == 0 && opc == 0x14) %title("SYS, len = 0")
+    | ?(len == 1 && opc == 0x14 && (reg == 0xD || reg == 0xE))   rd:4 %reg("rd") pad:12 %pad("pad") %title("SYS PROBER/PROBEW: a register")
+    | ?(len == 1 && opc == 0x14 && reg == 0xF) n:8 %imm("n") pad:8 %pad("pad") %title("SYS TRAPL: a vector number")
+    | ?((len >= 1 && len < 0x3) && opc == 0x14 && !(reg == 0 && (low == 0xD || low == 0xE)) && !(reg == 0 && low == 0xF))          p:bits(16 * len) %disp("p") %title("SYS: a payload parcel")
+
+    ; --- the compare-immediate-and-branch cbCC: low is the condition (as for `set`); parcel 1 is imm:5 %imm("imm") and the first 11 bits of the displacement (parcels)
+    | ?((len >= 1 && len < 0x3) && opc == 0x28)                             imm:5 %imm("imm") d:bits(11 + 16 * (len - 1)) %disp("d") %title("cbCC: 5-bit immediate and displacement")
+
+    ; --- MFSR and MTSR (SYS, class 0, minors 13 and 14): the system register in parcel 1, the general register, and a nibble that must be zero
+    | ?(len == 1 && opc == 0x14 && (reg == 0 && (low == 0xD || low == 0xE)))          sr:8 %imm("sr") r:4 %reg("r") pad:4 %pad("pad") ?(pad == 0) %title("MFSR/MTSR: system register and general register")
+
+    ; --- page 2: one parcel, nothing follows
+    | ?(len == 0x3) %title("Page 2: one parcel, nothing follows")
+
+    ; --- the wide-immediate cbCC (six bytes): low is the condition; parcel 1 is the signed 16-bit immediate, parcel 2 the signed 16-bit displacement in parcels
+    | ?(len == 2 && opc == 0x29)                           imm:16 %imm("imm") d:16 %disp("d") %title("cbW: wide immediate and displacement")
+
+    ; --- the register-register cbCC: reg is ra, low is rb; parcel 1 starts with the condition (as for `set`), then the displacement in parcels (12 bits, or 28 at len 2)
+    | ?((len >= 1 && len < 0x3) && opc == 0x2A)                            cond:4 %cond("cond") d:bits(12 + 16 * (len - 1)) %disp("d") %title("cbRR: condition and displacement")
+
+    ; --- SYSX (SYS, class 0, minor 15), four bytes: the sub-opcode (mn-sysx) and a byte that must be zero (the executor refuses a non-zero one)
+    | ?(len == 1 && opc == 0x14 && (reg == 0 && low == 0xF))               sub:8 %sub("sub") pad:8 %pad("pad") %title("SYSX: sub-opcode")
+  )

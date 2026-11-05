@@ -1,0 +1,35 @@
+%%% leaf-NOP.txt
+leaf-NOP rows=1 bits=16
+ pos=0 w=11 x=11 wide span=10 shl=2048 one=0 neg=-11 mix=4
+sub pos=11 w=5 x=38 wide span=4 shl=32 one=0 neg=-5 mix=2
+
+%%% leaf-ADD3.txt
+leaf-ADD3 rows=2 bits=24
+ pos=0 w=12 x=12 wide span=11 shl=4096 one=0 neg=-12 mix=1
+o3-r pos=12 w=4 x=40 wide span=3 shl=16 one=0 neg=-4 mix=0
+o1-r pos=0 w=4 x=4 wide span=3 shl=16 one=0 neg=-4 mix=0
+o2-r pos=4 w=4 x=16 wide span=3 shl=16 one=0 neg=-4 mix=0
+
+%%% leaf-LDB28.txt
+leaf-LDB28 rows=3 bits=48
+ pos=0 w=8 x=8 wide span=7 shl=256 one=0 neg=-8 mix=3
+sub pos=8 w=4 x=28 wide span=3 shl=16 one=0 neg=-4 mix=0
+o2-r pos=12 w=4 x=40 wide span=3 shl=16 one=0 neg=-4 mix=0
+o1-base pos=0 w=4 x=4 wide span=3 shl=16 one=0 neg=-4 mix=0
+o1-d pos=4 w=12 x=24 wide span=11 shl=4096 one=0 neg=-12 mix=1
+o1-d pos=0 w=16 x=16 wide span=15 shl=65536 one=0 neg=-16 mix=4
+
+%%% leaf-BRF.txt
+leaf-BRF rows=3 bits=48
+ pos=0 w=13 x=13 wide span=12 shl=8192 one=0 neg=-13 mix=3
+sub pos=13 w=3 x=42 narrow span=2 shl=8 one=0 neg=-3 mix=3
+o1-pcrel pos=0 w=16 x=16 wide span=15 shl=65536 one=0 neg=-16 mix=4
+o1-pcrel pos=0 w=16 x=16 wide span=15 shl=65536 one=0 neg=-16 mix=4
+
+%%% leaf-PUSHI.txt
+leaf-PUSHI rows=2 bits=
+ pos=0 w=10 x=10 wide span=9 shl=1024 one=0 neg=-10 mix=2
+cnt pos=10 w=6 x=36 wide span=5 shl=64 one=0 neg=-6 mix=4
+lits pos=0 w=16 x=16 wide span=15 shl=65536 one=0 neg=-16 mix=4
+
+

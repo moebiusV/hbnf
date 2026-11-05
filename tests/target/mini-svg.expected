@@ -1,0 +1,339 @@
+%%% leaf-NOP.svg
+<svg xmlns="http://www.w3.org/2000/svg" width="670" height="126" viewBox="0 0 670 126" role="img" aria-label="SYS0: no operand">
+<title>SYS0: no operand</title>
+<style>
+:root{--ink:#1d2430;--dim:#5b6573;--bg:#ffffff;--line:#2b3340;--const:#d9dde3;--field:#ffffff;--sub:#f7d7a1;--reg:#bcd7f5;--imm:#c4e7c2;--disp:#dcc9f0;--cond:#f5c6b8;--pad:#ececec;--var:#ffffff}
+@media (prefers-color-scheme:dark){:root{--ink:#e6e9ee;--dim:#a2abb8;--bg:#161a20;--line:#8d97a6;--const:#3a4250;--field:#1f252e;--sub:#6b5320;--reg:#25507f;--imm:#2f6a35;--disp:#5a3f7d;--cond:#7d3d2c;--pad:#2b2f36;--var:#161a20}}
+text{font-family:"DejaVu Sans",Verdana,sans-serif;fill:var(--ink)}
+.bg{fill:var(--bg)}
+.t{font-size:14px;font-weight:bold}
+.g{font-size:11px;fill:var(--dim);font-family:"DejaVu Sans Mono",monospace}
+.rl{font-size:11px;fill:var(--dim);text-anchor:end}
+.bn{font-size:9px;fill:var(--dim)}
+.lb{font-size:12px;text-anchor:middle}
+.rg{font-size:9px;text-anchor:middle;fill:var(--dim)}
+.dg{font-size:13px;font-family:"DejaVu Sans Mono",monospace;font-weight:bold;text-anchor:middle}
+.box{fill:var(--field);stroke:var(--line);stroke-width:1.2}
+.r-len,.r-opcode{fill:var(--const)}.r-low{fill:var(--reg)}.r-scale{fill:var(--imm)}.r-more{fill:var(--var)}.r-const{fill:var(--const)}.r-prefix{fill:var(--const)}.r-sub{fill:var(--sub)}.r-reg{fill:var(--reg)}.r-imm{fill:var(--imm)}.r-disp{fill:var(--disp)}.r-cond{fill:var(--cond)}.r-pad{fill:var(--pad)}
+.r-var{fill:var(--var)}.vr{stroke-dasharray:5 3}
+</style>
+<rect class="bg" width="100%" height="100%"/>
+<text class="t" x="80" y="18">SYS0: no operand</text>
+<text class="rl" x="72" y="70">parcel 0</text>
+<g><title></title>
+<rect class="box r-prefix" x="80" y="50" width="396" height="34"/>
+<text class="bn" x="82" y="46">15</text>
+<text class="bn" x="474" y="46" text-anchor="end">5</text>
+<text class="dg" x="98" y="71">1</text>
+<text class="dg" x="134" y="71">1</text>
+<text class="dg" x="170" y="71">1</text>
+<text class="dg" x="206" y="71">0</text>
+<text class="dg" x="242" y="71">1</text>
+<text class="dg" x="278" y="71">1</text>
+<text class="dg" x="314" y="71">0</text>
+<text class="dg" x="350" y="71">0</text>
+<text class="dg" x="386" y="71">1</text>
+<text class="dg" x="422" y="71">0</text>
+<text class="dg" x="458" y="71">0</text>
+</g>
+<g><title>sub</title>
+<rect class="box r-sub" x="476" y="50" width="180" height="34"/>
+<text class="bn" x="478" y="46">4</text>
+<text class="bn" x="654" y="46" text-anchor="end">0</text>
+<text class="lb" x="566" y="71">sub-opcode</text>
+</g>
+<rect class="box r-prefix" x="80" y="96" width="14" height="14"/>
+<text class="g" x="99" y="107">prefix</text>
+<rect class="box r-sub" x="172" y="96" width="14" height="14"/>
+<text class="g" x="191" y="107">sub</text>
+</svg>
+%%% leaf-ADD3.svg
+<svg xmlns="http://www.w3.org/2000/svg" width="670" height="184" viewBox="0 0 670 184" role="img" aria-label="R3: three registers">
+<title>R3: three registers</title>
+<style>
+:root{--ink:#1d2430;--dim:#5b6573;--bg:#ffffff;--line:#2b3340;--const:#d9dde3;--field:#ffffff;--sub:#f7d7a1;--reg:#bcd7f5;--imm:#c4e7c2;--disp:#dcc9f0;--cond:#f5c6b8;--pad:#ececec;--var:#ffffff}
+@media (prefers-color-scheme:dark){:root{--ink:#e6e9ee;--dim:#a2abb8;--bg:#161a20;--line:#8d97a6;--const:#3a4250;--field:#1f252e;--sub:#6b5320;--reg:#25507f;--imm:#2f6a35;--disp:#5a3f7d;--cond:#7d3d2c;--pad:#2b2f36;--var:#161a20}}
+text{font-family:"DejaVu Sans",Verdana,sans-serif;fill:var(--ink)}
+.bg{fill:var(--bg)}
+.t{font-size:14px;font-weight:bold}
+.g{font-size:11px;fill:var(--dim);font-family:"DejaVu Sans Mono",monospace}
+.rl{font-size:11px;fill:var(--dim);text-anchor:end}
+.bn{font-size:9px;fill:var(--dim)}
+.lb{font-size:12px;text-anchor:middle}
+.rg{font-size:9px;text-anchor:middle;fill:var(--dim)}
+.dg{font-size:13px;font-family:"DejaVu Sans Mono",monospace;font-weight:bold;text-anchor:middle}
+.box{fill:var(--field);stroke:var(--line);stroke-width:1.2}
+.r-len,.r-opcode{fill:var(--const)}.r-low{fill:var(--reg)}.r-scale{fill:var(--imm)}.r-more{fill:var(--var)}.r-const{fill:var(--const)}.r-prefix{fill:var(--const)}.r-sub{fill:var(--sub)}.r-reg{fill:var(--reg)}.r-imm{fill:var(--imm)}.r-disp{fill:var(--disp)}.r-cond{fill:var(--cond)}.r-pad{fill:var(--pad)}
+.r-var{fill:var(--var)}.vr{stroke-dasharray:5 3}
+</style>
+<rect class="bg" width="100%" height="100%"/>
+<text class="t" x="80" y="18">R3: three registers</text>
+<text class="rl" x="72" y="70">parcel 0</text>
+<g><title></title>
+<rect class="box r-prefix" x="80" y="50" width="432" height="34"/>
+<text class="bn" x="82" y="46">15</text>
+<text class="bn" x="510" y="46" text-anchor="end">4</text>
+<text class="dg" x="98" y="71">1</text>
+<text class="dg" x="134" y="71">1</text>
+<text class="dg" x="170" y="71">1</text>
+<text class="dg" x="206" y="71">0</text>
+<text class="dg" x="242" y="71">1</text>
+<text class="dg" x="278" y="71">1</text>
+<text class="dg" x="314" y="71">1</text>
+<text class="dg" x="350" y="71">1</text>
+<text class="dg" x="386" y="71">1</text>
+<text class="dg" x="422" y="71">0</text>
+<text class="dg" x="458" y="71">0</text>
+<text class="dg" x="494" y="71">0</text>
+</g>
+<g><title>o3-r</title>
+<rect class="box r-reg" x="512" y="50" width="144" height="34"/>
+<text class="bn" x="514" y="46">3</text>
+<text class="bn" x="654" y="46" text-anchor="end">0</text>
+<text class="lb" x="584" y="71">Rc</text>
+</g>
+<text class="rl" x="72" y="128">parcel 1</text>
+<g><title>o1-r</title>
+<rect class="box r-reg" x="80" y="108" width="144" height="34"/>
+<text class="bn" x="82" y="104">15</text>
+<text class="bn" x="222" y="104" text-anchor="end">12</text>
+<text class="lb" x="152" y="129">Ra</text>
+</g>
+<g><title>o2-r</title>
+<rect class="box r-reg" x="224" y="108" width="144" height="34"/>
+<text class="bn" x="226" y="104">11</text>
+<text class="bn" x="366" y="104" text-anchor="end">8</text>
+<text class="lb" x="296" y="129">Rb</text>
+</g>
+<rect class="box r-prefix" x="80" y="154" width="14" height="14"/>
+<text class="g" x="99" y="165">prefix</text>
+<rect class="box r-reg" x="172" y="154" width="14" height="14"/>
+<text class="g" x="191" y="165">reg</text>
+</svg>
+%%% leaf-LDB28.svg
+<svg xmlns="http://www.w3.org/2000/svg" width="670" height="242" viewBox="0 0 670 242" role="img" aria-label="LDU.B28: load with a 28-bit displacement">
+<title>LDU.B28: load with a 28-bit displacement</title>
+<style>
+:root{--ink:#1d2430;--dim:#5b6573;--bg:#ffffff;--line:#2b3340;--const:#d9dde3;--field:#ffffff;--sub:#f7d7a1;--reg:#bcd7f5;--imm:#c4e7c2;--disp:#dcc9f0;--cond:#f5c6b8;--pad:#ececec;--var:#ffffff}
+@media (prefers-color-scheme:dark){:root{--ink:#e6e9ee;--dim:#a2abb8;--bg:#161a20;--line:#8d97a6;--const:#3a4250;--field:#1f252e;--sub:#6b5320;--reg:#25507f;--imm:#2f6a35;--disp:#5a3f7d;--cond:#7d3d2c;--pad:#2b2f36;--var:#161a20}}
+text{font-family:"DejaVu Sans",Verdana,sans-serif;fill:var(--ink)}
+.bg{fill:var(--bg)}
+.t{font-size:14px;font-weight:bold}
+.g{font-size:11px;fill:var(--dim);font-family:"DejaVu Sans Mono",monospace}
+.rl{font-size:11px;fill:var(--dim);text-anchor:end}
+.bn{font-size:9px;fill:var(--dim)}
+.lb{font-size:12px;text-anchor:middle}
+.rg{font-size:9px;text-anchor:middle;fill:var(--dim)}
+.dg{font-size:13px;font-family:"DejaVu Sans Mono",monospace;font-weight:bold;text-anchor:middle}
+.box{fill:var(--field);stroke:var(--line);stroke-width:1.2}
+.r-len,.r-opcode{fill:var(--const)}.r-low{fill:var(--reg)}.r-scale{fill:var(--imm)}.r-more{fill:var(--var)}.r-const{fill:var(--const)}.r-prefix{fill:var(--const)}.r-sub{fill:var(--sub)}.r-reg{fill:var(--reg)}.r-imm{fill:var(--imm)}.r-disp{fill:var(--disp)}.r-cond{fill:var(--cond)}.r-pad{fill:var(--pad)}
+.r-var{fill:var(--var)}.vr{stroke-dasharray:5 3}
+</style>
+<rect class="bg" width="100%" height="100%"/>
+<text class="t" x="80" y="18">LDU.B28: load with a 28-bit displacement</text>
+<text class="rl" x="72" y="70">parcel 0</text>
+<g><title></title>
+<rect class="box r-prefix" x="80" y="50" width="288" height="34"/>
+<text class="bn" x="82" y="46">15</text>
+<text class="bn" x="366" y="46" text-anchor="end">8</text>
+<text class="dg" x="98" y="71">1</text>
+<text class="dg" x="134" y="71">1</text>
+<text class="dg" x="170" y="71">0</text>
+<text class="dg" x="206" y="71">0</text>
+<text class="dg" x="242" y="71">0</text>
+<text class="dg" x="278" y="71">0</text>
+<text class="dg" x="314" y="71">1</text>
+<text class="dg" x="350" y="71">0</text>
+</g>
+<g><title>sub</title>
+<rect class="box r-sub" x="368" y="50" width="144" height="34"/>
+<text class="bn" x="370" y="46">7</text>
+<text class="bn" x="510" y="46" text-anchor="end">4</text>
+<text class="lb" x="440" y="71">sub-opcode</text>
+</g>
+<g><title>o2-r</title>
+<rect class="box r-reg" x="512" y="50" width="144" height="34"/>
+<text class="bn" x="514" y="46">3</text>
+<text class="bn" x="654" y="46" text-anchor="end">0</text>
+<text class="lb" x="584" y="71">Rd</text>
+</g>
+<text class="rl" x="72" y="128">parcel 1</text>
+<g><title>o1-base</title>
+<rect class="box r-reg" x="80" y="108" width="144" height="34"/>
+<text class="bn" x="82" y="104">15</text>
+<text class="bn" x="222" y="104" text-anchor="end">12</text>
+<text class="lb" x="152" y="129">Rb</text>
+</g>
+<g><title>o1-d: signed, bytes</title>
+<rect class="box r-disp" x="224" y="108" width="432" height="34"/>
+<text class="bn" x="226" y="104">11</text>
+<text class="bn" x="654" y="104" text-anchor="end">0</text>
+<text class="lb" x="440" y="123">disp</text>
+<text class="rg" x="440" y="136">[27:16]</text>
+</g>
+<text class="rl" x="72" y="186">parcel 2</text>
+<g><title>o1-d: signed, bytes</title>
+<rect class="box r-disp" x="80" y="166" width="576" height="34"/>
+<text class="bn" x="82" y="162">15</text>
+<text class="bn" x="654" y="162" text-anchor="end">0</text>
+<text class="lb" x="368" y="181">disp</text>
+<text class="rg" x="368" y="194">[15:0]</text>
+</g>
+<rect class="box r-prefix" x="80" y="212" width="14" height="14"/>
+<text class="g" x="99" y="223">prefix</text>
+<rect class="box r-sub" x="172" y="212" width="14" height="14"/>
+<text class="g" x="191" y="223">sub</text>
+<rect class="box r-reg" x="264" y="212" width="14" height="14"/>
+<text class="g" x="283" y="223">reg</text>
+<rect class="box r-disp" x="356" y="212" width="14" height="14"/>
+<text class="g" x="375" y="223">disp</text>
+</svg>
+%%% leaf-BRF.svg
+<svg xmlns="http://www.w3.org/2000/svg" width="670" height="242" viewBox="0 0 670 242" role="img" aria-label="BRF: far branch">
+<title>BRF: far branch</title>
+<style>
+:root{--ink:#1d2430;--dim:#5b6573;--bg:#ffffff;--line:#2b3340;--const:#d9dde3;--field:#ffffff;--sub:#f7d7a1;--reg:#bcd7f5;--imm:#c4e7c2;--disp:#dcc9f0;--cond:#f5c6b8;--pad:#ececec;--var:#ffffff}
+@media (prefers-color-scheme:dark){:root{--ink:#e6e9ee;--dim:#a2abb8;--bg:#161a20;--line:#8d97a6;--const:#3a4250;--field:#1f252e;--sub:#6b5320;--reg:#25507f;--imm:#2f6a35;--disp:#5a3f7d;--cond:#7d3d2c;--pad:#2b2f36;--var:#161a20}}
+text{font-family:"DejaVu Sans",Verdana,sans-serif;fill:var(--ink)}
+.bg{fill:var(--bg)}
+.t{font-size:14px;font-weight:bold}
+.g{font-size:11px;fill:var(--dim);font-family:"DejaVu Sans Mono",monospace}
+.rl{font-size:11px;fill:var(--dim);text-anchor:end}
+.bn{font-size:9px;fill:var(--dim)}
+.lb{font-size:12px;text-anchor:middle}
+.rg{font-size:9px;text-anchor:middle;fill:var(--dim)}
+.dg{font-size:13px;font-family:"DejaVu Sans Mono",monospace;font-weight:bold;text-anchor:middle}
+.box{fill:var(--field);stroke:var(--line);stroke-width:1.2}
+.r-len,.r-opcode{fill:var(--const)}.r-low{fill:var(--reg)}.r-scale{fill:var(--imm)}.r-more{fill:var(--var)}.r-const{fill:var(--const)}.r-prefix{fill:var(--const)}.r-sub{fill:var(--sub)}.r-reg{fill:var(--reg)}.r-imm{fill:var(--imm)}.r-disp{fill:var(--disp)}.r-cond{fill:var(--cond)}.r-pad{fill:var(--pad)}
+.r-var{fill:var(--var)}.vr{stroke-dasharray:5 3}
+</style>
+<rect class="bg" width="100%" height="100%"/>
+<text class="t" x="80" y="18">BRF: far branch</text>
+<text class="rl" x="72" y="70">parcel 0</text>
+<g><title></title>
+<rect class="box r-prefix" x="80" y="50" width="468" height="34"/>
+<text class="bn" x="82" y="46">15</text>
+<text class="bn" x="546" y="46" text-anchor="end">3</text>
+<text class="dg" x="98" y="71">1</text>
+<text class="dg" x="134" y="71">1</text>
+<text class="dg" x="170" y="71">1</text>
+<text class="dg" x="206" y="71">1</text>
+<text class="dg" x="242" y="71">0</text>
+<text class="dg" x="278" y="71">0</text>
+<text class="dg" x="314" y="71">0</text>
+<text class="dg" x="350" y="71">1</text>
+<text class="dg" x="386" y="71">1</text>
+<text class="dg" x="422" y="71">1</text>
+<text class="dg" x="458" y="71">1</text>
+<text class="dg" x="494" y="71">1</text>
+<text class="dg" x="530" y="71">1</text>
+</g>
+<g><title>sub</title>
+<rect class="box r-sub" x="548" y="50" width="108" height="34"/>
+<text class="bn" x="550" y="46">2</text>
+<text class="bn" x="654" y="46" text-anchor="end">0</text>
+<text class="lb" x="602" y="71">sub-opcode</text>
+</g>
+<text class="rl" x="72" y="128">parcel 1</text>
+<g><title>o1-pcrel: signed, parcels</title>
+<rect class="box r-disp" x="80" y="108" width="576" height="34"/>
+<text class="bn" x="82" y="104">15</text>
+<text class="bn" x="654" y="104" text-anchor="end">0</text>
+<text class="lb" x="368" y="123">pcrel</text>
+<text class="rg" x="368" y="136">[31:16]</text>
+</g>
+<text class="rl" x="72" y="186">parcel 2</text>
+<g><title>o1-pcrel: signed, parcels</title>
+<rect class="box r-disp" x="80" y="166" width="576" height="34"/>
+<text class="bn" x="82" y="162">15</text>
+<text class="bn" x="654" y="162" text-anchor="end">0</text>
+<text class="lb" x="368" y="181">pcrel</text>
+<text class="rg" x="368" y="194">[15:0]</text>
+</g>
+<rect class="box r-prefix" x="80" y="212" width="14" height="14"/>
+<text class="g" x="99" y="223">prefix</text>
+<rect class="box r-sub" x="172" y="212" width="14" height="14"/>
+<text class="g" x="191" y="223">sub</text>
+<rect class="box r-disp" x="264" y="212" width="14" height="14"/>
+<text class="g" x="283" y="223">disp</text>
+</svg>
+%%% leaf-PUSHI.svg
+<svg xmlns="http://www.w3.org/2000/svg" width="670" height="184" viewBox="0 0 670 184" role="img" aria-label="PUSHI: trailing literals">
+<title>PUSHI: trailing literals</title>
+<style>
+:root{--ink:#1d2430;--dim:#5b6573;--bg:#ffffff;--line:#2b3340;--const:#d9dde3;--field:#ffffff;--sub:#f7d7a1;--reg:#bcd7f5;--imm:#c4e7c2;--disp:#dcc9f0;--cond:#f5c6b8;--pad:#ececec;--var:#ffffff}
+@media (prefers-color-scheme:dark){:root{--ink:#e6e9ee;--dim:#a2abb8;--bg:#161a20;--line:#8d97a6;--const:#3a4250;--field:#1f252e;--sub:#6b5320;--reg:#25507f;--imm:#2f6a35;--disp:#5a3f7d;--cond:#7d3d2c;--pad:#2b2f36;--var:#161a20}}
+text{font-family:"DejaVu Sans",Verdana,sans-serif;fill:var(--ink)}
+.bg{fill:var(--bg)}
+.t{font-size:14px;font-weight:bold}
+.g{font-size:11px;fill:var(--dim);font-family:"DejaVu Sans Mono",monospace}
+.rl{font-size:11px;fill:var(--dim);text-anchor:end}
+.bn{font-size:9px;fill:var(--dim)}
+.lb{font-size:12px;text-anchor:middle}
+.rg{font-size:9px;text-anchor:middle;fill:var(--dim)}
+.dg{font-size:13px;font-family:"DejaVu Sans Mono",monospace;font-weight:bold;text-anchor:middle}
+.box{fill:var(--field);stroke:var(--line);stroke-width:1.2}
+.r-len,.r-opcode{fill:var(--const)}.r-low{fill:var(--reg)}.r-scale{fill:var(--imm)}.r-more{fill:var(--var)}.r-const{fill:var(--const)}.r-prefix{fill:var(--const)}.r-sub{fill:var(--sub)}.r-reg{fill:var(--reg)}.r-imm{fill:var(--imm)}.r-disp{fill:var(--disp)}.r-cond{fill:var(--cond)}.r-pad{fill:var(--pad)}
+.r-var{fill:var(--var)}.vr{stroke-dasharray:5 3}
+</style>
+<rect class="bg" width="100%" height="100%"/>
+<text class="t" x="80" y="18">PUSHI: trailing literals</text>
+<text class="rl" x="72" y="70">parcel 0</text>
+<g><title></title>
+<rect class="box r-prefix" x="80" y="50" width="360" height="34"/>
+<text class="bn" x="82" y="46">15</text>
+<text class="bn" x="438" y="46" text-anchor="end">6</text>
+<text class="dg" x="98" y="71">1</text>
+<text class="dg" x="134" y="71">1</text>
+<text class="dg" x="170" y="71">1</text>
+<text class="dg" x="206" y="71">1</text>
+<text class="dg" x="242" y="71">0</text>
+<text class="dg" x="278" y="71">0</text>
+<text class="dg" x="314" y="71">1</text>
+<text class="dg" x="350" y="71">0</text>
+<text class="dg" x="386" y="71">0</text>
+<text class="dg" x="422" y="71">1</text>
+</g>
+<g><title>cnt</title>
+<rect class="box r-imm" x="440" y="50" width="216" height="34"/>
+<text class="bn" x="442" y="46">5</text>
+<text class="bn" x="654" y="46" text-anchor="end">0</text>
+<text class="lb" x="548" y="71">count</text>
+</g>
+<text class="rl" x="72" y="128">then</text>
+<g><title>lits</title>
+<rect class="box r-imm vr" x="80" y="108" width="576" height="34"/>
+<text class="lb" x="368" y="129">literals (cnt)</text>
+</g>
+<rect class="box r-prefix" x="80" y="154" width="14" height="14"/>
+<text class="g" x="99" y="165">prefix</text>
+<rect class="box r-imm" x="172" y="154" width="14" height="14"/>
+<text class="g" x="191" y="165">imm</text>
+</svg>
+%%% index.html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bit layouts: examples/mini.hbnf</title>
+<style>
+:root{--bg:#fff;--ink:#1d2430;--dim:#5b6573}
+@media (prefers-color-scheme:dark){:root{--bg:#161a20;--ink:#e6e9ee;--dim:#a2abb8}}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;margin:0 auto;max-width:56rem;padding:1rem 16px}
+li{margin:.25rem 0}
+.n{color:var(--dim);font-size:.85em}
+</style>
+</head>
+<body>
+<h1>Bit layouts: examples/mini.hbnf</h1>
+<p>5 charts, 16 bits to a parcel.</p>
+<ul>
+<li><a href="leaf-NOP.svg">SYS0: no operand</a> <span class="n">16 bits, 1 parcel rows</span></li>
+<li><a href="leaf-ADD3.svg">R3: three registers</a> <span class="n">24 bits, 2 parcel rows</span></li>
+<li><a href="leaf-LDB28.svg">LDU.B28: load with a 28-bit displacement</a> <span class="n">48 bits, 3 parcel rows</span></li>
+<li><a href="leaf-BRF.svg">BRF: far branch</a> <span class="n">48 bits, 3 parcel rows</span></li>
+<li><a href="leaf-PUSHI.svg">PUSHI: trailing literals</a> <span class="n">variable length, 2 parcel rows</span></li>
+</ul>
+</body>
+</html>
+
