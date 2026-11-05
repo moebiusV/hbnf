@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bit layouts: {{source}}</title>
+<style>
+:root{--bg:#fff;--ink:#1d2430;--dim:#5b6573}
+@media (prefers-color-scheme:dark){:root{--bg:#161a20;--ink:#e6e9ee;--dim:#a2abb8}}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;margin:0 auto;max-width:56rem;padding:1rem 16px}
+li{margin:.25rem 0}
+.n{color:var(--dim);font-size:.85em}
+</style>
+</head>
+<body>
+<h1>Bit layouts: {{source}}</h1>
+<p>{{nchart}} charts, {{unit}} bits to a {{unit_name}}.</p>
+<ul>
+{{#charts}}
+<li><a href="{{file}}.svg">{{title}}</a> <span class="n">{{#fixed}}{{bits}} bits{{/fixed}}{{^fixed}}variable length{{/fixed}}, {{nrows}} {{unit_name}} rows</span></li>
+{{/charts}}
+</ul>
+</body>
+</html>

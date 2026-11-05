@@ -27,6 +27,7 @@ library project Libhbnf is
       "hbnf_wire-ada_lang.ads", "hbnf_wire-ada_lang.adb",
       "hbnf_lookahead.ads", "hbnf_lookahead.adb",
       "hbnf_shape.ads", "hbnf_shape.adb",
+      "hbnf_layout.ads", "hbnf_layout.adb",
       "hbnf_tree_sitter.ads", "hbnf_tree_sitter.adb",
       "hbnf_template.ads", "hbnf_template.adb",
       "hbnf_template_syntax.ads", "hbnf_template_syntax-parser.ads", "hbnf_template_syntax-parser.adb");

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{(left+unit*cell+14)}}" height="{{(hdr+nrows*58+34)}}" viewBox="0 0 {{(left+unit*cell+14)}} {{(hdr+nrows*58+34)}}" role="img" aria-label="{{title}}">
+<title>{{title}}</title>
+<style>
+:root{--ink:#1d2430;--dim:#5b6573;--bg:#ffffff;--line:#2b3340;--const:#d9dde3;--field:#ffffff;--sub:#f7d7a1;--reg:#bcd7f5;--imm:#c4e7c2;--disp:#dcc9f0;--cond:#f5c6b8;--pad:#ececec;--var:#ffffff}
+@media (prefers-color-scheme:dark){:root{--ink:#e6e9ee;--dim:#a2abb8;--bg:#161a20;--line:#8d97a6;--const:#3a4250;--field:#1f252e;--sub:#6b5320;--reg:#25507f;--imm:#2f6a35;--disp:#5a3f7d;--cond:#7d3d2c;--pad:#2b2f36;--var:#161a20}}
+text{font-family:"DejaVu Sans",Verdana,sans-serif;fill:var(--ink)}
+.bg{fill:var(--bg)}
+.t{font-size:14px;font-weight:bold}
+.g{font-size:11px;fill:var(--dim);font-family:"DejaVu Sans Mono",monospace}
+.rl{font-size:11px;fill:var(--dim);text-anchor:end}
+.bn{font-size:9px;fill:var(--dim)}
+.lb{font-size:12px;text-anchor:middle}
+.rg{font-size:9px;text-anchor:middle;fill:var(--dim)}
+.dg{font-size:13px;font-family:"DejaVu Sans Mono",monospace;font-weight:bold;text-anchor:middle}
+.box{fill:var(--field);stroke:var(--line);stroke-width:1.2}
+.r-const{fill:var(--const)}.r-prefix{fill:var(--const)}.r-sub{fill:var(--sub)}.r-reg{fill:var(--reg)}.r-imm{fill:var(--imm)}.r-disp{fill:var(--disp)}.r-cond{fill:var(--cond)}.r-pad{fill:var(--pad)}
+.r-var{fill:var(--var);stroke-dasharray:5 3}
+</style>
+<rect class="bg" width="100%" height="100%"/>
+<text class="t" x="{{left}}" y="18">{{title}}</text>
+{{#guards}}
+<text class="g" x="{{left}}" y="{{(32+gi*14)}}">{{g}}</text>
+{{/guards}}
+{{#rows}}
+<text class="rl" x="{{(left-8)}}" y="{{(hdr+n*58+36)}}">{{label}}</text>
+{{#pieces}}
+{{#(var==0)}}
+<g><title>{{name}}{{#note}}: {{note}}{{/note}}</title>
+<rect class="box r-{{role}}" x="{{(left+pos*cell)}}" y="{{(hdr+n*58+16)}}" width="{{(w*cell)}}" height="34"/>
+<text class="bn" x="{{(left+pos*cell+2)}}" y="{{(hdr+n*58+12)}}">{{hi}}</text>
+{{#(w>1)}}
+<text class="bn" x="{{(left+pos*cell+w*cell-2)}}" y="{{(hdr+n*58+12)}}" text-anchor="end">{{lo}}</text>
+{{/(w>1)}}
+{{#const}}
+{{#digits}}
+<text class="dg" x="{{(left+pos*cell+cell/2)}}" y="{{(hdr+n*58+37)}}">{{d}}</text>
+{{/digits}}
+{{/const}}
+{{^const}}
+{{#split}}
+<text class="lb" x="{{(left+pos*cell+w*cell/2)}}" y="{{(hdr+n*58+31)}}">{{short}}</text>
+<text class="rg" x="{{(left+pos*cell+w*cell/2)}}" y="{{(hdr+n*58+44)}}">[{{range}}]</text>
+{{/split}}
+{{^split}}
+<text class="lb" x="{{(left+pos*cell+w*cell/2)}}" y="{{(hdr+n*58+37)}}">{{short}}</text>
+{{/split}}
+{{/const}}
+</g>
+{{/(var==0)}}
+{{#(var!=0)}}
+<g><title>{{name}}</title>
+<rect class="box r-var" x="{{left}}" y="{{(hdr+n*58+16)}}" width="{{(unit*cell)}}" height="34"/>
+<text class="lb" x="{{(left+unit*cell/2)}}" y="{{(hdr+n*58+37)}}">{{label}} ({{expr}})</text>
+</g>
+{{/(var!=0)}}
+{{/pieces}}
+{{/rows}}
+{{#roles}}
+<rect class="box r-{{role}}" x="{{(left+ri*92)}}" y="{{(hdr+nrows*58+4)}}" width="14" height="14"/>
+<text class="g" x="{{(left+ri*92+19)}}" y="{{(hdr+nrows*58+15)}}">{{role}}</text>
+{{/roles}}
+</svg>

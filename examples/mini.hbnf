@@ -1,0 +1,17 @@
+; mini: a four-instruction subset of a prefix-coded 16-bit-parcel ISA, annotated for the layout targets (LAYOUT.md).
+; The annotations (%role, %role("label" "note"), %title("text")) change nothing the C/Rust/Zig/Ada backends generate.
+prefix none
+
+insn = leaf:( leaf-NOP | leaf-ADD3 | leaf-LDB28 | leaf-BRF | leaf-PUSHI )
+
+; one parcel: prefix 11101100100, 5-bit sub-opcode (nop, rti, ...)
+leaf-NOP  = 0b11101100100 %prefix sub:5 %sub("sub-opcode") %title("SYS0: no operand")
+; one parcel: three registers
+leaf-ADD3 = 0b111011111000 %prefix o3-r:4 %reg("Rc") o1-r:4 %reg("Ra") o2-r:4 %reg("Rb") %title("R3: three registers")
+; two parcels: a load with a 28-bit signed displacement: the displacement field crosses the parcel boundary
+leaf-LDB28 = 0b11000010 %prefix sub:4 %sub("sub-opcode") o2-r:4 %reg("Rd") o1-base:4 %reg("Rb") o1-d:28s %disp("disp" "signed, bytes")
+             %title("LDU.B28: load with a 28-bit displacement")
+; three parcels: a 32-bit pc-relative branch, then padding
+leaf-BRF = 0b1111000111111 %prefix sub:3 %sub("sub-opcode") o1-pcrel:32s %disp("pcrel" "signed, parcels") %title("BRF: far branch")
+; a literal follows: an immediate of unknown length
+leaf-PUSHI = 0b1111001001 %prefix cnt:6 %imm("count") lits:[cnt] %imm("literals" "cnt octets follow") %title("PUSHI: trailing literals")

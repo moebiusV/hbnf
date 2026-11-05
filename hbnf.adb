@@ -18,6 +18,7 @@ with HBNF_C;
 with HBNF_Rust;
 with HBNF_Zig;
 with HBNF_Ada;
+with HBNF_Layout;
 with HBNF_Wire.C;
 with HBNF_Wire.Lower;
 with HBNF_Wire.Rust;
@@ -77,6 +78,12 @@ procedure Hbnf is
    Ts_Scanner   : Unbounded_String;
    Quiet        : Boolean := False;
    Prefix       : Unbounded_String;
+   Target       : Unbounded_String;   --  --target=NAME: a layout target (LAYOUT.md)
+   Targets_Dir  : Unbounded_String;
+   Out_Dir      : Unbounded_String;
+   Chart_Root   : Unbounded_String;
+   Chart_Unit   : Positive := 16;
+   Unit_Name    : Unbounded_String := To_Unbounded_String ("parcel");
 
    --  The directory the .tmpl templates load from: --templates=DIR, else the
    --  first XDG data dir that holds a hbnf/ subdirectory -- $XDG_DATA_HOME or
@@ -165,12 +172,33 @@ procedure Hbnf is
       when others => return Templates & "/layouts";
    end Layouts_Directory;
 
+   --  The directory of the layout targets (targets/NAME/*.tmpl): beside the template directory, as the layouts are.
+   function Targets_Directory (Templates : String) return String is
+      use type Ada.Directories.File_Kind;
+   begin
+      if Ada.Environment_Variables.Exists ("HBNF_TARGETS") then
+         return Ada.Environment_Variables.Value ("HBNF_TARGETS");
+      end if;
+      declare
+         Parent : constant String :=
+           Ada.Directories.Containing_Directory (Ada.Directories.Full_Name (Templates));
+      begin
+         if Ada.Directories.Exists (Parent & "/targets") then
+            return Parent & "/targets";
+         end if;
+      end;
+      return Templates & "/targets";
+   exception
+      when others => return Templates & "/targets";
+   end Targets_Directory;
+
    procedure Usage is
    begin
       Ada.Text_IO.Put_Line
         ("usage: hbnf <schema.hbnf> --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--root=RULE] [--dialect=NAME]"
          & " [--abnf] [--ebnf] [--prefix=NAME_]"
          & " [--layout=ast|tape|tailq|rb|NAME] [--layouts=DIR] [--templates=DIR]"
+         & " [--target=NAME [--targets=DIR] [--out=DIR] [--chart-root=RULE] [--unit=BITS] [--unit-name=WORD]]"
          & " [--idref] [--ast] [--ast-tools] [--paths] [--spans] [--parents] [--writer] [--compare]"
          & " [--forks] [--quiet-forks] [--run-params|--expand-params]"
          & " [--no-compact] [--no-views] [--no-factor] [--no-ladder] [--no-unwind] [--no-overlay] [--unwind] [--overlay] [--lint] [--werror]"
@@ -193,6 +221,18 @@ begin
             Package_Name := To_Unbounded_String (A (11 .. A'Last));
          elsif A'Length >= 7 and then A (1 .. 7) = "--root=" then
             HBNF_Grammar.Set_Root (A (8 .. A'Last));
+         elsif A'Length >= 13 and then A (1 .. 13) = "--chart-root=" then
+            Chart_Root := To_Unbounded_String (A (14 .. A'Last));
+         elsif A'Length >= 9 and then A (1 .. 9) = "--target=" then
+            Target := To_Unbounded_String (A (10 .. A'Last));
+         elsif A'Length >= 10 and then A (1 .. 10) = "--targets=" then
+            Targets_Dir := To_Unbounded_String (A (11 .. A'Last));
+         elsif A'Length >= 6 and then A (1 .. 6) = "--out=" then
+            Out_Dir := To_Unbounded_String (A (7 .. A'Last));
+         elsif A'Length >= 7 and then A (1 .. 7) = "--unit=" then
+            Chart_Unit := Positive'Value (A (8 .. A'Last));
+         elsif A'Length >= 12 and then A (1 .. 12) = "--unit-name=" then
+            Unit_Name := To_Unbounded_String (A (13 .. A'Last));
          elsif A'Length >= 10 and then A (1 .. 10) = "--dialect=" then
             HBNF_Grammar.Set_Dialect (A (11 .. A'Last));
          elsif A = "--abnf" then
@@ -419,6 +459,24 @@ begin
                & "so far (" & To_String (Backend)
                & " follows; RFCPLAN.md step 7b)");
             Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+            return;
+         end if;
+         if Target /= Null_Unbounded_String then
+            declare
+               G : constant HBNF_Wire.Grammar :=
+                 HBNF_Wire.Lower.Lower
+                   (HBNF_Grammar.Wire_Rules, Parsed, To_String (Schema_Path));
+               T : constant String := To_String (Target);
+               Base : constant String :=
+                 (if Targets_Dir /= Null_Unbounded_String then To_String (Targets_Dir)
+                  else Targets_Directory (Template_Directory));
+            begin
+               HBNF_Layout.Run
+                 (G, (Target_Dir => To_Unbounded_String
+                                      ((if (for some C of T => C = '/') then T else Base & "/" & T)),
+                      Out_Dir    => Out_Dir, Root => Chart_Root, Unit => Chart_Unit,
+                      Unit_Name  => Unit_Name, Source => Schema_Path));
+            end;
             return;
          end if;
          declare
