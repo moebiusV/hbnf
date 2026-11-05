@@ -213,48 +213,48 @@ found the same rules before it is timed.
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| hbnf (C backend) | 7.68 MB | 18 ms | 5.5 M rules/s | 425 MB/s | 15 MB |
-| byacc + flex | 7.68 MB | 56 ms | 1.8 M rules/s | 138 MB/s | 29 MB |
-| bison + flex | 7.68 MB | 58 ms | 1.7 M rules/s | 133 MB/s | 29 MB |
-| peg/leg | 7.68 MB | 44 ms | 2.3 M rules/s | 177 MB/s | 41 MB |
-| tree-sitter 0.27.1 | 7.68 MB | 222 ms | 0.4 M rules/s | 35 MB/s | 58 MB |
-| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 33 ms | | | 76 MB |
-| ANTLR 4 (Java), actions, cold JVM | 7.68 MB | 257 ms | 0.4 M rules/s | 30 MB/s | 223 MB |
-| ANTLR 4 (Java), actions, warm JVM | 7.68 MB | 103 ms | 1.0 M rules/s | 75 MB/s | 606 MB |
-| ANTLR 4 (Java), parse tree, cold JVM | 7.68 MB | 234 ms | 0.4 M rules/s | 33 MB/s | 314 MB |
+| hbnf (C backend) | 7.68 MB | 15 ms | 6.8 M rules/s | 526 MB/s | 17 MB |
+| byacc + flex | 7.68 MB | 52 ms | 1.9 M rules/s | 147 MB/s | 29 MB |
+| bison + flex | 7.68 MB | 53 ms | 1.9 M rules/s | 146 MB/s | 29 MB |
+| peg/leg | 7.68 MB | 42 ms | 2.4 M rules/s | 184 MB/s | 41 MB |
+| tree-sitter 0.27.1 | 7.68 MB | 213 ms | 0.5 M rules/s | 36 MB/s | 58 MB |
+| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 31 ms | | | 76 MB |
+| ANTLR 4 (Java), actions, cold JVM | 7.68 MB | 301 ms | 0.3 M rules/s | 25 MB/s | 217 MB |
+| ANTLR 4 (Java), actions, warm JVM | 7.68 MB | 95 ms | 1.1 M rules/s | 81 MB/s | 471 MB |
+| ANTLR 4 (Java), parse tree, cold JVM | 7.68 MB | 366 ms | 0.3 M rules/s | 21 MB/s | 297 MB |
 
 **1,000,000 rules** (76.86 MB, the same file for every tool):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| hbnf (C backend) | 76.86 MB | 184 ms | 5.4 M rules/s | 419 MB/s | 136 MB |
-| byacc + flex | 76.86 MB | 564 ms | 1.8 M rules/s | 136 MB/s | 273 MB |
-| bison + flex | 76.86 MB | 558 ms | 1.8 M rules/s | 138 MB/s | 273 MB |
-| peg/leg | 76.86 MB | 437 ms | 2.3 M rules/s | 176 MB/s | 395 MB |
-| tree-sitter 0.27.1 | 76.86 MB | 2303 ms | 0.4 M rules/s | 33 MB/s | 564 MB |
-| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 335 ms | | | 743 MB |
-| ANTLR 4 (Java), actions, cold JVM | 76.86 MB | 1196 ms | 0.8 M rules/s | 64 MB/s | 1446 MB |
-| ANTLR 4 (Java), actions, warm JVM | 76.86 MB | 1163 ms | 0.9 M rules/s | 66 MB/s | 2844 MB |
-| ANTLR 4 (Java), parse tree, cold JVM | 76.86 MB | 2033 ms | 0.5 M rules/s | 38 MB/s | 2502 MB |
+| hbnf (C backend) | 76.86 MB | 148 ms | 6.8 M rules/s | 520 MB/s | 137 MB |
+| byacc + flex | 76.86 MB | 523 ms | 1.9 M rules/s | 147 MB/s | 273 MB |
+| bison + flex | 76.86 MB | 532 ms | 1.9 M rules/s | 144 MB/s | 273 MB |
+| peg/leg | 76.86 MB | 421 ms | 2.4 M rules/s | 183 MB/s | 395 MB |
+| tree-sitter 0.27.1 | 76.86 MB | 2164 ms | 0.5 M rules/s | 36 MB/s | 564 MB |
+| tree-sitter 0.27.1, re-parse after a one-byte edit | (edit) | 321 ms | | | 744 MB |
+| ANTLR 4 (Java), actions, cold JVM | 76.86 MB | 1601 ms | 0.6 M rules/s | 48 MB/s | 1177 MB |
+| ANTLR 4 (Java), actions, warm JVM | 76.86 MB | 1171 ms | 0.9 M rules/s | 66 MB/s | 2110 MB |
+| ANTLR 4 (Java), parse tree, cold JVM | 76.86 MB | 3163 ms | 0.3 M rules/s | 24 MB/s | 2088 MB |
 
-_Measured 2026-10-27 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 6.11 on the host, hbnf 56e8c78; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
+_Measured 2026-11-05 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.27 on the host, hbnf c4d9370; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
 
 <!-- /bench:toy -->
 
-At 100,000 rules hbnf's generated C parser takes <!-- v:hbnf_100000_ms -->18<!-- /v --> ms.  byacc with flex
-takes <!-- v:byacc_100000_ms -->56<!-- /v --> ms (<!-- v:ratio_byacc_100000 -->3.1<!-- /v --> times as long), peg/leg <!-- v:ratio_peg_100000 -->2.4<!-- /v --> times, tree-sitter
-<!-- v:ratio_ts_100000 -->12<!-- /v --> times, and ANTLR <!-- v:ratio_antlr_cold_100000 -->14<!-- /v --> times in a fresh JVM (<!-- v:ratio_antlr_warm_100000 -->5.7<!-- /v --> times once
-the JVM is warm).  At 1,000,000 rules the ratios hold (byacc <!-- v:ratio_byacc_1000000 -->3.1<!-- /v -->, tree-sitter
-<!-- v:ratio_ts_1000000 -->13<!-- /v -->), so every tool's cost is linear and the table is not a small-input
-effect.  Peak memory follows the same order: <!-- v:hbnf_100000_rss_mb -->15<!-- /v --> MB for hbnf, <!-- v:byacc_100000_rss_mb -->29<!-- /v --> MB for
+At 100,000 rules hbnf's generated C parser takes <!-- v:hbnf_100000_ms -->15<!-- /v --> ms.  byacc with flex
+takes <!-- v:byacc_100000_ms -->52<!-- /v --> ms (<!-- v:ratio_byacc_100000 -->3.5<!-- /v --> times as long), peg/leg <!-- v:ratio_peg_100000 -->2.8<!-- /v --> times, tree-sitter
+<!-- v:ratio_ts_100000 -->14<!-- /v --> times, and ANTLR <!-- v:ratio_antlr_cold_100000 -->20<!-- /v --> times in a fresh JVM (<!-- v:ratio_antlr_warm_100000 -->6.3<!-- /v --> times once
+the JVM is warm).  At 1,000,000 rules the ratios hold (byacc <!-- v:ratio_byacc_1000000 -->3.5<!-- /v -->, tree-sitter
+<!-- v:ratio_ts_1000000 -->15<!-- /v -->), so every tool's cost is linear and the table is not a small-input
+effect.  Peak memory follows the same order: <!-- v:hbnf_100000_rss_mb -->17<!-- /v --> MB for hbnf, <!-- v:byacc_100000_rss_mb -->29<!-- /v --> MB for
 byacc, <!-- v:ts_100000_rss_mb -->58<!-- /v --> MB for tree-sitter.
 
 Three things this does not say.  The trees differ: hbnf builds typed structs
 whose strings are slices of the input, the yacc and PEG parsers copy each
 string, tree-sitter builds a node per token, and ANTLR's actions-only rows
 build no tree at all.  The toy is the smallest realistic shape; the full pfctl
-grammar, with its 35-way option alternation, takes <!-- v:pfctl_100000_ms -->168<!-- /v --> ms and <!-- v:pfctl_100000_rss_mb -->148<!-- /v --> MB for
-100,000 rules, about <!-- v:pfctl_vs_toy_time -->9<!-- /v --> times the toy per rule, and that is the number to
+grammar, with its 35-way option alternation, takes <!-- v:pfctl_100000_ms -->87<!-- /v --> ms and <!-- v:pfctl_100000_rss_mb -->116<!-- /v --> MB for
+100,000 rules, about <!-- v:pfctl_vs_toy_time -->6<!-- /v --> times the toy per rule, and that is the number to
 set against a production ruleset.  And a machine with other work on it gives
 slower, noisier times; the load average at the start of the run is recorded
 under every table.
@@ -274,17 +274,17 @@ checked to have built the same sensors.
 
 | tool | input | parse time | sensors/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| OpenBSD ntpd parse.y, byacc | 6.14 MB | 61 ms | 1630 K sensors/s | 100 MB/s | 9.1 MB |
-| hbnf binding | 6.14 MB | 60 ms | 1655 K sensors/s | 102 MB/s | 9.2 MB |
+| OpenBSD ntpd parse.y, byacc | 6.14 MB | 55 ms | 1810 K sensors/s | 111 MB/s | 9.1 MB |
+| hbnf binding | 6.14 MB | 79 ms | 1272 K sensors/s | 78 MB/s | 9.3 MB |
 
 **1,000,000 sensors** (one `sensor` line each, the same file for both):
 
 | tool | input | parse time | sensors/s | MB/s | peak RSS |
 |---|---:|---:|---:|---:|---:|
-| OpenBSD ntpd parse.y, byacc | 62.39 MB | 616 ms | 1623 K sensors/s | 101 MB/s | 77.8 MB |
-| hbnf binding | 62.39 MB | 395 ms | 2532 K sensors/s | 158 MB/s | 77.8 MB |
+| OpenBSD ntpd parse.y, byacc | 62.39 MB | 572 ms | 1747 K sensors/s | 109 MB/s | 77.8 MB |
+| hbnf binding | 62.39 MB | 790 ms | 1266 K sensors/s | 79 MB/s | 77.9 MB |
 
-_Measured 2026-10-27 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 6.11 on the host, hbnf 56e8c78; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
+_Measured 2026-11-05 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.27 on the host, hbnf c4d9370; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
 
 <!-- /bench:ntpd -->
 
@@ -305,19 +305,19 @@ the yacc side also that the source ports add up.
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
-| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 1.16 s | 87 K rules/s | 8 MB/s | 150.0 MB |
-| hbnf pfctl grammar (`--no-compact`, typed tree) | 9.18 MB | 312 ms | 320 K rules/s | 29 MB/s | 448.4 MB |
-| hbnf pfctl grammar (compact nodes, the default) | 9.18 MB | 163 ms | 612 K rules/s | 56 MB/s | 148.2 MB |
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 9.18 MB | 1.08 s | 93 K rules/s | 9 MB/s | 149.9 MB |
+| hbnf pfctl grammar (`--no-compact`, typed tree) | 9.18 MB | 154 ms | 649 K rules/s | 60 MB/s | 283.4 MB |
+| hbnf pfctl grammar (compact nodes, the default) | 9.18 MB | 113 ms | 886 K rules/s | 81 MB/s | 113.9 MB |
 
 **1,000,000 filter rules** (one `pass in quick ... keep state` line each, the same file for both):
 
 | tool | input | parse time | rules/s | MB/s | peak RSS |
 |---|---|---:|---:|---:|---:|
-| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 11.65 s | 86 K rules/s | 8 MB/s | 1481.9 MB |
-| hbnf pfctl grammar (`--no-compact`, typed tree) | 91.86 MB | 3.09 s | 324 K rules/s | 30 MB/s | 4468.3 MB |
-| hbnf pfctl grammar (compact nodes, the default) | 91.86 MB | 1.60 s | 625 K rules/s | 57 MB/s | 1468.2 MB |
+| OpenBSD pfctl parse.y, byacc (fills struct pf_rule) | 91.86 MB | 11.00 s | 91 K rules/s | 8 MB/s | 1481.9 MB |
+| hbnf pfctl grammar (`--no-compact`, typed tree) | 91.86 MB | 1.46 s | 686 K rules/s | 63 MB/s | 2817.2 MB |
+| hbnf pfctl grammar (compact nodes, the default) | 91.86 MB | 1.10 s | 909 K rules/s | 84 MB/s | 1123.3 MB |
 
-_Measured 2026-10-27 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 7.32 on the host, hbnf 56e8c78; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
+_Measured 2026-11-05 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.27 on the host, hbnf c4d9370; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
 
 <!-- /bench:pfctl_yacc -->
 
@@ -331,18 +331,18 @@ times over with every tree kept (about 30 MB of input per row):
 
 | corpus | input | parsed | time, old layout | time, compact | speed-up | memory, old | memory, compact | saved |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| json | 26 files x 20000 | 13.0 MB | 180 ms | 187 ms | 0.96x | 270 MB | 265 MB | 1.02x |
-| mustache | 25 files x 20000 | 7.4 MB | 72 ms | 58 ms | 1.25x | 90 MB | 48 MB | 1.88x |
-| algol60 | 5 files x 12615 | 30.0 MB | 1775 ms | 1253 ms | 1.42x | 3075 MB | 1886 MB | 1.63x |
-| bgpd | 4 files x 20000 | 19.7 MB | 519 ms | 471 ms | 1.10x | 381 MB | 277 MB | 1.38x |
-| httpd | 1 files x 20000 | 15.9 MB | 333 ms | 304 ms | 1.09x | 239 MB | 106 MB | 2.25x |
-| ntpd | 1 files x 20000 | 6.9 MB | 69 ms | 69 ms | 1.00x | 32 MB | 32 MB | 1.00x |
-| pfctl | 7 files x 12717 | 30.0 MB | 955 ms | 618 ms | 1.55x | 812 MB | 306 MB | 2.65x |
-| relayd | 2 files x 20000 | 15.2 MB | 252 ms | 224 ms | 1.12x | 86 MB | 61 MB | 1.42x |
-| snmpd | 2 files x 20000 | 10.9 MB | 153 ms | 144 ms | 1.06x | 66 MB | 53 MB | 1.25x |
-| unwind | 1 files x 20000 | 4.7 MB | 55 ms | 54 ms | 1.01x | 16 MB | 15 MB | 1.08x |
+| json | 27 files x 424 | 30.0 MB | 13 ms | 14 ms | 0.98x | 33 MB | 33 MB | 1.00x |
+| mustache | 25 files x 20000 | 7.4 MB | 52 ms | 43 ms | 1.22x | 75 MB | 43 MB | 1.76x |
+| algol60 | 5 files x 12615 | 30.0 MB | 358 ms | 330 ms | 1.09x | 390 MB | 285 MB | 1.37x |
+| bgpd | 4 files x 20000 | 19.7 MB | 408 ms | 377 ms | 1.08x | 346 MB | 257 MB | 1.34x |
+| httpd | 1 files x 20000 | 15.9 MB | 247 ms | 203 ms | 1.22x | 197 MB | 86 MB | 2.29x |
+| ntpd | 1 files x 20000 | 6.9 MB | 57 ms | 56 ms | 1.00x | 32 MB | 32 MB | 1.00x |
+| pfctl | 7 files x 12717 | 30.0 MB | 633 ms | 478 ms | 1.32x | 740 MB | 229 MB | 3.22x |
+| relayd | 2 files x 20000 | 15.2 MB | 188 ms | 183 ms | 1.03x | 65 MB | 49 MB | 1.32x |
+| snmpd | 2 files x 20000 | 10.9 MB | 110 ms | 107 ms | 1.03x | 59 MB | 46 MB | 1.29x |
+| unwind | 1 files x 20000 | 4.7 MB | 48 ms | 48 ms | 1.01x | 16 MB | 15 MB | 1.07x |
 
-_Measured 2026-10-27 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 7.32 on the host, hbnf 56e8c78; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
+_Measured 2026-11-05 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.27 on the host, hbnf c4d9370; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, `gcc -O2`._
 
 <!-- /bench:corpus -->
 
@@ -569,8 +569,8 @@ turn off the GLR and error-recovery machinery it carries. And the comparison
 above is a *cold* parse, which is not what tree-sitter optimises.
 
 So the cold number alone would be unfair, and the incremental one is in the
-table too: after a one-byte edit, re-parsing the same file takes <!-- v:ts_edit_100000_ms -->33<!-- /v --> ms,
-against <!-- v:hbnf_100000_ms -->18<!-- /v --> ms for hbnf's cold parse.  The reason is structural, and the
+table too: after a one-byte edit, re-parsing the same file takes <!-- v:ts_edit_100000_ms -->31<!-- /v --> ms,
+against <!-- v:hbnf_100000_ms -->15<!-- /v --> ms for hbnf's cold parse.  The reason is structural, and the
 honest caveat: the toy is a flat list of N independent rules, so an edit forces
 the root's N-child list to be rebuilt and incrementality has almost nothing to
 prune.  For deeply nested source code that is edited and re-parsed all day,

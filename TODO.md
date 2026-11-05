@@ -10,18 +10,22 @@ The speed agent is paused with its worktree intact (`.claude/worktrees/agent-a62
 
 ---
 
-## 1. Benchmarks that are not current
+## 1. Benchmarks: all rerun on 2026-11-05, on a busy machine
+
+Everything below was rerun at hbnf 9884a84 on a machine that was "as quiet as it will get", which is not quiet: the YAML probe read 18-19 ms
+(quiet is 8.4-9.6) and the load average was 9 (`fuzzy_search` on cores 0-4, a VM).  The reference rows were compared in each footnote; no figure was adjusted.
+hbnf's own rows touch many fresh pages and are the ones the load hurts most, so read them as upper bounds.
 
 | what | state | to do |
 |---|---|---|
-| `bench/libs.sh` JSON, TOML, YAML rows | from the last quiet run, before the SSE2 loop, the arena sized from the input and the context-set hash | rerun the whole of it **on a quiet machine** (`sh bench/libs.sh`, 30 min; accept only if the YAML probe reads 8.4-9.6 ms before and after and the reference rows reproduce: simdjson 1.7, RapidJSON 5.0, tomlc17 36-38, rapidyaml 15-18, libyaml 37-41) |
-| `bench/libs.sh` XML rows | **interim, busy machine** (probe 18.3-19 ms), XML only, at 4bb4e9a: hbnf tape 3.67 ms, tree 5.00 ms, libxml2 SAX2 5.33; the footnote says so | the same rerun replaces them; the hbnf rows are probably 20-30% high |
-| `bench/cspeed.sh` (C11 parser vs `gcc -fsyntax-only`), `bench/run.sh` stages (yacc, peg, tree-sitter, ANTLR, ntpd, pfctl, corpus), `bench/scalar.sh` | results dated 2026-10-24 to 10-27, before this month's generator changes | rerun on a quiet machine; `sh bench/run.sh --quick` first to see that it still builds |
-| `bench/tokens.sh` | **broken here**: it empties `bench/results/tokens.md` (28 lines) and prints nothing, probably the tokenizers are not installed; I restored the file from git | find why, fix, rerun |
-| `bench/notation.sh` | rerun 2026-11-05, current | - |
+| `bench/libs.sh` (JSON, TOML, YAML, XML), best of 9 | rerun; simdjson and rapidyaml read 20-35% high, the other references at their quiet readings; hbnf JSON tree 2.8 ms (1.9 quiet), YAML tree 12 (8.5), XML tape 3.5, tree 4.3 against libxml2 SAX2 4.8 | rerun on a quiet machine (30 min at 5 runs); accept only if the probe reads 8.4-9.6 before and after |
+| `bench/cspeed.sh`, `bench/scalar.sh` | rerun (C11 tree 0.20 s, 47 MB; tape 0.12 s; gcc -fsyntax-only 0.48 s) | same |
+| `bench/run.sh` (all stages: hbnf, yacc, peg, tree-sitter, ANTLR, ntpd, pfctl, corpus), which feeds WHY.md, README.md, HISTORY.md, USENIXSUBMISSION.md | rerun; the whole of it takes under 15 minutes | same |
+| `bench/tokens.sh` | **broken**: it empties `bench/results/tokens.md` and `bench/results/vals/tokens.txt` and prints nothing (the tokenizers are probably not installed), after which `update-docs.sh` complains of missing `tokens_*` values.  The tokens figures in the documents are the 10-27 ones, restored from git | find why, fix, rerun; make the script fail loudly instead of writing an empty table |
+| `bench/notation.sh` | current | - |
 | `bench/xml-conformance.sh` | current: hbnf 34 of 34, 11 of 11 with the real generator; reruns by itself when a parser's version, the case set, or hbnf's grammar or generator changes | grow the case set (encodings, DOCTYPE forms, namespaces) |
-| THP and the arena | the arena patch (9884a84) saves page faults only when the kernel cannot back the arena with huge pages; the benchmark runs with THP on and sees nothing | decide whether the benchmark should also run with THP off, and say which in the table |
-| `fuzzy_search` on cores 0-4 | it makes the machine unusable for timing (probe 18 ms against 9 quiet, even on idle cores: memory bandwidth) | agree a window when it is paused |
+| THP and the arena | the arena patch (9884a84) saves page faults only when the kernel cannot back the arena with huge pages; the benchmark runs with THP on | decide whether the benchmark should also run with THP off, and say which in the table |
+| `fuzzy_search` on cores 0-4 | makes the machine unusable for timing (even on idle cores: memory bandwidth) | agree a window when it is paused |
 
 Prio:
 Note:

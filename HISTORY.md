@@ -898,10 +898,10 @@ that can be compared whole; for the other seven, hbnf parses and builds the tree
 own actions are not yet attached.
 
 **Speed and memory.** The repository's benchmark (`bench/results/`, on glibc) puts the generated C
-parser at <!-- v:hbnf_100000_ms -->18<!-- /v --> ms and <!-- v:hbnf_100000_rss_mb -->15<!-- /v --> MB on the 7.7 MB toy-language file, where byacc plus flex takes
-<!-- v:byacc_100000_ms -->56<!-- /v --> ms and <!-- v:byacc_100000_rss_mb -->29<!-- /v --> MB, bison <!-- v:bison_100000_ms -->58<!-- /v --> ms, peg/leg <!-- v:peg_100000_ms -->44<!-- /v --> ms, Tree-sitter <!-- v:ts_100000_ms -->222<!-- /v --> ms and
-<!-- v:ts_100000_rss_mb -->58<!-- /v --> MB, and ANTLR 4 <!-- v:antlr_warm_100000_ms -->103<!-- /v --> to <!-- v:antlr_cold_100000_ms -->257<!-- /v --> ms and <!-- v:antlr_cold_100000_rss_mb -->223<!-- /v --> to <!-- v:antlr_warm_100000_rss_mb -->606<!-- /v --> MB; at a million rules,
-<!-- v:hbnf_1000000_ms -->184<!-- /v --> ms against Tree-sitter's <!-- v:ts_1000000_ms -->2303<!-- /v --> ms.  On real formats, JSON, TOML and YAML against the
+parser at <!-- v:hbnf_100000_ms -->15<!-- /v --> ms and <!-- v:hbnf_100000_rss_mb -->17<!-- /v --> MB on the 7.7 MB toy-language file, where byacc plus flex takes
+<!-- v:byacc_100000_ms -->52<!-- /v --> ms and <!-- v:byacc_100000_rss_mb -->29<!-- /v --> MB, bison <!-- v:bison_100000_ms -->53<!-- /v --> ms, peg/leg <!-- v:peg_100000_ms -->42<!-- /v --> ms, Tree-sitter <!-- v:ts_100000_ms -->213<!-- /v --> ms and
+<!-- v:ts_100000_rss_mb -->58<!-- /v --> MB, and ANTLR 4 <!-- v:antlr_warm_100000_ms -->95<!-- /v --> to <!-- v:antlr_cold_100000_ms -->301<!-- /v --> ms and <!-- v:antlr_cold_100000_rss_mb -->217<!-- /v --> to <!-- v:antlr_warm_100000_rss_mb -->471<!-- /v --> MB; at a million rules,
+<!-- v:hbnf_1000000_ms -->148<!-- /v --> ms against Tree-sitter's <!-- v:ts_1000000_ms -->2164<!-- /v --> ms.  On real formats, JSON, TOML and YAML against the
 libraries people use for them, the README has the tables.  Measuring a large JSON document found a
 real fault, now fixed: the generated parser worked out the line and column of every failure that went
 deeper than the last, which is a pass over the text each time, so a long input with any backtracking
