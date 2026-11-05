@@ -307,6 +307,9 @@ package HBNF_Grammar is
             F_Message : Unbounded_String;     --  `?(cond) "what is wrong"`
             F_Line    : Natural := 0;
             F_Col     : Natural := 0;
+            F_Role    : Unbounded_String;     --  `%reg`: the role (layout)
+            F_Label   : Unbounded_String;     --  `%reg("Rd")`: display name
+            F_Note    : Unbounded_String;     --  `%reg("Rd", "x8")`: a note
          when Negation =>
             Operand : Element_Vectors.Vector;
             --  `~x`: one code point not in the set x matches.  x is a class:

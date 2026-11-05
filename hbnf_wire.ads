@@ -95,6 +95,9 @@ package HBNF_Wire is
 
    type Sequence is record
       Guard : Expr_Access := null;     --  `?(expr)`: taken only when non-zero
+      Guard_Text : Unbounded_String;   --  the guard as written (layout)
+      Title : Unbounded_String;        --  `%title("text" "note")` (layout)
+      Title_Note : Unbounded_String;
       Items : Item_Vectors.Vector;
       Line  : Natural := 0;
    end record;
@@ -136,6 +139,12 @@ package HBNF_Wire is
       --  says what it is instead.  Words_Empty: no word at all is allowed.
       Shape_Why   : Unbounded_String;
       Words_Empty : Boolean := False;
+      --  Layout (LAYOUT.md): `%role("label" "note")` after the field, and the
+      --  count expression as written.  Nothing but the layout targets reads them.
+      Role      : Unbounded_String;
+      Label     : Unbounded_String;
+      Note      : Unbounded_String;
+      Expr_Text : Unbounded_String;
    end record;
 
    type Rule is record

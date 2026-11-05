@@ -4716,6 +4716,85 @@ package body HBNF_Grammar is
          end loop;
          return P.Toks (J).Kind in T_Bar | T_Slash | T_RParen | T_RBrack;
       end Emit_Ends_Alternative;
+
+      --  Layout annotations (LAYOUT.md): `%role` or `%role("label" "note")`
+      --  right after a bit field or constant says what the field is for;
+      --  `%title("text" "note")` anywhere in an alternative names it.  A
+      --  role is a lower-case word (no digits, so `%d13.10` is still a code
+      --  point) of two letters or more.  The annotation changes nothing a
+      --  backend generates; only the layout targets read it.
+      function Is_Layout_Word (W : String) return Boolean is
+        (W'Length >= 2
+         and then (for all C of W => C in 'a' .. 'z' | '-')
+         and then W not in "scan" | "action" | "emit" | "label" | "test"
+                         | "nottest" | "bind" | "scope" | "where" | "not"
+                         | "and" | "as" | "same" | "spaces" | "col" | "num"
+                         | "grammar");
+
+      function Is_Layout_Note return Boolean is
+      begin
+         if Cur (P).Kind /= T_Pct then
+            return False;
+         end if;
+         declare
+            W : constant String := To_String (Cur (P).Text);
+         begin
+            if not Is_Layout_Word (W) then
+               return False;
+            end if;
+            if W = "title" then
+               return P.Toks (P.Pos + 1).Kind = T_LParen;
+            end if;
+            return not V.Is_Empty
+              and then V.Last_Element.Kind = Bit_Field
+              and then V.Last_Element.F_Kind in HBNF_Wire.S_Bits
+                                              | HBNF_Wire.S_Const
+                                              | HBNF_Wire.S_Octets
+                                              | HBNF_Wire.S_Rest
+                                              | HBNF_Wire.S_Bit_Expr
+                                              | HBNF_Wire.S_Ref;
+         end;
+      end Is_Layout_Note;
+
+      procedure Read_Layout_Note is
+         T      : constant Token := Cur (P);
+         W      : constant String := To_String (T.Text);
+         Label  : Unbounded_String;
+         Note   : Unbounded_String;
+      begin
+         Next (P);
+         if Cur (P).Kind = T_LParen then
+            Next (P);
+            if Cur (P).Kind /= T_String then
+               raise Parse_Error with
+                 Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                 & ": `%" & W & "(` takes a string: `%" & W & "(""label"" ""note"")`";
+            end if;
+            Label := Cur (P).Text;
+            Next (P);
+            if Cur (P).Kind = T_String then
+               Note := Cur (P).Text;
+               Next (P);
+            end if;
+            Expect (P, T_RParen, "')'");
+         elsif W = "title" then
+            raise Parse_Error with
+              Integer'Image (T.Line) & ":" & Integer'Image (T.Col)
+              & ": `%title` takes a string: `%title(""text"")`";
+         end if;
+         if W = "title" then
+            Element_Vectors.Append
+              (V, new Element'(Kind => Bit_Field, Min => 1, Max => 1,
+                               F_Kind => HBNF_Wire.S_Const, F_Bits => 0,
+                               F_Name => To_Unbounded_String ("%title"),
+                               F_Label => Label, F_Note => Note,
+                               F_Line => T.Line, F_Col => T.Col, others => <>));
+         else
+            V.Last_Element.F_Role := To_Unbounded_String (W);
+            V.Last_Element.F_Label := Label;
+            V.Last_Element.F_Note := Note;
+         end if;
+      end Read_Layout_Note;
    begin
       loop
          --  A block *between* elements is lifted into a rule of its own (Lift
@@ -4757,6 +4836,8 @@ package body HBNF_Grammar is
                  & "It is a word of hbnf's notation, so no rule is named `as`";
             end if;
             Element_Vectors.Append (V, Parse_Context_Op (P));
+         elsif Is_Layout_Note then
+            Read_Layout_Note;
          elsif Cur (P).Kind = T_Code
            and then not Ends_Pattern (P.Pos + 1)
          then

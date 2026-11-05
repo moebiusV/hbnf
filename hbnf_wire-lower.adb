@@ -55,6 +55,11 @@ package body HBNF_Wire.Lower is
       begin
          case E.Kind is
             when GR.Bit_Field =>
+               if To_String (E.F_Name) = "%title" then
+                  S.Title := E.F_Label;
+                  S.Title_Note := E.F_Note;
+                  return;
+               end if;
                declare
                   Pos : constant String :=
                     Where_File & Img (E.F_Line) & ":" & Img (E.F_Col);
@@ -65,6 +70,8 @@ package body HBNF_Wire.Lower is
                               At_Bit => E.F_At, Ref => Ident (E.F_Ref),
                               Min => E.F_Min, Max => E.F_Max,
                               Line => E.F_Line, Col => E.F_Col,
+                              Role => E.F_Role, Label => E.F_Label,
+                              Note => E.F_Note, Expr_Text => E.F_Expr,
                               others => <>);
                begin
                   case E.F_Kind is
@@ -101,6 +108,7 @@ package body HBNF_Wire.Lower is
                     and then S.Items.Is_Empty and then S.Guard = null
                   then
                      S.Guard := It.Count;
+                     S.Guard_Text := E.F_Expr;
                   else
                      S.Items.Append (It);
                   end if;
