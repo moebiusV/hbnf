@@ -1,0 +1,178 @@
+; bitcharts.hbnf -- the INTERIM route: charts drawn by C written in %emit blocks, the preamble and the epilogue of a grammar,
+; built with the C backend.  The input is the grammar of an encoding (a file of leaf rules, as spec/pdp64-NN/*.hbnf):
+; this grammar reads the text of the leaf rules (the subset of hbnf's notation they use) and, as each leaf is read,
+; the %emit blocks collect its fields; at the end of the rule the epilogue's C lays the fields out in 16-bit parcels and
+; writes <leaf>.svg.   See LAYOUT.md, "The interim route".
+;
+;   hbnf bitcharts.hbnf --backend=c > bitcharts.c && cc -o bitcharts main.c   (main.c includes bitcharts.c)
+;   bitcharts OUTDIR < pdp64-16.hbnf
+prefix none
+whitespace none
+{
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* ---- what is collected from one leaf rule ---- */
+typedef struct { char name[64], label[64], role[32], note[2048], expr[128]; int bits, sgn, isconst, var; unsigned long long val; } fld;
+static fld F[96];
+static int nf, nleaf;
+static char leaf_name[128], leaf_title[512], leaf_titlenote[16];
+static const char *outdir = ".";
+
+static void leaf_begin (const char *s, size_t n) { memset (F, 0, sizeof F); nf = 0; leaf_title[0] = 0; snprintf (leaf_name, sizeof leaf_name, "leaf-%.*s", (int) n, s); }
+static void new_field (const char *s, size_t n, int bits, int sgn, int var, const char *x, size_t xn)
+{
+    fld *f = &F[nf++];
+    snprintf (f->name, sizeof f->name, "%.*s", (int) n, s);
+    f->bits = bits; f->sgn = sgn; f->var = var; snprintf (f->expr, sizeof f->expr, "%.*s", (int) xn, x);
+}
+static void new_const (const char *s, size_t n)
+{
+    fld *f = &F[nf++];
+    f->isconst = 1; f->bits = (int) n; f->val = strtoull (strndup (s, n), NULL, 2);
+    strcpy (f->role, "prefix");
+}
+static void annotate (const char *role, size_t rn, const char *a, size_t an, const char *b, size_t bn)
+{
+    char r[32]; snprintf (r, sizeof r, "%.*s", (int) rn, role);
+    if (an >= 2) { a++; an -= 2; } else an = 0;      /* the strings arrive with their quotes; an absent one has length 0 */
+    if (bn >= 2) { b++; bn -= 2; } else bn = 0;
+    if (!strcmp (r, "title")) { snprintf (leaf_title, sizeof leaf_title, "%.*s", (int) an, a); return; }
+    if (nf == 0) return;
+    fld *f = &F[nf - 1];
+    snprintf (f->role, sizeof f->role, "%s", r);
+    if (an) snprintf (f->label, sizeof f->label, "%.*s", (int) an, a);
+    if (bn) snprintf (f->note, sizeof f->note, "%.*s", (int) bn, b);
+}
+static void leaf_end (void);
+/* the codec tables: runs, places and leaves of every leaf read (the c-tables target's output, from C) */
+typedef struct { int parcel, hi, len; } trun;
+typedef struct { int bits, nruns, run0; char label[64]; } tplace;
+typedef struct { unsigned long long prefix; int L, nparcels, pl0, npl; char name[128]; } tleaf;
+static trun TR[100000]; static tplace TP[100000]; static tleaf TL[1000];
+static int ntr, ntp, ntl;
+}
+
+file    :: int = *line
+line    :: int = leaf | other
+other   = nol *nonl 0x0A | 0x0A
+leaf    :: int = "leaf-" ident %emit{ leaf_begin (hbnf_sp (ident), hbnf_sn (ident)); }
+                 *( " " ) "=" 1*gap item *( 1*gap item ) 0x0A %emit{ leaf_end (); }
+gap     = " " | 0x0A &" "
+item    :: int = constant | field | check | note
+constant :: int = "0b" bin %emit{ new_const (hbnf_sp (bin), hbnf_sn (bin)); }
+field   :: int = ident ":" ( digits [ "s" ] %emit{ new_field (hbnf_sp (ident), hbnf_sn (ident), atoi (hbnf_sp (digits)), 0, 0, "", 0); }
+                          | "[" vx "]"          %emit{ new_field (hbnf_sp (ident), hbnf_sn (ident), 0, 0, 1, hbnf_sp (vx), hbnf_sn (vx)); } )
+check   :: int = "?" paren
+paren   = "(" *( nonpar | paren ) ")"
+note    :: int = "%" role [ "(" lab [ 0x20 nts ] ")" ]
+                 %emit{ annotate (hbnf_sp (role), hbnf_sn (role), hbnf_sp (lab), hbnf_sn (lab), hbnf_sp (nts), hbnf_sn (nts)); }
+role    = 1*( 0x61..0x7A | 0x2D )
+lab     = 0x22 *nonq 0x22
+nts     = 0x22 *nonq 0x22
+nol     = 0x00..0x09 | 0x0B..0x6B | 0x6D..0x10FFFF
+vx      = 1*nonbr
+nonl    = 0x00..0x09 | 0x0B..0x10FFFF
+nonq    = 0x00..0x21 | 0x23..0x10FFFF
+nonbr   = 0x00..0x5C | 0x5E..0x10FFFF
+nonpar  = 0x00..0x27 | 0x2A..0x10FFFF
+ident   = 1*( 0x30..0x39 | 0x41..0x5A | 0x61..0x7A | 0x2D | 0x5F )
+digits  = 1*0x30..0x39
+bin     = 1*( 0x30 | 0x31 )
+
+{
+/* ---- the epilogue: lay the leaf out in 16-bit parcels and write its chart ---- */
+typedef struct { int row, col, w, fi, fhi, flo, var; } piece;
+
+static void esc (FILE *o, const char *s) { for (; *s; s++) { if (*s == '<') fputs ("&lt;", o); else if (*s == '>') fputs ("&gt;", o); else if (*s == '&') fputs ("&amp;", o); else fputc (*s, o); } }
+
+static void leaf_end (void)
+{
+    enum { UNIT = 16, CELL = 36, LEFT = 80, HDR = 34, PITCH = 58 };
+    piece P[256]; int np = 0, row = 0, pos = 0, i, k;
+    char path[512]; FILE *o;
+    for (i = 0; i < nf; i++) {
+        fld *f = &F[i];
+        if (f->var) { if (np && P[np - 1].row == row) row++; P[np++] = (piece){ row, 0, UNIT, i, 0, 0, 1 }; row++; pos = row * UNIT; continue; }
+        for (int left = f->bits, hi = f->bits - 1; left > 0; ) {
+            int col = pos % UNIT, take = left < UNIT - col ? left : UNIT - col;
+            P[np++] = (piece){ pos / UNIT, col, take, i, hi, hi + 1 - take, 0 };
+            pos += take; left -= take; hi -= take;
+        }
+    }
+    int nrows = np ? P[np - 1].row + 1 : 0;
+    {   /* tables: a leaf is its prefix, then its places; fields that share a label are one place (the pieces of one field) */
+        tleaf *L = &TL[ntl++]; int placeof[96], npl = 0, total = 0, p, j;
+        snprintf (L->name, sizeof L->name, "%s", leaf_name + 5);
+        if (nf && F[0].isconst) { L->prefix = F[0].val; L->L = F[0].bits; }
+        for (i = 0; i < nf; i++) {
+            placeof[i] = -1; if (F[i].isconst || F[i].var) { if (!F[i].var) total += F[i].bits; continue; }
+            total += F[i].bits;
+            for (j = 0; j < i; j++) if (F[i].label[0] && placeof[j] >= 0 && !strcmp (F[j].label, F[i].label)) { placeof[i] = placeof[j]; break; }
+            if (placeof[i] < 0) placeof[i] = npl++;
+        }
+        L->pl0 = ntp; L->npl = npl; L->nparcels = (total + UNIT - 1) / UNIT;
+        for (p = 0; p < npl; p++) {
+            tplace *t = &TP[ntp++]; t->run0 = ntr; t->bits = 0;
+            for (i = 0; i < nf; i++) if (placeof[i] == p) t->bits += F[i].bits;
+            for (j = 0; j < np; j++) if (!P[j].var && placeof[P[j].fi] == p) TR[ntr++] = (trun){ P[j].row, UNIT - 1 - P[j].col, P[j].w };
+            t->nruns = ntr - t->run0;
+        }
+    }
+    const char *roles[32]; int nr = 0;
+    for (i = 0; i < nf; i++) { const char *r = F[i].role[0] ? F[i].role : F[i].isconst ? "const" : F[i].var ? "var" : "field";
+        for (k = 0; k < nr; k++) if (!strcmp (roles[k], r)) break;
+        if (k == nr) roles[nr++] = r; }
+    snprintf (path, sizeof path, "%s/%s.svg", outdir, leaf_name);
+    if (!(o = fopen (path, "w"))) { perror (path); exit (1); }
+    int W = LEFT + UNIT * CELL + 14, H = HDR + nrows * PITCH + 14 + ((nr + 5) / 6) * 20;
+    const char *title = leaf_title[0] ? leaf_title : leaf_name;
+    fprintf (o, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\">\n<title>", W, H, W, H); esc (o, title);
+    fputs ("</title>\n<style>:root{--ink:#1d2430;--dim:#5b6573;--bg:#fff;--line:#2b3340;--const:#d9dde3;--field:#fff;--sub:#f7d7a1;--reg:#bcd7f5;--imm:#c4e7c2;--disp:#dcc9f0;--cond:#f5c6b8;--pad:#ececec}"
+           "@media (prefers-color-scheme:dark){:root{--ink:#e6e9ee;--dim:#a2abb8;--bg:#161a20;--line:#8d97a6;--const:#3a4250;--field:#1f252e;--sub:#6b5320;--reg:#25507f;--imm:#2f6a35;--disp:#5a3f7d;--cond:#7d3d2c;--pad:#2b2f36}}"
+           "text{font-family:DejaVu Sans,Verdana,sans-serif;fill:var(--ink)}.bg{fill:var(--bg)}.t{font-size:14px;font-weight:bold}.rl{font-size:11px;fill:var(--dim);text-anchor:end}"
+           ".bn{font-size:9px;fill:var(--dim)}.lb{font-size:12px;text-anchor:middle}.rg{font-size:9px;text-anchor:middle;fill:var(--dim)}.dg{font-size:13px;font-family:monospace;font-weight:bold;text-anchor:middle}"
+           ".box{fill:var(--field);stroke:var(--line);stroke-width:1.2}.r-prefix,.r-const{fill:var(--const)}.r-sub{fill:var(--sub)}.r-reg{fill:var(--reg)}.r-imm{fill:var(--imm)}.r-disp{fill:var(--disp)}.vr{stroke-dasharray:5 3}</style>\n", o);
+    fprintf (o, "<rect class=\"bg\" width=\"100%%\" height=\"100%%\"/>\n<text class=\"t\" x=\"%d\" y=\"18\">", LEFT); esc (o, title); fputs ("</text>\n", o);
+    for (i = 0; i < np; i++) {
+        piece *p = &P[i]; fld *f = &F[p->fi]; int y = HDR + p->row * PITCH, x = LEFT + p->col * CELL;
+        const char *role = f->role[0] ? f->role : f->isconst ? "const" : f->var ? "var" : "field";
+        if (i == 0 || P[i - 1].row != p->row) {
+            int then = p->var; for (k = 0; k < i; k++) if (P[k].var && P[k].row < p->row) then = 1;
+            if (p->row == 0) then = 0;
+            if (then) fprintf (o, "<text class=\"rl\" x=\"%d\" y=\"%d\">then</text>\n", LEFT - 8, y + 36);
+            else fprintf (o, "<text class=\"rl\" x=\"%d\" y=\"%d\">parcel %d</text>\n", LEFT - 8, y + 36, p->row);
+        }
+        fprintf (o, "<g><title>"); esc (o, f->name); if (f->note[0]) { fputs (": ", o); esc (o, f->note); } fputs ("</title>\n", o);
+        fprintf (o, "<rect class=\"box r-%s%s\" x=\"%d\" y=\"%d\" width=\"%d\" height=\"34\"/>\n", role, p->var ? " vr" : "", x, y + 16, p->w * CELL);
+        if (!p->var) {
+            fprintf (o, "<text class=\"bn\" x=\"%d\" y=\"%d\">%d</text>\n", x + 2, y + 12, UNIT - 1 - p->col);
+            if (p->w > 1) fprintf (o, "<text class=\"bn\" x=\"%d\" y=\"%d\" text-anchor=\"end\">%d</text>\n", x + p->w * CELL - 2, y + 12, UNIT - p->col - p->w);
+        }
+        if (f->isconst) for (k = 0; k < p->w; k++) fprintf (o, "<text class=\"dg\" x=\"%d\" y=\"%d\">%d</text>\n", x + k * CELL + CELL / 2, y + 37, (int) ((f->val >> (f->bits - 1 - (f->bits - 1 - p->fhi) - k)) & 1));
+        else {
+            const char *lab = f->label[0] ? f->label : f->name; int split = !p->var && (p->fhi != f->bits - 1 || p->flo != 0);
+            char vl[256]; if (p->var) { snprintf (vl, sizeof vl, "%s (%s)", lab, f->expr); lab = vl; }
+            fprintf (o, "<text class=\"lb\" x=\"%d\" y=\"%d\">", x + p->w * CELL / 2, y + (split ? 31 : 37)); esc (o, lab); fputs ("</text>\n", o);
+            if (split) fprintf (o, "<text class=\"rg\" x=\"%d\" y=\"%d\">[%d:%d]</text>\n", x + p->w * CELL / 2, y + 44, p->fhi, p->flo);
+        }
+        fputs ("</g>\n", o);
+    }
+    for (k = 0; k < nr; k++) {
+        int x = LEFT + (k % 6) * 92, y = HDR + nrows * PITCH + 4 + (k / 6) * 20;
+        fprintf (o, "<rect class=\"box r-%s\" x=\"%d\" y=\"%d\" width=\"14\" height=\"14\"/><text class=\"rl\" style=\"text-anchor:start\" x=\"%d\" y=\"%d\">%s</text>\n", roles[k], x, y, x + 19, y + 11, roles[k]);
+    }
+    fputs ("</svg>\n", o); fclose (o); nleaf++;
+}
+
+static void tables_out (FILE *o)
+{
+    int i;
+    fprintf (o, "static const struct lrun R[] = {\n"); for (i = 0; i < ntr; i++) fprintf (o, "\t{ %d, %d, %d },\n", TR[i].parcel, TR[i].hi, TR[i].len);
+    fprintf (o, "};\nstatic const struct lplace P[] = {\n"); for (i = 0; i < ntp; i++) fprintf (o, "\t{ %d, %d, %d },\n", TP[i].bits, TP[i].nruns, TP[i].run0);
+    fprintf (o, "};\nstatic const struct lleaf LF[] = {\n");
+    for (i = 0; i < ntl; i++) fprintf (o, "\t{ %llu, %d, %d, %d, %d, \"%s\" },\n", TL[i].prefix, TL[i].L, TL[i].nparcels, TL[i].pl0, TL[i].npl, TL[i].name);
+    fprintf (o, "};\n");
+}
+}

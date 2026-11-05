@@ -1,0 +1,11 @@
+; The route that does NOT work: %action on the encoding's own bit rules.  An action fires on a PARSE, so it needs an input (a sample
+; encoding), and it sees the typed values of the matched fields (n->o3_r), not their widths, names, order or roles: those are
+; not reflected into C.  To draw a chart the action has to say them again (the widths below), which is the layout written twice,
+; once in the rule and once in the C, and for 270 leaves 270 hand-kept actions.  What it prints is a sample value, not a placeholder.
+prefix none
+{ #include <stdio.h> }
+insn = leaf:( leaf-ADD3 | leaf-NOP )
+leaf-NOP  = 0b11101100100 sub:5
+  %action{ printf ("NOP   sub=%u   (widths 11,5 restated by hand)\n", (unsigned) n->sub); }
+leaf-ADD3 = 0b111011111000 o3-r:4 o1-r:4 o2-r:4
+  %action{ printf ("ADD3  o3-r=%u o1-r=%u o2-r=%u   (widths 12,4,4,4 restated by hand)\n", (unsigned) n->o3_r, (unsigned) n->o1_r, (unsigned) n->o2_r); }

@@ -182,6 +182,60 @@ What is not built and would be next, in order of use:
 3. **Transforms on text rules**: today only bit rules are in the model.  The same model applies to a text rule's alternatives
    (railroad diagrams, documentation of a notation), which is the same facility.
 
+## 6b. The interim route: C in the grammar's own blocks (**built**, `examples/c-blocks/`, `tests/cblocks.sh`)
+
+The author's question: until rewrite rules exist, can `%emit{}`, `%action{}` and the preamble and epilogue hold C that does the job inside a grammar?
+
+**What really works (verified in the source and by running it, upstream 9884a84):**
+
+| mechanism | state |
+|---|---|
+| preamble `{ }` before the rules, epilogue `{ }` after | built, C joined into the generated parser (also Rust/Zig/Ada, in their own language) |
+| `%action{ }` on a rule, **including a bit rule**, C backend | built: runs once after a successful parse, bottom-up, sees the typed fields as `n->field`; `HBNF_FAIL`, `HBNF_WARN` (`tests/wire/mixed5`, `mnemonic`) |
+| `%emit{ }` on a **bit rule**, C backend | built: runs when the record is **written**, on a copy (`mnemonic`: the checksum) |
+| `%emit{ }` in a **text rule** (`name :: type = ...`), C backend only | built, and the one a text-reading generator wants: runs at recognition, in order, between the elements, each element a C variable named after its rule (a token is a view: `hbnf_sp (x)`, `hbnf_sn (x)`); the generator refuses a grammar where something above an emit can retry past it |
+| `%emit` as a *text-generation language* (`METACOMPILERS.md` lesson 2) | **not** built: `%emit` is C, not a template |
+
+**The open question: what is the input of a chart, since an action fires on a parse?**  Three candidates, tried:
+
+1. *Sample encodings of each form parsed by the encoding's own grammar* (`examples/c-blocks/sample-driven.hbnf`): **does not work**.
+   An action sees the typed values of the fields (`n->o3_r`), not their widths, order, names or roles; none of that is reflected
+   into C.  To draw, the action must say the widths again (the layout written twice, once in the rule and once in the C: 270 actions for
+   pdp64/16), and what it can show is a sample value, not a placeholder.  Enumerating the forms is possible (parse every first
+   parcel with the generated decoder, as `tools/check-grammar-enc.sh` does, and keep one hit per leaf) but does not help the widths.
+2. *The grammar file itself as the input, read by a second grammar of the notation with C in its `%emit` blocks*
+   (`examples/c-blocks/bitcharts.hbnf`): **works** for the subset the leaf rules use.  The grammar reads the text of
+   `leaf-X = 0b... name:4 %reg("Rd") ... %title("..")` (constants, `name:N[s]`, `name:[expr]`, `?( )` checks, annotations; about 40 lines of
+   hbnf), its `%emit` blocks collect each leaf's fields as they are read, and the **epilogue's C** lays them out in 16-bit parcels and
+   writes `<leaf>.svg` (and, from the same data, the runs/places/leaves tables).  Built with the C backend (`hbnf bitcharts.hbnf
+   --backend=c`; the generated parser is 1,990 lines; the C written by hand is about 120 lines in the grammar's preamble and epilogue).
+   Run over `pdp64-16.hbnf` and `pdp64-32.hbnf` it writes 270 and 268 charts in 8 ms, and **every chart draws exactly the same rectangles and texts as the
+   `--target=svg` charts** (compared element by element by `tests/svgcmp.py`; the files differ in markup, not in what is drawn), and its tables equal mkenc.py's as
+   a set of leaves (prefix, length, runs of every field).
+3. *A walk over the grammar as hbnf has compiled it*: that is what the layout model of section 4 is (Ada, in hbnf).
+
+So the honest answer is **partial**: the charts and the table runs can come from C blocks today, with no change to hbnf, **but not from
+the encoding's own rules**: the blocks sit in a second grammar, one that reads the *text* of the first, and so it is the "one source, read twice" that
+the single-source principle tried to avoid.  The cost:
+
+* it re-parses hbnf's notation by hand (a subset: leaf lines; no `include`, no shapes, no `insn` order, no r20 `body:( ... )`), so it
+  follows the notation by convention, not by construction; the first grammar it reads is already parsed once by hbnf;
+* the layout logic and the drawing are written in C in the grammar (about 120 lines against 60 lines of template and 790 lines of Ada
+  that every target shares): each new output format is more C in that file, not a directory of templates;
+* **portability is lost**: a grammar with C blocks is refused by the Rust, Zig and Ada backends (`WIRE.md`: the code is in the language the grammar names);
+  the facility becomes C-only, which is the opposite of the rewrite-rule design, where a transform is language-neutral text;
+* `%emit` in text rules is C only; the preamble and epilogue are copied, never checked.
+
+Four small defects of the C backend turned up while building it (reported in section 9): a character rule repeated directly inside a rule that declares a value is
+not generated (a call to an undefined `parse_rule_X`); `~x` inline in such a rule likewise; the %emit-retry check does not see a `!"x"` guard, so `leaf | other` is refused; and an
+absent optional element is a zero string whose length minus 2 wraps.
+
+**Recommendation.**  Use it as the interim route for exactly what it does today: the pdp64/16 and /32 charts and the table runs, in a day of
+productizing (the `insn` order, the `include` of the shared file, a drift check against the digests), because it needs only gcc and the upstream hbnf the project
+already builds, and the generated output is the same as the native target's.  Do not extend it: every extension is C that the rewrite-rule language will replace, and the native
+`--target` (section 5) already draws and tabulates the same, with the annotations in the grammar.  The two can be run against each other, which is what `tests/cblocks.sh` does, and that is
+a useful oracle while the native one matures.
+
 ## 7. Transform language against a richer data model for the Mustache templates
 
 *Option A: keep Mustache and expose a richer model.*  Mustache is logic-less on purpose: it cannot add, compare or number, so
@@ -234,5 +288,7 @@ Recommendation: do 0 and 1 now (they remove the flags), 2 with the next backend,
 * the code-block lexer is C-aware, so a `%TARGET{ }` template with an odd number of quote characters cannot be written.
 * names in the wire tree have `-` turned into `_` (the code generators need that); a target wants the author's spelling,
   which the prototype restores by turning `_` back (so a rule that the author spelled with `_` is shown with `-`).
+* a character rule repeated directly inside a rule that declares a value (`x :: int = *nonl ...`) is not generated (undefined `parse_rule_nonl`); `~x` inline there likewise; the `%emit`
+  retry check ignores a `!"lit"` guard.  (Section 6b.)
 * not built: the unit of drawing in the grammar (`--unit` stands in), the default roles by name pattern (the pdp64
   annotation is a script, `examples/pdp64/annotate.py`, run once), per-rule `%TARGET{}` for non-chart templates, a `md`/`dot` target.
