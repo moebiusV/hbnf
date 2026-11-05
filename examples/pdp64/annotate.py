@@ -48,8 +48,8 @@ def main(src, dst):
                 res.append(t)
             elif re.fullmatch(r'0b[01]+', t):
                 res.append(t + ' %prefix')
-            elif re.fullmatch(r'x?sub:\d+', t):
-                res.append(t + ' %sub("' + t.split(':')[0] + '"' + (' "' + note + '"' if note else '') + ')')
+            elif re.fullmatch(r'x?sub(?:-\d+)?:\d+', t):
+                res.append(t + ' %sub("' + re.sub(r'-\d+','',t.split(':')[0]) + '"' + (' "' + note + '"' if note else '') + ')')
             else:
                 mm = re.fullmatch(r'o(\d+)-([a-z0-9]+)(?:-(\d+))?:(\d+)(s?)', t)
                 if mm and mm.group(2) in ROLE:

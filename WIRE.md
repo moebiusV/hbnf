@@ -328,6 +328,20 @@ official 2048-word lists as include files (`include "bip39/english.hbnf"`), and
 `tests/wire.sh` reads every word of every list back to its line number.  A union
 of plain words is a sort, not a search.
 
+## Layout annotations and targets
+
+A bit rule can say what its fields are *for*, so that the same grammar that makes the reader and the writer also makes
+documentation and tables (`LAYOUT.md`).  After a field or a constant, `%reg("Rd")`, `%imm("count" "bits to skip")`,
+`%prefix`: a role (any lower-case word), a display name and a note; anywhere in an alternative, `%title("text")`.
+None of it changes the C, Rust, Zig or Ada output.
+
+    leaf-ADD3 = 0b111011111000 %prefix  o3-r:4 %reg("Rc")  o1-r:4 %reg("Ra")  o2-r:4 %reg("Rb")  %title("R3: three registers")
+
+`hbnf g.hbnf --target=svg --out=DIR` draws one SVG per way the first rule can be laid out (16 bits to a row, bit 15 at the
+left), and `--target=c-tables` writes the runs, places and leaves a codec needs; a target is a directory of templates
+(`targets/NAME`), and a rule may carry its own (`%svg{ ... }`).  The examples are `examples/mini.hbnf` and
+`examples/pdp64/`.
+
 ## What is not built yet
 
 - `--writer` for Zig, Ada and Rust writes a whole document of text rules and bit rules (`write_<root>`, `Write_<Root>`), as C does: rules with alternatives (and list entries that are groups with them) record the one they took and the writer follows it, left-recursive lists, a root that is only another rule, a newline after each statement, and the layout hook (`Layout`, a pretty-printer's say). Not written: an alternation inside a group (C does not either).

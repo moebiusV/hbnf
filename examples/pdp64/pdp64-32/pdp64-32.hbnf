@@ -159,7 +159,7 @@ sub-R2-1 = "clz" | "ctz" | "clo" | "cto" | "popcnt" | "bswap" | "bswapw" | "bswa
 
 ; form R3 (index 7): 2 parcels
 form-R3 = o1:reg5 o2:reg5 o3:reg5
-leaf-R3-1 = 0b1110100001 %prefix xsub-1:1 o3-r:5 %reg("r3") xsub-2:6 o1-r:5 %reg("r1") o2-r:5 %reg("r2") ?(((xsub_1 << 6) | xsub_2) < 51) %title("R3-1: ror xnorpop clmull clmulh ...")
+leaf-R3-1 = 0b1110100001 %prefix xsub-1:1 %sub("xsub" "ror xnorpop clmull clmulh mcpy mmov mset mcmp mscn mscnn div divu mod modu mulhu min minu max maxu fcopysign fmin fmax maskeqz masknez aeses aesesm aesds aesdsm aesks2 xadd xadddb swap swapdb xand xanddb xor_ xor_db xxor xxordb xmax xmaxdb xmin xmindb xmaxu xmaxudb xminu xminudb ll sc msha256 msha512") o3-r:5 %reg("r3") xsub-2:6 %sub("xsub" "ror xnorpop clmull clmulh mcpy mmov mset mcmp mscn mscnn div divu mod modu mulhu min minu max maxu fcopysign fmin fmax maskeqz masknez aeses aesesm aesds aesdsm aesks2 xadd xadddb swap swapdb xand xanddb xor_ xor_db xxor xxordb xmax xmaxdb xmin xmindb xmaxu xmaxudb xminu xminudb ll sc msha256 msha512") o1-r:5 %reg("r1") o2-r:5 %reg("r2") ?(((xsub_1 << 6) | xsub_2) < 51) %title("R3-1: ror xnorpop clmull clmulh ...")
 sub-R3-1 = "ror" | "xnorpop" | "clmull" | "clmulh" | "mcpy" | "mmov" | "mset" | "mcmp" | "mscn" | "mscnn" | "div" | "divu" | "mod" | "modu" | "mulhu"
      | "min" | "minu" | "max" | "maxu" | "fcopysign" | "fmin" | "fmax" | "maskeqz" | "masknez" | "aeses" | "aesesm" | "aesds" | "aesdsm" | "aesks2"
      | "xadd" | "xadddb" | "swap" | "swapdb" | "xand" | "xanddb" | "xor_" | "xor_db" | "xxor" | "xxordb" | "xmax" | "xmaxdb" | "xmin" | "xmindb"
@@ -167,7 +167,7 @@ sub-R3-1 = "ror" | "xnorpop" | "clmull" | "clmulh" | "mcpy" | "mmov" | "mset" | 
 
 ; form R4 (index 8): 2 parcels
 form-R4 = o1:reg5 o2:reg5 o3:reg5 o4:reg5
-leaf-R4-1 = 0b11000101 %prefix xsub-1:3 o4-r:5 %reg("r4") xsub-2:1 o1-r:5 %reg("r1") o2-r:5 %reg("r2") o3-r:5 %reg("r3") %title("R4-1: fmadd fmsub fnmadd fnmsub ...")
+leaf-R4-1 = 0b11000101 %prefix xsub-1:3 %sub("xsub" "fmadd fmsub fnmadd fnmsub fmadd32 fmsub32 fnmadd32 fnmsub32 fmadd16 fmsub16 fnmadd16 fnmsub16 bsel cas casdb maesctr") o4-r:5 %reg("r4") xsub-2:1 %sub("xsub" "fmadd fmsub fnmadd fnmsub fmadd32 fmsub32 fnmadd32 fnmsub32 fmadd16 fmsub16 fnmadd16 fnmsub16 bsel cas casdb maesctr") o1-r:5 %reg("r1") o2-r:5 %reg("r2") o3-r:5 %reg("r3") %title("R4-1: fmadd fmsub fnmadd fnmsub ...")
 sub-R4-1 = "fmadd" | "fmsub" | "fnmadd" | "fnmsub" | "fmadd32" | "fmsub32" | "fnmadd32" | "fnmsub32" | "fmadd16" | "fmsub16" | "fnmadd16" | "fnmsub16"
      | "bsel" | "cas" | "casdb" | "maesctr"
 
