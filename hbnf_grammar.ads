@@ -409,6 +409,10 @@ package HBNF_Grammar is
    --  A rule's `%emit{ code }`, "" when it has none.
    function Emit_Code (Rule_Name : String) return String;
 
+   --  A rule's transform for a layout target, `%TARGET{ template }` at the end of the rule (LAYOUT.md), "" when it
+   --  has none.  The text between the braces is read as a code block is (balanced braces, strings and comments).
+   function Rule_Transform (Rule_Name, Target : String) return String;
+
    --  The prefix of the names the emitters make: "bnf_", the dialect's, the
    --  `prefix` line's, or "" for `prefix none`.
    function Name_Prefix return String;

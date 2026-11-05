@@ -1,0 +1,6 @@
+; a rule's own transform for a target: %expr{ template } at the end of a rule stands in for the target's chart template
+prefix none
+insn = leaf:( a | b )
+a = 0b10 %prefix x:6 %reg("rx") %title("A") %expr{ custom: {{name}} has {{nplaces}} field(s), prefix {{prefix_value}}/{{prefix_bits}}
+}
+b = 0b11 %prefix y:6 %imm("ry") %title("B")

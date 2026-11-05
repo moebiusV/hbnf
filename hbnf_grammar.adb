@@ -467,6 +467,7 @@ package body HBNF_Grammar is
    package Text_Maps is new Ada.Containers.Indefinite_Hashed_Maps
      (String, String, Ada.Strings.Hash, "=");
    Emit_Table      : Text_Maps.Map;      --  rule -> its %emit code
+   Transform_Table : Text_Maps.Map;      --  rule & "%" & target -> its %target{ template }
    Wire_Store      : Rule_Vectors.Vector;
    Wire_Root_Flag  : Boolean := False;
 
@@ -485,6 +486,12 @@ package body HBNF_Grammar is
 
    function Emit_Code (Rule_Name : String) return String is
      (if Emit_Table.Contains (Rule_Name) then Emit_Table (Rule_Name) else "");
+
+   function Rule_Transform (Rule_Name, Target : String) return String is
+      K : constant String := Rule_Name & "%" & Target;
+   begin
+      return (if Transform_Table.Contains (K) then Transform_Table (K) else "");
+   end Rule_Transform;
 
    function Enum_Value (Rule_Name, Literal : String) return Integer is
       C : constant Rank_Maps.Cursor :=
@@ -901,6 +908,7 @@ package body HBNF_Grammar is
       Standing.Clear;
       Enum_Ranks.Clear;
       Emit_Table.Clear;
+      Transform_Table.Clear;
       Wire_Store.Clear;
       Wire_Root_Flag := False;
    end Reset;
@@ -2718,6 +2726,17 @@ package body HBNF_Grammar is
       Next (P);
       return T.Text;
    end Expect_Name;
+
+   --  A layout word: a role (`%reg`), a title, or the name of a layout target (`%svg{ ... }`): lower-case letters and
+   --  hyphens, two or more, and not a word hbnf reads for itself.
+   function Is_Layout_Word (W : String) return Boolean is
+     (W'Length >= 2
+      and then (for all C of W => C in 'a' .. 'z' | '-')
+      and then W not in "scan" | "action" | "emit" | "label" | "test"
+                      | "nottest" | "bind" | "scope" | "where" | "not"
+                      | "and" | "as" | "same" | "spaces" | "col" | "num"
+                      | "grammar");
+
 
    function Parse_Atom (P : in out Parser) return Element_Access;
    function Parse_Element (P : in out Parser) return Element_Access;
@@ -4704,7 +4723,10 @@ package body HBNF_Grammar is
            | T_Code | T_Arrow | T_EOF
          or else (P.Toks (K).Kind = T_Pct
                   and then To_String (P.Toks (K).Text)
-                           in "scan" | "action" | "emit" | "label"));
+                           in "scan" | "action" | "emit" | "label")
+         or else (P.Toks (K).Kind = T_Pct and then K < Natural (P.Toks.Length)
+                  and then P.Toks (K + 1).Kind = T_Code
+                  and then Is_Layout_Word (To_String (P.Toks (K).Text))));
       --  True when what follows the block at K, past line ends, closes the alternative: the
       --  next alternative (`|`, `/`), the end of a group or an option.  An `%emit` before one
       --  of these belongs to its alternative; the end of the rule is read by the rule.
@@ -4723,14 +4745,6 @@ package body HBNF_Grammar is
       --  role is a lower-case word (no digits, so `%d13.10` is still a code
       --  point) of two letters or more.  The annotation changes nothing a
       --  backend generates; only the layout targets read it.
-      function Is_Layout_Word (W : String) return Boolean is
-        (W'Length >= 2
-         and then (for all C of W => C in 'a' .. 'z' | '-')
-         and then W not in "scan" | "action" | "emit" | "label" | "test"
-                         | "nottest" | "bind" | "scope" | "where" | "not"
-                         | "and" | "as" | "same" | "spaces" | "col" | "num"
-                         | "grammar");
-
       function Is_Layout_Note return Boolean is
       begin
          if Cur (P).Kind /= T_Pct then
@@ -4739,7 +4753,7 @@ package body HBNF_Grammar is
          declare
             W : constant String := To_String (Cur (P).Text);
          begin
-            if not Is_Layout_Word (W) then
+            if not Is_Layout_Word (W) or else P.Toks (P.Pos + 1).Kind = T_Code then
                return False;
             end if;
             if W = "title" then
@@ -12381,6 +12395,17 @@ package body HBNF_Grammar is
                                         Look => <>,
                                         Code => Cur (P).Text));
                      end if;
+                     Next (P);
+                  end loop;
+                  --  `pattern %svg{ template }`: a transform for a layout target
+                  while Cur (P).Kind = T_Pct
+                    and then Is_Layout_Word (To_String (Cur (P).Text))
+                    and then P.Toks (P.Pos + 1).Kind = T_Code
+                  loop
+                     Transform_Table.Include
+                       (To_String (Name) & "%" & To_String (Cur (P).Text),
+                        To_String (P.Toks (P.Pos + 1).Text));
+                     Next (P);
                      Next (P);
                   end loop;
                   if Cur (P).Kind = T_Pct then
