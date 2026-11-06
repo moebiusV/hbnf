@@ -15,13 +15,16 @@ hidden SP WSP LF CR DQUOTE nl blank starter cell-end ticks rest dash dashes titl
 flat code                                   ; a line of code stands for the text it holds
 
 document = *blank *( block(0) *blank )
-block(N in 0..) := heading | fence(N) | rule | quote(N) | table(N) | list(N) | setext(N) | icode(N) | paragraph(N)
+block(N in 0..) := heading | fence(N) | rule | quote(N) | table(N) | list(N) | ilist(N) | setext(N) | icode(N) | paragraph(N)
 
 ; ---- blocks
 heading   = hashes 1*SP 1*inline *WSP nl
 hashes    = 1*6'#'
 rule      = dashes *WSP nl
 dashes    = 3*'-' | 3*'*' | 3*'_'
+; a list whose markers are indented one to three columns: its items start at that column
+ilist(N in 0..) := 1*3SP %col K list(K)
+
 ; a heading underlined by = (level 1) or - (level 2); one line of text only, since a paragraph would take the underline as one more line
 setext(N in 0..) := line nl %spaces N under *WSP nl
 under     = 1*'=' | 1*'-'

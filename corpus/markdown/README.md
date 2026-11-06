@@ -13,6 +13,14 @@
 
 The HTML needs no Jekyll: put a `.nojekyll` file beside it, and no Liquid reads the `{{` and `{%` in the text.
 
+`mkpages.sh` does that for a whole repository: every `.md` under the root becomes an `.html` beside it (`README.md` becomes
+`index.html`), links to `X.md` become links to `X.html`, and `.nojekyll` is added.  Each page starts with a comment naming its
+source, so a regenerated tree never overwrites a page somebody wrote by hand, and a page whose source is gone is removed.
+
+    HBNF_DIR=/path/to/hbnf sh corpus/markdown/mkpages.sh REPO [OUTDIR]     # OUTDIR: try it without touching REPO
+
+`pre-commit` is a git hook that runs it when a commit holds a `.md` file and adds the pages that changed.
+
 ## Covered
 
 Headings (`#` to `######`, and a single line underlined with `=` or `-`), paragraphs, code indented four columns, bullet and numbered lists that nest (the content column of an item is read off its line, so
@@ -27,6 +35,9 @@ A mark does not open before a space (`2 * 3 * 4` is text), and an underscore ins
 - A fence closes at the first line that starts with three backticks, so a fence of four that holds a fence of three is cut short.
   The closing ticks should be the opening ones; that needs the opening ticks to be visible to the rule that reads a line of code
   (an up reference, `CONTEXTS.md` section 25).
+- An inline mark (`**bold**`, a link) does not run over a line end; each line of a paragraph is read alone, so a mark that starts on one line and
+  ends on the next stays as the plain characters.
+- A list whose markers are indented one to three columns is read; four columns is code.
 - A setext heading is one line: a paragraph of several lines takes the underline as one more line.
 - Blank lines inside indented code are dropped, so two runs of it with a blank between are one block.
 - No HTML blocks, reference links, hard line breaks, or `_` emphasis inside a word.

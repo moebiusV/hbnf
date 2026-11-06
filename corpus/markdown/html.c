@@ -2,8 +2,11 @@
 
    Build:  hbnf corpus/markdown/markdown.hbnf --backend=c --layout=tape > md.c
            cat md.c corpus/markdown/html.c > h.c && cc -O2 -Iruntime -DOUT_T=document_t h.c -o md2html
-   Use:    md2html file.md > body.html            the document as a fragment
-           md2html file.md TITLE > index.html     a whole page, with a title and a little style
+   Use:    md2html file.md > body.html                  the document as a fragment
+           md2html file.md TITLE [SOURCE] > page.html   a whole page, with a title and a little style;
+                                                        TITLE "-" takes the first heading; SOURCE is named
+                                                        in a comment, as the file to edit
+   A relative link to X.md is written as X.html, and one to README.md as index.html.
 
    The parser is the grammar and nothing else; this file only walks the tape it wrote, as typst.c
    does.  Nothing here reads {{ or {% specially, so a page made this way needs no Jekyll (put a
@@ -47,6 +50,23 @@ static void esc (const char *s, size_t n)
     }
 }
 
+/* a link or image address: a relative .md becomes .html (README.md becomes index.html), so pages made
+   from a tree of Markdown files link to each other; an address with a scheme or a lone #fragment stays */
+static void href (const char *s, size_t n)
+{
+    size_t e = 0, k;
+    while (e < n && s[e] != '#' && s[e] != '?') e++;                 /* the path ends at # or ? */
+    int abs = s[0] == '#' || (n >= 2 && s[0] == '/' && s[1] == '/');
+    for (k = 0; k < e && s[k] != '/'; k++) if (s[k] == ':') { abs = 1; break; }
+    if (abs || e < 4 || memcmp (s + e - 3, ".md", 3) != 0) { esc (s, n); return; }
+    size_t b = e - 3, base = b;                                       /* the path without .md */
+    while (base > 0 && s[base - 1] != '/') base--;
+    if (b - base == 6 && memcmp (s + base, "README", 6) == 0) { esc (s, base); fputs ("index", stdout); }
+    else esc (s, b);
+    fputs (".html", stdout);
+    esc (s + e, n - e);
+}
+
 /* ---- inline marks */
 static void inlines (size_t i, size_t end);
 
@@ -60,12 +80,12 @@ static void inline_ (Node v)
     case T_strong:             fputs ("<strong>", stdout); inlines (v.next, v.end); fputs ("</strong>", stdout); break;
     case T_emph:               fputs ("<em>", stdout); inlines (v.next, v.end); fputs ("</em>", stdout); break;
     case T_strike:             fputs ("<del>", stdout); inlines (v.next, v.end); fputs ("</del>", stdout); break;
-    case T_autolink:           fputs ("<a href=\"", stdout); esc (v.s + 1, v.n - 2); fputs ("\">", stdout);
+    case T_autolink:           fputs ("<a href=\"", stdout); href (v.s + 1, v.n - 2); fputs ("\">", stdout);
                                esc (v.s + 1, v.n - 2); fputs ("</a>", stdout); break;
     case T_image:              /* ![alt](src "title") */
         p = memchr (v.s, ']', v.n); q = p + 2;
         { size_t m = 0; while (q + m < v.s + v.n - 1 && q[m] != ' ') m++;
-          fputs ("<img src=\"", stdout); esc (q, m); fputs ("\" alt=\"", stdout); esc (v.s + 2, p - (v.s + 2));
+          fputs ("<img src=\"", stdout); href (q, m); fputs ("\" alt=\"", stdout); esc (v.s + 2, p - (v.s + 2));
           fputs ("\">", stdout); }
         break;
     case T_link: {             /* inlines, then the destination: a url and perhaps a title */
@@ -73,12 +93,27 @@ static void inline_ (Node v)
         while (d < v.end) { last = d; d = after (d); }
         Node dest = node (last); size_t m = 0;
         while (m < dest.n && dest.s[m] != ' ') m++;
-        fputs ("<a href=\"", stdout); esc (dest.s, m); fputs ("\">", stdout);
+        fputs ("<a href=\"", stdout); href (dest.s, m); fputs ("\">", stdout);
         inlines (v.next, last); fputs ("</a>", stdout); break;
     }
     }
 }
 static void inlines (size_t i, size_t end) { while (i < end) { inline_ (node (i)); i = after (i); } }
+
+/* the words of some inlines, with no marks: a page title */
+static void plain (size_t i, size_t end)
+{
+    while (i < end) {
+        Node v = node (i);
+        switch (v.tag) {
+        case T_text: case T_lone:  esc (v.s, v.n); break;
+        case T_escape:             esc (v.s + 1, v.n - 1); break;
+        case T_code_span:          esc (v.s + 1, v.n - 2); break;
+        case T_strong: case T_emph: case T_strike: case T_link: plain (v.next, v.end); break;
+        }
+        i = after (i);
+    }
+}
 
 /* ---- blocks */
 static void blocks (size_t i, size_t end, int tight);
@@ -210,7 +245,7 @@ static void blocks (size_t i, size_t end, int tight)
 
 int main (int argc, char **argv)
 {
-    if (argc < 2) { fprintf (stderr, "usage: md2html file.md [TITLE] > out.html\n"); return 2; }
+    if (argc < 2) { fprintf (stderr, "usage: md2html file.md [TITLE|-] [SOURCE] > out.html\n"); return 2; }
     FILE *f = fopen (argv[1], "rb");
     if (!f) { perror (argv[1]); return 2; }
     fseek (f, 0, SEEK_END); long n = ftell (f); rewind (f);
@@ -222,9 +257,20 @@ int main (int argc, char **argv)
     if (!parse_text (buf, &v, err, sizeof err, &l, &c)) { fprintf (stderr, "%s:%zu:%zu: %s\n", argv[1], l, c, err); return 1; }
     Node d = node (0);                                      /* the document */
     if (argc > 2) {
-        fputs ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
+        fputs ("<!doctype html>\n", stdout);
+        if (argc > 3) { fputs ("<!-- generated from ", stdout); esc (argv[3], strlen (argv[3])); fputs (" by md2html; edit that file, not this one -->\n", stdout); }
+        fputs ("<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>", stdout);
-        esc (argv[2], strlen (argv[2]));
+        if (strcmp (argv[2], "-") != 0) esc (argv[2], strlen (argv[2]));
+        else {                                              /* the first heading, else the file name */
+            int found = 0;
+            for (size_t i = d.next; i < d.end && !found; i = after (i)) {
+                Node b = node (i);
+                if (b.tag == T_heading) { Node h = node (b.next); plain (h.next, b.end); found = 1; }
+                else if (b.tag == T_setext) { Node ln = node (b.next); plain (ln.next, ln.end); found = 1; }
+            }
+            if (!found) esc (argc > 3 ? argv[3] : argv[1], strlen (argc > 3 ? argv[3] : argv[1]));
+        }
         fputs ("</title>\n<style>\n"
                "body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }\n"
                "pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }\n"
