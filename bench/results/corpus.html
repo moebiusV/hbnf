@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- generated from bench/results/corpus.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bench/results/corpus.md</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<table>
+<thead>
+<tr><th>corpus </th><th>input </th><th style="text-align:right">parsed </th><th style="text-align:right">time, old layout </th><th style="text-align:right">time, compact </th><th style="text-align:right">speed-up </th><th style="text-align:right">memory, old </th><th style="text-align:right">memory, compact </th><th style="text-align:right">saved </th></tr>
+</thead>
+<tbody>
+<tr><td>json </td><td>27 files x 424 </td><td style="text-align:right">30.0 MB </td><td style="text-align:right">13 ms </td><td style="text-align:right">14 ms </td><td style="text-align:right">0.98x </td><td style="text-align:right">33 MB </td><td style="text-align:right">33 MB </td><td style="text-align:right">1.00x </td></tr>
+<tr><td>mustache </td><td>25 files x 20000 </td><td style="text-align:right">7.4 MB </td><td style="text-align:right">52 ms </td><td style="text-align:right">43 ms </td><td style="text-align:right">1.22x </td><td style="text-align:right">75 MB </td><td style="text-align:right">43 MB </td><td style="text-align:right">1.76x </td></tr>
+<tr><td>algol60 </td><td>5 files x 12615 </td><td style="text-align:right">30.0 MB </td><td style="text-align:right">358 ms </td><td style="text-align:right">330 ms </td><td style="text-align:right">1.09x </td><td style="text-align:right">390 MB </td><td style="text-align:right">285 MB </td><td style="text-align:right">1.37x </td></tr>
+<tr><td>bgpd </td><td>4 files x 20000 </td><td style="text-align:right">19.7 MB </td><td style="text-align:right">408 ms </td><td style="text-align:right">377 ms </td><td style="text-align:right">1.08x </td><td style="text-align:right">346 MB </td><td style="text-align:right">257 MB </td><td style="text-align:right">1.34x </td></tr>
+<tr><td>httpd </td><td>1 files x 20000 </td><td style="text-align:right">15.9 MB </td><td style="text-align:right">247 ms </td><td style="text-align:right">203 ms </td><td style="text-align:right">1.22x </td><td style="text-align:right">197 MB </td><td style="text-align:right">86 MB </td><td style="text-align:right">2.29x </td></tr>
+<tr><td>ntpd </td><td>1 files x 20000 </td><td style="text-align:right">6.9 MB </td><td style="text-align:right">57 ms </td><td style="text-align:right">56 ms </td><td style="text-align:right">1.00x </td><td style="text-align:right">32 MB </td><td style="text-align:right">32 MB </td><td style="text-align:right">1.00x </td></tr>
+<tr><td>pfctl </td><td>7 files x 12717 </td><td style="text-align:right">30.0 MB </td><td style="text-align:right">633 ms </td><td style="text-align:right">478 ms </td><td style="text-align:right">1.32x </td><td style="text-align:right">740 MB </td><td style="text-align:right">229 MB </td><td style="text-align:right">3.22x </td></tr>
+<tr><td>relayd </td><td>2 files x 20000 </td><td style="text-align:right">15.2 MB </td><td style="text-align:right">188 ms </td><td style="text-align:right">183 ms </td><td style="text-align:right">1.03x </td><td style="text-align:right">65 MB </td><td style="text-align:right">49 MB </td><td style="text-align:right">1.32x </td></tr>
+<tr><td>snmpd </td><td>2 files x 20000 </td><td style="text-align:right">10.9 MB </td><td style="text-align:right">110 ms </td><td style="text-align:right">107 ms </td><td style="text-align:right">1.03x </td><td style="text-align:right">59 MB </td><td style="text-align:right">46 MB </td><td style="text-align:right">1.29x </td></tr>
+<tr><td>unwind </td><td>1 files x 20000 </td><td style="text-align:right">4.7 MB </td><td style="text-align:right">48 ms </td><td style="text-align:right">48 ms </td><td style="text-align:right">1.01x </td><td style="text-align:right">16 MB </td><td style="text-align:right">15 MB </td><td style="text-align:right">1.07x </td></tr>
+</tbody>
+</table>
+<p><em>Measured 2026-11-05 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.27 on the host, hbnf c4d9370; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, <code>gcc -O2</code>.</em></p>
+</body>
+</html>

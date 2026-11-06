@@ -1,0 +1,220 @@
+<!doctype html>
+<!-- generated from tests/bytetest/README.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bytetest — byte-identity harness against OpenBSD parse.y</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>bytetest — byte-identity harness against OpenBSD parse.y</h1>
+<p>hbnf's daemon grammars re-implement nine OpenBSD config parsers, each of which
+has a <code>parse.y</code> (bison) grammar and a set of config structs. The goal of the
+byte-identity work is that the parser hbnf generates produces the <strong>same bytes</strong>
+as <code>parse.y</code> does for the same input: the <code>conf</code> tree must be byte-for-byte
+identical.</p>
+<p>This directory is the harness that measures that. It runs two checks per
+daemon, driven by the table in <code>daemons.tsv</code>:</p>
+<ol>
+<li><strong>bison build</strong> — every <code>parse.y</code> is fed through bison, proving it is
+brought in and parses. (This is the &quot;bring the parse.y into the harness&quot;
+step.)</li>
+<li><strong>conf layout</strong> — the daemon's real config header is compiled against
+OpenBSD's own headers and <code>sizeof(struct conf)</code> is dumped. That size is the
+byte-identity anchor the generated parser must reproduce field-for-field.</li>
+</ol>
+<p>Run it:</p>
+<pre><code>OBSD=/path/to/obsd79 ./bytetest.sh      # OBSD defaults to &lt;repo&gt;/.work/obsd79
+</code></pre>
+<h2>The OpenBSD source tree</h2>
+<p>The harness compiles against a real OpenBSD 7.9 tree, so struct layout is the
+real thing, not a re-typed copy. Fetch and extract it once:</p>
+<pre><code>mkdir -p .work/obsd79 &amp;&amp; cd .work/obsd79
+curl -O https://cdn.openbsd.org/pub/OpenBSD/7.9/src.tar.gz
+curl -O https://cdn.openbsd.org/pub/OpenBSD/7.9/sys.tar.gz
+mkdir extracted
+tar xzf src.tar.gz -C extracted
+tar xzf sys.tar.gz -C extracted
+</code></pre>
+<p>Both tarballs are extracted whole (simplest; ~1.5 GB). The pieces the harness
+actually reads are: <code>sys/**</code> (kernel headers incl. <code>net/pfvar.h</code>),
+<code>include/</code>, <code>lib/libc/include</code>, <code>lib/libevent</code>, <code>lib/libutil</code>, <code>lib/libtls</code>,
+and the nine <code>sbin/*</code> / <code>usr.sbin/*</code> daemon directories.</p>
+<p><code>sys/machine</code> (the <code>&lt;machine/...&gt;</code> headers) is a build-time symlink, not in the
+tarball; <code>bytetest.sh</code> recreates it as <code>arch/amd64/include</code>.</p>
+<h2>Why the compile recipe looks like that</h2>
+<p>Compiling OpenBSD headers on Linux hits one real conflict: OpenBSD's
+<code>machine/_types.h</code> says <code>__int64_t</code> is <code>long long</code>, while glibc's
+<code>bits/types.h</code> says <code>long</code>. The two are ABI-identical on x86_64 (both 8 bytes,
+same alignment) but C-type-incompatible, so the compiler errors on the
+redefinition.</p>
+<p>The fix is to make the compiler see <strong>OpenBSD's headers consistently</strong>:</p>
+<pre><code>gcc -nostdinc -isystem &quot;$(gcc -print-file-name=include)&quot; \
+    -I bsdinc -I include -I lib/libc/include \
+    -I sys -I sys/arch/amd64/include \
+    -I lib/libevent -I lib/libutil -I lib/libtls ...
+</code></pre>
+<ul>
+<li><code>-nostdinc</code> drops glibc's headers so OpenBSD's <code>__int64_t</code> never meets
+glibc's.</li>
+<li><code>-isystem &quot;$(gcc -print-file-name=include)&quot;</code> re-adds only gcc's own
+freestanding headers (<code>stdarg.h</code>, <code>stddef.h</code>, <code>float.h</code>, …).</li>
+<li><code>bsdinc/stdint.h</code> is a shim that maps the POSIX <code>intN_t</code> names the daemon
+headers use onto OpenBSD's <code>__intN_t</code> (OpenBSD normally gets <code>&lt;stdint.h&gt;</code>
+from the compiler, which isn't available under <code>-nostdinc</code>).</li>
+<li><code>lib/libevent</code>, <code>lib/libutil</code>, <code>lib/libtls</code> are OpenBSD's in-tree libs whose
+headers the daemons include (<code>&lt;event.h&gt;</code>, <code>&lt;imsg.h&gt;</code>, <code>&lt;ber.h&gt;</code>, <code>&lt;tls.h&gt;</code>).</li>
+</ul>
+<p><code>relayd.h</code> additionally includes <code>&lt;openssl/ssl.h&gt;</code>, taken from the host's
+OpenSSL (its <code>daemons.tsv</code> row carries the extra <code>-I</code> paths).</p>
+<h2>daemons.tsv</h2>
+<p>One TAB-separated row per daemon:</p>
+<pre><code>name   parse.y path   conf struct   header   extra #includes (; / -)   extra -I (colon / -)
+</code></pre>
+<p><code>conf struct</code> is the tree <code>parse.y</code> builds. <code>pfctl</code> is the odd one out:
+<code>parse.y</code>'s output is a list of kernel <code>struct pf_rule</code> (assembled through
+parser-internal <code>node_*</code> helpers), so the grammar targets <code>pf_rule</code> in
+<code>sys/net/pfvar.h</code>, not <code>pfctl</code>'s own parser struct.</p>
+<h2>Status and next steps</h2>
+<ul>
+<li><code>sizeof(struct conf)</code> for all nine daemons is <strong>recorded</strong> from the real
+header.  Nothing generated by hbnf is part of the check yet, so this
+records the target — it does not verify it.</li>
+<li><code>dump_pfrule.c</code> dumps the full field-by-field layout of <code>struct pf_rule</code>
+(the active pfctl target): every <code>offsetof</code>/<code>sizeof</code>, the contract the
+generated parser must meet.</li>
+<li>Next: per-field <code>_Static_assert(offsetof(...) == offsetof(...))</code> against the
+generated parser (needs the grammars flattened + type-jetted first).</li>
+<li>The trees cannot be compared with <code>memcmp</code> once pointers are involved:
+TAILQ links, strings and malloc'd children sit at different addresses in any
+two parsers, and padding bytes need not match.  The <strong>deep-compare walk</strong>
+is now generated: <code>hbnf --compare</code> emits <code>compare_tree(a, b)</code> plus one
+<code>compare_&lt;rule&gt;</code> per struct/list, comparing scalars and arrays by value,
+strings by content (<code>strcmp</code>), enums and kind tags by value, structs
+recursively, and lists element by element — never pointer addresses, TAILQ
+links or padding.  It proves two hbnf parses (two backends, an idref
+round-trip) yield the same tree.</li>
+<li>Byte-identity against <code>parse.y</code> itself is proven for ntpd: <code>byteident.sh</code>
+builds parse.y's parser (bison) and hbnf's parser against the same
+<code>config.c</code>, runs both on 17 configs, and compares accept/reject, a
+canonical <code>dump_ntpd_conf()</code> of each <code>struct ntpd_conf</code> (scalars/arrays by
+value, strings by content, lists in order) and the error messages (see the
+section below).  The action jets fill the same fields parse.y does
+(<code>addr_head.{a,pool,name}</code>, <code>state</code>, per-address <code>servers</code> pooling) and
+reject the same values with the same messages.</li>
+<li>pfctl's comparison point is a hand-off, not the parse: <code>parse.y</code> runs each
+rule through <code>expand_rule</code> and returns the expanded rules, so one grammar
+rule is not one <code>pf_rule</code>.  Reaching <code>pf_rule</code> at all needs value jets
+(keyword → constant) and action jets first, since its fields are mostly
+flags and constants.</li>
+</ul>
+<h2>byte-identity proof (hbnf vs parse.y)</h2>
+<p><code>byteident.sh</code> is the proof that hbnf's generated parser is a drop-in for
+<code>parse.y</code>, for ntpd:</p>
+<pre><code>./byteident.sh      # OBSD defaults to &lt;repo&gt;/.work/obsd79
+</code></pre>
+<p>It builds <strong>two</strong> parsers against the same daemon <code>config.c</code> — <code>ntpd_yy</code>
+(bison's <code>parse.y</code>) and <code>ntpd_hbnf</code> (the parser generated from
+<code>grammars/bind/ntpd.hbnf</code>, with <code>runtime/hbnf_conf.c</code>) — and runs both on every <code>byteident/cases/*.conf</code>.
+For each case they must agree on:</p>
+<ul>
+<li><strong>accept or reject</strong> (the exit status);</li>
+<li><strong>the tree</strong>: a canonical dump of the <code>struct ntpd_conf</code> each built
+(<code>byteident/dump_ntpd_conf.c</code> walks the TAILQ lists and prints scalars and
+arrays by value, strings by content, lists in order, so pointer addresses,
+TAILQ links and padding never enter the comparison);</li>
+<li><strong>the error messages</strong>, byte for byte, for every case except
+<code>syntax-*.conf</code>: there parse.y says <code>syntax error</code> and hbnf gives a caret
+message, by design, so only the <code>file:line:</code> of each error is compared.
+Both go on past an error, so that is every error in the file.  Semantic
+errors come from the action jets, which use parse.y's own messages.</li>
+</ul>
+<p>The cases cover every directive, IPv6 literals, hostnames, a negative
+number, an empty file, each semantic error parse.y reports, two errors in
+one file, and syntax errors, alone and mixed with a semantic one
+(<code>syntax-several.conf</code>).  Add a case by dropping a <code>.conf</code> file in.</p>
+<p>Before comparing, <code>strict-cc.sh</code> builds the generated parser the way
+ntpd's own sources are built: the <code>-W</code> flags from ntpd's Makefile (`-Wall
+-Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wshadow
+-Wpointer-arith -Wcast-qual -Wsign-compare`), plus the errors gcc 14 and
+clang make of implicit declarations and pointer mismatches, with gcc and
+with clang (OpenBSD's compiler) when present.  Any warning in the generated
+files fails the run.  Everything else in the harness is built with <code>-w</code>, so
+without this step a missing <code>#include</code> or a <code>const</code> mismatch in the
+generated code goes unnoticed on an older gcc.</p>
+<p>bison and <code>hbnf</code> are used from the host when present (<code>bison</code> on PATH;
+<code>$HBNF</code>, or <code>sources/hbnf/hbnf</code> once built); otherwise from docker.
+<code>KEEP=1</code> keeps the scratch directory with both binaries.</p>
+<p>Three pieces make bison's parser compile and agree on Linux:</p>
+<ul>
+<li><code>byteident/harness.c</code> — the <code>parse_config</code> + dump <code>main</code>, the one
+<code>constraint_add()</code> the parse needs (the rest of <code>constraint.c</code> drags in
+imsg/tls), and <code>strtonum()</code> (parse.y's lexer uses it; glibc lacks it).</li>
+<li><code>byteident/getaddrinfo_wrap.c</code> — OpenBSD's <code>sockaddr_*</code> prefix the family
+with <code>sin_len</code> and number <code>AF_INET6</code> as 24 (glibc: 10); <code>--wrap=getaddrinfo</code>
+rewrites glibc's results into the OpenBSD layout so <code>host()</code> reads them,
+and <code>--wrap=inet_pton</code> maps AF_INET6 back to glibc's number (without it
+every IPv6 literal looked invalid to both parsers).  This is the one place
+the ABI gap leaks through, and it is a harness shim, not an hbnf concern.</li>
+</ul>
+<h2>ntpd -n proof (the first full drop-in)</h2>
+<p><code>ntpd-proof.sh</code> is the first daemon proven end-to-end: it builds the **real
+OpenBSD ntpd** with hbnf's generated parser in place of <code>parse.y</code>, then runs
+<code>ntpd -n</code> (configtest) against it — a valid config prints <code>configuration OK</code>
+and exits 0; a config parse.y rejects prints parse.y's message and exits 1
+(the script checks both).  <code>parse_config</code> returns -1 and ntpd exits, as with
+parse.y; the generated parser never exits on its own.</p>
+<pre><code>./ntpd-proof.sh      # OBSD defaults to &lt;repo&gt;/.work/obsd79
+</code></pre>
+<p>It compiles all twelve <code>usr.sbin/ntpd/*.c</code> files as-is against OpenBSD's own
+headers (the <code>-nostdinc</code> recipe above), links <code>libutil</code>'s imsg, and drops in
+the generated parser and <code>runtime/hbnf_conf.c</code> (<code>parse_config</code> takes
+<code>struct ntpd_conf *</code>, as the binding's epilogue defines it). A few small shims make this possible on Linux:</p>
+<ul>
+<li><code>bsdinc/fcntl.h</code> + <code>bsdinc/syslog.h</code> — OpenBSD generates these userland
+headers during its build; they just forward to <code>sys/sys/fcntl.h</code> and
+<code>sys/sys/syslog.h</code>, which the tarball does ship.</li>
+<li><code>bsdinc/stdint.h</code> — the fixed-width typedefs plus the <code>*_MAX</code>/<code>*_MIN</code>
+limits (the compiler normally supplies <code>&lt;stdint.h&gt;</code>, which <code>-nostdinc</code>
+drops).</li>
+<li><code>ntpd-shims.c</code> — bridges the OpenBSD libc/syscall names glibc spells
+differently (<code>__errno</code> → <code>__errno_location</code>, <code>__isfinite</code>, <code>__stderr</code>…),
+no-ops the syscalls that don't exist on Linux (<code>pledge</code>/<code>unveil</code>/<code>sysctl</code>/
+<code>setproctitle</code>/<code>adjfreq</code>), and stubs the runtime-only pieces <code>-n</code> never
+reaches (TLS constraints, MD5 auth, the resolver).  It also stubs
+<code>getexecpath()</code>, which -current's ntpd calls before parsing (7.9's does
+not).</li>
+<li><code>byteident/getaddrinfo_wrap.c</code> — the same sockaddr-layout wrappers as
+byteident.sh uses.  Without them host() sees glibc's layout, the address
+family reads as 0, and parse.y's &quot;IPv4 or IPv6 address or hostname
+expected&quot; check rejects every server.</li>
+</ul>
+<p><code>hbnf</code> comes from <code>$HBNF</code> or <code>sources/hbnf/hbnf</code> when built,
+otherwise from docker.</p>
+<p>Two more checks run before <code>ntpd -n</code>: <code>strict-cc.sh</code> (as above), and the
+symbol contract.  The script links ntpd without any parser; what is left
+undefined is what parse.y provides to the rest of the daemon, and each of
+those symbols must be defined by the generated <code>conf.o</code>.  For ntpd that is
+<code>parse_config</code> alone.  Other daemons need more (for example
+<code>cmdline_symset()</code> for <code>-D</code>), and the same link finds exactly what.</p>
+<p>The proof found one real emitter bug: a <code>word</code>/<code>atom</code> scalar matched a
+keyword token, so <code>1*string</code> would swallow the <em>next</em> directive's keyword.
+<code>word</code>/<code>atom</code> now require <code>kwid == KWID_NONE</code> (parse.y's lexer reserves
+keywords the same way).  Rules whose alternatives are all keywords
+(<code>dir = &quot;in&quot; / &quot;out&quot;</code>) match by keyword id, so that check does not apply to
+them.</p>
+<p>Qemu is the fallback if a daemon's full <code>parse.y</code> support code (<code>pfctl.c</code>,
+OpenSSL-linked helpers, …) won't compile on Linux; the static layout checks
+above do not need it, and ntpd no longer needs it at all.</p>
+</body>
+</html>

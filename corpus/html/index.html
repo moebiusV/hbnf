@@ -1,0 +1,167 @@
+<!doctype html>
+<!-- generated from corpus/html/README.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTML in HyperBNF</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>HTML in HyperBNF</h1>
+<p><code>html.hbnf</code> is the syntax of a conforming HTML document, as section 13.1 &quot;Writing HTML documents&quot; of the
+<a href="https://html.spec.whatwg.org/multipage/syntax.html">WHATWG HTML Living Standard</a> writes it: the doctype, elements
+with their start and end tags, the elements whose tags may be left out, void elements, attributes in their
+three quoted forms, text and character references, comments, CDATA in svg and math, and the elements that hold
+raw text (<code>script</code>, <code>style</code>) or escapable raw text (<code>textarea</code>, <code>title</code>).  <code>html-tokens.hbnf</code> has the
+characters (white space, names, references, attribute values, comments).  It is not the parser of section 13.2,
+which reads any text and recovers from every error, and it knows nothing of the content model (which element
+may hold which).  The standard has no grammar of the syntax: 13.1 is prose, and the tokenizer of 13.2.5 is a
+state machine of about eighty states that also says what to do with every error, so there is nothing to count
+against (<code>bench/notation.sh</code> has no HTML baseline, and none was made up).</p>
+<h2>Size</h2>
+<p>Measured by <code>python3 bench/count.py hbnf-code</code>, comments and blank lines left out:</p>
+<table>
+<thead>
+<tr><th></th><th style="text-align:right">rules </th><th style="text-align:right">lines </th><th style="text-align:right">symbols </th><th style="text-align:right">characters </th></tr>
+</thead>
+<tbody>
+<tr><td><code>html.hbnf</code> + <code>html-tokens.hbnf</code></td><td style="text-align:right">52 </td><td style="text-align:right">65 </td><td style="text-align:right">665 </td><td style="text-align:right">3772 </td></tr>
+<tr><td>with <code>html-islands.hbnf</code> (see below), without <code>js-stub.hbnf</code></td><td style="text-align:right">53 </td><td style="text-align:right">66 </td><td style="text-align:right">671 </td><td style="text-align:right">3829 </td></tr>
+</tbody>
+</table>
+<p>Eleven of the 52 are hyperrules: the whole family of omissible end tags is <code>omit(N, S)</code> and <code>last(N)</code>, written once,
+and the elements are twenty calls; the two raw-text forms are <code>raw-element(N)</code> and <code>rcdata-element(N)</code>; characters
+up to something, with the references among them, are <code>chars(X)</code>, which reads element text, a title, and the
+three forms of attribute value alike.</p>
+<h2>What is read</h2>
+<ul>
+<li><strong>The document</strong>: an optional byte order mark, comments and white space, a doctype (<code>&lt;!DOCTYPE html&gt;</code> in any case,
+with blanks before the <code>&gt;</code>, or the one legacy form 13.1.1 permits, <code>&lt;!DOCTYPE html SYSTEM &quot;about:legacy-compat&quot;&gt;</code> in
+either quote).  <code>PUBLIC</code> doctypes are not conforming and are refused.  Then nodes.</li>
+<li><strong>Elements</strong>: a start tag, content, and an end tag that has the name of the start tag; void elements
+(<code>area base br col embed hr img input link meta source track wbr</code>) with <code>&gt;</code> or <code>/&gt;</code> and no end tag; any name that starts
+with a letter, so custom elements (<code>x-y</code>) read like the rest.  A <code>/&gt;</code> on any other HTML element is refused.</li>
+<li><strong>Attributes</strong>: blank, name, and optionally <code>=</code> (blanks allowed on both sides) and a value, unquoted (not empty, none of
+<code>&quot;'=&lt;&gt;</code> and the backtick, no blank), single-quoted or double-quoted.  After a quoted value a blank must come before the
+next attribute.  A name is made of anything but controls, blanks, <code>&quot;</code> <code>'</code> <code>&gt;</code> <code>/</code> <code>=</code> and <code>&lt;</code>.</li>
+<li><strong>Text and references</strong>: <code>&amp;name;</code>, <code>&amp;#65;</code>, <code>&amp;#x41;</code> (and <code>&amp;#X41;</code>).  A <code>&amp;</code> that does not start a reference is text.
+A <code>&lt;</code> is never text.  The characters of a document are those 13.1.1 allows: no NUL, controls other than blanks,
+surrogates or noncharacters (the last two code points of each plane above the first are not left out).</li>
+<li><strong>Comments</strong>: <code>&lt;!--</code> ... <code>--&gt;</code>, not starting with <code>&gt;</code> or <code>-&gt;</code>, not holding <code>&lt;!--</code>, <code>--&gt;</code> or <code>--!&gt;</code>; two hyphens by
+themselves are fine, as in the standard (html5lib's strict mode disagrees).</li>
+<li><strong>Raw text</strong>: <code>script</code> and <code>style</code> hold anything up to <code>&lt;/script</code> or <code>&lt;/style</code> followed by a blank, <code>/</code> or <code>&gt;</code>;
+<code>textarea</code> and <code>title</code> the same with character references.  The end tag takes no attributes.  The double-escape quirk of
+script data (<code>&lt;!-- &lt;script&gt; ... &lt;/script&gt; --&gt;</code>) is not modelled: the first <code>&lt;/script</code> ends the element, as the tokenizer's
+outer state does.</li>
+<li><strong>Foreign content (svg, math)</strong>: elements of any name, <code>&lt;x/&gt;</code> or <code>&lt;x&gt;...&lt;/x&gt;</code>, comments, and **CDATA sections, which
+are read only here** and refused in HTML elements (<code>&lt;p&gt;&lt;![CDATA[x]]&gt;&lt;/p&gt;</code> is an error, as 13.1.5 says).  Inside svg the
+integration points <code>foreignObject</code>, <code>desc</code> and <code>title</code> hold HTML again.  The HTML elements that break out of foreign content
+(<code>&lt;p&gt;</code> in an svg) are not refused, and the integration points of math are not modelled.</li>
+<li><strong>Omitted tags (13.1.2.4)</strong>, as far as no content model is needed:
+<ul>
+<li><em>End tags, done</em>: <code>li dt dd p rt rp optgroup option colgroup caption thead tbody tfoot tr td th</code>, and <code>html head body</code>.
+An element with such an end tag ends where its end tag is, before the end tag of its parent or the end of the text, or
+before a start tag that cannot be inside it: <code>li</code> before <code>&lt;li&gt;</code>, <code>dt</code> and <code>dd</code> before <code>&lt;dt&gt;</code> or <code>&lt;dd&gt;</code>, <code>p</code> before the
+twenty-odd block-level start tags, <code>option</code> before <code>&lt;option&gt;</code> or <code>&lt;optgroup&gt;</code>, <code>tr</code> before <code>&lt;tr&gt;</code>, <code>td</code> and <code>th</code> before
+<code>&lt;td&gt;</code> or <code>&lt;th&gt;</code>, <code>thead</code> and <code>tbody</code> before <code>&lt;tbody&gt;</code> or <code>&lt;tfoot&gt;</code>, <code>rt</code> and <code>rp</code> before <code>&lt;rt&gt;</code> or <code>&lt;rp&gt;</code>, <code>head</code> before
+<code>&lt;body&gt;</code>, <code>caption</code> and <code>colgroup</code> before a table part.  <code>tfoot</code>, <code>body</code> and <code>html</code> end only with their parent or the text.</li>
+<li><em>Start tags, done</em> by not requiring them: <code>html</code>, <code>head</code>, <code>body</code>, <code>colgroup</code> and <code>tbody</code> start tags may be missing, and the
+end tags <code>&lt;/head&gt; &lt;/body&gt; &lt;/html&gt;</code> (at the top of the document or of <code>&lt;html&gt;</code>) and <code>&lt;/colgroup&gt; &lt;/tbody&gt;</code> (in a table)
+are read with no start tag.  A parser that wants the tree the content model gives (<code>&lt;tr&gt;</code> inside an implied <code>tbody</code>) needs
+the content model; the grammar only accepts the same documents.</li>
+<li><em>Not done</em>: the conditions about what follows (<code>head</code>, <code>colgroup</code> and <code>caption</code> end tags may be omitted only if the next thing
+is not a blank or a comment); that <code>p</code> and the rest may be left open only if the parent is not <code>a</code>, <code>audio</code>, <code>del</code>, <code>ins</code>,
+<code>map</code>, <code>noscript</code>, <code>video</code> or a custom element, or an svg element; that a <code>p</code> closed by a block start tag must have
+been one a content model allows.</li>
+</ul></li>
+<li><strong>Not read</strong>: <code>plaintext</code>, <code>xmp</code>, <code>iframe</code>, <code>noembed</code>, <code>noframes</code> and <code>noscript</code> as raw text (all obsolete or switched by the
+scripting flag), <code>template</code> content (read as ordinary markup), the content model, attribute names and values that the
+standard defines (a <code>class</code>, an <code>href</code>, a number), duplicate attributes, the table of 2,231 named references (a name between
+<code>&amp;</code> and <code>;</code> is any letters and digits; 13.1.4 asks for one in the table), the legacy names that are references without a
+<code>;</code> (<code>&amp;amp </code> is text), what a numeric reference may name (<code>&amp;#0;</code>, a surrogate, a C1 control), text that is whitespace-only
+where the content model does not want text, the language of a <code>lang</code>, <code>&lt;meta charset&gt;</code> against the real encoding, the
+length of anything.</li>
+</ul>
+<h2>One thing the notation does not say</h2>
+<ul>
+<li><strong>A big comment or script is a list of characters in the tree.</strong>  A rule of characters that holds a lookahead of more than one
+character (<code>!&quot;--&gt;&quot;</code>, <code>!&quot;]]&gt;&quot;</code>, the end tag of a script) is read one character at a time and the tree has a node for each:
+the generator warns of it for <code>html-comment</code>, <code>cdata</code> and <code>raw-closing-script</code> / <code>raw-closing-style</code>.  The text parses
+quickly (C, <code>-O2</code>: a script of half a megabyte in 0.01 s, a megabyte of markup in 0.07 s) but its node is not a single string.</li>
+</ul>
+<h2>Raw text and the island features</h2>
+<p><code>html-islands.hbnf</code> is <code>html.hbnf</code> with the inside of <code>&lt;script&gt;</code> read by another grammar, <code>js-stub.hbnf</code> (a small JavaScript
+stub: <code>var</code>, assignment, call, <code>if</code>, strings, numbers, <code>//</code> comments), through <code>include &quot;js-stub.hbnf&quot; as js</code> and one rule,</p>
+<pre><code>script = open(i&quot;script&quot;) js.program *space end(i&quot;script&quot;)
+</code></pre>
+<p>It works in the C, Rust, Zig and Ada backends and gives the same answer as <code>html.hbnf</code> on all 100 cases when the stub
+can read the script.  What it shows:</p>
+<ul>
+<li>The script ends where the <em>guest</em> stops, not at <code>&lt;/script</code>.  A script that holds the string <code>&quot;&lt;/script&gt;&quot;</code> is one script to
+the island variant, which reads the string to its closing quote, and two things to a browser, which ends the element at the
+first <code>&lt;/script</code> whatever JavaScript thinks of it (<code>tests-islands/guest-reads-past-end-string.html</code>).  The raw text of
+HTML is a decision of the tokenizer, which runs before the language of the script; an island puts the decision in the guest.
+The plain grammar's <code>script</code> is therefore the faithful one.</li>
+<li>A guest is not skipped for white space in the host's way: the host skips none, a guest that skipped its own would make two
+white-space rules in one parser, and the generator refuses it, so <code>js-stub.hbnf</code> says <code>whitespace none</code> and takes its
+blanks and comments itself.</li>
+<li>A hyperrule defined in the guest is not found in the scope (a lookahead <code>!x</code> on a rule of the guest is, since 2026-11-03).</li>
+<li><code>=&gt; grammar(js)</code> after <code>&lt;script&gt;</code> does generate, and changes nothing the document could show: the switch replaces
+the white space skipped, HTML skips none, and the raw text is still read by the rules of the host.  There is no way back,
+either: <code>=&gt; grammar(x)</code> names an included file, and the host cannot include itself.  The island is the form that does the job.</li>
+</ul>
+<h2>Checked against html5lib</h2>
+<p><code>sh tests/html.sh</code> runs the 100 files of <code>tests/</code> (below) and the 8 of <code>tests-islands/</code> through the C, Rust, Zig and Ada
+parsers.  <code>sh tests/html-diff.sh [N [SEED]]</code> asks the C parser and Python's <code>html5lib</code> (<code>HTMLParser(strict=True)</code>, which raises
+on the first parse error of 13.2, that is on a document that does not conform) the same questions (<code>PYTHON=</code> a python that
+has it; without, only the files are run).  The oracle is <code>tests/html/oracle.py</code>; lxml (libxml2, an HTML 4 parser) was asked as
+a second opinion (<code>oracle.py --lxml check</code>) and is no help: it accepts 20 of the 40 refused files and refuses 12 of the 41
+good ones, since it does not know <code>section</code> or <code>svg</code>.</p>
+<p>The 100 files are written from the examples of 13.1 and the classes of error html5lib reports, in four folders by what the
+two are expected to say:</p>
+<table>
+<thead>
+<tr><th>folder </th><th style="text-align:right">files </th><th>grammar </th><th>html5lib </th></tr>
+</thead>
+<tbody>
+<tr><td><code>tests/good</code></td><td style="text-align:right">44 </td><td>accepts </td><td>accepts </td></tr>
+<tr><td><code>tests/bad</code></td><td style="text-align:right">40 </td><td>refuses </td><td>refuses </td></tr>
+<tr><td><code>tests/oracle-stricter</code></td><td style="text-align:right">16 </td><td>accepts </td><td>refuses </td></tr>
+</tbody>
+</table>
+<p>Where they differ, by design:</p>
+<ul>
+<li><em>html5lib checks what a syntax cannot</em> (12 of the 16): a named reference not in the table, <code>a &amp;b</code> or <code>&amp;amp </code> with no <code>;</code>, a
+numeric reference to U+0000, a duplicate attribute, <code>&lt;td&gt;</code> outside a table, a nested <code>a</code>, a <code>div</code> in a table, an <code>&lt;a&gt;</code> or
+an svg holding a <code>p</code> whose end tag is left out (the standard allows leaving it out only if the parent is an HTML element
+that is not <code>a</code>), a <code>&lt;br&gt;</code> in an svg (it breaks out of foreign content), and a <code>&lt;caption&gt;</code> closed by an omitted end tag
+(html5lib answers &quot;Undefined error&quot;, which is its tree builder failing on a legal document).</li>
+<li><em>html5lib is older or stricter than the standard</em> (4): <code>&lt;!-- a -- b --&gt;</code>, <code>&lt;!-- a ---&gt;</code> and <code>&lt;!-- a --!--&gt;</code> are
+conforming comments, and a doctype with <code>SYSTEM &quot;About:Legacy-Compat&quot;</code> is too, the string being matched without regard to case.</li>
+<li><em>an end tag in another case than its start tag</em> (<code>&lt;DIV&gt;x&lt;/div&gt;</code>, 3 files of <code>good</code>) is legal, and both accept it: <code>$tag</code> keeps
+the case property of the name it repeats, and the file says <code>sensitivity string %i</code>.  (Until <code>$K</code> took that property from
+what it repeats, these 3 files were a folder of their own, <code>grammar-stricter</code>, which the grammar refused.)</li>
+</ul>
+<p><code>html-diff.sh</code> also generates N random valid documents (every omissible end tag, raw text, svg with CDATA and
+integration points, math, references, all forms of attribute and doctype, a byte order mark) and N mutations of them (a
+character deleted, inserted, replaced, swapped, doubled, the text cut).  Every valid document is accepted by both.
+For the mutations, html5lib's refusals are told apart by their message: those that are about what a document means (the
+list in <code>oracle.py</code>) are counted apart and either answer of the grammar is agreement; any other difference fails.  With
+20,000 documents and 20,000 mutations (seed 5): 15,317 agree, 4,683 are meaning (the grammar refuses 3,961 of them and
+accepts 722: unknown reference names, legacy references with no <code>;</code>, numeric values, <code>--</code> in a comment, elements where
+the content model does not want them, an end tag in another case than its start tag), none differs otherwise.  Seeds 1, 3,
+5, 7, 11, 21 and 22 were run, 5,000 to 20,000 each.
+What the &quot;meaning&quot; class can hide is a document the grammar wrongly accepts that html5lib refuses for a reason on the list;
+the list was made from the messages of the first runs, each one read against the standard.</p>
+</body>
+</html>

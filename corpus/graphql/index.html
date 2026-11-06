@@ -1,0 +1,130 @@
+<!doctype html>
+<!-- generated from corpus/graphql/README.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GraphQL (October 2021) in HyperBNF</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>GraphQL (October 2021) in HyperBNF</h1>
+<p><code>graphql.hbnf</code> (the executable and type system languages, 32 rules) and <code>graphql-tokens.hbnf</code> (names, numbers and
+strings, where no blank is allowed inside one, 22 rules) are the whole of the October 2021 specification's
+sections 2 (Language) and 3 (Type System) as a parser: queries, mutations and subscriptions, fragments, values,
+types and directives, and the schema, scalar, type, interface, union, enum, input and directive definitions
+with their <code>extend</code> forms, descriptions, <code>implements A &amp; B</code> and <code>repeatable</code>.</p>
+<h2>Counts</h2>
+<p>The baseline is the specification's grammar blocks, written down from memory of the specification and not
+fetched (no network here): <code>originals/graphql-2021-productions.bnf</code>, a transcription, one alternative to a line as
+the specification prints them, parameter <code>[Const]</code> as <code>(Const)</code>.  Counted the way <code>bench/notation.sh</code> counts the
+others (<code>python3 bench/count.py specbnf</code> and <code>hbnf-code</code>):</p>
+<table>
+<thead>
+<tr><th></th><th style="text-align:right">rules </th><th style="text-align:right">lines </th><th style="text-align:right">symbols </th><th style="text-align:right">characters </th></tr>
+</thead>
+<tbody>
+<tr><td>the specification's productions (transcribed) </td><td style="text-align:right">99 </td><td style="text-align:right">200 </td><td style="text-align:right">710 </td><td style="text-align:right">6316 </td></tr>
+<tr><td>HyperBNF (<code>graphql.hbnf</code>, <code>graphql-tokens.hbnf</code>) </td><td style="text-align:right">54 </td><td style="text-align:right">65 </td><td style="text-align:right">566 </td><td style="text-align:right">3863 </td></tr>
+<tr><td><strong>saved</strong></td><td style="text-align:right"><strong>45%</strong></td><td style="text-align:right"><strong>68%</strong></td><td style="text-align:right"><strong>20%</strong></td><td style="text-align:right"><strong>39%</strong></td></tr>
+</tbody>
+</table>
+<p>Where the saving is: the <code>Const</code> pair is one pattern (<code>value(K in &quot;const&quot; | &quot;var&quot;)</code> with a clause for <code>&quot;var&quot;</code>
+that adds the variable, and <code>arguments(K)</code>, <code>directives(K)</code> carry the same parameter), the optional <code>( ... )</code>
+lists are one pattern (<code>args</code>), the <code>{ ... }</code> lists another (<code>braced</code>, <code>block</code>), the <code>type</code> and <code>interface</code>
+definitions are one (<code>object(K)</code>), and a definition and its extension are one rule, not two families of seven:
+<code>type-system</code> says <code>[ description ] definition-body</code> and <code>&quot;extend&quot; definition-body</code>, and a one-line look ahead
+(<code>adds</code>) says an extension must add something.  The specification writes each of those again, with its own name.</p>
+<h2>What is covered</h2>
+<ul>
+<li>The lexical grammar (2.1 to 2.9): the ignored tokens as the <code>ws</code> rule (white space, line ends, commas, the byte
+order mark, <code>#</code> comments), names, <code>IntValue</code> and <code>FloatValue</code> with the lookahead that makes <code>01</code>, <code>1.</code>, <code>1e</code>,
+<code>0x</code> and <code>12abc</code> each one error, strings with their escapes, and block strings with <code>\&quot;&quot;&quot;</code>.  A block string is
+kept as written: removing its indentation (<code>BlockStringValue()</code>) and decoding <code>\uXXXX</code> are for a later stage,
+as in <code>corpus/json</code>.</li>
+<li>The executable definitions: operations (and the <code>{ ... }</code> shorthand), selection sets, fields with aliases and
+arguments, fragment spreads, inline fragments, fragment definitions, variable definitions with defaults and
+directives, directives.</li>
+<li>Values: variables, numbers, strings, <code>true</code>, <code>false</code>, <code>null</code>, enum values, lists, objects; the <code>Const</code>
+variants (a default value, a directive in the type system) refuse a variable.</li>
+<li>Types: named, list, non-null.</li>
+<li>The type system definitions and every extension, descriptions, interfaces that implement interfaces, <code>repeatable</code>
+and the directive locations.</li>
+</ul>
+<p>Not covered: schema coordinates (they are not in the October 2021 edition, only in later drafts), the semantic
+rules of the specification (a field exists, a fragment is used, an argument is unique, a directive is in a
+valid location; the validation of section 5), and the legacy <code>implements A, B</code> form that graphql-js 15 had
+as an option (commas are ignored tokens, so it reads as <code>implements A B</code>, which the 2021 grammar refuses).
+<code>ExecutableDocument</code> and <code>TypeSystemDocument</code> are not roots of their own: <code>Document</code>, which allows both, is
+the root.</p>
+<h2>Where the grammar is not a plain translation</h2>
+<p>The specification's productions are context-free and unordered; a parser that takes the first alternative that
+matches and never comes back needs these:</p>
+<ul>
+<li><strong>No word is reserved.</strong>  <code>query</code>, <code>type</code>, <code>on</code>, <code>fragment</code>, <code>extend</code>, <code>schema</code>, <code>true</code> ... are quoted words
+only where the specification has them in that place; everywhere else the position takes <code>name</code>, so
+<code>{ query type fragment on }</code>, <code>query query { a }</code>, <code>fragment fragment on query { a }</code> and <code>type type { type: type }</code>
+are all documents.  What the specification does exclude is a name each time it says &quot;but not&quot;: a
+fragment name is a name that is not <code>on</code>, and an enum value one that is not <code>true</code>, <code>false</code> or <code>null</code>; both are
+token exceptions (<code>name - on-word</code>) in the tokens file.</li>
+<li><strong><code>on</code> after <code>...</code>.</strong>  A fragment spread (<code>... name</code>) and an inline fragment (<code>... on Type { }</code>) both begin with
+<code>...</code> and a name.  <code>fragment-name</code> cannot be <code>on</code>, so the spread is tried first and fails on <code>on</code>, and the
+inline fragment follows.  <code>... on on { a }</code> is the inline fragment on a type called <code>on</code>.</li>
+<li><strong>A keyword is not the front of a longer name.</strong>  <code>true</code> must not match the front of <code>trueish</code> (an enum value),
+<code>type</code> the front of <code>typeName</code>.  hbnf reads a letter-led literal against its <code>word</code> rule, which is therefore
+the name token (<code>word = name-start *name-char</code>, then <code>name = word</code>); without a rule called <code>word</code> the literals
+match prefixes.  In the token rules (the exponent, the escapes) a letter is the single-character literal
+<code>'e'</code>, since <code>&quot;e&quot;</code> would be a word and not match <code>e10</code>.</li>
+<li><strong><code>type A { f }</code> is an error, not <code>type A</code> and a query <code>{ f }</code>.</strong>  The specification's definitions have an
+optional fields list, and the syntax <code>type A</code> then <code>{ f }</code> (an anonymous query) is also a valid reading, which
+makes it ambiguous as a context-free grammar (its extension forms carry <code>[lookahead != {]</code> for exactly this).
+Implementations (graphql-js) and this grammar take the brace as the start of the list: <code>block(X)</code> is <code>braced(X)</code>
+or no brace at all (<code>!&quot;{&quot;</code>).  <code>scalar S</code> followed by <code>{ a }</code> and <code>union U = A</code> followed by <code>{ a }</code> have no
+list to take the brace and stay two definitions.</li>
+<li><strong>An extension adds something.</strong>  <code>extend type A</code> alone is refused by the specification (its three forms
+each require a part).  Rather than three forms, <code>type-system</code> reads <code>&quot;extend&quot; definition-body</code> (all the parts
+optional, as in a definition) after a look ahead, <code>adds</code>, that the extension has a directive, a list, a union
+member or <code>implements</code> to add.  <code>extend scalar S</code> followed by a query is refused, as it should be.</li>
+<li><strong>A number is a token and its lookahead is part of it.</strong>  <code>01</code> would otherwise be <code>0</code> and then <code>1</code>, two values
+in a list (commas are ignored tokens).  <code>int-value</code> and <code>float-value</code> end in <code>!number-end</code> (a digit, a dot or a
+name start may not follow), as the specification says.  That makes <code>float-value</code> a rule read a character at a
+time (hbnf warns: a lookahead keeps a rule from being a single scanned token).</li>
+<li><strong><code>&quot;&quot;</code> and <code>&quot;&quot;&quot;</code>.</strong>  The empty string is <code>&quot;&quot;</code> not followed by a quote, as the specification says, so <code>&quot;&quot;&quot;x&quot;</code> is the
+start of a block string and not two strings.</li>
+<li><strong>A block string ends at the first <code>&quot;&quot;&quot;</code> that no backslash escapes.</strong>  <code>block-char</code> is a character, a <code>\&quot;&quot;&quot;</code>,
+a backslash that is not the start of <code>\&quot;&quot;&quot;</code>, or a quote that is not the start of <code>&quot;&quot;&quot;</code>.</li>
+<li><strong><code>Const</code>.</strong>  A word-valued parameter does it: <code>value(&quot;const&quot;)</code> has no variable, <code>value(&quot;var&quot;)</code> has one more
+alternative, and the same parameter goes through <code>arguments(K)</code> and <code>directives(K)</code>, because a variable in a
+directive's argument is allowed in an operation and not in a type system definition or a default value.</li>
+<li><strong>An alias</strong> is <code>[ name &quot;:&quot; ] name</code>: the optional part is tried, and given back if no colon follows.</li>
+</ul>
+<h2>Checked how</h2>
+<p>No GraphQL library is installed here (the Python module <code>graphql</code> is absent; there is no node), so there is no
+oracle to ask, and the checks are the specification's own examples and a second reading of its lexical grammar.</p>
+<ul>
+<li><code>sh tests/graphql.sh</code>: the generated parser of every backend (C, Rust, Zig, Ada) must accept all 145 files of
+<code>tests/good</code> and refuse all 145 of <code>tests/bad</code>.  The good files are the specification's examples, the
+kitchen-sink documents of graphql-js (from memory), every extension form, and the names-that-are-keywords cases;
+each bad file is bad for one reason, stated in its first line, a comment (an unterminated string, <code>01</code>, <code>1.</code>,
+<code>.5</code>, a name that starts with a digit, <code>{}</code>, <code>fragment on on X</code>, a variable in a default value, <code>type A {}</code>,
+<code>extend type A</code>, <code>enum E { true }</code>, a description on an extension, ...).</li>
+<li><code>sh tests/graphql-diff.sh [N [SEED]]</code>: N random documents <code>{ a(x: S) }</code>, S a random run of the pieces that
+hit lexical corners (quotes, backslashes, <code>\u</code>, numbers with dots and exponents, names, commas, comments, a
+control character, the byte order mark), asked of the C parser and of <code>tests/graphql/oracle.py</code>, a hand-made
+scanner written from the specification's lexical grammar rather than from <code>graphql.hbnf</code>.  Run with 900,000
+documents over four seeds: no difference (about 9% of the documents are valid).</li>
+</ul>
+<p>Tree-sitter: <code>--backend=tree-sitter</code> writes a <code>grammar.js</code>, but there is no tree-sitter binary here to run it,
+so it is not tested.  Tree-sitter has no lookahead, so it leaves out <code>adds</code> and the <code>!&quot;{&quot;</code> of <code>block</code>: its grammar
+accepts an empty extension and does not refuse <code>type A { f }</code>.</p>
+</body>
+</html>

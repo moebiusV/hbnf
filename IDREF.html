@@ -1,0 +1,181 @@
+<!doctype html>
+<!-- generated from IDREF.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>id-ref serializer output for the hbnf C backend</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>id-ref serializer output for the hbnf C backend</h1>
+<p>Status: implemented as <code>hbnf --backend=c --idref</code>, which emits the `id,
+parent` fields, one typed wire record per object, a pre-order serializer
+(<code>serialize_tree</code>) and a decoder that rebuilds the pointer tree
+(<code>decode_&lt;rule&gt;</code>, strings in the arena, released by the root's <code>free_</code>).  The
+per-type <code>*_find()</code> helpers and the merge side described below are not
+generated.  The daemon claims below were verified against the OpenBSD source
+tree (bgpd, ospfd, relayd, httpd, ldpd; pfctl as the counter-example).</p>
+<h2>Why</h2>
+<p>The C backend today emits a <strong>pointer-linked</strong> tree: list members are <code>X_t *</code>
+head pointers, list nodes carry <code>struct X *next</code>. That is the right shape for a
+single process that owns the whole parse tree.</p>
+<p>It is the wrong shape for the privsep daemons the grammars target (bgpd, ospfd,
+relayd, httpd, smtpd, ldpd). Those hand the finished config to unprivileged
+children over imsg, and a pointer cannot cross that boundary. What actually
+crosses is a flat stream of objects that reference each other by <strong>id</strong>
+(<code>objid_t</code> / <code>rl_conf.id</code>), serialized by the parent and rebuilt by each child
+into its own pointer/queue-linked tree via per-type <code>*_find()</code> helpers.</p>
+<p>So an id-ref output should emit three things:</p>
+<ol>
+<li>flat objects that cross-reference by <strong>id</strong>, not pointer;</li>
+<li>a <strong>serializer</strong> that walks them into typed records;</li>
+<li>per-type <strong>find</strong> helpers and, optionally, the rebuild/merge side.</li>
+</ol>
+<h2>The two representations (keep them distinct)</h2>
+<ul>
+<li><strong>Wire form</strong> — what this mode emits and what crosses the channel: id-refs
+plus length-prefixed scalar blobs. No pointers, no <code>next</code> links.</li>
+<li><strong>Live form</strong> — what the consumer rebuilds: a conventional <code>TAILQ</code>/<code>RB</code>/
+pointer tree it allocates itself.</li>
+</ul>
+<p>This matches the daemons exactly: &quot;each process has its own separately
+allocated tree, and none of them is the parser's original.&quot; The generator emits
+the wire form; the live form is the consumer's, so it is optional output (the
+<code>config_get*</code>/<code>merge_*</code> helpers).</p>
+<h2>The id invariant</h2>
+<p>Assign ids in <strong>parse (document) order</strong>, monotonically. Then a list field
+<code>*( child )</code> needs no explicit id array: the children of object <em>i</em> are exactly
+the <code>child</code> objects with <code>parent == i</code>, in id order, which is document order.</p>
+<p>That is why the daemons store the parent id <strong>on the child</strong> (<code>relayid</code>,
+<code>tableid</code>, <code>rule_protoid</code>) instead of a child-id array on the parent: a child
+always references a <strong>lower</strong> id — its parent, already received — so
+deserialization is single-pass and forward-only. On arrival the child looks up
+its parent (present) and links itself into the parent's list.</p>
+<p>Caveat: this collapses if a struct has two list members of the same element
+type (<code>x = &quot;a&quot; *( e ) *( e )</code>), because the parent id alone cannot say which
+slot a child belongs to. In that case tag the child with a <code>slot</code> (which list
+member it is), or fall back to explicit per-list id arrays. None of the nine
+daemon grammars hit this today, but the emitter must handle it.</p>
+<h2>Generated shape (concrete)</h2>
+<p>Grammar:</p>
+<pre><code>document = *( node )
+node     = &quot;leaf&quot;  string
+         / &quot;group&quot; string &quot;{&quot; *( node ) &quot;}&quot;
+</code></pre>
+<p>Current pointer output (today's <code>Emit</code>):</p>
+<pre><code class="language-c">typedef struct node_s node_t;
+struct node_s     { node_t *next; int kind; char *value; node_t *children; };
+typedef struct document_s document_t;
+struct document_s { node_t *head; };
+</code></pre>
+<p>Proposed id-ref output — the flat in-memory table the parser produces (strings
+are still <code>char *</code> here; only the structural links become ids):</p>
+<pre><code class="language-c">typedef uint32_t objid_t;
+
+enum node_kind { NODE_LEAF = 0, NODE_GROUP = 1 };
+
+struct node {
+    objid_t       id;      /* parser-assigned, monotonic */
+    objid_t       parent;  /* 0 = top-level */
+    enum node_kind kind;
+    char         *value;
+    /* group children = nodes with parent == this id, in id order */
+};
+
+struct document {
+    objid_t      *top;     /* ids of top-level nodes, in order */
+    size_t        ntop;
+};
+
+/* flat ownership table: node[id-1], the serializer's input */
+struct config {
+    objid_t       next_id;
+    struct node **node;
+    size_t        nnode;
+};
+</code></pre>
+<p>The parser's allocation changes from <code>calloc + link next</code> to `calloc + assign
+id + record parent`; the recursive-descent parse logic is untouched.</p>
+<h2>The serializer</h2>
+<p>Walk the table in id order and emit one typed record per object: id + scalars +
+referenced ids, with string blobs length-prefixed. Ids serialize trivially; a
+<code>char *</code> does not.</p>
+<pre><code class="language-c">struct node_msg { objid_t id, parent; uint32_t kind, vlen; };
+
+void serialize_config(struct config *c,
+                      void (*emit)(uint32_t type, const void *p, size_t n))
+{
+    for (size_t i = 0; i &lt; c-&gt;nnode; i++) {
+        struct node   *n = c-&gt;node[i];
+        struct node_msg m = { n-&gt;id, n-&gt;parent, n-&gt;kind,
+                              (uint32_t)strlen(n-&gt;value) };
+        emit(IMSG_NODE, &amp;m, sizeof m);
+        emit(IMSG_DATA, n-&gt;value, m.vlen);
+    }
+    /* then the document's top-level id list */
+}
+</code></pre>
+<p>The framing (imsg header, TLV, or a length-prefixed buffer) is policy; hbnf
+should emit against an abstract <code>emit(type, ptr, len)</code> callback so the consumer
+maps it onto imsg, a socket, or a buffer without the generator being
+OpenBSD-bound.</p>
+<h2>The rebuild side</h2>
+<p>Per object type: a find helper and a <code>config_get*</code> that allocates, fills
+scalars, and links into the live tree by resolving the parent id:</p>
+<pre><code class="language-c">struct node *node_find(struct config *c, objid_t id) { return c-&gt;node[id-1]; }
+
+void config_getnode(struct config *c, const struct node_msg *m, const char *v)
+{
+    struct node *n = calloc(1, sizeof *n);
+    n-&gt;id = m-&gt;id; n-&gt;kind = m-&gt;kind; n-&gt;value = strndup(v, m-&gt;vlen);
+    if (m-&gt;parent) {                      /* parent already present (lower id) */
+        struct node *p = node_find(c, m-&gt;parent);
+        /* link n into p's child list — the live form */
+    } else {
+        /* append n-&gt;id to the document's top-level list */
+    }
+}
+</code></pre>
+<p>Reload = parse a fresh flat table, <code>config_set*</code> each object, and on the
+consumer side merge new ids, update existing, purge absent (bgpd's
+<code>merge_config</code>, relayd's <code>config_purge</code>/<code>config_setreset</code>).</p>
+<h2>Relationship to the existing modes</h2>
+<table>
+<thead>
+<tr><th>mode </th><th>shape </th><th>notes </th></tr>
+</thead>
+<tbody>
+<tr><td><code>--backend=c</code></td><td>pointer tree + inline parser </td><td>single-process </td></tr>
+<tr><td><code>--backend=c</code>, with <code>parse_config()</code> written in the grammar's epilogue (<code>runtime/hbnf_conf.h</code>) </td><td>pointer tree + the entry point the grammar defines </td><td>the OpenBSD <em>file</em> shape; still pointer-linked </td></tr>
+<tr><td><code>--backend=c --idref</code></td><td>id-refs + serializer + find/rebuild </td><td>for privsep consumers </td></tr>
+</tbody>
+</table>
+<p>The file/entry-point shape and <code>--idref</code> are orthogonal axes: the first is written
+in the grammar's prologue and epilogue, the second is the cross-reference
+representation. A privsep consumer wants both.</p>
+<h2>Open decisions</h2>
+<ol>
+<li><strong>Framing</strong> — abstract <code>emit()</code> callback (recommended) vs. bind to
+imsg/<code>&lt;sys/queue.h&gt;</code>.</li>
+<li><strong>id namespace</strong> — global monotonic (relayd's <code>objid_t</code>) vs. per-type (some
+daemons keep a separate peer/prefixset space). Global is simpler; per-type
+matches bgpd.</li>
+<li><strong>Find</strong> — linear scan (daemon-style, simplest) vs. generated RB/hash for
+large types; could be a flag.</li>
+<li><strong>Strings/arrays</strong> — ids replace only the structural pointers; scalar
+<code>char *</code>/byte blobs still need length-prefixing on the wire.</li>
+<li><strong>Table ownership</strong> — the flat <code>struct config</code> above vs. per-type arrays;
+the serializer only needs id order.</li>
+</ol>
+</body>
+</html>

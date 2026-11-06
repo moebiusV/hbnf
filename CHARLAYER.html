@@ -1,0 +1,196 @@
+<!doctype html>
+<!-- generated from CHARLAYER.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Character + binary layer — implementation plan (working note)</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>Character + binary layer — implementation plan (working note)</h1>
+<p>Status note: this is the plan as it stood in September 2026 and the log of what each increment did.  The
+fixed lexer it replaces is gone: a phrase rule now reads the text at a position and runs the scanner a rule
+names there, so the <code>TOK_&lt;name&gt;</code> token kinds, <code>char_dispatch</code> and the <code>templates/*_lexer.tmpl</code> files below
+no longer exist; the scanners (<code>scan_&lt;name&gt;</code>, <code>hbnf_decode_utf8</code> and its Ada, Rust and Zig forms) and the
+character rules they come from do.  The binary layer is built (<code>WIRE.md</code>) and <code>json.hbnf</code> exists
+(<code>corpus/json/</code>); <code>where</code> and UTF-16 are not built.</p>
+<p>Goal: move hbnf's lexer from a fixed token template to a **generated,
+character-level scanner**, so schemas can express JSON (and, later, binary
+protocols) directly. Deliverable: a <code>json.hbnf</code> grammar that round-trips.</p>
+<p>Scope (user directive, 2026-09-26):</p>
+<ul>
+<li>Character layer (char rules, named classes, <code>where</code>, maximal-munch lexer).</li>
+<li>UTF-8 code points as primitives (decode on input, match on code points).</li>
+<li>UTF-16 code points as primitives (<code>\uXXXX</code> surrogate pairs — what JSON needs).</li>
+<li>Binary/octet layer (bit fields, fixed-width whole-byte fields, <code>*u8</code>
+payloads) — <strong>defer sub-byte <code>name:N</code> bitfield packing</strong> (<code>version:4</code>,
+<code>flags:3</code>, <code>ihl:4</code>).</li>
+<li>Backend order: <strong>C first</strong> (flagship), then Ada, then Rust/Zig.</li>
+</ul>
+<h2>Status (2026-09-26)</h2>
+<ul>
+<li><strong>I0 — schema parser: DONE.</strong> Numeric terminals <code>%b/%d/%o/%u/%x</code> (binary/
+decimal/octal/hex + <code>%u</code> Unicode code point bounded to <code>10FFFF</code>), character
+literals <code>'c'</code> (with C escapes), and <code>-</code> ranges between any two code-point
+designators (<code>'a'-'c'</code> = <code>%x61-63</code>). Endpoint order-insensitive (normalized
+to <code>Lo&lt;=Hi</code>). Dotted concatenation (<code>%d13.10</code>) was rejected here at first;
+since RFCPLAN.md step 1 it reads as the code points in sequence. All parse
+into <code>Char_Range(Lo, Hi)</code> elements. <code>%</code> is the
+reader-macro dispatch prefix (what <code>#'</code> is to Lisp). Build clean; 9-daemon
+round-trip + server round-trip pass.</li>
+<li><strong><code>grammars/ascii.hbnf</code> — DONE.</strong> The named ASCII characters as a library
+grammar (no emitter code): <code>NUL</code>..<code>US</code> (C0 controls), <code>SP</code> <code>HT</code> <code>HTAB</code> <code>DEL</code>
+<code>DQUOTE</code>.  Every rule matches one code point. (Uppercase, the ASCII/RFC
+spelling — <em>not</em> lowercase as an earlier draft had it.)  <code>grammars/common.hbnf</code>
+includes it and adds the RFC 5234 App B.1 classes `DIGIT ALPHA ALNUM LOWER
+UPPER HEXDIG BIT CHAR CTL VCHAR OCTET WSP<code>, and </code>CRLF`.</li>
+<li><strong>I1 — C char lexer: DONE.</strong> <code>Is_Char_Rule</code> classifies a rule whose pattern
+is an alternation of <code>Char_Range</code>; such rules get a <code>TOK_&lt;name&gt;</code> token kind,
+a <code>scan_&lt;name&gt;</code> scanner, and a <code>char_dispatch</code> the lexer calls after scanner actions.
+The parser matches a char-rule reference with <code>expect_kind</code>. Verified
+end-to-end (<code>LF</code> lexes/parses; no regression).</li>
+<li><strong>I2 (UTF-8) — C char lexer matches code points: DONE.</strong> <code>hbnf_decode_utf8</code>
+(emitted only when some rule is char-level) decodes the code point under the
+cursor; single-char scanners return its byte count, multi-char sequences
+advance a running byte offset. <code>%u20AC</code> (€) and <code>%x20-10FFFF</code> now match
+multi-byte sequences. <code>tests/utf8-test.sh</code> covers single-char, sequence,
+control and invalid-UTF-8 cases. (<code>where</code> is still deferred.)</li>
+<li><strong>I5 (Ada) — char lexer ported to the Ada backend: DONE.</strong> <code>Atom_Cond</code> renders
+code-point conditions; <code>Decode_Utf8</code> + <code>Scan_&lt;name&gt;</code> + <code>Char_Dispatch</code> mirror
+the C scanners (maximal munch).  A char rule classifies as scalar
+<code>Unbounded_String</code>, and <code>Analyze</code>/<code>Is_Struct</code>/<code>Emit_Rule_Decl</code>/<code>Emit_Seq</code>/
+<code>Emit_Rule_Parser</code> handle it.  Verified end-to-end (`item = EURO | HIRAGANA |
+DIGIT<code> lexes </code>€あ7<code> as 3 tokens; </code>seq = EURO DIGIT<code> matches </code>€7` and rejects
+<code>€</code>/<code>7€</code>).  Rust and Zig then followed.</li>
+<li><strong>I6 (Rust) — char lexer ported to the Rust backend: DONE.</strong> <code>Atom_Cond</code> renders
+code-point conditions; <code>decode_utf8</code> + <code>scan_&lt;name&gt;</code> + <code>char_dispatch</code> mirror
+the C scanners (maximal munch).  A char rule is scalar <code>String</code>; <code>Analyze</code>/
+<code>Emit_Seq</code>/<code>Emit_Rule_Parser</code> handle it, and the <code>Kind</code> enum gains a variant
+per char rule.  Naming: <code>Rust_Snake</code> now lowercases (UPPERCASE char names like
+<code>EURO</code>/<code>DIGIT</code> become <code>parse_euro</code>/<code>scan_euro</code>), and <code>Atom_Cond</code> drops the
+useless <code>c &gt;= 0</code> lower bound that <code>-D unused-comparisons</code> rejects.  Verified
+end-to-end (the same grammars as Ada/C) plus <code>ascii.hbnf</code> compiles under
+<code>rustc -D warnings</code>.</li>
+<li><strong>I7 (Zig) — char lexer ported to the Zig backend: DONE.</strong> Mirrors the Rust
+port (<code>decode_utf8</code> + <code>scan_&lt;name&gt;</code> + <code>char_dispatch</code> maximal munch; a char
+rule is scalar <code>[]const u8</code>; <code>Analyze</code>/<code>Emit_Seq</code>/<code>Emit_Rule_Parser</code> plus the
+<code>Kind</code> enum).  <code>Zig_Snake</code> lowercases and <code>Atom_Cond</code> drops the <code>c &gt;= 0</code> bound,
+matching the Rust fixes; the Zig lexer template calls <code>char_dispatch</code> after
+<code>jet_dispatch</code>.  Verified end-to-end (single-char, sequence, control) +
+<code>ascii.hbnf</code> compiles + <code>portable.sh</code> passes all four backends.</li>
+</ul>
+<h2>Loose ends (next)</h2>
+<ol>
+<li><del>Dead field</del> <strong>DONE</strong> — char rules behave exactly like scanner actions (scanner +
+<code>parse_rule</code> matching the token and capturing the text).</li>
+<li><del>Lists of char rules</del> <strong>DONE</strong> — <code>1*DIGIT</code> flows through <code>parse_rule_&lt;name&gt;</code>.
+<del>Root/alias edge case</del> <strong>DONE</strong> — <code>parse_rule_&lt;name&gt;</code> is correct, and an
+all-scalar schema emits <code>NODE_NONE</code> so <code>node_kind_t</code> is never empty.</li>
+<li><del>Multi-char char rules</del> <strong>DONE</strong> — <code>CRLF = CR LF</code> compiles to a &gt;1-code-point
+scanner; <code>char_dispatch</code> does maximal-munch (longest match, ties by order).
+<code>Is_Char_Rule</code> moved to <code>HBNF_Compilable</code> (shared by C and Ada).</li>
+<li><del>UTF-8 / <code>%u</code> &gt; 0xFF</del> <strong>DONE</strong> — scanners match decoded UTF-8 code points.
+A <code>hbnf_decode_utf8</code> helper decodes the code point under the cursor; a
+single-char scanner returns its byte count, a multi-char sequence advances
+a running byte offset; maximal munch is unchanged.  <code>%u20AC</code> (€) and
+<code>%x20-10FFFF</code> match multi-byte sequences.  This exposed a classification
+bug, now fixed: <code>Is_Char_Rule</code> rejects a repeated/optional element, so a
+list rule (<code>doc = 1*item</code>) is no longer mis-read as a char rule.  The
+stale <code>tests/syntax.sh</code> refusal (<code>%x41-5A</code>) became a <code>%d13.10</code> refusal.</li>
+<li><del>Ada backend</del> <strong>DONE</strong> — the char lexer is ported to Ada (<code>Decode_Utf8</code> +
+<code>Scan_&lt;name&gt;</code> + <code>Char_Dispatch</code> maximal munch; char rules are scalar
+<code>Unbounded_String</code>, handled by <code>Analyze</code>/<code>Is_Struct</code>/<code>Emit_Seq</code>/
+<code>Emit_Rule_Parser</code>).  <del>Rust and Zig</del> <strong>DONE</strong> — ported with the same
+shape (<code>decode_utf8</code>/<code>scan_&lt;name&gt;</code>/<code>char_dispatch</code>; scalar <code>String</code> in Rust,
+<code>[]const u8</code> in Zig), plus the naming fixes <code>Rust_Snake</code>/<code>Zig_Snake</code>
+lowercasing and the <code>c &gt;= 0</code> bound dropped from <code>Atom_Cond</code>.  All four
+backends now pass <code>portable.sh</code> and <code>ascii.hbnf</code>.</li>
+</ol>
+<h2>Remaining increments</h2>
+<ul>
+<li><strong>I2 — <code>where</code></strong> refinements in the C lexer (UTF-8 code-point decode already
+landed above).</li>
+<li><strong>I3 — <code>json.hbnf</code></strong> flagship + round-trip test: <strong>DONE</strong> (<code>corpus/json/</code>, <code>tests/json-diff.sh</code>); <code>\uXXXX</code> via <code>utf16</code> is not built.</li>
+<li><strong>I4 — binary/octet layer</strong> (bit fields, fixed-width whole-byte fields, <code>*u8</code>): <strong>DONE</strong> in all four backends (<code>WIRE.md</code>).</li>
+<li><strong>I5 — Rust/Zig backends</strong> — <del>port the char lexer</del> <strong>DONE</strong> (Ada, Rust, Zig
+all ported).</li>
+</ul>
+<h2>Design decisions (settled)</h2>
+<ol>
+<li><strong>Numeric terminals / ranges</strong> — <code>%b</code>/<code>%d</code>/<code>%o</code>/<code>%x</code> + <code>%u</code> (Unicode-bounded),
+<code>-</code> ranges, order-insensitive, dotted concatenation read as a sequence.
+See I0.</li>
+<li><strong>Character literals</strong> — <code>'a'</code> is a code point (C escapes), ranges with <code>-</code>.</li>
+<li><strong>Named chars / classes as grammar, not code</strong> — <code>common.hbnf</code> (which
+includes <code>ascii.hbnf</code>) defines them as ordinary rules; the emitters stay
+generic.</li>
+<li><strong><code>where</code></strong> — <code>u16 = int where (v &lt;= 65535)</code>; deferred (I2).  The predicate
+is over the matched <em>value</em> <code>v</code>, not the text, so <code>where</code> sits on the typed
+scalar layer (<code>u8</code>..<code>u64</code>) above the bits.  It fills the <em>value-constraint</em>
+half of a scanner action — the reason <code>ipv4</code>'s octet (0..255) is hand-written — but
+never the <em>lexical-shape</em> half (<code>ipv6</code>'s &quot;hex ∩ colon&quot;, <code>community</code>'s
+lookahead), which has no char-rule spelling and stays a scanner action.  The predicate
+language must stay a closed, schema-checkable subset (comparisons, ranges,
+<code>&amp;</code>/<code>|</code>; no calls or side effects) so it emits to all four backends.</li>
+<li><strong>UTF-8 / UTF-16</strong> — code-point primitives; deferred (I2).  Encoding is a
+<em>stream-level</em> property (a stream is UTF-8 <strong>or</strong> UTF-16, one or the other),
+not a per-terminal one, so <code>%u</code> stays &quot;code point, encoding-agnostic&quot; and a
+<code>%uu</code> (UTF-16 unit) distinction is deferred — revisit only if a syntax ever
+intermingles the two encodings in one stream.  Code points are stored 32-bit
+(<code>Natural</code> = 32-bit already; the scanner is byte-level until I2).</li>
+<li><strong>Binary</strong> — whole-byte fields, <code>*u8</code> and sub-byte bit fields (<code>name:N</code>), built; see <code>WIRE.md</code>.</li>
+<li><strong>Char rules are tokens, expanded to DNF</strong> — a char rule's pattern (a
+sequence/alternation of code-point atoms, string literals and Name
+references) is expanded to disjunctive normal form by <code>Char_DNF</code>: a list of
+branches, each a sequence of <strong>atoms</strong> — one code point, or (RFCPLAN.md
+step 4.1) a trailing repetition <code>n*m</code> of a character class.  A Name
+reference is inlined (its DNF distributed over the sequence position), so
+<code>A | B C</code> becomes two branches <code>[A]</code> and <code>[B, C]</code>, and <code>CRLF CRLF</code> (where
+<code>CRLF = CR LF</code>) becomes the single branch <code>[CR, LF, CR, LF]</code>.  A literal
+expands to one code point per character.  The scanner matches the longest
+branch — maximal munch — not a flattened <code>or</code> of single code points.</li>
+</ol>
+<h2>Files touched (verified)</h2>
+<ul>
+<li><code>hbnf_grammar.ads</code> — <code>Element_Kind</code> + <code>Char_Range</code> (Lo, Hi); <code>Element</code> variant.</li>
+<li><code>hbnf_grammar.adb</code> — <code>Lex</code> (<code>'</code>/<code>-</code>/<code>%</code> tokens), <code>Parse_Atom</code> (<code>%b%d%o%u%x</code>,
+<code>'c'</code>, <code>-</code> ranges), <code>Same_Element</code>.</li>
+<li><code>hbnf_compilable.{ads,adb}</code> — <code>Is_Char_Rule</code> (shared classifier, used by the C
+and Ada backends) + <code>Walk</code>/<code>El_Nullable</code>/<code>Same</code>/<code>Image</code> accept Char_Range.</li>
+<li><code>hbnf_c.adb</code> — token enum, <code>hbnf_decode_utf8</code>, <code>scan_*</code> + <code>char_dispatch</code>,
+<code>Emit_Seq</code> char-rule branch, <code>First_Elem</code>/<code>Collect</code> Char_Range arms.</li>
+<li><code>hbnf_ada.adb</code> — full char-lexer port (<code>Atom_Cond</code>, <code>Decode_Utf8</code>, <code>Scan_*</code>,
+<code>Char_Dispatch</code>; a char rule is scalar <code>Unbounded_String</code>).</li>
+<li><code>hbnf_rust.adb</code> — full char-lexer port (<code>Atom_Cond</code>, <code>decode_utf8</code>, <code>scan_*</code>,
+<code>char_dispatch</code>; a char rule is scalar <code>String</code>; <code>Rust_Snake</code> lowercases).</li>
+<li><code>hbnf_zig.adb</code> — full char-lexer port (<code>Atom_Cond</code>, <code>decode_utf8</code>, <code>scan_*</code>,
+<code>char_dispatch</code>; a char rule is scalar <code>[]const u8</code>; <code>Zig_Snake</code> lowercases).</li>
+<li><code>grammars/ascii.hbnf</code> — the named ASCII characters (C0 controls, blanks,
+<code>DEL</code>, <code>DQUOTE</code>); <code>grammars/common.hbnf</code> — the classes and <code>CRLF</code>.</li>
+<li><code>tests/utf8-test.sh</code> — single-char, sequence, control and invalid-UTF-8 cases
+(run inside the toolchain image).</li>
+<li><code>tests/syntax.sh</code> — the <code>%x41-5A</code> refusal became <code>%d13.10</code> (numeric terminals
+are supported now).</li>
+</ul>
+<h2>Verification</h2>
+<ul>
+<li>Build: `docker run --rm -v &quot;$PWD&quot;:/work -w /work ada-toolchain:edge gnatmake
+-q -gnat2022 -I. -Itests hbnf.adb -o /tmp/hbnf` (host has gcc, not
+gnat). Then <code>cp /tmp/hbnf /work/hbnf.new</code>.</li>
+<li>C compile/run smoke: generate with <code>hbnf.new … --backend=c</code>, `gcc
+-std=gnu11 -D_GNU_SOURCE`, run a small main.</li>
+<li>Regression: <code>sh tests/daemons.sh</code> (9 daemon grammars) and the <code>server.hbnf</code>
+round-trip via <code>hbnf.new … --backend=c</code>.</li>
+</ul>
+</body>
+</html>

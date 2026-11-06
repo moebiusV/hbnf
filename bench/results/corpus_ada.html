@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- generated from bench/results/corpus_ada.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bench/results/corpus_ada.md</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<table>
+<thead>
+<tr><th>corpus </th><th>input </th><th style="text-align:right">parsed </th><th style="text-align:right">time before (exceptions) </th><th style="text-align:right">time now </th><th style="text-align:right">faster </th><th style="text-align:right">memory </th></tr>
+</thead>
+<tbody>
+<tr><td>json </td><td>26 files x 300 </td><td style="text-align:right">0.2 MB </td><td style="text-align:right">1070 ms </td><td style="text-align:right">79 ms </td><td style="text-align:right">13.52x </td><td style="text-align:right">23 MB </td></tr>
+<tr><td>mustache </td><td>25 files x 300 </td><td style="text-align:right">0.1 MB </td><td style="text-align:right">580 ms </td><td style="text-align:right">25 ms </td><td style="text-align:right">22.99x </td><td style="text-align:right">9 MB </td></tr>
+<tr><td>httpd </td><td>1 files x 200 </td><td style="text-align:right">0.2 MB </td><td style="text-align:right">1290 ms </td><td style="text-align:right">32 ms </td><td style="text-align:right">40.66x </td><td style="text-align:right">7 MB </td></tr>
+<tr><td>relayd </td><td>2 files x 200 </td><td style="text-align:right">0.2 MB </td><td style="text-align:right">387 ms </td><td style="text-align:right">17 ms </td><td style="text-align:right">22.20x </td><td style="text-align:right">6 MB </td></tr>
+</tbody>
+</table>
+<p><em>Measured 2026-10-24 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.84 on the host, hbnf 4694beb; gcc 15.2.0, byacc 20260126, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12 2026-07-21; best of 5 runs, one process per run, <code>gcc -O2</code>.</em></p>
+</body>
+</html>

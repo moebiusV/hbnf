@@ -1,0 +1,1011 @@
+<!doctype html>
+<!-- generated from HISTORY.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HyperBNF: Return of the Metacompiler</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>HyperBNF: Return of the Metacompiler</h1>
+<p><em>A short history of the parser generator.</em></p>
+<p>© 2026 David Walther · 1 October 2026</p>
+<p>Named here, by year of first contribution: Emil Post (1943) · Noam Chomsky (1956) · John Backus (1959) · Peter Naur (1960) · John McCarthy (1960) · Edgar Irons (1961) · R. A. Brooker (1963) · D. Morris (1963) · Christopher Strachey (1963) · Donald Knuth (1964) · Dewey Val Schorre (1964) · Robert McClure (1965) · Martin Richards (1966) · Douglas McIlroy (1968) · Ken Thompson (1969) · Stephen Johnson (1971) · Al Aho (1971) · Dennis Ritchie (1972) · David Crocker (1982) · Robert Corbett (1985) · Richard Stallman (1987) · Michael Tiemann (1987) · Leonard Tower (1987) · Paul Rubin (1987) · John Gilmore (1987) · Keith Bostic (1987) · Mike Karels (1987) · Terence Parr (1988) · Isaac Mozeson (1989) · Jeff Fox (1996) · Bryan Ford (2002) · Anders Magnusson (2002) · Joseph Myers (2004) · Max Brunsfeld (2014).</p>
+<p>A parser generator reads a grammar — a precise description of what a language
+may say — and writes the program that recognizes exactly that. It matters
+because every compiler, every config-file reader, every network protocol has to
+parse text, and a parser written by hand is slow, error-prone, and thrown away
+whenever the language grows.</p>
+<p>Before any of this was engineering, it was linguistics. Noam Chomsky asked how
+a person produces and understands sentences never spoken before, and answered:
+with a grammar — a finite set of rules that generates the infinite set of legal
+sentences. Generative grammar turned language from examples into a formal
+object. It gave computing the Chomsky hierarchy, a ladder from regular to
+context-free to context-sensitive, and every parser in this history sits on one
+rung of that ladder, almost always the context-free one. The idea that a
+grammar is a machine for generating strings is Chomsky's; everything that
+follows is the story of people building that machine.</p>
+<p>A grammar has two readers: the person and the machine. Every system in this
+history leans toward one of them — easier for a person to read, or easier for a
+machine to turn into code. The aim underneath never changes: get the writer's
+intention into the machine without losing it, and make plain to the next reader
+what the machine was meant to do. One is a person talking to a machine. The
+other is a person talking to a person.</p>
+<p>A language used to be described the way a recipe is: prose and examples. Two
+implementors reading the same manual could ship two different languages. That
+stopped in 1959, when John Backus needed to describe ALGOL 58 well enough that
+implementations would not silently diverge. He took the idea of production
+rules from Emil Post and published the syntax as metalinguistic formulas. The
+notation was rough — a colon, the word &quot;or&quot;, brackets that did not quite close —
+and it said nothing about meaning, only about form. It was still the break: a
+finite set of rewrite rules that generated exactly the legal strings.</p>
+<p>Peter Naur made it usable. Editing the ALGOL 60 Report, he kept Backus's idea
+and fixed the marks: angle brackets for non-terminals, <code>::=</code> for definition,
+<code>|</code> for choice. Backus had written a paper; Naur had written the reference
+grammar of a real language, with recursion and block structure inside the same
+formalism. Donald Knuth insisted it be called Backus–Naur Form and not Backus
+Normal Form, because it is not a normal form. The name stuck, and the notation
+became the default way to write a language down.</p>
+<p><em>Sources:</em> Chomsky, <em>Syntactic Structures</em> (1957); Post, &quot;Formal reductions of the general combinatorial decision problem&quot; (1943); Backus, &quot;The syntax and semantics of the proposed international algebraic language&quot; (1959); Naur (ed.), &quot;Revised Report on the Algorithmic Language ALGOL 60&quot; (1963); <a href="https://doi.org/10.1016/S0019-9958(65">Knuth, &quot;On the translation of languages from left to right&quot; (1965)</a>90426-2).</p>
+<h2>The first compiler compilers</h2>
+<p>BNF was meant to be read, and it turned out to be nearly executable. Within a
+year of the ALGOL 60 Report, Edgar Irons published *A Syntax-Directed Compiler
+for ALGOL 60* (1961): the parser was driven straight off the BNF Naur had just
+written, the grammar supplying the recognition tables as a program supplies its
+data. The notation was written for people; it happened to run.</p>
+<p>The name &quot;compiler compiler&quot; came next, from R. A. Brooker and D. Morris at
+Manchester (1963). Their Compiler Compiler read a phrase-structure description
+of a language — BNF with the semantics hung off the rules — and generated a
+machine-code compiler for the Atlas. It was a working tool, not a toy; it built
+compilers for Algol and Atlas Autocode.</p>
+<p>A program describing itself came earlier still. John McCarthy's Lisp paper
+(1960) defined the language with a metacircular evaluator — <code>eval</code> written in
+Lisp, a self-interpreter — four years before META II. McCarthy meant it &quot;for
+reading, not for computing&quot;; Steve Russell had to run it for it to become a
+language.</p>
+<p>Running it is where the half-page stops being a definition. Kragen Sitaker,
+who went on to write StoneKnifeForth, translated the Lisp 1.5 metacircular
+interpreter into a low-level language in 2007 and found that about half the
+code went to things the metacircular interpreter says nothing about: memory
+management, argument evaluation order, laziness versus strictness, the rest of
+control flow, the representation and comparison of atoms, the representation
+of pairs, parsing, type checking and type testing, recursive call and return,
+tail calls, and lexical versus dynamic scoping. The gap is not an oversight in
+McCarthy's <code>eval</code>; it is what self-definition is. Reynolds, revisiting his own
+definitional interpreters in 1998, put it plainly: a metacircular interpreter
+&quot;is not really a definition, since it is trivial when the defining language is
+understood, and otherwise it is ambiguous&quot; — his Interpreters I and II say
+nothing about order of application. He quotes Jim Morris going further: &quot;The
+activity of defining features in terms of themselves is highly suspect,
+especially when they are as subtle as functional objects. It is a fad that
+should be debunked.&quot; Reynolds then grants what the thing is good for: he
+remembers McCarthy's definition as a great help when he first learned Lisp,
+&quot;but it was not the sole support of my understanding.&quot;</p>
+<p>Sitaker's conclusion is the one that bears on a compiler compiler: a
+metacircular <em>compiler</em> forces you to confront that complexity, because it has
+to emit the memory management and the calling convention rather than inherit
+them, and it is self-sustaining in a way an interpreter is not — once it runs,
+features added to the language are available to the compiler itself. That is
+the line this story follows from here: not a description that reads well, but
+one that has to produce the code.</p>
+<p>Then the metacompilers. Dewey Val Schorre's META II (1964) wrote a language as
+&quot;syntax equations&quot; in the shape of BNF and compiled each equation to the
+subroutine that recognized it; META II compiled itself, the first documented
+metacompiler.</p>
+<p>Its notation is worth reading closely, because most of it is still in use.
+Schorre dropped Naur's angle brackets and <code>::=</code> for ordinary algebraic
+punctuation — a bare <code>=</code> between the name and its definition, <code>/</code> between
+alternatives, each equation closed by a terminator — and added the one
+operator BNF lacked. A top-down parser cannot take BNF's left-recursive
+<code>&lt;list&gt; ::= &lt;item&gt; | &lt;list&gt; &lt;item&gt;</code> without running off its own stack, so
+META II wrote repetition out as an operator instead: <code>$</code> for &quot;zero or
+more&quot;, with <code>( )</code> to group what it repeated. Four built-in recognizers
+covered the token level — <code>.ID</code>, <code>.NUMBER</code>, <code>.STRING</code>, and <code>.EMPTY</code> for a
+production that matches nothing — and <code>.OUT('…')</code> emitted a line of target
+assembly from inside the equation, with <code>*</code> standing for whatever token had
+just matched. The whole of an expression translator is one line:</p>
+<pre><code>EXPR = TERM $( '+' TERM .OUT('ADD') / '-' TERM .OUT('SUB') );
+</code></pre>
+<p>Read that and you are reading EBNF a decade early: the <code>=</code>, the explicit
+repetition operator in place of recursion, the parenthesised group. Wirth's
+EBNF kept the first two and spelled the repetition <code>{ }</code>; ABNF kept the <code>=</code>
+and the <code>/</code>, and wrote repetition as a prefix count. The inheritance is the
+<em>decision</em> rather than the character — that a grammar for a top-down parser
+says &quot;repeat this&quot; instead of naming itself again — and every notation since
+has made it, hbnf included.</p>
+<p>What did not survive into the parser generators is the part that made META
+II a compiler-compiler rather than one of them: output directives living
+inside the syntax. Yacc put its actions at the end of a production, ANTLR
+and its successors built a tree and walked it afterwards, and hbnf did the
+same — a <code>%action{ }</code> block had to end its rule, so there was nowhere to put
+<code>.OUT</code> where META II puts it. That is being repaired rather than admired:
+the block positions are a notation decision in <code>RFCPLAN.md</code> step 12, and
+<code>%emit{ }</code> — the generative sibling of <code>%scan{ }</code> and <code>%action{ }</code> — is the
+<code>.OUT</code> directive sixty years on, one level up, writing a target language
+instead of one machine's assembly. Schorre's loop closed because the
+directives were in the grammar. Whether hbnf's closes depends on the same
+thing.</p>
+<p>Robert McClure's TMG (1965) did the same, at Texas Instruments; McIlroy
+ported it to Unix, and Ken Thompson used it around 1970 to write B — the
+language C grew out of — in place of the FORTRAN compiler he had set out to
+build.</p>
+<p>None of them became the way compilers were written. Each was a demonstration
+tied to one machine, with a notation of its own and no settled algorithm
+underneath: the grammar drove the parser, but how was still open. They proved
+the idea. What was missing was a reliable way to do it.</p>
+<p><em>Sources:</em> <a href="https://doi.org/10.1145/367177.367199">McCarthy, &quot;Recursive Functions of Symbolic Expressions and Their Computation by Machine&quot; (1960)</a> · <a href="http://lists.canonical.org/pipermail/kragen-hacks/2007-September/000464.html">Sitaker, &quot;A metacircular Lisp interpreter in a low-level language&quot; (kragen-hacks, September 2007)</a> · <a href="http://www.brics.dk/~hosc/local/HOSC-11-4-pp355-361.pdf">Reynolds, &quot;Definitional Interpreters Revisited&quot;, <em>Higher-Order and Symbolic Computation</em> 11, 355–361 (1998)</a> · <a href="https://doi.org/10.1145/366062.366083">Irons, &quot;A Syntax-Directed Compiler for ALGOL 60&quot; (1961)</a> · <a href="https://curation.cs.manchester.ac.uk/atlas/docs/ccPaperDL.pdf">Brooker, MacCallum, Morris &amp; Rohl, &quot;The Compiler Compiler&quot; (1963)</a> · <a href="https://dl.acm.org/doi/10.1145/800257.808896">Schorre, &quot;META II: A Syntax-Oriented Compiler Writing Language&quot;, <em>Proc. ACM SYMSAM</em> (1964)</a> (<a href="https://ibm-1401.info/Meta-II-schorre.pdf">scan</a>) · McClure, TMG (1965).</p>
+<h2>Irons, IMP and the two-level grammar</h2>
+<p>Two ideas run through the early years and they pull in opposite directions: make the
+grammar <em>run</em>, and make the grammar <em>say more</em>.</p>
+<p><strong>Make it run.</strong> Irons's 1961 compiler (E. T. Irons, &quot;A Syntax Directed Compiler for ALGOL 60&quot;,
+<em>Communications of the ACM</em> 4(1), January 1961) drove the parse straight off Naur's BNF.
+ALGOL 60's syntax allowed more than one parse for some programs, and Irons's answer was to
+add mechanisms that reject the ones that are semantically wrong (Knuth's account of the
+history of attribute grammars says as much). The grammar and the rule for
+choosing between its parses were one tool from the start. IMP (Irons; the dates
+differ by source, from the late 1960s into the 1970s) took the next step: the grammar is the
+extension mechanism. A program adds <em>syntax statements</em> to the language it is being compiled
+in, <code>&lt;EXP&gt; ::= ABS ( &lt;A&gt; ) ::= &quot;A&lt;0=&gt;-A ELSE A&quot;</code>, and the parser, which &quot;allows ambiguity in
+the syntax&quot;, settles it by rule (the 1973 Yale <em>IMP72 Reference Manual</em>, section 2.3.4): a
+terminal beats an identifier, then the reading that uses the fewest different syntax rules,
+then an arbitrary choice. No reserved words, one grammar for the language and for what a
+program adds to it. <code>METACOMPILERS.md</code> has the comparison with META II and SNOBOL4.</p>
+<p><strong>Make it say more.</strong> BNF cannot say that a name must be declared before it is used, or that
+the two sides of an assignment have the same type. Adriaan van Wijngaarden's answer, for the
+ALGOL 68 Report, was a grammar of grammars: a first level of <em>metarules</em> defining sets of
+strings (<code>MODE :: int ; real ; ref to MODE</code>), and a second of <em>hyperrules</em> whose names
+contain them (<code>MODE list : MODE, comma symbol, MODE list</code>), so that every consistent
+substitution of a metanotion gives an ordinary rule and one hyperrule stands for a family,
+usually an infinite one. With unrestricted metanotions the formalism is Turing complete.</p>
+<p><strong>What stopped it.</strong> By the accounts in Lindsey's <em>A History of ALGOL 68</em> and Koster's
+<em>The Making of ALGOL 68</em>, the first thing was the Report itself: from the beginning,
+prominent members of the working group complained that two-level grammars were too complicated
+to understand, and the 1968 Report was called unreadable (the 1973 Revised Report is a
+much more readable grammar, and admits in a famous sentence that its method may be difficult
+for the uninitiated reader). The second was that the formalism was too strong to be used:
+in its full generality it cannot be the input of a parser generator, so the groups that built
+compilers rewrote the grammar by hand into a context-free one and checked the rest in the
+compiler, and the Report stopped being the specification anyone actually ran. The third was
+the language: large, orthogonal, with coercions and modes that made it slow to implement while
+Pascal and C were simple enough to compile in one pass on a small machine. The grammar did not
+kill ALGOL 68 alone, and the historians say that &quot;too big&quot; and &quot;unreadable&quot; are oversimplified;
+but a grammar nobody could read and no tool could run is a poor basis for a language that has to
+spread. (This paragraph is a summary of those two histories and Wikipedia's article on van
+Wijngaarden grammars, not of the Report; check them before quoting it.)</p>
+<p><em>Sources:</em> <a href="https://doi.org/10.1145/366862.366872">Irons, &quot;A Syntax Directed Compiler for ALGOL 60&quot;, CACM 4(1), 1961</a>;
+<a href="https://www.cs.tufts.edu/~nr/cs257/archive/don-knuth/history-of-attribute-grammars.pdf">Knuth, &quot;The genesis of attribute grammars&quot;</a>;
+<a href="https://algol68-lang.org/docs/lindsey-history-of-algol68.pdf">Lindsey, &quot;A history of ALGOL 68&quot;</a>;
+<a href="https://algol68-lang.org/docs/koster-making-of-algol68.pdf">Koster, &quot;The making of ALGOL 68&quot;</a>;
+<a href="https://en.wikipedia.org/wiki/Van_Wijngaarden_grammar">Van Wijngaarden grammar (Wikipedia)</a>;
+Bilofsky, <em>IMP72 Reference Manual</em>, Yale, 1973 (see <code>METACOMPILERS.md</code>).</p>
+<p><strong>What hbnf takes from the line.</strong></p>
+<ul>
+<li>From Irons: the grammar and the choice rule are one document. IMP72's three-step tie-break is
+decision 14's order (a failing test removes a reading, a terminal beats an expression, the
+fewest rules wins, and where IMP72 says &quot;arbitrary&quot; hbnf says &quot;the first written&quot;). And an
+extensible, ambiguous grammar is fine if the ambiguity is <em>detected and reported</em> rather than
+silently resolved.</li>
+<li>From van Wijngaarden: the idea that one rule can stand for a family (<code>list(X) := X *( &quot;,&quot; X )</code>),
+and that two places in a rule can be made to agree (the closing tag equals the opening tag, the
+here-document terminator, a raw string's delimiter).</li>
+<li>From both histories, what not to copy: a notation that only its author can read, and a power
+nobody can bound.</li>
+</ul>
+<p><strong>How hbnf makes the two-level grammar work for real.</strong> By keeping the part that is decidable
+and cheap, and handing the rest to tools that already exist (<code>METACOMPILERS.md</code>, section on
+W-grammars, has the argument; <code>RFCPLAN.md</code> has the decisions):</p>
+<ul>
+<li><em>Parameterised rules over a finite set</em> are expanded when the parser is generated, so a
+hyperrule becomes the ordinary rules it stands for, and the parser is the one you would have
+written by hand. No runtime cost, no new parsing algorithm, no undecidability. Domains are
+checked when the grammar is read, so a use that can never match is an error with a message.
+<em>Built (<code>tests/params.sh</code>): see &quot;Why a two-level grammar can fail to end&quot; below.</em></li>
+<li><em>Consistent substitution</em> becomes a back-reference: <code>name as tag</code> keeps the text a name
+matched and <code>$tag</code> is that text again, in the same sequence. It is a slice of the input
+(two integers in the generated function, no copy), so a backtrack restores it with the
+position and nesting cannot mix two of them up. Mustache's closing tag, XML's, a here-document's
+terminator are the same rule. <em>Built, in C (<code>tests/backref.sh</code>, <code>corpus/mustache</code>).</em></li>
+<li><em>What a finite domain cannot hold</em>, the names declared so far, is a <strong>context</strong> (decision 13: a
+persistent set, <code>? types</code>, <code>%bind</code>, <code>%scope</code>, <code>%where</code>), kept local to the rule it affects.
+<em>Built, in C.</em></li>
+<li><em>Ambiguity</em> is handled by local forks (decision 14, <code>--forks</code>) and by a lookahead test
+(<code>!x</code>, <code>&amp;x</code>). <em>Built, in C, in their local form.</em></li>
+<li><em>Types and modes</em> are checked by a pass over the tree, not by the grammar. A parser that has
+to be a type checker is why the Report could not be run.</li>
+</ul>
+<p>The ALGOL 68 grammar will be written in this hbnf and not in the Report's literal two levels
+(the user's decision, 2026-10-18). ALGOL 60 came first as the proving ground, and it has been
+checked against the Report's own BNF with an independent recognizer.</p>
+<h3>Why a two-level grammar can fail to end, and why it almost never does</h3>
+<p>A metanotion is a set of strings defined by a context-free grammar of its own, and a hyperrule
+name contains metanotions, so a hyperrule is a template for every rule you get by putting a
+string in each. Reading a sentence means choosing those strings. Whether a choice exists is
+where the trouble is, because the strings are written into rule <em>names</em>, not into the text being
+read, and nothing about the finite input bounds them.</p>
+<p>The smallest example:</p>
+<pre><code>A :: x ; A x.             (A is any run of x's: an infinite set)
+A word : A x word.        (a hyperrule: &quot;A word&quot; is &quot;A x word&quot;)
+</code></pre>
+<p>Instantiate <code>A</code> with <code>x</code> and the rule is <code>x word : x x word</code>; with <code>xx</code>, <code>xx word : xxx word</code>.
+Every instance is a rule whose only right-hand side is another instance with a longer name, and no
+terminal is consumed on the way. A recogniser asked whether the input holds an <code>x word</code> is sent to
+<code>xx word</code>, then to <code>xxx word</code>, and so on, though the input is a few characters long. It is left
+recursion, with the difference that every step is a different rule, so there is no repeated state to
+catch. In general, consistent substitution lets a grammar copy a string and compare it with another,
+and that is enough to encode a Turing machine or Post's correspondence problem. Whether a given
+sentence is derivable is undecidable, so no recogniser halts on every grammar and every input.</p>
+<p><strong>Can the cycle be detected?</strong> Often, yes, and tracking which hyperrule is being instantiated is the
+way. There are three cases and they differ.</p>
+<ul>
+<li><em>The same instance again.</em> Remembering the instances already made ends it exactly. When every
+parameter ranges over a finite set the number of instances is finite, so every chain either
+repeats an instance or stops (the pigeonhole principle), and the check is complete.</li>
+<li><em>The same hyperrule with a strictly bigger argument</em>, as above. A static check follows the chain of
+instances, sees each argument larger than the last with nothing consumed between, and reports it.
+This is the termination analysis of term-rewriting systems and Prolog programs, and it is sound but
+not complete: a rule whose argument shrinks for a while and then grows, or grows only after a detour
+through other rules, can slip through. No fixed check catches every non-terminating grammar and
+accepts every terminating one; that is the halting problem.</li>
+<li><em>The same instance at the same input position, while parsing.</em> Remembering the pair (instance,
+position) detects it exactly, as it does left recursion in a packrat parser.</li>
+</ul>
+<p><strong>Does laziness help?</strong> Partly, and it is how the practical parsers cope. Instantiate a metanotion
+only when the parser needs it at the current position, memoise by (instance, position), and the
+work is bounded by the input: when the input can no longer match, nothing more is made. The infinite
+family <code>ref to ref to ... int</code> is in principle unbounded but any program uses finitely many of its
+members. What laziness does not do is stop the cycle above, because there the demand comes from the
+rule itself and no input has been matched for it to run out of. The same remedy applies as for left
+recursion: require progress, and refuse the rule that makes none.</p>
+<p><strong>How hbnf spells them.</strong> As the Report does, with the operators told apart: <code>=</code> defines a rule,
+<code>:=</code> a rule with parameters (a hyperrule, the Report's <code>:</code>) and <code>::=</code> a domain (a metarule, the
+Report's <code>::</code>), so <code>level ::= 1..17</code> and <code>binary(N in level) := binary(N+1) *( op(N) binary(N+1) )</code>
+read as the Report's two levels do. A metarule is a plain context-free production, over the strings
+that go into names instead of the sentences of the language, and here it is a finite set of numbers or
+words (a domain that names itself would be the infinite family, and is refused). A file in BNF, where
+<code>::=</code> or <code>:=</code> defines an ordinary rule, names its notation with <code>dialect bnf</code>; in HyperBNF's own notation
+a BNF rule read as a metarule is refused with the line to add.</p>
+<p><strong>What hbnf does.</strong></p>
+<ul>
+<li>Parameters range over a <em>finite</em> set (a number in <code>1..17</code>, one of a list of words, or a rule
+name), so the family is finite and is expanded into ordinary rules when the grammar is read: the
+parser is the one you would have written by hand, with no runtime cost and no new algorithm.</li>
+<li>The <em>domain is checked then</em>: a use outside it (<code>binary(18)</code> when <code>N</code> is <code>1..17</code>) is an error that
+names the chain of instances that led to it, not a parse that fails on some input.</li>
+<li>A chain that re-enters a hyperrule with a <em>bigger argument</em> is refused at once, with the chain,
+instead of running to a limit (there is a limit as well, at 20,000 instances).</li>
+<li>Where the family is open, as Algol 68's modes are, the plan is the lazy, input-driven instantiation
+above, with a no-progress check; it needs support in the parser and is the Algol 68 step's work.</li>
+<li>Consistent substitution is the back-reference (<code>as</code>, <code>$K</code>), and what a finite domain cannot
+hold, the names declared so far, is the context of decision 13. Neither needs the infinite family.</li>
+</ul>
+<p><strong>Why real grammars rarely meet it.</strong> A grammar that is written to be read, which the Report's is and
+every grammar a programmer writes is, has metanotions that stand for the finite things a language has:
+the modes a program uses, the kinds of operand, the precedence levels. Its recursion consumes input at
+each step, as any grammar's must if a parser is to run. The non-terminating hyperrule is a construction
+made on purpose, to show that the formalism is as strong as a Turing machine; none of the working
+descriptions or implementations (Koster's affix grammars and the CDL compiler description language, the
+Prolog definite clause grammars, the attribute grammars) needed more than the bounded part. Restricting
+parameters to finite domains, as hbnf does, makes the question decidable by construction and costs the
+grammars people write nothing.</p>
+<p><strong>Is it a typeclass?</strong> Much of it is, and the comparison is the quickest way to explain the rules to a
+programmer. A parameterised rule is a function from arguments to a rule, chosen by pattern: an instance
+declaration in Haskell is a function from types to dictionaries, chosen by pattern, and the most
+specific wins (<code>binary(17) := unary</code> beside the general <code>binary(N in 1..17)</code> is overlapping instances).
+Expanding every use before the parser runs is monomorphisation, as C++ templates and Rust generics do,
+and it costs nothing at run time (Haskell's dictionary passing does). A domain is a closed set of
+instances. And the termination trouble is the same trouble: instance resolution in Haskell can chase
+its own tail (<code>instance C [[a]] =&gt; C [a]</code>), and GHC refuses it unless <code>UndecidableInstances</code> is on,
+because its conservative check, the Paterson conditions (the constraint must be structurally smaller
+than the head), is a sufficient condition for finite resolution that rejects some programs that would
+in fact end. hbnf's growth check is the same trade. Where it differs is that nothing here is typed: a
+parameter is a rule name, a word or a number, not a type, and there is no inference.</p>
+<p><strong>What it saves.</strong> The numbers are in <em>Measured</em> below: the grammar text of ALGOL 60 and JSON is
+about half the size of the Report's BNF and the RFC's ABNF, and the OpenBSD daemons' <code>parse.y</code>
+files lose their lexers and C actions. The ALGOL 68 saving has not been measured: it is the point
+of the pilot, a chapter of the Report's W-grammar counted before and after.</p>
+<h2>Parameters on rules: affix grammars, CDL and Prolog</h2>
+<p>The two-level grammar was not the only answer to &quot;BNF cannot say it&quot;. Two others, from the
+same decade as the Report and the one after, gave a nonterminal <em>parameters</em> and made the
+parser run them. They are the closest relatives of HyperBNF's hyperrules, and the differences
+are the design.</p>
+<p><strong>Affix grammars and CDL.</strong> Cornelis Koster, who was one of the ALGOL 68 editors, took the
+Report's idea and made it implementable: a nonterminal carries <em>affixes</em>, and each affix has a
+<em>domain</em> declared up front, a finite set of values or a structure built from them. A rule is a
+predicate over its affixes. It succeeds, perhaps computing values on the way out, or it fails,
+and the same notation describes the syntax, the checks (a name declared before it is used,
+two operands of one type) and the translation. CDL, the Compiler Description Language, was the
+working form: Koster's group wrote compilers in it, and it went through several versions
+(CDL2, CDL3). The domain declaration is what made it practical. A parameter
+that ranges over a declared set can be checked when the grammar is read, and the machine
+never meets the infinite family that the Report's metanotions allowed. Watt and Meijer's
+extended affix grammars, and AGFL (affix grammars over a finite lattice) for natural language,
+kept the same shape.</p>
+<p><strong>Prolog and the definite clause grammar.</strong> Colmerauer's metamorphosis grammars (1975) and
+Pereira and Warren's definite clause grammars (1980) put the same idea inside Prolog. A
+nonterminal is a predicate with arguments, <code>expr(Type, Env)</code>, and the grammar is a logic
+program: the arguments are terms of any shape, unification passes values in both directions,
+and the parser is whatever Prolog's search does with it, depth-first with backtracking. That is
+the most general of the three, and it needs a Prolog to run. It also inherits Prolog's costs:
+a left-recursive rule does not end, backtracking can be exponential, a call outside the values
+the author meant is a failure at run time and not an error, and a parse that fails says only
+that it failed.</p>
+<p><strong>Domains are the point.</strong> All three answers separate by one choice: what a parameter may
+range over. The Report allowed a metanotion to be any context-free language, so a hyperrule
+could be an infinite family and a parse could be undecidable. Prolog allows any term, so the
+program can compute anything. CDL declared finite domains, and a grammar that stays inside
+them is checkable and terminates. Of the three, only the last gave a compiler writer a grammar
+that was also a guarantee.</p>
+<p><strong>What HyperBNF does differently, and why.</strong></p>
+<ul>
+<li><em>Domains are finite, or a counter.</em> A parameter is a number in a range, one of a list of
+words, or a rule name, as in CDL, and a use outside the domain is an error that names the
+chain of instances that led to it. The open domain <code>k in 0..</code> is a number the parser works
+out as it reads, for indentation and the lengths of a counted field. It is a counter and
+nothing else: no structure, no unification. That is what keeps every grammar decidable, and
+it is enough for the languages that needed more than BNF, YAML's block structure among them.</li>
+<li><em>Values go in, and the tree comes out.</em> An affix in CDL can be synthesised: the grammar
+computes. A HyperBNF parameter only restricts what parses. What a program wants from the
+input is the typed tree the rule shapes describe, and the program computes from that. The
+grammar stays a document that an RFC reader can follow, and the same file means the same
+thing to every backend. Names declared so far, the one thing a finite domain cannot hold,
+are the named context (<code>%bind</code>, <code>%scope</code>), a table beside the grammar and not a term in it.</li>
+<li><em>Choice is ordered, so nothing backtracks without being asked.</em> Prolog tries every way
+until one works; HyperBNF takes the first alternative that matches, as PEG does, and refuses
+a shadowed alternative when the grammar is read. There is no shift/reduce conflict to
+resolve and no exponential search to meet. Left recursion is read as a loop.</li>
+<li><em>The family is expanded before the parser exists.</em> A small table of instances becomes
+ordinary rules at generation time and costs nothing at run time; a large or open one is
+compiled as a guard on a stored number. Either way the output is the parser one would have
+written by hand, in C, Rust, Zig or Ada, with no engine to link. A DCG needs Prolog, and CDL
+needed its compiler.</li>
+<li><em>One notation.</em> The parameter is written on a rule in the ABNF that RFCs already use,
+<code>rule(N in 1..17)</code>, beside BNF, EBNF and yacc's dialect, not in a separate formalism that
+has to be learned first.</li>
+</ul>
+<p><em>Sources:</em> Koster, &quot;Using the CDL compiler-compiler&quot;, in Bauer and Eickel (eds.), *Compiler
+Construction: An Advanced Course*, Lecture Notes in Computer Science 21 (Springer, 1974) ·
+Colmerauer, &quot;Metamorphosis grammars&quot; (1975) · [Pereira and Warren, &quot;Definite clause grammars for
+language analysis&quot;, <em>Artificial Intelligence</em> 13 (1980)](https://doi.org/10.1016/0004-3702(80)90003-X).</p>
+<h2>The machine: Yacc</h2>
+<p>Yacc did not invent the compiler compiler; it found the algorithm that made one
+stick. The decade of attempts before it had proved a grammar could drive a
+parser, but each was a machine-specific experiment, and none had answered how
+to turn an arbitrary grammar into a correct parser on its own.</p>
+<p>Stephen Johnson answered it. At Bell Labs in the early 1970s he wanted
+to add an exclusive-or operator to the B compiler and found the hand-written
+parser impossible to change cleanly. Al Aho pointed him at Knuth's LR parsing
+papers, and Yacc was the result. A Yacc grammar is BNF plus C code that runs
+when a rule matches; the tool compiles the grammar into a shift-reduce
+automaton. The change was in who had to understand the parser. Before Yacc, a
+parser was an expert's handwritten artifact. After Yacc, a grammar was a text
+file, and the machine did the hard part.</p>
+<p>Yacc chose LALR(1), the compromise between canonical LR(1) — exact but
+explosive — and SLR(1) — small but too weak. Canonical LR(1) splits states by
+lookahead and blows up on a language the size of C; SLR(1) uses a global follow
+set and accepts reductions that are not legal in context. LALR(1) builds the
+LR(1) machine and merges the states that share a core, keeping the state count
+of LR(0) and nearly all the power of LR(1). It fit in 1970s memory, and it
+handled C, B, and Pascal.</p>
+<p>What it could not handle was ambiguity. Yacc turned ambiguity into a diagnostic
+— shift/reduce and reduce/reduce conflicts — and gave the grammar writer tools
+to resolve it: shift-on-conflict for the dangling else, <code>%left</code>/<code>%right</code>/
+<code>%nonassoc</code> for precedence. A Yacc grammar for C needed a feedback hack from
+the symbol table, because a typedef name and an identifier are the same token
+until they are not. The hack worked. It was the cost of the machine, and it
+stayed hidden in the grammar file for thirty years.</p>
+<p><em>Sources:</em> <a href="https://www.cs.utexas.edu/~novak/yaccpaper.htm">Johnson, &quot;Yacc: Yet Another Compiler-Compiler&quot; (1975), Bell Labs CSTR 32</a> · <a href="https://doi.org/10.1016/S0019-9958(65">Knuth, &quot;On the translation of languages from left to right&quot; (1965)</a>90426-2) · <a href="https://doi.org/10.1145/356616.356620">Aho &amp; Johnson, &quot;LR Parsing&quot; (1974)</a>.</p>
+<h2>The protocol metalanguage: ABNF</h2>
+<p>Meanwhile the people writing network standards needed something else. RFC 822
+(1982), David Crocker's specification of ARPA Internet mail, was not written
+for compiler authors. It was written for people who had to say, in plain ASCII,
+exactly which bytes a header may contain. So it dropped the angle brackets,
+changed <code>::=</code> to <code>=</code>, changed <code>|</code> to <code>/</code>, and let a literal be a quoted string
+or a byte value. It specified a language, not a parser. There were no actions,
+no conflict tables, no commitment to LL or LR.</p>
+<p>Formal grammars reached ordinary people through this door. BNF and Yacc were
+tools for a priesthood of compiler writers. RFC 822 was a tool for anyone who
+had to implement a mail client, and in the 1980s that meant nearly everyone who
+wrote software. A network engineer who had never heard of Chomsky could still
+read a rule and know what it meant. Without the RFC series, most of those
+people would never have seen a formal grammar at all.</p>
+<p>It was good enough that for fifteen years every other RFC cited &quot;the BNF in
+RFC 822&quot; instead of writing its own. That citation habit produced ABNF. RFC
+2234 (1997) extracted the notation and made it a standard; RFC 5234 (2008) is
+the current form. ABNF kept the looseness on purpose: a rule names its
+alternatives with <code>/</code>, repetition is explicit (<code>1*DIGIT</code>, <code>*WSP</code>), and the core
+rules (<code>ALPHA</code>, <code>DIGIT</code>, <code>CRLF</code>) ship with the spec. Ambiguity is legal. There
+is no generated automaton. ABNF exists so two protocol authors cannot silently
+disagree about the bytes on the wire.</p>
+<p><em>Sources:</em> <a href="https://www.rfc-editor.org/rfc/rfc822">RFC 822 (Crocker, 1982)</a> · <a href="https://www.rfc-editor.org/rfc/rfc2234">RFC 2234 (1997)</a> · <a href="https://www.rfc-editor.org/rfc/rfc5234">RFC 5234 (2008)</a>.</p>
+<h2>The return to top-down: ANTLR</h2>
+<p>Yacc won because it was easier than hand-writing a parser. It lost for the same
+reason. The shift-reduce automaton is fast, but when it rejects a grammar it
+tells you there is a conflict, not why, and you cannot step through the state
+machine it generated.</p>
+<p>Terence Parr went the other way. ANTLR (1988–90) generated the recursive-descent
+parser a human would have written, top-down, with the lexer and parser in one
+grammar. Where finite lookahead could not decide, it added predicates and
+backtracking — &quot;try this, and if it fails try that&quot; — instead of forcing the
+grammar to be LALR(1). Left recursion still had to be rewritten, and backtracking
+could go exponential. Those were the price of a parser a person could debug.</p>
+<p><em>Sources:</em> <a href="https://doi.org/10.1002/spe.4380250705">Parr &amp; Quong, &quot;ANTLR: A Predicated-LL(k) Parser Generator&quot; (1995)</a>.</p>
+<h2>The compilers: pcc, GCC, and C++</h2>
+<p>The language those compilers compiled had the same parent. C reaches ALGOL 60
+through a chain of simplifications — Christopher Strachey's CPL, Martin
+Richards's BCPL, Ken Thompson's B, and finally Ritchie's C — the curly-brace
+line that kept ALGOL's block structure and dropped everything else. What C took
+from ALGOL 68, Ritchie said, was the scheme of type composition and its names:
+<code>int</code>, <code>char</code>, <code>long</code>, <code>short</code>, <code>union</code>, <code>struct</code> and <code>void</code> are all ALGOL 68's,
+the cast is named after ALGOL 68's, and the compound-assignment operators came
+the same way, through Douglas McIlroy's TMG. The library borrowed too: ALGOL 68's
+formatted output was already <code>printf</code>, and C kept the name and the idea of a
+format string — though the <code>%</code> directives themselves came from BCPL's <code>writef</code>,
+which had them in 1966. So the C grammar Stallman later fed to Bison was, in its
+bones, an ALGOL grammar.</p>
+<p>Johnson's own compiler carried the machine into production. pcc shipped with
+Seventh Edition Unix in 1979, moved to the VAX through 32V, and became the
+compiler that let C leave the PDP-11. For a decade nearly every serious C
+compiler was pcc or a descendant of it.</p>
+<p>Then came GCC. Richard Stallman wrote the C grammar — copyright 1987, GCC 1.0
+shipped 22 March 1987 — and fed it to Bison rather than Johnson's Yacc. GCC 1.0
+credits Stallman as author, Leonard Tower for parts of the parser and the RTL,
+and Paul Rubin for most of the preprocessor. Bison itself was a half-breed:
+Stallman wrote its C skeleton, Robert Corbett its LALR engine from his Berkeley
+Yacc. Michael Tiemann wrote the C++ grammar for g++, the same kind of grammar,
+and that one became the standing lesson in what the machine could not do.</p>
+<p>GCC pushed pcc out. John Gilmore did the work in 1987–88, compiling the whole
+BSD tree with the VAX GCC so CSRG could drop pcc; Keith Bostic and Mike Karels
+endorsed it, for ANSI C, better code, and a way out from under the AT&amp;T
+copyright. By 1994 pcc was out of the BSD line and unmaintained.</p>
+<p>Then GCC climbed off the machine. The C++ front end dropped its Bison grammar
+for hand-written recursive descent in 2004; Joseph Myers wrote the C replacement
+for GCC 4.1 in 2006, the way Ritchie had written the original — shift and reduce
+became calls and returns, and the typedef hack became a real symbol table. Clang,
+when it came, never used a generator at all.</p>
+<p>The one compiler that kept Yacc was pcc. Anders Magnusson revived it in 2002
+from the opened 32V sources, half the front end and most of the back end
+rewritten. It still lives today, still driven by a Yacc grammar, and it crawls
+while GCC and LLVM, which do not use Yacc or Bison, are the compilers the world
+develops. The machine was right for 1975. It is why the work is hard now.</p>
+<p><em>Sources:</em> <a href="https://www.bell-labs.com/usr/dmr/www/chist.html">Ritchie, &quot;The Development of the C Language&quot; (1993)</a>; Johnson, pcc (1979); Stallman, GCC 1.0 (1987); Corbett, Berkeley Yacc (1985); Tiemann, g++ (1987).</p>
+<h2>Ordered recognition: PEG</h2>
+<p>Bryan Ford asked a different question. Context-free grammars were built to
+model natural language, where ambiguity is a feature. For a programming
+language it is a nuisance, and the entire apparatus — LR conflicts, scanner
+hacks, the lexer/parser split — exists to beat it back down.</p>
+<p>A PEG (Ford, 2002–04) answers by changing what alternation means. In a CFG,
+<code>A | B</code> says both are possible and a conflict is an error. In a PEG, <code>/</code> is
+ordered choice: try <code>A</code>, and if it matches, <code>B</code> is never considered. Ambiguity
+becomes impossible because the order of the text picks the winner. The grammar
+is scannerless — tokens and structure live in one set of rules — and memoizing
+every <code>(rule, position)</code> pair gives linear time. Ford was explicit that he was
+rehabilitating a 1970 recognition scheme, not inventing one. The differences
+that bite are left recursion and the greed of ordered choice.</p>
+<p><em>Sources:</em> <a href="https://bford.info/pub/lang/peg.pdf">Ford, &quot;Parsing Expression Grammars: A Recognition-Based Syntactic Foundation&quot; (2004)</a>.</p>
+<h2>The incremental tree: Tree-sitter</h2>
+<p>The last turn was not about compilers at all. Max Brunsfeld built Tree-sitter
+(2014–18) for the editor: a syntax tree that updates from an edit instead of
+re-parsing the whole file, and that still returns something when the buffer is
+briefly illegal. It uses generalized LR, keeping a stack of stacks so local
+ambiguity can be represented, and writes ERROR and MISSING nodes into the tree
+rather than failing. The grammar is a JavaScript DSL that compiles to C. Atom
+is gone; Tree-sitter is now the usual answer whenever a tool needs a real
+syntax tree for a language it does not itself compile.</p>
+<p><em>Sources:</em> <a href="https://www.thestrangeloop.com/2018/treesitter---a-new-parsing-system-for-programming-tools.html">Brunsfeld, &quot;Tree-sitter: A New Parsing System for Programming Tools&quot; (2018)</a>.</p>
+<p><strong>What Tree-sitter does about context, and what that costs.</strong> A parser generator has three
+places to put context-sensitivity, and Tree-sitter uses all of them in its own way. (1) *The
+lexer is told what the parser expects.* It lexes by parse state: only the tokens that are valid
+in the current LR state can match, so <code>&lt;</code> can be an operator in one state and a bracket in
+another, and a keyword is a keyword only where one can occur. (2) <em>The parse forks.</em> Where the
+LR table has a conflict (<code>a * b;</code> as a declaration or as a multiplication, <code>T(x)</code>, <code>a &lt; b &gt; c</code>)
+it splits the stack and runs the readings in parallel on the same input; the ones that die are
+dropped, and of those that survive the one with the higher <code>prec.dynamic</code> and the lower
+error cost wins. The author names the conflicts (<code>conflicts</code>) and the precedences. (3) *A hand-written
+scanner in C*, with state it serializes, for what no regular lexer can do: indentation, heredocs,
+raw strings, nested template literals.</p>
+<p>The limitation is what none of the three has: <strong>a symbol table.</strong> Tree-sitter cannot know that
+<code>T</code> was declared a type three screens earlier, so it decides <code>T * x;</code> by precedence and by which
+reading survives, not by what the program declared, and where the two readings are both valid
+it picks by a number the grammar author chose. That is why Tree-sitter's C and C++ trees are
+sometimes wrong where it matters (a typedef name taken for a variable), and why a tool that
+needs the right answer must run its own semantic pass over the tree afterwards. It is also
+the price of what Tree-sitter is for: incremental re-parsing and a tree for text that is
+half-written, where a wrong guess is cheap and an error is not allowed.</p>
+<p>The other cost is the machinery. In the repository's benchmark (<code>bench/results/treesitter.md</code>)
+on one toy language at 100,000 rules, Tree-sitter parses the 7.7 MB file in 226 ms with 63 MB
+of memory, against hbnf's C parser at 26 ms and 21 MB; at a million rules, 2,302 ms and 620 MB
+against 266 ms and 204 MB. That is about nine times the time and three times the memory, on a
+grammar with no ambiguity in it, so the forking itself is not in the number: it is the price of
+the tables, the tree it builds for editing, and the generality of the lexer.</p>
+<p>hbnf's forks (decision 14) are a smaller thing than GLR and should not be confused with it. They
+are depth-first: try one alternative to the end of the enclosing sequence and, if something later
+in that sequence fails, back up and try the next, with no stack of stacks and no reach past the end
+of a rule. Where Tree-sitter keeps both readings alive and decides at the end, hbnf's contexts
+decide <em>at the choice</em>: a <code>? types</code> test on an alternative removes the reading that the declared
+names rule out before anything is parsed under it. That is the part of C++ Tree-sitter cannot do,
+and the part of C++ that forks are not needed for.</p>
+<p>There is a Tree-sitter backend (<code>--backend=tree-sitter</code>), and what it shows is the same
+difference from the other side. A HyperBNF grammar becomes a <code>grammar.js</code> mechanically, ALGOL 60 and
+JSON parse the same texts in Tree-sitter as in HyperBNF (JSON: 2,000 documents and 2,000 mutations, no
+difference; ALGOL 60: every one of 500 sentences of the Report), but ordered choice has to be
+turned into <code>conflicts</code> and <code>prec.dynamic</code> (four conflicts for ALGOL 60), and a lookahead, a
+context test or a back-reference cannot be turned into anything: it is left out, and the nine
+mutants out of 500 that only Tree-sitter accepted were all the lookahead that was left out. The
+clearest case is Mustache, whose closing tag must repeat the opening one (<code>{{#a}} ... {{/a}}</code>):
+hbnf says it with <code>as</code> and <code>$K</code>, and the Tree-sitter grammar it writes accepts <code>{{#a}}x{{/b}}</code>,
+because a Tree-sitter grammar cannot make a token repeat another; 106 of 2,000 mutated templates
+were accepted by Tree-sitter alone, and 103 of those 106 have a closing tag naming another section.
+Tree-sitter's one place for state is the external scanner, a C file with state of its own that
+Tree-sitter saves and restores for every fork, and the backend uses it (<code>--ts-scanner=FILE</code>): the
+scanner holds the name the opening tag captured and accepts the closing tag only if it is the same
+text. With it the 106 disagreements are gone (0 of 2,000). The same scanner does the lookahead
+<code>!x</code> and <code>&amp;x</code> (a zero-width token that looks at the text, skipping the white space the grammar skips,
+and takes the literal that follows it into the test, because Tree-sitter cannot take a token back):
+the nine ALGOL 60 mutants only Tree-sitter accepted are gone too, and 3,000 sentences and 3,000
+mutations of the Report agree exactly. What the scanner cannot do is see the parse, only the
+characters, so a context test that depends on what the parser has reduced (whether <code>T</code> was declared
+a type) still has no equivalent.</p>
+<p>The thread through all of it: Backus and Naur gave a generative notation,
+Johnson mechanized the LR subset of it, Crocker loosened the notation for
+protocol writers, Parr and then Myers walked production parsers back to
+debuggable top-down code, Ford replaced generative choice with ordered
+recognition, and Brunsfeld optimized the tree for a buffer that is never
+finished.</p>
+<p>It is a pendulum between the two readers, each swing trading one reader's ease
+for the other's.</p>
+<h2>HyperBNF</h2>
+<p>HyperBNF starts from where that thread left off and picks a side. Its bet is that
+the notation worth compiling is the one the RFCs already use — ABNF — and that
+a grammar should be documentation first and a parser second. The same file that
+explains a language to a reader compiles to a parser and a typed tree in C,
+Rust, Zig, or Ada, self-contained, with no runtime library. (A grammar that chooses the tape
+layout includes one header of C, <code>runtime/hbnf_tape.h</code>; the others need nothing.)</p>
+<p>It keeps the best of each system and dodges the worst, in the way Jeff Fox
+taught at UltraForth (may he rest in peace): do not solve the hard problem,
+remove what makes it hard. Ordered choice leaves no shift/reduce conflict to
+resolve. Left recursion read as a loop leaves nothing to rewrite. A shadowed
+alternative refused up front leaves no ambiguity to stumble on at runtime. Each
+system's pain is not fought; it is not built in.</p>
+<p><strong>Where it succeeds.</strong> An RFC grammar compiles nearly verbatim: <code>=</code>, <code>|</code>, <code>/</code>,
+<code>*</code>, <code>1*</code>, <code>n*m</code>, <code>[ ]</code>, and the core character classes all mean what an RFC
+reader already expects. Character-level rules compile to scanners — <code>int = 1*DIGIT</code>,
+<code>comment = &quot;#&quot; *comment_char</code> — so there is no separate lexer grammar and no
+regex. Direct left recursion is read as a loop, not rejected. Ordered choice
+keeps conflicts impossible, and a shadowed alternative is refused at schema time
+with a diagnostic rather than failing at runtime. The tree is typed from the
+shape of the rule — enum, scalar, list, struct, and for a choice among rules a
+union with the number of the alternative taken (<code>_alt</code>) — with no visitor to write. And
+HyperBNF makes round-tripping easy: comments are first-class tokens, not
+whitespace, and a value written <code>0xFF</code> comes back as <code>0xFF</code>, not 255, so a
+grammar that wants it — obconf does — hands the file back unchanged, and
+pretty-printing and debug printouts become simple and pleasant. A parse failure
+is a line, a column, and a caret under the token that was expected.</p>
+<p>The literal syntax is C's on purpose: a string is <code>&quot;…&quot;</code>, a character <code>'a'</code>, a
+code point <code>0x21</code> or <code>33</code>, an escape <code>\n</code>. The reader already knows these
+spellings, and a notation should astonish no one — every mark it invents is one
+more thing to learn before the grammar is readable. The choice is not cosmetic.
+At the root a token is a sequence of bits, and nothing else; <code>0x21</code> and <code>&quot;!&quot;</code>
+name the same byte, so a grammar can reach straight down to the bytes it
+describes instead of floating above them in a lexer's abstractions. Human
+readability and machine exactness meet there: spell the bits the way a person
+already spells them, and keep the design honest about what is underneath.</p>
+<p><strong>The work of 28 to 31 October 2026.</strong> A parser can now build what its author wants as it reads:
+<code>%emit { }</code> blocks and rules that say their type (<code>name :: type = ...</code>) write a value, not a tree, and
+<code>rollback { }</code> names what the emits change so that a retry puts it back. JSON, TOML and YAML were
+written that way onto a flat tape of words (<code>corpus/*/*-tape.hbnf</code>, <code>runtime/hbnf_tape.h</code>), with
+number and string conversion in <code>runtime/hbnf_scalar.h</code>, checked bit for bit against <code>strtod</code> and
+timed against fast_float. A <em>layout</em> turned that into a choice made once for a whole grammar: <code>ast</code>
+(the default), <code>tape</code>, <code>tailq</code> and <code>rb</code> are directories, <code>layouts/NAME/layout.hbnf</code>, and the daemons'
+lists become their own <code>TAILQ</code>s and red-black trees. Context parameters let one rule stand for a pair
+(<code>declarator(C in &quot;vars&quot; | &quot;types&quot;)</code>). Six grammars of C, from 32V's of 1979 to C11, are measured
+against the yacc grammars they replace and tested on the SQLite amalgamation. The C arena maps its
+chunks and goes back for the iteration that ends a list, and a list stores its head alone.</p>
+<p>Alternatives that begin alike are now read once: the generator works out a tree of shared beginnings
+once (<code>HBNF_Lookahead.Factor</code>), and the C, Rust, Zig and Ada backends all walk it; <code>/</code> accepts such
+pairs, and <code>--lint</code> says where a <code>|</code> could be a <code>/</code>. A ladder of binary operators looks once past its
+first operand. Last, the templates that the code generators fill are Mustache, and the Mustache
+renderer is the project's own: <code>HBNF_Template</code> reads a template with the parser hbnf makes of
+<code>grammars/template.hbnf</code>, so the generator now depends on a parser it generated, and the external
+mustache-ada library it used from 3 October is gone.</p>
+<p><strong>Where it could do better.</strong> It has no incremental parse; an edit means parsing
+the file again. It has no error recovery; bad input fails instead of producing a
+broken tree. An alternation that mixes keywords with rules gets no kind discriminant in
+the C tree, so a consumer must infer which branch matched. The drop-in for parse.y
+(a <code>parse_config</code> the grammar writes in its epilogue around the statement driver) is C-only; the other backends warn and parse the whole file. And the
+grammar must be LL(1)-ish under maximal munch — it will not decide an ambiguous
+branch by looking arbitrarily far ahead.</p>
+<p><strong>Where it will not.</strong> Two things are off the table, and they are the same
+thing. Incremental, error-recovering parsing is Tree-sitter's entire reason for
+existing, and it requires a generalized-LR engine with a stack of stacks. HyperBNF's
+design is ordered choice plus maximal munch, the opposite trade; adding GLR
+would mean discarding the design. And HyperBNF will not handle genuinely ambiguous
+grammars, because that is not a missing feature to add later — it is the thing
+the design refuses on purpose. ALL(*) and GLR exist for the languages that need
+them. HyperBNF exists for the ones that do not, and for the person who wants the
+grammar and the parser to be the same document.</p>
+<p>Judged on that single aim — one document that serves both the person and the
+machine — the others all pick a side. BNF and ABNF are for people; Yacc and
+Tree-sitter are for machines; ANTLR and PEG generate code but drop the writer's
+comments and exact spellings. HyperBNF tries to be both at once, and the round trip
+a grammar can build is the proof: the text a person reads is what the machine
+runs, and the machine hands it back unchanged. The writer's intention arrives
+whole, and no earlier tool managed that.</p>
+<p>The line ends where it began, and it ends against Chomsky. Generative grammar
+started as a claim about the mind: a language is a set of rules that produces
+its sentences. That method drove the early years — BNF and Yacc both generate.
+But the useful work drifted the other way. ABNF defines a language without an
+automaton; PEG replaces generation with ordered recognition; the grammar stopped
+producing strings and started describing the ones that exist. Generation lost.
+Description won.</p>
+<p>Isaac Mozeson would be pleased. Chomsky was cruel to him — an Orthodox Jewish
+linguist who described the actual words, tracing every tongue back to a single
+source, and who saw language as the thing that brings people together — and
+Chomsky dismissed him as he dismissed everyone who disagreed. The field came
+around to his side anyway. The descriptive method won, and it won pointing the
+way he pointed: a grammar that names what is there can join a person to a
+machine as readily as it joins one person to another. Chomsky was nasty, and
+Chomsky was wrong. Bringing people and machines together through language is
+the more useful end.</p>
+<p>The sciences of the mind are following. The scientific consensus is shifting: Chomsky's
+idea of an innate, rigid &quot;grammar engine&quot; in our DNA is losing ground to probabilistic neural
+prediction. But while an LLM is a flat next-token predictor, the human brain is a structural
+predictor — calculating what comes next while simultaneously keeping track of the overall meaning
+and mental map of the conversation. The recent work behind this comes from Cornell University,
+the Hebrew University of Jerusalem and New York University. At the Hebrew University, Ariel
+Goldstein and colleagues recorded the brain during a podcast and found its processing steps follow
+the layers of GPT-2 and Llama 2, with phonemes and morphemes explaining the activity less well
+than the models' contextual representations. At Cornell, Yngwie Nielsen and Morten Christiansen
+ran four priming experiments with 497 participants and found that what speakers know is not
+explained by constituents as traditionally construed: the commonest three- and four-word
+sequences, such as &quot;can I have a&quot;, are often not constituents, yet they seem to be part of what
+speakers know. Reports of the study take care over what it shows, something missing from the
+account and not that the account is wrong, and note that generative theory has changed a great deal
+since 1957. At New York University, David Poeppel's group found the brain's word predictions
+shaped by the grammatical grouping of words into phrases, a sensitivity language models do not
+show: the brain predicts like a model, and it predicts with structure. A grammar is that structure
+written down, a description of the language as its speakers have it, which is the side Mozeson
+was on.</p>
+<p>An intelligence that must read what people wrote and act on it needs exactly
+that bridge — a text a person can read, a machine can run, an intention carried
+whole. HyperBNF was not written for AI. That is what will make it useful to AI.</p>
+<p><em>Sources:</em> the <a href="https://github.com/moebiusV/hbnf">hbnf repository</a>, and <a href="https://www.rfc-editor.org/rfc/rfc5234">RFC 5234</a> for the ABNF it compiles. For the studies of the brain: Goldstein et al., &quot;Temporal structure of natural language processing in the human brain corresponds to layered hierarchy of large language models&quot;, <em>Nature Communications</em> (2025; <a href="https://www.sciencedaily.com/releases/2026/01/260120000308.htm">reported January 2026</a>) · Nielsen and Christiansen, &quot;Evidence for the representation of non-hierarchical structures in language&quot;, <em>Nature Human Behaviour</em> (online 21 January 2026) · Zou, Ding and Poeppel, &quot;Constituent-constrained word prediction during language comprehension&quot;, <em>Nature Neuroscience</em> (2026; <a href="https://doi.org/10.1038/s41593-026-02272-6">doi:10.1038/s41593-026-02272-6</a>).</p>
+<h2>Leverage: a notation for people is a notation for models</h2>
+<p>HyperBNF is built on one premise: what lessens a person's mental load lessens a language model's
+token usage. It is an application of leverage. A small text, read once, does the work of many
+lines, and the reader, whether a person or a model, pays for what it has to read and write.</p>
+<p>The lever is the grammar. A person who reads the description of JSON as a few rules holds the
+whole language in mind; a person who reads it as hundreds of lines of hand-written parser does not.
+A model is in the same position and is charged for it by the token: it reads what the grammar says
+and writes what it changes, and every symbol of either costs. <em>Measured</em>, below, counts that cost
+in symbols, characters and the tokens of two public tokenizers, for the published grammar of each
+language against the same language in HyperBNF.</p>
+<p>Reliability is the other half, and the engine around a model decides it as much as the model does.
+In October 2026 Jesse Donkervliet and Junhao Li of Ubicloud reported that Kimi K2.6 served by vLLM
+0.28 gave &quot;the expected tool call schema only 92% of the time&quot;. They had carried their own fork of
+vLLM to reach 100% tool-call schema accuracy, then switched to the constrained decoding that vLLM
+added upstream in v0.25, and found their score &quot;dropped back to 91%&quot;: vLLM &quot;changed its default
+behavior for requests that do not explicitly turn constrained decoding on&quot;. Enabling it and re-running
+the K2VV ToolCall benchmark gave 100% across all the served model versions, and &quot;this runtime
+enforcement adds negligible performance overhead&quot;. Their conclusion: &quot;When using LLMs, the quality
+you observe isn't based on the model alone. The inference engine also plays an important role.&quot;</p>
+<p>Constrained decoding is a grammar at work. At each step the engine lets the model choose only among
+the tokens that keep the output valid, so a schema stops being something the model usually follows
+and becomes something it cannot leave. What the engine consumes is a grammar: vLLM builds it with
+structural tags from the XGrammar library. A model predicts one token at a time; the grammar
+supplies, from outside, the structure a flat predictor lacks.</p>
+<p>HyperBNF is a notation for that grammar which already compiles to parsers in four languages. One
+file can then give the program its parser and the decoder its grammar, so that the program reads
+exactly what the model was allowed to write and the two cannot drift apart, unlike a daemon's
+<code>parse.y</code> and an editor's tree-sitter grammar, which are written twice and drift. The emitter for decoders is planned (<code>RFCPLAN.md</code>, step 14)
+and not built, and nothing measured in this document shows a gain in a model's accuracy from
+HyperBNF itself.</p>
+<p><em>Sources:</em> Donkervliet and Li, <a href="https://www.ubicloud.com/blog/fixing-tool-call-accuracy-in-vllm">&quot;Fixing Tool-Call Accuracy in vLLM&quot;</a>, Ubicloud, 20 October 2026.</p>
+<h2>Measured: what HyperBNF saves and what it costs</h2>
+<p>Every number here is produced by a script in the repository, from the files in <code>corpus/</code> and
+<code>grammars/</code>, and can be rerun. For a grammar the comparison is the published notation against the
+hbnf, comments and blank lines left out of both. A <em>symbol</em> is a whitespace-separated word of the
+grammar text, which is what a reader (or a language model) pays for. Tokens are counted with two
+public tokenizers, so the table follows the model's own unit of cost and not only the characters; the
+count with Claude's tokenizer was not measured, because it is not public.</p>
+<p>&lt;!-- bench:tokens --&gt;</p>
+<table>
+<thead>
+<tr><th>language </th><th>notation </th><th style="text-align:right">characters </th><th style="text-align:right">o200k_base tokens </th><th style="text-align:right">Qwen2.5 tokens </th></tr>
+</thead>
+<tbody>
+<tr><td>ALGOL 60 </td><td>the Report's BNF </td><td style="text-align:right">8064 </td><td style="text-align:right">2290 </td><td style="text-align:right">2269 </td></tr>
+<tr><td></td><td>HyperBNF </td><td style="text-align:right">3604 </td><td style="text-align:right">890 </td><td style="text-align:right">870 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>55%</strong></td><td style="text-align:right"><strong>61%</strong></td><td style="text-align:right"><strong>62%</strong></td></tr>
+<tr><td>JSON </td><td>RFC 8259's ABNF </td><td style="text-align:right">949 </td><td style="text-align:right">379 </td><td style="text-align:right">407 </td></tr>
+<tr><td></td><td>HyperBNF </td><td style="text-align:right">641 </td><td style="text-align:right">247 </td><td style="text-align:right">260 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>32%</strong></td><td style="text-align:right"><strong>35%</strong></td><td style="text-align:right"><strong>36%</strong></td></tr>
+<tr><td>TOML 1.0 </td><td>TOML's ABNF </td><td style="text-align:right">4646 </td><td style="text-align:right">1564 </td><td style="text-align:right">1625 </td></tr>
+<tr><td></td><td>HyperBNF </td><td style="text-align:right">2599 </td><td style="text-align:right">1130 </td><td style="text-align:right">1193 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>44%</strong></td><td style="text-align:right"><strong>28%</strong></td><td style="text-align:right"><strong>27%</strong></td></tr>
+<tr><td>C </td><td>32V's cgram.y, 1979 </td><td style="text-align:right">3755 </td><td style="text-align:right">1593 </td><td style="text-align:right">1566 </td></tr>
+<tr><td></td><td>HyperBNF </td><td style="text-align:right">5155 </td><td style="text-align:right">1187 </td><td style="text-align:right">1157 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>-36%</strong></td><td style="text-align:right"><strong>25%</strong></td><td style="text-align:right"><strong>26%</strong></td></tr>
+<tr><td></td><td>HyperBNF with its token rules </td><td style="text-align:right">6649 </td><td style="text-align:right">1754 </td><td style="text-align:right">1735 </td></tr>
+<tr><td></td><td>PCC's cgram.y </td><td style="text-align:right">6505 </td><td style="text-align:right">2295 </td><td style="text-align:right">2248 </td></tr>
+<tr><td></td><td>HyperBNF </td><td style="text-align:right">8628 </td><td style="text-align:right">2084 </td><td style="text-align:right">2043 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>-32%</strong></td><td style="text-align:right"><strong>9%</strong></td><td style="text-align:right"><strong>9%</strong></td></tr>
+<tr><td></td><td>HyperBNF with its token rules </td><td style="text-align:right">11033 </td><td style="text-align:right">2991 </td><td style="text-align:right">2969 </td></tr>
+<tr><td></td><td>GCC 4.0.4's c-parse.in </td><td style="text-align:right">18966 </td><td style="text-align:right">6050 </td><td style="text-align:right">5918 </td></tr>
+<tr><td></td><td>HyperBNF </td><td style="text-align:right">8992 </td><td style="text-align:right">2149 </td><td style="text-align:right">2109 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>53%</strong></td><td style="text-align:right"><strong>64%</strong></td><td style="text-align:right"><strong>64%</strong></td></tr>
+<tr><td></td><td>HyperBNF with its token rules </td><td style="text-align:right">11454 </td><td style="text-align:right">3070 </td><td style="text-align:right">3049 </td></tr>
+<tr><td>YAML 1.2 </td><td>the spec's productions </td><td style="text-align:right">13273 </td><td style="text-align:right">4927 </td><td style="text-align:right">4912 </td></tr>
+<tr><td></td><td>HyperBNF </td><td style="text-align:right">6057 </td><td style="text-align:right">2642 </td><td style="text-align:right">2690 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>54%</strong></td><td style="text-align:right"><strong>46%</strong></td><td style="text-align:right"><strong>45%</strong></td></tr>
+</tbody>
+</table>
+<p><em>The text is the grammar as <code>notation.sh</code> counts it.  o200k_base is OpenAI's tokenizer (tiktoken 0.14.0) and Qwen2.5's is an open-weights model's (tokenizers 0.23.3); Claude's tokenizer is not public, so its count was not measured.</em></p>
+<p>&lt;!-- /bench:tokens --&gt;</p>
+<p>The two are not the same measure, and the table shows it: a saving in characters is not a saving of
+the same size in tokens, larger for some languages and smaller for others.</p>
+<p><strong>BNF and ABNF rewritten in HyperBNF: fewer rules, fewer lines, fewer symbols.</strong> Where a grammar is
+rewritten rather than pasted, the rewrite says each thing once: a comma list is <code>x *( &quot;,&quot; x )</code>, a
+block is a compound statement with declarations in front, the three expression grammars that exist
+to carry a type are one (a checking pass applies the types), a punctuation mark is the quoted
+character, the lexical rules share the RFC core rules.</p>
+<table>
+<thead>
+<tr><th>language </th><th>published notation </th><th style="text-align:right">rules </th><th style="text-align:right">lines </th><th style="text-align:right">symbols </th><th style="text-align:right">characters </th></tr>
+</thead>
+<tbody>
+<tr><td>ALGOL 60 </td><td>the Report's BNF </td><td style="text-align:right">108 </td><td style="text-align:right">116 </td><td style="text-align:right">1,246 </td><td style="text-align:right">8,064 </td></tr>
+<tr><td></td><td>hbnf (<code>corpus/algol60</code>) </td><td style="text-align:right">47 </td><td style="text-align:right">72 </td><td style="text-align:right">528 </td><td style="text-align:right">3,604 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>56%</strong></td><td style="text-align:right"><strong>38%</strong></td><td style="text-align:right"><strong>58%</strong></td><td style="text-align:right"><strong>55%</strong></td></tr>
+<tr><td>JSON </td><td>RFC 8259's ABNF </td><td style="text-align:right">30 </td><td style="text-align:right">45 </td><td style="text-align:right">193 </td><td style="text-align:right">949 </td></tr>
+<tr><td></td><td>hbnf (<code>corpus/json</code>) </td><td style="text-align:right">14 </td><td style="text-align:right">14 </td><td style="text-align:right">129 </td><td style="text-align:right">556 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>53%</strong></td><td style="text-align:right"><strong>69%</strong></td><td style="text-align:right"><strong>33%</strong></td><td style="text-align:right"><strong>41%</strong></td></tr>
+</tbody>
+</table>
+<p>The RFC grammars in <code>corpus/rfc</code> are not in the table on purpose: they are pasted verbatim, with one
+line added, to show that RFC text compiles unchanged, so they save nothing and are not meant to.</p>
+<p><strong>OpenBSD's <code>parse.y</code>, translated.</strong> The nine daemons' grammars in <code>grammars/obconf_*.hbnf</code> are
+faithful translations of the real <code>parse.y</code> files (OpenBSD <code>master</code>, pinned in <code>bench/pins.txt</code>), and
+here the answer is less flattering than a whole-file count suggests, so it is worth saying plainly.
+A <code>parse.y</code> is four things: a prologue (includes, declarations, the token list), the grammar rules, the
+C code in braces inside those rules that builds the daemon's structures, and a hand-written lexer with
+its keyword table and helpers after the second <code>%%</code>. <code>bench/parsey.py</code> splits each file that way and
+counts lines, comments and blank lines left out:</p>
+<p>&lt;!-- bench:parsey --&gt;</p>
+<table>
+<thead>
+<tr><th>daemon </th><th style="text-align:right"><code>parse.y</code> total </th><th style="text-align:right">lexer, keywords, C </th><th style="text-align:right">actions </th><th style="text-align:right">rule notation </th><th style="text-align:right">HyperBNF grammar </th></tr>
+</thead>
+<tbody>
+<tr><td>bgpd </td><td style="text-align:right">5,540 </td><td style="text-align:right">2,530 </td><td style="text-align:right">2,494 </td><td style="text-align:right">516 </td><td style="text-align:right">501 </td></tr>
+<tr><td>dhcpleased </td><td style="text-align:right">733 </td><td style="text-align:right">542 </td><td style="text-align:right">159 </td><td style="text-align:right">32 </td><td style="text-align:right">22 </td></tr>
+<tr><td>httpd </td><td style="text-align:right">2,490 </td><td style="text-align:right">1,185 </td><td style="text-align:right">1,057 </td><td style="text-align:right">248 </td><td style="text-align:right">185 </td></tr>
+<tr><td>ldpd </td><td style="text-align:right">1,498 </td><td style="text-align:right">868 </td><td style="text-align:right">484 </td><td style="text-align:right">146 </td><td style="text-align:right">114 </td></tr>
+<tr><td>ntpd </td><td style="text-align:right">731 </td><td style="text-align:right">377 </td><td style="text-align:right">292 </td><td style="text-align:right">62 </td><td style="text-align:right">22 </td></tr>
+<tr><td>pfctl </td><td style="text-align:right">5,885 </td><td style="text-align:right">2,524 </td><td style="text-align:right">2,777 </td><td style="text-align:right">584 </td><td style="text-align:right">492 </td></tr>
+<tr><td>relayd </td><td style="text-align:right">3,426 </td><td style="text-align:right">1,266 </td><td style="text-align:right">1,814 </td><td style="text-align:right">346 </td><td style="text-align:right">323 </td></tr>
+<tr><td>snmpd </td><td style="text-align:right">1,867 </td><td style="text-align:right">900 </td><td style="text-align:right">813 </td><td style="text-align:right">154 </td><td style="text-align:right">121 </td></tr>
+<tr><td>unwind </td><td style="text-align:right">831 </td><td style="text-align:right">593 </td><td style="text-align:right">166 </td><td style="text-align:right">72 </td><td style="text-align:right">67 </td></tr>
+<tr><td>shared <code>obconf.hbnf</code></td><td style="text-align:right"></td><td style="text-align:right"></td><td style="text-align:right"></td><td style="text-align:right"></td><td style="text-align:right">30 </td></tr>
+<tr><td><strong>nine daemons</strong></td><td style="text-align:right"><strong>23,001</strong></td><td style="text-align:right"><strong>10,785</strong></td><td style="text-align:right"><strong>10,056</strong></td><td style="text-align:right"><strong>2,160</strong></td><td style="text-align:right"><strong>1,877</strong></td></tr>
+</tbody>
+</table>
+<p>Only the rule notation is directly comparable with the HyperBNF grammar; the
+lexer is replaced by hbnf's reader, and the actions only where they are bound:</p>
+<table>
+<thead>
+<tr><th>daemon </th><th style="text-align:right"><code>parse.y</code> total </th><th style="text-align:right">HyperBNF grammar + bound actions </th><th style="text-align:right">saved </th></tr>
+</thead>
+<tbody>
+<tr><td>ntpd </td><td style="text-align:right">731 </td><td style="text-align:right">22 + 331 = 353 </td><td style="text-align:right"><strong>52%</strong></td></tr>
+<tr><td>unwind </td><td style="text-align:right">831 </td><td style="text-align:right">67 + 264 = 331 </td><td style="text-align:right"><strong>60%</strong></td></tr>
+</tbody>
+</table>
+<p>&lt;!-- /bench:parsey --&gt;</p>
+<p>As a notation the HyperBNF grammar is about the size of yacc's rules (a quoted <code>&quot;listen&quot;</code> is longer than
+the token name <code>LISTEN</code>, and each option list spells out the keyword that tags it). The saving is in the
+other 90%: hbnf's reader, <code>statements</code> mode and typed tree replace the lexer, keyword table and
+include-file stack, which is about 47% of a <code>parse.y</code>, and the actions, another 44%, are replaced only
+where they are bound.</p>
+<p>Only ntpd and unwind have their actions bound so far (<code>grammars/bind/</code>), so those are the two rows
+that can be compared whole; for the other seven, hbnf parses and builds the tree and the daemon's
+own actions are not yet attached.</p>
+<p><strong>Speed and memory.</strong> The repository's benchmark (<code>bench/results/</code>, on glibc) puts the generated C
+parser at &lt;!-- v:hbnf_100000_ms --&gt;15&lt;!-- /v --&gt; ms and &lt;!-- v:hbnf_100000_rss_mb --&gt;17&lt;!-- /v --&gt; MB on the 7.7 MB toy-language file, where byacc plus flex takes
+&lt;!-- v:byacc_100000_ms --&gt;52&lt;!-- /v --&gt; ms and &lt;!-- v:byacc_100000_rss_mb --&gt;29&lt;!-- /v --&gt; MB, bison &lt;!-- v:bison_100000_ms --&gt;53&lt;!-- /v --&gt; ms, peg/leg &lt;!-- v:peg_100000_ms --&gt;42&lt;!-- /v --&gt; ms, Tree-sitter &lt;!-- v:ts_100000_ms --&gt;213&lt;!-- /v --&gt; ms and
+&lt;!-- v:ts_100000_rss_mb --&gt;58&lt;!-- /v --&gt; MB, and ANTLR 4 &lt;!-- v:antlr_warm_100000_ms --&gt;95&lt;!-- /v --&gt; to &lt;!-- v:antlr_cold_100000_ms --&gt;301&lt;!-- /v --&gt; ms and &lt;!-- v:antlr_cold_100000_rss_mb --&gt;217&lt;!-- /v --&gt; to &lt;!-- v:antlr_warm_100000_rss_mb --&gt;471&lt;!-- /v --&gt; MB; at a million rules,
+&lt;!-- v:hbnf_1000000_ms --&gt;148&lt;!-- /v --&gt; ms against Tree-sitter's &lt;!-- v:ts_1000000_ms --&gt;2164&lt;!-- /v --&gt; ms.  On real formats, JSON, TOML and YAML against the
+libraries people use for them, the README has the tables.  Measuring a large JSON document found a
+real fault, now fixed: the generated parser worked out the line and column of every failure that went
+deeper than the last, which is a pass over the text each time, so a long input with any backtracking
+took quadratic time; the first attempt at a 39 MB file ran for minutes.  The position is now worked
+out once, if the parse fails.</p>
+<h2>Appendix — Incremental Parsing without Giving Up the Grammar</h2>
+<ol>
+<li>Tree-sitter's two real wins are incremental reparse and error recovery. Both</li>
+</ol>
+<p>rest on a concrete tree whose nodes carry byte spans: an edit reuses every
+subtree it does not touch, and a broken file still yields a tree with ERROR and
+MISSING nodes instead of nothing.</p>
+<ol start="2">
+<li>Tree-sitter needs generalized LR for this because it must preserve ambiguity</li>
+</ol>
+<p>across an edit. HyperBNF has no ambiguity to preserve, because it refuses it up
+front. A deterministic parser has exactly one result at a position, so an edit
+invalidates only the nodes whose span it touches; the rest is reused as-is, and
+re-parsing the touched range is guaranteed to match what a full parse would
+have produced. Incremental parsing falls out of determinism, not out of a stack
+of stacks.</p>
+<ol start="3">
+<li>Recovery is the same trick in the other direction. Where the parser fails it</li>
+</ol>
+<p>does not fork; it writes an ERROR node, skips to the next synchronizing token,
+resumes, and writes MISSING where a token was expected. The valid regions stay
+correct because the core parser never changed. Recovery is a wrapper, not a
+replacement.</p>
+<ol start="4">
+<li>The grammar stays the document. The extended ABNF — <code>=</code>, <code>|</code>, <code>/</code>, <code>*</code>,</li>
+</ol>
+<p><code>1*</code>, <code>n*m</code>, <code>[ ]</code>, the character classes, the <code>%scan{}</code> scanner actions, <code>whitespace ws</code>
+— remains the single source, read by the person and run by the machine. The
+spans and the recovery are added underneath, invisible in the notation.</p>
+<ol start="5">
+<li>One thing is worth taking back, lost when ABNF dropped it: the angle</li>
+</ol>
+<p>brackets. Naur's 1960 report wrote <code>&lt;expression&gt;</code> for a non-terminal and the
+terminal bare, and Knuth kept the convention in *The Art of Computer
+Programming* and WEB. ABNF threw the brackets away to fit ASCII. HyperBNF already
+reads <code>=</code> and <code>::=</code>, <code>|</code> and <code>/</code>, side by side, so reading <code>&lt;name&gt;</code> as sugar for
+<code>name</code> is the same move, and it is the one a literate grammar wants — the
+bracket marks the thing being defined for the reader, and the parser ignores
+it. The brackets are for non-terminals. That was the point: a terminal is
+written as itself, a non-terminal is written as a name in brackets, and the
+reader tells the two apart at a glance.</p>
+<h2>Appendix — The people</h2>
+<p>In the order of the list under the title.</p>
+<p><strong>Emil Post (1943).</strong> Emil Leon Post (1897–1954), a Polish-American logician.
+His &quot;Formal reductions of the general combinatorial decision problem&quot; (1943)
+gave production systems — strings rewritten by rules — the mechanism Backus
+later took for his metalinguistic formulas. He had already shown, independently
+of Turing and Gödel, the limits of formal computation.</p>
+<p><strong>Noam Chomsky (1956).</strong> Noam Chomsky (b. 1928), linguist at MIT. Generative
+grammar turned language from examples into a formal object: a finite rule set
+that generates the infinite legal sentences. The Chomsky hierarchy — regular,
+context-free, context-sensitive — is the ladder every parser in this history
+sits on. That a grammar is a machine for generating strings is his idea.</p>
+<p><strong>John Backus (1959).</strong> John Warner Backus (1924–2007) led the IBM team that
+built FORTRAN, then spent the rest of his career arguing that programming
+should move away from the von Neumann style he had helped entrench. At UNESCO's
+ICIP in Paris, June 1959, he published the ALGOL 58 syntax as &quot;metalinguistic
+formulas&quot; derived from Post's production systems — the first finite set of
+rewrite rules that generated exactly the legal strings. Turing Award, 1977.</p>
+<p><strong>Peter Naur (1960).</strong> Peter Naur (1928–2016), a Danish astronomer who had used
+EDSAC for comet orbits and moved to computing at Regnecentralen. As editor of
+the ALGOL 60 Report (CACM, May 1960) he made the notation usable: angle
+brackets, <code>::=</code>, <code>|</code>, with recursion and block structure in the one formalism.
+Backus wrote a paper; Naur wrote the reference grammar of a real language.
+Turing Award, 2005.</p>
+<p><strong>John McCarthy (1960).</strong> John McCarthy (1927–2011), at MIT and later Stanford.
+Inventor of Lisp; his 1960 paper defined the language with a metacircular
+evaluator, <code>eval</code> written in Lisp — a program that describes itself, four years
+before META II. Turing Award, 1971.</p>
+<p><strong>Edgar Irons (1961).</strong> Edgar T. &quot;Ned&quot; Irons, at Princeton. His
+&quot;A Syntax-Directed Compiler for ALGOL 60&quot; (January 1961) was the first compiler
+whose parser ran straight off the BNF, the grammar supplying the recognition
+tables as a program supplies its data. Then he went further than anyone in this
+story: he built IMP, a syntax-extensible language whose production rules,
+written in the program itself, rewrote the compiler's own grammar on the fly —
+the grammar not merely executed, but evolving as it ran. He used those
+techniques to build early time-sharing operating systems for the NSA and the
+Cray supercomputers. He is the hero of this history: the man who showed a
+grammar could not merely describe a language but run it, and then change it.</p>
+<p><strong>R. A. Brooker (1963).</strong> Ralph Anthony &quot;Tony&quot; Brooker (1925–2019), at Manchester. With D. Morris he built
+the Compiler Compiler for the Atlas — the system that gave the field its name.
+It read a phrase-structure description of a language and generated a
+machine-code compiler for it; it built compilers for Algol and Atlas Autocode.</p>
+<p><strong>D. Morris (1963).</strong> Derrick Morris, at Manchester. Co-designer, with Brooker, of
+the Compiler Compiler.</p>
+<p><strong>Christopher Strachey (1963).</strong> Christopher Strachey (1916–1975), a British
+computer scientist. He led the Cambridge–London effort behind CPL (Combined
+Programming Language, 1963), the ALGOL descendant whose simplifications became
+BCPL, then B, then C. He went on to found denotational semantics.</p>
+<p><strong>Donald Knuth (1964).</strong> Donald E. Knuth (b. 1938), at Stanford. He founded
+the theory this history mechanizes — &quot;On the Translation of Languages from
+Left to Right&quot; (1965) — and, in <em>The Art of Computer Programming</em> and WEB, the
+literate ideal that one document can be both prose a person reads and code a
+machine runs. He insisted the name be Backus–Naur Form, not Backus Normal
+Form, because it is not a normal form: the honesty of naming, applied to a
+whole field. Turing Award, 1974.</p>
+<p><strong>Dewey Val Schorre (1964).</strong> Dewey Val Schorre, at UCLA. META II (1964), the
+first documented metacompiler: a language written as &quot;syntax equations&quot; in the
+shape of BNF, each equation compiled to the subroutine that recognized it.
+He replaced <code>::=</code> with <code>=</code> and <code>|</code> with <code>/</code>, and introduced <code>$</code> for
+repetition because a top-down parser cannot survive left recursion — three
+decisions every later notation inherited in one form or another. META II
+compiled itself; he went on to the CWIC compiler-writing project at System
+Development Corporation.</p>
+<p><strong>Robert McClure (1965).</strong> Robert M. McClure, at Texas Instruments. TMG
+(TransMoGrifier, 1965), a recursive-descent compiler-compiler; ported to Unix
+by McIlroy, it was TMG that Ken Thompson used to write B.</p>
+<p><strong>Martin Richards (1966).</strong> Martin Richards (b. 1940), at Cambridge. BCPL
+(Basic CPL, 1966), the typeless language C descended from; his <code>writef</code> is
+where C's <code>%</code> format directives came from.</p>
+<p><strong>Douglas McIlroy (1968).</strong> Douglas McIlroy (b. 1932), at Bell Labs. The
+inventor of the Unix pipe; he implemented TMG on the PDP-7, and it was through
+his TMG that the compound-assignment operators passed from ALGOL 68 into B and
+C.</p>
+<p><strong>Ken Thompson (1969).</strong> Ken Thompson (b. 1943), at Bell Labs. Co-creator of
+Unix (1969); he set out to write a FORTRAN compiler with TMG and wrote B
+instead, the language C grew out of. Later Go.</p>
+<p><strong>Stephen Johnson (1971).</strong> Stephen Curtis Johnson (b. 1944), at Bell Labs.
+Yacc, lint, and the Portable C Compiler. He wanted to add an exclusive-or to
+the B compiler and found the hand-written parser impossible to change; Al Aho
+pointed him at Knuth's LR papers, and Jeff Ullman's &quot;another compiler-compiler?&quot;
+supplied the name.</p>
+<p><strong>Al Aho (1971).</strong> Alfred Aho (b. 1941), at Bell Labs and later Columbia.
+&quot;LR Parsing&quot; (1974, with Johnson) and the &quot;dragon book&quot;; AWK. It was his
+pointer to Knuth's LR papers that set Johnson on Yacc.</p>
+<p><strong>Dennis Ritchie (1972).</strong> Dennis Ritchie (1941–2011), at Bell Labs. Co-creator
+of Unix and the author of C (1972), the language every later system in this
+history was written in or against.</p>
+<p><strong>David Crocker (1982).</strong> David H. Crocker, an Arpanet mail practitioner.
+RFC 822 (1982), the mail-format spec whose section 2 everyone cited as &quot;the BNF
+in RFC 822&quot; — the citation habit that produced ABNF. IEEE Internet Award, 2004.</p>
+<p><strong>Robert Corbett (1985).</strong> Robert Corbett. Berkeley Yacc (1985), the LALR
+engine Bison adopted.</p>
+<p><strong>Richard Stallman (1987).</strong> Richard Stallman (b. 1953). The C grammar of
+GCC 1.0 (22 March 1987), fed to Bison; the GNU project and free software.</p>
+<p><strong>Michael Tiemann (1987).</strong> Michael Tiemann (b. 1964). The g++ C++ front end, the
+Yacc-based C++ grammar that became the standing lesson in what the machine
+could not do.</p>
+<p><strong>Leonard Tower (1987).</strong> Leonard H. Tower Jr. (b. 1949). Parts of the GCC parser, the RTL
+generator and definitions, and the VAX machine description.</p>
+<p><strong>Paul Rubin (1987).</strong> Paul Rubin. Most of the GCC preprocessor.</p>
+<p><strong>John Gilmore (1987).</strong> John Gilmore (b. 1955). Compiled the whole BSD source tree with
+the VAX GCC in 1987–88 so CSRG could drop pcc — for ANSI C, better code, and a
+way out from under the AT&amp;T copyright.</p>
+<p><strong>Keith Bostic (1987).</strong> Keith Bostic (b. 1959), of CSRG. Endorsed the GCC switch that
+took Berkeley off pcc.</p>
+<p><strong>Mike Karels (1987).</strong> Michael J. Karels (1956–2024), of CSRG. Endorsed the same switch.</p>
+<p><strong>Terence Parr (1988).</strong> Terence John Parr, at Purdue and later the University
+of San Francisco. ANTLR (1988–90), the parser generator that generated the
+recursive descent he was already writing by hand, with predicates and
+backtracking for what finite lookahead cannot decide.</p>
+<p><strong>Isaac Mozeson (1989).</strong> Isaac Elchanan Mozeson (b. 1951), an Orthodox Jewish linguist. *The
+Word* (1989), his Edenics dictionary, traces words across languages to a single
+source; he saw language as the thing that brings people together. Chomsky
+dismissed him. The descriptive method came around to his side anyway, and the
+studies of the brain are coming around to it too.</p>
+<p><strong>Jeff Fox (1996).</strong> Jeffrey Arthur Fox (1949–2011), of UltraTechnology. A
+Forth programmer and a close personal friend of Chuck Moore, the language's
+inventor; from 1990 they worked side by side on minimal computing taken to its
+limit: Fox commissioned the F21, a &quot;low fat&quot; chip — a 500 MIPS Forth engine
+with video, network and analog I/O, a whole workstation on a die he priced at
+about a dollar. The discipline this document borrows as its epigraph — do not
+solve the hard problem, remove what makes it hard — is his. May he rest in
+peace.</p>
+<p><strong>Bryan Ford (2002).</strong> Bryan Ford, at MIT and later EPFL. Packrat parsing
+(2002) and Parsing Expression Grammars (2004), recognition-based grammars
+where ordered choice makes ambiguity impossible.</p>
+<p><strong>Anders Magnusson (2002).</strong> Anders Magnusson. Revived pcc from the opened 32V
+sources from 2002, rewriting half the front end and most of the back end, and
+kept the last Yacc-driven C compiler alive.</p>
+<p><strong>Joseph Myers (2004).</strong> Joseph S. Myers, a Cambridge mathematician and the
+long-time GNU C front-end maintainer. Wrote the hand-written recursive-descent
+C parser that replaced the Bison grammar in GCC 4.1 (2006) — the end of the age
+of LALR parsing in the world's most visible C compiler.</p>
+<p><strong>Max Brunsfeld (2014).</strong> Max Brunsfeld, on GitHub's Atom team. Tree-sitter
+(2014–18), the incremental GLR parser for editors, now the usual answer
+whenever a tool needs a real syntax tree for a language it does not itself
+compile.</p>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!doctype html>
+<!-- generated from COMPILER-COMPILER.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HyperBNF compiler-compiler notes</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>HyperBNF compiler-compiler notes</h1>
+<p>HyperBNF is not yacc with a prettier surface syntax.  Its useful combination is:</p>
+<ul>
+<li>EBNF/CFG-style productions for human-readable grammar structure;</li>
+<li>PEG-style ordered choice and recursive descent;</li>
+<li>direct left-recursive grammar forms without forcing authors to rewrite them;</li>
+<li>ABNF/RFC-style character and numeric terminals for exact protocol syntax;</li>
+<li><code>%scan{}</code> for target-language scanner escape hatches;</li>
+<li><code>%action{}</code> for target-language semantic construction, run once after the parse;</li>
+<li><code>%where{}</code> for a test that runs each time an alternative is tried, and <code>%emit{}</code> for code that runs
+as the parse proceeds (a value, a tape; C backend), with <code>rollback { }</code> to undo what a given-up form did.</li>
+</ul>
+<p>The next layer makes those mechanisms compiler-quality rather than importing
+legacy yacc interfaces: locations, named typed semantic values, explicit
+parser/scanner context, scanner modes, input abstraction, recovery, and a
+shared semantic IR should <em>surround</em> <code>%scan{}</code> and <code>%action{}</code>.  See
+<code>RFCPLAN.md</code> §&quot;Compiler-compiler completion criteria&quot; and the Order steps 6–9.</p>
+<h2>RFC copy-paste</h2>
+<p>An RFC's ABNF should compile almost verbatim.  Spelling variants (<code>::=</code>, <code>:=</code>
+for <code>=</code>) are accepted silently — silence makes cut-and-paste easier.  Where
+hbnf needs something different, the error names the RFC form and says how hbnf
+spells it (&quot;you wrote X; if you meant Y, hbnf spells it Z&quot;), so a pasted RFC is
+corrected by the messages, not by reading the manual.</p>
+<h2>Non-goals</h2>
+<p>Do not add <code>yylval</code>, <code>$1</code>, global <code>yyparse</code>, LR conflict declarations, or
+GLR merely for compatibility.  (<code>$$</code> in an <code>%emit</code> block is the value of the rule being
+recognised, not yacc's.)  They solve problems caused by yacc's LR
+implementation rather than problems HyperBNF currently has.</p>
+<h2>Invariant</h2>
+<p>Every unbounded repetition must make progress or terminate.  A nullable rule
+may be repeated semantically, but the generated parser must stop when an
+iteration leaves the input position unchanged.  Every backend does: a loop over
+a nullable rule stops when an iteration does not advance (<code>tests/schema.sh</code>).</p>
+<h2>Backend contract</h2>
+<p>Every generated backend is an implementation of one language.
+If a construct cannot be represented by a backend, reject it during schema
+validation with a source-located diagnostic — never silently change its
+meaning for one backend.</p>
+<h2>Backend spectrum</h2>
+<p>Compiled today: <strong>C</strong> (pinned to C99, output also valid C++11+), <strong>Rust</strong>,
+<strong>Zig</strong>, <strong>Ada</strong>.  Planned compiled targets: <strong>D</strong>, <strong>Fortran</strong>, **Free
+Pascal<strong>, </strong>Nim<strong>, </strong>Odin<strong>, </strong>Objective-C<strong>, </strong>ATS<strong>, </strong>V**; then the GC
+languages <strong>Go</strong>, <strong>Java</strong>, <strong>JavaScript</strong>, <strong>C#</strong>, <strong>F#</strong>, <strong>Julia</strong>,
+<strong>Common Lisp</strong>, <strong>newLISP</strong>.  A Java backend also serves Kotlin, Scala and
+Clojure through the same jar, so they need no backend of their own.  A
+separate C++ backend appears only if C++ needs more than an <code>extern &quot;C&quot;</code>
+header guard.</p>
+</body>
+</html>

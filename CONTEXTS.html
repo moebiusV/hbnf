@@ -1,0 +1,927 @@
+<!doctype html>
+<!-- generated from CONTEXTS.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contexts: where a rule is, what it has, what it is</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>Contexts: where a rule is, what it has, what it is</h1>
+<p><strong>Status (reviewed; kept up to date with what is decided and what is built, last 2026-11-05).</strong>  The sections below are the record of how
+each point was reached; this table is where it stands.  Under the standing rule, no syntax is implemented before it has been shown and approved.</p>
+<table>
+<thead>
+<tr><th>Point </th><th>State </th><th>Where </th></tr>
+</thead>
+<tbody>
+<tr><td>Islands: <code>include &quot;f&quot; as x</code>, <code>x.rule</code>, the dot is scope and never part of a name, strict lookup (a missing name is missing); <code>^.rule</code> is the way out, a rule of the including grammar (<code>^.^.rule</code> two levels, <code>^.sql.rule</code> an island of the parent) </td><td><strong>built</strong> (aff3de9), four backends; tree-sitter refuses a scope that skips white space differently; <code>^.rule</code> <strong>built</strong> 2026-11-03 (<code>tests/upscope.sh</code>) </td><td>14, 19, stage 1 status </td></tr>
+<tr><td>Switch <code>=&gt; grammar(x)</code>, <code>=&gt;</code> the one arrow </td><td><strong>built, phase 1: white space only</strong> (aff3de9), C, Rust, Zig, Ada; tree-sitter refuses a switch </td><td>15, 18, 19, 22, stage 2 status </td></tr>
+<tr><td>Pattern arguments <code>phrases(&quot;SIZE&quot; &quot;ERROR&quot;)</code> and the literal join <code>&quot;END-&quot; + K</code></td><td><strong>built</strong> (09b966c); used in COBOL as <code>phrases(W)</code> and <code>scope-end(K)</code></td><td>21 </td></tr>
+<tr><td>Two <code>ws</code> bugs (a lookahead in <code>ws</code>, a group after a literal) </td><td><strong>fixed</strong> (112f19f) </td><td>20 </td></tr>
+<tr><td>Notation <code>i&quot;...&quot;</code>, <code>s&quot;...&quot;</code>, <code>r&quot;...&quot;</code>, C numbers; the <code>%</code> forms kept for the ABNF dialect only </td><td><strong>built</strong> (8328962); the repository's grammars rewritten </td><td>23 </td></tr>
+<tr><td><code>bol</code> and <code>eol</code>, built-in zero-width rules; no <code>^</code> or <code>$</code> in <code>r&quot;...&quot;</code></td><td><strong>built</strong> (b0f0302) </td><td>24 </td></tr>
+<tr><td><code>r&quot;...&quot;</code> with a one-letter rule (<code>exponent = ir&quot;E&quot;</code>) in the full COBOL grammar </td><td><strong>fixed</strong> (b0f0302: a letter rule that became a keyword) </td><td>23 </td></tr>
+<tr><td>Keywords as reserved words, without <code>%</code></td><td><strong>decided</strong> as to reserved words; the spellings of <code>%label</code>, <code>%num</code>, <code>%action</code> and the rest are <strong>open</strong>; nothing built </td><td>10 </td></tr>
+<tr><td>Back-references: <code>x as K</code> captures, <code>$K</code> matches the same text again (replaces <code>%as</code> and <code>%same</code>); named only </td><td><strong>built</strong> (1c9c7ac); up references <code>$K^</code> and <code>$K^R</code>, the case property kept by <code>$K</code>, and <code>^.rule</code> <strong>built</strong> (a4f96d9); <code>%as</code>/<code>%same</code> remain for the ABNF dialect </td><td>10, 25 </td></tr>
+<tr><td>Facts (a rule's own attributes, keyed by name) </td><td><strong>decided yes</strong>; nothing built </td><td>13 </td></tr>
+<tr><td>Labels (<code>name:</code> lines that set the context) </td><td><strong>open</strong>; nothing built </td><td>16 </td></tr>
+<tr><td>Switch phase 2 (token and scalar overrides: decimal comma, per-region reserved words) and phase 3 (phrase variants in <code>ast</code>, the tape case) </td><td><strong>decided design</strong>; not built </td><td>22 </td></tr>
+<tr><td><code>col</code> and <code>where (cond)</code>; <code>30WS</code></td><td><strong>proposed</strong>; <code>bol</code> and <code>eol</code> come first and cover the line-start cases; <code>col</code> 0-based and <code>where</code> as a postfix are <strong>to be confirmed</strong></td><td>24 </td></tr>
+<tr><td>Fixed-format COBOL as a grammar </td><td><strong>not started</strong>; waits for <code>bol</code>/<code>eol</code> and <code>col</code></td><td>24 </td></tr>
+<tr><td>GLR </td><td><strong>allowed</strong> by the scope note, pay only for what is used; not started </td><td>RFCPLAN </td></tr>
+</tbody>
+</table>
+<p>COBOL embeds other languages (SQL, CICS, DLI, and JCL near it), its PICTURE clause is a small language of its
+own, and its meaning depends on what the data division declared.  C needs the same from a typedef.  YAML and Python
+need it from the indentation.  All of these are a rule depending on something outside its own text: a context.
+This page names the kinds, lists what hbnf has for each, and offers several ways to write each one that change
+BNF as little as possible.</p>
+<h2>1. What hbnf has now</h2>
+<table>
+<thead>
+<tr><th>need </th><th>notation today </th><th>where it stops </th></tr>
+</thead>
+<tbody>
+<tr><td>a different lexical mode (white space, case, tokens) </td><td><code>whitespace ws</code>, <code>whitespace none</code>, <code>sensitivity string %i</code>, <code>dialect</code>, one tokens file per mode </td><td>the <strong>file</strong>: a mode cannot change inside a rule </td></tr>
+<tr><td>a name is of some kind </td><td><code>context types</code>; <code>name ? types</code>; <code>name ?! types</code></td><td>the set, until a scope ends </td></tr>
+<tr><td>a name is added to a kind </td><td><code>%bind types += decl.name</code>; <code>%scope</code></td><td>the scope </td></tr>
+<tr><td>a value from outside or from the text </td><td>parameters, <code>binary(N in 1..17)</code>, <code>declarator(&quot;vars&quot;)</code>, <code>x %num D</code>, <code>%spaces K</code>, <code>%col</code></td><td>the rule that takes it </td></tr>
+<tr><td>the same text again </td><td><code>name %as tag</code> ... <code>%same tag</code></td><td>the sequence </td></tr>
+<tr><td>host code </td><td><code>%where { code }</code></td><td>one test </td></tr>
+</tbody>
+</table>
+<p>Three things stand out.  The sigils (<code>%</code>, <code>?</code>) carry most of it, and the notation reads as code rather than as
+a grammar.  A mode belongs to a file, so a language inside a language needs a second file and has no way to say where
+it ends.  And one notation (<code>?</code>) is used for kind, while a different one (<code>( )</code>) carries a value; the grammar's
+reader has to know which is meant.</p>
+<h2>2. The three relations</h2>
+<p>A rule has three different relations to what surrounds it.</p>
+<ul>
+<li><strong>In a context</strong> (a place).  The rule is read in a mode: SQL inside <code>EXEC SQL ... END-EXEC</code>, the characters of
+a PICTURE string, a heredoc, a comment, the data of a JCL step.  The mode brings its white space, its case
+rule, its reserved words, its tokens.  Embedded languages and DSL strings are this.</li>
+<li><strong>Having an attribute</strong> (a property).  The rule carries a value beside its text: the level number of a data
+entry, the size a PICTURE gives, the indent of a block, the length before a payload.  The value is given to the rule
+from outside (inherited) or made by it (synthesized).</li>
+<li><strong>Being a kind of thing</strong> (a classification).  The text is accepted because of what it is known to be: a
+typedef name rather than a variable, a condition name rather than a data name, a class name from SPECIAL-NAMES.
+The knowledge is a set that declarations fill.</li>
+</ul>
+<h2>3. Other kinds of context?</h2>
+<p>Each of these shows up in some language.  Most turn out to be one of the three applied to something else.</p>
+<table>
+<thead>
+<tr><th>kind </th><th>example </th><th>which of the three </th></tr>
+</thead>
+<tbody>
+<tr><td>position (column, line start) </td><td>COBOL fixed-format area A and area B; YAML indentation </td><td>an attribute of the place the rule starts </td></tr>
+<tr><td>nesting depth </td><td>nested comments, a bound on recursion </td><td>an attribute that counts </td></tr>
+<tr><td>the same text as before </td><td>an XML closing tag, a heredoc end, COBOL <code>END PROGRAM name</code></td><td>an attribute that is a piece of text </td></tr>
+<tr><td>the neighbours of a token </td><td><code>A - B</code> against <code>A-B</code>, <code>a&gt;&gt;b</code> in a template </td><td>not context: lookahead and lookbehind (<code>!</code>, <code>&amp;</code>; lookbehind is missing) </td></tr>
+<tr><td>a dialect or version set from outside </td><td><code>&gt;&gt;SOURCE FORMAT</code>, <code>-std=c99</code>, <code>%YAML 1.1</code></td><td>a context (in a mode) that a directive sets </td></tr>
+<tr><td>a size or count </td><td><code>PIC 9(5)</code>, <code>OCCURS 3 TIMES</code>, a length prefix </td><td>an attribute that is a number </td></tr>
+<tr><td>where the text came from </td><td>a copybook, a macro expansion </td><td>outside the grammar: a preprocessor's business </td></tr>
+<tr><td>what is being written </td><td>the target syntax of a translation </td><td>the output side, not parsing </td></tr>
+<tr><td>what has been seen so far in this rule </td><td>COBOL's data clauses, in any order and each once </td><td>a <strong>kind</strong> (a set), kept for the length of one rule </td></tr>
+</tbody>
+</table>
+<p>So the three cover the grammar's side.  Two additions are worth naming because they cut across all three.</p>
+<ul>
+<li><strong>Extent</strong>: how long it lasts.  A file (today's modes), a rule, a scope (a block), a region (until a
+terminator), or one rule's siblings (the data clauses).  Today only the file and the scope can be said.</li>
+<li><strong>Direction</strong>: whether it comes in or goes out.  A level number goes out of the rule that reads it and into the
+entries below; a typedef name goes out of a declaration into everything after it.</li>
+</ul>
+<h2>4. What a notation should do</h2>
+<ul>
+<li>Change BNF as little as possible, so that a rule with no context reads as the BNF it is.</li>
+<li>Read naturally to a person who has never seen it, without a sigil to learn (<code>%</code>, <code>@</code>, <code>$</code> are what to avoid).</li>
+<li>Cost nothing for a grammar that uses none of it.</li>
+<li>Be one idea, not three: the three relations should look like cases of one thing.</li>
+</ul>
+<p>Where hbnf already has a form, the options below reuse it: <code>( )</code> for parameters with a domain <code>N in 1..17</code>,
+<code>-</code> as the infix exception operator, <code>&lt;rule&gt;</code> as a rule name.</p>
+<h2>5. Options for being <strong>in</strong> a context</h2>
+<p><strong>5.1  Say nothing in the rule; let the file carry it.</strong>  Embed a grammar by including it under a name, and refer to
+its rules by that name.  The rule syntax does not change.</p>
+<pre><code>include &quot;sql.hbnf&quot; prefix &quot;sql-&quot;          ; its rules appear as sql-statement, sql-select, ...
+exec-sql = &quot;EXEC&quot; &quot;SQL&quot; sql-statement &quot;END-EXEC&quot;
+</code></pre>
+<p>The mode (white space, case, reserved words) is the included file's own directives, as now.  New: a prefix on
+<code>include</code>, which is a directive and not part of a rule.  Missing: where the region ends (see 5.5).</p>
+<p><strong>5.2  A qualified name.</strong>  <code>include &quot;sql.hbnf&quot; as sql</code> and then <code>sql.statement</code>.  Familiar from every module system;
+a dot is free in rule names.  It changes the name syntax slightly.</p>
+<p><strong>5.3  An infix word.</strong>  Reuse the shape of <code>a - b</code>: <code>sql-text in sql</code> means &quot;read the text of <code>sql-text</code> with the
+rules of <code>sql</code>&quot;.</p>
+<pre><code>picture-clause = ( &quot;PICTURE&quot; | &quot;PIC&quot; ) [ &quot;IS&quot; ] picture-text in picture
+</code></pre>
+<p>Reads like English; <code>in</code> is already a word of the notation (<code>N in 1..17</code>).  The cost is that <code>in</code> then means a
+mode here and a domain there.</p>
+<p><strong>5.4  A mode as a parameter.</strong>  The hyperrule machinery already passes a word through a rule.  A mode is such a
+word: <code>statement(&quot;sql&quot;)</code>, with the file-level directives given per mode (<code>whitespace(&quot;sql&quot;) = sql-ws</code>).</p>
+<pre><code>mode ::= &quot;cobol&quot; | &quot;sql&quot; | &quot;cics&quot;
+exec-sql := &quot;EXEC&quot; &quot;SQL&quot; statement(&quot;sql&quot;) &quot;END-EXEC&quot;
+</code></pre>
+<p>No new syntax at all, only a new use of parameters; the price is that the directives become parameterised too.</p>
+<p><strong>5.5  Where it ends.</strong>  An embedded region ends at text the embedded grammar does not know (<code>END-EXEC</code>).  Options:</p>
+<ul>
+<li>a lookahead inside the embedded grammar (<code>*( !&quot;END-EXEC&quot; token )</code>), written by hand and already possible;</li>
+<li>an infix <code>until</code>: <code>sql-statement until &quot;END-EXEC&quot;</code>, a plain-English operator that means the region stops
+where the terminator begins and the embedded rules may not read past it;</li>
+<li>an <strong>island</strong>: capture the region as text, <code>region = text until &quot;END-EXEC&quot;</code>, and parse it afterwards with the other
+grammar (<code>region in sql</code>).  The host parser never sees the guest's tokens, which is how precompilers have always
+done it, and it costs nothing for a program that has none.</li>
+</ul>
+<p><strong>5.6  A heading, as in layout.</strong>  Rules defined under a label belong to that grammar:</p>
+<pre><code>sql:
+    statement = &quot;SELECT&quot; ...
+</code></pre>
+<p>Natural to a reader; but it changes the shape of a file, and BNF has no headings.</p>
+<p><strong>5.7  A tree of grammars: island and switch</strong> (the user, 2026-11-02).  Grammars form a tree: a root grammar, and
+sub-grammars it includes.  A rule of the root can hand the text to a sub-grammar, in one of two ways:</p>
+<ul>
+<li><strong>Island</strong> (scope and return).  The sub-grammar reads a part, then control comes back to the rule that called it,
+and the host goes on from where the guest stopped.  A stack: enter, leave.  <code>EXEC SQL ... END-EXEC</code>, a PICTURE
+string, an interpolation inside a string, a heredoc body.  In lex terms <code>yy_push_state</code> / <code>yy_pop_state</code>.</li>
+<li><strong>Switch</strong> (a railway points lever).  The sub-grammar takes over and nothing returns: it reads the rest of the
+input (or until something switches again), and it stays where it was put.  A file's <code>#!</code> line or front matter,
+an HTTP header block before a body whose grammar the header names, COBOL's <code>&gt;&gt;SOURCE FORMAT FIXED</code>, a <code>%YAML 1.1</code>
+directive.  In lex terms <code>BEGIN(state)</code>.  A switch is between peers, so no stack grows, and the guest can switch
+again (back to free format, say).</li>
+</ul>
+<p>Both can be read as one thing in BNF terms, which would leave the rule syntax alone.  Reference a rule of another
+grammar by a qualified name (5.2): <code>sql.statement</code>.  That is already an island, because a rule reference returns
+to its caller and the sequence goes on.  A switch is the same reference placed last in its sequence, with the
+guest's rule being whatever is left of the input:</p>
+<pre><code>exec-sql      = &quot;EXEC&quot; &quot;SQL&quot; sql.statement &quot;END-EXEC&quot;      ; island: the host continues after it
+fixed-section = &quot;&gt;&gt;&quot; &quot;SOURCE&quot; &quot;FORMAT&quot; &quot;FIXED&quot; fixed.rest   ; switch: the rest belongs to fixed
+</code></pre>
+<p>What changes is which grammar owns white space, case and tokens: that of the rule being read, so crossing a
+qualified reference changes mode, and a rule never has to say so.  The questions this leaves:</p>
+<ul>
+<li>Does the grammar have to say which of the two it means (<code>sql.statement</code> against <code>switch fixed.rest</code>), or is
+&quot;the reference is last and reads to the end&quot; enough?  Saying so helps the reader and lets the generator refuse a
+switch that is not last, or an island that never ends.</li>
+<li>Where an island ends.  PEG ends it where the guest rule stops; if the guest is greedy past <code>END-EXEC</code>, the
+host needs <code>until</code> (5.5) or the guest needs a terminator it knows.</li>
+<li>One tree, or two.  An island's tree can be one node of the host's tree (with the guest's nodes under it), or
+text kept for later (5.5).  A switch has a natural answer: the guest's tree is the rest of the host's.</li>
+<li>Mutual switches (free and fixed format referring to each other) need the tree to be a graph of peers, not strictly
+a tree below one root; a switch is the one case where a sub-grammar may name its parent.</li>
+<li>A switch is the case the file-level directives (<code>whitespace</code>, <code>sensitivity</code>) already cover, one file at a time; it
+extends them to the middle of a file.</li>
+</ul>
+<h2>6. Options for <strong>having</strong> an attribute</h2>
+<p><strong>6.1  Parameters, as now.</strong>  The attribute is an argument in parentheses: <code>entry(K)</code>, <code>number(V)</code>.  A built-in rule
+that carries the value of what it matched (<code>number(V)</code>, <code>text(T)</code>, <code>column(C)</code>) gives the binder without a sigil.
+This is the logic-grammar (DCG) habit, close to a W-grammar.</p>
+<pre><code>data-entry(L) := number(L) name *data-clause &quot;.&quot; *data-entry(M in L+1..49)
+occurs        := &quot;OCCURS&quot; number(N) &quot;TIMES&quot;
+</code></pre>
+<p><strong>6.2  A dotted reference.</strong>  <code>entry.level</code>, as members of a record.  Short, and the attribute is named instead
+of positional; needs a place to declare which attributes a rule has.</p>
+<p><strong>6.3  A word between rule and attribute.</strong>  <code>size of picture-text</code>, <code>column of item</code>, <code>indent of line</code>: the
+attribute reads as the English phrase.  Natural in a comparison (<code>M &gt; L</code>), clumsy as a binder.</p>
+<p><strong>6.4  Direction by position.</strong>  One way to tell given from made without a sigil: a domain (<code>N in 1..17</code>) means given,
+a bare name means made.  Already the practice in the C grammar's <code>declarator(C in &quot;vars&quot; | &quot;types&quot;)</code>.</p>
+<p>Arithmetic (<code>L+1</code>) and comparison (<code>M &gt; L</code>) already exist in parameters; none of the options changes that.</p>
+<h2>7. Options for <strong>being</strong> a kind of thing</h2>
+<p><strong>7.1  <code>in</code> for membership.</strong>  <code>identifier in types</code>, <code>identifier not in vars</code>, replacing <code>?</code> and <code>?!</code>.  Reads as
+set membership.  Overlaps 5.3 (a mode is also &quot;in&quot;).</p>
+<p><strong>7.2  <code>is a</code>.</strong>  <code>type-name = identifier is a type</code>; <code>variable-name = identifier is a variable</code>.  The wording the
+relation has in speech.  Two words, but unmistakable, and distinct from 5.3.</p>
+<p><strong>7.3  Declaring.</strong>  The matching verb for adding: <code>typedef = &quot;typedef&quot; specifiers declarator declares type</code>,
+replacing <code>%bind types += ...</code>.  With 7.2 it makes a pair a reader can see: what a rule declares, and what a rule
+accepts.</p>
+<p><strong>7.4  A kind as a rule.</strong>  Define the kind in the grammar instead of declaring a set: `type ::= name declared by
+typedef`.  Everything stays a rule; the declaration is the definition.</p>
+<p><strong>7.5  Scope.</strong>  How long a kind lasts: <code>block = local &quot;{&quot; *item &quot;}&quot;</code> (forget what the block declared), or the
+reverse, <code>file</code> for the whole text.  Replaces <code>%scope</code>.</p>
+<h2>8. Three whole sketches, side by side</h2>
+<p>The same four needs: COBOL's embedded SQL, its PICTURE clause, the level numbers of the data division, and C's typedef.</p>
+<p><strong>A. Least change: directives and parameters.</strong></p>
+<pre><code>include &quot;sql.hbnf&quot; prefix &quot;sql-&quot;
+exec-sql      = &quot;EXEC&quot; &quot;SQL&quot; sql-text &quot;END-EXEC&quot;      ; island: text until the terminator, parsed later
+picture       = &quot;PIC&quot; [ &quot;IS&quot; ] picture-text            ; parsed by the picture grammar when the tree is made
+data-entry(L) := number(L) name *data-clause &quot;.&quot; *data-entry(M in L+1..49)
+type-name     = identifier in types
+typedef       = &quot;typedef&quot; specifiers declarator declares types
+</code></pre>
+<p><strong>B. English words.</strong></p>
+<pre><code>exec-sql      = &quot;EXEC&quot; &quot;SQL&quot; sql.statement until &quot;END-EXEC&quot;
+picture       = &quot;PIC&quot; [ &quot;IS&quot; ] picture-text in picture
+data-entry    = level-number name *data-clause &quot;.&quot; *data-entry with level &gt; this level
+type-name     = identifier is a type
+typedef       = &quot;typedef&quot; specifiers declarator declares type
+block         = local &quot;{&quot; *item &quot;}&quot;
+</code></pre>
+<p><strong>C. Everything a parameter.</strong></p>
+<pre><code>mode ::= &quot;cobol&quot; | &quot;sql&quot; | &quot;picture&quot;
+exec-sql      := &quot;EXEC&quot; &quot;SQL&quot; statement(&quot;sql&quot;) &quot;END-EXEC&quot;
+picture       := &quot;PIC&quot; [ &quot;IS&quot; ] text(&quot;picture&quot;)
+data-entry(L) := number(L) name *data-clause &quot;.&quot; *data-entry(M in L+1..49)
+type-name     := identifier(types)
+typedef       := &quot;typedef&quot; specifiers declarator(types)
+</code></pre>
+<p>A is the smallest step and uses nothing the reader does not already know.  B reads best and spends the most new words.
+C is the most uniform: one mechanism, with the cost that a mode, a value and a kind look alike.</p>
+<h2>9. Questions for review</h2>
+<ol>
+<li><strong>Decided (the user, 2026-11-02): both.</strong>  An island is a qualified reference <code>x.rule</code> (it returns and restores the live rules); a switch is <code>=&gt; grammar(x)</code> (sections 18, 19); a qualified reference that comes last is not a switch.  The island's tree is part of the host's (the guest's nodes are children of the open host rule instance).  The original question: Is &quot;a qualified reference, and a switch is one that comes last&quot; enough, or
+should the grammar say which?  And is the island's tree inside the host's, or kept as text (5.5)?  Inline gives one
+error position and one tree; text is cheap and what COBOL tools do.</li>
+<li>Should <code>in</code> mean a mode (5.3) or a kind (7.1)?  They cannot both, unless a mode is a kind of the whole text.</li>
+<li>Is <code>is a</code> / <code>declares</code> (7.2, 7.3) too much English for a grammar notation, or the thing that makes it readable?</li>
+<li>Do attributes need a direction (6.4), or is &quot;given if it has a domain&quot; enough?</li>
+<li>How is <strong>extent</strong> said (a rule, a scope, a region)?  <code>local</code> (7.5) covers the scope; the region needs <code>until</code>.</li>
+<li>Is any of the other kinds of section 3 worth its own form: position, and the earlier text (<code>%col</code>, <code>%as</code>)?
+They are the other two sigils the grammars still use.</li>
+<li>Keywords without <code>%</code> (section 10): <strong>decided (the user, 2026-11-02): reserved words.</strong>  A keyword cannot name a rule; using one gets an error that says so and suggests another name.  The spellings in the section 10 table stay to be shown before anything is built.</li>
+<li>Is the active set (section 11) the model?  Named sets only (section 18) is <strong>my recommendation, not yet answered by the user</strong>.  <strong>Decided (the user, 2026-11-02): a missing name is missing, with no look in an enclosing grammar.</strong>  What is left: how two grammars <em>share</em> the rules they both include (<code>free</code> and <code>fixed</code> both include the COBOL rules and differ in <code>ws</code>): do they each get a copy of the rules, or do they share one set of definitions and override the differences?  Sharing keeps the generated parser small and is what inheritance means; copying is simpler to build.</li>
+<li>Facts (section 13): <strong>decided (the user, 2026-11-02): yes</strong> -- a fact is a record of the rule's own attributes, keyed by a name; store at parse time only what the parse needs, the rest stays in the tree for a checking pass.</li>
+<li><strong>Decided (the user, 2026-11-02): the switch is spelled <code>=&gt; grammar(x)</code></strong> (a grammar as a parameter value, <code>grammar(mode)</code> when matched text names it).  The draft spellings in section 14 (<code>switch x</code>, a trailing reference, <code>-&gt;</code>) are dropped.</li>
+<li>Section 15: <strong>decided (the user, 2026-11-02): <code>=&gt;</code> is the one arrow</strong> for what a match does (value, fact, grammar to read the rest with).  <strong>Decided (the user, 2026-11-02): a grammar is a parameter value, and the consequence form <code>=&gt; grammar(x)</code> is the primary form</strong> (not sugar for threading the value).</li>
+<li>Labels (section 16; the user's own proposal, 2026-11-02, with no yacc clash; <strong>not part of the first slice</strong>): <code>name:</code> on a line by itself for the context that follows; per-context directives; dotted nested labels; plain names inside, the dot between.</li>
+<li><strong>Decided (the user, 2026-11-02): the first slice is islands plus <code>=&gt; grammar(x)</code></strong> (section 19).  Facts, labels, the <code>%</code>-free keywords and the output forms of <code>=&gt;</code> come after it.  C's typedef must keep working unchanged throughout.</li>
+</ol>
+<h2>10. Keywords without <code>%</code> (the user, 2026-11-02)</h2>
+<p><code>%</code> is spent on two different things.  <code>%x41</code>, <code>%d65</code>, <code>%b0</code>, <code>%s&quot;A&quot;</code>, <code>%i&quot;a&quot;</code> are ABNF's own (RFC 5234, RFC
+7405), and they stay.  The rest are hbnf's words, written like a directive although they sit inside rules:
+<code>%emit</code>, <code>%label</code>, <code>%action</code>, <code>%token</code>, <code>%scan</code>, <code>%as</code>, <code>%same</code>, <code>%num</code>, <code>%col</code>, <code>%spaces</code>, <code>%bind</code>, <code>%scope</code>,
+<code>%where</code>, <code>%grammar</code>.  Quoted text is already a literal (<code>&quot;...&quot;</code>, <code>'...'</code>), so a bare word in a rule can mean a keyword
+the same way <code>include</code>, <code>whitespace</code>, <code>dialect</code> and <code>prefix</code> already do at the head of a line.</p>
+<p><strong>The cost: a bare word in a rule is a rule name.</strong>  <code>a as b</code> would read as three rules.  Two ways to keep it
+unambiguous without a sigil:</p>
+<ul>
+<li><strong>Reserved words.</strong>  The keywords below cannot name a rule; a grammar that uses one gets a message that says so
+and suggests another name (<code>emit</code> is a rule name in this grammar; call it <code>emitted</code>).  The list is the whole cost,
+and COBOL, C and SQL all live with one.  Smallest change, and the grammar reads as English.</li>
+<li><strong>Position.</strong>  A keyword is a keyword only where a rule name could not stand: right after the element it modifies
+(<code>name as tag</code>, <code>type-name where in-scope</code>), or before a brace (<code>emit { ... }</code>).  No reserved list, but a reader
+has to know the positions, and a typo turns a keyword into a rule name that is then undefined.</li>
+</ul>
+<p>Suggested words, one idea each, nothing that needs a prefix:</p>
+<table>
+<thead>
+<tr><th>now </th><th>bare </th><th>reads as </th></tr>
+</thead>
+<tbody>
+<tr><td><code>x %as tag</code> ... <code>%same tag</code></td><td><code>x as K</code> ... <code>$K</code></td><td>name the text, later say &quot;the same text as <code>K</code>&quot; (decided 2026-11-03, below) </td></tr>
+<tr><td><code>%emit ...</code></td><td><code>emit ...</code></td><td>what the rule writes </td></tr>
+<tr><td><code>%label</code>, <code>%action</code>, <code>%token</code></td><td><code>label</code>, <code>action</code>, <code>token</code></td><td>the same, named by what they are </td></tr>
+<tr><td><code>%num D</code>, <code>%spaces K</code>, <code>%col</code></td><td><code>number D</code>, <code>spaces K</code>, <code>column</code></td><td>a count, an indent, a position </td></tr>
+<tr><td><code>%bind types += decl.name</code></td><td><code>declares types decl.name</code> (or <code>adds decl.name to types</code>) </td><td>see 7.3 </td></tr>
+<tr><td><code>%scope</code></td><td><code>scope</code></td><td>forget what the block declared (7.5) </td></tr>
+<tr><td><code>%where { code }</code></td><td><code>where { code }</code></td><td>a host-code test </td></tr>
+<tr><td><code>%grammar</code></td><td><code>grammar</code></td><td>a directive at the head of a line, already bare in spirit </td></tr>
+<tr><td><code>%scan</code></td><td><code>scan</code></td><td>the scanner action </td></tr>
+</tbody>
+</table>
+<p>Two of these are the same question as the contexts above: <code>declares</code>, <code>scope</code> and <code>as</code>/<code>same</code> are the context words,
+so settling the notation for contexts (sections 5 to 7) settles most of the <code>%</code> list at the same stroke.  What this
+page leaves open: reserved words or position; whether <code>number</code>/<code>column</code> should be shorter (<code>num</code>, <code>col</code>); and
+whether any word is better as punctuation (<code>@</code> is out).  The migration is mechanical (a tool rewrites <code>%word</code> to
+<code>word</code> across the corpus and the docs), and under the rule of no compatibility spellings the old form would be
+removed at once, not kept.</p>
+<p><strong>Back-references: <code>as K</code> and <code>$K</code> (the user, 2026-11-03).</strong>  <code>x as K</code> captures the text <code>x</code> matched under the name <code>K</code>; <code>$K</code> matches that text again, in the same sequence, as <code>%as</code> and <code>%same</code> do today (<code>ABNF.md</code>, tests/backref, the Mustache grammar).  Named only, never numbered
+(<code>$1</code>): a number shifts when an alternative is added and a capture inside a repetition or an alternative may not exist on every path, a name does not.  The tag is local to the sequence, so nesting and backtracking work as they do now; a plain <code>$K</code> compared the bytes at first (as <code>%same</code> did: exact in all four backends, whatever the grammar's
+<code>sensitivity</code>), while the join <code>&quot;lit&quot; + $K</code> follows <code>sensitivity string %i</code>.  <strong>Decided later the same day (the user), and built: <code>$K</code> keeps the property of what it back-references, see section 26 item 24.</strong>  <code>$</code> is free for this because <code>^</code> and <code>$</code> are not anchors in <code>r&quot;...&quot;</code> (section 24); inside a regex string <code>$K</code> stays literal text.  It replaces <code>%as</code> and <code>%same</code> and so removes two more <code>%</code> words from the list above; <code>as</code> and <code>same</code> become reserved words.
+The case that asked for it: COBOL's terminators, <code>add-statement = &quot;ADD&quot; as K ... [ &quot;END-&quot; + $K ]</code>, where the statement names its keyword once; this makes <code>scope-end(K)</code> of section 21 unnecessary for fixed keywords.  Open: whether <code>&quot;END-&quot; + $K</code> (a join with a captured text, resolved
+at parse time unless the capture is a single fixed literal, which the generator can resolve when the grammar is read) is written that way or <code>&quot;END-&quot; $K</code>.  Built 2026-11-03: <code>x as K</code> and <code>$K</code>; <code>&quot;END-&quot; + $K</code> is the form (two elements, <code>&quot;END-&quot; $K</code>, would let white space come between them), read as the literal <code>&quot;END-ADD&quot;</code> when <code>K</code> is kept from one fixed literal in the same sequence, else compared at run time in the sequence that keeps <code>K</code>; <code>%as</code> and <code>%same</code> are refused with the new spelling in the message; <code>as</code> is a reserved word (a rule named <code>as</code> is refused).</p>
+<h2>11. An active grammar is a set of live rules (the user, 2026-11-02)</h2>
+<p>A grammar is not one fixed text but a set of rules, and at any point of the input some of them are <strong>live</strong>.  Reading
+is always done with the live set; a rule that is not live does not exist for the parser, and a reference to it fails
+as a name nobody has.  Switching is changing which rules are live.  That one idea covers most of this page:</p>
+<table>
+<thead>
+<tr><th>what </th><th>as live rules </th></tr>
+</thead>
+<tbody>
+<tr><td>island (5.7) </td><td>the guest's rules go live on entry, and the host's set is live again on return: a stack of sets </td></tr>
+<tr><td>switch (5.7) </td><td>the live set is replaced, and nothing is restored </td></tr>
+<tr><td>dialect (<code>c79</code>, <code>c89</code>, <code>c99</code>, COBOL 85 and 2014) </td><td>a set chosen once, usually by a directive or an option </td></tr>
+<tr><td>a kind (a typedef name, 7.x) </td><td>a rule that becomes live when a declaration adds a name: <code>type-name</code> holds the names so far </td></tr>
+<tr><td>reserved words </td><td>the set of words that are keywords, which differs by dialect and by mode (SQL's are not COBOL's) </td></tr>
+<tr><td>a mode's white space and case </td><td>part of the set: each grammar brings its own </td></tr>
+<tr><td>a scope ending (<code>scope</code>) </td><td>the rules a block made live stop being live </td></tr>
+</tbody>
+</table>
+<p>So &quot;in a context&quot;, &quot;is a kind&quot; and &quot;has a dialect&quot; are the same act at different sizes: a rule, a name, or a whole
+grammar goes live or stops.  Two consequences for the notation.</p>
+<ul>
+<li>One verb pair is enough, however the names are spelt: something goes <strong>live</strong> (is added to the active set, for a
+stated extent), and something is <strong>live</strong> (the test).  Everything in sections 5 to 7 is a spelling of these two.</li>
+<li>The sets are static and finite, which keeps the cost where it belongs: a grammar that never switches has one set,
+and the generator emits the same parser it does today.  A grammar that switches pays for the table of sets and
+for the stack, and for nothing else.</li>
+</ul>
+<p>What to settle: whether a set is named (<code>sql</code>, <code>fixed</code>) and switched to by name, or built (this rule and these);
+whether a rule can be live in several sets (a shared <code>identifier</code>), which makes a set an overlay and not a partition;
+and what a rule that is not live says when the input would have matched it (the error message is where the user
+meets this: &quot;<code>GOBACK</code> is not a statement in dialect <code>cobol85</code>; it is in <code>cobol2002</code>&quot;).</p>
+<h2>12. What COBOL would gain (an estimate, 2026-11-02, from the scan of GnuCOBOL's test programs)</h2>
+<table>
+<thead>
+<tr><th>problem </th><th>the context </th><th>size </th></tr>
+</thead>
+<tbody>
+<tr><td><code>DECIMAL-POINT IS COMMA</code> (<code>-19876,1234</code>) </td><td>an attribute set by SPECIAL-NAMES: another numeric-literal rule is live </td><td>about 7 programs refused </td></tr>
+<tr><td>PICTURE text shares white space with code (a <code>,</code> is a separator, <code>$</code> began a comment: a real bug) </td><td>an island for the picture string with its own tokens </td><td>2 refused; the whole class of bug </td></tr>
+<tr><td><code>Process ...</code>, <code>*CONTROL LIST</code>, <code>@OPTIONS</code>, <code>&gt;&gt;SOURCE FORMAT</code></td><td>a switch for the rest of the file </td><td>about 6 refused, 49 left out of the scan </td></tr>
+<tr><td>fixed against free format </td><td>the same switch, replacing an external converter </td><td>the whole corpus </td></tr>
+<tr><td>reserved words that are legal names (<code>nested</code>, <code>error</code>, <code>corr</code>, <code>same</code>, <code>main</code>) </td><td>the reserved set live only in the procedure division </td><td>about 12 refused </td></tr>
+<tr><td><code>OCCURS</code> on level 01, <code>REDEFINES</code> larger, misplaced <code>VALUE</code></td><td>the level number as an attribute </td><td>about 5 wrongly accepted </td></tr>
+<tr><td>&quot;not defined&quot;, ambiguous, redefined names </td><td>a kind (<code>data-name ? defined</code>) </td><td>about 32 wrongly accepted; better left to a checking pass </td></tr>
+</tbody>
+</table>
+<p>Not helped: <code>COPY</code> and <code>REPLACE</code> (about 45 refused; they rewrite the token stream, so they are a preprocessor's work),
+the XML and JSON statements (about 10; unwritten grammar), and type checks such as an invalid <code>MOVE</code>.</p>
+<p>For compactness: clauses in any order and each once (SELECT, FD, screen items, SPECIAL-NAMES) are written <code>*clause</code> today,
+which also accepts a duplicate; &quot;each once&quot; as a kind kept for one rule says it exactly.  One reserved set live per
+region replaces the patches in each name position.  Dialects (IBM, Micro Focus, COBOL 85 and 2014) become rule sets
+in one grammar, not copies of it.</p>
+<h2>13. A matched rule remembers facts about itself (the user, 2026-11-02)</h2>
+<p>When a rule matches it can leave facts behind that later rules read: C's typedef is the case hbnf has (a name goes into
+a set), and COBOL has many more.  Today the fact is only &quot;this name is in this set&quot;; the proposal is that a fact is
+a <strong>record kept under a name</strong>: the rule that matched says what it knows (its attributes, section 6), and a later rule
+asks for it.</p>
+<p>What COBOL would keep, from the data division and the environment division:</p>
+<table>
+<thead>
+<tr><th>remembered by </th><th>key </th><th>facts </th><th>read by </th></tr>
+</thead>
+<tbody>
+<tr><td>a data description entry </td><td>the data name </td><td>level, parent group, PICTURE category (numeric, alphanumeric, edited), USAGE, OCCURS, REDEFINES, SIGN </td><td>class and sign conditions; <code>MOVE</code>; subscripts (is it a table?); <code>INITIALIZE</code></td></tr>
+<tr><td>a level-88 entry </td><td>the condition name </td><td>the item it belongs to </td><td>the abbreviated condition <code>A &gt; B AND C</code>: is <code>C</code> a condition name or a data name? (the grammar's header says the parser cannot tell; with the fact it can) </td></tr>
+<tr><td>SPECIAL-NAMES </td><td><code>DECIMAL-POINT</code>, currency sign, alphabet and class names, switches </td><td>the setting </td><td>the numeric literal (section 12); <code>IF x IS my-class</code>; <code>SET sw TO ON</code></td></tr>
+<tr><td>FILE-CONTROL and FD </td><td>the file name </td><td>organization, access mode, record key </td><td>which <code>READ</code>, <code>START</code>, <code>REWRITE</code> forms are valid </td></tr>
+<tr><td>a paragraph or section </td><td>its name </td><td>which section it is in </td><td><code>PERFORM</code>, <code>GO TO</code>, <code>THRU</code> (a use before the definition is the norm, so these are checked after, not while parsing) </td></tr>
+<tr><td>PROGRAM-ID </td><td>the program name </td><td><code>COMMON</code>, <code>INITIAL</code>, nesting </td><td><code>CALL</code> of a contained program </td></tr>
+</tbody>
+</table>
+<p><strong>What is parse-time and what is not.</strong>  A fact belongs in the parser only if it changes what parses: C's typedef
+(<code>T * x;</code> is a declaration or a product), COBOL's decimal point, a condition name against a data name, a class name.
+A fact that only says &quot;this is wrong&quot; (the type of a <code>MOVE</code>, an undefined name, a missing file description: nearly all of
+the programs <code>cobc</code> refuses and the parser accepts) goes into the tree for a checking pass, where forward references
+are no problem.  The rule: <strong>store at parse time what the parse needs; keep the rest in the tree.</strong></p>
+<p><strong>Mechanics that already exist and carry over.</strong>  A fact is added when its rule matches and removed when that match is
+given back (a wrong guess puts every set back, as the typedef sets do).  A scope ends what it added (a nested program
+sees its parent's facts; a <code>GLOBAL</code> item is seen below).  Qualification (<code>A OF B</code>) is a lookup by a path of keys.</p>
+<p><strong>Options for writing it</strong>, each only a sketch, all reusing section 6:</p>
+<ul>
+<li><strong>R1, the attributes stay in parentheses; one word remembers.</strong>
+<code>data-entry(L) := level(L) name as N [ picture(P) ] [ usage(U) ] &quot;.&quot; remembers N(level L, picture P, usage U)</code>; a read is
+the name with a test: <code>data-name(usage binary)</code>.</li>
+<li><strong>R2, a dotted read.</strong>  <code>N.level</code>, <code>N.usage</code> after <code>N</code> is bound, as the members of a record.</li>
+<li><strong>R3, a kind is a rule with a body.</strong>  <code>condition-name = user-word where it has parent</code> and <code>data-name = user-word where it has picture</code>:
+a name is a kind because of a fact, so a kind (7.x) is a fact test and the set is not a separate notion.</li>
+</ul>
+<p>R3 is the smallest: it keeps one idea (a rule remembers; a name is of a kind if a fact holds) and makes the earlier
+<code>?</code> set test a special case with a fact named &quot;declared&quot;.</p>
+<p>Questions: is a fact always a record of the rule's own attributes, or can a rule remember something it did not match
+(the parent group's level)?  Is the key always a name, or can it be a position (the last entry at this level)?  And
+how does a fact reach a rule in another grammar (an island sees its host's facts, or not)?</p>
+<h2>14. Qualified names for islands; how to say a switch (the user's preference, 2026-11-02)</h2>
+<p>Preferred for an island: <code>include &quot;sql.hbnf&quot; as sql</code>, and then <code>sql.statement</code> where a rule wants it.  The rules inside
+<code>sql.hbnf</code> are written as ever and refer to each other by their plain names; only the including grammar writes the
+prefix.  The included file's own <code>whitespace</code>, <code>sensitivity</code> and <code>dialect</code> apply while one of its rules is read (they are
+per file already), so crossing the dot changes the mode.  This is option 5.2 and needs no new word.  <strong>The dot goes in, the caret goes out (the user, 2026-11-03; built):</strong> inside the included file <code>^.statement</code> is the rule <code>statement</code> of the grammar that includes it, <code>^.^.statement</code> the one two levels out, <code>^.sql.statement</code> a rule of an island <code>sql</code> of the parent; a plain name still means the file's own, and <code>^.name</code> is strict (the parent must define it, the root has nothing out of it).</p>
+<pre><code>include &quot;sql.hbnf&quot; as sql
+exec-sql = &quot;EXEC&quot; &quot;SQL&quot; sql.statement &quot;END-EXEC&quot;
+</code></pre>
+<p>For a switch, the options, from least to most new:</p>
+<ol>
+<li><strong>A qualified reference that comes last.</strong>  <code>fixed-directive = &quot;&gt;&gt;SOURCE&quot; &quot;FORMAT&quot; &quot;IS&quot; &quot;FIXED&quot; fixed.program</code>.  No new
+word; the generator sees that nothing follows and the reference reads to the end.</li>
+<li><strong>A word.</strong>  <code>... &quot;FIXED&quot; switch fixed</code>.  Reads as English; says the intent, so the generator can refuse a <code>switch</code> that
+is not last and a grammar that can never come back.  <code>switch</code> becomes a reserved word (section 10).</li>
+<li><strong>A word with a computed target.</strong>  The grammar to switch to is named by the text just matched, using <code>as</code> (section 10):
+<code>source-format = &quot;&gt;&gt;SOURCE&quot; &quot;FORMAT&quot; &quot;IS&quot; word as mode switch mode</code>, where the text <code>FIXED</code> names the grammar <code>fixed</code>.</li>
+<li><strong>An arrow.</strong>  <code>... &quot;FIXED&quot; -&gt; fixed</code>, the railway picture.  Short, but <code>=&gt;</code> is already the idea in step 20 for a rule's
+output form (a word and its number, ALGOL's <code>begin</code> and C's <code>{</code>), so an arrow would have to be told apart from that.</li>
+</ol>
+<p>A heredoc is an island and not a switch: the body is read by the other grammar and control comes back at the
+terminator line.  <code>heredoc = &quot;&lt;&lt;&quot; word as tag  body.text until tag</code>.  A true switch has no return: <code>&gt;&gt;SOURCE FORMAT</code>, the <code>#!</code>
+line, front matter, <code>%YAML</code>.  The guest grammar switches again itself when it must (<code>cobol-free</code> reads the directive that
+sends it back).</p>
+<h2>15. A grammar as a value; a switch as the consequence of a match (the user, 2026-11-02)</h2>
+<p>Corrections to section 14: a heredoc is an island (the example there is right that it returns, wrong to have offered it as
+the case for <code>switch</code>).  A little code-like notation is fine for a rare case.  And a rule can be parameterised, so a grammar can be.</p>
+<p><strong>A grammar is a value, like any parameter.</strong>  <code>grammar ::= &quot;cobol-free&quot; | &quot;cobol-fixed&quot; | &quot;sql&quot;</code> is a domain (section 6);
+a rule takes one, and a qualified reference may use it: <code>program(G) = *( G.item )</code>.  With that alone, switching needs no new
+notation: the rule that matches a directive hands the new value on to what follows, by the attribute machinery that
+already exists.</p>
+<pre><code>file(G)        := directive(G, H) file(H)  |  G.item file(G)  |  end
+directive(G, H) := &quot;&gt;&gt;SOURCE&quot; &quot;FORMAT&quot; &quot;IS&quot; word as mode   H is grammar(mode)
+</code></pre>
+<p>That is exact (no hidden state, and backtracking undoes it for free) and a little verbose, because the value is threaded
+through every rule between the directive and the place the file is read.</p>
+<p><strong>The consequence form, as sugar for the same thing.</strong>  Say that a match has a consequence, with <code>=&gt;</code>:</p>
+<pre><code>source-format = &quot;&gt;&gt;SOURCE&quot; &quot;FORMAT&quot; &quot;IS&quot; word as mode  =&gt;  grammar mode
+heredoc       = &quot;&lt;&lt;&quot; word as tag  =&gt;  island sql.text until tag          ; an island: the consequence returns
+bip-word      = &quot;abandon&quot;  =&gt;  0                                          ; the output form of step 20, same arrow
+declaration   = specifiers declarator  =&gt;  declares type                  ; a fact (section 13), same arrow
+</code></pre>
+<p>One arrow, one meaning: <strong>what happens because this rule matched.</strong>  The value of a match (<code>=&gt; 0</code>), a fact it leaves
+(<code>=&gt; declares ...</code>), and the grammar the rest is read with (<code>=&gt; grammar mode</code>) are all consequences.  A consequence takes effect
+only when the whole rule has matched, so it is clear in the text that the switch is <em>because of</em> the match and not part of
+the pattern, and it is undone with the match when a guess is given back.  This also settles the clash noted in section 14:
+the arrow in step 20 and the switch are the same arrow.</p>
+<p><strong>The new grammar sees everything matched before.</strong>  Facts, the texts bound with <code>as</code> and the nodes already built belong to the
+parse, not to one grammar.  A rule in the grammar switched to can use <code>same tag</code>, <code>N.level</code>, a kind test (<code>name in types</code>) or
+a name bound by the host, exactly as a rule of the host could.  What the new grammar does not see is the host's rules: it
+reaches them, when it must, by name (<code>host.item</code>) as the host reaches it by <code>sql.statement</code>.</p>
+<p><strong>Decided 2026-11-02 (the user): <code>=&gt;</code> is the one arrow.</strong>  The spellings after it are still to be shown and approved before anything is built.</p>
+<p>Open: whether the consequence form is only sugar for passing the value (so the generator can compile it to the threaded
+version), or the primary form; and whether a rule may have more than one consequence (<code>=&gt; declares type, grammar G</code>).</p>
+<h2>16. Labels: a line that names the context the following rules are defined in (the user, 2026-11-02)</h2>
+<p>Like Common Lisp's <code>in-package</code>, or an assembler's section and label lines: a line holding only a name and a colon says that
+every rule after it belongs to that context, until the next such line.  This is 5.6 (a heading) with the model made clear.</p>
+<pre><code>sql:
+statement = &quot;SELECT&quot; columns &quot;FROM&quot; table [ where ]
+columns   = column *( &quot;,&quot; column )
+
+cobol:
+exec-sql  = &quot;EXEC&quot; &quot;SQL&quot; sql.statement &quot;END-EXEC&quot;
+</code></pre>
+<ul>
+<li>Rules before the first label are the root context (named by the file, or <code>main</code>).  A label can be returned to, to
+add more rules to it.</li>
+<li>Inside a context, plain names are that context's rules (<code>columns</code>); another context's are reached with the dot
+(<code>sql.statement</code>), as in Lisp's <code>package:symbol</code>.  <code>include &quot;x.hbnf&quot; as x</code> stays for rules kept in another file, and gives
+the same names.</li>
+<li>The file-level directives become per context: <code>whitespace</code>, <code>sensitivity</code>, <code>dialect</code> after a label apply to that
+context only, which removes the one-mode-per-file limit without a second file.  A mode is then just the directives
+of the context being read.</li>
+<li>Nested contexts take a dotted label (<code>sql.select:</code>), which makes the tree of grammars of section 5.7 visible in the text.</li>
+<li>A switch names a context by its label: <code>=&gt; grammar(sql)</code>; <code>grammar</code> takes a label as its value (section 15).</li>
+</ul>
+<p>Labels are an hbnf notation; the other dialects keep their own forms (the user, 2026-11-02: there is no yacc clash, yacc is not hbnf).</p>
+<p>Questions: do contexts see each other's plain names (Lisp's <code>use-package</code>) or only by the dot?  Does a label start a new
+context or reopen one with the same name?  And should a context be allowed to inherit another's rules (a dialect that is
+<code>c99</code> plus changes), which is what a rule set (section 11) with an overlay would give?</p>
+<h2>17. Prior art (checked against sources 2026-11-02; what a source did not say is marked)</h2>
+<table>
+<thead>
+<tr><th>system </th><th>the piece it has </th><th>source and status </th></tr>
+</thead>
+<tbody>
+<tr><td>OMeta (Warth, Piumarta) </td><td>foreign rule invocation: a grammar &quot;lends&quot; its input stream to another grammar to use one of its rules, written as the rule <code>foreign</code> with the foreign parser and the rule name, <code>foreign(JSParser, 'srcElem')</code>; single inheritance besides; the point is to combine grammars without name clashes </td><td>confirmed from the text of Warth's 2009 dissertation, section 2.3.4 (the example <code>OMetaJSParser</code> that is the union of OMeta and JavaScript): <a href="https://www.cs.ucla.edu/~todd/theses/warth_dissertation.pdf">https://www.cs.ucla.edu/~todd/theses/warth_dissertation.pdf</a>, <a href="https://en.wikipedia.org/wiki/OMeta">https://en.wikipedia.org/wiki/OMeta</a>.  The section says nothing about memoization or left recursion in foreign calls </td></tr>
+<tr><td>Ragel </td><td><code>fcall</code> pushes a return target and jumps, <code>fret</code> returns to it (an island); <code>fgoto</code> jumps with no return (a switch); <code>fcall</code> needs a declared call stack </td><td>confirmed: the Ragel man page: <a href="https://www.mankier.com/1/ragel">https://www.mankier.com/1/ragel</a></td></tr>
+<tr><td>Raku grammars </td><td>a grammar is a class, inherits with <code>is</code>, composes with roles; a &quot;slang&quot; changes the language for a lexical scope by mixing a grammar role and an actions role into the current sublanguage (<code>$*LANG</code>, <code>define_slang</code>) </td><td>confirmed: the Raku slang documentation <a href="https://docs.raku.org/language/slangs">https://docs.raku.org/language/slangs</a>, roast test <code>S05-grammar/inheritance.t</code>; slangs act when the program is compiled, not when it runs (an earlier draft said run time: wrong) </td></tr>
+<tr><td>TextMate grammars </td><td><code>begin</code>/<code>end</code> rules with their own nested <code>patterns</code>; <code>include</code> names another language's scope (<code>source.php</code>), <code>$self</code> the grammar itself; <code>contentName</code> gives the inner text its scope </td><td>confirmed: the TextMate manual <a href="https://macromates.com/manual/en/language_grammars">https://macromates.com/manual/en/language_grammars</a></td></tr>
+<tr><td>Colm (Thurston) </td><td>each <code>lex</code> block is a <strong>lexical region</strong>: when the parser asks for a token the scanner uses only the regions that hold tokens the parser can take at that point; a <code>context</code> block holds data (and <code>lex</code> blocks) that reduction actions write and token actions read to decide which tokens the parser gets (the typedef case); the parser backtracks and Colm undoes what actions did to that data </td><td>confirmed from Colm's own manual, <code>doc/colm/3_01_lex.adoc</code> (&quot;Lexical regions&quot;) and <code>3_04_undo.adoc</code> (&quot;Context-dependent parsing&quot;): <a href="https://github.com/adrian-thurston/colm/tree/master/doc/colm">https://github.com/adrian-thurston/colm/tree/master/doc/colm</a>.  Corroborated by a Hacker News thread in which the author (user <code>thurston</code>) says Colm &quot;keeps only one global state, but stores instructions for programmatically reverting the state&quot;: <a href="https://news.ycombinator.com/item?id=2560288">https://news.ycombinator.com/item?id=2560288</a>.  An earlier draft of this table discounted the claim because it came from a comment, and was wrong to: the manual and the author's own comment support it.  Not found in the manual: the term &quot;island grammar&quot; </td></tr>
+<tr><td>Copper (with Silver) </td><td>context-aware scanning: the parser passes the scanner the set of terminals valid in its current state and the scanner returns only those; an analysis that the scanner cannot return two tokens for one input; a modular determinism analysis that independently written extension grammars compose with a host </td><td>confirmed: Van Wyk and Schwerdfeger, GPCE 2007 <a href="https://galois.com/wp-content/uploads/2023/06/gpce.pdf">https://galois.com/wp-content/uploads/2023/06/gpce.pdf</a>; Kaminski and Van Wyk 2013 <a href="https://www-users.cse.umn.edu/~kami0054/papers/parsingatsle2013.pdf">https://www-users.cse.umn.edu/~kami0054/papers/parsingatsle2013.pdf</a>; Silver is a separate attribute grammar system, Copper its parser and scanner (<a href="https://melt.cs.umn.edu/silver/tutorial/6_what_next/">https://melt.cs.umn.edu/silver/tutorial/6_what_next/</a>) </td></tr>
+<tr><td>SDF with SGLR, MetaBorg </td><td>syntaxes defined and combined in SDF, parsed scannerless-GLR; embeddings of a Swing UI language, regular expressions and Java itself in Java </td><td>confirmed: Bravenboer and Visser, OOPSLA 2004 <a href="https://eelcovisser.org/publications/2004/BravenboerV04.pdf">https://eelcovisser.org/publications/2004/BravenboerV04.pdf</a>.  Spoofax pairs SDF3 (declarative syntax, generalized scannerless parsing, full context-free grammars) with Stratego and NaBL2: <a href="https://spoofax.readthedocs.io/en/latest/source/langdev/meta/lang/sdf3/introduction.html">https://spoofax.readthedocs.io/en/latest/source/langdev/meta/lang/sdf3/introduction.html</a></td></tr>
+<tr><td>ANTLR 4 </td><td>lexer modes: <code>mode(x)</code> switches, <code>pushMode(x)</code> and <code>popMode</code> keep a stack; commands go at the end of a lexer rule's outermost alternative </td><td>confirmed: <a href="https://github.com/antlr/antlr4/blob/master/doc/lexer-rules.md">https://github.com/antlr/antlr4/blob/master/doc/lexer-rules.md</a>.  The page says &quot;Modes are not allowed within combined grammars, just lexer grammars&quot;, &quot;the lexer can only return tokens matched by rules from the current mode&quot;, and that popping the bottom of the mode stack is an exception.  It does not say whether a parser can switch modes: that remains my inference </td></tr>
+<tr><td>flex </td><td>start conditions, inclusive (<code>%s</code>) and exclusive (<code>%x</code>); <code>BEGIN</code> switches; <code>yy_push_state</code> and <code>yy_pop_state</code> (with <code>%option stack</code>) </td><td>confirmed: the flex manual <a href="https://westes.github.io/flex/manual/Start-Conditions.html">https://westes.github.io/flex/manual/Start-Conditions.html</a></td></tr>
+<tr><td>Common Lisp readtables </td><td><code>set-macro-character</code> changes the reader's behaviour for a character by modifying a readtable (by default the current one) </td><td>confirmed: the HyperSpec <a href="https://www.lispworks.com/documentation/HyperSpec/Body/f_set_ma.htm">https://www.lispworks.com/documentation/HyperSpec/Body/f_set_ma.htm</a>.  <code>in-package</code> is confirmed in the HyperSpec as setting <code>*package*</code>, also at compile time when top-level (<a href="https://www.lispworks.com/documentation/HyperSpec/Body/m_in_pkg.htm">https://www.lispworks.com/documentation/HyperSpec/Body/m_in_pkg.htm</a>); that the change lasts to the end of the file is not stated on that page </td></tr>
+<tr><td>Racket </td><td><code>#lang reader &lt;module&gt;</code> names a module whose <code>read</code> and <code>read-syntax</code> produce the module from the rest of the file; readtables extend the reader (<code>make-readtable</code>) </td><td>confirmed: <a href="https://docs.racket-lang.org/guide/hash-lang_reader.html">https://docs.racket-lang.org/guide/hash-lang_reader.html</a>, <a href="https://docs.racket-lang.org/guide/hash-reader.html">https://docs.racket-lang.org/guide/hash-reader.html</a></td></tr>
+<tr><td>tree-sitter injections </td><td><code>injections.scm</code>: <code>@injection.content</code> re-parsed in another language, named by <code>@injection.language</code> or <code>injection.language</code>; <code>injection.combined</code> parses all matches as one document; child text excluded unless <code>injection.include-children</code>; a heredoc tagged <code>BASH</code> is parsed as Bash </td><td>confirmed: <a href="https://tree-sitter.github.io/tree-sitter/3-syntax-highlighting.html">https://tree-sitter.github.io/tree-sitter/3-syntax-highlighting.html</a>; <code>ts_parser_set_included_ranges</code> is confirmed in <code>api.h</code> (parse only a portion of a document, several disjoint ranges allowed, ordered and not overlapping; otherwise the call fails and assigns nothing): <a href="https://github.com/tree-sitter/tree-sitter/blob/master/lib/include/tree_sitter/api.h">https://github.com/tree-sitter/tree-sitter/blob/master/lib/include/tree_sitter/api.h</a></td></tr>
+</tbody>
+</table>
+<p>What matches this page: the call into another grammar and inheritance (OMeta, Raku), call-and-return against jump (Ragel), the
+parser's state choosing what the scanner may return (Copper, Colm's lexical regions), begin/end islands (TextMate), a stack
+of modes (ANTLR, flex), an island parsed apart and joined by queries (tree-sitter).  Colm is the nearest on facts: its <code>context</code>
+blocks hold what actions record during the parse (its typedef example), and are undone on backtracking, as section 13
+wants; they are written in Colm's programming language, not in the grammar notation.  What none of the systems read was seen
+to have, in one declarative notation: a switch that is the consequence of a match (<code>=&gt;</code>), the new grammar seeing what matched
+before as facts and bound texts, and the same notation also saying that a name is a kind and that a rule has attributes.  That
+is a statement about the systems read here, not a survey of all of them.</p>
+<h2>18. Three points settled or sharpened (the user, 2026-11-02)</h2>
+<p><strong>Spelling.</strong>  A switch is written <code>=&gt; grammar(sql)</code>, a call with the grammar as its argument, as a rule is parameterised
+(<code>=&gt; grammar(mode)</code> when the text just matched names it).  It replaces the draft spellings <code>=&gt; grammar sql</code> and <code>switch sql</code>.</p>
+<p><strong>A qualified reference that comes last is not a switch.</strong>  A reference to <code>sql.statement</code> is an island: when the guest rule
+stops matching, control returns to the host, which carries on with whatever follows the reference, and if nothing follows in that
+rule, with the rule that called it.  That is the ordinary meaning of a rule reference in a PEG, and it cannot also mean &quot;keep
+the other grammar&quot;.  So a switch has to be said.</p>
+<p><strong>What a switch does (corrected by the user, 2026-11-02): it changes the live rules, and abandons nothing.</strong>  The rules the host had
+open stay open.  From the switch on, the names the parse looks up resolve in the new grammar, as a derived grammar overrides a
+base one, and what the new grammar matches is written into the nodes the host had opened and identified: the guest adds its
+content at the points the host left open, and the host's own pending parts (a closing <code>}</code>, the next statement of a list) go on
+matching under the new set.  There is no start rule to run to the end of the input and no fall back, since the host's
+continuation is what keeps running; a pending host rule that names something the new grammar does not have is an error that says
+so (&quot;<code>item</code> is not live in <code>fixed</code>&quot;, the message of section 11), and a mismatch is an error at its position like any other.  An
+island differs only in extent: it sets the live rules for one reference and restores them when it ends; a switch sets them until the
+next switch.</p>
+<pre><code>source-format = &quot;&gt;&gt;SOURCE&quot; &quot;FORMAT&quot; &quot;IS&quot; word as mode  =&gt;  grammar(mode)     ; only ws and the token rules differ: the rest of COBOL carries on
+exec-sql      = &quot;EXEC&quot; &quot;SQL&quot; sql.statement &quot;END-EXEC&quot;                          ; an island: the live rules are restored here
+</code></pre>
+<p><strong>Decided (the user, 2026-11-02): the points the host opened are the host's open rule instances, and nothing extra is written.</strong>  The
+guest's nodes become children of whichever host rule instance is open when they are matched.  The host does not name holes and
+cannot limit what a guest adds beyond what the live rules allow.</p>
+<p><strong>Named sets against built sets.</strong>  A <em>named</em> set is a grammar or context that the file defines once and refers to by its label or
+include name: <code>sql</code>, <code>fixed</code>, <code>cobol-free</code>.  A <em>built</em> set would be assembled during the parse from parts: <code>c99</code> plus the
+rules a declaration has made live, or a union of two grammars.  Two things already give &quot;built&quot; without a second concept:
+inheritance between named sets (<code>c99</code> is <code>c89</code> and its changes, section 16's last question), and facts that make single rules live
+(a typedef makes <code>type-name</code> match, section 13).  The recommendation is to have <strong>named sets only</strong>: a context is a label,
+<code>grammar(x)</code> and <code>x.rule</code> name it, a dialect is one that inherits from another, and the dynamic part is facts.  This removes the
+&quot;sets named or built&quot; half of question 8.</p>
+<h2>19. The first slice: islands and <code>=&gt; grammar(x)</code> (approved 2026-11-02; built as the two status sections after it say)</h2>
+<p>Exactly what was to be implemented, and nothing more.  What differs in the built form is in the two status sections below.</p>
+<p><strong>Syntax.</strong>  (Built later: <code>^.name</code> in the included file is a rule of the including grammar, the way out of an island, as the dot is the way in.)</p>
+<pre><code>include &quot;sql.hbnf&quot; as sql              ; a file's rules, reached as sql.name; its own whitespace/sensitivity/dialect directives apply to them
+exec-sql = &quot;EXEC&quot; &quot;SQL&quot; sql.statement &quot;END-EXEC&quot;                       ; island
+mode-directive = &quot;&gt;&gt;&quot; &quot;MODE&quot; word as m  =&gt;  grammar(m)                  ; switch, the grammar named by the matched text
+fixed-directive = &quot;&gt;&gt;&quot; &quot;FIXED&quot;  =&gt;  grammar(fixed)                     ; switch to a named grammar
+</code></pre>
+<ul>
+<li><code>include &quot;file&quot; as name</code>: the file is a grammar named <code>name</code>; without <code>as</code> it is the file's rules merged into the including one, as <code>include</code> is today.</li>
+<li><code>name.rule</code>: a rule of the grammar <code>name</code>.  <strong>The dot is never part of a rule name (the user, 2026-11-02): it always means scope or context</strong>, <code>scope.rule</code>, and scopes nest (<code>a.b.rule</code>).  The one way to have a dot or a space in a name is the angle-bracket form: everything between <code>&lt;</code> and <code>&gt;</code>, the brackets included, is one bareword, so <code>&lt;my . bare . word&gt;</code> is a single rule name and <code>&lt;my . bare . word&gt;.foo</code> is the rule <code>foo</code> inside the scope named <code>&lt;my . bare . word&gt;</code>.  (The dotted path in <code>%bind types += decl.name</code> is the same idea: <code>name</code> inside <code>decl</code>.)</li>
+<li><code>=&gt; grammar(x)</code> ends a rule, after its pattern: <code>x</code> is a grammar name, or a name bound earlier in the same rule by <code>as</code> (<code>word as m</code>; it was <code>%as m</code> when this was written).  It is the only form of <code>=&gt;</code> in this slice (the output forms come later).</li>
+<li>The <code>%</code> words stay as they are in this slice; Q7 is not touched.</li>
+</ul>
+<p><strong>Meaning.</strong></p>
+<ol>
+<li>Each included grammar has its own rule table, directives and tokens.  The including grammar's table is the root.</li>
+<li>At every point of the parse there is a <em>current grammar</em>.  Looking up a plain name looks in that grammar's table only: its own rules, the rules of the files it includes, and the built-in names.  <strong>A missing name is missing</strong> (the user, 2026-11-02): it is an error at generation (&quot;rule <code>item</code> is not defined in grammar <code>fixed</code>; include the file that defines it&quot;), never a look in the grammar that included this one.  A grammar that is to take over from another in the middle of a parse, as <code>fixed</code> does from <code>free</code>, includes the rules it shares and overrides the ones that differ.</li>
+<li><code>x.rule</code> is an island: the current grammar becomes <code>x</code> for the length of that rule reference, and is restored when it succeeds or fails.</li>
+<li><code>=&gt; grammar(x)</code> is a switch: when the rule that carries it has matched, the current grammar becomes <code>x</code> and stays so until another switch.  The host's open rule instances stay open and go on under <code>x</code>; the nodes <code>x</code> matches are children of whichever instance is open.  Nothing is abandoned and nothing falls back.</li>
+<li>The current grammar is part of the parse state and is put back when a guess is given back, as the typedef sets are.  A switch inside a speculative branch is undone with the branch.</li>
+<li>A grammar that uses neither costs nothing: no tables, no extra state, the same generated parser as today.</li>
+</ol>
+<p><strong>Generator.</strong>  The C backend first (the current grammar as one integer in the parse state; the rules that exist in more than one grammar dispatched through it; the scanner chosen per grammar for <code>ws</code> and tokens), then Rust, Zig and Ada.  The tree-sitter backend refuses a grammar that uses a switch, with a message, until it can write what tree-sitter needs (the user's suggestion, 2026-11-02): <code>grammar.js</code> only runs when the grammar is generated, so a rule cannot test the live context while parsing, but an <strong>external scanner</strong> can.  The backend would generate one (C, with the mode in its serialized state): a rule of a context starts with a zero-width external token that the scanner returns only when the live context is the rule's declared one (<code>valid_symbols</code> says which tokens the table allows), and a switch ends with a token that changes the mode.  That is implementation, not a workaround, and comes after the four backends.  Islands that share the including grammar's white space and case settings merge as prefixed rules; others wait for the same scanner.</p>
+<p><strong>Tests.</strong>  A small calculator with a <code>&gt;&gt;FIXED</code> / <code>&gt;&gt;FREE</code> switch that changes only <code>ws</code>, and an <code>EXEC SQL</code> island inside a host, through all four backends; then COBOL's <code>&gt;&gt;SOURCE FORMAT</code> and a COBOL embedded-SQL toy.  C's typedef grammar must pass unchanged.</p>
+<p><strong>Left for later.</strong>  Facts and kinds (section 13), labels (section 16), inheritance between grammars, the output and fact forms of <code>=&gt;</code>, the <code>%</code>-free keywords (section 10).</p>
+<p>Questions before building: <strong>answered 2026-11-02</strong> -- <code>include ... as</code> is the place for the scope name, and <code>.</code> is the scope operator, never part of a name.  What remains is the go-ahead to build the slice as written here.</p>
+<p><strong>Order of work (the user, 2026-11-02).</strong>  Stage 1: islands (<code>include ... as</code>, <code>x.rule</code>, the dot as scope), all backends.  Stage 2: <code>=&gt; grammar(x)</code>, the C backend first, then Rust, Zig and Ada; tree-sitter refuses a switch until it can write an external scanner.  Then use both to <strong>condense the C and COBOL grammars</strong> (the sigils and repeated rules that contexts replace: the typedef context, COBOL's per-region reserved words, fixed and free format as grammars, the decimal-point setting).</p>
+<h2>Stage 1 status (islands only, built 2026-11-02)</h2>
+<p>Built: <code>include &quot;file&quot; as x</code>, <code>x.rule</code> and <code>a.b.rule</code>, the rule that a dot is never part of a name (a definition with a dot is an
+error; <code>&lt;...&gt;</code> is the way to have one; <code>&lt;...&gt;.rule</code> is not read), scoped files read once per scope.  A scoped rule is named
+<code>x--rule</code> inside the generator (a legal identifier in every backend; Ada folds <code>--</code> to one <code>_</code>), and <code>Spelled</code> gives <code>x.rule</code> for a
+message.  Not built: <code>=&gt; grammar(x)</code> (stage 2).</p>
+<p>Differs from the text above: (1) a plain name in a scoped file is resolved only against that file's own closure (its rules, the files
+it includes into the same scope, the built-in names); there is no fallback to the including grammar (the correction of the same day),
+and a name found nowhere is an error saying so.  (2) Section 19 meaning 1 says each grammar has its own directives, tokens and tables;
+the generated parsers have one white-space rule, so a scope either shares the including grammar's <code>ws</code> or says <code>whitespace none</code>, and a
+scope that skips with a rule of its own is refused until a later stage gives each grammar its own scanner.  <code>sensitivity</code> and `whitespace
+none` are per file already and work as written.</p>
+<h2>20. What the C and COBOL grammars would gain (measured 2026-11-02, before stage 2)</h2>
+<p>Measured on the grammars as they stand:</p>
+<table>
+<thead>
+<tr><th>grammar </th><th style="text-align:right">lines </th><th style="text-align:right">characters </th><th style="text-align:right">rules </th></tr>
+</thead>
+<tbody>
+<tr><td><code>corpus/c/c11.hbnf</code></td><td style="text-align:right">145 </td><td style="text-align:right">10,442 </td><td style="text-align:right">82 </td></tr>
+<tr><td><code>corpus/cobol/cobol.hbnf</code></td><td style="text-align:right">361 </td><td style="text-align:right">31,859 </td><td style="text-align:right">186 </td></tr>
+<tr><td><code>corpus/cobol/cobol-words.hbnf</code></td><td style="text-align:right">48 </td><td style="text-align:right">2,897 </td><td style="text-align:right">18 </td></tr>
+</tbody>
+</table>
+<p><strong>C</strong> is already small, and its context machinery is 8 words (<code>%scope</code> four times, <code>%bind</code> once, <code>%start</code> once, <code>context</code> twice, <code>?</code> and
+<code>?!</code>).  Contexts as designed here add no capability it lacks (the typedef case works), so the saving is the <code>%</code> sigils and little else,
+well under 1%.  What stays to be shown by C is that the new notation reads at least as well for the same four lines of context.</p>
+<p><strong>COBOL</strong> is where the gain is, and it is not mostly in the machinery the first slice builds.  Counted in <code>cobol.hbnf</code>:</p>
+<ul>
+<li><strong>Noise words: 260 optional words, 2.8 KB, 9% of the characters</strong> (<code>[ &quot;IS&quot; ]</code> alone 88 times; <code>WITH</code> 21, <code>ON</code> 15, <code>KEY</code> 9, <code>TO</code> 8, <code>ARE</code> 6, <code>AT</code> 6, <code>IN</code>
+6).  The standard allows each in particular places, so the grammar spells it there.  A context with its own skip rule would say it once: in the
+data division, white space may also be <code>IS</code>, <code>ARE</code>, <code>TIMES</code>; in a <code>SELECT</code>, <code>IS</code>, <code>TO</code>, <code>WITH</code>.  This accepts a noise word in more places than
+the standard allows, inside a region that already is the place for clauses; the scan against <code>cobc</code> would show whether that over-accepts in
+practice.  It needs <strong>labelled contexts with their own <code>whitespace</code></strong> (section 16), which the first slice does not include, so the order of
+work puts them next.</li>
+<li><strong>Name patches</strong>: <code>user-word</code>, <code>not-a-name</code>, <code>no-letter</code>, <code>function-name</code>, <code>program-name</code> and the <code>XML</code>/<code>JSON</code>/<code>ABSENT</code>/<code>EQUALS</code> entries are the places where &quot;reserved here, a name there&quot;
+was patched by hand (five rules and a list).  A reserved set live per region replaces them.</li>
+<li><strong>Capabilities, at no growth</strong>: the decimal point (one fact, one numeric rule), fixed format (<code>fixed</code> as a second grammar, <code>=&gt; grammar(fixed)</code>),
+the PICTURE string (an island, which would have prevented the <code>$</code> bug), embedded SQL and CICS (islands), clauses each once.</li>
+</ul>
+<p>What contexts will not shrink: the statements themselves.  <code>statements</code>, the exception, size-error and invalid-key phrases are already shared
+rules (27, 7, 6, 6 uses).  Any further cut there is factoring, not contexts.</p>
+<p>So the honest target: C about the same; COBOL around a tenth fewer characters from the noise words and some rules from the name patches, with the
+decimal comma, fixed format and SQL as additions that cost a few lines each.</p>
+<h2>21. Factoring, measured (2026-11-02): what the current notation allows, and what it asks for</h2>
+<p>COBOL, factored by hand with today's notation: <code>cobol.hbnf</code> went from 32,202 to 30,732 characters (4.6%), and the parser's verdict and
+error position are identical on all 1,572 programs of the scan.  What paid: the optional words as rules (<code>is</code>, <code>with</code>, <code>on</code>, <code>key</code>, <code>to</code>, <code>at</code>,
+<code>are</code>, <code>number</code>, <code>by</code>: 2.2%), <code>thru</code>, <code>procedure-range</code>, <code>control-name</code>, <code>item-clause</code> (1%), and two real duplications in the
+screen section (<code>screen-clause</code> repeated <code>screen-attribute</code>'s keywords, and <code>screen-phrase</code> had an alternative the nullable <code>with</code> already covered:
+1.6%).  What did not pay: tiny rules (<code>corr</code>, <code>returning</code>, <code>giving</code>, <code>sort-key</code>, <code>sign-word</code>): each costs about what it saves, and the file stayed the same size.</p>
+<p>So the notation is the limit, not the effort.  What is left is repetition that no rule can express, because the repeated part is <em>inside</em> a literal or
+is a pattern, not a value:</p>
+<ol>
+<li><strong>The five phrase families</strong> (<code>size-error</code>, <code>on-exception</code>, <code>invalid-key</code>, <code>at end</code>, <code>end-of-page</code>) have one shape: <code>( on W statements ) [ &quot;NOT&quot; on W statements ] | &quot;NOT&quot; on W statements</code>,
+with W a different word each time.  A rule that takes a <em>pattern</em> (<code>phrases(&quot;SIZE&quot; &quot;ERROR&quot;)</code>) is one rule and five calls.</li>
+<li><strong>Scope terminators</strong>: about thirty <code>[ &quot;END-x&quot; ]</code>, the word spelled again in the terminator.  A literal built from a parameter (<code>end(&quot;IF&quot;)</code> giving <code>&quot;END-IF&quot;</code>).
+Tested today: a rule with a word-list parameter takes numbers or fixed words as values, not text spliced into a literal.</li>
+<li><strong>Singular and plural</strong>: <code>&quot;RECORD&quot; is | &quot;RECORDS&quot; are</code>, <code>&quot;LINE&quot; | &quot;LINES&quot;</code>, <code>&quot;SECOND&quot; | &quot;SECONDS&quot;</code>, <code>COLUMN</code>, <code>AREA</code>, <code>LIMIT</code>, <code>CONTROL</code>: a word and its plural.</li>
+<li><strong>C's GNU spellings</strong>: 32 alternatives, 490 characters (5% of C's rules): <code>&quot;const&quot; | &quot;__const&quot;</code>, <code>&quot;restrict&quot; | &quot;__restrict__&quot; | &quot;__restrict&quot;</code>, <code>&quot;asm&quot; | &quot;__asm&quot; | &quot;__asm__&quot;</code>.  A literal
+that also matches the same word with leading or trailing double underscores.</li>
+</ol>
+<p>These are not contexts; they are notation questions, in the spirit of the standing aim (the smallest total ruleset).  Sketches, for the user to choose among or reject:</p>
+<pre><code>phrases(W) := ( on W statements ) [ &quot;NOT&quot; on W statements ] | &quot;NOT&quot; on W statements      ; a rule parameterised by a pattern
+size-error-phrases = phrases(&quot;SIZE&quot; &quot;ERROR&quot;)
+end(K) := [ &quot;END-&quot; K ]                                                                   ; a parameter spliced into a literal
+if-statement = &quot;IF&quot; condition ... end(&quot;IF&quot;)
+&quot;RECORD&quot;s                                                                                ; a word and its plural (a suffix modifier)
+%u&quot;const&quot;                                                                                ; or &quot;const&quot;_ : with or without the double underscores
+</code></pre>
+<p>Nothing here is built.  Which, if any, are wanted, and in what spelling, is the question.</p>
+<p><strong>Built (09b966c, used 2026-11-03).</strong>  A rule may take a pattern: <code>phrases(W) := W statements [ &quot;NOT&quot; W statements ] | &quot;NOT&quot; W statements [ W statements ]</code>, called <code>phrases(on &quot;SIZE&quot; &quot;ERROR&quot;)</code>; <code>+</code> joins literals at read time (<code>&quot;END-&quot; + K</code>), an argument that is one quoted word needs no list of the words it may take.
+COBOL uses both: the six ON ... / NOT ON ... phrase rules are <code>phrases(W)</code> (d51af0b: 534 characters and 8 rules fewer, and the phrase pair may come in either order for all six), and the twenty-one terminators are <code>scope-end(K) := [ &quot;END-&quot; + K ]</code> (a7c3f37: one rule more, 35 symbols fewer by the repository's count, 93 characters more).
+<strong>The measure is tokens, rules and concepts, not characters (the user, 2026-11-03):</strong> a family of look-alike rules is one concept to state once, and the cost of a new rule is weighed against that.</p>
+<h2>22. What a switch target may override (decided by the coordinator 2026-11-02 after the stage 2 agent found the problem; the user can redirect)</h2>
+<p>Every backend emits a typed tree: a host rule's field holds a value of the exact type of the rule it names.  A dialect's version of a <em>phrase</em>
+rule would have its own node type and could not be stored there.  So in stage 2 a switch target (a dialect, section 19's resolution rule) may override
+<strong>only the white-space rule and token (text) rules</strong>, whose value is just the matched text and so has the same type either way: this is
+what fixed against free format (<code>ws</code>), a decimal comma (the numeric-literal token) and per-region reserved words (the exception token) need.  Overriding a
+phrase rule in a switch target is <strong>refused</strong> at generation, with a message that says why.  Structural overrides wait for a decision on typing
+(the same shape generated into the host's type; text-only; or a dynamic tree, which would change every grammar's output).
+<strong>No optimization is given up by switching</strong> (the user, 2026-11-02): an optimization goes away only if it becomes invalid for some other reason.  A fast path that bakes in the white-space rule or an overridden token is generated per grammar and chosen by the current grammar where it is entered; one that touches neither keeps its single copy.  Grammars that do not switch are unchanged, byte for byte.</p>
+<p><strong>Layouts (the user, 2026-11-02).</strong>  The restriction above is for the typed tree (<code>layout ast</code>, the default).  Under <code>layout tape</code>, where a node is a rule
+id and offsets with no type of its own, a switch target may override any rule, phrase rules included.  Built after the <code>ast</code> case.</p>
+<p><strong>Phrase overrides in the typed tree (the user, 2026-11-02): by variants.</strong>  Section 22's refusal of a phrase-rule override under <code>layout ast</code> is temporary.  The plan: a reference
+to an overridden phrase rule N holds a choice of N's node or the dialect's <code>x--N</code> node, which hbnf already generates for a choice whose alternatives are
+different record types; the generator synthesizes the choice and rewrites the references.  Only a grammar with such an override gets the variant types.  Order of work: the token and
+white-space case in C; then phrase overrides in <code>ast</code>; then the tape case; then Rust, Zig and Ada.</p>
+<h2>Stage 2 status (white-space dialects, built 2026-11-02)</h2>
+<p>Built: <code>=&gt; grammar(x)</code> and <code>=&gt; grammar(tag)</code> (the tag bound by <code>x as tag</code>) at the end of an alternative, through the C, Rust, Zig and
+Ada backends.  A switch is an event at the position where its alternative ended; the current grammar is the last event in force, and
+going back before an event undoes it (every restore of the position in the generated parse functions goes through one macro or method
+for a parser that switches, so a switch in a guess that is given back is undone).  The caches keyed by position (white space, the word
+read) are forgotten when the grammar changes.  What follows the current grammar is <code>skip_ws</code>: one dispatch on the grammar, each
+grammar having its own scanner.  A parser without a switch is generated exactly as before.</p>
+<p>Differs from the text above: (1) a grammar switched to replaces white space only so far.  A rule it defines under the name of one the
+including grammar has is refused (token rules are the next step, phrase rules need a typed variant), and so is a reference from the
+including grammar to one of its rules when its white space differs from the including grammar's.  (2) The switch is written only in
+the including grammar's own file.  (3) An alternative that can match no text may not switch.  (4) The host's rules keep their own
+choice of whether to skip white space; a switch changes which rule skips, not whether a rule does.  (5) The tree-sitter backend refuses a
+grammar that switches.  The current grammar is a function of the journal of switches and not of the position alone: a position-only
+rule reads a stale switch left by an abandoned guess when the next guess passes the same place without asking the grammar.</p>
+<h2>23. Regular expressions and insensitive strings as string prefixes (the user, 2026-11-02; decided and built, 8328962)</h2>
+<p>The idea, as the user clarified it: prefixes on a string, as Python has them, not a separate regex notation.</p>
+<ul>
+<li><code>r&quot;...&quot;</code> (first written <code>re&quot;...&quot;</code>; the user chose <code>r</code>): a regular expression, written raw (no escape processing, as Python's <code>r&quot;&quot;</code>): <code>r&quot;[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?&quot;</code>.</li>
+<li><code>i&quot;...&quot;</code>: a case-insensitive literal, which is <code>%i&quot;...&quot;</code> (RFC 7405) without the percent sign.  The prefixes combine as flags (<code>ir&quot;...&quot;</code> is an insensitive regex).
+Open: whether <code>%i&quot;...&quot;</code> stays in the ABNF dialect only, where RFC 7405 requires it, or in all of them.</li>
+</ul>
+<p>Meaning: a read-time desugaring into the existing fragments (alternation, repetition, character classes), so no backend changes and no existing grammar's output changes.  The
+meaning is hbnf's: repetition is greedy and does not give back (Python's possessive quantifiers), <code>|</code> is ordered, there are no lookarounds and no anchors (<code>!</code> and <code>&amp;</code> already
+say lookahead); classes, groups, <code>* + ? {m,n}</code> and <code>\d \w \s</code> work.  A pattern that needs backtracking to mean what a regex engine would give it is refused, with a message that says so.
+Allowed in rules of characters (tokens); in a phrase rule a literal is a keyword matched as a whole word, which a regex is not, so a bare regex there is refused and a named
+rule of characters (<code>plural = re&quot;RECORDS?&quot;</code>) is the way.
+Effect: the token sections shrink (COBOL's numeric literal about 90 characters to about 40, the TOML dates, the YAML scalars), and the plural and underscore-affix words of section 21 become
+one short regex each.  An estimate, about 5% of COBOL; not measured.</p>
+<p><strong>Numbers in C syntax (the user, 2026-11-02; decided and built, 8328962).</strong>  In hbnf's own notation the numeric terminals take C's number syntax in place of ABNF's <code>%x</code>, <code>%d</code>, <code>%b</code>:
+<code>0x41</code> (hex), <code>0b1000001</code> (binary), <code>65</code> (decimal) are the code point; a range is <code>0x41..0x5A</code> (the <code>..</code> of <code>1..17</code> that parameters already use); a run of code points is the numbers one after another
+(<code>0x41 0x42</code>).  A leading-zero decimal (<code>0101</code>) is refused, with a message, since C reads it as octal and nobody writes that on purpose.  A decimal number glued to the element after it
+(<code>3DIGIT</code>) is a repetition count as it always was; a number is a code point when a space, <code>|</code>, <code>)</code>, <code>]</code> or <code>..</code> follows it.  The <code>%x</code>, <code>%d</code>, <code>%b</code> forms stay in the ABNF dialect, where RFC 5234 has them,
+exactly as <code>%i&quot;...&quot;</code> does (this section's <code>i&quot;...&quot;</code>).  The character literal <code>'A'</code> with C escapes (<code>'\x41'</code>, <code>'\n'</code>, <code>'é'</code>) and the range <code>'A'..'Z'</code> stay as the other spelling of a code point.
+Effect: fewer sigils and a syntax a C programmer reads without a manual; not shorter (a single <code>0x41</code> is the length of <code>%x41</code>, a range <code>0x41..0x5A</code> is longer than <code>%x41-5A</code>).  The corpus has 430 such terminals:
+321 single <code>%x</code>, 95 <code>%x</code> ranges, 14 decimal or binary.</p>
+<p><strong>Decided (the user, 2026-11-02): build all three; the <code>%</code> forms stay in the ABNF dialect only; the regex prefix is <code>r</code>, not <code>re</code>.</strong>  In hbnf's own notation the spellings are <code>i&quot;...&quot;</code> (insensitive), <code>r&quot;...&quot;</code> (a raw regular expression),
+and C numbers (<code>0x41</code>, <code>0b1000001</code>, <code>65</code>, <code>0x41..0x5A</code>).  The reason is taste: <code>%</code> looks noisy.  The <code>%x</code>, <code>%d</code>, <code>%b</code>, <code>%i</code>, <code>%s</code> forms are refused in an hbnf-dialect file with a message that gives the new spelling, and a tool rewrites the
+repository's grammars (the generated output of each must be byte-identical before and after).  <code>s&quot;...&quot;</code> (sensitive) exists beside <code>i&quot;...&quot;</code>, for a file whose <code>sensitivity string</code> is insensitive.  The flags combine as <code>ir&quot;...&quot;</code>.</p>
+<p><strong>Built (8328962, 2026-11-03).</strong>  <code>i&quot;...&quot;</code>, <code>s&quot;...&quot;</code>, <code>r&quot;...&quot;</code> (flags in either order: <code>ir&quot;...&quot;</code>), C numbers (<code>0x41</code>, <code>0b...</code>, <code>65</code>, <code>lo..hi</code>), the <code>%</code> forms refused in an hbnf-dialect file with the new spelling in the message and kept in
+<code>dialect abnf</code>, <code>tools/hbnf_modernize.py</code> for the rewrite; a regex is allowed in rules of characters only, greedy and with no giveback, <code>.</code> is any character but a line feed, and lookarounds, <code>\b</code>, <code>\A</code>, <code>\Z</code> and (decided 2026-11-03) <code>^</code> and <code>$</code> are refused;
+<code>bol</code> and <code>eol</code> (section 24) are written beside the regex.  The repository's grammars read the same generated output as before.  COBOL's token file in the new notation is 3,244 characters, it was 3,544, with the same verdict on both corpora (62c7a66).
+<strong>Known defect (found 2026-11-03).</strong>  In the full COBOL grammar, <code>exponent = ir&quot;E&quot;</code> (and the whole numeric literal as one regex) stops <code>1.23E0</code> being read, while small grammars with the same rules pass; being fixed, a regression test with it.  <code>exponent</code> stays <code>0x45 | 0x65</code> until then,
+and <code>picletter</code> stays code points because the white-space scanner reaches it.</p>
+<h2>24. Line starts and ends, the column of a rule, and <code>where (col = x)</code> (the user, 2026-11-02 and 2026-11-03; <code>bol</code>/<code>eol</code> decided and being built, <code>col</code> a proposal)</h2>
+<p>The user: a rule should be able to access its column value, written something like <code>*ws &quot;foo&quot; where (col = x)</code>.  What fixed-format COBOL needs, and what a prototype of it showed
+was missing: the sequence area (columns 0 to 5), the indicator (6), the text (7 to 71) and the ignored area (72 on) are defined by column, and a rule of characters such as <code>ws</code> has no way to
+ask.  A line-start trick (<code>LF</code> then six characters) cannot reach the first line of the file, which has no line end before it, nor the area after column 72.</p>
+<ul>
+<li><code>col</code> is a built-in value readable in every rule, including a rule of characters; it is 0-based, as every index here is, and counts code points from the last line end.</li>
+<li><code>element where (condition)</code> is a postfix on the element before it, tested at the position where that element starts; a group carries it for several elements.  So <code>*ws &quot;foo&quot; where (col = x)</code>
+means: skip white space, then <code>foo</code>, provided <code>foo</code> starts in column x.</li>
+<li>The condition is a comparison (<code>= != &lt; &lt;= &gt; &gt;=</code>) of <code>col</code>, numbers, the parameters of the rule and the numbers <code>%col j</code> bound, joined with <code>and</code>, <code>or</code>, <code>not</code>.  No host code, so it works in all four backends.
+<code>where</code> is a reserved word of the keyword change (CONTEXTS.md section 10) and covers the simple cases of <code>%where { code }</code>.</li>
+<li>Implementation notes for whoever builds it: in a scanner the column is the distance back to the last line end, or carried by the loop; a rule whose conditions mention <code>col</code> cannot be a pure function of the text from the
+position on, so the analyses that treat scanners as such (first-byte sets, ladders) must see the condition as a lookahead-like test.</li>
+</ul>
+<p>Fixed format then reads, with no line-start trick and with the first line working:</p>
+<pre><code>ws = SP | HTAB | CR | LF | &quot;,&quot; | &quot;;&quot; | &quot;*&gt;&quot; *~LF | &quot;&gt;&gt;&quot; *~LF
+   | ~LF where (col &lt; 6)                    ; the sequence area
+   | ( &quot;*&quot; | &quot;/&quot; | 0x44 | 0x64 ) *~LF where (col = 6)   ; a comment line, a debugging line
+   | &quot;-&quot; where (col = 6)                    ; a continuation
+   | ~LF where (col &gt;= 72)                  ; the area after column 72
+</code></pre>
+<p><strong>Anchors in <code>r&quot;...&quot;</code> (the user, 2026-11-02; superseded 2026-11-03: see <code>bol</code> and <code>eol</code> below, no <code>^</code> or <code>$</code>).</strong>  In a regular-expression string <code>^</code> is the first column of a line and <code>$</code> the last (the position just before a line end, or the end of
+the input): <code>r&quot;^[0-9]{6}&quot;</code> is six digits starting a line.  They are what <code>where (col = 0)</code> and &quot;a line end follows&quot; say, as lookahead-like tests that consume nothing, so they follow section 24's <code>col</code>.  <code>\b</code>, <code>\A</code> and <code>\Z</code> stay refused.</p>
+<p><strong><code>30WS</code> reaches column 30 (the user, 2026-11-02).</strong>  Open, two readings: (1) a count of white-space units from a line's start, where a tab is the number of columns it advances (to the next multiple of 8), so <code>30WS</code> from column 0
+ends in column 30 whatever tabs the line holds; (2) a target: white space up to column 30 from wherever the parser is.  Reading 1 is the existing repetition <code>30WS</code> once <code>WS</code> counts columns and not characters; reading 2 is new.
+Fixed-format lines then read: <code>^ 6*6~LF</code> is the sequence area and <code>7WS</code> the margin.</p>
+<p><strong><code>bol</code> and <code>eol</code> (the user, 2026-11-03).</strong>  The beginning and the end of a line, as zero-width built-in rules of the grammar, named like <code>ALPHA</code> and <code>DIGIT</code>, not reserved words: usable in a rule of characters, a phrase rule and <code>ws</code>, consuming nothing.  <code>bol</code>
+holds when the position is the start of the input or follows a line feed; <code>eol</code> when a line feed, a carriage return or the end of the input comes next.  Inside <code>r&quot;...&quot;</code> there are no <code>^</code> and <code>$</code>: with <code>bol</code> and <code>eol</code> as rules they are not needed (one way, not two); the
+refusal of an anchor in a regex points to the two rules.  <code>bol</code> needs a look at the byte before the position (no element does that now; lookbehind is missing), a primitive in the scanners and the phrase code of the four backends; <code>eol</code> is a lookahead.  They cover
+most of what fixed format and other line-oriented formats ask of <code>col</code>; <code>where (col = n)</code> stays for an exact column.  The first lines of a fixed-format file then read <code>bol</code> where a trick with the line feed fails on the first line.  Asked of the literals agent, 2026-11-03.</p>
+<h2>25. Rewrite rules: a grammar that writes its output (the user, 2026-11-03; a proposal, from a worked example, nothing built)</h2>
+<p>The user: give the most compact and readable grammar for the Markdown Claude Code writes, into a tape or tree, with a C back end that turns it into Typst, or
+use rewrite rules if they are advanced enough; &quot;rewrite rules will really want backreferences within the rule, and also <code>up</code> references to things captured by the
+parent rules the rule is reached from&quot;.</p>
+<p><strong>Built and measured first (<code>corpus/markdown</code>).</strong>  The grammar <code>markdown.hbnf</code> is 44 rules, 439 symbols; it makes a tape (<code>--layout=tape</code>), and <code>typst.c</code> walks it: 13 functions, 202 lines, 1,437 symbols,
+three times the grammar.  The tape has the rule names as tags, so the walker reads as the grammar does (<code>case T_heading:</code>).  <code>tests/markdown.sh</code> checks five documents against their Typst.</p>
+<p><strong>The same conversion as rewrite rules</strong> (a sketch, not accepted by any reader; measured by <code>bench/count.py</code> as 42 rules, 544 symbols, 3,164 characters for grammar and output together):</p>
+<pre><code>hidden SP WSP LF CR DQUOTE nl blank starter cell-end ticks rest dash dashes title
+
+document = *blank *( block(0) *blank )                                   =&gt; trim($block)
+block(N in 0..) := heading | fence(N) | rule | quote(N) | table(N) | list(N) | paragraph(N)
+
+heading   = hashes 1*SP 1*inline *WSP nl                                 =&gt; rep(&quot;=&quot;, len($hashes)) &quot; &quot; $inline &quot;\n\n&quot;
+hashes    = 1*6'#'
+rule      = dashes *WSP nl                                               =&gt; &quot;#line(length: 100%)\n\n&quot;
+dashes    = 3*'-' | 3*'*' | 3*'_'
+paragraph(N in 0..) := line *( LF %spaces N *SP !starter line ) nl       =&gt; join($line, &quot;\n&quot;) &quot;\n\n&quot;
+quote(N in 0..)     := qline *( %spaces N qline )                        =&gt; &quot;#quote(block: true)[\n&quot; indent(2, join($line, &quot;\n&quot;)) &quot;\n]\n\n&quot;
+qline     = '&gt;' *SP [ line ] nl
+line      = 1*inline *WSP                                                =&gt; trim($inline)
+starter   = r&quot;[#&gt;|]|`{3}|[-*+] |[0-9]{1,9}[.)] &quot;
+
+fence(N in 0..) := ticks as T [ info ] nl *( code(N) nl ) %spaces N *SP $T rest nl
+                                                                         =&gt; ticks(max(len($T), 1 + longest($code, '`'))) $info &quot;\n&quot; join($code, &quot;\n&quot;) &quot;\n&quot; ticks(...) &quot;\n\n&quot;
+ticks     = 3*'`'
+rest      = *'`'
+info      = *SP 1*~( SP | LF | '`' )
+code(N in 0..) := !$^T [ %spaces N ] r&quot;.*&quot;
+
+list(N in 0..) := item(N) *( *blank %spaces N item(N) )                  =&gt; join($item, &quot;\n&quot;) &quot;\n\n&quot;
+item(N in 0..) := marker 1*SP %col M block(M) *( *blank %spaces M *SP %col K block(K) )
+                                                                         =&gt; $marker &quot; &quot; indent(len($marker) + 1, tight($block))
+marker    = bullet =&gt; &quot;-&quot; | ordinal
+bullet    = '-' | '*' | '+'
+ordinal   = 1*9DIGIT ( '.' | ')' )
+
+table(N in 0..) := row as H %spaces N delimiter as D *( %spaces N *SP row )
+                                                                         =&gt; &quot;#table(\n  columns: &quot; count($H.cell) &quot;,\n  align: &quot; aligns($D) &quot;,\n  table.header(&quot; $H &quot;),\n&quot; $row &quot;\n)\n\n&quot;
+row       = '|' 1*( cell '|' ) *WSP nl                                   =&gt; join($cell, &quot;, &quot;)
+cell      = *WSP *( !cell-end inline ) *WSP                              =&gt; &quot;[&quot; trim($inline) &quot;]&quot;
+cell-end  = *WSP '|'
+delimiter = '|' 1*( *WSP [ ':' ] dash [ ':' ] *WSP '|' ) *WSP nl
+dash      = 1*'-'
+
+inline    = code-span | strong | emph | strike | image | link | autolink | escape | text | lone
+code-span = r&quot;`[^`\n]+`&quot;
+strong    = &quot;**&quot; !SP 1*( !&quot;**&quot; inline ) &quot;**&quot; | &quot;__&quot; !SP 1*( !&quot;__&quot; inline ) &quot;__&quot;   =&gt; &quot;*&quot; $inline &quot;*&quot;
+emph      = &quot;*&quot; !SP 1*( !&quot;*&quot; inline ) &quot;*&quot; | &quot;_&quot; !SP 1*( !&quot;_&quot; inline ) &quot;_&quot;          =&gt; &quot;_&quot; $inline &quot;_&quot;
+strike    = &quot;~~&quot; !SP 1*( !&quot;~~&quot; inline ) &quot;~~&quot;                             =&gt; &quot;#strike[&quot; $inline &quot;]&quot;
+image     = &quot;![&quot; *~( ']' | LF ) as A &quot;](&quot; url as S [ 1*SP title ] &quot;)&quot;      =&gt; &quot;#image(&quot; str($S) &quot;, alt: &quot; str($A) &quot;)&quot;
+link      = '[' 1*( !&quot;]&quot; inline ) ']' '(' url as U [ 1*SP title ] ')'      =&gt; &quot;#link(&quot; str($U) &quot;)[&quot; $inline &quot;]&quot;
+autolink  = '&lt;' 1*ALPHA ':' 1*~( '&gt;' | SP | LF ) '&gt;'                       =&gt; &quot;#link(&quot; str($) &quot;)&quot;
+url       = 1*~( ')' | SP | LF )
+title     = DQUOTE *~( DQUOTE | LF ) DQUOTE
+escape    = '\\' ~( ALNUM | LF )                                         =&gt; esc(rest($))
+lone      = '`' | '*' | '!' | '[' | ']' | '&lt;' | '\\' | '|' | '_' | '~'     =&gt; esc($)
+text      = r&quot;([^`*!\[\]&lt;\\|_~ \r\n]+(_[^`*!\[\]&lt;\\|_~ \r\n]+)*| )+&quot;        =&gt; esc($)
+nl        = r&quot;\r?\n&quot;
+blank     = r&quot;[ \t]*\r?\n&quot;
+</code></pre>
+<p><strong>What it needs, in order of how much it changes the language.</strong></p>
+<ol>
+<li><strong>A value for every rule, and <code>=&gt; template</code> to write it.</strong>  A rule's value is its template, or, with none, its children's values one after the other; a rule of characters is its text.  A template is
+strings, <code>$rule</code> (the value of that child; for a repeated child, the values joined), <code>$</code> (the whole text the rule matched), <code>$K</code> (a capture), and calls.  This is <code>name :: type = ...</code> and <code>%emit{}</code>
+(ABNF.md, &quot;Values at recognition&quot;) with a default, so the substrate exists: the value returns up the parse, and giving up a branch drops it, which is why no rollback is needed (C only today).</li>
+<li><strong><code>x as K</code> captures a value, not only text, and <code>$K</code> reads it back</strong>: in the same rule (<code>ticks as T ... $T</code>, the back-reference being built now) and in the template.  <code>row as H</code> keeps the row's cells,
+<code>$H.cell</code> names them (<code>.</code> is scope, as everywhere).</li>
+<li><strong>Up references, <code>$K^</code> and <code>$K^R</code>: a capture of an enclosing rule.</strong>  (The user, 2026-11-03: <code>.</code> goes into a scope, so <code>^</code> goes up and out of one, and a path written inside-out reads <code>baz^bar^foo</code> for <code>foo.bar.baz</code>.  <code>$K</code> is the rule's own capture; <code>$K^</code> the capture K of the nearest enclosing rule that bound it, anonymous, which a helper called from many binders needs (<code>scope-end = [ &quot;END-&quot; + $K^ ]</code>); <code>$K^R</code> the capture K of the enclosing rule named R, which says which binder is meant and so needs no counting of levels and cannot be shadowed by a nearer rule that binds K too (<code>!$T^fence</code>).  There was a first spelling, <code>$^K</code> and <code>$^^K</code>, with the binder implicit; it was dropped for this one the same day.  Decided; being built.)  The sketch needs two.  The closing fence: <code>code(N) := !$^T ...</code> says a line of code is not the opening ticks again, which is
+what a rule reached from <code>fence</code> must see of <code>fence</code>'s capture, and which no lookahead over a rule can say today.  The other is a fact down the tree (<code>tight</code>, the kind of list marker, the table's
+column count).  <strong>An up reference is an implicit parameter</strong>: the generator adds the captured value to every rule on the paths from the capturing rule to the use, as <code>%col</code> and <code>%num</code> already travel in
+a frame; a rule reachable from two parents that do not both bind K is an error, or the reference is optional (<code>$^T?</code>).  So it is hyperrule machinery that exists, not a new runtime.</li>
+<li><strong>A small library the templates call</strong>: <code>rep</code>, <code>len</code>, <code>join</code>, <code>indent</code>, <code>trim</code>, <code>max</code>, <code>count</code>, <code>str</code> (a Typst string), <code>esc</code> (Typst's markup escapes), <code>longest</code>, <code>ticks</code>, <code>tight</code>, <code>aligns</code>.  The first
+seven are one line each; <code>esc</code>, <code>aligns</code> and <code>longest</code> are a few lines of C, which is where <code>{ code }</code> stays (the principle: code is allowed when it shrinks the total).</li>
+<li><strong>Output without a tree</strong>: the C backend builds the value as the parse returns (an arena, and a rope or a length-first buffer so a document is not copied once per nesting level).</li>
+</ol>
+<p><strong>Estimated size.</strong>  544 symbols for grammar and output, against 1,876 for grammar and walker; the library adds about 150 to 250 symbols once, for any grammar.  So the rewrite form is about 2.4 to 3.4 times smaller
+than the walker, and the walker disappears (no tape reader, no tag switch, no indentation bookkeeping: <code>indent(n, ...)</code> is the nesting).</p>
+<p><strong>What it does not remove.</strong>  Some of the sketch is judgment, not mechanism: <code>esc($)</code> must know it is at the start of a line (<code>= - + /</code>, <code>1.</code>), which wants <code>bol</code> as a fact the escape reads (<code>$^bol</code>) or the
+walker's <code>at_ls</code>; the tight-list rule; Typst's own limits.  A converter is also one-way: the tree is gone, so a second use (a table of contents, a word count) needs a second grammar or a tape.  Both of
+those argue for keeping the tape and the walker as the general answer and the rewrite form as the compact one for a straight conversion.</p>
+<p><strong>Open (the user).</strong>  (a) Is <code>=&gt;</code> followed by a template the right spelling of &quot;this rule's value&quot;, given <code>=&gt;</code> also means a switch of grammar and a fact (section 15)?  The one arrow reads as &quot;the consequence of
+a match&quot;, and a template is a consequence.  (b) <code>$^K</code> for an up reference, or another sign.  (c) Whether a default of &quot;concatenate the children&quot; is wanted, or every rule must say.</p>
+<h2>26. Reader and generator fixes found while writing the Markdown grammar (2026-11-03; queued, nothing built)</h2>
+<p>Each was met writing <code>corpus/markdown</code>; the first two are the user's decisions, the rest are findings that read as limits and not as design.</p>
+<ol>
+<li><strong><code>'c'</code> is <code>&quot;c&quot;</code> (the user).</strong>  A character literal is a literal of length one with the other quote character; the two spellings are one thing, and the quote character only saves an escape (<code>'&quot;'</code>, <code>&quot;'&quot;</code>).  Today the reader makes <code>'c'</code> a bare
+code point, so <code>!'b'</code> and <code>&amp;'c'</code> are refused, a repeated <code>*'-'</code> needs a rule of its own, and <code>'\'</code> is the only backslash.  What a literal means is decided where it stands (text in a rule of characters, a word in a phrase rule when it begins
+with a letter).  About 40 single-quoted literals in the repository hold a letter or a digit (mostly <code>grammars/obconf_*</code>); the byte-identity comparison finds any that change.</li>
+<li><strong><code>'\'</code> for a backslash (the user)</strong>, not <code>&quot;\\&quot;</code>: a backslash directly before the closing quote reads as a backslash (<code>\'</code> is still an escaped quote).</li>
+<li><strong>A lookahead over a sequence (the user's question: &quot;how is a rule not a sequence?&quot;).</strong>  <code>!( a b )</code> and <code>&amp;( %spaces N 'x' )</code> are read as a lookahead over an anonymous rule, lifted when the grammar is read, which takes the parameters it uses.
+Today only a literal, a rule or alternatives of those are accepted, and the sequence has to be named.</li>
+<li><strong><code>hidden</code> and <code>!</code>/<code>&amp;</code> over any rule, in every layout (the user: &quot;ws is structure&quot;).</strong>  Today <code>hidden</code> accepts a rule only if it is pure text, and a lookahead under <code>layout tape</code> accepts a rule only if it writes nothing.
+Both need the same thing: a silent variant of a rule, the same function with the writing of nodes switched off.  With it, <code>hidden nl</code> works when <code>nl</code> holds <code>eol</code>, and <code>!closer(N)</code> works when <code>closer</code> holds <code>%spaces N</code>.</li>
+<li><strong><code>bol</code> and <code>eol</code> are text for <code>hidden</code> and for rules of characters.</strong>  A rule that holds <code>eol</code> is refused as <code>hidden</code> (&quot;it builds structure&quot;).</li>
+<li><strong>A <code>%spaces N</code> at the start of a repeated group reads N as lost, in <code>corpus/markdown</code></strong> (not in the smallest grammar that has the same shape): <code>table(N) := row %spaces N delimiter *( %spaces N row )</code> reads no data rows for N &gt; 0, and
+<code>*( %spaces N *SP row )</code> does.  The repro is in <code>/home/matthew/hbnf-repro-spaces/</code> (README.txt, the failing grammar, the input, five variants).</li>
+<li><strong>A pattern rule's instances are named for the pattern</strong> (<code>marked-x42x42</code>) in the tape and the tree; a rule written with the pattern as its body would want the caller's name (<code>strong = marked(&quot;**&quot;) | marked(&quot;__&quot;)</code> as one node <code>strong</code>).</li>
+<li><strong>Up references (section 25)</strong> are the one item here that is a feature and not a repair.</li>
+</ol>
+<p><strong>More findings from the GraphQL grammar (<code>corpus/graphql</code>, 2026-11-03; each found by the agent that wrote it, none fixed).</strong></p>
+<ol start="9">
+<li><strong>Ada</strong>: a literal alternation holding <code>&quot;type&quot;</code> makes the enum value <code>&lt;Rule&gt;_Type</code>, which collides with the generated type of the same name and does not compile (<code>( &quot;type&quot; | &quot;interface&quot; )</code>).</li>
+<li><strong>Rust</strong>: a rule called <code>body(X)</code> collides with the generated <code>parse_body_&lt;rule&gt;</code> functions (<code>parse_body_root_operation</code> is defined twice).</li>
+<li><strong>A negative lookahead over a rule that itself ends in a negative lookahead</strong> (<code>!bare</code>, <code>bare = ... !( ... )</code>) works in C and wrongly refuses in Rust and Zig; a positive <code>&amp;adds</code> is the workaround.  This is a backend bug, not a limit.</li>
+<li><strong>Ada</strong> writes a raw TAB for <code>0x09</code> inside an Ada string literal when a character rule has a lookahead and is read a character at a time; the file does not compile.</li>
+<li><strong><code>word</code></strong> is renamed <code>word-rule</code> when it is a regex or holds a group under a repetition, and the keyword boundary then breaks (<code>scan_word</code> undefined in C).</li>
+<li><strong>A token exception</strong> <code>name - &quot;on&quot;</code> with a literal operand is refused with &quot;expected a literal, name, or group&quot;; the operand has to be a rule.</li>
+<li><strong>Letters in a rule of characters</strong> must be <code>'e'</code>, not <code>&quot;e&quot;</code>: <code>&quot;e&quot;</code> is read as a whole word and fails on <code>e10</code>.</li>
+</ol>
+<p><strong>More findings, from the XML grammar (<code>corpus/xml</code>, 2026-11-03; none fixed).</strong></p>
+<ol start="16">
+<li><del><strong><code>--layout=tape</code> with a back-reference</strong> wrote C that did not compile (<code>cl_tag_N</code> undeclared).</del>  Fixed: the pieces of one sequence (<code>qname as tag</code> and the <code>&quot;&lt;/&quot; $tag</code> after it) name the capture alike, and a rule made only of an up reference (<code>code_up1</code>) stays a phrase rule that a lookahead may look at.  <code>tests/tapecap.sh</code> runs the back-reference, up-reference and up-scope grammars as a tree and as a tape and compares the verdicts.  Still open, and not about captures: item 63 (HTML as a tape).</li>
+<li><strong><code>--layout=tape</code> and a lookahead over a rule</strong> (<code>legal = *Char !any</code>, <code>document = &amp;legal ...</code>) is refused (&quot;an %emit inside a lookahead&quot;), also when <code>legal</code> is <code>hidden</code>; the workaround is about three times slower (37 ms against 11 ms per MB).  The silent variant of item 4 is the cure.</li>
+<li><strong>Ada</strong>: a pattern rule's instance is named from its literal arguments, and a <code>-</code> or <code>_</code> in an argument gives <code>__</code>, which Ada refuses (<code>t(&quot;--&quot;)</code>); passing the literal through a rule avoids it.  The same as item 7, for Ada.</li>
+<li><strong>Rust</strong>: a rule named <code>default</code> becomes a struct <code>Default</code> that shadows the trait, and <code>Default::default()</code> fails to compile.</li>
+<li><strong>Rust</strong>: the generated <code>let mut cp_tag = 0usize</code> is assigned again before it is read, which <code>-D warnings</code> rejects (<code>unused_assignments</code>); <code>tests/xml.sh</code> shims <code>rustc -A unused-assignments</code>.</li>
+<li><strong>C</strong>: a NUL byte ends the text, so <code>&lt;a/&gt;</code> then a NUL and more is accepted; and an overlong UTF-8 sequence (<code>\xC0\x80</code>) is read as valid while <code>\xFF</code> is refused.</li>
+<li><strong>A lookahead rule inside a rule of characters always warns</strong> (&quot;read a character at a time&quot;); <code>legal</code>, <code>chardata</code> and the <code>quoted(...)</code> and <code>till(...)</code> instances all do.  <strong>Fixed for C (2026-11-03, on the question &quot;why is the C XML parser slower than expat&quot;).</strong>  A rule of text with a lookahead and a repetition is a rule of characters and is scanned in place: the scanner has an <code>Iter</code> atom (a repeated group, or a repeated rule that is not a flat class, whose one time is a function <code>loop_*</code> returning the length of the longest branch that matches, like the <code>look_*</code> of a lookahead), and a lookahead may sit anywhere in the rule, in a group too; <code>Group</code> is accepted in such rules.  A rule of characters that is one only for this reason (<code>HBNF_Grammar.Is_Wide_Rule</code>) also gets a faster loop for a repeated class (a 128-entry table for ASCII, a decode for the rest) instead of one decode per alternative per character.  Only C: <code>hbnf</code> says <code>Set_Scan_Look</code> for <code>--backend=c</code>; Rust, Zig and Ada still read these rules a character at a time and still warn.  The generated C of every grammar without such a rule is byte-identical (graphql, shell and XML, which have them, change by design).  <strong>The condition (added after the YAML and JavaScript suites found the first version too wide):</strong> a rule is scanned only where at most one alternative can begin at a position, which <code>Choices_Ok</code> proves from the first bytes (of the UTF-8) each alternative can begin with: every choice in the rule, in its groups and in the rules it names is between alternatives that cannot be empty and share no first byte, or between single code points; a lookahead is a test and its contents are not choices.  Where it cannot prove that, the rule stays a phrase rule and the warning stays (YAML's <code>dirs</code>, JavaScript's <code>number</code>).  A rule that only names a scanned rule is not made a rule of characters by it (so nothing about the tape layout or the tree of a rule that did not warn changes).  Not changed: the warning stays for the other backends; a nullable body of a repeated group ends the loop (a zero-length time is not counted); <code>--layout=tape</code> with <code>&amp;legal</code> now works for the lookahead (it names a token), the back-reference of item 16 still stops XML.</li>
+</ol>
+<p><strong>More findings, from the HTML grammar (<code>corpus/html</code>, 2026-11-03; none fixed).</strong></p>
+<ol start="23">
+<li><strong>A hyperrule's literal argument ignores the file's <code>sensitivity string %i</code></strong>: <code>f(N) := &quot;&lt;&quot; N &quot;&gt;&quot;</code> called <code>f(&quot;a&quot;)</code> refuses <code>&lt;A&gt;</code> and accepts <code>&lt;a&gt;</code>; the workaround is <code>i&quot;a&quot;</code>.</li>
+<li><strong><code>$K</code> compares bytes</strong>, so a closing tag cannot be case-insensitive (HTML folds case: <code>&lt;DIV&gt;x&lt;/div&gt;</code> is legal, and the grammar refuses it).  <strong>Decided (the user, 2026-11-03): <code>$K</code> keeps the property of what it back-references</strong>: it compares as the captured element matches (an <code>i&quot;...&quot;</code> captured is matched ignoring case, an <code>s&quot;...&quot;</code> exactly), and where that element carries no flag of its own, as the grammar's <code>sensitivity</code> says.  Section 10 recorded the byte comparison only to keep the output of the <code>%same</code> grammars the same; a grammar under <code>sensitivity string %i</code> that uses <code>$K</code> changes, and the byte-identity comparison finds it.  <strong>BUILT 2026-11-03</strong>: a <code>$K</code> of an <code>i&quot;...&quot;</code> literal ignores ASCII case, of an <code>s&quot;...&quot;</code> is exact, and otherwise follows the file's <code>sensitivity</code>; <code>corpus/html</code> now accepts <code>&lt;DIV&gt;x&lt;/div&gt;</code>.</li>
+<li><strong><code>as K</code> and <code>$K</code> in the same sequence but in different group alternatives</strong> (<code>&quot;&lt;&quot; ALPHA as t ( &quot;/&gt;&quot; | &quot;&gt;&quot; &quot;&lt;/&quot; $t &quot;&gt;&quot; )</code>) make the C backend write code that does not compile (<code>cl_t_3</code> undeclared); it should be a message from the reader.  <strong>Fixed 2026-11-03</strong>, by the machinery of up references, not by a message: the capture is passed to the group's rule in the frame of numbers, so it compiles and works (also in an option, a repetition, a lookahead and a join, <code>tests/upref/group.hbnf</code>, <code>tests/backref/join-group.hbnf</code>).</li>
+<li><strong>A rule named <code>text</code> collides with <code>parse_text</code> in Rust and Zig</strong> (fine in C), as <code>word</code> and <code>default</code> do; the generator should rename a rule that collides, as it does for <code>word</code>.</li>
+<li><strong>In an island (<code>include ... as x</code>)</strong> a hyperrule defined in the guest (<code>sym(S) := S blank</code>) gives &quot;rule <code>S</code> is not defined in grammar <code>js</code>&quot;, and a lookahead on a guest rule (<code>&quot;var&quot; !id-char</code>) gives &quot;rule <code>id-char</code> is not defined in grammar <code>js</code>&quot; though it is defined there.  <strong>The lookahead half is fixed 2026-11-03</strong> (a name after <code>!</code> or <code>&amp;</code> was read as the name of a capture, not of a rule); the hyperrule half is not (<code>^.list(^.name)</code>, a hyperrule defined in the host and called from the guest, is the way round it).</li>
+<li><strong>A generator crash</strong>, <code>CONSTRAINT_ERROR hbnf_c.adb:5851</code>, for <code>chars(X) := 1*( ref / amp / !( X / &quot;&amp;&quot; ) char )</code> called as <code>chars( space / DQUOTE )</code> (alternatives passed as a pattern); a named rule as the argument works.  Not shrunk below a copy of <code>corpus/html/html-tokens.hbnf</code>.</li>
+<li><strong>A multi-character lookahead in a rule of characters</strong> (<code>!&quot;--&gt;&quot;</code>, <code>!&quot;]]&gt;&quot;</code>) makes the rule a list of one-character nodes and the generator warns: the same cause as item 22, seen as a tree effect.  Quick at run time.</li>
+<li><strong>The root after <code>include &quot;html.hbnf&quot;</code></strong> with new rules in the including file became the last new rule, not the included file's first; overriding existing rules keeps the root.</li>
+<li><strong><code>=&gt; grammar(js)</code> after <code>&lt;script&gt;</code></strong> generates and changes nothing (the switch replaces white space only and HTML skips none); and there is no way back, since <code>grammar(x)</code> needs an <code>include ... as x</code> and a host cannot include itself.  This is phase 2 of the switch.</li>
+<li><strong>Rust</strong>: a rule using <code>as</code> assigns a value never read, and <code>-D warnings</code> refuses it (also item 20); <code>tests/suite.sh</code> now takes <code>RUST_LINTS</code>.</li>
+<li><strong>Tree-sitter</strong> drops lookaheads, so comments and raw text over-match.</li>
+</ol>
+<p><strong>More findings, from closing the XML well-formedness checks with contexts (<code>corpus/xml</code>, 2026-11-04; the first four fixed in the same change).</strong></p>
+<ol start="34">
+<li><strong>A grammar with <code>context</code> lost the C backend's speed-ups for no reason</strong> unless it held <code>%where { }</code> or <code>%bind { }</code> code: strings were copied, nodes were not overlaid, the arena was not put back.  Those three held only because the code could read the tree's strings and nodes; <code>%bind C += x</code> and <code>x ? C</code> keep slices of the input and nothing of the tree.  Now only code that names the node <code>n</code> turns them off (<code>HBNF_Grammar.Context_Code</code>, found by reading the code for an identifier <code>n</code> outside comments and literals): code that uses only <code>p</code>, <code>text</code>, <code>len</code> and the context API (<code>HBNF_IN</code>, <code>HBNF_ADD</code>, the log <code>hbnf_cx</code>) does not.  XML: 3.5 to 12.5 ms before, about 4 ms after (tree).</li>
+<li><strong>A rule that puts the contexts back kept a wrapper that the first pass could not skip</strong>; in a layout with emits (<code>--layout=tape</code>) the wrapper called the loud body, which writes no tape, so the tape of a grammar with a context held a fraction of its words (the verdicts were right).  The first pass now goes to the body with the mark and the reset inline.</li>
+<li><strong>In a rule with emits (<code>--layout=tape</code>), an alternative that failed after a <code>%bind</code> did not put the contexts back</strong> (the tree's alternatives did); the next alternative then saw a name bound by the one given up.  <code>tests/tapecap.sh</code> now holds the cases (an entity declared twice).</li>
+<li><strong>Tape words of a <code>%bind</code> need slices</strong>: with <code>context</code> and copies the tape code wrote <code>hbnf_sn()</code> of a <code>const char *</code>.</li>
+<li><strong>A regular expression whose alternatives can begin at the same byte</strong> (<code>[1-9][0-9]{5}|[1-4][0-9]{4}</code>) makes a rule that holds it, and is used under <code>*( !Q C )</code>, &quot;read a character at a time&quot; with the warning of item 22; written as the automaton (each alternative begins with its own class, the <code>;</code> inside), it does not.  <code>tools/xml_charref.py</code> writes the legal character references so.</li>
+<li><strong><code>%where { }</code> and <code>%bind { }</code> in a layout with emits</strong> (<code>--layout=tape</code>) were given the text since the code itself (empty), and the call had no <code>n</code> argument; the text is now that of the sequence they stand in, and the argument is 0 where the layout builds no node.</li>
+<li><strong>Entity texts are kept in the context log</strong>: <code>HBNF_ADD (vals, ..)</code> right after the entity's name in <code>ents</code> puts the text in the next entry, and <code>%where { }</code> code reads <code>hbnf_cx</code> to walk the entities that a use names (No Recursion, and an undeclared name inside an entity's text).  This is C only and is code (about 35 lines in <code>corpus/xml/xml.hbnf</code>) where a value kept with a name (section 13, R1) would be a notation; with it the Rust and Zig parsers of XML are gone (they have contexts, not code), Ada never had contexts.</li>
+<li><strong>Not built, needed to finish XML</strong>: the balance of an entity's markup (<code>&lt;!ENTITY e &quot;&lt;b&gt;&quot;&gt;</code>), a <code>&lt;</code> or an unparsed entity named inside an entity's text, a character reference made by <code>&amp;#38;#0;</code>: the replacement text parsed as <code>content</code> when the entity is used, a bounded island (section 27).</li>
+</ol>
+<h2>27. JavaScript and CSS as islands in HTML (the user, 2026-11-03; decided in outline, nothing built)</h2>
+<p>The user: <code>js</code> and <code>css</code> should be islands in <code>html</code>, each in its own grammar file.  So <code>corpus/js/js.hbnf</code> and <code>corpus/css/css.hbnf</code> are standalone grammars, and <code>html-islands.hbnf</code> includes them (<code>include &quot;../js/js.hbnf&quot; as js</code>).</p>
+<p><strong>Two things the island mechanism does not do yet</strong>, both found by the HTML grammar's island variant (section 26, items 27 and 31):</p>
+<ol>
+<li><strong>A guest with its own white space.</strong>  A grammar included <code>as x</code> shares the including grammar's <code>ws</code> or says <code>whitespace none</code>; one with a <code>ws</code> rule of its own is refused (&quot;one white-space rule&quot;).  JavaScript and CSS both have their own (comments,
+line terminators that matter to JavaScript's semicolon insertion), so an island needs the per-grammar scanner that the switch <code>=&gt; grammar(x)</code> already has (stage 2: <code>skip_ws</code> is one dispatch on the current grammar).</li>
+<li><strong>A bounded island.</strong>  The end of a <code>&lt;script&gt;</code> is decided by the HTML tokenizer (the first <code>&lt;/script</code>), not by the JavaScript inside it; today the guest runs on the host's text and stops where it stops, so <code>var a = &quot;&lt;/script&gt;&quot;;</code> ends
+the script at the wrong place.  The host should first take the raw text, and the guest should read exactly that text:
+<code>script = &quot;&lt;script&quot; attributes &quot;&gt;&quot; raw as R &quot;&lt;/script&quot; &quot;&gt;&quot;</code> with the guest applied to it, written <code>js.program in $R</code> (proposed spelling; <code>in</code> is already the word of a parameter's domain).  The guest must consume all of the text, or the
+element fails; the positions the guest reports are the host's.  This is <code>x as K</code> and <code>$K</code> (built) used as an input, not as a match.</li>
+</ol>
+<p><strong>The grammars.</strong>  <code>corpus/js</code>: ECMAScript, the Script goal and the Module goal if it is cheap; the lexical ambiguities of JavaScript (a <code>/</code> is a division or a regular expression; template literals nest; automatic semicolon insertion; the contextual
+keywords <code>async await yield of get set static let</code>) are written for a scannerless reader, which tries a regular expression where an expression is expected and a division where an operator is.  <code>corpus/css</code>: CSS Syntax Level 3 (rules, at-rules,
+declarations, blocks, functions, custom properties, comments, the escapes of identifiers and strings) with the selectors of Level 4 and the value syntax of the common properties as far as is cheap; roots <code>stylesheet</code> (a <code>&lt;style&gt;</code> element) and
+<code>declaration-list</code> (a <code>style=&quot;&quot;</code> attribute).  The attribute values of HTML (<code>onclick</code>, <code>style</code>) are the same islands with other roots.  Both are standalone and tested alone first.</p>
+<p><strong>Order.</strong>  (1) the two grammars, as agents; (2) island with its own white space, then the bounded island, in the generator (after the speed work on the C scanner, which touches the same files); (3) <code>html-islands.hbnf</code> over the real grammars, and the
+test the stub could not pass: <code>var a = &quot;&lt;/script&gt;&quot;;</code> read as the browser reads it.</p>
+<p><strong>Later, from the same sign (the user, 2026-11-03).</strong>  <code>^</code> as &quot;out of&quot; also fits islands: inside a guest grammar, <code>^.rule</code> names a rule of the including grammar (<code>^.^.rule</code> two out, as <code>../name</code>), an explicit way out that is not a fallback (missing names stay missing); the <code>$</code> sign tells it from the capture forms.  Decided (the user: &quot;why would you say not to build it?&quot;), being built;
+needed when a guest has to call back into its host (an HTML <code>&lt;script&gt;</code> that has to end where the host says, or a template language whose guest reaches the host's names).</p>
+<p><strong>More findings, from the SGML grammar (<code>corpus/sgml</code>, 2026-11-03; none fixed).</strong></p>
+<ol start="34">
+<li><strong>Under <code>sensitivity string %i</code> keywords have no word boundary</strong> (a plain <code>strncasecmp</code> prefix), so <code>ID</code> matched the front of <code>IDREF</code>.  The boundary turns on only if the grammar names <code>word</code> or lists <code>keywords</code>, and naming <code>word</code> makes every keyword unusable as a name.  The workaround is to write the longer keyword first, which lets <code>&lt;!ELEMENTa</code> through in a <code>.dtd</code>.</li>
+<li><strong>A literal passed as a word parameter</strong> (<code>decl(K, P)</code> with <code>K</code> = <code>&quot;ELEMENT&quot;</code>) does not take the file's <code>%i</code>, and generation stops with &quot;keyword written both with i&quot;...&quot; and without&quot; (as item 23 says for HTML; literals inside a pattern argument do work).</li>
+<li><strong>A rule named <code>flag</code> is silently the built-in <code>flag</code></strong>, with no warning, unlike <code>word</code> and <code>atom</code>.</li>
+<li><strong>A rule made only of literals and token rules is itself a token and skips no blanks inside it</strong> (<code>appinfo = &quot;APPINFO&quot; ( &quot;NONE&quot; | literal )</code>); the same words with an optional or a repetition in them are a phrase.  Silent and inconsistent.</li>
+<li><strong>A pattern rule inside an island fails</strong>, so the island experiment writes <code>content(D)</code> out three times (the same as item 27 for hyperrules).</li>
+<li><strong>Ada</strong>: a self-recursive list rule (<code>x = *( &quot;&lt;![&quot; x &quot;]]&gt;&quot; | y )</code>) emits <code>&quot;Ignored_Type&quot; is undefined</code>; giving the entry its own rule cures it.</li>
+<li><strong>The C backend refuses a lookahead inside what a <code>ws</code> rule repeats; Rust, Zig and Ada accept the same rule silently.</strong></li>
+<li><strong>A declaration that spells its own delimiters</strong> (the SGML declaration's <code>SYNTAX</code> section) cannot be a switch, even once token rules can be overridden: only a named syntax can be.  <code>=&gt; grammar(x)</code> for a CDATA marked section works in C but makes the text white space, which is not in the tree; a raw token is simpler.</li>
+</ol>
+<p><strong>More findings, from the CSS grammar (<code>corpus/css</code>, 2026-11-03; none fixed).</strong></p>
+<ol start="42">
+<li><strong>White space that means something cannot be a skipping <code>ws</code> rule.</strong>  The skipping rule eats blanks before the next element is tried, so nothing after it can ask whether there were any (CSS's descendant combinator, and the blanks around <code>+</code> and <code>-</code> in <code>calc()</code>).  <code>corpus/css</code> uses <code>whitespace none</code> and three rules written out: <code>ws</code> (any), <code>blank</code> (one or more), <code>gap</code> (a real space, with comments allowed around it).  A way to ask &quot;was there white space just now&quot; (a lookbehind, or a skip that reports) would let a grammar keep the skip.  It also means CSS has no skipping <code>ws</code>, so the island limit that stops it is not item 31's but item 27's (a hyperrule in a guest).</li>
+<li><strong><code>--layout=tape</code> produces C that does not compile for <code>css.hbnf</code></strong> (<code>parse_rule_ws</code> undefined inside <code>parse_loud_keyframe</code>); renaming <code>ws</code> cures it; a small grammar with a hidden <code>ws</code> compiles.  Not shrunk.</li>
+<li><strong>A pattern instance holding a lookahead warns &quot;read a character at a time&quot; when its argument is not a bare literal</strong> (<code>at([ vendor ] i&quot;keyframes&quot;)</code>).</li>
+<li><strong>With <code>sensitivity string %i</code> in a guest, an island error points at the sensitivity line</strong> (<code>css-tokens.hbnf: 6: 13</code>) instead of at the hyperrule that is not defined in the guest (<code>css--at(N)</code>).</li>
+</ol>
+<p><strong>More findings, from the JavaScript grammar (<code>corpus/js</code>, 2026-11-03; none fixed).</strong></p>
+<ol start="46">
+<li><strong>A lookahead is evaluated after the blanks are skipped</strong>, so it cannot see a line end (<code>program = &quot;a&quot; &amp;nl &quot;b&quot;</code>, <code>nl = *blank LF</code>, <code>ws</code> skipping LF refuses <code>a</code>, line feed, <code>b</code>).  Only <code>eol</code> sees where the previous token ended.  This is what automatic semicolon insertion needs, and the grammar is written around it: every token that can end a statement ends with <code>*inl</code> (the blanks and comments on its line), and <code>ends(X) := X &quot;;&quot; | X rbrace-ahead | X eof | X eol</code>.</li>
+<li><strong>A rule that ends in an optional or repeated element ends after the blanks</strong>, so a following <code>eol</code> fails (<code>e = id *tail</code> refuses; <code>e = id 1*tail | id</code> accepts), and the C ladder optimisation (<code>a = b *(op b)</code>) does the same.  The grammar writes every statement-ending rule as <code>a b | a</code>, never <code>a [ b ]</code>, which depends on this staying so; the V8 tests would catch a change.</li>
+<li><strong>Shared-beginnings factoring is off in rules with first-byte dispatch, and when the rest of an alternative starts with a block</strong> (<code>eol</code>, <code>!x</code>, <code>&amp;x</code>): <code>x = id &quot;;&quot; | id eol</code> parses <code>id</code> twice, so failing parses compound with nesting.</li>
+<li><strong>A rule that <code>ws</code> reaches and that holds a lookahead is checked as a plain rule</strong>: it refuses <code>*( group )</code>, a string literal as the operand (<code>0x2B</code> works), and <code>bol</code> in a group, with a message that is cut off after &quot;but&quot; and names no rule.  The same <code>ws</code> passes in a <code>whitespace none</code> file.</li>
+<li><strong>A table of about 700 ranges followed by anything is copied once per alternative</strong>: <code>x = id-start-uni *id-continue-uni</code> writes 126 MB of C, and adding a multi-character alternative to the same repetition makes the generator not finish.  (corpus/js/js-unicode.hbnf is generated by corpus/js/idtables.py from Unicode 16.)</li>
+<li><strong>Keyword mode is on only if some rule uses <code>word</code> or <code>atom</code></strong>; defining <code>word</code> alone does nothing and nothing warns.  Without it every letter-led literal matches the front of a longer word (<code>&quot;new&quot;</code> read <code>newValues</code>, <code>!&quot;class&quot;</code> refused <code>className</code>).  The same cause as item 34.</li>
+<li><strong>Zig is exponential in nesting where C is linear</strong>: about 3.5 times per level (<code>x = [[[[[[[[1]]]]]]]];</code> takes 22 s at 8 deep, 6 s at 7, 2 s at 6; the same in C at 22 deep takes 1 ms).  The Zig suite keeps its test nesting at 4 or less to pass its 30 s guard.  A backend defect, and the most serious finding of the grammars so far.</li>
+<li><strong><code>!</code> and <code>&amp;</code> accept no code point</strong> (<code>!0x7B</code> is refused; a rule is needed); and an island <code>include ... as js</code> fails first with the hyperrule-in-guest error (item 27).</li>
+<li><strong>A wish</strong>: a one-line way to say &quot;this token takes the blanks of its line&quot;, for the <code>*inl</code> that ends every token in item 46.</li>
+</ol>
+<p><strong>More findings, from the up references and <code>^.rule</code> (2026-11-03; the first four fixed in the same patch).</strong></p>
+<ol start="55">
+<li><strong>A frame for the first rule</strong>: a rule that keeps a capture in the frame (an <code>x as K</code> read by a group, an option or a lookahead) and is the first rule had no frame to keep it in, since the entry point made none.  Fixed: the entry point makes the first rule's frame (C, Rust, Zig, Ada).</li>
+<li><strong>The reader read the frames of the first reading into the second</strong>: <code>hbnf</code> reads a grammar twice in a process, and the table of frames was kept, so a rule made a frame by the first reading was refused as called without its arguments by the second.  Fixed: the table is cleared when the second reading begins.</li>
+<li><strong>The greedy-repetition check took <code>$K</code> as matching nothing</strong>, so <code>*( code LF ) $t extra LF</code> was refused for the text <code>&lt;U+000A&gt;</code>.  Fixed: the look stops at a <code>$K</code>, whose text the grammar does not know.</li>
+<li><strong>A lookahead of a name in a scope</strong> (<code>!^.stop</code>, <code>!sql.x</code>) was not resolved to the scope's rule (see item 27); fixed.</li>
+<li><strong>Not fixed, in the generator as it was: a repeated group whose first element is a lookahead, followed at once by a <code>$K</code></strong>, loses the lookahead and the list entry gains the <code>$K</code> (C; <code>doc = &quot;[&quot; 1*ALPHA as t LF *( !&quot;]&quot; ALPHA LF ) $t LF</code>, found with the build of main).  A literal before the lookahead in the group is the way round it.</li>
+<li><strong>Not built</strong>: a rule that uses an up reference and also sets numbers with <code>%col</code> or <code>x %num j</code> is refused (the numbers the up reference passes go in front of the others); a lookahead over a rule that itself uses an up reference is refused (write the up reference in the lookahead); <code>^.name</code> in a root-bound guest is checked only by the name, so a plain <code>name</code> written in the same guest beside it is also accepted when the root defines <code>name</code>; the <code>$K</code> writer (<code>--writer</code>) writes nothing for an up reference.</li>
+</ol>
+<p><strong>From the memory reduction of the C tree (2026-11-03; item 61 not fixed, 62 a decision recorded).</strong></p>
+<ol start="61">
+<li><strong>The generated tree dump (<code>--ast-tools</code>, <code>dump_&lt;root&gt;</code>) segfaults in its recursion for the JavaScript and COBOL trees</strong>, at the baseline too, so those two are not tree-compared before and after a change of layout, only by their suites.</li>
+<li><strong>The shape of the C tree changed where it paid</strong> (the user, 2026-11-03: apart from the obconf grammars, the structure of the tree and of the tape is free to change).  A node that is one of several alternatives overlays the fields no alternative holds together, and <code>_alt</code> (from 1, in written order) says which is valid; a small struct member of such a node, and the members of a pure choice, are held by value (<code>n-&gt;object.object_1</code>, <code>expr-&gt;keyval</code>).  A failed attempt rewinds the arena.  Each is switched off by <code>--no-overlay</code> and <code>--no-unwind</code>, and a grammar with an action, <code>%emit</code>, a context or forks keeps the old layout (which is how the obconf grammars stay as they are).  The memory of the YAML tree for a 2 MB document went from 29.0 to 19.2 MB, XML 14.4 to 9.4 MB.  Not done, with estimates: list links packed into arrays (about 25% of JSON and TOML, 19% of XML), embedding the 16-byte pure choices in their parent, options as nullable pointers, a tagged pointer for <code>_alt</code>.</li>
+<li><strong><code>--layout=tape</code>: a lookahead over a rule that writes something is refused</strong> (<code>an %emit inside a lookahead</code>).  The smallest case: <code>doc = 1*( &quot;&lt;&quot; name !tc &quot;&gt;&quot; )</code>, <code>name = 1*ALPHA</code>, <code>tc = !( SP / &quot;&gt;&quot; ) ALPHA</code>.  In a tape every phrase rule that holds a node is a rule with emits, and a lookahead may not look at one (the tape could be put back by <code>rollback { tape_n }</code>, but the lookahead code does not do it).  Only the rules <code>x_upN</code> that an up reference makes of <code>!$K^</code> stay phrase rules (they write nothing).  <code>corpus/html/html.hbnf</code> (<code>!tag-char</code>) does not generate as a tape because of it.</li>
+<li><strong>Silent variants and rewrite rules are to be built and benched for the XML grammar too</strong> (the user, 2026-11-04: &quot;we won't know until we implement and bench. which we will do. no stone unturned. readable AND fast.&quot;).  The speed profile of the XML parse (callgrind, 2 MB catalog) showed nothing in it that is output a grammar would drop, so the speed agent's guess is that they would not make it faster; that is a guess.  They are wanted for smaller and clearer grammars, and the test is both: the readable spelling must also be measured, and the XML grammar is where it is measured.</li>
+</ol>
+</body>
+</html>

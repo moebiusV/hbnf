@@ -1,0 +1,70 @@
+<!doctype html>
+<!-- generated from corpus/json/README.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON (RFC 8259) in HyperBNF</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>JSON (RFC 8259) in HyperBNF</h1>
+<p><code>json.hbnf</code> (the structure) and <code>json-tokens.hbnf</code> (a string and a number, where no blank
+is allowed inside one) are the whole of JSON in 17 rules, against the RFC's 30 ABNF rules:
+the RFC's rule for each punctuation mark is the quoted character, and a comma list is
+<code>x *( &quot;,&quot; x )</code>.  The notation table in <code>README.md</code> (<code>bench/notation.sh</code>) has the lines, symbols
+and characters of both.</p>
+<p>The tokens are in their own file because a rule is a <em>token</em> (a string, scanned by an
+automaton, with no tree) only in a file that skips no white space; <code>json-tokens.hbnf</code> says
+<code>whitespace none</code>, and <code>json.hbnf</code> skips the blanks between the rest.  (A rule called
+<code>int</code> would be hbnf's own number, so the integer part is <code>integer</code>.)</p>
+<h2>Onto a tape, with no tree</h2>
+<p><code>json-tape.hbnf</code> is the same language with an <code>%emit{ }</code> where the tree would have made a node:
+an object or an array is opened where its bracket is read, a string, number or literal is a tag
+and the place of its text, and the closing bracket links the opener to the position after it.
+The parser makes no struct and no list node, only a flat array of 64-bit words, which is the
+layout a hand-written reader would choose (<code>runtime/hbnf_tape.h</code>).  <code>sh tests/emit.sh</code> generates it, compiles it and checks
+that the tape holds as many values of each kind as Python's <code>json</code> finds in every good document
+of <code>tests/good</code> and that every document of <code>tests/bad</code> is refused.</p>
+<p><code>json.hbnf</code> itself also gives a tape, with no <code>%emit</code> in it, under <code>--layout=tape</code> (<code>tests/layout.sh</code>).
+<code>json-tape-values.hbnf</code> makes the number and string conversions of <code>runtime/hbnf_scalar.h</code> while it
+parses (<code>tests/scalar.sh</code>).</p>
+<h2>Checked against Python's <code>json</code></h2>
+<p>JSON is exactly defined, so there is no reason for any difference, and the check allows
+none.  <code>sh tests/json-diff.sh [N [SEED]]</code> generates N random valid documents (nested to five
+levels; strings with every escape, control characters, Unicode outside the BMP; integers
+up to thirty digits; floats in every notation; indented, compact and loose) and N mutations of
+them (a character deleted, inserted, replaced, swapped, doubled, or the text cut), and asks
+the parser hbnf makes and Python's <code>json.loads</code> (strict, <code>NaN</code> and <code>Infinity</code> refused)
+about each.  Run with 40,000 and 40,000: every valid document accepted, and the same
+answer on every mutation (13,000 of the first 3,000 were accepted, the rest refused).
+<code>tests/good</code> and <code>tests/bad</code> are 27 and 48 hand-written cases, in the style of the
+well-known JSONTestSuite, and Python agrees with where each is filed.</p>
+<p>In Tree-sitter (`sh tests/treesitter.sh corpus/json/json.hbnf corpus/json/tests/good
+corpus/json/tests/bad`) the grammar needs no conflict declared, parses all 27 good cases and
+shows an error on 47 of the 48 bad ones (Tree-sitter reads a byte-order mark as part of the
+file's encoding, so <code>bom.json</code> parses); `TSD_GRAMMAR=corpus/json/json.hbnf
+TSD_ORACLE=tests/json/oracle.py TSD_EXT=json sh tests/treesitter-diff.sh` finds no
+difference between hbnf and Tree-sitter on 2,000 documents and 2,000 mutations.</p>
+<p>The writer round-trips every good case (<code>tests/writer.sh</code>).</p>
+<p><code>true</code>, <code>false</code> and <code>null</code> are rules of their own (<code>literal-true</code>, <code>literal-false</code>, <code>literal-null</code>)
+rather than quoted text in <code>value</code>, because a quoted literal leaves no field in the tree and the three
+would look alike: the tree of a <code>value</code> has the field of the one that was read set, and the others nil.</p>
+<p>The C parser stops at <code>HBNF_MAX_DEPTH</code> rules nested at once (4096 by default, about 1,365 levels of
+JSON; override with <code>-DHBNF_MAX_DEPTH=n</code>) and reports &quot;shallower nesting&quot; as an error.  Without the limit
+a document of 50,000 <code>[</code> ran the stack out and the parser died of a segmentation fault, which a program
+reading JSON off a network cannot afford.</p>
+<p>Not done: decoding <code>\uXXXX</code> (and surrogate pairs) into code points is the UTF-16 step of
+<code>CHARLAYER.md</code>, which is not built; the parser reads a <code>\u</code> followed by four hex digits as
+the text it is, which is all RFC 8259's grammar asks.</p>
+</body>
+</html>

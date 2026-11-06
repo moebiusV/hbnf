@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- generated from corpus/bech32/README.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bech32 corpus</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>bech32 corpus</h1>
+<p>bech32 (BIP-173) and bech32m (BIP-350), the address encoding of segwit: a
+human-readable part, a <code>1</code>, then 5-bit symbols from a 32-character set, the last
+six of them a BCH checksum.  Test data for the wire layer (<code>tests/wire/segwit.hbnf</code>
+reads the data part).</p>
+<pre><code>corpus/bech32/
+  README.md        this file
+  SHA256SUMS       the hash of each file, as taken
+  segwit_addr.c    the reference implementation, unchanged
+  segwit_addr.h    its header, unchanged
+</code></pre>
+<h2>Source and attribution</h2>
+<ul>
+<li><strong>Reference implementation:</strong> Pieter Wuille's <code>ref/c/segwit_addr.c</code> and
+<code>segwit_addr.h</code>, <a href="https://github.com/sipa/bech32">https://github.com/sipa/bech32</a> (commit
+<code>7a7d7ab158db7078a333384e0e918c90dbc42917</code>, 2022-05-31), Copyright (c) 2017,
+2021 Pieter Wuille, MIT licence (the notice is at the head of each file).</li>
+<li><strong>Standards:</strong> BIP-173 (Wuille, Maxwell) and BIP-350 (Wuille).</li>
+<li>The addresses in <code>tests/wire/segwit_main.c</code> are the published valid examples.</li>
+</ul>
+<h2>Status</h2>
+<p>Saved so the reference is in the repository.  Nothing here is called yet.  The
+checksum covers the human-readable part (<code>bc</code>, <code>tb</code>) as well as the data, and the
+segwit grammar reads only the data symbols, so it reads the checksum and does not
+check it.  When the grammar can bring the human-readable part in, an <code>%action</code>
+calls <code>bech32_decode</code> from here, by its own name, and links <code>segwit_addr.c</code>.</p>
+</body>
+</html>

@@ -1,0 +1,353 @@
+<!doctype html>
+<!-- generated from WIRE.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The wire layer: octets, bit fields and enum numbers</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>The wire layer: octets, bit fields and enum numbers</h1>
+<p>The notation that reads a configuration file reads an Ethernet frame too, and
+the generated parser takes a buffer.  There is no binary mode and no separate
+file type: a field of N bits (<code>ttl:8</code>) is an element like a literal or a rule
+name, and a rule that holds one is a <strong>bit rule</strong>.  A file may hold text rules
+and bit rules side by side (a bit rule can read the numbered words of a text
+rule as its bits: <code>bitsof</code>, below).  This is <code>RFCPLAN.md</code> step 7b.  <strong>Status:</strong>
+the C, Rust, Zig and Ada backends read and write bit rules (the writing direction is the
+same grammar).  Enum numbers (<code>&quot;icmp&quot;@1</code>) work in all four
+backends already.  What is not built is a text element and a bit field in one
+rule (<code>&quot;GET &quot; len:16 payload:[len]</code>); see the end of this page.</p>
+<pre><code>; IPv4 (RFC 791): one 32-bit word to a line.
+ipv4 = version@0:4 ihl:4 tos:8 total_length:16
+       identification:16 flags:3 frag_offset:13
+       ttl:8 protocol:8 header_checksum:16
+       src:32
+       dst:32
+       options:[ihl*4 - 20]
+       payload:( ?(protocol == 6) t:tcp | ?(protocol == 17) u:udp | rest:*u8 )
+</code></pre>
+<p>The files <code>tests/wire/net.hbnf</code> (Ethernet, ARP, IPv4, IPv6, TCP, UDP) and
+<code>tests/wire.sh</code> (byte fixtures for each, read and written back) are the worked
+examples.  So is <code>tests/wire/segwit.hbnf</code>, the data part of a bech32 address
+(BIP-173, BIP-350): 5-bit symbols, a witness program whose octets start inside
+an octet, padding that must be zero, and rules on the program's length:</p>
+<pre><code>include &quot;bech32.hbnf&quot;
+doc = segwit
+data = 1*bech32-symbol
+segwit = words:bitsof(data)
+         version:5 ?(version &lt;= 16)
+         program:[(remaining - 30) / 8]
+         ?(len(program) &gt;= 2 &amp;&amp; len(program) &lt;= 40)
+         ?(version != 0 || len(program) == 20 || len(program) == 32)
+         pad:bits(align) ?(pad == 0)
+         checksum:30
+</code></pre>
+<p>It reads the five published valid addresses to their version and program, and
+refuses six made to break one rule each.  The checksum is read, not yet checked
+(see the end of this page).</p>
+<h2>Text and bit rules together</h2>
+<p>A grammar may hold both, and a rule of either kind may name one of the other.
+The C backend makes one parser for the lot: the bit rules are read from the text
+parser's own state, at its position (an octet and a bit offset inside it), with
+its error record and its arena, by functions with the same signature as the text
+rules', so a call goes either way:</p>
+<pre><code>prefix none
+whitespace none
+msg = &quot;PKT:&quot; frame &quot;;&quot;          ; a text rule naming a bit rule
+frame = len:8 body:[len]        ; a bit rule
+include &quot;common.hbnf&quot;
+doc = &quot;REC:&quot; record
+record = kind:8 label           ; a bit rule naming a text rule
+label = 1*ALPHA
+</code></pre>
+<p><code>parse_text</code> on <code>PKT:\x05hello;</code> gives a <code>msg</code> whose <code>frame</code> has <code>len</code> 5 and a
+<code>body</code> of five octets; on <code>REC:\x07abc</code>, a <code>doc</code> whose <code>record</code> has <code>kind</code> 7 and
+<code>label</code> <code>abc</code>.  The text of a text rule is octets read as UTF-8, and an octet
+is eight bits from any bit: after a 3-bit field (<code>flag:3 label</code>) the text is
+read from bit 3, the generated reader working on a copy of the rest shifted to
+that bit.  Because that is most often a missing field or padding, hbnf prints
+one note to standard error when it generates such a parser, naming the first
+rule where text follows fields that end inside an octet; it is only a note.
+The tests are <code>tests/wire/mixed*.hbnf</code>.</p>
+<p>Zig reads these too, and so do Ada and Rust (text rules and bit rules in one grammar, a text and
+a bit field in one rule, and <code>%emit</code> and <code>emit_bits_&lt;rule&gt;</code> for the bit rules; Zig also has
+<code>bitsof</code> anywhere in a rule over any text rule), in the same hosted way: the bit rules are read from the text parser's own input
+and position, and a bit rule that names a text rule with structure has the text parser read it
+(<code>bnf_sub</code>).  <code>%action</code> works in them too: after the whole text has been read, a walk over the tree (children first)
+runs the action of each bit rule it holds, as C does; <code>mixed5</code> is the test, one grammar per language.
+<code>--writer</code> is built for them in Zig, Ada and Rust too, for rules without alternatives (see below).  <code>bitsof</code>
+anywhere in a rule, over any text rule, works in Zig, Ada and Rust.  In Rust the text parser is over bytes
+(<code>parse_text(&amp;[u8])</code>), so a bit rule can hold any octet; in Ada the Parser child's spec gets
+<code>Emit_Bits_&lt;Rule&gt;</code>.  Their tests are <code>mixed</code>, <code>mixed2</code>, <code>mixed3</code>, <code>mixed4</code>, <code>mixed6</code> and <code>segwit_in</code>,
+in <code>tests/wire.sh</code> for each of the three.</p>
+<p>What is not built for it: the first rule must be a text rule (a grammar whose
+first rule is a bit rule is read as bits alone, and says so if it names a text
+rule); <code>--writer</code> writes a whole mixed document: <code>write_&lt;root&gt;</code> writes the text
+rules, and a bit rule in them by its own <code>emit_bits_&lt;rule&gt;</code> (which runs its
+<code>%emit</code>), its octets going into the text as they are (a bit rule that does not
+end on an octet is refused when written; <code>tests/wire/mixed7</code>).  A bit rule
+still writes a text token it holds but refuses a text rule that is not a
+token; and only C has it.  An <code>%action</code> on a bit rule runs after the parse, its
+<code>HBNF_FAIL</code> fails the parse, and its <code>HBNF_WARN</code> warnings are read with
+<code>hbnf_warnings ()</code> and <code>hbnf_warning (i)</code>.  A bit rule that holds a text rule by
+value is not built.</p>
+<p>A text element and a bit field may stand in the <em>same</em> rule
+(<code>req = &quot;GET &quot; len:8 payload:[len] %d13.10</code>).  The reader splits the rule into
+runs, each run of bit fields and each run of text becoming a hidden rule
+<code>req_1</code>, <code>req_2</code>, <code>req_3</code>, and <code>req</code> a sequence naming them; the fields are
+reached through them (<code>out.req_2.len</code>).  A group that holds both kinds is
+refused, with a message saying to split it.  In a rule that holds bit fields
+a number is a constant as wide as its digits (<code>0x05</code>), so the text there
+writes its code points the ABNF way, <code>%d13.10</code>; in any other rule of hbnf's
+own notation a code point is <code>13 10</code>.</p>
+<h2>Why these two characters</h2>
+<table>
+<thead>
+<tr><th>char </th><th>means </th><th>precedent </th></tr>
+</thead>
+<tbody>
+<tr><td><code>:</code></td><td>a width: <code>ttl:8</code> is 8 bits </td><td>C's bit-field (<code>unsigned ttl : 8</code>), Erlang's bit syntax (<code>&lt;&lt;Ttl:8&gt;&gt;</code>); and, at the start of a rule, the definition: Forth's <code>: name ... ;</code> and the label in assembly </td></tr>
+<tr><td><code>@</code></td><td>a place: <code>version@0:4</code> is 4 bits starting at bit 0 </td><td>&quot;at&quot;: Ada's representation clause (<code>F at 0 range 3 .. 7</code>); BLISS and IMP72 give position and size together (<code>A&lt;p,s&gt;</code>) </td></tr>
+</tbody>
+</table>
+<p>Both count from zero, as C and IMP72 do (IMP72's arrays start at zero and its
+bit fields <code>A&lt;B,C&gt;</code> count from the right).  The direction follows the RFCs, not
+IMP72 or the hardware manuals: bit 0 is the most significant bit, the leftmost
+in a packet diagram.</p>
+<p>They never clash.  A rule's <code>:</code> is the first <code>:</code> after a name in column 1 (a
+rule's continuation lines are indented), and every other <code>:</code> is a width glued
+to the name before it.  <code>@</code> also numbers an enum literal (below), where &quot;at&quot;
+means the same thing: <em>at this value</em>.</p>
+<h2>A field</h2>
+<table>
+<thead>
+<tr><th>write </th><th>meaning </th></tr>
+</thead>
+<tbody>
+<tr><td><code>name:N</code></td><td>N bits, 1 to 64.  The first field is in the most significant bits, the way an RFC's packet diagram reads; fields that do not fill an octet share it </td></tr>
+<tr><td><code>name:16le</code>, <code>name:8s</code>, <code>name:32sle</code></td><td>little-endian (<code>le</code>; <code>be</code> is the default), signed (<code>s</code>).  Little-endian needs a whole number of octets </td></tr>
+<tr><td><code>name:u16</code>, <code>name:i32le</code></td><td>the same, spelled as a type </td></tr>
+<tr><td><code>name@K:N</code></td><td>N bits that <strong>must</strong> start at bit K of the record (bit 0 is the most significant bit of its first octet).  It writes nothing new; it checks the author's arithmetic against the RFC.  hbnf proves it when the fields before it are fixed, and the parser checks it when they are not </td></tr>
+<tr><td><code>name:[expr]</code></td><td><code>expr</code> octets: a slice of the input (a copy if they start inside an octet) </td></tr>
+<tr><td><code>name:*u8</code></td><td>all the octets that are left </td></tr>
+<tr><td><code>name:bits(expr)</code></td><td><code>expr</code> bits (at most 64) </td></tr>
+<tr><td><code>0x0800</code>, <code>0b101</code></td><td>a constant, as wide as its digits: <code>0x0800</code> is 16 bits, <code>0b101</code> is 3.  A decimal number has no width, and is refused with that reason </td></tr>
+<tr><td><code>name:rule</code> / <code>rule</code></td><td>a nested record of that rule (a bare <code>rule</code> names the field <code>rule</code>) </td></tr>
+<tr><td><code>name:*rule</code>, <code>name:2*4 rule</code>, <code>name:(n)*rule</code></td><td>any number, 2 to 4, exactly <code>n</code> records of that rule </td></tr>
+<tr><td><code>name:( a \| b \| c )</code></td><td>one of several; the field has a <code>kind</code> (1, 2, 3) and the alternative's fields </td></tr>
+<tr><td><code>?(expr)</code></td><td>a condition.  At the start of an alternative it is a <strong>guard</strong> (the alternative is taken only if it holds); between fields it is a <strong>check</strong> (the read fails if it does not).  <code>?(expr) &quot;words&quot;</code> is a check whose failure says those words </td></tr>
+</tbody>
+</table>
+<p>A rule that is a list of constants (<code>ethertype = 0x0800 | 0x0806 | 0x86DD</code>) is a
+<strong>value set</strong>.  A field named for it, or of its type, must be one of those
+values: <code>ethertype:16</code>.</p>
+<p><strong>Numbers.</strong> Wherever a number is taken (an enum value <code>&quot;x&quot;@N</code>, the bit a field starts at, a width, a repeat count, a constant) it may be written
+in decimal, <code>0x</code> hex, <code>0b</code> binary or <code>0o</code> octal: a number is a number. A constant's width is its digits (4 bits to a hex digit, 3 to an octal
+digit, 1 to a binary digit); a decimal number has none. <code>tests/numbers.sh</code> checks every spelling at every place.</p>
+<h3>Expressions</h3>
+<p><code>expr</code> is C's integer arithmetic: <code>+ - * / % &lt;&lt; &gt;&gt; &amp; | ^ ~ !</code>, comparisons,
+<code>&amp;&amp;</code> <code>||</code>, parentheses, decimal and <code>0x</code> numbers, over the fields read earlier
+in the same record (<code>options:[ihl*4 - 20]</code>), <code>remaining</code>, the number of bits
+left in the input, <code>len (field)</code>, the number of octets in a field read as
+<code>name:[n]</code> or <code>name:*u8</code>, and <code>align</code>, the bits to the next unit boundary
+(<code>bitsof</code>, below; a message that ends in a partly filled unit says
+<code>pad:bits(align)</code>).  Division by zero is 0, and a shift count is taken mod 64.
+Using a name that is not a number read before that point is refused, with the
+names that are.</p>
+<h3>Names</h3>
+<p>A field or rule name becomes an identifier in the generated code: a hyphen is
+written as an underscore there (<code>total-length</code> is <code>total_length</code>), as in the text
+backends, and an expression refers to it with the underscore (a hyphen subtracts).
+A name that is a keyword of the language, or one the generated code keeps for
+itself, is refused with a rename to try (<code>int:8</code>).</p>
+<h2>The C API</h2>
+<pre><code>bool parse_bits  (const uint8_t *buf, size_t nbits, T *out, char *err, size_t errsz, size_t *at);
+bool parse_bytes (const uint8_t *buf, size_t len,   T *out, char *err, size_t errsz, size_t *at);
+bool emit_bits   (const T *in, uint8_t *buf, size_t cap, size_t *nbits, char *err, size_t errsz);
+bool emit_bytes  (const T *in, uint8_t *buf, size_t cap, size_t *n,     char *err, size_t errsz);
+void free_arena  (void);
+</code></pre>
+<p><code>T</code> is the first rule's type.  Reading uses the whole buffer or fails and says
+where (<code>at</code> is the octet) and why (<code>ethernet.src: needs 48 bits, 32 left</code>).
+Octets are slices of the input; the few that start inside an octet are copied
+into an arena that <code>free_arena</code> releases.</p>
+<p>Writing is the other direction, from the same grammar.  With <code>buf</code> NULL it only
+counts; <code>*n</code> is always the size the message takes, so the usual call is twice.
+A value that does not fit its field, a length that disagrees with the octets it
+describes, a value outside a value set, or an alternative whose guard does not
+hold is an error that names the field, not a silently wrong message.  A width
+that depends on <code>remaining</code> cannot be written: a writer does not know the size of
+a message it has not written.</p>
+<h2>Text: a message written in words, <code>bitsof</code></h2>
+<p>Bytes are not the only way a message is written.  A bech32 address spells 5 bits
+with each of 32 characters; a BIP-39 mnemonic spells 11 with each of 2048 words.
+The text is a decoding of the bits, the way UTF-8 is a decoding of octets.  A bit
+rule says so with a field:</p>
+<pre><code>include &quot;bip39/english.hbnf&quot;        ; bip39-word, bip39-space: numbered literals
+doc      = mnemonic
+phrase   = bip39-word *( bip39-space bip39-word )
+mnemonic = words:bitsof(phrase)
+           ?(remaining % 33 == 0 &amp;&amp; ...)
+           entropy:[remaining / 33 * 4]
+           checksum:bits(len(entropy) / 4)
+</code></pre>
+<p><code>words:bitsof(phrase)</code> reads the text rule <code>phrase</code> as text, takes the <strong>number</strong>
+of each word in it (its place in the list, or <code>&quot;x&quot;@7</code>) as W bits, W being what
+the largest number needs (11 for 2048 words, 5 for 32 symbols), and the **rest of
+the rule reads those bits**, as it would the bits of a buffer: <code>remaining</code> is the
+bits that are left, <code>align</code> the bits to the next word boundary.  When the rule
+ends every bit must have been used, and the input goes on after the text.
+Writing runs the other way: the fields are written as bits, then spelled as the
+words, joined by whatever the text rule puts between two (the blank of
+<code>bip39-space</code>).  <code>grammars/bech32.hbnf</code> is the 32 symbols; <code>grammars/bip39/</code> the
+ten word lists.</p>
+<p>The text rule is the grammar of the text, so a misspelt word, two blanks or a
+trailing blank are refused by it, with its messages; an error in the bits says
+where in the words (<code>(at unit 12)</code>).  The generated parser is the text parser:</p>
+<pre><code>bool parse_text (const char *text, T *out, char *err, size_t errlen, size_t *line, size_t *col);
+bool emit_bits_mnemonic (const mnemonic_t *in, uint8_t *buf, size_t cap, size_t *nbits, char *err, size_t errsz);
+</code></pre>
+<p>the second writes the <strong>text</strong>, as octets (<code>*nbits / 8</code> of them).  The tests
+round-trip the five published segwit addresses and eighteen mnemonics (the
+BIP-39 test vectors among them), and generate each mnemonic from its entropy
+alone, the checksum worked out by <code>%emit</code>.  The phrase's own tree is not kept
+(its words are the bits).  Rust, Zig and Ada read <code>bitsof</code> too, in the form the segwit grammar has:
+a first rule that only names the bit rule (<code>doc = segwit</code>), whose first field is the <code>bitsof</code>, and a
+text rule that is just the words joined by one separator (<code>1*word</code>, or <code>word *( sep word )</code>).  They
+give <code>parse_text</code> and <code>emit_text</code> (<code>Parse_Text</code> and <code>Emit_Text</code> in Ada) with the same messages as C,
+including <code>(at unit N)</code>.  In a grammar that mixes text rules and bit rules (above), <code>bitsof</code> can
+stand anywhere in a bit rule, over any text rule (<code>segwit_in</code> is the test).  The tests are <code>segwit</code> in <code>tests/wire.sh</code>, one driver
+each, with the same expected output as C, and the BIP-39 mnemonic (see Code, below).</p>
+<h2>Code: actions, emitters, and the library they call</h2>
+<p>A wire grammar holds C in three places, none of which hbnf reads or rewrites:</p>
+<ul>
+<li><code>{ code }</code> before the first rule is the <strong>preamble</strong>, after the last rule the
+<strong>epilogue</strong>: copied as they stand.  The preamble is where <code>#include</code>s and
+prototypes go; the epilogue is where the functions the actions call are defined.</li>
+<li><code>%action{ code }</code> at the end of a rule runs on that rule's record, as <code>n</code>,
+<strong>after</strong> the whole read has succeeded, children before parents.  It never runs
+during the read, so an alternative that is tried and given up cannot have run
+it (the rule <code>%action</code> has in a text grammar).  <code>n-&gt;field</code> are the typed fields;
+<code>HBNF_WARN (&quot;text&quot;)</code> adds a warning to the result (<code>out-&gt;warnings[]</code>,
+<code>out-&gt;nwarnings</code>, on the first rule's record) for a message that is valid but
+unusual; <code>HBNF_FAIL (&quot;text&quot;)</code> fails the read, naming the rule.</li>
+<li><code>%emit{ code }</code> runs when the record is <strong>written</strong>, before its fields are, on a
+copy of it as <code>n</code>: it fills in what is computed (a checksum), and the caller's
+tree is not touched.  <code>HBNF_EMIT_FAIL (&quot;text&quot;)</code> fails the write.  (In a text rule that declares a
+value, <code>name :: type = ...</code>, <code>%emit</code> is another thing: it runs during the read, in the C backend only;
+<code>grammars/README.md</code>, &quot;Values at recognition&quot;.)</li>
+</ul>
+<p>Rust, Zig and Ada have both, written in their own language: the grammar says
+<code>language Rust</code> (or <code>Zig</code>, <code>Ada</code>), and a grammar in another language is refused with a
+message saying so.  The code is the same four places, and the names are the language's:</p>
+<table>
+<thead>
+<tr><th></th><th>C </th><th>Rust </th><th>Zig </th><th>Ada </th></tr>
+</thead>
+<tbody>
+<tr><td>the record in an <code>%action</code></td><td><code>n-&gt;f</code></td><td><code>n.f</code> (<code>&amp;T</code>) </td><td><code>n.f</code> (<code>*const T</code>) </td><td><code>N.F</code></td></tr>
+<tr><td>warn </td><td><code>HBNF_WARN (&quot;..&quot;)</code></td><td><code>hbnf_warn!(&quot;..&quot;)</code></td><td><code>h.warn(&quot;..&quot;)</code></td><td><code>Hbnf_Warn (H, &quot;..&quot;)</code></td></tr>
+<tr><td>fail the read </td><td><code>HBNF_FAIL (&quot;..&quot;)</code></td><td><code>hbnf_fail!(&quot;..&quot;)</code></td><td><code>return h.fail(&quot;..&quot;)</code></td><td><code>Hbnf_Fail (H, &quot;..&quot;)</code></td></tr>
+<tr><td>the copy in an <code>%emit</code></td><td><code>n-&gt;f = ..</code></td><td><code>n.f = ..</code></td><td><code>n.f = ..</code></td><td><code>N.F := ..</code></td></tr>
+<tr><td>fail the write </td><td><code>HBNF_EMIT_FAIL (&quot;..&quot;)</code></td><td><code>hbnf_emit_fail!(&quot;..&quot;)</code></td><td><code>return w_.emit_fail(&quot;..&quot;)</code></td><td><code>Hbnf_Emit_Fail (&quot;..&quot;)</code></td></tr>
+<tr><td>the warnings </td><td><code>out-&gt;warnings</code></td><td><code>hbnf_warnings()</code></td><td><code>hbnf_warnings()</code></td><td><code>Warning_Count</code>, <code>Warning (I)</code></td></tr>
+</tbody>
+</table>
+<p>The preamble is at the top of the file (Ada: the context clauses of the body, <code>with ...;</code>) and the
+epilogue after the rules (Ada: before the readers, because Ada declares before it uses).  Their
+tests are <code>mnemonic_rust.hbnf</code>, <code>mnemonic_zig.hbnf</code> and <code>mnemonic_ada.hbnf</code>: BIP-39 with OpenSSL's
+SHA-256 in Rust (linked as <code>libcrypto</code>), Zig's <code>std.crypto</code> and GNAT's <code>GNAT.SHA256</code>, all with the
+same output (<code>mnemonic_ports.expected</code>).</p>
+<p>The action is the semantic member of the family and the emitter the generative
+one.  Warnings are collected in static storage, so a parser that has actions is
+not reentrant.</p>
+<h3>Library functions</h3>
+<p>A checksum is a function in a library somebody else wrote and tested, and an
+action calls it by its own name: hbnf neither wraps nor reimplements it.  The
+grammar's preamble includes the header, and the program that uses the generated
+file links the library:</p>
+<table>
+<thead>
+<tr><th>to compute </th><th>call </th><th>header </th><th>link </th></tr>
+</thead>
+<tbody>
+<tr><td>CRC-32, Adler-32 </td><td><code>crc32 (0, buf, n)</code>, <code>adler32 (1, buf, n)</code></td><td><code>&lt;zlib.h&gt;</code></td><td><code>-lz</code></td></tr>
+<tr><td>SHA-256 </td><td><code>SHA256 (buf, n, out)</code></td><td><code>&lt;openssl/sha.h&gt;</code></td><td><code>-lcrypto</code></td></tr>
+<tr><td>bech32 / bech32m </td><td><code>bech32_decode (...)</code></td><td><code>corpus/bech32/segwit_addr.h</code> (Pieter Wuille's reference, MIT) </td><td>its <code>.c</code></td></tr>
+</tbody>
+</table>
+<p>Where nothing standard exists, the format's own arithmetic lives with its corpus:
+<code>corpus/bip39/bip39.h</code> has <code>bip39_checksum</code>, the first n/4 bits of the SHA-256 of n
+octets of entropy.  The BIP-39 grammar checks its checksum on reading and
+computes it on writing:</p>
+<pre><code>{ #include &quot;bip39.h&quot; }
+mnemonic = ... entropy:[remaining / 33 * 4] checksum:bits(len(entropy) / 4)
+  %action{
+      if (bip39_checksum (n-&gt;entropy.ptr, n-&gt;entropy.len) != (unsigned)n-&gt;checksum)
+          HBNF_FAIL (&quot;the checksum does not match the words&quot;);
+  }
+  %emit{
+      n-&gt;checksum = bip39_checksum (n-&gt;entropy.ptr, n-&gt;entropy.len);
+  }
+</code></pre>
+<p>so a mnemonic is generated by setting <code>entropy</code> and calling <code>emit_text</code>.  The test
+reads eighteen phrases (the published vectors among them), refuses two wrong
+checksums, and generates all eighteen from their entropy alone; it is skipped,
+with a message, where OpenSSL's header is not installed.</p>
+<h2>Enum numbers</h2>
+<p>A rule made only of literals is an enum.  Its values are 0, 1, 2 ... in the order
+written; <code>&quot;literal&quot;@N</code> gives one its own number, as <code>NAME = N</code> does in C, and an
+alternative without one is the one before plus 1:</p>
+<pre><code>proto = &quot;icmp&quot;@1 | &quot;tcp&quot;@6 | &quot;udp&quot;@17 | &quot;sctp&quot;@0x84 | &quot;other&quot;
+</code></pre>
+<p>declares <code>icmp</code> 1, <code>tcp</code> 6, <code>udp</code> 17, <code>sctp</code> 132, <code>other</code> 133 in C, Rust, Zig and
+Ada (an Ada representation clause, a Zig <code>enum(u8)</code>, a Rust discriminant).  The
+numbers must fit 31 bits and be distinct.  Only a rule of plain literals can have
+them.</p>
+<p>A word list is an enum, and the number of a word is its place in the list.  When
+the author writes words in a union (<code>&quot;act&quot; / &quot;actor&quot;</code>) hbnf matches the longer
+word first, and <strong>keeps the values in the order written</strong>: the index of <code>actor</code> is
+where the list has it.  That is what BIP-39 needs; <code>corpus/bip39/</code> holds the ten
+official 2048-word lists as include files (<code>include &quot;bip39/english.hbnf&quot;</code>), and
+<code>tests/wire.sh</code> reads every word of every list back to its line number.  A union
+of plain words is a sort, not a search.</p>
+<h2>What is not built yet</h2>
+<ul>
+<li><code>--writer</code> for Zig, Ada and Rust writes a whole document of text rules and bit rules (<code>write_&lt;root&gt;</code>, <code>Write_&lt;Root&gt;</code>), as C does: rules with alternatives (and list entries that are groups with them) record the one they took and the writer follows it, left-recursive lists, a root that is only another rule, a newline after each statement, and the layout hook (<code>Layout</code>, a pretty-printer's say). Not written: an alternation inside a group (C does not either).
+Zig returns <code>error{Parse}</code> with the octet and message through a pointer and takes an allocator,
+best an arena.  Ada writes the specification and body in one file (<code>gnatchop</code> splits it), with
+<code>Ada.Containers.Vectors</code> for octets and entries and a record with a variant part for a choice
+(<code>--package=NAME</code>).  A <code>language</code> line
+in a grammar says which language its code blocks (preamble, epilogue,
+<code>%action</code>, <code>%emit</code>) are written in, C unless it says; the Rust backend reads
+grammars without code until <code>%action</code>/<code>%emit</code> are done for it.</li>
+<li><strong>Units.</strong>  A field's width is in bits and a string is an array of units, but
+a unit is not always a bit: an octet, a code point and a machine word (9-bit
+bytes, 36-bit words) are different things, and the notation should say which.
+The design: a number may carry a unit, <code>b</code> bits, <code>B</code> bytes, <code>c</code> code points,
+<code>W</code> words, and a file may say how big its byte and word are (<code>byte 9</code>,
+<code>word 36</code>).  <code>@Off:Len</code> is then a slice of any array of units, strings
+included: <code>name@4B:4B</code> is 4 bytes from byte 4, and <code>name@4:4</code> is 4 bits from
+bit 4.  Without a suffix the unit is bits for a bit field and code points for a string.</li>
+<li><strong>Layout records.</strong>  A record in which every field says where it is
+(<code>flags@0:3 id@3:13</code>) is a register layout, read in any order with gaps and
+overlaps.  Where only some do, <code>@</code> is the check described above.</li>
+<li><strong>A bech32 address's human-readable part.</strong>  Its checksum covers the part
+before the <code>1</code> (<code>bc</code>) as well as the data, and <code>parse_text</code> reads only the data
+symbols, so the segwit grammar reads the checksum but does not yet check it.
+The library can (<code>hbnf_bech32_verify</code>); the grammar needs a way to bring the
+<code>bc</code> in.</li>
+</ul>
+</body>
+</html>

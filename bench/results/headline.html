@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- generated from bench/results/headline.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bench/results/headline.md</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<p><strong>100,000 rules</strong> (7.68 MB, the same file for every tool):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">input </th><th style="text-align:right">parse time </th><th style="text-align:right">rules/s </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend) </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">15 ms </td><td style="text-align:right">6.8 M rules/s </td><td style="text-align:right">526 MB/s </td><td style="text-align:right">17 MB </td></tr>
+<tr><td>byacc + flex </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">52 ms </td><td style="text-align:right">1.9 M rules/s </td><td style="text-align:right">147 MB/s </td><td style="text-align:right">29 MB </td></tr>
+<tr><td>bison + flex </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">53 ms </td><td style="text-align:right">1.9 M rules/s </td><td style="text-align:right">146 MB/s </td><td style="text-align:right">29 MB </td></tr>
+<tr><td>tree-sitter 0.27.1 </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">213 ms </td><td style="text-align:right">0.5 M rules/s </td><td style="text-align:right">36 MB/s </td><td style="text-align:right">58 MB </td></tr>
+<tr><td>ANTLR 4 (Java), actions, cold JVM </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">301 ms </td><td style="text-align:right">0.3 M rules/s </td><td style="text-align:right">25 MB/s </td><td style="text-align:right">217 MB </td></tr>
+<tr><td>ANTLR 4 (Java), actions, warm JVM </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">95 ms </td><td style="text-align:right">1.1 M rules/s </td><td style="text-align:right">81 MB/s </td><td style="text-align:right">471 MB </td></tr>
+</tbody>
+</table>
+<p><strong>1,000,000 rules</strong> (76.86 MB, the same file for every tool):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">input </th><th style="text-align:right">parse time </th><th style="text-align:right">rules/s </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend) </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">148 ms </td><td style="text-align:right">6.8 M rules/s </td><td style="text-align:right">520 MB/s </td><td style="text-align:right">137 MB </td></tr>
+<tr><td>byacc + flex </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">523 ms </td><td style="text-align:right">1.9 M rules/s </td><td style="text-align:right">147 MB/s </td><td style="text-align:right">273 MB </td></tr>
+<tr><td>bison + flex </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">532 ms </td><td style="text-align:right">1.9 M rules/s </td><td style="text-align:right">144 MB/s </td><td style="text-align:right">273 MB </td></tr>
+<tr><td>tree-sitter 0.27.1 </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">2164 ms </td><td style="text-align:right">0.5 M rules/s </td><td style="text-align:right">36 MB/s </td><td style="text-align:right">564 MB </td></tr>
+<tr><td>ANTLR 4 (Java), actions, cold JVM </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">1601 ms </td><td style="text-align:right">0.6 M rules/s </td><td style="text-align:right">48 MB/s </td><td style="text-align:right">1177 MB </td></tr>
+<tr><td>ANTLR 4 (Java), actions, warm JVM </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">1171 ms </td><td style="text-align:right">0.9 M rules/s </td><td style="text-align:right">66 MB/s </td><td style="text-align:right">2110 MB </td></tr>
+</tbody>
+</table>
+<p><em>Measured 2026-11-05 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.27 on the host, hbnf c4d9370; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, <code>gcc -O2</code>.</em></p>
+</body>
+</html>

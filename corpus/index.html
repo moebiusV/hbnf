@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- generated from corpus/README.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>corpus/</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>corpus/</h1>
+<p>Real text that hbnf is meant to be able to read, each in a directory of its own with
+its source, its licence and attribution, hashes where the files are copies, and a
+README that says what is in it and what state it is in.</p>
+<table>
+<thead>
+<tr><th>directory </th><th>what </th><th>state </th></tr>
+</thead>
+<tbody>
+<tr><td><code>rfc/</code></td><td>grammar snippets lifted from RFCs, with vectors that must and must not parse </td><td>in use (<code>tests/rfc.sh</code>) </td></tr>
+<tr><td><code>posix/</code></td><td>the POSIX shell grammar (POSIX.1 §2.10), the standard's own text plus tokens and ordering </td><td>in use (<code>tests/posix.sh</code>; <code>scripts/posix-scan.sh</code> against dash) </td></tr>
+<tr><td><code>c/</code></td><td>six grammars: C of UNIX/32V (<code>c79</code>), ISO C90 (<code>c89</code>), C99 (<code>c99</code>), the C that PCC reads (<code>pcc99</code>), C99 with the GNU extensions of GCC 4.0.4 (<code>gnu99</code>), and C11 (ISO 9899:2011 Annex A) with the GNU forms headers use (<code>c11</code>), the start of a small C compiler </td><td>in use (<code>tests/c.sh</code>, <code>tests/c79.sh</code>, <code>tests/c89.sh</code>, <code>tests/c99.sh</code>, <code>tests/pcc99.sh</code>, <code>tests/gnu99.sh</code>, <code>tests/sqlite.sh</code>; <code>scripts/c-scan.sh</code> against gcc; <code>bench/cspeed.sh</code>) </td></tr>
+<tr><td><code>imp72/</code></td><td>the IMP72 compiler's sources (DECUS 10-198) </td><td>cancelled: IMP72 gets its own compiler; the files stay as the subject of <code>METACOMPILERS.md</code></td></tr>
+<tr><td><code>algol60/</code></td><td>the Revised Report on ALGOL 60, its BNF, and a grammar in HyperBNF </td><td>in use (<code>tests/algol60.sh</code>) </td></tr>
+<tr><td><code>json/</code></td><td>RFC 8259 in HyperBNF, checked against Python's <code>json</code> on 80,000 texts; a tape grammar (<code>json-tape.hbnf</code>) </td><td>in use (<code>tests/json-diff.sh</code>, <code>tests/emit.sh</code>) </td></tr>
+<tr><td><code>toml/</code></td><td>TOML 1.0, checked against the toml-test suite and Python's <code>tomllib</code>; a tape grammar (<code>toml-tape.hbnf</code>) </td><td>in use (<code>tests/toml.sh</code>, <code>tests/toml-diff.sh</code>, <code>tests/emit.sh</code>) </td></tr>
+<tr><td><code>yaml/</code></td><td>YAML 1.2, indentation as a number the parser works out; the YAML test suite and PyYAML; a tape grammar (<code>yaml-tape.hbnf</code>) </td><td>in use (<code>tests/yaml.sh</code>, <code>tests/yaml-suite.sh</code>, <code>tests/yaml-diff.sh</code>, <code>tests/emit.sh</code>) </td></tr>
+<tr><td><code>graphql/</code></td><td>GraphQL (October 2021): the executable language, the type system and its extensions, in 54 rules against the specification's 99 productions; checked by the specification's examples in four backends and against a second scanner of its lexical grammar </td><td>in use (<code>tests/graphql.sh</code>, <code>tests/graphql-diff.sh</code>) </td></tr>
+<tr><td><code>html/</code></td><td>HTML (WHATWG 13.1, the syntax of a conforming document): omissible tags, void and raw-text elements, svg/math with CDATA; <code>&lt;script&gt;</code> read by another grammar as an island; checked against html5lib's strict parser </td><td>in use (<code>tests/html.sh</code>, <code>tests/html-diff.sh</code>) </td></tr>
+<tr><td><code>js/</code></td><td>JavaScript (ECMAScript 2023): the Script and Module goals in 151 rules against the specification's 303 productions, automatic semicolon insertion and the restricted productions with <code>eol</code>, the cover grammars by ordered choice; checked in four backends, by the test262 parser tests and against V8 on 6,000 random programs and every code point as a name </td><td>in use (<code>tests/js.sh</code>, <code>tests/js-diff.sh</code>, <code>tests/js262.sh</code>) </td></tr>
+<tr><td><code>mustache/</code></td><td>Mustache templates, with a closing tag that repeats the opening one; checked against chevron on 12,000 texts </td><td>in use (<code>tests/mustache-diff.sh</code>) </td></tr>
+<tr><td><code>cobol/</code></td><td>COBOL in free format: the four divisions, the data description clauses and 30-odd statements, checked against GnuCOBOL's <code>cobc</code></td><td>begun (<code>tests/cobol.sh</code>); fixed format, <code>COPY</code> and the rest are not read yet </td></tr>
+<tr><td><code>sgml/</code></td><td>SGML (ISO 8879): the document type declaration and its declarations, the SGML declaration, the instance at the level of markup; HTML 4.01 Strict, DocBook and TEI style DTDs; no SGML parser to check against </td><td>begun (<code>tests/sgml.sh</code>); what needs the DTD (omitted tags, short references, a changed syntax) is not read </td></tr>
+<tr><td><code>algol68/</code></td><td>the Revised Report's W-grammar </td><td>not started; on the list (<code>RFCPLAN.md</code> step 20), with C++ </td></tr>
+<tr><td><code>bech32/</code></td><td>the bech32 and bech32m reference implementation (BIP-173, BIP-350) </td><td>saved; the segwit grammar of <code>tests/wire/segwit.hbnf</code> does not call it yet (<code>tests/wire.sh</code>) </td></tr>
+<tr><td><code>bip39/</code></td><td>the ten official BIP-39 word lists </td><td>in use (<code>tests/wire.sh</code>) </td></tr>
+</tbody>
+</table>
+<p>Planned, as the wire layer and the daemon grammars gain their own: <code>ipv4/</code>, <code>arp/</code>,
+<code>ipv6/</code>, <code>icmp/</code>, <code>obconf/</code>.  Their grammars exist today in other places:
+<code>tests/wire/net.hbnf</code> (Ethernet, ARP, IPv4, IPv6, TCP, UDP, one file because
+a binary grammar cannot <code>include</code> another yet), <code>tests/wire/segwit.hbnf</code> and
+<code>tests/wire/mnemonic.hbnf</code>, and <code>grammars/obconf_*.hbnf</code> with the configs under
+<code>tests/daemons/</code>.  Each moves here when it has its RFC text, its vectors and its README.</p>
+</body>
+</html>

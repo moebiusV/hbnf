@@ -1,0 +1,624 @@
+<!doctype html>
+<!-- generated from METACOMPILERS.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HyperBNF beside META II, IMP72 and SNOBOL4</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>HyperBNF beside META II, IMP72 and SNOBOL4</h1>
+<blockquote>
+<p><strong>2026-10-22:</strong> hbnf will not read or bootstrap the IMP72 compiler (the user: IMP72 &quot;is its
+own thing and will get its own compiler&quot;), so the sections below that ask whether hbnf
+could be its kernel are history, not a plan.  What hbnf took from IMP72's manual stands.
+The ALGOL 68 experiments they mention are far in the future.</p>
+</blockquote>
+<p>HyperBNF is a meta-compiler: a program that takes a description of a language and
+produces the thing that processes it.  Configuration files were where it
+started, not where it stops.  Three older systems made the same bet from
+different directions, and each is a precedent for something in HyperBNF's
+<code>%scan{ }</code>, <code>%action{ }</code>, <code>%where{ }</code> and <code>%emit{ }</code>.  This reads them
+against hbnf, from the primary sources, and ends with what hbnf could take.  A later section reads Raku's grammars the same way.</p>
+<p>Sources, all read for this note (the first two as scans with a text layer):</p>
+<ul>
+<li><strong>META II</strong> — D. V. Schorre, &quot;META II: A Syntax-Oriented Compiler Writing
+Language&quot;, UCLA, 1964.
+<a href="https://ibm1401.computerhistory.org/Meta-II-schorre.pdf">PDF</a></li>
+<li><strong>IMP72</strong> — Walter Bilofsky, <em>IMP72 Reference Manual</em>, Yale, 1973 (DECUS
+10-198a, PDP-10 IMP72 compiler version 1.5; the language is E. T. Irons's
+IMP, extended).
+<a href="https://archive.computerhistory.org/resources/access/text/2024/09/102737513-05-0002-acc.pdf">PDF, Computer History Museum</a></li>
+<li><strong>SNOBOL4</strong> — Griswold, Poage and Polonsky, *The SNOBOL4 Programming
+Language* (Bell Labs), as scanned at
+<a href="https://www.mirrorservice.org/sites/www.bitsavers.org/pdf/att/Bell_Labs/snobol4/Griswold_SNOBOL4_Programming_Language_1968.pdf">Bitsavers</a>.</li>
+</ul>
+<p>IMP72 is not a descendant of META II.  It is Irons's line (his syntax-directed
+compiler is 1961, three years before META II), which makes it an independent
+answer to the same question.</p>
+<h2>What each one is</h2>
+<p><strong>META II</strong> is a language of <em>syntax equations</em> that also emit code.  &quot;Each
+syntax equation is translated into a recursive subroutine which tests the input
+string for a particular phrase structure, and deletes it if found.  Backup is
+avoided by the extensive use of factoring in the syntax equations.&quot;  Tokens are
+three built-in recognizers, <code>.ID</code>, <code>.NUMBER</code> and <code>.STRING</code>.  Output is written
+inside the equation: <code>.OUT('BFP' *1)</code> emits an instruction, <code>*</code> stands for the
+token just matched, and <code>*1</code> and <code>*2</code> are labels the system invents afresh each
+time the equation runs.  The compiler is written in itself.  The target is the
+assembly language of a small interpreter, &quot;the META II machine&quot;.</p>
+<p><strong>IMP72</strong> is an extensible systems-programming language.  Its grammar is not
+fixed: a program can add productions to the syntax it is being compiled with, as
+<em>syntax statements</em> of the form</p>
+<pre><code>&lt;class&gt; ::= syntax-part ::= semantic-part
+</code></pre>
+<p>The semantic part is either a <em>quoted expression</em> in the language already
+defined (<code>&lt;EXP&gt; ::= ABS ( &lt;A&gt; ) ::= &quot;A&lt;0=&gt;-A ELSE A&quot;</code>, which the compiler
+rewrites into every use) or a call to a <em>semantic routine</em>, &quot;normal compiler
+subroutines which are also available to the syntax writer in a limited sense&quot;
+(§2.3.3.1), working on a stack of typed objects that carry the code computed so
+far.  Syntax statements &quot;with no semantic part&quot; just discard all but the first
+argument.  The parser &quot;allows ambiguity in the syntax&quot; and resolves it by rule
+(§2.3.4): a terminal beats an identifier, then the fewest different syntax rules
+wins, then an arbitrary choice.  There are no reserved words.  The compiler
+compiles itself, and its own syntax is a list of such statements (Appendix II).</p>
+<p><strong>SNOBOL4</strong> is a string-processing language whose patterns are values.  A
+pattern is built from primitives (<code>ARB</code>, <code>BAL</code>, <code>FENCE</code>, <code>ABORT</code>, <code>FAIL</code>,
+<code>SUCCEED</code>, <code>REM</code>; and the pattern functions <code>ANY</code>, <code>ARBNO</code>, <code>BREAK</code>, <code>LEN</code>,
+<code>NOTANY</code>, <code>POS</code>, <code>RPOS</code>, <code>RTAB</code>, <code>SPAN</code>, <code>TAB</code>), combined by concatenation and
+alternation, and matched by a scanner that backtracks: when a part fails &quot;the
+scanner backs up seeking alternatives&quot;.  Side effects come in two timings:
+<code>P . V</code> is <em>conditional value assignment</em>, made &quot;upon successful completion of
+pattern matching&quot;; <code>P $ V</code> and <code>@X</code> are <em>immediate</em>, made &quot;when the scanner
+encounters&quot; them, &quot;not following successful completion&quot;.  And <code>*E</code> &quot;postpones the
+evaluation of its operand&quot;: it is evaluated when the scanner reaches it, its
+value becomes part of the pattern, and &quot;if evaluation of the expression fails,
+the scanner backs up seeking alternatives&quot;.  That one operator gives recursive
+patterns (context-free grammars) and lets a function decide a match.  The manual
+itself advises that conditional assignment be used &quot;whenever possible&quot;.</p>
+<h2>Side by side</h2>
+<table>
+<thead>
+<tr><th></th><th>META II (1964) </th><th>IMP72 (1973) </th><th>SNOBOL4 </th><th>hbnf </th></tr>
+</thead>
+<tbody>
+<tr><td><strong>A rule is</strong></td><td>a recursive subroutine that recognizes and consumes </td><td>a production stored in a table; every parse carried until resolved </td><td>a pattern value, matched by a backtracking scanner </td><td>a rule; a generated recognizer per backend </td></tr>
+<tr><td><strong>Choice</strong></td><td>ordered <code>/</code>, no backup, so factor by hand </td><td>ambiguity allowed, resolved by three rules </td><td>ordered alternation with full backtracking; <code>FENCE</code> and <code>ABORT</code> cut it </td><td>ordered <code>\|</code>; <code>/</code> is a union hbnf orders (or refuses with a witness); prefix factoring done by the tool </td></tr>
+<tr><td><strong>Tokens</strong></td><td>built-in <code>.ID</code> <code>.NUMBER</code> <code>.STRING</code></td><td>classes <code>&lt;NAME&gt;</code>, <code>&lt;VBL&gt;</code>, ...; no reserved words </td><td>primitives <code>SPAN</code> <code>BREAK</code> <code>LEN</code> <code>ANY</code> ... </td><td>character-level grammar; <code>%scan</code> scanner actions; a rule is a token (automaton) when an exception names it </td></tr>
+<tr><td><strong>Code, when</strong></td><td><code>.OUT</code> inline, as the parse proceeds </td><td>semantics run as productions reduce, held back until context settles which special case applies; <code>PRIORITY</code> forces them now </td><td><code>.</code> after the match succeeds; <code>$</code> and <code>*f()</code> during it </td><td><code>%action</code> once, after the parse, bottom-up; <code>%where</code> during it, each try (C); <code>%emit</code> as the parse proceeds, once per parse (C), and when a bit rule is written </td></tr>
+<tr><td><strong>Code is written in</strong></td><td>META II's own output language (assembly for its machine) </td><td>IMP itself (quoted), or compiler subroutines in IMP </td><td>SNOBOL4 itself (<code>DEFINE</code>d functions) </td><td>any language with a backend: C, Rust, Zig and Ada today, once per backend; there is no rule against assembly </td></tr>
+<tr><td><strong>Output</strong></td><td>assembly for an interpreter </td><td>object code through typed objects </td><td>none (strings) </td><td>a typed tree; round-trip printing; values and flat tapes written as the parse proceeds (<code>%emit</code>, <code>layout tape</code>) </td></tr>
+<tr><td><strong>Fresh names</strong></td><td><code>*1</code>, <code>*2</code> per run of an equation </td><td><code>LOCAL R IN &quot;...&quot;</code>: a unique name per use </td><td>n/a </td><td>none yet </td></tr>
+<tr><td><strong>Grammar grows</strong></td><td>edit the compiler's own source </td><td>syntax statements inside the program </td><td>patterns built at run time </td><td><code>include</code>, <code>dialect</code>, <code>%grammar &quot;file&quot;</code></td></tr>
+<tr><td><strong>Self-hosting</strong></td><td>yes </td><td>yes </td><td>no </td><td>not yet (<code>hbnf_schema.hbnf</code> is a grammar for config files, not for HyperBNF's own notation) </td></tr>
+</tbody>
+</table>
+<h2>Your hunch about <code>%scan</code> and <code>%action</code>: yes, and the names are precedent</h2>
+<p>The three levels hbnf already distinguishes (decision 8 in <code>RFCPLAN.md</code>) each
+have an old counterpart.</p>
+<ul>
+<li><strong><code>%scan{ }</code> (lexical, runs at a position and returns how much it took)</strong> is
+META II's built-in recognizers and SNOBOL4's primitive pattern functions: code
+in the system's runtime that recognizes a piece of the input, standing in for
+something the notation could not or should not say.  META II calls them
+built-in; SNOBOL4, primitives.</li>
+<li><strong><code>%action{ }</code> (semantic, once, after the match)</strong> is SNOBOL4's <em>conditional</em>
+assignment <code>.</code>, exactly: an effect made only when the whole match has
+succeeded.  It is also yacc's semantic action, and IMP72's semantic part when
+it runs after context is known.</li>
+<li><strong><code>%where{ }</code> (decision 13: each time an alternative is tried, may fail it)</strong> is
+SNOBOL4's <em>immediate</em> assignment <code>$</code> plus <code>*f()</code>: it runs during the match,
+its failure backtracks, and it may run on a branch later abandoned.  SNOBOL4's
+manual warns about the cost of that timing and tells you to prefer the
+conditional one, which is the argument for <code>%action</code> being the default and
+<code>%where</code> being deferred &quot;until a grammar actually needs it&quot;.</li>
+<li><strong><code>%emit{ }</code> (generative)</strong> is META II's <code>.OUT</code>, and IMP72's quoted
+semantics: write the target.</li>
+</ul>
+<p>IMP72's <code>PRIORITY</code> semantics (§2.3.3.5) is the same axis a third time: by default
+a semantic action waits until the surrounding context has chosen between special
+cases, and <code>PRIORITY n</code> runs it the moment the production is recognized.  Three
+systems, three spellings of &quot;after, or now&quot;.</p>
+<h2>Names for hand-written scanner code</h2>
+<p>hbnf has one word for code the grammar calls out to: an <em>action</em> (<code>%scan</code> for a
+scanner, <code>%action</code> after the parse, <code>%where</code> as a predicate, <code>%emit</code> as the
+parse proceeds, and for a bit rule when it is written).  Other systems name it differently, which is only a reading aid:</p>
+<table>
+<thead>
+<tr><th>system </th><th>term </th></tr>
+</thead>
+<tbody>
+<tr><td>yacc/bison </td><td><em>semantic action</em> (code on a rule); the tokenizer <code>yylex()</code> is the <em>lexical analyzer</em></td></tr>
+<tr><td>META II </td><td><em>built-in recognizers</em> (<code>.ID</code>, <code>.NUMBER</code>, <code>.STRING</code>) </td></tr>
+<tr><td>IMP72 </td><td><em>semantic routines</em> (subroutines of the compiler available to the syntax writer; &quot;as a last resort go into the compiler to add new ones&quot;) </td></tr>
+<tr><td>SNOBOL4 </td><td><em>primitive patterns</em> and <em>primitive functions</em>; user-defined functions called from a pattern with <code>*</code></td></tr>
+<tr><td>tree-sitter </td><td><em>external scanner</em></td></tr>
+</tbody>
+</table>
+<p>Two uses are worth telling apart when it matters: code with no grammar behind
+it (META II's <code>.ID</code>, SNOBOL4's <code>SPAN</code>), and code that implements a rule the
+grammar <em>also</em> defines, as an optimization one may drop.  hbnf says which in
+the sentence, not with another term.</p>
+<h2>W-grammars (van Wijngaarden), and what they add that is not planned</h2>
+<p>A two-level grammar (the ALGOL 68 Revised Report is written in one).  Level
+one is <em>metarules</em> that define <em>metanotions</em> (<code>MODE :: int ; real ; ref to MODE</code>
+...), each a set of strings.  Level two is <em>hyperrules</em> whose names contain
+metanotions: <code>MODE list : MODE, comma symbol, MODE list</code>.  Every consistent
+substitution of a metanotion by one of its strings gives an ordinary rule, so a
+hyperrule stands for a (usually infinite) family, and <code>where MODE1 is MODE2</code>
+makes two spots in one rule agree.  With unrestricted metanotions this is
+Turing complete, so parsing <em>may</em> be undecidable, but in practice it is not:
+the Report's grammar is a real, finite working description, and parsers and
+checkers for it and for other W-grammars have been written, because a grammar
+written to be read is not an adversarial one.  The Report uses it for what a
+context-free grammar cannot say (identifiers declared before use, types
+agreeing).  What descended from it and was
+made practical: Koster's <em>affix grammars</em> and <em>extended affix grammars</em>
+(finite-domain parameters, the CDL compiler-description language), Prolog DCGs
+(arguments on nonterminals), attribute grammars, Fischer's <em>macro grammars</em>.</p>
+<p>hbnf already has the other answers to &quot;context&quot;: decision 13 (named persistent
+context, <code>?</code>, <code>%bind</code>, <code>%scope</code>, <code>%where</code>), the wire layer's expressions over
+earlier fields (<code>len(field)</code>, <code>?(cond)</code>), and decision 14 (detected forks).  What
+W-grammars give beyond those, kept to the decidable subset:</p>
+<ol>
+<li>**Parameterised rules over a finite set, expanded when the parser is
+generated.**  <code>list(X) := X *( &quot;,&quot; X )</code>; `binary(N) := binary(N+1) *( op(N)
+binary(N+1) )` for the 17 precedence levels of C++, with the operators per
+level in a table; a parameter ranging over an enum (<code>value(int)</code>,
+<code>value(string)</code>).  The family is finite, so it expands into ordinary rules:
+no runtime cost, no new parser, no undecidability.  Today a repeated shape
+is written out each time (or lifted into hidden rules by hand).  The C++
+standard's own grammar leans on this (<code>-list</code>, <code>-opt</code>, the declarator
+families).  This is LBNF's indexed categories and Menhir's parameterised
+nonterminals under another name, and it is the one idea here that is both
+useful and cheap.  <em>Built 2026-10-19 (every backend, since the uses are expanded into ordinary rules when the grammar is read): <code>list(X)</code>, number parameters over a domain, clauses for single values, a growth check; <code>tests/params.sh</code>.</em></li>
+<li>**Consistent substitution as a back-reference: this text must repeat that
+earlier text.**  <code>where TAG is TAG</code> is XML's <code>&lt;a&gt; ... &lt;/a&gt;</code>, a here-document's
+terminator (<code>&lt;&lt;EOF ... EOF</code>, which the POSIX shell corpus needs), C++
+raw strings <code>R&quot;delim( ... )delim&quot;</code>, Rust <code>r#&quot;...&quot;#</code>, Lua long brackets
+<code>[==[ ... ]==]</code>, Markdown fences.  hbnf cannot say any of them declaratively
+today; decision 13 would do them with a <code>%bind</code> and a <code>%where</code> in code.  The
+wire layer already names earlier fields and tests them (<code>?(len(f) == n)</code>);
+the same for text (<code>d:delim ... ?(text == d)</code>, or a back-reference spelled
+like a rule name) is the declarative form, and is what regexes call a
+back-reference.  <em>Built for text in C (2026-10-19): <code>x as K</code> ... <code>$K</code> (written <code>x %as tag</code> ... <code>%same tag</code> until 2026-11-03), local to a sequence (ABNF.md; <code>tests/backref.sh</code>, <code>corpus/mustache</code>).  Planned for the wire layer.</em></li>
+<li><strong>Domains checked at generation time.</strong>  An affix grammar's parameters have
+declared finite domains, so a use that cannot match is an error when the
+grammar is read, not a failed parse.  If hbnf takes (1), it should check
+the arguments the same way, with the helpful errors it already promises.
+*Named domains (the metarule, <code>::=</code>; a hyperrule is <code>:=</code>, an ordinary rule <code>=</code>) are built too: a finite set of
+numbers or words, joined from other domains, never one that names itself.*
+*Built with (1): a number outside its domain, a word not in its list, the wrong number of
+arguments, a rule that is not parameterised, and a chain that needs ever bigger instances of
+itself are errors when the grammar is read, each naming the chain of uses.*</li>
+</ol>
+<p><strong>Efficiency.</strong>  The three above cost nothing the grammar does not already pay.
+(1) is expansion before the parser is generated: the parser it produces is the
+one you would have written by hand, with no runtime parameter passing; the cost
+is generator time and parser size, bounded by sharing identical instances and
+building only the ones used (17 precedence levels are 17 rules, as by hand).
+(2) is a slice of the input (a pointer and a length, no copy) kept in the parse
+state and compared with <code>memcmp</code> where it is repeated; a backtrack restores it
+with the position, and only a token that holds a back-reference leaves the
+table-driven scanner for a short loop, as a scanner action would, so only
+grammars that use it pay.  It does mean a memoized result must be keyed by the
+captured text or not memoized (the same hazard as decision 13's context).
+(3) is generation time only.  Because each expands into an ordinary grammar,
+the first-match rule, the union analysis and the detected forks of decision 14
+run unchanged.  Full W-grammars are undecidable only in the worst case, not in
+the grammars people write, so how far past this subset hbnf can go without
+losing efficiency is a question for the ALGOL 68 step (parsing the Report's own
+W-grammar), not something to rule out here; the subset above is decidable by
+construction and costs nothing, which is why it comes first.</p>
+<p>What not to take yet: unrestricted metanotions and open-ended hyperrule families
+(they can fail to terminate in the worst case, and the Report's own grammar was
+written to be read by a human, not run; whether the practical ones can be run is
+the ALGOL 68 experiment); the notation (hyperrule
+names with spaces and consistent substitution across a whole rule is a reading
+puzzle, against hbnf's &quot;not surprising to a BNF user&quot; bar); symbol-spelling
+rules (<code>letter a symbol</code>).  Affix/inherited attributes as the answer to context
+were weighed in decision 13 and stay a second choice to persistent context.</p>
+<h2>Raku grammars</h2>
+<p>Raku (formerly Perl 6) has grammars as a part of the language, and they are the nearest living relative of what hbnf does, so
+they are read here as the three older systems are.  Sources: the Raku documentation on
+<a href="https://docs.raku.org/language/grammars">grammars</a>, <a href="https://docs.raku.org/language/regexes">regexes</a> and
+<a href="https://docs.raku.org/language/slangs">slangs</a>; the roast test <code>S05-grammar/inheritance.t</code>; the module
+<a href="https://raku.land/zef:bduggan/Grammar::PrettyErrors">Grammar::PrettyErrors</a>; and, for what is not in the reference, a 2016
+developer chat (<a href="https://irclogs.raku.org/perl6-macros/2016-06-19.html">https://irclogs.raku.org/perl6-macros/2016-06-19.html</a>) and the 2011 Hacker News thread on Colm
+(<a href="https://news.ycombinator.com/item?id=2560524">https://news.ycombinator.com/item?id=2560524</a>), where the Perl 6 implementer <code>audreyt</code> states one limit.</p>
+<p>What the documentation says:</p>
+<ul>
+<li>A grammar is a class; its rules are methods.  <code>token</code> and <code>rule</code> are ratcheting: &quot;the match engine won't back up and try
+again if it fails to match something&quot;.  <code>rule</code> also turns on <code>:sigspace</code>, so white space in the pattern matches the
+grammar's <code>ws</code> (by default <code>token ws { &lt;!ww&gt; \s* }</code>).  <code>regex</code> backtracks.</li>
+<li>Alternation has two forms: <code>||</code> takes the first branch that matches, and <code>|</code> takes the longest match of the declarative
+prefix, &quot;independent of the textual ordering in the regex&quot;.</li>
+<li>Values are not built by the grammar.  An actions class has a method named after a rule, called after that rule matches
+(post-order); <code>make</code> and <code>.made</code> carry values up the tree.</li>
+<li>Code can be embedded anywhere: <code>{ }</code> blocks, <code>&lt;?{ }&gt;</code> guards that allow or prevent a match, and dynamic variables (<code>$*USE-WS</code>)
+that &quot;cascade down through all tokens defined thereafter&quot;.</li>
+<li>Grammars inherit (<code>grammar B is A</code>, tested in roast) and compose with roles.  A <em>slang</em> changes the language of a lexical scope
+by mixing a grammar role and an actions role into the current sub-language (<code>$*LANG</code>, <code>define_slang</code>): it acts when the Raku
+program is compiled.</li>
+</ul>
+<p>What the documentation does not say, and what was found elsewhere:</p>
+<ul>
+<li>A failed <code>.parse</code> gives a failure without the position or the rule; a third-party module exists to report line, column and the
+last rule reached (its README describes its purpose as failing &quot;with a pretty error rather than returning nil&quot;).</li>
+<li>Side effects of embedded code are not undone when the engine backtracks: Raku developers say so in the 2016 chat (&quot;don't
+run any side effects until you're sure you're in the right rule&quot;), and the 2011 thread has <code>audreyt</code> saying Colm can reverse global
+state on backtracking where Perl 6 grammars cannot yet.  The reference pages read say nothing either way.</li>
+<li><strong>Not verified:</strong> whether a left-recursive rule is supported or loops (no source found), and how fast the engine is (only
+anecdotes; nothing measured here, so no claim is made).</li>
+</ul>
+<table>
+<thead>
+<tr><th></th><th>Raku grammars </th><th>hbnf </th></tr>
+</thead>
+<tbody>
+<tr><td>A grammar is </td><td>a class the Raku runtime interprets </td><td>a file compiled to a standalone parser: C, Rust, Zig, Ada; tree-sitter </td></tr>
+<tr><td>Choice </td><td><code>\|\|</code> first match; <code>\|</code> longest token </td><td><code>\|</code> first match; <code>/</code> a union hbnf orders or refuses with a witness </td></tr>
+<tr><td>White space </td><td><code>rule</code> (sigspace) against <code>token</code>, chosen per rule </td><td><code>whitespace ws</code> per file; text rules against phrase rules </td></tr>
+<tr><td>Values </td><td>an actions class, post-order </td><td>a typed tree; <code>%action</code> after the parse; <code>%emit</code> as it goes </td></tr>
+<tr><td>Context </td><td>embedded code and dynamic variables </td><td>symbol-table contexts rolled back with the guess; facts and <code>=&gt; grammar(x)</code> planned (<code>CONTEXTS.md</code>) </td></tr>
+<tr><td>Composition </td><td>inheritance, roles, slangs </td><td><code>include</code>; <code>include ... as</code> scopes and <code>=&gt; grammar(x)</code> planned </td></tr>
+<tr><td>Side effects on backtracking </td><td>not undone, by the developers' account </td><td>undone for the context sets; <code>%where</code> code is the exception </td></tr>
+<tr><td>Parse error </td><td>a failure; position by a module </td><td>the expected set and the position, from the generated parser </td></tr>
+</tbody>
+</table>
+<p>Code in the grammar is not the difference.  hbnf has had <code>{ code }</code> blocks since the beginning (<code>%action</code>, <code>%where</code>, <code>%emit</code>, <code>%scan</code>),
+and is not against them: the aim is the smallest total ruleset, in lines, characters, tokens and rules, and code belongs
+where it shortens that (a scanner jet that replaces a page of rules; a test that replaces a family of rules).  Where the two
+differ is what the engine promises about the code: Raku does not undo the side effects of a block when it backtracks, and
+hbnf's context sets are put back with the guess, while a <code>%where</code> block runs where its place in the sequence is reached and
+its effects are the author's.</p>
+<p>What hbnf can take: the per-rule choice of <code>token</code> against <code>rule</code> (ratchet and white space set for one rule, where hbnf sets
+white space per file), and the slang, a change of the language for a scope, which is the model for <code>=&gt; grammar(x)</code>.</p>
+<h2>What HyperBNF could learn</h2>
+<p>In order of how much it would change hbnf.</p>
+<ol>
+<li><strong>Hooks in any language, and a portable default for the common case.</strong>  In
+all three, the code that customizes the system is written in the system's own
+language: META II's output operators, IMP72's quoted expressions, SNOBOL4's
+<code>DEFINE</code>d functions.  hbnf deliberately does not pick one.  A hook is code in
+whatever language a backend targets, and that is open-ended: C, Rust, Zig and
+Ada today; D, Fortran, Free Pascal, Nim, Odin, Objective-C, ATS and V planned
+next, then the garbage-collected languages (<code>COMPILER-COMPILER.md</code>, &quot;Backend
+spectrum&quot;); and nothing stops a backend for assembly, or past it for raw
+machine-code bytes.  Assembly is what META II emitted, and what makes a
+compiler-compiler a <em>true</em> metacompiler is that its product is a translator to
+a machine's own language, whose hooks can be that language's instructions.
+Machine code is the limiting case, and it joins up with the binary
+layer (<code>OCTET</code> is a byte; bit fields are built, <code>WIRE.md</code>): a grammar that can
+read bytes by their fields can have an emitter that writes them, so the same
+notation describes an instruction encoding going in and coming out.  The cost of that openness is that a hook is written
+once per backend (decision 13: &quot;<code>%where Rust { }</code>&quot;), so a grammar that needs a
+predicate in four languages is four programs.  IMP72 shows what would cut that
+cost without closing the door: most semantics were a <em>template</em> in the language
+being compiled, with holes for the arguments, and compiler subroutines were the
+exception (&quot;as a last resort&quot;).  A small portable action and emit notation,
+compiled to every backend, with host-language code (assembly included) as the
+escape hatch, would make <code>%action</code>, <code>%where</code> and <code>%emit</code> portable by default
+without taking away the freedom to drop to the machine.</li>
+<li><strong>Output templates with hygienic fresh names.</strong>  <code>*1</code>/<code>*2</code> in META II and
+<code>LOCAL R IN &quot;...&quot;</code> in IMP72 exist because generating code needs labels and
+temporaries that cannot collide.  <code>%emit{ }</code> has no such facility.  A
+<code>gensym</code>-like facility in the emit language (unique per node and per use) is
+the smallest thing that makes it able to write a loop or a conditional.</li>
+<li><strong>User-defined syntactic sugar, by rewriting.</strong>  IMP72's <code>ABS ( &lt;A&gt; )</code> defined
+as an expression over existing syntax is a <em>syntactic macro</em>: a new notation
+whose meaning is a rewrite into the old one.  hbnf already has a few built-in
+sugars it compiles away (<code>n#m</code>, <code>#x</code>, <code>a - b</code>, prefix factoring) and the
+<code>macros</code> directive for configs.  A grammar-level <code>=&gt;</code> that rewrites a matched
+phrase into another phrase of the same grammar would let authors define such
+sugar themselves, and hbnf's own would become instances of it.  This is the
+&quot;mechanically rewrite, don't make people rewrite&quot; principle, made available to
+grammar authors.</li>
+<li><strong>Cases on the shape of what matched.</strong>  IMP72's conditional semantics
+(§2.3.3.2: <code>NOT</code> applied to a constant is folded by a compile-time routine, any
+other <code>NOT</code> generates an instruction) pick different semantics when the matched
+thing is a constant, a register, a variable, or has a particular constant value.  That is tree-pattern matching
+for code generation, and it is why a language implemented this way could
+generate good code for special cases without touching the syntax.  hbnf has a
+typed tree and <code>kind</code> tags; an <code>%action</code> (or <code>%emit</code>) written as *cases on
+node shapes* would give constant folding and peephole rules a home.  IMP72's
+own warning applies: an inner node must already be reduced to one object for a
+case to see it (§2.3.5), so the order in which actions run is part of the
+contract.</li>
+<li><strong>One semantics, many productions.</strong>  IMP72's <code>CASE (...) OF SHIFTS</code>
+(§2.3.3.3) lumps productions that differ only in constants under one general
+semantics with a parameter list (<code>PAR(0)</code>).  hbnf's equivalent is an action
+shared by several rules, with arguments: <code>%action binop(&quot;ADD&quot;)</code>.  Small, and it
+removes the copy-and-edit that makes four-backend hooks expensive.</li>
+<li><strong>Say when something is expensive, as the parser runs.</strong>  IMP72 reports, at the
+foot of every listing, the parser's maximum space, and tells the author what it
+means: a production that must read far before it can choose &quot;may require
+inordinate amounts of space and time&quot; (§2.3.5).  hbnf already finds this
+statically (a union whose branches share unbounded text is refused with a
+witness), which is better than IMP72's runtime symptom.  The cheap addition is
+the runtime one for what static analysis cannot see: a <code>--stats</code> run reporting
+backtracks and deepest lookahead per rule.</li>
+<li><strong>Self-hosting as the test.</strong>  META II compiles itself and IMP72 compiles
+itself; both define their own syntax in their own notation.  HyperBNF's notation
+is read by Ada code.  A grammar of HyperBNF's notation, in HyperBNF, whose generated
+parser reads the grammars hbnf is built from, would be the strongest
+conformance test the project could have, and it is what makes a system a
+meta-compiler in the original sense.</li>
+</ol>
+<h2>What not to take</h2>
+<ul>
+<li><strong>IMP72's ambiguity.</strong>  Carrying every parse and picking by rule is the opposite
+of hbnf's guarantee that a grammar is never ambiguous and that a choice that
+cannot be ordered is refused with a witness.  IMP72's own advice
+(&quot;Peaceful Co-Existence&quot;, §2.3.5) is a list of ways to write syntax so the
+ambiguity does not bite, which is the discipline hbnf makes mechanical.</li>
+<li><strong>SNOBOL4's unrestricted backtracking with side effects.</strong>  Its manual spends
+pages on immediate assignment's surprises.  <code>%where</code> should stay the exception,
+with its running order stated, as decision 13 already does.</li>
+<li><strong>META II's hand factoring.</strong>  &quot;Backup is avoided by the extensive use of
+factoring&quot; is a burden placed on the author; hbnf's prefix factoring and union
+ordering take it back.</li>
+</ul>
+<h2>Open questions this raises</h2>
+<ul>
+<li>Is the portable notation (lesson 1) a separate language, or hbnf's own
+notation extended with expressions, and is an assembly backend the first test
+of &quot;any language&quot; (it has no runtime to lean on, only what <code>%emit</code> writes)?  IMP72 chose the object language itself;
+that is the cheapest and the one that keeps a grammar a single file.</li>
+<li>Should <code>%scan</code> for a body-less rule and for a rule that has a body be spelled
+differently (code with no grammar behind it, and code the grammar also defines)?  Today they are one directive.</li>
+<li>If grammars can define rewrites (lesson 3), the exception <code>a - b</code>, <code>n#m</code> and the
+rest of hbnf's sugar could be defined in the standard library of the notation
+and not in the Ada reader.  That is an invitation to bootstrap, and a risk to
+error messages, which currently speak the sugar's own language.</li>
+</ul>
+<h2>Could HyperBNF be the minimal compiler IMP72 grew from?</h2>
+<p>The question is whether hbnf could play the part of IMP72's bootstrap kernel and
+grow into the full compiler from the DECUS material.  The tape and the manual
+answer most of it.</p>
+<h3>What the material contains</h3>
+<p>DECUS program 10-198 is on the library tape 10-LIB-3, and the PDP-10 archive's
+<a href="https://pdp-10.trailing-edge.com/decuslib10-03/index.html">extracted listing</a>
+(directory <code>43,50306</code>) has all of it as text and binary: 22 compiler modules as
+<code>.imc</code> source (about 44,000 36-bit words, roughly 220 KB, on the order of five
+thousand lines of IMP), <code>syntax.imc</code>, <code>impsyn.imc</code>, <code>rsyn.imc</code>, the compiler
+binary (<code>imp.low</code>, <code>imp.shr</code>), the I/O library (<code>implib.lib</code>, with
+<code>fortio.mac</code>, which is PDP-10 assembler), and <code>imp.rno</code>, the manual's source.
+The archive states that use of files from the DECUS tapes is unrestricted.  The
+PDF of the manual used elsewhere in this note is a scan of the same submission;
+it does <em>not</em> contain the compiler source, only the manual and unrelated
+documents, so the tape is the source of the code.</p>
+<h3>How IMP72 actually bootstraps (manual §3.4, §4.4, and the code)</h3>
+<p>IMP72 does not start from a minimal compiler and grow.  It starts from a
+<em>minimal syntax reader</em> and a long file:</p>
+<ol>
+<li><strong><code>rsyn.imc</code>, 327 lines of IMP, is the kernel.</strong>  It has one syntax built in:
+<code>&lt;CLASS&gt; ::= element element &lt;CLASS,name&gt; 'c' ... ::= ( routine, routine ) ;</code>,
+a production whose semantics is a comma-separated list of semantic-routine
+names, ended by <code>;</code>, the whole file by <code>%</code>.  It registers fourteen routines
+(<code>SYNT</code>, <code>SYTRM</code>, <code>SYNTS</code>, <code>SYNTAX</code>, <code>SEMR</code>, <code>SEMP</code>, <code>SEMANTICS</code>, <code>QUOSEM</code>,
+<code>EQUOSE</code>, <code>DEFCASE</code>, <code>SEMBIT</code>, <code>VALU</code>, <code>REPVAL</code>, <code>ENSTACK</code>) that enter a
+production into the syntax graph and compile its semantic part.  Its own
+header apologises for the coding.</li>
+<li>**<code>syntax.imc</code>, 450 lines, 177 syntax statements in 30 classes (and the lexer's two, <code>NAM</code> and <code>SYM</code>), is the
+language.**  Its first thirty lines are written in the kernel's tiny notation
+and define the <em>full</em> syntax-statement notation (quoted semantics, <code>ELSE</code>,
+<code>CASE</code>, <code>PRIORITY</code>, <code>VALUE</code>, <code>LOCAL</code>).  The rest, now read with that fuller
+notation, defines the base language: expressions, declarations, <code>GO TO</code>,
+conditionals, loops, subroutine calls, bytes and registers, and a few
+DECsystem-10 synonyms.  Most semantics are calls to semantic routines
+(<code>DEWOP(254B,0,A)</code> emits the PDP-10 opcode <code>JRST</code>); others are quoted IMP
+templates.</li>
+<li><strong>The compiler is then saved as a core image.</strong>  Everything but lexical
+conventions and the kernel's notation comes from <code>syntax.imc</code> and the
+semantic routines it names.</li>
+</ol>
+<p>What it does not do is compile those semantic routines itself from nothing.  The
+routines (<code>code</code>, <code>impsem</code>, <code>cotree</code>, <code>entree</code>, <code>dosem</code>, <code>parse</code>, <code>graph</code>,
+<code>ercor</code>, <code>amod</code>, <code>rmod</code>, <code>omod</code>, ...) are IMP source, compiled with the syntax in
+<code>impsyn.imc</code> by an IMP72 compiler that already exists; §3.4's &quot;from scratch&quot;
+procedure begins with &quot;make a version of the compiler&quot; from a running one.  The
+tape's <code>imp.low</code> and <code>imp.shr</code> are that running compiler, as a PDP-10 binary.
+So a true bootstrap from nothing has to supply, outside the tape, what the first
+IMP compiler was.</p>
+<h3>What HyperBNF has, and what it would take</h3>
+<table>
+<thead>
+<tr><th>IMP72 piece </th><th>what it does </th><th>hbnf today </th></tr>
+</thead>
+<tbody>
+<tr><td><code>rsyn</code>'s notation, and <code>syntax.imc</code>'s statements </td><td><code>&lt;C&gt; ::= elements ::= semantics ;</code></td><td>a reader for BNF, EBNF, ABNF and YBNF dialects: a dialect <code>imp72</code> is small </td></tr>
+<tr><td><code>parse</code>, <code>graph</code>, <code>ercor</code></td><td>Irons's bottom-up parser carrying every parse; ambiguity resolved by rule; syntax errors repaired </td><td>a generated ordered-choice parser; ambiguity refused with a witness; no repair </td></tr>
+<tr><td><code>rsyn</code>/<code>graph</code> adding productions at run time </td><td>a program extends its own syntax and uses it at once </td><td>grammar fixed when the parser is generated </td></tr>
+<tr><td><code>cotree</code>, <code>entree</code>, <code>dosem</code>, <code>stack</code></td><td>semantics held back until context decides the special case; quoted semantics re-fed to the parser as a rewrite </td><td><code>%action</code> once, after the parse </td></tr>
+<tr><td><code>code*</code>, <code>impsem</code>, <code>amod</code>, <code>rmod</code>, <code>omod</code></td><td>PDP-10 code generation, register allocation, DEC relocatable object files </td><td>none </td></tr>
+<tr><td><code>implib</code>, <code>fortio.mac</code></td><td>runtime, in IMP and in assembler </td><td>none </td></tr>
+</tbody>
+</table>
+<p>Three routes, from cheapest.</p>
+<p><strong>1. Read the language as data.</strong>  Add a reader for the kernel's notation and
+load <code>syntax.imc</code> as a HyperBNF grammar, semantic parts kept as text.  Nothing in
+HyperBNF's design rules this out, it is small, and it answers the question that
+decides everything else: how ambiguous is IMP72's syntax?  IMP72 leans on
+ambiguity on purpose (no reserved words; <code>ABS(&lt;A&gt;)</code> both a defined construct and
+a call), and resolves it with three rules (§2.3.4).  hbnf's union checker reports
+every ambiguity it finds, with a witness.  A count of those, and whether ordered
+choice with first-match-wins can be made to give IMP72's resolution, says whether
+a <em>static</em> IMP grammar is enough.</p>
+<p><strong>2. Translate the compiler, not bootstrap it.</strong>  If route 1 says the static
+grammar is workable, the compiler's own sources only use the syntax in
+<code>syntax.imc</code> and <code>impsyn.imc</code>, both finite.  An IMP front end generated by hbnf,
+with emit templates, translating <code>.imc</code> to C over a small 36-bit-word runtime
+(half-word fields <code>&lt;L&gt;</code>/<code>&lt;R&gt;</code>, byte pointers, registers, <code>COMMON</code>, <code>REMOTE</code>),
+would reproduce the whole IMP72 compiler on a modern machine, emitting PDP-10
+<code>.REL</code> files, with no PDP-10 binary needed to build it.  The tape is the test
+corpus (the way <code>corpus/rfc/</code> is for ABNF): every <code>.imc</code> file must parse, and
+the translated compiler must compile the compiler's sources.  Validation against
+the original needs the original running, which means a PDP-10 emulator (SIMH)
+and a TOPS-10 or TENEX image from the same archive, and the comparison is of
+behaviour, since object files will differ in incidental ways.</p>
+<p><strong>3. Be the kernel.</strong>  The literal reading of the question: hbnf <em>is</em> <code>rsyn</code> and
+the machinery behind it, and IMP72 grows out of it.  That is the large one, and
+it is the one that exercises every lesson above.  It needs a second engine
+inside hbnf: a run-time grammar interpreter with an add-production operation, a
+general parser that carries parses and resolves ambiguity by rule (in an explicit
+dialect, so the main guarantee of ordered choice stays where it is), the
+object-stack and special-case matching of <code>cotree</code>/<code>entree</code>, quoted semantics as
+rewriting, <code>PRIORITY</code>/<code>VALUE</code>/<code>CASE</code>, and a place to put the semantic routines.
+The modules that do this in IMP72 (<code>parse</code>, <code>graph</code>, <code>ercor</code>, <code>cotree</code>, <code>entree</code>,
+<code>dosem</code>, <code>stack</code>, <code>rsyn</code>, <code>lex</code>, <code>dir</code>, <code>free</code>) are about 22,000 words, a few
+thousand lines of IMP: the size of the job is moderate, not huge, and it is the
+design that is new.  The back end (<code>code</code>, <code>impsem</code>, <code>amod</code>, <code>rmod</code>, <code>omod</code>) is
+a second job of about the same size and is PDP-10 specific; <code>syntax.imc</code> embeds
+PDP-10 opcodes in its semantics, so it does not retarget for free.</p>
+<h3>Translate <code>rsyn</code> and run from there</h3>
+<p>This is route 2 started at the kernel, and the size of it was measured on the
+tape's sources (a name-based call closure; it over-counts a little, since a name
+in an error path counts, and it counts code lines with comments and blanks
+removed).  The whole compiler is 290 subroutines and about 3,400 lines of IMP.</p>
+<table>
+<thead>
+<tr><th>stage </th><th>what runs </th><th style="text-align:right">subroutines </th><th style="text-align:right">code lines </th><th>modules </th></tr>
+</thead>
+<tbody>
+<tr><td>1 </td><td><code>rsyn</code> alone: the built-in notation, enough to read the first thirty lines of <code>syntax.imc</code></td><td style="text-align:right">83 </td><td style="text-align:right">about 900 </td><td><code>rsyn</code>, <code>free</code>, <code>dosem</code>, <code>dir</code>, <code>stack</code>, <code>entree</code>, <code>graph</code> (3), <code>lex</code> (1), and a few routines each of <code>impsem</code>, <code>impm</code>, <code>code</code>, <code>cotree</code></td></tr>
+<tr><td>2 </td><td>the rest of the front half, enough to read all of <code>syntax.imc</code> and <code>impsyn.imc</code></td><td style="text-align:right">178 </td><td style="text-align:right">about 2,200 </td><td>adds <code>parse</code> and <code>cotree</code>; the driver <code>impm</code> pulls in much of the back end, so this over-counts </td></tr>
+<tr><td>all </td><td>the compiler </td><td style="text-align:right">290 </td><td style="text-align:right">about 3,400 </td><td>adds the code generator, register and assembly passes </td></tr>
+</tbody>
+</table>
+<p>So the kernel is not large, and the manual's own design helps: §4 says there is
+&quot;no common data base in the compiler&quot; and that modules reach each other's data
+by subroutine calls.  That makes the system replaceable one module at a time: run
+<code>rsyn</code> translated; later replace <code>parse</code> and <code>graph</code> with an hbnf-generated
+engine behind the same calls; keep the rest until it is worth replacing.</p>
+<p>What translating it needs:</p>
+<ol>
+<li><strong>An IMP front end.</strong>  To translate IMP source one must parse IMP source.  That
+is the static grammar of route 1, read from <code>syntax.imc</code>'s base-language
+statements plus <code>impsyn.imc</code>, which the compiler's own sources use.  The
+syntax statements' <em>semantic parts</em> produce PDP-10 code; for a C target each
+construct needs an emit written by hand, which for the base language is a
+couple of hundred productions of which a smaller core is used in these
+subroutines.</li>
+<li><strong>A 36-bit word model in C.</strong>  Half-word fields (<code>&lt;L&gt;</code>, <code>&lt;R&gt;</code>), byte pointers,
+<code>REGISTER</code>/<code>SCRATCH</code> declarations, <code>COMMON</code> and <code>REMOTE</code>, <code>LONG</code> arrays, and
+the compiler's habit of passing directory indices as negative numbers.</li>
+<li><strong>A small replacement for the I/O library.</strong>  <code>rsyn</code> reads through <code>lex</code>, which
+reads through <code>implib</code> (IMP and <code>fortio.mac</code>, PDP-10 assembler); the reading
+and printing routines are short (<code>tbin</code>, <code>tprin</code>, <code>traed</code>).</li>
+<li><strong>Care about PDP-10 tricks.</strong>  They are few and local.  <code>rsyn</code> itself checks
+its own code size with <code>LOC(QUIT)-LOC(RSYNLO)&lt;280</code>, a comparison of code
+addresses, and exits through a monitor call (<code>CALLI(12B,0)</code>).  These are
+stubbed or replaced, not translated.</li>
+</ol>
+<p>The check is built in: the kernel either reads the first thirty lines without
+<code>?ERROR IN INITIAL SYNTAX</code>, or it does not, and the manual's own message is
+<code>SYNTAX BOOTSTRAPPED</code> once it has.  Stage 2 is checked by finishing <code>syntax.imc</code>
+and <code>impsyn.imc</code> and then compiling a small IMP program; the fixed-point check
+(the compiler compiling its own sources twice to the same output) is last.</p>
+<p>The translator is where hbnf comes in first: the generated IMP parser and its
+emit templates are the tool.  Running the translated <code>rsyn</code> is the kernel.  The
+two meet when the translated parser is replaced by a generated one.</p>
+<h3>What not to expect</h3>
+<ul>
+<li>No route here starts from nothing.  Route 2 starts from the tape's sources and
+hbnf's front end; route 3 from the sources and a kernel that hbnf would have to
+grow.  Only the original has a binary that compiled itself.</li>
+<li>A match with the original is behavioural.  What can be checked exactly is
+that the compiler compiles its own sources to a fixed point: the translated
+compiler's output compiling the same sources again gives the same output.</li>
+<li>Error correction (<code>ercor</code>, after Irons 1963) is a research-grade piece and can
+wait; the language does not need it to be correct on correct programs.</li>
+</ul>
+<h3>Where to start</h3>
+<p>Route 1, as a measurement: fetch the files from the archive into a cache pinned by
+hash (as <code>bench/</code> does for the ntpd sources, and for the same reason: the tape is
+not ours to commit), read <code>syntax.imc</code> with a small <code>dialect imp72</code>, and report
+the classes, the productions, and the ambiguities hbnf finds.  It is the only
+step whose result changes what the next one is.</p>
+<h2>IMP72 and Ada, both from ALGOL</h2>
+<p>Ada is hbnf's implementation language and one of its four backends, and IMP is
+the language of the compiler in <code>corpus/imp72/</code>.  Both are ALGOL's descendants
+by different roads: Ada through Pascal, with ALGOL 68's influence on its
+types; IMP through Irons, whose syntax-directed compiler for ALGOL 60 (1961) is
+where his line of work begins.  The IMP72 manual describes the language as &quot;a
+simple higher-level language intended primarily for system programming&quot;,
+&quot;roughly at the level of FORTRAN II&quot; in power with &quot;a bit like ALGOL in
+flavor&quot;.  Same family, opposite bets.  What follows is read from the manual
+(section numbers are its), and the Ada side is the language as published.</p>
+<table>
+<thead>
+<tr><th></th><th>IMP72 </th><th>Ada </th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Aim</strong></td><td>system programming on one machine, the PDP-10, with all its registers and instructions in reach (§1.1) </td><td>systems and embedded programming, portable across machines, checked at compile time </td></tr>
+<tr><td><strong>Statements</strong></td><td>none: &quot;no distinction is made between expressions and statements&quot;, so <code>;</code> is a binary operator whose value is its second operand, and parentheses group (§2.1.2) </td><td>statements and expressions are separate; <code>;</code> ends a statement </td></tr>
+<tr><td><strong>Reserved words</strong></td><td>none (§1.1, item 4); a word is a keyword where a syntax statement says so </td><td>about seventy </td></tr>
+<tr><td><strong>Types</strong></td><td>integer and real only, plus what the programmer does with words; variables need no declaration unless they are arrays (§1.3) </td><td>strong, declared, user-defined: records, enumerations, ranges, access types, tagged types, generics </td></tr>
+<tr><td><strong>Scope</strong></td><td>one global scope for a compilation; <code>LOCAL</code> renames a variable to a unique name within one subroutine (§2.1.4) </td><td>nested blocks, packages, private parts; scope is lexical and checked </td></tr>
+<tr><td><strong>Precedence</strong></td><td>all binary operators equal, evaluated right to left, &quot;as in APL&quot;; relations after those (§2.2) </td><td>the conventional levels </td></tr>
+<tr><td><strong>Control</strong></td><td><code>A=&gt;B ELSE C</code>, <code>A FOR I IN 0,1,N</code>, <code>WHILE</code>, <code>GO TO</code>; labels are variables and can be stored into: <code>T:G0 TO T</code> writes an instruction into the next word (§2.1.3) </td><td><code>if</code>, <code>case</code>, three loops, <code>exit</code>, <code>goto</code>, exceptions </td></tr>
+<tr><td><strong>Calling</strong></td><td>FORTRAN's convention, so IMP and FORTRAN call each other (§2.1.4) </td><td>its own, with <code>in</code>, <code>out</code> and <code>in out</code> modes, and <code>pragma Import</code> with <code>Convention =&gt; Fortran</code> and others </td></tr>
+<tr><td><strong>Machine access</strong></td><td>registers <code>0R</code>..<code>15R</code> are names; &quot;if you write down an expression which can be evaluated with a single instruction, that instruction will almost always be used&quot; (§2.1.3); instructions the compiler lacks are added as syntax </td><td><code>System.Machine_Code</code> for inline assembly, <code>Address</code> clauses, representation clauses; the compiler is not required to emit any particular instruction </td></tr>
+<tr><td><strong>Bit fields</strong></td><td><code>A&lt;B,C&gt;</code>: B bits, C bits from the right of word A, an expression either side, usable on the left of an assignment; <code>A&lt;L&gt;</code>, <code>A&lt;R&gt;</code> the half words; <code>BYTEP</code> makes a byte pointer that can be stepped (§2.2.6) </td><td>a record representation clause: <code>for R use record F at 0 range 3 .. 7; end record;</code>, with <code>Bit_Order</code> and <code>Scalar_Storage_Order</code>; the compiler generates every access </td></tr>
+<tr><td><strong>Extension</strong></td><td>the language is extended by the program: syntax statements add productions with their semantics, mid-file (§2.3) </td><td>generics, overloading, user-defined operators, child packages, pragmas; the grammar is fixed </td></tr>
+<tr><td><strong>Special cases</strong></td><td>stated by the programmer as conditional semantics (<code>A+1</code> as a register increment) (§2.3.3.2) </td><td>left to the optimizer; <code>pragma Inline</code> and instantiation are the programmer's levers </td></tr>
+<tr><td><strong>Compile-time check</strong></td><td>little: a mistaken program compiles </td><td>the point of the language </td></tr>
+<tr><td><strong>Error handling</strong></td><td>none in the language; syntax errors are repaired by the compiler and compilation goes on (§4.1) </td><td>exceptions; the compiler refuses what is wrong </td></tr>
+</tbody>
+</table>
+<p>The two answer one question, how do you get machine-level control without
+writing assembler, in opposite directions.</p>
+<ul>
+<li><strong>Ada puts the knowledge in the type.</strong>  The layout of a record is declared
+once, by a representation clause, and every access the compiler writes follows
+it; a mistake is a compile error.  The cost is a fixed language and a compiler
+that must be taught each machine.</li>
+<li><strong>IMP72 puts the knowledge in the grammar.</strong>  There are almost no types, so
+the programmer states the field at every access (<code>A&lt;9,I&gt;</code>), and when the
+compiler would do something wasteful the programmer writes a syntax statement
+that does better.  The cost is that nothing is checked; the gain is that the
+compiler can be taught anything, by the person using it, without modifying it.</li>
+</ul>
+<h2>What this says for HyperBNF</h2>
+<ol>
+<li><strong>The bit-field notation is an old, good one, and a design question.</strong>  hbnf's
+wire layer (step 7b: widths, signedness, endianness, bit-precise syntax, an
+<code>OCTET</code> that is a byte) says &quot;B bits at C&quot;.  IMP72's <code>A&lt;B,C&gt;</code> is
+that, imperative and per access.  Ada's representation clause is that,
+declarative and per type.  A grammar is declarative, so Ada's shape is the
+closer fit: a rule says its layout once, and both directions, reading and
+writing, follow from it.  What IMP72 adds that Ada does not is that its B and
+C may be <em>expressions</em>: a length field read earlier in the same record can
+say how wide the next field is, which binary formats do constantly (length
+prefixed fields, TLV).  The wire layer allows it (<code>name:[expr]</code>, <code>WIRE.md</code>), and
+<code>%where</code>-style code is the wrong place for it.</li>
+<li><strong>Right-to-left evaluation of equal precedence is IMP72's, and a trap.</strong>  A
+grammar that accepts <code>A*B+C</code> must say which way it nests, and hbnf's ordered
+choice with left-recursive loops gives left to right.  A grammar for IMP in
+hbnf has to reproduce the right-to-left rule, and <code>syntax.imc</code> does it by
+writing <code>&lt;EXP&gt; ::= &lt;ATOM,A&gt; + &lt;EXP,B&gt;</code>, the right operand a whole <code>&lt;EXP&gt;</code>.</li>
+<li><strong>&quot;No reserved words&quot; is a lexer property, and hbnf has the option already.</strong>
+An identifier is a keyword only where a rule says so, which is what hbnf's
+<code>keywords { }</code> table opts into and what a grammar without one already does.
+Ada's reserved words, by contrast, are the reason the generated Ada needs the
+prefix hbnf now puts on every rule.</li>
+<li><strong>IMP is not a translation target for the Ada backend.</strong>  A flat global
+memory of 36-bit words, labels that are variables, instruction words stored by
+the program, and registers named in expressions have no counterpart in Ada's
+type model.  Translating the IMP72 compiler's own source is best done to C
+over a small word-model runtime (see the section above), where a word is an
+integer and a label is a number, and Ada stays what it is for hbnf: the
+language its compiler is written in and a typed target for generated parsers.</li>
+</ol>
+</body>
+</html>

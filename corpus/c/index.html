@@ -1,0 +1,109 @@
+<!doctype html>
+<!-- generated from corpus/c/README.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C in HyperBNF</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>C in HyperBNF</h1>
+<p>One grammar for each dialect of C that has a yacc grammar to be measured against, each a layer on the
+last and each checked with the compiler of its own time:</p>
+<table>
+<thead>
+<tr><th>grammar </th><th>dialect </th><th>checked against </th></tr>
+</thead>
+<tbody>
+<tr><td><code>c79.hbnf</code>, <code>c79-words.hbnf</code></td><td>the C of UNIX/32V (1979), as <code>usr/src/cmd/mip/cgram.y</code> and <code>scan.c</code> read it: no prototypes, <code>void</code> or <code>const</code>; <code>=+</code>; an initializer without its <code>=</code></td><td><code>tests/c79.sh</code> (22 small files) and <code>scripts/c79-scan.sh</code>: the 32V source tree itself, <strong>901 files preprocessed with the 32V headers, all accepted</strong> (26 more need headers its build generates) </td></tr>
+<tr><td><code>c89.hbnf</code>, <code>c89-words.hbnf</code></td><td>ISO C90, strictly </td><td><code>tests/c89.sh</code> (25 files) against <code>gcc -std=c89 -pedantic-errors</code></td></tr>
+<tr><td><code>c99.hbnf</code>, <code>c99-words.hbnf</code></td><td>ISO C99, strictly (no GNU forms) </td><td><code>tests/c99.sh</code> (23 files) against <code>gcc -std=c99 -pedantic-errors</code>, and <code>GRAMMAR=c99 STD=c99 scripts/c-scan.sh</code>: <strong>1,549 of the 1,580 units gcc accepts</strong>; the 31 refused are GNU spellings and one string of bytes that are not UTF-8 </td></tr>
+<tr><td><code>pcc99.hbnf</code>, <code>pcc99-words.hbnf</code></td><td>the C PCC's <code>cgram.y</code> (NetBSD trunk) reads: C99, the C11 forms it has (<code>_Alignas</code>, <code>_Atomic</code>, <code>_Generic</code>, <code>_Static_assert</code>, <code>_Noreturn</code>, <code>_Thread_local</code>), and its subset of the GNU extensions; a type may stand as a call's argument </td><td><code>tests/pcc99.sh</code> (24 files, four kinds: good, bad, only PCC's grammar has, and GNU forms it lacks) and <code>GRAMMAR=pcc STD=gnu11 scripts/c-scan.sh</code>: 1,696 of the 1,953 units gcc 14 accepts; the 257 refused are what PCC's grammar has no production for (<code>__extension__</code> in glibc's headers, 132 of them; <code>__real__</code>, <code>__label__</code>, nested functions) and features newer than it </td></tr>
+<tr><td><code>gnu99.hbnf</code>, <code>gnu99-words.hbnf</code></td><td>C99 and the GNU extensions GCC 4.0.4's bison grammar (<code>gcc/c-parse.in</code>) reads, which PCC's reads too; attributes and <code>asm</code> are in the grammar </td><td><code>tests/gnu99.sh</code> (21 files) against <code>gcc -std=gnu99</code>, and <code>GRAMMAR=gnu99 STD=gnu99 scripts/c-scan.sh</code>: <strong>1,883 of the 1,953 units gcc 14 accepts</strong>; the 70 refused are features newer than GCC 4.0.4 (<code>_Float128</code>, <code>__int128</code>, <code>_Static_assert</code>, <code>[[ ]]</code> attributes) and one string of bytes that are not UTF-8 </td></tr>
+<tr><td><code>c11.hbnf</code>, <code>c-words.hbnf</code></td><td>C11 and the GNU forms system headers use </td><td>below </td></tr>
+</tbody>
+</table>
+<p>The notation comparison (<code>bench/notation.sh</code>) sets 32V's <code>cgram.y</code> against <code>c79</code>, PCC's against <code>pcc99</code> and
+GCC 4.0.4's against <code>gnu99</code>.  C11, C17 and C23 are not in it: no yacc grammar of theirs exists to measure.</p>
+<h1>C11 in HyperBNF</h1>
+<p><code>c11.hbnf</code> is the grammar of ISO/IEC 9899:2011 Annex A with the standard's rule names, plus the GNU
+forms system headers use; <code>c-words.hbnf</code> has the tokens as rules of characters.  It is the first piece
+of a small C compiler written in HyperBNF (parse, check, lower, write), and it parses what a C preprocessor
+produces: hbnf has no preprocessor, so the tools below use gcc's (<code>gcc -E -P</code>).</p>
+<h2>Checked against gcc</h2>
+<ul>
+<li><strong><code>tests/c.sh</code></strong>: 57 small files, 38 that <code>gcc -fsyntax-only</code> accepts and 19 it refuses with a syntax
+error, all agreed on.  C backend only: the grammar uses the typedef context (<code>context types</code>,
+<code>%bind</code>, <code>%scope</code>, <code>?</code> and <code>?!</code>), which Rust, Zig and Ada do not have yet.</li>
+<li><strong><code>tests/layout.sh</code></strong> reads the same 57 files with <code>--layout=tape</code> (the parser writes a flat tape of
+words, not the tree) and agrees on every one.</li>
+<li><strong><code>tests/sqlite.sh</code></strong>: the SQLite amalgamation, fetched by the pin in <code>bench/pins.txt</code>.  <code>c11</code>, <code>gnu99</code>,
+<code>pcc99</code> and <code>c99</code> accept it; <code>c89</code> refuses it (<code>long long</code>), as <code>gcc -std=c89 -pedantic-errors</code> does, and <code>c79</code>
+refuses it (prototypes, <code>void</code>, <code>const</code>).</li>
+<li><strong><code>scripts/c-corpus.sh</code></strong> fetches the C corpora the pcc size work used (lua, zlib, lz4, cJSON, chibicc,
+c-testsuite, mbedtls, BearSSL, the SQLite amalgamation and gcc's c-torture execute tests), preprocesses
+every file with <code>gcc -E</code>, keeps the ones <code>gcc -fsyntax-only</code> accepts, and runs the generated parser.  On
+the day it was run: <strong>2,481 translation units (90 MB), the grammar accepts 2,478</strong>.  The three it refuses
+are a string literal with bytes that are not UTF-8, <code>register void *p asm (&quot;rbx&quot;)</code> and a decimal-float
+constant (<code>0.DD</code>).  By corpus: bearssl 317, c-testsuite 220, lua 40, mbedtls 177, zlib 37, lz4 48, cJSON
+35, chibicc 18, sqlite 1, c-torture 1,588.  (The original pcc work used 900 files that pcc, clang and
+gcc all compiled; those lists are not on this machine, so this is the same projects, regenerated, and
+all the files gcc accepts.)</li>
+<li><strong><code>scripts/c-scan.sh DIR...</code></strong>: the same over any directory of sources.  587 units of the prebsd checkouts
+and pcc's own sources (60 MB) and 426 of SIMH (43 MB) are also all accepted.  On 204 mutations of the SIMH
+units (a character, a line or a stray token removed or added), the grammar and gcc agree on every one whose
+gcc error is a syntax error (139 of 204; the rest are type errors, which a grammar does not check).</li>
+</ul>
+<p>Speed is measured by <code>bench/cspeed.sh</code>: the generated parser (the typed tree) and <code>gcc -fsyntax-only</code> read
+the same preprocessed files.</p>
+<p>&lt;!-- bench:cspeed --&gt;</p>
+<p><strong>47 translation units, 5.0 MB of preprocessed C</strong> (Lua 5.4.7, zlib 1.3.1, the SQLite 3.45.1 amalgamation; best of 5 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak memory, the largest unit alone (2.5 MB of C) </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), the C11 grammar, typed tree </td><td style="text-align:right">0.20 s </td><td style="text-align:right">24.4 MB/s </td><td style="text-align:right">47 MB </td></tr>
+<tr><td>hbnf (C backend), the same grammar, <code>--layout=tape</code></td><td style="text-align:right">0.12 s </td><td style="text-align:right">40.0 MB/s </td><td style="text-align:right">27 MB </td></tr>
+<tr><td><code>gcc -fsyntax-only</code></td><td style="text-align:right">0.48 s </td><td style="text-align:right">10.4 MB/s </td><td style="text-align:right"></td></tr>
+</tbody>
+</table>
+<p><em>2026-11-05; gcc (Debian 14.2.0-19) 14.2.0;ldd (Debian GLIBC 2.41-12+deb13u4) 2.41; <code>-O2</code>; hbnf 4d2f65a.  <code>gcc -fsyntax-only</code> also checks types and starts once for each file; the tree reads the whole program into memory, the tape a word or two for each token and rule.</em></p>
+<p>&lt;!-- /bench:cspeed --&gt;</p>
+<p>A ladder of binary operators looks once past its first operand (<code>tests/ladder.sh</code>, <code>--no-ladder</code>), and
+alternatives that begin alike read that beginning once (<code>tests/factor.sh</code>, <code>tests/nest.sh</code>, <code>--no-factor</code>).</p>
+<h2>How it is written</h2>
+<ul>
+<li><strong>Typedefs.</strong>  <code>typedef-name = known-type ?! vars</code>, <code>known-type = identifier ? types</code>: an identifier
+is a type if a typedef declarator has added it to the context <code>types</code>, and a variable if a declarator
+has since added it to <code>vars</code> (<code>int f(instr *instr)</code>).  A typedef declarator is `identifier %bind types
++= identifier<code>; a block, a function and a </code>for<code> are </code>%scope`s, so what they bind ends with them.
+<code>variable-name = identifier ?! types | identifier ? vars</code> keeps a typedef name from being a variable.</li>
+<li><strong>Ordered choice without reading twice.</strong>  `assignment-expression = conditional-expression [
+assignment-operator assignment-expression ]<code> (the standard has </code>unary-expression assignment-operator
+assignment-expression | conditional-expression`, which reads the left side twice), and likewise for
+<code>external-declaration</code> and the specifiers.  The tree has an optional field where the standard has an
+alternative.</li>
+<li><strong>The expression levels are the standard's nested rules</strong>, seventeen of them.  Nothing was wrong with
+that for correctness.  A table of levels was tried (<code>%left</code> lines in the manner of yacc) and set aside:
+it needed a construct of its own.</li>
+<li><strong>White space is one scanner</strong> (<code>ws</code>), written once for each backend: blanks, comments, <code>#pragma</code> and
+<code># line</code> (what the preprocessor leaves), and the GNU forms read as white space (<code>__attribute__((..))</code>,
+<code>__asm__(&quot;name&quot;)</code>, <code>__extension__</code>).</li>
+</ul>
+<h2>Not done</h2>
+<p>Keywords outside the standard and GNU's common ones (<code>__label__</code>, <code>typeof</code> is done, <code>_Float128</code> and
+friends are not), a preprocessor, semantic checks (types, undeclared names, constraints such as &quot;two
+or more data types&quot;), and the other backends.</p>
+</body>
+</html>

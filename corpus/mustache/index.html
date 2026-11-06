@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- generated from corpus/mustache/README.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mustache templates in HyperBNF</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>Mustache templates in HyperBNF</h1>
+<p><code>mustache.hbnf</code> is the syntax of a <a href="https://mustache.github.io/mustache.5.html">Mustache</a>
+template: text, <code>{{name}}</code>, <code>{{{name}}}</code>, <code>{{&amp;name}}</code>, <code>{{! comment }}</code>, <code>{{&gt; partial}}</code>,
+<code>{{#section}} ... {{/section}}</code>, <code>{{^inverted}} ... {{/inverted}}</code>, <code>{{=&lt;% %&gt;=}}</code>, and nothing
+of how a template is rendered.  Nineteen rules.</p>
+<p><code>grammars/template.hbnf</code> is a different, smaller Mustache grammar: the one the project renders its own code
+templates with (<code>hbnf_template_syntax*.ad[sb]</code> are what hbnf makes of it).  It reads a section as a tree
+(<code>block = open template close</code>) and checks in the renderer that the closing tag names what the opening one
+did, so it uses no back-reference; it reads a partial and a change of delimiters as tags that the renderer
+refuses; and it allows blanks between <code>{{</code> and a sigil, as the library it replaced did, where this grammar
+follows mustache.js and does not.</p>
+<p>A closing tag has to say the name the opening one did.  That is not context-free, and it is
+what the <strong>back-reference</strong> is for: <code>name as tag</code> keeps the text a name matched, and
+<code>$tag</code> is that text again, later in the same sequence.  It is local to the rule, so
+<code>{{#a}}{{#a}}x{{/a}}{{/a}}</code> closes each section with its own tag, and a backtrack
+restores it with the position.  The same two forms write XML's <code>&lt;a&gt; ... &lt;/a&gt;</code>, a
+here-document's terminator and a raw string's delimiter (<code>tests/backref.sh</code>).</p>
+<p>The details follow mustache.js: the sigil (<code>#</code> <code>^</code> <code>/</code> <code>!</code> <code>&gt;</code> <code>&amp;</code> <code>=</code>) comes right after the
+<code>{{</code>, so <code>{{ /a}}</code> is a variable called <code>/a</code>; a variable is anything up to the first <code>}}</code>,
+with a <code>}</code> allowed inside it, but not nothing; <code>{{{x}}</code> is a variable called <code>{x</code>.</p>
+<h2>Checked against chevron</h2>
+<p><code>sh tests/mustache-diff.sh [N [SEED]]</code> (needs a python with <code>chevron</code> installed, <code>PYTHON=</code>)
+generates random valid templates and mutations of them (a character deleted, inserted,
+replaced, swapped, doubled, the text cut) and asks the parser hbnf makes and
+<code>chevron.render</code> about each (<code>tests/mustache/oracle.py</code>).  With 6,000 and 6,000: every
+valid template accepted, and the same answer on 5,984 of the 6,000 mutations; the other 16 are
+one case, a tag whose text holds a <code>{{</code> (<code>{{&gt;a{{ }}</code>), which hbnf reads to the first <code>}}</code> as
+mustache.js does and chevron refuses.  The oracle is chevron plus two rules it lacks: a tag
+with nothing in it (<code>{{#}}</code>) is an error, and so is a <code>{{</code> that is never closed (chevron lets
+it end the text, mustache.js says &quot;Unclosed tag&quot;).  Finding those, and the generator's own
+mistakes (it put blanks before sigils, which mustache.js does not allow), is what the
+test is for.</p>
+<p>Not done: <code>{{=&lt;% %&gt;=}}</code> is read as a tag but does not change the delimiters.</p>
+<p>In Tree-sitter (`sh tests/treesitter.sh corpus/mustache/mustache.hbnf corpus/mustache/tests/good
+corpus/mustache/tests/bad`) the grammar generates with one declared conflict and parses all 25
+good templates and shows an error on all 13 bad ones.  A Tree-sitter grammar cannot make a
+closing tag repeat the opening one, so the backend writes <code>as</code> and <code>$tag</code> with an external
+scanner (<code>--ts-scanner=FILE</code>, the <code>scanner.c</code> that goes in <code>src/</code>): the scanner keeps each captured
+name in its state, which Tree-sitter saves for every fork, and accepts the closing name only if it
+is the same text.  Without the scanner the closing name is any name, and the five mismatched bad
+cases (<code>{{#a}}x{{/b}}</code>) parse; on 2,000 mutations that left 106 templates only Tree-sitter accepted.
+With it, hbnf and Tree-sitter give the same answer on all 2,000 (1,339 accepted by both, 661
+refused by both; `TSD_GRAMMAR=corpus/mustache/mustache.hbnf TSD_ORACLE=tests/mustache/oracle.py
+TSD_EXT=mustache sh tests/treesitter-diff.sh 2000 2`).</p>
+<p>Running it found three faults in HyperBNF, now fixed: a lookahead inside a rule that is only text
+was silently dropped when the rule was compiled to its automaton; a rule used only in a
+lookahead was left out of the generated parser; and an alias of an optional token
+(<code>blank_2 = blank</code>) failed on nothing, where <code>blank</code> succeeds on it.</p>
+</body>
+</html>

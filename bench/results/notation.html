@@ -1,0 +1,59 @@
+<!doctype html>
+<!-- generated from bench/results/notation.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bench/results/notation.md</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<table>
+<thead>
+<tr><th>language </th><th>notation </th><th style="text-align:right">rules </th><th style="text-align:right">lines </th><th style="text-align:right">symbols </th><th style="text-align:right">characters </th></tr>
+</thead>
+<tbody>
+<tr><td>ALGOL 60 </td><td>the Report's BNF </td><td style="text-align:right">108 </td><td style="text-align:right">116 </td><td style="text-align:right">1246 </td><td style="text-align:right">8064 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/algol60</code>) </td><td style="text-align:right">47 </td><td style="text-align:right">72 </td><td style="text-align:right">528 </td><td style="text-align:right">3604 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>56%</strong></td><td style="text-align:right"><strong>38%</strong></td><td style="text-align:right"><strong>58%</strong></td><td style="text-align:right"><strong>55%</strong></td></tr>
+<tr><td>JSON </td><td>RFC 8259's ABNF </td><td style="text-align:right">30 </td><td style="text-align:right">45 </td><td style="text-align:right">193 </td><td style="text-align:right">949 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/json</code>) </td><td style="text-align:right">17 </td><td style="text-align:right">17 </td><td style="text-align:right">138 </td><td style="text-align:right">653 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>43%</strong></td><td style="text-align:right"><strong>62%</strong></td><td style="text-align:right"><strong>28%</strong></td><td style="text-align:right"><strong>31%</strong></td></tr>
+<tr><td></td><td>HyperBNF with <code>%emit</code>, onto a tape (<code>corpus/json/json-tape.hbnf</code>) </td><td style="text-align:right">17 </td><td style="text-align:right">22 </td><td style="text-align:right">158 </td><td style="text-align:right">755 </td></tr>
+<tr><td></td><td>the same with the C it carries (the tags, the emits) </td><td style="text-align:right">17 </td><td style="text-align:right">28 </td><td style="text-align:right">243 </td><td style="text-align:right">1324 </td></tr>
+<tr><td></td><td>the tape both tape grammars share (<code>runtime/hbnf_tape.h</code>) </td><td style="text-align:right">0 </td><td style="text-align:right">80 </td><td style="text-align:right">331 </td><td style="text-align:right">2037 </td></tr>
+<tr><td>TOML 1.0 </td><td>TOML's ABNF (toml.abnf) </td><td style="text-align:right">124 </td><td style="text-align:right">126 </td><td style="text-align:right">666 </td><td style="text-align:right">4646 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/toml</code>) </td><td style="text-align:right">45 </td><td style="text-align:right">49 </td><td style="text-align:right">600 </td><td style="text-align:right">2682 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>64%</strong></td><td style="text-align:right"><strong>61%</strong></td><td style="text-align:right"><strong>10%</strong></td><td style="text-align:right"><strong>42%</strong></td></tr>
+<tr><td></td><td>HyperBNF with <code>%emit</code>, onto a tape (<code>corpus/toml/toml-tape.hbnf</code>) </td><td style="text-align:right">45 </td><td style="text-align:right">57 </td><td style="text-align:right">635 </td><td style="text-align:right">2853 </td></tr>
+<tr><td></td><td>the same with the C it carries (the tags, the emits) </td><td style="text-align:right">45 </td><td style="text-align:right">63 </td><td style="text-align:right">807 </td><td style="text-align:right">3968 </td></tr>
+<tr><td>C </td><td>32V's cgram.y (mip), 1979 </td><td style="text-align:right">55 </td><td style="text-align:right">386 </td><td style="text-align:right">813 </td><td style="text-align:right">3755 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/c/c79.hbnf</code>) </td><td style="text-align:right">51 </td><td style="text-align:right">75 </td><td style="text-align:right">623 </td><td style="text-align:right">4573 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>7%</strong></td><td style="text-align:right"><strong>81%</strong></td><td style="text-align:right"><strong>23%</strong></td><td style="text-align:right"><strong>-21%</strong></td></tr>
+<tr><td></td><td>HyperBNF with its token rules (<code>corpus/c/c79-words.hbnf</code> too) </td><td style="text-align:right">80 </td><td style="text-align:right">107 </td><td style="text-align:right">937 </td><td style="text-align:right">6073 </td></tr>
+<tr><td></td><td>PCC's cgram.y (NetBSD trunk) </td><td style="text-align:right">84 </td><td style="text-align:right">368 </td><td style="text-align:right">1029 </td><td style="text-align:right">6505 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/c/pcc99.hbnf</code>) </td><td style="text-align:right">79 </td><td style="text-align:right">109 </td><td style="text-align:right">1034 </td><td style="text-align:right">7943 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>6%</strong></td><td style="text-align:right"><strong>70%</strong></td><td style="text-align:right"><strong>0%</strong></td><td style="text-align:right"><strong>-21%</strong></td></tr>
+<tr><td></td><td>HyperBNF with its token rules (<code>corpus/c/pcc99-words.hbnf</code> too) </td><td style="text-align:right">118 </td><td style="text-align:right">157 </td><td style="text-align:right">1489 </td><td style="text-align:right">10360 </td></tr>
+<tr><td></td><td>GCC 4.0.4's c-parse.in (C part) </td><td style="text-align:right">172 </td><td style="text-align:right">892 </td><td style="text-align:right">1930 </td><td style="text-align:right">18966 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/c/gnu99.hbnf</code>) </td><td style="text-align:right">80 </td><td style="text-align:right">120 </td><td style="text-align:right">1080 </td><td style="text-align:right">8414 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>53%</strong></td><td style="text-align:right"><strong>87%</strong></td><td style="text-align:right"><strong>44%</strong></td><td style="text-align:right"><strong>56%</strong></td></tr>
+<tr><td></td><td>HyperBNF with its token rules (<code>corpus/c/gnu99-words.hbnf</code> too) </td><td style="text-align:right">119 </td><td style="text-align:right">169 </td><td style="text-align:right">1539 </td><td style="text-align:right">10888 </td></tr>
+<tr><td>YAML 1.2 </td><td>the YAML 1.2.2 spec's productions </td><td style="text-align:right">201 </td><td style="text-align:right">861 </td><td style="text-align:right">1350 </td><td style="text-align:right">13273 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/yaml</code>) </td><td style="text-align:right">94 </td><td style="text-align:right">109 </td><td style="text-align:right">1423 </td><td style="text-align:right">6287 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>53%</strong></td><td style="text-align:right"><strong>87%</strong></td><td style="text-align:right"><strong>-4%</strong></td><td style="text-align:right"><strong>53%</strong></td></tr>
+<tr><td></td><td>HyperBNF with <code>%emit</code>, onto a tape (<code>corpus/yaml/yaml-tape.hbnf</code>) </td><td style="text-align:right">97 </td><td style="text-align:right">120 </td><td style="text-align:right">1594 </td><td style="text-align:right">7107 </td></tr>
+<tr><td></td><td>the same with the C it carries (the tags, the emits) </td><td style="text-align:right">97 </td><td style="text-align:right">127 </td><td style="text-align:right">1998 </td><td style="text-align:right">9916 </td></tr>
+</tbody>
+</table>
+</body>
+</html>

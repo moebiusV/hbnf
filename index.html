@@ -1,0 +1,487 @@
+<!doctype html>
+<!-- generated from README.md by md2html; edit that file, not this one -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HyperBNF</title>
+<style>
+body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+code { background: #f4f4f4; padding: 0 .2em; }
+pre code { padding: 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: .25rem .6rem; }
+blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid #ccc; color: #555; }
+@media (prefers-color-scheme: dark) { body { color: #ddd; background: #181818; } pre, code { background: #262626; } th, td { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>HyperBNF</h1>
+<blockquote>
+<p><strong>Status, 31 October 2026.</strong>  JSON, TOML and YAML are built and tested in all four backends
+(TOML against toml-test and <code>tomllib</code>, YAML against the YAML test suite and PyYAML), and are
+measured against the libraries people use for them, on glibc.  C is a family of grammars, each
+checked against its own era's yacc grammar and compiler: <code>c79</code> (UNIX/32V's C, run over the 32V
+source tree itself), <code>c89</code>, <code>c99</code>, <code>pcc99</code> (what PCC's <code>cgram.y</code> reads), <code>gnu99</code> (what GCC 4.0.4's
+reads) and <code>c11</code>; the C parser is also measured against <code>gcc -fsyntax-only</code> and run over the
+SQLite amalgamation.  A grammar chooses the structure its parser builds: the typed tree (layout
+<code>ast</code>, the default), a flat tape of words (<code>tape</code>, <code>runtime/hbnf_tape.h</code>), or the daemons' own
+<code>sys/queue.h</code> and <code>sys/tree.h</code> containers (<code>tailq</code>, <code>rb</code>).  <code>%emit</code> blocks write the tape by hand
+where a layout does not fit.  The parsers read alternatives that begin alike once, and a ladder of
+binary operators with one look past its first operand.  The code templates are rendered by the
+project's own Mustache package, <code>HBNF_Template</code>, so libhbnf depends on nothing outside the GNAT
+runtime.
+Next: the tape layout for <code>str</code>, <code>bool</code>, <code>flag</code> and the fixed-width numbers and for the Rust, Zig and
+Ada backends (<code>RFCPLAN.md</code>), C17 and C23 for the C family, the C grammars through LLVM's ORC JIT and
+lld, the C preprocessor grammar and the typedef context for C, error recovery, grammars for COBOL,
+ALGOL 68 and C++ (full GLR where they need it, paid for only by the grammar that uses it), and the
+benchmark of the four backends against each other (the numbers here are the C backend's).</p>
+</blockquote>
+<p><strong>HyperBNF</strong> is a grammar language, and <code>hbnf</code> is the program that reads it: a parser generator
+(a compiler compiler) that emits a parser and its typed tree in C, Rust, Zig or Ada.  The name is an
+homage to the W-grammar and its hyper-rules: a rule may take parameters, and each use becomes an
+ordinary rule before any backend sees it.  It is a superset of BNF, EBNF, ABNF and YBNF (yacc's grammar language).</p>
+<p>The design is for anyone who is comfortable reading the RFCs. HyperBNF makes BNF
+natural and readable the way the RFCs do: a grammar reads like the notation
+RFCs have used for decades, not like a yacc file with embedded C actions.</p>
+<p>It is also a tool for making language models more effective, on one premise: what lessens a
+person's mental load lessens a model's token usage.  A grammar short enough for a person to hold in
+mind is short enough for a model to read and write cheaply, and the same file gives a program its
+parser.  <code>HISTORY.md</code> makes the case, <code>WHY.md</code> counts the tokens, and step 14 of <code>RFCPLAN.md</code> plans
+the emitter that would hand the same grammar to a model's decoder.</p>
+<p>HyperBNF ships with the basic formats ready to use: JSON, TOML and YAML.  Drop one in and you have a
+parser; the grammar is short, readable HyperBNF, so changing it to fit your own needs means editing a
+few lines, not learning a generator.</p>
+<p>Parameterised rules, back-references and context sets carry what a yacc grammar leaves to
+hand-written lexer hacks, which is what context-sensitive languages need.</p>
+<p>ABNF is the starting point because it is the notation the RFCs actually use:
+RFC 5234 defines it, RFC 7405 adds case-sensitive string literals, and dozens
+of newer RFCs specify their protocols in it. Start from the notation people
+already read fluently, and a grammar is documentation first and a parser
+second.</p>
+<p>The OpenBSD configuration file format was the initial inspiration for developing hbnf, but then
+that revealed some problems in the parser generator world that looked like they needed solving.  The
+format, the grammar for it and the daemons it was written for are in <a href="obconf.html"><code>obconf.md</code></a>.</p>
+<h2>Two things</h2>
+<p>This directory holds two things:</p>
+<ol>
+<li><strong>libhbnf</strong>, a static Ada library: the grammar reader, the compilability
+checks and the four emitters (C, Rust, Zig, Ada).  Everything <code>hbnf</code> does is
+in it, and <code>hbnf</code>, the command line, is a thin wrapper over it: argument
+parsing, finding the templates, and printing what the library returns.</li>
+<li><p><strong>The parser generator</strong>, <code>hbnf</code>: read a schema in HyperBNF's ABNF-like
+notation and generate a parser and its typed tree in C, Rust, Zig or Ada.</p>
+<p>hbnf corpus/json/json.hbnf --backend=c|rust|zig|ada</p>
+<p><code>--layout=ast|tape|tailq|rb|NAME</code> picks the structure the parser builds (layouts are directories,
+<code>layouts/NAME/layout.hbnf</code>, found by <code>--layouts=DIR</code> or <code>$HBNF_LAYOUTS</code>), <code>--lint</code> says where an
+ordered choice <code>|</code> could be a union <code>/</code>, and <code>--no-factor</code> and <code>--no-ladder</code> turn off the shared
+reading of alternatives that begin alike and of a ladder of binary operators.</p>
+<p>The generator's documents:</p>
+<ul>
+<li><code>WHY.md</code>: the grammar and its design choices, for an RFC reader;</li>
+<li><code>ABNF.md</code>: the notation against RFC 5234, feature by feature;</li>
+<li><code>CHARLAYER.md</code>: character rules, numeric terminals and UTF-8;</li>
+<li><code>WIRE.md</code>: octets and bit fields (<code>ttl:8</code>, <code>version@0:4</code>), enum numbers
+(<code>&quot;icmp&quot;@1</code>), and parsers that also write bytes back;</li>
+<li><code>RFCPLAN.md</code>: the plan to compile RFC grammars as written;</li>
+<li><code>USENIXSUBMISSION.md</code>: the design paper, with measurements.</li>
+</ul></li>
+</ol>
+<h2>All the documents</h2>
+<p>Every markdown file in the repository, so none is lost; <code>obconf.md</code> lists the ones that belong
+to the OpenBSD configuration files.</p>
+<p><strong>Start here</strong></p>
+<ul>
+<li><a href="TUTORIAL.html"><code>TUTORIAL.md</code></a>: start here: a six-line grammar to a typed tree you can use, in C, Zig, Rust and Ada, and the error messages.</li>
+</ul>
+<p><strong>The design and its plan</strong></p>
+<ul>
+<li><a href="WHY.html"><code>WHY.md</code></a>: the grammar and its design choices, for an RFC reader.</li>
+<li><a href="RFCPLAN.html"><code>RFCPLAN.md</code></a>: the plan, its decisions and its status, step by step.</li>
+<li><a href="ABNF.html"><code>ABNF.md</code></a>: the notation against RFC 5234, feature by feature.</li>
+<li><a href="CONTEXTS.html"><code>CONTEXTS.md</code></a>: design notes, reviewed and kept current: how a rule says it is in a context (an embedded language, a picture string), has an attribute, or is a kind of thing; what is decided and what is built is in the table at the top.</li>
+<li><a href="CHARLAYER.html"><code>CHARLAYER.md</code></a>: character rules, numeric terminals and UTF-8.</li>
+<li><a href="WIRE.html"><code>WIRE.md</code></a>: octets and bit fields, enum numbers, text and bit rules
+together, and parsers that also write bytes back.</li>
+<li><a href="COMPILER-COMPILER.html"><code>COMPILER-COMPILER.md</code></a>: what HyperBNF is as a compiler-compiler.</li>
+<li><a href="METACOMPILERS.html"><code>METACOMPILERS.md</code></a>: hbnf beside META II, IMP72, SNOBOL4 and
+W-grammars.</li>
+<li><a href="IDREF.html"><code>IDREF.md</code></a>: the id-ref serializer output of the C backend.</li>
+<li><a href="USENIXSUBMISSION.html"><code>USENIXSUBMISSION.md</code></a>: the design paper, with measurements.</li>
+<li><a href="HISTORY.html"><code>HISTORY.md</code></a>: a short history of the parser generator.</li>
+<li><a href="STYLE.html"><code>STYLE.md</code></a>: the Ada style the sources follow.</li>
+</ul>
+<p><strong>Grammars, bindings and tests</strong></p>
+<ul>
+<li><a href="obconf.html"><code>obconf.md</code></a>: the OpenBSD configuration file format hbnf started from: its grammar,
+the daemon grammars and bindings (<a href="grammars/index.html"><code>grammars/README.md</code></a>,
+<a href="bindings/index.html"><code>bindings/README.md</code></a>,
+<a href="tests/bytetest/index.html"><code>tests/bytetest/README.md</code></a>), and the name's lineage.</li>
+</ul>
+<p><strong>Corpora</strong> (<a href="corpus/index.html"><code>corpus/README.md</code></a> is the index)</p>
+<ul>
+<li><a href="corpus/rfc/index.html"><code>corpus/rfc/README.md</code></a>: RFC grammar snippets and vectors:
+<a href="corpus/rfc/rfc3986-1.html">RFC 3986</a>, <a href="corpus/rfc/rfc5234-1.html">RFC 5234</a>,
+<a href="corpus/rfc/rfc5322-1.html">RFC 5322</a>, <a href="corpus/rfc/rfc9112-1.html">RFC 9112</a>.</li>
+<li><a href="corpus/posix/shell.html"><code>corpus/posix/shell.md</code></a>: the POSIX shell grammar, read as the standard prints it, checked against dash on every script on the machine.
+(<a href="corpus/posix/posix-shell-1.html"><code>corpus/posix/posix-shell-1.md</code></a> is the standard's text it is read from.)</li>
+<li><a href="corpus/c/index.html"><code>corpus/c/README.md</code></a>: C in six grammars (<code>c79</code>, <code>c89</code>, <code>c99</code>, <code>pcc99</code>, <code>gnu99</code>, <code>c11</code>), each against its era's yacc grammar and compiler; <a href="corpus/c/originals/index.html"><code>corpus/c/originals/README.md</code></a> lists the original grammars they are counted against.</li>
+<li><a href="corpus/algol60/index.html"><code>corpus/algol60/README.md</code></a>: the ALGOL 60 report and its BNF.</li>
+<li><a href="corpus/imp72/index.html"><code>corpus/imp72/README.md</code></a>: the IMP72 compiler's sources (cancelled as a target: IMP72 will get its own compiler).</li>
+<li><a href="corpus/cobol/index.html"><code>corpus/cobol/README.md</code></a>: COBOL in free format, checked against GnuCOBOL's <code>cobc</code>; a core of the language, begun.</li>
+<li><a href="corpus/sgml/index.html"><code>corpus/sgml/README.md</code></a>: SGML (ISO 8879), the part a grammar can read: the DTD's declarations, the SGML declaration and the instance's markup; no oracle was available.</li>
+<li><a href="corpus/mustache/index.html"><code>corpus/mustache/README.md</code></a>: Mustache templates, with the back-reference that makes a closing tag repeat its opening one.</li>
+<li><a href="corpus/json/index.html"><code>corpus/json/README.md</code></a>: JSON in 14 rules, checked against Python's <code>json</code>.</li>
+<li><a href="corpus/toml/index.html"><code>corpus/toml/README.md</code></a>: TOML 1.0 in 46 rules against the ABNF's 124, all 208 valid toml-test files accepted, checked against Python's <code>tomllib</code>.</li>
+<li><a href="corpus/yaml/index.html"><code>corpus/yaml/README.md</code></a>: YAML 1.2, indentation as a number the parser works out, all 308 valid and 89 of 94 invalid cases of the YAML test suite, checked against PyYAML.  The YAML 1.2.2 productions it is counted against are described in <a href="corpus/yaml/originals/index.html"><code>corpus/yaml/originals/README.md</code></a>.</li>
+<li><a href="corpus/graphql/index.html"><code>corpus/graphql/README.md</code></a>: GraphQL (October 2021), the executable language and the type system in 54 rules against the specification's 99, no word reserved where the specification does not reserve it, 145 good and 145 bad files in four backends.</li>
+<li><a href="corpus/js/index.html"><code>corpus/js/README.md</code></a>: JavaScript (ECMAScript 2023), the Script and Module goals in 151 rules against the specification's 303 productions; semicolon insertion and <code>return</code>/<code>++</code>/<code>=&gt;</code> line-end restrictions by <code>eol</code>; the test262 parser tests and V8 as the oracle.</li>
+<li><a href="corpus/bip39/index.html"><code>corpus/bip39/README.md</code></a>: the ten BIP-39 word lists.</li>
+<li><a href="corpus/bech32/index.html"><code>corpus/bech32/README.md</code></a>: bech32 and bech32m.</li>
+</ul>
+<p><strong>Measurements</strong> (<a href="bench/index.html"><code>bench/README.md</code></a> says how they are made)</p>
+<ul>
+<li><a href="bench/results/env.html">environment</a>, <a href="bench/results/headline.html">headline</a>,
+<a href="bench/results/toy.html">toy grammar</a>, <a href="bench/results/hbnf-toy.html">hbnf on the toy</a>,
+<a href="bench/results/yacc.html">yacc</a>, <a href="bench/results/antlr-peg.html">ANTLR and PEG</a>,
+<a href="bench/results/treesitter.html">tree-sitter</a>, <a href="bench/results/libs.html">the libraries</a>,
+<a href="bench/results/cspeed.html">C against gcc</a>, <a href="bench/results/scalar.html">number conversion</a>,
+<a href="bench/results/haskell.html">the Haskell parsers</a>, <a href="bench/results/raku.html">the Raku parsers</a>, <a href="bench/results/notation.html">the size of the notations</a>,
+<a href="bench/results/tokens.html">tokens</a>, <a href="bench/results/corpus.html">the corpora with the old node layout and compact nodes</a>
+(in <a href="bench/results/corpus_rust.html">Rust</a>, <a href="bench/results/corpus_zig.html">Zig</a> and
+<a href="bench/results/corpus_ada.html">Ada</a> too), the daemons' speed (<a href="bench/results/ntpd.html">ntpd</a>, and
+<a href="bench/results/hbnf-pfctl.html">pfctl</a> against <a href="bench/results/pfctl_yacc.html">its yacc</a>) and the size of
+their grammars against <code>parse.y</code> (<a href="bench/results/parsey.html">parsey</a>).</li>
+</ul>
+<p><strong>How much grammar.</strong>  The same language in the published notation and in HyperBNF, with
+comments, blank lines and hbnf's directive lines left out of both
+(<code>bench/notation.sh</code>).  A symbol is a whitespace-separated word.  Mustache is not
+here because it has no published grammar to compare with.</p>
+<p>For C the published grammars are yacc's, counted by their rules alone (the C actions, the
+declarations and the lexer are left out, which favours yacc, and so are the <code>%left</code> precedence
+declarations, which spare a yacc grammar the ladder of expression rules HyperBNF writes out), and each
+is set against the HyperBNF grammar of the C it reads: UNIX/32V's (1979) against <code>c79.hbnf</code>; PCC's
+against <code>pcc99.hbnf</code>, which is C99, the C11 forms PCC's grammar has, and its subset of the GNU
+extensions; and GCC 4.0.4's against <code>gnu99.hbnf</code>, C99 and the GNU extensions its grammar reads.  Each C
+grammar is counted alone, and then with the token rules that do the lexer's work.  For YAML the
+published side is the specification's own productions.  HyperBNF puts alternatives on one line, so it
+takes far fewer lines than any of them.  Against the yacc grammars of 32V, PCC and GCC it takes fewer
+rules, and about as many symbols or fewer (PCC's, within half a percent); in characters it is larger than
+32V's and PCC's, because its rules are named as the standard names them and a yacc grammar's are short,
+and smaller than GCC's.</p>
+<p>&lt;!-- bench:notation --&gt;</p>
+<table>
+<thead>
+<tr><th>language </th><th>notation </th><th style="text-align:right">rules </th><th style="text-align:right">lines </th><th style="text-align:right">symbols </th><th style="text-align:right">characters </th></tr>
+</thead>
+<tbody>
+<tr><td>ALGOL 60 </td><td>the Report's BNF </td><td style="text-align:right">108 </td><td style="text-align:right">116 </td><td style="text-align:right">1246 </td><td style="text-align:right">8064 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/algol60</code>) </td><td style="text-align:right">47 </td><td style="text-align:right">72 </td><td style="text-align:right">528 </td><td style="text-align:right">3604 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>56%</strong></td><td style="text-align:right"><strong>38%</strong></td><td style="text-align:right"><strong>58%</strong></td><td style="text-align:right"><strong>55%</strong></td></tr>
+<tr><td>JSON </td><td>RFC 8259's ABNF </td><td style="text-align:right">30 </td><td style="text-align:right">45 </td><td style="text-align:right">193 </td><td style="text-align:right">949 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/json</code>) </td><td style="text-align:right">17 </td><td style="text-align:right">17 </td><td style="text-align:right">138 </td><td style="text-align:right">653 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>43%</strong></td><td style="text-align:right"><strong>62%</strong></td><td style="text-align:right"><strong>28%</strong></td><td style="text-align:right"><strong>31%</strong></td></tr>
+<tr><td></td><td>HyperBNF with <code>%emit</code>, onto a tape (<code>corpus/json/json-tape.hbnf</code>) </td><td style="text-align:right">17 </td><td style="text-align:right">22 </td><td style="text-align:right">158 </td><td style="text-align:right">755 </td></tr>
+<tr><td></td><td>the same with the C it carries (the tags, the emits) </td><td style="text-align:right">17 </td><td style="text-align:right">28 </td><td style="text-align:right">243 </td><td style="text-align:right">1324 </td></tr>
+<tr><td></td><td>the tape both tape grammars share (<code>runtime/hbnf_tape.h</code>) </td><td style="text-align:right">0 </td><td style="text-align:right">80 </td><td style="text-align:right">331 </td><td style="text-align:right">2037 </td></tr>
+<tr><td>TOML 1.0 </td><td>TOML's ABNF (toml.abnf) </td><td style="text-align:right">124 </td><td style="text-align:right">126 </td><td style="text-align:right">666 </td><td style="text-align:right">4646 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/toml</code>) </td><td style="text-align:right">45 </td><td style="text-align:right">49 </td><td style="text-align:right">600 </td><td style="text-align:right">2682 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>64%</strong></td><td style="text-align:right"><strong>61%</strong></td><td style="text-align:right"><strong>10%</strong></td><td style="text-align:right"><strong>42%</strong></td></tr>
+<tr><td></td><td>HyperBNF with <code>%emit</code>, onto a tape (<code>corpus/toml/toml-tape.hbnf</code>) </td><td style="text-align:right">45 </td><td style="text-align:right">57 </td><td style="text-align:right">635 </td><td style="text-align:right">2853 </td></tr>
+<tr><td></td><td>the same with the C it carries (the tags, the emits) </td><td style="text-align:right">45 </td><td style="text-align:right">63 </td><td style="text-align:right">807 </td><td style="text-align:right">3968 </td></tr>
+<tr><td>C </td><td>32V's cgram.y (mip), 1979 </td><td style="text-align:right">55 </td><td style="text-align:right">386 </td><td style="text-align:right">813 </td><td style="text-align:right">3755 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/c/c79.hbnf</code>) </td><td style="text-align:right">51 </td><td style="text-align:right">75 </td><td style="text-align:right">623 </td><td style="text-align:right">4573 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>7%</strong></td><td style="text-align:right"><strong>81%</strong></td><td style="text-align:right"><strong>23%</strong></td><td style="text-align:right"><strong>-21%</strong></td></tr>
+<tr><td></td><td>HyperBNF with its token rules (<code>corpus/c/c79-words.hbnf</code> too) </td><td style="text-align:right">80 </td><td style="text-align:right">107 </td><td style="text-align:right">937 </td><td style="text-align:right">6073 </td></tr>
+<tr><td></td><td>PCC's cgram.y (NetBSD trunk) </td><td style="text-align:right">84 </td><td style="text-align:right">368 </td><td style="text-align:right">1029 </td><td style="text-align:right">6505 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/c/pcc99.hbnf</code>) </td><td style="text-align:right">79 </td><td style="text-align:right">109 </td><td style="text-align:right">1034 </td><td style="text-align:right">7943 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>6%</strong></td><td style="text-align:right"><strong>70%</strong></td><td style="text-align:right"><strong>0%</strong></td><td style="text-align:right"><strong>-21%</strong></td></tr>
+<tr><td></td><td>HyperBNF with its token rules (<code>corpus/c/pcc99-words.hbnf</code> too) </td><td style="text-align:right">118 </td><td style="text-align:right">157 </td><td style="text-align:right">1489 </td><td style="text-align:right">10360 </td></tr>
+<tr><td></td><td>GCC 4.0.4's c-parse.in (C part) </td><td style="text-align:right">172 </td><td style="text-align:right">892 </td><td style="text-align:right">1930 </td><td style="text-align:right">18966 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/c/gnu99.hbnf</code>) </td><td style="text-align:right">80 </td><td style="text-align:right">120 </td><td style="text-align:right">1080 </td><td style="text-align:right">8414 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>53%</strong></td><td style="text-align:right"><strong>87%</strong></td><td style="text-align:right"><strong>44%</strong></td><td style="text-align:right"><strong>56%</strong></td></tr>
+<tr><td></td><td>HyperBNF with its token rules (<code>corpus/c/gnu99-words.hbnf</code> too) </td><td style="text-align:right">119 </td><td style="text-align:right">169 </td><td style="text-align:right">1539 </td><td style="text-align:right">10888 </td></tr>
+<tr><td>YAML 1.2 </td><td>the YAML 1.2.2 spec's productions </td><td style="text-align:right">201 </td><td style="text-align:right">861 </td><td style="text-align:right">1350 </td><td style="text-align:right">13273 </td></tr>
+<tr><td></td><td>HyperBNF (<code>corpus/yaml</code>) </td><td style="text-align:right">94 </td><td style="text-align:right">109 </td><td style="text-align:right">1423 </td><td style="text-align:right">6287 </td></tr>
+<tr><td></td><td><strong>saved</strong></td><td style="text-align:right"><strong>53%</strong></td><td style="text-align:right"><strong>87%</strong></td><td style="text-align:right"><strong>-4%</strong></td><td style="text-align:right"><strong>53%</strong></td></tr>
+<tr><td></td><td>HyperBNF with <code>%emit</code>, onto a tape (<code>corpus/yaml/yaml-tape.hbnf</code>) </td><td style="text-align:right">97 </td><td style="text-align:right">120 </td><td style="text-align:right">1594 </td><td style="text-align:right">7107 </td></tr>
+<tr><td></td><td>the same with the C it carries (the tags, the emits) </td><td style="text-align:right">97 </td><td style="text-align:right">127 </td><td style="text-align:right">1998 </td><td style="text-align:right">9916 </td></tr>
+</tbody>
+</table>
+<p>&lt;!-- /bench:notation --&gt;</p>
+<h2>Performance</h2>
+<p>hbnf's generated C parser against the tools it is usually compared with, on one
+toy language written once for each, at 100,000 and 1,000,000 rules.  Every
+figure is the output of <code>bench/run.sh</code>, put here by <code>bench/update-docs.sh</code>;
+<code>WHY.md</code> has the full table and what the numbers do and do not say.</p>
+<p>&lt;!-- bench:headline --&gt;</p>
+<p><strong>100,000 rules</strong> (7.68 MB, the same file for every tool):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">input </th><th style="text-align:right">parse time </th><th style="text-align:right">rules/s </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend) </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">15 ms </td><td style="text-align:right">6.8 M rules/s </td><td style="text-align:right">526 MB/s </td><td style="text-align:right">17 MB </td></tr>
+<tr><td>byacc + flex </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">52 ms </td><td style="text-align:right">1.9 M rules/s </td><td style="text-align:right">147 MB/s </td><td style="text-align:right">29 MB </td></tr>
+<tr><td>bison + flex </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">53 ms </td><td style="text-align:right">1.9 M rules/s </td><td style="text-align:right">146 MB/s </td><td style="text-align:right">29 MB </td></tr>
+<tr><td>tree-sitter 0.27.1 </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">213 ms </td><td style="text-align:right">0.5 M rules/s </td><td style="text-align:right">36 MB/s </td><td style="text-align:right">58 MB </td></tr>
+<tr><td>ANTLR 4 (Java), actions, cold JVM </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">301 ms </td><td style="text-align:right">0.3 M rules/s </td><td style="text-align:right">25 MB/s </td><td style="text-align:right">217 MB </td></tr>
+<tr><td>ANTLR 4 (Java), actions, warm JVM </td><td style="text-align:right">7.68 MB </td><td style="text-align:right">95 ms </td><td style="text-align:right">1.1 M rules/s </td><td style="text-align:right">81 MB/s </td><td style="text-align:right">471 MB </td></tr>
+</tbody>
+</table>
+<p><strong>1,000,000 rules</strong> (76.86 MB, the same file for every tool):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">input </th><th style="text-align:right">parse time </th><th style="text-align:right">rules/s </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend) </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">148 ms </td><td style="text-align:right">6.8 M rules/s </td><td style="text-align:right">520 MB/s </td><td style="text-align:right">137 MB </td></tr>
+<tr><td>byacc + flex </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">523 ms </td><td style="text-align:right">1.9 M rules/s </td><td style="text-align:right">147 MB/s </td><td style="text-align:right">273 MB </td></tr>
+<tr><td>bison + flex </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">532 ms </td><td style="text-align:right">1.9 M rules/s </td><td style="text-align:right">144 MB/s </td><td style="text-align:right">273 MB </td></tr>
+<tr><td>tree-sitter 0.27.1 </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">2164 ms </td><td style="text-align:right">0.5 M rules/s </td><td style="text-align:right">36 MB/s </td><td style="text-align:right">564 MB </td></tr>
+<tr><td>ANTLR 4 (Java), actions, cold JVM </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">1601 ms </td><td style="text-align:right">0.6 M rules/s </td><td style="text-align:right">48 MB/s </td><td style="text-align:right">1177 MB </td></tr>
+<tr><td>ANTLR 4 (Java), actions, warm JVM </td><td style="text-align:right">76.86 MB </td><td style="text-align:right">1171 ms </td><td style="text-align:right">0.9 M rules/s </td><td style="text-align:right">66 MB/s </td><td style="text-align:right">2110 MB </td></tr>
+</tbody>
+</table>
+<p><em>Measured 2026-11-05 on AMD Ryzen 5 7600 6-Core Processor (12 threads), load 3.27 on the host, hbnf c4d9370; gcc 14, byacc 20241231, bison 3.8.2, flex 2.6.4, peg/leg 0.1.18, tree-sitter 0.27.1, ANTLR 4.13.2 on 21.0.12.1 2026-08-18; best of up to 5 runs (two at least, fewer for a parser that takes seconds, so that no parser costs more than about 30 s), one process per run, <code>gcc -O2</code>.</em></p>
+<p>&lt;!-- /bench:headline --&gt;</p>
+<h3>JSON, TOML, YAML and XML against the parsers people use</h3>
+<p>The same four documents against the parsers people use for each format: the popular C, C++ and
+Rust libraries, built from one source with the same flags, and the parsers that Python and Node
+programs call.  All of it runs on glibc (Debian).  The libraries were picked by GitHub stars and
+package downloads, limited to what Debian packages or ships as a single file.  For XML they are
+expat (the base of Python's pyexpat and ElementTree, of Firefox and Apache), libxml2 (the base of lxml
+and xmllint), pugixml, TinyXML-2 and RapidXML (the original 1.13, unmaintained since 2009), the Python
+and Node parsers (ElementTree, lxml, the raw <code>xml.parsers.expat</code>, fast-xml-parser and sax), against the
+typed tree of <code>corpus/xml/xml.hbnf</code>.  The XML table has a column that says what each parser hands the
+program, because they differ most there: expat, libxml2's SAX2 interface, pyexpat and sax are event
+parsers that build nothing (the expat row that copies names, attributes and text into arrays shows the
+price of a cheap tree), pugixml, TinyXML-2, RapidXML, libxml2, ElementTree and lxml build a DOM, and
+every XML parser has to find the same elements, attributes and text as ElementTree or its row says
+<code>check failed</code>.  The last column says whether the parser is a conforming XML 1.0 parser: how many of 34 documents that each break one well-formedness constraint it refuses (and, not shown, whether it accepts 11 well-formed ones), by <code>bench/xml-conformance.sh</code>, which keeps its result and checks a parser again only when its version, the case set or hbnf's grammar changes.  expat, libxml2, ElementTree and lxml refuse all 34; hbnf's grammar does since 2026-11-04; pugixml (8), RapidXML (7), TinyXML-2 (9), sax (20) and fast-xml-parser's <code>parse</code> (0) are marked with a red cross, because they accept content XML forbids, and their times are not like for like with the others.  What each builds
+differs: the C++ and Rust libraries, Python, Node and the YAML parsers produce their own value
+types, simdjson is its DOM API, and hbnf builds the typed tree its grammar describes.  Peak RSS is
+the whole process, input included, and the last column shows it as a multiple of the input.  The
+numbers are <code>bench/libs.sh</code>.</p>
+<p>&lt;!-- bench:libs --&gt;</p>
+<p><strong>JSON</strong> (2.00 MB, the same file for every tool; best of up to 9 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th style="text-align:right">RSS over the input </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), %emit tape </td><td style="text-align:right">2.2 ms </td><td style="text-align:right">922 MB/s </td><td style="text-align:right">4 MB </td><td style="text-align:right">1.6x </td></tr>
+<tr><td>simdjson (DOM) </td><td style="text-align:right">2.3 ms </td><td style="text-align:right">870 MB/s </td><td style="text-align:right">12 MB </td><td style="text-align:right">5.6x </td></tr>
+<tr><td>hbnf (C backend), typed tree </td><td style="text-align:right">2.8 ms </td><td style="text-align:right">727 MB/s </td><td style="text-align:right">7 MB </td><td style="text-align:right">2.7x </td></tr>
+<tr><td>RapidJSON </td><td style="text-align:right">5.1 ms </td><td style="text-align:right">393 MB/s </td><td style="text-align:right">9 MB </td><td style="text-align:right">3.9x </td></tr>
+<tr><td>Node JSON.parse </td><td style="text-align:right">9.6 ms </td><td style="text-align:right">207 MB/s </td><td style="text-align:right">54 MB </td><td style="text-align:right">27.7x </td></tr>
+<tr><td>Python json </td><td style="text-align:right">12 ms </td><td style="text-align:right">170 MB/s </td><td style="text-align:right">20 MB </td><td style="text-align:right">9.7x </td></tr>
+<tr><td>cJSON </td><td style="text-align:right">12 ms </td><td style="text-align:right">166 MB/s </td><td style="text-align:right">17 MB </td><td style="text-align:right">8.1x </td></tr>
+<tr><td>serde_json (Rust) 1.0.154 </td><td style="text-align:right">14 ms </td><td style="text-align:right">145 MB/s </td><td style="text-align:right">20 MB </td><td style="text-align:right">9.8x </td></tr>
+<tr><td>Jansson </td><td style="text-align:right">29 ms </td><td style="text-align:right">69 MB/s </td><td style="text-align:right">20 MB </td><td style="text-align:right">9.7x </td></tr>
+</tbody>
+</table>
+<p><strong>TOML 1.0</strong> (1.99 MB, the same file for every tool; best of up to 9 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th style="text-align:right">RSS over the input </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), %emit tape </td><td style="text-align:right">5.1 ms </td><td style="text-align:right">391 MB/s </td><td style="text-align:right">5 MB </td><td style="text-align:right">2.0x </td></tr>
+<tr><td>hbnf (C backend), typed tree </td><td style="text-align:right">5.8 ms </td><td style="text-align:right">345 MB/s </td><td style="text-align:right">10 MB </td><td style="text-align:right">4.3x </td></tr>
+<tr><td>tomlc17 </td><td style="text-align:right">38 ms </td><td style="text-align:right">52 MB/s </td><td style="text-align:right">17 MB </td><td style="text-align:right">8.3x </td></tr>
+<tr><td>toml++ </td><td style="text-align:right">45 ms </td><td style="text-align:right">44 MB/s </td><td style="text-align:right">26 MB </td><td style="text-align:right">13.1x </td></tr>
+<tr><td>toml (Rust) 0.9.12+spec-1.1.0 </td><td style="text-align:right">59 ms </td><td style="text-align:right">34 MB/s </td><td style="text-align:right">57 MB </td><td style="text-align:right">29.4x </td></tr>
+<tr><td>Python tomllib </td><td style="text-align:right">255 ms </td><td style="text-align:right">8 MB/s </td><td style="text-align:right">26 MB </td><td style="text-align:right">12.8x </td></tr>
+<tr><td>toml11 </td><td style="text-align:right">650 ms </td><td style="text-align:right">3 MB/s </td><td style="text-align:right">93 MB </td><td style="text-align:right">48.5x </td></tr>
+</tbody>
+</table>
+<p><strong>YAML 1.2</strong> (1.99 MB, the same file for every tool; best of up to 9 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th style="text-align:right">RSS over the input </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), %emit tape </td><td style="text-align:right">7.5 ms </td><td style="text-align:right">264 MB/s </td><td style="text-align:right">5 MB </td><td style="text-align:right">1.7x </td></tr>
+<tr><td>hbnf (C backend), typed tree </td><td style="text-align:right">12 ms </td><td style="text-align:right">160 MB/s </td><td style="text-align:right">18 MB </td><td style="text-align:right">8.9x </td></tr>
+<tr><td>rapidyaml </td><td style="text-align:right">21 ms </td><td style="text-align:right">93 MB/s </td><td style="text-align:right">25 MB </td><td style="text-align:right">12.4x </td></tr>
+<tr><td>libyaml </td><td style="text-align:right">42 ms </td><td style="text-align:right">48 MB/s </td><td style="text-align:right">39 MB </td><td style="text-align:right">19.8x </td></tr>
+<tr><td>libfyaml </td><td style="text-align:right">69 ms </td><td style="text-align:right">29 MB/s </td><td style="text-align:right">84 MB </td><td style="text-align:right">43.6x </td></tr>
+<tr><td>js-yaml (Node) </td><td style="text-align:right">123 ms </td><td style="text-align:right">16 MB/s </td><td style="text-align:right">81 MB </td><td style="text-align:right">41.8x </td></tr>
+<tr><td>yaml-cpp </td><td style="text-align:right">287 ms </td><td style="text-align:right">7 MB/s </td><td style="text-align:right">110 MB </td><td style="text-align:right">57.3x </td></tr>
+<tr><td>PyYAML on libyaml (C) </td><td style="text-align:right">709 ms </td><td style="text-align:right">3 MB/s </td><td style="text-align:right">118 MB </td><td style="text-align:right">61.1x </td></tr>
+</tbody>
+</table>
+<p><strong>XML 1.0</strong> (2.00 MB, the same file for every tool; best of up to 9 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th>builds </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th style="text-align:right">RSS over the input </th><th style="text-align:right">conforms to XML 1.0 (refuses the 34 ill-formed documents) </th></tr>
+</thead>
+<tbody>
+<tr><td>pugixml </td><td>DOM, in place </td><td style="text-align:right">2.8 ms </td><td style="text-align:right">719 MB/s </td><td style="text-align:right">10 MB </td><td style="text-align:right">4.6x </td><td style="text-align:right">❌ 8 of 34 </td></tr>
+<tr><td>hbnf (C backend), tape </td><td>a flat tape of 64-bit words </td><td style="text-align:right">3.5 ms </td><td style="text-align:right">564 MB/s </td><td style="text-align:right">5 MB </td><td style="text-align:right">2.1x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>RapidXML </td><td>DOM, in place </td><td style="text-align:right">3.9 ms </td><td style="text-align:right">515 MB/s </td><td style="text-align:right">13 MB </td><td style="text-align:right">5.9x </td><td style="text-align:right">❌ 7 of 34 </td></tr>
+<tr><td>hbnf (C backend), tree </td><td>the grammar's typed tree </td><td style="text-align:right">4.3 ms </td><td style="text-align:right">462 MB/s </td><td style="text-align:right">10 MB </td><td style="text-align:right">4.5x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>libxml2, SAX2 events only </td><td>nothing (handlers count) </td><td style="text-align:right">4.8 ms </td><td style="text-align:right">415 MB/s </td><td style="text-align:right">6 MB </td><td style="text-align:right">2.4x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>expat, events only </td><td>nothing (handlers count) </td><td style="text-align:right">8.4 ms </td><td style="text-align:right">238 MB/s </td><td style="text-align:right">5 MB </td><td style="text-align:right">1.8x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>Python xml.parsers.expat, no handlers </td><td>nothing (well-formedness only) </td><td style="text-align:right">9.1 ms </td><td style="text-align:right">219 MB/s </td><td style="text-align:right">12 MB </td><td style="text-align:right">5.7x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>TinyXML-2 </td><td>DOM </td><td style="text-align:right">10 ms </td><td style="text-align:right">196 MB/s </td><td style="text-align:right">17 MB </td><td style="text-align:right">8.1x </td><td style="text-align:right">❌ 9 of 34 </td></tr>
+<tr><td>expat, events copied into a tree </td><td>a cheap tree of copies </td><td style="text-align:right">12 ms </td><td style="text-align:right">163 MB/s </td><td style="text-align:right">11 MB </td><td style="text-align:right">5.1x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>libxml2, DOM </td><td>DOM </td><td style="text-align:right">17 ms </td><td style="text-align:right">115 MB/s </td><td style="text-align:right">29 MB </td><td style="text-align:right">14.6x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>lxml (Python) </td><td>Element tree on libxml2 </td><td style="text-align:right">25 ms </td><td style="text-align:right">81 MB/s </td><td style="text-align:right">42 MB </td><td style="text-align:right">21.1x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>Python xml.etree.ElementTree </td><td>Element tree </td><td style="text-align:right">31 ms </td><td style="text-align:right">65 MB/s </td><td style="text-align:right">30 MB </td><td style="text-align:right">14.9x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>Python xml.parsers.expat, Python callbacks </td><td>nothing (Python callbacks count) </td><td style="text-align:right">32 ms </td><td style="text-align:right">63 MB/s </td><td style="text-align:right">13 MB </td><td style="text-align:right">5.8x </td><td style="text-align:right">34 of 34 </td></tr>
+<tr><td>sax (Node) </td><td>nothing (handlers count) </td><td style="text-align:right">114 ms </td><td style="text-align:right">18 MB/s </td><td style="text-align:right">69 MB </td><td style="text-align:right">35.5x </td><td style="text-align:right">❌ 20 of 34 </td></tr>
+<tr><td>fast-xml-parser (Node) </td><td>JavaScript objects </td><td style="text-align:right">271 ms </td><td style="text-align:right">7 MB/s </td><td style="text-align:right">113 MB </td><td style="text-align:right">58.4x </td><td style="text-align:right">❌ 0 of 34 </td></tr>
+</tbody>
+</table>
+<p><em>2026-11-05; glibc 2.41, gcc (Debian 14.2.0-19) 14.2.0, node 20.19.2, Python 3.13.5; <code>-O2</code>, the same sources and flags for every native library; hbnf f95d41d.  simdjson is its DOM API; the C++ and Rust libraries, Python, Node and the YAML parsers build their own value types, and hbnf builds the typed tree its grammar describes, except in the row that says <code>%emit tape</code>: that grammar writes a flat tape of 64-bit words and builds no tree.  The XML parsers: expat 2.9.0, libxml2 2.12.7, pugixml 1.14, TinyXML-2 11.0.0, RapidXML 1.13 (Marcin Kalicinski's original, unmaintained since 2009), lxml 5.4.0, fast-xml-parser 5.11.2, sax 1.6.1; the first six are Debian packages, the Node ones are locked by <code>bench/libs/node/package-lock.json</code>.  Every XML parser reads the same catalog and must find the same number of elements, of attributes (not counting xmlns declarations) and of non-blank bytes of text, references decoded, as ElementTree does (a driver that cannot count something does not, and a mismatch is a <code>check failed</code> row).  The time is the parse call alone; the counting walks of the tree parsers come after the clock.  expat, libxml2's SAX2 and sax build nothing, their handlers count, and the expat row that copies makes a small tree of names, attributes and text.  pugixml and RapidXML parse the buffer in place, the others leave it alone.  hbnf's XML grammar is measured twice: its typed tree and the same grammar under <code>--layout=tape</code> (the tape holds the elements, attributes and texts as 64-bit words; the driver counts from it), and that tree and that tape is the grammar's concrete syntax (a reference is a node and characters are not decoded).  The last column is <code>bench/xml-conformance.sh</code> (<code>bench/results/xml-conformance.md</code>): of 34 documents that each break one well-formedness constraint of XML 1.0 (a forbidden control character, invalid UTF-8, <code>]]&gt;</code> or <code>&lt;</code> where they may not be, two root elements, a bad character reference, a duplicate attribute, an undeclared entity ...), how many the parser refuses; ❌ marks a parser that does not refuse all of them or refuses a well-formed one; conforming parsers are left unmarked.  Expat, libxml2, ElementTree and lxml refuse all of them (34 of 34).  <strong>pugixml (8 of 34), TinyXML-2 (9 of 34) and RapidXML (7 of 34) are not conforming XML parsers</strong>: they check the structure of the tags and accept most content that XML forbids, and fast-xml-parser's <code>parse</code> (0 of 34) does not check well-formedness at all (the library has a separate <code>XMLValidator</code>, which this table does not time).  hbnf's grammar refuses 34 of 34.  A parser that skips checks does less work, so the time column is not like for like for the marked rows.  The check is done once and kept: a parser is checked again only when its version, the case set or, for hbnf, its grammar or generator changes.  <strong>Measured on a busy machine, as quiet as it would get</strong> (<code>fuzzy_search</code> on cores 0-4 and a VM; the YAML probe read 18.0-19.2 ms before and after, against 8.4-9.6 when quiet; load average 9; best of 9 runs each in place of 5, to catch the quieter moments; one core).  The reference rows say how much it cost: RapidJSON 5.1 ms (5.0 quiet), tomlc17 38 (36-38) and libyaml 42 (37-41) are at their quiet readings, simdjson 2.3 (1.7) and rapidyaml 21 (15-18) are 20-35% high, and the XML parsers other than hbnf reproduce their quiet readings (libxml2 SAX2 4.8 ms, expat 8.4).  hbnf's own rows are the ones the load hurts most, because it allocates and touches many fresh pages and a page fault costs about three times as much under this load (its JSON tree read 1.9 ms and its YAML tree 8.5 on the last quiet run, its XML tree 3.4 before the grammar was made conforming): read them as upper bounds.  No figure has been adjusted.  A quiet rerun is in TODO.md.</em></p>
+<p>&lt;!-- /bench:libs --&gt;</p>
+<p>On TOML the generated parser is the fastest by a wide margin.  On JSON the parser that writes a tape
+(<code>corpus/json/json-tape.hbnf</code>) is close to the SIMD parser simdjson, uses less than half its memory, and the
+typed-tree parser is ahead of everything else; on YAML both are ahead of rapidyaml, libyaml, libfyaml,
+js-yaml, yaml-cpp and PyYAML, which build generic node trees.  The rows that say <code>%emit tape</code> build a
+flat array of words and no tree (<code>runtime/hbnf_tape.h</code>); the others build the typed tree the grammar
+describes.  <code>--layout=tape</code> makes any grammar's parser write such a tape, with no <code>%emit</code> in the grammar.  A program reading a tape converts a number or string with <code>runtime/hbnf_scalar.h</code>, which <code>bench/scalar.sh</code> compares with fast_float.</p>
+<h3>C against gcc</h3>
+<p>The C11 grammar (<code>corpus/c/c11.hbnf</code>) on the same footing: preprocessed C from Lua, zlib and the SQLite
+amalgamation, read by the generated parser as a typed tree and as a tape, and by <code>gcc -fsyntax-only</code>,
+which also checks types.  The typed tree holds a node for every level of the expression grammar, which
+is why it is the large one; the tape holds a word or two for each token and rule.  The numbers are
+<code>bench/cspeed.sh</code>.</p>
+<p>&lt;!-- bench:cspeed --&gt;</p>
+<p><strong>47 translation units, 5.0 MB of preprocessed C</strong> (Lua 5.4.7, zlib 1.3.1, the SQLite 3.45.1 amalgamation; best of 5 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak memory, the largest unit alone (2.5 MB of C) </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), the C11 grammar, typed tree </td><td style="text-align:right">0.20 s </td><td style="text-align:right">24.4 MB/s </td><td style="text-align:right">47 MB </td></tr>
+<tr><td>hbnf (C backend), the same grammar, <code>--layout=tape</code></td><td style="text-align:right">0.12 s </td><td style="text-align:right">40.0 MB/s </td><td style="text-align:right">27 MB </td></tr>
+<tr><td><code>gcc -fsyntax-only</code></td><td style="text-align:right">0.48 s </td><td style="text-align:right">10.4 MB/s </td><td style="text-align:right"></td></tr>
+</tbody>
+</table>
+<p><em>2026-11-05; gcc (Debian 14.2.0-19) 14.2.0;ldd (Debian GLIBC 2.41-12+deb13u4) 2.41; <code>-O2</code>; hbnf 4d2f65a.  <code>gcc -fsyntax-only</code> also checks types and starts once for each file; the tree reads the whole program into memory, the tape a word or two for each token and rule.</em></p>
+<p>&lt;!-- /bench:cspeed --&gt;</p>
+<h3>Against Haskell's Alex and Happy</h3>
+<p><code>sh bench/haskell.sh</code> runs the parsers Haskell programs use for the same three documents, in a Debian
+container, on the cpu the other benchmarks use: <code>toml-parser</code>, which is an Alex lexer and a Happy parser
+(its grammar is also built again with the generators in their optimising modes); a JSON grammar in Alex
+and Happy, written for the comparison because no complete one is published, in the form the tutorials
+give and tuned; <code>aeson</code>; and, for YAML, for which no Alex and Happy parser is known, HsYAML (pure Haskell)
+and the <code>yaml</code> package on libyaml.  Every parser is asked about the good and bad files of the format's
+corpus before it is timed, and the table says where one disagrees.</p>
+<p>&lt;!-- bench:haskell --&gt;</p>
+<p><strong>JSON</strong> (2.00 MB, the same file for every tool; best of up to 5 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th>what it builds, and the corpus </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), %emit tape </td><td style="text-align:right">1.7 ms </td><td style="text-align:right">1150 MB/s </td><td style="text-align:right">5 MB </td><td>checked by tests/emit.sh against the corpus; a tape, text as offsets </td></tr>
+<tr><td>aeson </td><td style="text-align:right">41 ms </td><td style="text-align:right">49 MB/s </td><td style="text-align:right">34 MB </td><td>agrees with the corpus (75 files); a Value, text and numbers converted </td></tr>
+<tr><td>Alex and Happy, tuned </td><td style="text-align:right">109 ms </td><td style="text-align:right">18 MB/s </td><td style="text-align:right">48 MB </td><td>agrees with the corpus (75 files); a tree, text as slices of the input </td></tr>
+<tr><td>Alex and Happy, as the tutorials write it </td><td style="text-align:right">204 ms </td><td style="text-align:right">10 MB/s </td><td style="text-align:right">92 MB </td><td>agrees with the corpus (75 files); a tree, text as slices of the input </td></tr>
+</tbody>
+</table>
+<p><strong>TOML 1.0</strong> (1.99 MB, the same file for every tool; best of up to 5 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th>what it builds, and the corpus </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), %emit tape </td><td style="text-align:right">5.3 ms </td><td style="text-align:right">377 MB/s </td><td style="text-align:right">8 MB </td><td>checked by tests/emit.sh against the corpus; a tape, text as offsets </td></tr>
+<tr><td>toml-parser (Alex, Happy), generators in optimising modes </td><td style="text-align:right">291 ms </td><td style="text-align:right">7 MB/s </td><td style="text-align:right">188 MB </td><td>agrees with the corpus (31 files); a list of expressions, text as String </td></tr>
+<tr><td>toml-parser (Alex, Happy), as Debian ships it </td><td style="text-align:right">327 ms </td><td style="text-align:right">6 MB/s </td><td style="text-align:right">188 MB </td><td>agrees with the corpus (31 files); a list of expressions, text as String </td></tr>
+</tbody>
+</table>
+<p><strong>YAML 1.2</strong> (1.99 MB, the same file for every tool; best of up to 5 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th>what it builds, and the corpus </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), %emit tape </td><td style="text-align:right">7.0 ms </td><td style="text-align:right">282 MB/s </td><td style="text-align:right">5 MB </td><td>checked by tests/emit.sh against the corpus; a tape, text as offsets </td></tr>
+<tr><td>yaml (libyaml) into a Value </td><td style="text-align:right">272 ms </td><td style="text-align:right">7 MB/s </td><td style="text-align:right">75 MB </td><td>differs from the corpus on: docs.yaml explicit-key.yaml flow-dedent.yaml; a Value, text converted </td></tr>
+<tr><td>HsYAML (events) </td><td style="text-align:right">6.02 s </td><td style="text-align:right">0 MB/s </td><td style="text-align:right">17 MB </td><td>agrees with the corpus (36 files); the event stream </td></tr>
+</tbody>
+</table>
+<p><em>2026-10-28; amd64, glibc (Debian), GHC 9.6.6, Alex 3.4.0.1, Happy 1.20.1.1; <code>-O2</code>; hbnf eac77a0.  The Haskell parsers are the syntax alone, as hbnf's are: every one is walked to the end, so nothing is left lazy when the clock stops.  Text is kept as the input holds it where the parser allows (hbnf's tape and the Alex/Happy JSON); the libraries that convert it say so.</em></p>
+<p>&lt;!-- /bench:haskell --&gt;</p>
+<h3>Against Raku's grammars</h3>
+<p><code>sh bench/raku.sh</code> runs the parsers Raku programs use for the same three documents, in a Debian container,
+on the cpu the other benchmarks use: <code>JSON::Tiny</code>, a JSON grammar written as a Raku grammar, and <code>JSON::Fast</code>,
+which is hand-written; <code>TOML</code>, a Raku grammar for TOML 1.0; and <code>YAMLish</code>, a Raku grammar for YAML.  The
+grammar-based modules are the ecosystem's tarballs, pinned by hash in <code>bench/pins.txt</code>.  Every parser is asked
+about the good and bad files of the format's corpus before it is timed, and the table says where one
+disagrees or refuses the document.  A parse over 20 seconds is run once.</p>
+<p>&lt;!-- bench:raku --&gt;</p>
+<p><strong>JSON</strong> (2.00 MB, the same file for every tool; best of up to 5 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th>what it builds, and the corpus </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), %emit tape </td><td style="text-align:right">1.8 ms </td><td style="text-align:right">1136 MB/s </td><td style="text-align:right">5 MB </td><td>checked by tests/emit.sh against the corpus; a tape, text as offsets </td></tr>
+<tr><td>JSON::Fast (hand-written Raku) </td><td style="text-align:right">291 ms </td><td style="text-align:right">7 MB/s </td><td style="text-align:right">168 MB </td><td>differs from the corpus on: bom.json leading-zero.json; a Raku tree, text and numbers converted </td></tr>
+<tr><td>JSON::Tiny (a Raku grammar) </td><td style="text-align:right">4.29 s </td><td style="text-align:right">0 MB/s </td><td style="text-align:right">463 MB </td><td>differs from the corpus on: bom.json form-feed.json nbsp.json vertical-tab.json; a Raku tree, text and numbers converted </td></tr>
+</tbody>
+</table>
+<p><strong>TOML 1.0</strong> (1.99 MB, the same file for every tool; best of up to 5 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th>what it builds, and the corpus </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), %emit tape </td><td style="text-align:right">4.5 ms </td><td style="text-align:right">440 MB/s </td><td style="text-align:right">7 MB </td><td>checked by tests/emit.sh against the corpus; a tape, text as offsets </td></tr>
+<tr><td>TOML (a Raku grammar) </td><td style="text-align:right">4.49 s </td><td style="text-align:right">0 MB/s </td><td style="text-align:right">193 MB </td><td>differs from the corpus on: arrays.toml dates.toml dotted.toml inline.toml numbers.toml bare-cr.toml inline-newline.toml inline-trailing-comma.toml; a Raku Hash tree, text and numbers converted </td></tr>
+</tbody>
+</table>
+<p><strong>YAML 1.2</strong> (1.99 MB, the same file for every tool; best of up to 5 runs):</p>
+<table>
+<thead>
+<tr><th>tool </th><th style="text-align:right">parse time </th><th style="text-align:right">MB/s </th><th style="text-align:right">peak RSS </th><th>what it builds, and the corpus </th></tr>
+</thead>
+<tbody>
+<tr><td>hbnf (C backend), %emit tape </td><td style="text-align:right">7.0 ms </td><td style="text-align:right">285 MB/s </td><td style="text-align:right">5 MB </td><td>checked by tests/emit.sh against the corpus; a tape, text as offsets </td></tr>
+<tr><td>YAMLish (a Raku grammar) </td><td style="text-align:right">refused: the module refused the document  </td><td style="text-align:right"></td><td style="text-align:right"></td><td>differs from the corpus on: anchors.yaml comment.yaml empty.yaml explicit-key.yaml literal.yaml double-yaml.yaml flow-dedent.yaml marker-in-flow.yaml; a Raku tree, text converted </td></tr>
+</tbody>
+</table>
+<p><em>2026-11-02; amd64, glibc (Debian), Rakudo v2024.09; hbnf d9f7a84.  The Raku modules are the syntax alone, as hbnf's are: the tree each builds is complete when the clock stops.  A run over 20 s is not repeated.  The grammar-based modules build Raku values and convert text and numbers; hbnf's tape holds offsets.</em></p>
+<p>&lt;!-- /bench:raku --&gt;</p>
+<h2>Naming</h2>
+<ul>
+<li><strong>hbnf</strong>: the parser generator and compiler compiler. Reads a grammar, emits
+a parser in C, Rust, Zig or Ada. Also the command line, the Alire name, and
+the project file (<code>hbnf.gpr</code>).</li>
+<li><strong>libhbnf</strong>: the static Ada library (<code>libhbnf.a</code>, project <code>libhbnf.gpr</code>)
+that the <code>hbnf</code> command line wraps.  A C reference implementation, if there
+is one, will not take this name for its shared library.</li>
+</ul>
+<h2>Building</h2>
+<p>Pure Ada on the GNAT runtime, no C dependency.  The code templates are rendered by the
+library's own Mustache package, <code>HBNF_Template</code> (<code>hbnf_template.ads</code>); it reads a template with the
+parser hbnf makes of <code>grammars/template.hbnf</code> (<code>hbnf_template_syntax*</code>, regenerated by
+<code>scripts/gen-template-syntax.sh</code>, tested by <code>tests/template.sh</code>).</p>
+<pre><code>gprbuild -P libhbnf.gpr -p -XLIBRARY_TYPE=static
+gprinstall -P libhbnf.gpr -p --prefix=/usr --sources-subdir=include/hbnf
+</code></pre>
+<p>Packaged for Alpine by the <code>ada-on-alpine</code> aports overlay as <code>testing/hbnf</code>.</p>
+<p><strong>Build through the project files, not <code>gnatmake -I.</code>.</strong>  <code>gprbuild</code> keeps its
+own object directory; <code>gnatmake -I. -D &lt;tmpdir&gt;</code> compiles into the temp
+directory but <code>gnatlink</code> takes <code>hbnf.ali</code> from <code>.</code>, so a stale <code>.o</code> left in the
+source directory wins the link and the build reports success while running
+yesterday's code.  Those files are <code>.gitignore</code>d, so <code>git status</code> stays clean
+while it happens.  If you must use <code>gnatmake</code>, <code>rm -f *.o *.ali</code> first;
+<code>tests/e2e.sh</code> does that for you and refuses to run against a binary older
+than its newest source.</p>
+<h2>Contributing</h2>
+<p>Ada is written in the functional style in <code>STYLE.md</code>: constants by default,
+expression functions, no <code>out</code>/<code>in out</code> parameters, loops replaced by <code>'Reduce</code>
+and comprehensions, and side effects kept at the edges. Read it before
+contributing.</p>
+<h2>License</h2>
+<p>ISC. See <code>LICENSE</code>.</p>
+</body>
+</html>
