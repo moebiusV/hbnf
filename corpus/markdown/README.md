@@ -14,14 +14,6 @@
 
 The HTML needs no Jekyll: put a `.nojekyll` file beside it, and no Liquid reads the `{{` and `{%` in the text.
 
-`mkpages.sh` does that for a whole repository: every `.md` under the root becomes an `.html` beside it (`README.md` becomes
-`index.html`), links to `X.md` become links to `X.html`, and `.nojekyll` is added.  Each page starts with a comment naming its
-source, so a regenerated tree never overwrites a page somebody wrote by hand, and a page whose source is gone is removed.
-
-    HBNF_DIR=/path/to/hbnf sh corpus/markdown/mkpages.sh REPO [OUTDIR]     # OUTDIR: try it without touching REPO
-
-`pre-commit` is a git hook that runs it when a commit holds a `.md` file and adds the pages that changed.
-
 ## Covered
 
 Headings (`#` to `######`, and a single line underlined with `=` or `-`), paragraphs, code indented four columns, bullet and numbered lists that nest (the content column of an item is read off its line, so
