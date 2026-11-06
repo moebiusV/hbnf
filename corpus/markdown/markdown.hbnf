@@ -15,13 +15,20 @@ hidden SP WSP LF CR DQUOTE nl blank starter cell-end ticks rest dash dashes titl
 flat code                                   ; a line of code stands for the text it holds
 
 document = *blank *( block(0) *blank )
-block(N in 0..) := heading | fence(N) | rule | quote(N) | table(N) | list(N) | paragraph(N)
+block(N in 0..) := heading | fence(N) | rule | quote(N) | table(N) | list(N) | setext(N) | icode(N) | paragraph(N)
 
 ; ---- blocks
 heading   = hashes 1*SP 1*inline *WSP nl
 hashes    = 1*6'#'
 rule      = dashes *WSP nl
 dashes    = 3*'-' | 3*'*' | 3*'_'
+; a heading underlined by = (level 1) or - (level 2); one line of text only, since a paragraph would take the underline as one more line
+setext(N in 0..) := line nl %spaces N under *WSP nl
+under     = 1*'=' | 1*'-'
+; code indented four columns past the block: a run of such lines, with blank lines between kept out
+icode(N in 0..) := icl(N) *( *blank icl(N) )
+icl(N in 0..) := %spaces N 4SP irest nl
+irest     = r"[^\r\n]+"
 paragraph(N in 0..) := line *( LF %spaces N *SP !starter line ) nl
 quote(N in 0..)     := qline *( %spaces N qline )
 qline     = '>' *SP [ line ] nl

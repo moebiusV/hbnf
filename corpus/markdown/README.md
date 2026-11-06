@@ -1,15 +1,21 @@
-# Markdown, as Claude Code writes it, to Typst
+# Markdown, as Claude Code writes it, to Typst and HTML
 
-`markdown.hbnf` reads the Markdown that Claude Code emits for documents; `typst.c` walks the tape it writes and prints Typst.
-`tests/markdown.sh` checks that each `tests/good/NAME.md` comes out as `NAME.typ`.
+`markdown.hbnf` reads the Markdown that Claude Code emits for documents; `typst.c` and `html.c` each walk the tape it writes and print Typst or HTML.
+`tests/markdown.sh` checks that each `tests/good/NAME.md` comes out as `NAME.typ` and as `NAME.html`.
 
     hbnf corpus/markdown/markdown.hbnf --backend=c --layout=tape > md.c
     cat md.c corpus/markdown/typst.c > m.c && cc -O2 -Iruntime -DOUT_T=document_t m.c -o md2typst
     md2typst report.md > report.typ
 
+    cat md.c corpus/markdown/html.c > h.c && cc -O2 -Iruntime -DOUT_T=document_t h.c -o md2html
+    md2html README.md > body.html          # a fragment
+    md2html README.md "Title" > index.html  # a whole page
+
+The HTML needs no Jekyll: put a `.nojekyll` file beside it, and no Liquid reads the `{{` and `{%` in the text.
+
 ## Covered
 
-Headings (`#` to `######`), paragraphs, bullet and numbered lists that nest (the content column of an item is read off its line, so
+Headings (`#` to `######`, and a single line underlined with `=` or `-`), paragraphs, code indented four columns, bullet and numbered lists that nest (the content column of an item is read off its line, so
 a child sits where its parent's text does), fenced code with an info string, pipe tables with alignment, block quotes, rules, and the
 inline marks: `code`, `**bold**`, `*italic*`, `_italic_`, `~~strike~~`, links with titles, images, `<autolinks>`, backslash escapes.
 A mark does not open before a space (`2 * 3 * 4` is text), and an underscore inside a word is part of the word (`snake_case`).
@@ -21,7 +27,9 @@ A mark does not open before a space (`2 * 3 * 4` is text), and an underscore ins
 - A fence closes at the first line that starts with three backticks, so a fence of four that holds a fence of three is cut short.
   The closing ticks should be the opening ones; that needs the opening ticks to be visible to the rule that reads a line of code
   (an up reference, `CONTEXTS.md` section 25).
-- No setext headings, indented code, HTML blocks, reference links, hard line breaks, or `_` emphasis inside a word.
+- A setext heading is one line: a paragraph of several lines takes the underline as one more line.
+- Blank lines inside indented code are dropped, so two runs of it with a blank between are one block.
+- No HTML blocks, reference links, hard line breaks, or `_` emphasis inside a word.
 - A `>` line with nothing after it is not kept, so a paragraph break inside a quote is lost.
 - Typst: a tight or loose list is not told apart; links keep their address but not their title.
 

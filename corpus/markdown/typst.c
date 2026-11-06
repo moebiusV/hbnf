@@ -188,6 +188,22 @@ static void fence (Node v)
     for (n = 0; n < run; n++) put ("`", 1);
 }
 
+/* indented code is raw text like a fence, with ticks one more than the longest run inside it */
+static void icode (Node v)
+{
+    size_t run = 3, n;
+    for (size_t c = v.next; c < v.end; c = after (c)) {
+        Node l = node (c); size_t r = 0;
+        for (size_t k = 0; k < l.n; k++) { r = l.s[k] == '`' ? r + 1 : 0; if (r >= run) run = r + 1; }
+    }
+    for (n = 0; n < run; n++) put ("`", 1);
+    puts_ ("\n");
+    raw = 1;
+    for (size_t c = v.next; c < v.end; c = after (c)) { Node l = node (c); put (l.s, l.n); puts_ ("\n"); }
+    raw = 0;
+    for (n = 0; n < run; n++) put ("`", 1);
+}
+
 static void quote (Node v)
 {
     puts_ ("#quote(block: true)[\n"); ind += 2;
@@ -206,6 +222,10 @@ static void blocks (size_t i, size_t end, int tight)
         case T_heading: {
             Node h = node (v.next); for (size_t k = 0; k < h.n; k++) puts_ ("=");
             puts_ (" "); at_ls = 0; inlines (h.next, v.end); break; }
+        case T_setext: {
+            Node ln = node (v.next); Node u = node (ln.end);
+            puts_ (u.s[0] == '=' ? "= " : "== "); at_ls = 0; inlines (ln.next, ln.end); break; }
+        case T_icode:    icode (v); break;
         case T_paragraph: {
             int firstline = 1;
             for (size_t c = v.next; c < v.end; c = after (c)) {

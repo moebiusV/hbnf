@@ -1,0 +1,42 @@
+<h1>Parser Report</h1>
+<p>This document summarises the <strong>COBOL grammar</strong> work: the <em>syntax</em> side is close to <code>cobc</code>, with
+<code>snake_case</code> names left alone and a <a href="https://example.com/a_b">link</a> kept.</p>
+<h2>What changed</h2>
+<ul>
+<li>Added the communication section</li>
+<li>Fixed <code>PIC 99..</code> with a second token
+<ul>
+<li>nested item with <strong>bold</strong> text</li>
+<li>another nested item
+continuing on a second line</li>
+</ul></li>
+<li>Last item</li>
+</ul>
+<ol>
+<li>First step</li>
+<li>Second step
+<ul>
+<li>a bullet under a number</li>
+</ul></li>
+<li>Third step</li>
+</ol>
+<h3>Results</h3>
+<table>
+<thead>
+<tr><th>Corpus </th><th style="text-align:right">Programs </th><th style="text-align:center">Both ok </th></tr>
+</thead>
+<tbody>
+<tr><td>GnuCOBOL </td><td style="text-align:right">1,615 </td><td style="text-align:center">1,113 </td></tr>
+<tr><td>NIST </td><td style="text-align:right">459 </td><td style="text-align:center">218 </td></tr>
+</tbody>
+</table>
+<blockquote>
+<p>A quoted note spanning
+two lines.</p>
+</blockquote>
+<pre><code class="language-c">int main(void) {
+    return 0;
+}
+</code></pre>
+<hr>
+<p>Final paragraph with <del>strike</del>, an image <img src="pic.png" alt="alt"> and an escaped * star.</p>
