@@ -1,0 +1,11 @@
+title: hbnf
+description: A grammar notation (ABNF, extended) that compiles to a parser and a typed tree in C, Rust, Zig and Ada.
+plugins:
+  - jekyll-optional-front-matter
+  - jekyll-readme-index
+  - jekyll-relative-links
+  - jekyll-titles-from-headings
+  - jekyll-default-layout
+relative_links:
+  enabled: true
+  collections: false
