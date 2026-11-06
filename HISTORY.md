@@ -1,3 +1,4 @@
+<!-- {% raw %} -->
 # HyperBNF: Return of the Metacompiler
 
 *A short history of the parser generator.*
@@ -1117,3 +1118,5 @@ of LALR parsing in the world's most visible C compiler.
 (2014–18), the incremental GLR parser for editors, now the usual answer
 whenever a tool needs a real syntax tree for a language it does not itself
 compile.
+
+<!-- {% endraw %} -->

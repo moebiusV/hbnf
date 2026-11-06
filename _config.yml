@@ -9,3 +9,5 @@ plugins:
 relative_links:
   enabled: true
   collections: false
+exclude:
+  - corpus/markdown/tests

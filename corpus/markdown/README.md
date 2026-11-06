@@ -1,3 +1,4 @@
+<!-- {% raw %} -->
 # Markdown, as Claude Code writes it, to Typst and HTML
 
 `markdown.hbnf` reads the Markdown that Claude Code emits for documents; `typst.c` and `html.c` each walk the tape it writes and print Typst or HTML.
@@ -53,3 +54,5 @@ A mark does not open before a space (`2 * 3 * 4` is text), and an underscore ins
 
 The walker is three times the grammar.  `CONTEXTS.md` section 25 works the same conversion as rewrite rules in the grammar itself:
 about 540 symbols for both, with no walker.
+
+<!-- {% endraw %} -->

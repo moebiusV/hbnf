@@ -1,3 +1,4 @@
+<!-- {% raw %} -->
 # Mustache templates in HyperBNF
 
 `mustache.hbnf` is the syntax of a [Mustache](https://mustache.github.io/mustache.5.html)
@@ -55,3 +56,5 @@ Running it found three faults in HyperBNF, now fixed: a lookahead inside a rule 
 was silently dropped when the rule was compiled to its automaton; a rule used only in a
 lookahead was left out of the generated parser; and an alias of an optional token
 (`blank_2 = blank`) failed on nothing, where `blank` succeeds on it.
+
+<!-- {% endraw %} -->
