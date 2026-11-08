@@ -1,6 +1,6 @@
 # HyperBNF
 
-Index: [All Projects](https://moebiusv.github.io/) | Git Repository: [github.com/moebiusV/hbnf](https://github.com/moebiusV/hbnf) | `git clone https://github.com/moebiusV/hbnf`
+Parent: [All Projects](https://moebiusv.github.io/) | Git Repo: [github.com/moebiusV/hbnf](https://github.com/moebiusV/hbnf) | `git clone https://github.com/moebiusV/hbnf`
 
 > **Status, 31 October 2026.**  JSON, TOML and YAML are built and tested in all four backends
 > (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML), and are
