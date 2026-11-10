@@ -8,7 +8,6 @@
 - Checked, not guessed: a status of DONE needs evidence; what could not be checked is IN THE AIR and says why.
 - `Rationale` is why he chose it, in his own words; `Precedent` is a system, language, standard or design named as a referent, with whether his choice follows it (chosen), he turned it down (rejected) or it was only compared (considered), and who named it (the author, or the assistant and he accepted it or did not take it up). Only what the messages say: nothing is added from outside. The precedents are indexed by name near the end.
 - The chains behind it are in the decision log of the same project; the evidence is as of the repositories read on 2026-11-10.
-- Checked against the repository at commit ff3c5d0 (2026-11-07), the packaging repositories (ada-on-alpine 77daf37, mustache-ada c2d5967), and the author's uncommitted files on silentpc (notes, snapshot tarballs, build objects; nothing that settled a subject). His silentpc checkout is at the older d13ee66.
 
 ## Contents
 
@@ -19,6 +18,12 @@
 - [Done (176)](#done-176)
 - [Precedents, by name](#precedents-by-name)
 - [Where the current docs or code differ from the decisions (62)](#where-the-current-docs-or-code-differ-from-the-decisions-62)
+- [Decision briefing: open notation questions](#decision-briefing-open-notation-questions)
+- [Briefing E: hbnf, items Q18 to Q21](#briefing-e-hbnf-items-q18-to-q21)
+- [Q18 Namespaces and qualified names (REVIEW)](#q18-namespaces-and-qualified-names-review)
+- [Q19 Slice syntax (REVIEW)](#q19-slice-syntax-review)
+- [Q20 Library headers (REVIEW)](#q20-library-headers-review)
+- [Q21 The C standard (REVIEW)](#q21-the-c-standard-review)
 
 # Summary
 
@@ -2771,3 +2776,221 @@
 - C and C++ grammars and compiler: TODO.md:117 "ALGOL 68, C++ grammars: not started"; the C preprocessor grammar is not built (RFCPLAN.md:2940)
 - Fork autodetect: ABNF.md:112 says "Off by default" and "listed on stderr" (the decision says stdout and no annotation; annotation is not needed, so only the default and the stream differ)
 - COBOL grammar: corpus/cobol/README.md:8 "vendor extensions are left out", the chain's challenge about vendor forms is not settled in the code
+
+# Decision briefing: open notation questions
+
+- Each item gives where things stand, the referents you named or liked, options with rationale and precedents, and a recommendation that is the briefing agent's, not a decision
+- Precedents are marked verified (checked in the clone or on disk) or unverified (general knowledge); `(your referent [id])` marks one you named yourself
+
+## Briefing E: hbnf, items Q18 to Q21
+
+Project: hbnf (HyperBNF, the author's grammar notation and parser/code generator in Ada), clone status-check/hbnf at HEAD 1133cf1. Per the change to the standard prompt, options are fitted to hbnf's own stated principles, not the pdp64 priority list. The principles used, with where they are stated:
+- P-RFC: "a grammar reads like the notation RFCs have used for decades, not like a yacc file with embedded C actions" (README.md:25-27); the start is ABNF, "the notation people already read fluently" (README.md:46-50).
+- P-LOAD: "what lessens a person's mental load lessens a model's token usage"; "a grammar short enough for a person to hold in mind" (README.md:29-33; WHY.md:157 "Fewer words to read, for a person or a model").
+- P-DEP: libhbnf "depends on nothing outside the GNAT runtime" (README.md:19-20); "change it to fit your own needs means editing a few lines, not learning a generator" (README.md:38-40).
+- P-GATE: no syntax is implemented before it has been shown and approved (CONTEXTS.md:3); round-trip and byte-identity gates are mandatory (RFCPLAN.md:563); a grammar whose output does not re-parse is refused, never emitted as something close (RFCPLAN.md:1466-1469 region).
+- P-OCCAM: the author's rule on namespaces: "if you understand now and don't need to implement namespaces, then leave that alone. don't do that if we can at all avoid it" [silentpc:c14a13ff:j10318].
+- P-HIST: he prefers "a cleaner syntax especially if there is historical precedent" [silentpc-opusplan:4a4c3021:j17540]; the WIRE.md notation table cites a precedent for every character (WIRE.md:106-120).
+- STYLE.md is only a pointer to an external Ada guide (STYLE.md:1-7); it has nothing on these four items. WHY.md is about token counts and bench results, not these four items. HISTORY.md is the BNF essay; nothing on these items found (searched for namespace, slice, header, C99).
+- Verification notes: the repository's own tests were not run; counts below are from grep. The decision-log file is docs/decision-log/hbnf-status.md.
+
+---
+
+### Q18 Namespaces and qualified names (REVIEW)
+- What it is: a namespace (a named scope that lets two things with the same name coexist, written `ns.name`) was rejected by the author on 2026-10-01, yet islands (embedded sub-grammars such as SQL inside COBOL) are built with `include "f" as x`, referred to as `x.rule`, plus `^.rule` to reach out to the including grammar and `^.^.rule` two levels up.
+- What it is: CONTEXTS.md:7 itself says "the dot is scope and never part of a name, strict lookup (a missing name is missing)", so the built feature is a qualified name (a name with a path prefix) with lexical scope (the name means what the nearest enclosing definition says), which is what the rejected feature would have been.
+- Why it matters: the generator must map `x.rule` to a C/Rust/Zig/Ada identifier in four backends without clashes, and the manual must not tell the reader there are no namespaces while showing the dot; the author's rule is to avoid new machinery, so the question is whether this is new machinery or the old machinery under another name.
+- Where things stand: hbnf-status.md:919-924 "Namespaces: REJECTED ... no per-file namespaces in the repository, but qualified island names exist"; "Doc differs: CONTEXTS.md:7 ... (qualified names, close to what was rejected, from a later user decision not in this chain)". Built in aff3de9 (2026-11-02), `^.rule` built 2026-11-03 (tests/upscope.sh), four backends, tree-sitter refuses a scope that skips white space differently (CONTEXTS.md:7). "namespace" does not occur in RFCPLAN.md or CONTEXTS.md (hbnf-status.md:923). Author's words: [silentpc:c14a13ff:j10318#1] (rejection); the island decision itself is "from a later user decision not in this chain" (no source id). Related: 2026-09-22 "stdlib is a namespace collision just call it commonconf.hbnf" [hist-silentpc:fd13bc5f:h377#1], i.e. he solved a name clash by renaming, not by scoping.
+- Referents you named or liked:
+  - namespaces, from no named system: "if you understand now and don'tneed to implement namespaces, then leave that alone. don't do that if we can at all avoid it" [silentpc:c14a13ff:j10318]; stance: rejected
+  - qualified reference, from no named system: "qualified reference that comes last might be ok" [silentpc-opusplan:4a4c3021:84827]; stance: considered
+  - embedded languages (JCL, SQL, CICS), from COBOL: "since cobol allows to embed jcl sql cics and other languages inside it ... we should have some clear, smooth, simple syntax to indicate when we are switching syntax" [silentpc-opusplan:4a4c3021:83530]; stance: considered
+  - stock BNF, as the base: modify it as little as possible, extend the semantics a tiny bit [silentpc-opusplan:4a4c3021:83530]; stance: chosen
+  - include of common rules, source system not named (he asked whether yacc has an include statement): "a boilerplate library of rules/definitions/jets we can include" [hist-silentpc:fd13bc5f:h253]; stance: chosen
+  - name clash solved by renaming: "stdlib is a namespace collision just call it commonconf.hbnf or commconf.hbnf" [hist-silentpc:fd13bc5f:h377]; stance: chosen
+  - missing names are missing (strict lookup), from no named system: "missing names are missing; why would you look for them in previous live rulesets?" [silentpc-opusplan:4a4c3021:85182]; stance: chosen
+  - yacc: "yacc isn't hbnf" [silentpc-opusplan:4a4c3021:84827]; stance: rejected
+- Option 1 - CURRENT: keep qualified names for islands only, and say so: the manual states that the dot exists only after an `include ... as x` and nowhere else; no per-file namespaces, no nesting rules beyond `^`.
+  - Rationale: matches what is built and tested; honours the rejection for the general case (a file's own rules stay in one flat space); smallest change (one sentence in README and CONTEXTS).
+  - Precedent: C struct member access `a.b` and Ada's `Pkg.Name` are lexical prefixes not requiring a namespace feature in the language of the file itself; closest in spirit is yacc's `$$`/`$1` (positional, no names). (unverified: general knowledge)
+  - Cost and risk: one wording change; the risk is that "islands only" is a rule the author must police later when someone wants `include "common.hbnf"` with a clash (WIRE.md:57 already does `include "common.hbnf"` unqualified, so two include forms already exist).
+  - Fit: P-OCCAM and P-GATE satisfied; slight tension with P-LOAD (two include forms to learn).
+- Option 2 - Reword to avoid "scope" and "qualified": describe `x.rule` as "a rule of the island x" and `^.rule` as "a rule of the including grammar"; never use the words scope, qualified, namespace.
+  - Rationale: the contradiction is partly in vocabulary; the thing is a pointer to a sub-grammar, which a reader can hold without a theory of scoping.
+  - Precedent: the repository itself uses "island" and "include ... as" (CONTEXTS.md:7); ABNF (RFC 5234) has no scoping at all and RFC 7405 only adds string case flags. (unverified: general knowledge for RFC content)
+  - Cost and risk: no code; cosmetic, and `%scope` is also an existing keyword with another meaning (RFCPLAN.md:251, 282: bindings made inside vanish at `}`), so the word "scope" is already overloaded and rewording helps that clash too; risk is that it hides the identity of the feature (it IS a namespace).
+  - Fit: P-LOAD good (one fewer concept word); P-OCCAM fine; slightly evasive.
+- Option 3 - Make namespaces a real feature: every file is a namespace, `include "f"` makes `f.rule`, rules in the same file see each other unqualified, with `export` or similar.
+  - Rationale: removes the "islands only" special case and the unqualified `include "common.hbnf"` second form; clash-free libraries (the `commonconf` problem of 2026-09-22 would not have arisen).
+  - Precedent: Ada child packages and C++ namespaces; Erlang/Rust modules (see Option 6). (unverified: general knowledge)
+  - Cost and risk: design, parser, four backends and tree-sitter emitter changes, name mangling, tests; reverses a stated author rejection ("don't do that if we can at all avoid it"); P-GATE says it must be shown and approved first.
+  - Fit: violates P-OCCAM; only worth it if grammars libraries (`common.hbnf`, `bip39/english.hbnf`) are expected to multiply.
+  - Note: you said "don't do that if we can at all avoid it": [silentpc:c14a13ff:j10318]
+- Option 4 - Drop qualified names and use prefixes: the island's rules get a mechanical prefix (`sql-select`), the dot is removed; `include "f" as sql` means "every rule of f is renamed sql-NAME".
+  - Rationale: hbnf names already carry hyphens (`bip39-word`, `scope-end`, `phrases`), so a prefix is the existing idiom; it needs no scope concept and no strict-lookup rule beyond ordinary missing-name errors.
+  - Precedent: C libraries prefix by convention (`sqlite3_`, `SHA256_`); the repository's own `Pfx` variable in hbnf_c.adb (e.g. `struct " & Pfx & CN`) already prefixes generated names (verified: hbnf_c.adb:2919-2925); lemon and sqlite use `sqlite3` prefixing. (unverified: lemon behaviour, general knowledge)
+  - Cost and risk: `^.rule` (the way out) has no prefix equivalent and would have to go or become `up-rule`; built tests (tests/upscope.sh) rewritten; a user can now write an island rule that collides by accident with an including rule (strict lookup was a safety).
+  - Fit: P-OCCAM best; P-RFC fair (RFCs use hyphenated names such as `IPv6address`); loses a built feature.
+- Option 5 - Include-with-prefix directive, explicitly named: `include "f" prefix "x-"` is a textual rename at include time and the dot disappears, but keeps strict lookup because the including file may refer only to the prefixed names.
+  - Rationale: same effect as Option 4 but the rename is a visible directive in the grammar, searchable and documented in one place, and the generated names stay plain identifiers (no dots in C, Rust, Zig, Ada).
+  - Precedent: Python `from m import *` is the opposite; the closer ones are C's `#include` inside a `namespace`-like wrapper and Ada's `use`-free `with`; Erlang's `-import`. (unverified: general knowledge)
+  - Cost and risk: still a new directive (counts against P-OCCAM exactly as much as a namespace would, in a smaller size); `^` is not served; tests change.
+  - Fit: P-LOAD fair; P-GATE requires approval; essentially Option 4 plus syntax.
+- Option 6 - A module system like Ada's packages or Rust's modules: named units with explicit interface (`export`) and `with`/`use` style imports, plus `use` to open a module so names go unqualified.
+  - Rationale: the most complete answer; it is what a language community expects from a tool that targets Ada and Rust (hbnf_ada.adb, hbnf_rust.adb exist).
+  - Precedent: Ada 95 child packages (Pkg.Child.Name, `with`/`use`); Rust `mod`/`use`; Erlang's `module:function`. (unverified: general knowledge; Ada rules are well known but not checked against a reference manual on this machine)
+  - Cost and risk: largest design and docs cost; mismatches hbnf's one-file-one-grammar shape; pulls in visibility and cyclic-import problems; the exact opposite of the author's rule.
+  - Fit: P-OCCAM strongly against; mention only because he asked for the spectrum.
+  - Note: you said "don't do that if we can at all avoid it": [silentpc:c14a13ff:j10318]
+- Recommendation: MINE (P): Option 1 plus Option 2's wording: keep the built islands, state in one place that the dot exists only after `include ... as`, and replace "scope" by "island" in CONTEXTS.md:7 so it does not collide with `%scope` (RFCPLAN.md:251). It honours the rejection (no general namespace), costs one sentence, and keeps four-backend tests green. What would change my mind: if grammar libraries multiply (a second `common`-style file needing the same names), Option 5 becomes cheaper than clashes; if he dislikes `^.` he should look at Option 4.
+- Would help you decide: `grep -rn 'include ".*" as' grammars tests corpus` to count island uses versus plain `include` uses; `grep -rn '\^\.' ... ` for the count of `^.` uses; whether any grammar has a rule-name clash today.
+
+---
+
+### Q19 Slice syntax (REVIEW)
+- What it is: the notation for "which bits or units of a field": the built form is `name@K:N` (a place K, then a width N: `version@0:4` is 4 bits starting at bit 0, bit 0 being the most significant bit of the record's first octet), and `name:N` for a width only (`ttl:8`).
+- What it is: the author's 2026-10-18 decision says ":bits@offset" (width first, then place); the same day's approved proposal says "name:src@Off:Len" (a source, then place, then length), so his own words contain two orders.
+- Why it matters: this is the notation of every bit-level grammar (IPv4, BIP-39), the one a reader of a packet diagram sees first, and what the model must produce; changing it later rewrites grammars, tests, WIRE.md and RFCPLAN.md.
+- Where things stand: hbnf-status.md:718-727 "IN THE AIR ... the built spelling is `name:N` and `name@K:N` ... the ':bits@offset' order ... is not as the record says". Author's words: "Use the ':bits@offset syntax we discussed' to say what bits a text field's words stand for" [silentpc-opusplan:4a4c3021:19158#1]; "@Off:Len syntax shoudl work on strings too" [silentpc-opusplan:4a4c3021:j14778]; "we do need to distinguish bits from bytes from codepoints, and some platforms had different word sizes" [silentpc-opusplan:4a4c3021:j14841]; approved proposal "name:src@Off:Len, unit is src's layer, 'b' suffix gives bits" [silentpc-opusplan:4a4c3021:j19192#1]. In the repository: WIRE.md:15 `ipv4 = version@0:4 ihl:4 tos:8 total_length:16`; WIRE.md:106-111 the table of precedents (`:` is C's bit-field and Erlang's bit syntax; `@` is Ada's `F at 0 range 3 .. 7`, BLISS and IMP72 `A<p,s>`); WIRE.md:130 `name@K:N`; WIRE.md:341-351 `@Off:Len` also on strings and units, `name@4B:4B`, `name@4:4`; RFCPLAN.md:1514 "`foo:4` is 4 units and `foo@1:4` is 4 units at offset 1"; RFCPLAN.md:1331 region says the built spelling. The notation "was weighed against COBOL's `foo(2:4)`, BLISS's `foo<p,s>`, Ada's `foo(2..5)` and Python's `foo[1:5]`; `@offset:length` is the nearest to COBOL's" (RFCPLAN.md:1514-1520, read at 1514-1520). Open item: "string slices with a unit suffix" and the stream directive `byte 9`, `word 18` (RFCPLAN.md:1537 per hbnf-status.md:726).
+- Referents you named or liked:
+  - colon for widths, from Erlang bit syntax and the C bit-field: "Keep colon, expressions in, go with A" [silentpc-opusplan:4a4c3021:13175]; stance: chosen
+  - bit 0 is the most significant bit and direction, from RFC packet diagrams: "right or left follows the RFC" [silentpc-opusplan:4a4c3021:15185]; stance: chosen
+  - 0-based index, from C and IMP72: "our index are 0 based because C and IMP72 agree" [silentpc-opusplan:4a4c3021:15185]; stance: chosen
+  - IMP72 bit fields: "i didn't know about imp72 at the time" [silentpc-opusplan:4a4c3021:j13158]; stance: considered
+  - @Off:Len, source system not named: "@Off:Len syntax shoudl work on strings too." [silentpc-opusplan:4a4c3021:j14778]; stance: chosen
+  - bits versus bytes versus codepoints, source system not named: "we do need to distinguish bits from bytes from codepoints, and some platforms had different word sizes" [silentpc-opusplan:4a4c3021:j14841]; stance: chosen
+  - the :bits@offset order, source system not named: "are you forgetting that :bits@offset syntax we discussed?" [silentpc-opusplan:4a4c3021:19158]; stance: chosen
+  - name:src@Off:Len with a b suffix for bits (the BIP-39 and bech32 use case), approved the same day [silentpc-opusplan:4a4c3021:j19192]; stance: chosen
+- Option 1 - CURRENT in code and docs: keep `@K:N` (place, then width), width-only `:N`, `B` unit suffix; record in the decision log that ":bits@offset" meant the same notation.
+  - Rationale: it is built, tested in four backends, documented with a precedent per character in WIRE.md:106-120; the one slice syntax serves bits, octets and chars (WIRE.md:341-351); reads as "field at K width N", and `@` also numbers enum literals ("at this value", WIRE.md:120).
+  - Precedent: COBOL reference modification `foo(2:4)` is start:length (verified: stated in RFCPLAN.md:1514-1520 as the nearest precedent; COBOL itself unverified); Ada representation clause `F at 0 range 3 .. 7` (verified as the author's stated precedent, WIRE.md:111).
+  - Cost and risk: zero code; the decision record then contradicts the code and must be corrected; width-last order is opposite to how the author spoke it.
+  - Fit: P-RFC and P-HIST good; P-OCCAM best (nothing changes).
+  - Note: you said ":bits@offset" (width first): [silentpc-opusplan:4a4c3021:19158]; this option keeps place first
+- Option 2 - Change the notation in code and docs to `:bits@offset` (`version:4@0`): width first, then place.
+  - Rationale: follows the author's literal words; the common case (width only) is a prefix of the full form, so `ttl:8` upgrades to `ttl:8@16` by appending, which is a cleaner grammar (the place is an optional suffix).
+  - Precedent: Erlang bit syntax `<<Ttl:8>>` puts the width after a colon; C bit-field `unsigned ttl : 8`. A place after the width has no direct precedent I can name. (verified: both are quoted in WIRE.md:108; the combined order is unverified) (your referent [silentpc-opusplan:4a4c3021:13175])
+  - Cost and risk: every grammar using `@K:N` (grep below), WIRE.md, RFCPLAN.md, the tests, and the parser in hbnf_wire.adb change; breaks the "bit 0" examples; `@` after `:` conflicts with the enum literal form `"x"@N` only visually.
+  - Fit: P-HIST fair; P-OCCAM against (churn for a spelling).
+- Option 3 - Accept both orders: `name@K:N` and `name:N@K` mean the same.
+  - Rationale: ends the record-versus-code disagreement without rewriting anything; each order reads naturally to a different reader.
+  - Precedent: PEG and ABNF dialects often accept alternate spellings (ABNF `%x41` vs `%d65` in RFC 5234); two forms of one idea is also what C allows for `a[i]` and `i[a]`. (unverified: general knowledge; ABNF forms are RFC 5234 content)
+  - Cost and risk: two spellings for the writer to emit (the grammar writer of `write (tree)` must pick one, RFCPLAN.md:1466 region says canonical first), bigger parser, docs and model prompts doubled; P-LOAD is violated by every doubled form.
+  - Fit: P-GATE requires a canonical output, so this needs a canonical spelling too: effectively Option 1 or 2 plus a tolerance.
+- Option 4 - A range notation `name[K..K+N]` or `name(2..5)`: Ada slices and Python's `foo[1:5]` (the author weighed Ada's `foo(2..5)` and Python's, RFCPLAN.md:1514-1520).
+  - Rationale: readers of Ada, Python, Rust (`a[2..5]`) already read it; the end is explicit, so no "is N a width or an end" doubt.
+  - Precedent: Ada `A(2..5)`, Python `a[1:5]` (end exclusive), Rust `a[2..5]` (end exclusive), COBOL `foo(2:4)` (start:length). End inclusive or exclusive differs between them: a hazard. (unverified: general knowledge; the weighing of these is verified as an author consideration, RFCPLAN.md:1514-1520)
+  - Cost and risk: brackets and parentheses are used for lists, groups, optional items in ABNF/EBNF (RFC 5234 uses `[ ]` for optional); `(2..5)` collides with the group; width-only `ttl:8` still needed; inclusive/exclusive is a standing error source.
+  - Fit: P-RFC against (RFC grammars use `[]` for options); P-LOAD against.
+  - Note: you said "Keep colon, expressions in": [silentpc-opusplan:4a4c3021:13175]; this option drops the colon form for brackets
+- Option 5 - P4-style or Erlang bit-syntax declaration: a header with fields and widths, `bit<4> version;` (P4) or `<<Version:4, Ihl:4, Tos:8>>` (Erlang), place implied by order, with explicit places only for the rare check.
+  - Rationale: the order of fields already fixes the place (hbnf proves `@` only as a check, WIRE.md:130: "It writes nothing new; it checks the author's arithmetic against the RFC"), so most grammars need no `@` at all.
+  - Precedent: P4 `header ipv4_t { bit<4> version; bit<4> ihl; ... }` and Erlang `<<A:4, B:4>>` are both well known; neither was checked on this machine. (unverified: general knowledge) (your referent [silentpc-opusplan:4a4c3021:13175])
+  - Cost and risk: `bit<4>` clashes with hbnf's angle-free rule notation and its parameterised rules; Erlang's `<<...>>` has the width on each variable, which is already `name:N`, i.e. nothing new; no solution for the offset-with-gaps case (WIRE.md:350 registers read in any order with gaps and overlaps).
+  - Fit: P-RFC against (not RFC notation); P-OCCAM against.
+- Option 6 - The RFC packet-picture notation: accept a pasted ASCII diagram (the 32-bit-wide `+-+-+` boxes of RFC 791 and others) as the source of field widths and order.
+  - Rationale: the most RFC-natural way a person reads a header; the README's premise is that a grammar reads like the RFCs.
+  - Precedent: RFC 791 (IPv4), RFC 793 (TCP) and RFC 8650-era drafts' diagrams; the `art2bytes`-like tools and Kaitai's `.ksy` (YAML with `type: b4`) are the machine-readable cousins. (unverified: general knowledge; none of these tools is on this machine) (your referent [silentpc-opusplan:4a4c3021:15185])
+  - Cost and risk: parsing ASCII art is fragile (variable-width fields, labels cut across rows), cannot say a layer other than bits (no `B` suffix, no chars), and cannot carry actions; a very different parser; the diagram is documentation, not the grammar.
+  - Fit: P-RFC good, P-LOAD good for humans; P-GATE (round trip) poor; best as a generator output (emit a diagram from the grammar) than an input.
+- Recommendation: MINE (P): Option 1 (keep `@K:N`), and correct the decision record by quoting the code: ":bits@offset" becomes "`name:N` for width, `name@K:N` for place and width" with a note of the 2026-10-18 wording, since the WIRE.md table already gives a precedent for each character and the same day's approved proposal uses `@Off:Len`. If he truly prefers width first, Option 2 is a mechanical sed over a known set of files, best done before more grammars exist. What would change my mind: if few grammars use `@` (the check) the churn is cheap and the "optional suffix" argument wins.
+- Would help you decide: `grep -rn '@[0-9]*:[0-9]' status-check/hbnf --include=*.hbnf | wc -l` (count of places); `grep -c '@' WIRE.md`; the number of grammars with a width-only field and no place; whether string slices (`name@4B:4B`) have a built form (hbnf-status.md:726 says not decided).
+
+---
+
+### Q20 Library headers (REVIEW)
+- What it is: where the helper code for actions and emitters (hash functions such as SHA-256, checksums such as CRC) comes from when a generated program uses it: today the system's libraries are linked, and a single hand-written header `corpus/bip39/bip39.h` wraps OpenSSL's SHA256.
+- What it is: the author's 2026-10-17 decision wanted one `.h` file per function ("sha256.h crc.h etc"), instead of one opaque `hbnf_sum.h`; commit 15383d6 made per-function headers, 0cc3bc0 removed them in favour of linking system libraries.
+- Why it matters: it decides whether a generated parser can be built with nothing but a C compiler (P-DEP), whether the tests need OpenSSL installed, and how a reader finds the helper they call.
+- Where things stand: hbnf-status.md:783-790 "IN THE AIR". Author's words: "instead of hbnf_sum.h which is opaque, each function should get it's own .h file, sha256.h crc.h etc" [silentpc-opusplan:4a4c3021:j16491#1]. Repository: corpus/bip39/bip39.h:1-24 includes `<openssl/sha.h>`, defines one `static unsigned bip39_checksum` using `SHA256`, "the program links -lcrypto" (verified: corpus/bip39/bip39.h); RFCPLAN.md:1282 and :1464 "using SHA256"; no lib/ directory at HEAD; runtime/ holds hbnf_conf.c/.h, hbnf_pow5.h, hbnf_scalar.h, hbnf_tape.h (verified: ls runtime). Also TODO.md:88-97 "The conf glue out of the templates into an included C header" is open (hbnf-status.md:375).
+- Referents you named or liked:
+  - one header per function, source system not named: "instead of hbnf_sum.h which is opaque, each function should get it's own .h file, sha256.h crc.h etc" [silentpc-opusplan:4a4c3021:j16491]; stance: chosen
+  - standard library crc32, from the standard library: "stop renaming shit, crc32 is a standard function in a standard library that our generated parser should be linking in." [silentpc-opusplan:4a4c3021:j16595]; stance: chosen
+  - OpenBSD queue.h, from OpenBSD: "bring in sys/queue.h and use hte tailq macros. do it right. use the provided interface" [hist-silentpc:fd13bc5f:h404]; stance: chosen
+  - real headers in the preamble, from OpenBSD: "this tailq stuff should live in the jets and preamble and epilogue. possibly re-using the openbsd .h files" [hist-silentpc:fd13bc5f:h351]; stance: chosen
+  - one static binary, from musl: "the hbnf binary must be static and shipped that way" [silentpc:6ec412b3:j27839]; stance: chosen
+  - std library functions over hand-built code: "table-driven scanner first if possible use dfa or std library functions" [silentpc-opusplan:4a4c3021:6714]; stance: chosen
+- Option 1 - CURRENT: keep linking the system libraries (libcrypto for SHA-256, libc elsewhere) and one hand-written header per use such as bip39.h.
+  - Rationale: no hand-copied crypto (a copy of SHA-256 written here would be code the author must trust and test); smallest code; what is built.
+  - Precedent: OpenBSD's own tools link `libcrypto`/libc rather than copying (unverified: general knowledge); the BIP-39 reference implementations call a hash library (unverified).
+  - Cost and risk: the build needs OpenSSL headers and `-lcrypto`; the generated code is not self-contained; the decision record is contradicted; an interface change in OpenSSL (the 3.0 deprecation of `SHA256()` one-shot is widely reported, unverified) can turn into warnings under `-Werror` (tests use `-Wall -Werror`, e.g. tests/backref.sh:22).
+  - Fit: P-DEP is weakened for generated code (libhbnf itself is clean); P-OCCAM good.
+  - Note: you said "each function should get it's own .h file": [silentpc-opusplan:4a4c3021:j16491]
+- Option 2 - Restore per-function headers (the author's 2026-10-17 words): `sha256.h`, `crc.h`, `bech32.h`, each one function, in `runtime/` or `lib/`.
+  - Rationale: the author's own, explicit decision; each header is small, named for what it does, readable, copyable on its own ("not opaque").
+  - Precedent: Plan 9's convention of a header per library and `#include <u.h>` / `<libc.h>`; OpenBSD `sha2.h`, `crc.h`-style per-algorithm headers. (unverified: general knowledge; the commit 15383d6 is the repository's own earlier evidence, verified only through hbnf-status.md:787)
+  - Cost and risk: the code for SHA-256 has to be written or vendored with a licence (ISC is the repository's, corpus/bip39/bip39.h:8) and tested against NIST vectors; many tiny files; reversal of 0cc3bc0 (the removal was presumably done for a reason the records do not state).
+  - Fit: matches P-LOAD (short, named, readable); P-DEP best (self-contained output).
+- Option 3 - One header per library: `hbnf_hash.h` (sha256, crc), `hbnf_bits.h`: grouped by domain, not by function.
+  - Rationale: a middle path: fewer files than per-function, not one opaque blob; each header is documented with a table of what it holds.
+  - Precedent: C's `<string.h>` and `<stdint.h>` group related functions; the repository's own `hbnf_scalar.h`, `hbnf_tape.h` are of this size (verified: runtime/ listing); the author called `hbnf_sum.h` "opaque", so the grouping must be named well.
+  - Cost and risk: it is exactly the shape the author rejected on 2026-10-17 unless it is named by contents; moderate.
+  - Fit: P-OCCAM good; P-LOAD fair; partial conflict with the author's own words.
+  - Note: you called a grouped header "opaque": [silentpc-opusplan:4a4c3021:j16491]
+- Option 4 - Header-only inline library: all helpers `static inline` in headers, no `.c` to link, no `-l` flag.
+  - Rationale: generated parsers stay one compile command; no link order; inlining helps the hot loop of a hash over a field.
+  - Precedent: the repository's own `static unsigned bip39_checksum` in bip39.h is already header-only (verified: corpus/bip39/bip39.h); stb-style single-header libraries (unverified: general knowledge).
+  - Cost and risk: every translation unit gets its own copy (code bloat with `static`), `-Wunused-function` noise (the tests pass `-Wno-unused-function` in several places, verified: tests/backref.sh:22, tests/forks.sh:21); compatible with C99 `inline` rules only if done carefully (C99 `inline` semantics differ from GNU89; the repository's output already uses `static`).
+  - Fit: P-DEP good; combines with Option 2 or 3 as the packaging.
+- Option 5 - A generated amalgamated header, like SQLite: the generator emits one self-contained file containing only the helpers the grammar uses, in its output.
+  - Rationale: the generator already knows which helpers are used; the output has no external headers at all; SQLite's amalgamation is the proof the style is livable and is already in the author's corpus (tests/sqlite.sh:2 parses it; verified: corpora/sqlite-amalgamation-3460100/sqlite3.c exists).
+  - Precedent: SQLite's `sqlite3.c`/`sqlite3.h` amalgamation (verified: file present; the amalgamation's build process is general knowledge); bison and flex already emit the whole runtime into the generated file (bison's yacc.c skeleton is a template for that, verified: /usr/share/bison/skeletons/yacc.c exists).
+  - Cost and risk: generator code to include helpers conditionally (the Mustache templates exist for this, README.md:19-20); the helper source must still live somewhere in the repository; harder to read for a person ("not opaque" was the author's objection).
+  - Fit: P-DEP best; P-LOAD weak for the output file; P-OCCAM fair.
+  - Note: you called a single bundled header "opaque": [silentpc-opusplan:4a4c3021:j16491]
+- Option 6 - An include-what-you-use convention: each action file lists the headers it needs with plain `#include`, the library author documents "this header needs -lcrypto" at the top (as bip39.h does), and the generator never inserts includes.
+  - Rationale: no policy at all in the generator; what is used is visible at the top of the file that uses it; the same as how C programs have always been written.
+  - Precedent: the IWYU tool and Google's C++ style rule of it; the C standard library's own per-header model. (unverified: general knowledge)
+  - Cost and risk: nothing built, only a rule in the manual; a convention is a soft rule that drifts; does not choose between Options 1 to 5.
+  - Fit: P-OCCAM best; it is a rule and not a design, so it should accompany another option.
+- Recommendation: MINE (P): Option 1 now (state it in the docs and amend the decision log to 'superseded by the later link-the-library decision'), with Option 4's header-only shape for anything that is not cryptography (CRC, bech32 checksum, bit helpers: a dozen lines each, no external dependency, in per-function headers as the author wanted), and keep SHA-256 from the system. That keeps the author's wish ("sha256.h crc.h", readable names) where it is cheap and avoids owning crypto code. What would change my mind: if tests must run on a machine with no OpenSSL headers, Option 2 or 5 for SHA-256 as well.
+- Would help you decide: `ls lib 2>&1` and `git -C status-check/hbnf show 0cc3bc0 --stat` plus its message (the reason for the removal); `git show 15383d6 --stat`; whether any test fails when `-lcrypto` is absent; the list of helper functions the grammars call (`grep -rn '#include' tests/wire corpus --include=*.hbnf`).
+
+---
+
+### Q21 The C standard (REVIEW)
+- What it is: which edition of C the generated parser must be written in (C99 is 1999's ISO standard; C11 adds `_Thread_local` and `_Static_assert`; `gnu11` is C11 plus GCC's extensions) and which edition the tests compile with.
+- What it is: the docs and the decision say "pinned at C99 (for OpenBSD kernel compatibility)", but 64 test scripts compile with `-std=gnu11` and the generator emits `static _Thread_local` (C11) for forks and switch events.
+- Why it matters: a pinned standard is a promise that the output compiles on an old or small compiler (OpenBSD base's compiler, tcc, a kernel build with `-std=gnu99`); the tests are what decides whether the promise is ever checked; the generator's use of GNU `__attribute__` and `__builtin_expect` means "C99" is already "GNU C99".
+- Where things stand: hbnf-status.md:1736-1747 "DONE ... the C backend is stated as C99 and C++-clean", "Doc differs: tests/backref.sh and tests/ladder.sh compile generated C with -std=gnu11". Author's words: "we pin C at C99 (for OpenBSD kernel compatibility) and for C++ we want to support any reasonable version (obviously we don't care about cfront)" [silentpc:c14a13ff:j4748#1]; for the grammars (not the output): "c11 is a different dialect", C11/C17/C23 "wanted for himself, useless for the yacc bakeoff" [silentpc-opusplan:4a4c3021:60176, j60523]; README.md:20 plans "C17 and C23 for the C family" (grammars). Repository facts (verified by grep in status-check/hbnf): RFCPLAN.md:2123 "The C backend stays C99 and C++-clean"; hbnf_c.adb:807-808 `static _Thread_local hbnf_ev_t *hbnf_ev;` and `static _Thread_local size_t hbnf_cev;` (emitted when a grammar uses a switch), hbnf_c.adb:10424 `static _Thread_local size_t hbnf_fork_start, hbnf_fork_used;` (emitted when forks are used); `__attribute__((unused))` at hbnf_c.adb:267, 2919-2928, 4912; `__builtin_expect` at 4819; `grep -l "std=gnu11" tests/*.sh | wc -l` gives 64; only tests/c99.sh, tests/gnu99.sh and tests/sqlite.sh mention `-std=c99` or `gnu99`, and those run gcc as a reference on the C grammar's input, not on the generated output (tests/c99.sh:4,30); tests also pass `-D_GNU_SOURCE`.
+- Referents you named or liked:
+  - C99 pin, from OpenBSD: "we pin C at C99 (for OpenBSD kernel compatibility) and for C++ we want to support any reasonable version (obviously we don't care about cfront)" [silentpc:c14a13ff:j4748]; stance: chosen
+  - C++ through an extern "C" header guard: "if C++ support becomes more than a simple extern \"C\" header guard, we can make a separate C++ backend" [silentpc:c14a13ff:4769]; stance: chosen
+  - pcc as c99 plus gnu extensions: "modern pcc is c99 so that should be the comparable" [silentpc-opusplan:4a4c3021:j60523] and "pcc is c99 plus gnu extensions" [silentpc-opusplan:4a4c3021:60776]; stance: chosen
+  - gcc bison grammar, c99 era with its gnu extensions [silentpc-opusplan:4a4c3021:60776]; stance: chosen
+  - c11, c17 and c23 (grammars): "i want c11 c17 and c23 for my own personal satisfaction and use, but they are useless for the yacc bakeoff" [silentpc-opusplan:4a4c3021:j60523]; stance: rejected for the bakeoff, wanted otherwise
+  - c11 is a different dialect: "c11 is a different dialect" [silentpc-opusplan:4a4c3021:60176]; stance: considered
+  - language header, from no named system: "this stage we just go with C; but we can include as first non-comment in the file, a language C|Rust|Zig|Ada" [hist-silentpc:fd13bc5f:h213]; stance: chosen (C), considered (Rust, Zig, Ada)
+- Option 1 - Say C11 in the docs: change README/RFCPLAN to "C11 with GNU extensions (gnu11)", matching the tests and the generator.
+  - Rationale: the shortest path to truth: docs follow what exists and what is tested; every supported compiler today (GCC, Clang, OpenBSD's clang) defaults to gnu17 or newer.
+  - Precedent: GCC's default dialect is `gnu17` since GCC 8 (unverified: general knowledge) and clang's is `gnu17` (unverified); the decision log's own "pcc is c99 plus gnu extensions" (hbnf-status.md:2076) shows he thinks of C99 as the old-compiler floor. (your referent [silentpc-opusplan:4a4c3021:j60523])
+  - Cost and risk: abandons the "OpenBSD kernel compatibility" reason the author gave; if the kernel is compiled with `-std=gnu99` then forks and switches fail to compile there.
+  - Fit: P-OCCAM best (no work); contradicts the author's stated pin, so it needs his explicit change.
+  - Note: you said "we pin C at C99": [silentpc:c14a13ff:j4748]
+- Option 2 - Make the generator C99 and test with `-std=c99` (or gnu99): replace `_Thread_local` by a `__thread` fallback macro or a context pointer, flip the tests to `-std=gnu99`/`-std=c99 -pedantic`.
+  - Rationale: makes the pin true and checked; a promise that is tested stays a promise; the one real C11 feature is a handful of lines.
+  - Precedent: SQLite builds without any C11 feature and states portability as a goal (unverified: only the file's presence is verified, corpora/sqlite-amalgamation-3460100/sqlite3.c; its macros such as `SQLITE_HAVE_C99_MATH_FUNCS` at line 239 are verified); GNU bison's own skeleton chooses C99 integer types only `#if defined __STDC_VERSION__ && 199901 <= __STDC_VERSION__` (verified: /usr/share/bison/skeletons/c.m4:230) and carries pre-C99 fallbacks; this is the style of a tool that must run in old environments.
+  - Cost and risk: need an alternative to thread-local state: either a per-parser struct field (clean, and the right design for re-entrancy and for out-of-order or threaded use, since `parser_t *p` is already passed) or `__thread` (a GNU extension, not C99 either); `__attribute__` and `__builtin_expect` must be hidden behind macros to be C99-pedantic; 64 test lines change; `-pedantic-errors` would then expose more.
+  - Fit: P-DEP good; honours the author's pin; moderate effort.
+- Option 3 - C17 (or C23) for the grammars and C99 for the output: accept two meanings of "C standard": the C family of grammars grows to C17 and C23 (README.md:20), the generator's own output stays C99.
+  - Rationale: the two questions are different (what language the grammar parses, what language the generated code is written in) and the repository already uses the word for both; stating the two separately removes the confusion; C23 is also the first standard with `#embed`, `bool` and `typeof` as keywords, which the grammar must parse. (unverified: general knowledge)
+  - Precedent: Bison's documentation distinguishes the generated parser's C dialect from the grammar language (unverified: general knowledge); the author's own split "c11 is a different dialect" (hbnf-status.md:2078). (your referent [silentpc-opusplan:4a4c3021:j60523])
+  - Cost and risk: needs Option 2 (or 1) as well for the output side; new grammars c17/c23 (not started: hbnf-status.md:2483, RFCPLAN.md:2940) and a yacc/gcc reference for each; the word "C standard" must always carry its subject.
+  - Fit: P-LOAD good (a precise sentence); an add-on, not a full answer.
+- Option 4 - A switch that selects the standard: `--std=c99|c11|gnu11` (or a `language` header value, the existing "Language header" idea `C|Rust|Zig|Ada` of 2026-09-21 [hist-silentpc:fd13bc5f:h213#1], e.g. `language C99`) and the generator picks `_Thread_local`, `__thread` or a struct field accordingly.
+  - Rationale: lets a kernel user have C99 and a modern user have C23 features such as `thread_local` keyword, `static_assert`; the author already planned a language header.
+  - Precedent: flex and bison have switches for output dialect (bison's `%language "C"`/`"C++"`, verified only as present: /usr/share/bison/skeletons/c++.m4, c.m4, glr.cc); ANTLR's `-Dlanguage=` target option (unverified: general knowledge); lemon has no such switch (unverified). (your referent [hist-silentpc:fd13bc5f:h213])
+  - Cost and risk: a feature and a matrix to test (each standard times four backends times every grammar): the opposite of Occam; each option doubles `check.sh` time (which already runs four slices at once, tests/check.sh:16).
+  - Fit: P-OCCAM against; P-LOAD against; worth it only if two audiences really exist.
+- Option 5 - Drop `_Thread_local` for a portable fallback and keep everything else as is: a macro in the emitted prologue chooses `_Thread_local` when `__STDC_VERSION__ >= 201112L`, else `__thread`, else nothing (single-threaded).
+  - Rationale: the minimum change that makes the generated file compile under `-std=c99` for the forks and switch cases without redesigning state; the feature test macro pattern (`__STDC_VERSION__`) is exactly what bison's skeleton does (verified: c.m4:230).
+  - Precedent: glibc and many projects use `#if defined __STDC_VERSION__ && __STDC_VERSION__ >= 201112L` for `_Thread_local` and `__thread` for GNU compilers (unverified: general knowledge); the C feature test macros are `__STDC_VERSION__` (199901L, 201112L, 201710L, 202311L) (unverified for the exact values of C23 on this machine: gcc/clang here were not queried).
+  - Cost and risk: a few lines in hbnf_c.adb (3 sites: 807, 808, 10424) plus one test with `-std=c99`; if the fallback is "nothing" then two parsers in two threads share state silently: a latent error of exactly the kind hbnf's gates refuse, so the fallback should be "refuse to compile" (`#error`), not silent.
+  - Fit: P-GATE good if the failure is loud; P-OCCAM good.
+- Option 6 - Put the standard in one place and test it: keep C99 as the claim for the output, add `tests/std99.sh` that compiles every generated parser with `-std=c99 -Wall -Werror` (or `-std=gnu99`) and make the failures the work list, without deciding the solutions in advance.
+  - Rationale: first measure what actually breaks, then choose among 2, 5 and 1 with numbers; the prior claim has been unchecked for weeks (the docs say C99, the tests say gnu11).
+  - Precedent: the repository's own c99.sh test uses `gcc -std=c99 -pedantic-errors -fsyntax-only` as the reference for grammar acceptance (verified: tests/c99.sh:4,30), so the pattern is already used on the grammar side.
+  - Cost and risk: one new test script; may reveal many failures; no behaviour change until decided.
+  - Fit: P-GATE best (a claim should have a gate); P-OCCAM good.
+- Recommendation: MINE (P): Option 6 first (run the generated C of the standard grammars with `-std=gnu99` and `-std=c99 -pedantic` to see what breaks), then Option 5 for the three `_Thread_local` sites (with `#error` rather than a silent fallback), and say in the docs "output: C99 with the GNU attributes (`__attribute__`, `__builtin_expect`), tested at gnu99 and gnu11; grammars: C79 to C11 built, C17 and C23 planned" (Option 3's sentence). If the measurement shows only the three thread-local sites fail, this is a small job; if it shows `__attribute__` and other things everywhere, declare gnu99 (GNU extensions allowed) rather than strict C99. What would change my mind: if OpenBSD's base compiler is now clang with gnu17 as default and the kernel target is no longer a use, Option 1 (say C11) is honest and cheapest.
+- Would help you decide: `cd status-check/hbnf && grep -l 'std=gnu11' tests/*.sh | wc -l` (64) and replace `-std=gnu11` by `-std=gnu99` in a scratch copy of a few tests (backref.sh, forks.sh, ladder.sh) to see which fail; `grep -n '_Thread_local\|__thread' hbnf_c.adb runtime/*.h` (the three sites); `gcc -std=c99 -pedantic-errors -fsyntax-only` over one generated parser; `echo | gcc -dM -E - | grep STDC_VERSION` for the default dialect of the installed gcc and clang.
