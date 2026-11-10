@@ -9,7 +9,7 @@ Parent: [All Projects](https://moebiusv.github.io/) | Git Repo: [github.com/moeb
 > source tree itself), `c89`, `c99`, `pcc99` (what PCC's `cgram.y` reads), `gnu99` (what GCC 4.0.4's
 > reads) and `c11`; the C parser is also measured against `gcc -fsyntax-only` and run over the
 > SQLite amalgamation.  A grammar chooses the structure its parser builds: the typed tree (layout
-> `ast`, the default), a flat tape of words (`tape`, `runtime/hbnf_tape.h`), or the daemons' own
+> `ast`, the default), a flat tape of words (`tape`, `runtime/hbnf_tape.h`), or BSD's
 > `sys/queue.h` and `sys/tree.h` containers (`tailq`, `rb`).  `%emit` blocks write the tape by hand
 > where a layout does not fit.  The parsers read alternatives that begin alike once, and a ladder of
 > binary operators with one look past its first operand.  The code templates are rendered by the
@@ -36,7 +36,7 @@ mind is short enough for a model to read and write cheaply, and the same file gi
 parser.  `HISTORY.md` makes the case, `WHY.md` counts the tokens, and step 14 of `RFCPLAN.md` plans
 the emitter that would hand the same grammar to a model's decoder.
 
-HyperBNF ships with the basic formats ready to use: JSON, TOML and YAML.  Drop one in and you have a
+HyperBNF ships with the basic formats ready to use: JSON, TOML, YAML and obconf (the OpenBSD configuration format).  Drop one in and you have a
 parser; the grammar is short, readable HyperBNF, so changing it to fit your own needs means editing a
 few lines, not learning a generator.
 
@@ -49,9 +49,9 @@ of newer RFCs specify their protocols in it. Start from the notation people
 already read fluently, and a grammar is documentation first and a parser
 second.
 
-The OpenBSD configuration file format was the initial inspiration for developing hbnf, but then
+The configuration file format that OpenBSD uses by default for new projects was the initial inspiration for developing hbnf, but then
 that revealed some problems in the parser generator world that looked like they needed solving.  The
-format, the grammar for it and the daemons it was written for are in [`obconf.md`](obconf.md).
+format and the grammar for it are in [`obconf.md`](obconf.md).
 
 ## Two things
 
@@ -462,7 +462,7 @@ than its newest source.
 ## Contributing
 
 Ada is written in the functional style in `STYLE.md`: constants by default,
-expression functions, no `out`/`in out` parameters, loops replaced by `'Reduce`
+expression functions, as few `out`/`in out` parameters as possible, loops replaced by `'Reduce`
 and comprehensions, and side effects kept at the edges. Read it before
 contributing.
 
