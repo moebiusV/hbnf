@@ -7,7 +7,7 @@ README that says what is in it and what state it is in.
 | directory | what | state |
 |---|---|---|
 | `rfc/` | grammar snippets lifted from RFCs, with vectors that must and must not parse | in use (`tests/rfc.sh`) |
-| `posix/` | the POSIX shell grammar (POSIX.1 §2.10), the standard's own text plus tokens and ordering | in use (`tests/posix.sh`; `scripts/posix-scan.sh` against dash) |
+| `posix/` | the POSIX shell grammar (POSIX.1 §2.10), the standard's own text (source and attribution in `posix/posix-shell-1.md`) plus tokens and ordering | in use (`tests/posix.sh`; `scripts/posix-scan.sh` against dash) |
 | `c/` | six grammars: C of UNIX/32V (`c79`), ISO C90 (`c89`), C99 (`c99`), the C that PCC reads (`pcc99`), C99 with the GNU extensions of GCC 4.0.4 (`gnu99`), and C11 (ISO 9899:2011 Annex A) with the GNU forms headers use (`c11`), the start of a small C compiler | in use (`tests/c.sh`, `tests/c79.sh`, `tests/c89.sh`, `tests/c99.sh`, `tests/pcc99.sh`, `tests/gnu99.sh`, `tests/sqlite.sh`; `scripts/c-scan.sh` against gcc; `bench/cspeed.sh`) |
 | `imp72/` | the IMP72 compiler's sources (DECUS 10-198) | cancelled: IMP72 gets its own compiler; the files stay as the subject of `METACOMPILERS.md` |
 | `algol60/` | the Revised Report on ALGOL 60, its BNF, and a grammar in HyperBNF | in use (`tests/algol60.sh`) |

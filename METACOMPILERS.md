@@ -265,7 +265,7 @@ What the documentation does not say, and what was found elsewhere:
 
 Code in the grammar is not the difference.  hbnf has had `{ code }` blocks since the beginning (`%action`, `%where`, `%emit`, `%scan`),
 and is not against them: the aim is the smallest total ruleset, in lines, characters, tokens and rules, and code belongs
-where it shortens that (a scanner jet that replaces a page of rules; a test that replaces a family of rules).  Where the two
+where it shortens that (a scanner action that replaces a page of rules; a test that replaces a family of rules).  Where the two
 differ is what the engine promises about the code: Raku does not undo the side effects of a block when it backtracks, and
 hbnf's context sets are put back with the guess, while a `%where` block runs where its place in the sequence is reached and
 its effects are the author's.
