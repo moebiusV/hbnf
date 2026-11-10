@@ -91,7 +91,7 @@ to the OpenBSD configuration files.
 **The design and its plan**
 - [`WHY.md`](WHY.md): the grammar and its design choices, for an RFC reader.
 - [`RFCPLAN.md`](RFCPLAN.md): the plan, its decisions and its status, step by step.
-- [`decisions-and-status.md`](decisions-and-status.md): each design and implementation choice with its rationale and precedents, and whether it is done, left to do, rejected or left in the air.
+- [`decisions-and-status.md`](decisions-and-status.md): each design and implementation choice with its rationale and precedents, and whether it is done, left to do, rejected or left in the air. The author's messages it cites are rows [R<n>] of the [decision register](decision-register.md).
 - [`ABNF.md`](ABNF.md): the notation against RFC 5234, feature by feature.
 - [`CONTEXTS.md`](CONTEXTS.md): design notes, reviewed and kept current: how a rule says it is in a context (an embedded language, a picture string), has an attribute, or is a kind of thing; what is decided and what is built is in the table at the top.
 - [`CHARLAYER.md`](CHARLAYER.md): character rules, numeric terminals and UTF-8.
