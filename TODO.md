@@ -6,7 +6,7 @@ the agents' hand-backs of 2026-11-04.  Where an item is a number like "26/34" it
 
 State at the pause: `main` is pushed through 4bb4e9a, with two local commits after it (the notation figures, and the documents)
 that are pushed with this file.  The static `./hbnf` is built from the sources of 9884a84 (the old one is `./hbnf.old`).
-The speed agent is paused with its worktree intact (`.claude/worktrees/agent-a62ce11167790e13f`).
+The speed agent is paused with its worktree intact.
 
 ---
 
@@ -58,7 +58,7 @@ Queued reader and generator fixes (the titles are the item titles):
 | 1, 2 | `'c'` is `"c"`; `'\'` for a backslash |
 | 3 | a lookahead over a sequence |
 | 4, 5 | `hidden` and `!`/`&` over any rule in every layout; `bol`/`eol` are text for `hidden` and for rules of characters |
-| 6 | `%spaces N` at the start of a repeated group reads N as lost (repro in `/home/matthew/hbnf-repro-spaces/`) |
+| 6 | `%spaces N` at the start of a repeated group reads N as lost |
 | 7 | a pattern rule's instances are named for the pattern |
 | 11, 22, 29 | a negative lookahead over a rule that ends in one; a lookahead rule inside a rule of characters always warns; a multi-character lookahead in a rule of characters |
 | 13, 14, 15 | `word`; a token exception; letters in a rule of characters |
@@ -118,7 +118,7 @@ Note:
 
 - [ ] 165 `core.*` files (124 MB) untracked in the repository root; `hbnf-*.tar.gz` files and `hbnf15.txt` untracked there too.  Delete or move out; add to `.gitignore`.
 - [ ] Docker: 40 containers (340 GB, all but one stopped) and 17 GB of unused images are reclaimable; some may be yours (not touched).  `/` is 67% full (591 GB free).
-- [ ] `/home/matthew/hbnf-build` is 21 GB of dev generators (`bin/hbnf-*`) and scratch (`xw`, `xcb*`, `x2`, `rel`); `.claude/worktrees` is 594 MB (the paused speed agent's among them).
+- [ ] The out-of-tree build directory is 21 GB of dev generators (`bin/hbnf-*`) and scratch (`xw`, `xcb*`, `x2`, `rel`), and the agent worktrees take 594 MB (the paused speed agent's among them); clean both.
 - [ ] `tests/results/` is root-owned from container runs, so a host `tests/check.sh` cannot write there: run the suites in the container (as the agents did) or fix the ownership.
 - [ ] `./hbnf.old` (the pre-9884a84 static generator) can go once the next rebuild is verified.
 - [ ] `tests/xml/__pycache__` is left by the container.

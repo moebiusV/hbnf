@@ -918,7 +918,7 @@ Each was met writing `corpus/markdown`; the first two are the user's decisions, 
    Both need the same thing: a silent variant of a rule, the same function with the writing of nodes switched off.  With it, `hidden nl` works when `nl` holds `eol`, and `!closer(N)` works when `closer` holds `%spaces N`.
 5. **`bol` and `eol` are text for `hidden` and for rules of characters.**  A rule that holds `eol` is refused as `hidden` ("it builds structure").
 6. **A `%spaces N` at the start of a repeated group reads N as lost, in `corpus/markdown`** (not in the smallest grammar that has the same shape): `table(N) := row %spaces N delimiter *( %spaces N row )` reads no data rows for N > 0, and
-   `*( %spaces N *SP row )` does.  The repro is in `/home/matthew/hbnf-repro-spaces/` (README.txt, the failing grammar, the input, five variants).
+   `*( %spaces N *SP row )` does.  The repro (a README, the failing grammar, the input, five variants) was kept outside the repository.
 7. **A pattern rule's instances are named for the pattern** (`marked-x42x42`) in the tape and the tree; a rule written with the pattern as its body would want the caller's name (`strong = marked("**") | marked("__")` as one node `strong`).
 8. **Up references (section 25)** are the one item here that is a feature and not a repair.
 

@@ -7,3 +7,4 @@ hbnf
 
 # per-run results of tests/check.sh
 tests/results/
+__pycache__/
