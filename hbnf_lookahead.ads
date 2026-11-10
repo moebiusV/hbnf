@@ -22,7 +22,7 @@ with HBNF_Grammar;
 --  other, so it goes last, and is refused if what follows the choice could
 --  begin another.
 --
---  A jet, a built-in scanner, a name that is no rule, or a rule that refers to
+--  A scanner action, a built-in scanner, a name that is no rule, or a rule that refers to
 --  itself is taken to match any text, which only ever makes the answer "no".
 package HBNF_Lookahead is
    use HBNF_Grammar;
@@ -170,7 +170,7 @@ package HBNF_Lookahead is
    --  takes as many repetitions as match and does not give one back, where
    --  ABNF would if the rest needed it.  Found when some text begins with a
    --  repetition and is also the start of the rest, so the two differ;
-   --  Witness is that text.  A jet, a recursive rule or a built-in scanner is
+   --  Witness is that text.  A scanner action, a recursive rule or a built-in scanner is
    --  taken to match nothing here, so this never refuses a grammar on a guess.
 
    --  A token as a deterministic automaton, for the scanners the backends
@@ -207,7 +207,7 @@ package HBNF_Lookahead is
       Why   : out Ada.Strings.Unbounded.Unbounded_String);
    --  The rule Nm, read as text: literals, classes, groups, alternatives,
    --  repetitions and other rules built of those.  Not Ok, and Why says what
-   --  stops it, when it uses a jet or a built-in scanner, refers to itself,
+   --  stops it, when it uses a scanner action or a built-in scanner, refers to itself,
    --  repeats more than 32 times with an upper bound, or needs more than
    --  100,000 states before it is minimized: it is never approximated, because a scanner must match exactly
    --  what the grammar says.

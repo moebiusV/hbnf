@@ -422,7 +422,7 @@ package body HBNF_Rust is
    end Rust_Type_Of;
 
    --  The underlying scalar Rust type a rule name resolves to, chasing
-   --  single-name aliases and jets to their target (so `str | word` and
+   --  single-name aliases and scanner actions to their target (so `str | word` and
    --  `ipv4 | ipv6` both collapse to `String`).  "" if not scalar.
    function Resolve_Type
      (Rules : Rule_Vectors.Vector; N : String; Depth : Natural := 0)
@@ -525,7 +525,7 @@ package body HBNF_Rust is
                  Inline_Type => To_Unbounded_String ("String"));
       end if;
       if R.Jet_Code /= Null_Unbounded_String then
-         --  A jet reads its own token kind and yields the matched text.
+         --  A scanner action reads its own token kind and yields the matched text.
          return (Kind => Scalar,
                  Inline_Type => To_Unbounded_String ("String"));
       end if;
@@ -2716,11 +2716,11 @@ package body HBNF_Rust is
       Keywords : constant String_Vectors.Vector := Collect_Keywords;
 
       --  The four core scanners a grammar may leave undefined: the compiler
-      --  injects each as a C jet, and this backend has its own Rust for them.
+      --  injects each as a C scanner action, and this backend has its own Rust for them.
       function Is_Builtin_Jet (Nm : String) return Boolean is
         (Nm = "word" or else Nm = "int" or else Nm = "str" or else Nm = "ws");
 
-      --  The scanner a jet rule runs: the built-in one, or the stub for
+      --  The scanner a scanner action rule runs: the built-in one, or the stub for
       --  hand-written C.
       function Jet_Fn (Nm : String) return String is
         ((if Is_Builtin_Jet (Nm) then "scan_" else "jet_") & Rust_Snake (Nm));
@@ -3375,7 +3375,7 @@ package body HBNF_Rust is
          if Is_Char_Rule (Rules, NM) or else R.Jet_Code /= Null_Unbounded_String
          then
             --  A char rule is a scanner: run it here and capture the text.  A
-            --  jet is its built-in scanner, or the stub for hand-written C.
+            --  scanner action is its built-in scanner, or the stub for hand-written C.
             Append (Buf, "    let n = "
               & (if R.Jet_Code /= Null_Unbounded_String
                  then Jet_Fn (NM) else "scan_" & Rust_Snake (NM))
@@ -4062,7 +4062,7 @@ package body HBNF_Rust is
                --  An empty rule's body never reads the parser, so its
                --  parameter is `_p`: rustc rejects an unused one under
                --  `-D unused-variables`, which tests/portable.sh passes.  A
-               --  jet rule also has an empty pattern but does read `p`, so it
+               --  scanner action rule also has an empty pattern but does read `p`, so it
                --  keeps the name.
                declare
                   Param : constant String :=
@@ -4137,7 +4137,7 @@ package body HBNF_Rust is
 
       --  The scanners.  A core rule the grammar does not define (`word`,
       --  `int`, `str`, `ws`) is a built-in: hand-written Rust, the same scan
-      --  the C backend's jets make.  Any other jet is hand-written C, which
+      --  the C backend's scanner actions make.  Any other scanner action is hand-written C, which
       --  this backend cannot run, so it is a stub that matches nothing.
       declare
          procedure Put (Text : String) is

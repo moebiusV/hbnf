@@ -43,7 +43,7 @@ done
 
 # The same gate in Rust, Zig and Ada (--writer --ast): every file the language's parser reads is
 # written and read back to the same tree (the dump), and the second write is the first.  A grammar
-# with a scanner written in C (a `jet`) is parsed by C alone so far, so some files
+# with a scanner written in C (an action) is parsed by C alone so far, so some files
 # are not parsed here ("skipped").  tests/writer/rt_main.{rs,zig,adb} are the drivers.
 cap() { printf '%s' "$1" | awk '{ print toupper(substr($0,1,1)) substr($0,2) }'; }
 

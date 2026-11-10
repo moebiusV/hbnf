@@ -363,7 +363,7 @@ package body HBNF_Ada is
    end Ada_Type_Of;
 
    --  The underlying scalar Ada type a rule name resolves to, chasing
-   --  single-name aliases and jets to their target (so `str | word` and
+   --  single-name aliases and scanner actions to their target (so `str | word` and
    --  `ipv4 | ipv6` both collapse to `Unbounded_String`).  "" if not scalar.
    function Resolve_Type
      (Rules : Rule_Vectors.Vector; N : String; Depth : Natural := 0)
@@ -1707,11 +1707,11 @@ package body HBNF_Ada is
       Keywords : constant String_Vectors.Vector := Collect_Keywords;
 
       --  The four core scanners a grammar may leave undefined: the compiler
-      --  injects each as a C jet, and this backend has its own Ada for them.
+      --  injects each as a C scanner action, and this backend has its own Ada for them.
       function Is_Builtin_Jet (Nm : String) return Boolean is
         (Nm = "word" or else Nm = "int" or else Nm = "str" or else Nm = "ws");
 
-      --  The scanner a jet rule runs: the built-in Ada one, or the stub for
+      --  The scanner a scanner action rule runs: the built-in Ada one, or the stub for
       --  hand-written C.
       function Jet_Fn (Nm : String) return String is
         ((if Is_Builtin_Jet (Nm) then "Scan_" else "Jet_") & Ada_Ident (Nm));
@@ -2384,7 +2384,7 @@ package body HBNF_Ada is
          Old_FA : Unbounded_String;
 
          --  The lines that run a scanner at the position and, when it matched,
-         --  yield the text: a char rule, or a jet (a built-in scanner or the
+         --  yield the text: a char rule, or a scanner action (a built-in scanner or the
          --  stub for C code this backend cannot run).
          procedure Emit_Scan_Text (Fn, Desc : String) is
          begin
@@ -2438,7 +2438,7 @@ package body HBNF_Ada is
             return;
          end if;
          if R.Jet_Code /= Null_Unbounded_String then
-            --  A jet: its scanner (a built-in) or the stub for hand-written C.
+            --  A scanner action: its scanner (a built-in) or the stub for hand-written C.
             Emit_Scan_Text (Jet_Fn (NM), "a " & NM);
             return;
          end if;
@@ -2895,7 +2895,7 @@ package body HBNF_Ada is
       Spec  : U;
       Bdy  : U;
 
-      --  The built-in scanners, for each of word/int/str/ws that is a jet in
+      --  The built-in scanners, for each of word/int/str/ws that is a scanner action in
       --  the grammar (not defined as a char rule), and `word` besides when
       --  the grammar names no `word` at all, since a keyword is matched by it.
       procedure Emit_Builtin_Scans is
@@ -4255,7 +4255,7 @@ package body HBNF_Ada is
 
       --  The scanners.  A core rule the grammar does not define (`word`,
       --  `int`, `str`, `ws`) is a built-in: hand-written Ada, the same scan
-      --  the C backend's jets make.  Any other jet is hand-written C, which
+      --  the C backend's scanner actions make.  Any other scanner action is hand-written C, which
       --  this backend cannot run, so it is a stub that matches nothing.
       Emit_Builtin_Scans;
       --  The guards `/` sets where a union needs backtracking (first match

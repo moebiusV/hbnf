@@ -2188,7 +2188,7 @@ package body HBNF_Grammar is
                   Emit (T_Star);  Emit (T_LParen);
                   I := I + 1;  Col := Col + 1;
                else
-                  --  A raw code block (preamble, jet, or epilogue): capture the
+                  --  A raw code block (preamble, scanner action, or epilogue): capture the
                   --  text between matching braces.  Braces nest, and a `"` string
                   --  literal is copied verbatim so a `}` inside one is not taken
                   --  as the block's close.
@@ -9740,10 +9740,10 @@ package body HBNF_Grammar is
          Words_Used := (for some R of Rules => Names_Word (R.Pattern));
       end;
 
-      --  The built-in lexical jets: the classic word/int/str scanners and the
+      --  The built-in lexical scanner actions: the classic word/int/str scanners and the
       --  default whitespace, as hand-written `%scan{}` code a grammar
       --  (obconf) may override.  A grammar that defines its own rule keeps
-      --  it; `Reachable` drops an injected jet nothing references.
+      --  it; `Reachable` drops an injected scanner action nothing references.
       declare
          procedure Inject_Jet (Name, Code : String) is
             Present : Boolean := False;
@@ -12044,7 +12044,7 @@ package body HBNF_Grammar is
             end if;
             exit when Cur (P).Kind = T_EOF;
 
-            --  `action name { code }`: an action jet for a rule defined here
+            --  `action name { code }`: an action for a rule defined here
             --  or in an included file.  A binding file uses it to keep a
             --  daemon's actions (and its C headers) out of the grammar.
             if Cur (P).Kind = T_Name
@@ -12206,7 +12206,7 @@ package body HBNF_Grammar is
             Next (P);   --  the '='
             Note_Wire (P, To_String (Name));
 
-            --  `name = %scan{ code }` is a jet, as `name = { code }` is.
+            --  `name = %scan{ code }` is a scanner action, as `name = { code }` is.
             if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "scan"
               and then P.Pos + 1 <= Natural (P.Toks.Length)
               and then P.Toks (P.Pos + 1).Kind = T_Code
@@ -12234,7 +12234,7 @@ package body HBNF_Grammar is
                Jet_Tag := Tag;
             end;
             if Cur (P).Kind = T_Code then
-               --  A jet: `name = { <code> }` — a hand-written scanner.
+               --  A scanner action: `name = { <code> }` — a hand-written scanner.
                if Jet_Tag /= "c" and then Jet_Tag /= Null_Unbounded_String then
                   declare
                      Ent : Jet_Entry :=
@@ -12280,7 +12280,7 @@ package body HBNF_Grammar is
                   Bases   : Natural;
                begin
                   Rewrite_Left_Recursion (Name, Name_Line, Pattern, Bases);
-                  --  An action jet: `name = pattern { code }` — the code
+                  --  An action: `name = pattern { code }` — the code
                   --  block after the pattern is run in the bind walk, not
                   --  during parsing.  A trailing comment sits after it.
                   while Cur (P).Kind = T_Pct
@@ -12648,7 +12648,7 @@ package body HBNF_Grammar is
       end Expand;
 
       --  The file's own rules come first, in the order it writes them (so a
-      --  jet's place among the jets is where it is written).  Its includes
+      --  scanner action's place among the scanner actions is where it is written).  Its includes
       --  are read before it, so its own rule overrides an included one of
       --  the same name; the remaining included rules append after.  The
       --  root, put first, is the file's first new rule: the first it

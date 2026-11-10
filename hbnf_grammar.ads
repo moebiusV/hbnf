@@ -352,14 +352,14 @@ package HBNF_Grammar is
       Leading_Comment : Unbounded_String := Null_Unbounded_String;
       Trailing_Comment : Unbounded_String := Null_Unbounded_String;
       Jet_Code        : Unbounded_String := Null_Unbounded_String;
-      --  Non-empty for a jet: `name = %scan{ <code> }` (or `name = { <code> }`,
+      --  Non-empty for a scanner action: `name = %scan{ <code> }` (or `name = { <code> }`,
       --  or `<name> = C { <code> }`).  The code is a hand-written scanner
       --  body emitted verbatim; Pattern stays empty.  A scanner may also be
       --  written for another backend (`<name> = Rust { <code> }`): see
       --  Jet_Body.  One written for no C has No_C_Code here, so every test
-      --  for "is a jet" still holds.
+      --  for "is a scanner action" still holds.
       Action_Code     : Unbounded_String := Null_Unbounded_String;
-      --  Non-empty for an action jet: `name = pattern %action{ <C-code> }`
+      --  Non-empty for an action: `name = pattern %action{ <C-code> }`
       --  (or `pattern { <C-code> }`), or a separate `action name { <C-code> }`
       --  (e.g. in a binding file).  The
       --  code is a fragment that builds the daemon's conf struct, run once
@@ -479,7 +479,7 @@ package HBNF_Grammar is
    --    twice is not.  `keywords` lists merge.  Code blocks (preambles,
    --    epilogues) are joined in the order the files are read, included
    --    files' first, like C's #include.
-   --  - `action name { code }` attaches an action jet to the rule that
+   --  - `action name { code }` attaches an action to the rule that
    --    stands once every file is read, so a binding file can include a
    --    grammar and add the daemon's actions and headers without touching
    --    it.
@@ -493,8 +493,8 @@ package HBNF_Grammar is
    function Parse_File (Path : String) return Rule_Vectors.Vector;
 
    --  Rules, minus those nothing uses: the root (Rules (1)), every rule
-   --  reachable from it through references (groups included), and every jet
-   --  rule (the lexer runs jets whether or not a rule names them), in their
+   --  reachable from it through references (groups included), and every scanner action
+   --  rule (the lexer runs scanner actions whether or not a rule names them), in their
    --  original order.  An include like obconf.hbnf brings rules a
    --  grammar never references; emitting them costs code and unused-function
    --  warnings, and their literals would still become keywords.
@@ -577,8 +577,8 @@ package HBNF_Grammar is
    function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector;
 
    --  The top-level file's `language C|Rust|Zig|Ada`, or "C" when it has
-   --  none.  Jets are C today whatever the language: the other backends
-   --  read a jet's token with their own lexer.
+   --  none.  Scanner actions are C today whatever the language: the other backends
+   --  read a scanner action's token with their own lexer.
    function Language return String;
 
    --  The raw `{ ... }` code blocks before the rules (emitted before the

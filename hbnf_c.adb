@@ -864,7 +864,7 @@ package body HBNF_C is
    end Whitespace_Rule_Name;
 
    --  True when a rule is parsed by name: a core type (word/int/str/…, char
-   --  rule or jet) is read as a scalar in place, a building block is inlined
+   --  rule or scanner action) is read as a scalar in place, a building block is inlined
    --  into a token's scanner, and the whitespace rule is only scanned by
    --  skip_ws — none of them gets a parse_rule_<name>.
    function Needs_Parse_Fn (Rules : Rule_Vectors.Vector; NM : String)
@@ -883,7 +883,7 @@ package body HBNF_C is
       return True;
    end Needs_Parse_Fn;
 
-   --  The scanner a rule runs: its jet, or a char-rule scanner.  The whitespace
+   --  The scanner a rule runs: its scanner action, or a char-rule scanner.  The whitespace
    --  rule is one or the other, never a core scalar, so Scalar_Scan_Fn (which
    --  maps any non-core name onto `word`) would be wrong for it.
    --  Contexts (RFCPLAN.md decision 13): true when the grammar declares one.
@@ -1153,7 +1153,7 @@ package body HBNF_C is
    end C_Type_Of;
 
    --  The underlying scalar C type a rule name resolves to, chasing
-   --  single-name aliases and jets.  "" if not scalar.
+   --  single-name aliases and scanner actions.  "" if not scalar.
    function Resolve_Type (Rules : Rule_Vectors.Vector; N : String;
                           Depth : Natural := 0) return String is
       C : constant String := Scalar_C_Type (N);
@@ -1384,7 +1384,7 @@ package body HBNF_C is
                  others      => <>);
       end if;
       if Is_Char_Rule (Rules, To_String (R.Name)) then
-         --  A char-level rule is a token definition, like a jet.
+         --  A char-level rule is a token definition, like a scanner action.
          return (Kind        => Scalar,
                  Inline_Type => To_Unbounded_String ("const char *"),
                  others      => <>);
@@ -2046,7 +2046,7 @@ package body HBNF_C is
       end C_Type_Of;
 
       --  The underlying scalar C type a rule name resolves to, chasing
-      --  single-name aliases and jets to their target (so `str | word` and
+      --  single-name aliases and scanner actions to their target (so `str | word` and
       --  `ipv4 | ipv6` both collapse to `const char *`).  "" if not scalar.
       function Resolve_Type (N : String; Depth : Natural := 0) return String is
          C : constant String := Scalar_C_Type (N);
@@ -2156,13 +2156,13 @@ package body HBNF_C is
          end if;
 
          if R.Jet_Code /= Null_Unbounded_String then
-            --  A jet reads its own token kind and yields the matched text.
+            --  A scanner action reads its own token kind and yields the matched text.
             return (Kind        => Scalar,
                     Inline_Type => To_Unbounded_String ("const char *"),
                     others      => <>);
          end if;
          if Is_Char_Rule (Rules, To_String (R.Name)) then
-            --  A char-level rule is a token definition, like a jet.
+            --  A char-level rule is a token definition, like a scanner action.
             return (Kind        => Scalar,
                     Inline_Type => To_Unbounded_String ("const char *"),
                     others      => <>);
@@ -2944,7 +2944,7 @@ package body HBNF_C is
          end loop;
       end Emit_Walk;
 
-      --  Emit bind_<rule>: the bottom-up walk that runs action jets.  After a
+      --  Emit bind_<rule>: the bottom-up walk that runs actions.  After a
       --  successful parse it recurses into a node's children first (so a
       --  parent's action sees its children already processed) and then runs
       --  the rule's action code, if any.  Actions never run during parsing,
@@ -4563,7 +4563,7 @@ package body HBNF_C is
       Emitted   : array (1 .. N) of Boolean := [others => False];
       Remaining : Natural := 0;
       Res       : U;
-      --  A rule with an action jet gets a bind walk; without one the walk is
+      --  A rule with an action gets a bind walk; without one the walk is
       --  dead code, so it is emitted only when some rule has an action.
       Has_Action : constant Boolean :=
         Hosted_Actions
@@ -5177,7 +5177,7 @@ package body HBNF_C is
 
    --  The scanner a core scalar runs: `word`/`atom`/`bool`/`flag` read the
    --  `word` rule, `int`/`uN`/`iN` the `int` rule, `str` the `str` rule.  The
-   --  core rule is a hand-written jet (`jet_*`) when the grammar does not
+   --  core rule is a hand-written scanner action (`jet_*`) when the grammar does not
    --  define it (the injected built-in), else a char rule (`scan_*`).
    function Scalar_Scan_Fn (Rules : Rule_Vectors.Vector; Name : String)
       return String
@@ -5199,7 +5199,7 @@ package body HBNF_C is
       return "scan_" & Core;
    end Scalar_Scan_Fn;
 
-   --  The scanner the `word` core rule runs (jet or scan), for a keyword read.
+   --  The scanner the `word` core rule runs (scanner action or scan), for a keyword read.
    function Word_Scanner (Rules : Rule_Vectors.Vector) return String is
      ((if Find (Rules, "word") /= 0
          and then Rules (Find (Rules, "word")).Jet_Code /= Null_Unbounded_String
@@ -5675,7 +5675,7 @@ package body HBNF_C is
       end Emit_Keywords;
 
       --  The underlying scalar C type a rule name resolves to (chasing
-      --  single-name aliases and jets); "" if not scalar.
+      --  single-name aliases and scanner actions); "" if not scalar.
       function Resolve_Type (N : String; Depth : Natural := 0) return String is
          C : constant String := Scalar_C_Type (N);
       begin
@@ -6958,7 +6958,7 @@ package body HBNF_C is
 
       --  FIRST-set computation for keyword dispatch: the literal keywords that
       --  can begin an element, transitively through rule references.  A core
-      --  scalar (word / atom / int / str / …) or a jet has no bounded keyword
+      --  scalar (word / atom / int / str / …) or a scanner action has no bounded keyword
       --  set, so it makes the whole alternation fall back to linear probing.
       function Is_Keyword (S : String) return Boolean renames Is_Keyword_Lit;
 
@@ -6984,7 +6984,7 @@ package body HBNF_C is
       end First_Union;
 
       --  A FIRST-set member standing for "a token that is not a keyword":
-      --  punctuation, a digit-led literal, or a jet's own token kind.  Such a
+      --  punctuation, a digit-led literal, or a scanner action's own token kind.  Such a
       --  token has kwid KWID_NONE, and can never be a keyword, so a branch
       --  that starts with one is reached through `case KWID_NONE` while a
       --  keyword that starts no branch still fails fast.  (It cannot clash
@@ -7030,7 +7030,7 @@ package body HBNF_C is
                      if J = 0 then
                         Known := False;
                      elsif Rules (J).Jet_Code /= Null_Unbounded_String then
-                        --  A jet has no pattern: it is its own token kind.
+                        --  A scanner action has no pattern: it is its own token kind.
                         V.Append (Other_Tok);
                      else
                         return First_Of (Rules (J).Pattern, Depth + 1, Known);
@@ -7088,7 +7088,7 @@ package body HBNF_C is
       --  The FIRST set of each '|' branch, flattened into one vector: branch
       --  Br's keywords are Flat (Offs (Br) .. Offs (Br + 1) - 1).  Offs is
       --  empty when any branch's leading keyword is unbounded (a core scalar
-      --  or jet), so the caller falls back to linear probing.
+      --  or scanner action), so the caller falls back to linear probing.
       procedure Branch_Firsts
         (Els  : Element_Vectors.Vector;
          Flat : out String_Vectors.Vector;
@@ -8612,7 +8612,7 @@ package body HBNF_C is
             return;
          end if;
          if R.Jet_Code /= Null_Unbounded_String then
-            --  A jet: run its hand-written scanner and yield the matched text.
+            --  A scanner action: run its hand-written scanner and yield the matched text.
             Append (Buf, Fill ("c_rule_jet",
               (H ("scan", "jet_" & C_Name (NM)),
                H ("val", (if Views_On then "hbnf_mkstr(p->text + p->pos, n)"
@@ -9193,7 +9193,7 @@ package body HBNF_C is
          end if;
       end Emit_Rule_Parser;
 
-      --  A rule with an action jet gets a bind walk; without one the walk is
+      --  A rule with an action gets a bind walk; without one the walk is
       --  dead code, so it is emitted only when some rule has an action.
       Has_Action : constant Boolean :=
         Hosted_Actions
@@ -9212,7 +9212,7 @@ package body HBNF_C is
          then C_Name (To_String (Rules (1).Pattern (1).Name)) else "");
 
       --  `statements`: what the driver (templates/statements.c) needs from
-      --  the grammar -- the root list's operations, whether an action jet
+      --  the grammar -- the root list's operations, whether an action
       --  has already reported a failed bind, and the `macros` and
       --  `includes` rules tried on each parsed statement.
       procedure Emit_Statement_Hooks (Res : in out U) is
@@ -10961,7 +10961,7 @@ package body HBNF_C is
          Append (Res, LF);
       end;
 
-      --  Jets: hand-written scanners, plus the dispatch the lexer calls.
+      --  Scanner actions: hand-written scanners, plus the dispatch the lexer calls.
       for I in 1 .. N loop
          if Rules (I).Jet_Code /= Null_Unbounded_String then
             declare

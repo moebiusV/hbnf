@@ -425,7 +425,7 @@ package body HBNF_Zig is
    end Zig_Type_Of;
 
    --  The underlying scalar Zig type a rule name resolves to, chasing
-   --  single-name aliases and jets to their target (so `str | word` and
+   --  single-name aliases and scanner actions to their target (so `str | word` and
    --  `ipv4 | ipv6` both collapse to `[]const u8`).  "" if not scalar.
    function Resolve_Type
      (Rules : Rule_Vectors.Vector; N : String; Depth : Natural := 0)
@@ -2907,11 +2907,11 @@ package body HBNF_Zig is
       Keywords : constant String_Vectors.Vector := Collect_Keywords;
 
       --  The four core scanners a grammar may leave undefined: the compiler
-      --  injects each as a C jet, and this backend has its own Zig for them.
+      --  injects each as a C scanner action, and this backend has its own Zig for them.
       function Is_Builtin_Jet (Nm : String) return Boolean is
         (Nm = "word" or else Nm = "int" or else Nm = "str" or else Nm = "ws");
 
-      --  The scanner a jet rule runs: the built-in one, or the stub for
+      --  The scanner a scanner action rule runs: the built-in one, or the stub for
       --  hand-written C.
       function Jet_Fn (Nm : String) return String is
         ((if Is_Builtin_Jet (Nm) then "scan_" else "jet_") & Zig_Snake (Nm));
@@ -3586,7 +3586,7 @@ package body HBNF_Zig is
          if Is_Char_Rule (Rules, NM) or else R.Jet_Code /= Null_Unbounded_String
          then
             --  A char rule is a scanner: run it here and capture the text.  A
-            --  jet is its built-in scanner, or the stub for hand-written C.
+            --  scanner action is its built-in scanner, or the stub for hand-written C.
             Append (Buf, "    const n = "
               & (if R.Jet_Code /= Null_Unbounded_String
                  then Jet_Fn (NM) else "scan_" & Zig_Snake (NM))
@@ -4648,7 +4648,7 @@ package body HBNF_Zig is
             then
                --  An empty rule's body never reads the parser, so its
                --  parameter is anonymous: Zig rejects an unused function
-               --  parameter outright, not just as a warning.  A jet rule also
+               --  parameter outright, not just as a warning.  A scanner action rule also
                --  has an empty pattern but does read `p`, so it keeps the name.
                declare
                   Param : constant String :=
@@ -4729,7 +4729,7 @@ package body HBNF_Zig is
 
       --  The scanners.  A core rule the grammar does not define (`word`,
       --  `int`, `str`, `ws`) is a built-in: hand-written Zig, the same scan
-      --  the C backend's jets make.  Any other jet is hand-written C, which
+      --  the C backend's scanner actions make.  Any other scanner action is hand-written C, which
       --  this backend cannot run, so it is a stub that matches nothing.
       declare
          procedure Put (Text : String) is

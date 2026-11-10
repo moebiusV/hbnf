@@ -575,7 +575,7 @@ package body HBNF_Lookahead is
 
    Approximated : Boolean := False;
    --  Set by Build when the automaton is larger than the text it stands for
-   --  (a jet, a recursion, a bounded repetition past 32): Token_Dfa refuses.
+   --  (a scanner action, a recursion, a bounded repetition past 32): Token_Dfa refuses.
    Why_Approximated : Unbounded_String;
 
    type Edge is record
@@ -618,7 +618,7 @@ package body HBNF_Lookahead is
    end Decode;
 
    --  The text V (From .. To) matches, as an automaton.  A rule that refers
-   --  to itself, a jet, a built-in scanner or an unknown name matches any
+   --  to itself, a scanner action, a built-in scanner or an unknown name matches any
    --  text, and a repetition is read for at most 32 copies and then without
    --  limit: both only make the language larger, which only makes a union look
    --  harder to compile.
