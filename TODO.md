@@ -85,7 +85,7 @@ Open decisions and unbuilt designs:
 - [ ] Error recovery and restarts, with the Common Lisp restart system as the model (idea; not started).
 - [ ] GLR: allowed by the scope note, pay only for what is used; not started.
 - [ ] Granular check reporting: per-item results (backend / arch / grammar / suite), sequential, easy to run one item.
-- [ ] The conf glue (`--conf`) out of the templates into an included C header.
+- [ ] The conf glue out of the templates into an included C header.
 - [ ] **Port the C-only features to Rust, Zig, Ada, tree-sitter** (the standing rule is C first, then the rest): `as K`/`$K`, up references, `^.rule`, `bol`/`eol`, the scanned lookahead, overlay, unwind marks, the arena, the tape captures, the SSE2 loop, the context-set hash.
 
 Prio:
