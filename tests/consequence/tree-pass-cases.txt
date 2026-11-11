@@ -1,0 +1,5 @@
+same	a	Z
+same	aB	ZB
+same	abc	ZZZ
+different	aB	ZC
+same	Z	Z

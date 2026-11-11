@@ -93,6 +93,7 @@ package body HBNF_Grammar is
    Facts_Seen      : Boolean := False;     --  a fact or a template that reads one
    Group_Depth     : Natural := 0;         --  how many groups and options the reader is inside
    Reread_Seen     : Boolean := False;     --  a rewrite, `=> template`
+   Tree_Seen       : Boolean := False;     --  a tree rewrite, `-> template`
    Ctx_Code        : Boolean := False;   --  a `%where { }` or a `%bind { }` is written somewhere
 
    --  Whether the code of a `%where { }` or `%bind { }` names the node (`n`, not `x.n` or `p->n`): only code that
@@ -864,6 +865,7 @@ package body HBNF_Grammar is
       Facts_Seen := False;
       Group_Depth := 0;
       Reread_Seen := False;
+      Tree_Seen := False;
       Ctx_Code := False;
       Ctx_Pending.Clear;
       Macros_Name := Null_Unbounded_String;
@@ -5157,6 +5159,7 @@ package body HBNF_Grammar is
          end if;
          Check_Template (Item, Item);
          Reread_Seen := True;     --  the buffer of a template is the runtime of a rewrite (templates/c_reread.tmpl)
+         Tree_Seen := True;
          B.Append
            (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Tree,
                          Ctx => Null_Unbounded_String, Path => Null_Unbounded_String,
@@ -11516,6 +11519,7 @@ package body HBNF_Grammar is
    function Uses_Switch return Boolean is (Switch_Seen);
    function Uses_Facts return Boolean is (Facts_Seen);
    function Uses_Reread return Boolean is (Reread_Seen);
+   function Uses_Tree return Boolean is (Tree_Seen);
 
    function Scope_Keys return Sorted_Names.Set is
       R : Sorted_Names.Set;
@@ -14880,6 +14884,8 @@ package body HBNF_Grammar is
                         & "#define TAPE_IS_OPENER(t) (" & (if Length (Openers) = 0 then "0" else To_String (Openers)) & ")" & ASCII.LF
                         & "#define TAPE_IS_TEXT(t) (" & (if Length (Texts) = 0 then "0" else To_String (Texts)) & ")" & ASCII.LF
                         & "static const char *const tape_tag_names[] = { """"" & To_String (Names_Tab) & " };" & ASCII.LF
+                        --  a grammar with a `->` writes the text of a template into the tape (runtime/hbnf_tape.h)
+                        & (if Tree_Seen then "#define HBNF_TAPE_INLINE 1" & ASCII.LF else "")
                         & "#include ""hbnf_tape.h""" & ASCII.LF)));
       if Length (Rollback_Text) = 0 then
          Rollback_Text := To_Unbounded_String ("tape_n");

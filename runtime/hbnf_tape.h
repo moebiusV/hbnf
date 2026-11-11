@@ -12,6 +12,7 @@
 #define HBNF_TAPE_H
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 
 #define TAPE_TAG(t) ((uint64_t) (t) << 56)
@@ -81,10 +82,56 @@ static inline void tape_put (uint64_t w)
     tape[tape_n++] = w;
 }
 
+#ifdef HBNF_TAPE_INLINE
+/* A grammar with a rewrite (`a = b -> c`, the tree is as if the template c had matched) defines HBNF_TAPE_INLINE before it
+   includes this file.  The text of a template is not in the input, so while the parser reads one (tape_ibase is the
+   text it is reading) a text goes into the tape itself: its word has TAPE_INLINE_START where the offset would be,
+   and the bytes follow, in the words after it (after the length word, for a text of 65535 bytes or more), padded with
+   zeros.  A reader takes a text with tape_text_ptr, which says where the bytes are and how many words the entry takes.
+   Without the define none of this is compiled, and a text is what it always was: an offset into the input. */
+#define TAPE_INLINE_START 0xFFFFFFFFFFull
+static const char *tape_ibase;
+static void tape_inline_text (uint64_t tag, const char *s, size_t n)
+{
+    size_t i;
+    if (n >= TAPE_LONG) {
+        tape_put (TAPE_TAG (tag) | (uint64_t) TAPE_LONG << 40 | TAPE_INLINE_START);
+        tape_put (n);
+    } else {
+        tape_put (TAPE_TAG (tag) | (uint64_t) n << 40 | TAPE_INLINE_START);
+    }
+    for (i = 0; i < n; i += 8) {
+        uint64_t w = 0;
+        memcpy (&w, s + i, n - i < 8 ? n - i : 8);
+        tape_put (w);
+    }
+}
+/* The text of the entry at t[i]: its bytes, from `text` (the input) or from the tape, its length, and the words it takes. */
+static inline const char *tape_text_ptr (const uint64_t *t, size_t i, const char *text, size_t *n, size_t *words)
+{
+    uint64_t w = t[i];
+    size_t len = (size_t) ((w >> 40) & 0xFFFF), base = 1;
+    if (len == TAPE_LONG) { len = (size_t) t[i + 1];  base = 2; }
+    *n = len;
+    if ((w & 0xFFFFFFFFFFull) == TAPE_INLINE_START) {
+        *words = base + (len + 7) / 8;
+        return (const char *) &t[i + base];
+    }
+    *words = base;
+    return text + (w & 0xFFFFFFFFFFull);
+}
+#endif
+
 /* A text of n bytes that ends at `end` in the input: the parser's position, just after the token. */
 static inline void tape_text_of (uint64_t tag, size_t end, size_t n)
 {
     uint64_t start = end - n;
+#ifdef HBNF_TAPE_INLINE
+    if (__builtin_expect (tape_ibase != 0, 0)) {      /* reading a template: its text goes into the tape */
+        tape_inline_text (tag, tape_ibase + start, n);
+        return;
+    }
+#endif
     if (__builtin_expect (n >= TAPE_LONG, 0)) {
         tape_put (TAPE_TAG (tag) | (uint64_t) TAPE_LONG << 40 | start);
         tape_put (n);

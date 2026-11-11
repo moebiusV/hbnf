@@ -1,0 +1,12 @@
+; `->` in the tape layout, for a rule that is a node of the tape with children of its own (it holds a number, so
+; the layout opens it and does not make it one text entry): the rewrite rolls the tape back to the opener and the read of
+; the template writes the node again, closer and all.
+prefix none
+whitespace none
+
+cond = name as A " > " num as B " AND " num as C         -> A " > " B " AND " A " > " C
+     | rel " AND " rel
+     | rel
+rel  = name " > " num
+name = 1*0x61..0x7a
+num  = int

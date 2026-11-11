@@ -870,6 +870,25 @@ package body HBNF_C is
      (First <= Last and then Last <= Natural (Els.Length)
       and then Els (Last).Kind = Block and then Els (Last).Op = B_Tree);
 
+   --  True when the rule opens a node on the tape: the layout gave it an emit that calls tape_open.
+   function Rule_Opens_Tape (Rules : Rule_Vectors.Vector; Owner : Natural) return Boolean is
+      function Holds (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            if E.Kind = Block and then E.Op = B_Emit
+              and then Ada.Strings.Fixed.Index (To_String (E.Code), "tape_open") > 0
+            then
+               return True;
+            elsif E.Kind = Group and then Holds (E.Items) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Holds;
+   begin
+      return Owner > 0 and then Holds (Rules (Owner).Pattern);
+   end Rule_Opens_Tape;
+
    --  True when a rule is parsed by name: a core type (word/int/str/…, char
    --  rule or scanner action) is read as a scalar in place, a building block is inlined
    --  into a token's scanner, and the whitespace rule is only scanned by
@@ -6281,7 +6300,9 @@ package body HBNF_C is
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural; Acc : String;
          Buf  : in out U; Fail : String; Ind : String := "    ";
-         Ws   : Boolean := False; Lead_Ws : Boolean := True; Seg_Var : String := "") is
+         Ws   : Boolean := False; Lead_Ws : Boolean := True; Seg_Var : String := ""; Alt_Tape : String := "") is
+         --  Alt_Tape names where the tape stood when the alternation this sequence is in began (the valued path saves it
+         --  for every alternation, to put it back when a part is given up): a `->` rolls back to it.
          --  Seg_Var names where the sequence the caller is writing began, for a `%where { }` or `%bind { }`
          --  that stands alone in the range (the layouts with emits write an element at a time).
          --  Lead_Ws is False when the caller has already skipped whitespace
@@ -6733,19 +6754,22 @@ package body HBNF_C is
                            end;
                         when B_Tree =>
                            --  `-> template`: the tree of the rule is as if the template, parsed by the rule itself,
-                           --  had matched.  The input is not touched and the position stays after the pattern; the
-                           --  template is built as text (in the arena, so that the tree's strings live as long as
-                           --  the tree), the node is cleared, and the rule reads the text into it.
-                           if Acc /= "r." then
-                              raise HBNF_Grammar.Parse_Error with
-                                "rule `" & To_String (Rules (Owner).Name) & "` has a `->` and its node is not a struct "
-                                & "of its own: `->` is for a tree of nodes (the ast layout).  It is not built for a tape, whose "
-                                & "words are offsets into the input and would not mean the text of the template, or for a "
-                                & "rule with an %emit";
-                           end if;
+                           --  had matched.  The input is not touched and the position stays after the pattern.  The
+                           --  template is built as text (in the arena, so that the strings of a tree live as long as
+                           --  the tree) and the node is cleared: a tree, the struct; a tape, back to where the rule
+                           --  (or its alternative) began.  Then the rule reads the text into it.  A tape word is an
+                           --  offset into the input, which a template's text is not in: while it is read (tape_ibase)
+                           --  a text goes into the tape itself (runtime/hbnf_tape.h, HBNF_TAPE_INLINE).
                            declare
                               RN : constant String := C_Name (To_String (Rules (Owner).Name));
+                              Tape : constant Boolean := HBNF_Grammar.Layout = "tape";
                            begin
+                              if (not Tape and then Acc /= "r.") or else (Tape and then Acc = "r.") then
+                                 raise HBNF_Grammar.Parse_Error with
+                                   "rule `" & To_String (Rules (Owner).Name) & "` has a `->` and its node is not a "
+                                   & "node of the tree or an entry of the tape: `->` is not built for a rule with an %emit "
+                                   & "of its own, for `layout tailq` or for `layout rb`";
+                              end if;
                               Append (Buf, Ind & "{ hbnf_sb sb_ = { 0, 0, 0 };");
                               Append (Buf, LF);
                               Append (Buf, Template_Stmts (To_String (E.Code)));
@@ -6755,13 +6779,33 @@ package body HBNF_C is
                               Append (Buf, LF);
                               Append (Buf, Ind & "    sp_.text = t_;  sp_.len = sb_.n;  sp_.pos = 0;  sp_.err_pos = (size_t)-1;");
                               Append (Buf, LF);
-                              Append (Buf, Ind & "    if (p->depth >= HBNF_MAX_DEPTH) { fail(p, ""shallower nesting"", 0, p->text + p->pos, 0); "
+                              Append (Buf, Ind & "    if (hbnf_td >= HBNF_MAX_TREE_DEPTH) { fail(p, ""a rewrite that ends"", 0, p->text + p->pos, 0); "
                                 & Fail & " }");
                               Append (Buf, LF);
-                              Append (Buf, Ind & "    memset (&r, 0, sizeof r);");
+                              if Tape then
+                                 if Rule_Opens_Tape (Rules, Owner) then
+                                    Append (Buf, Ind & "    if (p->quiet) tape_n = (*out);   /* back to the opener of the rule */");
+                                    Append (Buf, LF);
+                                 elsif Alt_Tape /= "" then
+                                    Append (Buf, Ind & "    tape_n = " & Alt_Tape & ";   /* back to where the alternative began */");
+                                    Append (Buf, LF);
+                                 end if;
+                              else
+                                 Append (Buf, Ind & "    memset (&r, 0, sizeof r);");
+                                 Append (Buf, LF);
+                              end if;
+                              Append (Buf, Ind & "    { int ok_;" & (if Tape then "  const char *ib_ = tape_ibase;  tape_ibase = t_;" else "")
+                                & "  hbnf_td++;  ok_ = parse_rule_" & RN & " (&sp_, out) && sp_.pos == sp_.len;  hbnf_td--;"
+                                & (if Tape then "  tape_ibase = ib_;" else ""));
                               Append (Buf, LF);
-                              Append (Buf, Ind & "    if (!parse_rule_" & RN & " (&sp_, out) || sp_.pos != sp_.len) { fail(p, ""a tree that is as `"
-                                & RN & "`"", 0, p->text + p->pos, 0); " & Fail & " } }");
+                              Append (Buf, Ind & "      if (!ok_) { fail(p, ""a tree that is as `" & RN & "`"", 0, p->text + p->pos, 0); " & Fail & " } }");
+                              Append (Buf, LF);
+                              if Tape then
+                                 --  the read of the template wrote the node, its closer too
+                                 Append (Buf, Ind & "    return true;");
+                                 Append (Buf, LF);
+                              end if;
+                              Append (Buf, Ind & "  }");
                               Append (Buf, LF);
                               Append (Buf, Ind & "}");
                               Append (Buf, LF);
@@ -8140,6 +8184,7 @@ package body HBNF_C is
          --  need not skip them again (after a dispatch, which skipped before choosing).
          Skip_Done : Boolean := False;
          Cur_Seg : U;       --  where the sequence being written began, when it holds `%where { }` or `%bind { }`
+         Cur_Alt_Tape : U;  --  where the tape stood when the alternation being written began (the rollback of the tape)
          Seen : String_Vectors.Vector;
          Look : constant HBNF_Lookahead.Analysis := HBNF_Lookahead.Analyze (Rules);
 
@@ -8248,7 +8293,8 @@ package body HBNF_C is
          procedure Element_Seq (E : Element_Access; Fail, Ind : String) is
          begin
             Emit_Seq (Idx, Element_Vectors.To_Vector (E, 1), 1, 1, "", Buf, Fail, Ind, Ws,
-                      Lead_Ws => not Skip_Done, Seg_Var => To_String (Cur_Seg));
+                      Lead_Ws => not Skip_Done, Seg_Var => To_String (Cur_Seg),
+                      Alt_Tape => To_String (Cur_Alt_Tape));
             Skip_Done := False;
          end Element_Seq;
 
@@ -8537,7 +8583,15 @@ package body HBNF_C is
                end Dispatchable;
 
                Dispatch : constant Boolean := Quiet and then Dispatchable;
+               Saved_Alt_Tape : U;
             begin
+               Saved_Alt_Tape := Cur_Alt_Tape;
+               Cur_Alt_Tape := Null_Unbounded_String;
+               for K in 1 .. Natural (Rb.Length) loop
+                  if To_String (Rb (K)) = "tape_n" then
+                     Cur_Alt_Tape := To_Unbounded_String ("rba" & Id & "_" & Img (K));
+                  end if;
+               end loop;
                Append (Buf, Ind & "{ size_t as" & Id & " = p->pos;  " & Save ("a" & Id) & LF);
                if Dispatch then
                   if Ws and then not Skip_Done then
@@ -8618,6 +8672,7 @@ package body HBNF_C is
                   end loop;
                end;
                Append (Buf, Ind & "  done" & Id & ": ;" & LF & Ind & "}" & LF);
+               Cur_Alt_Tape := Saved_Alt_Tape;
             end;
          end Gen;
       begin

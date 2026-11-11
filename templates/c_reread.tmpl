@@ -28,7 +28,13 @@ static void hbnf_reread(size_t s, size_t e, hbnf_sb *b) {
     hbnf_rr_t = b->s ? b->s : strdup("");
     hbnf_rr_tn = b->n;
 }
-static void hbnf_reread_clear(void) { hbnf_rr = 0;  hbnf_rr_n = 0;  hbnf_rr_buf = NULL; }
+/* `->`: how many templates are being read inside one another (the quiet bodies of the rules do not count the depth of
+   a read): a `->` whose template comes back to the rule that rewrites it stops here. */
+#ifndef HBNF_MAX_TREE_DEPTH
+#define HBNF_MAX_TREE_DEPTH 200
+#endif
+static unsigned hbnf_td;
+static void hbnf_reread_clear(void) { hbnf_rr = 0;  hbnf_rr_n = 0;  hbnf_rr_buf = NULL;  hbnf_td = 0; }
 /* The text with [s, e) replaced; the text of the rewrite before is given back, the caller's own is not. */
 static const char *hbnf_splice(const char *text, size_t len) {
     size_t tail = len - hbnf_rr_e;

@@ -1,0 +1,10 @@
+; `->` in the tape layout, for a rule that writes no entry of its own (a choice of other rules: its child stands for it):
+; the rewrite rolls the tape back to where the alternative began and the read of the template writes the child again.
+prefix none
+whitespace none
+
+doc   = *item
+item  = lower -> "Z"
+      | upper
+lower = 0x61..0x7a
+upper = 0x41..0x5a

@@ -68,9 +68,6 @@ if [ -s "$d/p.c" ]; then
 			[ "$got" = "$want" ] || { echo "consequence: FAIL (tree [$a] and [$b]: should be $want and is $got)"; fail=1; }
 		done < tests/consequence/tree-cases.txt
 	fi
-	# built for the tree of structs; a tape, which writes words and not a node, is refused
-	"$CLI" "$t" --backend=c --layout=tape 2>&1 > /dev/null | grep -q 'is not a struct of its own' \
-		|| { echo "consequence: FAIL (tree: --layout=tape is not refused)"; fail=1; }
 	for b in rust zig; do
 		"$CLI" "$t" --backend=$b 2>&1 > /dev/null | grep -q 'rule `cond` has a consequence on a context, a fact or a rewrite' \
 			|| { echo "consequence: FAIL (tree: $b does not refuse it by rule name)"; fail=1; }
@@ -78,6 +75,30 @@ if [ -s "$d/p.c" ]; then
 fi
 
 # what is not read is refused with what is
+# `->` in the tape layout (runtime/hbnf_tape.h, HBNF_TAPE_INLINE): the tapes of the two texts are the same, where the
+# text a rewrite made is in the tape itself.  Three shapes of rule: one text entry (tree.hbnf), a node with children
+# (tree-open.hbnf), a rule that writes no entry of its own (tree-pass.hbnf).
+run_tape() {   # run_tape NAME
+	n=$1; g=tests/consequence/$n.hbnf; d=$W/tape-$n; mkdir -p "$d"
+	"$CLI" "$g" --backend=c --layout=tape > "$d/p.c" 2> "$d/err" \
+		|| { echo "consequence: FAIL ($n does not generate as a tape: $(head -c 300 "$d/err"))"; fail=1; return; }
+	root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$d/p.c")
+	cat "$d/p.c" tests/consequence/tree-tape-driver.c > "$d/m.c"
+	cc -std=gnu11 -D_GNU_SOURCE -w -I runtime "-DROOT_T=$root" "$d/m.c" -o "$d/m" 2> "$d/cc.txt" \
+		|| { echo "consequence: FAIL ($n as a tape: the C does not compile: $(head -c 300 "$d/cc.txt"))"; fail=1; return; }
+	cases=tests/consequence/$n-cases.txt; [ -f "$cases" ] || cases=tests/consequence/tree-cases.txt
+	while IFS="$(printf '\t')" read -r want a b; do
+		total=$((total + 1))
+		got=$("$d/m" "$a" "$b" | cut -d: -f1)
+		[ "$got" = "$want" ] || { echo "consequence: FAIL ($n as a tape, [$a] and [$b]: should be $want and is $got)"; fail=1; }
+	done < "$cases"
+}
+run_tape tree
+run_tape tree-open
+run_tape tree-pass
+# nothing of it in a tape grammar that has no `->`: a text is an offset, as it was
+"$CLI" corpus/json/json-tape.hbnf --backend=c > "$W/jt.c" 2>/dev/null
+grep -q 'HBNF_TAPE_INLINE' "$W/jt.c" && { echo "consequence: FAIL (a tape grammar without -> defines HBNF_TAPE_INLINE)"; fail=1; }
 refused() {   # refused TEXT PATTERN
 	printf 'prefix none\ncontext names\nwhitespace none\n%s\n' "$1" > "$W/v.hbnf"
 	"$CLI" "$W/v.hbnf" --backend=c 2>&1 > /dev/null | grep -q "$2" \

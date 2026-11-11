@@ -1,0 +1,6 @@
+same	x > 1 AND 3	x > 1 AND x > 3
+same	a > 5 AND 7	a > 5 AND a > 7
+same	x > 1	x > 1
+different	x > 1 AND 3	x > 1 AND y > 3
+different	x > 1 AND 3	x > 1 AND x > 4
+error	x > 1 AND	x > 1 AND

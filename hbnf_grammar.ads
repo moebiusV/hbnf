@@ -206,6 +206,8 @@ package HBNF_Grammar is
    --  True once a grammar has a fact (`=> tag.attr = tag2`, or `tag.attr` in a template), or a rewrite (`=> template`).
    function Uses_Facts return Boolean;
    function Uses_Reread return Boolean;
+   --  True once a grammar has a `->` (the tree rewrite): a tape of it may hold text in the tape itself.
+   function Uses_Tree return Boolean;
    function Uses_Switch return Boolean;
    function Switch_Count return Natural;
    function Switch_Prefix (K : Positive) return String;
