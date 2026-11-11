@@ -222,6 +222,13 @@ package body HBNF_Ada is
    Writer_On    : Boolean := False;   --  --writer: Write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
    Bref_Seq     : Natural := 0;       --  numbers the sequences that have `as` / `$K`
+   --  `->` (the tree rewrite): the tags a rewriting alternative reads, as the sequence that declared them
+   --  numbers them (a tag bound inside a group is read by the template at the end of the alternative), and
+   --  how many rewrites were emitted (a rule whose shape this backend does not generate is refused).
+   Ovr_Tag      : array (1 .. 32) of Unbounded_String;
+   Ovr_Sid      : array (1 .. 32) of Unbounded_String;
+   Ovr_N        : Natural := 0;
+   Tree_Emitted : Natural := 0;
    Spans_On     : Boolean := False;   --  --spans: where each node is in the text
    Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
@@ -1728,6 +1735,26 @@ package body HBNF_Ada is
       Lbl_No : Natural := 0;
       function Chk return String is ("if P.Failed then " & To_String (FA) & " end if;");
 
+      --  How many `->` a pattern holds (groups too).
+      function Count_Tree (V : Element_Vectors.Vector) return Natural is
+         C : Natural := 0;
+      begin
+         for E of V loop
+            if E.Kind = Block and then E.Op = B_Tree then
+               C := C + 1;
+            elsif E.Kind = Group then
+               C := C + Count_Tree (E.Items);
+            end if;
+         end loop;
+         return C;
+      end Count_Tree;
+
+      --  True when the segment First .. Last ends in `-> template`.
+      function Ends_Tree
+        (Els : Element_Vectors.Vector; First, Last : Natural) return Boolean is
+        (First <= Last and then Last <= Natural (Els.Length)
+         and then Els (Last).Kind = Block and then Els (Last).Op = B_Tree);
+
       procedure Emit_Seq
         (Owner : Natural;
          Els : Element_Vectors.Vector; First, Last : Natural;
@@ -1740,11 +1767,101 @@ package body HBNF_Ada is
          --  `x as K` keeps where the text x matched is and how long; `$K`
          --  is that text again.  The pair is local to this sequence.
          Sid : constant String := Img (Bref_Seq + 1);
-         Wrapped : constant Boolean :=
+         Tree_Here : constant Boolean := Ends_Tree (Els, First, Last);
+         Wrapped : constant Boolean := Tree_Here or else
            (for some K in First .. Last =>
               Els (K).Kind = Block and then Els (K).Op in B_As | B_Num);
+         Ovr_Was : constant Natural := Ovr_N;
+         --  the number of the sequence that declared the tag, when a rewrite above it reads it
+         function Tag_Sid (Tag : Unbounded_String) return String is
+         begin
+            for J in 1 .. Ovr_N loop
+               if Ovr_Tag (J) = Tag then
+                  return To_String (Ovr_Sid (J));
+               end if;
+            end loop;
+            return Sid;
+         end Tag_Sid;
          function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
-           (Pfx & "_" & Ada_Ident (To_String (Tag)) & "_" & Sid);
+           (Pfx & "_" & Ada_Ident (To_String (Tag)) & "_" & Tag_Sid (Tag));
+         --  The tags bound inside the groups of the alternative: the rewrite at its end reads them too.
+         procedure Group_Tags (V : Element_Vectors.Vector; Top : Boolean; Into : in out Element_Vectors.Vector) is
+         begin
+            for E of V loop
+               if E.Kind = Group then
+                  Group_Tags (E.Items, False, Into);
+               elsif E.Kind = Block and then E.Op = B_As and then not Top then
+                  Into.Append (E);
+               end if;
+            end loop;
+         end Group_Tags;
+         --  A template (CONTEXTS.md section 30) as the statements that put its parts, one after the other,
+         --  in the buffer Sb: a string as written, a tag as the text it kept.
+         function Tree_Adds (T : String; Ind : String) return String is
+            R : U;
+            K : Natural := T'First;
+         begin
+            while K <= T'Last loop
+               if T (K) in ' ' | ASCII.HT | ASCII.LF | ASCII.CR then
+                  K := K + 1;
+               elsif T (K) = '"' then
+                  declare
+                     Lit : U;
+                     Pieces : U;
+                  begin
+                     K := K + 1;
+                     while K <= T'Last and then T (K) /= '"' loop
+                        declare
+                           C : Character := T (K);
+                        begin
+                           if C = '\' and then K < T'Last then
+                              K := K + 1;
+                              C := (case T (K) is
+                                    when 'n' => ASCII.LF,
+                                    when 't' => ASCII.HT,
+                                    when 'r' => ASCII.CR,
+                                    when others => T (K));
+                           end if;
+                           if C in ASCII.NUL .. ASCII.US or else C = ASCII.DEL then
+                              Append (Pieces, '"' & Ada_Escape (To_String (Lit)) & '"' & " & Character'Val ("
+                                & Img (Character'Pos (C)) & ") & ");
+                              Lit := Null_Unbounded_String;
+                           else
+                              Append (Lit, C);
+                           end if;
+                        end;
+                        K := K + 1;
+                     end loop;
+                     K := K + 1;
+                     Append (Pieces, '"' & Ada_Escape (To_String (Lit)) & '"');
+                     Append (R, Ind & "Append (Sb, " & To_String (Pieces) & ");" & LF);
+                  end;
+               else
+                  declare
+                     S0 : constant Natural := K;
+                  begin
+                     while K <= T'Last and then T (K) not in ' ' | ASCII.HT | ASCII.LF | ASCII.CR | '"' loop
+                        K := K + 1;
+                     end loop;
+                     declare
+                        Tg : constant Unbounded_String := To_Unbounded_String (T (S0 .. K - 1));
+                     begin
+                        if (for all J in 1 .. Ovr_N => Ovr_Tag (J) /= Tg)
+                          and then not (for some X in First .. Last =>
+                                         Els (X).Kind = Block and then Els (X).Op = B_As and then Els (X).Ctx = Tg)
+                        then
+                           raise Parse_Error with
+                             "rule `" & To_String (Rules (Owner).Name) & "`: `->` reads `" & T (S0 .. K - 1)
+                             & "`, which is no `as` tag of its alternative";
+                        end if;
+                        Append (R, Ind & "Append (Sb, P.Text (" & Tag_Var ("Cp", Tg) & " .. "
+                          & Tag_Var ("Cp", Tg) & " + " & Tag_Var ("Cl", Tg) & " - 1));" & LF);
+                     end;
+                  end;
+               end if;
+            end loop;
+            return To_String (R);
+         end Tree_Adds;
          --  A capture read through the frame (`$K^`): the number of the frame, as a Natural.
          function Up_Slot_Img (E : Element_Access; Part : Character) return String is
            ("Frames.Element (Fb +" & Natural'Image (Natural'Max (0, HBNF_Grammar.Slot_Of
@@ -1759,12 +1876,32 @@ package body HBNF_Ada is
          if Wrapped then
             Append (Buf, Ind & "declare");
             Append (Buf, LF);
+            if Tree_Here then
+               declare
+                  Gt : Element_Vectors.Vector;
+               begin
+                  Group_Tags (Els, True, Gt);
+                  for G of Gt loop
+                     if (for all J in 1 .. Ovr_N => Ovr_Tag (J) /= G.Ctx) then
+                        Ovr_N := Ovr_N + 1;
+                        Ovr_Tag (Ovr_N) := G.Ctx;
+                        Ovr_Sid (Ovr_N) := To_Unbounded_String (Sid);
+                        Append (Buf, Ind & "   " & Tag_Var ("Cp", G.Ctx) & " : Natural := 1;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "   " & Tag_Var ("Cl", G.Ctx) & " : Natural := 0;");
+                        Append (Buf, LF);
+                     end if;
+                  end loop;
+               end;
+            end if;
             for K in First .. Last loop
                if Els (K).Kind = Block and then Els (K).Op = B_As then
-                  Append (Buf, Ind & "   " & Tag_Var ("Cp", Els (K).Ctx) & " : Natural := 1;");
-                  Append (Buf, LF);
-                  Append (Buf, Ind & "   " & Tag_Var ("Cl", Els (K).Ctx) & " : Natural := 0;");
-                  Append (Buf, LF);
+                  if Tag_Sid (Els (K).Ctx) = Sid then
+                     Append (Buf, Ind & "   " & Tag_Var ("Cp", Els (K).Ctx) & " : Natural := 1;");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "   " & Tag_Var ("Cl", Els (K).Ctx) & " : Natural := 0;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, Ind & "   Es_" & Sid & "_" & Img (K - 1) & " : Natural := 1;");
                   Append (Buf, LF);
                elsif Els (K).Kind = Block and then Els (K).Op = B_Num then
@@ -1937,7 +2074,65 @@ package body HBNF_Ada is
                   when Char_Range =>
                      null;
                   when Block =>
-                     if E.Op = B_As then
+                     if E.Op = B_Tree then
+                        --  `-> template`: the tree is as if the template had matched.  The template is built as text,
+                        --  read by the rule itself, and the result is the value of this alternative.
+                        declare
+                           RN   : constant String := Ada_Ident (To_String (Rules (Owner).Name));
+                           Tgt  : constant String := Dst (Dst'First .. Dst'Last - 1);
+                           Lst  : constant Boolean := Analyze (Rules, Owner).Kind = List;
+                           Ty   : constant String := RN & "_Type";
+                        begin
+                           if K /= Last or else Analyze (Rules, Owner).Kind not in Struct | List then
+                              raise Parse_Error with
+                                "rule `" & To_String (Rules (Owner).Name) & "` has a `->` and is not a record rule "
+                                & "or a list of entries; the Ada backend generates `->` for those";
+                           end if;
+                           Tree_Emitted := Tree_Emitted + 1;
+                           Append (Buf, Ind & "declare");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   Sb : Unbounded_String;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "begin");
+                           Append (Buf, LF);
+                           Append (Buf, Tree_Adds (To_String (E.Code), Ind & "   "));
+                           Append (Buf, Ind & "   if Tree_Depth >= 200 then Fail (P, ""a rewrite that ends""); "
+                             & To_String (FA) & " end if;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   declare");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      Tx : aliased constant String := To_String (Sb);");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      Sp : Parser := (Text => Tx'Unchecked_Access, Pos => 1, "
+                             & "Last => Natural'Last, others => <>);");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      V  : " & Ty & ";");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   begin");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      Tree_Depth := Tree_Depth + 1;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      V := Parse_" & RN & " (Sp);");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      Tree_Depth := Tree_Depth - 1;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      if Sp.Failed or else Sp.Pos <= Tx'Last"
+                             & (if Lst then " or else Natural (V.Length) /= 1" else "") & " then");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "         Fail (P, ""a tree that is as `" & To_String (Rules (Owner).Name)
+                             & "`""); " & To_String (FA));
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      end if;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      " & Tgt & " := "
+                             & (if Lst then "V.First_Element" else "V") & ";");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   end;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "end;");
+                           Append (Buf, LF);
+                        end;
+                     elsif E.Op = B_As then
                         --  where the text of the element before began, after the blanks
                         Append (Buf, Ind & "declare Kq : constant Natural := P.Pos; begin"
                           & (if Skips then " P.Pos := Es_" & Sid & "_" & Img (K - 1)
@@ -2203,6 +2398,7 @@ package body HBNF_Ada is
             Append (Buf, Ind & "end;");
             Append (Buf, LF);
          end if;
+         Ovr_N := Ovr_Was;
       end Emit_Seq;
 
       --  Emit a backtracking alternation over the Alt-separated branches in
@@ -2221,7 +2417,8 @@ package body HBNF_Ada is
          Lbl, Old_FA : Unbounded_String;
          --  Alternatives that begin alike read the shared elements once, then try their own rests in the
          --  order written (HBNF_Lookahead.Factor; a run may hold runs).
-         Pl : constant HBNF_Lookahead.Plan := HBNF_Lookahead.Factor (Els);
+         Pl : constant HBNF_Lookahead.Plan := HBNF_Lookahead.Factor
+             (Els, Enable => not (for some E of Els => E.Kind = Block and then E.Op = B_Tree));
 
          --  The tail of a leaf: its guard, its number, the return of the record Rec ("R." or "R2_n.").
          procedure Finish (Br : Natural; Rec : String) is
@@ -2258,7 +2455,9 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                end;
             end if;
-            if Struct_Alt (Rules (Owner), Analyze (Rules, Owner)) then
+            if Struct_Alt (Rules (Owner), Analyze (Rules, Owner))
+              and then not Ends_Tree (Els, Bs (Br).First, Bs (Br).Last)
+            then
                Append (Buf, Ind & "   " & Rec & "Alt_No := " & Img (Br) & ";");
                Append (Buf, LF);
             end if;
@@ -2602,7 +2801,9 @@ package body HBNF_Ada is
                               Emit_Seq (Idx, E.Items, St, K - 1, "El.",
                                         Buf, "                  ", True);
                               FA := Old_FA;
-                              if Entry_Alt (R, Analyze (Rules, Idx)) then
+                              if Entry_Alt (R, Analyze (Rules, Idx))
+                                and then not Ends_Tree (E.Items, St, K - 1)
+                              then
                                  Append (Buf, "                  El.Alt_No := " & Img (Br) & ";");
                                  Append (Buf, LF);
                               end if;
@@ -4775,6 +4976,10 @@ package body HBNF_Ada is
          end;
       end loop;
       Append (Bdy, LF);
+      if (for some I in 1 .. N => Count_Tree (Rules (I).Pattern) > 0) then
+         --  how many rewrites are being read inside one another (the rewrite that never ends stops at 200)
+         Append (Bdy, "   Tree_Depth : Natural := 0;" & LF & LF);
+      end if;
       Append (Bdy, Hosted_Code);
       if Length (Act_Decls) > 0 then
          Append (Bdy, To_String (Act_Decls) & LF & To_String (Act_Body));
@@ -4797,7 +5002,13 @@ package body HBNF_Ada is
                declare
                   Mark : constant Natural := Length (Bdy);
                begin
+                  Tree_Emitted := 0;
                   Emit_Rule_Parser (I, Bdy);
+                  if Tree_Emitted /= Count_Tree (Rules (I).Pattern) then
+                     raise Parse_Error with
+                       "rule `" & NM & "` has a `->` in a shape the Ada backend does not generate "
+                       & "(it does a record rule or a list of entries whose alternatives are read one by one)";
+                  end if;
                   if HBNF_Grammar.Uses_Switch then
                      --  going back to a position undoes the switches after it
                      declare

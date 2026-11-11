@@ -68,11 +68,13 @@ if [ -s "$d/p.c" ]; then
 			[ "$got" = "$want" ] || { echo "consequence: FAIL (tree [$a] and [$b]: should be $want and is $got)"; fail=1; }
 		done < tests/consequence/tree-cases.txt
 	fi
-	for b in rust zig; do
-		"$CLI" "$t" --backend=$b 2>&1 > /dev/null | grep -q 'rule `cond` has a consequence on a context, a fact or a rewrite' \
-			|| { echo "consequence: FAIL (tree: $b does not refuse it by rule name)"; fail=1; }
-	done
 fi
+# `->` in the other backends (the tree of nodes): each tests/consequence/tree-BACKEND.sh builds tree.hbnf for its backend,
+# runs the cases of tree-cases.txt and checks that what it does not do (a fact in the template, layout tape) is refused;
+# it counts into $total and sets $fail like the runs above.
+for b in rust zig ada; do
+	[ -f tests/consequence/tree-$b.sh ] && . tests/consequence/tree-$b.sh
+done
 
 # what is not read is refused with what is
 # `->` in the tape layout (runtime/hbnf_tape.h, HBNF_TAPE_INLINE): the tapes of the two texts are the same, where the

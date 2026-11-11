@@ -316,6 +316,32 @@ package body HBNF_Rust is
    function Rule_Fn (Snake : String) return String is
      (if Snake = "text" then "parse_rule_text" else "parse_" & Snake);
 
+   --  True when some rule has a `-> template` (the tree rewrite): the parser then keeps a depth counter, `td`,
+   --  so that a template that re-matches its own rewriting alternative ends with an error.
+   function Any_Tree (Rules : Rule_Vectors.Vector) return Boolean is
+      function Holds (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            if (E.Kind = Block and then E.Op = B_Tree)
+              or else (E.Kind = Group and then Holds (E.Items))
+            then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Holds;
+   begin
+      for R of Rules loop
+         if Holds (R.Pattern) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Any_Tree;
+
+   --  The most rewrites inside one another (the same bound as the C backend's HBNF_MAX_TREE_DEPTH).
+   Max_Tree_Depth : constant := 200;
+
    function Guard_Slot (K : Natural) return String is ("p.fs[p.fb + " & Img (K) & "]");
 
    --  A number expression of a rule with a frame (`k + 1`) as Rust: the names
@@ -3032,6 +3058,97 @@ package body HBNF_Rust is
                            Append (Buf, Ind & "  } }");
                         end if;
                         Append (Buf, LF);
+                     elsif E.Op = B_Tree then
+                        --  `-> template`: the tree of the rule is as if the template, parsed by the rule itself
+                        --  (from its first alternative), had matched.  The template is built as text; the parser
+                        --  reads it in place of the input (the strings of the tree are owned, so they outlive
+                        --  the text), and the whole of it has to be read.  The input is not touched and the
+                        --  position stays after the pattern.
+                        declare
+                           RN : constant String := To_String (Rules (Owner).Name);
+                           T  : constant String := To_String (E.Code);
+                           Q  : Natural := T'First;
+                           function Bound (Tag : String) return Boolean is
+                             (for some I in First .. Last =>
+                                Els (I).Kind = Block and then Els (I).Op = B_As
+                                and then To_String (Els (I).Ctx) = Tag);
+                        begin
+                           if Dst /= "r." or else Is_Hosted
+                             or else Length (HBNF_Grammar.Frame_Of (RN).Slots) > 0
+                           then
+                              raise HBNF_Grammar.Parse_Error with
+                                "rule `" & RN & "` has a `->` and its node is not a struct the Rust backend can "
+                                & "rewrite: `->` is not built here for a list entry, a hosted parser or a rule "
+                                & "with numeric parameters";
+                           end if;
+                           Append (Buf, Ind & "{ let mut sb_ = String::new();");
+                           Append (Buf, LF);
+                           while Q <= T'Last loop
+                              if T (Q) in ' ' | ASCII.HT then
+                                 Q := Q + 1;
+                              elsif T (Q) = '"' then
+                                 declare
+                                    S : U;
+                                 begin
+                                    Q := Q + 1;
+                                    while Q <= T'Last and then T (Q) /= '"' loop
+                                       if T (Q) = '\' and then Q < T'Last then
+                                          Q := Q + 1;
+                                          case T (Q) is
+                                             when 'n' => Append (S, ASCII.LF);
+                                             when 't' => Append (S, ASCII.HT);
+                                             when 'r' => Append (S, ASCII.CR);
+                                             when '0' => Append (S, ASCII.NUL);
+                                             when others => Append (S, T (Q));
+                                          end case;
+                                       else
+                                          Append (S, T (Q));
+                                       end if;
+                                       Q := Q + 1;
+                                    end loop;
+                                    Q := Q + 1;
+                                    Append (Buf, Ind & "  sb_.push_str(""" & Rust_Escape (To_String (S)) & """);");
+                                    Append (Buf, LF);
+                                 end;
+                              else
+                                 declare
+                                    S0 : constant Natural := Q;
+                                 begin
+                                    while Q <= T'Last and then T (Q) not in ' ' | ASCII.HT loop
+                                       Q := Q + 1;
+                                    end loop;
+                                    declare
+                                       Tag : constant String := T (S0 .. Q - 1);
+                                       Ut  : constant Unbounded_String := To_Unbounded_String (Tag);
+                                    begin
+                                       if not Bound (Tag) then
+                                          raise HBNF_Grammar.Parse_Error with
+                                            "rule `" & RN & "` has a `-> " & T & "` whose tag `" & Tag
+                                            & "` is not kept by an `as` at the top level of the same sequence "
+                                            & "(not inside a group, and not in a part shared with another alternative): "
+                                            & "the Rust backend cannot read it here";
+                                       end if;
+                                       Append (Buf, Ind & "  sb_.push_str(&p.text[" & Tag_Var ("cp", Ut) & ".." & Tag_Var ("cp", Ut)
+                                         & " + " & Tag_Var ("cl", Ut) & "]);");
+                                       Append (Buf, LF);
+                                    end;
+                                 end;
+                              end if;
+                           end loop;
+                           Append (Buf, Ind & "  if p.td >= " & Img (Max_Tree_Depth) & " { return Err(p.fail(""a rewrite that ends"")); }");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  let sv_ = (p.pos, p.err_pos, p.err.take(), p.ex.clone()); let full_ = p.text;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  p.text = unsafe { &*(sb_.as_str() as *const str) }; p.pos = 0; p.err_pos = 0; p.td += 1;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  let sub_ = " & Rule_Fn (Rust_Snake (RN)) & "(p); let whole_ = p.pos == p.text.len(); p.td -= 1;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  p.text = full_; p.pos = sv_.0; p.err_pos = sv_.1; p.err = sv_.2; p.ex = sv_.3;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  match sub_ { Ok(v_) if whole_ => { r = v_; } _ => { return Err(p.fail(""a tree that is as `"
+                             & RN & "`"")); } } }");
+                           Append (Buf, LF);
+                        end;
                      elsif E.Op = B_Scope then
                         Scope_Seq := Scope_Seq + 1;
                         Scopes.Append (To_Unbounded_String ("sc_" & Img (Scope_Seq)));
@@ -3279,7 +3396,10 @@ package body HBNF_Rust is
                      Append (Buf, LF);
                   end;
                end if;
-               Tag_Alt (Nd.Br, Ind2 & "    ");
+               --  a branch that ends in `->` does not number itself: the sub-parse's number stands
+               if not (Nd.First <= Nd.Last and then Els (Nd.Last).Kind = Block and then Els (Nd.Last).Op = B_Tree) then
+                  Tag_Alt (Nd.Br, Ind2 & "    ");
+               end if;
                Append (Buf, Ind2 & "    Ok(())");
                Append (Buf, LF);
             else
@@ -3365,6 +3485,8 @@ package body HBNF_Rust is
             for E of Els loop
                if E.Kind = Name and then not Is_Hidden (To_String (E.Name)) then
                   return True;
+               elsif E.Kind = Block and then E.Op = B_Tree then
+                  return True;     --  `-> template` replaces the whole of `r`
                elsif E.Kind = Group and then Assigns (E.Items) then
                   return True;
                end if;
@@ -3985,7 +4107,8 @@ package body HBNF_Rust is
               (if Is_Hosted then "bit: usize, " else ""));
             HBNF_Template.Put (V, "ctx_field",
               (if Ctx_On then ", cx: [Cx; NCTX]" else "")
-              & (if HBNF_Grammar.Uses_Frames then ", fs: Vec<i64>, fb: usize" else ""));
+              & (if HBNF_Grammar.Uses_Frames then ", fs: Vec<i64>, fb: usize" else "")
+              & (if Any_Tree (Rules) then ", td: usize" else ""));
             HBNF_Template.Put (V, "first_char",
               (if Is_Hosted then "bnf_first_char(&b[self.pos..])"
                else "self.text[self.pos..].chars().next().unwrap().to_string()"));
@@ -4490,7 +4613,8 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                           then (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
                                 then ", fs: vec![0; " & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name))) & "], fb: 0"
                                 else ", fs: Vec::new(), fb: 0")
-                          else ""));
+                          else "")
+                       & (if Any_Tree (Rules) then ", td: 0" else ""));
          HBNF_Template.Put (V, "switch_init",
            (if HBNF_Grammar.Uses_Switch then ", g: 0, ev: Vec::new()" else ""));
          HBNF_Template.Put (V, "reset",

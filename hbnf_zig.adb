@@ -277,6 +277,62 @@ package body HBNF_Zig is
    Writer_On    : Boolean := False;   --  --writer: write_<root>
    Ast_On       : Boolean := False;   --  --ast: the walker and the dump
    Bref_Seq     : Natural := 0;       --  numbers the sequences that have `as` / `$K`
+   --  Where each tag a `->` template may name was declared in the alternative being written: the tag and the
+   --  number of the sequence that holds its variables (a tag bound in a group is in the group's sequence).
+   Tree_Tag_Name : String_Vectors.Vector;
+   Tree_Tag_Sid  : String_Vectors.Vector;
+
+   --  Whether the `->` template T names the tag Tag (a word outside its strings).
+   function Template_Mentions (T, Tag : String) return Boolean is
+      K : Natural := T'First;
+   begin
+      while K <= T'Last loop
+         if T (K) = '"' then
+            K := K + 1;
+            while K <= T'Last and then T (K) /= '"' loop
+               if T (K) = '\' then
+                  K := K + 1;
+               end if;
+               K := K + 1;
+            end loop;
+            K := K + 1;
+         elsif T (K) in ' ' | ASCII.HT then
+            K := K + 1;
+         else
+            declare
+               S0 : constant Natural := K;
+            begin
+               while K <= T'Last and then T (K) not in ' ' | ASCII.HT | '"' loop
+                  K := K + 1;
+               end loop;
+               if T (S0 .. K - 1) = Tag then
+                  return True;
+               end if;
+            end;
+         end if;
+      end loop;
+      return False;
+   end Template_Mentions;
+
+   --  Whether a `->` anywhere in the elements (groups too) names the tag.
+   function Tree_Mentions
+     (V : HBNF_Grammar.Element_Vectors.Vector; Tag : String) return Boolean is
+   begin
+      for E of V loop
+         if E.Kind = HBNF_Grammar.Block and then E.Op = HBNF_Grammar.B_Tree
+           and then Template_Mentions (To_String (E.Code), Tag)
+         then
+            return True;
+         elsif E.Kind = HBNF_Grammar.Group and then Tree_Mentions (E.Items, Tag) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Tree_Mentions;
+
+   --  Whether the rule's own alternatives hold a `->`.
+   function Has_Tree_Top (V : HBNF_Grammar.Element_Vectors.Vector) return Boolean is
+     (for some E of V => E.Kind = HBNF_Grammar.Block and then E.Op = HBNF_Grammar.B_Tree);
    Spans_On     : Boolean := False;   --  --spans: where each node is in the text
    Parents_On   : Boolean := False;   --  --parents: which node holds each node
    Hosted_Types : U;
@@ -2990,9 +3046,10 @@ package body HBNF_Zig is
             then "@as(usize, @intCast(" & Up_Slot_Img (E, (if Pfx = "cp" then 'p' else 'l')) & "))"
             else Tag_Var (Pfx, E.Ctx));
          function Local_Reader (Tag : String) return Boolean is
-           (for some I in First .. Last =>
-              Els (I).Kind = Block and then Els (I).Op = B_Same
-              and then To_String (Els (I).Ctx) = Tag);
+           ((for some I in First .. Last =>
+              (Els (I).Kind = Block and then Els (I).Op = B_Same
+               and then To_String (Els (I).Ctx) = Tag))
+           or else Tree_Mentions (Rules (Owner).Pattern, Tag));
       begin
          Bref_Seq := Bref_Seq + 1;
          for K in First .. Last loop
@@ -3006,6 +3063,8 @@ package body HBNF_Zig is
                Append (Buf, Ind & "_ = &" & Tag_Var ("cp", Els (K).Ctx) & ";  _ = &"
                  & Tag_Var ("cl", Els (K).Ctx) & ";");
                Append (Buf, LF);
+               Tree_Tag_Name.Append (Els (K).Ctx);
+               Tree_Tag_Sid.Append (To_Unbounded_String (Sid));
             end if;
          end loop;
          for K in First .. Last loop
@@ -3245,6 +3304,111 @@ package body HBNF_Zig is
                               (To_String (Rules (Owner).Name), To_String (E.Ctx))))
                           & "] = v_; }");
                         Append (Buf, LF);
+                     elsif E.Op = B_Tree then
+                        --  `-> template`: the tree of the rule is as if the template, read by the rule itself,
+                        --  had matched.  The input is not touched and the position stays after the pattern.  The
+                        --  template's text is made in p.alloc (the strings of the tree point into it: it lives
+                        --  as long as the allocator does), read by the rule from its first alternative, and must
+                        --  be read whole.  td counts the rewrites inside one another.
+                        declare
+                           RN    : constant String := To_String (Rules (Owner).Name);
+                           T     : constant String := To_String (E.Code);
+                           Parts : U;
+                           Q     : Natural := T'First;
+                           Rel   : constant String := Zig_Snake (RN);
+                           function Fl (Msg : String) return String is
+                             (Pref & "p.fail(""" & Msg & """)" & Cat & ";");
+                        begin
+                           if Dst /= "r." then
+                              raise HBNF_Grammar.Parse_Error with
+                                "rule `" & RN & "` has a `->` that is not in its own alternative: "
+                                & "this backend builds `->` for a rule that is a struct, not for an entry of a list";
+                           end if;
+                           while Q <= T'Last loop
+                              if T (Q) in ' ' | ASCII.HT then
+                                 Q := Q + 1;
+                              elsif T (Q) = '"' then
+                                 declare
+                                    S0 : constant Natural := Q + 1;
+                                 begin
+                                    Q := S0;
+                                    while Q <= T'Last and then T (Q) /= '"' loop
+                                       if T (Q) = '\' then
+                                          Q := Q + 1;
+                                       end if;
+                                       Q := Q + 1;
+                                    end loop;
+                                    if Length (Parts) > 0 then
+                                       Append (Parts, ", ");
+                                    end if;
+                                    Append (Parts, """" & T (S0 .. Q - 1) & """");
+                                    Q := Q + 1;
+                                 end;
+                              else
+                                 declare
+                                    S0    : constant Natural := Q;
+                                    Found : Natural := 0;
+                                 begin
+                                    while Q <= T'Last and then T (Q) not in ' ' | ASCII.HT | '"' loop
+                                       Q := Q + 1;
+                                    end loop;
+                                    declare
+                                       Tag : constant String := T (S0 .. Q - 1);
+                                    begin
+                                       for X in reverse 1 .. Natural (Tree_Tag_Name.Length) loop
+                                          if To_String (Tree_Tag_Name (X)) = Tag then
+                                             Found := X;
+                                             exit;
+                                          end if;
+                                       end loop;
+                                       if Found = 0 then
+                                          raise HBNF_Grammar.Parse_Error with
+                                            "rule `" & RN & "`: the `->` template names `" & Tag
+                                            & "`, which no `as " & Tag & "` binds in this alternative before it "
+                                            & "(this backend: strings and tags)";
+                                       end if;
+                                       declare
+                                          Sd : constant String := To_String (Tree_Tag_Sid (Found));
+                                          V1 : constant String := "cp_" & Zig_Snake (Tag) & "_" & Sd;
+                                          V2 : constant String := "cl_" & Zig_Snake (Tag) & "_" & Sd;
+                                       begin
+                                          if Length (Parts) > 0 then
+                                             Append (Parts, ", ");
+                                          end if;
+                                          Append (Parts, "p.text[" & V1 & " .. " & V1 & " + " & V2 & "]");
+                                       end;
+                                    end;
+                                 end;
+                              end if;
+                           end loop;
+                           Append (Buf, Ind & "{");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    if (p.td >= 200) { " & Fl ("a rewrite that ends") & " }");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    const t_ = std.mem.concat(p.alloc, u8, &[_][]const u8{ "
+                             & To_String (Parts) & " }) catch return error.OutOfMemory;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    var sp_ = p.*;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    sp_.text = t_; sp_.pos = 0; sp_.e = .{}; sp_.td = p.td + 1;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    var sub_: " & Zig_Type (RN) & " = std.mem.zeroes(" & Zig_Type (RN) & ");");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    var ok_ = true;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    if (parse_" & Rel & "(&sp_)) |v_| { sub_ = v_; } else |err_| { if (err_ == error.OutOfMemory) return err_; ok_ = false; }");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    if (ok_ and sp_.pos != t_.len) { deinit_" & Rel & "(&sub_, p.alloc); ok_ = false; }");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    if (!ok_) { p.alloc.free(t_); " & Fl ("a tree that is as `" & RN & "`") & " }");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    deinit_" & Rel & "(&r, p.alloc);");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "    r = sub_;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "}");
+                           Append (Buf, LF);
+                        end;
                      elsif E.Op in B_Test | B_Not_Test then
                         --  `x ? types` / `x ?! types`: the text x matched is (not) in the context
                         Append (Buf, Ind & "{ const k_ = p.pos; "
@@ -3428,7 +3592,7 @@ package body HBNF_Zig is
          --  order written (HBNF_Lookahead.Factor; a run may hold runs).  (A rule that owns boxes frees them
          --  with the reset, whole: it is not written out in parts.)
          Pl : constant HBNF_Lookahead.Plan :=
-           HBNF_Lookahead.Factor (Els, Enable => not Has_Back (Backs, Owner));
+           HBNF_Lookahead.Factor (Els, Enable => not Has_Back (Backs, Owner) and then not Has_Tree_Top (Els));
 
          --  The fields a stretch of elements sets, for putting back what a failed alternative set.
          procedure Add_Fields (R : in out String_Vectors.Vector; V : Element_Vectors.Vector; F, L : Natural) is
@@ -3462,6 +3626,8 @@ package body HBNF_Zig is
                   Block_Start := Length (Buf);
                   Append (Buf, Ind2 & Label & ": {");
                   Append (Buf, LF);
+                  Tree_Tag_Name.Clear;
+                  Tree_Tag_Sid.Clear;
                   if Nd.First <= Nd.Last then
                      Emit_Seq (Owner, Els, Nd.First, Nd.Last, Acc, Buf, "break :" & Label, Ind2 & "    ");
                   end if;
@@ -3479,6 +3645,8 @@ package body HBNF_Zig is
                   end if;
                   if (Writer_On or else Ast_On)
                     and then Natural (Rules (Owner).Pattern.Length) > 1
+                    and then not (Nd.First <= Nd.Last and then Els (Nd.Last).Kind = Block
+                                  and then Els (Nd.Last).Op = B_Tree)
                   then
                      Append (Buf, Ind2 & "    r._alt = " & Img (Br) & ";");
                      Append (Buf, LF);
@@ -3583,6 +3751,19 @@ package body HBNF_Zig is
            (if Owns then Release & "; " else "")
            & "r = std.mem.zeroes(" & ZT & ")";
       begin
+         if Has_Tree_Top (P) then
+            if Is_Char_Rule (Rules, NM) or else R.Jet_Code /= Null_Unbounded_String or else Is_List
+              or else Is_Enum or else SU /= ""
+            then
+               raise HBNF_Grammar.Parse_Error with
+                 "rule `" & NM & "` has a `->` and is not a struct (a scanner, a list, an enum or a scalar): "
+                 & "this backend builds `->` for a rule of fields and alternatives";
+            elsif Ctx_On or else HBNF_Grammar.Uses_Frames or else HBNF_Grammar.Uses_Switch or else Is_Hosted then
+               raise HBNF_Grammar.Parse_Error with
+                 "rule `" & NM & "` has a `->` in a grammar with contexts, frames, grammar switches or bit rules: "
+                 & "this backend reads the template with a copy of the parser's state and does not build that";
+            end if;
+         end if;
          if Is_Char_Rule (Rules, NM) or else R.Jet_Code /= Null_Unbounded_String
          then
             --  A char rule is a scanner: run it here and capture the text.  A
@@ -4028,7 +4209,9 @@ package body HBNF_Zig is
             Append (Buf, "    unreachable;");
             Append (Buf, LF);
          else
-            if Has_Name (P) then
+            Tree_Tag_Name.Clear;
+            Tree_Tag_Sid.Clear;
+            if Has_Name (P) or else Has_Tree_Top (P) then
                Append (Buf, "    var r: " & ZT & " = std.mem.zeroes(" & ZT & ");");
                if Owns then
                   Append (Buf, LF);
@@ -4272,6 +4455,10 @@ package body HBNF_Zig is
       Append (Res, LF);
       Append (Res, "    pos: usize = 0,");
       Append (Res, LF);
+      if HBNF_Grammar.Uses_Tree then
+         Append (Res, "    td: usize = 0,   // rewrites (`->`) inside one another, bounded");
+         Append (Res, LF);
+      end if;
       if HBNF_Grammar.Uses_Switch then
          Append (Res, "    g: usize = 0,   // the current grammar: 0 the including one, k the kth included");
          Append (Res, LF);
