@@ -90,7 +90,7 @@ printf "${inc}top = \"a\" => grammar(nosuch)\n" > tests/switch/_m/g.hbnf
 refuse "an unknown grammar" 'no grammar is included `as nosuch`'
 refuse "an unknown grammar, the known ones" 'the grammars included `as` here are: free'
 printf "${inc}top = \"a\" => 0\n" > tests/switch/_m/g.hbnf
-refuse "a value after =>" 'are not built yet'
+refuse "a value after =>, which is a template now (CONTEXTS section 30), and names no tag" 'no `as 0` stands earlier'
 printf "${inc}top = \"a\" => grammar(mode)\n" > tests/switch/_m/g.hbnf
 refuse "a tag that is not bound" 'no earlier `as mode`'
 printf "${inc}top = [ \"a\" ] => grammar(free)\n" > tests/switch/_m/g.hbnf

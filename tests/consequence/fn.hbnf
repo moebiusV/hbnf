@@ -1,0 +1,21 @@
+; A template may call a function of the grammar's own code on a tag: `=> upper(N)` replaces the match by what
+; `upper` makes of the text kept as N (CONTEXTS section 30).  The language reads capital letters only, so a text
+; is read only if its small letters are rewritten.
+prefix none
+whitespace none
+{
+#include <stdlib.h>
+#include <stddef.h>
+static char *upper(const char *s, size_t n) {
+    char *r = (char *)malloc(n + 1);
+    size_t i;
+    for (i = 0; i < n; i++) r[i] = (s[i] >= 'a' && s[i] <= 'z') ? (char)(s[i] - 32) : s[i];
+    r[n] = 0;
+    return r;
+}
+}
+doc  = *unit
+unit = big | small
+small = 0x61..0x7A as N
+                                         => upper(N)
+big  = 0x41..0x5A

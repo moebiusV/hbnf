@@ -5,7 +5,13 @@
 /* One log for every context: an add pushes, so a mark is the log's length and giving up is popping back
    to it.  The usual give-up has nothing to pop, so hbnf_reset is one comparison, inlined; the popping
    is out of line. */
-typedef struct { const char *s; size_t n; unsigned hash; int prev; unsigned c; unsigned char neg; } hbnf_ce_t;   /* neg: takes the name out (`=> set -= tag`) */
+typedef struct {
+    const char *s; size_t n; unsigned hash; int prev; unsigned c;
+    unsigned char neg;                /* takes the name out (`=> set -= tag`) */
+#ifdef HBNF_FACTS
+    const char *vs; size_t vn;        /* a fact (`=> tag.attr = tag2`): the value kept under the name, in the context `attr` */
+#endif
+} hbnf_ce_t;
 static struct {
     hbnf_ce_t *e;
     unsigned n, cap;
@@ -58,6 +64,24 @@ static void hbnf_ctx_put(unsigned c, const char *s, size_t n, unsigned char neg)
 static inline void hbnf_ctx_add(unsigned c, const char *s, size_t n) { hbnf_ctx_put(c, s, n, 0); }
 /* Taking a name out is an entry that says so, newest first, so a mark still undoes it, and adding the name again puts it back. */
 static inline void hbnf_ctx_del(unsigned c, const char *s, size_t n) { hbnf_ctx_put(c, s, n, 1); }
+#ifdef HBNF_FACTS
+/* A fact is an entry of its own context with a value: undone with the match, like an add; the newest entry of a name wins. */
+static inline void hbnf_fact_put(unsigned c, const char *s, size_t n, const char *v, size_t vn) {
+    hbnf_ctx_put(c, s, n, 0);
+    hbnf_cx.e[hbnf_cx.n - 1].vs = v;  hbnf_cx.e[hbnf_cx.n - 1].vn = vn;
+}
+static int hbnf_fact_get(unsigned c, const char *s, size_t n, const char **v, size_t *vn) {
+    unsigned h = hbnf_chash(s, n);
+    int i;
+    for (i = hbnf_cx.bucket[c][h & 255]; i >= 0; i = hbnf_cx.e[i].prev)
+        if (hbnf_cx.e[i].hash == h && hbnf_cx.e[i].n == n && memcmp(hbnf_cx.e[i].s, s, n) == 0) {
+            if (hbnf_cx.e[i].neg) return 0;
+            *v = hbnf_cx.e[i].vs;  *vn = hbnf_cx.e[i].vn;
+            return 1;
+        }
+    return 0;
+}
+#endif
 static int hbnf_ctx_has(unsigned c, const char *s, size_t n) {
     unsigned h = hbnf_chash(s, n);
     int i;

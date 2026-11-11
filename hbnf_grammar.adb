@@ -90,6 +90,8 @@ package body HBNF_Grammar is
    --  rule, belongs to the end of the file (the included rules come first), not the start.
    Epilogue_After_Line : Natural := 0;
    Context_Words   : Word_Vectors.Vector;
+   Facts_Seen      : Boolean := False;     --  a fact or a template that reads one
+   Reread_Seen     : Boolean := False;     --  a rewrite, `=> template`
    Ctx_Code        : Boolean := False;   --  a `%where { }` or a `%bind { }` is written somewhere
 
    --  Whether the code of a `%where { }` or `%bind { }` names the node (`n`, not `x.n` or `p->n`): only code that
@@ -858,6 +860,8 @@ package body HBNF_Grammar is
       List_Generate_Code := Null_Unbounded_String;
       Statements_On := False;
       Context_Words.Clear;
+      Facts_Seen := False;
+      Reread_Seen := False;
       Ctx_Code := False;
       Ctx_Pending.Clear;
       Macros_Name := Null_Unbounded_String;
@@ -921,7 +925,7 @@ package body HBNF_Grammar is
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
                      T_Prose, T_Tilde, T_At, T_Colon, T_Octets, T_Count, T_Bits,
-                     T_Guard, T_Hash, T_Meta, T_Arrow, T_Plus, T_Prefix, T_DotDot, T_EOF);
+                     T_Guard, T_Hash, T_Meta, T_Arrow, T_Plus, T_Prefix, T_DotDot, T_Raw, T_EOF);
    --  T_Prefix: the flags of a prefixed string, `i`, `s`, `r`, `ir` or `sr`,
    --  which the string token after it (T_String) belongs to.  T_DotDot: `..`,
    --  the range of two code points.
@@ -1848,7 +1852,7 @@ package body HBNF_Grammar is
                            Last := Last - 1;
                         end loop;
                         if First <= Last then
-                           Emit (T_Name, Text (First .. Last));
+                           Emit (T_Raw, Text (First .. Last));
                         end if;
                      end;
                      Col := Col + (J - I);
@@ -4855,7 +4859,9 @@ package body HBNF_Grammar is
    --    grammar(NAME)   the grammar NAME (`include "f" as NAME`, or a tag bound with `as`) is current;
    --    SET += TAG      the text kept as TAG (`x as TAG`) is added to the context SET;
    --    SET -= TAG      the same text is taken out of it.
-   --  A value, a fact and `reread` are not built yet.
+   --    tag.attr = tag2 the text kept as tag2 is the attribute `attr` of the name kept as `tag` (a fact);
+   --    template [with tag.attr = tag2]   the match is replaced by the template and read again.
+   --  A value (`-> template`, the tree) is not built yet.
    procedure Append_Switch (P : in out Parser; B : in out Element_Vectors.Vector) is
       T : constant Token := Cur (P);
       Where : constant String := Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": ";
@@ -4966,6 +4972,162 @@ package body HBNF_Grammar is
                          Id => 0, Look => <>, Code => Null_Unbounded_String));
       end Context_Consequence;
 
+      --  where Pat first stands in S outside quotes, 0 if it does not
+      function Find_Outside (S : String; Pat : String) return Natural is
+         Quoted : Boolean := False;
+      begin
+         if S'Length < Pat'Length then
+            return 0;
+         end if;
+         for K in S'First .. S'Last - Pat'Length + 1 loop
+            if S (K) = '"' then
+               Quoted := not Quoted;
+            elsif not Quoted and then S (K .. K + Pat'Length - 1) = Pat then
+               return K;
+            end if;
+         end loop;
+         return 0;
+      end Find_Outside;
+
+      function Name_Char (C : Character) return Boolean is
+        (C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-');
+
+      function Tag_Bound (Tag : String) return Boolean is
+        (Tag /= "" and then (for some E of B =>
+           E.Kind = Block and then E.Op = B_As and then To_String (E.Ctx) = Tag));
+
+      --  the attribute of a fact is a context of its own, keyed by the name
+      procedure Add_Context (Name : String) is
+      begin
+         if not (for some C of Context_Words => To_String (C) = Name) then
+            Context_Words.Append (To_Unbounded_String (Name));
+         end if;
+         Facts_Seen := True;
+      end Add_Context;
+
+      --  `tag.attr`: the tag kept in this alternative, and an attribute name
+      procedure Check_Fact_Ref (Ref : String; Item : String) is
+         D : constant Natural := Find_Outside (Ref, ".");
+      begin
+         if D = 0 or else D = Ref'First or else D = Ref'Last
+           or else not (for all Ch of Ref (D + 1 .. Ref'Last) => Name_Char (Ch))
+         then
+            Fail (Where & "`=> " & Item & "`: `" & Ref & "` is not `tag.attribute`");
+         end if;
+         if not Tag_Bound (Ref (Ref'First .. D - 1)) then
+            Fail (Where & "`=> " & Item & "`: no `as " & Ref (Ref'First .. D - 1)
+                  & "` stands earlier in this alternative");
+         end if;
+         Add_Context (Ref (D + 1 .. Ref'Last));
+      end Check_Fact_Ref;
+
+      --  A template (CONTEXTS.md section 30): strings, tags the alternative kept, `tag.attribute` facts
+      --  and `function(tag)` calls of the grammar's own code, side by side.
+      procedure Check_Template (T : String; Item : String) is
+         K : Natural := T'First;
+      begin
+         while K <= T'Last loop
+            if T (K) in ' ' | ASCII.HT then
+               K := K + 1;
+            elsif T (K) = '"' then
+               K := K + 1;
+               while K <= T'Last and then T (K) /= '"' loop
+                  if T (K) = '\' then
+                     K := K + 1;
+                  end if;
+                  K := K + 1;
+               end loop;
+               if K > T'Last then
+                  Fail (Where & "`=> " & Item & "`: a string in the template is not closed");
+               end if;
+               K := K + 1;
+            else
+               declare
+                  S : constant Natural := K;
+               begin
+                  while K <= T'Last and then (Name_Char (T (K)) or else T (K) = '.') loop
+                     K := K + 1;
+                  end loop;
+                  if K = S then
+                     Fail (Where & "`=> " & Item & "`: a template is strings, tags kept with `as`, "
+                           & "`tag.attribute` facts and `function(tag)` calls, side by side");
+                  end if;
+                  if K <= T'Last and then T (K) = '(' then
+                     declare
+                        E : Natural := K + 1;
+                     begin
+                        while E <= T'Last and then T (E) /= ')' loop
+                           E := E + 1;
+                        end loop;
+                        if E > T'Last or else not Tag_Bound (Trim_Blanks (T (K + 1 .. E - 1))) then
+                           Fail (Where & "`=> " & Item & "`: `" & T (S .. K - 1)
+                                 & "(...)` takes a tag kept earlier in this alternative with `as`");
+                        end if;
+                        K := E + 1;
+                     end;
+                  elsif Find_Outside (T (S .. K - 1), ".") > 0 then
+                     Check_Fact_Ref (T (S .. K - 1), Item);
+                  elsif not Tag_Bound (T (S .. K - 1)) then
+                     Fail (Where & "`=> " & Item & "`: no `as " & T (S .. K - 1)
+                           & "` stands earlier in this alternative");
+                  end if;
+               end;
+            end if;
+         end loop;
+      end Check_Template;
+
+      --  `tag.attr = tag2`: the text kept as tag2 is a fact about the name kept as tag
+      procedure Fact_Consequence (Item : String; Eq : Natural) is
+         L : constant String := Trim_Blanks (Item (Item'First .. Eq - 1));
+         R : constant String := Trim_Blanks (Item (Eq + 1 .. Item'Last));
+      begin
+         Check_Fact_Ref (L, Item);
+         if not Tag_Bound (R) then
+            Fail (Where & "`=> " & Item & "`: no `as " & R & "` stands earlier in this alternative");
+         end if;
+         declare
+            D : constant Natural := Find_Outside (L, ".");
+         begin
+            B.Append
+              (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Fact,
+                            Ctx => To_Unbounded_String (L (L'First .. D - 1)),
+                            Path => To_Unbounded_String (L (D + 1 .. L'Last)),
+                            Id => 0, Look => <>, Code => To_Unbounded_String (R)));
+         end;
+      end Fact_Consequence;
+
+      --  `template [with tag.attr = tag2]`: the match is replaced by the template and read again; with a
+      --  `with`, the names in `tag.attr` (comma-separated) are replaced in it by the arguments in `tag2`
+      procedure Reread_Consequence (Item : String) is
+         W : constant Natural := Find_Outside (Item, " with ");
+         Template : constant String :=
+           Trim_Blanks (if W = 0 then Item else Item (Item'First .. W - 1));
+         With_Part : constant String :=
+           (if W = 0 then "" else Trim_Blanks (Item (W + 6 .. Item'Last)));
+      begin
+         Check_Template (Template, Item);
+         if With_Part /= "" then
+            declare
+               E : constant Natural := Find_Outside (With_Part, "=");
+            begin
+               if E = 0 then
+                  Fail (Where & "`=> " & Item & "`: `with` takes `tag.attribute = tag`");
+               end if;
+               Check_Fact_Ref (Trim_Blanks (With_Part (With_Part'First .. E - 1)), Item);
+               if not Tag_Bound (Trim_Blanks (With_Part (E + 1 .. With_Part'Last))) then
+                  Fail (Where & "`=> " & Item & "`: no `as "
+                        & Trim_Blanks (With_Part (E + 1 .. With_Part'Last))
+                        & "` stands earlier in this alternative");
+               end if;
+            end;
+         end if;
+         Reread_Seen := True;
+         B.Append
+           (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Reread,
+                         Ctx => Null_Unbounded_String, Path => To_Unbounded_String (With_Part),
+                         Id => 0, Look => <>, Code => To_Unbounded_String (Template)));
+      end Reread_Consequence;
+
       procedure One (Item : String) is
       begin
          if Item'Length >= 10 and then Item (Item'First .. Item'First + 7) = "grammar("
@@ -4974,18 +5136,29 @@ package body HBNF_Grammar is
             Grammar_Switch (Item);
             return;
          end if;
-         for K in Item'First .. Item'Last - 1 loop
-            if Item (K + 1) = '=' and then Item (K) in '+' | '-' then
-               Context_Consequence (Item, (if Item (K) = '+' then B_Add else B_Remove), K);
-               return;
-            end if;
-         end loop;
-         Fail (Where & "`=> " & Item & "`: the consequences built are `grammar(name)`, `set += tag` "
-               & "and `set -= tag`, separated by commas; a value, a fact and `reread` are not built yet");
+         if Find_Outside (Item, " with ") = 0 then
+            declare
+               Plus  : constant Natural := Find_Outside (Item, "+=");
+               Minus : constant Natural := Find_Outside (Item, "-=");
+               Eq    : constant Natural := Find_Outside (Item, "=");
+            begin
+               if Plus > 0 then
+                  Context_Consequence (Item, B_Add, Plus);
+                  return;
+               elsif Minus > 0 then
+                  Context_Consequence (Item, B_Remove, Minus);
+                  return;
+               elsif Eq > 0 then
+                  Fact_Consequence (Item, Eq);
+                  return;
+               end if;
+            end;
+         end if;
+         Reread_Consequence (Item);
       end One;
    begin
       Next (P);
-      if Cur (P).Kind /= T_Name then
+      if Cur (P).Kind /= T_Raw then
          Fail (Where & "`=>` takes the consequences of a match: `grammar(name)`, `set += tag`, "
                & "`set -= tag`, separated by commas");
       end if;
@@ -11298,6 +11471,8 @@ package body HBNF_Grammar is
    --  The grammars of a parser that switches: 0 is the including grammar, 1 ..
    --  Switch_Count the scopes (`include "f" as x`) in name order.
    function Uses_Switch return Boolean is (Switch_Seen);
+   function Uses_Facts return Boolean is (Facts_Seen);
+   function Uses_Reread return Boolean is (Reread_Seen);
 
    function Scope_Keys return Sorted_Names.Set is
       R : Sorted_Names.Set;

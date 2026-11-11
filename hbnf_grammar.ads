@@ -186,6 +186,8 @@ package HBNF_Grammar is
       B_Eol,         --  eol: a line feed, a carriage return or the end of the input follows; nothing is consumed
       B_Add,         --  `=> set += tag`: the text kept as `tag` (Ctx) is added to the context `set` (Path)
       B_Remove,      --  `=> set -= tag`: the same text is taken out of it
+      B_Fact,        --  `=> tag.attr = tag2`: the text kept as tag2 (Code) is the `attr` (Path) of the name kept as tag (Ctx)
+      B_Reread,      --  `=> template [with tag.attr = tag2]`: the text of the template (Code; the with clause in Path) replaces the match and is read again
       B_Switch);     --  `=> grammar(x)`: when the alternative has matched, x is the current grammar
                      --  (Path = "tag": Ctx is a tag bound by `as`, the text it kept names the grammar)
 
@@ -200,6 +202,9 @@ package HBNF_Grammar is
    --  is a scope some alternative switches to (any, when one switches to a
    --  matched name): its white space and the token rules it defines under a
    --  name the including grammar also has replace those while it is current.
+   --  True once a grammar has a fact (`=> tag.attr = tag2`, or `tag.attr` in a template), or a rewrite (`=> template`).
+   function Uses_Facts return Boolean;
+   function Uses_Reread return Boolean;
    function Uses_Switch return Boolean;
    function Switch_Count return Natural;
    function Switch_Prefix (K : Positive) return String;

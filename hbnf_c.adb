@@ -960,7 +960,9 @@ package body HBNF_C is
       for I in 1 .. Natural (Rules.Length) loop
          Walk (I, Rules (I).Pattern);
       end loop;
-      return To_String (Head) & HBNF_Template.Get ("c_context") & ASCII.LF
+      return To_String (Head)
+        & (if HBNF_Grammar.Uses_Facts then "#define HBNF_FACTS 1" & ASCII.LF else "")
+        & HBNF_Template.Get ("c_context") & ASCII.LF
         & To_String (R);
    end Context_Runtime;
 
@@ -5384,7 +5386,7 @@ package body HBNF_C is
       function Pat_Binds (V : Element_Vectors.Vector) return Boolean is
       begin
          for E of V loop
-            if E.Kind = Block and then E.Op in B_Bind | B_Bind_Code | B_Scope | B_Add | B_Remove then
+            if E.Kind = Block and then E.Op in B_Bind | B_Bind_Code | B_Scope | B_Add | B_Remove | B_Fact then
                return True;
             elsif E.Kind = Name then
                declare
@@ -6299,7 +6301,7 @@ package body HBNF_C is
          Needs_Seg : constant Boolean := Seg_Var = "" and then
            (for some K in First .. Last =>
               Els (K).Kind = Block
-              and then Els (K).Op in B_Where | B_Bind_Code);
+              and then Els (K).Op in B_Where | B_Bind_Code | B_Reread);
 
          --  `Acc` is `r.` or `nn->`; the node as a pointer.
          function Node_Ptr return String is
@@ -6323,12 +6325,99 @@ package body HBNF_C is
             return To_String (R);
          end Path_C;
 
+         --  A template (CONTEXTS.md section 30) as the statements that put its parts, one after the
+         --  other, in the buffer sb_: a string as written, a tag as the text it kept, `tag.attr` as the
+         --  fact the context `attr` holds for that text, `function(tag)` as what the grammar's own
+         --  function makes of it.
+         function Template_Stmts (T : String) return String is
+            R : U;
+            K : Natural := T'First;
+            function Tg (Name : String) return String is
+              ("p->text + cp_" & C_Ident_Lower (Name) & "_" & Tsid & ", cl_" & C_Ident_Lower (Name) & "_" & Tsid);
+         begin
+            while K <= T'Last loop
+               if T (K) in ' ' | ASCII.HT then
+                  K := K + 1;
+               elsif T (K) = '"' then
+                  declare
+                     S0 : constant Natural := K + 1;
+                  begin
+                     K := S0;
+                     while K <= T'Last and then T (K) /= '"' loop
+                        if T (K) = '\' then
+                           K := K + 1;
+                        end if;
+                        K := K + 1;
+                     end loop;
+                     Append (R, Ind & "hbnf_sb_adds (&sb_, """ & T (S0 .. K - 1) & """);" & LF);
+                     K := K + 1;
+                  end;
+               else
+                  declare
+                     S0 : constant Natural := K;
+                  begin
+                     while K <= T'Last and then T (K) not in ' ' | ASCII.HT | '(' loop
+                        K := K + 1;
+                     end loop;
+                     if K <= T'Last and then T (K) = '(' then
+                        declare
+                           E : Natural := K + 1;
+                        begin
+                           while T (E) /= ')' loop
+                              E := E + 1;
+                           end loop;
+                           declare
+                              Arg : constant String := Ada.Strings.Fixed.Trim (T (K + 1 .. E - 1), Ada.Strings.Both);
+                           begin
+                              Append (R, Ind & "{ char *r_ = " & T (S0 .. K - 1) & " (" & Tg (Arg)
+                                & "); if (r_) { hbnf_sb_adds (&sb_, r_); free (r_); } }" & LF);
+                           end;
+                           K := E + 1;
+                        end;
+                     else
+                        declare
+                           W : constant String := T (S0 .. K - 1);
+                           D : Natural := 0;
+                        begin
+                           for I in W'Range loop
+                              if W (I) = '.' then
+                                 D := I;
+                              end if;
+                           end loop;
+                           if D > 0 then
+                              Append (R, Ind & "{ const char *v_; size_t vn_; if (hbnf_fact_get (CTX_"
+                                & C_Ident_Lower (W (D + 1 .. W'Last)) & ", " & Tg (W (W'First .. D - 1))
+                                & ", &v_, &vn_)) hbnf_sb_add (&sb_, v_, vn_); }" & LF);
+                           else
+                              Append (R, Ind & "hbnf_sb_add (&sb_, " & Tg (W) & ");" & LF);
+                           end if;
+                        end;
+                     end if;
+                  end;
+               end if;
+            end loop;
+            return To_String (R);
+         end Template_Stmts;
+
          --  The statements that find where the text matched since Var starts,
          --  after the blanks, as `st_`, with the end in `k_`.
          function Span_Of (Var : String) return String is
            ("size_t k_ = p->pos, st_ = " & Var & "; "
             & (if Ws then "p->pos = " & Var & "; skip_ws(p); st_ = p->pos; "
                           & "p->pos = k_; " else ""));
+
+         --  Several context operations may follow one element (`name ? macros as N`): each one asks about
+         --  the text of that element, so each refers to where the element began, not to the operation before.
+         function Base_Of (K : Natural) return Natural is
+            J : Natural := K - 1;
+         begin
+            while J > First and then Els (J).Kind = Block
+              and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num
+            loop
+               J := J - 1;
+            end loop;
+            return J;
+         end Base_Of;
 
          --  A capture read through the frame (`$K^`, ABNF.md): its offset and length.
          function Up_Slot_Img (E : Element_Access; Part : Character) return String is
@@ -6582,6 +6671,59 @@ package body HBNF_C is
                                 & ", cl_" & T & ");");
                               Append (Buf, LF);
                            end;
+                        when B_Fact =>
+                           --  `=> tag.attr = tag2`: the text kept as tag2 is the attribute `attr` of the name kept as tag
+                           declare
+                              T1 : constant String := C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid;
+                              T2 : constant String := C_Ident_Lower (To_String (E.Code)) & "_" & Tsid;
+                           begin
+                              Append (Buf, Ind & "hbnf_fact_put (CTX_" & C_Ident_Lower (To_String (E.Path))
+                                & ", p->text + cp_" & T1 & ", cl_" & T1 & ", p->text + cp_" & T2 & ", cl_" & T2 & ");");
+                              Append (Buf, LF);
+                           end;
+                        when B_Reread =>
+                           --  `=> template [with tag.attr = tag2]`: the match is replaced by the template, and
+                           --  the parse starts again on the new text (hbnf_reread, and parse_text)
+                           declare
+                              W  : constant String := To_String (E.Path);
+                              Eq : Natural := 0;
+                           begin
+                              Append (Buf, Ind & "{ " & Span_Of (Seg) & "hbnf_sb sb_ = { 0, 0, 0 };");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  if (hbnf_rr_n >= HBNF_MAX_REREAD) { fail(p, ""a rewrite that ends"", 0, p->text + st_, 0); "
+                                & Fail & " }");
+                              Append (Buf, LF);
+                              Append (Buf, Template_Stmts (To_String (E.Code)));
+                              if W /= "" then
+                                 for I in W'Range loop
+                                    if W (I) = '=' and then Eq = 0 then
+                                       Eq := I;
+                                    end if;
+                                 end loop;
+                                 declare
+                                    L : constant String := Ada.Strings.Fixed.Trim (W (W'First .. Eq - 1), Ada.Strings.Both);
+                                    A : constant String := Ada.Strings.Fixed.Trim (W (Eq + 1 .. W'Last), Ada.Strings.Both);
+                                    D : Natural := 0;
+                                 begin
+                                    for I in L'Range loop
+                                       if L (I) = '.' then
+                                          D := I;
+                                       end if;
+                                    end loop;
+                                    Append (Buf, Ind & "  { const char *ps_; size_t pn_; if (hbnf_fact_get (CTX_"
+                                      & C_Ident_Lower (L (D + 1 .. L'Last)) & ", p->text + cp_"
+                                      & C_Ident_Lower (L (L'First .. D - 1)) & "_" & Tsid & ", cl_"
+                                      & C_Ident_Lower (L (L'First .. D - 1)) & "_" & Tsid & ", &ps_, &pn_))"
+                                      & " hbnf_subst (&sb_, ps_, pn_, p->text + cp_" & C_Ident_Lower (A) & "_" & Tsid
+                                      & ", cl_" & C_Ident_Lower (A) & "_" & Tsid & "); }");
+                                    Append (Buf, LF);
+                                 end;
+                              end if;
+                              Append (Buf, Ind & "  hbnf_reread (st_, k_, &sb_);  p->len = p->pos;   /* nothing more can match: the parse is read again */");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  " & Fail & " }");
+                              Append (Buf, LF);
+                           end;
                         when B_Switch =>
                            if E.Path = Null_Unbounded_String then
                               Append (Buf, Ind & "hbnf_push(p, "
@@ -6606,7 +6748,7 @@ package body HBNF_C is
                            null;  --  lifted to a rule of its own before emission
                         when B_Test | B_Not_Test =>
                            Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
-                             & Ctx_Img (K - 1)));
+                             & Ctx_Img (Base_Of (K))));
                            Append (Buf, LF);
                            Append (Buf, Ind & "  if (" & (if E.Op = B_Test then "!" else "")
                              & "hbnf_ctx_has (CTX_"
@@ -6801,7 +6943,7 @@ package body HBNF_C is
                            --  and how long it is
                            if E.Id /= 1 or else Local_Reader (To_String (E.Ctx)) then
                               Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
-                                & Ctx_Img (K - 1)) & "cp_"
+                                & Ctx_Img (Base_Of (K))) & "cp_"
                                 & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid
                                 & " = st_;  cl_"
                                 & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid
@@ -6811,7 +6953,7 @@ package body HBNF_C is
                            if E.Id = 1 then
                               --  read by a rule of its own: kept in the frame too
                               Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
-                                & Ctx_Img (K - 1)) & "(void) k_; "
+                                & Ctx_Img (Base_Of (K))) & "(void) k_; "
                                 & Up_Slot_Img (E, 'p') & " = (long)st_; "
                                 & Up_Slot_Img (E, 'l') & " = (long)(k_ - st_); }");
                               Append (Buf, LF);
@@ -6932,7 +7074,7 @@ package body HBNF_C is
                         when B_Num =>
                            --  the number the element before matched
                            Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_"
-                             & Ctx_Img (K - 1)) & "long v_ = 0; size_t q_; "
+                             & Ctx_Img (Base_Of (K))) & "long v_ = 0; size_t q_; "
                              & "for (q_ = st_; q_ < k_; q_++) v_ = v_ * 10 + (p->text[q_] - '0'); HF("
                              & Ctx_Img (Natural'Max (0, HBNF_Grammar.Slot_Of
                                  (To_String (Rules (Owner).Name), To_String (E.Ctx))))
@@ -10427,6 +10569,10 @@ package body HBNF_C is
       if Ctx_On then
          Append (Res, Context_Runtime (Rules));
       end if;
+      if HBNF_Grammar.Uses_Reread then
+         Append (Res, HBNF_Template.Get ("c_reread"));
+         Append (Res, LF);
+      end if;
       if HBNF_Grammar.Uses_Frames then
          Append (Res, HBNF_Template.Get ("c_frames"));
       end if;
@@ -10827,7 +10973,8 @@ package body HBNF_C is
          Append (Res, "                  char *err, size_t errlen,"
            & " size_t *err_line, size_t *err_col) {");
          Append (Res, LF);
-         Append (Res, (if Ctx_On then "    hbnf_ctx_clear();" & LF else "")
+         Append (Res, (if HBNF_Grammar.Uses_Reread then "    hbnf_reread_clear();" & LF else "")
+           & (if Ctx_On then "    hbnf_ctx_clear();" & LF else "")
            & (if HBNF_Grammar.Uses_Frames
               then "    hbnf_fsp = 0; hbnf_fb = 0;"
                    & (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
@@ -10845,6 +10992,10 @@ package body HBNF_C is
          Append (Res, "    if (!parse_rule_" & C_Name (To_String (Rules (1).Name))
            & "(&p, out)) goto fail_;");
          Append (Res, LF);
+         if HBNF_Grammar.Uses_Reread then
+            Append (Res, "    if (hbnf_rr) goto fail_;   /* a rewrite stopped the read short */");
+            Append (Res, LF);
+         end if;
          --  The text after the root may be whitespace, if the root's file skips
          --  any (`whitespace none`, as an RFC's ABNF reads, does not: an
          --  included file's own whitespace is not the root's), as the other
@@ -10891,6 +11042,38 @@ package body HBNF_C is
          end if;
          Append (Res, "    return true;");
          Append (Res, LF);
+         if HBNF_Grammar.Uses_Reread then
+            --  a rewrite asked for the parse to start over: splice its text in and read again from the beginning
+            Append (Res, "fail_:" & LF
+              & "    if (hbnf_rr) {" & LF
+              & "        int q_ = p.quiet;" & LF
+              & "        text = hbnf_splice(text, strlen(text));" & LF
+              & (if Ctx_On then "        hbnf_ctx_clear();" & LF else "")
+              & (if HBNF_Grammar.Uses_Frames
+                 then "        hbnf_fsp = 0; hbnf_fb = 0;"
+                      & (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
+                         then " hbnf_fpush(" & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name))) & ");"
+                         else "") & LF else "")
+              & "        memset(out, 0, sizeof *out);" & LF
+              & "        p = (parser_t){ text, strlen(text), 0, (size_t)-1, 0, 0, NULL, NULL, 0, 0 };" & LF
+              & "        p.quiet = q_;" & LF
+              & "        p.stack_lim = (const char *)__builtin_frame_address(0) - (size_t)HBNF_MAX_DEPTH * 256;" & LF
+              & "        goto start_;" & LF
+              & "    }" & LF
+              & "    if (p.quiet) {" & LF
+              & (if Ctx_On then "        hbnf_ctx_clear();" & LF else "")
+              & (if HBNF_Grammar.Uses_Frames
+                 then "        hbnf_fsp = 0; hbnf_fb = 0;"
+                      & (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
+                         then " hbnf_fpush(" & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name))) & ");"
+                         else "") & LF else "")
+              & "        memset(out, 0, sizeof *out);   /* the first pass left a tree here, and the fields of alternatives share space */" & LF
+              & "        p = (parser_t){ text, strlen(text), 0, (size_t)-1, 0, 0, NULL, NULL, 0, 0 };" & LF
+              & "        goto start_;" & LF
+              & "    }" & LF
+              & "    goto err;" & LF
+              & "err:");
+         else
          Append (Res, "fail_:" & LF
            & "    if (p.quiet) {" & LF
            & (if Ctx_On then "        hbnf_ctx_clear();" & LF else "")
@@ -10905,6 +11088,7 @@ package body HBNF_C is
            & "    }" & LF
            & "    goto err;" & LF
            & "err:");
+         end if;
          Append (Res, LF);
          Append (Res, "    if (p.err_pos != (size_t)-1)"
            & " line_col(&p, p.err_pos, &p.err_line, &p.err_col);");

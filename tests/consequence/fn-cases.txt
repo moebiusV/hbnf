@@ -1,0 +1,6 @@
+ok	ABC
+ok	abc
+ok	aBc
+bad	a1
+bad	1
+ok	
