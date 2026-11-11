@@ -98,7 +98,7 @@ Note:
 
 ## 4. Corpora (grammars)
 
-- [ ] **COBOL** (free-format core only): 5 gaps in the scan suite against cobc, 1 in NIST (`tests/cobol/scan-baseline.txt` = 5, `nist-baseline.txt` = 1); fixed format waits for `col`; copybooks, the embedded languages (SQL, CICS, DLI, JCL), PICTURE as its own grammar.  RFCPLAN step 20 (ALGOL 68, C++, COBOL on the list; IMP72 cancelled).
+- [ ] **COBOL** (free-format core only): 3 gaps in the scan suite against cobc, 0 in NIST (`tests/cobol/scan-baseline.txt` = 3: `>>IF`/`>>ELSE` directives that choose text, the LIST-BOX screen extension, 2023's `VARYING ... INVALID WHEN`; `nist-baseline.txt` = 0; a comma may be the decimal point); fixed format waits for `col`; copybooks, the embedded languages (SQL, CICS, DLI, JCL), PICTURE as its own grammar.  RFCPLAN step 20 (ALGOL 68, C++, COBOL on the list; IMP72 cancelled).
 - [ ] **HTML**: the places where the grammar and html5lib differ (`corpus/html/tests/oracle-stricter/`: documents html5lib refuses and the grammar accepts); JS and CSS as islands (CONTEXTS 27); the island 26/27, 30, 31 items above.
 - [ ] **JavaScript** (ECMAScript 2023, Script and Module) and **CSS** (Syntax 3, Selectors 4): known gaps against V8 / tinycss2 (see their READMEs).
 - [ ] **SGML** and **GraphQL**: no oracle.

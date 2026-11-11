@@ -28,7 +28,9 @@ ws = SP | HTAB | CR | LF | "," | ";" | "*>" *~( CR | LF ) | "*CONTROL" *~( CR | 
 
 ; ---- literals (the standard's 8.3) ----
 ; (a letter inside a token is a code point or sits in a regular expression: a letter-led literal would be matched as a whole word)
-numeric-body    = ir"[+-]?(\d+(\.\d+)?|\.\d+)(E[+-]?\d+)?"
+; a comma may be the decimal point (`DECIMAL-POINT IS COMMA`): `19876,1234`.  The standard puts a space after a separator
+; comma, so digits-comma-digits is never a list; whether the program declared the clause is a checking pass's business.
+numeric-body    = ir"[+-]?(\d+([.,]\d+)?|\.\d+)(E[+-]?\d+)?"
 numeric-literal = numeric-body !( ALPHA | "_" | "-" ALPHA )
 digits          = r"\d+"
 nonnumeric-literal = ir"([XNZBG]X?)?(\"([^\"]|\"\")*\"|'([^']|'')*')"
