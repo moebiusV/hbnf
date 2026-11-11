@@ -64,9 +64,9 @@ Queued reader and generator fixes (the titles are the item titles):
 | 6 | `%spaces N` at the start of a repeated group reads N as lost |
 | 7 | a pattern rule's instances are named for the pattern |
 | 11, 22, 29 | a negative lookahead over a rule that ends in one; a lookahead rule inside a rule of characters always warns; a multi-character lookahead in a rule of characters |
-| 13, 14, 15 | `word`; a token exception; letters in a rule of characters |
+| 13, 14, 15 | **13 and 14 done 2026-11-11 (`tests/lexer.sh`)**: a `word` renamed `word-rule` is still the keyword boundary (C); a token exception with a literal operand; 15 (letters in a rule of characters) is how the notation reads, see CONTEXTS section 23 |
 | 17, 63 | **done 2026-11-11 (C; `tests/layout.sh`)**: a lookahead over a rule that writes under `--layout=tape` runs it and puts the tape back (the grammar's `rollback`) |
-| 23, 24 | a hyperrule's literal argument ignores `sensitivity string %i`; `$K` compares bytes (it keeps the case property since a4f96d9) |
+| 23, 24 | **23 done 2026-11-11 (`tests/lexer.sh`)**: a hyperrule's literal argument follows `sensitivity string %i`; `$K` keeps the case property since a4f96d9 |
 | 25 | `as K` and `$K` in the same sequence but in different group alternatives |
 | 26 | **does not reproduce 2026-11-11** (a phrase rule named `text` compiles in Rust and Zig; `tests/lexer.sh`) |
 | 27, 30, 31 | islands: an island with its own `ws`; the root after `include "html.hbnf"`; `=> grammar(js)` after `<script>` |

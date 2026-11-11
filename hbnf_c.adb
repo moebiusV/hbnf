@@ -5228,10 +5228,15 @@ package body HBNF_C is
    end Scalar_Scan_Fn;
 
    --  The scanner the `word` core rule runs (scanner action or scan), for a keyword read.
+   --  A grammar's `word` that is a regular expression or holds a group under a repetition is renamed `word-rule`
+   --  (it would be the built-in type otherwise): it is still the rule that says where a keyword ends.
+   function Word_Rule (Rules : Rule_Vectors.Vector) return String is
+     (if Find (Rules, "word") = 0 and then Find (Rules, "word-rule") /= 0 then "word-rule" else "word");
+
    function Word_Scanner (Rules : Rule_Vectors.Vector) return String is
-     ((if Find (Rules, "word") /= 0
-         and then Rules (Find (Rules, "word")).Jet_Code /= Null_Unbounded_String
-       then "jet_word" else "scan_word"));
+     ((if Find (Rules, Word_Rule (Rules)) /= 0
+         and then Rules (Find (Rules, Word_Rule (Rules))).Jet_Code /= Null_Unbounded_String
+       then "jet_" & C_Name (Word_Rule (Rules)) else "scan_" & C_Name (Word_Rule (Rules))));
 
    --  A human-readable description of a core scalar (for error messages).
    function Core_Desc (Name : String) return String is
@@ -10322,7 +10327,7 @@ package body HBNF_C is
                Append (Scanners, "static size_t jet_"
                  & C_Name (To_String (Rules (I).Name))
                  & "(const char *s, size_t pos, size_t len);" & LF);
-               if To_String (Rules (I).Name) = "word" then
+               if To_String (Rules (I).Name) = Word_Rule (Rules) then
                   Has_Word := True;
                end if;
             elsif Is_Char_Rule (Rules, To_String (Rules (I).Name)) then
@@ -10334,7 +10339,7 @@ package body HBNF_C is
                   then
                      Append (Scanners, "static size_t scan_" & C_Name (NM)
                        & "(const char *s, size_t pos, size_t len);" & LF);
-                     if NM = "word" then
+                     if NM = Word_Rule (Rules) then
                         Has_Word := True;
                      end if;
                   end if;

@@ -1,0 +1,7 @@
+; A grammar's `word` that holds a group under a repetition is renamed `word-rule` (CONTEXTS section 26, item 13): it is still the rule
+; that says where a keyword ends, so `if` does not match the start of `ifx`.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top  = "if" " " word
+word = ALPHA *( ALPHA | "-" )

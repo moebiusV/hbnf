@@ -1,0 +1,6 @@
+; A hyperrule's literal argument follows the file's `sensitivity string %i` (CONTEXTS section 26, item 23): `f("a")` takes `<A>` too.
+prefix none
+whitespace none
+sensitivity string %i
+top = f("a") f("b")
+f(N) := "<" N ">"

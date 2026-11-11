@@ -674,6 +674,8 @@ package body HBNF_Grammar is
    Except_Bases  : Except_Maps.Map;   --  X -> A
    Pending_Except_A : Unbounded_String;   --  set by Parse_Body for its rule
    Pending_Except_B : Unbounded_String;
+   Pending_Except_Lit : Unbounded_String;   --  `A - "lit"`: the literal, which gets a rule of its own where the rule is defined
+   Pending_Except_Is_Lit : Boolean := False;
 
    --  The dialect, for the prefix on generated identifiers: the one a flag
    --  named (kept across files), else the first a file's `dialect` line named.
@@ -913,6 +915,7 @@ package body HBNF_Grammar is
       Wide_Yes.Clear;
       Text_No.Clear;
       Pending_Except_B := Null_Unbounded_String;
+      Pending_Except_Is_Lit := False;
       Declared_Tokens.Clear;
       Union_Sites.Clear;
       Pipe_Sites.Clear;
@@ -4153,7 +4156,8 @@ package body HBNF_Grammar is
                begin
                   --  A use of a parameterised rule remembers the literals of
                   --  its pattern arguments are in a file that ignores case.
-                  if File_No_Case and then (for some C of To_String (N) => C = '(') then
+                  --  (And a name that stands for a parameter: its literal is read ignoring case too, CONTEXTS section 26, item 23.)
+                  if File_No_Case then
                      Fold_Sites.Append (E);
                   end if;
                   return E;
@@ -5552,7 +5556,7 @@ package body HBNF_Grammar is
       --  `A - B`, the whole of a rule: A except what B matches (ISO 14977).
       if Cur (P).Kind = T_Name
         and then P.Toks (P.Pos + 1).Kind = T_Dash
-        and then P.Toks (P.Pos + 2).Kind = T_Name
+        and then P.Toks (P.Pos + 2).Kind in T_Name | T_String
         and then P.Toks (P.Pos + 3).Kind in T_Newline | T_EOF | T_Comment
       then
          declare
@@ -5560,6 +5564,8 @@ package body HBNF_Grammar is
          begin
             Pending_Except_A := Cur (P).Text;
             Pending_Except_B := P.Toks (P.Pos + 2).Text;
+            Pending_Except_Is_Lit := P.Toks (P.Pos + 2).Kind = T_String;
+            Pending_Except_Lit := (if Pending_Except_Is_Lit then P.Toks (P.Pos + 2).Text else Null_Unbounded_String);
             V.Append
               (new Element'(Kind => Name, Min => 1, Max => 1,
                             Name => Cur (P).Text, Fold => File_Fold_Names, Args => Null_Unbounded_String));
@@ -7912,7 +7918,8 @@ package body HBNF_Grammar is
                         when V_Lit =>
                            return new Element'
                              (Kind => Literal, Min => E.Min, Max => E.Max,
-                              Lit => V.Text, No_Case => False,
+                              Lit => V.Text,
+                              No_Case => Has_Letter (V.Text) and then (for some S of Fold_Sites => S = E),
                               Has_Value => False, Value => 0);
                         when V_Pat =>
                            --  the pattern, in a group, where the parameter stood
@@ -13008,6 +13015,24 @@ package body HBNF_Grammar is
                     (To_String (Name),
                      Standing_Rule'(R   => Rules (Index (To_String (Name))),
                                     Raw => Raw));
+                  if Pending_Except_B /= Null_Unbounded_String and then Pending_Except_Is_Lit then
+                     --  `A - "lit"`: the literal is a rule of its own, named for the rule it is the exception of
+                     declare
+                        LN : constant Unbounded_String := Name & "-except";
+                        L  : Element_Vectors.Vector;
+                     begin
+                        L.Append (new Element'(Kind => Literal, Min => 1, Max => 1, Lit => Pending_Except_Lit,
+                                               Has_Value => False, Value => 0,
+                                               No_Case => File_No_Case and then Has_Letter (Pending_Except_Lit)));
+                        Define (Rules, Index,
+                                Rule'(Name => LN, Pattern => L, Leading_Comment => Null_Unbounded_String,
+                                      Trailing_Comment => Null_Unbounded_String, Jet_Code => Null_Unbounded_String,
+                                      Action_Code => Null_Unbounded_String, Left_Bases => 0,
+                                      Whitespace => (if Alone then Null_Unbounded_String else File_Whitespace)));
+                        Pending_Except_B := LN;
+                     end;
+                  end if;
+                  Pending_Except_Is_Lit := False;
                   if Pending_Except_B /= Null_Unbounded_String then
                      Excepts.Include (To_String (Name),
                                       To_String (Pending_Except_B));

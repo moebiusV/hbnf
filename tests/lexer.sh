@@ -49,6 +49,33 @@ for c in "ok ac" "bad ab"; do
 	printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checks" "$W/t.txt" | cut -d' ' -f1)
 	[ "$got" = "${c%% *}" ] || { echo "lexer: FAIL (!( \"a\" \"b\" ) on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
 done
+# a hyperrule's literal argument under `sensitivity string %i` (item 23)
+"$CLI" tests/lexer/hyper-case.hbnf --backend=c > "$W/h.c" 2> /dev/null || { echo "lexer: FAIL (hyper-case.hbnf does not generate)"; exit 1; }
+root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/h.c")
+cat "$W/h.c" corpus/c/check.c > "$W/mh.c"
+cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/mh.c" -o "$W/checkh" 2> "$W/cc.txt" || { echo "lexer: FAIL (hyper-case.hbnf: cc: $(head -c 300 "$W/cc.txt"))"; exit 1; }
+for c in "ok <a><b>" "ok <A><B>" "ok <a><B>" "bad <a><c>"; do
+	printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checkh" "$W/t.txt" | cut -d' ' -f1)
+	[ "$got" = "${c%% *}" ] || { echo "lexer: FAIL (f(\"a\") under %i on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
+done
+# a `word` renamed `word-rule` is still the keyword boundary (item 13)
+"$CLI" tests/lexer/word-group.hbnf --backend=c > "$W/w.c" 2> /dev/null || { echo "lexer: FAIL (word-group.hbnf does not generate)"; exit 1; }
+root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/w.c")
+cat "$W/w.c" corpus/c/check.c > "$W/mw.c"
+cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/mw.c" -o "$W/checkw" 2> "$W/cc.txt" || { echo "lexer: FAIL (word-group.hbnf: cc: $(head -c 300 "$W/cc.txt"))"; exit 1; }
+for c in "ok if abc" "ok if a-b" "bad ifx abc"; do
+	printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checkw" "$W/t.txt" | cut -d' ' -f1)
+	[ "$got" = "${c%% *}" ] || { echo "lexer: FAIL (word-group on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
+done
+# a token exception with a literal operand (item 14)
+"$CLI" tests/lexer/except-literal.hbnf --backend=c > "$W/e.c" 2> "$W/err" || { echo "lexer: FAIL (except-literal.hbnf: $(head -c 300 "$W/err"))"; exit 1; }
+root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/e.c")
+cat "$W/e.c" corpus/c/check.c > "$W/me.c"
+cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/me.c" -o "$W/checke" 2> "$W/cc.txt" || { echo "lexer: FAIL (except-literal.hbnf: cc: $(head -c 300 "$W/cc.txt"))"; exit 1; }
+for c in "ok abc xy" "bad abc on" "ok onx a" "bad on"; do
+	printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checke" "$W/t.txt" | cut -d' ' -f1)
+	[ "$got" = "${c%% *}" ] || { echo "lexer: FAIL (name - \"on\" on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
+done
 # a rule named `text` (item 26) in Rust, where it is installed
 if command -v rustc > /dev/null 2>&1; then
 	mkdir -p "$W/rs"

@@ -1,0 +1,7 @@
+; A token exception with a literal for its operand (CONTEXTS section 26, item 14): `name - "on"` is a name that is not `on`.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top      = name *( " " name )
+name     = word-tok - "on"
+word-tok = 1*ALPHA
