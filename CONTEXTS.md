@@ -1246,3 +1246,31 @@ The text after `=>`, to the end of the alternative, is read as the consequences,
 
 I recommend **a** for the general rule, with a bound on the depth and size of expansion and a refusal of an expansion that returns to the text it replaced (a cycle), and **c** left for later as an optimization for token-shaped replacement.  Question for the author: **a, b or c?**
 
+### Revised 2026-11-11 after notes02.txt (R624 to R626): two arrows, and the three ways to `reread` measured
+
+**The spelling.**  ANTLR 3 wrote a tree rewrite as `->`; that is the precedent (R624).  So **`->` rewrites the tree** (`a = b -> c`: when `b` matches, the tree is as if `c` had matched; the text is not touched), and **`=>` is the reread form of rewrite and the arrow of the other consequences** (`a = b => c`: the text `c` replaces the match and is read again; `names += N`, `N.attr = V` and `grammar(x)` keep their operators, so a bare template after `=>` is the reread, and the word `reread` is not needed).  This replaces `=> reread` and `=>>` above.  Open for correction: whether `=>` stays the arrow of the context and fact consequences that are built (this reading keeps them).
+
+**The three ways, written out for both cases and counted** (rules and tokens by the simple tokenizer of section 29; the cases are the C macros and COBOL `COPY` and `REPLACE`, each as the grammar the author would write):
+
+| | C macros (a use that expands) | COBOL `COPY`, `REPLACE` | what the grammar says |
+|---|---|---|---|
+| a. the rule reads again where the use is (`=> template`) | 2 rules, 54 tokens | 4 rules, 73 tokens | everything: what a use is, what it becomes, with what |
+| b. a pass before the grammar | 8 rules, 143 tokens | 8 rules, 143 tokens | the same, and the language's strings, comments and literals again, so that a name inside a string is not expanded |
+| c. the scanner substitutes | 1 rule, 32 tokens | 4 rules, 62 tokens | only the definition; the use is invisible, and the engine decides how arguments are collected, what `#` and `##` mean, how pseudo-text matches |
+
+Readability first (R626): **a**.  It is the middle in size, and it is the only one in which the grammar says what a macro use is and where it may stand.  **b** is twice the rules, because the second grammar must repeat the lexical rules of the first so as not to expand inside a string or a comment (ANTLR's own COBOL grammar does this, as a separate preprocessor grammar).  **c** is the smallest and the least readable: the behaviour of a preprocessor would be built into the engine, out of the reader's sight, which is the opposite of "the preprocessor is rewrites".  So **a** is built; **b** needs nothing built beyond `->` and a project of two grammars (Phase 7); **c** is left out, for token-shaped replacement later if a grammar is shown to need it.
+
+**How a is built first.**  The simplest correct way is to restart the parse: the use fails with a note, the text is spliced into a new buffer, and the parse starts again from the beginning on it.  A definition is read again each time, so the facts it makes are made again, and a use that was expanded no longer matches, so the result is the same as reading again at the use.  Its cost is a whole parse for each expansion, and only a grammar that has a `=>` rewrite pays it; restarting at the rule that called the use is the refinement when that cost matters.  A bound stops a rewrite that never ends.
+
+### Built 2026-11-11, second slice: facts and `=> template` (reread), C backend only
+
+Mechanism **a** (R626), by restarting the parse (the simplest correct way, above).  After `=>`, besides `grammar(x)`, `set += tag` and `set -= tag`:
+
+- **a fact**, `tag.attr = tag2`: the text kept as `tag2` is the attribute `attr` of the name kept as `tag`.  An attribute is a context of its own, keyed by the name, with the value stored in the entry of the context log (two words more per entry, only in a grammar that has a fact: `HBNF_FACTS`); it is undone with the match like an add, and the newest of a name wins.
+- **a rewrite**, `template [with tag.attr = tag2]`: the template is strings, tags, `tag.attr` (the fact, or nothing if there is none) and `function(tag)` (a function of the grammar's own code that takes the text and its length and returns a `malloc`ed string), side by side.  The match is replaced by it and the parse starts again on the new text; a definition makes its facts again, a use that was replaced is no longer there.  With a `with`, the names of the comma-separated list in `tag.attr` are replaced in the template by the arguments of the list in `tag2` (one outer pair of brackets is taken off each, so `params-part as P` may keep its parentheses).  A rewrite that never ends stops at `HBNF_MAX_REREAD` (100,000) and the parse fails with "a rewrite that ends".  The tree of a parse that starts over is dropped; the text of the last one is kept, since the tree's strings are slices of it, until the next `parse_text`.
+- `tests/consequence.sh` and `tests/consequence/macros.hbnf`: object-like and function-like macros, a macro that uses another, a definition made again, a use before its definition (refused), and a rewrite that never ends (refused); `fn.hbnf` is a template that calls a function.
+
+**Found on the way, and fixed:** several context operations after one element (`name ? macros as N`) each measured their text from the operation before, not from the element, so `as N` kept nothing; they now all refer to where the element began (`Base_Of` in the sequence code).  It is not a rewrite feature: `x ? set as K` was wrong the same way before.
+
+**Not yet.**  The tree rewrite `->` (R624).  Hygiene (the names a macro body declares being made fresh).  COBOL's `COPY ... REPLACING` and `REPLACE`: they need the pairs of pseudo-text (`FROM`, `TO` for each of a repetition) and a function that reads a library member, which the template can call but the grammar has not been written for.  Restarting at the rule that called the use, in place of the whole parse, which is the refinement when the cost matters: today each expansion is one more parse of the whole text (so a file of k uses is k parses), paid only by a grammar that has a rewrite.  Error positions are those of the rewritten text; the chain that names the text written (R591) is not kept yet.  Rust, Zig and Ada refuse these by rule name.
+
