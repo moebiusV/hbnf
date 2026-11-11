@@ -1,0 +1,6 @@
+; Two rules whose names become one identifier in the generated code (`-` and `_` are one letter there) are refused, naming both.
+prefix none
+whitespace none
+top = and-like-this and_like_this
+and-like-this = "1"
+and_like_this = "2"

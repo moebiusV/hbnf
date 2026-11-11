@@ -8,6 +8,9 @@ with HBNF_Grammar;
 --  for every list rule.  Schema comments are carried through as Ada comments.
 package HBNF_Ada is
 
+   --  The type name a rule gets: two rules with one name are refused (HBNF_Compilable.Check_Names).
+   function Type_Key (S : String) return String;
+
    function Emit
      (Rules : HBNF_Grammar.Rule_Vectors.Vector; Package_Name : String) return String;
 

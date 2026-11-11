@@ -1,0 +1,8 @@
+; A lookahead in a phrase rule skips white space first, as an element does: in Rust, Zig and Ada as in C.
+prefix none
+sensitivity string %i
+include "/home/matthew/claude/hbnf/grammars/common.hbnf"
+whitespace ws
+doc = "PROCESS" 1*( !( "IDENTIFICATION" | "ID" ) cw ) "IDENTIFICATION" "X"
+ws = SP | LF
+cw = r"[^ \t\r\n]+"

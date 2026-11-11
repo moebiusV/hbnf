@@ -22,6 +22,15 @@ package HBNF_Compilable is
    procedure Check
      (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
       Backend : String);
+
+   --  Two rules whose names become the same identifier in a backend (`and-like-this` and `and_like_this` are both
+   --  `AndLikeThis` in Rust) would be one type in the generated code: refused, naming both.  Key is the backend's
+   --  own name for a rule (its Type_Key).
+   type Name_Key is access function (S : String) return String;
+   procedure Check_Names
+     (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
+      Backend : String;
+      Key     : Name_Key);
    --  Raises HBNF_Grammar.Parse_Error naming the first offending rule.
 
    --  Does some alternative of V run an `%emit` before it has read or tested anything: the emit

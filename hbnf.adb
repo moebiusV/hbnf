@@ -12,6 +12,7 @@ with Ada.Text_IO;
 with HBNF_Template;
 with HBNF_Grammar;
 with HBNF_Lookahead;
+with HBNF_Shape;
 with HBNF_Compilable;
 with HBNF_Tree_Sitter;
 with HBNF_C;
@@ -643,6 +644,15 @@ begin
       end if;
       if B /= "tree-sitter" then
          HBNF_Compilable.Check (Rules, B);
+         if B = "c" then
+            HBNF_Compilable.Check_Names (Rules, B, HBNF_Shape.C_Name'Access);
+         elsif B = "rust" then
+            HBNF_Compilable.Check_Names (Rules, B, HBNF_Rust.Type_Key'Access);
+         elsif B = "zig" then
+            HBNF_Compilable.Check_Names (Rules, B, HBNF_Zig.Type_Key'Access);
+         elsif B = "ada" then
+            HBNF_Compilable.Check_Names (Rules, B, HBNF_Ada.Type_Key'Access);
+         end if;
       end if;
       if B = "tree-sitter" then
          Put (HBNF_Tree_Sitter.Emit

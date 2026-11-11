@@ -1,0 +1,5 @@
+; Rust: a capture (`as T`, `$T`) compiles under `-D warnings` (CONTEXTS section 26, items 20 and 32).
+prefix none
+whitespace none
+doc = "<" name as T ">" 1*0x61..0x7a "</" $T ">"
+name = 1*0x61..0x7a

@@ -86,6 +86,26 @@ for g in ada-type-literal ada-instance-name; do
 			|| { echo "lexer: FAIL ($g does not compile in Ada: $(grep -m2 error "$W/ad-$g/cc.txt" | head -c 300))"; fail=1; }
 	fi
 done
+# Rust: a capture under -D warnings (items 20 and 32), and a lookahead that skips white space first, as C does
+if command -v rustc > /dev/null 2>&1; then
+	mkdir -p "$W/rl"
+	sed "s/MODULE/l/g" corpus/c/check.rs > "$W/rl/m.rs"
+	"$CLI" tests/lexer/rust-capture.hbnf --backend=rust > "$W/rl/l.rs" 2> "$W/err" || { echo "lexer: FAIL (rust-capture: $(head -c 300 "$W/err"))"; fail=1; }
+	(cd "$W/rl" && rustc --edition 2021 -D warnings -o m m.rs > cc.txt 2>&1) \
+		|| { echo "lexer: FAIL (a capture does not compile in Rust under -D warnings: $(grep -m2 error "$W/rl/cc.txt" | head -c 300))"; fail=1; }
+	"$CLI" tests/lexer/look-ws.hbnf --backend=rust > "$W/rl/l.rs" 2> "$W/err" || { echo "lexer: FAIL (look-ws: $(head -c 300 "$W/err"))"; fail=1; }
+	(cd "$W/rl" && rustc --edition 2021 -A warnings -o m m.rs > cc.txt 2>&1) || { echo "lexer: FAIL (look-ws does not compile in Rust)"; fail=1; }
+	printf 'PROCESS a b IDENTIFICATION X' > "$W/rl/in.txt"
+	[ "$("$W/rl/m" "$W/rl/in.txt" 2>&1 | cut -d' ' -f1)" = ok ] \
+		|| { echo "lexer: FAIL (look-ws: Rust does not stop a list at the word the lookahead names)"; fail=1; }
+fi
+# two rules that become one identifier are refused, naming both (R636: the mangling of names), in each backend
+for be in c rust zig ada; do
+	"$CLI" tests/lexer/name-collision.hbnf --backend=$be --package=Tn > /dev/null 2> "$W/err" \
+		&& { echo "lexer: FAIL (name-collision, $be: generated, should be refused)"; fail=1; continue; }
+	grep -q 'rules `and-like-this` and `and_like_this` both become' "$W/err" \
+		|| { echo "lexer: FAIL (name-collision, $be: the message does not name both rules: $(head -c 200 "$W/err"))"; fail=1; }
+done
 # a rule named `text` (item 26) in Rust, where it is installed
 if command -v rustc > /dev/null 2>&1; then
 	mkdir -p "$W/rs"

@@ -11,6 +11,9 @@ package HBNF_Zig is
 
    function Emit (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String;
 
+   --  The type name a rule gets: two rules with one name are refused (HBNF_Compilable.Check_Names).
+   function Type_Key (S : String) return String;
+
    --  A grammar with bit rules (HBNF_Wire.Zig.Emit_Hosted): Types, the structs
    --  of the bit rules, are added to the types, and Code, their readers and
    --  writers, to the parser, which then has a bit offset in its octet.  The

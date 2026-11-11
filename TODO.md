@@ -73,7 +73,7 @@ Queued reader and generator fixes (the titles are the item titles):
 | 28, 61 | a generator crash; the generated tree dump (`--ast-tools`, `dump_<root>`) segfaults in its recursion |
 | 60 | a rule that uses an up reference and also sets numbers with `%col` |
 | 37, 38, 39 | tape words of a `%bind` need slices; a regular expression whose alternatives can begin at the same byte; `%where`/`%bind` in a layout with emits |
-| 9, 10, 12, 18, 19, 20, 32, 33 | the per-backend items (Ada, Rust, tree-sitter): **9 and 18 (Ada) done 2026-11-11 (`tests/lexer.sh`)**; 10, 12 and 19 do not reproduce; 20 and 32 are warnings (`-D warnings`); 33 is tree-sitter's lookahead |
+| 9, 10, 12, 18, 19, 20, 32, 33 | the per-backend items (Ada, Rust, tree-sitter): **9 and 18 (Ada), 20 and 32 (Rust, a capture under `-D warnings`) done 2026-11-11 (`tests/lexer.sh`)**; 10, 12 and 19 do not reproduce; 33 is tree-sitter's lookahead.  Also found and fixed 2026-11-11: Rust type names of numbered groups collided (`select-clause-1-1` and `select-clause-11`: the COBOL parser did not compile in Rust and now agrees with C on every test file, `tests/cobol.sh`); a lookahead in a phrase rule did not skip white space first in Rust, Zig and Ada (a list did not stop at the word it names) |
 
 Open decisions and unbuilt designs:
 

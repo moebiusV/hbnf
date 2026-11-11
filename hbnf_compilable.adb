@@ -1,6 +1,9 @@
 pragma Ada_2022;
 
+with Ada.Characters.Handling;
+with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Vectors;
+with Ada.Strings.Hash;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -1425,6 +1428,32 @@ package body HBNF_Compilable is
          end if;
       end loop;
    end Check_Col_Tests;
+
+   procedure Check_Names
+     (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
+      Backend : String;
+      Key     : Name_Key) is
+      package Seen_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+        (Key_Type => String, Element_Type => String, Hash => Ada.Strings.Hash, Equivalent_Keys => "=");
+      Seen : Seen_Maps.Map;
+   begin
+      for R of Rules loop
+         declare
+            N : constant String := To_String (R.Name);
+            --  Ada does not tell `Foo` from `foo`
+            K : constant String :=
+              (if Backend = "ada" then Ada.Characters.Handling.To_Lower (Key (N)) else Key (N));
+         begin
+            if Seen.Contains (K) and then Seen.Element (K) /= N then
+               raise Parse_Error with
+                 "rules `" & Seen.Element (K) & "` and `" & N & "` both become `" & Key (N) & "` in the "
+                 & Backend & " backend, which would make them one type: rename one of them (`-` and `_` "
+                 & "are the same letter to the generated code)";
+            end if;
+            Seen.Include (K, N);
+         end;
+      end loop;
+   end Check_Names;
 
    procedure Check
      (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
