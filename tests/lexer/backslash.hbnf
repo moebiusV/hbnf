@@ -1,0 +1,7 @@
+; `'\'` is a backslash (CONTEXTS section 26, item 2): a backslash directly before the closing quote; `'\''` is still an escaped quote.
+prefix none
+whitespace none
+top = *( bs | sq | dq )
+bs  = '\'
+sq  = '\''
+dq  = '"'

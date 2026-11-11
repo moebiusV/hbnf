@@ -1,0 +1,6 @@
+; `'c'` is `"c"` (CONTEXTS section 26, item 1): a character literal is the literal of length one, so a lookahead over it and a
+; repetition of it are written as for a string.
+prefix none
+whitespace none
+top  = *dash 'a' !'b' &'c' 'c' *'-'
+dash = '-'

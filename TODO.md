@@ -58,8 +58,8 @@ Queued reader and generator fixes (the titles are the item titles):
 
 | item | what |
 |---|---|
-| 1, 2 | `'c'` is `"c"`; `'\'` for a backslash |
-| 3 | a lookahead over a sequence |
+| 1, 2 | **done 2026-11-11 (`tests/lexer.sh`):** `'\'` is a backslash; `!'b'` and `&'c'` work.  `'c'` as a plain `"c"` everywhere was tried and not done: it changes markdown and Rust GraphQL (a letter in a rule of characters becomes a word), so `'c'` stays a code point elsewhere |
+| 3 | **works (verified 2026-11-11, C and Rust; `tests/lexer.sh`)**: a lookahead over a sequence |
 | 4, 5 | `hidden` and `!`/`&` over any rule in every layout; `bol`/`eol` are text for `hidden` and for rules of characters |
 | 6 | `%spaces N` at the start of a repeated group reads N as lost |
 | 7 | a pattern rule's instances are named for the pattern |
@@ -68,7 +68,7 @@ Queued reader and generator fixes (the titles are the item titles):
 | 17, 63 | `--layout=tape` and a lookahead over a rule that writes something is refused |
 | 23, 24 | a hyperrule's literal argument ignores `sensitivity string %i`; `$K` compares bytes (it keeps the case property since a4f96d9) |
 | 25 | `as K` and `$K` in the same sequence but in different group alternatives |
-| 26 | a rule named `text` collides with `parse_text` in Rust and Zig |
+| 26 | **does not reproduce 2026-11-11** (a phrase rule named `text` compiles in Rust and Zig; `tests/lexer.sh`) |
 | 27, 30, 31 | islands: an island with its own `ws`; the root after `include "html.hbnf"`; `=> grammar(js)` after `<script>` |
 | 28, 61 | a generator crash; the generated tree dump (`--ast-tools`, `dump_<root>`) segfaults in its recursion |
 | 60 | a rule that uses an up reference and also sets numbers with `%col` |
@@ -78,7 +78,7 @@ Queued reader and generator fixes (the titles are the item titles):
 Open decisions and unbuilt designs:
 
 - [ ] The spellings `%label`, `%num`, `%action` and the rest (reserved words without `%`): open (CONTEXTS 10).
-- [ ] `col` (0-based?) and `where (cond)` as a postfix: proposed, to be confirmed (24).
+- [x] `col` (0-based) and `where (cond)` as a postfix: built 2026-11-11 (24), C backend.
 - [ ] Facts (a rule's own attributes keyed by name): decided yes, nothing built (13).
 - [ ] Labels (`name:` lines that set the context): open (16).
 - [ ] Switch phase 2 (token and scalar overrides: decimal comma, per-region reserved words) and phase 3 (phrase variants in `ast`, the tape case): designed, not built (22).

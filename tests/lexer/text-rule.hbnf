@@ -1,0 +1,5 @@
+; A rule named `text` does not collide with `parse_text` in Rust and Zig (CONTEXTS section 26, item 26).
+prefix none
+whitespace none
+doc = text *(" " text)
+text = "a" "b" | "c" ["d"]

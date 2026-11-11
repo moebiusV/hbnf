@@ -17,6 +17,7 @@ with GNAT.OS_Lib;
 
 package body HBNF_Grammar is
 
+
    --  Blanks, then `(`, from position I of T: `where (col = 6)` (the lexer's test).
    function Open_Paren_After_Blank (T : String; I : Natural) return Boolean is
       J : Natural := I;
@@ -2165,7 +2166,14 @@ package body HBNF_Grammar is
                           Integer'Image (Line) & ":" & Integer'Image (Col) &
                           ": empty character literal";
                      end if;
-                     if Text (I) = '\' then
+                     if Text (I) = '\' and then I < Text'Last and then Text (I + 1) = '''
+                       and then (I + 1 = Text'Last or else Text (I + 2) /= ''')
+                     then
+                        --  `'\'`: a backslash directly before the closing quote is a backslash (CONTEXTS section 26,
+                        --  item 2); `'\''` is still an escaped quote
+                        Append (Buf, '\');
+                        I := I + 1;  Col := Col + 1;
+                     elsif Text (I) = '\' then
                         I := I + 1;  Col := Col + 1;
                         if I > Text'Last then
                            raise Parse_Error with
@@ -4811,10 +4819,24 @@ package body HBNF_Grammar is
       if W = "not" or else W = "and" then
          --  `!x`, `&x`: x is a literal, a rule (a token, or a phrase that is parsed and thrown away), or alternatives of those.
          declare
+            --  `!'b'`, `&'c'`: a character literal of ASCII looks at the literal of length one (CONTEXTS section 26, item 1);
+            --  a range (`'a'..'z'`) is a range
+            function Char_As_Literal return Element_Access is
+               T : constant Token := Cur (P);
+            begin
+               Next (P);
+               return new Element'(Kind => Literal, Min => 1, Max => 1, Lit => T.Text, Has_Value => False,
+                                   Value => 0, No_Case => False);
+            end Char_As_Literal;
+
             --  `!$K^`: the text kept as K, again, is what must not (or must) follow
             A : constant Element_Access :=
               (if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "same"
-               then Parse_Context_Op (P) else Parse_Atom (P));
+               then Parse_Context_Op (P)
+               elsif Cur (P).Kind = T_Char and then P.Toks (P.Pos + 1).Kind /= T_DotDot
+                 and then Length (Cur (P).Text) = 1 and then Character'Pos (Ada.Strings.Unbounded.Element (Cur (P).Text, 1)) < 128
+               then Char_As_Literal
+               else Parse_Atom (P));
          begin
             E.Op := (if W = "not" then B_Not else B_And);
             if A.Kind = Group then

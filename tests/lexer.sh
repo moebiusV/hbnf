@@ -1,0 +1,60 @@
+#!/bin/sh
+# The reader's character literals: `'\'` is a backslash (a backslash directly before the closing quote), `'\''` is an escaped quote
+# (item 2); a lookahead over `'c'` works (item 1: what the string does; `'c'` stays a code point where it is read otherwise).  tests/lexer/backslash.hbnf and chars.hbnf are built (C).
+#   HBNF=/path/to/hbnf sh tests/lexer.sh      (default ./hbnf)
+set -u
+cd "$(dirname "$0")/.."
+export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
+CLI=${HBNF:-./hbnf}
+W=$(mktemp -d)
+trap 'rm -rf "$W"' EXIT
+command -v cc > /dev/null 2>&1 || { echo "lexer: skipped (no C compiler)"; exit 0; }
+fail=0
+"$CLI" tests/lexer/backslash.hbnf --backend=c > "$W/p.c" 2> "$W/err" || { echo "lexer: FAIL (backslash.hbnf: $(head -c 300 "$W/err"))"; exit 1; }
+root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/p.c")
+cat "$W/p.c" corpus/c/check.c > "$W/m.c"
+cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/m.c" -o "$W/check" 2> "$W/cc.txt" || { echo "lexer: FAIL (cc: $(head -c 300 "$W/cc.txt"))"; exit 1; }
+t() {   # WANT TEXT
+	printf '%s' "$2" > "$W/t.txt"
+	got=$("$W/check" "$W/t.txt" | cut -d' ' -f1)
+	[ "$got" = "$1" ] || { echo "lexer: FAIL ([$2] should be $1 and is $got)"; fail=1; }
+}
+t ok '\'
+t ok "'"
+t ok '"'
+t ok "\\'\"\\"
+t ok ''
+t bad 'x'
+# 'c' is "c"
+"$CLI" tests/lexer/chars.hbnf --backend=c > "$W/q.c" 2> "$W/err" || { echo "lexer: FAIL (chars.hbnf: $(head -c 300 "$W/err"))"; exit 1; }
+root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/q.c")
+cat "$W/q.c" corpus/c/check.c > "$W/mq.c"
+cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/mq.c" -o "$W/checkq" 2> "$W/cc.txt" || { echo "lexer: FAIL (chars.hbnf: cc: $(head -c 300 "$W/cc.txt"))"; exit 1; }
+q() {   # WANT TEXT
+	printf '%s' "$2" > "$W/t.txt"
+	got=$("$W/checkq" "$W/t.txt" | cut -d' ' -f1)
+	[ "$got" = "$1" ] || { echo "lexer: FAIL (chars: [$2] should be $1 and is $got)"; fail=1; }
+}
+q ok 'ac'
+q ok '--ac---'
+q bad 'ab'
+q bad 'a'
+q bad 'acc'
+# a lookahead over a sequence (item 3)
+"$CLI" tests/lexer/look-sequence.hbnf --backend=c > "$W/s.c" 2> "$W/err" || { echo "lexer: FAIL (look-sequence.hbnf: $(head -c 300 "$W/err"))"; exit 1; }
+root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/s.c")
+cat "$W/s.c" corpus/c/check.c > "$W/ms.c"
+cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/ms.c" -o "$W/checks" 2> "$W/cc.txt" || { echo "lexer: FAIL (look-sequence.hbnf: cc: $(head -c 300 "$W/cc.txt"))"; exit 1; }
+for c in "ok ac" "bad ab"; do
+	printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checks" "$W/t.txt" | cut -d' ' -f1)
+	[ "$got" = "${c%% *}" ] || { echo "lexer: FAIL (!( \"a\" \"b\" ) on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
+done
+# a rule named `text` (item 26) in Rust, where it is installed
+if command -v rustc > /dev/null 2>&1; then
+	mkdir -p "$W/rs"
+	"$CLI" tests/lexer/text-rule.hbnf --backend=rust > "$W/rs/l.rs" 2> "$W/err" || { echo "lexer: FAIL (text rule, Rust: $(head -c 300 "$W/err"))"; fail=1; }
+	sed "s/MODULE/l/g" corpus/c/check.rs > "$W/rs/m.rs"
+	(cd "$W/rs" && rustc --edition 2021 -A warnings -o m m.rs > cc.txt 2>&1) || { echo "lexer: FAIL (a rule named text does not compile in Rust: $(head -c 300 "$W/rs/cc.txt"))"; fail=1; }
+fi
+[ $fail = 0 ] || exit 1
+echo "lexer: OK (a backslash before the closing quote is a backslash, an escaped quote is still one; a lookahead over 'c' and a repetition of it)"

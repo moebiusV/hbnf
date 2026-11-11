@@ -1,0 +1,4 @@
+; `!( a b )` and `&( a b )` look at a sequence (CONTEXTS section 26, item 3): it reads as it should.
+prefix none
+whitespace none
+top = !( "a" "b" ) "a" ( "c" | "b" )
