@@ -3935,7 +3935,7 @@ package body HBNF_Rust is
             Br := Br + 1;
             declare
                Mark  : constant Natural := Length (Res);
-               Moves : constant Boolean := (for some A of B => A.Kind not in Look | Bol | Eol);
+               Moves : constant Boolean := (for some A of B => A.Kind not in Look | Bol | Eol | Col_Test);
                Branch_Text : Unbounded_String;
             begin
                if Br = 1 and then B.Is_Empty then
@@ -3955,6 +3955,8 @@ package body HBNF_Rust is
                         Emit_Repeat (A, "        ", "break 'br" & Img (Br));
                      when Look | Iter =>
                         Emit_Look (A, "        ", "break 'br" & Img (Br));
+                     when Col_Test =>
+                        null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
                      when Bol =>
                         Emit_Bol ("        ", "break 'br" & Img (Br));
                      when Eol =>
@@ -4507,6 +4509,8 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                               Emit_Repeat (A, "    ", "return 0");
                            when Look | Iter =>
                               Emit_Look (A, "    ", "return 0");
+                           when Col_Test =>
+                              null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
                            when Bol =>
                               Emit_Bol ("    ", "return 0");
                            when Eol =>
@@ -4544,6 +4548,8 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                                        Emit_Repeat (A, "        ", "break 'br" & Img (Br));
                                     when Look | Iter =>
                                        Emit_Look (A, "        ", "break 'br" & Img (Br));
+                                    when Col_Test =>
+                                       null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
                                     when Bol =>
                                        Emit_Bol ("        ", "break 'br" & Img (Br));
                                     when Eol =>

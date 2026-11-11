@@ -65,7 +65,8 @@ package HBNF_Compilable is
    --  (Hi = 0: no most), Inner is one time's branches, a function named Fn like a lookahead's, which
    --  says how much of the longest branch matches (0: none).  Only the C backend gets one (see
    --  HBNF_Grammar.Set_Scan_Look); like a Repeat it takes as many as match, and does not give any back.
-   type Cp_Atom_Kind is (Single, Repeat, Look, Bol, Eol, Iter);
+   --  Col_Test is `x where (col = 6)`: Lo numbers the condition (Col_Cond), a C expression on `c_`, the column; it moves nothing.
+   type Cp_Atom_Kind is (Single, Repeat, Look, Bol, Eol, Iter, Col_Test);
    type Look_Body;                                   --  completed below
    type Look_Access is access Look_Body;
    type Cp_Atom (Kind : Cp_Atom_Kind := Single) is record
@@ -73,7 +74,7 @@ package HBNF_Compilable is
       Lo2    : Natural := 1;           --  a second range for a Single, as in Cp_Range (Hi2 < Lo2: none)
       Hi2    : Natural := 0;
       case Kind is
-         when Single | Bol | Eol => null;
+         when Single | Bol | Eol | Col_Test => null;
          when Repeat =>
             Min : Natural;                  --  minimum iterations
             Max : Natural;                  --  0 = unbounded
@@ -84,6 +85,10 @@ package HBNF_Compilable is
             Inner    : Look_Access;         --  the branches of x
       end case;
    end record;
+
+   --  The conditions of the Col_Test atoms, numbered as they are met.
+   function Add_Col_Cond (Code : String) return Natural;
+   function Col_Cond (N : Natural) return String;
 
    package Cp_Atom_Vectors is new Ada.Containers.Vectors (Positive, Cp_Atom);
    use type Cp_Atom_Vectors.Vector;  --  "=" visible for the nested instantiation

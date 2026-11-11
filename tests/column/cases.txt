@@ -1,0 +1,12 @@
+ok	12345 xabc
+ok	12345 xabc\n67890 xz
+ok	12345 xabc q
+ok	12345 xabc   q
+ok	12345 xabc    q
+bad	12345 xabc  q
+bad	12345 xabc                  q
+ok	12345 xabc                                       padding
+bad	12345  xabc
+bad	1234 xabc
+bad	12345 xabc\n\n67890 xz
+bad	12345 xabc\n 67890 xz

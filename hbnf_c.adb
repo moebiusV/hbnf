@@ -7148,6 +7148,14 @@ package body HBNF_C is
                              & "{ fail(p, ""the end of a line"", 0, p->text + p->pos, 0); "
                              & Fail & " }");
                            Append (Buf, LF);
+                        when B_Col_Test =>
+                           --  `x where (col = 6)`: a test of the column at this position
+                           Append (Buf, Ind & "{ size_t b_ = p->pos; long c_ = 0; "
+                             & "while (b_ > 0 && p->text[b_ - 1] != '\n' && p->text[b_ - 1] != '\r') "
+                             & "{ b_--; if ((p->text[b_] & 0xC0) != 0x80) c_++; } "
+                             & "if (!(" & To_String (E.Code) & ")) { fail(p, ""a column where `"
+                             & To_String (E.Path) & "`"", 0, p->text + p->pos, 0); " & Fail & " } }");
+                           Append (Buf, LF);
                         when B_Col =>
                            --  the column: the code points since the line began
                            Append (Buf, Ind & "{ size_t b_ = p->pos; long c_ = 0; "
@@ -9962,6 +9970,15 @@ package body HBNF_C is
          Append (Res, LF);
       end Emit_Eol;
 
+      --  `x where (col = 6)`: the column, code points since the line began, is c_ in the condition.
+      procedure Emit_Col (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "{ size_t b_ = pos + off; long c_ = 0; "
+           & "while (b_ > 0 && s[b_ - 1] != '\n' && s[b_ - 1] != '\r') { b_--; if ((s[b_] & 0xC0) != 0x80) c_++; } "
+           & "if (!(" & Col_Cond (A.Lo) & ")) " & Fail & "; }");
+         Append (Res, LF);
+      end Emit_Col;
+
       --  The loops (Iters) that have a table of the bytes they take alone and one at a time.
       Run_Helpers : String_Vectors.Vector;
       Run_Bad     : String_Vectors.Vector;   --  parallel to Run_Helpers: the SSE2 test of the stopping bytes, or ""
@@ -10050,6 +10067,8 @@ package body HBNF_C is
                         Emit_Bol ("        ", "break");
                      when Eol =>
                         Emit_Eol ("        ", "break");
+                     when Col_Test =>
+                        Emit_Col (A, "        ", "break");
                      when Iter =>
                         Emit_Loop (A, "        ", "break");
                   end case;
@@ -10227,6 +10246,8 @@ package body HBNF_C is
                      Emit_Bol ("        ", "break");
                   when Eol =>
                      Emit_Eol ("        ", "break");
+                  when Col_Test =>
+                     Emit_Col (A, "        ", "break");
                   when Iter =>
                      Emit_Loop (A, "        ", "break");
                end case;
@@ -11848,6 +11869,8 @@ Append (Res, "static size_t scan_" & C_Name (NM)
                            Emit_Bol ("    ", "return 0");
                         when Eol =>
                            Emit_Eol ("    ", "return 0");
+                        when Col_Test =>
+                           Emit_Col (A, "    ", "return 0");
                         when Iter =>
                            Emit_Loop (A, "    ", "return 0");
                      end case;
@@ -11875,6 +11898,8 @@ Append (Res, "static size_t scan_" & C_Name (NM)
                               Emit_Bol ("        ", "break");
                            when Eol =>
                               Emit_Eol ("        ", "break");
+                           when Col_Test =>
+                              Emit_Col (A, "        ", "break");
                            when Iter =>
                               Emit_Loop (A, "        ", "break");
                         end case;

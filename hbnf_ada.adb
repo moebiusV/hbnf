@@ -3323,6 +3323,8 @@ package body HBNF_Ada is
                      Emit_Repeat (A, "         ", "Ok := False");
                   when Look | Iter =>
                      Emit_Look (A, "         ", "Ok := False");
+                  when Col_Test =>
+                     null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
                   when Bol =>
                      Emit_Bol ("         ", "Ok := False");
                   when Eol =>
@@ -4711,6 +4713,8 @@ package body HBNF_Ada is
                            Emit_Repeat (A, "      ", "return 0");
                         when Look | Iter =>
                            Emit_Look (A, "      ", "return 0");
+                        when Col_Test =>
+                           null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
                         when Bol =>
                            Emit_Bol ("      ", "return 0");
                         when Eol =>
@@ -4764,6 +4768,8 @@ package body HBNF_Ada is
                               Emit_Look (A, "         ", "Ok := False");
                               Append (Bdy, "      end if;");
                               Append (Bdy, LF);
+                           when Col_Test =>
+                              null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
                            when Bol | Eol =>
                               Append (Bdy, "      if Ok then");
                               Append (Bdy, LF);

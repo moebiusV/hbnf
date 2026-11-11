@@ -17,6 +17,17 @@ with GNAT.OS_Lib;
 
 package body HBNF_Grammar is
 
+   --  Blanks, then `(`, from position I of T: `where (col = 6)` (the lexer's test).
+   function Open_Paren_After_Blank (T : String; I : Natural) return Boolean is
+      J : Natural := I;
+   begin
+      while J <= T'Last and then T (J) in ' ' | ASCII.HT loop
+         J := J + 1;
+      end loop;
+      return J > I and then J <= T'Last and then T (J) = '(';
+   end Open_Paren_After_Blank;
+
+
    --  Labels of alternatives, by the address of the element they sit on.
    package Label_Maps is new Ada.Containers.Ordered_Maps
      (Key_Type => System.Storage_Elements.Integer_Address,
@@ -2652,6 +2663,38 @@ package body HBNF_Grammar is
                              & "`as`; call this one `as-word`, or the like";
                         end if;
                         Emit (T_Pct, "as");
+                     elsif Hbnf_Notation and then Text (Start .. I - 1) = "where" and then Col > 1
+                       and then I < Text'Last and then Text (I) in ' ' | ASCII.HT
+                       and then Open_Paren_After_Blank (Text, I)
+                     then
+                        --  `x where (col = 6)`: the condition, up to its `)` on this line, is one name for the parser
+                        declare
+                           J     : Natural := I;
+                           Depth : Natural := 0;
+                           K     : Natural;
+                        begin
+                           while Text (J) in ' ' | ASCII.HT loop
+                              J := J + 1;
+                           end loop;
+                           K := J;
+                           while K <= Text'Last and then Text (K) /= ASCII.LF loop
+                              if Text (K) = '(' then
+                                 Depth := Depth + 1;
+                              elsif Text (K) = ')' then
+                                 Depth := Depth - 1;
+                                 exit when Depth = 0;
+                              end if;
+                              K := K + 1;
+                           end loop;
+                           if K > Text'Last or else Text (K) /= ')' then
+                              raise Parse_Error with
+                                Integer'Image (Line) & ":" & Integer'Image (Col)
+                                & ": `where (`: the condition ends with `)` on the same line";
+                           end if;
+                           Emit (T_Pct, "where");
+                           Emit (T_Name, Text (J + 1 .. K - 1));
+                           I := K + 1;
+                        end;
                      else
                         Emit (T_Name, Text (Start .. I - 1));
                      end if;
@@ -4629,6 +4672,118 @@ package body HBNF_Grammar is
       return -1;
    end Slot_Of;
 
+   --  The condition of `x where (col = 6)` as a C expression on `c_`, the column (code points since the line began):
+   --  comparisons of `col` and numbers, joined by `and`, `or`, `not` and parentheses.  Anything else is refused
+   --  here, with what is allowed.
+   function Col_Condition (S : String; Where : String) return String is
+      Out_Text : Unbounded_String;
+      I        : Natural := S'First;
+
+      procedure Fail (What : String) is
+      begin
+         raise Parse_Error with
+           Where & "`where (" & S & ")`: " & What
+           & "; a condition is comparisons (= != < <= > >=) of `col` and numbers, joined by `and`, `or`, `not` and parentheses";
+      end Fail;
+
+      procedure Skip is
+      begin
+         while I <= S'Last and then S (I) in ' ' | ASCII.HT loop
+            I := I + 1;
+         end loop;
+      end Skip;
+
+      function Word return String is
+         J : Natural := I;
+      begin
+         while J <= S'Last and then (S (J) in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_') loop
+            J := J + 1;
+         end loop;
+         return S (I .. J - 1);
+      end Word;
+
+      procedure Operand is
+         W : constant String := Word;
+      begin
+         Skip;
+         if W = "col" then
+            Append (Out_Text, "c_");
+         elsif W'Length > 0 and then (for all C of W => C in '0' .. '9') then
+            Append (Out_Text, W);
+         else
+            Fail ("`" & (if W'Length > 0 then W else S (I .. I)) & "` is not `col` or a number");
+         end if;
+         I := I + W'Length;
+      end Operand;
+
+      procedure Expr;
+
+      procedure Comparison is
+      begin
+         Skip;
+         if I <= S'Last and then S (I) = '(' then
+            Append (Out_Text, "(");
+            I := I + 1;
+            Expr;
+            Skip;
+            if I > S'Last or else S (I) /= ')' then
+               Fail ("a `)` is missing");
+            end if;
+            Append (Out_Text, ")");
+            I := I + 1;
+            return;
+         end if;
+         if Word = "not" then
+            I := I + 3;
+            Append (Out_Text, "!(");
+            Comparison;
+            Append (Out_Text, ")");
+            return;
+         end if;
+         Operand;
+         Skip;
+         if I + 1 <= S'Last and then S (I .. I + 1) in "<=" | ">=" | "!=" | "<>" then
+            Append (Out_Text, (if S (I .. I + 1) = "<>" then "!=" else S (I .. I + 1)));
+            I := I + 2;
+         elsif I <= S'Last and then S (I) in '<' | '>' then
+            Append (Out_Text, S (I .. I));
+            I := I + 1;
+         elsif I <= S'Last and then S (I) = '=' then
+            Append (Out_Text, "==");
+            I := I + 1;
+         else
+            Fail ("a comparison is missing after the first operand");
+         end if;
+         Skip;
+         Operand;
+      end Comparison;
+
+      procedure Expr is
+      begin
+         Comparison;
+         loop
+            Skip;
+            if Word = "and" then
+               I := I + 3;
+               Append (Out_Text, " && ");
+            elsif Word = "or" then
+               I := I + 2;
+               Append (Out_Text, " || ");
+            else
+               exit;
+            end if;
+            Comparison;
+         end loop;
+      end Expr;
+   begin
+      Expr;
+      Skip;
+      if I <= S'Last then
+         Fail ("`" & S (I .. S'Last) & "` is not part of a condition");
+      end if;
+      return To_String (Out_Text);
+   end Col_Condition;
+
    function Parse_Context_Op (P : in out Parser) return Element_Access is
       T : constant Token := Cur (P);
       W : constant String := To_String (T.Text);
@@ -4726,6 +4881,14 @@ package body HBNF_Grammar is
          Declared (Cur (P));
          E.Op := (if W = "test" then B_Test else B_Not_Test);
          E.Ctx := Cur (P).Text;
+         Next (P);
+      elsif W = "where" and then Cur (P).Kind = T_Name then
+         --  `x where (col = 6)`: the column the element starts in (CONTEXTS section 24); it is a test of the
+         --  position, so the caller puts it before the element it follows
+         E.Op := B_Col_Test;
+         E.Path := Cur (P).Text;
+         E.Code := To_Unbounded_String
+           (Col_Condition (To_String (Cur (P).Text), Where));
          Next (P);
       elsif W = "where" then
          if Cur (P).Kind /= T_Code then
@@ -4830,7 +4993,21 @@ package body HBNF_Grammar is
                  & ": `as` follows the element whose text it keeps: `x as K`.  "
                  & "It is a word of hbnf's notation, so no rule is named `as`";
             end if;
-            Element_Vectors.Append (V, Parse_Context_Op (P));
+            declare
+               Op : constant Element_Access := Parse_Context_Op (P);
+            begin
+               if Op.Kind = Block and then Op.Op = B_Col_Test then
+                  --  the column is where the element before it starts
+                  if V.Is_Empty then
+                     raise Parse_Error with
+                       Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                       & ": `where (...)` follows the element it tests: `""foo"" where (col = 6)`";
+                  end if;
+                  Element_Vectors.Insert (V, V.Last_Index, Op);
+               else
+                  Element_Vectors.Append (V, Op);
+               end if;
+            end;
          elsif Cur (P).Kind = T_Code
            and then not Ends_Pattern (P.Pos + 1)
          then
@@ -13885,7 +14062,7 @@ package body HBNF_Grammar is
                      return False;
                   end if;
                when Block =>
-                  if E.Op in B_Bol | B_Eol then
+                  if E.Op in B_Bol | B_Eol | B_Col_Test then
                      null;
                   elsif E.Op not in B_Not | B_And or else E.Look.Is_Empty
                     or else not Wide_Els (E.Look, Owner, Depth)
@@ -14034,7 +14211,7 @@ package body HBNF_Grammar is
                   --  whitespace rule and the rules it reaches: they are
                   --  scanned and not parsed, and the scanner looks at what
                   --  the lookahead names without moving.
-                  if E.Op in B_Bol | B_Eol then
+                  if E.Op in B_Bol | B_Eol | B_Col_Test then
                      null;     --  a test of the position, scanned anywhere in a rule of characters
                   else
                      if E.Op not in B_Not | B_And or else E.Look.Is_Empty then

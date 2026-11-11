@@ -1,0 +1,11 @@
+; `x where (col ...)` (CONTEXTS section 24): the column the element starts in, counted from 0 in code points since the last line end.
+; A record is five digits, a blank, an `x` that must stand in column 6, letters, and perhaps a `q` that stands in columns 10 to 19 or in
+; column 30 and not in column 12.  `pad` is a rule of characters that holds a test, as the whitespace rule of a fixed format does.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+doc    = rec *( LF rec ) *LF
+rec    = 5*5DIGIT " " "x" where (col = 6) 1*lower [ *SP "q" where (( col >= 10 and col < 20 or col = 30 ) and not col = 12) ] *SP *pad
+lower  = 0x61..0x7a
+pad    = ~( CR | LF ) where (col >= 40)

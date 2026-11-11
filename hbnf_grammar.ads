@@ -184,6 +184,7 @@ package HBNF_Grammar is
       B_Guard,       --  the clause of a rule with numeric parameters applies: a test on the frame
       B_Bol,         --  bol: the position is the beginning of a line; nothing is consumed
       B_Eol,         --  eol: a line feed, a carriage return or the end of the input follows; nothing is consumed
+      B_Col_Test,    --  `x where (col = 6)`: a test of the column the position is in (Code: a C condition on `c_`, Path: as written); nothing is consumed
       B_Add,         --  `=> set += tag`: the text kept as `tag` (Ctx) is added to the context `set` (Path)
       B_Remove,      --  `=> set -= tag`: the same text is taken out of it
       B_Fact,        --  `=> tag.attr = tag2`: the text kept as tag2 (Code) is the `attr` (Path) of the name kept as tag (Ctx)
