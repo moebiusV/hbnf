@@ -49,6 +49,8 @@ type-qualifier       = "const" | "__const" | "__const__" | "restrict" | "__restr
 basic-type           = "void" | "char" | "short" | "int" | "long" | "float" | "double"
                      | "signed" | "__signed" | "__signed__" | "unsigned"
                      | "_Bool" | "_Complex" | "__complex" | "__complex__" | "_Imaginary" | "__builtin_va_list"
+                     | "__int128" | "__int128_t" | "__uint128_t" | "__float128" | "_Float16" | "__bf16" | "_Float32" | "_Float64" | "_Float128"
+                     | "_Float32x" | "_Float64x" | "_Decimal32" | "_Decimal64" | "_Decimal128"
                      | typeof-specifier | struct-or-union-specifier | enum-specifier
 typeof-specifier     = ( "typeof" | "__typeof" | "__typeof__" ) "(" ( type-name | expression ) ")"
 ; A typedef name is a token of its own, so it is not a variable, unless a declaration in an inner

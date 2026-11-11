@@ -121,6 +121,8 @@ def verdict(b, again=True, foreign=False):
     if foreign:
         p.UseForeignDTD(True)
     p.SetParamEntityParsing(ex.XML_PARAM_ENTITY_PARSING_NEVER)
+    version = []
+    p.XmlDeclHandler = lambda v, enc, sa: version.append(v)     # expat 2.7 takes any text as the version: VersionNum is '1.' [0-9]+
 
     def qn(*names):
         for n in names:
@@ -184,6 +186,8 @@ def verdict(b, again=True, foreign=False):
         dtd = tb[span[0]:span[1]].decode("utf-8", "replace")
         dtd = re.sub("<!--.*?-->|<\\?.*?\\?>", "", dtd, flags=re.S)       # not the text of a comment or an instruction
         seen += [(n, True) for n in re.findall("<!ATTLIST[ \t\r\n]+([^\\s>]+)[ \t\r\n]*>", dtd)]
+    if version and not re.fullmatch("1\\.[0-9]+", version[0] or ""):
+        return "0", "not a VersionNum: " + str(version[0])
     for n, q in seen + [(n, False) for _, _, n in pes]:
         if not (QNAME if q else NC).match(n):
             return "0", "not a QName: " + n
