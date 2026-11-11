@@ -656,9 +656,11 @@ package body HBNF_Template_Syntax.Parser is
          Sv  : constant Parser := P;
          Hit : Boolean := False;
          Ok  : Boolean;
+         Hp  : Natural := 0;
       begin
+         Hp := P.Pos;
          if not Hit then
-            Ok := True;  P.Pos := Sv.Pos;
+            Ok := True;  P.Pos := Hp;
             if Ok then declare N : constant Natural := Scan_Any (P.Text.all, P.Pos, Limit (P)); begin if N > 0 then P.Pos := P.Pos + N; else Ok := False; end if; end; end if;
             if Ok then Hit := True; end if;
          end if;

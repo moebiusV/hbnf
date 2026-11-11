@@ -73,16 +73,28 @@ package body HBNF_Rust is
    function Rust_Type (S : String) return String is
       Buf : U;
       Up  : Boolean := True;
+      Num : Boolean := False;      --  the word before the separator was only digits
+      Cur : Boolean := True;       --  the word being read is only digits so far
    begin
       for C of HBNF_Grammar.Prefixed (S) loop
          if C = '-' or else C = '_' then
             Up := True;
+            Num := Cur and then Length (Buf) > 0;
+            Cur := True;
          elsif Up then
+            --  `select-clause-1-1` and `select-clause-11` are two types: a number that follows a number across a
+            --  separator keeps an `_`
+            if Num and then C in '0' .. '9' then
+               Append (Buf, '_');
+            end if;
+            Num := False;
+            Cur := C in '0' .. '9';
             Append (Buf, (if C in 'a' .. 'z'
                           then Character'Val (Character'Pos (C) - 32)
                           else C));
             Up := False;
          else
+            Cur := Cur and then C in '0' .. '9';
             Append (Buf, C);
          end if;
       end loop;
@@ -99,6 +111,8 @@ package body HBNF_Rust is
          return T;
       end;
    end Rust_Type;
+
+   function Type_Key (S : String) return String is (Rust_Type (S));
 
    --  A field name: snake_case, with a "_" suffix if it is a Rust keyword.
    function Rust_Field (S : String) return String is
@@ -2840,9 +2854,9 @@ package body HBNF_Rust is
             if Els (K).Kind = Block and then Els (K).Op = B_As
               and then (Els (K).Id /= 1 or else Local_Reader (To_String (Els (K).Ctx)))
             then
-               Append (Buf, Ind & "let mut " & Tag_Var ("cp", Els (K).Ctx) & " = 0usize;");
+               Append (Buf, Ind & "#[allow(unused_assignments)] let mut " & Tag_Var ("cp", Els (K).Ctx) & " = 0usize;");
                Append (Buf, LF);
-               Append (Buf, Ind & "let mut " & Tag_Var ("cl", Els (K).Ctx) & " = 0usize;");
+               Append (Buf, Ind & "#[allow(unused_assignments)] let mut " & Tag_Var ("cl", Els (K).Ctx) & " = 0usize;");
                Append (Buf, LF);
             end if;
          end loop;
@@ -3174,7 +3188,8 @@ package body HBNF_Rust is
                               end if;
                            end Close;
                         begin
-                           Append (Buf, Ind & "{ let sv_ = (p.pos, p.err_pos, p.err.clone(), p.ex.clone()); let mut hit_ = false;");
+                           Append (Buf, Ind & "{ let sv_ = (p.pos, p.err_pos, p.err.clone(), p.ex.clone()); let mut hit_ = false;"
+                             & (if Skips then " p.skip_ws();" else "") & " let h0_ = p.pos;");
                            Append (Buf, LF);
                            for X of E.Look loop
                               if X.Kind = Alt then
@@ -3182,7 +3197,7 @@ package body HBNF_Rust is
                                  Append (Desc, " or ");
                               else
                                  if not Open then
-                                    Append (Buf, Ind & "  if !hit_ { let mut ok_ = true; p.pos = sv_.0;");
+                                    Append (Buf, Ind & "  if !hit_ { let mut ok_ = true; p.pos = h0_;");
                                     Append (Buf, LF);
                                     Open := True;
                                     First := True;

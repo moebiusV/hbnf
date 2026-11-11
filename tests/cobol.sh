@@ -36,6 +36,21 @@ for kind in good bad; do
 		fi
 	done
 done
+# the Rust backend reads the same programs the same way, where rustc is installed (the parser has no code in it; opt-level 0)
+if command -v rustc > /dev/null 2>&1; then
+	mkdir -p "$W/rs"
+	"$CLI" $D/cobol.hbnf --backend=rust > "$W/rs/l.rs" 2> "$W/err" || { echo "cobol: FAIL (generate Rust)"; fail=$((fail + 1)); }
+	sed "s/MODULE/l/g" corpus/c/check.rs > "$W/rs/m.rs"
+	if (cd "$W/rs" && rustc --edition 2021 -A warnings -C opt-level=0 -o m m.rs > cc.txt 2>&1); then
+		for kind in good bad; do
+			for f in $D/tests/$kind/*.cob; do
+				got=$("$W/rs/m" "$f" 2>&1 | cut -d' ' -f1 | head -1)
+				want=ok; [ $kind = bad ] && want=bad
+				[ "$got" = "$want" ] || { echo "FAIL $f: $kind file, the Rust parser says $got"; fail=$((fail + 1)); }
+			done
+		done
+	else echo "cobol: FAIL (the Rust parser does not compile: $(grep -m2 error "$W/rs/cc.txt" | head -c 300))"; fail=$((fail + 1)); fi
+fi
 # the fixed reference format: the same, with cobol-fixed.hbnf (the columns, `where (col ...)`) over corpus/cobol/tests/fixed/{good,bad}, and cobc -fixed
 "$CLI" $D/cobol-fixed.hbnf --root=compilation-group --backend=c > "$W/fixed.c" 2> "$W/err" || { echo "cobol: FAIL (generate the fixed format)"; grep -v warning "$W/err" | head -5; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/fixed.c")

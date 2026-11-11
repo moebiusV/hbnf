@@ -103,21 +103,35 @@ package body HBNF_Zig is
    function Zig_Type (S : String) return String is
       Buf : U;
       Up  : Boolean := True;
+      Num : Boolean := False;      --  the word before the separator was only digits
+      Cur : Boolean := True;       --  the word being read is only digits so far
    begin
       for C of HBNF_Grammar.Prefixed (S) loop
          if C = '-' or else C = '_' then
             Up := True;
+            Num := Cur and then Length (Buf) > 0;
+            Cur := True;
          elsif Up then
+            --  `select-clause-1-1` and `select-clause-11` are two types: a number that follows a number across a
+            --  separator keeps an `_` (as in the Rust backend)
+            if Num and then C in '0' .. '9' then
+               Append (Buf, '_');
+            end if;
+            Num := False;
+            Cur := C in '0' .. '9';
             Append (Buf, (if C in 'a' .. 'z'
                           then Character'Val (Character'Pos (C) - 32)
                           else C));
             Up := False;
          else
+            Cur := Cur and then C in '0' .. '9';
             Append (Buf, C);
          end if;
       end loop;
       return To_String (Buf);
    end Zig_Type;
+
+   function Type_Key (S : String) return String is (Zig_Type (S));
 
    --  A field name: snake_case, with a "_" suffix if it is a Zig keyword.
    function Zig_Field (S : String) return String is
@@ -3475,7 +3489,7 @@ package body HBNF_Zig is
                               end if;
                            end Close;
                         begin
-                           Append (Buf, Ind & "{ const sv_ = p.*; var hit_ = false;");
+                           Append (Buf, Ind & "{ const sv_ = p.*; var hit_ = false;" & (if Skips then " p.skip_ws();" else "") & " const h0_ = p.pos;");
                            Append (Buf, LF);
                            for X of E.Look loop
                               if X.Kind = Alt then
@@ -3483,7 +3497,7 @@ package body HBNF_Zig is
                                  Append (Desc, " or ");
                               else
                                  if not Open then
-                                    Append (Buf, Ind & "  if (!hit_) { var ok_ = true; p.pos = sv_.pos;");
+                                    Append (Buf, Ind & "  if (!hit_) { var ok_ = true; p.pos = h0_;");
                                     Append (Buf, LF);
                                     Open := True;
                                     First_El := True;

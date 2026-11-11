@@ -74,6 +74,8 @@ package body HBNF_Ada is
       return To_String (Buf);
    end Ada_Ident;
 
+   function Type_Key (S : String) return String is (Ada_Ident (S));
+
    --  A record component name: Ada_Ident, with a "_F" suffix if the bare
    --  identifier is an Ada reserved word (e.g. the rule `entry`).
    function Ada_Field (S : String) return String is
@@ -2310,7 +2312,16 @@ package body HBNF_Ada is
                            Append (Buf, LF);
                            Append (Buf, Ind & "   Ok  : Boolean;");
                            Append (Buf, LF);
+                           Append (Buf, Ind & "   Hp  : Natural := 0;");
+                           Append (Buf, LF);
                            Append (Buf, Ind & "begin");
+                           Append (Buf, LF);
+                           --  a phrase rule skips white space before an element, a lookahead included
+                           if Skips then
+                              Append (Buf, Ind & "   Skip_Ws (P);");
+                              Append (Buf, LF);
+                           end if;
+                           Append (Buf, Ind & "   Hp := P.Pos;");
                            Append (Buf, LF);
                            for X of E.Look loop
                               if X.Kind = Alt then
@@ -2320,7 +2331,7 @@ package body HBNF_Ada is
                                  if not Open then
                                     Append (Buf, Ind & "   if not Hit then");
                                     Append (Buf, LF);
-                                    Append (Buf, Ind & "      Ok := True;  P.Pos := Sv.Pos;");
+                                    Append (Buf, Ind & "      Ok := True;  P.Pos := Hp;");
                                     Append (Buf, LF);
                                     Open := True;
                                     First_El := True;
