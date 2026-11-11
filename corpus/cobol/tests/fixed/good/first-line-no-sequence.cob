@@ -1,0 +1,4 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. T8.
+       PROCEDURE DIVISION.
+           STOP RUN.

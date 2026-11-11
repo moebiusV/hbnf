@@ -20,7 +20,7 @@ trap 'rm -rf "$W"' EXIT
 # scan NAME DIR BASELINE: the gaps of one corpus against its baseline; prints a summary, returns 1 when the gaps grew
 scan() {
 	mkdir -p "$W/$1"
-	HBNF="$CLI" sh scripts/cobol-scan.sh "$2" "$W/$1" > "$W/$1/scan.txt" 2>&1 || { echo "cobol-scan: FAIL ($1)"; head -5 "$W/$1/scan.txt"; return 1; }
+	HBNF="$CLI" FORMAT="${FORMAT:-free}" sh scripts/cobol-scan.sh "$2" "$W/$1" > "$W/$1/scan.txt" 2>&1 || { echo "cobol-scan: FAIL ($1)"; head -5 "$W/$1/scan.txt"; return 1; }
 	gaps=0; [ -f "$W/$1/cobol-gaps.txt" ] && gaps=$(wc -l < "$W/$1/cobol-gaps.txt")
 	total=$(sed -n 's/^cobol-scan: \([0-9]*\) programs.*/\1/p' "$W/$1/scan.txt")
 	both=$(sed -n 's/^ *parser\/cobc ok\/ok: \([0-9]*\)/\1/p' "$W/$1/scan.txt")
@@ -40,5 +40,12 @@ scan gnucobol "$W/programs" tests/cobol/scan-baseline.txt || exit 1
 # the NIST suite, when tools/cobol_fetch.sh has fetched it
 if [ -d bench/cache/cobol/nist ]; then
 	scan nist bench/cache/cobol/nist tests/cobol/nist-baseline.txt || exit 1
+fi
+# the NIST suite in the fixed reference format (the columns kept, the suite's own markers in column 7 read as blanks), against cobc -fixed
+# and corpus/cobol/cobol-fixed.hbnf
+if [ -d bench/cache/cobol/nist-src ] && [ -f bench/cache/cobol/tests/gnucobol-3.2/tests/cobol85/EXEC85.conf.in ]; then
+	python3 tools/cobol_extract_nist.py bench/cache/cobol/nist-src/newcob.val bench/cache/cobol/tests/gnucobol-3.2/tests/cobol85/EXEC85.conf.in \
+		"$W/nist-free" "$W/nist-fixed" > /dev/null || { echo "cobol-scan: FAIL (extract the fixed NIST programs)"; exit 1; }
+	FORMAT=fixed scan nist-fixed "$W/nist-fixed" tests/cobol/fixed-baseline.txt || exit 1
 fi
 echo "cobol-scan: OK ($SUMMARY)"

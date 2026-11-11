@@ -54,7 +54,7 @@ options-clause          = "ARITHMETIC" is ( "NATIVE" | "STANDARD-BINARY" | "STAN
                         | "ENTRY-CONVENTION" is ( "COBOL" | "EXTERN" | "STDCALL" )
                         | "INTERMEDIATE-ROUNDING" is round-choice
 round-choice            = "AWAY-FROM-ZERO" | "NEAREST-AWAY-FROM-ZERO" | "NEAREST-EVEN" | "NEAREST-TOWARD-ZERO" | "PROHIBITED" | "TOWARD-GREATER" | "TOWARD-LESSER" | "TRUNCATION"
-paragraph-start         = id-paragraph-name | "OPTIONS" | "ENVIRONMENT" | "DATA" | "PROCEDURE"
+paragraph-start         = id-paragraph-name | "OPTIONS" | ( "ENVIRONMENT" | "DATA" | "PROCEDURE" ) "DIVISION"
 
 ; ---- the environment division ----
 environment-division    = "ENVIRONMENT" "DIVISION" "." [ configuration-section ] [ input-output-section ]
@@ -232,7 +232,7 @@ statement = transform-statement | xml-statement | json-statement | ready-stateme
           | evaluate-statement | exit-statement | goback-statement | go-to-statement | if-statement
           | initialize-statement | inspect-statement | move-statement | multiply-statement | open-statement
           | perform-statement | read-statement | rewrite-statement | search-statement | set-statement
-          | start-statement | unlock-statement | enable-statement | purge-statement | stop-statement | string-statement | subtract-statement | unstring-statement
+          | start-statement | unlock-statement | enable-statement | receive-statement | send-statement | purge-statement | stop-statement | string-statement | subtract-statement | unstring-statement
           | write-statement | entry-statement | sort-statement | merge-statement | release-statement | return-statement
           | allocate-statement | free-statement | exhibit-statement | initiate-statement | generate-statement | terminate-statement
           | suppress-statement | next-sentence
@@ -336,7 +336,9 @@ write-statement    = "WRITE" as K [ "RECORD" | "FILE" ] user-word [ "FROM" opera
 end-of-page-phrases = phrases(at ( "END-OF-PAGE" | "EOP" ))
 rewrite-statement  = "REWRITE" as K [ "RECORD" | "FILE" ] user-word [ "FROM" operand ] [ invalid-key-phrases ] scope-end
 delete-statement   = "DELETE" as K ( "FILE" 1*file-name | file-name [ "RECORD" ] [ invalid-key-phrases ] scope-end )
-enable-statement   = ( "ENABLE" | "DISABLE" ) ( [ "INPUT" ] [ "TERMINAL" ] | "I-O" "TERMINAL" | "OUTPUT" ) identifier [ with "KEY" operand ]
+enable-statement   = ( "ENABLE" | "DISABLE" ) ( "OUTPUT" | "I-O" "TERMINAL" | [ "INPUT" ] [ "TERMINAL" ] ) identifier [ with "KEY" operand ]
+receive-statement  = "RECEIVE" as K identifier ( "MESSAGE" | "SEGMENT" ) "INTO" identifier [ "NO" "DATA" statements ] [ with "DATA" statements ] scope-end
+send-statement     = "SEND" identifier [ "FROM" operand ] [ with ( "EGI" | "EMI" | "ESI" | operand ) ] [ ( "BEFORE" | "AFTER" ) [ "ADVANCING" ] ( "PAGE" | operand [ "LINE" | "LINES" ] ) ] [ "REPLACING" [ "LINE" ] ]
 purge-statement    = "PURGE" identifier
 unlock-statement   = "UNLOCK" file-name [ "RECORD" | "RECORDS" ]
 start-statement    = "START" as K file-name [ "FIRST" | "LAST" ] [ "KEY" is relation-operator identifier ] [ invalid-key-phrases ] scope-end

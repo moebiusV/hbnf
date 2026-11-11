@@ -7,6 +7,8 @@ the tokens XXXXXnnn stand for what an implementor chooses, and GnuCOBOL's own co
 EXEC85 reads) says what to put there and replaces a few lines of 17 programs (a `*START NAME` section: each line carries a six-digit
 sequence number and takes the place of the line with that number).  This does the same two things, then converts the fixed format as
 tools/cobol_extract.py does.  The members of the copy library (`*HEADER,CLBRY`) are not programs and are not written.
+With a fourth argument FIXED-DIR the programs are also written there as they are, in the fixed reference format (substitutions and
+patches done, the columns kept): what corpus/cobol/cobol-fixed.hbnf reads.
 Prints how many programs were written."""
 import os, re, sys
 
@@ -45,8 +47,11 @@ def members(path):
     if cur: yield cur
 
 def main():
-    val, conf, dst = args
+    val, conf, dst = args[:3]
+    fixed_dir = args[3] if len(args) > 3 else None
     os.makedirs(dst, exist_ok=True)
+    if fixed_dir:
+        os.makedirs(fixed_dir, exist_ok=True)
     subs, patches = read_conf(conf)
     wrote = 0
     for kind, name, lines in members(val):
@@ -60,6 +65,17 @@ def main():
         text = '\n'.join(lines)
         for k, v in subs.items():
             text = text.replace(k, v)
+        if fixed_dir:
+            # the suite marks lines in column 7 with letters (S, C, P, Y ...) that its configuration decides about; as the free
+            # conversion does, they are read as blanks, so that the indicator is one a compiler knows
+            fx = []
+            for l in text.split('\n'):
+                l = l.expandtabs(8)
+                if len(l) > 6 and l[6] not in ' */-Dd':
+                    l = l[:6] + ' ' + l[7:]
+                fx.append(l)
+            with open(os.path.join(fixed_dir, name + '.cob'), 'w') as f:
+                f.write('\n'.join(fx) + '\n')
         free = to_free(text.split('\n'))
         if free is None:
             print('cobol_extract_nist: %s has a continuation line that cannot be joined' % name, file=sys.stderr)

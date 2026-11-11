@@ -31,7 +31,7 @@ conditions (relation, class, sign, abbreviated, combined) and arithmetic express
 modification, `LENGTH OF` and `FUNCTION`; and the XML and JSON statements (`XML GENERATE` and `PARSE`, `JSON GENERATE` and `PARSE`).  A compiler directive (`>>` to the end of the line) and a `$` line
 are read as comments.
 
-Not yet: fixed format (the sequence area, the indicator column, continuation lines), `COPY` and `REPLACE`
+Fixed format is `cobol-fixed.hbnf`, which includes this grammar and replaces the white space, the literals and the word characters with ones that know the columns (`where (col ...)`, CONTEXTS section 24); it is read with `--root=compilation-group`.  Not yet: `COPY` and `REPLACE`
 (a preprocessor's work: textual inclusion and replacement that can happen between any two tokens, so it belongs
 with the C preprocessor item of `RFCPLAN.md`, as one include-and-replace layer), the
 object-oriented features and the rest of the vendor extensions.  This is a core, not the language; a size

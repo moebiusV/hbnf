@@ -24,7 +24,9 @@ user-word = word - not-a-name
 picletter     = 0x41 | 0x42 | 0x43 | 0x44 | 0x45 | 0x50 | 0x52 | 0x53 | 0x56 | 0x58 | 0x5A
               | 0x61 | 0x62 | 0x63 | 0x64 | 0x65 | 0x70 | 0x72 | 0x73 | 0x76 | 0x78 | 0x7A
 picture-start = *picletter !ALPHA
-ws = SP | HTAB | CR | LF | "," | ";" | "*>" *~( CR | LF ) | "*CONTROL" *~( CR | LF ) | "*CBL" *~( CR | LF ) | "@OPTIONS" *~( CR | LF ) | ">>" *~( CR | LF ) | "$" !picture-start ALPHA *~( CR | LF )
+ws-text = SP | HTAB | CR | LF | "," | ";" | "*>" *~( CR | LF ) | "*CONTROL" *~( CR | LF ) | "*CBL" *~( CR | LF ) | "@OPTIONS" *~( CR | LF ) | ">>" *~( CR | LF ) | "$" !picture-start ALPHA *~( CR | LF )
+; free format reads nothing else between tokens; cobol-fixed.hbnf adds the columns of the reference format to ws-text
+ws = ws-text
 
 ; ---- literals (the standard's 8.3) ----
 ; (a letter inside a token is a code point or sits in a regular expression: a letter-led literal would be matched as a whole word)

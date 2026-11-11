@@ -1,0 +1,49 @@
+; COBOL in the fixed reference format: cobol.hbnf with the columns (CONTEXTS.md section 24, `where (col ...)`).
+; Columns 1-6 are the sequence area, column 7 the indicator (`*` or `/` a comment line, `D` a debugging line, read as a
+; comment, `-` a continuation), columns 8-72 the text, and what is past column 72 is ignored.  `col` counts from 0, so the
+; indicator is column 6 here.  A literal that goes on in the next line (`-` in the indicator, then the quote again) is
+; read; a word or a number cut at column 72 and continued is not yet.  A tab is one column (not eight).
+;   hbnf corpus/cobol/cobol-fixed.hbnf --root=compilation-group --backend=c
+prefix none
+whitespace none
+include "cobol.hbnf"
+
+ws = ws-text | sequence-area | comment-line | continuation-mark | past-the-text
+
+sequence-area     = ~( CR | LF ) where (col < 6)                    ; columns 1-6
+indicator         = "*" | "/" | 0x44 | 0x64
+comment-line      = indicator where (col = 6) *~( CR | LF )         ; a comment line, a debugging line
+continuation-mark = 0x2D where (col = 6)                           ; the line goes on (a literal: below)
+past-the-text     = ~( CR | LF ) where (col >= 72)                  ; what is past column 72
+
+; Text past column 72 is no part of a word: `GO` at columns 71-72 and an identification at 73 are not one word `GONC1344`.
+; (The words of the keywords and of the names are scanned with this rule.)
+wordchar = word-char where (col < 72)
+word-char = ALNUM | 0x2D | 0x5F
+
+; a literal, and the line it goes on in: what is past column 72, the end of the line, six columns, `-`, blanks, and the quote again
+continued = *past-the-text ( CR LF | LF | CR ) 6*6~( CR | LF ) "-" *( SP | HTAB )
+; (a letter is a code point: a letter-led literal is a keyword here)
+literal-prefix = 0x58 | 0x78 | 0x4E | 0x6E | 0x5A | 0x7A | 0x42 | 0x62 | 0x47 | 0x67
+nonnumeric-literal = [ literal-prefix [ 0x58 | 0x78 ] ]
+                     ( "\"" *( ~( "\"" | CR | LF ) | "\"\"" | "\"" continued "\"" "\"" | continued "\"" ) "\""
+                     | "'" *( ~( "'" | CR | LF ) | "''" | "'" continued "'" "'" | continued "'" ) "'" )
+
+; A literal that goes on in the next line ends the line at column 72 with half of a doubled quote and begins the next with the
+; quote that opens it and the other half: `"..8J"` and `-    ""9K...` are `8J""9K`.
+
+; A word, and the same for a number, never ends at column 72 where a digit or a letter of the identification begins.
+numeric-literal = numeric-body !name-char-here
+name-char-here  = name-follow where (col < 72)
+name-follow     = ALPHA | 0x5F | dash-alpha
+dash-alpha      = 0x2D ALPHA
+
+; A picture string cut off at the end of the line goes on after the indicator of the next line (`PIC S9(` and `-    6)V9(6).`):
+; only blanks to column 72 (and what is past it), then the next line's six columns, the `-`, the blanks, and more of the string.
+pic-char          = ~( SP | HTAB | CR | LF | 0x2E )
+pic-body          = [ 0x2E ] 1*pic-char *( 0x2E 1*pic-char )
+blank-char        = SP | HTAB
+blank-here        = blank-char where (col < 72)
+continued-word    = *blank-here *past-the-text ( CR LF | LF | CR ) 6*6~( CR | LF ) 0x2D *( SP | HTAB )
+picture-string      = pic-body *( continued-word pic-body )
+picture-with-period = pic-body *( continued-word pic-body ) 0x2E
