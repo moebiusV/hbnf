@@ -21,7 +21,7 @@ each point was reached; this table is where it stands.  Under the standing rule,
 | Fixed-format COBOL as a grammar | **not started**; waits for `bol`/`eol` and `col` | 24 |
 | GLR | **allowed** by the scope note, pay only for what is used; not started | RFCPLAN |
 | The Annex A surface and set-logic operators (opt, X-seq, X-list, "one of", an unordered group, element of), Unicode spellings, names and spacing | **options written, for the author to choose** (section 29, 2026-11-11); nothing built | 28, 29 |
-| The rewrite surface and its chain of spans | **to be shown first**; nothing built | 25 |
+| The rewrite surface and its chain of spans | **shown 2026-11-11, for the author to approve** (section 30); nothing built | 25, 30 |
 
 COBOL embeds other languages (SQL, CICS, DLI, and JCL near it), its PICTURE clause is a small language of its
 own, and its meaning depends on what the data division declared.  C needs the same from a typedef.  YAML and Python
@@ -1070,7 +1070,7 @@ The assistant's estimates in that conversation (a C++23 front end of 3,200 to 4,
 
 **What is asked.**  Operators from set logic beside juxtaposition (sequence) and `|` (choice): intersection, element of, all of, and a way to say that order does not matter (R601).  They are real UTF-8 characters, outside string literals, each with an ASCII spelling, and the Unicode form is the default in the flagship grammars (R604, R606).  A bareword is a C symbol; between `<` and `>` a name may hold white space and `. , ; :` (R606).  White space between an operator and a bareword may be required, operator by operator (R607).  "One of" and element of are one operation (R605).
 
-**What a spelling can and cannot do.**  Measured on real passages of the corpus, with a simple tokenizer (a literal, a name or a mark is one token; not hbnf's reader): "one of" over the five storage classes of `corpus/c/c11.hbnf` is 11 tokens now, and 9 to 10 in any of the spellings below; the three typedef-name rules (`? types`, `?! vars`) are 21 tokens now, 19 with `∈ ∉`, 21 with `in` and `not in`.  So the choice of spelling is a matter of reading and of precedent, not of size.  The unordered group is *longer* than today's `*data-clause` (16 to 25 tokens against 7 for COBOL's six data clauses), because today's loop accepts any clause any number of times; what it replaces is a list of permutations (6 clauses: 720), or a loop that over-accepts and a check after.  Any figure for the saving on a whole grammar (the 25 to 40% an assistant gave for COBOL) is a guess until a grammar has been migrated and counted with `bench/notation.sh`.
+**What a spelling can and cannot do.**  Measured on real passages of the corpus, with a simple tokenizer (a literal, a name or a mark is one token; not hbnf's reader): "one of" over the five storage classes of `corpus/c/c11.hbnf` is 11 tokens now, and 9 to 10 in any of the spellings below; the three typedef-name rules (`? types`, `?! vars`) are 21 tokens now, 19 with `∈ ∉`, 21 with `in` and `not in`.  The purpose is not size: "the set logic operators are to make the grammar nicer, even if it doesn't reduce character or token count much" (R621).  So a spelling is judged first by how the grammar reads and by its precedent; a smaller grammar is still desirable, but it is not a gate (R622), and the counts are given so that no saving is claimed that is not there.  The unordered group is *longer* than today's `*data-clause` (16 to 25 tokens against 7 for COBOL's six data clauses), because today's loop accepts any clause any number of times; what it replaces is a list of permutations (6 clauses: 720), or a loop that over-accepts and a check after.  Any figure for the saving on a whole grammar (the 25 to 40% an assistant gave for COBOL) is a guess until a grammar has been migrated and counted with `bench/notation.sh`.
 
 **The passages used** (all from the corpus): (A) `storage-class-specifier = "extern" | "static" | "_Thread_local" | "auto" | "register"`; (B) `known-type = identifier ? types`, `typedef-name = known-type ?! vars`; (C) COBOL's data clauses, each at most once, in any order; (D) the Annex A form of a declaration, `simple-declaration: decl-specifier-seq init-declarator-list_opt ;`.
 
@@ -1141,4 +1141,108 @@ Candidates: JSON, TOML, YAML, XML, HTML, CSS, JavaScript, Markdown, the C family
 ### What building it takes, once chosen
 
 The reader accepts UTF-8 today only inside strings and comments (an operator character anywhere else is refused with "unexpected character"); the tokenizer learns the operator characters and their ASCII twins as one token each; the new forms become the element kinds the backends already take (a written set is a choice of literals, longest first; membership is `? ctx`; an unordered group is the choices of its orders, generated, or a counted loop, to be benched); `hbnf_modernize.py` migrates every grammar, one directory at a time, with the generated C byte-identical before the next.
+
+## 30. The `=>` surface, shown on the C and COBOL grammars (2026-11-11; for the author to approve; nothing built)
+
+The sources: `=>` is the one arrow, "what happens because this rule matched" (section 15, decided 2026-11-02); a template is a value (section 25); a fact is a record kept under a name (section 13); a rewrite keeps a chain so an error names the text the user wrote and the rule that fired, and is hygienic (R591, the Grok thread of 2026-10-30); COBOL's `COPY REPLACING` teaches locality (R597); the preprocessor is to be rewrites (R595).  Names are spelled as the grammars spell them now (hyphens); R606 changes that for everyone at once.
+
+### The five consequences after `=>`
+
+| consequence | spelling | built |
+|---|---|---|
+| a value | `=> template` | no (sections 25, 26/64) |
+| a context set grows (or shrinks) | `=> names += N` (the text kept by `x as N`), `=> names -= N`; the `%bind types += field` form stays | **built 2026-11-11, C only** (`tests/consequence.sh`); removal is an entry in the log that says so, undone with the match like an add |
+| a fact | `=> N.level = L` | no (section 13) |
+| the grammar changes | `=> grammar(x)` | phase 1 |
+| the matched text is replaced, and read again from where it began | `=> reread template` | no |
+
+A rule may have several, `=> a, b`, applied together when the whole rule has matched, undone together with the match.  The new words are `reread` and, for the local binding of one expansion, `with`; the others are spellings the design already has (`+=` as `%bind`, `grammar(x)` built, `N.attr` from section 13).
+
+### 1. C: the preprocessor as the grammar (an object-like macro, a function-like one)
+
+```
+define     = "#" "define" name as N [ "(" params as P ")" ] body as B nl     => macros += N, N.params = P, N.body = B
+undef      = "#" "undef" name as N nl                                        => macros -= N
+macro-use  = name as N ? macros [ "(" args as A ")" ]                        => reread N.body with N.params = A
+```
+
+`PI` replaces itself by `3.14159` and the grammar reads on from the 3; `SQ(x + 1)` by `((x + 1) * (x + 1))`.  `with N.params = A` binds the parameters for this one expansion; nothing else sees them.  Hygiene is a rule of the engine and not a spelling: a name that the body *declares* (`t` in `#define SWAP(a, b) do { int t = (a); (a) = (b); (b) = t; } while (0)`) is made fresh for each expansion, so `SWAP(t, u)` does what it says; a name the body only *uses* means what it meant where the macro was defined; an argument keeps the meaning it has at the call.  A conditional is a fact: `if-line = "#if" cond as C nl  => live = $live and C`, `else-line  => live = $outer and not $live`, and a rule that is skipped reads nothing while `live` is false (a region, not a token filter).
+
+### 2. COBOL: `COPY` and `REPLACE`, the substitutions local and visible
+
+```
+copy-stmt    = "COPY" text-name as T [ "REPLACING" 1*pair as R ] "."         => reread library(T) with replacing = R
+replace-on   = "REPLACE" [ "ALSO" ] 1*pair as R "."                          => replacing += R
+replace-off  = "REPLACE" "OFF" "."                                           => replacing = none
+pair         = "==" pseudo as FROM "==" "BY" "==" pseudo as TO "=="
+```
+
+The substitution list of a `COPY` is written where the copy is, applies to that copy and to nothing after it (R597).  `REPLACE` is a fact that the scanner consults at each token until `REPLACE OFF`, and is undone when a guess is given back, as the typedef sets are.  A copybook may itself `COPY`; the chain keeps each level.
+
+### 3. Facts that change what parses (COBOL and C)
+
+```
+decimal-point = "DECIMAL-POINT" is "COMMA"                                  => decimal = ","
+numeric-literal = 1*DIGIT [ $decimal 1*DIGIT ]
+data-entry(L) := level as L data-name as N [ picture as P ] "."              => N.level = L, N.picture = P
+condition-name = user-word as N where N.parent                              ; a name is of a kind because of a fact (section 13, R3)
+declaration  = specifiers declarator as D                                   => types += D.name
+source-format = ">>SOURCE" "FORMAT" "IS" word as mode                        => grammar(mode)
+```
+
+### 4. What an error says (the chain, R591)
+
+```
+sq.c:9:12: error: expected an expression, found ")"
+    9 |   y = SQ(x +);
+      |       ^^^^^^^  in the expansion of SQ   (defined at sq.c:3, rule macro-use)
+      = SQ(x +) was read as ((x +) * (x +))
+prog.cob:57:19: error: expected a data name, found "."
+   57 |     MOVE ZERO TO WS-.
+      |                  ^^^^   from COPY CUSTOMER REPLACING ==:T:== BY ==WS-==   (prog.cob:12, rule copy-stmt)
+      = the copybook has:  MOVE ZERO TO :T:NAME.
+```
+
+The primary span is the text the user wrote; the expansion is a note; a chain of rewrites keeps every step (`expanded from A via B`); a branch that gives up takes its rewrites with it.
+
+### 5. The five spellings of "replace and read again" (R596), on `PI` in C
+
+| | spelling | what it is |
+|---|---|---|
+| 1 | `macro-use = name as N ? macros  =>  reread N.body` | the attached arrow, IMP72's and TXL's way: the replacement is on the line of the pattern |
+| 2 | `macro-use = name as N ? macros  %emit{ push_source (N.body); }` | native code at the end of the alternative: works today for anything a function can do, but is code and carries no chain |
+| 3 | a parameter carries the replacement: `unit(T) := ...  unit(T ++ N.body)` | right for a grammar written to thread a value, wrong for text already behind the cursor |
+| 4 | `statement = macro-use %prefer \| expression-statement` | chooses between readings; rewrites nothing; what ordered choice already does for the most vexing parse |
+| 5 | `%rw expand(N) => reread N.body` then `macro-use = name as N ? macros expand(N)` | a named rewrite, defined once and used from many rules (hyperrule-like) |
+
+Recommended: **1** for everyday use, **5** where one rewrite serves several rules (the macro expansion in C, a copybook in COBOL), **2** left as the escape hatch it is; **3** and **4** are not rewrites.
+
+### What each costs, and what is already there
+
+A value and a fact need a record kept under a name (a hash on the context log, as the sets are) and a value for each rule (the substrate of `%emit`); `reread` needs a stack of sources and a node for each step of the chain, and a rule that never uses it pays for none of it (the standing rule); a switch is built.  The first thing to build is the single-line form in the C backend on the XML grammar, benched with and without it, as TODO.md asks.
+
+### Questions for the author
+
+1. `reread`, or another word (`expand`, `again`, `read`)?
+2. Facts: `N.level = L` (a dotted record, R2 of section 13) or a word (`remembers N(level L)`, R1) or the kind-rule form (R3)?
+3. May a rule have several consequences, `=> a, b`?
+4. Hygiene on by default for every `reread` (my proposal), with an explicit word to capture (`reread unhygienic ...`)?
+5. The error layout above: primary span the text written, expansion as a note; or the expansion first?
+6. `with N.params = A`: a local binding for one expansion; or the parameters are passed as arguments, `reread N.body(A)`?
+
+### Built 2026-11-11 (the first slice, C backend only)
+
+The text after `=>`, to the end of the alternative, is read as the consequences, separated by commas, each one a zero-width element after the pattern: `grammar(x)` (as before), `set += tag` and `set -= tag`, where `set` is a `context` and `tag` is kept earlier in the alternative by `x as tag`.  A match that is given back takes them with it.  Anything else after `=>` (a value, a fact, `reread`) is refused with what is built.  The other backends refuse `+=` and `-=` by rule name (Ada already refuses any `context`).  The context log gains one byte per entry (in padding that was there), and the XML parser built from the new template is as fast as before: best of nine runs on CPU 5, 4.36 ms against 4.44 ms on a 2 MB document.  Not yet: the fact form (`N.attr = value`, and reading it), a value (`=> template`), and `reread`.
+
+### What building `reread` showed: the question it needs answered
+
+"Replace the matched text and read it again from where the match began" is clear for a preprocessor that works on tokens and not obvious for a recursive-descent parser: the text is replaced, but *which rule reads it?*  `PI` becomes `3.14159`, and whatever rule stood at that place must read the 3, not the rule that matched `PI`.  Three ways, each with what it costs:
+
+| | how | cost | fits |
+|---|---|---|---|
+| a | **restart the caller.**  The rule that matched the use fails with a flag, the splice is made in a new buffer (the old one stays, since the tree holds slices of it), and the nearest enclosing rule is read again from its own start.  Everything before the match is unchanged, so every position a caller holds is still good | one retry loop in each rule that calls a rewriting rule, and a copy of the rest of the text per expansion; nothing in a grammar that has no `reread` | any rule, any grammar; the chain is a table of (where, rule, what it replaced) |
+| b | **a pass before the grammar.**  A first grammar whose value is the expanded text (the value form, section 25, plus facts); the second grammar reads that | no restart; but two grammars, and the chain needs carrying through the value | a preprocessor that really is a separate stage (C's) |
+| c | **the scanner consults the facts at each token**, as COBOL's `REPLACE` is described in RFCPLAN step 20 | a test at every token read, in every scanner of a grammar that uses it | token-shaped replacement (COBOL `REPLACE`, simple object macros), less so a function-like macro that reads arguments |
+
+I recommend **a** for the general rule, with a bound on the depth and size of expansion and a refusal of an expansion that returns to the text it replaced (a cycle), and **c** left for later as an optimization for token-shaped replacement.  Question for the author: **a, b or c?**
 
