@@ -184,6 +184,8 @@ package HBNF_Grammar is
       B_Guard,       --  the clause of a rule with numeric parameters applies: a test on the frame
       B_Bol,         --  bol: the position is the beginning of a line; nothing is consumed
       B_Eol,         --  eol: a line feed, a carriage return or the end of the input follows; nothing is consumed
+      B_Add,         --  `=> set += tag`: the text kept as `tag` (Ctx) is added to the context `set` (Path)
+      B_Remove,      --  `=> set -= tag`: the same text is taken out of it
       B_Switch);     --  `=> grammar(x)`: when the alternative has matched, x is the current grammar
                      --  (Path = "tag": Ctx is a tag bound by `as`, the text it kept names the grammar)
 

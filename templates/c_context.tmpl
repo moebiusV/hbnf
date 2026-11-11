@@ -5,7 +5,7 @@
 /* One log for every context: an add pushes, so a mark is the log's length and giving up is popping back
    to it.  The usual give-up has nothing to pop, so hbnf_reset is one comparison, inlined; the popping
    is out of line. */
-typedef struct { const char *s; size_t n; unsigned hash; int prev; unsigned c; } hbnf_ce_t;
+typedef struct { const char *s; size_t n; unsigned hash; int prev; unsigned c; unsigned char neg; } hbnf_ce_t;   /* neg: takes the name out (`=> set -= tag`) */
 static struct {
     hbnf_ce_t *e;
     unsigned n, cap;
@@ -40,7 +40,7 @@ static void hbnf_ctx_clear(void) {
     for (c = 0; c < HBNF_NCTX; c++)
         for (b = 0; b < 256; b++) hbnf_cx.bucket[c][b] = -1;
 }
-static void hbnf_ctx_add(unsigned c, const char *s, size_t n) {
+static void hbnf_ctx_put(unsigned c, const char *s, size_t n, unsigned char neg) {
     unsigned h = hbnf_chash(s, n);   /* not remembered from the last ask: the bytes at s may have changed */
     if (hbnf_cx.n == hbnf_cx.cap) {
         hbnf_cx.cap = hbnf_cx.cap ? hbnf_cx.cap * 2 : 64;
@@ -51,16 +51,20 @@ static void hbnf_ctx_add(unsigned c, const char *s, size_t n) {
     hbnf_cx.e[hbnf_cx.n].n = n;
     hbnf_cx.e[hbnf_cx.n].hash = h;
     hbnf_cx.e[hbnf_cx.n].c = c;
+    hbnf_cx.e[hbnf_cx.n].neg = neg;
     hbnf_cx.e[hbnf_cx.n].prev = hbnf_cx.bucket[c][h & 255];
     hbnf_cx.bucket[c][h & 255] = (int)hbnf_cx.n++;
 }
+static inline void hbnf_ctx_add(unsigned c, const char *s, size_t n) { hbnf_ctx_put(c, s, n, 0); }
+/* Taking a name out is an entry that says so, newest first, so a mark still undoes it, and adding the name again puts it back. */
+static inline void hbnf_ctx_del(unsigned c, const char *s, size_t n) { hbnf_ctx_put(c, s, n, 1); }
 static int hbnf_ctx_has(unsigned c, const char *s, size_t n) {
     unsigned h = hbnf_chash(s, n);
     int i;
     for (i = hbnf_cx.bucket[c][h & 255]; i >= 0; i = hbnf_cx.e[i].prev)
         if (hbnf_cx.e[i].hash == h && hbnf_cx.e[i].n == n
             && memcmp(hbnf_cx.e[i].s, s, n) == 0)
-            return 1;
+            return !hbnf_cx.e[i].neg;
     return 0;
 }
 static inline hbnf_mark_t hbnf_mark(void) {

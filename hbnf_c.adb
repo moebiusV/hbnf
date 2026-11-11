@@ -5384,7 +5384,7 @@ package body HBNF_C is
       function Pat_Binds (V : Element_Vectors.Vector) return Boolean is
       begin
          for E of V loop
-            if E.Kind = Block and then E.Op in B_Bind | B_Bind_Code | B_Scope then
+            if E.Kind = Block and then E.Op in B_Bind | B_Bind_Code | B_Scope | B_Add | B_Remove then
                return True;
             elsif E.Kind = Name then
                declare
@@ -6572,6 +6572,16 @@ package body HBNF_C is
                      case E.Op is
                         when B_Emit =>
                            null;  --  refused before emission until it is generated
+                        when B_Add | B_Remove =>
+                           --  `=> set += tag` and `set -= tag`: the text kept as the tag (Ctx), in the set (Path)
+                           declare
+                              T : constant String := C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid;
+                           begin
+                              Append (Buf, Ind & "hbnf_ctx_" & (if E.Op = B_Add then "add" else "del")
+                                & " (CTX_" & C_Ident_Lower (To_String (E.Path)) & ", p->text + cp_" & T
+                                & ", cl_" & T & ");");
+                              Append (Buf, LF);
+                           end;
                         when B_Switch =>
                            if E.Path = Null_Unbounded_String then
                               Append (Buf, Ind & "hbnf_push(p, "

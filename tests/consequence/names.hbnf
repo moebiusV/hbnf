@@ -1,0 +1,14 @@
+; `=>` consequences on a context (CONTEXTS section 30): `names += N` adds the text kept as N, `names -= N` takes it
+; out, and a match that is given back takes its consequences with it.
+prefix none
+context names
+whitespace none
+
+doc  = *( stmt ";" )
+stmt = "def" SP name as N                      => names += N
+     | "undef" SP name as N                    => names -= N
+     | "use" SP name ? names
+     | "try" SP ( "def" SP name as M           => names += M ) "!"
+     | "try" SP "def" SP name
+name = 1*0x61..0x7A
+SP   = " "

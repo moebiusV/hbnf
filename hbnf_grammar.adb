@@ -10,6 +10,7 @@ with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Containers.Ordered_Maps;
 with System.Storage_Elements;
 with Ada.Strings.Hash;
+with Ada.Strings.Fixed;
 with Ada.Directories;
 with Ada.Text_IO;
 with GNAT.OS_Lib;
@@ -1804,8 +1805,55 @@ package body HBNF_Grammar is
                if I < Text'Last and then Text (I + 1) = '/' then
                   Emit (T_Eq_Slash);  I := I + 2;  Col := Col + 2;
                elsif I < Text'Last and then Text (I + 1) = '>' then
-                  --  `=>`: what happens because the alternative matched.
+                  --  `=>`: what happens because the alternative matched.  What follows, to the end
+                  --  of the alternative (a line end, `|`, a closing bracket, a `%` word, a
+                  --  comment), is the consequences, one token of text that the reader splits at
+                  --  the commas (CONTEXTS.md section 30).
                   Emit (T_Arrow);  I := I + 2;  Col := Col + 2;
+                  declare
+                     J      : Natural := I;
+                     Depth  : Natural := 0;
+                     Quoted : Boolean := False;
+                  begin
+                     while J <= Text'Last loop
+                        declare
+                           C : constant Character := Text (J);
+                        begin
+                           if Quoted then
+                              exit when C in ASCII.LF | ASCII.CR;
+                              if C = '"' then
+                                 Quoted := False;
+                              end if;
+                           elsif C = '"' then
+                              Quoted := True;
+                           elsif C = '(' then
+                              Depth := Depth + 1;
+                           elsif C = ')' then
+                              exit when Depth = 0;
+                              Depth := Depth - 1;
+                           else
+                              exit when C in ASCII.LF | ASCII.CR | '|' | ']' | '%' | ';';
+                           end if;
+                        end;
+                        J := J + 1;
+                     end loop;
+                     declare
+                        First : Natural := I;
+                        Last  : Natural := J - 1;
+                     begin
+                        while First <= Last and then Text (First) in ' ' | ASCII.HT loop
+                           First := First + 1;
+                        end loop;
+                        while Last >= First and then Text (Last) in ' ' | ASCII.HT loop
+                           Last := Last - 1;
+                        end loop;
+                        if First <= Last then
+                           Emit (T_Name, Text (First .. Last));
+                        end if;
+                     end;
+                     Col := Col + (J - I);
+                     I := J;
+                  end;
                else
                   Emit (T_Eq, (if Legacy_Ops then "" else "="));
                   I := I + 1;  Col := Col + 1;
@@ -4799,32 +4847,30 @@ package body HBNF_Grammar is
       return To_String (List);
    end Known_Scopes;
 
-   --  `=> grammar(NAME)` at the end of an alternative whose pattern is B: the
-   --  switch is a zero-width element after the pattern.  NAME is a scope
-   --  (`include "f" as NAME`) or a tag the pattern bound with `as`.
+   --  `=>` at the end of an alternative whose pattern is B: what happens because the alternative
+   --  matched (CONTEXTS.md sections 15 and 30).  The lexer read the text after the arrow, to the end
+   --  of the alternative, as one token; its consequences are separated by commas, and each is a
+   --  zero-width element after the pattern, done when the alternative has matched and undone with it
+   --  when it is given back:
+   --    grammar(NAME)   the grammar NAME (`include "f" as NAME`, or a tag bound with `as`) is current;
+   --    SET += TAG      the text kept as TAG (`x as TAG`) is added to the context SET;
+   --    SET -= TAG      the same text is taken out of it.
+   --  A value, a fact and `reread` are not built yet.
    procedure Append_Switch (P : in out Parser; B : in out Element_Vectors.Vector) is
       T : constant Token := Cur (P);
       Where : constant String := Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": ";
-   begin
-      Next (P);
+
+      function Trim_Blanks (S : String) return String is
+        (Ada.Strings.Fixed.Trim (S, Ada.Strings.Both));
+
+      --  `grammar(NAME)`: the switch of the grammar (the first slice, section 19)
+      procedure Grammar_Switch (Txt : String) is
+      begin
       if not Scope_Stack.Is_Empty then
          Fail (Where & "`=> grammar(...)` is written in the grammar that includes the "
                & "others, not yet inside one included `as` a scope (`"
                & Dotted (Scope_Prefix) & "`)");
       end if;
-      declare
-         C   : constant Token := Cur (P);
-         Txt : constant String := To_String (C.Text);
-      begin
-         if C.Kind /= T_Name or else Txt'Length < 10
-           or else Txt (Txt'First .. Txt'First + 7) /= "grammar("
-           or else Txt (Txt'Last) /= ')'
-         then
-            Fail (Where & "`=>` takes `grammar(name)` in this version: it makes the "
-                  & "grammar the name gives the current one.  The other "
-                  & "consequences of a match (a value, a fact) are not built yet");
-         end if;
-         Next (P);
          declare
             Arg : constant String := Txt (Txt'First + 8 .. Txt'Last - 1);
             Tag : Boolean := False;
@@ -4884,6 +4930,91 @@ package body HBNF_Grammar is
                                      else Null_Unbounded_String),
                             Id => 0, Look => <>, Code => Null_Unbounded_String));
          end;
+
+      end Grammar_Switch;
+
+      --  `SET += TAG` and `SET -= TAG`
+      procedure Context_Consequence (Item : String; Op : Block_Op; At_Op : Natural) is
+         Set : constant String := Trim_Blanks (Item (Item'First .. At_Op - 1));
+         Tag : constant String := Trim_Blanks (Item (At_Op + 2 .. Item'Last));
+         Bound : Boolean := False;
+      begin
+         if Set = "" or else Tag = ""
+           or else not (for all Ch of Set => Ch in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-')
+           or else not (for all Ch of Tag => Ch in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-')
+         then
+            Fail (Where & "`" & Item & "`: a consequence on a context is `set += tag` or `set -= tag`, "
+                  & "the set a `context` names and the tag one the alternative kept with `as`");
+         end if;
+         for E of B loop
+            if E.Kind = Block and then E.Op = B_As and then To_String (E.Ctx) = Tag then
+               Bound := True;
+            end if;
+         end loop;
+         if not Bound then
+            Fail (Where & "`" & Item & "`: no `as " & Tag & "` stands earlier in this alternative; "
+                  & "write `x as " & Tag & "` after the text that is to go in");
+         end if;
+         if not (for some C of Context_Words => To_String (C) = Set)
+           and then not Ctx_Pending.Contains (Set)
+         then
+            Ctx_Pending.Insert (Set, Integer'Image (T.Line) & ":" & Integer'Image (T.Col));
+         end if;
+         B.Append
+           (new Element'(Kind => Block, Min => 1, Max => 1, Op => Op,
+                         Ctx => To_Unbounded_String (Tag), Path => To_Unbounded_String (Set),
+                         Id => 0, Look => <>, Code => Null_Unbounded_String));
+      end Context_Consequence;
+
+      procedure One (Item : String) is
+      begin
+         if Item'Length >= 10 and then Item (Item'First .. Item'First + 7) = "grammar("
+           and then Item (Item'Last) = ')'
+         then
+            Grammar_Switch (Item);
+            return;
+         end if;
+         for K in Item'First .. Item'Last - 1 loop
+            if Item (K + 1) = '=' and then Item (K) in '+' | '-' then
+               Context_Consequence (Item, (if Item (K) = '+' then B_Add else B_Remove), K);
+               return;
+            end if;
+         end loop;
+         Fail (Where & "`=> " & Item & "`: the consequences built are `grammar(name)`, `set += tag` "
+               & "and `set -= tag`, separated by commas; a value, a fact and `reread` are not built yet");
+      end One;
+   begin
+      Next (P);
+      if Cur (P).Kind /= T_Name then
+         Fail (Where & "`=>` takes the consequences of a match: `grammar(name)`, `set += tag`, "
+               & "`set -= tag`, separated by commas");
+      end if;
+      declare
+         Raw   : constant String := To_String (Cur (P).Text);
+         Start : Natural := Raw'First;
+         Depth : Natural := 0;
+         Quoted : Boolean := False;
+      begin
+         Next (P);
+         for K in Raw'Range loop
+            declare
+               C : constant Character := Raw (K);
+            begin
+               if Quoted then
+                  Quoted := C /= '"';
+               elsif C = '"' then
+                  Quoted := True;
+               elsif C = '(' then
+                  Depth := Depth + 1;
+               elsif C = ')' and then Depth > 0 then
+                  Depth := Depth - 1;
+               elsif C = ',' and then Depth = 0 then
+                  One (Trim_Blanks (Raw (Start .. K - 1)));
+                  Start := K + 1;
+               end if;
+            end;
+         end loop;
+         One (Trim_Blanks (Raw (Start .. Raw'Last)));
       end;
    end Append_Switch;
 

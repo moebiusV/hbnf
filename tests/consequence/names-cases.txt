@@ -1,0 +1,12 @@
+ok	def a;use a;
+bad	use a;
+bad	def a;undef a;use a;
+ok	def a;def b;undef a;use b;
+ok	def a;undef a;def a;use a;
+bad	try def x;use x;
+ok	try def x!;use x;
+ok	def a;undef b;use a;
+bad	def a;undef a;undef a;use a;
+ok	def a;try def a;use a;
+bad	def ab;use a;
+ok	def ab;use ab;
