@@ -13,7 +13,7 @@
 ## Contents
 
 - [Summary](#summary)
-- [Left to do (67)](#left-to-do-67)
+- [Left to do (68)](#left-to-do-68)
 - [Left in the air (27)](#left-in-the-air-27)
 - [Rejected or replaced (7)](#rejected-or-replaced-7)
 - [Done (178)](#done-178)
@@ -28,12 +28,12 @@
 
 # Summary
 
-- Left to do: 67 of 279 subjects
-- Left in the air: 27 of 279 subjects
-- Rejected or replaced: 7 of 279 subjects
-- Done: 178 of 279 subjects
+- Left to do: 68 of 280 subjects
+- Left in the air: 27 of 280 subjects
+- Rejected or replaced: 7 of 280 subjects
+- Done: 178 of 280 subjects
 
-# Left to do (67)
+# Left to do (68)
 
 - Decided, and not yet in the current code or docs (or only partly).
 
@@ -584,6 +584,13 @@
 - Doc differs: corpus/cobol/README.md:8 "vendor extensions are left out", the chain's challenge about vendor forms is not settled in the code
 - Left: the 5 scan and 1 NIST baseline gaps; fixed format (waits for `col`); COPY and REPLACE as rewrites over a source stack (R597 asks what COBOL's COPY REPLACING teaches: locality); remaining statements, object-oriented COBOL, PICTURE; the embedded languages as islands
 
+### Build files, project.conf and native code outside the grammar
+- Status: TO DO — decided in outline on 2026-10-29 and 30; nothing built (`languages/`, `builders/`, `project.conf`, `hbnfversion` do not exist) (latest decision 2026-10-30 \[R618\])
+- Decided: 2026-10-29 decided: the templates become HyperBNF, "renamed languages" \[R608\]; helper code lives in `.c` or `.rs` files that the grammar names, as C23's `#embed` does \[R609\]; hbnf chooses which code goes in which files and writes a makefile and a configure file with them, so they stay current with the grammar \[R610\] \[R612\]; a `build` directive with options (standalone, makefile, cmake, cargo) \[R611\]; each build grammar in `builders/`, language-specific parts under `languages/`, mixed-language and mixed-binary builders at the top \[R613\] \[R614\] \[R615\]; a grammar for the project's own `project.conf`, saying which grammars emit what files and how they are compiled and run afterward \[R616\]; installed under /usr/share and overridable in each project directory \[R617\]; an `hbnfversion` directive \[R618\]
+- Rationale: semantic analysis \"was always assumed to be code outside the grammar\", in the epilog or a `.o` file linked in \[R619\]
+- Evidence: not found: no `languages/` or `builders/` directory, no `build` or `hbnfversion` directive in `hbnf_grammar.adb`; islands (`include \"f\" as x`) are the one built way for grammars to interact (CONTEXTS section 19); `HBNF_Template` renders the templates
+- Left: the plan of 2026-11-11, Phase 7: templates as languages, the `build` directive and builders, `project.conf` for several grammars and the native object files they link, `hbnfversion`
+
 ### Buildabook hbnf
 - Status: TO DO — the overlay builds buildabook and mustache-ada against an old hbnf pin, not the latest; hbnf has since dropped mustache-ada and fixed libhbnf.gpr, so the overlay is stale (latest decision 2026-10-23 \[R395\])
 - Decided: 2026-10-23 decided: "make sure buildabook and muststache etc all work with the latest hbnf" \[R395\]
@@ -785,12 +792,16 @@
 - Left: whether to add cycle detection or lazy instantiation for unbounded metanotions
 
 ### Set-logic operators
-- Status: IN THE AIR — only an investigation was asked for (latest decision 2026-11-11 \[R601\])
+- Status: IN THE AIR — an investigation was asked for, and Unicode spellings as the flagship default (latest decision 2026-11-11 \[R604\])
 - Decided: 2026-11-11 decided: investigate other operators from set logic beside juxtaposition (sequence) and the pipe (union): intersection, element of, all of, and "a way to indicate sequence as well as indicate that sequence does not matter" \[R601\]
 - Rationale: BNF "already includes and by juxtaposition" and "or with the pipe"; asks "how much more effective" more operators would be \[R601\]
+- Decided: 2026-11-11 decided: the set-logic operators are written as real Unicode characters (∪ ∩ ∈ and the rest) and work, and are the default spelling in the flagship grammars \[R604\]; asked whether "one of" is the same as element-of \[R605\] (the assistant's answer: the same operation, a literal set or a named one)
+- Decided: 2026-11-11 decided: UTF-8 is allowed outside string literals for operators; a bareword (a name) follows the rules for C symbols, except inside `<>`, where it may hold white space and the punctuation `.`, `,`, `;`, `:` \[R606\]
+- Decided: 2026-11-11 decided: white space may be required between an operator and a bareword, case by case: where it looks bad it is not, where it helps reading it is \[R607\]
+- Doc differs: rule names today are ABNF-style and hold hyphens (`program-unit`, `declaration-seq`, `leaf-X`), which are not C symbol characters; `<name>` is read as ABNF's prose-val and BNF's nonterminal bracket in those dialects; `/` is not in the punctuation list (item 71 of CONTEXTS section 26, `pdp64/16`); whether C symbols include Unicode letters (C23 XID) is unsettled
 - Precedent: Annex A of the C++ standard (considered; named by the assistant, the author approved its reading style): opt, X-seq, X-list, "one of" \[R594\]
 - Evidence: not found: no set-logic operator beyond `|`, `-` (exception), `&x` (lookahead) and `? set` (membership) in ABNF.md or CONTEXTS.md; an unordered group is absent
-- Left: five or six spellings with rationale and precedents, shown on the same COBOL, C and Annex A passages, counted with bench/notation.sh; the author chooses; then build and migrate (plan of 2026-11-11, Phase 3)
+- Left: the author chooses among the options written 2026-11-11 in CONTEXTS.md section 29 (questions Q1 to Q8: element of and one of, intersection, difference, all of in any order, names, white space, the old spellings, the flagship list), each with a Unicode form and an ASCII twin; before that the plan was: with rationale and precedents, shown on the same COBOL, C and Annex A passages, counted with bench/notation.sh; "one of" and element-of treated as one operator (a set literal or a named set) unless shown otherwise; which grammars are "flagship" to be confirmed; the reader refuses a non-ASCII character outside a string or comment today (`unexpected character`); the author chooses; then build and migrate (plan of 2026-11-11, Phase 3)
 
 ## 03 Parser generation and back ends
 

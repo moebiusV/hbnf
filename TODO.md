@@ -21,7 +21,7 @@ hbnf's own rows touch many fresh pages and are the ones the load hurts most, so 
 | `bench/libs.sh` (JSON, TOML, YAML, XML), best of 9 | rerun; simdjson and rapidyaml read 20-35% high, the other references at their quiet readings; hbnf JSON tree 2.8 ms (1.9 quiet), YAML tree 12 (8.5), XML tape 3.5, tree 4.3 against libxml2 SAX2 4.8 | rerun on a quiet machine (30 min at 5 runs); accept only if the probe reads 8.4-9.6 before and after |
 | `bench/cspeed.sh`, `bench/scalar.sh` | rerun (C11 tree 0.20 s, 47 MB; tape 0.12 s; gcc -fsyntax-only 0.48 s) | same |
 | `bench/run.sh` (all stages: hbnf, yacc, peg, tree-sitter, ANTLR, ntpd, pfctl, corpus), which feeds WHY.md, README.md, HISTORY.md, USENIXSUBMISSION.md | rerun; the whole of it takes under 15 minutes | same |
-| `bench/tokens.sh` | **broken**: it empties `bench/results/tokens.md` and `bench/results/vals/tokens.txt` and prints nothing (the tokenizers are probably not installed), after which `update-docs.sh` complains of missing `tokens_*` values.  The tokens figures in the documents are the 10-27 ones, restored from git | find why, fix, rerun; make the script fail loudly instead of writing an empty table |
+| `bench/tokens.sh` | **fixed 2026-11-11, not rerun**: `tokens.py` stopped ("notation.md has 24 rows of figures, this has 17") because the notation table gained the tape rows, and the script had already truncated its results.  `tokens.py` now finds each of its rows in the table in order (extra rows allowed), and `tokens.sh` writes to scratch files and replaces the results only on success, saying why when it fails.  Run once, `sh bench/tokens.sh`, to refresh the figures (it ends by rewriting the benchmark blocks of README, WHY and HISTORY through `update-docs.sh`) | run it when the documents may change |
 | `bench/notation.sh` | current | - |
 | `bench/xml-conformance.sh` | current: hbnf 34 of 34, 11 of 11 with the real generator; reruns by itself when a parser's version, the case set, or hbnf's grammar or generator changes | grow the case set (encodings, DOCTYPE forms, namespaces) |
 | THP and the arena | the arena patch (9884a84) saves page faults only when the kernel cannot back the arena with huge pages; the benchmark runs with THP on | decide whether the benchmark should also run with THP off, and say which in the table |
@@ -32,6 +32,7 @@ Note:
 
 ## 2. XML
 
+- [ ] **`tests/xml-diff.sh` fails on this machine, with the shipped `./hbnf` and with a pristine build of the same sources** (found 2026-11-11, not caused by Phase 1): the installed expat 2.7.1 accepts four bad XML declarations that hbnf refuses (`corpus/xml/tests/bad/xml-decl-version-{empty,letters,major,no-minor}.xml`, reported as `oracle accepts bad`), and expat accepts some of the random mutations hbnf refuses.  The case set was made against another expat; decide whether the oracle check should name the expat version it was made with, or skip a case the oracle's version does not refuse.
 - [ ] **The other backends cannot generate the conforming XML grammar.**  Rust and Zig emit `compile_error!` (the recursion walk is C-only code), Ada no longer generates it (no contexts), tree-sitter refused it before.  Way back: a value kept with a name in a context (CONTEXTS 13) instead of code, so the check is grammar and not C.  (26/41)
 - [ ] **Not checked yet, all need an entity's replacement text parsed as content when it is used** (a bounded island, CONTEXTS 27, or a stored value): the balance of markup in an entity (`<!ENTITY e "<b>">`), a `<` or an unparsed entity inside an entity's text, `&#38;#0;`, the external subset and conditional sections, namespace constraints beyond the lexical rule.  They are in `corpus/xml/tests/loose` and the README's "Not checked".
 - [ ] **Speed, from the profile (64 M instructions per 2 MB parse):**
@@ -42,7 +43,7 @@ Note:
   - list links in arrays (memory only: -25% JSON/TOML, -19% XML)
   - automatic left-factoring through captures (26/48): the element was factored by hand and saved a millisecond; the natural spelling would pay it
   - hidden dependence of the arena patch on `MADV_POPULATE_WRITE` (Linux 5.14+); older kernels fault as before
-- [ ] **Latent hazard** in the context-set hash cache (`hbnf_lh_s`, 9884a84): it assumes the text does not change between a `?!` test and the `%bind` that follows; a `%where` block that tests a temporary buffer and adds another string at the same address would hash wrongly.
+- [x] **Latent hazard** in the context-set hash cache (`hbnf_lh_s`, 9884a84): fixed 2026-11-11 by dropping the cache (the hash reads at most eight bytes and the length, so what it saved was a few multiplies); `tests/context/ctxhash.hbnf` asks about a buffer, overwrites it and adds, and fails on the old template.
 - [ ] **Silent variants and rewrite rules (CONTEXTS 26/64):** build them and bench them on the XML grammar, for the readable grammar and for speed ("readable AND fast, no stone unturned").  The profile says nothing in the XML parse is output a grammar would drop, so the speed guess is "no gain"; it is a guess.
 - [ ] The README claim: "fastest conforming XML parser" only after a quiet run shows it for the tree (the tape already is).
 
@@ -50,6 +51,8 @@ Prio:
 Note:
 
 ## 3. The language and the generator (CONTEXTS section 26, by number)
+
+**Done 2026-11-11 (Phase 1 of the plan):** 6, 21 (the UTF-8 half: `tests/utf8.sh`; the NUL needs a `parse_text_n`, to be settled), 28, 43, 59, 61, 65, 66, 69, each with a test that fails on the old generator (`tests/markdown.sh`, `tests/pattern/lookalt.hbnf`, `tests/css.sh`, `tests/ast.sh`, `tests/valued.sh`, `tests/backref/lookgroup.hbnf`, `tests/wire.sh`).  Not reproduced: 67; not a defect: 68.  50 is diagnosed in CONTEXTS.md (700 x 700 blocks), not fixed.  17 and 63 wait for the silent variants (Phase 2).
 
 Queued reader and generator fixes (the titles are the item titles):
 
@@ -86,6 +89,7 @@ Open decisions and unbuilt designs:
 - [ ] Error recovery and restarts, with the Common Lisp restart system as the model (idea; not started).
 - [ ] GLR: allowed by the scope note, pay only for what is used; not started.
 - [ ] Granular check reporting: per-item results (backend / arch / grammar / suite), sequential, easy to run one item.
+- [ ] Build files, `project.conf`, `builders/`, `languages/`, `hbnfversion`, helper code in `.c`/`.rs` files and `.o` files linked in, several grammars named by one project: decided in outline 2026-10-29 and 30 (decision register R608-R618, R619), nothing built (the plan of 2026-11-11, Phase 7).
 - [ ] The conf glue out of the templates into an included C header.
 - [ ] **Port the C-only features to Rust, Zig, Ada, tree-sitter** (the standing rule is C first, then the rest): `as K`/`$K`, up references, `^.rule`, `bol`/`eol`, the scanned lookahead, overlay, unwind marks, the arena, the tape captures, the SSE2 loop, the context-set hash.
 
