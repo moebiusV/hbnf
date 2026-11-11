@@ -642,3 +642,5 @@
 - R633 | 2026-11-11 | question | "confirm, does the roadmap include the stuff to generate build scripts, makefiles, etc?" | subjects: Build files and project.conf | current
 - R634 | 2026-11-11 | decision | "i think you listed a lot more optios than cmake cargo etc, you mentioned ninja etc, we'll do them all" | subjects: Build files and project.conf | refines R611 | current
 - R635 | 2026-11-11 | question | "so.... the docs are completely updated and in sync with the current state of the code and it is pushed?" | subjects: README content, style and tables | current
+- R636 | 2026-11-11 | rationale | "this is to minimize name mangling on emitted code" | subjects: Readability and syntax principles; Namespaces and qualified names | refines R606 | current
+- R637 | 2026-11-11 | decision | "I like having - in barewords, let's make it a synonym for _ which might be a bit surprising.... how about this, barewords with - keep the -, but are treated the same as <tokens like this>" | subjects: Readability and syntax principles; Namespaces and qualified names; Set-logic operators | refines R606; refines R636 | current
