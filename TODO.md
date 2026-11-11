@@ -89,7 +89,7 @@ Open decisions and unbuilt designs:
 - [ ] Error recovery and restarts, with the Common Lisp restart system as the model (idea; not started).
 - [ ] GLR: allowed by the scope note, pay only for what is used; not started.
 - [ ] Granular check reporting: per-item results (backend / arch / grammar / suite), sequential, easy to run one item.
-- [ ] Build files, `project.conf`, `builders/`, `languages/`, `hbnfversion`, helper code in `.c`/`.rs` files and `.o` files linked in, several grammars named by one project: decided in outline 2026-10-29 and 30 (decision register R608-R618, R619), nothing built (the plan of 2026-11-11, Phase 7).
+- [ ] Build files (every builder, not only make, cmake, cargo and autoconf: ninja and the rest too, the author 2026-11-11), `project.conf`, `builders/`, `languages/`, `hbnfversion`, helper code in `.c`/`.rs` files and `.o` files linked in, several grammars named by one project: decided in outline 2026-10-29 and 30 (decision register R608-R618, R619), nothing built (the plan of 2026-11-11, Phase 7).
 - [ ] The conf glue out of the templates into an included C header.
 - [ ] **Port the C-only features to Rust, Zig, Ada, tree-sitter** (the standing rule is C first, then the rest): `as K`/`$K`, up references, `^.rule`, `bol`/`eol`, the scanned lookahead, overlay, unwind marks, the arena, the tape captures, the SSE2 loop, the context-set hash.
 
@@ -98,7 +98,7 @@ Note:
 
 ## 4. Corpora (grammars)
 
-- [ ] **COBOL** (free-format core only): 3 gaps in the scan suite against cobc, 0 in NIST (`tests/cobol/scan-baseline.txt` = 3: `>>IF`/`>>ELSE` directives that choose text, the LIST-BOX screen extension, 2023's `VARYING ... INVALID WHEN`; `nist-baseline.txt` = 0; a comma may be the decimal point); fixed format waits for `col`; copybooks, the embedded languages (SQL, CICS, DLI, JCL), PICTURE as its own grammar.  RFCPLAN step 20 (ALGOL 68, C++, COBOL on the list; IMP72 cancelled).
+- [ ] **COBOL** (free format, and fixed format since 2026-11-11): 3 gaps in the scan suite against cobc, 0 in NIST (`tests/cobol/scan-baseline.txt` = 3: `>>IF`/`>>ELSE` directives that choose text, the LIST-BOX screen extension, 2023's `VARYING ... INVALID WHEN`; `nist-baseline.txt` = 0; a comma may be the decimal point); fixed format: `corpus/cobol/cobol-fixed.hbnf`, `tests/cobol/fixed-baseline.txt` = 2 (`ACCEPT ... MESSAGE COUNT`, a data item named PROCEDURE), not yet `>>SOURCE FORMAT` switching, a word continued with `-`, text in the indicator column; copybooks, the embedded languages (SQL, CICS, DLI, JCL), PICTURE as its own grammar.  RFCPLAN step 20 (ALGOL 68, C++, COBOL on the list; IMP72 cancelled).
 - [ ] **HTML**: the places where the grammar and html5lib differ (`corpus/html/tests/oracle-stricter/`: documents html5lib refuses and the grammar accepts); JS and CSS as islands (CONTEXTS 27); the island 26/27, 30, 31 items above.
 - [ ] **JavaScript** (ECMAScript 2023, Script and Module) and **CSS** (Syntax 3, Selectors 4): known gaps against V8 / tinycss2 (see their READMEs).
 - [ ] **SGML** and **GraphQL**: no oracle.
