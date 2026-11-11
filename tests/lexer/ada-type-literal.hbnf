@@ -1,0 +1,5 @@
+; Ada: a literal `"type"` is not a value named like the type (CONTEXTS section 26, item 9).
+prefix none
+whitespace none
+doc = kw
+kw = "type" | "interface"

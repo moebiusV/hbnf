@@ -1,0 +1,5 @@
+; Ada: the instance of `t("--")` has no `__` in its name (CONTEXTS section 26, item 18).
+prefix none
+whitespace none
+doc = t("--") t("a_b")
+t(X) := "<" X ">"

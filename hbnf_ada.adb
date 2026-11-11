@@ -51,8 +51,9 @@ package body HBNF_Ada is
       First : Boolean := True;
    begin
       for C of HBNF_Grammar.Prefixed (S) loop
-         if C = '-' then
-            --  `--` (a rule of a scope, `x--rule`) is one `_`: Ada has no `__`.
+         if C in '-' | '_' then
+            --  `--` (a rule of a scope, `x--rule`) is one `_`, and so is a run of `-` and `_` (the instance of `t("--")`):
+            --  Ada has no `__`.
             if Length (Buf) = 0 or else Ada.Strings.Unbounded.Element (Buf, Length (Buf)) /= '_' then
                Append (Buf, '_');
             end if;
@@ -63,6 +64,13 @@ package body HBNF_Ada is
          end if;
          First := False;
       end loop;
+      --  no `_` at the end either (`_Type` follows some names) or at the start
+      if Length (Buf) > 0 and then Ada.Strings.Unbounded.Element (Buf, Length (Buf)) = '_' then
+         Append (Buf, 'U');
+      end if;
+      if Length (Buf) > 0 and then Ada.Strings.Unbounded.Element (Buf, 1) = '_' then
+         Insert (Buf, 1, "U");
+      end if;
       return To_String (Buf);
    end Ada_Ident;
 
@@ -176,6 +184,9 @@ package body HBNF_Ada is
               or else Base (Base'First) in '0' .. '9'
             then
                N := To_Unbounded_String ("Op_" & Img (I));
+            elsif Up (Base) = "TYPE" then
+               --  `<Rule>_Type` is the type: a literal `"type"` would be a value of the same name (CONTEXTS section 26, item 9)
+               N := To_Unbounded_String (Base & "_Value");
             else
                N := To_Unbounded_String (Base);
             end if;

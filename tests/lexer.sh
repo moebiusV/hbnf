@@ -76,6 +76,16 @@ for c in "ok abc xy" "bad abc on" "ok onx a" "bad on"; do
 	printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checke" "$W/t.txt" | cut -d' ' -f1)
 	[ "$got" = "${c%% *}" ] || { echo "lexer: FAIL (name - \"on\" on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
 done
+# Ada names (items 9 and 18): the generated text has no value named like its type and no `__`; compiled where gnatmake is
+for g in ada-type-literal ada-instance-name; do
+	"$CLI" tests/lexer/$g.hbnf --backend=ada --package=Tl > "$W/$g.ada" 2> "$W/err" || { echo "lexer: FAIL ($g, Ada: $(head -c 300 "$W/err"))"; fail=1; continue; }
+	grep -Eq 'is \(Kw_Type,|[A-Za-z0-9]__' "$W/$g.ada" && { echo "lexer: FAIL ($g, Ada: a value named like its type, or a double underscore)"; fail=1; }
+	if command -v gnatmake > /dev/null 2>&1 && command -v gnatchop > /dev/null 2>&1; then
+		mkdir -p "$W/ad-$g"; cp "$W/$g.ada" "$W/ad-$g/all.ada"
+		(cd "$W/ad-$g" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -c -gnat2022 -gnatws *.adb > cc.txt 2>&1) \
+			|| { echo "lexer: FAIL ($g does not compile in Ada: $(grep -m2 error "$W/ad-$g/cc.txt" | head -c 300))"; fail=1; }
+	fi
+done
 # a rule named `text` (item 26) in Rust, where it is installed
 if command -v rustc > /dev/null 2>&1; then
 	mkdir -p "$W/rs"
