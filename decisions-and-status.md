@@ -13,10 +13,10 @@
 ## Contents
 
 - [Summary](#summary)
-- [Left to do (65)](#left-to-do-65)
-- [Left in the air (26)](#left-in-the-air-26)
+- [Left to do (67)](#left-to-do-67)
+- [Left in the air (27)](#left-in-the-air-27)
 - [Rejected or replaced (7)](#rejected-or-replaced-7)
-- [Done (180)](#done-180)
+- [Done (178)](#done-178)
 - [Precedents, by name](#precedents-by-name)
 - [Where the current docs or code differ from the decisions (53)](#where-the-current-docs-or-code-differ-from-the-decisions-53)
 - [Decision briefing: open notation questions](#decision-briefing-open-notation-questions)
@@ -28,12 +28,12 @@
 
 # Summary
 
-- Left to do: 65 of 278 subjects
-- Left in the air: 26 of 278 subjects
-- Rejected or replaced: 7 of 278 subjects
-- Done: 180 of 278 subjects
+- Left to do: 67 of 279 subjects
+- Left in the air: 27 of 279 subjects
+- Rejected or replaced: 7 of 279 subjects
+- Done: 178 of 279 subjects
 
-# Left to do (65)
+# Left to do (67)
 
 - Decided, and not yet in the current code or docs (or only partly).
 
@@ -298,11 +298,12 @@
 - Left: build items 1 and 2 of CONTEXTS.md section 26; how a one-character literal behaves under \`!\`, \`&\` and \`\*\` is pending
 
 ### Up-references and rewrite rules
-- Status: TO DO — details pending: up references are built, silent variants and rewrite rules are not built or benched (latest decision 2026-11-04 \[R576\])
+- Status: TO DO — details pending: up references are built, silent variants and rewrite rules are not built or benched; 2026-11-10 and 11 added the rewrite stack and the syntax criteria (latest decision 2026-11-11 \[R596\])
 - Decided: 2026-11-04 decided: "we won't know until we implement and bench. which we will do. no stone unturned. readable AND fast." \[R576\]
 - Rationale: "we won't know until we implement and bench. which we will do. no stone unturned. readable AND fast." \[R576\]
+- Decided: 2026-11-10 decided: rewrites follow the principle that the rules are for human readers, and "the rewrite stack so that we can have helpful error messages attached to the rule that caused the error" \[R591\]; 2026-11-11 decided: choose the rewrite features "closest to the spirit of BNF consistent with what we already have", extended "clear and easy to read" and "as compact as is reasonable" \[R596\]; the rewrites are expected to make the preprocessor fairly straightforward \[R595\]
 - Evidence: a4f96d9 "Up references \`\$K^\` and \`\$K^R\`"; ABNF.md:122 (up reference); TODO.md:46 "Silent variants and rewrite rules (CONTEXTS 26/64): build them and bench them on the XML grammar"; CONTEXTS.md section 25 "a proposal ... nothing built" ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
-- Left: build silent variants and rewrite rules, bench on the XML grammar (TODO.md:134, section 7 question 4, asks the order)
+- Left: build silent variants and rewrite rules, bench on the XML grammar (TODO.md:134, section 7 question 4, asks the order); keep the chain of rewrites and the original span so an error names the text written and the rule that fired (R591); choose the surface from five options (R596)
 
 ### Word boundary with string literals
 - Status: TO DO — the boundary defect under \`sensitivity string %i\` is recorded as a known reader/generator defect, not fixed (latest decision 2026-10-21 \[R388\])
@@ -548,12 +549,40 @@
 ## Relation to imp72, pcc and other projects
 
 ### Algol68 hbnf
-- Status: TO DO — details pending: not started and deferred to the far future; no algol68 corpus directory (latest decision 2026-10-22 \[R391\])
-- Decided: 2026-10-18 decided: "I do want an hbnf grammar that fully specifies algol68"; "%where predicates are a fundamental part of hbnf" \[R362\]; 2026-10-22 decided: "defer c++ and algol68 to \\"far in the future\\"" \[R391\]
+- Status: TO DO — not started; since 2026-11-11 a target again, after COBOL, the C preprocessor and before C++; no algol68 corpus directory (latest decision 2026-11-11 \[R598\])
+- Decided: 2026-10-18 decided: "I do want an hbnf grammar that fully specifies algol68"; "%where predicates are a fundamental part of hbnf" \[R362\]; 2026-10-22 decided: "defer c++ and algol68 to \\"far in the future\\"" \[R391\], superseded 2026-11-11: the handoff to the implementer names "the c plus plus twenty three spec with pre processor and also algol68", with a soft limit of 5,000 lines of grammar and epilogue per grammar \[R598\] \[R600\]
 - Rationale: "%where predicates are a fundamental part of hbnf"; "I do want an hbnf grammar that fully specifies algol68" \[R362\]
 - Precedent: W-grammar (considered; named by author): asked how W-grammar handled what %where predicates do \[R362\]
 - Evidence: corpus/README.md:23 "\`algol68/\` \| the Revised Report's W-grammar \| not started; on the list (\`RFCPLAN.md\` step 20)"; TODO.md:101 "ALGOL 68, C++ grammars: not started"; RFCPLAN.md:38-39 "algol68 to far in the future"; on the list since 2026-10-31 as step 20 (RFCPLAN.md:2760); metarules \`::=\` and hyperrules \`:=\` exist (ABNF.md:353)
-- Left: write the algol68 grammar (needs the W-grammar facilities, partly built as parameterised rules)
+- Left: write the algol68 grammar (needs the W-grammar facilities, partly built as parameterised rules, and facts); order set in the plan of 2026-11-11: COBOL, the C preprocessor, ALGOL 68, then C++
+
+### C and C++ grammars and compiler
+- Status: TO DO — COBOL was factored and C factoring is done by the generator; the C++ grammars and the preprocessor are not started (latest decision 2026-11-11 \[R599\])
+- Decided: 2026-11-03 decided: "factor the fuck out of cobol and c" while continuing the triage. \[R530\]; 2026-11-11 decided: complete coverage of the C++ standard, a complete front end including the C++ preprocessor, one grammar per C++ version ("the farther back in time you go, the easier they will be to parse"), the Annex A surface style approved, and about 5,000 lines of grammar and epilogue per grammar as a soft limit \[R594\] \[R595\] \[R599\] \[R600\]
+- Rationale: "unlike the pcc project we don't care about the different arches, and we don't have to worry about c89 or k&r c so the whole corpus of c files should be usable for testing" \[R405\]
+- Rationale: "what is wrong with 17 nested rules? i liked your earlier plan just now of starting with a small c compiler" \[R401\]
+- Rationale: Try W-grammar to make the c and cpp grammars "more compact while maintaining readability" \[R405\]
+- Precedent: pcc (considered; named by author): contrast: hbnf does not need multiple arches or c89/K&R \[R405\]
+- Precedent: gcc and clang (considered; named by author): speed to beat \[R405\]
+- Precedent: W-grammar (considered; named by author): possible way to compact C and C++ grammars \[R405\]
+- Precedent: IMP72 rewrite rules and %emit templates (considered; named by assistant, not taken up): needed for the back half of the compiler \[R402\]
+- Evidence: commit 146c138 "COBOL: 44 gaps; the grammar factored (4.6% fewer characters) with the same verdict on all 1,572 programs"; corpus/c/README.md:67 "alternatives that begin alike read that beginning once (\`tests/factor.sh\`, \`--no-factor\`)"; TODO.md:43 "automatic left-factoring through captures (26/48)" still open
+- Doc differs: TODO.md:101 "ALGOL 68, C++ grammars: not started"; the C preprocessor grammar is not built (RFCPLAN.md:2757)
+- Left: the C preprocessor (on the C grammars first, from the source stack that COBOL's COPY and REPLACE need), then a C++ grammar per standard, oldest first; the plan of 2026-11-11
+
+### COBOL grammar
+- Status: TO DO — the free-format core exists and the koopa and proleap sets were looked at; 2026-11-11 the target became a full front end for old and modern dialects (latest decision 2026-11-11 \[R602\])
+- Decided: 2026-11-03 decided: After committing, "do koopa and proleap sets"; asks why gnucobol fails some of the 9708 tests. \[R540\]; 2026-11-11 decided: a full cobol front end, "including old and modern Dialects of cobol", and full coverage of the GnuCOBOL corpus \[R602\]
+- Rationale: "we need to be able to represent these languages in a compact, idiomatic way so it looks as much like pure bnf as possible." \[R515\]
+- Rationale: "we can do full glr; remember the policy, we only pay for what we use." \[R515\]
+- Precedent: pure BNF (chosen; named by author): grammars should look as much like pure bnf as possible \[R515\]
+- Precedent: ALGOL 68 and C++ grammars (considered; named by author): listed beside COBOL as languages to represent compactly \[R515\]
+- Precedent: GnuCOBOL (cobc, its test suite) (considered; named by author): asks why gnucobol fails some of the 9708 tests \[R540\]
+- Precedent: Koopa test sources (chosen; named by assistant, accepted): "do koopa and proleap sets" \[R540\]
+- Precedent: ProLeap COBOL parser test sources (chosen; named by assistant, accepted): "do koopa and proleap sets" \[R540\]
+- Evidence: corpus/cobol/README.md:49 "The ProLeap and Koopa test sources were looked at and add nothing"; tests/cobol/scan-baseline.txt, nist-baseline.txt
+- Doc differs: corpus/cobol/README.md:8 "vendor extensions are left out", the chain's challenge about vendor forms is not settled in the code
+- Left: the 5 scan and 1 NIST baseline gaps; fixed format (waits for `col`); COPY and REPLACE as rewrites over a source stack (R597 asks what COBOL's COPY REPLACING teaches: locality); remaining statements, object-oriented COBOL, PICTURE; the embedded languages as islands
 
 ### Buildabook hbnf
 - Status: TO DO — the overlay builds buildabook and mustache-ada against an old hbnf pin, not the latest; hbnf has since dropped mustache-ada and fixed libhbnf.gpr, so the overlay is stale (latest decision 2026-10-23 \[R395\])
@@ -639,7 +668,7 @@
 - Evidence: not found: searched the hbnf clone for pdp64/opcode/ISA grammars (none; hbnf only provides the tool)
 - Left: the "skip hbnf for now" versus "use the hbnf grammar" decisions (2026-10-21) are superseded by the 2026-11-04 decision; whether the pdp64 repository now follows it is pending there
 
-# Left in the air (26)
+# Left in the air (27)
 
 - Only ideas, open questions, conflicting decisions, or points the record and the repository do not settle.
 
@@ -755,6 +784,14 @@
 - Evidence: HISTORY.md:261 "Can the cycle be detected? Often, yes, and tracking which hyperrule is being instantiated is the ..."; ABNF.md:106 "a use that needs the same rule with a longer pattern again is refused like any use that grows without end"; ABNF.md:106 "An open end (\`0..\`) is not checked" \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): uncommitted (other machine): RESUME-9b.md's cycle detector (HBNF\_Compilable.Back\_Edges) is for recursive struct fields, not for hyperrule termination, so it does not settle this
 - Left: whether to add cycle detection or lazy instantiation for unbounded metanotions
 
+### Set-logic operators
+- Status: IN THE AIR — only an investigation was asked for (latest decision 2026-11-11 \[R601\])
+- Decided: 2026-11-11 decided: investigate other operators from set logic beside juxtaposition (sequence) and the pipe (union): intersection, element of, all of, and "a way to indicate sequence as well as indicate that sequence does not matter" \[R601\]
+- Rationale: BNF "already includes and by juxtaposition" and "or with the pipe"; asks "how much more effective" more operators would be \[R601\]
+- Precedent: Annex A of the C++ standard (considered; named by the assistant, the author approved its reading style): opt, X-seq, X-list, "one of" \[R594\]
+- Evidence: not found: no set-logic operator beyond `|`, `-` (exception), `&x` (lookahead) and `? set` (membership) in ABNF.md or CONTEXTS.md; an unordered group is absent
+- Left: five or six spellings with rationale and precedents, shown on the same COBOL, C and Annex A passages, counted with bench/notation.sh; the author chooses; then build and migrate (plan of 2026-11-11, Phase 3)
+
 ## 03 Parser generation and back ends
 
 ### Char type subtypes
@@ -786,6 +823,7 @@
 - Decided: no standing decision (only potential decisions)
 - Rationale: "the one grammar matches the opcodes and the bit layouts, but what is emitted can be either the assembler/linker or the svg charts." \[R581\]
 - Rationale: "this is the type of application where \\"rewrite rules\\" and \\"text transforms\\" come into their own in hbnf." \[R582\]
+- Decided: 2026-11-11 decided: the simulator also uses hbnf output for opcode generation; its semantics stay by hand, hbnf only parses the binary opcodes into the structs \[R603\]
 - Evidence: not found: searched TODO.md, CONTEXTS.md, README.md, RFCPLAN.md for svg, chart, opcode ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
 - Left: whether rewrite rules, or %emit with prologue/epilogue C, will produce the svg charts; depends on rewrite rules (CONTEXTS.md item 64) being built
 
@@ -931,7 +969,7 @@
 - Evidence: packaging repo: commit 6e53848 (2026-10-12) "Retire the odin and vlang aports; Alpine already ships both"; b123ee8 (2026-10-12) "Retire the fpc aport; Alpine's is older and better"; README.md:39-41 table rows odin, vlang, fpc "retired"; ls testing has none of them
 - Doc differs: build-full-image.sh:13-18 still lists fpc, odin, vlang as "this repo's aports" (stale)
 
-# Done (180)
+# Done (178)
 
 - Implemented in the current code or stated in the current docs, with the evidence.
 
@@ -2373,32 +2411,6 @@
 - Decided: 2026-10-06 changed: "bare words can be terminals or non terminals, i never separated them like that. a rule is a rule." \[R271\]
 - Rationale and precedent: none stated in the sources
 - Evidence: ABNF.md:213 "a bare word is a rule, a bare number or symbol gets a message saying to quote it"; ABNF.md:210 "a bare name and \`\<name\>\` are the same"
-
-### C and C++ grammars and compiler
-- Status: DONE — COBOL was factored; C factoring is done by the generator; C++ is not started (latest decision 2026-11-03 \[R530\])
-- Decided: 2026-11-03 decided: "factor the fuck out of cobol and c" while continuing the triage. \[R530\]
-- Rationale: "unlike the pcc project we don't care about the different arches, and we don't have to worry about c89 or k&r c so the whole corpus of c files should be usable for testing" \[R405\]
-- Rationale: "what is wrong with 17 nested rules? i liked your earlier plan just now of starting with a small c compiler" \[R401\]
-- Rationale: Try W-grammar to make the c and cpp grammars "more compact while maintaining readability" \[R405\]
-- Precedent: pcc (considered; named by author): contrast: hbnf does not need multiple arches or c89/K&R \[R405\]
-- Precedent: gcc and clang (considered; named by author): speed to beat \[R405\]
-- Precedent: W-grammar (considered; named by author): possible way to compact C and C++ grammars \[R405\]
-- Precedent: IMP72 rewrite rules and %emit templates (considered; named by assistant, not taken up): needed for the back half of the compiler \[R402\]
-- Evidence: commit 146c138 "COBOL: 44 gaps; the grammar factored (4.6% fewer characters) with the same verdict on all 1,572 programs"; corpus/c/README.md:67 "alternatives that begin alike read that beginning once (\`tests/factor.sh\`, \`--no-factor\`)"; TODO.md:43 "automatic left-factoring through captures (26/48)" still open
-- Doc differs: TODO.md:101 "ALGOL 68, C++ grammars: not started"; the C preprocessor grammar is not built (RFCPLAN.md:2757)
-
-### COBOL grammar
-- Status: DONE — the COBOL grammar exists and the koopa and proleap sets were looked at (latest decision 2026-11-03 \[R540\])
-- Decided: 2026-11-03 decided: After committing, "do koopa and proleap sets"; asks why gnucobol fails some of the 9708 tests. \[R540\]
-- Rationale: "we need to be able to represent these languages in a compact, idiomatic way so it looks as much like pure bnf as possible." \[R515\]
-- Rationale: "we can do full glr; remember the policy, we only pay for what we use." \[R515\]
-- Precedent: pure BNF (chosen; named by author): grammars should look as much like pure bnf as possible \[R515\]
-- Precedent: ALGOL 68 and C++ grammars (considered; named by author): listed beside COBOL as languages to represent compactly \[R515\]
-- Precedent: GnuCOBOL (cobc, its test suite) (considered; named by author): asks why gnucobol fails some of the 9708 tests \[R540\]
-- Precedent: Koopa test sources (chosen; named by assistant, accepted): "do koopa and proleap sets" \[R540\]
-- Precedent: ProLeap COBOL parser test sources (chosen; named by assistant, accepted): "do koopa and proleap sets" \[R540\]
-- Evidence: corpus/cobol/README.md:49 "The ProLeap and Koopa test sources were looked at and add nothing"; tests/cobol/scan-baseline.txt, nist-baseline.txt
-- Doc differs: corpus/cobol/README.md:8 "vendor extensions are left out", the chain's challenge about vendor forms is not settled in the code
 
 ### Character model
 - Status: DONE — the plan lists step 9c as done (latest decision 2026-10-06 \[R256\])

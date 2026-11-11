@@ -79,7 +79,8 @@ Open decisions and unbuilt designs:
 - [ ] Facts (a rule's own attributes keyed by name): decided yes, nothing built (13).
 - [ ] Labels (`name:` lines that set the context): open (16).
 - [ ] Switch phase 2 (token and scalar overrides: decimal comma, per-region reserved words) and phase 3 (phrase variants in `ast`, the tape case): designed, not built (22).
-- [ ] `=>` as the one arrow: consequence of a match (value, fact, grammar switch); decided 2026-11-02, nothing built.
+- [ ] `=>` as the one arrow: consequence of a match (value, fact, grammar switch); decided 2026-11-02, nothing built.  2026-11-10, 11: the rewrite form keeps a chain (the original span and the rule that fired) so an error names the text written and the rule, and the surface is chosen from five options shown first (R591, R596).
+- [ ] Set-logic operators beside juxtaposition and `|` (intersection, element of, all of, and an unordered group): the author asked for an investigation 2026-11-11 (R601); five or six spellings with precedents are to be shown first.
 - [ ] Bounded island `js.program in $R`.
 - [ ] `hidden` directive, tagged union, a bench under 30 s per parser (memory: bench speed and hidden).
 - [ ] Error recovery and restarts, with the Common Lisp restart system as the model (idea; not started).
@@ -98,7 +99,7 @@ Note:
 - [ ] **JavaScript** (ECMAScript 2023, Script and Module) and **CSS** (Syntax 3, Selectors 4): known gaps against V8 / tinycss2 (see their READMEs).
 - [ ] **SGML** and **GraphQL**: no oracle.
 - [ ] **Markdown to Typst** (`corpus/markdown`): a subset of CommonMark with tables; the `%spaces` bug (26/6).
-- [ ] ALGOL 68, C++ grammars: not started.
+- [ ] ALGOL 68, C++ grammars: not started; targets since 2026-11-11 (the user): the order is COBOL (full front end, old and modern dialects), the C preprocessor, ALGOL 68, then C++ one standard at a time, oldest first, the preprocessor included; about 5,000 lines of grammar and epilogue for each grammar, a soft limit (RFCPLAN step 20; decision register R594-R602).
 - [ ] The C compiler: action/emit into LLVM ORC and liblld, as in the IMP72 project, then c79 to facetlang: not started.
 
 Prio:

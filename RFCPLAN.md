@@ -37,7 +37,7 @@ silently.
 
 **ALGOL 68, and C++ after it: far in the future (the user, 2026-10-22: "defer c++ and
 algol68 to far in the future"); on 2026-10-31 they went on the todo list, with COBOL, as step 20.**  They were next in the running order (the user, 2026-10-18: "do algol68
-before c++"), and nothing else waits on them now.  ALGOL 68 is to be written in an hbnf that has gained what the W-grammar does (the user,
+before c++"), and nothing else waits on them now.  **Since 2026-11-11 they are targets again (step 20): COBOL, then the C preprocessor, ALGOL 68, and C++.**  ALGOL 68 is to be written in an hbnf that has gained what the W-grammar does (the user,
 2026-10-18: "we won't do ALGOL 68 in precisely the W-grammar, we'll do it in the
 hbnf that is updated to do what a W-grammar does"): parameterised rules for the
 Report's NOTION families (**built 2026-10-19**: `list(X)`, number parameters over a domain,
@@ -661,7 +661,7 @@ running order:
 > thing and will get its own compiler"); hbnf does not read the IMP72 compiler's
 > sources or bootstrap it.  The comparison with IMP72 in `METACOMPILERS.md` stays
 > as history, and what hbnf took from its manual (the choice rule, `A<pos,len>`)
-> stays.  **ALGOL 68 and C++ are far in the future** (the same day), and on the list since 2026-10-31 as step 20.
+> stays.  **ALGOL 68 and C++ are far in the future** (the same day), and on the list since 2026-10-31 as step 20; targets again since 2026-11-11 (step 20).
 > **Not started:** 14, grammars for
 > constrained decoding (added 2026-10-27), 16, the C grammar through LLVM ORC and lld (added 2026-10-28), and 20,
 > grammars for COBOL (begun), ALGOL 68 and C++, with full GLR where they need it (added 2026-10-31).
@@ -2757,7 +2757,7 @@ cycles.
     recovery with restarts (step 8).  The C preprocessor as a grammar; C17 and C23 grammars; the typedef-context
     port for the Ada side (step 16 depends on it).
 
-20. **Grammars for COBOL, ALGOL 68 and C++.**  *Added 2026-10-31 (the user); COBOL begun 2026-10-31 (`corpus/cobol/`: free format, checked against `cobc` on a few programs of its own and on the programs of GnuCOBOL's test suite, `tests/cobol-scan.sh`), ALGOL 68 and C++ not started.*  What makes COBOL hard is not its syntax but what surrounds it: `COPY` chains (a preprocessor's work, so with the C preprocessor item), fixed-format columns (a `ws` scanner can skip the sequence area and read the indicator column, since it can look back to the line start; the continuation of a literal is the hard part), decades of dialects, and a type system in the `PICTURE` and `USAGE` that a parser must keep as written.  One grammar
+20. **Grammars for COBOL, ALGOL 68 and C++.**  *Added 2026-10-31 (the user); COBOL begun 2026-10-31 (`corpus/cobol/`: free format, checked against `cobc` on a few programs of its own and on the programs of GnuCOBOL's test suite, `tests/cobol-scan.sh`), ALGOL 68 and C++ not started.  Targets set 2026-11-11 (the user): a complete C++ front end, the preprocessor included, one grammar for each C++ version, oldest first, and ALGOL 68; and a full COBOL front end, old and modern dialects.  About 5,000 lines of grammar and epilogue for each grammar, a soft limit that is per grammar and not a total.*  What makes COBOL hard is not its syntax but what surrounds it: `COPY` chains (a preprocessor's work, so with the C preprocessor item), fixed-format columns (a `ws` scanner can skip the sequence area and read the indicator column, since it can look back to the line start; the continuation of a literal is the hard part), decades of dialects, and a type system in the `PICTURE` and `USAGE` that a parser must keep as written.  One grammar
     for each, written to read as much like the pure BNF of the language's own standard as the notation
     allows: compact and idiomatic, a rule for a production, the production's name, and no lexer tricks
     beside it.  This is the test of the claim in the README that a grammar can carry a language that a
@@ -2771,8 +2771,8 @@ cycles.
     grammar that asks for it.  Still to settle, with the user before any of it is built (a syntax change is
     shown first): how a grammar asks for it, what a parse that is ambiguous returns (one tree by a stated
     rule, or all of them), and what the other backends do (refuse, as they do for `%emit`, or implement).
-    The order of the three is not fixed; C++ leans on the C family (`corpus/c/`) and the typedef context
-    of step 16.
+    The order (the user's plan, 2026-11-11): COBOL to a full front end first (it is furthest on, and fixed format and `COPY`/`REPLACE` need the source stack below), the C preprocessor on the C family next (the same source stack), then ALGOL 68, then C++ one standard at a time, oldest first.  C++ leans on the C family (`corpus/c/`) and the typedef context
+    of step 16.  The size is reported with the notation's counts (`bench/notation.sh`: tokens, rules, concepts), since a line count alone does not say how much a reader has to hold.
 
     *A preprocessor in the same grammar (the user's question, 2026-11-02; an idea, not decided).*  `COPY`, `REPLACE`, `#include` and `#define` can be applied as the parser goes, instead of in a pass before it: a source stack. Reaching `COPY name.` or a macro call pushes the other text (a copybook, a macro's expansion) as the current input, the same rules go on reading it, and its end pops back. A `REPLACE` or a `#define` is a fact (the pattern and its replacement, live until `REPLACE OFF` or `#undef`) that the scanner consults at each token; `#if` is a live/skipped region. Facts and the stack are put back when a guess is given back, as the typedef sets are. It handles what a separate pass handles badly (a macro that expands to half a declaration), and a program with no preprocessing pays nothing. Every position is then a chain of origins, `(source, offset)` with the place that pushed it, so an error or a tree node can be reported as gcc does (`in expansion of macro M, at a.c:3`, `copied from X.cpy by prog.cob:12`). Open: how the memo of a speculative parse keys positions that come from different sources, and where `REPLACE`'s pseudo-text matching (a token sequence, not a name) sits in the scanner. Sketched with the island and switch of `CONTEXTS.md`.
 

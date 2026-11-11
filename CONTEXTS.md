@@ -20,6 +20,7 @@ each point was reached; this table is where it stands.  Under the standing rule,
 | `col` and `where (cond)`; `30WS` | **proposed**; `bol` and `eol` come first and cover the line-start cases; `col` 0-based and `where` as a postfix are **to be confirmed** | 24 |
 | Fixed-format COBOL as a grammar | **not started**; waits for `bol`/`eol` and `col` | 24 |
 | GLR | **allowed** by the scope note, pay only for what is used; not started | RFCPLAN |
+| The Annex A surface and set-logic operators (opt, X-seq, X-list, "one of", an unordered group, element of); the rewrite surface and its chain of spans | **to be shown first**: the author asked for five or six spellings with precedents (2026-11-11); nothing built | 28, 25 |
 
 COBOL embeds other languages (SQL, CICS, DLI, and JCL near it), its PICTURE clause is a small language of its
 own, and its meaning depends on what the data division declared.  C needs the same from a typedef.  YAML and Python
@@ -963,6 +964,15 @@ Each was met writing `corpus/markdown`; the first two are the user's decisions, 
 40. **Entity texts are kept in the context log**: `HBNF_ADD (vals, ..)` right after the entity's name in `ents` puts the text in the next entry, and `%where { }` code reads `hbnf_cx` to walk the entities that a use names (No Recursion, and an undeclared name inside an entity's text).  This is C only and is code (about 35 lines in `corpus/xml/xml.hbnf`) where a value kept with a name (section 13, R1) would be a notation; with it the Rust and Zig parsers of XML are gone (they have contexts, not code), Ada never had contexts.
 41. **Not built, needed to finish XML**: the balance of an entity's markup (`<!ENTITY e "<b>">`), a `<` or an unparsed entity named inside an entity's text, a character reference made by `&#38;#0;`: the replacement text parsed as `content` when the entity is used, a bounded island (section 27).
 
+**From the opcode-layout prototype of the pdp64 project (found 2026-11-05 on `origin/layout-backend`, `LAYOUT.md` sections 6b and 9; queued 2026-11-11, nothing fixed).**
+65. **A character rule repeated directly inside a rule that declares a value is not generated** (C): `x :: int = *nonl ...` calls an undefined `parse_rule_nonl`.
+66. **`~x` inline in such a rule** is not generated either.
+67. **The `%emit`-retry check does not see a `!"lit"` guard**, so `leaf | other` is refused where nothing can retry past the emit.
+68. **An absent optional element is a zero string whose length minus 2 wraps.**
+69. **`--root=` is ignored for a grammar of bit rules only**, and is checked against the text rules (`the schema has no rule of that name`); the prototype added `--chart-root=` instead.
+70. **A bit field cannot be typed by an enum** (`sub:4 of sub-LDU-B28-1`), so a generator cannot know which mnemonics a sub-opcode selects.
+71. **A rule name cannot hold `.` or `/`.**  The dot is by decision scope and never part of a name (decision register R523); the `/` has no decision, and the pdp64 names `pdp64/16` and `pdp64/32` want it.
+
 ## 27. JavaScript and CSS as islands in HTML (the user, 2026-11-03; decided in outline, nothing built)
 
 The user: `js` and `css` should be islands in `html`, each in its own grammar file.  So `corpus/js/js.hbnf` and `corpus/css/css.hbnf` are standalone grammars, and `html-islands.hbnf` includes them (`include "../js/js.hbnf" as js`).
@@ -1027,3 +1037,30 @@ needed when a guest has to call back into its host (an HTML `<script>` that has 
 63. **`--layout=tape`: a lookahead over a rule that writes something is refused** (`an %emit inside a lookahead`).  The smallest case: `doc = 1*( "<" name !tc ">" )`, `name = 1*ALPHA`, `tc = !( SP / ">" ) ALPHA`.  In a tape every phrase rule that holds a node is a rule with emits, and a lookahead may not look at one (the tape could be put back by `rollback { tape_n }`, but the lookahead code does not do it).  Only the rules `x_upN` that an up reference makes of `!$K^` stay phrase rules (they write nothing).  `corpus/html/html.hbnf` (`!tag-char`) does not generate as a tape because of it.
 
 64. **Silent variants and rewrite rules are to be built and benched for the XML grammar too** (the user, 2026-11-04: "we won't know until we implement and bench. which we will do. no stone unturned. readable AND fast.").  The speed profile of the XML parse (callgrind, 2 MB catalog) showed nothing in it that is output a grammar would drop, so the speed agent's guess is that they would not make it faster; that is a guess.  They are wanted for smaller and clearer grammars, and the test is both: the readable spelling must also be measured, and the XML grammar is where it is measured.
+
+## 28. What the 2026-11-11 conversation proposed, against what hbnf has (the user, 2026-11-10 and 11; a map, nothing built)
+
+The user's decisions of those days are rows R591 to R603 of `decision-register.md`: a complete front end for C++ (the preprocessor included, one grammar for each version, oldest first), ALGOL 68 and COBOL (old and modern dialects), about 5,000 lines of grammar and epilogue for each grammar as a soft limit; grammars that read like the printed standard (Annex A), an investigation of set-logic operators, and a rewrite form that keeps a chain so that an error names the text written and the rule that fired.  An AI conversation (Grok, 2026-11-11) proposed the means; much of it is already in hbnf under another spelling.  This table puts the two side by side so that the vocabulary of the proposals is read once.  Under the standing rule, nothing marked "to be shown" is built before it has been shown and approved.
+
+| Proposed | Already in hbnf | State |
+|---|---|---|
+| `opt` after an element | `[ x ]`, `0*1 x` | `opt` is sugar: to be shown |
+| `X-seq` (one or more) and `X-list` (one or more, commas) | `1*x`, `1#x` (`n#m x`, `tests/commalist.sh`) | a naming convention first; sugar only if the counts of `bench/notation.sh` show a gain |
+| "one of" over a list of terminals | `"a" \| "b" \| ...` | to be shown |
+| Alternatives on separate lines | `\|` at the start of a continued line, as in `corpus/cobol/cobol.hbnf` | built |
+| Preferred reading (most vexing parse) | ordered choice takes the first that matches; `--forks` detects and forks locally (`tests/forks.sh`) | built; a `%prefer` mark is not needed unless a case shows it; GLR not built |
+| Type-name against identifier (dynamic token classes) | `context types`, `x ? types`, `%bind types += x`, `%scope` | built, C; the spelling `x in types` is proposed |
+| Template `>>` closes two lists | the parser reads characters, so `>>` is not a token to split; a context parameter (`expr(C in "angle" \| "plain")`) can make `>` end a template argument list | to be tried in the C++ grammar; nothing to build yet |
+| Operator ladder | levels found from the references, `--no-ladder`, `binary(N)` (`tests/ladder.sh`) | built |
+| Context tests at the end of an alternative | `%where { }` (host code), `x ? set`, `x ?! set` | built, C |
+| Sequence | juxtaposition | built |
+| Union | `\|` (ordered choice), ABNF's `/` where order does not change the language | built |
+| Intersection | `&x` followed by `y`: both read the same text (`tests/lookahead.sh`) | one spelling for "both hold" is to be shown |
+| Difference | `a - b`, `~class` | built |
+| Element of | `x ? set` | `in` / not in: to be shown |
+| All of, and "order does not matter" | none | to be shown (an unordered group: each member once, any order) |
+| Rewrite attached to an alternative (`=> replacement`), a trailing `%where` / `%emit`, a context-parameter rewrite, `%prefer`, named rewrite macros: the five options | `=> grammar(x)`, phase 1 only (section 15); section 25 is the proposal from a worked example | five spellings and the chain of spans (R591): to be shown |
+| The preprocessor as rewrites | a source stack, an idea in RFCPLAN step 20 (not decided) | to be shown, with the COBOL `COPY` and `REPLACE` |
+| COBOL `COPY REPLACING` as a lesson | none | a constraint: the substitutions are local and visible where used (R597); no open-ended textual recursion |
+
+The assistant's estimates in that conversation (a C++23 front end of 3,200 to 4,000 lines; the COBOL grammar down to 630 to 790) were not measured; its starting figure for the COBOL grammar was 1,048 lines, and `corpus/cobol/` is 405 lines of grammar with 54 and 62 of word lists.  The soft limit of the user's is reported beside the counts of `bench/notation.sh` (tokens, rules, concepts), since a line count alone does not say what a reader must hold.
