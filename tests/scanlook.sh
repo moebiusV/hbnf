@@ -26,7 +26,7 @@ run() {   # NAME
 		k=1
 		while [ $k -le $nc ]; do
 			want=$(cat "$W/cases/c$k.want")
-			got=$(grep -F "c$k.txt" "$2" | head -1 | cut -d' ' -f1)
+			got=$(grep -aF "c$k.txt" "$2" | head -1 | cut -d' ' -f1)
 			[ -n "$got" ] || got=none
 			[ "$got" = "$want" ] || { echo "scanlook: FAIL ($3, $1: \`$(cat "$W/cases/c$k.txt")\` should be $want and is $got)"; fail=1; }
 			k=$((k + 1))

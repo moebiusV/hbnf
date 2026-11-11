@@ -56,7 +56,7 @@ marker    = bullet | ordinal
 bullet    = '-' | '*' | '+'
 ordinal   = 1*9DIGIT ( '.' | ')' )
 
-table(N in 0..) := row %spaces N delimiter *( %spaces N *SP row )
+table(N in 0..) := row %spaces N delimiter *( %spaces N row )
 row       = '|' 1*( cell '|' ) *WSP nl
 cell      = *WSP *( !cell-end inline ) *WSP
 cell-end  = *WSP '|'

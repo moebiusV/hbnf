@@ -1,0 +1,8 @@
+; A rule of characters whose class starts above the Latin-1 range, so that the parser has to decode a sequence
+; (a class that holds every byte from 0x80 is matched without decoding: CONTEXTS section 26, item 21).  Only the shortest
+; form of a scalar value is UTF-8 (no overlong form, no surrogate, nothing past U+10FFFF); the others are not text
+; (CONTEXTS section 26, item 21).
+prefix none
+whitespace none
+doc = 1*cp
+cp = 0x20..0x7E / 0x100..0x10FFFF

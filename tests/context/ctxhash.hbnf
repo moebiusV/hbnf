@@ -1,0 +1,16 @@
+; A %where block that asks about a name in a buffer of its own, overwrites the buffer, and adds what is in it now:
+; the set must file the new text under its own hash, not under the one of the text that was asked about
+; (the hash of the name last asked about was once kept, and used by the add that followed at the same address).
+prefix none
+whitespace none
+context seen
+doc  = item
+item = name %where {
+    static char tmp[4];
+    memcpy (tmp, "ab", 2);
+    if (HBNF_IN (seen, tmp, 2)) return false;      /* not there yet */
+    memcpy (tmp, "cd", 2);                         /* the same address and length, other bytes */
+    HBNF_ADD (seen, tmp, 2);
+    return HBNF_IN (seen, "cd", 2);                /* found, if it was filed under its own hash */
+}
+name = 1*0x61..0x7A

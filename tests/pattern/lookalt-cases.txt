@@ -1,0 +1,13 @@
+ok	<ab >
+ok	<ab">
+ok	<a&amp;b >
+ok	<a&b >
+bad	<ab>
+bad	< >
+bad	<a>b"
+ok	{xyz}
+ok	{xaz}
+ok	{xbz}
+bad	{xyacz}
+bad	{xbcz}
+ok	{}

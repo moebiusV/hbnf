@@ -5072,10 +5072,14 @@ package body HBNF_Grammar is
      (A.Kind = B.Kind and then A.Min = B.Min and then A.Max = B.Max
       and then (case A.Kind is
                   when Literal => A.Lit = B.Lit and then A.No_Case = B.No_Case,
-                  when Name    => A.Name = B.Name,
+                  when Name    => A.Name = B.Name and then A.Args = B.Args,
                   when Group   => Same_Elements (A.Items, B.Items),
                   when Char_Range   => A.Lo = B.Lo and then A.Hi = B.Hi,
-                  when Block   => A.Code = B.Code,
+                  --  a lookahead, `$K` and the other context operations carry no code: what makes
+                  --  one the same as another is the operation, the name it works on and what it holds
+                  when Block   => A.Op = B.Op and then A.Code = B.Code and then A.Ctx = B.Ctx
+                                  and then A.Path = B.Path and then A.Id = B.Id
+                                  and then Same_Elements (A.Look, B.Look),
                   when Alt     => True,
                   when Negation => Same_Elements (A.Operand, B.Operand),
                   when Bit_Field => False));
@@ -7187,6 +7191,78 @@ package body HBNF_Grammar is
             Has_Value => False, Value => 0);
       end Join_Literal;
 
+      --  What a lookahead holds is literals, rules and alternatives of those.  A pattern argument
+      --  puts a group where its parameter stood (`!( X / "&" )` called with `space / DQUOTE`), so
+      --  the group's alternatives are spread over the branches it stands in: `( a / b ) c` is
+      --  `a c / b c`.  (The lookahead succeeds if any branch matches, so the kind of `/` is moot.)
+      package Branch_Lists is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Element_Vectors.Vector,
+         "=" => Element_Vectors."=");
+
+      function Look_Branches (V : Element_Vectors.Vector) return Branch_Lists.Vector is
+         Done : Branch_Lists.Vector;
+         Cur  : Branch_Lists.Vector;
+      begin
+         Cur.Append (Element_Vectors.Empty_Vector);
+         for E of V loop
+            if E.Kind = Alt then
+               for C of Cur loop
+                  Done.Append (C);
+               end loop;
+               Cur.Clear;
+               Cur.Append (Element_Vectors.Empty_Vector);
+            elsif E.Kind = Group and then E.Min = 1 and then E.Max = 1 then
+               declare
+                  Inner : constant Branch_Lists.Vector := Look_Branches (E.Items);
+                  Next  : Branch_Lists.Vector;
+               begin
+                  for C of Cur loop
+                     for I of Inner loop
+                        declare
+                           Joined : Element_Vectors.Vector := C;
+                        begin
+                           Joined.Append (I);
+                           Next.Append (Joined);
+                        end;
+                     end loop;
+                  end loop;
+                  Cur := Next;
+               end;
+            else
+               for K in 1 .. Natural (Cur.Length) loop
+                  declare
+                     Grown : Element_Vectors.Vector := Cur (K);
+                  begin
+                     Grown.Append (E);
+                     Cur.Replace_Element (K, Grown);
+                  end;
+               end loop;
+            end if;
+         end loop;
+         for C of Cur loop
+            Done.Append (C);
+         end loop;
+         return Done;
+      end Look_Branches;
+
+      function Flat_Look (V : Element_Vectors.Vector) return Element_Vectors.Vector is
+         Result : Element_Vectors.Vector;
+         First  : Boolean := True;
+      begin
+         if not (for some E of V => E.Kind = Group) then
+            return V;
+         end if;
+         for Br of Look_Branches (V) loop
+            if not First then
+               Result.Append (new Element'(Kind => Alt, Min => 1, Max => 1, Guard => 0,
+                                           Union => False));
+            end if;
+            First := False;
+            Result.Append (Br);
+         end loop;
+         return Result;
+      end Flat_Look;
+
       function Subst_One
         (E : Element_Access; B : Binding_Vectors.Vector; In_Rule : String)
          return Element_Access
@@ -7323,6 +7399,9 @@ package body HBNF_Grammar is
                   X : constant Element_Access := new Element'(E.all);
                begin
                   X.Look := Subst (E.Look, B, In_Rule);
+                  if E.Op in B_Not | B_And then
+                     X.Look := Flat_Look (X.Look);
+                  end if;
                   if E.Op in B_Bind | B_Test | B_Not_Test then
                      --  a context named by a parameter: the value is its name
                      declare
@@ -8519,6 +8598,21 @@ package body HBNF_Grammar is
       Changed : Boolean := True;
       Text    : Rule_Vectors.Vector;
    begin
+      --  --root=: the named rule goes first, a rule of bit fields too (it is then the root of the
+      --  bit layer, which reads the first one it holds)
+      if Root_Rule /= Null_Unbounded_String then
+         for K in 2 .. Natural (Rules.Length) loop
+            if Rules (K).Name = Root_Rule then
+               declare
+                  R : constant Rule := Rules (K);
+               begin
+                  Rules.Delete (K);
+                  Rules.Insert (1, R);
+               end;
+               exit;
+            end if;
+         end loop;
+      end if;
       while Changed loop
          Changed := False;
          for K in Is_Wire'Range loop
@@ -9417,9 +9511,17 @@ package body HBNF_Grammar is
                end if;
             end loop;
             if J = 0 then
-               raise Parse_Error with
-                 "--root=" & To_String (Root_Rule) & ": the schema has no rule"
-                 & " of that name";
+               --  a rule of bit fields is in the bit layer's store, and was put first there
+               declare
+                  Is_Bit_Rule : constant Boolean :=
+                    (for some W of Wire_Store => W.Name = Root_Rule);
+               begin
+                  if not Is_Bit_Rule then
+                     raise Parse_Error with
+                       "--root=" & To_String (Root_Rule) & ": the schema has no rule"
+                       & " of that name";
+                  end if;
+               end;
             end if;
             if J > 1 then
                declare
@@ -13949,8 +14051,14 @@ package body HBNF_Grammar is
       if Is_Token_Operand (Rules, Nm) then
          return True;
       end if;
+      --  A rule that runs its pattern as written (Runs_Emits) is a function that calls what it
+      --  names by name, even when its text alone would make it a token: `top :: int = "a" *digit`
+      --  calls the rule `digit`.  A rule of characters holds no %emit, so the declared value is
+      --  the test (a map lookup: this function is asked about every rule, again and again).
       for R of Rules loop
-         if not Is_Char_Rule (Rules, To_String (R.Name)) then
+         if not Is_Char_Rule (Rules, To_String (R.Name))
+           or else Value_Type (To_String (R.Name)) /= ""
+         then
             if Refers (R.Pattern) then
                return True;
             end if;

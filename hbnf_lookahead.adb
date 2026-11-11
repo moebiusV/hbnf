@@ -355,7 +355,15 @@ package body HBNF_Lookahead is
                           Natural (E.Items.Length), S, N);
                return S;
             end;
-         when Alt | Block =>
+         when Alt =>
+            return Empty;
+         when Block =>
+            --  `%spaces n` reads n spaces, and n can be 0 (a Block is nullable, so what follows
+            --  adds its own first bytes): the byte there may be a space.  A set without it let a
+            --  guard on the first byte (a loop of `%spaces N row`) refuse an indented line.
+            if E.Op = B_Spaces then
+               return Range_Set (32, 32);
+            end if;
             return Empty;
          when Bit_Field =>
             null;     --  a rule with bit fields never reaches here (Split_Wire)

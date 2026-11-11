@@ -121,6 +121,8 @@ expect_error() {
 }
 
 check net
+# --root= names a rule of bit fields that does not stand first (CONTEXTS section 26, item 69)
+check root_bits "" "" root_bits "-Wall -Wextra" --root=big
 check_rust net
 check_rust segwit
 check_rust mnemonic mnemonic_rust mnemonic_ports crypto

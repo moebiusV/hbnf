@@ -1,0 +1,4 @@
+; a negated class written inline in a rule that declares a value, with no %emit (CONTEXTS section 26, item 66)
+prefix none
+whitespace none
+top :: int = "[" *~"]" "]" | "{" ~"}" "}"

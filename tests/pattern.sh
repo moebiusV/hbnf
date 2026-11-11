@@ -88,6 +88,9 @@ parsers tests/pattern/underscore.hbnf tests/pattern/underscore-cases.txt "c rust
 # A file whose literals ignore case.
 parsers tests/pattern/nocase.hbnf tests/pattern/nocase-cases.txt "c rust zig ada"
 
+# A pattern of alternatives inside a lookahead (C first; the other backends follow).
+parsers tests/pattern/lookalt.hbnf tests/pattern/lookalt-cases.txt "c"
+
 # Tree-sitter is generated only.
 for g in pattern underscore nocase; do
 	"$CLI" tests/pattern/$g.hbnf --backend=tree-sitter > "$W/$g.js" 2> "$W/err" \

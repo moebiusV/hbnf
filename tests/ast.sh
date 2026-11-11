@@ -19,6 +19,19 @@ if ! cmp -s "$W/got.txt" tests/ast/expected.txt; then
 	echo "ast: FAIL"; diff -u tests/ast/expected.txt "$W/got.txt" | head -20; exit 1
 fi
 
+# A grammar with more than 255 kinds of node (COBOL has about 480): the tables name a node's kind in 16 bits
+# (CONTEXTS section 26, item 61: the dump crashed on the JavaScript and COBOL trees).  Every good COBOL program
+# is parsed and dumped.
+if [ -d corpus/cobol/tests/good ]; then
+	"$CLI" corpus/cobol/cobol.hbnf --backend=c --ast-tools > "$W/cob.c" 2> "$W/cob.err" \
+		|| { echo "ast: FAIL (generate cobol: $(head -c 200 "$W/cob.err"))"; exit 1; }
+	cat "$W/cob.c" tests/ast/dumpall.c > "$W/cm.c"
+	cc -std=gnu11 -D_GNU_SOURCE -w -include string.h -DROOT_T=compilation_group_t -DDUMP=dump_compilation_group \
+		"$W/cm.c" -o "$W/cobdump" 2> "$W/cc.txt" || { echo "ast: FAIL (compile cobol dump)"; head -5 "$W/cc.txt"; exit 1; }
+	"$W/cobdump" corpus/cobol/tests/good/*.cob > "$W/cobdump.out" 2>&1 \
+		|| { echo "ast: FAIL (the dump of a COBOL tree: $(head -c 300 "$W/cobdump.out"))"; exit 1; }
+fi
+
 # The same walk and dump in Rust (--ast): the first three sections must be the ones C printed, and
 # two trees are equal when their dumps are.
 if command -v rustc > /dev/null 2>&1; then

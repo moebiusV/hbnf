@@ -1,0 +1,13 @@
+; A pattern argument of alternatives inside a lookahead of the rule it is passed to
+; (CONTEXTS section 26, item 28: the generator stopped with CONSTRAINT_ERROR).  The group the
+; argument becomes is spread over the lookahead's branches: `( a / b ) "c"` is `a c / b c`.
+prefix none
+whitespace none
+doc = "<" chars( " " / DQUOTE ) ( " " / DQUOTE ) ">" / "{" tail( "a" / "b" ) "}"
+chars(X) := 1*( ref / amp / !( X / "&" ) char )
+tail(X)  := *( !( X "c" ) char2 )
+ref   = "&" 1*0x61..0x7A ";"
+amp   = "&"
+char  = 0x21..0x7E
+char2 = 0x21..0x7A
+DQUOTE = 0x22

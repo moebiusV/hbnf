@@ -3350,7 +3350,7 @@ package body HBNF_C is
            & "enum { HM_NODE, HM_PTR, HM_LIST, HM_STR, HM_INT, HM_UINT, HM_BOOL, "
            & "HM_ENUM };" & LF
            & "typedef struct { const char *name; unsigned short off; "
-           & "unsigned char type, target, size; } hbnf_m_t;" & LF
+           & "unsigned char type; unsigned short target; unsigned char size; } hbnf_m_t;" & LF
            & "typedef struct { unsigned short first, n; const char *name; } "
            & "hbnf_b_t;" & LF
            & "typedef struct { const char *name; unsigned short b0, nb, alt, "
@@ -8092,6 +8092,30 @@ package body HBNF_C is
                           & ") { fail(p, """ & Core_Desc (N) & """, 0, p->text + p->pos, 0); "
                           & Fail & " } " & C_Field (N) & " = " & Scalar_Value (N, "n")
                           & "; p->pos += n; }" & LF);
+                     elsif Is_Char_Rule (Rules, N) and then not Needs_Parse_Fn (Rules, N)
+                       and then Find (N) /= 0
+                       and then Rules (Find (N)).Jet_Code = Null_Unbounded_String
+                       and then E.Args = Null_Unbounded_String
+                     then
+                        --  A rule of characters that has no function of its own (the white-space rule,
+                        --  named in a pattern of a grammar that skips none): read by its scanner here,
+                        --  as the sequence code reads a hidden one.
+                        declare
+                           J   : constant Natural := Find (N);
+                           Opt : constant Boolean :=
+                             (Natural (Rules (J).Pattern.Length) = 1
+                              and then Rules (J).Pattern (1).Min = 0)
+                             or else Null_Flags (J);
+                        begin
+                           Append (Buf, Ind & "{ size_t n_ = " & Rule_Scanner (Rules, N)
+                             & "(p->text, p->pos, p->len);"
+                             & (if Opt then ""
+                                else " if (!n_) { fail(p, """ & N & """, 0, p->text + p->pos, 0); "
+                                     & Fail & " }")
+                             & (if Is_Hidden (N) then ""
+                                else " " & C_Field (N) & " = hbnf_mkstr (p->text + p->pos, n_);")
+                             & " p->pos += n_; }" & LF);
+                        end;
                      else
                         --  the quiet body calls the quiet bodies, which every rule that is called has
                         --  (but not one that puts the contexts back: that keeps its wrapper, and has
@@ -11024,6 +11048,10 @@ package body HBNF_C is
             Append (Res, "        c = (c << 6) | (b & 0x3F);");
             Append (Res, LF);
             Append (Res, "    }");
+            Append (Res, LF);
+            --  not a form that has a shorter one (overlong), not a surrogate, not past U+10FFFF
+            Append (Res, "    if ((n == 2 && c < 0x80) || (n == 3 && c < 0x800) || (n == 4 && c < 0x10000)"
+              & " || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) return 0;");
             Append (Res, LF);
             Append (Res, "    *cp = c; return n;");
             Append (Res, LF);

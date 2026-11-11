@@ -146,6 +146,8 @@ parsers tests/backref/join-run.hbnf tests/backref/join-run-cases.txt "c rust zig
 parsers tests/backref/join-run-nocase.hbnf tests/backref/join-run-nocase-cases.txt "c rust zig ada"
 parsers tests/backref/join-group.hbnf tests/backref/join-group-cases.txt "c rust zig ada"
 parsers tests/backref/dollar.hbnf tests/backref/dollar-cases.txt "c rust zig ada"
+# a repeated group that begins with a lookahead, and a `$K` after it
+parsers tests/backref/lookgroup.hbnf tests/backref/lookgroup-cases.txt "c rust zig ada"
 # `$K` keeps the case property of the element it repeats: the file's (a rule), the literal's (i"..." or s"...")
 parsers tests/backref/fold-file.hbnf tests/backref/fold-file-cases.txt "c rust zig ada"
 parsers tests/backref/fold-exact.hbnf tests/backref/fold-exact-cases.txt "c rust zig ada"

@@ -31,7 +31,21 @@ then
 	"$venv/bin/pip" install -q "tiktoken==$TOK_TIKTOKEN" "tokenizers==$TOK_TOKENIZERS"
 fi
 
-PYTHONDONTWRITEBYTECODE=1 "$venv/bin/python" -I "$here/tokens.py" "$cache" > "$here/results/tokens.md" 2> "$here/results/vals/tokens.txt"
+# the results are written beside the old ones and put in their place only when the counting succeeded: a failure
+# says why and leaves the figures that were there
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+if ! PYTHONDONTWRITEBYTECODE=1 "$venv/bin/python" -I "$here/tokens.py" "$cache" > "$tmp/tokens.md" 2> "$tmp/tokens.txt"; then
+	echo "tokens.sh: tokens.py failed, and bench/results/tokens.md is as it was:" >&2
+	cat "$tmp/tokens.txt" >&2
+	exit 1
+fi
+if [ ! -s "$tmp/tokens.md" ] || [ ! -s "$tmp/tokens.txt" ]; then
+	echo "tokens.sh: tokens.py wrote no table or no figures, and bench/results/tokens.md is as it was" >&2
+	exit 1
+fi
+mv "$tmp/tokens.md" "$here/results/tokens.md"
+mv "$tmp/tokens.txt" "$here/results/vals/tokens.txt"
 # bench/assemble.sh builds values.txt from vals/*.txt on a full run; keep this one's lines in it
 # between full runs, so the inline figures of the documents have them.
 if [ -f "$here/results/values.txt" ]; then

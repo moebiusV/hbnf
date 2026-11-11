@@ -1,0 +1,6 @@
+; --root= names a rule of bit fields: it is the root of the bit layer, wherever it stands in the file
+; (CONTEXTS section 26, item 69)
+prefix none
+whitespace none
+small = tag:4 lo:4
+big = tag:8 hi:8 lo:8

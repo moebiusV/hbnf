@@ -1,0 +1,9 @@
+; A repeated group that begins with a lookahead, followed at once by `$K` (CONTEXTS section 26, item 59): the lines
+; of a here-document, up to a line that begins with the word after `<<`.  The reader once rewrote
+; `*( A S ) A` as `A *( S A )` here, taking the lookahead for the same element as the `$d`.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+
+doc   = "<<" delim as d LF *( !$d *~LF LF ) $d LF
+delim = 1*ALPHA

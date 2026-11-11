@@ -112,15 +112,17 @@ for l in open(os.path.join(here, "results", "notation.md")):
     cells = [c.strip() for c in l.strip().strip("|").split("|")]
     if len(cells) == 6 and cells[5].isdigit():
         chars_in_table.append(int(cells[5]))
-if len(chars_in_table) != len(ROWS):
-    sys.exit("tokens.py: notation.md has %d rows of figures, this has %d" % (len(chars_in_table), len(ROWS)))
-
+# notation.md also has rows this script does not count (the tape grammars and their C), so each row here is found
+# in the table's column in order, and its text must have the characters that row has
 counted = []
-for (lang, label, reader, kind, files), want in zip(ROWS, chars_in_table):
+at = 0
+for (lang, label, reader, kind, files) in ROWS:
     text, lines = text_of(reader, kind, files)
     got = sum(len(w) for w in lines)
-    if got != want:
-        sys.exit("tokens.py: %s (%s) has %d characters here and %d in notation.md" % (lang or label, label, got, want))
+    if got not in chars_in_table[at:]:
+        sys.exit("tokens.py: %s (%s) has %d characters here, and notation.md has no such row after the one of the row before"
+                 % (lang or label, label, got))
+    at = chars_in_table.index(got, at) + 1
     counted.append((lang, label, got, n_o200k(text), n_qwen(text)))
 
 

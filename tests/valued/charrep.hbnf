@@ -1,0 +1,6 @@
+; a rule that declares a value, and has no %emit, still calls the character rules it names:
+; a repeated one, a one-or-more, an optional one (RFCPLAN step 15; CONTEXTS section 26, item 65)
+prefix none
+whitespace none
+top :: int = "a" *digit | "b" 1*digit | "c" [ digit ]
+digit = 0x30..0x39
