@@ -1299,7 +1299,7 @@ package body HBNF_Compilable is
       begin
          for E of V loop
             if (E.Kind = HBNF_Grammar.Block and then E.Op in HBNF_Grammar.B_Add | HBNF_Grammar.B_Remove
-                                                      | HBNF_Grammar.B_Fact | HBNF_Grammar.B_Reread)
+                                                      | HBNF_Grammar.B_Fact | HBNF_Grammar.B_Reread | HBNF_Grammar.B_Tree)
               or else (E.Kind = HBNF_Grammar.Group and then Has_Consequence (E.Items))
             then
                return True;
@@ -1314,7 +1314,7 @@ package body HBNF_Compilable is
       for R of Rules loop
          if Has_Consequence (R.Pattern) then
             raise Parse_Error with
-              "rule `" & To_String (R.Name) & "` has a consequence on a context, a fact or a rewrite (`=> set += tag`), "
+              "rule `" & To_String (R.Name) & "` has a consequence on a context, a fact or a rewrite (`=> set += tag`, `-> tree`), "
               & "which only the C backend generates";
          end if;
       end loop;

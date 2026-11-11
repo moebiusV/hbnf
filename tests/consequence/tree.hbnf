@@ -1,0 +1,12 @@
+; `->` (CONTEXTS section 30): when the alternative matches, the tree of the rule is as if the template had matched,
+; and the input is not touched.  COBOL's abbreviated combined condition `x > 1 AND 3` means `x > 1 AND x > 3`: its
+; tree is the tree of the long form.
+prefix none
+whitespace none
+
+cond = name as A " > " num as B " AND " num as C         -> A " > " B " AND " A " > " C
+     | rel " AND " rel
+     | rel
+rel  = name " > " num
+name = 1*0x61..0x7A
+num  = 1*0x30..0x39

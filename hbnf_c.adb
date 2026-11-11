@@ -863,6 +863,13 @@ package body HBNF_C is
       return Null_Unbounded_String;
    end Whitespace_Rule_Name;
 
+   --  True when the segment First .. Last ends in `-> template`: the tree is the one the template's sub-parse
+   --  made, alternative number and all, so the branch does not set its own.
+   function Ends_With_Tree
+     (Els : Element_Vectors.Vector; First, Last : Natural) return Boolean is
+     (First <= Last and then Last <= Natural (Els.Length)
+      and then Els (Last).Kind = Block and then Els (Last).Op = B_Tree);
+
    --  True when a rule is parsed by name: a core type (word/int/str/…, char
    --  rule or scanner action) is read as a scalar in place, a building block is inlined
    --  into a token's scanner, and the whitespace rule is only scanned by
@@ -6724,6 +6731,41 @@ package body HBNF_C is
                               Append (Buf, Ind & "  " & Fail & " }");
                               Append (Buf, LF);
                            end;
+                        when B_Tree =>
+                           --  `-> template`: the tree of the rule is as if the template, parsed by the rule itself,
+                           --  had matched.  The input is not touched and the position stays after the pattern; the
+                           --  template is built as text (in the arena, so that the tree's strings live as long as
+                           --  the tree), the node is cleared, and the rule reads the text into it.
+                           if Acc /= "r." then
+                              raise HBNF_Grammar.Parse_Error with
+                                "rule `" & To_String (Rules (Owner).Name) & "` has a `->` and its node is not a struct "
+                                & "of its own: `->` is for a tree of nodes (the ast layout).  It is not built for a tape, whose "
+                                & "words are offsets into the input and would not mean the text of the template, or for a "
+                                & "rule with an %emit";
+                           end if;
+                           declare
+                              RN : constant String := C_Name (To_String (Rules (Owner).Name));
+                           begin
+                              Append (Buf, Ind & "{ hbnf_sb sb_ = { 0, 0, 0 };");
+                              Append (Buf, LF);
+                              Append (Buf, Template_Stmts (To_String (E.Code)));
+                              Append (Buf, Ind & "  { parser_t sp_ = *p;  char *t_ = (char *)hbnf_alloc (sb_.n + 1);");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "    if (sb_.s) memcpy (t_, sb_.s, sb_.n);  t_[sb_.n] = 0;  free (sb_.s);");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "    sp_.text = t_;  sp_.len = sb_.n;  sp_.pos = 0;  sp_.err_pos = (size_t)-1;");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "    if (p->depth >= HBNF_MAX_DEPTH) { fail(p, ""shallower nesting"", 0, p->text + p->pos, 0); "
+                                & Fail & " }");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "    memset (&r, 0, sizeof r);");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "    if (!parse_rule_" & RN & " (&sp_, out) || sp_.pos != sp_.len) { fail(p, ""a tree that is as `"
+                                & RN & "`"", 0, p->text + p->pos, 0); " & Fail & " } }");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "}");
+                              Append (Buf, LF);
+                           end;
                         when B_Switch =>
                            if E.Path = Null_Unbounded_String then
                               Append (Buf, Ind & "hbnf_push(p, "
@@ -7777,6 +7819,7 @@ package body HBNF_C is
                      end if;
                      if (Ast_On or else (Owner > 0 and then (Is_Choice (Rules (Owner)) or else Overlay_Of (Owner))))
                        and then Natural (Alts.Length) >= Br
+                       and then not Ends_With_Tree (Els, Nd.First, Nd.Last)
                      then
                         Append (Buf, Ind & Acc & "_alt = " & To_String (Alts (Br)) & ";");
                         Append (Buf, LF);
@@ -7951,6 +7994,7 @@ package body HBNF_C is
                             Ws, Lead_Ws => not Hoist);
                   if (Ast_On or else (Owner > 0 and then (Is_Choice (Rules (Owner)) or else Overlay_Of (Owner))))
                     and then Natural (Alts.Length) >= LBr
+                    and then not Ends_With_Tree (Els, LSt, K - 1)
                   then
                      Append (Buf, Ind & Acc & "_alt = "
                        & To_String (Alts (LBr)) & ";");

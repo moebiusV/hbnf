@@ -52,6 +52,31 @@ run names stmt
 run macros define
 run fn ''
 
+# tree.hbnf: `->`, the tree is as if the template had matched.  Each case is two texts (TAB-separated) and whether their
+# trees, as --ast-tools dumps them, are the same, or different, or neither is a sentence (error).
+t=tests/consequence/tree.hbnf; d=$W/tree; mkdir -p "$d"
+"$CLI" "$t" --backend=c --ast-tools > "$d/p.c" 2> "$d/err" \
+	|| { echo "consequence: FAIL (tree does not generate: $(head -c 300 "$d/err"))"; fail=1; }
+if [ -s "$d/p.c" ]; then
+	cat "$d/p.c" tests/consequence/tree-driver.c > "$d/m.c"
+	cc -std=gnu11 -D_GNU_SOURCE -w -I runtime "$d/m.c" -o "$d/m" 2> "$d/cc.txt" \
+		|| { echo "consequence: FAIL (tree: the C does not compile: $(head -c 300 "$d/cc.txt"))"; fail=1; }
+	if [ -x "$d/m" ]; then
+		while IFS="$(printf '\t')" read -r want a b; do
+			total=$((total + 1))
+			got=$("$d/m" "$a" "$b" | cut -d: -f1)
+			[ "$got" = "$want" ] || { echo "consequence: FAIL (tree [$a] and [$b]: should be $want and is $got)"; fail=1; }
+		done < tests/consequence/tree-cases.txt
+	fi
+	# built for the tree of structs; a tape, which writes words and not a node, is refused
+	"$CLI" "$t" --backend=c --layout=tape 2>&1 > /dev/null | grep -q 'is not a struct of its own' \
+		|| { echo "consequence: FAIL (tree: --layout=tape is not refused)"; fail=1; }
+	for b in rust zig; do
+		"$CLI" "$t" --backend=$b 2>&1 > /dev/null | grep -q 'rule `cond` has a consequence on a context, a fact or a rewrite' \
+			|| { echo "consequence: FAIL (tree: $b does not refuse it by rule name)"; fail=1; }
+	done
+fi
+
 # what is not read is refused with what is
 refused() {   # refused TEXT PATTERN
 	printf 'prefix none\ncontext names\nwhitespace none\n%s\n' "$1" > "$W/v.hbnf"
@@ -63,5 +88,7 @@ refused 'doc = "a" => "x" N' 'no `as N` stands earlier'
 refused 'doc = "a" => 0' 'no `as 0` stands earlier'
 refused 'doc = "a" as T => T.attr = Q' 'no `as Q` stands earlier'
 refused 'doc = "a" as T => T = T' 'is not `tag.attribute`'
+refused 'doc = ( "a" as T -> T )' 'stands at the end of a rule'
+refused 'doc = "a" -> X' 'no `as X` stands earlier'
 [ $fail = 0 ] && echo "consequence: ok ($total cases, and the refusals)"
 exit $fail

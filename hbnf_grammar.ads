@@ -188,6 +188,7 @@ package HBNF_Grammar is
       B_Remove,      --  `=> set -= tag`: the same text is taken out of it
       B_Fact,        --  `=> tag.attr = tag2`: the text kept as tag2 (Code) is the `attr` (Path) of the name kept as tag (Ctx)
       B_Reread,      --  `=> template [with tag.attr = tag2]`: the text of the template (Code; the with clause in Path) replaces the match and is read again
+      B_Tree,        --  `-> template`: the tree of the rule is as if the template (Code) had matched; the input is not touched
       B_Switch);     --  `=> grammar(x)`: when the alternative has matched, x is the current grammar
                      --  (Path = "tag": Ctx is a tag bound by `as`, the text it kept names the grammar)
 

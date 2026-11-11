@@ -91,6 +91,7 @@ package body HBNF_Grammar is
    Epilogue_After_Line : Natural := 0;
    Context_Words   : Word_Vectors.Vector;
    Facts_Seen      : Boolean := False;     --  a fact or a template that reads one
+   Group_Depth     : Natural := 0;         --  how many groups and options the reader is inside
    Reread_Seen     : Boolean := False;     --  a rewrite, `=> template`
    Ctx_Code        : Boolean := False;   --  a `%where { }` or a `%bind { }` is written somewhere
 
@@ -861,6 +862,7 @@ package body HBNF_Grammar is
       Statements_On := False;
       Context_Words.Clear;
       Facts_Seen := False;
+      Group_Depth := 0;
       Reread_Seen := False;
       Ctx_Code := False;
       Ctx_Pending.Clear;
@@ -925,7 +927,7 @@ package body HBNF_Grammar is
                      T_Slash, T_LParen, T_RParen, T_LBrack, T_RBrack, T_Star,
                      T_Code, T_Comment, T_Newline, T_Pct, T_Char, T_Dash,
                      T_Prose, T_Tilde, T_At, T_Colon, T_Octets, T_Count, T_Bits,
-                     T_Guard, T_Hash, T_Meta, T_Arrow, T_Plus, T_Prefix, T_DotDot, T_Raw, T_EOF);
+                     T_Guard, T_Hash, T_Meta, T_Arrow, T_Tree, T_Plus, T_Prefix, T_DotDot, T_Raw, T_EOF);
    --  T_Prefix: the flags of a prefixed string, `i`, `s`, `r`, `ir` or `sr`,
    --  which the string token after it (T_String) belongs to.  T_DotDot: `..`,
    --  the range of two code points.
@@ -1225,6 +1227,56 @@ package body HBNF_Grammar is
            (Toks, Token'(K, Line, (if First_Col = 0 then Col else First_Col),
                          To_Unbounded_String (S)));
       end Emit;
+
+      --  What follows `=>` or `->`, to the end of the alternative (a line end, `|`, a closing bracket, a `%`
+      --  word, a comment), is the consequence: one token of text that the reader splits (CONTEXTS.md section 30).
+      procedure Raw_Consequence (I : in out Natural; Col : in out Natural) is
+      begin
+      declare
+         J      : Natural := I;
+         Depth  : Natural := 0;
+         Quoted : Boolean := False;
+      begin
+         while J <= Text'Last loop
+            declare
+               C : constant Character := Text (J);
+            begin
+               if Quoted then
+                  exit when C in ASCII.LF | ASCII.CR;
+                  if C = '"' then
+                     Quoted := False;
+                  end if;
+               elsif C = '"' then
+                  Quoted := True;
+               elsif C = '(' then
+                  Depth := Depth + 1;
+               elsif C = ')' then
+                  exit when Depth = 0;
+                  Depth := Depth - 1;
+               else
+                  exit when C in ASCII.LF | ASCII.CR | '|' | ']' | '%' | ';';
+               end if;
+            end;
+            J := J + 1;
+         end loop;
+         declare
+            First : Natural := I;
+            Last  : Natural := J - 1;
+         begin
+            while First <= Last and then Text (First) in ' ' | ASCII.HT loop
+               First := First + 1;
+            end loop;
+            while Last >= First and then Text (Last) in ' ' | ASCII.HT loop
+               Last := Last - 1;
+            end loop;
+            if First <= Last then
+               Emit (T_Raw, Text (First .. Last));
+            end if;
+         end;
+         Col := Col + (J - I);
+         I := J;
+      end;
+      end Raw_Consequence;
 
       --  The index of the bracket that closes the one at From (`(`, `[`),
       --  0 if none does; quoted strings are skipped.
@@ -1814,50 +1866,7 @@ package body HBNF_Grammar is
                   --  comment), is the consequences, one token of text that the reader splits at
                   --  the commas (CONTEXTS.md section 30).
                   Emit (T_Arrow);  I := I + 2;  Col := Col + 2;
-                  declare
-                     J      : Natural := I;
-                     Depth  : Natural := 0;
-                     Quoted : Boolean := False;
-                  begin
-                     while J <= Text'Last loop
-                        declare
-                           C : constant Character := Text (J);
-                        begin
-                           if Quoted then
-                              exit when C in ASCII.LF | ASCII.CR;
-                              if C = '"' then
-                                 Quoted := False;
-                              end if;
-                           elsif C = '"' then
-                              Quoted := True;
-                           elsif C = '(' then
-                              Depth := Depth + 1;
-                           elsif C = ')' then
-                              exit when Depth = 0;
-                              Depth := Depth - 1;
-                           else
-                              exit when C in ASCII.LF | ASCII.CR | '|' | ']' | '%' | ';';
-                           end if;
-                        end;
-                        J := J + 1;
-                     end loop;
-                     declare
-                        First : Natural := I;
-                        Last  : Natural := J - 1;
-                     begin
-                        while First <= Last and then Text (First) in ' ' | ASCII.HT loop
-                           First := First + 1;
-                        end loop;
-                        while Last >= First and then Text (Last) in ' ' | ASCII.HT loop
-                           Last := Last - 1;
-                        end loop;
-                        if First <= Last then
-                           Emit (T_Raw, Text (First .. Last));
-                        end if;
-                     end;
-                     Col := Col + (J - I);
-                     I := J;
-                  end;
+                  Raw_Consequence (I, Col);
                else
                   Emit (T_Eq, (if Legacy_Ops then "" else "="));
                   I := I + 1;  Col := Col + 1;
@@ -2088,7 +2097,14 @@ package body HBNF_Grammar is
                else
                   Emit (T_Star);   I := I + 1;  Col := Col + 1;
                end if;
-            when '-' => Emit (T_Dash);   I := I + 1;  Col := Col + 1;
+            when '-' =>
+               if I < Text'Last and then Text (I + 1) = '>' then
+                  --  `->`: the tree is as if what follows had matched (CONTEXTS.md section 30)
+                  Emit (T_Tree);  I := I + 2;  Col := Col + 2;
+                  Raw_Consequence (I, Col);
+               else
+                  Emit (T_Dash);   I := I + 1;  Col := Col + 1;
+               end if;
             when '~' => Emit (T_Tilde);  I := I + 1;  Col := Col + 1;
             when '#' =>
                --  `n#m x`: x, comma, x ... (decision 12).
@@ -4154,20 +4170,24 @@ package body HBNF_Grammar is
             end;
          when T_LParen =>
             Next (P);
+            Group_Depth := Group_Depth + 1;
             declare
                Items : constant Element_Vectors.Vector :=
                  Parse_Alternation (P);
             begin
+               Group_Depth := Group_Depth - 1;
                Expect (P, T_RParen, "')'");
                return new Element'
                  (Kind => Group, Min => 1, Max => 1, Items => Items);
             end;
          when T_LBrack =>
             Next (P);
+            Group_Depth := Group_Depth + 1;
             declare
                Items : constant Element_Vectors.Vector :=
                  Parse_Alternation (P);
             begin
+               Group_Depth := Group_Depth - 1;
                Expect (P, T_RBrack, "']'");
                return new Element'
                  (Kind => Group, Min => 0, Max => 1, Items => Items);
@@ -4753,7 +4773,7 @@ package body HBNF_Grammar is
       function Ends_Pattern (K : Positive) return Boolean is
         (P.Toks (K).Kind in
            T_Newline | T_RParen | T_RBrack | T_Bar | T_Slash | T_Comment
-           | T_Code | T_Arrow | T_EOF
+           | T_Code | T_Arrow | T_Tree | T_EOF
          or else (P.Toks (K).Kind = T_Pct
                   and then To_String (P.Toks (K).Text)
                            in "scan" | "action" | "emit" | "label"));
@@ -4862,7 +4882,7 @@ package body HBNF_Grammar is
    --    tag.attr = tag2 the text kept as tag2 is the attribute `attr` of the name kept as `tag` (a fact);
    --    template [with tag.attr = tag2]   the match is replaced by the template and read again.
    --  A value (`-> template`, the tree) is not built yet.
-   procedure Append_Switch (P : in out Parser; B : in out Element_Vectors.Vector) is
+   procedure Append_Switch (P : in out Parser; B : in out Element_Vectors.Vector; Tree : Boolean := False) is
       T : constant Token := Cur (P);
       Where : constant String := Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": ";
 
@@ -5128,6 +5148,21 @@ package body HBNF_Grammar is
                          Id => 0, Look => <>, Code => To_Unbounded_String (Template)));
       end Reread_Consequence;
 
+      --  `-> template`: the tree of the rule is as if the template, parsed by the rule itself, had matched
+      procedure Tree_Consequence (Item : String) is
+      begin
+         if Group_Depth > 0 then
+            Fail (Where & "`-> " & Item & "`: `->` stands at the end of a rule's own alternative, "
+                  & "not inside a group or an option");
+         end if;
+         Check_Template (Item, Item);
+         Reread_Seen := True;     --  the buffer of a template is the runtime of a rewrite (templates/c_reread.tmpl)
+         B.Append
+           (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Tree,
+                         Ctx => Null_Unbounded_String, Path => Null_Unbounded_String,
+                         Id => 0, Look => <>, Code => To_Unbounded_String (Item)));
+      end Tree_Consequence;
+
       procedure One (Item : String) is
       begin
          if Item'Length >= 10 and then Item (Item'First .. Item'First + 7) = "grammar("
@@ -5158,7 +5193,9 @@ package body HBNF_Grammar is
       end One;
    begin
       Next (P);
-      if Cur (P).Kind /= T_Raw then
+      if Cur (P).Kind /= T_Raw and then Tree then
+         Fail (Where & "`->` takes a template: the tree is as if it had matched, as `a = b -> c`");
+      elsif Cur (P).Kind /= T_Raw then
          Fail (Where & "`=>` takes the consequences of a match: `grammar(name)`, `set += tag`, "
                & "`set -= tag`, separated by commas");
       end if;
@@ -5169,6 +5206,10 @@ package body HBNF_Grammar is
          Quoted : Boolean := False;
       begin
          Next (P);
+         if Tree then
+            Tree_Consequence (Trim_Blanks (Raw));
+            return;
+         end if;
          for K in Raw'Range loop
             declare
                C : constant Character := Raw (K);
@@ -5204,6 +5245,8 @@ package body HBNF_Grammar is
       begin
          if Cur (P).Kind = T_Arrow then
             Append_Switch (P, B);
+         elsif Cur (P).Kind = T_Tree then
+            Append_Switch (P, B, Tree => True);
          end if;
          if Cur (P).Kind = T_Pct and then To_String (Cur (P).Text) = "label"
          then
