@@ -1217,7 +1217,7 @@ package body HBNF_Compilable is
                              & (if El_Nullable (Rules, A.Nullable, Required (E)) then ", and it can be empty" else "")
                              & ")");
                   end if;
-                  if E.Kind = Block and then E.Op in B_Not | B_And and then Bearing (E.Look) then
+                  if not Rolled and then E.Kind = Block and then E.Op in B_Not | B_And and then Bearing (E.Look) then
                      Refuse (R, "an %emit inside a lookahead");
                   end if;
                   if E.Kind = Group then

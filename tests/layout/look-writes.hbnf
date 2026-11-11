@@ -1,0 +1,7 @@
+; `!closer` under `layout tape` where `closer` writes entries (CONTEXTS section 26, items 17 and 63): the lookahead runs it and puts the tape back,
+; so the tape holds the entries of what is read and none of the trial.
+prefix none
+whitespace none
+doc = *( !closer item ) closer
+item = "a" int
+closer = "a" int "!"

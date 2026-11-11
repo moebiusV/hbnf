@@ -6965,6 +6965,25 @@ package body HBNF_C is
                                                   & Scan & "(p->text, p->pos, "
                                                   & "p->len); if (n_) p->pos += n_; "
                                                   & "else ok_ = 0; }");
+                                             elsif J /= 0 and then Emit_Value_Type (Rules (J)) /= ""
+                                               and then HBNF_Grammar.Rollback_State /= ""
+                                             then
+                                                --  a rule that runs emits, in a grammar that says what they change
+                                                --  (`rollback { }`; the tape layout): run it here, with those put back
+                                                declare
+                                                   Rbs : constant String_Vectors.Vector := Rollback_Items;
+                                                   Sv, Rs : U;
+                                                begin
+                                                   for Q in 1 .. Natural (Rbs.Length) loop
+                                                      Append (Sv, "__typeof__(" & To_String (Rbs (Q)) & ") rbl"
+                                                        & Img (Q) & "_ = " & To_String (Rbs (Q)) & "; ");
+                                                      Append (Rs, To_String (Rbs (Q)) & " = rbl" & Img (Q) & "_; ");
+                                                   end loop;
+                                                   Append (Buf, Ind & "    if (ok_) { " & Emit_Value_Type (Rules (J))
+                                                     & " t_; memset(&t_, 0, sizeof t_); " & To_String (Sv)
+                                                     & "ok_ = parse_rule_" & C_Name (NM) & "(p, &t_); "
+                                                     & To_String (Rs) & "(void)n_; }");
+                                                end;
                                              elsif J = 0 or else Emit_Value_Type (Rules (J)) /= "" then
                                                 raise Parse_Error with
                                                   "a lookahead (`!` or `&`) looks at a literal, a rule or "

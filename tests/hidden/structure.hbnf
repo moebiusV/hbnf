@@ -1,0 +1,9 @@
+; `hidden` over a rule that builds structure (CONTEXTS section 26, item 4): it is matched, read into a scratch value that is
+; dropped, and the tree has no field for it.  `mark` holds a number, so it is not just text.
+prefix none
+whitespace none
+
+doc  = name ":" mark rest
+hidden mark = "#" int ";"
+name = 1*0x61..0x7a
+rest = 1*0x61..0x7a

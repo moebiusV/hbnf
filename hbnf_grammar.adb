@@ -11010,21 +11010,14 @@ package body HBNF_Grammar is
       end if;
 
 
-      --  A hidden rule is matched and keeps nothing; that is a text rule's way of
-      --  being read, so a rule that builds structure cannot be one.
+      --  A hidden rule is matched and keeps nothing: a text rule is scanned, one that builds structure is read into a
+      --  scratch value that is dropped (CONTEXTS section 26, item 4).
       for R of Rules loop
          if Is_Hidden (To_String (R.Name)) then
             if R.Name = Rules (1).Name then
                raise Parse_Error with
                  "`" & To_String (R.Name) & "` is hidden, and it is the rule the "
                  & "grammar starts from: the tree would be empty";
-            elsif R.Jet_Code = Null_Unbounded_String
-              and then not Is_Char_Rule (Rules, To_String (R.Name))
-            then
-               raise Parse_Error with
-                 "`" & To_String (R.Name) & "` is hidden, but it builds structure, "
-                 & "and only a rule that is just text can keep nothing.  Hide the "
-                 & "text rules it is made of, or leave `hidden` off it";
             end if;
          end if;
       end loop;

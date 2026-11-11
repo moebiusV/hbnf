@@ -33,9 +33,27 @@ for be in rust zig ada; do
 	grep -Eiq '^ +(pub )?bnf_dash *: *bnf_?dash' "$W/decl.$be" \
 		&& { echo "hidden: FAIL (decl, $be: the hidden rule is still a field of the tree)"; fail=1; }
 done
-"$CLI" tests/hidden/phrase.hbnf --backend=c 2>&1 > /dev/null | grep -q 'builds structure' \
-	|| { echo "hidden: FAIL (a hidden rule that builds structure was accepted)"; fail=1; }
+# a hidden rule that builds structure (item 4): read into a scratch value, no field in the tree, the text still has to match
+"$CLI" tests/hidden/structure.hbnf --backend=c > "$W/st.c" 2> "$W/st.err" \
+	|| { echo "hidden: FAIL (structure: $(head -c 300 "$W/st.err"))"; fail=1; }
+if [ -s "$W/st.c" ]; then
+	sed -n '/^struct [a-z_]*doc_s {/,/^};/p' "$W/st.c" | grep -q 'mark' \
+		&& { echo "hidden: FAIL (structure: the hidden rule is a field of the tree)"; fail=1; }
+	root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/st.c")
+	cat "$W/st.c" corpus/c/check.c > "$W/stm.c"
+	cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/stm.c" -o "$W/st" 2> "$W/cc.txt" \
+		|| { echo "hidden: FAIL (structure: cc: $(head -c 300 "$W/cc.txt"))"; fail=1; }
+	for c in "ok abc:#12;xyz" "bad abc:#x;xyz" "bad abc:xyz"; do
+		printf '%s' "${c#* }" > "$W/t.txt"
+		[ -x "$W/st" ] && [ "$("$W/st" "$W/t.txt" | cut -d' ' -f1)" = "${c%% *}" ] \
+			|| { echo "hidden: FAIL (structure: [${c#* }] should be ${c%% *})"; fail=1; }
+	done
+fi
+for be in rust zig ada; do
+	"$CLI" tests/hidden/structure.hbnf --backend=$be > /dev/null 2> "$W/st.err" \
+		|| { echo "hidden: FAIL (structure, $be: $(head -c 300 "$W/st.err"))"; fail=1; }
+done
 "$CLI" tests/hidden/root.hbnf --backend=c 2>&1 > /dev/null | grep -q 'the rule the grammar starts from' \
 	|| { echo "hidden: FAIL (a hidden root was accepted)"; fail=1; }
-[ $fail = 0 ] && echo "hidden: OK (declaration, directive, hyperrule; structure and root refused)"
+[ $fail = 0 ] && echo "hidden: OK (declaration, directive, hyperrule; a rule that builds structure hidden; the root refused)"
 exit $fail

@@ -60,12 +60,12 @@ Queued reader and generator fixes (the titles are the item titles):
 |---|---|
 | 1, 2 | **done 2026-11-11 (`tests/lexer.sh`):** `'\'` is a backslash; `!'b'` and `&'c'` work.  `'c'` as a plain `"c"` everywhere was tried and not done: it changes markdown and Rust GraphQL (a letter in a rule of characters becomes a word), so `'c'` stays a code point elsewhere |
 | 3 | **works (verified 2026-11-11, C and Rust; `tests/lexer.sh`)**: a lookahead over a sequence |
-| 4, 5 | `hidden` and `!`/`&` over any rule in every layout; `bol`/`eol` are text for `hidden` and for rules of characters |
+| 4, 5 | **done 2026-11-11 (C, Rust, Zig, Ada for `hidden`; C for the tape):** `hidden` over a rule that builds structure (read into a scratch value, no field in the tree; `tests/hidden.sh`); `!`/`&` over a rule that writes tape entries; `!closer(N)` with `%spaces N` works in both layouts; a rule that holds `eol` can be hidden |
 | 6 | `%spaces N` at the start of a repeated group reads N as lost |
 | 7 | a pattern rule's instances are named for the pattern |
 | 11, 22, 29 | a negative lookahead over a rule that ends in one; a lookahead rule inside a rule of characters always warns; a multi-character lookahead in a rule of characters |
 | 13, 14, 15 | `word`; a token exception; letters in a rule of characters |
-| 17, 63 | `--layout=tape` and a lookahead over a rule that writes something is refused |
+| 17, 63 | **done 2026-11-11 (C; `tests/layout.sh`)**: a lookahead over a rule that writes under `--layout=tape` runs it and puts the tape back (the grammar's `rollback`) |
 | 23, 24 | a hyperrule's literal argument ignores `sensitivity string %i`; `$K` compares bytes (it keeps the case property since a4f96d9) |
 | 25 | `as K` and `$K` in the same sequence but in different group alternatives |
 | 26 | **does not reproduce 2026-11-11** (a phrase rule named `text` compiles in Rust and Zig; `tests/lexer.sh`) |

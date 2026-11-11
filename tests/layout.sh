@@ -112,5 +112,20 @@ printf 'prefix none\nlayout rb\ntop = "(" *( word ) ")"\n' > "$W/nokey.hbnf"
 "$CLI" "$W/nokey.hbnf" --backend=c 2>&1 >/dev/null | grep -q 'gives no key' \
 	|| { echo "layout: FAIL (rb with no key is not refused with how to give one)"; fail=1; }
 
+# a lookahead over a rule that writes entries (items 17 and 63): the tape holds what is read and nothing of the trial
+"$CLI" tests/layout/look-writes.hbnf --backend=c --layout=tape > "$W/lw.c" 2> "$W/lw.err" \
+	|| { echo "layout: FAIL (look-writes: $(head -c 300 "$W/lw.err"))"; fail=1; }
+if [ -s "$W/lw.c" ]; then
+	root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/lw.c")
+	cat "$W/lw.c" tests/layout/dump.c > "$W/lwm.c"
+	${CC:-cc} -std=gnu11 -D_GNU_SOURCE -w -Iruntime "-DOUT_T=$root" "$W/lwm.c" -o "$W/lw" 2> "$W/cc.err" \
+		|| { echo "layout: FAIL (look-writes does not compile: $(head -c 300 "$W/cc.err"))"; fail=1; }
+	if [ -x "$W/lw" ]; then
+		printf 'a1a2a3!' > "$W/lw.txt"
+		[ "$("$W/lw" "$W/lw.txt" | tr '\n' ' ')" = "tape doc int 1 int 2 int 3 " ] \
+			|| { echo "layout: FAIL (look-writes: the tape of a1a2a3! is not the entries of what was read: $("$W/lw" "$W/lw.txt" | tr '\n' ' '))"; fail=1; }
+	fi
+fi
+
 [ $fail = 0 ] && echo "layout: OK (a tape from the plain grammars of JSON, TOML and YAML; tailq; rb; C as a tape)"
 exit $fail
