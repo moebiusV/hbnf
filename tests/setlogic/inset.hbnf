@@ -1,0 +1,6 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top  = *( type ";" )
+type = word in ( "int" "char" "long" )
+word = 1*ALPHA

@@ -8,7 +8,7 @@
 #   - `all of ( a [b] c )`: each member once, in any order, one field for each member; `some of ( a b c )` one or more of them, `any of ( a b c )`
 #     none or more; `( a b c ) choose 2` takes 2 of them in the order written (3 shapes), `permute 2` in any order (6 shapes), the count n or n*m;
 #     in C so far (the other backends refuse them by rule name);
-#   - `x in ( ... )` after an element is not built yet and says so.
+#   - `x in ( "a" "b" )` after an element: the text x matched is one of them (C so far); `x in X not in Z` chains the tests.
 #   HBNF=/path/to/hbnf sh tests/setlogic.sh      (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
@@ -101,9 +101,22 @@ chk tests/setlogic/anyof.hbnf "ok D." "ok Dp1." "ok Dusagep1." "ok Dp1usage." "b
 chk tests/setlogic/permute.hbnf "ok Dab." "ok Dba." "ok Dac." "ok Dca." "ok Dbc." "ok Dcb." "bad Da." "bad Dabc." "bad Daa." "bad D."
 chk tests/setlogic/choose.hbnf "ok Dab." "ok Dac." "ok Dbc." "bad Dba." "bad Dca." "bad Dcb." "bad Da." "bad Dabc." "bad Daa."
 chk tests/setlogic/choose-range.hbnf "ok D." "ok Da." "ok Dc." "ok Dab." "ok Dac." "ok Dbc." "bad Dba." "bad Dabc." "bad Daa."
-printf 'prefix none\nwhitespace none\ntop = ( a b ) choose 2 with replacement\na = "a"\nb = "b"\n' > "$W/wr.hbnf"
-"$CLI" "$W/wr.hbnf" --backend=c 2>&1 > /dev/null | grep -q '`with replacement` is not built yet' || { echo "setlogic: FAIL (with replacement is not refused)"; fail=1; }
+# `with replacement` (R4): permute 2 of 3 with replacement is 2*( a | b | c ), 9 shapes; choose 2 of 3 with replacement is the members in
+# order, each repeated, 6 shapes, and counts them, so its members must be structures; the short forms are the same text
+chk tests/setlogic/permute-repl.hbnf "ok Daa." "ok Dab." "ok Dba." "ok Dcc." "ok Dbc." "bad Da." "bad Dabc." "bad D."
+chk tests/setlogic/short-pr.hbnf "ok Daa." "ok Dcb." "bad Da." "bad Dabc."
+chk tests/setlogic/short-p.hbnf "ok Dab." "ok Dba." "bad Daa." "bad Da."
+chk tests/setlogic/short-c.hbnf "ok Da." "ok Dab." "bad D." "bad Dabc." "bad Dba."
+chk tests/setlogic/choose-repl.hbnf "ok Da1a1." "ok Da1b1." "ok Da1c12." "ok Db1b1." "ok Db1c1." "ok Dc1c1." "bad Db1a1." "bad Dc1a1." "bad Da1." "bad Da1b1c1." "bad D."
+"$CLI" tests/setlogic/permute-repl.hbnf --backend=c > "$W/s1.c" 2> /dev/null; "$CLI" tests/setlogic/short-pr.hbnf --backend=c > "$W/s2.c" 2> /dev/null
+n=$((n + 1)); cmp -s "$W/s1.c" "$W/s2.c" || { echo "setlogic: FAIL (Pr(( ... ), 2) is not permute 2 with replacement)"; fail=1; }
+printf 'prefix none\nwhitespace none\ntop = "D" ( a b ) choose 2 with replacement\na = "a"\nb = "b"\n' > "$W/wr.hbnf"
+"$CLI" "$W/wr.hbnf" --backend=c 2>&1 > /dev/null | grep -q 'a member that is only text cannot be counted' || { echo "setlogic: FAIL (choose with replacement of text members is not refused)"; fail=1; }
 n=$((n + 1))
+# members that are literals, groups and repeated elements (R3); a member that matched nothing is not taken
+chk tests/setlogic/allof-kinds.hbnf "ok Dp1#fk=2." "ok Dk=2#fp1." "ok D#fp1k=2." "ok Dxp1#fk=2." "ok Dp1x#fk=2." "bad Dp1#fk=2" "bad Dp1k=2." "bad D#fk=2." "bad Dp1#fk=2#f." "bad Dp1#fk=2xx."
+chk tests/setlogic/anyof-rep.hbnf "ok D." "ok Daaa." "ok Dbbbb." "ok Dcc." "ok Dcccaabb." "ok Dbbcccaa." "bad Dc." "bad Dcccc." "bad Dabab."
+chk tests/setlogic/allof-rep.hbnf "ok Da." "ok Daa." "ok Dabb." "ok Dbba." "bad D." "bad Dbb." "bad Dbab."
 chk tests/setlogic/allof-first.hbnf "ok p1." "ok usagep1." "ok z." "ok p1.z.usagep2." "bad usage." "bad x." "bad p1usage"
 chk tests/setlogic/allof-opt.hbnf "ok D." "ok Dp1." "ok Dusage." "ok Dusagep1." "ok Dp1usage." "bad Dp1p2." "bad Dx."
 chk tests/setlogic/allof-two.hbnf "ok ab-c" "ok ba-cd" "ok ba-dc" "bad a-c" "bad ab-d" "bad ab-cc" "bad aab-c"
@@ -119,10 +132,13 @@ done
 printf 'prefix none\nwhitespace none\ntop = all of ( a a )\na = "a"\n' > "$W/dup.hbnf"
 "$CLI" "$W/dup.hbnf" --backend=c 2>&1 > /dev/null | grep -q 'names `a` twice' || { echo "setlogic: FAIL (all of ( a a ) is not refused)"; fail=1; }
 n=$((n + 1))
-# a written set after an element is not built yet
-printf 'prefix none\nwhitespace none\ntop = name in ( "a" "b" )\nname = 1*0x61..0x7a\n' > "$W/infix.hbnf"
-"$CLI" "$W/infix.hbnf" --backend=c 2>&1 > /dev/null | grep -q 'is not built yet' \
-	|| { echo "setlogic: FAIL (x in ( ... ) after an element is not refused with what is not built)"; fail=1; }
-n=$((n + 1))
+# `x in ( "a" "b" )` after an element (R2): the text x matched is one of the literals written, or is read whole by a rule written;
+# `x in X not in Z` (R1): the tests chain, each on the text x matched
+chk tests/setlogic/inset.hbnf "ok int;" "ok char;long;int;" "ok " "bad integer;" "bad in;" "bad intx;" "bad ;"
+chk tests/setlogic/inset-rule.hbnf "ok int;" "bad ab;"
+chk tests/setlogic/inset-uni.hbnf "ok int;long;" "bad integer;"
+"$CLI" tests/setlogic/inset.hbnf --backend=c > "$W/i1.c" 2> /dev/null; "$CLI" tests/setlogic/inset-uni.hbnf --backend=c > "$W/i2.c" 2> /dev/null
+n=$((n + 1)); cmp -s "$W/i1.c" "$W/i2.c" || { echo "setlogic: FAIL (x ∈ ( ... ) is not what x in ( ... ) generates)"; fail=1; }
+chk tests/setlogic/chain.hbnf "ok Tx;Qx;" "bad Qx;" "bad Tx;Ux;Qx;" "ok Tx;Ty;Uy;Qx;" "bad Tx;Ty;Uy;Qy;"
 [ $fail = 0 ] && echo "setlogic: OK ($n results: in, not in, ∈, ∉ and the written set generate what ?, ?! and the longest-first choice do, in four backends where the grammar can go to them)"
 exit $fail

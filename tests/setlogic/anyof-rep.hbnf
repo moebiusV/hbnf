@@ -1,0 +1,7 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top = "D" any of ( 1*a *b 2*3c ) "."
+a = "a"
+b = "b"
+c = "c"

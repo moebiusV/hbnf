@@ -1,0 +1,9 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top = "D" ( a b c ) choose 2 with replacement "."
+a   = "a" all of ( p [q] )
+b   = "b" all of ( p [q] )
+c   = "c" all of ( p [q] )
+p   = "1"
+q   = "2"

@@ -1,0 +1,7 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top = "D" Pr(( a b c ), 2) "."
+a = "a"
+b = "b"
+c = "c"

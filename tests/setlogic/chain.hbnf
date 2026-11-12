@@ -1,0 +1,10 @@
+prefix none
+context types
+context vars
+whitespace none
+top  = *stmt
+stmt = decl | use | q
+decl = "T" name as N ";" => types += N
+use  = "U" name as V ";" => vars += V
+q    = "Q" name in types not in vars ";"
+name = 1*0x61..0x7a

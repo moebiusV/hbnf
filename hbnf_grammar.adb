@@ -58,7 +58,7 @@ package body HBNF_Grammar is
    function Pick_Kind (E : Element_Access) return Character is
       C : constant String := To_String (E.Code);
    begin
-      return (if C'Length > 1 and then C (C'First) in 'P' | 'C' and then C (C'First + 1) = ':' then C (C'First) else ' ');
+      return (if C'Length > 1 and then C (C'First) in 'P' | 'C' | 'S' and then C (C'First + 1) = ':' then C (C'First) else ' ');
    end Pick_Kind;
 
    function Pick_Part (E : Element_Access; Which : Positive) return Natural is
@@ -1304,6 +1304,9 @@ package body HBNF_Grammar is
       --  `%i"abc"`.  The other dialects read the spellings of their notations.
       Hbnf_Notation : constant Boolean := not Legacy_Ops;
 
+      --  `C(( a b c ), 2)`: the lexer reads the group as usual and then skips the `, 2)` it has already read
+      Pick_Skip_At, Pick_Skip_To : Natural := 0;
+
       --  The string that comes next is `r"..."`: raw, a backslash only keeps
       --  the character after it from closing the string.
       Regex_Next : Boolean := False;
@@ -1582,6 +1585,12 @@ package body HBNF_Grammar is
       Last_Lex_Hbnf := Hbnf_Notation;
       Last_Lex_Abnf := Abnf_Here;
       while I <= Text'Last loop
+         if Pick_Skip_At /= 0 and then I = Pick_Skip_At then
+            Col := Col + (Pick_Skip_To - I);
+            I := Pick_Skip_To;
+            Pick_Skip_At := 0;
+         end if;
+         exit when I > Text'Last;
          case Text (I) is
             when ' ' | ASCII.HT =>
                I := I + 1;  Col := Col + 1;
@@ -2706,6 +2715,8 @@ package body HBNF_Grammar is
                      --  call is one name, read by Expand_Params.
                      if I <= Text'Last and then Text (I) = '('
                        and then Text (Start .. I - 1) not in "bitsof" | "bits"
+                       and then not (Hbnf_Notation and then Text (Start .. I - 1) in "C" | "P" | "Cr" | "Pr"
+                                     and then I < Text'Last and then Text (I + 1) = '(')
                        and then not (not Toks.Is_Empty
                                      and then Toks.Last_Element.Kind = T_Colon)
                      then
@@ -2780,9 +2791,9 @@ package body HBNF_Grammar is
                         --  `( a b c ) choose 2`, `permute 1*3`: how many of the members, from n or n*m (R659);
                         --  `with replacement` is not built yet
                         declare
-                           Kind : constant Character := (if Text (Start) = 'c' then 'C' else 'P');
                            J    : Natural := I;
                            Lo, Hi : Natural := 0;
+                           Repl : Boolean := False;
                         begin
                            while Text (J) in ' ' | ASCII.HT loop
                               J := J + 1;
@@ -2800,20 +2811,108 @@ package body HBNF_Grammar is
                                  J := J + 1;
                               end loop;
                            end if;
-                           if Next_Word_End (Text, J, "with") > 0 then
-                              raise Parse_Error with
-                                Integer'Image (Line) & ":" & Integer'Image (Col)
-                                & ": `with replacement` is not built yet; `choose` and `permute` take each member at most once";
-                           end if;
+                           declare
+                              W1 : constant Natural := Next_Word_End (Text, J, "with");
+                              W2 : constant Natural := (if W1 > 0 then Next_Word_End (Text, W1, "replacement") else 0);
+                           begin
+                              if W1 > 0 and then W2 = 0 then
+                                 raise Parse_Error with
+                                   Integer'Image (Line) & ":" & Integer'Image (Col) & ": `with` here is `with replacement`";
+                              elsif W2 > 0 then
+                                 --  members may be taken again: R for permute, S for choose
+                                 Repl := True;
+                                 J := W2;
+                              end if;
+                           end;
                            if Hi < Lo then
                               raise Parse_Error with
                                 Integer'Image (Line) & ":" & Integer'Image (Col) & ": the count of `" & Text (Start .. I - 1)
                                 & "` is n or n*m with n up to m";
                            end if;
                            Emit (T_Pct, "pick");
-                           Emit (T_Name, Kind & ':' & Ada.Strings.Fixed.Trim (Natural'Image (Lo), Ada.Strings.Both) & ':'
+                           Emit (T_Name, (if Text (Start) = 'c' then (if Repl then 'S' else 'C') else (if Repl then 'R' else 'P'))
+                                 & ':' & Ada.Strings.Fixed.Trim (Natural'Image (Lo), Ada.Strings.Both) & ':'
                                  & Ada.Strings.Fixed.Trim (Natural'Image (Hi), Ada.Strings.Both));
                            I := J;
+                        end;
+                     elsif Hbnf_Notation and then Text (Start .. I - 1) in "C" | "P" | "Cr" | "Pr" and then Col > 1
+                       and then I < Text'Last and then Text (I) = '(' and then Text (I + 1) = '('
+                     then
+                        --  `C(( a b c ), 2)`, `P(...)`, `Cr(...)`, `Pr(...)`: the short forms of `( a b c ) choose 2`, `permute 2`,
+                        --  and those `with replacement` (R659): the count follows the group, after a comma
+                        declare
+                           W     : constant String := Text (Start .. I - 1);
+                           Open  : constant Natural := I + 1;     --  the group's `(`
+                           J     : Natural := Open;
+                           Depth : Natural := 0;
+                           Lo, Hi : Natural := 0;
+                           In_Q  : Boolean := False;
+                           Q     : Character := '"';
+                           Where_M : constant String := Integer'Image (Line) & ":" & Integer'Image (Col) & ": `" & W & "(( ... ), k)`: ";
+                        begin
+                           if Pick_Skip_At /= 0 then
+                              raise Parse_Error with Where_M & "a short form inside another is not read";
+                           end if;
+                           while J <= Text'Last and then Text (J) /= ASCII.LF loop
+                              if In_Q then
+                                 In_Q := Text (J) /= Q;
+                              elsif Text (J) = '"' or else Text (J) = ''' then
+                                 In_Q := True;
+                                 Q := Text (J);
+                              elsif Text (J) = '(' then
+                                 Depth := Depth + 1;
+                              elsif Text (J) = ')' then
+                                 Depth := Depth - 1;
+                                 exit when Depth = 0;
+                              end if;
+                              J := J + 1;
+                           end loop;
+                           if J > Text'Last or else Text (J) /= ')' then
+                              raise Parse_Error with Where_M & "the group ends with `)` on the same line";
+                           end if;
+                           Pick_Skip_At := J + 1;          --  after the group's `)`: `, k )` follows
+                           J := J + 1;
+                           while J <= Text'Last and then Text (J) in ' ' | ASCII.HT loop
+                              J := J + 1;
+                           end loop;
+                           if J > Text'Last or else Text (J) /= ',' then
+                              raise Parse_Error with Where_M & "the count follows the group, after a comma";
+                           end if;
+                           J := J + 1;
+                           while J <= Text'Last and then Text (J) in ' ' | ASCII.HT loop
+                              J := J + 1;
+                           end loop;
+                           if J > Text'Last or else Text (J) not in '0' .. '9' then
+                              raise Parse_Error with Where_M & "the count is n or n*m";
+                           end if;
+                           while J <= Text'Last and then Text (J) in '0' .. '9' loop
+                              Lo := Lo * 10 + Character'Pos (Text (J)) - Character'Pos ('0');
+                              J := J + 1;
+                           end loop;
+                           Hi := Lo;
+                           if J < Text'Last and then Text (J) = '*' and then Text (J + 1) in '0' .. '9' then
+                              J := J + 1;
+                              Hi := 0;
+                              while J <= Text'Last and then Text (J) in '0' .. '9' loop
+                                 Hi := Hi * 10 + Character'Pos (Text (J)) - Character'Pos ('0');
+                                 J := J + 1;
+                              end loop;
+                           end if;
+                           while J <= Text'Last and then Text (J) in ' ' | ASCII.HT loop
+                              J := J + 1;
+                           end loop;
+                           if J > Text'Last or else Text (J) /= ')' then
+                              raise Parse_Error with Where_M & "the count ends with `)`";
+                           end if;
+                           if Hi < Lo then
+                              raise Parse_Error with Where_M & "the count is n or n*m with n up to m";
+                           end if;
+                           Pick_Skip_To := J + 1;
+                           Emit (T_Pct, "pickfn");
+                           Emit (T_Name, (if W (W'First) = 'C' then (if W'Length = 2 then 'S' else 'C') else (if W'Length = 2 then 'R' else 'P'))
+                                 & ':' & Ada.Strings.Fixed.Trim (Natural'Image (Lo), Ada.Strings.Both) & ':'
+                                 & Ada.Strings.Fixed.Trim (Natural'Image (Hi), Ada.Strings.Both));
+                           I := Open;                      --  go on at the group
                         end;
                      elsif Hbnf_Notation and then Text (Start .. I - 1) = "all" and then Col > 1
                        and then Next_Word_End (Text, I, "of") > 0
@@ -5098,6 +5197,20 @@ package body HBNF_Grammar is
             E.Op := B_Both;
             E.Look.Append (A);
          end;
+      elsif W = "pickfn" then
+         --  `C(( a b c ), 2)`: the lexer gave the count, and the group follows
+         E.Op := B_Any_Order;
+         E.Id := 0;
+         E.Code := Cur (P).Text;
+         Next (P);
+         declare
+            G : constant Element_Access := Parse_Atom (P);
+         begin
+            if G.Kind /= Group or else G.Min /= 1 or else G.Max /= 1 then
+               raise Parse_Error with Where & "`C`, `P`, `Cr` and `Pr` take a group of members: `C(( a b c ), 2)`";
+            end if;
+            E.Look.Append (G);
+         end;
       elsif W = "pick" then
          --  `( a b c ) choose 2`: the marker waits for the group it follows, which the caller takes the members from
          E.Op := B_Any_Order;
@@ -5124,27 +5237,32 @@ package body HBNF_Grammar is
                   raise Parse_Error with Where & "`all of ( ... )`: the members end with `)`";
                end if;
                declare
-                  A : constant Element_Access := Parse_Atom (P);
+                  A : constant Element_Access := Parse_Element (P);
                   M : Element_Access;
                begin
-                  if A.Kind = Name and then A.Min = 1 and then A.Max = 1 then
-                     M := A;
-                     Append (Mask, (if W = "allof" then '1' else '0'));
-                  elsif W /= "allof" then
-                     raise Parse_Error with
-                       Where & "`any of` and `some of` take rules, each of which may be left out already: `some of ( a b c )`";
-                  elsif A.Kind = Group and then A.Min = 0 and then A.Max = 1 and then Natural (A.Items.Length) = 1
-                    and then A.Items.First_Element.Kind = Name
-                    and then A.Items.First_Element.Min = 1 and then A.Items.First_Element.Max = 1
-                  then
-                     M := new Element'(A.Items.First_Element.all);
+                  if A.Kind = Group and then A.Min = 0 and then A.Max = 1 then
+                     --  `[ ... ]`: a member that may be left out; a rule alone in it is that rule
+                     if Natural (A.Items.Length) = 1 and then A.Items.First_Element.Kind = Name
+                       and then A.Items.First_Element.Min = 1 and then A.Items.First_Element.Max = 1
+                     then
+                        M := new Element'(A.Items.First_Element.all);
+                     else
+                        M := new Element'(Kind => Group, Min => 1, Max => 1, Items => A.Items);
+                     end if;
                      Append (Mask, '0');
+                  elsif A.Kind in Name | Literal | Group then
+                     --  a rule, a literal, a group or any of those repeated: a repeated one that may be empty may be left out
+                     M := A;
+                     Append (Mask, (if W = "allof" and then A.Min >= 1 then '1' else '0'));
                   else
                      raise Parse_Error with
-                       Where & "`all of ( ... )` takes rules, and `[ rule ]` for one that may be left out: `all of ( a [b] c )`";
+                       Where & "`" & (if W = "allof" then "all" elsif W = "anyof" then "any" else "some")
+                       & " of ( ... )` takes rules, literals and groups, each as written or repeated, and `[ ... ]` for one that may be left out";
                   end if;
                   for X of Items loop
-                     if X.Name = M.Name then
+                     if M.Kind = Name and then M.Min = 1 and then M.Max = 1 and then X.Kind = Name and then X.Min = 1
+                       and then X.Max = 1 and then X.Name = M.Name
+                     then
                         raise Parse_Error with
                           Where & "`all of ( ... )` names `" & To_String (M.Name) & "` twice; each member is used once";
                      end if;
@@ -5330,7 +5448,7 @@ package body HBNF_Grammar is
             P.Pos := P.Pos + 2;
          elsif Cur (P).Kind = T_Pct
            and then To_String (Cur (P).Text)
-                    in "test" | "nottest" | "bind" | "scope" | "where" | "not" | "and" | "both" | "allof" | "anyof" | "someof" | "pick"
+                    in "test" | "nottest" | "bind" | "scope" | "where" | "not" | "and" | "both" | "allof" | "anyof" | "someof" | "pick" | "pickfn"
                        | "as" | "same" | "spaces" | "col" | "num"
          then
             if V.Is_Empty and then To_String (Cur (P).Text) = "as" then
@@ -5355,28 +5473,39 @@ package body HBNF_Grammar is
                     Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
                     & ": `intersect` follows the element it intersects: `x intersect y`";
                elsif Op.Kind = Block and then Op.Op = B_Any_Order then
-                  --  `( a b c ) choose 2`: the group before it is the members
+                  --  `( a b c ) choose 2` (the group before it is the members) or `C(( a b c ), 2)` (the group is held in the
+                  --  marker): the members, each taken at most once; `permute 2 with replacement` is `2*( a | b | c )`, a
+                  --  repetition of the choice, and `choose 2 with replacement` the members in order, each repeated, with
+                  --  the count of all of them checked
                   declare
+                     Held : constant Boolean := not Op.Look.Is_Empty;
                      G    : Element_Access;
                      Mask : Unbounded_String;
                      Mem  : Element_Vectors.Vector;
+                     Code : constant String := To_String (Op.Code);
+                     Kind : constant Character := Code (Code'First);
                   begin
-                     if V.Is_Empty or else V.Last_Element.Kind /= Group or else V.Last_Element.Min /= 1
+                     if Held then
+                        G := Op.Look.First_Element;
+                     elsif V.Is_Empty or else V.Last_Element.Kind /= Group or else V.Last_Element.Min /= 1
                        or else V.Last_Element.Max /= 1
                      then
                         raise Parse_Error with
                           Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
                           & ": `choose` and `permute` follow a group of rules: `( a b c ) choose 2`";
+                     else
+                        G := V.Last_Element;
                      end if;
-                     G := V.Last_Element;
                      for X of G.Items loop
-                        if X.Kind /= Name or else X.Min /= 1 or else X.Max /= 1 then
+                        if X.Kind not in Name | Literal | Group then
                            raise Parse_Error with
                              Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
-                             & ": the members of `choose` and `permute` are rules: `( a b c ) choose 2`";
+                             & ": the members of `choose` and `permute` are rules, literals and groups: `( a b c ) choose 2`";
                         end if;
                         for Y of Mem loop
-                           if Y.Name = X.Name then
+                           if X.Kind = Name and then X.Min = 1 and then X.Max = 1 and then Y.Kind = Name and then Y.Min = 1
+                             and then Y.Max = 1 and then Y.Name = X.Name
+                           then
                               raise Parse_Error with
                                 Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
                                 & ": `choose` and `permute` name `" & To_String (X.Name) & "` twice; each member is used once";
@@ -5390,12 +5519,44 @@ package body HBNF_Grammar is
                           Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
                           & ": `choose` and `permute` take from 1 to 16 members";
                      end if;
-                     V.Delete_Last;
-                     V.Append (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Any_Order, Ctx => <>, Path => Mask,
-                                            Id => Natural (Mem.Length), Look => <>, Code => Op.Code));
-                     for X of Mem loop
-                        V.Append (X);
-                     end loop;
+                     if not Held then
+                        V.Delete_Last;
+                     end if;
+                     if Kind = 'R' then
+                        --  permute with replacement: lo..hi of the members, in any order, each as often as it comes
+                        declare
+                           Alts : Element_Vectors.Vector;
+                           Lo   : constant Natural := Natural'Value (Code (Code'First + 2 .. Ada.Strings.Fixed.Index (Code, ":", Code'First + 2) - 1));
+                           Hi   : constant Natural := Natural'Value (Code (Ada.Strings.Fixed.Index (Code, ":", Code'First + 2) + 1 .. Code'Last));
+                        begin
+                           for X of Mem loop
+                              if not Alts.Is_Empty then
+                                 Alts.Append (new Element'(Kind => Alt, Min => 1, Max => 1, Guard => 0, Union => False));
+                              end if;
+                              Alts.Append (X);
+                           end loop;
+                           V.Append (new Element'(Kind => Group, Min => Lo, Max => Hi, Items => Alts));
+                        end;
+                     else
+                        V.Append (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Any_Order, Ctx => <>, Path => Mask,
+                                               Id => Natural (Mem.Length), Look => <>, Code => Op.Code));
+                        for X of Mem loop
+                           if Kind = 'S' then
+                              --  with replacement, in order: each member is taken as often as it comes, up to the most
+                              declare
+                                 Hi : constant Natural :=
+                                   Natural'Value (Code (Ada.Strings.Fixed.Index (Code, ":", Code'First + 2) + 1 .. Code'Last));
+                                 R  : constant Element_Access := new Element'(X.all);
+                              begin
+                                 R.Min := 0;
+                                 R.Max := (if Hi = 0 then 1 else Hi);
+                                 V.Append (R);
+                              end;
+                           else
+                              V.Append (X);
+                           end if;
+                        end loop;
+                     end if;
                   end;
                elsif Op.Kind = Group and then not Op.Items.Is_Empty and then Op.Items.First_Element.Kind = Block
                  and then Op.Items.First_Element.Op = B_Any_Order
@@ -5413,12 +5574,16 @@ package body HBNF_Grammar is
                      V.Append (X);
                   end loop;
                elsif Op.Kind = Group and then not V.Is_Empty and then V.Last_Element.Kind /= Alt then
-                  --  `x in ( "a" "b" )`: x's text is one of them; that is an intersection (`x intersect ( "a" | "b" )`), which is
-                  --  built next
-                  raise Parse_Error with
-                    Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
-                    & ": `x in ( ... )` with a written set after an element is not built yet; "
-                    & "`in ( ... )` at the start of an alternative is one of the literals";
+                  --  `x in ( "a" "b" )`: x's text is one of them; that is an intersection (`x intersect ( "a" | "b" )`) with the
+                  --  set, which the backend checks the text against
+                  declare
+                     B : constant Element_Access :=
+                       new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Both, Ctx => <>, Path => <>, Id => 0,
+                                    Look => <>, Code => <>);
+                  begin
+                     B.Look.Append (Op);
+                     V.Append (B);
+                  end;
                else
                   Element_Vectors.Append (V, Op);
                end if;
@@ -15573,8 +15738,18 @@ package body HBNF_Grammar is
       procedure Flatten (V : in out Element_Vectors.Vector; Owner : String;
                          N : in out Natural; Ws : Unbounded_String) is
          Out_V : Element_Vectors.Vector;
+         Left  : Natural := 0;     --  members of an `all of ( ... )` still to come: each stays one element
       begin
          for E of V loop
+            declare
+               Member : constant Boolean := Left > 0;
+            begin
+            if Member then
+               Left := Left - 1;
+            end if;
+            if E.Kind = Block and then E.Op = B_Any_Order then
+               Left := E.Id;
+            end if;
             if E.Kind = Block and then E.Op = B_Action then
                --  A block between elements: a rule of its own that matches
                --  nothing and runs the code.  `expr = term "+" %action{ … }
@@ -15606,8 +15781,8 @@ package body HBNF_Grammar is
                end;
             elsif Simple (E) and then E.Kind /= Group then
                Out_V.Append (E);
-            elsif Simple (E) then
-               --  `( a b )`: the same as `a b`.
+            elsif Simple (E) and then not Member then
+               --  `( a b )`: the same as `a b`.  (A member of `all of ( ... )` is a rule of its own: it is taken or left as a whole.)
                declare
                   Inner : Element_Vectors.Vector := E.Items;
                begin
@@ -15670,6 +15845,7 @@ package body HBNF_Grammar is
                   end if;
                end;
             end if;
+            end;
          end loop;
          V := Out_V;
       end Flatten;

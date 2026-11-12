@@ -1,0 +1,6 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top   = "D" all of ( pic "#f" ( "k=" val ) [ "x" ] ) "."
+pic   = "p" 1*DIGIT
+val   = 1*DIGIT

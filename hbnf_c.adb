@@ -6485,6 +6485,37 @@ package body HBNF_C is
             exit when Stop;
             if K <= Skip_To then
                null;
+            elsif Els (K).Kind = Block and then Els (K).Op = B_Any_Order and then HBNF_Grammar.Pick_Kind (Els (K)) = 'S' then
+               --  `( a b c ) choose 2 with replacement`: the members in the order written, each as often as it comes (the
+               --  list rule each was made into); the number of all of them is counted and checked
+               declare
+                  N    : constant Natural := Els (K).Id;
+                  Gid  : constant String := Sid & "_" & Ctx_Img (K);
+                  PMin : constant Natural := HBNF_Grammar.Pick_Min (Els (K));
+                  PMax : constant Natural := HBNF_Grammar.Pick_Max (Els (K));
+               begin
+                  Append (Buf, Ind & "{ size_t cn" & Gid & " = 0;" & LF);
+                  for J in 1 .. N loop
+                     declare
+                        M  : constant Element_Access := Els (K + J);
+                        NM : constant String := (if M.Kind = Name then To_String (M.Name) else "");
+                     begin
+                        if M.Kind /= Name or else Find (NM) = 0 or else Analyze (Rules, Find (NM)).Kind /= List then
+                           raise Parse_Error with
+                             "rule `" & To_String (Rules (Owner).Name)
+                             & "` has `choose ... with replacement`, whose members must be rules that have a structure here (a member that is only text cannot be counted)";
+                        end if;
+                        Emit_Seq (Owner, Element_Vectors.To_Vector (M, 1), 1, 1, Acc, Buf, Fail, Ind & "  ", Ws,
+                                  Seg_Var => Seg_Var, Alt_Tape => Alt_Tape);
+                        Append (Buf, Ind & "  { struct " & C_Name (NM) & "_s *q_; for (q_ = " & Acc & C_Field (NM)
+                          & ".head; q_; q_ = q_->_link) cn" & Gid & "++; }" & LF);
+                     end;
+                  end loop;
+                  Append (Buf, Ind & "  if (cn" & Gid & " < " & Img (PMin) & " || cn" & Gid & " > " & Img (PMax) & ") { " & Fail & " }" & LF
+                    & Ind & "}" & LF);
+                  Skip_To := K + N;
+                  At_First := False;
+               end;
             elsif Els (K).Kind = Block and then Els (K).Op = B_Any_Order then
                --  `all of ( a [b] c )`: each member at most once, in any order.  A pass tries the members not yet taken,
                --  in the order written, each as the sequence would write it; one that matches is marked and the pass
@@ -6511,22 +6542,24 @@ package body HBNF_C is
                         Mem : constant Element_Access := new HBNF_Grammar.Element'(Els (K + J).all);
                         Sj  : constant String := Gid & "_" & Img (J);
                         Bit : constant Natural := 2 ** (J - 1);
-                        FN  : constant String := To_String (Mem.Name);
+                        Snap : constant Boolean := Node_Ptr /= "0";   --  a node to give back when the member does not match
                      begin
                         if Ada.Strings.Unbounded.Element (Els (K).Path, J) = '1' then
                            Req := Req + Bit;
                         end if;
                         Append (Buf, Ind & "    if (" & (if Cmb then "__builtin_popcount (ao" & Gid & ") < " & Img (PMax)
                                                    else "!(ao" & Gid & " & " & Img (Bit) & "u)")
-                          & ") { size_t sv" & Sj & " = p->pos;" & LF);
+                          & ") { size_t sv" & Sj & " = p->pos;"
+                          & (if Snap then "  unsigned char rb" & Sj & "[sizeof *(" & Node_Ptr & ")];  memcpy (rb" & Sj & ", "
+                                          & Node_Ptr & ", sizeof rb" & Sj & ");" else "") & LF);
                         Emit_Seq (Owner, Element_Vectors.To_Vector (Mem, 1), 1, 1, Acc, Buf,
                                   "{ p->pos = sv" & Sj & ";"
-                                  & (if Acc'Length > 0 and then not Is_Core (FN)
-                                     then " memset (&" & Acc & C_Field (FN) & ", 0, sizeof " & Acc & C_Field (FN) & ");"
-                                     else "")
+                                  & (if Snap then " memcpy (" & Node_Ptr & ", rb" & Sj & ", sizeof rb" & Sj & ");" else "")
                                   & " goto no" & Sj & "; }",
                                   Ind & "      ", Ws, Seg_Var => Seg_Var, Alt_Tape => Alt_Tape);
-                        Append (Buf, Ind & "      ao" & Gid & " |= " & Img (Bit) & "u;" & (if Cmb then "" else "  continue;") & " }" & LF
+                        --  a member that matched nothing (one that may be empty) is not taken: it would shut out a later one
+                        Append (Buf, Ind & "      if (p->pos > sv" & Sj & ") { ao" & Gid & " |= " & Img (Bit) & "u;"
+                          & (if Cmb then "" else "  continue;") & " } }" & LF
                           & Ind & "    no" & Sj & ": ;" & LF);
                      end;
                   end loop;
@@ -6921,6 +6954,36 @@ package body HBNF_C is
                         when B_Both =>
                            --  `a intersect b` (CONTEXTS section 29, Q2): b, a rule, is read over exactly the text a matched
                            --  and must end where a ended
+                           if E.Look.First_Element.Kind = Group then
+                              --  `x in ( "a" "b" )`: the text x matched is one of the written literals, or is read whole by
+                              --  one of the written rules
+                              Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_" & Ctx_Img (Base_Of (K))) & "  int in_ = 0;");
+                              Append (Buf, LF);
+                              for X of E.Look.First_Element.Items loop
+                                 if X.Kind = Literal then
+                                    Append (Buf, Ind & "  if (!in_ && k_ - st_ == " & Img (Length (X.Lit)) & " && "
+                                      & (if X.No_Case then "strncasecmp (p->text + st_, """ else "memcmp (p->text + st_, """)
+                                      & C_Escape (To_String (X.Lit)) & """, " & Img (Length (X.Lit)) & ") == 0) in_ = 1;");
+                                    Append (Buf, LF);
+                                 elsif X.Kind = Name then
+                                    declare
+                                       NM : constant String := To_String (X.Name);
+                                       T  : constant String := Out_Type (Find (NM));
+                                    begin
+                                       Append (Buf, Ind & "  if (!in_) { " & T (T'First .. T'Last - 5) & " h_;  parser_t sb_ = *p;"
+                                         & "  memset(&h_, 0, sizeof h_);  sb_.pos = st_;  sb_.len = k_;");
+                                       Append (Buf, LF);
+                                       Append (Buf, Ind & "    if (" & Rule_Call (To_String (Rules (Owner).Name), X,
+                                                                                 "parse_rule_" & C_Name (NM) & "(&sb_, &h_)")
+                                         & " && sb_.pos == k_) in_ = 1; }");
+                                       Append (Buf, LF);
+                                    end;
+                                 end if;
+                              end loop;
+                              Append (Buf, Ind & "  if (!in_) { p->pos = st_; fail(p, ""one of the words written"", 0, p->text + st_, 0); p->pos = k_; "
+                                & Fail & " } }");
+                              Append (Buf, LF);
+                           else
                            declare
                               X  : constant Element_Access := E.Look.First_Element;
                               NM : constant String := To_String (X.Name);
@@ -6939,6 +7002,7 @@ package body HBNF_C is
                                 & Fail & " } }");
                               Append (Buf, LF);
                            end;
+                           end if;
                         when B_Bind =>
                            if Views_On then
                               --  the field is a slice of the input: its text is what is kept
@@ -8634,6 +8698,8 @@ package body HBNF_C is
                      Append (Buf, Ind & "hbnf_reset (&" & Sc & ");" & LF);
                   end;
                   K := En + 1;
+               elsif V (K).Kind = Block and then V (K).Op = B_Any_Order and then HBNF_Grammar.Pick_Kind (V (K)) = 'S' then
+                  Unsupported ("`choose ... with replacement`");
                elsif V (K).Kind = Block and then V (K).Op = B_Any_Order then
                   --  `all of ( a [b] c )`: each member at most once, in any order.  A pass tries the members not yet
                   --  taken, in the order written; one that matches is marked and the pass starts again; when none
@@ -8669,7 +8735,8 @@ package body HBNF_C is
                              & ") { size_t sv" & Sj & " = p->pos;  " & Save ("l" & Sj) & LF);
                            Elem (Mem, "{ p->pos = sv" & Sj & "; " & Restore ("l" & Sj) & "goto no" & Sj & "; }",
                                  Ind & "      ");
-                           Append (Buf, Ind & "      ao" & Gid & " |= " & Img (Bit) & "u;" & (if Cmb then "" else "  continue;") & " }" & LF
+                           Append (Buf, Ind & "      if (p->pos > sv" & Sj & ") { ao" & Gid & " |= " & Img (Bit) & "u;"
+                             & (if Cmb then "" else "  continue;") & " } }" & LF
                              & Ind & "    no" & Sj & ": ;" & LF);
                            Skip_Done := False;
                         end;
@@ -11388,9 +11455,9 @@ package body HBNF_C is
          if HBNF_Grammar.Uses_Reread then
             --  a position in text a rewrite made is told where it stood in the text the user wrote, and the rule whose
             --  expansion held it (CONTEXTS.md section 30, R591)
-            Append (Res, "    const char *rr_rules[4];  int rr_n = 0;" & LF
+            Append (Res, "    const char *rr_rules[4], *rr_after = NULL;  int rr_n = 0;" & LF
               & "    if (hbnf_rr_nlog && p.err_pos != (size_t)-1) {" & LF
-              & "        size_t op_ = hbnf_origin(p.err_pos, rr_rules, &rr_n);" & LF
+              & "        size_t op_ = hbnf_origin(p.err_pos, rr_rules, &rr_n, &rr_after);" & LF
               & "        p.text = hbnf_rr_orig;  p.len = strlen(hbnf_rr_orig);  p.err_pos = op_;" & LF
               & "        line_col(&p, op_, &p.err_line, &p.err_col);" & LF
               & "    }" & LF);
@@ -11476,7 +11543,9 @@ package body HBNF_C is
          if HBNF_Grammar.Uses_Reread then
             Append (Res, "    { int i_;  for (i_ = 0; i_ < rr_n; i_++) { size_t k_ = strlen(err);" & LF
               & "        if (k_ + 1 < errlen) snprintf(err + k_, errlen - k_, i_ ? "", which came from the expansion of rule `%s`"
-              & """ : ""\n  note: this is in the expansion of rule `%s`"", rr_rules[i_]); } }" & LF);
+              & """ : ""\n  note: this is in the expansion of rule `%s`"", rr_rules[i_]); }" & LF
+              & "      if (rr_after && !rr_n) { size_t k_ = strlen(err);" & LF
+              & "        if (k_ + 1 < errlen) snprintf(err + k_, errlen - k_, ""\n  note: this follows the expansion of rule `%s`"", rr_after); } }" & LF);
          end if;
          Append (Res, "    *err_line = p.err_line; *err_col = p.err_col;");
          Append (Res, LF);

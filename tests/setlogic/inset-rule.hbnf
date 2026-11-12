@@ -1,0 +1,7 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top  = *( item ";" )
+item = word in ( "int" short )
+word = 1*ALPHA
+short = 1*2DIGIT
