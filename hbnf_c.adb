@@ -6315,6 +6315,7 @@ package body HBNF_C is
          --  where every branch would otherwise re-skip the same run).
          At_First : Boolean := True;
          Stop     : Boolean := False;    --  a retry block took the rest
+         Skip_To  : Natural := 0;        --  the members of an `all of ( ... )` that its marker has written
          procedure Ws_Skip is
          begin
             if Ws and then (Lead_Ws or else not At_First) then
@@ -6482,6 +6483,52 @@ package body HBNF_C is
          end if;
          for K in First .. Last loop
             exit when Stop;
+            if K <= Skip_To then
+               null;
+            elsif Els (K).Kind = Block and then Els (K).Op = B_Any_Order then
+               --  `all of ( a [b] c )`: each member at most once, in any order.  A pass tries the members not yet taken,
+               --  in the order written, each as the sequence would write it; one that matches is marked and the pass
+               --  starts again, and when none matches the group is over.  The members that may not be left out must
+               --  all have been taken.
+               declare
+                  N   : constant Natural := Els (K).Id;
+                  Gid : constant String := Sid & "_" & Ctx_Img (K);
+                  Req : Natural := 0;
+               begin
+                  Append (Buf, Ind & "{ unsigned ao" & Gid & " = 0;" & LF & Ind & "  for (;;) {" & LF);
+                  for J in 1 .. N loop
+                     declare
+                        Mem : constant Element_Access := new HBNF_Grammar.Element'(Els (K + J).all);
+                        Sj  : constant String := Gid & "_" & Img (J);
+                        Bit : constant Natural := 2 ** (J - 1);
+                        FN  : constant String := To_String (Mem.Name);
+                     begin
+                        if Ada.Strings.Unbounded.Element (Els (K).Path, J) = '1' then
+                           Req := Req + Bit;
+                        end if;
+                        Append (Buf, Ind & "    if (!(ao" & Gid & " & " & Img (Bit) & "u)) { size_t sv" & Sj & " = p->pos;" & LF);
+                        Emit_Seq (Owner, Element_Vectors.To_Vector (Mem, 1), 1, 1, Acc, Buf,
+                                  "{ p->pos = sv" & Sj & ";"
+                                  & (if Acc'Length > 0 and then not Is_Core (FN)
+                                     then " memset (&" & Acc & C_Field (FN) & ", 0, sizeof " & Acc & C_Field (FN) & ");"
+                                     else "")
+                                  & " goto no" & Sj & "; }",
+                                  Ind & "      ", Ws, Seg_Var => Seg_Var, Alt_Tape => Alt_Tape);
+                        Append (Buf, Ind & "      ao" & Gid & " |= " & Img (Bit) & "u;  continue; }" & LF
+                          & Ind & "    no" & Sj & ": ;" & LF);
+                     end;
+                  end loop;
+                  Append (Buf, Ind & "    break;" & LF & Ind & "  }" & LF);
+                  if Req > 0 then
+                     Append (Buf, Ind & "  if ((ao" & Gid & " & " & Img (Req) & "u) != " & Img (Req) & "u) { " & Fail & " }" & LF);
+                  elsif Els (K).Code /= Null_Unbounded_String then
+                     Append (Buf, Ind & "  if (!ao" & Gid & ") { " & Fail & " }" & LF);   --  `any of`: not none
+                  end if;
+                  Append (Buf, Ind & "}" & LF);
+                  Skip_To := K + N;
+                  At_First := False;
+               end;
+            else
             declare
                E : constant Element_Access := Els (K);
             begin
@@ -6694,6 +6741,8 @@ package body HBNF_C is
                      case E.Op is
                         when B_Emit =>
                            null;  --  refused before emission until it is generated
+                        when B_Any_Order =>
+                           null;  --  written, with its members, by the loop above
                         when B_Add | B_Remove =>
                            --  `=> set += tag` and `set -= tag`: the text kept as the tag (Ctx), in the set (Path)
                            declare
@@ -6852,7 +6901,7 @@ package body HBNF_C is
                              & Fail & " } }");
                            Append (Buf, LF);
                         when B_Both =>
-                           --  `a both b` (CONTEXTS section 29, Q2): b, a rule, is read over exactly the text a matched
+                           --  `a intersect b` (CONTEXTS section 29, Q2): b, a rule, is read over exactly the text a matched
                            --  and must end where a ended
                            declare
                               X  : constant Element_Access := E.Look.First_Element;
@@ -7239,6 +7288,7 @@ package body HBNF_C is
                end case;
                At_First := False;
             end;
+            end if;
          end loop;
          --  What a `%scope` bound ends with the segment.
          for I in reverse 1 .. Natural (Scopes.Length) loop
@@ -7335,7 +7385,11 @@ package body HBNF_C is
             when Char_Range =>
                null;
             when Block =>
-               null;  --  lifted to a rule of its own before emission
+               --  `all of ( ... )`: any member may come first, so the first keyword is not known
+               if E.Op = B_Any_Order then
+                  Known := False;
+               end if;
+               --  (the others were lifted to a rule of their own before emission)
             when Bit_Field =>
                null;     --  a rule with bit fields never reaches here (Split_Wire)
             when Negation =>
@@ -8562,6 +8616,45 @@ package body HBNF_C is
                      Append (Buf, Ind & "hbnf_reset (&" & Sc & ");" & LF);
                   end;
                   K := En + 1;
+               elsif V (K).Kind = Block and then V (K).Op = B_Any_Order then
+                  --  `all of ( a [b] c )`: each member at most once, in any order.  A pass tries the members not yet
+                  --  taken, in the order written; one that matches is marked and the pass starts again; when none
+                  --  matches the group is over.  The members that may not be left out must all have been taken.
+                  declare
+                     N   : constant Natural := V (K).Id;
+                     Gid : constant String := Fresh;
+                     Req : Natural := 0;
+                  begin
+                     Skip_Done := False;
+                     Append (Buf, Ind & "{ unsigned ao" & Gid & " = 0;" & LF
+                       & Ind & "  for (;;) {" & LF);
+                     for J in 1 .. N loop
+                        declare
+                           Mem : constant Element_Access := new HBNF_Grammar.Element'(V (K + J).all);
+                           Sj  : constant String := Gid & "_" & Img (J);
+                           Bit : constant Natural := 2 ** (J - 1);
+                        begin
+                           if Ada.Strings.Unbounded.Element (V (K).Path, J) = '1' then
+                              Req := Req + Bit;
+                           end if;
+                           Append (Buf, Ind & "    if (!(ao" & Gid & " & " & Img (Bit) & "u)) { size_t sv" & Sj & " = p->pos;  "
+                             & Save ("l" & Sj) & LF);
+                           Elem (Mem, "{ p->pos = sv" & Sj & "; " & Restore ("l" & Sj) & "goto no" & Sj & "; }",
+                                 Ind & "      ");
+                           Append (Buf, Ind & "      ao" & Gid & " |= " & Img (Bit) & "u;  continue; }" & LF
+                             & Ind & "    no" & Sj & ": ;" & LF);
+                           Skip_Done := False;
+                        end;
+                     end loop;
+                     Append (Buf, Ind & "    break;" & LF & Ind & "  }" & LF);
+                     if Req > 0 then
+                        Append (Buf, Ind & "  if ((ao" & Gid & " & " & Img (Req) & "u) != " & Img (Req) & "u) { " & Fail & " }" & LF);
+                     elsif V (K).Code /= Null_Unbounded_String then
+                        Append (Buf, Ind & "  if (!ao" & Gid & ") { " & Fail & " }" & LF);   --  `any of`: not none
+                     end if;
+                     Append (Buf, Ind & "}" & LF);
+                     K := K + 1 + N;
+                  end;
                elsif K < En and then V (K + 1).Kind = Block
                  and then V (K + 1).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both
                then

@@ -4,7 +4,9 @@
 #   - `x in S`, `x ∈ S` are `x ? S`; `x not in S`, `x ∉ S` are `x ?! S` (tests/setlogic/member*.hbnf);
 #   - `in ( "a" "ab" )` at the start of an alternative is one of the literals, the longest first: `"ab" | "a"`, an enum, and it
 #     does not hide a member that is the front of another;
-#   - `one of ( ... )` is `in ( ... )`; `a both b` (and `a ∩ b`) reads b over exactly the text a matched, in C so far;
+#   - `one of ( ... )` is `in ( ... )`; `a intersect b` (and `a ∩ b`) reads b over exactly the text a matched, in C so far;
+#   - `all of ( a [b] c )`: each member once, in any order, one field for each member; `some of ( a b c )` one or more of them, `any of ( a b c )`
+#     none or more; in C so far (the other backends refuse them by rule name);
 #   - `x in ( ... )` after an element is not built yet and says so.
 #   HBNF=/path/to/hbnf sh tests/setlogic.sh      (default ./hbnf)
 set -u
@@ -42,35 +44,35 @@ for c in "ok a" "ok ab" "ok abc" "bad abcd" "bad x"; do
 	printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/check" "$W/t.txt" | cut -d' ' -f1)
 	n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL (in ( \"a\" \"abc\" \"ab\" ) on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
 done
-# `a both b`: b matches exactly the text a matched; C only so far
+# `a intersect b`: b matches exactly the text a matched; C only so far
 cat > "$W/both.hbnf" <<'EOG'
 prefix none
 whitespace none
 include "../../grammars/common.hbnf"
 doc   = item *( "," item )
-item  = word both short
+item  = word intersect short
 word  = 1*ALPHA
 short = 1*3ALPHA
 EOG
 cp "$W/both.hbnf" tests/setlogic/_both.hbnf
-sed 's/ both / ∩ /' "$W/both.hbnf" > tests/setlogic/_both-u.hbnf
-"$CLI" tests/setlogic/_both.hbnf --backend=c > "$W/b.c" 2> "$W/err" || { echo "setlogic: FAIL (both does not generate: $(head -c 300 "$W/err"))"; fail=1; }
+sed 's/ intersect / ∩ /' "$W/both.hbnf" > tests/setlogic/_both-u.hbnf
+"$CLI" tests/setlogic/_both.hbnf --backend=c > "$W/b.c" 2> "$W/err" || { echo "setlogic: FAIL (intersect does not generate: $(head -c 300 "$W/err"))"; fail=1; }
 "$CLI" tests/setlogic/_both-u.hbnf --backend=c > "$W/bu.c" 2> /dev/null
-n=$((n + 1)); cmp -s "$W/b.c" "$W/bu.c" || { echo "setlogic: FAIL (∩ is not what both generates)"; fail=1; }
+n=$((n + 1)); cmp -s "$W/b.c" "$W/bu.c" || { echo "setlogic: FAIL (∩ is not what intersect generates)"; fail=1; }
 if [ -s "$W/b.c" ]; then
 	root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/b.c")
 	cat "$W/b.c" corpus/c/check.c > "$W/mb.c"
-	cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/mb.c" -o "$W/checkb" 2> "$W/cc.txt" || { echo "setlogic: FAIL (both: cc: $(head -c 300 "$W/cc.txt"))"; fail=1; }
+	cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/mb.c" -o "$W/checkb" 2> "$W/cc.txt" || { echo "setlogic: FAIL (intersect: cc: $(head -c 300 "$W/cc.txt"))"; fail=1; }
 	for c in "ok ab" "ok abc,x" "bad abcd" "bad ab,abcde" "bad 1"; do
 		printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checkb" "$W/t.txt" | cut -d' ' -f1)
-		n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL (word both short on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
+		n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL (word intersect short on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
 	done
 fi
 rm -f tests/setlogic/_both.hbnf tests/setlogic/_both-u.hbnf
 for b in rust zig ada; do
-	printf 'prefix none\nwhitespace none\ninclude "../../grammars/common.hbnf"\ntop = word both short\nword = 1*ALPHA\nshort = 1*3ALPHA\n' > tests/setlogic/_b.hbnf
-	"$CLI" tests/setlogic/_b.hbnf --backend=$b --package=Sl 2>&1 > /dev/null | grep -q 'has `both` (an intersection), which only the C backend generates' \
-		|| { echo "setlogic: FAIL ($b does not say that both is C only)"; fail=1; }
+	printf 'prefix none\nwhitespace none\ninclude "../../grammars/common.hbnf"\ntop = word intersect short\nword = 1*ALPHA\nshort = 1*3ALPHA\n' > tests/setlogic/_b.hbnf
+	"$CLI" tests/setlogic/_b.hbnf --backend=$b --package=Sl 2>&1 > /dev/null | grep -q 'has `intersect` (an intersection), which only the C backend generates' \
+		|| { echo "setlogic: FAIL ($b does not say that intersect is C only)"; fail=1; }
 	n=$((n + 1))
 done
 rm -f tests/setlogic/_b.hbnf
@@ -78,6 +80,37 @@ rm -f tests/setlogic/_b.hbnf
 printf 'prefix none\nwhitespace none\ntop = name in sep\nname = 1*0x61..0x7a\nin = "in"\nsep = ";"\n' > "$W/inrule.hbnf"
 "$CLI" "$W/inrule.hbnf" --backend=c 2>&1 > /dev/null | grep -q 'is not a context' \
 	|| { echo "setlogic: FAIL (a name after in is read as a set: a rule named in is not refused with what it is read as)"; fail=1; }
+n=$((n + 1))
+# `all of ( a [b] c )` (R649): each member once, in any order, a member in `[ ]` may be left out; one field for each member
+chk() {	# a grammar, then cases "ok TEXT" or "bad TEXT"
+	g=$1; shift
+	"$CLI" "$g" --backend=c > "$W/a.c" 2> "$W/err" || { echo "setlogic: FAIL ($g does not generate: $(head -c 300 "$W/err"))"; fail=1; return; }
+	root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/a.c")
+	cat "$W/a.c" corpus/c/check.c > "$W/ma.c"
+	cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/ma.c" -o "$W/checka" 2> "$W/cc.txt" || { echo "setlogic: FAIL ($g: cc: $(head -c 300 "$W/cc.txt"))"; fail=1; return; }
+	for c in "$@"; do
+		printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checka" "$W/t.txt" | cut -d' ' -f1)
+		n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL ($g on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
+	done
+}
+chk tests/setlogic/allof.hbnf "ok Dp1." "ok Dp1usage." "ok Dusagep1." "ok Dv2p1." "ok Dv2usagep1." "ok Dp1usagev2." "ok Dv2p1usage." "ok Dusagev2p1." \
+	"bad D." "bad Dusage." "bad Dp1p2." "bad Dp1usageusage." "bad Dp1v2v3." "bad Dp1"
+chk tests/setlogic/someof.hbnf "ok Dp1." "ok Dusage." "ok Dv2usagep1." "ok Dusagep1v2." "bad D." "bad Dp1p2." "bad Dusageusage." "bad Dx."
+chk tests/setlogic/anyof.hbnf "ok D." "ok Dp1." "ok Dusagep1." "ok Dp1usage." "bad Dp1p2." "bad Dx."
+chk tests/setlogic/allof-first.hbnf "ok p1." "ok usagep1." "ok z." "ok p1.z.usagep2." "bad usage." "bad x." "bad p1usage"
+chk tests/setlogic/allof-opt.hbnf "ok D." "ok Dp1." "ok Dusage." "ok Dusagep1." "ok Dp1usage." "bad Dp1p2." "bad Dx."
+chk tests/setlogic/allof-two.hbnf "ok ab-c" "ok ba-cd" "ok ba-dc" "bad a-c" "bad ab-d" "bad ab-cc" "bad aab-c"
+chk tests/setlogic/allof-rec.hbnf "ok D3x4." "ok Dtag3x4." "ok D3x4tag." "bad D3y4." "bad Dtag." "bad D3x4tagtag." "bad D3x"
+"$CLI" tests/setlogic/allof.hbnf --backend=c > "$W/f.c" 2> /dev/null
+n=$((n + 1)); [ "$(sed -n '/^struct decl_s {$/,/^};$/p' "$W/f.c" | tr -d ' \n')" = "structdecl_s{pic_tpic;usage_tusage;value_tvalue;};" ] \
+	|| { echo "setlogic: FAIL (all of: the record has not a field for each member)"; fail=1; }
+for b in rust zig ada; do
+	"$CLI" tests/setlogic/allof.hbnf --backend=$b --package=Sl 2>&1 > /dev/null | grep -q 'has `all of ( ... )`.*only the C backend generates' \
+		|| { echo "setlogic: FAIL ($b does not say that all of is C only)"; fail=1; }
+	n=$((n + 1))
+done
+printf 'prefix none\nwhitespace none\ntop = all of ( a a )\na = "a"\n' > "$W/dup.hbnf"
+"$CLI" "$W/dup.hbnf" --backend=c 2>&1 > /dev/null | grep -q 'names `a` twice' || { echo "setlogic: FAIL (all of ( a a ) is not refused)"; fail=1; }
 n=$((n + 1))
 # a written set after an element is not built yet
 printf 'prefix none\nwhitespace none\ntop = name in ( "a" "b" )\nname = 1*0x61..0x7a\n' > "$W/infix.hbnf"

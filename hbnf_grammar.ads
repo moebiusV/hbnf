@@ -184,7 +184,8 @@ package HBNF_Grammar is
       B_Guard,       --  the clause of a rule with numeric parameters applies: a test on the frame
       B_Bol,         --  bol: the position is the beginning of a line; nothing is consumed
       B_Eol,         --  eol: a line feed, a carriage return or the end of the input follows; nothing is consumed
-      B_Both,        --  `a both b`, `a ∩ b`: b (Look, one rule) matches exactly the text the element before it matched
+      B_Any_Order,   --  `all of ( a [b] c )`: the Id elements after this one are its members, each at most once, in any order; Path has a character for each, `0` for one that may be left out and `1` for one that may not
+      B_Both,        --  `a intersect b`, `a ∩ b`: b (Look, one rule) matches exactly the text the element before it matched
       B_Col_Test,    --  `x where (col = 6)`: a test of the column the position is in (Code: a C condition on `c_`, Path: as written); nothing is consumed
       B_Add,         --  `=> set += tag`: the text kept as `tag` (Ctx) is added to the context `set` (Path)
       B_Remove,      --  `=> set -= tag`: the same text is taken out of it

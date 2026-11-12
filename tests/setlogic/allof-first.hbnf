@@ -1,0 +1,6 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top   = *( all of ( pic [usage] ) "." | "z" "." )
+pic   = "p" 1*DIGIT
+usage = "usage"

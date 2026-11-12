@@ -2,6 +2,7 @@ pragma Ada_2022;
 
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Environment_Variables;
+with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Ada.Containers.Ordered_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
@@ -249,9 +250,18 @@ package body HBNF_Lookahead is
      (Rules : Rule_Vectors.Vector; Nullable : Flags;
       V : Element_Vectors.Vector; First, Last : Natural) return Boolean is
       All_Null : Boolean := True;
+      Skip_To  : Natural := 0;    --  the members of an `all of ( ... )`, taken with the marker
    begin
       for I in First .. Last + 1 loop
-         if I > Last or else V (I).Kind = Alt then
+         if I <= Skip_To then
+            null;
+         elsif I <= Last and then V (I).Kind = Block and then V (I).Op = B_Any_Order then
+            --  the group can be empty when every member may be left out
+            if Ada.Strings.Unbounded.Index (V (I).Path, "1") > 0 or else V (I).Code /= Null_Unbounded_String then
+               All_Null := False;
+            end if;
+            Skip_To := I + V (I).Id;
+         elsif I > Last or else V (I).Kind = Alt then
             if All_Null then
                return True;
             end if;
@@ -381,11 +391,35 @@ package body HBNF_Lookahead is
    is
       Branch_Set  : Cp_Set;
       Branch_Open : Boolean := True;   --  every element so far can be skipped
+      Skip_To     : Natural := 0;      --  the members of an `all of ( ... )` already taken with its marker
    begin
       Set := Empty;
       Is_Null := False;
       for I in From .. To + 1 loop
-         if I > To or else V (I).Kind = Alt then
+         if I <= Skip_To then
+            null;
+         elsif I <= To and then V (I).Kind = Block and then V (I).Op = B_Any_Order then
+            --  any member may come first; the group can be skipped when every member can
+            declare
+               All_Null : Boolean := True;
+            begin
+               for J in I + 1 .. Natural'Min (To, I + V (I).Id) loop
+                  if Branch_Open then
+                     Branch_Set := Branch_Set or El_First (Rules, Nullable, First, V (J));
+                  end if;
+                  if Ada.Strings.Unbounded.Element (V (I).Path, J - I) = '1' then
+                     All_Null := False;
+                  end if;
+               end loop;
+               if V (I).Code /= Null_Unbounded_String then
+                  All_Null := False;    --  `any of`: one or more
+               end if;
+               if not All_Null then
+                  Branch_Open := False;
+               end if;
+               Skip_To := I + V (I).Id;
+            end;
+         elsif I > To or else V (I).Kind = Alt then
             if Branch_Open then
                Is_Null := True;
             end if;
@@ -408,8 +442,21 @@ package body HBNF_Lookahead is
    is
       Result    : Cp_Set := Empty;
       Rest_Null : Boolean := True;
+      After     : Natural := P;     --  where the elements that follow begin: after the whole group, for a member of `all of ( ... )`
    begin
-      for Q in P + 1 .. B.Last loop
+      --  a member of `all of ( ... )` is followed by any other member, and by what follows the group
+      for G in reverse Natural'Max (B.First, P - 16) .. P - 1 loop
+         if V (G).Kind = Block and then V (G).Op = B_Any_Order and then G + V (G).Id >= P then
+            for J in G + 1 .. G + V (G).Id loop
+               if J /= P then
+                  Result := Result or El_First (Rules, A.Nullable, A.First, V (J));
+               end if;
+            end loop;
+            After := G + V (G).Id;
+            exit;
+         end if;
+      end loop;
+      for Q in After + 1 .. B.Last loop
          Result := Result or El_First (Rules, A.Nullable, A.First, V (Q));
          if not El_Nullable (Rules, A.Nullable, V (Q)) then
             Rest_Null := False;

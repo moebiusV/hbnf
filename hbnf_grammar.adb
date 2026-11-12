@@ -44,8 +44,8 @@ package body HBNF_Grammar is
       return 0;
    end Next_Word_End;
 
-   --  After the blanks from I of T a name or a `(` begins: what `in S`, `one of ( ... )` and `both y` take.  The words `in`, `not in`,
-   --  `one of` and `both` have the one meaning (CONTEXTS section 29): a grammar with a rule of one of those names renames it.
+   --  After the blanks from I of T a name or a `(` begins: what `in S`, `one of ( ... )` and `intersect y` take.  The words `in`, `not in`,
+   --  `one of` and `intersect` have the one meaning (CONTEXTS section 29): a grammar with a rule of one of those names renames it.
    function Operand_After (T : String; I : Natural) return Boolean is
       J : Natural := I;
    begin
@@ -2587,7 +2587,7 @@ package body HBNF_Grammar is
                  and then Text (I) = Character'Val (16#E2#) and then Text (I + 1) = Character'Val (16#88#)
                  and then Text (I + 2) = Character'Val (16#A9#)
                then
-                  --  `∩` (U+2229): what `both` says
+                  --  `∩` (U+2229): what `intersect` says
                   Emit (T_Pct, "both");
                   I := I + 3;  Col := Col + 1;
                elsif Text (I) in 'i' | 's' | 'r'
@@ -2729,10 +2729,25 @@ package body HBNF_Grammar is
                         --  `one of ( "a" "ab" )`: the plain words for `in ( ... )` (CONTEXTS section 29, R644)
                         Emit (T_Pct, "test");
                         I := Next_Word_End (Text, I, "of");
-                     elsif Hbnf_Notation and then Text (Start .. I - 1) = "both" and then Col > 1
+                     elsif Hbnf_Notation and then Text (Start .. I - 1) = "all" and then Col > 1
+                       and then Next_Word_End (Text, I, "of") > 0
+                       and then Operand_After (Text, Next_Word_End (Text, I, "of"))
+                     then
+                        --  `all of ( a b c )`: each member once, in any order (CONTEXTS section 29, R649)
+                        Emit (T_Pct, "allof");
+                        I := Next_Word_End (Text, I, "of");
+                     elsif Hbnf_Notation and then Text (Start .. I - 1) in "any" | "some" and then Col > 1
+                       and then Next_Word_End (Text, I, "of") > 0
+                       and then Operand_After (Text, Next_Word_End (Text, I, "of"))
+                     then
+                        --  `any of ( a b c )`: none or more of the members, `some of ( a b c )`: one or more, each once,
+                        --  in any order (R661)
+                        Emit (T_Pct, (if Text (Start .. I - 1) = "any" then "anyof" else "someof"));
+                        I := Next_Word_End (Text, I, "of");
+                     elsif Hbnf_Notation and then Text (Start .. I - 1) = "intersect" and then Col > 1
                        and then Operand_After (Text, I)
                      then
-                        --  `a both b`: b matches exactly the text a matched (CONTEXTS section 29, Q2)
+                        --  `a intersect b`: b matches exactly the text a matched (CONTEXTS section 29, Q2)
                         Emit (T_Pct, "both");
                      elsif Hbnf_Notation and then Text (Start .. I - 1) = "not" and then Col > 1
                        and then Next_Word_End (Text, I, "in") > 0
@@ -4986,16 +5001,76 @@ package body HBNF_Grammar is
       elsif W = "scope" then
          E.Op := B_Scope;
       elsif W = "both" then
-         --  `a both b`: b, a rule, matches exactly the text the element before matched
+         --  `a intersect b`: b, a rule, matches exactly the text the element before matched
          declare
             A : constant Element_Access := Parse_Atom (P);
          begin
             if A.Kind /= Name or else A.Min /= 1 or else A.Max /= 1 then
                raise Parse_Error with
-                 Where & "`both` takes a rule: `x both y` (write a literal or a group as a rule of its own)";
+                 Where & "`intersect` takes a rule: `x intersect y` (write a literal or a group as a rule of its own)";
             end if;
             E.Op := B_Both;
             E.Look.Append (A);
+         end;
+      elsif W in "allof" | "anyof" | "someof" then
+         --  `all of ( a [b] c )`: the members once each, in any order: the marker, then the members as the
+         --  elements of the sequence they are in, so the record has a field for each.  `any of ( a b c )` is none or
+         --  more of them, `some of ( a b c )` one or more: every member may be left out, and for `some of` not all
+         if Cur (P).Kind /= T_LParen then
+            raise Parse_Error with Where & "`" & (if W = "allof" then "all" elsif W = "anyof" then "any" else "some")
+              & " of` takes the members in parentheses: `" & (if W = "allof" then "all" elsif W = "anyof" then "any" else "some")
+              & " of ( a b c )`";
+         end if;
+         declare
+            Items : Element_Vectors.Vector;
+            N     : Natural := 0;
+            Mask  : Unbounded_String;
+         begin
+            Next (P);
+            while Cur (P).Kind /= T_RParen loop
+               if Cur (P).Kind in T_EOF | T_Newline then
+                  raise Parse_Error with Where & "`all of ( ... )`: the members end with `)`";
+               end if;
+               declare
+                  A : constant Element_Access := Parse_Atom (P);
+                  M : Element_Access;
+               begin
+                  if A.Kind = Name and then A.Min = 1 and then A.Max = 1 then
+                     M := A;
+                     Append (Mask, (if W = "allof" then '1' else '0'));
+                  elsif W /= "allof" then
+                     raise Parse_Error with
+                       Where & "`any of` and `some of` take rules, each of which may be left out already: `some of ( a b c )`";
+                  elsif A.Kind = Group and then A.Min = 0 and then A.Max = 1 and then Natural (A.Items.Length) = 1
+                    and then A.Items.First_Element.Kind = Name
+                    and then A.Items.First_Element.Min = 1 and then A.Items.First_Element.Max = 1
+                  then
+                     M := new Element'(A.Items.First_Element.all);
+                     Append (Mask, '0');
+                  else
+                     raise Parse_Error with
+                       Where & "`all of ( ... )` takes rules, and `[ rule ]` for one that may be left out: `all of ( a [b] c )`";
+                  end if;
+                  for X of Items loop
+                     if X.Name = M.Name then
+                        raise Parse_Error with
+                          Where & "`all of ( ... )` names `" & To_String (M.Name) & "` twice; each member is used once";
+                     end if;
+                  end loop;
+                  Items.Append (M);
+                  N := N + 1;
+               end;
+            end loop;
+            Next (P);
+            if N = 0 then
+               raise Parse_Error with Where & "`all of ( )` has no member";
+            elsif N > 16 then
+               raise Parse_Error with Where & "`all of ( ... )` has up to 16 members; split it";
+            end if;
+            Items.Prepend (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Any_Order, Ctx => <>, Path => Mask,
+                                        Id => N, Look => <>,
+                                        Code => (if W = "someof" then To_Unbounded_String ("some") else Null_Unbounded_String)));
+            return new Element'(Kind => Group, Min => 1, Max => 1, Items => Items);
          end;
       elsif W = "test" and then Cur (P).Kind = T_LParen then
          --  `in ( "a" "ab" )`: one of the literals written, the longest first (CONTEXTS section 29, Q1), so that a member
@@ -5163,7 +5238,7 @@ package body HBNF_Grammar is
             P.Pos := P.Pos + 2;
          elsif Cur (P).Kind = T_Pct
            and then To_String (Cur (P).Text)
-                    in "test" | "nottest" | "bind" | "scope" | "where" | "not" | "and" | "both"
+                    in "test" | "nottest" | "bind" | "scope" | "where" | "not" | "and" | "both" | "allof" | "anyof" | "someof"
                        | "as" | "same" | "spaces" | "col" | "num"
          then
             if V.Is_Empty and then To_String (Cur (P).Text) = "as" then
@@ -5186,7 +5261,14 @@ package body HBNF_Grammar is
                elsif Op.Kind = Block and then Op.Op = B_Both and then (V.Is_Empty or else V.Last_Element.Kind = Alt) then
                   raise Parse_Error with
                     Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
-                    & ": `both` follows the element it intersects: `x both y`";
+                    & ": `intersect` follows the element it intersects: `x intersect y`";
+               elsif Op.Kind = Group and then not Op.Items.Is_Empty and then Op.Items.First_Element.Kind = Block
+                 and then Op.Items.First_Element.Op = B_Any_Order
+               then
+                  --  `all of ( a b c )`: the marker and the members are elements of this sequence
+                  for X of Op.Items loop
+                     V.Append (X);
+                  end loop;
                elsif Op.Kind = Group and then not Op.Items.Is_Empty and then Op.Items.First_Element.Kind in Literal | Name
                  and then (V.Is_Empty or else V.Last_Element.Kind = Alt) and then Ends_Pattern (P.Pos)
                then
@@ -5196,7 +5278,7 @@ package body HBNF_Grammar is
                      V.Append (X);
                   end loop;
                elsif Op.Kind = Group and then not V.Is_Empty and then V.Last_Element.Kind /= Alt then
-                  --  `x in ( "a" "b" )`: x's text is one of them; that is an intersection (`x both ( "a" | "b" )`), which is
+                  --  `x in ( "a" "b" )`: x's text is one of them; that is an intersection (`x intersect ( "a" | "b" )`), which is
                   --  built next
                   raise Parse_Error with
                     Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)

@@ -1,0 +1,8 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top = "D" all of ( pic [tag] ) "."
+pic = w "x" h
+w   = 1*DIGIT
+h   = 1*DIGIT
+tag = "tag"

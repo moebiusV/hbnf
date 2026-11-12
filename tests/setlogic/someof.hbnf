@@ -1,0 +1,7 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top   = "D" some of ( pic usage value ) "."
+pic   = "p" 1*DIGIT
+usage = "usage"
+value = "v" 1*DIGIT

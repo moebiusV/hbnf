@@ -1,0 +1,8 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top = all of ( a b ) "-" all of ( c [d] )
+a   = "a"
+b   = "b"
+c   = "c"
+d   = "d"
