@@ -9999,7 +9999,7 @@ package body HBNF_C is
       begin
          Append (Res, Ind & "{ size_t b_ = pos + off; long c_ = 0; "
            & "while (b_ > 0 && s[b_ - 1] != '\n' && s[b_ - 1] != '\r') { b_--; if ((s[b_] & 0xC0) != 0x80) c_++; } "
-           & "if (!(" & Col_Cond (A.Lo) & ")) " & Fail & "; }");
+           & "if (!(" & HBNF_Grammar.Col_Condition_Text (Col_Cond (A.Lo), "c") & ")) " & Fail & "; }");
          Append (Res, LF);
       end Emit_Col;
 

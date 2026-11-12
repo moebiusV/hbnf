@@ -2266,6 +2266,29 @@ package body HBNF_Ada is
                           & " or else P.Text (P.Pos) = ASCII.CR) then"
                           & " Fail (P, ""the end of a line""); " & To_String (FA) & " end if;");
                         Append (Buf, LF);
+                     elsif E.Op = B_Col_Test then
+                        --  `x where (col = 6)`: a test of the column at this position
+                        Append (Buf, Ind & "declare");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "   Qc : Natural := P.Pos;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "   Cc : Natural := 0;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "begin");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "   while Qc > P.Text'First and then P.Text (Qc - 1) /= ASCII.LF and then P.Text (Qc - 1) /= ASCII.CR loop");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      Qc := Qc - 1;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      if Character'Pos (P.Text (Qc)) / 64 /= 2 then Cc := Cc + 1; end if;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "   end loop;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "   if not (" & HBNF_Grammar.Col_Condition_Text (To_String (E.Path), "ada")
+                          & ") then Fail (P, ""a column where `" & To_String (E.Path) & "`""); " & To_String (FA) & " end if;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "end;");
+                        Append (Buf, LF);
                      elsif E.Op = B_Col then
                         --  the column: the code points since the line began
                         Append (Buf, Ind & "declare Qq : Natural := P.Pos; Cc : Long_Long_Integer := 0; begin"
@@ -3307,6 +3330,32 @@ package body HBNF_Ada is
          Append (Bdy, LF);
       end Emit_Eol;
 
+      --  `x where (col = 6)`: the column, code points since the line began, is Cc in the condition.
+      procedure Emit_Col (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         Append (Bdy, Ind & "declare");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "   Qc : Natural := Pos + Off;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "   Cc : Natural := 0;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "begin");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "   while Qc > S'First and then S (Qc - 1) /= ASCII.LF and then S (Qc - 1) /= ASCII.CR loop");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      Qc := Qc - 1;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      if Character'Pos (S (Qc)) / 64 /= 2 then Cc := Cc + 1; end if;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "   end loop;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "   if not (" & HBNF_Grammar.Col_Condition_Text (Col_Cond (A.Lo), "ada") & ") then "
+           & Fail & "; end if;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "end;");
+         Append (Bdy, LF);
+      end Emit_Col;
+
       --  The function a lookahead calls: true when some branch matches at Pos
       --  (the empty one too).
       procedure Emit_Look_Fn (H : Look_Helper) is
@@ -3343,10 +3392,13 @@ package body HBNF_Ada is
                      Append (Bdy, LF);
                   when Repeat =>
                      Emit_Repeat (A, "         ", "Ok := False");
-                  when Look | Iter =>
+                  when Iter =>
+                     raise HBNF_Grammar.Parse_Error with
+                       "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                  when Look =>
                      Emit_Look (A, "         ", "Ok := False");
                   when Col_Test =>
-                     null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
+                     Emit_Col (A, "         ", "Ok := False");
                   when Bol =>
                      Emit_Bol ("         ", "Ok := False");
                   when Eol =>
@@ -4733,10 +4785,13 @@ package body HBNF_Ada is
                            Append (Bdy, LF);
                         when Repeat =>
                            Emit_Repeat (A, "      ", "return 0");
-                        when Look | Iter =>
+                        when Iter =>
+                           raise HBNF_Grammar.Parse_Error with
+                             "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                        when Look =>
                            Emit_Look (A, "      ", "return 0");
                         when Col_Test =>
-                           null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
+                           Emit_Col (A, "      ", "return 0");
                         when Bol =>
                            Emit_Bol ("      ", "return 0");
                         when Eol =>
@@ -4784,14 +4839,21 @@ package body HBNF_Ada is
                               Emit_Repeat (A, "         ", "Ok := False");
                               Append (Bdy, "      end if;");
                               Append (Bdy, LF);
-                           when Look | Iter =>
+                           when Iter =>
+                              raise HBNF_Grammar.Parse_Error with
+                                "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                           when Look =>
                               Append (Bdy, "      if Ok then");
                               Append (Bdy, LF);
                               Emit_Look (A, "         ", "Ok := False");
                               Append (Bdy, "      end if;");
                               Append (Bdy, LF);
                            when Col_Test =>
-                              null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
+                              Append (Bdy, "      if Ok then");
+                              Append (Bdy, LF);
+                              Emit_Col (A, "         ", "Ok := False");
+                              Append (Bdy, "      end if;");
+                              Append (Bdy, LF);
                            when Bol | Eol =>
                               Append (Bdy, "      if Ok then");
                               Append (Bdy, LF);

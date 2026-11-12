@@ -565,7 +565,7 @@ package body HBNF_Compilable is
                      end;
                   elsif E.Kind = Block and then E.Op = B_Col_Test then
                      for B of Branches loop
-                        B.Append (Cp_Atom'(Kind => Col_Test, Lo => Add_Col_Cond (To_String (E.Code)), Hi => 0,
+                        B.Append (Cp_Atom'(Kind => Col_Test, Lo => Add_Col_Cond (To_String (E.Path)), Hi => 0,
                                            Lo2 => 1, Hi2 => 0));
                      end loop;
                   elsif E.Kind = Block and then E.Op in B_Bol | B_Eol then
@@ -1418,13 +1418,13 @@ package body HBNF_Compilable is
          return False;
       end Has;
    begin
-      if Backend = "c" then
+      if Backend in "c" | "rust" | "zig" | "ada" then
          return;
       end if;
       for R of Rules loop
          if Has (R.Pattern) then
             raise Parse_Error with
-              "rule `" & To_String (R.Name) & "` has a `where (col ...)` test of the column, which only the C backend generates";
+              "rule `" & To_String (R.Name) & "` has a `where (col ...)` test of the column, which only the C, Rust, Zig and Ada backends generate";
          end if;
       end loop;
    end Check_Col_Tests;

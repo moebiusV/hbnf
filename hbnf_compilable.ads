@@ -74,7 +74,8 @@ package HBNF_Compilable is
    --  (Hi = 0: no most), Inner is one time's branches, a function named Fn like a lookahead's, which
    --  says how much of the longest branch matches (0: none).  Only the C backend gets one (see
    --  HBNF_Grammar.Set_Scan_Look); like a Repeat it takes as many as match, and does not give any back.
-   --  Col_Test is `x where (col = 6)`: Lo numbers the condition (Col_Cond), a C expression on `c_`, the column; it moves nothing.
+   --  Col_Test is `x where (col = 6)`: Lo numbers the condition (Col_Cond), as written; a backend writes it in its language
+   --  (HBNF_Grammar.Col_Condition_Text) on `c_`, the column; it moves nothing.
    type Cp_Atom_Kind is (Single, Repeat, Look, Bol, Eol, Iter, Col_Test);
    type Look_Body;                                   --  completed below
    type Look_Access is access Look_Body;

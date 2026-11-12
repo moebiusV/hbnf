@@ -3300,6 +3300,13 @@ package body HBNF_Zig is
                           & "or p.text[p.pos] == '\r')) { "
                           & Pref & "p.fail(""the end of a line"")" & Cat & "; }");
                         Append (Buf, LF);
+                     elsif E.Op = B_Col_Test then
+                        --  `x where (col = 6)`: a test of the column at this position
+                        Append (Buf, Ind & "{ var q_: usize = p.pos; var c_: i64 = 0;"
+                          & " while (q_ > 0 and p.text[q_ - 1] != '\n' and p.text[q_ - 1] != '\r') { q_ -= 1; if ((p.text[q_] & 0xC0) != 0x80) c_ += 1; }"
+                          & " if (!(" & HBNF_Grammar.Col_Condition_Text (To_String (E.Path), "zig") & ")) { "
+                          & Pref & "p.fail(""a column where `" & To_String (E.Path) & "`"")" & Cat & "; } }");
+                        Append (Buf, LF);
                      elsif E.Op = B_Col then
                         --  the column: the code points since the line began
                         Append (Buf, Ind & "{ var q_ = p.pos; var c_: i64 = 0;"
@@ -4311,6 +4318,15 @@ package body HBNF_Zig is
          Append (Res, LF);
       end Emit_Eol;
 
+      --  `x where (col = 6)`: the column, code points since the line began, is c_ in the condition.
+      procedure Emit_Col (A : Cp_Atom; Ind : String; Fail : String) is
+      begin
+         Append (Res, Ind & "{ var q_: usize = pos + off; var c_: i64 = 0; "
+           & "while (q_ > 0 and s[q_ - 1] != '\n' and s[q_ - 1] != '\r') { q_ -= 1; if ((s[q_] & 0xC0) != 0x80) c_ += 1; } "
+           & "if (!(" & HBNF_Grammar.Col_Condition_Text (Col_Cond (A.Lo), "zig") & ")) " & Fail & "; }");
+         Append (Res, LF);
+      end Emit_Col;
+
       --  The function a lookahead calls: true when some branch matches at pos
       --  (the empty one too).
       procedure Emit_Look_Fn (H : Look_Helper) is
@@ -4353,10 +4369,13 @@ package body HBNF_Zig is
                         Append (Res, LF);
                      when Repeat =>
                         Emit_Repeat (A, "        ", "break :br" & Img (Br));
-                     when Look | Iter =>
+                     when Iter =>
+                        raise HBNF_Grammar.Parse_Error with
+                          "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                     when Look =>
                         Emit_Look (A, "        ", "break :br" & Img (Br));
                      when Col_Test =>
-                        null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
+                        Emit_Col (A, "        ", "break :br" & Img (Br));
                      when Bol =>
                         Emit_Bol ("        ", "break :br" & Img (Br));
                      when Eol =>
@@ -5213,10 +5232,13 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
                               Append (Res, LF);
                            when Repeat =>
                               Emit_Repeat (A, "    ", "return 0");
-                           when Look | Iter =>
+                           when Iter =>
+                              raise HBNF_Grammar.Parse_Error with
+                                "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                           when Look =>
                               Emit_Look (A, "    ", "return 0");
                            when Col_Test =>
-                              null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
+                              Emit_Col (A, "    ", "return 0");
                            when Bol =>
                               Emit_Bol ("    ", "return 0");
                            when Eol =>
@@ -5262,10 +5284,13 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
                                        Append (Res, LF);
                                     when Repeat =>
                                        Emit_Repeat (A, "        ", "break :br" & Img (Br));
-                                    when Look | Iter =>
+                                    when Iter =>
+                                       raise HBNF_Grammar.Parse_Error with
+                                         "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                                    when Look =>
                                        Emit_Look (A, "        ", "break :br" & Img (Br));
                                     when Col_Test =>
-                                       null;     --  `where (col ...)` is refused before this (Check_Col_Tests)
+                                       Emit_Col (A, "        ", "break :br" & Img (Br));
                                     when Bol =>
                                        Emit_Bol ("        ", "break :br" & Img (Br));
                                     when Eol =>

@@ -209,6 +209,8 @@ package HBNF_Grammar is
    function Uses_Reread return Boolean;
    --  True once a grammar has a `->` (the tree rewrite): a tape of it may hold text in the tape itself.
    function Uses_Tree return Boolean;
+   --  The condition of `x where (col ...)` written in a backend's language (Lang: c, rust, zig or ada) on `c_`, the column.
+   function Col_Condition_Text (S : String; Lang : String) return String;
    function Uses_Switch return Boolean;
    function Switch_Count return Natural;
    function Switch_Prefix (K : Positive) return String;

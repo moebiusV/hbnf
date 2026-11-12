@@ -4684,18 +4684,20 @@ package body HBNF_Grammar is
       return -1;
    end Slot_Of;
 
-   --  The condition of `x where (col = 6)` as a C expression on `c_`, the column (code points since the line began):
-   --  comparisons of `col` and numbers, joined by `and`, `or`, `not` and parentheses.  Anything else is refused
-   --  here, with what is allowed.
-   function Col_Condition (S : String; Where : String) return String is
+   --  The condition of `x where (col = 6)` as an expression of a backend's language on `c_` (`Cc` in Ada), the column (code points since
+   --  the line began): comparisons of `col` and numbers joined by `and`, `or`, `not` and parentheses; `and` binds tighter
+   --  than `or`.  Anything else is refused here, with what is allowed.  Lang is "c", "rust", "zig" or "ada".
+   function Col_Condition_Lang (S : String; Where : String; Lang : String) return String is
       Out_Text : Unbounded_String;
       I        : Natural := S'First;
+      Ada_Like : constant Boolean := Lang = "ada";
+      Zig_Like : constant Boolean := Lang = "zig";
 
       procedure Fail (What : String) is
       begin
          raise Parse_Error with
            Where & "`where (" & S & ")`: " & What
-           & "; a condition is comparisons (= != < <= > >=) of `col` and numbers, joined by `and`, `or`, `not` and parentheses";
+           & "; a condition is comparisons (= != <> < <= > >=) of `col` and numbers, joined by `and`, `or`, `not` and parentheses";
       end Fail;
 
       procedure Skip is
@@ -4717,9 +4719,8 @@ package body HBNF_Grammar is
       procedure Operand is
          W : constant String := Word;
       begin
-         Skip;
          if W = "col" then
-            Append (Out_Text, "c_");
+            Append (Out_Text, (if Ada_Like then "Cc" else "c_"));
          elsif W'Length > 0 and then (for all C of W => C in '0' .. '9') then
             Append (Out_Text, W);
          else
@@ -4728,15 +4729,15 @@ package body HBNF_Grammar is
          I := I + W'Length;
       end Operand;
 
-      procedure Expr;
+      procedure Or_Expr;
 
-      procedure Comparison is
+      procedure Unary is
       begin
          Skip;
          if I <= S'Last and then S (I) = '(' then
             Append (Out_Text, "(");
             I := I + 1;
-            Expr;
+            Or_Expr;
             Skip;
             if I > S'Last or else S (I) /= ')' then
                Fail ("a `)` is missing");
@@ -4747,54 +4748,72 @@ package body HBNF_Grammar is
          end if;
          if Word = "not" then
             I := I + 3;
-            Append (Out_Text, "!(");
-            Comparison;
+            Append (Out_Text, (if Ada_Like then "not (" else "!("));
+            Unary;
             Append (Out_Text, ")");
             return;
          end if;
+         Append (Out_Text, "(");
          Operand;
          Skip;
          if I + 1 <= S'Last and then S (I .. I + 1) in "<=" | ">=" | "!=" | "<>" then
-            Append (Out_Text, (if S (I .. I + 1) = "<>" then "!=" else S (I .. I + 1)));
+            Append (Out_Text,
+                    (if S (I .. I + 1) in "!=" | "<>" then (if Ada_Like then " /= " else " != ")
+                     else " " & S (I .. I + 1) & " "));
             I := I + 2;
          elsif I <= S'Last and then S (I) in '<' | '>' then
-            Append (Out_Text, S (I .. I));
+            Append (Out_Text, " " & S (I .. I) & " ");
             I := I + 1;
          elsif I <= S'Last and then S (I) = '=' then
-            Append (Out_Text, "==");
+            Append (Out_Text, (if Ada_Like then " = " else " == "));
             I := I + 1;
          else
             Fail ("a comparison is missing after the first operand");
          end if;
          Skip;
          Operand;
-      end Comparison;
+         Append (Out_Text, ")");
+      end Unary;
 
-      procedure Expr is
+      procedure And_Expr is
       begin
-         Comparison;
+         Append (Out_Text, "(");
+         Unary;
          loop
             Skip;
-            if Word = "and" then
-               I := I + 3;
-               Append (Out_Text, " && ");
-            elsif Word = "or" then
-               I := I + 2;
-               Append (Out_Text, " || ");
-            else
-               exit;
-            end if;
-            Comparison;
+            exit when Word /= "and";
+            I := I + 3;
+            Append (Out_Text, (if Ada_Like then " and then " elsif Zig_Like then " and " else " && "));
+            Unary;
          end loop;
-      end Expr;
+         Append (Out_Text, ")");
+      end And_Expr;
+
+      procedure Or_Expr is
+      begin
+         And_Expr;
+         loop
+            Skip;
+            exit when Word /= "or";
+            I := I + 2;
+            Append (Out_Text, (if Ada_Like then " or else " elsif Zig_Like then " or " else " || "));
+            And_Expr;
+         end loop;
+      end Or_Expr;
    begin
-      Expr;
+      Or_Expr;
       Skip;
       if I <= S'Last then
          Fail ("`" & S (I .. S'Last) & "` is not part of a condition");
       end if;
       return To_String (Out_Text);
-   end Col_Condition;
+   end Col_Condition_Lang;
+
+   function Col_Condition_Text (S : String; Lang : String) return String is
+     (Col_Condition_Lang (S, "", Lang));
+
+   function Col_Condition (S : String; Where : String) return String is
+     (Col_Condition_Lang (S, Where, "c"));
 
    function Parse_Context_Op (P : in out Parser) return Element_Access is
       T : constant Token := Cur (P);
