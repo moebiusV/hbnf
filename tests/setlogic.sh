@@ -178,6 +178,8 @@ same "one of keeps the order written" "$W/o1.hbnf" "$W/o1-old.hbnf"
 printf 'prefix none\nwhitespace none\nkw = one of ( "x" "a" "ab" "y" "abc" )\n' > "$W/o2.hbnf"
 printf 'prefix none\nwhitespace none\nkw = "x" | "abc" | "ab" | "a" | "y"\n' > "$W/o2-old.hbnf"
 same "one of moves a literal ahead of its front only" "$W/o2.hbnf" "$W/o2-old.hbnf"
+# an enum of literals that are punctuation alone: the Ada constants are identifiers (Op_<pos>), not U__
+chk tests/setlogic/enum-punct.hbnf "ok =;" "ok -=;+=;" "ok **=;a--b;c-;d.e;" "bad ;" "bad ***=;" "bad a-b;"
 chk tests/setlogic/allof-first.hbnf "ok p1." "ok usagep1." "ok z." "ok p1.z.usagep2." "bad usage." "bad x." "bad p1usage"
 chk tests/setlogic/allof-opt.hbnf "ok D." "ok Dp1." "ok Dusage." "ok Dusagep1." "ok Dp1usage." "bad Dp1p2." "bad Dx."
 chk tests/setlogic/allof-two.hbnf "ok ab-c" "ok ba-cd" "ok ba-dc" "bad a-c" "bad ab-d" "bad ab-cc" "bad aab-c"

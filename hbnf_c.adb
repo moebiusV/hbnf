@@ -889,6 +889,29 @@ package body HBNF_C is
       return Owner > 0 and then Holds (Rules (Owner).Pattern);
    end Rule_Opens_Tape;
 
+   --  True when some rule that is built as a node names NM as an element (in a group too): not only as the rule that skips white space.
+   function Named_As_Element (Rules : Rule_Vectors.Vector; NM : String) return Boolean is
+      function In_Vec (V : Element_Vectors.Vector) return Boolean is
+      begin
+         for E of V loop
+            if E.Kind = Name and then To_String (E.Name) = NM then
+               return True;
+            elsif E.Kind = Group and then In_Vec (E.Items) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end In_Vec;
+   begin
+      --  (a rule of characters runs the scanner of what it names, so only the rules that are built as nodes count)
+      for R of Rules loop
+         if not Is_Char_Rule (Rules, To_String (R.Name)) and then In_Vec (R.Pattern) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Named_As_Element;
+
    --  True when a rule is parsed by name: a core type (word/int/str/…, char
    --  rule or scanner action) is read as a scalar in place, a building block is inlined
    --  into a token's scanner, and the whitespace rule is only scanned by
@@ -903,7 +926,12 @@ package body HBNF_C is
       if Is_Char_Rule (Rules, NM) and then not Is_Char_Token (Rules, NM) then
          return False;
       end if;
-      if NM = To_String (Whitespace_Rule_Name (Rules)) or else Is_Any_Ws (Rules, NM) then
+      --  The whitespace rule is only scanned by skip_ws, unless a rule names it as an element: a grammar's own `ws` is a rule like any
+      --  other there (the default whitespace rule is called `ws`, and the rules of an included file have it as theirs), and the rule that
+      --  names it calls its parse function.
+      if (NM = To_String (Whitespace_Rule_Name (Rules)) or else Is_Any_Ws (Rules, NM))
+        and then not Named_As_Element (Rules, NM)
+      then
          return False;
       end if;
       return True;

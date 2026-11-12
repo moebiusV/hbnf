@@ -154,6 +154,21 @@ package body HBNF_Ada is
          return To_String (Buf);
       end Fold;
 
+      --  no two underscores in a row, none at either end
+      function Collapse (S : String) return String is
+         Buf : U;
+      begin
+         for C of S loop
+            if C /= '_' or else (Length (Buf) > 0 and then Ada.Strings.Unbounded.Element (Buf, Length (Buf)) /= '_') then
+               Append (Buf, C);
+            end if;
+         end loop;
+         if Length (Buf) > 0 and then Ada.Strings.Unbounded.Element (Buf, Length (Buf)) = '_' then
+            Delete (Buf, Length (Buf), Length (Buf));
+         end if;
+         return To_String (Buf);
+      end Collapse;
+
       function Up (S : String) return String is
          Buf : U;
       begin
@@ -179,10 +194,16 @@ package body HBNF_Ada is
    begin
       for I in 1 .. Natural (Lits.Length) loop
          declare
-            Base : constant String := Fold (Ada_Ident (To_String (Lits (I))));
+            Lit  : constant String := To_String (Lits (I));
+            Raw  : constant String := Fold (Ada_Ident (Lit));
+            --  an Ada identifier has no two underscores in a row and does not end with one: `"a--b"` is `A_b`; a literal
+            --  of punctuation alone (`"-="`, which Ada_Ident turns into `U_`) is an `Op_<pos>`
+            Base : constant String := Collapse (Raw);
+            Alnum : constant Boolean :=
+              (for some C of Lit => C in 'a' .. 'z' or else C in 'A' .. 'Z' or else C in '0' .. '9');
             N    : U;
          begin
-            if Base = "" or else (for all C of Base => C = '_')
+            if Base = "" or else not Alnum or else (for all C of Base => C = '_')
               or else Base (Base'First) in '0' .. '9'
             then
                N := To_Unbounded_String ("Op_" & Img (I));

@@ -59,7 +59,7 @@ suite() {   # GRAMMAR CASES-FILE ADA-PACKAGE: every line of the cases file is a 
 		else echo "literal: FAIL ($G: Zig does not compile: $(head -c 300 "$d/cc.txt"))"; fail=1; fi
 	fi
 	if command -v gnatmake > /dev/null 2>&1; then
-		d=$W/ad; mkdir -p "$d"
+		d=$W/ad; rm -rf "$d"; mkdir -p "$d"   # a fresh directory for each grammar: gnatmake can take the check.o of the one before for up to date
 		"$CLI" $G --backend=ada --package=$PKG > "$d/all.ada" 2> "$d/err" || { echo "literal: FAIL ($G: does not generate for Ada: $(head -c 300 "$d/err"))"; fail=1; }
 		root=$(grep -o "return [A-Za-z0-9_]*_Type" "$d/all.ada" | head -1 | sed 's/return \(.*\)_Type/\1/')
 		sed "s/MODULE/$PKG/g; s/ROOT/$root/g" corpus/posix/check.adb > "$d/check.adb"

@@ -5,15 +5,15 @@
 prefix none
 include "../../grammars/common.hbnf"
 whitespace none
-top  = blank *( declarator-id blank ";" blank )
-blank   = *( SP / HTAB / LF )
+top  = ws *( declarator-id ws ";" ws )
+ws   = *( SP / HTAB / LF )
 declarator-id = operator-function-id | literal-operator-id | conversion-function-id | name
-operator-function-id  = "operator" blank overloadable-operator
-overloadable-operator = "new" blank "[" blank "]" | "delete" blank "[" blank "]" | "new" | "delete" | "co_await" | "(" blank ")" | "[" blank "]"
+operator-function-id  = "operator" ws overloadable-operator
+overloadable-operator = "new" ws "[" ws "]" | "delete" ws "[" ws "]" | "new" | "delete" | "co_await" | "(" ws ")" | "[" ws "]"
                       | one of ( "->*" "->" "<=>" "+=" "-=" "*=" "/=" "%=" "^=" "&=" "|=" "<<=" ">>=" "==" "!=" "<=" ">=" "&&" "||"
                                  "<<" ">>" "++" "--" "+" "-" "*" "/" "%" "^" "&" "|" "~" "!" "=" "<" ">" "," )
-literal-operator-id   = "operator" blank "\"\"" blank name
-conversion-function-id = "operator" blank name *( blank ( "*" | "&" ) )
+literal-operator-id   = "operator" ws "\"\"" ws name
+conversion-function-id = "operator" ws name *( ws ( "*" | "&" ) )
 name = !keyword 1*word-char
 keyword = "operator" !word-char
 word-char = ALPHA / DIGIT / "_"

@@ -1,0 +1,7 @@
+; an enum of literals, among them literals of punctuation alone (`"-="`, which Ada_Ident turns into `U_`) and one with two
+; punctuation characters in a row inside a word: the Ada constants must be identifiers (no two underscores in a row, none at an end)
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+top = 1*( op ";" )
+op  = one of ( "=" "+=" "-=" "**=" "a--b" "c-" "d.e" )
