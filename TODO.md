@@ -91,7 +91,7 @@ Open decisions and unbuilt designs:
 - [ ] Granular check reporting: per-item results (backend / arch / grammar / suite), sequential, easy to run one item.
 - [ ] Build files (every builder, not only make, cmake, cargo and autoconf: ninja and the rest too, the author 2026-11-11), `project.conf`, `builders/`, `languages/`, `hbnfversion`, helper code in `.c`/`.rs` files and `.o` files linked in, several grammars named by one project: decided in outline 2026-10-29 and 30 (decision register R608-R618, R619), nothing built (the plan of 2026-11-11, Phase 7).
 - [ ] The conf glue out of the templates into an included C header.
-- [ ] **Port the C-only features to Rust, Zig, Ada, tree-sitter** (`where (col ...)` is ported 2026-11-11 for phrase rules and for scanners that do not repeat a rule holding a test; the `Iter` atom, a rule of characters that repeats a rule or group holding a lookahead or a position test, is C only and the others refuse it by message: that is what fixed-format COBOL needs in Rust, Zig and Ada) (the standing rule is C first, then the rest): `as K`/`$K`, up references, `^.rule`, `bol`/`eol`, the scanned lookahead, overlay, unwind marks, the arena, the tape captures, the SSE2 loop, the context-set hash.
+- [ ] **Port the C-only features to Rust, Zig, Ada, tree-sitter** (`where (col ...)` and the `Iter` atom, a rule of characters that repeats a rule or group holding a lookahead or a position test, are ported 2026-11-11: fixed-format COBOL agrees with C on every test file in Rust, Zig and Ada; the standing rule is C first, then the rest): `as K`/`$K`, up references, `^.rule`, `bol`/`eol`, the scanned lookahead, overlay, unwind marks, the arena, the tape captures, the SSE2 loop, the context-set hash.
 
 Prio:
 Note:

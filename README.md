@@ -120,7 +120,7 @@ to the OpenBSD configuration files.
 - [`corpus/c/README.md`](corpus/c/README.md): C in six grammars (`c79`, `c89`, `c99`, `pcc99`, `gnu99`, `c11`), each against its era's yacc grammar and compiler; [`corpus/c/originals/README.md`](corpus/c/originals/README.md) lists the original grammars they are counted against.
 - [`corpus/algol60/README.md`](corpus/algol60/README.md): the ALGOL 60 report and its BNF.
 - [`corpus/imp72/README.md`](corpus/imp72/README.md): the IMP72 compiler's sources (cancelled as a target: IMP72 will get its own compiler).
-- [`corpus/cobol/README.md`](corpus/cobol/README.md): COBOL in free format and in the fixed reference format (`cobol-fixed.hbnf`, with `where (col ...)`), checked against GnuCOBOL's `cobc` and the NIST suite; a core of the language, begun.
+- [`corpus/cobol/README.md`](corpus/cobol/README.md): COBOL in free format and in the fixed reference format (`cobol-fixed.hbnf`, with `where (col ...)`, in all four backends), checked against GnuCOBOL's `cobc` and the NIST suite; a core of the language, begun.
 - [`corpus/sgml/README.md`](corpus/sgml/README.md): SGML (ISO 8879), the part a grammar can read: the DTD's declarations, the SGML declaration and the instance's markup; no oracle was available.
 - [`corpus/mustache/README.md`](corpus/mustache/README.md): Mustache templates, with the back-reference that makes a closing tag repeat its opening one.
 - [`corpus/json/README.md`](corpus/json/README.md): JSON in 14 rules, checked against Python's `json`.

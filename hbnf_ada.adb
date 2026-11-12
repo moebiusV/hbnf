@@ -3356,6 +3356,44 @@ package body HBNF_Ada is
          Append (Bdy, LF);
       end Emit_Col;
 
+      --  An Iter: a rule or a group that holds a lookahead or a position test, repeated.  One time of it is the function
+      --  written for it (Emit_Loop_Fn), which says how many bytes the longest of its branches takes (0: none matches);
+      --  take as many times as match, then require the least.
+      procedure Emit_Loop (A : Cp_Atom; Ind : String; Fail : String) is
+         Needs_Cnt : constant Boolean := A.Hi /= 0 or else A.Lo > 0;
+      begin
+         Append (Bdy, Ind & "declare");
+         Append (Bdy, LF);
+         if Needs_Cnt then
+            Append (Bdy, Ind & "   Cnt : Natural := 0;");
+            Append (Bdy, LF);
+         end if;
+         Append (Bdy, Ind & "   Mo  : Natural;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "begin");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "   loop");
+         Append (Bdy, LF);
+         if A.Hi /= 0 then
+            Append (Bdy, Ind & "      exit when Cnt >= " & Img (A.Hi) & ";");
+            Append (Bdy, LF);
+         end if;
+         Append (Bdy, Ind & "      Mo := Loop_" & Ada_Ident (To_String (A.Fn)) & " (S, Pos + Off, Len);");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      exit when Mo = 0;");
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "      Off := Off + Mo;" & (if Needs_Cnt then "  Cnt := Cnt + 1;" else ""));
+         Append (Bdy, LF);
+         Append (Bdy, Ind & "   end loop;");
+         Append (Bdy, LF);
+         if A.Lo > 0 then
+            Append (Bdy, Ind & "   if Cnt < " & Img (A.Lo) & " then " & Fail & "; end if;");
+            Append (Bdy, LF);
+         end if;
+         Append (Bdy, Ind & "end;");
+         Append (Bdy, LF);
+      end Emit_Loop;
+
       --  The function a lookahead calls: true when some branch matches at Pos
       --  (the empty one too).
       procedure Emit_Look_Fn (H : Look_Helper) is
@@ -3393,8 +3431,7 @@ package body HBNF_Ada is
                   when Repeat =>
                      Emit_Repeat (A, "         ", "Ok := False");
                   when Iter =>
-                     raise HBNF_Grammar.Parse_Error with
-                       "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                     Emit_Loop (A, "         ", "Ok := False");
                   when Look =>
                      Emit_Look (A, "         ", "Ok := False");
                   when Col_Test =>
@@ -3416,6 +3453,67 @@ package body HBNF_Ada is
          Append (Bdy, LF);
          Append (Bdy, LF);
       end Emit_Look_Fn;
+
+      --  The function one time of an Iter calls: how many bytes the longest branch takes at Pos (0: none matches).
+      procedure Emit_Loop_Fn (H : Look_Helper) is
+      begin
+         Append (Bdy, "   function Loop_" & Ada_Ident (To_String (H.Name))
+           & " (S : String; Pos, Len : Natural) return Natural is");
+         Append (Bdy, LF);
+         Append (Bdy, "      Cp   : Natural;");
+         Append (Bdy, LF);
+         Append (Bdy, "      N    : Natural;");
+         Append (Bdy, LF);
+         Append (Bdy, "      Off  : Natural;");
+         Append (Bdy, LF);
+         Append (Bdy, "      Ok   : Boolean;");
+         Append (Bdy, LF);
+         Append (Bdy, "      Best : Natural := 0;");
+         Append (Bdy, LF);
+         Append (Bdy, "   begin");
+         Append (Bdy, LF);
+         for B of H.Branches loop
+            Append (Bdy, "      Off := 0;");
+            Append (Bdy, LF);
+            Append (Bdy, "      Ok := True;");
+            Append (Bdy, LF);
+            for A of B loop
+               Append (Bdy, "      if Ok then");
+               Append (Bdy, LF);
+               case A.Kind is
+                  when Single =>
+                     Append (Bdy, "         N := Decode_Utf8 (S, Pos + Off, Len, Cp);");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         Ok := N > 0 and then "
+                       & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2) & ";");
+                     Append (Bdy, LF);
+                     Append (Bdy, "         if Ok then Off := Off + N; end if;");
+                     Append (Bdy, LF);
+                  when Repeat =>
+                     Emit_Repeat (A, "         ", "Ok := False");
+                  when Iter =>
+                     Emit_Loop (A, "         ", "Ok := False");
+                  when Look =>
+                     Emit_Look (A, "         ", "Ok := False");
+                  when Col_Test =>
+                     Emit_Col (A, "         ", "Ok := False");
+                  when Bol =>
+                     Emit_Bol ("         ", "Ok := False");
+                  when Eol =>
+                     Emit_Eol ("         ", "Ok := False");
+               end case;
+               Append (Bdy, "      end if;");
+               Append (Bdy, LF);
+            end loop;
+            Append (Bdy, "      if Ok and then Off > Best then Best := Off; end if;");
+            Append (Bdy, LF);
+         end loop;
+         Append (Bdy, "      return Best;");
+         Append (Bdy, LF);
+         Append (Bdy, "   end Loop_" & Ada_Ident (To_String (H.Name)) & ";");
+         Append (Bdy, LF);
+         Append (Bdy, LF);
+      end Emit_Loop_Fn;
    begin
       --  Free_<rule>: release a tree the parse functions built.  A consumer
       --  calls Free_<root> once it is finished with one, and the access nodes
@@ -4757,7 +4855,11 @@ package body HBNF_Ada is
                   end;
                else
                for H of Look_Helpers (DNF) loop
-                  Emit_Look_Fn (H);
+                  if H.Is_Iter then
+                     Emit_Loop_Fn (H);
+                  else
+                     Emit_Look_Fn (H);
+                  end if;
                end loop;
                Append (Bdy, "   function Scan_" & Ada_Ident (NM)
                  & " (S : String; Pos, Len : Natural) return Natural is");
@@ -4786,8 +4888,7 @@ package body HBNF_Ada is
                         when Repeat =>
                            Emit_Repeat (A, "      ", "return 0");
                         when Iter =>
-                           raise HBNF_Grammar.Parse_Error with
-                             "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                           Emit_Loop (A, "      ", "return 0");
                         when Look =>
                            Emit_Look (A, "      ", "return 0");
                         when Col_Test =>
@@ -4840,8 +4941,11 @@ package body HBNF_Ada is
                               Append (Bdy, "      end if;");
                               Append (Bdy, LF);
                            when Iter =>
-                              raise HBNF_Grammar.Parse_Error with
-                                "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                              Append (Bdy, "      if Ok then");
+                              Append (Bdy, LF);
+                              Emit_Loop (A, "         ", "Ok := False");
+                              Append (Bdy, "      end if;");
+                              Append (Bdy, LF);
                            when Look =>
                               Append (Bdy, "      if Ok then");
                               Append (Bdy, LF);

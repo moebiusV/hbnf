@@ -2,7 +2,7 @@
 # `x where (col = 6)` (CONTEXTS.md section 24): a test of the column the element before it starts in, in a phrase rule and in a rule of
 # characters (a scanner), in the C, Rust, Zig and Ada backends: tests/column/records.hbnf is built and each line of tests/column/cases.txt (ok or bad, TAB, the text;
 # `\n` is a line end) is read.  A condition that is not about `col` is refused with what is allowed, and the corpus/cobol/cobol-fixed.hbnf
-# programs (tests/cobol.sh) use it on a real format, in C (Rust, Zig and Ada say they cannot scan its repeated rules yet).
+# programs (tests/cobol.sh) use it on a real format.
 #   HBNF=/path/to/hbnf sh tests/column.sh      (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
@@ -38,11 +38,11 @@ if command -v rustc > /dev/null 2>&1 && [ -s "$W/o.rust" ]; then
 		done < tests/column/cases.txt
 	else echo "column: FAIL (the Rust parser does not compile: $(grep -m2 error "$W/rs/cc.txt" | head -c 300))"; fail=1; fi
 fi
-# a repeated rule that holds a position test, in a rule of characters, is scanned by C only: the others say so and do not guess
+# fixed-format COBOL (a rule of characters that repeats a rule holding a position test: the Iter atom) generates in each backend;
+# tests/cobol.sh builds and runs it
 for b in rust zig ada; do
-	"$CLI" corpus/cobol/cobol-fixed.hbnf --root=compilation-group --backend=$b --package=Tc 2>&1 > /dev/null \
-		| grep -q 'and only the C backend scans that' \
-		|| { echo "column: FAIL ($b does not say that fixed-format COBOL needs the C scanner)"; fail=1; }
+	"$CLI" corpus/cobol/cobol-fixed.hbnf --root=compilation-group --backend=$b --package=Tc > /dev/null 2> "$W/err" \
+		|| { echo "column: FAIL (fixed-format COBOL does not generate in $b: $(grep -v warning "$W/err" | head -c 300))"; fail=1; }
 done
 refuse() {   # NAME TEXT WANT: a grammar with TEXT as its rule is refused with a message containing WANT
 	printf 'prefix none\nwhitespace none\ntop = %s\n' "$2" > "$W/r.hbnf"

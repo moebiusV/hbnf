@@ -3952,6 +3952,32 @@ package body HBNF_Rust is
          Append (Res, LF);
       end Emit_Col;
 
+      --  An Iter: a rule or a group that holds a lookahead or a position test, repeated.  One time of it is the function
+      --  written for it (Emit_Loop_Fn), which says how many bytes the longest of its branches takes (0: none matches);
+      --  take as many times as match, then require the least.
+      procedure Emit_Loop (A : Cp_Atom; Ind : String; Fail : String) is
+         Needs_Cnt : constant Boolean := A.Hi /= 0 or else A.Lo > 0;
+      begin
+         Append (Res, Ind & "{" & (if Needs_Cnt then " let mut cnt = 0usize;" else ""));
+         Append (Res, LF);
+         Append (Res, Ind & (if A.Hi = 0 then "    loop {" else "    while cnt < " & Img (A.Hi) & " {"));
+         Append (Res, LF);
+         Append (Res, Ind & "        let n_ = loop_" & Rust_Snake (To_String (A.Fn)) & "(s, pos + off, len);");
+         Append (Res, LF);
+         Append (Res, Ind & "        if n_ == 0 { break; }");
+         Append (Res, LF);
+         Append (Res, Ind & "        off += n_;" & (if Needs_Cnt then " cnt += 1;" else ""));
+         Append (Res, LF);
+         Append (Res, Ind & "    }");
+         Append (Res, LF);
+         if A.Lo > 0 then
+            Append (Res, Ind & "    if cnt < " & Img (A.Lo) & " { " & Fail & "; }");
+            Append (Res, LF);
+         end if;
+         Append (Res, Ind & "}");
+         Append (Res, LF);
+      end Emit_Loop;
+
       --  The function a lookahead calls: true when some branch matches at pos
       --  (the empty one too).
       procedure Emit_Look_Fn (H : Look_Helper) is
@@ -3985,8 +4011,7 @@ package body HBNF_Rust is
                      when Repeat =>
                         Emit_Repeat (A, "        ", "break 'br" & Img (Br));
                      when Iter =>
-                        raise HBNF_Grammar.Parse_Error with
-                          "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                        Emit_Loop (A, "        ", "break 'br" & Img (Br));
                      when Look =>
                         Emit_Look (A, "        ", "break 'br" & Img (Br));
                      when Col_Test =>
@@ -4023,6 +4048,56 @@ package body HBNF_Rust is
          Append (Res, LF);
          Append (Res, LF);
       end Emit_Look_Fn;
+
+      --  The function one time of an Iter calls: how many bytes the longest branch takes at pos (0: none matches).
+      procedure Emit_Loop_Fn (H : Look_Helper) is
+         Br : Natural := 0;
+      begin
+         Append (Res, "#[allow(unused_labels, unused_mut, unused_assignments, unused_variables)]");
+         Append (Res, LF);
+         Append (Res, "fn loop_" & Rust_Snake (To_String (H.Name))
+           & "(s: &[u8], pos: usize, len: usize) -> usize {");
+         Append (Res, LF);
+         Append (Res, "    let mut best = 0usize;");
+         Append (Res, LF);
+         for B of H.Branches loop
+            Br := Br + 1;
+            Append (Res, "    'br" & Img (Br) & ": {");
+            Append (Res, LF);
+            Append (Res, "        let mut off = 0usize;");
+            Append (Res, LF);
+            for A of B loop
+               case A.Kind is
+                  when Single =>
+                     Append (Res, "        let (n, c) = decode_utf8(s, pos + off, len);"
+                       & " if n == 0 || !" & Range_Cond (A.Lo, A.Hi, A.Lo2, A.Hi2)
+                       & " { break 'br" & Img (Br) & "; } off += n;");
+                     Append (Res, LF);
+                  when Repeat =>
+                     Emit_Repeat (A, "        ", "break 'br" & Img (Br));
+                  when Iter =>
+                     Emit_Loop (A, "        ", "break 'br" & Img (Br));
+                  when Look =>
+                     Emit_Look (A, "        ", "break 'br" & Img (Br));
+                  when Col_Test =>
+                     Emit_Col (A, "        ", "break 'br" & Img (Br));
+                  when Bol =>
+                     Emit_Bol ("        ", "break 'br" & Img (Br));
+                  when Eol =>
+                     Emit_Eol ("        ", "break 'br" & Img (Br));
+               end case;
+            end loop;
+            Append (Res, "        if off > best { best = off; }");
+            Append (Res, LF);
+            Append (Res, "    }");
+            Append (Res, LF);
+         end loop;
+         Append (Res, "    best");
+         Append (Res, LF);
+         Append (Res, "}");
+         Append (Res, LF);
+         Append (Res, LF);
+      end Emit_Loop_Fn;
    begin
       if Preamble ("Rust") /= "" then
          Append (Res, Preamble ("Rust"));
@@ -4522,7 +4597,11 @@ begin
 end;
 else
 for H of Look_Helpers (DNF) loop
-   Emit_Look_Fn (H);
+   if H.Is_Iter then
+      Emit_Loop_Fn (H);
+   else
+      Emit_Look_Fn (H);
+   end if;
 end loop;
 Append (Res, "fn scan_" & Rust_Snake (NM)
                     & "(s: &[u8], pos: usize, len: usize) -> usize {");
@@ -4542,8 +4621,7 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                            when Repeat =>
                               Emit_Repeat (A, "    ", "return 0");
                            when Iter =>
-                              raise HBNF_Grammar.Parse_Error with
-                                "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                              Emit_Loop (A, "    ", "return 0");
                            when Look =>
                               Emit_Look (A, "    ", "return 0");
                            when Col_Test =>
@@ -4584,8 +4662,7 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
                                     when Repeat =>
                                        Emit_Repeat (A, "        ", "break 'br" & Img (Br));
                                     when Iter =>
-                                       raise HBNF_Grammar.Parse_Error with
-                                         "a rule of characters repeats a rule or a group that holds a lookahead or a position test (`where (col ...)`, `bol`, `eol`) and only the C backend scans that: write the repeated part as a class of characters";
+                                       Emit_Loop (A, "        ", "break 'br" & Img (Br));
                                     when Look =>
                                        Emit_Look (A, "        ", "break 'br" & Img (Br));
                                     when Col_Test =>

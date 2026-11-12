@@ -51,6 +51,21 @@ if command -v rustc > /dev/null 2>&1; then
 		done
 	else echo "cobol: FAIL (the Rust parser does not compile: $(grep -m2 error "$W/rs/cc.txt" | head -c 300))"; fail=$((fail + 1)); fi
 fi
+# fixed format in the Rust backend, where rustc is installed (the Iter atom: word characters that hold a column test)
+if command -v rustc > /dev/null 2>&1; then
+	mkdir -p "$W/rf"
+	"$CLI" $D/cobol-fixed.hbnf --root=compilation-group --backend=rust > "$W/rf/l.rs" 2> "$W/err" || { echo "cobol: FAIL (generate the fixed format in Rust)"; fail=$((fail + 1)); }
+	sed "s/MODULE/l/g" corpus/c/check.rs > "$W/rf/m.rs"
+	if (cd "$W/rf" && rustc --edition 2021 -A warnings -C opt-level=0 -o m m.rs > cc.txt 2>&1); then
+		for kind in good bad; do
+			for f in $D/tests/fixed/$kind/*.cob; do
+				got=$("$W/rf/m" "$f" 2>&1 | cut -d' ' -f1 | head -1)
+				want=ok; [ $kind = bad ] && want=bad
+				[ "$got" = "$want" ] || { echo "FAIL $f: fixed format, $kind file, the Rust parser says $got"; fail=$((fail + 1)); }
+			done
+		done
+	else echo "cobol: FAIL (the Rust fixed-format parser does not compile: $(grep -m2 error "$W/rf/cc.txt" | head -c 300))"; fail=$((fail + 1)); fi
+fi
 # the fixed reference format: the same, with cobol-fixed.hbnf (the columns, `where (col ...)`) over corpus/cobol/tests/fixed/{good,bad}, and cobc -fixed
 "$CLI" $D/cobol-fixed.hbnf --root=compilation-group --backend=c > "$W/fixed.c" 2> "$W/err" || { echo "cobol: FAIL (generate the fixed format)"; grep -v warning "$W/err" | head -5; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/fixed.c")
