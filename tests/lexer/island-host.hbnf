@@ -1,0 +1,4 @@
+prefix none
+whitespace none
+include "island-guest.hbnf" as js
+doc = "<" js.program ">"

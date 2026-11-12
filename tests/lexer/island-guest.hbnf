@@ -1,0 +1,6 @@
+; An island's guest defines a hyperrule: `sym(S) := S blank`; its parameter S is not a rule of the guest (CONTEXTS section 26, item 27).
+prefix none
+whitespace none
+program = *( sym("a") | sym("b") )
+sym(S) := S blank
+blank = *" "

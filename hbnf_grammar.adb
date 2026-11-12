@@ -11658,6 +11658,46 @@ package body HBNF_Grammar is
 
       procedure Check (Owner, Scope : String; V : Element_Vectors.Vector);
 
+      --  A hyperrule's parameter stands in its body as a name (`sym(S) := S blank`): it is no rule of the grammar, so it is
+      --  not looked for in one (CONTEXTS section 26, item 27).  The owner is spelled with its head, `js--sym(S)` or
+      --  `f(N in 0.., K)`.
+      function Is_Param_Of (Owner, B : String) return Boolean is
+         Open : Natural := Owner'First;
+         Pos  : Natural;
+      begin
+         while Open <= Owner'Last and then Owner (Open) /= '(' loop
+            Open := Open + 1;
+         end loop;
+         if Open > Owner'Last or else Owner (Owner'Last) /= ')' then
+            return False;
+         end if;
+         Pos := Open + 1;
+         while Pos < Owner'Last loop
+            declare
+               Start : Natural := Pos;
+               Stop  : Natural;
+            begin
+               while Start < Owner'Last and then Owner (Start) = ' ' loop
+                  Start := Start + 1;
+               end loop;
+               Stop := Start;
+               while Stop < Owner'Last and then Owner (Stop) not in ',' | ' ' | ')' loop
+                  Stop := Stop + 1;
+               end loop;
+               if Stop > Start and then Owner (Start .. Stop - 1) = B then
+                  return True;
+               end if;
+               --  to the next parameter
+               Pos := Stop;
+               while Pos < Owner'Last and then Owner (Pos) /= ',' loop
+                  Pos := Pos + 1;
+               end loop;
+               Pos := Pos + 1;
+            end;
+         end loop;
+         return False;
+      end Is_Param_Of;
+
       procedure Check_Name (Owner, Scope, Nm : String) is
          Stop : Natural := Nm'First;
       begin
@@ -11670,6 +11710,7 @@ package body HBNF_Grammar is
             if B = "" or else B (B'First) = '<' or else Is_Core_Name (B)
               or else B = "ws" or else Scope_Of (B) /= ""
               or else (for some R of Up_Root_Refs => To_String (R.Base) = B and then To_String (R.Scope) = Scope)
+              or else Is_Param_Of (Owner, B)
             then
                return;
             end if;

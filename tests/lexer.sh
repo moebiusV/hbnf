@@ -106,6 +106,15 @@ for be in c rust zig ada; do
 	grep -q 'rules `and-like-this` and `and_like_this` both become' "$W/err" \
 		|| { echo "lexer: FAIL (name-collision, $be: the message does not name both rules: $(head -c 200 "$W/err"))"; fail=1; }
 done
+# a hyperrule in an island's guest (item 27)
+"$CLI" tests/lexer/island-host.hbnf --backend=c > "$W/i.c" 2> "$W/err" || { echo "lexer: FAIL (island-host.hbnf: $(head -c 300 "$W/err"))"; exit 1; }
+root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/i.c")
+cat "$W/i.c" corpus/c/check.c > "$W/mi.c"
+cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/mi.c" -o "$W/checki" 2> "$W/cc.txt" || { echo "lexer: FAIL (island-host.hbnf: cc: $(head -c 300 "$W/cc.txt"))"; exit 1; }
+for c in "ok <a b a>" "ok <>" "bad <c>"; do
+	printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checki" "$W/t.txt" | cut -d' ' -f1)
+	[ "$got" = "${c%% *}" ] || { echo "lexer: FAIL (island hyperrule on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
+done
 # a rule named `text` (item 26) in Rust, where it is installed
 if command -v rustc > /dev/null 2>&1; then
 	mkdir -p "$W/rs"
