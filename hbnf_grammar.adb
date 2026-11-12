@@ -2574,13 +2574,23 @@ package body HBNF_Grammar is
                              and then Text (K) in 'a' .. 'z' | 'A' .. 'Z')
                then
                   --  `identifier ? types`: the text just matched is in a
-                  --  context (RFCPLAN.md decision 13).
+                  --  context (RFCPLAN.md decision 13).  In hbnf's notation it is written `in` (R647).
+                  if Hbnf_Notation then
+                     raise Parse_Error with
+                       Integer'Image (Line) & ":" & Integer'Image (Col)
+                       & ": `x ? S` is written `x in S` (or `x ∈ S`): `identifier in types`";
+                  end if;
                   Emit (T_Pct, "test");
                   I := I + 1;  Col := Col + 1;
                elsif I + 2 <= Text'Last and then Text (I + 1) = '!'
                  and then Text (I + 2) in ' ' | ASCII.HT
                then
-                  --  `identifier ?! types`: the text just matched is not in it.
+                  --  `identifier ?! types`: the text just matched is not in it.  In hbnf's notation it is written `not in` (R647).
+                  if Hbnf_Notation then
+                     raise Parse_Error with
+                       Integer'Image (Line) & ":" & Integer'Image (Col)
+                       & ": `x ?! S` is written `x not in S` (or `x ∉ S`): `identifier not in types`";
+                  end if;
                   Emit (T_Pct, "nottest");
                   I := I + 2;  Col := Col + 2;
                else

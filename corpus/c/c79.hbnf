@@ -32,8 +32,8 @@ type                 = 1*3( "char" | "short" | "int" | "long" | "float" | "doubl
                      | enum-specifier
 ; A typedef name is a token of its own, so it is not a variable, unless a declaration in an
 ; inner scope has made the name a variable.
-known-type           = identifier ? types
-typedef-name         = known-type ?! vars
+known-type           = identifier in types
+typedef-name         = known-type not in vars
 struct-specifier     = ( "struct" | "union" ) ( identifier [ "{" struct-body "}" ] | "{" struct-body "}" )
 struct-body          = member-declaration *( ";" member-declaration ) [ ";" ]
 member-declaration   = %scope type [ member-declarator *( "," member-declarator ) ]
@@ -79,8 +79,8 @@ compound-statement   = "{" %scope *declaration *statement "}"
 primary-expression   = constant
                      | string-literal
                      | "(" expression ")"
-                     | identifier ?! types
-                     | identifier ? vars
+                     | identifier not in types
+                     | identifier in vars
 postfix-expression   = primary-expression
                        *( "[" expression "]" | "(" [ assignment-expression *( "," assignment-expression ) ] ")"
                         | "." identifier | "->" identifier | "++" | "--" )

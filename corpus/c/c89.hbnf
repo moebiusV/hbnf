@@ -45,9 +45,9 @@ basic-type           = "void" | "char" | "short" | "int" | "long" | "float" | "d
                      | "unsigned" | struct-or-union-specifier | enum-specifier
 ; A typedef name is a token of its own (3.1.2.1), so it is not a variable, unless a declaration in
 ; an inner scope has made the name a variable (`typedef struct instr instr; ... instr *instr`).
-known-type           = identifier ? types
-typedef-name         = known-type ?! vars
-variable-name        = identifier ?! types | identifier ? vars
+known-type           = identifier in types
+typedef-name         = known-type not in vars
+variable-name        = identifier not in types | identifier in vars
 
 struct-or-union-specifier = struct-or-union ( identifier [ "{" struct-declaration-list "}" ] | "{" struct-declaration-list "}" )
 struct-or-union      = "struct" | "union"

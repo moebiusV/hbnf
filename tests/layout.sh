@@ -53,7 +53,7 @@ printf 'layout tape\nprefix none\nwhitespace none\ntop = "(" *( top ) ")"\n' > "
 	|| { echo "layout: FAIL (the layout directive does not make a tape)"; fail=1; }
 "$CLI" "$W/d.hbnf" --backend=c --layout=ast 2> "$W/d.err" | grep -q 'tape_open' \
 	&& { echo "layout: FAIL (--layout=ast does not win over the directive)"; fail=1; }
-# the C grammar as a tape: it uses the typedef context (`identifier ? types`) and recursion through its
+# the C grammar as a tape: it uses the typedef context (`identifier in types`) and recursion through its
 # rules, and must accept every file of corpus/c/tests/good and refuse every file of corpus/c/tests/bad,
 # as the tree parser does (tests/c.sh)
 "$CLI" corpus/c/c11.hbnf --backend=c --layout=tape > "$W/c11t.c" 2> "$W/c11t.err" \

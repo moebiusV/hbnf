@@ -7,7 +7,7 @@ whitespace none
 doc  = *( stmt ";" )
 stmt = "def" SP name as N                      => names += N
      | "undef" SP name as N                    => names -= N
-     | "use" SP name ? names
+     | "use" SP name in names
      | "try" SP ( "def" SP name as M           => names += M ) "!"
      | "try" SP "def" SP name
 name = 1*0x61..0x7A

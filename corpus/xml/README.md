@@ -57,12 +57,12 @@ syntax is mostly punctuation and keywords; what the grammar saves is rules, by s
 ## The well-formedness constraints
 
 The syntax cannot say these; the grammar checks them with the `context` mechanism (named sets of names that the
-parser keeps while it reads: `x ? C` tests one, `%bind C += x` adds to it, a guess that fails puts them back) and with one
+parser keeps while it reads: `x in C` tests one, `%bind C += x` adds to it, a guess that fails puts them back) and with one
 regular expression.  Each is written in the grammar once, in a few symbols.
 
 | constraint | how | size | feature |
 |---|---|---|---|
-| Unique Att Spec: no attribute name twice in a tag | `attribute = qname ?! atts %bind atts += qname ..`; `%scope` on `attributes` empties the set at the end of the tag | 0 rules, 7 symbols | context |
+| Unique Att Spec: no attribute name twice in a tag | `attribute = qname not in atts %bind atts += qname ..`; `%scope` on `attributes` empties the set at the end of the tag | 0 rules, 7 symbols | context |
 | Legal Character: `&#..;` names a character of `Char`, in text, in an attribute value, in an entity value, in an attribute default | `charnum = r"#(..)"`, a regular expression over the digits (decimal and hex, leading zeros allowed), written as an automaton so that no two alternatives begin alike (`tools/xml_charref.py [--check]`; the check tries every number from 0 to 0x110010 in both bases) | 1 rule, 925 characters (`charref`, `predef`, `simple-ref` are the old `reference` split) | regular expression: every backend, not a context |
 | Entity Declared | `ents` holds the general entities of the internal subset (`gen-entity`); `&name;` is `declared`, a name in `ents`; the five predefined are the token `predef`.  A document whose DOCTYPE has an external identifier or a `%name;` may have declared the name elsewhere: `open` is set there and `declared` accepts any name; `standalone="yes"` (`solo`) says it did not | 7 rules | context |
 | No Recursion; and Entity Declared once more, for the names inside the text of an entity that is used | each entity declared with a text keeps the text in the context log next to its name (`%bind { }` after `entity-value`, `vals`); `declared` runs a `%where { }` that walks, from the entity named, the entities that the texts name, with a mark for the ones on the path and for the ones done (`safe` remembers the entity that passed, so each is walked once): a name met again on the path is a recursion, a name that is not declared (and not predefined, in a document that is not `open`) is an error | about 40 lines of C, once | context, `%where` and `%bind` code (C only) |

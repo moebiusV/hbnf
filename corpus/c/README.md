@@ -68,11 +68,11 @@ alternatives that begin alike read that beginning once (`tests/factor.sh`, `test
 
 ## How it is written
 
-- **Typedefs.**  `typedef-name = known-type ?! vars`, `known-type = identifier ? types`: an identifier
+- **Typedefs.**  `typedef-name = known-type not in vars`, `known-type = identifier in types`: an identifier
   is a type if a typedef declarator has added it to the context `types`, and a variable if a declarator
   has since added it to `vars` (`int f(instr *instr)`).  A typedef declarator is `identifier %bind types
   += identifier`; a block, a function and a `for` are `%scope`s, so what they bind ends with them.
-  `variable-name = identifier ?! types | identifier ? vars` keeps a typedef name from being a variable.
+  `variable-name = identifier not in types | identifier in vars` keeps a typedef name from being a variable.
 - **Ordered choice without reading twice.**  `assignment-expression = conditional-expression [
   assignment-operator assignment-expression ]` (the standard has `unary-expression assignment-operator
   assignment-expression | conditional-expression`, which reads the left side twice), and likewise for

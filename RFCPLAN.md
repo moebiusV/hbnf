@@ -246,7 +246,7 @@ parameterised rules.
     by the parser, in a notation a BNF reader is not surprised by:
 
         context types                              ; a scoped set of names
-        typedef-name = identifier ? types          ; an identifier that is in `types`
+        typedef-name = identifier in types          ; an identifier that is in `types`
         declaration  = specs declarators ";"  %bind types += declarators.name
         block        = "{" %scope *statement "}"   ; bindings made inside vanish at "}"
 
@@ -276,7 +276,7 @@ parameterised rules.
 
     **Built 2026-10-18 (C), in the first spelling, local to the rule that uses
     it** (the user: "keep things local ... but clean and easy to read"):
-    `context types templates` declares contexts; `identifier ? types` fails the
+    `context types templates` declares contexts; `identifier in types` fails the
     alternative unless the text just matched is in `types`; `%bind types +=
     declarators.name` adds a field's text when that point of the rule is
     reached (or `%bind { code }`); `%scope` makes what is bound after it vanish

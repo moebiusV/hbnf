@@ -24,8 +24,15 @@ same() {   # WHAT NEW OLD [BACKENDS]: the same generated text in each backend
 		cmp -s "$W/n" "$W/o" && [ -s "$W/n" ] || { echo "setlogic: FAIL ($1, $b: not the text of $3: $(head -c 200 "$W/ne"))"; fail=1; }
 	done
 }
-same "in and not in" tests/setlogic/member.hbnf tests/setlogic/member-old.hbnf c     # (a grammar with `context` is C only)
-same "∈ and ∉" tests/setlogic/member-unicode.hbnf tests/setlogic/member-old.hbnf c
+same "in and not in are ∈ and ∉" tests/setlogic/member.hbnf tests/setlogic/member-unicode.hbnf c     # (a grammar with `context` is C only)
+# the old spellings `x ? S` and `x ?! S` are refused, with the new spelling in the message (R647)
+"$CLI" tests/setlogic/member-old.hbnf --backend=c 2>&1 > /dev/null | grep -q '`x ? S` is written `x in S`' \
+	|| { echo "setlogic: FAIL (x ? S is not refused with in)"; fail=1; }
+n=$((n + 1))
+printf 'prefix none\ncontext types\nwhitespace none\ntop = name ?! types\nname = 1*0x61..0x7a\n' > "$W/neg.hbnf"
+"$CLI" "$W/neg.hbnf" --backend=c 2>&1 > /dev/null | grep -q '`x ?! S` is written `x not in S`' \
+	|| { echo "setlogic: FAIL (x ?! S is not refused with not in)"; fail=1; }
+n=$((n + 1))
 printf 'prefix none\nwhitespace none\nkw = in ( "a" "abc" "ab" )\n' > "$W/one.hbnf"
 printf 'prefix none\nwhitespace none\nkw = "abc" | "ab" | "a"\n' > "$W/one-old.hbnf"
 same "one of, the longest first" "$W/one.hbnf" "$W/one-old.hbnf"

@@ -20,7 +20,7 @@ expr      = cast %label cast
           | product %label product
           | primary %label primary
 cast      = "(" tname ")" unary          ; the name in parens must be a type
-tname     = name ? types
+tname     = name in types
 product   = primary "*" primary
 unary     = "*" primary | primary
 primary      = number | name | "(" expr ")"

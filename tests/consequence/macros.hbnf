@@ -12,7 +12,7 @@ define    = "#define" SP name as N params-part as P SP body as B ";"
                                          => macros += N, N.params = P, N.body = B
 expr      = term *( "+" term )
 term      = macro-use | number
-macro-use = name ? macros as N args-part as A
+macro-use = name in macros as N args-part as A
                                          => N.body with N.params = A
 params-part = [ "(" *~")" ")" ]
 args-part   = [ "(" *~")" ")" ]

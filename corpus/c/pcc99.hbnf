@@ -53,9 +53,9 @@ basic-type           = "void" | "char" | "short" | "int" | "long" | "float" | "d
                      | typeof-specifier | atomic-type-specifier | struct-or-union-specifier | enum-specifier
 atomic-type-specifier = "_Atomic" "(" type-name ")"
 typeof-specifier     = ( "typeof" | "__typeof" | "__typeof__" ) "(" ( type-name | expression ) ")"
-known-type           = identifier ? types
-typedef-name         = known-type ?! vars
-variable-name        = identifier ?! types | identifier ? vars
+known-type           = identifier in types
+typedef-name         = known-type not in vars
+variable-name        = identifier not in types | identifier in vars
 
 ; ---- attributes ----
 attribute            = ( "__attribute__" | "__attribute" ) "(" "(" [ attribute-item *( "," attribute-item ) ] ")" ")"

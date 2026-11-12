@@ -1,4 +1,4 @@
-; Element of (CONTEXTS section 29, Q1): `x in S` and `x ∈ S` say what `x ? S` says, `x not in S` and `x ∉ S` what `x ?! S` says; the
+; The old spelling of element of, refused since R647 (tests/setlogic.sh checks the message): `x ? S` is `x in S`, `x ?! S` is `x not in S`; the
 ; spelling changes nothing in the parser that is made.
 prefix none
 context types
