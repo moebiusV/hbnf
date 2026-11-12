@@ -1450,10 +1450,10 @@ package body HBNF_Compilable is
          return;
       end if;
       for R of Rules loop
-         if Has (R.Pattern, HBNF_Grammar.B_Both) then
+         if Has (R.Pattern, HBNF_Grammar.B_Both) and then Backend not in "rust" | "zig" | "ada" then
             raise Parse_Error with
               "rule `" & To_String (R.Name) & "` has `intersect` (an intersection), which only the C backend generates";
-         elsif Has (R.Pattern, HBNF_Grammar.B_Any_Order) then
+         elsif Has (R.Pattern, HBNF_Grammar.B_Any_Order) and then Backend not in "rust" | "zig" | "ada" then
             raise Parse_Error with
               "rule `" & To_String (R.Name) & "` has `all of`, `some of`, `any of`, `choose` or `permute` (a group of members each taken once), which only the C backend generates";
          end if;

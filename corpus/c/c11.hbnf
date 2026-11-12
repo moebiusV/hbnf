@@ -35,8 +35,8 @@ static-assert-declaration = "_Static_assert" "(" constant-expression "," 1*strin
 ; a type and a declarator), and the storage classes and qualifiers around
 declaration-specifiers = *non-type-specifier ( 1*( basic-type *non-type-specifier ) | typedef-name *non-type-specifier )
 non-type-specifier   = storage-class-specifier | type-qualifier | function-specifier | alignment-specifier
-storage-class-specifier = "extern" | "static" | "_Thread_local" | "auto" | "register"
-function-specifier   = "inline" | "__inline__" | "__inline" | "_Noreturn"
+storage-class-specifier = one of ( "extern" "static" "_Thread_local" "auto" "register" )
+function-specifier   = one of ( "inline" "__inline__" "__inline" "_Noreturn" )
 alignment-specifier  = "_Alignas" "(" ( type-name | constant-expression ) ")"
 type-qualifier       = "const" | "__const" | "restrict" | "__restrict__" | "__restrict" | "volatile" | "__volatile__" | "__volatile" | "_Atomic" !"("
 basic-type           = "void" | "char" | "short" | "int" | "long" | "float" | "double" | "signed"
@@ -126,7 +126,7 @@ unary-expression     = "++" unary-expression | "--" unary-expression
                      | ( "__real__" | "__real" | "__imag__" | "__imag" ) cast-expression
                      | "&&" identifier
                      | postfix-expression
-unary-operator       = "&" | "*" | "+" | "-" | "~" | "!"
+unary-operator       = one of ( "&" "*" "+" "-" "~" "!" )
 cast-expression      = "(" type-name ")" cast-expression | unary-expression
 multiplicative-expression = cast-expression *( ( "*" | "/" | "%" ) cast-expression )
 additive-expression  = multiplicative-expression *( ( "+" | "-" ) multiplicative-expression )

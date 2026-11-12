@@ -42,7 +42,7 @@ typedef-declaration  = "typedef" declaration-specifiers declarator("types") *att
 declaration-specifiers = *non-type-specifier ( 1*( basic-type *non-type-specifier ) | typedef-name *non-type-specifier )
                        | 1*non-type-specifier
 non-type-specifier   = storage-class-specifier | type-qualifier | function-specifier | attribute
-storage-class-specifier = "extern" | "static" | "auto" | "register" | "__thread"
+storage-class-specifier = one of ( "extern" "static" "auto" "register" "__thread" )
 function-specifier   = "inline" | "__inline" | "__inline__"
 type-qualifier       = "const" | "__const" | "__const__" | "restrict" | "__restrict" | "__restrict__"
                      | "volatile" | "__volatile" | "__volatile__"

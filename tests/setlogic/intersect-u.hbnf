@@ -1,0 +1,7 @@
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+doc   = item *( "," item )
+item  = word ∩ short
+word  = 1*ALPHA
+short = 1*3ALPHA

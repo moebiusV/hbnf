@@ -144,7 +144,7 @@ contentspec   = "EMPTY" | "ANY" | mixed | group [ occ ]
 mixed         = "(" [ S ] "#PCDATA" ( 1*( sep("|") qname ) [ S ] ")*" | [ S ] ")" [ "*" ] )
 group         = "(" [ S ] cp ( 1*( sep("|") cp ) | *( sep(",") cp ) ) [ S ] ")"
 cp            = ( qname | group ) [ occ ]
-occ           = "?" | "*" | "+"
+occ           = one of ( "?" "*" "+" )
 
 attlist-decl  = "<!ATTLIST" S qname *( S qname S att-type S default-decl ) [ S ] ">"
 att-type      = "CDATA" | tokenized | "NOTATION" S alts(ncname) | alts(nmtoken)

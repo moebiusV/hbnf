@@ -5284,8 +5284,8 @@ package body HBNF_Grammar is
             Next (P);
             if N = 0 then
                raise Parse_Error with Where & "`all of ( )` has no member";
-            elsif N > 16 then
-               raise Parse_Error with Where & "`all of ( ... )` has up to 16 members; split it";
+            elsif N > 30 then
+               raise Parse_Error with Where & "`all of ( ... )` has up to 30 members; split it";
             end if;
             Items.Prepend (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Any_Order, Ctx => <>, Path => Mask,
                                         Id => N, Look => <>,
@@ -5323,22 +5323,36 @@ package body HBNF_Grammar is
             if Members.Is_Empty then
                raise Parse_Error with Where & "`in ( )` has no member";
             end if;
-            --  literals only: the longest first, the order written among those as long; rules: the order written, as `|` reads
-            for I in Members.First_Index + 1 .. Members.Last_Index loop
-               exit when not All_Lit;
+            --  literals only: the order written, except that a literal that has an earlier one as its front goes ahead of it
+            --  (R670, S5), so that `"ab"` is not hidden by `"a"`; rules: the order written, as `|` reads
+            if All_Lit then
                declare
-                  X : constant Element_Access := Members (I);
-                  J : Integer := I - 1;
+                  Ordered : Element_Vectors.Vector;
                begin
-                  while J >= Members.First_Index
-                    and then Length (Members (J).Lit) < Length (X.Lit)
-                  loop
-                     Members (J + 1) := Members (J);
-                     J := J - 1;
+                  for X of Members loop
+                     declare
+                        Pos : Natural := 0;     --  the first earlier literal that is the front of X
+                        Idx : Natural := 0;
+                     begin
+                        for Y of Ordered loop
+                           Idx := Idx + 1;
+                           if Length (Y.Lit) < Length (X.Lit)
+                             and then Slice (X.Lit, 1, Length (Y.Lit)) = To_String (Y.Lit)
+                           then
+                              Pos := Idx;
+                              exit;
+                           end if;
+                        end loop;
+                        if Pos = 0 then
+                           Ordered.Append (X);
+                        else
+                           Ordered.Insert (Ordered.First_Index + Pos - 1, X);
+                        end if;
+                     end;
                   end loop;
-                  Members (J + 1) := X;
+                  Members := Ordered;
                end;
-            end loop;
+            end if;
             for I in Members.First_Index .. Members.Last_Index loop
                if I > Members.First_Index then
                   Items.Append (new Element'(Kind => Alt, Min => 1, Max => 1, Guard => 0, Union => False));
@@ -5524,10 +5538,10 @@ package body HBNF_Grammar is
                         Mem.Append (X);
                         Append (Mask, '0');
                      end loop;
-                     if Mem.Is_Empty or else Natural (Mem.Length) > 16 then
+                     if Mem.Is_Empty or else Natural (Mem.Length) > 30 then
                         raise Parse_Error with
                           Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
-                          & ": `choose` and `permute` take from 1 to 16 members";
+                          & ": `choose` and `permute` take from 1 to 30 members";
                      end if;
                      if not Held then
                         V.Delete_Last;

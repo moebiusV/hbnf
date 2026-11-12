@@ -39,7 +39,7 @@ typedef-declaration  = "typedef" declaration-specifiers declarator("types") *( "
 declaration-specifiers = *non-type-specifier ( 1*( basic-type *non-type-specifier ) | typedef-name *non-type-specifier )
                        | 1*non-type-specifier
 non-type-specifier   = storage-class-specifier | type-qualifier
-storage-class-specifier = "extern" | "static" | "auto" | "register"
+storage-class-specifier = one of ( "extern" "static" "auto" "register" )
 type-qualifier       = "const" | "volatile"
 basic-type           = "void" | "char" | "short" | "int" | "long" | "float" | "double" | "signed"
                      | "unsigned" | struct-or-union-specifier | enum-specifier
@@ -102,7 +102,7 @@ unary-expression     = "++" unary-expression | "--" unary-expression
                      | unary-operator cast-expression
                      | "sizeof" ( "(" type-name ")" | unary-expression )
                      | postfix-expression
-unary-operator       = "&" | "*" | "+" | "-" | "~" | "!"
+unary-operator       = one of ( "&" "*" "+" "-" "~" "!" )
 cast-expression      = "(" type-name ")" cast-expression | unary-expression
 multiplicative-expression = cast-expression *( ( "*" | "/" | "%" ) cast-expression )
 additive-expression  = multiplicative-expression *( ( "+" | "-" ) multiplicative-expression )

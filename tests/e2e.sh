@@ -5,6 +5,8 @@
 set -u
 rc=0   # any suite below that fails makes this one fail
 cd "$(dirname "$0")/.."
+# it builds the generators with gnatmake and compiles a parser in each language: without the GNAT tools it runs in the container
+command -v gnatmake > /dev/null 2>&1 || { echo "e2e: SKIP (no gnatmake: run it in the ada-toolchain:edge-full container)"; exit 0; }
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 HERE=$(pwd)
 

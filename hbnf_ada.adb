@@ -1746,6 +1746,9 @@ package body HBNF_Ada is
       --  tries the next, so FA is changed there and put back.
       FA     : Unbounded_String := To_Unbounded_String ("return R;");
       Lbl_No : Natural := 0;
+      --  the type of the record the sequence being written assigns to (`R.`, `El.`, or an alternative's copy): a member of
+      --  `all of ( ... )` that fails gives the record back as it was
+      Cur_TN : Unbounded_String;
       function Chk return String is ("if P.Failed then " & To_String (FA) & " end if;");
 
       --  How many `->` a pattern holds (groups too).
@@ -1783,8 +1786,9 @@ package body HBNF_Ada is
          Tree_Here : constant Boolean := Ends_Tree (Els, First, Last);
          Wrapped : constant Boolean := Tree_Here or else
            (for some K in First .. Last =>
-              Els (K).Kind = Block and then Els (K).Op in B_As | B_Num);
+              Els (K).Kind = Block and then Els (K).Op in B_As | B_Num | B_Both);
          Ovr_Was : constant Natural := Ovr_N;
+         Skip_To : Natural := 0;     --  the members of an `all of ( ... )` that its marker has written
          --  the number of the sequence that declared the tag, when a rewrite above it reads it
          function Tag_Sid (Tag : Unbounded_String) return String is
          begin
@@ -1917,7 +1921,7 @@ package body HBNF_Ada is
                   end if;
                   Append (Buf, Ind & "   Es_" & Sid & "_" & Img (K - 1) & " : Natural := 1;");
                   Append (Buf, LF);
-               elsif Els (K).Kind = Block and then Els (K).Op = B_Num then
+               elsif Els (K).Kind = Block and then Els (K).Op in B_Num | B_Both then
                   Append (Buf, Ind & "   Es_" & Sid & "_" & Img (K - 1) & " : Natural := 1;");
                   Append (Buf, LF);
                end if;
@@ -1926,11 +1930,125 @@ package body HBNF_Ada is
             Append (Buf, LF);
          end if;
          for K in First .. Last loop
+            if K <= Skip_To then
+               null;
+            elsif Els (K).Kind = Block and then Els (K).Op = B_Any_Order and then HBNF_Grammar.Pick_Kind (Els (K)) = 'S' then
+               raise Parse_Error with
+                 "rule `" & To_String (Rules (Owner).Name) & "` has `choose ... with replacement`, which only the C backend generates";
+            elsif Els (K).Kind = Block and then Els (K).Op = B_Any_Order then
+               --  `all of ( a [b] c )`, `some of`, `any of`, `choose`, `permute` (CONTEXTS section 29): each member at most once.  A
+               --  pass tries the members not yet taken, in the order written, each as the sequence would write it, with a jump
+               --  to the member's own failure place; one that matched is marked and the pass starts again, and when none matches
+               --  the group is over.  A member that failed gives back its input and the record as it was.
+               declare
+                  N    : constant Natural := Els (K).Id;
+                  Gid  : constant String := Sid & "_" & Img (K);
+                  Req  : Natural := 0;
+                  Pk   : constant Character := HBNF_Grammar.Pick_Kind (Els (K));
+                  Cmb  : constant Boolean := Pk = 'C';
+                  PMin : constant Natural := HBNF_Grammar.Pick_Min (Els (K));
+                  PMax : constant Natural := HBNF_Grammar.Pick_Max (Els (K));
+                  TN   : constant String := To_String (Cur_TN);
+                  RV   : constant String := Dst (Dst'First .. Dst'Last - 1);   --  the record the members are written to
+                  Save_FA : constant Unbounded_String := FA;
+                  Req_Cond : Unbounded_String;
+               begin
+                  Append (Buf, Ind & "declare");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "   Ao_" & Gid & " : Natural := 0;  Cnt_" & Gid & " : Natural := 0;");
+                  Append (Buf, LF);
+                  Append (Buf, Ind & "begin");
+                  Append (Buf, LF);
+                  if not Cmb then
+                     Append (Buf, Ind & "   Pass_" & Gid & " : loop");
+                     Append (Buf, LF);
+                     if Pk /= ' ' then
+                        Append (Buf, Ind & "      exit Pass_" & Gid & " when Cnt_" & Gid & " >= " & Img (PMax) & ";");
+                        Append (Buf, LF);
+                     end if;
+                  end if;
+                  for J in 1 .. N loop
+                     declare
+                        Mem : constant Element_Access := new HBNF_Grammar.Element'(Els (K + J).all);
+                        Bit : constant Natural := 2 ** (J - 1);
+                        Sj  : constant String := Gid & "_" & Img (J);
+                     begin
+                        if Ada.Strings.Unbounded.Element (Els (K).Path, J) = '1' then
+                           Req := Req + Bit;
+                           if Length (Req_Cond) > 0 then
+                              Append (Req_Cond, " and then ");
+                           end if;
+                           Append (Req_Cond, "(Ao_" & Gid & " / " & Img (Bit) & ") mod 2 = 1");
+                        end if;
+                        Append (Buf, Ind & "      if " & (if Cmb then "Cnt_" & Gid & " < " & Img (PMax)
+                                                         else "(Ao_" & Gid & " / " & Img (Bit) & ") mod 2 = 0") & " then");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "         declare");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "            Sv_" & Sj & " : constant Natural := P.Pos;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "            Rc_" & Sj & " : constant " & TN & " := " & RV & ";");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "         begin");
+                        Append (Buf, LF);
+                        FA := To_Unbounded_String ("goto Mf_" & Sj & ";");
+                        Emit_Seq (Owner, Element_Vectors.To_Vector (Mem, 1), 1, 1, Dst, Buf, Ind & "            ", Alloc_Records);
+                        FA := Save_FA;
+                        Append (Buf, Ind & "            if P.Pos > Sv_" & Sj & " then");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "               Ao_" & Gid & " := Ao_" & Gid & " + " & Img (Bit) & ";  Cnt_" & Gid & " := Cnt_" & Gid & " + 1;");
+                        Append (Buf, LF);
+                        if not Cmb then
+                           Append (Buf, Ind & "               goto Nx_" & Gid & ";");
+                           Append (Buf, LF);
+                        end if;
+                        Append (Buf, Ind & "            end if;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "            goto Md_" & Sj & ";");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "            <<Mf_" & Sj & ">> P.Failed := False;  P.Pos := Sv_" & Sj & ";  " & RV & " := Rc_" & Sj & ";");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "            <<Md_" & Sj & ">> null;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "         end;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      end if;");
+                        Append (Buf, LF);
+                     end;
+                  end loop;
+                  if not Cmb then
+                     Append (Buf, Ind & "      exit Pass_" & Gid & ";");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "      <<Nx_" & Gid & ">> null;");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "   end loop Pass_" & Gid & ";");
+                     Append (Buf, LF);
+                  end if;
+                  if Pk /= ' ' then
+                     if PMin > 0 then
+                        Append (Buf, Ind & "   if Cnt_" & Gid & " < " & Img (PMin) & " then Fail (P, ""the members of the group""); "
+                          & To_String (FA) & " end if;");
+                        Append (Buf, LF);
+                     end if;
+                  elsif Req > 0 then
+                     Append (Buf, Ind & "   if not (" & To_String (Req_Cond) & ") then Fail (P, ""all of the members of the group""); "
+                       & To_String (FA) & " end if;");
+                     Append (Buf, LF);
+                  elsif Els (K).Code /= Null_Unbounded_String then
+                     Append (Buf, Ind & "   if Ao_" & Gid & " = 0 then Fail (P, ""one of the members of the group""); "
+                       & To_String (FA) & " end if;");
+                     Append (Buf, LF);
+                  end if;
+                  Append (Buf, Ind & "end;");
+                  Append (Buf, LF);
+                  Skip_To := K + N;
+               end;
+            else
             declare
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_As | B_Num
+                 and then Els (K + 1).Op in B_As | B_Num | B_Both
                then
                   Append (Buf, Ind & "Es_" & Sid & "_" & Img (K) & " := P.Pos;");
                   Append (Buf, LF);
@@ -2300,6 +2418,88 @@ package body HBNF_Ada is
                               (To_String (Rules (Owner).Name), To_String (E.Ctx))))
                           & ", Cc); end;");
                         Append (Buf, LF);
+                     elsif E.Op = B_Both then
+                        --  `a intersect b` and `x in ( "a" "b" )`: the text the element before matched is read again by the rule b (or is
+                        --  one of the literals and rules written), ending where it ended; the parser is a copy, cut at Kk, and is put back
+                        declare
+                           Members : Element_Vectors.Vector;
+                        begin
+                           if E.Look.First_Element.Kind = Group then
+                              Members := E.Look.First_Element.Items;
+                           else
+                              Members.Append (E.Look.First_Element);
+                           end if;
+                           Append (Buf, Ind & "declare");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   Sv  : constant Parser := P;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   Kk  : constant Natural := P.Pos;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   St  : Natural := Es_" & Sid & "_" & Img (K - 1) & ";");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   In_Set : Boolean := False;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "begin");
+                           Append (Buf, LF);
+                           if Skips then
+                              Append (Buf, Ind & "   P.Pos := St;  Skip_Ws (P);  St := P.Pos;  P.Pos := Kk;");
+                              Append (Buf, LF);
+                           end if;
+                           for X of Members loop
+                              if X.Kind = Literal then
+                                 if X.No_Case then
+                                    raise Parse_Error with
+                                      "rule `" & To_String (Rules (Owner).Name)
+                                      & "` has a written set with a literal that ignores case, which the Ada backend does not generate";
+                                 end if;
+                                 Append (Buf, Ind & "   if not In_Set and then Kk - St =" & Natural'Image (Length (X.Lit))
+                                   & " and then P.Text (St .. Kk - 1) = """ & Ada_Escape (To_String (X.Lit)) & """ then In_Set := True; end if;");
+                                 Append (Buf, LF);
+                              elsif X.Kind = Name then
+                                 declare
+                                    NM   : constant String := To_String (X.Name);
+                                    Scan : constant String :=
+                                      (if Is_Core (NM) then Scan_Fn (NM)
+                                       elsif Is_Char_Rule (Rules, NM) then "Scan_" & Ada_Ident (NM)
+                                       else "");
+                                    J    : constant Natural := Find (Rules, NM);
+                                 begin
+                                    if Scan /= "" then
+                                       Append (Buf, Ind & "   if not In_Set then declare N : constant Natural := " & Scan
+                                         & " (P.Text.all, St, Kk - 1); begin if N = Kk - St and then (N > 0 or else "
+                                         & (if Is_Core (NM) then "False" else (if Can_Be_Empty (NM) then "True" else "False"))
+                                         & ") then In_Set := True; end if; end; end if;");
+                                       Append (Buf, LF);
+                                    elsif J = 0 then
+                                       raise Parse_Error with "`intersect` and a written set take rules that are defined, and `" & NM & "` is not";
+                                    else
+                                       Append (Buf, Ind & "   if not In_Set then");
+                                       Append (Buf, LF);
+                                       Append (Buf, Ind & "      P.Pos := St;  P.Last := Kk;");
+                                       Append (Buf, LF);
+                                       Append (Buf, Ind & "      declare V : " & Ada_Ident (NM) & "_Type := "
+                                         & Rule_Call (To_String (Rules (Owner).Name), X) & "; begin"
+                                         & " if not P.Failed and then P.Pos = Kk then In_Set := True; end if;"
+                                         & (if Analyze (Rules, J).Kind in Struct | List
+                                            then " Free_" & Ada_Ident (NM) & " (V);" else "")
+                                         & " end;");
+                                       Append (Buf, LF);
+                                       Append (Buf, Ind & "      P := Sv;");
+                                       Append (Buf, LF);
+                                       Append (Buf, Ind & "   end if;");
+                                       Append (Buf, LF);
+                                    end if;
+                                 end;
+                              end if;
+                           end loop;
+                           Append (Buf, Ind & "   if not In_Set then Fail (P, """
+                             & (if E.Look.First_Element.Kind = Group then "one of the words written"
+                                else "text that is also `" & To_String (E.Look.First_Element.Name) & "`")
+                             & """); " & To_String (FA) & " end if;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "end;");
+                           Append (Buf, LF);
+                        end;
                      elsif E.Op = B_Num then
                         --  the number the element before matched
                         Append (Buf, Ind & "declare Vv : Long_Long_Integer := 0; begin"
@@ -2438,6 +2638,7 @@ package body HBNF_Ada is
                      null;   --  resolved into a rule of ranges before this runs
                end case;
             end;
+            end if;
          end loop;
          if Wrapped then
             Append (Buf, Ind & "end;");
@@ -2843,6 +3044,7 @@ package body HBNF_Ada is
                               Lbl_No := Lbl_No + 1;
                               Old_FA := FA;
                               FA := To_Unbounded_String ("goto Ent_Fail_" & Img (Lbl_No) & ";");
+                              Cur_TN := To_Unbounded_String (Ada_Ident (To_String (Rules (Idx).Name)) & "_Entry");
                               Emit_Seq (Idx, E.Items, St, K - 1, "El.",
                                         Buf, "                  ", True);
                               FA := Old_FA;
@@ -3121,6 +3323,7 @@ package body HBNF_Ada is
             Append (Buf, LF);
             Append (Buf, "      begin");
             Append (Buf, LF);
+            Cur_TN := To_Unbounded_String (TN);
             Emit_Alternation (Idx, P, TN, Buf, "         ", True);
             Append (Buf, "         P.Pos := Save;");
             Append (Buf, LF);
@@ -3131,6 +3334,7 @@ package body HBNF_Ada is
             Append (Buf, "      end;");
             Append (Buf, LF);
          else
+            Cur_TN := To_Unbounded_String (TN);
             Emit_Seq (Idx, P, 1, Natural (P.Length), "R.", Buf, "      ",
                       True);
             Append (Buf, "      return R;");

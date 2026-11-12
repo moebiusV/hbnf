@@ -10,6 +10,8 @@ set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 CLI=${HBNF:-./hbnf}
+# the regeneration below uses gnatchop too, so the skip comes first: without the GNAT tools this suite runs in the container (docker run ... ada-toolchain:edge)
+command -v gnatmake > /dev/null 2>&1 && command -v gnatchop > /dev/null 2>&1 || { echo "template: SKIP (no gnatmake or gnatchop: run it in the ada-toolchain container)"; exit 0; }
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 fail=0

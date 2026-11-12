@@ -170,18 +170,36 @@ special-names-clause = is "SPECIAL-NAMES" ( "CURSOR" | "CRT" "STATUS" )
 data-description-entry = "66" data-name renames-clause "."
                        | "88" data-name 1*value-clause(condition-value) "."
                        | "78" data-name *plain-clause "."
-                       | plain-level [ data-name | "FILLER" ] *data-clause "."
+                       | plain-level [ data-name | "FILLER" ] any of ( special-names-clause volatile-clause same-as-clause picture-clause usage-clause value-clause(value-item)
+                                                                     redefines-clause renames-clause sign-clause justified-clause synchronized-clause blank-zero-clause
+                                                                     type-clause default-clause present-when-clause destination-clause class-clause identified-by-clause
+                                                                     global-clause based-clause typedef-clause static-clause external-clause external-form-clause
+                                                                     constant-clause any-length-clause dynamic-length-clause unsigned-clause occurs-clause ) "."
 data-name              = user-word | "PAGE-COUNTER" | "LINE-COUNTER" | "LINAGE-COUNTER"
-data-clause            = plain-clause | occurs-clause
-; a level 66, 78 or 88 item has no OCCURS (cobc allows it on the others)
-plain-clause           = special-names-clause | "VOLATILE" | "SAME" "AS" identifier | item-clause | redefines-clause
-                       | renames-clause | sign-clause | justified-clause | synchronized-clause
-                       | "BLANK" [ "WHEN" ] "ZERO" | "TYPE" to identifier | "DEFAULT" is operand | "PRESENT" "WHEN" condition | "DESTINATION" identifier | "CLASS" is ( "NUMERIC" | "ALPHABETIC" | "ALPHABETIC-LOWER" | "ALPHABETIC-UPPER" | user-word ) | "IDENTIFIED" by operand | "GLOBAL" | "BASED" | "TYPEDEF" | "STATIC"
-                       | is "EXTERNAL" [ "AS" operand ] | is "EXTERNAL-FORM" [ "IDENTIFIED" by operand ] | is "GLOBAL" | is "TYPEDEF"
-                       | "CONSTANT" [ is "GLOBAL" ] [ "AS" ] [ "FROM" identifier | ( "LENGTH" | "BYTE-LENGTH" ) [ "OF" ] ( operand | usage ) | operand *( "&" operand ) ]
-                       | "ANY" ( "LENGTH" | "NUMERIC" )
-                       | "SYNC" | "DYNAMIC" "LENGTH" [ identifier ] [ "LIMIT" is operand ]
-                       | "UNSIGNED" | "SIGNED"
+; the clauses of a data description entry come in any order, each at most once (an entry of level 66, 78 or 88 has no OCCURS; cobc allows it on the others)
+plain-clause           = special-names-clause | volatile-clause | same-as-clause | item-clause | redefines-clause | renames-clause | sign-clause
+                       | justified-clause | synchronized-clause | blank-zero-clause | type-clause | default-clause | present-when-clause
+                       | destination-clause | class-clause | identified-by-clause | global-clause | based-clause | typedef-clause | static-clause
+                       | external-clause | external-form-clause | constant-clause | any-length-clause | dynamic-length-clause | unsigned-clause
+volatile-clause        = "VOLATILE"
+same-as-clause         = "SAME" "AS" identifier
+blank-zero-clause      = "BLANK" [ "WHEN" ] "ZERO"
+type-clause            = "TYPE" to identifier
+default-clause         = "DEFAULT" is operand
+present-when-clause    = "PRESENT" "WHEN" condition
+destination-clause     = "DESTINATION" identifier
+class-clause           = "CLASS" is ( "NUMERIC" | "ALPHABETIC" | "ALPHABETIC-LOWER" | "ALPHABETIC-UPPER" | user-word )
+identified-by-clause   = "IDENTIFIED" by operand
+global-clause          = "GLOBAL" | is "GLOBAL"
+based-clause           = "BASED"
+typedef-clause         = "TYPEDEF" | is "TYPEDEF"
+static-clause          = "STATIC"
+external-clause        = is "EXTERNAL" [ "AS" operand ]
+external-form-clause   = is "EXTERNAL-FORM" [ "IDENTIFIED" by operand ]
+constant-clause        = "CONSTANT" [ is "GLOBAL" ] [ "AS" ] [ "FROM" identifier | ( "LENGTH" | "BYTE-LENGTH" ) [ "OF" ] ( operand | usage ) | operand *( "&" operand ) ]
+any-length-clause      = "ANY" ( "LENGTH" | "NUMERIC" )
+dynamic-length-clause  = "DYNAMIC" "LENGTH" [ identifier ] [ "LIMIT" is operand ]
+unsigned-clause        = "UNSIGNED" | "SIGNED"
 ; a picture may end in a period of its own (`PIC 999.` then the entry's `.`): that picture is the one whose period another follows
 picture-clause         = ( "PICTURE" | "PIC" ) is ( picture-with-period &"." | picture-string ) [ "DEPENDING" on identifier ]
 usage-clause           = "USAGE" is ( usage | user-word ) | usage

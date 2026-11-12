@@ -52,44 +52,7 @@ for c in "ok a" "ok ab" "ok abc" "bad abcd" "bad x"; do
 	printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/check" "$W/t.txt" | cut -d' ' -f1)
 	n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL (in ( \"a\" \"abc\" \"ab\" ) on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
 done
-# `a intersect b`: b matches exactly the text a matched; C only so far
-cat > "$W/both.hbnf" <<'EOG'
-prefix none
-whitespace none
-include "../../grammars/common.hbnf"
-doc   = item *( "," item )
-item  = word intersect short
-word  = 1*ALPHA
-short = 1*3ALPHA
-EOG
-cp "$W/both.hbnf" tests/setlogic/_both.hbnf
-sed 's/ intersect / ∩ /' "$W/both.hbnf" > tests/setlogic/_both-u.hbnf
-"$CLI" tests/setlogic/_both.hbnf --backend=c > "$W/b.c" 2> "$W/err" || { echo "setlogic: FAIL (intersect does not generate: $(head -c 300 "$W/err"))"; fail=1; }
-"$CLI" tests/setlogic/_both-u.hbnf --backend=c > "$W/bu.c" 2> /dev/null
-n=$((n + 1)); cmp -s "$W/b.c" "$W/bu.c" || { echo "setlogic: FAIL (∩ is not what intersect generates)"; fail=1; }
-if [ -s "$W/b.c" ]; then
-	root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/b.c")
-	cat "$W/b.c" corpus/c/check.c > "$W/mb.c"
-	cc -std=gnu11 -D_GNU_SOURCE -w "-DOUT_T=$root" "$W/mb.c" -o "$W/checkb" 2> "$W/cc.txt" || { echo "setlogic: FAIL (intersect: cc: $(head -c 300 "$W/cc.txt"))"; fail=1; }
-	for c in "ok ab" "ok abc,x" "bad abcd" "bad ab,abcde" "bad 1"; do
-		printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checkb" "$W/t.txt" | cut -d' ' -f1)
-		n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL (word intersect short on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
-	done
-fi
-rm -f tests/setlogic/_both.hbnf tests/setlogic/_both-u.hbnf
-for b in rust zig ada; do
-	printf 'prefix none\nwhitespace none\ninclude "../../grammars/common.hbnf"\ntop = word intersect short\nword = 1*ALPHA\nshort = 1*3ALPHA\n' > tests/setlogic/_b.hbnf
-	"$CLI" tests/setlogic/_b.hbnf --backend=$b --package=Sl 2>&1 > /dev/null | grep -q 'has `intersect` (an intersection), which only the C backend generates' \
-		|| { echo "setlogic: FAIL ($b does not say that intersect is C only)"; fail=1; }
-	n=$((n + 1))
-done
-rm -f tests/setlogic/_b.hbnf
-# `in` has the one meaning (R645 and CONTEXTS section 29): a grammar with a rule of that name renames it (the POSIX shell's is `in_word`)
-printf 'prefix none\nwhitespace none\ntop = name in sep\nname = 1*0x61..0x7a\nin = "in"\nsep = ";"\n' > "$W/inrule.hbnf"
-"$CLI" "$W/inrule.hbnf" --backend=c 2>&1 > /dev/null | grep -q 'is not a context' \
-	|| { echo "setlogic: FAIL (a name after in is read as a set: a rule named in is not refused with what it is read as)"; fail=1; }
-n=$((n + 1))
-# `all of ( a [b] c )` (R649): each member once, in any order, a member in `[ ]` may be left out; one field for each member
+# chk GRAMMAR CASES...: each case "ok TEXT" or "bad TEXT" is read in C and, where rustc is installed, in Rust
 chk() {	# a grammar, then cases "ok TEXT" or "bad TEXT"
 	g=$1; shift
 	"$CLI" "$g" --backend=c > "$W/a.c" 2> "$W/err" || { echo "setlogic: FAIL ($g does not generate: $(head -c 300 "$W/err"))"; fail=1; return; }
@@ -100,7 +63,84 @@ chk() {	# a grammar, then cases "ok TEXT" or "bad TEXT"
 		printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/checka" "$W/t.txt" | cut -d' ' -f1)
 		n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL ($g on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
 	done
+	# the same cases in the Rust backend, where rustc is installed and the grammar can go to it (the others refuse by rule name)
+	if command -v rustc > /dev/null 2>&1; then
+		mkdir -p "$W/rs"; rm -f "$W/rs/m"
+		if "$CLI" "$g" --backend=rust > "$W/rs/l.rs" 2> "$W/err"; then
+			sed "s/MODULE/l/g" corpus/c/check.rs > "$W/rs/m.rs"
+			(cd "$W/rs" && rustc --edition 2021 -A warnings -C opt-level=0 -o m m.rs > cc.txt 2>&1) \
+				|| { echo "setlogic: FAIL ($g: the Rust parser does not compile: $(grep -m2 error "$W/rs/cc.txt" | head -c 300))"; fail=1; return; }
+			for c in "$@"; do
+				printf '%s' "${c#* }" > "$W/t.txt"; got=$("$W/rs/m" "$W/t.txt" 2>&1 | cut -d' ' -f1 | head -1)
+				n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL ($g in Rust on [${c#* }] should be ${c%% *} and is $got)"; fail=1; }
+			done
+		elif ! grep -q 'only the C backend\|in C so far' "$W/err"; then
+			echo "setlogic: FAIL ($g does not generate in Rust: $(head -c 300 "$W/err"))"; fail=1
+		fi
+	fi
+	# and in Zig, where zig is installed: the cases are embedded in one check program, which says ok or bad for each
+	if command -v zig > /dev/null 2>&1; then
+		d=$W/zg; rm -rf "$d"; mkdir -p "$d"
+		if "$CLI" "$g" --backend=zig > "$d/l.zig" 2> "$W/err"; then
+			k=0; : > "$d/files.txt"; : > "$d/want.txt"
+			for c in "$@"; do
+				printf '%s' "${c#* }" > "$d/f$k.dat"; printf '    .{ .name = "c%d.txt", .data = @embedFile("f%d.dat") },\n' $k $k >> "$d/files.txt"
+				echo "${c%% *}" >> "$d/want.txt"; k=$((k + 1))
+			done
+			sed "s/MODULE/l.zig/g" corpus/c/check.zig | awk -v f="$d/files.txt" '$0 == "FILES" { while ((getline l < f) > 0) print l; next } { print }' > "$d/m.zig"
+			if (cd "$d" && zig build-exe m.zig -O Debug -femit-bin=m > cc.txt 2>&1); then
+				"$d/m" > "$d/out" 2>&1
+				k=0
+				for c in "$@"; do
+					got=$(grep -aF "c$k.txt" "$d/out" | head -1 | cut -d' ' -f1)
+					n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL ($g in Zig on [${c#* }] should be ${c%% *} and is ${got:-none})"; fail=1; }
+					k=$((k + 1))
+				done
+			else echo "setlogic: FAIL ($g: the Zig parser does not compile: $(grep -m2 error "$d/cc.txt" | head -c 300))"; fail=1; fi
+		elif ! grep -q 'only the C backend\|in C so far' "$W/err"; then
+			echo "setlogic: FAIL ($g does not generate in Zig: $(head -c 300 "$W/err"))"; fail=1
+		fi
+	fi
+	# and in Ada, where gnatmake is installed: one file for each case, one check program for all of them
+	if command -v gnatmake > /dev/null 2>&1; then
+		d=$W/ad; rm -rf "$d"; mkdir -p "$d/cases"
+		if "$CLI" "$g" --backend=ada --package=Sl > "$d/all.ada" 2> "$W/err"; then
+			root=$(grep -o "return [A-Za-z0-9_]*_Type" "$d/all.ada" | head -1 | sed 's/return \(.*\)_Type/\1/')
+			sed "s/MODULE/Sl/g; s/ROOT/$root/g" corpus/posix/check.adb > "$d/check.adb"
+			k=0; for c in "$@"; do printf '%s' "${c#* }" > "$d/cases/c$k.txt"; k=$((k + 1)); done
+			if (cd "$d" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -gnat2022 -gnatws check.adb -o m > cc.txt 2>&1); then
+				k=0
+				for c in "$@"; do
+					got=$("$d/m" "$d/cases/c$k.txt" 2>&1 | cut -d' ' -f1 | head -1)
+					n=$((n + 1)); [ "$got" = "${c%% *}" ] || { echo "setlogic: FAIL ($g in Ada on [${c#* }] should be ${c%% *} and is ${got:-none})"; fail=1; }
+					k=$((k + 1))
+				done
+			else echo "setlogic: FAIL ($g: the Ada parser does not compile: $(grep -m2 error "$d/cc.txt" | head -c 300))"; fail=1; fi
+		elif ! grep -q 'only the C backend\|in C so far' "$W/err"; then
+			echo "setlogic: FAIL ($g does not generate in Ada: $(head -c 300 "$W/err"))"; fail=1
+		fi
+	fi
 }
+# `a intersect b`: b matches exactly the text a matched, in C, Rust, Zig and Ada
+cat > tests/setlogic/intersect.hbnf <<'EOG'
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+doc   = item *( "," item )
+item  = word intersect short
+word  = 1*ALPHA
+short = 1*3ALPHA
+EOG
+sed 's/ intersect / ∩ /' tests/setlogic/intersect.hbnf > tests/setlogic/intersect-u.hbnf
+"$CLI" tests/setlogic/intersect.hbnf --backend=c > "$W/b.c" 2> /dev/null; "$CLI" tests/setlogic/intersect-u.hbnf --backend=c > "$W/bu.c" 2> /dev/null
+n=$((n + 1)); cmp -s "$W/b.c" "$W/bu.c" || { echo "setlogic: FAIL (∩ is not what intersect generates)"; fail=1; }
+chk tests/setlogic/intersect.hbnf "ok ab" "ok abc,x" "bad abcd" "bad ab,abcde" "bad 1"
+# `in` has the one meaning (R645 and CONTEXTS section 29): a grammar with a rule of that name renames it (the POSIX shell's is `in_word`)
+printf 'prefix none\nwhitespace none\ntop = name in sep\nname = 1*0x61..0x7a\nin = "in"\nsep = ";"\n' > "$W/inrule.hbnf"
+"$CLI" "$W/inrule.hbnf" --backend=c 2>&1 > /dev/null | grep -q 'is not a context' \
+	|| { echo "setlogic: FAIL (a name after in is read as a set: a rule named in is not refused with what it is read as)"; fail=1; }
+n=$((n + 1))
+# `all of ( a [b] c )` (R649): each member once, in any order, a member in `[ ]` may be left out; one field for each member
 chk tests/setlogic/allof.hbnf "ok Dp1." "ok Dp1usage." "ok Dusagep1." "ok Dv2p1." "ok Dv2usagep1." "ok Dp1usagev2." "ok Dv2p1usage." "ok Dusagev2p1." \
 	"bad D." "bad Dusage." "bad Dp1p2." "bad Dp1usageusage." "bad Dp1v2v3." "bad Dp1"
 chk tests/setlogic/someof.hbnf "ok Dp1." "ok Dusage." "ok Dv2usagep1." "ok Dusagep1v2." "bad D." "bad Dp1p2." "bad Dusageusage." "bad Dx."
@@ -116,6 +156,12 @@ chk tests/setlogic/short-p.hbnf "ok Dab." "ok Dba." "bad Daa." "bad Da."
 chk tests/setlogic/short-c.hbnf "ok Da." "ok Dab." "bad D." "bad Dabc." "bad Dba."
 chk tests/setlogic/choose-repl.hbnf "ok Da1a1." "ok Da1b1." "ok Da1c12." "ok Db1b1." "ok Db1c1." "ok Dc1c1." "bad Db1a1." "bad Dc1a1." "bad Da1." "bad Da1b1c1." "bad D."
 "$CLI" tests/setlogic/permute-repl.hbnf --backend=c > "$W/s1.c" 2> /dev/null; "$CLI" tests/setlogic/short-pr.hbnf --backend=c > "$W/s2.c" 2> /dev/null
+# choose with replacement counts lists: C only
+for b in rust zig ada; do
+	"$CLI" tests/setlogic/choose-repl.hbnf --backend=$b 2>&1 > /dev/null | grep -q '`choose ... with replacement`, which only the C backend generates' \
+		|| { echo "setlogic: FAIL ($b does not say that choose with replacement is C only)"; fail=1; }
+	n=$((n + 1))
+done
 n=$((n + 1)); cmp -s "$W/s1.c" "$W/s2.c" || { echo "setlogic: FAIL (Pr(( ... ), 2) is not permute 2 with replacement)"; fail=1; }
 printf 'prefix none\nwhitespace none\ntop = "D" ( a b ) choose 2 with replacement\na = "a"\nb = "b"\n' > "$W/wr.hbnf"
 "$CLI" "$W/wr.hbnf" --backend=c 2>&1 > /dev/null | grep -q 'a member that is only text cannot be counted' || { echo "setlogic: FAIL (choose with replacement of text members is not refused)"; fail=1; }
@@ -124,6 +170,14 @@ n=$((n + 1))
 chk tests/setlogic/allof-kinds.hbnf "ok Dp1#fk=2." "ok Dk=2#fp1." "ok D#fp1k=2." "ok Dxp1#fk=2." "ok Dp1x#fk=2." "bad Dp1#fk=2" "bad Dp1k=2." "bad D#fk=2." "bad Dp1#fk=2#f." "bad Dp1#fk=2xx."
 chk tests/setlogic/anyof-rep.hbnf "ok D." "ok Daaa." "ok Dbbbb." "ok Dcc." "ok Dcccaabb." "ok Dbbcccaa." "bad Dc." "bad Dcccc." "bad Dabab."
 chk tests/setlogic/allof-rep.hbnf "ok Da." "ok Daa." "ok Dabb." "ok Dbba." "bad D." "bad Dbb." "bad Dbab."
+# `one of` keeps the order written, and moves a literal ahead only of an earlier one that is its front (R670, S5): a list with no
+# such pair is the plain alternation, byte for byte (so the C grammars can use it)
+printf 'prefix none\nwhitespace none\nkw = one of ( "extern" "static" "auto" "register" )\n' > "$W/o1.hbnf"
+printf 'prefix none\nwhitespace none\nkw = "extern" | "static" | "auto" | "register"\n' > "$W/o1-old.hbnf"
+same "one of keeps the order written" "$W/o1.hbnf" "$W/o1-old.hbnf"
+printf 'prefix none\nwhitespace none\nkw = one of ( "x" "a" "ab" "y" "abc" )\n' > "$W/o2.hbnf"
+printf 'prefix none\nwhitespace none\nkw = "x" | "abc" | "ab" | "a" | "y"\n' > "$W/o2-old.hbnf"
+same "one of moves a literal ahead of its front only" "$W/o2.hbnf" "$W/o2-old.hbnf"
 chk tests/setlogic/allof-first.hbnf "ok p1." "ok usagep1." "ok z." "ok p1.z.usagep2." "bad usage." "bad x." "bad p1usage"
 chk tests/setlogic/allof-opt.hbnf "ok D." "ok Dp1." "ok Dusage." "ok Dusagep1." "ok Dp1usage." "bad Dp1p2." "bad Dx."
 chk tests/setlogic/allof-two.hbnf "ok ab-c" "ok ba-cd" "ok ba-dc" "bad a-c" "bad ab-d" "bad ab-cc" "bad aab-c"
@@ -131,11 +185,6 @@ chk tests/setlogic/allof-rec.hbnf "ok D3x4." "ok Dtag3x4." "ok D3x4tag." "bad D3
 "$CLI" tests/setlogic/allof.hbnf --backend=c > "$W/f.c" 2> /dev/null
 n=$((n + 1)); [ "$(sed -n '/^struct decl_s {$/,/^};$/p' "$W/f.c" | tr -d ' \n')" = "structdecl_s{pic_tpic;usage_tusage;value_tvalue;};" ] \
 	|| { echo "setlogic: FAIL (all of: the record has not a field for each member)"; fail=1; }
-for b in rust zig ada; do
-	"$CLI" tests/setlogic/allof.hbnf --backend=$b --package=Sl 2>&1 > /dev/null | grep -q 'has `all of`, `some of`.*only the C backend generates' \
-		|| { echo "setlogic: FAIL ($b does not say that all of is C only)"; fail=1; }
-	n=$((n + 1))
-done
 printf 'prefix none\nwhitespace none\ntop = all of ( a a )\na = "a"\n' > "$W/dup.hbnf"
 "$CLI" "$W/dup.hbnf" --backend=c 2>&1 > /dev/null | grep -q 'names `a` twice' || { echo "setlogic: FAIL (all of ( a a ) is not refused)"; fail=1; }
 n=$((n + 1))

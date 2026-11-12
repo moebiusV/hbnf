@@ -1,0 +1,19 @@
+; What C++ operator overloading needs of the notation (the declarator-id of C++ Annex A, [over.oper], [over.literal], [class.conv.fct]),
+; so that the C++ grammars (Phase 6) rest on forms that are tested: the operator tokens that are pairs of tokens (`operator()`, `operator[]`,
+; `operator new[]`, `operator delete[]`) with or without blanks between, the operators that are the front of another (`<`, `<=`, `<=>`, `<<`,
+; `<<=`, `->`, `->*`: `one of` puts the longer first), `operator""_km`, and `operator T*`.  `operator` is a keyword, so it is no name.
+prefix none
+include "../../grammars/common.hbnf"
+whitespace none
+top  = blank *( declarator-id blank ";" blank )
+blank   = *( SP / HTAB / LF )
+declarator-id = operator-function-id | literal-operator-id | conversion-function-id | name
+operator-function-id  = "operator" blank overloadable-operator
+overloadable-operator = "new" blank "[" blank "]" | "delete" blank "[" blank "]" | "new" | "delete" | "co_await" | "(" blank ")" | "[" blank "]"
+                      | one of ( "->*" "->" "<=>" "+=" "-=" "*=" "/=" "%=" "^=" "&=" "|=" "<<=" ">>=" "==" "!=" "<=" ">=" "&&" "||"
+                                 "<<" ">>" "++" "--" "+" "-" "*" "/" "%" "^" "&" "|" "~" "!" "=" "<" ">" "," )
+literal-operator-id   = "operator" blank "\"\"" blank name
+conversion-function-id = "operator" blank name *( blank ( "*" | "&" ) )
+name = !keyword 1*word-char
+keyword = "operator" !word-char
+word-char = ALPHA / DIGIT / "_"

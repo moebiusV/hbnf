@@ -35,11 +35,10 @@ typedef-declaration  = "typedef" declaration-specifiers declarator("types") *( "
 ; a type and a declarator), and the storage classes, qualifiers and `inline` around
 declaration-specifiers = *non-type-specifier ( 1*( basic-type *non-type-specifier ) | typedef-name *non-type-specifier )
 non-type-specifier   = storage-class-specifier | type-qualifier | function-specifier
-storage-class-specifier = "extern" | "static" | "auto" | "register"
+storage-class-specifier = one of ( "extern" "static" "auto" "register" )
 function-specifier   = "inline"
-type-qualifier       = "const" | "restrict" | "volatile"
-basic-type           = "void" | "char" | "short" | "int" | "long" | "float" | "double" | "signed"
-                     | "unsigned" | "_Bool" | "_Complex" | "_Imaginary"
+type-qualifier       = one of ( "const" "restrict" "volatile" )
+basic-type           = one of ( "void" "char" "short" "int" "long" "float" "double" "signed" "unsigned" "_Bool" "_Complex" "_Imaginary" )
                      | struct-or-union-specifier | enum-specifier
 ; A typedef name is a token of its own (6.4.1), so it is not a variable, unless a declaration in
 ; an inner scope has made the name a variable (`typedef struct instr instr; ... instr *instr`).
@@ -102,7 +101,7 @@ unary-expression     = "++" unary-expression | "--" unary-expression
                      | unary-operator cast-expression
                      | "sizeof" ( "(" type-name ")" | unary-expression )
                      | postfix-expression
-unary-operator       = "&" | "*" | "+" | "-" | "~" | "!"
+unary-operator       = one of ( "&" "*" "+" "-" "~" "!" )
 cast-expression      = "(" type-name ")" cast-expression | unary-expression
 multiplicative-expression = cast-expression *( ( "*" | "/" | "%" ) cast-expression )
 additive-expression  = multiplicative-expression *( ( "+" | "-" ) multiplicative-expression )

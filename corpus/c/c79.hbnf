@@ -25,7 +25,7 @@ typedef-declaration  = ( "typedef" [ type ] | type "typedef" ) declarator("types
 
 ; one storage class, one type, in either order, or either alone
 attributes           = class type | type class | class | type
-class                = "extern" | "static" | "auto" | "register" | "fortran"
+class                = one of ( "extern" "static" "auto" "register" "fortran" )
 type                 = 1*3( "char" | "short" | "int" | "long" | "float" | "double" | "unsigned" )
                      | typedef-name
                      | struct-specifier

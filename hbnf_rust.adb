@@ -2833,6 +2833,7 @@ package body HBNF_Rust is
          --  `x as K` keeps where the text x matched is and how long; `$K`
          --  is that text again.  The pair is local to this sequence.
          Sid : constant String := Img (Bref_Seq + 1);
+         Skip_To : Natural := 0;     --  the members of an `all of ( ... )` that its marker has written
          function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
            (Pfx & "_" & Rust_Snake (To_String (Tag)) & "_" & Sid);
          --  A capture read through the frame (`$K^`): the number of the frame, as a usize.
@@ -2861,11 +2862,110 @@ package body HBNF_Rust is
             end if;
          end loop;
          for K in First .. Last loop
+            if K <= Skip_To then
+               null;
+            elsif Els (K).Kind = Block and then Els (K).Op = B_Any_Order and then HBNF_Grammar.Pick_Kind (Els (K)) = 'S' then
+               raise Parse_Error with
+                 "rule `" & To_String (Rules (Owner).Name) & "` has `choose ... with replacement`, which only the C backend generates";
+            elsif Els (K).Kind = Block and then Els (K).Op = B_Any_Order then
+               --  `all of ( a [b] c )`, `some of`, `any of`, `choose`, `permute` (CONTEXTS section 29): each member at most once.  A
+               --  pass tries the members not yet taken, in the order written, each as the sequence would write it, inside a
+               --  closure that says whether it matched; one that did is marked and the pass starts again, and when none matches
+               --  the group is over.  A member that failed gives back its input and its fields.
+               declare
+                  N    : constant Natural := Els (K).Id;
+                  Gid  : constant String := Sid & "_" & Img (K);
+                  Req  : Natural := 0;
+                  Pk   : constant Character := HBNF_Grammar.Pick_Kind (Els (K));
+                  Cmb  : constant Boolean := Pk = 'C';
+                  PMin : constant Natural := HBNF_Grammar.Pick_Min (Els (K));
+                  PMax : constant Natural := HBNF_Grammar.Pick_Max (Els (K));
+
+                  procedure Reset_Fields (V : Element_Vectors.Vector) is
+                  begin
+                     for X of V loop
+                        if X.Kind = Name then
+                           if not Is_Hidden (To_String (X.Name)) then
+                              Append (Buf, " " & Dst & Rust_Field (To_String (X.Name)) & " = Default::default();");
+                           end if;
+                        elsif X.Kind = Group then
+                           Reset_Fields (X.Items);
+                        end if;
+                     end loop;
+                  end Reset_Fields;
+               begin
+                  Append (Buf, Ind & "{ let mut ao" & Gid & ": u32 = 0;");
+                  Append (Buf, LF);
+                  if not Cmb then
+                     Append (Buf, Ind & "  loop {");
+                     Append (Buf, LF);
+                     if Pk /= ' ' then
+                        Append (Buf, Ind & "    if ao" & Gid & ".count_ones() >= " & Img (PMax) & " { break; }");
+                        Append (Buf, LF);
+                     end if;
+                  end if;
+                  for J in 1 .. N loop
+                     declare
+                        Mem : constant Element_Access := new HBNF_Grammar.Element'(Els (K + J).all);
+                        Bit : constant Natural := 2 ** (J - 1);
+                        Sj  : constant String := Gid & "_" & Img (J);
+                     begin
+                        if Ada.Strings.Unbounded.Element (Els (K).Path, J) = '1' then
+                           Req := Req + Bit;
+                        end if;
+                        Append (Buf, Ind & "    if " & (if Cmb then "ao" & Gid & ".count_ones() < " & Img (PMax)
+                                                       else "ao" & Gid & " & " & Img (Bit) & " == 0") & " {");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      let sv" & Sj & " = p.pos;" & (if Ctx_On then " let cp" & Sj & " = p.cx_mark();" else ""));
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      let ok" & Sj & " = (|| -> Result<(), ParseError> {");
+                        Append (Buf, LF);
+                        Emit_Seq (Owner, Element_Vectors.To_Vector (Mem, 1), 1, 1, Dst, Buf, Ind & "        ");
+                        Append (Buf, Ind & "        Ok(())");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      })().is_ok();");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      if !ok" & Sj & " { p.pos = sv" & Sj & ";" & (if Ctx_On then " p.cx_reset(&cp" & Sj & ");" else ""));
+                        Reset_Fields (Element_Vectors.To_Vector (Mem, 1));
+                        Append (Buf, " }");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      else if p.pos > sv" & Sj & " { ao" & Gid & " |= " & Img (Bit) & ";"
+                          & (if Cmb then "" else " continue;") & " }");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "    }");
+                        Append (Buf, LF);
+                     end;
+                  end loop;
+                  if not Cmb then
+                     Append (Buf, Ind & "    break;");
+                     Append (Buf, LF);
+                     Append (Buf, Ind & "  }");
+                     Append (Buf, LF);
+                  end if;
+                  if Pk /= ' ' then
+                     if PMin > 0 then
+                        Append (Buf, Ind & "  if ao" & Gid & ".count_ones() < " & Img (PMin)
+                          & " { return Err(p.fail(""the members of the group"")); }");
+                        Append (Buf, LF);
+                     end if;
+                  elsif Req > 0 then
+                     Append (Buf, Ind & "  if (ao" & Gid & " & " & Img (Req) & ") != " & Img (Req)
+                       & " { return Err(p.fail(""all of the members of the group"")); }");
+                     Append (Buf, LF);
+                  elsif Els (K).Code /= Null_Unbounded_String then
+                     Append (Buf, Ind & "  if ao" & Gid & " == 0 { return Err(p.fail(""one of the members of the group"")); }");
+                     Append (Buf, LF);
+                  end if;
+                  Append (Buf, Ind & "}");
+                  Append (Buf, LF);
+                  Skip_To := K + N;
+               end;
+            else
             declare
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test | B_Num
+                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test | B_Num | B_Both
                then
                   Append (Buf, Ind & "let es_" & Sid & "_" & Img (K) & " = p.pos;");
                   Append (Buf, LF);
@@ -3029,6 +3129,45 @@ package body HBNF_Rust is
                               (To_String (Rules (Owner).Name), To_String (E.Ctx))))
                           & "] = v_; }");
                         Append (Buf, LF);
+                     elsif E.Op = B_Both then
+                        --  `a intersect b` and `x in ( "a" "b" )`: the text the element before matched is read again by the rule b (or is
+                        --  one of the literals and rules written), ending where it ended; the parser reads the text cut at k_ meanwhile
+                        Append (Buf, Ind & "{ let k_ = p.pos; "
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                               & "; p.skip_ws(); " else "")
+                          & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "; p.pos = k_;");
+                        Append (Buf, LF);
+                        if E.Look.First_Element.Kind = Group then
+                           Append (Buf, Ind & "  let mut in_ = false;");
+                           Append (Buf, LF);
+                           for X of E.Look.First_Element.Items loop
+                              if X.Kind = Literal then
+                                 Append (Buf, Ind & "  if !in_ && " & (if X.No_Case then "p.text[st_..k_].eq_ignore_ascii_case(""" else "&p.text[st_..k_] == """)
+                                   & Rust_Escape (To_String (X.Lit)) & """" & (if X.No_Case then ")" else "") & " { in_ = true; }");
+                                 Append (Buf, LF);
+                              elsif X.Kind = Name then
+                                 Append (Buf, Ind & "  if !in_ { let full_ = p.text; p.text = &full_[..k_]; p.pos = st_; let r_ = "
+                                   & Rule_Call (To_String (Rules (Owner).Name), X, "parse_" & Rust_Snake (To_String (X.Name)) & "(p)")
+                                   & "; let end_ = p.pos; p.text = full_; p.pos = k_; if r_.is_ok() && end_ == k_ { in_ = true; } }");
+                                 Append (Buf, LF);
+                              end if;
+                           end loop;
+                           Append (Buf, Ind & "  if !in_ { return Err(p.fail(""one of the words written"")); } }");
+                           Append (Buf, LF);
+                        else
+                           declare
+                              X  : constant Element_Access := E.Look.First_Element;
+                              NM : constant String := To_String (X.Name);
+                           begin
+                              Append (Buf, Ind & "  let full_ = p.text; p.text = &full_[..k_]; p.pos = st_; let r_ = "
+                                & Rule_Call (To_String (Rules (Owner).Name), X, "parse_" & Rust_Snake (NM) & "(p)")
+                                & "; let end_ = p.pos; p.text = full_; p.pos = k_;");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  if r_.is_err() || end_ != k_ { return Err(p.fail(""text that is also `" & NM & "`"")); } }");
+                              Append (Buf, LF);
+                           end;
+                        end if;
                      elsif E.Op in B_Test | B_Not_Test then
                         --  `x ? types` / `x ?! types`: the text x matched is (not) in the context
                         Append (Buf, Ind & "{ let k_ = p.pos; "
@@ -3335,6 +3474,7 @@ package body HBNF_Rust is
                      null;   --  resolved into a rule of ranges before this runs
                end case;
             end;
+            end if;
          end loop;
          --  what a `%scope` bound ends with the segment
          for Q in reverse 1 .. Natural (Scopes.Length) loop

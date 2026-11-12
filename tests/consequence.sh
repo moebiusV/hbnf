@@ -79,6 +79,13 @@ EOM
 		grep -q '^1:22:21: expected' "$d/o1.txt" || { echo "consequence: FAIL (chain: the error is not at the use, 1:22:21: $(sed -n 2p "$d/o1.txt"))"; fail=1; }
 		grep -q '^  #define ADD(a,b) a+b;ADD(1,TWO);$' "$d/o1.txt" || { echo "consequence: FAIL (chain: the line shown is not the user's)"; fail=1; }
 		grep -q 'note: this is in the expansion of rule `macro-use`' "$d/o1.txt" || { echo "consequence: FAIL (chain: no note naming the rule)"; fail=1; }
+		# with --paths the rule path and the chain are in one message (R670, S4)
+		"$CLI" tests/consequence/macros.hbnf --backend=c --paths > "$d/pp.c" 2> /dev/null
+		cat "$d/pp.c" "$d/main.c" > "$d/mp.c"; cc -std=gnu11 -D_GNU_SOURCE -w -I runtime "-DOUT_T=$root" "$d/mp.c" -o "$d/mp" 2> /dev/null
+		total=$((total + 1))
+		if [ -x "$d/mp" ]; then "$d/mp" "$d/t1.txt" > "$d/op.txt"; else : > "$d/op.txt"; fi
+		grep -q '(in doc > stmt > expr > term > macro-use)' "$d/op.txt" && grep -q 'note: this is in the expansion of rule `macro-use`' "$d/op.txt" \
+			|| { echo "consequence: FAIL (chain: --paths does not give the rule path and the note in one message)"; fail=1; }
 		printf '%s' '#define PI 3;PI+PI;PIX' > "$d/t2.txt"; "$d/m" "$d/t2.txt" > "$d/o2.txt"
 		grep -q '^1:20:19: expected' "$d/o2.txt" || { echo "consequence: FAIL (chain: an error after rewrites is not placed in the user's text: $(sed -n 2p "$d/o2.txt"))"; fail=1; }
 	fi
