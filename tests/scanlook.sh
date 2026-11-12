@@ -1,10 +1,11 @@
 #!/bin/sh
-# A rule of characters that holds a lookahead is scanned in C (tests/scanlook/scan.hbnf: `*Char !any`, `1*( !( "<" | "&" ) any )`,
+# A rule of characters that holds a lookahead is scanned in C, Rust, Zig and Ada (tests/scanlook/scan.hbnf: `*Char !any`, `1*( !( "<" | "&" ) any )`,
 # `till(T) := *( !T any )`, `quoted(C)`), where it used to be read a character at a time, a tree node for each, with a warning:
 #   - every case of scan-cases.txt (a verdict, ok or bad, and an input; `\nnn` is an octal byte) gets its verdict from the parser
-#     of every backend installed (Rust, Zig and Ada read the rules a character at a time still, and must agree);
-#   - for C there is no warning, and the rules are scanned: the generated parser calls a scanner for them;
-#   - for the others the warning is still there, saying what to write instead.
+#     of every backend installed (all four scan the rules, and must agree);
+#   - there is no warning, and the rules are scanned: the generated parser calls a scanner for them (the Iter atom, a repeated rule
+#     or group that holds a lookahead, is a loop_ function of its own in each backend);
+#   - a rule whose alternatives overlap is not scanned in any, and the warning is there, saying what to write instead.
 #   HBNF=/path/to/hbnf sh tests/scanlook.sh      (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."
@@ -84,11 +85,14 @@ for r in top; do
 	grep -q "^static size_t scan_[a-z]*_*$r(" "$W/c.c" || { echo "scanlook: FAIL (C has no scanner for $r)"; fail=1; }
 done
 n=$((n + 1))
-# and the other backends say it, as they did
+# and the other backends scan it too, with no warning and a scanner for the rule and the loops it calls
 for b in rust zig ada; do
-	"$CLI" tests/scanlook/scan.hbnf --backend=$b > "$W/o" 2> "$W/err"
-	[ "$(grep -c 'keeps it from being one token' "$W/err")" -ge 4 ] \
-		|| { echo "scanlook: FAIL ($b does not warn that a rule with a lookahead is read a character at a time)"; fail=1; }
+	"$CLI" tests/scanlook/scan.hbnf --backend=$b --package=Sl > "$W/o" 2> "$W/err"
+	grep -q 'keeps it from being one token' "$W/err" \
+		&& { echo "scanlook: FAIL ($b warns that a rule with a lookahead is read a character at a time)"; fail=1; }
+	grep -Eq '^(fn |   function )(scan|Scan)_[A-Za-z_]*[Tt]op ' "$W/o" || grep -Eq '^(fn |   function )(scan|Scan)_[A-Za-z_]*[Tt]op[ (]' "$W/o" \
+		|| { echo "scanlook: FAIL ($b has no scanner for top)"; fail=1; }
+	grep -Eq '^(fn |   function )(loop|Loop)_' "$W/o" || { echo "scanlook: FAIL ($b has no function that loops over the repeated part)"; fail=1; }
 	n=$((n + 1))
 done
 # a rule whose alternatives overlap (overlap.hbnf: `*( "a" | "ab" )`; dirs.hbnf: YAML's directives) is not scanned, in C either: it
@@ -97,10 +101,15 @@ for g in overlap dirs; do
 	"$CLI" tests/scanlook/$g.hbnf --backend=c > "$W/o.c" 2> "$W/err"
 	grep -q 'keeps it from being one token' "$W/err" || { echo "scanlook: FAIL ($g: C does not warn that the rule is read a character at a time)"; fail=1; }
 	! grep -q '^static size_t loop_' "$W/o.c" || { echo "scanlook: FAIL ($g: C loops over alternatives that overlap)"; fail=1; }
+	for b in rust zig ada; do
+		"$CLI" tests/scanlook/$g.hbnf --backend=$b --package=Sl > "$W/o" 2> "$W/err"
+		grep -q 'keeps it from being one token' "$W/err" || { echo "scanlook: FAIL ($g: $b does not warn that the rule is read a character at a time)"; fail=1; }
+		! grep -Eq '^(fn |   function )(loop|Loop)_' "$W/o" || { echo "scanlook: FAIL ($g: $b loops over alternatives that overlap)"; fail=1; }
+	done
 	n=$((n + 1))
 done
 "$CLI" tests/scanlook/dirs.hbnf --backend=c --layout=tape > "$W/o.c" 2> "$W/err" \
 	|| { echo "scanlook: FAIL (dirs.hbnf as a tape: $(head -c 300 "$W/err"))"; fail=1; }
 n=$((n + 1))
-[ $fail = 0 ] && echo "scanlook: OK ($n results: three grammars, their cases in each backend installed, C scanning the one whose alternatives cannot overlap, the others warning)"
+[ $fail = 0 ] && echo "scanlook: OK ($n results: three grammars, their cases in each backend installed, all four scanning the one whose alternatives cannot overlap, and warning for the others)"
 exit $fail

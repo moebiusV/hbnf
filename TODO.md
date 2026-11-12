@@ -63,7 +63,7 @@ Queued reader and generator fixes (the titles are the item titles):
 | 4, 5 | **done 2026-11-11 (C, Rust, Zig, Ada for `hidden`; C for the tape):** `hidden` over a rule that builds structure (read into a scratch value, no field in the tree; `tests/hidden.sh`); `!`/`&` over a rule that writes tape entries; `!closer(N)` with `%spaces N` works in both layouts; a rule that holds `eol` can be hidden |
 | 6 | `%spaces N` at the start of a repeated group reads N as lost |
 | 7 | a pattern rule's instances are named for the pattern |
-| 11, 22, 29 | a negative lookahead over a rule that ends in one; a lookahead rule inside a rule of characters always warns; a multi-character lookahead in a rule of characters |
+| 11, 22, 29 | a negative lookahead over a rule that ends in one (does not reproduce); **22 and 29 done in all four backends 2026-11-11** (a lookahead rule, or a multi-character lookahead, in a rule of characters is scanned in C, Rust, Zig and Ada: the `Iter` atom was ported; `tests/scanlook.sh`) |
 | 13, 14, 15 | **13 and 14 done 2026-11-11 (`tests/lexer.sh`)**: a `word` renamed `word-rule` is still the keyword boundary (C); a token exception with a literal operand; 15 (letters in a rule of characters) is how the notation reads, see CONTEXTS section 23 |
 | 17, 63 | **done 2026-11-11 (C; `tests/layout.sh`)**: a lookahead over a rule that writes under `--layout=tape` runs it and puts the tape back (the grammar's `rollback`) |
 | 23, 24 | **23 done 2026-11-11 (`tests/lexer.sh`)**: a hyperrule's literal argument follows `sensitivity string %i`; `$K` keeps the case property since a4f96d9 |

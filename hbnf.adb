@@ -314,9 +314,9 @@ begin
    --  once-per-file keys.
    HBNF_Grammar.Reset_Warnings;
 
-   --  Only the C backend scans a rule of characters that holds a lookahead (the others read it a
-   --  character at a time, as before).
-   HBNF_Grammar.Set_Scan_Look (To_String (Backend) = "c");
+   --  The C, Rust, Zig and Ada backends scan a rule of characters that holds a lookahead or repeats a group
+   --  (the Iter atom); tree-sitter and the rest read it a character at a time, as before.
+   HBNF_Grammar.Set_Scan_Look (To_String (Backend) in "c" | "rust" | "zig" | "ada");
 
    --  A grammar whose first rule holds bit fields (RFCPLAN.md step 7b) goes to
    --  the wire emitters; the text rules it keeps (those `bitsof` names) are
