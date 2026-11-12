@@ -96,19 +96,19 @@ term             : term separator and_or
                  ;
 for_clause       : For name                                      do_group
                  | For name                       sequential_sep do_group
-                 | For name linebreak in          sequential_sep do_group
-                 | For name linebreak in wordlist sequential_sep do_group
+                 | For name linebreak in_word     sequential_sep do_group
+                 | For name linebreak in_word wordlist sequential_sep do_group
                  ;
 name             : NAME                     /* Apply rule 5 */
                  ;
-in               : In                       /* Apply rule 6 */
+in_word          : In                       /* Apply rule 6 */
                  ;
 wordlist         : wordlist WORD
                  |          WORD
                  ;
-case_clause      : Case WORD linebreak in linebreak case_list    Esac
-                 | Case WORD linebreak in linebreak case_list_ns Esac
-                 | Case WORD linebreak in linebreak              Esac
+case_clause      : Case WORD linebreak in_word linebreak case_list    Esac
+                 | Case WORD linebreak in_word linebreak case_list_ns Esac
+                 | Case WORD linebreak in_word linebreak              Esac
                  ;
 case_list_ns     : case_list case_item_ns
                  |           case_item_ns

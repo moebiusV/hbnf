@@ -1,7 +1,7 @@
 # The POSIX shell command language in HyperBNF
 
 `shell.y` reads shell scripts with the grammar of POSIX.1-2017 section 2.10.2, the one in
-`posix-shell-1.y` as the standard prints it and **included unchanged**, plus three small files.  The standard's text, its copyright and where it was taken from are in
+`posix-shell-1.y` as the standard prints it and **included, with one rename**, plus three small files.  The standard's rule `in` is called `in_word` there: `in` is the word of the set operator (`x in S`), with that one meaning, so a grammar that has a rule of that name renames it.  The standard's text, its copyright and where it was taken from are in
 `posix-shell-1.md`.
 
 | file | what |
@@ -29,7 +29,7 @@ them:
 
 1. **Definitions for the `%token` names.**  `AND_IF = "&&"` and the rest.
 2. **Names that differ only in case.**  The standard has a rule `name` and a token `NAME`, a rule
-   `in` and a token `In`.  hbnf's names ignore case, so under a dialect with case-sensitive names the
+   `in` (now `in_word`) and a token `In`.  hbnf's names ignore case, so under a dialect with case-sensitive names the
    reader now calls the token `NAME-token`, `In-token`, and says so, instead of refusing.
 3. **Reserved words by position** (rules 1 and 7a): `cmd_name = WORD - reserved`, the exception.  A
    word is reserved only when it is exactly the word, so `iffy` and `if/x` are words.

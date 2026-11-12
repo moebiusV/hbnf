@@ -51,3 +51,5 @@ A working `posix-shell-1.hbnf` needs, beyond defining the tokens:
 - **Quoting and expansion** (`'..'`, `".."`, `$(..)`, `${..}`) nest.
 
 The plan is RFCPLAN.md's POSIX BNF section.
+
+**One change from the standard's text (2026-11-12):** the rule `in` is written `in_word` (lines 99, 100, 104, 109 to 111), because `in` is the word of the set operator in hbnf and has that one meaning.

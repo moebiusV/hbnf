@@ -6445,7 +6445,7 @@ package body HBNF_C is
             J : Natural := K - 1;
          begin
             while J > First and then Els (J).Kind = Block
-              and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num
+              and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both
             loop
                J := J - 1;
             end loop;
@@ -6487,7 +6487,7 @@ package body HBNF_C is
             begin
                --  A `? ctx` after this element asks about its text.
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_Test | B_Not_Test | B_As | B_Num
+                 and then Els (K + 1).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both
                then
                   Append (Buf, Ind & "size_t es" & Sid & "_" & Ctx_Img (K)
                     & ";  es" & Sid & "_" & Ctx_Img (K) & " = p->pos;");
@@ -6851,6 +6851,27 @@ package body HBNF_C is
                              & "`"", 0, p->text + st_, 0); p->pos = k_; "
                              & Fail & " } }");
                            Append (Buf, LF);
+                        when B_Both =>
+                           --  `a both b` (CONTEXTS section 29, Q2): b, a rule, is read over exactly the text a matched
+                           --  and must end where a ended
+                           declare
+                              X  : constant Element_Access := E.Look.First_Element;
+                              NM : constant String := To_String (X.Name);
+                              T  : constant String := Out_Type (Find (NM));
+                           begin
+                              Append (Buf, Ind & "{ " & Span_Of ("es" & Sid & "_" & Ctx_Img (Base_Of (K))));
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  " & T (T'First .. T'Last - 5) & " h_;  parser_t sb_ = *p;"
+                                & "  memset(&h_, 0, sizeof h_);  sb_.pos = st_;  sb_.len = k_;");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  if (!" & Rule_Call (To_String (Rules (Owner).Name), X,
+                                                                        "parse_rule_" & C_Name (NM) & "(&sb_, &h_)")
+                                & " || sb_.pos != k_) {");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "      p->pos = st_; fail(p, ""text that is also `" & NM & "`"", 0, p->text + st_, 0); p->pos = k_; "
+                                & Fail & " } }");
+                              Append (Buf, LF);
+                           end;
                         when B_Bind =>
                            if Views_On then
                               --  the field is a slice of the input: its text is what is kept
@@ -8542,7 +8563,7 @@ package body HBNF_C is
                   end;
                   K := En + 1;
                elsif K < En and then V (K + 1).Kind = Block
-                 and then V (K + 1).Op in B_Test | B_Not_Test | B_As | B_Num
+                 and then V (K + 1).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both
                then
                   if V (K).Min /= 1 or else V (K).Max /= 1 then
                      Unsupported ("a repeated element that a context test or number follows");

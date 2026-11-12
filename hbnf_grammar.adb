@@ -28,6 +28,34 @@ package body HBNF_Grammar is
       return J > I and then J <= T'Last and then T (J) = '(';
    end Open_Paren_After_Blank;
 
+   --  The index just after the word W when it is the next text after the blanks from I of T, as a whole word; 0 when not.
+   function Next_Word_End (T : String; I : Natural; W : String) return Natural is
+      J : Natural := I;
+   begin
+      while J <= T'Last and then T (J) in ' ' | ASCII.HT loop
+         J := J + 1;
+      end loop;
+      if J + W'Length - 1 <= T'Last and then T (J .. J + W'Length - 1) = W
+        and then (J + W'Length > T'Last
+                  or else T (J + W'Length) not in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-')
+      then
+         return J + W'Length;
+      end if;
+      return 0;
+   end Next_Word_End;
+
+   --  After the blanks from I of T a name or a `(` begins: what `in S`, `one of ( ... )` and `both y` take.  The words `in`, `not in`,
+   --  `one of` and `both` have the one meaning (CONTEXTS section 29): a grammar with a rule of one of those names renames it.
+   function Operand_After (T : String; I : Natural) return Boolean is
+      J : Natural := I;
+   begin
+      while J <= T'Last and then T (J) in ' ' | ASCII.HT loop
+         J := J + 1;
+      end loop;
+      return J > I and then J <= T'Last
+        and then (T (J) in 'a' .. 'z' | 'A' .. 'Z' | '_' | '(' | '<');
+   end Operand_After;
+
 
    --  Labels of alternatives, by the address of the element they sit on.
    package Label_Maps is new Ada.Containers.Ordered_Maps
@@ -2548,7 +2576,21 @@ package body HBNF_Grammar is
                   Col := Col + (I - Start);
                end;
             when others =>
-               if Text (I) in 'i' | 's' | 'r'
+               if Hbnf_Notation and then I + 2 <= Text'Last
+                 and then Text (I) = Character'Val (16#E2#) and then Text (I + 1) = Character'Val (16#88#)
+                 and then Text (I + 2) in Character'Val (16#88#) | Character'Val (16#89#)
+               then
+                  --  `∈` and `∉` (U+2208, U+2209): what `in` and `not in` say, as `?` and `?!` do (CONTEXTS section 29)
+                  Emit (T_Pct, (if Text (I + 2) = Character'Val (16#88#) then "test" else "nottest"));
+                  I := I + 3;  Col := Col + 1;
+               elsif Hbnf_Notation and then I + 2 <= Text'Last
+                 and then Text (I) = Character'Val (16#E2#) and then Text (I + 1) = Character'Val (16#88#)
+                 and then Text (I + 2) = Character'Val (16#A9#)
+               then
+                  --  `∩` (U+2229): what `both` says
+                  Emit (T_Pct, "both");
+                  I := I + 3;  Col := Col + 1;
+               elsif Text (I) in 'i' | 's' | 'r'
                  and then (Hbnf_Notation or else Abnf_Here)
                  and then Flags_Then_Quote (I)
                then
@@ -2674,6 +2716,31 @@ package body HBNF_Grammar is
                              & "`as`; call this one `as-word`, or the like";
                         end if;
                         Emit (T_Pct, "as");
+                     elsif Hbnf_Notation and then Text (Start .. I - 1) = "in" and then Col > 1
+                       and then Operand_After (Text, I)
+                     then
+                        --  `x in S`: the text x matched is in the set S, as `x ? S` says (CONTEXTS section 29, Q1);
+                        --  `in ( "a" "b" )` is one of those
+                        Emit (T_Pct, "test");
+                     elsif Hbnf_Notation and then Text (Start .. I - 1) = "one" and then Col > 1
+                       and then Next_Word_End (Text, I, "of") > 0
+                       and then Operand_After (Text, Next_Word_End (Text, I, "of"))
+                     then
+                        --  `one of ( "a" "ab" )`: the plain words for `in ( ... )` (CONTEXTS section 29, R644)
+                        Emit (T_Pct, "test");
+                        I := Next_Word_End (Text, I, "of");
+                     elsif Hbnf_Notation and then Text (Start .. I - 1) = "both" and then Col > 1
+                       and then Operand_After (Text, I)
+                     then
+                        --  `a both b`: b matches exactly the text a matched (CONTEXTS section 29, Q2)
+                        Emit (T_Pct, "both");
+                     elsif Hbnf_Notation and then Text (Start .. I - 1) = "not" and then Col > 1
+                       and then Next_Word_End (Text, I, "in") > 0
+                       and then Operand_After (Text, Next_Word_End (Text, I, "in"))
+                     then
+                        --  `x not in S`: as `x ?! S`
+                        Emit (T_Pct, "nottest");
+                        I := Next_Word_End (Text, I, "in");
                      elsif Hbnf_Notation and then Text (Start .. I - 1) = "where" and then Col > 1
                        and then I < Text'Last and then Text (I) in ' ' | ASCII.HT
                        and then Open_Paren_After_Blank (Text, I)
@@ -4918,6 +4985,73 @@ package body HBNF_Grammar is
          Next (P);
       elsif W = "scope" then
          E.Op := B_Scope;
+      elsif W = "both" then
+         --  `a both b`: b, a rule, matches exactly the text the element before matched
+         declare
+            A : constant Element_Access := Parse_Atom (P);
+         begin
+            if A.Kind /= Name or else A.Min /= 1 or else A.Max /= 1 then
+               raise Parse_Error with
+                 Where & "`both` takes a rule: `x both y` (write a literal or a group as a rule of its own)";
+            end if;
+            E.Op := B_Both;
+            E.Look.Append (A);
+         end;
+      elsif W = "test" and then Cur (P).Kind = T_LParen then
+         --  `in ( "a" "ab" )`: one of the literals written, the longest first (CONTEXTS section 29, Q1), so that a member
+         --  that is the front of another does not hide it
+         declare
+            Members : Element_Vectors.Vector;
+            Items   : Element_Vectors.Vector;
+            All_Lit : Boolean := True;
+         begin
+            Next (P);
+            while Cur (P).Kind /= T_RParen loop
+               if Cur (P).Kind in T_EOF | T_Newline then
+                  raise Parse_Error with
+                    Where & "`in ( ... )`: the set ends with `)`";
+               end if;
+               declare
+                  A : constant Element_Access := Parse_Atom (P);
+               begin
+                  if A.Kind not in Literal | Name or else A.Min /= 1 or else A.Max /= 1 then
+                     raise Parse_Error with
+                       Where & "`one of ( ... )` takes literals or rules: `one of ( ""a"" ""b"" )`, `one of ( x y )`";
+                  end if;
+                  if A.Kind /= Literal then
+                     All_Lit := False;
+                  end if;
+                  Members.Append (A);
+               end;
+            end loop;
+            Next (P);
+            if Members.Is_Empty then
+               raise Parse_Error with Where & "`in ( )` has no member";
+            end if;
+            --  literals only: the longest first, the order written among those as long; rules: the order written, as `|` reads
+            for I in Members.First_Index + 1 .. Members.Last_Index loop
+               exit when not All_Lit;
+               declare
+                  X : constant Element_Access := Members (I);
+                  J : Integer := I - 1;
+               begin
+                  while J >= Members.First_Index
+                    and then Length (Members (J).Lit) < Length (X.Lit)
+                  loop
+                     Members (J + 1) := Members (J);
+                     J := J - 1;
+                  end loop;
+                  Members (J + 1) := X;
+               end;
+            end loop;
+            for I in Members.First_Index .. Members.Last_Index loop
+               if I > Members.First_Index then
+                  Items.Append (new Element'(Kind => Alt, Min => 1, Max => 1, Guard => 0, Union => False));
+               end if;
+               Items.Append (Members (I));
+            end loop;
+            return new Element'(Kind => Group, Min => 1, Max => 1, Items => Items);
+         end;
       elsif W = "test" or else W = "nottest" then
          if Cur (P).Kind /= T_Name then
             raise Parse_Error with
@@ -5029,7 +5163,7 @@ package body HBNF_Grammar is
             P.Pos := P.Pos + 2;
          elsif Cur (P).Kind = T_Pct
            and then To_String (Cur (P).Text)
-                    in "test" | "nottest" | "bind" | "scope" | "where" | "not" | "and"
+                    in "test" | "nottest" | "bind" | "scope" | "where" | "not" | "and" | "both"
                        | "as" | "same" | "spaces" | "col" | "num"
          then
             if V.Is_Empty and then To_String (Cur (P).Text) = "as" then
@@ -5049,6 +5183,25 @@ package body HBNF_Grammar is
                        & ": `where (...)` follows the element it tests: `""foo"" where (col = 6)`";
                   end if;
                   Element_Vectors.Insert (V, V.Last_Index, Op);
+               elsif Op.Kind = Block and then Op.Op = B_Both and then (V.Is_Empty or else V.Last_Element.Kind = Alt) then
+                  raise Parse_Error with
+                    Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                    & ": `both` follows the element it intersects: `x both y`";
+               elsif Op.Kind = Group and then not Op.Items.Is_Empty and then Op.Items.First_Element.Kind in Literal | Name
+                 and then (V.Is_Empty or else V.Last_Element.Kind = Alt) and then Ends_Pattern (P.Pos)
+               then
+                  --  `kw = in ( "a" "ab" )`: the whole alternative is one of the literals, the longest first, so it is the
+                  --  alternation of them and not a group (an enum, as `"ab" | "a"` is)
+                  for X of Op.Items loop
+                     V.Append (X);
+                  end loop;
+               elsif Op.Kind = Group and then not V.Is_Empty and then V.Last_Element.Kind /= Alt then
+                  --  `x in ( "a" "b" )`: x's text is one of them; that is an intersection (`x both ( "a" | "b" )`), which is
+                  --  built next
+                  raise Parse_Error with
+                    Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
+                    & ": `x in ( ... )` with a written set after an element is not built yet; "
+                    & "`in ( ... )` at the start of an alternative is one of the literals";
                else
                   Element_Vectors.Append (V, Op);
                end if;
@@ -6203,7 +6356,7 @@ package body HBNF_Grammar is
                                        & "capture before the join");
                               end if;
                            end;
-                        when B_Not | B_And =>
+                        when B_Not | B_And | B_Both =>
                            for X of E.Look loop
                               if X.Kind = Name then
                                  Site_Of (X, True);
@@ -6242,7 +6395,7 @@ package body HBNF_Grammar is
                     and then Up_Level (To_String (E.Ctx)) /= 1
                     and then Up_Name (To_String (E.Ctx)) = Tag
                     and then (E.Op = B_Same or else E.Path /= Null_Unbounded_String))
-           or else (E.Kind = Block and then E.Op in B_Not | B_And and then Refers (E.Look, Tag)));
+           or else (E.Kind = Block and then E.Op in B_Not | B_And | B_Both and then Refers (E.Look, Tag)));
 
       function Binds (Els : Element_Vectors.Vector; Tag : String) return Boolean is
         (for some E of Els =>

@@ -1,0 +1,12 @@
+; Element of (CONTEXTS section 29, Q1): `x in S` and `x ∈ S` say what `x ? S` says, `x not in S` and `x ∉ S` what `x ?! S` says; the
+; spelling changes nothing in the parser that is made.
+prefix none
+context types
+
+program   = *statement
+statement = typedef-decl | use
+typedef-decl = "typedef" name %bind types += name ";"
+use       = known ";" | fresh "!"
+known     = name in types
+fresh     = name not in types
+name      = word
