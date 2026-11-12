@@ -22,8 +22,15 @@ static size_t hbnf_rr_s, hbnf_rr_e;           /* the text it replaces: [s, e) */
 static char *hbnf_rr_t;  static size_t hbnf_rr_tn;   /* and what it replaces it with */
 static unsigned hbnf_rr_n;                    /* rewrites made in this parse */
 static char *hbnf_rr_buf;                     /* the text of the last rewrite */
-static void hbnf_reread(size_t s, size_t e, hbnf_sb *b) {
-    hbnf_rr = 1;  hbnf_rr_s = s;  hbnf_rr_e = e;
+/* The chain of rewrites, so that an error is reported against the text the user wrote (CONTEXTS.md section 30, R591): each
+   splice is logged with where its text stands in the text it made, where the text it replaced stood in the text before, and
+   the rule whose `=>` made it.  hbnf_rr_orig is the text before the first rewrite. */
+typedef struct { size_t ns, nlen, os, oe; const char *rule; } hbnf_rr_rec;
+static hbnf_rr_rec *hbnf_rr_log;  static size_t hbnf_rr_nlog, hbnf_rr_caplog;
+static const char *hbnf_rr_orig;
+static const char *hbnf_rr_rule_;            /* the rule that asked for the rewrite waiting to be made */
+static void hbnf_reread(size_t s, size_t e, hbnf_sb *b, const char *rule) {
+    hbnf_rr = 1;  hbnf_rr_s = s;  hbnf_rr_e = e;  hbnf_rr_rule_ = rule;
     free(hbnf_rr_t);
     hbnf_rr_t = b->s ? b->s : strdup("");
     hbnf_rr_tn = b->n;
@@ -34,12 +41,34 @@ static void hbnf_reread(size_t s, size_t e, hbnf_sb *b) {
 #define HBNF_MAX_TREE_DEPTH 200
 #endif
 static unsigned hbnf_td;
-static void hbnf_reread_clear(void) { hbnf_rr = 0;  hbnf_rr_n = 0;  hbnf_rr_buf = NULL;  hbnf_td = 0; }
+static void hbnf_reread_clear(void) { hbnf_rr = 0;  hbnf_rr_n = 0;  hbnf_rr_buf = NULL;  hbnf_td = 0;  hbnf_rr_nlog = 0;  hbnf_rr_orig = NULL; }
+/* Where position pos of the text being read stood in the text the user wrote; rules[0 .. *nr) are the rules whose
+   expansions held it, the newest first.  The log is walked back, newest first: a position after a splice moves by what
+   the splice changed, one inside the text a splice made goes to the start of the text it replaced. */
+static size_t hbnf_origin(size_t pos, const char *rules[4], int *nr) {
+    size_t i = hbnf_rr_nlog;
+    *nr = 0;
+    while (i > 0) {
+        const hbnf_rr_rec *r = &hbnf_rr_log[--i];
+        if (pos >= r->ns + r->nlen) pos = pos - r->nlen + (r->oe - r->os);
+        else if (pos >= r->ns) { pos = r->os;  if (*nr < 4) rules[(*nr)++] = r->rule; }
+    }
+    return pos;
+}
 /* The text with [s, e) replaced; the text of the rewrite before is given back, the caller's own is not. */
 static const char *hbnf_splice(const char *text, size_t len) {
     size_t tail = len - hbnf_rr_e;
     char *r = (char *)malloc(hbnf_rr_s + hbnf_rr_tn + tail + 1);
     if (!r) hbnf_oom();
+    if (hbnf_rr_n == 0) hbnf_rr_orig = text;
+    if (hbnf_rr_nlog == hbnf_rr_caplog) {
+        hbnf_rr_caplog = hbnf_rr_caplog ? hbnf_rr_caplog * 2 : 16;
+        hbnf_rr_log = (hbnf_rr_rec *)realloc(hbnf_rr_log, hbnf_rr_caplog * sizeof *hbnf_rr_log);
+        if (!hbnf_rr_log) hbnf_oom();
+    }
+    hbnf_rr_log[hbnf_rr_nlog].ns = hbnf_rr_s;  hbnf_rr_log[hbnf_rr_nlog].nlen = hbnf_rr_tn;
+    hbnf_rr_log[hbnf_rr_nlog].os = hbnf_rr_s;  hbnf_rr_log[hbnf_rr_nlog].oe = hbnf_rr_e;
+    hbnf_rr_log[hbnf_rr_nlog].rule = hbnf_rr_rule_;  hbnf_rr_nlog++;
     memcpy(r, text, hbnf_rr_s);
     memcpy(r + hbnf_rr_s, hbnf_rr_t, hbnf_rr_tn);
     memcpy(r + hbnf_rr_s + hbnf_rr_tn, text + hbnf_rr_e, tail);

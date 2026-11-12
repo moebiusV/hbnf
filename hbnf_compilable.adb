@@ -1455,7 +1455,7 @@ package body HBNF_Compilable is
               "rule `" & To_String (R.Name) & "` has `intersect` (an intersection), which only the C backend generates";
          elsif Has (R.Pattern, HBNF_Grammar.B_Any_Order) then
             raise Parse_Error with
-              "rule `" & To_String (R.Name) & "` has `all of ( ... )` (each member once, in any order), which only the C backend generates";
+              "rule `" & To_String (R.Name) & "` has `all of`, `some of`, `any of`, `choose` or `permute` (a group of members each taken once), which only the C backend generates";
          end if;
       end loop;
    end Check_Intersections;

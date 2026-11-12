@@ -160,6 +160,13 @@ package HBNF_Grammar is
    --  `%label name` at the end of an alternative names it.  The name is kept
    --  against the alternative's first element; "" when there is none.
    function Label_Of (E : Element_Access) return String;
+
+   --  The marker of an any-order group that `( a b c ) choose 2` or `permute 2` made: `C` for combinations (the members taken in
+   --  the order written), `P` for permutations (in any order), ' ' for one that `all of`, `some of` or `any of` made; and the
+   --  fewest and most members it takes.
+   function Pick_Kind (E : Element_Access) return Character;
+   function Pick_Min (E : Element_Access) return Natural;
+   function Pick_Max (E : Element_Access) return Natural;
    procedure Set_Label (E : Element_Access; Name : String);
 
    --  What a Block is: an `%action{ }` between elements (lifted into a rule

@@ -6491,11 +6491,21 @@ package body HBNF_C is
                --  starts again, and when none matches the group is over.  The members that may not be left out must
                --  all have been taken.
                declare
-                  N   : constant Natural := Els (K).Id;
-                  Gid : constant String := Sid & "_" & Ctx_Img (K);
-                  Req : Natural := 0;
+                  N    : constant Natural := Els (K).Id;
+                  Gid  : constant String := Sid & "_" & Ctx_Img (K);
+                  Req  : Natural := 0;
+                  Pk   : constant Character := HBNF_Grammar.Pick_Kind (Els (K));   --  `choose` (C), `permute` (P), or ' '
+                  Cmb  : constant Boolean := Pk = 'C';   --  the members taken in the order written: one pass, no restart
+                  PMin : constant Natural := HBNF_Grammar.Pick_Min (Els (K));
+                  PMax : constant Natural := HBNF_Grammar.Pick_Max (Els (K));
                begin
-                  Append (Buf, Ind & "{ unsigned ao" & Gid & " = 0;" & LF & Ind & "  for (;;) {" & LF);
+                  Append (Buf, Ind & "{ unsigned ao" & Gid & " = 0;" & LF);
+                  if not Cmb then
+                     Append (Buf, Ind & "  for (;;) {" & LF);
+                     if Pk /= ' ' then
+                        Append (Buf, Ind & "    if (__builtin_popcount (ao" & Gid & ") >= " & Img (PMax) & ") break;" & LF);
+                     end if;
+                  end if;
                   for J in 1 .. N loop
                      declare
                         Mem : constant Element_Access := new HBNF_Grammar.Element'(Els (K + J).all);
@@ -6506,7 +6516,9 @@ package body HBNF_C is
                         if Ada.Strings.Unbounded.Element (Els (K).Path, J) = '1' then
                            Req := Req + Bit;
                         end if;
-                        Append (Buf, Ind & "    if (!(ao" & Gid & " & " & Img (Bit) & "u)) { size_t sv" & Sj & " = p->pos;" & LF);
+                        Append (Buf, Ind & "    if (" & (if Cmb then "__builtin_popcount (ao" & Gid & ") < " & Img (PMax)
+                                                   else "!(ao" & Gid & " & " & Img (Bit) & "u)")
+                          & ") { size_t sv" & Sj & " = p->pos;" & LF);
                         Emit_Seq (Owner, Element_Vectors.To_Vector (Mem, 1), 1, 1, Acc, Buf,
                                   "{ p->pos = sv" & Sj & ";"
                                   & (if Acc'Length > 0 and then not Is_Core (FN)
@@ -6514,12 +6526,18 @@ package body HBNF_C is
                                      else "")
                                   & " goto no" & Sj & "; }",
                                   Ind & "      ", Ws, Seg_Var => Seg_Var, Alt_Tape => Alt_Tape);
-                        Append (Buf, Ind & "      ao" & Gid & " |= " & Img (Bit) & "u;  continue; }" & LF
+                        Append (Buf, Ind & "      ao" & Gid & " |= " & Img (Bit) & "u;" & (if Cmb then "" else "  continue;") & " }" & LF
                           & Ind & "    no" & Sj & ": ;" & LF);
                      end;
                   end loop;
-                  Append (Buf, Ind & "    break;" & LF & Ind & "  }" & LF);
-                  if Req > 0 then
+                  if not Cmb then
+                     Append (Buf, Ind & "    break;" & LF & Ind & "  }" & LF);
+                  end if;
+                  if Pk /= ' ' then
+                     if PMin > 0 then
+                        Append (Buf, Ind & "  if (__builtin_popcount (ao" & Gid & ") < " & Img (PMin) & ") { " & Fail & " }" & LF);
+                     end if;
+                  elsif Req > 0 then
                      Append (Buf, Ind & "  if ((ao" & Gid & " & " & Img (Req) & "u) != " & Img (Req) & "u) { " & Fail & " }" & LF);
                   elsif Els (K).Code /= Null_Unbounded_String then
                      Append (Buf, Ind & "  if (!ao" & Gid & ") { " & Fail & " }" & LF);   --  `any of`: not none
@@ -6801,7 +6819,7 @@ package body HBNF_C is
                                     Append (Buf, LF);
                                  end;
                               end if;
-                              Append (Buf, Ind & "  hbnf_reread (st_, k_, &sb_);  p->len = p->pos;   /* nothing more can match: the parse is read again */");
+                              Append (Buf, Ind & "  hbnf_reread (st_, k_, &sb_, """ & C_Escape (To_String (Rules (Owner).Name)) & """);  p->len = p->pos;   /* nothing more can match: the parse is read again */");
                               Append (Buf, LF);
                               Append (Buf, Ind & "  " & Fail & " }");
                               Append (Buf, LF);
@@ -8621,13 +8639,22 @@ package body HBNF_C is
                   --  taken, in the order written; one that matches is marked and the pass starts again; when none
                   --  matches the group is over.  The members that may not be left out must all have been taken.
                   declare
-                     N   : constant Natural := V (K).Id;
-                     Gid : constant String := Fresh;
-                     Req : Natural := 0;
+                     N    : constant Natural := V (K).Id;
+                     Gid  : constant String := Fresh;
+                     Req  : Natural := 0;
+                     Pk   : constant Character := HBNF_Grammar.Pick_Kind (V (K));
+                     Cmb  : constant Boolean := Pk = 'C';
+                     PMin : constant Natural := HBNF_Grammar.Pick_Min (V (K));
+                     PMax : constant Natural := HBNF_Grammar.Pick_Max (V (K));
                   begin
                      Skip_Done := False;
-                     Append (Buf, Ind & "{ unsigned ao" & Gid & " = 0;" & LF
-                       & Ind & "  for (;;) {" & LF);
+                     Append (Buf, Ind & "{ unsigned ao" & Gid & " = 0;" & LF);
+                     if not Cmb then
+                        Append (Buf, Ind & "  for (;;) {" & LF);
+                        if Pk /= ' ' then
+                           Append (Buf, Ind & "    if (__builtin_popcount (ao" & Gid & ") >= " & Img (PMax) & ") break;" & LF);
+                        end if;
+                     end if;
                      for J in 1 .. N loop
                         declare
                            Mem : constant Element_Access := new HBNF_Grammar.Element'(V (K + J).all);
@@ -8637,17 +8664,24 @@ package body HBNF_C is
                            if Ada.Strings.Unbounded.Element (V (K).Path, J) = '1' then
                               Req := Req + Bit;
                            end if;
-                           Append (Buf, Ind & "    if (!(ao" & Gid & " & " & Img (Bit) & "u)) { size_t sv" & Sj & " = p->pos;  "
-                             & Save ("l" & Sj) & LF);
+                           Append (Buf, Ind & "    if (" & (if Cmb then "__builtin_popcount (ao" & Gid & ") < " & Img (PMax)
+                                                      else "!(ao" & Gid & " & " & Img (Bit) & "u)")
+                             & ") { size_t sv" & Sj & " = p->pos;  " & Save ("l" & Sj) & LF);
                            Elem (Mem, "{ p->pos = sv" & Sj & "; " & Restore ("l" & Sj) & "goto no" & Sj & "; }",
                                  Ind & "      ");
-                           Append (Buf, Ind & "      ao" & Gid & " |= " & Img (Bit) & "u;  continue; }" & LF
+                           Append (Buf, Ind & "      ao" & Gid & " |= " & Img (Bit) & "u;" & (if Cmb then "" else "  continue;") & " }" & LF
                              & Ind & "    no" & Sj & ": ;" & LF);
                            Skip_Done := False;
                         end;
                      end loop;
-                     Append (Buf, Ind & "    break;" & LF & Ind & "  }" & LF);
-                     if Req > 0 then
+                     if not Cmb then
+                        Append (Buf, Ind & "    break;" & LF & Ind & "  }" & LF);
+                     end if;
+                     if Pk /= ' ' then
+                        if PMin > 0 then
+                           Append (Buf, Ind & "  if (__builtin_popcount (ao" & Gid & ") < " & Img (PMin) & ") { " & Fail & " }" & LF);
+                        end if;
+                     elsif Req > 0 then
                         Append (Buf, Ind & "  if ((ao" & Gid & " & " & Img (Req) & "u) != " & Img (Req) & "u) { " & Fail & " }" & LF);
                      elsif V (K).Code /= Null_Unbounded_String then
                         Append (Buf, Ind & "  if (!ao" & Gid & ") { " & Fail & " }" & LF);   --  `any of`: not none
@@ -11351,6 +11385,16 @@ package body HBNF_C is
          Append (Res, "    if (p.err_pos != (size_t)-1)"
            & " line_col(&p, p.err_pos, &p.err_line, &p.err_col);");
          Append (Res, LF);
+         if HBNF_Grammar.Uses_Reread then
+            --  a position in text a rewrite made is told where it stood in the text the user wrote, and the rule whose
+            --  expansion held it (CONTEXTS.md section 30, R591)
+            Append (Res, "    const char *rr_rules[4];  int rr_n = 0;" & LF
+              & "    if (hbnf_rr_nlog && p.err_pos != (size_t)-1) {" & LF
+              & "        size_t op_ = hbnf_origin(p.err_pos, rr_rules, &rr_n);" & LF
+              & "        p.text = hbnf_rr_orig;  p.len = strlen(hbnf_rr_orig);  p.err_pos = op_;" & LF
+              & "        line_col(&p, op_, &p.err_line, &p.err_col);" & LF
+              & "    }" & LF);
+         end if;
          --  Found at the end of the input: say what ends there (a statement,
          --  with `statements`; else the input).
          Append (Res, "    { const char *f = p.err_found ? p.err_found"
@@ -11429,6 +11473,11 @@ package body HBNF_C is
          Append (Res, LF);
          Append (Res, "    }");
          Append (Res, LF);
+         if HBNF_Grammar.Uses_Reread then
+            Append (Res, "    { int i_;  for (i_ = 0; i_ < rr_n; i_++) { size_t k_ = strlen(err);" & LF
+              & "        if (k_ + 1 < errlen) snprintf(err + k_, errlen - k_, i_ ? "", which came from the expansion of rule `%s`"
+              & """ : ""\n  note: this is in the expansion of rule `%s`"", rr_rules[i_]); } }" & LF);
+         end if;
          Append (Res, "    *err_line = p.err_line; *err_col = p.err_col;");
          Append (Res, LF);
          Append (Res, "    return false;");

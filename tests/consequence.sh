@@ -52,6 +52,38 @@ run names stmt
 run macros define
 run fn ''
 
+# The chain of rewrites (R591): an error in text that a rewrite made is reported against the text the user wrote, with the line
+# and column there, that text under the caret, and a note naming the rule whose expansion held it; an error after a rewrite is
+# placed in the user's text too.
+d=$W/chain; mkdir -p "$d"
+"$CLI" tests/consequence/macros.hbnf --backend=c > "$d/p.c" 2> "$d/err" || { echo "consequence: FAIL (chain: macros does not generate)"; fail=1; }
+if [ -s "$d/p.c" ]; then
+	root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$d/p.c")
+	cat > "$d/main.c" <<'EOM'
+#include <stdio.h>
+#include <string.h>
+int main(int argc, char **argv) {
+    FILE *f = fopen(argv[1], "rb"); char buf[4096]; size_t n = fread(buf, 1, sizeof buf - 1, f); buf[n] = 0; fclose(f);
+    OUT_T tree; char err[2048]; size_t l, c;
+    memset(&tree, 0, sizeof tree);
+    if (parse_text(buf, &tree, err, sizeof err, &l, &c)) puts("ok"); else printf("bad\n%s\n", err);
+    return 0;
+}
+EOM
+	cat "$d/p.c" "$d/main.c" > "$d/m.c"
+	cc -std=gnu11 -D_GNU_SOURCE -w -I runtime "-DOUT_T=$root" "$d/m.c" -o "$d/m" 2> "$d/cc.txt" \
+		|| { echo "consequence: FAIL (chain: cc: $(head -c 300 "$d/cc.txt"))"; fail=1; }
+	if [ -x "$d/m" ]; then
+		printf '%s' '#define ADD(a,b) a+b;ADD(1,TWO);' > "$d/t1.txt"; "$d/m" "$d/t1.txt" > "$d/o1.txt"
+		total=$((total + 4))
+		grep -q '^1:22:21: expected' "$d/o1.txt" || { echo "consequence: FAIL (chain: the error is not at the use, 1:22:21: $(sed -n 2p "$d/o1.txt"))"; fail=1; }
+		grep -q '^  #define ADD(a,b) a+b;ADD(1,TWO);$' "$d/o1.txt" || { echo "consequence: FAIL (chain: the line shown is not the user's)"; fail=1; }
+		grep -q 'note: this is in the expansion of rule `macro-use`' "$d/o1.txt" || { echo "consequence: FAIL (chain: no note naming the rule)"; fail=1; }
+		printf '%s' '#define PI 3;PI+PI;PIX' > "$d/t2.txt"; "$d/m" "$d/t2.txt" > "$d/o2.txt"
+		grep -q '^1:20:19: expected' "$d/o2.txt" || { echo "consequence: FAIL (chain: an error after rewrites is not placed in the user's text: $(sed -n 2p "$d/o2.txt"))"; fail=1; }
+	fi
+fi
+
 # tree.hbnf: `->`, the tree is as if the template had matched.  Each case is two texts (TAB-separated) and whether their
 # trees, as --ast-tools dumps them, are the same, or different, or neither is a sentence (error).
 t=tests/consequence/tree.hbnf; d=$W/tree; mkdir -p "$d"

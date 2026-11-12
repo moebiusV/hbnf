@@ -257,7 +257,10 @@ package body HBNF_Lookahead is
             null;
          elsif I <= Last and then V (I).Kind = Block and then V (I).Op = B_Any_Order then
             --  the group can be empty when every member may be left out
-            if Ada.Strings.Unbounded.Index (V (I).Path, "1") > 0 or else V (I).Code /= Null_Unbounded_String then
+            if Ada.Strings.Unbounded.Index (V (I).Path, "1") > 0
+              or else (V (I).Code /= Null_Unbounded_String
+                       and then (HBNF_Grammar.Pick_Kind (V (I)) = ' ' or else HBNF_Grammar.Pick_Min (V (I)) > 0))
+            then
                All_Null := False;
             end if;
             Skip_To := I + V (I).Id;
@@ -411,8 +414,10 @@ package body HBNF_Lookahead is
                      All_Null := False;
                   end if;
                end loop;
-               if V (I).Code /= Null_Unbounded_String then
-                  All_Null := False;    --  `any of`: one or more
+               if V (I).Code /= Null_Unbounded_String
+                 and then (HBNF_Grammar.Pick_Kind (V (I)) = ' ' or else HBNF_Grammar.Pick_Min (V (I)) > 0)
+               then
+                  All_Null := False;    --  `some of`, or a pick of at least one
                end if;
                if not All_Null then
                   Branch_Open := False;

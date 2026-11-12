@@ -6,7 +6,8 @@
 #     does not hide a member that is the front of another;
 #   - `one of ( ... )` is `in ( ... )`; `a intersect b` (and `a ∩ b`) reads b over exactly the text a matched, in C so far;
 #   - `all of ( a [b] c )`: each member once, in any order, one field for each member; `some of ( a b c )` one or more of them, `any of ( a b c )`
-#     none or more; in C so far (the other backends refuse them by rule name);
+#     none or more; `( a b c ) choose 2` takes 2 of them in the order written (3 shapes), `permute 2` in any order (6 shapes), the count n or n*m;
+#     in C so far (the other backends refuse them by rule name);
 #   - `x in ( ... )` after an element is not built yet and says so.
 #   HBNF=/path/to/hbnf sh tests/setlogic.sh      (default ./hbnf)
 set -u
@@ -97,6 +98,12 @@ chk tests/setlogic/allof.hbnf "ok Dp1." "ok Dp1usage." "ok Dusagep1." "ok Dv2p1.
 	"bad D." "bad Dusage." "bad Dp1p2." "bad Dp1usageusage." "bad Dp1v2v3." "bad Dp1"
 chk tests/setlogic/someof.hbnf "ok Dp1." "ok Dusage." "ok Dv2usagep1." "ok Dusagep1v2." "bad D." "bad Dp1p2." "bad Dusageusage." "bad Dx."
 chk tests/setlogic/anyof.hbnf "ok D." "ok Dp1." "ok Dusagep1." "ok Dp1usage." "bad Dp1p2." "bad Dx."
+chk tests/setlogic/permute.hbnf "ok Dab." "ok Dba." "ok Dac." "ok Dca." "ok Dbc." "ok Dcb." "bad Da." "bad Dabc." "bad Daa." "bad D."
+chk tests/setlogic/choose.hbnf "ok Dab." "ok Dac." "ok Dbc." "bad Dba." "bad Dca." "bad Dcb." "bad Da." "bad Dabc." "bad Daa."
+chk tests/setlogic/choose-range.hbnf "ok D." "ok Da." "ok Dc." "ok Dab." "ok Dac." "ok Dbc." "bad Dba." "bad Dabc." "bad Daa."
+printf 'prefix none\nwhitespace none\ntop = ( a b ) choose 2 with replacement\na = "a"\nb = "b"\n' > "$W/wr.hbnf"
+"$CLI" "$W/wr.hbnf" --backend=c 2>&1 > /dev/null | grep -q '`with replacement` is not built yet' || { echo "setlogic: FAIL (with replacement is not refused)"; fail=1; }
+n=$((n + 1))
 chk tests/setlogic/allof-first.hbnf "ok p1." "ok usagep1." "ok z." "ok p1.z.usagep2." "bad usage." "bad x." "bad p1usage"
 chk tests/setlogic/allof-opt.hbnf "ok D." "ok Dp1." "ok Dusage." "ok Dusagep1." "ok Dp1usage." "bad Dp1p2." "bad Dx."
 chk tests/setlogic/allof-two.hbnf "ok ab-c" "ok ba-cd" "ok ba-dc" "bad a-c" "bad ab-d" "bad ab-cc" "bad aab-c"
@@ -105,7 +112,7 @@ chk tests/setlogic/allof-rec.hbnf "ok D3x4." "ok Dtag3x4." "ok D3x4tag." "bad D3
 n=$((n + 1)); [ "$(sed -n '/^struct decl_s {$/,/^};$/p' "$W/f.c" | tr -d ' \n')" = "structdecl_s{pic_tpic;usage_tusage;value_tvalue;};" ] \
 	|| { echo "setlogic: FAIL (all of: the record has not a field for each member)"; fail=1; }
 for b in rust zig ada; do
-	"$CLI" tests/setlogic/allof.hbnf --backend=$b --package=Sl 2>&1 > /dev/null | grep -q 'has `all of ( ... )`.*only the C backend generates' \
+	"$CLI" tests/setlogic/allof.hbnf --backend=$b --package=Sl 2>&1 > /dev/null | grep -q 'has `all of`, `some of`.*only the C backend generates' \
 		|| { echo "setlogic: FAIL ($b does not say that all of is C only)"; fail=1; }
 	n=$((n + 1))
 done
