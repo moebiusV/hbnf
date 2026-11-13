@@ -174,7 +174,8 @@ data-description-entry = "66" data-name renames-clause "."
                                                                      redefines-clause renames-clause sign-clause justified-clause synchronized-clause blank-zero-clause
                                                                      type-clause default-clause present-when-clause invalid-when-clause destination-clause class-clause identified-by-clause
                                                                      global-clause based-clause typedef-clause static-clause external-clause external-form-clause
-                                                                     constant-clause any-length-clause dynamic-length-clause unsigned-clause occurs-clause ) "."
+                                                                     constant-clause any-length-clause dynamic-length-clause unsigned-clause occurs-clause )
+                                                                     *validate-status-clause "."
 data-name              = user-word | "PAGE-COUNTER" | "LINE-COUNTER" | "LINAGE-COUNTER"
 ; the clauses of a data description entry come in any order, each at most once (an entry of level 66, 78 or 88 has no OCCURS; cobc allows it on the others)
 plain-clause           = special-names-clause | volatile-clause | same-as-clause | item-clause | redefines-clause | renames-clause | sign-clause
@@ -188,12 +189,14 @@ type-clause            = "TYPE" to identifier
 default-clause         = "DEFAULT" is operand
 present-when-clause    = "PRESENT" "WHEN" condition
 invalid-when-clause    = "INVALID" "WHEN" condition
+; the VALIDATE facility's messages: one or more, after the other clauses (the any of group is at its limit of members)
+validate-status-clause = "VALIDATE-STATUS" is operand "WHEN" ( "ERROR" | "NO" "ERROR" ) [ "ON" ( "FORMAT" | "CONTENT" | "RELATION" | "SIZE" ) ] "FOR" identifier
 destination-clause     = "DESTINATION" identifier
 class-clause           = "CLASS" is ( "NUMERIC" | "ALPHABETIC" | "ALPHABETIC-LOWER" | "ALPHABETIC-UPPER" | user-word )
 identified-by-clause   = "IDENTIFIED" by operand
 global-clause          = "GLOBAL" | is "GLOBAL"
 based-clause           = "BASED"
-typedef-clause         = "TYPEDEF" | is "TYPEDEF"
+typedef-clause         = ( "TYPEDEF" | is "TYPEDEF" ) [ "STRONG" ]
 static-clause          = "STATIC"
 external-clause        = is "EXTERNAL" [ "AS" operand ]
 external-form-clause   = is "EXTERNAL-FORM" [ "IDENTIFIED" by operand ]
@@ -204,8 +207,8 @@ unsigned-clause        = "UNSIGNED" | "SIGNED"
 ; a picture may end in a period of its own (`PIC 999.` then the entry's `.`): that picture is the one whose period another follows
 picture-clause         = ( "PICTURE" | "PIC" ) is ( picture-with-period &"." | picture-string ) [ "DEPENDING" on identifier ]
 usage-clause           = "USAGE" is ( usage | user-word ) | usage
-usage                  = "DISPLAY" | "BIT" | "HANDLE" [ "OF" user-word ] | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "POINTER" | "PROCEDURE-POINTER" | "FUNCTION-POINTER"
-                       | "PROGRAM-POINTER"
+usage                  = "DISPLAY" | "BIT" [ "ALIGNED" ] | "HANDLE" [ "OF" user-word ] | "BINARY" | "PACKED-DECIMAL" | "INDEX" | "POINTER" | "PROCEDURE-POINTER" | "FUNCTION-POINTER"
+                       | "PROGRAM-POINTER" | "OBJECT" "REFERENCE" [ [ "FACTORY" "OF" ] user-word | "ACTIVE-CLASS" ]
                        | "COMPUTATIONAL-1" | "COMPUTATIONAL-2" | "COMPUTATIONAL-3" | "COMPUTATIONAL-4" | "COMPUTATIONAL-5"
                        | "COMPUTATIONAL-X" | "COMPUTATIONAL-6" | "COMPUTATIONAL" | "COMP-1" | "COMP-2" | "COMP-3" | "COMP-4" | "COMP-5" | "COMP-X"
                        | "COMP-6" | "COMP" | "BINARY-C-LONG" | "SIGNED-SHORT" | "SIGNED-INT" | "SIGNED-LONG" | "BINARY-LONG-LONG" | "UNSIGNED-SHORT" | "UNSIGNED-INT" | "UNSIGNED-LONG" | "UNSIGNED-CHAR" | "BINARY-INT" | "COMP-N" | "BINARY-CHAR" | "BINARY-SHORT" | "BINARY-LONG" | "BINARY-DOUBLE" | "NATIONAL"
@@ -246,7 +249,7 @@ end-of-unit            = "END" ( "PROGRAM" | "FUNCTION" )
 statements             = 1*statement
 
 ; ---- statements ----
-statement = transform-statement | xml-statement | json-statement | ready-statement | accept-statement | add-statement | alter-statement | call-statement | cancel-statement | close-statement
+statement = transform-statement | validate-statement | xml-statement | json-statement | ready-statement | accept-statement | add-statement | alter-statement | call-statement | cancel-statement | close-statement
           | compute-statement | continue-statement | delete-statement | display-message | display-statement | divide-statement
           | evaluate-statement | exit-statement | goback-statement | go-to-statement | if-statement
           | initialize-statement | inspect-statement | move-statement | multiply-statement | open-statement
@@ -272,6 +275,7 @@ count-in           = "COUNT" [ "IN" ] identifier
 name-of            = "NAME" [ "OF" ] 1*( identifier is ( "OMITTED" | operand ) )
 suppress-list      = "SUPPRESS" 1*( [ "EVERY" ( "ELEMENT" | "ATTRIBUTE" ) ] "WHEN" figurative-constant *( "OR" figurative-constant ) | identifier [ "WHEN" figurative-constant ] )
 transform-statement = "TRANSFORM" identifier [ "CHARACTERS" ] "FROM" operand "TO" operand
+validate-statement = "VALIDATE" 1*identifier
 ready-statement = ( "READY" | "RESET" ) "TRACE"
 next-sentence = "NEXT" "SENTENCE"
 continue-statement = "CONTINUE" [ "AFTER" operand ( "SECONDS" | "SECOND" ) ]
@@ -299,7 +303,7 @@ go-to-statement    = "GO" to [ "ENTRY" 1*literal [ "DEPENDING" on identifier ] |
 alter-statement    = "ALTER" 1*( procedure-name "TO" [ "PROCEED" "TO" ] procedure-name )
 procedure-name     = paragraph-name [ ( "IN" | "OF" ) section-name ]
 
-accept-statement   = "ACCEPT" as K ( "OMITTED" | identifier ) [ "FROM" ( "DATE" [ "YYYYMMDD" ] | "DAY" [ "YYYYDDD" ] | "DAY-OF-WEEK" | "TIME"
+accept-statement   = "ACCEPT" as K ( "OMITTED" | identifier [ "MESSAGE" "COUNT" ] ) [ "FROM" ( "DATE" [ "YYYYMMDD" ] | "DAY" [ "YYYYDDD" ] | "DAY-OF-WEEK" | "TIME"
                                                   | "COMMAND-LINE" | "ESCAPE" [ "KEY" ] | "ENVIRONMENT-VALUE" | "ENVIRONMENT" operand | user-word ) ]
                      *screen-phrase [ on-exception-phrases ] scope-end
 ; A message box (GnuCOBOL's graphical extension): its attributes follow the text.

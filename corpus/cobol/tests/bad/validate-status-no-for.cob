@@ -1,0 +1,8 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. vbad.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  M.
+           03  PIC X(40)  VALIDATE-STATUS "x" WHEN ERROR.
+       PROCEDURE DIVISION.
+           GOBACK.

@@ -1,0 +1,19 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. vstat.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  IN-REC.
+           03  IN-TYPE   PIC 99 DEFAULT 1.
+           03  IN-NAME   PIC A(20) PRESENT WHEN IN-TYPE = 0 OR 1.
+       01  MESSAGES.
+           03  PIC X(40)  VALIDATE-STATUS "Unknown type" WHEN ERROR FOR IN-TYPE
+                          VALIDATE-STATUS "Type accepted" WHEN NO ERROR FOR IN-TYPE.
+           03  PIC X(40)  VALIDATE-STATUS "Not alphabetic" WHEN ERROR ON FORMAT FOR IN-NAME
+                          VALIDATE-STATUS "Lower case" WHEN ERROR ON CONTENT FOR IN-NAME.
+           03  FLAG       PIC 9 COMP OCCURS 5 VALIDATE-STATUS 1 WHEN ERROR FOR IN-NAME.
+       01  GRP TYPEDEF STRONG.
+           05  F1         PIC 1(8) USAGE BIT ALIGNED.
+           05  F2         USAGE OBJECT REFERENCE.
+       PROCEDURE DIVISION.
+           VALIDATE IN-REC MESSAGES
+           GOBACK.

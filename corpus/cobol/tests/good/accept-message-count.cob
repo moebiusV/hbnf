@@ -1,0 +1,5 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. amc.
+       PROCEDURE DIVISION.
+           ACCEPT CD-IN MESSAGE COUNT
+           GOBACK.
