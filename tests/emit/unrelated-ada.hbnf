@@ -1,0 +1,10 @@
+; tests/emit/unrelated.hbnf for the Ada backend: `pair` can end the way `top` goes on, but nothing after it retries it past an emit.
+; `pair` builds a tree and `top` holds an %emit, so `top` makes a value and calls a rule that makes a node.
+language Ada
+prefix none
+whitespace none
+{
+with Emit_State;
+}
+top = pair "z" %emit{ Emit_State.Done; }
+pair = "x" | "xy"

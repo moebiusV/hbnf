@@ -1,0 +1,7 @@
+; tests/emit/run.hbnf for the Ada backend: the code of an %emit is the grammar's own, so it is Ada here.
+; `$$` is the rule's value, an element is a variable: a list's value is the number of `t` in it, nested lists included
+language Ada
+prefix none
+whitespace none
+list :: Integer = "[" %emit{ $$ := 0; } [ item %emit{ $$ := $$ + item; } *( "," item %emit{ $$ := $$ + item; } ) ] "]"
+item :: Integer = "t" %emit{ $$ := 1; } | "f" %emit{ $$ := 0; } | list %emit{ $$ := list; }

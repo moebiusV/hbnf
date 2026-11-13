@@ -482,6 +482,30 @@ package body HBNF_Ada is
    --  (appeared with a repetition prefix) rather than a single value.
 
    type Class_Kind is (Enum, Scalar, List, Struct);
+   --  Whether a pattern holds an `%emit` (groups too).
+   function Holds_Emit (V : Element_Vectors.Vector) return Boolean is
+   begin
+      for E of V loop
+         if (E.Kind = Block and then E.Op = B_Emit) or else (E.Kind = Group and then Holds_Emit (E.Items)) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Holds_Emit;
+
+   --  The Ada type of the value a rule makes: the one it declares (`name :: Integer = ...`), or `Character` for a rule that only
+   --  holds an `%emit`; empty for a rule that builds a tree.
+   function Emit_Value_Type (R : Rule) return String is
+      T : constant String := HBNF_Grammar.Value_Type (To_String (R.Name));
+   begin
+      if T /= "" then
+         return T;
+      elsif Holds_Emit (R.Pattern) then
+         return "Character";
+      end if;
+      return "";
+   end Emit_Value_Type;
+
    type Rule_Info (Kind : Class_Kind := Scalar) is record
       case Kind is
          when Enum =>
@@ -502,6 +526,11 @@ package body HBNF_Ada is
       R : constant Rule := Rules (Idx);
       P : constant Element_Vectors.Vector := R.Pattern;
    begin
+      if Emit_Value_Type (R) /= "" then
+         --  a rule that makes a value (`name :: Type = ...`, or holds an `%emit`) has no node: its type is the value's
+         return (Kind        => Scalar,
+                 Inline_Type => To_Unbounded_String (Emit_Value_Type (R)));
+      end if;
       if Is_Char_Rule (Rules, To_String (R.Name)) then
          --  A character-level rule compiles to a scanner and a token; its
          --  value is the matched text, so it is a scalar string.
@@ -976,6 +1005,11 @@ package body HBNF_Ada is
             Append (Buf, LF);
          end if;
 
+         if Emit_Value_Type (R) /= "" then
+            --  a rule that makes a value (`name :: Type = ...`, or holds an `%emit`): no tree node, the type of the value
+            return To_String (Buf) & "   subtype " & TN & " is " & Emit_Value_Type (R) & ";" & LF;
+         end if;
+
          case Info.Kind is
             when Scalar =>
                declare
@@ -1256,7 +1290,7 @@ package body HBNF_Ada is
       --  Incomplete declarations for every record type, then an access type
       --  for each, so records may refer to one another through access.
       for I in 1 .. N loop
-         if Is_Record (Infos (I)) then
+         if Is_Record (Infos (I)) and then Emit_Value_Type (Rules (I)) = "" then
             Append (Res, "   type " & Ada_Ident (To_String (Rules (I).Name)) &
                     "_Type;");
             Append (Res, LF);
@@ -1264,7 +1298,7 @@ package body HBNF_Ada is
       end loop;
       Append (Res, LF);
       for I in 1 .. N loop
-         if Is_Record (Infos (I)) then
+         if Is_Record (Infos (I)) and then Emit_Value_Type (Rules (I)) = "" then
             Append (Res, "   type " & Ada_Ident (To_String (Rules (I).Name)) &
                     "_Access is access " &
                     Ada_Ident (To_String (Rules (I).Name)) & "_Type;");
@@ -1706,6 +1740,32 @@ package body HBNF_Ada is
         & "" & LF & LF);
       return To_String (R);
    end Context_Support;
+
+   --  The grammar's preamble (`{ code }` before its rules, in `language Ada`): its lines that begin with `with`, `use` or `pragma` are
+   --  context clauses and go before the package; the rest is declarations for the body, before the rules.
+   function Preamble_Part (Withs : Boolean) return String is
+      T : constant String := HBNF_Grammar.Preamble ("Ada");
+      R : Unbounded_String;
+      B : Natural := T'First;
+   begin
+      for K in T'First .. T'Last + 1 loop
+         if K > T'Last or else T (K) = ASCII.LF then
+            declare
+               Ln : constant String := Ada.Strings.Fixed.Trim (T (B .. K - 1), Ada.Strings.Left);
+               Cc : constant Boolean := Ln'Length >= 5 and then (Ln (Ln'First .. Ln'First + 4) = "with " or else Ln (Ln'First .. Ln'First + 3) = "use "
+                                                               or else Ln (Ln'First .. Ln'First + 5) = "pragma");
+            begin
+               if Cc = Withs and then T (B .. K - 1)'Length > 0 then
+                  Append (R, T (B .. K - 1) & LF);
+               end if;
+            end;
+            B := K + 1;
+         end if;
+      end loop;
+      return To_String (R);
+   end Preamble_Part;
+   function Preamble_Withs return String is (Preamble_Part (True));
+   function Preamble_Body return String is (Preamble_Part (False));
 
    function Emit_Parser
      (Rules : HBNF_Grammar.Rule_Vectors.Vector; Package_Name : String)
@@ -3247,6 +3307,253 @@ package body HBNF_Ada is
             FA := Old_FA;
          end loop;
       end Emit_Alternation;
+
+      --  A rule that declares a value (`name :: Type = ...`) or holds an `%emit`: a function that runs its pattern and returns the
+      --  value, with no tree node (CONTEXTS.md and ABNF.md, "Values at recognition").  `%emit{ code }` is the author's own Ada,
+      --  run where its place in the sequence is reached, `$$` the value being made, each element a local variable of its rule's
+      --  name.  Ordered choices and repetitions give back what they read and put back what `rollback { name : Type }` names.
+      procedure Emit_Valued (Idx : Natural; Buf : in out U) is
+         R   : constant Rule := Rules (Idx);
+         RN  : constant String := To_String (R.Name);
+         Lbl : Natural := 0;
+         Seen : String_Vectors.Vector;
+         Rb  : String_Vectors.Vector;     --  the names `rollback { }` lists
+         Rbt : String_Vectors.Vector;     --  and their types
+
+         procedure Unsupported (What : String) is
+         begin
+            raise Parse_Error with "rule `" & RN & "` runs an %emit, and " & What & " is not generated for Ada in such a rule yet";
+         end Unsupported;
+
+         function Fresh return String is
+         begin
+            Lbl := Lbl + 1;
+            return Img (Lbl);
+         end Fresh;
+
+         --  `$$` is the value the rule is making
+         function Code_Of (Text : String) return String is
+            Res : U;
+            K   : Natural := Text'First;
+         begin
+            while K <= Text'Last loop
+               if K < Text'Last and then Text (K) = '$' and then Text (K + 1) = '$' then
+                  Append (Res, "Rv");
+                  K := K + 2;
+               else
+                  Append (Res, Text (K));
+                  K := K + 1;
+               end if;
+            end loop;
+            return To_String (Res);
+         end Code_Of;
+
+         function Save (Tag : String) return String is
+            S : U;
+         begin
+            for K in 1 .. Natural (Rb.Length) loop
+               Append (S, " Rb" & Tag & "_" & Img (K) & " : constant " & To_String (Rbt (K)) & " := " & To_String (Rb (K)) & ";");
+            end loop;
+            return To_String (S);
+         end Save;
+
+         function Restore (Tag : String) return String is
+            S : U;
+         begin
+            for K in 1 .. Natural (Rb.Length) loop
+               Append (S, To_String (Rb (K)) & " := Rb" & Tag & "_" & Img (K) & "; ");
+            end loop;
+            return To_String (S);
+         end Restore;
+
+         procedure Locals (V : Element_Vectors.Vector) is
+         begin
+            for E of V loop
+               if E.Kind = Group then
+                  Locals (E.Items);
+               elsif E.Kind = Name then
+                  declare
+                     N : constant String := To_String (E.Name);
+                     J : constant Natural := Find (Rules, N);
+                  begin
+                     if not Seen.Contains (E.Name) then
+                        Seen.Append (E.Name);
+                        Append (Buf, "      " & Ada_Field (N) & " : "
+                          & (if J > 0 and then Emit_Value_Type (Rules (J)) /= "" then Ret_Type (J)
+                             else Ada_Type_Of (Rules, N)) & ";" & LF);
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end Locals;
+
+         procedure Gen (V : Element_Vectors.Vector; F, L : Natural; Fail, Ind : String);
+
+         --  One occurrence of E; Fail is where a failure goes.
+         procedure One (E : Element_Access; Fail, Ind : String) is
+            Old_FA : constant Unbounded_String := FA;
+            Single : constant Element_Vectors.Vector := Element_Vectors.To_Vector (E, 1);
+         begin
+            case E.Kind is
+               when Group =>
+                  Gen (E.Items, 1, Natural (E.Items.Length), Fail, Ind);
+               when Name =>
+                  declare
+                     N : constant String := To_String (E.Name);
+                     J : constant Natural := Find (Rules, N);
+                  begin
+                     if J > 0 and then Emit_Value_Type (Rules (J)) /= "" then
+                        if E.Args /= Null_Unbounded_String then
+                           Unsupported ("a call with parameters");
+                        end if;
+                        if Rules (Idx).Whitespace /= Null_Unbounded_String then
+                           Append (Buf, Ind & "Skip_Ws (P);" & LF);
+                        end if;
+                        Append (Buf, Ind & Ada_Field (N) & " := Parse_" & Ada_Ident (N) & " (P);" & LF);
+                        Append (Buf, Ind & "if P.Failed then " & Fail & " end if;" & LF);
+                     else
+                        FA := To_Unbounded_String (Fail);
+                        Emit_Seq (Idx, Single, 1, 1, "", Buf, Ind);
+                        FA := Old_FA;
+                     end if;
+                  end;
+               when Block =>
+                  if E.Op = B_Emit then
+                     Append (Buf, Ind & "begin" & LF & Ind & "   " & Code_Of (To_String (E.Code)) & LF & Ind & "end;" & LF);
+                  else
+                     Unsupported ("a `" & HBNF_Grammar.Block_Op'Image (E.Op) & "` element");
+                  end if;
+               when Literal | Char_Range =>
+                  FA := To_Unbounded_String (Fail);
+                  Emit_Seq (Idx, Single, 1, 1, "", Buf, Ind);
+                  FA := Old_FA;
+               when others =>
+                  Unsupported ("this kind of element");
+            end case;
+         end One;
+
+         --  E as often as its bounds say; a part that fails gives back what it took, and the loop ends
+         procedure Elem (E : Element_Access; Fail, Ind : String) is
+         begin
+            if E.Min = 1 and then E.Max = 1 then
+               One (E, Fail, Ind);
+               return;
+            end if;
+            declare
+               Id : constant String := Fresh;
+            begin
+               Append (Buf, Ind & "declare" & LF
+                 & Ind & "   Cnt_" & Id & " : Natural := 0;" & LF
+                 & Ind & "begin" & LF
+                 & Ind & "   loop" & LF
+                 & Ind & "      declare" & LF
+                 & Ind & "         Sv_" & Id & " : constant Natural := P.Pos;" & To_String (Unbounded_String'(To_Unbounded_String (Save ("l" & Id)))) & LF
+                 & Ind & "      begin" & LF);
+               if E.Max >= 0 then
+                  Append (Buf, Ind & "         exit when Cnt_" & Id & " >= " & Img (Natural (E.Max)) & ";" & LF);
+               end if;
+               One (E, "goto Rf_" & Id & ";", Ind & "         ");
+               Append (Buf, Ind & "         Cnt_" & Id & " := Cnt_" & Id & " + 1;" & LF
+                 & Ind & "         exit when P.Pos = Sv_" & Id & ";" & LF
+                 & Ind & "         goto Rn_" & Id & ";" & LF
+                 & Ind & "         <<Rf_" & Id & ">> P.Failed := False;  P.Pos := Sv_" & Id & ";  " & Restore ("l" & Id) & "exit;" & LF
+                 & Ind & "         <<Rn_" & Id & ">> null;" & LF
+                 & Ind & "      end;" & LF
+                 & Ind & "   end loop;" & LF);
+               if E.Min > 0 then
+                  Append (Buf, Ind & "   if Cnt_" & Id & " < " & Img (E.Min) & " then " & Fail & " end if;" & LF);
+               end if;
+               Append (Buf, Ind & "end;" & LF);
+            end;
+         end Elem;
+
+         procedure Seq_Range (V : Element_Vectors.Vector; St, En : Natural; Fail, Ind : String) is
+         begin
+            for K in St .. En loop
+               Elem (V (K), Fail, Ind);
+            end loop;
+         end Seq_Range;
+
+         --  V (F .. L): the alternatives are tried in order; one that fails gives back its input
+         procedure Gen (V : Element_Vectors.Vector; F, L : Natural; Fail, Ind : String) is
+            Alts : Natural := 1;
+         begin
+            for K in F .. L loop
+               if V (K).Kind = Alt then
+                  Alts := Alts + 1;
+               end if;
+            end loop;
+            if Alts = 1 then
+               Seq_Range (V, F, L, Fail, Ind);
+               return;
+            end if;
+            declare
+               Id : constant String := Fresh;
+               Bs : constant HBNF_Lookahead.Bounds_Vectors.Vector := HBNF_Lookahead.Branches (V);
+               N  : Natural := 0;
+            begin
+               Append (Buf, Ind & "declare" & LF
+                 & Ind & "   As_" & Id & " : constant Natural := P.Pos;" & Save ("a" & Id) & LF
+                 & Ind & "begin" & LF);
+               for Br of Bs loop
+                  N := N + 1;
+                  if N < Natural (Bs.Length) then
+                     Append (Buf, Ind & "   begin" & LF);
+                     Seq_Range (V, Br.First, Br.Last, "goto An_" & Id & "_" & Img (N) & ";", Ind & "      ");
+                     Append (Buf, Ind & "      goto Ad_" & Id & ";" & LF
+                       & Ind & "   end;" & LF
+                       & Ind & "   <<An_" & Id & "_" & Img (N) & ">> P.Failed := False;  P.Pos := As_" & Id & ";  "
+                       & Restore ("a" & Id) & LF);
+                  else
+                     Seq_Range (V, Br.First, Br.Last, Fail, Ind & "   ");
+                  end if;
+               end loop;
+               Append (Buf, Ind & "   <<Ad_" & Id & ">> null;" & LF & Ind & "end;" & LF);
+            end;
+         end Gen;
+      begin
+         declare
+            T : constant String := HBNF_Grammar.Rollback_State;
+            B : Natural := T'First;
+            Depth : Integer := 0;
+         begin
+            for K in T'First .. T'Last + 1 loop
+               if K > T'Last or else (T (K) = ',' and then Depth = 0) then
+                  declare
+                     Item : constant String := Ada.Strings.Fixed.Trim (T (B .. K - 1), Ada.Strings.Both);
+                     C    : Natural := 0;
+                  begin
+                     for Q in Item'Range loop
+                        if Item (Q) = ':' then
+                           C := Q;
+                           exit;
+                        end if;
+                     end loop;
+                     if Item /= "" then
+                        if C = 0 then
+                           Unsupported ("`rollback { " & Item & " }` without a type (Ada writes `rollback { " & Item & " : Integer }`)");
+                        end if;
+                        Rb.Append (To_Unbounded_String (Ada.Strings.Fixed.Trim (Item (Item'First .. C - 1), Ada.Strings.Both)));
+                        Rbt.Append (To_Unbounded_String (Ada.Strings.Fixed.Trim (Item (C + 1 .. Item'Last), Ada.Strings.Both)));
+                     end if;
+                  end;
+                  B := K + 1;
+               elsif T (K) in '(' | '[' then
+                  Depth := Depth + 1;
+               elsif T (K) in ')' | ']' then
+                  Depth := Depth - 1;
+               end if;
+            end loop;
+         end;
+         Append (Buf, "      Rv : " & Ret_Type (Idx) & ";" & LF
+           & "      Start : constant Natural := P.Pos;" & LF);
+         Locals (R.Pattern);
+         Append (Buf, "   begin" & LF);
+         Gen (R.Pattern, 1, Natural (R.Pattern.Length), "goto Rule_Fail;", "      ");
+         Append (Buf, "      return Rv;" & LF
+           & "      <<Rule_Fail>> P.Pos := Start;" & LF
+           & "      return Rv;" & LF);
+      end Emit_Valued;
 
       procedure Emit_Rule_Decl (Idx : Natural; Buf : in out U) is
          R        : constant Rule := Rules (Idx);
@@ -5293,7 +5600,7 @@ package body HBNF_Ada is
          HBNF_Template.Put (V, "switch_with",
            (if HBNF_Grammar.Uses_Switch or else Ctx_On then "with Ada.Containers.Vectors;" & LF else ""));
          HBNF_Template.Put (V, "hosted_with",
-           To_String (Hosted_Withs)
+           To_String (Hosted_Withs) & Preamble_Withs
            & (if Parents_On and then Length (Ast_Body) > 0
               then "with System.Storage_Elements;" & LF else ""));
          Append (Bdy, HBNF_Template.Render_File ("ada_parser_body", V));
@@ -5784,6 +6091,8 @@ package body HBNF_Ada is
             then "      Bit  : Natural := 0;   --  bits of the octet at Pos a bit rule has read" & LF
             else ""));
          Append (Bdy, HBNF_Template.Render_File ("ada_parser_prims", V));
+         --  the grammar's own Ada, in the package body before the rules (the `with` lines of it went where the context clauses are)
+         Append (Bdy, Preamble_Body);
       end;
       Append (Bdy, LF);
       Append (Bdy, To_String (Free_Body));
@@ -5867,6 +6176,9 @@ package body HBNF_Ada is
                Append (Bdy, "   function Body_Of_" & Ada_Ident (NM)
                  & " (P : in out Parser) return " & Ret_Type (I) & " is");
                Append (Bdy, LF);
+               if Emit_Value_Type (Rules (I)) /= "" then
+                  Emit_Valued (I, Bdy);
+               else
                Emit_Rule_Decl (I, Bdy);
                Append (Bdy, "   begin");
                Append (Bdy, LF);
@@ -5890,6 +6202,7 @@ package body HBNF_Ada is
                      end;
                   end if;
                end;
+               end if;
                Append (Bdy, "   end Body_Of_" & Ada_Ident (NM) & ";");
                Append (Bdy, LF);
                Append (Bdy, LF);
@@ -5900,7 +6213,7 @@ package body HBNF_Ada is
                  & "      Enter (P, " & Img (I) & ");" & LF
                  & "      declare" & LF
                  & (if Ctx_On then "         Cx0 : constant Natural := P.Ncx;" & LF else "")
-                 & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
+                 & (if Emit_Value_Type (Rules (I)) = "" and then Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
                     then "         Save : constant Natural := P.Pos;" & LF
                          & "         R : " & Ret_Type (I) & " := Body_Of_"
                     else "         R : constant " & Ret_Type (I) & " := Body_Of_")
@@ -5908,7 +6221,7 @@ package body HBNF_Ada is
                  & "      begin" & LF
                  & "         P.Depth := P.Depth - 1;" & LF
                  & (if Ctx_On then "         if P.Failed then P.Ncx := Cx0; end if;" & LF else "")
-                 & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
+                 & (if Emit_Value_Type (Rules (I)) = "" and then Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
                     then (if Rules (I).Whitespace /= Null_Unbounded_String
                           then "         declare K : constant Natural := P.Pos; begin P.Pos := Save;"
                                & " Skip_Ws (P); R.Span_Start := P.Pos - 1; P.Pos := K; end;" & LF

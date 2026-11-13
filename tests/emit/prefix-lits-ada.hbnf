@@ -1,0 +1,9 @@
+; tests/emit/prefix-lits.hbnf for the Ada backend: alternatives that begin with literals, one the front of the other, each with its emit
+language Ada
+prefix none
+whitespace none
+{
+with Emit_State;
+}
+top = "[[" %emit{ Emit_State.Array_Table; } key "]]" / "[" %emit{ Emit_State.Table; } key "]"
+key = 1*0x61..0x7a

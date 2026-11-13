@@ -1,0 +1,10 @@
+; tests/emit/emit-last.hbnf for the Ada backend: an alternative of an emit rule that ends with its emit, and a choice between them
+language Ada
+prefix none
+whitespace none
+{
+with Emit_State;
+}
+top = word-a %emit{ Emit_State.One; } / word-ab %emit{ Emit_State.Two; }
+word-a  = "a"
+word-ab = "a" "b"

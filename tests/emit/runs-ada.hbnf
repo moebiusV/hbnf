@@ -1,0 +1,14 @@
+; tests/emit/runs.hbnf for the Ada backend (the code is Ada, the state is in tests/emit/ada/emit_state.ads): the choices are tried in
+; order, and `rollback { depth : Natural }` puts the state back for an alternative that is given up, so only the one that
+; succeeds leaves its pushes.  The type is written with the name because Ada has no typeof.
+language Ada
+prefix none
+whitespace none
+{
+with Emit_State;
+}
+rollback { Emit_State.Depth : Natural }
+
+top   :: Integer = name "(" digit ")" %emit{ Emit_State.Push (100); $$ := 1; } | name "(" ")" %emit{ Emit_State.Push (200); $$ := 2; } | name ":" name %emit{ Emit_State.Push (300); $$ := 3; } | name %emit{ Emit_State.Push (400); $$ := 4; }
+name  :: Integer = "a" %emit{ Emit_State.Push (1); } | "b" %emit{ Emit_State.Push (1); } | "c" %emit{ Emit_State.Push (1); }
+digit :: Integer = "0" %emit{ Emit_State.Push (2); } | "1" %emit{ Emit_State.Push (2); }

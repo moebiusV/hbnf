@@ -1,0 +1,14 @@
+; tests/emit/safe.hbnf for the Ada backend: every emit is where nothing can retry past it (the analysis is the same for every backend).
+; A rule of characters (`key`) is read as text and is a variable of the emit that names it; a rule that holds emits is a value, here
+; a Character when it declares none.
+language Ada
+prefix none
+whitespace none
+{
+with Emit_State;
+with Ada.Strings.Unbounded;
+}
+top :: Natural = "{" %emit{ $$ := Emit_State.Open; } [ pair *( "," pair ) ] "}" %emit{ Emit_State.Close ($$); }
+pair :: Natural = key ":" val %emit{ Emit_State.Put (Ada.Strings.Unbounded.To_String (key)); }
+key = 0x61..0x7A
+val = "t" %emit{ Emit_State.Yes; } | "f" %emit{ Emit_State.No; } | top

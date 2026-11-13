@@ -23,10 +23,13 @@ for f in read safe unrelated emit-last prefix-lits; do
 	"$CLI" tests/emit/$f.hbnf --backend=c > "$W/$f.c" 2> "$W/$f.err" \
 		|| { echo "emit: FAIL ($f: $(head -c 200 "$W/$f.err"))"; fail=1; }
 done
-for b in rust zig ada; do
-	"$CLI" tests/emit/safe.hbnf --backend=$b 2>&1 > /dev/null | grep -q 'has an %emit, which only the C backend generates' \
+for b in rust zig; do
+	"$CLI" tests/emit/safe.hbnf --backend=$b 2>&1 > /dev/null | grep -q 'has an %emit, which only the C and Ada backends generate so far' \
 		|| { echo "emit: FAIL (safe: $b does not refuse an %emit by name)"; fail=1; }
 done
+# the code of an %emit is the grammar's own: C here, so Ada says so (a file that says `language Ada` is generated, below)
+"$CLI" tests/emit/safe.hbnf --backend=ada 2>&1 > /dev/null | grep -q 'which is code written in C' \
+	|| { echo "emit: FAIL (safe: ada does not refuse C code in an %emit)"; fail=1; }
 # the generated parser runs the emits in order, with `$$` and the elements as variables, and a
 # parse that fails reports where without running them again
 "$CLI" tests/emit/run.hbnf --backend=c > "$W/run.c" 2> "$W/run.err" \
@@ -141,5 +144,55 @@ refused rollback-none top 'can both begin with'
 "$CLI" tests/emit/lookahead.hbnf --backend=c 2>&1 > /dev/null | grep -q 'looks at a literal' \
 	|| { echo "emit: FAIL (lookahead: an %emit in a lookahead is not refused)"; fail=1; }
 refused overlap-called top 'can both begin with'
-[ $fail = 0 ] && echo "emit: OK (types read; %emit analysed and generated, each retry refused)"
+# the Ada backend generates the %emit of a file that says `language Ada` (the code is Ada: `$$` is the function's result, an element
+# is a local variable, `rollback { Name : Type }` names the state a given-up alternative puts back), and gives the same answers
+if command -v gnatmake > /dev/null 2>&1; then
+	ada_case() {   # NAME DRIVER: the grammar tests/emit/NAME-ada.hbnf and the driver tests/emit/ada/DRIVER.adb, built together
+		d=$W/ada-$1; rm -rf "$d"; mkdir -p "$d"; cp tests/emit/ada/*.ad? "$d/"
+		"$CLI" tests/emit/$1-ada.hbnf --backend=ada --package=Er > "$d/all.ada" 2> "$d/err" \
+			|| { echo "emit: FAIL (ada $1: $(head -c 200 "$d/err"))"; fail=1; return 1; }
+		(cd "$d" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -gnat2022 -gnatws "$2.adb" -o "$2" > cc.txt 2>&1) \
+			|| { echo "emit: FAIL (ada $1 does not compile: $(grep -m2 error "$d/cc.txt" | head -c 300))"; fail=1; return 1; }
+		return 0
+	}
+	ada_run() {   # NAME DRIVER INPUT WANT
+		got=$("$W/ada-$1/$2" "$3" 2>&1 | head -1)
+		[ "$got" = "$4" ] || { echo "emit: FAIL (ada $1 $3: got '$got', wanted '$4')"; fail=1; }
+	}
+	if ada_case run run_check; then
+		while IFS== read -r input want; do ada_run run run_check "$input" "$want"; done <<'CASES'
+[]=0
+[t]=1
+[f]=0
+[t,f,[t,t]]=3
+[[[t]],[t,t],f]=3
+[t,[]=error 1:6
+[t,x=error 1:4
+CASES
+	fi
+	if ada_case runs runs_check; then
+		while IFS== read -r input want; do ada_run runs runs_check "$input" "$want"; done <<'CASES'
+a(1)=1 3 103
+b()=2 2 201
+c(0)=1 3 103
+c:a=3 3 302
+a:b=3 3 302
+a=4 2 401
+a(=error 1:3
+a(2)=error 1:3
+d=error 1:1
+b(1=error 1:4
+CASES
+	fi
+	if ada_case safe safe_check; then
+		ada_run safe safe_check '{}' '{}'; ada_run safe safe_check '{a:t}' '{yp:a}'
+		ada_run safe safe_check '{a:t,b:{c:f}}' '{yp:a{np:c}p:b}'; ada_run safe safe_check '{a:x}' 'error'
+	fi
+	if ada_case unrelated trace_check; then ada_run unrelated trace_check xz done; ada_run unrelated trace_check xyz error; fi
+	if ada_case emit-last trace_check; then ada_run emit-last trace_check a one; ada_run emit-last trace_check ab two; fi
+	if ada_case prefix-lits trace_check; then
+		ada_run prefix-lits trace_check '[ab]' table; ada_run prefix-lits trace_check '[[ab]]' array_table; ada_run prefix-lits trace_check '[ab]]' error
+	fi
+fi
+[ $fail = 0 ] && echo "emit: OK (types read; %emit analysed and generated in C and in Ada, each retry refused)"
 exit $fail
